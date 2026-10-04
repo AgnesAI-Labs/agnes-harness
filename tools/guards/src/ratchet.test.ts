@@ -2008,7 +2008,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // Runtime client routes on the daemon HTTP listener (validated, unported refusals); measured 27356 (+209), exact.
   // Native conversation source for the default projection read over shared opening/history windows; measured 27424 (+68), exact.
   // Runtime HTTP credentials are generation-bound and Host read ports are wired. Measured 27535, exact, no spare.
-  'packages/daemon/src': 27535,
+  // Host projection lifecycle and read-port composition. Measured 27549, exact.
+  'packages/daemon/src': 27549,
   'packages/daemon/src/packages/admin-session': 46,
   // 2026-09-14: whole-branch review fix wave (Finding 1) adds the two missing
   // 'pins/inspect'/'pins/release' entries to the ACTIONS BFF route allowlist, which had been left
@@ -2836,7 +2837,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // Artifact download streams recheck the ticket broker before every chunk; measured 79978 (+12), exact.
   // Runtime HTTP credentials are generation-bound and Host read ports are wired. Measured 80050, exact, no spare.
   // Binding-scoped model Local egress adds 461 measured lines; measured 80511, exact, no spare.
-  'packages/host/src': 80511,
+  // feat(host): wire projection read ownership and daemon lifecycle. Measured 80687, exact, no spare.
+  'packages/host/src': 80687,
   'packages/host/src/ext-host/service-invocation': 247,
   // T5.2's permission projector is kept independently bounded so later extension-host work cannot
   // hide in the package-wide increment. Measured source: 86 lines.

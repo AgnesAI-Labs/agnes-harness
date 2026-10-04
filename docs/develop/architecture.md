@@ -109,6 +109,8 @@ Skills combine disk/package resource governance with runtime Cordis contribution
 
 AGH's App Server provides shared task execution: the daemon manages sessions and the control plane, workers execute tasks, and the SDK provides communication entry points. Choose an integration path from the repository's [API contracts](../reference/api.md) when building a client.
 
+The runtime HTTP listener consumes Host-owned read adapters. Host owns the projection lifecycle, refreshes after committed-event notifications, and checks original C14-issued contexts on each read. The default projection owner currently refuses with `projection_provider_export_unavailable`: Core has not published its factory. A selected provider and a deployment-issued context binding are required before production reads can be installed; HTTP transport authentication does not issue a business identity.
+
 <a id="可复用场景的范围"></a>
 
 ## Scope of reusable applications

@@ -93,6 +93,8 @@ Skills 包含磁盘/包资源治理与运行时 Cordis 贡献。当前共享 wor
 
 AGH 的 App Server 为客户端提供共享的任务运行基础：daemon 管理会话与控制面，worker 承载执行，SDK 提供通信入口。开发自己的客户端时，从本仓的[API 合同](../reference/api.zh-CN.md)选择接入方式。
 
+runtime HTTP 监听消费 Host 所有的只读适配端口。Host 持有 projection 生命周期，接到已提交事件通知后刷新，并在每次读时核验原 C14 签发的上下文。Core 尚未公开工厂，默认 projection owner 当前返回 `projection_provider_export_unavailable`。生产读侧仍需选中的 provider 与部署签发上下文的绑定；HTTP 传输鉴权不签发业务身份。
+
 ## 可复用场景的范围
 
 FDE 是交付方式，MHS 是设备接入方向。FDE 交付可通过 AGH 已有扩展入口构建企业软件，后续也可包含设备接入。知识检索、数据库连接器、业务系统与专用界面需要针对具体环境开发与验证。
