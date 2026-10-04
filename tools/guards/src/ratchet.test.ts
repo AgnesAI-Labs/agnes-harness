@@ -2757,7 +2757,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // Original same-connection Action capture adds 159 measured source lines; exact cap, no spare.
   // Original same-connection maintenance owner and C14 installation slot add 478 measured lines; exact cap, no spare.
   // Nullable dispatch codec keeps State unavailable with a typed refusal; measured +2, exact cap.
-  'packages/host/src': 78066,
+  // Original maintenance owner connection/generation handshake adds 31 measured lines; exact cap, no spare.
+  'packages/host/src': 78097,
   'packages/host/src/ext-host/service-invocation': 247,
   // T5.2's permission projector is kept independently bounded so later extension-host work cannot
   // hide in the package-wide increment. Measured source: 86 lines.

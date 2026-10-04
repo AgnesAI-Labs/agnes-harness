@@ -42,9 +42,23 @@ const schema = [
   'CREATE TABLE runtime_native_maintenance_versions (record_id TEXT NOT NULL,revision INTEGER NOT NULL,commit_id TEXT NOT NULL,body_json TEXT NOT NULL,PRIMARY KEY(record_id,revision))',
 ] as const
 const owners = new WeakSet<object>()
+const ownerConnections = new WeakMap<
+  object,
+  Readonly<{ database: DatabaseSync; originalConnection(): boolean }>
+>()
+const readOwnerConnection = ownerConnections.get.bind(ownerConnections)
 export type NativeMaintenanceOwner = ReturnType<typeof createNativeMaintenanceOwner>
 export function isNativeMaintenanceOwner(value: unknown): value is NativeMaintenanceOwner {
   return typeof value === 'object' && value !== null && owners.has(value)
+}
+/** Original connection membership only; this does not authorize a publication or renew C14. */
+export function nativeMaintenanceOwnerUsesDatabase(
+  value: unknown,
+  database: DatabaseSync,
+): value is NativeMaintenanceOwner {
+  if (typeof value !== 'object' || value === null) return false
+  const binding = readOwnerConnection(value)
+  return binding !== undefined && binding.database === database && binding.originalConnection()
 }
 function wire<T>(
   name: 'MaintenanceStoreCommitRequest' | 'MaintenanceStoreCommitResult' | 'MaintenanceEnvelopeJsonValue',
@@ -445,6 +459,24 @@ export function createNativeMaintenanceOwner(
       closed = true
     },
   })
+  const originalConnectionGet = sql(
+    db,
+    'SELECT body_json FROM runtime_native_maintenance_installation WHERE id=?',
+  ).get
+  ownerConnections.set(
+    api,
+    Object.freeze({
+      database: db,
+      originalConnection() {
+        if (closed) return false
+        try {
+          return originalConnectionGet(id)?.body_json === configJson
+        } catch {
+          return false
+        }
+      },
+    }),
+  )
   owners.add(api)
   return api
 }
