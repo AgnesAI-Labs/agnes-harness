@@ -7,19 +7,26 @@ import { canonicalJsonDigest, validateRuntime } from '@agnes/protocol/runtime'
 import { expect, it, vi } from 'vitest'
 import type { WireEvent } from '../../src/adapter.js'
 import { PiAdapter } from '../../src/adapters/pi/index.js'
-import { estimateBilling } from '../../src/usage.js'
+import { estimateBilling, estimateCredits } from '../../src/usage.js'
 import { modelFixture } from './model-fixture.js'
 
 it.each([
-  { api: 'openai-completions', failAfterUsage: false, legacyUsage: false, gatewayFees: false },
-  { api: 'anthropic-messages', failAfterUsage: false, legacyUsage: false, gatewayFees: false },
-  { api: 'openai-completions', failAfterUsage: true, legacyUsage: false, gatewayFees: false },
-  { api: 'openai-completions', failAfterUsage: false, legacyUsage: true, gatewayFees: false },
-  { api: 'openai-completions', failAfterUsage: true, legacyUsage: true, gatewayFees: false },
-  { api: 'openai-completions', failAfterUsage: false, legacyUsage: true, gatewayFees: true },
+  {
+    api: 'openai-completions',
+    failAfterUsage: false,
+    legacyUsage: false,
+    gatewayFees: false,
+    rate: undefined,
+  },
+  { api: 'anthropic-messages', failAfterUsage: false, legacyUsage: false, gatewayFees: false, rate: 100 },
+  { api: 'openai-completions', failAfterUsage: true, legacyUsage: false, gatewayFees: false, rate: 100 },
+  { api: 'openai-completions', failAfterUsage: false, legacyUsage: true, gatewayFees: false, rate: 100 },
+  { api: 'openai-completions', failAfterUsage: true, legacyUsage: true, gatewayFees: false, rate: undefined },
+  { api: 'openai-completions', failAfterUsage: false, legacyUsage: true, gatewayFees: true, rate: 100 },
+  { api: 'openai-completions', failAfterUsage: false, legacyUsage: false, gatewayFees: true, rate: 100 },
 ] as const)(
-  'retains Pi HTTP usage for $api (failure=$failAfterUsage, legacy=$legacyUsage, typed gateway=$gatewayFees)',
-  async ({ api, failAfterUsage, legacyUsage, gatewayFees }) => {
+  'retains Pi HTTP usage for $api (failure=$failAfterUsage, legacy=$legacyUsage, typed gateway=$gatewayFees, rate=$rate)',
+  async ({ api, failAfterUsage, legacyUsage, gatewayFees, rate }) => {
     const directory = mkdtempSync(join(tmpdir(), 'model-usage-wire-'))
     const requests = join(directory, 'requests.jsonl')
     const child = spawn(
@@ -83,15 +90,18 @@ it.each([
           cacheWrite: 4,
         },
         legacyUsage,
+        rate,
       )
       const effect = await fixture.action.execute(fixture.frame, fixture.call)
-      expect(effect.outcome).toBe(failAfterUsage || gatewayFees ? 'unknown_effect' : 'succeeded')
+      expect(effect.outcome).toBe(
+        failAfterUsage || (gatewayFees && legacyUsage) ? 'unknown_effect' : 'succeeded',
+      )
       expect(effect.usage).toHaveLength(1)
       const fact = effect.usage[0]
       if (fact?.dimensions.kind !== 'inline') throw new Error('Missing original inline measurement')
       const parsed = validateRuntime('UsageMeasurement', fact.dimensions.value)
       if (!parsed.ok) throw new Error('Invalid official measurement')
-      if (failAfterUsage || gatewayFees) {
+      if (failAfterUsage || (gatewayFees && legacyUsage)) {
         expect(fact.certainty).toBe('unknown')
         expect(parsed.value.kind).toBe('unknown')
         expect(parsed.value.quantities).toEqual([])
@@ -105,12 +115,27 @@ it.each([
       expect(parsed.value.billing).toEqual(
         legacyUsage
           ? undefined
-          : estimateBilling(fixture.source.model, { input: 7, output: 3, cacheRead: 0, cacheWrite: 0 }),
+          : gatewayFees
+            ? { usdMicros: 0, source: 'gateway', subscription: true }
+            : estimateBilling(fixture.source.model, { input: 7, output: 3, cacheRead: 0, cacheWrite: 0 }),
       )
-      expect(parsed.value.credits).toBeUndefined()
+      expect(parsed.value.credits).toBe(
+        legacyUsage || rate === undefined
+          ? undefined
+          : gatewayFees
+            ? 0
+            : estimateCredits(
+                fixture.source.model,
+                { input: 7, output: 3, cacheRead: 0, cacheWrite: 0 },
+                rate,
+              ),
+      )
+      expect(parsed.value.creditSource).toBe(
+        legacyUsage || rate === undefined ? undefined : gatewayFees ? 'gateway' : 'estimated',
+      )
       expect(fact.dimensions.digest).toBe(canonicalJsonDigest(parsed.value))
       expect(fact.dimensions.bytes).toBe(Buffer.byteLength(JSON.stringify(parsed.value)))
-      if (failAfterUsage || gatewayFees) {
+      if (failAfterUsage || (gatewayFees && legacyUsage)) {
         const recovered = await fixture.action.reconcile(fixture.frame, [], fixture.call)
         expect(recovered.kind).toBe('resolved')
         if (recovered.kind !== 'resolved') throw new Error('Missing original saved unknown effect')

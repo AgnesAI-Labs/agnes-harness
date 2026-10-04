@@ -1,31 +1,29 @@
-import type {
-  ActionContext,
-  CallContext,
-  FactoryContext,
-  Outcome,
-  ProviderFactory,
-  ServiceProvider,
-} from '@agnes/extension-api/runtime'
-import { runtimeAuthorSchemas } from '@agnes/extension-api/runtime'
-import type { ResponseMeta, ToolCall } from '@agnes/protocol'
-import type {
-  ActionFrame,
-  DataRef,
-  EffectResult,
-  ExternalRequestRef,
-  ModelOutput,
-  ProviderDescriptor,
-  ReconcileResult,
-  RuntimeError,
-  UsageFact,
-  UsageMeasurement,
-} from '@agnes/protocol/runtime'
 import {
+  type ActionContext,
+  type CallContext,
+  type FactoryContext,
+  type Outcome,
+  type ProviderFactory,
+  runtimeAuthorSchemas,
+  type ServiceProvider,
+} from '@agnes/extension-api/runtime'
+import type { ResponseMeta, ToolCall } from '@agnes/protocol'
+import {
+  type ActionFrame,
   boundedCanonicalJson,
   canonicalJsonDigest,
+  type DataRef,
+  type EffectResult,
+  type ExternalRequestRef,
   MAX_AUTHOR_INLINE_BYTES,
+  type ModelOutput,
+  type ProviderDescriptor,
+  type ReconcileResult,
   RuntimeAuthorCapabilities,
+  type RuntimeError,
   RuntimeMethodSchemaRefs,
+  type UsageFact,
+  type UsageMeasurement,
   validateRuntime,
 } from '@agnes/protocol/runtime'
 import { PiAdapter } from '../../adapters/pi/index.js'
@@ -541,7 +539,7 @@ export function createModelAdapterFactory(
                     if (event.type === 'toolcall_end') tools.push(event.call)
                     if (event.type === 'usage') {
                       usageState.tokens = event.tokens
-                      usageState.evidence = modelUsageEvidence(source.model, event)
+                      usageState.evidence = modelUsageEvidence(source.model, event, original.creditsPerUsd)
                       usageState.reportedFees = event.billing !== undefined || event.credits !== undefined
                       response = event.response ?? response
                     }
