@@ -1,8 +1,8 @@
 import { createHash, randomBytes } from 'node:crypto'
-import { existsSync, readFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join, sep } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import type { ArtifactAccessPort, CallContext, Outcome, ScopeRef } from '@agnes/extension-api/runtime'
 import { createTestServiceContainer } from '@agnes/extension-api/testkit'
@@ -20,7 +20,11 @@ import {
   createArtifactsService,
   type OwnerAction,
 } from '../../src/runtime/providers/artifacts.js'
-import { type BlobService, createBlobService } from '../../src/runtime/providers/blob.js'
+import {
+  type BlobService,
+  createBlobService,
+  runtimeServiceDataDir,
+} from '../../src/runtime/providers/blob.js'
 import { artifactTicketKeys } from './artifact-ticket-key-fixture.js'
 
 const START = Date.parse('2026-10-01T00:00:00.000Z')
@@ -88,8 +92,29 @@ afterEach(async () => {
   clock = START
 })
 
+/** Where the legacy private CAS of a Host data directory keeps `digest`. */
+const legacyCasPath = (hostDataDir: string, digest: string) =>
+  join(hostDataDir, 'artifacts', 'sha256', digest.slice(0, 2), digest)
+
+/** Every entry of a Host data directory outside its runtime service directories; files with their digest. */
+function outsideRuntimeServices(hostDataDir: string): string[][] {
+  return readdirSync(hostDataDir, { recursive: true, encoding: 'utf8' })
+    .filter((entry) => entry.split(sep)[0] !== 'runtime-services')
+    .sort()
+    .map((entry) => {
+      const path = join(hostDataDir, entry)
+      return [entry, statSync(path).isFile() ? sha(readFileSync(path)) : 'directory']
+    })
+}
+
 type Published = {
+  hostDataDir: string
+  /** The Host data directory outside the runtime service directories, before the services opened. */
+  hostBefore: string[][]
+  /** The artifacts service data directory. */
   dataDir: string
+  /** The blob service data directory. */
+  blobDir: string
   blob: BlobService
   artifacts: ArtifactsService
   access: ArtifactAccessPort
@@ -101,14 +126,23 @@ type Published = {
   reopen(options: ArtifactAccessOptions): ArtifactAccessPort
 }
 
-/** One ready artifact of 1.5 MiB with a read and download grant for user-1. */
+/**
+ * One ready artifact of 1.5 MiB with a read and download grant for user-1, published by services laid
+ * out in a Host data directory whose legacy private CAS already holds the same content.
+ */
 async function published(offerTickets = true): Promise<Published> {
-  const dataDir = await mkdtemp(join(tmpdir(), 'agh-artifact-range-'))
-  dirs.push(dataDir)
+  const hostDataDir = await mkdtemp(join(tmpdir(), 'agh-artifact-range-'))
+  dirs.push(hostDataDir)
+  const legacy = legacyCasPath(hostDataDir, sha(CONTENT))
+  mkdirSync(dirname(legacy), { recursive: true })
+  writeFileSync(legacy, CONTENT)
+  const hostBefore = outsideRuntimeServices(hostDataDir)
+  const dataDir = runtimeServiceDataDir(hostDataDir, 'artifacts')
+  const blobDir = runtimeServiceDataDir(hostDataDir, 'blob')
   const tickets = artifactTicketKeys(join(dataDir, 'secrets'), () => clock)
   closers.push(() => tickets.broker.close())
   const blob = createBlobService({
-    dataDir,
+    dataDir: blobDir,
     authorityId: 'blob-authority',
     binding: BLOB_BINDING,
     now: () => clock,
@@ -203,7 +237,10 @@ async function published(offerTickets = true): Promise<Published> {
     ),
   )
   return {
+    hostDataDir,
+    hostBefore,
     dataDir,
+    blobDir,
     blob,
     artifacts,
     access: artifacts.artifactAccess,
@@ -450,5 +487,59 @@ describe('artifact download tickets', () => {
     expect((await iterator.next()).done).toBe(true)
     expect(refused(await live.stream.ended)).toBe('revoked')
     expect(refused(await world.access.redeemDownload({ ticketId, nonce, offset: 0 }, ctx()))).toBe('revoked')
+  })
+})
+
+describe('runtime artifacts beside the legacy CAS', () => {
+  const download = (ref: Wire.ArtifactRef, requestId = 'download-1') => ({
+    requestId,
+    input: { ...ref, disposition: 'inline' as const },
+  })
+
+  it('keeps published bytes in the blob service directory and adds nothing to the legacy CAS', async () => {
+    const world = await published()
+    const digest = sha(CONTENT)
+    expect(sha(readFileSync(join(world.blobDir, 'artifacts', 'sha256', digest.slice(0, 2), digest)))).toBe(
+      digest,
+    )
+    expect(ok(await world.access.describe(world.ref, ctx())).status).toBe('ready')
+    const range = ok(await world.access.readRange({ ...world.ref, offset: 0, length: MIB }, ctx()))
+    expect(sha(range.bytes)).toBe(sha(CONTENT.subarray(0, MIB)))
+    expect(sha(await collect(ok(await world.access.openStream(world.ref, ctx()))))).toBe(digest)
+    const ticket = ticketParts(ok(await world.access.openDownload(download(world.ref), ctx())))
+    const redeemed = ok(await world.access.redeemDownload({ ...ticket, offset: 0 }, ctx()))
+    expect(sha(await collect(redeemed.stream))).toBe(digest)
+    expect(outsideRuntimeServices(world.hostDataDir)).toEqual(world.hostBefore)
+  })
+
+  it('refuses an unknown, damaged or revoked reference itself although the legacy CAS holds the same bytes', async () => {
+    const world = await published()
+    const ticket = ticketParts(ok(await world.access.openDownload(download(world.ref), ctx())))
+    const reads = (ref: Wire.ArtifactRef) => [
+      world.access.readRange({ ...ref, offset: 0, length: 1 }, ctx()),
+      world.access.openStream(ref, ctx()),
+    ]
+    for (const ref of [
+      { ...world.ref, version: 2 },
+      { artifactId: '00000000-0000-4000-8000-000000000000', version: 1 },
+    ]) {
+      expect(refused(await world.access.describe(ref, ctx()))).toBe('permission_denied')
+      for (const read of reads(ref)) expect(refused(await read)).toBe('permission_denied')
+      expect(refused(await world.access.openDownload(download(ref, 'download-2'), ctx()))).toBe(
+        'permission_denied',
+      )
+    }
+
+    const digest = sha(CONTENT)
+    rmSync(join(world.blobDir, 'artifacts', 'sha256', digest.slice(0, 2), digest))
+    for (const read of reads(world.ref)) expect(refused(await read)).toBe('integrity')
+    expect(refused(await world.access.redeemDownload({ ...ticket, offset: 0 }, ctx()))).toBe('integrity')
+
+    ok(await world.artifacts.revoke({ artifactRef: world.ref, reason: 'withdrawn' }, ctx()))
+    expect(ok(await world.access.describe(world.ref, ctx())).status).toBe('revoked')
+    for (const read of reads(world.ref)) expect(refused(await read)).toBe('revoked')
+    expect(refused(await world.access.openDownload(download(world.ref, 'download-3'), ctx()))).toBe('revoked')
+    expect(refused(await world.access.redeemDownload({ ...ticket, offset: 0 }, ctx()))).toBe('revoked')
+    expect(outsideRuntimeServices(world.hostDataDir)).toEqual(world.hostBefore)
   })
 })

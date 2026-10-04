@@ -163,6 +163,79 @@ function hostDaemonViolations(base: string): string[] {
   return violations
 }
 
+/** The default runtime blob and artifacts services. */
+const RUNTIME_ARTIFACT_SERVICES = [
+  'packages/host/src/runtime/artifacts',
+  'packages/host/src/runtime/blob',
+  'packages/host/src/runtime/providers/artifacts.ts',
+  'packages/host/src/runtime/providers/blob.ts',
+  'packages/host/src/runtime/authority-copy.ts',
+  'packages/host/src/runtime/authority-transfer.ts',
+] as const
+
+/** Legacy `{sha256,size,mime}` readers and the legacy reference index; the daemon owns three readers. */
+const LEGACY_ARTIFACT_READERS = {
+  modules: [
+    'packages/host/src/artifact-read-store',
+    'packages/host/src/artifact-ref-index',
+    'packages/daemon/src/local/artifact-read',
+    'packages/daemon/src/local/artifact-read-authority',
+    'packages/daemon/src/supervisor/artifact-read',
+  ],
+  packages: ['@agnes/daemon'],
+} as const
+
+/**
+ * The legacy artifact write entry: the local artifacts seam, which the base package root loads.
+ * Reviewed allowance: the services reuse `private-artifact-store`'s private file primitives
+ * (`openPrivateArtifactDatabase`, `createPrivateArtifactStore`) rooted at their own data directory, so
+ * it is not listed; artifact-range-revocation.test.ts shows their writes never reach the legacy CAS.
+ */
+const LEGACY_ARTIFACT_WRITERS = {
+  modules: ['packages/base/extensions/artifacts-local/src/seam'],
+  packages: ['@agnes/base'],
+} as const
+
+/**
+ * Value imports, from the given source and every module it loads through relative imports, of one of
+ * the legacy `modules` (repo-relative, without extension) or `packages`. A forbidden module is not
+ * followed further.
+ */
+function legacyArtifactViolations(
+  base: string,
+  roots: readonly string[],
+  legacy: Readonly<{ modules: readonly string[]; packages: readonly string[] }>,
+): string[] {
+  const queue: string[] = []
+  for (const root of roots) {
+    if (isSourceName(root)) queue.push(join(base, root))
+    else eachSourceFile(join(base, root), (file) => queue.push(file))
+  }
+  const seen = new Set(queue)
+  const violations: string[] = []
+  for (const file of queue) {
+    for (const edge of importEdges(readFileSync(file, 'utf8'))) {
+      if (!edge.value) continue
+      const named = legacy.packages.some(
+        (name) => edge.specifier === name || edge.specifier.startsWith(`${name}/`),
+      )
+      if (!named && !edge.specifier.startsWith('.')) continue
+      const target = resolve(dirname(file), edge.specifier)
+      if (named || legacy.modules.includes(normalizeModulePath(repoRelative(target, base)))) {
+        violations.push(`${repoRelative(file, base)}: imports ${edge.specifier}`)
+        continue
+      }
+      const stem = target.replace(/\.(?:js|mjs|cjs|ts|tsx|mts|cts)$/, '')
+      const next = [`${stem}.ts`, `${stem}.tsx`, join(stem, 'index.ts')].find((path) => existsSync(path))
+      if (next !== undefined && !seen.has(next)) {
+        seen.add(next)
+        queue.push(next)
+      }
+    }
+  }
+  return violations
+}
+
 function testkitCoreViolations(base: string): string[] {
   const violations: string[] = []
   const names = ['@agnes/core', '@agnes/host', '@agnes/daemon']
@@ -480,6 +553,48 @@ describe('host source does not import the daemon package', () => {
         expect(violations.join('\n')).toContain('bad.ts')
         expect(violations.join('\n')).toContain('relative.ts')
         expect(violations.join('\n')).not.toContain('mention.ts')
+      },
+    )
+  })
+})
+
+describe('default runtime artifact services and legacy artifact storage', () => {
+  it('load no legacy artifact reader or reference index', () => {
+    const violations = legacyArtifactViolations(root, RUNTIME_ARTIFACT_SERVICES, LEGACY_ARTIFACT_READERS)
+    expect(violations, violations.join('\n')).toEqual([])
+  })
+
+  it('load no legacy artifact write entry', () => {
+    const violations = legacyArtifactViolations(root, RUNTIME_ARTIFACT_SERVICES, LEGACY_ARTIFACT_WRITERS)
+    expect(violations, violations.join('\n')).toEqual([])
+  })
+
+  it('rejects a legacy import made directly, through a loaded module or by package, and ignores types and comments', () => {
+    withTemp(
+      'agnes-runtime-artifacts-',
+      {
+        'packages/host/src/runtime/blob/direct.ts': "import { open } from '../../artifact-read-store.js'\n",
+        'packages/host/src/runtime/providers/blob.ts': "import { helper } from '../helper.js'\n",
+        'packages/host/src/runtime/helper.ts': "export { index } from '../artifact-ref-index.js'\n",
+        'packages/host/src/runtime/providers/artifacts.ts': "const read = await import('@agnes/daemon')\n",
+        'packages/host/src/runtime/authority-copy.ts':
+          "import type { Store } from '../artifact-read-store.js'\n// import '../artifact-read-store.js'\n",
+        'packages/host/src/runtime/authority-transfer.ts':
+          "import { put } from '../private-artifact-store.js'\n",
+        'packages/host/src/runtime/artifacts/seam.ts': "import { artifactsLocal } from '@agnes/base'\n",
+        'packages/host/src/unloaded.ts': "import { open } from './artifact-read-store.js'\n",
+      },
+      (base) => {
+        const files = (legacy: Parameters<typeof legacyArtifactViolations>[2]) =>
+          legacyArtifactViolations(base, RUNTIME_ARTIFACT_SERVICES, legacy)
+            .map((violation) => violation.split(':')[0])
+            .sort()
+        expect(files(LEGACY_ARTIFACT_READERS)).toEqual([
+          'packages/host/src/runtime/blob/direct.ts',
+          'packages/host/src/runtime/helper.ts',
+          'packages/host/src/runtime/providers/artifacts.ts',
+        ])
+        expect(files(LEGACY_ARTIFACT_WRITERS)).toEqual(['packages/host/src/runtime/artifacts/seam.ts'])
       },
     )
   })
