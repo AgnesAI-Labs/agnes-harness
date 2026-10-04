@@ -254,7 +254,9 @@ const INITIAL_CEILING: Record<string, number> = {
   // Failed shell calls read as their exit code (+19 lines); measured 4891, exact cap.
   'packages/web-ui/src': 6629,
   // W8a-3: retire the native tool renderer in favor of one compatibility root; measured 4630.
-  'packages/web-units/src': 5825,
+  // 2026-10-04 image upload: the composer downscales images whose long edge exceeds the model's
+  // 1456 vision limit before encoding them (+29 counted lines). Measured: 5854, exact, no spare.
+  'packages/web-units/src': 5854,
   'packages/base/extensions/tools-core': 800,
   // MCP-ROWS stage 2b, steps 1-2 (D118): connection supervisor, catalog hub, and the per-server
   // extension row wiring them together. New extension at the shared default cap; measured 276.
@@ -432,7 +434,10 @@ const INITIAL_CEILING: Record<string, number> = {
   // @agnes/web-admin-frame, so this file only keeps its own state machine and rendering.
   // 2026-09-25 UI refactor: model options now render through the React region contract.
   // Re-measured with countLines(): 274, exact, no spare.
-  'packages/web/src/model-picker': 969,
+  // 2026-10-04 preview-path fixes: the leaf keyboard boundary follows the previewed model, the
+  // duplicate-submit short circuit applies only to the current model, the blur guard covers the
+  // detail panel, and hover matches the keyboard path (+6 counted lines). Measured: 975, exact.
+  'packages/web/src/model-picker': 975,
   // 2026-09-25 UI refactor: settings-owned element construction uses the shared UI host boundary.
   // Re-measured with countLines(): 754, exact, no spare.
   'packages/web/src/settings': 900,
@@ -2087,7 +2092,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // which carries its own key. Re-measured with countLines() on the merged tree: 13120, exact.
   // Output-limit and rate-limit presentation adds four counted lines, exact allocation.
   // The live approval card's wording, preview and session-choice rule (new file). Measured 13463 (+52), exact cap.
-  'packages/web/src': 16751,
+  // 2026-10-04 model-picker preview-path fixes (+6 counted lines). Measured: 16757, exact, no spare.
+  'packages/web/src': 16757,
   // 2026-09-17 web-client-modules frontend track (rebased onto L0/permission-picker main): re-measured exact value below.
   // 2026-09-14: Task 7 orphaned-pin-cleanup adds the orphan-pins section to PluginAdminPage — the
   // #orphanPins/#orphanPinsList/#orphanPinsStatus/#orphanPinsReleaseAll element bindings, the
