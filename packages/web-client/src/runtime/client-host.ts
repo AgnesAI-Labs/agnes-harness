@@ -3,16 +3,20 @@
 // path after verifying its digest and hands back the module namespace; the host alone picks exports
 // from it. The selected registry is the named export its contribution declares, built over this
 // generation's renderer host; the selected shell is the named export its contribution declares, probed
-// once for its id and never mounted here. A selected module that exports the fixed `clientEntry` is
-// activated through it with a ClientHost bound to the owner token the catalog issued it; it registers
-// only the renderers its catalog entry declares, and the registry leases a handle only for a definition
-// a module of this live generation registered, each lease presenting through a restricted per-view
-// context the caller's presenter builds. A module without `clientEntry` is not activated, and a
-// default export or another function never stands in for a named one. A candidate becomes current only
-// once every entry returned and every selected renderer is present; otherwise everything it created is
-// released and the current generation stays. A module the selection does not name is never loaded. The
-// generation presents a domain view through the renderer the selection chose, then the selected
-// fallback, then the built-in generic view, and never through a renderer the selection did not choose.
+// once for its id and never mounted here. The host then registers each selected renderer itself, for its
+// module under the owner token the catalog issued it: the descriptor the catalog declares for it plus, for
+// each target that descriptor declares, the module's fixed own function exports (`component` for Web,
+// `format` for TUI and SDK, `format` and `encode` for IM); the namespace itself goes no further. Only then
+// is a selected module that exports the fixed `clientEntry` activated through it with a ClientHost bound
+// to the same token; it may register the other renderers its catalog entry declares, and registering a
+// selected one again fails the candidate. A module without `clientEntry` is not activated, and a default
+// export or another function never stands in for a named one. The registry leases a handle only for a
+// definition registered for a module of this live generation, each lease presenting through a restricted
+// per-view context the caller's presenter builds. A candidate becomes current only once every selected
+// renderer is registered and every entry returned; otherwise everything it created is released and the
+// current generation stays. A module the selection does not name is never loaded. The generation
+// presents a domain view through the renderer the selection chose, then the selected fallback, then the
+// built-in generic view, and never through a renderer the selection did not choose.
 import type {
   ClientContribution,
   ClientEntry,
@@ -24,6 +28,7 @@ import type {
   RendererContext,
   RendererDefinition,
   RendererPresentation,
+  RendererRegistration,
   RuntimeError,
   ShellProvider,
   UIRegistry,
@@ -35,6 +40,7 @@ import type {
   ClientTarget,
   ResolvedClientSelection,
   SelectedContribution,
+  SelectedRenderer,
   SelectedService,
 } from './client-selection.js'
 import type { createRendererPresenter } from './renderer-presentation.js'
@@ -75,8 +81,8 @@ type Generation = {
   /** Cleared on release: every module host and the renderer host refuse from then on. */
   live: boolean
   /**
-   * Registered definitions, the module that registered each and the leases bound to it, among them the
-   * one lease the generation's presentation presents the definition through.
+   * Registered definitions, the module each was registered for and the leases bound to it, among them
+   * the one lease the generation's presentation presents the definition through.
    */
   readonly owners: Map<
     RendererDefinition,
@@ -91,6 +97,8 @@ type Generation = {
   readonly listeners: Set<(revision: number) => void>
   /** Entry contributions and renderer registrations, released newest first. */
   readonly releases: (() => Promise<void>)[]
+  /** Set once a module registers a renderer the host registered; it fails the candidate. */
+  conflict: { ok: false; error: RuntimeError } | undefined
 }
 
 const refuse = (
@@ -121,6 +129,39 @@ const declared = (module: ClientModule, kind: ClientModuleContribution['kind'], 
 const exported = (namespace: unknown, name: string): unknown => {
   const object = Object(namespace) as Record<string, unknown>
   return Object.hasOwn(object, name) ? object[name] : undefined
+}
+
+/** The fallback renderer and the renderer of every row. */
+const picked = (selection: Catalog['selection']): SelectedRenderer[] => [
+  selection.fallbackRenderer,
+  ...selection.renderers.map((row) => row.renderer),
+]
+
+/** The fixed exports a renderer presents each target through. */
+const PARTS: Readonly<Record<ClientTarget, readonly string[]>> = {
+  web: ['component'],
+  tui: ['format'],
+  sdk: ['format'],
+  im: ['format', 'encode'],
+}
+
+/**
+ * The definition of a selected renderer: the descriptor its catalog contribution declares and, for each
+ * target that descriptor declares, the fixed own function export of its module that presents it.
+ */
+function compose(namespace: unknown, renderer: SelectedRenderer): Outcome<RendererDefinition> {
+  const definition: Record<string, unknown> = { descriptor: renderer.descriptor }
+  for (const name of new Set(renderer.descriptor.targets.flatMap((target) => PARTS[target]))) {
+    const value = exported(namespace, name)
+    if (typeof value !== 'function')
+      return refuse(
+        'incompatible',
+        value === undefined ? 'client_export_missing' : 'client_export_invalid',
+        `module ${renderer.moduleId} has no function export ${name} for renderer ${renderer.contributionId}`,
+      )
+    definition[name] = value
+  }
+  return { ok: true, value: definition as unknown as RendererDefinition }
 }
 
 /** The descriptor id of a probe instance of `factory`; the probe is never mounted. */
@@ -224,7 +265,7 @@ export function createClientHostRuntime(input: {
         return refuse(
           'denied',
           'renderer_unbound',
-          'the definition was not registered by a module of this client generation',
+          'the definition was not registered for a module of this client generation',
         )
       const lease = input.presenter.lease({ definition, ownerToken: owner.ownerToken })
       owner.leases.add(lease)
@@ -249,7 +290,6 @@ export function createClientHostRuntime(input: {
 
   /** The definition the registry matches for `view`, when the selection chose it; otherwise none. */
   function matched(generation: Generation, view: DomainView): RendererDefinition | undefined {
-    const { fallbackRenderer, renderers } = generation.selection
     try {
       const found = generation.registry?.resolve({
         renderKey: view.renderKey,
@@ -262,7 +302,7 @@ export function createClientHostRuntime(input: {
       const { handle } = found.value
       // The view presents through the definition's own lease, so the one the registry took ends here.
       void settle(() => handle.dispose())
-      return [fallbackRenderer, ...renderers.map((row) => row.renderer)]
+      return picked(generation.selection)
         .map((contribution) => definitionOf(generation, contribution))
         .find((definition) => {
           const owner = definition && generation.owners.get(definition)
@@ -299,9 +339,65 @@ export function createClientHostRuntime(input: {
     return generation.generic.present(view)
   }
 
-  function moduleHost(generation: Generation, module: ClientModule) {
+  /**
+   * Registers `definition` for `module` with the generation's registry and records it for leases,
+   * presentation and release: the host's registration of each selected renderer, and every one a
+   * module makes, which may not register a selected renderer again.
+   */
+  function enroll(
+    generation: Generation,
+    module: ClientModule,
+    definition: RendererDefinition,
+    by: 'host' | 'module',
+  ): Outcome<RendererRegistration> {
+    if (!generation.live) return released()
+    const descriptor = definition?.descriptor
+    const declaration = declared(module, 'renderer', descriptor?.id)
+    if (
+      declaration === undefined ||
+      !Array.isArray(descriptor.targets) ||
+      !descriptor.targets.every((target) => declaration.targets.includes(target))
+    )
+      return refuse(
+        'invalid_input',
+        'renderer_undeclared',
+        `module ${module.moduleId} does not declare renderer ${String(descriptor?.id)} for these targets`,
+      )
+    if (
+      by === 'module' &&
+      picked(generation.selection).some(({ contributionId }) => contributionId === descriptor.id)
+    ) {
+      // Whatever the module makes of this refusal, its candidate fails; the host's registration stays.
+      generation.conflict ??= refuse(
+        'conflict',
+        'renderer_conflict',
+        `module ${module.moduleId} registers renderer ${descriptor.id}, which the client host registered`,
+      )
+      return generation.conflict
+    }
+    const registered = (generation.registry as UIRegistry).register(definition)
+    if (!registered.ok) return registered
+    const { id, ownerToken: registrationToken, dispose } = registered.value
+    const cell = key(module.moduleId, descriptor.id)
     // The server binds this token to the client instance and the module generation; it grants nothing.
-    const ownerToken = module.ownerToken
+    const owner = { id: descriptor.id, ownerToken: module.ownerToken, leases: new Set<Lease>() }
+    generation.owners.set(definition, owner)
+    generation.registered.set(cell, definition)
+    let done: Promise<void> | undefined
+    const unregister = () => {
+      done ??= (async () => {
+        generation.owners.delete(definition)
+        generation.registered.delete(cell)
+        await revoke([owner])
+        return dispose()
+      })()
+      return done
+    }
+    generation.releases.push(unregister)
+    return { ok: true, value: { id, ownerToken: registrationToken, dispose: unregister } }
+  }
+
+  function moduleHost(generation: Generation, module: ClientModule) {
     const registry = generation.registry as UIRegistry
     const host: ClientHost = {
       // ponytail: every module shares the caller's context; only a presented renderer gets a per-view
@@ -309,40 +405,7 @@ export function createClientHostRuntime(input: {
       context: input.context,
       presentation: generation.presentation,
       renderers: {
-        register(definition) {
-          if (!generation.live) return released()
-          const descriptor = definition?.descriptor
-          const declaration = declared(module, 'renderer', descriptor?.id)
-          if (
-            declaration === undefined ||
-            !Array.isArray(descriptor.targets) ||
-            !descriptor.targets.every((target) => declaration.targets.includes(target))
-          )
-            return refuse(
-              'invalid_input',
-              'renderer_undeclared',
-              `module ${module.moduleId} does not declare renderer ${String(descriptor?.id)} for these targets`,
-            )
-          const registered = registry.register(definition)
-          if (!registered.ok) return registered
-          const { id, ownerToken: registrationToken, dispose } = registered.value
-          const cell = key(module.moduleId, descriptor.id)
-          const owner = { id: descriptor.id, ownerToken, leases: new Set<Lease>() }
-          generation.owners.set(definition, owner)
-          generation.registered.set(cell, definition)
-          let done: Promise<void> | undefined
-          const unregister = () => {
-            done ??= (async () => {
-              generation.owners.delete(definition)
-              generation.registered.delete(cell)
-              await revoke([owner])
-              return dispose()
-            })()
-            return done
-          }
-          generation.releases.push(unregister)
-          return { ok: true, value: { id, ownerToken: registrationToken, dispose: unregister } }
-        },
+        register: (definition) => enroll(generation, module, definition, 'module'),
         resolve: (request) => registry.resolve(request),
       },
       registerShell(factory) {
@@ -386,12 +449,9 @@ export function createClientHostRuntime(input: {
         `the selection is not for a ${input.target} client`,
       )
     const modules = new Map(catalog.modules.map((module) => [module.moduleId, module]))
-    const named = [
-      selection.registry,
-      selection.shell,
-      selection.fallbackRenderer,
-      ...selection.renderers.map((row) => row.renderer),
-    ].filter((contribution): contribution is SelectedContribution => contribution !== null)
+    const named = [selection.registry, selection.shell, ...picked(selection)].filter(
+      (contribution) => contribution !== null,
+    )
     const missing = named.find((contribution) => !modules.has(contribution.moduleId))?.moduleId
     if (missing !== undefined)
       return refuse('incompatible', 'client_module_missing', `the catalog has no module ${missing}`)
@@ -461,6 +521,22 @@ export function createClientHostRuntime(input: {
       generation.shell = factory.value
     }
 
+    // The host registers each selected renderer once, before any module starts, from its catalog
+    // descriptor and its module's fixed exports; a module needs no clientEntry for it.
+    const renderers = new Map(
+      picked(selection).map((renderer) => [key(renderer.moduleId, renderer.contributionId), renderer]),
+    )
+    for (const renderer of renderers.values()) {
+      if (disposed) return closed()
+      const module = modules.get(renderer.moduleId) as ClientModule
+      const namespace = await load(module)
+      if (!namespace.ok) return namespace
+      const definition = compose(namespace.value, renderer)
+      if (!definition.ok) return definition
+      const registered = enroll(generation, module, definition.value, 'host')
+      if (!registered.ok) return registered
+    }
+
     // A selected module is activated through its `clientEntry` export when it has one and is otherwise
     // loaded for its exports alone. One module at a time, so a failure leaves no later module started.
     for (const id of new Set(named.map((contribution) => contribution.moduleId))) {
@@ -485,19 +561,19 @@ export function createClientHostRuntime(input: {
         // A late entry finds its generation released; what it returns is released as well.
         (contribution: ClientContribution) => void settle(() => contribution.dispose()),
       )
+      if (started.ok) {
+        const contribution = started.value
+        generation.releases.push(() => contribution.dispose())
+      }
+      if (generation.conflict) return generation.conflict
       if (!started.ok) return started
-      const contribution = started.value
-      generation.releases.push(() => contribution.dispose())
     }
     if (disposed) return closed()
 
-    // ponytail: a renderer is registered only through its module's clientEntry, so a renderer-only module
-    // without one cannot satisfy a selection yet (fail closed). Host-assembled renderer definitions from
-    // the locked descriptor replace this once the wire carries renderer descriptors.
-    const present = (contribution: SelectedContribution) =>
-      generation.registered.has(key(contribution.moduleId, contribution.contributionId))
-    const renderers = [selection.fallbackRenderer, ...selection.renderers.map((row) => row.renderer)]
-    const lacking = renderers.find((renderer) => !present(renderer))?.contributionId
+    // Each selected renderer the host registered is still there once every entry returned.
+    const lacking = picked(selection).find(
+      (renderer) => !generation.registered.has(key(renderer.moduleId, renderer.contributionId)),
+    )?.contributionId
     if (lacking !== undefined)
       return refuse(
         'incompatible',
@@ -520,8 +596,12 @@ export function createClientHostRuntime(input: {
       shell: undefined,
       listeners: new Set(),
       releases: [],
+      conflict: undefined,
     }
-    const built = await build(generation, catalog)
+    // A throw from loader or module code, such as an export that cannot be read, fails the candidate too.
+    const built = await build(generation, catalog).catch((error: unknown) =>
+      refuse('internal', 'client_activation_failed', `the client generation was not built: ${text(error)}`),
+    )
     if (!built.ok) {
       await release(generation)
       return built
