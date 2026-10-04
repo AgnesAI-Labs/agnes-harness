@@ -17,6 +17,8 @@ import {
 import { act, createElement, useEffect } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import type { Translate } from '../src/locales/index.js'
+import { zhT } from './locale.js'
 
 let host: HTMLDivElement
 let root: Root
@@ -54,11 +56,13 @@ function BoundaryMessages() {
 function AdapterProbe({
   store,
   onRuntime,
+  t,
 }: {
   store: ConversationProjectionStore
   onRuntime: (runtime: AssistantRuntime) => void
+  t?: Translate
 }) {
-  const runtime = useConversationRuntime(store)
+  const runtime = useConversationRuntime(store, t)
   useEffect(() => onRuntime(runtime), [onRuntime, runtime])
   return createElement(AssistantRuntimeProvider, { runtime }, createElement(AdapterMessages))
 }
@@ -130,8 +134,10 @@ const observe = (runtime: AssistantRuntime) => {
   observed = runtime
 }
 
-async function mount(store: ConversationProjectionStore) {
-  await act(async () => root.render(createElement(AdapterProbe, { store, onRuntime: observe })))
+async function mount(store: ConversationProjectionStore, t?: Translate) {
+  await act(async () =>
+    root.render(createElement(AdapterProbe, { store, onRuntime: observe, ...(t ? { t } : {}) })),
+  )
 }
 
 async function update(store: ConversationProjectionStore, projection: Parameters<typeof store.update>[0]) {
@@ -232,11 +238,11 @@ describe('W3a projected conversation adapter', () => {
     const user: UINode = { kind: 'user', id: 'u1', seq: 1, content: [{ type: 'text', text: 'earlier' }] }
     const lost: UINode = { kind: 'assistant', id: 'a1', seq: 2, text: '', lostChars: 7 }
     const store = createConversationProjectionStore({ sessionId: 'one', nodes: [latest] })
-    await mount(store)
+    await mount(store, zhT)
     expect(ids()).toEqual(['a2'])
     await update(store, { sessionId: 'one', nodes: [user, lost, latest] })
     expect(ids()).toEqual(['u1', 'a1', 'a2'])
-    expect(byId('a1')?.textContent).toContain('7')
+    expect(byId('a1')?.textContent).toContain('输出中断，至少 7 字未保存')
     expect(byId('a2')?.textContent).toBe('latest')
     await update(store, { sessionId: 'one', nodes: [latest, user, lost] })
     expect(ids()).toEqual(['a2', 'u1', 'a1'])

@@ -36,6 +36,7 @@ function fixture() {
 describe('manual pipe connection identity', () => {
   it('uses selected scope discovery and passes its identity to the SDK', async () => {
     const { deps, scope, client } = fixture()
+    deps.env.AGNES_LOCALE = 'zh-CN'
     const booted = await bootConnect(
       parseArgs(['--connect', 'pipe:///selected-daemon', '--profile', 'chosen']),
       deps,
@@ -55,6 +56,7 @@ describe('manual pipe connection identity', () => {
           path: '\\\\.\\pipe\\selected-daemon',
           serverIdentity: { pid: 123, processStartId: '456' },
         },
+        locale: 'zh-CN',
       }),
     )
     await booted.close()

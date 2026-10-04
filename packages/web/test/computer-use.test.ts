@@ -39,9 +39,22 @@ beforeEach(() => {
 afterEach(() => {
   for (const controller of controllers.splice(0)) controller.dispose()
   document.body.replaceChildren()
+  document.documentElement.lang = ''
 })
 
 describe('Computer Use status', () => {
+  it('repaints the open pane when the page language changes', async () => {
+    const controller = createComputerUseStatusController({ call: vi.fn() })
+    expect(document.getElementById('computer-use-state')?.textContent).toBe('Waiting for a check')
+    document.documentElement.lang = 'zh-CN'
+    window.dispatchEvent(new CustomEvent('agnes:locale-changed'))
+    expect(document.getElementById('computer-use-state')?.textContent).toBe('等待检查')
+    document.documentElement.lang = ''
+    window.dispatchEvent(new CustomEvent('agnes:locale-changed'))
+    expect(document.getElementById('computer-use-state')?.textContent).toBe('Waiting for a check')
+    controller.dispose()
+  })
+
   it('discovers a new preparation after the previous operation failed', async () => {
     let preparing = false
     let finishWait!: () => void
@@ -75,7 +88,7 @@ describe('Computer Use status', () => {
     preparing = true
     await controller.refresh()
     await vi.waitFor(() =>
-      expect(document.getElementById('computer-use-operation-state')?.textContent).toBe('正在安装'),
+      expect(document.getElementById('computer-use-operation-state')?.textContent).toBe('Installing'),
     )
     expect(call).toHaveBeenCalledTimes(2)
     expect(call).toHaveBeenCalledWith('_agnes/v1/computerUse.operation.status', {})
@@ -107,7 +120,7 @@ describe('Computer Use status', () => {
       expect(call).toHaveBeenCalledTimes(8)
       const operationCalls = call.mock.calls.filter(([method]) => method.endsWith('operation.status'))
       expect(operationCalls).toHaveLength(4)
-      expect(document.getElementById('computer-use-operation-state')?.textContent).toBe('仍在执行')
+      expect(document.getElementById('computer-use-operation-state')?.textContent).toBe('Still running')
       await Promise.resolve()
       expect(call).toHaveBeenCalledTimes(8)
     },
@@ -120,9 +133,9 @@ describe('Computer Use status', () => {
     const markup = document.body.innerHTML
     document.body.innerHTML = markup
     await vi.waitFor(() =>
-      expect(document.getElementById('computer-use-state')?.textContent).toBe('无法读取'),
+      expect(document.getElementById('computer-use-state')?.textContent).toBe('Could not read status'),
     )
-    expect(old?.textContent).toBe('')
+    expect(old?.textContent).toBe('Waiting for a check')
     call.mockClear()
     document.getElementById('computer-use-refresh')?.click()
     await vi.waitFor(() => expect(call).toHaveBeenCalledTimes(1))
@@ -147,7 +160,7 @@ describe('Computer Use status', () => {
     const markup = document.body.innerHTML
     document.body.innerHTML = markup
     await vi.waitFor(() =>
-      expect(document.getElementById('computer-use-state')?.textContent).toBe('无法读取'),
+      expect(document.getElementById('computer-use-state')?.textContent).toBe('Could not read status'),
     )
     finish({
       status: 'blocked',
@@ -155,15 +168,15 @@ describe('Computer Use status', () => {
       admission: { reason: 'runtime-unavailable' },
     })
     await pending
-    expect(document.getElementById('computer-use-state')?.textContent).toBe('无法读取')
+    expect(document.getElementById('computer-use-state')?.textContent).toBe('Could not read status')
   })
 
   it.each([
-    ['feature-disabled', '已关闭', true],
-    ['platform-unsupported', '暂不支持', true],
-    ['driver-not-prepared', '首次使用自动准备', false],
-    ['driver-preparing', '准备中', true],
-    ['driver-prepare-failed', '准备失败', false],
+    ['feature-disabled', 'Turned off', true],
+    ['platform-unsupported', 'Not supported on this system', true],
+    ['driver-not-prepared', 'Prepares automatically on first use', false],
+    ['driver-preparing', 'Preparing', true],
+    ['driver-prepare-failed', 'Preparation failed', false],
   ] as const)('renders %s with accurate preparation controls', async (reason, label, disabled) => {
     const call = vi.fn().mockImplementation(async (method) =>
       method.endsWith('operation.status')
@@ -217,16 +230,16 @@ describe('Computer Use status', () => {
     )
     await controller.refresh()
     await vi.waitFor(() =>
-      expect(document.getElementById('computer-use-operation-state')?.textContent).toBe('正在安装'),
+      expect(document.getElementById('computer-use-operation-state')?.textContent).toBe('Installing'),
     )
     expect((document.getElementById('computer-use-operation-cancel') as HTMLButtonElement).hidden).toBe(false)
     finished = true
     finishWait()
     await vi.waitFor(() =>
-      expect(document.getElementById('computer-use-state')?.textContent).toBe('准备失败'),
+      expect(document.getElementById('computer-use-state')?.textContent).toBe('Preparation failed'),
     )
     expect((document.getElementById('computer-use-install') as HTMLButtonElement).disabled).toBe(false)
-    expect(document.getElementById('computer-use-operation-state')?.textContent).toBe('操作失败')
+    expect(document.getElementById('computer-use-operation-state')?.textContent).toBe('Operation failed')
   })
 
   it('does not probe permissions while the production gate is blocked', async () => {
@@ -243,11 +256,11 @@ describe('Computer Use status', () => {
 
     expect(call).toHaveBeenCalledOnce()
     expect(call).toHaveBeenCalledWith('_agnes/v1/computerUse.status', {})
-    expect(document.getElementById('computer-use-state')?.textContent).toBe('已阻止')
-    expect(document.getElementById('computer-use-summary')?.textContent).toContain('准入保持关闭')
+    expect(document.getElementById('computer-use-state')?.textContent).toBe('Blocked')
+    expect(document.getElementById('computer-use-summary')?.textContent).toContain('stays closed')
     expect(document.querySelectorAll('#computer-use-blockers li')).toHaveLength(2)
-    expect(document.getElementById('computer-use-runtime')?.textContent).toContain('未尝试启动')
-    expect(document.getElementById('computer-use-permission-state')?.textContent).toBe('不可用')
+    expect(document.getElementById('computer-use-runtime')?.textContent).toContain('start was not attempted')
+    expect(document.getElementById('computer-use-permission-state')?.textContent).toBe('Unavailable')
   })
 
   it('fails closed, clears stale details, and does not expose an RPC error', async () => {
@@ -267,7 +280,7 @@ describe('Computer Use status', () => {
 
     await controller.refresh()
 
-    expect(document.getElementById('computer-use-state')?.textContent).toBe('无法读取')
+    expect(document.getElementById('computer-use-state')?.textContent).toBe('Could not read status')
     expect(document.querySelectorAll('#computer-use-blockers li')).toHaveLength(0)
     expect(document.body.textContent).not.toContain(secret)
     expect(call).toHaveBeenNthCalledWith(2, '_agnes/v1/computerUse.status', {})
@@ -291,10 +304,12 @@ describe('Computer Use status', () => {
         probe: { state: 'passed', reason: 'windows-no-os-grant-required' },
       })
     await createComputerUseStatusController({ call }).refresh()
-    expect(document.getElementById('computer-use-state')?.textContent).toBe('可用')
+    expect(document.getElementById('computer-use-state')?.textContent).toBe('Available')
     expect(document.getElementById('computer-use-summary')?.textContent).toContain('0.28.1')
-    expect(document.getElementById('computer-use-runtime')?.textContent).toContain('之前已启动过')
-    expect(document.getElementById('computer-use-permission-state')?.textContent).toBe('无需系统授权')
+    expect(document.getElementById('computer-use-runtime')?.textContent).toContain('started before')
+    expect(document.getElementById('computer-use-permission-state')?.textContent).toBe(
+      'No system authorization required',
+    )
   })
 
   it('keeps a verified driver visible when only the permission probe fails', async () => {
@@ -313,9 +328,11 @@ describe('Computer Use status', () => {
 
     await createComputerUseStatusController({ call }).refresh()
 
-    expect(document.getElementById('computer-use-state')?.textContent).toBe('可用')
-    expect(document.getElementById('computer-use-summary')?.textContent).toContain('macOS 驱动 0.28.1')
-    expect(document.getElementById('computer-use-permission-state')?.textContent).toBe('无法读取')
+    expect(document.getElementById('computer-use-state')?.textContent).toBe('Available')
+    expect(document.getElementById('computer-use-summary')?.textContent).toContain('macOS driver 0.28.1')
+    expect(document.getElementById('computer-use-permission-state')?.textContent).toBe(
+      'Could not read permissions',
+    )
     expect(document.body.textContent).not.toContain(secret)
   })
 
@@ -346,9 +363,13 @@ describe('Computer Use status', () => {
         },
       })
     await createComputerUseStatusController({ call }).refresh()
-    expect(document.getElementById('computer-use-summary')?.textContent).toContain('macOS 驱动 0.28.1')
-    expect(document.getElementById('computer-use-permission-state')?.textContent).toBe('需要授权')
-    expect(document.getElementById('computer-use-permission-summary')?.textContent).toContain('屏幕录制')
+    expect(document.getElementById('computer-use-summary')?.textContent).toContain('macOS driver 0.28.1')
+    expect(document.getElementById('computer-use-permission-state')?.textContent).toBe(
+      'Authorization required',
+    )
+    expect(document.getElementById('computer-use-permission-summary')?.textContent).toContain(
+      'Screen Recording',
+    )
     expect((document.getElementById('computer-use-permission-grant') as HTMLButtonElement).hidden).toBe(false)
   })
 
@@ -369,7 +390,7 @@ describe('Computer Use status', () => {
     await controller.grantPermissions()
 
     expect(call).toHaveBeenCalledWith('_agnes/v1/computerUse.permissions.grant', {})
-    expect(document.getElementById('computer-use-permission-state')?.textContent).toBe('已授权')
+    expect(document.getElementById('computer-use-permission-state')?.textContent).toBe('Authorized')
     expect((document.getElementById('computer-use-permission-grant') as HTMLButtonElement).hidden).toBe(true)
   })
 
@@ -385,7 +406,7 @@ describe('Computer Use status', () => {
     await controller.doctor()
 
     expect(call).toHaveBeenCalledWith('_agnes/v1/computerUse.doctor', {})
-    expect(document.getElementById('computer-use-doctor-state')?.textContent).toBe('检查通过')
+    expect(document.getElementById('computer-use-doctor-state')?.textContent).toBe('Check passed')
     expect(document.getElementById('computer-use-doctor-summary')?.textContent).toContain('macOS')
   })
 
@@ -397,7 +418,7 @@ describe('Computer Use status', () => {
 
     await controller.doctor()
 
-    expect(document.getElementById('computer-use-doctor-state')?.textContent).toBe('检查失败')
+    expect(document.getElementById('computer-use-doctor-state')?.textContent).toBe('Check failed')
     expect(document.body.textContent).not.toContain(secret)
   })
 
@@ -419,11 +440,13 @@ describe('Computer Use status', () => {
     const controller = createComputerUseStatusController({ call })
 
     await controller.doctor()
-    expect(document.getElementById('computer-use-doctor-state')?.textContent).toBe('检查失败')
-    expect(document.getElementById('computer-use-doctor-summary')?.textContent).toContain('签名身份')
+    expect(document.getElementById('computer-use-doctor-state')?.textContent).toBe('Check failed')
+    expect(document.getElementById('computer-use-doctor-summary')?.textContent).toContain(
+      'signature identity',
+    )
     await controller.doctor()
-    expect(document.getElementById('computer-use-doctor-state')?.textContent).toBe('无法连接')
-    expect(document.getElementById('computer-use-doctor-summary')?.textContent).toContain('诊断入口')
+    expect(document.getElementById('computer-use-doctor-state')?.textContent).toBe('Could not connect')
+    expect(document.getElementById('computer-use-doctor-summary')?.textContent).toContain('diagnostics entry')
   })
 
   it('does not let an older permission refresh overwrite a completed grant', async () => {
@@ -472,8 +495,8 @@ describe('Computer Use status', () => {
     })
     await refreshing
 
-    expect(document.getElementById('computer-use-state')?.textContent).toBe('可用')
-    expect(document.getElementById('computer-use-permission-state')?.textContent).toBe('已授权')
+    expect(document.getElementById('computer-use-state')?.textContent).toBe('Available')
+    expect(document.getElementById('computer-use-permission-state')?.textContent).toBe('Authorized')
   })
 
   it('keeps refresh disabled until an overlapping permission grant settles', async () => {
@@ -578,8 +601,8 @@ describe('Computer Use status', () => {
     expect(call).toHaveBeenCalledWith('_agnes/v1/computerUse.operation.status', {
       operationId: 'cu-update-1',
     })
-    expect(document.getElementById('computer-use-operation-state')?.textContent).toBe('操作完成')
-    expect(document.getElementById('computer-use-operation-summary')?.textContent).toContain('锁定版本')
+    expect(document.getElementById('computer-use-operation-state')?.textContent).toBe('Operation finished')
+    expect(document.getElementById('computer-use-operation-summary')?.textContent).toContain('pinned version')
     expect(document.body.textContent).not.toContain('operation-failed')
   })
 
@@ -655,7 +678,7 @@ describe('Computer Use status', () => {
     })
     await installing
 
-    expect(document.getElementById('computer-use-operation-state')?.textContent).toBe('已取消')
+    expect(document.getElementById('computer-use-operation-state')?.textContent).toBe('Cancelled')
     expect(document.getElementById('computer-use-operation-summary')?.textContent).not.toContain('credential')
   })
 
@@ -677,7 +700,9 @@ describe('Computer Use status', () => {
     expect(call).toHaveBeenCalledOnce()
 
     await controller.refreshOperation()
-    expect(document.getElementById('computer-use-operation-state')?.textContent).toBe('无法读取')
+    expect(document.getElementById('computer-use-operation-state')?.textContent).toBe(
+      'Could not read the operation',
+    )
     expect((document.getElementById('computer-use-operation-refresh') as HTMLButtonElement).disabled).toBe(
       false,
     )
@@ -723,7 +748,7 @@ describe('Computer Use action ownership regressions', () => {
     reply.resolve(granted)
     await Promise.all([first, second])
     expect(requests).toBe(1)
-    expect(document.getElementById('computer-use-permission-state')?.textContent).toBe('已授权')
+    expect(document.getElementById('computer-use-permission-state')?.textContent).toBe('Authorized')
   })
 
   it('preserves a newer pending grant across a status refresh', async () => {
@@ -748,7 +773,7 @@ describe('Computer Use action ownership regressions', () => {
     await controller.refresh()
     reply.resolve(granted)
     await granting
-    expect(document.getElementById('computer-use-permission-state')?.textContent).toBe('已授权')
+    expect(document.getElementById('computer-use-permission-state')?.textContent).toBe('Authorized')
     expect((document.getElementById('computer-use-refresh') as HTMLButtonElement).disabled).toBe(false)
   })
 
@@ -773,7 +798,7 @@ describe('Computer Use action ownership regressions', () => {
     })
     await checking
     expect(disabledWhileChecking).toBe(true)
-    expect(document.getElementById('computer-use-doctor-state')?.textContent).toBe('检查通过')
+    expect(document.getElementById('computer-use-doctor-state')?.textContent).toBe('Check passed')
   })
 
   it('does not let refresh overtake an unresolved start and permit another mutation', async () => {
@@ -803,7 +828,7 @@ describe('Computer Use action ownership regressions', () => {
     })
     await Promise.all([starting, second])
     expect(starts).toBe(1)
-    expect(document.getElementById('computer-use-operation-state')?.textContent).toBe('操作完成')
+    expect(document.getElementById('computer-use-operation-state')?.textContent).toBe('Operation finished')
   })
 
   it('does not claim a rejected start was never executed or permit an immediate replay', async () => {
@@ -817,7 +842,9 @@ describe('Computer Use action ownership regressions', () => {
     await controller.update()
     await controller.update()
     expect(call.mock.calls.filter(([method]) => method.endsWith('operation.start'))).toHaveLength(1)
-    expect(document.getElementById('computer-use-operation-summary')?.textContent).toContain('无法确认')
+    expect(document.getElementById('computer-use-operation-summary')?.textContent).toContain(
+      'could not be confirmed',
+    )
     expect(document.body.textContent).not.toContain('private-host-path')
     expect((document.getElementById('computer-use-operation-refresh') as HTMLButtonElement).disabled).toBe(
       false,
@@ -909,7 +936,7 @@ describe('Computer Use pane retirement boundary', () => {
       await vi.waitFor(() =>
         expect((document.getElementById('computer-use-refresh') as HTMLButtonElement).disabled).toBe(false),
       )
-      expect(document.getElementById('computer-use-state')?.textContent).toBe('可用')
+      expect(document.getElementById('computer-use-state')?.textContent).toBe('Available')
       const finalBeforeOldReply = document.body.textContent
       const controlsBeforeOldReply = [...document.querySelectorAll('button')].map((button) => [
         button.id,
@@ -954,7 +981,7 @@ describe('Computer Use pane retirement boundary', () => {
       call.mockClear()
       await controller.update()
       expect(call.mock.calls.filter(([method]) => method.endsWith('operation.start'))).toHaveLength(1)
-      expect(document.getElementById('computer-use-operation-state')?.textContent).toBe('操作完成')
+      expect(document.getElementById('computer-use-operation-state')?.textContent).toBe('Operation finished')
     },
   )
 
@@ -993,7 +1020,7 @@ describe('Computer Use pane retirement boundary', () => {
     expect(call.mock.calls.some(([method]) => method.endsWith('operation.cancel'))).toBe(false)
     document.body.innerHTML = markup
     await vi.advanceTimersByTimeAsync(0)
-    expect(document.getElementById('computer-use-state')?.textContent).toBe('可用')
+    expect(document.getElementById('computer-use-state')?.textContent).toBe('Available')
     call.mockClear()
     document.getElementById('computer-use-refresh')?.click()
     await vi.advanceTimersByTimeAsync(0)

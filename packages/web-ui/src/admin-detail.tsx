@@ -1,6 +1,9 @@
 import type { PackageOperation } from '@agnes/protocol'
 import type { JSX } from 'react'
-import { operationLabel } from './admin-text.js'
+import { ADMIN_LOCALE_NAMESPACE, operationLabel } from './admin-text.js'
+import { adminLocaleCatalog } from './locales/admin.js'
+import { ADMIN_DETAIL_LOCALE_NAMESPACE, adminDetailLocaleCatalog } from './locales/admin-detail.js'
+import { useUiText } from './ui-locale.js'
 
 export type DetailActionSpec = Readonly<{
   label: string
@@ -67,6 +70,8 @@ export function DetailContent({
   onClose(): void
   onCancelOperation(operationId: string, trigger: HTMLButtonElement): void
 }): JSX.Element {
+  const { t } = useUiText(ADMIN_DETAIL_LOCALE_NAMESPACE, adminDetailLocaleCatalog)
+  const { t: adminText } = useUiText(ADMIN_LOCALE_NAMESPACE, adminLocaleCatalog)
   return (
     <>
       <div className="admin-detail-head">
@@ -76,9 +81,9 @@ export function DetailContent({
             type="button"
             className="secondary-button compact plugin-detail-close"
             onClick={onClose}
-            aria-label={`关闭 ${heading} 的详情`}
+            aria-label={t('close.aria', { heading })}
           >
-            关闭详情
+            {t('close.label')}
           </button>
         </div>
         {version && <p className="plugin-detail-version">{version}</p>}
@@ -98,19 +103,19 @@ export function DetailContent({
         ))}
         {lastOperationLabel && (
           <section className="plugin-operations">
-            <h3>最近完成的操作</h3>
+            <h3>{t('operations.recent')}</h3>
             <p>{lastOperationLabel}</p>
           </section>
         )}
         {operations.length > 0 && (
           <section className="plugin-operations">
-            <h3>正在进行的操作</h3>
+            <h3>{t('operations.ongoing')}</h3>
             {operations.map(({ operation, canCancel }) => (
               <div key={operation.operationId} className="operation-row">
                 <p>
-                  {operationLabel(operation)}
+                  {operationLabel(operation, adminText)}
                   {operation.progress ? ` · ${operation.progress}%` : ''}
-                  {operation.retryable ? ' · 后台允许重试' : ''}
+                  {operation.retryable ? ` · ${t('operations.retry')}` : ''}
                 </p>
                 {canCancel && (
                   <button
@@ -118,7 +123,7 @@ export function DetailContent({
                     className="secondary-button compact"
                     onClick={(event) => onCancelOperation(operation.operationId, event.currentTarget)}
                   >
-                    请求取消
+                    {t('operations.cancel')}
                   </button>
                 )}
               </div>

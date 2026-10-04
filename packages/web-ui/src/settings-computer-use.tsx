@@ -32,10 +32,14 @@ export type SettingsComputerUseActions = Readonly<{
 export function SettingsComputerUse({
   view,
   actions,
+  text,
 }: {
   view: SettingsComputerUseView
   actions: SettingsComputerUseActions
+  /** Render-time copy. Defaults to the English catalog so a missing host still stays in the default language. */
+  text?: (key: string) => string
 }) {
+  const label = (key: string, fallback: string) => text?.(key) ?? fallback
   return (
     <section
       id="computer-use-settings-pane"
@@ -46,7 +50,12 @@ export function SettingsComputerUse({
       <header className="config-heading">
         <div>
           <h2>Computer Use</h2>
-          <p>让 Agnes 查看屏幕并操作应用。需要使用支持图片的模型。</p>
+          <p>
+            {label(
+              'computerUse.intro',
+              'Let Agnes see the screen and operate apps. This needs a model that accepts images.',
+            )}
+          </p>
         </div>
         <Button
           id="computer-use-refresh"
@@ -55,12 +64,12 @@ export function SettingsComputerUse({
           disabled={view.controls.refreshDisabled}
           onClick={() => void actions.refresh()}
         >
-          刷新状态
+          {label('computerUse.action.refresh', 'Refresh status')}
         </Button>
       </header>
       <div className="config-workspace">
         <section className="config-card" aria-labelledby="computer-use-state">
-          <p className="eyebrow">使用状态</p>
+          <p className="eyebrow">{label('computerUse.status.eyebrow', 'Status')}</p>
           <strong id="computer-use-state" role="status">
             {view.status.label}
           </strong>
@@ -73,7 +82,7 @@ export function SettingsComputerUse({
           </ul>
         </section>
         <section className="config-card" aria-labelledby="computer-use-permission-state">
-          <p className="eyebrow">系统权限</p>
+          <p className="eyebrow">{label('computerUse.permissions.eyebrow', 'System permissions')}</p>
           <strong id="computer-use-permission-state">{view.permissions.label}</strong>
           <p id="computer-use-permission-summary">{view.permissions.summary}</p>
           <Button
@@ -84,11 +93,11 @@ export function SettingsComputerUse({
             disabled={view.controls.grantDisabled}
             onClick={() => void actions.grantPermissions()}
           >
-            打开 macOS 授权
+            {label('computerUse.permissions.grant', 'Open macOS authorization')}
           </Button>
         </section>
         <section className="config-card" aria-labelledby="computer-use-doctor-state">
-          <p className="eyebrow">驱动诊断</p>
+          <p className="eyebrow">{label('computerUse.doctor.eyebrow', 'Driver diagnostics')}</p>
           <strong id="computer-use-doctor-state">{view.doctor.label}</strong>
           <p id="computer-use-doctor-summary">{view.doctor.summary}</p>
           <Button
@@ -98,11 +107,11 @@ export function SettingsComputerUse({
             disabled={view.controls.doctorDisabled}
             onClick={() => void actions.doctor()}
           >
-            运行诊断
+            {label('computerUse.doctor.run', 'Run diagnostics')}
           </Button>
         </section>
         <section className="config-card" aria-labelledby="computer-use-operation-state">
-          <p className="eyebrow">安装与维护</p>
+          <p className="eyebrow">{label('computerUse.operation.eyebrow', 'Install and maintenance')}</p>
           <strong id="computer-use-operation-state">{view.operation.label}</strong>
           <p id="computer-use-operation-summary">{view.operation.summary}</p>
           <div className="config-actions">
@@ -113,7 +122,7 @@ export function SettingsComputerUse({
               disabled={view.controls.installDisabled}
               onClick={() => void actions.install()}
             >
-              准备驱动
+              {label('computerUse.action.install', 'Prepare driver')}
             </Button>
             <Button
               id="computer-use-update"
@@ -122,7 +131,7 @@ export function SettingsComputerUse({
               disabled={view.controls.updateDisabled}
               onClick={() => void actions.update()}
             >
-              更新驱动
+              {label('computerUse.action.update', 'Update driver')}
             </Button>
             <Button
               id="computer-use-restart"
@@ -131,7 +140,7 @@ export function SettingsComputerUse({
               disabled={view.controls.restartDisabled}
               onClick={() => void actions.restart()}
             >
-              重启驱动
+              {label('computerUse.action.restart', 'Restart driver')}
             </Button>
             <Button
               id="computer-use-operation-refresh"
@@ -140,7 +149,7 @@ export function SettingsComputerUse({
               disabled={view.controls.operationRefreshDisabled}
               onClick={() => void actions.refreshOperation()}
             >
-              刷新进度
+              {label('computerUse.action.operationRefresh', 'Refresh progress')}
             </Button>
             <Button
               id="computer-use-operation-cancel"
@@ -150,7 +159,7 @@ export function SettingsComputerUse({
               disabled={view.controls.cancelDisabled}
               onClick={() => void actions.cancelOperation()}
             >
-              取消操作
+              {label('computerUse.action.cancel', 'Cancel operation')}
             </Button>
           </div>
         </section>

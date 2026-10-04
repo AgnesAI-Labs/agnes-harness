@@ -95,6 +95,16 @@ describe('branding cache', () => {
 })
 
 describe('unified text', () => {
+  it('keeps both public text locales paired and non-empty', () => {
+    const keys = ['blocked', 'unavailable'] as const
+    expect(Object.keys(TEXT.en).sort()).toEqual([...keys].sort())
+    expect(Object.keys(TEXT['zh-CN']).sort()).toEqual([...keys].sort())
+    for (const key of keys) {
+      expect(TEXT.en[key], `en ${key}`).toBeTruthy()
+      expect(TEXT['zh-CN'][key], `zh-CN ${key}`).toBeTruthy()
+    }
+  })
+
   it('uses the two reviewed locales and falls back to English', () => {
     const ep = fakeEndpoint({ initialize: () => ({ protocolVersion: 1, agentCapabilities: {} }) })
     const zh = createClient({ transport: { kind: 'inproc', endpoint: ep.endpoint }, locale: 'zh-CN' })

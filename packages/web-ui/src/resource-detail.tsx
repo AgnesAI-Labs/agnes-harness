@@ -1,6 +1,8 @@
 import type { McpServerDescriptor, SkillDescriptor } from '@agnes/protocol'
 import type { JSX } from 'react'
 import { useState } from 'react'
+import { RESOURCE_DETAIL_LOCALE_NAMESPACE, resourceDetailLocaleCatalog } from './locales/resource-detail.js'
+import { useUiText } from './ui-locale.js'
 
 export type ResourceDetailAction = Readonly<{
   label: string
@@ -56,6 +58,7 @@ function DetailHead({
   subtitle: string
   onClose(): void
 }): JSX.Element {
+  const { t } = useUiText(RESOURCE_DETAIL_LOCALE_NAMESPACE, resourceDetailLocaleCatalog)
   return (
     <div className="admin-detail-head">
       <p className="eyebrow">{kindLabel}</p>
@@ -64,10 +67,10 @@ function DetailHead({
         <button
           type="button"
           className="secondary-button compact plugin-detail-close"
-          aria-label={`关闭 ${title} 的详情`}
+          aria-label={t('close.aria', { title })}
           onClick={onClose}
         >
-          关闭详情
+          {t('close')}
         </button>
       </div>
       <p className="dialog-intro">{subtitle}</p>
@@ -93,30 +96,31 @@ export function SkillDetailContent({
   onPrioritySave(next: number): void
   onClose(): void
 }): JSX.Element {
+  const { t } = useUiText(RESOURCE_DETAIL_LOCALE_NAMESPACE, resourceDetailLocaleCatalog)
   const [priority, setPriority] = useState(String(skill.priority))
   const removing = skill.lastSafeError?.code === 'SKILL_REMOVAL_PENDING'
   return (
     <>
       <DetailHead
-        kindLabel="Skill 资源"
+        kindLabel={t('skill.kind')}
         title={skill.name}
-        subtitle={skill.description ?? '该 Skill 未提供说明。'}
+        subtitle={skill.description ?? t('skill.no-description')}
         onClose={onClose}
       />
       <div className="admin-detail-scroll">
         <FactList
           className="resource-facts"
           items={[
-            ['来源', `${skill.sourceIdentity.scope} · ${skill.sourceIdentity.rootKey}`],
-            ['优先级', String(skill.priority)],
-            ['解析', skill.resolution.winner ? '当前 winner' : '非 winner'],
-            ['版本', skill.revision],
-            ['目录状态', skill.stale ? '使用最近一次安全目录（刷新失败）' : '最新目录'],
+            [t('fact.source'), `${skill.sourceIdentity.scope} · ${skill.sourceIdentity.rootKey}`],
+            [t('fact.priority'), String(skill.priority)],
+            [t('fact.resolution'), t(skill.resolution.winner ? 'fact.current-winner' : 'fact.not-winner')],
+            [t('fact.version'), skill.revision],
+            [t('fact.catalog-state'), t(skill.stale ? 'fact.catalog-stale' : 'fact.catalog-current')],
           ]}
         />
         {skill.resolution.shadowed.length > 0 && (
           <details className="confirm-review-section">
-            <summary>{`被遮蔽的候选（${skill.resolution.shadowed.length}）`}</summary>
+            <summary>{t('shadowed', { count: skill.resolution.shadowed.length })}</summary>
             <ul>
               {skill.resolution.shadowed.map((candidate) => (
                 <li
@@ -130,12 +134,12 @@ export function SkillDetailContent({
         )}
         {skill.lastSafeError && (
           <p className="resource-safe-error">
-            {`${skill.lastSafeError.code}：${skill.lastSafeError.message}`}
+            {t('safe-error', { code: skill.lastSafeError.code, message: skill.lastSafeError.message })}
           </p>
         )}
         {skill.sourceIdentity.scope !== 'runtime' && !removing && (
           <label>
-            同名覆盖优先级（50–500，越大越优先）
+            {t('priority.label')}
             <input
               type="number"
               min={50}
@@ -148,9 +152,7 @@ export function SkillDetailContent({
             />
           </label>
         )}
-        {skill.sourceIdentity.scope === 'runtime' && (
-          <p>此 Skill 由插件提供，请通过插件管理移除，不能单独删除文件。</p>
-        )}
+        {skill.sourceIdentity.scope === 'runtime' && <p>{t('skill.plugin-managed')}</p>}
         {progress && (
           <div className="resource-operation">
             <span>{progress.text}</span>
@@ -161,7 +163,7 @@ export function SkillDetailContent({
                 title={progress.cancelTitle}
                 onClick={progress.onCancel}
               >
-                取消操作
+                {t('operation.cancel')}
               </button>
             )}
           </div>
@@ -191,7 +193,7 @@ export function SkillDetailContent({
               onPrioritySave(next)
             }}
           >
-            保存优先级
+            {t('priority.save')}
           </button>
         )}
       </div>
@@ -225,21 +227,22 @@ export function McpDetailContent({
   onEdit(): void
   onClose(): void
 }): JSX.Element {
+  const { t } = useUiText(RESOURCE_DETAIL_LOCALE_NAMESPACE, resourceDetailLocaleCatalog)
   const [status, setStatus] = useState<StatusPanel | undefined>()
   const [catalog, setCatalog] = useState<ToolCatalog | undefined>()
   return (
     <>
       <DetailHead
-        kindLabel="MCP 服务"
+        kindLabel={t('mcp.kind')}
         title={server.displayName}
-        subtitle={`${server.serverId} · ${server.transportKind.toUpperCase()} · 凭据：${server.secretBindingKind}`}
+        subtitle={`${server.serverId} · ${server.transportKind.toUpperCase()} · ${t('mcp.credentials', { kind: server.secretBindingKind })}`}
         onClose={onClose}
       />
       <div className="admin-detail-scroll">
-        <FactList className="resource-facts" items={[['来源', server.source]]} />
+        <FactList className="resource-facts" items={[[t('mcp.fact.source'), server.source]]} />
         {server.lastSafeError && (
           <p className="resource-safe-error">
-            {`${server.lastSafeError.code}：${server.lastSafeError.message}`}
+            {t('safe-error', { code: server.lastSafeError.code, message: server.lastSafeError.message })}
           </p>
         )}
         {!status && (
@@ -249,7 +252,7 @@ export function McpDetailContent({
             disabled={disabled}
             onClick={() => void onStatus().then(setStatus)}
           >
-            查看连接状态
+            {t('mcp.status.show')}
           </button>
         )}
         {status && <FactList className="resource-facts" items={status} />}
@@ -260,12 +263,12 @@ export function McpDetailContent({
             disabled={disabled}
             onClick={() => void onTools().then(setCatalog)}
           >
-            查看工具目录
+            {t('mcp.tools.show')}
           </button>
         )}
         {catalog && (
           <details className="confirm-review-section" open>
-            <summary>{`工具目录（${catalog.names.length}）`}</summary>
+            <summary>{t('mcp.tools.title', { count: catalog.names.length })}</summary>
             <div>
               {catalog.names.map((name) => (
                 <p key={name}>{name}</p>
@@ -284,7 +287,7 @@ export function McpDetailContent({
                     )
                   }
                 >
-                  加载更多工具
+                  {t('mcp.tools.more')}
                 </button>
               )}
             </div>
@@ -300,7 +303,7 @@ export function McpDetailContent({
                 title={progress.cancelTitle}
                 onClick={progress.onCancel}
               >
-                取消操作
+                {t('operation.cancel')}
               </button>
             )}
           </div>
@@ -320,7 +323,7 @@ export function McpDetailContent({
           </button>
         ))}
         <button type="button" className="secondary-button compact" disabled={disabled} onClick={onEdit}>
-          编辑
+          {t('mcp.edit')}
         </button>
       </div>
     </>

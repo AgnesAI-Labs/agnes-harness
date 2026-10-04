@@ -1,6 +1,11 @@
 import { type HTMLElement as HappyElement, Window } from 'happy-dom'
 import { afterEach, expect, it, vi } from 'vitest'
+import { setLocaleTranslator } from '../src/locale-bridge.js'
 import { createProviderPicker } from '../src/provider-picker.js'
+import { enT, zhT } from './helpers/locale.js'
+
+// i18n: these suites assert zh-CN catalog output; pin the translator before imports run.
+setLocaleTranslator(zhT)
 
 let window: Window
 afterEach(() => {
@@ -44,11 +49,24 @@ it('renders catalogue groups and selection without changing provider/auth values
   h.doc.querySelectorAll<HappyElement>('[role="option"]')[2]?.click()
   expect(h.select.value).toBe('openai:oauth')
   expect(changed).toHaveBeenCalledOnce()
-  expect(h.trigger.textContent).toBe('OpenAI · 订阅登录')
+  expect(h.trigger.textContent).toBe('OpenAI')
   expect(h.doc.querySelector('[role="listbox"]')).toBeNull()
   h.trigger.click()
   h.doc.querySelectorAll<HappyElement>('[role="option"]')[2]?.click()
   expect(changed).toHaveBeenCalledOnce()
+})
+
+it('removes the localized subscription suffix from the English trigger label', () => {
+  setLocaleTranslator(enT)
+  try {
+    const h = setup()
+    h.select.innerHTML = '<option value="openai:oauth">OpenAI · subscription sign-in</option>'
+    h.select.value = 'openai:oauth'
+    h.picker.sync()
+    expect(h.trigger.textContent).toBe('OpenAI')
+  } finally {
+    setLocaleTranslator(zhT)
+  }
 })
 
 it('supports arrows, Home/End, typeahead and Enter; Escape cancels without closing the dialog', () => {
@@ -91,7 +109,7 @@ it('syncs programmatic changes, loading/locked accounts and an empty catalogue',
   h.select.disabled = true
   h.picker.sync()
   expect(h.trigger.disabled).toBe(true)
-  expect(h.trigger.textContent).toBe('OpenAI · 订阅登录')
+  expect(h.trigger.textContent).toBe('OpenAI')
   expect(h.doc.querySelector('[role="listbox"]')).toBeNull()
   h.trigger.click()
   expect(h.doc.querySelector('[role="listbox"]')).toBeNull()

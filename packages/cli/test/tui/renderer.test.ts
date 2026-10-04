@@ -386,6 +386,6 @@ it('exits with only the current tool state after planned and running updates', a
   renderer.stop(timeline.transcript(50))
   const screen = await emulate(term, 50, 2)
   expect([...screen.scrollback, ...screen.lines].filter(Boolean)).toEqual([
-    expect.stringContaining('◆ 读取  README.md'),
+    expect.stringContaining('◆ read  README.md'),
   ])
 })

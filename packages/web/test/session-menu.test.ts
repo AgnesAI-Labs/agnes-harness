@@ -1,6 +1,7 @@
 /** @vitest-environment happy-dom */
 import { afterEach, expect, it, vi } from 'vitest'
 import { attachSessionMenu, closeSessionMenu, createSessionMenuTrigger } from '../src/session-menu.js'
+import { zhT } from './helpers/locale.js'
 
 afterEach(() => {
   closeSessionMenu()
@@ -13,19 +14,19 @@ function openMenu() {
   row.className = 'session-row'
   const menu = document.createElement('div')
   menu.className = 'session-menu'
-  const trigger = createSessionMenuTrigger('visible', '名称 visible')
+  const trigger = createSessionMenuTrigger('visible', '名称 visible', zhT)
   menu.append(trigger)
   row.append(menu)
   document.body.append(row)
   const select = vi.fn()
-  attachSessionMenu(trigger, select)
+  attachSessionMenu(trigger, select, zhT)
   trigger.click()
   const panel = document.querySelector('.session-menu-actions') as HTMLElement
   return { row, trigger, select, panel }
 }
 
 it('labels the trigger for assistive technology and starts collapsed', () => {
-  const trigger = createSessionMenuTrigger('visible', '名称 visible')
+  const trigger = createSessionMenuTrigger('visible', '名称 visible', zhT)
   expect(trigger.getAttribute('aria-label')).toBe('会话操作 名称 visible')
   expect(trigger.getAttribute('aria-haspopup')).toBe('menu')
   expect(trigger.getAttribute('aria-expanded')).toBe('false')

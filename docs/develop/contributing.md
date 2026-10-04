@@ -94,6 +94,8 @@ pnpm exec vitest run tools/public-docs/examples.test.ts --maxWorkers=1
 
 Rebuild the full distribution after source or resource changes. A Web-only build is not a complete daemon/worker distribution. Do not rebuild a directory currently used by someone's running instance.
 
+For frontend iteration, build the local backend once, stop any regular `agnes serve` Web process, then run `pnpm --filter @agnes/cli dev:web`. Closing the Web process leaves the shared daemon running. The development launcher rebuilds the Web assets when frontend source or shared UI files change and reloads open pages after a successful build. A reload resets temporary page state. Backend source changes still require a new local build.
+
 <a id="合同与测试层级"></a>
 
 ## Contracts and verification levels

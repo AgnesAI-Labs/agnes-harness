@@ -4,6 +4,7 @@ import { ConversationMarkdown, type ConversationMarkdownProps } from '@agnes/web
 import { act, createElement } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
+import { zhT } from './locale.js'
 
 let host: HTMLDivElement
 let root: Root
@@ -21,7 +22,7 @@ afterEach(async () => {
 })
 const render = async (source: string, streaming = true, props: Partial<ConversationMarkdownProps> = {}) =>
   act(async () =>
-    root.render(createElement(ConversationMarkdown, { source, streaming, part: 'body', ...props })),
+    root.render(createElement(ConversationMarkdown, { source, streaming, part: 'body', t: zhT, ...props })),
   )
 function select(element: Node) {
   const selection = document.getSelection()

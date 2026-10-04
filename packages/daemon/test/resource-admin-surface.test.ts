@@ -104,7 +104,10 @@ describe('local resource admin surface trust boundary', () => {
     })
     expect(session.status).toBe(413)
     expect(await session.json()).toEqual({
-      error: { code: 'E_RESOURCE_ADMIN_BODY_TOO_LARGE', message: '资源管理请求体超过大小限制' },
+      error: {
+        code: 'E_RESOURCE_ADMIN_BODY_TOO_LARGE',
+        message: 'The resource admin request body is too large.',
+      },
     })
     await s.request('context')
     s.invoke.mockClear()
@@ -114,7 +117,10 @@ describe('local resource admin surface trust boundary', () => {
     })
     expect(action.status).toBe(413)
     expect(await action.json()).toEqual({
-      error: { code: 'E_RESOURCE_ADMIN_BODY_TOO_LARGE', message: '资源管理请求体超过大小限制' },
+      error: {
+        code: 'E_RESOURCE_ADMIN_BODY_TOO_LARGE',
+        message: 'The resource admin request body is too large.',
+      },
     })
     expect(s.invoke).not.toHaveBeenCalled()
     const malformed = await fetch(`${s.origin}/admin/resources/api/skills/list`, {
@@ -128,7 +134,7 @@ describe('local resource admin surface trust boundary', () => {
     })
     expect(malformed.status).toBe(400)
     expect(await malformed.json()).toEqual({
-      error: { code: 'E_RESOURCE_ADMIN_REQUEST', message: '资源管理请求格式无效' },
+      error: { code: 'E_RESOURCE_ADMIN_REQUEST', message: 'The resource admin request is not valid JSON.' },
     })
   })
 
@@ -146,7 +152,10 @@ describe('local resource admin surface trust boundary', () => {
     expect(await invalid.text()).not.toContain(rejectedValue)
     s.invoke.mockRejectedValueOnce(new Error(`/private/home/token=${rejectedValue}`))
     expect(await (await s.request('skills/list', { profile: 'local-dev', kind: 'skill' })).json()).toEqual({
-      error: { code: 'E_RESOURCE_ADMIN_BACKEND', message: '操作未确认，请查询状态或重新连接后台' },
+      error: {
+        code: 'E_RESOURCE_ADMIN_BACKEND',
+        message: 'The operation was not confirmed. Check its status or reconnect to the backend.',
+      },
     })
   })
 
@@ -162,7 +171,10 @@ describe('local resource admin surface trust boundary', () => {
     const response = await s.request('mcp/list', { profile: 'local-dev' })
     expect(response.status).toBe(501)
     expect(await response.json()).toEqual({
-      error: { code: 'E_RESOURCE_UNSUPPORTED', message: '当前后台版本不支持此资源管理能力。' },
+      error: {
+        code: 'E_RESOURCE_UNSUPPORTED',
+        message: 'This backend version does not support that resource admin capability.',
+      },
     })
   })
 
@@ -184,7 +196,10 @@ describe('local resource admin surface trust boundary', () => {
     })
     expect(conflict.status).toBe(409)
     expect(await conflict.json()).toEqual({
-      error: { code: 'REVISION_CONFLICT', message: '资源已被另一项操作更新，请刷新后核对最新版本。' },
+      error: {
+        code: 'REVISION_CONFLICT',
+        message: 'Another operation updated this resource. Refresh and check the latest version.',
+      },
     })
     s.invoke.mockResolvedValueOnce({ operationId: 'resource-op-1', state: 'received' })
     const cancel = await s.request('operations/cancel', {

@@ -7,6 +7,15 @@ import { SecretInputView } from '../src/tui/views/secret-input.js'
 import { emulate } from './tui/harness.js'
 
 describe('AuthMethodView', () => {
+  it('renders translated authentication choices and keyboard guidance', () => {
+    const view = new AuthMethodView({ locale: 'zh-CN', onChoose: () => {}, onCancel: () => {} })
+    const output = view.render(80).join('\n')
+    expect(output).toContain('选择认证方式')
+    expect(output).toContain('使用 Agnes 账户登录')
+    expect(output).toContain('使用 API Key / ChatGPT 订阅登录')
+    expect(output).toContain('↑↓ 导航')
+  })
+
   it.each([40, 80, 120])('renders the two product choices and hint within %i columns', (width) => {
     const view = new AuthMethodView({ onChoose: () => {}, onCancel: () => {} })
     const lines = view.render(width)

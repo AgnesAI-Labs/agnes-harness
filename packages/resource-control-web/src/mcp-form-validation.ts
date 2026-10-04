@@ -1,4 +1,8 @@
 import { RESOURCE_CONTROL_METHODS } from '@agnes/protocol'
+import { createCatalogTranslator, type LocaleTranslator } from '@agnes/web-ui'
+import { resourceAdminLocaleCatalog } from './locales/admin.js'
+
+const englishText = createCatalogTranslator(resourceAdminLocaleCatalog, 'en')
 
 /**
  * 表单字段的即时正则校验。正则与条数上限**直接取自 resource-control-contracts 生成的 JSON
@@ -89,51 +93,50 @@ const lines = (value: string): string[] =>
     .map((line) => line.trim())
     .filter(Boolean)
 
-function urlIssues(url: string): McpFormFieldIssue[] {
+function urlIssues(url: string, t: LocaleTranslator): McpFormFieldIssue[] {
   if (!url) return []
   let parsed: URL
   try {
     parsed = new URL(url)
   } catch {
-    return [{ field: 'mcp-url', message: '地址格式不正确，请填写完整 URL。' }]
+    return [{ field: 'mcp-url', message: t('validation.url-format') }]
   }
   if (parsed.username || parsed.password || parsed.hash)
     return [
       {
         field: 'mcp-url',
-        message: '地址不能携带用户名、密码或 #fragment（凭据请用 SecretRef）。',
+        message: t('validation.url-no-credentials'),
       },
     ]
   if ([...parsed.searchParams.keys()].some((name) => URL_CREDENTIAL_QUERY.test(name)))
     return [
       {
         field: 'mcp-url',
-        message:
-          '地址查询参数不能包含 token / secret / password / api-key / credential（凭据请用 SecretRef）。',
+        message: t('validation.url-no-secret-query'),
       },
     ]
   if (url.length > MCP_FORM_LIMITS.urlMaxLength || !MCP_FORM_PATTERNS.url.test(url))
     return [
       {
         field: 'mcp-url',
-        message: '地址需为 https:// 或 loopback 的 http:// URL，且不含空格。',
+        message: t('validation.url-secure'),
       },
     ]
   return []
 }
 
-function stdioIssues(executable: string, argsText: string): McpFormFieldIssue[] {
+function stdioIssues(executable: string, argsText: string, t: LocaleTranslator): McpFormFieldIssue[] {
   const issues: McpFormFieldIssue[] = []
   if (executable && !MCP_FORM_PATTERNS.executable.test(executable))
     issues.push({
       field: 'mcp-executable',
-      message: '可执行文件不能是 shell（sh/bash/zsh/fish/cmd/powershell/pwsh），裸名称不能含空格。',
+      message: t('validation.executable'),
     })
   const args = lines(argsText)
   if (args.length > MCP_FORM_LIMITS.argsMaxItems)
     issues.push({
       field: 'mcp-args',
-      message: `参数最多 ${MCP_FORM_LIMITS.argsMaxItems} 个，每行一个。`,
+      message: t('validation.args-limit', { count: MCP_FORM_LIMITS.argsMaxItems }),
     })
   const badIndex = args.findIndex(
     (arg) => arg.length > MCP_FORM_LIMITS.argMaxLength || !MCP_FORM_PATTERNS.arg.test(arg),
@@ -141,11 +144,11 @@ function stdioIssues(executable: string, argsText: string): McpFormFieldIssue[] 
   if (badIndex >= 0)
     issues.push({
       field: 'mcp-args',
-      message: `第 ${badIndex + 1} 个参数不合法：不能是 -c 或 /c，也不能为空。`,
+      message: t('validation.arg-invalid', { index: badIndex + 1 }),
     })
   return issues
 }
-function secretIssues(secretKind: string, secretText: string): McpFormFieldIssue[] {
+function secretIssues(secretKind: string, secretText: string, t: LocaleTranslator): McpFormFieldIssue[] {
   if (secretKind === 'none') return []
   if (secretKind === 'stdio-env') {
     for (const [index, line] of lines(secretText).entries()) {
@@ -156,14 +159,14 @@ function secretIssues(secretKind: string, secretText: string): McpFormFieldIssue
         return [
           {
             field: 'mcp-secret',
-            message: `第 ${index + 1} 项环境变量名不合法：需大写字母开头（不能是 PATH/HOME 等保留名）。`,
+            message: t('validation.env-name', { index: index + 1 }),
           },
         ]
       if (!MCP_FORM_PATTERNS.secretRef.test(reference))
         return [
           {
             field: 'mcp-secret',
-            message: `第 ${index + 1} 项需形如 TOKEN=secret://namespace/name。`,
+            message: t('validation.env-ref', { index: index + 1 }),
           },
         ]
     }
@@ -173,19 +176,19 @@ function secretIssues(secretKind: string, secretText: string): McpFormFieldIssue
     return [
       {
         field: 'mcp-secret',
-        message: 'SecretRef 需形如 secret://namespace/name。',
+        message: t('validation.secret-ref'),
       },
     ]
   return []
 }
 
-function toolIssues(toolsText: string): McpFormFieldIssue[] {
+function toolIssues(toolsText: string, t: LocaleTranslator): McpFormFieldIssue[] {
   const tools = lines(toolsText)
   if (tools.length > MCP_FORM_LIMITS.toolsMaxItems)
     return [
       {
         field: 'mcp-tools',
-        message: `允许工具最多 ${MCP_FORM_LIMITS.toolsMaxItems} 个。`,
+        message: t('validation.tools-limit', { count: MCP_FORM_LIMITS.toolsMaxItems }),
       },
     ]
   const badIndex = tools.findIndex(
@@ -195,7 +198,7 @@ function toolIssues(toolsText: string): McpFormFieldIssue[] {
     return [
       {
         field: 'mcp-tools',
-        message: `第 ${badIndex + 1} 个工具名不合法：需以字母开头，只能含字母、数字、下划线、点、连字符。`,
+        message: t('validation.tool-name', { index: badIndex + 1 }),
       },
     ]
   const duplicated = tools.find((tool, index) => tools.indexOf(tool) !== index)
@@ -203,7 +206,7 @@ function toolIssues(toolsText: string): McpFormFieldIssue[] {
     return [
       {
         field: 'mcp-tools',
-        message: `允许工具中有重复项：「${duplicated}」。`,
+        message: t('validation.tool-duplicate', { name: duplicated }),
       },
     ]
   return []
@@ -216,33 +219,35 @@ function toolIssues(toolsText: string): McpFormFieldIssue[] {
 export function mcpFormIssues(
   snapshot: McpFormFieldSnapshot,
   options: { requireFilled: boolean },
+  t: LocaleTranslator = englishText,
 ): McpFormFieldIssue[] {
   const issues: McpFormFieldIssue[] = []
   if (!snapshot.serverId) {
-    if (options.requireFilled) issues.push({ field: 'mcp-id', message: '请填写服务 ID。' })
+    if (options.requireFilled) issues.push({ field: 'mcp-id', message: t('validation.server-id-required') })
   } else if (!MCP_FORM_PATTERNS.serverId.test(snapshot.serverId)) {
     issues.push({
       field: 'mcp-id',
-      message: '服务 ID 需以小写字母开头，只能含小写字母、数字、点、下划线、连字符。',
+      message: t('validation.server-id-format'),
     })
   }
   if (snapshot.transport === 'stdio') {
     if (!snapshot.executable) {
-      if (options.requireFilled) issues.push({ field: 'mcp-executable', message: '请填写可执行文件。' })
+      if (options.requireFilled)
+        issues.push({ field: 'mcp-executable', message: t('validation.executable-required') })
     }
-    issues.push(...stdioIssues(snapshot.executable, snapshot.argsText))
+    issues.push(...stdioIssues(snapshot.executable, snapshot.argsText, t))
   } else if (snapshot.transport === 'http' || snapshot.transport === 'sse') {
     if (!snapshot.url) {
       if (options.requireFilled)
         issues.push({
           field: 'mcp-url',
-          message: '请填写 HTTPS 地址，或本地策略允许的 loopback HTTP 地址。',
+          message: t('validation.url-required'),
         })
-    } else issues.push(...urlIssues(snapshot.url))
+    } else issues.push(...urlIssues(snapshot.url, t))
   }
   if (!snapshot.secretText && snapshot.secretKind !== 'none' && options.requireFilled)
-    issues.push({ field: 'mcp-secret', message: '请填写 SecretRef。' })
-  else issues.push(...secretIssues(snapshot.secretKind, snapshot.secretText))
-  issues.push(...toolIssues(snapshot.toolsText))
+    issues.push({ field: 'mcp-secret', message: t('error.form.secret') })
+  else issues.push(...secretIssues(snapshot.secretKind, snapshot.secretText, t))
+  issues.push(...toolIssues(snapshot.toolsText, t))
   return issues
 }

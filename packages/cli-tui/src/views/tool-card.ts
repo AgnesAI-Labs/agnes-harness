@@ -3,6 +3,7 @@ import { type Ansi, createAnsi } from '../ansi.js'
 import { type Component, escapeControl, padLine, Text, VStack } from '../component.js'
 import { Box } from '../components/box.js'
 import { fitLine } from '../components/line.js'
+import { tt } from '../locale-extended.js'
 import { displayWidth } from '../terminal.js'
 
 type ToolNode = Extract<UINode, { kind: 'tool' }>
@@ -68,14 +69,27 @@ const STATUS_GLYPH: Record<string, string> = {
   error: '◆',
   planned: '◇',
 }
-const STATUS_LABEL: Record<string, string> = {
-  completed: '完成',
-  running: '执行中',
-  failed: '失败',
-  error: '错误',
-  planned: '待执行',
+const STATUS_KEYS: Record<
+  string,
+  | 'tool.status.completed'
+  | 'tool.status.running'
+  | 'tool.status.failed'
+  | 'tool.status.error'
+  | 'tool.status.planned'
+> = {
+  completed: 'tool.status.completed',
+  running: 'tool.status.running',
+  failed: 'tool.status.failed',
+  error: 'tool.status.error',
+  planned: 'tool.status.planned',
 }
-const TOOL_LABEL: Record<string, string> = { read: '读取', write: '写入', edit: '编辑', shell: '命令' }
+const TOOL_KEYS: Record<string, 'tool.name.read' | 'tool.name.write' | 'tool.name.edit' | 'tool.name.shell'> =
+  {
+    read: 'tool.name.read',
+    write: 'tool.name.write',
+    edit: 'tool.name.edit',
+    shell: 'tool.name.shell',
+  }
 
 export class ToolCard implements Component {
   private readonly box: Box
@@ -86,13 +100,16 @@ export class ToolCard implements Component {
 
   constructor(
     node: ToolNode,
-    options: { collapsed?: boolean; ansi?: Ansi; onAction?(actionId: string): void } = {},
+    options: { collapsed?: boolean; ansi?: Ansi; onAction?(actionId: string): void; locale?: string } = {},
   ) {
     const ansi = options.ansi ?? createAnsi('none')
     this.onAction = options.onAction ?? (() => {})
+    const locale = options.locale ?? 'en'
     const summary = node.summary.replace(/\s+/g, ' ').trim()
-    const name = TOOL_LABEL[node.name] ?? escapeControl(node.name)
-    const status = STATUS_LABEL[node.status] ?? escapeControl(node.status)
+    const toolKey = TOOL_KEYS[node.name]
+    const name = toolKey ? tt(toolKey, locale) : escapeControl(node.name)
+    const statusKey = STATUS_KEYS[node.status]
+    const status = statusKey ? tt(statusKey, locale) : escapeControl(node.status)
     const colour = STATUS_COLOR[node.status]
     const paint = colour === undefined ? (s: string) => s : ansi.fg.bind(ansi, colour)
     const glyph = paint(STATUS_GLYPH[node.status] ?? '·')
