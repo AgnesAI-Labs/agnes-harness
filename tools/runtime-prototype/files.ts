@@ -111,7 +111,7 @@ export const GENERATED_FILES = [
   'packages/protocol/src/runtime/public.ts',
   'packages/protocol/src/runtime/validation.ts',
   'packages/protocol/gen/ts/runtime-public.ts',
-  ...Array.from({ length: 24 }, (_, index) => `packages/protocol/gen/ts/runtime-public-${index + 1}.ts`),
+  ...Array.from({ length: 25 }, (_, index) => `packages/protocol/gen/ts/runtime-public-${index + 1}.ts`),
   'packages/protocol/gen/ts/runtime-catalog.ts',
   'packages/protocol/gen/ts/runtime-client-transport.ts',
   'packages/protocol/gen/ts/runtime-artifact-policy.ts',

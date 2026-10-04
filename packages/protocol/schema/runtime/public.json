@@ -24355,6 +24355,29 @@
             }
           ]
         },
+        "billing": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "usdMicros": {
+              "$ref": "prototype.json#/$defs/UInt53"
+            },
+            "source": {
+              "enum": ["gateway", "estimated"]
+            },
+            "subscription": {
+              "type": "boolean"
+            }
+          },
+          "required": ["usdMicros", "source", "subscription"]
+        },
+        "credits": {
+          "type": "number",
+          "minimum": 0
+        },
+        "creditSource": {
+          "enum": ["gateway", "estimated"]
+        },
         "replacesFactIds": {
           "type": "array",
           "items": {
@@ -40854,10 +40877,10 @@
     "UIRegistryResolveRequest": 2,
     "UpgradeCheckpoint": 2,
     "UsageFact": 2,
-    "UsageMeasurement": 2,
+    "UsageMeasurement": 3,
     "UsageMirrorValue": 2,
     "UsageQueryResult": 2,
-    "UsageRecordRequest": 2,
+    "UsageRecordRequest": 3,
     "VersionedRef": 2,
     "VersionedState": 2,
     "ViewAction": 2,

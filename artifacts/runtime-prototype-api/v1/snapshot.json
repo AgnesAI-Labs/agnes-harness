@@ -165,7 +165,7 @@
     },
     {
       "path": "packages/protocol/schema/runtime/public.json",
-      "sha256": "70726f48345a5bf6fc869354da947ee2e77190ba32bcc39fd95c7f979897716b"
+      "sha256": "db050e2a6e9bf10cdac3f9f70dbb5ddfdca19b5b9c7a9590af53e47458cf354d"
     },
     {
       "path": "packages/protocol/schema/runtime/simple-loop.schema.json",
@@ -419,43 +419,43 @@
     },
     {
       "path": "packages/protocol/gen/ts/runtime-public-10.ts",
-      "sha256": "5ac3ae3005387685e39f7edc565dad4c27dc1f71b950971f7fcc0ebd369afa3f"
+      "sha256": "f87351ec717c0c19e8ef06e521f2cc436a55b6873fc871182d9b4332aacb8f88"
     },
     {
       "path": "packages/protocol/gen/ts/runtime-public-11.ts",
-      "sha256": "aff2bf93611d74eedca193ad97eb7b98271a33beffddf22b51210910763800f0"
+      "sha256": "f4e609233101cf202df95c49c1698c051a8d47966275e8907a6611ad674154bb"
     },
     {
       "path": "packages/protocol/gen/ts/runtime-public-12.ts",
-      "sha256": "9e9f9b4ed0ebe4ba403449b68f8072d5cc71f70cc7a0cf04f81f996f20b3b10b"
+      "sha256": "5fd89233d461cb24d2f13c3f4ffc7b9d6a34c8772f75acecd6d8c527ca77c5ac"
     },
     {
       "path": "packages/protocol/gen/ts/runtime-public-13.ts",
-      "sha256": "b447df765f82c868d0c625b64c20999953c1632365c408e7614d9bcd34e5a7ee"
+      "sha256": "776ae797bab2d337422f0bfd6f309e6a892afed0f45942d4f118d8ae29e42ae5"
     },
     {
       "path": "packages/protocol/gen/ts/runtime-public-14.ts",
-      "sha256": "c56583aaac3fcb67f44000b7de8ecb1afe35a4f99e9b860dae36fc1f4907293b"
+      "sha256": "7d8a1856eb1229c4817134159b529ca49ba2aee750a661f9649f7b7d41c1dc3f"
     },
     {
       "path": "packages/protocol/gen/ts/runtime-public-15.ts",
-      "sha256": "921ad9faed195e58a7bf83fb7abc10f551091ee2f7478c9aca571fd774ea0b2d"
+      "sha256": "af2a3b06a4f97fed1ce591373bb9f495398edc4f53ae93fb7c47753d61c092b0"
     },
     {
       "path": "packages/protocol/gen/ts/runtime-public-16.ts",
-      "sha256": "ae31117b9f4156276e42e564618200e7003b3e34409a795f218abf66b1f65ce5"
+      "sha256": "015394b38e7255bd1131f24db88d40484430f77cfc080b915e3757a9fb31004b"
     },
     {
       "path": "packages/protocol/gen/ts/runtime-public-17.ts",
-      "sha256": "0fac21159a6f530b3a3a73578bcee57a43d2188fa24a65c7781b7d43cf8c1afa"
+      "sha256": "975f677b935c65238fcb597c06f2f731b9509bc94af4e112612e9949b5d109aa"
     },
     {
       "path": "packages/protocol/gen/ts/runtime-public-18.ts",
-      "sha256": "879b9727aee3bbdff77dc526647c9f95ed14a0bbc54694f8ed2a0d2f656d1ad8"
+      "sha256": "6e504654b7d5613d650364dfdc7465309855641c0ac486c113d7afefe27ecba7"
     },
     {
       "path": "packages/protocol/gen/ts/runtime-public-19.ts",
-      "sha256": "0b70c5f23511c214ca40a6ea3986b50ce5f1920bf29f85137c5140d84fe7ac8d"
+      "sha256": "4c30ac91cdffa0a51a1adc7b55d708c686e9fb79de8b7c8b9712b1963a70790c"
     },
     {
       "path": "packages/protocol/gen/ts/runtime-public-2.ts",
@@ -463,23 +463,27 @@
     },
     {
       "path": "packages/protocol/gen/ts/runtime-public-20.ts",
-      "sha256": "6f981cfce1a3366924cf348544410859504e79c756c68a343c92d853cfacae4e"
+      "sha256": "c680dcca34299a47a92af6938e7967d059cbd42787e5424db278416588cd99c5"
     },
     {
       "path": "packages/protocol/gen/ts/runtime-public-21.ts",
-      "sha256": "2a26ccc26eb2159da8e13db24ae653c7edee4f74013c6d198bccdb4791703bf6"
+      "sha256": "8e13fb884d6ba5b52581c8c79358ae346704795a8411c37e506bcb719d2e8e04"
     },
     {
       "path": "packages/protocol/gen/ts/runtime-public-22.ts",
-      "sha256": "a0bdf46ccf2bdb9b24406ef440e1ba0142ab342c8e1e96aa705fac161e42d3ec"
+      "sha256": "6d12ea4dfe13eec1d2796795b4daad3c90429cbd97708c411e50c1f3a80be16c"
     },
     {
       "path": "packages/protocol/gen/ts/runtime-public-23.ts",
-      "sha256": "db50839bab8212742ab32611558583b97cd0e19c5423282c03042e871ed6d511"
+      "sha256": "c83d4ec8a383e6788907b55b0819fbc5ed5634e74f13bc859d74b5209bc34a07"
     },
     {
       "path": "packages/protocol/gen/ts/runtime-public-24.ts",
-      "sha256": "05c9a41bdf1cc5e9c76c96aee35c9c0a2b321e5f0be24eb0e0637731143df346"
+      "sha256": "ed3ce504d509e9ed71e6359bfb9480e9ab79d339f9325286887424d082a6b9d9"
+    },
+    {
+      "path": "packages/protocol/gen/ts/runtime-public-25.ts",
+      "sha256": "b6970a597b05930258821b9597a4c4d60f582b65ba98da800c3abede0c345136"
     },
     {
       "path": "packages/protocol/gen/ts/runtime-public-3.ts",
@@ -511,11 +515,11 @@
     },
     {
       "path": "packages/protocol/gen/ts/runtime-public.ts",
-      "sha256": "1a150f237beb9594a3be00ef40ac70033b118ab283e9eded1eb50486ab94e3eb"
+      "sha256": "96b3b027b7c8299346b73ffbff1b0ba7b74428446ba1048dd0023a339dd121ef"
     },
     {
       "path": "packages/protocol/gen/ts/runtime-schema-refs.ts",
-      "sha256": "7f20a987fd101f07a7ce31bafbc0578978eb8d4cbf14dff6c7074a1bb9f28a1d"
+      "sha256": "62382999e2dfe3619e4d077710c4b24ce2b318a8139faec69ff4a622523da68e"
     },
     {
       "path": "packages/protocol/gen/ts/runtime-wire-types.ts",
@@ -900,43 +904,43 @@
       },
       {
         "path": "packages/protocol/gen/ts/runtime-public-10.ts",
-        "sha256": "5ac3ae3005387685e39f7edc565dad4c27dc1f71b950971f7fcc0ebd369afa3f"
+        "sha256": "f87351ec717c0c19e8ef06e521f2cc436a55b6873fc871182d9b4332aacb8f88"
       },
       {
         "path": "packages/protocol/gen/ts/runtime-public-11.ts",
-        "sha256": "aff2bf93611d74eedca193ad97eb7b98271a33beffddf22b51210910763800f0"
+        "sha256": "f4e609233101cf202df95c49c1698c051a8d47966275e8907a6611ad674154bb"
       },
       {
         "path": "packages/protocol/gen/ts/runtime-public-12.ts",
-        "sha256": "9e9f9b4ed0ebe4ba403449b68f8072d5cc71f70cc7a0cf04f81f996f20b3b10b"
+        "sha256": "5fd89233d461cb24d2f13c3f4ffc7b9d6a34c8772f75acecd6d8c527ca77c5ac"
       },
       {
         "path": "packages/protocol/gen/ts/runtime-public-13.ts",
-        "sha256": "b447df765f82c868d0c625b64c20999953c1632365c408e7614d9bcd34e5a7ee"
+        "sha256": "776ae797bab2d337422f0bfd6f309e6a892afed0f45942d4f118d8ae29e42ae5"
       },
       {
         "path": "packages/protocol/gen/ts/runtime-public-14.ts",
-        "sha256": "c56583aaac3fcb67f44000b7de8ecb1afe35a4f99e9b860dae36fc1f4907293b"
+        "sha256": "7d8a1856eb1229c4817134159b529ca49ba2aee750a661f9649f7b7d41c1dc3f"
       },
       {
         "path": "packages/protocol/gen/ts/runtime-public-15.ts",
-        "sha256": "921ad9faed195e58a7bf83fb7abc10f551091ee2f7478c9aca571fd774ea0b2d"
+        "sha256": "af2a3b06a4f97fed1ce591373bb9f495398edc4f53ae93fb7c47753d61c092b0"
       },
       {
         "path": "packages/protocol/gen/ts/runtime-public-16.ts",
-        "sha256": "ae31117b9f4156276e42e564618200e7003b3e34409a795f218abf66b1f65ce5"
+        "sha256": "015394b38e7255bd1131f24db88d40484430f77cfc080b915e3757a9fb31004b"
       },
       {
         "path": "packages/protocol/gen/ts/runtime-public-17.ts",
-        "sha256": "0fac21159a6f530b3a3a73578bcee57a43d2188fa24a65c7781b7d43cf8c1afa"
+        "sha256": "975f677b935c65238fcb597c06f2f731b9509bc94af4e112612e9949b5d109aa"
       },
       {
         "path": "packages/protocol/gen/ts/runtime-public-18.ts",
-        "sha256": "879b9727aee3bbdff77dc526647c9f95ed14a0bbc54694f8ed2a0d2f656d1ad8"
+        "sha256": "6e504654b7d5613d650364dfdc7465309855641c0ac486c113d7afefe27ecba7"
       },
       {
         "path": "packages/protocol/gen/ts/runtime-public-19.ts",
-        "sha256": "0b70c5f23511c214ca40a6ea3986b50ce5f1920bf29f85137c5140d84fe7ac8d"
+        "sha256": "4c30ac91cdffa0a51a1adc7b55d708c686e9fb79de8b7c8b9712b1963a70790c"
       },
       {
         "path": "packages/protocol/gen/ts/runtime-public-2.ts",
@@ -944,23 +948,27 @@
       },
       {
         "path": "packages/protocol/gen/ts/runtime-public-20.ts",
-        "sha256": "6f981cfce1a3366924cf348544410859504e79c756c68a343c92d853cfacae4e"
+        "sha256": "c680dcca34299a47a92af6938e7967d059cbd42787e5424db278416588cd99c5"
       },
       {
         "path": "packages/protocol/gen/ts/runtime-public-21.ts",
-        "sha256": "2a26ccc26eb2159da8e13db24ae653c7edee4f74013c6d198bccdb4791703bf6"
+        "sha256": "8e13fb884d6ba5b52581c8c79358ae346704795a8411c37e506bcb719d2e8e04"
       },
       {
         "path": "packages/protocol/gen/ts/runtime-public-22.ts",
-        "sha256": "a0bdf46ccf2bdb9b24406ef440e1ba0142ab342c8e1e96aa705fac161e42d3ec"
+        "sha256": "6d12ea4dfe13eec1d2796795b4daad3c90429cbd97708c411e50c1f3a80be16c"
       },
       {
         "path": "packages/protocol/gen/ts/runtime-public-23.ts",
-        "sha256": "db50839bab8212742ab32611558583b97cd0e19c5423282c03042e871ed6d511"
+        "sha256": "c83d4ec8a383e6788907b55b0819fbc5ed5634e74f13bc859d74b5209bc34a07"
       },
       {
         "path": "packages/protocol/gen/ts/runtime-public-24.ts",
-        "sha256": "05c9a41bdf1cc5e9c76c96aee35c9c0a2b321e5f0be24eb0e0637731143df346"
+        "sha256": "ed3ce504d509e9ed71e6359bfb9480e9ab79d339f9325286887424d082a6b9d9"
+      },
+      {
+        "path": "packages/protocol/gen/ts/runtime-public-25.ts",
+        "sha256": "b6970a597b05930258821b9597a4c4d60f582b65ba98da800c3abede0c345136"
       },
       {
         "path": "packages/protocol/gen/ts/runtime-public-3.ts",
@@ -992,11 +1000,11 @@
       },
       {
         "path": "packages/protocol/gen/ts/runtime-public.ts",
-        "sha256": "1a150f237beb9594a3be00ef40ac70033b118ab283e9eded1eb50486ab94e3eb"
+        "sha256": "96b3b027b7c8299346b73ffbff1b0ba7b74428446ba1048dd0023a339dd121ef"
       },
       {
         "path": "packages/protocol/gen/ts/runtime-schema-refs.ts",
-        "sha256": "7f20a987fd101f07a7ce31bafbc0578978eb8d4cbf14dff6c7074a1bb9f28a1d"
+        "sha256": "62382999e2dfe3619e4d077710c4b24ce2b318a8139faec69ff4a622523da68e"
       },
       {
         "path": "packages/protocol/gen/ts/runtime-wire-types.ts",
@@ -1120,7 +1128,7 @@
       },
       {
         "path": "packages/protocol/schema/runtime/public.json",
-        "sha256": "70726f48345a5bf6fc869354da947ee2e77190ba32bcc39fd95c7f979897716b"
+        "sha256": "db050e2a6e9bf10cdac3f9f70dbb5ddfdca19b5b9c7a9590af53e47458cf354d"
       },
       {
         "path": "packages/protocol/schema/runtime/simple-loop.schema.json",
@@ -1404,16 +1412,16 @@
       },
       {
         "path": "tools/runtime-prototype/files.ts",
-        "sha256": "b3c36c24faccd01394a00a9933e6925ac6941706b3a60b2afa48b2512c550c4d"
+        "sha256": "5ebf8d6be13de3bc7922b8e1d9a6cc65568c39b4076454aeb60f407f20df877a"
       },
       {
         "path": "tools/runtime-prototype/tsconfig.compile.json",
         "sha256": "5368e00eb1fe320fa21e015f95911b6af6ca8a3c405c3be6585ff521c4832ce0"
       }
     ],
-    "inputDigest": "95e8cd50f303633cd50d35242f61bf785296d4231ae53c8a0c5ffb45a67551a6",
+    "inputDigest": "caac8c88e74bc1f4aaf88dad4b62289f037f670fd353628d56534217b34c9d6e",
     "diagnostics": [],
-    "reportDigest": "cea646afd7c8b2004a0ce42716544a9a8f503b7de9e75a9b8c065867b277ed07"
+    "reportDigest": "103c88bdc0700dd27efb8ad03e3a978b707f7f994dbb4f0f28f0404e567d132f"
   },
-  "snapshotDigest": "4903424bccca052448f02ef2a3f7a110bde6e04c63d9f405e73ea402cca4f17d"
+  "snapshotDigest": "a1c4a4ac037b240922d8857881500e3c5a00e305488204a7d8f4854afb43efe7"
 }
