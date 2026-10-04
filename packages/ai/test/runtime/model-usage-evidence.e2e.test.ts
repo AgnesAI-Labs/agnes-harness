@@ -7,6 +7,7 @@ import { canonicalJsonDigest, validateRuntime } from '@agnes/protocol/runtime'
 import { expect, it, vi } from 'vitest'
 import type { WireEvent } from '../../src/adapter.js'
 import { PiAdapter } from '../../src/adapters/pi/index.js'
+import { createModelAdapterFactory } from '../../src/runtime/providers/model-adapter.js'
 import { estimateBilling, estimateCredits } from '../../src/usage.js'
 import { modelFixture } from './model-fixture.js'
 
@@ -154,4 +155,24 @@ it.each([
     }
   },
   20000,
+)
+
+it.each([0, -1, Number.NaN, Number.POSITIVE_INFINITY])(
+  'refuses an explicitly invalid deployment credit rate %s before installation',
+  async (rate) => {
+    const directory = mkdtempSync(join(tmpdir(), 'model-invalid-rate-'))
+    const fixture = await modelFixture(
+      'openai-completions',
+      'http://127.0.0.1:1/v1',
+      join(directory, 'effect.json'),
+    )
+    try {
+      expect(() => createModelAdapterFactory({ ...fixture.deployment, creditsPerUsd: rate })).toThrow(
+        'Missing model source owner',
+      )
+    } finally {
+      await fixture.provider.close('shutdown')
+      rmSync(directory, { recursive: true, force: true })
+    }
+  },
 )

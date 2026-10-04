@@ -148,6 +148,7 @@ export function createModelAdapterFactory(
     !deployment.config ||
     !deployment.usage ||
     !deployment.usageAuthorityId ||
+    !(Number.isFinite(deployment.creditsPerUsd ?? 1) && (deployment.creditsPerUsd ?? 1) > 0) ||
     !deployment.units ||
     Object.values(deployment.units).some((unit) => !unit) ||
     ['installed', 'load', 'current', 'withCredential', 'beforeSend', 'save', 'lookup'].some(
