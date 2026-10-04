@@ -26,6 +26,11 @@ import {
   type ServiceOperation,
   validateRuntime,
 } from '@agnes/protocol/runtime'
+import {
+  type HostRuntimeAdmissionInstallation,
+  type HostRuntimeRunRequest,
+  selectHostRuntimeAdmission,
+} from './entry-admission.js'
 import type { HostPermissionGrant, HostSelectedProvider } from './scoped-dependencies.js'
 
 // SHA-256 of the bundled package runtime sources, pinned by the product source guard.
@@ -37,6 +42,9 @@ export const DEFAULT_PACKAGE_RUNTIME_DIGEST =
 export type HostRuntimeServices = Readonly<{
   dependencies: ScopedDependencies
   contextFor(binding: BindingRef): CallContext
+  runAdmission(
+    request: HostRuntimeRunRequest,
+  ): Promise<Outcome<import('@agnes/protocol/runtime').AdmissionProbe>>
 }>
 
 type PackageResult =
@@ -118,7 +126,12 @@ function call(
 }
 
 /** Select bundled Q/C defaults without opening a container or granting maintenance capabilities. */
-export function selectDefaultHostServices(dataDir: string, clock: () => number) {
+export function selectDefaultHostServices(
+  dataDir: string,
+  clock: () => number,
+  installation?: HostRuntimeAdmissionInstallation,
+) {
+  const admission = selectHostRuntimeAdmission(installation, clock)
   const generationId = `host:${randomUUID()}`
   const authorizationRef = randomUUID()
   const scope = Object.freeze({
@@ -247,6 +260,7 @@ export function selectDefaultHostServices(dataDir: string, clock: () => number) 
       },
     },
   ]
+  providers.push(...admission.providers)
   const grants: HostPermissionGrant[] = providers.map((provider) => ({
     authorizationRef,
     ownerId: provider.ownerId,
@@ -257,8 +271,15 @@ export function selectDefaultHostServices(dataDir: string, clock: () => number) 
     generationId,
     providers,
     grants,
-    stop: () => lifetime.abort(),
+    stop: () => {
+      lifetime.abort()
+      admission.stop()
+    },
+    closeAdmission: admission.close,
+    runAdmission: admission.run,
     contextFor(selected: BindingRef): CallContext {
+      if (admission.providers.some((provider) => same(provider.binding, selected)))
+        throw new Error('Runtime admission requires an original local-owner context')
       if (lifetime.signal.aborted || !providers.some((provider) => same(provider.binding, selected)))
         throw new Error('Host runtime services are closed or the binding is not selected')
       return {

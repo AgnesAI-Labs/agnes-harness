@@ -1267,7 +1267,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // The Kernel receives the spawned-child turn admission. Measured 4193, exact, no spare (+1).
   // A returning package must not be served a cached generation bound to revoked leases (+7), and the
   // full-access read-only roots reach the fence from the assembly (+7). Measured 4207, exact.
-  'packages/host/src/assemble': 4239,
+  // Wire the optional deployment installation through the existing service root; measured +3, exact.
+  'packages/host/src/assemble': 4242,
   // P1: generated-schema validators and duplicate projection-name refusal; measured exact cap.
   // F1 adds Surface JSON/identity validation and lock snapshot validation.
   // PM4 adds strict management DTO validation and method permission/identity contracts; exact total.
@@ -2788,7 +2789,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // Publication fences are confirmed through locked source owners. Measured 78258, exact, no spare.
   // Original no-hook Receipt cold source verifies persisted Action/Attempt/dispatch/intake/commit relations.
   // Measured 78585 (+327), exact cap, no spare.
-  'packages/host/src': 78585,
+  // Explicit worker admission is routed through a deployment slot. Measured 78823, exact, no spare.
+  'packages/host/src': 78823,
   'packages/host/src/ext-host/service-invocation': 247,
   // T5.2's permission projector is kept independently bounded so later extension-host work cannot
   // hide in the package-wide increment. Measured source: 86 lines.

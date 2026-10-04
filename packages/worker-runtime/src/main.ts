@@ -57,6 +57,7 @@ import {
   type WorkerResourceSlot,
 } from './commands.js'
 import type {
+  RuntimeRunCommandFrame,
   SessionCommandFrame,
   SessionOpenFrame,
   SessionReplyFrame,
@@ -73,6 +74,7 @@ import {
   sessionScopedKey,
 } from './hosted-sessions.js'
 import { createMcpRowRuntime } from './mcp-row-runtime.js'
+import { handleRuntimeRunCommand, isRuntimeRunMethod } from './runtime-admission.js'
 import { createRuntimeTargetSlot, type RuntimeTargetApplyPort } from './runtime-target-slot.js'
 import { createWorkerServiceAuthority } from './service-authority.js'
 import { SharedSessionChannel } from './shared-session-channel.js'
@@ -80,6 +82,7 @@ import { createMcpStatusFrameBuffer } from './status-frame-buffer.js'
 
 /** Runtime capabilities already bootstrapped for this worker; reuse them without reconnecting. */
 export type WorkerHostSkillResources = Readonly<{
+  runtimeAdmissionInstallation?: HostOptions['runtimeAdmissionInstallation']
   mcpManage?: NonNullable<HostOptions['mcpManage']>
   pluginManage?: NonNullable<HostOptions['pluginManage']>
   skillInstall?: NonNullable<HostOptions['skillInstall']>
@@ -100,6 +103,8 @@ export type WorkerHostLike = Host
 
 /** Host assembly uses the verified filesystem loader by default; tests may inject a loader. */
 export type WorkerHostDeps = {
+  /** Executable-owned slot; no environment variable or wire frame can install an owner. */
+  runtimeAdmissionInstallation?: HostOptions['runtimeAdmissionInstallation']
   loader?: PackageLoader
   extensionLoader?: { import(file: string): Promise<Record<string, unknown>> }
   hostRoot?: string
@@ -393,6 +398,9 @@ export async function runWorker(
     ? Promise.resolve(undefined)
     : deps.buildHost
       ? deps.buildHost(profile, prompter, {
+          ...(deps.runtimeAdmissionInstallation
+            ? { runtimeAdmissionInstallation: deps.runtimeAdmissionInstallation }
+            : {}),
           skillInstall,
           mcpManage,
           pluginManage,
@@ -416,6 +424,9 @@ export async function runWorker(
                 }
               : createLoader({ cacheDir: profile.cacheDir, hostRoot, agnesVersion: '0.0.0' }))
           return createHost(profile, {
+            ...(deps.runtimeAdmissionInstallation
+              ? { runtimeAdmissionInstallation: deps.runtimeAdmissionInstallation }
+              : {}),
             dataDir: profile.dataDir,
             profileDir,
             workspaceRoot: cwd,
@@ -615,6 +626,10 @@ export async function runWorker(
         }
         const resources = resourceSlot.generation
         const command = frame as WorkerCommandFrame
+        if (isRuntimeRunMethod(command.method)) {
+          if (workerKind !== 'session') throw new Error('Runtime run entry requires a session worker')
+          return handleRuntimeRunCommand(requireHost(), command as RuntimeRunCommandFrame)
+        }
         if (command.method === 'resource.stale') {
           resourceSlot.staleMarks++
           return { ok: true }

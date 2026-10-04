@@ -2331,9 +2331,11 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
     // The selected services share one fixed Cordis root alongside the existing runtime.
     // Construction is mandatory: an incomplete root follows the same startup rollback as seams.
     step = 'runtime-services'
-    const selectedServices = selectDefaultHostServices(dataDir, clock)
+    const selectedServices = selectDefaultHostServices(dataDir, clock, deps.runtimeAdmissionInstallation)
     const serviceRoot = createHostScopedDependencies(selectedServices.grants)
     let servicesPublished = false
+    // Covers failure before Cordis constructs the installation's identity row, too.
+    rollback.push('runtime-admission', selectedServices.closeAdmission)
     rollback.push('runtime-services', async () => {
       selectedServices.stop()
       if (!servicesPublished) {
@@ -2356,6 +2358,8 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
     const runtimeServices = Object.freeze({
       dependencies: serviceRoot.dependencies,
       contextFor: selectedServices.contextFor,
+      runAdmission: (request: import('./runtime/entry-admission.js').HostRuntimeRunRequest) =>
+        selectedServices.runAdmission(serviceRoot.dependencies, request),
     })
 
     // 10 ready
