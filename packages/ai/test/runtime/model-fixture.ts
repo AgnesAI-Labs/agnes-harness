@@ -123,6 +123,7 @@ export async function modelFixture(
   journal: string,
   cost?: ModelRecord['cost'],
   legacyUsage = false,
+  creditsPerUsd?: number,
 ) {
   const usage = usageCodec(legacyUsage)
   const scope = {
@@ -239,6 +240,7 @@ export async function modelFixture(
     config,
     usage,
     usageAuthorityId: 'fixture-usage',
+    ...(creditsPerUsd === undefined ? {} : { creditsPerUsd }),
     packageDigest: 'c'.repeat(64),
     units: {
       input: 'fixture.input-token',

@@ -30,6 +30,8 @@ export type ModelAdapterDeployment = {
   readonly config: AuthorSchema<EmptyAuthorConfig>
   readonly usage: AuthorSchema<UsageMeasurement>
   readonly usageAuthorityId: string
+  /** Selected deployment's legacy credit rate; absent leaves estimated credits unknown. */
+  readonly creditsPerUsd?: number
   readonly units: Readonly<{
     input: string
     output: string
