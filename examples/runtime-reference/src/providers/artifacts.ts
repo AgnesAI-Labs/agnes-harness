@@ -1,4 +1,4 @@
-import { createHash, createHmac, randomUUID } from 'node:crypto'
+import { createHash, randomBytes, randomUUID } from 'node:crypto'
 import { DatabaseSync } from 'node:sqlite'
 import type {
   ArtifactAccessPort,
@@ -20,6 +20,7 @@ import {
   type RuntimeWireTypes,
   validateRuntime,
 } from '@agnes/protocol/runtime'
+import type { createReferenceArtifactTicketKeyPort } from './artifact-ticket-key.js'
 import { openTransfer, type TransferMaintenance } from './blob-transfer.js'
 
 export const ARTIFACTS_PROVIDER = { id: 'reference.artifacts', contract: 'agh.artifacts' } as const
@@ -36,6 +37,9 @@ export const BLOB_DEPENDENCY: ServiceRequirement = {
 
 type Detail = keyof typeof RuntimeErrorDetails
 type Permission = Wire.ArtifactAccessGrantValue['permissions'][number]
+/** The reference ticket key broker as its consumer sees it: seal and open, never the key material. */
+type TicketKeyPort = Pick<ReturnType<typeof createReferenceArtifactTicketKeyPort>, 'sealNonce' | 'openNonce'>
+type Envelope = Parameters<TicketKeyPort['openNonce']>[0]['envelope']
 
 class Refusal extends Error {
   readonly error: Wire.RuntimeError
@@ -98,8 +102,23 @@ export type ArtifactsStoreOptions = Readonly<{
   dependencies: ScopedDependencies
   /** The Host's current check of a caller holding a grant. Without one every access is refused as blocked. */
   authorize?: (context: CallContext, grant: Wire.ArtifactAccessGrantValue) => boolean
-  /** Secret that ticket nonces are derived from. Without one, openDownload is refused as blocked. */
-  ticketKey?: Uint8Array
+  /**
+   * The ticket key broker, which holds every key version, and the installation it serves. Supplied only
+   * by a trusted assembly whose broker verifies the delegated identity; without it, openDownload is
+   * refused as blocked.
+   */
+  ticketKeys?: Readonly<{
+    port: TicketKeyPort
+    binding: Parameters<TicketKeyPort['sealNonce']>[0]['binding']
+    tenantId: Wire.Id
+    /** The selected blob authority the broker installation names. */
+    authorityId: Wire.Id
+    /**
+     * The installed artifacts owner's call for one client call, issued by the trusted assembly with that
+     * call's signal. This store never builds an owner identity itself.
+     */
+    delegate: (context: CallContext) => CallContext
+  }>
   /** A profile's ticket lifetime. The contract's own lifetime still caps it. */
   ticketTtlMs?: number
   now?: () => number
@@ -119,9 +138,10 @@ export type ArtifactsStoreOptions = Readonly<{
 
 /**
  * Versions point at a BlobRef of the selected blob service. Grants are stored whole. A ticket row keeps
- * no nonce: the nonce is an HMAC of the ticket id, so a repeated request rebuilds the same URL. Every
- * revoke and revokeGrant that changes something appends one row to the revocation log, whose seq only
- * grows. The authority row says whether the store takes business writes: only while it serves.
+ * its nonce only as the broker's envelope under the key version that sealed it, with the digest of the
+ * nonce bytes, so a repeated request rebuilds the same URL through the broker. Every revoke and
+ * revokeGrant that changes something appends one row to the revocation log, whose seq only grows. The
+ * authority row says whether the store takes business writes: only while it serves.
  */
 const TABLES = `
 CREATE TABLE IF NOT EXISTS artifact_versions (
@@ -139,11 +159,16 @@ CREATE TABLE IF NOT EXISTS access_grants (
   version INTEGER NOT NULL,
   value TEXT NOT NULL
 );
-CREATE TABLE IF NOT EXISTS download_tickets (
+CREATE TABLE IF NOT EXISTS sealed_tickets (
   actor TEXT NOT NULL,
   request_id TEXT NOT NULL,
   fingerprint TEXT NOT NULL,
   ticket_id TEXT NOT NULL UNIQUE,
+  nonce_digest TEXT NOT NULL,
+  key_version TEXT NOT NULL,
+  iv BLOB NOT NULL,
+  ciphertext BLOB NOT NULL,
+  tag BLOB NOT NULL,
   artifact_id TEXT NOT NULL,
   version INTEGER NOT NULL,
   grant_revision INTEGER NOT NULL,
@@ -191,11 +216,18 @@ type VersionRow = {
 type TicketRow = {
   fingerprint: string
   ticket_id: string
+  nonce_digest: string
+  key_version: string
+  iv: Uint8Array
+  ciphertext: Uint8Array
+  tag: Uint8Array
   artifact_id: string
   version: number
   grant_revision: number
   expires_ms: number
 }
+
+const sha256 = (value: string | Uint8Array) => createHash('sha256').update(value).digest('hex')
 
 /** Opens the store over the blob service the container selects; a selection without a read port is refused. */
 export function openArtifactsStore(path: string, options: ArtifactsStoreOptions) {
@@ -221,13 +253,16 @@ export function openArtifactsStore(path: string, options: ArtifactsStoreOptions)
   const live = () => {
     if (!open) refuse('blocked', 'artifacts store is closed')
   }
+  const serving = () => {
+    const { role } = db.prepare('SELECT role FROM authority WHERE id = 1').get() as { role: string }
+    if (role !== 'serving') refuse('blocked', 'store is fenced or a transfer candidate')
+  }
   /** One transaction. A business write is gated: refused as blocked unless the store serves. */
   function atomically<T>(body: () => T, gated = true): T {
     live()
     db.exec('BEGIN IMMEDIATE')
     try {
-      const { role } = db.prepare('SELECT role FROM authority WHERE id = 1').get() as { role: string }
-      if (gated && role !== 'serving') refuse('blocked', 'store is fenced or a transfer candidate')
+      if (gated) serving()
       const result = body()
       db.exec('COMMIT')
       return result
@@ -317,12 +352,9 @@ export function openArtifactsStore(path: string, options: ArtifactsStoreOptions)
     }
   }
 
-  const nonceOf = (key: Uint8Array, ticketId: string) =>
-    createHmac('sha256', key).update(ticketId).digest('base64url')
-
-  const ticketOf = (key: Uint8Array, row: TicketRow): Wire.ArtifactDownloadTicket =>
+  const ticketOf = (row: TicketRow, nonce: Uint8Array): Wire.ArtifactDownloadTicket =>
     own('ArtifactDownloadTicket', {
-      url: `${RuntimeClientTransportWire.routes.download.path.replace('{ticketId}', encodeURIComponent(row.ticket_id))}?nonce=${nonceOf(key, row.ticket_id)}`,
+      url: `${RuntimeClientTransportWire.routes.download.path.replace('{ticketId}', encodeURIComponent(row.ticket_id))}?nonce=${Buffer.from(nonce).toString('base64url')}`,
       expiresAt: new Date(row.expires_ms).toISOString(),
       artifactId: row.artifact_id,
       version: row.version,
@@ -360,50 +392,94 @@ export function openArtifactsStore(path: string, options: ArtifactsStoreOptions)
       }),
 
     openDownload: (input, context) =>
-      attempt(context, () => {
-        const key = options.ticketKey ?? refuse('blocked', 'no ticket key is configured')
+      attempt(context, async () => {
+        const keys = options.ticketKeys ?? refuse('blocked', 'no ticket key broker is configured')
         const { requestId, input: target } = parse('ArtifactOpenDownloadRequest', input)
-        const { grant, row } = access(context, target.artifactId, target.version, 'download')
-        contentOf(row)
+        // Checked before and after every broker call. A fenced store or a candidate neither issues a
+        // ticket nor rebuilds one, so it asks no broker either.
+        const permitted = () => {
+          const { grant, row } = access(context, target.artifactId, target.version, 'download')
+          contentOf(row)
+          serving()
+          return grant
+        }
+        permitted()
         const actor = jcs({ principalRef: context.principalRef, scope: context.scope })
-        const fingerprint = createHash('sha256').update(jcs(target)).digest('hex')
-        return atomically(() => {
-          const prior = db
-            .prepare('SELECT * FROM download_tickets WHERE actor = ? AND request_id = ?')
+        const fingerprint = sha256(jcs(target))
+        const stored = () =>
+          db
+            .prepare('SELECT * FROM sealed_tickets WHERE actor = ? AND request_id = ?')
             .get(actor, requestId) as TicketRow | undefined
-          if (prior) {
-            if (prior.fingerprint !== fingerprint)
-              refuse('idempotency_conflict', 'request id already names another download')
-            if (now() >= prior.expires_ms) refuse('ticket_expired', 'download ticket expired')
-            return ticketOf(key, prior)
-          }
-          const issued: TicketRow = {
-            fingerprint,
-            ticket_id: randomUUID(),
-            artifact_id: target.artifactId,
-            version: target.version,
-            grant_revision: grant.revision,
-            expires_ms: now() + lifetime,
-          }
-          db.prepare(
-            `INSERT INTO download_tickets
-               (actor, request_id, fingerprint, ticket_id, artifact_id, version, grant_revision, expires_ms)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-          ).run(
-            actor,
-            requestId,
-            issued.fingerprint,
-            issued.ticket_id,
-            issued.artifact_id,
-            issued.version,
-            issued.grant_revision,
-            issued.expires_ms,
-          )
-          return ticketOf(key, issued)
+        const aadOf = (ticketId: Wire.Id, nonceDigest: string) => ({
+          ticketId,
+          tenantId: keys.tenantId,
+          authorityId: keys.authorityId,
+          nonceDigest,
         })
+        /** The stored ticket, opened under its own key version: rebuilt, never reissued or extended. */
+        const rebuilt = async (row: TicketRow) => {
+          if (row.fingerprint !== fingerprint)
+            refuse('idempotency_conflict', 'request id already names another download')
+          if (now() >= row.expires_ms) refuse('ticket_expired', 'download ticket expired')
+          const envelope: Envelope = {
+            keyVersion: row.key_version,
+            iv: row.iv,
+            ciphertext: row.ciphertext,
+            tag: row.tag,
+          }
+          const nonce = unwrap(
+            await keys.port.openNonce(
+              { binding: keys.binding, aad: aadOf(row.ticket_id, row.nonce_digest), envelope },
+              keys.delegate(context),
+            ),
+          )
+          permitted()
+          if (now() >= row.expires_ms) refuse('ticket_expired', 'download ticket expired')
+          return ticketOf(row, nonce)
+        }
+        const prior = stored()
+        if (prior) return rebuilt(prior)
+        const nonce = randomBytes(32)
+        const ticketId = randomUUID()
+        const nonceDigest = sha256(nonce)
+        const expires = now() + lifetime
+        // Sealed outside any transaction; the broker answers under its current key version.
+        const sealed = unwrap(
+          await keys.port.sealNonce(
+            { binding: keys.binding, aad: aadOf(ticketId, nonceDigest), nonce },
+            keys.delegate(context),
+          ),
+        )
+        const grant = permitted()
+        // A concurrent request with the same id may have stored its ticket first; that one is rebuilt.
+        const row = atomically(() => {
+          if (!stored())
+            db.prepare(
+              `INSERT INTO sealed_tickets (actor, request_id, fingerprint, ticket_id, nonce_digest, key_version,
+                 iv, ciphertext, tag, artifact_id, version, grant_revision, expires_ms)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            ).run(
+              actor,
+              requestId,
+              fingerprint,
+              ticketId,
+              nonceDigest,
+              sealed.keyVersion,
+              sealed.iv,
+              sealed.ciphertext,
+              sealed.tag,
+              target.artifactId,
+              target.version,
+              grant.revision,
+              expires,
+            )
+          return stored() as TicketRow
+        })
+        return row.ticket_id === ticketId ? ticketOf(row, nonce) : rebuilt(row)
       }),
 
     // ponytail: tickets are issued but not redeemed here; the download route belongs to another provider.
+    // artifact-ticket.v1, which names redeemDownload, is therefore never declared, broker or not.
     redeemDownload: (_request, context) =>
       attempt(context, () => refuse('operation_not_supported', 'this provider does not redeem tickets')),
   }
