@@ -89,6 +89,14 @@ const textContent = (node: UserNode): string =>
     .map((block) => block.text)
     .join('\n')
 
+function legacyUserContent(node: UserNode): string {
+  const images = node.content.filter((block) => block.type === 'image')
+  const unavailable = document.documentElement.lang.toLowerCase().startsWith('en')
+    ? 'Image preview unavailable in this view'
+    : '图片附件暂不可预览'
+  return [textContent(node), ...images.map(() => unavailable)].filter(Boolean).join('\n')
+}
+
 /** What an assistant node says; an attempt whose streamed text died with its process says so. */
 function assistantText(node: Extract<UINode, { kind: 'assistant' }>): string {
   if (node.lostChars === undefined || node.text !== '') return node.text
@@ -108,7 +116,14 @@ function fingerprint(node: UINode): string {
   switch (node.kind) {
     case 'user': {
       const body = textContent(node)
-      return `${node.kind}:${node.id}:${sampledPart(body)}`
+      const images = node.content
+        .filter((block) => block.type === 'image')
+        .map(
+          (block) =>
+            `${block.mimeType}:${block.data.length}:${block.data.slice(0, 16)}:${block.data.slice(-16)}`,
+        )
+        .join('|')
+      return `${node.kind}:${node.id}:${sampledPart(body)}:${images}`
     }
     case 'assistant':
       return `${node.kind}:${node.id}:${sampledPart(node.thinking)}:${sampledPart(node.text)}:${
@@ -198,7 +213,7 @@ function createEntry(node: UINode): Entry {
 
   if (node.kind === 'user') {
     const title = heading(element, 'node-label', '你')
-    const body = text(element, 'node-body', textContent(node))
+    const body = text(element, 'node-body', legacyUserContent(node))
     return {
       kind: node.kind,
       element,
@@ -206,7 +221,7 @@ function createEntry(node: UINode): Entry {
       update(next) {
         if (next.kind !== 'user') return
         updateText(title, '你')
-        updateText(body, textContent(next))
+        updateText(body, legacyUserContent(next))
       },
     }
   }

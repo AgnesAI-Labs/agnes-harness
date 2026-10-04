@@ -1,4 +1,5 @@
-import type { UINode, UITurn } from '@agnes/protocol'
+import type { ContentBlock, UINode, UITurn } from '@agnes/protocol'
+import { decodeSafeImage, USER_MESSAGE_IMAGE_LIMITS } from '@agnes/protocol-validation'
 import { useThread } from '@assistant-ui/react'
 import { type ReactNode, type RefObject, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { flushSync } from 'react-dom'
@@ -54,6 +55,61 @@ const toolLabels: Record<ToolNode['status'], string> = {
 // nonzero exit is the command's own answer, and what it printed is its output, not an error report.
 // A result cut before its last line has no marker and keeps the general wording.
 const SHELL_EXIT = /\n?\[exit (-?\d+)\](?: \[output truncated by sandbox\])?\s*$/
+const HISTORY_IMAGE_LIMITS = USER_MESSAGE_IMAGE_LIMITS
+
+function imageBlobBytes(bytes: Uint8Array): ArrayBuffer {
+  const copy = new ArrayBuffer(bytes.byteLength)
+  new Uint8Array(copy).set(bytes)
+  return copy
+}
+
+function UserMessageImage({
+  image,
+  index,
+  allowed,
+}: {
+  image: Extract<ContentBlock, { type: 'image' }>
+  index: number
+  allowed: boolean
+}) {
+  const [previewUrl, setPreviewUrl] = useState<string>()
+  const [unavailable, setUnavailable] = useState(false)
+  const english = document.documentElement.lang.toLowerCase().startsWith('en')
+  const { data, mimeType } = image
+  useEffect(() => {
+    if (!allowed) {
+      setUnavailable(true)
+      return
+    }
+    let url: string
+    try {
+      const decoded = decodeSafeImage({ data, mimeType }, HISTORY_IMAGE_LIMITS)
+      url = URL.createObjectURL(new Blob([imageBlobBytes(decoded.bytes)], { type: decoded.mime }))
+      setPreviewUrl(url)
+      setUnavailable(false)
+    } catch {
+      setUnavailable(true)
+      return
+    }
+    return () => URL.revokeObjectURL(url)
+  }, [allowed, data, mimeType])
+
+  if (unavailable)
+    return (
+      <span className="user-message-image-unavailable" role="status">
+        {english ? 'Image unavailable' : '图片无法显示'}
+      </span>
+    )
+  if (!previewUrl) return null
+  return (
+    <img
+      className="user-message-image"
+      src={previewUrl}
+      alt={english ? `Attached image ${index + 1}` : `历史图片 ${index + 1}`}
+      loading="lazy"
+    />
+  )
+}
 
 /** How a tool call's outcome is named and its result introduced, for the card and its detail. */
 export function toolOutcome(node: ToolNode): { label: string; section: string; text: string | undefined } {
@@ -81,14 +137,41 @@ const approvalStatus = (node: ApprovalNode) =>
     : approvalLabels[node.state]
 
 function UserMessage({ node }: { node: Extract<UINode, { kind: 'user' }> }) {
-  const value = node.content
+  let imageBytes = 0
+  const imageKeys = new Map<string, number>()
+  const text = node.content
     .filter((block) => block.type === 'text')
     .map((block) => block.text)
     .join('\n')
+  const images = node.content.filter((block) => block.type === 'image')
   return (
     <>
       <p className="node-label">你</p>
-      <div className="node-body">{value}</div>
+      <div className="node-body">
+        {text}
+        {images.map((block, index) => {
+          const decodedLength =
+            Math.floor((block.data.length * 3) / 4) -
+            (block.data.endsWith('==') ? 2 : block.data.endsWith('=') ? 1 : 0)
+          const allowed =
+            index < 4 &&
+            decodedLength > 0 &&
+            decodedLength <= HISTORY_IMAGE_LIMITS.maxBytesPerImage &&
+            imageBytes + decodedLength <= HISTORY_IMAGE_LIMITS.maxAggregateBytes
+          if (allowed) imageBytes += decodedLength
+          const imageKey = `${block.mimeType}:${block.data.length}:${block.data.slice(0, 16)}:${block.data.slice(-16)}`
+          const occurrence = imageKeys.get(imageKey) ?? 0
+          imageKeys.set(imageKey, occurrence + 1)
+          return (
+            <UserMessageImage
+              key={`${imageKey}:${occurrence}`}
+              image={block}
+              index={index}
+              allowed={allowed}
+            />
+          )
+        })}
+      </div>
     </>
   )
 }

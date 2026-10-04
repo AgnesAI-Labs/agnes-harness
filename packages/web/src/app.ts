@@ -1,5 +1,6 @@
 import {
   type ConfigSnapshot,
+  type ContentBlock,
   type ModelSettings,
   type PageSessionMeta,
   readSessionTitle,
@@ -86,6 +87,8 @@ function element<K extends keyof HTMLElementTagNameMap>(id: string, tag: K): HTM
 }
 const button = (id: string) => element(id, 'button')
 const composerDraftKey = 'agnes-web-composer-draft'
+// Keep image submissions below the daemon's WebSocket frame cap, including their JSON-RPC envelope.
+const MAX_WEBSOCKET_MESSAGE_BYTES = 2 * 1024 * 1024
 const savedComposerDraft = sessionStorage.getItem(composerDraftKey)
 const notice = element('notice', 'p')
 const conversation = element('conversation-shell', 'div')
@@ -277,6 +280,7 @@ const clientModules = await startClientModules({
   composerContainer: document.getElementById('composer-mount') ?? undefined,
   composer: {
     initialDraft: savedComposerDraft ?? '',
+    onAttachmentsChange: renderControls,
     onCancel: handleComposerCancel,
     onDraftChange: handleComposerDraftChange,
     onError: showError,
@@ -581,7 +585,8 @@ function renderControls(): void {
   document.body.classList.toggle('session-switching', sessionPending)
   const available = connected
   const busy = projection ? webView(projection).busy : false
-  const hasInput = composerRuntime.getDraft().trim().length > 0
+  const images = composerRuntime.getImageBlocks()
+  const hasInput = composerRuntime.getDraft().trim().length > 0 || images.length > 0
   const initialSubmissionPending = sending && pendingSessionKey !== undefined
   const action = composerActionPresentation({ busy, loading: sessionPending, sending })
   for (const control of notice.querySelectorAll<HTMLButtonElement>('[data-recovery-action]'))
@@ -592,6 +597,8 @@ function renderControls(): void {
   const selectedRecord = runtimeModels.find(
     (m) => m.route === knownSessionModel?.route && m.id === knownSessionModel?.id,
   )
+  const imageUnsupported =
+    images.length > 0 && selectedRecord?.input && !selectedRecord.input.includes('image')
   const composerView: ComposerView = {
     cancel: {
       disabled: !connected || !busy || stopping || sessionPending,
@@ -610,14 +617,21 @@ function renderControls(): void {
         }
       : knownSessionModel && !selectedModelAvailable()
         ? { kind: 'state', text: '当前模型已不可用，请重新选择模型' }
-        : composerHintPresentation({
-            connected,
-            configured,
-            hasSession: current !== undefined || draftingNew,
-            busy,
-            stopping,
-            loading: sessionPending,
-          }),
+        : imageUnsupported
+          ? {
+              kind: 'state',
+              text: document.documentElement.lang.toLowerCase().startsWith('en')
+                ? 'The selected model does not accept images. Choose a model with image input or remove the images.'
+                : '当前模型不支持图片输入。请切换到支持图片的模型，或移除图片。',
+            }
+          : composerHintPresentation({
+              connected,
+              configured,
+              hasSession: current !== undefined || draftingNew,
+              busy,
+              stopping,
+              loading: sessionPending,
+            }),
     input: {
       disabled:
         !available || (!current && !draftingNew) || stopping || sessionPending || initialSubmissionPending,
@@ -667,6 +681,8 @@ function renderControls(): void {
         !selectedModelAvailable() ||
         (!current && !canStartDraft) ||
         !hasInput ||
+        composerRuntime.hasPendingImages() ||
+        Boolean(imageUnsupported) ||
         sending ||
         stopping ||
         sessionPending ||
@@ -1800,11 +1816,32 @@ function handleComposerDraftChange(value: string): void {
   composerRuntime.resize()
   renderControls()
 }
+function imageSubmissionFrameBytes(sessionId: string, content: ContentBlock[], followUp: boolean): number {
+  const params = followUp
+    ? {
+        clientId: 'c'.repeat(128),
+        commandId: 'c'.repeat(128),
+        kind: 'followUp',
+        payload: { sessionId, content },
+      }
+    : { sessionId, prompt: content }
+  return new TextEncoder().encode(
+    JSON.stringify({
+      jsonrpc: '2.0',
+      id: Number.MAX_SAFE_INTEGER,
+      method: followUp ? '_agnes/v1/submit' : 'session/prompt',
+      params,
+    }),
+  ).byteLength
+}
 function submitComposer(): void {
-  const input = composerRuntime.getDraft().trim()
+  const originalDraft = composerRuntime.getDraft()
+  const input = originalDraft.trim()
+  const images = composerRuntime.getImageBlocks()
   let session = current
   if (
-    !input ||
+    (!input && images.length === 0) ||
+    composerRuntime.hasPendingImages() ||
     !configured ||
     !selectedModelAvailable() ||
     permissionChangePending ||
@@ -1814,15 +1851,43 @@ function submitComposer(): void {
     !canSubmitComposer({ connected, hasSession: true, sending, stopping, loading: sessionPending })
   )
     return
+  const selectedRecord = runtimeModels.find(
+    (model) => model.route === knownSessionModel?.route && model.id === knownSessionModel?.id,
+  )
+  if (images.length > 0 && selectedRecord?.input && !selectedRecord.input.includes('image')) {
+    showError(
+      new Error(
+        document.documentElement.lang.toLowerCase().startsWith('en')
+          ? 'The selected model does not accept images. Choose a model with image input or remove the images.'
+          : '当前模型不支持图片输入。请切换到支持图片的模型，或移除图片。',
+      ),
+    )
+    return
+  }
+  const content: ContentBlock[] = [...(input ? [{ type: 'text' as const, text: input }] : []), ...images]
+  const busy = projection?.opState !== null && projection?.opState !== undefined
+  if (
+    images.length > 0 &&
+    imageSubmissionFrameBytes(session?.id ?? 's'.repeat(512), content, busy) > MAX_WEBSOCKET_MESSAGE_BYTES
+  ) {
+    showError(
+      new Error(
+        document.documentElement.lang.toLowerCase().startsWith('en')
+          ? 'This message exceeds the 2 MiB WebSocket limit. Shorten the text or remove an image.'
+          : '消息超过 WebSocket 的 2 MiB 限制。请缩短文字或移除图片。',
+      ),
+    )
+    return
+  }
   notice.textContent = ''
   notice.dataset.kind = ''
   const submission = ++submissionGeneration
   const connectionEpoch = permissionConnectionEpoch
   let ownedSelection = selection
-  const busy = projection?.opState !== null && projection?.opState !== undefined
   sending = true
   awaitingPromptStart = !busy
   composerRuntime.setDraft('')
+  composerRuntime.clearImageBlocks()
   sessionStorage.removeItem(composerDraftKey)
   composerRuntime.resize()
   renderer.pinToBottom()
@@ -1882,7 +1947,7 @@ function submitComposer(): void {
       throw new Error('连接已变化，请等待权限同步后重新发送。')
     if (current !== session || selection !== ownedSelection) throw new Error('会话选择已改变。')
     if (sessionYoloEnabled === undefined) throw new Error('请先选择本会话权限，确认后再发送。')
-    const result = await (busy ? session.followUp(input) : session.prompt(input))
+    const result = await (busy ? session.followUp(content) : session.prompt(content))
     const submittedId = session.id
     if (typeof result === 'object' && result.reason === 'completed' && !sessionTitles.has(submittedId))
       titleRefresh.start(submittedId)
@@ -1898,9 +1963,15 @@ function submitComposer(): void {
         }
         // Closing the connection on purpose (page unload, manual disconnect) rejects a prompt the daemon
         // already accepted. That is not a failed send, so the sent text must not come back as a draft.
-        if (!intentionalClose && !composerRuntime.getDraft()) {
-          composerRuntime.setDraft(input)
-          sessionStorage.setItem(composerDraftKey, input)
+        if (!intentionalClose) {
+          const laterDraft = composerRuntime.getDraft()
+          if (originalDraft) {
+            const restoredDraft = laterDraft ? `${originalDraft}\n${laterDraft}` : originalDraft
+            composerRuntime.setDraft(restoredDraft)
+            sessionStorage.setItem(composerDraftKey, restoredDraft)
+          }
+          if (!composerRuntime.getImageBlocks().length && !composerRuntime.hasPendingImages())
+            composerRuntime.restoreImageBlocks(images)
           composerRuntime.resize()
         }
         showError(error)

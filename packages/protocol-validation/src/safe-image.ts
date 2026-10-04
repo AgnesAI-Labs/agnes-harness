@@ -7,6 +7,15 @@ export type SafeImageLimits = Readonly<{
   maxAggregatePixels: number
 }>
 
+/** Shared trust-boundary limits for inline images in user session messages. */
+export const USER_MESSAGE_IMAGE_MAX_COUNT = 4
+export const USER_MESSAGE_IMAGE_LIMITS = Object.freeze({
+  maxBytesPerImage: 1024 * 1024,
+  maxPixelsPerImage: 2_000_000,
+  maxAggregateBytes: 1024 * 1024,
+  maxAggregatePixels: 8_000_000,
+}) satisfies SafeImageLimits
+
 export type SafeImageInput = Readonly<{ data: string; mimeType: string }>
 export type SafeImageBytesInput = Readonly<{ bytes: Uint8Array; mimeType: string }>
 

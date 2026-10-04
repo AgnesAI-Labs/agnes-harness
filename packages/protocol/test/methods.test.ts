@@ -608,9 +608,17 @@ describe('methods (I1 set)', () => {
         sessionId: 's',
         surface: 'tui',
         maxNodes: 200,
-        maxBytes: 262_144,
+        maxBytes: 2 * 1024 * 1024,
       }).ok,
     ).toBe(true)
+    expect(
+      errorsOf(
+        validateMethod('_agnes/v1/session.projectUIOpening', 'params', {
+          sessionId: 's',
+          maxBytes: 2 * 1024 * 1024 + 1,
+        }),
+      ),
+    ).toContainEqual(expect.objectContaining({ code: 'RANGE', key: 'maxBytes' }))
     expect(
       errorsOf(
         validateMethod('_agnes/v1/session.projectUIOpening', 'params', {
@@ -644,9 +652,18 @@ describe('methods (I1 set)', () => {
         sessionId: 's',
         cursor: 'opaque-page-1',
         limit: 100,
-        maxBytes: 262_144,
+        maxBytes: 2 * 1024 * 1024,
       }).ok,
     ).toBe(true)
+    expect(
+      errorsOf(
+        validateMethod('_agnes/v1/session.projectUIHistory', 'params', {
+          sessionId: 's',
+          cursor: 'opaque-page-1',
+          maxBytes: 2 * 1024 * 1024 + 1,
+        }),
+      ),
+    ).toContainEqual(expect.objectContaining({ code: 'RANGE', key: 'maxBytes' }))
     expect(
       errorsOf(
         validateMethod('_agnes/v1/session.projectUIHistory', 'params', {

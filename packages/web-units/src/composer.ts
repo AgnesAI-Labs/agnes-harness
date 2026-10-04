@@ -1,13 +1,22 @@
-import type { ModelSettings, UsageView } from '@agnes/protocol'
+import type { ContentBlock, ModelSettings, UsageView } from '@agnes/protocol'
+import {
+  decodeSafeImageBytes,
+  decodeSafeImages,
+  USER_MESSAGE_IMAGE_LIMITS,
+  USER_MESSAGE_IMAGE_MAX_COUNT,
+} from '@agnes/protocol-validation'
 import { ModelSettingsDialog } from '@agnes/web-ui'
 import {
+  type ClipboardEvent,
   type ComponentType,
   createElement,
+  type DragEvent,
   type FormEvent,
   type ForwardedRef,
   forwardRef,
   type KeyboardEvent,
   type ReactNode,
+  useCallback,
   useImperativeHandle,
   useLayoutEffect,
   useRef,
@@ -29,6 +38,7 @@ export type ModelPicker = {
   render(state: ModelPickerState): void
 }
 export type PermissionMode = 'view' | 'workspace' | 'full'
+export type ComposerImageBlock = Extract<ContentBlock, { type: 'image' }>
 export type PermissionPickerState = { disabled: boolean; pending: boolean; selected: PermissionMode | null }
 export type PermissionPicker = {
   destroy(): void
@@ -87,9 +97,13 @@ export interface ComposerView {
 }
 
 export interface ComposerHandle {
+  clearImageBlocks(): void
   focus(): void
   getDraft(): string
+  getImageBlocks(): readonly ComposerImageBlock[]
+  hasPendingImages(): boolean
   render(view: ComposerView): void
+  restoreImageBlocks(images: readonly ComposerImageBlock[]): void
   resize(): void
   setDraft(value: string): void
 }
@@ -97,6 +111,7 @@ export interface ComposerHandle {
 export interface ComposerRegionOptions {
   initialDraft?: string
   onCancel(): void
+  onAttachmentsChange?(): void
   onDraftChange(value: string): void
   onError(error: unknown): void
   onModelSelect(option: ModelPickerOption): Promise<boolean>
@@ -146,12 +161,61 @@ interface ComposerProps extends ComposerRegionOptions {
   slots?: ComposerSlots
 }
 
+type ComposerAttachment = ComposerImageBlock & { id: string; previewUrl: string; size: number }
+
+const MAX_IMAGE_COUNT = USER_MESSAGE_IMAGE_MAX_COUNT
+const MAX_IMAGE_BYTES = USER_MESSAGE_IMAGE_LIMITS.maxBytesPerImage
+const MAX_TOTAL_IMAGE_BYTES = USER_MESSAGE_IMAGE_LIMITS.maxAggregateBytes
+const IMAGE_PREVIEW_LIMITS = USER_MESSAGE_IMAGE_LIMITS
+
+function composerCopy() {
+  const english = document.documentElement.lang.toLowerCase().startsWith('en')
+  return english
+    ? {
+        imageAlt: (index: number) => `Attached image ${index + 1}`,
+        imageLimit: 'PNG and JPEG, up to 4 images and 1 MiB total.',
+        imageReading: 'Reading image…',
+        invalidImage: 'The file is not a valid PNG or JPEG image.',
+        invalidType: 'Only PNG and JPEG images are supported.',
+        readFailed: 'The image could not be read.',
+        removeImage: (index: number) => `Remove image ${index + 1}`,
+        tooMany: 'A message can contain up to 4 images.',
+        tooLarge: 'Images in one message must total no more than 1 MiB.',
+      }
+    : {
+        imageAlt: (index: number) => `附件图片 ${index + 1}`,
+        imageLimit: '支持 PNG 和 JPEG，最多 4 张，合计不超过 1 MiB。',
+        imageReading: '正在读取图片…',
+        invalidImage: '文件内容不是有效的 PNG 或 JPEG 图片。',
+        invalidType: '目前只支持 PNG 和 JPEG 图片。',
+        readFailed: '无法读取图片文件。',
+        removeImage: (index: number) => `移除图片 ${index + 1}`,
+        tooMany: '一条消息最多添加 4 张图片。',
+        tooLarge: '单条消息中的图片合计不能超过 1 MiB。',
+      }
+}
+
+async function readImage(file: File): Promise<{ data: string; bytes: Uint8Array }> {
+  const bytes = new Uint8Array(await file.arrayBuffer())
+  let binary = ''
+  for (let offset = 0; offset < bytes.length; offset += 0x8000)
+    binary += String.fromCharCode(...bytes.subarray(offset, offset + 0x8000))
+  return { data: btoa(binary), bytes }
+}
+
+function blobBytes(bytes: Uint8Array): ArrayBuffer {
+  const copy = new ArrayBuffer(bytes.byteLength)
+  new Uint8Array(copy).set(bytes)
+  return copy
+}
+
 export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Composer(
   {
     initialDraft = '',
     initialView = INITIAL_VIEW,
     dependencies,
     onCancel,
+    onAttachmentsChange,
     onDraftChange,
     onError,
     onModelSelect,
@@ -164,6 +228,8 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
   ref: ForwardedRef<ComposerHandle>,
 ) {
   const [view, setView] = useState<ComposerView>(initialView)
+  const [attachments, setAttachments] = useState<ComposerAttachment[]>([])
+  const [pendingCount, setPendingCount] = useState(0)
   const form = useRef<HTMLFormElement>(null)
   const prompt = useRef<HTMLTextAreaElement>(null)
   const model = useRef<HTMLButtonElement>(null)
@@ -172,19 +238,202 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
   const modelPicker = useRef<ModelPicker>()
   const permissionPicker = useRef<PermissionPicker>()
   const renderUsage = useRef<ReturnType<ComposerDependencies['createUsagePanel']>>()
+  const attachmentsRef = useRef<ComposerAttachment[]>([])
+  const generation = useRef(0)
+  const nextAttachmentId = useRef(0)
+  const pendingCountRef = useRef(0)
+  const pendingBytes = useRef(0)
+
+  const publishAttachments = useCallback(
+    (next: ComposerAttachment[]): void => {
+      attachmentsRef.current = next
+      setAttachments(next)
+      onAttachmentsChange?.()
+    },
+    [onAttachmentsChange],
+  )
+
+  const clearImageBlocks = useCallback((): void => {
+    generation.current += 1
+    pendingCountRef.current = 0
+    pendingBytes.current = 0
+    setPendingCount(0)
+    for (const attachment of attachmentsRef.current) URL.revokeObjectURL(attachment.previewUrl)
+    publishAttachments([])
+  }, [publishAttachments])
+
+  const restoreImageBlocks = useCallback(
+    (images: readonly ComposerImageBlock[]): void => {
+      clearImageBlocks()
+      if (images.length > MAX_IMAGE_COUNT) return
+      let decoded: ReturnType<typeof decodeSafeImages>
+      try {
+        decoded = decodeSafeImages(images, IMAGE_PREVIEW_LIMITS)
+      } catch {
+        return
+      }
+
+      const restored: ComposerAttachment[] = []
+      try {
+        for (const [index, image] of images.entries()) {
+          const bytes = decoded[index]?.bytes
+          if (!bytes) throw new Error('validated image bytes are unavailable')
+          const blob = new Blob([blobBytes(bytes)], { type: image.mimeType })
+          restored.push({
+            ...image,
+            id: `restored-${++nextAttachmentId.current}`,
+            previewUrl: URL.createObjectURL(blob),
+            size: bytes.byteLength,
+          })
+        }
+      } catch {
+        for (const attachment of restored) URL.revokeObjectURL(attachment.previewUrl)
+        return
+      }
+      publishAttachments(restored)
+    },
+    [clearImageBlocks, publishAttachments],
+  )
+
+  const addFiles = async (files: readonly File[]): Promise<void> => {
+    if (view.sending) return
+    const copy = composerCopy()
+    const accepted: File[] = []
+    let candidateBytes = 0
+    for (const file of files) {
+      if (file.type !== 'image/png' && file.type !== 'image/jpeg') {
+        onError(new Error(copy.invalidType))
+        continue
+      }
+      if (file.size < 1 || file.size > MAX_IMAGE_BYTES) {
+        onError(new Error(copy.tooLarge))
+        continue
+      }
+      if (attachmentsRef.current.length + pendingCountRef.current + accepted.length >= MAX_IMAGE_COUNT) {
+        onError(new Error(copy.tooMany))
+        continue
+      }
+      if (
+        attachmentsRef.current.reduce((sum, image) => sum + image.size, 0) +
+          pendingBytes.current +
+          candidateBytes +
+          file.size >
+        MAX_TOTAL_IMAGE_BYTES
+      ) {
+        onError(new Error(copy.tooLarge))
+        continue
+      }
+      accepted.push(file)
+      candidateBytes += file.size
+    }
+    if (accepted.length === 0) return
+
+    const readGeneration = generation.current
+    pendingCountRef.current += accepted.length
+    pendingBytes.current += candidateBytes
+    setPendingCount(pendingCountRef.current)
+    onAttachmentsChange?.()
+
+    await Promise.all(
+      accepted.map(async (file) => {
+        try {
+          const { data, bytes } = await readImage(file)
+          if (readGeneration !== generation.current) return
+          try {
+            decodeSafeImageBytes({ bytes, mimeType: file.type }, IMAGE_PREVIEW_LIMITS)
+          } catch {
+            throw new Error(copy.invalidImage)
+          }
+          const attachment: ComposerAttachment = {
+            type: 'image',
+            data,
+            mimeType: file.type,
+            id: `image-${++nextAttachmentId.current}`,
+            previewUrl: URL.createObjectURL(file),
+            size: file.size,
+          }
+          publishAttachments([...attachmentsRef.current, attachment])
+        } catch (error) {
+          if (readGeneration === generation.current)
+            onError(
+              error instanceof Error && error.message === copy.invalidImage
+                ? error
+                : new Error(copy.readFailed),
+            )
+        } finally {
+          if (readGeneration === generation.current) {
+            pendingCountRef.current -= 1
+            pendingBytes.current -= file.size
+            setPendingCount(pendingCountRef.current)
+            onAttachmentsChange?.()
+          }
+        }
+      }),
+    )
+  }
+
+  const removeImage = (id: string): void => {
+    const removed = attachmentsRef.current.find((attachment) => attachment.id === id)
+    if (!removed) return
+    URL.revokeObjectURL(removed.previewUrl)
+    publishAttachments(attachmentsRef.current.filter((attachment) => attachment.id !== id))
+  }
+
+  const handlePaste = (event: ClipboardEvent<HTMLTextAreaElement>): void => {
+    const clipboard = event.clipboardData
+    const itemFiles: File[] = []
+    for (const item of Array.from(clipboard.items)) {
+      if (item.kind !== 'file') continue
+      const file = item.getAsFile()
+      if (file) itemFiles.push(file)
+    }
+    const files = itemFiles.length > 0 ? itemFiles : Array.from(clipboard.files)
+    if (files.length === 0) return
+    event.preventDefault()
+    const text = clipboard.getData('text/plain')
+    if (text) {
+      const textarea = event.currentTarget
+      textarea.setRangeText(text, textarea.selectionStart, textarea.selectionEnd, 'end')
+      textarea.dispatchEvent(new Event('input', { bubbles: true }))
+    }
+    void addFiles(files)
+  }
+
+  const handleDrop = (event: DragEvent<HTMLFormElement>): void => {
+    if (event.dataTransfer.files.length === 0) return
+    event.preventDefault()
+    void addFiles(Array.from(event.dataTransfer.files))
+  }
+
+  useLayoutEffect(
+    () => () => {
+      generation.current += 1
+      for (const attachment of attachmentsRef.current) URL.revokeObjectURL(attachment.previewUrl)
+      attachmentsRef.current = []
+    },
+    [],
+  )
 
   useImperativeHandle(
     ref,
     () => ({
+      clearImageBlocks,
       focus() {
         prompt.current?.focus()
       },
       getDraft() {
         return prompt.current?.value ?? ''
       },
+      getImageBlocks() {
+        return attachmentsRef.current.map(({ type, data, mimeType }) => ({ type, data, mimeType }))
+      },
+      hasPendingImages() {
+        return pendingCountRef.current > 0
+      },
       render(next) {
         flushSync(() => setView(next))
       },
+      restoreImageBlocks,
       resize() {
         if (prompt.current) dependencies.resize(prompt.current)
       },
@@ -194,7 +443,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
         dependencies.resize(prompt.current)
       },
     }),
-    [dependencies.resize],
+    [dependencies.resize, clearImageBlocks, restoreImageBlocks],
   )
 
   useLayoutEffect(() => {
@@ -235,6 +484,10 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
       'data-agnes-region': 'composer',
       'data-agnes-region-owner': 'builtin',
       'data-agnes-region-unit': 'composer',
+      onDragOver: (event: DragEvent<HTMLFormElement>) => {
+        if (event.dataTransfer.types.includes('Files')) event.preventDefault()
+      },
+      onDrop: handleDrop,
       onSubmit: (event: SubmitEvent) => {
         event.preventDefault()
         onSubmit()
@@ -270,8 +523,46 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
           form.current?.requestSubmit()
         },
         onInput: (event: FormEvent<HTMLTextAreaElement>) => onDraftChange(event.currentTarget.value),
+        onPaste: handlePaste,
       }),
       createElement('p', { id: 'composer-hint', 'data-kind': view.hint.kind }, view.hint.text),
+      createElement(
+        'div',
+        { className: 'composer-image-attachments' },
+        createElement(
+          'div',
+          {
+            className: 'composer-image-preview-list',
+            'aria-label': composerCopy().imageLimit,
+            'aria-live': 'polite',
+          },
+          ...attachments.map((attachment, index) =>
+            createElement(
+              'figure',
+              { className: 'composer-image-preview', key: attachment.id },
+              createElement('img', { src: attachment.previewUrl, alt: composerCopy().imageAlt(index) }),
+              createElement(
+                'button',
+                {
+                  type: 'button',
+                  'data-remove-image': true,
+                  'aria-label': composerCopy().removeImage(index + 1),
+                  disabled: view.sending,
+                  onClick: () => removeImage(attachment.id),
+                },
+                '×',
+              ),
+            ),
+          ),
+          pendingCount > 0
+            ? createElement(
+                'span',
+                { className: 'composer-image-pending', role: 'status' },
+                composerCopy().imageReading,
+              )
+            : undefined,
+        ),
+      ),
       slots?.attachments,
     ),
     createElement(

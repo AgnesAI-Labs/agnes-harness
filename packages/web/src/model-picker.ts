@@ -5,6 +5,7 @@ import { createElement, type ReactNode } from 'react'
 export type ModelPickerOption = {
   id: string
   route: string
+  input?: readonly ('text' | 'image')[]
   label?: string
   reasoning?: boolean
   thinkingLevelMap?: Record<string, string>

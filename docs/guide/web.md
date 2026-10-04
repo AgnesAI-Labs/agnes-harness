@@ -38,6 +38,14 @@ Session and approval traffic uses the browser SDK's direct WebSocket connection 
 5. When approval is requested, check the current choices and scope. After submitting, wait for backend confirmation; a disappearing button alone does not prove execution.
 6. After clicking Stop, wait for the actual terminal state. A stop-request message only means cancellation has been requested.
 
+### Attach images
+
+Paste an image from the clipboard or drag it onto the composer. The Web composer accepts PNG and JPEG, up to four images and 1 MiB of original image data per message. The server checks the declared type, image structure, byte count, and pixel dimensions before accepting the message. Images are encoded into the JSON message, so the 2 MiB WebSocket frame limit also applies; encoding and message metadata use part of that space.
+
+An image can be sent by itself or with text. While a turn is running, the combination is queued as a follow-up. If the selected model does not accept image input, choose a model that does or remove the images. A failed send restores the text and attachments for retry; changing sessions clears staged images.
+
+Images are stored inline in the user message and session event record, and remain part of session history. The history projection read budget is 2 MiB. Reopened messages rebuild their previews from saved content; an invalid or unavailable image is labeled. Older clients that still request a 1 MiB read budget may be unable to recover messages near the image size limit. This is not an artifact upload flow, and `artifact.read` does not upload browser files. Other file types are outside the current Web composer support.
+
 Choose **思考 · 上下文** beside the composer model picker to set reasoning intensity and context budget for this session. The choices reflect the selected model's supported levels. Enter a full token count or an explicit `K`/`M` suffix: `100K` means 100,000 tokens, while `100` means 100 tokens and is too small for ordinary models. Leave the budget empty to restore automatic sizing. Applying saves the settings for subsequent requests and reopening. Account settings provide defaults for new sessions. Existing sessions keep their saved settings when those defaults change.
 
 Failed turns show the recorded error code and message below their status, even when the process is collapsed. These details remain available after reopening the session. Older records without error details are labeled explicitly.

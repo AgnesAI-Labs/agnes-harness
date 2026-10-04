@@ -1745,7 +1745,7 @@
         "maxBytes": {
           "type": "integer",
           "minimum": 16384,
-          "maximum": 1048576,
+          "maximum": 2097152,
           "default": 262144
         }
       }
@@ -1776,7 +1776,7 @@
         "maxBytes": {
           "type": "integer",
           "minimum": 16384,
-          "maximum": 1048576,
+          "maximum": 2097152,
           "default": 262144
         }
       }
