@@ -138,29 +138,57 @@ describe('same SQLite maintenance and real State admission', { timeout: 120_000 
     }
   })
 
-  it('arbitrates create/cancel in two real State processes and cold-replays the winner', async () => {
-    const path = directory()
-    const fixture = await openJointAdmission(path, admissionFixtureInput())
-    expect(await fixture.tickets.issue(fixture.draft(), fixture.context())).toMatchObject({ ok: true })
-    await fixture.close()
-    const children = ['coordinate', 'cancel'].map((operation) => childAt(path, operation, 'race-start'))
-    try {
-      await Promise.all(children.map((process) => process.ready))
-      for (const process of children) process.child.send('go')
-      const outputs = await Promise.all(children.map((process) => process.done))
-      for (const output of outputs) expect(output.code, output.stderr).toBe(0)
-      const replies = outputs.map((output) => JSON.parse(output.stdout) as Reply)
-      expect(replies[0]?.result).toEqual(replies[1]?.result)
-      expect(replies[0]?.result).toMatchObject({ ok: true })
-      const recovered = cold(path)
-      expect(recovered.result).toEqual(replies[0]?.result)
-      unique(recovered.snapshot)
-      expect(recovered.snapshot.created.length + recovered.snapshot.cancelled.length).toBe(1)
-    } finally {
-      await Promise.all(children.map((process) => process.kill()))
-      rmSync(path, { recursive: true, force: true })
-    }
-  })
+  it.each(['simultaneous', 'create-first', 'cancel-during-ticket-read'] as const)(
+    'arbitrates create/cancel in two real State processes and cold-replays the winner (%s)',
+    async (order) => {
+      const path = directory()
+      const fixture = await openJointAdmission(path, admissionFixtureInput())
+      expect(await fixture.tickets.issue(fixture.draft(), fixture.context())).toMatchObject({ ok: true })
+      await fixture.close()
+      const children: ReturnType<typeof childAt>[] = []
+      try {
+        if (order === 'cancel-during-ticket-read') {
+          // State has chosen the tombstone; interleave its maintenance confirmation with a read.
+          const cancel = childAt(path, 'cancel', 'cancel:result')
+          children.push(cancel)
+          expect(await cancel.ready).toMatchObject({ checkpoint: 'cancel:result' })
+          const create = childAt(path, 'coordinate', 'read:ticket')
+          children.unshift(create)
+          expect(await create.ready).toMatchObject({ checkpoint: 'read:ticket' })
+          cancel.child.send('go')
+          expect((await cancel.done).code).toBe(0)
+          create.child.send('go')
+        } else {
+          const create = childAt(path, 'coordinate', 'race-start')
+          const cancel = childAt(path, 'cancel', 'race-start')
+          children.push(create, cancel)
+          await Promise.all(children.map((process) => process.ready))
+          if (order === 'create-first') {
+            create.child.send('go')
+            expect((await create.done).code).toBe(0)
+            cancel.child.send('go')
+          } else for (const process of children) process.child.send('go')
+        }
+        const outputs = await Promise.all(children.map((process) => process.done))
+        for (const output of outputs) expect(output.code, output.stderr).toBe(0)
+        const replies = outputs.map((output) => JSON.parse(output.stdout) as Reply)
+        expect(replies[0]?.result).toEqual(replies[1]?.result)
+        expect(replies[0]?.result).toMatchObject({ ok: true })
+        if (order !== 'simultaneous')
+          expect(replies[0]?.result).toMatchObject({
+            ok: true,
+            value: { state: order === 'create-first' ? 'created' : 'cancelled' },
+          })
+        const recovered = cold(path)
+        expect(recovered.result).toEqual(replies[0]?.result)
+        unique(recovered.snapshot)
+        expect(recovered.snapshot.created.length + recovered.snapshot.cancelled.length).toBe(1)
+      } finally {
+        await Promise.all(children.map((process) => process.kill()))
+        rmSync(path, { recursive: true, force: true })
+      }
+    },
+  )
 
   it('refuses cold create and confirm after all three State decision tables lose a cancelled ticket', async () => {
     const path = directory()

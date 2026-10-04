@@ -6,9 +6,13 @@ import { openJointAdmission } from './assembly-admission-joint.js'
 const [directory, operation = 'coordinate', stop] = process.argv.slice(2)
 if (!directory) throw Error('isolated directory required')
 const input: AdmissionFixtureInput = JSON.parse(readFileSync(join(directory, 'input.json'), 'utf8'))
+let paused = false
 const fixture = await openJointAdmission(directory, input, (checkpoint) => {
-  if (checkpoint !== stop) return
+  if (checkpoint !== stop || paused) return
+  paused = true
   process.send?.({ checkpoint })
+  if (stop === 'read:ticket' || stop === 'cancel:result')
+    return new Promise<void>((resolve) => process.once('message', () => resolve()))
   Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0)
 })
 try {
