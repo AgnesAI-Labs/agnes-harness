@@ -383,7 +383,9 @@ describe('conversation window with domain cards', () => {
     expect(host.querySelector('button, a, input, form')).toBeNull()
   })
 
-  it('reuses the card node and keeps focus when the same id is upserted', async () => {
+  // A cancelled turn shows the provisional card interrupted until the finalized revision arrives; the
+  // text the user selected elsewhere and the focus inside the card survive both updates.
+  it('reuses the card node and keeps selection and focus when the same id is upserted', async () => {
     const props: Partial<ConversationMessagesProps> = {
       renderDomain: (view) =>
         createElement(
@@ -393,13 +395,31 @@ describe('conversation window with domain cards', () => {
           createElement('input', { 'data-revision': String(view.revision) }),
         ),
     }
-    const first = conversationWindow(
-      [domain('domain:flight', 'provisional', 'Flight on hold')],
-      [native('u1'), domainRef('domain:flight')],
-    )
+    const held = domain('domain:flight', 'provisional', 'Flight on hold')
+    const first = conversationWindow([held], [native('u1'), domainRef('domain:flight')])
     const store = createConversationProjectionStore({ sessionId: 'session', nodes: [], window: first })
     await mount(store, props)
     const before = card('domain:flight')
+    expect(before?.dataset.status).toBe('running')
+    const walker = document.createTreeWalker(card('u1') as HTMLElement, NodeFilter.SHOW_TEXT)
+    let asked = walker.nextNode()
+    while (asked && asked.nodeValue !== 'plan a trip') asked = walker.nextNode()
+    const range = document.createRange()
+    range.selectNodeContents(asked as Node)
+    document.getSelection()?.removeAllRanges()
+    document.getSelection()?.addRange(range)
+    await update(store, {
+      sessionId: 'session',
+      nodes: [],
+      window: conversationWindow([held], [native('u1'), domainRef('domain:flight')], [turn('cancelled')]),
+    })
+    expect([ids(), card('domain:flight')?.dataset.status]).toEqual([['u1', 'domain:flight'], 'incomplete'])
+    const selection = document.getSelection()
+    expect([selection?.toString(), selection?.anchorNode, asked?.isConnected]).toEqual([
+      'plan a trip',
+      asked,
+      true,
+    ])
     const input = before?.querySelector('input')
     input?.focus()
     expect(document.activeElement).toBe(input)
@@ -409,9 +429,11 @@ describe('conversation window with domain cards', () => {
         domain('domain:flight', 'finalized', 'Flight booked', 'turn:1', 2),
       ],
       [native('u1'), domainRef('domain:hotel'), domainRef('domain:flight')],
+      [turn('cancelled')],
     )
     await update(store, { sessionId: 'session', nodes: [], window: next })
     expect(ids()).toEqual(['u1', 'domain:hotel', 'domain:flight'])
+    expect(card('domain:flight')?.dataset.status).toBe('complete')
     expect(card('domain:flight')).toBe(before)
     expect(card('domain:flight')?.querySelector('input')).toBe(input)
     expect(input?.dataset.revision).toBe('2')

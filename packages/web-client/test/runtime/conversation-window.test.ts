@@ -371,6 +371,86 @@ describe('conversation window replace', () => {
     ])
   })
 
+  /** The live window at `revision`, holding n1 and the card d1 at that revision and phase. */
+  const at = (revision: number, phase: DomainView['phase']) =>
+    win(['n1', 'd1'], { revision, views: { d1: { revision, phase } } })
+  const on = (id: string, sent: ClientConversationSubscriptionFrame) => ({ ...sent, subscriptionId: id })
+  it.each<[string, (merger: ConversationWindowMerger) => void]>([
+    [
+      'twice each',
+      (merger) => {
+        for (const [window, base] of [
+          [at(2, 'provisional'), 'order-1'],
+          [at(3, 'finalized'), 'order-2'],
+        ] as const) {
+          expect(merger.frame(replace(window, base))).toEqual(APPLIED)
+          expect(merger.frame(replace(window, base))).toEqual(IGNORED)
+        }
+      },
+    ],
+    [
+      'older after newer',
+      (merger) => {
+        expect(merger.frame(replace(at(2, 'provisional'), 'order-1'))).toEqual(APPLIED)
+        expect(merger.frame(replace(at(3, 'finalized'), 'order-2'))).toEqual(APPLIED)
+        expect(merger.frame(replace(at(2, 'provisional'), 'order-1'))).toEqual(IGNORED)
+      },
+    ],
+    [
+      'newer before older',
+      (merger) => {
+        const token = tokenOf(merger.frame(replace(at(3, 'finalized'), 'order-2')))
+        expect(merger.frame(replace(at(2, 'provisional'), 'order-1'))).toEqual(IGNORED)
+        expect(merger.opened(token, at(3, 'finalized'))).toEqual(APPLIED)
+      },
+    ],
+    [
+      'with a gap',
+      (merger) => {
+        const step = merger.frame(replace(at(3, 'finalized'), 'order-2'))
+        expect([step, merger.writable]).toEqual([RESYNC, false])
+        expect(merger.opened(tokenOf(step), at(3, 'finalized'))).toEqual(APPLIED)
+      },
+    ],
+    [
+      'interrupted before final',
+      (merger) => {
+        expect(merger.frame(replace(at(2, 'interrupted'), 'order-1'))).toEqual(APPLIED)
+        expect(merger.frame(replace(at(3, 'finalized'), 'order-2'))).toEqual(APPLIED)
+      },
+    ],
+    [
+      'with a cancelled open',
+      (merger) => {
+        const cancelled = merger.resync()
+        const retried = merger.resync()
+        expect(merger.opened(retried, at(3, 'finalized'))).toEqual(APPLIED)
+        expect(merger.opened(cancelled, at(2, 'provisional'))).toEqual(IGNORED)
+      },
+    ],
+    [
+      'across a disconnect and a replaying reconnect',
+      (merger) => {
+        expect(merger.frame(replace(at(2, 'provisional'), 'order-1'))).toEqual(APPLIED)
+        merger.disconnected()
+        expect([merger.status, merger.writable]).toEqual(['offline', false])
+        merger.subscribed('sub-2')
+        expect(merger.frame(replace(at(3, 'finalized'), 'order-2'))).toEqual(IGNORED)
+        expect(merger.frame(on('sub-2', snapshot(at(3, 'finalized'))))).toEqual(APPLIED)
+        // The new subscription replays changes the snapshot already holds.
+        expect(merger.frame(on('sub-2', replace(at(2, 'provisional'), 'order-1')))).toEqual(IGNORED)
+        expect(merger.frame(on('sub-2', replace(at(3, 'finalized'), 'order-2')))).toEqual(IGNORED)
+      },
+    ],
+  ])('settles a provisional card as one finalized entry when its updates arrive %s', (_, arrive) => {
+    const merger = liveOn(at(1, 'provisional'))
+    arrive(merger)
+    expect([merger.status, merger.writable, ids(merger)]).toEqual(['live', true, ['n1', 'd1']])
+    expect(merger.window?.domains.map(({ id, view }) => [id, view.revision, view.phase])).toEqual([
+      ['d1', 3, 'finalized'],
+    ])
+  })
+
   // Cards are keyed by entry id, which the server derives from the domain type, scope and view id, so
   // cards sharing only a view id never overwrite each other; a removed one stays gone.
   it('keeps cards sharing a view id apart by domain type and scope through replace, removal and reset', () => {
