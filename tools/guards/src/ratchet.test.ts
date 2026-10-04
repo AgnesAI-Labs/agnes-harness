@@ -2293,7 +2293,9 @@ const INITIAL_CEILING: Record<string, number> = {
   // Measured 5250 with countLines(); the guard still rejects any further growth.
   // Durable WAL checkpoints on darwin: the outbound ref store sets checkpoint_fullfsync.
   // Measured 5252, exact, no spare (+2).
-  'packages/channels/src': 5252,
+  // Pure mapping of a domain view to channel send messages with an injected text renderer. Measured
+  // 5379, exact, no spare (+127).
+  'packages/channels/src': 5379,
   'packages/code/src': 1600,
   'packages/cli/src/args': 300,
   'packages/runtime-python/src': 400,
