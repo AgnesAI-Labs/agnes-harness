@@ -44,6 +44,7 @@ import {
 import { canonicalJsonDigest } from '../../../../packages/protocol/src/runtime/index.js'
 import { getConformanceBuildIdentity } from '../build-identity.js'
 import { bindArtifactTicketKeyConformance } from './artifact-ticket-key-scenarios.js'
+import { bindModelEgressConformance } from './model-egress-scenarios.js'
 
 const ROOT = fileURLToPath(new URL('../../../../', import.meta.url))
 const OWNED = ['agh.network', 'agh.secrets'] as const
@@ -345,7 +346,7 @@ export async function bindConformance(
   for (const providerId of providers) {
     const kind = kindOf(providerId)
     if (kind === null) continue
-    if (wanted.includes('agh.network'))
+    if (wanted.includes('agh.network')) {
       registerNetworkContract(harness, {
         command: request.command,
         build: identity,
@@ -360,6 +361,8 @@ export async function bindConformance(
             : []),
         ],
       })
+      bindModelEgressConformance(harness, request.command, kind, providerId, identity)
+    }
     if (wanted.includes('agh.secrets')) {
       const sources: SecretsPort[] = [
         {

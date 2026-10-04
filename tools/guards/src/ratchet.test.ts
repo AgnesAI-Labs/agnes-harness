@@ -2835,7 +2835,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // Publication installation and pure empty-history checks: measured 79966, exact, no spare.
   // Artifact download streams recheck the ticket broker before every chunk; measured 79978 (+12), exact.
   // Runtime HTTP credentials are generation-bound and Host read ports are wired. Measured 80050, exact, no spare.
-  'packages/host/src': 80050,
+  // Binding-scoped model Local egress adds 461 measured lines; measured 80511, exact, no spare.
+  'packages/host/src': 80511,
   'packages/host/src/ext-host/service-invocation': 247,
   // T5.2's permission projector is kept independently bounded so later extension-host work cannot
   // hide in the package-wide increment. Measured source: 86 lines.
