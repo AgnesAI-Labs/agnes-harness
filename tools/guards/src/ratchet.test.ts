@@ -2736,7 +2736,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // Default artifacts transfer with its export held by the default blob service, and collection counts
   // of only collections with parts. Measured 74980 (+73), exact, no spare.
   // Download tickets sealed and opened through the Host ticket key broker. Measured 74977 (-3), exact.
-  'packages/host/src': 74977,
+  // The artifacts transfer stamps verify with the store's injected clock. Measured 74978 (+1), exact.
+  'packages/host/src': 74978,
   'packages/host/src/ext-host/service-invocation': 247,
   // T5.2's permission projector is kept independently bounded so later extension-host work cannot
   // hide in the package-wide increment. Measured source: 86 lines.
