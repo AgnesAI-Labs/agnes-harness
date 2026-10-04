@@ -270,7 +270,9 @@ const INITIAL_CEILING: Record<string, number> = {
   // Measured 3530, exact, no spare (+89).
   // Fifth main synchronization merged with the current integration tip (locale catalogs). Measured 3633,
   // exact, no spare.
-  'packages/web-client/src': 3633,
+  // The default domain view text format moves to the `@agnes/sdk/runtime` export. Measured 3429, exact,
+  // no spare (-204).
+  'packages/web-client/src': 3429,
   'packages/web-slots/src': 605,
   // Failed shell calls read as their exit code (+19 lines); measured 4891, exact cap.
   // B-line diagnostics dialog: React view adds 147 lines; measured 4706, exact cap.
@@ -1608,7 +1610,9 @@ const INITIAL_CEILING: Record<string, number> = {
   // Runtime client push socket (WebSocket uplink sharing the HTTP settle path, push frame routing)
   // and subscriptions (push delivery, polling fallback, reader queue bound). Measured 6020, exact,
   // no spare.
-  'packages/sdk/src': 6023,
+  // The default domain view text format, moved from the web client and exported as `./runtime`, now
+  // also removes format characters. Measured 6231, exact, no spare (+208).
+  'packages/sdk/src': 6231,
   'packages/sdk/src/extensions.node': 21,
   'packages/sdk/src/package-admin.node': 147,
   'packages/sdk/src/surface.browser': 3,

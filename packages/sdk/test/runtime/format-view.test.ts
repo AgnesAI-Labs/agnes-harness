@@ -1,14 +1,14 @@
-import type {
-  DomainView,
-  FormattedView,
-  IMRendererEncodeChannel,
-  NegotiatedClientCapabilities,
-  TextRendererFormatContext,
-  ViewAction,
-} from '@agnes/extension-api/client'
-import { validateRuntime } from '@agnes/protocol/runtime'
+import {
+  type DomainView,
+  type FormattedView,
+  type IMRendererEncodeChannel,
+  type NegotiatedClientCapabilities,
+  type TextRendererFormatContext,
+  type ViewAction,
+  validateRuntime,
+} from '@agnes/protocol/runtime'
+import { encodeForChannel, formatDomainView } from '@agnes/sdk/runtime'
 import { describe, expect, it } from 'vitest'
-import { encodeForChannel, formatDomainView } from '../../src/runtime/renderers/text.js'
 
 const schema = { typeId: 'acme.notes/publish@1', revision: 1, digest: 'a'.repeat(64) }
 const base = { requiredFeatures: [], availability: 'enabled' as const, disabledReason: null }
@@ -195,17 +195,24 @@ describe('formatDomainView', () => {
   })
 
   it('keeps view text plain and leaves identifiers and data out of it', () => {
-    const fallbackText = 'Hi \x1b[31mred\r\nnext\x07 <b>bold</b> **x**'
+    // Format characters such as bidirectional overrides, isolates, zero widths and BOMs are removed;
+    // the zero width joiner of an emoji sequence stays.
+    const fallbackText =
+      'Hi \x1b[31mred\r\nnext\x07 <b>bold</b> **x** \u202Eevil\u202C \u2067rtl\u2069 a\u200Bb\uFEFF \u{1F469}\u200D\u{1F4BB}'
     const download: ViewAction = {
       ...base,
       kind: 'download',
       actionKey: 'get',
-      label: 'Get',
+      label: 'G\u202Eet',
       artifactId: 'artifact-secret',
       version: 1,
     }
     const formatted = format(view({ fallbackText, actions: [publish, review, download] }), ['forms.complex'])
-    expect(formatted.parts[1]).toEqual({ kind: 'text', text: 'Hi �[31mred\nnext� <b>bold</b> **x**' })
+    expect(formatted.parts[1]).toEqual({
+      kind: 'text',
+      text: 'Hi �[31mred\nnext� <b>bold</b> **x** evil rtl ab \u{1F469}\u200D\u{1F4BB}',
+    })
+    expect(formatted.parts.at(-1)).toEqual({ kind: 'action', actionKey: 'get', label: 'Get' })
     for (const secret of [
       'approval-secret',
       'interaction-secret',
