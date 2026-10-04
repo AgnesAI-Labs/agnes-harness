@@ -510,6 +510,48 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
       },
     },
     slots?.overlay,
+    // 待发图片排在输入文字上方：文字行数增长时图片不会被顶出视野。空态由 CSS 收掉
+    // （style.css 的 :has 规则），这里不额外做条件渲染。
+    createElement(
+      'div',
+      { className: 'composer-image-attachments' },
+      createElement(
+        'div',
+        {
+          className: 'composer-image-preview-list',
+          'aria-label': dependencies.translate('composer.image.limit'),
+          'aria-live': 'polite',
+        },
+        ...attachments.map((attachment, index) =>
+          createElement(
+            'figure',
+            { className: 'composer-image-preview', key: attachment.id },
+            createElement('img', {
+              src: attachment.previewUrl,
+              alt: dependencies.translate('composer.image.alt', { index: index + 1 }),
+            }),
+            createElement(
+              'button',
+              {
+                type: 'button',
+                'data-remove-image': true,
+                'aria-label': dependencies.translate('composer.image.remove', { index: index + 1 }),
+                disabled: view.sending,
+                onClick: () => removeImage(attachment.id),
+              },
+              '×',
+            ),
+          ),
+        ),
+        pendingCount > 0
+          ? createElement(
+              'span',
+              { className: 'composer-image-pending', role: 'status' },
+              dependencies.translate('composer.image.reading'),
+            )
+          : undefined,
+      ),
+    ),
     createElement(
       'div',
       { className: 'composer-writing' },
@@ -546,46 +588,6 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
         onPaste: handlePaste,
       }),
       createElement('p', { id: 'composer-hint', 'data-kind': view.hint.kind }, view.hint.text),
-      createElement(
-        'div',
-        { className: 'composer-image-attachments' },
-        createElement(
-          'div',
-          {
-            className: 'composer-image-preview-list',
-            'aria-label': dependencies.translate('composer.image.limit'),
-            'aria-live': 'polite',
-          },
-          ...attachments.map((attachment, index) =>
-            createElement(
-              'figure',
-              { className: 'composer-image-preview', key: attachment.id },
-              createElement('img', {
-                src: attachment.previewUrl,
-                alt: dependencies.translate('composer.image.alt', { index: index + 1 }),
-              }),
-              createElement(
-                'button',
-                {
-                  type: 'button',
-                  'data-remove-image': true,
-                  'aria-label': dependencies.translate('composer.image.remove', { index: index + 1 }),
-                  disabled: view.sending,
-                  onClick: () => removeImage(attachment.id),
-                },
-                '×',
-              ),
-            ),
-          ),
-          pendingCount > 0
-            ? createElement(
-                'span',
-                { className: 'composer-image-pending', role: 'status' },
-                dependencies.translate('composer.image.reading'),
-              )
-            : undefined,
-        ),
-      ),
       slots?.attachments,
     ),
     createElement(

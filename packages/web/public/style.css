@@ -2478,10 +2478,16 @@ body.session-switching #approval {
   white-space: nowrap;
   clip-path: inset(50%);
 }
+/* 附件在输入文字之上，所以顶边距归它：0.25rem 加上表单的 0.5rem，与 textarea 首行齐平。 */
 .composer-image-attachments {
   display: grid;
   gap: 0.5rem;
-  padding: 0 0.875rem;
+  padding: 0.25rem 0.875rem 0;
+}
+/* 没有待发图片（也没有正在读取的）时整块不占位：容器常驻 DOM，靠这条把空态收掉，
+   否则这段上边距会把输入框整体顶下去。 */
+.composer-image-attachments:not(:has(.composer-image-preview, .composer-image-pending)) {
+  display: none;
 }
 .composer-image-preview-list {
   display: flex;

@@ -262,10 +262,27 @@ describe('W3b projected message DOM', () => {
     // 门户那份是界面上真正显示的内容，兜底只是被 CSS 隐藏的备份：图只出现在兜底里等于没显示。
     const portal = article?.querySelector<HTMLElement>('[data-agnes-assistant-ui-target]')
     expect(portal?.dataset.agnesAssistantUiReady).toBe('true')
-    expect(portal?.querySelector<HTMLImageElement>('img.user-message-image')?.src).toBe('blob:history-image')
+    const thumbnail = portal?.querySelector<HTMLImageElement>('img.user-message-image')
+    expect(thumbnail?.src).toBe('blob:history-image')
+    // 固定缩略图尺寸，不跟着原图比例走：否则竖长图会把消息撑成一根。
+    expect([thumbnail?.getAttribute('width'), thumbnail?.getAttribute('height')]).toEqual(['72', '56'])
     expect(article?.querySelector<HTMLImageElement>('img.user-message-image')?.src).toBe('blob:history-image')
     await update(store, [])
     expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:history-image')
+  })
+
+  it('keeps the attachment block above the message text in both DOM copies', async () => {
+    const store = createConversationProjectionStore({ sessionId: 'session', nodes })
+    await mount(store)
+    const article = item('user')
+    for (const copy of ['[data-agnes-assistant-ui-target]', '[data-agnes-assistant-ui-fallback]']) {
+      const images = article?.querySelector(`${copy} .user-message-images`) as Element
+      const text = article?.querySelector(`${copy} .node-body`) as Element
+      expect(images).not.toBeNull()
+      expect(text).not.toBeNull()
+      // DOCUMENT_POSITION_FOLLOWING：正文排在图片块之后，图片才算是独立的一块。
+      expect(images.compareDocumentPosition(text)).toBe(Node.DOCUMENT_POSITION_FOLLOWING)
+    }
   })
 
   it('updates each kind by ID, preserves disclosure state, and removes deleted nodes', async () => {

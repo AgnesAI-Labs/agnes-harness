@@ -5,6 +5,7 @@ import {
   USER_MESSAGE_IMAGE_MAX_COUNT,
 } from '@agnes/protocol-validation'
 import { MessagePrimitive, ThreadPrimitive, useAssistantState, useThread } from '@assistant-ui/react'
+import { Image } from 'antd'
 import {
   createContext,
   type ReactNode,
@@ -131,6 +132,9 @@ const approvalStatus = (node: ApprovalNode, t: Translate) =>
       })()
     : t(approvalLabelKeys[node.state])
 
+/** 缩略图固定 72×56，和输入框里的待发图片同尺寸：图片不再按原图比例把消息撑长。 */
+const USER_MESSAGE_IMAGE_THUMBNAIL = { width: 72, height: 56 } as const
+
 /** 历史消息里的图片按服务端同一套预算重新判一遍，超出的一张只显示占位说明。 */
 function imageBlobBytes(bytes: Uint8Array): ArrayBuffer {
   const copy = new ArrayBuffer(bytes.byteLength)
@@ -177,12 +181,14 @@ function UserMessageImage({
       </span>
     )
   if (!previewUrl) return null
+  // antd 的 Image 自带点击放大预览（缩放、旋转、多图左右切换），比自绘弹层省事。
   return (
-    <img
+    <Image
       className="user-message-image"
       src={previewUrl}
       alt={t('conversation.imageAlt', { index: index + 1 })}
-      loading="lazy"
+      width={USER_MESSAGE_IMAGE_THUMBNAIL.width}
+      height={USER_MESSAGE_IMAGE_THUMBNAIL.height}
     />
   )
 }
@@ -193,35 +199,39 @@ function UserMessageImage({
  */
 function UserMessageImages({ node, t }: { node: Extract<UINode, { kind: 'user' }>; t: Translate }) {
   const images = node.content.filter((block) => block.type === 'image')
+  if (images.length === 0) return null
   let imageBytes = 0
   // 同一条消息里可以粘贴重复的图片：内容摘要相同就靠出现次数区分 key，否则 React 会认成同一张。
   const imageKeys = new Map<string, number>()
   return (
-    <>
-      {images.map((block, index) => {
-        const decodedLength =
-          Math.floor((block.data.length * 3) / 4) -
-          (block.data.endsWith('==') ? 2 : block.data.endsWith('=') ? 1 : 0)
-        const allowed =
-          index < USER_MESSAGE_IMAGE_MAX_COUNT &&
-          decodedLength > 0 &&
-          decodedLength <= USER_MESSAGE_IMAGE_LIMITS.maxBytesPerImage &&
-          imageBytes + decodedLength <= USER_MESSAGE_IMAGE_LIMITS.maxAggregateBytes
-        if (allowed) imageBytes += decodedLength
-        const imageKey = `${block.mimeType}:${block.data.length}:${block.data.slice(0, 16)}:${block.data.slice(-16)}`
-        const occurrence = imageKeys.get(imageKey) ?? 0
-        imageKeys.set(imageKey, occurrence + 1)
-        return (
-          <UserMessageImage
-            key={`${imageKey}:${occurrence}`}
-            image={block}
-            index={index}
-            allowed={allowed}
-            t={t}
-          />
-        )
-      })}
-    </>
+    // 同一条消息的图片归到一个预览组：点开大图后能用左右箭头在几张之间翻。
+    <Image.PreviewGroup>
+      <div className="user-message-images">
+        {images.map((block, index) => {
+          const decodedLength =
+            Math.floor((block.data.length * 3) / 4) -
+            (block.data.endsWith('==') ? 2 : block.data.endsWith('=') ? 1 : 0)
+          const allowed =
+            index < USER_MESSAGE_IMAGE_MAX_COUNT &&
+            decodedLength > 0 &&
+            decodedLength <= USER_MESSAGE_IMAGE_LIMITS.maxBytesPerImage &&
+            imageBytes + decodedLength <= USER_MESSAGE_IMAGE_LIMITS.maxAggregateBytes
+          if (allowed) imageBytes += decodedLength
+          const imageKey = `${block.mimeType}:${block.data.length}:${block.data.slice(0, 16)}:${block.data.slice(-16)}`
+          const occurrence = imageKeys.get(imageKey) ?? 0
+          imageKeys.set(imageKey, occurrence + 1)
+          return (
+            <UserMessageImage
+              key={`${imageKey}:${occurrence}`}
+              image={block}
+              index={index}
+              allowed={allowed}
+              t={t}
+            />
+          )
+        })}
+      </div>
+    </Image.PreviewGroup>
   )
 }
 
@@ -233,10 +243,8 @@ function UserMessage({ node, t }: { node: Extract<UINode, { kind: 'user' }>; t: 
   return (
     <>
       <p className="node-label">{t('timeline.userLabel')}</p>
-      <div className="node-body">
-        {value}
-        <UserMessageImages node={node} t={t} />
-      </div>
+      <UserMessageImages node={node} t={t} />
+      <div className="node-body">{value}</div>
     </>
   )
 }
@@ -379,8 +387,8 @@ function ConversationMessageView() {
         >
           <div className="aui-user-message-content aui:rounded-3xl aui:border aui:border-[var(--agnes-line-primary)] aui:bg-[var(--agnes-bg-card)] aui:px-5 aui:py-2.5 aui:text-sm aui:leading-relaxed aui:text-[var(--agnes-text-primary)]">
             <p className="node-label">{t('timeline.userLabel')}</p>
-            <MessagePrimitive.Parts components={userMessageParts} />
             <UserMessageImages node={node} t={t} />
+            <MessagePrimitive.Parts components={userMessageParts} />
           </div>
         </div>
       ) : node.kind === 'assistant' ? (

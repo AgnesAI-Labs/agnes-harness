@@ -14,19 +14,27 @@
   display: none;
 }
 
+/* 图片自成一块排在正文之上，横排换行，和输入框里的待发图片同一种排法。 */
+[data-agnes-conversation-messages] .user-message-images {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-block: 4px 8px;
+}
+
+/* 宽高由 antd Image 的行内尺寸给定（72×56），这里只管裁切与描边；
+   object-fit 必须显式写：antd 只声明了 width/height，默认的 fill 会把图压变形。 */
 [data-agnes-conversation-messages] .user-message-image {
   display: block;
-  max-width: min(320px, 100%);
-  max-height: 240px;
-  margin-block: 8px;
   border: 1px solid var(--color-border-secondary, #e5e5e5);
   border-radius: 8px;
-  object-fit: contain;
+  object-fit: cover;
+  cursor: zoom-in;
 }
 
 [data-agnes-conversation-messages] .user-message-image-unavailable {
   display: inline-block;
-  margin-block: 4px;
   color: var(--color-text-tertiary, #777);
   font-size: 12px;
 }
