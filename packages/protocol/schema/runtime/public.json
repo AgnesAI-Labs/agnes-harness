@@ -37190,6 +37190,9 @@
             "kind": {
               "const": "renderer"
             },
+            "descriptor": {
+              "$ref": "#/$defs/RendererDescriptor"
+            },
             "targets": {
               "type": "array",
               "items": {
@@ -37200,7 +37203,7 @@
               "uniqueItems": true
             }
           },
-          "required": ["contributionId", "kind", "targets"]
+          "required": ["contributionId", "kind", "descriptor", "targets"]
         }
       ]
     },
@@ -40723,9 +40726,9 @@
     "ClaimOutboxResult": 3,
     "ClientArtifactOpenStreamRequest": 2,
     "ClientArtifactReadRangeRequest": 2,
-    "ClientBootstrapAccepted": 5,
-    "ClientBootstrapResult": 5,
-    "ClientCatalogPageResult": 5,
+    "ClientBootstrapAccepted": 6,
+    "ClientBootstrapResult": 6,
+    "ClientCatalogPageResult": 6,
     "ClientCommandCall": 3,
     "ClientCommandReply": 4,
     "ClientCommandRequest": 3,
@@ -40737,7 +40740,7 @@
     "ClientInteractionChange": 3,
     "ClientInteractionsSnapshot": 3,
     "ClientInteractionsSubscriptionFrame": 3,
-    "ClientModule": 5,
+    "ClientModule": 6,
     "ClientQueryCall": 3,
     "ClientQueryReply": 5,
     "ClientQueryRequest": 3,
@@ -40748,7 +40751,7 @@
     "ClientSubscriptionFrame": 4,
     "ClientTransportFrame": 5,
     "ClientTransportRequestFrame": 2,
-    "ClientWelcome": 5,
+    "ClientWelcome": 6,
     "CloseInvocationRequest": 2,
     "CommandHandle": 4,
     "CommandRuntimeAcceptanceDataRef": 3,
@@ -41083,7 +41086,7 @@
     "WaitCondition": 2,
     "WaitRecordValue": 2,
     "ClientContributionRef": 1,
-    "ClientModuleContribution": 2,
+    "ClientModuleContribution": 3,
     "ClientSelection": 1
   },
   "x-client-transport-wire": {
