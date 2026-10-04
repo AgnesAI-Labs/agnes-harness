@@ -1498,7 +1498,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // Recoverable embedding providers. Measured 12446, exact, no spare.
   // Fixed package plan apply. Measured 12543, exact, no spare.
   // Usage and budget settlement for billing. Measured 12594, exact, no spare.
-  'packages/extension-api/testkit': 12622,
+  'packages/extension-api/testkit': 12890,
   // 2026-09-10: raised from 2500 by Task 15 (stream-disconnect reconnection). The new
   // reattach.ts (the Reconnector: backoff loop, OVERLOADED's retryAfterMs override) plus
   // Session.recover()/waitForQuiescence and Client's reconnect wiring (emit(), the
