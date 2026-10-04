@@ -103,8 +103,8 @@ describe('MCP form live validation mirrors the runtime schema', () => {
   it('only demands required fills at submit time, not while typing', () => {
     const empty: McpFormFieldSnapshot = { ...base, serverId: '', executable: '', toolsText: '' }
     expect(messages(empty, live)).toEqual([])
-    expect(messages(empty, submit).join('\n')).toContain('服务 ID')
-    expect(messages(empty, submit).join('\n')).toContain('可执行文件')
+    expect(messages(empty, submit).join('\n')).toContain('Enter a service ID')
+    expect(messages(empty, submit).join('\n')).toContain('Enter an executable')
     expect(messages({ ...http(''), toolsText: '' }, submit).join('\n')).toContain('HTTPS')
     expect(messages({ ...http(''), secretKind: 'http-bearer', secretText: '' }, submit).join('\n')).toContain(
       'SecretRef',

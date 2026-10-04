@@ -23,7 +23,10 @@ export class ResourceAdminApiError extends Error {
     this.details = details
   }
 }
-function safeError(value: unknown, fallback = '资源管理后台暂时不可用，请稍后重试。'): ResourceAdminError {
+function safeError(
+  value: unknown,
+  fallback = 'The resource admin service is temporarily unavailable. Try again later.',
+): ResourceAdminError {
   if (!value || typeof value !== 'object') return { code: 'RESOURCE_ADMIN_UNAVAILABLE', message: fallback }
   const error = value as ErrorResponse
   return {
@@ -73,12 +76,12 @@ export class ResourceAdminApi {
     const body = await json(response)
     if (!response.ok)
       throw new ResourceAdminApiError(
-        safeError(body, response.status === 403 ? '没有资源管理权限。' : undefined),
+        safeError(body, response.status === 403 ? 'You do not have resource admin permission.' : undefined),
       )
     if (!isContext(body))
       throw new ResourceAdminApiError({
         code: 'RESOURCE_ADMIN_CONTEXT_INVALID',
-        message: '资源管理上下文无效，请重新打开页面。',
+        message: 'The resource admin context is invalid. Reopen the page.',
       })
     return body
   }
@@ -237,7 +240,10 @@ export class ResourceAdminApi {
     const result = await json(response)
     if (!response.ok)
       throw new ResourceAdminApiError(
-        safeError(result, response.status === 403 ? '没有执行此操作的权限。' : undefined),
+        safeError(
+          result,
+          response.status === 403 ? 'You do not have permission to perform this operation.' : undefined,
+        ),
       )
     return result as T
   }

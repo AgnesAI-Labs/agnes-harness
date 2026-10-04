@@ -6,6 +6,7 @@
   "exports": {
     "./admin": "./src/admin.tsx",
     "./api": "./src/api.ts",
+    "./locale-shell": "./src/locales/shell.ts",
     "./standalone": "./src/standalone.ts",
     "./types": "./src/types.ts"
   },

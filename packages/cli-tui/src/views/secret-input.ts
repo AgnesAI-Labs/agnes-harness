@@ -1,6 +1,7 @@
 import { type Component, CURSOR_MARKER, escapeControl } from '../component.js'
 import { fitLine } from '../components/line.js'
 import { parseKey } from '../keys.js'
+import { tt } from '../locale-extended.js'
 
 const GRAPHEMES = new Intl.Segmenter(undefined, { granularity: 'grapheme' })
 // Provider keys are opaque printable ASCII. Rejecting an entire invalid paste avoids silently
@@ -9,6 +10,7 @@ const PRINTABLE_SECRET = /^[\x21-\x7e]+$/
 const PRINTABLE_TEXT = /^[\x20-\x7e]+$/
 
 export type SecretInputViewOptions = {
+  locale?: string
   label?: string
   hint?: string
   /** Text prompts may be shown and may accept a blank response; secrets remain masked by default. */
@@ -84,8 +86,9 @@ export class SecretInputView implements Component {
   }
 
   render(width: number): string[] {
-    const label = escapeControl(this.options.label ?? 'API key:')
-    const hint = escapeControl(this.options.hint ?? 'enter submit  escape back')
+    const locale = this.options.locale ?? 'en'
+    const label = escapeControl(this.options.label ?? tt('secretInput.apiKeyLabel', locale))
+    const hint = escapeControl(this.options.hint ?? tt('secretInput.hint', locale))
     const value = this.options.masked === false ? escapeControl(this.#secret) : '[input hidden]'
     return [placeCursor(fitLine(`${label} ${value}`, width)), fitLine(hint, width)]
   }

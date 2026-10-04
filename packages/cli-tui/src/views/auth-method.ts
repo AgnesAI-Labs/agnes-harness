@@ -2,12 +2,12 @@ import type { Component } from '../component.js'
 import { wrapText } from '../component.js'
 import { fitLine } from '../components/line.js'
 import { Select } from '../components/select.js'
-
-const HINT = '↑↓ navigate  enter select  escape/ctrl+c cancel'
+import { tt } from '../locale-extended.js'
 
 export type AuthMethodChoice = 'agnes-account' | 'api-key'
 
 export type AuthMethodViewOptions = {
+  locale?: string
   suggested?: AuthMethodChoice
   onChoose(choice: AuthMethodChoice): void
   onCancel(): void
@@ -15,13 +15,16 @@ export type AuthMethodViewOptions = {
 
 export class AuthMethodView implements Component {
   private readonly select: Select
+  private readonly locale: string
 
   constructor(options: AuthMethodViewOptions) {
+    const locale = options.locale ?? 'en'
+    this.locale = locale
     this.select = new Select({
-      title: 'Select authentication method:',
+      title: tt('authMethod.title', locale),
       options: [
-        { id: 'agnes-account', label: 'Sign in with an Agnes account' },
-        { id: 'api-key', label: 'Sign in with an API key / ChatGPT subscription' },
+        { id: 'agnes-account', label: tt('authMethod.agnesAccount', locale) },
+        { id: 'api-key', label: tt('authMethod.apiKey', locale) },
       ],
       onChoose: (id) => {
         if (id === 'agnes-account' || id === 'api-key') options.onChoose(id)
@@ -40,6 +43,9 @@ export class AuthMethodView implements Component {
   }
 
   render(width: number): string[] {
-    return [...this.select.render(width), ...wrapText(HINT, width).map((line) => fitLine(line, width))]
+    return [
+      ...this.select.render(width),
+      ...wrapText(tt('authMethod.hint', this.locale), width).map((line) => fitLine(line, width)),
+    ]
   }
 }

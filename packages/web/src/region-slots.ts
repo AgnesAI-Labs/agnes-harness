@@ -63,6 +63,7 @@ import { flushSync } from 'react-dom'
 import type { ClaimResolver } from './client-modules/boot.js'
 import { observeSlotCards } from './client-modules/timeline-slot.js'
 import type { DocumentPreviewInput, DocumentPreviewKind } from './document-preview.js'
+import { applyLocaleText } from './locale-preference.js'
 import { createModelPicker } from './model-picker.js'
 import { renderSessionNavigation } from './navigation.js'
 import { createPermissionPicker } from './permission-picker.js'
@@ -74,15 +75,14 @@ import { createUsagePanel } from './usage.js'
 
 export type { ConversationChildContainers, ConversationHandle } from '@agnes/web-units'
 
-const SIDEBAR_DEPENDENCIES: SidebarDependencies = {
-  renderNavigation: renderSessionNavigation,
+const SIDEBAR_DEPENDENCIES_BASE = {
   bindSidebar,
 }
 const TRANSCRIPT_DEPENDENCIES: TranscriptDependencies = {
   createRenderer: createTimelineRenderer,
   observeCards: observeSlotCards,
 }
-const COMPOSER_DEPENDENCIES: ComposerDependencies = {
+const COMPOSER_DEPENDENCIES: Omit<ComposerDependencies, 'translate'> = {
   createModelPicker,
   createPermissionPicker,
   createUsagePanel,
@@ -190,7 +190,11 @@ const SETTINGS_DSH_GLOBAL_SLOT_NAMES = new Set([
   'settings.section',
 ])
 
-function EmptyStateBuiltin(): ReturnType<typeof createElement> {
+function EmptyStateBuiltin({
+  t = (key) => key,
+}: {
+  t?: (key: string) => string
+}): ReturnType<typeof createElement> {
   return createElement(
     'div',
     { 'data-agnes-region-owner': 'builtin', 'data-agnes-region-unit': 'empty-state' },
@@ -220,7 +224,7 @@ function EmptyStateBuiltin(): ReturnType<typeof createElement> {
     ),
     createElement('span', { className: 'agnes-mark empty-brand-mark', 'aria-hidden': 'true' }),
     createElement('h2', { id: 'empty-state-title', className: 'empty-state-heading' }, 'Agnes Harness'),
-    createElement('p', { className: 'empty-state-copy' }, '让每一个模型，都能成为会做事的智能体。'),
+    createElement('p', { className: 'empty-state-copy' }, t('app.emptyState.tagline')),
   )
 }
 
@@ -312,17 +316,19 @@ function SidebarDshFrame({
   handle,
   state,
   actions,
+  dependencies,
 }: {
   handle: { current: SidebarHandle | null }
   state: SidebarState
   actions?: Partial<SidebarActions>
+  dependencies: SidebarDependencies
 }): ReturnType<typeof createElement> {
   const outlet = (name: string) => createElement(SlotOutlet, { name: name as never, hideWhenEmpty: true })
   return createElement(Sidebar, {
     ref: handle,
     state,
     actions,
-    dependencies: SIDEBAR_DEPENDENCIES,
+    dependencies,
     slots: {
       brandMark: outlet('sidebar.brand.mark'),
       brandName: outlet('sidebar.brand.name'),
@@ -354,6 +360,7 @@ export function mountSettingsPaneRegion(
   registry: SlotRegistry,
   container: HTMLElement,
   options: SettingsRegionOptions = {},
+  locale?: LocaleService,
 ): SettingsRegionMount {
   // The dialog/rail is a host scaffold. Every page below it is a separate row and separate
   // SlotOutlet, so disabling a single built-in or third-party replacement cannot reset siblings.
@@ -366,9 +373,17 @@ export function mountSettingsPaneRegion(
   }
   const handle = { current: null as SettingsRegionHandle | null }
   const root = createAntdRoot(container)
-  flushSync(() => {
-    root.render(createElement(SettingsBuiltin, { ref: handle, options }))
-  })
+  const renderSettingsShell = (): void => {
+    flushSync(() => {
+      root.render(
+        createElement(SettingsBuiltin, {
+          ref: handle,
+          options: locale ? { ...options, translate: (key: string) => locale.t(key) } : options,
+        }),
+      )
+    })
+  }
+  renderSettingsShell()
   const dshRoots = new Map<string, AntdRoot>()
   const dshPaneSlots = new Map<SettingsPane, string[]>()
   const mountDshOutlet = (name: string, host: HTMLElement, pane?: SettingsPane): void => {
@@ -405,7 +420,12 @@ export function mountSettingsPaneRegion(
         owner: SETTINGS_UNIT_OWNER[pane],
         priority: 0,
       },
-      () => createElement(SettingsPaneBuiltin, { pane, computerUse: options.computerUse }),
+      () =>
+        createElement(SettingsPaneBuiltin, {
+          pane,
+          computerUse: options.computerUse,
+          ...(locale ? { translate: (key: string) => locale.t(key) } : {}),
+        }),
     )
     removeBuiltin.set(pane, remove)
     flushSync(() => {
@@ -424,6 +444,30 @@ export function mountSettingsPaneRegion(
       mountDshOutlet(name, dshHost, pane)
     }
   }
+  const translateSettingsMarkup = (): void => {
+    if (locale) applyLocaleText(container, (key) => locale.t(key))
+  }
+  translateSettingsMarkup()
+  // 不重渲染外壳。外壳用 dangerouslySetInnerHTML 渲染，字符串随语言变化，重渲染会整段替换
+  // innerHTML，把每个面板与各 DSH 出口的宿主元素一起换掉；面板的 React 根绑在旧宿主上，结果右侧
+  // 内容区变空白，要刷新页面才恢复。其余面板的文本由 applyLocaleText 就地回填。
+  //
+  // 模型面板是例外：它由 React 组件 SettingsModelPane 渲染，没有 data-i18n 节点，回填够不着，
+  // 只能重渲染它的根换语言。React 这次是就地协调、不替换 DOM，所以面板内的 DSH 宿主仍然存活。
+  const stopLocaleUpdates = locale?.subscribe(() => {
+    translateSettingsMarkup()
+    const modelRoot = paneRoots.get('model')
+    if (!modelRoot) return
+    flushSync(() => {
+      modelRoot.render(
+        createElement(
+          SlotsProvider,
+          { registry },
+          createElement(SlotOutlet, { name: settingsPaneSlot('model') }),
+        ),
+      )
+    })
+  })
   let disposed = false
   return {
     open(pane: SettingsPane) {
@@ -454,6 +498,7 @@ export function mountSettingsPaneRegion(
         dshRoot.unmount()
         dshRoots.delete(name)
       }
+      stopLocaleUpdates?.()
       root.unmount()
     },
   }
@@ -466,10 +511,12 @@ function ComposerDshFrame({
   registry,
   setHandle,
   options,
+  dependencies,
 }: {
   registry: SlotRegistry
   setHandle: (value: ComposerHandle | null) => void
   options: ComposerRegionOptions
+  dependencies: ComposerDependencies
 }): ReturnType<typeof createElement> {
   const outlet = (name: string) => createElement(SlotOutlet, { name: name as never, hideWhenEmpty: true })
   return createElement(
@@ -486,7 +533,7 @@ function ComposerDshFrame({
       }),
       createElement(Composer, {
         ref: setHandle,
-        dependencies: COMPOSER_DEPENDENCIES,
+        dependencies,
         ...options,
         slots: {
           attachments: outlet('conversation.input.attachments'),
@@ -516,7 +563,20 @@ export function mountComposerRegion(
   registry: SlotRegistry,
   container: HTMLElement,
   options: ComposerRegionOptions,
+  locale: LocaleService,
 ): ComposerRegionMount {
+  // Render-time lookup: the injected translate reads whatever locale is current on each render.
+  const composerDependencies: ComposerDependencies = {
+    ...COMPOSER_DEPENDENCIES,
+    translate: (key, vars) => locale.t(key, vars),
+    // Wrap the usage panel so the shared React component renders with the current locale.
+    UsagePanel: (props) =>
+      createElement(ConversationUsage, {
+        ...props,
+        t: (key, vars) => locale.t(key, vars),
+      }),
+    createUsagePanel: (parent) => createUsagePanel(parent, (key, vars) => locale.t(key, vars)),
+  }
   const ownedShell = registry.spec('root') ? undefined : mountDshShellRegion(registry)
   if (!registry.spec('conversation.composer'))
     registry.declare(
@@ -566,6 +626,7 @@ export function mountComposerRegion(
         registry,
         setHandle,
         options: composerOptions,
+        dependencies: composerDependencies,
       }),
   )
   const removeBuiltin = registry.register(
@@ -639,10 +700,13 @@ export interface RightbarDocument {
   readonly artifact?: ClientDocumentArtifact
 }
 
-function documentPreviewInput(document: RightbarDocument | undefined): DocumentPreviewInput {
+function documentPreviewInput(
+  document: RightbarDocument | undefined,
+  t: (key: string) => string = (key) => key,
+): DocumentPreviewInput {
   return {
     kind: document?.kind ?? 'text',
-    title: document?.title ?? '文档预览',
+    title: document?.title ?? t('app.doc.previewTitle'),
     content: document?.content ?? '',
     ...(document?.resourceUrl === undefined ? {} : { resourceUrl: document.resourceUrl }),
   }
@@ -651,9 +715,11 @@ function documentPreviewInput(document: RightbarDocument | undefined): DocumentP
 function DocumentPreviewBuiltin({
   document,
   resources,
+  t = (key) => key,
 }: {
   document: RightbarDocument | undefined
   resources?: ClientResourceService
+  t?: (key: string) => string
 }): ReturnType<typeof createElement> {
   const artifact = document?.artifact
   const laneId = document?.laneId
@@ -698,7 +764,9 @@ function DocumentPreviewBuiltin({
           input: {
             kind: 'text',
             content:
-              error instanceof ClientResourceReclaimedError ? '截图已按保留策略清理' : '文档资源暂不可用',
+              error instanceof ClientResourceReclaimedError
+                ? t('app.doc.reclaimed')
+                : t('app.doc.unavailable'),
           },
         })
       })
@@ -706,12 +774,12 @@ function DocumentPreviewBuiltin({
       active = false
       resource?.release()
     }
-  }, [request, resources])
+  }, [request, resources, t])
   // A changed owner must never paint the previous resource while its replacement is loading.
   const input =
     loaded && loaded.request === request && loaded.resources === resources
-      ? { ...documentPreviewInput(document), ...loaded.input }
-      : documentPreviewInput(document)
+      ? { ...documentPreviewInput(document, t), ...loaded.input }
+      : documentPreviewInput(document, t)
   return createElement(
     'div',
     {
@@ -725,9 +793,11 @@ function DocumentPreviewBuiltin({
 function RightbarDocumentTab({
   document,
   resources,
+  t = (key) => key,
 }: {
   document: RightbarDocument | undefined
   resources?: ClientResourceService
+  t?: (key: string) => string
 }): ReturnType<typeof createElement> {
   const kind = document?.kind ?? 'text'
   return createElement(
@@ -740,19 +810,24 @@ function RightbarDocumentTab({
       fallback: createElement(DocumentPreviewBuiltin, {
         document,
         ...(resources === undefined ? {} : { resources }),
+        t,
       }),
     }),
   )
 }
 
-function RightbarGuideTab(): ReturnType<typeof createElement> {
+function RightbarGuideTab({
+  t = (key) => key,
+}: {
+  t?: (key: string) => string
+}): ReturnType<typeof createElement> {
   return createElement(
     'section',
     { className: 'rightbar-tab-content', 'data-rightbar-tab': 'guide' },
     createElement(SlotOutlet, {
       name: 'sidebar.right.tab.guide',
       owner: { tabId: 'guide' },
-      fallback: '暂无指南',
+      fallback: t('app.guide.empty'),
     }),
     createElement(SlotOutlet, {
       name: 'sidebar.right.tab.guide.entry',
@@ -767,28 +842,32 @@ function RightbarTabBuiltin({
   tab,
   document,
   resources,
+  t = (key) => key,
 }: {
   tab: 'document' | 'guide'
   document: RightbarDocument | undefined
   resources?: ClientResourceService
+  t?: (key: string) => string
 }): ReturnType<typeof createElement> {
   return tab === 'document'
     ? createElement(RightbarDocumentTab, {
         document,
         ...(resources === undefined ? {} : { resources }),
       })
-    : createElement(RightbarGuideTab)
+    : createElement(RightbarGuideTab, { t })
 }
 
 function RightbarSessionBuiltin({
   document,
+  t = (key) => key,
 }: {
   document: RightbarDocument | undefined
+  t?: (key: string) => string
 }): ReturnType<typeof createElement> {
   const activeTab = document === undefined ? 'guide' : 'document'
   const owner = (tabId: 'document' | 'guide') => ({
     tabId,
-    title: tabId === 'document' ? (document?.title ?? '文档') : '指南',
+    title: tabId === 'document' ? (document?.title ?? t('app.doc.fallbackTitle')) : t('app.guide.title'),
     active: activeTab === tabId,
   })
   return createElement(
@@ -796,7 +875,7 @@ function RightbarSessionBuiltin({
     { id: 'rightbar-session', 'data-agnes-rightbar-session': true },
     createElement(
       'nav',
-      { className: 'rightbar-tabs', 'aria-label': '扩展面板' },
+      { className: 'rightbar-tabs', 'aria-label': t('app.rightbarTabs') },
       createElement(SlotOutlet, {
         name: 'sidebar.right.pane.tab',
         entryKey: 'document',
@@ -838,7 +917,9 @@ export function mountRightbarRegion(
   registry: SlotRegistry,
   container: HTMLElement,
   options: RightbarRegionOptions = {},
+  locale?: LocaleService,
 ): RightbarRegionMount {
+  const t = locale ? (key: string) => locale.t(key) : undefined
   const rootSpec = dshSlotSpec('rightbar')
   const sessionSpec = dshSlotSpec('rightbar.session')
   if (!rootSpec || !sessionSpec) throw new Error('rightbar DSH slots are missing from the catalog')
@@ -861,7 +942,11 @@ export function mountRightbarRegion(
       priority: 1,
       children: RIGHTBAR_SESSION_CHILDREN,
     },
-    () => createElement(RightbarSessionBuiltin, { document: options.document }),
+    () =>
+      createElement(RightbarSessionBuiltin, {
+        document: options.document,
+        ...(t ? { t } : {}),
+      }),
   )
   const removeDocumentTab = registry.register(
     {
@@ -910,6 +995,7 @@ export function mountRightbarRegion(
           createElement(DocumentPreviewBuiltin, {
             document: owner ?? options.document,
             ...(options.resources === undefined ? {} : { resources: options.resources }),
+            ...(t ? { t } : {}),
           }),
       ),
     )
@@ -1000,9 +1086,12 @@ export interface TopbarRegionMount extends EmptyStateRegionMount, TopbarHandle {
 }
 
 /** Mount the component-owned topbar behind a replaceable SlotOutlet. */
-export function mountTopbarRegion(registry: SlotRegistry, container: HTMLElement): TopbarRegionMount {
+export function mountTopbarRegion(
+  registry: SlotRegistry,
+  container: HTMLElement,
+  locale: LocaleService,
+): TopbarRegionMount {
   const handle = { current: null as TopbarHandle | null }
-  const disconnectListeners = new Set<() => void>()
   let resolveReady!: () => void
   const ready = new Promise<void>((resolve) => {
     resolveReady = resolve
@@ -1024,7 +1113,7 @@ export function mountTopbarRegion(registry: SlotRegistry, container: HTMLElement
     () =>
       createElement(Topbar, {
         ref: setHandle,
-        disconnectListeners,
+        translate: (key, vars) => locale.t(key, vars),
       }),
   )
   container.replaceChildren()
@@ -1053,14 +1142,9 @@ export function mountTopbarRegion(registry: SlotRegistry, container: HTMLElement
       connectionState = value
       handle.current?.setConnectionState(value)
     },
-    onDisconnect(listener) {
-      disconnectListeners.add(listener)
-      return () => disconnectListeners.delete(listener)
-    },
     dispose() {
       if (disposed) return
       disposed = true
-      disconnectListeners.clear()
       root.unmount()
       removeBuiltin()
     },
@@ -1131,6 +1215,7 @@ export function mountApprovalRegion(registry: SlotRegistry, container: HTMLEleme
 /** Make the conversation shell a session-scoped replacement boundary before mounting its children. */
 export interface ConversationRegionOptions {
   session?: SessionService
+  locale?: LocaleService
   onMount?(children: ConversationChildContainers): void
   onUnmount?(): void
 }
@@ -1195,7 +1280,14 @@ export function mountConversationRegion(
     () =>
       createElement(Conversation, {
         ref: handle,
-        ...options,
+        ...(options.onMount ? { onMount: options.onMount } : {}),
+        ...(options.onUnmount ? { onUnmount: options.onUnmount } : {}),
+        ...(options.locale
+          ? {
+              translate: (key: string, vars?: Record<string, string | number>) =>
+                options.locale?.t(key, vars) ?? key,
+            }
+          : {}),
         slots: {
           session: createElement(SlotOutlet, { name: 'conversation.session', hideWhenEmpty: true }),
           sessionHeader: createElement(SlotOutlet, {
@@ -1282,7 +1374,14 @@ export function mountSidebarRegion(
   registry: SlotRegistry,
   container: HTMLElement,
   options: { state?: SidebarState; actions?: Partial<SidebarActions> } = {},
+  locale: LocaleService,
 ): SidebarRegionMount {
+  // Render-time lookup: navigation copy resolves on each rebuild against the current locale.
+  const sidebarDependencies: SidebarDependencies = {
+    ...SIDEBAR_DEPENDENCIES_BASE,
+    translate: (key, vars) => locale.t(key, vars),
+    renderNavigation: (options) => renderSessionNavigation(options, (key, vars) => locale.t(key, vars)),
+  }
   registry.declare(SIDEBAR_SLOT as string, { kind: 'single', scope: 'root' }, 'web-shell')
   if (!registry.spec('sidebar')) registry.declare('sidebar', { kind: 'single', scope: 'root' }, 'web-shell')
   const handle = { current: null as SidebarHandle | null }
@@ -1299,6 +1398,7 @@ export function mountSidebarRegion(
         handle,
         state: options.state ?? EMPTY_SIDEBAR_STATE,
         ...(options.actions === undefined ? {} : { actions: options.actions }),
+        dependencies: sidebarDependencies,
       }),
   )
   const removeBuiltin = registry.register(
@@ -1509,6 +1609,7 @@ export function mountEmptyStateRegion(
   if (!registry.spec(EMPTY_STATE_SLOT))
     registry.declare(EMPTY_STATE_SLOT as string, { kind: 'single', scope: 'root' }, 'web-shell')
   // Priority 0 is the built-in. Third-party entries can explicitly shadow it with a lower value.
+  const translate = services.locale ? (key: string) => services.locale?.t(key) ?? key : undefined
   const removeBuiltin = registry.register(
     {
       name: EMPTY_STATE_SLOT as string,
@@ -1517,7 +1618,7 @@ export function mountEmptyStateRegion(
       priority: 0,
       children: EMPTY_STATE_DSH_CHILDREN,
     },
-    EmptyStateBuiltin,
+    () => createElement(EmptyStateBuiltin, translate ? { t: translate } : {}),
   )
   container.replaceChildren()
   const root: AntdRoot = createAntdRoot(container)

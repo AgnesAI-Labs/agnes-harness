@@ -29,6 +29,8 @@ export interface SlotNodeView {
 export interface SlotCardContext {
   registry: SlotRegistry
   claim: ClaimResolver
+  /** Locale for the unclaimed-slot fallback copy; optional, defaults to English. */
+  locale?: import('@agnes/web-client').LocaleService
 }
 
 let cardContext: SlotCardContext | undefined
@@ -69,7 +71,7 @@ export function mountSlotCard(options: {
   const context = options.context
   if (!context) {
     element.setAttribute('data-slot-state', 'empty')
-    element.textContent = '此卡片的插件未就绪'
+    element.textContent = cardContext?.locale?.t('slot.notReady') ?? 'Plugin for this card is not ready'
     return {
       element,
       update(next: SlotNodeView) {

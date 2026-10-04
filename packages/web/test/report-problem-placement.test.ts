@@ -36,8 +36,8 @@ describe('report-problem button placement', () => {
 
     expect(button.type).toBe('button')
     expect(button.className).toBe('icon-button')
-    expect(button.getAttribute('aria-label')).toBe('报告问题')
-    expect(button.getAttribute('title')).toBe('报告问题')
+    expect(button.getAttribute('aria-label')).toBe('Report a problem')
+    expect(button.getAttribute('title')).toBe('Report a problem')
 
     const svg = button.querySelector('svg')
     expect(svg?.getAttribute('class')).toBe('icon icon-fill')

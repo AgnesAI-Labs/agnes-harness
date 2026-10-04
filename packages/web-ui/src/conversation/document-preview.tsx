@@ -1,4 +1,5 @@
 import { createElement, type ReactNode, useMemo } from 'react'
+import { fallbackT, type Translate } from '../locales/index.js'
 import { documentResourceUrl, sanitizeDocumentHtml } from './document-preview-policy.js'
 import { ConversationMarkdown } from './markdown.js'
 
@@ -16,6 +17,8 @@ export interface DocumentPreviewProps extends DocumentPreviewInput {
   theme?: 'light' | 'dark'
   onCopy?: ((text: string) => Promise<void>) | undefined
   onFragment?: ((id: string) => void) | undefined
+  /** Locale-bound translate injected by the host; render-time lookup only. */
+  t?: Translate
 }
 
 /** Display only: the consumer owns resource acquisition, authorization and release. */
@@ -27,6 +30,7 @@ export function DocumentPreview({
   theme = 'light',
   onCopy,
   onFragment,
+  t = fallbackT,
 }: DocumentPreviewProps) {
   const html = useMemo(
     () => (kind === 'html' ? htmlNodes(sanitizeDocumentHtml(content)) : undefined),
@@ -35,7 +39,10 @@ export function DocumentPreview({
   const url = documentResourceUrl(resourceUrl)
   const unavailable =
     (kind === 'image' || kind === 'pdf') && !url
-      ? `${kind === 'image' ? '图片' : 'PDF '}资源${resourceUrl ? '未获授权' : '不可用'}`
+      ? t('doc.preview.unavailable', {
+          kind: t(kind === 'image' ? 'doc.kind.image' : 'doc.kind.pdf'),
+          reason: t(resourceUrl ? 'doc.reason.unauthorized' : 'doc.reason.unavailable'),
+        })
       : undefined
   let children: ReactNode
   switch (kind) {
@@ -61,14 +68,15 @@ export function DocumentPreview({
           theme={theme}
           onCopy={onCopy}
           onFragment={onFragment}
+          t={t}
         />
       ) : undefined
       break
     case 'image':
-      children = url ? <img src={url} alt={title ?? '文档图片'} decoding="async" /> : undefined
+      children = url ? <img src={url} alt={title ?? t('doc.imageFallback')} decoding="async" /> : undefined
       break
     case 'pdf':
-      children = url ? <iframe src={url} title={title ?? 'PDF 文档'} sandbox="" /> : undefined
+      children = url ? <iframe src={url} title={title ?? t('doc.pdfFallback')} sandbox="" /> : undefined
       break
   }
   return (

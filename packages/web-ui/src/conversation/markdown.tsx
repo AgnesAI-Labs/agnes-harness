@@ -1,5 +1,15 @@
 import { type ComponentProps, type Tokens, XMarkdown, type XMarkdownProps } from '@ant-design/x-markdown'
-import { createContext, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import {
+  createContext,
+  type ReactNode,
+  useContext,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react'
+import { fallbackT, type Translate } from '../locales/index.js'
 import {
   decodeMarkdownEntities,
   escapeMarkdownHtml,
@@ -28,10 +38,12 @@ export interface ConversationMarkdownProps {
   theme?: 'light' | 'dark'
   onCopy?: ((text: string) => Promise<void>) | undefined
   onFragment?: ((id: string) => void) | undefined
+  /** Locale-bound translate injected by the host; render-time lookup only. */
+  t?: Translate | undefined
 }
 
 const Callbacks = createContext<
-  Pick<ConversationMarkdownProps, 'onCopy' | 'onFragment' | 'onRelease' | 'syntax'>
+  Pick<ConversationMarkdownProps, 'onCopy' | 'onFragment' | 'onRelease' | 'syntax' | 't'>
 >({})
 const dompurifyConfig = { ADD_ATTR: ['key'] }
 
@@ -73,7 +85,7 @@ function Link({ children, title, ...props }: ComponentProps) {
 }
 
 function CodeBlock({ children, domNode }: ComponentProps) {
-  const { onCopy: writeCode, onRelease, syntax } = useContext(Callbacks)
+  const { onCopy: writeCode, onRelease, syntax, t = fallbackT } = useContext(Callbacks)
   const node = domNode as { children?: Array<{ name?: string; attribs?: Record<string, string> }> }
   const label =
     node.children
@@ -112,12 +124,16 @@ function CodeBlock({ children, domNode }: ComponentProps) {
         <button
           type="button"
           className="code-copy"
-          aria-label="复制代码"
+          aria-label={t('markdown.copyCode')}
           aria-live="polite"
           data-copy-state={state}
           onClick={copy}
         >
-          {state === 'success' ? '已复制' : state === 'failure' ? '复制失败' : '复制'}
+          {state === 'success'
+            ? t('markdown.copied')
+            : state === 'failure'
+              ? t('markdown.copyFailed')
+              : t('markdown.copy')}
         </button>
       </div>
       <pre ref={codeRef}>{children}</pre>
@@ -131,12 +147,17 @@ const components: NonNullable<XMarkdownProps['components']> = {
   img: ({ alt }) => <>{alt}</>,
   span: RevealText,
   'agnes-reveal-root': RevealRoot,
-  table: ({ children }) => (
+  table: TableScroll,
+}
+
+function TableScroll({ children }: { children?: ReactNode }) {
+  const { t = fallbackT } = useContext(Callbacks)
+  return (
     // biome-ignore lint/a11y/noNoninteractiveTabindex: focus enables keyboard scrolling of wide tables.
-    <section className="table-scroll" tabIndex={0} aria-label="表格，可横向滚动">
+    <section className="table-scroll" tabIndex={0} aria-label={t('markdown.tableScroll')}>
       <table>{children}</table>
     </section>
-  ),
+  )
 }
 
 export function ConversationMarkdown({
@@ -148,6 +169,7 @@ export function ConversationMarkdown({
   onFragment,
   onRelease,
   syntax = 'streaming',
+  t,
 }: ConversationMarkdownProps) {
   const host = useRef<HTMLDivElement>(null)
   const shown = useMarkdownSnapshot(host, source, streaming, onRelease)
@@ -222,8 +244,8 @@ export function ConversationMarkdown({
     [protectedSource, shown, syntax],
   )
   const callbacks = useMemo(
-    () => ({ onCopy, onFragment, onRelease, syntax }),
-    [onCopy, onFragment, onRelease, syntax],
+    () => ({ onCopy, onFragment, onRelease, syntax, t }),
+    [onCopy, onFragment, onRelease, syntax, t],
   )
   const stream = useMemo(
     () => ({ hasNextChunk: shown.streaming && syntax === 'streaming', enableAnimation: false }),

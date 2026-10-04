@@ -5,6 +5,7 @@ import {
   type DiagnosticsInclude,
   type DiagnosticsStep,
 } from '@agnes/web-ui'
+import { diagnosticsLocale, diagnosticsText } from '@agnes/web-units/diagnostics-locale'
 import { createElement } from 'react'
 import { flushSync } from 'react-dom'
 import { getBrowserLog } from './browser-log.js'
@@ -31,12 +32,13 @@ export type DiagnosticsDialogDeps = {
   save?: (zip: Uint8Array, fileName: string) => Promise<'saved' | 'canceled'>
 }
 
-const TITLES: Record<DiagnosticsStep, string> = {
-  menu: '报告问题',
-  share: '选择要包含的内容',
-  ready: '诊断包已生成',
-  saved: '诊断文件已保存',
-}
+const TITLE_KEY = {
+  menu: 'diagnostics.title.menu',
+  share: 'diagnostics.title.share',
+  ready: 'diagnostics.title.ready',
+  saved: 'diagnostics.title.saved',
+} as const
+const titleFor = (step: DiagnosticsStep) => diagnosticsText(TITLE_KEY[step])
 
 const message = (failure: unknown) => (failure instanceof Error ? failure.message : String(failure))
 const formatSize = (bytes: number) =>
@@ -112,7 +114,7 @@ export function createDiagnosticsDialog(deps: DiagnosticsDialogDeps): {
   const root = createAntdRoot(dialog)
   let snapshot: DiagnosticsDialogSnapshot = {
     step: 'menu',
-    title: TITLES.menu,
+    title: titleFor('menu'),
     hasSession: false,
     include: { conversation: false, logs: true, system: true },
     generating: false,
@@ -129,14 +131,23 @@ export function createDiagnosticsDialog(deps: DiagnosticsDialogDeps): {
   let disposed = false
 
   const render = () => {
-    flushSync(() => root.render(createElement(DiagnosticsDialogView, { snapshot, actions })))
+    const locale = diagnosticsLocale()
+    flushSync(() =>
+      root.render(
+        createElement(DiagnosticsDialogView, {
+          snapshot,
+          actions,
+          text: (key) => diagnosticsText(key as Parameters<typeof diagnosticsText>[0], undefined, locale),
+        }),
+      ),
+    )
   }
   const focusStep = () => {
     dialog
       .querySelector<HTMLElement>(`[data-step="${snapshot.step}"] :is(button, input):not(:disabled)`)
       ?.focus()
   }
-  const show = (step: DiagnosticsStep, title = TITLES[step]) => {
+  const show = (step: DiagnosticsStep, title = titleFor(step)) => {
     snapshot = { ...snapshot, step, title, error: '' }
     render()
     focusStep()
@@ -150,7 +161,7 @@ export function createDiagnosticsDialog(deps: DiagnosticsDialogDeps): {
     snapshot = {
       ...snapshot,
       step: 'menu',
-      title: TITLES.menu,
+      title: titleFor('menu'),
       generating: false,
       saving: false,
       summary: '',
@@ -204,7 +215,11 @@ export function createDiagnosticsDialog(deps: DiagnosticsDialogDeps): {
         (failure: unknown) => {
           if (disposed || generation !== currentGeneration || controller !== mine) return
           controller = undefined
-          snapshot = { ...snapshot, generating: false, error: `生成诊断包失败：${message(failure)}` }
+          snapshot = {
+            ...snapshot,
+            generating: false,
+            error: diagnosticsText('diagnostics.error.generate', { detail: message(failure) }),
+          }
           render()
         },
       )
@@ -223,11 +238,19 @@ export function createDiagnosticsDialog(deps: DiagnosticsDialogDeps): {
             if (disposed || generation !== currentGeneration || result !== current) return
             if (outcome !== 'saved') return
             snapshot = { ...snapshot, savedName: current.fileName }
-            show('saved', current.bundle.warnings.length ? '问题包已导出，部分资料不完整' : TITLES.saved)
+            show(
+              'saved',
+              current.bundle.warnings.length
+                ? diagnosticsText('diagnostics.savedPartial')
+                : titleFor('saved'),
+            )
           },
           (failure: unknown) => {
             if (disposed || generation !== currentGeneration || result !== current) return
-            snapshot = { ...snapshot, error: `保存诊断分享包失败：${message(failure)}` }
+            snapshot = {
+              ...snapshot,
+              error: diagnosticsText('diagnostics.error.save', { detail: message(failure) }),
+            }
             render()
           },
         )
@@ -251,10 +274,17 @@ export function createDiagnosticsDialog(deps: DiagnosticsDialogDeps): {
     if (disposed) return
     retire()
     disposed = true
+    window.removeEventListener('agnes:locale-changed', onLocale)
     window.removeEventListener('pagehide', dispose)
     root.unmount()
     dialog.remove()
   }
+  const onLocale = () => {
+    if (disposed) return
+    snapshot = { ...snapshot, title: titleFor(snapshot.step) }
+    render()
+  }
+  window.addEventListener('agnes:locale-changed', onLocale)
   window.addEventListener('pagehide', dispose, { once: true })
 
   return {

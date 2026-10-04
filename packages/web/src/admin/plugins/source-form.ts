@@ -1,4 +1,8 @@
 import type { PackageSource } from '@agnes/protocol'
+import { createCatalogTranslator, type LocaleTranslator } from '@agnes/web-ui'
+import { pluginAdminLocaleCatalog } from './locales/admin.js'
+
+const sourceText = createCatalogTranslator(pluginAdminLocaleCatalog, 'en')
 
 export function sourceFromForm(type: string, ref: string): PackageSource | undefined {
   if (!ref) return undefined
@@ -21,16 +25,20 @@ export const SOURCE_FORMATS: Readonly<
   },
   git: {
     prefix: 'git:',
-    example: 'git:https://example.com/org/repo.git#<40 位提交哈希>',
+    example: 'git:https://example.com/org/repo.git#<40-character commit hash>',
   },
 })
 
 /** A problem the page can see before asking the backend, or undefined when the reference looks right. */
-export function sourceProblem(type: string, ref: string): string | undefined {
-  if (!ref) return '请输入来源引用。'
+export function sourceProblem(
+  type: string,
+  ref: string,
+  t: LocaleTranslator = sourceText,
+): string | undefined {
+  if (!ref) return t('source.validation.missing')
   const format = type in SOURCE_FORMATS ? SOURCE_FORMATS[type as PackageSource['type']] : undefined
-  if (!format) return '请选择来源类型。'
+  if (!format) return t('source.validation.type')
   if (!ref.startsWith(format.prefix))
-    return `此类型的引用必须以“${format.prefix}”开头，例如 ${format.example}`
+    return t('source.validation.prefix', { prefix: format.prefix, example: format.example })
   return undefined
 }

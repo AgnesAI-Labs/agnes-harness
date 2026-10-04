@@ -260,7 +260,8 @@ export class WorkerLink {
                     typeof (error as { data?: { code?: unknown } })?.data?.code === 'string'
                       ? (error as { data: { code: string } }).data.code
                       : 'HELPER_MANAGEMENT_FAILED',
-                  message: 'AGH 扩展操作未完成，请检查设置中的状态或策略。',
+                  message:
+                    'The AGH extension operation did not finish. Check its status or policy in Settings.',
                 }
               : frame.method === 'skill-install'
                 ? skillInstallReplyError(error)

@@ -1,25 +1,26 @@
 import { type ModelSettings, minimumContextBudget, type ThinkingLevel } from '@agnes/protocol'
 import { useState } from 'react'
+import { fallbackT, type Translate } from './locales/index.js'
 import { Button } from './ui/button.js'
 import { Dialog } from './ui/dialog.js'
 import { Field } from './ui/field.js'
 
-const labels: Record<ThinkingLevel, string> = {
-  off: '关闭',
-  minimal: '最低',
-  low: '低',
-  medium: '中',
-  high: '高',
-  xhigh: '更高',
-  max: '最高',
+const THINKING_LABEL_KEYS: Record<ThinkingLevel, string> = {
+  off: 'modelSettings.thinking.off',
+  minimal: 'modelSettings.thinking.minimal',
+  low: 'modelSettings.thinking.low',
+  medium: 'modelSettings.thinking.medium',
+  high: 'modelSettings.thinking.high',
+  xhigh: 'modelSettings.thinking.xhigh',
+  max: 'modelSettings.thinking.max',
 }
 
-export function modelThinkingOptions(map?: Record<string, string>) {
+export function modelThinkingOptions(map?: Record<string, string>, t: Translate = fallbackT) {
   return [
-    { label: '自动（Provider 默认）', value: '' },
-    ...Object.entries(labels)
+    { label: t('modelSettings.thinking.auto'), value: '' },
+    ...Object.entries(THINKING_LABEL_KEYS)
       .filter(([level]) => map && Object.hasOwn(map, level))
-      .map(([value, label]) => ({ value, label: `${label} · ${value}` })),
+      .map(([value, key]) => ({ value, label: `${t(key)} · ${value}` })),
   ]
 }
 
@@ -37,6 +38,8 @@ export type ModelSettingsDialogProps = {
   contextWindow: number
   thinkingLevelMap?: Record<string, string> | undefined
   onApply(settings: ModelSettings): Promise<boolean>
+  /** Locale-bound translate injected by the host; render-time lookup only. */
+  t?: Translate | undefined
 }
 
 /** The dialog owns its draft; the backend-confirmed selection remains in the composer. */
@@ -46,6 +49,7 @@ export function ModelSettingsDialog({
   contextWindow,
   thinkingLevelMap,
   onApply,
+  t = fallbackT,
 }: ModelSettingsDialogProps) {
   const [open, setOpen] = useState(false)
   const [thinking, setThinking] = useState('')
@@ -57,7 +61,7 @@ export function ModelSettingsDialog({
   const validWindow =
     window.trim() === '' || (tokens !== undefined && tokens >= minimum && tokens <= contextWindow)
   const validThinking =
-    thinking === '' || modelThinkingOptions(thinkingLevelMap).some((option) => option.value === thinking)
+    thinking === '' || modelThinkingOptions(thinkingLevelMap, t).some((option) => option.value === thinking)
   return (
     <>
       <Button
@@ -66,7 +70,7 @@ export function ModelSettingsDialog({
         htmlType="button"
         disabled={disabled}
         aria-haspopup="dialog"
-        aria-label="配置本会话的思考强度和上下文预算"
+        aria-label={t('modelSettings.triggerAria')}
         onClick={() => {
           setThinking(settings.thinking ?? '')
           setWindow(String(settings.contextWindow ?? ''))
@@ -74,14 +78,14 @@ export function ModelSettingsDialog({
           setOpen(true)
         }}
       >
-        思考 · 上下文
+        {t('modelSettings.trigger')}
       </Button>
       <Dialog
-        title="本会话模型配置"
+        title={t('modelSettings.title')}
         open={open}
         onCancel={() => setOpen(false)}
-        okText="应用到本会话"
-        cancelText="取消"
+        okText={t('modelSettings.ok')}
+        cancelText={t('modelSettings.cancel')}
         confirmLoading={pending}
         okButtonProps={{ disabled: disabled || !validWindow || !validThinking }}
         onOk={async () => {
@@ -94,16 +98,20 @@ export function ModelSettingsDialog({
               ...(tokens === undefined ? {} : { contextWindow: tokens }),
             })
             if (accepted) setOpen(false)
-            else setError('配置未保存，请检查连接或重试。')
+            else setError(t('modelSettings.saveFailed'))
           } catch (failure) {
-            setError(failure instanceof Error ? failure.message : '配置保存失败')
+            setError(failure instanceof Error ? failure.message : t('modelSettings.saveError'))
           } finally {
             setPending(false)
           }
         }}
       >
-        <p>仅影响本会话的后续请求，重新打开会话后仍会保留。</p>
-        <Field className="form-field" label="思考强度" htmlFor="session-model-thinking">
+        <p>{t('modelSettings.intro')}</p>
+        <Field
+          className="form-field"
+          label={t('modelSettings.thinkingLabel')}
+          htmlFor="session-model-thinking"
+        >
           <select
             id="session-model-thinking"
             value={thinking}
@@ -112,21 +120,27 @@ export function ModelSettingsDialog({
             aria-describedby="session-model-settings-error"
             onChange={(event) => setThinking(event.target.value)}
           >
-            {modelThinkingOptions(thinkingLevelMap).map((option) => (
+            {modelThinkingOptions(thinkingLevelMap, t).map((option) => (
               <option key={option.value} value={option.value}>
                 {option.label}
               </option>
             ))}
-            {!validThinking && <option value={thinking}>已保存的档位当前不可用：{thinking}</option>}
+            {!validThinking && (
+              <option value={thinking}>
+                {t('modelSettings.savedThinkingUnavailable', { value: thinking })}
+              </option>
+            )}
           </select>
         </Field>
-        <Field className="form-field" label="本会话上下文预算（Token）" htmlFor="session-model-window">
+        <Field className="form-field" label={t('modelSettings.windowLabel')} htmlFor="session-model-window">
           <input
             id="session-model-window"
             type="text"
             maxLength={32}
             value={window}
-            placeholder={`自动 · ${contextWindow.toLocaleString()}`}
+            placeholder={t('modelSettings.windowPlaceholder', {
+              tokens: contextWindow.toLocaleString(),
+            })}
             disabled={pending || disabled}
             aria-invalid={!validWindow}
             aria-describedby="session-model-window-hint session-model-settings-error"
@@ -134,14 +148,16 @@ export function ModelSettingsDialog({
           />
         </Field>
         <p id="session-model-window-hint" className="field-hint">
-          模型容量 {contextWindow.toLocaleString()} Token。可输入 100K（100,000
-          Token）或完整数量；留空恢复自动。较小预算会提前整理上下文。
+          {t('modelSettings.windowHint', { tokens: contextWindow.toLocaleString() })}
         </p>
         <p id="session-model-settings-error" role="alert">
           {!validWindow
-            ? `请输入 ${minimum.toLocaleString()} 至 ${contextWindow.toLocaleString()} 之间的正整数 Token，可使用 K/M 单位。`
+            ? t('modelSettings.windowRange', {
+                min: minimum.toLocaleString(),
+                max: contextWindow.toLocaleString(),
+              })
             : !validThinking
-              ? '该模型当前不支持已保存的思考强度，请重新选择。'
+              ? t('modelSettings.thinkingUnsupported')
               : error}
         </p>
       </Dialog>

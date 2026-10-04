@@ -54,7 +54,7 @@ export const TimelineNodeHost = forwardRef<TranscriptHandle, TimelineNodeHostPro
   const [store] = useState(() =>
     createConversationProjectionStore({ sessionId: registry.sessionId ?? '', nodes: [] }),
   )
-  const runtime = useConversationRuntime(store)
+  const runtime = useConversationRuntime(store, locale?.t.bind(locale))
   const projection = useSyncExternalStore(store.subscribe, store.getSnapshot, store.getSnapshot)
   const viewport = useCallback(
     () => content.current?.closest<HTMLElement>('#transcript') ?? content.current,
@@ -184,7 +184,7 @@ export const TimelineNodeHost = forwardRef<TranscriptHandle, TimelineNodeHostPro
     >
       <div ref={earlier} className="transcript-earlier" hidden={!projection.meta?.hasEarlier}>
         <button type="button" onClick={loadEarlier}>
-          加载更早的记录
+          {locale ? locale.t('timeline.loadEarlier') : 'Load earlier records'}
         </button>
       </div>
       <div id="transcript-content" ref={content}>

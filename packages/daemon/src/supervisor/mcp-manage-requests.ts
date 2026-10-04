@@ -191,7 +191,8 @@ export function createMcpManageRequests(options: {
           state: operation.state,
           connectionState: status.connectionState,
           code: status.lastSafeError?.code ?? 'MCP_CONNECT_FAILED',
-          message: 'MCP 已登记，但接入尚未完成。请在 AGH 设置 → MCP 查看并修复连接；不能报告工具可用。',
+          message:
+            'MCP is registered, but the connection is not ready. Open AGH Settings → MCP and fix the connection. Do not report the tools as available.',
         }
       return {
         proposalId: receipt.proposalId,
@@ -210,8 +211,8 @@ export function createMcpManageRequests(options: {
         toolCount: status.toolCount,
         effective: 'next-turn',
         message: ready
-          ? 'MCP 已在 AGH 连接成功。请根据本轮实际工具列表判断能否调用。'
-          : '服务已登记到 AGH：设置 → MCP。连接和工具快照在轮次边界生效；本轮请结束回复，下一轮再核验。',
+          ? 'MCP is connected in AGH. Use this turn’s actual tool list to decide whether it can be called.'
+          : 'The server is registered in AGH under Settings → MCP. The connection and tool snapshot apply at a turn boundary. Finish this reply and verify on the next turn.',
       }
     }
     try {
@@ -296,7 +297,7 @@ export function createMcpManageRequests(options: {
         throw rpcError('SEMANTIC_REJECTED', { code: 'MCP_PROPOSAL_EXPIRED' })
       proposal.busy = true
       try {
-        const summary = `接入到 Agnes Harness：${proposal.definition.displayName}\n${JSON.stringify(proposal.definition.transport)}\n在当前 AGH 配置的会话中共享；登记、信任并启用此配置。启动命令可能下载并运行第三方软件。仅批准本服务的这份配置，不修改其他客户端。`
+        const summary = `Connect to Agnes Harness: ${proposal.definition.displayName}\n${JSON.stringify(proposal.definition.transport)}\nShared by sessions in the current AGH profile. This registers, trusts, and enables this configuration. The start command may download and run third-party software. This approval covers only this configuration and does not change other clients.`
         const prompt = new PrompterRouter({
           record: () => {},
           connections: () => [conn],

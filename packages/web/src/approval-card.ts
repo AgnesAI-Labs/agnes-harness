@@ -2,6 +2,8 @@
 // and what the session-wide choice covers. Pure, so the wording and the "can everything be seen"
 // rule are tested without a page.
 
+import type { Translate } from './presentation.js'
+
 /** Characters of the arguments the card prints. Past this the card says so and drops the session grant. */
 export const PREVIEW_LIMIT = 32 * 1024
 
@@ -34,36 +36,40 @@ function leadingFirst(input: unknown): unknown {
   return Object.fromEntries([...first, ...keys.filter((k) => !first.includes(k))].map((k) => [k, input[k]]))
 }
 
-function impactOf(tool: string | undefined, kind: unknown, input: unknown): string {
+function impactOf(tool: string | undefined, kind: unknown, input: unknown, t: Translate): string {
   const field = (name: string): string | undefined => {
     const v = isRecord(input) ? input[name] : undefined
     return typeof v === 'string' && v !== '' ? v : undefined
   }
   const path = field('path') ?? field('file_path')
-  const check = '请核对后决定。'
-  if (tool === 'write') return `将创建或覆盖文件${path ? ` ${path}` : ''}。${check}`
-  if (kind === 'edit') return `将修改文件${path ? ` ${path}` : ''}。${check}`
-  if (kind === 'execute') return '将在此任务的工作目录执行命令。请核对命令后决定。'
-  if (kind === 'fetch') return `将访问网址${field('url') ? ` ${field('url')}` : ''}。${check}`
-  if (kind === 'read') return `将读取${path ? ` ${path}` : '内容'}。${check}`
-  return '请核对工具及参数后决定是否继续。'
+  // 目标路径/网址直接拼进句子，中英文都写作「动词 + 空格 + 目标」，所以把空格放进插值值里。
+  const target = (value: string | undefined): string => (value ? ` ${value}` : '')
+  if (tool === 'write') return t('app.approval.impact.write', { target: target(path) })
+  if (kind === 'edit') return t('app.approval.impact.edit', { target: target(path) })
+  if (kind === 'execute') return t('app.approval.impact.execute')
+  if (kind === 'fetch') return t('app.approval.impact.fetch', { target: target(field('url')) })
+  if (kind === 'read')
+    return path
+      ? t('app.approval.impact.read', { target: target(path) })
+      : t('app.approval.impact.readContent')
+  return t('app.approval.impact.default')
 }
 
-export function liveApprovalCard(toolCall: Record<string, unknown>): ApprovalCard {
+export function liveApprovalCard(toolCall: Record<string, unknown>, t: Translate): ApprovalCard {
   const tool = toolOf(toolCall)
   const input = toolCall.rawInput
-  const impact = impactOf(tool, toolCall.kind, input)
-  const sessionLabel = tool ? `本会话内允许所有 ${tool} 调用` : '本会话内允许此工具的所有调用'
+  const impact = impactOf(tool, toolCall.kind, input, t)
+  const sessionLabel = tool ? t('app.approval.session.all', { tool }) : t('app.approval.session.tool')
   if (input === undefined) return { impact, sessionLabel }
   const text = JSON.stringify(leadingFirst(input), null, 2) ?? String(input)
   if (text.length <= PREVIEW_LIMIT) return { impact, preview: text, sessionLabel }
   let shown = PREVIEW_LIMIT
   const last = text.charCodeAt(shown - 1)
   if (last >= 0xd800 && last <= 0xdbff) shown -= 1
-  const count = `已显示 ${shown} / 共 ${text.length} 字符`
+  const count = t('app.approval.truncatedCount', { shown, total: text.length })
   return {
     impact,
     preview: `${text.slice(0, shown)}\n…[${count}]`,
-    warning: `内容未完整显示（${count}）。未显示的部分同样会随调用生效，所以这项审批没有“本会话允许”，只能“仅允许这次”或“拒绝”。`,
+    warning: t('app.approval.truncatedWarning', { count }),
   }
 }

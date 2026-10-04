@@ -7,6 +7,7 @@ import {
   useLayoutEffect,
   useRef,
 } from 'react'
+import type { Translate } from './locales/index.js'
 
 export interface ConversationChildContainers {
   transcript: HTMLElement
@@ -26,6 +27,8 @@ export interface ConversationHandle {
 export interface ConversationProps {
   onMount?(children: ConversationChildContainers): void
   onUnmount?(): void
+  /** Locale-bound translate injected by the host; render-time lookup only. */
+  translate?: Translate
   slots?: {
     session?: ReactNode
     sessionHeader?: ReactNode
@@ -44,9 +47,10 @@ function nearBottom(element: HTMLElement): boolean {
  * never needs to reach into a child implementation.
  */
 export const Conversation = forwardRef<ConversationHandle, ConversationProps>(function Conversation(
-  { onMount, onUnmount, slots }: ConversationProps,
+  { onMount, onUnmount, translate, slots }: ConversationProps,
   ref: ForwardedRef<ConversationHandle>,
 ) {
+  const t: Translate = translate ?? ((key) => key)
   const transcript = useRef<HTMLElement>(null)
   const emptyState = useRef<HTMLElement>(null)
   const newContentButton = useRef<HTMLButtonElement>(null)
@@ -111,7 +115,7 @@ export const Conversation = forwardRef<ConversationHandle, ConversationProps>(fu
       ref: transcript,
       id: 'transcript',
       'data-agnes-region': 'transcript',
-      'aria-label': '对话',
+      'aria-label': t('conversation.transcriptAria'),
       tabIndex: -1,
     }),
     createElement('section', {
@@ -129,7 +133,7 @@ export const Conversation = forwardRef<ConversationHandle, ConversationProps>(fu
         { className: 'icon', 'data-agnes-region': 'icon', viewBox: '0 0 24 24', 'aria-hidden': true },
         createElement('path', { d: NEW_CONTENT_ICON_PATH }),
       ),
-      createElement('span', null, '有新内容'),
+      createElement('span', null, t('conversation.newContent')),
     ),
     // These outlet hosts are intentionally display-contents: card renderers own the existing
     // timeline layout, while independently replaceable units get stable child mount points.

@@ -7,6 +7,7 @@ import { act, createElement, useEffect, useState } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { mountTranscriptRegion } from '../src/region-slots.js'
 import { costDetails, costSummary } from '../src/usage.js'
+import { zhLocaleService, zhT } from './helpers/locale.js'
 
 const contexts: Context[] = []
 const mounts: Array<ReturnType<typeof mountTranscriptRegion>> = []
@@ -26,6 +27,7 @@ async function setup(options: { onFork?: (turn: UITurn) => Promise<void> } = {})
     nodeHost: 'react',
     newContentButton: button,
     claim: (entry, extId) => entry.owner === extId,
+    locale: zhLocaleService(),
     ...(options.onFork ? { onFork: options.onFork } : {}),
   })
   mounts.push(mount)
@@ -829,13 +831,13 @@ it('preserves complete React cost details, focus and order through the opt-in ti
     expect(article?.querySelector('summary')).toBe(summary)
     expect(details.open).toBe(true)
     expect(document.activeElement).toBe(summary)
-    expect(summary.textContent).toBe(costSummary(next))
+    expect(summary.textContent).toBe(costSummary(next, zhT))
     expect(
       Array.from(article?.querySelectorAll('dt') ?? []).map((term) => [
         term.textContent,
         term.nextElementSibling?.textContent,
       ]),
-    ).toEqual(costDetails(next))
+    ).toEqual(costDetails(next, zhT))
     expect(article?.querySelector('svg, strong, img')).toBeNull()
     expect(transcript.querySelectorAll('[data-node-id="cost"]')).toHaveLength(1)
     expect(
