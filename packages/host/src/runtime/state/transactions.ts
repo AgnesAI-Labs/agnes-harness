@@ -111,6 +111,7 @@ import {
   type StoredHead,
   type WriteCommitInput,
 } from './control.js'
+import { createEffectsActionCaptureOwner, type EffectsActionCapture } from './effects-action-capture.js'
 import {
   createInteractionReads,
   type InteractionReadCut,
@@ -863,6 +864,7 @@ export class RuntimeStateDatabase {
   private readonly reservedCommitEvents = new Map<string, string>()
   private admissionSource: RuntimeAdmissionSource | undefined
   private sessionControl: SessionControlOwner | undefined
+  private effectsActionCapture: ReturnType<typeof createEffectsActionCaptureOwner> | undefined
   private readonly beforeCommit: (() => void) | undefined
   private readonly onCommit: ((commit: CommitNotice) => void) | undefined
   private readonly ids: ReturnType<typeof defaultIds>
@@ -1047,6 +1049,13 @@ export class RuntimeStateDatabase {
       this.controlPorts(),
       (method, id, body, final) => this.tx(method, id, body, final),
     )
+  }
+
+  installEffectsActionCapture(): void {
+    if (this.closed) refuse('denied', 'effects_action', 'State connection is closed')
+    if (this.effectsActionCapture)
+      refuse('denied', 'effects_action', 'Effects Action capture is already installed')
+    this.effectsActionCapture = createEffectsActionCaptureOwner(this.db, this.controlPorts())
   }
 
   readSessionControl(sessionId: string, context: CallContext) {
@@ -1540,6 +1549,18 @@ export class RuntimeStateDatabase {
     return this.finishControl(
       await this.tx('advanceRun', request.commitId, () => advanceRunTx(this.controlPorts(), request)),
     )
+  }
+
+  async captureEffectsAction(sessionId: string, actionId: string): Promise<EffectsActionCapture> {
+    const source = this.effectsActionCapture
+    if (this.closed || !source) refuse('denied', 'effects_action', 'Effects Action capture is unavailable')
+    return this.tx('captureEffectsAction', actionId, () => source.capture(sessionId, actionId))
+  }
+
+  async verifyEffectsActionCapture(capture: EffectsActionCapture): Promise<boolean> {
+    const source = this.effectsActionCapture
+    if (this.closed || !source) return false
+    return this.tx('verifyEffectsActionCapture', 'fixed-capture', () => source.verify(capture))
   }
 
   async dispatchAdmission(request: DispatchAdmissionRequest): Promise<DispatchAdmissionResult> {
