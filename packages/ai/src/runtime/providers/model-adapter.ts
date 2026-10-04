@@ -30,6 +30,7 @@ import {
 } from '@agnes/protocol/runtime'
 import { PiAdapter } from '../../adapters/pi/index.js'
 import type { ModelAdapterDeployment, ModelWireSource } from '../model-adapter/ports.js'
+import { type ModelUsageEvidence, modelUsageEvidence } from '../model-adapter/usage-evidence.js'
 
 const methods = RuntimeMethodSchemaRefs['agh.model-adapter']
 const same = (a: unknown, b: unknown) => canonicalJsonDigest(a as never) === canonicalJsonDigest(b as never)
@@ -468,7 +469,9 @@ export function createModelAdapterFactory(
               const tools: ToolCall[] = []
               const usageState: {
                 tokens: { input: number; output: number; cacheRead: number; cacheWrite: number } | null
-              } = { tokens: null }
+                evidence: ModelUsageEvidence
+                reportedFees: boolean
+              } = { tokens: null, evidence: {}, reportedFees: false }
               const requestRef = external(frame)
               const unknownMeasurement: UsageMeasurement = {
                 kind: 'unknown',
@@ -538,6 +541,8 @@ export function createModelAdapterFactory(
                     if (event.type === 'toolcall_end') tools.push(event.call)
                     if (event.type === 'usage') {
                       usageState.tokens = event.tokens
+                      usageState.evidence = modelUsageEvidence(source.model, event)
+                      usageState.reportedFees = event.billing !== undefined || event.credits !== undefined
                       response = event.response ?? response
                     }
                     if (event.type === 'done')
@@ -566,6 +571,7 @@ export function createModelAdapterFactory(
                   Object.values(usageState.tokens).some((quantity) => quantity > 0)
                 const measurement: UsageMeasurement = {
                   kind: measured ? 'reported' : 'unknown',
+                  ...usageState.evidence,
                   quantities:
                     measured && usageState.tokens
                       ? Object.entries(usageState.tokens).map(([unit, quantity]) => ({
@@ -578,6 +584,16 @@ export function createModelAdapterFactory(
                   sourceReceipt: receipt,
                   replacesFactIds: [],
                 }
+                let dimensions = original.usage.encode(measurement)
+                if (!dimensions.ok && !usageState.reportedFees) {
+                  const {
+                    billing: _billing,
+                    credits: _credits,
+                    creditSource: _creditSource,
+                    ...legacy
+                  } = measurement
+                  dimensions = original.usage.encode(legacy)
+                }
                 usage = [
                   {
                     usageId: `${frame.attemptId}:model`,
@@ -585,7 +601,7 @@ export function createModelAdapterFactory(
                     actionId: frame.actionId,
                     attemptId: frame.attemptId,
                     source: source.prepared.target.adapter,
-                    dimensions: checked(original.usage.encode(measurement)),
+                    dimensions: checked(dimensions),
                     externalRequest: requestRef,
                     observedAt: new Date().toISOString(),
                     certainty: measured ? 'measured' : 'unknown',
@@ -627,6 +643,18 @@ export function createModelAdapterFactory(
                       usage: sent ? usage : [],
                     }
               } catch {
+                if (sent && usageState.tokens !== null) {
+                  usage = [unknownFact]
+                  try {
+                    const dimensions = original.usage.encode({
+                      ...unknownMeasurement,
+                      ...usageState.evidence,
+                    })
+                    if (dimensions.ok) usage = [{ ...unknownFact, dimensions: dimensions.value }]
+                  } catch {
+                    // Preserve the already encoded unknown fact when the selected codec cannot retain fees.
+                  }
+                }
                 result = {
                   ...failure(
                     sent ? 'unknown_effect' : controller.signal.aborted ? 'cancelled' : 'denied',

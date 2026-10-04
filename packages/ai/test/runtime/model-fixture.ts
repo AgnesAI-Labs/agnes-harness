@@ -2,6 +2,7 @@ import { readFileSync, writeFileSync } from 'node:fs'
 import type { ActionContext, CallContext, Outcome } from '@agnes/extension-api/runtime'
 import { defineGeneratedAuthorSchema, runtimeAuthorSchemas } from '@agnes/extension-api/runtime'
 import { createTestServiceContainer } from '@agnes/extension-api/testkit'
+import type { ModelRecord } from '@agnes/protocol'
 import {
   type ActionFrame,
   canonicalJsonDigest,
@@ -59,26 +60,42 @@ const receipt = object({
   digest: { type: 'string', minLength: 64, maxLength: 64 },
   bytes: integer(262144),
 })
-const usage = defineGeneratedAuthorSchema<UsageMeasurement>({
-  ownerPackageId: '@fixture/model',
-  name: 'Measurement',
-  typeId: '@fixture/model/measurement@1',
-  revision: 1,
-  document: {
-    $schema: 'https://json-schema.org/draft/2020-12/schema',
-    $ref: '#/$defs/Measurement',
-    $defs: {
-      Measurement: object({
-        kind: { enum: ['reported', 'estimated', 'corrected', 'unknown'] },
-        quantities: array(object({ unit: string(128), value: string(32) }), 16),
-        actualModel: { anyOf: [string(8192), { type: 'null' }] },
-        source: { enum: ['provider-receipt', 'adapter-counter', 'reported-target', 'estimator'] },
-        sourceReceipt: { anyOf: [receipt, { type: 'null' }] },
-        replacesFactIds: array(string(256), 16),
-      }),
+function usageCodec(legacy: boolean) {
+  return defineGeneratedAuthorSchema<UsageMeasurement>({
+    ownerPackageId: '@fixture/model',
+    name: 'Measurement',
+    typeId: '@fixture/model/measurement@1',
+    revision: 1,
+    document: {
+      $schema: 'https://json-schema.org/draft/2020-12/schema',
+      $ref: '#/$defs/Measurement',
+      $defs: {
+        Measurement: object(
+          {
+            kind: { enum: ['reported', 'estimated', 'corrected', 'unknown'] },
+            quantities: array(object({ unit: string(128), value: string(32) }), 16),
+            actualModel: { anyOf: [string(8192), { type: 'null' }] },
+            source: { enum: ['provider-receipt', 'adapter-counter', 'reported-target', 'estimator'] },
+            sourceReceipt: { anyOf: [receipt, { type: 'null' }] },
+            replacesFactIds: array(string(256), 16),
+            ...(legacy
+              ? {}
+              : {
+                  billing: object({
+                    usdMicros: integer(),
+                    source: { enum: ['gateway', 'estimated'] },
+                    subscription: { type: 'boolean' },
+                  }),
+                  credits: { type: 'number', minimum: 0 },
+                  creditSource: { enum: ['gateway', 'estimated'] },
+                }),
+          },
+          ['kind', 'quantities', 'actualModel', 'source', 'sourceReceipt', 'replacesFactIds'],
+        ),
+      },
     },
-  },
-})
+  })
+}
 const preparedLocator = defineGeneratedAuthorSchema<{ preparedDigest: string; inputDigest: string }>({
   ownerPackageId: '@fixture/model',
   name: 'PreparedLocator',
@@ -104,7 +121,10 @@ export async function modelFixture(
   api: 'openai-completions' | 'anthropic-messages',
   baseUrl: string,
   journal: string,
+  cost?: ModelRecord['cost'],
+  legacyUsage = false,
 ) {
+  const usage = usageCodec(legacyUsage)
   const scope = {
     kind: 'runtime' as const,
     installationId: 'fixture-installation',
@@ -120,7 +140,13 @@ export async function modelFixture(
     authorizationRef: 'fixture-authority',
     signal: new AbortController().signal,
   }
-  const model = fakeModel({ id: 'fixture-model', route: 'fixed-route', api, baseUrl })
+  const model = fakeModel({
+    id: 'fixture-model',
+    route: 'fixed-route',
+    api,
+    baseUrl,
+    ...(cost ? { cost } : {}),
+  })
   const prepared: PreparedModelRequest = {
     preparedId: 'prepared',
     ownerBinding: {
