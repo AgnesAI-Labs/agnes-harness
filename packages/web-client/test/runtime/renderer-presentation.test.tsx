@@ -96,7 +96,12 @@ function card(extra: Partial<RendererDescriptor> = {}) {
     useEffect(() => {
       mounts += 1
     }, [])
-    return <p className="card">{`card ${view.viewId}@${view.revision}`}</p>
+    return (
+      <p className="card">
+        {`card ${view.viewId}@${view.revision}`}
+        <input aria-label="note" />
+      </p>
+    )
   }
   const definition = { descriptor: descriptor(extra), component: Card } as unknown as RendererDefinition
   return { definition, renders, mounts: () => mounts, last: () => renders.at(-1) }
@@ -351,19 +356,29 @@ describe('renderer presentation', () => {
   })
 
   it('moves the mounted context to a newer revision instead of remounting', async () => {
-    const { presenter, hold } = setup('web', view(1))
+    const provisional = (revision: number) => view(revision, [command('rename')], { phase: 'provisional' })
+    const { presenter, hold } = setup('web', provisional(1))
     const renderer = card()
     const lease = presenter.lease({ definition: renderer.definition, ownerToken: 'owner-1' })
-    await show(element(lease.present(view(1))))
-    hold(view(2, [command('publish')]))
-    await show(element(lease.present(view(2))))
+    await show(element(lease.present(provisional(1))))
+    // The text the user selected in the card, and then the focus inside it, survive each newer revision.
+    const shown = host.querySelector('.card') as HTMLElement
+    document.getSelection()?.selectAllChildren(shown)
+    hold(provisional(2))
+    await show(element(lease.present(provisional(2))))
+    expect([document.getSelection()?.anchorNode, shown.isConnected]).toEqual([shown, true])
+    const input = shown.querySelector('input')
+    input?.focus()
+    hold(view(3, [command('publish')]))
+    await show(element(lease.present(view(3))))
+    expect([document.activeElement, input?.isConnected]).toEqual([input, true])
 
-    expect(host.querySelector('.card')?.textContent).toBe('card note-1@2')
+    expect(host.querySelector('.card')?.textContent).toBe('card note-1@3')
     expect(renderer.mounts()).toBe(1)
     expect(new Set(renderer.renders.map((entry) => entry.context)).size).toBe(1)
     const context = renderer.last()?.context as RendererContext
     expect(await submitted(context, 'rename', 1)).toBe('denied/outside_view')
-    expect(await submitted(context, 'publish', 2)).toBe('ok')
+    expect(await submitted(context, 'publish', 3)).toBe('ok')
   })
 
   it('shows the window copy of any view in the generic card, as text only', async () => {
