@@ -58,13 +58,14 @@ async function issueIdentity(
   clockHook: () => void,
   permissionOwner: SessionControlClaimsOwner,
   additionalWorkspace?: string,
+  now: () => number = () => Date.parse(at),
 ) {
   const identity = createIdentityAuthority(
     db,
     permissionOwner,
     () => {
       clockHook()
-      return Date.parse(at)
+      return now()
     },
     (_actor, target) =>
       target.bindingId === 'controller' &&
@@ -109,7 +110,7 @@ async function issueIdentity(
   return { identity, actor, context }
 }
 export async function createSessionControlSourceFixture(
-  optionsInput: Readonly<{ additionalWorkspace?: string }> = {},
+  optionsInput: Readonly<{ additionalWorkspace?: string; now?: () => number }> = {},
 ) {
   const dir = mkdtempSync(join(tmpdir(), 'runtime-admission-'))
   const file = join(dir, 'state.sqlite')
@@ -119,7 +120,7 @@ export async function createSessionControlSourceFixture(
   const options = {
     file,
     authority,
-    now: () => Date.parse(at),
+    now: optionsInput.now ?? (() => Date.parse(at)),
     beforeCommit: () => hook(),
   }
   const state = new RuntimeStateDatabase(options)
@@ -141,6 +142,7 @@ export async function createSessionControlSourceFixture(
     () => clockHook(),
     permissionOwner,
     optionsInput.additionalWorkspace,
+    options.now,
   )
   const configuration = createSessionControlConfiguration({
     database: db,

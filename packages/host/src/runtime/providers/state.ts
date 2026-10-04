@@ -55,10 +55,7 @@ export const UNIMPLEMENTED_STATE_METHODS = [
   'pruneRecordVersions',
   'publishActionResult',
   'readServiceCommand',
-  'readSessionControl',
   'registerStream',
-  'sessionControlStatus',
-  'submitSessionControl',
 ] as const
 
 export type UnimplementedStateMethod = (typeof UNIMPLEMENTED_STATE_METHODS)[number]
@@ -228,9 +225,30 @@ export function createRuntimeStateStore(
     cancelPreparedActionAdmission: (_request, context) =>
       unavailable('cancelPreparedActionAdmission', context),
     probePreparedActionAdmission: (_request, context) => unavailable('probePreparedActionAdmission', context),
-    readSessionControl: (_request, context) => unavailable('readSessionControl', context),
-    submitSessionControl: (_request, context) => unavailable('submitSessionControl', context),
-    sessionControlStatus: (_request, context) => unavailable('sessionControlStatus', context),
+    readSessionControl: (request, context) => {
+      const parsed = validateRuntime('StateStoreControlReadSessionControlRequest', request)
+      if (!parsed.ok)
+        return Promise.resolve(
+          failure('invalid_input', 'session_control_request', 'read input violates its codec'),
+        )
+      return run(context, () => database.readSessionControl(parsed.value.sessionId, context))
+    },
+    submitSessionControl: (request, context) => {
+      const parsed = validateRuntime('SessionControlRequest', request)
+      if (!parsed.ok)
+        return Promise.resolve(
+          failure('invalid_input', 'session_control_request', 'submit input violates its codec'),
+        )
+      return run(context, () => database.submitSessionControl(parsed.value, context))
+    },
+    sessionControlStatus: (request, context) => {
+      const parsed = validateRuntime('StateStoreControlSessionControlStatusRequest', request)
+      if (!parsed.ok)
+        return Promise.resolve(
+          failure('invalid_input', 'session_control_request', 'status input violates its codec'),
+        )
+      return run(context, () => database.sessionControlStatus(parsed.value, context))
+    },
     fireTimer: (_request, context) => unavailable('fireTimer', context),
     registerStream: (_request, context) => unavailable('registerStream', context),
     appendStream: (_request, context) => unavailable('appendStream', context),

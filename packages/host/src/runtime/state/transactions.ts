@@ -48,6 +48,10 @@ import {
   RuntimeCommitData as RuntimeCommitSchema,
   RuntimeFormatData,
 } from '@agnes/protocol/gen/session-v1'
+import type {
+  SessionControlRequest,
+  StateStoreControlSessionControlStatusRequest,
+} from '@agnes/protocol/runtime'
 import {
   type DataRef,
   type InboxRecord,
@@ -190,6 +194,8 @@ import {
   taintRecordId,
 } from './records.js'
 import { integrity, refuse, StateRefusal } from './refusal.js'
+import { createSessionControlOwner, type SessionControlOwner } from './session-control.js'
+import type { SessionControlSource } from './session-control-source.js'
 
 const SNAPSHOT_TTL_MS = 60_000
 const PROOF_PAGE = 500
@@ -856,6 +862,7 @@ export class RuntimeStateDatabase {
   private readonly interactionRead: RuntimeInteractionReadOwner | undefined
   private readonly reservedCommitEvents = new Map<string, string>()
   private admissionSource: RuntimeAdmissionSource | undefined
+  private sessionControl: SessionControlOwner | undefined
   private readonly beforeCommit: (() => void) | undefined
   private readonly onCommit: ((commit: CommitNotice) => void) | undefined
   private readonly ids: ReturnType<typeof defaultIds>
@@ -1029,6 +1036,35 @@ export class RuntimeStateDatabase {
         'admission source must be installed once on its original State connection',
       )
     this.admissionSource = source
+  }
+
+  installSessionControlSource(source: SessionControlSource): void {
+    if (this.sessionControl)
+      refuse('denied', 'session_control_source', 'session control source is already installed')
+    this.sessionControl = createSessionControlOwner(
+      this.db,
+      source,
+      this.controlPorts(),
+      (method, id, body, final) => this.tx(method, id, body, final),
+    )
+  }
+
+  readSessionControl(sessionId: string, context: CallContext) {
+    if (!this.sessionControl)
+      refuse('denied', 'session_control_source', 'session control source is not installed')
+    return this.sessionControl.read(sessionId, context)
+  }
+
+  submitSessionControl(request: SessionControlRequest, context: CallContext) {
+    if (!this.sessionControl)
+      refuse('denied', 'session_control_source', 'session control source is not installed')
+    return this.sessionControl.submit(request, context)
+  }
+
+  sessionControlStatus(request: StateStoreControlSessionControlStatusRequest, context: CallContext) {
+    if (!this.sessionControl)
+      refuse('denied', 'session_control_source', 'session control source is not installed')
+    return this.sessionControl.status(request, context)
   }
 
   async createRun(input: CreateRunInput, context?: CallContext): Promise<AdmissionProbe> {
