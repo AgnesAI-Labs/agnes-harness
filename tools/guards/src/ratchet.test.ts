@@ -1515,7 +1515,9 @@ const INITIAL_CEILING: Record<string, number> = {
   // Measured 13100, exact, no spare (+178).
   // Channel contract cases: idempotent send and reconcile, authenticated callbacks, cancellation,
   // crash recovery and disposal. Measured 13613, exact, no spare (+513).
-  'packages/extension-api/testkit': 13613,
+  // Shell recover: a killed client process and a rebuilt one restore the exported state, and states of
+  // another version or schema are refused. Measured 13705, exact, no spare (+92).
+  'packages/extension-api/testkit': 13705,
   // 2026-09-10: raised from 2500 by Task 15 (stream-disconnect reconnection). The new
   // reattach.ts (the Reconnector: backoff loop, OVERLOADED's retryAfterMs override) plus
   // Session.recover()/waitForQuiescence and Client's reconnect wiring (emit(), the
