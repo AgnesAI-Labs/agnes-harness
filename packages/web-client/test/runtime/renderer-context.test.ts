@@ -61,10 +61,33 @@ function view(revision: number, rename = 'rename'): DomainView {
         artifactId: 'file-3',
         version: 1,
       },
+      // An enabled command needing a feature this client did not negotiate is shown but not offered.
+      {
+        ...action,
+        kind: 'command',
+        actionKey: 'batch',
+        label: 'Batch',
+        command: 'batch',
+        inputSchema: schema,
+        requiredFeatures: ['acme.batch'],
+      },
     ],
   }
   expect(validateRuntime('DomainView', value).ok).toBe(true)
-  return value
+  // Unknown action (case 4): an enabled action of a kind this client does not know, forged past
+  // validation as a newer or malicious server could send it, offers nothing it names.
+  const forged = {
+    ...action,
+    kind: 'script',
+    actionKey: 'run',
+    label: 'Run',
+    command: 'run',
+    inputSchema: schema,
+    interactionId: 'run-1',
+    artifactId: 'file-4',
+    version: 1,
+  }
+  return { ...value, actions: [...value.actions, forged as unknown as DomainView['actions'][number]] }
 }
 
 const capabilities = {
@@ -170,8 +193,12 @@ describe('renderer context restricted to the mounted view', () => {
         context.interactions.pending({ scope }),
         call.submit('r', 'lock'),
         ...call.artifact('file-3', 1),
+        call.submit('r', 'run'),
+        ...call.interaction('run-1'),
+        ...call.artifact('file-4', 1),
+        call.submit('r', 'batch'),
       ]),
-    ).toEqual(Array(24).fill('denied'))
+    ).toEqual(Array(34).fill('denied'))
     for (const group of Object.values(services))
       for (const fn of Object.values(group)) if (vi.isMockFunction(fn)) expect(fn).not.toHaveBeenCalled()
 

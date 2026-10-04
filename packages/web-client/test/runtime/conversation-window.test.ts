@@ -7,7 +7,7 @@ import {
   RuntimeSchemas,
   validateRuntime,
 } from '@agnes/protocol/runtime'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import {
   type ConversationWindowMerger,
   createConversationWindow,
@@ -230,6 +230,7 @@ describe('conversation window subscription', () => {
 
   it('revoke drops the window and its subscription at once; only the open it asked for restores it', () => {
     const merger = liveOn(win(['n1', 'd1'], { next: 'page-1' }))
+    const pending = request(merger)
     const token = merger.revoke()
     expect([merger.window, merger.status, merger.writable]).toEqual([null, 'resyncing', false])
     expect(merger.frame(replace(win(['n1', 'd1', 'n2'], { revision: 2 }), 'order-1'))).toEqual(IGNORED)
@@ -239,6 +240,32 @@ describe('conversation window subscription', () => {
     expect(merger.window).toBeNull()
     expect(merger.opened(token, win(['n1'], { revision: 3 }))).toEqual(APPLIED)
     expect([merger.status, merger.writable, ids(merger)]).toEqual(['live', true, ['n1']])
+    // The revoked card stays gone: neither a late frame of the old subscription nor the page asked for
+    // before the revocation brings it back.
+    expect(merger.frame(replace(win(['n1', 'd1'], { revision: 4 }), 'order-3'))).toEqual(IGNORED)
+    expect(merger.loadedEarlier(pending.token, win(['d0', 'd1'], { revision: 3 }))).toEqual(IGNORED)
+    expect(ids(merger)).toEqual(['n1'])
+  })
+
+  // The caller runs every query; merging frames, opens and pages sends no request of its own.
+  it('sends no request while merging', () => {
+    const fetch = vi.fn()
+    const socket = vi.fn()
+    vi.stubGlobal('fetch', fetch)
+    vi.stubGlobal('WebSocket', socket)
+    try {
+      const merger = liveOn(win(['n2', 'd2'], { next: 'page-1' }))
+      expect(
+        merger.frame(replace(win(['n2', 'd2', 'n3'], { revision: 2, next: 'page-1' }), 'order-1')),
+      ).toEqual(APPLIED)
+      expect(merger.loadedEarlier(request(merger).token, win(['n1']))).toEqual(APPLIED)
+      expect(merger.opened(merger.resync(), upto(3))).toEqual(APPLIED)
+      merger.disconnected()
+      merger.revoke()
+      expect([fetch.mock.calls, socket.mock.calls]).toEqual([[], []])
+    } finally {
+      vi.unstubAllGlobals()
+    }
   })
 })
 
@@ -306,9 +333,11 @@ describe('conversation window replace', () => {
   it('keeps two concurrent domain cards independent through a replace of one', () => {
     const views: Record<string, Partial<DomainView>> = {
       d1: { phase: 'provisional', fallbackText: 'Flight on hold' },
-      d2: { phase: 'finalized', fallbackText: 'Hotel booked' },
+      d2: { phase: 'provisional', fallbackText: 'Hotel on hold' },
     }
     const merger = liveOn(win(['n1', 'd1', 'd2'], { views }))
+    const cards = () =>
+      merger.window?.domains.map(({ id, view }) => [id, view.revision, view.phase, view.fallbackText])
     const update = {
       ...views,
       d1: { revision: 2, phase: 'finalized' as const, fallbackText: 'Flight booked' },
@@ -317,12 +346,91 @@ describe('conversation window replace', () => {
       APPLIED,
     )
     expect(ids(merger)).toEqual(['n1', 'd1', 'd2'])
-    expect(
-      merger.window?.domains.map(({ id, view }) => [id, view.revision, view.phase, view.fallbackText]),
-    ).toEqual([
+    expect(cards()).toEqual([
       ['d1', 2, 'finalized', 'Flight booked'],
-      ['d2', 1, 'finalized', 'Hotel booked'],
+      ['d2', 1, 'provisional', 'Hotel on hold'],
     ])
+    // The other card ends interrupted while the first stays finalized; the older revision arriving
+    // late changes neither card nor their order.
+    const interrupted = {
+      ...update,
+      d2: { revision: 2, phase: 'interrupted' as const, fallbackText: 'Hotel failed' },
+    }
+    expect(
+      merger.frame(replace(win(['n1', 'd1', 'd2'], { revision: 3, views: interrupted }), 'order-2')),
+    ).toEqual(APPLIED)
+    const settled = merger.window
+    expect(merger.frame(replace(win(['n1', 'd2', 'd1'], { revision: 2, views: update }), 'order-1'))).toEqual(
+      IGNORED,
+    )
+    expect(merger.window).toBe(settled)
+    expect(ids(merger)).toEqual(['n1', 'd1', 'd2'])
+    expect(cards()).toEqual([
+      ['d1', 2, 'finalized', 'Flight booked'],
+      ['d2', 2, 'interrupted', 'Hotel failed'],
+    ])
+  })
+
+  // Cards are keyed by entry id, which the server derives from the domain type, scope and view id, so
+  // cards sharing only a view id never overwrite each other; a removed one stays gone.
+  it('keeps cards sharing a view id apart by domain type and scope through replace, removal and reset', () => {
+    const workspace: DomainView['scope'] = {
+      kind: 'workspace',
+      installationId: 'install-1',
+      runtimeId: 'runtime-1',
+      workspaceId: 'workspace-1',
+    }
+    const views: Record<string, Partial<DomainView>> = {
+      dFlight: { viewId: 'shared', domainType: 'travel.flight', fallbackText: 'Flight' },
+      dHotel: { viewId: 'shared', domainType: 'travel.hotel', fallbackText: 'Hotel' },
+      dTeam: { viewId: 'shared', domainType: 'travel.flight', scope: workspace, fallbackText: 'Team flight' },
+    }
+    const merger = liveOn(win(['n1', 'dFlight', 'dHotel', 'dTeam'], { views }))
+    const cards = () =>
+      merger.window?.domains.map(({ id, view }) => [
+        id,
+        view.viewId,
+        view.domainType,
+        view.scope.kind,
+        view.revision,
+        view.fallbackText,
+      ])
+    const flight = ['dFlight', 'shared', 'travel.flight', 'session', 1, 'Flight']
+    const hotel = ['dHotel', 'shared', 'travel.hotel', 'session', 1, 'Hotel']
+    expect(cards()).toEqual([
+      flight,
+      hotel,
+      ['dTeam', 'shared', 'travel.flight', 'workspace', 1, 'Team flight'],
+    ])
+
+    const upserted = { ...views, dTeam: { ...views.dTeam, revision: 2, fallbackText: 'Team flight booked' } }
+    const team = ['dTeam', 'shared', 'travel.flight', 'workspace', 2, 'Team flight booked']
+    const all = ['n1', 'dFlight', 'dHotel', 'dTeam']
+    expect(merger.frame(replace(win(all, { revision: 2, views: upserted }), 'order-1'))).toEqual(APPLIED)
+    expect(cards()).toEqual([flight, hotel, team])
+
+    // A removal starts a new epoch without the card; a late frame of the old epoch asks for a resync
+    // instead of bringing it back.
+    const removal = win(['n1', 'dHotel', 'dTeam'], { epoch: 'epoch-2', revision: 3, views: upserted })
+    expect(
+      merger.frame(
+        frame({
+          ...head(SUB),
+          kind: 'change',
+          payload: { kind: 'reset', window: removal, reason: 'removal' },
+        }),
+      ),
+    ).toEqual(APPLIED)
+    const removed = merger.window
+    expect(merger.frame(replace(win(all, { revision: 4, views: upserted }), 'order-3'))).toEqual(RESYNC)
+    expect(merger.window).toBe(removed)
+    expect(cards()).toEqual([hotel, team])
+
+    // A rebuild installs exactly the order and identities it carries.
+    const rebuilt = win(['dTeam', 'n1', 'dHotel'], { epoch: 'epoch-3', views: upserted })
+    expect(merger.frame(resets.frame(rebuilt))).toEqual(APPLIED)
+    expect(ids(merger)).toEqual(['dTeam', 'n1', 'dHotel'])
+    expect(cards()).toEqual([team, hotel])
   })
 
   it('returns the same composed window until something changes', () => {
@@ -427,7 +535,10 @@ describe('conversation window history', () => {
     )
     const first = request(merger)
     expect(first.cursor).toBe('page-1')
-    const older = win(['n3', 'd3', 'd4', 'n4', 'd5'], {
+    // Read at a newer cut, the page also holds the live n5 and d5: neither its copies, its revision
+    // nor its order cursor replace the live ones.
+    const older = win(['n3', 'd3', 'd4', 'n4', 'n5', 'd5'], {
+      revision: 9,
       next: 'page-2',
       views: {
         d4: { revision: 2, fallbackText: 'held card' },
@@ -444,6 +555,8 @@ describe('conversation window history', () => {
       complete: false,
     })
     expect(view(merger, 'd5')).toMatchObject({ revision: 3, fallbackText: 'live card' })
+    expect(merger.window?.native.timeline.nodes.find((node) => node.id === 'n5')?.seq).toBe(1)
+    expect(merger.window?.native.timeline.upto).toBe(2)
 
     const second = request(merger)
     expect(second.cursor).toBe('page-2')
@@ -465,6 +578,13 @@ describe('conversation window history', () => {
       complete: true,
     })
     expect(merger.earlier()).toBeNull()
+    // The live cursor did not move: the next replace on it applies after the loaded history.
+    const live = win(['n5', 'd5', 'n6', 'n7'], {
+      revision: 5,
+      views: { d5: { revision: 3, fallbackText: 'live card' } },
+    })
+    expect(merger.frame(replace(live, 'order-4'))).toEqual(APPLIED)
+    expect(ids(merger)).toEqual(['n1', 'n2', 'n3', 'd3', 'd4', 'n4', 'n5', 'd5', 'n6', 'n7'])
   })
 
   it('merges turns by id with the live window winning, in start order', () => {
@@ -570,6 +690,31 @@ describe('conversation window history', () => {
     expect(merger.frame(replace(win(['n4', 'n5'], { revision: 3 }), 'order-2'))).toEqual(APPLIED)
     expect(ids(merger)).toEqual(['n1', 'n2', 'n3', 'n4', 'n5'])
     expect(merger.window).toMatchObject({ nextPageCursor: null, orderCursor: 'order-3' })
+  })
+
+  // A late history page never leaves a hole: it lands only while it still ends where the window starts.
+  it('installs a page asked for before a replace only while the window still starts where it did', () => {
+    const merger = liveOn(win(['n3', 'n4'], { next: 'page-1' }))
+    const appended = request(merger)
+    expect(
+      merger.frame(replace(win(['n3', 'n4', 'n5'], { revision: 2, next: 'page-1' }), 'order-1')),
+    ).toEqual(APPLIED)
+    expect(merger.loadedEarlier(appended.token, win(['n2'], { next: 'page-0' }))).toEqual(APPLIED)
+    expect(ids(merger)).toEqual(['n2', 'n3', 'n4', 'n5'])
+
+    // n3 scrolls out of a live window with no loaded history, so the page asked for before n3 would leave
+    // a hole before n4 (and claim completeness); the next request asks from the new start.
+    const fresh = liveOn(win(['n3', 'n4'], { next: 'page-1' }))
+    const late = request(fresh)
+    expect(fresh.frame(replace(win(['n4', 'n5'], { revision: 2, next: 'page-2' }), 'order-1'))).toEqual(
+      APPLIED,
+    )
+    expect(fresh.loadedEarlier(late.token, win(['n1', 'n2']))).toEqual(IGNORED)
+    expect(ids(fresh)).toEqual(['n4', 'n5'])
+    const again = request(fresh)
+    expect(again.cursor).toBe('page-2')
+    expect(fresh.loadedEarlier(again.token, win(['n1', 'n2', 'n3']))).toEqual(APPLIED)
+    expect(ids(fresh)).toEqual(['n1', 'n2', 'n3', 'n4', 'n5'])
   })
 
   it('holds the composed order to the protocol bound', () => {

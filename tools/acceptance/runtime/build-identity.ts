@@ -48,3 +48,26 @@ export function withConformanceBuild(harness: ConformanceHarness): ConformanceHa
     },
   }
 }
+
+/**
+ * Marks every case registered through it as run on test stand-ins for deployment-owned ports: a case
+ * without a fixture of its own records `restricted-effects`, and each says which stand-ins it ran on.
+ */
+export function withDeploymentStandIns(harness: ConformanceHarness, standIns: string): ConformanceHarness {
+  return {
+    ...harness,
+    registerCase(registration) {
+      harness.registerCase({
+        ...registration,
+        async run(context) {
+          const input = await registration.run(context)
+          return {
+            ...input,
+            fixture: input.fixture ?? 'restricted-effects',
+            diagnostic: input.diagnostic === undefined ? standIns : `${input.diagnostic}; ${standIns}`,
+          }
+        },
+      })
+    },
+  }
+}

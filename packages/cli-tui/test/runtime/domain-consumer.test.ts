@@ -203,6 +203,32 @@ describe('runtime domain consumer', () => {
     }
   })
 
+  // Unknown domain (case 1), unknown action (case 4) and HTML in server strings (case 5): a view of a
+  // domain no renderer knows reads as text, its markup stays literal, and an action of a kind this
+  // client does not know, forged past validation, gets no number from any formatter.
+  it('shows a view of an unknown domain as text and never numbers an action of an unknown kind', () => {
+    const markup = '<img src=x onerror=alert(1)>'
+    const forged = { ...base, kind: 'script', actionKey: 'run', label: markup } as unknown as ViewAction
+    const domain = { domainType: 'acme.unknown', renderKey: 'acme.unknown/card', fallbackText: markup }
+    const value = { ...view({ ...domain, actions: [review] }), actions: [forged, review] }
+    const tui = createDomainConsumer({ locale: 'en', capabilities })
+    const shown = tui.present(value)
+    expect(shown.lines).toEqual([
+      'Status: Final',
+      markup,
+      'Actions:',
+      `${markup}: Not available here.`,
+      '[1] Review',
+      'Finish this in the Web client.',
+    ])
+    expect(shown).toMatchObject({ actions: [{ n: 1, actionKey: 'review' }], complete: false, needsWeb: true })
+    expect(tui.select('note-1', 3, 2)).toBeUndefined()
+    // A formatter that emits the forged action as an action part does not get it a number either.
+    const injected = consumer().present(value)
+    expect(injected.lines).toEqual([markup, `${markup} (not available in the terminal)`, '[1] Review'])
+    expect(injected.actions).toEqual([{ n: 1, actionKey: 'review', kind: 'open-form' }])
+  })
+
   it('names missing features and sends an incomplete view to the Web without fetching a link', () => {
     const incomplete: FormatDomainView = (input, context) => {
       const outcome = plain(input, context)

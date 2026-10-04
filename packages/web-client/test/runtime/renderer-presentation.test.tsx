@@ -276,11 +276,13 @@ describe('renderer presentation', () => {
     const other = view(1, [command('rename')], { viewId: 'note-2' })
     const { presenter, submit, failures } = setup('web', view(1), other)
     const failing = broken()
+    // A faulty renderer yields its own view only: another view presented beside it keeps rendering and
+    // its context keeps working.
     const sibling = card()
     await show(
       <>
         {element(presenter.lease({ definition: failing.definition, ownerToken: 'owner-1' }).present(view(1)))}
-        {element(presenter.lease({ definition: sibling.definition, ownerToken: 'owner-1' }).present(other))}
+        {element(presenter.lease({ definition: sibling.definition, ownerToken: 'owner-2' }).present(other))}
         <span className="sibling">still here</span>
       </>,
     )
@@ -422,6 +424,9 @@ describe('renderer presentation', () => {
       }),
     ],
     ['formats another view', (shown) => formattedOf({ ...shown, viewId: 'note-2' })],
+    // A malformed result yields like a throw.
+    ['returns no outcome', () => undefined as unknown as Outcome<FormattedView>],
+    ['succeeds without a view', () => ({ ok: true, value: null }) as unknown as Outcome<FormattedView>],
   ])('refuses a renderer whose format %s', (_, format) => {
     const { presenter } = setup('tui', view(1))
     const definition = textRenderer(format).definition

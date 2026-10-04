@@ -138,7 +138,8 @@ export function createConversationWindow(sessionId: string): ConversationWindowM
   let composed: RuntimeConversationWindow | null = null
   let tokens = 0
   let opening: number | null = null
-  let loading: number | null = null
+  /** The pending history request and the entry the composed window started with when it was asked. */
+  let loading: { readonly token: number; readonly before: string | undefined } | null = null
   let replay: Replace[] = []
 
   const show = (window: RuntimeConversationWindow | null, earlier: History | null) => {
@@ -218,11 +219,13 @@ export function createConversationWindow(sessionId: string): ConversationWindowM
     },
     earlier() {
       if (!composed || composed.nextPageCursor === null || composed.order.length >= MAX_ORDER) return null
-      loading = ++tokens
-      return { token: loading, cursor: composed.nextPageCursor }
+      loading = { token: ++tokens, before: composed.order[0]?.id }
+      return { token: loading.token, cursor: composed.nextPageCursor }
     },
     loadedEarlier(token, page) {
-      if (token !== loading || !live) return IGNORED
+      // A page ends where the window started when it was asked. Once that start has moved (entries
+      // scrolled out with no history loaded, or history was dropped) it would leave a hole.
+      if (token !== loading?.token || !live || composed?.order[0]?.id !== loading?.before) return IGNORED
       loading = null
       if (page.epoch !== live.epoch) return IGNORED
       if (page.native.timeline.generation !== live.native.timeline.generation || !coherent(sessionId, page))
