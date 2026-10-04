@@ -36,12 +36,36 @@
       "sha256": "edf5f9a829e3f107cf22d0b0c4d7421fb639be86093716bda7d7a7ded17972d3"
     },
     {
+      "path": "packages/extension-api/src/runtime/compaction-authoring.ts",
+      "sha256": "cb7c3cc268242e5ad49afb2ddfa603695e82ce35ef18e19b47a51d6a0f091ae7"
+    },
+    {
+      "path": "packages/extension-api/src/runtime/context-authoring.ts",
+      "sha256": "bcccbb849c93bb89cbccc0dd8dbde4a7f3fb90215bd4c8470248e3561657f962"
+    },
+    {
       "path": "packages/extension-api/src/runtime/pricing-authoring.ts",
       "sha256": "b925ebb391cfa2b590327170cf47a5b060db0c5b3ddca1f617e06a422872d640"
     },
     {
       "path": "packages/extension-api/src/runtime/routing-authoring.ts",
       "sha256": "b09e7debd6551e50184a5fdccd7c105fc4dd0e6ef02beb1075277081c872f9fd"
+    },
+    {
+      "path": "packages/extension-api/src/runtime/simple-loop-authoring.ts",
+      "sha256": "cae142c108bf73e73624087720678c8bc18483a2c931592744bb12a18b9b994b"
+    },
+    {
+      "path": "packages/extension-api/src/runtime/tool-author-effects.ts",
+      "sha256": "2425e3abf447b4aa795026087487fd9767a451931c0959c42975c07df08a727e"
+    },
+    {
+      "path": "packages/extension-api/src/runtime/tool-authoring.ts",
+      "sha256": "068ae4114c2416f36588eb3bde92cf093804ca4e75d8a36774a0f44b66d70130"
+    },
+    {
+      "path": "packages/extension-api/src/runtime/workflow-authoring.ts",
+      "sha256": "8ecf214321e97af337e11ebda5fdc21d6c0b9c9b5c1e5d5b3768af5393d6f961"
     },
     {
       "path": "packages/protocol-validation/src/byte-budget.ts",
@@ -683,6 +707,14 @@
         "sha256": "edf5f9a829e3f107cf22d0b0c4d7421fb639be86093716bda7d7a7ded17972d3"
       },
       {
+        "path": "packages/extension-api/src/runtime/compaction-authoring.ts",
+        "sha256": "cb7c3cc268242e5ad49afb2ddfa603695e82ce35ef18e19b47a51d6a0f091ae7"
+      },
+      {
+        "path": "packages/extension-api/src/runtime/context-authoring.ts",
+        "sha256": "bcccbb849c93bb89cbccc0dd8dbde4a7f3fb90215bd4c8470248e3561657f962"
+      },
+      {
         "path": "packages/extension-api/src/runtime/index.ts",
         "sha256": "e12089cfc2af0969be0afbbdb058cea397de6ab287c5dcfbb69a4bb8da30c2f6"
       },
@@ -705,6 +737,22 @@
       {
         "path": "packages/extension-api/src/runtime/routing-authoring.ts",
         "sha256": "b09e7debd6551e50184a5fdccd7c105fc4dd0e6ef02beb1075277081c872f9fd"
+      },
+      {
+        "path": "packages/extension-api/src/runtime/simple-loop-authoring.ts",
+        "sha256": "cae142c108bf73e73624087720678c8bc18483a2c931592744bb12a18b9b994b"
+      },
+      {
+        "path": "packages/extension-api/src/runtime/tool-author-effects.ts",
+        "sha256": "2425e3abf447b4aa795026087487fd9767a451931c0959c42975c07df08a727e"
+      },
+      {
+        "path": "packages/extension-api/src/runtime/tool-authoring.ts",
+        "sha256": "068ae4114c2416f36588eb3bde92cf093804ca4e75d8a36774a0f44b66d70130"
+      },
+      {
+        "path": "packages/extension-api/src/runtime/workflow-authoring.ts",
+        "sha256": "8ecf214321e97af337e11ebda5fdc21d6c0b9c9b5c1e5d5b3768af5393d6f961"
       },
       {
         "path": "packages/extension-api/src/skill-install.ts",
@@ -1412,16 +1460,16 @@
       },
       {
         "path": "tools/runtime-prototype/files.ts",
-        "sha256": "5ebf8d6be13de3bc7922b8e1d9a6cc65568c39b4076454aeb60f407f20df877a"
+        "sha256": "b75fc5372d607a6f17daee79f516d47971466128665da84d0fae5e941e1a2c97"
       },
       {
         "path": "tools/runtime-prototype/tsconfig.compile.json",
         "sha256": "5368e00eb1fe320fa21e015f95911b6af6ca8a3c405c3be6585ff521c4832ce0"
       }
     ],
-    "inputDigest": "caac8c88e74bc1f4aaf88dad4b62289f037f670fd353628d56534217b34c9d6e",
+    "inputDigest": "0cab4a5f72193d2426c53433721152eb9448c6b3d09baaa4e61bd3fbc5517f3b",
     "diagnostics": [],
-    "reportDigest": "103c88bdc0700dd27efb8ad03e3a978b707f7f994dbb4f0f28f0404e567d132f"
+    "reportDigest": "1a94ceb9f252e7bcfb066594ca612a033473dfa9560c294fe1e756e08116809b"
   },
-  "snapshotDigest": "a1c4a4ac037b240922d8857881500e3c5a00e305488204a7d8f4854afb43efe7"
+  "snapshotDigest": "28a8b09be0eb4088f29408b45b83ade69edff87baf8b83d6e4799dcb3a757e1c"
 }
