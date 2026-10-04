@@ -124,21 +124,48 @@ describe('client selection wire values', () => {
 
   it('bounds contribution targets and limits shells to Web without relaxing registry or renderer targets', () => {
     for (const kind of ['registry', 'renderer'] as const) {
-      expect(validateRuntime('ClientModuleContribution', { ...contribution, kind }).ok).toBe(true)
+      const candidate =
+        kind === 'registry' ? { ...contribution, kind, export: 'namedRegistry' } : contribution
+      expect(validateRuntime('ClientModuleContribution', candidate).ok).toBe(true)
       for (const targets of [[], ['web', 'web'], ['desktop'], ['web', 'tui', 'im', 'sdk', 'web']])
-        expect(validateRuntime('ClientModuleContribution', { ...contribution, kind, targets }).ok).toBe(false)
+        expect(validateRuntime('ClientModuleContribution', { ...candidate, targets }).ok).toBe(false)
     }
     expect(
       validateRuntime('ClientModuleContribution', {
         contributionId: 'shell',
         kind: 'shell',
+        export: 'namedShell',
         targets: ['web'],
       }).ok,
     ).toBe(true)
     for (const targets of [[], ['tui'], ['web', 'tui'], ['web', 'web']])
       expect(
-        validateRuntime('ClientModuleContribution', { contributionId: 'shell', kind: 'shell', targets }).ok,
+        validateRuntime('ClientModuleContribution', {
+          contributionId: 'shell',
+          kind: 'shell',
+          export: 'namedShell',
+          targets,
+        }).ok,
       ).toBe(false)
+  })
+
+  it('requires verified named exports for shell and registry while keeping renderer closed', () => {
+    for (const kind of ['shell', 'registry'] as const) {
+      const valid = { contributionId: kind, kind, targets: ['web'], export: `custom${kind}` }
+      expect(validateRuntime('ClientModuleContribution', valid).ok).toBe(true)
+      expect(validateRuntime('ClientModule', { ...module, contributions: [valid] }).ok).toBe(true)
+      for (const invalid of [
+        { ...valid, export: undefined },
+        { ...valid, export: '' },
+        { ...valid, export: 'bad\u0000name' },
+        { ...valid, export: 'x'.repeat(257) },
+        { ...valid, entry: './other.js' },
+      ])
+        expect(validateRuntime('ClientModuleContribution', invalid).ok).toBe(false)
+    }
+    expect(validateRuntime('ClientModuleContribution', { ...contribution, export: 'namedRenderer' }).ok).toBe(
+      false,
+    )
   })
 
   it('enforces the 128 contribution and renderer-selection collection limits', () => {
@@ -227,7 +254,7 @@ describe('client selection wire values', () => {
     ).toBe(true)
   })
 
-  it('records the complete changed closure at revision four and new helpers at revision one', () => {
+  it('records the changed closure at revision five and contribution revision two', () => {
     const document = JSON.parse(readFileSync(`${directory}/public.json`, 'utf8'))
     for (const name of [
       'ClientModule',
@@ -236,12 +263,14 @@ describe('client selection wire values', () => {
       'ClientBootstrapResult',
       'ClientCatalogPageResult',
     ])
-      expect(document['x-schema-revisions'][name]).toBe(4)
-    for (const name of ['ClientContributionRef', 'ClientModuleContribution', 'ClientSelection']) {
+      expect(document['x-schema-revisions'][name]).toBe(5)
+    for (const name of ['ClientContributionRef', 'ClientSelection']) {
       expect(document['x-schema-revisions'][name]).toBe(1)
       expect(document['x-schema-ids'][name]).toBeUndefined()
     }
+    expect(document['x-schema-revisions'].ClientModuleContribution).toBe(2)
+    expect(document['x-schema-ids'].ClientModuleContribution).toBeUndefined()
     const hello = RuntimeMethodSchemaRefs['agh.transport'].handshake
-    expect(hello.output.revision).toBe(4)
+    expect(hello.output.revision).toBe(5)
   })
 })

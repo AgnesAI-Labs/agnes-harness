@@ -6015,8 +6015,8 @@ export const RuntimeMethodSchemaRefs = freeze({
       },
       "output": {
         "typeId": "agh.transport/handshake.response@1",
-        "revision": 4,
-        "digest": "3b448537a4667b6054f7ae8c4e671525679d9352cc2897923378407f3617082b"
+        "revision": 5,
+        "digest": "76c050453e03bd2f4415c06f026a65f05d46bc637cadd65df8ee658f10783844"
       }
     },
     "connect": {
@@ -6027,8 +6027,8 @@ export const RuntimeMethodSchemaRefs = freeze({
       },
       "output": {
         "typeId": "agh.transport/connect.response@1",
-        "revision": 4,
-        "digest": "3b448537a4667b6054f7ae8c4e671525679d9352cc2897923378407f3617082b"
+        "revision": 5,
+        "digest": "76c050453e03bd2f4415c06f026a65f05d46bc637cadd65df8ee658f10783844"
       }
     },
     "command": {
@@ -6051,8 +6051,8 @@ export const RuntimeMethodSchemaRefs = freeze({
       },
       "output": {
         "typeId": "agh.transport/bootstrap.response@1",
-        "revision": 4,
-        "digest": "40861f6d5d996641c6a0f828799bc69e2b10b127aa933fc63dd0aee8e9f5f3f5"
+        "revision": 5,
+        "digest": "a31ec775bffb49aef356261b5269ba2d96132d559a2f0abc6f9048e5503ed96a"
       }
     },
     "clientQuery": {
@@ -6087,8 +6087,8 @@ export const RuntimeMethodSchemaRefs = freeze({
       },
       "output": {
         "typeId": "agh.transport/catalogPage.response@1",
-        "revision": 4,
-        "digest": "aef6d74dbfaae8dc32e5ef705935a02b5af919dc429ba31a6651ddc6b5765ef2"
+        "revision": 5,
+        "digest": "84e15e4151df8c826b9e1025f2c7f39a7661d39776a3efb7d66f00ee1fbd6aaf"
       }
     },
     "subscribe": {

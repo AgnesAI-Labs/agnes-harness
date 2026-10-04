@@ -37134,6 +37134,12 @@
             "kind": {
               "const": "shell"
             },
+            "export": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256,
+              "pattern": "^[^\\u0000-\\u001f\\u007f]+$"
+            },
             "targets": {
               "type": "array",
               "items": {
@@ -37144,7 +37150,7 @@
               "uniqueItems": true
             }
           },
-          "required": ["contributionId", "kind", "targets"]
+          "required": ["contributionId", "kind", "export", "targets"]
         },
         {
           "type": "object",
@@ -37156,6 +37162,12 @@
             "kind": {
               "const": "registry"
             },
+            "export": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256,
+              "pattern": "^[^\\u0000-\\u001f\\u007f]+$"
+            },
             "targets": {
               "type": "array",
               "items": {
@@ -37166,7 +37178,7 @@
               "uniqueItems": true
             }
           },
-          "required": ["contributionId", "kind", "targets"]
+          "required": ["contributionId", "kind", "export", "targets"]
         },
         {
           "type": "object",
@@ -40711,9 +40723,9 @@
     "ClaimOutboxResult": 3,
     "ClientArtifactOpenStreamRequest": 2,
     "ClientArtifactReadRangeRequest": 2,
-    "ClientBootstrapAccepted": 4,
-    "ClientBootstrapResult": 4,
-    "ClientCatalogPageResult": 4,
+    "ClientBootstrapAccepted": 5,
+    "ClientBootstrapResult": 5,
+    "ClientCatalogPageResult": 5,
     "ClientCommandCall": 3,
     "ClientCommandReply": 4,
     "ClientCommandRequest": 3,
@@ -40725,7 +40737,7 @@
     "ClientInteractionChange": 3,
     "ClientInteractionsSnapshot": 3,
     "ClientInteractionsSubscriptionFrame": 3,
-    "ClientModule": 4,
+    "ClientModule": 5,
     "ClientQueryCall": 3,
     "ClientQueryReply": 5,
     "ClientQueryRequest": 3,
@@ -40736,7 +40748,7 @@
     "ClientSubscriptionFrame": 4,
     "ClientTransportFrame": 5,
     "ClientTransportRequestFrame": 2,
-    "ClientWelcome": 4,
+    "ClientWelcome": 5,
     "CloseInvocationRequest": 2,
     "CommandHandle": 4,
     "CommandRuntimeAcceptanceDataRef": 3,
@@ -41071,7 +41083,7 @@
     "WaitCondition": 2,
     "WaitRecordValue": 2,
     "ClientContributionRef": 1,
-    "ClientModuleContribution": 1,
+    "ClientModuleContribution": 2,
     "ClientSelection": 1
   },
   "x-client-transport-wire": {
