@@ -1,5 +1,5 @@
-import { bindInteractionContract } from '../../../../examples/runtime-reference/src/providers/interaction-contract.ts'
-import type { ConformanceHarness } from '../../../../packages/extension-api/testkit/runtime/harness.ts'
+import { bindInteractionContract } from '../../../../examples/runtime-reference/src/providers/interaction-contract.js'
+import type { ConformanceHarness } from '../../../../packages/extension-api/testkit/runtime/harness.js'
 import { withConformanceBuild } from '../build-identity.js'
 
 const CONTRACT = 'agh.interaction'

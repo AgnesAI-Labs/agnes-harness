@@ -3,22 +3,22 @@ import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { Window } from 'happy-dom'
-import { createWorkbenchShell } from '../../../../examples/runtime-reference/src/client/workbench-shell.ts'
-import { bindShellContract } from '../../../../examples/runtime-reference/src/providers/shell.ts'
-import type { ShellProvider } from '../../../../packages/extension-api/src/client/index.ts'
+import { createWorkbenchShell } from '../../../../examples/runtime-reference/src/client/workbench-shell.js'
+import { bindShellContract } from '../../../../examples/runtime-reference/src/providers/shell.js'
+import type { ShellProvider } from '../../../../packages/extension-api/src/client/index.js'
 import {
   recoverShell,
   registerShellContract,
   type ShellConformanceBinding,
-} from '../../../../packages/extension-api/testkit/runtime/contracts/shell.ts'
+} from '../../../../packages/extension-api/testkit/runtime/contracts/shell.js'
 import {
   holdUIRegistryClient,
   restartUIRegistryClient,
-} from '../../../../packages/extension-api/testkit/runtime/contracts/ui-registry.ts'
-import type { ConformanceHarness } from '../../../../packages/extension-api/testkit/runtime/harness.ts'
-import { canonicalJsonDigest } from '../../../../packages/protocol/src/runtime/index.ts'
-import { createClientHostRuntime } from '../../../../packages/web-client/src/runtime/client-host.ts'
-import { resolveClientSelection } from '../../../../packages/web-client/src/runtime/client-selection.ts'
+} from '../../../../packages/extension-api/testkit/runtime/contracts/ui-registry.js'
+import type { ConformanceHarness } from '../../../../packages/extension-api/testkit/runtime/harness.js'
+import { canonicalJsonDigest } from '../../../../packages/protocol/src/runtime/index.js'
+import { createClientHostRuntime } from '../../../../packages/web-client/src/runtime/client-host.js'
+import { resolveClientSelection } from '../../../../packages/web-client/src/runtime/client-selection.js'
 import { getConformanceBuildIdentity, withConformanceBuild } from '../build-identity.js'
 
 const CONTRACT = 'agh.shell'
@@ -39,7 +39,7 @@ const SHELLS: Record<Provider, () => Promise<() => ShellProvider>> = {
   reference: async () => createWorkbenchShell,
   async default() {
     const { createDefaultShell, defaultShellLocale } = await import(
-      '../../../../packages/web/src/runtime/providers/shell.ts'
+      '../../../../packages/web/src/runtime/providers/shell.js'
     )
     const locale = defaultShellLocale('en')
     return () => createDefaultShell(locale)

@@ -1,5 +1,5 @@
-import { bindEventsContract } from '../../../../examples/runtime-reference/src/providers/events-contract.ts'
-import type { ConformanceHarness } from '../../../../packages/extension-api/testkit/runtime/harness.ts'
+import { bindEventsContract } from '../../../../examples/runtime-reference/src/providers/events-contract.js'
+import type { ConformanceHarness } from '../../../../packages/extension-api/testkit/runtime/harness.js'
 import { withConformanceBuild } from '../build-identity.js'
 
 const CONTRACT = 'agh.events'

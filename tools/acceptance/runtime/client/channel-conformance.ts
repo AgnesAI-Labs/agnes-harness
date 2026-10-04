@@ -1,5 +1,5 @@
-import { bindChannelContract } from '../../../../examples/runtime-reference/src/providers/channel-contract.ts'
-import type { ConformanceHarness } from '../../../../packages/extension-api/testkit/runtime/harness.ts'
+import { bindChannelContract } from '../../../../examples/runtime-reference/src/providers/channel-contract.js'
+import type { ConformanceHarness } from '../../../../packages/extension-api/testkit/runtime/harness.js'
 import { withConformanceBuild } from '../build-identity.js'
 
 const CONTRACT = 'agh.channel'

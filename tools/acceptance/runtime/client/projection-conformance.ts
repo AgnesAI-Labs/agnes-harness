@@ -4,10 +4,10 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import { fileURLToPath, pathToFileURL } from 'node:url'
-import { killWhenReady } from '../../../../examples/runtime-reference/src/providers/interaction-contract.ts'
-import { bindProjectionContract } from '../../../../examples/runtime-reference/src/providers/projection-contract.ts'
-import { type DomainCommandStorage, fail } from '../../../../packages/core/src/runtime/projection/commands.ts'
-import { createProjectionProvider } from '../../../../packages/core/src/runtime/providers/projection.ts'
+import { killWhenReady } from '../../../../examples/runtime-reference/src/providers/interaction-contract.js'
+import { bindProjectionContract } from '../../../../examples/runtime-reference/src/providers/projection-contract.js'
+import { type DomainCommandStorage, fail } from '../../../../packages/core/src/runtime/projection/commands.js'
+import { createProjectionProvider } from '../../../../packages/core/src/runtime/providers/projection.js'
 import {
   crashProjection,
   createProjectionFixture,
@@ -16,10 +16,10 @@ import {
   type ProjectionSubject,
   projectionContractPort,
   registerProjectionContract,
-} from '../../../../packages/extension-api/testkit/runtime/contracts/projection.ts'
-import type { ConformanceHarness } from '../../../../packages/extension-api/testkit/runtime/harness.ts'
-import type * as Wire from '../../../../packages/protocol/src/runtime/index.ts'
-import { canonicalJsonDigest } from '../../../../packages/protocol/src/runtime/index.ts'
+} from '../../../../packages/extension-api/testkit/runtime/contracts/projection.js'
+import type { ConformanceHarness } from '../../../../packages/extension-api/testkit/runtime/harness.js'
+import type * as Wire from '../../../../packages/protocol/src/runtime/index.js'
+import { canonicalJsonDigest } from '../../../../packages/protocol/src/runtime/index.js'
 import {
   getConformanceBuildIdentity,
   withConformanceBuild,

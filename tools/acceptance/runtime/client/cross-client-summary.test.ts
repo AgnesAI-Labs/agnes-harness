@@ -6,18 +6,18 @@
 // layout; this test only compares the surfaces with each other.
 
 import { describe, expect, it, vi } from 'vitest'
-import { toChannelMessages } from '../../../../packages/channels/src/runtime/domain-consumer.ts'
-import { t } from '../../../../packages/cli-tui/src/locale.ts'
-import { createDomainConsumer } from '../../../../packages/cli-tui/src/runtime/domain-consumer.ts'
+import { toChannelMessages } from '../../../../packages/channels/src/runtime/domain-consumer.js'
+import { t } from '../../../../packages/cli-tui/src/locale.js'
+import { createDomainConsumer } from '../../../../packages/cli-tui/src/runtime/domain-consumer.js'
 import {
   type DomainView,
   type NegotiatedClientCapabilities,
   type ViewAction,
   validateRuntime,
-} from '../../../../packages/protocol/src/runtime/index.ts'
-import { encodeForChannel, formatDomainView } from '../../../../packages/sdk/src/runtime/format-view.ts'
-import { createRendererPresenter } from '../../../../packages/web-client/src/runtime/renderer-presentation.tsx'
-import { createAntdRoot } from '../../../../packages/web-ui/src/antd-root.tsx'
+} from '../../../../packages/protocol/src/runtime/index.js'
+import { encodeForChannel, formatDomainView } from '../../../../packages/sdk/src/runtime/format-view.js'
+import { createRendererPresenter } from '../../../../packages/web-client/src/runtime/renderer-presentation.js'
+import { createAntdRoot } from '../../../../packages/web-ui/src/antd-root.js'
 
 // Values no surface may show. Each sits in the view's data or in a field that is not display text.
 const SECRET = {

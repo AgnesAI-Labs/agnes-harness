@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
-import { SCENARIOS } from '../../../../packages/extension-api/testkit/runtime/evidence.ts'
-import { createConformanceHarness } from '../../../../packages/extension-api/testkit/runtime/harness.ts'
-import { bindConformance } from './artifacts-conformance.ts'
+import { SCENARIOS } from '../../../../packages/extension-api/testkit/runtime/evidence.js'
+import { createConformanceHarness } from '../../../../packages/extension-api/testkit/runtime/harness.js'
+import { bindConformance } from './artifacts-conformance.js'
 
 const CONTRACTS = ['agh.blob', 'agh.artifacts']
 const PROVIDERS = ['default', 'reference']
