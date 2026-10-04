@@ -250,7 +250,10 @@ const INITIAL_CEILING: Record<string, number> = {
   // Client host: server-chosen selection resolution, generation activation from verified module
   // exports and renderer presentation through per-view restricted contexts. Measured 3372, exact,
   // no spare (+725).
-  'packages/web-client/src': 3372,
+  // Domain view presentation through the selected renderers, the selected fallback and the built-in
+  // generic view; contexts open on commit and dispose their cleanups independently. Measured 3441,
+  // exact, no spare (+69).
+  'packages/web-client/src': 3441,
   'packages/web-slots/src': 605,
   // Failed shell calls read as their exit code (+19 lines); measured 4891, exact cap.
   // B-line diagnostics dialog: React view adds 147 lines; measured 4706, exact cap.

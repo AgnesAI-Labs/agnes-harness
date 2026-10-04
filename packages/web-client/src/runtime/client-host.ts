@@ -10,16 +10,20 @@
 // context the caller's presenter builds. A module without `clientEntry` is not activated, and a
 // default export or another function never stands in for a named one. A candidate becomes current only
 // once every entry returned and every selected renderer is present; otherwise everything it created is
-// released and the current generation stays. A module the selection does not name is never loaded.
+// released and the current generation stays. A module the selection does not name is never loaded. The
+// generation presents a domain view through the renderer the selection chose, then the selected
+// fallback, then the built-in generic view, and never through a renderer the selection did not choose.
 import type {
   ClientContribution,
   ClientEntry,
   ClientHost,
   ClientModule,
   ClientPresentation,
+  DomainView,
   Outcome,
   RendererContext,
   RendererDefinition,
+  RendererPresentation,
   RuntimeError,
   ShellProvider,
   UIRegistry,
@@ -43,6 +47,8 @@ export interface ClientModuleLoader {
 export interface ClientGeneration {
   readonly revision: number
   readonly registry: UIRegistry
+  /** Presents through the selected renderers and the built-in generic view; refuses once released. */
+  readonly presentation: ClientPresentation
   /** The selected shell's export; undefined when the selection has no shell or the generation was released. */
   shell(): (() => ShellProvider) | undefined
 }
@@ -63,16 +69,23 @@ type Lease = ReturnType<ReturnType<typeof createRendererPresenter>['lease']>
 
 type Generation = {
   readonly revision: number
+  readonly selection: Catalog['selection']
+  readonly presentation: ClientPresentation
   registry: UIRegistry | undefined
   /** Cleared on release: every module host and the renderer host refuse from then on. */
   live: boolean
-  /** Registered definitions, the module that registered each and the leases bound to it. */
+  /**
+   * Registered definitions, the module that registered each and the leases bound to it, among them the
+   * one lease the generation's presentation presents the definition through.
+   */
   readonly owners: Map<
     RendererDefinition,
-    { readonly id: string; readonly ownerToken: string; readonly leases: Set<Lease> }
+    { readonly id: string; readonly ownerToken: string; readonly leases: Set<Lease>; presenting?: Lease }
   >
-  /** `moduleId`/descriptor id of every live registration, for the selection check. */
-  readonly registered: Set<string>
+  /** The definition of every live registration under its `moduleId`/descriptor id. */
+  readonly registered: Map<string, RendererDefinition>
+  /** The built-in generic view's lease, taken on first use. */
+  generic: Lease | undefined
   /** The selected shell's export. */
   shell: (() => ShellProvider) | undefined
   readonly listeners: Set<(revision: number) => void>
@@ -90,6 +103,10 @@ const refuse = (
 })
 const closed = () => refuse('cancelled', 'client_host_disposed', 'the client closed')
 const released = () => refuse('cancelled', 'client_generation_released', 'the client generation was released')
+// ponytail: the slot schema source is still open, so every legacy slot refuses; render it here once
+// the selection names that schema.
+const legacySlot = () =>
+  refuse('incompatible', 'legacy_slot_unwired', 'legacy slot presentation is not wired yet')
 
 const text = (error: unknown) => (error instanceof Error ? error.message : String(error))
 const key = (moduleId: string, id: string) => JSON.stringify([moduleId, id])
@@ -159,8 +176,7 @@ export function createClientHostRuntime(input: {
   target: ClientTarget
   loader: ClientModuleLoader
   context: RendererContext
-  presentation: ClientPresentation
-  /** Presents a bound renderer through a restricted context for the view the authorized window holds. */
+  /** Presents a bound renderer, or the generic view, through a restricted context for the window's view. */
   presenter: ReturnType<typeof createRendererPresenter>
   limits?: { entryMs?: number; disposeMs?: number }
 }): ClientHostRuntime {
@@ -192,7 +208,10 @@ export function createClientHostRuntime(input: {
     generation.live = false
     const owners = [...generation.owners.values()]
     generation.owners.clear()
+    const generic = generation.generic
+    generation.generic = undefined
     await revoke(owners)
+    if (generic) await settle(() => generic.dispose())
     generation.shell = undefined
     generation.listeners.clear()
     for (const dispose of generation.releases.splice(0).reverse()) await settle(dispose)
@@ -225,15 +244,70 @@ export function createClientHostRuntime(input: {
     },
   })
 
+  const definitionOf = (generation: Generation, contribution: SelectedContribution) =>
+    generation.registered.get(key(contribution.moduleId, contribution.contributionId))
+
+  /** The definition the registry matches for `view`, when the selection chose it; otherwise none. */
+  function matched(generation: Generation, view: DomainView): RendererDefinition | undefined {
+    const { fallbackRenderer, renderers } = generation.selection
+    try {
+      const found = generation.registry?.resolve({
+        renderKey: view.renderKey,
+        viewSchema: view.viewSchema,
+        target: input.target,
+        // What the presenter holds a renderer to: the features of every action, disabled ones too.
+        requiredFeatures: [...new Set(view.actions.flatMap((action) => action.requiredFeatures))],
+      })
+      if (found?.ok !== true || found.value.kind !== 'matched') return undefined
+      const { handle } = found.value
+      // The view presents through the definition's own lease, so the one the registry took ends here.
+      void settle(() => handle.dispose())
+      return [fallbackRenderer, ...renderers.map((row) => row.renderer)]
+        .map((contribution) => definitionOf(generation, contribution))
+        .find((definition) => {
+          const owner = definition && generation.owners.get(definition)
+          return owner?.id === handle.id && owner.ownerToken === handle.ownerToken
+        })
+    } catch {
+      return undefined
+    }
+  }
+
+  /**
+   * Presents `view` through the renderer the selection chose for its render key, else the registry's
+   * match when the selection chose that one, then the selected fallback, then the built-in generic view.
+   * A resync refusal goes back unchanged so the caller rereads the window; any other refusal moves on.
+   * Each definition presents through one lease per generation, so an upsert of the same view keeps its
+   * mount and context, while another definition for that view mounts afresh.
+   */
+  function domain(generation: Generation, view: DomainView): Outcome<RendererPresentation> {
+    if (!generation.live) return released()
+    const { fallbackRenderer, renderers } = generation.selection
+    const row = renderers.find((entry) => entry.renderKey === view?.renderKey)
+    const chosen = row ? definitionOf(generation, row.renderer) : matched(generation, view)
+    for (const definition of new Set([chosen, definitionOf(generation, fallbackRenderer)])) {
+      const owner = definition && generation.owners.get(definition)
+      if (!definition || !owner) continue
+      if (owner.presenting === undefined) {
+        owner.presenting = input.presenter.lease({ definition, ownerToken: owner.ownerToken })
+        owner.leases.add(owner.presenting)
+      }
+      const presented = owner.presenting.present(view)
+      if (presented.ok || presented.error.retryAdvice.kind === 'retry_read') return presented
+    }
+    generation.generic ??= input.presenter.generic()
+    return generation.generic.present(view)
+  }
+
   function moduleHost(generation: Generation, module: ClientModule) {
     // The server binds this token to the client instance and the module generation; it grants nothing.
     const ownerToken = module.ownerToken
     const registry = generation.registry as UIRegistry
     const host: ClientHost = {
-      // ponytail: every module shares the caller's context and presentation; only a bound renderer
-      // presents through a per-view restricted context. Bind these to the module when they need it.
+      // ponytail: every module shares the caller's context; only a presented renderer gets a per-view
+      // restricted context. Bind it to the module when it needs one.
       context: input.context,
-      presentation: input.presentation,
+      presentation: generation.presentation,
       renderers: {
         register(definition) {
           if (!generation.live) return released()
@@ -255,7 +329,7 @@ export function createClientHostRuntime(input: {
           const cell = key(module.moduleId, descriptor.id)
           const owner = { id: descriptor.id, ownerToken, leases: new Set<Lease>() }
           generation.owners.set(definition, owner)
-          generation.registered.add(cell)
+          generation.registered.set(cell, definition)
           let done: Promise<void> | undefined
           const unregister = () => {
             done ??= (async () => {
@@ -436,10 +510,13 @@ export function createClientHostRuntime(input: {
   async function run(catalog: Catalog): Promise<Outcome<void>> {
     const generation: Generation = {
       revision: catalog.revision,
+      selection: catalog.selection,
+      presentation: { domain: (view) => domain(generation, view), legacySlot },
       registry: undefined,
       live: true,
       owners: new Map(),
-      registered: new Set(),
+      registered: new Map(),
+      generic: undefined,
       shell: undefined,
       listeners: new Set(),
       releases: [],
@@ -455,6 +532,7 @@ export function createClientHostRuntime(input: {
       view: {
         revision: generation.revision,
         registry: generation.registry as UIRegistry,
+        presentation: generation.presentation,
         shell: () => generation.shell,
       },
     }

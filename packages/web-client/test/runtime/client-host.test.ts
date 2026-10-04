@@ -3,7 +3,6 @@ import type {
   ClientEntry,
   ClientHost,
   ClientModule,
-  ClientPresentation,
   DomainView,
   Outcome,
   RendererContext,
@@ -240,29 +239,30 @@ function harness(options: { target?: ClientTarget; limits?: { entryMs?: number; 
     },
   }
   const context = { ownerToken: 'caller' } as unknown as RendererContext
-  const presentation = {} as ClientPresentation
-  /** Every lease the host took, with how often each was disposed. */
+  /** Every lease the host took, with how often each was disposed; the generic view's is `generic`. */
   const leases: Array<{ id: string; ownerToken: string; disposed: number }> = []
+  const lease = (id: string, ownerToken: string) => {
+    const entry = { id, ownerToken, disposed: 0 }
+    leases.push(entry)
+    return {
+      present: (view: DomainView) =>
+        ({
+          ok: true,
+          value: { target: 'tui', formatted: view },
+        }) as unknown as Outcome<RendererPresentation>,
+      dispose: async () => {
+        entry.disposed += 1
+      },
+    }
+  }
   const presenter = {
-    lease({ definition, ownerToken }: { definition: RendererDefinition; ownerToken: string }) {
-      const lease = { id: definition.descriptor.id, ownerToken, disposed: 0 }
-      leases.push(lease)
-      return {
-        present: (view: DomainView) =>
-          ({
-            ok: true,
-            value: { target: 'tui', formatted: view },
-          }) as unknown as Outcome<RendererPresentation>,
-        dispose: async () => {
-          lease.disposed += 1
-        },
-      }
-    },
+    lease: ({ definition, ownerToken }: { definition: RendererDefinition; ownerToken: string }) =>
+      lease(definition.descriptor.id, ownerToken),
+    generic: () => lease('generic', 'generic'),
   }
   const h = {
     log,
     context,
-    presentation,
     leases,
     /** How often each module's standard entry ran. */
     starts,
@@ -277,7 +277,6 @@ function harness(options: { target?: ClientTarget; limits?: { entryMs?: number; 
       target,
       loader,
       context,
-      presentation,
       presenter,
       limits: options.limits ?? {},
     }),
@@ -316,7 +315,8 @@ describe('client host runtime', () => {
     // base serves the registry, the shell and a renderer, and still loads once.
     expect(h.log).toEqual(['load base', 'register base.fallback', 'load cards', 'register cards.card'])
     expect(seen?.context).toBe(h.context)
-    expect(seen?.presentation).toBe(h.presentation)
+    // A module presents through its generation's presentation.
+    expect(seen?.presentation).toBe(generation.presentation)
     expect(seen && kind(seen.renderers, 'base.fallback')).toBe('matched')
   })
 
@@ -743,6 +743,9 @@ describe('client host runtime', () => {
     expect(h.log).not.toContain('dispose base#2')
     expect(old.shell()).toBeUndefined()
     expect(kind(old.registry, 'cards.card')).toBe('fallback')
+    expect(refused(old.presentation.domain({ viewId: 'v1', revision: 1 } as DomainView))).toBe(
+      'cancelled/client_generation_released',
+    )
     expect(kind(now(h).registry, 'cards.card')).toBe('matched')
   })
 

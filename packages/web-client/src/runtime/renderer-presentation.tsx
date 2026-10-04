@@ -4,7 +4,8 @@
 // client's target. A Web view mounts one restricted context per lease and view, moved in place to newer
 // revisions, under a boundary that shows the view's fallback text when the renderer throws. A text view
 // is only formatted; encoding and sending stay with the channel. Disposing a lease releases only what
-// that lease mounted.
+// that lease mounted. The built-in generic lease presents any view the window holds with the safe Web
+// card or the default text format, so basic information shows without any plugin bundle.
 import type {
   DomainView,
   FormattedView,
@@ -18,9 +19,11 @@ import type {
   TextRenderer,
   WebRendererDefinition,
 } from '@agnes/extension-api/client'
-import { Component, type ReactNode, useEffect, useMemo } from 'react'
+import { Component, type ReactNode, useLayoutEffect, useState } from 'react'
 import type { ClientTarget } from './client-selection.js'
 import { createRendererContext, type MountedRendererContext } from './renderer-context.js'
+import { GenericDomainView } from './renderers/generic.js'
+import { formatDomainView } from './renderers/text.js'
 
 export interface AuthorizedViews {
   /** The view the current authorized window holds under this id, or undefined when the window has none. */
@@ -46,6 +49,10 @@ const refuse = (
 const resync = (detailCode: string, message: string) => refuse('conflict', detailCode, message, 'retry_read')
 
 const text = (error: unknown) => (error instanceof Error ? error.message : String(error))
+
+// The built-in view, presented like a renderer but never held to a descriptor: it reads any view.
+const GENERIC = { component: GenericDomainView, format: formatDomainView } as unknown as RendererDefinition
+const GENERIC_OWNER = 'web-client-generic'
 
 /** Why `definition` cannot present `view` to `target`, or undefined when it can. */
 function mismatch(
@@ -99,20 +106,30 @@ function Presented({
   component: WebRendererDefinition['component']
   view: DomainView
 }) {
-  // One context per lease: a newer revision is moved into it, and another lease presenting under the
-  // same key opens its own while the effect disposes the old one.
-  // ponytail: a StrictMode remount would find this context disposed; recreate it in the effect if a
-  // StrictMode host appears.
+  // The context opens when this element commits and closes when it unmounts, so a render React discards
+  // (after a renderer throws, say) opens nothing. One context per lease: a newer revision is moved into
+  // it, and another lease presenting under the same key opens its own while the old one closes.
+  const [mounted, setMounted] = useState<MountedRendererContext>()
   // biome-ignore lint/correctness/useExhaustiveDependencies: the view is opened once and moved by update.
-  const mounted = useMemo(() => open(view), [open])
+  useLayoutEffect(() => {
+    const opened = open(view)
+    setMounted(opened)
+    return () => void opened.dispose()
+  }, [open])
+  if (mounted === undefined) return null
   // Before the renderer renders, so its own effects already see the newer restriction.
   mounted.update(view)
-  useEffect(() => () => void mounted.dispose(), [mounted])
   return (
     <Guard fallbackText={view.fallbackText}>
       <Renderer view={view} context={mounted.context} />
     </Guard>
   )
+}
+
+interface RendererLease {
+  present(view: DomainView): Outcome<RendererPresentation>
+  /** Refuses every later present and disposes each context this lease still has mounted. Idempotent. */
+  dispose(): Promise<void>
 }
 
 export function createRendererPresenter(input: {
@@ -124,85 +141,87 @@ export function createRendererPresenter(input: {
   views: AuthorizedViews
 }): {
   /** One lease for a definition the host bound under `ownerToken`. */
-  lease(binding: { definition: RendererDefinition; ownerToken: string }): {
-    present(view: DomainView): Outcome<RendererPresentation>
-    /** Refuses every later present and disposes each context this lease still has mounted. Idempotent. */
-    dispose(): Promise<void>
-  }
+  lease(binding: { definition: RendererDefinition; ownerToken: string }): RendererLease
+  /** One lease for the built-in generic view, which presents any view the window holds. */
+  generic(): RendererLease
 } {
   const { target, clientInstanceId, capabilities, services, views } = input
-  return {
-    lease({ definition, ownerToken }) {
-      // Read once, so a definition changed after it was bound does not move what it may present.
-      let descriptor: RendererDescriptor | undefined
-      try {
-        descriptor = structuredClone(definition.descriptor)
-      } catch {}
-      const live = new Set<MountedRendererContext>()
-      let released = false
+  /** A lease presenting through `definition`; a plugin renderer must also fit the view (`checked`). */
+  function bind(definition: RendererDefinition, ownerToken: string, checked: boolean): RendererLease {
+    // Read once, so a definition changed after it was bound does not move what it may present.
+    let descriptor: RendererDescriptor | undefined
+    try {
+      descriptor = structuredClone(definition.descriptor)
+    } catch {}
+    const live = new Set<MountedRendererContext>()
+    let released = false
 
-      // ponytail: the calling shell or module's grant and the renderer contribution's grant are not on
-      // the wire yet, so only the view's own offers (and the services' own checks) bound a context today;
-      // intersect those grants here once the selection carries them.
-      const open = (view: DomainView) => {
-        const mounted = createRendererContext({ clientInstanceId, ownerToken, capabilities, services, view })
-        if (released) {
-          void mounted.dispose()
-          return mounted
-        }
-        live.add(mounted)
-        mounted.context.onDispose(() => {
-          live.delete(mounted)
-        })
+    // ponytail: the calling shell or module's grant and the renderer contribution's grant are not on
+    // the wire yet, so only the view's own offers (and the services' own checks) bound a context today;
+    // intersect those grants here once the selection carries them.
+    const open = (view: DomainView) => {
+      const mounted = createRendererContext({ clientInstanceId, ownerToken, capabilities, services, view })
+      if (released) {
+        void mounted.dispose()
         return mounted
       }
+      live.add(mounted)
+      mounted.context.onDispose(() => {
+        live.delete(mounted)
+      })
+      return mounted
+    }
 
-      return {
-        present(view) {
-          if (released) return refuse('cancelled', 'renderer_released', 'the renderer lease was released')
-          const viewId = view?.viewId
-          const revision = view?.revision
-          const current = typeof viewId === 'string' ? views.current(viewId) : undefined
-          if (current === undefined)
-            return resync('view_resync_required', 'the authorized window does not hold the view')
-          if (current.revision !== revision)
-            return resync('view_stale', `the authorized window holds revision ${current.revision}`)
-          // A copy, so a renderer cannot change what the window holds.
-          const shown = structuredClone(current)
-          const reason = mismatch(definition, descriptor, shown, target)
-          if (reason !== undefined) return refuse('incompatible', 'renderer_mismatch', reason)
+    return {
+      present(view) {
+        if (released) return refuse('cancelled', 'renderer_released', 'the renderer lease was released')
+        const viewId = view?.viewId
+        const revision = view?.revision
+        const current = typeof viewId === 'string' ? views.current(viewId) : undefined
+        if (current === undefined)
+          return resync('view_resync_required', 'the authorized window does not hold the view')
+        if (current.revision !== revision)
+          return resync('view_stale', `the authorized window holds revision ${current.revision}`)
+        // A copy, so a renderer cannot change what the window holds.
+        const shown = structuredClone(current)
+        const reason = checked ? mismatch(definition, descriptor, shown, target) : undefined
+        if (reason !== undefined) return refuse('incompatible', 'renderer_mismatch', reason)
 
-          if (target === 'web') {
-            const { component } = definition as WebRendererDefinition
-            const key = JSON.stringify([ownerToken, shown.viewId])
-            return {
-              ok: true,
-              value: {
-                target,
-                element: <Presented key={key} open={open} component={component} view={shown} />,
-              },
-            }
+        if (target === 'web') {
+          const { component } = definition as WebRendererDefinition
+          // Another definition presenting the same view mounts afresh, a newer revision updates in place.
+          const key = JSON.stringify([ownerToken, descriptor?.id ?? null, shown.viewId])
+          return {
+            ok: true,
+            value: {
+              target,
+              element: <Presented key={key} open={open} component={component} view={shown} />,
+            },
           }
-          let formatted: Outcome<FormattedView>
-          try {
-            formatted = (definition as TextRenderer).format(shown, {
-              locale: input.locale,
-              capabilities: structuredClone(capabilities),
-            })
-          } catch (error) {
-            return refuse('internal', 'renderer_failed', `the renderer threw: ${text(error)}`)
-          }
-          if (formatted?.ok !== true)
-            return refuse('internal', 'renderer_failed', `the renderer refused: ${formatted?.error?.message}`)
-          if (formatted.value?.viewId !== shown.viewId || formatted.value.revision !== shown.revision)
-            return refuse('internal', 'renderer_failed', 'the renderer formatted another view')
-          return { ok: true, value: { target, formatted: formatted.value } }
-        },
-        async dispose() {
-          released = true
-          await Promise.all([...live].map((mounted) => mounted.dispose()))
-        },
-      }
-    },
+        }
+        let formatted: Outcome<FormattedView>
+        try {
+          formatted = (definition as TextRenderer).format(shown, {
+            locale: input.locale,
+            capabilities: structuredClone(capabilities),
+          })
+        } catch (error) {
+          return refuse('internal', 'renderer_failed', `the renderer threw: ${text(error)}`)
+        }
+        if (formatted?.ok !== true)
+          return refuse('internal', 'renderer_failed', `the renderer refused: ${formatted?.error?.message}`)
+        if (formatted.value?.viewId !== shown.viewId || formatted.value.revision !== shown.revision)
+          return refuse('internal', 'renderer_failed', 'the renderer formatted another view')
+        return { ok: true, value: { target, formatted: formatted.value } }
+      },
+      async dispose() {
+        released = true
+        await Promise.all([...live].map((mounted) => mounted.dispose()))
+      },
+    }
+  }
+  return {
+    lease: ({ definition, ownerToken }) => bind(definition, ownerToken, true),
+    generic: () => bind(GENERIC, GENERIC_OWNER, false),
   }
 }
