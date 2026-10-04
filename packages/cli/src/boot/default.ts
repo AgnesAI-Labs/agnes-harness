@@ -55,6 +55,7 @@ export async function bootDefault(
       ...connected,
       profileName: backend.scope.profile,
       resolvedProfileHash: backend.discovery.profileHash,
+      ...(backend.runtimeClient ? { runtimeClient: backend.runtimeClient } : {}),
     }
   } catch (error) {
     await backend.closeClient().catch(() => undefined)

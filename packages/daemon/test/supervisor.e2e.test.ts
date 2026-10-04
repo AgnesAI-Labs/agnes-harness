@@ -5,6 +5,7 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { canonicalJson, DEFAULT_COMPUTER_USE, hashInput, type ResolvedProfile, sha256hex } from '@agnes/host'
 import { createTestHost } from '@agnes/host/testkit'
+import { RuntimeClientTransportWire } from '@agnes/protocol/runtime'
 import { createClient, memoryJournal, wsTransport } from '@agnes/sdk'
 import { afterEach, describe, expect, it } from 'vitest'
 import { WebSocket } from 'ws'
@@ -14,6 +15,7 @@ import { SessionPrincipalOwnershipIndex } from '../src/storage/session-ownership
 import { ensure } from '../src/storage/table.js'
 import { encodeFrame, JsonlDecoder } from '../src/supervisor/framing.js'
 import { DaemonMutationLockError } from '../src/supervisor/mutation-lock.js'
+import { runtimeClientBearer } from '../src/supervisor/runtime-credential.js'
 import { daemonSocketPaths } from '../src/supervisor/socket-paths.js'
 import { startSupervisor } from '../src/supervisor/supervisor.js'
 import { localSdkTransport } from './local-socket-path.js'
@@ -229,6 +231,88 @@ async function wsSourceAuthCall(
 }
 
 describe('agnesd supervisor: real end-to-end', () => {
+  it('owns a private runtime HTTP listener in Unix mode and fences its bearer across restart', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'agnes-runtime-http-'))
+    const profile = buildProfile(dir)
+    const profileFile = join(dir, 'profile.json')
+    writeFileSync(profileFile, JSON.stringify(profile))
+    const options = {
+      config: buildConfigFor(dir),
+      profile,
+      profileFile,
+      profileDir: join(dir, 'profiles', 'local-dev'),
+      workspaceRoot: dir,
+      processIdentity,
+      ...workerSpawnOpts,
+    }
+    let supervisor: Awaited<ReturnType<typeof startSupervisor>> | undefined
+    try {
+      supervisor = await startSupervisor(options)
+      expect(supervisor.ws).toBeUndefined()
+      const first = supervisor.runtimeClient
+      if (!first) throw new Error('missing runtime HTTP listener')
+      expect(new URL(first.baseUrl).hostname).toBe('127.0.0.1')
+      expect(Number(new URL(first.baseUrl).port)).toBeGreaterThan(0)
+      const bearer = runtimeClientBearer(first.token, supervisor.owner.generation)
+      const input = {
+        header: { negotiatedSession: 's1', clientInstanceId: 'ci1', catalogRevision: 1, callId: 'call1' },
+      }
+      const query = (baseUrl: string, token: string) =>
+        fetch(baseUrl + RuntimeClientTransportWire.routes.catalogStatus.path, {
+          method: 'POST',
+          headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+          body: JSON.stringify(input),
+        })
+      expect((await query(first.baseUrl, '')).status).toBe(401)
+      expect(await (await query(first.baseUrl, bearer)).json()).toMatchObject({
+        ok: false,
+        error: { detailCode: 'operation_not_supported' },
+      })
+      const ownerPath = join(dir, 'daemon', 'owner.json')
+      const ownerRecord = readFileSync(ownerPath, 'utf8')
+      try {
+        writeFileSync(
+          ownerPath,
+          JSON.stringify({ ...JSON.parse(ownerRecord), generation: 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa' }),
+        )
+        expect((await query(first.baseUrl, bearer)).status).toBe(401)
+      } finally {
+        writeFileSync(ownerPath, ownerRecord)
+      }
+      const firstGeneration = supervisor.owner.generation
+      await supervisor.close()
+      await expect(fetch(first.baseUrl)).rejects.toThrow()
+      supervisor = await startSupervisor({
+        ...options,
+        runtimeClientInstallation: {
+          authorize: async () => ({ ok: true, value: true }),
+          queries: {
+            'transport.catalogStatus': async () => ({
+              ok: true,
+              value: {
+                catalogRevision: 1,
+                mode: 'compatible',
+                reasonCode: null,
+              },
+            }),
+          },
+        },
+      })
+      const second = supervisor.runtimeClient
+      if (!second) throw new Error('missing replacement runtime listener')
+      expect(supervisor.owner.generation).not.toBe(firstGeneration)
+      expect((await query(second.baseUrl, bearer)).status).toBe(401)
+      expect(
+        (await query(second.baseUrl, runtimeClientBearer(second.token, supervisor.owner.generation))).status,
+      ).toBe(200)
+      await supervisor.close()
+      await expect(fetch(second.baseUrl)).rejects.toThrow()
+    } finally {
+      await supervisor?.close()
+      rmSync(dir, { recursive: true, force: true })
+    }
+  }, 30_000)
+
   it.runIf(process.platform === 'win32')(
     'starts after a transient reader releases the existing profile snapshot',
     async () => {

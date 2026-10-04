@@ -28,6 +28,7 @@ export {
   type DaemonWebCredentialReadOptions,
   publishDaemonDiscovery,
   readDaemonDiscovery,
+  readDaemonRuntimeClientEndpoint,
   readDaemonWebCredential,
   removeDaemonDiscovery,
 } from './supervisor/discovery.js'

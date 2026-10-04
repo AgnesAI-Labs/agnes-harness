@@ -411,6 +411,12 @@ export type { PluginManageBridge, PluginManageInvocation } from './resources/plu
 export { createSkillInstaller, type SkillInstallAuthority } from './resources/skill-install.js'
 export { validInstallPathPolicy } from './resources/skill-install-files.js'
 export type { SkillInstallBridge, SkillInstallInvocation } from './resources/skill-install-port.js'
+export {
+  createHostRuntimeClientPorts,
+  type HostRuntimeClientCaller,
+  type HostRuntimeClientInstallation,
+  type HostRuntimeClientPorts,
+} from './runtime/client-ports.js'
 export type { HostRuntimeAdmissionInstallation, HostRuntimeRunRequest } from './runtime/entry-admission.js'
 export {
   type BootstrapAnchor,

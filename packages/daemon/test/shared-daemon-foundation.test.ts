@@ -12,6 +12,7 @@ import {
   DaemonStartupBusyError,
   publishDaemonDiscovery,
   readDaemonDiscovery,
+  readDaemonRuntimeClientEndpoint,
   readDaemonWebCredential,
   removeDaemonDiscovery,
   resolveDaemonScope,
@@ -209,6 +210,7 @@ describe('generation-bound discovery and Web credential', () => {
         owner: lock.owner,
         socketPath: lock.owner.socketPath,
         profileHash: 'sha256-profile',
+        runtimeClient: { baseUrl: 'http://127.0.0.1:43112', token: 'a'.repeat(48) },
         web: {
           url: 'ws://127.0.0.1:43111/',
           origin: 'http://127.0.0.1:4177',
@@ -216,6 +218,19 @@ describe('generation-bound discovery and Web credential', () => {
         },
       })
       expect(descriptor.profileHash).toBe('sha256-profile')
+      const endpoint = await readDaemonRuntimeClientEndpoint(scope, {
+        expectedGeneration: lock.owner.generation,
+        processIdentity,
+      })
+      expect(endpoint?.baseUrl).toBe('http://127.0.0.1:43112')
+      expect(endpoint?.bearer).toHaveLength(43)
+      expect(endpoint?.bearer).not.toBe('a'.repeat(48))
+      await expect(
+        readDaemonRuntimeClientEndpoint(scope, {
+          expectedGeneration: 'previous-generation',
+          processIdentity,
+        }),
+      ).rejects.toThrow('current owner')
       const raw = await readFile(scope.discoveryPath, 'utf8')
       if (process.platform === 'win32') {
         expect(hasPrivateDaclSync(scope.discoveryPath)).toBe(true)
@@ -281,6 +296,28 @@ describe('generation-bound discovery and Web credential', () => {
           expectedWeb: { url: 'ws://127.0.0.1:43111/', origin: 'http://127.0.0.1:4177' },
         }),
       ).rejects.toBeInstanceOf(DaemonDiscoveryError)
+      const runtimeOnly = await publishDaemonDiscovery(scope, {
+        owner: lock.owner,
+        socketPath: lock.owner.socketPath,
+        profileHash: 'sha256-profile',
+        runtimeClient: { baseUrl: 'http://127.0.0.1:43112', token: 'a'.repeat(48) },
+      })
+      expect(runtimeOnly.web).toBeUndefined()
+      expect(runtimeOnly.capabilities).toEqual(['unix'])
+      expect(await readDaemonWebCredential(scope, { processIdentity })).toBeNull()
+      expect(
+        await readDaemonRuntimeClientEndpoint(scope, {
+          expectedGeneration: lock.owner.generation,
+          processIdentity,
+        }),
+      ).toEqual(endpoint)
+      await removeDaemonDiscovery(scope, 'previous-generation')
+      expect(
+        await readDaemonRuntimeClientEndpoint(scope, {
+          expectedGeneration: lock.owner.generation,
+          processIdentity,
+        }),
+      ).toEqual(endpoint)
       const current = JSON.parse(await readFile(scope.discoveryPath, 'utf8')) as Record<string, unknown>
       await writeFile(scope.discoveryPath, JSON.stringify({ ...current, capabilities: ['unix', 'bogus'] }))
       await expect(readDaemonDiscovery(scope, { processIdentity })).rejects.toBeInstanceOf(

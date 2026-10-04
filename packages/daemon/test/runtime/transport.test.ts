@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { request as httpRequest } from 'node:http'
 import { request as httpsRequest } from 'node:https'
+import { createHostRuntimeClientPorts } from '@agnes/host'
 import { RuntimeClientTransportPolicy, RuntimeClientTransportWire } from '@agnes/protocol/runtime'
 import { afterEach, describe, expect, it } from 'vitest'
 import { memoryJournal } from '../../../sdk/src/journal.js'
@@ -10,6 +11,7 @@ import {
   readOutcome,
 } from '../../../sdk/src/runtime/client-transport.js'
 import type { RuntimeClientPorts } from '../../src/runtime/transport.js'
+import { runtimeClientBearer } from '../../src/supervisor/runtime-credential.js'
 import { listenWebSocket } from '../../src/supervisor/ws.js'
 
 // The runtime client routes on the daemon's real HTTP listener, spoken to as the SDK speaks: every
@@ -150,6 +152,93 @@ function raw(url: string, headers: Record<string, string>, body = '', ca?: strin
 }
 
 describe('runtime client routes', () => {
+  it('admits only the current runtime bearer before body reads, gates Host reads and refuses writes', async () => {
+    const secret = 'local-secret'.repeat(5)
+    const bearer = runtimeClientBearer(secret, 'generation-1')
+    let current = true
+    let permitted = true
+    const caller = { principalId: 'local' as const, generation: 'generation-1' }
+    const listener = await listenWebSocket({
+      addr: '127.0.0.1:0',
+      token: bearer,
+      runtimeOnly: { current: async () => current },
+      endpoint: () => {
+        throw new Error('private HTTP must not admit RPC')
+      },
+      runtimeClient: createHostRuntimeClientPorts(
+        {
+          authorize: async (identity, request) => {
+            expect(identity).toEqual(caller)
+            expect(request.operation).toBe('transport.catalogStatus')
+            return permitted
+              ? { ok: true, value: true }
+              : {
+                  ok: false,
+                  error: {
+                    code: 'denied',
+                    detailCode: 'c14_denied',
+                    message: 'denied',
+                    diagnosticId: 'synthetic-policy',
+                    retryAdvice: { kind: 'never' },
+                  },
+                }
+          },
+          queries: { 'transport.catalogStatus': async () => ({ ok: true, value: catalogStatus }) },
+        },
+        caller,
+      ),
+    })
+    closers.add(() => listener.close())
+    // Content-Length without body: admission must reply immediately, not wait for route parsing.
+    for (const token of ['', 'wrong', secret, runtimeClientBearer(secret, 'generation-0')]) {
+      const denied = await raw(listener.url + routes.clientQuery.path, {
+        'content-type': json,
+        'content-length': '100',
+        authorization: `Bearer ${token}`,
+      })
+      expect(denied).toMatchObject({ status: 401, connection: 'close', text: '' })
+    }
+    current = false
+    expect(
+      await raw(listener.url + routes.clientQuery.path, {
+        'content-type': json,
+        'content-length': '100',
+        authorization: `Bearer ${bearer}`,
+      }),
+    ).toMatchObject({ status: 401, connection: 'close' })
+    current = true
+    const query = () =>
+      call(listener.url, 'clientQuery', valid.clientQuery, {
+        headers: { authorization: `Bearer ${bearer}`, origin: '' },
+      })
+    // The CLI sends no Origin; an authenticated browser page is not this private transport.
+    expect((await query()).status).toBe(403)
+    const headers = { authorization: `Bearer ${bearer}`, 'content-type': json }
+    const read = () =>
+      fetch(listener.url + routes.clientQuery.path, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(valid.clientQuery),
+      })
+    expect(await (await read()).json()).toMatchObject({
+      ok: true,
+      value: { reply: { value: catalogStatus } },
+    })
+    permitted = false
+    expect(await refusal(await read())).toEqual({ status: 403, detailCode: 'c14_denied' })
+    expect(
+      await refusal(
+        await fetch(listener.url + routes.clientCommand.path, {
+          method: 'POST',
+          headers,
+          body: JSON.stringify(valid.clientCommand),
+        }),
+      ),
+    ).toEqual({ status: 409, detailCode: 'operation_not_supported' })
+    await listener.close()
+    await expect(fetch(listener.url)).rejects.toThrow()
+  })
+
   it('serves every generated route but the push socket', () => {
     expect(Object.keys(routes).filter((name) => !unserved.has(name))).toEqual(Object.keys(valid))
   })

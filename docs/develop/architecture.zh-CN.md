@@ -52,6 +52,12 @@ flowchart LR
 
 ## 状态归属
 
+daemon 还拥有一个随机 `127.0.0.1` 端口的私有 runtime-client HTTP 监听器，即使只配置 Unix
+socket 或 Windows pipe 也会启动。CLI 启动先验证本地 IPC 连接和 daemon owner 代际，再读取
+入口并从已有私有本地凭据派生独立 bearer。HTTP 在读取请求体前做常量时间 bearer 比较和
+owner 复核；重启使凭据失效，退出关闭监听器。Host 装配只接显式安装的只读适配端口，并要求
+注入授权策略；服务或策略缺失返回 `operation_not_supported`，写操作仍未接入。
+
 | 层 | 主要职责 |
 | --- | --- |
 | CLI/Web | 用户输入、审批交互、会话与结果展示 |

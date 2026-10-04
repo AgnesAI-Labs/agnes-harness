@@ -10,6 +10,7 @@ import {
   daemonStatus,
   prepareDaemonSocketPaths,
   readDaemonDiscovery,
+  readDaemonRuntimeClientEndpoint,
   readDaemonWebCredential,
   resolveDaemonScope,
   stopDaemon,
@@ -36,6 +37,7 @@ export type LocalBackend = {
   scope: DaemonScope
   discovery: DaemonDiscovery
   socketPath: string
+  runtimeClient?: { baseUrl: string; bearer: string }
   web?: LocalBackendWeb
   /** Compatibility name for Web launchers that only need to release their client-side resources. */
   closeClient(): Promise<void>
@@ -595,6 +597,9 @@ export async function ensureLocalBackend(options: EnsureLocalBackendOptions = {}
       ? started.discovery
       : await sdkReady(scope, started.discovery, options, deadlineAt)
     validateWeb(discovery, requested)
+    const runtimeClient = discovery.runtimeClient
+      ? await readDaemonRuntimeClientEndpoint(scope, { expectedGeneration: discovery.owner.generation })
+      : null
     let web: LocalBackendWeb | undefined
     if (requested && discovery.web) {
       let token: string | null
@@ -612,6 +617,7 @@ export async function ensureLocalBackend(options: EnsureLocalBackendOptions = {}
       discovery,
       socketPath: discovery.socketPath,
       ...(web ? { web } : {}),
+      ...(runtimeClient ? { runtimeClient } : {}),
       closeClient: async () => undefined,
       close: async () => undefined,
     }

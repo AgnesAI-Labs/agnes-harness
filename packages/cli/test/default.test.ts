@@ -52,6 +52,7 @@ describe('bootDefault', () => {
       const closeClient = vi.fn(async () => undefined)
       vi.mocked(backend.ensureLocalBackend).mockResolvedValue({
         socketPath,
+        runtimeClient: { baseUrl: 'http://127.0.0.1:49101', bearer: 'restricted-fixture-token' },
         scope: { profile: 'local-dev' },
         discovery: { profileHash: 'resolved-profile', owner: { pid: 123, processStartId: '456' } },
         closeClient,
@@ -75,6 +76,10 @@ describe('bootDefault', () => {
           },
         }),
       )
+      expect(booted.runtimeClient).toEqual({
+        baseUrl: 'http://127.0.0.1:49101',
+        bearer: 'restricted-fixture-token',
+      })
       expect(booted.profileName).toBe('local-dev')
       expect(booted.resolvedProfileHash).toBe('resolved-profile')
       await booted.close()
