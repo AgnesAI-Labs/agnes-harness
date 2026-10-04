@@ -1,7 +1,8 @@
+import { createHash } from 'node:crypto'
 import type { Outcome, RuntimeError } from '@agnes/extension-api/runtime'
 import { jcs } from '@agnes/protocol'
 import type { DataRef, JsonValue, RuntimeWireTypes } from '@agnes/protocol/runtime'
-import { canonicalJsonDigest, validateRuntime } from '@agnes/protocol/runtime'
+import { validateRuntime } from '@agnes/protocol/runtime'
 
 export class ReleaseRefusal extends Error {
   constructor(
@@ -20,17 +21,61 @@ export function requireRelease(
 ): asserts condition {
   if (!condition) throw new ReleaseRefusal(detailCode, path, message)
 }
+// Only this decoder's detached, deeply frozen results are trusted. A caller's
+// frozen object (which may have mutable children or accessors) never earns a cache hit.
+const wireTypes = new WeakMap<object, Map<keyof RuntimeWireTypes, unknown>>()
+const jsonSnapshots = new WeakSet<object>()
+const canonicalSnapshots = new WeakMap<object, string>()
+const digestSnapshots = new WeakMap<object, string>()
+const frozenSnapshots = new WeakSet<object>()
+function rememberSnapshot(value: unknown, json: boolean): void {
+  if (value === null || typeof value !== 'object' || frozenSnapshots.has(value)) return
+  for (const child of Object.values(value)) rememberSnapshot(child, json)
+  Object.freeze(value)
+  if (json) jsonSnapshots.add(value)
+  frozenSnapshots.add(value)
+}
+function canonical(value: JsonValue): string {
+  if (value === null || typeof value !== 'object' || !frozenSnapshots.has(value)) return jcs(value)
+  let encoded = canonicalSnapshots.get(value)
+  if (encoded === undefined) {
+    encoded = jcs(value)
+    canonicalSnapshots.set(value, encoded)
+  }
+  return encoded
+}
 export function readWire<K extends keyof RuntimeWireTypes>(name: K, value: unknown): RuntimeWireTypes[K] {
+  if (value !== null && typeof value === 'object') {
+    if (name === 'JsonValue' && jsonSnapshots.has(value)) return value as RuntimeWireTypes[K]
+    const cached = wireTypes.get(value)?.get(name)
+    if (cached !== undefined) return cached as RuntimeWireTypes[K]
+  }
   const parsed = validateRuntime(name, value)
   requireRelease(parsed.ok, 'schema_invalid', `/${name}`)
+  rememberSnapshot(parsed.value, name === 'JsonValue')
+  const cache = (key: object) => {
+    const schemas = wireTypes.get(key) ?? new Map<keyof RuntimeWireTypes, unknown>()
+    schemas.set(name, parsed.value)
+    wireTypes.set(key, schemas)
+  }
+  if (parsed.value !== null && typeof parsed.value === 'object') cache(parsed.value)
+  if (value !== null && typeof value === 'object' && frozenSnapshots.has(value)) cache(value)
   return parsed.value
 }
 export function digest(value: unknown): string {
-  return canonicalJsonDigest(readWire('JsonValue', value))
+  const json = readWire('JsonValue', value)
+  if (json !== null && typeof json === 'object') {
+    const cached = digestSnapshots.get(json)
+    if (cached !== undefined) return cached
+    const hash = createHash('sha256').update(canonical(json)).digest('hex')
+    digestSnapshots.set(json, hash)
+    return hash
+  }
+  return createHash('sha256').update(canonical(json)).digest('hex')
 }
 export function equal(left: unknown, right: unknown): boolean {
   // Inputs have crossed the bounded wire decoder; compare their exact canonical bytes.
-  return jcs(left as JsonValue) === jcs(right as JsonValue)
+  return canonical(left as JsonValue) === canonical(right as JsonValue)
 }
 export function fields(value: unknown, names: readonly string[], path: string): Record<string, unknown> {
   requireRelease(value !== null && typeof value === 'object' && !Array.isArray(value), 'schema_invalid', path)
@@ -72,9 +117,10 @@ export function readContent(ref: DataRef, path: string, snapshots: readonly Fixt
   return content.value
 }
 export function freeze<T>(value: T): T {
-  if (value !== null && typeof value === 'object') {
+  if (value !== null && typeof value === 'object' && !frozenSnapshots.has(value)) {
     for (const child of Object.values(value)) freeze(child)
     Object.freeze(value)
+    frozenSnapshots.add(value)
   }
   return value
 }

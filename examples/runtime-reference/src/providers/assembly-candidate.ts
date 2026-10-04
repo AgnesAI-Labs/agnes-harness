@@ -10,8 +10,8 @@ import {
   type ReleasePlan,
   type ReleaseSet,
   type RuntimeWireTypes,
-  validateRuntime,
 } from '@agnes/protocol/runtime'
+import { readReferenceAssemblyWire } from './assembly-wire.js'
 
 interface StagedObservation {
   readonly generationId: string
@@ -49,7 +49,7 @@ const ensure = (valid: unknown, reason: string) => {
   if (!valid) throw new CandidateRejected(reason)
 }
 function checked<K extends keyof RuntimeWireTypes>(name: K, raw: unknown): RuntimeWireTypes[K] {
-  const decoded = validateRuntime(name, raw)
+  const decoded = readReferenceAssemblyWire(name, raw)
   if (!decoded.ok) throw new CandidateRejected('schema_invalid')
   return decoded.value
 }
@@ -97,6 +97,8 @@ export function referenceCandidate(
   let mode: 'idle' | 'preparing' | 'ready' | 'failed' | 'disposed' | 'residual' = 'idle'
   let disposing = false
   let outcome: AssemblyPrepareResult | undefined
+  // This graph is a detached deep-frozen capture; validate its canonical bytes once.
+  let graphEncoding: string | undefined
   let running: Promise<Outcome<AssemblyPrepareResult>> | undefined
   let releasing: Promise<void> | undefined
   let leftover: readonly string[] = []
@@ -205,10 +207,9 @@ export function referenceCandidate(
     async prepare(raw: unknown, call: CallContext): Promise<Outcome<AssemblyPrepareResult>> {
       if (call.signal.aborted) return failed(null, true)
       try {
-        ensure(
-          canon(checked('AssemblyPrepareRequest', raw).graph) === canon(fixedGraph),
-          'prepare_input_mismatch',
-        )
+        const incoming = canon(checked('AssemblyPrepareRequest', raw).graph)
+        graphEncoding ??= canon(fixedGraph)
+        ensure(incoming === graphEncoding, 'prepare_input_mismatch')
         ensure(!disposing && mode !== 'failed', 'candidate_disposed')
         const selected = new Map(ports.selections.map((entry) => [entry.binding.bindingId, entry]))
         ensure(

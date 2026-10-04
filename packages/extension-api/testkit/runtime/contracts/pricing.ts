@@ -213,6 +213,7 @@ export async function runPricingContractScenario(
       requireFact(digest(recovered.output) === digest(original.ref), 'fixed quote survives process recovery')
     }
     return {
+      providerId: fixture.factory.descriptor.providerId,
       providerDigest: digest(fixture.factory.descriptor),
       configDigest: fixture.config.kind === 'inline' ? fixture.config.digest : fixture.config.blob.digest,
     }
@@ -240,6 +241,7 @@ export function registerPricingContract(
       providerId: binding.providerId,
       async run() {
         const result = await runPricingContractScenario(scenario, binding.create)
+        requireFact(result.providerId === binding.providerId, 'executed provider matches evidence binding')
         return {
           id: `agh.pricing/${binding.providerId}/${scenario}`,
           ...result,

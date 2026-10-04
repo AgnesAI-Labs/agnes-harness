@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { Outcome } from '@agnes/extension-api/runtime'
 import type { RuntimeWireTypes as W } from '@agnes/protocol/runtime'
-import { describe, expect, it } from 'vitest'
+import { beforeAll, describe, expect, it } from 'vitest'
 import { installerDigest } from '../../src/runtime/install-journal.js'
 import {
   createInstallRepairPlan,
@@ -21,6 +21,18 @@ import {
   installerReleaseFixture,
   openInstallerFixture,
 } from './fixtures/installer.js'
+
+let releasePlan: W['ReleasePlan']
+beforeAll(async () => {
+  releasePlan = await installerReleaseFixture()
+  const freeze = (value: unknown): void => {
+    if (value !== null && typeof value === 'object') {
+      Object.values(value).forEach(freeze)
+      Object.freeze(value)
+    }
+  }
+  freeze(releasePlan)
+})
 
 function value<T>(result: Outcome<T>): T {
   if (!result.ok) throw new Error(result.error.detailCode)
@@ -303,7 +315,7 @@ describe.each(['default', 'reference'])('persistent installer proposals: %s', (p
 
   it('binds package plans to the authorized scope route and rechecks current authority before persisting', () =>
     fixture(async (f) => {
-      const plan = await installerReleaseFixture()
+      const plan = releasePlan
       const pkg = plan.targetReleaseSet.packages[0]
       if (!pkg) throw new Error('fixture package missing')
       const locator: W['PackageLocator'] = {

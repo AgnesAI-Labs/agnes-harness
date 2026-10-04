@@ -1,10 +1,15 @@
 import { execFileSync, spawnSync } from 'node:child_process'
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
-import { describe, expect, it } from 'vitest'
-import { SCENARIOS } from '../../../packages/extension-api/testkit/index.js'
+import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import {
+  type AssertionRecord,
+  discoverContracts,
+  PROVIDER_ABSENT,
+  SCENARIOS,
+} from '../../../packages/extension-api/testkit/index.js'
 import { filesystemSupportsLocalRename } from '../../../packages/host/src/runtime/maintenance/bootstrap-locator.js'
 import { getConformanceBuildIdentity } from './build-identity.js'
 import { SAMPLE_CLOCK } from './fixtures.js'
@@ -12,14 +17,22 @@ import { serializeReport } from './report.js'
 import { conformanceBinderFiles, runConformance } from './run-conformance.js'
 
 // Every selection runs real recover processes. Keep the full catalog in the heavy tier,
-// partitioned by provider so a slow implementation cannot consume the other's deadline.
-async function measuredSelection(directory: string, options: Parameters<typeof runConformance>[0]) {
+// partitioned by contract and provider; replay only measured records to judge the full catalog.
+async function measuredSelection(
+  directory: string,
+  options: Parameters<typeof runConformance>[0],
+  assemblyPart: 'all' | 'plan' | 'prepare' | 'publish' | 'admission' = 'all',
+) {
   const files = options.binderFiles ?? conformanceBinderFiles()
   const wrappers = files.map((file, index) => {
-    const wrapper = join(directory, `${options.command}-measured-${index.toString().padStart(3, '0')}.mjs`)
-    writeFileSync(
-      wrapper,
-      `
+    const wrapper = join(
+      directory,
+      `${options.command}-${assemblyPart}-measured-${index.toString().padStart(3, '0')}.mjs`,
+    )
+    if (!existsSync(wrapper))
+      writeFileSync(
+        wrapper,
+        `
 import { bindConformance as bind } from ${JSON.stringify(pathToFileURL(file).href)}
 export async function bindConformance(harness, request) {
   return bind({ ...harness, registerCase(row) {
@@ -31,10 +44,10 @@ export async function bindConformance(harness, request) {
         scenario: row.scenario, elapsedMs: performance.now() - start
       })) }
     } })
-  } }, request)
+  } }, request${file.endsWith('assembly-conformance.ts') ? `, ${JSON.stringify(assemblyPart)}` : ''})
 }
 `,
-    )
+      )
     return wrapper
   })
   const start = performance.now()
@@ -84,18 +97,140 @@ describe('full conformance report selection', () => {
       rmSync(directory, { recursive: true, force: true })
     }
   }, 60_000)
-  it.each(['default', 'reference'])(
-    'finishes the full %s selection when the authority directory refuses the filesystem',
-    async (providerId) => {
-      const directory = mkdtempSync(join(tmpdir(), 'conformance-unsupported-'))
+
+  const contracts = [
+    'agh.authority-directory',
+    ...discoverContracts()
+      .map((row) => row.contract)
+      .filter((name) => name !== 'agh.authority-directory'),
+  ]
+  const partitions = contracts.flatMap<{
+    contract: string
+    part: 'all' | 'plan' | 'prepare' | 'publish' | 'admission'
+    key: string
+  }>((contract) =>
+    contract === 'agh.assembly'
+      ? (['plan', 'prepare', 'publish', 'admission'] as const).map((part) => ({
+          contract,
+          part,
+          key: `${contract}-${part}`,
+        }))
+      : [{ contract, part: 'all' as const, key: contract }],
+  )
+  describe.each(['default', 'reference'])('provider %s', (providerId) => {
+    let directory: string
+    let binder: string
+    const natural = new Map<string, readonly AssertionRecord[]>()
+    const refused = new Map<string, readonly AssertionRecord[]>()
+    beforeAll(() => {
+      directory = mkdtempSync(join(tmpdir(), 'conformance-partitions-'))
+      binder = join(directory, 'a-authority-conformance.mjs')
+      const authorityUrl = new URL('./platform/authority-directory-conformance.ts', import.meta.url).href
+      writeFileSync(
+        binder,
+        `import { bindAuthorityDirectoryContracts } from ${JSON.stringify(authorityUrl)}
+export async function bindConformance(harness, request) {
+  if (request.contracts !== 'all' && !request.contracts.includes('agh.authority-directory'))
+    return { contracts: [], providers: [] }
+  await bindAuthorityDirectoryContracts(harness, request.command, request.providers, 'unsupported')
+  return { contracts: ['agh.authority-directory'], providers: request.providers }
+}
+`,
+      )
+    })
+    it.each(
+      partitions.flatMap((partition) =>
+        (['natural-filesystem', 'unsupported-filesystem'] as const).map((command) => ({
+          ...partition,
+          command,
+        })),
+      ),
+    )(
+      'finishes $key for $command',
+      async ({ contract, part, key, command }) => {
+        const run = await measuredSelection(
+          directory,
+          {
+            contracts: [contract],
+            providers: [providerId],
+            clock: SAMPLE_CLOCK,
+            command,
+            reportPath: join(directory, `${key}-${command}.json`),
+            ...(command === 'unsupported-filesystem'
+              ? {
+                  binderFiles: [
+                    binder,
+                    ...conformanceBinderFiles().filter(
+                      (file) => !file.endsWith('authority-directory-conformance.ts'),
+                    ),
+                  ],
+                }
+              : {}),
+          },
+          part,
+        )
+        const records = command === 'natural-filesystem' ? natural : refused
+        records.set(key, run.report.assertions)
+        expect(run.report.assertions.length).toBeGreaterThan(0)
+      },
+      300_000,
+    )
+
+    // Full selection and catalog gates still go through the original runner. The
+    // replay binder cannot manufacture evidence: it returns only completed partitions.
+    afterAll(async () => {
       try {
-        const supported = await measuredSelection(directory, {
-          contracts: 'all',
-          providers: [providerId],
-          command: 'natural-filesystem',
-          clock: SAMPLE_CLOCK,
-          reportPath: join(directory, 'natural.json'),
-        })
+        expect([...natural.keys()].sort()).toEqual(partitions.map(({ key }) => key).sort())
+        expect([...refused.keys()].sort()).toEqual(partitions.map(({ key }) => key).sort())
+        const cases = (rows: readonly AssertionRecord[]) =>
+          rows.map((row) => ({
+            id: row.id,
+            contract: row.contract,
+            providerId: row.providerId,
+            scenario: row.scenario,
+            status: row.status,
+          }))
+        for (const { contract, key } of partitions)
+          if (contract !== 'agh.authority-directory')
+            expect(cases(refused.get(key) ?? [])).toEqual(cases(natural.get(key) ?? []))
+        const replay = async (rows: Map<string, readonly AssertionRecord[]>, command: string) => {
+          const source = join(directory, `${command}-records.json`)
+          writeFileSync(
+            source,
+            JSON.stringify(
+              partitions
+                .flatMap(({ key }) => rows.get(key) ?? [])
+                .filter(
+                  (row) =>
+                    // Recreate only synthetic missing-binding rows in the full runner, so
+                    // their build is inherited from the full selection as before partitioning.
+                    row.providerDigest !== PROVIDER_ABSENT || row.consumer !== 'unregistered',
+                ),
+            ),
+          )
+          const file = join(directory, `${command}-replay.mjs`)
+          writeFileSync(
+            file,
+            `import { readFileSync } from 'node:fs'
+const rows = JSON.parse(readFileSync(${JSON.stringify(source)}, 'utf8'))
+export async function bindConformance(harness, request) {
+  for (const row of rows) harness.registerCase({ ...row, async run() {
+    return { ...row, command: request.command }
+  } })
+  return { contracts: ${JSON.stringify(contracts)}, providers: request.providers }
+}
+`,
+          )
+          return runConformance({
+            contracts: 'all',
+            providers: [providerId],
+            command,
+            clock: SAMPLE_CLOCK,
+            reportPath: join(directory, `${command}-all.json`),
+            binderFiles: [file],
+          })
+        }
+        const supported = await replay(natural, 'natural-filesystem')
         const directoryRows = supported.report.assertions.filter(
           (row) => row.contract === 'agh.authority-directory',
         )
@@ -117,25 +252,8 @@ describe('full conformance report selection', () => {
         const uiRows = supported.report.assertions.filter((row) => row.contract === 'agh.ui-registry')
         expect(uiRows).toHaveLength(SCENARIOS.length)
         expect(uiRows.every((row) => row.status === 'passed')).toBe(true)
-        const binder = join(directory, 'a-authority-conformance.mjs')
-        const authorityUrl = new URL('./platform/authority-directory-conformance.ts', import.meta.url).href
-        writeFileSync(
-          binder,
-          `import { bindAuthorityDirectoryContracts } from ${JSON.stringify(authorityUrl)}\nexport async function bindConformance(harness, request) {\n  await bindAuthorityDirectoryContracts(harness, request.command, request.providers, 'unsupported')\n  return { contracts: ['agh.authority-directory'], providers: request.providers }\n}\n`,
-        )
-        const run = await measuredSelection(directory, {
-          contracts: 'all',
-          providers: [providerId],
-          command: 'unsupported-filesystem',
-          clock: SAMPLE_CLOCK,
-          reportPath: join(directory, 'all.json'),
-          binderFiles: [
-            binder,
-            ...conformanceBinderFiles().filter(
-              (file) => !file.endsWith('authority-directory-conformance.ts'),
-            ),
-          ],
-        })
+
+        const run = await replay(refused, 'unsupported-filesystem')
         expect(run.report.status).toBe('failed')
         expect(
           new Set(
@@ -188,9 +306,8 @@ describe('full conformance report selection', () => {
         expect(stored.startedAt).toBe(SAMPLE_CLOCK.startedAt)
         expect(stored.assertions).toEqual(JSON.parse(serializeReport(run.report)).assertions)
       } finally {
-        rmSync(directory, { recursive: true, force: true })
+        if (directory) rmSync(directory, { recursive: true, force: true })
       }
-    },
-    300_000,
-  )
+    })
+  })
 })
