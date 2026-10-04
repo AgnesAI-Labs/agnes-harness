@@ -21,6 +21,7 @@ import type {
   AuthorityDirectoryCompareAndSwapResult,
   AuthorityDirectoryReadRequest,
   AuthorityDirectoryReadResult,
+  AuthorityFence,
   AuthorityRoute,
   DataRef,
   JsonValue,
@@ -75,6 +76,8 @@ export interface UpgradeApproval {
   readonly upgradeId: string
   readonly validationRef: DataRef
   readonly authorityIds: readonly string[]
+  /** Exact source receipts obtained by the trusted maintenance controller, bound to this approval. */
+  readonly sourceFences?: readonly AuthorityFence[]
 }
 
 export interface ActivationNote {
@@ -116,6 +119,7 @@ interface GenerationDocument {
   readonly head: DirectoryHead
   readonly fingerprint: string | null
   readonly result: AuthorityDirectoryCompareAndSwapResult | null
+  readonly sourceFences?: readonly AuthorityFence[]
   readonly approval?: UpgradeApproval
   readonly origins?: readonly { readonly domainId: string; readonly digest: string }[]
 }
@@ -300,6 +304,7 @@ export function createAuthorityDirectoryProvider(
           head: decision.head,
           fingerprint: decision.fingerprint,
           result: decision.result,
+          sourceFences: request.publication.sourceFences,
           origins: request.publication.jointDispatchMappings.flatMap((mapping) =>
             [mapping.from, mapping.to].map((qualification) => ({
               domainId: mapping.domainId,
@@ -767,7 +772,11 @@ function seal(directory: string, id: string): void {
 function readApproval(
   directory: string,
   upgradeId: string,
-): { validationDigest: string; authorityIds: readonly string[] } | null {
+): {
+  validationDigest: string
+  authorityIds: readonly string[]
+  sourceFences?: readonly AuthorityFence[]
+} | null {
   const id = `approval:${canonicalJsonDigest(upgradeId)}`
   if (!isCommitted(directory, id)) return null
   const approval = readGeneration(directory, id)?.approval
@@ -777,6 +786,7 @@ function readApproval(
           JSON.parse(JSON.stringify(approval.validationRef)) as JsonValue,
         ),
         authorityIds: approval.authorityIds,
+        sourceFences: approval.sourceFences ?? [],
       }
     : null
 }

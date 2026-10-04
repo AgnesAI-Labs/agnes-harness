@@ -177,7 +177,7 @@ function publication(
           tenantId: change.previous.tenantId,
           authorityEpoch: change.previous.authorityEpoch,
         },
-        fenceId: `fence-${cutoverId}-${change.previous.logicalAuthorityId}`,
+        fenceId: `fence-${upgradeId}-${change.previous.logicalAuthorityId}`,
         fenceEpoch: change.previous.authorityEpoch,
         checkpoint: change.previous.checkpoint,
         writerCredentialsRevoked: true,
@@ -186,6 +186,34 @@ function publication(
       jointDispatchMappings: mappings,
     },
   }
+}
+
+async function approveRegistered(
+  provider: Driver['provider'],
+  input: {
+    upgradeId: string
+    validationRef: DataRef
+    authorityIds: readonly string[]
+    sourceFences?: AuthorityDirectoryCompareAndSwapRequest['publication']['sourceFences']
+  },
+  call: CallContext,
+) {
+  if (input.sourceFences) return provider.approveUpgrade(input, call)
+  const sourceFences: AuthorityDirectoryCompareAndSwapRequest['publication']['sourceFences'][number][] = []
+  for (const logicalAuthorityId of input.authorityIds) {
+    const read = await provider.read({ kind: 'authority', logicalAuthorityId }, call)
+    if (read.ok && read.value.kind === 'authority') {
+      sourceFences.push(
+        ...publication(
+          [advance(read.value.route, 'unused', read.value.revision)],
+          input.upgradeId,
+          'unused',
+          input.validationRef,
+        ).publication.sourceFences,
+      )
+    }
+  }
+  return provider.approveUpgrade({ ...input, sourceFences }, call)
 }
 
 function collapsed(source: string): Set<string> {
@@ -209,7 +237,12 @@ interface Driver {
   readonly provider: {
     seedRoute(route: AuthorityRoute, context: CallContext): Promise<Outcome<{ revision: number }>>
     approveUpgrade(
-      input: { upgradeId: string; validationRef: DataRef; authorityIds: readonly string[] },
+      input: {
+        upgradeId: string
+        validationRef: DataRef
+        authorityIds: readonly string[]
+        sourceFences?: AuthorityDirectoryCompareAndSwapRequest['publication']['sourceFences']
+      },
       context: CallContext,
     ): Promise<Outcome<{ upgradeId: string }>>
     compareAndSwap(
@@ -387,16 +420,116 @@ describe('reference authority directory', () => {
           )
         }
         const validation = proof()
+        const original = publication([advance(route, 'cutover-1', 1)], 'upgrade-1', 'cutover-1', validation)
+        const freshFences = original.publication.sourceFences.map((fence) => ({
+          ...fence,
+          checkpoint: {
+            ...fence.checkpoint,
+            checkpointId: 'fresh-freeze',
+            snapshotDigest: '88'.repeat(32),
+            recordCount: 42,
+            bridgeWatermarks: [],
+          },
+        }))
+        const first = { ...original, publication: { ...original.publication, sourceFences: freshFences } }
         await same(left, right, 'approve', (driver) =>
-          driver.provider.approveUpgrade(
-            { upgradeId: 'upgrade-1', validationRef: validation, authorityIds: ['state-auth'] },
+          approveRegistered(
+            driver.provider,
+            {
+              upgradeId: 'upgrade-1',
+              validationRef: validation,
+              authorityIds: ['state-auth'],
+              sourceFences: freshFences,
+            },
             context(),
           ),
         )
-        const first = publication([advance(route, 'cutover-1', 1)], 'upgrade-1', 'cutover-1', validation)
         const invalid: readonly [string, AuthorityDirectoryCompareAndSwapRequest][] = [
           ['invalid_input/cutover_transaction_mismatch', { ...first, transactionId: 'different' }],
           ['conflict/writer_epoch', { ...first, expectedWriterEpoch: 9 }],
+          ...(['authorityId', 'authorityEpoch'] as const).map(
+            (field) =>
+              [
+                'incompatible/fence_incomplete',
+                {
+                  ...first,
+                  publication: {
+                    ...first.publication,
+                    sourceFences: freshFences.map((fence) => ({
+                      ...fence,
+                      source: { ...fence.source, [field]: field === 'authorityId' ? 'other-authority' : 2 },
+                      checkpoint: {
+                        ...fence.checkpoint,
+                        [field]: field === 'authorityId' ? 'other-authority' : 2,
+                      },
+                    })),
+                  },
+                },
+              ] as const,
+          ),
+
+          ...(
+            [
+              ['authorityId', 'other-authority'],
+              ['tenantId', 'other-tenant'],
+              ['authorityEpoch', 2],
+            ] as const
+          ).map(
+            ([field, value]) =>
+              [
+                field === 'tenantId' ? 'incompatible/fence_incomplete' : 'invalid_input/checkpoint_mismatch',
+                {
+                  ...first,
+                  publication: {
+                    ...first.publication,
+                    sourceFences: freshFences.map((fence) => ({
+                      ...fence,
+                      source: { ...fence.source, [field]: value },
+                    })),
+                  },
+                },
+              ] as const,
+          ),
+          [
+            'invalid_input/checkpoint_mismatch',
+            {
+              ...first,
+              publication: {
+                ...first.publication,
+                sourceFences: freshFences.map((fence) => ({
+                  ...fence,
+                  checkpoint: { ...fence.checkpoint, authorityEpoch: 2 },
+                })),
+              },
+            },
+          ],
+          [
+            'incompatible/fence_not_registered',
+            {
+              ...first,
+              publication: {
+                ...first.publication,
+                sourceFences: freshFences.map((fence) => ({ ...fence, fenceId: 'forged-fence' })),
+              },
+            },
+          ],
+          [
+            'conflict/revision_mismatch',
+            {
+              ...first,
+              publication: {
+                ...first.publication,
+                changes: first.publication.changes.map((change) => ({
+                  ...change,
+                  previous: {
+                    ...change.previous,
+                    checkpoint: freshFences[0]?.checkpoint ?? route.checkpoint,
+                  },
+                })),
+              },
+            },
+          ],
+
           [
             'conflict/directory_authority',
             { ...first, authority: { ...first.authority, authorityEpoch: 9 } },
@@ -429,7 +562,7 @@ describe('reference authority directory', () => {
             },
           ],
           [
-            'incompatible/fence_checkpoint',
+            'incompatible/fence_not_registered',
             {
               ...first,
               publication: {
@@ -476,7 +609,8 @@ describe('reference authority directory', () => {
         )
         expect(code(frozenSeed)).toBe('conflict/directory_fenced')
         const frozenApproval = await same(left, right, 'frozen approval', (driver) =>
-          driver.provider.approveUpgrade(
+          approveRegistered(
+            driver.provider,
             { upgradeId: 'new-upgrade', validationRef: validation, authorityIds: ['state-auth'] },
             context(),
           ),
@@ -492,9 +626,46 @@ describe('reference authority directory', () => {
         )
         expect(read.ok).toBe(true)
         const current = read.ok ? (read.value as { route: AuthorityRoute }).route : route
+        const staleFence = publication(
+          [advance(current, 'stale-cutover', 2)],
+          'upgrade-1',
+          'stale-cutover',
+          validation,
+        )
+        expect(
+          code(
+            await same(left, right, 'old epoch fence', (driver) =>
+              driver.provider.compareAndSwap(
+                { ...staleFence, publication: { ...staleFence.publication, sourceFences: freshFences } },
+                context(),
+              ),
+            ),
+          ),
+        ).toBe('incompatible/fence_incomplete')
+        const missingUpgrade = 'unregistered-upgrade'
+        await same(left, right, 'approval without fence', (driver) =>
+          driver.provider.approveUpgrade(
+            { upgradeId: missingUpgrade, validationRef: validation, authorityIds: ['state-auth'] },
+            context(),
+          ),
+        )
+        const unregistered = publication(
+          [advance(current, 'unregistered-cutover', 2)],
+          missingUpgrade,
+          'unregistered-cutover',
+          validation,
+        )
+        expect(
+          code(
+            await same(left, right, 'unregistered fence', (driver) =>
+              driver.provider.compareAndSwap(unregistered, context()),
+            ),
+          ),
+        ).toBe('incompatible/fence_not_registered')
         const secondProof = inlineData({ accepted: false } as JsonValue, 'agh.maintenance/validation@1')
         await same(left, right, 'approve-2', (driver) =>
-          driver.provider.approveUpgrade(
+          approveRegistered(
+            driver.provider,
             { upgradeId: 'upgrade-2', validationRef: secondProof, authorityIds: ['state-auth'] },
             context(),
           ),
@@ -599,7 +770,8 @@ describe('reference authority directory', () => {
       await same(left, right, 'budget', (driver) => driver.provider.seedRoute(budget, context()))
       const validation = proof()
       await same(left, right, 'journal', (driver) =>
-        driver.provider.approveUpgrade(
+        approveRegistered(
+          driver.provider,
           { upgradeId: 'upgrade-1', validationRef: validation, authorityIds: ['state-auth', 'budget-auth'] },
           context(),
         ),
@@ -642,7 +814,8 @@ describe('reference authority directory', () => {
         if (epoch > 2) {
           const upgradeId = `upgrade-${epoch}`
           await same(left, right, 'joint journal', (driver) =>
-            driver.provider.approveUpgrade(
+            approveRegistered(
+              driver.provider,
               { upgradeId, validationRef: validation, authorityIds: ['state-auth', 'budget-auth'] },
               context(),
             ),
@@ -790,7 +963,8 @@ describe('reference authority directory', () => {
       const validation = proof()
       expect(
         code(
-          await driver.provider.approveUpgrade(
+          await approveRegistered(
+            driver.provider,
             { upgradeId: 'upgrade-1', validationRef: validation, authorityIds: ['state-auth'] },
             context(),
           ),

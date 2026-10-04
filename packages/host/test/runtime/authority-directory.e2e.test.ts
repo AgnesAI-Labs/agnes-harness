@@ -1,4 +1,4 @@
-import { type ChildProcess, spawn } from 'node:child_process'
+import { type ChildProcess, execFileSync, spawn } from 'node:child_process'
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -92,7 +92,7 @@ function lockRef(): DataRef {
   return inlineData({ lock: 'directory' } as JsonValue, 'agh.maintenance/provider-lock@1')
 }
 
-function fenceFor(route: AuthorityRoute, cutoverId: string): AuthorityFence {
+function fenceFor(route: AuthorityRoute, _cutoverId: string): AuthorityFence {
   return {
     upgradeId: 'upgrade-1',
     source: {
@@ -100,9 +100,14 @@ function fenceFor(route: AuthorityRoute, cutoverId: string): AuthorityFence {
       tenantId: route.tenantId,
       authorityEpoch: route.authorityEpoch,
     },
-    fenceId: `fence-${cutoverId}-${route.logicalAuthorityId}`,
+    fenceId: `fence-upgrade-1-${route.logicalAuthorityId}`,
     fenceEpoch: route.authorityEpoch,
-    checkpoint: route.checkpoint,
+    checkpoint: {
+      ...route.checkpoint,
+      checkpointId: 'fresh-source-freeze',
+      snapshotDigest: '44'.repeat(32),
+      recordCount: route.checkpoint.recordCount + 1,
+    },
     writerCredentialsRevoked: true,
   }
 }
@@ -174,7 +179,12 @@ async function prepared(): Promise<{
   expect(
     detail(
       await provider.approveUpgrade(
-        { upgradeId: 'upgrade-1', validationRef: proof, authorityIds: ['state-auth'] },
+        {
+          upgradeId: 'upgrade-1',
+          validationRef: proof,
+          authorityIds: ['state-auth'],
+          sourceFences: requestFor(route, 'cutover-1', COHORT, proof).publication.sourceFences,
+        },
         context(),
       ),
     ),
@@ -297,6 +307,31 @@ async function revisionAt(directory: string, anchor: string): Promise<number> {
 }
 
 describe('authority directory process durability', () => {
+  it.each(['default', 'reference'])(
+    'publishes and cold recovers a fresh real C31 fence through %s',
+    (recipe) => {
+      const root = mkdtempSync(join(tmpdir(), 'authority-blob-cold-'))
+      const fixture = fileURLToPath(
+        new URL('../fixtures/authority-directory-blob-process.ts', import.meta.url),
+      )
+      try {
+        const run = (mode: string) =>
+          JSON.parse(
+            execFileSync(process.execPath, ['--import', 'tsx', fixture, mode, root, recipe], {
+              encoding: 'utf8',
+              timeout: 30_000,
+            }),
+          )
+        const published = run('prepare')
+        expect(published.read.revision).toBe(2)
+        expect(published.sourceProbe.fence.checkpoint.recordCount).toBeGreaterThan(0)
+        expect(run('recover')).toEqual(published)
+      } finally {
+        rmSync(root, { recursive: true, force: true })
+      }
+    },
+  )
+
   it('keeps the old route when killed before the pointer rename and the new route after it', async () => {
     for (const phase of [
       'temp',

@@ -172,7 +172,7 @@ async function seed(provider: AuthorityDirectoryProvider, id: string): Promise<A
   return route
 }
 
-function fenceFor(route: AuthorityRoute, upgradeId: string, cutoverId: string): AuthorityFence {
+function fenceFor(route: AuthorityRoute, upgradeId: string, _cutoverId: string): AuthorityFence {
   return {
     upgradeId,
     source: {
@@ -180,9 +180,14 @@ function fenceFor(route: AuthorityRoute, upgradeId: string, cutoverId: string): 
       tenantId: route.tenantId,
       authorityEpoch: route.authorityEpoch,
     },
-    fenceId: `fence-${cutoverId}-${route.logicalAuthorityId}`,
+    fenceId: `fence-${upgradeId}-${route.logicalAuthorityId}`,
     fenceEpoch: route.authorityEpoch,
-    checkpoint: route.checkpoint,
+    checkpoint: {
+      ...route.checkpoint,
+      checkpointId: 'fresh-source-freeze',
+      snapshotDigest: '44'.repeat(32),
+      recordCount: route.checkpoint.recordCount + 1,
+    },
     writerCredentialsRevoked: true,
   }
 }
@@ -231,7 +236,16 @@ async function approve(
   proof: DataRef,
   authorityIds: readonly string[],
 ) {
-  const approved = await provider.approveUpgrade({ upgradeId, validationRef: proof, authorityIds }, context())
+  const sourceFences: AuthorityFence[] = []
+  for (const logicalAuthorityId of authorityIds) {
+    const read = await provider.read({ kind: 'authority', logicalAuthorityId }, context())
+    if (read.ok && read.value.kind === 'authority')
+      sourceFences.push(fenceFor(read.value.route, upgradeId, ''))
+  }
+  const approved = await provider.approveUpgrade(
+    { upgradeId, validationRef: proof, authorityIds, sourceFences },
+    context(),
+  )
   expect(detail(approved)).toBe('ok')
 }
 

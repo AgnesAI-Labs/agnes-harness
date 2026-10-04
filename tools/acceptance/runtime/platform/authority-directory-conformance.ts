@@ -66,6 +66,7 @@ interface DirectoryProvider {
       readonly upgradeId: string
       readonly validationRef: DataRef
       readonly authorityIds: readonly string[]
+      readonly sourceFences?: readonly AuthorityFence[]
     },
     context: CallContext,
   ): Promise<Outcome<{ readonly upgradeId: string }>>
@@ -151,7 +152,12 @@ function fenceFor(route: AuthorityRoute, upgradeId: string, cutoverId: string): 
     },
     fenceId: `fence-${cutoverId}-${route.logicalAuthorityId}`,
     fenceEpoch: route.authorityEpoch,
-    checkpoint: route.checkpoint,
+    checkpoint: {
+      ...route.checkpoint,
+      checkpointId: 'fresh-source-freeze',
+      snapshotDigest: '44'.repeat(32),
+      recordCount: route.checkpoint.recordCount + 1,
+    },
     writerCredentialsRevoked: true,
   }
 }
@@ -387,7 +393,12 @@ async function normal(recipe: Recipe): Promise<AuthorityDirectoryScenarioEvidenc
     const proof = validation()
     must(
       await provider.approveUpgrade(
-        { upgradeId: 'upgrade-1', validationRef: proof, authorityIds: ['state-auth'] },
+        {
+          upgradeId: 'upgrade-1',
+          validationRef: proof,
+          authorityIds: ['state-auth'],
+          sourceFences: requestFor(route, 1, proof).publication.sourceFences,
+        },
         context(),
       ),
     )
@@ -449,7 +460,12 @@ async function recover(recipe: Recipe): Promise<AuthorityDirectoryScenarioEviden
     const proof = validation()
     must(
       await first.approveUpgrade(
-        { upgradeId: 'upgrade-1', validationRef: proof, authorityIds: ['state-auth'] },
+        {
+          upgradeId: 'upgrade-1',
+          validationRef: proof,
+          authorityIds: ['state-auth'],
+          sourceFences: requestFor(route, 1, proof).publication.sourceFences,
+        },
         context(),
       ),
     )
@@ -626,7 +642,12 @@ export async function proveDirectoryAgreement(): Promise<{
     const proof = validation()
     must(
       await provider.approveUpgrade(
-        { upgradeId: 'upgrade-1', validationRef: proof, authorityIds: ['state-auth'] },
+        {
+          upgradeId: 'upgrade-1',
+          validationRef: proof,
+          authorityIds: ['state-auth'],
+          sourceFences: requestFor(route, 1, proof).publication.sourceFences,
+        },
         context(),
       ),
     )
@@ -667,7 +688,12 @@ export async function proveDirectoryAgreement(): Promise<{
     const proof = validation()
     must(
       await provider.approveUpgrade(
-        { upgradeId: 'upgrade-1', validationRef: proof, authorityIds: ['state-auth'] },
+        {
+          upgradeId: 'upgrade-1',
+          validationRef: proof,
+          authorityIds: ['state-auth'],
+          sourceFences: requestFor(route, 1, proof).publication.sourceFences,
+        },
         context(),
       ),
     )

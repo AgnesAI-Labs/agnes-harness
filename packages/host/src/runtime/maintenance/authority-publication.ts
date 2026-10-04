@@ -109,7 +109,11 @@ export function decidePublication(
   head: DirectoryHead,
   request: AuthorityDirectoryCompareAndSwapRequest,
   existing: { readonly fingerprint: string; readonly result: AuthorityDirectoryCompareAndSwapResult } | null,
-  journal: { readonly validationDigest: string; readonly authorityIds: readonly string[] } | null,
+  journal: {
+    readonly validationDigest: string
+    readonly authorityIds: readonly string[]
+    readonly sourceFences?: readonly AuthorityFence[]
+  } | null,
 ): PublicationDecision {
   if (request.transactionId !== request.publication.cutoverId) {
     return refuse('invalid_input', 'cutover_transaction_mismatch')
@@ -130,6 +134,13 @@ export function decidePublication(
   if (structural.kind === 'refuse') return structural
   const revision = revisionsMatch(head, structural.changes)
   if (revision.kind === 'refuse') return revision
+  const registered = new Set(
+    (journal.sourceFences ?? []).map((fence) => canonicalJsonDigest(cloneJson(fence))),
+  )
+  if (
+    request.publication.sourceFences.some((fence) => !registered.has(canonicalJsonDigest(cloneJson(fence))))
+  )
+    return refuse('incompatible', 'fence_not_registered')
   const result = buildResult(request, revision.revisions)
   const headNext = applyCommit(head, structural.changes, structural.domains)
   return { kind: 'commit', result, head: headNext, fingerprint }
@@ -273,19 +284,6 @@ function inspectPublication(
     if (!fences.keys.has(key)) return refuse('incompatible', 'fence_incomplete')
   }
   if (fences.keys.size !== seen.size) return refuse('incompatible', 'fence_incomplete')
-  for (const change of publication.changes) {
-    const fence = publication.sourceFences.find(
-      (item) =>
-        fenceKey(change.previous) ===
-        `${item.source.authorityId}\0${item.source.tenantId}\0${item.source.authorityEpoch}`,
-    )
-    if (
-      !fence ||
-      canonicalJsonDigest(cloneJson(fence.checkpoint)) !==
-        canonicalJsonDigest(cloneJson(change.previous.checkpoint))
-    )
-      return refuse('incompatible', 'fence_checkpoint')
-  }
   const domains = domainUpdates(head, publication)
   if (domains.kind === 'refuse') return domains
   const partial = partialJoint(head, publication, domains.domains)
