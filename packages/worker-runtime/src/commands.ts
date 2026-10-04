@@ -534,17 +534,24 @@ export async function applyMcpRowChange(
 ): Promise<McpStatus | undefined> {
   const slot = o.resources
   if (reconnect) slot?.mcpRows?.reconnect(serverId)
-  if (slot) slot.staleMarks++
+  const mark = slot ? ++slot.staleMarks : 0
   const ac = new AbortController()
-  const release = await admitResourceRun(
-    {
-      host: o.host,
-      ...(o.resources ? { resources: o.resources } : {}),
-      ...(o.workerResourcesInput ? { workerResourcesInput: o.workerResourcesInput } : {}),
-    },
-    ac.signal,
-  )
-  release?.()
+  // An admission that finds a reload already claimed joins that batch and leaves any newer mark to
+  // the next run. This caller reads a status back, so that status must come from a generation that
+  // includes its own mark. An idle preparation is often the batch it joins, so ask again; the
+  // bound keeps a reload that keeps failing from holding the caller forever.
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const release = await admitResourceRun(
+      {
+        host: o.host,
+        ...(o.resources ? { resources: o.resources } : {}),
+        ...(o.workerResourcesInput ? { workerResourcesInput: o.workerResourcesInput } : {}),
+      },
+      ac.signal,
+    )
+    release?.()
+    if (!slot || slot.reloadedMarks >= mark) break
+  }
   return slot?.mcpRows?.status(serverId)
 }
 
