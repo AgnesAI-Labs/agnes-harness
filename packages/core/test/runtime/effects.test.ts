@@ -24,6 +24,7 @@ import {
   runPureHookStage,
 } from '../../src/runtime/hooks/stages.js'
 import { createDefaultEffectsFactory } from '../../src/runtime/providers/effects.js'
+import { createReferenceEffectsFactory } from '../../testkit/index.js'
 
 const closed = { additionalProperties: false } as const
 const section = {
@@ -839,4 +840,237 @@ it('rejects an ordinary frozen callback without genuine Host source installation
   expect(captured).toBe(0)
   expect(handled).toBe(0)
   await provider.close('completed')
+})
+
+async function referenceHarness(pure: PureHookStage) {
+  const signal = new AbortController()
+  const scope = {
+    kind: 'session',
+    installationId: 'installation',
+    runtimeId: 'runtime',
+    workspaceId: 'workspace',
+    sessionId: 'session',
+  } as const
+  const provider = await createReferenceEffectsFactory(descriptor, configCodec, pure).create(
+    encoded(configCodec, {}),
+    dependencies,
+    { instanceId: 'effects-instance', bindingId: binding.bindingId, scope, signal: signal.signal },
+  )
+  const action = await provider.actions?.runHooks?.create({
+    instanceId: 'effects-action',
+    actionId: pure.sourceActionId,
+    runId: pure.request.owner.runId,
+    bindingId: binding.bindingId,
+    scope,
+    signal: signal.signal,
+  })
+  if (action?.kind !== 'leaf') throw new Error('Missing reference action')
+  const call = {
+    bindingId: binding.bindingId,
+    scope,
+    principalRef: 'principal',
+    authorizationRef: 'authorization',
+    invocationId: 'invocation',
+    deadline: '2026-10-05T00:00:00Z',
+    traceRef: 'trace',
+    signal: signal.signal,
+  }
+  const input: DataRef = {
+    kind: 'inline',
+    schema: refs.runHooks.input,
+    value: pure.request,
+    digest: canonicalJsonDigest(pure.request),
+    bytes: Buffer.byteLength(jcs(pure.request)),
+  }
+  const { signal: _signal, ...wireCall } = call
+  const frame: ActionFrame = {
+    actionId: pure.sourceActionId,
+    parentActionId: null,
+    runId: pure.request.owner.runId,
+    bindingId: binding.bindingId,
+    method: 'runHooks',
+    input,
+    inputDigest: canonicalJsonDigest(input),
+    attemptId: 'attempt',
+    attemptNumber: 1,
+    invocationId: call.invocationId,
+    requestIdentity: null,
+    providerRevision: 0,
+    continuation: null,
+    signals: { items: [], nextCursor: null, complete: true, snapshot: 'snapshot' },
+    receipts: { items: [], nextCursor: null, complete: true, snapshot: 'snapshot' },
+    signalHighWater: 0,
+    snapshot: 'snapshot',
+    observedAt: '2026-10-04T00:00:00Z',
+    context: wireCall,
+    actionTimebox: { defaultTimeoutMs: 1000, maxDeadline: call.deadline },
+  }
+  const context = {
+    call,
+    effects: {
+      invoke: async () => {
+        throw new Error('Reference pure stage must not send an effect')
+      },
+      stream: async () => {
+        throw new Error('Reference pure stage must not stream an effect')
+      },
+      upload: async () => {
+        throw new Error('Reference pure stage must not upload an effect')
+      },
+    },
+    progress: async () => {
+      throw new Error('Reference pure stage must not publish progress')
+    },
+  }
+  return { provider, action, frame, context, signal }
+}
+
+describe('reference Effects value runner', () => {
+  it('executes a real pure handler and reuses one action result for concurrent identical frames', async () => {
+    expect('createReferenceEffectsFactory' in Core).toBe(false)
+    let calls = 0
+    const pure = stage([
+      registration(
+        contextDefinition('chosen', () => {
+          calls++
+          return { additionalContext: 'selected' }
+        }),
+        0,
+      ),
+    ])
+    const f = await referenceHarness(pure)
+    expect((await f.provider.ready(f.context.call)).ok).toBe(true)
+    const [first, second] = await Promise.all([
+      f.action.execute(f.frame, f.context),
+      f.action.execute(f.frame, f.context),
+    ])
+    expect(first).toEqual(second)
+    expect(first.outcome).toBe('succeeded')
+    expect(first.externalRequests).toEqual([])
+    if (first.result?.kind !== 'inline') throw new Error('Missing reference result')
+    expect(first.result.schema).toEqual(refs.runHooks.output)
+    expect(validateRuntime('HookResultSet', first.result.value).ok).toBe(true)
+    expect(first.result.digest).toBe(canonicalJsonDigest(first.result.value))
+    expect(f.action.effectSemantics).toBe('non-idempotent')
+    expect(calls).toBe(1)
+    expect(await f.action.execute({ ...f.frame, attemptId: 'different' }, f.context)).toMatchObject({
+      outcome: 'failed',
+      error: { detailCode: 'effects_reference_frame_changed' },
+    })
+    expect(calls).toBe(1)
+    const rebuilt = await f.provider.actions?.runHooks?.create({
+      instanceId: 'effects-rebuilt',
+      actionId: pure.sourceActionId,
+      runId: pure.request.owner.runId,
+      bindingId: binding.bindingId,
+      scope: f.context.call.scope,
+      signal: f.signal.signal,
+    })
+    if (rebuilt?.kind !== 'leaf') throw new Error('Missing rebuilt reference action')
+    expect(rebuilt.effectSemantics).toBe('non-idempotent')
+    expect((await rebuilt.execute(f.frame, f.context)).outcome).toBe('succeeded')
+    expect(calls).toBe(2)
+    await f.provider.close('completed')
+    expect((await f.provider.ready(f.context.call)).ok).toBe(false)
+    expect((await f.action.execute(f.frame, f.context)).outcome).toBe('cancelled')
+  })
+
+  it('refuses frame drift and cancellation before a handler runs', async () => {
+    let calls = 0
+    const pure = stage([
+      registration(
+        contextDefinition('chosen', () => {
+          calls++
+          return { additionalContext: 'selected' }
+        }),
+        0,
+      ),
+    ])
+    const f = await referenceHarness(pure)
+    expect(await f.action.execute({ ...f.frame, actionId: 'foreign' }, f.context)).toMatchObject({
+      outcome: 'failed',
+      error: { detailCode: 'effects_reference_frame' },
+    })
+    expect(await f.action.execute({ ...f.frame, inputDigest: 'a'.repeat(64) }, f.context)).toMatchObject({
+      outcome: 'failed',
+      error: { detailCode: 'effects_reference_frame' },
+    })
+    const foreign = await f.provider.actions?.runHooks?.create({
+      instanceId: 'effects-foreign',
+      actionId: pure.sourceActionId,
+      runId: pure.request.owner.runId,
+      bindingId: binding.bindingId,
+      scope: { ...f.context.call.scope, workspaceId: 'foreign-workspace' },
+      signal: f.signal.signal,
+    })
+    if (foreign?.kind !== 'leaf') throw new Error('Missing foreign action')
+    expect(await foreign.execute(f.frame, f.context)).toMatchObject({
+      outcome: 'failed',
+      error: { detailCode: 'effects_reference_frame' },
+    })
+    expect(calls).toBe(0)
+    f.signal.abort()
+    expect((await f.action.execute(f.frame, f.context)).outcome).toBe('cancelled')
+    expect(calls).toBe(0)
+  })
+
+  it('preserves a closed handler denial without leaking its error', async () => {
+    const pure = stage([
+      registration(
+        contextDefinition(
+          'throws',
+          () => {
+            throw new Error('private handler detail')
+          },
+          { failPolicy: 'closed' },
+        ),
+        0,
+      ),
+    ])
+    const f = await referenceHarness(pure)
+    const result = await f.action.execute(f.frame, f.context)
+    expect(result.outcome).toBe('succeeded')
+    expect(result.result?.kind).toBe('inline')
+    expect(JSON.stringify(result)).not.toContain('private handler detail')
+  })
+
+  it('returns a typed failure before a handler when reference access is invalid', async () => {
+    let calls = 0
+    const pure = stage([
+      registration(
+        contextDefinition('chosen', () => {
+          calls++
+          return { additionalContext: 'selected' }
+        }),
+        0,
+      ),
+    ])
+    const invalid: PureHookStage = {
+      ...pure,
+      access: { ...pure.access, readFields: [] },
+    }
+    const f = await referenceHarness(invalid)
+    const result = await f.action.execute(f.frame, f.context)
+    expect(result.outcome).toBe('failed')
+    expect(result.result).toBeUndefined()
+    expect(calls).toBe(0)
+  })
+
+  it('stops reference execution after drain', async () => {
+    let calls = 0
+    const pure = stage([
+      registration(
+        contextDefinition('chosen', () => {
+          calls++
+          return { additionalContext: 'selected' }
+        }),
+        0,
+      ),
+    ])
+    const f = await referenceHarness(pure)
+    await f.provider.drain(f.context.call.deadline, f.context.call)
+    expect((await f.provider.ready(f.context.call)).ok).toBe(false)
+    expect((await f.action.execute(f.frame, f.context)).outcome).toBe('cancelled')
+    expect(calls).toBe(0)
+  })
 })
