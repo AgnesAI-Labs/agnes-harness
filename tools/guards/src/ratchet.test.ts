@@ -267,7 +267,9 @@ const INITIAL_CEILING: Record<string, number> = {
   // W8a-3: retire the native tool renderer in favor of one compatibility root; measured 4630.
   // 2026-10-04 image upload merged onto the queue view: the composer reads, downscales and previews
   // attachments, and the queue row markup above stays. Measured: 5923, exact, no spare.
-  'packages/web-units/src': 5923,
+  // 2026-10-05 the image size gate moved after downscaling (sources get a coarse 20 MiB bound only),
+  // replacing the pre-read byte reservations and freeing 8 lines. Measured: 5915, exact.
+  'packages/web-units/src': 5915,
   'packages/base/extensions/tools-core': 800,
   // MCP-ROWS stage 2b, steps 1-2 (D118): connection supervisor, catalog hub, and the per-server
   // extension row wiring them together. New extension at the shared default cap; measured 276.

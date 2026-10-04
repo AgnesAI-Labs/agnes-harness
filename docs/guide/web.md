@@ -45,7 +45,7 @@ Resource updates discovered during startup are prepared while the worker is idle
 
 ### Attach images
 
-Paste an image from the clipboard or drag it onto the composer. The Web composer accepts PNG and JPEG, up to four images and 1 MiB of original image data per message. The server checks the declared type, image structure, byte count, and pixel dimensions before accepting the message. Images are encoded into the JSON message, so the 2 MiB WebSocket frame limit also applies; encoding and message metadata use part of that space.
+Paste an image from the clipboard or drag it onto the composer. The Web composer accepts PNG and JPEG, up to four images and 1 MiB of encoded image data per message; an image whose long edge exceeds 1456 pixels is downscaled to that edge first, so the limit applies to what is sent rather than to the file you picked. The server checks the declared type, image structure, byte count, and pixel dimensions before accepting the message. Images are encoded into the JSON message, so the 2 MiB WebSocket frame limit also applies; encoding and message metadata use part of that space.
 
 An image can be sent by itself or with text. While a turn is running, the combination is queued as a follow-up. If the selected model does not accept image input, choose a model that does or remove the images. A failed send restores the text and attachments for retry; changing sessions clears staged images.
 

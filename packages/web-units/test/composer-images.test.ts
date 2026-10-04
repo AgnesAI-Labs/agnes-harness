@@ -10,6 +10,7 @@ import {
   type ComposerHandle,
   type ComposerView,
 } from '../src/composer.js'
+import { webUnitsLocaleCatalog } from '../src/locales/index.js'
 
 let host: HTMLDivElement
 let root: Root
@@ -17,9 +18,10 @@ let originalCreateObjectURL: PropertyDescriptor | undefined
 let originalRevokeObjectURL: PropertyDescriptor | undefined
 
 const dependencies: ComposerDependencies = {
-  // 组件从语言目录取词，桩要返回真实文案而不是 key 本身。
+  // 组件从语言目录取词，桩要返回真实文案而不是 key 本身。composer 的词条在 web-units 自己的
+  // 目录里，web-ui 的目录没有，只查后者会拿到原始 key。
   translate: (key, vars) => {
-    const template = webUiLocaleCatalog['zh-CN'][key] ?? key
+    const template = webUnitsLocaleCatalog['zh-CN'][key] ?? webUiLocaleCatalog['zh-CN'][key] ?? key
     if (!vars) return template
     return template.replace(/\{(\w+)\}/g, (match, name: string) =>
       Object.hasOwn(vars, name) ? String(vars[name]) : match,
@@ -370,5 +372,118 @@ describe('composer image attachments', () => {
     expect(onError).toHaveBeenCalledTimes(3)
     expect(handle.current?.getImageBlocks()).toEqual([])
     expect(URL.createObjectURL).not.toHaveBeenCalled()
+  })
+
+  it('accepts a large source image once downscaling brings it under the per-image limit', async () => {
+    const handle = createRef<ComposerHandle>()
+    const onError = vi.fn()
+    // 源图 3 MiB，远超单张 1 MiB 上限，缩放后却是张合法小图。闸门必须按缩放后的结果判，
+    // 否则大截图会在能被缩小之前就被拒掉——缩放功能对最需要它的场景反而无效。
+    const source = new File([new Uint8Array(3 * 1024 * 1024)], 'screenshot.png', { type: 'image/png' })
+    const scaled = pngFile('screenshot.png', pngBytes)
+    const downscaleImage = vi.fn(async () => scaled)
+    await act(async () => {
+      root.render(
+        createElement(Composer, {
+          ref: handle,
+          dependencies: { ...dependencies, downscaleImage },
+          initialView: view,
+          onCancel() {},
+          onDraftChange() {},
+          onError,
+          onModelSelect: async () => false,
+          onPermissionSelect: async () => false,
+          onSubmit() {},
+          onWorkspace() {},
+        }),
+      )
+    })
+
+    const prompt = host.querySelector<HTMLTextAreaElement>('#prompt')
+    if (!prompt) throw new Error('composer input is missing')
+    await act(async () => {
+      prompt.dispatchEvent(imagePasteEvent([source]))
+      await vi.waitFor(() => expect(handle.current?.getImageBlocks()).toHaveLength(1))
+    })
+
+    expect(downscaleImage).toHaveBeenCalledWith(source)
+    expect(URL.createObjectURL).toHaveBeenCalledWith(scaled)
+    expect(onError).not.toHaveBeenCalled()
+    await act(async () => root.unmount())
+    root = createRoot(host)
+  })
+
+  it('rejects an image that is still over the per-image limit after downscaling', async () => {
+    const handle = createRef<ComposerHandle>()
+    const onError = vi.fn()
+    const oversized = new File([new Uint8Array(1024 * 1024 + 1)], 'still-big.png', { type: 'image/png' })
+    const downscaleImage = vi.fn(async () => oversized)
+    await act(async () => {
+      root.render(
+        createElement(Composer, {
+          ref: handle,
+          dependencies: { ...dependencies, downscaleImage },
+          initialView: view,
+          onCancel() {},
+          onDraftChange() {},
+          onError,
+          onModelSelect: async () => false,
+          onPermissionSelect: async () => false,
+          onSubmit() {},
+          onWorkspace() {},
+        }),
+      )
+    })
+
+    const prompt = host.querySelector<HTMLTextAreaElement>('#prompt')
+    if (!prompt) throw new Error('composer input is missing')
+    await act(async () => {
+      prompt.dispatchEvent(imagePasteEvent([pngFile()]))
+      await vi.waitFor(() => expect(onError).toHaveBeenCalled())
+    })
+
+    expect(onError.mock.calls[0]?.[0]?.message).toBe('单条消息中的图片合计不能超过 1 MiB。')
+    expect(handle.current?.getImageBlocks()).toEqual([])
+    expect(URL.createObjectURL).not.toHaveBeenCalled()
+    await act(async () => root.unmount())
+    root = createRoot(host)
+  })
+
+  it('counts the aggregate limit from the downscaled sizes, not the sources', async () => {
+    const handle = createRef<ComposerHandle>()
+    const onError = vi.fn()
+    // 三张源图合计 2.4 MiB，远超 1 MiB 的合计上限，缩放后各自只剩几十字节：应当全部收下。
+    const sources = [0, 1, 2].map(
+      (index) => new File([new Uint8Array(800 * 1024)], `source-${index}.png`, { type: 'image/png' }),
+    )
+    const downscaleImage = vi.fn(async (file: File) => pngFile(file.name, pngBytes))
+    await act(async () => {
+      root.render(
+        createElement(Composer, {
+          ref: handle,
+          dependencies: { ...dependencies, downscaleImage },
+          initialView: view,
+          onCancel() {},
+          onDraftChange() {},
+          onError,
+          onModelSelect: async () => false,
+          onPermissionSelect: async () => false,
+          onSubmit() {},
+          onWorkspace() {},
+        }),
+      )
+    })
+
+    const prompt = host.querySelector<HTMLTextAreaElement>('#prompt')
+    if (!prompt) throw new Error('composer input is missing')
+    await act(async () => {
+      prompt.dispatchEvent(imagePasteEvent(sources))
+      await vi.waitFor(() => expect(handle.current?.getImageBlocks()).toHaveLength(3))
+    })
+
+    expect(downscaleImage).toHaveBeenCalledTimes(3)
+    expect(onError).not.toHaveBeenCalled()
+    await act(async () => root.unmount())
+    root = createRoot(host)
   })
 })

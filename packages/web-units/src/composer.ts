@@ -210,6 +210,11 @@ const MAX_IMAGE_COUNT = USER_MESSAGE_IMAGE_MAX_COUNT
 const MAX_IMAGE_BYTES = USER_MESSAGE_IMAGE_LIMITS.maxBytesPerImage
 const MAX_TOTAL_IMAGE_BYTES = USER_MESSAGE_IMAGE_LIMITS.maxAggregateBytes
 const IMAGE_PREVIEW_LIMITS = USER_MESSAGE_IMAGE_LIMITS
+/**
+ * 源文件的粗上限，只为避免把超大文件整体读进内存再交给 canvas。真正的每张与合计上限看
+ * 缩放之后的结果：一张几 MB 的截图缩完往往只剩几百 KB，按原图卡会在能缩小之前就拒掉。
+ */
+const MAX_SOURCE_IMAGE_BYTES = 20 * 1024 * 1024
 
 /** 模型视觉输入的长边上限；超出的像素模型本来也读不到，上传前先缩掉，免得整张被尺寸闸拒。 */
 const IMAGE_MAX_EDGE = 1456
@@ -295,7 +300,6 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
   const generation = useRef(0)
   const nextAttachmentId = useRef(0)
   const pendingCountRef = useRef(0)
-  const pendingBytes = useRef(0)
 
   const publishAttachments = useCallback(
     (next: ComposerAttachment[]): void => {
@@ -309,7 +313,6 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
   const clearImageBlocks = useCallback((): void => {
     generation.current += 1
     pendingCountRef.current = 0
-    pendingBytes.current = 0
     setPendingCount(0)
     for (const attachment of attachmentsRef.current) URL.revokeObjectURL(attachment.previewUrl)
     publishAttachments([])
@@ -353,39 +356,28 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
     const t = dependencies.translate
     // 这张表用于把「内容不是图片」与「读不出来」区分开，所以文案只算一次再比对。
     const invalidImage = t('composer.image.invalid')
+    const tooLargeMessage = t('composer.image.tooLarge')
     const accepted: File[] = []
-    let candidateBytes = 0
     for (const file of files) {
       if (file.type !== 'image/png' && file.type !== 'image/jpeg') {
         onError(new Error(t('composer.image.invalidType')))
         continue
       }
-      if (file.size < 1 || file.size > MAX_IMAGE_BYTES) {
-        onError(new Error(t('composer.image.tooLarge')))
+      // 源图只做粗筛：体积上限留到缩放之后再判，否则大截图会在能被缩小之前就被拒掉。
+      if (file.size < 1 || file.size > MAX_SOURCE_IMAGE_BYTES) {
+        onError(new Error(tooLargeMessage))
         continue
       }
       if (attachmentsRef.current.length + pendingCountRef.current + accepted.length >= MAX_IMAGE_COUNT) {
         onError(new Error(t('composer.image.tooMany')))
         continue
       }
-      if (
-        attachmentsRef.current.reduce((sum, image) => sum + image.size, 0) +
-          pendingBytes.current +
-          candidateBytes +
-          file.size >
-        MAX_TOTAL_IMAGE_BYTES
-      ) {
-        onError(new Error(t('composer.image.tooLarge')))
-        continue
-      }
       accepted.push(file)
-      candidateBytes += file.size
     }
     if (accepted.length === 0) return
 
     const readGeneration = generation.current
     pendingCountRef.current += accepted.length
-    pendingBytes.current += candidateBytes
     setPendingCount(pendingCountRef.current)
     onAttachmentsChange?.()
 
@@ -395,6 +387,14 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
           const scaled = dependencies.downscaleImage ? await dependencies.downscaleImage(file) : file
           const { data, bytes } = await readImage(scaled)
           if (readGeneration !== generation.current) return
+          // 每张与合计都按缩放后的体积结算，且必须排在解码之前：解码自己也卡同一批上限，
+          // 先解码的话「太大」会被当成「不是有效图片」报出去。
+          const current = attachmentsRef.current
+          const total = current.reduce((sum, image) => sum + image.size, 0)
+          if (scaled.size > MAX_IMAGE_BYTES || total + scaled.size > MAX_TOTAL_IMAGE_BYTES) {
+            onError(new Error(tooLargeMessage))
+            return
+          }
           try {
             decodeSafeImageBytes({ bytes, mimeType: scaled.type }, IMAGE_PREVIEW_LIMITS)
           } catch {
@@ -408,7 +408,9 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
             previewUrl: URL.createObjectURL(scaled),
             size: scaled.size,
           }
-          publishAttachments([...attachmentsRef.current, attachment])
+          // 这里到 publishAttachments 之间没有 await：并发读出的多张图会依次看到彼此已提交的
+          // 体积，不会各自按同一份旧快照判定而一起越过合计上限。
+          publishAttachments([...current, attachment])
         } catch (error) {
           if (readGeneration === generation.current)
             onError(
@@ -419,7 +421,6 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
         } finally {
           if (readGeneration === generation.current) {
             pendingCountRef.current -= 1
-            pendingBytes.current -= file.size
             setPendingCount(pendingCountRef.current)
             onAttachmentsChange?.()
           }

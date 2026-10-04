@@ -479,7 +479,9 @@ describe('web permission synchronization', () => {
       old.prompt.mockClear()
       submit('use the current permission')
       await vi.waitFor(() =>
-        expect(old.prompt).toHaveBeenCalledWith([{ type: 'text', text: 'use the current permission' }], { titleLocale: 'zh-CN' }),
+        expect(old.prompt).toHaveBeenCalledWith([{ type: 'text', text: 'use the current permission' }], {
+          titleLocale: 'zh-CN',
+        }),
       )
       expect.soft(pendingLabel).toBe('请选择权限')
       expect.soft(renderedLabel).toBe('请选择权限')
@@ -581,7 +583,9 @@ describe('web permission synchronization', () => {
     await vi.waitFor(() => expect(label()).toBe('工作区内修改'))
     submit('confirmed permission')
     await vi.waitFor(() =>
-      expect(old.prompt).toHaveBeenCalledWith([{ type: 'text', text: 'confirmed permission' }], { titleLocale: 'zh-CN' }),
+      expect(old.prompt).toHaveBeenCalledWith([{ type: 'text', text: 'confirmed permission' }], {
+        titleLocale: 'zh-CN',
+      }),
     )
 
     const opened = old.projectUIOpening.mock.calls.length
@@ -599,7 +603,9 @@ describe('web permission synchronization', () => {
     await vi.waitFor(() => expect(label()).toBe('工作区内修改'))
     submit('confirmed after reconnect')
     await vi.waitFor(() =>
-      expect(old.prompt).toHaveBeenCalledWith([{ type: 'text', text: 'confirmed after reconnect' }], { titleLocale: 'zh-CN' }),
+      expect(old.prompt).toHaveBeenCalledWith([{ type: 'text', text: 'confirmed after reconnect' }], {
+        titleLocale: 'zh-CN',
+      }),
     )
     expect(old.setYolo).toHaveBeenCalledTimes(2)
   }, 20_000)
@@ -852,7 +858,9 @@ describe('web session selection', () => {
       }
       expect(fresh.setYolo).toHaveBeenCalledWith(true)
       await vi.waitFor(() =>
-        expect(fresh.prompt).toHaveBeenCalledWith([{ type: 'text', text: 'use the remembered selection' }], { titleLocale: 'zh-CN' }),
+        expect(fresh.prompt).toHaveBeenCalledWith([{ type: 'text', text: 'use the remembered selection' }], {
+          titleLocale: 'zh-CN',
+        }),
       )
       expect(permission.querySelector('[data-permission-label]')?.textContent).toBe('完全权限')
     },
@@ -923,7 +931,9 @@ describe('web session selection', () => {
     await vi.waitFor(() => expect(create).toHaveBeenCalledOnce())
     expect(create).toHaveBeenCalledWith({ cwd: beta.path, sessionKey: expect.any(String) })
     await vi.waitFor(() =>
-      expect(fresh.prompt).toHaveBeenCalledWith([{ type: 'text', text: 'create in beta' }], { titleLocale: 'zh-CN' }),
+      expect(fresh.prompt).toHaveBeenCalledWith([{ type: 'text', text: 'create in beta' }], {
+        titleLocale: 'zh-CN',
+      }),
     )
   })
 
@@ -1376,7 +1386,9 @@ describe('web session selection', () => {
     includeFresh = true
     newProjection.resolve(idleTimeline('fresh'))
     await vi.waitFor(() =>
-      expect(fresh.prompt).toHaveBeenCalledWith([{ type: 'text', text: 'must not cross sessions' }], { titleLocale: 'zh-CN' }),
+      expect(fresh.prompt).toHaveBeenCalledWith([{ type: 'text', text: 'must not cross sessions' }], {
+        titleLocale: 'zh-CN',
+      }),
     )
   })
 
@@ -1611,10 +1623,9 @@ describe('web session selection', () => {
       try {
         submit('first message')
         await vi.waitFor(() =>
-          expect(fresh.prompt).toHaveBeenCalledWith(
-            [{ type: 'text', text: 'first message' }],
-            { titleLocale: 'zh-CN' },
-          ),
+          expect(fresh.prompt).toHaveBeenCalledWith([{ type: 'text', text: 'first message' }], {
+            titleLocale: 'zh-CN',
+          }),
         )
         if (mode === 'failed') {
           listing.reject(new Error('sidebar list failed'))
@@ -1742,7 +1753,9 @@ describe('web session selection', () => {
       .getElementById('composer')
       ?.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
     await vi.waitFor(() =>
-      expect(fresh.prompt).toHaveBeenLastCalledWith([{ type: 'text', text: '成功后的第二条消息' }], { titleLocale: 'en' }),
+      expect(fresh.prompt).toHaveBeenLastCalledWith([{ type: 'text', text: '成功后的第二条消息' }], {
+        titleLocale: 'en',
+      }),
     )
     expect(create).toHaveBeenCalledTimes(1)
     expect(create.mock.calls[0]?.[0]?.sessionKey).toBe(firstKey)
