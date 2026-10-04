@@ -18,10 +18,10 @@ it('renders a compact Agnes session card with brand, context, model and command 
   const lines = banner.render(80)
   expect(lines).toHaveLength(5)
   expect(lines[0]).toContain('Agnes AI ·ᴗ·')
-  expect(strip(lines[1] as string)).toContain('新的想法，从这里开始')
+  expect(strip(lines[1] as string)).toContain('New ideas start here')
   expect(strip(lines[2] as string)).toContain('local-dev · standard')
   expect(strip(lines[3] as string)).toContain('● deepseek-v4-pro')
-  expect(strip(lines[3] as string)).toContain('输入 / 查看命令')
+  expect(strip(lines[3] as string)).toContain('Type / for commands')
   expect(lines[4]).toContain('╰')
   // Before the opening projection arrives, the card reports resolution in progress rather than
   // claiming the session has no model. Projection truth then replaces that temporary copy.
@@ -33,10 +33,10 @@ it('renders a compact Agnes session card with brand, context, model and command 
   })
   const narrowed = noModel.render(50)
   expect(strip(narrowed[2] as string)).toContain('local-dev · standard')
-  expect(strip(narrowed[3] as string)).toContain('正在解析模型')
+  expect(strip(narrowed[3] as string)).toContain('resolving model')
   noModel.setModel('kimi-for-coding-highspeed')
   expect(strip(noModel.render(50)[3] as string)).toContain('kimi-for-coding-highspeed')
-  expect(strip(noModel.render(50)[3] as string)).not.toContain('正在解析模型')
+  expect(strip(noModel.render(50)[3] as string)).not.toContain('resolving model')
 })
 
 it('uses the website violet for the brand and dims supporting copy, none tier stays plain', () => {

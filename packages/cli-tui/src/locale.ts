@@ -59,9 +59,7 @@ const DICT: Record<Locale, Record<LocaleKey, string>> = {
 }
 
 export function resolveLocale(env: Readonly<Record<string, string | undefined>>): Locale {
-  if (env.AGNES_LOCALE && (LOCALES as readonly string[]).includes(env.AGNES_LOCALE))
-    return env.AGNES_LOCALE as Locale
-  return (env.LANG ?? '').toLowerCase().startsWith('zh') ? 'zh-CN' : 'en'
+  return env.AGNES_LOCALE === 'zh-CN' ? 'zh-CN' : 'en'
 }
 
 export function t(

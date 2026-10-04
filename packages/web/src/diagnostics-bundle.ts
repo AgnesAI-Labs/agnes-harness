@@ -5,6 +5,7 @@ import type {
   EventEnvelope,
   UITimeline,
 } from '@agnes/protocol'
+import { diagnosticsText } from '@agnes/web-units/diagnostics-locale'
 // 走诊断相关的子路径，而不是 @agnes/web-units 的包根 barrel：barrel 会连带导出整个 UI 组件树
 // (含 XMarkdown 的 CJS 构建)，而它的 CJS 里有 require('./DebugPanel.css')，在没有 CSS 加载器的
 // 环境里会直接抛语法错误。本模块只做收集、脱敏和打包，不需要 React。
@@ -200,8 +201,14 @@ export async function collectDiagnostics(
         const imported = (start as { imported?: unknown } | null | undefined)?.imported
         if (imported && typeof imported === 'object' && !Array.isArray(imported)) {
           const { source } = imported as { source?: unknown }
-          const named = IMPORT_SOURCES.has(source) ? source : 'unknown'
-          warnings.push({ source: 'session', reason: 'imported', detail: `imported from ${named}` })
+          const named = IMPORT_SOURCES.has(source)
+            ? source
+            : diagnosticsText('diagnostics.trace.unknownSource')
+          warnings.push({
+            source: 'session',
+            reason: 'imported',
+            detail: diagnosticsText('diagnostics.trace.imported', { source: String(named) }),
+          })
         }
         const line = JSON.stringify(redactDiagnostic(event))
         bytes += encoder.encode(line).byteLength + 1
@@ -227,7 +234,7 @@ export async function collectDiagnostics(
   if (effective.conversation) {
     if (!projection) warnings.push({ source: 'trace', reason: 'unavailable' })
     else if (input.projectionHasEarlier) {
-      const detail = `仅含已加载的最近 ${projection.nodes.length} 个节点，更早的历史未包含`
+      const detail = diagnosticsText('diagnostics.trace.window', { n: projection.nodes.length })
       warnings.push({ source: 'trace', reason: 'truncated', detail })
     }
   }

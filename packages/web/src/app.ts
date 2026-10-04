@@ -36,6 +36,8 @@ import {
   findApproval,
   type LiveProjection,
 } from './live-projection.js'
+import { setLocaleTranslator } from './locale-bridge.js'
+import { applyDocumentLocale, readLocalePreference, writeLocalePreference } from './locale-preference.js'
 import type { ModelPickerOption } from './model-picker.js'
 import { renderWorkspaceOptions } from './navigation.js'
 import { type PermissionMode, permissionLabel, yoloEnabled } from './permission-picker.js'
@@ -49,6 +51,7 @@ import {
   modelSelectLabel,
   setButtonLabel,
   shouldShowEmptyState,
+  type Translate,
   workspaceErrorNotice,
 } from './presentation.js'
 import { bootstrapProbe, createReconnectController, type ReconnectPhase } from './reconnect.js'
@@ -125,20 +128,15 @@ function renderReconnect(phase: ReconnectPhase): void {
   if (phase !== 'stalled') {
     setConnection('reconnecting')
     reconnectNotice.textContent =
-      phase === 'waiting'
-        ? '正在等待后台恢复，恢复后页面会自动重新载入。只重启了后台时，请同时重新运行 Web 启动命令。'
-        : '后台已恢复，正在重新载入页面…'
+      phase === 'waiting' ? t('app.reconnect.waiting') : t('app.reconnect.reloading')
     return
   }
   setConnection('closed')
   const retry = document.createElement('button')
   retry.type = 'button'
-  retry.textContent = '重试连接'
+  retry.textContent = t('app.reconnect.retry')
   retry.addEventListener('click', () => reconnect.retry())
-  reconnectNotice.replaceChildren(
-    '后台暂未恢复。确认后台和 Web 启动命令都已重新运行后，可以重试连接。 ',
-    retry,
-  )
+  reconnectNotice.replaceChildren(t('app.reconnect.stalled'), retry)
 }
 // 客户端模块底座（WC8）：Cordis 根 + 五个宿主服务 + workbench.panel 挂载点。
 // 名册真源是 `_agnes/v1/clientModules.list`（P1a）；profile 要等 config.get() 才报出，
@@ -210,10 +208,10 @@ const clientModules = await startClientModules({
       },
       body: JSON.stringify({ rowId: module.rowId ?? module.packageId, sessionId, service, input }),
     })
-    if (!response.ok) throw new Error('插件后端服务当前不可用。')
+    if (!response.ok) throw new Error(t('app.plugin.serviceUnavailable'))
     const body: unknown = await response.json().catch(() => undefined)
     if (!body || typeof body !== 'object' || !('output' in body))
-      throw new Error('插件后端服务返回无效结果。')
+      throw new Error(t('app.plugin.serviceInvalid'))
     return (body as { output: unknown }).output
   },
   clientEffectCaller: async (module, sessionId, service, commandId, input) => {
@@ -232,20 +230,27 @@ const clientModules = await startClientModules({
         input,
       }),
     })
-    if (!response.ok) throw new Error('插件命令当前不可用或结果未知。')
+    if (!response.ok) throw new Error(t('app.plugin.effectUnavailable'))
     const body: unknown = await response.json().catch(() => undefined)
-    if (!body || typeof body !== 'object' || !('output' in body)) throw new Error('插件命令返回无效结果。')
+    if (!body || typeof body !== 'object' || !('output' in body))
+      throw new Error(t('app.plugin.effectInvalid'))
     return (body as { output: unknown }).output
   },
   authorizeCommand: ({ owner, command }) =>
     window.confirm(
-      `是否允许插件 ${owner} 执行命令“${command.title ?? command.id}”${command.effectService ? `（服务：${command.effectService}）` : ''}？`,
+      t('app.plugin.authorize', {
+        owner,
+        command: command.title ?? command.id,
+        service: command.effectService
+          ? t('app.plugin.authorizeService', { service: command.effectService })
+          : '',
+      }),
     ),
   panelContainer: document.getElementById('main-content') ?? undefined,
   sidebarContainer: document.querySelector<HTMLElement>('aside.sidebar') ?? undefined,
   sidebar: {
     actions: {
-      newSession: () => run(beginNewDraft),
+      newSession: (workspace) => run(() => beginNewDraft(workspace === undefined, workspace)),
       addWorkspace: () =>
         run(async () => {
           if (!draftingNew) await beginNewDraft()
@@ -293,8 +298,8 @@ const clientModules = await startClientModules({
     conversation,
     readToolDetail: async (sessionId, callSeq, resultSeq, signal) => {
       const session = current
-      if (!session) throw new Error('没有当前会话，无法读取工具详情')
-      if (session.id !== sessionId) throw new Error('会话已切换，请等待轨迹更新')
+      if (!session) throw new Error(t('app.trace.noSession'))
+      if (session.id !== sessionId) throw new Error(t('app.trace.sessionSwitched'))
       return session.readToolDetail(callSeq, resultSeq, signal ? { signal } : undefined)
     },
   },
@@ -330,7 +335,12 @@ const conversationRuntime = clientModules.conversation as NonNullable<typeof cli
 if (!conversationRuntime) throw new Error('missing conversation region')
 const renderer = clientModules.transcript as NonNullable<typeof clientModules.transcript>
 if (!renderer) throw new Error('missing transcript region')
-bindSlotCardContext({ registry: clientModules.registry, claim: claimSlotCard })
+bindSlotCardContext({ registry: clientModules.registry, claim: claimSlotCard, locale: clientModules.locale })
+
+// 渲染时取词：t 只在渲染/组装瞬间调用；语言切换后由订阅重跑渲染函数，命令式区域整体重建。
+const t: Translate = (key, vars) => clientModules.locale.t(key, vars)
+setLocaleTranslator(t)
+clientModules.locale.subscribe(() => renderControls())
 
 // A daemon notice is only an invalidation hint. Every read goes back through the SDK roster
 // endpoint, and a failed read leaves the current page/modules intact for the next hint.
@@ -424,6 +434,7 @@ function updateSidebar(): void {
     sessions: sessionRows,
     workspaces: workspaceRows,
     labels: sessionLabels,
+    locale: clientModules.locale.getSnapshot(),
     ...(current ? { currentId: current.id } : {}),
     ...(sessionNext ? { next: sessionNext } : {}),
     sessionPending,
@@ -439,7 +450,7 @@ async function stopWithTimeout(stop: (() => Promise<void>) | undefined): Promise
     await Promise.race([
       stop(),
       new Promise<never>((_, reject) => {
-        timer = setTimeout(() => reject(new Error('旧会话事件流关闭超时')), SESSION_WATCH_STOP_TIMEOUT_MS)
+        timer = setTimeout(() => reject(new Error(t('app.watch.stopTimeout'))), SESSION_WATCH_STOP_TIMEOUT_MS)
       }),
     ])
     return true
@@ -450,6 +461,7 @@ async function stopWithTimeout(stop: (() => Promise<void>) | undefined): Promise
   }
 }
 const settings = createSettingsController({ client, onSaved: savedConfiguration, onError: showError })
+clientModules.locale.subscribe(() => settings.refreshLocale())
 const sessionActions = createSessionActions({
   client,
   changed: () => list(),
@@ -458,11 +470,12 @@ const sessionActions = createSessionActions({
     if (document.body.classList.contains('sidebar-open')) clientModules.sidebar?.dismiss()
     showError(error)
   },
+  translate: t,
 })
 let sessionRecovery: { id: string; message: string } | undefined
 function errorMessage(error: unknown): string {
   // Provider values are redacted by settings before leaving that controller.
-  const message = error instanceof Error ? error.message : '操作失败，请重试。'
+  const message = error instanceof Error ? error.message : t('app.error.fallback')
   const diagnostic =
     error instanceof Error && 'data' in error && error.data && typeof error.data === 'object'
       ? (error.data as {
@@ -479,6 +492,7 @@ function errorMessage(error: unknown): string {
     diagnostic?.diagnosticUnavailable,
     diagnostic?.code === 'TURN_ERROR' ? diagnostic.error?.code : undefined,
     diagnostic?.reason,
+    t,
   )
 }
 function showError(error: unknown): void {
@@ -507,10 +521,10 @@ function showSessionRecovery(error: unknown, id: string): void {
     id,
     message:
       data && typeof data === 'object' && 'code' in data && data.code === 'SESSION_PROFILE_MISSING'
-        ? '这个历史任务的旧配置文件已缺失，暂时无法打开。记录仍保留，未切换为当前配置。'
+        ? t('app.recovery.profileMissing')
         : data && typeof data === 'object' && 'reason' in data && data.reason === 'legacy-ledger-format'
           ? errorMessage(error)
-          : `历史任务打开失败。${errorMessage(error)}`,
+          : t('app.recovery.openFailed', { detail: errorMessage(error) }),
   }
   renderSessionRecovery()
 }
@@ -527,7 +541,7 @@ function renderSessionRecovery(message = ''): void {
     const retry = document.createElement('button')
     retry.dataset.recoveryAction = 'retry'
     retry.type = 'button'
-    retry.textContent = '重试打开'
+    retry.textContent = t('app.recovery.retry')
     retry.addEventListener('click', () => {
       if (recoveryDisabled() || !sessionRecovery) return
       const id = sessionRecovery.id
@@ -536,7 +550,7 @@ function renderSessionRecovery(message = ''): void {
     const create = document.createElement('button')
     create.dataset.recoveryAction = 'create'
     create.type = 'button'
-    create.textContent = '新建任务'
+    create.textContent = t('app.recovery.create')
     create.addEventListener('click', () => {
       if (recoveryDisabled()) return
       run(() => beginNewDraft())
@@ -548,8 +562,7 @@ function renderSessionRecovery(message = ''): void {
   notice.dataset.kind = 'session-recovery'
   const description = notice.querySelector<HTMLElement>('[data-recovery-message]')
   const secondary = notice.querySelector<HTMLElement>('[data-recovery-error]')
-  if (description)
-    description.textContent = `${sessionRecovery.message} 可以重试、选择侧栏其他任务，或新建任务。 `
+  if (description) description.textContent = t('app.recovery.hint', { message: sessionRecovery.message })
   if (secondary) secondary.textContent = message ? ` ${message}` : ''
   for (const control of notice.querySelectorAll<HTMLButtonElement>('[data-recovery-action]'))
     control.disabled = recoveryDisabled()
@@ -580,10 +593,10 @@ function renderControls(): void {
   // 由 sessionPending = false 的那次 renderControls 平滑恢复。
   document.body.classList.toggle('session-switching', sessionPending)
   const available = connected
-  const busy = projection ? webView(projection).busy : false
+  const busy = projection ? webView(projection, undefined, t).busy : false
   const hasInput = composerRuntime.getDraft().trim().length > 0
   const initialSubmissionPending = sending && pendingSessionKey !== undefined
-  const action = composerActionPresentation({ busy, loading: sessionPending, sending })
+  const action = composerActionPresentation({ busy, loading: sessionPending, sending }, t)
   for (const control of notice.querySelectorAll<HTMLButtonElement>('[data-recovery-action]'))
     control.disabled = recoveryDisabled()
   const canStartDraft = draftingNew && selectedWorkspace?.available === true
@@ -596,7 +609,7 @@ function renderControls(): void {
     cancel: {
       disabled: !connected || !busy || stopping || sessionPending,
       hidden: !busy && !stopping,
-      label: stopping ? '正在请求停止…' : '停止',
+      label: stopping ? t('composer.cancel.stopping') : t('composer.cancel.stop'),
     },
     connected,
     configured,
@@ -605,27 +618,30 @@ function renderControls(): void {
       ? {
           kind: 'state',
           text: permissionRefreshPending
-            ? '正在同步会话权限，请稍后发送'
-            : '请先选择本会话权限，确认后再发送',
+            ? t('composer.hint.permissionSyncing')
+            : t('composer.hint.permissionRequired'),
         }
       : knownSessionModel && !selectedModelAvailable()
-        ? { kind: 'state', text: '当前模型已不可用，请重新选择模型' }
-        : composerHintPresentation({
-            connected,
-            configured,
-            hasSession: current !== undefined || draftingNew,
-            busy,
-            stopping,
-            loading: sessionPending,
-          }),
+        ? { kind: 'state', text: t('composer.hint.modelUnavailable') }
+        : composerHintPresentation(
+            {
+              connected,
+              configured,
+              hasSession: current !== undefined || draftingNew,
+              busy,
+              stopping,
+              loading: sessionPending,
+            },
+            t,
+          ),
     input: {
       disabled:
         !available || (!current && !draftingNew) || stopping || sessionPending || initialSubmissionPending,
-      placeholder: busy ? '补充下一轮要做的事…' : '描述你想完成的事…',
+      placeholder: busy ? t('composer.placeholder.busy') : t('composer.placeholder.idle'),
     },
     loading: sessionPending,
     model: {
-      accessibleName: modelSelectAccessibleName(knownSessionModel),
+      accessibleName: modelSelectAccessibleName(knownSessionModel, t),
       disabled:
         !available ||
         (!current && !draftingNew) ||
@@ -633,7 +649,7 @@ function renderControls(): void {
         sessionPending ||
         initialSubmissionPending ||
         !runtimeModels.length,
-      label: modelSelectLabel(knownSessionModel),
+      label: modelSelectLabel(knownSessionModel, t),
       options: runtimeModels,
       pending: modelChangePending,
       ...(knownSessionModel ? { selected: knownSessionModel } : {}),
@@ -680,14 +696,18 @@ function renderControls(): void {
     usage: projection?.usage,
     workspace: {
       disabled: !available || sending || sessionPending,
-      label: selectedWorkspace?.name ?? (current ? '当前工作区' : '选择工作区'),
-      title: selectedWorkspace?.path ?? (current ? '当前会话工作区' : '选择工作区'),
+      label:
+        selectedWorkspace?.name ??
+        (current ? t('composer.workspace.current') : t('composer.workspace.select')),
+      title:
+        selectedWorkspace?.path ??
+        (current ? t('composer.workspace.currentTitle') : t('composer.workspace.select')),
     },
   }
   composerRuntime.render(composerView)
   updateSidebar()
   if (sessionPending) {
-    topbarRuntime.setStatus('正在准备会话', 'loading')
+    topbarRuntime.setStatus(t('topbar.preparing'), 'loading')
   }
   conversationRuntime.setEmptyStateVisible(shouldShowEmptyState(projection))
   renderNewSessionControls()
@@ -735,7 +755,7 @@ function renderTrace(
 }
 function render(): void {
   if (!projection) {
-    topbarRuntime.setStatus('新任务')
+    topbarRuntime.setStatus(t('app.status.newTask'))
     tracePanel.render([], [])
     renderControls()
     return
@@ -771,7 +791,7 @@ function render(): void {
     rememberWebComposer({ model: knownSessionModel })
   }
   const receipt = current ? receipts.get(current.id) : undefined
-  const view = webView(projection, receipt)
+  const view = webView(projection, receipt, t)
   if (!view.busy && receipt?.reason && liveApproval && receipt.endSeq > liveApproval.afterSeq) {
     // A real later terminal invalidates this live request; no cancelled task keeps an approval card.
     liveApproval.finish({ verdict: 'rejected' })
@@ -795,7 +815,7 @@ function render(): void {
   }
   if (!view.busy && receipt?.reason && receipt.endSeq > stopAfterSeq) stopping = false
   topbarRuntime.setStatus(
-    stopping ? '正在请求停止，等待后台确认' : liveApproval ? '等待审批' : view.status,
+    stopping ? t('app.status.stoppingWait') : liveApproval ? t('app.status.awaitingApproval') : view.status,
     view.busy ? 'running' : (receipt?.reason ?? 'idle'),
   )
   const meta = transcriptMeta()
@@ -812,7 +832,7 @@ function render(): void {
   renderControls()
 }
 function renderApproval(): void {
-  const durable = projection ? webView(projection).approval : undefined
+  const durable = projection ? webView(projection, undefined, t).approval : undefined
   const parked = !liveApproval && !durable && projection ? projection.opState?.parked : undefined
   if (parked && approvalSearch !== 'idle') {
     const stick = conversationRuntime.isTranscriptNearBottom()
@@ -821,10 +841,12 @@ function renderApproval(): void {
     // verdict can only be given there, so this card only leads to it.
     approvalRuntime.render({
       key: `parked:${parked.ticket}`,
-      title: searching ? '正在查找待处理的审批…' : '有一项审批等待处理',
-      summary: `这项审批在较早的记录里，过期时间 ${parked.expiresAt}。`,
-      impact: searching ? '正在加载更早的记录。' : '定位后可以看到它的完整内容和可选操作。',
-      actions: searching ? [] : [{ id: 'locate', label: '定位审批', onSelect: () => searchApproval() }],
+      title: searching ? t('app.approval.searching') : t('app.approval.parkedTitle'),
+      summary: t('app.approval.parkedSummary', { expiresAt: parked.expiresAt }),
+      impact: searching ? t('app.approval.searchingImpact') : t('app.approval.locateImpact'),
+      actions: searching
+        ? []
+        : [{ id: 'locate', label: t('app.approval.locate'), onSelect: () => searchApproval() }],
       disabled: !connected,
     })
     if (stick) renderer.pinToBottom()
@@ -841,15 +863,16 @@ function renderApproval(): void {
   }
 
   const liveTitle = liveApproval?.request.toolCall.title
-  const summary = typeof liveTitle === 'string' ? liveTitle : (durable?.summary ?? '允许执行此操作？')
+  const summary =
+    typeof liveTitle === 'string' ? liveTitle : (durable?.summary ?? t('app.approval.defaultSummary'))
   const risks = {
-    destructive: '可能修改或删除内容',
-    always: '此操作需要明确确认',
-    budget: '涉及预算使用',
-    unknown: '影响范围需要确认',
+    destructive: t('app.risk.destructive'),
+    always: t('app.risk.always'),
+    budget: t('app.risk.budget'),
+    unknown: t('app.risk.unknown'),
   }
-  const card = liveApproval ? liveApprovalCard(liveApproval.request.toolCall) : undefined
-  const impact = durable ? risks[durable.risk] : (card?.impact ?? '请核对工具及参数后决定是否继续。')
+  const card = liveApproval ? liveApprovalCard(liveApproval.request.toolCall, t) : undefined
+  const impact = durable ? risks[durable.risk] : (card?.impact ?? t('app.approval.toolImpact'))
   const actions: ApprovalAction[] = []
   const decide = (id: string, label: string, action: () => Promise<void>): void => {
     actions.push({
@@ -873,9 +896,9 @@ function renderApproval(): void {
   if (liveApproval) {
     const request = liveApproval
     const labels: Record<string, string> = {
-      allow_once: '仅允许这次',
-      reject_once: '拒绝',
-      reject_always: '始终拒绝',
+      allow_once: t('app.approval.allowOnce'),
+      reject_once: t('app.approval.rejectOnce'),
+      reject_always: t('app.approval.rejectAlways'),
       // Absent when the card cannot show the whole call: that choice would also cover later calls.
       ...(card?.sessionLabel === undefined ? {} : { allow_always: card.sessionLabel }),
     }
@@ -887,7 +910,7 @@ function renderApproval(): void {
     }
   } else if (durable?.ticket) {
     const ticket = durable.ticket
-    for (const { label, verdict } of durableApprovalActions(durable))
+    for (const { label, verdict } of durableApprovalActions(durable, t))
       decide(
         `durable:${verdict}`,
         label,
@@ -896,7 +919,7 @@ function renderApproval(): void {
   }
   approvalRuntime.render({
     key,
-    title: '需要你的确认',
+    title: t('app.approval.title'),
     summary,
     impact,
     ...(card?.warning === undefined ? {} : { warning: card.warning }),
@@ -970,7 +993,7 @@ async function list(cursor?: string): Promise<PageSessionMeta> {
   updateSidebar()
   const selectedRow = sessionRows.find((row) => row.sessionId === current?.id)
   if (selectedRow?.title || (selectedRow && !projection?.nodes.some((node) => node.kind === 'user')))
-    topbarRuntime.setTaskTitle(selectedRow.title ?? '新任务')
+    topbarRuntime.setTaskTitle(selectedRow.title ?? t('app.status.newTask'))
   return page
 }
 async function open(
@@ -1019,7 +1042,7 @@ async function open(
     stopEvents = undefined
     live = undefined
     if (!stopped) {
-      notice.textContent = '旧会话仍在关闭，新会话已继续准备。'
+      notice.textContent = t('app.notice.oldSessionClosing')
       notice.dataset.kind = 'warning'
     }
     await previous?.detach()
@@ -1111,7 +1134,7 @@ async function open(
         streamFrame = requestAnimationFrame(() => {
           streamFrame = undefined
           if (projection && selected())
-            renderer.render(webView(projection).nodes, projection.turns, transcriptMeta())
+            renderer.render(webView(projection, undefined, t).nodes, projection.turns, transcriptMeta())
         })
       },
       event(event) {
@@ -1176,9 +1199,9 @@ async function forkSidebar(id: string, title: string): Promise<void> {
   const row = sessionRows.find((item) => item.sessionId === id)
   const source = await client.session.load(id, row?.cwd ? { cwd: row.cwd } : {})
   const timeline = await source.projectUI(undefined, { surface: 'web' })
-  if (timeline.opState !== null) throw new Error('请等待会话运行结束后再分叉。')
+  if (timeline.opState !== null) throw new Error(t('app.fork.waitIdle'))
   const turn = timeline.turns.findLast((item) => item.forkable && item.endSeq !== undefined)
-  if (turn?.endSeq === undefined) throw new Error('此会话还没有可分叉的已完成回合。')
+  if (turn?.endSeq === undefined) throw new Error(t('app.fork.noForkableTurn'))
   const child = await client.session.fork(id, turn.endSeq)
   let namingError: unknown
   try {
@@ -1197,34 +1220,40 @@ async function forkSidebar(id: string, title: string): Promise<void> {
   } catch (error) {
     refreshError = error
   }
-  if (refreshError) throw new Error(`新会话已创建，但页面刷新失败。请刷新页面查找会话：${child.id}`)
-  if (namingError) throw new Error('新会话已创建，但名称保存失败；请在新会话菜单中重命名。')
+  if (refreshError) throw new Error(t('app.fork.refreshFailed', { id: child.id }))
+  if (namingError) throw new Error(t('app.fork.renameFailed'))
 }
 async function forkTurn(turn: UITurn): Promise<void> {
   const parent = current
   if (!parent || !turn.forkable || turn.endSeq === undefined || projection?.opState !== null)
-    throw new Error('只有已完成且当前空闲的回合可以分支。')
+    throw new Error(t('app.fork.notIdle'))
   const forked = await client.session.fork(parent.id, turn.endSeq)
   await open(forked.id, { created: forked })
-  notice.textContent = '已从所选回合创建新聊天。原聊天保持不变。'
+  notice.textContent = t('app.fork.created')
   notice.dataset.kind = ''
   composerRuntime.focus()
 }
 function renderNewSessionControls(): void {
   newSessionCreate.disabled =
     !connected || sessionPending || newSessionCreating || workspacePickerBusy || !newSessionCwd.value.trim()
-  setButtonLabel(newSessionCreate, newSessionCreating ? '正在验证…' : '使用此工作区')
+  setButtonLabel(
+    newSessionCreate,
+    newSessionCreating ? t('app.newSession.verifying') : t('app.newSession.useWorkspace'),
+  )
   workspacePick.disabled =
     !connected || sessionPending || newSessionCreating || workspacePickerBusy || !workspacePickerReady
   workspacePick.hidden = workspacePickerReady === false
-  setButtonLabel(workspacePick, workspacePickerBusy ? '正在打开…' : '选择文件夹…')
+  setButtonLabel(
+    workspacePick,
+    workspacePickerBusy ? t('app.newSession.opening') : t('app.newSession.pickFolder'),
+  )
   workspacePickerState.textContent = workspacePickerBusy
-    ? '请在系统窗口中选择工作区。'
+    ? t('app.newSession.pickSystemHint')
     : workspacePickerReady === undefined
-      ? '正在检查系统目录选择器…'
+      ? t('app.newSession.checkingPicker')
       : workspacePickerReady
-        ? '从这台机器选择一个目录。'
-        : '当前环境无法打开目录选择器，请手动输入路径。'
+        ? t('app.newSession.pickMachine')
+        : t('app.newSession.noPicker')
   if (workspacePickerReady === false) workspaceManual.open = true
   newSessionCwd.disabled = workspacePickerBusy
   newSessionCancel.disabled = newSessionCreating || workspacePickerBusy
@@ -1273,7 +1302,7 @@ async function registerWorkspace(cwd: string): Promise<void> {
     closeNewSessionDialog()
     composerRuntime.focus()
   } catch (error) {
-    const failure = new Error(workspaceErrorNotice(error), { cause: error })
+    const failure = new Error(workspaceErrorNotice(error, t), { cause: error })
     element('new-session-error', 'p').textContent = failure.message
     throw failure
   } finally {
@@ -1293,7 +1322,7 @@ async function pickWorkspace(): Promise<void> {
     if (!result) {
       workspacePickerReady = false
       workspaceManual.open = true
-      element('new-session-error', 'p').textContent = '无法打开系统目录选择器，请手动输入工作区路径。'
+      element('new-session-error', 'p').textContent = t('app.newSession.pickerFailed')
       return
     }
     if (result.status === 'cancelled') return
@@ -1309,8 +1338,9 @@ async function pickWorkspace(): Promise<void> {
     renderNewSessionControls()
   }
 }
-async function beginNewDraft(showWorkspacePicker = true): Promise<void> {
+async function beginNewDraft(showWorkspacePicker = true, workspace?: WorkspaceEntry): Promise<void> {
   if (sessionPending || sending) return
+  if (workspace) selectedWorkspace = workspace
   clearSessionRecovery()
   const epoch = ++selection
   const previous = current
@@ -1339,7 +1369,7 @@ async function beginNewDraft(showWorkspacePicker = true): Promise<void> {
   const url = new URL(location.href)
   url.searchParams.delete('session')
   history.replaceState(null, '', `${url.pathname}${url.search}`)
-  topbarRuntime.setTaskTitle('新会话')
+  topbarRuntime.setTaskTitle(t('app.newSession.defaultTitle'))
   render()
   if (!selectedWorkspace?.available && showWorkspacePicker) openNewSessionDialog()
   else composerRuntime.focus()
@@ -1349,7 +1379,7 @@ async function beginNewDraft(showWorkspacePicker = true): Promise<void> {
   try {
     const stopped = await stopWithTimeout(stop)
     if (!stopped) {
-      notice.textContent = '旧会话仍在关闭，新会话已继续准备。'
+      notice.textContent = t('app.notice.oldSessionClosing')
       notice.dataset.kind = 'warning'
     }
   } catch (error) {
@@ -1410,7 +1440,7 @@ async function selectPermission(mode: PermissionMode): Promise<boolean> {
   if (!current && draftingNew) {
     permissionMode = mode
     rememberWebComposer({ permission: mode })
-    notice.textContent = `新会话将使用「${permissionLabel(mode)}」。`
+    notice.textContent = t('app.permission.draftNotice', { mode: permissionLabel(mode) })
     notice.dataset.kind = ''
     renderControls()
     return true
@@ -1438,8 +1468,8 @@ async function selectPermission(mode: PermissionMode): Promise<boolean> {
     rememberWebComposer({ permission: mode })
     notice.textContent =
       mode === 'full'
-        ? '本会话已开启完全权限，可读写工作区内外文件。'
-        : `本会话权限已设为「${permissionLabel(mode)}」。`
+        ? t('app.permission.notice.full')
+        : t('app.permission.notice.mode', { mode: permissionLabel(mode) })
     notice.dataset.kind = ''
     return true
   } catch (error) {
@@ -1491,7 +1521,7 @@ async function selectModel(option: ModelPickerOption, settings?: ModelSettings):
     else if (!sameModel) draftModelSettingsEdited = false
     knownSessionModel = selected
     rememberWebComposer({ model: knownSessionModel })
-    notice.textContent = '新会话将使用所选模型与配置。'
+    notice.textContent = t('app.notice.newSessionModel')
     notice.dataset.kind = ''
     renderControls()
     return true
@@ -1513,7 +1543,7 @@ async function selectModel(option: ModelPickerOption, settings?: ModelSettings):
     knownSessionModel = selected
     rememberWebComposer({ model: knownSessionModel })
     initialModelPending = undefined
-    notice.textContent = '模型配置已保存，后续请求将使用新的思考强度和上下文窗口。'
+    notice.textContent = t('app.notice.modelSaved')
     notice.dataset.kind = ''
     live?.refresh()
     return true
@@ -1539,14 +1569,14 @@ async function savedConfiguration(saved: ConfigSnapshot): Promise<void> {
       entry.route === (saved.provider?.route ?? saved.provider?.id) && entry.id === saved.provider?.model,
   )
   if (!saved.configured && !savedModels.length) {
-    notice.textContent = '尚无启用的模型账户。请在设置中添加或启用账户。'
+    notice.textContent = t('app.model.noAccounts')
     return
   }
   if (saved.effect === 'restart-required' || !published) {
-    notice.textContent = '配置已保存，但尚未生效；当前继续使用已生效的模型。请在设置中重试保存。'
+    notice.textContent = t('app.model.savedNotEffective')
     return
   }
-  notice.textContent = '模型配置已更新。新会话沿用上次使用的模型；尚未选过时使用新的默认模型。'
+  notice.textContent = t('app.model.savedNotice')
 }
 newSessionForm.addEventListener('submit', (event) => {
   event.preventDefault()
@@ -1569,10 +1599,21 @@ addEventListener('focus', () => {
       if (!element('archived-settings-pane', 'section').hidden) await sessionActions.loadArchived()
     })
 })
+const appearanceStorage = safeThemeStorage(window)
 const appearance = bindAppearance({
   scope: document,
   root: document.documentElement,
-  storage: safeThemeStorage(window),
+  storage: appearanceStorage,
+  locale: {
+    current: () => readLocalePreference(appearanceStorage),
+    select: (value) => {
+      writeLocalePreference(appearanceStorage, value)
+      applyDocumentLocale(document.documentElement, value)
+      clientModules.locale.setLocale(value)
+      window.dispatchEvent(new CustomEvent('agnes:locale-changed', { detail: value }))
+    },
+    text: (key) => clientModules.locale.t(key),
+  },
 })
 /**
  * 皮肤选择。清单来自 `config.get()` 报出的 profile——daemon 只接受它自己那一个 profile，
@@ -1581,7 +1622,6 @@ const appearance = bindAppearance({
  */
 /** 最近一次拉到的清单，供选中时取样式表与 token；清单变了会整体替换。 */
 let skinRoster: SkinRosterEntry[] = []
-const appearanceStorage = safeThemeStorage(window)
 /** 回落到 `cssUrl` 时的同源取数器；只接受 `/skins/` 下的路径（见 `fetchSkinCss`）。 */
 const skinCssOptions = { fetcher: (input: string) => fetch(input), origin: location.origin }
 /** 每次显式选择 +1：让在途的对账不能把用户刚做的选择覆盖回去。 */
@@ -1752,8 +1792,8 @@ async function openAdminPane(pane: AdminPaneName, tab: ResourceTab = 'skills'): 
     })
   } catch (error) {
     if (!isCurrentRequest()) return
-    const message = error instanceof Error ? error.message : '打开管理面板失败，请重试。'
-    paneNotice.textContent = errorNotice(message)
+    const message = error instanceof Error ? error.message : t('app.admin.openFailed')
+    paneNotice.textContent = errorNotice(message, undefined, undefined, undefined, undefined, t)
     paneNotice.dataset.kind = 'error'
     resourceList?.replaceChildren()
   } finally {
@@ -1845,10 +1885,10 @@ function submitComposer(): void {
       } finally {
         ownedSelection = selection
       }
-      if (current !== created) throw new Error('会话选择已改变。')
+      if (current !== created) throw new Error(t('app.session.selectionChanged'))
       session = current
     }
-    if (!session) throw new Error('会话创建失败。')
+    if (!session) throw new Error(t('app.session.createFailed'))
     if (initialModelPending) {
       const selectedModel = initialModelPending
       const applied = await session.setModel({
@@ -1858,30 +1898,29 @@ function submitComposer(): void {
         thinking: selectedModel.settings?.thinking ?? null,
         contextWindow: selectedModel.settings?.contextWindow ?? null,
       })
-      if (current !== session || selection !== ownedSelection) throw new Error('会话选择已改变。')
+      if (current !== session || selection !== ownedSelection) throw new Error(t('app.error.sessionChanged'))
       modelSelectionSeq = applied.effectiveFromSeq
       knownSessionModel = selectedModel
       initialModelPending = undefined
       renderControls()
     }
     if (!connected || connectionEpoch !== permissionConnectionEpoch || permissionRefreshPending)
-      throw new Error('连接已变化，请等待权限同步后重新发送。')
+      throw new Error(t('app.error.connectionChanged'))
     if (initialPermissionPending !== undefined) {
       const selectedPermission = initialPermissionPending
       const enabled = yoloEnabled(selectedPermission)
       const applied = await session.setYolo(enabled)
-      if (current !== session || selection !== ownedSelection) throw new Error('会话选择已改变。')
-      if (connectionEpoch !== permissionConnectionEpoch)
-        throw new Error('连接已变化，请等待权限同步后重新发送。')
+      if (current !== session || selection !== ownedSelection) throw new Error(t('app.error.sessionChanged'))
+      if (connectionEpoch !== permissionConnectionEpoch) throw new Error(t('app.error.connectionChanged'))
       permissionSelectionSeq = applied.effectiveFromSeq
       sessionYoloEnabled = enabled
       permissionMode = selectedPermission
       initialPermissionPending = undefined
     }
     if (!connected || connectionEpoch !== permissionConnectionEpoch || permissionRefreshPending)
-      throw new Error('连接已变化，请等待权限同步后重新发送。')
-    if (current !== session || selection !== ownedSelection) throw new Error('会话选择已改变。')
-    if (sessionYoloEnabled === undefined) throw new Error('请先选择本会话权限，确认后再发送。')
+      throw new Error(t('app.error.connectionChanged'))
+    if (current !== session || selection !== ownedSelection) throw new Error(t('app.error.sessionChanged'))
+    if (sessionYoloEnabled === undefined) throw new Error(t('app.error.permissionRequired'))
     const result = await (busy ? session.followUp(input) : session.prompt(input))
     const submittedId = session.id
     if (typeof result === 'object' && result.reason === 'completed' && !sessionTitles.has(submittedId))
@@ -1915,13 +1954,6 @@ function submitComposer(): void {
       }
     })
 }
-topbarRuntime.onDisconnect(() =>
-  run(async () => {
-    intentionalClose = true
-    reconnect.cancel()
-    await client.close()
-  }),
-)
 const diagnostics = createDiagnosticsDialog({
   call: (method, params) => client.call(method, params),
   context: () => ({
@@ -1948,9 +1980,7 @@ client.on('closed', () => {
   titleRefresh.close()
   setConnection('closed')
   // While the page recovers by itself, the notice only states the fact; the recovery status says what happens next.
-  const message = intentionalClose
-    ? '连接已关闭；任务是否结束请以后台状态为准。重新运行 Web 启动命令并打开其地址即可恢复查看。'
-    : '与后台的连接已断开；任务是否结束请以后台状态为准。'
+  const message = intentionalClose ? t('app.connection.closedIntentional') : t('app.connection.lost')
   if (sessionRecovery) renderSessionRecovery(message)
   else {
     notice.textContent = message
@@ -1963,7 +1993,7 @@ const forCurrent = (payload: unknown): boolean =>
   current !== undefined && (payload as { sessionId?: unknown } | undefined)?.sessionId === current.id
 client.on('gap', (payload) => {
   if (!forCurrent(payload)) return
-  const message = '部分历史事件已不可回放，正在读取后台现有投影。'
+  const message = t('app.gap.partial')
   if (sessionRecovery) renderSessionRecovery(message)
   else notice.textContent = message
   void live?.resync().catch(showError)
@@ -2042,7 +2072,7 @@ composerRuntime.resize()
 
 run(async () => {
   setConnection('connecting')
-  if (!wsUrl) throw new Error('WebSocket 连接地址不可用。')
+  if (!wsUrl) throw new Error(t('app.ws.unavailable'))
   // A first connection that fails never reports `closed`; the page may hold a stale daemon address.
   try {
     await client.initialize()
@@ -2065,13 +2095,13 @@ run(async () => {
   await refreshModels()
   if (!configured) {
     renderControls()
-    notice.textContent = '先配置模型，即可开始第一个任务。'
+    notice.textContent = t('app.firstRun.configure')
     await settings.open()
   }
   try {
     await refreshWorkspaces()
   } catch (error) {
-    showError(new Error('无法读取工作区列表，请稍后重试或直接添加工作目录。', { cause: error }))
+    showError(new Error(t('app.workspaceList.unreadable'), { cause: error }))
   }
   const page = await list()
   const selected = new URL(location.href).searchParams.get('session')
@@ -2081,7 +2111,7 @@ run(async () => {
       : await client.session.list({ q: { prefix: selected }, limit: 100 })
     if (candidates.items.some((item) => item.sessionId === selected)) await open(selected)
     else {
-      notice.textContent = '当前后台中找不到这个任务。请从侧栏选择，或新建任务。'
+      notice.textContent = t('app.session.notFound')
       renderControls()
     }
   } else {

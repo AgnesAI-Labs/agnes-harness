@@ -113,7 +113,7 @@ it.each(['allow', 'reject', 'stop', 'disconnect', 'paged_allow'])(
       if (mode === 'allow') {
         await vi.waitFor(async () =>
           expect((await screenOf(term, dimensions.columns, dimensions.rows)).join('\n')).toContain(
-            '◆ 写入  write',
+            '◆ write  write',
           ),
         )
         expect((await screenOf(term, dimensions.columns, dimensions.rows)).join('\n')).not.toContain(

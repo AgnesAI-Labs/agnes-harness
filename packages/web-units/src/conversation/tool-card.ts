@@ -3,6 +3,7 @@ import { ConversationToolCard as ReactToolCard, toolOutcome } from '@agnes/web-u
 import { createElement, type ReactNode } from 'react'
 import { flushSync } from 'react-dom'
 import { createRoot } from 'react-dom/client'
+import type { Translate } from '../locales/index.js'
 
 type ToolNode = Extract<UINode, { kind: 'tool' }>
 
@@ -13,6 +14,8 @@ export interface ConversationToolCard {
 
 export interface ConversationToolCardOptions {
   icon(name: string): Element
+  /** Locale-bound translate; called on every render so a locale switch refreshes the card. */
+  translate: Translate
 }
 
 /** Copy an existing icon into a React-owned tree without adopting its DOM nodes. */
@@ -52,12 +55,20 @@ export function createConversationToolCard(
       icon = reactIcon(options.icon(iconName))
     }
     element.dataset.status = next.status
-    element.setAttribute('aria-label', `工具 ${next.name}：${toolOutcome(next).label}`)
+    // 无障碍标签要带上工具名：只报状态会让读屏用户听不出是哪次调用。
+    element.setAttribute(
+      'aria-label',
+      options.translate('tool.card.aria', {
+        name: next.name,
+        status: toolOutcome(next, options.translate).label,
+      }),
+    )
     flushSync(() =>
       root.render(
         createElement(ReactToolCard, {
           node: next,
           icon,
+          t: options.translate,
           onExpandedChange: (expanded: boolean) => {
             element.dataset.expanded = String(expanded)
           },

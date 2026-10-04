@@ -1,8 +1,15 @@
 /** @vitest-environment happy-dom */
 import { beforeEach, describe, expect, it } from 'vitest'
 import { bindAppearance, bindSkinGroup } from '../src/appearance.js'
+import { setLocaleTranslator } from '../src/locale-bridge.js'
+import { webLocaleCatalog } from '../src/locale-catalog.js'
+import { applyLocaleText, syncLocaleRadios, type UiLocale } from '../src/locale-preference.js'
 import { SKIN_CACHE_VERSION, SKIN_STORAGE_KEY } from '../src/skin.js'
 import { FONT_SCALE_STORAGE_KEY, THEME_STORAGE_KEY } from '../src/theme.js'
+import { zhT } from './helpers/locale.js'
+
+// i18n: these suites assert zh-CN catalog output; pin the translator before imports run.
+setLocaleTranslator(zhT)
 
 function fakeStorage(initial: Record<string, string> = {}) {
   const map = new Map(Object.entries(initial))
@@ -345,5 +352,128 @@ describe('bindSkinGroup', () => {
     await Promise.resolve()
     await Promise.resolve()
     expect(inputs().map((entry) => entry.value)).toEqual(['', 'midnight', 'paper'])
+  })
+})
+
+describe('bindAppearance 语言组', () => {
+  function mountLocale(): void {
+    document.body.innerHTML = `
+      <section data-i18n-aria="settings.appearance.language" aria-label="Language">
+        <span data-i18n="settings.appearance.language">Language</span>
+        <label><input type="radio" name="agnes-theme" value="system" /></label>
+        <label><input type="radio" name="agnes-theme" value="light" /></label>
+        <label><input type="radio" name="agnes-theme" value="dark" /></label>
+        <label><input type="radio" name="agnes-locale" value="en" /></label>
+        <label><input type="radio" name="agnes-locale" value="zh-CN" /></label>
+      </section>
+    `
+  }
+  const localeRadio = (value: string): HTMLInputElement => {
+    const found = document.querySelector<HTMLInputElement>(`input[name="agnes-locale"][value="${value}"]`)
+    if (!found) throw new Error(`missing locale radio ${value}`)
+    return found
+  }
+  const pickLocale = (value: string): void => {
+    const input = localeRadio(value)
+    input.checked = true
+    input.dispatchEvent(new Event('change'))
+  }
+
+  beforeEach(() => {
+    mountLocale()
+    document.documentElement.lang = 'en'
+  })
+
+  it('无选择时回填英文，并保持语言开关文案为英文', () => {
+    let current: UiLocale = 'en'
+    bindAppearance({
+      scope: document,
+      root: document.documentElement,
+      storage: fakeStorage(),
+      locale: {
+        current: () => current,
+        select: (value) => {
+          current = value
+        },
+        text: (key) => webLocaleCatalog[current]?.[key] ?? key,
+      },
+    })
+    expect(localeRadio('en').checked).toBe(true)
+    expect(localeRadio('zh-CN').checked).toBe(false)
+    expect(document.querySelector('[data-i18n="settings.appearance.language"]')?.textContent).toBe('Language')
+    expect(document.querySelector('section')?.getAttribute('aria-label')).toBe('Language')
+  })
+
+  it('切换到简体中文后回填语言开关文案', () => {
+    let current: UiLocale = 'en'
+    const onLocale = (): void => {
+      syncLocaleRadios(document, current)
+      applyLocaleText(document, (key) => webLocaleCatalog[current]?.[key] ?? key)
+    }
+    window.addEventListener('agnes:locale-changed', onLocale)
+    try {
+      bindAppearance({
+        scope: document,
+        root: document.documentElement,
+        storage: fakeStorage(),
+        locale: {
+          current: () => current,
+          select: (value) => {
+            current = value
+            document.documentElement.lang = value
+            window.dispatchEvent(new CustomEvent('agnes:locale-changed'))
+          },
+          text: (key) => webLocaleCatalog[current]?.[key] ?? key,
+        },
+      })
+      pickLocale('zh-CN')
+      expect(current).toBe('zh-CN')
+      expect(document.documentElement.lang).toBe('zh-CN')
+      expect(document.querySelector('[data-i18n="settings.appearance.language"]')?.textContent).toBe('语言')
+      expect(document.querySelector('section')?.getAttribute('aria-label')).toBe('语言')
+      expect(localeRadio('zh-CN').checked).toBe(true)
+    } finally {
+      window.removeEventListener('agnes:locale-changed', onLocale)
+    }
+  })
+
+  it('语言切换不改配色存储', () => {
+    const storage = fakeStorage({ [THEME_STORAGE_KEY]: 'dark' })
+    document.documentElement.classList.add('dark')
+    let current: UiLocale = 'en'
+    bindAppearance({
+      scope: document,
+      root: document.documentElement,
+      storage,
+      locale: {
+        current: () => current,
+        select: (value) => {
+          current = value
+        },
+        text: (key) => webLocaleCatalog[current]?.[key] ?? key,
+      },
+    })
+    pickLocale('zh-CN')
+    expect(storage.read(THEME_STORAGE_KEY)).toBe('dark')
+    expect(document.documentElement.classList.contains('dark')).toBe(true)
+    expect(radio('dark').checked).toBe(true)
+  })
+
+  it('未选中的语言项派发 change 时被忽略', () => {
+    let current: UiLocale = 'en'
+    bindAppearance({
+      scope: document,
+      root: document.documentElement,
+      storage: fakeStorage(),
+      locale: {
+        current: () => current,
+        select: (value) => {
+          current = value
+        },
+        text: () => 'x',
+      },
+    })
+    localeRadio('zh-CN').dispatchEvent(new Event('change'))
+    expect(current).toBe('en')
   })
 })

@@ -7,9 +7,11 @@ import {
   PreviewConfirmationFacts,
   RollbackActivationFacts,
   TrustConfirmationFacts,
+  UiLocaleProvider,
   UntrustConfirmationFacts,
   UpdateActivationFacts,
 } from '../src/index.js'
+import type { UiLocaleSource } from '../src/ui-locale.js'
 
 afterEach(() => {
   document.body.replaceChildren()
@@ -89,6 +91,24 @@ function tags(element: ReturnType<typeof createElement>): string[] {
 }
 
 describe('plugin confirmation facts (React)', () => {
+  it('uses the active locale for the preview lead', () => {
+    const source: UiLocaleSource = {
+      getSnapshot: () => 'en',
+      getVersion: () => 0,
+      subscribe: () => () => undefined,
+      t: (key) => key,
+      bind: (namespace) => (key) =>
+        namespace === '@agnes/web-ui/admin-confirmation' && key === 'lead.preview'
+          ? 'Review the reported facts before installation.'
+          : key,
+    }
+    const rendered = renderText(
+      createElement(UiLocaleProvider, { source }, createElement(PreviewConfirmationFacts, { preview })),
+    )
+
+    expect(rendered).toContain('Review the reported facts before installation.')
+  })
+
   it('renders complete preview facts as safe text, including integrity and reviewable protocol fields', () => {
     const rendered = renderText(createElement(PreviewConfirmationFacts, { preview }))
 
@@ -116,34 +136,34 @@ describe('plugin confirmation facts (React)', () => {
     } as PackagePreview
 
     expect(renderText(createElement(PreviewConfirmationFacts, { preview: withoutDiff }))).toContain(
-      '这不表示这个包不包含能力。',
+      'this does not mean the package has no capabilities.',
     )
   })
 
   it('binds trust and untrust decisions to the immutable baselines without enabling anything', () => {
     const trust = renderText(createElement(TrustConfirmationFacts, { item: installed }))
-    expect(trust).toContain('信任决定会绑定下列完整性摘要')
+    expect(trust).toContain('A trust decision will be bound')
     expect(trust).toContain(integrity)
     expect(trust).toContain(capabilityHash)
 
     const untrust = renderText(createElement(UntrustConfirmationFacts, { item: installed }))
-    expect(untrust).toContain('立刻停用此包')
-    expect(untrust).toContain('将被撤销的贡献与能力字段')
+    expect(untrust).toContain('immediately disable this package')
+    expect(untrust).toContain('Contributions and capability fields to be revoked')
   })
 
   it('shows both baselines for the atomic update-and-activate confirmation', () => {
     const rendered = renderText(createElement(UpdateActivationFacts, { installed, preview }))
 
-    expect(rendered).toContain('当前安装与运行基线')
-    expect(rendered).toContain('目标信任摘要')
+    expect(rendered).toContain('Current installation and runtime baseline')
+    expect(rendered).toContain('Target trust digest')
     expect(rendered).toContain('1.2.3')
   })
 
   it('shows the verified rollback target without exposing internal tree hashes', () => {
     const rendered = renderText(createElement(RollbackActivationFacts, { installed }))
 
-    expect(rendered).toContain('回滚目标版本')
+    expect(rendered).toContain('Rollback target version')
     expect(rendered).toContain('1.2.2')
-    expect(rendered).toContain('当前阻断项')
+    expect(rendered).toContain('Current blockers')
   })
 })

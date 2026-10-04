@@ -23,9 +23,23 @@ import {
   ThemeService,
 } from '@agnes/web-client'
 import type { AntdRoot } from '@agnes/web-ui'
-import { createAntdRoot } from '@agnes/web-ui'
-import { BuiltinWebUnitRegistry } from '@agnes/web-units'
+import { createAntdRoot, WEB_UI_LOCALE_NAMESPACE, webUiLocaleCatalog } from '@agnes/web-ui'
+import { BuiltinWebUnitRegistry, WEB_UNITS_LOCALE_NAMESPACE, webUnitsLocaleCatalog } from '@agnes/web-units'
+import { diagnosticsCatalog } from '@agnes/web-units/diagnostics-locale'
+import { traceCatalog } from '@agnes/web-units/trace-locale'
 import { createElement } from 'react'
+import { WEB_LOCALE_NAMESPACE, webLocaleCatalog } from '../locale-catalog.js'
+import {
+  applyDocumentLocale,
+  applyLocaleText,
+  isUiLocale,
+  LOCALE_STORAGE_KEY,
+  readLocalePreference,
+  syncLocaleRadios,
+  type UiLocale,
+} from '../locale-preference.js'
+import { COMPUTER_USE_LOCALE_NAMESPACE, computerUseCatalog } from '../locales/computer-use.js'
+import { SERVER_ERROR_LOCALE_NAMESPACE, serverErrorCatalog } from '../locales/server-errors.js'
 import type {
   ApprovalRegionMount,
   ComposerRegionMount,
@@ -138,7 +152,16 @@ export async function startClientModules(options: {
   const theme = new ThemeService(ctx, resolveTheme(pref, prefersDark.matches))
   const session = new SessionService(ctx, undefined, options.agnes)
   const resources = new ClientResourceService(ctx, options.agnes, session)
-  const locale = new LocaleService(ctx, document.documentElement.lang || 'zh-CN')
+  const storedLocale = readLocalePreference(safeThemeStorage())
+  applyDocumentLocale(document.documentElement, storedLocale)
+  const locale = new LocaleService(ctx, storedLocale)
+  locale.register(WEB_LOCALE_NAMESPACE, webLocaleCatalog)
+  locale.register(WEB_UNITS_LOCALE_NAMESPACE, webUnitsLocaleCatalog)
+  locale.register(WEB_UI_LOCALE_NAMESPACE, webUiLocaleCatalog)
+  locale.register(COMPUTER_USE_LOCALE_NAMESPACE, computerUseCatalog)
+  locale.register('@agnes/web-diagnostics', diagnosticsCatalog)
+  locale.register('@agnes/web-trace', traceCatalog)
+  locale.register(SERVER_ERROR_LOCALE_NAMESPACE, serverErrorCatalog)
   const commands = new CommandService(ctx, options.authorizeCommand)
 
   const registry = (ctx as unknown as { slots: SlotRegistry }).slots
@@ -155,6 +178,19 @@ export async function startClientModules(options: {
   })
   window.addEventListener('agnes:theme-changed', () => {
     theme.setTheme(resolveTheme(readThemePreference(safeThemeStorage()), prefersDark.matches))
+  })
+  const applyLocale = (next: UiLocale): void => {
+    applyDocumentLocale(document.documentElement, next)
+    locale.setLocale(next)
+    syncLocaleRadios(document, next)
+    applyLocaleText(document, (key) => locale.t(key))
+  }
+  window.addEventListener('storage', (event) => {
+    if (event.key === LOCALE_STORAGE_KEY) applyLocale(readLocalePreference(safeThemeStorage()))
+  })
+  window.addEventListener('agnes:locale-changed', (event) => {
+    const next = (event as CustomEvent<unknown>).detail
+    if (isUiLocale(next)) applyLocale(next)
   })
 
   // workbench.panel 挂载点：宿主划定的容器 + React root（WC8）。
@@ -202,6 +238,7 @@ export async function startClientModules(options: {
         ...(options.claim ? { claim: options.claim } : {}),
         newContentButton: children.newContentButton,
         session,
+        locale,
         resources,
       })
       builtinUnits.mount('@agnes/web-empty-state', () => emptyState.dispose())
@@ -242,12 +279,15 @@ export async function startClientModules(options: {
   const conversation = options.conversationContainer
     ? mountConversationRegion(registry, options.conversationContainer, {
         session,
+        locale,
         onMount: mountConversationChildren,
         onUnmount: unmountConversationChildren,
       })
     : undefined
   if (conversation) builtinUnits.mount('@agnes/web-conversation', () => conversation.dispose())
-  const topbar = options.topbarContainer ? mountTopbarRegion(registry, options.topbarContainer) : undefined
+  const topbar = options.topbarContainer
+    ? mountTopbarRegion(registry, options.topbarContainer, locale)
+    : undefined
   if (topbar) builtinUnits.mount('@agnes/web-topbar', () => topbar.dispose())
   const approval = options.approvalContainer
     ? mountApprovalRegion(registry, options.approvalContainer)
@@ -266,6 +306,7 @@ export async function startClientModules(options: {
           onSubmit: () => undefined,
           onWorkspace: () => undefined,
         },
+        locale,
       )
     : undefined
   if (composer) builtinUnits.mount('@agnes/web-composer', () => composer.dispose())
@@ -275,11 +316,11 @@ export async function startClientModules(options: {
       : undefined
   if (trace) builtinUnits.mount('@agnes/web-trace', () => trace.dispose())
   const rightbar = options.rightbarContainer
-    ? mountRightbarRegion(registry, options.rightbarContainer, { session, resources })
+    ? mountRightbarRegion(registry, options.rightbarContainer, { session, resources }, locale)
     : undefined
   if (rightbar) builtinUnits.mount('@agnes/web-rightbar', () => rightbar.dispose())
   const settingsPane = options.settingsPaneContainer
-    ? mountSettingsPaneRegion(registry, options.settingsPaneContainer, options.settings)
+    ? mountSettingsPaneRegion(registry, options.settingsPaneContainer, options.settings, locale)
     : undefined
   if (settingsPane) {
     const settingsUnits = [
@@ -303,7 +344,7 @@ export async function startClientModules(options: {
   if (topbar) await topbar.ready
 
   const sidebar = options.sidebarContainer
-    ? mountSidebarRegion(registry, options.sidebarContainer, options.sidebar)
+    ? mountSidebarRegion(registry, options.sidebarContainer, options.sidebar, locale)
     : undefined
   if (sidebar) builtinUnits.mount('@agnes/web-sidebar', () => sidebar.dispose())
   const transcript =
@@ -312,6 +353,7 @@ export async function startClientModules(options: {
           ...options.transcript,
           ...(options.claim ? { claim: options.claim } : {}),
           session,
+          locale,
           resources,
         })
       : undefined
@@ -336,6 +378,7 @@ export async function startClientModules(options: {
 
   const reconciler = createReconciler({
     ctx,
+    locale,
     source: options.rosterSource ?? { list: async () => ({ revision: '', modules: [], statuses: [] }) },
     removeOwner: (packageId) => registry.removeOwner(packageId),
   })

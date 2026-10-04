@@ -109,6 +109,19 @@ describe('first-run onboarding TUI', () => {
     expect(screen).toContain('Sign in with an API key')
   })
 
+  it('uses the selected locale for the first-run authentication screen', async () => {
+    const term = new FakeTerminal({ columns: 80, rows: 24 })
+    const client = { config: {} } as unknown as Client
+    const done = runOnboardingTui(client, UNCONFIGURED, term, 'zh-CN')
+    await Promise.resolve()
+
+    const screen = (await screenOf(term, 80, 24)).join('\n')
+    expect(screen).toContain('选择认证方式')
+    expect(screen).toContain('使用 API Key / ChatGPT 订阅登录')
+    term.feed('\x1b')
+    await expect(done).resolves.toBeUndefined()
+  })
+
   it('saves the chosen provider, key and model through client.config', async () => {
     const term = new FakeTerminal({ columns: 80, rows: 24 })
     const { client, test, save } = stubClient()

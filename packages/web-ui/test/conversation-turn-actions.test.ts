@@ -4,6 +4,7 @@ import { ConversationTurnActions } from '@agnes/web-ui/assistant-ui'
 import { act, createElement } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
+import { zhT } from './locale.js'
 
 function turn(id = 'turn:one', changes: Partial<UITurn> = {}): UITurn {
   return {
@@ -51,7 +52,7 @@ afterEach(async () => {
 })
 
 async function render(props: Parameters<typeof ConversationTurnActions>[0]) {
-  await act(async () => root.render(createElement(ConversationTurnActions, props)))
+  await act(async () => root.render(createElement(ConversationTurnActions, { ...props, t: zhT })))
 }
 function required<T extends Element>(selector: string): T {
   const element = host.querySelector<T>(selector)

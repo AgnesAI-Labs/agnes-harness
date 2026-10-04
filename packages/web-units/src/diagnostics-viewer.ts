@@ -1,3 +1,9 @@
+import {
+  type DiagnosticsLocale,
+  diagnosticsLocale,
+  diagnosticsText,
+  diagnosticsViewerLabels,
+} from './diagnostics-locale.js'
 import type { DiagnosticsBundle } from './diagnostics-types.js'
 
 /**
@@ -23,14 +29,7 @@ function escapeHtml(value: string): string {
     .replace(/'/g, '&#39;')
 }
 
-const TABS: ReadonlyArray<readonly [string, string]> = [
-  ['overview', '概览'],
-  ['conversation', '对话'],
-  ['trace', '轨迹'],
-  ['logs', '日志'],
-  ['system', '系统'],
-  ['artifacts', '产物'],
-]
+const TAB_IDS = ['overview', 'conversation', 'trace', 'logs', 'system', 'artifacts'] as const
 
 const STYLE = `
 :root { color-scheme: light dark; --agh-bg:#fff; --agh-fg:#1a1a1a; --agh-muted:#666; --agh-border:#ddd; --agh-accent:#2563eb; }
@@ -72,27 +71,32 @@ const RUNTIME_SCRIPT = `
     if (text !== undefined && text !== null) node.textContent = text;
     return node;
   }
+  function fill(template, vars) {
+    return String(template).replace(/\\{(\\w+)\\}/g, function (_match, name) {
+      return vars[name] == null ? '{' + name + '}' : String(vars[name]);
+    });
+  }
 
   // A missing or unreadable bundle, or a format this viewer predates, gets a notice instead of tabs.
   if (!bundle || bundle.bundleVersion !== 1) {
     var version = bundle ? bundle.bundleVersion : null;
     document.getElementById('agh-tabs').remove();
-    document.querySelector('main').replaceChildren(el('p', '此查看器不支持该诊断包版本：' + (version == null ? '未知' : String(version))));
+    document.querySelector('main').replaceChildren(el('p', fill(L.unsupportedVersion, { version: version == null ? L.unknownVersion : String(version) })));
     return;
   }
   function notIncluded(target) {
-    target.appendChild(el('p', '未包含', 'agh-empty'));
+    target.appendChild(el('p', L.notIncluded, 'agh-empty'));
   }
   function fmtDuration(ms) {
-    if (ms === undefined || ms === null) return '进行中';
-    if (ms < 1000) return ms + ' 毫秒';
-    if (ms < 60000) return (ms / 1000).toFixed(ms < 10000 ? 1 : 0) + ' 秒';
-    return Math.floor(ms / 60000) + ' 分 ' + Math.round((ms % 60000) / 1000) + ' 秒';
+    if (ms === undefined || ms === null) return L.durationRunning;
+    if (ms < 1000) return fill(L.durationMs, { n: ms });
+    if (ms < 60000) return fill(L.durationSeconds, { n: (ms / 1000).toFixed(ms < 10000 ? 1 : 0) });
+    return fill(L.durationMinutes, { minutes: Math.floor(ms / 60000), seconds: Math.round((ms % 60000) / 1000) });
   }
 
-  var STATUS_LABEL = { running: '进行中', waiting: '等待中', completed: '已完成', failed: '失败', cancelled: '已取消' };
-  var REASON_LABEL = { unavailable: '不可用', truncated: '已截断', limit: '超出上限', timeout: '超时', failed: '失败', imported: '导入' };
-  var INCLUDE_LABEL = { conversation: '对话与轨迹', logs: '日志', system: '系统信息' };
+  var STATUS_LABEL = L.status;
+  var REASON_LABEL = L.reason;
+  var INCLUDE_LABEL = L.include;
 
   var tabButtons = Array.prototype.slice.call(document.querySelectorAll('#agh-tabs button'));
   var tabSections = Array.prototype.slice.call(document.querySelectorAll('main > section'));
@@ -109,20 +113,22 @@ const RUNTIME_SCRIPT = `
     var list = el('ul', undefined, 'agh-include');
     Object.keys(INCLUDE_LABEL).forEach(function (key) {
       var included = bundle.include && bundle.include[key];
-      list.appendChild(el('li', INCLUDE_LABEL[key] + '：' + (included ? '已包含' : '未包含')));
+      list.appendChild(el('li', INCLUDE_LABEL[key] + ': ' + (included ? L.included : L.excluded)));
     });
     root.appendChild(list);
     if (bundle.warnings && bundle.warnings.length > 0) {
       var warnings = el('ul', undefined, 'agh-warnings');
       bundle.warnings.forEach(function (warning) {
         var reason = REASON_LABEL[warning.reason] || warning.reason;
-        var text = warning.source + '：' + reason + (warning.detail ? '（' + warning.detail + '）' : '');
+        var text = warning.detail
+          ? fill(L.warningDetail, { source: warning.source, reason: reason, detail: warning.detail })
+          : fill(L.warning, { source: warning.source, reason: reason });
         warnings.appendChild(el('li', text));
       });
       root.appendChild(warnings);
     }
     if (bundle.events) {
-      var summary = '完整事件账本见 events.jsonl（' + bundle.events.count + ' 条，截至 seq ' + bundle.events.lastSeq + '）';
+      var summary = fill(L.events, { count: bundle.events.count, seq: bundle.events.lastSeq });
       root.appendChild(el('p', summary));
     }
   }
@@ -130,7 +136,7 @@ const RUNTIME_SCRIPT = `
   function nodeText(node) {
     if (node.kind === 'user') return (node.content || []).map(function (b) { return (b && b.text) || ''; }).join(' ');
     if (node.kind === 'assistant') return node.text || node.thinking || '';
-    if (node.kind === 'tool') return node.name + (node.summary ? '：' + node.summary : '');
+    if (node.kind === 'tool') return node.summary ? fill(L.toolSummary, { name: node.name, summary: node.summary }) : node.name;
     if (node.kind === 'approval') return node.summary || '';
     if (node.kind === 'compaction') return node.summary || '';
     if (node.kind === 'cost') return node.model || node.purpose || '';
@@ -157,7 +163,7 @@ const RUNTIME_SCRIPT = `
     row.style.paddingLeft = (depth * 16) + 'px';
     var parts = [span.kind, span.name, STATUS_LABEL[span.status] || span.status, fmtDuration(span.durationMs)];
     if (span.model) parts.push(span.model);
-    if (span.error && span.error.message) parts.push('错误：' + span.error.message);
+    if (span.error && span.error.message) parts.push(fill(L.error, { message: span.error.message }));
     row.textContent = parts.join(' · ');
     container.appendChild(row);
     (span.children || []).forEach(function (child) { renderSpan(child, depth + 1, container); });
@@ -169,7 +175,7 @@ const RUNTIME_SCRIPT = `
     var withTrace = turns.filter(function (t) { return t.trace; });
     if (withTrace.length === 0) { notIncluded(root); return; }
     withTrace.forEach(function (turn) {
-      root.appendChild(el('h3', '第 ' + turn.turn + ' 轮'));
+      root.appendChild(el('h3', fill(L.turn, { turn: turn.turn })));
       renderSpan(turn.trace, 0, root);
     });
   }
@@ -187,7 +193,7 @@ const RUNTIME_SCRIPT = `
         });
         root.appendChild(el('pre', lines.join('\\n')));
       } else {
-        root.appendChild(el('pre', value.text + (value.truncated ? '\\n…（已截断）' : '')));
+        root.appendChild(el('pre', value.text + (value.truncated ? '\\n' + L.truncated : '')));
       }
     });
   }
@@ -227,32 +233,54 @@ const RUNTIME_SCRIPT = `
 `
 
 /** Renders the self-contained offline `index.html` that ships inside the diagnostics ZIP. */
-export function renderDiagnosticsViewer(bundle: DiagnosticsBundle): string {
-  const headerTitle = escapeHtml(bundle.sessionTitle ?? bundle.sessionId ?? '应用范围')
-  const nav = TABS.map(
-    ([id, label], index) =>
-      `<button type="button" data-tab="${id}" aria-selected="${index === 0 ? 'true' : 'false'}">${escapeHtml(label)}</button>`,
+export function renderDiagnosticsViewer(
+  bundle: DiagnosticsBundle,
+  locale: DiagnosticsLocale = diagnosticsLocale(),
+): string {
+  const headerTitle = escapeHtml(
+    bundle.sessionTitle ??
+      bundle.sessionId ??
+      diagnosticsText('diagnostics.viewer.fallbackTitle', undefined, locale),
+  )
+  const tabKey = {
+    overview: 'diagnostics.viewer.tab.overview',
+    conversation: 'diagnostics.viewer.tab.conversation',
+    trace: 'diagnostics.viewer.tab.trace',
+    logs: 'diagnostics.viewer.tab.logs',
+    system: 'diagnostics.viewer.tab.system',
+    artifacts: 'diagnostics.viewer.tab.artifacts',
+  } as const
+  const nav = TAB_IDS.map(
+    (id, index) =>
+      `<button type="button" data-tab="${id}" aria-selected="${index === 0 ? 'true' : 'false'}">${escapeHtml(diagnosticsText(tabKey[id], undefined, locale))}</button>`,
   ).join('')
-  const sections = TABS.map(
-    ([id], index) => `<section id="tab-${id}"${index === 0 ? '' : ' hidden'}></section>`,
+  const sections = TAB_IDS.map(
+    (id, index) => `<section id="tab-${id}"${index === 0 ? '' : ' hidden'}></section>`,
   ).join('')
+  const labels = JSON.stringify(diagnosticsViewerLabels(locale)).replace(/</g, '\\u003c')
+  const title = diagnosticsText('diagnostics.viewer.title', undefined, locale)
+  const meta = diagnosticsText(
+    'diagnostics.viewer.meta',
+    { version: bundle.version, createdAt: bundle.createdAt },
+    locale,
+  )
   return `<!doctype html>
-<html lang="zh">
+<html lang="${locale}">
 <head>
 <meta charset="utf-8">
-<title>agh 诊断包</title>
+<title>${escapeHtml(title)}</title>
 <style>${STYLE}</style>
 </head>
 <body>
 <header>
-<h1>agh 诊断包</h1>
+<h1>${escapeHtml(title)}</h1>
 <p id="agh-session-title">${headerTitle}</p>
-<p id="agh-meta">版本 ${escapeHtml(bundle.version)} · 导出于 ${escapeHtml(bundle.createdAt)}</p>
+<p id="agh-meta">${escapeHtml(meta)}</p>
 </header>
 <nav id="agh-tabs">${nav}</nav>
 <main>${sections}</main>
 <script type="application/json" id="agh-bundle">${escapeBundleJson(bundle)}</script>
-<script>${RUNTIME_SCRIPT}</script>
+<script>var L = ${labels};\n${RUNTIME_SCRIPT}</script>
 </body>
 </html>
 `

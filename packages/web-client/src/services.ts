@@ -497,58 +497,86 @@ export class ThemeService extends Service {
   getSnapshot = (): ResolvedTheme => this.resolved
 }
 
-/** 多语言字典：`ctx.locale.register`（对齐清单 #8）。键为消息 key，值为已翻译文本。 */
+/** 界面语言。未知值回落英文。与 Web 偏好模块保持同一组取值。 */
+export const UI_LOCALES = ['en', 'zh-CN'] as const
+export type UiLocale = (typeof UI_LOCALES)[number]
+
+export function resolveUiLocale(value: string | null | undefined): UiLocale {
+  return (UI_LOCALES as readonly string[]).includes(value ?? '') ? (value as UiLocale) : 'en'
+}
+
+/** 一种语言下的文案。键为消息 key，值为已翻译文本。 */
 export type LocaleDictionary = Record<string, string>
 
+/** `ctx.locale.register` 的目录：同一命名空间同时登记 `en` 与 `zh-CN`。 */
+export type LocaleCatalog = Partial<Record<UiLocale, LocaleDictionary>>
+
+export type LocaleVars = Readonly<Record<string, string | number>>
+
+function interpolate(template: string, vars: LocaleVars | undefined): string {
+  if (!vars) return template
+  return template.replace(/\{(\w+)\}/g, (match, name: string) =>
+    Object.hasOwn(vars, name) ? String(vars[name]) : match,
+  )
+}
+
 export class LocaleService extends Service {
-  private currentLocale: string
-  private readonly dictionaries = new Map<string, LocaleDictionary>()
+  private currentLocale: UiLocale
+  private readonly catalogs = new Map<string, LocaleCatalog>()
   private readonly listeners = new Set<() => void>()
 
   constructor(ctx: Context, initial: string) {
     super(ctx, 'locale')
-    this.currentLocale = initial
+    this.currentLocale = resolveUiLocale(initial)
   }
 
-  get locale(): string {
+  get locale(): UiLocale {
     return this.currentLocale
   }
 
-  /** 注册字典（命名空间 = 包 id）。撤销时自动移除；插件侧经 effect 绑定 fiber。 */
-  register(namespace: string, dictionary: LocaleDictionary): () => void {
+  /** 注册目录（命名空间 = 包 id）。撤销时自动移除；插件侧经 effect 绑定 fiber。 */
+  register(namespace: string, catalog: LocaleCatalog): () => void {
     // Re-registering a namespace is an update, not a second competing seat.
     // Delete first so the newest revision wins deterministic lookup order.
-    this.dictionaries.delete(namespace)
-    this.dictionaries.set(namespace, dictionary)
+    this.catalogs.delete(namespace)
+    this.catalogs.set(namespace, catalog)
     for (const listener of [...this.listeners]) listener()
     return () => {
-      if (this.dictionaries.get(namespace) !== dictionary) return
-      this.dictionaries.delete(namespace)
+      if (this.catalogs.get(namespace) !== catalog) return
+      this.catalogs.delete(namespace)
       for (const listener of [...this.listeners]) listener()
     }
   }
 
-  /** 查字典：后注册者覆盖先注册者；找不到回退 key 本身。 */
-  t(key: string): string {
-    const dictionaries = [...this.dictionaries.values()]
-    for (let index = dictionaries.length - 1; index >= 0; index -= 1) {
-      const dictionary = dictionaries[index]
-      if (!dictionary) continue
-      const hit = dictionary[key]
-      if (hit !== undefined) return hit
-    }
-    return key
+  /**
+   * 查目录：后注册者覆盖先注册者。
+   * 当前语言没有该 key 时回落英文，英文也没有则回落 key 本身。
+   */
+  t(key: string, vars?: LocaleVars): string {
+    const direct = this.lookup(this.currentLocale, key)
+    const hit = direct ?? (this.currentLocale === 'en' ? undefined : this.lookup('en', key))
+    return interpolate(hit ?? key, vars)
   }
 
   /** Bind a namespace for slot entries that declare `locale`. */
-  bind(namespace: string): (key: string) => string {
-    return (key) => this.dictionaries.get(namespace)?.[key] ?? this.t(key)
+  bind(namespace: string): (key: string, vars?: LocaleVars) => string {
+    return (key, vars) => {
+      const catalog = this.catalogs.get(namespace)
+      const direct = catalog?.[this.currentLocale]?.[key]
+      if (direct !== undefined) return interpolate(direct, vars)
+      if (this.currentLocale !== 'en') {
+        const english = catalog?.en?.[key]
+        if (english !== undefined) return interpolate(english, vars)
+      }
+      return this.t(key, vars)
+    }
   }
 
-  /** 仅宿主调用。 */
+  /** 仅宿主调用。未知语言回落英文。 */
   setLocale(locale: string): void {
-    if (locale === this.currentLocale) return
-    this.currentLocale = locale
+    const next = resolveUiLocale(locale)
+    if (next === this.currentLocale) return
+    this.currentLocale = next
     for (const listener of [...this.listeners]) listener()
   }
 
@@ -558,4 +586,13 @@ export class LocaleService extends Service {
   }
 
   getSnapshot = (): string => this.currentLocale
+
+  private lookup(locale: UiLocale, key: string): string | undefined {
+    const catalogs = [...this.catalogs.values()]
+    for (let index = catalogs.length - 1; index >= 0; index -= 1) {
+      const hit = catalogs[index]?.[locale]?.[key]
+      if (hit !== undefined) return hit
+    }
+    return undefined
+  }
 }

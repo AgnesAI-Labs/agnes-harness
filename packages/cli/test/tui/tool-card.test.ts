@@ -20,7 +20,7 @@ const node: Extract<UINode, { kind: 'tool' }> = {
 it('collapses by default and expands current protocol details without inventing missing values', () => {
   const card = new ToolCard(node)
   expect(card.render(40)).toHaveLength(1)
-  expect(card.render(40)[0]).toContain('◆ 读取  read a file')
+  expect(card.render(40)[0]).toContain('◆ read  read a file')
   card.toggle()
   const output = card.render(40).join('\n')
   expect(output).toContain('Arguments: {"path":"中.txt"}')
@@ -50,7 +50,7 @@ it('keeps the default collapsed headline to one bounded and escaped summary row'
   const output = card.render(48)
   expect(output).toHaveLength(1)
   expect(displayWidth(output[0] as string)).toBe(48)
-  expect(output[0]).toContain('◆ 读取  first second')
+  expect(output[0]).toContain('◆ read  first second')
   expect(output[0]).not.toContain('\n')
   expect(output[0]).not.toContain('\x1b')
 })
@@ -68,21 +68,21 @@ it('colors the compact state glyph and the expanded title status on a colour tie
   const done = mk('completed').render(40)[0] as string
   expect(done).toContain('\x1b[38;5;78m◆\x1b[39m')
   expect(done).not.toContain('完成')
-  expect(mk('running').render(40)[0]).toContain('\x1b[38;5;178m执行中\x1b[39m')
-  expect(mk('failed').render(40)[0]).toContain('\x1b[38;5;203m失败\x1b[39m')
+  expect(mk('running').render(40)[0]).toContain('\x1b[38;5;178mrunning\x1b[39m')
+  expect(mk('failed').render(40)[0]).toContain('\x1b[38;5;203mfailed\x1b[39m')
   // A planned row gets typography but no semantic foreground colour; the tool name is never
   // coloured by status.
   const planned = mk('planned').render(40)[0] as string
   expect(planned).not.toContain('\x1b[38;5;')
-  expect(planned).toContain('\x1b[1m读取\x1b[22m')
-  expect(done).not.toContain('\x1b[38;5;78m读取\x1b[39m')
+  expect(planned).toContain('\x1b[1mread\x1b[22m')
+  expect(done).not.toContain('\x1b[38;5;78mread\x1b[39m')
   // Expanded: the frame stays quiet while the title status carries colour.
   const open = new ToolCard(
     { kind: 'tool', id: 'c', seq: 1, toolUseId: 'c', name: 'read', status: 'completed', summary: 's' },
     { ansi, collapsed: false },
   ).render(40)
   expect(open[0]).toContain('\x1b[2m╭\x1b[22m')
-  expect(open[0]).toContain('\x1b[38;5;78m完成\x1b[39m')
+  expect(open[0]).toContain('\x1b[38;5;78mdone\x1b[39m')
   expect(open.at(-1)).toContain('\x1b[2m╰')
   expect(open[1]).toContain(' s ')
   // none tier: zero escapes anywhere.

@@ -10,6 +10,7 @@ import {
   type ConversationChildContainers,
   EMPTY_SIDEBAR_STATE,
   SettingsBuiltin,
+  type SettingsPane,
   SettingsPaneBuiltin,
   Sidebar,
   Transcript,
@@ -17,10 +18,24 @@ import {
 } from '../src/index.js'
 
 const roots: Root[] = []
+const englishText: Record<string, string> = {
+  'settings-shell.appearanceTitle': 'General settings',
+  'settings-shell.fontScale': 'Font size',
+  'shell.install': 'Install from source',
+  'button.refresh': 'Refresh Skill catalog',
+  // 语言切换的三条文案由 web 包的 locale-catalog 提供，这里补进桩以便断言它确实渲染出来。
+  'settings.appearance.language': 'Language',
+  'settings.appearance.language.en': 'English',
+  'settings.appearance.language.en.hint': 'Show the workbench in English',
+  'settings.appearance.language.zh-CN': '简体中文',
+  'settings.appearance.language.zh-CN.hint': 'Show the workbench in Simplified Chinese',
+}
+const enT = (key: string): string => englishText[key] ?? key
 
 afterEach(() => {
   while (roots.length) roots.pop()?.unmount()
   document.body.replaceChildren()
+  document.documentElement.lang = 'en'
 })
 
 describe('independent core web-unit implementations', () => {
@@ -30,7 +45,7 @@ describe('independent core web-unit implementations', () => {
     document.body.append(host)
     const shell = createRoot(host)
     roots.push(shell)
-    flushSync(() => shell.render(createElement(SettingsBuiltin, { options: {} })))
+    flushSync(() => shell.render(createElement(SettingsBuiltin, { options: { translate: enT } })))
     const paneSlot = host.querySelector<HTMLElement>('#settings-pane-slot-model')
     if (!paneSlot) throw new Error('model settings slot is missing')
     const pane = createRoot(paneSlot)
@@ -45,6 +60,74 @@ describe('independent core web-unit implementations', () => {
     expect(host.querySelector('#config-provider')).toBeInstanceOf(HTMLSelectElement)
     expect(host.querySelector('#config-save')).toBeInstanceOf(HTMLButtonElement)
     expect(host.querySelector('#config-save')?.getAttribute('form')).toBe('config-form')
+  })
+
+  it('renders the appearance controls in English', () => {
+    const host = document.createElement('div')
+    document.body.append(host)
+    const root = createRoot(host)
+    roots.push(root)
+    flushSync(() => root.render(createElement(SettingsPaneBuiltin, { pane: 'appearance', translate: enT })))
+    expect(host.querySelector('input[name="agnes-theme"][value="system"]')).toBeInstanceOf(HTMLInputElement)
+    expect(host.querySelector('input[name="agnes-font-scale"][value="normal"]')).toBeInstanceOf(
+      HTMLInputElement,
+    )
+    expect(host.querySelector('[data-i18n="settings-shell.appearanceTitle"]')?.textContent).toBe(
+      'General settings',
+    )
+    expect(
+      host.querySelector('[data-i18n-aria="settings-shell.fontScale"]')?.getAttribute('aria-label'),
+    ).toBe('Font size')
+    // 语言切换必须留在通用设置里：合并 origin/main 时它一度被整段冲掉，
+    // 而当时的用例断言被改成只查配色和字号，回归没有被兜住。
+    const english = host.querySelector<HTMLInputElement>('input[name="agnes-locale"][value="en"]')
+    const chinese = host.querySelector<HTMLInputElement>('input[name="agnes-locale"][value="zh-CN"]')
+    expect(english).toBeInstanceOf(HTMLInputElement)
+    expect(chinese).toBeInstanceOf(HTMLInputElement)
+    expect(english?.checked).toBe(true)
+    expect(host.querySelector('[data-i18n="settings.appearance.language"]')?.textContent).toBe('Language')
+  })
+
+  it('keeps the settings markup markers the origin/main merge dropped', () => {
+    // 合并 origin/main 时 settings.ts 被整段退回成 main 的版本，分支自己加的标记随之丢失，
+    // 而当时没有任何用例覆盖这些元素，回归因此无人发现。这里按元素逐个钉住标记。
+    // 面板是单独渲染进各自 slot 的（外壳会把 settings-pane 段落移除），所以按面板渲染。
+    const expected: Array<[SettingsPane, string, string, string]> = [
+      ['computer-use', '#computer-use-refresh [data-i18n]', 'data-i18n', 'computerUse.action.refresh'],
+      ['computer-use', '#computer-use-install [data-i18n]', 'data-i18n', 'computerUse.action.install'],
+      ['computer-use', '#computer-use-update [data-i18n]', 'data-i18n', 'computerUse.action.update'],
+      ['computer-use', '#computer-use-restart [data-i18n]', 'data-i18n', 'computerUse.action.restart'],
+      ['computer-use', '#computer-use-doctor-run [data-i18n]', 'data-i18n', 'computerUse.doctor.run'],
+      [
+        'computer-use',
+        '#computer-use-operation-refresh [data-i18n]',
+        'data-i18n',
+        'computerUse.action.operationRefresh',
+      ],
+      [
+        'computer-use',
+        '#computer-use-operation-cancel [data-i18n]',
+        'data-i18n',
+        'computerUse.action.cancel',
+      ],
+      [
+        'computer-use',
+        '#computer-use-permission-grant [data-i18n]',
+        'data-i18n',
+        'computerUse.permissions.grant',
+      ],
+      ['archived', '#archived-search', 'data-i18n-placeholder', 'settings-shell.searchPlaceholder'],
+    ]
+    for (const [pane, selector, attribute, key] of expected) {
+      const host = document.createElement('div')
+      document.body.append(host)
+      const root = createRoot(host)
+      roots.push(root)
+      flushSync(() => root.render(createElement(SettingsPaneBuiltin, { pane })))
+      const element = host.querySelector(selector)
+      expect(element, `${selector} 缺失`).toBeTruthy()
+      expect(element?.getAttribute(attribute), `${selector} 少了 ${attribute}="${key}"`).toBe(key)
+    }
   })
 
   it('keeps the conversation child contract in the web-units package', () => {
@@ -94,6 +177,7 @@ describe('independent core web-unit implementations', () => {
           ref,
           state: EMPTY_SIDEBAR_STATE,
           dependencies: {
+            translate: (key) => key,
             renderNavigation: ({ nav }) => {
               rendered++
               nav.textContent = 'navigation'
@@ -164,5 +248,21 @@ describe('independent core web-unit implementations', () => {
     root.unmount()
     expect(reset).toBe(1)
     expect(stopped).toBe(1)
+  })
+
+  it('renders plugin and resource pane templates with stable locale markers', () => {
+    const host = document.createElement('div')
+    document.body.append(host)
+    document.documentElement.lang = 'en'
+    const root = createRoot(host)
+    roots.push(root)
+
+    flushSync(() => root.render(createElement(SettingsPaneBuiltin, { pane: 'plugin', translate: enT })))
+    expect(host.querySelector('#install-source')?.textContent).toBe('Install from source')
+    expect(host.querySelector('#install-source')?.getAttribute('data-i18n')).toBe('shell.install')
+
+    flushSync(() => root.render(createElement(SettingsPaneBuiltin, { pane: 'resources', translate: enT })))
+    expect(host.querySelector('#skill-refresh')?.textContent).toBe('Refresh Skill catalog')
+    expect(host.querySelector('#resource-list')?.getAttribute('data-i18n-aria')).toBe('shell.list.aria')
   })
 })

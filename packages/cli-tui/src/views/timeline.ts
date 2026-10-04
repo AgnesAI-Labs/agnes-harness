@@ -1,5 +1,6 @@
 import type { UINode, UITimeline } from '@agnes/protocol'
 import type { Component } from '../component.js'
+import { tt } from '../locale-extended.js'
 
 export const TIMELINE_RESERVED_ROWS = 5
 
@@ -21,6 +22,7 @@ export class Timeline implements Component {
     private readonly o: {
       rows(): number
       reservedRows?(): number
+      locale?: string
       nodeView(node: UINode): Component
       /** Startup banner, part of the scrollable viewport but not the exit transcript. */
       top?: Component
@@ -108,7 +110,7 @@ export class Timeline implements Component {
     const content = this.content(width, false)
     const showWelcome = content.length === 0 && !this.hasEarlier
     const rows = [
-      ...(this.hasEarlier ? ['↑ Earlier history · PgUp to load'] : []),
+      ...(this.hasEarlier ? [tt('timeline.earlierHistory', this.o.locale ?? 'en')] : []),
       ...(showWelcome ? (this.o.top?.render(width) ?? []) : []),
       ...content,
     ]

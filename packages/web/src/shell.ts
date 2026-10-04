@@ -1,3 +1,5 @@
+import { tr } from './locale-bridge.js'
+
 const getButton = (id: string) => {
   const value = document.getElementById(id)
   if (!(value instanceof HTMLButtonElement)) throw new Error(`missing button#${id}`)
@@ -16,7 +18,7 @@ export function bindSidebar(narrow: MediaQueryList): { close(): void; dismiss():
       : !document.body.classList.contains('sidebar-collapsed')
     const toggle = getButton('sidebar-toggle')
     toggle.setAttribute('aria-expanded', String(visible))
-    toggle.setAttribute('aria-label', visible ? '收起导航' : '打开导航')
+    toggle.setAttribute('aria-label', visible ? tr('shell.collapseNav') : tr('shell.openNav'))
     const sidebar = document.querySelector<HTMLElement>('.sidebar')
     if (sidebar) sidebar.inert = !visible
     const main = document.querySelector('main')

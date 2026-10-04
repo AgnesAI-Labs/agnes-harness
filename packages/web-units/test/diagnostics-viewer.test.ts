@@ -112,12 +112,12 @@ describe('renderDiagnosticsViewer', () => {
     expect(dataEl?.textContent ? JSON.parse(dataEl.textContent) : null).toEqual(bundle)
   })
 
-  it('executes the viewer script', () => {
+  it.each(['en', 'zh-CN'] as const)('executes the viewer script in %s', (locale) => {
     const bundle = makeBundle({
       trace: twoLevelTimeline(),
       warnings: [{ source: 'trace', reason: 'unavailable' }],
     })
-    const html = renderDiagnosticsViewer(bundle)
+    const html = renderDiagnosticsViewer(bundle, locale)
     document.documentElement.innerHTML = html
     const scripts = Array.from(document.querySelectorAll('script'))
     const runtime = scripts.find((s) => s.getAttribute('type') !== 'application/json')
@@ -125,16 +125,24 @@ describe('renderDiagnosticsViewer', () => {
     new Function(runtime?.textContent ?? '')()
 
     const tabLabels = Array.from(document.querySelectorAll('#agh-tabs button')).map((b) => b.textContent)
-    expect(tabLabels).toEqual(['概览', '对话', '轨迹', '日志', '系统', '产物'])
+    expect(tabLabels).toEqual(
+      locale === 'en'
+        ? ['Overview', 'Conversation', 'Trace', 'Logs', 'System', 'Artifacts']
+        : ['概览', '对话', '轨迹', '日志', '系统', '产物'],
+    )
 
-    expect(document.getElementById('tab-logs')?.textContent).toContain('未包含')
-    expect(document.getElementById('tab-overview')?.textContent).toContain('trace：不可用')
+    expect(document.getElementById('tab-logs')?.textContent).toContain(
+      locale === 'en' ? 'Not included' : '未包含',
+    )
+    expect(document.getElementById('tab-overview')?.textContent).toContain(
+      locale === 'en' ? 'trace: Unavailable' : 'trace：不可用',
+    )
 
     const traceText = document.getElementById('tab-trace')?.textContent ?? ''
     expect(traceText).toContain('root-call')
     expect(traceText).toContain('child-tool')
-    expect(traceText).toMatch(/1\.5 ?秒|1500 ?毫秒/)
-    expect(traceText).toContain('250 毫秒')
+    expect(traceText).toMatch(locale === 'en' ? /1\.5 s|1500 ms/ : /1\.5 ?秒|1500 ?毫秒/)
+    expect(traceText).toContain(locale === 'en' ? '250 ms' : '250 毫秒')
   })
 
   it('lists artifacts metadata', () => {
@@ -162,24 +170,41 @@ describe('renderDiagnosticsViewer', () => {
   })
 
   it.each([
-    ['an unknown bundle version', '2', false],
-    ['a missing bundle data block', '未知', true],
-  ])('shows an unsupported-version notice instead of tabs for %s', (_name, shown, dropData) => {
-    const bundle = {
-      ...makeBundle({ trace: twoLevelTimeline() }),
-      bundleVersion: 2,
-    } as unknown as DiagnosticsBundle
-    document.documentElement.innerHTML = renderDiagnosticsViewer(bundle)
-    if (dropData) document.getElementById('agh-bundle')?.remove()
-    const runtime = Array.from(document.querySelectorAll('script')).find(
-      (s) => s.getAttribute('type') !== 'application/json',
-    )
-    expect(() => new Function(runtime?.textContent ?? '')()).not.toThrow()
+    [
+      'an unknown bundle version',
+      '2',
+      false,
+      'en',
+      'This viewer does not support diagnostics package version',
+    ],
+    ['an unknown bundle version', '2', false, 'zh-CN', '此查看器不支持该诊断包版本'],
+    [
+      'a missing bundle data block',
+      'Unknown',
+      true,
+      'en',
+      'This viewer does not support diagnostics package version',
+    ],
+    ['a missing bundle data block', '未知', true, 'zh-CN', '此查看器不支持该诊断包版本'],
+  ] as const)(
+    'shows an unsupported-version notice instead of tabs for %s in %s',
+    (_name, shown, dropData, locale, prefix) => {
+      const bundle = {
+        ...makeBundle({ trace: twoLevelTimeline() }),
+        bundleVersion: 2,
+      } as unknown as DiagnosticsBundle
+      document.documentElement.innerHTML = renderDiagnosticsViewer(bundle, locale)
+      if (dropData) document.getElementById('agh-bundle')?.remove()
+      const runtime = Array.from(document.querySelectorAll('script')).find(
+        (s) => s.getAttribute('type') !== 'application/json',
+      )
+      expect(() => new Function(runtime?.textContent ?? '')()).not.toThrow()
 
-    expect(document.querySelectorAll('#agh-tabs button, main section')).toHaveLength(0)
-    const notice = document.querySelector('main')?.textContent ?? ''
-    expect(notice).toContain('此查看器不支持该诊断包版本')
-    expect(notice).toContain(shown)
-    expect(notice).not.toContain('root-call')
-  })
+      expect(document.querySelectorAll('#agh-tabs button, main section')).toHaveLength(0)
+      const notice = document.querySelector('main')?.textContent ?? ''
+      expect(notice).toContain(prefix)
+      expect(notice).toContain(shown)
+      expect(notice).not.toContain('root-call')
+    },
+  )
 })

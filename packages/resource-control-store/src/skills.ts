@@ -141,7 +141,7 @@ function projected(journal: SkillJournal): SkillDescriptor[] {
         ? {
             lastSafeError: safeError(
               'SKILL_REMOVAL_PENDING',
-              '永久删除尚未完成；已阻止重新启用，可排除文件占用后重试删除。',
+              'Permanent deletion has not finished. Re-enabling is blocked. Clear any file lock and retry the delete.',
             ),
           }
         : {}),

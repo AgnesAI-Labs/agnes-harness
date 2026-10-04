@@ -1,4 +1,6 @@
 import type { EventEnvelope, TurnEnd, UINode, UITimeline, UITurn } from '@agnes/protocol'
+import type { LocaleVars } from '@agnes/web-client'
+import type { Translate } from './presentation.js'
 
 type ApprovalNode = Extract<UINode, { kind: 'approval' }>
 type ApprovalOption = ApprovalNode['options'][number]
@@ -8,16 +10,27 @@ export type DurableApprovalAction = {
   verdict: 'allowed-once' | 'allowed-session' | 'allowed-permanent' | 'rejected'
 }
 
-const DURABLE_APPROVAL_ACTIONS: Record<ApprovalOption, Omit<DurableApprovalAction, 'option'>> = {
-  allow_once: { label: '仅允许这次', verdict: 'allowed-once' },
-  allow_always: { label: '本会话允许', verdict: 'allowed-session' },
-  allow_permanent: { label: '对此配置始终允许', verdict: 'allowed-permanent' },
-  reject_once: { label: '拒绝', verdict: 'rejected' },
+const DURABLE_APPROVAL_KEYS: Record<ApprovalOption, string> = {
+  allow_once: 'timeline.decision.allowedOnce',
+  allow_always: 'timeline.decision.allowedSession',
+  allow_permanent: 'timeline.decision.allowedPermanent',
+  reject_once: 'timeline.decision.rejectOnce',
 }
 
 /** The UI may act only on options the durable approval event actually offered. */
-export function durableApprovalActions(node: ApprovalNode): DurableApprovalAction[] {
-  return node.options.map((option) => ({ option, ...DURABLE_APPROVAL_ACTIONS[option] }))
+export function durableApprovalActions(node: ApprovalNode, t: Translate): DurableApprovalAction[] {
+  return node.options.map((option) => ({
+    option,
+    label: t(DURABLE_APPROVAL_KEYS[option]),
+    verdict: DURABLE_APPROVAL_VERDICTS[option],
+  }))
+}
+
+const DURABLE_APPROVAL_VERDICTS: Record<ApprovalOption, DurableApprovalAction['verdict']> = {
+  allow_once: 'allowed-once',
+  allow_always: 'allowed-session',
+  allow_permanent: 'allowed-permanent',
+  reject_once: 'rejected',
 }
 
 /** Display receipt from validated ledger rows, including replay; never an execution controller. */
@@ -43,25 +56,25 @@ export function receiptFromTurns(turns: readonly UITurn[]): RunReceipt | undefin
   }
 }
 
-const terminalLabels: Record<TurnEnd['reason'], string> = {
-  completed: '已完成',
-  aborted: '已取消',
-  interrupted: '已中断',
-  error: '执行失败',
-  parked: '等待处理',
-  blocked: '执行受阻',
-  budget: '预算已用尽',
-  max_steps: '已达到执行步数上限',
+const TERMINAL_KEYS: Record<TurnEnd['reason'], string> = {
+  completed: 'timeline.terminal.completed',
+  aborted: 'timeline.terminal.aborted',
+  interrupted: 'timeline.terminal.interrupted',
+  error: 'timeline.terminal.error',
+  parked: 'timeline.terminal.parked',
+  blocked: 'timeline.terminal.blocked',
+  budget: 'timeline.terminal.budget',
+  max_steps: 'timeline.terminal.maxSteps',
 }
 
-const phaseLabels: Record<string, string> = {
-  inference: '生成回复',
-  tools: '执行工具',
-  checkpoint: '检查下一步',
-  compaction: '整理上下文',
-  deferred: '等待外部结果',
-  cancel_requested: '处理停止请求',
-  failure_drain: '处理执行失败',
+const PHASE_KEYS: Record<string, string> = {
+  inference: 'timeline.phase.inference',
+  tools: 'timeline.phase.tools',
+  checkpoint: 'timeline.phase.checkpoint',
+  compaction: 'timeline.phase.compaction',
+  deferred: 'timeline.phase.deferred',
+  cancel_requested: 'timeline.phase.cancelRequested',
+  failure_drain: 'timeline.phase.failureDrain',
 }
 
 export type WebView = {
@@ -71,26 +84,31 @@ export type WebView = {
   status: string
 }
 
-export function webView(timeline: UITimeline, receipt?: RunReceipt): WebView {
+export function webView(
+  timeline: UITimeline,
+  receipt?: RunReceipt,
+  t: (key: string, vars?: LocaleVars) => string = (key) => key,
+): WebView {
   const approval = timeline.nodes.find(
     (node): node is ApprovalNode =>
       node.kind === 'approval' && node.state === 'pending' && typeof node.ticket === 'string',
   )
   const phase = timeline.opState?.phase
+  const phaseKey = phase === undefined ? undefined : PHASE_KEYS[phase]
   return {
     busy: timeline.opState !== null,
     ...(approval ? { approval } : {}),
     // WC9：slot 节点不再被丢弃；时间线为它保留稳定容器，认领未命中时显示占位。
     nodes: timeline.nodes,
     status: approval
-      ? '等待审批'
+      ? t('timeline.status.awaitingApproval')
       : phase
-        ? phaseLabels[phase]
-          ? `正在执行 · ${phaseLabels[phase]}`
-          : '正在执行'
+        ? phaseKey
+          ? t('timeline.status.runningPhase', { phase: t(phaseKey) })
+          : t('timeline.status.running')
         : receipt?.reason && receipt.endSeq >= receipt.startSeq
-          ? terminalLabels[receipt.reason]
-          : '准备就绪',
+          ? t(TERMINAL_KEYS[receipt.reason])
+          : t('timeline.status.ready'),
   }
 }
 
