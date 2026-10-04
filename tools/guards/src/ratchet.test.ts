@@ -2735,8 +2735,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // Same-database admission joint coverage. Measured 74907, exact, no spare.
   // Default artifacts transfer with its export held by the default blob service, and collection counts
   // of only collections with parts. Measured 74980 (+73), exact, no spare.
-  // SessionControl source qualification adds 883 measured lines; no spare allocation.
-  'packages/host/src': 75863,
+  // SessionControl identity-facts and complete Binding proof add 1093 measured lines; no spare allocation.
+  'packages/host/src': 76073,
   'packages/host/src/ext-host/service-invocation': 247,
   // T5.2's permission projector is kept independently bounded so later extension-host work cannot
   // hide in the package-wide increment. Measured source: 86 lines.

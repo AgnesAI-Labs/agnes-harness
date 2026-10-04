@@ -23,7 +23,7 @@ it('requires an original issued configuration, not a resolver candidate', async 
   expect(() => source.captureRead('session', f.context)).toThrow(/issuance/)
   expect(f.db.prepare('SELECT count(*) n FROM runtime_session_configuration_issued').get()?.n).toBe(0)
 })
-it('qualifies the real resolver, admitted binding and issued C14 permission without writing a State command', async () => {
+it('qualifies the real resolver, admitted binding and issued C14 session identity without writing a State command', async () => {
   const f = await fixture()
   const before = f.db.prepare('SELECT count(*) n FROM events').get()?.n
   const selectedPreset = f.request.presets[0]
@@ -146,7 +146,7 @@ async function acceptCredential(
   if (!context) throw Error('actual issued context refused')
   return { actor, context }
 }
-it('derives stable actors from the original issued permission across credentials and refuses another actor proof', async () => {
+it('derives stable actors from the original issued identity across credentials and refuses another actor proof', async () => {
   const f = await fixture()
   await f.configuration.issueBase('ticket', f.request, f.context)
   const source = createSessionControlSource({ database: f.db, configuration: f.configuration })
@@ -157,9 +157,6 @@ it('derives stable actors from the original issued permission across credentials
   expect(second.permission.actorRef).toBe(first.permission.actorRef)
   expect(second.permission.permissionSourceDigest).not.toBe(first.permission.permissionSourceDigest)
   expect(second.permission.authorizationRef).toBe(renewed.actor.authorizationRef)
-  f.db
-    .prepare('INSERT INTO runtime_session_control_permission_grants VALUES(?,?,?)')
-    .run('other-controller', 'session', JSON.stringify(['read', 'status', 'set-preset:next-run']))
   const other = await acceptCredential(f, 'other-controller')
   const otherPermission = source.captureRead('session', other.context).permission
   expect(otherPermission.actorRef).not.toBe(first.permission.actorRef)
@@ -262,4 +259,48 @@ it('refuses another issued workspace with the same principal and session identif
   ).toThrow()
   await expect(f.configuration.issueBase('ticket', f.request, foreign.context)).rejects.toThrow()
   expect(f.db.prepare('SELECT total_changes() n').get()?.n).toBe(before)
+})
+
+it('allows every genuine session user to select an allowed preset without a grant table', async () => {
+  const f = await fixture()
+  expect(
+    f.db
+      .prepare("SELECT name FROM sqlite_master WHERE name='runtime_session_control_permission_grants'")
+      .get(),
+  ).toBeUndefined()
+  await f.configuration.issueBase('ticket', f.request, f.context)
+  const another = await acceptCredential(f, 'another-session-user')
+  const source = createSessionControlSource({ database: f.db, configuration: f.configuration })
+  const selected = f.request.defaults.preset
+  const cap = source.captureSubmit(
+    {
+      sessionId: 'session',
+      requestId: 'all-users',
+      expectedRevision: 0,
+      command: {
+        kind: 'set-preset',
+        presetId: 'base',
+        presetDigest: selected.source.digest,
+        apply: 'next-run',
+      },
+    },
+    another.context,
+  )
+  cap.dynamicCheck()
+  cap.finalCheck()
+  expect(cap.permission.principalRef).toBe('another-session-user')
+})
+it.each([
+  ["UPDATE runtime_record_heads SET min_reader=1 WHERE record_id='run-binding:run'"],
+  [
+    "UPDATE runtime_commit_proofs SET manifests_json=json_remove(manifests_json,'$[0]') WHERE commit_id=(SELECT last_commit_id FROM runtime_records WHERE record_id='run-binding:run')",
+  ],
+  ["DELETE FROM runtime_admission_source_proofs WHERE ticket_id='ticket'"],
+])('refuses changed original Binding header or committed source proof: %s', async (sql) => {
+  const f = await fixture()
+  await f.configuration.issueBase('ticket', f.request, f.context)
+  const source = createSessionControlSource({ database: f.db, configuration: f.configuration })
+  source.captureRead('session', f.context).finalCheck()
+  expect(f.db.prepare(sql).run().changes).toBe(1)
+  expect(() => source.captureRead('session', f.context)).toThrow()
 })

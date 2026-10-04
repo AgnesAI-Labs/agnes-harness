@@ -26,6 +26,7 @@ import type { VerifiedIdentityCredential } from '../identity/verify.js'
 import { canonicalJson } from './canonical-json.js'
 import { bodyDigest, digestOf, runBindingRecordId, sameJson, stableId } from './records.js'
 import { integrity, refuse } from './refusal.js'
+import { captureSessionControlBindingProof } from './session-control-binding-proof.js'
 import {
   matchesRuntimeStateDatabaseOptions,
   type RuntimeStateDatabase,
@@ -35,14 +36,15 @@ import {
 export type SessionControlPermissionClaims = {
   sessionId: string
   principalRef: string
-  capabilities: Array<'read' | 'status' | 'set-preset:next-run'>
 }
+export type SessionControlOperation = 'read' | 'status' | 'set-preset:next-run'
+/** Operation and actor evidence; capability names identify methods and are not administrator grants. */
 export type SessionControlPermissionProof = Readonly<{
   actorRef: string
   permissionSourceDigest: string
   authorizationRef: string
   sessionId: string
-  capability: SessionControlPermissionClaims['capabilities'][number]
+  capability: SessionControlOperation
   principalRef: string
   tenantRef: string
   claims: DataRef
@@ -51,7 +53,6 @@ export type SessionControlPermissionProof = Readonly<{
 type SessionControlClaimsIssue = Readonly<{
   ref: DataRef
   binding: IdentityClaimsBinding
-  grant: Readonly<{ principal: string; session_id: string; capabilities: string }>
 }>
 export type SessionControlClaimsOwner = IdentityClaimsOwner &
   Readonly<{
@@ -62,7 +63,7 @@ export type SessionControlClaimsOwner = IdentityClaimsOwner &
     ): Readonly<{ ref: DataRef; issue: SessionControlClaimsIssue; sourceDigest: string; staticCheck(): void }>
   }>
 const claimsDatabases = new WeakMap<object, DatabaseSync>()
-/** Restricted claims installer: permissions come from its native grant rows and a verified credential. */
+/** Reference identity-facts issuer. Every genuine session user may select its allowed preset. */
 export function createSessionControlClaimsOwner(
   database: DatabaseSync,
   codec: AuthorSchema<SessionControlPermissionClaims>,
@@ -72,19 +73,14 @@ export function createSessionControlClaimsOwner(
     'SELECT * FROM runtime_session_control_claims_issued WHERE authorization_ref=?',
   )
   const issuedGet = issuedStatement.get.bind(issuedStatement)
-  const grantStatement = database.prepare(
-    'SELECT * FROM runtime_session_control_permission_grants WHERE principal=? AND session_id=?',
-  )
-  const grantGet = grantStatement.get.bind(grantStatement)
   const codecSlots = captureSessionControlSlots([codec])
-  function capture(authorizationRef: string, historical = false) {
+  function capture(authorizationRef: string, _historical = false) {
     codecSlots()
     const row = issuedGet(authorizationRef)
     if (!row || typeof row.value_json !== 'string') integrity('original session permission issuance missing')
     const body = JSON.parse(row.value_json) as {
       ref: import('@agnes/protocol/runtime').DataRef
       binding: import('../identity/authority.js').IdentityClaimsBinding
-      grant: { principal: string; session_id: string; capabilities: string }
     }
     if (
       !validateRuntime('DataRef', body.ref).ok ||
@@ -93,35 +89,23 @@ export function createSessionControlClaimsOwner(
       digestOf(body.ref.value) !== body.ref.digest ||
       Buffer.byteLength(canonicalJson(body.ref.value)) !== body.ref.bytes ||
       body.binding.authorizationRef !== authorizationRef ||
-      body.binding.principalRef !== body.grant.principal
+      !validateRuntime('ScopeRef', body.binding.scope).ok ||
+      !('sessionId' in body.binding.scope)
     )
       integrity('session permission original issuance differs from its native binding')
     const parsed = codec.parse(body.ref.value)
     if (
       !parsed.ok ||
       parsed.value.principalRef !== body.binding.principalRef ||
-      parsed.value.sessionId !== body.grant.session_id ||
-      !sameJson(parsed.value.capabilities, JSON.parse(body.grant.capabilities))
+      !('sessionId' in body.binding.scope) ||
+      parsed.value.sessionId !== body.binding.scope.sessionId
     )
-      integrity('session permission claims differ from their original grant')
+      integrity('session identity claims differ from their original binding')
     const original = row.value_json
-    const grant = grantGet(body.grant.principal, body.grant.session_id)
-    if (!historical && (!grant || grant.capabilities !== body.grant.capabilities))
-      refuse('denied', 'session_control_permission', 'original permission grant is no longer available')
     function staticCheck() {
       codecSlots()
       if (issuedGet(authorizationRef)?.value_json !== original)
         integrity('original session permission issuance changed')
-      if (!historical) {
-        const actual = grantGet(body.grant.principal, body.grant.session_id)
-        if (
-          !actual ||
-          actual.principal !== body.grant.principal ||
-          actual.session_id !== body.grant.session_id ||
-          actual.capabilities !== body.grant.capabilities
-        )
-          refuse('denied', 'session_control_permission', 'original native permission grant changed')
-      }
     }
     return Object.freeze({
       ref: fixedSessionControlData(body.ref),
@@ -139,7 +123,7 @@ export function createSessionControlClaimsOwner(
         refuse(
           'denied',
           'session_control_permission',
-          'verified credential has no installed session permission',
+          'verified credential does not match its original session binding',
         )
       if (
         issuedGet(binding.authorizationRef) ||
@@ -148,19 +132,19 @@ export function createSessionControlClaimsOwner(
           .get(binding.authorizationRef)
       )
         integrity('session permission issuance cannot replace an original authentication instance')
-      const grant = grantGet(verified.subject, binding.scope.sessionId)
-      if (!grant || typeof grant.capabilities !== 'string')
-        refuse('denied', 'session_control_permission', 'original native permission grant missing')
       const encoded = codec.encode({
         principalRef: verified.subject,
         sessionId: binding.scope.sessionId,
-        capabilities: JSON.parse(grant.capabilities),
       })
       if (!encoded.ok)
-        refuse('denied', 'session_control_permission', 'original permission codec refused native grant')
+        refuse(
+          'denied',
+          'session_control_permission',
+          'original identity facts codec refused verified binding',
+        )
       database
         .prepare('INSERT INTO runtime_session_control_claims_issued VALUES(?,?)')
-        .run(binding.authorizationRef, JSON.stringify({ ref: encoded.value, binding, grant }))
+        .run(binding.authorizationRef, JSON.stringify({ ref: encoded.value, binding }))
       return encoded.value
     },
     validate(ref: DataRef, binding: IdentityClaimsBinding) {
@@ -201,7 +185,7 @@ export type SessionControlConfiguration = Readonly<{
   issueBase(ticketId: string, request: unknown, context: CallContext): Promise<SessionConfigurationIssue>
   capture(
     sessionId: string,
-    capability: SessionControlPermissionClaims['capabilities'][number],
+    capability: SessionControlOperation,
     context: CallContext,
   ): SessionConfigurationCapture
   readHistoricalPermission(proof: SessionControlPermissionProof): Readonly<{ staticCheck(): void }>
@@ -432,10 +416,10 @@ export function createSessionControlConfiguration(
     if (!result.ok) refuse('denied', 'session_configuration', result.refusal.message)
     return fixedSessionControlData(result.result)
   }
-  function permissionFacts(
+  function actorFacts(
     original: ReturnType<SessionControlClaimsOwner['capture']>,
     sessionId: string,
-    capability: SessionControlPermissionClaims['capabilities'][number],
+    capability: SessionControlOperation,
   ): SessionControlPermissionProof {
     const binding = original.issue.binding
     const parsed = permissionCodec.parse(original.ref.kind === 'inline' ? original.ref.value : null)
@@ -446,8 +430,7 @@ export function createSessionControlConfiguration(
       binding.tenantRef !== input.stateOptions.authority.tenantId ||
       !validateRuntime('ScopeRef', binding.scope).ok ||
       !('sessionId' in binding.scope) ||
-      binding.scope.sessionId !== sessionId ||
-      !parsed.value.capabilities.includes(capability)
+      binding.scope.sessionId !== sessionId
     )
       integrity('original command permission does not match its issued actor and session')
     return fixedSessionControlData({
@@ -474,7 +457,7 @@ export function createSessionControlConfiguration(
   function readHistoricalPermission(proof: SessionControlPermissionProof) {
     staticSlots()
     const original = permissionOwner.capture(proof.authorizationRef, true)
-    const expected = permissionFacts(original, proof.sessionId, proof.capability)
+    const expected = actorFacts(original, proof.sessionId, proof.capability)
     if (!sameJson(expected, proof)) integrity('historical command permission differs from original issuance')
     return Object.freeze({
       staticCheck() {
@@ -483,11 +466,7 @@ export function createSessionControlConfiguration(
       },
     })
   }
-  function permission(
-    sessionId: string,
-    capability: SessionControlPermissionClaims['capabilities'][number],
-    context: CallContext,
-  ) {
+  function permission(sessionId: string, capability: SessionControlOperation, context: CallContext) {
     const actor = identity.current(context)
     if (
       !actor ||
@@ -508,8 +487,7 @@ export function createSessionControlConfiguration(
     if (
       !parsed.ok ||
       parsed.value.sessionId !== sessionId ||
-      parsed.value.principalRef !== actor.identity.principalRef ||
-      !parsed.value.capabilities.includes(capability)
+      parsed.value.principalRef !== actor.identity.principalRef
     )
       refuse(
         'denied',
@@ -525,7 +503,7 @@ export function createSessionControlConfiguration(
     )
       integrity('current identity claims differ from original native permission issuance')
     staticSlots()
-    return Object.freeze({ ...proof, permission: permissionFacts(proof, sessionId, capability) })
+    return Object.freeze({ ...proof, permission: actorFacts(proof, sessionId, capability) })
   }
   function readHistorical(sessionId: string) {
     const a = anchor()
@@ -550,7 +528,8 @@ export function createSessionControlConfiguration(
       issue.binding.presetDigest !== issue.resolved.presetDigest
     )
       integrity('session configuration original binding or resolved source changed')
-    const originalBinding = bindingGet(runBindingRecordId(issue.runId))
+    const bindingProof = captureSessionControlBindingProof(db, issue.runId, issue.commitId, issue.ticketId)
+    const originalBinding = bindingProof.original
     if (
       !originalBinding ||
       typeof originalBinding.value_json !== 'string' ||
@@ -573,6 +552,7 @@ export function createSessionControlConfiguration(
     function staticCheck() {
       staticSlots()
       permissionProof.staticCheck()
+      bindingProof.staticCheck()
       const currentBinding = bindingGet(runBindingRecordId(issue.runId))
       if (!currentBinding || bindingSlots.some(([key, value]) => currentBinding[key] !== value))
         integrity('session configuration original State binding changed')
@@ -594,7 +574,13 @@ export function createSessionControlConfiguration(
     const probe = await probeAdmission(ticketId, context)
     if (probe.state !== 'created')
       refuse('denied', 'session_configuration', 'configuration requires an original created admission')
-    const original = bindingGet(runBindingRecordId(probe.runId))
+    const originalBindingProof = captureSessionControlBindingProof(
+      db,
+      probe.runId,
+      probe.commit.commitId,
+      ticketId,
+    )
+    const original = originalBindingProof.original
     if (!original || typeof original.value_json !== 'string') integrity('original locked RunBinding missing')
     const binding = validateRuntime('RunBinding', JSON.parse(original.value_json))
     const schema = JSON.parse(String(original.schema_json))
@@ -679,7 +665,7 @@ export function createSessionControlConfiguration(
   }
   function capture(
     sessionId: string,
-    capability: SessionControlPermissionClaims['capabilities'][number],
+    capability: SessionControlOperation,
     context: CallContext,
   ): SessionConfigurationCapture {
     const permissionProof = permission(sessionId, capability, context)

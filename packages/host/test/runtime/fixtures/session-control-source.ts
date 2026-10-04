@@ -134,14 +134,6 @@ export async function createSessionControlSourceFixture(
   db.exec(
     'CREATE TABLE runtime_session_control_claims_issued (authorization_ref TEXT PRIMARY KEY, value_json TEXT NOT NULL)',
   )
-  db.exec(
-    'CREATE TABLE runtime_session_control_permission_grants (principal TEXT, session_id TEXT, capabilities TEXT)',
-  )
-  db.prepare('INSERT INTO runtime_session_control_permission_grants VALUES(?,?,?)').run(
-    'controller',
-    'session',
-    JSON.stringify(['read', 'status', 'set-preset:next-run']),
-  )
   const permissionCodec = defineGeneratedAuthorSchema<SessionControlPermissionClaims>(permissionSchema)
   const permissionOwner = createSessionControlClaimsOwner(db, permissionCodec)
   const { identity, actor, context } = await issueIdentity(
@@ -295,9 +287,8 @@ const permissionSchema: GeneratedAuthorSchemaSource = {
         properties: {
           sessionId: { type: 'string' },
           principalRef: { type: 'string' },
-          capabilities: { type: 'array', items: { enum: ['read', 'status', 'set-preset:next-run'] } },
         },
-        required: ['sessionId', 'principalRef', 'capabilities'],
+        required: ['sessionId', 'principalRef'],
       },
     },
   },
