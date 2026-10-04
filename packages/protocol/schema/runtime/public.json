@@ -21872,6 +21872,13 @@
             ]
           },
           "maxItems": 10000
+        },
+        "contributions": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ClientModuleContribution"
+          },
+          "maxItems": 128
         }
       },
       "required": [
@@ -21975,6 +21982,9 @@
         },
         "clientInstanceId": {
           "$ref": "prototype.json#/$defs/Id"
+        },
+        "clientSelection": {
+          "$ref": "#/$defs/ClientSelection"
         }
       },
       "required": [
@@ -37098,6 +37108,171 @@
         "snapshotExpiresAt",
         "snapshotCommitId"
       ]
+    },
+    "ClientContributionRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "packageId": {
+          "$ref": "prototype.json#/$defs/Id"
+        },
+        "contributionId": {
+          "$ref": "prototype.json#/$defs/Id"
+        }
+      },
+      "required": ["packageId", "contributionId"]
+    },
+    "ClientModuleContribution": {
+      "anyOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "contributionId": {
+              "$ref": "prototype.json#/$defs/Id"
+            },
+            "kind": {
+              "const": "shell"
+            },
+            "targets": {
+              "type": "array",
+              "items": {
+                "enum": ["web"]
+              },
+              "minItems": 1,
+              "maxItems": 1,
+              "uniqueItems": true
+            }
+          },
+          "required": ["contributionId", "kind", "targets"]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "contributionId": {
+              "$ref": "prototype.json#/$defs/Id"
+            },
+            "kind": {
+              "const": "registry"
+            },
+            "targets": {
+              "type": "array",
+              "items": {
+                "enum": ["web", "tui", "im", "sdk"]
+              },
+              "minItems": 1,
+              "maxItems": 4,
+              "uniqueItems": true
+            }
+          },
+          "required": ["contributionId", "kind", "targets"]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "contributionId": {
+              "$ref": "prototype.json#/$defs/Id"
+            },
+            "kind": {
+              "const": "renderer"
+            },
+            "targets": {
+              "type": "array",
+              "items": {
+                "enum": ["web", "tui", "im", "sdk"]
+              },
+              "minItems": 1,
+              "maxItems": 4,
+              "uniqueItems": true
+            }
+          },
+          "required": ["contributionId", "kind", "targets"]
+        }
+      ]
+    },
+    "ClientSelection": {
+      "anyOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "target": {
+              "const": "web"
+            },
+            "shell": {
+              "$ref": "#/$defs/ClientContributionRef"
+            },
+            "registry": {
+              "$ref": "#/$defs/ClientContributionRef"
+            },
+            "fallbackRenderer": {
+              "$ref": "#/$defs/ClientContributionRef"
+            },
+            "rendererSelections": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "renderKey": {
+                    "$ref": "prototype.json#/$defs/Id"
+                  },
+                  "rendererId": {
+                    "$ref": "prototype.json#/$defs/Id"
+                  },
+                  "target": {
+                    "enum": ["web", "tui", "im", "sdk"]
+                  }
+                },
+                "required": ["renderKey", "rendererId", "target"]
+              },
+              "maxItems": 128
+            }
+          },
+          "required": ["target", "shell", "registry", "fallbackRenderer", "rendererSelections"]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "target": {
+              "enum": ["tui", "im", "sdk"]
+            },
+            "shell": {
+              "type": "null"
+            },
+            "registry": {
+              "$ref": "#/$defs/ClientContributionRef"
+            },
+            "fallbackRenderer": {
+              "$ref": "#/$defs/ClientContributionRef"
+            },
+            "rendererSelections": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "renderKey": {
+                    "$ref": "prototype.json#/$defs/Id"
+                  },
+                  "rendererId": {
+                    "$ref": "prototype.json#/$defs/Id"
+                  },
+                  "target": {
+                    "enum": ["web", "tui", "im", "sdk"]
+                  }
+                },
+                "required": ["renderKey", "rendererId", "target"]
+              },
+              "maxItems": 128
+            }
+          },
+          "required": ["target", "shell", "registry", "fallbackRenderer", "rendererSelections"]
+        }
+      ]
     }
   },
   "x-service-catalog": {
@@ -40536,9 +40711,9 @@
     "ClaimOutboxResult": 3,
     "ClientArtifactOpenStreamRequest": 2,
     "ClientArtifactReadRangeRequest": 2,
-    "ClientBootstrapAccepted": 3,
-    "ClientBootstrapResult": 3,
-    "ClientCatalogPageResult": 3,
+    "ClientBootstrapAccepted": 4,
+    "ClientBootstrapResult": 4,
+    "ClientCatalogPageResult": 4,
     "ClientCommandCall": 3,
     "ClientCommandReply": 4,
     "ClientCommandRequest": 3,
@@ -40550,7 +40725,7 @@
     "ClientInteractionChange": 3,
     "ClientInteractionsSnapshot": 3,
     "ClientInteractionsSubscriptionFrame": 3,
-    "ClientModule": 3,
+    "ClientModule": 4,
     "ClientQueryCall": 3,
     "ClientQueryReply": 5,
     "ClientQueryRequest": 3,
@@ -40561,7 +40736,7 @@
     "ClientSubscriptionFrame": 4,
     "ClientTransportFrame": 5,
     "ClientTransportRequestFrame": 2,
-    "ClientWelcome": 3,
+    "ClientWelcome": 4,
     "CloseInvocationRequest": 2,
     "CommandHandle": 4,
     "CommandRuntimeAcceptanceDataRef": 3,
@@ -40894,7 +41069,10 @@
     "ViewAction": 2,
     "WaitClause": 2,
     "WaitCondition": 2,
-    "WaitRecordValue": 2
+    "WaitRecordValue": 2,
+    "ClientContributionRef": 1,
+    "ClientModuleContribution": 1,
+    "ClientSelection": 1
   },
   "x-client-transport-wire": {
     "feature": "client-transport-wire.v2",

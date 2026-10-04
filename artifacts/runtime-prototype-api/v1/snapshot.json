@@ -189,7 +189,7 @@
     },
     {
       "path": "packages/protocol/schema/runtime/public.json",
-      "sha256": "237d64793c4ca811ae32309ab327f320f5ccc3d0e6260c4c6cf7323ad20f5b50"
+      "sha256": "1544092c6c8a99cccbc7276c54858e9318eeeea421171935c0c3860d86d120d2"
     },
     {
       "path": "packages/protocol/schema/runtime/simple-loop.schema.json",
@@ -487,7 +487,7 @@
     },
     {
       "path": "packages/protocol/gen/ts/runtime-public-20.ts",
-      "sha256": "c680dcca34299a47a92af6938e7967d059cbd42787e5424db278416588cd99c5"
+      "sha256": "fb3876db086063a97598495b0ebb180541aa6469ff8c39735d62632c67af441a"
     },
     {
       "path": "packages/protocol/gen/ts/runtime-public-21.ts",
@@ -535,19 +535,19 @@
     },
     {
       "path": "packages/protocol/gen/ts/runtime-public-9.ts",
-      "sha256": "e110d2c7341d931cd24270e931e15ed28a6b533d298ceb9fd31a7005fdc64ac7"
+      "sha256": "d90633da53173455cbfbb145fa44d5cb3fe702013da17bf671baf03ea4bb2a42"
     },
     {
       "path": "packages/protocol/gen/ts/runtime-public.ts",
-      "sha256": "b0559d92b6ed2ba17ee1a54bcb0917dd3e14c75c8372628ca2d4bfa146ad2f89"
+      "sha256": "8e30e6f5e6b8d1f5770d5520b5094e213ffbc706543c5676b7d071cfb08792fe"
     },
     {
       "path": "packages/protocol/gen/ts/runtime-schema-refs.ts",
-      "sha256": "33122a1127ca7614896f63398a8acd7c9742705242246ef2d7cda2114ff0d878"
+      "sha256": "f0326cd92f33c6396babd748717dd05c0dc4d490f9bfcae3881f45865d7794b2"
     },
     {
       "path": "packages/protocol/gen/ts/runtime-wire-types.ts",
-      "sha256": "9bb6061c7e7993679005087c626f4089a4004e481651b3b72b74ec52eda601ae"
+      "sha256": "926dabb657c5c2598d95a69022a8be59176e22764943232adc56b9d1a08e3a3e"
     },
     {
       "path": "packages/protocol/gen/ts/session-v1.ts",
@@ -996,7 +996,7 @@
       },
       {
         "path": "packages/protocol/gen/ts/runtime-public-20.ts",
-        "sha256": "c680dcca34299a47a92af6938e7967d059cbd42787e5424db278416588cd99c5"
+        "sha256": "fb3876db086063a97598495b0ebb180541aa6469ff8c39735d62632c67af441a"
       },
       {
         "path": "packages/protocol/gen/ts/runtime-public-21.ts",
@@ -1044,19 +1044,19 @@
       },
       {
         "path": "packages/protocol/gen/ts/runtime-public-9.ts",
-        "sha256": "e110d2c7341d931cd24270e931e15ed28a6b533d298ceb9fd31a7005fdc64ac7"
+        "sha256": "d90633da53173455cbfbb145fa44d5cb3fe702013da17bf671baf03ea4bb2a42"
       },
       {
         "path": "packages/protocol/gen/ts/runtime-public.ts",
-        "sha256": "b0559d92b6ed2ba17ee1a54bcb0917dd3e14c75c8372628ca2d4bfa146ad2f89"
+        "sha256": "8e30e6f5e6b8d1f5770d5520b5094e213ffbc706543c5676b7d071cfb08792fe"
       },
       {
         "path": "packages/protocol/gen/ts/runtime-schema-refs.ts",
-        "sha256": "33122a1127ca7614896f63398a8acd7c9742705242246ef2d7cda2114ff0d878"
+        "sha256": "f0326cd92f33c6396babd748717dd05c0dc4d490f9bfcae3881f45865d7794b2"
       },
       {
         "path": "packages/protocol/gen/ts/runtime-wire-types.ts",
-        "sha256": "9bb6061c7e7993679005087c626f4089a4004e481651b3b72b74ec52eda601ae"
+        "sha256": "926dabb657c5c2598d95a69022a8be59176e22764943232adc56b9d1a08e3a3e"
       },
       {
         "path": "packages/protocol/gen/ts/session-v1.ts",
@@ -1176,7 +1176,7 @@
       },
       {
         "path": "packages/protocol/schema/runtime/public.json",
-        "sha256": "237d64793c4ca811ae32309ab327f320f5ccc3d0e6260c4c6cf7323ad20f5b50"
+        "sha256": "1544092c6c8a99cccbc7276c54858e9318eeeea421171935c0c3860d86d120d2"
       },
       {
         "path": "packages/protocol/schema/runtime/simple-loop.schema.json",
@@ -1467,9 +1467,9 @@
         "sha256": "5368e00eb1fe320fa21e015f95911b6af6ca8a3c405c3be6585ff521c4832ce0"
       }
     ],
-    "inputDigest": "caf512fd0d8d99ed3f593e40665062bd32e0971564efbf87ac763d269f89ddd9",
+    "inputDigest": "74fdd87bd62f04a18a785e0f04673fa02a481425c3f34ec542732d153341f480",
     "diagnostics": [],
-    "reportDigest": "a87ca6fa9bc0f8869b049565c952650fd5b0b6b55a6eee520e68921426bf53f0"
+    "reportDigest": "71e60ea60e91241dc559ed367776a0e998098ec6cef5aa1dfe2b6ad78630e0b6"
   },
-  "snapshotDigest": "33a7a7c93913784ba21de451e8b889709af4da32e48ff56d7117f5577bee24de"
+  "snapshotDigest": "5eeb7840833ea078315b194c5dab1933bc617b15cd1b7f2927d62bf4fdd3b083"
 }
