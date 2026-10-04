@@ -42,6 +42,7 @@ import { createClient, memoryJournal } from '@agnes/sdk'
 import { packagedPackages } from '../../launch/packaged-host.js'
 import { resolveLaunchResources } from '../../launch/resources.js'
 import { BootError } from '../errors.js'
+import { resolveLocale } from '../tui/locale.js'
 import type { BootDeps, Booted, ParsedArgs } from '../types.js'
 import { profileNameFrom, readProfileInputs } from './inputs.js'
 import { readScreenshotBytes } from './screenshot-read.js'
@@ -361,7 +362,11 @@ export async function bootLocal(p: ParsedArgs, deps: LocalBootDeps): Promise<Boo
   // Bound after the endpoint exists, not before: until this line an ask is answered 'unavailable',
   // which is the verdict meaning nobody was asked.
   bridge.bind(endpoint.prompter)
-  const client = createClient({ transport: { kind: 'inproc', endpoint }, journal: memoryJournal() })
+  const client = createClient({
+    transport: { kind: 'inproc', endpoint },
+    journal: memoryJournal(),
+    locale: resolveLocale(deps.env),
+  })
   try {
     // ACP is itself the client of this endpoint. Initialising the SDK client here would start a
     // second consumer of notifications and race the stdio pump for session/update frames.

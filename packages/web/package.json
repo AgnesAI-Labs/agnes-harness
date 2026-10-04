@@ -4,7 +4,8 @@
   "private": true,
   "type": "module",
   "exports": {
-    "./server": "./src/serve.ts"
+    "./server": "./src/serve.ts",
+    "./dev": "./tools/dev.ts"
   },
   "scripts": {
     "build": "tsx tools/build.ts",

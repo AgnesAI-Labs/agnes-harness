@@ -3,6 +3,7 @@ import { act, createElement } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { ModelSettingsDialog } from '../src/model-settings-dialog.js'
+import { zhT } from './locale.js'
 
 let root: Root
 beforeEach(() => {
@@ -35,6 +36,7 @@ const props = {
   contextWindow: 128000,
   thinkingLevelMap: { low: 'low', high: 'high' },
   settings: { thinking: 'low' as const, contextWindow: 64000 },
+  t: zhT,
 }
 
 it('shows supported thinking levels, validates the window and keeps failed changes reviewable', async () => {

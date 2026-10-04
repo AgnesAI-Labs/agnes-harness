@@ -4,6 +4,12 @@ import type {
   ComputerUsePermissionsStatusResult,
   ComputerUseStatusResult,
 } from '@agnes/protocol'
+import {
+  type ComputerUsePhrase,
+  computerUseLocale,
+  computerUsePhrase,
+  computerUseText,
+} from './locales/computer-use.js'
 
 export type ComputerUseStatusClient = Readonly<{
   call<T>(method: string, params: unknown): Promise<T>
@@ -56,16 +62,18 @@ export type ComputerUseState = ComputerUseStatusController &
   }>
 
 type BlockedStatus = Extract<ComputerUseStatusResult, { status: 'blocked' }>
-const BLOCKER_LABELS: Readonly<Record<BlockedStatus['blockers'][number], string>> = {
-  'release-provenance-incomplete': '驱动发布来源与完整性证据尚未锁定',
-  'compatibility-evidence-incomplete': '固定版本兼容性证据尚未完成',
-  'platform-acceptance-incomplete': '平台实机验收尚未完成',
-  'feature-disabled': '当前配置已关闭电脑操作，请检查本地配置中的 computerUse.enabled。',
-  'platform-unsupported': '当前系统或处理器暂不支持电脑操作。',
-  'driver-not-prepared': '首次使用时会自动准备驱动，也可以点击“准备驱动”。',
-  'driver-preparing': '正在准备驱动，请稍候。',
-  'driver-prepare-failed': '驱动准备未完成。请检查网络或安装环境，然后点击“准备驱动”重试。',
+const BLOCKER_KEYS: Readonly<Record<BlockedStatus['blockers'][number], ComputerUsePhrase['key']>> = {
+  'release-provenance-incomplete': 'computerUse.blocker.releaseProvenance',
+  'compatibility-evidence-incomplete': 'computerUse.blocker.compatibility',
+  'platform-acceptance-incomplete': 'computerUse.blocker.platformAcceptance',
+  'feature-disabled': 'computerUse.blocker.featureDisabled',
+  'platform-unsupported': 'computerUse.blocker.platformUnsupported',
+  'driver-not-prepared': 'computerUse.blocker.driverNotPrepared',
+  'driver-preparing': 'computerUse.blocker.driverPreparing',
+  'driver-prepare-failed': 'computerUse.blocker.driverPrepareFailed',
 }
+const phrase = (key: ComputerUsePhrase['key'], vars?: ComputerUsePhrase['vars']): ComputerUsePhrase =>
+  vars === undefined ? { key } : { key, vars }
 
 /** One Web-owned RPC coordinator per pane. Retirement only stops local work. */
 export function createComputerUseState(
@@ -75,17 +83,18 @@ export function createComputerUseState(
   let disposed = false
   const listeners = new Set<() => void>()
   const view = {
-    statusLabel: '等待检查',
-    statusSummary: '打开面板后读取本机状态。',
-    runtime: '',
-    blockers: [] as string[],
-    permissionLabel: '等待检查',
-    permissionSummary: '驱动就绪后显示当前系统所需的权限。',
+    statusLabel: phrase('computerUse.status.pending'),
+    statusSummary: phrase('computerUse.status.pendingSummary'),
+    runtime: undefined as ComputerUsePhrase | undefined,
+    blockers: [] as ComputerUsePhrase[],
+    permissionLabel: phrase('computerUse.permissions.pending'),
+    permissionSummary: phrase('computerUse.permissions.pendingSummary'),
     grantHidden: true,
-    doctorLabel: '等待检查',
-    doctorSummary: '检查本机驱动是否正常。',
-    operationLabel: '没有记录',
-    operationSummary: '首次使用会自动准备驱动；已有安装会先验证并复用。',
+    doctorLabel: phrase('computerUse.doctor.pending'),
+    doctorSummary: phrase('computerUse.doctor.pendingSummary'),
+    operationLabel: phrase('computerUse.operation.none'),
+    operationSummary: phrase('computerUse.operation.noneSummary'),
+    permissionMissing: [] as ComputerUsePhrase['key'][],
   }
   let snapshot: ComputerUseSnapshot
   let operationRecord: ComputerUseSnapshot['operation']['record']
@@ -136,20 +145,31 @@ export function createComputerUseState(
     if (disposed) return
     snapshot = Object.freeze({
       status: Object.freeze({
-        label: view.statusLabel,
-        summary: view.statusSummary,
-        runtime: view.runtime,
-        blockers: Object.freeze([...view.blockers]),
+        label: computerUsePhrase(view.statusLabel),
+        summary: computerUsePhrase(view.statusSummary),
+        runtime: view.runtime === undefined ? '' : computerUsePhrase(view.runtime),
+        blockers: Object.freeze(view.blockers.map((item) => computerUsePhrase(item))),
       }),
       permissions: Object.freeze({
-        label: view.permissionLabel,
-        summary: view.permissionSummary,
+        label: computerUsePhrase(view.permissionLabel),
+        summary: computerUsePhrase(
+          view.permissionSummary.key === 'computerUse.permissions.requiredSummary'
+            ? phrase('computerUse.permissions.requiredSummary', {
+                missing: view.permissionMissing
+                  .map((key) => computerUseText(key))
+                  .join(computerUseLocale() === 'zh-CN' ? '、' : ', '),
+              })
+            : view.permissionSummary,
+        ),
         grantHidden: view.grantHidden,
       }),
-      doctor: Object.freeze({ label: view.doctorLabel, summary: view.doctorSummary }),
+      doctor: Object.freeze({
+        label: computerUsePhrase(view.doctorLabel),
+        summary: computerUsePhrase(view.doctorSummary),
+      }),
       operation: Object.freeze({
-        label: view.operationLabel,
-        summary: view.operationSummary,
+        label: computerUsePhrase(view.operationLabel),
+        summary: computerUsePhrase(view.operationSummary),
         record: operationRecord,
       }),
       controls: Object.freeze({
@@ -181,8 +201,8 @@ export function createComputerUseState(
     if (report.status === 'not-found') {
       activeOperationId = undefined
       operationPending = false
-      view.operationLabel = '没有记录'
-      view.operationSummary = '本机没有可显示的驱动操作。'
+      view.operationLabel = phrase('computerUse.operation.none')
+      view.operationSummary = phrase('computerUse.operation.emptySummary')
       publish()
       return true
     }
@@ -190,30 +210,36 @@ export function createComputerUseState(
     activeOperationId = terminal ? undefined : report.operationId
     operationPending = !terminal
     if (report.state === 'queued') {
-      view.operationLabel = '等待执行'
-      view.operationSummary = '驱动操作已进入本机队列。'
+      view.operationLabel = phrase('computerUse.operation.queued')
+      view.operationSummary = phrase('computerUse.operation.queuedSummary')
     } else if (report.state === 'running') {
-      view.operationLabel = report.phase === 'restarting' ? '正在重启' : '正在安装'
-      view.operationSummary = '正在检查已有驱动；缺失时会下载并验证。网络较慢时需要等待，可取消后重试。'
+      view.operationLabel = phrase(
+        report.phase === 'restarting'
+          ? 'computerUse.operation.restarting'
+          : 'computerUse.operation.installing',
+      )
+      view.operationSummary = phrase('computerUse.operation.runningSummary')
     } else if (report.state === 'cancelling') {
-      view.operationLabel = '正在取消'
-      view.operationSummary = '已请求取消；正在等待当前安全步骤结束。'
+      view.operationLabel = phrase('computerUse.operation.cancelling')
+      view.operationSummary = phrase('computerUse.operation.cancellingSummary')
     } else if (report.state === 'succeeded') {
-      view.operationLabel = '操作完成'
-      const labels = {
-        installed: '驱动已经安装并通过验证。',
-        'already-current': '当前驱动已经是锁定版本。',
-        repaired: '驱动已经修复并通过验证。',
-        restarted: '驱动已经安全重启。',
-        'lkg-restored': '新驱动未通过验证，已恢复上一可用版本。',
+      view.operationLabel = phrase('computerUse.operation.done')
+      const outcomes = {
+        installed: 'computerUse.operation.installed',
+        'already-current': 'computerUse.operation.alreadyCurrent',
+        repaired: 'computerUse.operation.repaired',
+        restarted: 'computerUse.operation.restarted',
+        'lkg-restored': 'computerUse.operation.lkgRestored',
       } as const
-      view.operationSummary = report.outcome ? labels[report.outcome] : '驱动操作已经完成。'
+      view.operationSummary = phrase(
+        report.outcome ? outcomes[report.outcome] : 'computerUse.operation.doneSummary',
+      )
     } else if (report.state === 'cancelled') {
-      view.operationLabel = '已取消'
-      view.operationSummary = '驱动操作已取消，未继续执行后续步骤。'
+      view.operationLabel = phrase('computerUse.operation.cancelled')
+      view.operationSummary = phrase('computerUse.operation.cancelledSummary')
     } else {
-      view.operationLabel = '操作失败'
-      view.operationSummary = '驱动准备或维护未完成。请检查网络或安装环境后重试。'
+      view.operationLabel = phrase('computerUse.operation.failed')
+      view.operationSummary = phrase('computerUse.operation.failedSummary')
     }
     publish()
     return terminal
@@ -242,15 +268,15 @@ export function createComputerUseState(
         }
       } catch {
         if (current !== operationGeneration) return
-        view.operationLabel = '无法读取进度'
-        view.operationSummary = '驱动操作可能仍在后台执行，请稍后刷新进度。'
+        view.operationLabel = phrase('computerUse.operation.progressUnreadable')
+        view.operationSummary = phrase('computerUse.operation.progressUnreadableSummary')
         publish()
         return
       }
     }
     if (current !== operationGeneration) return
-    view.operationLabel = '仍在执行'
-    view.operationSummary = '等待时间较长，驱动操作仍可能在后台执行，请稍后刷新进度。'
+    view.operationLabel = phrase('computerUse.operation.stillRunning')
+    view.operationSummary = phrase('computerUse.operation.stillRunningSummary')
     publish()
   }
 
@@ -270,8 +296,8 @@ export function createComputerUseState(
     operationPending = true
     activeOperationId = undefined
     operationRecord = undefined
-    view.operationLabel = '正在提交'
-    view.operationSummary = '正在向本机 Host 提交驱动操作。'
+    view.operationLabel = phrase('computerUse.operation.submitting')
+    view.operationSummary = phrase('computerUse.operation.submittingSummary')
     publish()
     if (current !== operationGeneration) return
     try {
@@ -288,8 +314,8 @@ export function createComputerUseState(
     } catch {
       if (current !== operationGeneration) return
       operationMutationPending = false
-      view.operationLabel = '无法确认是否开始'
-      view.operationSummary = '无法确认提交结果；操作可能已在后台开始，请刷新进度后再试。'
+      view.operationLabel = phrase('computerUse.operation.startUnknown')
+      view.operationSummary = phrase('computerUse.operation.startUnknownSummary')
       publish()
     }
   }
@@ -299,8 +325,8 @@ export function createComputerUseState(
     cancelWait?.()
     const current = ++operationGeneration
     operationReadPending = true
-    view.operationLabel = '正在读取'
-    view.operationSummary = '正在读取最近一次驱动操作。'
+    view.operationLabel = phrase('computerUse.operation.reading')
+    view.operationSummary = phrase('computerUse.operation.readingSummary')
     publish()
     if (current !== operationGeneration) return
     try {
@@ -320,10 +346,12 @@ export function createComputerUseState(
       }
     } catch {
       if (current !== operationGeneration) return
-      view.operationLabel = '无法读取'
-      view.operationSummary = operationPending
-        ? '暂时无法读取进度；操作可能仍在后台执行。'
-        : '暂时无法读取驱动操作进度。'
+      view.operationLabel = phrase('computerUse.operation.readFailed')
+      view.operationSummary = phrase(
+        operationPending
+          ? 'computerUse.operation.readFailedPendingSummary'
+          : 'computerUse.operation.readFailedSummary',
+      )
       publish()
     } finally {
       if (current === operationGeneration) {
@@ -339,8 +367,8 @@ export function createComputerUseState(
     const operationId = activeOperationId
     const current = ++operationGeneration
     operationReadPending = false
-    view.operationLabel = '正在取消'
-    view.operationSummary = '正在请求本机 Host 停止驱动操作。'
+    view.operationLabel = phrase('computerUse.operation.cancelling')
+    view.operationSummary = phrase('computerUse.operation.cancelRequestSummary')
     operationMutationPending = true
     publish()
     if (current !== operationGeneration) return
@@ -360,49 +388,51 @@ export function createComputerUseState(
     } catch {
       if (current !== operationGeneration) return
       operationMutationPending = false
-      view.operationLabel = '取消失败'
-      view.operationSummary = '无法确认取消结果，请刷新进度后再试。'
+      view.operationLabel = phrase('computerUse.operation.cancelFailed')
+      view.operationSummary = phrase('computerUse.operation.cancelFailedSummary')
       publish()
     }
   }
 
   const applyPermissions = (report: ComputerUsePermissionsStatusResult): void => {
     view.grantHidden = true
+    view.permissionMissing = []
     if (report.status === 'not-required') {
-      view.permissionLabel = '无需系统授权'
-      view.permissionSummary =
+      view.permissionLabel = phrase('computerUse.permissions.notRequired')
+      view.permissionSummary = phrase(
         report.admission.reason === 'linux-verified-driver'
-          ? 'Linux 不使用 macOS 的辅助功能和录屏授权；桌面会话能力由驱动健康检查验证。'
-          : 'Windows 无需额外的录屏或辅助功能授权。'
+          ? 'computerUse.permissions.linuxSummary'
+          : 'computerUse.permissions.windowsSummary',
+      )
       return
     }
     if (report.status === 'granted') {
-      view.permissionLabel = '已授权'
-      view.permissionSummary = '辅助功能和屏幕录制均已授权。'
+      view.permissionLabel = phrase('computerUse.permissions.granted')
+      view.permissionSummary = phrase('computerUse.permissions.grantedSummary')
       return
     }
     if (report.status === 'required') {
-      view.permissionLabel = '需要授权'
-      const missing = [
-        report.probe.accessibility ? undefined : '辅助功能',
-        report.probe.screenRecording ? undefined : '屏幕录制',
-      ].filter((value): value is string => value !== undefined)
-      view.permissionSummary = `macOS 仍需授权：${missing.join('、')}。点击后由系统设置窗口完成。`
+      view.permissionLabel = phrase('computerUse.permissions.required')
+      view.permissionMissing = [
+        report.probe.accessibility ? undefined : 'computerUse.permissions.accessibility',
+        report.probe.screenRecording ? undefined : 'computerUse.permissions.screenRecording',
+      ].filter((value): value is ComputerUsePhrase['key'] => value !== undefined)
+      view.permissionSummary = phrase('computerUse.permissions.requiredSummary')
       view.grantHidden = false
       return
     }
     if (report.status === 'unknown') {
-      view.permissionLabel = '无法确认'
-      view.permissionSummary = '无法从已验签驱动读取 macOS 权限，请刷新后重试。'
+      view.permissionLabel = phrase('computerUse.permissions.unknown')
+      view.permissionSummary = phrase('computerUse.permissions.unknownSummary')
       return
     }
-    view.permissionLabel = '不可用'
-    view.permissionSummary = '生产驱动尚未通过准入，未检查系统权限。'
+    view.permissionLabel = phrase('computerUse.permissions.unavailable')
+    view.permissionSummary = phrase('computerUse.permissions.unavailableSummary')
   }
 
   const unavailablePermissions = (): void => {
-    view.permissionLabel = '无法读取'
-    view.permissionSummary = '暂时无法读取系统权限；没有发起授权。'
+    view.permissionLabel = phrase('computerUse.permissions.unreadable')
+    view.permissionSummary = phrase('computerUse.permissions.unreadableSummary')
     view.grantHidden = true
     publish()
   }
@@ -412,9 +442,9 @@ export function createComputerUseState(
     const current = ++generation
     const permissionCurrent = grantPending ? undefined : ++permissionGeneration
     statusPending = true
-    view.statusLabel = '正在检查'
-    view.statusSummary = '正在读取本机 Computer Use 安全门状态。'
-    view.runtime = ''
+    view.statusLabel = phrase('computerUse.status.checking')
+    view.statusSummary = phrase('computerUse.status.checkingSummary')
+    view.runtime = undefined
     view.blockers = []
     publish()
     if (current !== generation) return
@@ -424,20 +454,23 @@ export function createComputerUseState(
       driverPreparing = report.status === 'blocked' && report.blockers.includes('driver-preparing')
       if (report.status === 'ready') {
         driverReady = true
-        view.statusLabel = report.runtime.state === 'running' ? '运行中' : '可用'
+        view.statusLabel = phrase(
+          report.runtime.state === 'running' ? 'computerUse.status.running' : 'computerUse.status.available',
+        )
         const platform =
           report.driver.platform === 'darwin'
             ? 'macOS'
             : report.driver.platform === 'linux'
               ? 'Linux'
               : 'Windows'
-        view.statusSummary = `${platform} 驱动 ${report.driver.version} 已就绪。请在对话中使用支持图片的模型操作电脑。`
+        view.statusSummary = phrase('computerUse.status.readySummary', {
+          platform,
+          version: report.driver.version,
+        })
         view.runtime =
           report.runtime.state === 'running'
-            ? `运行时：${report.runtime.activeSessions} 个活动会话`
-            : report.runtime.startAttempted
-              ? '运行时：当前空闲，之前已启动过'
-              : '运行时：已就绪，尚未启动会话'
+            ? phrase('computerUse.runtime.active', { count: report.runtime.activeSessions })
+            : phrase(report.runtime.startAttempted ? 'computerUse.runtime.idle' : 'computerUse.runtime.ready')
         view.blockers = []
         publish()
         if (current !== generation || permissionCurrent === undefined) return
@@ -459,30 +492,31 @@ export function createComputerUseState(
         report.blockers.includes('driver-not-prepared') || report.blockers.includes('driver-prepare-failed')
       if (report.admission.reason === 'runtime-unavailable') {
         const reason = report.blockers[0]
-        view.statusLabel =
+        view.statusLabel = phrase(
           reason === 'feature-disabled'
-            ? '已关闭'
+            ? 'computerUse.status.closed'
             : reason === 'platform-unsupported'
-              ? '暂不支持'
+              ? 'computerUse.status.unsupported'
               : reason === 'driver-preparing'
-                ? '准备中'
+                ? 'computerUse.status.preparing'
                 : reason === 'driver-prepare-failed'
-                  ? '准备失败'
-                  : '首次使用自动准备'
-        view.statusSummary = reason ? BLOCKER_LABELS[reason] : '请刷新状态后重试。'
-        view.runtime = '电脑操作需要支持图片的模型；普通聊天不受影响。'
+                  ? 'computerUse.status.prepareFailed'
+                  : 'computerUse.status.firstPrepare',
+        )
+        view.statusSummary = phrase(reason ? BLOCKER_KEYS[reason] : 'computerUse.status.refreshRetry')
+        view.runtime = phrase('computerUse.runtime.imageModel')
         if (permissionCurrent === permissionGeneration) {
-          view.permissionLabel = '等待驱动就绪'
-          view.permissionSummary = '驱动就绪后显示当前系统所需的权限。'
+          view.permissionLabel = phrase('computerUse.permissions.waitingDriver')
+          view.permissionSummary = phrase('computerUse.permissions.pendingSummary')
           view.grantHidden = true
         }
         if (driverPreparing && discoverOperation && !operationPending) void refreshOperation()
         return
       }
-      view.statusLabel = '已阻止'
-      view.statusSummary = '当前平台的生产驱动准入保持关闭。'
-      view.runtime = '运行时：未启动，且未尝试启动'
-      view.blockers = report.blockers.map((blocker) => BLOCKER_LABELS[blocker])
+      view.statusLabel = phrase('computerUse.status.blocked')
+      view.statusSummary = phrase('computerUse.status.blockedSummary')
+      view.runtime = phrase('computerUse.runtime.notStarted')
+      view.blockers = report.blockers.map((blocker) => phrase(BLOCKER_KEYS[blocker]))
       if (permissionCurrent === permissionGeneration)
         applyPermissions({
           schemaVersion: 1,
@@ -495,9 +529,9 @@ export function createComputerUseState(
       driverReady = false
       driverPreparing = false
       canPrepare = false
-      view.statusLabel = '无法读取'
-      view.statusSummary = '暂时无法读取 Computer Use 状态；未执行任何驱动操作。'
-      view.runtime = ''
+      view.statusLabel = phrase('computerUse.status.unreadable')
+      view.statusSummary = phrase('computerUse.status.unreadableSummary')
+      view.runtime = undefined
       view.blockers = []
       if (permissionCurrent === permissionGeneration) unavailablePermissions()
     } finally {
@@ -513,8 +547,8 @@ export function createComputerUseState(
     const current = ++permissionGeneration
     const grantCurrent = ++grantGeneration
     grantPending = true
-    view.permissionLabel = '等待系统授权'
-    view.permissionSummary = '请在 macOS 系统界面完成辅助功能和屏幕录制授权。'
+    view.permissionLabel = phrase('computerUse.permissions.granting')
+    view.permissionSummary = phrase('computerUse.permissions.grantingSummary')
     publish()
     if (current !== permissionGeneration) return
     try {
@@ -526,8 +560,8 @@ export function createComputerUseState(
       applyPermissions(report)
     } catch {
       if (current !== permissionGeneration) return
-      view.permissionLabel = '授权未完成'
-      view.permissionSummary = '系统授权未完成或无法验证，请检查系统设置后刷新。'
+      view.permissionLabel = phrase('computerUse.permissions.grantFailed')
+      view.permissionSummary = phrase('computerUse.permissions.grantFailedSummary')
       view.grantHidden = false
     } finally {
       if (grantCurrent === grantGeneration) {
@@ -541,39 +575,40 @@ export function createComputerUseState(
     if (disposed || doctorPending) return
     const current = ++doctorGeneration
     doctorPending = true
-    view.doctorLabel = '正在检查'
-    view.doctorSummary = '正在验证驱动健康状态和签名身份。'
+    view.doctorLabel = phrase('computerUse.doctor.checking')
+    view.doctorSummary = phrase('computerUse.doctor.checkingSummary')
     publish()
     if (current !== doctorGeneration) return
     try {
       const report = await client.call<ComputerUseDoctorResult>('_agnes/v1/computerUse.doctor', {})
       if (current !== doctorGeneration) return
       if (report.status === 'ready') {
-        view.doctorLabel = '检查通过'
-        view.doctorSummary =
+        view.doctorLabel = phrase('computerUse.doctor.passed')
+        view.doctorSummary = phrase(
           report.admission.reason === 'macos-verified-driver'
-            ? 'macOS 驱动健康状态和签名身份均已验证。'
+            ? 'computerUse.doctor.macosSummary'
             : report.admission.reason === 'linux-verified-driver'
-              ? 'Linux 驱动健康状态、来源身份和桌面会话均已验证。'
-              : 'Windows 驱动健康状态和签名身份均已验证。'
+              ? 'computerUse.doctor.linuxSummary'
+              : 'computerUse.doctor.windowsSummary',
+        )
         return
       }
       if (report.status === 'failed') {
-        view.doctorLabel = '检查失败'
-        view.doctorSummary = '驱动健康状态或签名身份已经变化，请修复或重新安装后再试。'
+        view.doctorLabel = phrase('computerUse.doctor.failed')
+        view.doctorSummary = phrase('computerUse.doctor.failedSummary')
         return
       }
       if (report.status === 'unreachable') {
-        view.doctorLabel = '无法连接'
-        view.doctorSummary = '实时驱动诊断入口不可用，请重新启动或修复驱动。'
+        view.doctorLabel = phrase('computerUse.doctor.unreachable')
+        view.doctorSummary = phrase('computerUse.doctor.unreachableSummary')
         return
       }
-      view.doctorLabel = '未执行'
-      view.doctorSummary = '生产驱动尚未通过准入，无法执行健康检查。'
+      view.doctorLabel = phrase('computerUse.doctor.skipped')
+      view.doctorSummary = phrase('computerUse.doctor.skippedSummary')
     } catch {
       if (current !== doctorGeneration) return
-      view.doctorLabel = '检查失败'
-      view.doctorSummary = '暂时无法完成健康检查；没有启动或修复驱动。'
+      view.doctorLabel = phrase('computerUse.doctor.failedTemporary')
+      view.doctorSummary = phrase('computerUse.doctor.failedTemporarySummary')
     } finally {
       if (current === doctorGeneration) {
         doctorPending = false
@@ -582,12 +617,15 @@ export function createComputerUseState(
     }
   }
 
+  const onLocale = (): void => publish()
+  if (typeof window !== 'undefined') window.addEventListener('agnes:locale-changed', onLocale)
   publish()
   return {
     dispose() {
       if (disposed) return
       disposed = true
       listeners.clear()
+      if (typeof window !== 'undefined') window.removeEventListener('agnes:locale-changed', onLocale)
       cancelWait?.()
       generation += 1
       permissionGeneration += 1

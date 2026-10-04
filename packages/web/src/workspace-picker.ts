@@ -1,3 +1,5 @@
+import { tr } from './locale-bridge.js'
+
 export type WorkspacePickerResult =
   | { status: 'selected'; path: string }
   | { status: 'cancelled' }
@@ -30,7 +32,7 @@ export async function requestWorkspacePicker(fetcher: Fetcher = fetch): Promise<
   try {
     body = (await response.json()) as typeof body
   } catch {
-    throw new Error('系统目录选择器返回了无法确认的结果。')
+    throw new Error(tr('settings.workspacePicker.ambiguous'))
   }
   if (body.status === 'cancelled') return { status: 'cancelled' }
   if (body.status === 'unavailable') return { status: 'unavailable' }
@@ -43,5 +45,5 @@ export async function requestWorkspacePicker(fetcher: Fetcher = fetch): Promise<
     !body.path.includes('\0')
   )
     return { status: 'selected', path: body.path }
-  throw new Error('系统目录选择器返回了无法确认的结果。')
+  throw new Error(tr('settings.workspacePicker.ambiguous'))
 }

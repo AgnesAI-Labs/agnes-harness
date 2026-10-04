@@ -52,7 +52,7 @@ describe('TUI composer memory', () => {
     })
 
     const session = sessionDouble()
-    const inherited = await inheritFreshSession(session, path)
+    const inherited = await inheritFreshSession(session, path, undefined, 'zh-CN')
     expect(session.setModel).toHaveBeenCalledWith({
       slot: 'primary',
       route: 'deepseek',
@@ -70,11 +70,16 @@ describe('TUI composer memory', () => {
     const path = join(mkdtempSync(join(tmpdir(), 'agh-composer-')), 'composer-selection.json')
     writeComposerMemoryFile(path, { model: { route: 'deepseek', id: 'retired' }, permission: 'workspace' })
     const session = sessionDouble()
-    const inherited = await inheritFreshSession(session, path, {
-      slot: 'primary',
-      route: 'deepseek',
-      model: 'deepseek-v4-flash',
-    })
+    const inherited = await inheritFreshSession(
+      session,
+      path,
+      {
+        slot: 'primary',
+        route: 'deepseek',
+        model: 'deepseek-v4-flash',
+      },
+      'zh-CN',
+    )
     expect(session.setModel).toHaveBeenCalledTimes(1)
     expect(session.setModel).toHaveBeenCalledWith({
       slot: 'primary',
@@ -88,7 +93,7 @@ describe('TUI composer memory', () => {
 
   it('does nothing when no preference file is configured', async () => {
     const session = sessionDouble()
-    await expect(inheritFreshSession(session, undefined)).resolves.toEqual({})
+    await expect(inheritFreshSession(session, undefined, undefined, 'zh-CN')).resolves.toEqual({})
     expect(session.setModel).not.toHaveBeenCalled()
   })
 })

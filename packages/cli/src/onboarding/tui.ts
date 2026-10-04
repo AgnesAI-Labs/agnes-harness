@@ -5,6 +5,7 @@ import { openLoginBrowser } from '../login-browser.js'
 import { type Component, Text, VStack } from '../tui/component.js'
 import { Select } from '../tui/components/select.js'
 import { parseKey } from '../tui/keys.js'
+import { tt } from '../tui/locale.js'
 import { Renderer } from '../tui/renderer.js'
 import type { Terminal } from '../tui/terminal.js'
 import { AuthMethodView } from '../tui/views/auth-method.js'
@@ -23,6 +24,7 @@ export async function runOnboardingTui(
   client: Client,
   snapshot: ConfigSnapshot,
   term: Terminal,
+  locale = 'en',
 ): Promise<ConfigSnapshot | undefined> {
   return new Promise<ConfigSnapshot | undefined>((resolve, reject) => {
     let state: OnboardingState = {
@@ -94,12 +96,13 @@ export async function runOnboardingTui(
 
     function authMethodView(): Component {
       return new AuthMethodView({
+        locale,
         suggested: 'api-key',
         onChoose: (choice) => {
           if (choice === 'agnes-account') {
             // The account path needs the platform's PKCE/token contract, which this build does not
             // carry. Say so and stay on the selector rather than opening a flow that cannot finish.
-            notice = 'Agnes account sign-in is not available in this build yet. Choose an API key.'
+            notice = tt('onboarding.accountUnavailable', locale)
             renderer?.requestRender()
             return
           }
@@ -128,7 +131,7 @@ export async function runOnboardingTui(
       if (!provider) return
       const current = ++attempt
       apiKey = secret
-      notice = 'Testing the provider…'
+      notice = tt('onboarding.testingProvider', locale)
       renderer?.requestRender()
       let models: readonly ConfigModel[]
       try {
@@ -144,7 +147,7 @@ export async function runOnboardingTui(
         if (current !== attempt) return
         // The key never reaches the rendered failure: only this driver's own summary is shown.
         apiKey = ''
-        notice = 'Could not verify that key. Press escape to go back and try again.'
+        notice = tt('onboarding.verifyKeyFailed', locale)
         dispatch({
           type: 'operation-failed',
           failure: { code: 'AUTH_FAILED', message: notice, retryable: true },
@@ -162,10 +165,10 @@ export async function runOnboardingTui(
     function oauthView(): Component {
       const methods = provider?.loginMethods ?? ['browser', 'device_code']
       return new Select({
-        title: `${provider?.label ?? 'Provider'} subscription login:`,
+        title: tt('onboarding.oauthTitle', locale, { provider: provider?.label ?? 'Provider' }),
         options: methods.map((id) => ({
           id,
-          label: id === 'browser' ? 'Browser login' : 'Device code login',
+          label: tt(id === 'browser' ? 'onboarding.browserLogin' : 'onboarding.deviceCodeLogin', locale),
         })),
         onChoose: (method) => void startOAuth(method as 'browser' | 'device_code'),
         onCancel: () => {
@@ -179,7 +182,7 @@ export async function runOnboardingTui(
       clearOAuth()
       const controller = new AbortController()
       oauthController = controller
-      child = new Text(`Waiting for ${provider?.label ?? 'Provider'} authorization. Ctrl+C cancels.`)
+      child = new Text(tt('onboarding.oauthWaiting', locale, { provider: provider?.label ?? 'Provider' }))
       notice = ''
       renderer?.requestRender()
       try {
@@ -190,7 +193,7 @@ export async function runOnboardingTui(
             providerId: provider?.id ?? '',
             loginMethod,
             accountId: `acct-${randomUUID()}`,
-            label: provider?.label ?? 'Subscription account',
+            label: provider?.label ?? tt('onboarding.subscriptionAccount', locale),
             expectedRevision: snapshot.revision,
           },
           {
@@ -211,14 +214,15 @@ export async function runOnboardingTui(
                 signal.addEventListener('abort', abort, { once: true })
                 child = new SecretInputView({
                   label: value.message,
-                  hint: `${value.placeholder ? `${value.placeholder} · ` : ''}Enter submits. Ctrl+C cancels.`,
+                  locale,
+                  hint: `${value.placeholder ? `${value.placeholder} · ` : ''}${tt('onboarding.promptHint', locale)}`,
                   masked: value.type !== 'text',
                   allowEmpty: value.type === 'text',
                   allowSpaces: value.type === 'text',
                   onSubmit: (answer) => {
                     signal.removeEventListener('abort', abort)
                     resolve(answer)
-                    child = new Text('Waiting for login…')
+                    child = new Text(tt('onboarding.loginWaiting', locale))
                     renderer?.requestRender()
                   },
                   onBack: () => {
@@ -235,7 +239,7 @@ export async function runOnboardingTui(
           },
         )
         if (controller.signal.aborted) return
-        notice = 'Authorized. Saving will send a test request to the selected model.'
+        notice = tt('onboarding.authorizedSave', locale)
         dispatch({
           type: 'models-required',
           models: (result.models ?? []).map((m) => ({ id: m.id, label: m.name })),
@@ -243,7 +247,7 @@ export async function runOnboardingTui(
       } catch {
         if (!controller.signal.aborted) {
           clearOAuth()
-          notice = 'Login failed. Retry or choose device code.'
+          notice = tt('onboarding.loginFailed', locale)
           child = oauthView()
           renderer?.requestRender()
         }
@@ -254,7 +258,7 @@ export async function runOnboardingTui(
       if (saving) return
       saving = true
       if (oauthOperation) {
-        notice = 'Testing the selected model and saving…'
+        notice = tt('onboarding.testingModelSave', locale)
         renderer?.requestRender()
         try {
           const result = await client.config.oauth({
@@ -266,7 +270,7 @@ export async function runOnboardingTui(
           finish(result.snapshot)
         } catch {
           saving = false
-          notice = 'Could not save. Retry, or press escape to sign in again.'
+          notice = tt('onboarding.saveFailed', locale)
           renderer?.requestRender()
         }
         return
@@ -275,7 +279,7 @@ export async function runOnboardingTui(
         saving = false
         return
       }
-      notice = 'Saving…'
+      notice = tt('onboarding.saving', locale)
       renderer?.requestRender()
       const account =
         snapshot.accounts === undefined ? {} : { accountId: `acct-${randomUUID()}`, label: provider.label }
@@ -300,7 +304,7 @@ export async function runOnboardingTui(
           return authMethodView()
         case 'provider-select':
           return new Select({
-            title: 'Select a provider:',
+            title: tt('onboarding.providerTitle', locale),
             options: next.providers.map((option) => ({ id: option.id, label: option.label })),
             onChoose: (id) => {
               provider = providers.find((row) => row.id === id)
@@ -314,10 +318,10 @@ export async function runOnboardingTui(
             const methods = provider?.authMethods ?? [provider?.authType ?? 'api-key']
             if (!selectedAuth && methods.length > 1)
               return new Select({
-                title: 'Choose authentication:',
+                title: tt('onboarding.authTitle', locale),
                 options: [
-                  { id: 'api-key', label: 'API key' },
-                  { id: 'oauth', label: 'Subscription login' },
+                  { id: 'api-key', label: tt('onboarding.apiKeyOption', locale) },
+                  { id: 'oauth', label: tt('onboarding.subscriptionOption', locale) },
                 ].filter((option) => methods.includes(option.id as 'api-key' | 'oauth')),
                 onChoose: (id) => {
                   selectedAuth = id as 'api-key' | 'oauth'
@@ -329,8 +333,9 @@ export async function runOnboardingTui(
             if ((selectedAuth ?? methods[0]) === 'oauth') return oauthView()
           }
           return new SecretInputView({
-            label: `${next.provider.label} API key`,
-            hint: 'enter submit  escape back  ctrl+c cancel',
+            locale,
+            label: tt('onboarding.keyLabel', locale, { provider: next.provider.label }),
+            hint: tt('onboarding.keyHint', locale),
             onSubmit: (secret) => void submitKey(secret),
             onBack: () => {
               attempt++
@@ -341,7 +346,7 @@ export async function runOnboardingTui(
           })
         case 'model-select':
           return new Select({
-            title: 'Select the default model:',
+            title: tt('onboarding.modelTitle', locale),
             options: next.models.map((option) => ({ id: option.id, label: option.label })),
             onChoose: (id) => void saveModel(id),
             onCancel: () => {

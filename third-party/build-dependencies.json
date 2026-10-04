@@ -132,6 +132,24 @@
       "purpose": "DOM-based Web Markdown and streaming interaction regression tests.",
       "rationale": "Runs isolated selection, focus, safe rendering and clipboard lifecycle tests without adding a browser runtime dependency to the product.",
       "consumers": ["."]
+    },
+    {
+      "name": "@tailwindcss/cli",
+      "version": "4.3.3",
+      "license": "MIT",
+      "source": "https://github.com/tailwindlabs/tailwindcss",
+      "purpose": "Builds the shared web-ui conversation styles from Tailwind v4 source.",
+      "rationale": "Provides the pinned Tailwind command line used by the web-ui stylesheet build.",
+      "consumers": ["packages/web-ui"]
+    },
+    {
+      "name": "tailwindcss",
+      "version": "4.3.3",
+      "license": "MIT",
+      "source": "https://github.com/tailwindlabs/tailwindcss",
+      "purpose": "Tailwind v4 CSS framework used to build the shared web-ui conversation styles.",
+      "rationale": "Provides the source directives and theme utilities consumed by the web-ui stylesheet build.",
+      "consumers": ["packages/web-ui"]
     }
   ]
 }

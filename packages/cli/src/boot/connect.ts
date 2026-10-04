@@ -9,6 +9,7 @@ import {
   wsTransport,
 } from '@agnes/sdk'
 import { BootError } from '../errors.js'
+import { resolveLocale } from '../tui/locale.js'
 import type { BootDeps, Booted, ParsedArgs } from '../types.js'
 import { profileNameFrom } from './inputs.js'
 import { localPipeFactories } from './pipe-factory.js'
@@ -102,12 +103,17 @@ export function parseConnectTarget(value: string, env: NodeJS.ProcessEnv): Conne
   }
 }
 
-function connectOptions(target: ConnectTarget, scope?: DaemonScope): CreateClientOptions {
+function connectOptions(
+  target: ConnectTarget,
+  scope: DaemonScope | undefined,
+  locale: string,
+): CreateClientOptions {
   if (target.kind === 'unix')
     return {
       transport: target,
       auth: { kind: 'local' },
       journal: memoryJournal(),
+      locale,
       ...(scope ? { transportFactories: localPipeFactories(target.path, scope) } : {}),
     }
   const origin = target.origin
@@ -115,6 +121,7 @@ function connectOptions(target: ConnectTarget, scope?: DaemonScope): CreateClien
     transport: target,
     auth: target.auth,
     journal: memoryJournal(),
+    locale,
     ...(origin
       ? {
           transportFactories: {
@@ -154,7 +161,7 @@ export async function bootConnect(p: ParsedArgs, deps: ConnectBootDeps): Promise
       throw new BootError('connect: daemon identity could not be verified', error)
     }
   }
-  return connectTarget(p, deps, target, scope)
+  return connectTarget(p, deps, target, scope, resolveLocale(deps.env))
 }
 
 /** Internal automatic boot path: discovery already carries a local socket/pipe address. */
@@ -178,6 +185,7 @@ export function bootLocalConnect(
         : {}),
     },
     scope,
+    resolveLocale(deps.env),
   )
 }
 
@@ -186,13 +194,14 @@ async function connectTarget(
   deps: ConnectBootDeps,
   target: ConnectTarget,
   scope?: DaemonScope,
+  locale = resolveLocale(deps.env),
 ): Promise<Booted> {
   const started = performance.now()
   const profileName = profileNameFrom(p, deps.env)
   const makeClient = deps.createClientImpl ?? createClient
   let client: NodeClient | undefined
   try {
-    client = makeClient(connectOptions(target, scope))
+    client = makeClient(connectOptions(target, scope, locale))
     await client.initialize()
   } catch (error) {
     await client?.close().catch(() => undefined)

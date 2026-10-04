@@ -9,6 +9,7 @@ import { AssistantRuntimeProvider } from '@assistant-ui/react'
 import { act, createElement } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, expect, it } from 'vitest'
+import { zhT } from './locale.js'
 
 type CostNode = Extract<UINode, { kind: 'cost' }>
 let host: HTMLDivElement
@@ -37,7 +38,7 @@ const call: CostNode = {
 }
 function Harness({ store }: { store: ReturnType<typeof createConversationProjectionStore> }) {
   const runtime = useConversationRuntime(store)
-  return createElement(AssistantRuntimeProvider, { runtime }, createElement(ConversationMessages))
+  return createElement(AssistantRuntimeProvider, { runtime }, createElement(ConversationMessages, { t: zhT }))
 }
 async function mount(node: CostNode) {
   const store = createConversationProjectionStore({ sessionId: 'session', nodes: [node] })

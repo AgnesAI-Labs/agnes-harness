@@ -4,6 +4,7 @@ import type { ModelChoice } from '../commands.js'
 import type { Component } from '../component.js'
 import { Box } from '../components/box.js'
 import { Select } from '../components/select.js'
+import { tt } from '../locale-extended.js'
 
 /** What the picker finally delivers — a model, and a thinking level only when the model has one. */
 export type ModelSelection = { route: string; model: string; thinking?: ThinkingLevel }
@@ -18,6 +19,7 @@ export class ModelPicker implements Component {
   constructor(
     private readonly o: {
       ansi: Ansi
+      locale?: string
       maxRows(): number
       onChoose(choice: ModelSelection): void
       changed(): void
@@ -47,7 +49,7 @@ export class ModelPicker implements Component {
       onCancel: () => this.close(),
     })
     this.box = new Box(select, {
-      title: 'Select Model',
+      title: tt('picker.modelTitle', this.o.locale ?? 'en'),
       rounded: true,
       border: this.o.ansi.dim,
       titleStyle: (text) => this.o.ansi.bold(text),
@@ -72,7 +74,9 @@ export class ModelPicker implements Component {
       onCancel: () => this.show(this.choices),
     })
     this.box = new Box(select, {
-      title: `Select Reasoning Level for ${choice.route}/${choice.model}`,
+      title: tt('picker.reasoningTitle', this.o.locale ?? 'en', {
+        model: `${choice.route}/${choice.model}`,
+      }),
       rounded: true,
       border: this.o.ansi.dim,
       titleStyle: (text) => this.o.ansi.bold(text),

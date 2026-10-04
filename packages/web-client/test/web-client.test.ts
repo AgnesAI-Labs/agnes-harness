@@ -788,12 +788,12 @@ describe('SlotOutlet', () => {
       createElement(SlotsProvider, { registry }, createElement(SlotOutlet, { name: 'workbench.panel' })),
     )
     await vi.waitFor(() => {
-      expect(el.textContent).toContain('此槽位的插件未就绪')
+      expect(el.textContent).toContain('Plugin for this slot is not ready')
     }, committed)
     ctx.plugin(clientModule(mod), { packageId: 'p', revision: 'r1' })
     await vi.waitFor(() => {
       expect(el.textContent).toContain('hello-card')
-      expect(el.textContent).not.toContain('此槽位的插件未就绪')
+      expect(el.textContent).not.toContain('Plugin for this slot is not ready')
       expect(el.querySelector('[data-slot="workbench.panel"]')).toBeTruthy()
     }, committed)
   })
@@ -810,7 +810,7 @@ describe('SlotOutlet', () => {
     await vi.waitFor(() => {
       const empty = el.querySelector('[data-slot="workbench.panel"]')
       expect(empty?.hasAttribute('hidden')).toBe(true)
-      expect(el.textContent).not.toContain('此槽位的插件未就绪')
+      expect(el.textContent).not.toContain('Plugin for this slot is not ready')
     }, committed)
 
     registry.register('workbench.panel', () => createElement('div', {}, 'ready-panel'))
@@ -829,7 +829,7 @@ describe('SlotOutlet', () => {
     let host: Element | null = null
     await vi.waitFor(() => {
       host = el.querySelector('[data-slot="tool.card.inline"]')
-      expect(host?.textContent).toContain('此槽位的插件未就绪')
+      expect(host?.textContent).toContain('Plugin for this slot is not ready')
     }, committed)
 
     const off = registry.register('tool.card.inline', () => createElement('div', {}, 'inline-card'))
@@ -840,7 +840,7 @@ describe('SlotOutlet', () => {
 
     off()
     await vi.waitFor(() => {
-      expect(el.textContent).toContain('此槽位的插件未就绪')
+      expect(el.textContent).toContain('Plugin for this slot is not ready')
       expect(el.querySelector('[data-slot="tool.card.inline"]')).toBe(host)
     }, committed)
   })
@@ -862,7 +862,7 @@ describe('SlotOutlet', () => {
       createElement(SlotsProvider, { registry }, createElement(SlotOutlet, { name: 'workbench.panel' })),
     )
     await vi.waitFor(() => {
-      expect(el.textContent).toContain('插件渲染失败')
+      expect(el.textContent).toContain('Plugin render failed')
       expect(el.textContent).toContain('good')
       expect(el.querySelector('[data-slot="workbench.panel"]')).toBeTruthy()
       expect(errSpy.length).toBeGreaterThan(0)

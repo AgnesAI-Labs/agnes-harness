@@ -1,4 +1,6 @@
 import type { JSX } from 'react'
+import { ADMIN_LOCALE_NAMESPACE, adminLocaleCatalog } from '../locales/admin.js'
+import { useUiText } from '../ui-locale.js'
 
 /**
  * 语义色档。颜色不进 JS，只作为 `data-tone`，由 style.css 里的 token 决定。
@@ -18,6 +20,7 @@ export type StateLight = Readonly<{
  * 圆点 aria-hidden，完整语义留在 `title` 与可见文字里供读屏。
  */
 export function StateLights({ states }: { states: readonly StateLight[] }): JSX.Element {
+  const { t } = useUiText(ADMIN_LOCALE_NAMESPACE, adminLocaleCatalog)
   return (
     <div className="state-lights">
       {states.map((state) => (
@@ -25,7 +28,7 @@ export function StateLights({ states }: { states: readonly StateLight[] }): JSX.
           key={state.label}
           className="state-light"
           data-tone={state.tone}
-          title={`${state.label}：${state.value}`}
+          title={t('state.title', { label: state.label, value: state.value })}
         >
           <span className="state-light-dot" aria-hidden="true" />
           <span className="state-light-copy">

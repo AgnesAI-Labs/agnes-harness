@@ -20,12 +20,25 @@ type RuntimeFixture = Readonly<{
   invalidate(): Promise<void>
 }>
 
+type AdminMount = Readonly<{ reload(): Promise<void>; dispose(): void }>
+const activeAdminMounts = new Set<AdminMount>()
+
 /** Mounts the surface the way a host does; importing the module alone must have no effect on the DOM. */
 async function mountAdmin(
   options: { actualSlots?: (packageId: string) => readonly string[]; runtime?: RuntimeFixture } = {},
-): Promise<{ reload(): Promise<void>; dispose(): void }> {
+): Promise<AdminMount> {
   const { mountPluginAdmin } = await import('../src/admin/plugins/admin.js')
-  return mountPluginAdmin(options)
+  const mounted = mountPluginAdmin(options)
+  await mounted.ready
+  const tracked: AdminMount = {
+    reload: () => mounted.reload(),
+    dispose: () => {
+      if (!activeAdminMounts.delete(tracked)) return
+      mounted.dispose()
+    },
+  }
+  activeAdminMounts.add(tracked)
+  return tracked
 }
 
 const html = readFileSync(join(process.cwd(), 'packages/web/public/admin.html'), 'utf8').replace(
@@ -116,9 +129,11 @@ function operation(
 }
 
 afterEach(() => {
+  for (const mounted of [...activeAdminMounts]) mounted.dispose()
   vi.unstubAllGlobals()
   vi.restoreAllMocks()
   sessionStorage.clear()
+  document.documentElement.lang = 'en'
   document.documentElement.replaceChildren()
 })
 
@@ -298,7 +313,9 @@ it('renders all real local releases and carries a selected catalog source throug
   vi.stubGlobal('fetch', fetcher)
 
   await mountAdmin()
-  await vi.waitFor(() => expect(document.querySelector('.plugin-empty')?.textContent).toContain('尚未安装'))
+  await vi.waitFor(() =>
+    expect(document.querySelector('.plugin-empty')?.textContent).toContain('No packages are installed'),
+  )
   expect(document.querySelector('.plugin-empty')?.classList.contains('admin-empty-state')).toBe(true)
   expect(document.querySelector('.plugin-empty .admin-empty-state-mark')).not.toBeNull()
   document.getElementById('discover-tab')?.click()
@@ -317,13 +334,13 @@ it('renders all real local releases and carries a selected catalog source throug
   )
   expect(v2).toBeDefined()
   v2?.click()
-  expect(document.getElementById('plugin-detail')?.textContent).toContain('版本 1.1.0')
+  expect(document.getElementById('plugin-detail')?.textContent).toContain('Version 1.1.0')
   const check = [...document.querySelectorAll<HTMLButtonElement>('#plugin-detail button')].find(
-    (candidate) => candidate.textContent === '检查安装内容',
+    (candidate) => candidate.textContent === 'Inspect installation',
   )
   check?.click()
   await vi.waitFor(() =>
-    expect(document.getElementById('plugin-confirm-title')?.textContent).toContain('安装预览'),
+    expect(document.getElementById('plugin-confirm-title')?.textContent).toContain('Install preview'),
   )
   expect(document.getElementById('plugin-confirm-preview')?.textContent).toContain(selected.integrity)
   expect(document.getElementById('plugin-confirm-preview')?.textContent).toContain('examples/hot-tool')
@@ -341,7 +358,7 @@ it('renders all real local releases and carries a selected catalog source throug
   )
   expect(document.querySelector('.plugin-row-trust')).toBeNull()
   expect(fetcher.mock.calls.some(([url]) => String(url).endsWith('/install'))).toBe(true)
-  expect(document.querySelector('.plugin-detail-close')?.textContent).toBe('关闭详情')
+  expect(document.querySelector('.plugin-detail-close')?.textContent).toBe('Close details')
   document.querySelector<HTMLButtonElement>('.plugin-detail-close')?.click()
   await vi.waitFor(() => expect(document.getElementById('plugin-detail')?.hasAttribute('open')).toBe(false))
 
@@ -350,7 +367,7 @@ it('renders all real local releases and carries a selected catalog source throug
   expect(toggle?.disabled).toBe(false)
   toggle?.click()
   await vi.waitFor(() =>
-    expect(document.getElementById('plugin-confirm-title')?.textContent).toContain('启用'),
+    expect(document.getElementById('plugin-confirm-title')?.textContent).toContain('Enable'),
   )
   expect(document.getElementById('plugin-confirm-preview')?.textContent).toContain(capabilityHash)
   document.getElementById('plugin-confirm-action')?.click()
@@ -363,7 +380,7 @@ it('renders all real local releases and carries a selected catalog source throug
   // 普通 Web 详情不暴露撤销信任；停用仍然保留为用户动作。
   document.querySelector<HTMLElement>('.plugin-row')?.click()
   await vi.waitFor(() => expect(document.getElementById('plugin-detail')?.hasAttribute('open')).toBe(true))
-  expect(document.getElementById('plugin-detail')?.textContent).not.toContain('撤销信任')
+  expect(document.getElementById('plugin-detail')?.textContent).not.toContain('Revoke trust')
 })
 
 it('links a live Surface mount without treating the link as qualified actual', async () => {
@@ -425,7 +442,7 @@ it('links a live Surface mount without treating the link as qualified actual', a
   expect(row?.querySelector('[role="switch"]')?.getAttribute('aria-checked')).toBe('false')
   const listLink = row?.querySelector<HTMLAnchorElement>('.plugin-surface-link')
   expect(listLink?.getAttribute('href')).toBe('/demo')
-  expect(listLink?.textContent).toBe('打开页面 · /demo')
+  expect(listLink?.textContent).toBe('Open page · /demo')
   expect(listLink?.target).toBe('_blank')
 
   row?.click()
@@ -433,7 +450,7 @@ it('links a live Surface mount without treating the link as qualified actual', a
     '#plugin-detail .plugin-surface-link[href="/demo"]',
   )
   expect(detailLinks).toHaveLength(1)
-  expect(document.getElementById('plugin-detail')?.textContent).not.toContain('实际状态')
+  expect(document.getElementById('plugin-detail')?.textContent).not.toContain('Actual state')
 })
 
 it('does not enable a plugin when its hidden approval step fails', async () => {
@@ -496,12 +513,14 @@ it('does not enable a plugin when its hidden approval step fails', async () => {
   await vi.waitFor(() => expect(document.querySelectorAll('.plugin-row')).toHaveLength(1))
   document.querySelector<HTMLButtonElement>('#plugin-list button[role="switch"]')?.click()
   await vi.waitFor(() =>
-    expect(document.getElementById('plugin-confirm-title')?.textContent).toContain('启用'),
+    expect(document.getElementById('plugin-confirm-title')?.textContent).toContain('Enable'),
   )
   document.getElementById('plugin-confirm-action')?.click()
 
   await vi.waitFor(() =>
-    expect(document.getElementById('admin-notice')?.textContent).toContain('当前版本未通过安全校验'),
+    expect(document.getElementById('admin-notice')?.textContent).toContain(
+      'The capability summary has not been confirmed',
+    ),
   )
   expect(enableCalls).toBe(0)
 })
@@ -574,7 +593,9 @@ it.each(['failed', 'unavailable'] as const)(
     expect(row?.querySelector('.state-light')).toBeNull()
     expect(row?.textContent).toContain(installed.actualReason)
     toggle?.click()
-    expect(document.getElementById('admin-notice')?.textContent).toContain('实际运行摘要尚未确认')
+    expect(document.getElementById('admin-notice')?.textContent).toContain(
+      'The actual runtime summary has not been confirmed',
+    )
     expect(document.getElementById('plugin-confirm-title')).toBeNull()
     expect(enableCalls).toBe(0)
     expect(disableCalls).toBe(0)
@@ -657,7 +678,7 @@ it('keeps backend actual and browser UI runtime failure visible as separate stat
     'true',
   )
   const retry = [...document.querySelectorAll<HTMLButtonElement>('#plugin-list button')].find(
-    (candidate) => candidate.textContent === '重试 UI',
+    (candidate) => candidate.textContent === 'Retry UI',
   )
   expect(retry).toBeDefined()
   retry?.click()
@@ -746,12 +767,15 @@ it('does not confirm enable while the browser runtime is still running the old r
   await vi.waitFor(() => expect(document.querySelectorAll('.plugin-row')).toHaveLength(1))
   document.querySelector<HTMLButtonElement>('#plugin-list button[role="switch"]')?.click()
   await vi.waitFor(() =>
-    expect(document.getElementById('plugin-confirm-title')?.textContent).toContain('启用'),
+    expect(document.getElementById('plugin-confirm-title')?.textContent).toContain('Enable'),
   )
   document.getElementById('plugin-confirm-action')?.click()
 
   await vi.waitFor(
-    () => expect(document.getElementById('admin-notice')?.textContent).toContain('浏览器 UI 状态待确认'),
+    () =>
+      expect(document.getElementById('admin-notice')?.textContent).toContain(
+        'the browser UI state is not confirmed yet',
+      ),
     { timeout: 5_000 },
   )
   expect(invalidate).toHaveBeenCalledTimes(1)
@@ -844,14 +868,16 @@ it('allows a checked enable for an inactive client-only package while backend ac
   expect(enable?.disabled).toBe(false)
   enable?.click()
   await vi.waitFor(() =>
-    expect(document.getElementById('plugin-confirm-title')?.textContent).toContain('启用'),
+    expect(document.getElementById('plugin-confirm-title')?.textContent).toContain('Enable'),
   )
 
   runtimeState = { packageId: installed.id, revision: installedIntegrity, phase: 'loading' }
   for (const listener of runtimeListeners) listener(runtimeState)
   document.getElementById('plugin-confirm-action')?.click()
   await vi.waitFor(() =>
-    expect(document.getElementById('admin-notice')?.textContent).toContain('实际运行摘要尚未确认'),
+    expect(document.getElementById('admin-notice')?.textContent).toContain(
+      'The actual runtime summary has not been confirmed',
+    ),
   )
   await vi.waitFor(() => expect(document.getElementById('plugin-confirm')?.hasAttribute('open')).toBe(false))
   expect(enableBody).toBeUndefined()
@@ -861,7 +887,9 @@ it('allows a checked enable for an inactive client-only package while backend ac
   registeredSlots = ['tool.call.toolview']
   document.querySelector<HTMLButtonElement>('#plugin-list button[role="switch"]')?.click()
   await vi.waitFor(() =>
-    expect(document.getElementById('admin-notice')?.textContent).toContain('实际运行摘要尚未确认'),
+    expect(document.getElementById('admin-notice')?.textContent).toContain(
+      'The actual runtime summary has not been confirmed',
+    ),
   )
   expect(document.getElementById('plugin-confirm')?.hasAttribute('open')).toBe(false)
   expect(enableBody).toBeUndefined()
@@ -876,7 +904,9 @@ it('allows a checked enable for an inactive client-only package while backend ac
   await page.reload()
   document.querySelector<HTMLButtonElement>('#plugin-list button[role="switch"]')?.click()
   await vi.waitFor(() =>
-    expect(document.getElementById('admin-notice')?.textContent).toContain('实际运行摘要尚未确认'),
+    expect(document.getElementById('admin-notice')?.textContent).toContain(
+      'The actual runtime summary has not been confirmed',
+    ),
   )
   expect(document.getElementById('plugin-confirm')?.hasAttribute('open')).toBe(false)
   expect(enableBody).toBeUndefined()
@@ -885,7 +915,7 @@ it('allows a checked enable for an inactive client-only package while backend ac
   await page.reload()
   document.querySelector<HTMLButtonElement>('#plugin-list button[role="switch"]')?.click()
   await vi.waitFor(() =>
-    expect(document.getElementById('plugin-confirm-title')?.textContent).toContain('启用'),
+    expect(document.getElementById('plugin-confirm-title')?.textContent).toContain('Enable'),
   )
   document.getElementById('plugin-confirm-action')?.click()
 
@@ -897,7 +927,9 @@ it('allows a checked enable for an inactive client-only package while backend ac
     }),
   )
   await vi.waitFor(() =>
-    expect(document.getElementById('admin-notice')?.textContent).toContain('启用：已完成'),
+    expect(document.getElementById('admin-notice')?.textContent).toContain(
+      'Enable: Completed. Latest state loaded.',
+    ),
   )
   page.dispose()
 })
@@ -947,10 +979,49 @@ it('hides the orphan pins section when packages.pins.inspect reports no orphans'
   vi.resetModules()
 
   await mountAdmin()
-  await vi.waitFor(() => expect(document.querySelector('.plugin-empty')?.textContent).toContain('尚未安装'))
+  await vi.waitFor(() =>
+    expect(document.querySelector('.plugin-empty')?.textContent).toContain('No packages are installed'),
+  )
 
   expect(document.getElementById('orphan-pins')).toHaveProperty('hidden', true)
   expect(fetcher.mock.calls.some(([url]) => String(url).endsWith('/pins/inspect'))).toBe(true)
+})
+
+it.each([
+  ['context', 'The admin context is invalid. Reopen the page.', '管理上下文无效，请重新打开页面。'],
+  ['list', 'The admin response could not be verified.', '后台返回的数据无法确认。'],
+] as const)('localizes %s validation errors by stable code', async (failedRoute, english, chinese) => {
+  document.documentElement.innerHTML = html
+    .replace('<link rel="stylesheet" href="/style.css" />', '')
+    .replace('<script type="module" src="/admin.js"></script>', '')
+  document.documentElement.lang = 'en'
+  history.replaceState(null, '', `/admin/plugins#invalid-${failedRoute}-token`)
+  const fetcher = vi.fn<typeof fetch>(async (input) => {
+    const url = String(input)
+    if (url.endsWith('/session')) return new Response('{}', { status: 200 })
+    if (url.endsWith('/context'))
+      return failedRoute === 'context'
+        ? Response.json({ profile: 'local-dev' })
+        : Response.json(pinsContext())
+    if (url.endsWith('/list'))
+      return failedRoute === 'list' ? Response.json({}) : Response.json({ packages: [] })
+    if (url.endsWith('/tree/list')) return Response.json({ actual: true, pending: false })
+    if (url.endsWith('/surfaces')) return Response.json({ surfaces: [] })
+    if (url.endsWith('/pins/inspect')) return Response.json({ orphans: [] })
+    return Response.json({ error: { code: 'UNEXPECTED', message: url } }, { status: 500 })
+  })
+  vi.stubGlobal('fetch', fetcher)
+  vi.resetModules()
+
+  const mounted = await mountAdmin()
+  try {
+    await vi.waitFor(() => expect(document.getElementById('admin-notice')?.textContent).toBe(english))
+    document.documentElement.lang = 'zh-CN'
+    window.dispatchEvent(new Event('agnes:locale-changed'))
+    expect(document.getElementById('admin-notice')?.textContent).toBe(chinese)
+  } finally {
+    mounted.dispose()
+  }
 })
 
 // Finding 5 of the whole-branch review: refresh() used to swallow a pins/inspect failure with no
@@ -993,6 +1064,41 @@ it('surfaces a status message and clears a stale list when packages.pins.inspect
   )
   expect(document.getElementById('orphan-pins')).toHaveProperty('hidden', false)
   expect(document.getElementById('orphan-pins-list')?.textContent ?? '').not.toContain('acme/plugin@1.0.0')
+})
+
+it('localizes an orphan-pin transport failure when rendered', async () => {
+  document.documentElement.innerHTML = html
+    .replace('<link rel="stylesheet" href="/style.css" />', '')
+    .replace('<script type="module" src="/admin.js"></script>', '')
+  document.documentElement.lang = 'zh-CN'
+  history.replaceState(null, '', '/admin/plugins#pins-transport-fail-token')
+  let inspectCalls = 0
+  const fetcher = vi.fn<typeof fetch>(async (input) => {
+    const url = String(input)
+    if (url.endsWith('/session')) return new Response('{}', { status: 200 })
+    if (url.endsWith('/context')) return Response.json(pinsContext())
+    if (url.endsWith('/list')) return Response.json({ packages: [] })
+    if (url.endsWith('/tree/list')) return Response.json({ actual: true, pending: false })
+    if (url.endsWith('/surfaces')) return Response.json({ surfaces: [] })
+    if (url.endsWith('/pins/inspect')) {
+      inspectCalls++
+      if (inspectCalls === 1) return Response.json({ orphans: [] })
+      throw new Error('offline')
+    }
+    return Response.json({ error: { code: 'UNEXPECTED', message: url } }, { status: 500 })
+  })
+  vi.stubGlobal('fetch', fetcher)
+  vi.resetModules()
+
+  const mounted = await mountAdmin()
+  try {
+    await mounted.reload()
+    expect(document.getElementById('orphan-pins-status')?.textContent).toBe(
+      '无法连接插件管理后台。已保留当前页面内容。',
+    )
+  } finally {
+    mounted.dispose()
+  }
 })
 
 it('shows orphaned pins and removes a released one after confirming', async () => {
@@ -1114,7 +1220,7 @@ it('release-all batches more than 64 orphaned pins into multiple pins/release ca
 
   document.getElementById('orphan-pins-release-all')?.click()
   await vi.waitFor(() =>
-    expect(document.getElementById('plugin-confirm-title')?.textContent).toContain('全部孤儿 pin'),
+    expect(document.getElementById('plugin-confirm-title')?.textContent).toContain('Release all orphan pins'),
   )
   document.getElementById('plugin-confirm-action')?.click()
 
@@ -1170,7 +1276,7 @@ it('keeps an earlier successfully-released batch reflected in the UI when a late
 
   document.getElementById('orphan-pins-release-all')?.click()
   await vi.waitFor(() =>
-    expect(document.getElementById('plugin-confirm-title')?.textContent).toContain('全部孤儿 pin'),
+    expect(document.getElementById('plugin-confirm-title')?.textContent).toContain('Release all orphan pins'),
   )
   document.getElementById('plugin-confirm-action')?.click()
 
@@ -1219,7 +1325,7 @@ it('removes nothing and surfaces the error when the first batch call fails outri
 
   document.getElementById('orphan-pins-release-all')?.click()
   await vi.waitFor(() =>
-    expect(document.getElementById('plugin-confirm-title')?.textContent).toContain('全部孤儿 pin'),
+    expect(document.getElementById('plugin-confirm-title')?.textContent).toContain('Release all orphan pins'),
   )
   document.getElementById('plugin-confirm-action')?.click()
 
@@ -1274,12 +1380,14 @@ it('aggregates skipped-no-longer-orphaned counts across successful batches into 
 
   document.getElementById('orphan-pins-release-all')?.click()
   await vi.waitFor(() =>
-    expect(document.getElementById('plugin-confirm-title')?.textContent).toContain('全部孤儿 pin'),
+    expect(document.getElementById('plugin-confirm-title')?.textContent).toContain('Release all orphan pins'),
   )
   document.getElementById('plugin-confirm-action')?.click()
 
   await vi.waitFor(() =>
-    expect(document.getElementById('orphan-pins-status')?.textContent).toContain('2 个 pin 已不再是孤儿'),
+    expect(document.getElementById('orphan-pins-status')?.textContent).toContain(
+      '2 pin(s) are no longer orphaned',
+    ),
   )
 })
 
@@ -1325,12 +1433,12 @@ it('shows a plain pending tree status and hides aligned internal digests', async
   vi.stubGlobal('fetch', fetcher)
   const mounted = await mountAdmin()
   await vi.waitFor(() =>
-    expect(document.getElementById('plugin-tree-status')?.textContent).toContain('插件资源正在更新'),
+    expect(document.getElementById('plugin-tree-status')?.textContent).toContain('Updating plugin resources'),
   )
   const first = document.getElementById('plugin-tree-status')?.textContent ?? ''
   expect(first).not.toContain(digest)
   expect(first).not.toContain('health')
-  expect(first).not.toContain('实际已对齐')
+  expect(first).not.toContain('Actual state is aligned')
   actual = true
   await mounted.reload()
   await vi.waitFor(() => expect(document.getElementById('plugin-tree-status')?.hidden).toBe(true))
@@ -1384,7 +1492,7 @@ it('recovers a dropped tree_changed notice by polling tree/list without a page r
   vi.stubGlobal('fetch', fetcher)
   await mountAdmin()
   await vi.waitFor(() =>
-    expect(document.getElementById('plugin-tree-status')?.textContent).toContain('插件资源正在更新'),
+    expect(document.getElementById('plugin-tree-status')?.textContent).toContain('Updating plugin resources'),
   )
   expect(document.getElementById('plugin-tree-status')?.textContent).not.toContain(digest)
   expect(document.getElementById('plugin-tree-status')?.textContent).not.toContain('health')
@@ -1452,11 +1560,11 @@ it('closes an open detail dialog so disable and rollback confirms can show', asy
   document.querySelector<HTMLElement>('.plugin-row')?.click()
   await vi.waitFor(() => expect(document.getElementById('plugin-detail')?.hasAttribute('open')).toBe(true))
   const rollback = [...document.querySelectorAll<HTMLButtonElement>('#plugin-detail button')].find((button) =>
-    button.textContent?.startsWith('回滚到'),
+    button.textContent?.startsWith('Roll back to'),
   )
   expect(rollback?.disabled).toBe(false)
   document.querySelector<HTMLButtonElement>('#plugin-list button[role="switch"]')?.click()
   await vi.waitFor(() => expect(document.getElementById('plugin-confirm')?.hasAttribute('open')).toBe(true))
-  expect(document.getElementById('plugin-confirm-title')?.textContent).toContain('请求停用')
+  expect(document.getElementById('plugin-confirm-title')?.textContent).toContain('Request disable')
   expect(document.getElementById('plugin-detail')?.hasAttribute('open')).toBe(false)
 })

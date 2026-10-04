@@ -6,6 +6,7 @@ import { createElement } from 'react'
 import { expect, it, vi } from 'vitest'
 import { mountSettingsPaneRegion, settingsPaneSlot } from '../src/region-slots.js'
 import { createSessionActions } from '../src/session-actions.js'
+import { zhT } from './helpers/locale.js'
 
 it('keeps archived results, search and restore connected after opening and switching sessions', async () => {
   const ctx = new Context()
@@ -33,6 +34,7 @@ it('keeps archived results, search and restore connected after opening and switc
       changed,
       error,
       fork: vi.fn(),
+      translate: zhT,
     })
     const originalPane = region.pane('archived')
     // Production creates the controller before session load updates the slot registry.

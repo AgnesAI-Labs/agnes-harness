@@ -3,12 +3,13 @@ import type { SessionChoice } from '../commands.js'
 import type { Component } from '../component.js'
 import { Box } from '../components/box.js'
 import { Select } from '../components/select.js'
+import { tt } from '../locale-extended.js'
 
-function label(choice: SessionChoice): string {
+function label(choice: SessionChoice, locale: string): string {
   const parsed = Date.parse(choice.createdAt)
   const time = Number.isFinite(parsed)
     ? `${new Date(parsed).toISOString().slice(0, 16).replace('T', ' ')}Z`
-    : 'time unknown'
+    : tt('picker.timeUnknown', locale)
   return [time, choice.title?.trim(), choice.preset, `seq ${choice.lastSeq}`, choice.sessionId]
     .filter((part): part is string => Boolean(part))
     .join(' · ')
@@ -21,6 +22,7 @@ export class SessionPicker implements Component {
   constructor(
     private readonly o: {
       ansi: Ansi
+      locale?: string
       maxRows(): number
       onChoose(choice: SessionChoice): void
       changed(): void
@@ -34,7 +36,10 @@ export class SessionPicker implements Component {
   show(choices: readonly SessionChoice[]): void {
     const byId = new Map(choices.map((choice) => [choice.sessionId, structuredClone(choice)]))
     const select = new Select({
-      options: [...byId.values()].map((choice) => ({ id: choice.sessionId, label: label(choice) })),
+      options: [...byId.values()].map((choice) => ({
+        id: choice.sessionId,
+        label: label(choice, this.o.locale ?? 'en'),
+      })),
       maxRows: () => Math.max(1, this.o.maxRows() - 3),
       onChoose: (id) => {
         const choice = byId.get(id)
@@ -45,7 +50,7 @@ export class SessionPicker implements Component {
       onCancel: () => this.close(),
     })
     this.box = new Box(select, {
-      title: 'Select Session',
+      title: tt('picker.sessionTitle', this.o.locale ?? 'en'),
       rounded: true,
       border: this.o.ansi.dim,
       titleStyle: (text) => this.o.ansi.bold(text),
