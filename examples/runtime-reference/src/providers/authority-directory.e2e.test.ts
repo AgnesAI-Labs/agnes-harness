@@ -15,13 +15,10 @@ import type {
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createConformanceHarness, SCENARIOS } from '../../../../packages/extension-api/testkit/index.js'
 import { inlineData } from '../../../../packages/host/src/runtime/maintenance/authority-publication.js'
+import { createFixtureReferenceDirectory as createReferenceAuthorityDirectory } from '../../../../packages/host/test/fixtures/authority-directory-owner.js'
 import * as buildIdentity from '../../../../tools/acceptance/runtime/build-identity.js'
 import { bindAuthorityDirectoryContracts } from '../../../../tools/acceptance/runtime/platform/authority-directory-conformance.js'
-import {
-  createReferenceAnchor,
-  createReferenceAuthorityDirectory,
-  readReferenceAnchor,
-} from './authority-directory.ts'
+import { createReferenceAnchor, readReferenceAnchor } from './authority-directory.ts'
 
 const probe = vi.hoisted(() => ({ platform: null as string | null }))
 vi.mock('node:os', async (original) => {

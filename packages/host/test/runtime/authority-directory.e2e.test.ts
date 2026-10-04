@@ -17,10 +17,10 @@ import { inlineData } from '../../src/runtime/maintenance/authority-publication.
 import { readStageZero } from '../../src/runtime/maintenance/bootstrap-locator.js'
 import {
   type AuthorityDirectoryProvider,
-  createAuthorityDirectoryProvider,
   createDirectoryAnchor,
   type DurabilityPhase,
 } from '../../src/runtime/providers/authority-directory.js'
+import { createFixtureAuthorityDirectory as createAuthorityDirectoryProvider } from '../fixtures/authority-directory-owner.js'
 
 const fixture = fileURLToPath(
   new URL('../../../../tools/acceptance/runtime/fixtures/authority-directory-process.ts', import.meta.url),
@@ -307,30 +307,49 @@ async function revisionAt(directory: string, anchor: string): Promise<number> {
 }
 
 describe('authority directory process durability', () => {
-  it.each(['default', 'reference'])(
-    'publishes and cold recovers a fresh real C31 fence through %s',
-    (recipe) => {
-      const root = mkdtempSync(join(tmpdir(), 'authority-blob-cold-'))
-      const fixture = fileURLToPath(
-        new URL('../fixtures/authority-directory-blob-process.ts', import.meta.url),
-      )
-      try {
-        const run = (mode: string) =>
-          JSON.parse(
-            execFileSync(process.execPath, ['--import', 'tsx', fixture, mode, root, recipe], {
-              encoding: 'utf8',
-              timeout: 30_000,
-            }),
-          )
-        const published = run('prepare')
-        expect(published.read.revision).toBe(2)
-        expect(published.sourceProbe.fence.checkpoint.recordCount).toBeGreaterThan(0)
-        expect(run('recover')).toEqual(published)
-      } finally {
-        rmSync(root, { recursive: true, force: true })
-      }
-    },
-  )
+  it.each(
+    ['default', 'reference'].flatMap((recipe) =>
+      (
+        [
+          ['none', 'ok'],
+          ['owner-location', 'incompatible/source_owner_mismatch'],
+          ['owner-binding', 'incompatible/source_owner_mismatch'],
+          ['owner-authority', 'incompatible/source_owner_mismatch'],
+          ['lookalike-owner', 'incompatible/source_fence_unconfirmed'],
+          ['missing-owner', 'incompatible/source_owner_unavailable'],
+          ['validation-previous', 'incompatible/source_validation_mismatch'],
+          ['validation-fence', 'incompatible/source_validation_mismatch'],
+          ['validation-upgrade', 'incompatible/source_validation_mismatch'],
+          ['wrong-tenant', 'incompatible/fence_incomplete'],
+          ['wrong-epoch', 'incompatible/fence_incomplete'],
+          ['wrong-upgrade', 'invalid_input/fence_upgrade'],
+          ['wrong-checkpoint', 'invalid_input/checkpoint_mismatch'],
+          ['route-race', 'conflict/revision_mismatch'],
+        ] as const
+      ).map(([fault, expected]) => [recipe, fault, expected] as const),
+    ),
+  )('checks real C31 source evidence and cold replay through %s with %s', (recipe, fault, expected) => {
+    const root = mkdtempSync(join(tmpdir(), 'authority-blob-cold-'))
+    const fixture = fileURLToPath(new URL('../fixtures/authority-directory-blob-process.ts', import.meta.url))
+    try {
+      const run = (mode: string) =>
+        JSON.parse(
+          execFileSync(process.execPath, ['--import', 'tsx', fixture, mode, root, recipe, fault], {
+            encoding: 'utf8',
+            timeout: 30_000,
+          }),
+        )
+      const result = run('prepare')
+      if (fault === 'none') {
+        expect(result.read.revision).toBe(2)
+        expect(result.sourceProbe.fence.checkpoint.recordCount).toBeGreaterThan(0)
+        expect(run('recover')).toEqual(result)
+        expect(run('recover')).toEqual(result)
+      } else expect(detail(result.outcome)).toBe(expected)
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
 
   it('keeps the old route when killed before the pointer rename and the new route after it', async () => {
     for (const phase of [

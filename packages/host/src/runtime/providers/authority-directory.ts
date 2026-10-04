@@ -22,6 +22,7 @@ import type {
   AuthorityDirectoryReadRequest,
   AuthorityDirectoryReadResult,
   AuthorityFence,
+  AuthorityPublication,
   AuthorityRoute,
   DataRef,
   JsonValue,
@@ -44,6 +45,11 @@ import {
   seedHead,
   unfenceHead,
 } from '../maintenance/authority-publication.js'
+import {
+  type PublicationPlanResolver,
+  type PublicationSourceEvidence,
+  verifyPublicationSource,
+} from '../maintenance/authority-publication-owner.js'
 import {
   authorityDurability,
   type BootstrapAnchor,
@@ -70,6 +76,7 @@ export interface AuthorityDirectoryOpenOptions {
   readonly authority: StateAuthorityRef
   readonly filesystem?: 'local' | 'unsupported'
   readonly onPhase?: (phase: DurabilityPhase) => void
+  readonly publicationPlan?: PublicationPlanResolver
 }
 
 export interface UpgradeApproval {
@@ -120,6 +127,8 @@ interface GenerationDocument {
   readonly fingerprint: string | null
   readonly result: AuthorityDirectoryCompareAndSwapResult | null
   readonly sourceFences?: readonly AuthorityFence[]
+  readonly publication?: AuthorityPublication
+  readonly sourceEvidence?: PublicationSourceEvidence
   readonly approval?: UpgradeApproval
   readonly origins?: readonly { readonly domainId: string; readonly digest: string }[]
 }
@@ -225,6 +234,8 @@ export function createAuthorityDirectoryProvider(
     locator: BootstrapLocator,
     context: CallContext,
   ): Outcome<DirectoryHead> {
+    const early = precheck(context)
+    if (early) return early
     const live = authorize(context)
     if (!live.ok) return live
     if (
@@ -277,11 +288,19 @@ export function createAuthorityDirectoryProvider(
         return { ok: true as const, value: decision.value }
       })
     },
-    async compareAndSwap(request, context) {
-      const gated = await gate(context, request, 'AuthorityDirectoryCompareAndSwapRequest')
+    async compareAndSwap(input, context) {
+      const early = precheck(context)
+      if (early) return early
+      if (!validateRuntime('AuthorityDirectoryCompareAndSwapRequest', input).ok)
+        return refused({ code: 'invalid_input', detailCode: 'schema' })
+      const request = JSON.parse(JSON.stringify(input)) as AuthorityDirectoryCompareAndSwapRequest
+      const gated = await gate(context, request, null)
       if (!gated.ok) return gated
       const prepared = prepareHead(gated.value)
       if (!prepared.ok) return prepared
+      const sourceEvidence = readCommitted(directory, request.publication.cutoverId)
+        ? null
+        : await verifyPublicationSource(request.publication, options.publicationPlan, context)
       const outcome = mutate<{
         readonly published: boolean
         readonly result: AuthorityDirectoryCompareAndSwapResult
@@ -299,12 +318,16 @@ export function createAuthorityDirectoryProvider(
         if (decision.kind === 'replay') {
           return { ok: true as const, value: { published: false as const, result: decision.result } }
         }
+        if (!sourceEvidence?.ok)
+          return sourceEvidence ?? refused({ code: 'incompatible', detailCode: 'source_owner_unavailable' })
         const written = publish(current.id, {
           id: `publication:${request.publication.cutoverId}`,
           head: decision.head,
           fingerprint: decision.fingerprint,
           result: decision.result,
           sourceFences: request.publication.sourceFences,
+          publication: request.publication,
+          sourceEvidence: sourceEvidence.value,
           origins: request.publication.jointDispatchMappings.flatMap((mapping) =>
             [mapping.from, mapping.to].map((qualification) => ({
               domainId: mapping.domainId,

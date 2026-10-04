@@ -19,8 +19,8 @@ import type {
   StateAuthorityRef,
 } from '@agnes/protocol/runtime'
 import { canonicalJsonDigest, validateRuntime } from '@agnes/protocol/runtime'
-
 import { syncDirectorySync, syncFileSync, windowsVolumeInfoSync } from '@agnes/system-node'
+import { confirmSourcePlan, type ReferencePlanResolver } from './authority-publication-owner.js'
 
 export const REFERENCE_AUTHORITY_CONTRACT = 'agh.authority-directory' as const
 export const REFERENCE_AUTHORITY_DIRECTORY_ID = 'agh.reference/authority-directory' as const
@@ -134,6 +134,7 @@ export function createReferenceAuthorityDirectory(options: {
   readonly authority: StateAuthorityRef
   readonly filesystem?: 'local' | 'unsupported'
   readonly onPhase?: (phase: 'transaction' | 'commit' | 'notify') => void
+  readonly publicationPlan?: ReferencePlanResolver
 }): ReferenceDirectory {
   const directory = resolve(options.directory)
   const anchor = resolve(options.anchor)
@@ -249,11 +250,20 @@ export function createReferenceAuthorityDirectory(options: {
         return { ok: true as const, value: answer.value }
       })
     },
-    async compareAndSwap(request, context) {
-      const gated = admit(context, request, 'AuthorityDirectoryCompareAndSwapRequest')
+    async compareAndSwap(input, context) {
+      const gated = admit(context, input, 'AuthorityDirectoryCompareAndSwapRequest')
       if (!gated.ok) return gated
+      const request = JSON.parse(JSON.stringify(input)) as AuthorityDirectoryCompareAndSwapRequest
       const opened = ready(gated.value)
       if (!opened.ok) return opened
+      const committed = immediate(store, (db) => ({
+        ok: true as const,
+        value: takeCutover(db, request.publication.cutoverId),
+      }))
+      if (!committed.ok) return committed
+      const sourceEvidence = committed.value
+        ? null
+        : await confirmSourcePlan(request.publication, options.publicationPlan, context)
       let wrote = false
       const outcome = immediate(store, (db) => {
         const live = admit(context, null, null)
@@ -280,6 +290,7 @@ export function createReferenceAuthorityDirectory(options: {
         )
         if (verdict.tag === 'stop') return halt(verdict.stop.code, verdict.stop.detail)
         if (verdict.tag === 'replay') return { ok: true as const, value: verdict.result }
+        if (!sourceEvidence?.ok) return sourceEvidence ?? halt('incompatible', 'source_owner_unavailable')
         putHead(db, verdict.head)
         const insertOrigin = db.prepare(
           'INSERT OR IGNORE INTO domain_origin(domain_id, qualification_digest) VALUES (?, ?)',
@@ -294,7 +305,7 @@ export function createReferenceAuthorityDirectory(options: {
         putCutover(db, request.publication.cutoverId, verdict.fingerprint, verdict.result)
         db.prepare('INSERT INTO route_freeze_points(cutover_key, payload) VALUES (?, ?)').run(
           request.publication.cutoverId,
-          JSON.stringify(request.publication.sourceFences),
+          JSON.stringify({ publication: request.publication, sourceEvidence: sourceEvidence.value }),
         )
         options.onPhase?.('transaction')
         wrote = true
@@ -1002,6 +1013,9 @@ function plant(head: RouteHead, route: AuthorityRoute): RouteHead | { stop: Stop
   if (routeEntry(head, route.logicalAuthorityId))
     return { stop: { code: 'conflict', detail: 'route_exists' } }
   if (route.authorityEpoch < 1) return { stop: { code: 'invalid_input', detail: 'epoch_not_increasing' } }
+  if (route.authorityEpoch !== 1) return { stop: { code: 'invalid_input', detail: 'bootstrap_epoch' } }
+  if (route.checkpoint.authorityId !== route.logicalAuthorityId || route.checkpoint.authorityEpoch !== 1)
+    return { stop: { code: 'invalid_input', detail: 'checkpoint_mismatch' } }
   return { ...head, routes: { ...head.routes, [route.logicalAuthorityId]: { revision: 1, route } } }
 }
 

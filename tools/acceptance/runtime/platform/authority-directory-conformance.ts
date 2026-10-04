@@ -17,10 +17,7 @@ import type {
   JsonValue,
   MigrationRequest,
 } from '@agnes/protocol/runtime'
-import {
-  createReferenceAnchor,
-  createReferenceAuthorityDirectory,
-} from '../../../../examples/runtime-reference/src/providers/authority-directory.ts'
+import { createReferenceAnchor } from '../../../../examples/runtime-reference/src/providers/authority-directory.ts'
 import {
   type AuthorityDirectoryConformanceBinding,
   type AuthorityDirectoryScenarioEvidence,
@@ -29,11 +26,12 @@ import {
 import type { ConformanceHarness } from '../../../../packages/extension-api/testkit/runtime/harness.ts'
 import { documentDigest } from '../../../../packages/host/src/runtime/config/config-digest.ts'
 import { inlineData } from '../../../../packages/host/src/runtime/maintenance/authority-publication.ts'
-import {
-  createAuthorityDirectoryProvider,
-  createDirectoryAnchor,
-} from '../../../../packages/host/src/runtime/providers/authority-directory.ts'
+import { createDirectoryAnchor } from '../../../../packages/host/src/runtime/providers/authority-directory.ts'
 import { createHostScopedDependencies } from '../../../../packages/host/src/runtime/scoped-dependencies.ts'
+import {
+  createFixtureAuthorityDirectory as createAuthorityDirectoryProvider,
+  createFixtureReferenceDirectory as createReferenceAuthorityDirectory,
+} from '../../../../packages/host/test/fixtures/authority-directory-owner.js'
 import { getConformanceBuildIdentity } from '../build-identity.js'
 
 type Recipe = 'default' | 'reference'

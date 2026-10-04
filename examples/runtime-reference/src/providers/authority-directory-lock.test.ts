@@ -15,15 +15,12 @@ import type {
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { inlineData } from '../../../../packages/host/src/runtime/maintenance/authority-publication.js'
 import { openBootstrapAnchor } from '../../../../packages/host/src/runtime/maintenance/bootstrap-locator.js'
+import { createDirectoryAnchor } from '../../../../packages/host/src/runtime/providers/authority-directory.js'
 import {
-  createAuthorityDirectoryProvider,
-  createDirectoryAnchor,
-} from '../../../../packages/host/src/runtime/providers/authority-directory.js'
-import {
-  createReferenceAnchor,
-  createReferenceAuthorityDirectory,
-  openReferenceAnchor,
-} from './authority-directory.ts'
+  createFixtureAuthorityDirectory as createAuthorityDirectoryProvider,
+  createFixtureReferenceDirectory as createReferenceAuthorityDirectory,
+} from '../../../../packages/host/test/fixtures/authority-directory-owner.js'
+import { createReferenceAnchor, openReferenceAnchor } from './authority-directory.ts'
 
 const probe = vi.hoisted(() => ({
   platform: null as string | null,
@@ -351,10 +348,17 @@ async function same(
 
 describe('reference authority directory', () => {
   it('does not import the host implementation and stays under half line overlap', () => {
-    const reference = readFileSync(new URL('./authority-directory.ts', import.meta.url), 'utf8')
+    const reference = ['authority-directory.ts', 'authority-publication-owner.ts']
+      .map((name) => readFileSync(new URL(`./${name}`, import.meta.url), 'utf8'))
+      .join('\n')
     expect(reference).not.toContain('@agnes/host')
     expect(reference).not.toContain('packages/host')
-    const defaults = ['authority-directory.ts', 'authority-publication.ts', 'bootstrap-locator.ts']
+    const defaults = [
+      'authority-directory.ts',
+      'authority-publication.ts',
+      'authority-publication-owner.ts',
+      'bootstrap-locator.ts',
+    ]
       .map((name) =>
         readFileSync(
           new URL(
@@ -372,6 +376,7 @@ describe('reference authority directory', () => {
     for (const file of [
       '../../../../packages/host/src/runtime/providers/authority-directory.ts',
       '../../../../packages/host/src/runtime/maintenance/authority-publication.ts',
+      '../../../../packages/host/src/runtime/maintenance/authority-publication-owner.ts',
       '../../../../packages/host/src/runtime/maintenance/bootstrap-locator.ts',
     ])
       expect(
@@ -401,6 +406,33 @@ describe('reference authority directory', () => {
         await same(left, right, 'cancel', (driver) =>
           driver.provider.seedRoute(route, context(PRINCIPAL, controller.signal)),
         )
+
+        for (const [candidate, expected] of [
+          [
+            { ...route, authorityEpoch: 2, checkpoint: { ...route.checkpoint, authorityEpoch: 2 } },
+            'invalid_input/bootstrap_epoch',
+          ],
+          [
+            { ...route, checkpoint: { ...route.checkpoint, authorityId: 'other' } },
+            'invalid_input/checkpoint_mismatch',
+          ],
+          [
+            { ...route, checkpoint: { ...route.checkpoint, authorityEpoch: 2 } },
+            'invalid_input/checkpoint_mismatch',
+          ],
+        ] as const) {
+          const result = await same(left, right, 'bootstrap alignment', (driver) =>
+            driver.provider.seedRoute(candidate, context()),
+          )
+          expect(code(result)).toBe(expected)
+          const absent = await same(left, right, 'unseeded', (driver) =>
+            driver.provider.read(
+              { kind: 'authority', logicalAuthorityId: route.logicalAuthorityId },
+              context(),
+            ),
+          )
+          expect(code(absent)).toBe('incompatible/route_absent')
+        }
         await same(left, right, 'seed', (driver) => driver.provider.seedRoute(route, context()))
         for (const logicalAuthorityId of ['toString', 'constructor', '__proto__']) {
           const absent = await same(left, right, 'reserved-looking ID absent', (driver) =>
@@ -445,6 +477,8 @@ describe('reference authority directory', () => {
           ),
         )
         const invalid: readonly [string, AuthorityDirectoryCompareAndSwapRequest][] = [
+          ['invalid_input/schema', undefined as unknown as AuthorityDirectoryCompareAndSwapRequest],
+          ['invalid_input/schema', {} as AuthorityDirectoryCompareAndSwapRequest],
           ['invalid_input/cutover_transaction_mismatch', { ...first, transactionId: 'different' }],
           ['conflict/writer_epoch', { ...first, expectedWriterEpoch: 9 }],
           ...(['authorityId', 'authorityEpoch'] as const).map(

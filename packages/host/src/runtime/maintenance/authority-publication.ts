@@ -212,6 +212,9 @@ export function decideRead(
 export function seedHead(head: DirectoryHead, route: AuthorityRoute): DirectoryHead | PublicationRefusal {
   if (own(head.routes, route.logicalAuthorityId)) return { code: 'conflict', detailCode: 'route_exists' }
   if (route.authorityEpoch < 1) return { code: 'invalid_input', detailCode: 'epoch_not_increasing' }
+  if (route.authorityEpoch !== 1) return { code: 'invalid_input', detailCode: 'bootstrap_epoch' }
+  if (route.checkpoint.authorityId !== route.logicalAuthorityId || route.checkpoint.authorityEpoch !== 1)
+    return { code: 'invalid_input', detailCode: 'checkpoint_mismatch' }
   return {
     ...head,
     routes: { ...head.routes, [route.logicalAuthorityId]: { revision: 1, route } },

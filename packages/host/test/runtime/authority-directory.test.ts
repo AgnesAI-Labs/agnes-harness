@@ -19,10 +19,10 @@ import { inlineData } from '../../src/runtime/maintenance/authority-publication.
 import { openBootstrapAnchor, readStageZero } from '../../src/runtime/maintenance/bootstrap-locator.js'
 import {
   type AuthorityDirectoryProvider,
-  createAuthorityDirectoryProvider,
   createDirectoryAnchor,
   type DurabilityPhase,
 } from '../../src/runtime/providers/authority-directory.js'
+import { createFixtureAuthorityDirectory as createAuthorityDirectoryProvider } from '../fixtures/authority-directory-owner.js'
 
 const durabilityFault = vi.hoisted(() => ({
   failSync: false,
