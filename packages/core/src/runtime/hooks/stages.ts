@@ -361,11 +361,11 @@ export async function runPureHookStage(
         if (!candidate || typeof candidate !== 'object' || Array.isArray(candidate))
           refuse('hook_context_candidate')
         const current = candidate
-        candidate = json({
-          ...current,
-          ...(patch.sections !== undefined ? { sections: patch.sections } : {}),
-        })
-        output = { ...output, ...patch }
+        const sections = new Map((current as ContextPayload).sections.map((section) => [section.id, section]))
+        for (const section of patch.sections ?? []) sections.set(section.id, section)
+        const merged = [...sections.values()].sort((a, b) => a.order - b.order)
+        candidate = json({ ...current, sections: merged })
+        output = { ...output, ...patch, sections: merged }
       } else {
         const checked = validateHook('tool_call', 'return', safe)
         if (!checked.ok) refuse('hook_return_schema')

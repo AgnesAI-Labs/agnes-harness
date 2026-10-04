@@ -341,6 +341,22 @@ const value = (ref: DataRef) => {
 }
 
 describe('pure runtime Hook stage algorithm (no State or execution authority)', () => {
+  it('keeps original sections not overridden by contribution id', async () => {
+    const input = stage([
+      registration(
+        contextDefinition('contribute', () => ({ sections: [{ id: 'added', order: 1, content: 'new' }] })),
+        0,
+      ),
+    ])
+    const result = await runPureHookStage(input)
+    expect(result.outcome).toBe('completed')
+    expect(value(result.result.output)).toEqual({
+      sections: [
+        { id: 'base', order: 0, text: 'original' },
+        { id: 'added', order: 1, text: 'new' },
+      ],
+    })
+  })
   it('retains actual author projections, runs fixed waterfall order and closes result digests', async () => {
     const calls: string[] = []
     const a = registration(
@@ -350,7 +366,7 @@ describe('pure runtime Hook stage algorithm (no State or execution authority)', 
         expect(input.sections?.[0]?.content).toBe('original')
         expect('surfaceDigest' in input).toBe(false)
         expect('effects' in context).toBe(false)
-        return { sections: [{ id: 'transformed', order: 0, content: 'changed' }] }
+        return { sections: [{ id: 'base', order: 0, content: 'changed' }] }
       }),
       0,
     )
@@ -371,7 +387,7 @@ describe('pure runtime Hook stage algorithm (no State or execution authority)', 
     expect(calls).toEqual(['first', 'second'])
     expect(result.outcome).toBe('completed')
     expect(value(result.result.output)).toEqual({
-      sections: [{ id: 'transformed', order: 0, text: 'changed' }],
+      sections: [{ id: 'base', order: 0, text: 'changed' }],
       additionalContext: 'note',
     })
     expect(value(input.request.input)).toMatchObject({ sections: [{ text: 'original' }] })

@@ -68,6 +68,7 @@ exports[`keeps the public runtime export surface stable 1`] = `
   "createAccountingFactory",
   "createAuxiliaryVisionEffectPort",
   "createDefaultBudgetFactory",
+  "createDefaultEffectsFactory",
   "createDefaultUsageFactory",
   "createEnvelopeCache",
   "createInteractionAuthority",
