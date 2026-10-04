@@ -1290,6 +1290,15 @@ body:not([data-connection="reconnecting"]):not([data-connection="closed"]) .conn
   background: var(--agnes-bg-app-content);
   color: var(--agnes-text-secondary);
 }
+/* 轨迹区渲染在内置插槽包装里：区域 → [data-slot] → [data-slot-entry] → #trace-content。
+   两层包装默认是普通 block，区域网格只看到一个按内容高度铺开的子项，三条轨道被第一行
+   全吃掉，`.trace-body` 拿到的不是剩余高度而是内容高度，`.trace-list` 的 overflow:auto
+   永不触发——列表被区域的 overflow:hidden 裁掉又滚不动。包装透明后 toolbar / 甘特图 /
+   trace-body 才真正落到各自轨道上。 */
+[data-agnes-region="trace"] > [data-slot],
+[data-agnes-region="trace"] > [data-slot] > [data-slot-entry] {
+  display: contents;
+}
 [data-agnes-region="rightbar"] {
   position: fixed;
   z-index: 5;
