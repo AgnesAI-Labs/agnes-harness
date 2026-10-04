@@ -1,7 +1,61 @@
 import { describe, expect, it } from 'vitest'
 import { createHostRuntimeClientPorts } from '../../src/runtime/client-ports.js'
+import { assembleHostProjectionOwner, createHostProjectionOwner } from '../../src/runtime/projection-owner.js'
 
 describe('Host runtime client assembly', () => {
+  it('names a missing public projection export and cannot issue an identity from transport authentication', async () => {
+    const owner = createHostProjectionOwner()
+    const caller = { principalId: 'local' as const, generation: 'daemon-generation' }
+    const header = { negotiatedSession: 's1', clientInstanceId: 'ci1', catalogRevision: 1, callId: 'call1' }
+    const ports = createHostRuntimeClientPorts(owner.installation, caller)
+    expect(await ports['conversation.open']?.({ sessionId: 'session', limit: 1 }, header)).toMatchObject({
+      ok: false,
+      error: { detailCode: 'projection_provider_export_unavailable' },
+    })
+    expect(Object.keys(ports)).toEqual([
+      'conversation.open',
+      'conversation.history',
+      'domain.query',
+      'domain.commandStatus',
+      'conversation.list',
+    ])
+    await owner.close()
+    expect(await ports['conversation.open']?.({ sessionId: 'session', limit: 1 }, header)).toMatchObject({
+      ok: false,
+      error: { detailCode: 'projection_owner_closed' },
+    })
+    const missing = assembleHostProjectionOwner({
+      provider: {
+        openConversation: async () => {
+          throw new Error('unreachable')
+        },
+        conversationHistory: async () => {
+          throw new Error('unreachable')
+        },
+        listConversations: async () => {
+          throw new Error('unreachable')
+        },
+        snapshot: async () => {
+          throw new Error('unreachable')
+        },
+        commandStatus: async () => {
+          throw new Error('unreachable')
+        },
+        refresh: async () => null,
+        close() {},
+      },
+    })
+    expect(
+      await createHostRuntimeClientPorts(missing.installation, caller)['conversation.open']?.(
+        { sessionId: 'session', limit: 1 },
+        header,
+      ),
+    ).toMatchObject({
+      ok: false,
+      error: { detailCode: 'projection_context_issuer_unavailable' },
+    })
+    await missing.close()
+  })
   it('requires both a read adapter and C14, propagates refusal and never installs a command', async () => {
     const caller = { principalId: 'local' as const, generation: 'daemon-generation' }
     const header = { negotiatedSession: 's1', clientInstanceId: 'ci1', catalogRevision: 1, callId: 'call1' }

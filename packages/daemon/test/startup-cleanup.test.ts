@@ -56,14 +56,23 @@ describe('supervisor startup cleanup', () => {
       const lock = await acquireOwnerLock(dir, { socketPath, processIdentity })
       await lock.release()
     }
+    let projectionClosed = false
     try {
       await expect(
         startSupervisor({
           ...base,
+          projectionOwner: {
+            installation: { queries: {} },
+            committed: async () => null,
+            close: async () => {
+              projectionClosed = true
+            },
+          },
           artifactAuthorityProjection: {} as never,
           ports: { artifactRead: {} as never },
         }),
       ).rejects.toThrow('artifact authority projection conflicts')
+      expect(projectionClosed).toBe(true)
       await assertReleased()
 
       await expect(startSupervisor({ ...base, artifactAuthorityProjection: null as never })).rejects.toThrow(

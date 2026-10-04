@@ -3,7 +3,14 @@ import { connect } from 'node:net'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { canonicalJson, DEFAULT_COMPUTER_USE, hashInput, type ResolvedProfile, sha256hex } from '@agnes/host'
+import {
+  canonicalJson,
+  createHostProjectionOwner,
+  DEFAULT_COMPUTER_USE,
+  hashInput,
+  type ResolvedProfile,
+  sha256hex,
+} from '@agnes/host'
 import { createTestHost } from '@agnes/host/testkit'
 import { RuntimeClientTransportWire } from '@agnes/protocol/runtime'
 import { createClient, memoryJournal, wsTransport } from '@agnes/sdk'
@@ -268,6 +275,21 @@ describe('agnesd supervisor: real end-to-end', () => {
         ok: false,
         error: { detailCode: 'operation_not_supported' },
       })
+      const projectionReply = await fetch(
+        new URL(RuntimeClientTransportWire.routes.clientQuery.path, first.baseUrl),
+        {
+          method: 'POST',
+          headers: { authorization: `Bearer ${bearer}`, 'content-type': 'application/json' },
+          body: JSON.stringify({
+            header: input.header,
+            call: { operation: 'conversation.open', input: { sessionId: 'session', limit: 1 } },
+          }),
+        },
+      )
+      expect(await projectionReply.json()).toMatchObject({
+        ok: false,
+        error: { detailCode: 'projection_provider_export_unavailable' },
+      })
       const ownerPath = join(dir, 'daemon', 'owner.json')
       const ownerRecord = readFileSync(ownerPath, 'utf8')
       try {
@@ -282,11 +304,24 @@ describe('agnesd supervisor: real end-to-end', () => {
       const firstGeneration = supervisor.owner.generation
       await supervisor.close()
       await expect(fetch(first.baseUrl)).rejects.toThrow()
+      const projectionOwner = createHostProjectionOwner()
+      let projectionClosed = false
       supervisor = await startSupervisor({
         ...options,
+        projectionOwner: {
+          ...projectionOwner,
+          close: async () => {
+            await projectionOwner.close()
+            projectionClosed = true
+          },
+        },
         runtimeClientInstallation: {
           authorize: async () => ({ ok: true, value: true }),
           queries: {
+            'conversation.list': async () => ({
+              ok: true,
+              value: { items: [], snapshot: 'explicit-list', nextCursor: null, complete: true },
+            }),
             'transport.catalogStatus': async () => ({
               ok: true,
               value: {
@@ -305,7 +340,36 @@ describe('agnesd supervisor: real end-to-end', () => {
       expect(
         (await query(second.baseUrl, runtimeClientBearer(second.token, supervisor.owner.generation))).status,
       ).toBe(200)
+      const listReply = await fetch(second.baseUrl + RuntimeClientTransportWire.routes.clientQuery.path, {
+        method: 'POST',
+        headers: {
+          authorization: `Bearer ${runtimeClientBearer(second.token, supervisor.owner.generation)}`,
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({
+          header: input.header,
+          call: {
+            operation: 'conversation.list',
+            input: {
+              scope: {
+                kind: 'workspace',
+                installationId: 'install',
+                runtimeId: 'runtime',
+                workspaceId: 'workspace',
+              },
+              text: null,
+              cursor: null,
+              limit: 1,
+            },
+          },
+        }),
+      })
+      expect(await listReply.json()).toMatchObject({
+        ok: true,
+        value: { reply: { operation: 'conversation.list', value: { snapshot: 'explicit-list' } } },
+      })
       await supervisor.close()
+      expect(projectionClosed).toBe(true)
       await expect(fetch(second.baseUrl)).rejects.toThrow()
     } finally {
       await supervisor?.close()
