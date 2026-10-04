@@ -16,7 +16,11 @@ import type { JsonValue } from '@agnes/protocol'
 // test should reach for reject with a named error instead of quietly returning a plausible value —
 // a tool that starts using one fails loudly rather than silently passing.
 
-export type MemFs = { files: Map<string, Uint8Array> }
+export type MemFs = {
+  files: Map<string, Uint8Array>
+  /** Modification times `fs.stat` reports, by absolute path; a path with no entry reports 0. A test moves one to model a change that kept the size. */
+  mtimes: Map<string, number>
+}
 
 export type ExecOpts = { cwd?: string; env?: Record<string, string>; stdin?: string; timeoutMs?: number }
 export type ExecFn = (
@@ -41,6 +45,13 @@ export type FakeToolContext = ToolContext & { mem: MemFs; calls: FakeCalls }
 
 export type FakeToolContextOpts = {
   cwd?: string
+  /** The session key the tool sees. Two contexts with different keys are two sessions. */
+  sessionKey?: string
+  /**
+   * An existing memory filesystem to use instead of a new one, so two contexts (two sessions) act
+   * on the same files the way two sessions do on one workspace. `files` is then ignored.
+   */
+  mem?: MemFs
   files?: Record<string, string | Uint8Array>
   exec?: ExecFn
   invoke?: (name: string, args: JsonValue) => Promise<ToolResult>
@@ -83,10 +94,11 @@ function enoent(path: string): Error {
 export function fakeToolContext(opts: FakeToolContextOpts = {}): FakeToolContext {
   const cwd = opts.cwd ?? '/work/proj'
   const abs = (p: string): string => (p.startsWith('/') ? p : `${cwd}/${p}`)
-  const mem: MemFs = {
+  const mem: MemFs = opts.mem ?? {
     files: new Map(
       Object.entries(opts.files ?? {}).map(([k, v]) => [abs(k), typeof v === 'string' ? enc.encode(v) : v]),
     ),
+    mtimes: new Map(),
   }
   const calls: FakeCalls = {
     exec: [],
@@ -109,7 +121,7 @@ export function fakeToolContext(opts: FakeToolContextOpts = {}): FakeToolContext
   const ctx: ToolContext = {
     projections: unavailableProjections,
     session: {
-      key: 'agnes:t:a:cli:dm:x',
+      key: opts.sessionKey ?? 'agnes:t:a:cli:dm:x',
       lane: 'main',
       workspaceRoot: cwd,
       turn: 1,
@@ -158,7 +170,7 @@ export function fakeToolContext(opts: FakeToolContextOpts = {}): FakeToolContext
       },
       async stat(p: string) {
         const b = mem.files.get(abs(p))
-        if (b) return { kind: 'file' as const, size: b.byteLength, mtimeMs: 0 }
+        if (b) return { kind: 'file' as const, size: b.byteLength, mtimeMs: mem.mtimes.get(abs(p)) ?? 0 }
         const prefix = `${abs(p).replace(/\/$/, '')}/`
         if ([...mem.files.keys()].some((k) => k.startsWith(prefix)))
           return { kind: 'dir' as const, size: 0, mtimeMs: 0 }
