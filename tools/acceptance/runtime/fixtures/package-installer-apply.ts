@@ -18,7 +18,10 @@ import {
   installerFixtureRequest,
   openInstallerFixture,
 } from '../../../../packages/package-manager/test/runtime/fixtures/installer.js'
-import { installerApplyBuild } from '../../../../packages/package-manager/test/runtime/fixtures/installer-apply-build.js'
+import {
+  type BuildObservation,
+  installerApplyBuild,
+} from '../../../../packages/package-manager/test/runtime/fixtures/installer-apply-build.js'
 import { jcs } from '../../../../packages/protocol/src/jcs.js'
 import type { RuntimeWireTypes as W } from '../../../../packages/protocol/src/runtime/index.js'
 import { canonicalJsonDigest } from '../../../../packages/protocol/src/runtime/index.js'
@@ -55,13 +58,32 @@ function fixtureInput(operation: 'install' | 'disable' | 'repair' | 'resource') 
   return structuredClone(upgradeTemplate)
 }
 
+export interface InstallerApplyFixture extends ReturnType<typeof openInstallerFixture> {
+  buildObservation: BuildObservation | undefined
+  query: ReturnType<typeof openInstallerFixture>
+  call: CallContext
+  request: W['ChangeProposalRequest']
+  control: {
+    authorized: boolean
+    failCandidate: boolean
+    losePublishResponse: boolean
+    approval: DeploymentApprovalTerminal | null
+  }
+  input: ReturnType<typeof fixtureInput>
+  assembly: Awaited<ReturnType<ReturnType<typeof bindingModule.assemblyTestBinding>['open']>>
+  patchApproval: ReturnType<typeof installerApprovalFixture>['patch']
+  approvals: ReturnType<typeof installerApprovalFixture>
+  approved(): Promise<W['ChangeProposal']>
+  close(): Promise<void>
+}
+
 export async function openInstallerApplyFixture(
   kind: 'default' | 'reference',
   directory: string,
   operation: 'install' | 'disable' | 'repair' | 'resource' = 'install',
   hook?: (phase: string) => Promise<void>,
   build?: { sourceKind?: 'local' | 'npm' | 'git'; fault?: 'secret' | 'failure' },
-) {
+): Promise<InstallerApplyFixture> {
   const input = fixtureInput(operation)
   if (operation === 'disable' || operation === 'repair') {
     input.plan.operation = operation

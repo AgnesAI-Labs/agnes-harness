@@ -14,6 +14,7 @@ import { join } from 'node:path'
 import type { CallContext, Outcome } from '@agnes/extension-api/runtime'
 import type * as R from '@agnes/protocol/runtime'
 import { canonicalJsonDigest as digest, validateRuntime } from '@agnes/protocol/runtime'
+import { syncDirectorySync } from '@agnes/system-node'
 
 interface Launch {
   argv: readonly string[]
@@ -109,19 +110,14 @@ export function createReferenceSandbox(raw: ReferenceSandboxOptions) {
     if (!capable) return
     const temporary = `${file}.${randomUUID()}`
     writeFileSync(temporary, JSON.stringify(documents), { mode: 0o600, flag: 'wx' })
-    const fd = openSync(temporary, 'r')
+    const fd = openSync(temporary, 'r+')
     try {
       fsyncSync(fd)
     } finally {
       closeSync(fd)
     }
     renameSync(temporary, file)
-    const dir = openSync(config.directory, 'r')
-    try {
-      fsyncSync(dir)
-    } finally {
-      closeSync(dir)
-    }
+    syncDirectorySync(config.directory)
   }
   for (const document of documents)
     if (!['stopped', 'lost'].includes(document.status)) {
