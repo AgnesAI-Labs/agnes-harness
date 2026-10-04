@@ -6,6 +6,7 @@ import { afterEach, expect, it, vi } from 'vitest'
 import { type AgnesClient, startClientModules } from '../src/client-modules/boot.js'
 import { createComputerUsePaneController } from '../src/computer-use-pane.js'
 import type { ComputerUseOperationPolling, ComputerUseStatusClient } from '../src/computer-use-state.js'
+import { registryRegionSlots } from '../src/region-slot-port.js'
 import { mountSettingsPaneRegion, settingsPaneSlot } from '../src/region-slots.js'
 
 const ready = {
@@ -49,7 +50,7 @@ async function fixture(
   const owner = createComputerUsePaneController({ call: call as ComputerUseStatusClient['call'] }, polling)
   const host = document.createElement('div')
   document.body.append(host)
-  const region = mountSettingsPaneRegion(slots, host, {
+  const region = mountSettingsPaneRegion(registryRegionSlots(slots), host, {
     computerUse: strict ? createElement(StrictMode, null, owner.render()) : owner.render(),
     onChange: ({ pane }) => {
       if (pane === 'computer-use') void owner.refresh()

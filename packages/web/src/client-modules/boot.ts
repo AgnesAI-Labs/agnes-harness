@@ -17,9 +17,7 @@ import {
   LocaleService,
   SessionService,
   type SlotEntry,
-  SlotOutlet,
   SlotRegistry,
-  SlotsProvider,
   ThemeService,
 } from '@agnes/web-client'
 import type { AntdRoot } from '@agnes/web-ui'
@@ -27,7 +25,6 @@ import { createAntdRoot, WEB_UI_LOCALE_NAMESPACE, webUiLocaleCatalog } from '@ag
 import { BuiltinWebUnitRegistry, WEB_UNITS_LOCALE_NAMESPACE, webUnitsLocaleCatalog } from '@agnes/web-units'
 import { diagnosticsCatalog } from '@agnes/web-units/diagnostics-locale'
 import { traceCatalog } from '@agnes/web-units/trace-locale'
-import { createElement } from 'react'
 import { WEB_LOCALE_NAMESPACE, webLocaleCatalog } from '../locale-catalog.js'
 import {
   applyDocumentLocale,
@@ -40,6 +37,7 @@ import {
 } from '../locale-preference.js'
 import { COMPUTER_USE_LOCALE_NAMESPACE, computerUseCatalog } from '../locales/computer-use.js'
 import { SERVER_ERROR_LOCALE_NAMESPACE, serverErrorCatalog } from '../locales/server-errors.js'
+import { registryRegionSlots } from '../region-slot-port.js'
 import type {
   ApprovalRegionMount,
   ComposerRegionMount,
@@ -165,7 +163,8 @@ export async function startClientModules(options: {
   const commands = new CommandService(ctx, options.authorizeCommand)
 
   const registry = (ctx as unknown as { slots: SlotRegistry }).slots
-  const dshShell: DshShellRegionMount = mountDshShellRegion(registry)
+  const slots = registryRegionSlots(registry)
+  const dshShell: DshShellRegionMount = mountDshShellRegion(slots)
 
   // 主题：监听既有外观系统的三个变化入口（不改宿主内部：storage/system + 显式事件）。
   prefersDark.addEventListener('change', () => {
@@ -203,11 +202,7 @@ export async function startClientModules(options: {
     const root = createAntdRoot(host)
     panelRoots.push(root)
     root.render(
-      createElement(
-        SlotsProvider,
-        { registry, session, locale, resources },
-        createElement(SlotOutlet, { name: 'workbench.panel', hideWhenEmpty: true }),
-      ),
+      slots.outlet({ name: 'workbench.panel', hideWhenEmpty: true }, { session, locale, resources }),
     )
   }
 
@@ -232,8 +227,8 @@ export async function startClientModules(options: {
       builtinUnits.unmount('@agnes/web-transcript')
       builtinUnits.unmount('@agnes/web-empty-state')
       transcriptDelegate.current = null
-      const emptyState = mountEmptyStateRegion(registry, children.emptyState, { session, locale })
-      const transcript = mountTranscriptRegion(registry, children.transcript, {
+      const emptyState = mountEmptyStateRegion(slots, children.emptyState, { session, locale })
+      const transcript = mountTranscriptRegion(slots, children.transcript, {
         ...options.transcript,
         ...(options.claim ? { claim: options.claim } : {}),
         newContentButton: children.newContentButton,
@@ -256,11 +251,7 @@ export async function startClientModules(options: {
       for (const [packageId, slot, container] of childUnits) {
         const root = createAntdRoot(container)
         root.render(
-          createElement(
-            SlotsProvider,
-            { registry, session, locale, resources },
-            createElement(SlotOutlet, { name: slot as never, hideWhenEmpty: true }),
-          ),
+          slots.outlet({ name: slot as never, hideWhenEmpty: true }, { session, locale, resources }),
         )
         builtinUnits.mount(packageId, () => root.unmount())
       }
@@ -277,7 +268,7 @@ export async function startClientModules(options: {
     })
   }
   const conversation = options.conversationContainer
-    ? mountConversationRegion(registry, options.conversationContainer, {
+    ? mountConversationRegion(slots, options.conversationContainer, {
         session,
         locale,
         onMount: mountConversationChildren,
@@ -286,16 +277,16 @@ export async function startClientModules(options: {
     : undefined
   if (conversation) builtinUnits.mount('@agnes/web-conversation', () => conversation.dispose())
   const topbar = options.topbarContainer
-    ? mountTopbarRegion(registry, options.topbarContainer, locale)
+    ? mountTopbarRegion(slots, options.topbarContainer, locale)
     : undefined
   if (topbar) builtinUnits.mount('@agnes/web-topbar', () => topbar.dispose())
   const approval = options.approvalContainer
-    ? mountApprovalRegion(registry, options.approvalContainer)
+    ? mountApprovalRegion(slots, options.approvalContainer)
     : undefined
   if (approval) builtinUnits.mount('@agnes/web-approval', () => approval.dispose())
   const composer = options.composerContainer
     ? mountComposerRegion(
-        registry,
+        slots,
         options.composerContainer,
         options.composer ?? {
           onCancel: () => undefined,
@@ -312,15 +303,15 @@ export async function startClientModules(options: {
   if (composer) builtinUnits.mount('@agnes/web-composer', () => composer.dispose())
   const trace =
     options.traceContainer && options.trace
-      ? mountTraceRegion(registry, options.traceContainer, options.trace)
+      ? mountTraceRegion(slots, options.traceContainer, options.trace)
       : undefined
   if (trace) builtinUnits.mount('@agnes/web-trace', () => trace.dispose())
   const rightbar = options.rightbarContainer
-    ? mountRightbarRegion(registry, options.rightbarContainer, { session, resources }, locale)
+    ? mountRightbarRegion(slots, options.rightbarContainer, { session, resources }, locale)
     : undefined
   if (rightbar) builtinUnits.mount('@agnes/web-rightbar', () => rightbar.dispose())
   const settingsPane = options.settingsPaneContainer
-    ? mountSettingsPaneRegion(registry, options.settingsPaneContainer, options.settings, locale)
+    ? mountSettingsPaneRegion(slots, options.settingsPaneContainer, options.settings, locale)
     : undefined
   if (settingsPane) {
     const settingsUnits = [
@@ -336,7 +327,7 @@ export async function startClientModules(options: {
   }
   const emptyState =
     !conversation && options.emptyStateContainer
-      ? mountEmptyStateRegion(registry, options.emptyStateContainer, { session, locale })
+      ? mountEmptyStateRegion(slots, options.emptyStateContainer, { session, locale })
       : undefined
   if (emptyState) builtinUnits.mount('@agnes/web-empty-state', () => emptyState.dispose())
   // The sidebar keeps its existing document-level navigation binding; let the component-owned
@@ -344,12 +335,12 @@ export async function startClientModules(options: {
   if (topbar) await topbar.ready
 
   const sidebar = options.sidebarContainer
-    ? mountSidebarRegion(registry, options.sidebarContainer, options.sidebar, locale)
+    ? mountSidebarRegion(slots, options.sidebarContainer, options.sidebar, locale)
     : undefined
   if (sidebar) builtinUnits.mount('@agnes/web-sidebar', () => sidebar.dispose())
   const transcript =
     !conversation && options.transcriptContainer
-      ? mountTranscriptRegion(registry, options.transcriptContainer, {
+      ? mountTranscriptRegion(slots, options.transcriptContainer, {
           ...options.transcript,
           ...(options.claim ? { claim: options.claim } : {}),
           session,

@@ -5,6 +5,7 @@ import type { UINode, UITurn } from '@agnes/protocol'
 import { SlotRegistry } from '@agnes/web-client'
 import { act } from 'react'
 import { afterEach, expect, it, vi } from 'vitest'
+import { registryRegionSlots } from '../src/region-slot-port.js'
 import { mountTranscriptRegion } from '../src/region-slots.js'
 import { zhLocaleService } from './helpers/locale.js'
 
@@ -31,7 +32,7 @@ async function setup() {
   const host = document.createElement('section')
   host.id = 'transcript'
   document.body.append(host)
-  const mount = mountTranscriptRegion(registry, host, {
+  const mount = mountTranscriptRegion(registryRegionSlots(registry), host, {
     nodeHost: 'react',
     markdownRenderer: 'xmarkdown',
     locale: zhLocaleService(),

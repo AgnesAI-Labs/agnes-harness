@@ -15,8 +15,6 @@ import {
   type SessionService,
   type SlotName,
   SlotOutlet,
-  type SlotRegistry,
-  SlotsProvider,
 } from '@agnes/web-client'
 import type { AntdRoot } from '@agnes/web-ui'
 import { createAntdRoot } from '@agnes/web-ui'
@@ -68,6 +66,7 @@ import { createModelPicker } from './model-picker.js'
 import { renderSessionNavigation } from './navigation.js'
 import { createPermissionPicker } from './permission-picker.js'
 import { isComposerSubmitShortcut, resizeComposer, type Translate } from './presentation.js'
+import type { RegionSlots, TranscriptRegionSlots } from './region-slot-port.js'
 import { bindSidebar } from './shell.js'
 import { createTimelineRenderer } from './timeline.js'
 import { TimelineNodeHost } from './timeline-node-host.js'
@@ -230,14 +229,6 @@ export interface EmptyStateRegionMount {
   dispose(): void
 }
 
-/** Root-scoped regions must not remount when a session-scoped sibling changes session. */
-function rootStableRegistry(registry: SlotRegistry): SlotRegistry {
-  const stable = Object.create(registry) as SlotRegistry
-  Object.defineProperty(stable, 'sessionId', { configurable: true, get: () => undefined })
-  Object.defineProperty(stable, 'subscribeSession', { configurable: true, value: () => () => undefined })
-  return stable
-}
-
 export interface DshShellRegionMount extends EmptyStateRegionMount {}
 
 /**
@@ -245,10 +236,10 @@ export interface DshShellRegionMount extends EmptyStateRegionMount {}
  * compatibility boundaries; their built-ins below forward into this tree so a DSH contribution
  * can replace a top-level surface without making the old app shell disappear.
  */
-export function mountDshShellRegion(registry: SlotRegistry): DshShellRegionMount {
-  if (registry.spec('root')) throw new Error('DSH shell root is already mounted')
-  registry.declare('root', { kind: 'single', scope: 'root' }, 'web-shell')
-  const removeRoot = registry.register(
+export function mountDshShellRegion(slots: RegionSlots): DshShellRegionMount {
+  if (slots.has('root')) throw new Error('DSH shell root is already mounted')
+  slots.declare('root', { kind: 'single', scope: 'root' })
+  const removeRoot = slots.register(
     {
       name: 'root',
       id: 'builtin-dsh-root',
@@ -258,7 +249,7 @@ export function mountDshShellRegion(registry: SlotRegistry): DshShellRegionMount
     },
     () => null,
   )
-  const removeMain = registry.register(
+  const removeMain = slots.register(
     {
       name: 'main',
       key: 'default',
@@ -279,13 +270,7 @@ export function mountDshShellRegion(registry: SlotRegistry): DshShellRegionMount
   document.body.append(overlayHost)
   const overlayRoot = createAntdRoot(overlayHost)
   flushSync(() => {
-    overlayRoot.render(
-      createElement(
-        SlotsProvider,
-        { registry },
-        createElement(SlotOutlet, { name: 'shell.overlay', hideWhenEmpty: true }),
-      ),
-    )
+    overlayRoot.render(slots.outlet({ name: 'shell.overlay', hideWhenEmpty: true }))
   })
   let disposed = false
   return {
@@ -355,7 +340,7 @@ export interface SettingsRegionMount extends EmptyStateRegionMount, SettingsRegi
 
 /** The settings dialog is component-owned; the dialog shell remains the skin/accessibility boundary. */
 export function mountSettingsPaneRegion(
-  registry: SlotRegistry,
+  slots: RegionSlots,
   container: HTMLElement,
   options: SettingsRegionOptions = {},
   locale?: LocaleService,
@@ -363,11 +348,11 @@ export function mountSettingsPaneRegion(
   // The dialog/rail is a host scaffold. Every page below it is a separate row and separate
   // SlotOutlet, so disabling a single built-in or third-party replacement cannot reset siblings.
   for (const pane of Object.keys(PANE_IDS) as SettingsPane[])
-    registry.declare(settingsPaneSlot(pane) as string, { kind: 'single', scope: 'root' }, 'web-shell')
+    slots.declare(settingsPaneSlot(pane) as string, { kind: 'single', scope: 'root' })
   for (const name of SETTINGS_DSH_SLOT_NAMES) {
     const spec = dshSlotSpec(name)
     if (!spec) throw new Error(`settings DSH slot is missing from the catalog: ${name}`)
-    registry.declare(name, spec, 'web-shell')
+    slots.declare(name, spec)
   }
   const handle = { current: null as SettingsRegionHandle | null }
   const root = createAntdRoot(container)
@@ -390,13 +375,7 @@ export function mountSettingsPaneRegion(
     dshRoots.set(name, dshRoot)
     if (pane) dshPaneSlots.set(pane, [...(dshPaneSlots.get(pane) ?? []), name])
     flushSync(() => {
-      dshRoot.render(
-        createElement(
-          SlotsProvider,
-          { registry },
-          createElement(SlotOutlet, { name: name as never, hideWhenEmpty: true }),
-        ),
-      )
+      dshRoot.render(slots.outlet({ name: name as never, hideWhenEmpty: true }))
     })
   }
   for (const name of SETTINGS_DSH_GLOBAL_SLOT_NAMES) {
@@ -411,7 +390,7 @@ export function mountSettingsPaneRegion(
     if (!slotHost) throw new Error(`settings shell is missing ${settingsPaneSlotHostId(pane)}`)
     const paneRoot = createAntdRoot(slotHost)
     paneRoots.set(pane, paneRoot)
-    const remove = registry.register(
+    const remove = slots.register(
       {
         name: settingsPaneSlot(pane) as string,
         id: `builtin-settings-${pane}`,
@@ -427,13 +406,7 @@ export function mountSettingsPaneRegion(
     )
     removeBuiltin.set(pane, remove)
     flushSync(() => {
-      paneRoot.render(
-        createElement(
-          SlotsProvider,
-          { registry },
-          createElement(SlotOutlet, { name: settingsPaneSlot(pane) }),
-        ),
-      )
+      paneRoot.render(slots.outlet({ name: settingsPaneSlot(pane) }))
     })
     for (const name of SETTINGS_DSH_SLOT_NAMES) {
       if (SETTINGS_DSH_GLOBAL_SLOT_NAMES.has(name)) continue
@@ -457,13 +430,7 @@ export function mountSettingsPaneRegion(
     const modelRoot = paneRoots.get('model')
     if (!modelRoot) return
     flushSync(() => {
-      modelRoot.render(
-        createElement(
-          SlotsProvider,
-          { registry },
-          createElement(SlotOutlet, { name: settingsPaneSlot('model') }),
-        ),
-      )
+      modelRoot.render(slots.outlet({ name: settingsPaneSlot('model') }))
     })
   })
   let disposed = false
@@ -505,60 +472,60 @@ export function mountSettingsPaneRegion(
 /** Mount the component-owned composer form behind a session-scoped replacement boundary. */
 export interface ComposerRegionMount extends EmptyStateRegionMount, ComposerHandle {}
 
+/**
+ * Each outlet resolves against the session-aware slots on its own: the frame renders under the
+ * root-stable composer region, while its children follow the active session.
+ */
 function ComposerDshFrame({
-  registry,
+  slots,
   setHandle,
   options,
   dependencies,
 }: {
-  registry: SlotRegistry
+  slots: RegionSlots
   setHandle: (value: ComposerHandle | null) => void
   options: ComposerRegionOptions
   dependencies: ComposerDependencies
 }): ReturnType<typeof createElement> {
-  const outlet = (name: string) => createElement(SlotOutlet, { name: name as never, hideWhenEmpty: true })
+  const outlet = (name: string) => slots.outlet({ name: name as never, hideWhenEmpty: true })
   return createElement(
-    SlotsProvider,
-    { registry },
-    createElement(
-      'div',
-      { 'data-agnes-composer-dsh': true },
-      createElement(SlotOutlet, {
-        name: 'conversation.composer',
-        props: { owner: { composerId: 'composer' } },
-        owner: { composerId: 'composer' },
-        hideWhenEmpty: true,
-      }),
-      createElement(Composer, {
-        ref: setHandle,
-        dependencies,
-        ...options,
-        slots: {
-          attachments: outlet('conversation.input.attachments'),
-          dock: createElement(
-            'span',
-            { style: { display: 'contents' }, 'data-agnes-composer-dock': true },
-            createElement(SlotOutlet, {
-              name: 'conversation.composer.dock',
-              props: { owner: { composerId: 'composer' } },
-              hideWhenEmpty: true,
-            }),
-            outlet('conversation.input.dock'),
-          ),
-          left: outlet('conversation.input.left'),
-          model: outlet('conversation.input.model'),
-          overlay: outlet('conversation.input.overlay'),
-          permission: outlet('conversation.input.permission'),
-          plan: outlet('conversation.input.plan'),
-          right: outlet('conversation.input.right'),
-        },
-      }),
-    ),
+    'div',
+    { 'data-agnes-composer-dsh': true },
+    slots.outlet({
+      name: 'conversation.composer',
+      props: { owner: { composerId: 'composer' } },
+      owner: { composerId: 'composer' },
+      hideWhenEmpty: true,
+    }),
+    createElement(Composer, {
+      ref: setHandle,
+      dependencies,
+      ...options,
+      slots: {
+        attachments: outlet('conversation.input.attachments'),
+        dock: createElement(
+          'span',
+          { style: { display: 'contents' }, 'data-agnes-composer-dock': true },
+          slots.outlet({
+            name: 'conversation.composer.dock',
+            props: { owner: { composerId: 'composer' } },
+            hideWhenEmpty: true,
+          }),
+          outlet('conversation.input.dock'),
+        ),
+        left: outlet('conversation.input.left'),
+        model: outlet('conversation.input.model'),
+        overlay: outlet('conversation.input.overlay'),
+        permission: outlet('conversation.input.permission'),
+        plan: outlet('conversation.input.plan'),
+        right: outlet('conversation.input.right'),
+      },
+    }),
   )
 }
 
 export function mountComposerRegion(
-  registry: SlotRegistry,
+  slots: RegionSlots,
   container: HTMLElement,
   options: ComposerRegionOptions,
   locale: LocaleService,
@@ -578,19 +545,13 @@ export function mountComposerRegion(
       }),
     createUsagePanel: (parent) => createUsagePanel(parent, (key, vars) => locale.t(key, vars)),
   }
-  const ownedShell = registry.spec('root') ? undefined : mountDshShellRegion(registry)
-  if (!registry.spec('conversation.composer'))
-    registry.declare(
-      'conversation.composer',
-      { kind: 'chain', scope: 'session' },
-      'web-shell',
-      'main.conversation',
-    )
-  if (!registry.spec('conversation.composer.bar'))
-    registry.declare(
+  const ownedShell = slots.has('root') ? undefined : mountDshShellRegion(slots)
+  if (!slots.has('conversation.composer'))
+    slots.declare('conversation.composer', { kind: 'chain', scope: 'session' }, 'main.conversation')
+  if (!slots.has('conversation.composer.bar'))
+    slots.declare(
       'conversation.composer.bar',
       { kind: 'single', scope: 'session-maybe' },
-      'web-shell',
       'main.conversation',
     )
   const handle = { current: null as ComposerHandle | null }
@@ -613,8 +574,8 @@ export function mountComposerRegion(
       options.onDraftChange(value)
     },
   }
-  registry.declare(COMPOSER_SLOT as string, { kind: 'single', scope: 'session-maybe' }, 'web-shell')
-  const removeDshBarBuiltin = registry.register(
+  slots.declare(COMPOSER_SLOT as string, { kind: 'single', scope: 'session-maybe' })
+  const removeDshBarBuiltin = slots.register(
     {
       name: 'conversation.composer.bar',
       id: 'builtin-conversation-composer-bar',
@@ -624,13 +585,13 @@ export function mountComposerRegion(
     },
     () =>
       ComposerDshFrame({
-        registry,
+        slots,
         setHandle,
         options: composerOptions,
         dependencies: composerDependencies,
       }),
   )
-  const removeBuiltin = registry.register(
+  const removeBuiltin = slots.register(
     {
       name: COMPOSER_SLOT as string,
       id: 'builtin-composer',
@@ -641,13 +602,7 @@ export function mountComposerRegion(
   )
   const root = createAntdRoot(container)
   flushSync(() => {
-    root.render(
-      createElement(
-        SlotsProvider,
-        { registry: rootStableRegistry(registry) },
-        createElement(SlotOutlet, { name: COMPOSER_SLOT }),
-      ),
-    )
+    root.render(slots.outlet({ name: COMPOSER_SLOT }, { rootStable: true }))
   })
   let disposed = false
   return {
@@ -915,7 +870,7 @@ function RightbarBuiltin(): ReturnType<typeof createElement> {
 
 /** Mount the independent DSH rightbar surface; trace and approval keep their legacy owners. */
 export function mountRightbarRegion(
-  registry: SlotRegistry,
+  slots: RegionSlots,
   container: HTMLElement,
   options: RightbarRegionOptions = {},
   locale?: LocaleService,
@@ -924,8 +879,8 @@ export function mountRightbarRegion(
   const rootSpec = dshSlotSpec('rightbar')
   const sessionSpec = dshSlotSpec('rightbar.session')
   if (!rootSpec || !sessionSpec) throw new Error('rightbar DSH slots are missing from the catalog')
-  if (!registry.spec('rightbar')) registry.declare('rightbar', rootSpec, 'web-shell')
-  const removeBuiltin = registry.register(
+  if (!slots.has('rightbar')) slots.declare('rightbar', rootSpec)
+  const removeBuiltin = slots.register(
     {
       name: 'rightbar',
       id: 'builtin-rightbar',
@@ -935,7 +890,7 @@ export function mountRightbarRegion(
     },
     () => createElement(RightbarBuiltin),
   )
-  const removeSessionBuiltin = registry.register(
+  const removeSessionBuiltin = slots.register(
     {
       name: 'rightbar.session',
       id: 'builtin-rightbar-session',
@@ -949,7 +904,7 @@ export function mountRightbarRegion(
         ...(t ? { t } : {}),
       }),
   )
-  const removeDocumentTab = registry.register(
+  const removeDocumentTab = slots.register(
     {
       name: 'sidebar.right.pane.tab',
       key: 'document',
@@ -965,7 +920,7 @@ export function mountRightbarRegion(
         ...(options.resources === undefined ? {} : { resources: options.resources }),
       }),
   )
-  const removeGuideTab = registry.register(
+  const removeGuideTab = slots.register(
     {
       name: 'sidebar.right.pane.tab',
       key: 'guide',
@@ -984,7 +939,7 @@ export function mountRightbarRegion(
   const documentRenderers: Array<() => void> = []
   for (const kind of ['text', 'markdown', 'html', 'image', 'pdf', 'code'] as const) {
     documentRenderers.push(
-      registry.register(
+      slots.register(
         {
           name: 'sidebar.right.tab.document',
           key: kind,
@@ -1014,19 +969,13 @@ export function mountRightbarRegion(
   ]
   const hasCustomRightbarEntry = (): boolean =>
     options.document !== undefined ||
-    watchedSlots.some((name) => registry.entries(name).some((entry) => entry.owner !== '@agnes/web-rightbar'))
+    watchedSlots.some((name) => slots.entries(name).some((entry) => entry.owner !== '@agnes/web-rightbar'))
   const syncVisibility = (): void => {
     container.hidden = !hasCustomRightbarEntry()
   }
-  const stops = watchedSlots.map((name) => registry.subscribeBatched(name, syncVisibility))
+  const stops = watchedSlots.map((name) => slots.subscribe(name, syncVisibility))
   flushSync(() => {
-    root.render(
-      createElement(
-        SlotsProvider,
-        { registry, ...(options.session ? { session: options.session } : {}) },
-        createElement(SlotOutlet, { name: 'rightbar' }),
-      ),
-    )
+    root.render(slots.outlet({ name: 'rightbar' }, { session: options.session }))
   })
   syncVisibility()
   let disposed = false
@@ -1048,19 +997,19 @@ export function mountRightbarRegion(
 
 /** The trace pane retains outer visibility semantics while its renderer owns a slot leaf. */
 export function mountTraceRegion(
-  registry: SlotRegistry,
+  slots: RegionSlots,
   container: HTMLElement,
   options: TraceRegionOptions,
 ): TraceRegionMount {
-  registry.declare(TRACE_SLOT as string, { kind: 'single', scope: 'session-maybe' }, 'web-shell')
+  slots.declare(TRACE_SLOT as string, { kind: 'single', scope: 'session-maybe' })
   const handle = { current: null as TraceHandle | null }
-  const removeBuiltin = registry.register(
+  const removeBuiltin = slots.register(
     { name: TRACE_SLOT as string, id: 'builtin-trace', owner: '@agnes/web-trace', priority: 0 },
     () => createElement(Trace, { ref: handle, root: container, options }),
   )
   const root = createAntdRoot(container)
   flushSync(() => {
-    root.render(createElement(SlotsProvider, { registry }, createElement(SlotOutlet, { name: TRACE_SLOT })))
+    root.render(slots.outlet({ name: TRACE_SLOT }))
   })
   let disposed = false
   return {
@@ -1088,7 +1037,7 @@ export interface TopbarRegionMount extends EmptyStateRegionMount, TopbarHandle {
 
 /** Mount the component-owned topbar behind a replaceable SlotOutlet. */
 export function mountTopbarRegion(
-  registry: SlotRegistry,
+  slots: RegionSlots,
   container: HTMLElement,
   locale: LocaleService,
 ): TopbarRegionMount {
@@ -1108,8 +1057,8 @@ export function mountTopbarRegion(
     if (status !== undefined) value.setStatus(status.text, status.state)
     if (connectionState !== undefined) value.setConnectionState(connectionState)
   }
-  registry.declare(TOPBAR_SLOT as string, { kind: 'single', scope: 'root' }, 'web-shell')
-  const removeBuiltin = registry.register(
+  slots.declare(TOPBAR_SLOT as string, { kind: 'single', scope: 'root' })
+  const removeBuiltin = slots.register(
     { name: TOPBAR_SLOT as string, id: 'builtin-topbar', owner: '@agnes/web-topbar', priority: 0 },
     () =>
       createElement(Topbar, {
@@ -1120,13 +1069,7 @@ export function mountTopbarRegion(
   container.replaceChildren()
   const root = createAntdRoot(container)
   flushSync(() => {
-    root.render(
-      createElement(
-        SlotsProvider,
-        { registry: rootStableRegistry(registry) },
-        createElement(SlotOutlet, { name: TOPBAR_SLOT }),
-      ),
-    )
+    root.render(slots.outlet({ name: TOPBAR_SLOT }, { rootStable: true }))
   })
   let disposed = false
   return {
@@ -1170,15 +1113,15 @@ function ApprovalDshFrame({
 }
 
 /** Mount the component-owned approval card behind the live-region section and slot boundary. */
-export function mountApprovalRegion(registry: SlotRegistry, container: HTMLElement): ApprovalRegionMount {
+export function mountApprovalRegion(slots: RegionSlots, container: HTMLElement): ApprovalRegionMount {
   const handle = { current: null as ApprovalHandle | null }
   let view: ApprovalView | undefined
   const setHandle = (value: ApprovalHandle | null): void => {
     handle.current = value
     if (value) value.render(view)
   }
-  registry.declare(APPROVAL_SLOT as string, { kind: 'single', scope: 'session-maybe' }, 'web-shell')
-  const removeBuiltin = registry.register(
+  slots.declare(APPROVAL_SLOT as string, { kind: 'single', scope: 'session-maybe' })
+  const removeBuiltin = slots.register(
     {
       name: APPROVAL_SLOT as string,
       id: 'builtin-approval',
@@ -1191,9 +1134,7 @@ export function mountApprovalRegion(registry: SlotRegistry, container: HTMLEleme
   container.replaceChildren()
   const root = createAntdRoot(container)
   flushSync(() => {
-    root.render(
-      createElement(SlotsProvider, { registry }, createElement(SlotOutlet, { name: APPROVAL_SLOT })),
-    )
+    root.render(slots.outlet({ name: APPROVAL_SLOT }))
   })
   let disposed = false
   return {
@@ -1263,14 +1204,14 @@ function ConversationSessionBuiltin(): ReturnType<typeof createElement> {
 }
 
 export function mountConversationRegion(
-  registry: SlotRegistry,
+  slots: RegionSlots,
   container: HTMLElement,
   options: ConversationRegionOptions = {},
 ): ConversationRegionMount {
-  const ownedShell = registry.spec('root') ? undefined : mountDshShellRegion(registry)
-  registry.declare(CONVERSATION_SLOT as string, { kind: 'single', scope: 'session-maybe' }, 'web-shell')
+  const ownedShell = slots.has('root') ? undefined : mountDshShellRegion(slots)
+  slots.declare(CONVERSATION_SLOT as string, { kind: 'single', scope: 'session-maybe' })
   const handle = { current: null as ConversationHandle | null }
-  const removeMainConversationBuiltin = registry.register(
+  const removeMainConversationBuiltin = slots.register(
     {
       name: 'main.conversation',
       id: 'builtin-dsh-main-conversation',
@@ -1298,7 +1239,7 @@ export function mountConversationRegion(
         },
       }),
   )
-  const removeSessionBuiltin = registry.register(
+  const removeSessionBuiltin = slots.register(
     {
       name: 'conversation.session',
       id: 'builtin-conversation-session',
@@ -1308,7 +1249,7 @@ export function mountConversationRegion(
     },
     () => createElement(ConversationSessionBuiltin),
   )
-  const removeBuiltin = registry.register(
+  const removeBuiltin = slots.register(
     {
       name: CONVERSATION_SLOT as string,
       id: 'builtin-conversation',
@@ -1323,7 +1264,7 @@ export function mountConversationRegion(
     },
     () => createElement(SlotOutlet, { name: 'main', entryKey: 'default', hideWhenEmpty: true }),
   )
-  const removeHeaderBuiltin = registry.register(
+  const removeHeaderBuiltin = slots.register(
     {
       name: 'conversation.session.header',
       id: 'builtin-conversation-session-header',
@@ -1339,13 +1280,7 @@ export function mountConversationRegion(
   container.replaceChildren()
   const root = createAntdRoot(container)
   flushSync(() => {
-    root.render(
-      createElement(
-        SlotsProvider,
-        { registry, ...(options.session ? { session: options.session } : {}) },
-        createElement(SlotOutlet, { name: CONVERSATION_SLOT }),
-      ),
-    )
+    root.render(slots.outlet({ name: CONVERSATION_SLOT }, { session: options.session }))
   })
   let disposed = false
   return {
@@ -1372,7 +1307,7 @@ export function mountConversationRegion(
 export interface SidebarRegionMount extends EmptyStateRegionMount, SidebarHandle {}
 
 export function mountSidebarRegion(
-  registry: SlotRegistry,
+  slots: RegionSlots,
   container: HTMLElement,
   options: { state?: SidebarState; actions?: Partial<SidebarActions> } = {},
   locale: LocaleService,
@@ -1384,10 +1319,10 @@ export function mountSidebarRegion(
     bindSidebar: (narrow, ownerDocument) => bindSidebar(narrow, ownerDocument, translate),
     renderNavigation: (options) => renderSessionNavigation(options, translate),
   }
-  registry.declare(SIDEBAR_SLOT as string, { kind: 'single', scope: 'root' }, 'web-shell')
-  if (!registry.spec('sidebar')) registry.declare('sidebar', { kind: 'single', scope: 'root' }, 'web-shell')
+  slots.declare(SIDEBAR_SLOT as string, { kind: 'single', scope: 'root' })
+  if (!slots.has('sidebar')) slots.declare('sidebar', { kind: 'single', scope: 'root' })
   const handle = { current: null as SidebarHandle | null }
-  const removeDshBuiltin = registry.register(
+  const removeDshBuiltin = slots.register(
     {
       name: 'sidebar',
       id: 'builtin-sidebar-dsh',
@@ -1403,19 +1338,13 @@ export function mountSidebarRegion(
         dependencies: sidebarDependencies,
       }),
   )
-  const removeBuiltin = registry.register(
+  const removeBuiltin = slots.register(
     { name: SIDEBAR_SLOT as string, id: 'builtin-sidebar', owner: '@agnes/web-sidebar', priority: 0 },
-    () => createElement(SlotsProvider, { registry }, createElement(SlotOutlet, { name: 'sidebar' as never })),
+    () => slots.outlet({ name: 'sidebar' as never }),
   )
   const root = createAntdRoot(container)
   flushSync(() => {
-    root.render(
-      createElement(
-        SlotsProvider,
-        { registry: rootStableRegistry(registry) },
-        createElement(SlotOutlet, { name: SIDEBAR_SLOT }),
-      ),
-    )
+    root.render(slots.outlet({ name: SIDEBAR_SLOT }, { rootStable: true }))
   })
   let disposed = false
   return {
@@ -1445,7 +1374,7 @@ export function mountSidebarRegion(
 export interface TranscriptRegionMount extends EmptyStateRegionMount, TranscriptHandle {}
 
 export function mountTranscriptRegion(
-  registry: SlotRegistry,
+  slots: TranscriptRegionSlots,
   container: HTMLElement,
   options: {
     /** Select the React host; callers that omit it retain the legacy renderer. */
@@ -1460,17 +1389,14 @@ export function mountTranscriptRegion(
     resources?: ClientResourceService
   } = {},
 ): TranscriptRegionMount {
-  if (!registry.spec('conversation.view'))
-    registry.declare(
-      'conversation.view',
-      { kind: 'list', scope: 'session' },
-      'web-shell',
-      'conversation.session',
-    )
-  if (!registry.spec(TRANSCRIPT_SLOT))
-    registry.declare(TRANSCRIPT_SLOT as string, { kind: 'single', scope: 'session-maybe' }, 'web-shell')
+  if (!slots.has('conversation.view'))
+    slots.declare('conversation.view', { kind: 'list', scope: 'session' }, 'conversation.session')
+  if (!slots.has(TRANSCRIPT_SLOT))
+    slots.declare(TRANSCRIPT_SLOT as string, { kind: 'single', scope: 'session-maybe' })
+  // The timeline projects each node through the registry itself; only the region goes through the port.
+  const { registry } = slots
   const handle = { current: null as TranscriptHandle | null }
-  const removeBuiltin = registry.register(
+  const removeBuiltin = slots.register(
     {
       name: TRANSCRIPT_SLOT as string,
       id: 'builtin-transcript',
@@ -1512,7 +1438,7 @@ export function mountTranscriptRegion(
             ...options,
           }),
   )
-  const removeViewBuiltin = registry.register(
+  const removeViewBuiltin = slots.register(
     {
       name: 'conversation.view',
       id: 'builtin-conversation-view',
@@ -1524,7 +1450,7 @@ export function mountTranscriptRegion(
   // These are child declarations of the two keyed transcript parents. The
   // declaration-only entries keep the parent/child lifecycle tied to this
   // transcript mount while their keys stay outside real node/tool keys.
-  const removeChatChildren = registry.register(
+  const removeChatChildren = slots.register(
     {
       name: 'conversation.chat.node',
       key: '__agnes-native-child-declarations__',
@@ -1541,7 +1467,7 @@ export function mountTranscriptRegion(
     },
     () => null,
   )
-  const removeToolChildren = registry.register(
+  const removeToolChildren = slots.register(
     {
       name: 'tool.call.toolview',
       key: '__agnes-native-child-declarations__',
@@ -1559,18 +1485,9 @@ export function mountTranscriptRegion(
   const root = createAntdRoot(container)
   flushSync(() => {
     root.render(
-      createElement(
-        SlotsProvider,
-        {
-          registry,
-          ...(options.session ? { session: options.session } : {}),
-          ...(options.locale ? { locale: options.locale } : {}),
-          ...(options.resources ? { resources: options.resources } : {}),
-        },
-        createElement(SlotOutlet, {
-          name: 'conversation.view',
-          fallback: createElement(SlotOutlet, { name: TRANSCRIPT_SLOT }),
-        }),
+      slots.outlet(
+        { name: 'conversation.view', fallback: createElement(SlotOutlet, { name: TRANSCRIPT_SLOT }) },
+        { session: options.session, locale: options.locale, resources: options.resources },
       ),
     )
   })
@@ -1605,15 +1522,15 @@ export function mountTranscriptRegion(
  * section is hidden; the app keeps ownership of `hidden` and the region only owns its contents.
  */
 export function mountEmptyStateRegion(
-  registry: SlotRegistry,
+  slots: RegionSlots,
   container: HTMLElement,
   services: { session?: SessionService; locale?: LocaleService } = {},
 ): EmptyStateRegionMount {
-  if (!registry.spec(EMPTY_STATE_SLOT))
-    registry.declare(EMPTY_STATE_SLOT as string, { kind: 'single', scope: 'root' }, 'web-shell')
+  if (!slots.has(EMPTY_STATE_SLOT))
+    slots.declare(EMPTY_STATE_SLOT as string, { kind: 'single', scope: 'root' })
   // Priority 0 is the built-in. Third-party entries can explicitly shadow it with a lower value.
   const translate = services.locale ? (key: string) => services.locale?.t(key) ?? key : undefined
-  const removeBuiltin = registry.register(
+  const removeBuiltin = slots.register(
     {
       name: EMPTY_STATE_SLOT as string,
       id: 'builtin-empty-state',
@@ -1625,13 +1542,8 @@ export function mountEmptyStateRegion(
   )
   container.replaceChildren()
   const root: AntdRoot = createAntdRoot(container)
-  const providerProps = {
-    registry,
-    ...(services.session ? { session: services.session } : {}),
-    ...(services.locale ? { locale: services.locale } : {}),
-  }
   root.render(
-    createElement(SlotsProvider, providerProps, createElement(SlotOutlet, { name: EMPTY_STATE_SLOT })),
+    slots.outlet({ name: EMPTY_STATE_SLOT }, { session: services.session, locale: services.locale }),
   )
   let disposed = false
   return {
