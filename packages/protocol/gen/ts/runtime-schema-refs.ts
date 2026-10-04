@@ -5084,8 +5084,8 @@ export const RuntimeMethodSchemaRefs = freeze({
     "record": {
       "input": {
         "typeId": "agh.usage/record.request@1",
-        "revision": 2,
-        "digest": "7623d12ff60baea513b963f59c684f0e5ee4835fdd73c1235b7a11b17ba8e6ef"
+        "revision": 3,
+        "digest": "d2c73edad9abac443545d0cdc39df951b84b6787027aa032a2ddb8776f1741a3"
       },
       "output": {
         "typeId": "agh.usage/record.response@1",

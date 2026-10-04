@@ -56,6 +56,10 @@ export const RuntimePublic11 = Type.Module({
   "DomainEvent": Type.Object({ "eventId": Type.Ref('Id'), "typeId": Type.Ref('TypeId'), "schema": Type.Ref('SchemaRef'), "source": Type.Ref('BindingRef'), "scope": Type.Ref('ScopeRef'), "occurredAt": Type.Ref('Timestamp'), "payload": Type.Ref('DataRef'), "idempotencyKey": Type.String(), "causation": Type.Object({ "runId": Type.Optional(Type.Ref('Id')), "actionId": Type.Optional(Type.Ref('Id')), "attemptId": Type.Optional(Type.Ref('Id')), "commandId": Type.Optional(Type.Ref('Id')) }, { additionalProperties: false }), "principalRef": Type.Ref('Id'), "correlationId": Type.Union([Type.Ref('Id'), Type.Null()]), "provenance": Type.Ref('Provenance') }, { additionalProperties: false }),
   "UsageFact": Type.Object({ "usageId": Type.Ref('Id'), "originKey": Type.String(), "actionId": Type.Ref('Id'), "attemptId": Type.Ref('Id'), "source": Type.Ref('BindingRef'), "dimensions": Type.Ref('DataRef'), "externalRequest": Type.Ref('ExternalRequestRef'), "observedAt": Type.Ref('Timestamp'), "certainty": Type.Union([Type.Literal('measured'), Type.Literal('estimated'), Type.Literal('unknown')]) }, { additionalProperties: false }),
   "ArtifactVersion": Type.Integer({ minimum: 1, maximum: 9007199254740991 }),
+  "Revision": Type.Ref('UInt53'),
+  "ModelFeatures": Type.Object({ "input": Type.Array(Type.Union([Type.Literal('text'), Type.Literal('image'), Type.Literal('audio'), Type.Literal('video')]), { maxItems: 10000 }), "output": Type.Array(Type.Union([Type.Literal('text'), Type.Literal('image'), Type.Literal('audio'), Type.Literal('video')]), { maxItems: 10000 }), "tools": Type.Boolean(), "structuredOutput": Type.Boolean(), "streaming": Type.Boolean() }, { additionalProperties: false }),
+  "SecretConsumerBinding": Type.Object({ "consumer": Type.Union([Type.Literal('model'), Type.Literal('mcp'), Type.Literal('tls'), Type.Literal('jwt'), Type.Literal('source-auth'), Type.Literal('surface')]), "secretId": Type.Ref('Id'), "accountRef": Type.Union([Type.Ref('Id'), Type.Null()]), "serverRef": Type.Ref('Id'), "audience": Type.String(), "purpose": Type.String() }, { additionalProperties: false }),
+  "ModelRouteSnapshot": Type.Object({ "routeId": Type.Ref('Id'), "routeRevision": Type.Ref('Revision'), "adapter": Type.Ref('BindingRef'), "model": Type.String(), "endpointRef": Type.Ref('Id'), "catalogRevision": Type.Ref('Revision'), "features": Type.Ref('ModelFeatures'), "priceVersion": Type.Ref('Id'), "credentialAudience": Type.String(), "credentialBinding": Type.Union([Type.Ref('SecretConsumerBinding'), Type.Null()]) }, { additionalProperties: false }),
   "SessionControlBoundary": Type.Object({ "kind": Type.Union([Type.Literal('immediate'), Type.Literal('next-request'), Type.Literal('next-turn'), Type.Literal('quiet-step'), Type.Literal('quiet-turn'), Type.Literal('next-run')]), "revision": Type.Ref('UInt53'), "runId": Type.Union([Type.Ref('Id'), Type.Null()]), "afterRequestId": Type.Union([Type.Ref('Id'), Type.Null()]) }, { additionalProperties: false }),
   "CompactOutcome": Type.Union([Type.Object({ "state": Type.Literal('completed'), "endSeq": Type.Integer({ minimum: 1 }) }, { additionalProperties: false }), Type.Object({ "state": Type.Literal('failed'), "endSeq": Type.Integer({ minimum: 1 }) }, { additionalProperties: false }), Type.Object({ "state": Type.Literal('unknown') }, { additionalProperties: false })]),
   "SessionControlResult": Type.Object({ "sessionId": Type.Ref('Id'), "requestId": Type.Ref('Id'), "status": Type.Union([Type.Literal('accepted'), Type.Literal('applied'), Type.Literal('rejected')]), "revision": Type.Ref('UInt53'), "effective": Type.Union([Type.Ref('SessionControlBoundary'), Type.Null()]), "runId": Type.Union([Type.Ref('Id'), Type.Null()]), "childSessionId": Type.Union([Type.Ref('Id'), Type.Null()]), "compact": Type.Union([Type.Ref('CompactOutcome'), Type.Null()]), "error": Type.Union([Type.Ref('RuntimeError'), Type.Null()]) }, { additionalProperties: false }),
@@ -83,7 +87,8 @@ export const RuntimePublic11 = Type.Module({
   "ViewAction": Type.Union([Type.Object({ "actionKey": Type.String(), "label": Type.String(), "requiredFeatures": Type.Array(Type.String(), { maxItems: 10000 }), "availability": Type.Union([Type.Literal('enabled'), Type.Literal('disabled')]), "disabledReason": Type.Union([Type.String(), Type.Null()]), "kind": Type.Literal('command'), "command": Type.String(), "inputSchema": Type.Ref('SchemaRef') }, { additionalProperties: false }), Type.Object({ "actionKey": Type.String(), "label": Type.String(), "requiredFeatures": Type.Array(Type.String(), { maxItems: 10000 }), "availability": Type.Union([Type.Literal('enabled'), Type.Literal('disabled')]), "disabledReason": Type.Union([Type.String(), Type.Null()]), "kind": Type.Literal('interaction'), "interactionId": Type.String(), "version": Type.Number() }, { additionalProperties: false }), Type.Object({ "actionKey": Type.String(), "label": Type.String(), "requiredFeatures": Type.Array(Type.String(), { maxItems: 10000 }), "availability": Type.Union([Type.Literal('enabled'), Type.Literal('disabled')]), "disabledReason": Type.Union([Type.String(), Type.Null()]), "kind": Type.Literal('download'), "artifactId": Type.String(), "version": Type.Number() }, { additionalProperties: false }), Type.Object({ "actionKey": Type.String(), "label": Type.String(), "requiredFeatures": Type.Array(Type.String(), { maxItems: 10000 }), "availability": Type.Union([Type.Literal('enabled'), Type.Literal('disabled')]), "disabledReason": Type.Union([Type.String(), Type.Null()]), "kind": Type.Literal('open-form'), "interactionId": Type.String(), "version": Type.Number() }, { additionalProperties: false })]),
   "DomainView": Type.Object({ "kind": Type.Literal('domain'), "viewId": Type.String(), "revision": Type.Number(), "domainType": Type.String(), "viewSchema": Type.Ref('SchemaRef'), "renderKey": Type.String(), "scope": Type.Ref('AuthorizedViewScope'), "source": Type.Object({ "eventIds": Type.Array(Type.String(), { maxItems: 10000 }), "projectionRevision": Type.Number() }, { additionalProperties: false }), "phase": Type.Union([Type.Literal('provisional'), Type.Literal('finalized'), Type.Literal('interrupted')]), "stream": Type.Optional(Type.Object({ "streamId": Type.String(), "generation": Type.Number(), "revision": Type.Number() }, { additionalProperties: false })), "fallbackText": Object.assign(Type.String({ maxLength: 4096 }), {"x-max-utf8-bytes":4096}), "data": JsonValue, "resources": Type.Array(Type.Ref('ArtifactViewRef'), { maxItems: 32 }), "actions": Type.Array(Type.Ref('ViewAction'), { maxItems: 32 }) }, { additionalProperties: false }),
   "DomainQuery": Type.Object({ "domainType": Type.String(), "query": Type.Ref('DataRef'), "scope": Type.Ref('ScopeRef'), "cursor": Type.Union([Type.String(), Type.Null()]), "limit": Type.Integer({ minimum: 1, maximum: 500 }) }, { additionalProperties: false }),
-  "DomainActionRef": Type.Object({ "viewId": Type.String(), "actionKey": Type.String(), "viewRevision": Type.Number() }, { additionalProperties: false }),
+  "RoutingSelectResult": Type.Object({ "route": Type.Ref('ModelRouteSnapshot'), "reason": Type.String() }, { additionalProperties: false }),
+  "EffectPortsInvokeRequest": Type.Object({ "operation": Type.String(), "input": Type.Ref('DataRef') }, { additionalProperties: false }),
   "EffectPortsStreamRequest": Type.Object({ "operation": Type.String(), "input": Type.Ref('DataRef') }, { additionalProperties: false }),
   "EffectStreamHandleCancelRequest": Type.String(),
   "StreamHandleCancelRequest": Type.String(),
@@ -145,16 +150,6 @@ export const RuntimePublic11 = Type.Module({
   "LocaleClientFormatNumberRequest": Type.Number(),
   "LocaleClientFormatNumberResult": Type.String(),
   "LocaleClientFormatDateResult": Type.String(),
-  "DomainCommandClientSubmitRequest": Type.Object({ "action": Type.Ref('DomainActionRef'), "input": Type.Ref('DataRef'), "requestId": Type.String(), "expectedRevision": Type.Number(), "commandSchema": Type.Ref('SchemaRef') }, { additionalProperties: false }),
-  "DomainCommandClientCommandStatusRequest": Type.String(),
-  "UIRegistryResolveRequest": Type.Object({ "renderKey": Type.String(), "viewSchema": Type.Ref('SchemaRef'), "target": Type.Union([Type.Literal('web'), Type.Literal('tui'), Type.Literal('im'), Type.Literal('sdk')]), "requiredFeatures": Type.Array(Type.String(), { maxItems: 10000 }) }, { additionalProperties: false }),
-  "ClientPresentationLegacySlotRequest": Type.Object({ "name": Type.String(), "props": JsonValue }, { additionalProperties: false }),
-  "ShellServicesNavigateRequest": Type.Object({ "sessionId": Type.String(), "viewId": Type.Optional(Type.String()) }, { additionalProperties: false }),
-  "ShellProviderDisposeRequest": Type.Union([Type.Literal('switch'), Type.Literal('shutdown'), Type.Literal('fault')]),
-  "ShellConversationClientCreateRequest": Type.Object({ "workspaceId": Type.String(), "presetId": Type.String(), "requestId": Type.String() }, { additionalProperties: false }),
-  "ShellConversationClientCreateResult": Type.Object({ "sessionId": Type.String() }, { additionalProperties: false }),
-  "ShellConversationClientOpenRequest": Type.Object({ "sessionId": Type.String(), "limit": Type.Number() }, { additionalProperties: false }),
-  "ShellConversationClientHistoryRequest": Type.Object({ "sessionId": Type.String(), "cursor": Type.String(), "limit": Type.Number() }, { additionalProperties: false }),
 })
 
 export const Id = RuntimePublic11.Import('Id')
@@ -251,6 +246,14 @@ export const UsageFact = RuntimePublic11.Import('UsageFact')
 export type UsageFact = Static<typeof UsageFact>
 export const ArtifactVersion = RuntimePublic11.Import('ArtifactVersion')
 export type ArtifactVersion = Static<typeof ArtifactVersion>
+export const Revision = RuntimePublic11.Import('Revision')
+export type Revision = Static<typeof Revision>
+export const ModelFeatures = RuntimePublic11.Import('ModelFeatures')
+export type ModelFeatures = Static<typeof ModelFeatures>
+export const SecretConsumerBinding = RuntimePublic11.Import('SecretConsumerBinding')
+export type SecretConsumerBinding = Static<typeof SecretConsumerBinding>
+export const ModelRouteSnapshot = RuntimePublic11.Import('ModelRouteSnapshot')
+export type ModelRouteSnapshot = Static<typeof ModelRouteSnapshot>
 export const SessionControlBoundary = RuntimePublic11.Import('SessionControlBoundary')
 export type SessionControlBoundary = Static<typeof SessionControlBoundary>
 export const CompactOutcome = RuntimePublic11.Import('CompactOutcome')
@@ -305,8 +308,10 @@ export const DomainView = RuntimePublic11.Import('DomainView')
 export type DomainView = Static<typeof DomainView>
 export const DomainQuery = RuntimePublic11.Import('DomainQuery')
 export type DomainQuery = Static<typeof DomainQuery>
-export const DomainActionRef = RuntimePublic11.Import('DomainActionRef')
-export type DomainActionRef = Static<typeof DomainActionRef>
+export const RoutingSelectResult = RuntimePublic11.Import('RoutingSelectResult')
+export type RoutingSelectResult = Static<typeof RoutingSelectResult>
+export const EffectPortsInvokeRequest = RuntimePublic11.Import('EffectPortsInvokeRequest')
+export type EffectPortsInvokeRequest = Static<typeof EffectPortsInvokeRequest>
 export const EffectPortsStreamRequest = RuntimePublic11.Import('EffectPortsStreamRequest')
 export type EffectPortsStreamRequest = Static<typeof EffectPortsStreamRequest>
 export const EffectStreamHandleCancelRequest = RuntimePublic11.Import('EffectStreamHandleCancelRequest')
@@ -429,23 +434,3 @@ export const LocaleClientFormatNumberResult = RuntimePublic11.Import('LocaleClie
 export type LocaleClientFormatNumberResult = Static<typeof LocaleClientFormatNumberResult>
 export const LocaleClientFormatDateResult = RuntimePublic11.Import('LocaleClientFormatDateResult')
 export type LocaleClientFormatDateResult = Static<typeof LocaleClientFormatDateResult>
-export const DomainCommandClientSubmitRequest = RuntimePublic11.Import('DomainCommandClientSubmitRequest')
-export type DomainCommandClientSubmitRequest = Static<typeof DomainCommandClientSubmitRequest>
-export const DomainCommandClientCommandStatusRequest = RuntimePublic11.Import('DomainCommandClientCommandStatusRequest')
-export type DomainCommandClientCommandStatusRequest = Static<typeof DomainCommandClientCommandStatusRequest>
-export const UIRegistryResolveRequest = RuntimePublic11.Import('UIRegistryResolveRequest')
-export type UIRegistryResolveRequest = Static<typeof UIRegistryResolveRequest>
-export const ClientPresentationLegacySlotRequest = RuntimePublic11.Import('ClientPresentationLegacySlotRequest')
-export type ClientPresentationLegacySlotRequest = Static<typeof ClientPresentationLegacySlotRequest>
-export const ShellServicesNavigateRequest = RuntimePublic11.Import('ShellServicesNavigateRequest')
-export type ShellServicesNavigateRequest = Static<typeof ShellServicesNavigateRequest>
-export const ShellProviderDisposeRequest = RuntimePublic11.Import('ShellProviderDisposeRequest')
-export type ShellProviderDisposeRequest = Static<typeof ShellProviderDisposeRequest>
-export const ShellConversationClientCreateRequest = RuntimePublic11.Import('ShellConversationClientCreateRequest')
-export type ShellConversationClientCreateRequest = Static<typeof ShellConversationClientCreateRequest>
-export const ShellConversationClientCreateResult = RuntimePublic11.Import('ShellConversationClientCreateResult')
-export type ShellConversationClientCreateResult = Static<typeof ShellConversationClientCreateResult>
-export const ShellConversationClientOpenRequest = RuntimePublic11.Import('ShellConversationClientOpenRequest')
-export type ShellConversationClientOpenRequest = Static<typeof ShellConversationClientOpenRequest>
-export const ShellConversationClientHistoryRequest = RuntimePublic11.Import('ShellConversationClientHistoryRequest')
-export type ShellConversationClientHistoryRequest = Static<typeof ShellConversationClientHistoryRequest>
