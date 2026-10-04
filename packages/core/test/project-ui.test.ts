@@ -42,6 +42,7 @@ it('projects empty defaults without invented generation, state or budget', async
     sessionId: 'empty',
     upto: 0,
     opState: null,
+    pendingInputs: [],
     nodes: [],
     turns: [],
   })

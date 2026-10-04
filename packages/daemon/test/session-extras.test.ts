@@ -490,11 +490,13 @@ describe('session extras: deterministic UI projection diff', () => {
       diffUITimeline(timeline([user, oldAssistant, removed], 3), {
         ...timeline([nextAssistant, user, added], 4),
         yolo: true,
+        pendingInputs: [{ itemId: 'queued', preview: 'next task' }],
       }),
     ).toMatchObject({
       from: 3,
       upto: 4,
       yolo: true,
+      pendingInputs: [{ itemId: 'queued', preview: 'next task' }],
       changes: [
         { op: 'remove', id: 'c' },
         { op: 'upsert', index: 0, node: nextAssistant },

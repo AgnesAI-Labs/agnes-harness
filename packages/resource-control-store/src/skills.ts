@@ -152,6 +152,17 @@ const changed = (journal: SkillJournal, patch: Partial<SkillJournal>): SkillJour
   ...journal,
   ...patch,
 })
+/** Ignore operation history and root scan bookkeeping when deciding whether workers must reload. */
+const skillRuntimeRevision = (journal: SkillJournal): string =>
+  hash({
+    skills: projected(journal).sort((a, b) => a.resourceId.localeCompare(b.resourceId)),
+    capability: journal.capability,
+    priorities: journal.priorities,
+    removed: [...journal.removed].sort(),
+    desired: journal.desired,
+    trust: journal.trust,
+  })
+
 function findCommand(journal: SkillJournal, authority: ResourceAuthority, commandId: string) {
   return journal.operations.find(
     (row) =>
@@ -578,7 +589,9 @@ export class SkillResourceStore {
     }
     try {
       if (!this.adapter) throw new Error('skill catalog adapter unavailable')
+      let resourcesChanged = true
       if (record.operation.kind === '_agnes/v1/skills.refresh') {
+        const before = await this.journal.read(profile, skillRuntimeRevision)
         // The scan observed actual state under the old decisions. When the refresh changed them,
         // publish the worker snapshot the observer reads, then reconcile. The committed catalog
         // stands even if that observation fails; the next one catches up.
@@ -586,6 +599,7 @@ export class SkillResourceStore {
           await beforeTerminal?.()
           await this.reconcile(profile, controller.signal).catch(() => undefined)
         }
+        resourcesChanged = before !== (await this.journal.read(profile, skillRuntimeRevision))
       } else if (record.operation.kind === '_agnes/v1/skills.remove') {
         const descriptor = await this.journal.read(profile, (journal) =>
           journal.discovered.find((item) => item.resourceId === record.operation.target),
@@ -625,7 +639,7 @@ export class SkillResourceStore {
       // Session replacement is downstream bookkeeping. It must not retroactively turn a committed
       // successful resource operation into a failed one.
       try {
-        afterSuccess?.()
+        if (resourcesChanged) afterSuccess?.()
       } catch {}
     } catch {
       if (controller.signal.aborted) return

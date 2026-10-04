@@ -66,6 +66,7 @@ describe('UI projection leaf contract', () => {
         opState: null,
         nodes: [node],
         turns: [],
+        pendingInputs: [{ itemId: 'queued', preview: 'next task' }],
       }),
     ).toBe(true)
   })

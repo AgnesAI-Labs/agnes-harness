@@ -56,6 +56,7 @@ async function fixture(
   options: {
     waitTitle?: Promise<void>
     title?: string
+    rawTitle?: string
     root?: string
     failTurn?: boolean
     treeBudgetCredits?: number
@@ -144,7 +145,13 @@ async function fixture(
           yield { type: 'error', reason: 'error', code: 'AUTH', message: 'no auth', retryable: false }
           return
         }
-        yield { type: 'text_delta', delta: title ? (options.title ?? '修复登录问题') : '这是完整的回答。' }
+        yield {
+          type: 'text_delta',
+          delta: title
+            ? (options.rawTitle ??
+              JSON.stringify({ language: 'zh-CN', title: options.title ?? '修复登录问题' }))
+            : '这是完整的回答。',
+        }
         yield usage(title)
         yield { type: 'done', reason: 'stop' }
       },
@@ -155,8 +162,12 @@ async function fixture(
   ownedSession = session
   return { host, root, session, calls, signals, callOptions }
 }
-async function run(session: HostSession, text = '请修复登录问题') {
-  await session.enqueue('next-turn', { actor: session.d.actor, content: [{ type: 'text', text }] })
+async function run(session: HostSession, text = '请修复登录问题', titleLocale?: 'en' | 'zh-CN') {
+  await session.enqueue('next-turn', {
+    actor: session.d.actor,
+    content: [{ type: 'text', text }],
+    ...(titleLocale ? { titleLocale } : {}),
+  })
   return session.run({ until: 'turn-end', signal: new AbortController().signal })
 }
 async function titleRecord(session: HostSession) {
@@ -165,51 +176,68 @@ async function titleRecord(session: HostSession) {
 }
 
 // Two Hosts and three real turns: about 0.4 s alone, past the 5 s default on the Windows runner.
-it('generates with the captured model, persists once, and bills the first turn without changing context', async () => {
-  let finish!: () => void
-  const f = await fixture({
-    waitTitle: new Promise<void>((resolve) => {
-      finish = resolve
-    }),
-  })
-  expect((await run(f.session)).reason).toBe('completed')
-  await vi.waitFor(() =>
-    expect(f.calls.filter((call) => call.sessionKey.startsWith('title:'))).toHaveLength(1),
-  )
-  const baseline = contextTokens(f.session)
-  expect(baseline).toBe(1050)
-  await f.session.setModel({ slot: 'primary', route: 'gw', model: 'm2' })
-  expect((await run(f.session, '第二个问题')).reason).toBe('completed')
-  finish()
-  await vi.waitFor(async () =>
-    expect(await titleRecord(f.session)).toMatchObject({
-      status: 'generated',
-      title: '修复登录问题',
-      model: 'm1',
-    }),
-  )
-  expect(contextTokens(f.session)).toBe(baseline)
-  const timeline = await f.session.projectUI(undefined, { surface: 'web' })
-  expect(timeline.usage?.totals.input).toBe(2015)
-  expect(timeline.turns[0]?.usage.calls.filter((call) => call.purpose === 'title')).toHaveLength(1)
-  expect(timeline.turns[1]?.usage.calls.filter((call) => call.purpose === 'title')).toHaveLength(0)
-  expect(f.session.surface().map((node) => node.kind)).toEqual(['user', 'assistant', 'user', 'assistant'])
-  const request = f.calls.find((call) => call.sessionKey.startsWith('title:')) as RequestBody
-  expect(request.tools).toEqual([])
-  expect(request.model).toBe('m1')
-  expect(request.sampling?.maxTokens).toBeLessThanOrEqual(1024)
-  for (const [index, call] of f.calls.entries()) {
-    if (call.kind === 'summary') expect(f.callOptions[index]).toHaveProperty('retry', false)
-    else expect(f.callOptions[index]).not.toHaveProperty('retry')
-  }
-  await f.host.close()
-  const reopened = await fixture({ root: f.root })
-  expect(await titleRecord(reopened.session)).toMatchObject({ status: 'generated' })
-  expect(contextTokens(reopened.session)).toBe(baseline)
-  expect((await reopened.session.projectUI()).usage?.totals.input).toBe(2015)
-  await run(reopened.session)
-  expect(reopened.calls.every((call) => !call.sessionKey.startsWith('title:'))).toBe(true)
-}, 30_000)
+it.each([undefined, 'en', 'zh-CN'] as const)(
+  'generates with captured model and language %s, persists once, and bills the first turn without changing context',
+  async (titleLocale) => {
+    let finish!: () => void
+    const f = await fixture({
+      ...(titleLocale === 'zh-CN' ? { title: 'Fix login issue' } : {}),
+      waitTitle: new Promise<void>((resolve) => {
+        finish = resolve
+      }),
+    })
+    expect(
+      (await run(f.session, titleLocale === 'zh-CN' ? 'Fix login issue' : '请修复登录问题', titleLocale))
+        .reason,
+    ).toBe('completed')
+    await vi.waitFor(() =>
+      expect(f.calls.filter((call) => call.sessionKey.startsWith('title:'))).toHaveLength(1),
+    )
+    const baseline = contextTokens(f.session)
+    expect(baseline).toBe(1050)
+    await f.session.setModel({ slot: 'primary', route: 'gw', model: 'm2' })
+    expect((await run(f.session, '第二个问题')).reason).toBe('completed')
+    finish()
+    await vi.waitFor(async () =>
+      expect(await titleRecord(f.session)).toMatchObject({
+        status: 'generated',
+        title: titleLocale === 'zh-CN' ? 'Fix login issue' : '修复登录问题',
+        model: 'm1',
+        ...(titleLocale ? { titleLocale } : {}),
+      }),
+    )
+    expect(contextTokens(f.session)).toBe(baseline)
+    const timeline = await f.session.projectUI(undefined, { surface: 'web' })
+    expect(timeline.usage?.totals.input).toBe(2015)
+    expect(timeline.turns[0]?.usage.calls.filter((call) => call.purpose === 'title')).toHaveLength(1)
+    expect(timeline.turns[1]?.usage.calls.filter((call) => call.purpose === 'title')).toHaveLength(0)
+    expect(f.session.surface().map((node) => node.kind)).toEqual(['user', 'assistant', 'user', 'assistant'])
+    const request = f.calls.find((call) => call.sessionKey.startsWith('title:')) as RequestBody
+    expect(request.tools).toEqual([])
+    expect(request.model).toBe('m1')
+    expect(request.system).toContain('Use the primary natural language of userMessage')
+    expect(request.system).toContain('Only when the language cannot be determined')
+    expect(request.system).toContain('use fallbackLocale as the fallback')
+    expect(request.system).toContain('LANGUAGE PRIORITY')
+    const instruction = request.messages[0]?.content.find((block) => block.type === 'text')
+    expect(instruction?.type === 'text' ? JSON.parse(instruction.text).fallbackLocale : undefined).toBe(
+      titleLocale,
+    )
+    expect(request.sampling?.maxTokens).toBeLessThanOrEqual(1024)
+    for (const [index, call] of f.calls.entries()) {
+      if (call.kind === 'summary') expect(f.callOptions[index]).toHaveProperty('retry', false)
+      else expect(f.callOptions[index]).not.toHaveProperty('retry')
+    }
+    await f.host.close()
+    const reopened = await fixture({ root: f.root })
+    expect(await titleRecord(reopened.session)).toMatchObject({ status: 'generated' })
+    expect(contextTokens(reopened.session)).toBe(baseline)
+    expect((await reopened.session.projectUI()).usage?.totals.input).toBe(2015)
+    await run(reopened.session)
+    expect(reopened.calls.every((call) => !call.sessionKey.startsWith('title:'))).toBe(true)
+  },
+  30_000,
+)
 
 // Two sessions with real turns and a ledger: about 0.3 s alone, past 5 s on the Windows runner.
 it('records equal-sequence title costs from separate sessions in the real ledger without replay duplicates', async () => {
@@ -449,6 +477,60 @@ it('preserves Unicode and rejects multiline/control output', () => {
   expect(normalizeSessionTitle('bad\u202etitle')).toBeUndefined()
   expect(normalizeSessionTitle('')).toBeUndefined()
 })
+
+it.each([
+  ['en', '请修复登录问题', '修复登录问题'],
+  ['zh-CN', 'Hi', 'First greeting'],
+  ['zh-CN', 'hi i am your father', 'A playful introduction'],
+  ['en', 'Помоги исправить вход', 'Исправление входа'],
+  ['en', 'Fix résumé login 🔐', 'Fix résumé login 🔐'],
+  ['en', '帮我修复 OpenAI API 登录', '修复 OpenAI API 登录'],
+  ['en', '123 😀', 'New conversation'],
+  ['zh-CN', '123 😀', '新会话'],
+  ['zh-CN', 'const x = 42;', '代码讨论'],
+  ['en', '你好 / hello', 'Bilingual greeting'],
+] as const)('leaves language selection to the model with %s fallback: %s', async (locale, input, title) => {
+  const f = await fixture({ title })
+  await run(f.session, input, locale)
+  await vi.waitFor(async () =>
+    expect(await titleRecord(f.session)).toMatchObject({ status: 'generated', title }),
+  )
+  const requests = f.calls.filter((call) => call.kind === 'summary')
+  expect(requests).toHaveLength(1)
+  const request = requests[0] as RequestBody
+  const instruction = request.messages[0]?.content.find((block) => block.type === 'text')
+  expect(instruction?.type === 'text' ? JSON.parse(instruction.text) : undefined).toMatchObject({
+    fallbackLocale: locale,
+    userMessage: input,
+  })
+  expect(request.system).toContain('Use the primary natural language of userMessage')
+  expect(request.system).toContain('mixed languages have no clear primary language')
+  expect(request.system).toContain('Code, identifiers, file paths, URLs, numbers, emoji')
+  expect(request.system).toContain('use fallbackLocale as the fallback')
+  expect(request.system).toContain('LANGUAGE PRIORITY')
+  expect(request.system).toContain('"language" first')
+  expect(request.system).toContain('NEVER use fallbackLocale for a recognizable greeting or sentence')
+  expect(request.system).toContain(
+    'descriptive natural-language words in the language selected by priority 1',
+  )
+  expect(request.system).toContain(
+    `For THIS request, the fallback language is ${locale === 'zh-CN' ? 'Simplified Chinese (zh-CN)' : 'English (en)'}`,
+  )
+  expect(instruction?.type === 'text' ? JSON.parse(instruction.text) : {}).not.toHaveProperty(
+    'assistantAnswer',
+  )
+})
+
+it.each(['plain text title', '{"title":"title"}', '{"language":"en","title":12}', '[]'])(
+  'rejects malformed title output without exposing JSON in the session title: %s',
+  async (rawTitle) => {
+    const f = await fixture({ rawTitle })
+    await run(f.session)
+    await vi.waitFor(async () =>
+      expect(await titleRecord(f.session)).toMatchObject({ status: 'failed', reason: 'invalid-title' }),
+    )
+  },
+)
 
 it('waits through approval and generates once after the continued logical turn completes', async () => {
   const f = await fixture({ park: true })

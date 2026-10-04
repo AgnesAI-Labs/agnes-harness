@@ -8,6 +8,7 @@ export type EnqueueMsg = {
   commandId?: string
   admissionId?: string
   kind?: 'prompt' | 'steer' | 'follow_up'
+  titleLocale?: 'en' | 'zh-CN'
   trust?: 'trusted' | 'untrusted'
   /** Replaces `budget.per_request_cap` for the one next turn opened by this inbox item. The value
    * is ledger-bound to the item and turn, so worker recovery cannot lose or leak it. */

@@ -116,6 +116,9 @@ export function applyUITimelinePatch(current: UITimeline, patch: UITimelinePatch
     opState: patch.opState,
     nodes,
     turns: applyTurnChanges(current.turns, patch.turnChanges),
+    ...((patch.pendingInputs ?? current.pendingInputs) === undefined
+      ? {}
+      : { pendingInputs: patch.pendingInputs ?? current.pendingInputs }),
     ...((patch.yolo ?? current.yolo) === undefined ? {} : { yolo: patch.yolo ?? current.yolo }),
     ...(patch.budget === undefined ? {} : { budget: patch.budget }),
     ...(patch.usage === undefined ? {} : { usage: patch.usage }),
@@ -211,6 +214,9 @@ export function applyWindowedUITimelinePatch(
       opState: patch.opState,
       nodes,
       turns: applyWindowedTurnChanges(current.turns, patch.turnChanges, nodes),
+      ...((patch.pendingInputs ?? current.pendingInputs) === undefined
+        ? {}
+        : { pendingInputs: patch.pendingInputs ?? current.pendingInputs }),
       ...((patch.yolo ?? current.yolo) === undefined ? {} : { yolo: patch.yolo ?? current.yolo }),
       ...(patch.budget === undefined
         ? current.budget === undefined
