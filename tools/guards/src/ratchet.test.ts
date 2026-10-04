@@ -1560,7 +1560,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // exact, no spare (+4).
   // Events contract cases: resumable pages, idempotent publish, crash recovery. Measured 14341, exact (+632).
   // Renderer contract cases through the client host on every target. Measured 15193, exact, no spare (+852).
-  'packages/extension-api/testkit': 15193,
+  // Runtime client transport cases over two servers with one SDK client. Measured 16143, exact, no spare (+950).
+  'packages/extension-api/testkit': 16143,
   // 2026-09-10: raised from 2500 by Task 15 (stream-disconnect reconnection). The new
   // reattach.ts (the Reconnector: backoff loop, OVERLOADED's retryAfterMs override) plus
   // Session.recover()/waitForQuiescence and Client's reconnect wiring (emit(), the

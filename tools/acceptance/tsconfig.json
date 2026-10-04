@@ -59,6 +59,8 @@
     "runtime/client/renderer-conformance.e2e.test.ts",
     "runtime/client/shell-conformance.ts",
     "runtime/client/shell-conformance.e2e.test.ts",
+    "runtime/client/transport-conformance.ts",
+    "runtime/client/transport-conformance.e2e.test.ts",
     "runtime/client/ui-registry-conformance.ts",
     "runtime/client/ui-registry-conformance.e2e.test.ts"
   ],
