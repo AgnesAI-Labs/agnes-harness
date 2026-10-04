@@ -2,6 +2,7 @@
 
 import type { UINode } from '@agnes/protocol'
 import {
+  ConversationMarkdown,
   ConversationMessages,
   type ConversationMessagesProps,
   type ConversationProjectionStore,
@@ -35,13 +36,26 @@ const t: ConversationMessagesProps['t'] = (key, vars) =>
     webUiLocaleCatalog['zh-CN'][key] ?? key,
   )
 
-function Harness({ store }: { store: ConversationProjectionStore }) {
+function Harness({
+  store,
+  renderMarkdown,
+}: {
+  store: ConversationProjectionStore
+  renderMarkdown?: ConversationMessagesProps['renderMarkdown']
+}) {
   const runtime = useConversationRuntime(store)
-  return createElement(AssistantRuntimeProvider, { runtime }, createElement(ConversationMessages, { t }))
+  return createElement(
+    AssistantRuntimeProvider,
+    { runtime },
+    createElement(ConversationMessages, { t, ...(renderMarkdown ? { renderMarkdown } : {}) }),
+  )
 }
 
-async function mount(store: ConversationProjectionStore) {
-  await act(async () => root.render(createElement(Harness, { store })))
+async function mount(
+  store: ConversationProjectionStore,
+  renderMarkdown?: ConversationMessagesProps['renderMarkdown'],
+) {
+  await act(async () => root.render(createElement(Harness, { store, renderMarkdown })))
 }
 
 async function update(store: ConversationProjectionStore, nodes: readonly UINode[]) {
@@ -126,6 +140,21 @@ describe('W3b projected message DOM', () => {
     expect(assistant?.querySelector('[data-assistant-ui-part="text"]')?.textContent).toContain(
       'Streaming answer',
     )
+  })
+
+  it('keeps a long fenced code line inside the assistant message width', async () => {
+    const line = 'A'.repeat(400)
+    const source = `\`\`\`text\n${line}\n\`\`\``
+    const store = createConversationProjectionStore({
+      sessionId: 'session',
+      nodes: [{ kind: 'assistant', id: 'wide-code', seq: 1, text: source }],
+    })
+    await mount(store, (text, part) => createElement(ConversationMarkdown, { source: text, part, t }))
+
+    const content = item('wide-code')?.querySelector<HTMLElement>('.aui-assistant-message-content')
+    expect(item('wide-code')?.querySelector('pre code')?.textContent?.trimEnd()).toBe(line)
+    expect(content?.classList.contains('aui:self-stretch')).toBe(true)
+    expect(content?.classList.contains('aui:min-w-0')).toBe(true)
   })
 
   it('renders messages projected after the read-only runtime starts empty', async () => {

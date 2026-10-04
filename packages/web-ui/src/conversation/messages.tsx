@@ -284,7 +284,7 @@ function ConversationMessageView() {
       ) : node.kind === 'assistant' ? (
         <>
           <p className="node-label">Agnes</p>
-          <div className="aui-assistant-message-content aui:mx-2 aui:min-h-[4.25rem] aui:text-sm aui:leading-relaxed aui:text-[var(--agnes-text-primary)]">
+          <div className="aui-assistant-message-content aui:mx-2 aui:self-stretch aui:min-w-0 aui:min-h-[4.25rem] aui:text-sm aui:leading-relaxed aui:text-[var(--agnes-text-primary)]">
             <MessagePrimitive.Parts components={assistantMessageParts} />
           </div>
         </>
