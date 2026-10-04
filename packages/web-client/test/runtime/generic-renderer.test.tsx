@@ -190,6 +190,82 @@ describe('generic domain view', () => {
     expect(commandStatus).toHaveBeenCalledWith(first.requestId)
   })
 
+  /** The fixture's enabled command action. */
+  function publishAction() {
+    const [publish] = view('finalized').actions
+    if (publish?.kind !== 'command') throw new Error('the fixture has no command action')
+    return publish
+  }
+
+  // Unknown action (case 4): an enabled action of a kind this client does not know, forged past
+  // validation, is shown by its label and never becomes a control that submits.
+  it('shows an action of an unknown kind but never submits it', async () => {
+    const { submit, commandStatus, context } = contextWith([])
+    const forged = { ...publishAction(), kind: 'script', actionKey: 'run', label: 'Run' }
+    const actions = [forged as unknown as DomainView['actions'][number]]
+    await show({ ...view('finalized'), actions }, context)
+    expect(host.querySelector('.generic-domain-text')?.textContent).toBe('Draft note')
+    const [run] = buttons()
+    expect(buttons()).toHaveLength(1)
+    expect(run?.textContent).toBe('Run')
+    expect(run?.disabled).toBe(true)
+    await act(async () => run?.click())
+    expect(submit).not.toHaveBeenCalled()
+    expect(commandStatus).not.toHaveBeenCalled()
+  })
+
+  it('offers a command only once every feature it needs was negotiated', async () => {
+    const batch = {
+      ...publishAction(),
+      actionKey: 'batch',
+      label: 'Send to all',
+      requiredFeatures: ['acme.batch'],
+    }
+    const shown = { ...view('finalized'), actions: [batch] }
+    const { submit, context } = contextWith([])
+    await show(shown, context)
+    const [unnegotiated] = buttons()
+    expect(unnegotiated?.disabled).toBe(true)
+    expect(host.querySelector('.generic-domain-action')?.textContent).toBe('Send to allNot available here.')
+    await act(async () => unnegotiated?.click())
+    expect(submit).not.toHaveBeenCalled()
+
+    const negotiated = {
+      ...context,
+      capabilities: { features: ['acme.batch'] },
+    } as unknown as RendererContext
+    await show(shown, negotiated)
+    expect(buttons()[0]?.disabled).toBe(false)
+  })
+
+  // HTML in server strings (case 5): markup in the fallback text, resource titles, labels, disabled
+  // reasons and action keys stays text; no element, event attribute or link is built from it.
+  it('shows markup in every view string as text', async () => {
+    const { context } = contextWith([])
+    const markup = '<img src=x onerror=alert(1)><a href="javascript:alert(1)">go</a>'
+    const publish = publishAction()
+    const injected = 'x" onclick="alert(1)'
+    await show(
+      view('finalized', 1, {
+        fallbackText: markup,
+        resources: [
+          { artifactId: 'file-1', version: 1, title: markup, mime: 'text/html', size: 1, status: 'ready' },
+        ],
+        actions: [
+          { ...publish, actionKey: injected, label: markup },
+          { ...publish, actionKey: 'lock', label: 'Lock', availability: 'disabled', disabledReason: markup },
+        ],
+      }),
+      context,
+    )
+    expect(host.querySelector('.generic-domain-text')?.textContent).toBe(markup)
+    expect(host.querySelector('li')?.textContent).toBe(markup)
+    expect(buttons().map((button) => button.textContent)).toEqual([markup, 'Lock'])
+    expect(host.querySelector('.generic-domain-action span:not([role])')?.textContent).toBe(markup)
+    expect(host.querySelector('[data-action-key]')?.getAttribute('data-action-key')).toBe(injected)
+    expect(host.querySelector('img, a, script, [onerror], [onclick], [href]')).toBeNull()
+  })
+
   it('shows pending and done handles and starts a new request after a settled one', async () => {
     const handle = (status: 'accepted' | 'succeeded', requestId: string): Outcome<CommandHandle> => ({
       ok: true,
