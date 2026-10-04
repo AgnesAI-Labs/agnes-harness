@@ -273,7 +273,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // The default domain view text format moves to the `@agnes/sdk/runtime` export. Measured 3429, exact,
   // no spare (-204).
   // A renderer needing a feature the client did not negotiate is refused. Measured 3433, exact, no spare (+4).
-  'packages/web-client/src': 3433,
+  // Default renderer factory over the built-in presentation. Measured 3444, exact, no spare (+11).
+  'packages/web-client/src': 3444,
   'packages/web-slots/src': 605,
   // Failed shell calls read as their exit code (+19 lines); measured 4891, exact cap.
   // B-line diagnostics dialog: React view adds 147 lines; measured 4706, exact cap.
@@ -1551,7 +1552,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // another version or schema are refused. Measured 13705, exact, no spare (+92).
   // The shell services double answers registry and presentation calls synchronously. Measured 13709,
   // exact, no spare (+4).
-  'packages/extension-api/testkit': 13709,
+  // Renderer contract cases through the client host on every target. Measured 14561, exact, no spare (+852).
+  'packages/extension-api/testkit': 14561,
   // 2026-09-10: raised from 2500 by Task 15 (stream-disconnect reconnection). The new
   // reattach.ts (the Reconnector: backoff loop, OVERLOADED's retryAfterMs override) plus
   // Session.recover()/waitForQuiescence and Client's reconnect wiring (emit(), the
