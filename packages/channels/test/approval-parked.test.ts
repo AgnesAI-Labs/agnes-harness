@@ -88,6 +88,17 @@ describe('parked approval, text protocol, and slot actions', () => {
     expect(call?.args[2]).toEqual(expect.objectContaining({ kind: 'channel', userId: 'reviewer' }))
     expect(call?.args[2]).not.toHaveProperty('actor')
     expect(call?.args[2]).toHaveProperty('raw', { staffId: 'reviewer' })
+    // Exactly the sender the adapter authenticated: the action's claimed local approver is not forwarded.
+    expect(call?.args[2]).toEqual({
+      kind: 'channel',
+      channel: adapter.manifest.id,
+      accountId: 'account',
+      userId: 'reviewer',
+      chatId: 'chat',
+      chatType: 'group',
+      displayName: 'reviewer',
+      raw: { staffId: 'reviewer' },
+    })
     expect(adapter.sent.at(-1)?.msg.blocks).toEqual([{ kind: 'text', markdown: '已提交审批' }])
   })
 
@@ -108,7 +119,19 @@ describe('parked approval, text protocol, and slot actions', () => {
 
     await expect(approval.handleAction(action('ignored'))).resolves.toBe(true)
     expect(client.calls.filter((entry) => entry.method === 'approval.decide')).toHaveLength(0)
+    expect(client.calls.filter((entry) => entry.method === 'claim.once')).toHaveLength(0)
     expect(adapter.sent.at(-1)?.msg.blocks).toEqual([{ kind: 'text', markdown: '无权审批' }])
+
+    // A session grant on the same ticket is forwarded as a session grant, never widened to permanent.
+    adapter.onApprovalAction = () => ({
+      ticket: 'abcdef123456',
+      verdict: 'allowed-session',
+      approverCredential: { kind: 'local' },
+    })
+    await expect(approval.handleAction(action('session'))).resolves.toBe(true)
+    expect(
+      client.calls.filter((entry) => entry.method === 'approval.decide').map((entry) => entry.args[1]),
+    ).toEqual(['allowed-session'])
   })
 
   it('keeps allowFrom as a local nuisance gate without calling the server', async () => {
@@ -461,6 +484,10 @@ describe('parked approval, text protocol, and slot actions', () => {
       await vi.waitFor(() =>
         expect(client.calls.some((entry) => entry.method === 'approval.decide')).toBe(true),
       )
+      expect(client.calls.find((entry) => entry.method === 'approval.decide')?.args.slice(0, 2)).toEqual([
+        'abcdef-ticket',
+        'allowed-once',
+      ])
       adapter.emit(action('slot:7:export'))
       await vi.waitFor(() =>
         expect(adapter.sent.at(-1)?.msg.blocks).toEqual([{ kind: 'text', markdown: '无效操作' }]),
