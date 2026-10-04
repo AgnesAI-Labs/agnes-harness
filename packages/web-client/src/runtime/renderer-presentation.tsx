@@ -60,6 +60,7 @@ function mismatch(
   descriptor: RendererDescriptor | undefined,
   view: DomainView,
   target: ClientTarget,
+  negotiated: readonly string[],
 ): string | undefined {
   const has = (part: string) => typeof (definition as unknown as Record<string, unknown>)[part] === 'function'
   if (!(target === 'web' ? has('component') : has('format') && (target !== 'im' || has('encode'))))
@@ -73,6 +74,9 @@ function mismatch(
       (range) => range.typeId === typeId && range.minRevision <= revision && revision <= range.maxRevision,
     )
     if (!reads) return `the renderer does not read ${typeId} revision ${revision}`
+    // A renderer that needs a feature this client did not negotiate is not compatible with it.
+    const unnegotiated = descriptor.requiredFeatures.find((feature) => !negotiated.includes(feature))
+    if (unnegotiated !== undefined) return `the client did not negotiate feature ${unnegotiated}`
     // The view states its features per action; the renderer presents every action, disabled ones too.
     const known = [...descriptor.requiredFeatures, ...descriptor.optionalFeatures]
     const missing = view.actions.flatMap((action) => action.requiredFeatures).find((f) => !known.includes(f))
@@ -146,6 +150,8 @@ export function createRendererPresenter(input: {
   generic(): RendererLease
 } {
   const { target, clientInstanceId, capabilities, services, views } = input
+  // A capability set without a feature list negotiated none.
+  const negotiated: readonly string[] = Array.isArray(capabilities?.features) ? capabilities.features : []
   /** A lease presenting through `definition`; a plugin renderer must also fit the view (`checked`). */
   function bind(definition: RendererDefinition, ownerToken: string, checked: boolean): RendererLease {
     // Read once, so a definition changed after it was bound does not move what it may present.
@@ -184,7 +190,7 @@ export function createRendererPresenter(input: {
           return resync('view_stale', `the authorized window holds revision ${current.revision}`)
         // A copy, so a renderer cannot change what the window holds.
         const shown = structuredClone(current)
-        const reason = checked ? mismatch(definition, descriptor, shown, target) : undefined
+        const reason = checked ? mismatch(definition, descriptor, shown, target, negotiated) : undefined
         if (reason !== undefined) return refuse('incompatible', 'renderer_mismatch', reason)
 
         if (target === 'web') {
