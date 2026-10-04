@@ -50,10 +50,12 @@ export function assemblyPublishBinding(
           'packages/host/src/runtime/assembly/package-pins.ts',
           'packages/host/src/runtime/assembly/release-set.ts',
           'packages/host/src/runtime/assembly/client-bundles.ts',
+          'packages/host/src/runtime/assembly/client-lock.ts',
           'packages/host/src/runtime/assembly/candidate.ts',
         ]
       : [
           'examples/runtime-reference/src/providers/assembly.ts',
+          'examples/runtime-reference/src/providers/assembly-client-lock.ts',
           'examples/runtime-reference/src/providers/assembly-publication.ts',
           'examples/runtime-reference/src/providers/assembly-journal.ts',
           'examples/runtime-reference/src/providers/assembly-admission.ts',
@@ -121,6 +123,7 @@ export async function bindConformance(
           ]
         : [
             'examples/runtime-reference/src/providers/assembly.ts',
+            'examples/runtime-reference/src/providers/assembly-client-lock.ts',
             'examples/runtime-reference/src/providers/assembly-candidate.ts',
           ]
     const publicationBinding = assemblyPublishBinding(providerId as 'default' | 'reference', request.command)
@@ -129,12 +132,14 @@ export async function bindConformance(
       ...(providerId === 'default'
         ? [
             'packages/host/src/runtime/assembly/client-bundles.ts',
+            'packages/host/src/runtime/assembly/client-lock.ts',
             'packages/host/src/runtime/assembly/publication.ts',
             'packages/host/src/runtime/assembly/maintenance-journal.ts',
             'packages/host/src/runtime/assembly/admission-ticket.ts',
             'packages/host/src/runtime/assembly/package-pins.ts',
           ]
         : [
+            'examples/runtime-reference/src/providers/assembly-client-lock.ts',
             'examples/runtime-reference/src/providers/assembly-publication.ts',
             'examples/runtime-reference/src/providers/assembly-journal.ts',
             'examples/runtime-reference/src/providers/assembly-admission.ts',

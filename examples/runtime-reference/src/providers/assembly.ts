@@ -21,6 +21,7 @@ import {
 } from '@agnes/protocol/runtime'
 import { createReferenceAdmissionCoordinator } from './assembly-admission-coordinator.js'
 import { type ReferenceCandidateLifecycle, referenceCandidate } from './assembly-candidate.js'
+import { verifyReferenceClientLock } from './assembly-client-lock.js'
 import { type ReferenceMaintenancePorts, referenceAuthorized, referenceResult } from './assembly-journal.js'
 import { referencePublication } from './assembly-publication.js'
 import { captureReferenceAssemblyWire } from './assembly-wire.js'
@@ -603,7 +604,8 @@ function materialPhase(s: Snapshot) {
       'recovery_codec_missing',
     )
   }
-  const client = object(content(target.clientBundlesRef), ['bundles'])
+  const clientBody = content(target.clientBundlesRef)
+  const client = clientBody as Record<string, unknown>
   const bundles = list(client.bundles)
   const checkBundle = (raw: unknown) => {
     const item = object(raw, [
@@ -659,6 +661,19 @@ function materialPhase(s: Snapshot) {
   demand(
     identities.every((id, index) => identities.indexOf(id) === index),
     'duplicate_ui_bundle',
+  )
+  const clientCheck = verifyReferenceClientLock(
+    {
+      plan: s.releasePlan,
+      configuration: s.config,
+      resolution: s.packages,
+      fixture: { contents: s.contents },
+    },
+    clientBody,
+  )
+  demand(
+    clientCheck.ok,
+    clientCheck.ok ? 'schema_invalid' : (clientCheck.error.detailCode ?? 'schema_invalid'),
   )
   const definitions = list(schemas.contracts).map((raw) => decode('CommunityContractDefinition', raw))
   checkCommunity(definitions, target.bindings)

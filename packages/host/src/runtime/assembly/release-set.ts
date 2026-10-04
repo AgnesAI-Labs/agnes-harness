@@ -15,6 +15,7 @@ import {
   validateOwnedAuthorSchemaSource,
 } from '@agnes/protocol/runtime'
 import { verifyClientBundles } from './client-bundles.js'
+import { verifyClientLock } from './client-lock.js'
 import { type ReleaseSetInputs, readInputs, readLocatorRoute } from './inputs.js'
 import {
   array,
@@ -624,13 +625,11 @@ function verifyMaterials(input: ReleaseSetInputs): DispatchAtomicDomain[] {
         '/recoveryManifestRef/codecs',
       )
   }
-  const bundleBody = fields(
-    read(release.clientBundlesRef, '/clientBundlesRef'),
-    ['bundles'],
-    '/clientBundlesRef/value',
-  )
-  const bundles = array(bundleBody.bundles, '/clientBundlesRef/bundles')
+  const bundleBody = read(release.clientBundlesRef, '/clientBundlesRef')
+  const bundleFields = bundleBody as Record<string, unknown>
+  const bundles = array(bundleFields.bundles, '/clientBundlesRef/bundles')
   verifyClientBundles(release, bundles, array(config.bundles, '/configSnapshotRef/bundles'), known)
+  verifyClientLock(input, bundleBody)
   const definitions = array(materials.contracts, '/schemasRef/contracts').map((row) =>
     readWire('CommunityContractDefinition', row),
   )
