@@ -14,6 +14,7 @@ import {
 } from '../../src/runtime/package-build.js'
 import { inspectLockedPackage, type SourceBuildDeclaration } from '../../src/runtime/package-inspect.js'
 import { sha256Hex } from '../../src/runtime/source-snapshot.js'
+import { buildQualified } from './fixtures/installer-apply-build.js'
 
 type Kind = 'default' | 'reference'
 interface NativeFixture {
@@ -108,6 +109,9 @@ async function inputFor(
     acquire: async () => ({ ok: true, value: acquired }),
   })
   if (!inspected.ok) throw new Error(inspected.detailCode)
+  const kind = options.kind ?? 'default'
+  const starts: string[] = []
+  const staged: string[] = []
   const directories: string[] = [],
     observedPids: number[] = [],
     outsideWrites: boolean[] = []
@@ -134,10 +138,17 @@ async function inputFor(
           f.createInput.resourceLimits === input.limits
             ? f.createInput
             : { ...f.createInput, resourceLimits: input.limits },
-        sandbox: f.sandbox,
+        sandbox: {
+          ...f.sandbox,
+          async create(body, context) {
+            starts.push('sandbox')
+            return f.sandbox.create(body, context)
+          },
+        },
         exec: {
           ...f.exec,
           async run(body, context) {
+            starts.push('exec')
             const pending = f.exec.run(body, context)
             if (options.interrupt === 'kill')
               await waitForTrace(trace, () => {
@@ -153,6 +164,8 @@ async function inputFor(
           return f.auth.call(operation === 'stop' ? {} : signal ? { signal } : {})
         },
         async dispose() {
+          for (const name of ['source', 'source.archive', 'artifact.tar', 'build-pids'])
+            if (existsSync(join(f.roots.workspace, name))) staged.push(name)
           outsideWrites.push(existsSync(join(f.directory, 'outside-build')))
           if (existsSync(trace))
             observedPids.push(...readFileSync(trace, 'utf8').trim().split(' ').map(Number))
@@ -169,13 +182,28 @@ async function inputFor(
       }
     },
   }
-  return { input, pkg, directories, observedPids, outsideWrites, sourceRoot }
+  return { input, pkg, kind, starts, staged, directories, observedPids, outsideWrites, sourceRoot }
 }
 
 const cleanup = (f: Awaited<ReturnType<typeof inputFor>>) => {
   expect(f.directories.every((path) => !existsSync(path))).toBe(true)
   if (f.sourceRoot) rmSync(f.sourceRoot, { recursive: true, force: true })
   expect(f.observedPids.every((pid) => Number.isSafeInteger(pid) && pid > 1 && !alive(pid))).toBe(true)
+}
+
+async function refusesUnqualified(f: Awaited<ReturnType<typeof inputFor>>, input = f.input) {
+  if (await buildQualified(f.kind)) return false
+  expect(await buildLockedPackage(input)).toMatchObject({
+    ok: false,
+    error: { code: 'incompatible', detailCode: 'build_mechanism_unqualified' },
+  })
+  expect(f.starts).toEqual([])
+  expect(f.staged).toEqual([])
+  expect(f.observedPids).toEqual([])
+  expect(f.outsideWrites).toEqual([false])
+  expect(f.directories).toHaveLength(1)
+  cleanup(f)
+  return true
 }
 
 describe('package build approval and qualification', () => {
@@ -220,26 +248,25 @@ describe('package build approval and qualification', () => {
     expect(await buildLockedPackage(input)).toMatchObject({ ok: false, error: { detailCode } })
     expect(f.directories).toEqual([])
   })
-  it.skipIf(process.platform === 'darwin').each(['default', 'reference'] as const)(
-    'refuses the unqualified %s platform service before launch',
+  it.each(['default', 'reference'] as const)(
+    'requires complete hard-limit qualification for the %s service before launch',
     async (kind) => {
       const f = await inputFor({ kind })
-      expect(await buildLockedPackage(f.input)).toMatchObject({
-        ok: false,
-        error: { code: 'incompatible', detailCode: 'build_mechanism_unqualified' },
-      })
+      if (await refusesUnqualified(f)) return
+      expect(await buildLockedPackage(f.input)).toMatchObject({ ok: true })
       cleanup(f)
     },
   )
 })
 
-describe.skipIf(process.platform !== 'darwin').each(['default', 'reference'] as const)(
-  '%s real isolated package builds with cooperative ownership',
+describe.each(['default', 'reference'] as const)(
+  '%s isolated builds require qualified hard limits and cooperative ownership',
   (kind) => {
     it.each(['local', 'npm', 'git'] as const)(
       'rebuilds locked %s content twice and keeps all three identities',
       async (sourceKind) => {
         const f = await inputFor({ kind, sourceKind })
+        if (await refusesUnqualified(f)) return
         const outcome = await buildLockedPackage(f.input)
         expect(outcome).toMatchObject({
           ok: true,
@@ -274,6 +301,7 @@ describe.skipIf(process.platform !== 'darwin').each(['default', 'reference'] as 
 
     it('rebuilds an acquired local directory without changing it', async () => {
       const f = await inputFor({ kind, rootSource: true })
+      if (await refusesUnqualified(f)) return
       const result = await buildLockedPackage(f.input)
       expect(result).toMatchObject({ ok: true, value: { reproducibility: { verified: true } } })
       if (!f.sourceRoot) throw new Error('Missing source root')
@@ -292,6 +320,7 @@ describe.skipIf(process.platform !== 'darwin').each(['default', 'reference'] as 
       'refuses built %s and discards staging',
       async (fault, detailCode) => {
         const f = await inputFor({ kind, program: packageBuildProgram(fault) })
+        if (await refusesUnqualified(f)) return
         expect(await buildLockedPackage(f.input)).toMatchObject({ ok: false, error: { detailCode } })
         cleanup(f)
       },
@@ -303,6 +332,7 @@ describe.skipIf(process.platform !== 'darwin').each(['default', 'reference'] as 
         kind,
         program: "require('node:fs').writeFileSync('../outside-build', 'escape')",
       })
+      if (await refusesUnqualified(hostile)) return
       expect(await buildLockedPackage(hostile.input)).toMatchObject({
         ok: false,
         error: { detailCode: 'build_execution_failed' },
@@ -325,6 +355,7 @@ describe.skipIf(process.platform !== 'darwin').each(['default', 'reference'] as 
           kind,
           program: `const net=require('node:net'); const s=net.connect(${address.port},'127.0.0.1'); s.on('error',()=>process.exit(23)); s.on('connect',()=>process.exit(0));`,
         })
+        if (await refusesUnqualified(f)) return
         expect(await buildLockedPackage(f.input)).toMatchObject({
           ok: false,
           error: { detailCode: 'build_execution_failed' },
@@ -349,6 +380,7 @@ describe.skipIf(process.platform !== 'darwin').each(['default', 'reference'] as 
         ${field === 'outputBytes' ? "setInterval(()=>process.stdout.write('x'.repeat(256)),10);" : 'setInterval(()=>{},100);'}
       `,
         })
+        if (await refusesUnqualified(f)) return
         expect(await buildLockedPackage(f.input)).toMatchObject({
           ok: false,
           error: { code: 'quota', detailCode: `exec_limit_${field}` },
@@ -371,6 +403,7 @@ describe.skipIf(process.platform !== 'darwin').each(['default', 'reference'] as 
         setInterval(()=>{},100);
       `,
       })
+      if (await refusesUnqualified(f)) return
       const result = await buildLockedPackage(f.input)
       expect(result.ok).toBe(false)
       if (result.ok) throw new Error('Killed build succeeded')
@@ -393,6 +426,7 @@ describe.skipIf(process.platform !== 'darwin').each(['default', 'reference'] as 
         setInterval(()=>{},100);
       `,
       })
+      if (await refusesUnqualified(f)) return
       const result = await buildLockedPackage(f.input)
       expect(result).toMatchObject({
         ok: false,
@@ -410,6 +444,7 @@ describe.skipIf(process.platform !== 'darwin').each(['default', 'reference'] as 
         kind,
         program,
       })
+      if (await refusesUnqualified(f)) return
       expect(await buildLockedPackage(f.input)).toMatchObject({
         ok: false,
         error: { detailCode },
@@ -422,6 +457,7 @@ describe.skipIf(process.platform !== 'darwin').each(['default', 'reference'] as 
       async (mode) => {
         const f = await inputFor({ kind })
         const open = f.input.openWorkspace
+        if (await refusesUnqualified(f)) return
         const result = await buildLockedPackage({
           ...f.input,
           async openWorkspace(attempt, signal) {
@@ -475,6 +511,7 @@ describe.skipIf(process.platform !== 'darwin').each(['default', 'reference'] as 
     it('rejects a directory changed after inspection before executing its script', async () => {
       const f = await inputFor({ kind, rootSource: true })
       const open = f.input.openWorkspace
+      if (await refusesUnqualified(f)) return
       const result = await buildLockedPackage({
         ...f.input,
         async openWorkspace(attempt, signal) {
@@ -490,6 +527,7 @@ describe.skipIf(process.platform !== 'darwin').each(['default', 'reference'] as 
 
     it('checks transport integrity separately from canonical reproducibility', async () => {
       const f = await inputFor({ kind, program: packageBuildProgram('transport-metadata') })
+      if (await refusesUnqualified(f)) return
       const result = await buildLockedPackage(f.input)
       expect(result.ok).toBe(true)
       if (!result.ok) throw new Error(result.error.detailCode)
@@ -507,6 +545,7 @@ describe.skipIf(process.platform !== 'darwin').each(['default', 'reference'] as 
         sourceKind: 'npm',
         program: packageBuildProgram('transport-metadata'),
       })
+      if (await refusesUnqualified(f)) return
       expect(await buildLockedPackage(f.input)).toMatchObject({
         ok: false,
         error: { detailCode: 'archive_integrity_mismatch' },
@@ -518,6 +557,7 @@ describe.skipIf(process.platform !== 'darwin').each(['default', 'reference'] as 
       const f = await inputFor({ kind })
       let revoked = false
       const open = f.input.openWorkspace
+      if (await refusesUnqualified(f)) return
       const result = await buildLockedPackage({
         ...f.input,
         authorize: async () => !revoked,
@@ -558,6 +598,7 @@ describe.skipIf(process.platform !== 'darwin').each(['default', 'reference'] as 
             }
           },
         }
+        if (await refusesUnqualified(f, mode === 'approval' ? changedInput : f.input)) continue
         expect(await buildLockedPackage(mode === 'approval' ? changedInput : f.input)).toMatchObject({
           ok: false,
           error: { detailCode: mode === 'approval' ? 'build_unapproved' : 'build_filesystem_unqualified' },

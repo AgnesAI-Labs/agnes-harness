@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
 import { existsSync, readFileSync } from 'node:fs'
+import { createPlatform } from '../../src/adapters/platform.js'
 import { cleanup, error, type Kind } from './network-secrets-fixture.js'
 import { fixture } from './sandbox-exec-fixture.js'
 
@@ -82,11 +83,10 @@ export async function scenario(kind: Kind, service: 'sandbox' | 'exec', name: st
   }
 }
 export function expectedRefusal(service: 'sandbox' | 'exec') {
-  // guards-allow-platform: refusal must describe the unavailable platform hard gate.
-  if (process.platform === 'darwin') return `incompatible/${service}_limit_memoryBytes_unsupported`
+  const { os } = createPlatform()
+  if (os === 'darwin') return `incompatible/${service}_limit_memoryBytes_unsupported`
   if (service === 'sandbox') return 'incompatible/sandbox_isolation_unsupported'
-  // guards-allow-platform: Windows lacks a mandatory aggregate File hard gate.
-  return process.platform === 'win32'
+  return os === 'win32'
     ? 'incompatible/exec_limit_openFiles_unsupported'
     : 'incompatible/exec_platform_unsupported'
 }

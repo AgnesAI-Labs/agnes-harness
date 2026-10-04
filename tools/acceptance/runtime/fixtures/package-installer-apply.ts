@@ -402,6 +402,7 @@ export async function openInstallerApplyFixture(
   return {
     ...f,
     controller,
+    buildObservation: buildTask?.observation,
     ports,
     query,
     call,

@@ -1,6 +1,6 @@
 import { execFileSync, fork } from 'node:child_process'
 import { once } from 'node:events'
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -22,6 +22,25 @@ import {
   openInstallerFixture,
 } from './fixtures/installer.js'
 import { openInstallerApplyFixture } from './fixtures/installer-apply.js'
+import { buildQualified } from './fixtures/installer-apply-build.js'
+
+function noBuildEffects(f: Awaited<ReturnType<typeof openInstallerApplyFixture>>, proposalId: string) {
+  const observation = f.buildObservation
+  if (!observation) throw new Error('Missing build observation')
+  expect(observation.starts).toEqual([])
+  expect(observation.stagedFiles).toEqual([])
+  for (const directory of observation.directories) expect(existsSync(directory)).toBe(false)
+  expect(f.journal.read(proposalId).applyCheckpoint?.buildEvidence ?? []).toEqual([])
+  expect(
+    f.assembly
+      .snapshot()
+      .records.some((row) => row.recordId === 'release-route:fixture-route' && row.revision > 0),
+  ).toBe(false)
+  expect(
+    f.assembly.snapshot().records.find((row) => row.recordId === `pin:${f.input.plan.requiredPins[0]}`)
+      ?.payload,
+  ).toMatchObject({ data: { status: 'active', ownerId: f.input.plan.upgradeId } })
+}
 
 describe.each(['default', 'reference'])('installer journal process recovery: %s', (providerId) => {
   it.each(['planning', 'applying', 'applied'])(
@@ -499,15 +518,18 @@ describe.each(['default', 'reference'] as const)('approved installer apply: %s',
   ])(
     'kills and cold-reopens at %s without replay',
     async (phase) => {
-      if (phase.startsWith('build-') && process.platform !== 'darwin') {
+      if (phase.startsWith('build-') && !(await buildQualified(kind))) {
         const directory = mkdtempSync(join(tmpdir(), 'unqualified-build-'))
         const f = await openInstallerApplyFixture(kind, directory, 'install', undefined, {})
         try {
           const approved = await f.approved()
           expect(await f.controller.apply(approved.proposalId, approved.revision, f.call)).toMatchObject({
             ok: false,
-            error: { detailCode: 'build_mechanism_unqualified' },
+            error: { code: 'incompatible', detailCode: 'build_mechanism_unqualified' },
           })
+          noBuildEffects(f, approved.proposalId)
+          expect(f.buildObservation?.directories).toHaveLength(1)
+          expect(existsSync(join(directory, 'build-owner.json'))).toBe(false)
         } finally {
           await f.close()
           rmSync(directory, { recursive: true, force: true })
@@ -600,7 +622,7 @@ describe.each(['default', 'reference'] as const)('installer isolated build compo
       try {
         const proposal = await f.approved()
         const result = await f.controller.apply(proposal.proposalId, proposal.revision, f.call)
-        if (process.platform === 'darwin') {
+        if (await buildQualified(kind)) {
           expect(result).toMatchObject({ ok: true, value: { status: 'applied' } })
           const saved = f.journal.read(proposal.proposalId)
           expect(saved.applyCheckpoint?.buildEvidence).toHaveLength(1)
@@ -608,8 +630,14 @@ describe.each(['default', 'reference'] as const)('installer isolated build compo
             kind: 'inline',
             value: { reproducibility: { verified: true }, audit: expect.any(Array) },
           })
-        } else
-          expect(result).toMatchObject({ ok: false, error: { detailCode: 'build_mechanism_unqualified' } })
+        } else {
+          expect(result).toMatchObject({
+            ok: false,
+            error: { code: 'incompatible', detailCode: 'build_mechanism_unqualified' },
+          })
+          noBuildEffects(f, proposal.proposalId)
+          expect(f.buildObservation?.directories).toHaveLength(1)
+        }
       } finally {
         await f.close()
         rmSync(directory, { recursive: true, force: true })
@@ -631,11 +659,12 @@ describe.each(['default', 'reference'] as const)('installer isolated build compo
             detailCode:
               fault === 'secret'
                 ? 'secret_consumer_unavailable'
-                : process.platform === 'darwin'
+                : (await buildQualified(kind))
                   ? 'build_execution_failed'
                   : 'build_mechanism_unqualified',
           },
         })
+        if (!(await buildQualified(kind))) noBuildEffects(f, proposal.proposalId)
         expect(
           f.assembly
             .snapshot()

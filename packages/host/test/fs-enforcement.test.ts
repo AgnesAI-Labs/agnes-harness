@@ -220,18 +220,8 @@ const IMPLEMENTATIONS: Record<string, Impl> = {
 // The checkpoint seam used to be one: it refused paths outside the workspace itself. It no longer
 // does, because the host's file fence decides what a session may reach and the seam follows it, so
 // its row is gone rather than left naming a file that refuses nothing.
-const AUXILIARY_PATH_GUARDS: Record<string, { test: string; evidence: RegExp[] }> = {
-  // The sandbox compiles an OS process fence and binds directory descriptors; it is not FsOps.
-  // Its real-process tests prove all four access kinds and path replacement at launch.
-  'packages/host/src/runtime/providers/sandbox.ts': {
-    test: 'packages/host/test/runtime/sandbox-enforcement.e2e.test.ts',
-    evidence: [
-      /filesystemProof\.probes/,
-      /\['read', 'write', 'stat', 'list'\]/,
-      /moved outside after admission/,
-    ],
-  },
-}
+// Sandbox now refuses admission before exposing a filesystem; its former path-fence row is gone.
+const AUXILIARY_PATH_GUARDS: Record<string, { test: string; evidence: RegExp[] }> = {}
 
 /** The spellings of one file under a denied directory. Each one used to reach the bytes. */
 function spellings(root: string, deny: string, file: string): Array<[string, string]> {

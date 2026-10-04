@@ -8,6 +8,7 @@ import type { createPackageMaintenanceController } from '../../../src/runtime/pr
 import type { openInstallerFixture } from './installer.js'
 
 export interface InstallerApplyFixture extends Omit<ReturnType<typeof openInstallerFixture>, 'close'> {
+  buildObservation?: import('./installer-apply-build.js').BuildObservation
   controller: ReturnType<typeof createPackageMaintenanceController>
   query: ReturnType<typeof openInstallerFixture>
   call: CallContext
