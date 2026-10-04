@@ -30,6 +30,7 @@ import {
 } from '@agnes/protocol/runtime'
 import { PiAdapter } from '../../adapters/pi/index.js'
 import type { ModelAdapterDeployment, ModelWireSource } from '../model-adapter/ports.js'
+import { type ModelUsageEvidence, modelUsageEvidence } from '../model-adapter/usage-evidence.js'
 
 const methods = RuntimeMethodSchemaRefs['agh.model-adapter']
 const same = (a: unknown, b: unknown) => canonicalJsonDigest(a as never) === canonicalJsonDigest(b as never)
@@ -468,7 +469,8 @@ export function createModelAdapterFactory(
               const tools: ToolCall[] = []
               const usageState: {
                 tokens: { input: number; output: number; cacheRead: number; cacheWrite: number } | null
-              } = { tokens: null }
+                evidence: ModelUsageEvidence
+              } = { tokens: null, evidence: {} }
               const requestRef = external(frame)
               const unknownMeasurement: UsageMeasurement = {
                 kind: 'unknown',
@@ -538,6 +540,7 @@ export function createModelAdapterFactory(
                     if (event.type === 'toolcall_end') tools.push(event.call)
                     if (event.type === 'usage') {
                       usageState.tokens = event.tokens
+                      usageState.evidence = modelUsageEvidence(source.model, event)
                       response = event.response ?? response
                     }
                     if (event.type === 'done')
@@ -566,6 +569,7 @@ export function createModelAdapterFactory(
                   Object.values(usageState.tokens).some((quantity) => quantity > 0)
                 const measurement: UsageMeasurement = {
                   kind: measured ? 'reported' : 'unknown',
+                  ...usageState.evidence,
                   quantities:
                     measured && usageState.tokens
                       ? Object.entries(usageState.tokens).map(([unit, quantity]) => ({
@@ -627,6 +631,15 @@ export function createModelAdapterFactory(
                       usage: sent ? usage : [],
                     }
               } catch {
+                if (sent && usageState.tokens !== null)
+                  usage = [
+                    {
+                      ...unknownFact,
+                      dimensions: checked(
+                        original.usage.encode({ ...unknownMeasurement, ...usageState.evidence }),
+                      ),
+                    },
+                  ]
                 result = {
                   ...failure(
                     sent ? 'unknown_effect' : controller.signal.aborted ? 'cancelled' : 'denied',
