@@ -1,6 +1,10 @@
-import type { ModelSettings } from '@agnes/protocol'
+import type { ModelSettings, ThinkingLevel } from '@agnes/protocol'
+import type { LocaleVars } from '@agnes/web-client'
 
 export { shouldShowEmptyState } from './conversation-visibility.js'
+
+/** 渲染时取词：宿主传 `LocaleService#t` 的稳定包装，禁止缓存返回值跨渲染。 */
+export type Translate = (key: string, vars?: LocaleVars) => string
 
 export type ComposerPresentation = {
   connected: boolean
@@ -17,7 +21,12 @@ export type ComposerActionPresentation = {
   title: string
 }
 
-export type KnownSessionModel = { route: string; id: string; settings?: ModelSettings }
+export type KnownSessionModel = {
+  route: string
+  id: string
+  settings?: ModelSettings
+  thinking?: ThinkingLevel
+}
 
 type ResizeableComposer = {
   scrollHeight: number
@@ -44,40 +53,44 @@ export function setButtonLabel(button: HTMLButtonElement, value: string): void {
   else button.textContent = value
 }
 
-export function composerHint(state: ComposerPresentation): string {
-  return composerHintPresentation(state).text
+export function composerHint(state: ComposerPresentation, t: Translate): string {
+  return composerHintPresentation(state, t).text
 }
 
-export function composerHintPresentation(state: ComposerPresentation): {
+export function composerHintPresentation(
+  state: ComposerPresentation,
+  t: Translate,
+): {
   kind: 'shortcut' | 'state'
   text: string
 } {
-  if (!state.connected) return { kind: 'state', text: '连接后台后开始' }
-  if (!state.configured) return { kind: 'state', text: '配置模型后开始' }
-  if (state.loading) return { kind: 'state', text: '正在准备…' }
-  if (!state.hasSession) return { kind: 'state', text: '准备新任务' }
-  if (state.stopping) return { kind: 'state', text: '正在请求停止…' }
+  if (!state.connected) return { kind: 'state', text: t('composer.hint.disconnected') }
+  if (!state.configured) return { kind: 'state', text: t('composer.hint.unconfigured') }
+  if (state.loading) return { kind: 'state', text: t('composer.hint.preparing') }
+  if (!state.hasSession) return { kind: 'state', text: t('composer.hint.newTask') }
+  if (state.stopping) return { kind: 'state', text: t('composer.hint.stopping') }
   return state.busy
-    ? { kind: 'state', text: '可补充下一轮' }
-    : { kind: 'shortcut', text: 'Enter 发送，Shift+Enter 换行' }
+    ? { kind: 'state', text: t('composer.hint.busy') }
+    : { kind: 'shortcut', text: t('composer.hint.shortcut') }
 }
 
 export function composerActionPresentation(
   state: Pick<ComposerPresentation, 'busy' | 'loading'> & { sending: boolean },
+  t: Translate,
 ): ComposerActionPresentation {
   const mode = state.loading || state.sending ? 'pending' : state.busy ? 'busy' : 'idle'
   const label =
     mode === 'pending'
       ? state.loading
-        ? '正在准备会话…'
-        : '正在提交…'
+        ? t('composer.action.preparing')
+        : t('composer.action.submitting')
       : mode === 'busy'
-        ? '加入下一轮'
-        : '发送'
+        ? t('composer.action.append')
+        : t('composer.action.send')
   return {
     mode,
     label,
-    title: mode === 'pending' ? label : `${label}（Enter）`,
+    title: mode === 'pending' ? label : t('composer.action.title', { label }),
   }
 }
 
@@ -89,12 +102,20 @@ export function canSubmitComposer(
   return state.connected && state.hasSession && !state.sending && !state.stopping && !state.loading
 }
 
-export function modelSelectLabel(model?: KnownSessionModel): string {
-  return model?.id ?? '选择模型'
+/** 档位在界面上按首字母大写显示，与后台的 `ThinkingLevel` 小写取值区分开。 */
+export function thinkingLevelLabel(level: ThinkingLevel): string {
+  return level.charAt(0).toUpperCase() + level.slice(1)
 }
 
-export function modelSelectAccessibleName(model?: KnownSessionModel): string {
-  return model ? `当前会话模型：${model.id}` : '选择当前会话模型'
+export function modelSelectLabel(model: KnownSessionModel | undefined, t: Translate): string {
+  if (!model) return t('composer.model.select')
+  return model.thinking ? `${model.id} ${thinkingLevelLabel(model.thinking)}` : model.id
+}
+
+export function modelSelectAccessibleName(model: KnownSessionModel | undefined, t: Translate): string {
+  return model
+    ? t('composer.model.accessible.current', { id: model.id })
+    : t('composer.model.accessible.fallback')
 }
 
 export function launcherCredential(
@@ -111,29 +132,29 @@ export function errorNotice(
   diagnosticUnavailable?: unknown,
   turnErrorCode?: unknown,
   reason?: unknown,
+  t: Translate = (key) => key,
 ): string {
   // Not a fault to retry or report: the session was written by an older build and cannot be read.
-  if (reason === 'legacy-ledger-format') return '该会话由旧版本创建，当前版本无法打开，请新建会话。'
-  if (message === 'INTERNAL_ERROR (-32603)' && turnErrorCode === 'AUTH')
-    return '模型凭据已失效或被上游拒绝，请在设置中重新配置或登录该模型账号。'
+  if (reason === 'legacy-ledger-format') return t('session.error.legacyLedger')
+  if (message === 'INTERNAL_ERROR (-32603)' && turnErrorCode === 'AUTH') return t('session.error.authFailed')
   if (message === 'INTERNAL_ERROR (-32603)' && turnErrorCode === 'OUTPUT_LIMIT')
-    return '模型回复达到输出额度，本轮已停止。请要求分步生成，或调整请求输出额度后继续。'
+    return t('session.error.outputLimit')
   if (message === 'INTERNAL_ERROR (-32603)' && turnErrorCode === 'RATE_LIMIT')
-    return '模型服务返回限流错误（HTTP 429）。请稍后重试；若持续出现，请检查该账号的服务额度或联系模型服务方。'
+    return t('session.error.rateLimit')
   if (message !== 'INTERNAL_ERROR (-32603)') return message
   const id =
     typeof diagnosticId === 'string' && /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(diagnosticId)
-      ? ` 诊断编号：${diagnosticId}`
+      ? t('session.error.diagnosticId', { id: diagnosticId })
       : ''
-  return `后台未能完成请求，请稍后重试。${diagnosticUnavailable === true ? ' 诊断记录未能保存。' : id}`
+  return `${t('session.error.internal')}${diagnosticUnavailable === true ? t('session.error.diagnosticUnavailable') : id}`
 }
 
-export function workspaceErrorNotice(error: unknown): string {
+export function workspaceErrorNotice(error: unknown, t: Translate = (key) => key): string {
   const data =
     typeof error === 'object' && error !== null ? (error as { data?: { reason?: unknown } }).data : undefined
-  if (data?.reason === 'not-found') return '工作目录不存在，请检查路径后重试。'
-  if (data?.reason === 'not-directory') return '所选路径不是目录，请选择一个文件夹。'
-  if (data?.reason === 'not-accessible') return '无法访问此工作目录，请检查权限后重试。'
-  if (data?.reason === 'not-absolute') return '请输入工作目录的绝对路径。'
-  return '无法使用此工作目录，请检查路径是否存在及访问权限。'
+  if (data?.reason === 'not-found') return t('workspace.error.notFound')
+  if (data?.reason === 'not-directory') return t('workspace.error.notDirectory')
+  if (data?.reason === 'not-accessible') return t('workspace.error.notAccessible')
+  if (data?.reason === 'not-absolute') return t('workspace.error.notAbsolute')
+  return t('workspace.error.fallback')
 }

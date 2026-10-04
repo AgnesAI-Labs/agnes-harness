@@ -252,7 +252,10 @@ it('fails closed when an admin API handler is not installed', async () => {
     const response = await fetch(`${server.url}/admin/plugins/api/list`, { method: 'POST' })
     expect(response.status).toBe(503)
     await expect(response.json()).resolves.toEqual({
-      error: { code: 'ADMIN_UNAVAILABLE', message: '插件管理后台暂时不可用。' },
+      error: {
+        code: 'ADMIN_UNAVAILABLE',
+        message: 'The plugin admin service is temporarily unavailable.',
+      },
     })
   } finally {
     await server.close()

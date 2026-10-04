@@ -20,6 +20,7 @@ afterEach(() => {
   document.body.replaceChildren()
   document.body.className = ''
   sessionStorage.clear()
+  document.documentElement.lang = ''
 })
 
 const turn = (trace?: UISpan, nodeIds: string[] = []): UITurn => ({
@@ -139,20 +140,20 @@ describe('trace panel', () => {
     const { root, panel } = mount()
     panel.render(nodes, [turn(sampleTrace, ['u1', 'c1', 'a1', 't1'])])
     const text = root.textContent ?? ''
-    expect(text).toContain('用户')
+    expect(text).toContain('User')
     expect(text).toContain('你好')
-    expect(text).toContain('上下文')
+    expect(text).toContain('Context')
     expect(text).toContain('Current runtime context')
-    expect(text).toContain('助手')
+    expect(text).toContain('Assistant')
     expect(text).toContain('我先看一下工作目录')
-    expect(text).toContain('工具')
+    expect(text).toContain('Tool')
     expect(text).toContain('bash')
-    expect(text).toContain('输入')
-    expect(text).toContain('模型')
-    expect(text).toContain('时长')
-    expect(text).toContain('轮次 1')
-    expect(text).toContain('调用 2')
-    expect(root.textContent).toContain('第 1 轮')
+    expect(text).toContain('Input')
+    expect(text).toContain('Model')
+    expect(text).toContain('Duration')
+    expect(text).toContain('Turns 1')
+    expect(text).toContain('Calls 2')
+    expect(root.textContent).toContain('Turn 1')
     const modelBars = [...root.querySelectorAll('.trace-gantt-bar.lane-model')] as HTMLElement[]
     const toolBars = [...root.querySelectorAll('.trace-gantt-bar.lane-tool')] as HTMLElement[]
     expect(modelBars.length).toBeGreaterThan(0)
@@ -163,7 +164,7 @@ describe('trace panel', () => {
   it('shows empty state and does not throw when there are no nodes', () => {
     const { root, panel } = mount()
     expect(() => panel.render([], [turn()])).not.toThrow()
-    expect(root.textContent).toContain('发送一条任务后，这里会按步骤显示耗时。')
+    expect(root.textContent).toContain('Send a task to see timing for each step.')
   })
 
   it('switches to the trace view and persists without calling projectUI', () => {
@@ -186,19 +187,21 @@ describe('trace panel', () => {
     const tool = [...root.querySelectorAll('.trace-row')].find((row) => row.textContent?.includes('bash'))
     ;(tool as HTMLButtonElement | undefined)?.click()
     expect(root.querySelector<HTMLElement>('.trace-inspector')?.hidden).toBe(false)
-    expect(root.textContent).toContain('概述')
-    expect(root.textContent).toContain('预览')
-    expect(root.textContent).toContain('投影内容')
-    expect(root.textContent).toContain('来源')
-    expect(root.textContent).toContain('工具 · bash')
-    const previewTab = [...root.querySelectorAll('.trace-tab')].find((tab) => tab.textContent === '预览')
+    expect(root.textContent).toContain('Overview')
+    expect(root.textContent).toContain('Preview')
+    expect(root.textContent).toContain('Projected content')
+    expect(root.textContent).toContain('Source')
+    expect(root.textContent).toContain('Tool · bash')
+    const previewTab = [...root.querySelectorAll('.trace-tab')].find((tab) => tab.textContent === 'Preview')
     ;(previewTab as HTMLButtonElement | undefined)?.click()
     expect(root.querySelector('.trace-inspector-pane:not([hidden])')?.textContent).toContain('ls')
     const projectionTab = [...root.querySelectorAll('.trace-tab')].find(
-      (tab) => tab.textContent === '投影内容',
+      (tab) => tab.textContent === 'Projected content',
     )
     ;(projectionTab as HTMLButtonElement | undefined)?.click()
-    expect(root.querySelector('.trace-inspector-pane:not([hidden])')?.textContent).toContain('可能已截断')
+    expect(root.querySelector('.trace-inspector-pane:not([hidden])')?.textContent).toContain(
+      'may be truncated',
+    )
     expect(projectUI).not.toHaveBeenCalled()
   })
 
@@ -225,7 +228,7 @@ describe('trace panel', () => {
     root.querySelector<HTMLButtonElement>('[data-trace-row-id="t1"]')?.click()
     expect(readToolDetail).not.toHaveBeenCalled()
     const input = [...root.querySelectorAll<HTMLButtonElement>('.trace-tab')].find(
-      (tab) => tab.textContent === '完整输入',
+      (tab) => tab.textContent === 'Full input',
     )
     input?.click()
     await vi.waitFor(() =>
@@ -237,7 +240,7 @@ describe('trace panel', () => {
       ),
     )
     const output = [...root.querySelectorAll<HTMLButtonElement>('.trace-tab')].find(
-      (tab) => tab.textContent === '完整输出',
+      (tab) => tab.textContent === 'Full output',
     )
     output?.click()
     expect(root.querySelector('.trace-inspector-pane:not([hidden])')?.textContent).toContain(
@@ -260,8 +263,8 @@ describe('trace panel', () => {
     root.querySelector<HTMLButtonElement>('[data-trace-row-id="t1"]')?.click()
     root.querySelector<HTMLButtonElement>('[data-pane="timing"]')?.click()
     const timing = root.querySelector('.trace-inspector-pane:not([hidden])')?.textContent
-    expect(timing).toContain('时长未知')
-    expect(timing).not.toContain('进行中')
+    expect(timing).toContain('Duration unknown')
+    expect(timing).not.toContain('In progress')
   })
 
   it('discards a late tool-detail result after changing sessions', async () => {
@@ -282,7 +285,7 @@ describe('trace panel', () => {
     })
     root.querySelector<HTMLButtonElement>('[data-trace-row-id="t1"]')?.click()
     ;[...root.querySelectorAll<HTMLButtonElement>('.trace-tab')]
-      .find((tab) => tab.textContent === '完整输入')
+      .find((tab) => tab.textContent === 'Full input')
       ?.click()
     await vi.waitFor(() => expect(readToolDetail).toHaveBeenCalledTimes(1))
     panel.render(nodes, [turn(sampleTrace, ['u1', 'c1', 'a1', 't1'])], {
@@ -292,14 +295,14 @@ describe('trace panel', () => {
     expect(root.querySelector('.trace-inspector')?.hasAttribute('hidden')).toBe(true)
     root.querySelector<HTMLButtonElement>('[data-trace-row-id="t1"]')?.click()
     ;[...root.querySelectorAll<HTMLButtonElement>('.trace-tab')]
-      .find((tab) => tab.textContent === '完整输入')
+      .find((tab) => tab.textContent === 'Full input')
       ?.click()
     await vi.waitFor(() => expect(readToolDetail).toHaveBeenCalledTimes(2))
     resolveOld?.({
       call: { toolUseId: 'call-1', name: 'bash', args: { command: 'old session' }, ordinal: 0 },
     })
     const input = [...root.querySelectorAll<HTMLButtonElement>('.trace-tab')].find(
-      (tab) => tab.textContent === '完整输入',
+      (tab) => tab.textContent === 'Full input',
     )
     input?.click()
     await vi.waitFor(() =>
@@ -314,7 +317,7 @@ describe('trace panel', () => {
     const { root, panel } = mount()
     panel.render(nodes, [turn(sampleTrace, ['u1', 'c1', 'a1', 't1'])])
     const row = root.querySelector('.trace-row') as HTMLElement
-    expect(root.querySelector('.trace-turn-toggle')?.textContent).toContain('第 1 轮 · 4 条记录')
+    expect(root.querySelector('.trace-turn-toggle')?.textContent).toContain('Turn 1 · 4 records')
     expect(row.children[0]?.classList.contains('trace-step-mark')).toBe(true)
     expect(row.children[1]?.classList.contains('trace-badge')).toBe(true)
     expect(row.children[2]?.classList.contains('trace-row-preview')).toBe(true)
@@ -355,7 +358,7 @@ describe('trace panel', () => {
     expect(root.querySelectorAll('.trace-turn-toggle')).toHaveLength(2)
     foldAll.click()
     expect(root.querySelectorAll('.trace-row')).toHaveLength(0)
-    expect(foldAll.getAttribute('aria-label')).toBe('展开所有轮次')
+    expect(foldAll.getAttribute('aria-label')).toBe('Expand all turns')
     foldAll.click()
     expect(root.querySelectorAll('.trace-row')).toHaveLength(5)
   })
@@ -425,9 +428,9 @@ describe('trace panel', () => {
       ],
     }
     panel.render([attachmentOnly], [turn(undefined, ['u-attachment'])])
-    expect(root.querySelector('.trace-row')?.textContent).toContain('1 张图片 · 1 个资源链接')
+    expect(root.querySelector('.trace-row')?.textContent).toContain('1 image · 1 resource link')
     ;(root.querySelector('.trace-row') as HTMLButtonElement).click()
-    expect(root.querySelector('.trace-inspector')?.textContent).toContain('图片 · image/png')
+    expect(root.querySelector('.trace-inspector')?.textContent).toContain('Image · image/png')
     expect(root.querySelector('.trace-inspector')?.textContent).toContain('notes.txt')
     const thumb = root.querySelector<HTMLButtonElement>('.trace-image-thumb')
     thumb?.focus()
@@ -458,7 +461,7 @@ describe('trace panel', () => {
     expect(root.querySelector('.trace-gantt-bar.tone-context')).not.toBeNull()
     expect((root.querySelector('.trace-gantt-bar.tone-user') as HTMLElement).style.width).toBe('0%')
     expect(root.querySelector('.trace-gantt-bar.tone-user')?.getAttribute('title')).toContain(
-      '按轮次起点定位',
+      'anchored at the turn start',
     )
   })
 
@@ -496,17 +499,17 @@ describe('trace panel', () => {
       row.textContent?.includes('我先看一下'),
     )
     expect(assistant?.textContent).toContain('Step 1')
-    expect(assistant?.textContent).toContain('失败')
+    expect(assistant?.textContent).toContain('Failed')
     expect(assistant?.textContent).toContain('MODEL_TIMEOUT')
     assistant?.click()
     const inspector = root.querySelector('.trace-inspector')
-    expect(inspector?.textContent).toContain('步骤Step 1')
-    expect(inspector?.textContent).toContain('错误码MODEL_TIMEOUT')
-    expect(inspector?.textContent).toContain('本轮用量输入 12 · 输出 5')
-    expect(inspector?.textContent).toContain('当前调用输入 7 · 输出 3')
-    expect(inspector?.textContent).toContain('请求顺序1')
-    expect(inspector?.textContent).toContain('入账顺序1')
-    expect(inspector?.textContent).toContain('累计入账用量输入 7 · 输出 3')
+    expect(inspector?.textContent).toContain('StepStep 1')
+    expect(inspector?.textContent).toContain('Error codeMODEL_TIMEOUT')
+    expect(inspector?.textContent).toContain('Turn usageInput 12 · Output 5')
+    expect(inspector?.textContent).toContain('This callInput 7 · Output 3')
+    expect(inspector?.textContent).toContain('Request order1')
+    expect(inspector?.textContent).toContain('Ledger order1')
+    expect(inspector?.textContent).toContain('Cumulative billed usageInput 7 · Output 3')
     panel.render(
       [nodes[0] as UINode, nodes[2] as UINode],
       [
@@ -516,7 +519,7 @@ describe('trace panel', () => {
         },
       ],
     )
-    expect(root.querySelector('.trace-inspector')?.textContent).toContain('推理 未提供')
+    expect(root.querySelector('.trace-inspector')?.textContent).toContain('Reasoning Not provided')
     panel.render(
       [nodes[0] as UINode, nodes[2] as UINode],
       [
@@ -529,7 +532,7 @@ describe('trace panel', () => {
         },
       ],
     )
-    expect(root.querySelector('.trace-inspector')?.textContent).not.toContain('当前调用')
+    expect(root.querySelector('.trace-inspector')?.textContent).not.toContain('This call')
   })
 
   it('selects the linked record from the time overview, including a filtered record', () => {
@@ -561,13 +564,13 @@ describe('trace panel', () => {
     panel.render(nodes.slice(0, 3), [turn(runningTrace, ['u1', 'c1', 'a1'])])
     const modelBar = root.querySelector<HTMLElement>('.trace-gantt-bar.lane-model')
     expect(modelBar?.style.width).toBe('0%')
-    expect(modelBar?.getAttribute('title')).toContain('进行中')
+    expect(modelBar?.getAttribute('title')).toContain('In progress')
     const row = [...root.querySelectorAll('.trace-row')].find((item) =>
       item.textContent?.includes('我先看一下'),
     )
     ;(row as HTMLButtonElement | undefined)?.click()
-    expect(root.querySelector('.trace-inspector')?.textContent).toContain('进行中')
-    expect(root.querySelector('.trace-inspector')?.textContent).not.toContain('0 毫秒')
+    expect(root.querySelector('.trace-inspector')?.textContent).toContain('In progress')
+    expect(root.querySelector('.trace-inspector')?.textContent).not.toContain('0 ms')
   })
 
   it('keeps overlapping spans at their recorded relative positions', () => {
@@ -684,21 +687,23 @@ describe('trace panel', () => {
       ],
     }
     panel.render(nodes, [turn(truncated, ['u1', 'c1', 'a1', 't1'])])
-    expect(root.textContent).toContain('已省略 7 个子步骤')
-    expect(root.textContent).not.toContain('失败')
-    expect(root.textContent).toContain('调用 2')
-    expect(root.querySelector('.trace-gantt-bar.truncated')?.getAttribute('title')).toBe('已省略 7 个子步骤')
+    expect(root.textContent).toContain('7 child steps omitted')
+    expect(root.textContent).not.toContain('Failed')
+    expect(root.textContent).toContain('Calls 2')
+    expect(root.querySelector('.trace-gantt-bar.truncated')?.getAttribute('title')).toBe(
+      '7 child steps omitted',
+    )
   })
 
   it('marks a partially loaded session and loads earlier records on request', () => {
     const { root, panel } = mount()
     const loadEarlier = vi.fn()
     panel.render(nodes, [turn(sampleTrace, ['u1', 'c1', 'a1', 't1'])], { hasEarlier: true, loadEarlier })
-    expect(root.textContent).toContain('已加载部分')
+    expect(root.textContent).toContain('Partially loaded')
     ;(root.querySelector('.trace-load-earlier') as HTMLButtonElement).click()
     expect(loadEarlier).toHaveBeenCalledTimes(1)
     panel.render(nodes, [turn(sampleTrace, ['u1', 'c1', 'a1', 't1'])])
-    expect(root.textContent).not.toContain('已加载部分')
+    expect(root.textContent).not.toContain('Partially loaded')
     expect(root.querySelector('.trace-load-earlier')).toBeNull()
   })
 
@@ -1002,5 +1007,20 @@ describe('trace panel', () => {
     const list = root.querySelector<HTMLElement>('.trace-list') as HTMLElement
     expect(list.scrollTop).toBe(0)
     expect(root.querySelector('[data-trace-row-id="older0"]')).not.toBeNull()
+  })
+
+  it('repaints badges and stats when the page language changes', () => {
+    const { root, panel } = mount()
+    panel.render(nodes, [turn(sampleTrace, ['u1', 'c1', 'a1', 't1'])])
+    expect(root.textContent).toContain('User')
+    expect(root.textContent).toContain('Turns 1')
+    document.documentElement.lang = 'zh-CN'
+    flushSync(() => window.dispatchEvent(new CustomEvent('agnes:locale-changed')))
+    expect(root.textContent).toContain('用户')
+    expect(root.textContent).toContain('轮次 1')
+    document.documentElement.lang = ''
+    flushSync(() => window.dispatchEvent(new CustomEvent('agnes:locale-changed')))
+    expect(root.textContent).toContain('User')
+    expect(root.textContent).toContain('Turns 1')
   })
 })

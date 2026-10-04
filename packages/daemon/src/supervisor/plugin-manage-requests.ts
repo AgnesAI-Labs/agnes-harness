@@ -179,8 +179,8 @@ export function createPluginManageRequests(options: {
         operationState: op?.state,
         effective: 'next-turn',
         message: ready
-          ? '插件已在 AGH 运行；使用本轮实际工具列表验证贡献。前端效果需单独验证。'
-          : '可在 AGH 设置 → 插件管理查看。submitted 仅表示提交启用，请结束本轮，下一轮查询实际状态。',
+          ? 'The plugin is running in AGH. Check this turn’s actual tool list to confirm what it contributes. Verify the UI separately.'
+          : 'See AGH Settings → Plugins. Submitted only means enablement was requested. End this turn and check the actual status on the next turn.',
       }
     }
     let active: Receipt | undefined
@@ -248,7 +248,8 @@ export function createPluginManageRequests(options: {
           proposalId: receipt.proposalId,
           packageId: receipt.packageId,
           state: 'cancelling',
-          message: '取消已请求；已发生的安装不会自动回滚，请稍后查询实际状态。',
+          message:
+            'Cancellation was requested. An install that already happened is not rolled back. Check the actual status later.',
         }
       }
       if (input.action === 'cancel') {
@@ -288,7 +289,7 @@ export function createPluginManageRequests(options: {
             sessionKey,
             stepId: 'plugin-manage',
             toolUseId: raw.toolUseId as string,
-            summary: `安装到 Agnes Harness：${receipt.packageId}@${proposal.preview.version}\n摘要：${receipt.integrity}\n能力：${JSON.stringify(proposal.preview)}\n将安装、信任并启用这份生成代码，在当前 AGH 配置的会话中共享。启用会以本机进程权限运行 JavaScript；结构检查不代表代码安全或功能已验证。`,
+            summary: `Install into Agnes Harness: ${receipt.packageId}@${proposal.preview.version}\nDigest: ${receipt.integrity}\nCapabilities: ${JSON.stringify(proposal.preview)}\nThis installs, trusts, and enables the generated code for sessions in the current AGH profile. Enabling runs JavaScript with this machine’s process permissions. A structural check does not mean the code is safe or that its behavior has been verified.`,
             risk: 'always',
             actor: connActor(conn),
             taint: false,

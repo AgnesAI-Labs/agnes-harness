@@ -8,25 +8,31 @@ import type {
 import {
   type ConfirmController,
   createConfirmController,
+  createDocumentLocaleSource,
   createSelectPicker,
+  createUiTranslator,
+  type LocaleTranslator,
   McpDetailContent,
-  mountRegion,
+  RESOURCE_DETAIL_LOCALE_NAMESPACE,
+  RESOURCE_LIST_LOCALE_NAMESPACE,
   type ResourceDetailAction,
-  ResourceEmpty,
   ResourceListContent,
   type ResourceProgress,
-  ResourceRoots,
-  ResourceRow,
   renderRegion,
   resourceDesiredEnabled,
+  resourceDetailLocaleCatalog,
+  resourceListLocaleCatalog,
   type SelectPicker,
   SkillDetailContent,
+  UiLocaleProvider,
+  type UiLocaleSource,
   unmountRegion,
 } from '@agnes/web-ui'
 import { ResourceAdminApi, ResourceAdminApiError } from './api.js'
+import { RESOURCE_ADMIN_LOCALE_NAMESPACE, resourceAdminLocaleCatalog } from './locales/admin.js'
 import { type McpFormFieldId, type McpFormFieldSnapshot, mcpFormIssues } from './mcp-form-validation.js'
 import { watchMcpPanel } from './mcp-refresh.js'
-import { SKILL_EMPTY_DESCRIPTION, SKILL_EMPTY_TITLE, SKILL_LOCATION_HINTS } from './skill-copy.js'
+import { SKILL_LOCATION_HINTS } from './skill-copy.js'
 import type { ResourceAdminContext, ResourceAdminError } from './types.js'
 
 const $ = <K extends keyof HTMLElementTagNameMap>(id: string, tag: K): HTMLElementTagNameMap[K] => {
@@ -54,6 +60,7 @@ export type ResourceAdminOptions = {
   workspaceId?: string
   tab?: Tab
   embedded?: boolean
+  locale?: UiLocaleSource
 }
 export type ResourceScope = Readonly<{ tab: Tab; workspaceId?: string }>
 
@@ -65,24 +72,36 @@ const errorOf = (error: unknown): ResourceAdminError =>
     ? error.details
     : {
         code: 'RESOURCE_ADMIN_UNAVAILABLE',
-        message: '资源管理后台暂时不可用，请稍后重试。',
+        message: 'The resource admin service is temporarily unavailable. Try again later.',
       }
-function showError(error: unknown): void {
-  const value = errorOf(error)
-  notice.textContent = value.message
-  notice.dataset.kind = 'error'
-}
+class McpFormValidationError extends Error {}
+const resourceAdminCatalogs = {
+  [RESOURCE_ADMIN_LOCALE_NAMESPACE]: resourceAdminLocaleCatalog,
+  [RESOURCE_LIST_LOCALE_NAMESPACE]: resourceListLocaleCatalog,
+  [RESOURCE_DETAIL_LOCALE_NAMESPACE]: resourceDetailLocaleCatalog,
+} as const
+let activeResourceText: LocaleTranslator = createUiTranslator(
+  undefined,
+  RESOURCE_ADMIN_LOCALE_NAMESPACE,
+  resourceAdminLocaleCatalog,
+)
 let confirmController: ConfirmController | undefined
-async function confirmEffect(summary: string): Promise<boolean> {
+async function confirmEffect(summary: string, t: LocaleTranslator = activeResourceText): Promise<boolean> {
   confirmController ??= createConfirmController()
   return confirmController.ask({
-    title: '确认操作',
-    description: `${summary}\n\n确认后将提交到本地后台，并按当前版本和策略完成安全校验。`,
+    title: t('confirmation.title'),
+    description: t('confirmation.description', { summary }),
+    confirmLabel: t('confirmation.confirm'),
   })
 }
 
 /** 详情三段式：头部固定 / 中段滚动 / 动作固定。操作按钮因此永远留在可视区内。 */
 class ResourceAdminPage {
+  readonly #locale: UiLocaleSource
+  readonly #localeStop: () => void
+  readonly #localeCleanup?: () => void
+  readonly #t: LocaleTranslator
+  readonly #detailT: LocaleTranslator
   #api: ResourceAdminApi | undefined
   #context: ResourceAdminContext | undefined
   #tab: Tab = 'skills'
@@ -100,10 +119,66 @@ class ResourceAdminPage {
   #loadMorePromise: Promise<void> | undefined
   #loadedTab: Tab | undefined
   #loadedWorkspace: string | undefined
+  #notice: {
+    key?: string
+    vars?: Readonly<Record<string, string | number>>
+    raw?: string
+    kind: string
+  } = { raw: '', kind: '' }
 
-  constructor(workspaceId?: string, tab: Tab = 'skills') {
+  constructor(workspaceId?: string, tab: Tab = 'skills', locale?: UiLocaleSource) {
     this.#workspaceId = normalizeWorkspaceId(workspaceId)
     this.#tab = tab
+    if (locale) this.#locale = locale
+    else {
+      const documentLocale = createDocumentLocaleSource(resourceAdminCatalogs)
+      this.#locale = documentLocale.source
+      this.#localeCleanup = documentLocale.dispose
+    }
+    this.#t = createUiTranslator(this.#locale, RESOURCE_ADMIN_LOCALE_NAMESPACE, resourceAdminLocaleCatalog)
+    this.#detailT = createUiTranslator(
+      this.#locale,
+      RESOURCE_DETAIL_LOCALE_NAMESPACE,
+      resourceDetailLocaleCatalog,
+    )
+    activeResourceText = this.#t
+    this.#localeStop = this.#locale.subscribe(() => {
+      activeResourceText = this.#t
+      syncResourcePickers(this.#t)
+      syncTransport(this.#t)
+      if (dialog?.open)
+        $('mcp-dialog-title', 'h2').textContent = editing
+          ? this.#t('form.title.edit', { name: editing.displayName })
+          : this.#t('form.title.create')
+      this.render()
+    })
+  }
+
+  confirm(summary: string): Promise<boolean> {
+    return confirmEffect(summary, this.#t)
+  }
+
+  showError(error: unknown): void {
+    const value = errorOf(error)
+    if (
+      error instanceof ResourceAdminApiError &&
+      value.code !== 'ADMIN_UNAVAILABLE' &&
+      value.code !== 'RESOURCE_ADMIN_UNAVAILABLE'
+    ) {
+      this.setRawNotice(value.message, 'error')
+      return
+    }
+    this.setNotice('error.unavailable', 'error')
+  }
+
+  setNotice(key: string | undefined, kind = '', vars?: Readonly<Record<string, string | number>>): void {
+    this.#notice = key ? { key, ...(vars ? { vars } : {}), kind } : { raw: '', kind }
+    this.render()
+  }
+
+  setRawNotice(raw: string, kind = ''): void {
+    this.#notice = { raw, kind }
+    this.render()
   }
   /** Re-scopes to the workbench's current workspace (or clears the scope) and reloads. */
   async setWorkspace(workspaceId?: string): Promise<void> {
@@ -170,8 +245,7 @@ class ResourceAdminPage {
     this.#loadState = 'loading'
     this.render()
     if (!preserveNotice) {
-      notice.textContent = '正在读取本地资源目录…'
-      notice.dataset.kind = ''
+      this.setNotice('notice.loading')
     }
     try {
       const context = this.#context ?? (await ResourceAdminApi.context())
@@ -191,20 +265,19 @@ class ResourceAdminPage {
       if (this.#selected !== undefined && !this.#items.some((item) => item.resourceId === this.#selected))
         this.#selected = undefined
       if (!preserveNotice) {
-        notice.textContent = context.readOnly ? '后台处于只读恢复模式；可以查看状态，不能更改资源。' : ''
-        notice.dataset.kind = context.readOnly ? 'warning' : ''
+        this.setNotice(context.readOnly ? 'notice.read-only' : undefined, context.readOnly ? 'warning' : '')
       }
       this.render()
     } catch (error) {
       if (generation === this.#generation) {
         this.#loadState = 'error'
-        showError(error)
+        this.showError(error)
         this.render()
       }
     }
   }
   api(): ResourceAdminApi {
-    if (!this.#api) throw new Error('资源管理尚未连接')
+    if (!this.#api) throw new Error(this.#t('error.not-connected'))
     return this.#api
   }
   writable(): boolean {
@@ -280,9 +353,8 @@ class ResourceAdminPage {
         this.#nextCursor = result.nextCursor
         this.#loadState = this.#items.length ? 'ready' : 'empty'
       } catch (error) {
-        notice.textContent = '读取更多资源失败，可重试。'
-        notice.dataset.kind = 'error'
-        showError(error)
+        this.setNotice('notice.load-more-failed', 'error')
+        this.showError(error)
       } finally {
         this.#loadMorePromise = undefined
         this.render()
@@ -293,19 +365,16 @@ class ResourceAdminPage {
   async track(receipt: { operationId: string }): Promise<boolean> {
     const api = this.api()
     this.#activeOperation = receipt.operationId
-    notice.textContent = '操作已提交，正在等待后台确认…'
-    notice.dataset.kind = ''
+    this.setNotice('notice.submitted')
     for (let attempt = 0; attempt < 120; attempt += 1) {
       const op = await api.operation(receipt.operationId)
       this.#operations.set(op.operationId, op)
       this.render()
       if (terminal.has(op.state)) {
         this.#activeOperation = undefined
-        notice.textContent =
-          op.state === 'succeeded'
-            ? '控制面已更新。空闲会话的下一次请求会使用新快照；正在进行的回合会等到本回合结束后再切换，刷新成功不等于所有会话已经切换。'
-            : (op.lastSafeError?.message ?? '操作未完成，请查看安全状态。')
-        notice.dataset.kind = op.state === 'succeeded' ? 'success' : 'error'
+        if (op.state === 'succeeded') this.setNotice('notice.succeeded', 'success')
+        else if (op.lastSafeError?.message) this.setRawNotice(op.lastSafeError.message, 'error')
+        else this.setNotice('notice.failed', 'error')
         await this.reload(true)
         if (this.#loadState === 'error') return false
         return op.state === 'succeeded'
@@ -313,12 +382,15 @@ class ResourceAdminPage {
       await new Promise((resolve) => setTimeout(resolve, 500))
     }
     this.#activeOperation = undefined
-    notice.textContent = '操作仍在后台运行；可稍后刷新状态。'
-    notice.dataset.kind = 'warning'
+    this.setNotice('notice.running', 'warning')
     return false
   }
 
   render(): void {
+    notice.textContent = this.#notice.key
+      ? this.#t(this.#notice.key, this.#notice.vars)
+      : (this.#notice.raw ?? '')
+    notice.dataset.kind = this.#notice.kind
     const skillTab = $('skills-tab', 'button')
     const mcpTab = $('mcp-tab', 'button')
     skillTab.setAttribute('aria-selected', String(this.#tab === 'skills'))
@@ -334,33 +406,33 @@ class ResourceAdminPage {
     list.setAttribute('aria-busy', String(this.#loadState === 'loading'))
     renderRegion(
       list,
-      <ResourceListContent
-        tab={this.#tab}
-        loadState={this.#loadState}
-        items={this.#items}
-        skillRoots={this.#skillRoots}
-        selectedId={this.#selected}
-        nextCursor={this.#nextCursor}
-        loadingMore={this.#loadMorePromise !== undefined}
-        emptyTitle={this.#tab === 'skills' ? SKILL_EMPTY_TITLE : '还没有 MCP 服务'}
-        emptyDescription={
-          this.#tab === 'skills'
-            ? SKILL_EMPTY_DESCRIPTION
-            : '添加一个 MCP 服务后，可以在这里查看连接和启用状态。'
-        }
-        emptyHints={this.#tab === 'skills' ? SKILL_LOCATION_HINTS : undefined}
-        switchDisabled={!this.writable() || this.#activeOperation !== undefined}
-        itemNameOf={(item) => this.#itemName(item)}
-        onOpen={(item) => this.select(item.resourceId, this.#rowOf(item.resourceId))}
-        onToggleDesired={(item, next) => void this.toggleDesired(item, next)}
-        onLoadMore={() => void this.loadMore()}
-        onRetry={() => void this.reload()}
-      />,
+      <UiLocaleProvider source={this.#locale}>
+        <ResourceListContent
+          tab={this.#tab}
+          loadState={this.#loadState}
+          items={this.#items}
+          skillRoots={this.#skillRoots}
+          selectedId={this.#selected}
+          nextCursor={this.#nextCursor}
+          loadingMore={this.#loadMorePromise !== undefined}
+          emptyTitle={this.#t(this.#tab === 'skills' ? 'empty.skills.title' : 'empty.mcp.title')}
+          emptyDescription={
+            this.#tab === 'skills' ? this.#t('empty.skills.description') : this.#t('empty.mcp.description')
+          }
+          emptyHints={this.#tab === 'skills' ? SKILL_LOCATION_HINTS : undefined}
+          switchDisabled={!this.writable() || this.#activeOperation !== undefined}
+          itemNameOf={(item) => this.#itemName(item)}
+          onOpen={(item) => this.select(item.resourceId, this.#rowOf(item.resourceId))}
+          onToggleDesired={(item, next) => void this.toggleDesired(item, next)}
+          onLoadMore={() => void this.loadMore()}
+          onRetry={() => void this.reload()}
+        />
+      </UiLocaleProvider>,
     )
     const selected = this.#items.find((item) => item.resourceId === this.#selected)
     if (!selected) {
       this.#closeDetailDialog()
-      renderRegion(detail, <></>)
+      renderRegion(detail, <UiLocaleProvider source={this.#locale} />)
       return
     }
     const operationId = this.#activeOperation
@@ -368,63 +440,80 @@ class ResourceAdminPage {
     if (operationId) {
       const current = this.#operations.get(operationId)
       progress = {
-        text: current?.progress === undefined ? '正在等待后台…' : `正在执行 ${current.progress}%`,
+        text:
+          current?.progress === undefined
+            ? this.#t('progress.waiting')
+            : this.#t('progress.running', { progress: current.progress }),
         canCancel: this.writable() && current?.kind !== '_agnes/v1/skills.remove',
-        cancelTitle: current?.kind === '_agnes/v1/skills.remove' ? '永久删除开始后不能取消' : undefined,
+        cancelTitle:
+          current?.kind === '_agnes/v1/skills.remove' ? this.#t('progress.delete-uncancellable') : undefined,
         onCancel: () =>
           void (async () => {
-            if (await confirmEffect(`取消正在执行的资源操作 ${operationId}`))
+            if (await this.confirm(this.#t('progress.cancel-summary', { id: operationId })))
               await this.track(await this.api().cancel(operationId))
-          })().catch(showError),
+          })().catch((error) => this.showError(error)),
       }
     }
     if (selected.kind === 'skill') {
       renderRegion(
         detail,
-        <SkillDetailContent
-          skill={selected}
-          disabled={!this.writable() || this.#activeOperation !== undefined}
-          actions={this.#detailActions(selected)}
-          progress={progress}
-          onAction={(action) => void this.#runAction(action)}
-          onPrioritySave={(next) => void this.#savePriority(selected, next)}
-          onClose={() => this.closeDetail()}
-        />,
+        <UiLocaleProvider source={this.#locale}>
+          <SkillDetailContent
+            skill={selected}
+            disabled={!this.writable() || this.#activeOperation !== undefined}
+            actions={this.#detailActions(selected)}
+            progress={progress}
+            onAction={(action) => void this.#runAction(action)}
+            onPrioritySave={(next) => void this.#savePriority(selected, next)}
+            onClose={() => this.closeDetail()}
+          />
+        </UiLocaleProvider>,
       )
     } else {
       renderRegion(
         detail,
-        <McpDetailContent
-          server={selected}
-          disabled={!this.writable()}
-          actions={this.#detailActions(selected)}
-          progress={progress}
-          onAction={(action) => void this.#runAction(action)}
-          onStatus={async () => {
-            const value = await this.api().mcpStatus(selected.serverId)
-            const panel: (readonly [string, string])[] = [
-              ['连接', value.connectionState],
-              ['工具数', String(value.toolCount)],
-              ['观察版本', value.observedRevision ?? '暂无'],
-              ['目录版本', value.catalogRevision ?? '暂无'],
-              ['更新时间', new Date(value.observedAt).toLocaleString()],
-            ]
-            if (value.lastSafeError)
-              panel.push(['安全错误', `${value.lastSafeError.code}：${value.lastSafeError.message}`])
-            return panel
-          }}
-          onTools={async (cursor) => {
-            const result = await this.api().mcpTools(selected.serverId, cursor)
-            return {
-              names: result.items.map((tool) =>
-                tool.description ? `${tool.name} — ${tool.description}` : tool.name,
-              ),
-              nextCursor: result.nextCursor,
-            }
-          }}
-          onEdit={() => openMcpDialog(selected)}
-          onClose={() => this.closeDetail()}
-        />,
+        <UiLocaleProvider source={this.#locale}>
+          <McpDetailContent
+            server={selected}
+            disabled={!this.writable()}
+            actions={this.#detailActions(selected)}
+            progress={progress}
+            onAction={(action) => void this.#runAction(action)}
+            onStatus={async () => {
+              const value = await this.api().mcpStatus(selected.serverId)
+              const panel: (readonly [string, string])[] = [
+                [this.#t('fact.connection'), value.connectionState],
+                [this.#t('fact.tools'), String(value.toolCount)],
+                [this.#t('fact.observed-revision'), value.observedRevision ?? this.#t('fact.none')],
+                [this.#t('fact.catalog-revision'), value.catalogRevision ?? this.#t('fact.none')],
+                [
+                  this.#t('fact.updated-at'),
+                  new Date(value.observedAt).toLocaleString(this.#locale.getSnapshot()),
+                ],
+              ]
+              if (value.lastSafeError)
+                panel.push([
+                  this.#t('fact.safe-error'),
+                  this.#detailT('safe-error', {
+                    code: value.lastSafeError.code,
+                    message: value.lastSafeError.message,
+                  }),
+                ])
+              return panel
+            }}
+            onTools={async (cursor) => {
+              const result = await this.api().mcpTools(selected.serverId, cursor)
+              return {
+                names: result.items.map((tool) =>
+                  tool.description ? `${tool.name} — ${tool.description}` : tool.name,
+                ),
+                nextCursor: result.nextCursor,
+              }
+            }}
+            onEdit={() => openMcpDialog(selected)}
+            onClose={() => this.closeDetail()}
+          />
+        </UiLocaleProvider>,
       )
     }
     this.openDetail(this.#itemName(selected))
@@ -444,12 +533,17 @@ class ResourceAdminPage {
 
   async toggleDesired(item: Item, next: boolean): Promise<void> {
     const kind = item.kind === 'skill' ? 'Skill' : 'MCP'
-    const summary = `请求${next ? '启用' : '停用'} ${kind}「${this.#itemName(item)}」\n版本：${item.revision.slice(0, 12)}…`
-    if (!(await confirmEffect(summary))) return
+    const summary = this.#t('action.request', {
+      action: this.#t(next ? 'action.enable' : 'action.disable'),
+      kind,
+      name: this.#itemName(item),
+      revision: `${item.revision.slice(0, 12)}…`,
+    })
+    if (!(await this.confirm(summary))) return
     try {
       await this.#setDesired(item, next)
     } catch (error) {
-      showError(error)
+      this.showError(error)
       this.render()
     }
   }
@@ -464,9 +558,7 @@ class ResourceAdminPage {
       if (!trusted) return
       const current = this.#items.find((candidate) => candidate.resourceId === item.resourceId)
       if (!current || current.revision !== item.revision || current.trust !== 'trusted') {
-        notice.textContent = '资源版本已经变化，请确认最新内容后再次启用。'
-        notice.dataset.kind = 'warning'
-        this.render()
+        this.setNotice('notice.changed', 'warning')
         return
       }
       item = current
@@ -497,13 +589,18 @@ class ResourceAdminPage {
           label,
           summary,
           run,
-          disabled: disabled || (removing && label !== '永久删除'),
+          disabled: disabled || (removing && label !== this.#t('action.remove-skill.label')),
           ...extra,
         })
       }
       add(
-        resourceDesiredEnabled(skill) ? '停用' : '启用',
-        `${resourceDesiredEnabled(skill) ? '停用' : '启用'} Skill「${skill.name}」\n版本：${skill.revision.slice(0, 12)}…`,
+        this.#t(resourceDesiredEnabled(skill) ? 'action.disable' : 'action.enable'),
+        this.#t('action.request', {
+          action: this.#t(resourceDesiredEnabled(skill) ? 'action.disable' : 'action.enable'),
+          kind: 'Skill',
+          name: skill.name,
+          revision: `${skill.revision.slice(0, 12)}…`,
+        }),
         async () => {
           await this.#setDesired(skill, !resourceDesiredEnabled(skill))
           return undefined
@@ -511,10 +608,8 @@ class ResourceAdminPage {
       )
       if (skill.sourceIdentity.scope === 'workspace' || skill.sourceIdentity.scope === 'user') {
         add(
-          '永久删除',
-          '永久删除 Skill「' +
-            skill.name +
-            '」及目录中的全部文件。不可恢复；同名的其他来源可能接替生效。用户目录中的 Skill 可能也被其他应用使用。',
+          this.#t('action.remove-skill.label'),
+          this.#t('action.remove-skill.summary', { name: skill.name }),
           () => this.api().skillRemove(skill.resourceId, skill.revision),
           { className: 'danger-button compact' },
         )
@@ -522,7 +617,7 @@ class ResourceAdminPage {
       return specs
     }
     const server = item
-    const revision = `版本：${server.revision.slice(0, 12)}…`
+    const revision = `${server.revision.slice(0, 12)}…`
     const add = (
       label: string,
       summary: string,
@@ -531,23 +626,32 @@ class ResourceAdminPage {
     ): void => {
       specs.push({ label, summary, run, disabled, ...extra })
     }
-    add('测试连接', `测试 MCP「${server.displayName}」\n${revision}\n测试不会启用服务或调用工具。`, () =>
-      this.api().mcpTest(server.serverId, server.revision),
+    add(
+      this.#t('action.test-mcp'),
+      this.#t('action.test-mcp-summary', { name: server.displayName, revision }),
+      () => this.api().mcpTest(server.serverId, server.revision),
     )
     add(
-      resourceDesiredEnabled(server) ? '停用' : '启用',
-      `${resourceDesiredEnabled(server) ? '停用' : '启用'} MCP「${server.displayName}」\n${revision}`,
+      this.#t(resourceDesiredEnabled(server) ? 'action.disable' : 'action.enable'),
+      this.#t('action.request', {
+        action: this.#t(resourceDesiredEnabled(server) ? 'action.disable' : 'action.enable'),
+        kind: 'MCP',
+        name: server.displayName,
+        revision,
+      }),
       async () => {
         await this.#setDesired(server, !resourceDesiredEnabled(server))
         return undefined
       },
     )
-    add('重连', `重连 MCP「${server.displayName}」\n${revision}\n失败会保留已生效的旧连接。`, () =>
-      this.api().mcpReconnect(server.serverId, server.revision),
+    add(
+      this.#t('action.reconnect'),
+      this.#t('action.reconnect-summary', { name: server.displayName, revision }),
+      () => this.api().mcpReconnect(server.serverId, server.revision),
     )
     add(
-      '移除',
-      `移除 MCP「${server.displayName}」\n${revision}\n后台会阻断仍被使用或尚未安全退役的定义。`,
+      this.#t('action.remove-mcp'),
+      this.#t('action.remove-mcp-summary', { name: server.displayName, revision }),
       () => this.api().mcpRemove(server.serverId, server.revision),
       { className: 'danger-button compact' },
     )
@@ -556,30 +660,39 @@ class ResourceAdminPage {
 
   async #runAction(action: ResourceDetailAction): Promise<void> {
     try {
-      if (await confirmEffect(action.summary)) {
+      if (await this.confirm(action.summary)) {
         const receipt = await action.run()
         if (receipt) await this.track(receipt)
       }
     } catch (error) {
       // 旧 button() helper 的错误路径：动作失败必须落到页面通知，不能静默。
-      showError(error)
+      this.showError(error)
       this.render()
     }
   }
 
   async #savePriority(skill: SkillDescriptor, next: number): Promise<void> {
     if (
-      await confirmEffect(
-        '调整同名 Skill「' +
-          skill.name +
-          '」的覆盖优先级：' +
-          skill.priority +
-          ' → ' +
-          next +
-          '。不会改变启用状态。',
+      await this.confirm(
+        this.#t('action.adjust-priority', {
+          name: skill.name,
+          current: skill.priority,
+          next,
+        }),
       )
     )
       await this.track(await this.api().skillPriority(skill.resourceId, skill.revision, skill.priority, next))
+  }
+
+  dispose(): void {
+    this.#localeStop()
+    this.#localeCleanup?.()
+    stopMcpRefresh?.()
+    stopMcpRefresh = undefined
+    for (const picker of mcpPickers) picker.destroy()
+    mcpPickers = []
+    unmountRegion(list)
+    unmountRegion(detail)
   }
 }
 
@@ -614,18 +727,29 @@ function writeDefinition(definition: McpServerDefinitionInput): void {
     $('mcp-header-name', 'select').value = definition.secretBinding.headerName
   $('mcp-tools', 'textarea').value = definition.toolPolicy?.allow?.join('\n') ?? ''
 }
-function openMcpDialog(server?: McpServerDescriptor): void {
+function openMcpDialog(server?: McpServerDescriptor, t: LocaleTranslator = activeResourceText): void {
   editing = server
   form.reset()
   if (server) writeDefinition(server.definition)
-  syncTransport()
-  $('mcp-dialog-title', 'h2').textContent = server ? `编辑 ${server.displayName}` : '添加 MCP 服务'
+  syncTransport(t)
+  $('mcp-dialog-title', 'h2').textContent = server
+    ? t('form.title.edit', { name: server.displayName })
+    : t('form.title.create')
   $('mcp-id', 'input').disabled = !!server
   $('mcp-error', 'p').textContent = ''
   dialog.showModal()
   $('mcp-name', 'input').focus()
 }
-function syncTransport(): void {
+function syncResourcePickers(t: LocaleTranslator = activeResourceText): void {
+  for (const picker of mcpPickers) picker.destroy()
+  mcpPickers = [
+    createSelectPicker(mcpTransport, { label: t('select.transport') }),
+    createSelectPicker(mcpSecretKind, { label: t('select.secret') }),
+    createSelectPicker($('mcp-header-name', 'select'), { label: t('select.header') }),
+  ]
+}
+
+function syncTransport(t: LocaleTranslator = activeResourceText): void {
   const stdio = mcpTransport.value === 'stdio'
   $('mcp-executable-row', 'label').hidden = !stdio
   $('mcp-args-row', 'label').hidden = !stdio
@@ -636,9 +760,7 @@ function syncTransport(): void {
   $('mcp-secret-row', 'label').hidden = mcpSecretKind.value === 'none'
   $('mcp-header-row', 'label').hidden = mcpSecretKind.value !== 'http-header'
   $('mcp-secret', 'textarea').placeholder =
-    mcpSecretKind.value === 'stdio-env'
-      ? 'TOKEN=secret://namespace/name（每行一个）'
-      : 'secret://namespace/name'
+    mcpSecretKind.value === 'stdio-env' ? t('placeholder.env') : 'secret://namespace/name'
   for (const picker of mcpPickers) picker.sync()
   syncMcpFieldFeedback()
 }
@@ -669,8 +791,11 @@ function mcpFormSnapshot(): McpFormFieldSnapshot {
  * 输入过程（requireFilled=false）只看非空值，不在用户还没填到时催促；提交前（true）把
  * 「必填但为空」也标出来。
  */
-function syncMcpFieldFeedback(requireFilled = false): ReturnType<typeof mcpFormIssues> {
-  const issues = mcpFormIssues(mcpFormSnapshot(), { requireFilled })
+function syncMcpFieldFeedback(
+  requireFilled = false,
+  t: LocaleTranslator = activeResourceText,
+): ReturnType<typeof mcpFormIssues> {
+  const issues = mcpFormIssues(mcpFormSnapshot(), { requireFilled }, t)
   for (const [id, tag] of MCP_FIELD_CONTROLS) $(id, tag).removeAttribute('aria-invalid')
   for (const issue of issues) {
     const control = MCP_FIELD_CONTROLS.find(([fieldId]) => fieldId === issue.field)
@@ -679,7 +804,7 @@ function syncMcpFieldFeedback(requireFilled = false): ReturnType<typeof mcpFormI
   $('mcp-error', 'p').textContent = issues[0]?.message ?? ''
   return issues
 }
-function definitionFromForm(): McpServerDefinitionInput {
+function definitionFromForm(t: LocaleTranslator = activeResourceText): McpServerDefinitionInput {
   const serverId = $('mcp-id', 'input').value.trim()
   const displayName = $('mcp-name', 'input').value.trim()
   const args = $('mcp-args', 'textarea')
@@ -692,10 +817,10 @@ function definitionFromForm(): McpServerDefinitionInput {
     .filter(Boolean)
   const secretKind = mcpSecretKind.value
   const secret = $('mcp-secret', 'textarea').value.trim()
-  if (!serverId || !displayName) throw new Error('请填写服务 ID 和显示名称。')
+  if (!serverId || !displayName) throw new McpFormValidationError(t('error.form.identity'))
   if (mcpTransport.value === 'stdio') {
     const executable = $('mcp-executable', 'input').value.trim()
-    if (!executable) throw new Error('请填写受允许的可执行文件。')
+    if (!executable) throw new McpFormValidationError(t('error.form.executable'))
     const secretBinding =
       secretKind === 'none'
         ? { kind: 'none' as const }
@@ -709,10 +834,10 @@ function definitionFromForm(): McpServerDefinitionInput {
               const name = line.slice(0, at)
               const reference = line.slice(at + 1)
               if (at < 1 || !reference || Object.hasOwn(env, name))
-                throw new Error('环境变量格式为 TOKEN=secret://namespace/name，每项只能出现一次。')
+                throw new McpFormValidationError(t('error.form.env-format'))
               env[name] = reference
             }
-            if (!Object.keys(env).length) throw new Error('请填写至少一个环境变量 SecretRef。')
+            if (!Object.keys(env).length) throw new McpFormValidationError(t('error.form.env-empty'))
             return { kind: 'stdio-env' as const, env }
           })()
     return {
@@ -724,8 +849,8 @@ function definitionFromForm(): McpServerDefinitionInput {
     }
   }
   const url = $('mcp-url', 'input').value.trim()
-  if (!url) throw new Error('请填写 HTTPS 地址，或获本地策略允许的 loopback HTTP 地址。')
-  if (secretKind !== 'none' && !secret) throw new Error('请填写已有的 SecretRef。')
+  if (!url) throw new McpFormValidationError(t('error.form.url'))
+  if (secretKind !== 'none' && !secret) throw new McpFormValidationError(t('error.form.secret'))
   const secretBinding =
     secretKind === 'none'
       ? { kind: 'none' as const }
@@ -757,12 +882,13 @@ function definitionFromForm(): McpServerDefinitionInput {
   // The <select id="mcp-transport"> option set lives in packages/web/public/resources.html, a
   // different package than this dispatch -- nothing guarantees they stay in sync. Fail loudly on an
   // unrecognized value instead of silently falling through to an SSE-shaped definition.
-  throw new Error(`未识别的传输方式：${mcpTransport.value}，请刷新页面后重试。`)
+  throw new Error(t('error.invalid-transport', { value: mcpTransport.value }))
 }
 
 export type ResourceAdminMount = Readonly<{
   ready: Promise<void>
   reload(): Promise<void>
+  dispose(): void
   /** Re-scopes to the workbench's current workspace, or clears the scope when none is selected. */
   setWorkspace(workspaceId?: string): Promise<void>
   /** 设置页把「技能」和「MCP」做成两条独立 Tab，由宿主决定打开哪一类。 */
@@ -782,15 +908,8 @@ export function mountResourceAdmin(options: ResourceAdminOptions = {}): Resource
   form = $('mcp-form', 'form')
   mcpTransport = $('mcp-transport', 'select')
   mcpSecretKind = $('mcp-secret-kind', 'select')
-  for (const picker of mcpPickers) picker.destroy()
-  mcpPickers = [
-    createSelectPicker(mcpTransport, { label: '传输' }),
-    createSelectPicker(mcpSecretKind, { label: '凭据方式' }),
-    createSelectPicker($('mcp-header-name', 'select'), {
-      label: 'HTTP Header',
-    }),
-  ]
-  const page = new ResourceAdminPage(options.workspaceId, options.tab)
+  const page = new ResourceAdminPage(options.workspaceId, options.tab, options.locale)
+  syncResourcePickers(activeResourceText)
 
   // 详情是模态框：点遮罩、按 Escape、点「关闭详情」都要走同一条收尾路径（含焦点归还）。
   detail.addEventListener('cancel', (event) => {
@@ -830,18 +949,14 @@ export function mountResourceAdmin(options: ResourceAdminOptions = {}): Resource
     'click',
     () =>
       void (async () => {
-        if (
-          await confirmEffect(
-            '刷新 Skill 目录\n后台将重新扫描受控根目录，并保留最近一次安全目录直到新结果通过校验。',
-          )
-        )
+        if (await page.confirm(activeResourceText('action.refresh-skills')))
           await page.track(await page.api().refresh())
-      })().catch(showError),
+      })().catch((error) => page.showError(error)),
   )
-  $('mcp-create', 'button').addEventListener('click', () => openMcpDialog())
+  $('mcp-create', 'button').addEventListener('click', () => openMcpDialog(undefined, activeResourceText))
   $('mcp-cancel', 'button').addEventListener('click', () => dialog.close())
-  mcpTransport.addEventListener('change', syncTransport)
-  mcpSecretKind.addEventListener('change', syncTransport)
+  mcpTransport.addEventListener('change', () => syncTransport(activeResourceText))
+  mcpSecretKind.addEventListener('change', () => syncTransport(activeResourceText))
   // input/change 都在 form 上冒泡：文本框逐字触发 input，select 触发 change。
   // 必须包一层箭头函数——addEventListener 会把 Event 对象当第一个参数传进去。
   form.addEventListener('input', () => syncMcpFieldFeedback())
@@ -851,13 +966,16 @@ export function mountResourceAdmin(options: ResourceAdminOptions = {}): Resource
     const error = $('mcp-error', 'p')
     error.textContent = ''
     void (async () => {
-      if (syncMcpFieldFeedback(true).length) return
-      const definition = definitionFromForm()
+      if (syncMcpFieldFeedback(true, activeResourceText).length) return
+      const definition = definitionFromForm(activeResourceText)
       const creating = !editing
       const summary = editing
-        ? `更新 MCP「${editing.displayName}」\n版本：${editing.revision.slice(0, 12)}…\n更新后需要重新启用。`
-        : `创建 MCP「${definition.displayName}」\n它将以停用状态保存，可在检查后直接启用。`
-      if (!(await confirmEffect(summary))) return
+        ? activeResourceText('action.update-mcp-summary', {
+            name: editing.displayName,
+            revision: `${editing.revision.slice(0, 12)}…`,
+          })
+        : activeResourceText('action.create-mcp-summary', { name: definition.displayName })
+      if (!(await page.confirm(summary))) return
       const receipt = editing
         ? await page.api().mcpUpdate(editing.serverId, editing.revision, definition)
         : await page.api().mcpCreate(definition)
@@ -866,13 +984,20 @@ export function mountResourceAdmin(options: ResourceAdminOptions = {}): Resource
       await page.track(receipt)
       // track() already reported success generically; a new server still needs an explicit enable.
       if (creating && notice.dataset.kind === 'success')
-        notice.textContent = `MCP「${definition.displayName}」已创建，但尚未可用：请检查配置后点击「启用」。`
+        page.setNotice('notice.created', 'success', { name: definition.displayName })
     })().catch((cause) => {
-      if (dialog.open) error.textContent = errorOf(cause).message
-      else showError(cause)
+      if (dialog.open)
+        error.textContent =
+          cause instanceof McpFormValidationError
+            ? cause.message
+            : cause instanceof ResourceAdminApiError &&
+                ['ADMIN_UNAVAILABLE', 'RESOURCE_ADMIN_UNAVAILABLE'].includes(cause.details.code)
+              ? activeResourceText('error.unavailable')
+              : errorOf(cause).message
+      else page.showError(cause)
     })
   })
-  syncTransport()
+  syncTransport(activeResourceText)
   stopMcpRefresh?.()
   stopMcpRefresh = watchMcpPanel({
     root: list,
@@ -885,6 +1010,7 @@ export function mountResourceAdmin(options: ResourceAdminOptions = {}): Resource
   return {
     ready,
     reload: () => page.reload(),
+    dispose: () => page.dispose(),
     setWorkspace: (id) => page.setWorkspace(id),
     setTab: (tab) => page.setTab(tab),
     sync: (scope, options) => page.sync(scope, options),

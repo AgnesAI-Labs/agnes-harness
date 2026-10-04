@@ -13,13 +13,13 @@ import type {
 } from '@agnes/extension-api/client'
 import { Button, type StateLight, StateLights } from '@agnes/web-ui'
 import { useState } from 'react'
+import { type DomainMessageKey, domainText } from '../../locales/domain.js'
 
-const PHASES: Record<string, StateLight> = {
-  provisional: { label: 'Status', value: 'In progress', tone: 'warn' },
-  finalized: { label: 'Status', value: 'Final', tone: 'ok' },
-  interrupted: { label: 'Status', value: 'Interrupted, may be incomplete', tone: 'bad' },
+const PHASE_TONES: Record<string, StateLight['tone']> = {
+  provisional: 'warn',
+  finalized: 'ok',
+  interrupted: 'bad',
 }
-const UNKNOWN_PHASE: StateLight = { label: 'Status', value: 'Unknown', tone: 'unknown' }
 
 // sha256 of the canonical JSON `{}`.
 const EMPTY_DIGEST = '44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a'
@@ -36,39 +36,48 @@ const emptyInput = (schema: SchemaRef): DataRef => ({
 type Attempt = Readonly<{
   requestId: string
   state: 'sending' | 'pending' | 'succeeded' | 'failed' | 'refused' | 'unknown'
-  message: string
+  message: DomainMessageKey
+  vars?: Readonly<Record<string, string | number>>
   /** Whether the next click resends this request id. */
   retry: boolean
 }>
 
 /** What one submit or status read means for the card. A thrown call may have arrived, so it retries. */
 function settle(requestId: string, outcome: Outcome<CommandHandle> | undefined): Attempt {
-  const at = (state: Attempt['state'], message: string, retry = false) => ({
+  const at = (
+    state: Attempt['state'],
+    message: DomainMessageKey,
+    retry = false,
+    vars?: Readonly<Record<string, string | number>>,
+  ) => ({
     requestId,
     state,
     message,
+    ...(vars ? { vars } : {}),
     retry,
   })
-  if (outcome === undefined) return at('refused', 'The request could not be confirmed.', true)
+  if (outcome === undefined) return at('refused', 'domain.unconfirmed', true)
   if (!outcome.ok) {
     const { code, message, retryAdvice } = outcome.error
-    if (code === 'unknown_effect') return at('unknown', 'The outcome is unknown. Check its status first.')
+    if (code === 'unknown_effect') return at('unknown', 'domain.unknownOutcome')
     const again = code === 'retryable' || code === 'timeout' || retryAdvice.kind === 'retry_same_action'
-    return at('refused', `Refused: ${message}`, again)
+    return at('refused', 'domain.refused', again, { message })
   }
   const handle = outcome.value
   switch (handle.status) {
     case 'accepted':
     case 'running':
-      return at('pending', 'Pending.')
+      return at('pending', 'domain.pending')
     case 'succeeded':
-      return at('succeeded', 'Done.')
+      return at('succeeded', 'domain.done')
     case 'unknown_effect':
-      return at('unknown', 'The outcome is unknown. Check its status first.')
+      return at('unknown', 'domain.unknownOutcome')
     case 'not-accepted':
-      return at('refused', 'Not accepted.', true)
+      return at('refused', 'domain.notAccepted', true)
     default:
-      return at('failed', handle.status === 'cancelled' ? 'Cancelled.' : `Failed: ${handle.error.message}`)
+      return handle.status === 'cancelled'
+        ? at('failed', 'domain.cancelled')
+        : at('failed', 'domain.failed', false, { message: handle.error.message })
   }
 }
 
@@ -81,6 +90,8 @@ function ActionControl({
   action: ViewAction
   context: RendererContext
 }) {
+  const text = (key: DomainMessageKey, vars?: Readonly<Record<string, string | number>>) =>
+    domainText(context.locale.locale, key, vars)
   const [attempt, setAttempt] = useState<Attempt | null>(null)
   // ponytail: only command actions act here; forms and downloads show their label until the card
   // gets the interaction and artifact flows.
@@ -88,14 +99,14 @@ function ActionControl({
     return (
       <span className="generic-domain-action" data-action-key={action.actionKey}>
         <Button disabled>{action.label}</Button>
-        <span>{action.disabledReason ?? 'Not available here.'}</span>
+        <span>{action.disabledReason ?? text('domain.unavailable')}</span>
       </span>
     )
   const waiting = attempt?.state === 'pending' || attempt?.state === 'unknown'
 
   const send = async (check: boolean) => {
     const requestId = attempt && (check || attempt.retry) ? attempt.requestId : crypto.randomUUID()
-    setAttempt({ requestId, state: 'sending', message: 'Sending.', retry: false })
+    setAttempt({ requestId, state: 'sending', message: 'domain.sending', retry: false })
     let outcome: Outcome<CommandHandle> | undefined
     try {
       outcome = check
@@ -118,21 +129,29 @@ function ActionControl({
   return (
     <span className="generic-domain-action" data-action-key={action.actionKey} data-state={attempt?.state}>
       <Button disabled={attempt?.state === 'sending' || waiting} onClick={() => void send(false)}>
-        {attempt?.retry ? `Retry ${action.label}` : action.label}
+        {attempt?.retry ? text('domain.retry', { label: action.label }) : action.label}
       </Button>
-      {waiting ? <Button onClick={() => void send(true)}>Check status</Button> : null}
-      <span role="status">{attempt?.message}</span>
+      {waiting ? <Button onClick={() => void send(true)}>{text('domain.checkStatus')}</Button> : null}
+      <span role="status">{attempt ? text(attempt.message, attempt.vars) : null}</span>
     </span>
   )
 }
 
 export function GenericDomainView({ view, context }: { view: DomainView; context: RendererContext }) {
+  const text = (key: DomainMessageKey) => domainText(context.locale.locale, key)
+  const phase: DomainMessageKey = Object.hasOwn(PHASE_TONES, view.phase)
+    ? `domain.phase.${view.phase}`
+    : 'domain.phase.unknown'
   return (
     <article className="generic-domain-view" data-view-id={view.viewId} data-phase={view.phase}>
-      <StateLights states={[PHASES[view.phase] ?? UNKNOWN_PHASE]} />
+      <StateLights
+        states={[
+          { label: text('domain.status'), value: text(phase), tone: PHASE_TONES[view.phase] ?? 'unknown' },
+        ]}
+      />
       <p className="generic-domain-text">{view.fallbackText}</p>
       {view.resources.length > 0 ? (
-        <ul className="generic-domain-resources" aria-label="Resources">
+        <ul className="generic-domain-resources" aria-label={text('domain.resources')}>
           {view.resources.map((resource) => (
             <li key={`${resource.artifactId}@${resource.version}`}>
               {resource.title ?? resource.artifactId}

@@ -319,3 +319,15 @@ it('requests an earlier page only when PageUp reaches the loaded window boundary
   expect(t.render(40)).toEqual(['↑ Earlier history · PgUp to load', 'tail 1'])
   expect(t.scroll(2)).toBe(false)
 })
+
+it('localizes the earlier-history hint', () => {
+  const options = {
+    rows: () => 2,
+    reservedRows: () => 0,
+    nodeView: view,
+    locale: 'zh-CN',
+  }
+  const t = new Timeline(options)
+  t.apply(timeline([]), { hasEarlier: true })
+  expect(t.render(40)).toEqual(['↑ 更早的记录 · PgUp 加载'])
+})

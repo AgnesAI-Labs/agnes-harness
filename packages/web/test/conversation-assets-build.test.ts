@@ -30,8 +30,12 @@ it('ships private conversation styles in the existing three-page style asset', a
   expect(built).toContain('.x-markdown-dark')
   expect(built).toContain('.conversation-markdown')
   expect(built).toContain('--text-color: var(--agnes-text-primary)')
+  expect(built).toContain('.aui\\:flex')
+  expect(built).toContain('var(--agnes-bg-card)')
+  expect(built).not.toContain('box-sizing:border-box')
   expect(files).not.toContain('messages.css')
   expect(files).not.toContain('assistant-ui.css')
+  expect(files).not.toContain('conversation-tailwind.css')
 
   for (const page of ['index', 'admin', 'resources']) {
     const html = await readFile(resolve(web, `dist/web/${page}.html`), 'utf8')

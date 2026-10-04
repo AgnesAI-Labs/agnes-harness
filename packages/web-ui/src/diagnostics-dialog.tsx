@@ -29,11 +29,14 @@ export type DiagnosticsDialogActions = {
 export function DiagnosticsDialogView({
   snapshot,
   actions,
+  text,
 }: {
   snapshot: DiagnosticsDialogSnapshot
   actions: DiagnosticsDialogActions
+  text?: (key: string) => string
 }): JSX.Element {
   const { step, include } = snapshot
+  const label = (key: string, fallback: string) => text?.(key) ?? fallback
   return (
     <div className="diagnostics-body">
       <div className="dialog-heading">
@@ -41,15 +44,20 @@ export function DiagnosticsDialogView({
       </div>
       <section data-step="menu" hidden={step !== 'menu'}>
         <p className="dialog-intro">
-          创建一个可分享给支持人员的诊断 ZIP 包，包含当前会话的对话与轨迹、日志和系统信息。
+          {label(
+            'diagnostics.intro',
+            'Create a diagnostics ZIP you can share with support. It can include this session’s conversation and trace, logs, and system information.',
+          )}
         </p>
-        <p className="diagnostics-badge">分享前会先对密钥脱敏。</p>
+        <p className="diagnostics-badge">
+          {label('diagnostics.redaction', 'Secrets are redacted before sharing.')}
+        </p>
         <div className="dialog-actions">
           <button className="secondary-button" type="button" data-action="cancel" onClick={actions.close}>
-            取消
+            {label('diagnostics.cancel', 'Cancel')}
           </button>
           <button className="primary-button" type="button" data-action="share" onClick={actions.share}>
-            分享诊断
+            {label('diagnostics.share', 'Share diagnostics')}
           </button>
         </div>
       </section>
@@ -63,7 +71,7 @@ export function DiagnosticsDialogView({
               disabled={!snapshot.hasSession}
               onChange={(event) => actions.setInclude('conversation', event.currentTarget.checked)}
             />{' '}
-            对话与轨迹
+            {label('diagnostics.include.conversation', 'Conversation and trace')}
           </label>
           <label>
             <input
@@ -72,7 +80,7 @@ export function DiagnosticsDialogView({
               checked={include.logs}
               onChange={(event) => actions.setInclude('logs', event.currentTarget.checked)}
             />{' '}
-            日志
+            {label('diagnostics.include.logs', 'Logs')}
           </label>
           <label>
             <input
@@ -81,7 +89,7 @@ export function DiagnosticsDialogView({
               checked={include.system}
               onChange={(event) => actions.setInclude('system', event.currentTarget.checked)}
             />{' '}
-            系统信息
+            {label('diagnostics.include.system', 'System information')}
           </label>
         </fieldset>
         <div className="dialog-actions">
@@ -92,7 +100,7 @@ export function DiagnosticsDialogView({
             disabled={snapshot.generating}
             onClick={() => actions.back('menu')}
           >
-            返回
+            {label('diagnostics.back', 'Back')}
           </button>
           <button
             className="primary-button"
@@ -101,7 +109,9 @@ export function DiagnosticsDialogView({
             disabled={snapshot.generating}
             onClick={actions.generate}
           >
-            {snapshot.generating ? '正在生成…' : '生成诊断包'}
+            {snapshot.generating
+              ? label('diagnostics.generating', 'Generating…')
+              : label('diagnostics.generate', 'Generate package')}
           </button>
         </div>
       </section>
@@ -110,7 +120,10 @@ export function DiagnosticsDialogView({
           {snapshot.summary}
         </p>
         <p className="dialog-intro" data-ready-warning hidden={!snapshot.hasWarnings}>
-          部分诊断资料不可用或超出导出上限，详见包内 diagnostic-export-warnings.json。
+          {label(
+            'diagnostics.warning',
+            'Some diagnostics were unavailable or over the export limit. See diagnostic-export-warnings.json in the package.',
+          )}
         </p>
         <div className="dialog-actions">
           <button
@@ -119,7 +132,7 @@ export function DiagnosticsDialogView({
             data-back="share"
             onClick={() => actions.back('share')}
           >
-            返回
+            {label('diagnostics.back', 'Back')}
           </button>
           <button
             className="primary-button"
@@ -128,18 +141,23 @@ export function DiagnosticsDialogView({
             disabled={snapshot.saving}
             onClick={actions.save}
           >
-            保存 ZIP 包
+            {label('diagnostics.save', 'Save ZIP')}
           </button>
         </div>
       </section>
       <section data-step="saved" hidden={step !== 'saved'}>
-        <p className="dialog-intro">把这个 ZIP 包分享给支持或研发人员。解压后打开 index.html 查看。</p>
+        <p className="dialog-intro">
+          {label(
+            'diagnostics.savedIntro',
+            'Share this ZIP with support or engineering. Unzip it and open index.html.',
+          )}
+        </p>
         <p className="diagnostics-file" data-saved-name>
           {snapshot.savedName}
         </p>
         <div className="dialog-actions">
           <button className="primary-button" type="button" data-action="close" onClick={actions.close}>
-            关闭
+            {label('diagnostics.close', 'Close')}
           </button>
         </div>
       </section>

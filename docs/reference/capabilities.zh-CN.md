@@ -21,7 +21,7 @@
 | `ai.models.catalogue-probe` | 提供方模型目录探测 | partial | 常见 OpenAI/Anthropic 连通性探测可用；特定协议的模型目录与部分认证变体会被拒绝。 | 按提供方补充实现 | `packages/ai/src/adapters/pi/probe-models.ts`<br>`packages/ai/src/adapters/pi/probe.ts` |
 | `approval.ticket-store` | 停驻审批票据 | stub | 审批策略尚无持久化票据存储。 | 需要持久化存储 | `packages/base/extensions/approval-policy/src/tickets.ts` |
 | `artifacts.background-jobs` | 产物后台任务 | stub | 本地产物读写已实现，但异步产物任务尚未实现。 | 需要任务执行能力 | `packages/base/extensions/artifacts-local/src/jobs.ts` |
-| `cli.onboarding.account` | 首次运行时登录 Agnes 账号 | stub | API key 路径已端到端接通；账号路径依赖平台的 PKCE、token、刷新和订阅目录契约，当前构建不包含这些能力。选择器会展示该选项并明确拒绝，避免打开无法完成的流程。 | 需要账号集成 | `packages/cli/src/onboarding/tui.ts` |
+| `cli.onboarding.account` | 首次运行时登录 Agnes 账号 | stub | API key 路径已端到端接通；账号路径依赖平台的 PKCE、token、刷新和订阅目录契约，当前构建不包含这些能力。选择器会展示该选项并明确拒绝，避免打开无法完成的流程。 | 需要账号集成 | `packages/cli/src/onboarding/tui.ts`、`packages/cli-tui/src/locale-extended.ts` |
 | `profile.additional-layers` | Workspace、local、flags 与 managed 配置层 | partial | 已验证的 workspace 覆盖层，以及仅包含隔离设置的 local/flags/managed 覆盖层可解析；这些层的其他字段仍会被拒绝，确保 profile hash 如实反映配置。 | 扩展配置层支持 | `packages/host/src/profile/isolation.ts` |
 | `sandbox.host-filtered-network` | 主机白名单网络约束 | partial | 完全禁网可用；非空主机白名单依赖尚未实现的过滤代理。 | 需要网络过滤能力 | `packages/base/extensions/sandbox/src/seam.ts`<br>`packages/base/extensions/sandbox/src/backends/shared.ts` |
 | `windows.runtime-enforcement` | Windows 沙箱与凭据保护 | partial | 原生私有凭据 ACL 约束已实现；原生能力不可用时会拒绝执行。受限令牌沙箱与网络隔离仍不可用，强制隔离请求必须被拒绝。完整 Windows 验收尚未完成。 | 完成 Windows 兼容性验收；当前范围不包含 OS 沙箱 | `packages/host/src/adapters/platform-win32.ts`<br>`packages/host/src/adapters/credential-files.ts` |

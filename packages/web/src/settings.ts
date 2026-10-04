@@ -19,6 +19,7 @@ import {
   unmountRegion,
 } from '@agnes/web-ui'
 import { createElement } from 'react'
+import { tr } from './locale-bridge.js'
 import { oauthControls } from './oauth-controls.js'
 import { createAccountPickers } from './provider-picker.js'
 
@@ -31,41 +32,42 @@ export type SettingsControllerOptions = {
 export type SettingsController = {
   open(): Promise<void>
   close(): void
+  refreshLocale(): void
   setConnected(connected: boolean): void
 }
 
 type AsyncPhase = 'idle' | 'loading' | 'ready' | 'empty' | 'error'
 
-const CONFIGURATION_REASON_MESSAGES: Readonly<Record<string, string>> = {
-  CONFIG_AUTH_FAILED: '登录未完成，请重试或使用设备码登录。',
-  CONFIG_AUTH_EXPIRED: '登录操作已过期，请重新登录。',
-  CONFIG_AUTH_BUSY: '正在处理登录，请稍后重试。',
-  CONFIG_INVALID_INPUT: '配置输入无效，请检查 Provider、Base URL、密钥和模型。',
-  CONFIG_UNKNOWN_PROVIDER: '所选 Provider 不可用，请重新选择。',
-  CONFIG_ENDPOINT_OVERRIDE_UNSUPPORTED: '该 Provider 不支持自定义 Base URL，请恢复默认地址。',
-  CONFIG_CREDENTIAL_REQUIRED: '需要 API key，请输入密钥后重试。',
-  CONFIG_CREDENTIAL_STORE: '本地凭据存储不可用，请检查本机配置。',
-  CONFIG_PROVIDER_UNAVAILABLE: 'Provider 模型目录不可用，请检查网络或 Base URL。',
-  CONFIG_TEST_FAILED: 'Provider 连接测试未通过，请检查地址和密钥。',
-  CONFIG_SUBSCRIPTION_AUTH: '上游拒绝了订阅授权或访问权限，请重新授权并核对登录账号。',
-  CONFIG_SUBSCRIPTION_QUOTA: '上游报告额度或余额不足，请检查订阅用量。',
-  CONFIG_SUBSCRIPTION_RATE_LIMIT: '上游请求限流，请稍后重试。',
-  CONFIG_SUBSCRIPTION_TIMEOUT: '模型测试超时，请检查网络后重试。',
-  CONFIG_SUBSCRIPTION_MODEL: '上游未找到所选模型，请选择其他模型重试。',
-  CONFIG_SUBSCRIPTION_FAILED: '授权已完成，但所选模型的推理测试失败；请重试或改选模型。账户尚未保存。',
-  CONFIG_MODEL_UNAVAILABLE: '所选模型不可用，请重新测试并选择返回的模型。',
-  CONFIG_REVISION_CONFLICT: '配置已被其他客户端修改，请重新打开设置后再试。',
-  CONFIG_PERSIST_FAILED: '配置保存失败，请稍后重试。',
-  CONFIG_INVALID_STATE: '本地配置状态无效，请检查配置文件。',
-  CONFIG_FAILED: '配置请求失败，请稍后重试。',
+const CONFIGURATION_REASON_KEYS: Readonly<Record<string, string>> = {
+  CONFIG_AUTH_FAILED: 'settings.config.authFailed',
+  CONFIG_AUTH_EXPIRED: 'settings.config.authExpired',
+  CONFIG_AUTH_BUSY: 'settings.config.authBusy',
+  CONFIG_INVALID_INPUT: 'settings.config.invalidInput',
+  CONFIG_UNKNOWN_PROVIDER: 'settings.config.unknownProvider',
+  CONFIG_ENDPOINT_OVERRIDE_UNSUPPORTED: 'settings.config.endpointUnsupported',
+  CONFIG_CREDENTIAL_REQUIRED: 'settings.config.credentialRequired',
+  CONFIG_CREDENTIAL_STORE: 'settings.config.credentialStore',
+  CONFIG_PROVIDER_UNAVAILABLE: 'settings.config.providerUnavailable',
+  CONFIG_TEST_FAILED: 'settings.config.testFailed',
+  CONFIG_SUBSCRIPTION_AUTH: 'settings.config.subscriptionAuth',
+  CONFIG_SUBSCRIPTION_QUOTA: 'settings.config.subscriptionQuota',
+  CONFIG_SUBSCRIPTION_RATE_LIMIT: 'settings.config.subscriptionRateLimit',
+  CONFIG_SUBSCRIPTION_TIMEOUT: 'settings.config.subscriptionTimeout',
+  CONFIG_SUBSCRIPTION_MODEL: 'settings.config.subscriptionModel',
+  CONFIG_SUBSCRIPTION_FAILED: 'settings.config.subscriptionFailed',
+  CONFIG_MODEL_UNAVAILABLE: 'settings.config.modelUnavailable',
+  CONFIG_REVISION_CONFLICT: 'settings.config.revisionConflict',
+  CONFIG_PERSIST_FAILED: 'settings.config.persistFailed',
+  CONFIG_INVALID_STATE: 'settings.config.invalidState',
 }
 
-function configurationReason(error: unknown): string | undefined {
+function configurationReason(error: unknown, t: (key: string) => string = tr): string | undefined {
   if (error === null || typeof error !== 'object') return undefined
   const data =
     'data' in error && error.data !== null && typeof error.data === 'object' ? error.data : undefined
   const reason = data && 'reason' in data && typeof data.reason === 'string' ? data.reason : undefined
-  return reason === undefined ? undefined : CONFIGURATION_REASON_MESSAGES[reason]
+  const key = reason === undefined ? undefined : CONFIGURATION_REASON_KEYS[reason]
+  return key === undefined ? undefined : t(key)
 }
 
 type SettingsElements = {
@@ -130,8 +132,10 @@ function readElements(): SettingsElements {
 
 const option = (label: string, value: string) => ({ label, value })
 
-function errorText(error: unknown, secret: string): string {
-  const message = configurationReason(error) ?? (error instanceof Error ? error.message : '配置请求失败')
+function errorText(error: unknown, secret: string, t: (key: string) => string): string {
+  const message =
+    configurationReason(error, t) ??
+    (error instanceof Error ? error.message : t('settings.config.requestFailed'))
   return secret ? message.split(secret).join('[redacted]') : message
 }
 
@@ -191,14 +195,33 @@ export function createSettingsController(options: SettingsControllerOptions): Se
   let focusReturn: HTMLElement | null = null
   let suggestedAccountLabel: string | undefined
   const providerId = () => ui.provider.value.split(':')[0] ?? ''
+  const canUseSavedModels = (): boolean => {
+    const account = selectedAccount()
+    return (
+      !!account &&
+      !!tested?.models.length &&
+      account.providerId === providerId() &&
+      account.authType === ui.authMethod.value &&
+      account.baseUrl.replace(/\/$/, '') === ui.baseUrl.value.trim().replace(/\/$/, '') &&
+      !ui.apiKey.value
+    )
+  }
   const authMethods = (provider: ConfigProvider) => provider.authMethods ?? [provider.authType ?? 'api-key']
   const providerValue = (provider: ConfigProvider, auth: string) =>
     auth === 'oauth' && authMethods(provider).includes('api-key') ? `${provider.id}:oauth` : provider.id
+  const isOAuth = () => ui.authMethod.value === 'oauth'
+  const hasUnverifiedSavedChanges = (): boolean => {
+    const account = selectedAccount()
+    if (!account || !canUseSavedModels()) return false
+    const name = accountName?.value.trim()
+    return ui.models.value !== account.model || (!!name && name !== account.label)
+  }
 
   const oauth = oauthControls(ui.oauthMount, options.client.config, {
     input: () => {
       const provider = providers.find((row) => row.id === providerId())
-      if (!configuration || !editingId || !accountName || !provider) throw new Error('账户信息尚未加载完成')
+      if (!configuration || !editingId || !accountName || !provider)
+        throw new Error(tr('settings.account.notLoaded'))
       const label = accountName.value.trim() || provider.label
       if (!accountName.value.trim()) suggestedAccountLabel = label
       accountName.value = label
@@ -220,24 +243,26 @@ export function createSettingsController(options: SettingsControllerOptions): Se
     ready: (models) => {
       tested = models.length ? { models, verified: true } : undefined
       ui.state.textContent = models.length
-        ? '授权完成；选择模型并保存，保存前会验证所选模型。'
+        ? tr('settings.oauth.authorizedVerify')
         : testPending
-          ? '正在等待订阅授权。'
-          : '登录已取消。'
+          ? tr('settings.oauth.awaitingAuth')
+          : tr('settings.oauth.cancelled')
       renderModels()
       if (models.length) ui.models.focus()
     },
     error: (error) => setError(error),
   })
-  const isOAuth = () => ui.authMethod.value === 'oauth'
-
+  const modelReadyForSave = (): boolean =>
+    !!tested?.verified ||
+    (isOAuth() && oauth.operation() !== undefined && ui.models.value !== '') ||
+    hasUnverifiedSavedChanges()
   const current = (token: number, inputRevision?: number): boolean =>
     token === lifecycle && ui.dialog.open && (inputRevision === undefined || inputRevision === revision)
 
   const setError = (error: unknown): void => {
     const secret = ui.apiKey.value
-    const translated = configurationReason(error)
-    const message = translated ?? errorText(error, secret)
+    const translated = configurationReason(error, tr)
+    const message = translated ?? errorText(error, secret, tr)
     ui.error.textContent = message
     ui.state.textContent = ''
     try {
@@ -255,8 +280,8 @@ export function createSettingsController(options: SettingsControllerOptions): Se
     const currentAccountList = accountList()
     if (currentAccountList) currentAccountList.dataset.state = phase
     if (ui.retry) ui.retry.hidden = phase !== 'error'
-    if (phase === 'loading') ui.state.textContent = '正在读取配置…'
-    if (phase === 'error') ui.state.textContent = '配置读取失败，请重试。'
+    if (phase === 'loading') ui.state.textContent = tr('settings.state.reading')
+    if (phase === 'error') ui.state.textContent = tr('settings.state.readFailed')
     updateButtons()
   }
 
@@ -283,14 +308,14 @@ export function createSettingsController(options: SettingsControllerOptions): Se
     if (ui.thinking) ui.thinking.disabled = ui.models.disabled
     if (ui.contextWindow) ui.contextWindow.disabled = ui.models.disabled
     ui.save.disabled =
-      !connected || busy || !tested?.verified || tested.models.length === 0 || ui.models.value === ''
+      !connected || busy || !modelReadyForSave() || !tested?.models.length || ui.models.value === ''
     providerPicker.sync()
   }
 
   const renderModels = (models: readonly ConfigModel[] = tested?.models ?? []): void => {
     const previousModel = ui.models.value
     setSettingsSelectOptions(ui.models, [
-      option(models.length ? '选择要保存的默认模型' : '先测试 Provider，再选择默认模型', ''),
+      option(models.length ? tr('settings.model.chooseSaved') : tr('settings.model.testFirst'), ''),
       ...models.map((model) => option(`${model.name} · ${model.id}`, model.id)),
     ])
     const savedModel = models.some((model) => model.id === previousModel)
@@ -308,10 +333,10 @@ export function createSettingsController(options: SettingsControllerOptions): Se
     const tokens = parseContextBudget(window)
     if (
       thinking &&
-      !modelThinkingOptions(model?.thinkingLevelMap).some((option) => option.value === thinking)
+      !modelThinkingOptions(model?.thinkingLevelMap, tr).some((option) => option.value === thinking)
     ) {
       ui.thinking?.setAttribute('aria-invalid', 'true')
-      throw new Error('该模型当前不支持所选思考强度，请重新选择')
+      throw new Error(tr('settings.model.thinkingUnsupported'))
     }
     ui.thinking?.setAttribute('aria-invalid', 'false')
     if (
@@ -322,7 +347,9 @@ export function createSettingsController(options: SettingsControllerOptions): Se
     ) {
       ui.contextWindow?.setAttribute('aria-invalid', 'true')
       throw new Error(
-        `上下文预算须为 ${minimumContextBudget(model?.contextWindow).toLocaleString()} Token 以上、模型容量以内的正整数，可使用 K/M 单位`,
+        tr('settings.model.contextRange', {
+          min: minimumContextBudget(model?.contextWindow).toLocaleString(),
+        }),
       )
     }
     ui.contextWindow?.setAttribute('aria-invalid', 'false')
@@ -339,9 +366,12 @@ export function createSettingsController(options: SettingsControllerOptions): Se
       model?.defaultSettings ??
       {}
     if (ui.thinking) {
-      const options = modelThinkingOptions(model?.thinkingLevelMap)
+      const options = modelThinkingOptions(model?.thinkingLevelMap, tr)
       if (defaults.thinking && !options.some((option) => option.value === defaults.thinking))
-        options.push({ value: defaults.thinking, label: `已保存的档位当前不可用：${defaults.thinking}` })
+        options.push({
+          value: defaults.thinking,
+          label: tr('settings.model.savedThinkingUnavailable', { value: defaults.thinking }),
+        })
       setSettingsSelectOptions(ui.thinking, options)
       ui.thinking.value = defaults.thinking ?? ''
     }
@@ -353,8 +383,9 @@ export function createSettingsController(options: SettingsControllerOptions): Se
     }
     if (ui.modelSettingsHint)
       ui.modelSettingsHint.textContent =
-        (model?.contextWindow ? `模型容量：${model.contextWindow.toLocaleString()} tokens。` : '') +
-        '可输入 100K（100,000 Token）或完整数量，留空恢复自动；仅新会话继承，已有会话保留自己的配置。'
+        (model?.contextWindow
+          ? `${tr('settings.model.capacity', { tokens: model.contextWindow.toLocaleString() })} `
+          : '') + tr('settings.model.budgetHint')
   }
 
   const renderKeyHint = (): void => {
@@ -362,32 +393,34 @@ export function createSettingsController(options: SettingsControllerOptions): Se
     const reusesSavedKey =
       connected && savedProvider()?.id === providerId() && savedProvider()?.credentialConfigured
     if (isOAuth()) {
-      ui.keyHint.textContent = '使用当前 Provider 的订阅授权，无需 API key。'
+      ui.keyHint.textContent = tr('settings.key.oauthHint')
       return
     }
     ui.keyHint.textContent = reusesSavedKey
-      ? '已保存 API key。留空会继续使用它；输入新值可替换。页面不会显示已保存的密钥。'
+      ? tr('settings.key.savedHint')
       : connected
-        ? '请输入 API key 进行测试和保存。关闭设置会清除本次输入。'
-        : '后台未连接，页面已清除本次输入。'
+        ? tr('settings.key.inputHint')
+        : tr('settings.key.offlineCleared')
   }
 
   const renderProviders = (): void => {
     const savedProviderId = savedProvider()?.id
     const groups = (['api-key', 'oauth'] as const).map((method) => ({
-      label: method === 'oauth' ? '订阅登录' : 'API Key',
+      label: method === 'oauth' ? tr('settings.provider.subscriptionLogin') : 'API Key',
       options: providers
         .filter((provider) => authMethods(provider).includes(method))
         .map((provider) =>
           option(
-            method === 'oauth' ? `${provider.label.replace(/\s*订阅$/, '')} · 订阅登录` : provider.label,
+            method === 'oauth'
+              ? `${provider.label.replace(/\s*subscription$/i, '')}${tr('settings.provider.subscriptionLoginSuffix')}`
+              : provider.label,
             providerValue(provider, method),
           ),
         ),
     }))
     setSettingsSelectOptions(
       ui.provider,
-      [option(providers.length ? '选择 Provider' : '无可用 Provider', '')],
+      [option(providers.length ? tr('settings.provider.choose') : tr('settings.provider.none'), '')],
       groups,
     )
     if (savedProviderId && providers.some((provider) => provider.id === savedProviderId))
@@ -397,7 +430,9 @@ export function createSettingsController(options: SettingsControllerOptions): Se
     const methods = selected?.authMethods ?? [selected?.authType ?? 'api-key']
     setSettingsSelectOptions(
       ui.authMethod,
-      methods.map((method) => option(method === 'oauth' ? '订阅登录' : 'API Key', method)),
+      methods.map((method) =>
+        option(method === 'oauth' ? tr('settings.provider.subscriptionLogin') : 'API Key', method),
+      ),
     )
     const saved = savedProvider()
     const savedAuth = saved && 'authType' in saved ? saved.authType : undefined
@@ -415,21 +450,21 @@ export function createSettingsController(options: SettingsControllerOptions): Se
     testGeneration += 1
     testPending = false
     const saved = selectedAccount()
-    tested = isOAuth() && saved?.authType === 'oauth' ? { models: saved.models, verified: false } : undefined
+    tested = saved?.models.length ? { models: saved.models, verified: false } : undefined
     ui.models.value = ''
     renderModels()
     if (clearError) ui.error.textContent = ''
-    ui.state.textContent = '连接信息已变更。请重新测试 Provider；此前的模型列表已失效。'
+    ui.state.textContent = tr('settings.state.connectionChanged')
   }
 
   const input = (): { providerId: string; accountId?: string; baseUrl?: string; apiKey?: string } => {
     const selectedId = providerId()
     const selected = providers.find((provider) => provider.id === selectedId)
-    if (!selectedId || !selected) throw new Error('请选择 Provider')
+    if (!selectedId || !selected) throw new Error(tr('settings.provider.required'))
     const baseUrl = ui.baseUrl.value.trim()
     const apiKey = ui.apiKey.value
     if (!isOAuth() && selectedAccount()?.authType === 'oauth' && !apiKey)
-      throw new Error('从订阅登录切换为 API Key 时，请输入新的 API key')
+      throw new Error(tr('settings.provider.switchKeyRequired'))
     return {
       providerId: selectedId,
       ...(editingId ? { accountId: editingId } : {}),
@@ -498,9 +533,7 @@ export function createSettingsController(options: SettingsControllerOptions): Se
       providers = [...result.providers].sort((a, b) => +(b.id === 'agnes-ai') - +(a.id === 'agnes-ai'))
       tested = undefined
       ui.error.textContent = ''
-      ui.state.textContent = snapshot.configured
-        ? '已加载保存的 Provider 与默认模型。测试连接后可更新默认模型；当前会话模型不会在此更改。'
-        : '第 1 步：选择 Provider 并测试连接；验证后才能选择默认模型。'
+      ui.state.textContent = snapshot.configured ? tr('settings.step.loadedSaved') : tr('settings.step.first')
       renderProviders()
       renderModels()
       setLoadPhase(snapshot.accounts?.length ? 'ready' : 'empty')
@@ -524,11 +557,14 @@ export function createSettingsController(options: SettingsControllerOptions): Se
       if (!model) return
       testPending = true
       ui.error.textContent = ''
-      ui.state.textContent = '正在测试所选订阅模型…'
+      ui.state.textContent = tr('settings.step.testingModel')
       updateButtons()
       try {
         await options.client.config.oauth({ action: 'test', operationId: oauthId, model })
-        if (ownsTest()) ui.state.textContent = '所选模型测试通过，可以保存账户。'
+        if (ownsTest()) {
+          if (tested) tested = { ...tested, verified: true }
+          ui.state.textContent = tr('settings.step.modelVerified')
+        }
       } catch (error) {
         if (ownsTest()) setError(error)
       } finally {
@@ -548,7 +584,7 @@ export function createSettingsController(options: SettingsControllerOptions): Se
     }
     testPending = true
     ui.error.textContent = ''
-    ui.state.textContent = '第 2 步：正在测试 Provider…'
+    ui.state.textContent = tr('settings.step.second')
     updateButtons()
     try {
       const result = await options.client.config.test({
@@ -557,9 +593,9 @@ export function createSettingsController(options: SettingsControllerOptions): Se
       })
       if (!ownsTest()) return
       if (isOAuth()) tested = result
-      if (!result.verified || result.models.length === 0) throw new Error('Provider 未返回可验证的模型目录')
+      if (!result.verified || result.models.length === 0) throw new Error(tr('settings.provider.noCatalog'))
       tested = result
-      ui.state.textContent = `第 3 步：连接成功，发现 ${result.models.length} 个模型。确认或选择默认模型后保存；当前会话模型不会改变。`
+      ui.state.textContent = tr('settings.step.third', { count: result.models.length })
       ui.error.textContent = ''
       renderModels(result.models)
     } catch (error) {
@@ -576,7 +612,15 @@ export function createSettingsController(options: SettingsControllerOptions): Se
   }
 
   const save = async (): Promise<void> => {
-    if (!connected || testPending || savePending || !tested?.verified || !ui.models.value) return
+    if (
+      !connected ||
+      testPending ||
+      savePending ||
+      !tested?.models.length ||
+      !modelReadyForSave() ||
+      !ui.models.value
+    )
+      return
     const token = lifecycle
     const inputRevision = revision
     const modelId = ui.models.value
@@ -585,14 +629,15 @@ export function createSettingsController(options: SettingsControllerOptions): Se
     try {
       request = input()
       defaultSettings = ui.thinking || ui.contextWindow ? readModelSettings() : undefined
-      if (accountName && editingId && !accountName.value.trim()) throw new Error('请填写账户名称')
+      if (accountName && editingId && !accountName.value.trim())
+        throw new Error(tr('settings.account.nameRequired'))
     } catch (error) {
       setError(error)
       return
     }
     savePending = true
     ui.error.textContent = ''
-    ui.state.textContent = '正在保存默认配置…'
+    ui.state.textContent = tr('settings.step.saving')
     updateButtons()
     try {
       const oauthId = oauth.operation()
@@ -604,7 +649,7 @@ export function createSettingsController(options: SettingsControllerOptions): Se
             ...(defaultSettings === undefined ? {} : { defaultSettings }),
           })
         : undefined
-      if (oauthId && !oauthResult?.snapshot) throw new Error('登录保存未完成')
+      if (oauthId && !oauthResult?.snapshot) throw new Error(tr('settings.oauth.saveIncomplete'))
       const saved =
         oauthResult?.snapshot ??
         (await options.client.config.save({
@@ -633,8 +678,8 @@ export function createSettingsController(options: SettingsControllerOptions): Se
       tested = undefined
       ui.state.textContent =
         saved.effect === 'restart-required'
-          ? '默认配置已保存；当前后台需要重启后生效。当前会话模型不会改变。'
-          : '默认配置已保存；仅新建任务会使用新的默认模型，当前会话模型不会改变。'
+          ? tr('settings.saved.restartRequired')
+          : tr('settings.saved.newSessionsOnly')
       try {
         await options.onSaved(saved)
       } catch (error) {
@@ -666,12 +711,15 @@ export function createSettingsController(options: SettingsControllerOptions): Se
     renderProviders()
     resetTest()
     renderAccounts()
-    ui.state.textContent = id
-      ? '正在编辑账户。测试后保存；修改只对新会话生效。'
-      : '添加模型账户；每个账户单独保存地址与密钥。'
-    if (accountDialogTitle) accountDialogTitle.textContent = id ? '账户详情' : '添加账户'
+    ui.state.textContent = id ? tr('settings.account.editingHint') : tr('settings.account.addingHint')
+    if (accountDialogTitle)
+      accountDialogTitle.textContent = id
+        ? tr('settings.account.detailsTitle')
+        : tr('settings.account.addTitle')
     if (accountDialogContext)
-      accountDialogContext.textContent = id ? '编辑连接与默认模型' : '填写连接信息后测试并保存'
+      accountDialogContext.textContent = id
+        ? tr('settings.account.editContext')
+        : tr('settings.account.addContext')
     openAccountDialog()
   }
 
@@ -730,8 +778,8 @@ export function createSettingsController(options: SettingsControllerOptions): Se
       renderAccounts()
       ui.state.textContent =
         saved.effect === 'restart-required'
-          ? '已保存；需要重启后台后生效。'
-          : '已保存；对新会话生效，已有会话保持原配置。'
+          ? tr('settings.saved.restartNeeded')
+          : tr('settings.saved.newSessions')
     } catch (error) {
       if (current(token)) setError(error)
     } finally {
@@ -755,6 +803,7 @@ export function createSettingsController(options: SettingsControllerOptions): Se
         disabled: !connected || loadPhase === 'loading' || testPending || savePending,
         editingId,
         removingId,
+        t: tr,
         onEdit: editAccount,
         onAction: (row, action) => void accountAction(row, action),
         onCancelRemove: () => {
@@ -792,7 +841,9 @@ export function createSettingsController(options: SettingsControllerOptions): Se
     const methods = selected?.authMethods ?? [selected?.authType ?? 'api-key']
     setSettingsSelectOptions(
       ui.authMethod,
-      methods.map((method) => option(method === 'oauth' ? '订阅登录' : 'API Key', method)),
+      methods.map((method) =>
+        option(method === 'oauth' ? tr('settings.provider.subscriptionLogin') : 'API Key', method),
+      ),
     )
     ui.authMethod.value = ui.provider.value.endsWith(':oauth') ? 'oauth' : (methods[0] ?? 'api-key')
     ui.authMethodField.hidden = methods.length < 2
@@ -873,7 +924,7 @@ export function createSettingsController(options: SettingsControllerOptions): Se
       ? load(token)
       : Promise.resolve().then(() => {
           if (current(token)) {
-            setError(new Error('后台未连接'))
+            setError(new Error(tr('settings.state.offline')))
             setLoadPhase('error')
           }
         })
@@ -900,7 +951,7 @@ export function createSettingsController(options: SettingsControllerOptions): Se
       // Allow a reconnect to start a fresh load even if the old network request never settles.
       opening = undefined
       ui.apiKey.value = ''
-      ui.state.textContent = '后台连接已断开。'
+      ui.state.textContent = tr('settings.state.disconnected')
       setLoadPhase('error')
     }
     renderKeyHint()
@@ -908,5 +959,5 @@ export function createSettingsController(options: SettingsControllerOptions): Se
     if (connected && ui.dialog.open && !opening) void open()
   }
 
-  return { open, close, setConnected }
+  return { open, close, refreshLocale: renderAccounts, setConnected }
 }

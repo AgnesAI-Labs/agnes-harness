@@ -78,13 +78,16 @@ const refusal = (code: RuntimeError['code'], retry = false): Outcome<CommandHand
   },
 })
 
-function contextWith(outcomes: Outcome<CommandHandle>[]) {
+function contextWith(outcomes: Outcome<CommandHandle>[], locale = 'en') {
   const submit = vi.fn(async () => outcomes.shift() ?? refusal('internal'))
   const commandStatus = vi.fn(async () => outcomes.shift() ?? refusal('internal'))
   return {
     submit,
     commandStatus,
-    context: { commands: { submit, commandStatus } } as unknown as RendererContext,
+    context: {
+      commands: { submit, commandStatus },
+      locale: { locale, text: (key: string) => key, formatNumber: () => '', formatDate: () => '' },
+    } as unknown as RendererContext,
   }
 }
 
@@ -102,8 +105,8 @@ async function click(label: string) {
 }
 
 describe('generic domain view', () => {
-  it('shows fallback text as text, the phase and the resources by title', async () => {
-    const { context } = contextWith([])
+  it.each(['en', 'zh-CN'])('shows inert fallback text, phase and resources in %s', async (locale) => {
+    const { context } = contextWith([], locale)
     const markup = '<b>bold</b><script>alert(1)</script>'
     await show(
       view('finalized', 1, {
@@ -135,7 +138,12 @@ describe('generic domain view', () => {
       phases.push(host.querySelector('.state-light')?.textContent ?? '')
     }
     expect(new Set(phases).size).toBe(3)
-    expect(phases[2]).toMatch(/interrupted/i)
+    expect(phases[2]).toMatch(locale === 'en' ? /interrupted/i : /已中断/)
+    expect(phases).toEqual(
+      locale === 'en'
+        ? ['StatusIn progress', 'StatusFinal', 'StatusInterrupted, may be incomplete']
+        : ['状态进行中', '状态最终结果', '状态已中断，可能不完整'],
+    )
     expect(host.querySelector('.state-light')?.getAttribute('data-tone')).toBe('bad')
   })
 
@@ -176,6 +184,10 @@ describe('generic domain view', () => {
     expect(commandStatus).toHaveBeenCalledWith(first.requestId)
     expect(submit).toHaveBeenCalledTimes(2)
     expect(status()).toBe('Refused: denied happened')
+    await show(view('provisional', 2), { ...context, locale: { ...context.locale, locale: 'zh-CN' } })
+    expect(status()).toBe('已拒绝：denied happened')
+    expect(submit).toHaveBeenCalledTimes(2)
+    expect(commandStatus).toHaveBeenCalledWith(first.requestId)
   })
 
   it('shows pending and done handles and starts a new request after a settled one', async () => {

@@ -1,6 +1,7 @@
 import type { EventEnvelope, UITimeline } from '@agnes/protocol'
 import { describe, expect, it } from 'vitest'
 import { durableApprovalActions, nodeText, recordRunEvent, webView } from '../src/view.js'
+import { zhT } from './helpers/locale.js'
 
 const timeline = (nodes: UITimeline['nodes'], phase: string | null = null): UITimeline => ({
   sessionId: 's',
@@ -27,17 +28,17 @@ describe('web projection adapter', () => {
       undefined,
       event(7, 'turn/end', { reason: 'aborted', lastAssistantSeq: null }),
     )
-    expect(webView(timeline([]), cancelled).status).toBe('已取消')
+    expect(webView(timeline([]), cancelled, zhT).status).toBe('已取消')
     const active = recordRunEvent(cancelled, event(8, 'turn/start', { turn: 2, trigger: 'prompt' }))
     const replay = recordRunEvent(
       active,
       event(6, 'turn/end', { reason: 'completed', lastAssistantSeq: null }),
     )
-    expect(webView(timeline([], 'inference'), replay).status).toContain('正在执行')
-    expect(webView(timeline([]), replay).status).not.toBe('已完成')
+    expect(webView(timeline([], 'inference'), replay, zhT).status).toContain('正在执行')
+    expect(webView(timeline([]), replay, zhT).status).not.toBe('已完成')
     const failure = recordRunEvent(active, event(10, 'turn/end', { reason: 'error', lastAssistantSeq: null }))
-    expect(webView(timeline([]), failure).status).toBe('执行失败')
-    expect(webView(timeline([])).status).toBe('准备就绪')
+    expect(webView(timeline([]), failure, zhT).status).toBe('执行失败')
+    expect(webView(timeline([]), undefined, zhT).status).toBe('准备就绪')
   })
   it('renders literal conversation and tool content without HTML interpretation', () => {
     const nodes: UITimeline['nodes'] = [
@@ -54,7 +55,7 @@ describe('web projection adapter', () => {
         resultPreview: 'file',
       },
     ]
-    const view = webView(timeline(nodes, 'inference'))
+    const view = webView(timeline(nodes, 'inference'), undefined, zhT)
     expect(view.busy).toBe(true)
     expect(view.nodes.map(nodeText)).toEqual(['<script>no</script>', 'thinking\nanswer', 'ok\n\nfile'])
   })
@@ -70,7 +71,7 @@ describe('web projection adapter', () => {
       options: ['allow_once'],
       ticket: 'opaque-ticket',
     }
-    expect(webView(timeline([pending], 'parked')).approval?.ticket).toBe('opaque-ticket')
+    expect(webView(timeline([pending], 'parked'), undefined, zhT).approval?.ticket).toBe('opaque-ticket')
   })
 
   it('offers permanent approval only when the projected event explicitly includes it', () => {
@@ -84,12 +85,12 @@ describe('web projection adapter', () => {
       options: ['allow_once', 'reject_once'],
       ticket: 'opaque-ticket',
     }
-    expect(durableApprovalActions(pending)).toEqual([
+    expect(durableApprovalActions(pending, zhT)).toEqual([
       { option: 'allow_once', label: '仅允许这次', verdict: 'allowed-once' },
       { option: 'reject_once', label: '拒绝', verdict: 'rejected' },
     ])
     expect(
-      durableApprovalActions({ ...pending, options: ['allow_once', 'allow_permanent', 'reject_once'] }),
+      durableApprovalActions({ ...pending, options: ['allow_once', 'allow_permanent', 'reject_once'] }, zhT),
     ).toContainEqual({
       option: 'allow_permanent',
       label: '对此配置始终允许',
@@ -108,7 +109,7 @@ describe('web projection adapter', () => {
       options: ['allow_once'],
       ticket: 'opaque-ticket',
     }
-    const view = webView(timeline([expired]), { startSeq: 1, endSeq: 5, reason: 'parked' })
+    const view = webView(timeline([expired]), { startSeq: 1, endSeq: 5, reason: 'parked' }, zhT)
     expect(view.approval).toBeUndefined()
     expect(view.busy).toBe(false)
     expect(view.status).toBe('等待处理')

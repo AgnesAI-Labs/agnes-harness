@@ -80,6 +80,8 @@ pnpm exec vitest run tools/public-docs/examples.test.ts --maxWorkers=1
 
 完整构建需要在源码或资源改变后重新执行；Web 单包构建不是完整 daemon/worker 分发。不要重建用户正在运行的目录。
 
+迭代前端界面时，可先构建一次本地后台，退出普通 `agnes serve` 的 Web 进程，再运行 `pnpm --filter @agnes/cli dev:web`。关闭 Web 进程不会停止共享 daemon。开发启动器会监听前端源码和共享 UI 文件，构建成功后自动刷新已打开的页面。刷新会重置页面临时状态；后台源码变更仍需重新执行本地完整构建。
+
 ## 合同与测试层级
 
 Schema 手写源在 `packages/protocol/schema`，生成 TS 位于 `gen/ts`；不要直接改生成物绕开校验。API 改动同时检查提供方、SDK、CLI/Web 消费方与负例。`gen:check` 是一致性检查，不是运行行为证明。

@@ -13,6 +13,10 @@ node packages/cli/dist/local/agnes.mjs serve
 
 Open the printed loopback URL. Configure a model account, create a task and confirm its working directory. `AGH_HOME` and `AGNES_PROFILE` select the same instance used by the CLI; closing the Web server does not stop the shared daemon.
 
+## Frontend development
+
+After building the local backend once, stop any regular `agnes serve` Web process and run `pnpm --filter @agnes/cli dev:web` from the repository root. Closing the Web process leaves the shared daemon running. The development launcher watches frontend source and shared UI files, rebuilds the browser assets, and reloads open pages after a successful build. A page reload resets temporary UI state. Backend source changes still require a new local build.
+
 ## Guides and contracts
 
 - [Web operations](../../docs/guide/web.md) and [first task](../../docs/guide/quickstart.md).

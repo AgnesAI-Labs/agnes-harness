@@ -1,4 +1,5 @@
 import type { UINode } from '@agnes/protocol'
+import { fallbackT, type Translate } from '../locales/index.js'
 
 export type CostNode = Extract<UINode, { kind: 'cost' }>
 const count = (n: number) => n.toLocaleString('en-US')
@@ -6,63 +7,79 @@ const compact = (n: number) =>
   n < 1000 ? String(n) : `${(n / (n >= 1e6 ? 1e6 : 1000)).toFixed(1)}${n >= 1e6 ? 'M' : 'K'}`
 const usd = (n: number) => `$${(n / 1e6).toFixed(6).replace(/0+$/, '').replace(/\.$/, '.00')}`
 const credits = (n: number) => n.toFixed(8).replace(/\.?0+$/, '')
-const source = (value: 'gateway' | 'estimated') => (value === 'estimated' ? '估算' : '网关记录')
-const time = (n: number) => (n < 1000 ? `${n} ms` : `${(n / 1000).toFixed(2)} 秒`)
+const source = (value: 'gateway' | 'estimated', t: Translate) =>
+  t(value === 'estimated' ? 'cost.source.estimated' : 'cost.source.gateway')
+const time = (n: number, t: Translate) =>
+  n < 1000 ? `${n} ms` : t('cost.time.s', { n: (n / 1000).toFixed(2) })
 type Rows = Array<[string, string]>
-const purposes: Record<string, string> = {
-  inference: '模型调用',
-  compaction: '上下文整理',
-  subagent: '子任务',
-  verifier: '结果验证',
-  media: '媒体',
-  tool: '工具',
+const purposeKeys: Record<string, string> = {
+  inference: 'cost.purpose.inference',
+  compaction: 'cost.purpose.compaction',
+  subagent: 'cost.purpose.subagent',
+  verifier: 'cost.purpose.verifier',
+  media: 'cost.purpose.media',
+  tool: 'cost.purpose.tool',
 }
 
-export function costSummary(node: CostNode): string {
+export function costSummary(node: CostNode, t: Translate = fallbackT): string {
   const parts = node.tokens
-    ? [`输入 ${compact(node.tokens.input)}`, `输出 ${compact(node.tokens.output)}`]
+    ? [
+        t('cost.summary.input', { n: compact(node.tokens.input) }),
+        t('cost.summary.output', { n: compact(node.tokens.output) }),
+      ]
     : []
   const amount = node.billing
-    ? `${usd(node.billing.usdMicros)}（${source(node.billing.source)}）`
+    ? t('cost.billing.usd', { usd: usd(node.billing.usdMicros), source: source(node.billing.source, t) })
     : node.credits === undefined
-      ? '费用未提供'
-      : `${credits(node.credits)} credits（${source(node.source)}）`
-  return [...parts, amount, ...(node.interrupted ? ['已中断'] : [])].join(' · ')
+      ? t('cost.summary.noBilling')
+      : t('cost.summary.credits', { credits: credits(node.credits), source: source(node.source, t) })
+  return [...parts, amount, ...(node.interrupted ? [t('cost.summary.interrupted')] : [])].join(' · ')
 }
 
-function tokenRows(tokens: NonNullable<CostNode['tokens']>): Rows {
+function tokenRows(tokens: NonNullable<CostNode['tokens']>, t: Translate): Rows {
   return [
-    ['输入 Token（不含缓存）', count(tokens.input)],
-    ['输出 Token（含推理）', count(tokens.output)],
-    ['缓存读取 Token', count(tokens.cacheRead)],
-    ['缓存写入 Token', count(tokens.cacheWrite)],
-    ['推理 Token（输出的子集）', tokens.reasoning === undefined ? '未提供' : count(tokens.reasoning)],
+    [t('cost.rows.tokensInNoCache'), count(tokens.input)],
+    [t('cost.rows.tokensOutReasoning'), count(tokens.output)],
+    [t('cost.rows.cacheRead'), count(tokens.cacheRead)],
+    [t('cost.rows.cacheWrite'), count(tokens.cacheWrite)],
+    [
+      t('cost.rows.reasoning'),
+      tokens.reasoning === undefined ? t('cost.rows.notProvided') : count(tokens.reasoning),
+    ],
   ]
 }
 
-export function costDetails(node: CostNode): Rows {
+export function costDetails(node: CostNode, t: Translate = fallbackT): Rows {
+  const purpose = node.purpose ?? ''
+  const purposeKey = Object.hasOwn(purposeKeys, purpose) ? purposeKeys[purpose] : undefined
   return [
-    [
-      '记录范围',
-      Object.hasOwn(purposes, node.purpose ?? '')
-        ? (purposes[node.purpose ?? ''] ?? '单次费用记录')
-        : '单次费用记录',
-    ],
-    ...(node.model ? [['模型', node.model] as [string, string]] : []),
-    ...(node.tokens ? tokenRows(node.tokens) : [['Token 明细', '未提供'] as [string, string]]),
+    [t('cost.rows.range'), purposeKey === undefined ? t('cost.rows.singleRecord') : t(purposeKey)],
+    ...(node.model ? [[t('cost.rows.model'), node.model] as [string, string]] : []),
+    ...(node.tokens
+      ? tokenRows(node.tokens, t)
+      : [[t('cost.rows.tokenDetail'), t('cost.rows.notProvided')] as [string, string]]),
     ...(node.billing
-      ? [['美元费用', `${usd(node.billing.usdMicros)} · ${source(node.billing.source)}`] as [string, string]]
+      ? [
+          [t('cost.rows.usd'), `${usd(node.billing.usdMicros)} · ${source(node.billing.source, t)}`] as [
+            string,
+            string,
+          ],
+        ]
       : []),
     [
-      '额度',
-      node.credits === undefined ? '未提供' : `${credits(node.credits)} credits · ${source(node.source)}`,
+      t('cost.rows.credits'),
+      node.credits === undefined
+        ? t('cost.rows.notProvided')
+        : `${credits(node.credits)} credits · ${source(node.source, t)}`,
     ],
     ...(node.timing?.ttftMs !== undefined
-      ? [['首次输出等待', time(node.timing.ttftMs)] as [string, string]]
+      ? [[t('cost.rows.ttft'), time(node.timing.ttftMs, t)] as [string, string]]
       : []),
     ...(node.timing?.durationMs !== undefined
-      ? [['模型请求耗时', time(node.timing.durationMs)] as [string, string]]
+      ? [[t('cost.rows.requestDuration'), time(node.timing.durationMs, t)] as [string, string]]
       : []),
-    ...(node.interrupted ? [['状态', '已中断；用量可能不完整或包含估算'] as [string, string]] : []),
+    ...(node.interrupted
+      ? [[t('cost.rows.status'), t('cost.rows.interruptedNote')] as [string, string]]
+      : []),
   ]
 }
