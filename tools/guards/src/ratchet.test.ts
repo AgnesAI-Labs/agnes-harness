@@ -2733,7 +2733,9 @@ const INITIAL_CEILING: Record<string, number> = {
   // Usage and budget settlement for billing. Measured 74449, exact, no spare.
   // CI overhead reductions. Measured 74865, exact, no spare.
   // Same-database admission joint coverage. Measured 74907, exact, no spare.
-  'packages/host/src': 74907,
+  // Default artifacts transfer with its export held by the default blob service, and collection counts
+  // of only collections with parts. Measured 74980 (+73), exact, no spare.
+  'packages/host/src': 74980,
   'packages/host/src/ext-host/service-invocation': 247,
   // T5.2's permission projector is kept independently bounded so later extension-host work cannot
   // hide in the package-wide increment. Measured source: 86 lines.

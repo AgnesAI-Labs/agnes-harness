@@ -84,6 +84,9 @@ const DDL = [
   `CREATE TABLE IF NOT EXISTS maintenance_imports (
     upgrade_id TEXT PRIMARY KEY, fingerprint TEXT NOT NULL, source TEXT NOT NULL, assets TEXT NOT NULL,
     manifest TEXT NOT NULL, result TEXT, activate_fingerprint TEXT, activated TEXT)`,
+  // The collections an import's accepted parts named, committed with their rows.
+  `CREATE TABLE IF NOT EXISTS maintenance_import_collections (
+    upgrade_id TEXT NOT NULL, collection_id TEXT NOT NULL, PRIMARY KEY (upgrade_id, collection_id))`,
 ]
 
 type ImportRow = {
@@ -244,6 +247,8 @@ export function openAuthorityCopy(kit: Kit): AuthorityCopyMethods & {
         .map((table) => ({ table, collectionId: `${copy.collection}.${table}` }))
         .sort((a, b) => Buffer.compare(Buffer.from(a.collectionId), Buffer.from(b.collectionId)))
       let partCount = 0
+      // A collection counts once it has a part; a table without rows has none.
+      const collections = new Set<string>()
       async function* parts(): AsyncGenerator<Wire.AuthorityExportPart> {
         for (const { table, collectionId } of tables) {
           const { columns, schema } = tableSchema(copy.collection, table)
@@ -257,6 +262,7 @@ export function openAuthorityCopy(kit: Kit): AuthorityCopyMethods & {
             lines = []
             size = 0
             partCount += 1
+            collections.add(collectionId)
             return checked('AuthorityExportPart', {
               collectionId,
               schema,
@@ -308,7 +314,7 @@ export function openAuthorityCopy(kit: Kit): AuthorityCopyMethods & {
         upgradeId: input.upgradeId,
         fenceId: input.fenceId,
         checkpoint: fence.checkpoint,
-        collectionCount: tables.length,
+        collectionCount: collections.size,
         partCount,
         manifestRoot,
         requiredAssetsRoot,
@@ -452,13 +458,19 @@ export function openAuthorityCopy(kit: Kit): AuthorityCopyMethods & {
             )
             kit.transaction(false, () => {
               for (const cells of rows) insert.run(...cells)
+              db.prepare(
+                'INSERT OR IGNORE INTO maintenance_import_collections (upgrade_id, collection_id) VALUES (?, ?)',
+              ).run(upgradeId, part.collectionId)
               save('manifest', next)
             })
           },
         ),
       )
-      if (manifest.consumed !== from.partCount)
-        refuse('integrity', 'export manifest does not hold its declared parts')
+      const { collections } = db
+        .prepare('SELECT COUNT(*) AS collections FROM maintenance_import_collections WHERE upgrade_id = ?')
+        .get(upgradeId) as { collections: number }
+      if (manifest.consumed !== from.partCount || collections !== from.collectionCount)
+        refuse('integrity', 'export manifest does not hold its declared parts and collections')
       const current = kit.snapshot()
       const result = checked('AuthorityTransferControlImportResult', {
         targetCheckpoint: {

@@ -1,5 +1,6 @@
 import type {
   ArtifactAccessPort,
+  AuthorityTransferControl,
   CallContext,
   Outcome,
   ScopedDependencies,
@@ -11,6 +12,7 @@ import {
   type ArtifactEvent,
   ArtifactsRefusal,
   artifactsError,
+  type BlobTransfer,
   fail,
   grant,
   type OwnerAction,
@@ -23,21 +25,34 @@ import {
   revokeGrant,
   type SelectedBlobActions,
 } from '../artifacts/publication.js'
-import type { AuthorityTransferSource, TransferMaintenance } from '../authority-transfer.js'
-import { defaultServiceDescriptor, type ServiceDescriptorInput } from './blob.js'
+import type { TransferMaintenance } from '../authority-transfer.js'
+import { BlobRefusal } from '../blob/uploads.js'
+import { defaultServiceDescriptor, type ServiceDescriptorInput, TRANSFER_STEPS } from './blob.js'
 
 export type { ArtifactAccessOptions } from '../artifacts/access.js'
-export type { ArtifactEvent, OwnerAction, SelectedBlobActions } from '../artifacts/publication.js'
+export type {
+  ArtifactEvent,
+  BlobTransfer,
+  OwnerAction,
+  SelectedBlobActions,
+} from '../artifacts/publication.js'
 
 export const ARTIFACTS_CONTRACT = 'agh.artifacts'
 export const ARTIFACTS_MAJOR = 1
 
-/** Ticket downloads are refused without a ticket key, so only a configured key offers their feature. */
-export function artifactsFeatures(options: Pick<ArtifactAccessOptions, 'ticketKey'>): string[] {
+type Offered = Pick<ArtifactsServiceOptions, 'ticketKey' | 'maintenance' | 'blobTransfer'>
+
+/**
+ * Ticket downloads are refused without a ticket key, so only a configured key offers their feature.
+ * A transfer needs the maintenance assembly and the selected default blob service's transfer entry,
+ * which holds this store's export.
+ */
+export function artifactsFeatures(options: Offered): string[] {
   return [
     'artifact-publication.v1',
     'artifact-access.v1',
     ...(options.ticketKey ? ['artifact-ticket.v1'] : []),
+    ...(options.maintenance && options.blobTransfer ? ['authority-transfer.v1'] : []),
   ]
 }
 
@@ -51,16 +66,17 @@ export const BLOB_REQUIREMENT: Wire.ServiceRequirement = {
   optional: false,
 }
 
-/** Every artifacts action returns its first result again for the same input. */
+/** Every artifacts action and transfer step returns its first result again for the same input. */
 export function artifactsProviderDescriptor(
-  input: ServiceDescriptorInput & Pick<ArtifactAccessOptions, 'ticketKey'>,
+  input: ServiceDescriptorInput & Offered,
 ): Wire.ProviderDescriptor {
   return defaultServiceDescriptor(
     ARTIFACTS_CONTRACT,
     input,
     artifactsFeatures(input),
     [BLOB_REQUIREMENT],
-    ['reserve', 'publish', 'fail', 'revoke', 'grant', 'revokeGrant'],
+    ['reserve', 'publish', 'fail', 'revoke', 'grant', 'revokeGrant', ...TRANSFER_STEPS],
+    ['authorityProbe'],
   )
 }
 
@@ -74,6 +90,13 @@ export type ArtifactsServiceOptions = ArtifactAccessOptions &
     now?: () => number
     /** The Host's maintenance assembly. Without it, every transfer call is refused as not supported. */
     maintenance?: TransferMaintenance
+    /**
+     * The transfer entry of the selected blob service, which only the default blob service has. Without
+     * it, export, import, verify and activate are refused as not supported.
+     */
+    blobTransfer?: BlobTransfer
+    /** Opens a new store at a transfer target, refusing business writes until a transfer activates it. */
+    transferTarget?: boolean
   }>
 
 type Owned = { request: unknown; owner: OwnerAction }
@@ -95,8 +118,8 @@ export type ArtifactsService = Readonly<{
   query(request: unknown, context: CallContext): Promise<Outcome<Wire.ArtifactViewRef>>
   artifactAccess: ArtifactAccessPort
   pendingEvents(): readonly ArtifactEvent[]
-  /** Host-internal source side of an authority transfer; not offered by the descriptor. */
-  transfer: AuthorityTransferSource
+  /** Both sides of an authority transfer; offered only with maintenance and the blob transfer entry. */
+  transfer: AuthorityTransferControl
   close(): void
 }>
 
@@ -105,15 +128,17 @@ async function run<T>(context: CallContext, body: () => T | Promise<T>): Promise
   try {
     return { ok: true, value: await body() }
   } catch (caught) {
-    if (caught instanceof ArtifactsRefusal) return { ok: false, error: caught.error }
+    // A transfer step that writes through the selected blob service keeps that service's refusal.
+    if (caught instanceof ArtifactsRefusal || caught instanceof BlobRefusal)
+      return { ok: false, error: caught.error }
     return { ok: false, error: artifactsError('internal_error', 'artifacts service failed') }
   }
 }
 
 /**
  * Assembles the default artifacts service over the blob service the container selects. A selection
- * without a read port, or action methods from another binding, refuses assembly instead of falling
- * back to a local store.
+ * without a read port, or action methods or a transfer entry from another binding, refuses assembly
+ * instead of falling back to a local store.
  */
 export function createArtifactsService(options: ArtifactsServiceOptions): Outcome<ArtifactsService> {
   const selected = options.dependencies.get(BLOB_REQUIREMENT)
@@ -124,10 +149,11 @@ export function createArtifactsService(options: ArtifactsServiceOptions): Outcom
       ok: false,
       error: artifactsError('operation_not_supported', 'selected blob service has no read port'),
     }
-  if (jcs(selected.value.binding) !== jcs(options.blobActions.binding))
+  const ports = [options.blobActions, options.blobTransfer]
+  if (ports.some((port) => port && jcs(port.binding) !== jcs(selected.value.binding)))
     return {
       ok: false,
-      error: artifactsError('blocked', 'blob actions do not belong to the selected blob service'),
+      error: artifactsError('blocked', 'blob ports do not belong to the selected blob service'),
     }
   const store = openArtifactsStore(options)
   const artifactAccess = createArtifactAccess(store, blobRead, options)
@@ -148,8 +174,13 @@ export function createArtifactsService(options: ArtifactsServiceOptions): Outcom
       pendingEvents: () => pendingEvents(store),
       transfer: {
         fence: (request, context) => run(context, () => store.fence(request, context)),
-        probe: (request, context) => run(context, () => store.probe(request, context)),
+        export: (request, context) => run(context, () => store.export(request, context)),
+        exportPage: (request, context) => run(context, () => store.exportPage(request, context)),
+        import: (request, context) => run(context, () => store.import(request, context)),
+        verify: (request, context) => run(context, () => store.verify(request, context)),
+        activate: (request, context) => run(context, () => store.activate(request, context)),
         abort: (request, context) => run(context, () => store.abort(request, context)),
+        probe: (request, context) => run(context, () => store.probe(request, context)),
       },
       close: () => store.close(),
     }),

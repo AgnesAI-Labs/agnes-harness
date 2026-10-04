@@ -1,11 +1,12 @@
 import { createHash } from 'node:crypto'
-import { existsSync, readFileSync, realpathSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import type {
   ArtifactAccessPort,
+  AuthorityTransferControl,
   BlobReadPort,
   CallContext,
   Outcome,
@@ -22,6 +23,7 @@ import {
 import type * as Wire from '@agnes/protocol/runtime'
 import {
   canonicalJsonDigest,
+  type JsonValue,
   RuntimeMethodSchemaRefs,
   RuntimeSchemaRefs,
   RuntimeServiceCatalog,
@@ -29,11 +31,13 @@ import {
 } from '@agnes/protocol/runtime'
 import { afterEach, describe, expect, it } from 'vitest'
 import type { TransferMaintenance } from '../../src/runtime/authority-transfer.js'
+import { inlineData } from '../../src/runtime/maintenance/authority-publication.js'
 import {
   type ArtifactsService,
   artifactsFeatures,
   artifactsProviderDescriptor,
   BLOB_REQUIREMENT,
+  type BlobTransfer,
   createArtifactsService,
   type OwnerAction,
   type SelectedBlobActions,
@@ -104,6 +108,11 @@ afterEach(async () => {
 })
 
 type World = { dataDir: string; blob: BlobService; artifacts: ArtifactsService; reads: { count: number } }
+/**
+ * Both services take part in transfers: each gets its maintenance assembly, and the artifacts service
+ * holds its export through the blob service's transfer entry.
+ */
+type Transfer = { maintenance(authorityId: string): TransferMaintenance; target?: boolean }
 
 /**
  * The default artifacts service over the default blob service, each in its own database,
@@ -112,15 +121,17 @@ type World = { dataDir: string; blob: BlobService; artifacts: ArtifactsService; 
 async function world(
   dataDir?: string,
   adjust: (blob: BlobService) => Partial<SelectedBlobActions> = () => ({}),
-  maintenance?: TransferMaintenance,
+  transfer?: Transfer,
 ): Promise<World> {
   const dir = dataDir ?? (await mkdtemp(join(tmpdir(), 'agh-artifacts-')))
   if (!dataDir) dirs.push(dir)
+  const target = transfer?.target === true
   const blob = createBlobService({
     dataDir: dir,
     authorityId: 'blob-authority',
     binding: BLOB_BINDING,
     authorizeRead: (context) => context.authorizationRef === 'auth-ok',
+    ...(transfer ? { maintenance: transfer.maintenance('blob-authority'), transferTarget: target } : {}),
   })
   closers.push(() => blob.close())
   const reads = { count: 0 }
@@ -143,7 +154,13 @@ async function world(
       dependencies: container.dependencies,
       blobActions: { ...blob, ...adjust(blob) },
       authorize: (context) => context.authorizationRef === 'auth-ok',
-      ...(maintenance ? { maintenance } : {}),
+      ...(transfer
+        ? {
+            maintenance: transfer.maintenance('artifacts-authority'),
+            blobTransfer: blob,
+            transferTarget: target,
+          }
+        : {}),
     }),
   )
   closers.push(() => artifacts.close())
@@ -201,14 +218,19 @@ const publishRequest = (
   ...over,
 })
 
-async function readGrant(artifacts: ArtifactsService, artifactRef: Wire.ArtifactRef, requestId = 'grant-1') {
+async function readGrant(
+  artifacts: ArtifactsService,
+  artifactRef: Wire.ArtifactRef,
+  requestId = 'grant-1',
+  granteePrincipalRef = 'user-1',
+) {
   return ok(
     await artifacts.grant(
       {
         request: {
           requestId,
           artifactRef,
-          granteePrincipalRef: 'user-1',
+          granteePrincipalRef,
           scope: scope(),
           permissions: ['read', 'download'],
           expiresAt: null,
@@ -574,7 +596,7 @@ describe('default artifacts publication', () => {
       sourceBlobs: { openRead: () => Promise.reject(new Error('this store never imports')) },
       planFingerprint: () => Promise.reject(new Error('this store never verifies')),
     }
-    const { artifacts, blob, dataDir } = await world(undefined, undefined, maintenance)
+    const { artifacts, blob, dataDir } = await world(undefined, undefined, { maintenance: () => maintenance })
     const reserved = ok(await artifacts.reserve({ request: reserveRequest('pub-1'), owner: owner() }, ctx()))
     const upload = await sealedUpload(blob, 'u1', text('one'))
     ok(await artifacts.publish({ request: publishRequest('pub-1', upload), owner: owner() }, ctx()))
@@ -622,6 +644,227 @@ describe('default artifacts publication', () => {
   })
 })
 
+const ARTIFACTS_BINDING = {
+  bindingId: 'artifacts-1',
+  contract: 'agh.artifacts',
+  logicalName: 'default',
+  providerId: 'agh.artifacts.default',
+}
+const MAINTAINER = ctx({ authorizationRef: 'maintenance' })
+const UPGRADE = 'upgrade-1'
+const COHORT = 'c'.repeat(64)
+type Routes = Map<string, { route: Wire.AuthorityRoute; targetActivated: boolean }>
+type Lender = Pick<BlobReadPort, 'openRead'>
+
+const unavailable = (detailCode: string, message: string) => ({
+  ok: false as const,
+  error: {
+    code: 'invalid_input' as const,
+    detailCode,
+    message,
+    retryAdvice: { kind: 'never' as const },
+    diagnosticId: 'test',
+  },
+})
+
+/** One location's view of the maintenance directory, reading the source's bytes through `sourceBlobs`. */
+function transferFixture(
+  routes: Routes,
+  locationRef: string,
+  sourceBlobs: Lender,
+  maintainer = 'maintenance',
+): TransferMaintenance {
+  return {
+    authorize: (context) => context.authorizationRef === maintainer,
+    tenantId: 'tenant-1',
+    locationRef,
+    readRoute: async ({ logicalAuthorityId }) => {
+      const held = routes.get(logicalAuthorityId)
+      return held ? { ok: true, value: held } : unavailable('not_found', 'no published route')
+    },
+    sourceBlobs,
+    planFingerprint: async () => ({ ok: true, value: 'f'.repeat(64) }),
+  }
+}
+
+async function fenceAndExport(transfer: AuthorityTransferControl, authorityId: string, context = MAINTAINER) {
+  const expected = { authorityId, tenantId: 'tenant-1', authorityEpoch: 1 }
+  const fence = ok(await transfer.fence({ upgradeId: UPGRADE, expected, cohortDigest: COHORT }, context))
+  return {
+    fence,
+    exported: ok(await transfer.export({ upgradeId: UPGRADE, fenceId: fence.fenceId }, context)),
+  }
+}
+
+/**
+ * A ready artifact user-1 reads while user-2's grant to it was revoked, and a revoked version user-1
+ * holds a grant to; the two ready events and the revoked event stay pending in the outbox.
+ */
+async function seedTransfer({ artifacts, blob }: World) {
+  const publishOne = async (id: string, bytes: Uint8Array) => {
+    const reserved = ok(await artifacts.reserve({ request: reserveRequest(id), owner: owner() }, ctx()))
+    const upload = await sealedUpload(blob, `upload-${id}`, bytes)
+    ok(await artifacts.publish({ request: publishRequest(id, upload), owner: owner() }, ctx()))
+    return { artifactId: reserved.artifactId, version: reserved.version }
+  }
+  const live = await publishOne('pub-live', text('live artifact'))
+  await readGrant(artifacts, live, 'grant-live')
+  const withdrawn = await readGrant(artifacts, live, 'grant-withdrawn', 'user-2')
+  const request = { requestId: 'revoke-1', grantId: withdrawn.grantId, expectedRevision: 1, reason: 'done' }
+  ok(await artifacts.revokeGrant({ request, owner: owner() }, ctx()))
+  const revoked = await publishOne('pub-revoked', text('revoked artifact'))
+  await readGrant(artifacts, revoked, 'grant-revoked')
+  ok(await artifacts.revoke({ artifactRef: revoked, reason: 'withdrawn' }, ctx()))
+  return { live, revoked }
+}
+
+/** Whether the service serves what `seedTransfer` left: the live bytes, but not the revoked grant or version. */
+async function servesSeed(artifacts: ArtifactsService, seeded: Awaited<ReturnType<typeof seedTransfer>>) {
+  const bytes = text('live artifact')
+  const read = await artifacts.artifactAccess.readRange(
+    { ...seeded.live, offset: 0, length: bytes.byteLength },
+    ctx(),
+  )
+  const withdrawn = await artifacts.artifactAccess.describe(seeded.live, ctx({ principalRef: 'user-2' }))
+  const revoked = await artifacts.artifactAccess.readRange({ ...seeded.revoked, offset: 0, length: 1 }, ctx())
+  return (
+    read.ok &&
+    Buffer.from(read.value.bytes).equals(bytes) &&
+    !withdrawn.ok &&
+    withdrawn.error.detailCode === 'permission_denied' &&
+    !revoked.ok &&
+    revoked.error.detailCode === 'revoked'
+  )
+}
+
+describe('default artifacts authority transfer', () => {
+  it('moves with its blob service as a cohort, and the target serves the artifact through the target blob', async () => {
+    const routes: Routes = new Map()
+    const lender: Lender = {
+      openRead: (request, context) => source.blob.transferRead.openRead(request, context),
+    }
+    const source = await world(undefined, undefined, {
+      maintenance: () => transferFixture(routes, 'location-1', lender),
+    })
+    const seeded = await seedTransfer(source)
+    const pending = source.artifacts.pendingEvents()
+    expect(pending.map(({ eventKey, kind }) => [eventKey, kind])).toEqual([
+      ['pub-live:ready', 'ready'],
+      ['pub-revoked:ready', 'ready'],
+      ['pub-revoked:revoked', 'revoked'],
+    ])
+    // Both stores of the cohort are fenced and exported; the artifacts export lives in the blob store.
+    const blobSide = await fenceAndExport(source.blob.transfer, 'blob-authority')
+    const artifactsSide = await fenceAndExport(source.artifacts.transfer, 'artifacts-authority')
+    expect(
+      refused(await source.artifacts.reserve({ request: reserveRequest('pub-next'), owner: owner() }, ctx())),
+    ).toBe('blocked')
+
+    const target = await world(undefined, undefined, {
+      maintenance: () => transferFixture(routes, 'location-2', lender),
+      target: true,
+    })
+    const steps = [
+      { ...blobSide, binding: BLOB_BINDING, origin: source.blob, transfer: target.blob.transfer },
+      {
+        ...artifactsSide,
+        binding: ARTIFACTS_BINDING,
+        origin: source.artifacts,
+        transfer: target.artifacts.transfer,
+      },
+    ]
+    expect(
+      refused(await target.artifacts.reserve({ request: reserveRequest('pub-next'), owner: owner() }, ctx())),
+    ).toBe('blocked')
+    // The blob service imports first, so the artifacts' content is there when their import is verified.
+    const imported = []
+    for (const step of steps) {
+      const request = { upgradeId: UPGRADE, source: step.exported, targetLocationRef: 'location-2' }
+      imported.push({ step, result: ok(await step.transfer.import(request, MAINTAINER)) })
+    }
+    for (const { step, result } of imported) {
+      const request = { upgradeId: UPGRADE, source: step.exported, candidateRef: result.candidateRef }
+      const validation = ok(await step.transfer.verify(request, MAINTAINER))
+      expect(validation.checks.map(({ checkId, passed }) => [checkId, passed])).toEqual([
+        ['snapshot-digest', true],
+        ['record-count', true],
+        ['required-assets', true],
+        ['deletion-watermark', true],
+      ])
+      // Each store requires both artifacts' content: the artifacts store names it, the blob store holds it.
+      const assets = validation.checks.find(({ checkId }) => checkId === 'required-assets')
+      expect(assets?.evidence).toMatchObject({ value: { expected: 2, actual: 2 } })
+    }
+    for (const { step, result } of imported) {
+      // The published route serves the candidate: its checkpoint is the import's, at the route's epoch.
+      const route: Wire.AuthorityRoute = {
+        logicalAuthorityId: step.fence.source.authorityId,
+        tenantId: 'tenant-1',
+        authorityEpoch: 2,
+        providerBinding: step.binding,
+        locationRef: 'location-2',
+        cohortDigest: COHORT,
+        cutoverId: 'cutover-1',
+        checkpoint: { ...result.targetCheckpoint, authorityEpoch: 2 },
+        previous: { authorityEpoch: 1, locationRef: 'location-1', cutoverId: 'cutover-0' },
+      }
+      routes.set(route.logicalAuthorityId, { route, targetActivated: false })
+      const publishedRoute = inlineData(route as unknown as JsonValue, 'agh.test/authority-route@1')
+      const activated = ok(
+        await step.transfer.activate(
+          { upgradeId: UPGRADE, cutoverId: 'cutover-1', publishedRoute },
+          MAINTAINER,
+        ),
+      )
+      expect(activated).toEqual({
+        state: 'activated',
+        cutoverId: 'cutover-1',
+        authority: { ...step.fence.source, authorityEpoch: 2 },
+        checkpoint: route.checkpoint,
+      })
+      expect(ok(await step.transfer.probe({ upgradeId: UPGRADE }, MAINTAINER))).toEqual(activated)
+      expect(ok(await step.origin.transfer.probe({ upgradeId: UPGRADE }, MAINTAINER))).toEqual({
+        state: 'fenced',
+        fence: step.fence,
+      })
+    }
+
+    // With the source closed, the target reads through its own blob service, keeps the revoked grant
+    // and version, and still holds the pending events under their original keys.
+    source.artifacts.close()
+    source.blob.close()
+    expect(ok(await target.artifacts.artifactAccess.describe(seeded.live, ctx())).status).toBe('ready')
+    expect(await servesSeed(target.artifacts, seeded)).toBe(true)
+    expect(target.reads.count).toBeGreaterThan(0)
+    expect(target.artifacts.pendingEvents()).toEqual(pending)
+    ok(await target.artifacts.reserve({ request: reserveRequest('pub-next'), owner: owner() }, ctx()))
+  })
+})
+
+describe('default artifacts authority transfer refusals', () => {
+  it("keeps the blob service's own refusal when its transfer entry refuses the export", async () => {
+    const source = await world(undefined, undefined, {
+      maintenance: () =>
+        transferFixture(new Map(), 'location-1', {
+          openRead: async () => unavailable('not_found', 'no source lends its bytes'),
+        }),
+    })
+    const expected = { authorityId: 'artifacts-authority', tenantId: 'tenant-1', authorityEpoch: 1 }
+    const fence = ok(
+      await source.artifacts.transfer.fence(
+        { upgradeId: UPGRADE, expected, cohortDigest: COHORT },
+        MAINTAINER,
+      ),
+    )
+    source.blob.close()
+    expect(
+      refused(
+        await source.artifacts.transfer.export({ upgradeId: UPGRADE, fenceId: fence.fenceId }, MAINTAINER),
+      ),
+    ).toBe('blocked')
+  })
+})
+
 describe('default artifacts assembly', () => {
   it('reads bytes through the blob service the container selected, and nothing after close', async () => {
     const { artifacts, blob, reads } = await world()
@@ -656,7 +899,7 @@ describe('default artifacts assembly', () => {
     expect(reads.count).toBe(2)
   })
 
-  it('refuses a selection without the read feature or port, or action methods from another binding', async () => {
+  it('refuses a selection without the read feature or port, or action methods or a transfer entry from another binding', async () => {
     const dataDir = await mkdtemp(join(tmpdir(), 'agh-artifacts-'))
     dirs.push(dataDir)
     const blob = createBlobService({ dataDir, authorityId: 'blob-authority', binding: BLOB_BINDING })
@@ -664,6 +907,7 @@ describe('default artifacts assembly', () => {
     const assemble = (
       register: (container: ReturnType<typeof createTestServiceContainer>) => void,
       actions = blob,
+      blobTransfer = blob,
     ) => {
       const container = createTestServiceContainer()
       register(container)
@@ -672,6 +916,7 @@ describe('default artifacts assembly', () => {
         authorityId: 'artifacts-authority',
         dependencies: container.dependencies,
         blobActions: actions,
+        blobTransfer,
       })
     }
     expect(refused(assemble(() => undefined))).toBe('service_not_registered')
@@ -692,43 +937,43 @@ describe('default artifacts assembly', () => {
       ),
     ).toBe('operation_not_supported')
     const other = { ...blob, binding: { ...BLOB_BINDING, bindingId: 'blob-2' } }
-    expect(
-      refused(
-        assemble(
-          (container) =>
-            container.register({
-              requirement: BLOB_REQUIREMENT,
-              binding: BLOB_BINDING,
-              blobRead: blob.blobRead,
-            }),
-          other,
-        ),
-      ),
-    ).toBe('blocked')
+    const selected = (container: ReturnType<typeof createTestServiceContainer>) =>
+      container.register({ requirement: BLOB_REQUIREMENT, binding: BLOB_BINDING, blobRead: blob.blobRead })
+    expect(refused(assemble(selected, other))).toBe('blocked')
+    expect(refused(assemble(selected, blob, other))).toBe('blocked')
     expect([...BLOB_FEATURES]).toEqual(BLOB_REQUIREMENT.features)
-    expect(artifactsFeatures({ ticketKey: TICKET_KEY })).toEqual([
-      'artifact-publication.v1',
-      'artifact-access.v1',
-      'artifact-ticket.v1',
-    ])
-    expect(artifactsFeatures({})).toEqual(['artifact-publication.v1', 'artifact-access.v1'])
+    // A transfer needs both the maintenance assembly and the default blob service's transfer entry.
+    const maintenance = transferFixture(new Map(), 'location-1', blob.transferRead)
+    const base = ['artifact-publication.v1', 'artifact-access.v1']
+    expect(artifactsFeatures({ ticketKey: TICKET_KEY })).toEqual([...base, 'artifact-ticket.v1'])
+    expect(artifactsFeatures({})).toEqual(base)
+    expect(artifactsFeatures({ maintenance })).toEqual(base)
+    expect(artifactsFeatures({ blobTransfer: blob })).toEqual(base)
+    expect(artifactsFeatures({ maintenance, blobTransfer: blob })).toEqual([...base, 'authority-transfer.v1'])
   })
 
-  it('describes the service with the ticket feature only when a ticket key is configured', () => {
-    const binding = {
-      bindingId: 'artifacts-1',
-      contract: 'agh.artifacts',
-      logicalName: 'default',
-      providerId: 'agh.artifacts.default',
-    }
+  it('describes the service with the ticket feature only with a ticket key, and transfers only with the blob transfer entry', () => {
+    const binding = ARTIFACTS_BINDING
     const configSchema = { typeId: 'agh.test/config@1', revision: 1, digest: 'c'.repeat(64) }
     const input = { binding, packageVersion: '1.0.0', packageDigest: 'a'.repeat(64), configSchema }
     const keyed = artifactsProviderDescriptor({ ...input, ticketKey: TICKET_KEY })
     const plain = artifactsProviderDescriptor(input)
+    const maintenance = transferFixture(new Map(), 'location-1', {
+      openRead: async () => unavailable('not_found', 'no source lends its bytes'),
+    })
+    const blobTransfer: BlobTransfer = {
+      binding: BLOB_BINDING,
+      transferStorage: () => {
+        throw new Error('a descriptor never writes')
+      },
+      holds: async () => false,
+    }
+    const unported = artifactsProviderDescriptor({ ...input, maintenance })
+    const transfer = artifactsProviderDescriptor({ ...input, maintenance, blobTransfer })
     const catalog: Record<string, { kind?: string; local?: boolean }> =
       RuntimeServiceCatalog['agh.artifacts'].methods
     const refs: Record<string, unknown> = RuntimeMethodSchemaRefs['agh.artifacts']
-    for (const descriptor of [keyed, plain]) {
+    for (const descriptor of [keyed, plain, unported, transfer]) {
       expect(validateRuntime('ProviderDescriptor', descriptor).ok).toBe(true)
       expect(descriptor).toMatchObject({
         providerId: binding.providerId,
@@ -753,6 +998,19 @@ describe('default artifacts assembly', () => {
       ['grant', 'idempotent'],
       ['revokeGrant', 'idempotent'],
     ])
+    expect(unported).toEqual(plain)
+    expect(transfer.features).toEqual([...plain.features, 'authority-transfer.v1'])
+    expect(transfer.operations.map(({ method, retrySafety }) => [method, retrySafety])).toEqual([
+      ...plain.operations.map(({ method, retrySafety }) => [method, retrySafety]),
+      ['authorityFence', 'idempotent'],
+      ['authorityExport', 'idempotent'],
+      ['authorityExportPage', 'idempotent'],
+      ['authorityImport', 'idempotent'],
+      ['authorityVerify', 'idempotent'],
+      ['authorityActivate', 'idempotent'],
+      ['authorityAbort', 'idempotent'],
+      ['authorityProbe', 'read-only'],
+    ])
     expect(() =>
       artifactsProviderDescriptor({ ...input, binding: { ...binding, contract: 'agh.blob' } }),
     ).toThrow()
@@ -767,6 +1025,11 @@ type ArtifactsSuite = {
   ARTIFACT_READER: { principalRef: string; authorizationRef: string; scope: ScopeRef }
   artifactsContractPort(subject: object): unknown
   registerArtifactsContract(harness: ConformanceHarness, binding: object): void
+}
+type TransferSuite = {
+  TRANSFER_MAINTAINER: string
+  transferContractPort(subject: object): unknown
+  registerAuthorityTransferContract(harness: ConformanceHarness, contract: string, binding: object): void
 }
 type ReferenceBlob = {
   BLOB_PROVIDER: { id: string }
@@ -806,10 +1069,11 @@ const fileDigest = (path: string) =>
     .digest('hex')
 
 /**
- * Runs the shared artifacts suite against the default artifacts service, assembled through a test
- * service container over the blob service `openBlob` opens, and returns each scenario's status.
+ * Runs the shared artifacts suite, and the authority transfer suite when asked, against the default
+ * artifacts service, assembled through a test service container over the blob service `openBlob` opens,
+ * and returns each case's id and status.
  */
-async function artifactsConformance(providerId: string, openBlob: OpenBlob) {
+async function artifactsConformance(providerId: string, openBlob: OpenBlob, transfer = false) {
   const suite = (await import(
     new URL('../../../extension-api/testkit/runtime/contracts/artifacts.ts', import.meta.url).href
   )) as ArtifactsSuite
@@ -940,7 +1204,7 @@ async function artifactsConformance(providerId: string, openBlob: OpenBlob) {
     ticketTtlMs: null,
   })
   const harness = createConformanceHarness()
-  suite.registerArtifactsContract(harness, {
+  const registered = {
     providerId,
     recipe: 'packages/host/src/runtime/providers/artifacts.ts',
     command: 'host-artifacts-conformance',
@@ -948,8 +1212,17 @@ async function artifactsConformance(providerId: string, openBlob: OpenBlob) {
     providerDigest: fileDigest('../../src/runtime/providers/artifacts.ts'),
     configDigest: canonicalJsonDigest({ authorityId: 'artifacts-authority' }),
     releaseSetDigest: fileDigest('../../package.json'),
-    port,
-  })
+  }
+  suite.registerArtifactsContract(harness, { ...registered, port })
+  if (transfer) {
+    const transfers = (await import(
+      new URL('../../../extension-api/testkit/runtime/contracts/authority-transfer.ts', import.meta.url).href
+    )) as TransferSuite
+    transfers.registerAuthorityTransferContract(harness, 'agh.artifacts', {
+      ...registered,
+      port: transfers.transferContractPort(artifactsTransferSubject(transfers.TRANSFER_MAINTAINER)),
+    })
+  }
   try {
     const report = await harness.run({
       contracts: ['agh.artifacts'],
@@ -957,30 +1230,168 @@ async function artifactsConformance(providerId: string, openBlob: OpenBlob) {
       command: 'host-artifacts-conformance',
       clock: { startedAt: '2026-10-01T00:00:00.000Z', finishedAt: '2026-10-01T00:00:01.000Z' },
     })
-    return report.assertions.map((item) => [item.scenario, item.status])
+    return report.assertions.map((item) => [item.id, item.status])
   } finally {
     shut()
   }
 }
 
-describe('default artifacts service: conformance', () => {
-  it('passes the shared artifacts suite in all six scenarios over the default blob service', async () => {
-    const statuses = await artifactsConformance('default', (dataDir, readable) => {
-      const blob = createBlobService({
-        dataDir,
-        authorityId: 'blob-authority',
-        binding: BLOB_BINDING,
-        authorizeRead: readable,
-      })
-      return {
-        binding: BLOB_BINDING,
-        blobRead: blob.blobRead,
-        actions: blob,
-        upload: (bytes, id) => sealedUpload(blob, `upload-${id}`, bytes, MEDIA_TYPE),
-        close: () => blob.close(),
+/** Every case of the named suites passed, in registration order. */
+const allPassed = (providerId: string, suites: readonly string[]) =>
+  suites.flatMap((name) =>
+    SCENARIOS.map((scenario) => [`agh.artifacts/${providerId}${name}/${scenario}`, 'passed']),
+  )
+
+const CONFORMANCE_ARTIFACTS = { ...ARTIFACTS_BINDING, logicalName: 'conformance', providerId: 'default' }
+
+/**
+ * Default artifacts worlds for the authority transfer suite, over the default blob service. The source
+ * holds the transfer seed; when maintained, its blob service is fenced and exported as the world opens,
+ * as a cohort transfer fences it beside the artifacts service. Each target location's blob service
+ * imports that export before the suite drives the artifacts service over it.
+ */
+function artifactsTransferSubject(maintainer: string) {
+  const control = ctx({ authorizationRef: maintainer })
+  return {
+    async open(maintained: boolean) {
+      const root = await mkdtemp(join(tmpdir(), 'agh-artifacts-transfer-'))
+      dirs.push(root)
+      const routes: Routes = new Map()
+      let cut: number | null = null
+      const lend: Lender['openRead'] = (request, context) =>
+        source.current().blob.transferRead.openRead(request, context)
+      // Only the artifacts import reads through the cut; a target's blob service imports apart from it.
+      const interrupted: Lender = {
+        openRead: async (request, context) => {
+          if (cut === 0) return unavailable('lender_unavailable', 'the source stopped lending')
+          if (cut !== null) cut -= 1
+          return lend(request, context)
+        },
       }
-    })
-    expect(statuses).toEqual(SCENARIOS.map((scenario) => [scenario, 'passed']))
+      const fixture = (locationRef: string, authorityId: string) =>
+        transferFixture(
+          routes,
+          locationRef,
+          authorityId === 'artifacts-authority' ? interrupted : { openRead: lend },
+          maintainer,
+        )
+      const side = async (locationRef: string, target: boolean) => {
+        const dataDir = join(root, locationRef)
+        mkdirSync(dataDir)
+        const transfer = { maintenance: (authorityId: string) => fixture(locationRef, authorityId), target }
+        const start = () => world(dataDir, undefined, maintained ? transfer : undefined)
+        let current = await start()
+        let writes = 0
+        const close = async () => {
+          current.artifacts.close()
+          current.blob.close()
+        }
+        return {
+          dataDir,
+          current: () => current,
+          control: () => current.artifacts.transfer,
+          async write() {
+            const request = reserveRequest(`${locationRef}-write-${++writes}`)
+            const outcome = await current.artifacts.reserve({ request, owner: owner() }, ctx())
+            return outcome.ok ? null : outcome.error.detailCode
+          },
+          serves: () => servesSeed(current.artifacts, seeded),
+          async reopen() {
+            await close()
+            current = await start()
+          },
+          close,
+        }
+      }
+      const source = await side('location-1', false)
+      const stores = new Map([['location-1', source]])
+      const seeded = await seedTransfer(source.current())
+      const cohort = maintained
+        ? await fenceAndExport(source.current().blob.transfer, 'blob-authority', control)
+        : undefined
+      const configSchema = { typeId: 'agh.test/config@1', revision: 1, digest: 'c'.repeat(64) }
+      return {
+        descriptor: artifactsProviderDescriptor({
+          binding: CONFORMANCE_ARTIFACTS,
+          packageVersion: '1.0.0',
+          packageDigest: fileDigest('../../src/runtime/providers/artifacts.ts'),
+          configSchema,
+          ...(maintained
+            ? {
+                maintenance: fixture('location-1', 'artifacts-authority'),
+                blobTransfer: source.current().blob,
+              }
+            : {}),
+        }),
+        source,
+        authority: { authorityId: 'artifacts-authority', tenantId: 'tenant-1', authorityEpoch: 1 },
+        locationRef: 'location-1',
+        providerBinding: CONFORMANCE_ARTIFACTS,
+        async target(locationRef: string) {
+          const known = stores.get(locationRef)
+          if (known) return known
+          const made = await side(locationRef, true)
+          if (cohort) {
+            const request = { upgradeId: UPGRADE, source: cohort.exported, targetLocationRef: locationRef }
+            ok(await made.current().blob.transfer.import(request, control))
+          }
+          stores.set(locationRef, made)
+          return made
+        },
+        publish(route: Wire.AuthorityRoute, targetActivated: boolean) {
+          routes.set(route.logicalAuthorityId, { route, targetActivated })
+        },
+        cut(after: number | null) {
+          cut = after
+        },
+        // The chunk lives in the source blob's content; one hex letter changes, so it still parses.
+        async tamper(chunk: Wire.BlobRef) {
+          const file = join(source.dataDir, 'artifacts', 'sha256', chunk.digest.slice(0, 2), chunk.digest)
+          const bytes = readFileSync(file)
+          const at = bytes.findIndex((byte) => byte >= 0x61 && byte <= 0x66)
+          if (at < 0) throw new Error('the chunk has no hex letter to change')
+          bytes[at] = bytes[at] === 0x61 ? 0x62 : 0x61
+          writeFileSync(file, bytes)
+        },
+        async damage(locationRef: string) {
+          const db = new DatabaseSync(join(root, locationRef, 'artifacts', 'artifacts-service.db'))
+          try {
+            db.exec('UPDATE artifacts SET latest_version = latest_version + 1')
+          } finally {
+            db.close()
+          }
+        },
+        async dispose() {
+          for (const each of stores.values()) await each.close()
+          await rm(root, { recursive: true, force: true })
+        },
+      }
+    },
+  }
+}
+
+describe('default artifacts service: conformance', () => {
+  it('passes the shared artifacts suite and the authority transfer suite in all six scenarios over the default blob service', async () => {
+    const statuses = await artifactsConformance(
+      'default',
+      (dataDir, readable) => {
+        const blob = createBlobService({
+          dataDir,
+          authorityId: 'blob-authority',
+          binding: BLOB_BINDING,
+          authorizeRead: readable,
+        })
+        return {
+          binding: BLOB_BINDING,
+          blobRead: blob.blobRead,
+          actions: blob,
+          upload: (bytes, id) => sealedUpload(blob, `upload-${id}`, bytes, MEDIA_TYPE),
+          close: () => blob.close(),
+        }
+      },
+      true,
+    )
+    expect(statuses).toEqual(allPassed('default', ['', '/authority-transfer']))
   })
 
   it('passes the shared artifacts suite in all six scenarios over the reference blob service', async () => {
@@ -1006,6 +1417,6 @@ describe('default artifacts service: conformance', () => {
         close: () => blob.close(),
       }
     })
-    expect(statuses).toEqual(SCENARIOS.map((scenario) => [scenario, 'passed']))
+    expect(statuses).toEqual(allPassed('default-over-reference-blob', ['']))
   })
 })
