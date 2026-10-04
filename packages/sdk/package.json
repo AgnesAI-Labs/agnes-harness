@@ -14,7 +14,7 @@
       "default": "./src/surface.node.ts"
     },
     "./composer-selection": "./src/composer-selection.ts",
-    "./runtime": "./src/runtime/format-view.ts"
+    "./runtime": "./src/runtime/index.ts"
   },
   "scripts": {
     "test": "vitest run",

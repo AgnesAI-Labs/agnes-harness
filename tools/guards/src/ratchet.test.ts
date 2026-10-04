@@ -1625,7 +1625,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // no spare.
   // The default domain view text format, moved from the web client and exported as `./runtime`, now
   // also removes format characters. Measured 6231, exact, no spare (+208).
-  'packages/sdk/src': 6231,
+  // `./runtime` becomes a barrel that also exports the runtime client. Measured 6252, exact, no spare (+21).
+  'packages/sdk/src': 6252,
   'packages/sdk/src/extensions.node': 21,
   'packages/sdk/src/package-admin.node': 147,
   'packages/sdk/src/surface.browser': 3,
