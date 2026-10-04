@@ -7,6 +7,19 @@ import type {
   WorkerGeneration,
 } from '@agnes/protocol'
 import { workerGeneration } from '@agnes/protocol'
+import type { Id, RunAdmission, StateCancelAdmissionRequest } from '@agnes/protocol/runtime'
+
+/** Explicit private worker-control selection; these are not legacy session.run commands. */
+export type RuntimeRunMethod =
+  | 'runtime.run.create'
+  | 'runtime.run.status'
+  | 'runtime.run.cancel'
+  | 'runtime.run.probe'
+export type RuntimeRunCommandFrame = { kind: 'command'; requestId: string } & (
+  | { method: 'runtime.run.create'; params: { request: RunAdmission } }
+  | { method: 'runtime.run.status' | 'runtime.run.probe'; params: { request: Id } }
+  | { method: 'runtime.run.cancel'; params: { request: StateCancelAdmissionRequest } }
+)
 
 export type SessionMethod =
   | 'enqueue'
@@ -33,6 +46,7 @@ export type SessionMethod =
 
 /** Process-wide methods available before C2 runtime-target delivery exists. */
 export type WorkerMethod =
+  | RuntimeRunMethod
   | 'ping'
   | 'configuration.apply'
   | 'inspectService'

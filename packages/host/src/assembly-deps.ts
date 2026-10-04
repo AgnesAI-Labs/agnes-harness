@@ -15,6 +15,7 @@ import type { ExtensionIsolationOptions } from './ext-host/hooks-isolation-assem
 import type { ServiceAuthority } from './ext-host/service-invocation.js'
 import type { ResolvedProfile } from './profile/types.js'
 import type { SkillRuntimeInput } from './resources/skills.js'
+import type { HostRuntimeAdmissionInstallation } from './runtime/entry-admission.js'
 import type { TrajectoryAssemblyOptions } from './trajectory-contract.js'
 import type { WorkspaceInvocationResolver } from './workspace-invocation-resolver.js'
 
@@ -31,6 +32,8 @@ export type AssembleDeps = HostPaths &
     prompter?: Prompter
     signal?: AbortSignal
     clock?: () => number
+    /** Private deployment-owned installation; never deserialize this slot from client/worker data. */
+    runtimeAdmissionInstallation?: HostRuntimeAdmissionInstallation
     netFetch?: KernelOptions['netFetch']
     /** Host-owned lookup of the currently published runtime for already-open Core sessions. */
     currentRuntime?: KernelOptions['currentRuntime']

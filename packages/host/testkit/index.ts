@@ -128,6 +128,7 @@ function fakePlatform(caps: Record<string, CapabilityLevel['level']>): PlatformB
 }
 
 export type TestHostOptions = {
+  runtimeAdmissionInstallation?: HostOptions['runtimeAdmissionInstallation']
   /** Opt out of the production publisher view in tests that deliberately exercise raw Kernel ports. */
   currentRuntime?: import('@agnes/core').KernelOptions['currentRuntime']
   serviceAuthority?: import('../src/ext-host/service-invocation.js').ServiceAuthority
@@ -349,6 +350,9 @@ export async function createTestHost(o: TestHostOptions): Promise<TestHost> {
   for (const module of Object.values(modules)) if (module.seams) attachTestSeamPlugins(module)
   const loader = new MemoryPackageLoader(modules)
   const host = await createHost(profile, {
+    ...(o.runtimeAdmissionInstallation
+      ? { runtimeAdmissionInstallation: o.runtimeAdmissionInstallation }
+      : {}),
     dataDir: o.dataDir,
     packageDirs: new Map(ids.map((id) => [id, o.packageDirs?.[id] ?? o.dataDir])),
     profileDir: `${o.dataDir}/profiles/${template}`,
