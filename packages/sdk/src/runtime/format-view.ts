@@ -1,20 +1,23 @@
 // The default text presentation of a domain view no registered renderer presents, for the tui, sdk and
 // im targets. It is the text sibling of the generic Web card and shows the same information in the same
-// order: status, fallback text, resources, then actions. Both functions are pure. View data becomes plain
-// text parts, never markup, with control characters replaced so a terminal or chat cannot run them as
-// escapes. Actions are referenced only by their keys. An enabled action that needs a feature the client
-// did not negotiate is shown but not offered, and the result is marked incomplete so the consumer can
-// send the user to the Web client.
+// order: status, fallback text, resources, then actions. Both functions are pure and import nothing at
+// runtime, so the `@agnes/sdk/runtime` entry runs unchanged in browsers. View data becomes plain text
+// parts, never markup, with control characters replaced and format characters (bidirectional controls
+// among them) removed so a terminal or chat cannot run them as escapes or reorder the text. Actions are
+// referenced only by their keys. An enabled action that needs a feature the client did not negotiate is
+// shown but not offered, and the result is marked incomplete so the consumer can send the user to the
+// Web client.
 import type {
   DomainView,
   FormattedView,
   IMRendererEncodeChannel,
   IMRendererEncodeResult,
-  Outcome,
   RuntimeError,
   TextPart,
   TextRendererFormatContext,
-} from '@agnes/extension-api/client'
+} from '@agnes/protocol/runtime'
+
+type Outcome<T> = { ok: true; value: T } | { ok: false; error: RuntimeError }
 
 const PHASES: Record<string, string> = {
   provisional: 'In progress',
@@ -37,7 +40,7 @@ const refuse = (detailCode: string, message: string): { ok: false; error: Runtim
     detailCode,
     message,
     retryAdvice: { kind: 'never' },
-    diagnosticId: 'web-client-text-renderer',
+    diagnosticId: 'sdk-text-format',
   },
 })
 
@@ -46,8 +49,15 @@ const record = (value: unknown): value is Record<string, unknown> =>
 const strings = (value: unknown): value is string[] =>
   Array.isArray(value) && value.every((entry) => typeof entry === 'string')
 
-/** View text as plain text: line breaks become `\n` and every other control character but tab is replaced. */
-const plain = (text: string) => text.replace(/\r\n?/g, '\n').replace(/(?![\n\t])\p{Cc}/gu, '�')
+/**
+ * View text as plain text: format characters are removed, line breaks become `\n` and every other
+ * control character but tab is replaced. The zero width joiner stays, so emoji sequences hold together.
+ */
+const plain = (text: string) =>
+  text
+    .replace(/(?!\u200D)\p{Cf}/gu, '')
+    .replace(/\r\n?/g, '\n')
+    .replace(/(?![\n\t])\p{Cc}/gu, '�')
 
 /** UTF-8 bytes of one code point. A lone surrogate is sent as U+FFFD, which also takes three. */
 function width(char: string): number {

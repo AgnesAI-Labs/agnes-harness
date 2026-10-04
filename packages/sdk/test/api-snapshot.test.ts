@@ -110,7 +110,7 @@ describe('export surface snapshot (规格 §20.5, SDK Task 23)', () => {
     }
   })
 
-  it('routes the package browser condition and reviewed explicit subpaths', () => {
+  it('routes the package browser condition and reviewed explicit subpaths', async () => {
     const manifest = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')) as Record<
       string,
       unknown
@@ -119,8 +119,14 @@ describe('export surface snapshot (规格 §20.5, SDK Task 23)', () => {
       '.': { browser: './src/index.browser.ts', default: './src/index.node.ts' },
       './browser': './src/index.browser.ts',
       './composer-selection': './src/composer-selection.ts',
+      './runtime': './src/runtime/format-view.ts',
       './surface': { browser: './src/surface.browser.ts', default: './src/surface.node.ts' },
     })
     expect(parseComposerSelection({ permission: 'full' })).toEqual({ permission: 'full' })
+    // The runtime subpath carries only the domain view text formatter, not the runtime client wire.
+    expect(Object.keys(await import('@agnes/sdk/runtime')).sort()).toEqual([
+      'encodeForChannel',
+      'formatDomainView',
+    ])
   })
 })

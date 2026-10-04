@@ -270,8 +270,10 @@ const INITIAL_CEILING: Record<string, number> = {
   // Measured 3530, exact, no spare (+89).
   // Fifth main synchronization merged with the current integration tip (locale catalogs). Measured 3633,
   // exact, no spare.
-  // A renderer needing a feature the client did not negotiate is refused. Measured 3637, exact, no spare (+4).
-  'packages/web-client/src': 3637,
+  // The default domain view text format moves to the `@agnes/sdk/runtime` export. Measured 3429, exact,
+  // no spare (-204).
+  // A renderer needing a feature the client did not negotiate is refused. Measured 3433, exact, no spare (+4).
+  'packages/web-client/src': 3433,
   'packages/web-slots/src': 605,
   // Failed shell calls read as their exit code (+19 lines); measured 4891, exact cap.
   // B-line diagnostics dialog: React view adds 147 lines; measured 4706, exact cap.
@@ -1432,7 +1434,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // WEB-INCREMENTAL-PROJECTION-TRACE-INDEX C3: projection.ts is now a re-export of the SDK engine.
   // measured 4238 (-534), exact, lowered to the measured value.
   // CHUNK-LEDGER-SLIM final tree: the TUI live line reads merged previews. Measured 4232, exact, no spare (-6).
-  'packages/cli-tui/src': 4737,
+  // Runtime domain views, questions, approvals and artifact actions: measured 5486, exact, no spare (+749).
+  'packages/cli-tui/src': 5486,
   // Initial ceilings for the remaining packages, registered all at once so that each parallel lane
   // does not have to edit these two files separately. The sdk ceiling of 2500 was newly set by
   // estimate: 404 lines today, plus roughly 360 for the three transports, plus roughly 1650 for the
@@ -1612,7 +1615,9 @@ const INITIAL_CEILING: Record<string, number> = {
   // Runtime client push socket (WebSocket uplink sharing the HTTP settle path, push frame routing)
   // and subscriptions (push delivery, polling fallback, reader queue bound). Measured 6020, exact,
   // no spare.
-  'packages/sdk/src': 6023,
+  // The default domain view text format, moved from the web client and exported as `./runtime`, now
+  // also removes format characters. Measured 6231, exact, no spare (+208).
+  'packages/sdk/src': 6231,
   'packages/sdk/src/extensions.node': 21,
   'packages/sdk/src/package-admin.node': 147,
   'packages/sdk/src/surface.browser': 3,
@@ -2229,7 +2234,9 @@ const INITIAL_CEILING: Record<string, number> = {
   // Digest-pinned client module stylesheets (integrity, declared order, fail-closed digest check).
   // Measured 13139, exact (+15).
   // Web shell switch: candidate validation, view state hand-over and fallback. Measured 13614, exact (+188).
-  'packages/web/src': 16186,
+  // Default chat shell: five regions, presented domain views, view state and its text by locale.
+  // Measured 16738, exact, no spare (+552).
+  'packages/web/src': 16738,
   // 2026-09-17 web-client-modules frontend track (rebased onto L0/permission-picker main): re-measured exact value below.
   // 2026-09-14: Task 7 orphaned-pin-cleanup adds the orphan-pins section to PluginAdminPage — the
   // #orphanPins/#orphanPinsList/#orphanPinsStatus/#orphanPinsReleaseAll element bindings, the

@@ -13,6 +13,7 @@ import type {
   RendererRegistration,
 } from '@agnes/extension-api/client'
 import { validateRuntime } from '@agnes/protocol/runtime'
+import { formatDomainView } from '@agnes/sdk/runtime'
 import { act, type ReactElement, useEffect } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -20,7 +21,6 @@ import { createClientHostRuntime } from '../../src/runtime/client-host.js'
 import type { ClientTarget, SelectedRenderer } from '../../src/runtime/client-selection.js'
 import { createUIRegistry } from '../../src/runtime/providers/ui-registry.js'
 import { createRendererPresenter } from '../../src/runtime/renderer-presentation.js'
-import { formatDomainView } from '../../src/runtime/renderers/text.js'
 
 let host: HTMLDivElement
 let root: Root

@@ -18,11 +18,12 @@ APIs evolve with the source. `@agnes/*` packages currently resolve through the r
 | --- | --- | --- |
 | Node client | Node conditional export of `@agnes/sdk` | createClient, session, config, packages, resources, skills, mcp |
 | Browser host | `@agnes/sdk/browser` | Sessions and browser-allowed protocol methods, without Node management capabilities |
+| Text client or chat channel, Node or browser | `@agnes/sdk/runtime` | formatDomainView and encodeForChannel: the default plain-text presentation of a domain view and its split into channel messages |
 | Browser plugin | Host-supplied ClientContext | slots, session, theme, locale, commands, agnes.services |
 | Backend Cordis plugin row | `@agnes/plugin-runtime` / Cordis Context | Config, inject/provide, effect, ctx.extension, ctx.skills, and ctx.services/slots/projections/resources on verified rows |
 | Constrained extension capabilities | PluginExtensionAPI from `@agnes/extension-api` | Tools, `on` observation hooks, all `registerHook` categories, and events; service and similar contributions use row Cordis APIs |
 
-Current SDK exports: [index.node.ts](../../packages/sdk/src/index.node.ts) and [index.browser.ts](../../packages/sdk/src/index.browser.ts). Consume only package `exports`; source links explain behavior and do not authorize deep imports.
+Current SDK exports: [index.node.ts](../../packages/sdk/src/index.node.ts), [index.browser.ts](../../packages/sdk/src/index.browser.ts) and [runtime/format-view.ts](../../packages/sdk/src/runtime/format-view.ts). Consume only package `exports`; source links explain behavior and do not authorize deep imports.
 
 <a id="sdk-调用顺序"></a>
 

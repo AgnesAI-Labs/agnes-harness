@@ -1,9 +1,14 @@
+import { createHash } from 'node:crypto'
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { Window } from 'happy-dom'
 import { createWorkbenchShell } from '../../../../examples/runtime-reference/src/client/workbench-shell.ts'
 import { bindShellContract } from '../../../../examples/runtime-reference/src/providers/shell.ts'
+import type { ShellProvider } from '../../../../packages/extension-api/src/client/index.ts'
 import {
   recoverShell,
+  registerShellContract,
   type ShellConformanceBinding,
 } from '../../../../packages/extension-api/testkit/runtime/contracts/shell.ts'
 import {
@@ -11,15 +16,35 @@ import {
   restartUIRegistryClient,
 } from '../../../../packages/extension-api/testkit/runtime/contracts/ui-registry.ts'
 import type { ConformanceHarness } from '../../../../packages/extension-api/testkit/runtime/harness.ts'
+import { canonicalJsonDigest } from '../../../../packages/protocol/src/runtime/index.ts'
 import { createClientHostRuntime } from '../../../../packages/web-client/src/runtime/client-host.ts'
 import { resolveClientSelection } from '../../../../packages/web-client/src/runtime/client-selection.ts'
-import { withConformanceBuild } from '../build-identity.js'
+import { getConformanceBuildIdentity, withConformanceBuild } from '../build-identity.js'
 
 const CONTRACT = 'agh.shell'
-const REFERENCE = 'reference'
+const PROVIDERS = ['default', 'reference'] as const
+type Provider = (typeof PROVIDERS)[number]
+const RECIPE = 'packages/web/src/runtime/providers/shell.ts'
 
 const root = fileURLToPath(new URL('../../../../', import.meta.url))
 const self = fileURLToPath(import.meta.url)
+const sha256 = (path: string) =>
+  createHash('sha256')
+    .update(readFileSync(join(root, path)))
+    .digest('hex')
+
+// The shell each provider names. The Web client's default chat shell shows its own English text; it is
+// loaded only when asked for, so runs of other contracts do not load the Web UI layer.
+const SHELLS: Record<Provider, () => Promise<() => ShellProvider>> = {
+  reference: async () => createWorkbenchShell,
+  async default() {
+    const { createDefaultShell, defaultShellLocale } = await import(
+      '../../../../packages/web/src/runtime/providers/shell.ts'
+    )
+    const locale = defaultShellLocale('en')
+    return () => createDefaultShell(locale)
+  },
+}
 
 // Every container is a fresh element in one happy-dom document. The runner has no teardown, so the
 // document lives until the process exits.
@@ -58,8 +83,15 @@ const select: ShellConformanceBinding['select'] = async ({ modules, selection, l
   return { ok: true, value: shell }
 }
 
-// Only the reference workbench shell binds here. The web app has no default shell yet, so a default
-// request stays without evidence.
+// The client processes run this file, which selects the provider's shell through the same host into the
+// same DOM. The UI registry's client process runner kills the first on READY and waits for the second to
+// exit.
+const restart =
+  (provider: Provider): ShellConformanceBinding['restart'] =>
+  (directory) =>
+    restartUIRegistryClient(['--import', 'tsx', self, directory, provider], root)
+
+// The Web client's default chat shell and the reference workbench shell bind here.
 export async function bindConformance(
   harness: ConformanceHarness,
   request: {
@@ -70,29 +102,47 @@ export async function bindConformance(
 ): Promise<{ readonly contracts: readonly string[]; readonly providers: readonly string[] }> {
   if (request.contracts !== 'all' && !request.contracts.includes(CONTRACT))
     return { contracts: [], providers: [] }
-  if (!request.providers.includes(REFERENCE)) return { contracts: [CONTRACT], providers: [] }
-  bindShellContract(withConformanceBuild(harness), request.command, {
-    providerId: REFERENCE,
-    container,
-    select,
-    // The client processes run this file, which selects through the same host into the same DOM. The
-    // UI registry's client process runner kills the first on READY and waits for the second to exit.
-    restart: (directory) => restartUIRegistryClient(['--import', 'tsx', self, directory], root),
-  })
-  return { contracts: [CONTRACT], providers: [REFERENCE] }
+  const providers = PROVIDERS.filter((providerId) => request.providers.includes(providerId))
+  for (const providerId of providers) {
+    if (providerId === 'reference')
+      bindShellContract(withConformanceBuild(harness), request.command, {
+        providerId,
+        container,
+        select,
+        restart: restart(providerId),
+      })
+    else
+      registerShellContract(harness, {
+        providerId,
+        recipe: RECIPE,
+        command: request.command,
+        build: getConformanceBuildIdentity(),
+        providerDigest: sha256(RECIPE),
+        configDigest: canonicalJsonDigest({}),
+        releaseSetDigest: sha256('packages/web/package.json'),
+        shell: await SHELLS[providerId](),
+        container,
+        select,
+        restart: restart(providerId),
+      })
+  }
+  return { contracts: [CONTRACT], providers }
 }
 
-// The client process `recover` starts: `<directory>`. The rebuilt one exits once it has recorded what
-// it saw, whatever the DOM still holds open.
+// The client process `recover` starts: `<directory> <provider>`. The rebuilt one exits once it has
+// recorded what it saw, whatever the DOM still holds open.
 const entry = process.argv[1]
 if (entry !== undefined && import.meta.url === pathToFileURL(entry).href) {
-  const directory = process.argv[2]
-  if (directory === undefined) throw new Error('expected: <directory>')
-  recoverShell({ shell: createWorkbenchShell, container, select }, directory, holdUIRegistryClient).then(
-    () => process.exit(0),
-    (error: unknown) => {
-      process.stderr.write(`${error instanceof Error ? error.message : 'shell client failed'}\n`)
-      process.exit(1)
-    },
-  )
+  const [directory, provider] = process.argv.slice(2)
+  if (directory === undefined || !PROVIDERS.includes(provider as Provider))
+    throw new Error('expected: <directory> <default|reference>')
+  SHELLS[provider as Provider]()
+    .then((shell) => recoverShell({ shell, container, select }, directory, holdUIRegistryClient))
+    .then(
+      () => process.exit(0),
+      (error: unknown) => {
+        process.stderr.write(`${error instanceof Error ? error.message : 'shell client failed'}\n`)
+        process.exit(1)
+      },
+    )
 }
