@@ -1,3 +1,8 @@
+import { randomUUID } from 'node:crypto'
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { pid } from 'node:process'
 import { isDeepStrictEqual } from 'node:util'
 import type {
   ClientEntry,
@@ -61,6 +66,12 @@ export interface ShellConformanceBinding {
     readonly selection: Wire.ClientSelection
     readonly load: (module: Wire.ClientModule) => Promise<Outcome<Readonly<Record<string, unknown>>>>
   }) => Promise<Outcome<() => ShellProvider>>
+  /**
+   * Runs `recoverShell` with this binding's shell, container and select in a client process over
+   * `directory` and kills it with SIGKILL once it is ready, then runs it in a second process over the
+   * same directory until that one exits. Resolves to each process's exit signal and pid, in that order.
+   */
+  readonly restart: (directory: string) => Promise<readonly { signal: string | null; pid: number | null }[]>
 }
 
 type Turn = Wire.RuntimeConversationWindow['native']['timeline']['turns'][number]
@@ -400,60 +411,162 @@ const fallback: RendererDescriptor = {
   entry: './fallback.js',
 }
 
-const CASES: Partial<Record<ScenarioName, (binding: ShellConformanceBinding) => Promise<Checks>>> = {
+/** The catalog: FRAME, DECOY, and SHELLS declaring the shell under test as `workbench` and PLAIN. */
+const catalog = (workbench: string): Wire.ClientModule[] => [
+  catalogModule(FRAME, [
+    serving('registry', 'conformance.registry', 'createRegistry'),
+    { contributionId: FALLBACK, kind: 'renderer', targets: ['web'], descriptor: fallback },
+  ]),
+  catalogModule(DECOY, [serving('shell', PLAIN, 'plainShell')]),
+  catalogModule(SHELLS, [
+    serving('shell', workbench, 'workbenchShell'),
+    serving('shell', PLAIN, 'plainShell'),
+  ]),
+]
+
+/** Runs the binding's host over `modules` for `chosen`; the cases' namespaces play the module authors. */
+function choose(
+  { shell, select }: Pick<ShellConformanceBinding, 'shell' | 'select'>,
+  chosen: Wire.ClientSelection,
+  modules: readonly Wire.ClientModule[],
+  shells: Namespace = { workbenchShell: shell, plainShell: () => markedShell('plain') },
+) {
+  const namespaces: Record<string, Namespace> = {
+    // The host registers the fallback from its module's fixed Web export; nothing is presented here.
+    [FRAME]: { createRegistry: anyRegistry, component: () => null },
+    [SHELLS]: shells,
+    [DECOY]: { plainShell: () => markedShell('decoy') },
+  }
+  return select({
+    modules,
+    selection: chosen,
+    async load(module) {
+      const own = namespaces[module.moduleId] ?? {}
+      // The entry registers every shell its module declares, in declaration order: each becomes a
+      // candidate, so in one of the two orders the shell registered last is not the selected one.
+      const clientEntry: ClientEntry = async (host) => {
+        for (const declared of module.contributions ?? []) {
+          const outcome =
+            declared.kind === 'shell' ? host.registerShell(own[declared.export] as () => ShellProvider) : OK
+          if (!outcome.ok) return outcome
+        }
+        return { ok: true, value: { dispose: async () => {} } }
+      }
+      return { ok: true, value: { ...own, clientEntry } }
+    },
+  })
+}
+
+/** States of another version or schema than `state`: a later revision, another type and another digest. */
+const mismatched = ({ schema, data }: Wire.ShellViewState): Wire.ShellViewState[] => [
+  { schema: { ...schema, revision: schema.revision + 1 }, data },
+  { schema: { ...schema, typeId: 'other.shell/state@1' }, data },
+  { schema: { ...schema, digest: schema.digest === DIGEST ? 'd'.repeat(64) : DIGEST }, data },
+]
+
+// The files `recover` and its client processes share: the catalog and selection both processes build
+// from, then what each process saw.
+const PROFILE = 'profile.json'
+const KILLED = 'killed.json'
+const REBUILT = 'rebuilt.json'
+const DRAFT = 'unsent draft'
+
+/** What a client process saw: the shell it selected and what its container shows. */
+type Seen = { readonly pid: number; readonly selected: string; readonly shown: string | null }
+
+const exportedState = async (provider: ShellProvider) => {
+  const outcome = await provider.exportState()
+  return outcome.ok ? outcome.value : null
+}
+
+/**
+ * The client process side of `recover`, in Node; a browser refresh is not covered. Each process reads
+ * the catalog and selection in `directory`, selects a shell through the binding's host and mounts a new
+ * instance of it with a services double and an owner token of its own, as a client mounts one.
+ *
+ * The first process navigates to a view, exports the state, types a draft into the focused composer,
+ * exports again, records the last export and calls `ready`, which must not return, since the process is
+ * killed there. A process that finds that record is the rebuilt one: it imports the last export into its
+ * new mount, checks the draft, navigation and focus that shows, then imports states of another version
+ * or schema and submits a draft to check the mount still works, and records its checks. Refusing the
+ * killed process's owner token and services is the server's part, not the shell's, so it is not judged.
+ */
+export async function recoverShell(
+  binding: Pick<ShellConformanceBinding, 'shell' | 'container' | 'select'>,
+  directory: string,
+  ready: () => void,
+): Promise<void> {
+  const profile = JSON.parse(readFileSync(join(directory, PROFILE), 'utf8')) as {
+    modules: Wire.ClientModule[]
+    selection: Wire.ClientSelection
+  }
+  const killed = join(directory, KILLED)
+  const rebuilt = existsSync(killed)
+  const chosen = await choose(binding, profile.selection, profile.modules)
+  if (!chosen.ok) throw new Error(`the selection was refused: ${chosen.error.message}`)
+  const provider = chosen.value()
+  const box = binding.container()
+  const fake = fakeServices()
+  const mount = { ...input(box, fake.services, rebuilt ? NEXT : SNAPSHOT), ownerToken: randomUUID() }
+  const mounted = await provider.mount(mount)
+  if (!mounted.ok) throw new Error(`the mount was refused: ${mounted.error.message}`)
+  const seen: Seen = { pid, selected: provider.descriptor.id, shown: shown(box) }
+
+  if (!rebuilt) {
+    item(box, 'view-2')?.click()
+    await settle()
+    writeFileSync(killed, JSON.stringify({ ...seen, state: await exportedState(provider) }))
+    const { draft } = composer(box)
+    draft.value = DRAFT
+    draft.focus()
+    writeFileSync(killed, JSON.stringify({ ...seen, state: await exportedState(provider) }))
+    ready()
+    return
+  }
+
+  const { state: last } = JSON.parse(readFileSync(killed, 'utf8')) as { state: Wire.ShellViewState | null }
+  if (last === null) throw new Error('the killed process exported no state')
+  // The new mount is a new shell from the rebuilt host: nothing of the killed one is in it until the
+  // exported state is imported.
+  const fresh = await exportedState(provider)
+  const checks: Checks = {
+    'the new mount starts without the killed state': fresh !== null && !isDeepStrictEqual(fresh, last),
+    'the last exported state imported': (await provider.importState(last)).ok,
+  }
+  const restored = await exportedState(provider)
+  checks['state survives the rebuild'] = isDeepStrictEqual(restored, last)
+  checks['draft restored'] = composer(box).draft.value === DRAFT
+  checks['navigation restored'] = current(item(box, 'view-2'))
+  checks['focus restored'] = Boolean(region(box, 'composer')?.contains(box.ownerDocument.activeElement))
+  const refused: string[] = []
+  for (const other of mismatched(last)) refused.push(code(await provider.importState(other)))
+  checks['states of another version or schema refused as incompatible'] = refused.every(
+    (seen) => seen === 'incompatible',
+  )
+  const kept = await exportedState(provider)
+  fake.answer('conversation.submit', (sent) => ok(handle(sent, 'accepted')))
+  await send(box, 'after the rebuild')
+  const [request] = submitted(fake.calls)
+  checks['refused states leave the mount usable'] =
+    isDeepStrictEqual(kept, restored) && state(box, request?.requestId ?? '', 'composer') === 'pending'
+  checks['rebuilt shell disposed'] = (await provider.dispose('shutdown')).ok
+  writeFileSync(join(directory, REBUILT), JSON.stringify({ ...seen, checks }))
+}
+
+const CASES: Record<ScenarioName, (binding: ShellConformanceBinding) => Promise<Checks>> = {
   // Three selections that differ only in the shell they name, by package and contribution id, each mount
   // exactly that shell through the same host, with the catalog in either order. A selection of an
   // undeclared shell, or of one whose export is missing or not a function, is refused.
-  async select({ shell, container, select }) {
+  async select(binding) {
+    const { shell, container } = binding
     const workbench = shell().descriptor.id
-    const plain = () => markedShell('plain')
-    const forward = [
-      catalogModule(FRAME, [
-        serving('registry', 'conformance.registry', 'createRegistry'),
-        { contributionId: FALLBACK, kind: 'renderer', targets: ['web'], descriptor: fallback },
-      ]),
-      catalogModule(DECOY, [serving('shell', PLAIN, 'plainShell')]),
-      catalogModule(SHELLS, [
-        serving('shell', workbench, 'workbenchShell'),
-        serving('shell', PLAIN, 'plainShell'),
-      ]),
-    ]
+    const forward = catalog(workbench)
     // Modules and their declarations in the opposite order, so neither picks a shell.
     const reversed = forward
       .map((module) => ({ ...module, contributions: [...(module.contributions ?? [])].reverse() }))
       .reverse()
-    const run = (
-      ref: Wire.ClientContributionRef,
-      modules = forward,
-      shells: Namespace = { workbenchShell: shell, plainShell: plain },
-    ) => {
-      const namespaces: Record<string, Namespace> = {
-        // The host registers the fallback from its module's fixed Web export; nothing is presented here.
-        [FRAME]: { createRegistry: anyRegistry, component: () => null },
-        [SHELLS]: shells,
-        [DECOY]: { plainShell: () => markedShell('decoy') },
-      }
-      return select({
-        modules,
-        selection: selection(ref),
-        async load(module) {
-          const own = namespaces[module.moduleId] ?? {}
-          // The entry registers every shell its module declares, in declaration order: each becomes a
-          // candidate, so in one of the two orders the shell registered last is not the selected one.
-          const clientEntry: ClientEntry = async (host) => {
-            for (const declared of module.contributions ?? []) {
-              const outcome =
-                declared.kind === 'shell'
-                  ? host.registerShell(own[declared.export] as () => ShellProvider)
-                  : OK
-              if (!outcome.ok) return outcome
-            }
-            return { ok: true, value: { dispose: async () => {} } }
-          }
-          return { ok: true, value: { ...own, clientEntry } }
-        },
-      })
-    }
+    const run = (ref: Wire.ClientContributionRef, modules = forward, shells?: Namespace) =>
+      choose(binding, selection(ref), modules, shells)
 
     const checks: Checks = {}
     const choices = [
@@ -483,7 +596,7 @@ const CASES: Partial<Record<ScenarioName, (binding: ShellConformanceBinding) => 
       [
         'an export that is not a function',
         { packageId: SHELLS, contributionId: PLAIN },
-        { workbenchShell: shell, plainShell: plain() },
+        { workbenchShell: shell, plainShell: markedShell('plain') },
       ],
     ]
     for (const [what, ref, shells] of refusals)
@@ -592,11 +705,6 @@ const CASES: Partial<Record<ScenarioName, (binding: ShellConformanceBinding) => 
     const before = await provider.exportState()
     if (!before.ok) return { ...checks, 'state exported': false }
     const { schema, data } = before.value
-    const mismatched = [
-      { schema: { ...schema, revision: schema.revision + 1 }, data },
-      { schema: { ...schema, typeId: 'other.shell/state@1' }, data },
-      { schema: { ...schema, digest: schema.digest === DIGEST ? 'd'.repeat(64) : DIGEST }, data },
-    ]
     const malformed = [
       null,
       { data },
@@ -605,9 +713,9 @@ const CASES: Partial<Record<ScenarioName, (binding: ShellConformanceBinding) => 
     ] as unknown as Wire.ShellViewState[]
     const imported = async (states: Wire.ShellViewState[]) =>
       Promise.all(states.map(async (state) => code(await provider.importState(state))))
-    checks['mismatched state versions refused as incompatible'] = (await imported(mismatched)).every(
-      (seen) => seen === 'incompatible',
-    )
+    checks['mismatched state versions refused as incompatible'] = (
+      await imported(mismatched(before.value))
+    ).every((seen) => seen === 'incompatible')
     checks['malformed states refused as invalid input'] = (await imported(malformed)).every(
       (seen) => seen === 'invalid_input',
     )
@@ -660,6 +768,41 @@ const CASES: Partial<Record<ScenarioName, (binding: ShellConformanceBinding) => 
     return checks
   },
 
+  // A client process that holds the selected shell is killed with SIGKILL; a second one rebuilds over
+  // the same catalog and selection, imports the state the first exported last and records its checks.
+  async recover(binding) {
+    const directory = mkdtempSync(join(tmpdir(), 'shell-recover-'))
+    const read = <T>(name: string) => JSON.parse(readFileSync(join(directory, name), 'utf8')) as T
+    try {
+      const workbench = binding.shell().descriptor.id
+      const chosen = selection({ packageId: SHELLS, contributionId: workbench })
+      writeFileSync(
+        join(directory, PROFILE),
+        JSON.stringify({ modules: catalog(workbench), selection: chosen }),
+      )
+      const exits = await binding.restart(directory)
+      const killed = read<Seen>(KILLED)
+      const rebuilt = read<Seen & { checks: Checks }>(REBUILT)
+      const pids = exits.map((exit) => exit.pid)
+      return {
+        'the client killed with SIGKILL, the rebuilt one exited': isDeepStrictEqual(
+          exits.map((exit) => exit.signal),
+          ['SIGKILL', null],
+        ),
+        'each record written by its own client process':
+          isDeepStrictEqual(pids, [killed.pid, rebuilt.pid]) &&
+          killed.pid !== rebuilt.pid &&
+          !pids.includes(pid),
+        'the same shell selected and mounted after the rebuild': [killed, rebuilt].every(
+          (seen) => seen.selected === workbench && seen.shown === 'regions',
+        ),
+        ...rebuilt.checks,
+      }
+    } finally {
+      rmSync(directory, { recursive: true, force: true })
+    }
+  },
+
   async dispose({ shell, container }) {
     const checks: Checks = {}
     for (const reason of ['switch', 'shutdown', 'fault'] as const) {
@@ -697,25 +840,12 @@ const CASES: Partial<Record<ScenarioName, (binding: ShellConformanceBinding) => 
   },
 }
 
-/**
- * Classes these cases cannot prove yet. Each is reported as skipped, which the report counts as
- * missing evidence, never as passed.
- */
-const UNPROVEN: Partial<Record<ScenarioName, string>> = {
-  recover:
-    'recovering a shell needs a client host lease: a host rebuilt from the same catalog and selection ' +
-    "offers the same shell, but nothing binds a shell's owner token and services to one client " +
-    "instance, so nothing can refuse a crashed client's handles once the rebuild is current",
-}
-
 /** The names of the failed checks, or the error a case threw. */
 async function failures(scenario: ScenarioName, binding: ShellConformanceBinding): Promise<string[]> {
   const digests = [binding.providerDigest, binding.configDigest, binding.releaseSetDigest]
   if (!digests.every((digest) => HEX.test(digest))) return ['provider, config or release set digest']
-  const run = CASES[scenario]
-  if (!run) return ['no case']
   try {
-    return Object.entries(await run(binding))
+    return Object.entries(await CASES[scenario](binding))
       .filter(([, passed]) => !passed)
       .map(([name]) => name)
   } catch (error) {
@@ -744,9 +874,8 @@ export function registerShellContract(harness: ConformanceHarness, binding: Shel
       qualification: 'required',
       providerId: binding.providerId,
       async run(): Promise<AssertionInput> {
-        const unproven = UNPROVEN[scenario]
-        const failed = unproven === undefined ? await failures(scenario, binding) : []
-        const diagnostic = unproven ?? failed.join('; ')
+        const failed = await failures(scenario, binding)
+        const diagnostic = failed.join('; ')
         return {
           id: `${CONTRACT}/${binding.providerId}/${scenario}`,
           providerDigest: binding.providerDigest,
@@ -755,13 +884,13 @@ export function registerShellContract(harness: ConformanceHarness, binding: Shel
           build: binding.build,
           consumer: 'shell-conformance-consumer',
           command: binding.command,
-          status: unproven !== undefined ? 'skipped' : failed.length === 0 ? 'passed' : 'failed',
+          status: failed.length === 0 ? 'passed' : 'failed',
           ...(diagnostic ? { diagnostic } : {}),
           configDigest: binding.configDigest,
           releaseSetDigest: binding.releaseSetDigest,
           attachmentDigest: null,
           // Every scenario drives the shell through a services double that stands in for the client host's
-          // services; select also runs the binding's host over the cases' own modules.
+          // services; select and recover also run the binding's host over the cases' own modules.
           fixture: 'test-client-host',
           sharedEvidenceId: null,
           reuse: {

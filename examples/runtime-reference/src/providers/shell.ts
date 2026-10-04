@@ -32,12 +32,15 @@ const build: BuildIdentity = {
  * Registers the shell cases for the reference workbench shell, reported under `providerId` (the runner
  * passes the name it was asked for, such as `reference`). This package carries no DOM implementation and
  * no client host, so the caller supplies `container`, which makes an empty element attached to a document
- * for each mount, and `select`, which runs a web client host's shell selection.
+ * for each mount, `select`, which runs a web client host's shell selection, and `restart`, which runs
+ * `recoverShell` with both in client processes.
  */
 export function bindShellContract(
   harness: ConformanceHarness,
   command: string,
-  options: Readonly<{ providerId?: string } & Pick<ShellConformanceBinding, 'container' | 'select'>>,
+  options: Readonly<
+    { providerId?: string } & Pick<ShellConformanceBinding, 'container' | 'select' | 'restart'>
+  >,
 ): void {
   registerShellContract(harness, {
     providerId: options.providerId ?? 'reference.shell',
@@ -50,5 +53,6 @@ export function bindShellContract(
     shell: reference,
     container: options.container,
     select: options.select,
+    restart: options.restart,
   })
 }
