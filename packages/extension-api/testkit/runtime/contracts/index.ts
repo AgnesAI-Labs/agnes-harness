@@ -10,6 +10,7 @@ export * from './blob.js'
 // Blob and projection cases both export a callContext helper; the aggregate keeps the blob one.
 export { callContext } from './blob.js'
 export * from './budget.js'
+export * from './channel.js'
 export * from './config.js'
 export * from './embedding.js'
 export * from './exec.js'

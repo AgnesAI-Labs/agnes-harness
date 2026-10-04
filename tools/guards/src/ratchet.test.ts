@@ -1511,7 +1511,9 @@ const INITIAL_CEILING: Record<string, number> = {
   // Usage and budget settlement for billing. Measured 12594, exact, no spare.
   // Shell selection through the client host: the selected shell, in either catalog order, and refusals.
   // Measured 13100, exact, no spare (+178).
-  'packages/extension-api/testkit': 13100,
+  // Channel contract cases: idempotent send and reconcile, authenticated callbacks, cancellation,
+  // crash recovery and disposal. Measured 13613, exact, no spare (+513).
+  'packages/extension-api/testkit': 13613,
   // 2026-09-10: raised from 2500 by Task 15 (stream-disconnect reconnection). The new
   // reattach.ts (the Reconnector: backoff loop, OVERLOADED's retryAfterMs override) plus
   // Session.recover()/waitForQuiescence and Client's reconnect wiring (emit(), the

@@ -115,13 +115,18 @@ const root = fileURLToPath(new URL('../../../..', import.meta.url))
 type Killed = { signal: string | null; pid: number | null; stdout: string; stderr: string }
 
 /**
- * Runs one provider CLI command and kills it with SIGKILL the first time `ready` accepts its output.
- * Settles only once the child's pipes have closed, so neither the process nor its handles outlive the
- * call; a child that never gets ready is killed after 15 seconds and the call rejects.
+ * Runs one provider CLI command (the interaction provider unless `script` names another) and kills it
+ * with SIGKILL the first time `ready` accepts its output. Settles only once the child's pipes have closed,
+ * so neither the process nor its handles outlive the call; a child that never gets ready is killed after
+ * 15 seconds and the call rejects.
  */
-function killWhenReady(args: readonly string[], ready: (stdout: string) => boolean): Promise<Killed> {
+export function killWhenReady(
+  args: readonly string[],
+  ready: (stdout: string) => boolean,
+  script = provider,
+): Promise<Killed> {
   return new Promise((resolve, reject) => {
-    const child = spawn(process.execPath, ['--import', 'tsx', provider, ...args], {
+    const child = spawn(process.execPath, ['--import', 'tsx', script, ...args], {
       cwd: root,
       stdio: ['ignore', 'pipe', 'pipe'],
     })
@@ -149,7 +154,7 @@ function killWhenReady(args: readonly string[], ready: (stdout: string) => boole
     child.on('error', reject)
     child.on('close', (_code, signal) => {
       clearTimeout(timer)
-      if (timedOut) reject(new Error(`interaction child timed out\n${stderr}\n${stdout}`))
+      if (timedOut) reject(new Error(`provider child timed out\n${stderr}\n${stdout}`))
       else resolve({ signal, pid: child.pid ?? null, stdout, stderr })
     })
   })
