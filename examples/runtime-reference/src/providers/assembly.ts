@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto'
 import type { CallContext, Outcome, RuntimeError } from '@agnes/extension-api/runtime'
 import { simpleLoopCapabilities } from '@agnes/extension-api/runtime/authoring'
 import { jcs } from '@agnes/protocol'
@@ -13,17 +14,16 @@ import type {
   RuntimeWireTypes,
 } from '@agnes/protocol/runtime'
 import {
-  canonicalJsonDigest,
   RuntimeAuthorCapabilities,
   RuntimeMethodSchemaRefs,
   RuntimeServiceCatalog,
   validateOwnedAuthorSchemaSource,
-  validateRuntime,
 } from '@agnes/protocol/runtime'
 import { createReferenceAdmissionCoordinator } from './assembly-admission-coordinator.js'
 import { type ReferenceCandidateLifecycle, referenceCandidate } from './assembly-candidate.js'
 import { type ReferenceMaintenancePorts, referenceAuthorized, referenceResult } from './assembly-journal.js'
 import { referencePublication } from './assembly-publication.js'
+import { captureReferenceAssemblyWire } from './assembly-wire.js'
 
 const wireMethods: Readonly<
   Record<
@@ -52,13 +52,46 @@ class InvalidRelease extends Error {
 function demand(valid: unknown, reason: string, message?: string): asserts valid {
   if (!valid) throw new InvalidRelease(reason, message)
 }
+const acceptedDocuments = new WeakMap<object, Map<keyof RuntimeWireTypes, unknown>>()
+const acceptedJson = new WeakSet<object>()
+const sealedDocuments = new WeakSet<object>()
+const fingerprints = new WeakMap<object, string>()
+function sealDocument(document: unknown, json: boolean): void {
+  if (!document || typeof document !== 'object' || sealedDocuments.has(document)) return
+  for (const child of Object.values(document)) sealDocument(child, json)
+  Object.freeze(document)
+  sealedDocuments.add(document)
+  if (json) acceptedJson.add(document)
+}
 function decode<K extends keyof RuntimeWireTypes>(schema: K, raw: unknown): RuntimeWireTypes[K] {
-  const result = validateRuntime(schema, raw)
+  if (raw && typeof raw === 'object') {
+    if (schema === 'JsonValue' && acceptedJson.has(raw)) return raw as RuntimeWireTypes[K]
+    const decoded = acceptedDocuments.get(raw)?.get(schema)
+    if (decoded !== undefined) return decoded as RuntimeWireTypes[K]
+  }
+  const result = captureReferenceAssemblyWire(schema, raw)
   demand(result.ok, 'schema_invalid')
+  sealDocument(result.value, schema === 'JsonValue')
+  for (const key of [result.value, sealedDocuments.has(raw as object) ? raw : null]) {
+    if (key && typeof key === 'object') {
+      let entries = acceptedDocuments.get(key)
+      if (!entries) {
+        entries = new Map()
+        acceptedDocuments.set(key, entries)
+      }
+      entries.set(schema, result.value)
+    }
+  }
   return result.value
 }
 function fingerprint(raw: unknown): string {
-  return canonicalJsonDigest(decode('JsonValue', raw))
+  const data = decode('JsonValue', raw)
+  const key = data && typeof data === 'object' ? data : null
+  const saved = key ? fingerprints.get(key) : undefined
+  if (saved !== undefined) return saved
+  const hash = createHash('sha256').update(jcs(data)).digest('hex')
+  if (key) fingerprints.set(key, hash)
+  return hash
 }
 function matches(a: unknown, b: unknown): boolean {
   return jcs(a as RuntimeWireTypes['JsonValue']) === jcs(b as RuntimeWireTypes['JsonValue'])
@@ -919,8 +952,8 @@ function prerequisites(s: Snapshot, joint: RuntimeWireTypes['DispatchAtomicDomai
   }
 }
 function immutable<T>(raw: T): T {
-  if (raw && typeof raw === 'object') Object.values(raw).forEach(immutable)
-  return raw && typeof raw === 'object' ? Object.freeze(raw) : raw
+  sealDocument(raw, false)
+  return raw
 }
 function refusal(reason: string, message?: string): Outcome<never> {
   const code: RuntimeError['code'] =
@@ -940,15 +973,24 @@ function refusal(reason: string, message?: string): Outcome<never> {
     },
   }
 }
-export function constructReferenceReleaseSet(raw: unknown): Outcome<ReleaseSet> {
+function checkedRelease(s: Snapshot): Outcome<ReleaseSet> {
   try {
-    const s = decodeSnapshot(raw)
     lockPhase(s)
     selectionPhase(s)
     const paired = materialPhase(s)
     permissionPhase(s)
     prerequisites(s, paired)
     return { ok: true, value: immutable(s.releasePlan.targetReleaseSet) }
+  } catch (error) {
+    return refusal(
+      error instanceof InvalidRelease ? error.reason : 'schema_invalid',
+      error instanceof InvalidRelease ? error.message : undefined,
+    )
+  }
+}
+export function constructReferenceReleaseSet(raw: unknown): Outcome<ReleaseSet> {
+  try {
+    return checkedRelease(decodeSnapshot(raw))
   } catch (error) {
     return refusal(
       error instanceof InvalidRelease ? error.reason : 'schema_invalid',
@@ -978,7 +1020,7 @@ export function createReferenceAssemblyProvider(
   let decoded: ReturnType<typeof decodeSnapshot> | undefined
   let validation: Outcome<ReleaseSet> | undefined
   const fixedSnapshot = () => (decoded ??= immutable(decodeSnapshot(pinned)))
-  const fixedRelease = () => (validation ??= immutable(constructReferenceReleaseSet(pinned)))
+  const fixedRelease = () => (validation ??= immutable(checkedRelease(fixedSnapshot())))
   let candidate: ReturnType<typeof referenceCandidate> | undefined
   let disposed = false
   const shutdown = new AbortController()

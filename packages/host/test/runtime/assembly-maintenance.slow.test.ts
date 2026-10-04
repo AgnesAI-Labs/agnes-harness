@@ -2,7 +2,7 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { jcs } from '@agnes/protocol'
-import { describe, expect, it } from 'vitest'
+import { beforeAll, describe, expect, it } from 'vitest'
 import { createReferenceAssemblyProvider } from '../../../../examples/runtime-reference/src/providers/assembly.js'
 import {
   createReferenceAdmissionTickets,
@@ -49,6 +49,28 @@ const implementations = [
   },
 ]
 describe('persistent maintenance assembly', { timeout: 120_000 }, () => {
+  const recipes = new Map<string, ReturnType<typeof upgradeAssemblyFixture>>()
+  beforeAll(() => {
+    for (const recipe of ['upgrade', 'joint', 'migration']) {
+      const input = upgradeAssemblyFixture()
+      if (recipe === 'joint') pairAssemblyFixture(input)
+      if (recipe === 'migration') migrationAssemblyFixture(input)
+      const freeze = (value: unknown): void => {
+        if (value !== null && typeof value === 'object' && !Object.isFrozen(value)) {
+          Object.values(value).forEach(freeze)
+          Object.freeze(value)
+        }
+      }
+      freeze(input)
+      recipes.set(recipe, input)
+    }
+  })
+  const inputFor = (recipe = 'upgrade') => {
+    const seed = recipes.get(recipe)
+    if (!seed) throw new Error('maintenance recipe missing')
+    return structuredClone(seed)
+  }
+
   it.each(
     implementations.flatMap(({ name }) =>
       ['select', 'normal', 'deny', 'cancel', 'dispose'].map((scenario) => ({ name, scenario })),
@@ -80,9 +102,7 @@ describe('persistent maintenance assembly', { timeout: 120_000 }, () => {
     ),
   )('$name rechecks $change before publish', async ({ create, pins, change }) => {
     const directory = mkdtempSync(join(tmpdir(), 'agnes-publish-refusal-')),
-      input = upgradeAssemblyFixture()
-    if (change === 'joint') pairAssemblyFixture(input)
-    if (change === 'migration') migrationAssemblyFixture(input)
+      input = inputFor(change === 'joint' || change === 'migration' ? change : 'upgrade')
     const fixture = await persistentAssemblyFixture(input, join(directory, 'maintenance.sqlite'))
     const subject = create(input, fixture.memory?.lifecycle, fixture.ports)
     try {
@@ -262,7 +282,7 @@ describe('persistent maintenance assembly', { timeout: 120_000 }, () => {
     const traces: unknown[] = []
     for (const { create, tickets, pins, decision } of implementations) {
       const directory = mkdtempSync(join(tmpdir(), 'agnes-admission-ticket-')),
-        input = upgradeAssemblyFixture()
+        input = inputFor()
       const fixture = await persistentAssemblyFixture(input, join(directory, 'maintenance.sqlite'))
       const subject = create(input, fixture.memory?.lifecycle, fixture.ports)
       try {

@@ -22,7 +22,9 @@ export function maintenanceStoreFixture(
 ) {
   mkdirSync(dirname(file), { recursive: true, mode: 0o700 })
   const db = new DatabaseSync(file)
-  db.exec(`PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL; PRAGMA busy_timeout=5000;
+  // Install the lock wait before WAL/schema setup, which can race another process.
+  db.exec('PRAGMA busy_timeout=5000')
+  db.exec(`PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL;
     CREATE TABLE IF NOT EXISTS records (id TEXT PRIMARY KEY, body TEXT NOT NULL);
     CREATE TABLE IF NOT EXISTS transactions (id TEXT PRIMARY KEY, fingerprint TEXT NOT NULL, result TEXT NOT NULL);
     CREATE TABLE IF NOT EXISTS outbox (id TEXT PRIMARY KEY, body TEXT NOT NULL);`)
@@ -54,6 +56,7 @@ export function maintenanceStoreFixture(
     ctx.scope.kind === 'runtime' &&
     ctx.scope.installationId === 'fixture-installation'
   const reader = new DatabaseSync(file)
+  reader.exec('PRAGMA busy_timeout=5000')
   let closed = false
   const read = (database: DatabaseSync, id: string): MaintenanceEnvelopeJsonValue | null => {
     const row = database.prepare('SELECT body FROM records WHERE id=?').get(id)

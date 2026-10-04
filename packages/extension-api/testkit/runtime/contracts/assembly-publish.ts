@@ -101,7 +101,7 @@ function snapshotDigest(snapshot: AssemblyMaintenanceSnapshot) {
     transactions: snapshot.transactions,
   })
 }
-export function upgradeAssemblyFixture(): AssemblyFixture {
+function buildUpgradeFixture(): AssemblyFixture {
   const input = assemblyFixture(),
     release = input.plan.targetReleaseSet
   const previous = structuredClone(release),
@@ -136,6 +136,22 @@ export function upgradeAssemblyFixture(): AssemblyFixture {
     }
   resealAssemblyFixture(input)
   return input
+}
+
+let upgradeSeed: AssemblyFixture | undefined
+/** Validated immutable recipe; callers retain separate mutable inputs and aliases. */
+export function upgradeAssemblyFixture(): AssemblyFixture {
+  if (!upgradeSeed) {
+    upgradeSeed = buildUpgradeFixture()
+    const freeze = (value: unknown): void => {
+      if (value !== null && typeof value === 'object' && !Object.isFrozen(value)) {
+        Object.values(value).forEach(freeze)
+        Object.freeze(value)
+      }
+    }
+    freeze(upgradeSeed)
+  }
+  return structuredClone(upgradeSeed)
 }
 
 export async function exerciseAssemblyPublication(
