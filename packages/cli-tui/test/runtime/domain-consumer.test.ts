@@ -95,6 +95,26 @@ const consumer = (format: FormatDomainView = plain, locale = 'en') =>
   createDomainConsumer({ format, locale, capabilities })
 
 describe('runtime domain consumer', () => {
+  it('formats through the SDK text format unless another format is injected', () => {
+    const shown = createDomainConsumer({ locale: 'en', capabilities }).present(view())
+    expect(shown.lines).toEqual([
+      'Status: Final',
+      'Draft note',
+      'Actions:',
+      '[1] answer',
+      '[2] save',
+      '[3] Review',
+      'Publish (not available in the terminal)',
+      'Later: Locked',
+    ])
+    expect(shown.actions.map(({ n, actionKey }) => [n, actionKey])).toEqual([
+      [1, 'save'],
+      [2, 'answer'],
+      [3, 'review'],
+    ])
+    expect(shown.complete).toBe(true)
+  })
+
   it('numbers offered actions and maps a number back by action key, never by label', () => {
     const tui = consumer()
     const shown = tui.present(view())
