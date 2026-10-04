@@ -1443,7 +1443,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // measured 4238 (-534), exact, lowered to the measured value.
   // CHUNK-LEDGER-SLIM final tree: the TUI live line reads merged previews. Measured 4232, exact, no spare (-6).
   // Runtime domain views, questions, approvals and artifact actions: measured 5486, exact, no spare (+749).
-  'packages/cli-tui/src': 5486,
+  // The domain consumer formats through the SDK text format by default. Measured 5487, exact, no spare (+1).
+  'packages/cli-tui/src': 5487,
   // Initial ceilings for the remaining packages, registered all at once so that each parallel lane
   // does not have to edit these two files separately. The sdk ceiling of 2500 was newly set by
   // estimate: 404 lines today, plus roughly 360 for the three transports, plus roughly 1650 for the

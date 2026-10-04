@@ -1,5 +1,5 @@
-// Presents runtime domain views in the terminal through an injected text formatter, the pure function
-// the other text clients share. Every server string loses its control and format characters before it
+// Presents runtime domain views in the terminal through a text formatter, by default the SDK's, the pure
+// function the other text clients share. Every server string loses its control and format characters before it
 // reaches a line. An offered action is shown as `[n] label`, and the number maps back to its action key,
 // never to its label. Only the action kinds this client can carry out are offered: answering an
 // interaction, downloading an artifact and opening a form. A command action needs an owner token and an
@@ -13,6 +13,7 @@ import type {
   TextRendererFormatContext,
   ViewAction,
 } from '@agnes/protocol/runtime'
+import { formatDomainView } from '@agnes/sdk/runtime'
 import { escapeServerText } from '../component.js'
 import { t } from '../locale.js'
 
@@ -39,11 +40,12 @@ const lines = (text: string) => escapeServerText(text).split('\n')
 const oneLine = (text: string) => escapeServerText(text).replace(/\n/g, ' ')
 
 export function createDomainConsumer(options: {
-  format: FormatDomainView
+  /** The SDK's default text format unless another is injected. */
+  format?: FormatDomainView
   locale: string
   capabilities: NegotiatedClientCapabilities
 }) {
-  const { format, locale, capabilities } = options
+  const { format = formatDomainView, locale, capabilities } = options
   // Insertion order is screen order; a newer revision takes its view's existing place.
   const shown = new Map<string, { view: DomainView; presented: PresentedView }>()
 
