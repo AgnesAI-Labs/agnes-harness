@@ -158,6 +158,8 @@ function verifyFixturePin(ref: RetentionRef): boolean {
   return false
 }
 
+const stateOwners = new WeakMap<RuntimeStateStore, RuntimeStateDatabase>()
+
 function openStore(
   path: string,
   now = () => Date.parse(admittedAt),
@@ -176,6 +178,7 @@ function openStore(
   const database = new RuntimeStateDatabase(options)
   const issuer = createAdmissionAcceptanceIssuer(database, authority, now)
   const store = createRuntimeStateStore(options, database)
+  stateOwners.set(store, database)
   const create = store.createRun.bind(store)
   const close = store.close.bind(store)
   store.createRun = async (input, rawContext) => {
@@ -1971,6 +1974,87 @@ function saveCommitEvent(path: string, seq: number, data: unknown): void {
 }
 
 describe('runtime state advance, dispatch, and invocation', () => {
+  it('captures only the original same-connection prepared Action', async () => {
+    const { path, store } = await leasedRun()
+    const owner = stateOwners.get(store)
+    if (!owner) throw new Error('State owner missing')
+    owner.installEffectsActionCapture()
+    expect(() => owner.installEffectsActionCapture()).toThrow()
+    await preparedInvocation(store, 'invocation-1', 0)
+    const action = preparedAction('capture-step')
+    const actionId = stableId('act', 'run-1\0capture-step')
+    await store.advanceRun(advanceBody('capture-advance', 'invocation-1', 0, [action]), context())
+    const before = count(path, 'events')
+    const capture = await owner.captureEffectsAction('session-1', actionId)
+    expect(capture).toMatchObject({
+      sessionId: 'session-1',
+      runId: 'run-1',
+      actionId,
+      bindingId: 'binding-1',
+      createdByCommitId: 'capture-advance',
+      inputDigest: canonicalDigest(action.input),
+    })
+    const dispatch = dispatchBody(action, 'invocation-1', 1, 'capture-dispatch')
+    expect(capture.inputDigest).toBe(dispatch.requestIdentity.requestDigest)
+    expect(capture.inputDigest).not.toBe(action.input.digest)
+    expect(await owner.verifyEffectsActionCapture(capture)).toBe(true)
+    expect(await owner.verifyEffectsActionCapture({ ...capture })).toBe(false)
+    expect(
+      await owner.verifyEffectsActionCapture({
+        get actionId() {
+          throw new Error('untrusted capture getter must not run')
+        },
+      } as typeof capture),
+    ).toBe(false)
+    const foreign = await leasedRun()
+    const foreignOwner = stateOwners.get(foreign.store)
+    if (!foreignOwner) throw new Error('foreign State owner missing')
+    foreignOwner.installEffectsActionCapture()
+    expect(await foreignOwner.verifyEffectsActionCapture(capture)).toBe(false)
+    foreign.store.close()
+    const cold = openStore(path)
+    const coldOwner = stateOwners.get(cold)
+    if (!coldOwner) throw new Error('cold State owner missing')
+    coldOwner.installEffectsActionCapture()
+    expect(await coldOwner.verifyEffectsActionCapture(capture)).toBe(false)
+    cold.close()
+    await expect(owner.captureEffectsAction('other-session', actionId)).rejects.toThrow()
+    expect(count(path, 'events')).toBe(before)
+    unwrap(await store.dispatchAdmission(dispatch, context()), 'capture-dispatch')
+    await expect(owner.verifyEffectsActionCapture(capture)).rejects.toThrow()
+    store.close()
+    expect(await owner.verifyEffectsActionCapture(capture)).toBe(false)
+  })
+
+  it('rejects missing original action-created side without writes', async () => {
+    const { path, store } = await leasedRun()
+    const owner = stateOwners.get(store)
+    if (!owner) throw new Error('State owner missing')
+    owner.installEffectsActionCapture()
+    await preparedInvocation(store, 'invocation-1', 0)
+    const actionId = stableId('act', 'run-1\0capture-side')
+    await store.advanceRun(
+      advanceBody('capture-side-advance', 'invocation-1', 0, [preparedAction('capture-side')]),
+      context(),
+    )
+    const capture = await owner.captureEffectsAction('session-1', actionId)
+    const before = count(path, 'events')
+    mutate(path, (db) => {
+      const row = db
+        .prepare('SELECT sides_json FROM runtime_commit_proofs WHERE commit_id=?')
+        .get('capture-side-advance') as { sides_json: string }
+      db.prepare('UPDATE runtime_commit_proofs SET sides_json=? WHERE commit_id=?').run(
+        '[]',
+        'capture-side-advance',
+      )
+      expect(row.sides_json).toContain('action-created')
+    })
+    await expect(owner.captureEffectsAction('session-1', actionId)).rejects.toThrow()
+    await expect(owner.verifyEffectsActionCapture(capture)).rejects.toThrow()
+    expect(count(path, 'events')).toBe(before)
+    store.close()
+  })
+
   it('matches a serial create, advance, and batched dispatch when those calls overlap', async () => {
     const action = preparedAction('step-1')
     const serial = await mixedControl(file(), action, false)
