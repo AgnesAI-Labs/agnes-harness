@@ -119,9 +119,10 @@ const SECOND = 1000
 const backoff = (failures: number) => Math.min(60 * SECOND, SECOND * 2 ** (failures - 1))
 const iso = (ms: number) => new Date(ms).toISOString()
 
-function fail(
+export function fail(
   detail: keyof typeof RuntimeErrorDetails,
   message: string,
+  diagnosticId = 'domain-outbox',
 ): { ok: false; error: Wire.RuntimeError } {
   const kinds: readonly string[] = RuntimeErrorDetails[detail].retryAdviceKinds
   return {
@@ -131,7 +132,7 @@ function fail(
       detailCode: detail,
       message,
       retryAdvice: { kind: kinds.includes('never') ? 'never' : 'retry_read' },
-      diagnosticId: 'domain-outbox',
+      diagnosticId,
     },
   }
 }

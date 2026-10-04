@@ -2005,7 +2005,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // Merged with the integration base at 26535; measured 27078, exact.
   // Diagnostics export replaces credential-carrier values in events and log rows; measured 27094 (+11), exact.
   // Runtime client routes on the daemon HTTP listener (validated, unported refusals); measured 27356 (+209), exact.
-  'packages/daemon/src': 27356,
+  // Native conversation source for the default projection read over shared opening/history windows; measured 27424 (+68), exact.
+  'packages/daemon/src': 27424,
   'packages/daemon/src/packages/admin-session': 46,
   // 2026-09-14: whole-branch review fix wave (Finding 1) adds the two missing
   // 'pins/inspect'/'pins/release' entries to the ACTIONS BFF route allowlist, which had been left
