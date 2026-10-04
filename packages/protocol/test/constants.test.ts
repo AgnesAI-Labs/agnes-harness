@@ -59,7 +59,7 @@ describe('constants', () => {
     expect(UI_HISTORY_MAX_LIMIT).toBe(200)
     expect(UI_PROJECTION_DEFAULT_MAX_BYTES).toBe(256 * 1024)
     expect(UI_PROJECTION_MIN_MAX_BYTES).toBe(16 * 1024)
-    expect(UI_PROJECTION_MAX_BYTES).toBe(1024 * 1024)
+    expect(UI_PROJECTION_MAX_BYTES).toBe(2 * 1024 * 1024)
     expect(UI_PROJECTION_RESYNC_REQUIRED).toBe('UI_PROJECTION_RESYNC_REQUIRED')
   })
 })

@@ -50,7 +50,10 @@ export function positionPopover(
     padding,
     Math.min(triggerBounds.left, Math.max(padding, viewportWidth - width - padding)),
   )
-  const measuredHeight = panel.getBoundingClientRect().height || options.preferredHeight
+  // scrollHeight 是内容真实需要的高度。面板身上可能还带着上一轮（或 CSS）设下的
+  // max-height，只量 getBoundingClientRect 会量到被截过的值，翻边判断和落点都会偏。
+  const measuredHeight =
+    Math.max(panel.getBoundingClientRect().height, panel.scrollHeight) || options.preferredHeight
   const roomAbove = Math.max(0, triggerBounds.top - padding - gap)
   const roomBelow = Math.max(0, viewportHeight - triggerBounds.bottom - padding - gap)
   // Prefer the side that fits the panel outright; otherwise take the roomier one.
@@ -91,7 +94,10 @@ export function positionSubmenu(
   // 右侧放不下才翻到左边；两边都放不下时选右边（至少和父面板同侧读起来连贯）。
   const opensRight = toRight + width + padding <= viewportWidth || toLeft < padding
   const left = Math.max(padding, Math.min(opensRight ? toRight : toLeft, viewportWidth - width - padding))
-  const measuredHeight = panel.getBoundingClientRect().height || options.preferredHeight
+  // scrollHeight 是内容真实需要的高度。面板身上可能还带着上一轮（或 CSS）设下的
+  // max-height，只量 getBoundingClientRect 会量到被截过的值，据此摆位就会一直压不住底部。
+  const measuredHeight =
+    Math.max(panel.getBoundingClientRect().height, panel.scrollHeight) || options.preferredHeight
   const height = Math.min(measuredHeight, options.preferredHeight, viewportHeight - padding * 2)
   const top = Math.max(padding, Math.min(anchorBounds.top, viewportHeight - height - padding))
   panel.style.width = `${width}px`

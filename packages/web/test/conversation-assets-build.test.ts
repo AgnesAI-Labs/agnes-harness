@@ -31,6 +31,8 @@ it('ships private conversation styles in the existing three-page style asset', a
   expect(built).toContain('.conversation-markdown')
   expect(built).toContain('--text-color: var(--agnes-text-primary)')
   expect(built).toContain('.aui\\:flex')
+  expect(built).toContain('.aui\\:self-stretch')
+  expect(built).toContain('align-self:stretch')
   expect(built).toContain('var(--agnes-bg-card)')
   expect(built).not.toContain('box-sizing:border-box')
   expect(files).not.toContain('messages.css')

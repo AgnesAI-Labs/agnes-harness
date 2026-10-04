@@ -11,6 +11,8 @@ export const composerLocaleCatalog: LocaleCatalog = {
     'composer.hint.busy': 'You can add the next round',
     'composer.hint.shortcut': 'Enter to send, Shift+Enter for a new line',
     'composer.hint.modelUnavailable': 'The current model is no longer available; pick another model',
+    'composer.hint.imageUnsupported':
+      'The selected model does not accept images. Switch to a model with image input, or remove the images',
     'composer.hint.permissionSyncing': 'Session permissions are syncing; try sending again shortly',
     'composer.hint.permissionRequired': 'Choose the permissions for this session before sending',
     'composer.action.preparing': 'Preparing session…',
@@ -58,6 +60,7 @@ export const composerLocaleCatalog: LocaleCatalog = {
     'composer.hint.busy': '可补充下一轮',
     'composer.hint.shortcut': 'Enter 发送，Shift+Enter 换行',
     'composer.hint.modelUnavailable': '当前模型已不可用，请重新选择模型',
+    'composer.hint.imageUnsupported': '当前模型不支持图片输入，请切换到支持图片的模型，或移除图片',
     'composer.hint.permissionSyncing': '正在同步会话权限，请稍后发送',
     'composer.hint.permissionRequired': '请先选择本会话权限，确认后再发送',
     'composer.action.preparing': '正在准备会话…',

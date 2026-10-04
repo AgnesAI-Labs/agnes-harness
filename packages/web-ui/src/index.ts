@@ -23,7 +23,7 @@ export {
 } from './locales/model-settings.js'
 export { RESOURCE_DETAIL_LOCALE_NAMESPACE, resourceDetailLocaleCatalog } from './locales/resource-detail.js'
 export { RESOURCE_LIST_LOCALE_NAMESPACE, resourceListLocaleCatalog } from './locales/resource-list.js'
-export * from './model-settings-dialog.js'
+export * from './model-settings.js'
 export * from './popover.js'
 export {
   createRegionHost,

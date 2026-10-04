@@ -4,6 +4,7 @@ import {
   decodeSafeImages,
   SafeImageError,
   type SafeImageLimits,
+  USER_MESSAGE_IMAGE_LIMITS,
 } from '@agnes/protocol-validation'
 import { describe, expect, it } from 'vitest'
 
@@ -412,5 +413,16 @@ describe('safe image decoder', () => {
       /pixel limit/,
     )
     expect(decodeSafeImages([input, input], limits)).toHaveLength(2)
+  })
+
+  it('accepts a full-HD screenshot under the user message limits', () => {
+    // 1,920x1,080 is 2,073,600px, so a round 2,000,000 cap rejected the most ordinary desktop
+    // capture. The limit now shares the 1456 edge the vision paths enforce.
+    expect(
+      decodeSafeImage({ data: base64(png(1920, 1080)), mimeType: 'image/png' }, USER_MESSAGE_IMAGE_LIMITS),
+    ).toMatchObject({ width: 1920, height: 1080, pixels: 2_073_600 })
+    expect(() =>
+      decodeSafeImage({ data: base64(png(1457, 1456)), mimeType: 'image/png' }, USER_MESSAGE_IMAGE_LIMITS),
+    ).toThrow(/pixel limit/)
   })
 })
