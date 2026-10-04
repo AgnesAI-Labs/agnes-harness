@@ -14,6 +14,7 @@ import type {
 } from '@agnes/extension-api/runtime'
 import type * as Wire from '@agnes/protocol/runtime'
 import { RuntimeClientTransportPolicy, RuntimeSchemaRefs } from '@agnes/protocol/runtime'
+import type { TransferMaintenance } from '../../../src/runtime/authority-transfer.js'
 import { blobError } from '../../../src/runtime/blob/uploads.js'
 import {
   type ArtifactsService,
@@ -143,16 +144,22 @@ export function openServices(
     now?: () => number
     actions?: (blob: BlobService) => Partial<SelectedBlobActions>
     read?: (port: BlobReadPort) => BlobReadPort
+    /** Both services take part in authority transfers; the artifacts export lives in the blob store. */
+    transfer?: Readonly<{ maintenance: TransferMaintenance; target: boolean }>
   } = {},
 ): Services {
   const trusted = (context: CallContext) => context.authorizationRef === 'auth-ok'
   const clock = options.now ? { now: options.now } : {}
+  const transfer = options.transfer
+    ? { maintenance: options.transfer.maintenance, transferTarget: options.transfer.target }
+    : {}
   const blob = createBlobService({
     dataDir,
     authorityId: 'blob-authority',
     binding: BLOB_BINDING,
     authorizeRead: trusted,
     ...clock,
+    ...transfer,
   })
   const assembled = createArtifactsService({
     dataDir,
@@ -166,6 +173,8 @@ export function openServices(
     blobActions: { ...blob, ...options.actions?.(blob) },
     authorize: trusted,
     ...clock,
+    ...transfer,
+    ...(options.transfer ? { blobTransfer: blob } : {}),
   })
   if (!assembled.ok) {
     blob.close()
