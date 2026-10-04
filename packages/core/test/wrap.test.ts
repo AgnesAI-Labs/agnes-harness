@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { FsPolicy } from '../src/effects/fs-guard.js'
 import { buildToolContext, type FsOps } from '../src/effects/tool-context.js'
-import { SeamRuntime, withTimeout } from '../src/effects/wrap.js'
+import { SeamRuntime, settlesWithin, withTimeout } from '../src/effects/wrap.js'
 import { presetDefaults } from '../src/step/preset.js'
 import {
   createWorkspaceInvocationPort,
@@ -677,6 +677,47 @@ describe('withTimeout resource lifecycle', () => {
     await expect(
       withTimeout(Promise.reject(new Error('late')), 100, 'cancelled', controller.signal, timers),
     ).rejects.toThrow('aborted: cancelled')
+    await Promise.resolve()
+    expect(pending.size).toBe(0)
+  })
+})
+
+describe('settlesWithin', () => {
+  const setup = () => {
+    const pending = new Map<number, () => void>()
+    let id = 0
+    const timers = {
+      setTimeout: (fn: () => void) => {
+        pending.set(++id, fn)
+        return id
+      },
+      clearTimeout: (handle: unknown) => {
+        pending.delete(handle as number)
+      },
+    }
+    return { pending, timers }
+  }
+
+  it.each(['resolves', 'rejects'] as const)(
+    'is true once the promise %s, and leaves no timer behind',
+    async (kind) => {
+      const { pending, timers } = setup()
+      const p = kind === 'resolves' ? Promise.resolve(7) : Promise.reject(new Error('the work failed'))
+      await expect(settlesWithin(p, 100, timers)).resolves.toBe(true)
+      expect(pending.size).toBe(0)
+    },
+  )
+
+  it('is false when the time runs out first, and a later failure is still consumed', async () => {
+    const { pending, timers } = setup()
+    let fail!: (error: Error) => void
+    const p = new Promise<never>((_, reject) => {
+      fail = reject
+    })
+    const rested = settlesWithin(p, 100, timers)
+    pending.values().next().value?.()
+    await expect(rested).resolves.toBe(false)
+    fail(new Error('late'))
     await Promise.resolve()
     expect(pending.size).toBe(0)
   })
