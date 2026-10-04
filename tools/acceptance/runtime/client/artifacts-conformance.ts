@@ -3,40 +3,40 @@ import { existsSync, mkdtempSync, readFileSync, realpathSync, writeFileSync } fr
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { bindArtifactsContract } from '../../../../examples/runtime-reference/src/providers/artifacts-contract.ts'
-import { bindBlobContract } from '../../../../examples/runtime-reference/src/providers/blob-contract.ts'
+import { bindArtifactsContract } from '../../../../examples/runtime-reference/src/providers/artifacts-contract.js'
+import { bindBlobContract } from '../../../../examples/runtime-reference/src/providers/blob-contract.js'
 import type {
   BlobReadPort,
   CallContext,
   Outcome,
-} from '../../../../packages/extension-api/src/runtime/index.ts'
+} from '../../../../packages/extension-api/src/runtime/index.js'
 import {
   ARTIFACT_READER,
   artifactsContractPort,
   registerArtifactsContract,
-} from '../../../../packages/extension-api/testkit/runtime/contracts/artifacts.ts'
+} from '../../../../packages/extension-api/testkit/runtime/contracts/artifacts.js'
 import {
   blobContractPort,
   createBlobReadGate,
   MIB,
   registerBlobContract,
-} from '../../../../packages/extension-api/testkit/runtime/contracts/blob.ts'
+} from '../../../../packages/extension-api/testkit/runtime/contracts/blob.js'
 import {
   type ConformanceHarness,
   createTestServiceContainer,
-} from '../../../../packages/extension-api/testkit/runtime/harness.ts'
+} from '../../../../packages/extension-api/testkit/runtime/harness.js'
 import {
   BLOB_REQUIREMENT,
   createArtifactsService,
-} from '../../../../packages/host/src/runtime/providers/artifacts.ts'
+} from '../../../../packages/host/src/runtime/providers/artifacts.js'
 import {
   BLOB_FEATURES,
   type BlobService,
   createBlobService,
-} from '../../../../packages/host/src/runtime/providers/blob.ts'
-import { artifactTicketKeys } from '../../../../packages/host/test/runtime/artifact-ticket-key-fixture.ts'
-import type * as Wire from '../../../../packages/protocol/src/runtime/index.ts'
-import { canonicalJsonDigest, RuntimeSchemaRefs } from '../../../../packages/protocol/src/runtime/index.ts'
+} from '../../../../packages/host/src/runtime/providers/blob.js'
+import { artifactTicketKeys } from '../../../../packages/host/test/runtime/artifact-ticket-key-fixture.js'
+import type * as Wire from '../../../../packages/protocol/src/runtime/index.js'
+import { canonicalJsonDigest, RuntimeSchemaRefs } from '../../../../packages/protocol/src/runtime/index.js'
 import {
   getConformanceBuildIdentity,
   withConformanceBuild,

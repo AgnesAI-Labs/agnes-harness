@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { createConformanceHarness } from '../../../../packages/extension-api/testkit/runtime/harness.ts'
-import { bindConformance } from './shell-conformance.ts'
+import { createConformanceHarness } from '../../../../packages/extension-api/testkit/runtime/harness.js'
+import { bindConformance } from './shell-conformance.js'
 
 const CONTRACT = 'agh.shell'
 // Recover kills a real client process with SIGKILL and starts a second one for each shell, so this run

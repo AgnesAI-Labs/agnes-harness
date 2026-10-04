@@ -3,16 +3,16 @@ import { createHash } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
-import { bindUIRegistryContract } from '../../../../examples/runtime-reference/src/providers/ui-registry.ts'
+import { bindUIRegistryContract } from '../../../../examples/runtime-reference/src/providers/ui-registry.js'
 import {
   holdUIRegistryClient,
   recoverUIRegistry,
   registerUIRegistryContract,
   restartUIRegistryClient,
-} from '../../../../packages/extension-api/testkit/runtime/contracts/ui-registry.ts'
-import type { ConformanceHarness } from '../../../../packages/extension-api/testkit/runtime/harness.ts'
-import { canonicalJsonDigest } from '../../../../packages/protocol/src/runtime/index.ts'
-import { createUIRegistry } from '../../../../packages/web-client/src/runtime/providers/ui-registry.ts'
+} from '../../../../packages/extension-api/testkit/runtime/contracts/ui-registry.js'
+import type { ConformanceHarness } from '../../../../packages/extension-api/testkit/runtime/harness.js'
+import { canonicalJsonDigest } from '../../../../packages/protocol/src/runtime/index.js'
+import { createUIRegistry } from '../../../../packages/web-client/src/runtime/providers/ui-registry.js'
 import { getConformanceBuildIdentity, withConformanceBuild } from '../build-identity.js'
 
 const CONTRACT = 'agh.ui-registry'

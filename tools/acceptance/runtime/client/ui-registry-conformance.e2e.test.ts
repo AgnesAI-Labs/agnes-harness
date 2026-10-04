@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
-import { SCENARIOS } from '../../../../packages/extension-api/testkit/runtime/evidence.ts'
-import { createConformanceHarness } from '../../../../packages/extension-api/testkit/runtime/harness.ts'
-import { bindConformance } from './ui-registry-conformance.ts'
+import { SCENARIOS } from '../../../../packages/extension-api/testkit/runtime/evidence.js'
+import { createConformanceHarness } from '../../../../packages/extension-api/testkit/runtime/harness.js'
+import { bindConformance } from './ui-registry-conformance.js'
 
 // Recover kills a real client process with SIGKILL and starts a second one, so this run is heavy and
 // needs more than the default timeout on slow hosts.

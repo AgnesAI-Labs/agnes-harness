@@ -7,25 +7,25 @@ import { Window } from 'happy-dom'
 import {
   bindRendererContract,
   referenceOutlineRenderers,
-} from '../../../../examples/runtime-reference/src/providers/renderer.ts'
+} from '../../../../examples/runtime-reference/src/providers/renderer.js'
 import type {
   DomainView,
   RendererDefinition,
   RendererDescriptor,
-} from '../../../../packages/extension-api/src/client/index.ts'
+} from '../../../../packages/extension-api/src/client/index.js'
 import {
   type RendererConformanceBinding,
   recoverRenderer,
   registerRendererContract,
-} from '../../../../packages/extension-api/testkit/runtime/contracts/renderer.ts'
+} from '../../../../packages/extension-api/testkit/runtime/contracts/renderer.js'
 import {
   holdUIRegistryClient,
   restartUIRegistryClient,
-} from '../../../../packages/extension-api/testkit/runtime/contracts/ui-registry.ts'
-import type { ConformanceHarness } from '../../../../packages/extension-api/testkit/runtime/harness.ts'
-import { canonicalJsonDigest } from '../../../../packages/protocol/src/runtime/index.ts'
-import { createClientHostRuntime } from '../../../../packages/web-client/src/runtime/client-host.ts'
-import { resolveClientSelection } from '../../../../packages/web-client/src/runtime/client-selection.ts'
+} from '../../../../packages/extension-api/testkit/runtime/contracts/ui-registry.js'
+import type { ConformanceHarness } from '../../../../packages/extension-api/testkit/runtime/harness.js'
+import { canonicalJsonDigest } from '../../../../packages/protocol/src/runtime/index.js'
+import { createClientHostRuntime } from '../../../../packages/web-client/src/runtime/client-host.js'
+import { resolveClientSelection } from '../../../../packages/web-client/src/runtime/client-selection.js'
 import { getConformanceBuildIdentity, withConformanceBuild } from '../build-identity.js'
 
 const CONTRACT = 'agh.renderer'
@@ -82,7 +82,7 @@ const RENDERERS: Record<Provider, () => Promise<readonly RendererDefinition[]>> 
   reference: async () => referenceOutlineRenderers,
   async default() {
     const { createDefaultRenderer } = await import(
-      '../../../../packages/web-client/src/runtime/providers/renderer.ts'
+      '../../../../packages/web-client/src/runtime/providers/renderer.js'
     )
     return [createDefaultRenderer(DEFAULT_DESCRIPTOR)]
   },
@@ -112,8 +112,8 @@ function webHost(): Promise<Host> {
     }
     const document = scope.document as Document
     const [{ createRendererPresenter }, { renderRegion, unmountRegion }] = await Promise.all([
-      import('../../../../packages/web-client/src/runtime/renderer-presentation.tsx'),
-      import('../../../../packages/web-ui/src/regions.ts'),
+      import('../../../../packages/web-client/src/runtime/renderer-presentation.js'),
+      import('../../../../packages/web-ui/src/regions.js'),
     ])
     const reactRoot: Host['root'] = () => {
       const container = document.body.appendChild(document.createElement('div'))

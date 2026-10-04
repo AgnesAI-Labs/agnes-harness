@@ -2,7 +2,8 @@
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
     "rootDir": ".",
-    "outDir": "dist"
+    "outDir": "dist",
+    "jsx": "react-jsx"
   },
   "include": [
     "runtime/ast.ts",
@@ -43,7 +44,23 @@
     "runtime/fixtures/platform-exec-agent.ts",
     "runtime/platform/memory-conformance.ts",
     "runtime/fixtures/memory-cold-process.ts",
-    "runtime/fixtures/retrieval-remote-peer.ts"
+    "runtime/fixtures/retrieval-remote-peer.ts",
+    "runtime/client/artifacts-conformance.ts",
+    "runtime/client/artifacts-conformance.test.ts",
+    "runtime/client/channel-conformance.ts",
+    "runtime/client/channel-conformance.test.ts",
+    "runtime/client/cross-client-summary.test.ts",
+    "runtime/client/events-conformance.ts",
+    "runtime/client/events-conformance.e2e.test.ts",
+    "runtime/client/interaction-conformance.ts",
+    "runtime/client/projection-conformance.ts",
+    "runtime/client/projection-conformance.e2e.test.ts",
+    "runtime/client/renderer-conformance.ts",
+    "runtime/client/renderer-conformance.e2e.test.ts",
+    "runtime/client/shell-conformance.ts",
+    "runtime/client/shell-conformance.e2e.test.ts",
+    "runtime/client/ui-registry-conformance.ts",
+    "runtime/client/ui-registry-conformance.e2e.test.ts"
   ],
   "exclude": ["dist", "runtime/prototype/**"],
   "references": [
@@ -73,6 +90,24 @@
     },
     {
       "path": "../../packages/core"
+    },
+    {
+      "path": "../../packages/channels"
+    },
+    {
+      "path": "../../packages/cli-tui"
+    },
+    {
+      "path": "../../packages/sdk"
+    },
+    {
+      "path": "../../packages/web"
+    },
+    {
+      "path": "../../packages/web-client"
+    },
+    {
+      "path": "../../packages/web-ui"
     }
   ]
 }

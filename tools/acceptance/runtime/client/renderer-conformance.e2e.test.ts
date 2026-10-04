@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
-import { SCENARIOS } from '../../../../packages/extension-api/testkit/runtime/evidence.ts'
-import { createConformanceHarness } from '../../../../packages/extension-api/testkit/runtime/harness.ts'
-import { bindConformance } from './renderer-conformance.ts'
+import { SCENARIOS } from '../../../../packages/extension-api/testkit/runtime/evidence.js'
+import { createConformanceHarness } from '../../../../packages/extension-api/testkit/runtime/harness.js'
+import { bindConformance } from './renderer-conformance.js'
 
 const CONTRACT = 'agh.renderer'
 // Recover kills a real client process with SIGKILL and starts a second one for each provider, so this

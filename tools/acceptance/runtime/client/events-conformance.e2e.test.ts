@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { createConformanceHarness } from '../../../../packages/extension-api/testkit/runtime/harness.ts'
-import { bindConformance } from './events-conformance.ts'
+import { createConformanceHarness } from '../../../../packages/extension-api/testkit/runtime/harness.js'
+import { bindConformance } from './events-conformance.js'
 
 const CONTRACT = 'agh.events'
 
