@@ -159,9 +159,9 @@ describe.each(['default', 'reference'])('installer journal process recovery: %s'
   })
 })
 
-// Durable publication and full wire validation take up to 12s on hosted Linux runners.
+// Durable publication and full wire validation exceed 15s on hosted Linux runners.
 // Bound the harness uniformly; approval expiry and execution deadlines remain unchanged.
-const applyTimeout = { timeout: 15_000 }
+const applyTimeout = { timeout: 30_000 }
 describe.each(['default', 'reference'] as const)('approved installer apply: %s', applyTimeout, (kind) => {
   async function using(
     operation: 'install' | 'disable' | 'repair' | 'resource',
