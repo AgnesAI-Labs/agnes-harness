@@ -4,6 +4,7 @@ import { DocumentPreview, type DocumentPreviewProps } from '@agnes/web-ui/assist
 import { act, createElement, StrictMode } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
+import { zhT } from './locale.js'
 
 let host: HTMLDivElement
 let root: Root
@@ -23,7 +24,7 @@ afterEach(async () => {
 })
 
 async function render(props: DocumentPreviewProps) {
-  await act(async () => root.render(createElement(DocumentPreview, props)))
+  await act(async () => root.render(createElement(DocumentPreview, { ...props, t: zhT })))
 }
 
 it('renders literal text and code with stable nodes, empty defaults and removable title', async () => {

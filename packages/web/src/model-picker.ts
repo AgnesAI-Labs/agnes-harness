@@ -1,12 +1,13 @@
 import type { ModelSettings } from '@agnes/protocol'
 import * as webUi from '@agnes/web-ui'
 import { createElement, type ReactNode } from 'react'
+import { tr } from './locale-bridge.js'
 
 export type ModelPickerOption = {
   id: string
   route: string
   label?: string
-  reasoning?: boolean
+  /** 弹窗取用的档位映射；模型列表本身不展示或修改档位。 */
   thinkingLevelMap?: Record<string, string>
   contextWindow?: number
   defaultSettings?: ModelSettings
@@ -80,7 +81,11 @@ function modelOption(
       onClick: () => onSelect(index),
     },
     createElement('span', { className: 'model-picker-model' }, option.id),
-    createElement('span', { className: 'model-picker-route' }, option.label ?? '已配置账户'),
+    createElement(
+      'span',
+      { className: 'model-picker-route' },
+      option.label ?? tr('settings.modelPicker.configuredAccount'),
+    ),
   )
 }
 
@@ -101,7 +106,7 @@ export function createModelPicker(options: ModelPickerOptions): ModelPicker {
   let state: ModelPickerState = {
     accessibleName: '',
     disabled: true,
-    label: '选择模型',
+    label: tr('settings.modelPicker.select'),
     options: [],
     pending: false,
   }
@@ -146,7 +151,7 @@ export function createModelPicker(options: ModelPickerOptions): ModelPicker {
     else listbox.removeAttribute('aria-activedescendant')
     if (help) {
       help.hidden = state.selected !== undefined
-      help.textContent = '选择此任务使用的模型'
+      help.textContent = tr('settings.modelPicker.help')
     }
     webUi.renderRegion(
       listbox,
@@ -217,13 +222,13 @@ export function createModelPicker(options: ModelPickerOptions): ModelPicker {
     activeIndex = Math.min(Math.max(initialIndex, 0), Math.max(state.options.length - 1, 0))
     popover = webUi.createRegionHost(document.body, 'section', 'model-picker')
     popover.id = 'model-picker-popover'
-    popover.setAttribute('aria-label', '选择当前会话模型')
+    popover.setAttribute('aria-label', tr('settings.modelPicker.aria'))
     help = webUi.createRegionHost(popover, 'p', 'model-picker-help')
     help.dataset.modelPickerHelp = ''
     listbox = webUi.createRegionHost(popover, 'div', 'model-picker-list')
     listbox.id = 'model-listbox'
     listbox.setAttribute('role', 'listbox')
-    listbox.setAttribute('aria-label', '可用模型')
+    listbox.setAttribute('aria-label', tr('settings.modelPicker.listAria'))
     listbox.tabIndex = -1
     webUi.bindListboxKeys(listbox, (intent) => {
       if (intent.kind === 'move') setActive(activeIndex + intent.delta)

@@ -1,7 +1,10 @@
 import type { PackageCatalogDescriptor, PackageInstalledDescriptor, PackageSource } from '@agnes/protocol'
 import type { JSX } from 'react'
-import { contributionText, type RuntimeStateView, sourceLabel } from './admin-text.js'
+import { ADMIN_LOCALE_NAMESPACE, contributionText, type RuntimeStateView, sourceLabel } from './admin-text.js'
+import { adminLocaleCatalog } from './locales/admin.js'
+import { ADMIN_LIST_LOCALE_NAMESPACE, adminListLocaleCatalog } from './locales/admin-list.js'
 import { StateLights, StateSwitch } from './ui/state-lights.js'
+import { useUiText } from './ui-locale.js'
 
 export type AdminTab = 'installed' | 'discover'
 
@@ -21,9 +24,11 @@ export type RowAction = Readonly<{
 function SurfaceLinks({
   links,
   packageId,
+  t,
 }: {
   links: readonly SurfaceLinkItem[]
   packageId: string
+  t: (key: string, vars?: Readonly<Record<string, string | number>>) => string
 }): JSX.Element | undefined {
   if (!links.length) return undefined
   return (
@@ -36,9 +41,15 @@ function SurfaceLinks({
           target="_blank"
           rel="noopener"
           onClick={(event) => event.stopPropagation()}
-          aria-label={`打开 ${packageId} 的 ${surface.surfaceId} 页面 ${surface.mount}`}
+          aria-label={t('surface.open-aria', {
+            packageId,
+            surfaceId: surface.surfaceId,
+            mount: surface.mount,
+          })}
         >
-          {links.length === 1 ? `打开页面 · ${surface.mount}` : `${surface.surfaceId} · ${surface.mount}`}
+          {links.length === 1
+            ? t('surface.open-page', { mount: surface.mount })
+            : `${surface.surfaceId} · ${surface.mount}`}
         </a>
       ))}
     </div>
@@ -69,10 +80,11 @@ export function OrphanPins({
   canRelease: boolean
   onRelease(pinIds: readonly string[], trigger: HTMLElement): void
 }): JSX.Element {
+  const { t } = useUiText(ADMIN_LIST_LOCALE_NAMESPACE, adminListLocaleCatalog)
   return (
     <>
       <div className="orphan-pins-heading">
-        <strong>存在未释放的孤儿运行时 pin</strong>
+        <strong>{t('orphan.title')}</strong>
         <button
           type="button"
           id="orphan-pins-release-all"
@@ -85,7 +97,7 @@ export function OrphanPins({
             )
           }
         >
-          全部释放
+          {t('orphan.release-all')}
         </button>
       </div>
       <p id="orphan-pins-status" className="orphan-pins-status" hidden={!fetchError && !notice}>
@@ -99,7 +111,7 @@ export function OrphanPins({
                 {pin.packageId}@{pin.version} · {pin.purpose}
               </p>
               <p className="orphan-pin-meta">
-                pin {pin.pinId} · 快照 {pin.snapshotId}
+                pin {pin.pinId} · {t('orphan.snapshot')} {pin.snapshotId}
               </p>
               {errors.get(pin.pinId) && <p className="orphan-pin-error">{errors.get(pin.pinId)}</p>}
             </div>
@@ -109,7 +121,7 @@ export function OrphanPins({
               disabled={!canRelease}
               onClick={(event) => onRelease([pin.pinId], event.currentTarget)}
             >
-              释放
+              {t('orphan.release')}
             </button>
           </li>
         ))}
@@ -120,12 +132,15 @@ export function OrphanPins({
 
 /** 目录页保留兼容性提示；已安装页不再显示内部状态灯。 */
 function CatalogCompatibility({ item }: { item: PackageCatalogDescriptor }): JSX.Element {
+  const { t } = useUiText(ADMIN_LIST_LOCALE_NAMESPACE, adminListLocaleCatalog)
   return (
     <StateLights
       states={[
         {
-          label: '兼容',
-          value: item.compatibility === 'unsupported' ? '不支持' : '兼容',
+          label: t('compatibility.label'),
+          value: t(
+            item.compatibility === 'unsupported' ? 'compatibility.unsupported' : 'compatibility.supported',
+          ),
           tone: item.compatibility === 'unsupported' ? 'bad' : 'ok',
         },
       ]}
@@ -140,12 +155,14 @@ function RowControl({
   primaryAction,
   switchDisabled,
   onToggleDesired,
+  t,
 }: {
   tab: AdminTab
   item: PackageInstalledDescriptor | PackageCatalogDescriptor
   runtime: RuntimeStateView | undefined
   primaryAction: RowAction
   switchDisabled: boolean
+  t: (key: string, vars?: Readonly<Record<string, string | number>>) => string
   onToggleDesired(item: PackageInstalledDescriptor, next: boolean): void
 }): JSX.Element {
   const actionButton = (extraClass?: string): JSX.Element => (
@@ -168,7 +185,7 @@ function RowControl({
       return (
         <div className="plugin-row-actions">
           <StateSwitch
-            label={enabled ? `请求停用 ${installed.id}` : `请求启用 ${installed.id}`}
+            label={t(enabled ? 'switch.disable' : 'switch.enable', { id: installed.id })}
             checked={enabled}
             disabled={switchDisabled}
             onToggle={(next) => onToggleDesired(installed, next)}
@@ -179,7 +196,7 @@ function RowControl({
     }
     return (
       <StateSwitch
-        label={enabled ? `请求停用 ${installed.id}` : `请求启用 ${installed.id}`}
+        label={t(enabled ? 'switch.disable' : 'switch.enable', { id: installed.id })}
         checked={enabled}
         disabled={switchDisabled}
         onToggle={(next) => onToggleDesired(installed, next)}
@@ -218,24 +235,26 @@ export function PluginList({
   onToggleDesired(item: PackageInstalledDescriptor, next: boolean): void
   onLoadMore(): void
 }): JSX.Element {
+  const { t } = useUiText(ADMIN_LIST_LOCALE_NAMESPACE, adminListLocaleCatalog)
+  const { t: adminText } = useUiText(ADMIN_LOCALE_NAMESPACE, adminLocaleCatalog)
   if (loading && !rows.length) {
-    return <p className="plugin-empty">正在读取插件状态…</p>
+    return <p className="plugin-empty">{t('empty.loading')}</p>
   }
   if (!rows.length) {
     const title =
       tab === 'installed'
         ? inventoryAuthoritative
-          ? '尚未安装插件'
-          : '已安装状态暂不可确认'
+          ? t('empty.installed')
+          : t('empty.installed-unknown')
         : query
-          ? '没有匹配的目录条目'
-          : '目录暂时没有可显示的插件'
+          ? t('empty.query')
+          : t('empty.catalog')
     const copy =
       tab === 'installed'
         ? inventoryAuthoritative
-          ? '可以浏览目录，或从已知来源检查一个插件。'
-          : '后台尚未确认当前已安装状态；恢复后会自动刷新。'
-        : '请调整搜索词，或确认目录连接后重试。'
+          ? t('empty.installed-help')
+          : t('empty.installed-recovery')
+        : t('empty.catalog-help')
     return (
       <div className="plugin-empty admin-empty-state">
         <span className="agnes-mark admin-empty-state-mark" aria-hidden="true" />
@@ -247,7 +266,7 @@ export function PluginList({
   return (
     <>
       {tab === 'installed' && !inventoryAuthoritative && (
-        <p className="plugin-inventory-status">以下为上次读取的状态，当前后台尚未确认。</p>
+        <p className="plugin-inventory-status">{t('inventory.stale')}</p>
       )}
       {rows.map((item) => {
         const runtime = runtimeOf(item.id)
@@ -266,7 +285,7 @@ export function PluginList({
             data-tab={tab}
             tabIndex={0}
             role="button"
-            aria-label={`查看 ${item.id} 的详情`}
+            aria-label={t('row.details', { id: item.id })}
             onClick={(event) => {
               // 行内 Switch / 动作按钮自己处理点击；置灰控件在部分浏览器里不发 click，
               // 事件会落到行上，所以这里再挡一次，避免「拨开关顺带打开详情」。
@@ -284,11 +303,13 @@ export function PluginList({
           >
             <div className="plugin-row-content">
               <h2>{item.id}</h2>
-              <p>{contributionText(item)}</p>
+              <p>{contributionText(item, adminText)}</p>
               <p className="plugin-source">
-                {item.version} · {sourceLabel(item.source as PackageSource)}
+                {item.version} · {sourceLabel(item.source as PackageSource, adminText)}
               </p>
-              {tab === 'installed' && <SurfaceLinks links={surfaceLinksOf(item.id)} packageId={item.id} />}
+              {tab === 'installed' && (
+                <SurfaceLinks links={surfaceLinksOf(item.id)} packageId={item.id} t={t} />
+              )}
               {failureReason && <p className="resource-safe-error">{failureReason}</p>}
             </div>
             {tab === 'discover' && <CatalogCompatibility item={item as PackageCatalogDescriptor} />}
@@ -300,6 +321,7 @@ export function PluginList({
               switchDisabled={
                 tab === 'installed' ? switchDisabledOf(item as PackageInstalledDescriptor) : true
               }
+              t={t}
               onToggleDesired={onToggleDesired}
             />
           </article>
@@ -307,7 +329,7 @@ export function PluginList({
       })}
       {tab === 'discover' && nextCursor && (
         <button type="button" className="secondary-button plugin-more" onClick={onLoadMore}>
-          加载更多目录条目
+          {t('load-more')}
         </button>
       )}
     </>

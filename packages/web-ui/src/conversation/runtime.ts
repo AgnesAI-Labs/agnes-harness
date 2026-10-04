@@ -6,6 +6,7 @@ import {
   useExternalStoreRuntime,
 } from '@assistant-ui/react'
 import { useMemo, useSyncExternalStore } from 'react'
+import { fallbackT, type Translate } from '../locales/index.js'
 
 /** One already-projected Web window. The caller owns session and history loading. */
 export type ConversationProjection = Readonly<{
@@ -63,22 +64,28 @@ function userText(node: Extract<UINode, { kind: 'user' }>): string {
     .join('\n')
 }
 
-function displayText(node: Exclude<UINode, { kind: 'context' | 'context-sections' }>): string {
+/** 无障碍摘要面的兜底文案。t 缺省时显示 key（fail-visible）。 */
+function displayText(
+  node: Exclude<UINode, { kind: 'context' | 'context-sections' }>,
+  t: (key: string, vars?: Record<string, string | number>) => string = (key) => key,
+): string {
   switch (node.kind) {
     case 'user':
       return userText(node)
     case 'assistant':
-      return node.text || (node.lostChars === undefined ? '' : `输出中断，至少 ${node.lostChars} 字未保存`)
+      return (
+        node.text || (node.lostChars === undefined ? '' : t('runtime.lostOutput', { count: node.lostChars }))
+      )
     case 'tool':
       return `${node.name}: ${node.summary}`
     case 'approval':
       return `${node.state}: ${node.summary}`
     case 'cost':
-      return `${node.source}: ${node.credits ?? '费用未提供'}`
+      return `${node.source}: ${node.credits ?? t('cost.summary.noBilling')}`
     case 'artifact':
       return node.name
     case 'compaction':
-      return node.summary ?? `已整理上下文 ${node.range.join('–')}`
+      return node.summary ?? t('runtime.compactionFallback', { range: node.range.join('–') })
     case 'slot':
       return `${node.fill.slot}: ${node.fill.extId}`
     case 'contribute-conflict':
@@ -106,6 +113,7 @@ function messageStatus(node: UINode, owner?: UITurn): ThreadMessageLike['status'
 /** Keep source IDs and projection order. Business detail remains on the source node. */
 export function projectConversationMessages(
   projection: ConversationProjection,
+  t: Translate = fallbackT,
 ): readonly ConversationMessage[] {
   const ownerByNodeId = new Map(
     projection.turns?.flatMap((turn) => turn.nodeIds.map((id) => [id, turn] as const)),
@@ -114,7 +122,7 @@ export function projectConversationMessages(
   for (const node of projection.nodes) {
     if (!isConversationNode(node)) continue
     const owner = ownerByNodeId.get(node.id)
-    const text = displayText(node)
+    const text = displayText(node, t)
     const status = messageStatus(node, owner)
     messages.set(node.id, {
       id: node.id,
@@ -141,9 +149,9 @@ export function projectConversationMessages(
   return [...messages.values()]
 }
 
-export function useConversationRuntime(store: ConversationProjectionStore) {
+export function useConversationRuntime(store: ConversationProjectionStore, t: Translate = fallbackT) {
   const projection = useSyncExternalStore(store.subscribe, store.getSnapshot, store.getSnapshot)
-  const messages = useMemo(() => projectConversationMessages(projection), [projection])
+  const messages = useMemo(() => projectConversationMessages(projection, t), [projection, t])
   const messageRepository = useMemo(() => ExportedMessageRepository.fromArray(messages), [messages])
   const lastMessage = messages.at(-1)
   return useExternalStoreRuntime<ThreadMessage>({

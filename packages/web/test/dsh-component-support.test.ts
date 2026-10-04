@@ -6,6 +6,7 @@ import type { UINode } from '@agnes/protocol'
 import { createElement } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createTimelineRenderer } from '../src/timeline.js'
+import { zhLocaleService } from './helpers/locale.js'
 import { mountRenderedIndex, resetWebDom } from './web-dom-fixture.js'
 
 describe('DSH component support matrix', () => {
@@ -62,6 +63,7 @@ describe('DSH component support matrix', () => {
     const newContentButton = document.createElement('button')
     document.body.append(dshTranscript, newContentButton)
     const timeline = createTimelineRenderer({
+      locale: zhLocaleService(),
       transcript: dshTranscript,
       newContentButton,
       registry: runtime.registry,

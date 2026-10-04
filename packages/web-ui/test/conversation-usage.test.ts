@@ -4,6 +4,7 @@ import { act, createElement, StrictMode } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { ConversationUsage } from '../src/conversation/usage.js'
+import { zhT } from './locale.js'
 
 const usage: UsageView = {
   totals: { input: 9999, output: 500, cacheRead: 6000, cacheWrite: 0, reasoning: 20 },
@@ -28,7 +29,7 @@ afterEach(async () => {
 async function render(value: UsageView | undefined, connected = true) {
   await act(async () =>
     root.render(
-      createElement(StrictMode, null, createElement(ConversationUsage, { usage: value, connected })),
+      createElement(StrictMode, null, createElement(ConversationUsage, { usage: value, connected, t: zhT })),
     ),
   )
 }
@@ -43,8 +44,8 @@ it('renders only actual context fields with the existing ring, values and labels
   expect(host.querySelector<HTMLElement>('.usage-bar > span')?.style.width).toBe('1.2%')
   expect(rows()).toEqual([
     ['上下文占用', '1,500 Token'],
-    ['本会话预算', '128,000 Token'],
-    ['模型最大输出', '8,192 Token'],
+    ['模型窗口', '128,000 Token'],
+    ['最大输出上限', '8,192 Token'],
     ['自动整理上下文', '已启用'],
   ])
   for (const forbidden of ['9,999', '0.000206', '$', 'private-route', 'model', '缓存命中', '累计'])
@@ -113,7 +114,7 @@ it('clears missing usage and restarts closed with current fields for another ses
   expect(details.open).toBe(false)
   expect(rows()).toEqual([
     ['上下文占用', '0 Token'],
-    ['本会话预算', '128,000 Token'],
+    ['模型窗口', '128,000 Token'],
     ['自动整理上下文', '未启用'],
   ])
   expect(host.textContent).not.toContain('8,192')

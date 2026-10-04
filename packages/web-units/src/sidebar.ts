@@ -9,6 +9,7 @@ import {
   useLayoutEffect,
   useRef,
 } from 'react'
+import type { Translate } from './locales/index.js'
 export type SessionAction = 'rename' | 'fork' | 'archive'
 
 export interface SidebarNavigationOptions {
@@ -17,11 +18,14 @@ export interface SidebarNavigationOptions {
   workspaces: readonly WorkspaceEntry[]
   currentId?: string
   activeId?: string
+  activeWorkspace?: string
   labels: ReadonlyMap<string, string>
   disabled?: boolean
+  newDisabled?: boolean
   next?: string
   loadMore?(cursor: string): void
   action?(action: SessionAction, id: string, title: string, trigger: HTMLElement): void
+  newSession(workspace: WorkspaceEntry): void
   open(id: string): void
 }
 
@@ -32,6 +36,8 @@ export interface SidebarShell {
 }
 
 export interface SidebarDependencies {
+  /** Locale-bound translate (host injects); called during render, never cached. */
+  translate: Translate
   renderNavigation(options: SidebarNavigationOptions): void
   bindSidebar(narrow: MediaQueryList): SidebarShell
 }
@@ -40,6 +46,7 @@ export interface SidebarState {
   sessions: PageSessionMeta['items']
   workspaces: readonly WorkspaceEntry[]
   labels: ReadonlyMap<string, string>
+  locale?: string
   currentId?: string
   next?: string
   sessionPending: boolean
@@ -47,7 +54,7 @@ export interface SidebarState {
 }
 
 export interface SidebarActions {
-  newSession(): void
+  newSession(workspace?: WorkspaceEntry): void
   addWorkspace(): void
   openSettings(): void
   openSession(id: string): void
@@ -108,6 +115,7 @@ function navigationSignature(state: SidebarState): string {
     }),
     state.workspaces.map((workspace) => [workspace.path, workspace.name, workspace.available]),
     labels,
+    state.locale ?? null,
     state.currentId ?? null,
     state.next ?? null,
     state.sessionPending,
@@ -166,16 +174,19 @@ const SidebarBuiltin = forwardRef<
   const settingsButton = useRef<HTMLButtonElement>(null)
   const shell = useRef<SidebarShell | undefined>(undefined)
   const stateRef = useRef(state)
+  const t: Translate = dependencies?.translate ?? ((key) => key)
   /** 上一次真正渲染的导航区数据签名；未渲染过时为 undefined，首次更新不得短路。 */
   const renderedSignature = useRef<string | undefined>(undefined)
   const renderNavigation = useCallback(
     (next: SidebarState): boolean => {
       const navElement = nav.current
       if (!navElement || !dependencies) return false
-      const active =
+      const focused =
         navElement.contains(document.activeElement) && document.activeElement instanceof HTMLElement
-          ? document.activeElement.dataset.session
+          ? document.activeElement
           : undefined
+      const active = focused?.dataset.session
+      const activeWorkspace = focused?.dataset.workspaceNewSession
       dependencies.renderNavigation({
         nav: navElement,
         sessions: next.sessions,
@@ -183,10 +194,13 @@ const SidebarBuiltin = forwardRef<
         labels: next.labels,
         ...(next.currentId ? { currentId: next.currentId } : {}),
         ...(active ? { activeId: active } : {}),
+        ...(activeWorkspace ? { activeWorkspace } : {}),
         disabled: next.sessionPending,
+        newDisabled: next.newDisabled,
         ...(next.next ? { next: next.next } : {}),
         loadMore: actions.loadMore,
         action: actions.sessionAction,
+        newSession: actions.newSession,
         open: actions.openSession,
       })
       return true
@@ -242,7 +256,10 @@ const SidebarBuiltin = forwardRef<
       !(backdrop instanceof HTMLButtonElement)
     )
       return
-    const controller = dependencies.bindSidebar(window.matchMedia('(max-width: 720px)'))
+    // 断点必须与 style.css 的移动抽屉媒体查询一致（`.sidebar-backdrop` 所在的那个
+    // `@media (max-width: …)`）。两者不一致时，中间那段宽度里 JS 走桌面折叠分支、
+    // CSS 却已把侧栏移出视口，按钮点了没有任何反应。回归由 sidebar-breakpoint.test.ts 兜住。
+    const controller = dependencies.bindSidebar(window.matchMedia('(max-width: 900px)'))
     shell.current = controller
     return () => {
       controller.dispose()
@@ -273,7 +290,7 @@ const SidebarBuiltin = forwardRef<
           id: 'sidebar-close',
           className: 'icon-button sidebar-close',
           type: 'button',
-          'aria-label': '关闭导航',
+          'aria-label': t('sidebar.closeNav'),
         },
         icon(CLOSE_ICON, '0 0 20 20', 'icon icon-fill'),
       ),
@@ -291,13 +308,13 @@ const SidebarBuiltin = forwardRef<
           disabled: state.newDisabled,
         },
         icon(NEW_ICON, '0 0 16 16', 'icon icon-fill'),
-        createElement('span', null, '新会话'),
+        createElement('span', null, t('sidebar.newSession')),
       ),
     ),
     createElement(
       'div',
       { className: 'sidebar-section-heading' },
-      createElement('p', { className: 'section-label' }, '工作区与会话'),
+      createElement('p', { className: 'section-label' }, t('sidebar.sectionHeading')),
       createElement(
         'button',
         {
@@ -305,14 +322,14 @@ const SidebarBuiltin = forwardRef<
           ref: workspaceAdd,
           className: 'icon-button subtle',
           type: 'button',
-          'aria-label': '添加工作区',
-          title: '添加工作区',
+          'aria-label': t('sidebar.addWorkspace'),
+          title: t('sidebar.addWorkspace'),
         },
         icon(ADD_ICON, '0 0 12 12', 'icon icon-fill'),
       ),
       slots?.workspaces,
     ),
-    createElement('nav', { id: 'sessions', 'aria-label': '任务列表', ref: nav }),
+    createElement('nav', { id: 'sessions', 'aria-label': t('sidebar.sessionsNav'), ref: nav }),
     slots?.panellist,
     createElement(
       'div',
@@ -322,7 +339,7 @@ const SidebarBuiltin = forwardRef<
         'button',
         { id: 'settings', ref: settingsButton, className: 'secondary-button', type: 'button' },
         icon(SETTINGS_ICON, '0 0 16 16', 'icon icon-settings'),
-        createElement('span', null, '设置'),
+        createElement('span', null, t('sidebar.settings')),
       ),
       slots?.settings,
     ),

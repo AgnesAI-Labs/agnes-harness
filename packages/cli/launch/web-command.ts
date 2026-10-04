@@ -12,6 +12,8 @@ export type WebCommandIO = {
   cwd?: string
   write?: (text: string) => void
   resources?: LaunchResources
+  developmentReload?: boolean
+  onWebServerReady?: (web: WebServer) => void
   createServer?: typeof createWebServer
   ensureBackend?: typeof ensureLocalBackend
   signals?: NodeJS.EventEmitter
@@ -157,6 +159,7 @@ export async function runWebCommand(
       wsUrl: backend.web.url,
       port,
       origin,
+      ...(io.developmentReload === undefined ? {} : { developmentReload: io.developmentReload }),
       workspacePicker: createNativeWorkspacePicker({ env: io.env ?? process.env }),
       // `/skins/*` bytes come from the daemon over the launcher's private connection: this process
       // does not own the package store, so it never resolves a skin path itself (design §22).
@@ -183,6 +186,7 @@ export async function runWebCommand(
         oauthAdminHandler.handle(request, response),
       mountProxy: mounts.proxy,
     })
+    io.onWebServerReady?.(web)
     ;(io.write ?? ((text: string) => process.stdout.write(text)))(`${web.url}/\n`)
     await waitForSignal(io.signals ?? process)
   } finally {

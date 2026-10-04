@@ -4,6 +4,7 @@ import { ConversationMarkdown } from '@agnes/web-ui/assistant-ui'
 import { act, createElement } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
+import { zhT } from './locale.js'
 
 let host: HTMLDivElement
 let root: Root
@@ -28,7 +29,9 @@ async function render(
   theme: 'light' | 'dark' = 'light',
   onCopy?: (text: string) => Promise<void>,
 ) {
-  await act(async () => root.render(createElement(ConversationMarkdown, { source, part, theme, onCopy })))
+  await act(async () =>
+    root.render(createElement(ConversationMarkdown, { source, part, theme, onCopy, t: zhT })),
+  )
 }
 
 it('renders GFM blocks in body and thinking without interpreting user HTML', async () => {

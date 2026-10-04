@@ -258,7 +258,7 @@ export function createSkillInstaller(directory: string, discovery: SkillDiscover
         if (within(source, root.path) || within(root.path, source))
           throw installError('SKILL_SOURCE_TARGET_OVERLAP')
         const allowed = await authority.ask(
-          `读取本地 Skill 目录以准备安装：${source}。只读取文件，不执行脚本。`,
+          `Read the local skill directory to prepare an install: ${source}. This only reads files and does not run scripts.`,
           installDigest(source),
           signal,
         )
@@ -358,7 +358,7 @@ export function createSkillInstaller(directory: string, discovery: SkillDiscover
         const source = p.invocation.input.action === 'prepare' ? p.invocation.input.sourceDirectory : ''
         assertInstallPath(invocation, source)
         for (const name of p.bundle.files.keys()) assertInstallPath(invocation, join(source, name))
-        const summary = `安装 Skill ${p.bundle.candidate.name}；来源 ${source}；目标 ${p.target}；${p.bundle.files.size} 个文件；SHA256 ${p.bundle.digest}。${enabled ? '信任此版本并在当前配置启用' : '只登记，不新增信任或启用'}。${p.rootKey === 'user-agnes' ? '用户目录可被其他配置发现。' : ''}不覆盖不同内容，不执行脚本。`
+        const summary = `Install skill ${p.bundle.candidate.name}; source ${source}; target ${p.target}; ${p.bundle.files.size} files; SHA256 ${p.bundle.digest}. ${enabled ? 'Trust this version and enable it in the current profile.' : 'Register it only. Do not add trust or enable it.'}${p.rootKey === 'user-agnes' ? ' The user directory can be discovered by other profiles.' : ''} This does not overwrite different content and does not run scripts.`
         p.approvalAbort = new AbortController()
         const approvalSignal = AbortSignal.any([signal, p.approvalAbort.signal])
         try {

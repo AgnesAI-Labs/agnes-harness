@@ -25,6 +25,7 @@ import {
   TRACE_SLOT,
   TRANSCRIPT_SLOT,
 } from '../src/region-slots.js'
+import { zhLocaleService } from './helpers/locale.js'
 
 // A slot change commits in a few milliseconds, but a loaded runner has taken longer than the fixed
 // sleeps these checks used before. Wait for the rendered state instead.
@@ -43,6 +44,7 @@ async function registry(): Promise<SlotRegistry> {
 afterEach(async () => {
   while (mounts.length) mounts.pop()?.dispose()
   while (contexts.length) await contexts.pop()?.fiber.dispose()
+  document.documentElement.lang = 'en'
   document.body.replaceChildren()
 })
 
@@ -136,7 +138,7 @@ describe('migrated sidebar region', () => {
     sidebar.innerHTML =
       '<button id="new">新会话</button><nav id="sessions"></nav><button id="settings">设置</button>'
     document.body.append(sidebar)
-    mounts.push(mountSidebarRegion(slots, sidebar))
+    mounts.push(mountSidebarRegion(slots, sidebar, {}, zhLocaleService()))
 
     expect(sidebar.querySelector('[data-slot="ui:sidebar"]')).toBeTruthy()
     expect(sidebar.querySelector('#new')?.textContent).toBe('新会话')
@@ -156,7 +158,7 @@ describe('migrated sidebar region', () => {
     const sidebar = document.createElement('aside')
     sidebar.className = 'sidebar'
     document.body.append(sidebar)
-    mounts.push(mountSidebarRegion(slots, sidebar))
+    mounts.push(mountSidebarRegion(slots, sidebar, {}, zhLocaleService()))
 
     const remove = slots.register(
       { name: 'sidebar.footer.action', id: 'fixture-footer-action', owner: 'fixture' },
@@ -176,7 +178,7 @@ describe('migrated sidebar region', () => {
     const sidebar = document.createElement('aside')
     sidebar.className = 'sidebar'
     document.body.append(sidebar)
-    mounts.push(mountSidebarRegion(slots, sidebar))
+    mounts.push(mountSidebarRegion(slots, sidebar, {}, zhLocaleService()))
 
     const remove = slots.register(
       { name: 'sidebar.workspaces.directoryFlow', id: 'fixture-directory-flow', owner: 'fixture' },
@@ -299,6 +301,37 @@ describe('migrated settings panes', () => {
     expect(slots.entries(settingsPaneSlot('model') as string)).toHaveLength(1)
   })
 
+  it('keeps every pane rendered after the locale changes', async () => {
+    const slots = await registry()
+    const config = document.createElement('dialog')
+    config.id = 'config'
+    document.body.append(config)
+    const locale = zhLocaleService()
+    const mount = mountSettingsPaneRegion(slots, config, {}, locale)
+    mounts.push(mount)
+
+    await vi.waitFor(
+      () => expect(config.querySelector('#appearance-settings-pane')?.textContent).toContain('通用设置'),
+      committed,
+    )
+    expect(config.querySelector('#model-settings-pane')?.textContent).toContain('模型账户')
+    locale.setLocale('en')
+    // 语言变化会替换外壳的 innerHTML，六个面板的宿主元素随之重建。回归时只有 model 面板被重挂到
+    // 旧宿主，其余面板的根指向已丢弃的节点，右侧内容区变空白，要刷新页面才恢复。
+    await vi.waitFor(
+      () =>
+        expect(config.querySelector('#appearance-settings-pane')?.textContent).toContain(
+          'Adjust interface language',
+        ),
+      committed,
+    )
+    expect(config.querySelector('#appearance-settings-pane')?.textContent).toContain('English')
+    expect(config.querySelector('#computer-use-settings-pane')?.textContent).toContain('Computer Use')
+    // 模型面板的标题与说明也要跟着切换，而不是停在挂载时的语言。
+    expect(config.querySelector('#model-settings-pane')?.textContent).toContain('Model accounts')
+    expect(config.querySelector('#model-settings-pane')?.textContent).not.toContain('模型账户')
+  })
+
   it('mounts DSH settings outlets at the existing pane controls', async () => {
     const slots = await registry()
     const config = document.createElement('dialog')
@@ -409,7 +442,7 @@ describe('migrated topbar region', () => {
     topbar.className = 'topbar'
     topbar.innerHTML = '<p id="legacy-topbar">legacy</p>'
     document.body.append(topbar)
-    const mount = mountTopbarRegion(slots, topbar)
+    const mount = mountTopbarRegion(slots, topbar, zhLocaleService())
     mounts.push(mount)
     expect(topbar.querySelector('#legacy-topbar')).toBeNull()
     expect(topbar.querySelector('[data-slot="ui:topbar"]')).toBeTruthy()
@@ -542,6 +575,7 @@ describe('migrated trace region', () => {
     toggle.id = 'view-trace'
     chat.id = 'view-chat'
     conversation.id = 'conversation-shell'
+    document.documentElement.lang = 'zh-CN'
     document.body.append(trace, toggle, chat, conversation)
     // The trace unit only renders while open.
     sessionStorage.setItem('agnes.web.tracePanel', 'open')
@@ -582,7 +616,7 @@ describe('DSH rightbar region', () => {
     const rightbar = document.createElement('aside')
     rightbar.id = 'rightbar-panel'
     document.body.append(rightbar)
-    const mount = mountRightbarRegion(slots, rightbar)
+    const mount = mountRightbarRegion(slots, rightbar, {}, zhLocaleService())
     mounts.push(mount)
 
     expect(rightbar.hidden).toBe(true)
@@ -607,9 +641,14 @@ describe('DSH rightbar region', () => {
     const slots = await registry()
     const rightbar = document.createElement('aside')
     document.body.append(rightbar)
-    const mount = mountRightbarRegion(slots, rightbar, {
-      document: { id: 'doc-1', title: '指南', kind: 'markdown', content: '# 右栏文档' },
-    })
+    const mount = mountRightbarRegion(
+      slots,
+      rightbar,
+      {
+        document: { id: 'doc-1', title: '指南', kind: 'markdown', content: '# 右栏文档' },
+      },
+      zhLocaleService(),
+    )
     mounts.push(mount)
     slots.setSession('session-1')
     await vi.waitFor(() => {
@@ -656,10 +695,15 @@ describe('DSH rightbar region', () => {
     const original = console.error.bind(console)
     const errors = vi.spyOn(console, 'error').mockImplementation((...args) => original(...args))
     try {
-      const markdown = mountRightbarRegion(slots, host, {
-        session,
-        document: { id: 'markdown', kind: 'markdown', content: '# Before replacement' },
-      })
+      const markdown = mountRightbarRegion(
+        slots,
+        host,
+        {
+          session,
+          document: { id: 'markdown', kind: 'markdown', content: '# Before replacement' },
+        },
+        zhLocaleService(),
+      )
       mounts.push(markdown)
       await vi.waitFor(() => expect(host.querySelector('h1')?.textContent).toBe('Before replacement'))
       const remove = slots.register(
@@ -678,11 +722,16 @@ describe('DSH rightbar region', () => {
       await vi.waitFor(() => expect(host.querySelector('h1')?.textContent).toBe('Before replacement'))
       markdown.dispose()
       markdown.dispose()
-      const next = mountRightbarRegion(slots, host, {
-        session,
-        resources,
-        document: { id: 'next', kind: 'text', laneId: 'lane', artifact },
-      })
+      const next = mountRightbarRegion(
+        slots,
+        host,
+        {
+          session,
+          resources,
+          document: { id: 'next', kind: 'text', laneId: 'lane', artifact },
+        },
+        zhLocaleService(),
+      )
       mounts.push(next)
       await vi.waitFor(() => expect(host.querySelector('pre')?.textContent).toBe('Hi'))
       expect(call.mock.calls).toHaveLength(1)
@@ -715,17 +764,22 @@ describe('DSH rightbar region', () => {
       } as never,
       session,
     )
-    const mount = mountRightbarRegion(slots, rightbar, {
-      session,
-      resources,
-      document: {
-        id: 'artifact-doc',
-        title: '产物',
-        kind: 'text',
-        laneId: 'lane-a',
-        artifact,
+    const mount = mountRightbarRegion(
+      slots,
+      rightbar,
+      {
+        session,
+        resources,
+        document: {
+          id: 'artifact-doc',
+          title: '产物',
+          kind: 'text',
+          laneId: 'lane-a',
+          artifact,
+        },
       },
-    })
+      zhLocaleService(),
+    )
     mounts.push(mount)
 
     await vi.waitFor(() => {
@@ -747,11 +801,16 @@ describe('DSH rightbar region', () => {
       session,
     )
     mounts.push(
-      mountRightbarRegion(slots, rightbar, {
-        session,
-        resources,
-        document: { id: 'reclaimed-shot', title: '截图', kind: 'image', laneId: 'lane-a', artifact },
-      }),
+      mountRightbarRegion(
+        slots,
+        rightbar,
+        {
+          session,
+          resources,
+          document: { id: 'reclaimed-shot', title: '截图', kind: 'image', laneId: 'lane-a', artifact },
+        },
+        zhLocaleService(),
+      ),
     )
 
     await vi.waitFor(() => {

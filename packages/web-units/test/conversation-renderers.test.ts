@@ -1,12 +1,21 @@
 /** @vitest-environment happy-dom */
 
 import type { UINode, UITurn } from '@agnes/protocol'
+import { webUiLocaleCatalog } from '@agnes/web-ui'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   createConversationAttachmentsRenderer,
   createConversationMessageActions,
   createConversationToolCard,
+  webUnitsLocaleCatalog,
 } from '../src/index.js'
+
+const zhT = (key: string, vars?: Record<string, string | number>): string => {
+  const template = webUnitsLocaleCatalog['zh-CN'][key] ?? webUiLocaleCatalog['zh-CN'][key] ?? key
+  return vars
+    ? template.replace(/\{(\w+)\}/g, (match, name: string) => String(vars[name] ?? match))
+    : template
+}
 
 afterEach(() => {
   vi.useRealTimers()
@@ -46,7 +55,7 @@ function required<T extends Element>(parent: ParentNode, selector: string): T {
 
 describe('conversation leaf renderers', () => {
   it('owns outside-click dismissal without an injected binding and preserves the disclosure on updates', () => {
-    const actions = createConversationMessageActions()
+    const actions = createConversationMessageActions({ t: zhT })
     document.body.append(actions.element)
     expect(actions.element.querySelector('footer.turn-footer')).not.toBeNull()
     const details = required<HTMLDetailsElement>(actions.element, '.turn-usage')
@@ -75,7 +84,7 @@ describe('conversation leaf renderers', () => {
   it('releases its document click listener on disposal, including repeated disposal', () => {
     const add = vi.spyOn(document, 'addEventListener')
     const remove = vi.spyOn(document, 'removeEventListener')
-    const actions = createConversationMessageActions()
+    const actions = createConversationMessageActions({ t: zhT })
     document.body.append(actions.element)
     const details = required<HTMLDetailsElement>(actions.element, '.turn-usage')
     const clicks = add.mock.calls.filter(([type]) => type === 'click')
@@ -97,8 +106,8 @@ describe('conversation leaf renderers', () => {
   })
 
   it('ignores a detached disclosure while another mounted action renderer still dismisses', () => {
-    const first = createConversationMessageActions()
-    const second = createConversationMessageActions()
+    const first = createConversationMessageActions({ t: zhT })
+    const second = createConversationMessageActions({ t: zhT })
     document.body.append(first.element, second.element)
     const detached = required<HTMLDetailsElement>(first.element, '.turn-usage')
     const live = required<HTMLDetailsElement>(second.element, '.turn-usage')
@@ -122,7 +131,7 @@ describe('conversation leaf renderers', () => {
   it('keeps the caller-supplied dismissal binding as a compatibility override', () => {
     const bindAutoDismiss = vi.fn()
     const add = vi.spyOn(document, 'addEventListener')
-    const actions = createConversationMessageActions({ bindAutoDismiss })
+    const actions = createConversationMessageActions({ bindAutoDismiss, t: zhT })
     try {
       expect(bindAutoDismiss).toHaveBeenCalledExactlyOnceWith(actions.element.querySelector('.turn-usage'))
       expect(add.mock.calls.filter(([type]) => type === 'click')).toHaveLength(0)
@@ -149,6 +158,7 @@ describe('conversation leaf renderers', () => {
     }
     const card = createConversationToolCard(element, node, {
       icon: () => document.createElement('span'),
+      translate: zhT,
     })
     const detail = element.querySelector<HTMLButtonElement>('.tool-detail')
     detail?.click()
@@ -188,8 +198,8 @@ describe('conversation leaf renderers', () => {
 
   it('keeps feedback local to the turn action renderer and clears its timer on disposal', async () => {
     vi.useFakeTimers()
-    const first = createConversationMessageActions()
-    const second = createConversationMessageActions()
+    const first = createConversationMessageActions({ t: zhT })
+    const second = createConversationMessageActions({ t: zhT })
     document.body.append(first.element, second.element)
     const state = { turn: completedTurn(), finalText: 'answer', settled: true }
     first.update(state)
@@ -224,8 +234,8 @@ describe('conversation leaf renderers', () => {
           }),
       )
       .mockResolvedValueOnce(undefined)
-    const first = createConversationMessageActions({ onFork })
-    const second = createConversationMessageActions()
+    const first = createConversationMessageActions({ onFork, t: zhT })
+    const second = createConversationMessageActions({ t: zhT })
     document.body.append(first.element, second.element)
     const firstTurn = completedTurn({ id: 'turn:first' })
     const secondTurn = completedTurn({ id: 'turn:second' })

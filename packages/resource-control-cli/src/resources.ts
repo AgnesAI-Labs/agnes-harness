@@ -19,7 +19,10 @@ export class ResourceOperationFailure extends Error {
     /** `waitForOperation` has already emitted the terminal operation and its safe error. */
     readonly outputRendered = false,
   ) {
-    const fallback = state === 'cancelled' ? '资源操作已取消' : '资源操作未能安全完成'
+    const fallback =
+      state === 'cancelled'
+        ? 'The resource operation was cancelled'
+        : 'The resource operation could not be completed safely'
     super(safeError?.message ?? fallback)
     this.code =
       safeError?.code ??
@@ -32,7 +35,7 @@ export class ResourceOperationTimeout extends Error {
   override readonly name = 'ResourceOperationTimeout'
   readonly code = 'RESOURCE_OPERATION_TIMEOUT'
   constructor(readonly operationId: string) {
-    super('资源操作仍在执行；请查询状态或取消该操作')
+    super('The resource operation is still running; query its status or cancel it')
   }
 }
 
@@ -661,7 +664,8 @@ export async function runResourceCommand(
       })
       await waitForOperation(client, p, receipt, io)
       io.write(
-        `MCP ${id} 已创建，但尚未可用（trust=untrusted, desired=disabled）：先执行 /mcp trust ${id} --expected-revision <revision> 完成信任审核，再执行 /mcp enable ${id} --expected-revision <revision> 启用后才能被调用（<revision> 见上方 revision=…）\n`,
+        `MCP ${id} was created but is not usable yet (trust=untrusted, desired=disabled): run /mcp trust ${id} --expected-revision <revision> to pass the trust review, then /mcp enable ${id} --expected-revision <revision> to enable it (see revision=... above for <revision>)
+`,
       )
       return
     }

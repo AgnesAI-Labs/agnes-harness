@@ -133,7 +133,10 @@ describe('local package admin surface trust boundary', () => {
     s.invoke.mockRejectedValueOnce(new Error('/private/home/key?token=do-not-leak'))
     const failed = await s.request('list', { profile: 'local-dev' })
     expect(await failed.json()).toEqual({
-      error: { code: 'E_ADMIN_BACKEND', message: '操作未确认，请查询状态或重新连接后台' },
+      error: {
+        code: 'E_ADMIN_BACKEND',
+        message: 'The operation was not confirmed. Check its status or reconnect to the backend.',
+      },
     })
   })
 

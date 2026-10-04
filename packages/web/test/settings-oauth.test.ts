@@ -7,8 +7,13 @@ import type { Client } from '@agnes/sdk/browser'
 import { unmountRegion } from '@agnes/web-ui'
 import { type HTMLButtonElement as HappyButton, type HTMLLabelElement as HappyLabel, Window } from 'happy-dom'
 import { afterEach, expect, it, vi } from 'vitest'
+import { setLocaleTranslator } from '../src/locale-bridge.js'
 import { createSettingsController, type SettingsController } from '../src/settings.js'
 import { renderSettingsMarkup } from '../src/settings-region.js'
+import { zhT } from './helpers/locale.js'
+
+// i18n: these suites assert zh-CN catalog output; pin the translator before imports run.
+setLocaleTranslator(zhT)
 
 function must<T>(value: T | null | undefined): T {
   if (value == null) throw new Error('missing fixture element')
@@ -203,6 +208,7 @@ it('allows replacing an unavailable saved OAuth model and revalidates each selec
   const select = must(h.doc.querySelector('#config-model')) as unknown as HTMLSelectElement
   const testButton = must(h.doc.querySelector<HappyButton>('#config-test'))
   const saveButton = must(h.doc.querySelector<HappyButton>('#config-save'))
+  ;(h.doc.getElementById('config-account-name') as unknown as HTMLInputElement).value = 'Work'
   expect(select.disabled).toBe(false)
   expect(saveButton.disabled).toBe(true)
   vi.mocked(h.test).mockRejectedValueOnce(new Error('CONFIG_SUBSCRIPTION_MODEL'))
@@ -374,7 +380,7 @@ it('lists five explicit subscription entries and starts the selected dual-auth p
     'xai',
   ].map((id) => ({
     id,
-    label: id,
+    label: id === 'github-copilot' ? 'GitHub Copilot subscription' : id,
     api: 'test',
     baseUrl: 'https://example.test',
     authType: ['openai-codex', 'github-copilot'].includes(id) ? 'oauth' : 'api-key',
@@ -384,6 +390,8 @@ it('lists five explicit subscription entries and starts the selected dual-auth p
   const h = await setup({ providers })
   const group = must(h.doc.querySelector('optgroup[label="订阅登录"]'))
   expect(group.querySelectorAll('option')).toHaveLength(5)
+  const copilot = group.querySelector('option[value="github-copilot"]') as unknown as HTMLOptionElement | null
+  expect(copilot?.textContent).toBe('GitHub Copilot · 订阅登录')
   const select = h.doc.getElementById('config-provider') as unknown as HTMLSelectElement
   select.value = 'kimi-coding:oauth'
   select.dispatchEvent(new (must(window).Event)('change') as unknown as Event)

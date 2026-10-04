@@ -31,7 +31,8 @@ const EXPECTED: Record<string, Record<string, readonly [string, number]>> = {
     composer: ['form', 1],
     'composer-input': ['textarea', 1],
     // Every icon glyph, so a skin can restyle or replace them without reaching for `.icon`.
-    icon: ['svg', 26],
+    // 26 减 1：顶栏的「断开连接」按钮移除后少了一个图标字形。
+    icon: ['svg', 25],
     // 插件详情、资源详情和账户详情/新增都使用独立模态框。
     dialog: ['dialog', 9],
     'settings-pane': ['section', 6],

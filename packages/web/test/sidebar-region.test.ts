@@ -79,6 +79,81 @@ describe('rendered sidebar region', () => {
     expect(openSettings).toHaveBeenCalledOnce()
   })
 
+  it('starts a new session in the selected workspace without toggling the group', async () => {
+    const newSession = vi.fn()
+    const selectedWorkspace = workspace('/workspace', '主工作区')
+    runtime = await mountRenderedIndex({
+      sidebar: {
+        state: {
+          sessions: [session('one', selectedWorkspace.path)],
+          workspaces: [selectedWorkspace],
+          labels: new Map(),
+          currentId: 'one',
+          sessionPending: false,
+          newDisabled: false,
+        },
+        actions: { newSession },
+      },
+    })
+
+    const heading = document.querySelector<HTMLButtonElement>('.workspace-heading')
+    const create = document.querySelector<HTMLButtonElement>('.workspace-new-session')
+    expect(create?.getAttribute('aria-label')).toBe('New session in “主工作区”')
+
+    create?.click()
+
+    expect(newSession).toHaveBeenCalledWith(selectedWorkspace)
+    expect(heading?.getAttribute('aria-expanded')).toBe('true')
+  })
+
+  it('refreshes the workspace shortcut label when the locale changes', async () => {
+    const state = {
+      sessions: [session('one', '/workspace')],
+      workspaces: [workspace('/workspace', '主工作区')],
+      labels: new Map<string, string>(),
+      currentId: 'one',
+      sessionPending: false,
+      newDisabled: false,
+      locale: 'en',
+    }
+    runtime = await mountRenderedIndex({ sidebar: { state } })
+    const shortcut = () => document.querySelector<HTMLButtonElement>('.workspace-new-session')
+    expect(shortcut()?.getAttribute('aria-label')).toBe('New session in “主工作区”')
+
+    runtime.locale.setLocale('zh-CN')
+    runtime.sidebar?.update({ ...state, locale: 'zh-CN' })
+
+    expect(shortcut()?.getAttribute('aria-label')).toBe('在“主工作区”中新建会话')
+  })
+
+  it('disables unavailable workspace shortcuts and omits one for unassigned sessions', async () => {
+    const unavailable = { ...workspace('/workspace', '不可用工作区'), available: false }
+    runtime = await mountRenderedIndex({
+      sidebar: {
+        state: {
+          sessions: [session('one', '/unassigned')],
+          workspaces: [unavailable],
+          labels: new Map(),
+          sessionPending: false,
+          newDisabled: false,
+        },
+      },
+    })
+
+    const shortcuts = document.querySelectorAll<HTMLButtonElement>('.workspace-new-session')
+    expect(shortcuts).toHaveLength(1)
+    expect(shortcuts[0]?.disabled).toBe(true)
+
+    runtime.sidebar?.update({
+      sessions: [session('one', '/unassigned')],
+      workspaces: [{ ...unavailable, available: true }],
+      labels: new Map(),
+      sessionPending: false,
+      newDisabled: true,
+    })
+    expect(document.querySelector<HTMLButtonElement>('.workspace-new-session')?.disabled).toBe(true)
+  })
+
   // 回归：导航区每次状态更新都用 replaceChildren 整体重建，折叠态必须活过重建。
   // 旧实现把折叠态只写在 DOM 上，重建后一律回到展开，在活跃会话下观感是「点了没反应」。
   it('keeps a collapsed workspace group across a rebuild', async () => {
@@ -112,6 +187,29 @@ describe('rendered sidebar region', () => {
     // 收起状态不得变成「点不开」：再点一次应当恢复展开。
     heading()?.click()
     expect(children()?.hidden).toBe(false)
+  })
+
+  it('restores keyboard focus to a workspace shortcut after the navigation rebuilds', async () => {
+    const state = {
+      sessions: [session('one', '/workspace')],
+      workspaces: [workspace('/workspace', '主工作区')],
+      labels: new Map<string, string>(),
+      currentId: 'one',
+      sessionPending: false,
+      newDisabled: false,
+    }
+    runtime = await mountRenderedIndex({ sidebar: { state } })
+    const shortcut = () => document.querySelector<HTMLButtonElement>('.workspace-new-session')
+    shortcut()?.focus()
+    expect(document.activeElement).toBe(shortcut())
+
+    runtime.sidebar?.update({
+      ...state,
+      sessions: [session('one', '/workspace'), session('two', '/workspace')],
+    })
+    await new Promise<void>((resolve) => queueMicrotask(resolve))
+
+    expect(document.activeElement).toBe(shortcut())
   })
 
   // 侧边栏更新挂在事件流上，一次回答期间会被调用数十次，但侧边栏自身的数据多数时候没变。

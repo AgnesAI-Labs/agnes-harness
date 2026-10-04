@@ -10,6 +10,7 @@ import {
   parseComposerMemory,
   resolveNewSessionSelection,
 } from '@agnes/sdk/composer-selection'
+import { tt } from './locale-extended.js'
 
 export function readComposerMemoryFile(path: string | undefined): ComposerMemory | undefined {
   if (!path) return undefined
@@ -36,6 +37,7 @@ export async function inheritFreshSession(
   session: Session,
   path: string | undefined,
   explicit?: { slot: SlotName; route: string; model: string; thinking?: ThinkingLevel },
+  locale = 'en',
 ): Promise<{ modelId?: string; notice?: string }> {
   if (explicit) {
     await session.setModel(explicit)
@@ -70,11 +72,14 @@ export async function inheritFreshSession(
     if (resolved.permission === 'full') await session.setYolo(true)
     const notice = [
       model ? `${model.route}/${model.id}${model.thinking ? ` · ${model.thinking}` : ''}` : undefined,
-      resolved.permission === 'full' ? '完全权限' : undefined,
+      resolved.permission === 'full' ? tt('memory.permissionFull', locale) : undefined,
     ]
       .filter((part) => part !== undefined)
       .join(' · ')
-    return { ...(model ? { modelId: model.id } : {}), ...(notice ? { notice: `新会话使用 ${notice}` } : {}) }
+    return {
+      ...(model ? { modelId: model.id } : {}),
+      ...(notice ? { notice: tt('memory.noticePrefix', locale, { notice }) } : {}),
+    }
   } catch {
     return explicit ? { modelId: explicit.model } : {}
   }

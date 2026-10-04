@@ -261,7 +261,11 @@ describe('collectDiagnostics', () => {
     const files = readZip(out.zip)
     expect(files.has('trace.json')).toBe(true)
     expect(out.bundle.warnings).toContainEqual(
-      expect.objectContaining({ source: 'trace', reason: 'truncated' }),
+      expect.objectContaining({
+        source: 'trace',
+        reason: 'truncated',
+        detail: 'Only the 0 most recently loaded nodes are included. Earlier history is not included.',
+      }),
     )
     expect(files.get('diagnostic-export-warnings.json')).toContain('"source": "trace"')
   })
