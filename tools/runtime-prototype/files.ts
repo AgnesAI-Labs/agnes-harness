@@ -58,6 +58,7 @@ export const SOURCE_FILES = [
   'packages/extension-api/src/runtime/authoring-hook-operations.ts',
   'packages/extension-api/src/runtime/artifact-authoring.ts',
   'packages/extension-api/src/runtime/routing-authoring.ts',
+  'packages/extension-api/src/runtime/pricing-authoring.ts',
   'LICENSE',
   'third-party/build-dependencies.json',
   'packages/protocol/schema/acp/schema.json',

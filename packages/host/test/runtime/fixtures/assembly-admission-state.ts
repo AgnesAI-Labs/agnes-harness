@@ -38,7 +38,7 @@ export function restrictedAdmissionState(
   },
 ) {
   const db = new DatabaseSync(file)
-  db.exec(`PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL; PRAGMA busy_timeout=5000;
+  db.exec(`PRAGMA busy_timeout=5000; PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL;
     CREATE TABLE IF NOT EXISTS facts (kind TEXT, id TEXT, body TEXT NOT NULL, PRIMARY KEY(kind,id));`)
   const read = <T>(kind: string, id: string): T | null => {
     const row = db.prepare('SELECT body FROM facts WHERE kind=? AND id=?').get(kind, id)

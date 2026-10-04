@@ -18,6 +18,7 @@ if ((kind !== 'default' && kind !== 'reference') || !directory) {
 
 let report: RenamedReport | undefined
 const opened = openFiles(kind, directory, () => {
+  // process.send issues the pipe write before it returns. Park in the hook so the receipt is never sent.
   if (!report || process.send?.(report) !== true) process.stderr.write('rename report was not delivered\n')
   Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0)
 })

@@ -1,6 +1,4 @@
-import { mkdirSync } from 'node:fs'
-import { dirname } from 'node:path'
-import { DatabaseSync } from 'node:sqlite'
+import type { DatabaseSync } from 'node:sqlite'
 import type { CallContext, MaintenanceStore, Outcome } from '@agnes/extension-api/runtime'
 import type {
   MaintenanceEnvelopeJsonValue,
@@ -12,19 +10,17 @@ import type {
 import { canonicalJsonDigest, validateRuntime } from '@agnes/protocol/runtime'
 import { fixtureRef, fixtureWire } from './assembly-maintenance-wire.js'
 
-/** Persistent synthetic maintenance authority, isolated from all business stores. */
-export function maintenanceStoreFixture(
-  file: string,
+/** Test maintenance owner sharing the original State connection and its issuer transaction. */
+export function sameConnectionMaintenance(
+  db: DatabaseSync,
+  permitted: (context: CallContext) => boolean,
   hooks: {
+    issue?: (request: MaintenanceStoreCommitRequest, context: CallContext) => void
     beforeCommit?: (request: MaintenanceStoreCommitRequest, context: CallContext) => Promise<void>
     afterCommit?: (request: MaintenanceStoreCommitRequest, context: CallContext) => Promise<void>
   } = {},
 ) {
-  mkdirSync(dirname(file), { recursive: true, mode: 0o700 })
-  const db = new DatabaseSync(file)
-  // Install the lock wait before WAL/schema setup, which can race another process.
-  db.exec('PRAGMA busy_timeout=5000')
-  db.exec(`PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL;
+  db.exec(`PRAGMA busy_timeout=5000; PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL;
     CREATE TABLE IF NOT EXISTS records (id TEXT PRIMARY KEY, body TEXT NOT NULL);
     CREATE TABLE IF NOT EXISTS transactions (id TEXT PRIMARY KEY, fingerprint TEXT NOT NULL, result TEXT NOT NULL);
     CREATE TABLE IF NOT EXISTS outbox (id TEXT PRIMARY KEY, body TEXT NOT NULL);`)
@@ -50,19 +46,12 @@ export function maintenanceStoreFixture(
     logicalName: 'default',
     providerId: 'fixture-maintenance',
   }
-  const permitted = (ctx: CallContext) =>
-    ctx.principalRef === 'fixture-principal' &&
-    ctx.authorizationRef === 'fixture-authorization' &&
-    ctx.scope.kind === 'runtime' &&
-    ctx.scope.installationId === 'fixture-installation'
-  const reader = new DatabaseSync(file)
-  reader.exec('PRAGMA busy_timeout=5000')
   let closed = false
   const read = (database: DatabaseSync, id: string): MaintenanceEnvelopeJsonValue | null => {
     const row = database.prepare('SELECT body FROM records WHERE id=?').get(id)
     return row ? fixtureWire('MaintenanceEnvelopeJsonValue', JSON.parse(String(row.body))) : null
   }
-  const get = (id: string) => read(reader, id)
+  const get = (id: string) => read(db, id)
   let writes: Promise<unknown> = Promise.resolve()
   async function commit(
     raw: MaintenanceStoreCommitRequest,
@@ -118,6 +107,7 @@ export function maintenanceStoreFixture(
           throw new Error('outbox_commit_mismatch')
         db.prepare('INSERT INTO outbox VALUES (?,?)').run(event.eventId, JSON.stringify(event))
       }
+      hooks.issue?.(request, context)
       await hooks.beforeCommit?.(request, context)
       if (context.signal.aborted) throw new Error('maintenance_cancelled')
       const result = fixtureWire('MaintenanceStoreCommitResult', {
@@ -174,14 +164,14 @@ export function maintenanceStoreFixture(
       const output =
         input.recordIds === null
           ? {
-              recordIds: reader
+              recordIds: db
                 .prepare('SELECT id FROM records ORDER BY id')
                 .all()
                 .map((row) => String(row.id)),
             }
           : {
               records: (input.recordIds as string[]).flatMap((id) => {
-                const record = read(reader, id)
+                const record = read(db, id)
                 return record ? [record] : []
               }),
             }
@@ -205,15 +195,15 @@ export function maintenanceStoreFixture(
     },
     inspect() {
       return {
-        records: reader
+        records: db
           .prepare('SELECT body FROM records ORDER BY id')
           .all()
           .map((row) => fixtureWire('MaintenanceEnvelopeJsonValue', JSON.parse(String(row.body)))),
-        outbox: reader
+        outbox: db
           .prepare('SELECT body FROM outbox ORDER BY id')
           .all()
           .map((row) => fixtureWire('OutboxRecord', JSON.parse(String(row.body)))),
-        transactions: reader
+        transactions: db
           .prepare('SELECT id FROM transactions ORDER BY id')
           .all()
           .map((row) => String(row.id)),
@@ -222,8 +212,7 @@ export function maintenanceStoreFixture(
     close() {
       if (closed) return
       closed = true
-      reader.close()
-      db.close()
+      // State owns the shared connection and closes it after the coordinator drains.
     },
   }
 }

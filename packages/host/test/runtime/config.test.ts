@@ -228,6 +228,20 @@ it('resolves a pinned profile chain without taking a newer source document', () 
   expect(latest.result.digest).not.toBe(resolved.result.profileDigest)
 })
 
+it('resolves the mandatory default preset with no inherited preset documents', () => {
+  const { request, base } = chain(({ parent, child, base: original }) => {
+    const allowed = [{ presetId: original.id, digest: documentDigest(original) }]
+    parent.presets = { default: original.id, allowed }
+    child.presets = { default: original.id, allowed }
+  })
+  const result = providerFor().resolve({ ...request, presets: [] })
+  expect(result.ok).toBe(true)
+  if (!result.ok) return
+  expect(result.result.preset.id).toBe(base.id)
+  expect(result.result.preset.parameters.value).toEqual({ name: 'base', meta: { a: 1, b: 2 } })
+  expect(result.result.provenance.some((entry) => entry.operation === 'default')).toBe(true)
+})
+
 it('keeps the same digests when object keys are reversed and when another provider resolves the same request', () => {
   const catalog = admitParameters()
   const { request } = chain()

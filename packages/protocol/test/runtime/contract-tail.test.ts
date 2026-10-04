@@ -87,6 +87,7 @@ describe('configuration and authenticated control contracts', () => {
     const validate = ajv.compile({ ...document, $ref: '#/$defs/ConfigResolveRequest' })
     for (const [value, expected] of [
       [request, true],
+      [{ ...request, presets: [] }, true],
       [{ ...request, profiles: [] }, false],
       [{ ...request, managed: undefined }, false],
       [

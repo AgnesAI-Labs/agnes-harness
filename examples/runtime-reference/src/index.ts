@@ -37,3 +37,10 @@ export function createReferenceRegistry(
   }
   return slots
 }
+
+export type {
+  ReferencePriceRule,
+  ReferencePricingOptions,
+  ReferencePricingOwner,
+} from './providers/pricing.js'
+export { createReferencePricingFactory } from './providers/pricing.js'

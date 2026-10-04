@@ -19,5 +19,6 @@ export type {
 export * from './authoring.js'
 export { assertAuthorSchema } from './authoring-schemas.js'
 export { defineGeneratedAuthorSchema } from './authoring-source.js'
+export { pricingInputSchema, pricingQuoteSchema } from './pricing-authoring.js'
 export type * from './public-api.js'
 export * from './routing-authoring.js'

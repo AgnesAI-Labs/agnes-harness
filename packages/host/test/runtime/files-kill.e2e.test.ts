@@ -10,7 +10,9 @@ import {
   BODY,
   callFor,
   FILE_NAME,
+  forceKill,
   type Kind,
+  killedByForce,
   loadProfile,
   openFiles,
   type RenamedReport,
@@ -58,7 +60,7 @@ function killAfterRename(kind: Kind, directory: string): Promise<RenamedReport> 
       else reject(new Error('missing rename report'))
     }
     const timer = setTimeout(() => {
-      child.kill('SIGKILL')
+      forceKill(child)
       finish(new Error(`files child timed out\n${stderr}`))
     }, 15_000)
     child.stderr?.setEncoding('utf8')
@@ -79,11 +81,11 @@ function killAfterRename(kind: Kind, directory: string): Promise<RenamedReport> 
       } catch (error) {
         content = error instanceof Error ? error.message : 'unreadable'
       }
-      child.kill('SIGKILL')
+      forceKill(child)
     })
     child.on('error', (error) => finish(error))
     child.on('close', (code, signal) => {
-      if (signal === 'SIGKILL' && report && !receipt && content === BODY) finish()
+      if (killedByForce(child, code, signal) && report && !receipt && content === BODY) finish()
       else
         finish(
           new Error(
@@ -108,8 +110,7 @@ function detail(outcome: Outcome<unknown>): string {
   return outcome.ok ? 'ok' : outcome.error.detailCode
 }
 
-// POSIX SIGKILL after rename and before the caller receives the receipt. Windows is not covered.
-describe.skipIf(process.platform === 'win32')('file write killed after rename', () => {
+describe('file write killed after rename', () => {
   it.each(['default', 'reference'] as const)(
     'returns the original %s result when the durable bytes still match',
     async (kind) => {

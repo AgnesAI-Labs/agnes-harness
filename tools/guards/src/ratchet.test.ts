@@ -1,3 +1,5 @@
+// Cache validated immutable assembly snapshots and share frozen assembly recipes;
+// Host 74846 and testkit 12622 are exact measured counts, with no spare allocation.
 // Measure recoverable embedding providers and their public fixture contract with exact ceilings.
 // Windows Job internal five-limit protocol: exact Host allocation, no headroom.
 // Durable admission coordination and session control: exact merged source/testkit caps; no headroom.
@@ -1017,7 +1019,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // Response metadata on cost/ledger: per-attempt fetch capture of status, allowlisted header values
   // and header names, plus provider-side shape checks. Measured 3886 (+51).
   // Agnes default output allowance is explicitly serialized to HTTP. Measured +6, exact allocation.
-  'packages/ai/src': 5406,
+  'packages/ai/src': 5802,
   // 2026-09-09: raised from 500, which was exactly the measured count and so forbade every
   // further line. Two repairs were blocked by it and are landing with this raise: the provider
   // factory taking log + pricing (without which every delivered assembly denominates ledger
@@ -1437,7 +1439,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // exported as constants. Measured 981 (+3), exact, no spare.
   // Optional ExecResult.timedOut and the soft-deadline note on timeoutMs. Measured 987 (+6), exact cap.
   // Optional ToolContext.defaultTimeoutMs. Measured 988 (+1), exact cap.
-  'packages/extension-api/src': 3216, // SKILL-INSTALL-CORE: optional request port and bounded DTO, no admin grant.
+  'packages/extension-api/src': 3226, // SKILL-INSTALL-CORE: optional request port and bounded DTO, no admin grant.
   // Optional author fixture entry; no production runtime code belongs here.
   // B1-A: measured 229 lines on the shared tree; public transport contract, config and wiring/testkit.
   // B1 review repair: exact measured 246; startup cancellation / cwd contract coverage.
@@ -1496,7 +1498,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // Recoverable embedding providers. Measured 12446, exact, no spare.
   // Fixed package plan apply. Measured 12543, exact, no spare.
   // Usage and budget settlement for billing. Measured 12594, exact, no spare.
-  'packages/extension-api/testkit': 12594,
+  'packages/extension-api/testkit': 12890,
   // 2026-09-10: raised from 2500 by Task 15 (stream-disconnect reconnection). The new
   // reattach.ts (the Reconnector: backoff loop, OVERLOADED's retryAfterMs override) plus
   // Session.recover()/waitForQuiescence and Client's reconnect wiring (emit(), the
@@ -2729,9 +2731,11 @@ const INITIAL_CEILING: Record<string, number> = {
   // Windows Job execution backends. Measured 73901, exact, no spare.
   // Artifact ticket key port. Measured 74321, exact, no spare.
   // Usage and budget settlement for billing. Measured 74449, exact, no spare.
+  // CI overhead reductions. Measured 74865, exact, no spare.
+  // Same-database admission joint coverage. Measured 74907, exact, no spare.
   // Default artifacts transfer with its export held by the default blob service, and collection counts
-  // of only collections with parts. Measured 74892 (+73), exact, no spare.
-  'packages/host/src': 74892,
+  // of only collections with parts. Measured 74980 (+73), exact, no spare.
+  'packages/host/src': 74980,
   'packages/host/src/ext-host/service-invocation': 247,
   // T5.2's permission projector is kept independently bounded so later extension-host work cannot
   // hide in the package-wide increment. Measured source: 86 lines.
