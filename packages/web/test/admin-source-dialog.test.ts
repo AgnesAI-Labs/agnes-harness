@@ -45,7 +45,8 @@ async function mount(fetcher: Fetcher, before?: () => void): Promise<void> {
   history.replaceState(null, '', '/admin/plugins#source-dialog-token')
   vi.stubGlobal('fetch', fetcher)
   const { mountPluginAdmin } = await import('../src/admin/plugins/admin.js')
-  await mountPluginAdmin()
+  const mounted = mountPluginAdmin()
+  await mounted.ready
   // The install button is inert until the admin context has loaded.
   await vi.waitFor(() => expect(document.querySelector('#install-source')).not.toBeNull())
   await vi.waitFor(() =>
@@ -145,6 +146,26 @@ it('keeps the dialog open and shows the backend refusal inside it', async () => 
   await vi.waitFor(() => expect(sourceError().textContent).not.toBe(''))
   // The refusal must be visible where the user is looking, not only in a panel behind a closed dialog.
   expect(sourceDialog().open).toBe(true)
+})
+
+it('retranslates a source-check failure when the locale changes while the dialog stays open', async () => {
+  const fetcher = backend(() =>
+    Response.json(
+      { error: { code: 'ADMIN_UNAVAILABLE', message: '插件管理后台暂时不可用。' } },
+      { status: 503 },
+    ),
+  )
+  await mount(fetcher)
+  openSourceDialog()
+
+  submit('file', 'file:./examples/packages/missing')
+
+  await vi.waitFor(() => expect(sourceError().textContent).toContain('Could not connect'))
+  document.documentElement.lang = 'zh-CN'
+  window.dispatchEvent(new Event('agnes:locale-changed'))
+
+  expect(sourceDialog().open).toBe(true)
+  expect(sourceError().textContent).toBe('无法连接插件管理后台。已保留当前页面内容。')
 })
 
 it('does not close the settings dialog it was opened from', async () => {

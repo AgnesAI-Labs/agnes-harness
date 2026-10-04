@@ -17,10 +17,7 @@ import type {
   JsonValue,
   MigrationRequest,
 } from '@agnes/protocol/runtime'
-import {
-  createReferenceAnchor,
-  createReferenceAuthorityDirectory,
-} from '../../../../examples/runtime-reference/src/providers/authority-directory.ts'
+import { createReferenceAnchor } from '../../../../examples/runtime-reference/src/providers/authority-directory.ts'
 import {
   type AuthorityDirectoryConformanceBinding,
   type AuthorityDirectoryScenarioEvidence,
@@ -29,11 +26,12 @@ import {
 import type { ConformanceHarness } from '../../../../packages/extension-api/testkit/runtime/harness.ts'
 import { documentDigest } from '../../../../packages/host/src/runtime/config/config-digest.ts'
 import { inlineData } from '../../../../packages/host/src/runtime/maintenance/authority-publication.ts'
-import {
-  createAuthorityDirectoryProvider,
-  createDirectoryAnchor,
-} from '../../../../packages/host/src/runtime/providers/authority-directory.ts'
+import { createDirectoryAnchor } from '../../../../packages/host/src/runtime/providers/authority-directory.ts'
 import { createHostScopedDependencies } from '../../../../packages/host/src/runtime/scoped-dependencies.ts'
+import {
+  createFixtureAuthorityDirectory as createAuthorityDirectoryProvider,
+  createFixtureReferenceDirectory as createReferenceAuthorityDirectory,
+} from '../../../../packages/host/test/fixtures/authority-directory-owner.js'
 import { getConformanceBuildIdentity } from '../build-identity.js'
 
 type Recipe = 'default' | 'reference'
@@ -66,6 +64,7 @@ interface DirectoryProvider {
       readonly upgradeId: string
       readonly validationRef: DataRef
       readonly authorityIds: readonly string[]
+      readonly sourceFences?: readonly AuthorityFence[]
     },
     context: CallContext,
   ): Promise<Outcome<{ readonly upgradeId: string }>>
@@ -151,7 +150,12 @@ function fenceFor(route: AuthorityRoute, upgradeId: string, cutoverId: string): 
     },
     fenceId: `fence-${cutoverId}-${route.logicalAuthorityId}`,
     fenceEpoch: route.authorityEpoch,
-    checkpoint: route.checkpoint,
+    checkpoint: {
+      ...route.checkpoint,
+      checkpointId: 'fresh-source-freeze',
+      snapshotDigest: '44'.repeat(32),
+      recordCount: route.checkpoint.recordCount + 1,
+    },
     writerCredentialsRevoked: true,
   }
 }
@@ -387,7 +391,12 @@ async function normal(recipe: Recipe): Promise<AuthorityDirectoryScenarioEvidenc
     const proof = validation()
     must(
       await provider.approveUpgrade(
-        { upgradeId: 'upgrade-1', validationRef: proof, authorityIds: ['state-auth'] },
+        {
+          upgradeId: 'upgrade-1',
+          validationRef: proof,
+          authorityIds: ['state-auth'],
+          sourceFences: requestFor(route, 1, proof).publication.sourceFences,
+        },
         context(),
       ),
     )
@@ -449,7 +458,12 @@ async function recover(recipe: Recipe): Promise<AuthorityDirectoryScenarioEviden
     const proof = validation()
     must(
       await first.approveUpgrade(
-        { upgradeId: 'upgrade-1', validationRef: proof, authorityIds: ['state-auth'] },
+        {
+          upgradeId: 'upgrade-1',
+          validationRef: proof,
+          authorityIds: ['state-auth'],
+          sourceFences: requestFor(route, 1, proof).publication.sourceFences,
+        },
         context(),
       ),
     )
@@ -626,7 +640,12 @@ export async function proveDirectoryAgreement(): Promise<{
     const proof = validation()
     must(
       await provider.approveUpgrade(
-        { upgradeId: 'upgrade-1', validationRef: proof, authorityIds: ['state-auth'] },
+        {
+          upgradeId: 'upgrade-1',
+          validationRef: proof,
+          authorityIds: ['state-auth'],
+          sourceFences: requestFor(route, 1, proof).publication.sourceFences,
+        },
         context(),
       ),
     )
@@ -667,7 +686,12 @@ export async function proveDirectoryAgreement(): Promise<{
     const proof = validation()
     must(
       await provider.approveUpgrade(
-        { upgradeId: 'upgrade-1', validationRef: proof, authorityIds: ['state-auth'] },
+        {
+          upgradeId: 'upgrade-1',
+          validationRef: proof,
+          authorityIds: ['state-auth'],
+          sourceFences: requestFor(route, 1, proof).publication.sourceFences,
+        },
         context(),
       ),
     )

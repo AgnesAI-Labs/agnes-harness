@@ -2,7 +2,10 @@ import { inflateRawSync } from 'node:zlib'
 import { type EventEnvelope, rpcError, type UITimeline } from '@agnes/protocol'
 import { JsonRpcError } from '@agnes/sdk/browser'
 import type { BrowserLog, DiagnosticsInclude } from '@agnes/web-units'
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+
+afterEach(() => vi.unstubAllGlobals())
+
 import {
   type CollectInput,
   collectDiagnostics,
@@ -280,7 +283,8 @@ describe('collectDiagnostics', () => {
     expect(out.bundle.warnings).toContainEqual({ source: 'trace', reason: 'unavailable' })
   })
 
-  it('flags a trace that holds only the loaded window of a longer session', async () => {
+  it.each(['en', 'zh-CN'])('flags the loaded trace window in %s', async (locale) => {
+    vi.stubGlobal('document', { documentElement: { lang: locale } })
     const { call } = fake(standard())
     const out = await collectDiagnostics(
       input(call, { projectionHasEarlier: true }),
@@ -293,7 +297,10 @@ describe('collectDiagnostics', () => {
       expect.objectContaining({
         source: 'trace',
         reason: 'truncated',
-        detail: expect.stringContaining('更早的历史未包含'),
+        detail:
+          locale === 'en'
+            ? 'Only the 0 most recently loaded nodes are included. Earlier history is not included.'
+            : '仅含已加载的最近 0 个节点，更早的历史未包含',
       }),
     )
     expect(files.get('diagnostic-export-warnings.json')).toContain('"source": "trace"')
@@ -535,10 +542,21 @@ describe('collectDiagnostics', () => {
 
   // The reader should know the ledger was imported, but not from where on disk or under what id.
   it.each([
-    [{ source: 'codex', sourceId: 'sess-private', cwd: '/work/private-repo' }, ['imported from codex']],
-    [{ source: 'elsewhere', sourceId: 'sess-private', cwd: '/work/private-repo' }, ['imported from unknown']],
-    [undefined, []],
-  ])('names an imported session only by its source (%o)', async (imported, details) => {
+    [{ source: 'codex', sourceId: 'sess-private', cwd: '/work/private-repo' }, ['imported from codex'], 'en'],
+    [{ source: 'codex', sourceId: 'sess-private', cwd: '/work/private-repo' }, ['导入自 codex'], 'zh-CN'],
+    [
+      { source: 'elsewhere', sourceId: 'sess-private', cwd: '/work/private-repo' },
+      ['imported from unknown'],
+      'en',
+    ],
+    [
+      { source: 'elsewhere', sourceId: 'sess-private', cwd: '/work/private-repo' },
+      ['导入自 未知来源'],
+      'zh-CN',
+    ],
+    [undefined, [], 'en'],
+  ] as const)('names an imported session only by its source (%o)', async (imported, details, locale) => {
+    vi.stubGlobal('document', { documentElement: { lang: locale } })
     const start = { key: 'k', resolvedProfileHash: null, preset: null, agnesVersion: '1', imported }
     const { call } = fake({ 'diagnostics.events': ledger([[ev(1, 'session/start', start)]]) })
     const out = await collectDiagnostics(

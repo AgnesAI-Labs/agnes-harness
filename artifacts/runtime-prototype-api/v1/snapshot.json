@@ -9,7 +9,7 @@
     },
     {
       "path": "biome.json",
-      "sha256": "ec20c116e24097d36a4323d4c39ebfc3162335f6c6710e34b996e8e9882e0244"
+      "sha256": "d3dd2bb990c519a1302446f2dbb4a2257a0bd97bc153e0d1ecf07d9d2be7dc88"
     },
     {
       "path": "packages/extension-api/src/runtime/artifact-authoring.ts",
@@ -321,7 +321,7 @@
     },
     {
       "path": "third-party/build-dependencies.json",
-      "sha256": "2bb355fee538c61f6adacad2c31c88476103c579b52de0e85ef9a61551c8cca4"
+      "sha256": "7393868f07d04bcc3b18d42b1e695440dd750566795e1ce10c6e6eaa7df026c0"
     }
   ],
   "generatedFiles": [
@@ -636,7 +636,7 @@
       },
       {
         "path": "biome.json",
-        "sha256": "ec20c116e24097d36a4323d4c39ebfc3162335f6c6710e34b996e8e9882e0244"
+        "sha256": "d3dd2bb990c519a1302446f2dbb4a2257a0bd97bc153e0d1ecf07d9d2be7dc88"
       },
       {
         "path": "package.json",
@@ -1440,11 +1440,11 @@
       },
       {
         "path": "pnpm-lock.yaml",
-        "sha256": "c88b2bf87b481cd8988654c603442bb5a97d7388a412878bc999f0a16726b031"
+        "sha256": "1bc62a2a2089817a60fafe5b7a489b00834fa2a3b72bb0d1a77cdd17c9cdadda"
       },
       {
         "path": "third-party/build-dependencies.json",
-        "sha256": "2bb355fee538c61f6adacad2c31c88476103c579b52de0e85ef9a61551c8cca4"
+        "sha256": "7393868f07d04bcc3b18d42b1e695440dd750566795e1ce10c6e6eaa7df026c0"
       },
       {
         "path": "tools/check-runtime-prototype-checkpoint.ts",
@@ -1467,9 +1467,9 @@
         "sha256": "5368e00eb1fe320fa21e015f95911b6af6ca8a3c405c3be6585ff521c4832ce0"
       }
     ],
-    "inputDigest": "f81e53162a47356a69eb95fb540284c2ec55e65a35cafc6c58f38796658f842b",
+    "inputDigest": "b33ef74aa7a88ab87d5afb4878c5e20a009f82d0ece4ef91d479055e00e6e99a",
     "diagnostics": [],
-    "reportDigest": "32d522eb4d08f5057eb22e126d47e38c25dad2379ea4d66e775d6899ecba415d"
+    "reportDigest": "20d8485a9e9770a87b4eb2497936427e2931fe75a0ec13fd252947a569e6696f"
   },
-  "snapshotDigest": "01bea2f97324445541856768b15c54b484aafdb02b4ae592045005acadc10de4"
+  "snapshotDigest": "8428bfbe3b14d58793b40405ec86718c248c1a9e739c9b2a48cff5f9d096db9b"
 }

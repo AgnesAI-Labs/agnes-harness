@@ -28,7 +28,10 @@ export class SessionPreferencesStore {
       Array.from(normalized).length > 80 ||
       /[\p{Cc}\p{Zl}\p{Zp}\u202a-\u202e\u2066-\u2069]/u.test(normalized)
     )
-      throw rpcError('SEMANTIC_REJECTED', { reason: '标题需为 1–80 个字符的单行可见文本。' })
+      throw rpcError('SEMANTIC_REJECTED', {
+        code: 'SESSION_TITLE_INVALID',
+        reason: 'A title must be 1–80 characters on one visible line.',
+      })
     if (this.table)
       this.table.exec(
         `INSERT INTO session_preferences (session_key, title) VALUES (?, ?)

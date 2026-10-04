@@ -239,10 +239,10 @@ async function harness(target: ClientTarget, rows: boolean) {
     clientInstanceId: 'client-1',
     capabilities,
     locale: 'en',
-    services: { commands: { submit, commandStatus: submit } } as unknown as Pick<
-      RendererContext,
-      'commands' | 'interactions' | 'artifacts' | 'locale'
-    >,
+    services: {
+      commands: { submit, commandStatus: submit },
+      locale: { locale: 'en', text: (key: string) => key, formatNumber: () => '', formatDate: () => '' },
+    } as unknown as Pick<RendererContext, 'commands' | 'interactions' | 'artifacts' | 'locale'>,
     views: { current: (viewId) => window.get(viewId) },
   })
   const runtime = createClientHostRuntime({

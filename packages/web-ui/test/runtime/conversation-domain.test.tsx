@@ -7,6 +7,7 @@ import {
   type RuntimeConversationWindow,
   validateRuntime,
 } from '@agnes/protocol/runtime'
+import { webUiLocaleCatalog } from '@agnes/web-ui'
 import {
   type ConversationMessage,
   ConversationMessages,
@@ -40,7 +41,7 @@ afterEach(async () => {
 })
 
 function Harness({ store, props }: { store: ConversationProjectionStore; props: ConversationMessagesProps }) {
-  const runtime = useConversationRuntime(store)
+  const runtime = useConversationRuntime(store, props.t)
   useEffect(() => {
     observed = runtime
   }, [runtime])
@@ -49,10 +50,15 @@ function Harness({ store, props }: { store: ConversationProjectionStore; props: 
 
 async function mount(
   store: ConversationProjectionStore,
-  props: ConversationMessagesProps = {},
+  props: Partial<ConversationMessagesProps> = {},
   wrap = (node: ReactNode) => node,
 ) {
-  await act(async () => root.render(wrap(createElement(Harness, { store, props }))))
+  const t: ConversationMessagesProps['t'] = (key, vars) =>
+    Object.entries(vars ?? {}).reduce(
+      (value, [name, replacement]) => value.replaceAll(`{${name}}`, String(replacement)),
+      webUiLocaleCatalog.en[key] ?? key,
+    )
+  await act(async () => root.render(wrap(createElement(Harness, { store, props: { t, ...props } }))))
 }
 
 async function update(store: ConversationProjectionStore, projection: ConversationProjection) {
@@ -238,17 +244,20 @@ describe('conversation window with domain cards', () => {
     expect(custom(flight)).toEqual({ kind: 'domain', entry: owned })
     expect(owned.view.phase).toBe('provisional')
     expect(note?.status?.type).toBe('running')
-    const views: DomainView[] = []
+    // assistant-ui may re-render while registering native message targets. Inspect each presented
+    // view's data, rather than treating React render invocations as distinct domain cards.
+    const views = new Map<string, DomainView>()
     await mount(createConversationProjectionStore({ sessionId: 'session', nodes: [], window }), {
       renderDomain: (view) => {
-        views.push(view)
+        views.set(view.viewId, view)
         return view.fallbackText
       },
     })
     expect(card('domain:flight')?.dataset.status).toBe('incomplete')
     expect(card('domain:flight')?.dataset.phase).toBe('provisional')
     expect(card('domain:note')?.dataset.status).toBe('running')
-    expect(views.map((view) => view.phase)).toEqual(['provisional', 'provisional'])
+    expect([...views.values()].map((view) => view.phase)).toEqual(['provisional', 'provisional'])
+    expect([...views.values()]).toEqual([owned.view, loose.view])
   })
 
   it('renders fallback text, data and resources as inert text without renderDomain', async () => {
@@ -286,7 +295,7 @@ describe('conversation window with domain cards', () => {
   })
 
   it('reuses the card node and keeps focus when the same id is upserted', async () => {
-    const props: ConversationMessagesProps = {
+    const props: Partial<ConversationMessagesProps> = {
       renderDomain: (view) =>
         createElement(
           'label',

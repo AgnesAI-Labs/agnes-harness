@@ -4,6 +4,12 @@
   white-space: pre-wrap;
 }
 
+[data-agnes-conversation-messages]
+  [data-agnes-assistant-ui-target][data-agnes-assistant-ui-ready="true"]
+  + [data-agnes-assistant-ui-fallback] {
+  display: none;
+}
+
 [data-agnes-conversation-messages] .tool-detail-body[hidden] {
   display: none;
 }

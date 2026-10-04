@@ -1,6 +1,7 @@
 /** @vitest-environment happy-dom */
 import { afterEach, expect, it, vi } from 'vitest'
 import { createMarkdownRenderer } from '../src/markdown.js'
+import { zhT } from './helpers/locale.js'
 
 afterEach(() => {
   document.getSelection()?.removeAllRanges()
@@ -57,7 +58,9 @@ it('copies genuine trailing code newlines exactly rather than stripping user con
 it('retains keyboard-accessible table regions, column header scope and alignment', () => {
   const host = document.createElement('div')
   document.body.append(host)
-  const renderer = createMarkdownRenderer(host, '| key | value |\n| :--- | ---: |\n| a | 1 |')
+  const renderer = createMarkdownRenderer(host, '| key | value |\n| :--- | ---: |\n| a | 1 |', {
+    t: zhT,
+  })
   expect(host.querySelector('.table-scroll')?.getAttribute('tabindex')).toBe('0')
   expect(host.querySelector('.table-scroll')?.getAttribute('aria-label')).toBe('表格，可横向滚动')
   expect(host.querySelector('th')?.getAttribute('scope')).toBe('col')

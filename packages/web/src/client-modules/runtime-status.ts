@@ -24,25 +24,39 @@ export type RuntimeErrorStage =
   | 'row-alias'
   | 'reconcile'
 
-const ERROR_DETAILS: Record<RuntimeErrorStage, PluginRuntimeError> = {
-  import: { code: 'CLIENT_MODULE_IMPORT_FAILED', message: '插件 UI 入口加载失败，可重试' },
-  styles: { code: 'CLIENT_MODULE_STYLES_FAILED', message: '插件 UI 样式加载失败，可重试' },
-  'unsupported-slot': {
-    code: 'CLIENT_MODULE_SLOT_UNSUPPORTED',
-    message: '插件 UI 使用了当前宿主未实现的槽位',
-  },
-  'module-shape': { code: 'CLIENT_MODULE_SHAPE_INVALID', message: '插件 UI 模块格式无效，可重试' },
-  apply: { code: 'CLIENT_MODULE_APPLY_FAILED', message: '插件 UI 启动失败，可重试' },
-  render: { code: 'CLIENT_MODULE_RENDER_FAILED', message: '插件 UI 渲染失败，可重试' },
-  dispose: { code: 'CLIENT_MODULE_DISPOSE_FAILED', message: '插件 UI 卸载失败，后台清理中，可重试' },
-  timeout: { code: 'CLIENT_MODULE_TIMEOUT', message: '插件 UI 操作超时，后台清理中，可重试' },
-  'row-alias': { code: 'CLIENT_MODULE_ROW_ALIAS_INVALID', message: '插件 UI 行身份迁移不明确，已停止激活' },
-  reconcile: { code: 'CLIENT_MODULE_RECONCILE_FAILED', message: '插件 UI 名册暂不可用，可重试' },
+const ERROR_KEYS: Record<RuntimeErrorStage, string> = {
+  import: 'runtime.import',
+  styles: 'runtime.styles',
+  'unsupported-slot': 'runtime.unsupportedSlot',
+  'module-shape': 'runtime.moduleShape',
+  apply: 'runtime.apply',
+  render: 'runtime.render',
+  dispose: 'runtime.dispose',
+  timeout: 'runtime.timeout',
+  'row-alias': 'runtime.rowAlias',
+  reconcile: 'runtime.reconcile',
+}
+
+const ERROR_CODES: Record<RuntimeErrorStage, string> = {
+  import: 'CLIENT_MODULE_IMPORT_FAILED',
+  styles: 'CLIENT_MODULE_STYLES_FAILED',
+  'unsupported-slot': 'CLIENT_MODULE_SLOT_UNSUPPORTED',
+  'module-shape': 'CLIENT_MODULE_SHAPE_INVALID',
+  apply: 'CLIENT_MODULE_APPLY_FAILED',
+  render: 'CLIENT_MODULE_RENDER_FAILED',
+  dispose: 'CLIENT_MODULE_DISPOSE_FAILED',
+  timeout: 'CLIENT_MODULE_TIMEOUT',
+  'row-alias': 'CLIENT_MODULE_ROW_ALIAS_INVALID',
+  reconcile: 'CLIENT_MODULE_RECONCILE_FAILED',
 }
 
 /** Convert loader/runtime failures into a small, safe diagnostic contract. */
-export function normalizeRuntimeError(stage: RuntimeErrorStage, _error: unknown): PluginRuntimeError {
-  return { ...ERROR_DETAILS[stage] }
+export function normalizeRuntimeError(
+  stage: RuntimeErrorStage,
+  _error: unknown,
+  t: (key: string) => string = (key) => key,
+): PluginRuntimeError {
+  return { code: ERROR_CODES[stage], message: t(ERROR_KEYS[stage]) }
 }
 
 function copyState(state: PluginRuntimeState): PluginRuntimeState {

@@ -129,8 +129,7 @@ function createPaneController(
     operationCancel.disabled = view.controls.cancelDisabled
     operationCancel.hidden = view.controls.cancelHidden
   }
-  renderControls(model.getSnapshot())
-  const unsubscribe = model.subscribe(() => {
+  const paint = (): void => {
     const view = model.getSnapshot()
     state.textContent = view.status.label
     summary.textContent = view.status.summary
@@ -154,7 +153,9 @@ function createPaneController(
     operationState.textContent = view.operation.label
     operationSummary.textContent = view.operation.summary
     renderControls(view)
-  })
+  }
+  paint()
+  const unsubscribe = model.subscribe(paint)
   return {
     ...model,
     dispose() {

@@ -132,10 +132,10 @@ function setup(target: ClientTarget, ...held: DomainView[]) {
     clientInstanceId: 'client-1',
     capabilities,
     locale: 'en',
-    services: { commands: { submit, commandStatus: submit } } as unknown as Pick<
-      RendererContext,
-      'commands' | 'interactions' | 'artifacts' | 'locale'
-    >,
+    services: {
+      commands: { submit, commandStatus: submit },
+      locale: { locale: 'en', text: (key: string) => key, formatNumber: () => '', formatDate: () => '' },
+    } as unknown as Pick<RendererContext, 'commands' | 'interactions' | 'artifacts' | 'locale'>,
     views,
   })
   return { presenter, submit, hold: (entry: DomainView) => window.set(entry.viewId, entry) }

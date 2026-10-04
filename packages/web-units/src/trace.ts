@@ -11,9 +11,11 @@ import {
   useMemo,
   useRef,
   useState,
+  useSyncExternalStore,
 } from 'react'
 import { flushSync } from 'react-dom'
 import { buildTraceToolHierarchy, isTraceRowHiddenByTool, traceToolAncestors } from './trace-hierarchy.js'
+import { type TraceMessageKey, traceLocale, traceText } from './trace-locale.js'
 import {
   buildTraceRequestMetrics,
   type TraceMetric,
@@ -32,24 +34,24 @@ import {
 
 export const TRACE_PANEL_STORAGE_KEY = 'agnes.web.tracePanel'
 
-const BADGE: Record<string, string> = {
-  user: '用户',
-  context: '上下文',
-  assistant: '助手',
-  tool: '工具',
-  approval: '审批',
-  compaction: '整理',
-  cost: '费用',
+const BADGE_KEY: Record<string, TraceMessageKey> = {
+  user: 'trace.badge.user',
+  context: 'trace.badge.context',
+  assistant: 'trace.badge.assistant',
+  tool: 'trace.badge.tool',
+  approval: 'trace.badge.approval',
+  compaction: 'trace.badge.compaction',
+  cost: 'trace.badge.cost',
 }
 
-const STATUS_LABEL: Record<string, string> = {
-  running: '进行中',
-  waiting: '等待中',
-  completed: '已完成',
-  failed: '失败',
-  cancelled: '已取消',
-  planned: '等待执行',
-  awaiting_approval: '等待审批',
+const STATUS_KEY: Record<string, TraceMessageKey> = {
+  running: 'trace.status.running',
+  waiting: 'trace.status.waiting',
+  completed: 'trace.status.completed',
+  failed: 'trace.status.failed',
+  cancelled: 'trace.status.cancelled',
+  planned: 'trace.status.planned',
+  awaiting_approval: 'trace.status.awaiting_approval',
 }
 
 /** What the host knows beyond the loaded snapshot: whether older records exist, and how to load them. */
@@ -82,7 +84,9 @@ export type TraceRow = {
   seq: number
   turn?: number | undefined
   step?: string | undefined
+  kind: string
   badge: string
+  statusCode: string
   preview: string
   raw: string
   rawNote?: string | undefined
@@ -129,29 +133,45 @@ const clip = (value: string, max: number): string =>
   value.length <= max ? value : `${value.slice(0, max).trimEnd()}…`
 
 export const durationLabel = (duration?: number): string => {
-  if (duration === undefined) return '进行中'
-  if (duration < 1000) return `${duration} 毫秒`
-  if (duration < 60_000) return `${(duration / 1000).toFixed(duration < 10_000 ? 1 : 0)} 秒`
-  return `${Math.floor(duration / 60_000)} 分 ${Math.round((duration % 60_000) / 1000)} 秒`
+  if (duration === undefined) return traceText('trace.duration.running')
+  if (duration < 1000) return traceText('trace.duration.ms', { n: duration })
+  if (duration < 60_000)
+    return traceText('trace.duration.seconds', { n: (duration / 1000).toFixed(duration < 10_000 ? 1 : 0) })
+  return traceText('trace.duration.minutes', {
+    minutes: Math.floor(duration / 60_000),
+    seconds: Math.round((duration % 60_000) / 1000),
+  })
 }
 
 const tokenLabel = (
   tokens: { input: number; output: number; cacheRead: number; cacheWrite: number; reasoning?: number },
   reasoningKnown: boolean,
 ): string =>
-  `输入 ${tokens.input} · 输出 ${tokens.output} · 缓存读取 ${tokens.cacheRead} · 缓存写入 ${tokens.cacheWrite} · 推理 ${reasoningKnown ? tokens.reasoning : '未提供'}`
+  traceText('trace.token.line', {
+    input: tokens.input,
+    output: tokens.output,
+    cacheRead: tokens.cacheRead,
+    cacheWrite: tokens.cacheWrite,
+    reasoning: reasoningKnown ? (tokens.reasoning ?? '') : traceText('trace.token.unavailable'),
+  })
 
 const metricLabel = (metric: TraceMetric<number>): string =>
   metric.state === 'known'
     ? String(metric.value)
     : metric.reason === 'earlier-history-unloaded'
-      ? '更早历史未加载'
+      ? traceText('trace.metric.earlierUnloaded')
       : metric.reason === 'request-order-unverifiable'
-        ? '无法核对'
-        : '未记录'
+        ? traceText('trace.metric.unverifiable')
+        : traceText('trace.metric.unrecorded')
 
 const metricTokensLabel = (tokens: TraceTokenMetrics): string =>
-  `输入 ${metricLabel(tokens.input)} · 输出 ${metricLabel(tokens.output)} · 缓存读取 ${metricLabel(tokens.cacheRead)} · 缓存写入 ${metricLabel(tokens.cacheWrite)} · 推理 ${metricLabel(tokens.reasoning)}`
+  traceText('trace.token.line', {
+    input: metricLabel(tokens.input),
+    output: metricLabel(tokens.output),
+    cacheRead: metricLabel(tokens.cacheRead),
+    cacheWrite: metricLabel(tokens.cacheWrite),
+    reasoning: metricLabel(tokens.reasoning),
+  })
 
 const walkSpans = (span: UISpan, visit: (item: UISpan) => void): void => {
   visit(span)
@@ -168,7 +188,13 @@ const nodePreview = (node: UINode): string => {
       .join('\n')
     const images = node.content.filter((block) => block.type === 'image').length
     const resources = node.content.filter((block) => block.type === 'resource_link').length
-    return [message, images ? `${images} 张图片` : '', resources ? `${resources} 个资源链接` : '']
+    return [
+      message,
+      images ? traceText(images === 1 ? 'trace.preview.image' : 'trace.preview.images', { n: images }) : '',
+      resources
+        ? traceText(resources === 1 ? 'trace.preview.resource' : 'trace.preview.resources', { n: resources })
+        : '',
+    ]
       .filter(Boolean)
       .join(' · ')
   }
@@ -190,27 +216,34 @@ const nodePreview = (node: UINode): string => {
 const nodeRaw = (node: UINode): string => {
   if (node.kind === 'assistant') return [node.thinking, node.text].filter(Boolean).join('\n\n')
   if (node.kind === 'tool')
-    return [`工具：${node.name}`, node.argsPreview, node.resultPreview].filter(Boolean).join('\n\n')
+    return [traceText('trace.raw.tool', { name: node.name }), node.argsPreview, node.resultPreview]
+      .filter(Boolean)
+      .join('\n\n')
   return nodePreview(node)
 }
 
 const userAttachments = (node: UINode): string[] => {
   if (node.kind !== 'user') return []
   return node.content.flatMap((block) => {
-    if (block.type === 'image') return [`图片 · ${block.mimeType}`]
-    if (block.type === 'resource_link')
-      return [`资源链接 · ${block.name ?? '未命名资源'}${block.mimeType ? ` · ${block.mimeType}` : ''}`]
+    if (block.type === 'image') return [traceText('trace.attachment.image', { mime: block.mimeType })]
+    if (block.type === 'resource_link') {
+      const name = `${block.name ?? traceText('trace.attachment.unnamed')}${block.mimeType ? ` · ${block.mimeType}` : ''}`
+      return [traceText('trace.attachment.resource', { name })]
+    }
     return []
   })
 }
 
 const nodeSource = (node: UINode): string => {
-  if (node.kind === 'user') return node.actorLabel ? `用户 · ${node.actorLabel}` : '用户'
-  if (node.kind === 'assistant') return '模型'
-  if (node.kind === 'tool') return `工具 · ${node.name}`
-  if (node.kind === 'context') return '运行时上下文'
-  if (node.kind === 'approval') return '审批'
-  if (node.kind === 'compaction') return '上下文整理'
+  if (node.kind === 'user')
+    return node.actorLabel
+      ? traceText('trace.source.userActor', { actor: node.actorLabel })
+      : traceText('trace.source.user')
+  if (node.kind === 'assistant') return traceText('trace.source.model')
+  if (node.kind === 'tool') return traceText('trace.source.tool', { name: node.name })
+  if (node.kind === 'context') return traceText('trace.source.context')
+  if (node.kind === 'approval') return traceText('trace.source.approval')
+  if (node.kind === 'compaction') return traceText('trace.source.compaction')
   return node.kind
 }
 
@@ -218,7 +251,10 @@ const LIST_KINDS = new Set(['user', 'context', 'assistant', 'tool', 'approval', 
 
 /** A span placed where the trace shortened a subtree; its message is how many steps it stands for. */
 const isTruncation = (span: UISpan): boolean => span.error?.code === 'TRACE_TRUNCATED'
-const truncationLabel = (span: UISpan): string => `已省略 ${span.error?.message ?? '若干'} 个子步骤`
+const truncationLabel = (span: UISpan): string => {
+  const n = span.error?.message ?? traceText('trace.truncated.some')
+  return traceText(n === '1' ? 'trace.truncated.one' : 'trace.truncated', { n })
+}
 
 type Placed = { span: UISpan; order: number; step: string | undefined }
 
@@ -263,7 +299,10 @@ function indexTrace(turns: readonly UITurn[]) {
 }
 
 // A row depends only on its node, turn and span; unchanged objects are reused across snapshots.
-const rowCache = new WeakMap<UINode, { turn: UITurn | undefined; span: UISpan | undefined; row: TraceRow }>()
+const rowCache = new WeakMap<
+  UINode,
+  { locale: string; turn: UITurn | undefined; span: UISpan | undefined; row: TraceRow }
+>()
 
 export function buildTraceRows(nodes: readonly UINode[], turns: readonly UITurn[]): TraceRow[] {
   const index = indexTrace(turns)
@@ -276,19 +315,19 @@ export function buildTraceRows(nodes: readonly UINode[], turns: readonly UITurn[
     const preview = nodePreview(node).replace(/\s+/g, ' ').trim()
     const raw = nodeRaw(node)
     const attachments = userAttachments(node)
-    const status =
-      node.kind === 'tool'
-        ? (STATUS_LABEL[node.status] ?? node.status)
-        : (STATUS_LABEL[span?.status ?? ''] ?? '已完成')
+    const statusCode = node.kind === 'tool' ? node.status : (span?.status ?? 'completed')
+    const status = traceText(STATUS_KEY[statusCode] ?? 'trace.status.completed')
     const errorCode = span && !isTruncation(span) ? span.error?.code : undefined
     const usage = turn?.usage?.calls.length ? turn.usage : undefined
     const callUsage =
       span?.callSeq === undefined
         ? undefined
         : turn?.usage?.calls.find((call) => call.seq === span.callSeq && !call.adjustment)
+    const locale = traceLocale()
     const cached = rowCache.get(node)
     if (
       cached &&
+      cached.locale === locale &&
       cached.turn === turn &&
       cached.span === span &&
       cached.row.step === placed?.step &&
@@ -311,13 +350,15 @@ export function buildTraceRows(nodes: readonly UINode[], turns: readonly UITurn[
       seq: node.seq,
       turn: turn?.turn,
       step: placed?.step,
-      badge: BADGE[node.kind] ?? node.kind,
+      kind: node.kind,
+      badge: traceText(BADGE_KEY[node.kind] ?? 'trace.badge.assistant'),
       preview,
       raw,
-      ...(node.kind === 'tool' ? { rawNote: '工具参数与结果来自有长度限制的会话投影，可能已截断。' } : {}),
-      ...(attachments.length ? { attachments, rawNote: '附件只显示摘要；内容请在对话中查看。' } : {}),
+      ...(node.kind === 'tool' ? { rawNote: traceText('trace.note.tool') } : {}),
+      ...(attachments.length ? { attachments, rawNote: traceText('trace.note.attachments') } : {}),
       source: nodeSource(node),
       status,
+      statusCode,
       startedAt: span?.startedAt,
       durationMs: span?.durationMs,
       ttftMs: span?.ttftMs,
@@ -326,7 +367,7 @@ export function buildTraceRows(nodes: readonly UINode[], turns: readonly UITurn[
       usage,
       callUsage,
     }
-    rowCache.set(node, { turn, span, row })
+    rowCache.set(node, { locale, turn, span, row })
     rows.push(row)
   }
   return rows
@@ -403,9 +444,9 @@ function buildGantt(
         key: `row:${row.id}`,
         targetId: row.id,
         lane:
-          row.badge === '用户' || row.badge === '上下文' ? 'input' : row.badge === '工具' ? 'tool' : 'model',
-        ...(row.badge === '用户' ? { tone: 'user' as const } : {}),
-        ...(row.badge === '上下文' ? { tone: 'context' as const } : {}),
+          row.kind === 'user' || row.kind === 'context' ? 'input' : row.kind === 'tool' ? 'tool' : 'model',
+        ...(row.kind === 'user' ? { tone: 'user' as const } : {}),
+        ...(row.kind === 'context' ? { tone: 'context' as const } : {}),
         left: (index / rows.length) * 100,
         end: ((index + 1) / rows.length) * 100,
         width: 100 / rows.length,
@@ -461,7 +502,7 @@ function buildGantt(
         lane: 'input',
         start: origin,
         end: origin,
-        title: `第 ${turn.turn} 轮输入 · 按轮次起点定位`,
+        title: traceText('trace.gantt.turnInput', { turn: turn.turn }),
       })
     } else {
       turnInputs.forEach((node) => {
@@ -472,7 +513,9 @@ function buildGantt(
           start: origin,
           end: origin,
           targetId: node.id,
-          title: `${node.kind === 'user' ? '用户' : '上下文'} · 按轮次起点定位`,
+          title: traceText('trace.gantt.anchored', {
+            kind: traceText(node.kind === 'user' ? 'trace.badge.user' : 'trace.badge.context'),
+          }),
         })
       })
     }
@@ -490,7 +533,7 @@ function buildGantt(
           start: at,
           end: at + duration,
           ...(targetId ? { targetId } : {}),
-          title: `${span.model ?? span.name} · ${span.durationMs === undefined && span.status !== 'running' ? '时长未知' : durationLabel(span.durationMs)}`,
+          title: `${span.model ?? span.name} · ${span.durationMs === undefined && span.status !== 'running' ? traceText('trace.duration.unknown') : durationLabel(span.durationMs)}`,
         })
       if (span.kind === 'tool')
         events.push({
@@ -499,7 +542,7 @@ function buildGantt(
           start: at,
           end: at + duration,
           ...(targetId ? { targetId } : {}),
-          title: `${span.name} · ${span.durationMs === undefined && span.status !== 'running' ? '时长未知' : durationLabel(span.durationMs)}`,
+          title: `${span.name} · ${span.durationMs === undefined && span.status !== 'running' ? traceText('trace.duration.unknown') : durationLabel(span.durationMs)}`,
         })
       if (isTruncation(span)) {
         const label = truncationLabel(span)
@@ -543,20 +586,27 @@ const traceStats = (turns: readonly UITurn[]): Array<[string, string]> => {
       })
   }
   return [
-    ['时长', durationLabel(duration)],
-    ['轮次', String(turns.length)],
-    ['调用', String(calls)],
+    [traceText('trace.stat.duration'), durationLabel(duration)],
+    [traceText('trace.stat.turns'), String(turns.length)],
+    [traceText('trace.stat.calls'), String(calls)],
   ]
 }
 
-const INSPECTOR_PANES = [
-  ['overview', '概述'],
-  ['preview', '预览'],
-  ['raw', '投影内容'],
-  ['source', '来源'],
-] as const
+const INSPECTOR_PANE_IDS = ['overview', 'preview', 'raw', 'source'] as const
+const PANE_KEY = {
+  overview: 'trace.pane.overview',
+  preview: 'trace.pane.preview',
+  raw: 'trace.pane.raw',
+  source: 'trace.pane.source',
+  input: 'trace.pane.input',
+  output: 'trace.pane.output',
+  timing: 'trace.pane.timing',
+} as const satisfies Record<string, TraceMessageKey>
 
-type InspectorPane = (typeof INSPECTOR_PANES)[number][0] | 'input' | 'output' | 'timing'
+type InspectorPane = keyof typeof PANE_KEY
+
+const laneName = (lane: 'input' | 'model' | 'tool'): string =>
+  traceText(lane === 'input' ? 'trace.lane.input' : lane === 'model' ? 'trace.lane.model' : 'trace.lane.tool')
 type ToolDetail = { call: ToolCall; result?: ToolResult }
 type ToolDetailState =
   | { key: string; status: 'loading' }
@@ -630,9 +680,15 @@ export const Trace = forwardRef<TraceHandle, TraceProps>(function Trace(
     pan: boolean
     viewportStart: number
   } | null>(null)
+  const locale = useSyncExternalStore((listener) => {
+    window.addEventListener('agnes:locale-changed', listener)
+    return () => window.removeEventListener('agnes:locale-changed', listener)
+  }, traceLocale)
+  // buildTraceRows reads the document language itself. locale is only the subscription snapshot.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: locale changes the formatted row text
   const rows = useMemo(
     () => traceRowBuilder.build(snapshot.nodes, snapshot.turns),
-    [snapshot.nodes, snapshot.turns],
+    [snapshot.nodes, snapshot.turns, locale],
   )
   const toolHierarchy = useMemo(() => buildTraceToolHierarchy(snapshot.nodes), [snapshot.nodes])
   const selectedRow = selected ? rows.find((row) => row.id === selected) : undefined
@@ -927,7 +983,9 @@ export const Trace = forwardRef<TraceHandle, TraceProps>(function Trace(
     observer.observe(list)
     return () => observer.disconnect()
   }, [])
-  const omitted = useMemo(() => truncations(snapshot.turns), [snapshot.turns])
+  // truncation labels are formatted from the document language. locale is the subscription snapshot.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: locale changes the omitted-step text
+  const omitted = useMemo(() => truncations(snapshot.turns), [snapshot.turns, locale])
   const meta = snapshot.meta
   const selectRow = (id: string): void => {
     const bar = timelineViewport ? bars.find((item) => item.targetId === id) : undefined
@@ -1132,21 +1190,23 @@ export const Trace = forwardRef<TraceHandle, TraceProps>(function Trace(
       createElement('div', { className: 'trace-field-label' }, label),
       createElement('div', { className: 'trace-field-value' }, value),
     )
-  const inspectorPanes: readonly (readonly [InspectorPane, string])[] = selectedToolKey
-    ? [...INSPECTOR_PANES, ['input', '完整输入'], ['output', '完整输出'], ['timing', '时间']]
-    : INSPECTOR_PANES
+  const inspectorPaneIds: readonly InspectorPane[] = selectedToolKey
+    ? [...INSPECTOR_PANE_IDS, 'input', 'output', 'timing']
+    : [...INSPECTOR_PANE_IDS]
   const detailValue = activeToolDetail?.status === 'ready' ? activeToolDetail.value : undefined
   const detailNotice = () =>
     activeToolDetail?.status === 'error'
       ? createElement(
           'p',
           { className: 'trace-detail-status', role: 'alert' },
-          `读取详情失败：${activeToolDetail.message}`,
+          traceText('trace.detail.readFailed', { message: activeToolDetail.message }),
         )
       : createElement(
           'p',
           { className: 'trace-detail-status', role: 'status' },
-          activeToolDetail?.status === 'loading' ? '正在读取完整记录…' : '尚无可读取的详情',
+          activeToolDetail?.status === 'loading'
+            ? traceText('trace.detail.loading')
+            : traceText('trace.detail.empty'),
         )
   const copyDetail = (label: string, value: string) =>
     createElement(
@@ -1179,18 +1239,21 @@ export const Trace = forwardRef<TraceHandle, TraceProps>(function Trace(
                 {
                   type: 'button',
                   className: 'trace-image-thumb',
-                  'aria-label': `查看结果图片 ${index + 1}`,
-                  onClick: () => setLightbox({ src, alt: `工具结果图片 ${index + 1}` }),
+                  'aria-label': traceText('trace.image.viewResult', { n: index + 1 }),
+                  onClick: () =>
+                    setLightbox({ src, alt: traceText('trace.image.resultAlt', { n: index + 1 }) }),
                 },
-                createElement('img', { src, alt: `工具结果图片 ${index + 1}` }),
+                createElement('img', { src, alt: traceText('trace.image.resultAlt', { n: index + 1 }) }),
               )
-            : `图片 · ${block.mimeType}`,
+            : traceText('trace.image.mime', { mime: block.mimeType }),
         )
       }
       return createElement(
         'p',
         { className: 'trace-detail-resource', key: `resource:${index}` },
-        `资源链接 · ${block.name ?? block.uri}${block.mimeType ? ` · ${block.mimeType}` : ''}`,
+        traceText('trace.resource.link', {
+          name: `${block.name ?? block.uri}${block.mimeType ? ` · ${block.mimeType}` : ''}`,
+        }),
       )
     })
   const inspector = selectedRow
@@ -1200,11 +1263,15 @@ export const Trace = forwardRef<TraceHandle, TraceProps>(function Trace(
         createElement(
           'header',
           { className: 'trace-inspector-head' },
-          createElement('span', { className: `trace-badge kind-${selectedRow.badge}` }, selectedRow.badge),
+          createElement('span', { className: `trace-badge kind-${selectedRow.kind}` }, selectedRow.badge),
           createElement(
             'h2',
             { className: 'trace-inspector-title' },
-            [selectedRow.turn ? `第 ${selectedRow.turn} 轮` : undefined, selectedRow.step, '消息']
+            [
+              selectedRow.turn ? traceText('trace.inspector.turn', { turn: selectedRow.turn }) : undefined,
+              selectedRow.step,
+              traceText('trace.inspector.message'),
+            ]
               .filter(Boolean)
               .join(' · '),
           ),
@@ -1213,7 +1280,7 @@ export const Trace = forwardRef<TraceHandle, TraceProps>(function Trace(
             {
               className: 'trace-inspector-close',
               type: 'button',
-              'aria-label': '关闭详情',
+              'aria-label': traceText('trace.closeDetail'),
               onClick: closeInspector,
             },
             '×',
@@ -1222,7 +1289,7 @@ export const Trace = forwardRef<TraceHandle, TraceProps>(function Trace(
         createElement(
           'div',
           { className: 'trace-inspector-tabs' },
-          ...inspectorPanes.map(([id, label]) =>
+          ...inspectorPaneIds.map((id) =>
             createElement(
               'button',
               {
@@ -1233,17 +1300,26 @@ export const Trace = forwardRef<TraceHandle, TraceProps>(function Trace(
                 'aria-selected': pane === id ? 'true' : 'false',
                 onClick: () => selectPane(id),
               },
-              label,
+              traceText(PANE_KEY[id]),
             ),
           ),
         ),
         createElement(
           'div',
           { className: 'trace-inspector-pane', hidden: pane !== 'overview' },
-          paneField('来源', selectedRow.source),
-          paneField('状态', selectedRow.status),
-          ...(selectedRow.errorCode ? [paneField('错误码', selectedRow.errorCode)] : []),
-          ...(selectedRow.attachments?.length ? [paneField('附件', selectedRow.attachments.join('；'))] : []),
+          paneField(traceText('trace.field.source'), selectedRow.source),
+          paneField(traceText('trace.field.status'), selectedRow.status),
+          ...(selectedRow.errorCode
+            ? [paneField(traceText('trace.field.errorCode'), selectedRow.errorCode)]
+            : []),
+          ...(selectedRow.attachments?.length
+            ? [
+                paneField(
+                  traceText('trace.field.attachments'),
+                  selectedRow.attachments.join(traceText('trace.join.list')),
+                ),
+              ]
+            : []),
           ...(selectedUserNode?.kind === 'user'
             ? selectedUserNode.content.flatMap((block, index) => {
                 if (block.type !== 'image' || !/^image\/(png|jpeg|webp|gif)$/.test(block.mimeType)) return []
@@ -1255,32 +1331,37 @@ export const Trace = forwardRef<TraceHandle, TraceProps>(function Trace(
                       key: `user-image:${index}`,
                       className: 'trace-image-thumb',
                       type: 'button',
-                      'aria-label': `查看输入图片 ${index + 1}`,
-                      onClick: () => setLightbox({ src, alt: `输入图片 ${index + 1}` }),
+                      'aria-label': traceText('trace.image.viewInput', { n: index + 1 }),
+                      onClick: () =>
+                        setLightbox({ src, alt: traceText('trace.image.inputAlt', { n: index + 1 }) }),
                     },
-                    createElement('img', { src, alt: `输入图片 ${index + 1}` }),
+                    createElement('img', { src, alt: traceText('trace.image.inputAlt', { n: index + 1 }) }),
                   ),
                 ]
               })
             : []),
-          ...(selectedRow.step ? [paneField('步骤', selectedRow.step)] : []),
-          ...(selectedRow.durationMs !== undefined || selectedRow.status === '进行中'
-            ? [paneField('时长', durationLabel(selectedRow.durationMs))]
+          ...(selectedRow.step ? [paneField(traceText('trace.field.step'), selectedRow.step)] : []),
+          ...(selectedRow.durationMs !== undefined || selectedRow.statusCode === 'running'
+            ? [paneField(traceText('trace.field.duration'), durationLabel(selectedRow.durationMs))]
             : []),
-          ...(selectedRow.ttftMs === undefined ? [] : [paneField('首字', durationLabel(selectedRow.ttftMs))]),
-          ...(selectedRow.model === undefined ? [] : [paneField('模型', selectedRow.model)]),
+          ...(selectedRow.ttftMs === undefined
+            ? []
+            : [paneField(traceText('trace.field.ttft'), durationLabel(selectedRow.ttftMs))]),
+          ...(selectedRow.model === undefined
+            ? []
+            : [paneField(traceText('trace.field.model'), selectedRow.model)]),
           ...(selectedRow.usage === undefined
             ? []
             : [
                 paneField(
-                  '本轮用量',
+                  traceText('trace.field.turnUsage'),
                   tokenLabel(selectedRow.usage.totals, selectedRow.usage.reasoningComplete),
                 ),
               ]),
           ...(selectedRow.callUsage?.tokens
             ? [
                 paneField(
-                  '当前调用',
+                  traceText('trace.field.callUsage'),
                   tokenLabel(
                     selectedRow.callUsage.tokens,
                     selectedRow.callUsage.tokens.reasoning !== undefined,
@@ -1290,17 +1371,20 @@ export const Trace = forwardRef<TraceHandle, TraceProps>(function Trace(
             : []),
           ...(selectedRequest
             ? [
-                paneField('请求顺序', metricLabel(selectedRequest.requestNumber)),
-                paneField('入账顺序', metricLabel(selectedRequest.ledgerNumber)),
-                paneField('累计入账用量', metricTokensLabel(selectedRequest.cumulativeTokens)),
+                paneField(traceText('trace.field.requestOrder'), metricLabel(selectedRequest.requestNumber)),
+                paneField(traceText('trace.field.ledgerOrder'), metricLabel(selectedRequest.ledgerNumber)),
                 paneField(
-                  '当次耗时',
+                  traceText('trace.field.cumulativeUsage'),
+                  metricTokensLabel(selectedRequest.cumulativeTokens),
+                ),
+                paneField(
+                  traceText('trace.field.callDuration'),
                   selectedRequest.durationMs.state === 'known'
                     ? durationLabel(selectedRequest.durationMs.value)
                     : metricLabel(selectedRequest.durationMs),
                 ),
                 paneField(
-                  '累计调用耗时',
+                  traceText('trace.field.cumulativeDuration'),
                   selectedRequest.cumulativeCallDurationMs.state === 'known'
                     ? durationLabel(selectedRequest.cumulativeCallDurationMs.value)
                     : metricLabel(selectedRequest.cumulativeCallDurationMs),
@@ -1311,7 +1395,11 @@ export const Trace = forwardRef<TraceHandle, TraceProps>(function Trace(
         createElement(
           'div',
           { className: 'trace-inspector-pane', hidden: pane !== 'preview' },
-          createElement('pre', { className: 'trace-pre' }, selectedRow.preview || '（无预览）'),
+          createElement(
+            'pre',
+            { className: 'trace-pre' },
+            selectedRow.preview || traceText('trace.emptyPreview'),
+          ),
         ),
         createElement(
           'div',
@@ -1319,12 +1407,12 @@ export const Trace = forwardRef<TraceHandle, TraceProps>(function Trace(
           ...(selectedRow.rawNote
             ? [createElement('p', { className: 'trace-raw-note' }, selectedRow.rawNote)]
             : []),
-          createElement('pre', { className: 'trace-pre' }, selectedRow.raw || '（无原始内容）'),
+          createElement('pre', { className: 'trace-pre' }, selectedRow.raw || traceText('trace.emptyRaw')),
         ),
         createElement(
           'div',
           { className: 'trace-inspector-pane', hidden: pane !== 'source' },
-          paneField('来源', selectedRow.source),
+          paneField(traceText('trace.field.source'), selectedRow.source),
         ),
         ...(selectedToolKey
           ? [
@@ -1335,7 +1423,10 @@ export const Trace = forwardRef<TraceHandle, TraceProps>(function Trace(
                   ? []
                   : detailValue
                     ? [
-                        copyDetail('复制输入 JSON', JSON.stringify(detailValue.call.args)),
+                        copyDetail(
+                          traceText('trace.detail.copyInput'),
+                          JSON.stringify(detailValue.call.args),
+                        ),
                         createElement(
                           'pre',
                           { className: 'trace-pre trace-detail-content' },
@@ -1352,16 +1443,36 @@ export const Trace = forwardRef<TraceHandle, TraceProps>(function Trace(
                   : !detailValue
                     ? [detailNotice()]
                     : !detailValue.result
-                      ? [createElement('p', { className: 'trace-detail-status' }, '工具结果尚未记录。')]
+                      ? [
+                          createElement(
+                            'p',
+                            { className: 'trace-detail-status' },
+                            traceText('trace.detail.resultMissing'),
+                          ),
+                        ]
                       : [
-                          paneField('结果', detailValue.result.isError ? '失败' : '完成'),
-                          ...(detailValue.result.code ? [paneField('错误码', detailValue.result.code)] : []),
-                          copyDetail('复制结果 JSON', JSON.stringify(detailValue.result)),
+                          paneField(
+                            traceText('trace.field.result'),
+                            detailValue.result.isError
+                              ? traceText('trace.result.failed')
+                              : traceText('trace.result.completed'),
+                          ),
+                          ...(detailValue.result.code
+                            ? [paneField(traceText('trace.field.errorCode'), detailValue.result.code)]
+                            : []),
+                          copyDetail(
+                            traceText('trace.detail.copyResult'),
+                            JSON.stringify(detailValue.result),
+                          ),
                           ...toolResultBlocks(detailValue.result),
                           ...(detailValue.result.structured === undefined
                             ? []
                             : [
-                                createElement('h3', { className: 'trace-detail-heading' }, '结构化结果'),
+                                createElement(
+                                  'h3',
+                                  { className: 'trace-detail-heading' },
+                                  traceText('trace.detail.structured'),
+                                ),
                                 createElement(
                                   'pre',
                                   { className: 'trace-pre trace-detail-content' },
@@ -1373,21 +1484,23 @@ export const Trace = forwardRef<TraceHandle, TraceProps>(function Trace(
               createElement(
                 'div',
                 { className: 'trace-inspector-pane', hidden: pane !== 'timing' },
-                ...(selectedRow.startedAt ? [paneField('开始时间', selectedRow.startedAt)] : []),
+                ...(selectedRow.startedAt
+                  ? [paneField(traceText('trace.field.startedAt'), selectedRow.startedAt)]
+                  : []),
                 paneField(
-                  '时长',
-                  selectedRow.durationMs === undefined && selectedRow.status !== '进行中'
-                    ? '时长未知'
+                  traceText('trace.field.duration'),
+                  selectedRow.durationMs === undefined && selectedRow.statusCode !== 'running'
+                    ? traceText('trace.duration.unknown')
                     : durationLabel(selectedRow.durationMs),
                 ),
                 ...(selectedRow.ttftMs === undefined
                   ? []
-                  : [paneField('首字耗时', durationLabel(selectedRow.ttftMs))]),
+                  : [paneField(traceText('trace.field.ttftDuration'), durationLabel(selectedRow.ttftMs))]),
                 ...(selectedRow.ttftMs === undefined || selectedRow.durationMs === undefined
                   ? []
                   : [
                       paneField(
-                        '后续生成',
+                        traceText('trace.field.generationAfter'),
                         durationLabel(Math.max(0, selectedRow.durationMs - selectedRow.ttftMs)),
                       ),
                     ]),
@@ -1415,7 +1528,13 @@ export const Trace = forwardRef<TraceHandle, TraceProps>(function Trace(
           createElement('span', { className: 'trace-stat', key: label }, `${label} ${value}`),
         ),
         ...(meta?.hasEarlier
-          ? [createElement('span', { className: 'trace-stat trace-partial', key: 'partial' }, '已加载部分')]
+          ? [
+              createElement(
+                'span',
+                { className: 'trace-stat trace-partial', key: 'partial' },
+                traceText('trace.partial'),
+              ),
+            ]
           : []),
       ),
       createElement(
@@ -1424,16 +1543,18 @@ export const Trace = forwardRef<TraceHandle, TraceProps>(function Trace(
           className: 'trace-fold-all',
           type: 'button',
           disabled: focusActive || numberedTurns.length === 0,
-          'aria-label': allTurnsCollapsed ? '展开所有轮次' : '折叠所有轮次',
+          'aria-label': allTurnsCollapsed
+            ? traceText('trace.expandTurnsLabel')
+            : traceText('trace.collapseTurnsLabel'),
           onClick: toggleAllTurns,
         },
-        allTurnsCollapsed ? '展开轮次' : '折叠轮次',
+        allTurnsCollapsed ? traceText('trace.expandTurns') : traceText('trace.collapseTurns'),
       ),
       createElement('input', {
         className: 'trace-search',
         type: 'search',
-        placeholder: '搜索',
-        'aria-label': '搜索轨迹',
+        placeholder: traceText('trace.search'),
+        'aria-label': traceText('trace.searchLabel'),
         value: query,
         onInput: updateQuery,
       }),
@@ -1443,35 +1564,35 @@ export const Trace = forwardRef<TraceHandle, TraceProps>(function Trace(
       {
         className: 'trace-gantt',
         role: 'group',
-        'aria-label': '轨迹时间图',
+        'aria-label': traceText('trace.gantt.label'),
         hidden: rows.length === 0,
         ref: timelineRef,
       },
       createElement(
         'div',
         { className: 'trace-gantt-controls' },
-        createElement('label', { htmlFor: 'trace-timeline-mode' }, '时间轴'),
+        createElement('label', { htmlFor: 'trace-timeline-mode' }, traceText('trace.timeline.label')),
         createElement(
           'select',
           {
             id: 'trace-timeline-mode',
             value: timelineMode,
             onChange: changeTimelineMode,
-            'aria-label': '时间轴模式',
+            'aria-label': traceText('trace.timeline.mode'),
           },
-          createElement('option', { value: 'sequence' }, '记录顺序'),
-          createElement('option', { value: 'duration' }, '耗时 · 压缩空闲'),
-          createElement('option', { value: 'time' }, '记录时间'),
-          createElement('option', { value: 'actual' }, '实际耗时'),
+          createElement('option', { value: 'sequence' }, traceText('trace.timeline.sequence')),
+          createElement('option', { value: 'duration' }, traceText('trace.timeline.duration')),
+          createElement('option', { value: 'time' }, traceText('trace.timeline.time')),
+          createElement('option', { value: 'actual' }, traceText('trace.timeline.actual')),
         ),
         createElement(
           'span',
           { className: 'trace-gantt-note' },
           timelineMode === 'sequence'
-            ? '按记录顺序等宽展示'
+            ? traceText('trace.timeline.noteSequence')
             : timelineMode === 'duration'
-              ? '长空闲间隔已压缩；输入按轮次起点定位'
-              : '按记录时间展示；输入按轮次起点定位',
+              ? traceText('trace.timeline.noteDuration')
+              : traceText('trace.timeline.noteTime'),
         ),
         ...(timelineRange
           ? [
@@ -1481,9 +1602,9 @@ export const Trace = forwardRef<TraceHandle, TraceProps>(function Trace(
                   className: 'trace-gantt-clear',
                   type: 'button',
                   onClick: () => setTimelineRange(null),
-                  'aria-label': '清除时间范围',
+                  'aria-label': traceText('trace.timeline.clearLabel'),
                 },
-                '清除范围',
+                traceText('trace.timeline.clear'),
               ),
             ]
           : []),
@@ -1492,11 +1613,7 @@ export const Trace = forwardRef<TraceHandle, TraceProps>(function Trace(
         createElement(
           'div',
           { className: 'trace-gantt-row', key: lane },
-          createElement(
-            'span',
-            { className: 'trace-gantt-label' },
-            lane === 'input' ? '输入' : lane === 'model' ? '模型' : '工具',
-          ),
+          createElement('span', { className: 'trace-gantt-label' }, laneName(lane)),
           createElement(
             'div',
             {
@@ -1516,7 +1633,7 @@ export const Trace = forwardRef<TraceHandle, TraceProps>(function Trace(
                   setTimelineRange(null)
                 }
               },
-              'aria-label': `${lane === 'input' ? '输入' : lane === 'model' ? '模型' : '工具'}时间轴：拖动筛选，滚轮缩放，右键拖动平移`,
+              'aria-label': traceText('trace.lane.aria', { lane: laneName(lane) }),
             },
             ...(activeTimelineRange
               ? [
@@ -1539,7 +1656,7 @@ export const Trace = forwardRef<TraceHandle, TraceProps>(function Trace(
                 const cluster = unit.kind === 'cluster'
                 const marker = cluster ? unit.domainEnd <= unit.domainStart : bar.marker
                 const targets = unit.members.filter((member) => member.targetId)
-                const title = cluster ? `${unit.count} 条记录 · 点击定位最近记录` : bar.title
+                const title = cluster ? traceText('trace.cluster', { n: unit.count }) : bar.title
                 return createElement(targets.length ? 'button' : 'span', {
                   className: `trace-gantt-bar lane-${lane}${!cluster && bar.tone ? ` tone-${bar.tone}` : ''}${!cluster && bar.truncated ? ' truncated' : ''}${marker ? ' marker' : ''}${cluster ? ' cluster' : ''}`,
                   key: unit.key,
@@ -1633,7 +1750,7 @@ export const Trace = forwardRef<TraceHandle, TraceProps>(function Trace(
                   item.loadEarlier()
                 },
               },
-              '加载更早的记录',
+              traceText('trace.loadEarlier'),
             )
           if (item.kind === 'header')
             return createElement(
@@ -1648,16 +1765,22 @@ export const Trace = forwardRef<TraceHandle, TraceProps>(function Trace(
                   'aria-expanded': !item.collapsed,
                   onClick: () => toggleTurn(item.turn),
                 },
-                `${item.collapsed ? '▸' : '▾'} 第 ${item.turn} 轮 · ${item.count} 条记录${item.collapsed ? '（已折叠）' : ''}`,
+                `${item.collapsed ? '▸' : '▾'} ${traceText('trace.turnHeader', {
+                  turn: item.turn,
+                  count: item.count,
+                  folded: item.collapsed ? traceText('trace.turnFolded') : '',
+                })}`,
               ),
             )
           const row = item.row
           const request = row.callUsage ? requestMetrics.get(row.callUsage.seq) : undefined
           const requestPrefix =
-            request?.requestNumber.state === 'known' ? `请求 #${request.requestNumber.value} · ` : ''
+            request?.requestNumber.state === 'known'
+              ? traceText('trace.requestPrefix', { n: request.requestNumber.value })
+              : ''
           const children = toolHierarchy.childrenById.get(row.id) ?? []
-          const toolDepth = row.badge === '工具' ? Math.min(8, toolHierarchy.depthById.get(row.id) ?? 0) : 0
-          const nested = row.badge === '工具' && (children.length > 0 || toolDepth > 0)
+          const toolDepth = row.kind === 'tool' ? Math.min(8, toolHierarchy.depthById.get(row.id) ?? 0) : 0
+          const nested = row.kind === 'tool' && (children.length > 0 || toolDepth > 0)
           const rowButton = createElement(
             'button',
             {
@@ -1670,11 +1793,11 @@ export const Trace = forwardRef<TraceHandle, TraceProps>(function Trace(
               ...(nested ? { style: { paddingLeft: `${24 + toolDepth * 16}px` } } : {}),
             },
             createElement('span', { className: 'trace-step-mark' }, item.showStep ? row.step : undefined),
-            createElement('span', { className: `trace-badge kind-${row.badge}` }, row.badge),
+            createElement('span', { className: `trace-badge kind-${row.kind}` }, row.badge),
             createElement(
               'span',
               { className: 'trace-row-preview' },
-              `${requestPrefix}${clip(row.preview, 160) || '（无内容）'}${row.status === '已完成' ? '' : ` · ${row.status}`}${row.errorCode ? ` · ${row.errorCode}` : ''}`,
+              `${requestPrefix}${clip(row.preview, 160) || traceText('trace.emptyPreview')}${row.statusCode === 'completed' ? '' : ` · ${row.status}`}${row.errorCode ? ` · ${row.errorCode}` : ''}`,
             ),
           )
           if (!nested) return createElement('div', { key: item.key, className: 'trace-row-entry' }, rowButton)
@@ -1690,8 +1813,8 @@ export const Trace = forwardRef<TraceHandle, TraceProps>(function Trace(
                       className: 'trace-tool-toggle',
                       style: { left: `${4 + toolDepth * 16}px` },
                       'aria-label': collapsedTools.has(row.id)
-                        ? `展开 ${row.source} 的子调用`
-                        : `折叠 ${row.source} 的子调用`,
+                        ? traceText('trace.tool.expand', { source: row.source })
+                        : traceText('trace.tool.collapse', { source: row.source }),
                       'aria-expanded': focusActive || !collapsedTools.has(row.id),
                       disabled: focusActive,
                       onClick: () => toggleTool(row.id),
@@ -1718,7 +1841,7 @@ export const Trace = forwardRef<TraceHandle, TraceProps>(function Trace(
               createElement(
                 'p',
                 { key: 'no-results', className: 'trace-no-results', role: 'status' },
-                '当前范围没有匹配记录',
+                traceText('trace.noResults'),
               ),
             ]
           : []),
@@ -1727,7 +1850,7 @@ export const Trace = forwardRef<TraceHandle, TraceProps>(function Trace(
         createElement(
           'p',
           { key: `omitted:${note.key}`, className: 'trace-truncated', role: 'note' },
-          `第 ${note.turn} 轮 · ${note.label}`,
+          traceText('trace.omittedNote', { turn: note.turn, label: note.label }),
         ),
       ),
       inspector,
@@ -1754,7 +1877,7 @@ export const Trace = forwardRef<TraceHandle, TraceProps>(function Trace(
               {
                 type: 'button',
                 className: 'trace-lightbox-close',
-                'aria-label': '关闭图片预览',
+                'aria-label': traceText('trace.lightbox.close'),
                 onClick: () => setLightbox(null),
               },
               '×',
@@ -1763,10 +1886,6 @@ export const Trace = forwardRef<TraceHandle, TraceProps>(function Trace(
           ),
         ]
       : []),
-    createElement(
-      'p',
-      { className: 'trace-empty', hidden: rows.length > 0 },
-      '发送一条任务后，这里会按步骤显示耗时。',
-    ),
+    createElement('p', { className: 'trace-empty', hidden: rows.length > 0 }, traceText('trace.empty')),
   )
 })

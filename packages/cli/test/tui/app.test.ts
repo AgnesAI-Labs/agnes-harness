@@ -737,11 +737,11 @@ it('paints the startup session card, compact header and editor surface once acro
       expect(text).toContain('Agnes AI ·ᴗ·')
       expect(text).toContain('local-dev · standard')
       expect(text).toContain('● deepseek-v4-pro')
-      expect(text).toContain('输入 / 查看命令')
+      expect(text).toContain('Type / for commands')
       expect(text).not.toContain('Ctrl+C×2 退出')
       // The header's first segment is the brand, separated from the profile.
       expect(text).toContain('agnes · local-dev · standard')
-      expect(text).toContain('想做点什么？从一句话开始。')
+      expect(text).toContain('What do you want to do? Start with a sentence.')
     })
     term.feed('/new')
     term.feed('\r')
@@ -1012,7 +1012,7 @@ it('opens /resume choices above the footer, owns input, loads the selection and 
       expect((await screenOf(term, 76, 24)).join('\n')).toContain('restored older answer'),
     )
     expect((await screenOf(term, 76, 24)).find((line) => line.includes('❯'))).toContain(
-      '❯ 想做点什么？从一句话开始。',
+      '❯ What do you want to do? Start with a sentence.',
     )
 
     term.feed('/resume')

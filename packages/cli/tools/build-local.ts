@@ -8,6 +8,7 @@ import { fileURLToPath } from 'node:url'
 import { type BuildOptions, type BuildResult, build, type Plugin } from 'esbuild'
 import { collectThirdPartyNotices } from '../../../tools/third-party-notices.mjs'
 import { beginRuntimeDirectory } from '../../base/tools/runtime-directory.js'
+import { buildConversationCss } from '../../web-ui/tools/build-conversation-css.js'
 import { copySystemRuntime, withBuiltSystemRuntime } from './windows-runtime.js'
 
 const cliRoot = join(dirname(fileURLToPath(import.meta.url)), '..')
@@ -255,6 +256,10 @@ export async function buildLocalWeb(webOut: string): Promise<void> {
   ])
   const conversationCss = await readFile(join(webUi, 'src', 'conversation', 'messages.css'), 'utf8')
   await appendFile(join(webOut, 'style.css'), `\n${conversationCss}`)
+  const generatedConversationCss = join(webOut, 'conversation-tailwind.css')
+  buildConversationCss(generatedConversationCss)
+  await appendFile(join(webOut, 'style.css'), `\n${await readFile(generatedConversationCss, 'utf8')}`)
+  await rm(generatedConversationCss)
   const markdownCss = join(webOut, 'vendor', 'assistant-ui.css')
   const [core, light, dark, overrides] = await Promise.all([
     readFile(markdownCss, 'utf8'),
