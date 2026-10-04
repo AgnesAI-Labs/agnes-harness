@@ -1,9 +1,11 @@
 import { createHash } from 'node:crypto'
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { lstat, mkdir, mkdtemp, readdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import { PersistentArtifactReadAuthorityIndex } from '../src/local/artifact-read-authority.js'
+import { LocalEndpoint } from '../src/local/endpoint.js'
+import { registerArtifactRead } from '../src/local/methods/artifacts.js'
 import { SessionPrincipalOwnershipIndex } from '../src/storage/session-ownership.js'
 import { composeDefaultProductionProjectedArtifactRead } from '../src/supervisor/artifact-read.js'
 import { sqliteTables } from './sqlite-tables.js'
@@ -53,14 +55,26 @@ function header(sha256: string, mime = 'image/png') {
   }
 }
 
+/** Every path under `root` with its size and modification time. */
+async function tree(root: string) {
+  const paths = (await readdir(root, { recursive: true })).sort()
+  return Promise.all(
+    paths.map(async (path) => {
+      const stat = await lstat(join(root, path))
+      return [path, stat.size, stat.mtimeMs] as const
+    }),
+  )
+}
+
 async function fixture() {
   const dataDir = await mkdtemp(join(tmpdir(), 'agnes-default-artifact-projection-'))
   roots.push(dataDir)
   const bytes = new TextEncoder().encode('durable projection bytes')
   const sha256 = createHash('sha256').update(bytes).digest('hex')
   const directory = join(dataDir, 'artifacts', 'sha256', sha256.slice(0, 2))
+  const path = join(directory, sha256)
   await mkdir(directory, { recursive: true })
-  await writeFile(join(directory, sha256), bytes)
+  await writeFile(path, bytes)
 
   // The artifact index deliberately owns a dedicated schema. Session ownership uses another
   // durable connection, matching the production capability split.
@@ -80,6 +94,9 @@ async function fixture() {
     readTimeoutMs: 1_000,
   })
   return {
+    dataDir,
+    path,
+    bytes,
     artifactTables,
     artifactAuthority,
     ownershipTables,
@@ -131,7 +148,7 @@ describe('default durable production artifact projection', () => {
         sessionId: 'session-b',
         laneId: 'main',
       }),
-    ).resolves.toMatchObject({ ok: false })
+    ).resolves.toMatchObject({ ok: false, status: 403, code: 'artifact_forbidden' })
     await item.artifactTables.close()
     await item.ownershipTables.close()
   })
@@ -151,6 +168,122 @@ describe('default durable production artifact projection', () => {
         laneId: 'main',
       }),
     ).resolves.toMatchObject({ ok: false, status: 404, code: 'artifact_not_found' })
+    await item.artifactTables.close()
+    await item.ownershipTables.close()
+  })
+
+  it('reads a legacy reference only inside its original binding and grants nothing new', async () => {
+    const item = await fixture()
+    for (const [sessionId, ownerId] of [
+      ['session-a', 'owner-a'],
+      ['session-b', 'owner-b'],
+    ] as const) {
+      expect(item.sessionOwnership.bindNew(sessionId, ownerId)).toBe(true)
+      expect(item.sessionOwnership.activateNew(sessionId, ownerId)).toBe(true)
+    }
+    await item.composed.projection.observe(
+      'session-a',
+      header(item.artifact.sha256),
+      new AbortController().signal,
+    )
+    // The registered RPC: the connection supplies the principal and the projection the scope.
+    const rpc = (principalId: string, params: Record<string, unknown>) => {
+      const endpoint = new LocalEndpoint({ clock: () => 1, principalId })
+      endpoint.conn.initialized = true
+      endpoint.conn.authKind = 'local'
+      registerArtifactRead(endpoint, item.composed.rpc)
+      return endpoint.handle({ jsonrpc: '2.0', id: 'legacy', method: '_agnes/v1/artifact.read', params })
+    }
+    const legacy = { sessionId: 'session-a', laneId: 'main', artifact: item.artifact }
+    const durable = () => ({
+      authority: item.artifactTables
+        .table('artifact-read-authority')
+        .all('SELECT * FROM artifact_read_authority_v1 ORDER BY session_id, lane_id, sha256'),
+      ownership: item.ownershipTable.all('SELECT * FROM session_principal_ownership ORDER BY session_id'),
+    })
+    const before = { files: await tree(item.dataDir), rows: durable() }
+    expect(before.rows.authority).toHaveLength(1)
+
+    const original = await rpc('owner-a', legacy)
+    expect(original).toMatchObject({
+      result: { ok: true, status: 200, base64: Buffer.from(item.bytes).toString('base64') },
+    })
+    // The reply names the legacy content identity only, never a runtime artifact reference.
+    expect((original as { result: { artifact: unknown } }).result.artifact).toEqual(item.artifact)
+    await expect(rpc('owner-a', { ...legacy, range: 'bytes=2-5' })).resolves.toMatchObject({
+      result: {
+        ok: true,
+        status: 206,
+        contentRange: `bytes 2-5/${item.artifact.size}`,
+        base64: Buffer.from(item.bytes.slice(2, 6)).toString('base64'),
+      },
+    })
+
+    // Another owner, session or lane is refused by the scope, and again by the durable binding.
+    for (const [principalId, sessionId, laneId, bindingStatus] of [
+      ['owner-b', 'session-a', 'main', 403],
+      ['owner-b', 'session-b', 'main', 404],
+      ['owner-a', 'session-a', 'side', 404],
+    ] as const) {
+      await expect(rpc(principalId, { ...legacy, sessionId, laneId })).resolves.toMatchObject({
+        result: { ok: false, status: 403, code: 'artifact_forbidden' },
+      })
+      await expect(
+        item.composed.rpc.read(
+          { ...legacy, sessionId, laneId },
+          { principalId, authKind: 'local', sessionId, laneId },
+        ),
+      ).resolves.toMatchObject({ ok: false, status: bindingStatus })
+    }
+    // A reference whose size or mime disagrees with the binding, or whose digest is unbound.
+    for (const [artifact, code] of [
+      [{ ...item.artifact, size: item.artifact.size + 1 }, 'artifact_identity_mismatch'],
+      [{ ...item.artifact, mime: 'image/jpeg' }, 'artifact_identity_mismatch'],
+      [{ ...item.artifact, sha256: 'e'.repeat(64) }, 'artifact_not_found'],
+    ] as const)
+      await expect(rpc('owner-a', { ...legacy, artifact })).resolves.toMatchObject({
+        result: { ok: false, code },
+      })
+
+    // Reading wrote nothing: no grant, no ownership change, no file, no runtime service storage.
+    expect({ files: await tree(item.dataDir), rows: durable() }).toEqual(before)
+    expect(before.files.some(([path]) => path.startsWith('runtime-services'))).toBe(false)
+
+    // Bytes whose digest no longer matches the binding are refused.
+    await writeFile(
+      item.path,
+      item.bytes.map((byte) => byte ^ 1),
+    )
+    await expect(rpc('owner-a', legacy)).resolves.toMatchObject({
+      result: { ok: false, code: 'artifact_unavailable' },
+    })
+    await writeFile(item.path, item.bytes)
+    await expect(rpc('owner-a', legacy)).resolves.toMatchObject({ result: { ok: true, status: 200 } })
+
+    // Closing the session revokes the binding: every reader is refused and the row is gone.
+    item.composed.projection.resetSession('session-a')
+    await expect(rpc('owner-a', legacy)).resolves.toMatchObject({
+      result: { ok: false, status: 403, code: 'artifact_forbidden' },
+    })
+    await expect(
+      item.composed.rpc.read(legacy, {
+        principalId: 'owner-a',
+        authKind: 'local',
+        sessionId: 'session-a',
+        laneId: 'main',
+      }),
+    ).resolves.toMatchObject({
+      ok: false,
+      status: 404,
+      code: 'artifact_not_found',
+    })
+    await expect(
+      item.composed.workerRead(
+        { sessionId: 'session-a', laneId: 'main', ownerId: 'owner-a', sha256: item.artifact.sha256 },
+        new AbortController().signal,
+      ),
+    ).resolves.toBeUndefined()
+    expect(durable().authority).toEqual([])
     await item.artifactTables.close()
     await item.ownershipTables.close()
   })
