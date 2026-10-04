@@ -82,6 +82,8 @@ export interface ComposerDependencies {
   ): ((usage: UsageView | undefined, connected: boolean) => void) & {
     dispose?(): void
   }
+  /** 上传前把超出模型视觉上限的图片缩小；缺省时按原图发送。 */
+  downscaleImage?(file: File): Promise<File>
   /** Component injection keeps production usage in the composer root; factories remain compatible. */
   UsagePanel?: ComponentType<{ usage: UsageView | undefined; connected: boolean; t?: Translate }>
   isSubmitShortcut(event: {
@@ -206,6 +208,42 @@ const MAX_IMAGE_COUNT = USER_MESSAGE_IMAGE_MAX_COUNT
 const MAX_IMAGE_BYTES = USER_MESSAGE_IMAGE_LIMITS.maxBytesPerImage
 const MAX_TOTAL_IMAGE_BYTES = USER_MESSAGE_IMAGE_LIMITS.maxAggregateBytes
 const IMAGE_PREVIEW_LIMITS = USER_MESSAGE_IMAGE_LIMITS
+
+/** 模型视觉输入的长边上限；超出的像素模型本来也读不到，上传前先缩掉，免得整张被尺寸闸拒。 */
+const IMAGE_MAX_EDGE = 1456
+
+/**
+ * 把长边超过 IMAGE_MAX_EDGE 的图片缩到该边长，格式和文件名保持不变。只对超限的图动手；
+ * canvas 不可用或编码失败时原样返回，交给服务端按原图判定。
+ */
+export async function downscaleImageFile(file: File): Promise<File> {
+  // 有些 DOM 实现没有位图解码（测试环境就是），那种情况下按原图走，交给服务端判定。
+  if (typeof createImageBitmap !== 'function') return file
+  let bitmap: ImageBitmap
+  try {
+    bitmap = await createImageBitmap(file)
+  } catch {
+    // 文件本身解不开时也按原图走：拒绝与否由服务端的格式校验决定，这里不下结论。
+    return file
+  }
+  try {
+    const longest = Math.max(bitmap.width, bitmap.height)
+    if (longest <= IMAGE_MAX_EDGE) return file
+    const ratio = IMAGE_MAX_EDGE / longest
+    const canvas = document.createElement('canvas')
+    canvas.width = Math.max(1, Math.round(bitmap.width * ratio))
+    canvas.height = Math.max(1, Math.round(bitmap.height * ratio))
+    const context = canvas.getContext('2d')
+    if (!context) return file
+    context.drawImage(bitmap, 0, 0, canvas.width, canvas.height)
+    // PNG 会忽略质量参数，JPEG 用它。保持原格式，避免截图上的小字被有损编码糊掉。
+    const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, file.type, 0.92))
+    if (!blob) return file
+    return new File([blob], file.name, { type: file.type })
+  } finally {
+    bitmap.close()
+  }
+}
 
 async function readImage(file: File): Promise<{ data: string; bytes: Uint8Array }> {
   const bytes = new Uint8Array(await file.arrayBuffer())
@@ -351,20 +389,21 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
     await Promise.all(
       accepted.map(async (file) => {
         try {
-          const { data, bytes } = await readImage(file)
+          const scaled = dependencies.downscaleImage ? await dependencies.downscaleImage(file) : file
+          const { data, bytes } = await readImage(scaled)
           if (readGeneration !== generation.current) return
           try {
-            decodeSafeImageBytes({ bytes, mimeType: file.type }, IMAGE_PREVIEW_LIMITS)
+            decodeSafeImageBytes({ bytes, mimeType: scaled.type }, IMAGE_PREVIEW_LIMITS)
           } catch {
             throw new Error(invalidImage)
           }
           const attachment: ComposerAttachment = {
             type: 'image',
             data,
-            mimeType: file.type,
+            mimeType: scaled.type,
             id: `image-${++nextAttachmentId.current}`,
-            previewUrl: URL.createObjectURL(file),
-            size: file.size,
+            previewUrl: URL.createObjectURL(scaled),
+            size: scaled.size,
           }
           publishAttachments([...attachmentsRef.current, attachment])
         } catch (error) {

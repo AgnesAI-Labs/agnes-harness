@@ -171,6 +171,79 @@ describe('composer image attachments', () => {
     root = createRoot(host)
   })
 
+  it('hands an incoming image to the downscaler and reads the scaled result', async () => {
+    const handle = createRef<ComposerHandle>()
+    const onError = vi.fn()
+    // 缩放器的返回值必须是被读取、被预览的那一份，否则用户看到和发出的不是同一张图。
+    const scaled = pngFile('scaled.png', pngBytes)
+    const downscaleImage = vi.fn(async (_file: File) => scaled)
+    await act(async () => {
+      root.render(
+        createElement(Composer, {
+          ref: handle,
+          dependencies: { ...dependencies, downscaleImage },
+          initialView: view,
+          onCancel() {},
+          onDraftChange() {},
+          onError,
+          onModelSelect: async () => false,
+          onPermissionSelect: async () => false,
+          onSubmit() {},
+          onWorkspace() {},
+        }),
+      )
+    })
+
+    const prompt = host.querySelector<HTMLTextAreaElement>('#prompt')
+    if (!prompt) throw new Error('composer input is missing')
+
+    await act(async () => {
+      prompt.dispatchEvent(imagePasteEvent([pngFile()]))
+      await vi.waitFor(() => expect(handle.current?.getImageBlocks()).toHaveLength(1))
+    })
+
+    expect(downscaleImage).toHaveBeenCalledTimes(1)
+    expect(URL.createObjectURL).toHaveBeenCalledWith(scaled)
+    expect(onError).not.toHaveBeenCalled()
+    await act(async () => root.unmount())
+    root = createRoot(host)
+  })
+
+  it('skips the downscaler when the host does not inject one', async () => {
+    const handle = createRef<ComposerHandle>()
+    const onError = vi.fn()
+    await act(async () => {
+      root.render(
+        createElement(Composer, {
+          ref: handle,
+          dependencies,
+          initialView: view,
+          onCancel() {},
+          onDraftChange() {},
+          onError,
+          onModelSelect: async () => false,
+          onPermissionSelect: async () => false,
+          onSubmit() {},
+          onWorkspace() {},
+        }),
+      )
+    })
+
+    const prompt = host.querySelector<HTMLTextAreaElement>('#prompt')
+    if (!prompt) throw new Error('composer input is missing')
+    const original = pngFile()
+    await act(async () => {
+      prompt.dispatchEvent(imagePasteEvent([original]))
+      await vi.waitFor(() => expect(handle.current?.getImageBlocks()).toHaveLength(1))
+    })
+
+    // 缺省路径按原图发送，行为与加入缩放之前一致。
+    expect(URL.createObjectURL).toHaveBeenCalledWith(original)
+    expect(onError).not.toHaveBeenCalled()
+    await act(async () => root.unmount())
+    root = createRoot(host)
+  })
+
   it('accepts pasted text and images plus dropped images', async () => {
     const handle = createRef<ComposerHandle>()
     const draftChanges = vi.fn()

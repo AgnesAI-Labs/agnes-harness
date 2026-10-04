@@ -14,6 +14,7 @@ export {
   type ComposerRegionOptions,
   type ComposerSlots,
   type ComposerView,
+  downscaleImageFile,
   type ModelPickerOption,
   type ModelPickerState,
   type PermissionMode,
