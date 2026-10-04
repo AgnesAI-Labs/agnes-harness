@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from 'node:crypto'
-import { createReadStream } from 'node:fs'
+import { createReadStream, existsSync } from 'node:fs'
 import { lstat } from 'node:fs/promises'
 import { join } from 'node:path'
 import type { DatabaseSync } from 'node:sqlite'
@@ -122,6 +122,10 @@ export function openBlobStore(options: {
   /** Opens a new store as a transfer target; an existing store keeps its role. */
   transferTarget?: boolean
 }): BlobStore {
+  // Content shares the legacy CAS layout, so a directory whose CAS this store did not create is refused.
+  const own = (name: string) => existsSync(join(options.dataDir, 'artifacts', name))
+  if (own('sha256') && !own('blob-service.db'))
+    throw new Error('blob service data directory holds another artifact store')
   const db = openPrivateArtifactDatabase(options.dataDir, 'blob-service.db', 'blob service store')
   const now = options.now ?? (() => Date.now())
   const copy = contentCopy(db, options.dataDir, options.authorityId)
