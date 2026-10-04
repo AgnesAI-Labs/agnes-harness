@@ -28,5 +28,6 @@
 | 行业/企业 | 业务接口、身份、数据与部署政策需要按[FDE 场景](../guide/why-agh.zh-CN.md)分别集成和验收 |
 | MHS/物理设备 | AGH 的[MHS 接入文档与示例即将开放](../guide/mhs.zh-CN.md)；暂无已验证的通用 MHS 适配器、设备兼容列表或设备端到端示例 |
 | 性能/Eval | 不提供未经固定模型、预算、任务与测量验证的领先/提升数字 |
+| 实验性 Sandbox/Exec 服务 | 必填资源限额须在效果前取得真实硬门。macOS/reference 拒绝 memory/process 限额；Linux native 核验受信委派的 memory/pids controller，但仍拒绝缺失的整树 CPU/文件数硬门。采样仅作诊断，不能给出超出量上界。正常执行与冷恢复尚未取得资格；既有命令适配器行为不变 |
 
 当前验证的命令与范围见[验证记录](../maintainers/verification.zh-CN.md)。版本更新时需重新核对当前源码，特别是长期运行、MCP OAuth 会话支持、插件与客户端描述合同、默认安全策略和发行状态。

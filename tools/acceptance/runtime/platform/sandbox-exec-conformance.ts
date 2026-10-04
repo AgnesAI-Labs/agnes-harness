@@ -9,7 +9,7 @@ import type { ScenarioName } from '../../../../packages/extension-api/testkit/ru
 import type { ConformanceHarness } from '../../../../packages/extension-api/testkit/runtime/harness.js'
 import { cleanup, error, type Kind } from '../../../../packages/host/test/runtime/network-secrets-fixture.js'
 import { fixture } from '../../../../packages/host/test/runtime/sandbox-exec-fixture.js'
-import { scenario } from '../../../../packages/host/test/runtime/sandbox-exec-scenarios.js'
+import { expectedRefusal, scenario } from '../../../../packages/host/test/runtime/sandbox-exec-scenarios.js'
 import { canonicalJsonDigest } from '../../../../packages/protocol/src/runtime/index.js'
 import { getConformanceBuildIdentity } from '../build-identity.js'
 
@@ -21,6 +21,9 @@ const digest = (path: string) =>
     .digest('hex')
 export const qualification = {
   darwin: {
+    serviceQualified: false,
+    mandatoryLimits: 'refused before effects: memoryBytes/processes have no hard gate',
+    samples: { diagnosticOnly: true, hardLimit: false, overshootBound: null },
     ownership: 'cooperative: process group + inherited lifeline',
     strong: false,
     securityDebt:
@@ -33,6 +36,13 @@ export const qualification = {
     ownership:
       'strong native cgroup v2 only with delegation, protected supervisor and isolated control filesystem',
     serviceQualified: false,
+    hardGates: {
+      controllers: ['memory.max', 'memory.swap.max', 'pids.max', 'memory.oom.group'],
+      qualification: 'set and exact readback on a real trusted delegation, before any business fork',
+      evidence: 'conditional Linux kernel tests; not exercised by admission conformance',
+    },
+    mandatoryLimits: 'CPU-total and aggregate openFiles are unavailable; zero business launches',
+    samples: { diagnosticOnly: true, hardLimit: false, overshootBound: null },
     unsupported: ['Linux filesystem isolation provider', 'reference cgroup backend', 'Exec.env.secret'],
   },
   win32: {
@@ -108,16 +118,7 @@ export async function unsupportedPlatform(kind: Kind, service: 'sandbox' | 'exec
             },
             f.auth.call(),
           )
-    const windows = process.platform === 'win32' // guards-allow-platform: mandatory Windows File quota refusal.
-    assert.equal(
-      error(result),
-      'incompatible/' +
-        (service === 'sandbox'
-          ? 'sandbox_isolation_unsupported'
-          : windows
-            ? 'exec_limit_openFiles_unsupported'
-            : 'exec_platform_unsupported'),
-    )
+    assert.equal(error(result), expectedRefusal(service))
     assert.equal(f[service].features.length, 0)
   } finally {
     await f.close()
@@ -149,24 +150,42 @@ export async function bindConformance(
     const kind = providerId.includes('reference') ? 'reference' : 'default'
     for (const contract of contracts) {
       const name = contract === 'agh.exec' ? 'exec' : 'sandbox'
-      const supported = process.platform === 'darwin' // guards-allow-platform: explicit backend qualification
       const sources = [
         {
-          recipe: supported
-            ? `${kind}-darwin-cooperative-lifeline-main-blocked`
-            : `${kind}-unsupported-platform`,
-          qualification: supported ? ('required' as const) : ('not-advertised' as const),
-          features: supported
-            ? [name === 'exec' ? 'run' : 'create', 'cooperative-ownership']
-            : ['unsupported-platform'],
+          recipe: `${kind}-mandatory-hard-gate-refusal`,
+          qualification: 'required' as const,
+          features: ['admission-refusal'],
+          scenarios: ['deny', 'cancel', 'dispose'] as const,
           ...methods(async (test) => {
-            const proof = evidence(kind, name, supported ? test : 'explicit unsupported refusal')
-            if (supported) await scenario(kind, name, test, proof.providerDigest)
-            else await unsupportedPlatform(kind, name)
-            return proof
+            await scenario(kind, name, test)
+            return evidence(kind, name, 'Admission refusal only; no launch qualification')
           }),
         },
       ]
+      // A refusal does not prove selection, normal execution or cold recovery.
+      for (const unavailable of ['select', 'normal', 'recover'] as const)
+        harness.registerCase({
+          contract,
+          scenario: unavailable,
+          qualification: 'not-advertised',
+          providerId,
+          build,
+          run: () => ({
+            id: `${contract}/${providerId}/unqualified-hard-limits/${unavailable}`,
+            ...evidence(kind, name, 'No qualified hard-limit backend'),
+            recipe: 'unqualified-hard-limits',
+            features: [],
+            build,
+            consumer: `${name}-consumer`,
+            command: request.command,
+            status: 'skipped',
+            diagnostic:
+              'Incomplete: mandatory hard gates unavailable; refusal is not normal or recovery evidence',
+            attachmentDigest: null,
+            fixture: 'restricted-effects',
+            sharedEvidenceId: null,
+          }),
+        })
       if (name === 'exec')
         registerExecContract(harness, { command: request.command, build, providerId, sources })
       else registerSandboxContract(harness, { command: request.command, build, providerId, sources })

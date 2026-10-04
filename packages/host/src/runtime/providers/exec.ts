@@ -1,4 +1,3 @@
-import { createHash } from 'node:crypto'
 import { closeSync, existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
@@ -8,7 +7,7 @@ import { canonicalJsonDigest, RuntimeMethodSchemaRefs, validateRuntime } from '@
 import { createPrivateDirectorySync, createPrivateFileSync } from '@agnes/system-node'
 import { createPlatform } from '../../adapters/platform.js'
 import { callSignal, during } from '../platform/call-limit.js'
-import { type ExecutionMetrics, runOwnedExecution } from '../platform/resource-owners.js'
+import type { ExecutionMetrics } from '../platform/resource-owners.js'
 import type { SandboxService } from './sandbox.js'
 
 export const EXEC_CONTRACT = 'agh.exec'
@@ -100,7 +99,10 @@ export function createExecService(input: ExecOptions): ExecService {
     logicalName: 'exec',
     providerId: DEFAULT_EXEC_PROVIDER_ID,
   }
-  const providerDigest = canonicalJsonDigest({ contract: EXEC_CONTRACT, recipe: 'native-pipe-owner-sqlite' })
+  const providerDigest = canonicalJsonDigest({
+    contract: EXEC_CONTRACT,
+    recipe: 'mandatory-hard-gates-before-launch-sqlite',
+  })
   const supported = createPlatform().os === 'darwin'
   if (!existsSync(options.directory)) createPrivateDirectorySync(options.directory)
   const file = join(options.directory, 'executions.sqlite')
@@ -137,7 +139,6 @@ export function createExecService(input: ExecOptions): ExecService {
     if (context.signal.aborted || lifetime.signal.aborted) throw new Error('exec_cancelled')
   }
   async function perform(raw: unknown, context: CallContext): Promise<Outcome<W.ExecResult>> {
-    let ref: W.ExecutionRef | undefined
     try {
       await auth(context)
       const parsed = validateRuntime('ExecRequest', raw)
@@ -145,182 +146,18 @@ export function createExecService(input: ExecOptions): ExecService {
       const body = parsed.value
       if (body.env.some((item) => item.value.kind === 'secret'))
         return refusal('incompatible', 'exec_secret_env_unsupported')
+      if (!body.argv.length || body.argv.some((value) => value.includes('\0')))
+        return refusal('invalid_input', 'exec_argv')
+      for (const [name, limit] of Object.entries(body.limits))
+        if (limit === 0) return refusal('quota', `exec_zero_${name}`)
       if (!supported)
         return refusal(
           'incompatible',
           createPlatform().os === 'win32' ? 'exec_limit_openFiles_unsupported' : 'exec_platform_unsupported',
         )
-      if (!body.argv.length || body.argv.some((value) => value.includes('\0')))
-        return refusal('invalid_input', 'exec_argv')
-      for (const [name, limit] of Object.entries(body.limits))
-        if (limit === 0) return refusal('quota', `exec_zero_${name}`)
-      if (body.limits.openFiles < 32) return refusal('quota', 'exec_limit_openFiles')
-      const env = { ...options.environment },
-        names = new Set<string>()
-      for (const item of body.env) {
-        if (
-          item.value.kind !== 'literal' ||
-          names.has(item.name) ||
-          !options.literalNames.includes(item.name) ||
-          !/^[A-Z_][A-Z0-9_]*$/u.test(item.name) ||
-          /^(?:LD_|DYLD_|NODE_|PATH$|HOME$|.*(?:SECRET|TOKEN|PASSWORD|CREDENTIAL))/u.test(item.name) ||
-          item.value.value.includes('\0')
-        )
-          return refusal('denied', 'exec_environment')
-        names.add(item.name)
-        env[item.name] = item.value.value
-      }
-      const owner = canonicalJsonDigest({ principal: context.principalRef, scope: context.scope })
-      const fingerprint = canonicalJsonDigest({ body, owner })
-      const id = createHash('sha256').update(`${context.bindingId}/${context.invocationId}`).digest('hex')
-      ref = {
-        authorityId: options.authorityId,
-        executionId: id,
-        requestIdentity: {
-          system: EXEC_CONTRACT,
-          aghRequestId: id,
-          idempotencyKey: null,
-          requestDigest: fingerprint,
-        },
-      }
-      const prior = db.prepare('SELECT * FROM executions WHERE id=?').get(id)
-      if (prior) {
-        if (prior.owner !== owner || prior.fingerprint !== fingerprint)
-          return refusal('conflict', 'exec_request_identity')
-        return prior.outcome
-          ? (JSON.parse(String(prior.outcome)) as Outcome<W.ExecResult>)
-          : refusal('unknown_effect', 'exec_unknown', ref)
-      }
-      const stdin = body.stdinRef
-        ? await during(
-            callSignal(context, lifetime.signal, 'exec'),
-            'exec',
-            options.content.read(body.stdinRef, context),
-          )
-        : new Uint8Array()
-      if (
-        stdin.length > 1024 * 1024 ||
-        (body.stdinRef &&
-          (stdin.length !== body.stdinRef.bytes ||
-            createHash('sha256').update(stdin).digest('hex') !== body.stdinRef.digest))
-      )
-        return refusal('invalid_input', 'exec_content')
-      await auth(context)
-      const executionRef = ref
-      const launched = await options.sandbox.withExecution(body, context, async (launch) => {
-        await auth(context)
-        if (launch.signal.aborted) return refusal('cancelled', 'exec_cancelled')
-        const concurrent = db.prepare('SELECT * FROM executions WHERE id=?').get(id)
-        if (concurrent) {
-          if (concurrent.owner !== owner || concurrent.fingerprint !== fingerprint)
-            return refusal('conflict', 'exec_request_identity')
-          return concurrent.outcome
-            ? (JSON.parse(String(concurrent.outcome)) as Outcome<W.ExecResult>)
-            : refusal('unknown_effect', 'exec_unknown', executionRef)
-        }
-        db.prepare('INSERT INTO executions VALUES(?,?,?,?,NULL,NULL)').run(
-          id,
-          owner,
-          fingerprint,
-          JSON.stringify(executionRef),
-        )
-        const signal = AbortSignal.any([
-          launch.signal,
-          lifetime.signal,
-          AbortSignal.timeout(Math.max(1, Date.parse(context.deadline) - Date.now())),
-        ])
-        try {
-          const remainingDeadline = Date.parse(context.deadline) - Date.now()
-          if (remainingDeadline <= 0 || signal.aborted) throw new Error('exec_cancelled')
-          const deadlineBound = remainingDeadline < body.limits.wallMs
-          const result = await runOwnedExecution({
-            ...launch,
-            env,
-            stdin,
-            limits: { ...body.limits, wallMs: Math.min(body.limits.wallMs, remainingDeadline) },
-            signal,
-          })
-          const metrics = result.metrics
-          // Completion facts are kept separately from external-effect certainty.
-          const normal = metrics.reason === 'completed'
-          const retained = await during(
-            AbortSignal.timeout(2000),
-            'exec',
-            Promise.all([
-              options.content.retain(result.stdout, context),
-              options.content.retain(result.stderr, context),
-            ]),
-          )
-          for (const [index, bytes] of [result.stdout, result.stderr].entries()) {
-            const data = retained[index]
-            if (
-              !data ||
-              data.ref.bytes !== bytes.length ||
-              data.ref.digest !== createHash('sha256').update(bytes).digest('hex')
-            )
-              throw new Error('exec_content')
-            if (
-              !validateRuntime('RetentionRef', data.retention).ok ||
-              data.retention.authorityId !== data.ref.authorityId ||
-              data.retention.pinId !== data.ref.pinId ||
-              data.retention.kind !== 'blob' ||
-              data.retention.resourceId !== data.ref.blobId ||
-              data.retention.digest !== data.ref.digest
-            )
-              throw new Error('exec_content')
-          }
-          const value: W.ExecResult = {
-            executionRef,
-            state: normal ? 'exited' : metrics.ownershipVerified ? 'terminated' : 'unknown',
-            exitCode: metrics.code < 0 ? null : metrics.code,
-            signal: metrics.signal ? `SIG${metrics.signal}` : null,
-            stdoutRef: retained[0]?.ref ?? null,
-            stderrRef: retained[1]?.ref ?? null,
-            outputTruncated: metrics.reason === 'outputBytes',
-            effectStatus: normal ? 'confirmed' : 'unknown',
-          }
-          if (!validateRuntime('ExecResult', value).ok) throw new Error('exec_content')
-          const outcome: Outcome<W.ExecResult> =
-            deadlineBound && metrics.reason === 'wallMs'
-              ? refusal('unknown_effect', 'exec_unknown', executionRef, metrics)
-              : normal
-                ? { ok: true, value }
-                : ['cpuMs', 'wallMs', 'memoryBytes', 'outputBytes', 'processes', 'openFiles'].includes(
-                      metrics.reason,
-                    )
-                  ? refusal('quota', `exec_limit_${metrics.reason}`, executionRef, metrics)
-                  : refusal(
-                      'unknown_effect',
-                      metrics.reason === 'residual'
-                        ? 'exec_residual'
-                        : metrics.reason === 'cleanup' || !metrics.ownershipVerified
-                          ? 'exec_cleanup_unknown'
-                          : 'exec_unknown',
-                      executionRef,
-                      metrics,
-                    )
-          db.prepare('UPDATE executions SET outcome=?, evidence=? WHERE id=?').run(
-            JSON.stringify(outcome),
-            JSON.stringify({ metrics, value, references: retained.map((item) => item.retention) }),
-            id,
-          )
-          return outcome
-        } catch (failure) {
-          const outcome = refusal(
-            'unknown_effect',
-            failure instanceof Error && failure.message === 'exec_cleanup_unknown'
-              ? 'exec_cleanup_unknown'
-              : 'exec_unknown',
-            executionRef,
-          )
-          db.prepare('UPDATE executions SET outcome=? WHERE id=?').run(JSON.stringify(outcome), id)
-          return outcome
-        }
-      })
-      return launched.ok ? launched.value : launched
+      // No hard tree memory/process gate: refuse before content reads, journaling or launch.
+      return refusal('incompatible', 'exec_limit_memoryBytes_unsupported')
     } catch (problem) {
-      if (ref && db.prepare('SELECT id FROM executions WHERE id=?').get(ref.executionId))
-        return refusal('unknown_effect', 'exec_unknown', ref)
       const detail =
         problem instanceof Error && problem.message.startsWith('exec_') ? problem.message : 'exec_unavailable'
       return refusal(detail === 'exec_cancelled' ? 'cancelled' : 'denied', detail)
@@ -389,24 +226,10 @@ export function createExecService(input: ExecOptions): ExecService {
   return {
     binding,
     providerDigest,
-    features: supported
-      ? [
-          'run',
-          'reconcile',
-          'cpuMs',
-          'wallMs',
-          'memoryBytes',
-          'outputBytes',
-          'processes',
-          'openFiles',
-          'owner-pipe',
-          'cooperative-ownership',
-          'lifeline',
-        ]
-      : [],
+    features: [],
     run(raw, context) {
       const key = `${context.bindingId}/${context.invocationId}`
-      // Journal identity decides duplicate outcomes; concurrent inputs cannot bypass it.
+      // Track every admission attempt so close drains current authentication work.
       const pending = perform(raw, context)
       active.set(key, pending)
       queries.add(pending)

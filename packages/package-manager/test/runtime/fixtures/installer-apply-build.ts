@@ -1,4 +1,5 @@
-import { rmSync } from 'node:fs'
+import { existsSync, rmSync } from 'node:fs'
+import { join } from 'node:path'
 import type { CallContext } from '@agnes/extension-api/runtime'
 import type { RuntimeWireTypes as W } from '@agnes/protocol/runtime'
 import type { PackageBuildInput, PackageBuildWorkspace } from '../../../src/runtime/package-build.js'
@@ -28,12 +29,54 @@ const pluginModule = (await import(
   createBrokenPlugin(mode: 'approved-build', kind: 'local' | 'npm' | 'git'): FixturePackage
   packageBuildProgram(fault?: string): string
 }
+// Match the build contract's advertised mechanisms. Resource features may only be advertised
+// by a backend that can enforce every mandatory limit; a sampling observer cannot qualify.
+const qualifications = new Map<string, Promise<boolean>>()
+export function buildQualified(kind: 'default' | 'reference'): Promise<boolean> {
+  let result = qualifications.get(kind)
+  if (!result) {
+    result = (async () => {
+      const f = await nativeModule.fixture(kind)
+      try {
+        return (
+          ['create', 'stop', 'closed-network', 'live-mount', 'seatbelt'].every((name) =>
+            f.sandbox.features.includes(name),
+          ) &&
+          [
+            'run',
+            'owner-pipe',
+            'lifeline',
+            'cooperative-ownership',
+            'cpuMs',
+            'wallMs',
+            'memoryBytes',
+            'outputBytes',
+            'processes',
+            'openFiles',
+          ].every((name) => f.exec.features.includes(name))
+        )
+      } finally {
+        await f.release()
+        await f.close()
+        rmSync(f.directory, { recursive: true, force: true })
+      }
+    })()
+    qualifications.set(kind, result)
+  }
+  return result
+}
+export interface BuildObservation {
+  directories: string[]
+  starts: string[]
+  stagedFiles: string[]
+}
 export async function installerApplyBuild(
   kind: 'default' | 'reference',
   sourceKind: 'local' | 'npm' | 'git' = 'local',
   fault?: 'secret' | 'failure',
   hook?: (phase: string, owner: { directory: string; sandboxRef?: W['SandboxRef'] }) => Promise<void>,
 ) {
+  const observation: BuildObservation = { directories: [], starts: [], stagedFiles: [] }
   const pkg = pluginModule.createBrokenPlugin('approved-build', sourceKind)
   const quote = (value: string) => "'" + value.replaceAll("'", "'\\''") + "'"
   const build: SourceBuildDeclaration = {
@@ -67,12 +110,14 @@ export async function installerApplyBuild(
     acquire: async () => ({ ok: true, value: source }),
     async openWorkspace(attempt) {
       const f = await nativeModule.fixture(kind)
+      observation.directories.push(f.directory)
       return {
         root: f.roots.workspace,
         request: { ...f.createInput, resourceLimits: input.limits },
         sandbox: {
           ...f.sandbox,
           async create(request, context) {
+            observation.starts.push('sandbox')
             const outcome = await f.sandbox.create(request, context)
             if (outcome.ok)
               await hook?.(`build-created-${attempt}`, {
@@ -85,6 +130,7 @@ export async function installerApplyBuild(
         exec: {
           ...f.exec,
           async run(request, context) {
+            observation.starts.push('exec')
             const outcome = await f.exec.run(request, context)
             if (outcome.ok) await hook?.(`build-executed-${attempt}`, { directory: f.directory })
             return outcome
@@ -94,6 +140,8 @@ export async function installerApplyBuild(
           return f.auth.call(operation === 'stop' ? {} : signal ? { signal } : {})
         },
         async dispose() {
+          for (const name of ['source', 'source.archive', 'artifact.tar', 'build-pids'])
+            if (existsSync(join(f.roots.workspace, name))) observation.stagedFiles.push(name)
           try {
             await f.release()
           } finally {
@@ -107,5 +155,5 @@ export async function installerApplyBuild(
       }
     },
   }
-  return { input, pkg }
+  return { input, pkg, observation }
 }

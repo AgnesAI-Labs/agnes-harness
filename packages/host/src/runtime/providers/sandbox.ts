@@ -1,26 +1,16 @@
-import { createHash } from 'node:crypto'
-import { closeSync, constants, existsSync, fstatSync, lstatSync, openSync } from 'node:fs'
-import { lstat, realpath } from 'node:fs/promises'
-import { dirname, isAbsolute, join, relative, sep } from 'node:path'
+import { closeSync, existsSync } from 'node:fs'
+import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import type { CallContext, Outcome } from '@agnes/extension-api/runtime'
-import { WORKSPACE_SECRET_DIRS } from '@agnes/protocol'
 import type * as W from '@agnes/protocol/runtime'
 import { canonicalJsonDigest, validateRuntime } from '@agnes/protocol/runtime'
 import { createPrivateDirectorySync, createPrivateFileSync } from '@agnes/system-node'
-import { createExec } from '../../adapters/exec.js'
 import { createPlatform } from '../../adapters/platform.js'
 import { callSignal, during } from '../platform/call-limit.js'
 
 export const SANDBOX_CONTRACT = 'agh.sandbox'
 export const DEFAULT_SANDBOX_PROVIDER_ID = 'agh.default/sandbox'
 type Root = 'workspace' | 'home' | 'data'
-const FLOOR = [
-  ['workspace', '.git'],
-  ...WORKSPACE_SECRET_DIRS.map((path) => ['workspace', path] as const),
-  ['home', '.ssh'],
-  ['data', 'secrets'],
-] as const
 export type SandboxLaunch = {
   argv: readonly string[]
   cwd: string
@@ -71,72 +61,6 @@ export function sandboxRefusal(code: W.RuntimeError['code'], detailCode: string)
 }
 const same = (a: unknown, b: unknown) =>
   canonicalJsonDigest(a as W.JsonValue) === canonicalJsonDigest(b as W.JsonValue)
-function pathParts(path: string): string[] {
-  if (
-    path.includes('\0') ||
-    path.includes('\\') ||
-    isAbsolute(path) ||
-    /^[A-Za-z]:/.test(path) ||
-    path.split('/').includes('..')
-  )
-    throw new Error('sandbox_path')
-  if (path === '' || path === '.') return []
-  const parts = path.split('/')
-  if (parts.some((part) => !part || part === '.')) throw new Error('sandbox_path')
-  return parts
-}
-const under = (root: string, value: string) => {
-  const rel = relative(root, value)
-  return rel === '' || (!rel.startsWith(`..${sep}`) && rel !== '..' && !isAbsolute(rel))
-}
-function profile(options: SandboxOptions): string {
-  const quote = (p: string) => {
-    if (!isAbsolute(p) || [...p].some((char) => char.charCodeAt(0) < 32 || char.charCodeAt(0) === 127))
-      throw new Error('sandbox_path')
-    return JSON.stringify(p)
-  }
-  const rulePath = (rule: W.FsPolicySnapshot['rules'][number]) =>
-    join(options.roots[rule.root], ...pathParts(rule.path))
-  const lines = [
-    '(version 1)',
-    '(deny default)',
-    '(allow process*)',
-    '(allow sysctl-read)',
-    '(allow process-info*)',
-    '(deny network*)',
-    '(allow file-write-data (literal "/dev/null"))',
-  ]
-  for (const path of options.readPaths) lines.push(`(allow file-read* (subpath ${quote(path)}))`)
-  lines.push('(allow file-read* (literal "/"))')
-  const ancestors = new Set<string>()
-  for (const path of [...Object.values(options.roots), ...options.readPaths]) {
-    for (let parent = dirname(path); parent !== '/'; parent = dirname(parent)) ancestors.add(parent)
-  }
-  for (const parent of ancestors) lines.push(`(allow file-read-metadata (literal ${quote(parent)}))`)
-  for (const access of ['read', 'stat', 'list', 'write'] as const) {
-    const operation =
-      access === 'write' ? 'file-write*' : access === 'stat' ? 'file-read-metadata' : 'file-read*'
-    for (const rule of options.policy.rules.filter(
-      (rule) => rule.effect === 'allow' && rule.access.includes(access),
-    )) {
-      const allowed = rulePath(rule)
-      const denied = options.policy.rules.filter(
-        (candidate) =>
-          candidate.effect !== 'allow' &&
-          candidate.access.includes(access) &&
-          under(allowed, rulePath(candidate)),
-      )
-      const condition = denied.length
-        ? `(require-all (subpath ${quote(allowed)}) ${denied.map((candidate) => `(require-not (subpath ${quote(rulePath(candidate))}))`).join(' ')})`
-        : `(subpath ${quote(allowed)})`
-      lines.push(`(allow ${operation} ${condition})`)
-    }
-  }
-  for (const rule of options.policy.rules.filter((rule) => rule.effect === 'hard-deny'))
-    lines.push(`(deny file-read* file-write* (subpath ${quote(rulePath(rule))}))`)
-  return lines.join('\n')
-}
-
 export function createSandboxService(input: SandboxOptions): SandboxService {
   const options: SandboxOptions = {
     ...input,
@@ -150,14 +74,11 @@ export function createSandboxService(input: SandboxOptions): SandboxService {
     logicalName: 'sandbox',
     providerId: DEFAULT_SANDBOX_PROVIDER_ID,
   }
-  const providerDigest = canonicalJsonDigest({ contract: SANDBOX_CONTRACT, recipe: 'seatbelt-sqlite-owner' })
+  const providerDigest = canonicalJsonDigest({
+    contract: SANDBOX_CONTRACT,
+    recipe: 'mandatory-hard-gates-before-effects-sqlite',
+  })
   const supported = createPlatform().os === 'darwin'
-  const rootIdentity = new Map(
-    Object.values(options.roots).map((path) => {
-      const stat = lstatSync(path)
-      return [path, [stat.dev, stat.ino]] as const
-    }),
-  )
   if (!existsSync(options.directory)) createPrivateDirectorySync(options.directory)
   const file = join(options.directory, 'sandboxes.sqlite')
   if (!existsSync(file)) closeSync(createPrivateFileSync(file))
@@ -197,32 +118,6 @@ export function createSandboxService(input: SandboxOptions): SandboxService {
       throw new Error('sandbox_denied')
     if (lifetime.signal.aborted || context.signal.aborted) throw new Error('sandbox_cancelled')
   }
-  async function root(mount: W.MountRef, context: CallContext) {
-    const logical = options.policy.roots.find((item) => item.kind === 'workspace')?.mount
-    if (!logical || logical.mountId !== mount.mountId || logical.workspaceId !== mount.workspaceId)
-      throw new Error('sandbox_mount')
-    const value = await during(
-      callSignal(context, lifetime.signal, 'sandbox'),
-      'sandbox',
-      options.mount(mount, context).catch(() => {
-        throw new Error('sandbox_mount')
-      }),
-    )
-    if (
-      Date.parse(mount.lease.expiresAt) <= Date.now() ||
-      !same(mount.workspaceId, 'workspaceId' in context.scope ? context.scope.workspaceId : null)
-    )
-      throw new Error('sandbox_mount')
-    for (const [path, identity] of rootIdentity) {
-      const stat = await lstat(path)
-      if (stat.isSymbolicLink() || stat.dev !== identity[0] || stat.ino !== identity[1])
-        throw new Error('sandbox_mount')
-    }
-    const actual = await realpath(value)
-    if (actual !== options.roots.workspace || actual !== value || !(await lstat(actual)).isDirectory())
-      throw new Error('sandbox_mount')
-    return actual
-  }
   async function checked(ref: W.SandboxRef, context: CallContext) {
     await auth(context)
     const row = db.prepare('SELECT * FROM sandboxes WHERE id=?').get(ref.sandboxId)
@@ -252,104 +147,11 @@ export function createSandboxService(input: SandboxOptions): SandboxService {
       const parsed = validateRuntime('SandboxCreateRequest', raw)
       if (!parsed.ok) throw new Error('sandbox_schema')
       const body = parsed.value
-      if (!supported || body.mode !== 'isolated-process')
-        return sandboxRefusal('incompatible', 'sandbox_isolation_unsupported')
-      if (!same(body.filesystemPolicy, options.policy) || body.networkPolicyRef !== options.networkPolicyRef)
-        throw new Error('sandbox_policy')
-      const { digest: _digest, ...policyBody } = body.filesystemPolicy
-      if (canonicalJsonDigest(policyBody) !== body.filesystemPolicy.digest) throw new Error('sandbox_policy')
-      for (const [kind, path] of FLOOR)
-        if (
-          !body.filesystemPolicy.rules.some(
-            (rule) =>
-              rule.root === kind &&
-              rule.path === path &&
-              rule.effect === 'hard-deny' &&
-              ['read', 'write', 'stat', 'list'].every((access) => rule.access.includes(access as 'read')),
-          )
-        )
-          throw new Error('sandbox_policy')
-      if (
-        body.filesystemPolicy.rules.some(
-          (rule) =>
-            !['read', 'write', 'stat', 'list'].every((access) => rule.access.includes(access as 'read')),
-        )
-      )
-        return sandboxRefusal('incompatible', 'sandbox_policy_unsupported')
-      for (const kind of ['workspace', 'home', 'data'] as const) {
-        if (
-          !body.filesystemPolicy.roots.some((item) => item.kind === kind) ||
-          (await realpath(options.roots[kind])) !== options.roots[kind]
-        )
-          throw new Error('sandbox_policy')
-      }
-      const cwd = await root(body.workspaceRef, context)
       if (Object.values(body.resourceLimits).some((limit) => limit === 0))
         return sandboxRefusal('quota', 'sandbox_zero_limit')
-      const id = createHash('sha256').update(`${context.bindingId}/${context.invocationId}`).digest('hex')
-      const owner = canonicalJsonDigest({ principal: context.principalRef, scope: context.scope })
-      const fingerprint = canonicalJsonDigest({ body, owner })
-      const previous = db.prepare('SELECT * FROM sandboxes WHERE id=?').get(id)
-      if (previous) {
-        if (previous.fingerprint !== fingerprint)
-          return sandboxRefusal('conflict', 'sandbox_request_identity')
-        if (previous.state !== 'ready') return sandboxRefusal('unknown_effect', 'sandbox_unknown')
-        return { ok: true, value: JSON.parse(String(previous.value)) as W.SandboxCreateResult }
-      }
-      const argv = profile(options)
-      db.prepare("INSERT INTO sandboxes(id,owner,fingerprint,value,state) VALUES(?,?,?,NULL,'creating')").run(
-        id,
-        owner,
-        fingerprint,
-      )
-      const probes: W.FsEnforcementProof['probes'][number][] = []
-      const signal = AbortSignal.any([
-        context.signal,
-        lifetime.signal,
-        AbortSignal.timeout(Math.max(1, Math.min(5000, Date.parse(context.deadline) - Date.now()))),
-      ])
-      const exec = createExec({ baseEnv: {} })
-      const stat = (path: string) =>
-        exec.run(['/usr/bin/sandbox-exec', '-p', argv, '/usr/bin/stat', '-f', '%z', path], {
-          cwd,
-          signal,
-          timeoutMs: 1000,
-          maxOutputBytes: 1024,
-        })
-      if ((await stat(cwd)).code !== 0) throw new Error('sandbox_probe')
-      for (const [kind, path] of FLOOR) {
-        const observed = await stat(join(options.roots[kind], path))
-        if (observed.code === 0 || !/Operation not permitted|Permission denied/u.test(observed.stderr))
-          throw new Error('sandbox_probe')
-        probes.push({ root: kind, path, decision: 'denied', evidenceCode: 'E_FS_DENIED' })
-      }
-      await auth(context)
-      await root(body.workspaceRef, context)
-      if (signal.aborted) throw new Error('sandbox_cancelled')
-      const proofBody = {
-        policyDigest: options.policy.digest,
-        provider: binding,
-        authorityEpoch: body.workspaceRef.lease.epoch,
-        checkedAt: new Date().toISOString(),
-        scope: context.scope,
-        workspaceRoot: { mount: body.workspaceRef, policyDecision: 'allow' as const, exists: true },
-        probes,
-      }
-      const value: W.SandboxCreateResult = {
-        sandboxRef: {
-          authorityId: options.authorityId,
-          sandboxId: id,
-          ownerBinding: binding,
-          lease: body.workspaceRef.lease,
-        },
-        achievedIsolation: 'isolated-process',
-        limits: body.resourceLimits,
-        filesystemProof: { ...proofBody, digest: canonicalJsonDigest(proofBody) },
-      }
-      if (!validateRuntime('SandboxCreateResult', value).ok) throw new Error('sandbox_probe')
-      db.prepare("UPDATE sandboxes SET value=?, state='ready' WHERE id=?").run(JSON.stringify(value), id)
-      scopes.set(id, { abort: new AbortController(), work: new Set() })
-      return { ok: true, value }
+      if (!supported || body.mode !== 'isolated-process')
+        return sandboxRefusal('incompatible', 'sandbox_isolation_unsupported')
+      return sandboxRefusal('incompatible', 'sandbox_limit_memoryBytes_unsupported')
     } catch (error) {
       return refused(error)
     }
@@ -357,7 +159,7 @@ export function createSandboxService(input: SandboxOptions): SandboxService {
   const service: SandboxService = {
     binding,
     providerDigest,
-    features: supported ? ['create', 'stop', 'inspect', 'seatbelt', 'closed-network', 'live-mount'] : [],
+    features: [],
     create(raw, context) {
       const pending = create(raw, context)
       creates.add(pending)
@@ -405,93 +207,14 @@ export function createSandboxService(input: SandboxOptions): SandboxService {
         return refused(error)
       }
     },
-    async withExecution(body, context, run) {
-      let watcher: ReturnType<typeof setInterval> | undefined
-      let directoryFd: number | undefined, mountFd: number | undefined
+    async withExecution(body, context, _run) {
       try {
-        const { row, value } = await checked(body.sandboxRef, context)
-        if (row.state !== 'ready') throw new Error('sandbox_stopped')
-        if (
-          !same(value.filesystemProof.workspaceRoot.mount, body.cwd.mount) ||
-          (Object.keys(body.limits) as (keyof W.ResourceLimits)[]).some(
-            (key) => body.limits[key] > value.limits[key],
-          )
-        )
-          throw new Error('sandbox_mount')
-        const cwdRoot = await root(body.cwd.mount, context)
-        let cwd = cwdRoot
-        for (const part of pathParts(body.cwd.path)) {
-          cwd = join(cwd, part)
-          if ((await lstat(cwd)).isSymbolicLink()) throw new Error('sandbox_path')
-        }
-        const physical = await realpath(cwd)
-        if (!under(cwdRoot, physical) || !(await lstat(physical)).isDirectory())
-          throw new Error('sandbox_path')
-        const owned = scopes.get(body.sandboxRef.sandboxId)
-        if (!owned) throw new Error('sandbox_stopped')
-        const revoked = new AbortController()
-        let polling = false
-        watcher = setInterval(() => {
-          if (polling) return
-          polling = true
-          void root(body.cwd.mount, context)
-            .catch(() => revoked.abort())
-            .finally(() => {
-              polling = false
-            })
-        }, 25)
-        const signal = AbortSignal.any([
-          context.signal,
-          lifetime.signal,
-          owned.abort.signal,
-          revoked.signal,
-          AbortSignal.timeout(Math.max(1, Date.parse(body.cwd.mount.lease.expiresAt) - Date.now())),
-        ])
         await auth(context)
-        await root(body.cwd.mount, context)
-        if (signal.aborted) throw new Error('sandbox_cancelled')
-        mountFd = openSync(cwdRoot, constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW)
-        const openedRoot = fstatSync(mountFd),
-          expectedRoot = rootIdentity.get(cwdRoot)
-        if (!expectedRoot || openedRoot.dev !== expectedRoot[0] || openedRoot.ino !== expectedRoot[1])
-          throw new Error('sandbox_mount')
-        directoryFd = openSync(cwdRoot, constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW)
-        let nextPath = cwdRoot
-        for (const component of pathParts(body.cwd.path)) {
-          nextPath = join(nextPath, component)
-          const next = openSync(nextPath, constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW)
-          closeSync(directoryFd)
-          directoryFd = next
-        }
-        const pending = run({
-          argv: ['/usr/bin/sandbox-exec', '-p', profile(options), ...body.argv],
-          cwd: physical,
-          cwdFd: directoryFd,
-          rootFd: mountFd,
-          cwdRoot,
-          signal,
-        })
-        owned.work.add(pending)
-        try {
-          const result = await pending
-          const outcome = result as Outcome<W.ExecResult>
-          if (!outcome.ok) {
-            const metrics = outcome.error?.safeDetail as
-              | { metrics?: { ownershipVerified?: boolean; remaining?: number } }
-              | undefined
-            if (!metrics?.metrics?.ownershipVerified || metrics.metrics.remaining !== 0)
-              db.prepare('UPDATE sandboxes SET uncertain=1 WHERE id=?').run(body.sandboxRef.sandboxId)
-          }
-          return { ok: true, value: result }
-        } finally {
-          owned.work.delete(pending)
-        }
+        if (!validateRuntime('ExecRequest', body).ok) throw new Error('sandbox_schema')
+        if (Object.values(body.limits).includes(0)) return sandboxRefusal('quota', 'sandbox_zero_limit')
+        return sandboxRefusal('incompatible', 'sandbox_limit_memoryBytes_unsupported')
       } catch (error) {
         return refused(error)
-      } finally {
-        if (watcher) clearInterval(watcher)
-        if (directoryFd !== undefined) closeSync(directoryFd)
-        if (mountFd !== undefined) closeSync(mountFd)
       }
     },
     close() {

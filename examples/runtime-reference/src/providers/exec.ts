@@ -1,5 +1,5 @@
 import { spawn } from 'node:child_process'
-import { createHash, randomUUID } from 'node:crypto'
+import { randomUUID } from 'node:crypto'
 import {
   chmodSync,
   closeSync,
@@ -122,7 +122,6 @@ function reject(
   }
 }
 const equal = (a: unknown, b: unknown) => hash(a as R.JsonValue) === hash(b as R.JsonValue)
-const sha = (bytes: Uint8Array) => createHash('sha256').update(bytes).digest('hex')
 function data(value: R.JsonValue): R.DataRef {
   return {
     kind: 'inline',
@@ -145,128 +144,6 @@ async function bounded<T>(signal: AbortSignal, promise: Promise<T>) {
     signal.removeEventListener('abort', cancel)
   }
 }
-function execute(
-  argv: readonly string[],
-  cwd: string,
-  environment: Record<string, string>,
-  bytes: Uint8Array,
-  ceiling: R.ResourceLimits,
-  signal: AbortSignal,
-  directory: { cwdFd: number; rootFd: number; cwdRoot: string },
-) {
-  const locations = [
-    new URL('../../native/execution-owner', import.meta.url),
-    new URL('../../dist/native/execution-owner', import.meta.url),
-  ]
-  const binary = fileURLToPath(
-    locations.find((location) => existsSync(location)) ??
-      new URL('../../dist/native/execution-owner', import.meta.url),
-  )
-  // The executable has a separate event-driven implementation and no Host helper import.
-  const process = spawn(
-    binary,
-    [
-      ceiling.cpuMs,
-      ceiling.wallMs,
-      ceiling.memoryBytes,
-      ceiling.outputBytes,
-      ceiling.processes,
-      ceiling.openFiles,
-    ]
-      .map((number) => number.toString())
-      .concat([directory.cwdRoot, ...argv]),
-    {
-      cwd,
-      env: environment,
-      stdio: ['pipe', 'pipe', 'pipe', 'pipe', 'pipe', 'ignore', directory.cwdFd, directory.rootFd],
-    },
-  )
-  const stdout: Buffer[] = [],
-    stderr: Buffer[] = []
-  let held = 0,
-    tail = '',
-    final: Measurements | undefined,
-    invalid = false
-  const cancel = () => process.stdin?.end('stop')
-  signal.addEventListener('abort', cancel, { once: true })
-  if (signal.aborted) cancel()
-  process.stdin?.on('error', () => {})
-  const input = process.stdio[4]
-  if (input && 'end' in input) {
-    input.on('error', () => {})
-    input.end(Buffer.from(bytes))
-  }
-  const receive = (chunks: Buffer[]) => (chunk: Buffer) => {
-    const part = chunk.subarray(0, Math.max(ceiling.outputBytes - held, 0))
-    chunks.push(part)
-    held += part.byteLength
-    if (part.length !== chunk.length) {
-      invalid = true
-      cancel()
-    }
-  }
-  process.stdout?.on('data', receive(stdout))
-  process.stderr?.on('data', receive(stderr))
-  process.stdio[3]?.on('data', (chunk: Buffer) => {
-    tail += chunk.toString()
-    if (tail.length > 16384) {
-      invalid = true
-      cancel()
-      tail = ''
-      return
-    }
-    const rows = tail.split('\n')
-    tail = rows.pop() ?? ''
-    for (const row of rows) {
-      try {
-        const parsed = JSON.parse(row) as Measurements
-        if (!Number.isSafeInteger(parsed.pid) || parsed.pid < 1 || typeof parsed.reason !== 'string')
-          throw new Error()
-        const numeric = [
-          parsed.cpuMs,
-          parsed.rss,
-          parsed.processes,
-          parsed.files,
-          parsed.outputBytes,
-          parsed.intervalMs,
-          parsed.maxGapMs,
-          parsed.residualObserved,
-        ]
-        if (
-          numeric.some((value) => !Number.isSafeInteger(value) || value < 0) ||
-          !Number.isSafeInteger(parsed.remaining) ||
-          parsed.remaining < -1 ||
-          typeof parsed.ownershipVerified !== 'boolean' ||
-          typeof parsed.final !== 'boolean' ||
-          (parsed.ownership !== 'cooperative' && parsed.ownership !== 'strong') ||
-          !Number.isSafeInteger(parsed.code) ||
-          !Number.isSafeInteger(parsed.signal) ||
-          (parsed.final && parsed.ownershipVerified && parsed.remaining !== 0)
-        )
-          throw new Error()
-        if (parsed.final) final = parsed
-      } catch {
-        invalid = true
-        cancel()
-      }
-    }
-  })
-  return new Promise<{ out: Buffer; err: Buffer; counters: Measurements }>((resolve, fail) => {
-    process.once('error', () => fail(new Problem('exec_runner_unavailable')))
-    process.once('close', (status) => {
-      signal.removeEventListener('abort', cancel)
-      if (
-        ![0, 125].includes(status ?? -1) ||
-        invalid ||
-        !final ||
-        (final.reason === 'completed' && (!final.ownershipVerified || final.remaining !== 0))
-      )
-        fail(new Problem('exec_cleanup_unknown', 'unknown_effect'))
-      else resolve({ out: Buffer.concat(stdout), err: Buffer.concat(stderr), counters: final })
-    })
-  })
-}
-
 export function createReferenceExec(raw: ReferenceExecOptions) {
   const options = {
     ...raw,
@@ -282,7 +159,7 @@ export function createReferenceExec(raw: ReferenceExecOptions) {
   }
   const providerDigest = hash({
     contract: binding.contract,
-    implementation: 'linked-event-owner-array-cabinet',
+    implementation: 'hard-gate-refusal-linked-event-owner-array-cabinet',
   })
   // guards-allow-platform: qualification follows the native reference's supported backend.
   const supported = process.platform === 'darwin'
@@ -351,7 +228,6 @@ export function createReferenceExec(raw: ReferenceExecOptions) {
     return task
   }
   async function run(input: unknown, context: CallContext): Promise<Outcome<R.ExecResult>> {
-    let entry: CabinetEntry | undefined
     try {
       await authorize(context)
       const parsed = validateRuntime('ExecRequest', input)
@@ -359,168 +235,21 @@ export function createReferenceExec(raw: ReferenceExecOptions) {
       const request = parsed.value
       if (request.env.find((item) => item.value.kind === 'secret'))
         throw new Problem('exec_secret_env_unsupported', 'incompatible')
-      if (!supported)
-        // guards-allow-platform: Windows requires mandatory File sampling qualification.
-        throw new Problem(
-          process.platform === 'win32' ? 'exec_limit_openFiles_unsupported' : 'exec_platform_unsupported',
-          'incompatible',
-        )
       if (request.argv.length === 0 || request.argv.find((item) => item.includes('\0')))
         throw new Problem('exec_argv', 'invalid_input')
       for (const field of Object.keys(request.limits) as (keyof R.ResourceLimits)[])
         if (request.limits[field] === 0) throw new Problem(`exec_zero_${field}`, 'quota')
-      if (request.limits.openFiles < 32) throw new Problem('exec_limit_openFiles', 'quota')
-      const environment = { ...options.environment },
-        named: string[] = []
-      for (const variable of request.env) {
-        if (
-          variable.value.kind !== 'literal' ||
-          named.includes(variable.name) ||
-          !options.literalNames.includes(variable.name) ||
-          !/^[A-Z_][A-Z0-9_]*$/u.test(variable.name) ||
-          /^(?:LD_|DYLD_|NODE_|PATH$|HOME$|.*(?:SECRET|TOKEN|PASSWORD|CREDENTIAL))/u.test(variable.name) ||
-          variable.value.value.includes('\0')
+      if (!supported)
+        // guards-allow-platform: mandatory Windows File ceilings cannot be sampled.
+        throw new Problem(
+          process.platform === 'win32' ? 'exec_limit_openFiles_unsupported' : 'exec_platform_unsupported',
+          'incompatible',
         )
-          throw new Problem('exec_environment')
-        named.push(variable.name)
-        environment[variable.name] = variable.value.value
-      }
-      const id = createHash('sha256').update(`${context.bindingId}/${context.invocationId}`).digest('hex')
-      const owner = ownerOf(context),
-        digest = hash({ body: request, owner })
-      const existing = entries.find((row) => row.id === id)
-      if (existing) {
-        if (existing.owner !== owner || existing.digest !== digest)
-          throw new Problem('exec_request_identity', 'conflict')
-        return existing.reply ?? reject('exec_unknown', 'unknown_effect', existing)
-      }
-      const stdin = request.stdinRef
-        ? await bounded(signal(context), options.content.read(request.stdinRef, context))
-        : Buffer.alloc(0)
-      if (
-        stdin.length > 1048576 ||
-        (request.stdinRef &&
-          (request.stdinRef.digest !== sha(stdin) || request.stdinRef.bytes !== stdin.length))
-      )
-        throw new Problem('exec_content', 'invalid_input')
-      await authorize(context)
-      const admission = await options.sandbox.withExecution(request, context, async (launch) => {
-        await authorize(context)
-        if (launch.signal.aborted) return reject('exec_cancelled', 'cancelled')
-        const prior = entries.find((row) => row.id === id)
-        if (prior) {
-          if (prior.owner !== owner || prior.digest !== digest)
-            return reject('exec_request_identity', 'conflict')
-          return prior.reply ?? reject('exec_unknown', 'unknown_effect', prior)
-        }
-        entry = {
-          id,
-          owner,
-          digest,
-          ref: {
-            authorityId: options.authorityId,
-            executionId: id,
-            requestIdentity: {
-              aghRequestId: id,
-              system: 'agh.exec',
-              requestDigest: digest,
-              idempotencyKey: null,
-            },
-          },
-          reply: null,
-          value: null,
-          counters: null,
-          pins: null,
-        }
-        entries.push(entry)
-        flush()
-        try {
-          const availableTime = Date.parse(context.deadline) - Date.now()
-          if (availableTime <= 0 || launch.signal.aborted) throw new Error('exec_cancelled')
-          const callEndsFirst = request.limits.wallMs > availableTime
-          const observed = await execute(
-            launch.argv,
-            launch.cwd,
-            environment,
-            stdin,
-            { ...request.limits, wallMs: Math.min(availableTime, request.limits.wallMs) },
-            AbortSignal.any([launch.signal, signal(context)]),
-            launch,
-          )
-          entry.counters = observed.counters
-          const output = await bounded(
-              AbortSignal.timeout(2000),
-              options.content.retain(observed.out, context),
-            ),
-            error = await bounded(AbortSignal.timeout(2000), options.content.retain(observed.err, context))
-          if (
-            output.ref.digest !== sha(observed.out) ||
-            error.ref.digest !== sha(observed.err) ||
-            output.ref.bytes !== observed.out.length ||
-            error.ref.bytes !== observed.err.length
-          )
-            throw new Problem('exec_content')
-          for (const stored of [output, error]) {
-            if (
-              !validateRuntime('RetentionRef', stored.retention).ok ||
-              stored.retention.digest !== stored.ref.digest ||
-              stored.retention.resourceId !== stored.ref.blobId ||
-              stored.retention.authorityId !== stored.ref.authorityId ||
-              stored.retention.pinId !== stored.ref.pinId ||
-              stored.retention.kind !== 'blob'
-            )
-              throw new Problem('exec_content')
-          }
-          entry.pins = [output.retention, error.retention]
-          const ordinary = observed.counters.reason === 'completed'
-          entry.value = {
-            executionRef: entry.ref,
-            state: ordinary ? 'exited' : observed.counters.ownershipVerified ? 'terminated' : 'unknown',
-            exitCode: observed.counters.code < 0 ? null : observed.counters.code,
-            signal: observed.counters.signal ? `SIG${observed.counters.signal}` : null,
-            stdoutRef: output.ref,
-            stderrRef: error.ref,
-            outputTruncated: observed.counters.reason === 'outputBytes',
-            effectStatus: ordinary ? 'confirmed' : 'unknown',
-          }
-          if (!validateRuntime('ExecResult', entry.value).ok) throw new Problem('exec_content')
-          entry.reply =
-            callEndsFirst && observed.counters.reason === 'wallMs'
-              ? reject('exec_unknown', 'unknown_effect', entry)
-              : ordinary
-                ? { ok: true, value: entry.value }
-                : Object.keys(request.limits).includes(observed.counters.reason)
-                  ? reject(`exec_limit_${observed.counters.reason}`, 'quota', entry)
-                  : reject(
-                      observed.counters.reason === 'residual'
-                        ? 'exec_residual'
-                        : observed.counters.reason === 'cleanup' || !observed.counters.ownershipVerified
-                          ? 'exec_cleanup_unknown'
-                          : 'exec_unknown',
-                      'unknown_effect',
-                      entry,
-                    )
-          flush()
-          return entry.reply
-        } catch (failure) {
-          entry.reply = reject(
-            failure instanceof Problem && failure.detail === 'exec_cleanup_unknown'
-              ? 'exec_cleanup_unknown'
-              : 'exec_unknown',
-            'unknown_effect',
-            entry,
-          )
-          flush()
-          return entry.reply
-        }
-      })
-      return admission.ok ? admission.value : admission
+      throw new Problem('exec_limit_memoryBytes_unsupported', 'incompatible')
     } catch (problem) {
-      return entry
-        ? reject('exec_unknown', 'unknown_effect', entry)
-        : problem instanceof Problem
-          ? reject(problem.detail, problem.category)
-          : reject(shutdown.signal.aborted ? 'exec_closed' : 'exec_unavailable')
+      return problem instanceof Problem
+        ? reject(problem.detail, problem.category)
+        : reject(shutdown.signal.aborted ? 'exec_closed' : 'exec_unavailable')
     }
   }
   async function reconcile(input: unknown, context: CallContext): Promise<Outcome<R.ReconcileResult>> {
@@ -575,21 +304,7 @@ export function createReferenceExec(raw: ReferenceExecOptions) {
   return {
     binding,
     providerDigest,
-    features: supported
-      ? [
-          'run',
-          'reconcile',
-          'cpuMs',
-          'wallMs',
-          'memoryBytes',
-          'outputBytes',
-          'processes',
-          'openFiles',
-          'owner-pipe',
-          'cooperative-ownership',
-          'lifeline',
-        ]
-      : [],
+    features: [],
     run(input: unknown, context: CallContext) {
       return track(run(input, context))
     },

@@ -30,5 +30,6 @@ Use this page to decide whether AGH fits your trial or integration. It distingui
 | Domain / enterprise | Business APIs, identity, data, and deployment policies need scenario-specific integration and acceptance; see [FDE](../guide/why-agh.md) |
 | MHS / devices | [AGH MHS guides and examples are coming soon](../guide/mhs.md). No verified general-purpose MHS adapter, compatibility list, or end-to-end device example |
 | Performance / evaluation | No leadership or improvement figures without fixed models, budgets, tasks, and reproducible measurement |
+| Experimental Sandbox/Exec services | Mandatory resource limits require real hard gates before effects. macOS/reference refuse memory/process limits; Linux native verifies delegated memory/pids controllers but refuses missing aggregate CPU/open-file gates. Sampling is diagnostic and supplies no overshoot bound. Normal execution and cold recovery remain unqualified; legacy command adapters retain their existing behavior |
 
 See [verification](../maintainers/verification.md) for recorded commands and scope. Recheck current source after upgrades, especially long-running behavior, MCP OAuth session support, plugin/client descriptor contracts, default security policy, and distribution status.
