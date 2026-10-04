@@ -65,6 +65,13 @@ export function escapeControl(s: string): string {
   return s.replace(CONTROL, (c) => (c === '\n' ? c : ''))
 }
 
+// Text a runtime server supplies (views, questions, options, approvals, artifact names) also loses
+// Unicode format controls: a bidi override or a zero-width character can reorder or hide what the user
+// reads next to a choice.
+export function escapeServerText(s: string): string {
+  return escapeControl(s).replace(/\p{Cf}/gu, '')
+}
+
 export class Text implements Component {
   private cache: { width: number; lines: string[] } | null = null
 
