@@ -523,7 +523,12 @@ function verifyMaterials(input: ResolvedReleaseInputs, effectiveKind: string): D
   const config = fields(
     effectiveKind === 'assembly-effective-fixture'
       ? read(release.configSnapshotRef, '/configSnapshotRef')
-      : readAppliedConfiguration(release.configSnapshotRef, input.configuration),
+      : readAppliedConfiguration(
+          release.configSnapshotRef,
+          input.configuration,
+          release.schemasRef,
+          input.observations.contents,
+        ),
     ['kind', 'configuration', 'features', 'bundles', 'jointDomains', 'directory', 'deployments'],
     '/configSnapshotRef/value',
   )
@@ -639,7 +644,7 @@ function verifyMaterials(input: ResolvedReleaseInputs, effectiveKind: string): D
   const bundleFields = bundleBody as Record<string, unknown>
   const bundles = array(bundleFields.bundles, '/clientBundlesRef/bundles')
   verifyClientBundles(release, bundles, array(config.bundles, '/configSnapshotRef/bundles'), known)
-  verifyClientLock(input, bundleBody)
+  verifyClientLock({ ...input, fixture: { contents: input.observations.contents } }, bundleBody)
   const definitions = array(materials.contracts, '/schemasRef/contracts').map((row) =>
     readWire('CommunityContractDefinition', row),
   )
@@ -741,7 +746,7 @@ function verifyJointAndMigrations(input: ResolvedReleaseInputs, domains: Dispatc
 /** Pure validation shared by detached fixtures and private publication issuers; grants no authority. */
 export function validateResolvedRelease(
   input: ResolvedReleaseInputs,
-  effectiveKind: 'assembly-effective-fixture' | 'assembly-applied-awaiting-protocol-confirmation',
+  effectiveKind: 'assembly-effective-fixture' | 'assembly-applied',
   configurationRequest?: ConfigResolveRequest,
 ): ReleaseSet {
   requireRelease(

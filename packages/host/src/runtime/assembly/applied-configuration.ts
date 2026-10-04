@@ -1,37 +1,29 @@
 import { jcs } from '@agnes/protocol'
 import type { ConfigResolveResult, DataRef } from '@agnes/protocol/runtime'
-import { digest, equal, fields, freeze, readWire, requireRelease } from './primitives.js'
+import { validateOwnedAuthorSchemaSource } from '@agnes/protocol/runtime'
+import type { ResolvedReleaseInputs } from './inputs.js'
+import { array, digest, equal, fields, readContent, readWire, requireRelease } from './primitives.js'
 
-/** Host-private provisional codec. Its identity and application proof await protocol-owner confirmation. */
-export const APPLIED_CONFIGURATION_KIND = 'assembly-applied-awaiting-protocol-confirmation' as const
-const typeId = 'agh.assembly/applied-configuration-awaiting-confirmation@1'
-export const appliedConfigurationSchema = freeze({
-  typeId,
-  revision: 1,
-  digest: digest({ typeId, schemaStatus: 'provisional-awaiting-protocol-owner-confirmation' }),
-})
+export const APPLIED_CONFIGURATION_KIND = 'assembly-applied' as const
 
-export function appliedConfigurationRef(value: unknown): DataRef {
-  const canonicalJson = jcs(readWire('JsonValue', value))
-  const json = { canonicalJson, contentDigest: digest(value) }
-  return readWire('DataRef', {
-    kind: 'inline',
-    schema: appliedConfigurationSchema,
-    value: json,
-    digest: digest(json),
-    bytes: Buffer.byteLength(jcs(json)),
-  })
-}
+/** Decode the original selected author's schema; no provisional Host schema is issued here. */
 export function readAppliedConfiguration(
   ref: DataRef,
   configuration: ConfigResolveResult,
+  schemasRef: DataRef,
+  contents: ResolvedReleaseInputs['observations']['contents'],
 ): Record<string, unknown> {
-  requireRelease(
-    ref.kind === 'inline' && equal(ref.schema, appliedConfigurationSchema),
-    'applied_configuration_codec_mismatch',
-    '/configuration',
+  const materials = fields(
+    readContent(schemasRef, '/schemasRef', contents),
+    ['schemas', 'builtinContracts', 'contracts'],
+    '/schemasRef',
   )
-  const envelope = fields(ref.value, ['canonicalJson', 'contentDigest'], '/configuration')
+  const source = array(materials.schemas, '/schemasRef/schemas')
+    .map(validateOwnedAuthorSchemaSource)
+    .find((row) => equal(row.ref, ref.schema))
+  const original = readContent(ref, '/configuration', contents)
+  requireRelease(source?.validate(original).ok, 'applied_configuration_codec_mismatch', '/configuration')
+  const envelope = fields(original, ['canonicalJson', 'contentDigest'], '/configuration')
   requireRelease(
     typeof envelope.canonicalJson === 'string',
     'applied_configuration_codec_mismatch',
@@ -50,8 +42,7 @@ export function readAppliedConfiguration(
   )
   requireRelease(
     row.kind === APPLIED_CONFIGURATION_KIND &&
-      equal(readWire('ConfigResolveResult', row.configuration), configuration) &&
-      equal(ref, appliedConfigurationRef(decoded)),
+      equal(readWire('ConfigResolveResult', row.configuration), configuration),
     'applied_configuration_source_mismatch',
     '/configuration',
   )

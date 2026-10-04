@@ -1,4 +1,5 @@
 import type { CallContext, MaintenanceStore, Outcome } from '@agnes/extension-api/runtime'
+import { jcs } from '@agnes/protocol'
 import type {
   BindingRef,
   DataRef,
@@ -8,18 +9,20 @@ import type {
   StateAuthorityRef,
 } from '@agnes/protocol/runtime'
 import {
-  journalMutation,
-  MaintenanceFailure,
-  maintenanceOutcome,
-  readReleaseSnapshot,
-  releaseSnapshot,
-} from './maintenance-journal.js'
-import { equal, freeze, readWire, requireRelease } from './primitives.js'
+  encodePublicationPayload,
+  type PublicationContentBytes,
+  publicationRequiredDigests,
+  readPublicationDataRef,
+} from '../maintenance/publication-codecs.js'
+import { MaintenanceFailure, maintenanceOutcome, releaseSnapshot } from './maintenance-journal.js'
+import { digest, equal, readWire, requireRelease } from './primitives.js'
+import { captureReleaseProducerContents, readRetainedProducerFacts } from './release-producer-contents.js'
+import type { InstalledReleaseProducer } from './release-producer-installation.js'
+import { assertOriginalInstalledReleaseProducer } from './release-producer-installation.js'
 import {
-  producerFactsRef,
   type ReleaseProducerFacts,
   readProducerDeployment,
-  readProducerFacts,
+  releaseResolvedProducerSource,
   resolveProducerSource,
 } from './release-producer-source.js'
 
@@ -28,6 +31,7 @@ export interface ProducerPublication {
   request: MaintenanceStoreCommitRequest
   receipt: MaintenanceStoreCommitResult
   source: DataRef
+  contents: readonly PublicationContentBytes[]
 }
 export interface ReleaseProducerCommitPort {
   readonly store: MaintenanceStore
@@ -48,6 +52,7 @@ const originalRequests = new WeakMap<
     context: CallContext
     source: DataRef
     qualifiedUntil: string
+    contents: readonly PublicationContentBytes[]
     preClock(): void
   }
 >()
@@ -64,10 +69,14 @@ export function captureReleaseProducerPublication(
     '/publication/source',
   )
   original.preClock()
-  return freeze({ source: original.source, qualifiedUntil: original.qualifiedUntil })
+  return {
+    source: original.source,
+    qualifiedUntil: original.qualifiedUntil,
+    contents: original.contents.map((row) => ({ ...row, body: Buffer.from(row.body) })),
+  }
 }
 
-function publicationRequest(
+export function publicationRequest(
   facts: ReleaseProducerFacts,
   port: ReleaseProducerCommitPort,
 ): MaintenanceStoreCommitRequest {
@@ -79,10 +88,10 @@ function publicationRequest(
     releaseSetId: facts.release.releaseSetId,
   }
   const head = {
-    directory,
-    jointDomains: facts.observations.jointDomains,
-    migrations: facts.observations.migrations,
-    stateAuthorityRef: facts.binding.stateAuthorityAtCreation,
+    directoryJson: jcs(directory),
+    jointDomainsJson: jcs(facts.observations.jointDomains),
+    migrationsJson: '[]' as const,
+    stateAuthorityRefJson: jcs(facts.binding.stateAuthorityAtCreation),
   }
   const route = {
     routeId: directory.routeId,
@@ -90,22 +99,37 @@ function publicationRequest(
     authorityEpoch: facts.binding.stateAuthorityAtCreation.authorityEpoch,
     cutoverId: transactionId,
   }
+  const encoded = [
+    encodePublicationPayload('head', head),
+    encodePublicationPayload('route', route),
+    encodePublicationPayload('release', releaseSnapshot(facts.release)),
+  ]
+  const ids = [
+    port.headRecordId,
+    `release-route:${directory.routeId}`,
+    `release:${facts.release.releaseSetId}`,
+  ]
   return readWire('MaintenanceStoreCommitRequest', {
     transactionId,
     authority: port.authority,
     expectedWriterEpoch: port.writerEpoch,
-    mutations: [
-      journalMutation(port, port.headRecordId, 'current-head', head, null, now),
-      journalMutation(port, `release-route:${directory.routeId}`, 'release-route', route, null, now),
-      journalMutation(
-        port,
-        `release:${facts.release.releaseSetId}`,
-        'release-snapshot',
-        releaseSnapshot(facts.release),
-        null,
-        now,
-      ),
-    ],
+    mutations: encoded.map((ref, index) => {
+      requireRelease(ref.kind === 'inline' && ids[index], 'publication_inline_budget', '/publication')
+      return {
+        recordId: ids[index],
+        expectedRevision: null,
+        next: {
+          recordId: ids[index],
+          revision: 1,
+          writerEpoch: port.writerEpoch,
+          createdAt: now,
+          updatedAt: now,
+          schema: ref.schema,
+          payload: ref.value,
+          fingerprint: ref.digest,
+        },
+      }
+    }),
     outbox: [],
   })
 }
@@ -113,7 +137,7 @@ function verifyPublication(
   original: ProducerPublication,
   port: ReleaseProducerCommitPort,
 ): ReleaseProducerFacts {
-  const facts = readProducerFacts(readWire('DataRef', original.source))
+  const facts = readRetainedProducerFacts(original.source, original.contents)
   const request = readWire('MaintenanceStoreCommitRequest', original.request)
   const receipt = readWire('MaintenanceStoreCommitResult', original.receipt)
   const expected = publicationRequest(facts, port)
@@ -133,7 +157,16 @@ function verifyPublication(
   const release = request.mutations[2]
   requireRelease(
     release &&
-      equal(readReleaseSnapshot(release.next), facts.release) &&
+      equal(
+        readPublicationDataRef('release', {
+          kind: 'inline',
+          schema: release.next.schema,
+          value: release.next.payload,
+          digest: digest(release.next.payload),
+          bytes: Buffer.byteLength(jcs(release.next.payload)),
+        }),
+        releaseSnapshot(facts.release),
+      ) &&
       equal(facts.binding.stateAuthorityAtCreation, port.stateAuthority) &&
       equal(facts.producer, port.producer) &&
       equal(facts.scope, port.scope),
@@ -143,8 +176,12 @@ function verifyPublication(
   return facts
 }
 
-/** Detached provisional producer. No startup registration; production readiness always refuses. */
-export function createReleaseProducer(deploymentDirectory: string, port?: ReleaseProducerCommitPort) {
+/** Detached producer. Original native issuance and startup registration require the installer. */
+export function createReleaseProducer(
+  deploymentDirectory: string,
+  port?: ReleaseProducerCommitPort,
+  installation?: InstalledReleaseProducer,
+) {
   let disposed = false
   let writing: Promise<unknown> = Promise.resolve()
   const lifetime = new AbortController()
@@ -174,21 +211,28 @@ export function createReleaseProducer(deploymentDirectory: string, port?: Releas
   ) => {
     const facts = verifyPublication(original, originalPort)
     // Preserve the exact native result pointer. Never substitute the codec's detached receipt.
-    await originalPort.acceptPublishedAdmissionRelease(original.receipt, context)
+    if (installation) await installation.issuer.acceptOriginalReceipt(original.receipt, context)
+    else await originalPort.acceptPublishedAdmissionRelease(original.receipt, context)
     return { receipt: original.receipt, source: original.source, facts }
   }
   return {
     async ready(): Promise<Outcome<never>> {
       return maintenanceOutcome(async () => {
         requireRelease(port, 'producer_commit_port_missing', '/publication')
-        requireRelease(false, 'producer_codec_confirmation_pending', '/publication')
+        requireRelease(false, 'producer_native_issuer_missing', '/publication')
         throw new Error('unreachable')
       })
     },
     publish(context: CallContext) {
       const operation = writing.then(() =>
         maintenanceOutcome(async () => {
+          if (installation) assertOriginalInstalledReleaseProducer(installation)
           const selected = permitted(context)
+          requireRelease(
+            !installation || context === installation.initialContext,
+            'producer_context_mismatch',
+            '/publication/context',
+          )
           const source = readProducerDeployment(deploymentDirectory)
           const transactionId = `publish:${source.plan.targetReleaseSet.releaseSetId}`
           const prior = await selected.readPublication(transactionId, context)
@@ -203,26 +247,54 @@ export function createReleaseProducer(deploymentDirectory: string, port?: Releas
             permitted(context)
             return accept(prior, context, selected)
           }
-          const facts = await resolveProducerSource(
-            source,
-            selected.stateAuthority,
-            selected.now(),
-            context.deadline,
-            selected.producer,
-            selected.scope,
-          )
+          const facts =
+            installation?.initialFacts ??
+            (await resolveProducerSource(
+              source,
+              selected.stateAuthority,
+              selected.now(),
+              context.deadline,
+              selected.producer,
+              selected.scope,
+            ))
           permitted(context)
           requireRelease(!lifetime.signal.aborted, 'producer_cancelled', '/publication')
-          const request = publicationRequest(facts, selected),
-            proof = producerFactsRef(facts)
+          let request: MaintenanceStoreCommitRequest
+          let captured: ReturnType<typeof captureReleaseProducerContents>
+          let proof: DataRef
+          try {
+            if (installation) {
+              const prepared = installation.prepareOriginal()
+              request = prepared.request
+              captured = prepared.captured
+            } else {
+              request = publicationRequest(facts, selected)
+              captured = captureReleaseProducerContents(
+                facts,
+                request,
+                selected,
+                context.deadline,
+                context.deadline,
+              )
+            }
+            const payload = {
+              ...captured.payload,
+              requiredDigests: [...publicationRequiredDigests(captured.payload, captured.contents)],
+            }
+            proof = encodePublicationPayload('source', payload)
+          } catch (error) {
+            releaseResolvedProducerSource(facts)
+            throw error
+          }
           originalRequests.set(request, {
             context,
             source: proof,
-            qualifiedUntil: facts.qualifiedUntil,
+            qualifiedUntil: captured.payload.qualifiedUntil,
+            contents: captured.contents,
             preClock: () => {
               source.deployment.preClock()
               requireRelease(
-                Date.parse(selected.now()) < Date.parse(facts.qualifiedUntil),
+                Date.parse(selected.now()) < Date.parse(captured.payload.qualifiedUntil),
                 'producer_qualification_expired',
                 '/publication',
               )
@@ -237,7 +309,11 @@ export function createReleaseProducer(deploymentDirectory: string, port?: Releas
             const outcome = await selected.store.commit(request, context)
             if (!outcome.ok) throw new MaintenanceFailure(outcome.error)
             permitted(context)
-            return accept({ request, receipt: outcome.value, source: proof }, context, selected)
+            return accept(
+              { request, receipt: outcome.value, source: proof, contents: captured.contents },
+              context,
+              selected,
+            )
           } catch (error) {
             // An unknown native result only probes its original commit; it never resubmits mutations.
             const committed = await selected.readPublication(transactionId, context)
@@ -251,6 +327,7 @@ export function createReleaseProducer(deploymentDirectory: string, port?: Releas
             return accept(committed, context, selected)
           } finally {
             originalRequests.delete(request)
+            releaseResolvedProducerSource(facts)
           }
         }),
       )

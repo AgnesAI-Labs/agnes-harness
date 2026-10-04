@@ -20,7 +20,7 @@ export function producerCommitFixture(
   if (!options.readonly)
     db.exec(`PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL;
     CREATE TABLE IF NOT EXISTS records(id TEXT PRIMARY KEY, body TEXT NOT NULL);
-    CREATE TABLE IF NOT EXISTS publications(id TEXT PRIMARY KEY, fingerprint TEXT NOT NULL, request TEXT NOT NULL, receipt TEXT NOT NULL, source TEXT NOT NULL);`)
+    CREATE TABLE IF NOT EXISTS publications(id TEXT PRIMARY KEY, fingerprint TEXT NOT NULL, request TEXT NOT NULL, receipt TEXT NOT NULL, source TEXT NOT NULL, contents TEXT NOT NULL);`)
   const receipts = new WeakSet<MaintenanceStoreCommitResult>()
   let closed = false,
     now = '2026-10-03T00:00:00Z'
@@ -46,7 +46,17 @@ export function producerCommitFixture(
     }
     if (fixtureHash(request) !== row.fingerprint) throw new Error('original_commit_mismatch')
     receipts.add(receipt)
-    return { request, receipt, source: fixtureWire('DataRef', JSON.parse(String(row.source))) }
+    const contents = JSON.parse(String(row.contents)) as {
+      kind: 'json' | 'bytes'
+      digest: string
+      body: string
+    }[]
+    return {
+      request,
+      receipt,
+      source: fixtureWire('DataRef', JSON.parse(String(row.source))),
+      contents: contents.map((item) => ({ ...item, body: Buffer.from(item.body, 'base64') })),
+    }
   }
   const store: MaintenanceStore = {
     async query() {
@@ -78,12 +88,15 @@ export function producerCommitFixture(
           transactionId: parsed.transactionId,
           revisions,
         })
-        db.prepare('INSERT INTO publications VALUES(?,?,?,?,?)').run(
+        db.prepare('INSERT INTO publications VALUES(?,?,?,?,?,?)').run(
           parsed.transactionId,
           fixtureHash(parsed),
           jcs(parsed),
           jcs(receipt),
           jcs(original.source),
+          JSON.stringify(
+            original.contents.map((item) => ({ ...item, body: Buffer.from(item.body).toString('base64') })),
+          ),
         )
         db.exec('COMMIT')
         receipts.add(receipt)
