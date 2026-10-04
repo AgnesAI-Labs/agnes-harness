@@ -411,10 +411,28 @@ function ownerMayImport(fromRel: string, dir: string): boolean {
 
 function internalRuntimePortViolations(base: string): string[] {
   const allow = publicRuntimeSpecifiers(base)
+  const channelEntries = new Set(
+    Object.keys(packageExports(base, 'packages/extension-api/package.json'))
+      .filter((key) => key !== './testkit' && !key.startsWith('./testkit/'))
+      .map((key) => `@agnes/extension-api${key === '.' ? '' : key.slice(1)}`),
+  )
   const violations: string[] = []
   eachProductSourceFile(base, (file) => {
     const fromRel = repoRelative(file, base)
     for (const edge of importEdges(readFileSync(file, 'utf8'))) {
+      if (hasBoundaryPrefix(fromRel, 'packages/channels/src')) {
+        const named = hasBoundaryPrefix(edge.specifier, '@agnes/extension-api')
+        const internal =
+          edge.specifier.startsWith('.') &&
+          hasBoundaryPrefix(
+            posix(relative(base, resolve(dirname(file), edge.specifier))),
+            'packages/extension-api',
+          )
+        if ((named && !channelEntries.has(edge.specifier)) || internal) {
+          violations.push(`${fromRel}: imports ${edge.specifier}`)
+          continue
+        }
+      }
       const byName = runtimePortHit(edge.specifier, allow)
       if (byName !== undefined) {
         violations.push(`${fromRel}: imports ${edge.specifier}`)
@@ -778,11 +796,20 @@ describe('public runtime and client entries', () => {
         'packages/extension-api/package.json': JSON.stringify({
           name: '@agnes/extension-api',
           exports: {
+            '.': './src/index.ts',
             './runtime': './src/runtime/index.ts',
             './runtime/authoring': './src/runtime/authoring.ts',
             './client': './src/client/index.ts',
+            './testkit': './testkit/index.ts',
           },
         }),
+        'packages/channels/src/public.ts':
+          "import { helper } from '@agnes/extension-api'\nimport type { Service } from '@agnes/extension-api/runtime'\nimport { author } from '@agnes/extension-api/runtime/authoring'\nimport { client } from '@agnes/extension-api/client'\n",
+        'packages/channels/src/deep.ts': "import type { State } from '@agnes/extension-api/src/index.js'\n",
+        'packages/channels/src/testkit.ts': "import { fixture } from '@agnes/extension-api/testkit'\n",
+        'packages/channels/src/internal.ts': "import { helper } from '@agnes/extension-api/internal.js'\n",
+        'packages/channels/src/relative.ts':
+          "import type { State } from '../../extension-api/src/index.js'\n",
         'packages/other/src/public.ts': "import { helper } from '@agnes/extension-api/runtime/authoring'\n",
         'packages/other/src/wire.ts': "import { Session } from '@agnes/protocol/gen/session-v1'\n",
         'packages/other/src/deep.ts':
@@ -797,6 +824,11 @@ describe('public runtime and client entries', () => {
         const text = violations.join('\n')
         expect(text).toContain('packages/other/src/deep.ts')
         expect(text).toContain('packages/other/src/rel.ts')
+        expect(text).toContain('packages/channels/src/deep.ts')
+        expect(text).toContain('packages/channels/src/testkit.ts')
+        expect(text).toContain('packages/channels/src/internal.ts')
+        expect(text).toContain('packages/channels/src/relative.ts')
+        expect(text).not.toContain('packages/channels/src/public.ts')
         expect(text).not.toContain('packages/other/src/public.ts')
         expect(text).not.toContain('packages/other/src/wire.ts')
         expect(text).not.toContain('packages/extension-api/src/runtime/local.ts')

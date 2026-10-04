@@ -119,7 +119,13 @@
     "@agnes/cli-tui",
     "@agnes/cli-launch"
   ],
-  "@agnes/channels": ["@agnes/protocol", "@agnes/sdk", "@agnes/system-node", "@agnes/daemon"],
+  "@agnes/channels": [
+    "@agnes/protocol",
+    "@agnes/sdk",
+    "@agnes/system-node",
+    "@agnes/daemon",
+    "@agnes/extension-api"
+  ],
   "@agnes/bridges": ["@agnes/protocol", "@agnes/sdk"],
   "@agnes/web": [
     "@agnes/base",

@@ -20,6 +20,7 @@ import {
   RuntimeMethodSchemaRefs,
   validateRuntime,
 } from '@agnes/protocol/runtime'
+import { syncDirectorySync } from '@agnes/system-node'
 
 interface Measurements {
   pid: number
@@ -174,19 +175,14 @@ export function createReferenceExec(raw: ReferenceExecOptions) {
     if (!supported) return
     const temp = `${cabinet}.${randomUUID()}`
     writeFileSync(temp, JSON.stringify(entries), { flag: 'wx', mode: 0o600 })
-    const fd = openSync(temp, 'r')
+    const fd = openSync(temp, 'r+')
     try {
       fsyncSync(fd)
     } finally {
       closeSync(fd)
     }
     renameSync(temp, cabinet)
-    const directory = openSync(options.directory, 'r')
-    try {
-      fsyncSync(directory)
-    } finally {
-      closeSync(directory)
-    }
+    syncDirectorySync(options.directory)
   }
   flush()
   function signal(context: CallContext) {
