@@ -39,7 +39,8 @@ export interface SidebarDependencies {
   /** Locale-bound translate (host injects); called during render, never cached. */
   translate: Translate
   renderNavigation(options: SidebarNavigationOptions): void
-  bindSidebar(narrow: MediaQueryList): SidebarShell
+  /** `ownerDocument` is the sidebar's own document; listeners, body classes and `inert` stay there. */
+  bindSidebar(narrow: MediaQueryList, ownerDocument: Document): SidebarShell
 }
 
 export interface SidebarState {
@@ -181,10 +182,9 @@ const SidebarBuiltin = forwardRef<
     (next: SidebarState): boolean => {
       const navElement = nav.current
       if (!navElement || !dependencies) return false
+      const activeElement = navElement.ownerDocument.activeElement
       const focused =
-        navElement.contains(document.activeElement) && document.activeElement instanceof HTMLElement
-          ? document.activeElement
-          : undefined
+        navElement.contains(activeElement) && activeElement instanceof HTMLElement ? activeElement : undefined
       const active = focused?.dataset.session
       const activeWorkspace = focused?.dataset.workspaceNewSession
       dependencies.renderNavigation({
@@ -246,10 +246,12 @@ const SidebarBuiltin = forwardRef<
     }
   }, [actions])
   useLayoutEffect(() => {
-    if (!dependencies) return
-    const toggle = document.getElementById('sidebar-toggle')
-    const close = document.getElementById('sidebar-close')
-    const backdrop = document.getElementById('sidebar-backdrop')
+    const ownerDocument = nav.current?.ownerDocument
+    const view = ownerDocument?.defaultView
+    if (!dependencies || !ownerDocument || !view) return
+    const toggle = ownerDocument.getElementById('sidebar-toggle')
+    const close = ownerDocument.getElementById('sidebar-close')
+    const backdrop = ownerDocument.getElementById('sidebar-backdrop')
     if (
       !(toggle instanceof HTMLButtonElement) ||
       !(close instanceof HTMLButtonElement) ||
@@ -259,7 +261,7 @@ const SidebarBuiltin = forwardRef<
     // 断点必须与 style.css 的移动抽屉媒体查询一致（`.sidebar-backdrop` 所在的那个
     // `@media (max-width: …)`）。两者不一致时，中间那段宽度里 JS 走桌面折叠分支、
     // CSS 却已把侧栏移出视口，按钮点了没有任何反应。回归由 sidebar-breakpoint.test.ts 兜住。
-    const controller = dependencies.bindSidebar(window.matchMedia('(max-width: 900px)'))
+    const controller = dependencies.bindSidebar(view.matchMedia('(max-width: 900px)'), ownerDocument)
     shell.current = controller
     return () => {
       controller.dispose()

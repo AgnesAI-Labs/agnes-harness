@@ -5,6 +5,7 @@ import type { ComposerView } from '@agnes/web-units'
 import { createElement } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { COMPOSER_SLOT } from '../src/region-slots.js'
+import { enT, zhT } from './helpers/locale.js'
 import { mountRenderedIndex, resetWebDom } from './web-dom-fixture.js'
 
 const usage: UsageView = {
@@ -40,7 +41,8 @@ describe('rendered composer region', () => {
     })
     const handle = runtime.composer
     expect(handle).toBeDefined()
-    handle?.render({
+    runtime.locale.setLocale('zh-CN')
+    const view: ComposerView = {
       cancel: { disabled: true, hidden: true, label: '停止' },
       connected: true,
       configured: true,
@@ -62,7 +64,8 @@ describe('rendered composer region', () => {
       stopping: false,
       usage,
       workspace: { disabled: false, label: 'agnes', title: '/workspace/agnes' },
-    })
+    }
+    handle?.render(view)
 
     const composer = document.querySelector<HTMLFormElement>('#composer')
     const prompt = document.querySelector<HTMLTextAreaElement>('#prompt')
@@ -74,6 +77,13 @@ describe('rendered composer region', () => {
     expect(document.querySelector('#composer-permission')).toBeTruthy()
     expect(document.querySelector('#model')).toBeTruthy()
     expect(document.querySelector<HTMLElement>('#session-usage')?.hidden).toBe(false)
+    // Picker copy comes from the locale bound at mount, read on every render rather than cached.
+    const permissionLabel = () =>
+      document.querySelector('#composer-permission [data-permission-label]')?.textContent
+    expect(permissionLabel()).toBe(zhT('settings.picker.workspace'))
+    runtime.locale.setLocale('en')
+    handle?.render({ ...view })
+    expect(permissionLabel()).toBe(enT('settings.picker.workspace'))
 
     if (!prompt) throw new Error('missing composer input')
     prompt.value = '键盘提交'

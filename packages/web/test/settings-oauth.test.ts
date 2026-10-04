@@ -7,13 +7,9 @@ import type { Client } from '@agnes/sdk/browser'
 import { unmountRegion } from '@agnes/web-ui'
 import { type HTMLButtonElement as HappyButton, type HTMLLabelElement as HappyLabel, Window } from 'happy-dom'
 import { afterEach, expect, it, vi } from 'vitest'
-import { setLocaleTranslator } from '../src/locale-bridge.js'
 import { createSettingsController, type SettingsController } from '../src/settings.js'
 import { renderSettingsMarkup } from '../src/settings-region.js'
 import { zhT } from './helpers/locale.js'
-
-// i18n: these suites assert zh-CN catalog output; pin the translator before imports run.
-setLocaleTranslator(zhT)
 
 function must<T>(value: T | null | undefined): T {
   if (value == null) throw new Error('missing fixture element')
@@ -110,7 +106,7 @@ async function setup(
       save,
     },
   } as unknown as Client
-  const controller = createSettingsController({ client, onSaved, onError: () => {} })
+  const controller = createSettingsController({ t: zhT, client, onSaved, onError: () => {} })
   activeController = controller
   await controller.open()
   const doc = window.document

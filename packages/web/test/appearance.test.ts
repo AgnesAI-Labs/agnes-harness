@@ -1,15 +1,11 @@
 /** @vitest-environment happy-dom */
 import { beforeEach, describe, expect, it } from 'vitest'
 import { bindAppearance, bindSkinGroup } from '../src/appearance.js'
-import { setLocaleTranslator } from '../src/locale-bridge.js'
 import { webLocaleCatalog } from '../src/locale-catalog.js'
 import { applyLocaleText, syncLocaleRadios, type UiLocale } from '../src/locale-preference.js'
 import { SKIN_CACHE_VERSION, SKIN_STORAGE_KEY } from '../src/skin.js'
 import { FONT_SCALE_STORAGE_KEY, THEME_STORAGE_KEY } from '../src/theme.js'
 import { zhT } from './helpers/locale.js'
-
-// i18n: these suites assert zh-CN catalog output; pin the translator before imports run.
-setLocaleTranslator(zhT)
 
 function fakeStorage(initial: Record<string, string> = {}) {
   const map = new Map(Object.entries(initial))
@@ -264,6 +260,7 @@ describe('bindSkinGroup', () => {
 
   it('renders the built-in default plus every installed skin, with its source package', async () => {
     const group = bindSkinGroup({
+      t: zhT,
       scope: document,
       storage: fakeStorage(),
       list: async () => skins,
@@ -278,6 +275,7 @@ describe('bindSkinGroup', () => {
   it('back-fills the cached choice and reports it without refetching', async () => {
     let calls = 0
     const group = bindSkinGroup({
+      t: zhT,
       scope: document,
       storage: fakeStorage(cached('paper')),
       list: async () => {
@@ -295,6 +293,7 @@ describe('bindSkinGroup', () => {
   it('selects a skin, and the default selects no skin at all', async () => {
     const chosen: Array<string | null> = []
     const group = bindSkinGroup({
+      t: zhT,
       scope: document,
       storage: fakeStorage(),
       list: async () => skins,
@@ -308,6 +307,7 @@ describe('bindSkinGroup', () => {
   it('keeps the previous choice when applying a new one fails, and says so', async () => {
     let reject = true
     const group = bindSkinGroup({
+      t: zhT,
       scope: document,
       storage: fakeStorage(cached('paper')),
       list: async () => skins,
@@ -334,6 +334,7 @@ describe('bindSkinGroup', () => {
   it('shows a visible failure with a retry instead of pretending there are no skins', async () => {
     let attempts = 0
     const group = bindSkinGroup({
+      t: zhT,
       scope: document,
       storage: fakeStorage(),
       list: async () => {

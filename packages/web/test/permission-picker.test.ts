@@ -1,12 +1,8 @@
 /** @vitest-environment happy-dom */
 
 import { afterEach, expect, it, vi } from 'vitest'
-import { setLocaleTranslator } from '../src/locale-bridge.js'
 import { createPermissionPicker, permissionLabel, yoloEnabled } from '../src/permission-picker.js'
 import { zhT } from './helpers/locale.js'
-
-// i18n: these suites assert zh-CN catalog output; pin the translator before imports run.
-setLocaleTranslator(zhT)
 
 afterEach(() => {
   vi.unstubAllGlobals()
@@ -14,9 +10,9 @@ afterEach(() => {
 })
 
 it('labels the three session permission modes', () => {
-  expect(permissionLabel('view')).toBe('仅可查看')
-  expect(permissionLabel('workspace')).toBe('工作区内修改')
-  expect(permissionLabel('full')).toBe('完全权限')
+  expect(permissionLabel('view', zhT)).toBe('仅可查看')
+  expect(permissionLabel('workspace', zhT)).toBe('工作区内修改')
+  expect(permissionLabel('full', zhT)).toBe('完全权限')
   expect(yoloEnabled('full')).toBe(true)
   expect(yoloEnabled('workspace')).toBe(false)
 })
@@ -28,7 +24,7 @@ it('opens the list and reports the chosen mode', async () => {
   trigger.append(label)
   document.body.append(trigger)
   const onSelect = vi.fn(async () => true)
-  const picker = createPermissionPicker({ trigger, onSelect, onError: () => undefined })
+  const picker = createPermissionPicker({ trigger, onSelect, onError: () => undefined, t: zhT })
   picker.render({ disabled: false, pending: false, selected: null })
   expect(label.textContent).toBe('请选择权限')
   picker.render({ disabled: false, pending: false, selected: 'workspace' })
@@ -61,7 +57,7 @@ it('moves the active permission with keys and returns focus on Escape', () => {
   const trigger = document.createElement('button')
   document.body.append(trigger)
   const onSelect = vi.fn(async () => true)
-  const picker = createPermissionPicker({ trigger, onSelect, onError: vi.fn() })
+  const picker = createPermissionPicker({ trigger, onSelect, onError: vi.fn(), t: zhT })
   picker.render({ disabled: false, pending: false, selected: 'workspace' })
 
   trigger.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }))

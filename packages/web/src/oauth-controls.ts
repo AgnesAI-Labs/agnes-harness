@@ -2,7 +2,7 @@ import type { ConfigModel, ConfigOAuthInput, ConfigProvider } from '@agnes/proto
 import { loginSubscription, type OAuthClient } from '@agnes/sdk/browser'
 import { Button, createRegionHost, Field, mountRegion } from '@agnes/web-ui'
 import { createElement } from 'react'
-import { tr } from './locale-bridge.js'
+import type { Translate } from './presentation.js'
 
 type UiButton = { button: HTMLButtonElement; host: HTMLElement; dispose?: () => void }
 type UiField = { field: HTMLLabelElement; input: HTMLInputElement; host: HTMLElement; dispose?: () => void }
@@ -30,14 +30,14 @@ function uiButton(parent: HTMLElement, text: string, className?: string): UiButt
   return { button, host: button }
 }
 
-function uiField(parent: HTMLElement): UiField {
+function uiField(parent: HTMLElement, label: string): UiField {
   if (typeof window !== 'undefined' && typeof document.querySelector === 'function') {
     const host = createRegionHost(parent, 'span', 'agnes-ui-field-host')
     const dispose = mountRegion(
       host,
       createElement(
         Field,
-        { className: 'form-field oauth-prompt', hidden: true, label: tr('settings.oauth.prompt') },
+        { className: 'form-field oauth-prompt', hidden: true, label },
         createElement('input', { autoComplete: 'off', type: 'password' }),
       ),
     )
@@ -49,7 +49,7 @@ function uiField(parent: HTMLElement): UiField {
   }
   const field = createRegionHost(parent, 'label') as HTMLLabelElement
   field.className = 'form-field oauth-prompt'
-  field.textContent = tr('settings.oauth.prompt')
+  field.textContent = label
   const input = createRegionHost(field, 'input') as HTMLInputElement
   input.type = 'password'
   input.autocomplete = 'off'
@@ -61,6 +61,7 @@ function uiField(parent: HTMLElement): UiField {
 export function oauthControls(
   parent: HTMLElement,
   client: OAuthClient,
+  t: Translate,
   callbacks: {
     input(): ConfigOAuthInput
     provider(): ConfigProvider | undefined
@@ -71,20 +72,20 @@ export function oauthControls(
 ) {
   const panel = createRegionHost(parent, 'section')
   panel.className = 'oauth-controls'
-  panel.setAttribute('aria-label', tr('settings.oauth.panelAria'))
+  panel.setAttribute('aria-label', t('settings.oauth.panelAria'))
   panel.hidden = true
   const status = createRegionHost(panel, 'p', 'oauth-status')
   status.setAttribute('role', 'status')
   const links = createRegionHost(panel, 'div', 'oauth-links')
-  const promptView = uiField(panel)
+  const promptView = uiField(panel, t('settings.oauth.prompt'))
   const prompt = promptView.field
   const answer = promptView.input
   prompt.hidden = true
   const actions = createRegionHost(panel, 'div', 'oauth-actions')
-  const browserView = uiButton(actions, tr('settings.oauth.browserLogin'))
-  const deviceView = uiButton(actions, tr('settings.oauth.deviceLogin'))
-  const cancelView = uiButton(actions, tr('settings.oauth.cancelLogin'))
-  const submitView = uiButton(actions, tr('settings.oauth.submitCode'), 'secondary-button')
+  const browserView = uiButton(actions, t('settings.oauth.browserLogin'))
+  const deviceView = uiButton(actions, t('settings.oauth.deviceLogin'))
+  const cancelView = uiButton(actions, t('settings.oauth.cancelLogin'))
+  const submitView = uiButton(actions, t('settings.oauth.submitCode'), 'secondary-button')
   const browser = browserView.button
   const device = deviceView.button
   const cancel = cancelView.button
@@ -128,7 +129,7 @@ export function oauthControls(
       input = callbacks.input()
       provider = callbacks.provider()
       if (!provider?.loginMethods?.includes(loginMethod))
-        throw new Error(tr('settings.oauth.methodUnsupported'))
+        throw new Error(t('settings.oauth.methodUnsupported'))
     } catch (error) {
       if (controller === own) {
         clear()
@@ -143,7 +144,7 @@ export function oauthControls(
       browser.disabled = true
       device.disabled = true
       cancel.hidden = false
-      status.textContent = tr('settings.oauth.awaiting')
+      status.textContent = t('settings.oauth.awaiting')
       status.setAttribute('aria-busy', 'true')
       const result = await loginSubscription(
         client,
@@ -163,7 +164,7 @@ export function oauthControls(
             link.href = url.href
             link.target = '_blank'
             link.rel = 'noopener noreferrer'
-            link.textContent = tr('settings.oauth.openLoginPage', { provider: provider.label })
+            link.textContent = t('settings.oauth.openLoginPage', { provider: provider.label })
           },
           prompt: (value, signal) =>
             new Promise<string>((resolve, reject) => {
@@ -173,7 +174,7 @@ export function oauthControls(
               answer.type = value.type === 'secret' ? 'password' : 'text'
               answer.placeholder = value.placeholder ?? ''
               submit.textContent =
-                value.type === 'text' ? tr('settings.oauth.continue') : tr('settings.oauth.submit')
+                value.type === 'text' ? t('settings.oauth.continue') : t('settings.oauth.submit')
               prompt.hidden = false
               submit.hidden = false
               answer.value = ''
@@ -211,7 +212,7 @@ export function oauthControls(
         },
       )
       if (controller !== own || own.signal.aborted) return
-      status.textContent = tr('settings.oauth.completed')
+      status.textContent = t('settings.oauth.completed')
       status.removeAttribute('aria-busy')
       links.replaceChildren()
       callbacks.ready(result.models ?? [])
@@ -222,8 +223,8 @@ export function oauthControls(
         callbacks.error(
           new Error(
             provider.loginMethods && provider.loginMethods.length > 1
-              ? tr('settings.oauth.failedRetry')
-              : tr('settings.oauth.failedNetwork'),
+              ? t('settings.oauth.failedRetry')
+              : t('settings.oauth.failedNetwork'),
           ),
         )
       }

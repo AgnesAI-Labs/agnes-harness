@@ -67,7 +67,7 @@ import { applyLocaleText } from './locale-preference.js'
 import { createModelPicker } from './model-picker.js'
 import { renderSessionNavigation } from './navigation.js'
 import { createPermissionPicker } from './permission-picker.js'
-import { isComposerSubmitShortcut, resizeComposer } from './presentation.js'
+import { isComposerSubmitShortcut, resizeComposer, type Translate } from './presentation.js'
 import { bindSidebar } from './shell.js'
 import { createTimelineRenderer } from './timeline.js'
 import { TimelineNodeHost } from './timeline-node-host.js'
@@ -75,16 +75,14 @@ import { createUsagePanel } from './usage.js'
 
 export type { ConversationChildContainers, ConversationHandle } from '@agnes/web-units'
 
-const SIDEBAR_DEPENDENCIES_BASE = {
-  bindSidebar,
-}
 const TRANSCRIPT_DEPENDENCIES: TranscriptDependencies = {
   createRenderer: createTimelineRenderer,
   observeCards: observeSlotCards,
 }
-const COMPOSER_DEPENDENCIES: Omit<ComposerDependencies, 'translate'> = {
-  createModelPicker,
-  createPermissionPicker,
+const COMPOSER_DEPENDENCIES: Omit<
+  ComposerDependencies,
+  'translate' | 'createModelPicker' | 'createPermissionPicker'
+> = {
   createUsagePanel,
   UsagePanel: ConversationUsage,
   isSubmitShortcut: isComposerSubmitShortcut,
@@ -566,9 +564,12 @@ export function mountComposerRegion(
   locale: LocaleService,
 ): ComposerRegionMount {
   // Render-time lookup: the injected translate reads whatever locale is current on each render.
+  const translate: Translate = (key, vars) => locale.t(key, vars)
   const composerDependencies: ComposerDependencies = {
     ...COMPOSER_DEPENDENCIES,
-    translate: (key, vars) => locale.t(key, vars),
+    translate,
+    createModelPicker: (pickerOptions) => createModelPicker({ ...pickerOptions, t: translate }),
+    createPermissionPicker: (pickerOptions) => createPermissionPicker({ ...pickerOptions, t: translate }),
     // Wrap the usage panel so the shared React component renders with the current locale.
     UsagePanel: (props) =>
       createElement(ConversationUsage, {
@@ -1377,10 +1378,11 @@ export function mountSidebarRegion(
   locale: LocaleService,
 ): SidebarRegionMount {
   // Render-time lookup: navigation copy resolves on each rebuild against the current locale.
+  const translate: Translate = (key, vars) => locale.t(key, vars)
   const sidebarDependencies: SidebarDependencies = {
-    ...SIDEBAR_DEPENDENCIES_BASE,
-    translate: (key, vars) => locale.t(key, vars),
-    renderNavigation: (options) => renderSessionNavigation(options, (key, vars) => locale.t(key, vars)),
+    translate,
+    bindSidebar: (narrow, ownerDocument) => bindSidebar(narrow, ownerDocument, translate),
+    renderNavigation: (options) => renderSessionNavigation(options, translate),
   }
   registry.declare(SIDEBAR_SLOT as string, { kind: 'single', scope: 'root' }, 'web-shell')
   if (!registry.spec('sidebar')) registry.declare('sidebar', { kind: 'single', scope: 'root' }, 'web-shell')
@@ -1500,6 +1502,7 @@ export function mountTranscriptRegion(
                 return createTimelineRenderer({
                   ...rendererOptions,
                   registry,
+                  ...(options.claim ? { slotCards: { registry, claim: options.claim } } : {}),
                   ...(options.session ? { session: options.session } : {}),
                   ...(options.locale ? { locale: options.locale } : {}),
                   ...(options.resources ? { resources: options.resources } : {}),

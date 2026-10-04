@@ -19,14 +19,15 @@ import {
   unmountRegion,
 } from '@agnes/web-ui'
 import { createElement } from 'react'
-import { tr } from './locale-bridge.js'
 import { oauthControls } from './oauth-controls.js'
+import type { Translate } from './presentation.js'
 import { createAccountPickers } from './provider-picker.js'
 
 export type SettingsControllerOptions = {
   client: Client
   onSaved(snapshot: ConfigSnapshot): Promise<void>
   onError(error: unknown): void
+  t: Translate
 }
 
 export type SettingsController = {
@@ -61,7 +62,7 @@ const CONFIGURATION_REASON_KEYS: Readonly<Record<string, string>> = {
   CONFIG_INVALID_STATE: 'settings.config.invalidState',
 }
 
-function configurationReason(error: unknown, t: (key: string) => string = tr): string | undefined {
+function configurationReason(error: unknown, t: (key: string) => string): string | undefined {
   if (error === null || typeof error !== 'object') return undefined
   const data =
     'data' in error && error.data !== null && typeof error.data === 'object' ? error.data : undefined
@@ -149,8 +150,9 @@ function focusable(value: Element | null): value is HTMLElement {
  * provider credentials from another store.
  */
 export function createSettingsController(options: SettingsControllerOptions): SettingsController {
+  const { t } = options
   const ui = readElements()
-  const providerPicker = createAccountPickers(ui)
+  const providerPicker = createAccountPickers(ui, t)
   let connected = true
   let configuration: ConfigSnapshot | undefined
   // The model pane is independently reconcilable. Resolve its list/button at the point of use;
@@ -217,11 +219,11 @@ export function createSettingsController(options: SettingsControllerOptions): Se
     return ui.models.value !== account.model || (!!name && name !== account.label)
   }
 
-  const oauth = oauthControls(ui.oauthMount, options.client.config, {
+  const oauth = oauthControls(ui.oauthMount, options.client.config, t, {
     input: () => {
       const provider = providers.find((row) => row.id === providerId())
       if (!configuration || !editingId || !accountName || !provider)
-        throw new Error(tr('settings.account.notLoaded'))
+        throw new Error(t('settings.account.notLoaded'))
       const label = accountName.value.trim() || provider.label
       if (!accountName.value.trim()) suggestedAccountLabel = label
       accountName.value = label
@@ -243,10 +245,10 @@ export function createSettingsController(options: SettingsControllerOptions): Se
     ready: (models) => {
       tested = models.length ? { models, verified: true } : undefined
       ui.state.textContent = models.length
-        ? tr('settings.oauth.authorizedVerify')
+        ? t('settings.oauth.authorizedVerify')
         : testPending
-          ? tr('settings.oauth.awaitingAuth')
-          : tr('settings.oauth.cancelled')
+          ? t('settings.oauth.awaitingAuth')
+          : t('settings.oauth.cancelled')
       renderModels()
       if (models.length) ui.models.focus()
     },
@@ -261,8 +263,8 @@ export function createSettingsController(options: SettingsControllerOptions): Se
 
   const setError = (error: unknown): void => {
     const secret = ui.apiKey.value
-    const translated = configurationReason(error, tr)
-    const message = translated ?? errorText(error, secret, tr)
+    const translated = configurationReason(error, t)
+    const message = translated ?? errorText(error, secret, t)
     ui.error.textContent = message
     ui.state.textContent = ''
     try {
@@ -280,8 +282,8 @@ export function createSettingsController(options: SettingsControllerOptions): Se
     const currentAccountList = accountList()
     if (currentAccountList) currentAccountList.dataset.state = phase
     if (ui.retry) ui.retry.hidden = phase !== 'error'
-    if (phase === 'loading') ui.state.textContent = tr('settings.state.reading')
-    if (phase === 'error') ui.state.textContent = tr('settings.state.readFailed')
+    if (phase === 'loading') ui.state.textContent = t('settings.state.reading')
+    if (phase === 'error') ui.state.textContent = t('settings.state.readFailed')
     updateButtons()
   }
 
@@ -315,7 +317,7 @@ export function createSettingsController(options: SettingsControllerOptions): Se
   const renderModels = (models: readonly ConfigModel[] = tested?.models ?? []): void => {
     const previousModel = ui.models.value
     setSettingsSelectOptions(ui.models, [
-      option(models.length ? tr('settings.model.chooseSaved') : tr('settings.model.testFirst'), ''),
+      option(models.length ? t('settings.model.chooseSaved') : t('settings.model.testFirst'), ''),
       ...models.map((model) => option(`${model.name} · ${model.id}`, model.id)),
     ])
     const savedModel = models.some((model) => model.id === previousModel)
@@ -333,10 +335,10 @@ export function createSettingsController(options: SettingsControllerOptions): Se
     const tokens = parseContextBudget(window)
     if (
       thinking &&
-      !modelThinkingOptions(model?.thinkingLevelMap, tr).some((option) => option.value === thinking)
+      !modelThinkingOptions(model?.thinkingLevelMap, t).some((option) => option.value === thinking)
     ) {
       ui.thinking?.setAttribute('aria-invalid', 'true')
-      throw new Error(tr('settings.model.thinkingUnsupported'))
+      throw new Error(t('settings.model.thinkingUnsupported'))
     }
     ui.thinking?.setAttribute('aria-invalid', 'false')
     if (
@@ -347,7 +349,7 @@ export function createSettingsController(options: SettingsControllerOptions): Se
     ) {
       ui.contextWindow?.setAttribute('aria-invalid', 'true')
       throw new Error(
-        tr('settings.model.contextRange', {
+        t('settings.model.contextRange', {
           min: minimumContextBudget(model?.contextWindow).toLocaleString(),
         }),
       )
@@ -366,11 +368,11 @@ export function createSettingsController(options: SettingsControllerOptions): Se
       model?.defaultSettings ??
       {}
     if (ui.thinking) {
-      const options = modelThinkingOptions(model?.thinkingLevelMap, tr)
+      const options = modelThinkingOptions(model?.thinkingLevelMap, t)
       if (defaults.thinking && !options.some((option) => option.value === defaults.thinking))
         options.push({
           value: defaults.thinking,
-          label: tr('settings.model.savedThinkingUnavailable', { value: defaults.thinking }),
+          label: t('settings.model.savedThinkingUnavailable', { value: defaults.thinking }),
         })
       setSettingsSelectOptions(ui.thinking, options)
       ui.thinking.value = defaults.thinking ?? ''
@@ -384,8 +386,8 @@ export function createSettingsController(options: SettingsControllerOptions): Se
     if (ui.modelSettingsHint)
       ui.modelSettingsHint.textContent =
         (model?.contextWindow
-          ? `${tr('settings.model.capacity', { tokens: model.contextWindow.toLocaleString() })} `
-          : '') + tr('settings.model.budgetHint')
+          ? `${t('settings.model.capacity', { tokens: model.contextWindow.toLocaleString() })} `
+          : '') + t('settings.model.budgetHint')
   }
 
   const renderKeyHint = (): void => {
@@ -393,26 +395,26 @@ export function createSettingsController(options: SettingsControllerOptions): Se
     const reusesSavedKey =
       connected && savedProvider()?.id === providerId() && savedProvider()?.credentialConfigured
     if (isOAuth()) {
-      ui.keyHint.textContent = tr('settings.key.oauthHint')
+      ui.keyHint.textContent = t('settings.key.oauthHint')
       return
     }
     ui.keyHint.textContent = reusesSavedKey
-      ? tr('settings.key.savedHint')
+      ? t('settings.key.savedHint')
       : connected
-        ? tr('settings.key.inputHint')
-        : tr('settings.key.offlineCleared')
+        ? t('settings.key.inputHint')
+        : t('settings.key.offlineCleared')
   }
 
   const renderProviders = (): void => {
     const savedProviderId = savedProvider()?.id
     const groups = (['api-key', 'oauth'] as const).map((method) => ({
-      label: method === 'oauth' ? tr('settings.provider.subscriptionLogin') : 'API Key',
+      label: method === 'oauth' ? t('settings.provider.subscriptionLogin') : 'API Key',
       options: providers
         .filter((provider) => authMethods(provider).includes(method))
         .map((provider) =>
           option(
             method === 'oauth'
-              ? `${provider.label.replace(/\s*subscription$/i, '')}${tr('settings.provider.subscriptionLoginSuffix')}`
+              ? `${provider.label.replace(/\s*subscription$/i, '')}${t('settings.provider.subscriptionLoginSuffix')}`
               : provider.label,
             providerValue(provider, method),
           ),
@@ -420,7 +422,7 @@ export function createSettingsController(options: SettingsControllerOptions): Se
     }))
     setSettingsSelectOptions(
       ui.provider,
-      [option(providers.length ? tr('settings.provider.choose') : tr('settings.provider.none'), '')],
+      [option(providers.length ? t('settings.provider.choose') : t('settings.provider.none'), '')],
       groups,
     )
     if (savedProviderId && providers.some((provider) => provider.id === savedProviderId))
@@ -431,7 +433,7 @@ export function createSettingsController(options: SettingsControllerOptions): Se
     setSettingsSelectOptions(
       ui.authMethod,
       methods.map((method) =>
-        option(method === 'oauth' ? tr('settings.provider.subscriptionLogin') : 'API Key', method),
+        option(method === 'oauth' ? t('settings.provider.subscriptionLogin') : 'API Key', method),
       ),
     )
     const saved = savedProvider()
@@ -454,17 +456,17 @@ export function createSettingsController(options: SettingsControllerOptions): Se
     ui.models.value = ''
     renderModels()
     if (clearError) ui.error.textContent = ''
-    ui.state.textContent = tr('settings.state.connectionChanged')
+    ui.state.textContent = t('settings.state.connectionChanged')
   }
 
   const input = (): { providerId: string; accountId?: string; baseUrl?: string; apiKey?: string } => {
     const selectedId = providerId()
     const selected = providers.find((provider) => provider.id === selectedId)
-    if (!selectedId || !selected) throw new Error(tr('settings.provider.required'))
+    if (!selectedId || !selected) throw new Error(t('settings.provider.required'))
     const baseUrl = ui.baseUrl.value.trim()
     const apiKey = ui.apiKey.value
     if (!isOAuth() && selectedAccount()?.authType === 'oauth' && !apiKey)
-      throw new Error(tr('settings.provider.switchKeyRequired'))
+      throw new Error(t('settings.provider.switchKeyRequired'))
     return {
       providerId: selectedId,
       ...(editingId ? { accountId: editingId } : {}),
@@ -533,7 +535,7 @@ export function createSettingsController(options: SettingsControllerOptions): Se
       providers = [...result.providers].sort((a, b) => +(b.id === 'agnes-ai') - +(a.id === 'agnes-ai'))
       tested = undefined
       ui.error.textContent = ''
-      ui.state.textContent = snapshot.configured ? tr('settings.step.loadedSaved') : tr('settings.step.first')
+      ui.state.textContent = snapshot.configured ? t('settings.step.loadedSaved') : t('settings.step.first')
       renderProviders()
       renderModels()
       setLoadPhase(snapshot.accounts?.length ? 'ready' : 'empty')
@@ -557,13 +559,13 @@ export function createSettingsController(options: SettingsControllerOptions): Se
       if (!model) return
       testPending = true
       ui.error.textContent = ''
-      ui.state.textContent = tr('settings.step.testingModel')
+      ui.state.textContent = t('settings.step.testingModel')
       updateButtons()
       try {
         await options.client.config.oauth({ action: 'test', operationId: oauthId, model })
         if (ownsTest()) {
           if (tested) tested = { ...tested, verified: true }
-          ui.state.textContent = tr('settings.step.modelVerified')
+          ui.state.textContent = t('settings.step.modelVerified')
         }
       } catch (error) {
         if (ownsTest()) setError(error)
@@ -584,7 +586,7 @@ export function createSettingsController(options: SettingsControllerOptions): Se
     }
     testPending = true
     ui.error.textContent = ''
-    ui.state.textContent = tr('settings.step.second')
+    ui.state.textContent = t('settings.step.second')
     updateButtons()
     try {
       const result = await options.client.config.test({
@@ -593,9 +595,9 @@ export function createSettingsController(options: SettingsControllerOptions): Se
       })
       if (!ownsTest()) return
       if (isOAuth()) tested = result
-      if (!result.verified || result.models.length === 0) throw new Error(tr('settings.provider.noCatalog'))
+      if (!result.verified || result.models.length === 0) throw new Error(t('settings.provider.noCatalog'))
       tested = result
-      ui.state.textContent = tr('settings.step.third', { count: result.models.length })
+      ui.state.textContent = t('settings.step.third', { count: result.models.length })
       ui.error.textContent = ''
       renderModels(result.models)
     } catch (error) {
@@ -630,14 +632,14 @@ export function createSettingsController(options: SettingsControllerOptions): Se
       request = input()
       defaultSettings = ui.thinking || ui.contextWindow ? readModelSettings() : undefined
       if (accountName && editingId && !accountName.value.trim())
-        throw new Error(tr('settings.account.nameRequired'))
+        throw new Error(t('settings.account.nameRequired'))
     } catch (error) {
       setError(error)
       return
     }
     savePending = true
     ui.error.textContent = ''
-    ui.state.textContent = tr('settings.step.saving')
+    ui.state.textContent = t('settings.step.saving')
     updateButtons()
     try {
       const oauthId = oauth.operation()
@@ -649,7 +651,7 @@ export function createSettingsController(options: SettingsControllerOptions): Se
             ...(defaultSettings === undefined ? {} : { defaultSettings }),
           })
         : undefined
-      if (oauthId && !oauthResult?.snapshot) throw new Error(tr('settings.oauth.saveIncomplete'))
+      if (oauthId && !oauthResult?.snapshot) throw new Error(t('settings.oauth.saveIncomplete'))
       const saved =
         oauthResult?.snapshot ??
         (await options.client.config.save({
@@ -678,8 +680,8 @@ export function createSettingsController(options: SettingsControllerOptions): Se
       tested = undefined
       ui.state.textContent =
         saved.effect === 'restart-required'
-          ? tr('settings.saved.restartRequired')
-          : tr('settings.saved.newSessionsOnly')
+          ? t('settings.saved.restartRequired')
+          : t('settings.saved.newSessionsOnly')
       try {
         await options.onSaved(saved)
       } catch (error) {
@@ -711,15 +713,15 @@ export function createSettingsController(options: SettingsControllerOptions): Se
     renderProviders()
     resetTest()
     renderAccounts()
-    ui.state.textContent = id ? tr('settings.account.editingHint') : tr('settings.account.addingHint')
+    ui.state.textContent = id ? t('settings.account.editingHint') : t('settings.account.addingHint')
     if (accountDialogTitle)
       accountDialogTitle.textContent = id
-        ? tr('settings.account.detailsTitle')
-        : tr('settings.account.addTitle')
+        ? t('settings.account.detailsTitle')
+        : t('settings.account.addTitle')
     if (accountDialogContext)
       accountDialogContext.textContent = id
-        ? tr('settings.account.editContext')
-        : tr('settings.account.addContext')
+        ? t('settings.account.editContext')
+        : t('settings.account.addContext')
     openAccountDialog()
   }
 
@@ -778,8 +780,8 @@ export function createSettingsController(options: SettingsControllerOptions): Se
       renderAccounts()
       ui.state.textContent =
         saved.effect === 'restart-required'
-          ? tr('settings.saved.restartNeeded')
-          : tr('settings.saved.newSessions')
+          ? t('settings.saved.restartNeeded')
+          : t('settings.saved.newSessions')
     } catch (error) {
       if (current(token)) setError(error)
     } finally {
@@ -803,7 +805,7 @@ export function createSettingsController(options: SettingsControllerOptions): Se
         disabled: !connected || loadPhase === 'loading' || testPending || savePending,
         editingId,
         removingId,
-        t: tr,
+        t,
         onEdit: editAccount,
         onAction: (row, action) => void accountAction(row, action),
         onCancelRemove: () => {
@@ -842,7 +844,7 @@ export function createSettingsController(options: SettingsControllerOptions): Se
     setSettingsSelectOptions(
       ui.authMethod,
       methods.map((method) =>
-        option(method === 'oauth' ? tr('settings.provider.subscriptionLogin') : 'API Key', method),
+        option(method === 'oauth' ? t('settings.provider.subscriptionLogin') : 'API Key', method),
       ),
     )
     ui.authMethod.value = ui.provider.value.endsWith(':oauth') ? 'oauth' : (methods[0] ?? 'api-key')
@@ -924,7 +926,7 @@ export function createSettingsController(options: SettingsControllerOptions): Se
       ? load(token)
       : Promise.resolve().then(() => {
           if (current(token)) {
-            setError(new Error(tr('settings.state.offline')))
+            setError(new Error(t('settings.state.offline')))
             setLoadPhase('error')
           }
         })
@@ -951,7 +953,7 @@ export function createSettingsController(options: SettingsControllerOptions): Se
       // Allow a reconnect to start a fresh load even if the old network request never settles.
       opening = undefined
       ui.apiKey.value = ''
-      ui.state.textContent = tr('settings.state.disconnected')
+      ui.state.textContent = t('settings.state.disconnected')
       setLoadPhase('error')
     }
     renderKeyHint()

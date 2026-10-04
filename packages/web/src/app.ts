@@ -24,7 +24,6 @@ import { installBrowserLogCapture } from './browser-log.js'
 import { type ClaimResolver, startClientModules } from './client-modules/boot.js'
 import { startPluginHotReload } from './client-modules/hot-reload.js'
 import type { RosterSource } from './client-modules/reconcile.js'
-import { bindSlotCardContext } from './client-modules/timeline-slot.js'
 import type { ComposerView } from './composer.js'
 import { rememberWebComposer, selectionFromMemory } from './composer-memory.js'
 import { createComputerUsePaneController } from './computer-use-pane.js'
@@ -36,7 +35,6 @@ import {
   findApproval,
   type LiveProjection,
 } from './live-projection.js'
-import { setLocaleTranslator } from './locale-bridge.js'
 import { applyDocumentLocale, readLocalePreference, writeLocalePreference } from './locale-preference.js'
 import type { ModelPickerOption } from './model-picker.js'
 import { renderWorkspaceOptions } from './navigation.js'
@@ -335,11 +333,9 @@ const conversationRuntime = clientModules.conversation as NonNullable<typeof cli
 if (!conversationRuntime) throw new Error('missing conversation region')
 const renderer = clientModules.transcript as NonNullable<typeof clientModules.transcript>
 if (!renderer) throw new Error('missing transcript region')
-bindSlotCardContext({ registry: clientModules.registry, claim: claimSlotCard, locale: clientModules.locale })
 
 // 渲染时取词：t 只在渲染/组装瞬间调用；语言切换后由订阅重跑渲染函数，命令式区域整体重建。
 const t: Translate = (key, vars) => clientModules.locale.t(key, vars)
-setLocaleTranslator(t)
 clientModules.locale.subscribe(() => renderControls())
 
 // A daemon notice is only an invalidation hint. Every read goes back through the SDK roster
@@ -460,7 +456,7 @@ async function stopWithTimeout(stop: (() => Promise<void>) | undefined): Promise
     if (timer) clearTimeout(timer)
   }
 }
-const settings = createSettingsController({ client, onSaved: savedConfiguration, onError: showError })
+const settings = createSettingsController({ client, onSaved: savedConfiguration, onError: showError, t })
 clientModules.locale.subscribe(() => settings.refreshLocale())
 const sessionActions = createSessionActions({
   client,
@@ -800,6 +796,7 @@ function render(): void {
   const firstInput = windowAtStart ? view.nodes.find((node) => node.kind === 'user') : undefined
   const selectedId = current?.id
   const title = sessionTitle(
+    t,
     selectedId
       ? (sessionTitles.get(selectedId) ?? sessionRows.find((row) => row.sessionId === selectedId)?.title)
       : undefined,
@@ -1318,7 +1315,7 @@ async function pickWorkspace(): Promise<void> {
   workspacePickerBusy = true
   renderNewSessionControls()
   try {
-    const result = await requestWorkspacePicker().catch(() => undefined)
+    const result = await requestWorkspacePicker(t).catch(() => undefined)
     if (!result) {
       workspacePickerReady = false
       workspaceManual.open = true
@@ -1440,7 +1437,7 @@ async function selectPermission(mode: PermissionMode): Promise<boolean> {
   if (!current && draftingNew) {
     permissionMode = mode
     rememberWebComposer({ permission: mode })
-    notice.textContent = t('app.permission.draftNotice', { mode: permissionLabel(mode) })
+    notice.textContent = t('app.permission.draftNotice', { mode: permissionLabel(mode, t) })
     notice.dataset.kind = ''
     renderControls()
     return true
@@ -1469,7 +1466,7 @@ async function selectPermission(mode: PermissionMode): Promise<boolean> {
     notice.textContent =
       mode === 'full'
         ? t('app.permission.notice.full')
-        : t('app.permission.notice.mode', { mode: permissionLabel(mode) })
+        : t('app.permission.notice.mode', { mode: permissionLabel(mode, t) })
     notice.dataset.kind = ''
     return true
   } catch (error) {
@@ -1668,6 +1665,7 @@ async function reconcileSkin(entries: readonly SkinRosterEntry[]): Promise<void>
 const skinGroup = bindSkinGroup({
   scope: document,
   storage: appearanceStorage,
+  t,
   list: async () => {
     if (profileName === '') return []
     const roster = await client.skins.list(profileName)

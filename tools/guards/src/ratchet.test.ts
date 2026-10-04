@@ -278,10 +278,12 @@ const INITIAL_CEILING: Record<string, number> = {
   // Failed shell calls read as their exit code (+19 lines); measured 4891, exact cap.
   // B-line diagnostics dialog: React view adds 147 lines; measured 4706, exact cap.
   // Domain cards in the conversation window projection and message list: measured 4792, exact cap (+86).
-  'packages/web-ui/src': 6712,
+  // Popover placement measures the trigger's own window. Measured 6714, exact, no spare (+2).
+  'packages/web-ui/src': 6714,
   // W8a-3: retire the native tool renderer in favor of one compatibility root; measured 4630.
   // The offline diagnostics viewer refuses an unknown bundle version (+7 lines); measured 4645, exact cap.
-  'packages/web-units/src': 5558,
+  // Sidebar binds against its own document and window. Measured 5559, exact, no spare (+1).
+  'packages/web-units/src': 5559,
   // Locale catalogs on LocaleService. Measured 1745, exact, no spare (+31).
   // Failed shell calls read as their exit code (+19 lines); measured 4891, exact cap.
   // W8a-3: retire the native tool renderer in favor of one compatibility root; measured 4630.
@@ -452,11 +454,13 @@ const INITIAL_CEILING: Record<string, number> = {
   // Measured 1825, exact (+1).
   // UI integration merge: the default React transcript now receives the inline card claim callback,
   // which lands on top of the diagnostics wiring above. Re-measured with countLines(): 1827, exact.
-  'packages/web/src/app': 2016,
+  // Locale bridge and slot card bindings removed. Measured 2014, exact, no spare (-2).
+  'packages/web/src/app': 2014,
   // 2026-09-22 UI plugin management: inject the embedded pane's client runtime reconciler.
   // 2026-09-25 UI refactor: permission options now render through the React region contract.
   // Re-measured with countLines(): 215, exact, no spare.
-  'packages/web/src/permission-picker': 248,
+  // Injected translate; popover on the trigger's document. Measured 251, exact, no spare (+3).
+  'packages/web/src/permission-picker': 251,
   // 2026-09-17 WEB-RUN-TRACE: new panel renderer. Measured 130; exact cap, no spare.
   // 2026-09-17 DSH parity: gantt + event list + inspector. Measured 411.
   // 2026-09-17 DSH layout: idle-compressed gantt. Measured 445.
@@ -466,10 +470,12 @@ const INITIAL_CEILING: Record<string, number> = {
   // @agnes/web-admin-frame, so this file only keeps its own state machine and rendering.
   // 2026-09-25 UI refactor: model options now render through the React region contract.
   // Re-measured with countLines(): 274, exact, no spare.
-  'packages/web/src/model-picker': 282,
+  // Injected translate; popover on the trigger's document. Measured 286, exact, no spare (+4).
+  'packages/web/src/model-picker': 286,
   // 2026-09-25 UI refactor: settings-owned element construction uses the shared UI host boundary.
   // Re-measured with countLines(): 754, exact, no spare.
-  'packages/web/src/settings': 900,
+  // Settings controller receives translate explicitly. Measured 902, exact, no spare (+2).
+  'packages/web/src/settings': 902,
   // 2026-09-17 rebase 后的重新实测：timeline.ts 的详情弹窗管线已在 WEB-UI-ALIGN-DSH 中删除
   // （原 427 是旧实现的实测值），删码后未跟着收紧会留下 55 行富余，故收到实测精确值 372。
   // 2026-09-24 WEB-INCREMENTAL-PROJECTION-TRACE-INDEX C6 (Web incremental wiring) and its review fixes,
@@ -482,7 +488,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // much was lost. Measured 678, exact, no spare (+4).
   // Merge of CHUNK-LEDGER-SLIM (lost-text marker, +4) with the streaming-smoothness quick fixes (727):
   // sampled fingerprints also carry lostChars. Re-measured on the merged tree: 731, exact, no spare.
-  'packages/web/src/timeline': 786,
+  // Slot card context travels with the renderer options. Measured 787, exact, no spare (+1).
+  'packages/web/src/timeline': 787,
   // 2026-09-17：navigation.ts 的 folderIcon 换成客户端 AgnesProjectFolderIcon 两态字形
   // （两条 path + folderSvg 构造器），展开/收起由 CSS 的 [aria-expanded] 切换。实测 108。
   // SESSION-ACTIONS integrated with b/main: exact increment +43.
@@ -497,7 +504,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // 2026-09-17：shell.ts 的 SETTINGS 表允许一个面板挂多个 rail 入口（技能 / MCP 共用
   // #resource-settings-pane），showSettingsPane 改按 aria-selected 决定哪一条高亮。实测 89。
   // SESSION-ACTIONS integrated with b/main: exact increment +1.
-  'packages/web/src/shell': 107,
+  // bindSidebar receives its document and translate. Measured 110, exact, no spare (+3).
+  'packages/web/src/shell': 110,
   // 2026-09-17 rebase 后的重新实测：turns.ts 把过程摘要搬进过程行、用量面板只留关键项、
   // 运行中页脚整行隐藏（原 432 是旧实现的实测值），收紧到实测精确值 399。
   'packages/web/src/turns': 407,
@@ -2236,7 +2244,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // Web shell switch: candidate validation, view state hand-over and fallback. Measured 13614, exact (+188).
   // Default chat shell: five regions, presented domain views, view state and its text by locale.
   // Measured 16738, exact, no spare (+552).
-  'packages/web/src': 16738,
+  // Locale bridge and slot card singletons replaced. Measured 16747, exact, no spare (+9).
+  'packages/web/src': 16747,
   // 2026-09-17 web-client-modules frontend track (rebased onto L0/permission-picker main): re-measured exact value below.
   // 2026-09-14: Task 7 orphaned-pin-cleanup adds the orphan-pins section to PluginAdminPage — the
   // #orphanPins/#orphanPinsList/#orphanPinsStatus/#orphanPinsReleaseAll element bindings, the

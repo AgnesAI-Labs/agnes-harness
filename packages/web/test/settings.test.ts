@@ -5,13 +5,9 @@ import type { Client } from '@agnes/sdk/browser'
 import { unmountRegion } from '@agnes/web-ui'
 import { Window } from 'happy-dom'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { setLocaleTranslator } from '../src/locale-bridge.js'
 import { createSettingsController } from '../src/settings.js'
 import { renderSettingsMarkup } from '../src/settings-region.js'
 import { zhT } from './helpers/locale.js'
-
-// i18n: these suites assert zh-CN catalog output; pin the translator before imports run.
-setLocaleTranslator(zhT)
 
 // Picker interaction is covered by settings-accounts/settings-oauth; these cases exercise the
 // controller against real DOM nodes because the account and select subtrees are React-owned.
@@ -143,6 +139,7 @@ describe('settings controller', () => {
     const snapshotRequest = deferred<ConfigSnapshot>()
     const providersRequest = deferred<{ providers: (typeof provider)[] }>()
     const settings = createSettingsController({
+      t: zhT,
       client: client({ get: () => snapshotRequest.promise, providers: () => providersRequest.promise }),
       onSaved: vi.fn(async () => undefined),
       onError: vi.fn(),
@@ -162,6 +159,7 @@ describe('settings controller', () => {
   it('shows empty only after a successful empty response', async () => {
     installDom()
     const settings = createSettingsController({
+      t: zhT,
       client: client({ get: async () => ({ ...snapshot, accounts: [] }) }),
       onSaved: vi.fn(async () => undefined),
       onError: vi.fn(),
@@ -179,6 +177,7 @@ describe('settings controller', () => {
       .mockRejectedValueOnce(new Error('配置请求失败'))
       .mockResolvedValue({ ...snapshot, accounts: [] })
     const settings = createSettingsController({
+      t: zhT,
       client: client({ get }),
       onSaved: vi.fn(async () => undefined),
       onError: vi.fn(),
@@ -195,6 +194,7 @@ describe('settings controller', () => {
     installDom()
     const get = vi.fn(async () => ({ ...snapshot, accounts: [] }))
     const settings = createSettingsController({
+      t: zhT,
       client: client({ get }),
       onSaved: vi.fn(async () => undefined),
       onError: vi.fn(),
@@ -216,6 +216,7 @@ describe('settings controller', () => {
     installDom()
     node('config-key-hint').remove()
     const settings = createSettingsController({
+      t: zhT,
       client: client(),
       onSaved: vi.fn(async () => undefined),
       onError: vi.fn(),
@@ -228,6 +229,7 @@ describe('settings controller', () => {
   it('explains saved-key reuse without reading or revealing the credential', async () => {
     installDom()
     const settings = createSettingsController({
+      t: zhT,
       client: client(),
       onSaved: vi.fn(async () => undefined),
       onError: vi.fn(),
@@ -245,6 +247,7 @@ describe('settings controller', () => {
   it('separates the saved default model from the current session model throughout configuration', async () => {
     installDom()
     const settings = createSettingsController({
+      t: zhT,
       client: client(),
       onSaved: vi.fn(async () => undefined),
       onError: vi.fn(),
@@ -271,7 +274,7 @@ describe('settings controller', () => {
       provider: snapshot.provider,
     }))
     const onSaved = vi.fn(async () => undefined)
-    const settings = createSettingsController({ client: client({ save }), onSaved, onError: vi.fn() })
+    const settings = createSettingsController({ t: zhT, client: client({ save }), onSaved, onError: vi.fn() })
     const returnFocus = fixtureWindow.document.createElement('button')
     returnFocus.id = 'settings'
     fixtureWindow.document.body.append(returnFocus)
@@ -322,6 +325,7 @@ describe('settings controller', () => {
     const pending = deferred<ConfigTestResult>()
     const test = vi.fn(async () => pending.promise)
     const settings = createSettingsController({
+      t: zhT,
       client: client({ test }),
       onSaved: vi.fn(async () => undefined),
       onError: vi.fn(),
@@ -348,6 +352,7 @@ describe('settings controller', () => {
     installDom()
     const onError = vi.fn()
     const settings = createSettingsController({
+      t: zhT,
       client: client({
         test: async () => {
           throw new Error('provider rejected secret-value')
@@ -372,6 +377,7 @@ describe('settings controller', () => {
     installDom()
     const onError = vi.fn()
     const settings = createSettingsController({
+      t: zhT,
       client: client({
         test: async () => {
           throw {
@@ -411,6 +417,7 @@ describe('settings controller', () => {
     )
     const save = vi.fn(async (_input: Record<string, unknown>) => snapshot)
     const settings = createSettingsController({
+      t: zhT,
       client: client({ get: async () => configured, test, save }),
       onSaved: vi.fn(async () => undefined),
       onError: vi.fn(),
@@ -446,6 +453,7 @@ describe('settings controller', () => {
     installDom()
     const pending = deferred<ConfigTestResult>()
     const settings = createSettingsController({
+      t: zhT,
       client: client({ test: async () => pending.promise }),
       onSaved: vi.fn(async () => undefined),
       onError: vi.fn(),
@@ -467,6 +475,7 @@ describe('settings controller', () => {
     installDom()
     const pending = deferred<ConfigTestResult>()
     const settings = createSettingsController({
+      t: zhT,
       client: client({ test: async () => pending.promise }),
       onSaved: vi.fn(async () => undefined),
       onError: vi.fn(),
@@ -488,7 +497,7 @@ describe('settings controller', () => {
     const pending = deferred<ConfigSnapshot>()
     const save = vi.fn(async () => pending.promise)
     const onSaved = vi.fn(async () => undefined)
-    const settings = createSettingsController({ client: client({ save }), onSaved, onError: vi.fn() })
+    const settings = createSettingsController({ t: zhT, client: client({ save }), onSaved, onError: vi.fn() })
     await settings.open()
     node('config-api-key').value = 'one-shot-secret'
     node('config-api-key').dispatch('input')

@@ -1,25 +1,28 @@
 import { createSelectPicker, type SelectPicker } from '@agnes/web-ui'
-import { tr } from './locale-bridge.js'
+import type { Translate } from './presentation.js'
 
-export function createProviderPicker(select: HTMLSelectElement): SelectPicker {
+export function createProviderPicker(select: HTMLSelectElement, t: Translate): SelectPicker {
   return createSelectPicker(select, {
-    label: tr('settings.provider.label'),
+    label: t('settings.provider.label'),
     includeEmpty: false,
-    formatOption: (label) => label.replace(tr('settings.provider.subscriptionLoginSuffix'), ''),
+    formatOption: (label) => label.replace(t('settings.provider.subscriptionLoginSuffix'), ''),
   })
 }
 
-export function createAccountPickers(ui: {
-  provider: HTMLSelectElement
-  authMethod: HTMLSelectElement
-  models: HTMLSelectElement
-  thinking?: HTMLSelectElement | undefined
-}): Pick<SelectPicker, 'sync' | 'close'> {
+export function createAccountPickers(
+  ui: {
+    provider: HTMLSelectElement
+    authMethod: HTMLSelectElement
+    models: HTMLSelectElement
+    thinking?: HTMLSelectElement | undefined
+  },
+  t: Translate,
+): Pick<SelectPicker, 'sync' | 'close'> {
   const pickers = [
-    createProviderPicker(ui.provider),
-    createSelectPicker(ui.authMethod, { label: tr('settings.oauth.methodLabel') }),
-    createSelectPicker(ui.models, { label: tr('accounts.defaultModelLabel') }),
-    ...(ui.thinking ? [createSelectPicker(ui.thinking, { label: tr('settings.model.thinkingLabel') })] : []),
+    createProviderPicker(ui.provider, t),
+    createSelectPicker(ui.authMethod, { label: t('settings.oauth.methodLabel') }),
+    createSelectPicker(ui.models, { label: t('accounts.defaultModelLabel') }),
+    ...(ui.thinking ? [createSelectPicker(ui.thinking, { label: t('settings.model.thinkingLabel') })] : []),
   ]
   return {
     sync: () => {

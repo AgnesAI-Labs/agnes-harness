@@ -1,7 +1,7 @@
 import { renderRegion } from '@agnes/web-ui'
 import { createElement, type ReactNode } from 'react'
-import { tr } from './locale-bridge.js'
 import { applyLocaleText, isUiLocale, syncLocaleRadios, type UiLocale } from './locale-preference.js'
+import type { Translate } from './presentation.js'
 import { readSkinCache } from './skin.js'
 import {
   applyFontScale,
@@ -112,6 +112,8 @@ export type SkinGroupOptions = {
    * 抛错表示这次选择没有生效，UI 会提示并保留原选择。
    */
   select: (id: string | null) => Promise<void> | void
+  /** Render-time translate; the group re-reads it on every render, never caches copy. */
+  t: Translate
 }
 
 export type SkinGroupController = { sync: () => void; refresh: () => Promise<void> }
@@ -126,6 +128,7 @@ type SkinOptionsProps = {
   failed: boolean
   onChoose(value: string): void
   onRetry(): void
+  t: Translate
 }
 
 function skinOption(value: string, name: string, hint: string, props: SkinOptionsProps): ReactNode {
@@ -149,27 +152,28 @@ function skinOption(value: string, name: string, hint: string, props: SkinOption
 }
 
 function skinOptions(props: SkinOptionsProps): ReactNode {
+  const { t } = props
   if (props.failed)
     return createElement(
       'p',
       { className: 'appearance-option-hint' },
-      tr('settings.appearance.skinListFailed'),
-      createElement('button', { type: 'button', onClick: props.onRetry }, tr('settings.appearance.retry')),
+      t('settings.appearance.skinListFailed'),
+      createElement('button', { type: 'button', onClick: props.onRetry }, t('settings.appearance.retry')),
     )
   return createElement(
     'div',
     null,
     skinOption(
       NO_SKIN,
-      tr('settings.appearance.followTheme'),
-      tr('settings.appearance.followThemeHint'),
+      t('settings.appearance.followTheme'),
+      t('settings.appearance.followThemeHint'),
       props,
     ),
     ...props.skins.map((skin) =>
       skinOption(
         skin.id,
         skin.name,
-        tr('settings.appearance.fromPackage', { package: skin.packageName }),
+        t('settings.appearance.fromPackage', { package: skin.packageName }),
         props,
       ),
     ),
@@ -202,6 +206,7 @@ export function bindSkinGroup(options: SkinGroupOptions): SkinGroupController {
         failed,
         onChoose: choose,
         onRetry: () => void refresh(),
+        t: options.t,
       }),
     )
   }
@@ -234,7 +239,7 @@ export function bindSkinGroup(options: SkinGroupOptions): SkinGroupController {
       .catch(() => {
         // 选择没有生效：回到原选择，而不是把一个假的选中态留在界面上。
         selected = previous
-        status = tr('settings.appearance.skinNotApplied')
+        status = options.t('settings.appearance.skinNotApplied')
         render()
       })
   }
