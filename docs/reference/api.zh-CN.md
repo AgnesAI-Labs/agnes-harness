@@ -14,11 +14,12 @@ API 随源码演进，`@agnes/*` 目前通过仓库 workspace 解析。使用与
 | --- | --- | --- |
 | Node 客户端 | `@agnes/sdk` 的 Node 条件出口 | createClient、session、config、packages、resources、skills、mcp |
 | 浏览器宿主 | `@agnes/sdk/browser` | 会话与浏览器允许的协议，未提供 Node 管理能力 |
+| 文本客户端或聊天渠道（Node 或浏览器） | `@agnes/sdk/runtime` | formatDomainView、encodeForChannel：领域视图的默认纯文本呈现，以及按渠道消息上限拆分 |
 | 浏览器插件 | 宿主传入的 ClientContext | slots、session、theme、locale、commands、agnes.services |
 | 后端 Cordis 插件行 | `@agnes/plugin-runtime` / Cordis Context | Config、inject/provide、effect、ctx.extension、ctx.skills、已验证行上的 ctx.services/slots/projections/resources |
 | 受限扩展能力 | `@agnes/extension-api` 的 PluginExtensionAPI | 工具、`on` 观察 hook、`registerHook` 全类 hook 与事件；服务等贡献走行上的 Cordis 入口 |
 
-SDK 的现行 Node 出口：[index.node.ts](../../packages/sdk/src/index.node.ts)；浏览器出口：[index.browser.ts](../../packages/sdk/src/index.browser.ts)。应用只能使用各包 exports 暴露的入口；源码深链接用于解释，不是鼓励消费者深导入。
+SDK 的现行 Node 出口：[index.node.ts](../../packages/sdk/src/index.node.ts)；浏览器出口：[index.browser.ts](../../packages/sdk/src/index.browser.ts)；文本呈现出口：[runtime/format-view.ts](../../packages/sdk/src/runtime/format-view.ts)。应用只能使用各包 exports 暴露的入口；源码深链接用于解释，不是鼓励消费者深导入。
 
 ## SDK 调用顺序
 

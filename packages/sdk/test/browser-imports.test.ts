@@ -33,6 +33,24 @@ it('bundles the browser SDK without external imports or Node implementations', a
   // browser-entry type assertions in api-snapshot.test.ts, not a raw substring scan.
 })
 
+it('bundles the runtime subpath for browsers from its own module alone', async () => {
+  const result = await build({
+    entryPoints: [fileURLToPath(new URL('../src/runtime/format-view.ts', import.meta.url))],
+    bundle: true,
+    write: false,
+    platform: 'browser',
+    format: 'esm',
+    metafile: true,
+    logLevel: 'silent',
+  })
+  // Protocol types are erased, so the entry reaches no other module, Node built-in or package.
+  const inputs = Object.keys(result.metafile.inputs)
+  expect(inputs).toHaveLength(1)
+  expect(inputs[0]).toMatch(/src\/runtime\/format-view\.ts$/)
+  for (const output of Object.values(result.metafile.outputs)) expect(output.imports).toEqual([])
+  expect(result.outputFiles[0]?.text).not.toMatch(/(?:from|import\()\s*['"]node:/)
+})
+
 it('routes the Surface subpath to its browser-empty entry', async () => {
   const result = await build({
     entryPoints: [fileURLToPath(new URL('../src/surface.browser.ts', import.meta.url))],

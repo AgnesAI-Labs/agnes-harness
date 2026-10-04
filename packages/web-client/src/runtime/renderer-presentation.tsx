@@ -19,11 +19,11 @@ import type {
   TextRenderer,
   WebRendererDefinition,
 } from '@agnes/extension-api/client'
+import { formatDomainView } from '@agnes/sdk/runtime'
 import { Component, type ReactNode, useLayoutEffect, useState } from 'react'
 import type { ClientTarget } from './client-selection.js'
 import { createRendererContext, type MountedRendererContext } from './renderer-context.js'
 import { GenericDomainView } from './renderers/generic.js'
-import { formatDomainView } from './renderers/text.js'
 
 export interface AuthorizedViews {
   /** The view the current authorized window holds under this id, or undefined when the window has none. */

@@ -14,6 +14,7 @@
   "dependencies": {
     "@agnes/cordis": "workspace:*",
     "@agnes/extension-api": "workspace:*",
+    "@agnes/sdk": "workspace:*",
     "@agnes/web-slots": "workspace:*",
     "@agnes/web-ui": "workspace:*"
   },
@@ -22,7 +23,6 @@
   },
   "devDependencies": {
     "@agnes/protocol": "workspace:*",
-    "@agnes/sdk": "workspace:*",
     "@types/react": "18.3.12",
     "@types/react-dom": "18.3.1",
     "react": "18.3.1",

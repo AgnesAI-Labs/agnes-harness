@@ -13,7 +13,8 @@
       "browser": "./src/surface.browser.ts",
       "default": "./src/surface.node.ts"
     },
-    "./composer-selection": "./src/composer-selection.ts"
+    "./composer-selection": "./src/composer-selection.ts",
+    "./runtime": "./src/runtime/format-view.ts"
   },
   "scripts": {
     "test": "vitest run",

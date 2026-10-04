@@ -11,12 +11,12 @@ import type {
   TextRenderer,
 } from '@agnes/extension-api/client'
 import { validateRuntime } from '@agnes/protocol/runtime'
+import { formatDomainView } from '@agnes/sdk/runtime'
 import { act, type ReactElement, type ReactNode, useEffect } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ClientTarget } from '../../src/runtime/client-selection.js'
 import { type AuthorizedViews, createRendererPresenter } from '../../src/runtime/renderer-presentation.js'
-import { formatDomainView } from '../../src/runtime/renderers/text.js'
 
 let host: HTMLDivElement
 let root: Root
