@@ -1,3 +1,4 @@
+import type { ChildProcess } from 'node:child_process'
 import { readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import type { CallContext, Outcome } from '@agnes/extension-api/runtime'
@@ -42,6 +43,20 @@ export const serviceProfile: ServiceProfile = {
 }
 
 export type Kind = 'default' | 'reference'
+
+/** child.kill('SIGKILL') is TerminateProcess on Windows. libuv stores that exit as SIGKILL. */
+export function forceKill(child: ChildProcess): boolean {
+  return child.kill('SIGKILL')
+}
+
+/** True only after forceKill, when the child closes with code null and signal SIGKILL. */
+export function killedByForce(
+  child: ChildProcess,
+  code: number | null,
+  signal: NodeJS.Signals | null,
+): boolean {
+  return child.killed && signal === 'SIGKILL' && code === null
+}
 
 export type RenamedReport = {
   stage: 'renamed'
