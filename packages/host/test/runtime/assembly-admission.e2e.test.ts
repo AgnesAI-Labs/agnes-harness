@@ -178,6 +178,8 @@ describe('restricted persistent State admission process recovery', { timeout: 12
           expect(code, stderr).toBe(0)
           return JSON.parse(stdout) as ReturnType<typeof admissionCold>
         })
+        // A bootstrap failure can reject before ready; keep cleanup from leaking another rejection.
+        void done.catch(() => undefined)
         return { child, ready, done }
       })
       try {

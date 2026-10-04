@@ -2732,7 +2732,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // Artifact ticket key port. Measured 74321, exact, no spare.
   // Usage and budget settlement for billing. Measured 74449, exact, no spare.
   // CI overhead reductions. Measured 74865, exact, no spare.
-  'packages/host/src': 74865,
+  // Same-database admission joint coverage. Measured 74907, exact, no spare.
+  'packages/host/src': 74907,
   'packages/host/src/ext-host/service-invocation': 247,
   // T5.2's permission projector is kept independently bounded so later extension-host work cannot
   // hide in the package-wide increment. Measured source: 86 lines.

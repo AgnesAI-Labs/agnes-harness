@@ -14,9 +14,9 @@ import {
 } from './maintenance-journal.js'
 import { equal, readWire, requireRelease } from './primitives.js'
 
-/** Restricted durable fixtures only. Real State admission qualification is not delivered yet. */
+/** Test-only composition; real State sources must pass their original same-connection installation. */
 export interface AdmissionStatePorts {
-  readonly qualification: 'restricted-persistent-state-fixture'
+  readonly qualification: 'restricted-persistent-state-fixture' | 'same-database-state-admission'
   readonly store: Pick<
     StateStoreControl,
     | 'createRun'
@@ -45,14 +45,21 @@ export function createAdmissionCoordinator(
       retryAdvice: { kind: 'never' },
     },
   })
+  const qualified = () =>
+    state?.qualification === 'restricted-persistent-state-fixture' ||
+    state?.qualification === 'same-database-state-admission'
   function work<T>(context: CallContext, body: (call: CallContext) => Promise<T>): Promise<Outcome<T>> {
-    if (!maintenance || state?.qualification !== 'restricted-persistent-state-fixture')
-      return Promise.resolve(unsupported())
-    const call = { ...context, signal: AbortSignal.any([context.signal, lifetime.signal]) }
+    if (!maintenance || !qualified()) return Promise.resolve(unsupported())
+    // C14 tracks the original issued object. Copying it would discard the selected authority.
+    const call =
+      state?.qualification === 'same-database-state-admission'
+        ? context
+        : { ...context, signal: AbortSignal.any([context.signal, lifetime.signal]) }
     const pending = tail.then(() =>
       maintenanceOutcome(async () => {
         requireRelease(!disposed, 'admission_disposed', '/admission')
         await authorizeMaintenance(maintenance, call, null)
+        requireRelease(!disposed, 'admission_disposed', '/admission')
         return body(call)
       }),
     )
@@ -63,6 +70,24 @@ export function createAdmissionCoordinator(
     const result = await reply
     if (!result.ok) throw new MaintenanceFailure(result.error)
     return result.value
+  }
+  async function admissionReply(
+    ticketId: string,
+    call: CallContext,
+    pending: Promise<Outcome<AdmissionProbe>>,
+  ): Promise<Outcome<AdmissionProbe>> {
+    const reply = await pending
+    if (
+      state?.qualification === 'same-database-state-admission' &&
+      !reply.ok &&
+      ((reply.error.code === 'denied' && reply.error.detailCode === 'admission_source') ||
+        (reply.error.code === 'conflict' && reply.error.detailCode === 'admission_cancelled'))
+    ) {
+      requireRelease(!disposed, 'admission_disposed', '/admission')
+      // Another writer may have consumed the captured slot. A fresh State read must prove its result.
+      return state.store.probeAdmission(ticketId, call)
+    }
+    return reply
   }
   async function ticket(ticketId: string, call: CallContext) {
     requireRelease(maintenance, 'unsupported', '/admission')
@@ -89,6 +114,7 @@ export function createAdmissionCoordinator(
   }
   async function settle(ticketId: string, observed: AdmissionProbe, call: CallContext) {
     requireRelease(maintenance && state, 'unsupported', '/admission')
+    requireRelease(!disposed, 'admission_disposed', '/admission')
     const saved = await ticket(ticketId, call)
     const proof = readWire('AdmissionProbe', observed)
     // A caller-supplied reply is never sufficient to release a maintenance pin.
@@ -138,6 +164,7 @@ export function createAdmissionCoordinator(
           now,
         ),
       )
+    requireRelease(!disposed, 'admission_disposed', '/admission')
     try {
       await journalCommit(maintenance, `admission:${ticketId}:${status}`, mutations, [], call)
     } catch (error) {
@@ -153,24 +180,37 @@ export function createAdmissionCoordinator(
   }
   return {
     providerId: 'agh.default/assembly',
-    qualification:
-      maintenance && state?.qualification === 'restricted-persistent-state-fixture'
-        ? 'restricted-persistent-state-fixture'
-        : 'unsupported',
+    qualification: maintenance && qualified() ? (state?.qualification ?? 'unsupported') : 'unsupported',
     incomplete: ['production-state-qualification', 'production-wiring'],
     coordinate(incoming: TicketDraft, context: CallContext): Promise<Outcome<AdmissionProbe>> {
       const draft = structuredClone(incoming)
       return work(context, async (call) => {
         requireRelease(maintenance && state, 'unsupported', '/admission')
         const issued = await value(createAdmissionTickets(maintenance).issue(draft, call))
-        const prior = readWire(
-          'AdmissionProbe',
-          await value(state.store.probeAdmission(issued.admission.ticketId, call)),
+        requireRelease(!disposed, 'admission_disposed', '/admission')
+        const reply = await admissionReply(
+          issued.admission.ticketId,
+          call,
+          state.store.probeAdmission(issued.admission.ticketId, call),
         )
-        const proof =
-          prior.state === 'absent'
-            ? readWire('AdmissionProbe', await value(state.store.createRun(issued.admission, call)))
-            : prior
+        // Unproven absence cannot release a pin. Only createRun may arbitrate the original issuer slot.
+        const prior =
+          !reply.ok &&
+          state.qualification === 'same-database-state-admission' &&
+          reply.error.code === 'denied' &&
+          reply.error.detailCode === 'admission_absence_unproven'
+            ? null
+            : readWire('AdmissionProbe', await value(Promise.resolve(reply)))
+        let proof = prior
+        if (!proof || proof.state === 'absent') {
+          requireRelease(!disposed, 'admission_disposed', '/admission')
+          proof = readWire(
+            'AdmissionProbe',
+            await value(
+              admissionReply(issued.admission.ticketId, call, state.store.createRun(issued.admission, call)),
+            ),
+          )
+        }
         return settle(issued.admission.ticketId, proof, call)
       })
     },
@@ -196,7 +236,12 @@ export function createAdmissionCoordinator(
         )
         return settle(
           ticketId,
-          readWire('AdmissionProbe', await value(state.store.cancelAdmission(ticketId, fingerprint, call))),
+          readWire(
+            'AdmissionProbe',
+            await value(
+              admissionReply(ticketId, call, state.store.cancelAdmission(ticketId, fingerprint, call)),
+            ),
+          ),
           call,
         )
       })
