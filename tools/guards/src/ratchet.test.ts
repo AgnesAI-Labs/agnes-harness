@@ -2790,7 +2790,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // Original no-hook Receipt cold source verifies persisted Action/Attempt/dispatch/intake/commit relations.
   // Measured 78585 (+327), exact cap, no spare.
   // Explicit worker admission is routed through a deployment slot. Measured 78823, exact, no spare.
-  'packages/host/src': 78823,
+  // Four source-bound publication data codecs and complete retained-content validation add 1039 measured lines.
+  'packages/host/src': 79862,
   'packages/host/src/ext-host/service-invocation': 247,
   // T5.2's permission projector is kept independently bounded so later extension-host work cannot
   // hide in the package-wide increment. Measured source: 86 lines.
