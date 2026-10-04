@@ -157,6 +157,165 @@ describe('MCP durable resource control', () => {
     ).resolves.toMatchObject({ revision: revision(definition), actual: 'ready' })
   })
 
+  it('keeps a running MCP test open when the worker reports the server ready, and records its result', async () => {
+    directory = await mkdtemp(join(tmpdir(), 'agnes-mcp-control-'))
+    let finishTest: (() => void) | undefined
+    const store = new McpResourceStore(directory, scope, {
+      reconcile: async ({ serverId, enabled }) => ({
+        status: enabled ? ready(serverId) : { ...ready(serverId), connectionState: 'disabled' as const },
+      }),
+      reconnect: async ({ serverId }) => ({ status: ready(serverId) }),
+      test: () =>
+        new Promise((resolve) => {
+          finishTest = () => resolve({ toolCount: 1, catalogRevision: 'a'.repeat(64) })
+        }),
+      tools: async ({ serverId }) => ({ serverId, catalogRevision: 'a'.repeat(64), items: [] }),
+    })
+    const service = testService(createResourceControlService(store))
+    const create = await service.call(
+      '_agnes/v1/mcp.servers.create',
+      { profile, definition, clientId: 'client', commandId: 'create-1' },
+      authority,
+    )
+    await settled(service, create.operationId)
+    const trust = await service.call(
+      '_agnes/v1/mcp.servers.trust.set',
+      {
+        profile,
+        serverId: definition.serverId,
+        expectedRevision: revision(definition),
+        trust: 'trusted',
+        clientId: 'client',
+        commandId: 'trust-1',
+      },
+      authority,
+    )
+    await settled(service, trust.operationId)
+    const tested = await service.call(
+      '_agnes/v1/mcp.servers.test',
+      {
+        profile,
+        serverId: definition.serverId,
+        expectedRevision: revision(definition),
+        clientId: 'client',
+        commandId: 'test-1',
+      },
+      authority,
+    )
+    await vi.waitFor(() => expect(finishTest).toBeDefined())
+    // A worker observation of the same server arrives while the test is still running. It says
+    // nothing about the test, so the operation must stay open until the test itself reports.
+    await store.observeWorker(profile, [ready(definition.serverId)])
+    await expect(
+      service.call(
+        '_agnes/v1/resources.operation.get',
+        { profile, operationId: tested.operationId },
+        authority,
+      ),
+    ).resolves.toMatchObject({ state: 'running' })
+    finishTest?.()
+    expect(await settled(service, tested.operationId)).toMatchObject({
+      state: 'succeeded',
+      result: { toolCount: 1, catalogRevision: 'a'.repeat(64) },
+    })
+  })
+
+  it('keeps a running enable open when the worker reports the server disabled first', async () => {
+    directory = await mkdtemp(join(tmpdir(), 'agnes-mcp-control-'))
+    let finishEnable: (() => void) | undefined
+    const store = new McpResourceStore(directory, scope, {
+      reconcile: ({ serverId, enabled }) =>
+        enabled
+          ? new Promise((resolve) => {
+              finishEnable = () => resolve({ status: ready(serverId) })
+            })
+          : Promise.resolve({ status: { ...ready(serverId), connectionState: 'disabled' as const } }),
+      reconnect: async ({ serverId }) => ({ status: ready(serverId) }),
+      test: async () => ({ toolCount: 1, catalogRevision: 'a'.repeat(64) }),
+      tools: async ({ serverId }) => ({ serverId, catalogRevision: 'a'.repeat(64), items: [] }),
+    })
+    const service = testService(createResourceControlService(store))
+    const create = await service.call(
+      '_agnes/v1/mcp.servers.create',
+      { profile, definition, clientId: 'client', commandId: 'create-1' },
+      authority,
+    )
+    await settled(service, create.operationId)
+    const trust = await service.call(
+      '_agnes/v1/mcp.servers.trust.set',
+      {
+        profile,
+        serverId: definition.serverId,
+        expectedRevision: revision(definition),
+        trust: 'trusted',
+        clientId: 'client',
+        commandId: 'trust-1',
+      },
+      authority,
+    )
+    await settled(service, trust.operationId)
+    const enable = await service.call(
+      '_agnes/v1/mcp.servers.enable',
+      {
+        profile,
+        serverId: definition.serverId,
+        expectedRevision: revision(definition),
+        clientId: 'client',
+        commandId: 'enable-1',
+      },
+      authority,
+    )
+    await vi.waitFor(() => expect(finishEnable).toBeDefined())
+    // An idle worker reports the server as disabled before the enable has started it.
+    await store.observeWorker(profile, [{ ...ready(definition.serverId), connectionState: 'disabled' }])
+    await expect(
+      service.call(
+        '_agnes/v1/resources.operation.get',
+        { profile, operationId: enable.operationId },
+        authority,
+      ),
+    ).resolves.toMatchObject({ state: 'running' })
+    finishEnable?.()
+    expect(await settled(service, enable.operationId)).toMatchObject({ state: 'succeeded' })
+  })
+
+  it('does not close a test this store is not driving when the worker reports the server ready', async () => {
+    directory = await mkdtemp(join(tmpdir(), 'agnes-mcp-control-'))
+    const store = new McpResourceStore(directory, scope, {
+      reconcile: async ({ serverId }) => ({ status: ready(serverId) }),
+      reconnect: async ({ serverId }) => ({ status: ready(serverId) }),
+      test: async () => ({ toolCount: 1, catalogRevision: 'a'.repeat(64) }),
+      tools: async ({ serverId }) => ({ serverId, catalogRevision: 'a'.repeat(64), items: [] }),
+    })
+    // Another process drives these operations (the resource worker runs a SecretRef test), so this
+    // store holds no active drive for them and only the operation's own kind can protect it.
+    store.setDeferredDrive(true)
+    const call = (method: Parameters<typeof store.call>[0], params: Record<string, unknown>) =>
+      store.call(method, { profile, clientId: 'client', ...params }, authority) as Promise<{
+        operationId: string
+      }>
+    await call('_agnes/v1/mcp.servers.create', { definition, commandId: 'create-1' })
+    await call('_agnes/v1/mcp.servers.trust.set', {
+      serverId: definition.serverId,
+      expectedRevision: revision(definition),
+      trust: 'trusted',
+      commandId: 'trust-1',
+    })
+    const tested = await call('_agnes/v1/mcp.servers.test', {
+      serverId: definition.serverId,
+      expectedRevision: revision(definition),
+      commandId: 'test-1',
+    })
+    await store.observeWorker(profile, [ready(definition.serverId)])
+    await expect(
+      store.call(
+        '_agnes/v1/resources.operation.get',
+        { profile, operationId: tested.operationId },
+        authority,
+      ),
+    ).resolves.toMatchObject({ state: 'received' })
+  })
+
   it('does not delegate a catalog read after the definition has been removed', async () => {
     directory = await mkdtemp(join(tmpdir(), 'agnes-mcp-remove-catalog-'))
     const tools = vi.fn(async ({ serverId }: { serverId: string }) => ({
