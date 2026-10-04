@@ -11,7 +11,7 @@ import type { BlobContractPort } from '../../../../packages/extension-api/testki
 import { createReferenceRegistry } from '../index.js'
 import { BLOB_PROVIDER, type BlobStore, type BlobStoreOptions, openBlobStore, PIECE_BYTES } from './blob.js'
 import { bindBlobContract, damage } from './blob-contract.js'
-import type { BlobTransferMaintenance } from './blob-transfer.js'
+import type { TransferMaintenance } from './blob-transfer.js'
 
 const sha = (bytes: Uint8Array) => createHash('sha256').update(bytes).digest('hex')
 const bytesOf = (size: number) => new Uint8Array(size).map((_, index) => (index * 13) % 256)
@@ -240,7 +240,7 @@ describe('reference blob authority transfer', () => {
 
   /** A store at `locationRef` with a maintenance assembly; an import reads from `source`. */
   function at(locationRef: string, options: BlobStoreOptions = {}, source?: BlobStore): BlobStore {
-    const maintenance: BlobTransferMaintenance = {
+    const maintenance: TransferMaintenance = {
       authorize: (context) => context.authorizationRef === 'maintainer',
       tenantId: 'tenant-1',
       locationRef,

@@ -6,6 +6,11 @@ import { createConformanceHarness, createTestServiceContainer, SCENARIOS } from 
 import { RuntimeArtifactPolicy } from '@agnes/protocol/runtime'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import type { ArtifactsContractPort } from '../../../../packages/extension-api/testkit/runtime/contracts/artifacts.js'
+import {
+  TRANSFER_MAINTAINER,
+  type TransferContractPort,
+} from '../../../../packages/extension-api/testkit/runtime/contracts/authority-transfer.js'
+import { inline } from '../../../../packages/extension-api/testkit/runtime/contracts/projection.js'
 import { createReferenceRegistry } from '../index.js'
 import {
   ARTIFACTS_PROVIDER,
@@ -16,6 +21,7 @@ import {
 } from './artifacts.js'
 import { bindArtifactsContract } from './artifacts-contract.js'
 import { BLOB_PROVIDER, type BlobStore, openBlobStore } from './blob.js'
+import { directoryMaintenance, type Routes, TENANT } from './blob-contract.js'
 
 const START = Date.parse('2026-10-01T00:00:00.000Z')
 const SCOPE = {
@@ -64,7 +70,8 @@ let reads: number
 
 type Overrides = { [K in keyof ArtifactsStoreOptions]?: ArtifactsStoreOptions[K] | undefined }
 
-function open(extra: Overrides = {}): ArtifactsStore {
+/** An artifacts store at `name` over the `selected` blob store. */
+function open(extra: Overrides = {}, name = 'artifacts', selected = blob): ArtifactsStore {
   const container = createTestServiceContainer()
   container.register({
     requirement: BLOB_DEPENDENCY,
@@ -72,11 +79,11 @@ function open(extra: Overrides = {}): ArtifactsStore {
     blobRead: {
       readRange: (request, context) => {
         reads += 1
-        return blob.blobRead.readRange(request, context)
+        return selected.blobRead.readRange(request, context)
       },
       openRead: (request, context) => {
         reads += 1
-        return blob.blobRead.openRead(request, context)
+        return selected.blobRead.openRead(request, context)
       },
     },
   })
@@ -87,7 +94,7 @@ function open(extra: Overrides = {}): ArtifactsStore {
     now: () => clock,
     ...extra,
   }
-  return openArtifactsStore(join(directory, 'artifacts.sqlite'), options as ArtifactsStoreOptions)
+  return openArtifactsStore(join(directory, `${name}.sqlite`), options as ArtifactsStoreOptions)
 }
 
 function publish(body: string, artifactId: string | null = null) {
@@ -227,6 +234,119 @@ describe('reference artifacts store', () => {
   })
 })
 
+describe('reference artifacts authority transfer', () => {
+  const MAINTAINER = ctx({ authorizationRef: TRANSFER_MAINTAINER })
+  const UPGRADE = 'upgrade-1'
+  const routes: Routes = new Map()
+  const opened: { close(): void }[] = []
+  afterEach(() => {
+    for (const each of opened.splice(0)) each.close()
+    routes.clear()
+  })
+
+  /** A store at `locationRef` with a maintenance assembly over `selected`; an import reads from `artifacts`. */
+  function at(locationRef: string, selected: BlobStore, extra: Overrides = {}) {
+    const store = open(
+      {
+        maintenance: directoryMaintenance(
+          routes,
+          locationRef,
+          (ref, context) => artifacts.readExport(ref, context),
+          'plan',
+        ),
+        blobTransfer: { binding: BLOB_BINDING, holds: (ref) => selected.holds(ref) },
+        ...extra,
+      },
+      locationRef,
+      selected,
+    )
+    opened.push(store)
+    return store
+  }
+
+  it('declares and offers authority transfer only with maintenance and the selected blob service entry', async () => {
+    const absent = { upgradeId: UPGRADE }
+    const offered = async (extra: Overrides) => {
+      const store = at('offered', blob, extra)
+      const probe = await store.transfer.probe(absent, MAINTAINER)
+      store.close()
+      return [store.features, probe.ok ? probe.value : refused(probe)]
+    }
+    const unsupported = [['artifact-access.v1'], 'operation_not_supported']
+    expect(await offered({ maintenance: undefined, blobTransfer: undefined })).toEqual(unsupported)
+    expect(await offered({ blobTransfer: undefined })).toEqual(unsupported)
+    expect(await offered({ maintenance: undefined })).toEqual(unsupported)
+    expect(await offered({})).toEqual([['artifact-access.v1', 'authority-transfer.v1'], { state: 'absent' }])
+    const elsewhere = { binding: { ...BLOB_BINDING, bindingId: 'blob-2' }, holds: () => true }
+    expect(() => at('offered', blob, { blobTransfer: elsewhere })).toThrow('another blob service')
+  })
+
+  it('carries the revocation log, refuses miscounted exports and activates nothing while a blob is missing', async () => {
+    artifacts.close()
+    artifacts = at('source', blob)
+    const one = publish('one')
+    const two = publish('two')
+    artifacts.revoke(one.ref)
+    artifacts.revokeGrant(two.grant.grantId, 'request-1')
+    const expected = { authorityId: 'reference-artifacts', tenantId: TENANT, authorityEpoch: 1 }
+    const fence = must(
+      await artifacts.transfer.fence(
+        { upgradeId: UPGRADE, expected, cohortDigest: 'c'.repeat(64) },
+        MAINTAINER,
+      ),
+    )
+    const exported = must(
+      await artifacts.transfer.export({ upgradeId: UPGRADE, fenceId: fence.fenceId }, MAINTAINER),
+    )
+    // The blob service was never moved: the target's blob store is empty.
+    const empty = openBlobStore(join(directory, 'empty-blob.sqlite'), { authorizeRead: trusted })
+    opened.push(empty)
+    const imports = async (locationRef: string, source: typeof exported) =>
+      at(locationRef, empty, { candidate: true }).transfer.import(
+        { upgradeId: UPGRADE, source, targetLocationRef: locationRef },
+        MAINTAINER,
+      )
+    expect([
+      refused(await imports('collections', { ...exported, collectionCount: exported.collectionCount + 1 })),
+      refused(await imports('parts', { ...exported, partCount: exported.partCount - 1 })),
+    ]).toEqual(['integrity', 'integrity'])
+    const target = at('target', empty, { candidate: true })
+    const imported = must(
+      await target.transfer.import(
+        { upgradeId: UPGRADE, source: exported, targetLocationRef: 'target' },
+        MAINTAINER,
+      ),
+    )
+    const verified = must(
+      await target.transfer.verify(
+        { upgradeId: UPGRADE, source: exported, candidateRef: imported.candidateRef },
+        MAINTAINER,
+      ),
+    )
+    expect(exported.deletionWatermark).toBe(2)
+    expect(target.revocations()).toEqual(artifacts.revocations())
+    expect(verified.checks.filter((check) => !check.passed).map((check) => check.checkId)).toEqual([
+      'required-assets',
+    ])
+    const route = {
+      logicalAuthorityId: 'reference-artifacts',
+      tenantId: TENANT,
+      authorityEpoch: 2,
+      providerBinding: { ...BLOB_BINDING, contract: 'agh.artifacts', bindingId: 'artifacts-1' },
+      locationRef: 'target',
+      cohortDigest: 'c'.repeat(64),
+      cutoverId: 'cutover-1',
+      checkpoint: { ...imported.targetCheckpoint, authorityEpoch: 2 },
+      previous: { authorityEpoch: 1, locationRef: 'source', cutoverId: 'none' },
+    }
+    routes.set(route.logicalAuthorityId, { route, targetActivated: false })
+    const schema = { typeId: 'test/route@1', revision: 1, digest: 'd'.repeat(64) }
+    const activate = { upgradeId: UPGRADE, cutoverId: route.cutoverId, publishedRoute: inline(schema, route) }
+    expect(refused(await target.transfer.activate(activate, MAINTAINER))).toBe('integrity')
+    expect(must(await target.transfer.probe({ upgradeId: UPGRADE }, MAINTAINER)).state).toBe('imported')
+  })
+})
+
 describe('reference artifacts: conformance', () => {
   it('fills the artifacts slot of the reference registry', () => {
     const slot = createReferenceRegistry([ARTIFACTS_PROVIDER, BLOB_PROVIDER]).find(
@@ -236,9 +356,15 @@ describe('reference artifacts: conformance', () => {
     expect(slot?.providerFile).toBe('examples/runtime-reference/src/providers/artifacts.ts')
   })
 
-  async function runContract(change: (port: ArtifactsContractPort) => ArtifactsContractPort) {
+  async function runContract(
+    change: (port: ArtifactsContractPort) => ArtifactsContractPort,
+    changeTransfer: (port: TransferContractPort) => TransferContractPort = (port) => port,
+  ) {
     const harness = createConformanceHarness()
-    const bound = bindArtifactsContract(harness, 'reference-artifacts-conformance', { change })
+    const bound = bindArtifactsContract(harness, 'reference-artifacts-conformance', {
+      change,
+      changeTransfer,
+    })
     try {
       return await harness.run({
         contracts: ['agh.artifacts'],
@@ -251,23 +377,32 @@ describe('reference artifacts: conformance', () => {
     }
   }
 
-  it('passes select, normal, deny, cancel, recover and dispose', async () => {
+  it('passes select, normal, deny, cancel, recover and dispose for access and for a cohort authority transfer', async () => {
     const report = await runContract((port) => port)
-    expect(report.assertions.map((item) => [item.scenario, item.status])).toEqual(
-      SCENARIOS.map((scenario) => [scenario, 'passed']),
+    expect(report.assertions.map((item) => [item.id, item.status])).toEqual(
+      ['', '/authority-transfer'].flatMap((suite) =>
+        SCENARIOS.map((scenario) => [`agh.artifacts/${ARTIFACTS_PROVIDER.id}${suite}/${scenario}`, 'passed']),
+      ),
     )
     expect(report.status).toBe('passed')
     expect(report.failures).toEqual([])
   })
 
   it('fails a scenario whose observations break the contract', async () => {
-    const report = await runContract((port) => ({
-      ...port,
-      normal: async (context) => ({ ...(await port.normal(context)), blobReads: 0 }),
-    }))
-    expect(report.assertions.filter((item) => item.status === 'failed').map((item) => item.scenario)).toEqual(
-      ['normal'],
+    const report = await runContract(
+      (port) => ({
+        ...port,
+        normal: async (context) => ({ ...(await port.normal(context)), blobReads: 0 }),
+      }),
+      (port) => ({
+        ...port,
+        recover: async (context) => ({ ...(await port.recover(context)), sourceServes: false }),
+      }),
     )
+    expect(report.assertions.filter((item) => item.status === 'failed').map((item) => item.id)).toEqual([
+      `agh.artifacts/${ARTIFACTS_PROVIDER.id}/normal`,
+      `agh.artifacts/${ARTIFACTS_PROVIDER.id}/authority-transfer/recover`,
+    ])
     expect(report.status).toBe('failed')
   })
 })

@@ -14,8 +14,8 @@ import {
 
 type Detail = keyof typeof RuntimeErrorDetails
 
-/** What the maintenance assembly tells one reference blob store about its place in the directory. */
-export type BlobTransferMaintenance = Readonly<{
+/** What the maintenance assembly tells one reference store about its place in the directory. */
+export type TransferMaintenance = Readonly<{
   /** Whether the caller is the maintenance controller. */
   authorize(context: CallContext): boolean
   tenantId: Wire.Id
@@ -35,11 +35,25 @@ export type BlobTransferMaintenance = Readonly<{
   planFingerprint: Wire.Digest
 }>
 
-/** What the blob store lends its transfer side. */
+/** What a reference store lends its transfer side. Its `authority` table holds its role and epoch. */
 export type TransferHost = Readonly<{
   db: DatabaseSync
   authorityId: Wire.Id
-  maintenance: BlobTransferMaintenance | undefined
+  /** Names the store's collections and schemas: `reference.<name>/<table>`. */
+  name: string
+  /**
+   * The business tables a checkpoint covers, each with the SQL that gives a record its key. Rows are
+   * read in key order, so a part's keys are its first and last.
+   */
+  tables: Readonly<Record<string, string>>
+  /** The table whose `seq` head is the store's deletion or revocation watermark. */
+  log: string
+  /**
+   * The blobs the records name, which the selected blob service's own transfer moves, and whether that
+   * service holds one intact. Without it the store needs no assets.
+   */
+  assets?: Readonly<{ list(): Iterable<Wire.BlobRef>; present(ref: Wire.BlobRef): boolean }>
+  maintenance: TransferMaintenance | undefined
   /** The most records and encoded bytes one exported part holds. */
   part: Readonly<{ records: number; bytes: number }>
   live(): void
@@ -72,29 +86,7 @@ const inline = (typeId: string, value: Wire.JsonValue): Wire.DataRef => ({
   bytes: Buffer.byteLength(jcs(value)),
 })
 
-/**
- * The business tables a checkpoint covers, in collection order (UTF-8 bytes of the id), each with the
- * SQL that gives a record its key. Rows are read in key order, so a part's keys are its first and last.
- * Cross-implementation collection schemas are not defined yet, so these ids are the reference's own.
- */
-const COLLECTIONS = (
-  [
-    ['deletions', "printf('%016d', seq)"],
-    ['objects', 'blob_id'],
-    ['pieces', "blob_id || '/' || printf('%016d', seq)"],
-    ['pins', 'pin_id'],
-    ['uploads', 'upload_id'],
-  ] as const
-)
-  .map(([table, key]) => ({
-    table,
-    key,
-    id: `reference.blob/${table}`,
-    schema: schemaRef(`agh.reference.blob/${table}-rows@1`),
-  }))
-  .sort((left, right) => Buffer.compare(Buffer.from(left.id), Buffer.from(right.id)))
-
-type Collection = (typeof COLLECTIONS)[number]
+type Collection = { table: string; key: string; id: Wire.Id; schema: Wire.SchemaRef }
 type Row = Record<string, unknown>
 type Part = Wire.AuthorityExportPart
 type ImportResult = Wire.AuthorityTransferControlImportResult
@@ -136,13 +128,24 @@ const encode = (row: Row) =>
   )
 
 /**
- * The transfer side of one reference blob store. A source fences, exports and aborts; a candidate
- * store imports, verifies and activates. Every call is idempotent by upgrade id and request
- * fingerprint, and probe reads only what is committed.
+ * The transfer side of one reference store. A source fences, exports and aborts; a candidate store
+ * imports, verifies and activates. Every call is idempotent by upgrade id and request fingerprint, and
+ * probe reads only what is committed.
  */
-export function openBlobTransfer(host: TransferHost) {
-  const { db, authorityId, maintenance } = host
+export function openTransfer(host: TransferHost) {
+  const { db, authorityId, maintenance, assets } = host
   db.exec(DDL)
+  // Collection order is the UTF-8 bytes of the id. Cross-implementation collection schemas are not
+  // defined yet, so these ids are the reference's own.
+  const COLLECTIONS: Collection[] = Object.entries(host.tables)
+    .map(([table, key]) => ({
+      table,
+      key,
+      id: `reference.${host.name}/${table}`,
+      schema: schemaRef(`agh.reference.${host.name}/${table}-rows@1`),
+    }))
+    .sort((left, right) => Buffer.compare(Buffer.from(left.id), Buffer.from(right.id)))
+  const CONTENT = schemaRef(`agh.reference.${host.name}/content@1`)
   function refuse(detail: Detail, message: string): never {
     return host.refuse(detail, message)
   }
@@ -160,7 +163,7 @@ export function openBlobTransfer(host: TransferHost) {
   const transfer = (upgradeId: Wire.Id) =>
     db.prepare('SELECT * FROM transfers WHERE upgrade_id = ?').get(upgradeId) as TransferRow | undefined
   const head = () =>
-    (db.prepare('SELECT COALESCE(MAX(seq), 0) AS head FROM deletions').get() as { head: number }).head
+    (db.prepare(`SELECT COALESCE(MAX(seq), 0) AS head FROM ${host.log}`).get() as { head: number }).head
   const columns = new Map(
     COLLECTIONS.map(({ table }) => [
       table,
@@ -169,7 +172,7 @@ export function openBlobTransfer(host: TransferHost) {
   )
 
   /** The caller must be the maintenance controller of a store that has a maintenance assembly. */
-  function admit(context: CallContext): BlobTransferMaintenance {
+  function admit(context: CallContext): TransferMaintenance {
     if (!maintenance) refuse('operation_not_supported', 'authority transfer is not configured')
     host.live()
     if (!maintenance.authorize(context))
@@ -322,7 +325,7 @@ export function openBlobTransfer(host: TransferHost) {
 
   /** Reads one exported blob from the source in full, refused unless its size and digest match. */
   async function download(
-    source: BlobTransferMaintenance,
+    source: TransferMaintenance,
     ref: Wire.BlobRef,
     context: CallContext,
     limit: number,
@@ -342,7 +345,7 @@ export function openBlobTransfer(host: TransferHost) {
   }
 
   /** One chunk line as a row of `table`: exactly the table's columns, byte cells decoded. */
-  function decode(table: Collection['table'], line: string): SQLInputValue[] {
+  function decode(table: string, line: string): SQLInputValue[] {
     let row: Row
     try {
       row = JSON.parse(line) as Row
@@ -376,7 +379,7 @@ export function openBlobTransfer(host: TransferHost) {
 
   /** The route must be exactly the one the directory durably holds; reports whether a target was activated. */
   async function published(
-    source: BlobTransferMaintenance,
+    source: TransferMaintenance,
     route: Wire.AuthorityRoute,
     upgradeId: Wire.Id,
     context: CallContext,
@@ -451,11 +454,26 @@ export function openBlobTransfer(host: TransferHost) {
       collectionCount: collections.size,
       partCount,
       manifestRoot: manifest.finish(),
-      // A blob store's content travels in its own parts; it needs no assets from elsewhere.
-      requiredAssetsRoot: indexWriter(ASSET_INDEX).finish(),
+      requiredAssetsRoot: assetIndex(),
       deletionWatermark: watermark,
     })
   }
+
+  /**
+   * The blobs the records name, each once in key order. A blob store's content travels in its own
+   * parts, so its index is empty.
+   */
+  function assetIndex(): Wire.DataRef {
+    const index = indexWriter(ASSET_INDEX)
+    // ponytail: sorts every asset ref in memory; stage them in a table once stores name many blobs.
+    const refs = new Map([...(assets?.list() ?? [])].map((ref) => [jcs(ref), ref]))
+    for (const key of [...refs.keys()].sort())
+      index.add(key, { kind: 'blob', schema: CONTENT, blob: refs.get(key) })
+    return index.finish()
+  }
+
+  /** How many blobs the records name that the selected blob service does not hold intact. */
+  const absent = () => (assets ? [...assets.list()].filter((ref) => !assets.present(ref)).length : 0)
 
   const control: AuthorityTransferControl = {
     /** Installs the write gate and takes the checkpoint and deletion watermark in one transaction. */
@@ -632,8 +650,12 @@ export function openBlobTransfer(host: TransferHost) {
         }
         if (count !== source.partCount || collections.size !== source.collectionCount)
           refuse('integrity', 'export parts differ from its counts')
-        for await (const _ of items(source.requiredAssetsRoot, ASSET_INDEX, 0, load))
-          refuse('integrity', 'a reference blob export needs no assets')
+        // The selected blob service moves the assets' bytes; verify and activate check they arrived.
+        for await (const item of items(source.requiredAssetsRoot, ASSET_INDEX, 0, load)) {
+          if (!assets) refuse('integrity', 'this store needs no assets')
+          if (parse('DataRef', item, 'integrity').kind !== 'blob')
+            refuse('integrity', 'an asset is not a blob')
+        }
         return host.transaction(() => {
           const prior = transfer(upgradeId)
           if (prior?.imported) return JSON.parse(prior.imported) as ImportResult
@@ -652,7 +674,7 @@ export function openBlobTransfer(host: TransferHost) {
           const result = checked('AuthorityTransferControlImportResult', {
             targetCheckpoint,
             // Provisional: the shared candidate document is not defined for authority transfers yet.
-            candidateRef: inline('agh.reference.blob/candidate@1', candidate),
+            candidateRef: inline(`agh.reference.${host.name}/candidate@1`, candidate),
           })
           db.prepare('UPDATE transfers SET imported = ? WHERE upgrade_id = ?').run(jcs(result), upgradeId)
           return result
@@ -672,7 +694,7 @@ export function openBlobTransfer(host: TransferHost) {
         const check = (checkId: string, actual: unknown, expected: unknown) => ({
           checkId,
           passed: jcs(actual) === jcs(expected),
-          evidence: inline('agh.reference.blob/check@1', { actual, expected } as Wire.JsonValue),
+          evidence: inline(`agh.reference.${host.name}/check@1`, { actual, expected } as Wire.JsonValue),
         })
         const checks = [
           check('source-export', fingerprint(input.source), fingerprint(JSON.parse(row.source as string))),
@@ -686,6 +708,7 @@ export function openBlobTransfer(host: TransferHost) {
             recordCount: checkpoint.recordCount,
           }),
           check('deletion-watermark', head(), input.source.deletionWatermark),
+          check('required-assets', absent(), 0),
         ]
         return checked('MigrationValidation', {
           upgradeId: input.upgradeId,
@@ -741,6 +764,7 @@ export function openBlobTransfer(host: TransferHost) {
             now.recordCount !== targetCheckpoint.recordCount
           )
             refuse('integrity', 'candidate records changed since the import')
+          if (absent() > 0) refuse('integrity', 'a blob the records name is missing on the blob service')
           const activated = checked('AuthorityTransferProbe', {
             state: 'activated',
             cutoverId: route.cutoverId,
@@ -854,36 +878,41 @@ export function openBlobTransfer(host: TransferHost) {
 }
 
 /**
- * The reference blob descriptor: one operation per remote catalog method whose required feature is
- * declared. Stage is left out because the reference has no upload chain; local read methods are ports.
+ * A reference descriptor: one operation per remote catalog method of the binding's contract whose
+ * required feature is declared, except the `omitted` ones the reference does not offer (the blob store
+ * has no upload chain for stage); local read methods are ports.
  */
-export function blobDescriptor(
+export function referenceDescriptor(
   binding: Wire.BindingRef,
   features: readonly string[],
   packageDigest: Wire.Digest,
+  offer: Readonly<{ omitted: readonly string[]; requires: readonly Wire.ServiceRequirement[] }>,
 ): Wire.ProviderDescriptor {
-  const methods: Readonly<Record<string, { kind: string; local?: boolean; requiredFeature?: string }>> =
-    RuntimeServiceCatalog['agh.blob'].methods
+  const contract = binding.contract as 'agh.blob' | 'agh.artifacts'
+  const catalog: Readonly<{
+    major: number
+    methods: Readonly<Record<string, { kind?: string; local?: boolean; requiredFeature?: string }>>
+  }> = RuntimeServiceCatalog[contract]
   const schemas: Readonly<Record<string, { input: Wire.SchemaRef; output: Wire.SchemaRef }>> =
-    RuntimeMethodSchemaRefs['agh.blob']
+    RuntimeMethodSchemaRefs[contract]
   const checked = validateRuntime('ProviderDescriptor', {
     providerId: binding.providerId,
-    contract: 'agh.blob',
-    major: RuntimeServiceCatalog['agh.blob'].major,
+    contract,
+    major: catalog.major,
     logicalName: binding.logicalName,
     packageVersion: '1.0.0',
     packageDigest,
     features,
     scope: 'runtime',
-    configSchema: schemaRef('agh.reference.blob/config@1'),
-    requires: [],
+    configSchema: schemaRef(`agh.reference.${contract.slice('agh.'.length)}/config@1`),
+    requires: offer.requires,
     capabilities: [],
     recovery: 'R1',
     isolation: ['trusted-in-process'],
     stateCodecs: [],
     activationMode: 'eager',
-    operations: Object.entries(methods).flatMap(([method, { kind, local, requiredFeature }]) =>
-      local || method === 'stage' || (requiredFeature && !features.includes(requiredFeature))
+    operations: Object.entries(catalog.methods).flatMap(([method, { kind, local, requiredFeature }]) =>
+      local || offer.omitted.includes(method) || (requiredFeature && !features.includes(requiredFeature))
         ? []
         : [
             {
@@ -897,6 +926,6 @@ export function blobDescriptor(
           ],
     ),
   })
-  if (!checked.ok) throw new Error('invalid reference blob descriptor')
+  if (!checked.ok) throw new Error(`invalid reference ${contract} descriptor`)
   return checked.value
 }
