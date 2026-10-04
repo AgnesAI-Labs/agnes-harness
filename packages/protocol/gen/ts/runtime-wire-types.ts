@@ -450,7 +450,10 @@ export interface RuntimeWireTypes {
   InteractionFormLink: Schemas.InteractionFormLink
   ArtifactDownloadTicket: Schemas.ArtifactDownloadTicket
   ClientHello: Schemas.ClientHello
+  ClientModuleContribution: Schemas.ClientModuleContribution
   ClientModule: Schemas.ClientModule
+  ClientContributionRef: Schemas.ClientContributionRef
+  ClientSelection: Schemas.ClientSelection
   ClientWelcome: Schemas.ClientWelcome
   DomainCommandRequest: Schemas.DomainCommandRequest
   PluginAuthorMetadata: Schemas.PluginAuthorMetadata
