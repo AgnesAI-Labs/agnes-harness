@@ -11,6 +11,10 @@ function check(condition: unknown, code: string): asserts condition {
   requireRelease(condition, code, '/clientLock')
 }
 
+type ClientLockInputs = Pick<ReleaseSetInputs, 'plan' | 'configuration' | 'resolution'> & {
+  fixture: Pick<ReleaseSetInputs['fixture'], 'contents'>
+}
+
 type ClientTarget = ClientSelection['target']
 function readTarget(value: unknown): ClientTarget {
   check(value === 'web' || value === 'tui' || value === 'im' || value === 'sdk', 'schema_invalid')
@@ -41,7 +45,7 @@ export interface ClientLock {
   diagnostics: { code: 'renderer_selection_other_target'; target: ClientTarget; index: number }[]
 }
 
-function deriveClientBundles(input: ReleaseSetInputs, delivered: unknown[]): ClientBundleLock[] {
+function deriveClientBundles(input: ClientLockInputs, delivered: unknown[]): ClientBundleLock[] {
   const release = readWire('ReleaseSet', input.plan.targetReleaseSet)
   const resolution = readWire('PackageResolverResolveResult', input.resolution)
   const manifests = new Map<string, RuntimePluginManifest>()
@@ -154,7 +158,7 @@ function deriveClientBundles(input: ReleaseSetInputs, delivered: unknown[]): Cli
 }
 
 /** Derive identities from locked manifests, never from client-supplied module descriptors. */
-export function produceClientLock(input: ReleaseSetInputs, delivered: unknown[]): Outcome<ClientLock> {
+export function produceClientLock(input: ClientLockInputs, delivered: unknown[]): Outcome<ClientLock> {
   return attempt(() => {
     const config = readWire('ConfigResolveResult', input.configuration)
     const bundles = deriveClientBundles(input, delivered)
@@ -199,7 +203,7 @@ export function produceClientLock(input: ReleaseSetInputs, delivered: unknown[])
 }
 
 /** Read compatibility never qualifies a selected new client without its derived proof. */
-export function verifyClientLock(input: ReleaseSetInputs, body: unknown): void {
+export function verifyClientLock(input: ClientLockInputs, body: unknown): void {
   const object = body as Record<string, unknown>
   const hasLock = Object.hasOwn(object, 'clientLock')
   fields(body, hasLock ? ['bundles', 'clientLock'] : ['bundles'], '/clientBundlesRef/value')

@@ -1,14 +1,12 @@
 import { createHash } from 'node:crypto'
-import { mkdtempSync } from 'node:fs'
+import { mkdtempSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { createPackageResolverProvider } from '@agnes/package-manager/runtime/package-resolver'
 import { createPackageSourceProvider } from '@agnes/package-manager/runtime/package-source'
-import { jcs } from '@agnes/protocol'
 import type {
   BindingRef,
   ConfigResolveRequest,
   ConfigResolveResult,
-  DataRef,
   PackageResolverResolveRequest,
   PackageResolverResolveResult,
   PackageSourceFetchResult,
@@ -21,7 +19,6 @@ import { validateOwnedAuthorSchemaSource } from '@agnes/protocol/runtime'
 import { createFileConfigProvider, createSchemaCatalog } from '../providers/config.js'
 import { APPLIED_CONFIGURATION_KIND, readAppliedConfiguration } from './applied-configuration.js'
 import { type ResolvedReleaseInputs, readLocatorRoute } from './inputs.js'
-import { journalRef } from './maintenance-journal.js'
 import { array, digest, equal, fields, freeze, readContent, readWire, requireRelease } from './primitives.js'
 import { ProtectedDeployment } from './protected-deployment.js'
 import { validateResolvedRelease } from './release-set.js'
@@ -54,6 +51,41 @@ export interface ReleaseProducerFacts {
   qualifiedUntil: string
   producer: BindingRef
   scope: ScopeRef
+}
+
+const resolvedOriginals = new WeakMap<
+  ReleaseProducerFacts,
+  {
+    source: ReturnType<typeof readProducerDeployment>
+    config: ReturnType<typeof createFileConfigProvider>['provider']
+    resolver: ReturnType<typeof createPackageResolverProvider>
+    packageSource: ReturnType<typeof createPackageSourceProvider>
+    configurationResult: ConfigResolveResult
+    packageResult: PackageResolverResolveResult
+    verified: {
+      packageId: string
+      metadataRequest: object
+      fetchRequest: object
+      metadata: PackageSourceResolveMetadataResult
+      snapshot: PackageSourceFetchResult
+      archive: Buffer
+    }[]
+  }
+>()
+
+export function captureResolvedProducerSource(facts: ReleaseProducerFacts) {
+  const original = resolvedOriginals.get(facts)
+  requireRelease(original, 'producer_original_resolution_missing', '/publication/source')
+  original.source.deployment.preClock()
+  return original
+}
+export function releaseResolvedProducerSource(facts: ReleaseProducerFacts): void {
+  const original = resolvedOriginals.get(facts)
+  if (!original) return
+  resolvedOriginals.delete(facts)
+  original.config.dispose()
+  original.resolver.dispose()
+  original.packageSource.dispose()
 }
 
 export function readProducerDeployment(directory: string) {
@@ -117,21 +149,6 @@ export function readProducerDeployment(directory: string) {
   }
 }
 
-function contentDigests(value: unknown, result = new Set<string>()): Set<string> {
-  if (value && typeof value === 'object') {
-    for (const [key, child] of Object.entries(value)) {
-      if (
-        (key === 'digest' || key.endsWith('Digest')) &&
-        typeof child === 'string' &&
-        /^[a-f0-9]{64}$/.test(child)
-      )
-        result.add(child)
-      contentDigests(child, result)
-    }
-  }
-  return result
-}
-
 /** Resolves actual protected local sources. This does not qualify a native installer for production. */
 export async function resolveProducerSource(
   source: ReturnType<typeof readProducerDeployment>,
@@ -179,6 +196,8 @@ export async function resolveProducerSource(
   const packageSource = createPackageSourceProvider({ cacheDir, localRoots: source.roots })
   const resolver = createPackageResolverProvider({ cacheDir })
   const config = createFileConfigProvider(() => null, catalog).provider
+  let retained = false
+  const originalVerified: NonNullable<ReturnType<typeof resolvedOriginals.get>>['verified'] = []
   try {
     for (const sourceId of packageRequest.allowedSources) {
       const refreshed = await packageSource.refreshCatalog({
@@ -205,10 +224,8 @@ export async function resolveProducerSource(
     const codeDigests: string[] = []
     for (const entry of resolution.lockGraph.entries) {
       requireRelease(entry.locator.kind === 'local', 'package_source_not_local', '/packages/locator')
-      const metadataResult = packageSource.resolveMetadata({
-        packageId: entry.packageId,
-        version: entry.version,
-      })
+      const metadataRequest = { packageId: entry.packageId, version: entry.version }
+      const metadataResult = packageSource.resolveMetadata(metadataRequest)
       requireRelease(
         metadataResult.ok,
         metadataResult.ok ? '' : metadataResult.detailCode,
@@ -247,7 +264,10 @@ export async function resolveProducerSource(
         return deployment.read(join(versionRoot, path))
       }
       for (const declaration of manifest.schemas) {
-        const document = JSON.parse(readEntry(declaration.path).toString('utf8'))
+        const originalSchema = JSON.parse(readEntry(declaration.path).toString('utf8'))
+        const document = originalSchema.ownerPackageId
+          ? validateOwnedAuthorSchemaSource(originalSchema).source.document
+          : originalSchema
         const material = array(materials.schemas, '/schemasRef/schemas').find((raw) => {
           const row = fields(
             raw,
@@ -321,10 +341,8 @@ export async function resolveProducerSource(
         )
       }
       permissions.push({ packageId: manifest.id, capabilities: manifest.permissions.runtime })
-      const snapshotResult = await packageSource.fetch({
-        locator: entry.locator,
-        expectedDigest: entry.digest,
-      })
+      const fetchRequest = { locator: entry.locator, expectedDigest: entry.digest }
+      const snapshotResult = await packageSource.fetch(fetchRequest)
       requireRelease(
         snapshotResult.ok,
         snapshotResult.ok ? '' : snapshotResult.detailCode,
@@ -336,6 +354,23 @@ export async function resolveProducerSource(
         'package_snapshot_mismatch',
         '/packages/snapshot',
       )
+      const archive = readFileSync(join(cacheDir, 'staging', entry.digest, 'archive.tar'))
+      const archiveRef = snapshot.stagedPackageRef
+      requireRelease(
+        archiveRef.kind === 'blob' &&
+          sha(archive) === archiveRef.blob.digest &&
+          archive.length === archiveRef.blob.bytes,
+        'producer_original_bytes_missing',
+        '/packages/archive',
+      )
+      originalVerified.push({
+        packageId: entry.packageId,
+        metadataRequest,
+        fetchRequest,
+        metadata: metadataResult.value,
+        snapshot: snapshotResult.value,
+        archive,
+      })
       verified.push({ packageId: entry.packageId, metadata, snapshot })
     }
     requireRelease(
@@ -346,7 +381,7 @@ export async function resolveProducerSource(
     const configured = config.resolve(configRequest)
     requireRelease(configured.ok, configured.ok ? '' : configured.refusal.code, '/configuration/resolver')
     const configuration = readWire('ConfigResolveResult', configured.result)
-    readAppliedConfiguration(release.configSnapshotRef, configuration)
+    readAppliedConfiguration(release.configSnapshotRef, configuration, release.schemasRef, contents)
     for (const pkg of configuration.profile.packages.filter((row) => row.enabled)) {
       const entry = resolution.lockGraph.entries.find((row) => row.packageId === pkg.id)
       requireRelease(
@@ -428,122 +463,28 @@ export async function resolveProducerSource(
       producer,
       scope,
     }
-    const requiredDigests = contentDigests(fixed)
+    const requiredDigests = new Set<string>()
+    // Raw verified asset inventory only; the native issuer computes the official exact Digest set.
     for (const pkg of release.packages) requiredDigests.add(pkg.digest)
     for (const d of codeDigests) requiredDigests.add(d)
     for (const row of deployment.files.values()) requiredDigests.add(sha(row.bytes))
-    return freeze({ ...fixed, requiredDigests: [...requiredDigests].sort() })
+    const facts = freeze({ ...fixed, requiredDigests: [...requiredDigests].sort() })
+    resolvedOriginals.set(facts, {
+      source,
+      config,
+      resolver,
+      packageSource,
+      configurationResult: configured.result,
+      packageResult: resolved.value,
+      verified: originalVerified,
+    })
+    retained = true
+    return facts
   } finally {
-    config.dispose()
-    resolver.dispose()
-    packageSource.dispose()
+    if (!retained) {
+      config.dispose()
+      resolver.dispose()
+      packageSource.dispose()
+    }
   }
-}
-
-export function producerFactsRef(facts: ReleaseProducerFacts): DataRef {
-  const canonicalJson = jcs(facts)
-  return journalRef(
-    { canonicalJson, contentDigest: sha(canonicalJson) },
-    'publication-source-awaiting-confirmation',
-  )
-}
-export function readProducerFacts(ref: DataRef): ReleaseProducerFacts {
-  requireRelease(ref.kind === 'inline', 'producer_source_missing', '/publication/source')
-  const row = fields(ref.value, ['canonicalJson', 'contentDigest'], '/publication/source')
-  requireRelease(
-    typeof row.canonicalJson === 'string' &&
-      sha(row.canonicalJson) === row.contentDigest &&
-      ref.digest === digest(ref.value),
-    'producer_source_mismatch',
-    '/publication/source',
-  )
-  const parsed = JSON.parse(row.canonicalJson) as ReleaseProducerFacts
-  fields(
-    parsed,
-    [
-      'configuration',
-      'packages',
-      'release',
-      'binding',
-      'observations',
-      'sourceFingerprint',
-      'qualifiedUntil',
-      'requiredDigests',
-      'producer',
-      'scope',
-    ],
-    '/publication/source',
-  )
-  readWire('ConfigResolveRequest', parsed.configuration.request)
-  readWire('ConfigResolveResult', parsed.configuration.result)
-  readWire('PackageResolverResolveRequest', parsed.packages.request)
-  readWire('PackageResolverResolveResult', parsed.packages.result)
-  readWire('ReleaseSet', parsed.release)
-  readWire('RunBinding', parsed.binding)
-  readWire('BindingRef', parsed.producer)
-  readWire('ScopeRef', parsed.scope)
-  readWire('Timestamp', parsed.qualifiedUntil)
-  readWire('Digest', parsed.sourceFingerprint)
-  fields(parsed.configuration, ['request', 'result'], '/publication/configuration')
-  fields(parsed.packages, ['request', 'result', 'verified'], '/publication/packages')
-  requireRelease(
-    parsed.packages.verified.length === parsed.packages.result.lockGraph.entries.length &&
-      new Set(parsed.packages.verified.map((row) => row.packageId)).size === parsed.packages.verified.length,
-    'producer_source_mismatch',
-    '/publication/packages',
-  )
-  for (const item of array(parsed.packages.verified, '/publication/packages')) {
-    const row = fields(item, ['packageId', 'metadata', 'snapshot'], '/publication/packages')
-    const id = readWire('Id', row.packageId)
-    const metadata = readWire('PackageSourceResolveMetadataResult', row.metadata)
-    const snapshot = readWire('PackageSourceFetchResult', row.snapshot)
-    const locked = parsed.packages.result.lockGraph.entries.find((entry) => entry.packageId === id)
-    requireRelease(
-      locked &&
-        locked.digest === snapshot.verifiedDigest &&
-        locked.digest === metadata.digest &&
-        equal(locked.manifestRef, metadata.manifestRef),
-      'producer_source_mismatch',
-      '/publication/packages',
-    )
-  }
-  fields(
-    parsed.observations,
-    [
-      'now',
-      'contents',
-      'previousRelease',
-      'previousConfiguration',
-      'directory',
-      'jointDomains',
-      'migrations',
-      'packagePermissions',
-    ],
-    '/publication/observations',
-  )
-  readWire('Timestamp', parsed.observations.now)
-  readLocatorRoute(parsed.observations.directory)
-  const digests = array(parsed.requiredDigests, '/publication/digests').map((value) =>
-    readWire('Digest', value),
-  )
-  requireRelease(
-    equal(digests, [...new Set(digests)].sort()) &&
-      [...contentDigests({ ...parsed, requiredDigests: [] })].every((value) => digests.includes(value)),
-    'producer_source_mismatch',
-    '/publication/digests',
-  )
-  requireRelease(
-    parsed.binding.releaseSetId === parsed.release.releaseSetId &&
-      equal(parsed.binding.providers, parsed.release.bindings) &&
-      parsed.binding.profileDigest === parsed.configuration.result.profileDigest &&
-      parsed.binding.presetDigest === parsed.configuration.result.presetDigest,
-    'producer_source_mismatch',
-    '/publication/binding',
-  )
-  requireRelease(
-    equal(ref, producerFactsRef(parsed)) && jcs(parsed) === row.canonicalJson,
-    'producer_source_mismatch',
-    '/publication/source',
-  )
-  return freeze(parsed)
 }
