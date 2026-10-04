@@ -11,7 +11,7 @@ it('registers the existing prepared body without changing any previously registe
   const source = runtimeSchemaDocument(document, 'PreparedModelRequest')
   const ref = RuntimeSchemaRefs.PreparedModelRequest
   expect(ref.typeId).toBe('agh.model/prepared-request@1')
-  expect(ref.revision).toBe(3)
+  expect(ref.revision).toBe(4)
   expect(ref.digest).toBe(createHash('sha256').update(jcs(source)).digest('hex'))
   const before = structuredClone(publicDocument)
   const registrations = before['x-schema-ids']
