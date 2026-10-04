@@ -41,9 +41,6 @@ export const RuntimePublic10 = Type.Module({
   "ArtifactRef": Type.Object({ "artifactId": Type.Ref('Id'), "version": Type.Ref('ArtifactVersion') }, { additionalProperties: false }),
   "Revision": Type.Ref('UInt53'),
   "DomainObjectRef": Type.Object({ "authorityId": Type.Ref('Id'), "typeId": Type.Ref('TypeId'), "id": Type.Ref('Id'), "revision": Type.Ref('Revision') }, { additionalProperties: false }),
-  "ModelFeatures": Type.Object({ "input": Type.Array(Type.Union([Type.Literal('text'), Type.Literal('image'), Type.Literal('audio'), Type.Literal('video')]), { maxItems: 10000 }), "output": Type.Array(Type.Union([Type.Literal('text'), Type.Literal('image'), Type.Literal('audio'), Type.Literal('video')]), { maxItems: 10000 }), "tools": Type.Boolean(), "structuredOutput": Type.Boolean(), "streaming": Type.Boolean() }, { additionalProperties: false }),
-  "SecretConsumerBinding": Type.Object({ "consumer": Type.Union([Type.Literal('model'), Type.Literal('mcp'), Type.Literal('tls'), Type.Literal('jwt'), Type.Literal('source-auth'), Type.Literal('surface')]), "secretId": Type.Ref('Id'), "accountRef": Type.Union([Type.Ref('Id'), Type.Null()]), "serverRef": Type.Ref('Id'), "audience": Type.String(), "purpose": Type.String() }, { additionalProperties: false }),
-  "ModelRouteSnapshot": Type.Object({ "routeId": Type.Ref('Id'), "routeRevision": Type.Ref('Revision'), "adapter": Type.Ref('BindingRef'), "model": Type.String(), "endpointRef": Type.Ref('Id'), "catalogRevision": Type.Ref('Revision'), "features": Type.Ref('ModelFeatures'), "priceVersion": Type.Ref('Id'), "credentialAudience": Type.String(), "credentialBinding": Type.Union([Type.Ref('SecretConsumerBinding'), Type.Null()]) }, { additionalProperties: false }),
   "SessionRef": Type.Object({ "sessionId": Type.Ref('Id'), "authority": Type.Ref('StateAuthorityRef') }, { additionalProperties: false }),
   "RunRef": Type.Object({ "runId": Type.Ref('Id'), "session": Type.Ref('SessionRef') }, { additionalProperties: false }),
   "InteractionRef": Type.Object({ "interactionId": Type.Ref('Id') }, { additionalProperties: false }),
@@ -135,7 +132,6 @@ export const RuntimePublic10 = Type.Module({
   "InterceptorContribution": Type.Object({ "kind": Type.Literal('interceptor'), "id": Type.String(), "implementation": Type.Ref('ContributionExport') }, { additionalProperties: false }),
   "AuthorContribution": Type.Union([Type.Ref('ToolContribution'), Type.Ref('RoutingContribution'), Type.Ref('ArtifactContribution'), Type.Ref('WorkflowContribution'), Type.Ref('ObserverContribution'), Type.Ref('RendererContribution'), Type.Ref('InterceptorContribution')]),
   "StandardToolOutput": Type.Object({ "content": Type.Array(Type.Object({ "type": Type.Literal('text'), "text": Type.String() }, { additionalProperties: false }), { maxItems: 10000 }), "structured": Type.Optional(JsonValue) }, { additionalProperties: false }),
-  "RoutingSelectInput": Type.Object({ "purpose": Type.String(), "requiredFeatures": Type.Ref('ModelFeatures'), "allowedRoutes": Type.Array(Type.Ref('ModelRouteSnapshot'), { maxItems: 10000 }), "catalogRevision": Type.Ref('Revision'), "budgetSnapshot": Type.Ref('DataRef'), "inputMeta": Type.Ref('DataRef') }, { additionalProperties: false }),
 })
 
 export const Id = RuntimePublic10.Import('Id')
@@ -204,12 +200,6 @@ export const Revision = RuntimePublic10.Import('Revision')
 export type Revision = Static<typeof Revision>
 export const DomainObjectRef = RuntimePublic10.Import('DomainObjectRef')
 export type DomainObjectRef = Static<typeof DomainObjectRef>
-export const ModelFeatures = RuntimePublic10.Import('ModelFeatures')
-export type ModelFeatures = Static<typeof ModelFeatures>
-export const SecretConsumerBinding = RuntimePublic10.Import('SecretConsumerBinding')
-export type SecretConsumerBinding = Static<typeof SecretConsumerBinding>
-export const ModelRouteSnapshot = RuntimePublic10.Import('ModelRouteSnapshot')
-export type ModelRouteSnapshot = Static<typeof ModelRouteSnapshot>
 export const SessionRef = RuntimePublic10.Import('SessionRef')
 export type SessionRef = Static<typeof SessionRef>
 export const RunRef = RuntimePublic10.Import('RunRef')
@@ -392,5 +382,3 @@ export const AuthorContribution = RuntimePublic10.Import('AuthorContribution')
 export type AuthorContribution = Static<typeof AuthorContribution>
 export const StandardToolOutput = RuntimePublic10.Import('StandardToolOutput')
 export type StandardToolOutput = Static<typeof StandardToolOutput>
-export const RoutingSelectInput = RuntimePublic10.Import('RoutingSelectInput')
-export type RoutingSelectInput = Static<typeof RoutingSelectInput>

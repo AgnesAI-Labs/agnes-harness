@@ -47,7 +47,7 @@ export const RuntimePublic13 = Type.Module({
   "Revision": Type.Ref('UInt53'),
   "DomainObjectRef": Type.Object({ "authorityId": Type.Ref('Id'), "typeId": Type.Ref('TypeId'), "id": Type.Ref('Id'), "revision": Type.Ref('Revision') }, { additionalProperties: false }),
   "ModelFeatures": Type.Object({ "input": Type.Array(Type.Union([Type.Literal('text'), Type.Literal('image'), Type.Literal('audio'), Type.Literal('video')]), { maxItems: 10000 }), "output": Type.Array(Type.Union([Type.Literal('text'), Type.Literal('image'), Type.Literal('audio'), Type.Literal('video')]), { maxItems: 10000 }), "tools": Type.Boolean(), "structuredOutput": Type.Boolean(), "streaming": Type.Boolean() }, { additionalProperties: false }),
-  "SecretConsumerBinding": Type.Object({ "consumer": Type.Union([Type.Literal('model'), Type.Literal('mcp'), Type.Literal('tls'), Type.Literal('jwt'), Type.Literal('source-auth'), Type.Literal('surface')]), "secretId": Type.Ref('Id'), "accountRef": Type.Union([Type.Ref('Id'), Type.Null()]), "serverRef": Type.Ref('Id'), "audience": Type.String(), "purpose": Type.String() }, { additionalProperties: false }),
+  "SecretConsumerBinding": Type.Object({ "consumer": Type.Union([Type.Literal('model'), Type.Literal('mcp'), Type.Literal('tls'), Type.Literal('jwt'), Type.Literal('source-auth'), Type.Literal('surface'), Type.Literal('exec'), Type.Literal('artifact-ticket')]), "secretId": Type.Ref('Id'), "accountRef": Type.Union([Type.Ref('Id'), Type.Null()]), "serverRef": Type.Ref('Id'), "audience": Type.String(), "purpose": Type.String() }, { additionalProperties: false }),
   "ModelRouteSnapshot": Type.Object({ "routeId": Type.Ref('Id'), "routeRevision": Type.Ref('Revision'), "adapter": Type.Ref('BindingRef'), "model": Type.String(), "endpointRef": Type.Ref('Id'), "catalogRevision": Type.Ref('Revision'), "features": Type.Ref('ModelFeatures'), "priceVersion": Type.Ref('Id'), "credentialAudience": Type.String(), "credentialBinding": Type.Union([Type.Ref('SecretConsumerBinding'), Type.Null()]) }, { additionalProperties: false }),
   "ToolCatalogPolicy": Type.Object({ "disclosure": Type.Union([Type.Literal('standard'), Type.Literal('code'), Type.Literal('hybrid'), Type.Literal('provider-defined')]), "discoveredResourceIds": Type.Array(Type.Ref('Id'), { maxItems: 10000 }), "compactionAgentCallable": Type.Boolean(), "mainModel": Type.Union([Type.Ref('ModelRouteSnapshot'), Type.Null()]), "policyRevision": Type.Ref('Revision') }, { additionalProperties: false }),
   "TaintSnapshot": Type.Object({ "recordRevision": Type.Integer({ minimum: 1, maximum: 9007199254740991 }), "sourceSeq": Type.Ref('UInt53'), "clearedThroughSeq": Type.Ref('UInt53') }, { additionalProperties: false }),
@@ -93,11 +93,21 @@ export const RuntimePublic13 = Type.Module({
   "JobTarget": Type.Union([Type.Object({ "kind": Type.Literal('pin'), "releaseSetId": Type.Ref('Id'), "bindingId": Type.Ref('Id'), "presetRef": Type.Ref('Id') }, { additionalProperties: false }), Type.Object({ "kind": Type.Literal('follow'), "routeId": Type.Ref('Id'), "presetRef": Type.Ref('Id') }, { additionalProperties: false })]),
   "JobSchedule": Type.Union([Type.Object({ "kind": Type.Literal('once'), "at": Type.Ref('Timestamp') }, { additionalProperties: false }), Type.Object({ "kind": Type.Literal('rrule'), "rrule": Type.String(), "timezone": Type.String(), "startsAt": Type.Ref('Timestamp'), "ambiguousLocalTime": Type.Union([Type.Literal('earlier'), Type.Literal('later')]), "nonexistentLocalTime": Type.Union([Type.Literal('skip'), Type.Literal('next-valid')]) }, { additionalProperties: false })]),
   "JobPolicy": Type.Object({ "missed": Type.Union([Type.Literal('skip'), Type.Literal('latest'), Type.Literal('catch-up')]), "maxCatchUp": Type.Ref('UInt53'), "concurrency": Type.Union([Type.Literal('forbid'), Type.Literal('queue'), Type.Literal('parallel')]), "maxConcurrent": Type.Ref('UInt53'), "maxAttempts": Type.Ref('UInt53'), "retryDelayMs": Type.Ref('UInt53'), "retryMaxDelayMs": Type.Ref('UInt53') }, { additionalProperties: false }),
-  "JobDefinition": Type.Object({ "definitionId": Type.Ref('Id'), "revision": Type.Ref('Revision'), "status": Type.Union([Type.Literal('active'), Type.Literal('paused'), Type.Literal('cancelled')]), "schedule": Type.Ref('JobSchedule'), "policy": Type.Ref('JobPolicy'), "target": Type.Ref('JobTarget'), "inputRef": Type.Ref('DataRef'), "budgetAccount": Type.Ref('DomainObjectRef'), "ownerPrincipalRef": Type.Ref('Id'), "nextDueAt": Type.Union([Type.Ref('Timestamp'), Type.Null()]), "protected": Type.Boolean() }, { additionalProperties: false }),
   "JobEdit": Type.Object({ "schedule": Type.Optional(Type.Ref('JobSchedule')), "policy": Type.Optional(Type.Ref('JobPolicy')), "target": Type.Optional(Type.Ref('JobTarget')), "inputRef": Type.Optional(Type.Ref('DataRef')), "budgetAccount": Type.Optional(Type.Ref('DomainObjectRef')), "status": Type.Optional(Type.Union([Type.Literal('active'), Type.Literal('paused')])) }, { additionalProperties: false }),
   "MemoryItem": Type.Object({ "ref": Type.Ref('DomainObjectRef'), "contentRef": Type.Ref('DataRef'), "sourceRefs": Type.Array(Type.Ref('PublicRef'), { maxItems: 10000 }), "provenance": Type.Ref('Provenance'), "trust": Type.Union([Type.Literal('system'), Type.Literal('user'), Type.Literal('external'), Type.Literal('derived')]), "labels": Type.Array(Type.String(), { maxItems: 10000 }), "ownerPrincipalRef": Type.Ref('Id'), "expiresAt": Type.Union([Type.Ref('Timestamp'), Type.Null()]), "status": Type.Union([Type.Literal('active'), Type.Literal('deleted')]) }, { additionalProperties: false }),
   "DeletionReceipt": Type.Object({ "deletionId": Type.Ref('Id'), "authorityId": Type.Ref('Id'), "watermark": Type.Ref('UInt53'), "invalidatedRefs": Type.Array(Type.Ref('PublicRef'), { maxItems: 10000 }) }, { additionalProperties: false }),
   "RetrievalHit": Type.Object({ "ref": Type.Ref('PublicRef'), "score": Type.Number(), "source": Type.Ref('Provenance'), "trust": Type.Union([Type.Literal('system'), Type.Literal('user'), Type.Literal('external'), Type.Literal('derived')]) }, { additionalProperties: false }),
+  "ResourcesRemoveResult": Type.Object({ "revision": Type.Ref('Revision') }, { additionalProperties: false }),
+  "ResourcesRetainRequest": Type.Object({ "resource": Type.Ref('PublicRef'), "purpose": Type.Union([Type.Literal('continuation'), Type.Literal('artifact'), Type.Literal('job'), Type.Literal('history')]) }, { additionalProperties: false }),
+  "ResourcesReleaseRequest": Type.Object({ "retention": Type.Ref('RetentionRef'), "reason": Type.String() }, { additionalProperties: false }),
+  "ResourcesReleaseResult": Type.Object({ "state": Type.Union([Type.Literal('release-pending'), Type.Literal('released')]), "receipt": Type.Ref('ReceiptPointer') }, { additionalProperties: false }),
+  "McpConnectResult": Type.Object({ "connectionRef": Type.Ref('DomainObjectRef'), "capabilities": Type.Ref('DataRef'), "schemaRevision": Type.Ref('Revision') }, { additionalProperties: false }),
+  "McpCallRequest": Type.Object({ "connectionRef": Type.Ref('DomainObjectRef'), "method": Type.String(), "methodSchema": Type.Ref('SchemaRef'), "params": Type.Ref('DataRef') }, { additionalProperties: false }),
+  "McpCallResult": Type.Object({ "contentRefs": Type.Array(Type.Ref('DataRef'), { maxItems: 10000 }), "provenance": Type.Ref('Provenance'), "remoteReceipt": Type.Union([Type.Ref('DataRef'), Type.Null()]) }, { additionalProperties: false }),
+  "McpReadRequest": Type.Object({ "connectionRef": Type.Ref('DomainObjectRef'), "method": Type.String(), "methodSchema": Type.Ref('SchemaRef'), "params": Type.Ref('DataRef') }, { additionalProperties: false }),
+  "McpReadResult": Type.Object({ "contentRefs": Type.Array(Type.Ref('DataRef'), { maxItems: 10000 }), "provenance": Type.Ref('Provenance'), "remoteReceipt": Type.Union([Type.Ref('DataRef'), Type.Null()]) }, { additionalProperties: false }),
+  "ToolsDescribeRequest": Type.Object({ "resource": Type.Ref('ResourceRef') }, { additionalProperties: false }),
+  "ToolsInspectRequest": Type.Object({ "action": Type.Ref('ActionRef') }, { additionalProperties: false }),
   "ToolsInspectResult": Type.Object({ "actionId": Type.Union([Type.Ref('Id'), Type.Null()]), "receipt": Type.Union([Type.Ref('ActionResultView'), Type.Null()]), "visibility": Type.Union([Type.Literal('absent'), Type.Literal('pending'), Type.Literal('ready')]) }, { additionalProperties: false }),
   "ToolsClassifyRequest": Type.Object({ "definition": Type.Ref('ToolDefinition'), "input": Type.Ref('DataRef') }, { additionalProperties: false }),
   "ToolsCatalogRequest": Type.Object({ "tools": Type.Array(Type.Ref('ToolDefinition'), { maxItems: 10000 }), "policy": Type.Ref('ToolCatalogPolicy') }, { additionalProperties: false }),
@@ -190,14 +200,6 @@ export const RuntimePublic13 = Type.Module({
   "JobsRequestCreateRequest": Type.Object({ "schedule": Type.Ref('JobSchedule'), "policy": Type.Ref('JobPolicy'), "target": Type.Ref('JobTarget'), "inputRef": Type.Ref('DataRef'), "budgetAccount": Type.Ref('DomainObjectRef') }, { additionalProperties: false }),
   "JobsRequestUpdateRequest": Type.Object({ "id": Type.Ref('Id'), "expectedRevision": Type.Ref('Revision'), "changes": Type.Ref('JobEdit') }, { additionalProperties: false }),
   "JobsRequestCancelRequest": Type.Object({ "id": Type.Ref('Id'), "expectedRevision": Type.Ref('Revision'), "reason": Type.String(), "cancelActive": Type.Boolean() }, { additionalProperties: false }),
-  "JobsRequestCancelResult": Type.Object({ "definition": Type.Ref('JobDefinition'), "cancellationRefs": Type.Array(Type.Ref('ReceiptPointer'), { maxItems: 10000 }) }, { additionalProperties: false }),
-  "JobsRequestReserveDetachedRequest": Type.Object({ "sourceActionKey": Type.String(), "inputDigest": Type.Ref('Digest'), "providerBinding": Type.Ref('BindingRef') }, { additionalProperties: false }),
-  "JobsClaimOccurrenceRequest": Type.Object({ "id": Type.Ref('Id'), "expectedRevision": Type.Ref('Revision'), "ownerId": Type.Ref('Id'), "until": Type.Ref('Timestamp') }, { additionalProperties: false }),
-  "JobsCompleteOccurrenceRequest": Type.Object({ "id": Type.Ref('Id'), "expectedEpoch": Type.Ref('UInt53'), "outcomeRef": Type.Ref('ReceiptPointer') }, { additionalProperties: false }),
-  "JobsReserveDetachedRequest": Type.Object({ "mutationId": Type.Ref('Id'), "fingerprint": Type.Ref('Digest'), "sourceAction": Type.Ref('ActionRef'), "sourceRun": Type.Ref('RunRef'), "sourceParentActionId": Type.Union([Type.Ref('Id'), Type.Null()]), "sourceActionKey": Type.String(), "inputDigest": Type.Ref('Digest'), "providerBinding": Type.Ref('BindingRef'), "budgetScope": Type.Ref('DomainObjectRef'), "cancellationOwner": Type.Ref('DomainObjectRef') }, { additionalProperties: false }),
-  "JobsAttachDetachedRequest": Type.Object({ "acceptanceId": Type.Ref('Id'), "committedAction": Type.Ref('ActionRef') }, { additionalProperties: false }),
-  "JobsCancelDetachedRequest": Type.Object({ "acceptanceId": Type.Ref('Id'), "expectedRevision": Type.Ref('Revision'), "reason": Type.String() }, { additionalProperties: false }),
-  "JobsInspectRequest": Type.Object({ "id": Type.Ref('Id'), "cursor": Type.Union([Type.Ref('Cursor'), Type.Null()]), "limit": Type.Ref('UInt53') }, { additionalProperties: false }),
 })
 
 export const Id = RuntimePublic13.Import('Id')
@@ -368,8 +370,6 @@ export const JobSchedule = RuntimePublic13.Import('JobSchedule')
 export type JobSchedule = Static<typeof JobSchedule>
 export const JobPolicy = RuntimePublic13.Import('JobPolicy')
 export type JobPolicy = Static<typeof JobPolicy>
-export const JobDefinition = RuntimePublic13.Import('JobDefinition')
-export type JobDefinition = Static<typeof JobDefinition>
 export const JobEdit = RuntimePublic13.Import('JobEdit')
 export type JobEdit = Static<typeof JobEdit>
 export const MemoryItem = RuntimePublic13.Import('MemoryItem')
@@ -378,6 +378,28 @@ export const DeletionReceipt = RuntimePublic13.Import('DeletionReceipt')
 export type DeletionReceipt = Static<typeof DeletionReceipt>
 export const RetrievalHit = RuntimePublic13.Import('RetrievalHit')
 export type RetrievalHit = Static<typeof RetrievalHit>
+export const ResourcesRemoveResult = RuntimePublic13.Import('ResourcesRemoveResult')
+export type ResourcesRemoveResult = Static<typeof ResourcesRemoveResult>
+export const ResourcesRetainRequest = RuntimePublic13.Import('ResourcesRetainRequest')
+export type ResourcesRetainRequest = Static<typeof ResourcesRetainRequest>
+export const ResourcesReleaseRequest = RuntimePublic13.Import('ResourcesReleaseRequest')
+export type ResourcesReleaseRequest = Static<typeof ResourcesReleaseRequest>
+export const ResourcesReleaseResult = RuntimePublic13.Import('ResourcesReleaseResult')
+export type ResourcesReleaseResult = Static<typeof ResourcesReleaseResult>
+export const McpConnectResult = RuntimePublic13.Import('McpConnectResult')
+export type McpConnectResult = Static<typeof McpConnectResult>
+export const McpCallRequest = RuntimePublic13.Import('McpCallRequest')
+export type McpCallRequest = Static<typeof McpCallRequest>
+export const McpCallResult = RuntimePublic13.Import('McpCallResult')
+export type McpCallResult = Static<typeof McpCallResult>
+export const McpReadRequest = RuntimePublic13.Import('McpReadRequest')
+export type McpReadRequest = Static<typeof McpReadRequest>
+export const McpReadResult = RuntimePublic13.Import('McpReadResult')
+export type McpReadResult = Static<typeof McpReadResult>
+export const ToolsDescribeRequest = RuntimePublic13.Import('ToolsDescribeRequest')
+export type ToolsDescribeRequest = Static<typeof ToolsDescribeRequest>
+export const ToolsInspectRequest = RuntimePublic13.Import('ToolsInspectRequest')
+export type ToolsInspectRequest = Static<typeof ToolsInspectRequest>
 export const ToolsInspectResult = RuntimePublic13.Import('ToolsInspectResult')
 export type ToolsInspectResult = Static<typeof ToolsInspectResult>
 export const ToolsClassifyRequest = RuntimePublic13.Import('ToolsClassifyRequest')
@@ -562,19 +584,3 @@ export const JobsRequestUpdateRequest = RuntimePublic13.Import('JobsRequestUpdat
 export type JobsRequestUpdateRequest = Static<typeof JobsRequestUpdateRequest>
 export const JobsRequestCancelRequest = RuntimePublic13.Import('JobsRequestCancelRequest')
 export type JobsRequestCancelRequest = Static<typeof JobsRequestCancelRequest>
-export const JobsRequestCancelResult = RuntimePublic13.Import('JobsRequestCancelResult')
-export type JobsRequestCancelResult = Static<typeof JobsRequestCancelResult>
-export const JobsRequestReserveDetachedRequest = RuntimePublic13.Import('JobsRequestReserveDetachedRequest')
-export type JobsRequestReserveDetachedRequest = Static<typeof JobsRequestReserveDetachedRequest>
-export const JobsClaimOccurrenceRequest = RuntimePublic13.Import('JobsClaimOccurrenceRequest')
-export type JobsClaimOccurrenceRequest = Static<typeof JobsClaimOccurrenceRequest>
-export const JobsCompleteOccurrenceRequest = RuntimePublic13.Import('JobsCompleteOccurrenceRequest')
-export type JobsCompleteOccurrenceRequest = Static<typeof JobsCompleteOccurrenceRequest>
-export const JobsReserveDetachedRequest = RuntimePublic13.Import('JobsReserveDetachedRequest')
-export type JobsReserveDetachedRequest = Static<typeof JobsReserveDetachedRequest>
-export const JobsAttachDetachedRequest = RuntimePublic13.Import('JobsAttachDetachedRequest')
-export type JobsAttachDetachedRequest = Static<typeof JobsAttachDetachedRequest>
-export const JobsCancelDetachedRequest = RuntimePublic13.Import('JobsCancelDetachedRequest')
-export type JobsCancelDetachedRequest = Static<typeof JobsCancelDetachedRequest>
-export const JobsInspectRequest = RuntimePublic13.Import('JobsInspectRequest')
-export type JobsInspectRequest = Static<typeof JobsInspectRequest>

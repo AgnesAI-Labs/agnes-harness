@@ -2113,6 +2113,12 @@
             },
             {
               "const": "surface"
+            },
+            {
+              "const": "exec"
+            },
+            {
+              "const": "artifact-ticket"
             }
           ]
         },
@@ -40442,6 +40448,8 @@
     "maxBinaryMetadataBytes": 8192
   },
   "x-schema-revisions": {
+    "RetrievalSearchRemoteRequest": 2,
+    "RoutingSelectResult": 2,
     "EmbeddingVectors": 1,
     "AckOutboxRequest": 2,
     "ActionFrame": 2,
@@ -40616,7 +40624,7 @@
     "EffectPortsInvokeRequest": 2,
     "EffectPortsStreamRequest": 2,
     "EffectResult": 2,
-    "EmbeddingEncodeRequest": 2,
+    "EmbeddingEncodeRequest": 3,
     "EmbeddingEncodeResult": 2,
     "EventsPublishRequest": 3,
     "EventsPublishResult": 3,
@@ -40684,10 +40692,10 @@
     "ModelAdapterReconcileRequest": 2,
     "ModelInferRequest": 2,
     "ModelOutput": 2,
-    "ModelPrepareRequest": 3,
-    "ModelPrepareRequestRequest": 3,
-    "ModelPrepareRequestResult": 2,
-    "ModelPrepareResult": 2,
+    "ModelPrepareRequest": 4,
+    "ModelPrepareRequestRequest": 4,
+    "ModelPrepareRequestResult": 3,
+    "ModelPrepareResult": 3,
     "NetworkRequest": 2,
     "NetworkRequestResult": 2,
     "NewRunSpec": 2,
@@ -40728,7 +40736,7 @@
     "PreparedAction": 2,
     "PreparedHookInput": 2,
     "PreparedMedia": 3,
-    "PreparedModelRequest": 3,
+    "PreparedModelRequest": 4,
     "ProbeActionResultResult": 2,
     "ProjectionChange": 3,
     "ProjectionChanges": 3,
@@ -40775,7 +40783,7 @@
     "RetrievalSearchRemoteResult": 3,
     "RetrievalSearchRequest": 2,
     "RetrievalSearchResult": 3,
-    "RoutingSelectInput": 2,
+    "RoutingSelectInput": 3,
     "RunAdmission": 2,
     "RunBinding": 2,
     "RunFrame": 2,
@@ -40865,7 +40873,7 @@
     "ToolExecutionConstraints": 2,
     "ToolModelResult": 3,
     "ToolResult": 3,
-    "ToolsCatalogRequest": 2,
+    "ToolsCatalogRequest": 3,
     "ToolsClassifyRequest": 2,
     "ToolsInspectResult": 2,
     "ToolsReconcileRequest": 2,
