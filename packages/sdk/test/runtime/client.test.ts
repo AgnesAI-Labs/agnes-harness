@@ -29,18 +29,19 @@ import {
   validateClientTransportRequestFrame,
   validateRuntime,
 } from '@agnes/protocol/runtime'
-import { afterEach, describe, expect, it, vi } from 'vitest'
-import WebSocket, { WebSocketServer } from 'ws'
-import { memoryJournal } from '../../src/journal.js'
-import { artifactReader } from '../../src/runtime/artifact-reader.js'
-import { type RuntimeSubscription, subscriptions } from '../../src/runtime/client-subscriptions.js'
 import {
+  artifactReader,
   type LocalRefusal,
   RUNTIME_JOURNAL_KEY,
   type RuntimeClientOptions,
   RuntimeClientTransport,
+  type RuntimeSubscription,
   type RuntimeWebSocketFactory,
-} from '../../src/runtime/client-transport.js'
+  subscriptions,
+} from '@agnes/sdk/runtime'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import WebSocket, { WebSocketServer } from 'ws'
+import { memoryJournal } from '../../src/journal.js'
 
 const { routes, metadataHeader, binaryMime } = RuntimeClientTransportWire
 const { maxReaderQueueFrames } = RuntimeClientTransportPolicy
