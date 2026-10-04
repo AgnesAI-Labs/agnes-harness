@@ -7,6 +7,10 @@ import { describe, expect, it } from 'vitest'
 
 const execute = promisify(execFile)
 const indexModule = new URL('../../../src/runtime/migration/export-index.ts', import.meta.url).href
+// Hosted Linux used ~437s to build and ~53s per 100k verified parts: about 705s
+// for build plus its first-half verification and an estimated 535s for recovery.
+// This memory/scale check has finite budgets rather than a product latency SLA.
+const phaseTimeoutMs = 900_000
 // Measure actual RSS in isolated processes with a declared heap budget, without explicit GC.
 // This is index-layer evidence, not the default Host's memory SLA or a State/Budget fence.
 const program = `
@@ -20,6 +24,11 @@ const count = 1_000_000, digest = 'ab'.repeat(32);
 const baselineRSS = process.memoryUsage().rss;
 let peakRSS = baselineRSS, indexBytes = 0, maxPageBytes = 0, pageCount = 0, accepted = 0;
 const sample = () => { peakRSS = Math.max(peakRSS, process.memoryUsage().rss); };
+const started = performance.now();
+const progress = (stage) => console.error(JSON.stringify({ mode, stage,
+  elapsedMs: performance.now() - started, accepted, indexBytes, pageCount,
+  memory: process.memoryUsage(), resources: process.resourceUsage() }));
+progress('start');
 const storage = {
   async put(bytes, typeId) {
     sample();
@@ -39,6 +48,7 @@ const storage = {
 };
 async function* parts() {
   for (let index = 0; index < count; index++) {
+    if (index && index % 100_000 === 0) progress('parts-' + index);
     const key = 'record-' + String(index).padStart(8, '0') + '-' + 'x'.repeat(235);
     yield { collectionId: 'events', schema: { typeId: 'agh.state/events@1', revision: 1, digest },
       partIndex: index, firstRecordKey: key, lastRecordKey: key, records: 1, contentDigest: digest,
@@ -52,6 +62,7 @@ let buildMs = null, recoverMs = null, consumed;
 if (mode === 'build') {
   const start = performance.now();
   const root = await buildExportIndex(EXPORT_INDEX, parts(), storage);
+  progress('index-built');
   writeFileSync(join(directory, 'root.json'), JSON.stringify(root), { flush: true });
   buildMs = performance.now() - start;
   const initial = initialIndexCheckpoint(root, EXPORT_INDEX, digest);
@@ -59,6 +70,7 @@ if (mode === 'build') {
     await verifyExportIndex(root, initial, storage, async (item, next) => {
       if (item.partIndex !== next.consumed - 1) throw new Error('Part order changed');
       accepted++;
+      if (accepted % 100_000 === 0) progress('checkpoint-prefix');
       if (next.consumed === count / 2) {
         writeFileSync(checkpointFile, JSON.stringify(next), { flush: true });
         throw new Error('persisted checkpoint');
@@ -75,6 +87,7 @@ if (mode === 'build') {
   const final = await verifyExportIndex(root, checkpoint, storage, async (item, next) => {
     if (item.partIndex !== next.consumed - 1) throw new Error('Resumed part order changed');
     accepted++;
+    if (accepted % 100_000 === 0) progress('recover');
   });
   consumed = final.consumed;
   recoverMs = performance.now() - start;
@@ -95,41 +108,66 @@ interface ScaleReport {
 }
 
 describe('migration index scale', () => {
-  it('writes one million parts and resumes a persisted checkpoint in a new bounded-heap process', async () => {
-    const directory = mkdtempSync(join(tmpdir(), 'large-export-index-'))
-    async function phase(mode: 'build' | 'recover'): Promise<ScaleReport> {
-      const { stdout } = await execute(
-        process.execPath,
-        [
-          '--max-old-space-size=128',
-          '--import',
-          'tsx',
-          '--input-type=module',
-          '-e',
-          program,
-          directory,
-          mode,
-        ],
-        { timeout: 600_000, maxBuffer: 1024 * 1024 },
-      )
-      console.info(stdout.trim())
-      return JSON.parse(stdout) as ScaleReport
-    }
-    try {
-      const built = await phase('build')
-      const recovered = await phase('recover')
-      expect(built.pid).not.toBe(recovered.pid)
-      expect(built.consumed).toBe(500_000)
-      expect(recovered.consumed).toBe(1_000_000)
-      expect(built.accepted).toBe(500_000)
-      expect(recovered.accepted).toBe(500_000)
-      expect(built.indexBytes).toBeGreaterThan(1024 ** 3)
-      expect(built.maxPageBytes).toBeLessThanOrEqual(1024 * 1024)
-      for (const report of [built, recovered]) {
-        expect(report.additionalRSS).toBeLessThanOrEqual(256 * 1024 ** 2)
+  it(
+    'writes one million parts and resumes a persisted checkpoint in a new bounded-heap process',
+    async () => {
+      const directory = mkdtempSync(join(tmpdir(), 'large-export-index-'))
+      async function phase(mode: 'build' | 'recover'): Promise<ScaleReport> {
+        const started = performance.now()
+        try {
+          const { stdout } = await execute(
+            process.execPath,
+            [
+              '--max-old-space-size=128',
+              '--import',
+              'tsx',
+              '--input-type=module',
+              '-e',
+              program,
+              directory,
+              mode,
+            ],
+            { timeout: phaseTimeoutMs, maxBuffer: 1024 * 1024 },
+          )
+          console.info(stdout.trim())
+          return JSON.parse(stdout) as ScaleReport
+        } catch (error) {
+          const failure = error as Error & {
+            code?: string | number
+            signal?: string | null
+            killed?: boolean
+            stdout?: string
+            stderr?: string
+          }
+          console.error('migration index subprocess failure', {
+            mode,
+            elapsedMs: performance.now() - started,
+            code: failure.code,
+            signal: failure.signal,
+            killed: failure.killed,
+            stdout: failure.stdout,
+            stderr: failure.stderr,
+          })
+          throw error
+        }
       }
-    } finally {
-      rmSync(directory, { recursive: true, force: true })
-    }
-  }, 1_200_000)
+      try {
+        const built = await phase('build')
+        const recovered = await phase('recover')
+        expect(built.pid).not.toBe(recovered.pid)
+        expect(built.consumed).toBe(500_000)
+        expect(recovered.consumed).toBe(1_000_000)
+        expect(built.accepted).toBe(500_000)
+        expect(recovered.accepted).toBe(500_000)
+        expect(built.indexBytes).toBeGreaterThan(1024 ** 3)
+        expect(built.maxPageBytes).toBeLessThanOrEqual(1024 * 1024)
+        for (const report of [built, recovered]) {
+          expect(report.additionalRSS).toBeLessThanOrEqual(256 * 1024 ** 2)
+        }
+      } finally {
+        rmSync(directory, { recursive: true, force: true })
+      }
+    },
+    2 * phaseTimeoutMs + 30_000,
+  )
 })

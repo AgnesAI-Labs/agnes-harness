@@ -55,6 +55,7 @@
     "runtime/client/interaction-conformance.ts",
     "runtime/client/projection-conformance.ts",
     "runtime/client/projection-conformance.e2e.test.ts",
+    "runtime/client/projection-sources.test.ts",
     "runtime/client/renderer-conformance.ts",
     "runtime/client/renderer-conformance.e2e.test.ts",
     "runtime/client/shell-conformance.ts",
@@ -80,6 +81,9 @@
     },
     {
       "path": "../../packages/host"
+    },
+    {
+      "path": "../../packages/daemon"
     },
     {
       "path": "../../examples/runtime-reference"

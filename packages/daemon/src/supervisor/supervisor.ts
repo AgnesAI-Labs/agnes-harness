@@ -8,6 +8,7 @@ import {
   composeSecrets,
   createExtensionActivationBarrier,
   createFileAudit,
+  createHostProjectionOwner,
   createHostRuntimeClientPorts,
   createPlatform,
   createSecretsEnv,
@@ -17,6 +18,7 @@ import {
   type ExtensionActivationBarrier,
   type Host,
   HostError,
+  type HostProjectionOwner,
   type HostRuntimeClientInstallation,
   type HostSession,
   type TableStore as HostTableStore,
@@ -637,6 +639,7 @@ export type StartSupervisorOptions = {
   processIdentity?: (pid: number) => Promise<ProcessIdentity>
   /** Host-owned read adapters and C14 policy; omitted services and authorization fail closed. */
   runtimeClientInstallation?: HostRuntimeClientInstallation
+  projectionOwner?: HostProjectionOwner
   /**
    * A privileged view of core's tables, used by crash reclaim. The sqliteTables test fixture can
    * provide this combined view; Host deliberately does not expose one in production today.
@@ -856,7 +859,8 @@ export async function startSupervisor(o: StartSupervisorOptions): Promise<{
   // its own comment at `startupCleanup.length = 0`: it is wiped the moment startup succeeds and only
   // ever fires on a startup abort, never on a later `close()`).
   let surfaceController: SurfaceController | undefined
-  const startupCleanup: Array<() => void | Promise<void>> = []
+  const projectionOwner = o.projectionOwner ?? createHostProjectionOwner()
+  const startupCleanup: Array<() => void | Promise<void>> = [() => projectionOwner.close()]
   const cleanupStartup = async (): Promise<void> => {
     for (const cleanup of startupCleanup.reverse()) {
       try {
@@ -1925,6 +1929,10 @@ export async function startSupervisor(o: StartSupervisorOptions): Promise<{
         : undefined
     if (wsServer) startupCleanup.push(() => wsServer.close())
     const localSecret = o.config.localWeb && wsToken ? wsToken : randomBytes(32).toString('base64url')
+    const projectionPorts = createHostRuntimeClientPorts(projectionOwner.installation, {
+      principalId: 'local',
+      generation: lock.owner.generation,
+    })
     const runtimeServer = await listenWebSocket({
       addr: '127.0.0.1:0',
       token: runtimeClientBearer(localSecret, lock.owner.generation),
@@ -1938,10 +1946,13 @@ export async function startSupervisor(o: StartSupervisorOptions): Promise<{
           )
         },
       },
-      runtimeClient: createHostRuntimeClientPorts(o.runtimeClientInstallation, {
-        principalId: 'local',
-        generation: lock.owner.generation,
-      }),
+      runtimeClient: {
+        ...projectionPorts,
+        ...createHostRuntimeClientPorts(o.runtimeClientInstallation, {
+          principalId: 'local',
+          generation: lock.owner.generation,
+        }),
+      },
       endpoint: () => {
         throw new Error('runtime HTTP does not accept RPC upgrades')
       },
@@ -1987,6 +1998,7 @@ export async function startSupervisor(o: StartSupervisorOptions): Promise<{
             Promise.resolve().then(() => server.stopAccepting()),
             ...(wsServer ? [Promise.resolve().then(() => wsServer.stopAccepting())] : []),
             Promise.resolve().then(() => runtimeServer.stopAccepting()),
+            Promise.resolve().then(() => projectionOwner.close()),
             ...(stopJwks ? [Promise.resolve().then(() => stopJwks())] : []),
           ])
           const errors = results
@@ -2193,6 +2205,7 @@ export type RunAgnesdDeps = {
   packageAdmin?: StartSupervisorOptions['packageAdmin']
   resources?: StartSupervisorOptions['resources']
   runtimeClientInstallation?: HostRuntimeClientInstallation
+  projectionOwner?: HostProjectionOwner
 }
 
 /** `runAgnesd` accepts a partial argument object so embedded launchers can rely on scope defaults. */
@@ -2426,6 +2439,7 @@ export async function runAgnesd(args: RunAgnesdArgs = {}, deps: RunAgnesdDeps = 
     profile,
     profileDir: scope.profileDir,
     ...(deps.runtimeClientInstallation ? { runtimeClientInstallation: deps.runtimeClientInstallation } : {}),
+    ...(deps.projectionOwner ? { projectionOwner: deps.projectionOwner } : {}),
     profileFile: scope.profileFile,
     workspaceRoot: scope.workspace,
     configuration,

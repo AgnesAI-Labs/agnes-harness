@@ -39,7 +39,8 @@ const implementations = [
   { name: 'reference', construct: constructReferenceReleaseSet, create: createReferenceAssemblyProvider },
 ]
 
-describe('detached immutable assembly plans', () => {
+// Both implementations validate complete frozen releases; hosted Linux exceeds its 5s default.
+describe('detached immutable assembly plans', { timeout: 15_000 }, () => {
   describe.each(['unpaired', 'joint', 'migration', 'joint and migration', 'explicit feature', 'community'])(
     'recipe %s',
     (recipe) => {

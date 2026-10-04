@@ -129,6 +129,7 @@ function results(docsOnly: boolean): Record<string, { result: string; outputs?: 
     check: { result: docsOnly ? 'skipped' : 'success' },
     'windows-check-result': { result: docsOnly ? 'skipped' : 'success' },
     heavy: { result: docsOnly ? 'skipped' : 'success' },
+    'migration-scale': { result: docsOnly ? 'skipped' : 'success' },
     'runtime-package': { result: docsOnly ? 'skipped' : 'success' },
     sea: { result: docsOnly ? 'skipped' : 'success' },
   }
@@ -139,17 +140,23 @@ describe('CI result', () => {
     expect(() => verifyResults(results(docsOnly))).not.toThrow()
   })
 
-  it.each(['changes', 'static', 'check', 'windows-check-result', 'heavy', 'runtime-package', 'sea'])(
-    'fails closed for a failed, cancelled, skipped or missing code job: %s',
-    (job) => {
-      for (const state of ['failure', 'cancelled', 'skipped', undefined]) {
-        const needs = results(false)
-        if (state) needs[job] = { ...needs[job], result: state }
-        else delete needs[job]
-        expect(() => verifyResults(needs)).toThrow()
-      }
-    },
-  )
+  it.each([
+    'changes',
+    'static',
+    'check',
+    'windows-check-result',
+    'heavy',
+    'migration-scale',
+    'runtime-package',
+    'sea',
+  ])('fails closed for a failed, cancelled, skipped or missing code job: %s', (job) => {
+    for (const state of ['failure', 'cancelled', 'skipped', undefined]) {
+      const needs = results(false)
+      if (state) needs[job] = { ...needs[job], result: state }
+      else delete needs[job]
+      expect(() => verifyResults(needs)).toThrow()
+    }
+  })
 
   it('does not hide a documentation check failure behind intentional runtime skips', () => {
     const needs = results(true)

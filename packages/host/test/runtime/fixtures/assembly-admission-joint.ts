@@ -25,7 +25,7 @@ import { fixtureHash, fixtureRef, fixtureWire } from './assembly-maintenance-wir
 export async function openJointAdmission(
   directory: string,
   input: AdmissionFixtureInput,
-  checkpoint: (point: string) => void = () => {},
+  checkpoint: (point: string) => void | Promise<void> = () => {},
   split: false | 'separate-file' | 'separate-connection' = false,
 ) {
   const authority = { authorityId: 'fixture-state', tenantId: 'fixture-tenant', authorityEpoch: 1 }
@@ -211,6 +211,9 @@ export async function openJointAdmission(
     async afterCommit(request) {
       checkpoint(request.transactionId.startsWith('ticket:') ? 'issue:after' : 'confirm:after')
     },
+    async afterRead(recordId, recordIds) {
+      if (recordIds.length === 2 && recordId.startsWith('ticket:')) await checkpoint('read:ticket')
+    },
   })
   const headRecordId = 'fixture-current-head'
   if (!maintenance.get(headRecordId)) {
@@ -259,9 +262,11 @@ export async function openJointAdmission(
       operation = 'create'
       return store.createRun(...args)
     },
-    cancelAdmission: (...args: Parameters<typeof store.cancelAdmission>) => {
+    cancelAdmission: async (...args: Parameters<typeof store.cancelAdmission>) => {
       operation = 'cancel'
-      return store.cancelAdmission(...args)
+      const reply = await store.cancelAdmission(...args)
+      await checkpoint('cancel:result')
+      return reply
     },
   }
   const coordinator = createAdmissionCoordinator(ports, {

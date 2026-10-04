@@ -85,6 +85,9 @@ jobs:
       - run: pnpm --filter @agnes/host build:native
       - run: node examples/runtime-reference/scripts/build-native.mjs
       - run: pnpm --filter @agnes/system-node build:native
+      # The fast service-root baseline starts the packaged Host and requires this artifact.
+      - name: build local acceptance package on each platform
+        run: pnpm --filter @agnes/cli build:local
       - name: Windows Job protocol and honest execution admission
         if: runner.os == 'Windows' && matrix.shard == '3/3'
         run: pnpm exec vitest run packages/host/test/runtime/exec.test.ts packages/host/test/runtime/windows-job-owner.test.ts examples/runtime-reference/src/providers/sandbox-exec-lock.test.ts --maxWorkers=1
@@ -118,9 +121,6 @@ jobs:
         if: ${{ !cancelled() && steps.suite.outcome != 'skipped' && (runner.os != 'Windows' || matrix.shard == '1/3') }}
         env: { AGH_BOOT_BUDGET_REPORT: '1' }
         run: pnpm exec vitest run packages/cli/test/boot-budget.test.ts --maxWorkers=1
-      - name: build local acceptance package on each platform
-        if: ${{ runner.os != 'Windows' || matrix.shard == '1/3' }}
-        run: pnpm --filter @agnes/cli build:local
       - name: verify packaged directory publication capability
         if: ${{ runner.os != 'Windows' || matrix.shard == '1/3' }}
         run: node packages/system-node/scripts/check-directory-publication.mjs packages/cli/dist/local/node_modules/@agnes/system-node/dist/native/agnes-system.node
@@ -207,7 +207,7 @@ jobs:
         run: pnpm exec vitest run packages/host/test/runtime/windows-job-owner.e2e.test.ts --maxWorkers=1
       - name: test heavy tier
         env:
-          AGNES_TEST_EXCLUDE: ${{ runner.os == 'Windows' && 'packages/cli/test/acp-concurrency.e2e.test.ts,packages/cli/test/dbh-m06-ephemeral-leak.e2e.test.ts,packages/daemon/test/service-worker.e2e.test.ts,packages/cli/test/built-resource-mcp.e2e.test.ts,packages/host/test/runtime/windows-job-owner.e2e.test.ts' || '' }}
+          AGNES_TEST_EXCLUDE: ${{ runner.os == 'Windows' && 'packages/cli/test/acp-concurrency.e2e.test.ts,packages/cli/test/dbh-m06-ephemeral-leak.e2e.test.ts,packages/daemon/test/service-worker.e2e.test.ts,packages/cli/test/built-resource-mcp.e2e.test.ts,packages/host/test/runtime/windows-job-owner.e2e.test.ts' || runner.os == 'Linux' && 'packages/host/test/runtime/migration/large-export.slow.test.ts' || '' }}
         run: pnpm exec vitest run --project heavy --maxWorkers=${{ runner.os == 'Windows' && 1 || 2 }}
       # The ACP cold-start bound measures concurrent CLI processes. Run it without other Vitest
       # files competing for this runner's cores, while retaining its original assertion.
@@ -227,6 +227,23 @@ jobs:
       - name: Windows built CLI managed MCP lifecycle
         if: runner.os == 'Windows'
         run: pnpm exec vitest run packages/cli/test/built-resource-mcp.e2e.test.ts --maxWorkers=1
+      - name: verify working tree is clean
+        run: git diff --exit-code
+  migration-scale:
+    name: migration scale (ubuntu-latest)
+    needs: changes
+    if: needs.changes.outputs.docs-only != 'true'
+    runs-on: ubuntu-latest
+    # A separate runner preserves CPU/disk isolation and a full bounded workload
+    # budget even when the ordinary heavy tier consumes most of its own deadline.
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with: { node-version: 24, cache: pnpm }
+      - run: pnpm install --frozen-lockfile --ignore-scripts
+      - run: pnpm exec vitest run packages/host/test/runtime/migration/large-export.slow.test.ts --maxWorkers=1
       - name: verify working tree is clean
         run: git diff --exit-code
   runtime-package:
@@ -312,7 +329,7 @@ jobs:
   result:
     name: CI result
     if: always()
-    needs: [changes, static, check, windows-check-result, heavy, runtime-package, sea]
+    needs: [changes, static, check, windows-check-result, heavy, migration-scale, runtime-package, sea]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:

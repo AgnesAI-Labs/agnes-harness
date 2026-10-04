@@ -18,6 +18,7 @@ export function sameConnectionMaintenance(
     issue?: (request: MaintenanceStoreCommitRequest, context: CallContext) => void
     beforeCommit?: (request: MaintenanceStoreCommitRequest, context: CallContext) => Promise<void>
     afterCommit?: (request: MaintenanceStoreCommitRequest, context: CallContext) => Promise<void>
+    afterRead?: (recordId: string, recordIds: readonly string[]) => Promise<void>
   } = {},
 ) {
   db.exec(`PRAGMA busy_timeout=5000; PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL;
@@ -161,6 +162,21 @@ export function sameConnectionMaintenance(
         )
       )
         return fail('schema_invalid')
+      const records: MaintenanceEnvelopeJsonValue[] = []
+      if (input.recordIds !== null) {
+        // Materialize one SQLite statement before decoding: ticket and pin share a snapshot.
+        const bodies = new Map(
+          db
+            .prepare('SELECT id, body FROM records WHERE id IN (SELECT value FROM json_each(?))')
+            .all(JSON.stringify(input.recordIds))
+            .map((row) => [String(row.id), String(row.body)]),
+        )
+        for (const id of input.recordIds as string[]) {
+          const body = bodies.get(id)
+          if (body) records.push(fixtureWire('MaintenanceEnvelopeJsonValue', JSON.parse(body)))
+          await hooks.afterRead?.(id, input.recordIds as string[])
+        }
+      }
       const output =
         input.recordIds === null
           ? {
@@ -170,10 +186,7 @@ export function sameConnectionMaintenance(
                 .map((row) => String(row.id)),
             }
           : {
-              records: (input.recordIds as string[]).flatMap((id) => {
-                const record = read(db, id)
-                return record ? [record] : []
-              }),
+              records,
             }
       return {
         ok: true,

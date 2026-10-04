@@ -90,7 +90,8 @@ function locked(input: Input) {
 const producers = [produceClientLock, produceReferenceClientLock]
 const constructors = [constructReleaseSet, constructReferenceReleaseSet]
 
-describe('package contribution client locks', () => {
+// Full source validation and tampered projection checks take up to 15s on hosted Linux.
+describe('package contribution client locks', { timeout: 30_000 }, () => {
   it('projects only the requested target with diagnostics and locks original identities and exports', () => {
     const input = clientFixture(),
       before = JSON.stringify(input)
