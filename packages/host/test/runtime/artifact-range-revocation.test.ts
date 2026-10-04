@@ -3,6 +3,7 @@ import { existsSync, readFileSync } from 'node:fs'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { DatabaseSync } from 'node:sqlite'
 import type { ArtifactAccessPort, CallContext, Outcome, ScopeRef } from '@agnes/extension-api/runtime'
 import { createTestServiceContainer } from '@agnes/extension-api/testkit'
 import type * as Wire from '@agnes/protocol/runtime'
@@ -20,6 +21,7 @@ import {
   type OwnerAction,
 } from '../../src/runtime/providers/artifacts.js'
 import { type BlobService, createBlobService } from '../../src/runtime/providers/blob.js'
+import { artifactTicketKeys } from './artifact-ticket-key-fixture.js'
 
 const START = Date.parse('2026-10-01T00:00:00.000Z')
 const MIB = RuntimeClientTransportPolicy.maxRangeBytes
@@ -29,7 +31,6 @@ const BLOB_BINDING = {
   logicalName: 'default',
   providerId: 'agh.blob.default',
 }
-const KEY = { version: 'key-1', key: new Uint8Array(32).fill(7) }
 const sha = (bytes: Uint8Array) => createHash('sha256').update(bytes).digest('hex')
 const CONTENT = new Uint8Array(MIB + MIB / 2).map((_, index) => (index * 7) % 256)
 
@@ -80,9 +81,9 @@ function refused(outcome: Outcome<unknown>): string {
 
 let clock = START
 const dirs: string[] = []
-const closers: (() => void)[] = []
+const closers: (() => unknown)[] = []
 afterEach(async () => {
-  for (const close of closers.splice(0)) close()
+  for (const close of closers.splice(0)) await close()
   for (const dir of dirs.splice(0)) await rm(dir, { recursive: true, force: true })
   clock = START
 })
@@ -94,14 +95,18 @@ type Published = {
   access: ArtifactAccessPort
   ref: Wire.ArtifactRef
   grant: Wire.ArtifactAccessGrantValue
+  /** A real ticket key broker, offered to the first service only when asked. */
+  tickets: ReturnType<typeof artifactTicketKeys>
   /** Another service over the same stores with exactly these access options. */
   reopen(options: ArtifactAccessOptions): ArtifactAccessPort
 }
 
 /** One ready artifact of 1.5 MiB with a read and download grant for user-1. */
-async function published(options: ArtifactAccessOptions = { ticketKey: KEY }): Promise<Published> {
+async function published(offerTickets = true): Promise<Published> {
   const dataDir = await mkdtemp(join(tmpdir(), 'agh-artifact-range-'))
   dirs.push(dataDir)
+  const tickets = artifactTicketKeys(join(dataDir, 'secrets'), () => clock)
+  closers.push(() => tickets.broker.close())
   const blob = createBlobService({
     dataDir,
     authorityId: 'blob-authority',
@@ -126,7 +131,10 @@ async function published(options: ArtifactAccessOptions = { ticketKey: KEY }): P
     closers.push(() => service.close())
     return service
   }
-  const artifacts = reopen({ authorize: (context) => context.authorizationRef === 'auth-ok', ...options })
+  const artifacts = reopen({
+    authorize: (context) => context.authorizationRef === 'auth-ok',
+    ...(offerTickets ? { ticketKeys: tickets.keys } : {}),
+  })
   const descriptor = RuntimeSchemaRefs.ArtifactContentDescriptor
   const reserved = ok(
     await artifacts.reserve(
@@ -201,6 +209,7 @@ async function published(options: ArtifactAccessOptions = { ticketKey: KEY }): P
     access: artifacts.artifactAccess,
     ref,
     grant,
+    tickets,
     reopen: (extra) => reopen(extra).artifactAccess,
   }
 }
@@ -233,6 +242,16 @@ function ticketParts(ticket: Wire.ArtifactDownloadTicket) {
   }
 }
 
+/** The stored tickets' request ids and key versions, as a restarted process would find them. */
+function storedTickets(world: Published) {
+  const db = new DatabaseSync(join(world.dataDir, 'artifacts', 'artifacts-service.db'), { readOnly: true })
+  try {
+    return db.prepare('SELECT request_id, key_version FROM tickets ORDER BY request_id').all()
+  } finally {
+    db.close()
+  }
+}
+
 describe('artifact ranges', () => {
   it('reads 1 byte to 1 MiB, refuses a start at or past the end and clamps a range crossing it', async () => {
     const world = await published()
@@ -253,7 +272,7 @@ describe('artifact ranges', () => {
     })
     expect(refused(await read(0, 1, ctx({ principalRef: 'user-2' })))).toBe('permission_denied')
     expect(refused(await read(0, 1, ctx({ authorizationRef: 'auth-other' })))).toBe('permission_denied')
-    const unauthorized = world.reopen({ ticketKey: KEY })
+    const unauthorized = world.reopen({ ticketKeys: world.tickets.keys })
     expect(refused(await unauthorized.readRange({ ...world.ref, offset: 0, length: 1 }, ctx()))).toBe(
       'blocked',
     )
@@ -282,14 +301,21 @@ describe('artifact ranges', () => {
 })
 
 describe('artifact download tickets', () => {
-  it('blocks both download methods without a ticket key', async () => {
-    const world = await published({})
+  it('blocks both download methods without a ticket key broker and stores no ticket the broker refuses', async () => {
+    const world = await published(false)
     const request = { requestId: 'download-1', input: { ...world.ref, disposition: 'attachment' as const } }
     expect(refused(await world.access.openDownload(request, ctx()))).toBe('blocked')
     const nonce = randomBytes(32).toString('base64url')
     expect(
       refused(await world.access.redeemDownload({ ticketId: 'ticket-1', nonce, offset: 0 }, ctx())),
     ).toBe('blocked')
+    const brokered = world.reopen({
+      authorize: (context) => context.authorizationRef === 'auth-ok',
+      ticketKeys: world.tickets.keys,
+    })
+    world.tickets.auth.withdraw()
+    expect(refused(await brokered.openDownload(request, ctx()))).toBe('ticket_delegation')
+    expect(storedTickets(world)).toEqual([])
   })
 
   it('returns the original ticket for a repeated request id and keeps only a nonce digest', async () => {
@@ -304,12 +330,20 @@ describe('artifact download tickets', () => {
     expect(ticket.url.startsWith('/api/runtime/artifact/download/')).toBe(true)
     clock += 1000
     expect(ok(await world.access.openDownload(request, ctx()))).toEqual(ticket)
+    const racing = { ...request, requestId: 'download-2' }
+    const [one, two] = await Promise.all([
+      world.access.openDownload(racing, ctx()),
+      world.access.openDownload(racing, ctx()),
+    ])
+    expect(ok(two)).toEqual(ok(one))
     const inline = { ...request, input: { ...request.input, disposition: 'inline' as const } }
     expect(refused(await world.access.openDownload(inline, ctx()))).toBe('idempotency_conflict')
     const { nonce } = ticketParts(ticket)
     for (const file of ['artifacts-service.db', 'artifacts-service.db-wal']) {
       const path = join(world.dataDir, 'artifacts', file)
-      if (existsSync(path)) expect(readFileSync(path).includes(Buffer.from(nonce))).toBe(false)
+      if (!existsSync(path)) continue
+      for (const form of [Buffer.from(nonce), Buffer.from(nonce, 'base64url')])
+        expect(readFileSync(path).includes(form)).toBe(false)
     }
     clock = START + RuntimeArtifactPolicy.downloadTicketTtlMs
     expect(refused(await world.access.openDownload(request, ctx()))).toBe('ticket_expired')
@@ -362,6 +396,42 @@ describe('artifact download tickets', () => {
     clock = START
     ok(await revokeGrant(world))
     expect(refused(await redeem(0))).toBe('revoked')
+  })
+
+  it('keeps a ticket sealed under a rotated key until it expires and refuses every ticket of a revoked key at once', async () => {
+    const world = await published()
+    const { broker, auth } = world.tickets
+    const request = (requestId: string) => ({
+      requestId,
+      input: { ...world.ref, disposition: 'inline' as const },
+    })
+    const old = ok(await world.access.openDownload(request('download-1'), ctx()))
+    ok(
+      await broker.rotate(
+        { secretId: 'ticket-key', newVersionRef: 'secret://fixture/ticket-v2' },
+        auth.call({}, true),
+      ),
+    )
+    expect(ok(await world.access.openDownload(request('download-1'), ctx()))).toEqual(old)
+    const whole = ok(await world.access.redeemDownload({ ...ticketParts(old), offset: 0 }, ctx()))
+    expect(sha(await collect(whole.stream))).toBe(sha(CONTENT))
+    const fresh = ok(await world.access.openDownload(request('download-2'), ctx()))
+    expect(storedTickets(world)).toEqual([
+      { request_id: 'download-1', key_version: 'v1' },
+      { request_id: 'download-2', key_version: 'v2' },
+    ])
+
+    ok(await broker.revoke({ secretId: 'ticket-key', reason: 'emergency' }, auth.call({}, true)))
+    for (const [requestId, ticket] of [
+      ['download-1', old],
+      ['download-2', fresh],
+    ] as const) {
+      expect(refused(await world.access.openDownload(request(requestId), ctx()))).toBe('ticket_revoked')
+      expect(refused(await world.access.redeemDownload({ ...ticketParts(ticket), offset: 0 }, ctx()))).toBe(
+        'ticket_revoked',
+      )
+    }
+    expect(refused(await world.access.openDownload(request('download-3'), ctx()))).toBe('ticket_revoked')
   })
 
   it('stops redeeming once the artifact version is revoked', async () => {
