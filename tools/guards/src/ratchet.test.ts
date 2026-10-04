@@ -1550,7 +1550,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // another version or schema are refused. Measured 13705, exact, no spare (+92).
   // The shell services double answers registry and presentation calls synchronously. Measured 13709,
   // exact, no spare (+4).
-  'packages/extension-api/testkit': 13709,
+  // Events contract cases: resumable pages, idempotent publish, crash recovery. Measured 14341, exact (+632).
+  'packages/extension-api/testkit': 14341,
   // 2026-09-10: raised from 2500 by Task 15 (stream-disconnect reconnection). The new
   // reattach.ts (the Reconnector: backoff loop, OVERLOADED's retryAfterMs override) plus
   // Session.recover()/waitForQuiescence and Client's reconnect wiring (emit(), the
