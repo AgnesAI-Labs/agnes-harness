@@ -470,7 +470,8 @@ export function createModelAdapterFactory(
               const usageState: {
                 tokens: { input: number; output: number; cacheRead: number; cacheWrite: number } | null
                 evidence: ModelUsageEvidence
-              } = { tokens: null, evidence: {} }
+                reportedFees: boolean
+              } = { tokens: null, evidence: {}, reportedFees: false }
               const requestRef = external(frame)
               const unknownMeasurement: UsageMeasurement = {
                 kind: 'unknown',
@@ -541,6 +542,7 @@ export function createModelAdapterFactory(
                     if (event.type === 'usage') {
                       usageState.tokens = event.tokens
                       usageState.evidence = modelUsageEvidence(source.model, event)
+                      usageState.reportedFees = event.billing !== undefined || event.credits !== undefined
                       response = event.response ?? response
                     }
                     if (event.type === 'done')
@@ -582,6 +584,16 @@ export function createModelAdapterFactory(
                   sourceReceipt: receipt,
                   replacesFactIds: [],
                 }
+                let dimensions = original.usage.encode(measurement)
+                if (!dimensions.ok && !usageState.reportedFees) {
+                  const {
+                    billing: _billing,
+                    credits: _credits,
+                    creditSource: _creditSource,
+                    ...legacy
+                  } = measurement
+                  dimensions = original.usage.encode(legacy)
+                }
                 usage = [
                   {
                     usageId: `${frame.attemptId}:model`,
@@ -589,7 +601,7 @@ export function createModelAdapterFactory(
                     actionId: frame.actionId,
                     attemptId: frame.attemptId,
                     source: source.prepared.target.adapter,
-                    dimensions: checked(original.usage.encode(measurement)),
+                    dimensions: checked(dimensions),
                     externalRequest: requestRef,
                     observedAt: new Date().toISOString(),
                     certainty: measured ? 'measured' : 'unknown',
@@ -631,15 +643,18 @@ export function createModelAdapterFactory(
                       usage: sent ? usage : [],
                     }
               } catch {
-                if (sent && usageState.tokens !== null)
-                  usage = [
-                    {
-                      ...unknownFact,
-                      dimensions: checked(
-                        original.usage.encode({ ...unknownMeasurement, ...usageState.evidence }),
-                      ),
-                    },
-                  ]
+                if (sent && usageState.tokens !== null) {
+                  usage = [unknownFact]
+                  try {
+                    const dimensions = original.usage.encode({
+                      ...unknownMeasurement,
+                      ...usageState.evidence,
+                    })
+                    if (dimensions.ok) usage = [{ ...unknownFact, dimensions: dimensions.value }]
+                  } catch {
+                    // Preserve the already encoded unknown fact when the selected codec cannot retain fees.
+                  }
+                }
                 result = {
                   ...failure(
                     sent ? 'unknown_effect' : controller.signal.aborted ? 'cancelled' : 'denied',
