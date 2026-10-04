@@ -7,7 +7,10 @@ import {
   providerFileForContract,
 } from '@agnes/extension-api/testkit'
 import { canonicalJsonDigest } from '@agnes/protocol/runtime'
-import { registerShellContract } from '../../../../packages/extension-api/testkit/runtime/contracts/shell.js'
+import {
+  registerShellContract,
+  type ShellConformanceBinding,
+} from '../../../../packages/extension-api/testkit/runtime/contracts/shell.js'
 import { createWorkbenchShell } from '../client/workbench-shell.js'
 
 // Assigning the browser factory here checks its mirrored shapes against the generated types.
@@ -27,13 +30,14 @@ const build: BuildIdentity = {
 
 /**
  * Registers the shell cases for the reference workbench shell, reported under `providerId` (the runner
- * passes the name it was asked for, such as `reference`). This package carries no DOM implementation, so
- * the caller supplies `container`, which makes an empty element attached to a document for each mount.
+ * passes the name it was asked for, such as `reference`). This package carries no DOM implementation and
+ * no client host, so the caller supplies `container`, which makes an empty element attached to a document
+ * for each mount, and `select`, which runs a web client host's shell selection.
  */
 export function bindShellContract(
   harness: ConformanceHarness,
   command: string,
-  options: Readonly<{ providerId?: string; container: () => HTMLElement }>,
+  options: Readonly<{ providerId?: string } & Pick<ShellConformanceBinding, 'container' | 'select'>>,
 ): void {
   registerShellContract(harness, {
     providerId: options.providerId ?? 'reference.shell',
@@ -45,5 +49,6 @@ export function bindShellContract(
     releaseSetDigest: sha256(new URL('../../package.json', import.meta.url)),
     shell: reference,
     container: options.container,
+    select: options.select,
   })
 }
