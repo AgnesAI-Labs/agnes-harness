@@ -317,6 +317,14 @@ describe('default blob service retention', () => {
     expect(existsSync(join(root, 'artifacts'))).toBe(false)
     const content = join(root, 'runtime-services', 'blob', 'artifacts', 'sha256', upload.digest.slice(0, 2))
     expect(existsSync(join(content, upload.digest))).toBe(true)
+
+    // Opened on the Host data directory itself, it would share the legacy CAS; it refuses instead.
+    const legacy = join(root, 'artifacts', 'sha256', upload.digest.slice(0, 2))
+    mkdirSync(legacy, { recursive: true })
+    writeFileSync(join(legacy, upload.digest), 'hello')
+    expect(() => open(root)).toThrow(/another artifact store/)
+    expect(existsSync(join(root, 'artifacts', 'blob-service.db'))).toBe(false)
+    open(runtimeServiceDataDir(root, 'blob')).close()
   })
 
   it('aborts an expired upload only after its writer stopped, inside the requested scope, then deletes it', async () => {
