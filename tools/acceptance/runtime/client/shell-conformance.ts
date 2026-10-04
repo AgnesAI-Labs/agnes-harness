@@ -1,6 +1,15 @@
+import { fileURLToPath, pathToFileURL } from 'node:url'
 import { Window } from 'happy-dom'
+import { createWorkbenchShell } from '../../../../examples/runtime-reference/src/client/workbench-shell.ts'
 import { bindShellContract } from '../../../../examples/runtime-reference/src/providers/shell.ts'
-import type { ShellConformanceBinding } from '../../../../packages/extension-api/testkit/runtime/contracts/shell.ts'
+import {
+  recoverShell,
+  type ShellConformanceBinding,
+} from '../../../../packages/extension-api/testkit/runtime/contracts/shell.ts'
+import {
+  holdUIRegistryClient,
+  restartUIRegistryClient,
+} from '../../../../packages/extension-api/testkit/runtime/contracts/ui-registry.ts'
 import type { ConformanceHarness } from '../../../../packages/extension-api/testkit/runtime/harness.ts'
 import { createClientHostRuntime } from '../../../../packages/web-client/src/runtime/client-host.ts'
 import { resolveClientSelection } from '../../../../packages/web-client/src/runtime/client-selection.ts'
@@ -8,6 +17,9 @@ import { withConformanceBuild } from '../build-identity.js'
 
 const CONTRACT = 'agh.shell'
 const REFERENCE = 'reference'
+
+const root = fileURLToPath(new URL('../../../../', import.meta.url))
+const self = fileURLToPath(import.meta.url)
 
 // Every container is a fresh element in one happy-dom document. The runner has no teardown, so the
 // document lives until the process exits.
@@ -63,6 +75,24 @@ export async function bindConformance(
     providerId: REFERENCE,
     container,
     select,
+    // The client processes run this file, which selects through the same host into the same DOM. The
+    // UI registry's client process runner kills the first on READY and waits for the second to exit.
+    restart: (directory) => restartUIRegistryClient(['--import', 'tsx', self, directory], root),
   })
   return { contracts: [CONTRACT], providers: [REFERENCE] }
+}
+
+// The client process `recover` starts: `<directory>`. The rebuilt one exits once it has recorded what
+// it saw, whatever the DOM still holds open.
+const entry = process.argv[1]
+if (entry !== undefined && import.meta.url === pathToFileURL(entry).href) {
+  const directory = process.argv[2]
+  if (directory === undefined) throw new Error('expected: <directory>')
+  recoverShell({ shell: createWorkbenchShell, container, select }, directory, holdUIRegistryClient).then(
+    () => process.exit(0),
+    (error: unknown) => {
+      process.stderr.write(`${error instanceof Error ? error.message : 'shell client failed'}\n`)
+      process.exit(1)
+    },
+  )
 }
