@@ -26,6 +26,17 @@ const contribution: ClientModuleContribution = {
   contributionId: 'message-renderer',
   kind: 'renderer',
   targets: ['web', 'tui', 'im', 'sdk'],
+  descriptor: {
+    id: 'message-renderer',
+    packageDigest: digest,
+    renderKey: 'message',
+    targets: ['web', 'tui', 'im', 'sdk'],
+    viewSchemaRanges: [{ typeId: 'demo/view@1', minRevision: 1, maxRevision: 1 }],
+    requiredFeatures: [],
+    optionalFeatures: [],
+    scope: 'view',
+    entry: './renderer.js',
+  },
 }
 const module: ClientModule = {
   moduleId: 'client-module',
@@ -123,9 +134,10 @@ describe('client selection wire values', () => {
   })
 
   it('bounds contribution targets and limits shells to Web without relaxing registry or renderer targets', () => {
+    const { descriptor: _descriptor, ...withoutDescriptor } = contribution
     for (const kind of ['registry', 'renderer'] as const) {
       const candidate =
-        kind === 'registry' ? { ...contribution, kind, export: 'namedRegistry' } : contribution
+        kind === 'registry' ? { ...withoutDescriptor, kind, export: 'namedRegistry' } : contribution
       expect(validateRuntime('ClientModuleContribution', candidate).ok).toBe(true)
       for (const targets of [[], ['web', 'web'], ['desktop'], ['web', 'tui', 'im', 'sdk', 'web']])
         expect(validateRuntime('ClientModuleContribution', { ...candidate, targets }).ok).toBe(false)
@@ -166,6 +178,55 @@ describe('client selection wire values', () => {
     expect(validateRuntime('ClientModuleContribution', { ...contribution, export: 'namedRenderer' }).ok).toBe(
       false,
     )
+  })
+
+  it('requires the original complete renderer descriptor without a clientEntry alias', () => {
+    expect(validateRuntime('ClientModuleContribution', contribution).ok).toBe(true)
+    const { descriptor: _descriptor, ...missing } = contribution
+    expect(validateRuntime('ClientModuleContribution', missing).ok).toBe(false)
+    expect(
+      validateRuntime('ClientModuleContribution', {
+        ...contribution,
+        descriptor: { ...contribution.descriptor, viewSchemaRanges: undefined },
+      }).ok,
+    ).toBe(false)
+    expect(
+      validateRuntime('ClientModuleContribution', {
+        ...contribution,
+        descriptor: { ...contribution.descriptor, entry: 'https://foreign.example/renderer.js' },
+      }).ok,
+    ).toBe(false)
+    expect(validateRuntime('ClientModuleContribution', { ...contribution, clientEntry: 'activate' }).ok).toBe(
+      false,
+    )
+    expect(
+      validateRuntime('ClientModuleContribution', {
+        contributionId: 'shell',
+        kind: 'shell',
+        export: 'namedShell',
+        targets: ['web'],
+        descriptor: contribution.descriptor,
+      }).ok,
+    ).toBe(false)
+  })
+
+  it('accepts the existing pure renderer package descriptor', () => {
+    const manifest = JSON.parse(
+      readFileSync(
+        `${import.meta.dirname}/../../../../examples/packages/runtime-ui-bundle/v1/agnes.plugin.json`,
+        'utf8',
+      ),
+    )
+    const renderer = manifest.renderers[0]
+    expect(manifest.clientServices).toEqual([])
+    expect(
+      validateRuntime('ClientModuleContribution', {
+        contributionId: renderer.id,
+        kind: 'renderer',
+        targets: renderer.targets,
+        descriptor: renderer,
+      }).ok,
+    ).toBe(true)
   })
 
   it('enforces the 128 contribution and renderer-selection collection limits', () => {
@@ -254,7 +315,7 @@ describe('client selection wire values', () => {
     ).toBe(true)
   })
 
-  it('records the changed closure at revision five and contribution revision two', () => {
+  it('records the changed closure at revision six and contribution revision three', () => {
     const document = JSON.parse(readFileSync(`${directory}/public.json`, 'utf8'))
     for (const name of [
       'ClientModule',
@@ -263,14 +324,14 @@ describe('client selection wire values', () => {
       'ClientBootstrapResult',
       'ClientCatalogPageResult',
     ])
-      expect(document['x-schema-revisions'][name]).toBe(5)
+      expect(document['x-schema-revisions'][name]).toBe(6)
     for (const name of ['ClientContributionRef', 'ClientSelection']) {
       expect(document['x-schema-revisions'][name]).toBe(1)
       expect(document['x-schema-ids'][name]).toBeUndefined()
     }
-    expect(document['x-schema-revisions'].ClientModuleContribution).toBe(2)
+    expect(document['x-schema-revisions'].ClientModuleContribution).toBe(3)
     expect(document['x-schema-ids'].ClientModuleContribution).toBeUndefined()
     const hello = RuntimeMethodSchemaRefs['agh.transport'].handshake
-    expect(hello.output.revision).toBe(5)
+    expect(hello.output.revision).toBe(6)
   })
 })

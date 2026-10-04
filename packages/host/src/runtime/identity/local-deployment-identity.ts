@@ -56,6 +56,28 @@ const claimsCodec = defineGeneratedAuthorSchema<{
   },
 })
 
+export type LocalDeploymentIdentity = ReturnType<typeof createLocalDeploymentIdentity>
+const nativeIdentities = new WeakMap<
+  object,
+  Readonly<{
+    database: DatabaseSync
+    authority: StateAuthorityRef
+    scope: ScopeRef
+    installationId: string
+    owner: LocalDeploymentOwner
+    check: () => void
+  }>
+>()
+
+/** Private original issuer/connection handshake; it never accepts a structural capture callback. */
+export function localDeploymentIdentityBinding(identity: LocalDeploymentIdentity, database: DatabaseSync) {
+  const binding = nativeIdentities.get(identity)
+  if (!binding || binding.database !== database || !localDeploymentOwnerUsesDatabase(binding.owner, database))
+    return undefined
+  binding.check()
+  return binding
+}
+
 /** Internal installer composition. No credential, transport evidence or principal comes from a caller. */
 export function createLocalDeploymentIdentity(
   input: Readonly<{
@@ -117,7 +139,7 @@ export function createLocalDeploymentIdentity(
     const wrote = anchor.writeJournal(journalId, { phase: 'installing', config: safeConfig.value.json })
     if (!wrote.ok) throw new Error('Original local identity installation anchor cannot be retained')
     db.exec(`CREATE TABLE runtime_local_identity_installation (
-      id TEXT PRIMARY KEY,body_json TEXT NOT NULL,revoked INTEGER NOT NULL DEFAULT 0);
+      id TEXT PRIMARY KEY,body_json TEXT NOT NULL,revoked INTEGER NOT NULL DEFAULT 0,maintenance_json TEXT);
       CREATE TABLE runtime_local_identity_connections (
       id TEXT PRIMARY KEY,installation_id TEXT NOT NULL,generation TEXT UNIQUE NOT NULL,
       process_id INTEGER NOT NULL,closed INTEGER NOT NULL DEFAULT 0);
@@ -418,7 +440,7 @@ export function createLocalDeploymentIdentity(
       enrolling = false
     }
   }
-  return Object.freeze({
+  const api = Object.freeze({
     connect,
     capture,
     revoke() {
@@ -431,4 +453,20 @@ export function createLocalDeploymentIdentity(
       authority.close()
     },
   })
+  nativeIdentities.set(
+    api,
+    Object.freeze({
+      database: db,
+      authority: stateAuthority,
+      scope,
+      installationId: configDigest,
+      owner,
+      check() {
+        if (closed) throw new Error('Original local identity is closed')
+        owner.dynamicCheck()
+        installationCurrent()
+      },
+    }),
+  )
+  return api
 }

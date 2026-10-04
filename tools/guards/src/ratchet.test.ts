@@ -258,7 +258,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // Default UI registry over a private slot ledger. Measured 2126, exact, no spare (+171).
   // Renderer context restricted to its mounted view and the generic domain view card. Measured 2443,
   // exact, no spare (+317).
-  'packages/web-client/src': 2546,
+  // Fifth main synchronization merged with the current integration tip. Measured 3475, exact, no spare.
+  'packages/web-client/src': 3475,
   'packages/web-slots/src': 605,
   // Failed shell calls read as their exit code (+19 lines); measured 4891, exact cap.
   // B-line diagnostics dialog: React view adds 147 lines; measured 4706, exact cap.
@@ -2760,7 +2761,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // Original local deployment owner observations and native lifetime checks add 166 measured lines; no spare.
   // Local deployment C14 owner and native generation checks add 431 measured lines; no spare.
   // Selected pricing quotes are verified before settlement. Measured 77427, exact, no spare.
-  'packages/host/src': 77438,
+  // Fifth main synchronization merged with the current integration tip. Measured 78075, exact, no spare.
+  'packages/host/src': 78075,
   'packages/host/src/ext-host/service-invocation': 247,
   // T5.2's permission projector is kept independently bounded so later extension-host work cannot
   // hide in the package-wide increment. Measured source: 86 lines.
