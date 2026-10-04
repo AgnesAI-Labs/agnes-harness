@@ -1004,8 +1004,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // Measured 25811, exact cap.
   // The approval card's summary line is built by summarizeCall (new file). Measured 25861 (+50), exact cap.
   // Sourced memory and hybrid retrieval providers. Measured 32058, exact, no spare.
-  // Pure Effects factory consumes a captured stage with full frame/source checks. Measured 32751, exact.
-  'packages/core/src': 32751,
+  'packages/core/src': 32652,
   // 2026-09-15: DeepSeek V4 Pro/Flash ship a known-thinking-corrections table (new file) so the
   // product corrects pi-ai's verified-wrong reasoning_effort data out of the box, instead of
   // requiring every deployment to hand-edit thinkingEfforts once they notice. Measured 3347.

@@ -731,7 +731,7 @@ describe('default Effects factory ABI scaffold', () => {
   })
 })
 
-it('consumes a captured pure stage only when the full action frame matches', async () => {
+it('rejects an ordinary frozen callback without genuine Host source installation', async () => {
   let captured = 0
   let handled = 0
   const pure = stage([
@@ -749,6 +749,7 @@ it('consumes a captured pure stage only when the full action frame matches', asy
       return pure
     },
   })
+  // @ts-expect-error Untrusted callers cannot supply a stage source to the public factory.
   const factory = createDefaultEffectsFactory(descriptor, configCodec, source)
   const signal = new AbortController().signal
   const scope = {
@@ -831,48 +832,11 @@ it('consumes a captured pure stage only when the full action frame matches', asy
     },
   }
   const result = await action.execute(frame, context)
-  expect(result).toMatchObject({ outcome: 'succeeded', result: { schema: refs.runHooks.output } })
-  expect(captured).toBe(1)
-  expect(handled).toBe(1)
-  expect(await action.execute({ ...frame, inputDigest: input.digest }, context)).toMatchObject({
+  expect(result).toMatchObject({
     outcome: 'failed',
-    error: { detailCode: 'effects_stage_frame_mismatch' },
+    error: { detailCode: 'effects_stage_source_unavailable' },
   })
-  expect(captured).toBe(1)
-  expect(
-    await action.execute({ ...frame, context: { ...frame.context, invocationId: 'forged' } }, context),
-  ).toMatchObject({
-    outcome: 'failed',
-    error: { detailCode: 'effects_stage_frame_mismatch' },
-  })
-  expect(captured).toBe(1)
-  expect(
-    await action.execute(
-      {
-        ...frame,
-        input: { ...input, digest: 'b'.repeat(64) },
-        inputDigest: canonicalJsonDigest({ ...input, digest: 'b'.repeat(64) }),
-      },
-      context,
-    ),
-  ).toMatchObject({ outcome: 'failed', error: { detailCode: 'effects_stage_input_proof' } })
-  expect(captured).toBe(1)
-  const cancelled = new AbortController()
-  cancelled.abort()
-  expect(
-    await action.execute(frame, { ...context, call: { ...call, signal: cancelled.signal } }),
-  ).toMatchObject({
-    outcome: 'cancelled',
-    error: { detailCode: 'effects_cancelled' },
-  })
-  expect(captured).toBe(1)
-  expect(handled).toBe(1)
+  expect(captured).toBe(0)
+  expect(handled).toBe(0)
   await provider.close('completed')
-  expect(() =>
-    createDefaultEffectsFactory(descriptor, configCodec, {
-      get capture() {
-        throw new Error('accessor must not run')
-      },
-    }),
-  ).toThrow(/own capture/)
 })
