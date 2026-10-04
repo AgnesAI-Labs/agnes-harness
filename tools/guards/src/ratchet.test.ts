@@ -2786,7 +2786,9 @@ const INITIAL_CEILING: Record<string, number> = {
   // Fifth main synchronization merged with the current integration tip. Measured 78108, exact, no spare.
   // Publication fences are confirmed through locked source owners. Measured 78115, exact, no spare.
   // Publication fences are confirmed through locked source owners. Measured 78258, exact, no spare.
-  'packages/host/src': 78258,
+  // Original no-hook Receipt cold source verifies persisted Action/Attempt/dispatch/intake/commit relations.
+  // Measured 78585 (+327), exact cap, no spare.
+  'packages/host/src': 78585,
   'packages/host/src/ext-host/service-invocation': 247,
   // T5.2's permission projector is kept independently bounded so later extension-host work cannot
   // hide in the package-wide increment. Measured source: 86 lines.

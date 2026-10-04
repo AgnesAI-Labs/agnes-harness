@@ -3625,6 +3625,18 @@ describe('runtime state receipt intake, outbox, and query flush', () => {
     const accepted = unwrap(await store.intakeReceipt(intake, context()), 'intake')
     expect(accepted).toEqual({ intakeId: 'intake-1', state: 'accepted' })
     expect(count(path, 'events')).toBe(before + 1)
+    const owner = stateOwners.get(store)
+    if (!owner) throw new Error('State owner missing')
+    const original = await owner.readEffectsReceiptSource(receiptId)
+    expect(original).toMatchObject({
+      sessionId: 'session-1',
+      runId: 'run-1',
+      actionId: intake.receipt.actionId,
+      attemptId: request.attemptId,
+      receiptId,
+      receipt: intake.receipt,
+    })
+    expect(count(path, 'events')).toBe(before + 1)
     const signalId = stableId('sig', `authority-1\0${receiptId}\0run`)
     const visibility = recordValue<{
       state: string
@@ -3721,7 +3733,122 @@ describe('runtime state receipt intake, outbox, and query flush', () => {
     store.close()
     const reopened = openStore(path)
     expect((await reopened.open(readOpen('open-after-intake'), context())).ok).toBe(true)
+    const coldOwner = stateOwners.get(reopened)
+    if (!coldOwner) throw new Error('cold State owner missing')
+    expect(await coldOwner.readEffectsReceiptSource(receiptId)).toEqual(original)
     reopened.close()
+  })
+
+  it('refuses a missing original receipt-created side without a recovery write', async () => {
+    const { path, store } = await leasedRun()
+    await preparedInvocation(store, 'invocation-1', 0)
+    const action = preparedAction('receipt-source-side')
+    unwrap(
+      await store.advanceRun(advanceBody('receipt-source-advance', 'invocation-1', 0, [action]), context()),
+      'advance',
+    )
+    const request = dispatchBody(action, 'invocation-1', 1, 'receipt-source-dispatch')
+    const admitted = unwrap(await store.dispatchAdmission(request, context()), 'dispatch')
+    if (admitted.state !== 'admitted') throw new Error('expected an admission')
+    await markRunning(store, 'invocation-1', 1, request.attemptId, 'receipt-source-running')
+    const intake = intakeOf(
+      'receipt-source-intake',
+      action,
+      request.attemptId,
+      admitted.authorizationId,
+      'receipt-source',
+    )
+    unwrap(await store.intakeReceipt(intake, context()), 'intake')
+    const owner = stateOwners.get(store)
+    if (!owner) throw new Error('State owner missing')
+    const source = await owner.readEffectsReceiptSource('receipt-source')
+    const before = count(path, 'events')
+    mutate(path, (db) => {
+      db.prepare("DELETE FROM runtime_side_entries WHERE commit_id=? AND kind='receipt-created'").run(
+        source.commitId,
+      )
+    })
+    await expect(owner.readEffectsReceiptSource('receipt-source')).rejects.toThrow()
+    expect(count(path, 'events')).toBe(before)
+    store.close()
+  })
+
+  it('refuses a receipt whose original intake source evidence was removed', async () => {
+    const { path, store } = await leasedRun()
+    await preparedInvocation(store, 'invocation-1', 0)
+    const action = preparedAction('receipt-source-evidence')
+    unwrap(
+      await store.advanceRun(advanceBody('receipt-evidence-advance', 'invocation-1', 0, [action]), context()),
+      'advance',
+    )
+    const request = dispatchBody(action, 'invocation-1', 1, 'receipt-evidence-dispatch')
+    const admitted = unwrap(await store.dispatchAdmission(request, context()), 'dispatch')
+    if (admitted.state !== 'admitted') throw new Error('expected an admission')
+    await markRunning(store, 'invocation-1', 1, request.attemptId, 'receipt-evidence-running')
+    unwrap(
+      await store.intakeReceipt(
+        intakeOf(
+          'receipt-evidence-intake',
+          action,
+          request.attemptId,
+          admitted.authorizationId,
+          'receipt-evidence',
+        ),
+        context(),
+      ),
+      'intake',
+    )
+    const owner = stateOwners.get(store)
+    if (!owner) throw new Error('State owner missing')
+    expect(await owner.readEffectsReceiptSource('receipt-evidence')).toMatchObject({
+      receiptId: 'receipt-evidence',
+    })
+    const before = count(path, 'events')
+    mutate(path, (db) => {
+      db.prepare(
+        "UPDATE runtime_version_bodies SET value_json=json_set(value_json,'$.evidenceRefs',json('[]')) WHERE record_id=? AND record_revision=1",
+      ).run('receipt:receipt-evidence')
+    })
+    await expect(owner.readEffectsReceiptSource('receipt-evidence')).rejects.toThrow()
+    expect(count(path, 'events')).toBe(before)
+    store.close()
+  })
+
+  it('refuses a missing original Receipt commit proof', async () => {
+    const { path, store } = await leasedRun()
+    await preparedInvocation(store, 'invocation-1', 0)
+    const action = preparedAction('receipt-source-proof')
+    unwrap(
+      await store.advanceRun(advanceBody('receipt-proof-advance', 'invocation-1', 0, [action]), context()),
+      'advance',
+    )
+    const request = dispatchBody(action, 'invocation-1', 1, 'receipt-proof-dispatch')
+    const admitted = unwrap(await store.dispatchAdmission(request, context()), 'dispatch')
+    if (admitted.state !== 'admitted') throw new Error('expected an admission')
+    await markRunning(store, 'invocation-1', 1, request.attemptId, 'receipt-proof-running')
+    unwrap(
+      await store.intakeReceipt(
+        intakeOf(
+          'receipt-proof-intake',
+          action,
+          request.attemptId,
+          admitted.authorizationId,
+          'receipt-proof',
+        ),
+        context(),
+      ),
+      'intake',
+    )
+    const owner = stateOwners.get(store)
+    if (!owner) throw new Error('State owner missing')
+    const source = await owner.readEffectsReceiptSource('receipt-proof')
+    const before = count(path, 'events')
+    mutate(path, (db) => {
+      db.prepare('DELETE FROM runtime_commit_proofs WHERE commit_id=?').run(source.commitId)
+    })
+    await expect(owner.readEffectsReceiptSource('receipt-proof')).rejects.toThrow()
+    expect(count(path, 'events')).toBe(before)
+    store.close()
   })
 
   it('refuses inline-pure and staged handling before writing', async () => {

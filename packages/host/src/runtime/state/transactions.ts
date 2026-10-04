@@ -112,6 +112,7 @@ import {
   type WriteCommitInput,
 } from './control.js'
 import { createEffectsActionCaptureOwner, type EffectsActionCapture } from './effects-action-capture.js'
+import { type EffectsReceiptSource, readEffectsReceiptSource } from './effects-receipt-source.js'
 import {
   createInteractionReads,
   type InteractionReadCut,
@@ -1561,6 +1562,14 @@ export class RuntimeStateDatabase {
     const source = this.effectsActionCapture
     if (this.closed || !source) return false
     return this.tx('verifyEffectsActionCapture', 'fixed-capture', () => source.verify(capture))
+  }
+
+  /** Original accepted no-hook receipt fact; does not establish an Effects stage. */
+  async readEffectsReceiptSource(receiptId: string): Promise<EffectsReceiptSource> {
+    if (this.closed) refuse('denied', 'effects_receipt', 'State connection is closed')
+    return this.tx('readEffectsReceiptSource', receiptId, () =>
+      readEffectsReceiptSource(this.controlPorts(), receiptId),
+    )
   }
 
   async dispatchAdmission(request: DispatchAdmissionRequest): Promise<DispatchAdmissionResult> {
