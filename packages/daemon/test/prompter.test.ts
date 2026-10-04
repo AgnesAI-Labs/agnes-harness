@@ -142,11 +142,25 @@ describe('PrompterRouter', () => {
     await expect(p).resolves.toBe('allowed-once')
   })
 
-  it('an explicit rejection is rejected, and never the policy fallback', async () => {
+  it('an explicit rejection is the user rejecting, and never the policy fallback', async () => {
     const { ep, r } = mk()
     ep.conn.capabilities.permission = true
     const it = ep.notifications[Symbol.asyncIterator]()
     const p = r.ask(req as never, { signal: never })
+    const m = (await it.next()).value as { id: string }
+    await ep.handle({
+      jsonrpc: '2.0',
+      id: m.id,
+      result: { outcome: { outcome: 'selected', optionId: 'reject_once' } },
+    })
+    await expect(p).resolves.toEqual({ verdict: 'rejected', reason: 'user_rejected' })
+  })
+
+  it('askVerdict gives the bare verdict to callers that only need a yes or a no', async () => {
+    const { ep, r } = mk()
+    ep.conn.capabilities.permission = true
+    const it = ep.notifications[Symbol.asyncIterator]()
+    const p = r.askVerdict(req as never, { signal: never })
     const m = (await it.next()).value as { id: string }
     await ep.handle({
       jsonrpc: '2.0',
@@ -191,14 +205,15 @@ describe('PrompterRouter', () => {
   })
 
   it.each([
-    ['timeout', undefined, 'timeout'],
+    ['timeout', undefined, 'timeout', { verdict: 'rejected', reason: 'timeout' }],
     [
       'a JSON-RPC error from the client',
       { code: -32603, message: 'boom', data: { code: 'INTERNAL' } },
       'transport',
+      'rejected',
     ],
-    ['an outcome shape nobody defined', { outcome: { outcome: 'shrug' } }, 'malformed'],
-  ] as const)('%s fails closed to rejected, recorded as its own cause', async (_n, answer, via) => {
+    ['an outcome shape nobody defined', { outcome: { outcome: 'shrug' } }, 'malformed', 'rejected'],
+  ] as const)('%s fails closed to rejected, recorded as its own cause', async (_n, answer, via, expected) => {
     const { ep, r, log } = mk({ clock: () => 59_990 }) // deadline is 60_000 ⇒ 10 ms to answer
     ep.conn.capabilities.permission = true
     const it = ep.notifications[Symbol.asyncIterator]()
@@ -206,7 +221,7 @@ describe('PrompterRouter', () => {
     const m = (await it.next()).value as { id: string }
     if (answer && 'code' in answer) await ep.handle({ jsonrpc: '2.0', id: m.id, error: answer })
     else if (answer) await ep.handle({ jsonrpc: '2.0', id: m.id, result: answer })
-    await expect(p).resolves.toBe('rejected')
+    await expect(p).resolves.toEqual(expected)
     expect(log.at(-1)).toEqual({ requestId: 'r1', via, verdict: 'rejected' })
   })
 
@@ -216,7 +231,7 @@ describe('PrompterRouter', () => {
     const ac = new AbortController()
     const p = r.ask(req as never, { signal: ac.signal })
     ac.abort()
-    await expect(p).resolves.toBe('cancelled')
-    expect(log.at(-1)?.via).toBe('aborted')
+    await expect(p).resolves.toEqual({ verdict: 'cancelled', reason: 'stopped' })
+    expect(log.at(-1)).toMatchObject({ via: 'aborted', verdict: 'cancelled' })
   })
 })

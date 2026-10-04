@@ -812,6 +812,8 @@ export class UIProjectionCell {
             verdict: decided.verdict,
             via: decided.via,
             ...(decided.decidedBy ? { byLabel: clip(decided.decidedBy.id, 128) } : {}),
+            // A ledger written before reasons existed has none; the card then says nothing about why.
+            ...(decided.reason ? { reason: clip(decided.reason, 128) } : {}),
           }
           changed.add(node.id)
         }

@@ -4,8 +4,10 @@ import type { ArtifactJob } from '../reduce/shapes.js'
 import type { PresetView } from '../step/preset.js'
 import type { Clock } from '../types.js'
 import type { WorkspaceInvocationPort } from '../workspace/runtime.js'
+import { isPending, normalizeApproval, type RawApproval } from './approval-answer.js'
 import { platformView } from './platform-facts.js'
 import type {
+  ApprovalAnswer,
   ApprovalGrantQuery,
   ApprovalGuardianDecision,
   ApprovalRequest,
@@ -26,14 +28,6 @@ import type {
   VerifierVerdict,
 } from './seams.js'
 
-const VERDICTS = new Set([
-  'allowed-once',
-  'allowed-session',
-  'allowed-permanent',
-  'rejected',
-  'cancelled',
-  'unavailable',
-])
 const DECISION_TTL_MS = 60_000
 const ARTIFACT_POLL_TIMEOUT_MS = 5_000
 const ARTIFACT_JOB_STATUSES = new Set<ArtifactJob['status']>([
@@ -179,8 +173,12 @@ export class SeamRuntime {
       : port.run((view) => invoke(view.checkpointContext()))
   }
 
-  async approvalAsk(req: ApprovalRequest, signal: AbortSignal): Promise<Verdict | Pending> {
-    let v: Verdict | Pending
+  /**
+   * A verdict with no reason to give comes back as the bare string, so a caller that never asked for
+   * reasons sees what it always saw. Everything this method decides itself carries one.
+   */
+  async approvalAsk(req: ApprovalRequest, signal: AbortSignal): Promise<Verdict | ApprovalAnswer | Pending> {
+    let v: RawApproval
     try {
       v = await withTimeout(
         this.withApproval((approval) => approval.ask(req)),
@@ -191,17 +189,25 @@ export class SeamRuntime {
       )
     } catch (err) {
       this.fail('approval', 'ask', err)
+      // An interrupt and a lapsed wait are not refusals by the approver, and the ledger says which.
+      if (signal.aborted || (err instanceof Error && err.message.startsWith('aborted:')))
+        return { verdict: 'cancelled', reason: 'stopped' }
+      if (err instanceof Error && err.message.startsWith('timeout:'))
+        return { verdict: 'rejected', reason: 'timeout' }
       return 'rejected'
     }
-    if (v && typeof v === 'object' && typeof (v as Pending).ticket === 'string') return v
-    if (typeof v !== 'string' || !VERDICTS.has(v)) {
+    const answer = normalizeApproval(v)
+    if (!answer) {
       this.fail('approval', 'ask', `verdict out of set: ${String(v)}`)
       return 'rejected'
     }
-    // 'unavailable' is a real answer, not a failure: the preset decides whether an approver that
-    // cannot be reached refuses the call or parks the turn until someone can be.
-    if (v === 'unavailable' && this.preset.approval.onUnavailable === 'deny') return 'rejected'
-    return v
+    if (isPending(answer)) return answer
+    // 'unavailable' is a real answer, not a failure, and it stays one: nobody was asked, so the
+    // ledger must not read it as a refusal. The preset's on_unavailable decides what the turn does
+    // next; until a call can park on it, the call is refused as unanswered.
+    if (answer.verdict === 'unavailable')
+      return { verdict: 'unavailable', reason: answer.reason ?? 'no_approver' }
+    return answer.reason === undefined ? answer.verdict : answer
   }
 
   async approvalGuard(req: ApprovalRequest, signal: AbortSignal): Promise<ApprovalGuardianDecision> {

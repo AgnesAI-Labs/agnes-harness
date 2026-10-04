@@ -131,7 +131,7 @@ export function createSkillInstallRequests(options: {
           ask: async (summary, bindingHash, requestSignal) => {
             assertActive()
             approvalOutcome = undefined
-            const verdict = await prompt.ask(
+            const verdict = await prompt.askVerdict(
               {
                 requestId: `skill-install-${randomUUID()}`,
                 kind: 'tool',

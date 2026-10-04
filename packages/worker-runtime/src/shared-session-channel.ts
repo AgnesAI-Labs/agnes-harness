@@ -1,6 +1,5 @@
 import { AsyncLocalStorage } from 'node:async_hooks'
 import type { Prompter } from '@agnes/host'
-import type { ApprovalVerdict } from '@agnes/protocol'
 import type { RequestFrame, SessionReplyFrame, WorkerReplyFrame } from './frames.js'
 
 type SessionContext = Readonly<{ sessionKey: string }>
@@ -30,8 +29,8 @@ export class SharedSessionChannel {
     return sessionKey
   }
 
-  ask(req: Parameters<Prompter['ask']>[0], options: { signal: AbortSignal }): Promise<ApprovalVerdict> {
-    return this.request('permission', req, options.signal) as Promise<ApprovalVerdict>
+  ask(req: Parameters<Prompter['ask']>[0], options: { signal: AbortSignal }): ReturnType<Prompter['ask']> {
+    return this.request('permission', req, options.signal) as ReturnType<Prompter['ask']>
   }
 
   notice(params: unknown, signal: AbortSignal): Promise<unknown> {
