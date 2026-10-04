@@ -1046,7 +1046,14 @@
           "$ref": "#/$defs/Id"
         },
         "requestIdentity": {
-          "$ref": "#/$defs/RequestIdentity"
+          "anyOf": [
+            {
+              "$ref": "#/$defs/RequestIdentity"
+            },
+            {
+              "type": "null"
+            }
+          ]
         },
         "hookResults": {
           "type": "array",

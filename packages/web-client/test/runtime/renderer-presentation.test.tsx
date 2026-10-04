@@ -16,6 +16,7 @@ import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ClientTarget } from '../../src/runtime/client-selection.js'
 import { type AuthorizedViews, createRendererPresenter } from '../../src/runtime/renderer-presentation.js'
+import { formatDomainView } from '../../src/runtime/renderers/text.js'
 
 let host: HTMLDivElement
 let root: Root
@@ -160,11 +161,15 @@ function element(result: Outcome<RendererPresentation>): ReactElement {
 }
 
 const show = (node: ReactNode) => act(async () => root.render(node))
+type Presenting = (view: DomainView) => Outcome<RendererPresentation>
 
 describe('renderer presentation', () => {
-  it('asks for a resync without the view in the window or at another revision', () => {
+  it.each<[string, (presenter: ReturnType<typeof setup>['presenter']) => { present: Presenting }]>([
+    ['a renderer', (presenter) => presenter.lease({ definition: card().definition, ownerToken: 'owner-1' })],
+    ['the generic view', (presenter) => presenter.generic()],
+  ])('asks for a resync through %s without the view in the window or at another revision', (_, take) => {
     const { presenter, hold } = setup('web')
-    const lease = presenter.lease({ definition: card().definition, ownerToken: 'owner-1' })
+    const lease = take(presenter)
     const missing = lease.present(view(1))
     expect(outcome(missing)).toBe('conflict/view_resync_required')
     expect(!missing.ok && missing.error.retryAdvice).toEqual({ kind: 'retry_read' })
@@ -256,6 +261,13 @@ describe('renderer presentation', () => {
     )
     expect(host.textContent).toBe('Note <b>saved</b>still here')
     expect(host.querySelector('b, img')).toBeNull()
+
+    // Another definition of the same owner presenting that view mounts afresh, past the failure.
+    const renderer = card({ id: 'acme.notes.other' })
+    await show(
+      element(presenter.lease({ definition: renderer.definition, ownerToken: 'owner-1' }).present(view(1))),
+    )
+    expect(host.querySelector('.card')?.textContent).toBe('card note-1@1')
   })
 
   it('disposes the context when the element unmounts', async () => {
@@ -285,6 +297,27 @@ describe('renderer presentation', () => {
     expect(await submitted(context, 'rename', 1)).toBe('denied/outside_view')
     expect(await submitted(context, 'publish', 2)).toBe('ok')
   })
+
+  it('shows the window copy of any view in the generic card, as text only', async () => {
+    const { presenter } = setup('web', view(1))
+    const passed = view(1, [command('rename'), command('wipe')], { renderKey: 'acme.other/list' })
+    await show(element(presenter.generic().present(passed)))
+    const card = host.querySelector('.generic-domain-view')
+    expect(card?.textContent).toContain('Note <b>saved</b>')
+    expect(host.querySelector('b, img')).toBeNull()
+    expect([...host.querySelectorAll('button')].map((button) => button.textContent)).toEqual(['rename'])
+  })
+
+  it.each<ClientTarget>(['tui', 'sdk', 'im'])(
+    'formats the window view for %s in the generic text',
+    (target) => {
+      const { presenter } = setup(target, view(1))
+      const result = presenter.generic().present(view(1, [command('rename'), command('wipe')]))
+      const expected = formatDomainView(view(1), { locale: 'en', capabilities })
+      if (!expected.ok) throw new Error(expected.error.message)
+      expect(result).toEqual({ ok: true, value: { target, formatted: expected.value } })
+    },
+  )
 
   it.each<ClientTarget>(['tui', 'sdk', 'im'])(
     'formats the window view for %s and sends nothing',

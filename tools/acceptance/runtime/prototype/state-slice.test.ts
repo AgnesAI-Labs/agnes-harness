@@ -1974,6 +1974,44 @@ function saveCommitEvent(path: string, seq: number, data: unknown): void {
 }
 
 describe('runtime state advance, dispatch, and invocation', () => {
+  it('decodes nullable dispatch identity but refuses it before State admission', async () => {
+    const { path, store } = await leasedRun()
+    await preparedInvocation(store, 'invocation-1', 0)
+    const first = preparedAction('nullable-first')
+    const second = preparedAction('nullable-second')
+    unwrap(
+      await store.advanceRun(advanceBody('nullable-advance', 'invocation-1', 0, [first, second]), context()),
+      'nullable advance',
+    )
+    const ordinary = dispatchBody(first, 'invocation-1', 1, 'nullable-ordinary')
+    const nullable = { ...dispatchBody(second, 'invocation-1', 1, 'nullable-stage'), requestIdentity: null }
+    expect(validateRuntime('DispatchAdmissionRequest', nullable).ok).toBe(true)
+    const { requestIdentity: _missing, ...withoutIdentity } = nullable
+    expect(validateRuntime('DispatchAdmissionRequest', withoutIdentity).ok).toBe(false)
+    const before = count(path, 'events')
+    const beforeResults = count(path, 'runtime_request_results')
+    const denied = await store.dispatchAdmission(nullable, context())
+    expect(denied).toMatchObject({
+      ok: false,
+      error: { code: 'incompatible', detailCode: 'effects_stage_source_unavailable' },
+    })
+    const batch = await store.commitDispatchBatch('nullable-batch', [ordinary, nullable], context())
+    expect(batch).toMatchObject({
+      ok: false,
+      error: { code: 'incompatible', detailCode: 'effects_stage_source_unavailable' },
+    })
+    expect(count(path, 'events')).toBe(before)
+    expect(count(path, 'runtime_request_results')).toBe(beforeResults)
+    expect(actionState(path, 'nullable-first')).toBe('prepared')
+    expect(actionState(path, 'nullable-second')).toBe('prepared')
+    expect(query(path, "SELECT record_id FROM runtime_records WHERE record_id LIKE 'attempt:%'")).toEqual([])
+    const admitted = unwrap(await store.dispatchAdmission(ordinary, context()), 'ordinary dispatch')
+    expect(admitted.state).toBe('admitted')
+    expect(unwrap(await store.dispatchAdmission(ordinary, context()), 'ordinary replay')).toEqual(admitted)
+    expect(count(path, 'events')).toBe(before + 1)
+    store.close()
+  })
+
   it('captures only the original same-connection prepared Action', async () => {
     const { path, store } = await leasedRun()
     const owner = stateOwners.get(store)

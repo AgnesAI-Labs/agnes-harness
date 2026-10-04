@@ -28,7 +28,11 @@ const STATE_CONTRACT = 'agh.state'
 const PROVIDER_REL = 'packages/host/src/runtime/providers/state.ts'
 const STATE_DIR = 'packages/host/src/runtime/state'
 const REFERENCE_DIR = 'examples/runtime-reference'
-const PUBLIC_TESTKITS = ['@agnes/extension-api/testkit', '@agnes/plugin-runtime/testkit'] as const
+const PUBLIC_TESTKITS = [
+  '@agnes/core/testkit',
+  '@agnes/extension-api/testkit',
+  '@agnes/plugin-runtime/testkit',
+] as const
 const SKIP_DIRS = new Set(['node_modules', 'dist', 'coverage', '.git'])
 const SOURCE_EXTENSIONS = ['.ts', '.tsx', '.mts', '.cts']
 
@@ -428,9 +432,11 @@ function resolvedRel(base: string, file: string, specifier: string): string | un
 function isPublicTestkitPath(rel: string): boolean {
   return PUBLIC_TESTKITS.some((name) => {
     const dir =
-      name === '@agnes/extension-api/testkit'
-        ? 'packages/extension-api/testkit'
-        : 'packages/plugin-runtime/testkit'
+      name === '@agnes/core/testkit'
+        ? 'packages/core/testkit'
+        : name === '@agnes/extension-api/testkit'
+          ? 'packages/extension-api/testkit'
+          : 'packages/plugin-runtime/testkit'
     return rel === dir || rel.startsWith(`${dir}/`)
   })
 }
@@ -439,9 +445,11 @@ function testkitImportAllowed(rel: string): boolean {
   return (
     isTestFile(rel) ||
     /^packages\/[^/]+\/test\//.test(rel) ||
+    /^packages\/[^/]+\/testkit\//.test(rel) ||
     rel.endsWith('.test-d.ts') ||
     rel.split('/').includes('examples') ||
-    rel.startsWith('tools/acceptance/')
+    rel.startsWith('tools/acceptance/') ||
+    rel.startsWith('tools/bench-')
   )
 }
 
@@ -877,6 +885,8 @@ describe('test fixtures stay out of product source', () => {
       {
         'packages/cli/src/main.ts':
           "import { createTestServiceContainer } from '@agnes/extension-api/testkit'\n",
+        'packages/core/src/runtime/bad.ts':
+          "import { createReferenceEffectsFactory } from '@agnes/core/testkit'\n",
         'packages/cli/src/local.ts':
           "import { createVerifiedTestRoot } from '../../plugin-runtime/testkit/index.js'\n",
         'packages/host/src/app.ts': "import { createTestHost } from '../testkit/index.js'\n",
@@ -888,17 +898,23 @@ describe('test fixtures stay out of product source', () => {
           "import { createTestServiceContainer } from '@agnes/extension-api/testkit'\n",
         'packages/cli/test/helper.ts':
           "import { createTestServiceContainer } from '@agnes/extension-api/testkit'\n",
+        'packages/host/testkit/helper.ts':
+          "import { createReferenceEffectsFactory } from '@agnes/core/testkit'\n",
+        'tools/bench-runtime.ts': "import { fakeProvider } from '../packages/core/testkit/index.js'\n",
       },
       (base) => {
         const problems = testkitProblems(base)
         const text = problems.join('\n')
         expect(text).toContain('packages/cli/src/main.ts')
+        expect(text).toContain('packages/core/src/runtime/bad.ts')
         expect(text).toContain('packages/cli/src/local.ts')
         expect(text).toContain('packages/host/src/app.ts')
         expect(text).not.toContain('examples/demo/src/main.ts')
         expect(text).not.toContain('tools/acceptance/runtime/run.ts')
         expect(text).not.toContain('main.test.ts')
         expect(text).not.toContain('packages/cli/test/helper.ts')
+        expect(text).not.toContain('packages/host/testkit/helper.ts')
+        expect(text).not.toContain('tools/bench-runtime.ts')
       },
     )
   })

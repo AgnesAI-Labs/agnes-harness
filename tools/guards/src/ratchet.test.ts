@@ -259,7 +259,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // Renderer context restricted to its mounted view and the generic domain view card. Measured 2443,
   // exact, no spare (+317).
   // Fifth main synchronization merged with the current integration tip. Measured 3475, exact, no spare.
-  'packages/web-client/src': 3475,
+  // Fifth main synchronization merged with the current integration tip. Measured 3544, exact, no spare.
+  'packages/web-client/src': 3544,
   'packages/web-slots/src': 605,
   // Failed shell calls read as their exit code (+19 lines); measured 4891, exact cap.
   // B-line diagnostics dialog: React view adds 147 lines; measured 4706, exact cap.
@@ -1023,6 +1024,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // The approval card's summary line is built by summarizeCall (new file). Measured 25861 (+50), exact cap.
   // Sourced memory and hybrid retrieval providers. Measured 32058, exact, no spare.
   'packages/core/src': 32652,
+  // Testkit-only reference Effects runner adds 202 measured lines; exact cap, no spare.
+  'packages/core/testkit': 1997,
   // 2026-09-15: DeepSeek V4 Pro/Flash ship a known-thinking-corrections table (new file) so the
   // product corrects pi-ai's verified-wrong reasoning_effort data out of the box, instead of
   // requiring every deployment to hand-edit thinkingEfforts once they notice. Measured 3347.
@@ -1516,7 +1519,9 @@ const INITIAL_CEILING: Record<string, number> = {
   // Recoverable embedding providers. Measured 12446, exact, no spare.
   // Fixed package plan apply. Measured 12543, exact, no spare.
   // Usage and budget settlement for billing. Measured 12594, exact, no spare.
-  'packages/extension-api/testkit': 12922,
+  // Shell selection through the client host: the selected shell, in either catalog order, and refusals.
+  // Measured 13100, exact, no spare (+178).
+  'packages/extension-api/testkit': 13100,
   // 2026-09-10: raised from 2500 by Task 15 (stream-disconnect reconnection). The new
   // reattach.ts (the Reconnector: backoff loop, OVERLOADED's retryAfterMs override) plus
   // Session.recover()/waitForQuiescence and Client's reconnect wiring (emit(), the
@@ -2762,7 +2767,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // Local deployment C14 owner and native generation checks add 431 measured lines; no spare.
   // Selected pricing quotes are verified before settlement. Measured 77427, exact, no spare.
   // Fifth main synchronization merged with the current integration tip. Measured 78075, exact, no spare.
-  'packages/host/src': 78075,
+  // Fifth main synchronization merged with the current integration tip. Measured 78108, exact, no spare.
+  'packages/host/src': 78108,
   'packages/host/src/ext-host/service-invocation': 247,
   // T5.2's permission projector is kept independently bounded so later extension-host work cannot
   // hide in the package-wide increment. Measured source: 86 lines.

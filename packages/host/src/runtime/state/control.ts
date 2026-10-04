@@ -1841,6 +1841,8 @@ export async function dispatchAdmissionTx(
   ports: ControlPorts,
   request: DispatchAdmissionRequest,
 ): Promise<Committed<DispatchAdmissionResult>> {
+  if (request.requestIdentity === null)
+    refuse('incompatible', 'effects_stage_source_unavailable', 'pure stage dispatch source is unavailable')
   const verified = await ports.requireSession(request.guard.sessionId)
   const fingerprint = digestOf(request)
   const stored = ports.replayRequest<RememberedDispatch>(

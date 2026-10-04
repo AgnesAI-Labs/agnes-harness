@@ -1,5 +1,11 @@
 import { isDeepStrictEqual } from 'node:util'
-import type { ShellProvider, ShellServices } from '@agnes/extension-api/client'
+import type {
+  ClientEntry,
+  RendererDefinition,
+  ShellProvider,
+  ShellServices,
+  UIRegistryFactory,
+} from '@agnes/extension-api/client'
 import type { Outcome } from '@agnes/extension-api/runtime'
 import type * as Wire from '@agnes/protocol/runtime'
 import { type BuildIdentity, type ReuseLifecycle, SCENARIOS, type ScenarioName } from '../evidence.js'
@@ -45,6 +51,16 @@ export interface ShellConformanceBinding {
    * implementation, so these cases depend on no DOM library.
    */
   readonly container: () => HTMLElement
+  /**
+   * Runs a web client host over one catalog: resolves `selection` against `modules`, builds a client
+   * generation whose module namespaces come from `load` and answers the shell factory it offers, or the
+   * refusal of either step. The cases play the server and the module authors; the binding owns the host.
+   */
+  readonly select: (catalog: {
+    readonly modules: readonly Wire.ClientModule[]
+    readonly selection: Wire.ClientSelection
+    readonly load: (module: Wire.ClientModule) => Promise<Outcome<Readonly<Record<string, unknown>>>>
+  }) => Promise<Outcome<() => ShellProvider>>
 }
 
 type Turn = Wire.RuntimeConversationWindow['native']['timeline']['turns'][number]
@@ -286,7 +302,199 @@ async function send(box: HTMLElement, text: string): Promise<void> {
 const current = (element: Element | null) =>
   element !== null && ![null, 'false'].includes(element.getAttribute('aria-current'))
 
+// The catalog `select` hands the binding's client host: FRAME serves the registry and the fallback
+// renderer every selection needs, SHELLS declares the shell under test and PLAIN, and DECOY declares
+// PLAIN again in another package.
+const FRAME = 'conformance.frame'
+const SHELLS = 'conformance.shells'
+const DECOY = 'conformance.decoy'
+const PLAIN = 'conformance.plain-shell'
+const FALLBACK = 'conformance.fallback'
+const OK: Outcome<void> = { ok: true, value: undefined }
+type Contribution = NonNullable<Wire.ClientModule['contributions']>[number]
+type Namespace = Readonly<Record<string, unknown>>
+
+/**
+ * A shell independent of the one under test, with the id PLAIN. It mounts one element carrying `mark`,
+ * so a container shows which shell it holds.
+ */
+function markedShell(mark: string): ShellProvider {
+  const schema = { typeId: 'conformance.marked-shell/state@1', revision: 1, digest: DIGEST }
+  let shown: HTMLElement | undefined
+  return {
+    descriptor: { id: PLAIN, apiMajor: 1, stateSchema: schema, requiredRegions: [] },
+    async mount({ container }) {
+      shown = container.appendChild(container.ownerDocument.createElement('div'))
+      shown.setAttribute('data-conformance-shell', mark)
+      return OK
+    },
+    update: async () => OK,
+    exportState: async () => ({ ok: true, value: { schema, data: null } }),
+    importState: async () => OK,
+    stopAdmission() {},
+    async dispose() {
+      shown?.remove()
+      return OK
+    },
+  }
+}
+
+/** The shell a container shows: a marked shell's mark, `regions` for the shell under test, else null. */
+function shown(box: HTMLElement): string | null {
+  const marks = [...box.querySelectorAll('[data-conformance-shell]')].map((found) =>
+    found.getAttribute('data-conformance-shell'),
+  )
+  const regions = REGIONS.filter((name) => region(box, name) !== null).length
+  if (marks.length === 1 && regions === 0) return marks[0] ?? null
+  return marks.length === 0 && regions === REGIONS.length ? 'regions' : null
+}
+
+const catalogModule = (id: string, contributions: Contribution[]): Wire.ClientModule => ({
+  moduleId: id,
+  packageId: id,
+  packageDigest: DIGEST,
+  assetDigest: DIGEST,
+  entryPath: `./${id}.js`,
+  ownerToken: `owner-${id}`,
+  authorApiMajor: 1,
+  targets: ['web'],
+  schemas: [],
+  requiredFeatures: [],
+  styles: [],
+  contributions,
+})
+const serving = (kind: 'shell' | 'registry', contributionId: string, name: string): Contribution => ({
+  contributionId,
+  kind,
+  export: name,
+  targets: ['web'],
+})
+const selection = (shell: Wire.ClientContributionRef): Wire.ClientSelection => ({
+  target: 'web',
+  shell,
+  registry: { packageId: FRAME, contributionId: 'conformance.registry' },
+  fallbackRenderer: { packageId: FRAME, contributionId: FALLBACK },
+  rendererSelections: [],
+})
+
+/** A registry double: it takes every registration and resolves every view to the fallback. */
+const anyRegistry: UIRegistryFactory = () => ({
+  ok: true,
+  value: {
+    register: ({ descriptor }) => ({
+      ok: true,
+      value: { id: descriptor.id, ownerToken: 'conformance-registry', dispose: async () => {} },
+    }),
+    resolve: () => ({ ok: true, value: { kind: 'fallback', reason: 'nothing is presented here' } }),
+  },
+})
+const fallback: RendererDefinition = {
+  descriptor: {
+    id: FALLBACK,
+    packageDigest: DIGEST,
+    renderKey: FALLBACK,
+    targets: ['web'],
+    viewSchemaRanges: [],
+    requiredFeatures: [],
+    optionalFeatures: [],
+    scope: 'view',
+    entry: './fallback.js',
+  },
+  format: () => ({ ok: false, error: refusal('denied', 'not_presented') }),
+}
+
 const CASES: Partial<Record<ScenarioName, (binding: ShellConformanceBinding) => Promise<Checks>>> = {
+  // Three selections that differ only in the shell they name, by package and contribution id, each mount
+  // exactly that shell through the same host, with the catalog in either order. A selection of an
+  // undeclared shell, or of one whose export is missing or not a function, is refused.
+  async select({ shell, container, select }) {
+    const workbench = shell().descriptor.id
+    const plain = () => markedShell('plain')
+    const forward = [
+      catalogModule(FRAME, [
+        serving('registry', 'conformance.registry', 'createRegistry'),
+        { contributionId: FALLBACK, kind: 'renderer', targets: ['web'], descriptor: fallback.descriptor },
+      ]),
+      catalogModule(DECOY, [serving('shell', PLAIN, 'plainShell')]),
+      catalogModule(SHELLS, [
+        serving('shell', workbench, 'workbenchShell'),
+        serving('shell', PLAIN, 'plainShell'),
+      ]),
+    ]
+    // Modules and their declarations in the opposite order, so neither picks a shell.
+    const reversed = forward
+      .map((module) => ({ ...module, contributions: [...(module.contributions ?? [])].reverse() }))
+      .reverse()
+    const run = (
+      ref: Wire.ClientContributionRef,
+      modules = forward,
+      shells: Namespace = { workbenchShell: shell, plainShell: plain },
+    ) => {
+      const namespaces: Record<string, Namespace> = {
+        [FRAME]: { createRegistry: anyRegistry },
+        [SHELLS]: shells,
+        [DECOY]: { plainShell: () => markedShell('decoy') },
+      }
+      return select({
+        modules,
+        selection: selection(ref),
+        async load(module) {
+          const own = namespaces[module.moduleId] ?? {}
+          // The entry registers what its module declares, in declaration order: every shell becomes a
+          // candidate, so in one of the two orders the shell registered last is not the selected one.
+          const clientEntry: ClientEntry = async (host) => {
+            for (const declared of module.contributions ?? []) {
+              const outcome =
+                declared.kind === 'renderer'
+                  ? host.renderers.register(fallback)
+                  : declared.kind === 'shell'
+                    ? host.registerShell(own[declared.export] as () => ShellProvider)
+                    : OK
+              if (!outcome.ok) return outcome
+            }
+            return { ok: true, value: { dispose: async () => {} } }
+          }
+          return { ok: true, value: { ...own, clientEntry } }
+        },
+      })
+    }
+
+    const checks: Checks = {}
+    const choices = [
+      [SHELLS, workbench, 'regions'],
+      [SHELLS, PLAIN, 'plain'],
+      [DECOY, PLAIN, 'decoy'],
+    ] as const
+    for (const [order, modules] of [
+      ['in catalog order', forward],
+      ['reversed', reversed],
+    ] as const)
+      for (const [packageId, contributionId, expected] of choices) {
+        const chosen = await run({ packageId, contributionId }, modules)
+        const provider = chosen.ok ? chosen.value() : undefined
+        const box = container()
+        checks[`${packageId}/${contributionId} ${order}: only the selected shell mounted`] =
+          provider?.descriptor.id === contributionId &&
+          (await provider.mount(input(box, fakeServices().services))).ok &&
+          shown(box) === expected &&
+          (await provider.dispose('shutdown')).ok
+      }
+    // A refused selection hands back no shell, so nothing can be mounted from it.
+    const refusals: [string, Wire.ClientContributionRef, Namespace?][] = [
+      ['an undeclared shell', { packageId: SHELLS, contributionId: 'conformance.undeclared-shell' }],
+      ['a shell its package does not declare', { packageId: FRAME, contributionId: PLAIN }],
+      ['a missing export', { packageId: SHELLS, contributionId: PLAIN }, { workbenchShell: shell }],
+      [
+        'an export that is not a function',
+        { packageId: SHELLS, contributionId: PLAIN },
+        { workbenchShell: shell, plainShell: plain() },
+      ],
+    ]
+    for (const [what, ref, shells] of refusals)
+      checks[`selecting ${what} refused`] = !(await run(ref, forward, shells)).ok
+    return checks
+  },
+
   async normal({ shell, container }) {
     const first = shell()
     const box = container()
@@ -498,12 +706,10 @@ const CASES: Partial<Record<ScenarioName, (binding: ShellConformanceBinding) => 
  * missing evidence, never as passed.
  */
 const UNPROVEN: Partial<Record<ScenarioName, string>> = {
-  select:
-    'selecting a shell needs ClientHost.registerShell and a client selection field in the protocol, ' +
-    'neither of which exists yet',
   recover:
-    'recovering a shell needs a client host lease to rebuild it in a new client process, which does not ' +
-    'exist yet',
+    'recovering a shell needs a client host lease: a host rebuilt from the same catalog and selection ' +
+    "offers the same shell, but nothing binds a shell's owner token and services to one client " +
+    "instance, so nothing can refuse a crashed client's handles once the rebuild is current",
 }
 
 /** The names of the failed checks, or the error a case threw. */
@@ -558,7 +764,8 @@ export function registerShellContract(harness: ConformanceHarness, binding: Shel
           configDigest: binding.configDigest,
           releaseSetDigest: binding.releaseSetDigest,
           attachmentDigest: null,
-          // Every scenario drives the shell through a services double that stands in for the client host.
+          // Every scenario drives the shell through a services double that stands in for the client host's
+          // services; select also runs the binding's host over the cases' own modules.
           fixture: 'test-client-host',
           sharedEvidenceId: null,
           reuse: {
