@@ -25,6 +25,7 @@ describe('rendered composer region', () => {
   afterEach(async () => {
     await runtime?.dispose()
     runtime = undefined
+    localStorage.clear()
     resetWebDom()
   })
 
@@ -95,6 +96,7 @@ describe('rendered composer region', () => {
     const added = vi.spyOn(document, 'addEventListener')
     const removed = vi.spyOn(document, 'removeEventListener')
     try {
+      localStorage.setItem('agnes-locale', 'zh-CN')
       runtime = await mountRenderedIndex()
       const view: ComposerView = {
         cancel: { disabled: true, hidden: true, label: '停止' },

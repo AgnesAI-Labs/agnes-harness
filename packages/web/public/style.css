@@ -467,9 +467,13 @@ textarea:focus-visible {
   border-color: var(--agnes-input-border-focus);
   box-shadow: 0 0 0 3px var(--agnes-brand-focus-ring);
 }
-button:disabled {
+button:disabled,
+button.ant-btn:disabled {
   cursor: not-allowed;
-  opacity: 0.4;
+  opacity: 1;
+  color: var(--agnes-text-tertiary);
+  border-color: var(--agnes-line-primary);
+  background: var(--agnes-bg-card);
 }
 input:disabled,
 select:disabled,
@@ -1209,9 +1213,10 @@ main {
 .connection-group:has(#connection[data-state="closed"])::before {
   background: currentcolor;
 }
-#disconnect .icon {
-  width: 0.9375rem;
-  height: 0.9375rem;
+/* 连接正常是默认态，常驻一行「已连接」没有信息量；只有中断和已关闭才值得占位置。
+   恢复路径本来就在 #reconnect-notice 里，顶栏只负责把状态本身说清楚。 */
+body:not([data-connection="reconnecting"]):not([data-connection="closed"]) .connection-group {
+  display: none;
 }
 #notice,
 #reconnect-notice {
@@ -1603,27 +1608,27 @@ button.trace-gantt-bar:focus-visible {
   font-size: 0.75rem;
   font-weight: 500;
 }
-.trace-badge.kind-用户 {
+.trace-badge.kind-user {
   color: var(--agnes-trace-badge-user-text);
   background: var(--agnes-trace-badge-user-bg);
 }
-.trace-badge.kind-上下文 {
+.trace-badge.kind-context {
   color: var(--agnes-trace-badge-context-text);
   background: var(--agnes-trace-badge-context-bg);
 }
-.trace-badge.kind-助手 {
+.trace-badge.kind-assistant {
   color: var(--agnes-trace-badge-assistant-text);
   background: var(--agnes-trace-badge-assistant-bg);
 }
-.trace-badge.kind-工具 {
+.trace-badge.kind-tool {
   color: var(--agnes-trace-badge-tool-text);
   background: var(--agnes-trace-badge-tool-bg);
 }
-.trace-badge.kind-审批 {
+.trace-badge.kind-approval {
   color: var(--agnes-trace-badge-approval-text);
   background: var(--agnes-trace-badge-approval-bg);
 }
-.trace-badge.kind-整理 {
+.trace-badge.kind-compaction {
   color: var(--agnes-trace-badge-compaction-text);
   background: var(--agnes-trace-badge-compaction-bg);
 }
@@ -1796,7 +1801,6 @@ button.trace-gantt-bar:focus-visible {
 }
 #transcript {
   height: 100%;
-  margin-inline: auto;
   /* 切换会话时旧画面降不透明度提示「正在准备」（body.session-switching），
      新投影就绪后平滑恢复。 */
   transition: opacity var(--transition);
@@ -1804,8 +1808,15 @@ button.trace-gantt-bar:focus-visible {
      （长代码串、长路径）把整条会话推出横向滚动。 */
   overflow-x: hidden;
   overflow-y: auto;
-  padding: 1rem 2rem;
   scroll-behavior: smooth;
+  width: 100%;
+}
+/* 滚动容器占满整个中列，内容列自己限宽居中。限宽若落回 #transcript，两侧留白就属于
+   不可滚动的祖先（.conversation-region-root / .conversation-shell / body 都是
+   overflow: hidden），鼠标停在留白上时找不到可滚动祖先，滚轮会毫无反应。 */
+#transcript-content {
+  margin-inline: auto;
+  padding: 1rem 2rem;
   width: min(100%, var(--chat-content-width));
 }
 #empty-state {
@@ -2342,33 +2353,60 @@ button.trace-gantt-bar:focus-visible {
   gap: 0.5rem;
   margin-top: 0.875rem;
 }
-body:has(#transcript:empty) #prompt {
+/* 空态判据取 `#empty-state` 的 hidden，与 app 的 shouldShowEmptyState 同一个信号。
+   此前用的 `#transcript:empty` 永远不成立：React 树恒定渲染一个 `#transcript-content`
+   子节点，`:empty` 不匹配，下面这一组规则全是死规则，实际效果一直是"输入卡贴底"。 */
+body:has(#empty-state:not([hidden])) #prompt {
   min-height: 3.25rem;
 }
-/* 新会话（空态）：hero 与输入卡作为**一组**在剩余空间里垂直居中——空态时让
-   .conversation-shell 收起为内容高度，两端各吃一份 auto 外边距即可居中，
-   顶栏（flex 首项）不受影响。此前是 hero 占满、输入卡贴底。 */
-body:has(#transcript:empty) .conversation-shell {
+/* 新会话（空态）：hero 与输入卡作为**一组**在剩余空间里垂直居中。两级绝对定位
+   （.conversation-region-root 与 #empty-state）必须在空态下放开，hero 才撑得出真实
+   高度；否则 shell 高度为 0，后面两份 auto 外边距无处可吃。顶栏在空态是绝对定位的
+   悬浮开关，不占流，所以不再需要补偿它的高度。 */
+body:has(#empty-state:not([hidden])) .workbench-split {
   flex: 0 1 auto;
   margin-top: auto;
-  overflow: visible;
 }
-body:has(#transcript:empty) #empty-state {
+body:has(#empty-state:not([hidden])) .conversation-region-root,
+body:has(#empty-state:not([hidden])) #empty-state {
   position: static;
   inset: auto;
 }
+body:has(#empty-state:not([hidden])) .conversation-shell {
+  overflow: visible;
+}
 /* 空态下会话清单里没有内容，但它带着 16px 上下内边距会占位、把 hero 顶下去，
    于是 hero 跑出 shell 而整体偏离居中。空态时直接让位。 */
-body:has(#transcript:empty) #transcript {
+body:has(#empty-state:not([hidden])) #transcript {
   display: none;
 }
-body:has(#transcript:empty) #composer {
+/* 下边那份 auto 必须挂在 main 的 flex 子项上：挂到 #composer 上会被 #composer-mount
+   挡住，块级上下文里的纵向 auto 外边距会算成 0，居中就只剩上面那一份。 */
+body:has(#empty-state:not([hidden])) #composer-mount {
   margin-bottom: auto;
 }
-/* 两份 auto 只把这一组居中在"顶栏以下"的空间里，观感上仍偏低；用等高的下内边距
-   把顶栏那一份补回来，中轴才与视口一致。 */
-body:has(#transcript:empty) main {
-  padding-bottom: 8rem;
+/* 新会话时顶栏不成立：标题、状态都没有内容，页签也没有会话可切。容器降为不占流的
+   透明浮层，只留下左上角的侧栏开关——窄屏和折叠态下它是唤出导航的唯一入口，不能
+   跟着一起消失。连接异常那一行仍然保留（见 connection-group 的可见性规则）。 */
+body:has(#empty-state:not([hidden])) main {
+  position: relative;
+}
+body:has(#empty-state:not([hidden])) .topbar {
+  position: absolute;
+  inset: 0 0 auto 0;
+  z-index: 6;
+  min-height: 0;
+  padding: 0.625rem 1.75rem;
+  border-bottom: 0;
+  background: transparent;
+}
+body:has(#empty-state:not([hidden])) .topbar .task-heading,
+body:has(#empty-state:not([hidden])) .session-tabs-bar {
+  display: none;
+}
+/* .task-heading 平时靠 flex:1 把连接组顶到右边；它退场后这份推力要显式补回来。 */
+body:has(#empty-state:not([hidden])) .connection-group {
+  margin-left: auto;
 }
 /* 切换会话的加载态：上一会话画面降不透明度（含会话区外的审批卡），提示内容
    正在被替换；新投影就绪后由 body.session-switching 移除而平滑恢复。
@@ -2507,8 +2545,10 @@ body.session-switching #approval {
   display: flex;
   flex-direction: column;
   min-height: 0;
+  /* 首层入口菜单按内容定宽（positionPopover 的 width: 'content'），所以下界放得很低：
+     菜单项就「名称 + 当前值 + 箭头」，钉死宽只会在右侧留一片空白。 */
   width: max-content;
-  min-width: min(240px, calc(100vw - 32px));
+  min-width: min(11rem, calc(100vw - 32px));
   max-width: min(420px, calc(100vw - 32px));
   max-height: min(360px, calc(100vh - 96px));
   padding: 0.25rem;
@@ -2524,6 +2564,13 @@ body.session-switching #approval {
 }
 .model-picker[data-placement="below"] {
   transform-origin: top left;
+}
+/* 子菜单从入口行的方向长出来。 */
+.model-picker[data-placement="right"] {
+  transform-origin: top left;
+}
+.model-picker[data-placement="left"] {
+  transform-origin: top right;
 }
 .model-picker-help {
   margin: 0;
@@ -2595,6 +2642,41 @@ body.session-switching #approval {
   font-size: 0.75rem;
   line-height: 1.125rem;
   overflow-wrap: anywhere;
+}
+/* 首层入口行：「名称 —— 当前值 ›」。选中态由右侧的当前值表达，不再用左侧对勾，
+   所以要撤掉 .model-picker-option 的对勾占位和左内边距。 */
+.model-picker-entry {
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.5rem 0.625rem;
+}
+.model-picker-entry::before {
+  content: none;
+}
+/* 子菜单开着的那一行保持高亮，这样「右边这块列表是从哪来的」一眼能看出来。 */
+.model-picker-entry[data-open="true"] {
+  background: var(--agnes-bg-hover);
+}
+.model-picker-entry-label {
+  color: var(--agnes-text-primary);
+  font-size: 0.875rem;
+  line-height: 1.25rem;
+}
+.model-picker-entry-value {
+  overflow: hidden;
+  color: var(--agnes-text-tertiary);
+  font-size: 0.875rem;
+  line-height: 1.25rem;
+  text-align: right;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.model-picker-chevron {
+  flex: 0 0 auto;
+  width: 0.875rem;
+  height: 0.875rem;
+  color: var(--agnes-icon-secondary);
 }
 #cancel,
 #send {
@@ -2909,7 +2991,7 @@ body {
   #empty-state {
     width: calc(100% - 2rem);
   }
-  #transcript {
+  #transcript-content {
     padding-inline: 1rem;
   }
   .new-content {
@@ -2932,8 +3014,8 @@ body {
   .connection-group {
     gap: var(--s8);
   }
-  /* 只有 #connection 需要隐藏；#disconnect 里没有任何 .button-label 元素，
-     原先那条 `#disconnect .button-label` 选择器匹配不到东西。 */
+  /* 窄屏只留一个状态点：文字仍对屏幕阅读器可见，视觉上的原因说明交给
+     #reconnect-notice。「断开连接」按钮已移除，不再需要为它单独放宽触控尺寸。 */
   #connection {
     position: absolute;
     width: 1px;
@@ -2942,13 +3024,6 @@ body {
     clip: rect(0 0 0 0);
     white-space: nowrap;
     clip-path: inset(50%);
-  }
-  #disconnect {
-    width: 2.75rem;
-    min-width: 2.75rem;
-    height: 2.75rem;
-    min-height: 2.75rem;
-    padding: 0;
   }
   button,
   input,
@@ -3010,7 +3085,7 @@ body {
   #empty-state {
     width: calc(100% - 1.5rem);
   }
-  #transcript {
+  #transcript-content {
     padding-inline: 0.75rem;
   }
   .composer-controls {
@@ -3105,8 +3180,14 @@ body {
 .workspace-group:first-child {
   margin-top: 0;
 }
+.workspace-heading-row {
+  display: flex;
+  align-items: center;
+  gap: 0.125rem;
+}
 .workspace-heading {
-  width: 100%;
+  flex: 1;
+  min-width: 0;
   min-height: 2.125rem;
   gap: 0.375rem;
   justify-content: flex-start;
@@ -3125,6 +3206,19 @@ body {
   border-color: transparent;
   background: var(--agnes-bg-hover);
 }
+.workspace-heading-row .workspace-new-session {
+  width: 1.75rem;
+  min-width: 1.75rem;
+  height: 1.75rem;
+  min-height: 1.75rem;
+  opacity: 0;
+  pointer-events: none;
+}
+.workspace-heading-row:hover .workspace-new-session,
+.workspace-new-session:focus-visible {
+  opacity: 1;
+  pointer-events: auto;
+}
 .workspace-heading .workspace-name,
 .session .session-title {
   min-width: 0;
@@ -3139,12 +3233,6 @@ body {
   gap: 0.125rem;
 }
 
-.quiet-disconnect {
-  width: 2rem;
-  min-width: 2rem;
-  height: 2rem;
-  min-height: 2rem;
-}
 /* hero 品牌标：用客户端 AgnesMark 位图（与侧栏品牌位同一资源）代替原来的 "AGH" 文字占位。
    mask 靠 background 显色，所以这里必须显式给 currentColor —— 上面那条基础规则里的
    background: transparent 是在"文字标"时代写的，会盖掉 .agnes-mark 的着色。 */
@@ -3989,7 +4077,7 @@ body {
     min-height: 3.4rem;
     padding-inline: 0.75rem;
   }
-  #transcript {
+  #transcript-content {
     padding: 1.5rem 1rem 5rem;
   }
   .timeline-node.user {
@@ -5107,7 +5195,7 @@ body.admin-page {
 }
 .settings-nav-item {
   width: 100%;
-  height: 2.5rem;
+  min-height: 2.5rem;
   display: flex;
   align-items: center;
   justify-content: flex-start;
@@ -5598,20 +5686,26 @@ body.admin-page {
   color: var(--agnes-brand-primary);
   text-align: center;
 }
-.account-dialog-close {
+#account-dialog .account-dialog-close {
   position: absolute;
   top: 0.75rem;
   right: 0.75rem;
   z-index: 1;
 }
 .account-dialog-body {
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
   max-height: var(--dialog-max-height);
-  overflow-y: auto;
+  overflow: hidden;
 }
-/* 弹窗里不再需要卡片自己的内边距与滚动（由 .account-dialog-body 统一承担）。 */
+/* 只有表单内容滚动，标题与操作区始终保留在弹窗可视范围内。 */
 #account-dialog .config-detail-grid {
+  min-height: 0;
+  flex: 1 1 auto;
   padding: 0.875rem 1.25rem 1rem;
-  overflow: visible;
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 #account-dialog .config-detail-heading {
   min-height: auto;
@@ -5638,8 +5732,8 @@ body.admin-page {
   text-align: start;
 }
 #account-dialog .config-detail-footer {
-  position: sticky;
-  bottom: 0;
+  position: static;
+  flex: 0 0 auto;
 }
 /* 模型账户页的字段整行铺开（用户要求改成上下结构）；
    设置弹窗整体在 #config-form 内，故用面板 id 收窄作用范围。 */
@@ -5675,7 +5769,9 @@ body.admin-page {
   grid-column: 1 / -1;
 }
 :is(#config-form, #account-dialog) input,
-:is(#config-form, #account-dialog) select {
+:is(#config-form, #account-dialog) select,
+:is(#config-form, #account-dialog) .select-picker-trigger {
+  height: var(--control-height-form);
   min-height: var(--control-height-form);
   padding: 0.625rem 0.75rem;
   border-color: var(--agnes-input-border);
@@ -5751,6 +5847,10 @@ body.admin-page {
   grid-template-columns: minmax(0, 1fr) auto;
   align-items: end;
   gap: 1rem;
+}
+:is(#config-form, #account-dialog) .config-validation-controls > #config-test {
+  height: var(--control-height-form);
+  min-height: var(--control-height-form);
 }
 :is(#config-form, #account-dialog) .config-validation-section #config-state,
 :is(#config-form, #account-dialog) .config-validation-section #config-error {
@@ -5935,6 +6035,9 @@ body.admin-page {
   #config-form #config-test,
   #config-save {
     width: 100%;
+  }
+  #account-dialog .config-detail-footer {
+    flex-direction: column;
   }
 }
 .usage-disclosure {

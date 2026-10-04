@@ -7,6 +7,7 @@ import { createElement, useEffect, useLayoutEffect } from 'react'
 import { createRoot } from 'react-dom/client'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createTimelineRenderer } from '../src/timeline.js'
+import { zhLocaleService } from './helpers/locale.js'
 
 afterEach(() => {
   vi.unstubAllGlobals()
@@ -20,11 +21,48 @@ function renderer() {
   document.body.append(transcript, newContentButton)
   return {
     transcript,
-    timeline: createTimelineRenderer({ transcript, newContentButton }),
+    timeline: createTimelineRenderer({ locale: zhLocaleService(), transcript, newContentButton }),
   }
 }
 
 describe('timeline reader semantics', () => {
+  it('unsubscribes from locale changes when disposed', () => {
+    const transcript = document.createElement('div')
+    const newContentButton = document.createElement('button')
+    const locale = zhLocaleService()
+    const unsubscribe = vi.fn()
+    vi.spyOn(locale, 'subscribe').mockReturnValue(unsubscribe)
+    document.body.append(transcript, newContentButton)
+    const timeline = createTimelineRenderer({ locale, transcript, newContentButton })
+
+    timeline.dispose?.()
+
+    expect(unsubscribe).toHaveBeenCalledOnce()
+  })
+
+  it('refreshes translated node chrome when the locale changes', () => {
+    const transcript = document.createElement('div')
+    const newContentButton = document.createElement('button')
+    document.body.append(transcript, newContentButton)
+    const locale = zhLocaleService()
+    const timeline = createTimelineRenderer({ locale, transcript, newContentButton })
+    const approval: UINode = {
+      kind: 'approval',
+      id: 'approval-1',
+      seq: 1,
+      state: 'pending',
+      summary: 'run a command',
+      risk: 'destructive',
+      options: ['allow_once'],
+      ticket: 'ticket-1',
+    }
+
+    timeline.render([approval])
+    expect(transcript.querySelector('.node-label')?.textContent).toBe('审批')
+    locale.setLocale('en')
+    expect(transcript.querySelector('.node-label')?.textContent).toBe('Approval')
+  })
+
   it('projects a keyed DSH chat renderer for one node kind and restores native fallback on removal', async () => {
     const ctx = new Context()
     await ctx.plugin(SlotRegistry)
@@ -42,7 +80,12 @@ describe('timeline reader semantics', () => {
     const transcript = document.createElement('div')
     const newContentButton = document.createElement('button')
     document.body.append(transcript, newContentButton)
-    const timeline = createTimelineRenderer({ transcript, newContentButton, registry })
+    const timeline = createTimelineRenderer({
+      locale: zhLocaleService(),
+      transcript,
+      newContentButton,
+      registry,
+    })
     const node: UINode = { kind: 'assistant', id: 'assistant-1', seq: 1, text: '原生回答' }
 
     timeline.render([node])
@@ -142,7 +185,12 @@ describe('timeline reader semantics', () => {
     const transcript = document.createElement('div')
     const newContentButton = document.createElement('button')
     document.body.append(transcript, newContentButton)
-    const timeline = createTimelineRenderer({ transcript, newContentButton, registry })
+    const timeline = createTimelineRenderer({
+      locale: zhLocaleService(),
+      transcript,
+      newContentButton,
+      registry,
+    })
     timeline.render([{ kind: 'assistant', id: 'assistant-1', seq: 1, text: 'answer' }])
     await vi.waitFor(() => expect(mounted).toBe(1))
 
@@ -226,7 +274,9 @@ describe('timeline reader semantics', () => {
     const fork = vi.fn(async () => undefined)
     const transcript = document.createElement('div')
     document.body.append(transcript)
+    const locale = zhLocaleService()
     const timeline = createTimelineRenderer({
+      locale,
       transcript,
       newContentButton: document.createElement('button'),
       onFork: fork,
@@ -308,6 +358,15 @@ describe('timeline reader semantics', () => {
     expect(transcript.querySelector('.turn-usage-grid')?.textContent).not.toContain('调用记录')
     expect(transcript.querySelector('.turn-usage-grid')?.textContent).toContain('0.000206 credits · 网关记录')
     expect(transcript.querySelector('.turn-usage-grid')?.textContent).not.toContain('0.00020600000000000002')
+    expect(transcript.querySelector<HTMLButtonElement>('[aria-label="复制回答"]')?.title).toBe('复制回答')
+    locale.setLocale('en')
+    expect(transcript.querySelector('.turn-usage-grid')?.textContent).toContain('Input tokens352')
+    expect(transcript.querySelector<HTMLButtonElement>('[aria-label="Copy answer"]')?.title).toBe(
+      'Copy answer',
+    )
+    locale.setLocale('zh-CN')
+    expect(transcript.querySelector('.turn-usage-grid')?.textContent).toContain('输入 Token352')
+    expect(transcript.querySelector<HTMLButtonElement>('[aria-label="复制回答"]')?.title).toBe('复制回答')
     vi.stubGlobal('innerWidth', 320)
     vi.stubGlobal('innerHeight', 568)
     // 定位锚点是**触发 pill**（.turn-meta）而不是消息块：此前锚在消息左缘，
@@ -749,7 +808,7 @@ describe('timeline reader semantics', () => {
         geometry.scrollTop = options.top
       },
     })
-    const timeline = createTimelineRenderer({ transcript, newContentButton })
+    const timeline = createTimelineRenderer({ locale: zhLocaleService(), transcript, newContentButton })
     const node: UINode = { kind: 'user', id: 'u1', seq: 1, content: [{ type: 'text', text: '1' }] }
 
     // 初始渲染即贴底；程序写入引发的 scroll 事件不解除跟随。
@@ -870,7 +929,12 @@ describe('loading earlier records', () => {
       configurable: true,
       get: () => 100 * transcript.querySelectorAll('[data-node-id]').length,
     })
-    const timeline = createTimelineRenderer({ transcript, scrollContainer, newContentButton })
+    const timeline = createTimelineRenderer({
+      locale: zhLocaleService(),
+      transcript,
+      scrollContainer,
+      newContentButton,
+    })
     return { scrollContainer, transcript, timeline }
   }
   const say = (id: string, seq: number, text = id): UINode => ({ kind: 'assistant', id, seq, text })

@@ -4,6 +4,11 @@ import {
   type PluginRuntimeState,
   RuntimeStatusStore,
 } from '../src/client-modules/runtime-status.js'
+import { setLocaleTranslator } from '../src/locale-bridge.js'
+import { zhT } from './helpers/locale.js'
+
+// i18n: these suites assert zh-CN catalog output; pin the translator before imports run.
+setLocaleTranslator(zhT)
 
 describe('client module runtime status', () => {
   it('publishes bounded state updates and returns an isolated snapshot', () => {
@@ -27,7 +32,7 @@ describe('client module runtime status', () => {
 
   it('normalizes an arbitrary loader error without exposing its details', () => {
     const error = new Error('file:///private/token=secret/index.js\nstack trace')
-    const normalized = normalizeRuntimeError('import', error)
+    const normalized = normalizeRuntimeError('import', error, zhT)
 
     expect(normalized).toEqual({
       code: 'CLIENT_MODULE_IMPORT_FAILED',

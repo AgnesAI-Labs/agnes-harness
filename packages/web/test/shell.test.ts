@@ -1,7 +1,12 @@
 // @vitest-environment happy-dom
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { setLocaleTranslator } from '../src/locale-bridge.js'
 import { bindSidebar, showSettingsPane } from '../src/shell.js'
+import { zhT } from './helpers/locale.js'
+
+// i18n: these suites assert zh-CN catalog output; pin the translator before imports run.
+setLocaleTranslator(zhT)
 
 afterEach(() => document.body.replaceChildren())
 

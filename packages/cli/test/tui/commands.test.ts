@@ -11,6 +11,7 @@ import {
   runSlash,
   SLASH_COMMANDS,
   slashCommand,
+  slashCommandFor,
 } from '../../src/tui/commands.js'
 import { FakeTerminal } from '../../src/tui/terminal.js'
 import { scriptedEndpoint } from '../fake-endpoint.js'
@@ -101,6 +102,7 @@ async function unstartedApp(
     session,
     term,
     header: 'Agnes',
+    locale: 'zh-CN',
     ...(composerSelectionPath ? { composerSelectionPath } : {}),
     ...(themePreferencePath ? { themePreferencePath } : {}),
   })
@@ -151,11 +153,24 @@ describe('SLASH_COMMANDS (cli 稿 §9.3 and PM7)', () => {
     // Commands without arguments carry no shape at all, and an unknown name finds nothing.
     expect(slashCommand('/help')?.args).toBeUndefined()
     expect(slashCommand('/nope')).toBeUndefined()
-    for (const c of SLASH_COMMANDS) expect(c.description.length).toBeGreaterThan(0)
+    for (const c of SLASH_COMMANDS)
+      expect(slashCommandFor(c.name, 'zh-CN')?.description.length).toBeGreaterThan(0)
   })
 })
 
 describe('runSlash', () => {
+  it('uses the app locale for the context command', async () => {
+    const app = {
+      locale: 'zh-CN',
+      session: {
+        client: {},
+        projectUIOpening: async () => ({ timeline: { nodes: [] } }),
+      },
+    } as unknown as TuiApp
+
+    await expect(runSlash(app, '/context')).resolves.toMatchObject({ title: '上下文分解' })
+  })
+
   it('/theme menu selects, repaints and persists across TUI instances', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'agh-theme-app-'))
     const path = join(dir, 'tui-theme.json')
@@ -250,7 +265,7 @@ describe('runSlash', () => {
       const help = await runSlash(app, '/help')
       for (const cmd of SLASH_COMMANDS) expect(help.text).toContain(cmd.name)
       expect(help.presentation).toBe('transcript')
-      expect(help.text).toContain('Slash commands')
+      expect(help.text).toContain('斜杠命令')
       // The help line carries the one-line description, not just the name.
       expect(help.text).toContain('退出')
       expect(await runSlash(app, '/quit')).toEqual({ quit: true })
@@ -547,6 +562,7 @@ describe('runSlash', () => {
           session,
           term: new FakeTerminal({ columns: 60, rows: 20 }),
           header: 'Agnes',
+          locale: 'zh-CN',
         })
         const result = await runSlash(app, command)
         expect(result.details).toBe(true)
@@ -742,7 +758,7 @@ describe('app.ts wiring: key routing through the editor reaches the real command
     const client = createClient({ transport: { kind: 'inproc', endpoint: ep } })
     const session = await client.session.new({ cwd: '/tmp' })
     const term = new FakeTerminal({ columns: 40, rows: 12 })
-    const app = new TuiApp({ session, term, header: 'Agnes' })
+    const app = new TuiApp({ session, term, header: 'Agnes', locale: 'zh-CN' })
     await app.start()
     return { app, term, client }
   }

@@ -37,6 +37,7 @@ import { runAcp } from './modes/acp.js'
 import { runPrint } from './modes/print.js'
 import { runTui } from './modes/tui.js'
 import { runOnboardingTui } from './onboarding/tui.js'
+import { resolveLocale } from './tui/locale.js'
 import { NodeTerminal } from './tui/terminal.js'
 import type { Booted } from './types.js'
 
@@ -730,7 +731,7 @@ export async function main(argv: string[], io: MainIO, boot: Partial<LocalBootDe
           // Rendered with the TUI's own selectors. `agh config` keeps the line-oriented wizard so
           // a piped or non-TTY caller still has a scriptable path to the same config endpoint.
           const term = new NodeTerminal(io.stdin, io.stdout, io.env)
-          const saved = await runOnboardingTui(booted.client, snapshot, term)
+          const saved = await runOnboardingTui(booted.client, snapshot, term, resolveLocale(io.env))
           // Cancelled at the root selector: leave without writing anything, as an unconfigured CLI
           // has nothing to open a session with.
           if (saved === undefined || saved.effect === 'restart-required') return ExitCode.OK

@@ -25,10 +25,14 @@ describe('rendered topbar region', () => {
     expect(handle).toBeDefined()
     expect(topbar?.querySelector('[data-slot="ui:topbar"]')).toBeTruthy()
     expect(topbar?.querySelector('#sidebar-toggle')).toBeInstanceOf(HTMLButtonElement)
-    expect(topbar?.querySelector('#task-title')?.textContent).toBe('新会话')
-    expect(topbar?.querySelector('#status')?.textContent).toBe('准备任务')
-    expect(topbar?.querySelector('#connection')?.textContent).toBe('正在连接后台')
-    expect(topbar?.querySelector('#disconnect')).toBeInstanceOf(HTMLButtonElement)
+    // No locale preference saved: the workbench defaults to English (assert the catalog default).
+    expect(topbar?.querySelector('#task-title')?.textContent).toBe('New session')
+    expect(topbar?.querySelector('#status')?.textContent).toBe('Ready')
+    expect(topbar?.querySelector('#connection')?.textContent).toBe('Connecting to the backend')
+    // 「断开连接」按钮已移除：主动断开没有恢复路径（SDK 的 isClosed 一旦置真就锁死，
+    // 且不会启动自动重连），留一个点了只能靠重启后台恢复的按钮是净损失。掉线仍由
+    // 自动重连和 #reconnect-notice 里的「重试连接」处理。
+    expect(topbar?.querySelector('#disconnect')).toBeNull()
 
     const toggle = topbar?.querySelector<HTMLButtonElement>('#sidebar-toggle')
     toggle?.click()
@@ -42,7 +46,7 @@ describe('rendered topbar region', () => {
     expect(topbar?.querySelector('#task-title')?.textContent).toBe('测试任务')
     expect(topbar?.querySelector('#status')?.textContent).toBe('执行中')
     expect(topbar?.querySelector('#status')?.getAttribute('data-state')).toBe('running')
-    expect(topbar?.querySelector('#connection')?.textContent).toBe('本地后台已连接')
+    expect(topbar?.querySelector('#connection')?.textContent).toBe('Local backend connected')
     expect(topbar?.querySelector('#connection')?.getAttribute('data-state')).toBe('connected')
   })
 

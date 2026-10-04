@@ -74,6 +74,12 @@ vi.mock('@agnes/sdk/browser', async (importOriginal) => ({
   },
   memoryJournal: sdk.memoryJournal,
 }))
+
+// i18n: the workbench defaults to English; these tests assert the zh-CN catalog,
+// so the locale preference is pinned before each app start.
+beforeEach(() => {
+  localStorage.setItem('agnes-locale', 'zh-CN')
+})
 vi.mock('../src/session-binding.js', () => ({
   bindWebSession: binding.bindWebSession,
   loadWebSession: binding.loadWebSession,
@@ -227,6 +233,7 @@ function installPublicFixture(): void {
   history.replaceState(null, '', '/?session=old#test-launcher-token')
   sessionStorage.clear()
   localStorage.clear()
+  localStorage.setItem('agnes-locale', 'zh-CN')
   vi.stubGlobal(
     'fetch',
     vi.fn<typeof fetch>(async () => new Response(JSON.stringify({ available: false }), { status: 200 })),
@@ -237,6 +244,18 @@ function submit(text: string): void {
   const composer = document.getElementById('prompt') as HTMLTextAreaElement
   composer.value = text
   document.getElementById('composer')?.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+}
+
+/** The model trigger opens the complete flat model list. */
+function openModelList(): void {
+  if (!document.querySelector('#model-listbox')) throw new Error('model picker did not open')
+}
+
+/** The model list is rendered directly in the picker. */
+function modelMenu(): HTMLElement {
+  const found = document.querySelector<HTMLElement>('#model-listbox')
+  if (!found) throw new Error('model picker did not open')
+  return found
 }
 
 afterEach(async () => {
@@ -806,6 +825,72 @@ describe('web session selection', () => {
     20_000,
   )
 
+  it('starts a draft in the workspace chosen from its sidebar action', async () => {
+    installPublicFixture()
+    const alpha = {
+      path: '/workspace/alpha',
+      name: 'Alpha',
+      lastUsedAt: null,
+      sessionCount: 1,
+      available: true,
+    }
+    const beta = {
+      path: '/workspace/beta',
+      name: 'Beta',
+      lastUsedAt: null,
+      sessionCount: 0,
+      available: true,
+    }
+    const old = session('old', async () => idleTimeline('old', { route: 'local', id: 'model-a' }))
+    const fresh = session('fresh', async () => idleTimeline('fresh', { route: 'local', id: 'model-a' }))
+    const create = vi.fn(async () => fresh)
+    sdk.createClient.mockReturnValue({
+      initialize: vi.fn(async () => undefined),
+      on: vi.fn(),
+      close: vi.fn(async () => undefined),
+      apis: vi.fn(async () => ({ profile: { models: [{ route: 'local', id: 'model-a' }] } })),
+      config: {
+        get: vi.fn(async () => ({ configured: true })),
+        providers: vi.fn(async () => ({ providers: [] })),
+      },
+      approval: { decide: vi.fn(async () => undefined) },
+      workspace: { list: vi.fn(async () => ({ items: [alpha, beta] })) },
+      session: {
+        list: vi.fn(async () => ({ items: [{ sessionId: 'old', cwd: alpha.path }] })),
+        load: vi.fn(async () => old),
+        new: create,
+      },
+    })
+    binding.loadWebSession.mockResolvedValue({ session: old, offPermission: vi.fn() })
+    binding.bindWebSession.mockImplementation((selected: SessionDouble) => ({
+      session: selected,
+      offPermission: vi.fn(),
+    }))
+
+    await import('../src/app.js')
+    const createInBeta = await vi.waitFor(() => {
+      const button = document.querySelector<HTMLButtonElement>(
+        '[data-workspace-new-session="/workspace/beta"]',
+      )
+      expect(button).toBeTruthy()
+      expect(button?.disabled).toBe(false)
+      return button as HTMLButtonElement
+    })
+    createInBeta.click()
+
+    await vi.waitFor(() => expect(document.querySelector('[data-workspace-label]')?.textContent).toBe('Beta'))
+    expect((document.getElementById('new-session') as HTMLDialogElement).open).toBe(false)
+    expect(create).not.toHaveBeenCalled()
+    await vi.waitFor(() =>
+      expect((document.getElementById('prompt') as HTMLTextAreaElement).disabled).toBe(false),
+    )
+
+    submit('create in beta')
+    await vi.waitFor(() => expect(create).toHaveBeenCalledOnce())
+    expect(create).toHaveBeenCalledWith({ cwd: beta.path, sessionKey: expect.any(String) })
+    await vi.waitFor(() => expect(fresh.prompt).toHaveBeenCalledWith('create in beta'))
+  })
+
   it('keeps controls usable after a pending model update and refreshes both old and new drafts', async () => {
     installPublicFixture()
     let models = [{ route: 'local', id: 'model-a' }]
@@ -840,7 +925,8 @@ describe('web session selection', () => {
     models = [...models, { route: 'new', id: 'model-b' }]
     await savedCallback({ ...snapshot, effect: 'new-sessions' })
     control('model').click()
-    expect(document.querySelector('[role="listbox"]')?.textContent).toContain('model-b')
+    openModelList()
+    expect(modelMenu().textContent).toContain('model-b')
     control('model').click()
     control('new').click()
     await vi.waitFor(() => expect(control('model').disabled).toBe(false))
@@ -852,6 +938,64 @@ describe('web session selection', () => {
       expect(control(id).disabled).toBe(false)
     expect(control('send').disabled).toBe(true)
   })
+
+  it('keeps the model picker flat and applies the selected model settings', async () => {
+    installPublicFixture()
+    vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
+      callback(0)
+      return 1
+    })
+    const old = session('old', async () => idleTimeline('old', { route: 'local', id: 'model-a' }))
+    sdk.createClient.mockReturnValue({
+      initialize: vi.fn(async () => undefined),
+      on: vi.fn(),
+      close: vi.fn(async () => undefined),
+      // Model capability metadata stays available to settings even though the picker is flat.
+      apis: vi.fn(async () => ({
+        profile: {
+          models: [
+            {
+              route: 'local',
+              id: 'model-a',
+              reasoning: true,
+              thinkingLevelMap: { low: 'low', high: 'high' },
+            },
+          ],
+        },
+      })),
+      config: {
+        get: vi.fn(async () => ({ configured: true })),
+        providers: vi.fn(async () => ({ providers: [] })),
+      },
+      workspace: { list: vi.fn(async () => ({ items: [] })) },
+      session: { list: vi.fn(async () => ({ items: [{ sessionId: 'old' }] })), load: vi.fn(async () => old) },
+    })
+    binding.loadWebSession.mockResolvedValue({ session: old, offPermission: vi.fn() })
+    await import('../src/app.js')
+    const control = (id: string) => document.getElementById(id) as HTMLButtonElement
+    await vi.waitFor(() => expect(control('model').disabled).toBe(false))
+
+    const rows = () => Array.from(modelMenu().querySelectorAll<HTMLElement>('[role="option"]'))
+    control('model').click()
+    openModelList()
+    rows()[0]?.click()
+    await vi.waitFor(() =>
+      expect(old.setModel).toHaveBeenCalledWith({
+        slot: 'primary',
+        route: 'local',
+        model: 'model-a',
+        thinking: 'off',
+        contextWindow: 128000,
+      }),
+    )
+
+    // The flat picker changes only the model; thinking controls stay in account settings.
+    await vi.waitFor(() => expect(control('model').disabled).toBe(false))
+    control('model').click()
+    expect(document.querySelector('.model-picker-entry, #model-submenu-listbox')).toBeNull()
+    expect(rows().map((row) => row.textContent?.trim())).toContain('model-a已配置账户')
+    control('model').click()
+  }, 20_000)
 
   it.each(['save-first', 'poll-first', 'poll-fails'])(
     'keeps saved model status accurate when %s',
@@ -903,9 +1047,9 @@ describe('web session selection', () => {
       else pollRead.resolve(result)
       await vi.waitFor(() => expect(modelButton.disabled).toBe(false))
       modelButton.click()
-      expect(document.querySelector('[role="listbox"]')?.textContent).toContain('model-b')
-      if (order === 'poll-first')
-        expect(document.querySelector('[role="listbox"]')?.textContent).toContain('model-c')
+      openModelList()
+      expect(modelMenu().textContent).toContain('model-b')
+      if (order === 'poll-first') expect(modelMenu().textContent).toContain('model-c')
     },
   )
 
@@ -1149,7 +1293,8 @@ describe('web session selection', () => {
     prompt.dispatchEvent(new Event('input', { bubbles: true }))
 
     model.click()
-    const option = document.querySelector<HTMLElement>('[role="option"]')
+    openModelList()
+    const option = modelMenu().querySelector<HTMLElement>('[role="option"]')
     option?.click()
     await vi.waitFor(() =>
       expect(old.setModel).toHaveBeenCalledWith({
@@ -1437,7 +1582,8 @@ describe('web session selection', () => {
     form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
     await vi.waitFor(() => expect(dialog.open).toBe(false))
     document.getElementById('model')?.click()
-    document.querySelector<HTMLElement>('[role="option"]')?.click()
+    openModelList()
+    modelMenu().querySelector<HTMLElement>('[role="option"]')?.click()
 
     submit('保留这条首轮草稿')
     await vi.waitFor(() =>
@@ -1669,13 +1815,14 @@ describe('web model confirmation', () => {
     expect(model.getAttribute('aria-label')).toBe('当前会话模型：model-a')
 
     model.click()
-    document.querySelectorAll<HTMLElement>('[role="option"]')[1]?.click()
+    openModelList()
+    modelMenu().querySelectorAll<HTMLElement>('[role="option"]')[1]?.click()
     await vi.waitFor(() => expect(old.setModel).toHaveBeenCalledTimes(1))
     await vi.waitFor(() => expect(document.getElementById('notice')?.dataset.kind).toBe('error'))
     expect(model.querySelector('[data-model-label]')?.textContent).toBe('model-a')
     expect(model.getAttribute('aria-label')).not.toContain('account-acct-private')
 
-    document.querySelectorAll<HTMLElement>('[role="option"]')[1]?.click()
+    modelMenu().querySelectorAll<HTMLElement>('[role="option"]')[1]?.click()
     await vi.waitFor(() => expect(old.setModel).toHaveBeenCalledTimes(2))
     expect(model.disabled).toBe(true)
     document.querySelector<HTMLButtonElement>('[data-session="next"]')?.click()

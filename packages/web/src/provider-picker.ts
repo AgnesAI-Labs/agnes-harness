@@ -1,10 +1,11 @@
 import { createSelectPicker, type SelectPicker } from '@agnes/web-ui'
+import { tr } from './locale-bridge.js'
 
 export function createProviderPicker(select: HTMLSelectElement): SelectPicker {
   return createSelectPicker(select, {
-    label: 'Provider',
+    label: tr('settings.provider.label'),
     includeEmpty: false,
-    formatOption: (label) => label.replace(/ · 订阅登录$/, ''),
+    formatOption: (label) => label.replace(tr('settings.provider.subscriptionLoginSuffix'), ''),
   })
 }
 
@@ -16,9 +17,9 @@ export function createAccountPickers(ui: {
 }): Pick<SelectPicker, 'sync' | 'close'> {
   const pickers = [
     createProviderPicker(ui.provider),
-    createSelectPicker(ui.authMethod, { label: '认证方式' }),
-    createSelectPicker(ui.models, { label: '默认模型' }),
-    ...(ui.thinking ? [createSelectPicker(ui.thinking, { label: '默认思考强度' })] : []),
+    createSelectPicker(ui.authMethod, { label: tr('settings.oauth.methodLabel') }),
+    createSelectPicker(ui.models, { label: tr('accounts.defaultModelLabel') }),
+    ...(ui.thinking ? [createSelectPicker(ui.thinking, { label: tr('settings.model.thinkingLabel') })] : []),
   ]
   return {
     sync: () => {

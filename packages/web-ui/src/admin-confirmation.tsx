@@ -8,7 +8,13 @@ import type {
 } from '@agnes/protocol'
 import { isWebClientModuleSlotName } from '@agnes/protocol'
 import type { JSX, ReactNode } from 'react'
-import { blockerText, sourceLabel } from './admin-text.js'
+import { ADMIN_LOCALE_NAMESPACE, blockerText, sourceLabel } from './admin-text.js'
+import { adminLocaleCatalog } from './locales/admin.js'
+import {
+  ADMIN_CONFIRMATION_LOCALE_NAMESPACE,
+  adminConfirmationLocaleCatalog,
+} from './locales/admin-confirmation.js'
+import { type LocaleTranslator, useUiText } from './ui-locale.js'
 
 type Fact = readonly [label: string, value: string]
 
@@ -55,114 +61,164 @@ function serviceGrant(grant: SurfaceServiceGrant): string {
   return `${grant.extension} · ${grant.name} · ${grant.range}`
 }
 
-function capabilityLines(capabilities: Capabilities): string[] {
+function capabilityLines(capabilities: Capabilities, t: LocaleTranslator): string[] {
   const lines: string[] = []
   if (capabilities.tools) {
     const names = capabilities.tools.names?.length
-      ? `；名称 ${capabilities.tools.names.join('、')}`
-      : '；未报告具体名称'
-    lines.push(`工具：前缀 ${capabilities.tools.prefix || '（无前缀）'}${names}`)
+      ? t('capability.names', { names: capabilities.tools.names.join(t('list.separator')) })
+      : t('capability.names-unknown')
+    lines.push(
+      `${t('capability.tools')}: ${t('capability.prefix')} ${capabilities.tools.prefix || t('value.no-prefix')} · ${names}`,
+    )
   }
   if (capabilities['tools.invoke'] !== undefined)
-    lines.push(`调用其他工具：${capabilities['tools.invoke'] ? '允许' : '不允许'}`)
-  if (capabilities.hooks?.length) lines.push(`钩子：${capabilities.hooks.join('、')}`)
-  if (capabilities.slots?.length) lines.push(`界面插槽：${capabilities.slots.join('、')}`)
-  if (capabilities.events !== undefined) lines.push(`事件：${capabilities.events ? '允许' : '不允许'}`)
-  if (capabilities.resources?.length) lines.push(`资源：${capabilities.resources.join('、')}`)
+    lines.push(
+      `${t('capability.invoke')}: ${t(capabilities['tools.invoke'] ? 'boolean.allowed' : 'boolean.denied')}`,
+    )
+  if (capabilities.hooks?.length)
+    lines.push(`${t('capability.hooks')}: ${capabilities.hooks.join(t('list.separator'))}`)
+  if (capabilities.slots?.length)
+    lines.push(`${t('capability.slots')}: ${capabilities.slots.join(t('list.separator'))}`)
+  if (capabilities.events !== undefined)
+    lines.push(`${t('capability.events')}: ${t(capabilities.events ? 'boolean.allowed' : 'boolean.denied')}`)
+  if (capabilities.resources?.length)
+    lines.push(`${t('capability.resources')}: ${capabilities.resources.join(t('list.separator'))}`)
   if (capabilities.network !== undefined) {
     lines.push(
       Array.isArray(capabilities.network)
-        ? '网络：未授予主机访问权限'
-        : `网络主机：${capabilities.network.hosts.join('、')}`,
+        ? t('capability.network-denied')
+        : t('capability.network-hosts', { hosts: capabilities.network.hosts.join(t('list.separator')) }),
     )
   }
-  if (capabilities.artifacts !== undefined) lines.push(`工件：${capabilities.artifacts ? '允许' : '不允许'}`)
+  if (capabilities.artifacts !== undefined)
+    lines.push(
+      `${t('capability.artifacts')}: ${t(capabilities.artifacts ? 'boolean.allowed' : 'boolean.denied')}`,
+    )
   if (capabilities['network.publicRead'] !== undefined)
-    lines.push(`公开网页读取：${capabilities['network.publicRead'] ? '允许（匿名、限额）' : '不允许'}`)
-  if (capabilities.subagent !== undefined) lines.push(`子代理：${capabilities.subagent ? '允许' : '不允许'}`)
+    lines.push(
+      `${t('capability.public-read')}: ${t(
+        capabilities['network.publicRead'] ? 'capability.public-read-allowed' : 'boolean.denied',
+      )}`,
+    )
+  if (capabilities.subagent !== undefined)
+    lines.push(
+      `${t('capability.subagent')}: ${t(capabilities.subagent ? 'boolean.allowed' : 'boolean.denied')}`,
+    )
   for (const service of capabilities.services ?? []) {
-    lines.push(`服务：${service.name}（${service.kind}，超时 ${service.timeoutMs}ms）`)
+    lines.push(
+      t('capability.service', { name: service.name, kind: service.kind, timeoutMs: service.timeoutMs }),
+    )
   }
   for (const projection of capabilities.projections ?? []) {
     lines.push(
-      `投影：${projection.name}（输入 ${projection.inputEventTypes.join('、')}，状态上限 ${projection.maxStateBytes} B）`,
+      t('capability.projection', {
+        name: projection.name,
+        inputs: projection.inputEventTypes.join(t('list.separator')),
+        maxStateBytes: projection.maxStateBytes,
+      }),
     )
   }
   return lines
 }
 
-function contributionLines(contribution: PackageContributionSummary): string[] {
-  const lines = [`${contribution.kind} · ${contribution.id}`]
+function contributionLines(
+  contribution: PackageContributionSummary,
+  t: LocaleTranslator,
+  adminText: LocaleTranslator,
+): string[] {
+  const contributionKey = `contribution.${contribution.kind}`
+  const translatedKind = adminText(contributionKey)
+  const kind = translatedKind === contributionKey ? contribution.kind : translatedKind
+  const lines = [`${kind} · ${contribution.id}`]
   switch (contribution.kind) {
     case 'client':
       return [
         ...lines,
-        `描述：${contribution.path}`,
-        `后端行：${contribution.rowId}`,
-        ...('client' in contribution ? [`浏览器入口：${contribution.client.entry}`] : []),
+        t('contribution.description', { value: contribution.path }),
+        t('contribution.backend-row', { value: contribution.rowId }),
+        ...('client' in contribution
+          ? [t('contribution.browser-entry', { value: contribution.client.entry })]
+          : []),
         ...('client' in contribution && contribution.client.services?.length
-          ? [`查询服务：${contribution.client.services.join('、')}`]
+          ? [t('contribution.services', { services: contribution.client.services.join(t('list.separator')) })]
           : []),
       ]
     case 'extension': {
-      lines.push(`入口：${contribution.path}`, `API 范围：${contribution.apiRange}`)
-      if (contribution.runtimeSupports?.length)
-        lines.push(`运行方式：${contribution.runtimeSupports.join('、')}`)
-      const declared = capabilityLines(contribution.capabilities)
       lines.push(
-        ...(declared.length
-          ? declared
-          : ['此扩展未在 capability 字段中报告能力；不能由此推断整个包没有能力。']),
+        t('contribution.entry', { value: contribution.path }),
+        t('contribution.api-range', { value: contribution.apiRange }),
       )
+      if (contribution.runtimeSupports?.length)
+        lines.push(
+          t('contribution.run-mode', { modes: contribution.runtimeSupports.join(t('list.separator')) }),
+        )
+      const declared = capabilityLines(contribution.capabilities, t)
+      lines.push(...(declared.length ? declared : [t('contribution.no-declared-capabilities')]))
       const clientSlots = contribution.client?.slots ?? []
       if (clientSlots.length) {
-        lines.push(`浏览器 UI 槽位：${clientSlots.join('、')}`)
+        lines.push(t('contribution.client-slots', { slots: clientSlots.join(t('list.separator')) }))
         const unsupported = clientSlots.filter((slot) => !isWebClientModuleSlotName(slot))
         if (unsupported.length)
-          lines.push(`Web 宿主暂不支持：${unsupported.join('、')}；安装后不会发布浏览器 UI。`)
+          lines.push(t('contribution.unsupported-slots', { slots: unsupported.join(t('list.separator')) }))
       }
       return lines
     }
     case 'seam':
       return [
         ...lines,
-        `入口：${contribution.path}`,
-        `API 范围：${contribution.apiRange}`,
-        `提供：${contribution.provides.join('、')}`,
+        t('contribution.entry', { value: contribution.path }),
+        t('contribution.api-range', { value: contribution.apiRange }),
+        t('contribution.provides', { value: contribution.provides.join(t('list.separator')) }),
       ]
     case 'provider':
     case 'runtime':
-      return [...lines, `入口：${contribution.path}`, `API 范围：${contribution.apiRange}`]
+      return [
+        ...lines,
+        t('contribution.entry', { value: contribution.path }),
+        t('contribution.api-range', { value: contribution.apiRange }),
+      ]
     case 'skill':
     case 'preset':
-      return [...lines, `入口：${contribution.path}`]
+      return [...lines, t('contribution.entry', { value: contribution.path })]
     case 'surface': {
       const { descriptor } = contribution
       const artifact =
         descriptor.artifact.kind === 'node' ? descriptor.artifact.entry : descriptor.artifact.image
       return [
         ...lines,
-        `表面：${descriptor.id}`,
-        `API 范围：${descriptor.apiRange}`,
-        `工件：${descriptor.artifact.kind} · ${artifact}`,
-        `健康检查：${descriptor.healthPath}`,
+        t('contribution.surface', { value: descriptor.id }),
+        t('contribution.api-range', { value: descriptor.apiRange }),
+        t('contribution.artifact', { kind: descriptor.artifact.kind, value: artifact }),
+        t('contribution.health-check', { value: descriptor.healthPath }),
         ...(descriptor.requires.services.length
-          ? descriptor.requires.services.map((grant) => `所需服务：${serviceGrant(grant)}`)
-          : ['未报告所需服务授权。']),
+          ? descriptor.requires.services.map((grant) =>
+              t('contribution.required-service', { value: serviceGrant(grant) }),
+            )
+          : [t('contribution.no-required-services')]),
       ]
     }
   }
 }
 
-function Contributions({ values }: { values: readonly PackageContributionSummary[] }): JSX.Element {
+function Contributions({
+  values,
+  t,
+  adminText,
+}: {
+  values: readonly PackageContributionSummary[]
+  t: LocaleTranslator
+  adminText: LocaleTranslator
+}): JSX.Element {
   if (!values.length) {
-    return <TextList items={[]} empty="后台未报告贡献；请仍核对本次安装的完整性摘要。" />
+    return <TextList items={[]} empty={t('empty.contributions')} />
   }
   return (
     <ul className="confirm-contributions">
       {values.map((contribution) => (
-        <li key={`${contribution.kind}:${contribution.id}:${contributionLines(contribution).join('|')}`}>
-          {contributionLines(contribution).map((line) => (
+        <li
+          key={`${contribution.kind}:${contribution.id}:${contributionLines(contribution, t, adminText).join('|')}`}
+        >
+          {contributionLines(contribution, t, adminText).map((line) => (
             <p key={line}>{line}</p>
           ))}
         </li>
@@ -171,81 +227,111 @@ function Contributions({ values }: { values: readonly PackageContributionSummary
   )
 }
 
-function Blockers({ values }: { values: readonly PackageBlocker[] }): JSX.Element {
-  return <TextList items={values.map(blockerText)} empty="后台未报告阻断项。" />
+function Blockers({
+  values,
+  t,
+  adminText,
+}: {
+  values: readonly PackageBlocker[]
+  t: LocaleTranslator
+  adminText: LocaleTranslator
+}): JSX.Element {
+  return (
+    <TextList items={values.map((blocker) => blockerText(blocker, adminText))} empty={t('empty.blockers')} />
+  )
 }
 
-function CapabilityDiff({ preview }: { preview: PackagePreview }): JSX.Element {
+function CapabilityDiff({ preview, t }: { preview: PackagePreview; t: LocaleTranslator }): JSX.Element {
   const diff = preview.capabilityDiff
   const changes = [
-    ...diff.added.map((item) => `新增能力：${item}`),
-    ...diff.removed.map((item) => `移除能力：${item}`),
-    ...diff.runtimeSupportRemoved.map((item) => `不再支持运行方式：${item}`),
-    ...diff.dependenciesAdded.map((item) => `新增依赖：${item}`),
-    ...diff.serviceGrantsAdded.map((item) => `新增服务授权：${serviceGrant(item)}`),
+    ...diff.added.map((item) => t('diff.added', { item })),
+    ...diff.removed.map((item) => t('diff.removed', { item })),
+    ...diff.runtimeSupportRemoved.map((item) => t('diff.runtime-removed', { item })),
+    ...diff.dependenciesAdded.map((item) => t('diff.dependency-added', { item })),
+    ...diff.serviceGrantsAdded.map((item) => t('diff.service-added', { value: serviceGrant(item) })),
   ]
-  return <TextList items={changes} empty="后台未报告相对于当前基线的能力差异；这不表示这个包不包含能力。" />
+  return <TextList items={changes} empty={t('empty.capability-diff')} />
 }
 
-function Dependencies({ entries }: { entries: Readonly<Record<string, string>> }): JSX.Element {
+function Dependencies({
+  entries,
+  t,
+}: {
+  entries: Readonly<Record<string, string>>
+  t: LocaleTranslator
+}): JSX.Element {
   return (
     <TextList
       items={Object.entries(entries).map(([name, range]) => `${name} · ${range}`)}
-      empty="后台未报告依赖项。"
+      empty={t('empty.dependencies')}
     />
   )
 }
 
-function Warnings({ preview }: { preview: PackagePreview }): JSX.Element {
+function Warnings({ preview, t }: { preview: PackagePreview; t: LocaleTranslator }): JSX.Element {
   return (
     <TextList
-      items={preview.warnings.map((warning) => `${warning.code}：${warning.safeMessage}`)}
-      empty="后台未报告警告。"
+      items={preview.warnings.map((warning) =>
+        t('warning.label', { code: warning.code, message: warning.safeMessage }),
+      )}
+      empty={t('empty.warnings')}
     />
   )
 }
 
 /** Renders the exact preview DTO as inert text nodes before an install or update is confirmed. */
 export function PreviewConfirmationFacts({ preview }: { preview: PackagePreview }): JSX.Element {
+  const { locale, t } = useUiText(ADMIN_CONFIRMATION_LOCALE_NAMESPACE, adminConfirmationLocaleCatalog)
+  const { t: adminText } = useUiText(ADMIN_LOCALE_NAMESPACE, adminLocaleCatalog)
   return (
     <>
-      <p className="confirm-facts-lead">请核对完整性、能力摘要及以下后台已报告的安装事实。</p>
+      <p className="confirm-facts-lead">{t('lead.preview')}</p>
       <FactsList
         items={[
-          ['版本', preview.version],
-          ['来源', sourceLabel(preview.source)],
-          ['完整性摘要', preview.integrity],
+          [t('fact.version'), preview.version],
+          [t('fact.source'), sourceLabel(preview.source, adminText)],
+          [t('fact.integrity'), preview.integrity],
+          [t('fact.capability-hash'), preview.capabilityHash ?? t('value.not-reported-cannot-trust')],
+          [t('fact.license'), preview.license],
           [
-            '能力摘要哈希',
-            preview.capabilityHash ?? '后台未报告能力摘要哈希；此预览不能据此作为信任决定的依据。',
+            t('fact.provenance-signature'),
+            t(preview.provenance.signatureVerified ? 'value.verified' : 'value.unverified'),
           ],
-          ['许可证', preview.license],
-          ['溯源签名', preview.provenance.signatureVerified ? '已验证' : '未验证'],
         ]}
       />
-      <ReviewSection title="来源与溯源">
+      <ReviewSection title={t('section.provenance')}>
         <FactsList
           items={[
-            ['溯源来源', sourceLabel(preview.provenance.source)],
-            ['溯源完整性', preview.provenance.integrity],
-            ['发布时间', preview.provenance.releasedAt ?? '后台未报告发布时间'],
-            ['签名验证', preview.provenance.signatureVerified ? '已验证' : '未验证'],
+            [t('fact.provenance-source'), sourceLabel(preview.provenance.source, adminText)],
+            [t('fact.provenance-integrity'), preview.provenance.integrity],
+            [
+              t('fact.release-time'),
+              preview.provenance.releasedAt
+                ? new Intl.DateTimeFormat(locale, { dateStyle: 'medium', timeStyle: 'short' }).format(
+                    new Date(preview.provenance.releasedAt),
+                  )
+                : t('value.not-reported'),
+            ],
+            [
+              t('fact.signature-verification'),
+              t(preview.provenance.signatureVerified ? 'value.verified' : 'value.unverified'),
+            ],
           ]}
         />
       </ReviewSection>
-      <ReviewSection title="贡献与已报告能力">
-        <Contributions values={preview.contributions} />
+      <ReviewSection title={t('section.reported-contributions')}>
+        <Contributions values={preview.contributions} t={t} adminText={adminText} />
       </ReviewSection>
-      <ReviewSection title="能力差异与服务授权">
-        <CapabilityDiff preview={preview} />
+      <ReviewSection title={t('section.capability-diff')}>
+        <CapabilityDiff preview={preview} t={t} />
       </ReviewSection>
-      <ReviewSection title="依赖与许可证">
-        <FactsList items={[['许可证', preview.license]]} />
-        <Dependencies entries={preview.dependencies} />
+      <ReviewSection title={t('section.dependencies-license')}>
+        <FactsList items={[[t('fact.license'), preview.license]]} />
+        <Dependencies entries={preview.dependencies} t={t} />
       </ReviewSection>
-      <ReviewSection title="警告与阻断项">
-        <Warnings preview={preview} />
-        <Blockers values={preview.blockers} />
+      <ReviewSection title={t('section.warnings-blockers')}>
+        <Warnings preview={preview} t={t} />
+        <Blockers values={preview.blockers} t={t} adminText={adminText} />
       </ReviewSection>
     </>
   )
@@ -254,27 +340,31 @@ export function PreviewConfirmationFacts({ preview }: { preview: PackagePreview 
 /** Renders the installed DTO that will be bound by a trust decision. */
 export function TrustConfirmationFacts({
   item,
-  lead = '信任决定会绑定下列完整性摘要与能力摘要哈希；信任本身不会启用插件。',
+  lead,
+  leadKey = 'lead.trust',
 }: {
   item: PackageInstalledDescriptor
   lead?: string
+  leadKey?: 'lead.trust' | 'lead.trust-enable'
 }): JSX.Element {
+  const { t } = useUiText(ADMIN_CONFIRMATION_LOCALE_NAMESPACE, adminConfirmationLocaleCatalog)
+  const { t: adminText } = useUiText(ADMIN_LOCALE_NAMESPACE, adminLocaleCatalog)
   return (
     <>
-      <p className="confirm-facts-lead">{lead}</p>
+      <p className="confirm-facts-lead">{lead ?? t(leadKey)}</p>
       <FactsList
         items={[
-          ['版本', item.version],
-          ['来源', sourceLabel(item.source)],
-          ['完整性摘要', item.integrity],
-          ['能力摘要哈希', item.capabilityHash ?? '后台未报告能力摘要哈希'],
+          [t('fact.version'), item.version],
+          [t('fact.source'), sourceLabel(item.source, adminText)],
+          [t('fact.integrity'), item.integrity],
+          [t('fact.capability-hash'), item.capabilityHash ?? t('value.not-reported')],
         ]}
       />
-      <ReviewSection title="已报告的贡献与能力字段">
-        <Contributions values={item.contributions} />
+      <ReviewSection title={t('section.trust-contributions')}>
+        <Contributions values={item.contributions} t={t} adminText={adminText} />
       </ReviewSection>
-      <ReviewSection title="当前阻断项">
-        <Blockers values={item.blockers} />
+      <ReviewSection title={t('section.current-blockers')}>
+        <Blockers values={item.blockers} t={t} adminText={adminText} />
       </ReviewSection>
     </>
   )
@@ -282,24 +372,24 @@ export function TrustConfirmationFacts({
 
 /** Renders the immutable baselines that make a trust revocation race-safe. */
 export function UntrustConfirmationFacts({ item }: { item: PackageInstalledDescriptor }): JSX.Element {
+  const { t } = useUiText(ADMIN_CONFIRMATION_LOCALE_NAMESPACE, adminConfirmationLocaleCatalog)
+  const { t: adminText } = useUiText(ADMIN_LOCALE_NAMESPACE, adminLocaleCatalog)
   return (
     <>
-      <p className="confirm-facts-lead">
-        撤销信任会绑定下列完整性摘要与能力摘要哈希，立刻停用此包，并从恢复与回滚候选中移除。再次使用必须重新预览并信任。
-      </p>
+      <p className="confirm-facts-lead">{t('lead.untrust')}</p>
       <FactsList
         items={[
-          ['版本', item.version],
-          ['来源', sourceLabel(item.source)],
-          ['完整性摘要', item.integrity],
-          ['能力摘要哈希', item.capabilityHash ?? '后台未报告能力摘要哈希'],
+          [t('fact.version'), item.version],
+          [t('fact.source'), sourceLabel(item.source, adminText)],
+          [t('fact.integrity'), item.integrity],
+          [t('fact.capability-hash'), item.capabilityHash ?? t('value.not-reported')],
         ]}
       />
-      <ReviewSection title="将被撤销的贡献与能力字段">
-        <Contributions values={item.contributions} />
+      <ReviewSection title={t('section.revoked-contributions')}>
+        <Contributions values={item.contributions} t={t} adminText={adminText} />
       </ReviewSection>
-      <ReviewSection title="当前阻断项">
-        <Blockers values={item.blockers} />
+      <ReviewSection title={t('section.current-blockers')}>
+        <Blockers values={item.blockers} t={t} adminText={adminText} />
       </ReviewSection>
     </>
   )
@@ -313,21 +403,26 @@ export function UpdateActivationFacts({
   installed: PackageInstalledDescriptor
   preview: PackagePreview
 }): JSX.Element {
+  const { t } = useUiText(ADMIN_CONFIRMATION_LOCALE_NAMESPACE, adminConfirmationLocaleCatalog)
   return (
     <>
       <PreviewConfirmationFacts preview={preview} />
-      <ReviewSection title="当前安装与运行基线">
+      <ReviewSection title={t('section.current-baseline')}>
         <FactsList
           items={[
-            ['当前安装版本', installed.version],
-            ['当前安装摘要', installed.integrity],
-            ['当前运行版本', installed.actualVersion ?? '后台未确认'],
+            [t('fact.current-install-version'), installed.version],
+            [t('fact.current-install-integrity'), installed.integrity],
+            [t('fact.current-runtime-version'), installed.actualVersion ?? t('fact.not-confirmed')],
             [
-              '当前运行摘要',
-              installed.actualIntegrity ?? (installed.actual === 'not-running' ? '未运行' : '后台未确认'),
+              t('fact.current-runtime-integrity'),
+              installed.actualIntegrity ??
+                (installed.actual === 'not-running' ? t('fact.not-running') : t('fact.not-confirmed')),
             ],
-            ['目标信任摘要', preview.integrity],
-            ['目标能力摘要哈希', preview.capabilityHash ?? '后台未报告，不能组合激活'],
+            [t('fact.target-trust-integrity'), preview.integrity],
+            [
+              t('fact.target-capability-hash'),
+              preview.capabilityHash ?? t('value.not-reported-cannot-activate'),
+            ],
           ]}
         />
       </ReviewSection>
@@ -341,26 +436,29 @@ export function RollbackActivationFacts({
 }: {
   installed: PackageInstalledDescriptor
 }): JSX.Element {
+  const { t } = useUiText(ADMIN_CONFIRMATION_LOCALE_NAMESPACE, adminConfirmationLocaleCatalog)
+  const { t: adminText } = useUiText(ADMIN_LOCALE_NAMESPACE, adminLocaleCatalog)
   const target = installed.rollbackTarget
   return (
     <>
-      <p className="confirm-facts-lead">回滚确认会绑定后台已核验的目标、当前安装摘要和当前运行摘要。</p>
+      <p className="confirm-facts-lead">{t('lead.rollback')}</p>
       <FactsList
         items={[
-          ['当前安装版本', installed.version],
-          ['当前安装摘要', installed.integrity],
-          ['当前运行版本', installed.actualVersion ?? '后台未确认'],
+          [t('fact.current-install-version'), installed.version],
+          [t('fact.current-install-integrity'), installed.integrity],
+          [t('fact.current-runtime-version'), installed.actualVersion ?? t('fact.not-confirmed')],
           [
-            '当前运行摘要',
-            installed.actualIntegrity ?? (installed.actual === 'not-running' ? '未运行' : '后台未确认'),
+            t('fact.current-runtime-integrity'),
+            installed.actualIntegrity ??
+              (installed.actual === 'not-running' ? t('fact.not-running') : t('fact.not-confirmed')),
           ],
-          ['回滚目标版本', target?.version ?? '后台未提供已核验目标'],
-          ['回滚目标摘要', target?.integrity ?? '后台未提供已核验目标'],
-          ['目标能力摘要哈希', target?.capabilityHash ?? '后台未提供已核验目标'],
+          [t('fact.rollback-target-version'), target?.version ?? t('fact.rollback-target-missing')],
+          [t('fact.rollback-target-integrity'), target?.integrity ?? t('fact.rollback-target-missing')],
+          [t('fact.target-capability-hash'), target?.capabilityHash ?? t('fact.rollback-target-missing')],
         ]}
       />
-      <ReviewSection title="当前阻断项">
-        <Blockers values={installed.blockers} />
+      <ReviewSection title={t('section.rollback-blockers')}>
+        <Blockers values={installed.blockers} t={t} adminText={adminText} />
       </ReviewSection>
     </>
   )

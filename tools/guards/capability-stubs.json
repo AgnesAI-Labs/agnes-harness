@@ -116,7 +116,7 @@
       "id": "cli.onboarding.account",
       "evidence": [
         {
-          "path": "packages/cli/src/onboarding/tui.ts",
+          "path": "packages/cli-tui/src/locale-extended.ts",
           "marker": "Agnes account sign-in is not available in this build yet"
         }
       ]

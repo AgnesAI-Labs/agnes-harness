@@ -1,5 +1,4 @@
 import type {
-  PackageBlocker,
   PackageCatalogDescriptor,
   PackageInstalledDescriptor,
   PackageOperation,
@@ -9,14 +8,25 @@ import type {
   RuntimePinReleaseResult,
 } from '@agnes/protocol'
 import {
+  ADMIN_CONFIRMATION_LOCALE_NAMESPACE,
+  ADMIN_DETAIL_LOCALE_NAMESPACE,
+  ADMIN_DIALOGS_LOCALE_NAMESPACE,
+  ADMIN_LIST_LOCALE_NAMESPACE,
+  ADMIN_LOCALE_NAMESPACE,
+  adminConfirmationLocaleCatalog,
+  adminDetailLocaleCatalog,
+  adminDialogsLocaleCatalog,
+  adminListLocaleCatalog,
+  adminLocaleCatalog,
   blockerText,
   ConfirmDialogContent,
   contributionText,
+  createDocumentLocaleSource,
+  createUiTranslator,
   type DetailActionSpec,
   DetailContent,
   hasPermission,
   integrityLabel,
-  mountRegion,
   OrphanPins,
   operationLabel,
   PluginList,
@@ -28,12 +38,15 @@ import {
   sourceLabel,
   TrustConfirmationFacts,
   terminal,
+  UiLocaleProvider,
+  type UiLocaleSource,
   UpdateActivationFacts,
   unmountRegion,
 } from '@agnes/web-ui'
 import type { ReactNode } from 'react'
 import type { PluginRuntimeState } from '../../client-modules/runtime-status.js'
 import { AdminApiError, PluginAdminApi } from './api.js'
+import { PLUGIN_ADMIN_LOCALE_NAMESPACE, pluginAdminLocaleCatalog } from './locales/admin.js'
 import { SOURCE_FORMATS, sourceFromForm, sourceProblem } from './source-form.js'
 import {
   ADMIN_FEATURES,
@@ -54,23 +67,34 @@ const RECONNECT_REFRESH_MS = 3_000
 const PIN_RELEASE_BATCH_SIZE = 64
 
 type PreviewMode = 'install' | 'update'
+type SourceInlineError = { code: string; message: string }
 type TrackedOperation = Readonly<{
   operationId: string
   mode?: PreviewMode
   packageId?: string
 }>
 type PendingConfirm = {
-  title: string
-  description: string
-  label: string
+  title: string | (() => string)
+  description: string | (() => string)
+  label: string | (() => string)
   run: () => Promise<void>
   facts?: ReactNode
 }
 
 type PluginAdminOptions = Readonly<{
   actualSlots?: (packageId: string) => readonly string[]
+  locale?: UiLocaleSource
   runtime?: PluginRuntimeSource
 }>
+
+const pluginAdminCatalogs = {
+  [PLUGIN_ADMIN_LOCALE_NAMESPACE]: pluginAdminLocaleCatalog,
+  [ADMIN_CONFIRMATION_LOCALE_NAMESPACE]: adminConfirmationLocaleCatalog,
+  [ADMIN_DETAIL_LOCALE_NAMESPACE]: adminDetailLocaleCatalog,
+  [ADMIN_DIALOGS_LOCALE_NAMESPACE]: adminDialogsLocaleCatalog,
+  [ADMIN_LIST_LOCALE_NAMESPACE]: adminListLocaleCatalog,
+  [ADMIN_LOCALE_NAMESPACE]: adminLocaleCatalog,
+} as const
 
 const SOURCE_TYPE_OPTIONS = Object.keys(SOURCE_FORMATS).map((type) => ({
   value: type,
@@ -123,7 +147,7 @@ function safeMessage(error: unknown): AdminError {
   if (error instanceof AdminApiError) return error.details
   return {
     code: 'ADMIN_UNAVAILABLE',
-    message: '无法连接插件管理后台。已保留当前页面内容。',
+    message: 'Could not connect to the plugin admin service. The current page content has been kept.',
   }
 }
 
@@ -151,15 +175,15 @@ function sourceForCatalog(item: PackageCatalogDescriptor): PackageSource {
   return item.source
 }
 
-function pinPurposeLabel(purpose: RuntimePinDescriptor['purpose']): string {
-  const label: Record<RuntimePinDescriptor['purpose'], string> = {
-    active: '当前运行',
-    candidate: '安装候选',
-    recovery: '恢复保留',
-    rollback: '回滚目标',
-    turn: '进行中的调用',
+function pinPurposeLabel(purpose: RuntimePinDescriptor['purpose'], t: (key: string) => string): string {
+  const key: Record<RuntimePinDescriptor['purpose'], string> = {
+    active: 'pin.active',
+    candidate: 'pin.candidate',
+    recovery: 'pin.recovery',
+    rollback: 'pin.rollback',
+    turn: 'pin.turn',
   }
-  return label[purpose]
+  return t(key[purpose])
 }
 
 function asRuntimeView(state: PluginRuntimeState | undefined): RuntimeStateView | undefined {
@@ -169,11 +193,27 @@ function asRuntimeView(state: PluginRuntimeState | undefined): RuntimeStateView 
 class PluginAdminPage {
   readonly #runtime: PluginRuntimeSource | undefined
   #runtimeStop: (() => void) | undefined
+  readonly #locale: UiLocaleSource
+  readonly #localeStop: () => void
+  readonly #localeCleanup: (() => void) | undefined
+  readonly #t: ReturnType<typeof createUiTranslator>
+  readonly #adminT: ReturnType<typeof createUiTranslator>
   private readonly actualSlots: ((packageId: string) => readonly string[]) | undefined
 
   constructor(options: PluginAdminOptions = {}) {
     this.actualSlots = options.actualSlots
     this.#runtime = options.runtime
+    if (options.locale) {
+      this.#locale = options.locale
+      this.#localeStop = options.locale.subscribe(() => this.render())
+    } else {
+      const locale = createDocumentLocaleSource(pluginAdminCatalogs)
+      this.#locale = locale.source
+      this.#localeCleanup = locale.dispose
+      this.#localeStop = locale.source.subscribe(() => this.render())
+    }
+    this.#t = createUiTranslator(this.#locale, PLUGIN_ADMIN_LOCALE_NAMESPACE, pluginAdminLocaleCatalog)
+    this.#adminT = createUiTranslator(this.#locale, ADMIN_LOCALE_NAMESPACE, adminLocaleCatalog)
   }
 
   #state: AdminPageState = {
@@ -208,18 +248,24 @@ class PluginAdminPage {
   #sourceBusy = false
   #sourceTypeValue = 'npm'
   #sourceRefValue = ''
-  #sourceError = ''
-  #noticeState: { message: string; kind: 'error' | 'state' | '' } = {
+  #sourceError: SourceInlineError | undefined
+  #sourceProblem: { type: string; ref: string } | undefined
+  #noticeState: {
+    message: string
+    key?: string
+    vars?: Readonly<Record<string, string | number>>
+    kind: 'error' | 'state' | ''
+  } = {
     message: '',
     kind: '',
   }
   #orphanPinList: RuntimePinDescriptor[] = []
   #orphanPinErrors = new Map<string, string>()
-  #orphanPinNotice: string | undefined
+  #orphanPinNotice: number | undefined
   // Distinct from #orphanPinNotice (which reports a per-pin "no longer orphaned" outcome after a
   // release): this reports pinsInspect() itself failing during refresh(), so the section stays
   // visible with a clear message instead of silently keeping a now-unverified stale list.
-  #orphanPinFetchError: string | undefined
+  #orphanPinFetchError: { detail: AdminError; localize: boolean } | undefined
 
   readonly #orphanPinsHost = element('orphan-pins', 'section')
   readonly #notice = element('admin-notice', 'p')
@@ -364,7 +410,10 @@ class PluginAdminPage {
         if (generation !== this.#generation) return
         this.#orphanPinList = []
         this.#orphanPinErrors = new Map()
-        this.#orphanPinFetchError = safeMessage(error).message
+        this.#orphanPinFetchError = {
+          detail: safeMessage(error),
+          localize: !(error instanceof AdminApiError),
+        }
       }
       this.restoreOperations(context)
       if (this.#tab === 'discover') await this.loadCatalog()
@@ -430,13 +479,9 @@ class PluginAdminPage {
     mode: PreviewMode,
     trigger: HTMLElement,
     packageId?: string,
-  ): Promise<{ ok: true } | { ok: false; message: string }> {
+  ): Promise<{ ok: true } | { ok: false; error: SourceInlineError }> {
     const api = this.effectApi('packages.install')
-    if (!api)
-      return {
-        ok: false,
-        message: this.#noticeState.message || '暂时无法检查来源。',
-      }
+    if (!api) return { ok: false, error: this.#state.error ?? { code: 'ADMIN_UNAVAILABLE', message: '' } }
     try {
       const receipt = packageId
         ? await this.submitPackage(packageId, () => api.inspect(source))
@@ -446,14 +491,11 @@ class PluginAdminPage {
         ...(packageId ? { packageId } : {}),
       })
       this.#confirmTrigger = trigger
-      this.setNotice('正在检查来源、完整性与权限变化。', 'state')
+      this.setNoticeKey('notice.inspecting-source', 'state')
       return { ok: true }
     } catch (error) {
       this.showError(error)
-      return {
-        ok: false,
-        message: this.#noticeState.message || '检查来源失败。',
-      }
+      return { ok: false, error: safeMessage(error) }
     }
   }
 
@@ -499,10 +541,7 @@ class PluginAdminPage {
       preview: undefined,
       previewMode: undefined,
     }
-    this.setNotice(
-      mode === 'install' ? '正在安装。完成后可检查内容并直接启用。' : '正在更新，实际运行状态将由后台确认。',
-      'state',
-    )
+    this.setNoticeKey(mode === 'install' ? 'notice.installing' : 'notice.updating', 'state')
     this.render()
   }
 
@@ -511,26 +550,44 @@ class PluginAdminPage {
     this.render()
   }
 
+  setNoticeKey(
+    key: string,
+    kind: 'error' | 'state' | '',
+    vars?: Readonly<Record<string, string | number>>,
+  ): void {
+    this.#noticeState = { message: '', key, ...(vars ? { vars } : {}), kind }
+    this.render()
+  }
+
+  noticeText(): string {
+    return this.#noticeState.key
+      ? this.#t(this.#noticeState.key, this.#noticeState.vars)
+      : this.#noticeState.message
+  }
+
   openSourceDialog(mode: PreviewMode, item?: PackageInstalledDescriptor, trigger?: HTMLElement): void {
     if (!this.effectApi('packages.install')) return
     if (item && this.packageBusy(item.id)) return
     this.#sourceMode = mode
     this.#sourcePackageId = item?.id
     this.#sourceTrigger = trigger ?? button('install-source')
-    this.#sourceError = ''
+    this.#sourceError = undefined
+    this.#sourceProblem = undefined
     this.#sourceRefValue = ''
     this.syncSourceHint()
-    this.#sourceTitle = mode === 'update' && item ? `从新来源更新 ${item.id}` : '从来源检查插件'
-    this.#sourceIntro =
-      mode === 'update'
-        ? '请输入明确的新来源。检查不会复用当前已安装来源，也不会在确认前改变运行版本。'
-        : '检查不会安装或启用插件。确认预览中的完整性摘要后，才能继续安装。'
     setDialog(this.#sourceDialog, true, this.#sourceDialogFocusTarget())
     this.render()
   }
 
-  #sourceTitle = '从来源检查插件'
-  #sourceIntro = '检查不会安装或启用插件。确认预览中的完整性摘要后，才能继续安装。'
+  sourceTitle(): string {
+    return this.#sourceMode === 'update' && this.#sourcePackageId
+      ? this.#t('source.title.update', { id: this.#sourcePackageId })
+      : this.#t('source.title.inspect')
+  }
+
+  sourceIntro(): string {
+    return this.#sourceMode === 'update' ? this.#t('source.intro.update') : this.#t('source.intro.install')
+  }
 
   /** React 渲染后 input 由组件持有，首焦点交给表单第一个可交互元素。 */
   #sourceDialogFocusTarget(): HTMLElement | undefined {
@@ -541,8 +598,9 @@ class PluginAdminPage {
   syncSourceHint(): void {
     const type = this.#sourceTypeValue
     const format = type in SOURCE_FORMATS ? SOURCE_FORMATS[type as PackageSource['type']] : undefined
-    this.#sourcePlaceholder = format?.example ?? 'npm:scope/package@1.2.3'
-    this.#sourceError = ''
+    this.#sourcePlaceholder = format?.example ?? this.#t('source.placeholder.npm')
+    this.#sourceError = undefined
+    this.#sourceProblem = undefined
   }
 
   #sourcePlaceholder = 'npm:scope/package@1.2.3'
@@ -555,24 +613,25 @@ class PluginAdminPage {
   submitSource(): void {
     if (this.#sourceBusy) return
     const ref = this.#sourceRefValue.trim()
-    const problem = sourceProblem(this.#sourceTypeValue, ref)
+    const problem = sourceProblem(this.#sourceTypeValue, ref, this.#t)
     const source = problem ? undefined : sourceFromForm(this.#sourceTypeValue, ref)
     if (!source) {
-      this.#sourceError = problem ?? '请输入符合所选来源格式的完整引用。'
+      this.#sourceProblem = { type: this.#sourceTypeValue, ref }
       this.render()
       return
     }
+    this.#sourceProblem = undefined
     const mode = this.#sourceMode
     const packageId = this.#sourcePackageId
     const trigger = this.#sourceTrigger ?? button('install-source')
-    this.#sourceError = ''
+    this.#sourceError = undefined
     this.#sourceBusy = true
     // Stay on this dialog until the backend has accepted the check: a refusal has to be readable
     // where the user is looking, not in a panel that this dialog has just been closed over.
     void this.inspect(source, mode, trigger, packageId)
       .then((result) => {
         if (result.ok) this.closeSourceDialog()
-        else this.#sourceError = result.message
+        else this.#sourceError = result.error
       })
       .finally(() => {
         this.#sourceBusy = false
@@ -606,7 +665,7 @@ class PluginAdminPage {
         lastOperation: operation,
         error: {
           code: operation.error?.code ?? 'E_PACKAGE_STATE',
-          message: operation.error?.safeMessage ?? '操作未能完成。',
+          message: operation.error?.safeMessage ?? 'The operation could not be completed.',
           blockers: operation.error?.blockers,
         },
       }
@@ -650,14 +709,24 @@ class PluginAdminPage {
       mode === 'update' ? this.#state.installed.find((item) => item.id === preview.id) : undefined
     const combined = !!installed && this.canCombineUpdate(installed, preview)
     this.configureConfirm({
-      title: `${mode === 'install' ? '安装预览' : '更新预览'} · ${preview.id}`,
-      description:
-        mode === 'install'
-          ? '请先审阅下方后台返回的完整性、能力、依赖和阻断信息。安装后会保持停用，检查后可直接启用。'
-          : combined
-            ? '将原子执行更新与安全激活，并绑定当前安装与运行摘要。'
-            : '将按兼容模式更新为停用状态；后台未声明组合热更新能力，或当前摘要条件不完整。',
-      label: mode === 'install' ? '确认安装' : combined ? '确认更新并激活' : '确认更新（保持停用）',
+      title: () =>
+        `${this.#t(mode === 'install' ? 'preview.title.install' : 'preview.title.update')} · ${preview.id}`,
+      description: () =>
+        this.#t(
+          mode === 'install'
+            ? 'preview.description.install'
+            : combined
+              ? 'preview.description.update-combined'
+              : 'preview.description.update-compatible',
+        ),
+      label: () =>
+        this.#t(
+          mode === 'install'
+            ? 'preview.action.install'
+            : combined
+              ? 'preview.action.update-activate'
+              : 'preview.action.update',
+        ),
       facts: combined ? (
         <UpdateActivationFacts installed={installed!} preview={preview} />
       ) : (
@@ -690,28 +759,28 @@ class PluginAdminPage {
     if (!this.#api || !this.#state.context) {
       this.showError({
         code: 'ADMIN_UNAVAILABLE',
-        message: '管理会话尚未就绪。',
+        message: this.#t('error.session'),
       })
       return undefined
     }
     if (this.#state.context.readOnly) {
       this.showError({
         code: 'RECOVERY_READ_ONLY',
-        message: '当前处于只读恢复模式，无法执行插件操作。',
+        message: this.#t('error.read-only'),
       })
       return undefined
     }
     if (this.#state.loading || this.#state.connection !== 'connected') {
       this.showError({
         code: 'ADMIN_UNAVAILABLE',
-        message: '管理后台尚未恢复，无法执行插件操作。',
+        message: this.#t('error.restoring'),
       })
       return undefined
     }
     if (!this.can(permission)) {
       this.showError({
         code: 'ADMIN_FORBIDDEN',
-        message: '当前账户没有执行此操作的权限。',
+        message: this.#t('error.forbidden'),
       })
       return undefined
     }
@@ -776,7 +845,7 @@ class PluginAdminPage {
     if (this.packageBusy(packageId))
       throw new AdminApiError({
         code: 'PACKAGE_BUSY',
-        message: '此插件已有操作正在提交或执行。',
+        message: this.#t('error.busy'),
       })
     this.#submittingPackages.add(packageId)
     this.render()
@@ -794,6 +863,24 @@ class PluginAdminPage {
       error && typeof error === 'object' && 'message' in error ? (error as AdminError) : safeMessage(error)
     this.#state = { ...this.#state, error: detail }
     this.render()
+  }
+
+  errorMessage(error: AdminError): string {
+    const keyByCode: Readonly<Record<string, string>> = {
+      ADMIN_UNAVAILABLE: 'error.connection',
+      RECOVERY_READ_ONLY: 'error.read-only',
+      ADMIN_FORBIDDEN: 'error.forbidden',
+      FORBIDDEN: 'error.forbidden',
+      PACKAGE_BUSY: 'error.busy',
+      ADMIN_CONTEXT_INVALID: 'error.context-invalid',
+      ADMIN_RESPONSE_INVALID: 'error.response-invalid',
+      RUNTIME_NOT_CONFIRMED: 'notice.runtime-pending',
+      RUNTIME_IDENTITY_UNKNOWN: 'error.runtime-unconfirmed',
+      E_PACKAGE_TRUST: 'error.capability-unconfirmed',
+      E_PACKAGE_STATE: 'error.state-changed',
+    }
+    const key = keyByCode[error.code]
+    return key ? this.#t(key) : error.message
   }
 
   track(
@@ -922,7 +1009,8 @@ class PluginAdminPage {
     // 详情体、对话框内容）全部在下面的 React 区域里。
     this.#tabs.installed.disabled = this.#tabs.discover.disabled = !context || !this.can('packages.read')
     this.syncTabs()
-    this.#search.placeholder = this.#tab === 'installed' ? '筛选当前已安装列表' : '搜索目录中的插件'
+    this.#search.placeholder =
+      this.#tab === 'installed' ? this.#t('search.installed') : this.#t('search.discover')
     this.#search.setAttribute('aria-label', this.#search.placeholder)
     this.#search.disabled = !context || !this.can('packages.read')
     button('install-source').disabled = !this.canEffect('packages.install')
@@ -930,67 +1018,88 @@ class PluginAdminPage {
     this.#layout.dataset.detail = String(this.hasDetail())
     const connectionNotice =
       connection === 'loading'
-        ? '正在连接管理后台…'
+        ? this.#t('connection.loading')
         : connection === 'offline'
-          ? '连接中断，内容保留，等待重新连接。'
+          ? this.#t('connection.offline')
           : connection === 'forbidden'
-            ? '没有插件管理权限。'
+            ? this.#t('connection.forbidden')
             : ''
     const noticeMessage = error
-      ? `${this.#state.lastOperation ? `${operationLabel(this.#state.lastOperation)}：` : ''}${error.message}`
+      ? this.#state.lastOperation
+        ? this.#t('notice.operation-error', {
+            operation: operationLabel(this.#state.lastOperation, this.#adminT),
+            message: this.errorMessage(error),
+          })
+        : this.errorMessage(error)
       : this.#state.lastOperation
-        ? `${operationLabel(this.#state.lastOperation)}。已读取最新状态。`
-        : this.#noticeState.message || connectionNotice
+        ? this.#t('notice.operation-refreshed', {
+            operation: operationLabel(this.#state.lastOperation, this.#adminT),
+          })
+        : this.noticeText() || connectionNotice
     const noticeKind = error ? 'error' : connection === 'connected' ? this.#noticeState.kind : 'state'
     this.#notice.textContent = noticeMessage
     this.#notice.dataset.kind = noticeKind
     const treeText =
       tree?.desiredDigest && !tree.actual
         ? tree.failurePhase && !tree.pending
-          ? '插件资源更新失败，请重试；若问题持续，请查看后台日志。'
-          : '插件资源正在更新，请稍候。'
+          ? this.#t('tree.error')
+          : this.#t('tree.loading')
         : ''
     this.#treeStatus.textContent = treeText
     this.#treeStatus.hidden = !treeText
     this.#orphanPinsHost.hidden = this.#orphanPinList.length === 0 && !this.#orphanPinFetchError
     renderRegion(
       this.#orphanPinsHost,
-      <OrphanPins
-        pins={this.#orphanPinList.map((pin) => ({
-          pinId: pin.pinId,
-          packageId: pin.packageId,
-          version: pin.version,
-          purpose: pinPurposeLabel(pin.purpose),
-          snapshotId: integrityLabel(pin.snapshotId),
-        }))}
-        errors={this.#orphanPinErrors}
-        notice={this.#orphanPinNotice}
-        fetchError={this.#orphanPinFetchError}
-        canRelease={this.canEffect('packages.remove') && this.#orphanPinList.length > 0}
-        onRelease={(pinIds, trigger) => this.confirmReleasePins(pinIds, trigger)}
-      />,
+      <UiLocaleProvider source={this.#locale}>
+        <OrphanPins
+          pins={this.#orphanPinList.map((pin) => ({
+            pinId: pin.pinId,
+            packageId: pin.packageId,
+            version: pin.version,
+            purpose: pinPurposeLabel(pin.purpose, this.#t),
+            snapshotId: integrityLabel(pin.snapshotId),
+          }))}
+          errors={this.#orphanPinErrors}
+          notice={
+            this.#orphanPinNotice === undefined
+              ? undefined
+              : this.#t('notice.pin-skipped', { count: this.#orphanPinNotice })
+          }
+          fetchError={
+            this.#orphanPinFetchError
+              ? this.#orphanPinFetchError.localize
+                ? this.errorMessage(this.#orphanPinFetchError.detail)
+                : this.#orphanPinFetchError.detail.message
+              : undefined
+          }
+          canRelease={this.canEffect('packages.remove') && this.#orphanPinList.length > 0}
+          onRelease={(pinIds, trigger) => this.confirmReleasePins(pinIds, trigger)}
+        />
+      </UiLocaleProvider>,
     )
     renderRegion(
       this.#listHost,
-      <PluginList
-        tab={this.#tab}
-        rows={this.#tab === 'installed' ? this.filteredInstalled() : this.#state.catalog}
-        loading={loading}
-        inventoryAuthoritative={this.#state.inventoryAuthoritative}
-        query={this.#query}
-        nextCursor={this.#state.nextCursor}
-        surfaceLinksOf={(packageId) => this.surfaceLinks(packageId)}
-        runtimeOf={(packageId) => asRuntimeView(this.runtimeState(packageId))}
-        primaryActionOf={(item) => this.primaryAction(item)}
-        switchDisabledOf={(installed) =>
-          !this.canEffect('packages.activate') ||
-          (!installed.trusted && (!this.can('packages.trust') || !installed.capabilityHash)) ||
-          this.packageBusy(installed.id)
-        }
-        onOpen={(item) => this.selectItem(item)}
-        onToggleDesired={(item, next) => void (next ? this.confirmEnable(item) : this.confirmDisable(item))}
-        onLoadMore={() => void this.loadCatalog(this.#state.nextCursor ?? undefined)}
-      />,
+      <UiLocaleProvider source={this.#locale}>
+        <PluginList
+          tab={this.#tab}
+          rows={this.#tab === 'installed' ? this.filteredInstalled() : this.#state.catalog}
+          loading={loading}
+          inventoryAuthoritative={this.#state.inventoryAuthoritative}
+          query={this.#query}
+          nextCursor={this.#state.nextCursor}
+          surfaceLinksOf={(packageId) => this.surfaceLinks(packageId)}
+          runtimeOf={(packageId) => asRuntimeView(this.runtimeState(packageId))}
+          primaryActionOf={(item) => this.primaryAction(item)}
+          switchDisabledOf={(installed) =>
+            !this.canEffect('packages.activate') ||
+            (!installed.trusted && (!this.can('packages.trust') || !installed.capabilityHash)) ||
+            this.packageBusy(installed.id)
+          }
+          onOpen={(item) => this.selectItem(item)}
+          onToggleDesired={(item, next) => void (next ? this.confirmEnable(item) : this.confirmDisable(item))}
+          onLoadMore={() => void this.loadCatalog(this.#state.nextCursor ?? undefined)}
+        />
+      </UiLocaleProvider>,
     )
     this.#layout.dataset.detail = String(this.hasDetail())
     this.renderDetail()
@@ -1008,95 +1117,112 @@ class PluginAdminPage {
     if (!item) {
       if (!this.hasDetail()) {
         setDialog(this.#detail, false)
-        renderRegion(this.#detail, <></>)
+        renderRegion(this.#detail, <UiLocaleProvider source={this.#locale} />)
         return
       }
       // 不传焦点目标：render 每 1.2 秒被刷新触发一次，抢焦点会打断弹窗里的输入。
       setDialog(this.#detail, true)
       renderRegion(
         this.#detail,
-        <DetailContent
-          heading={this.#state.operations.size ? '插件操作' : '插件详情'}
-          intro={
-            this.#state.operations.size
-              ? '后台正在处理以下操作；此处仅显示后台已报告的状态。'
-              : '选择一项插件，查看来源、权限和运行状态。'
-          }
-          version={undefined}
-          stateText={undefined}
-          facts={[]}
-          blockerSections={[
-            {
-              title: '此操作的阻断项',
-              items: (this.#state.error?.blockers ?? []).map(blockerText),
-            },
-          ]}
-          operations={this.detailOperations()}
-          lastOperationLabel={
-            this.#state.lastOperation
-              ? `${operationLabel(this.#state.lastOperation)}${this.#state.lastOperation.retryable ? ' · 后台允许重试' : ''}`
-              : undefined
-          }
-          actions={[]}
-          onClose={() => this.closeDetail()}
-          onCancelOperation={(operationId, trigger) => void this.cancelOperation(operationId, trigger)}
-        />,
+        <UiLocaleProvider source={this.#locale}>
+          <DetailContent
+            heading={
+              this.#state.operations.size
+                ? this.#t('detail.heading.operations')
+                : this.#t('detail.heading.plugin')
+            }
+            intro={
+              this.#state.operations.size
+                ? this.#t('detail.intro.operations')
+                : this.#t('detail.intro.plugin')
+            }
+            version={undefined}
+            stateText={undefined}
+            facts={[]}
+            blockerSections={[
+              {
+                title: this.#t('blocker.operation'),
+                items: (this.#state.error?.blockers ?? []).map((blocker) =>
+                  blockerText(blocker, this.#adminT),
+                ),
+              },
+            ]}
+            operations={this.detailOperations()}
+            lastOperationLabel={
+              this.#state.lastOperation
+                ? `${operationLabel(this.#state.lastOperation, this.#adminT)}${this.#state.lastOperation.retryable ? ` · ${this.#t('detail.retry-allowed')}` : ''}`
+                : undefined
+            }
+            actions={[]}
+            onClose={() => this.closeDetail()}
+            onCancelOperation={(operationId, trigger) => void this.cancelOperation(operationId, trigger)}
+          />
+        </UiLocaleProvider>,
       )
       return
     }
     // 不传焦点目标：render 每 1.2 秒被刷新触发一次，抢焦点会打断弹窗里的操作。
     setDialog(this.#detail, true)
     const facts: (readonly [string, string])[] = [
-      ['来源', sourceLabel(item.source as PackageSource)],
-      ['完整性', integrityLabel(item.integrity)],
-      ['贡献', contributionText(item)],
+      [this.#t('fact.source'), sourceLabel(item.source as PackageSource, this.#adminT)],
+      [this.#t('fact.integrity'), integrityLabel(item.integrity)],
+      [this.#t('fact.contribution'), contributionText(item, this.#adminT)],
     ]
-    if ('license' in item) facts.push(['许可证', item.license])
+    if ('license' in item) facts.push([this.#t('fact.license'), item.license])
     if ('desired' in item) {
       // Manifest slots are an author declaration. This fact is intentionally derived from the
       // live browser registry so the operator can distinguish a declaration from what this page
       // actually registered in the current browser session.
       const actualSlotList = this.actualSlots?.(item.id) ?? []
       facts.push([
-        '本浏览器会话实际注册槽位',
-        actualSlotList.length ? actualSlotList.join('、') : '当前没有已注册的浏览器槽位',
+        this.#t('fact.browser-slots'),
+        actualSlotList.length
+          ? actualSlotList.join(this.#locale.getSnapshot() === 'en' ? ', ' : '、')
+          : this.#t('fact.no-browser-slots'),
       ])
       const runtime = this.runtimeState(item.id)
       const failureReason =
         runtime?.error?.message ?? (item.actual === 'running' ? undefined : item.actualReason)
-      if (failureReason) facts.push(['失败原因', failureReason])
-      facts.push(['旧资源清理', item.cleanupPending ? '尚未完成，后台会继续重试' : '无待清理状态'])
+      if (failureReason) facts.push([this.#t('fact.failure'), failureReason])
       facts.push([
-        '已核验回滚目标',
+        this.#t('fact.cleanup'),
+        item.cleanupPending ? this.#t('fact.cleanup-pending') : this.#t('fact.cleanup-none'),
+      ])
+      facts.push([
+        this.#t('fact.rollback-target'),
         item.rollbackTarget
           ? `${item.rollbackTarget.version} · ${integrityLabel(item.rollbackTarget.integrity)}`
-          : '后台未提供',
+          : this.#t('fact.unavailable'),
       ])
     }
     renderRegion(
       this.#detail,
-      <DetailContent
-        heading={item.id}
-        intro=""
-        version={`版本 ${item.version}`}
-        stateText={'trusted' in item ? undefined : `兼容性：${item.compatibility}`}
-        facts={facts}
-        blockerSections={[
-          {
-            title: '当前阻断项',
-            items: ('blockers' in item ? item.blockers : []).map(blockerText),
-          },
-          {
-            title: '此操作的阻断项',
-            items: (this.#state.error?.blockers ?? []).map(blockerText),
-          },
-        ]}
-        operations={this.detailOperations(item.id)}
-        lastOperationLabel={undefined}
-        actions={this.detailActions(item)}
-        onClose={() => this.closeDetail()}
-        onCancelOperation={(operationId, trigger) => void this.cancelOperation(operationId, trigger)}
-      />,
+      <UiLocaleProvider source={this.#locale}>
+        <DetailContent
+          heading={item.id}
+          intro=""
+          version={this.#t('version', { version: item.version })}
+          stateText={'trusted' in item ? undefined : this.#t('compatibility', { value: item.compatibility })}
+          facts={facts}
+          blockerSections={[
+            {
+              title: this.#t('blocker.current'),
+              items: ('blockers' in item ? item.blockers : []).map((blocker) =>
+                blockerText(blocker, this.#adminT),
+              ),
+            },
+            {
+              title: this.#t('blocker.operation'),
+              items: (this.#state.error?.blockers ?? []).map((blocker) => blockerText(blocker, this.#adminT)),
+            },
+          ]}
+          operations={this.detailOperations(item.id)}
+          lastOperationLabel={undefined}
+          actions={this.detailActions(item)}
+          onClose={() => this.closeDetail()}
+          onCancelOperation={(operationId, trigger) => void this.cancelOperation(operationId, trigger)}
+        />
+      </UiLocaleProvider>,
     )
   }
 
@@ -1128,21 +1254,28 @@ class PluginAdminPage {
       const links = this.surfaceLinks(item.id)
       for (const link of links) {
         specs.push({
-          label: links.length === 1 ? `打开页面 · ${link.mount}` : `${link.surfaceId} · ${link.mount}`,
+          label:
+            links.length === 1
+              ? this.#t('surface.open', { mount: link.mount })
+              : this.#t('surface.open-named', { surface: link.surfaceId, mount: link.mount }),
           className: 'secondary-button compact plugin-surface-link',
           href: link.mount,
-          ariaLabel: `打开 ${item.id} 的 ${link.surfaceId} 页面 ${link.mount}`,
+          ariaLabel: this.#t('surface.open-aria', {
+            id: item.id,
+            surface: link.surfaceId,
+            mount: link.mount,
+          }),
           onClick: () => {},
         })
       }
       specs.push({
-        label: '从目录选择更新版本',
+        label: this.#t('action.update-catalog'),
         className: 'secondary-button',
         disabled: !this.canEffect('packages.install') || busy,
         onClick: () => void this.chooseUpdateVersion(installed),
       })
       specs.push({
-        label: '从新来源更新',
+        label: this.#t('action.update-source'),
         className: 'secondary-button',
         disabled: !this.canEffect('packages.install') || busy,
         onClick: () => this.openSourceDialog('update', installed),
@@ -1158,16 +1291,16 @@ class PluginAdminPage {
         this.can('packages.activate') &&
         !busy
       specs.push({
-        label: target ? `回滚到 ${target.version}` : '回滚（目标未知）',
+        label: target
+          ? this.#t('action.rollback', { version: target.version })
+          : this.#t('action.rollback-unknown'),
         className: 'secondary-button',
         disabled: !rollbackReady,
-        title: rollbackReady
-          ? '将绑定已核验目标并原子执行回滚与安全激活。'
-          : '后台未声明组合回滚能力，或缺少目标、运行摘要及必要权限。',
+        title: rollbackReady ? this.#t('action.rollback-ready') : this.#t('action.rollback-unavailable'),
         onClick: () => this.confirmRollback(installed),
       })
       specs.push({
-        label: '卸载插件',
+        label: this.#t('action.remove'),
         className: 'danger-button',
         disabled: !this.canEffect('packages.remove') || installed.blockers.length > 0 || busy,
         onClick: () => this.confirmRemove(installed),
@@ -1177,7 +1310,7 @@ class PluginAdminPage {
     const catalog = item as PackageCatalogDescriptor
     const installed = this.#state.installed.some((candidate) => candidate.id === catalog.id)
     specs.push({
-      label: installed ? '检查更新' : '检查安装内容',
+      label: installed ? this.#t('action.check-update') : this.#t('action.check-install-content'),
       className: 'primary-button',
       disabled:
         catalog.compatibility === 'unsupported' ||
@@ -1198,7 +1331,9 @@ class PluginAdminPage {
     const query = this.#query.toLocaleLowerCase()
     if (!query) return this.#state.installed
     return this.#state.installed.filter((item) =>
-      `${item.id} ${item.version} ${contributionText(item)}`.toLocaleLowerCase().includes(query),
+      `${item.id} ${item.version} ${contributionText(item, this.#adminT)}`
+        .toLocaleLowerCase()
+        .includes(query),
     )
   }
 
@@ -1224,7 +1359,7 @@ class PluginAdminPage {
         ...this.#state,
         error: {
           code: 'RUNTIME_NOT_CONFIRMED',
-          message: '后台已完成，浏览器 UI 状态待确认。',
+          message: 'The host completed the operation, but the browser UI state is not confirmed yet.',
         },
       }
       this.render()
@@ -1237,7 +1372,7 @@ class PluginAdminPage {
         ...this.#state,
         error: {
           code: 'RUNTIME_NOT_CONFIRMED',
-          message: '后台已完成，浏览器 UI 状态待确认。',
+          message: 'The host completed the operation, but the browser UI state is not confirmed yet.',
         },
       }
       this.render()
@@ -1267,7 +1402,7 @@ class PluginAdminPage {
       ...this.#state,
       error: {
         code: 'RUNTIME_NOT_CONFIRMED',
-        message: '后台已完成，浏览器 UI 状态待确认。',
+        message: 'The host completed the operation, but the browser UI state is not confirmed yet.',
       },
     }
     this.render()
@@ -1305,7 +1440,12 @@ class PluginAdminPage {
       const catalog = item as PackageCatalogDescriptor
       const installed = this.#state.installed.some((candidate) => candidate.id === catalog.id)
       return {
-        label: catalog.compatibility === 'unsupported' ? '不支持' : installed ? '检查更新' : '检查安装',
+        label:
+          catalog.compatibility === 'unsupported'
+            ? this.#t('action.unsupported')
+            : installed
+              ? this.#t('action.check-update')
+              : this.#t('action.check-install'),
         disabled:
           !this.canEffect('packages.install') ||
           catalog.compatibility === 'unsupported' ||
@@ -1324,7 +1464,7 @@ class PluginAdminPage {
     const installed = item as PackageInstalledDescriptor
     if (installed.trusted && this.runtimeState(installed.id)?.phase === 'failed') {
       return {
-        label: '重试 UI',
+        label: this.#t('action.retry-ui'),
         disabled: this.packageBusy(installed.id),
         run: async () => {
           if (!this.#runtime) return
@@ -1335,7 +1475,7 @@ class PluginAdminPage {
               ...this.#state,
               error: {
                 code: 'RUNTIME_NOT_CONFIRMED',
-                message: '浏览器 UI 状态待确认，可稍后重试。',
+                message: 'The browser UI state is not confirmed. You can retry later.',
               },
             }
             this.render()
@@ -1345,7 +1485,7 @@ class PluginAdminPage {
     }
     return installed.actual === 'running'
       ? {
-          label: '请求停用',
+          label: this.#t('action.disable'),
           disabled: !this.canEffect('packages.activate') || this.packageBusy(installed.id),
           run: () => this.confirmDisable(installed),
         }
@@ -1353,8 +1493,8 @@ class PluginAdminPage {
           label:
             hasFeature(this.#state.context, ADMIN_FEATURES.runtimeIdentity) &&
             this.activeIntegrity(installed) === undefined
-              ? '运行状态待确认'
-              : '请求启用',
+              ? this.#t('action.runtime-unconfirmed')
+              : this.#t('action.enable'),
           disabled:
             !this.canEffect('packages.activate') ||
             (!installed.trusted && (!this.can('packages.trust') || !installed.capabilityHash)) ||
@@ -1437,7 +1577,8 @@ class PluginAdminPage {
     ) {
       this.showError({
         code: 'RUNTIME_IDENTITY_UNKNOWN',
-        message: '实际运行摘要尚未确认，不能安全启用。',
+        message:
+          'The actual runtime summary has not been confirmed, so this plugin cannot be safely enabled.',
       })
       return Promise.resolve()
     }
@@ -1445,22 +1586,15 @@ class PluginAdminPage {
     if (!item.trusted && !capabilityHash) {
       this.showError({
         code: 'E_PACKAGE_TRUST',
-        message: '缺少已确认的能力摘要，不能安全启用此版本。',
+        message: 'The capability summary has not been confirmed, so this version cannot be safely enabled.',
       })
       return Promise.resolve()
     }
     this.configureConfirm({
-      title: `启用 ${item.id}`,
-      description: item.trusted
-        ? '确认后将请求启用；后台和浏览器 UI 状态确认后才显示已运行。'
-        : '确认后将校验当前版本及能力范围，通过后继续启用；校验失败时不会启用。',
-      label: '确认启用',
-      facts: !item.trusted ? (
-        <TrustConfirmationFacts
-          item={item}
-          lead="启用前会绑定下列完整性摘要与能力摘要哈希，并校验当前版本及能力范围。"
-        />
-      ) : undefined,
+      title: () => this.#t('confirm.enable.title', { id: item.id }),
+      description: () => this.#t(item.trusted ? 'confirm.enable.trusted' : 'confirm.enable.verify'),
+      label: () => this.#t('confirm.enable.action'),
+      facts: !item.trusted ? <TrustConfirmationFacts item={item} leadKey="lead.trust-enable" /> : undefined,
       run: async () => {
         if (item.trusted) {
           await this.#submitEnable(item)
@@ -1476,7 +1610,8 @@ class PluginAdminPage {
           if (!current || current.integrity !== item.integrity || current.capabilityHash !== capabilityHash) {
             this.showError({
               code: 'E_PACKAGE_STATE',
-              message: '插件版本或能力范围已经变化，请确认最新内容后再次启用。',
+              message:
+                'The plugin version or capability scope has changed. Review the latest details before enabling it again.',
             })
             return
           }
@@ -1494,7 +1629,8 @@ class PluginAdminPage {
     if (hasFeature(this.#state.context, ADMIN_FEATURES.runtimeIdentity) && activeIntegrity === undefined) {
       this.showError({
         code: 'RUNTIME_IDENTITY_UNKNOWN',
-        message: '实际运行摘要尚未确认，不能安全启用。',
+        message:
+          'The actual runtime summary has not been confirmed, so this plugin cannot be safely enabled.',
       })
       return
     }
@@ -1508,9 +1644,9 @@ class PluginAdminPage {
 
   confirmDisable(item: PackageInstalledDescriptor): Promise<void> {
     this.configureConfirm({
-      title: `请求停用 ${item.id}`,
-      description: '停用后插件 UI 贡献将移除，Agnes 原界面保持可用；后台会在安全边界完成排干与撤销。',
-      label: '请求停用',
+      title: () => this.#t('confirm.disable.title', { id: item.id }),
+      description: () => this.#t('confirm.disable.description'),
+      label: () => this.#t('confirm.disable.action'),
       run: async () => {
         const api = this.effectApi('packages.activate')
         if (!api) return
@@ -1523,9 +1659,9 @@ class PluginAdminPage {
 
   confirmRemove(item: PackageInstalledDescriptor): void {
     this.configureConfirm({
-      title: `卸载 ${item.id}`,
-      description: '卸载会由后台检查依赖、运行代际和部署引用。出现阻断项时不会绕过检查。',
-      label: '确认卸载',
+      title: () => this.#t('confirm.remove.title', { id: item.id }),
+      description: () => this.#t('confirm.remove.description'),
+      label: () => this.#t('confirm.remove.action'),
       run: async () => {
         const api = this.effectApi('packages.remove')
         if (!api) return
@@ -1540,9 +1676,9 @@ class PluginAdminPage {
     const activeIntegrity = this.activeIntegrity(item)
     if (!target || activeIntegrity === undefined || !this.supportsCompositeActivation()) return
     this.configureConfirm({
-      title: `回滚 ${item.id} 到 ${target.version}`,
-      description: '后台会重新核验目标摘要，并原子执行回滚与安全激活。',
-      label: '确认回滚并激活',
+      title: () => this.#t('confirm.rollback.title', { id: item.id, version: target.version }),
+      description: () => this.#t('confirm.rollback.description'),
+      label: () => this.#t('confirm.rollback.action'),
       facts: <RollbackActivationFacts installed={item} />,
       run: async () => {
         const api = this.effectApi('packages.remove')
@@ -1566,10 +1702,12 @@ class PluginAdminPage {
     if (!pinIds.length) return
     this.#confirmTrigger = trigger
     this.configureConfirm({
-      title: pinIds.length === 1 ? `释放 pin ${pinIds[0]}` : `释放全部孤儿 pin（共 ${pinIds.length} 个）`,
-      description:
-        '释放会立即解除对应运行时快照的占用。若某个 pin 在确认前已不再孤儿，后台会跳过并说明原因。',
-      label: '确认释放',
+      title: () =>
+        pinIds.length === 1
+          ? this.#t('confirm.release.one', { id: pinIds[0]! })
+          : this.#t('confirm.release.all', { count: pinIds.length }),
+      description: () => this.#t('confirm.release.description'),
+      label: () => this.#t('confirm.release.action'),
       run: async () => {
         const api = this.effectApi('packages.remove')
         if (!api) return
@@ -1589,14 +1727,14 @@ class PluginAdminPage {
     let skipped = skippedSoFar
     for (const result of results) {
       if (result.outcome === 'failed') {
-        this.#orphanPinErrors.set(result.pinId, result.error?.safeMessage ?? '释放失败，原因未知。')
+        this.#orphanPinErrors.set(result.pinId, result.error?.safeMessage ?? this.#t('error.pin-release'))
         continue
       }
       if (result.outcome === 'skipped-no-longer-orphaned') skipped++
       this.#orphanPinErrors.delete(result.pinId)
       this.#orphanPinList = this.#orphanPinList.filter((pin) => pin.pinId !== result.pinId)
     }
-    this.#orphanPinNotice = skipped > 0 ? `${skipped} 个 pin 已不再是孤儿，无需释放。` : undefined
+    this.#orphanPinNotice = skipped > 0 ? skipped : undefined
     this.render()
     return skipped
   }
@@ -1618,65 +1756,83 @@ class PluginAdminPage {
   renderConfirm(): void {
     const pending = this.#pendingConfirm
     if (!pending) {
-      renderRegion(this.#confirmDialog, <></>)
+      renderRegion(this.#confirmDialog, <UiLocaleProvider source={this.#locale} />)
       return
     }
     renderRegion(
       this.#confirmDialog,
-      <ConfirmDialogContent
-        title={pending.title}
-        description={pending.description}
-        facts={pending.facts}
-        actionLabel={pending.label}
-        actionDisabled={this.#confirmActionDisabled}
-        onAction={() => {
-          if (!this.#pendingConfirm) return
-          this.#confirmActionDisabled = true
-          this.renderConfirm()
-          void this.#pendingConfirm
-            .run()
-            .then(() => this.closeConfirm())
-            .catch((error: unknown) => this.showError(error))
-            .finally(() => {
-              // 确认框在失败路径保持打开：按钮必须复位为可重试，而不是停在置灰。
-              this.#confirmActionDisabled = false
-              this.renderConfirm()
-            })
-        }}
-        onCancel={() => this.closeConfirm()}
-      />,
+      <UiLocaleProvider source={this.#locale}>
+        <ConfirmDialogContent
+          title={typeof pending.title === 'function' ? pending.title() : pending.title}
+          description={
+            typeof pending.description === 'function' ? pending.description() : pending.description
+          }
+          facts={pending.facts}
+          actionLabel={typeof pending.label === 'function' ? pending.label() : pending.label}
+          actionDisabled={this.#confirmActionDisabled}
+          onAction={() => {
+            if (!this.#pendingConfirm) return
+            this.#confirmActionDisabled = true
+            this.renderConfirm()
+            void this.#pendingConfirm
+              .run()
+              .then(() => this.closeConfirm())
+              .catch((error: unknown) => this.showError(error))
+              .finally(() => {
+                // 确认框在失败路径保持打开：按钮必须复位为可重试，而不是停在置灰。
+                this.#confirmActionDisabled = false
+                this.renderConfirm()
+              })
+          }}
+          onCancel={() => this.closeConfirm()}
+        />
+      </UiLocaleProvider>,
     )
   }
 
   renderSource(): void {
     renderRegion(
       this.#sourceDialog,
-      <SourceDialogContent
-        title={this.#sourceTitle}
-        intro={this.#sourceIntro}
-        typeOptions={SOURCE_TYPE_OPTIONS}
-        type={this.#sourceTypeValue}
-        ref_={this.#sourceRefValue}
-        placeholder={this.#sourcePlaceholder}
-        error={this.#sourceError}
-        busy={this.#sourceBusy}
-        onTypeChange={(type) => {
-          this.#sourceTypeValue = type
-          this.syncSourceHint()
-          this.render()
-        }}
-        onRefChange={(ref) => {
-          this.#sourceRefValue = ref
-        }}
-        onSubmit={() => this.submitSource()}
-        onCancel={() => this.closeSourceDialog()}
-      />,
+      <UiLocaleProvider source={this.#locale}>
+        <SourceDialogContent
+          title={this.sourceTitle()}
+          intro={this.sourceIntro()}
+          typeOptions={SOURCE_TYPE_OPTIONS.map(({ value }) => ({
+            value,
+            label: this.#adminT(`source.${value}`),
+          }))}
+          type={this.#sourceTypeValue}
+          ref_={this.#sourceRefValue}
+          placeholder={this.#sourcePlaceholder}
+          error={
+            this.#sourceProblem
+              ? (sourceProblem(this.#sourceProblem.type, this.#sourceProblem.ref, this.#t) ??
+                this.#t('source.error.incomplete'))
+              : this.#sourceError
+                ? this.errorMessage(this.#sourceError)
+                : ''
+          }
+          busy={this.#sourceBusy}
+          onTypeChange={(type) => {
+            this.#sourceTypeValue = type
+            this.syncSourceHint()
+            this.render()
+          }}
+          onRefChange={(ref) => {
+            this.#sourceRefValue = ref
+          }}
+          onSubmit={() => this.submitSource()}
+          onCancel={() => this.closeSourceDialog()}
+        />
+      </UiLocaleProvider>,
     )
   }
 
   dispose(): void {
     this.#runtimeStop?.()
     this.#runtimeStop = undefined
+    this.#localeStop()
+    this.#localeCleanup?.()
     if (this.#treeTimer !== undefined) window.clearTimeout(this.#treeTimer)
     for (const timer of this.#operationTimers.values()) {
       if (timer >= 0) window.clearTimeout(timer)
@@ -1692,6 +1848,7 @@ class PluginAdminPage {
 }
 
 export type PluginAdminMount = Readonly<{
+  ready: Promise<void>
   reload(): Promise<void>
   dispose(): void
 }>
@@ -1703,6 +1860,6 @@ export type PluginAdminMount = Readonly<{
 export function mountPluginAdmin(options: PluginAdminOptions = {}): PluginAdminMount {
   const page = new PluginAdminPage(options)
   page.bind()
-  void page.start()
-  return { reload: () => page.refresh(), dispose: () => page.dispose() }
+  const ready = page.start()
+  return { ready, reload: () => page.refresh(), dispose: () => page.dispose() }
 }

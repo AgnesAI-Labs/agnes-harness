@@ -77,12 +77,12 @@ describe('Computer Use DOM-free state', () => {
     const unsubscribe = model.subscribe(listener)
     await model.refresh()
     const result = model.getSnapshot()
-    expect(result.status.label).toBe('已关闭')
+    expect(result.status.label).toBe('Turned off')
     expect(result.controls.installDisabled).toBe(true)
     expect(Object.isFrozen(result)).toBe(true)
     expect(Object.isFrozen(result.controls)).toBe(true)
     expect(Object.isFrozen(result.status.blockers)).toBe(true)
-    expect(initial.status.label).toBe('等待检查')
+    expect(initial.status.label).toBe('Waiting for a check')
     expect(listener).toHaveBeenCalled()
     unsubscribe()
     unsubscribe()
@@ -118,7 +118,7 @@ describe('Computer Use DOM-free state', () => {
     expect(model.getSnapshot().controls.refreshDisabled).toBe(true)
     recent.resolve(blocked('platform-unsupported'))
     await second
-    expect(model.getSnapshot().status.label).toBe('暂不支持')
+    expect(model.getSnapshot().status.label).toBe('Not supported on this system')
     expect(model.getSnapshot().controls.refreshDisabled).toBe(false)
     expect(call).toHaveBeenCalledTimes(2)
   })
@@ -131,11 +131,11 @@ describe('Computer Use DOM-free state', () => {
       .mockRejectedValueOnce(new Error('credential'))
     const model = create(call)
     await model.refresh()
-    expect(model.getSnapshot().status.summary).toContain('macOS 驱动 0.28.1')
-    expect(model.getSnapshot().permissions.label).toBe('无法读取')
+    expect(model.getSnapshot().status.summary).toContain('macOS driver 0.28.1')
+    expect(model.getSnapshot().permissions.label).toBe('Could not read permissions')
     await model.refresh()
     const result = model.getSnapshot()
-    expect(result.status.label).toBe('无法读取')
+    expect(result.status.label).toBe('Could not read status')
     expect(result.status.runtime).toBe('')
     expect(result.status.blockers).toEqual([])
     expect(result.controls.installDisabled).toBe(true)
@@ -143,11 +143,11 @@ describe('Computer Use DOM-free state', () => {
   })
 
   it.each([
-    ['required', '需要授权', false],
-    ['unknown', '无法确认', true],
-    ['unavailable', '不可用', true],
-    ['not-required', '无需系统授权', true],
-    ['granted', '已授权', true],
+    ['required', 'Authorization required', false],
+    ['unknown', 'Could not confirm', true],
+    ['unavailable', 'Unavailable', true],
+    ['not-required', 'No system authorization required', true],
+    ['granted', 'Authorized', true],
   ] as const)(
     'does not turn a successful grant RPC with %s into a granted status',
     async (status, label, hidden) => {
@@ -172,23 +172,23 @@ describe('Computer Use DOM-free state', () => {
     const granting = model.grantPermissions()
     const checking = model.doctor()
     await Promise.all([model.grantPermissions(), model.doctor(), model.refresh()])
-    expect(model.getSnapshot().permissions.label).toBe('等待系统授权')
+    expect(model.getSnapshot().permissions.label).toBe('Waiting for system authorization')
     expect(model.getSnapshot().controls.refreshDisabled).toBe(true)
     expect(model.getSnapshot().controls.doctorDisabled).toBe(true)
     grant.resolve(granted)
     doctor.resolve({ status: 'unavailable' })
     await Promise.all([granting, checking])
-    expect(model.getSnapshot().permissions.label).toBe('已授权')
-    expect(model.getSnapshot().doctor.label).toBe('未执行')
+    expect(model.getSnapshot().permissions.label).toBe('Authorized')
+    expect(model.getSnapshot().doctor.label).toBe('Not run')
     expect(model.getSnapshot().controls.doctorDisabled).toBe(true)
     expect(call).toHaveBeenCalledTimes(3)
   })
 
   it.each([
-    ['ready', '检查通过'],
-    ['failed', '检查失败'],
-    ['unreachable', '无法连接'],
-    ['unavailable', '未执行'],
+    ['ready', 'Check passed'],
+    ['failed', 'Check failed'],
+    ['unreachable', 'Could not connect'],
+    ['unavailable', 'Not run'],
   ] as const)('projects doctor %s without exposing service internals', async (status, label) => {
     const call = vi.fn().mockResolvedValue({
       status,
@@ -238,7 +238,7 @@ describe('Computer Use operation coordination', () => {
       await model.install()
       expect(call).toHaveBeenNthCalledWith(2, `${rpc}operation.start`, { kind: 'install' })
       expect(call).toHaveBeenNthCalledWith(3, `${rpc}status`, {})
-      expect(model.getSnapshot().operation.label).toBe('操作完成')
+      expect(model.getSnapshot().operation.label).toBe('Operation finished')
       expect(model.getSnapshot().controls.installDisabled).toBe(false)
     },
   )
@@ -260,14 +260,14 @@ describe('Computer Use operation coordination', () => {
     expect(model.getSnapshot().operation.record?.state).toBe('queued')
     expect(model.getSnapshot().controls.cancelDisabled).toBe(false)
     await vi.advanceTimersByTimeAsync(20)
-    expect(model.getSnapshot().operation.label).toBe('正在安装')
+    expect(model.getSnapshot().operation.label).toBe('Installing')
     await vi.advanceTimersByTimeAsync(20)
-    expect(model.getSnapshot().operation.label).toBe('正在取消')
+    expect(model.getSnapshot().operation.label).toBe('Cancelling')
     expect(model.getSnapshot().controls.installDisabled).toBe(true)
     await vi.advanceTimersByTimeAsync(20)
     await starting
     expect(model.getSnapshot().operation.record?.state).toBe('cancelled')
-    expect(model.getSnapshot().operation.label).toBe('已取消')
+    expect(model.getSnapshot().operation.label).toBe('Cancelled')
     expect(model.getSnapshot().controls.cancelHidden).toBe(true)
     expect(call.mock.calls.filter(([method]) => method.endsWith('operation.status'))).toEqual(
       Array(3).fill([`${rpc}operation.status`, { operationId: 'cu-test' }]),
@@ -289,14 +289,14 @@ describe('Computer Use operation coordination', () => {
     await model.refresh()
     await model.update()
     const exhausted = model.getSnapshot()
-    expect(exhausted.operation.label).toBe('仍在执行')
+    expect(exhausted.operation.label).toBe('Still running')
     expect(exhausted.operation.record?.state).toBe('running')
     expect(exhausted.controls.updateDisabled).toBe(true)
     expect(exhausted.controls.operationRefreshDisabled).toBe(false)
     expect(wait).toHaveBeenCalledTimes(2)
     completed = true
     await model.refreshOperation()
-    expect(model.getSnapshot().operation.label).toBe('操作完成')
+    expect(model.getSnapshot().operation.label).toBe('Operation finished')
     expect(model.getSnapshot().controls.restartDisabled).toBe(false)
     await model.restart()
     expect(call.mock.calls.filter(([method]) => method.endsWith('operation.start'))).toEqual([
@@ -319,18 +319,18 @@ describe('Computer Use operation coordination', () => {
     const model = create(call as ComputerUseStatusClient['call'], { wait: async () => undefined })
     await model.refresh()
     await model.update()
-    expect(model.getSnapshot().operation.label).toBe('无法读取进度')
+    expect(model.getSnapshot().operation.label).toBe('Could not read progress')
     await model.cancelOperation()
-    expect(model.getSnapshot().operation.label).toBe('取消失败')
+    expect(model.getSnapshot().operation.label).toBe('Cancel failed')
     expect(model.getSnapshot().operation.record?.state).toBe('running')
     expect(model.getSnapshot().controls.cancelDisabled).toBe(false)
     await model.refreshOperation()
-    expect(model.getSnapshot().operation.summary).toContain('可能仍在后台')
+    expect(model.getSnapshot().operation.summary).toContain('still be running in the background')
     expect(model.getSnapshot().controls.updateDisabled).toBe(true)
     expect(JSON.stringify(model.getSnapshot())).not.toContain('credential')
     recovered = true
     await model.refreshOperation()
-    expect(model.getSnapshot().operation.label).toBe('操作失败')
+    expect(model.getSnapshot().operation.label).toBe('Operation failed')
     expect(model.getSnapshot().controls.updateDisabled).toBe(false)
     expect(call).toHaveBeenCalledWith(`${rpc}operation.cancel`, { operationId: 'cu-test' })
   })
@@ -357,12 +357,12 @@ describe('Computer Use operation coordination', () => {
     oldPoll.resolve(operation('succeeded'))
     oldRead.resolve(operation('running'))
     await Promise.all([starting, refreshing])
-    expect(model.getSnapshot().operation.label).toBe('正在取消')
+    expect(model.getSnapshot().operation.label).toBe('Cancelling')
     expect(model.getSnapshot().controls.operationRefreshDisabled).toBe(true)
     expect(model.getSnapshot().controls.cancelDisabled).toBe(true)
     cancel.resolve(operation('cancelled'))
     await cancelling
-    expect(model.getSnapshot().operation.label).toBe('已取消')
+    expect(model.getSnapshot().operation.label).toBe('Cancelled')
     expect(model.getSnapshot().controls.operationRefreshDisabled).toBe(false)
     expect(call.mock.calls.filter(([method]) => method.endsWith('operation.cancel'))).toHaveLength(1)
   })
@@ -390,7 +390,7 @@ describe('Computer Use operation coordination', () => {
         }
         await starting
       }
-      expect(model.getSnapshot().operation.label).toBe('没有记录')
+      expect(model.getSnapshot().operation.label).toBe('No record')
       expect(model.getSnapshot().operation.record).toBeUndefined()
     },
   )
@@ -495,7 +495,7 @@ describe('Computer Use subscription retirement', () => {
     await vi.advanceTimersByTimeAsync(500)
     await starting
     expect(timerCount).toBe(0)
-    expect(model.getSnapshot().operation.label).toBe('已取消')
+    expect(model.getSnapshot().operation.label).toBe('Cancelled')
     expect(call.mock.calls.some(([method]) => method.endsWith('operation.status'))).toBe(false)
   })
 })
@@ -534,7 +534,7 @@ describe('Computer Use terminal recovery', () => {
       state: 'succeeded',
       phase: 'complete',
     })
-    expect(model.getSnapshot().status.label).toBe('可用')
+    expect(model.getSnapshot().status.label).toBe('Available')
     expect(model.getSnapshot().controls.updateDisabled).toBe(false)
   })
 
@@ -555,13 +555,13 @@ describe('Computer Use terminal recovery', () => {
     const cancelling = model.cancelOperation()
     await vi.advanceTimersByTimeAsync(0)
     await starting
-    expect(model.getSnapshot().operation.label).toBe('正在取消')
+    expect(model.getSnapshot().operation.label).toBe('Cancelling')
     expect(model.getSnapshot().operation.record?.state).toBe('cancelling')
     expect(model.getSnapshot().controls.updateDisabled).toBe(true)
     cancelled = true
     await vi.advanceTimersByTimeAsync(20)
     await cancelling
-    expect(model.getSnapshot().operation.label).toBe('已取消')
+    expect(model.getSnapshot().operation.label).toBe('Cancelled')
     expect(model.getSnapshot().controls.updateDisabled).toBe(false)
     expect(call.mock.calls.filter(([method]) => method.endsWith('operation.cancel'))).toHaveLength(1)
     expect(vi.getTimerCount()).toBe(0)
@@ -583,7 +583,7 @@ describe('Computer Use terminal recovery', () => {
     await model.update()
     await model.restart()
     expect(submissions).toBe(1)
-    expect(model.getSnapshot().operation.label).toBe('无法确认是否开始')
+    expect(model.getSnapshot().operation.label).toBe('Could not confirm the start')
     expect(model.getSnapshot().operation.record).toBeUndefined()
     expect(model.getSnapshot().controls.cancelDisabled).toBe(true)
     await model.refreshOperation()

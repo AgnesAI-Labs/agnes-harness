@@ -1,3 +1,5 @@
+import { fallbackT, type Translate } from './locales/index.js'
+
 /**
  * Shared confirmation dialog for the admin surfaces.
  *
@@ -8,6 +10,8 @@
  */
 export type ConfirmRequest = Readonly<{
   title: string
+  /** Locale-bound translate for the default action label when confirmLabel is omitted. */
+  t?: Translate
   description: string
   confirmLabel?: string
   /** Optional structured preview rendered above the actions. */
@@ -75,7 +79,7 @@ export function createConfirmController(): ConfirmController {
       trigger = document.activeElement instanceof HTMLElement ? document.activeElement : undefined
       title.textContent = request.title
       description.textContent = request.description
-      action.textContent = request.confirmLabel ?? '确认'
+      action.textContent = request.confirmLabel ?? (request.t ?? fallbackT)('settings.confirm.default')
       facts.replaceChildren()
       facts.hidden = !request.renderFacts
       request.renderFacts?.(facts)

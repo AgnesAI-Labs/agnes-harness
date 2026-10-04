@@ -2,6 +2,7 @@
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createDocumentPreview, sanitizeDocumentHtml } from '../src/document-preview.js'
+import { zhT } from './helpers/locale.js'
 
 afterEach(() => {
   document.body.replaceChildren()
@@ -17,7 +18,7 @@ function host(): HTMLElement {
 describe('DSH document preview renderers', () => {
   it('preserves the synchronous update/dispose contract and makes retired updates inert', () => {
     const element = host()
-    const preview = createDocumentPreview(element, { kind: 'markdown', title: 'old', content: '# old' })
+    const preview = createDocumentPreview(element, { kind: 'markdown', title: 'old', content: '# old' }, zhT)
     expect(element.querySelector('h1')?.textContent).toBe('old')
     preview.update({ kind: 'html', content: '<p>new</p><a href="data:text/html,evil">literal</a>' })
     expect(element.textContent).toBe('newliteral')
@@ -55,10 +56,14 @@ describe('DSH document preview renderers', () => {
   it('leaves object URL ownership with the consumer across updates and disposal', () => {
     const revoke = vi.spyOn(URL, 'revokeObjectURL')
     const element = host()
-    const preview = createDocumentPreview(element, {
-      kind: 'image',
-      resourceUrl: 'blob:https://example.test/one',
-    })
+    const preview = createDocumentPreview(
+      element,
+      {
+        kind: 'image',
+        resourceUrl: 'blob:https://example.test/one',
+      },
+      zhT,
+    )
     expect(element.querySelector('img')?.getAttribute('alt')).toBe('文档图片')
     preview.update({ kind: 'image', resourceUrl: '' })
     expect(element.querySelector('img')).toBeNull()
@@ -86,7 +91,7 @@ describe('DSH document preview renderers', () => {
 
   it('covers text, markdown, code and controlled resource renderer keys', () => {
     const element = host()
-    const preview = createDocumentPreview(element, { kind: 'text', content: 'plain' })
+    const preview = createDocumentPreview(element, { kind: 'text', content: 'plain' }, zhT)
     expect(element.querySelector('pre')?.textContent).toBe('plain')
 
     preview.update({ kind: 'markdown', content: '# 标题' })
@@ -101,10 +106,14 @@ describe('DSH document preview renderers', () => {
     preview.update({ kind: 'image', title: '截图', resourceUrl: 'blob:https://example.test/image-1' })
     expect(element.querySelector<HTMLImageElement>('img')?.src).toBe('blob:https://example.test/image-1')
     const pdfElement = document.createElement('div')
-    const pdfPreview = createDocumentPreview(pdfElement, {
-      kind: 'pdf',
-      resourceUrl: 'blob:https://example.test/document-1',
-    })
+    const pdfPreview = createDocumentPreview(
+      pdfElement,
+      {
+        kind: 'pdf',
+        resourceUrl: 'blob:https://example.test/document-1',
+      },
+      zhT,
+    )
     expect(pdfElement.querySelector<HTMLIFrameElement>('iframe')?.sandbox.value).toBe('')
     pdfPreview.dispose()
     preview.dispose()

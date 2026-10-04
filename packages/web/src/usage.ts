@@ -1,6 +1,6 @@
 import type { UsageView } from '@agnes/protocol'
+import type { LocaleVars } from '@agnes/web-client'
 import { ConversationUsage, type CostNode, costDetails, costSummary } from '@agnes/web-ui/assistant-ui'
-
 import { createElement } from 'react'
 import { flushSync } from 'react-dom'
 import { createRoot } from 'react-dom/client'
@@ -22,18 +22,21 @@ function fillRows(list: HTMLDListElement, rows: Rows): void {
 }
 
 /** Keeps the native disclosure and its focus/expanded state through incremental updates. */
-export function createCostDetails(parent: HTMLElement): (node: CostNode) => void {
+export function createCostDetails(
+  parent: HTMLElement,
+  t: (key: string, vars?: LocaleVars) => string,
+): (node: CostNode) => void {
   const details = document.createElement('details')
   details.className = 'usage-disclosure call-usage'
   const summary = document.createElement('summary')
-  summary.setAttribute('aria-label', '查看本次调用用量明细')
+  summary.setAttribute('aria-label', t('cost.callDetailsAria'))
   const list = document.createElement('dl')
   list.className = 'usage-grid'
   details.append(summary, list)
   parent.append(details)
   return (node) => {
-    summary.textContent = costSummary(node)
-    fillRows(list, costDetails(node))
+    summary.textContent = costSummary(node, t)
+    fillRows(list, costDetails(node, t))
   }
 }
 
@@ -42,13 +45,16 @@ export type UsagePanelUpdater = ((usage: UsageView | undefined, connected: boole
 }
 
 /** Synchronous compatibility root; production composer injects ConversationUsage directly. */
-export function createUsagePanel(parent: HTMLElement): UsagePanelUpdater {
+export function createUsagePanel(
+  parent: HTMLElement,
+  t?: (key: string, vars?: LocaleVars) => string,
+): UsagePanelUpdater {
   const root = createRoot(parent)
   let disposed = false
   const update = ((usage, connected) => {
     if (disposed) return
     parent.hidden = !usage
-    flushSync(() => root.render(createElement(ConversationUsage, { usage, connected })))
+    flushSync(() => root.render(createElement(ConversationUsage, { usage, connected, ...(t ? { t } : {}) })))
   }) as UsagePanelUpdater
   update.dispose = () => {
     if (disposed) return
