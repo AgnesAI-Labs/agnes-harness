@@ -61,12 +61,11 @@ export const RuntimePublic10 = Type.Module({
   "MountRef": Type.Object({ "workspaceId": Type.Ref('Id'), "mountId": Type.Ref('Id'), "revision": Type.Ref('Revision'), "lease": Type.Ref('LeaseRef') }, { additionalProperties: false }),
   "PackageLocator": Type.Union([Type.Object({ "kind": Type.Literal('local'), "sourceId": Type.Ref('Id'), "pathRef": Type.Ref('Id'), "digest": Type.Ref('Digest') }, { additionalProperties: false }), Type.Object({ "kind": Type.Literal('npm'), "sourceId": Type.Ref('Id'), "name": Type.String(), "version": Type.String(), "integrity": Type.String(), "digest": Type.Ref('Digest') }, { additionalProperties: false }), Type.Object({ "kind": Type.Literal('git'), "sourceId": Type.Ref('Id'), "repository": Type.String(), "commit": Type.String(), "subdirectory": Type.String(), "digest": Type.Ref('Digest') }, { additionalProperties: false })]),
   "ProviderBindingSnapshot": Type.Object({ "binding": Type.Ref('BindingRef'), "descriptor": Type.Ref('ProviderDescriptor'), "isolation": Type.Ref('IsolationMode'), "config": Type.Ref('DataRef'), "configDigest": Type.Ref('Digest'), "dependencies": Type.Array(Type.Ref('BindingRef'), { maxItems: 10000 }), "codecRefs": Type.Array(Type.Ref('StateCodecRef'), { maxItems: 10000 }), "schemaRefs": Type.Array(Type.Ref('SchemaRef'), { maxItems: 10000 }) }, { additionalProperties: false }),
-  "ContributionExport": Type.Ref('ExportRef'),
+  "SkinTokenValue": Type.String({ minLength: 1, maxLength: 256, pattern: "^(?!.*url\\()[^;{}@]*$" }),
   "Cursor": Type.String(),
   "ArtifactTitle": Object.assign(Type.String({ minLength: 1, pattern: "^[^\\u0000-\\u001f\\u007f]+$" }), {"x-max-utf8-bytes":1024}),
   "ArtifactMediaType": Object.assign(Type.String({ pattern: "^[a-z0-9][a-z0-9!#$&^_.+\\-]*/[a-z0-9][a-z0-9!#$&^_.+\\-]*$" }), {"x-max-utf8-bytes":255}),
-  "TextPart": Type.Union([Type.Object({ "kind": Type.Literal('text'), "text": Type.String() }, { additionalProperties: false }), Type.Object({ "kind": Type.Literal('action'), "actionKey": Type.String(), "label": Type.String() }, { additionalProperties: false })]),
-  "FormattedView": Type.Object({ "viewId": Type.String(), "revision": Type.Number(), "parts": Type.Array(Type.Ref('TextPart'), { maxItems: 10000 }), "complete": Type.Boolean(), "unsupportedRequiredFeatures": Type.Array(Type.String(), { maxItems: 10000 }) }, { additionalProperties: false }),
+  "PluginAuthorMetadata": Type.Object({ "entries": Type.Optional(Type.Object({ "runtime": Type.Optional(Type.String()), "web": Type.Optional(Type.String()), "tui": Type.Optional(Type.String()), "im": Type.Optional(Type.String()), "sdk": Type.Optional(Type.String()) }, { additionalProperties: false })), "clientAssets": Type.Optional(Type.Object({ "styles": Type.Array(Type.Union([Type.Object({ "kind": Type.Literal('stylesheet'), "path": Type.String() }, { additionalProperties: false }), Type.Object({ "kind": Type.Literal('skin'), "path": Type.String(), "skin": Type.Object({ "id": Type.String(), "name": Type.String(), "tokens": Type.Optional(Type.Intersect([Type.Record(Type.String(), Type.Object({ "light": Type.Ref('SkinTokenValue'), "dark": Type.Ref('SkinTokenValue') }, { additionalProperties: false })), Type.Object({})])) }, { additionalProperties: false }) }, { additionalProperties: false })]), { maxItems: 10000 }) }, { additionalProperties: false })), "schemaSources": Type.Optional(Type.Array(Type.Object({ "name": Type.String(), "typeId": Type.String(), "revision": Type.Number(), "source": Type.String() }, { additionalProperties: false }), { maxItems: 10000 })), "domains": Type.Optional(Type.Array(Type.Object({ "domainType": Type.String(), "onCommittedTypes": Type.Array(Type.String(), { maxItems: 10000 }), "stateSchema": Type.String(), "readStateSchema": Type.String(), "querySchema": Type.String(), "viewSchema": Type.String(), "renderKey": Type.String(), "readerPolicy": Type.Object({ "capability": Type.String(), "rules": Type.Array(Type.Object({ "pointer": Type.String(), "resourcePointer": Type.String(), "operation": Type.String() }, { additionalProperties: false }), { maxItems: 10000 }) }, { additionalProperties: false }), "reducer": Type.Ref('ExportRef'), "selectAuthorized": Type.Ref('ExportRef'), "commands": Type.Array(Type.Object({ "name": Type.String(), "inputSchema": Type.String(), "resultSchema": Type.String(), "completion": Type.Union([Type.Literal('domain-commit'), Type.Literal('runtime-accepted')]), "handler": Type.Ref('ExportRef') }, { additionalProperties: false }), { maxItems: 10000 }), "retention": Type.Object({ "readerAfterDisable": Type.Boolean(), "deletionPolicy": Type.String() }, { additionalProperties: false }) }, { additionalProperties: false }), { maxItems: 10000 })), "tools": Type.Optional(Type.Array(Type.Object({ "id": Type.String(), "description": Type.String(), "inputSchema": Type.String(), "outputSchema": Type.String(), "action": Type.Object({ "providerId": Type.String(), "method": Type.String() }, { additionalProperties: false }) }, { additionalProperties: false }), { maxItems: 10000 })), "renderers": Type.Optional(Type.Array(Type.Object({ "id": Type.String({ minLength: 1, maxLength: 256, pattern: "^[^\\u0000-\\u001f\\u007f]+$" }), "renderKey": Type.String({ minLength: 1, maxLength: 256, pattern: "^[^\\u0000-\\u001f\\u007f]+$" }), "targets": Type.Array(Type.Union([Type.Literal('web'), Type.Literal('tui'), Type.Literal('im'), Type.Literal('sdk')]), { minItems: 1, maxItems: 4 }), "viewSchemaRanges": Type.Array(Type.Object({ "typeId": Type.Ref('TypeId'), "minRevision": Type.Integer({ minimum: 1, maximum: 9007199254740991 }), "maxRevision": Type.Integer({ minimum: 1, maximum: 9007199254740991 }) }, { additionalProperties: false }), { minItems: 1, maxItems: 64 }), "requiredFeatures": Type.Array(Type.String({ minLength: 1, maxLength: 256, pattern: "^[^\\u0000-\\u001f\\u007f]+$" }), { minItems: 0, maxItems: 64 }), "optionalFeatures": Type.Array(Type.String({ minLength: 1, maxLength: 256, pattern: "^[^\\u0000-\\u001f\\u007f]+$" }), { minItems: 0, maxItems: 64 }), "scope": Type.Union([Type.Literal('client'), Type.Literal('client-session'), Type.Literal('view')]), "entry": Type.String({ minLength: 1, maxLength: 1024, pattern: "^\\./(?!\\.{1,2}(?:/|$))(?!.*\\/\\.{1,2}(?:/|$))(?!.*//)[^\\\\\\u0000-\\u001f]+$" }) }, { additionalProperties: false }), { maxItems: 10000 })), "clientServices": Type.Optional(Type.Array(Type.Object({ "id": Type.String(), "contract": Type.Union([Type.Literal('agh.shell'), Type.Literal('agh.ui-registry')]), "apiMajor": Type.Literal(1), "targets": Type.Array(Type.Union([Type.Literal('web'), Type.Literal('tui'), Type.Literal('im'), Type.Literal('sdk')]), { maxItems: 10000 }), "scope": Type.Literal('client'), "configSchema": Type.String(), "entry": Type.Ref('ExportRef'), "requiredFeatures": Type.Array(Type.String(), { maxItems: 10000 }) }, { additionalProperties: false }), { maxItems: 10000 })), "permissions": Type.Optional(Type.Object({ "runtime": Type.Optional(Type.Array(Type.Ref('CapabilityRequirement'), { maxItems: 10000 })), "web": Type.Optional(Type.Array(Type.Ref('CapabilityRequirement'), { maxItems: 10000 })), "tui": Type.Optional(Type.Array(Type.Ref('CapabilityRequirement'), { maxItems: 10000 })), "im": Type.Optional(Type.Array(Type.Ref('CapabilityRequirement'), { maxItems: 10000 })), "sdk": Type.Optional(Type.Array(Type.Ref('CapabilityRequirement'), { maxItems: 10000 })) }, { additionalProperties: false })) }, { additionalProperties: false }),
   "Ref": Type.Ref('PublicRef'),
   "BytesRef": Type.Ref('BlobRef'),
   "PageRequest": Type.Object({ "cursor": Type.Union([Type.Ref('Cursor'), Type.Null()]), "limit": Type.Ref('UInt53') }, { additionalProperties: false }),
@@ -119,19 +118,6 @@ export const RuntimePublic10 = Type.Module({
   "AssemblyGraph": Type.Object({ "graphId": Type.Ref('Id'), "configRef": Type.Ref('DataRef'), "lock": Type.Ref('PackageLock'), "bindings": Type.Array(Type.Ref('ProviderBindingSnapshot'), { maxItems: 10000 }), "dependencies": Type.Array(Type.Object({ "consumerId": Type.Ref('Id'), "dependencyId": Type.Ref('Id'), "optional": Type.Boolean() }, { additionalProperties: false }), { maxItems: 10000 }), "requiredContributions": Type.Array(Type.Ref('Id'), { maxItems: 10000 }), "digest": Type.Ref('Digest') }, { additionalProperties: false }),
   "ChannelDestination": Type.Object({ "channelId": Type.Ref('Id'), "accountId": Type.Ref('Id'), "conversationId": Type.Ref('Id'), "threadId": Type.Union([Type.Ref('Id'), Type.Null()]) }, { additionalProperties: false }),
   "ChannelArtifactAttachment": Type.Object({ "artifactId": Type.Ref('Id'), "version": Type.Ref('UInt53'), "disposition": Type.Literal('attachment') }, { additionalProperties: false }),
-  "ChannelMessage": Type.Object({ "messageId": Type.Ref('Id'), "destination": Type.Ref('ChannelDestination'), "viewId": Type.Ref('Id'), "viewRevision": Type.Ref('Revision'), "content": Type.Ref('FormattedView'), "interaction": Type.Union([Type.Null(), Type.Object({ "interactionId": Type.Ref('Id'), "version": Type.Ref('Revision') }, { additionalProperties: false })]), "partIndex": Type.Ref('UInt53'), "partCount": Type.Ref('UInt53'), "fullContentDigest": Type.Ref('Digest'), "attachments": Type.Optional(Type.Array(Type.Ref('ChannelArtifactAttachment'), { maxItems: 32, uniqueItems: true })) }, { additionalProperties: false }),
-  "ChannelDelivery": Type.Object({ "messageId": Type.Ref('Id'), "destination": Type.Ref('ChannelDestination'), "state": Type.Union([Type.Literal('accepted'), Type.Literal('delivered'), Type.Literal('failed'), Type.Literal('unknown')]), "remoteMessageId": Type.Union([Type.Ref('Id'), Type.Null()]), "receipt": Type.Union([Type.Ref('DataRef'), Type.Null()]) }, { additionalProperties: false }),
-  "AuthenticatedCallback": Type.Object({ "callbackId": Type.Ref('Id'), "channelId": Type.Ref('Id'), "remoteEventId": Type.Ref('Id'), "actorPrincipalRef": Type.Ref('Id'), "destination": Type.Ref('ChannelDestination'), "receivedAt": Type.Ref('Timestamp'), "credentialRevision": Type.Ref('Revision'), "verifiedEnvelopeDigest": Type.Ref('Digest'), "command": Type.Union([Type.Object({ "kind": Type.Literal('interaction'), "interactionId": Type.Ref('Id'), "expectedVersion": Type.Ref('Revision'), "responseId": Type.Ref('Id'), "answer": Type.Ref('DataRef') }, { additionalProperties: false }), Type.Object({ "kind": Type.Literal('domain'), "command": Type.Ref('DataRef') }, { additionalProperties: false })]) }, { additionalProperties: false }),
-  "EmptyAuthorConfig": Type.Object({  }, { additionalProperties: false }),
-  "ToolContribution": Type.Object({ "kind": Type.Literal('tool'), "id": Type.String(), "implementation": Type.Ref('ContributionExport') }, { additionalProperties: false }),
-  "RoutingContribution": Type.Object({ "kind": Type.Literal('routing'), "id": Type.String(), "implementation": Type.Ref('ContributionExport') }, { additionalProperties: false }),
-  "ArtifactContribution": Type.Object({ "kind": Type.Literal('artifact-tool'), "id": Type.String(), "implementation": Type.Ref('ContributionExport') }, { additionalProperties: false }),
-  "WorkflowContribution": Type.Object({ "kind": Type.Literal('workflow'), "id": Type.String(), "implementation": Type.Ref('ContributionExport') }, { additionalProperties: false }),
-  "ObserverContribution": Type.Object({ "kind": Type.Literal('observer'), "id": Type.String(), "implementation": Type.Ref('ContributionExport') }, { additionalProperties: false }),
-  "RendererContribution": Type.Object({ "kind": Type.Literal('renderer'), "id": Type.String(), "implementation": Type.Ref('ContributionExport') }, { additionalProperties: false }),
-  "InterceptorContribution": Type.Object({ "kind": Type.Literal('interceptor'), "id": Type.String(), "implementation": Type.Ref('ContributionExport') }, { additionalProperties: false }),
-  "AuthorContribution": Type.Union([Type.Ref('ToolContribution'), Type.Ref('RoutingContribution'), Type.Ref('ArtifactContribution'), Type.Ref('WorkflowContribution'), Type.Ref('ObserverContribution'), Type.Ref('RendererContribution'), Type.Ref('InterceptorContribution')]),
-  "StandardToolOutput": Type.Object({ "content": Type.Array(Type.Object({ "type": Type.Literal('text'), "text": Type.String() }, { additionalProperties: false }), { maxItems: 10000 }), "structured": Type.Optional(JsonValue) }, { additionalProperties: false }),
 })
 
 export const Id = RuntimePublic10.Import('Id')
@@ -240,18 +226,16 @@ export const PackageLocator = RuntimePublic10.Import('PackageLocator')
 export type PackageLocator = Static<typeof PackageLocator>
 export const ProviderBindingSnapshot = RuntimePublic10.Import('ProviderBindingSnapshot')
 export type ProviderBindingSnapshot = Static<typeof ProviderBindingSnapshot>
-export const ContributionExport = RuntimePublic10.Import('ContributionExport')
-export type ContributionExport = Static<typeof ContributionExport>
+export const SkinTokenValue = RuntimePublic10.Import('SkinTokenValue')
+export type SkinTokenValue = Static<typeof SkinTokenValue>
 export const Cursor = RuntimePublic10.Import('Cursor')
 export type Cursor = Static<typeof Cursor>
 export const ArtifactTitle = RuntimePublic10.Import('ArtifactTitle')
 export type ArtifactTitle = Static<typeof ArtifactTitle>
 export const ArtifactMediaType = RuntimePublic10.Import('ArtifactMediaType')
 export type ArtifactMediaType = Static<typeof ArtifactMediaType>
-export const TextPart = RuntimePublic10.Import('TextPart')
-export type TextPart = Static<typeof TextPart>
-export const FormattedView = RuntimePublic10.Import('FormattedView')
-export type FormattedView = Static<typeof FormattedView>
+export const PluginAuthorMetadata = RuntimePublic10.Import('PluginAuthorMetadata')
+export type PluginAuthorMetadata = Static<typeof PluginAuthorMetadata>
 export const Ref = RuntimePublic10.Import('Ref')
 export type Ref = Static<typeof Ref>
 export const BytesRef = RuntimePublic10.Import('BytesRef')
@@ -356,29 +340,3 @@ export const ChannelDestination = RuntimePublic10.Import('ChannelDestination')
 export type ChannelDestination = Static<typeof ChannelDestination>
 export const ChannelArtifactAttachment = RuntimePublic10.Import('ChannelArtifactAttachment')
 export type ChannelArtifactAttachment = Static<typeof ChannelArtifactAttachment>
-export const ChannelMessage = RuntimePublic10.Import('ChannelMessage')
-export type ChannelMessage = Static<typeof ChannelMessage>
-export const ChannelDelivery = RuntimePublic10.Import('ChannelDelivery')
-export type ChannelDelivery = Static<typeof ChannelDelivery>
-export const AuthenticatedCallback = RuntimePublic10.Import('AuthenticatedCallback')
-export type AuthenticatedCallback = Static<typeof AuthenticatedCallback>
-export const EmptyAuthorConfig = RuntimePublic10.Import('EmptyAuthorConfig')
-export type EmptyAuthorConfig = Static<typeof EmptyAuthorConfig>
-export const ToolContribution = RuntimePublic10.Import('ToolContribution')
-export type ToolContribution = Static<typeof ToolContribution>
-export const RoutingContribution = RuntimePublic10.Import('RoutingContribution')
-export type RoutingContribution = Static<typeof RoutingContribution>
-export const ArtifactContribution = RuntimePublic10.Import('ArtifactContribution')
-export type ArtifactContribution = Static<typeof ArtifactContribution>
-export const WorkflowContribution = RuntimePublic10.Import('WorkflowContribution')
-export type WorkflowContribution = Static<typeof WorkflowContribution>
-export const ObserverContribution = RuntimePublic10.Import('ObserverContribution')
-export type ObserverContribution = Static<typeof ObserverContribution>
-export const RendererContribution = RuntimePublic10.Import('RendererContribution')
-export type RendererContribution = Static<typeof RendererContribution>
-export const InterceptorContribution = RuntimePublic10.Import('InterceptorContribution')
-export type InterceptorContribution = Static<typeof InterceptorContribution>
-export const AuthorContribution = RuntimePublic10.Import('AuthorContribution')
-export type AuthorContribution = Static<typeof AuthorContribution>
-export const StandardToolOutput = RuntimePublic10.Import('StandardToolOutput')
-export type StandardToolOutput = Static<typeof StandardToolOutput>

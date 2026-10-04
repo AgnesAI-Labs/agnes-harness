@@ -30,10 +30,32 @@ const client = generation('acme.client', '1')
 const notes = generation('acme.notes', '2')
 const code = generation('acme.code', '3')
 
+const renderer = (
+  contributionId: string,
+  renderKey: string,
+  targets: ClientModule['targets'],
+  packageDigit: string,
+): ClientModuleContribution => ({
+  contributionId,
+  kind: 'renderer',
+  targets,
+  descriptor: {
+    id: contributionId,
+    packageDigest: packageDigit.repeat(64),
+    renderKey,
+    targets,
+    viewSchemaRanges: [{ typeId: 'acme/view@1', minRevision: 1, maxRevision: 1 }],
+    requiredFeatures: [],
+    optionalFeatures: [],
+    scope: 'view',
+    entry: './renderer.js',
+  },
+})
+
 const webContributions: ClientModuleContribution[] = [
   { contributionId: 'workbench', kind: 'shell', export: 'workbenchShell', targets: ['web'] },
   { contributionId: 'registry', kind: 'registry', export: 'createRegistry', targets: ['web'] },
-  { contributionId: 'fallback', kind: 'renderer', targets: ['web'] },
+  renderer('fallback', 'acme.client/fallback', ['web'], '1'),
 ]
 const webModule = client('acme.client/web', ['web'], webContributions)
 const tuiModule = client(
@@ -41,18 +63,18 @@ const tuiModule = client(
   ['tui'],
   [
     { contributionId: 'tui-registry', kind: 'registry', export: 'createTuiRegistry', targets: ['tui'] },
-    { contributionId: 'tui-fallback', kind: 'renderer', targets: ['tui'] },
+    renderer('tui-fallback', 'acme.client/fallback', ['tui'], '1'),
   ],
 )
 const notesModule = notes(
   'acme.notes/cards',
   ['web', 'tui'],
-  [{ contributionId: 'note-card', kind: 'renderer', targets: ['web', 'tui'] }],
+  [renderer('note-card', 'acme.notes/card', ['web', 'tui'], '2')],
 )
 const codeModule = code(
   'acme.code/blocks',
   ['web'],
-  [{ contributionId: 'code-block', kind: 'renderer', targets: ['web'] }],
+  [renderer('code-block', 'acme.code/block', ['web'], '3')],
 )
 const catalog: ClientModule[] = [webModule, tuiModule, notesModule, codeModule]
 
@@ -115,7 +137,7 @@ describe('resolveClientSelection', () => {
       ['tui'],
       [
         { contributionId: 'registry', kind: 'registry', export: 'createRegistry', targets: ['tui'] },
-        { contributionId: 'fallback', kind: 'renderer', targets: ['tui'] },
+        renderer('fallback', 'acme.client/fallback', ['tui'], '1'),
       ],
     )
     const found = resolveClientSelection({ target: 'web', selection: web, modules: [...catalog, other] })
@@ -165,10 +187,7 @@ describe('resolveClientSelection', () => {
         client(
           'acme.client/web',
           ['web'],
-          [
-            ...webContributions.slice(0, 2),
-            { contributionId: 'fallback', kind: 'renderer', targets: ['tui'] },
-          ],
+          [...webContributions.slice(0, 2), renderer('fallback', 'acme.client/fallback', ['tui'], '1')],
         ),
       ),
       detailCode: 'client_selection_target',
@@ -207,11 +226,7 @@ describe('resolveClientSelection', () => {
       name: 'one renderer id declared by two packages',
       modules: [
         ...catalog,
-        code(
-          'acme.code/notes',
-          ['web'],
-          [{ contributionId: 'note-card', kind: 'renderer', targets: ['web'] }],
-        ),
+        code('acme.code/notes', ['web'], [renderer('note-card', 'acme.notes/card', ['web'], '3')]),
       ],
       detailCode: 'client_selection_ambiguous',
     },
