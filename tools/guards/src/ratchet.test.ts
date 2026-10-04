@@ -247,7 +247,10 @@ const INITIAL_CEILING: Record<string, number> = {
   // exact, no spare (+317).
   // Default text presentation of a domain view for the tui, sdk and im targets. Measured 2647, exact,
   // no spare (+204).
-  'packages/web-client/src': 2647,
+  // Client host: server-chosen selection resolution, generation activation from verified module
+  // exports and renderer presentation through per-view restricted contexts. Measured 3372, exact,
+  // no spare (+725).
+  'packages/web-client/src': 3372,
   'packages/web-slots/src': 605,
   // Failed shell calls read as their exit code (+19 lines); measured 4891, exact cap.
   // B-line diagnostics dialog: React view adds 147 lines; measured 4706, exact cap.

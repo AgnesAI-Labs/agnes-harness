@@ -1,0 +1,840 @@
+import type {
+  ClientContribution,
+  ClientEntry,
+  ClientHost,
+  ClientModule,
+  ClientPresentation,
+  DomainView,
+  Outcome,
+  RendererContext,
+  RendererDefinition,
+  RendererDescriptor,
+  RendererPresentation,
+  ShellProvider,
+  UIRegistry,
+  UIRegistryFactory,
+  UIRegistryHost,
+} from '@agnes/extension-api/client'
+import { describe, expect, it, vi } from 'vitest'
+import { type ClientModuleLoader, createClientHostRuntime } from '../../src/runtime/client-host.js'
+import type {
+  ClientModuleContribution,
+  ClientTarget,
+  SelectedContribution,
+  SelectedService,
+} from '../../src/runtime/client-selection.js'
+import { createUIRegistry } from '../../src/runtime/providers/ui-registry.js'
+
+const DIGEST = 'a'.repeat(64)
+const TARGETS: RendererDescriptor['targets'] = ['web', 'tui']
+
+// What each catalog module declares, with the export of every shell and registry. `base` holds the
+// registry, the fallback renderer and the selected shell; `cards` holds the selected card renderer and a
+// shell nobody selected; `frame` holds only a shell and a registry; `spare` is never selected.
+const DECLARED: Record<
+  string,
+  ReadonlyArray<readonly [ClientModuleContribution['kind'], string, string?]>
+> = {
+  base: [
+    ['registry', 'base.registry', 'createRegistry'],
+    ['renderer', 'base.fallback'],
+    ['shell', 'base.shell', 'workbenchShell'],
+  ],
+  cards: [
+    ['renderer', 'cards.card'],
+    ['shell', 'cards.shell', 'cardsShell'],
+  ],
+  frame: [
+    ['registry', 'frame.registry', 'createFrameRegistry'],
+    ['shell', 'frame.shell', 'frameShell'],
+  ],
+  spare: [['renderer', 'spare.card']],
+}
+
+const catalogModule = (moduleId: string): ClientModule => ({
+  moduleId,
+  packageId: `acme.${moduleId}`,
+  packageDigest: DIGEST,
+  assetDigest: DIGEST,
+  entryPath: `./${moduleId}.js`,
+  ownerToken: `catalog-${moduleId}`,
+  authorApiMajor: 1,
+  targets: ['web', 'tui'],
+  schemas: [],
+  requiredFeatures: [],
+  styles: [],
+  contributions: (DECLARED[moduleId] ?? []).map(
+    ([kind, contributionId, name]) =>
+      ({
+        contributionId,
+        kind,
+        export: name,
+        targets: kind === 'shell' ? ['web'] : TARGETS,
+      }) as ClientModuleContribution,
+  ),
+})
+const MODULES = Object.keys(DECLARED).map(catalogModule)
+
+const pick = (moduleId: string, contributionId: string): SelectedContribution => ({
+  moduleId,
+  packageId: `acme.${moduleId}`,
+  packageDigest: DIGEST,
+  entryPath: `./${moduleId}.js`,
+  contributionId,
+})
+/** A selected shell or registry, naming the export its module declares for it. */
+const serve = (moduleId: string, contributionId: string): SelectedService => ({
+  ...pick(moduleId, contributionId),
+  export: DECLARED[moduleId]?.find(([, id]) => id === contributionId)?.[2] ?? '',
+})
+
+function catalog(revision: number, target: ClientTarget = 'web') {
+  return {
+    revision,
+    // The server issues each module a fresh owner token per catalog generation.
+    modules: MODULES.map((module) => ({ ...module, ownerToken: `${module.ownerToken}-${revision}` })),
+    selection: {
+      kind: 'selected' as const,
+      target,
+      shell: target === 'web' ? serve('base', 'base.shell') : null,
+      registry: serve('base', 'base.registry'),
+      fallbackRenderer: pick('base', 'base.fallback'),
+      renderers: [{ renderKey: 'card', renderer: pick('cards', 'cards.card') }],
+    },
+  }
+}
+
+// Presents on every declared target; the host never presents during these tests.
+const renderer = (id: string, targets = TARGETS) =>
+  ({
+    descriptor: {
+      id,
+      packageDigest: DIGEST,
+      renderKey: id,
+      targets,
+      viewSchemaRanges: [{ typeId: 'acme.card/view@1', minRevision: 1, maxRevision: 1 }],
+      requiredFeatures: [],
+      optionalFeatures: [],
+      scope: 'view',
+      entry: './card.js',
+    },
+    component: () => null,
+    format: () => {
+      throw new Error('not presented')
+    },
+  }) as unknown as RendererDefinition
+
+// Only the descriptor id is read before a shell is mounted.
+const shell = (id: string) => () => ({ descriptor: { id } }) as unknown as ShellProvider
+
+const refused = (result: Outcome<unknown> | undefined) =>
+  result?.ok === false ? `${result.error.code}/${result.error.detailCode}` : result?.ok ? 'ok' : 'none'
+
+function resolved(registry: UIRegistry, renderKey: string, target: ClientTarget = 'web') {
+  const result = registry.resolve({
+    renderKey,
+    viewSchema: { typeId: 'acme.card/view@1', revision: 1, digest: DIGEST },
+    target,
+    requiredFeatures: [],
+  })
+  return result.ok ? result.value : undefined
+}
+const kind = (registry: UIRegistry, renderKey: string, target?: ClientTarget) =>
+  resolved(registry, renderKey, target)?.kind
+
+type Namespace = Record<string, unknown>
+/** Namespace edits: drop the export `name`, or set it to `value`. */
+const without = (name: string) => (namespace: Namespace) =>
+  Object.fromEntries(Object.entries(namespace).filter(([key]) => key !== name))
+const replacing = (name: string, value: unknown) => (namespace: Namespace) => ({
+  ...namespace,
+  [name]: value,
+})
+
+const contribution = (log: string[], name: string): Outcome<ClientContribution> => ({
+  ok: true,
+  value: {
+    dispose: async () => {
+      log.push(`dispose ${name}`)
+    },
+  },
+})
+
+/**
+ * A runtime over a fake loader. Each module namespace holds its `clientEntry` and a function under every
+ * export it declares; `entries` replaces one module's entry and `namespaces` edits its namespace for later
+ * loads. Every module's standard entry registers what it declares. The registry is the default one,
+ * logging what it holds.
+ */
+function harness(options: { target?: ClientTarget; limits?: { entryMs?: number; disposeMs?: number } } = {}) {
+  const target = options.target ?? 'web'
+  const log: string[] = []
+  const starts = new Map<string, number>()
+  const factory: UIRegistryFactory = (host) => {
+    h.hosts.push(host)
+    const made = createUIRegistry(host)
+    if (!made.ok) return made
+    const { register, resolve } = made.value
+    return {
+      ok: true,
+      value: {
+        resolve,
+        register(definition) {
+          const registered = register(definition)
+          if (!registered.ok) return registered
+          log.push(`register ${registered.value.id}`)
+          const { id, ownerToken, dispose } = registered.value
+          return {
+            ok: true,
+            value: {
+              id,
+              ownerToken,
+              dispose: async () => {
+                log.push(`unregister ${id}`)
+                await dispose()
+              },
+            },
+          }
+        },
+      },
+    }
+  }
+  const standard =
+    (moduleId: string): ClientEntry =>
+    async (host) => {
+      const run = (starts.get(moduleId) ?? 0) + 1
+      starts.set(moduleId, run)
+      for (const [kind, id] of DECLARED[moduleId] ?? []) {
+        const outcome =
+          kind === 'renderer'
+            ? host.renderers.register(renderer(id))
+            : kind === 'shell' && target === 'web'
+              ? host.registerShell(shell(id))
+              : undefined
+        if (outcome?.ok === false) return outcome
+      }
+      return contribution(log, `${moduleId}#${run}`)
+    }
+  const loader: ClientModuleLoader = {
+    load: async (module) => {
+      log.push(`load ${module.moduleId}`)
+      if (h.slow === module.moduleId) await sleep(100)
+      if (h.unloadable === module.moduleId)
+        return {
+          ok: false,
+          error: {
+            code: 'internal',
+            detailCode: 'missing_export',
+            message: 'no client entry',
+            retryAdvice: { kind: 'never' },
+            diagnosticId: 'client-host-test',
+          },
+        }
+      const own = standard(module.moduleId)
+      const namespace: Namespace = { clientEntry: h.entries[module.moduleId]?.(own) ?? own }
+      for (const [kind, id, name] of DECLARED[module.moduleId] ?? [])
+        if (name !== undefined) namespace[name] = kind === 'registry' ? factory : shell(id)
+      const loaded = h.namespaces[module.moduleId]?.(namespace) ?? namespace
+      h.loaded[module.moduleId] = loaded
+      return { ok: true, value: loaded }
+    },
+  }
+  const context = { ownerToken: 'caller' } as unknown as RendererContext
+  const presentation = {} as ClientPresentation
+  /** Every lease the host took, with how often each was disposed. */
+  const leases: Array<{ id: string; ownerToken: string; disposed: number }> = []
+  const presenter = {
+    lease({ definition, ownerToken }: { definition: RendererDefinition; ownerToken: string }) {
+      const lease = { id: definition.descriptor.id, ownerToken, disposed: 0 }
+      leases.push(lease)
+      return {
+        present: (view: DomainView) =>
+          ({
+            ok: true,
+            value: { target: 'tui', formatted: view },
+          }) as unknown as Outcome<RendererPresentation>,
+        dispose: async () => {
+          lease.disposed += 1
+        },
+      }
+    },
+  }
+  const h = {
+    log,
+    context,
+    presentation,
+    leases,
+    /** How often each module's standard entry ran. */
+    starts,
+    hosts: [] as UIRegistryHost[],
+    entries: {} as Record<string, (standard: ClientEntry) => ClientEntry>,
+    namespaces: {} as Record<string, (standard: Namespace) => Namespace>,
+    /** The namespace each module loaded last. */
+    loaded: {} as Record<string, Namespace>,
+    unloadable: undefined as string | undefined,
+    slow: undefined as string | undefined,
+    runtime: createClientHostRuntime({
+      target,
+      loader,
+      context,
+      presentation,
+      presenter,
+      limits: options.limits ?? {},
+    }),
+  }
+  return h
+}
+
+function now(h: ReturnType<typeof harness>) {
+  const generation = h.runtime.current()
+  if (generation === undefined) throw new Error('no current generation')
+  return generation
+}
+
+const sorted = (lines: readonly string[]) => [...lines].sort()
+function at<T>(list: readonly T[], index: number): T {
+  const item = list[index]
+  if (item === undefined) throw new Error(`nothing at ${index}`)
+  return item
+}
+const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms))
+
+describe('client host runtime', () => {
+  it('loads each selected module once, starts its entry and exposes the selected exports', async () => {
+    const h = harness()
+    let seen: ClientHost | undefined
+    h.entries.cards = (standard) => async (host) => {
+      seen = host
+      return standard(host)
+    }
+    expect(refused(await h.runtime.activate(catalog(1)))).toBe('ok')
+    const generation = now(h)
+    expect(generation.revision).toBe(1)
+    // Both entries registered their own shells; the generation offers only the selected export.
+    expect(generation.shell()).toBe(h.loaded.base?.workbenchShell)
+    expect(kind(generation.registry, 'cards.card')).toBe('matched')
+    // base serves the registry, the shell and a renderer, and still loads once.
+    expect(h.log).toEqual(['load base', 'register base.fallback', 'load cards', 'register cards.card'])
+    expect(seen?.context).toBe(h.context)
+    expect(seen?.presentation).toBe(h.presentation)
+    expect(seen && kind(seen.renderers, 'base.fallback')).toBe('matched')
+  })
+
+  it('activates a text target without a shell and refuses registerShell there', async () => {
+    const h = harness({ target: 'tui' })
+    let outcome: Outcome<unknown> | undefined
+    h.entries.base = (standard) => async (host) => {
+      outcome = host.registerShell(shell('base.shell'))
+      return standard(host)
+    }
+    expect(refused(await h.runtime.activate(catalog(1, 'tui')))).toBe('ok')
+    expect(refused(outcome)).toBe('incompatible/shell_target_unsupported')
+    expect(now(h).shell()).toBeUndefined()
+    expect(kind(now(h).registry, 'cards.card', 'tui')).toBe('matched')
+  })
+
+  it.each([
+    ['an undeclared renderer', 'base', renderer('base.other')],
+    ['a target its declaration lacks', 'base', renderer('base.fallback', ['web', 'im'])],
+    ["another module's renderer", 'base', renderer('cards.card')],
+  ])('refuses to register %s', async (_name, moduleId, definition) => {
+    const h = harness()
+    let outcome: Outcome<unknown> | undefined
+    h.entries[moduleId] = (standard) => async (host) => {
+      outcome = host.renderers.register(definition)
+      return standard(host)
+    }
+    expect(refused(await h.runtime.activate(catalog(1)))).toBe('ok')
+    expect(refused(outcome)).toBe('invalid_input/renderer_undeclared')
+    expect(h.log.filter((line) => line.startsWith('register'))).toEqual([
+      'register base.fallback',
+      'register cards.card',
+    ])
+  })
+
+  it.each([
+    ['an undeclared shell', 'base', shell('base.other'), 'invalid_input/shell_undeclared'],
+    ["another module's shell", 'cards', shell('base.shell'), 'invalid_input/shell_undeclared'],
+    [
+      'a shell that cannot be created',
+      'base',
+      () => {
+        throw new Error('broken')
+      },
+      'invalid_input/shell_invalid',
+    ],
+  ])('refuses to register %s', async (_name, moduleId, factory, expected) => {
+    const h = harness()
+    let outcome: Outcome<unknown> | undefined
+    h.entries[moduleId] = (standard) => async (host) => {
+      outcome = host.registerShell(factory)
+      return standard(host)
+    }
+    expect(refused(await h.runtime.activate(catalog(1)))).toBe('ok')
+    expect(refused(outcome)).toBe(expected)
+    expect(now(h).shell()).toBe(h.loaded.base?.workbenchShell)
+  })
+
+  it('never lets a registered shell replace the selected export', async () => {
+    const h = harness()
+    let outcome: Outcome<ClientContribution> | undefined
+    h.entries.base = (standard) => async (host) => {
+      // The declared shell of this very module, from another factory than its export.
+      outcome = host.registerShell(shell('base.shell'))
+      return standard(host)
+    }
+    expect(refused(await h.runtime.activate(catalog(1)))).toBe('ok')
+    if (!outcome?.ok) throw new Error('the shell was not registered')
+    expect(now(h).shell()).toBe(h.loaded.base?.workbenchShell)
+    await outcome.value.dispose()
+    expect(now(h).shell()).toBe(h.loaded.base?.workbenchShell)
+  })
+
+  it.each([
+    [
+      'shell',
+      (next: ReturnType<typeof catalog>) => ({
+        ...next,
+        selection: { ...next.selection, shell: serve('frame', 'frame.shell') },
+      }),
+    ],
+    [
+      'registry',
+      (next: ReturnType<typeof catalog>) => ({
+        ...next,
+        selection: { ...next.selection, registry: serve('frame', 'frame.registry') },
+      }),
+    ],
+  ])('loads a %s module without clientEntry once and never activates it', async (_name, select) => {
+    const h = harness()
+    h.namespaces.frame = without('clientEntry')
+    const next = select(catalog(1))
+    expect(refused(await h.runtime.activate(next))).toBe('ok')
+    expect(sorted(h.log.filter((line) => line.startsWith('load')))).toEqual([
+      'load base',
+      'load cards',
+      'load frame',
+    ])
+    expect([...h.starts.keys()].sort()).toEqual(['base', 'cards'])
+    const selected = next.selection.shell
+    expect(now(h).shell()).toBe(selected && h.loaded[selected.moduleId]?.[selected.export])
+    expect(kind(now(h).registry, 'cards.card')).toBe('matched')
+  })
+
+  it('leases handles only for definitions a module of the live generation registered', async () => {
+    const h = harness()
+    const definitions: RendererDefinition[] = []
+    h.entries.cards = () => async (host) => {
+      const definition = renderer('cards.card')
+      definitions.push(definition)
+      const registered = host.renderers.register(definition)
+      return registered.ok ? contribution(h.log, 'cards') : registered
+    }
+    expect(refused(await h.runtime.activate(catalog(1)))).toBe('ok')
+    const first = at(h.hosts, 0)
+    const bound = first.bindRenderer(at(definitions, 0))
+    if (!bound.ok) throw new Error(bound.error.message)
+    expect(bound.value.id).toBe('cards.card')
+    const fallback = resolved(now(h).registry, 'base.fallback')
+    if (fallback?.kind !== 'matched') throw new Error('the fallback renderer is not registered')
+    // Each module is bound under the owner token its catalog entry carries.
+    expect(bound.value.ownerToken).toBe('catalog-cards-1')
+    expect(fallback.handle.ownerToken).toBe('catalog-base-1')
+    // The handle presents through the lease the presenter issued under the module's token.
+    const view = { viewId: 'v1', revision: 1 } as DomainView
+    expect(bound.value.present(view)).toEqual({ ok: true, value: { target: 'tui', formatted: view } })
+    const lease = (id: string, ownerToken: string) =>
+      h.leases.filter((entry) => entry.id === id && entry.ownerToken === ownerToken)
+    expect(lease('cards.card', 'catalog-cards-1')).toEqual([
+      { id: 'cards.card', ownerToken: 'catalog-cards-1', disposed: 0 },
+    ])
+    await bound.value.dispose()
+    // Releasing a lease ends that lease only and leaves the renderer registered.
+    expect(lease('cards.card', 'catalog-cards-1')[0]?.disposed).toBe(1)
+    expect(lease('base.fallback', 'catalog-base-1')[0]?.disposed).toBe(0)
+    expect(kind(now(h).registry, 'cards.card')).toBe('matched')
+    // An equal definition that no module registered.
+    expect(refused(first.bindRenderer(renderer('cards.card')))).toBe('denied/renderer_unbound')
+
+    expect(refused(await h.runtime.activate(catalog(2)))).toBe('ok')
+    // Releasing the generation ends every lease it still held.
+    expect(lease('base.fallback', 'catalog-base-1')[0]?.disposed).toBe(1)
+    const second = at(h.hosts, 1)
+    expect(refused(first.bindRenderer(at(definitions, 0)))).toBe('denied/renderer_unbound')
+    expect(refused(second.bindRenderer(at(definitions, 0)))).toBe('denied/renderer_unbound')
+    const rebound = second.bindRenderer(at(definitions, 1))
+    if (!rebound.ok) throw new Error(rebound.error.message)
+    // The next generation binds the module under that generation's token.
+    expect(rebound.value.ownerToken).toBe('catalog-cards-2')
+  })
+
+  const late = (h: ReturnType<typeof harness>) => () => async (host: ClientHost) => {
+    host.renderers.register(renderer('cards.card'))
+    await sleep(100)
+    h.log.push(`late ${refused(host.renderers.register(renderer('cards.card')))}`)
+    return contribution(h.log, 'late')
+  }
+  const failing: Array<{
+    name: string
+    arrange: (h: ReturnType<typeof harness>) => void
+    select?: (next: ReturnType<typeof catalog>) => ReturnType<typeof catalog>
+    expected: string
+    log: string[]
+    eventually?: string[]
+    /** Nothing more happens once the refusal returned. */
+    quiet?: boolean
+  }> = [
+    {
+      name: 'the registry module cannot be loaded',
+      arrange: (h) => {
+        h.unloadable = 'base'
+      },
+      expected: 'internal/client_module_load_failed',
+      log: ['load base'],
+    },
+    {
+      name: 'the registry factory throws',
+      arrange: (h) => {
+        h.namespaces.base = replacing('createRegistry', () => {
+          throw new Error('broken')
+        })
+      },
+      expected: 'internal/client_registry_failed',
+      log: ['load base'],
+    },
+    // Every other export of base stays in place, and none of them is taken instead.
+    ...(
+      [
+        ['the registry export is missing', without('createRegistry'), 'client_export_missing'],
+        ['the registry export is not a function', replacing('createRegistry', {}), 'client_export_invalid'],
+        ['the shell export is missing', without('workbenchShell'), 'client_export_missing'],
+        // A shell instance in place of its factory.
+        [
+          'the shell export is not a function',
+          replacing('workbenchShell', shell('base.shell')()),
+          'client_export_invalid',
+        ],
+        [
+          'the shell export creates another shell',
+          replacing('workbenchShell', shell('cards.shell')),
+          'client_export_invalid',
+        ],
+        [
+          'the shell export throws',
+          replacing('workbenchShell', () => {
+            throw new Error('broken')
+          }),
+          'client_export_invalid',
+        ],
+      ] as const
+    ).map(([name, edit, detail]) => ({
+      name,
+      arrange: (h: ReturnType<typeof harness>) => {
+        h.namespaces.base = edit
+      },
+      expected: `incompatible/${detail}`,
+      log: ['load base'],
+    })),
+    {
+      name: "the registry's declared export differs from the selection's",
+      arrange: () => {},
+      select: (next) => ({
+        ...next,
+        selection: {
+          ...next.selection,
+          registry: { ...serve('base', 'base.registry'), export: 'workbenchShell' },
+        },
+      }),
+      expected: 'incompatible/registry_undeclared',
+      log: [],
+    },
+    {
+      name: "the shell's declared export differs from the selection's",
+      arrange: () => {},
+      select: (next) => ({
+        ...next,
+        selection: { ...next.selection, shell: { ...serve('base', 'base.shell'), export: 'createRegistry' } },
+      }),
+      expected: 'incompatible/shell_undeclared',
+      log: ['load base'],
+    },
+    ...(
+      [
+        [
+          'a renderer module cannot be loaded',
+          (h) => (h.unloadable = 'cards'),
+          'internal/client_module_load_failed',
+        ],
+        [
+          'an entry throws',
+          (h) =>
+            (h.entries.cards = () => async () => {
+              throw new Error('broken')
+            }),
+          'internal/client_entry_failed',
+        ],
+        [
+          'an entry refuses',
+          (h) =>
+            (h.entries.cards = () => async () => ({
+              ok: false,
+              error: {
+                code: 'denied',
+                detailCode: 'no',
+                message: 'no',
+                retryAdvice: { kind: 'never' },
+                diagnosticId: 'client-host-test',
+              },
+            })),
+          'internal/client_entry_failed',
+        ],
+        [
+          'clientEntry is not a function',
+          (h) => (h.namespaces.cards = replacing('clientEntry', {})),
+          'incompatible/client_entry_invalid',
+        ],
+        // cards is loaded but never activated, so its selected renderer is never registered; neither its
+        // default export nor its shell export stands in for the entry.
+        [
+          'a renderer module has no clientEntry',
+          (h) =>
+            (h.namespaces.cards = (namespace) => ({
+              ...without('clientEntry')(namespace),
+              default: namespace.clientEntry,
+            })),
+          'incompatible/client_contribution_missing',
+        ],
+      ] as Array<[string, (h: ReturnType<typeof harness>) => void, string]>
+    ).map(([name, arrange, expected]) => ({
+      name,
+      arrange,
+      expected,
+      log: [
+        'load base',
+        'register base.fallback',
+        'load cards',
+        'dispose base#2',
+        'unregister base.fallback',
+      ],
+    })),
+    {
+      name: 'an entry misses its deadline',
+      arrange: (h) => {
+        h.entries.cards = late(h)
+      },
+      expected: 'timeout/client_entry_timeout',
+      log: [
+        'load base',
+        'register base.fallback',
+        'load cards',
+        'register cards.card',
+        'unregister cards.card',
+        'dispose base#2',
+        'unregister base.fallback',
+      ],
+      // The late entry finds its host released, and what it returns is released too.
+      eventually: ['late cancelled/client_generation_released', 'dispose late'],
+    },
+    {
+      name: 'a module loads past its deadline',
+      arrange: (h) => {
+        h.slow = 'cards'
+        h.entries.cards = (standard) => async (host) => {
+          h.log.push('start cards')
+          return standard(host)
+        }
+      },
+      expected: 'timeout/client_module_load_timeout',
+      log: [
+        'load base',
+        'register base.fallback',
+        'load cards',
+        'dispose base#2',
+        'unregister base.fallback',
+      ],
+      // The entry of a late load is never started.
+      quiet: true,
+    },
+    {
+      name: 'a selected renderer is not registered',
+      arrange: (h) => {
+        h.entries.cards = () => async () => contribution(h.log, 'cards (empty)')
+      },
+      expected: 'incompatible/client_contribution_missing',
+      log: [
+        'load base',
+        'register base.fallback',
+        'load cards',
+        'dispose cards (empty)',
+        'dispose base#2',
+        'unregister base.fallback',
+      ],
+    },
+    {
+      name: 'the selection is for another target',
+      arrange: () => {},
+      select: () => catalog(2, 'tui'),
+      expected: 'invalid_input/client_target_mismatch',
+      log: [],
+    },
+    {
+      name: 'a selected module is missing from the catalog',
+      arrange: () => {},
+      select: (next) => ({ ...next, modules: MODULES.filter((module) => module.moduleId !== 'cards') }),
+      expected: 'incompatible/client_module_missing',
+      log: [],
+    },
+  ]
+
+  it.each(failing)('keeps the current generation and releases the candidate when $name', async (row) => {
+    const h = harness({ limits: { entryMs: 50 } })
+    expect(refused(await h.runtime.activate(catalog(1)))).toBe('ok')
+    h.log.length = 0
+    row.arrange(h)
+    const next = catalog(2)
+    expect(refused(await h.runtime.activate(row.select ? row.select(next) : next))).toBe(row.expected)
+    expect(sorted(h.log)).toEqual(sorted(row.log))
+    const generation = now(h)
+    expect(generation.revision).toBe(1)
+    expect(generation.shell()?.().descriptor.id).toBe('base.shell')
+    expect(kind(generation.registry, 'cards.card')).toBe('matched')
+    if (row.eventually) {
+      const eventually = row.eventually
+      await vi.waitFor(() => expect(h.log).toEqual(expect.arrayContaining(eventually)))
+    }
+    if (row.quiet) {
+      await sleep(150)
+      expect(sorted(h.log)).toEqual(sorted(row.log))
+    }
+  })
+
+  it('commits a new generation before releasing the old one', async () => {
+    const h = harness()
+    let currentAtRelease: number | undefined
+    h.entries.base = (standard) => async (host) => {
+      const started = await standard(host)
+      if (!started.ok) return started
+      return {
+        ok: true,
+        value: {
+          dispose: async () => {
+            currentAtRelease = h.runtime.current()?.revision
+            await started.value.dispose()
+          },
+        },
+      }
+    }
+    expect(refused(await h.runtime.activate(catalog(1)))).toBe('ok')
+    const old = now(h)
+    h.log.length = 0
+    expect(refused(await h.runtime.activate(catalog(2)))).toBe('ok')
+    expect(now(h).revision).toBe(2)
+    expect(currentAtRelease).toBe(2)
+    // The next generation loads each module afresh, once.
+    expect(h.log.filter((line) => line.startsWith('load'))).toEqual(['load base', 'load cards'])
+    expect(h.log).toEqual(
+      expect.arrayContaining([
+        'dispose base#1',
+        'dispose cards#1',
+        'unregister base.fallback',
+        'unregister cards.card',
+      ]),
+    )
+    expect(h.log).not.toContain('dispose base#2')
+    expect(old.shell()).toBeUndefined()
+    expect(kind(old.registry, 'cards.card')).toBe('fallback')
+    expect(kind(now(h).registry, 'cards.card')).toBe('matched')
+  })
+
+  it('gives up on a dispose past its deadline and still releases the rest', async () => {
+    const h = harness({ limits: { disposeMs: 20 } })
+    h.entries.cards = (standard) => async (host) => {
+      const started = await standard(host)
+      return started.ok ? { ok: true, value: { dispose: () => new Promise<void>(() => {}) } } : started
+    }
+    h.entries.base = (standard) => async (host) => {
+      const started = await standard(host)
+      return started.ok
+        ? {
+            ok: true,
+            value: {
+              dispose: async () => {
+                throw new Error('broken')
+              },
+            },
+          }
+        : started
+    }
+    expect(refused(await h.runtime.activate(catalog(1)))).toBe('ok')
+    const started = Date.now()
+    await h.runtime.dispose()
+    expect(Date.now() - started).toBeLessThan(1_000)
+    expect(h.log).toEqual(expect.arrayContaining(['unregister base.fallback', 'unregister cards.card']))
+    expect(h.runtime.current()).toBeUndefined()
+  })
+
+  it('refuses a second activation while one runs', async () => {
+    const h = harness()
+    let open = () => {}
+    const gate = new Promise<void>((resolve) => {
+      open = resolve
+    })
+    h.entries.cards = (standard) => async (host) => {
+      await gate
+      return standard(host)
+    }
+    const first = h.runtime.activate(catalog(1))
+    expect(refused(await h.runtime.activate(catalog(2)))).toBe('conflict/client_activation_in_progress')
+    open()
+    expect(refused(await first)).toBe('ok')
+    expect(now(h).revision).toBe(1)
+    expect(refused(await h.runtime.activate(catalog(2)))).toBe('ok')
+  })
+
+  it('ends a running activation on dispose and refuses everything after', async () => {
+    const h = harness()
+    expect(refused(await h.runtime.activate(catalog(1)))).toBe('ok')
+    let open = () => {}
+    const gate = new Promise<void>((resolve) => {
+      open = resolve
+    })
+    h.entries.cards = (standard) => async (host) => {
+      await gate
+      return standard(host)
+    }
+    const running = h.runtime.activate(catalog(2))
+    const closing = h.runtime.dispose()
+    open()
+    expect(refused(await running)).toBe('cancelled/client_host_disposed')
+    await closing
+    expect(h.runtime.current()).toBeUndefined()
+    expect(h.log).toEqual(expect.arrayContaining(['dispose base#1', 'dispose cards#1']))
+    // Whatever the stopped candidate had registered is gone with the rest.
+    const count = (prefix: string) => h.log.filter((line) => line.startsWith(prefix)).length
+    expect(count('register')).toBe(count('unregister'))
+    expect(refused(await h.runtime.activate(catalog(3)))).toBe('cancelled/client_host_disposed')
+  })
+
+  it('tells catalog observers the revision once their generation is current', async () => {
+    const h = harness()
+    const seen: string[] = []
+    h.entries.base = (standard) => async (host) => {
+      host.observeCatalog((revision) => seen.push(`${revision} while ${h.runtime.current()?.revision}`))
+      host.observeCatalog(() => {
+        throw new Error('observer failed')
+      })
+      const dropped = host.observeCatalog(() => seen.push('dropped'))
+      await dropped.dispose()
+      await dropped.dispose()
+      return standard(host)
+    }
+    expect(refused(await h.runtime.activate(catalog(1)))).toBe('ok')
+    expect(seen).toEqual(['1 while 1'])
+    expect(refused(await h.runtime.activate(catalog(2)))).toBe('ok')
+    // The first generation's observer was released with it; the second generation's was told once.
+    expect(seen).toEqual(['1 while 1', '2 while 2'])
+    h.unloadable = 'cards'
+    expect(refused(await h.runtime.activate(catalog(3)))).toBe('internal/client_module_load_failed')
+    expect(seen).toEqual(['1 while 1', '2 while 2'])
+  })
+})
