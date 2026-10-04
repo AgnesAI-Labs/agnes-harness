@@ -3,8 +3,9 @@
 import { Context } from '@agnes/cordis'
 import type { UINode } from '@agnes/protocol'
 import { ClientResourceService, SessionService, SlotRegistry } from '@agnes/web-client'
-import { createElement } from 'react'
+import { type ComponentType, createElement, type ReactElement } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { type RegionSlots, registryRegionSlots } from '../src/region-slot-port.js'
 import {
   APPROVAL_SLOT,
   CONVERSATION_SLOT,
@@ -51,11 +52,11 @@ afterEach(async () => {
 describe('DSH top-level shell', () => {
   it('bridges main/conversation and exposes the root overlay host', async () => {
     const slots = await registry()
-    const shell = mountDshShellRegion(slots)
+    const shell = mountDshShellRegion(registryRegionSlots(slots))
     mounts.push(shell)
     const conversation = document.createElement('div')
     document.body.append(conversation)
-    mounts.push(mountConversationRegion(slots, conversation))
+    mounts.push(mountConversationRegion(registryRegionSlots(slots), conversation))
     const remove = slots.register(
       { name: 'shell.overlay', id: 'fixture-shell-overlay', owner: 'fixture' },
       () => createElement('button', { id: 'fixture-shell-overlay-content', type: 'button' }, '全局浮层'),
@@ -85,7 +86,7 @@ describe('migrated empty-state region', () => {
     section.innerHTML = '<h2>legacy duplicate</h2>'
     document.body.append(section)
 
-    mounts.push(mountEmptyStateRegion(slots, section))
+    mounts.push(mountEmptyStateRegion(registryRegionSlots(slots), section))
     expect(section.textContent).not.toContain('legacy duplicate')
     await vi.waitFor(() => {
       expect(section.querySelector('[data-slot="ui:empty-state"]')).toBeTruthy()
@@ -99,7 +100,7 @@ describe('migrated empty-state region', () => {
     const section = document.createElement('section')
     section.id = 'empty-state'
     document.body.append(section)
-    mounts.push(mountEmptyStateRegion(slots, section))
+    mounts.push(mountEmptyStateRegion(registryRegionSlots(slots), section))
     const remove = slots.register(
       { name: EMPTY_STATE_SLOT as string, id: 'plugin-empty-state', owner: 'fixture', priority: -1 },
       () => createElement('div', { 'data-fixture-unit': 'replacement' }, '替换空态'),
@@ -117,7 +118,7 @@ describe('migrated empty-state region', () => {
     const section = document.createElement('section')
     section.id = 'empty-state'
     document.body.append(section)
-    mounts.push(mountEmptyStateRegion(slots, section))
+    mounts.push(mountEmptyStateRegion(registryRegionSlots(slots), section))
     const remove = slots.register(
       { name: 'conversation.hero.workspace', id: 'fixture-hero-workspace', owner: 'fixture' },
       () => createElement('button', { id: 'fixture-hero-workspace', type: 'button' }, '选择工作区'),
@@ -138,7 +139,7 @@ describe('migrated sidebar region', () => {
     sidebar.innerHTML =
       '<button id="new">新会话</button><nav id="sessions"></nav><button id="settings">设置</button>'
     document.body.append(sidebar)
-    mounts.push(mountSidebarRegion(slots, sidebar, {}, zhLocaleService()))
+    mounts.push(mountSidebarRegion(registryRegionSlots(slots), sidebar, {}, zhLocaleService()))
 
     expect(sidebar.querySelector('[data-slot="ui:sidebar"]')).toBeTruthy()
     expect(sidebar.querySelector('#new')?.textContent).toBe('新会话')
@@ -158,7 +159,7 @@ describe('migrated sidebar region', () => {
     const sidebar = document.createElement('aside')
     sidebar.className = 'sidebar'
     document.body.append(sidebar)
-    mounts.push(mountSidebarRegion(slots, sidebar, {}, zhLocaleService()))
+    mounts.push(mountSidebarRegion(registryRegionSlots(slots), sidebar, {}, zhLocaleService()))
 
     const remove = slots.register(
       { name: 'sidebar.footer.action', id: 'fixture-footer-action', owner: 'fixture' },
@@ -178,7 +179,7 @@ describe('migrated sidebar region', () => {
     const sidebar = document.createElement('aside')
     sidebar.className = 'sidebar'
     document.body.append(sidebar)
-    mounts.push(mountSidebarRegion(slots, sidebar, {}, zhLocaleService()))
+    mounts.push(mountSidebarRegion(registryRegionSlots(slots), sidebar, {}, zhLocaleService()))
 
     const remove = slots.register(
       { name: 'sidebar.workspaces.directoryFlow', id: 'fixture-directory-flow', owner: 'fixture' },
@@ -201,7 +202,7 @@ describe('migrated transcript region', () => {
     document.body.append(transcript)
     const newContentButton = document.createElement('button')
     document.body.append(newContentButton)
-    const mount = mountTranscriptRegion(slots, transcript, { newContentButton })
+    const mount = mountTranscriptRegion(registryRegionSlots(slots), transcript, { newContentButton })
     mounts.push(mount)
     const content = transcript.querySelector('#transcript-content')
     expect(content?.closest('[data-slot]')?.getAttribute('data-slot')).toBe('ui:transcript')
@@ -227,7 +228,7 @@ describe('migrated transcript region', () => {
     const transcript = document.createElement('section')
     const newContentButton = document.createElement('button')
     document.body.append(transcript, newContentButton)
-    const mount = mountTranscriptRegion(slots, transcript, { newContentButton })
+    const mount = mountTranscriptRegion(registryRegionSlots(slots), transcript, { newContentButton })
     mounts.push(mount)
 
     const removeActions = slots.register(
@@ -279,7 +280,7 @@ describe('migrated settings panes', () => {
     const config = document.createElement('dialog')
     config.id = 'config'
     document.body.append(config)
-    const mount = mountSettingsPaneRegion(slots, config)
+    const mount = mountSettingsPaneRegion(registryRegionSlots(slots), config)
     mounts.push(mount)
 
     expect(config.querySelector('[data-slot="ui:settings-pane.model"]')).toBeTruthy()
@@ -307,7 +308,7 @@ describe('migrated settings panes', () => {
     config.id = 'config'
     document.body.append(config)
     const locale = zhLocaleService()
-    const mount = mountSettingsPaneRegion(slots, config, {}, locale)
+    const mount = mountSettingsPaneRegion(registryRegionSlots(slots), config, {}, locale)
     mounts.push(mount)
 
     await vi.waitFor(
@@ -337,7 +338,7 @@ describe('migrated settings panes', () => {
     const config = document.createElement('dialog')
     config.id = 'config'
     document.body.append(config)
-    const mount = mountSettingsPaneRegion(slots, config)
+    const mount = mountSettingsPaneRegion(registryRegionSlots(slots), config)
     mounts.push(mount)
 
     const removeHeader = slots.register(
@@ -388,7 +389,7 @@ describe('migrated conversation region', () => {
     conversation.id = 'conversation-shell'
     conversation.innerHTML = '<p id="legacy-conversation">legacy</p>'
     document.body.append(conversation)
-    const mount = mountConversationRegion(slots, conversation)
+    const mount = mountConversationRegion(registryRegionSlots(slots), conversation)
     mounts.push(mount)
     expect(conversation.querySelector('#legacy-conversation')).toBeNull()
     expect(conversation.querySelector('[data-slot="ui:conversation"]')).toBeTruthy()
@@ -415,7 +416,7 @@ describe('migrated conversation region', () => {
     const conversation = document.createElement('div')
     conversation.id = 'conversation-shell'
     document.body.append(conversation)
-    mounts.push(mountConversationRegion(slots, conversation))
+    mounts.push(mountConversationRegion(registryRegionSlots(slots), conversation))
     slots.setSession('session-1')
     const removeSession = slots.register(
       { name: 'conversation.session', id: 'fixture-conversation-session', owner: 'fixture' },
@@ -442,7 +443,7 @@ describe('migrated topbar region', () => {
     topbar.className = 'topbar'
     topbar.innerHTML = '<p id="legacy-topbar">legacy</p>'
     document.body.append(topbar)
-    const mount = mountTopbarRegion(slots, topbar, zhLocaleService())
+    const mount = mountTopbarRegion(registryRegionSlots(slots), topbar, zhLocaleService())
     mounts.push(mount)
     expect(topbar.querySelector('#legacy-topbar')).toBeNull()
     expect(topbar.querySelector('[data-slot="ui:topbar"]')).toBeTruthy()
@@ -468,6 +469,32 @@ describe('migrated topbar region', () => {
       expect(topbar.querySelector('#task-title')).toBeTruthy()
     }, committed)
   })
+
+  it('mounts through any slot port, rendering its occupant or else the built-in', () => {
+    const builtins = new Map<string, ComponentType>()
+    let occupant: ReactElement | undefined
+    const port: RegionSlots = {
+      has: () => false,
+      declare: () => undefined,
+      register(entry, component) {
+        builtins.set(entry.name, component as ComponentType)
+        return () => builtins.delete(entry.name)
+      },
+      entries: () => [],
+      subscribe: () => () => undefined,
+      outlet: ({ name }) => occupant ?? createElement(builtins.get(name) ?? 'div'),
+    }
+    const topbar = document.createElement('header')
+    document.body.append(topbar)
+    const builtin = mountTopbarRegion(port, topbar, zhLocaleService())
+    expect(topbar.querySelector('#task-title')?.textContent).toBe('新会话')
+    builtin.dispose()
+    expect(builtins.size).toBe(0)
+    occupant = createElement('div', { id: 'port-topbar' })
+    mounts.push(mountTopbarRegion(port, topbar, zhLocaleService()))
+    expect(topbar.querySelector('#port-topbar')).toBeTruthy()
+    expect(topbar.querySelector('#task-title')).toBeNull()
+  })
 })
 
 describe('migrated approval region', () => {
@@ -478,7 +505,7 @@ describe('migrated approval region', () => {
     approval.setAttribute('aria-live', 'polite')
     document.body.append(approval)
     const selected: string[] = []
-    const mount = mountApprovalRegion(slots, approval)
+    const mount = mountApprovalRegion(registryRegionSlots(slots), approval)
     mounts.push(mount)
     slots.setSession('session-1')
     const removeDetail = slots.register(
@@ -579,7 +606,7 @@ describe('migrated trace region', () => {
     document.body.append(trace, toggle, chat, conversation)
     // The trace unit only renders while open.
     sessionStorage.setItem('agnes.web.tracePanel', 'open')
-    const mount = mountTraceRegion(slots, trace, {
+    const mount = mountTraceRegion(registryRegionSlots(slots), trace, {
       toggle,
       chatToggle: chat,
       conversation,
@@ -616,7 +643,7 @@ describe('DSH rightbar region', () => {
     const rightbar = document.createElement('aside')
     rightbar.id = 'rightbar-panel'
     document.body.append(rightbar)
-    const mount = mountRightbarRegion(slots, rightbar, {}, zhLocaleService())
+    const mount = mountRightbarRegion(registryRegionSlots(slots), rightbar, {}, zhLocaleService())
     mounts.push(mount)
 
     expect(rightbar.hidden).toBe(true)
@@ -642,7 +669,7 @@ describe('DSH rightbar region', () => {
     const rightbar = document.createElement('aside')
     document.body.append(rightbar)
     const mount = mountRightbarRegion(
-      slots,
+      registryRegionSlots(slots),
       rightbar,
       {
         document: { id: 'doc-1', title: '指南', kind: 'markdown', content: '# 右栏文档' },
@@ -696,7 +723,7 @@ describe('DSH rightbar region', () => {
     const errors = vi.spyOn(console, 'error').mockImplementation((...args) => original(...args))
     try {
       const markdown = mountRightbarRegion(
-        slots,
+        registryRegionSlots(slots),
         host,
         {
           session,
@@ -723,7 +750,7 @@ describe('DSH rightbar region', () => {
       markdown.dispose()
       markdown.dispose()
       const next = mountRightbarRegion(
-        slots,
+        registryRegionSlots(slots),
         host,
         {
           session,
@@ -765,7 +792,7 @@ describe('DSH rightbar region', () => {
       session,
     )
     const mount = mountRightbarRegion(
-      slots,
+      registryRegionSlots(slots),
       rightbar,
       {
         session,
@@ -802,7 +829,7 @@ describe('DSH rightbar region', () => {
     )
     mounts.push(
       mountRightbarRegion(
-        slots,
+        registryRegionSlots(slots),
         rightbar,
         {
           session,

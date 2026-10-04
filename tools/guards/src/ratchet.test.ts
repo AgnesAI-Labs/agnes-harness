@@ -2246,7 +2246,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // Default chat shell: five regions, presented domain views, view state and its text by locale.
   // Measured 16738, exact, no spare (+552).
   // Locale bridge and slot card singletons replaced. Measured 16747, exact, no spare (+9).
-  'packages/web/src': 16747,
+  // Region mounts go through a slot port built from the registry. Measured 16705, exact, no spare (-42).
+  'packages/web/src': 16705,
   // 2026-09-17 web-client-modules frontend track (rebased onto L0/permission-picker main): re-measured exact value below.
   // 2026-09-14: Task 7 orphaned-pin-cleanup adds the orphan-pins section to PluginAdminPage — the
   // #orphanPins/#orphanPinsList/#orphanPinsStatus/#orphanPinsReleaseAll element bindings, the

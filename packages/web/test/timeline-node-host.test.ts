@@ -5,6 +5,7 @@ import type { UINode, UITurn } from '@agnes/protocol'
 import { SlotRegistry } from '@agnes/web-client'
 import { act, createElement, useEffect, useState } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { registryRegionSlots } from '../src/region-slot-port.js'
 import { mountTranscriptRegion } from '../src/region-slots.js'
 import { costDetails, costSummary } from '../src/usage.js'
 import { zhLocaleService, zhT } from './helpers/locale.js'
@@ -23,7 +24,7 @@ async function setup(options: { onFork?: (turn: UITurn) => Promise<void> } = {})
   transcript.tabIndex = -1
   const button = document.createElement('button')
   document.body.append(transcript, button)
-  const mount = mountTranscriptRegion(registry, transcript, {
+  const mount = mountTranscriptRegion(registryRegionSlots(registry), transcript, {
     nodeHost: 'react',
     newContentButton: button,
     claim: (entry, extId) => entry.owner === extId,

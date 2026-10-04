@@ -6,6 +6,7 @@ import { SlotRegistry } from '@agnes/web-client'
 import { act, createElement, useState } from 'react'
 import { expect, it, vi } from 'vitest'
 import { createLiveProjection } from '../src/live-projection.js'
+import { registryRegionSlots } from '../src/region-slot-port.js'
 import { mountTranscriptRegion } from '../src/region-slots.js'
 import { zhLocaleService } from './helpers/locale.js'
 
@@ -57,7 +58,7 @@ it.each(['legacy', 'xmarkdown'] as const)(
     const transcript = document.createElement('section')
     transcript.id = 'transcript'
     document.body.append(transcript)
-    const mounted = mountTranscriptRegion(registry, transcript, {
+    const mounted = mountTranscriptRegion(registryRegionSlots(registry), transcript, {
       nodeHost: 'react',
       markdownRenderer,
       locale: zhLocaleService(),

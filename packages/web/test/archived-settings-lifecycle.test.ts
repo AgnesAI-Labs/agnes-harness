@@ -4,6 +4,7 @@ import type { Client } from '@agnes/sdk/browser'
 import { SlotRegistry } from '@agnes/web-client'
 import { createElement } from 'react'
 import { expect, it, vi } from 'vitest'
+import { registryRegionSlots } from '../src/region-slot-port.js'
 import { mountSettingsPaneRegion, settingsPaneSlot } from '../src/region-slots.js'
 import { createSessionActions } from '../src/session-actions.js'
 import { zhT } from './helpers/locale.js'
@@ -14,7 +15,7 @@ it('keeps archived results, search and restore connected after opening and switc
   const slots = (ctx as unknown as { slots: SlotRegistry }).slots
   const container = document.createElement('div')
   document.body.append(container)
-  const region = mountSettingsPaneRegion(slots, container)
+  const region = mountSettingsPaneRegion(registryRegionSlots(slots), container)
   let archived = false
   const session = {
     archive: vi.fn(async (_id: string, value: boolean) => {
