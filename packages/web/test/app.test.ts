@@ -61,6 +61,8 @@ const timelineRenderer = vi.hoisted(() => ({
   })),
   nearBottom: vi.fn(() => true),
 }))
+const originalCreateObjectURL = Object.getOwnPropertyDescriptor(URL, 'createObjectURL')
+const originalRevokeObjectURL = Object.getOwnPropertyDescriptor(URL, 'revokeObjectURL')
 
 vi.mock('@agnes/sdk/browser', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@agnes/sdk/browser')>()),
@@ -268,6 +270,10 @@ afterEach(async () => {
   traceBridge.claim = undefined
   traceBridge.metas.length = 0
   vi.unstubAllGlobals()
+  if (originalCreateObjectURL) Object.defineProperty(URL, 'createObjectURL', originalCreateObjectURL)
+  else Reflect.deleteProperty(URL, 'createObjectURL')
+  if (originalRevokeObjectURL) Object.defineProperty(URL, 'revokeObjectURL', originalRevokeObjectURL)
+  else Reflect.deleteProperty(URL, 'revokeObjectURL')
   document.documentElement.replaceChildren()
   sessionStorage.clear()
   localStorage.clear()
@@ -469,7 +475,9 @@ describe('web permission synchronization', () => {
       await vi.waitFor(() => expect(label()).toBe(before ? '工作区内修改' : '完全权限'))
       old.prompt.mockClear()
       submit('use the current permission')
-      await vi.waitFor(() => expect(old.prompt).toHaveBeenCalledWith('use the current permission'))
+      await vi.waitFor(() =>
+        expect(old.prompt).toHaveBeenCalledWith([{ type: 'text', text: 'use the current permission' }]),
+      )
       expect.soft(pendingLabel).toBe('请选择权限')
       expect.soft(renderedLabel).toBe('请选择权限')
       expect.soft(failedLabel).toBe('请选择权限')
@@ -569,7 +577,9 @@ describe('web permission synchronization', () => {
     applied.resolve({ effectiveFromSeq: 11 })
     await vi.waitFor(() => expect(label()).toBe('工作区内修改'))
     submit('confirmed permission')
-    await vi.waitFor(() => expect(old.prompt).toHaveBeenCalledWith('confirmed permission'))
+    await vi.waitFor(() =>
+      expect(old.prompt).toHaveBeenCalledWith([{ type: 'text', text: 'confirmed permission' }]),
+    )
 
     const opened = old.projectUIOpening.mock.calls.length
     connect('reconnecting')
@@ -585,7 +595,9 @@ describe('web permission synchronization', () => {
     choose('工作区内修改')
     await vi.waitFor(() => expect(label()).toBe('工作区内修改'))
     submit('confirmed after reconnect')
-    await vi.waitFor(() => expect(old.prompt).toHaveBeenCalledWith('confirmed after reconnect'))
+    await vi.waitFor(() =>
+      expect(old.prompt).toHaveBeenCalledWith([{ type: 'text', text: 'confirmed after reconnect' }]),
+    )
     expect(old.setYolo).toHaveBeenCalledTimes(2)
   }, 20_000)
 })
@@ -836,7 +848,9 @@ describe('web session selection', () => {
         submit('use the remembered selection')
       }
       expect(fresh.setYolo).toHaveBeenCalledWith(true)
-      await vi.waitFor(() => expect(fresh.prompt).toHaveBeenCalledWith('use the remembered selection'))
+      await vi.waitFor(() =>
+        expect(fresh.prompt).toHaveBeenCalledWith([{ type: 'text', text: 'use the remembered selection' }]),
+      )
       expect(permission.querySelector('[data-permission-label]')?.textContent).toBe('完全权限')
     },
     20_000,
@@ -905,7 +919,9 @@ describe('web session selection', () => {
     submit('create in beta')
     await vi.waitFor(() => expect(create).toHaveBeenCalledOnce())
     expect(create).toHaveBeenCalledWith({ cwd: beta.path, sessionKey: expect.any(String) })
-    await vi.waitFor(() => expect(fresh.prompt).toHaveBeenCalledWith('create in beta'))
+    await vi.waitFor(() =>
+      expect(fresh.prompt).toHaveBeenCalledWith([{ type: 'text', text: 'create in beta' }]),
+    )
   })
 
   it('keeps controls usable after a pending model update and refreshes both old and new drafts', async () => {
@@ -1356,7 +1372,9 @@ describe('web session selection', () => {
     firstCreation.resolve(fresh)
     includeFresh = true
     newProjection.resolve(idleTimeline('fresh'))
-    await vi.waitFor(() => expect(fresh.prompt).toHaveBeenCalledWith('must not cross sessions'))
+    await vi.waitFor(() =>
+      expect(fresh.prompt).toHaveBeenCalledWith([{ type: 'text', text: 'must not cross sessions' }]),
+    )
   })
 
   it('opens directory confirmation before creation and explains an unavailable path', async () => {
@@ -1637,7 +1655,9 @@ describe('web session selection', () => {
     document
       .getElementById('composer')
       ?.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
-    await vi.waitFor(() => expect(fresh.prompt).toHaveBeenLastCalledWith('成功后的第二条消息'))
+    await vi.waitFor(() =>
+      expect(fresh.prompt).toHaveBeenLastCalledWith([{ type: 'text', text: '成功后的第二条消息' }]),
+    )
     expect(create).toHaveBeenCalledTimes(1)
     expect(create.mock.calls[0]?.[0]?.sessionKey).toBe(firstKey)
   })
@@ -1711,9 +1731,11 @@ describe('composer draft persistence', () => {
     installPublicFixture()
     const old = session('old', async () => idleTimeline('old'))
     const inFlight = deferred<undefined>()
+    const unloading = deferred<undefined>()
     old.prompt
       .mockRejectedValueOnce(new Error('prompt rejected'))
       .mockImplementationOnce(() => inFlight.promise)
+      .mockImplementationOnce(() => unloading.promise)
     const client = {
       apis: vi.fn(async () => ({ profile: { models: [{ route: 'local', id: 'model-a' }] } })),
       approval: { decide: vi.fn(async () => undefined) },
@@ -1751,19 +1773,150 @@ describe('composer draft persistence', () => {
     await vi.waitFor(() => expect(composer.value).toBe('一段较长的任务提示词'))
     expect(sessionStorage.getItem(draftKey)).toBe('一段较长的任务提示词')
 
-    // The prompt was accepted and the run is in flight. Unloading closes the connection, which rejects
-    // the pending call, but that is not a failed send: nothing may be stored or put back.
+    // Preserve a later draft if the in-flight message is rejected.
     document
       .getElementById('composer')
       ?.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
     await vi.waitFor(() => expect(old.prompt).toHaveBeenCalledTimes(2))
     expect(composer.value).toBe('')
     expect(sessionStorage.getItem(draftKey)).toBeNull()
+    type('下一条草稿')
+    inFlight.reject(new Error('provider rejected image input'))
+    await vi.waitFor(() => expect(composer.value).toBe('一段较长的任务提示词\n下一条草稿'))
+    expect(sessionStorage.getItem(draftKey)).toBe('一段较长的任务提示词\n下一条草稿')
+
+    // The third prompt was accepted and is in flight. Unloading is not a failed send and must not
+    // revive its contents.
+    document
+      .getElementById('composer')
+      ?.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+    await vi.waitFor(() => expect(old.prompt).toHaveBeenCalledTimes(3))
+    expect(composer.value).toBe('')
+    expect(sessionStorage.getItem(draftKey)).toBeNull()
     window.dispatchEvent(new Event('pagehide'))
-    inFlight.reject(new Error('transport closed'))
+    unloading.reject(new Error('transport closed'))
     await new Promise((resolve) => setTimeout(resolve, 0))
     expect(composer.value).toBe('')
     expect(sessionStorage.getItem(draftKey)).toBeNull()
+  })
+})
+
+describe('image composer submissions', () => {
+  const imagePngData =
+    'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII='
+  const imagePngBytes = Uint8Array.from(atob(imagePngData), (character) => character.charCodeAt(0))
+
+  async function start(
+    sessionValue: SessionDouble,
+    busy = false,
+    inputModes: readonly ('text' | 'image')[] = ['text', 'image'],
+  ): Promise<void> {
+    installPublicFixture()
+    const imageUrl = `blob:${sessionValue.id}-image`
+    Object.defineProperty(URL, 'createObjectURL', { configurable: true, value: vi.fn(() => imageUrl) })
+    Object.defineProperty(URL, 'revokeObjectURL', { configurable: true, value: vi.fn() })
+    sdk.createClient.mockReturnValue({
+      apis: vi.fn(async () => ({
+        profile: { models: [{ route: 'local', id: 'model-a', input: inputModes }] },
+      })),
+      approval: { decide: vi.fn(async () => undefined) },
+      close: vi.fn(async () => undefined),
+      config: {
+        get: vi.fn(async () => ({ configured: true })),
+        providers: vi.fn(async () => ({ providers: [] })),
+      },
+      initialize: vi.fn(async () => undefined),
+      on: vi.fn(),
+      workspace: { list: vi.fn(async () => ({ items: [] })) },
+      session: {
+        list: vi.fn(async () => ({ items: [{ sessionId: sessionValue.id }] })),
+        load: vi.fn(async () => sessionValue),
+      },
+    })
+    binding.loadWebSession.mockResolvedValue({ session: sessionValue, offPermission: vi.fn() })
+    binding.bindWebSession.mockImplementation((selected: SessionDouble) => ({
+      session: selected,
+      offPermission: vi.fn(),
+    }))
+    await import('../src/app.js')
+    const send = document.getElementById('send') as HTMLButtonElement
+    await vi.waitFor(() =>
+      expect((document.getElementById('prompt') as HTMLTextAreaElement).disabled).toBe(false),
+    )
+    if (busy) await vi.waitFor(() => expect(send.dataset.mode).toBe('busy'))
+  }
+
+  async function attachPng(): Promise<void> {
+    const prompt = document.querySelector<HTMLTextAreaElement>('#prompt')
+    expect(prompt).not.toBeNull()
+    if (!prompt) throw new Error('composer input is missing')
+    const event = new Event('paste', { bubbles: true, cancelable: true })
+    Object.defineProperty(event, 'clipboardData', {
+      value: {
+        files: [new File([imagePngBytes], 'one.png', { type: 'image/png' })],
+        items: [],
+        getData: () => '',
+      },
+    })
+    prompt.dispatchEvent(event)
+    await vi.waitFor(() => expect(document.querySelector('.composer-image-preview img')).not.toBeNull())
+  }
+
+  it('enables and sends a picture without text through session.prompt', async () => {
+    const active = session('old', async () => idleTimeline('old', { route: 'local', id: 'model-a' }))
+    await start(active)
+    await attachPng()
+
+    const send = document.getElementById('send') as HTMLButtonElement
+    expect(send.disabled).toBe(false)
+    submit('')
+
+    await vi.waitFor(() => expect(active.prompt).toHaveBeenCalledTimes(1))
+    expect(active.prompt).toHaveBeenCalledWith([{ type: 'image', mimeType: 'image/png', data: imagePngData }])
+  })
+
+  it('sends mixed text and images through session.followUp and restores both on failure', async () => {
+    const active = session('old', async () => busyTimeline('old'))
+    active.followUp.mockRejectedValueOnce(new Error('follow-up rejected'))
+    await start(active, true)
+    await attachPng()
+    const draft = document.getElementById('prompt') as HTMLTextAreaElement
+    draft.value = '请解释这张图'
+    draft.dispatchEvent(new Event('input', { bubbles: true }))
+    submit('请解释这张图')
+
+    await vi.waitFor(() => expect(active.followUp).toHaveBeenCalledTimes(1))
+    expect(active.followUp).toHaveBeenCalledWith([
+      { type: 'text', text: '请解释这张图' },
+      { type: 'image', mimeType: 'image/png', data: imagePngData },
+    ])
+    await vi.waitFor(() => expect(draft.value).toBe('请解释这张图'))
+    expect(document.querySelector('.composer-image-preview img')).not.toBeNull()
+    expect(document.getElementById('notice')?.textContent).toContain('follow-up rejected')
+  })
+
+  it('explains when the selected provider model cannot accept images', async () => {
+    const active = session('old', async () => idleTimeline('old', { route: 'local', id: 'model-a' }))
+    await start(active, false, ['text'])
+    await attachPng()
+
+    expect((document.getElementById('send') as HTMLButtonElement).disabled).toBe(true)
+    expect(document.getElementById('composer-hint')?.textContent).toContain('当前模型不支持图片输入')
+    submit('')
+    expect(active.prompt).not.toHaveBeenCalled()
+  })
+
+  it('keeps an image draft and refuses a WebSocket frame that exceeds 2 MiB', async () => {
+    const active = session('old', async () => busyTimeline('old'))
+    await start(active, true)
+    await attachPng()
+    const longText = 'x'.repeat(2 * 1024 * 1024)
+    submit(longText)
+
+    expect(active.followUp).not.toHaveBeenCalled()
+    expect((document.getElementById('prompt') as HTMLTextAreaElement).value).toBe(longText)
+    expect(document.querySelector('.composer-image-preview img')).not.toBeNull()
+    expect(document.getElementById('notice')?.textContent).toContain('2 MiB 限制')
   })
 })
 

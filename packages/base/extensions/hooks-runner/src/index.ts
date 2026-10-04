@@ -88,6 +88,9 @@ function invocationSandbox(context: HookContext): WorkspaceHookSandbox | undefin
   ]
 }
 
+/** Left under the dispatcher's own deadline, so the dispatcher never times out before the wrapper does. */
+const OBSERVER_MARGIN_MS = 500
+
 function defaultReturn<E extends HookEvent>(event: E, payload: HookPayloadMap[E]): HookReturnMap[E] {
   const current = event === 'tool_result' ? (payload as HookPayloadMap['tool_result']).result : undefined
   return translateReturn(event, { exitCode: 0, stdout: '', stderr: '' }, current)
@@ -399,6 +402,32 @@ export function preparedHooksRunnerExtension(
         return result
       }
 
+    // PreCompact only looks (its hooks.json contract has no output), but core reads the value of
+    // `before_compact` as a decision: any plan or null means "this hook decided" and the built-in
+    // compaction stays out, and a throw or a timeout rejects the compaction. So whatever the
+    // hooks do, run them within the time left and always hand the decision back.
+    const observing =
+      (run: HookHandler<'before_compact'>): HookHandler<'before_compact'> =>
+      async (payload, hctx) => {
+        let timer: ReturnType<typeof setTimeout> | undefined
+        try {
+          await Promise.race([
+            run(payload, hctx),
+            new Promise<never>((_, reject) => {
+              timer = setTimeout(
+                () => reject(new Error('observer deadline')),
+                HOOK_TABLE.before_compact.timeoutMs - OBSERVER_MARGIN_MS,
+              )
+            }),
+          ])
+        } catch {
+          agnes.ctx.log.warn('PreCompact hook was skipped; compaction continues', {})
+        } finally {
+          clearTimeout(timer)
+        }
+        return HOOK_UNHANDLED as never
+      }
+
     const disposers: Disposer[] = []
     if (bindings.has('session_start') || dynamicEvents.has('session_start'))
       disposers.push(agnes.registerHook('session_start', handler('session_start')))
@@ -430,7 +459,7 @@ export function preparedHooksRunnerExtension(
     if (bindings.has('subagent_end') || dynamicEvents.has('subagent_end'))
       disposers.push(agnes.registerHook('subagent_end', handler('subagent_end')))
     if (bindings.has('before_compact') || dynamicEvents.has('before_compact'))
-      disposers.push(agnes.registerHook('before_compact', handler('before_compact')))
+      disposers.push(agnes.registerHook('before_compact', observing(handler('before_compact'))))
     if (bindings.has('compact') || dynamicEvents.has('compact'))
       disposers.push(agnes.registerHook('compact', handler('compact')))
     if (bindings.has('approval_request') || dynamicEvents.has('approval_request'))

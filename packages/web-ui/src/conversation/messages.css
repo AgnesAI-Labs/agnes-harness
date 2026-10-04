@@ -13,3 +13,20 @@
 [data-agnes-conversation-messages] .tool-detail-body[hidden] {
   display: none;
 }
+
+[data-agnes-conversation-messages] .user-message-image {
+  display: block;
+  max-width: min(320px, 100%);
+  max-height: 240px;
+  margin-block: 8px;
+  border: 1px solid var(--color-border-secondary, #e5e5e5);
+  border-radius: 8px;
+  object-fit: contain;
+}
+
+[data-agnes-conversation-messages] .user-message-image-unavailable {
+  display: inline-block;
+  margin-block: 4px;
+  color: var(--color-text-tertiary, #777);
+  font-size: 12px;
+}

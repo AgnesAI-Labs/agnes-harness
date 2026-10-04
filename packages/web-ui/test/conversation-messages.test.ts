@@ -12,11 +12,13 @@ import {
 import { AssistantRuntimeProvider } from '@assistant-ui/react'
 import { act, createElement } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { webUiLocaleCatalog } from '../src/locales/index.js'
 
 let host: HTMLDivElement
 let root: Root
+const originalCreateObjectURL = Object.getOwnPropertyDescriptor(URL, 'createObjectURL')
+const originalRevokeObjectURL = Object.getOwnPropertyDescriptor(URL, 'revokeObjectURL')
 
 beforeEach(() => {
   Object.defineProperty(globalThis, 'IS_REACT_ACT_ENVIRONMENT', { configurable: true, value: true })
@@ -28,6 +30,10 @@ beforeEach(() => {
 afterEach(async () => {
   await act(async () => root.unmount())
   host.remove()
+  if (originalCreateObjectURL) Object.defineProperty(URL, 'createObjectURL', originalCreateObjectURL)
+  else Reflect.deleteProperty(URL, 'createObjectURL')
+  if (originalRevokeObjectURL) Object.defineProperty(URL, 'revokeObjectURL', originalRevokeObjectURL)
+  else Reflect.deleteProperty(URL, 'revokeObjectURL')
 })
 
 const t: ConversationMessagesProps['t'] = (key, vars) =>
@@ -212,6 +218,7 @@ describe('W3b projected message DOM', () => {
       'conflict',
     ])
     expect(item('user')?.textContent).toContain('第一行\n第二行')
+    expect(item('user')?.textContent).toContain('图片无法显示')
     expect(item('assistant')?.textContent).toContain('思考中')
     expect(item('assistant')?.textContent).toContain('回答 **正文**')
     expect(item('tool')?.textContent).toContain('正在执行')
@@ -229,6 +236,36 @@ describe('W3b projected message DOM', () => {
     expect(item('ctx')).toBeNull()
     expect(item('sections')).toBeNull()
     expect(store.getSnapshot().nodes).toBe(nodes)
+  })
+
+  it('rebuilds a persisted image preview in both DOM copies and releases its URL when the row leaves', async () => {
+    Object.defineProperty(URL, 'createObjectURL', {
+      configurable: true,
+      value: vi.fn(() => 'blob:history-image'),
+    })
+    Object.defineProperty(URL, 'revokeObjectURL', { configurable: true, value: vi.fn() })
+    const user: UINode = {
+      kind: 'user',
+      id: 'persisted-image',
+      seq: 1,
+      content: [
+        {
+          type: 'image',
+          mimeType: 'image/png',
+          data: 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=',
+        },
+      ],
+    }
+    const store = createConversationProjectionStore({ sessionId: 'session', nodes: [user] })
+    await mount(store)
+    const article = item('persisted-image')
+    // 门户那份是界面上真正显示的内容，兜底只是被 CSS 隐藏的备份：图只出现在兜底里等于没显示。
+    const portal = article?.querySelector<HTMLElement>('[data-agnes-assistant-ui-target]')
+    expect(portal?.dataset.agnesAssistantUiReady).toBe('true')
+    expect(portal?.querySelector<HTMLImageElement>('img.user-message-image')?.src).toBe('blob:history-image')
+    expect(article?.querySelector<HTMLImageElement>('img.user-message-image')?.src).toBe('blob:history-image')
+    await update(store, [])
+    expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:history-image')
   })
 
   it('updates each kind by ID, preserves disclosure state, and removes deleted nodes', async () => {

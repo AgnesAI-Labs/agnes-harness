@@ -198,6 +198,13 @@ describe('ratchet key path-boundary matching (regression: sibling-prefix false m
 // with this guard's countLines(): web/src/model-picker 284 -> 968, web/src 15977 -> 16662,
 // web-units/src 5540 -> 5554 (composer forwards the session settings into the picker state).
 // Exact measured values, no exclusions or spare allocation.
+// IMAGE-ATTACHMENTS-MERGE-20261004: merged feat/web-image-attachments (Web 图片附件) into the i18n
+// branch. Conflict resolutions kept this branch's i18n and the cascade model picker, and re-applied
+// the feature's image handling on top (paste/drag in the composer, inline images in user messages,
+// server-side image validation, 2 MiB projection budget). Measured with this guard's countLines():
+// web/src 16662 -> 16751, web/src/app 2016 -> 2068, web/src/timeline 786 -> 799,
+// web/src/model-picker 968 -> 969, web-units/src 5554 -> 5825, core/src 25861 -> 25892,
+// sdk/src 5130 -> 5131. Exact measured values, no exclusions or spare allocation.
 const INITIAL_CEILING: Record<string, number> = {
   // 2026-09-22 M11 browser effect-command closure: exact measured deltas for the explicit
   // authorization facade, private BFF/RPC, durable journal reuse, and cross-platform test repair.
@@ -247,7 +254,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // Failed shell calls read as their exit code (+19 lines); measured 4891, exact cap.
   'packages/web-ui/src': 6629,
   // W8a-3: retire the native tool renderer in favor of one compatibility root; measured 4630.
-  'packages/web-units/src': 5554,
+  'packages/web-units/src': 5825,
   'packages/base/extensions/tools-core': 800,
   // MCP-ROWS stage 2b, steps 1-2 (D118): connection supervisor, catalog hub, and the per-server
   // extension row wiring them together. New extension at the shared default cap; measured 276.
@@ -411,7 +418,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // Measured 1825, exact (+1).
   // UI integration merge: the default React transcript now receives the inline card claim callback,
   // which lands on top of the diagnostics wiring above. Re-measured with countLines(): 1827, exact.
-  'packages/web/src/app': 2016,
+  'packages/web/src/app': 2068,
   // 2026-09-22 UI plugin management: inject the embedded pane's client runtime reconciler.
   // 2026-09-25 UI refactor: permission options now render through the React region contract.
   // Re-measured with countLines(): 215, exact, no spare.
@@ -425,7 +432,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // @agnes/web-admin-frame, so this file only keeps its own state machine and rendering.
   // 2026-09-25 UI refactor: model options now render through the React region contract.
   // Re-measured with countLines(): 274, exact, no spare.
-  'packages/web/src/model-picker': 968,
+  'packages/web/src/model-picker': 969,
   // 2026-09-25 UI refactor: settings-owned element construction uses the shared UI host boundary.
   // Re-measured with countLines(): 754, exact, no spare.
   'packages/web/src/settings': 900,
@@ -441,7 +448,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // much was lost. Measured 678, exact, no spare (+4).
   // Merge of CHUNK-LEDGER-SLIM (lost-text marker, +4) with the streaming-smoothness quick fixes (727):
   // sampled fingerprints also carry lostChars. Re-measured on the merged tree: 731, exact, no spare.
-  'packages/web/src/timeline': 786,
+  'packages/web/src/timeline': 799,
   // 2026-09-17：navigation.ts 的 folderIcon 换成客户端 AgnesProjectFolderIcon 两态字形
   // （两条 path + folderSvg 构造器），展开/收起由 CSS 的 [aria-expanded] 切换。实测 108。
   // SESSION-ACTIONS integrated with b/main: exact increment +43.
@@ -974,7 +981,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // prefix, so the first request after a compaction lands below the threshold (+8).
   // Measured 25811, exact cap.
   // The approval card's summary line is built by summarizeCall (new file). Measured 25861 (+50), exact cap.
-  'packages/core/src': 25861,
+  'packages/core/src': 25892,
   // 2026-09-15: DeepSeek V4 Pro/Flash ship a known-thinking-corrections table (new file) so the
   // product corrects pi-ai's verified-wrong reasoning_effort data out of the box, instead of
   // requiring every deployment to hand-edit thinkingEfforts once they notice. Measured 3347.
@@ -1472,7 +1479,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // CHUNK-LEDGER-SLIM final tree: the stream keep-alive and its sizing are gone. Measured 5013, exact, no spare (-61).
   // Permission cancellation distinction on the merged tree: measured 5051, no spare.
   // TRACE-INSPECTION-20260925: bounded, abortable paged detail read; measured 5127, exact.
-  'packages/sdk/src': 5130,
+  'packages/sdk/src': 5131,
   'packages/sdk/src/extensions.node': 21,
   'packages/sdk/src/package-admin.node': 147,
   'packages/sdk/src/surface.browser': 3,
@@ -2080,7 +2087,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // which carries its own key. Re-measured with countLines() on the merged tree: 13120, exact.
   // Output-limit and rate-limit presentation adds four counted lines, exact allocation.
   // The live approval card's wording, preview and session-choice rule (new file). Measured 13463 (+52), exact cap.
-  'packages/web/src': 16662,
+  'packages/web/src': 16751,
   // 2026-09-17 web-client-modules frontend track (rebased onto L0/permission-picker main): re-measured exact value below.
   // 2026-09-14: Task 7 orphaned-pin-cleanup adds the orphan-pins section to PluginAdminPage — the
   // #orphanPins/#orphanPinsList/#orphanPinsStatus/#orphanPinsReleaseAll element bindings, the
@@ -2188,7 +2195,9 @@ const INITIAL_CEILING: Record<string, number> = {
   // workspace `.agh/hooks.json` fallback path. Prompt-submit result memo adds 41 counted lines.
   // Context-first exit 2 reuses the before_step prompt verdict. A workspace/policy-scoped memo
   // prevents cross-sandbox verdict reuse. Re-measured 1007, exact cap.
-  'packages/base/extensions/hooks-runner': 1007,
+  // PreCompact observer wrapper: before_compact always hands the decision back to the built-in
+  // compaction (+21 counted lines, measured 1028, exact cap).
+  'packages/base/extensions/hooks-runner': 1028,
   // MCP rows step 4 (design 2026-09-21-resource-rows-design.md §3.9, D122): agnes/mcp-client was
   // retired. Its shared MCP library (connect.ts, register.ts, index-table.ts, the McpServerConfig type)
   // moved here unchanged apart from import paths; the profile-preset reader (config.ts's
@@ -2781,7 +2790,7 @@ const EXTENSION_CEILING_EXCEPTIONS = new Map([
   // CORDIS-C1b Task 6 adds invocation-scoped workspace hook snapshots and descendant draining.
   // 2026-09-21 AGH namespace rename, +1 approved by the user: the AGH_DIR import for the workspace
   // `.agh/hooks.json` fallback path. Context-first prompt denial and scoped memo; measured 1007.
-  ['hooks-runner', 1007],
+  ['hooks-runner', 1028],
   ['computer-use', 1786],
   // 2026-09-23 user-approved: dsh-compatible Skill discovery. Measured 899.
   // SKILL-CATALOG-CLEAN-REWRITE: same reviewed exact total as the catalog/name activation budget above.

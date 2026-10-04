@@ -661,6 +661,7 @@ export class UIProjectionSync {
     try {
       const page = await this.session.projectUIHistory(history.cursor, {
         limit: this.options.historyLimit ?? 100,
+        ...(this.options.opening?.maxBytes === undefined ? {} : { maxBytes: this.options.opening.maxBytes }),
       })
       if (this.stopped || epoch !== this.historyEpoch) return false
       this.validateHistoryPage(page, history, expectedBefore)
