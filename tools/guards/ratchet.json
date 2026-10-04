@@ -13,7 +13,7 @@
   "packages/protocol/src": 3462,
   "packages/cli/src/tui": 38,
   "packages/cli-tui/src": 4232,
-  "packages/extension-api/src": 3226,
+  "packages/extension-api/src": 5485,
   "packages/sdk/src": 6023,
   "packages/sdk/src/extensions.node": 21,
   "packages/sdk/src/package-admin.node": 147,
