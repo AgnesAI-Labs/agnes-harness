@@ -28,6 +28,7 @@ vi.mock('@agnes/daemon', async (importOriginal) => {
     daemonStatus: vi.fn(),
     readDaemonDiscovery: vi.fn(),
     readDaemonWebCredential: vi.fn(),
+    readDaemonRuntimeClientEndpoint: vi.fn(),
     resolveDaemonScope: vi.fn(),
     stopDaemon: vi.fn(),
   }
@@ -60,6 +61,7 @@ type DescriptorOverrides = {
   dataDir?: string
   socketPath?: string
   owner?: DaemonDiscovery['owner']
+  runtimeClient?: NonNullable<DaemonDiscovery['runtimeClient']>
   web?: DaemonDiscovery['web']
 }
 
@@ -128,6 +130,7 @@ function setupMocks(): void {
   vi.mocked(daemon.resolveDaemonScope).mockResolvedValue(scope)
   vi.mocked(daemon.readDaemonDiscovery).mockResolvedValue(null)
   vi.mocked(daemon.readDaemonWebCredential).mockResolvedValue('test-web-token')
+  vi.mocked(daemon.readDaemonRuntimeClientEndpoint).mockResolvedValue(null)
   vi.mocked(daemon.daemonStatus).mockResolvedValue({ running: false })
   vi.mocked(daemon.acquireDaemonStartup).mockReturnValue({ release: vi.fn() })
   vi.mocked(daemon.stopDaemon).mockResolvedValue('stopped')
@@ -449,6 +452,7 @@ describe('ensureLocalBackend', () => {
       }),
     ).rejects.toThrow(/config handshake failed/)
 
+    expect(daemon.readDaemonRuntimeClientEndpoint).not.toHaveBeenCalled()
     expect(events.indexOf('config-failure')).toBeGreaterThanOrEqual(0)
     expect(events.indexOf('stop')).toBeGreaterThan(events.indexOf('config-failure'))
     expect(events.indexOf('release')).toBeGreaterThan(events.indexOf('stop'))
@@ -609,4 +613,31 @@ describe('ensureLocalBackend', () => {
     await expect(ensureLocalBackend({ readinessTimeoutMs: 0 })).rejects.toBeInstanceOf(BootError)
     expect(vi.mocked(daemon.resolveDaemonScope)).not.toHaveBeenCalled()
   })
+})
+
+it('delivers the runtime HTTP capability only after the local handshake and owner verification', async () => {
+  const baseUrl = 'http://127.0.0.1:49101'
+  const discovery = descriptor({ runtimeClient: { baseUrl } })
+  vi.mocked(daemon.readDaemonDiscovery).mockResolvedValue(discovery)
+  const ready: string[] = []
+  const client = fakeClient({
+    initialize: async () => {
+      ready.push('initialize')
+    },
+    configGet: async () => {
+      ready.push('config')
+      return {}
+    },
+    apis: async () => {
+      ready.push('apis')
+      return { profile: { name: scope.profile } }
+    },
+  })
+  vi.mocked(daemon.readDaemonRuntimeClientEndpoint).mockImplementation(async (_scope, options) => {
+    expect(ready).toEqual(['initialize', 'config', 'apis'])
+    expect(options.expectedGeneration).toBe(discovery.owner.generation)
+    return { baseUrl, bearer: 'restricted-fixture-token' }
+  })
+  const result = await ensureLocalBackend({ createClientImpl: () => client })
+  expect(result.runtimeClient).toEqual({ baseUrl, bearer: 'restricted-fixture-token' })
 })

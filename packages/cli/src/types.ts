@@ -87,6 +87,8 @@ export type CliRpcEndpoint = {
  */
 export type Booted = {
   client: NodeClient
+  /** Private runtime HTTP capability obtained after the local daemon readiness handshake. */
+  runtimeClient?: { baseUrl: string; bearer: string }
   /** Present when stdio ACP owns the local endpoint directly instead of going through the SDK. */
   endpoint?: CliRpcEndpoint
   /** Present for the local one-shot form; commands that need privileged Host APIs fail closed without it. */

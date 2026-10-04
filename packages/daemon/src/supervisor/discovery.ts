@@ -13,6 +13,7 @@ import {
 } from '@agnes/system-node'
 import type { Owner } from './owner-record.js'
 import { readOwner } from './owner-record.js'
+import { runtimeClientBearer } from './runtime-credential.js'
 import type { DaemonScope } from './scope.js'
 
 const windows = process.platform === 'win32' // guards-allow-platform: Windows private file validation and publication.
@@ -35,6 +36,7 @@ export type DaemonDiscovery = Readonly<{
   owner: Pick<Owner, 'pid' | 'processStartId' | 'generation' | 'startedAt'>
   ready: true
   web?: DaemonDiscoveryWeb
+  runtimeClient?: Readonly<{ baseUrl: string }>
 }>
 
 type WebCredentialFile = {
@@ -211,7 +213,8 @@ function parseDiscovery(value: unknown): DaemonDiscovery {
     'owner',
     'ready',
   ]
-  if (!exactKeys(value, keys) && !exactKeys(value, [...keys, 'web']))
+  const optional = ['web', 'runtimeClient'].filter((key) => key in value)
+  if (!exactKeys(value, [...keys, ...optional]))
     throw new DaemonDiscoveryError('daemon discovery file is unavailable or invalid')
   if (value.protocol !== 'agnesd-discovery' || value.version !== 1 || value.ready !== true)
     throw new DaemonDiscoveryError('daemon discovery file is unavailable or invalid')
@@ -239,6 +242,8 @@ function parseDiscovery(value: unknown): DaemonDiscovery {
     throw new DaemonDiscoveryError('daemon discovery file is unavailable or invalid')
   if (value.web !== undefined && !webShape(value.web))
     throw new DaemonDiscoveryError('daemon discovery file is unavailable or invalid')
+  if (value.runtimeClient !== undefined && !runtimeShape(value.runtimeClient))
+    throw new DaemonDiscoveryError('daemon runtime endpoint is unavailable or invalid')
   const capabilities = value.capabilities
   const validCapabilities =
     (capabilities.length === 1 && capabilities[0] === 'unix' && value.web === undefined) ||
@@ -341,6 +346,7 @@ export async function publishDaemonDiscovery(
     socketPath: string
     profileHash: string
     web?: DaemonDiscoveryWeb & { token: string }
+    runtimeClient?: { baseUrl: string; token: string }
   },
 ): Promise<DaemonDiscovery> {
   const current = await readOwner(scope.dataDir)
@@ -356,6 +362,13 @@ export async function publishDaemonDiscovery(
       !/^[A-Za-z0-9_-]{32,256}$/u.test(input.web.token))
   )
     throw new DaemonDiscoveryError('cannot publish an invalid local Web endpoint')
+  if (
+    input.runtimeClient &&
+    (!runtimeShape({ baseUrl: input.runtimeClient.baseUrl }) ||
+      !/^[A-Za-z0-9_-]{32,256}$/u.test(input.runtimeClient.token) ||
+      (input.web && input.web.token !== input.runtimeClient.token))
+  )
+    throw new DaemonDiscoveryError('cannot publish an invalid runtime endpoint')
   const descriptor: DaemonDiscovery = {
     protocol: 'agnesd-discovery',
     version: 1,
@@ -373,14 +386,16 @@ export async function publishDaemonDiscovery(
     },
     ready: true,
     ...(input.web ? { web: { url: input.web.url, origin: input.web.origin } } : {}),
+    ...(input.runtimeClient ? { runtimeClient: { baseUrl: input.runtimeClient.baseUrl } } : {}),
   }
-  if (input.web) {
+  const secret = input.web?.token ?? input.runtimeClient?.token
+  if (secret) {
     const credential: WebCredentialFile = {
       protocol: 'agnesd-web-credential',
       version: 1,
       scopeID: scope.scopeID,
       generation: input.owner.generation,
-      token: input.web.token,
+      token: secret,
     }
     await atomicWrite(scope.webCredentialPath, JSON.stringify(credential))
   } else {
@@ -409,6 +424,14 @@ export async function readDaemonWebCredential(
       : expectedGenerationOrOptions
   const descriptor = await readDaemonDiscovery(scope, readOptions)
   if (!descriptor?.web) return null
+  return readCredential(scope, descriptor, expectedGenerationOrOptions)
+}
+
+async function readCredential(
+  scope: DaemonScope,
+  descriptor: DaemonDiscovery,
+  expectedGenerationOrOptions?: string | DaemonWebCredentialReadOptions,
+): Promise<string> {
   const value = await readJsonFile(scope.webCredentialPath, 16 * 1024, 0o600)
   if (value === undefined) throw new DaemonDiscoveryError('daemon Web credential is unavailable or invalid')
   const credential = parseCredential(value)
@@ -467,4 +490,41 @@ export async function removeDaemonDiscovery(scope: DaemonScope, generation: stri
   if (!matchedGeneration) return
   await unlink(scope.discoveryPath).catch(() => undefined)
   await unlink(scope.webCredentialPath).catch(() => undefined)
+}
+
+function runtimeShape(value: unknown): value is { baseUrl: string } {
+  if (!isRecord(value) || !exactKeys(value, ['baseUrl']) || typeof value.baseUrl !== 'string') return false
+  try {
+    const url = new URL(value.baseUrl)
+    return (
+      url.protocol === 'http:' &&
+      url.hostname === '127.0.0.1' &&
+      Number(url.port) > 0 &&
+      url.origin === value.baseUrl
+    )
+  } catch {
+    return false
+  }
+}
+
+/** Call only after the local socket/pipe handshake; generation is that handshake's validated owner. */
+export async function readDaemonRuntimeClientEndpoint(
+  scope: DaemonScope,
+  options: DaemonWebCredentialReadOptions & { expectedGeneration: string },
+): Promise<{ baseUrl: string; bearer: string } | null> {
+  const descriptor = await readDaemonDiscovery(scope, options)
+  if (!descriptor?.runtimeClient) return null
+  const secret = await readCredential(scope, descriptor, options)
+  // Recheck after reading the private secret; an owner replacement cannot produce a mixed pair.
+  const current = await readDaemonDiscovery(scope, options)
+  if (
+    !current ||
+    !sameOwner({ ...descriptor.owner, socketPath: descriptor.socketPath }, current.owner) ||
+    current.runtimeClient?.baseUrl !== descriptor.runtimeClient.baseUrl
+  )
+    throw new DaemonDiscoveryError('daemon changed during runtime credential delivery')
+  return {
+    baseUrl: descriptor.runtimeClient.baseUrl,
+    bearer: runtimeClientBearer(secret, options.expectedGeneration),
+  }
 }

@@ -8,6 +8,7 @@ import {
   composeSecrets,
   createExtensionActivationBarrier,
   createFileAudit,
+  createHostRuntimeClientPorts,
   createPlatform,
   createSecretsEnv,
   createSecretsFile,
@@ -16,6 +17,7 @@ import {
   type ExtensionActivationBarrier,
   type Host,
   HostError,
+  type HostRuntimeClientInstallation,
   type HostSession,
   type TableStore as HostTableStore,
   type PresetDoc,
@@ -187,8 +189,10 @@ import { type JwksResolver, type JwksTransport, startJwksCache } from './jwks-ca
 import { closeWithAudit, installSignals, shutdownLadder } from './lifecycle.js'
 import { createMcpManageRequests } from './mcp-manage-requests.js'
 import { acquireOwnerLock } from './owner-lock.js'
+import { readOwner } from './owner-record.js'
 import { createPluginManageRequests } from './plugin-manage-requests.js'
 import { type RemoteEntry, WorkerRegistry } from './registry.js'
+import { runtimeClientBearer } from './runtime-credential.js'
 import { createRuntimeTargetProbeLauncher, spawnRuntimeTargetProbeWorker } from './runtime-target-probe.js'
 import { resolveDaemonProfile, resolveDaemonScope } from './scope.js'
 import {
@@ -631,6 +635,8 @@ export type StartSupervisorOptions = {
   workerExecArgv?: string[]
   workerEntry?: string
   processIdentity?: (pid: number) => Promise<ProcessIdentity>
+  /** Host-owned read adapters and C14 policy; omitted services and authorization fail closed. */
+  runtimeClientInstallation?: HostRuntimeClientInstallation
   /**
    * A privileged view of core's tables, used by crash reclaim. The sqliteTables test fixture can
    * provide this combined view; Host deliberately does not expose one in production today.
@@ -829,6 +835,7 @@ export async function startSupervisor(o: StartSupervisorOptions): Promise<{
   /** Privileged Package activation coordination port; never exposed on the client wire. */
   activationBarrier: ExtensionActivationBarrier
   ws?: { url: string; token: string }
+  runtimeClient?: { baseUrl: string; token: string }
 }> {
   prepareDaemonSocketPaths(o.config)
   if (o.config.ws && o.config.localWeb) throw new Error('choose local Web or remote WSS')
@@ -1917,6 +1924,29 @@ export async function startSupervisor(o: StartSupervisorOptions): Promise<{
           })
         : undefined
     if (wsServer) startupCleanup.push(() => wsServer.close())
+    const localSecret = o.config.localWeb && wsToken ? wsToken : randomBytes(32).toString('base64url')
+    const runtimeServer = await listenWebSocket({
+      addr: '127.0.0.1:0',
+      token: runtimeClientBearer(localSecret, lock.owner.generation),
+      runtimeOnly: {
+        current: async () => {
+          const current = await readOwner(o.config.dataDir)
+          return (
+            current?.generation === lock.owner.generation &&
+            current.pid === lock.owner.pid &&
+            current.processStartId === lock.owner.processStartId
+          )
+        },
+      },
+      runtimeClient: createHostRuntimeClientPorts(o.runtimeClientInstallation, {
+        principalId: 'local',
+        generation: lock.owner.generation,
+      }),
+      endpoint: () => {
+        throw new Error('runtime HTTP does not accept RPC upgrades')
+      },
+    })
+    startupCleanup.push(() => runtimeServer.close())
 
     const evictIdleNow = (): number =>
       pool.evictIdle(clock(), (sessionKey) => !!registry.get(sessionKey)?.inflight)
@@ -1956,6 +1986,7 @@ export async function startSupervisor(o: StartSupervisorOptions): Promise<{
             ...[...conns].map(({ ep }) => Promise.resolve().then(() => ep.stopIntake())),
             Promise.resolve().then(() => server.stopAccepting()),
             ...(wsServer ? [Promise.resolve().then(() => wsServer.stopAccepting())] : []),
+            Promise.resolve().then(() => runtimeServer.stopAccepting()),
             ...(stopJwks ? [Promise.resolve().then(() => stopJwks())] : []),
           ])
           const errors = results
@@ -1994,6 +2025,7 @@ export async function startSupervisor(o: StartSupervisorOptions): Promise<{
             ...[...conns].map(({ ep }) => Promise.resolve().then(() => ep.close())),
             Promise.resolve().then(() => server.close()),
             ...(wsServer ? [Promise.resolve().then(() => wsServer.close())] : []),
+            Promise.resolve().then(() => runtimeServer.close()),
             Promise.resolve().then(() => workersServer.close()),
             // A Surface is a separate OS child process fed by the mount-proxy HTTP forwarder that
             // whichever process owns the browser-facing `createWebServer` listener builds from the
@@ -2030,6 +2062,7 @@ export async function startSupervisor(o: StartSupervisorOptions): Promise<{
       activationBarrier,
       socketPath: o.config.socketPath,
       owner: { ...lock.owner },
+      runtimeClient: { baseUrl: runtimeServer.url, token: localSecret },
       ...(wsServer && wsToken ? { ws: { url: wsServer.url, token: wsToken } } : {}),
       reclaimNow,
       evictIdleNow,
@@ -2126,6 +2159,7 @@ export async function startProductionSupervisor(
     socketPath: supervisor.socketPath,
     owner: { ...supervisor.owner },
     ...(supervisor.ws ? { ws: supervisor.ws } : {}),
+    ...(supervisor.runtimeClient ? { runtimeClient: supervisor.runtimeClient } : {}),
     reclaimNow: () => supervisor.reclaimNow(),
     evictIdleNow: () => supervisor.evictIdleNow(),
     retireSharedWorkerNow: () => supervisor.retireSharedWorkerNow(),
@@ -2158,6 +2192,7 @@ export type RunAgnesdDeps = {
   /** Injection seam for enterprise composition. An unconfigured WSS still has no package grant. */
   packageAdmin?: StartSupervisorOptions['packageAdmin']
   resources?: StartSupervisorOptions['resources']
+  runtimeClientInstallation?: HostRuntimeClientInstallation
 }
 
 /** `runAgnesd` accepts a partial argument object so embedded launchers can rely on scope defaults. */
@@ -2390,6 +2425,7 @@ export async function runAgnesd(args: RunAgnesdArgs = {}, deps: RunAgnesdDeps = 
     config,
     profile,
     profileDir: scope.profileDir,
+    ...(deps.runtimeClientInstallation ? { runtimeClientInstallation: deps.runtimeClientInstallation } : {}),
     profileFile: scope.profileFile,
     workspaceRoot: scope.workspace,
     configuration,
@@ -2448,6 +2484,7 @@ export async function runAgnesd(args: RunAgnesdArgs = {}, deps: RunAgnesdDeps = 
       socketPath: sup.socketPath,
       profileHash: profile.hash,
       ...(localWeb && sup.ws ? { web: { ...sup.ws, origin: localWeb.origin } } : {}),
+      ...(sup.runtimeClient ? { runtimeClient: sup.runtimeClient } : {}),
     })
     if (socketFailure) throw socketFailure
   } catch (error) {

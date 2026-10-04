@@ -58,6 +58,14 @@ Code: [browser session client](../../packages/web/src/app.ts), [browser SDK expo
 
 ## State ownership
 
+The daemon also owns a private runtime-client HTTP listener on a random `127.0.0.1` port, including
+when only Unix sockets or Windows pipes are configured. CLI startup first verifies the local IPC
+connection and daemon owner generation, then reads the endpoint and derives a separate bearer from
+the existing private local credential. HTTP checks the bearer in constant time and rechecks the
+owner before reading a body. Restart invalidates the capability; shutdown closes the listener.
+Host composition admits only explicitly installed read adapters with an injected authorization
+policy. Missing services or policy return `operation_not_supported`; write operations remain unwired.
+
 | Layer | Main responsibilities |
 | --- | --- |
 | CLI/Web | User input, approval interaction, sessions, and result presentation |

@@ -545,13 +545,14 @@ const INITIAL_CEILING: Record<string, number> = {
   // ceiling after the session-resume picker (87b62431) landed without a paired raise, so this key
   // was red on arrival. This raise carries that overshoot rather than hiding it -- the picker's 97
   // lines still owe their own measured justification here.
-  'packages/cli/src': 8974,
+  // Re-measured after TUI relocation, including local runtime endpoint delivery: 7302, no spare.
+  'packages/cli/src': 7302,
   'packages/cli/src/commands/package': 160,
   'packages/cli/src/tui/package-admin': 106,
   'packages/cli/src/tui/package-controller': 58,
-  // DAEMON-SHORT-SOCKET-PATH: reuse daemon path preflight before spawning; +9 counted lines.
-  'packages/cli/src/boot/backend': 538,
-  'packages/cli/src/boot/default': 56,
+  // Private runtime endpoint delivery after the IPC readiness proof: backend 544, default 57, exact.
+  'packages/cli/src/boot/backend': 544,
+  'packages/cli/src/boot/default': 57,
   // 2026-09-22 CLI error surfaces (F03): `sessions show` prints one detail row per field with
   // model-written text escaped, and an id that matches nothing exits 1 on stderr. Exact measured 60.
   'packages/cli/src/commands/sessions': 60,
@@ -665,8 +666,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // glue, not a second scope path or general profile-error bypass. Measured total: 214.
   'packages/daemon/src/supervisor/scope': 214,
   // 2026-09-26: bounded EBUSY retry preserves Windows discovery validation during concurrent boot.
-  // Measured 436, exact.
-  'packages/daemon/src/supervisor/discovery': 436,
+  // Generation-protected local credential reuse for the private runtime endpoint; measured 491, exact.
+  'packages/daemon/src/supervisor/discovery': 491,
   'packages/daemon/src/supervisor/startup': 18,
   'packages/web/src/serve': 188,
   // 2026-09-12 unified App Server: shared configuration, authenticated RPC, session metadata
@@ -2006,7 +2007,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // Diagnostics export replaces credential-carrier values in events and log rows; measured 27094 (+11), exact.
   // Runtime client routes on the daemon HTTP listener (validated, unported refusals); measured 27356 (+209), exact.
   // Native conversation source for the default projection read over shared opening/history windows; measured 27424 (+68), exact.
-  'packages/daemon/src': 27424,
+  // Runtime HTTP credentials are generation-bound and Host read ports are wired. Measured 27535, exact, no spare.
+  'packages/daemon/src': 27535,
   'packages/daemon/src/packages/admin-session': 46,
   // 2026-09-14: whole-branch review fix wave (Finding 1) adds the two missing
   // 'pins/inspect'/'pins/release' entries to the ACTIONS BFF route allowlist, which had been left
@@ -2832,7 +2834,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // Four source-bound publication data codecs and complete retained-content validation add 1039 measured lines.
   // Publication installation and pure empty-history checks: measured 79966, exact, no spare.
   // Artifact download streams recheck the ticket broker before every chunk; measured 79978 (+12), exact.
-  'packages/host/src': 79978,
+  // Runtime HTTP credentials are generation-bound and Host read ports are wired. Measured 80050, exact, no spare.
+  'packages/host/src': 80050,
   'packages/host/src/ext-host/service-invocation': 247,
   // T5.2's permission projector is kept independently bounded so later extension-host work cannot
   // hide in the package-wide increment. Measured source: 86 lines.

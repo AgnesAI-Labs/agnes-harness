@@ -96,8 +96,10 @@ export async function listenWebSocket(options: {
   localOrigin?: string
   token: string
   endpoint(): { endpoint: RpcEndpoint; onClose(): void }
-  /** Backends for the runtime client routes; none is assembled yet, so each route refuses. */
+  /** Trusted backends for runtime client routes; every uninstalled operation refuses. */
   runtimeClient?: RuntimeClientPorts
+  /** Private runtime HTTP listener. No WebSocket or legacy local-origin admission. */
+  runtimeOnly?: { current(): Promise<boolean> }
 }): Promise<{ url: string; stopAccepting(): Promise<void>; close(): Promise<void> }> {
   const { host, port } = target(options.addr)
   const local = options.localOrigin !== undefined
@@ -110,9 +112,13 @@ export async function listenWebSocket(options: {
       origin.origin !== options.localOrigin
     )
       throw new Error('local Web requires a literal loopback address and exact HTTP origin')
+  } else if (options.runtimeOnly) {
+    if (host !== '127.0.0.1' || port !== 0)
+      throw new Error('runtime HTTP requires a random IPv4 loopback port')
   } else if (!options.cert || !options.key) throw new Error('remote WebSocket requires TLS')
   if (!options.token) throw new Error('WebSocket token is required')
-  const server = local ? createHttpServer() : createServer({ cert: options.cert, key: options.key })
+  const server =
+    local || options.runtimeOnly ? createHttpServer() : createServer({ cert: options.cert, key: options.key })
   const webSockets = new Set<WebSocket>()
   const transportSockets = new Set<Socket>()
   let stopping = false
@@ -146,9 +152,19 @@ export async function listenWebSocket(options: {
     return undefined
   }
   const runtime = runtimeClientRoutes(options.runtimeClient ?? {})
-  server.on('request', (request, response) => {
+  server.on('request', async (request, response) => {
     if (stopping) return void request.socket.destroy()
-    const status = refusal(request)
+    if (options.runtimeOnly) {
+      // Reject before parsing or consuming a body. Neither Origin nor WS protocol credentials
+      // authorize this private HTTP capability; owner replacement and shutdown fence every read.
+      const current = authorized(request.headers.authorization, options.token)
+        ? await options.runtimeOnly.current().catch(() => false)
+        : false
+      if (!current || stopping) return void response.writeHead(401, { Connection: 'close' }).end()
+      if (request.headers.host !== expectedHost || request.headers.origin !== undefined)
+        return void response.writeHead(403, { Connection: 'close' }).end()
+    }
+    const status = options.runtimeOnly ? undefined : refusal(request)
     if (status) return void response.writeHead(status, { Connection: 'close' }).end()
     void runtime(request, response).then(
       (served) => {
@@ -165,7 +181,7 @@ export async function listenWebSocket(options: {
       socket.destroy()
       return
     }
-    const status = refusal(request)
+    const status = options.runtimeOnly ? 403 : refusal(request)
     if (status) {
       socket.end(`HTTP/1.1 ${status} ${STATUS_CODES[status]}\r\nConnection: close\r\n\r\n`)
       return
@@ -196,7 +212,7 @@ export async function listenWebSocket(options: {
     return Promise.resolve()
   }
   return {
-    url: `${local ? 'ws' : 'wss'}://${printableHost}:${actual.port}`,
+    url: `${options.runtimeOnly ? 'http' : local ? 'ws' : 'wss'}://${printableHost}:${actual.port}`,
     stopAccepting,
     close: () =>
       (closing ??= new Promise<void>((resolve) => {
