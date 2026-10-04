@@ -1,6 +1,7 @@
-import { mkdtempSync, rmSync } from 'node:fs'
+import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { DatabaseSync } from 'node:sqlite'
 import type { CallContext, Outcome } from '@agnes/extension-api/runtime'
 import { createConformanceHarness, createTestServiceContainer, SCENARIOS } from '@agnes/extension-api/testkit'
 import { RuntimeArtifactPolicy } from '@agnes/protocol/runtime'
@@ -11,6 +12,11 @@ import {
   type TransferContractPort,
 } from '../../../../packages/extension-api/testkit/runtime/contracts/authority-transfer.js'
 import { inline } from '../../../../packages/extension-api/testkit/runtime/contracts/projection.js'
+import {
+  ticketBinding,
+  ticketBoundary,
+  ticketBroker,
+} from '../../../../packages/host/test/runtime/artifact-ticket-key-fixture.js'
 import { createReferenceRegistry } from '../index.js'
 import {
   ARTIFACTS_PROVIDER,
@@ -65,10 +71,46 @@ const trusted = (context: CallContext) => context.authorizationRef === 'auth-ok'
 let directory: string
 let blob: BlobStore
 let artifacts: ArtifactsStore
+let tickets: ReturnType<typeof referenceTickets>
 let clock: number
 let reads: number
 
 type Overrides = { [K in keyof ArtifactsStoreOptions]?: ArtifactsStoreOptions[K] | undefined }
+
+/**
+ * A real reference ticket key broker behind the reference secrets service, and the option a trusted
+ * assembly hands the store: the port and a delegation of each client call to the installed owner.
+ */
+function referenceTickets() {
+  const auth = ticketBoundary()
+  const { broker, port } = ticketBroker('reference', join(directory, 'secrets'), auth, {}, () => clock)
+  const keys: NonNullable<ArtifactsStoreOptions['ticketKeys']> = {
+    port,
+    binding: ticketBinding,
+    tenantId: 'tenant',
+    authorityId: 'selected-blob',
+    delegate: (call) => auth.delegate({ signal: call.signal }),
+  }
+  return { auth, broker, keys }
+}
+
+/** The stored tickets' request ids and key versions, as a reopened store would find them. */
+function storedTickets(name = 'artifacts') {
+  const db = new DatabaseSync(join(directory, `${name}.sqlite`), { readOnly: true })
+  try {
+    return db
+      .prepare('SELECT request_id, key_version FROM sealed_tickets ORDER BY request_id')
+      .all()
+      .map((row) => [row.request_id, row.key_version])
+  } finally {
+    db.close()
+  }
+}
+
+const download = (ref: { artifactId: string; version: number }, requestId: string) => ({
+  requestId,
+  input: { ...ref, disposition: 'inline' as const },
+})
 
 /** An artifacts store at `name` over the `selected` blob store. */
 function open(extra: Overrides = {}, name = 'artifacts', selected = blob): ArtifactsStore {
@@ -90,7 +132,7 @@ function open(extra: Overrides = {}, name = 'artifacts', selected = blob): Artif
   const options = {
     dependencies: container.dependencies,
     authorize: trusted,
-    ticketKey: new Uint8Array(32).fill(3),
+    ticketKeys: tickets.keys,
     now: () => clock,
     ...extra,
   }
@@ -119,12 +161,14 @@ beforeEach(() => {
   clock = START
   reads = 0
   blob = openBlobStore(join(directory, 'blob.sqlite'), { authorizeRead: trusted })
+  tickets = referenceTickets()
   artifacts = open()
 })
 
-afterEach(() => {
+afterEach(async () => {
   artifacts.close()
   blob.close()
+  await tickets.broker.close()
   rmSync(directory, { recursive: true, force: true })
 })
 
@@ -164,22 +208,28 @@ describe('reference artifacts store', () => {
     })
   })
 
-  it('blocks access without a Host check and tickets without a key, and never redeems', async () => {
+  it('blocks access without a Host check and tickets without a ticket key broker, and never redeems', async () => {
     const { ref } = publish('content')
     artifacts.close()
-    artifacts = open({ authorize: undefined, ticketKey: undefined })
+    artifacts = open({ authorize: undefined, ticketKeys: undefined })
     expect(refused(await artifacts.artifactAccess.describe(ref, ctx()))).toBe('blocked')
     artifacts.close()
-    artifacts = open({ ticketKey: undefined })
-    const request = { requestId: 'download-1', input: { ...ref, disposition: 'inline' as const } }
-    expect(refused(await artifacts.artifactAccess.openDownload(request, ctx()))).toBe('blocked')
+    artifacts = open({ ticketKeys: undefined })
+    expect(refused(await artifacts.artifactAccess.openDownload(download(ref, 'download-1'), ctx()))).toBe(
+      'blocked',
+    )
+    expect(artifacts.features).toEqual(['artifact-access.v1'])
     const redeem = { ticketId: 'ticket-1', nonce: 'A'.repeat(43), offset: 0 }
+    artifacts.close()
+    artifacts = open()
+    // Redemption is not offered, so even with the broker artifact-ticket.v1 is not declared.
+    expect(artifacts.features).toEqual(['artifact-access.v1'])
     expect(refused(await artifacts.artifactAccess.redeemDownload(redeem, ctx()))).toBe(
       'operation_not_supported',
     )
   })
 
-  it('caps a ticket at the contract lifetime and keeps only what rebuilds it', async () => {
+  it('caps a ticket at the contract lifetime, rebuilds it for a repeat or a concurrent request and keeps no nonce', async () => {
     const { ref } = publish('content')
     artifacts.close()
     artifacts = open({ ticketTtlMs: RuntimeArtifactPolicy.downloadTicketTtlMs * 2 })
@@ -189,10 +239,90 @@ describe('reference artifacts store', () => {
     expect(ticket.url).toMatch(/^\/api\/runtime\/artifact\/download\/[^?]+\?nonce=[A-Za-z0-9_-]{43}$/)
     artifacts.close()
     artifacts = open()
+    clock += 1000
     expect(must(await artifacts.artifactAccess.openDownload(request, ctx()))).toEqual(ticket)
+    const racing = download(ref, 'download-2')
+    const [one, two] = await Promise.all([
+      artifacts.artifactAccess.openDownload(racing, ctx()),
+      artifacts.artifactAccess.openDownload(racing, ctx()),
+    ])
+    expect(must(two)).toEqual(must(one))
+    expect(storedTickets()).toEqual([
+      ['download-1', 'v1'],
+      ['download-2', 'v1'],
+    ])
+    const nonce = ticket.url.split('?nonce=')[1] ?? ''
+    for (const file of ['artifacts.sqlite', 'artifacts.sqlite-wal']) {
+      const path = join(directory, file)
+      if (!existsSync(path)) continue
+      for (const form of [Buffer.from(nonce), Buffer.from(nonce, 'base64url')])
+        expect(readFileSync(path).includes(form)).toBe(false)
+    }
     expect(
       refused(await artifacts.artifactAccess.openDownload(request, ctx({ principalRef: 'user-2' }))),
     ).toBe('permission_denied')
+  })
+
+  it('keeps a ticket sealed under a rotated key until it expires and refuses every ticket of a revoked key at once', async () => {
+    const { ref } = publish('content')
+    const { broker, auth } = tickets
+    const issue = (requestId: string) =>
+      artifacts.artifactAccess.openDownload(download(ref, requestId), ctx())
+    const old = must(await issue('download-1'))
+    must(
+      await broker.rotate(
+        { secretId: 'ticket-key', newVersionRef: 'secret://fixture/ticket-v2' },
+        auth.call({}, true),
+      ),
+    )
+    expect(must(await issue('download-1'))).toEqual(old)
+    clock += 1000
+    const current = must(await issue('download-2'))
+    expect(current.url).not.toBe(old.url)
+    expect(storedTickets()).toEqual([
+      ['download-1', 'v1'],
+      ['download-2', 'v2'],
+    ])
+    clock = Date.parse(old.expiresAt)
+    expect(refused(await issue('download-1'))).toBe('ticket_expired')
+    expect(must(await issue('download-2'))).toEqual(current)
+    must(await broker.revoke({ secretId: 'ticket-key', reason: 'emergency' }, auth.call({}, true)))
+    expect([await issue('download-2'), await issue('download-3')].map(refused)).toEqual([
+      'ticket_revoked',
+      'ticket_revoked',
+    ])
+    expect(storedTickets()).toHaveLength(2)
+  })
+
+  it('stores no ticket the broker refuses or whose grant ends while it is sealed', async () => {
+    const first = publish('content')
+    const { keys, auth } = tickets
+    artifacts.close()
+    // The grant is revoked while the broker seals, so the check after the broker refuses the ticket.
+    artifacts = open({
+      ticketKeys: {
+        ...keys,
+        port: {
+          openNonce: keys.port.openNonce,
+          sealNonce: async (query, call) => {
+            const sealed = await keys.port.sealNonce(query, call)
+            artifacts.revokeGrant(first.grant.grantId)
+            return sealed
+          },
+        },
+      },
+    })
+    const ended = await artifacts.artifactAccess.openDownload(download(first.ref, 'download-1'), ctx())
+    expect(refused(ended)).toBe('permission_denied')
+    const second = publish('other')
+    auth.withdraw()
+    const withdrawn = await artifacts.artifactAccess.openDownload(download(second.ref, 'download-2'), ctx())
+    // The broker's refusal passes through unchanged.
+    expect(withdrawn.ok ? null : withdrawn.error).toMatchObject({
+      detailCode: 'ticket_delegation',
+      diagnosticId: 'reference-artifact-ticket-key',
+    })
+    expect(storedTickets()).toEqual([])
   })
 
   it('stops a grant and a version at the next check, leaving other versions readable', async () => {
@@ -286,8 +416,12 @@ describe('reference artifacts authority transfer', () => {
     artifacts = at('source', blob)
     const one = publish('one')
     const two = publish('two')
+    const three = publish('three')
     artifacts.revoke(one.ref)
     artifacts.revokeGrant(two.grant.grantId, 'request-1')
+    const ticket = (store: ArtifactsStore, requestId: string) =>
+      store.artifactAccess.openDownload(download(three.ref, requestId), ctx())
+    must(await ticket(artifacts, 'download-1'))
     const expected = { authorityId: 'reference-artifacts', tenantId: TENANT, authorityEpoch: 1 }
     const fence = must(
       await artifacts.transfer.fence(
@@ -295,6 +429,10 @@ describe('reference artifacts authority transfer', () => {
         MAINTAINER,
       ),
     )
+    // A fenced store neither issues a ticket nor rebuilds one.
+    expect(
+      [await ticket(artifacts, 'download-1'), await ticket(artifacts, 'download-2')].map(refused),
+    ).toEqual(['blocked', 'blocked'])
     const exported = must(
       await artifacts.transfer.export({ upgradeId: UPGRADE, fenceId: fence.fenceId }, MAINTAINER),
     )
@@ -325,6 +463,9 @@ describe('reference artifacts authority transfer', () => {
     )
     expect(exported.deletionWatermark).toBe(2)
     expect(target.revocations()).toEqual(artifacts.revocations())
+    // Tickets stay out of the checkpoint, and a candidate issues none over the imported grant.
+    expect(storedTickets('target')).toEqual([])
+    expect(refused(await ticket(target, 'download-1'))).toBe('blocked')
     expect(verified.checks.filter((check) => !check.passed).map((check) => check.checkId)).toEqual([
       'required-assets',
     ])
