@@ -20,6 +20,19 @@ const require = createRequire(import.meta.url)
 const Ajv2020 = require('ajv/dist/2020.js').default as typeof Ajv2020Class
 
 describe('runtime schema generation', () => {
+  it('registers nullable dispatch admission at revision three on the official input root', () => {
+    const { document, publicDocument } = loadRuntimeSchemaGraph('packages/protocol/schema/runtime')
+    const ref = RuntimeMethodSchemaRefs['agh.state'].dispatchAdmission.input
+    expect((publicDocument['x-schema-revisions'] as Record<string, number>).DispatchAdmissionRequest).toBe(3)
+    expect(ref.revision).toBe(3)
+    expect(ref.typeId).toBe('agh.state/dispatchAdmission.request@1')
+    expect(ref.digest).toBe(
+      createHash('sha256')
+        .update(jcs(runtimeSchemaDocument(document, 'DispatchAdmissionRequest')))
+        .digest('hex'),
+    )
+  })
+
   it('enforces object and dictionary property counts with JSON Schema parity', () => {
     for (const schema of [
       {

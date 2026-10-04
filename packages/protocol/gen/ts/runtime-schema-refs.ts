@@ -7662,8 +7662,8 @@ export const RuntimeMethodSchemaRefs = freeze({
     "dispatchAdmission": {
       "input": {
         "typeId": "agh.state/dispatchAdmission.request@1",
-        "revision": 2,
-        "digest": "7553cf322faa4f140a2949b646a3e1d1aa1db6c75093381177af84a480568c79"
+        "revision": 3,
+        "digest": "2b14fe31d0189c2c7d6fb835f142417aeaf39286cf5c4fe33ffdd7b445394f56"
       },
       "output": {
         "typeId": "agh.state/dispatchAdmission.response@1",
