@@ -67,7 +67,6 @@ export const RuntimePublic14 = Type.Module({
   "ReleaseSet": Type.Object({ "releaseSetId": Type.String(), "formatVersion": Type.Number(), "hostAbi": Type.String(), "packages": Type.Array(Type.Object({ "packageId": Type.String(), "version": Type.String(), "digest": Type.String(), "sourceRef": Type.String(), "integrityRef": Type.String(), "entries": Type.Record(Type.String(), Type.Object({ "digest": Type.String(), "platform": Type.String() }, { additionalProperties: false }), { maxProperties: 10000 }) }, { additionalProperties: false }), { maxItems: 10000 }), "bindings": Type.Array(Type.Ref('ResolvedProviderBinding'), { maxItems: 10000 }), "profileRef": Type.Ref('VersionedRef'), "presetRef": Type.Ref('VersionedRef'), "configSnapshotRef": Type.Ref('ContentRef'), "schemasRef": Type.Ref('ContentRef'), "clientBundlesRef": Type.Ref('ContentRef'), "recoveryManifestRef": Type.Ref('ContentRef'), "resourceClaimsRef": Type.Ref('ContentRef') }, { additionalProperties: false }),
   "ReleasePlan": Type.Object({ "planId": Type.Ref('Id'), "upgradeId": Type.Ref('Id'), "planFingerprint": Type.Ref('Digest'), "operation": Type.Union([Type.Literal('install'), Type.Literal('upgrade'), Type.Literal('disable'), Type.Literal('repair'), Type.Literal('rollback')]), "routeId": Type.Ref('Id'), "expectedRouteRevision": Type.Union([Type.Ref('UInt53'), Type.Null()]), "sourceReleaseSetId": Type.Union([Type.Ref('Id'), Type.Null()]), "targetReleaseSet": Type.Ref('ReleaseSet'), "affectedContributions": Type.Array(Type.Ref('Id'), { maxItems: 10000 }), "configDigest": Type.Ref('Digest'), "permissionDifference": Type.Object({ "beforeProfileDigest": Type.Union([Type.Ref('Digest'), Type.Null()]), "afterProfileDigest": Type.Ref('Digest'), "added": Type.Array(Type.Ref('CapabilityRequirement'), { maxItems: 10000 }), "removed": Type.Array(Type.Ref('CapabilityRequirement'), { maxItems: 10000 }), "policyChanges": Type.Array(Type.Object({ "path": Type.String(), "before": Type.Union([Type.Ref('DataRef'), Type.Null()]), "after": Type.Union([Type.Ref('DataRef'), Type.Null()]) }, { additionalProperties: false }), { maxItems: 10000 }) }, { additionalProperties: false }), "requiredPins": Type.Array(Type.Ref('Id'), { maxItems: 10000 }), "readinessChecks": Type.Array(Type.Ref('Id'), { maxItems: 10000 }), "prerequisiteMigrationPlans": Type.Array(Type.Object({ "planId": Type.Ref('Id'), "planFingerprint": Type.Ref('Digest') }, { additionalProperties: false }), { maxItems: 10000 }), "authorizedBy": Type.Ref('Id'), "expiresAt": Type.Ref('Timestamp'), "rollbackOf": Type.Union([Type.Ref('Id'), Type.Null()]) }, { additionalProperties: false }),
   "ChangeProposal": Type.Object({ "proposalId": Type.Ref('Id'), "requestId": Type.Ref('Id'), "revision": Type.Ref('Revision'), "requester": Type.Ref('Id'), "scope": Type.Ref('ScopeRef'), "status": Type.Union([Type.Literal('planning'), Type.Literal('awaiting-approval'), Type.Literal('approved'), Type.Literal('applying'), Type.Literal('applied'), Type.Literal('denied'), Type.Literal('cancelled'), Type.Literal('unknown')]), "plan": Type.Union([Type.Object({ "kind": Type.Literal('release'), "value": Type.Ref('ReleasePlan') }, { additionalProperties: false }), Type.Object({ "kind": Type.Literal('resource'), "value": Type.Ref('ResourceChangePlan') }, { additionalProperties: false }), Type.Null()]), "planDigest": Type.Union([Type.Ref('Digest'), Type.Null()]), "interactionRef": Type.Union([Type.Ref('InteractionRef'), Type.Null()]), "resultRef": Type.Union([Type.Ref('ReceiptPointer'), Type.Null()]), "error": Type.Union([Type.Ref('RuntimeError'), Type.Null()]) }, { additionalProperties: false }),
-  "ProviderBindingSnapshot": Type.Object({ "binding": Type.Ref('BindingRef'), "descriptor": Type.Ref('ProviderDescriptor'), "isolation": Type.Ref('IsolationMode'), "config": Type.Ref('DataRef'), "configDigest": Type.Ref('Digest'), "dependencies": Type.Array(Type.Ref('BindingRef'), { maxItems: 10000 }), "codecRefs": Type.Array(Type.Ref('StateCodecRef'), { maxItems: 10000 }), "schemaRefs": Type.Array(Type.Ref('SchemaRef'), { maxItems: 10000 }) }, { additionalProperties: false }),
   "AttemptRef": Type.Object({ "run": Type.Ref('RunRef'), "actionId": Type.Ref('Id'), "attemptId": Type.Ref('Id') }, { additionalProperties: false }),
   "Cursor": Type.String(),
   "ArtifactTitle": Object.assign(Type.String({ minLength: 1, pattern: "^[^\\u0000-\\u001f\\u007f]+$" }), {"x-max-utf8-bytes":1024}),
@@ -87,10 +86,17 @@ export const RuntimePublic14 = Type.Module({
   "PackageRequirement": Type.Object({ "packageId": Type.Ref('Id'), "versionRange": Type.String(), "sourceIds": Type.Array(Type.Ref('Id'), { maxItems: 10000 }) }, { additionalProperties: false }),
   "PackageLockEntry": Type.Object({ "packageId": Type.Ref('Id'), "version": Type.String(), "digest": Type.Ref('Digest'), "locator": Type.Ref('PackageLocator'), "manifestRef": Type.Ref('DataRef'), "dependencies": Type.Array(Type.Object({ "packageId": Type.Ref('Id'), "digest": Type.Ref('Digest') }, { additionalProperties: false }), { maxItems: 10000 }) }, { additionalProperties: false }),
   "PackageLock": Type.Object({ "entries": Type.Array(Type.Ref('PackageLockEntry'), { maxItems: 10000 }), "digest": Type.Ref('Digest') }, { additionalProperties: false }),
-  "AssemblyGraph": Type.Object({ "graphId": Type.Ref('Id'), "configRef": Type.Ref('DataRef'), "lock": Type.Ref('PackageLock'), "bindings": Type.Array(Type.Ref('ProviderBindingSnapshot'), { maxItems: 10000 }), "dependencies": Type.Array(Type.Object({ "consumerId": Type.Ref('Id'), "dependencyId": Type.Ref('Id'), "optional": Type.Boolean() }, { additionalProperties: false }), { maxItems: 10000 }), "requiredContributions": Type.Array(Type.Ref('Id'), { maxItems: 10000 }), "digest": Type.Ref('Digest') }, { additionalProperties: false }),
   "ChannelDestination": Type.Object({ "channelId": Type.Ref('Id'), "accountId": Type.Ref('Id'), "conversationId": Type.Ref('Id'), "threadId": Type.Union([Type.Ref('Id'), Type.Null()]) }, { additionalProperties: false }),
   "AuthenticatedCallback": Type.Object({ "callbackId": Type.Ref('Id'), "channelId": Type.Ref('Id'), "remoteEventId": Type.Ref('Id'), "actorPrincipalRef": Type.Ref('Id'), "destination": Type.Ref('ChannelDestination'), "receivedAt": Type.Ref('Timestamp'), "credentialRevision": Type.Ref('Revision'), "verifiedEnvelopeDigest": Type.Ref('Digest'), "command": Type.Union([Type.Object({ "kind": Type.Literal('interaction'), "interactionId": Type.Ref('Id'), "expectedVersion": Type.Ref('Revision'), "responseId": Type.Ref('Id'), "answer": Type.Ref('DataRef') }, { additionalProperties: false }), Type.Object({ "kind": Type.Literal('domain'), "command": Type.Ref('DataRef') }, { additionalProperties: false })]) }, { additionalProperties: false }),
   "PageJobOccurrence": Type.Object({ "items": Type.Array(Type.Ref('JobOccurrence'), { maxItems: 10000 }), "snapshot": Type.Ref('Id'), "nextCursor": Type.Union([Type.Ref('Cursor'), Type.Null()]), "complete": Type.Boolean() }, { additionalProperties: false }),
+  "JobsRequestCancelResult": Type.Object({ "definition": Type.Ref('JobDefinition'), "cancellationRefs": Type.Array(Type.Ref('ReceiptPointer'), { maxItems: 10000 }) }, { additionalProperties: false }),
+  "JobsRequestReserveDetachedRequest": Type.Object({ "sourceActionKey": Type.String(), "inputDigest": Type.Ref('Digest'), "providerBinding": Type.Ref('BindingRef') }, { additionalProperties: false }),
+  "JobsClaimOccurrenceRequest": Type.Object({ "id": Type.Ref('Id'), "expectedRevision": Type.Ref('Revision'), "ownerId": Type.Ref('Id'), "until": Type.Ref('Timestamp') }, { additionalProperties: false }),
+  "JobsCompleteOccurrenceRequest": Type.Object({ "id": Type.Ref('Id'), "expectedEpoch": Type.Ref('UInt53'), "outcomeRef": Type.Ref('ReceiptPointer') }, { additionalProperties: false }),
+  "JobsReserveDetachedRequest": Type.Object({ "mutationId": Type.Ref('Id'), "fingerprint": Type.Ref('Digest'), "sourceAction": Type.Ref('ActionRef'), "sourceRun": Type.Ref('RunRef'), "sourceParentActionId": Type.Union([Type.Ref('Id'), Type.Null()]), "sourceActionKey": Type.String(), "inputDigest": Type.Ref('Digest'), "providerBinding": Type.Ref('BindingRef'), "budgetScope": Type.Ref('DomainObjectRef'), "cancellationOwner": Type.Ref('DomainObjectRef') }, { additionalProperties: false }),
+  "JobsAttachDetachedRequest": Type.Object({ "acceptanceId": Type.Ref('Id'), "committedAction": Type.Ref('ActionRef') }, { additionalProperties: false }),
+  "JobsCancelDetachedRequest": Type.Object({ "acceptanceId": Type.Ref('Id'), "expectedRevision": Type.Ref('Revision'), "reason": Type.String() }, { additionalProperties: false }),
+  "JobsInspectRequest": Type.Object({ "id": Type.Ref('Id'), "cursor": Type.Union([Type.Ref('Cursor'), Type.Null()]), "limit": Type.Ref('UInt53') }, { additionalProperties: false }),
   "JobsInspectResult": Type.Object({ "definition": Type.Ref('JobDefinition'), "occurrences": Type.Ref('PageJobOccurrence') }, { additionalProperties: false }),
   "ArtifactsReserveRequest": Type.Union([Type.Object({ "publicationId": Type.Ref('Id'), "kind": Type.Ref('TypeId'), "schema": Type.Ref('SchemaRef'), "title": Type.Union([Type.Ref('ArtifactTitle'), Type.Null()]), "mediaType": Type.Union([Type.Ref('ArtifactMediaType'), Type.Null()]), "ownerActionRef": Type.Ref('ActionRef'), "artifactId": Type.Null(), "expectedLatestVersion": Type.Null() }, { additionalProperties: false }), Type.Object({ "publicationId": Type.Ref('Id'), "kind": Type.Ref('TypeId'), "schema": Type.Ref('SchemaRef'), "title": Type.Union([Type.Ref('ArtifactTitle'), Type.Null()]), "mediaType": Type.Union([Type.Ref('ArtifactMediaType'), Type.Null()]), "ownerActionRef": Type.Ref('ActionRef'), "artifactId": Type.Ref('Id'), "expectedLatestVersion": Type.Ref('ArtifactVersion') }, { additionalProperties: false })]),
   "ArtifactsPublishRequest": Type.Object({ "publicationId": Type.Ref('Id'), "source": Type.Ref('ArtifactSource'), "expectedRevision": Type.Ref('Revision'), "title": Type.Ref('ArtifactTitle'), "mediaType": Type.Ref('ArtifactMediaType') }, { additionalProperties: false }),
@@ -159,10 +165,6 @@ export const RuntimePublic14 = Type.Module({
   "PackageInstallerProposalStatusRequest": Type.Object({ "proposalId": Type.Ref('Id') }, { additionalProperties: false }),
   "PackageInstallerApplyResourceChangeRequest": Type.Object({ "proposalId": Type.Ref('Id'), "plan": Type.Ref('ResourceChangePlan'), "expectedProposalRevision": Type.Ref('Revision'), "approvalRef": Type.Ref('Id') }, { additionalProperties: false }),
   "PackageInstallerApplyResourceChangeResult": Type.Object({ "proposal": Type.Ref('ChangeProposal'), "receipt": Type.Ref('ReceiptPointer') }, { additionalProperties: false }),
-  "ConfigReadRequest": Type.Object({ "sourceRef": Type.Ref('Id'), "revision": Type.Union([Type.Ref('Revision'), Type.Null()]) }, { additionalProperties: false }),
-  "ConfigReadResult": Type.Object({ "documentRef": Type.Ref('DataRef'), "revision": Type.Ref('Revision'), "digest": Type.Ref('Digest') }, { additionalProperties: false }),
-  "AssemblyPlanRequest": Type.Object({ "configRef": Type.Ref('DataRef'), "lock": Type.Ref('PackageLock') }, { additionalProperties: false }),
-  "AssemblyPrepareRequest": Type.Object({ "graph": Type.Ref('AssemblyGraph') }, { additionalProperties: false }),
 })
 
 export const Id = RuntimePublic14.Import('Id')
@@ -281,8 +283,6 @@ export const ReleasePlan = RuntimePublic14.Import('ReleasePlan')
 export type ReleasePlan = Static<typeof ReleasePlan>
 export const ChangeProposal = RuntimePublic14.Import('ChangeProposal')
 export type ChangeProposal = Static<typeof ChangeProposal>
-export const ProviderBindingSnapshot = RuntimePublic14.Import('ProviderBindingSnapshot')
-export type ProviderBindingSnapshot = Static<typeof ProviderBindingSnapshot>
 export const AttemptRef = RuntimePublic14.Import('AttemptRef')
 export type AttemptRef = Static<typeof AttemptRef>
 export const Cursor = RuntimePublic14.Import('Cursor')
@@ -321,14 +321,28 @@ export const PackageLockEntry = RuntimePublic14.Import('PackageLockEntry')
 export type PackageLockEntry = Static<typeof PackageLockEntry>
 export const PackageLock = RuntimePublic14.Import('PackageLock')
 export type PackageLock = Static<typeof PackageLock>
-export const AssemblyGraph = RuntimePublic14.Import('AssemblyGraph')
-export type AssemblyGraph = Static<typeof AssemblyGraph>
 export const ChannelDestination = RuntimePublic14.Import('ChannelDestination')
 export type ChannelDestination = Static<typeof ChannelDestination>
 export const AuthenticatedCallback = RuntimePublic14.Import('AuthenticatedCallback')
 export type AuthenticatedCallback = Static<typeof AuthenticatedCallback>
 export const PageJobOccurrence = RuntimePublic14.Import('PageJobOccurrence')
 export type PageJobOccurrence = Page<JobOccurrence>
+export const JobsRequestCancelResult = RuntimePublic14.Import('JobsRequestCancelResult')
+export type JobsRequestCancelResult = Static<typeof JobsRequestCancelResult>
+export const JobsRequestReserveDetachedRequest = RuntimePublic14.Import('JobsRequestReserveDetachedRequest')
+export type JobsRequestReserveDetachedRequest = Static<typeof JobsRequestReserveDetachedRequest>
+export const JobsClaimOccurrenceRequest = RuntimePublic14.Import('JobsClaimOccurrenceRequest')
+export type JobsClaimOccurrenceRequest = Static<typeof JobsClaimOccurrenceRequest>
+export const JobsCompleteOccurrenceRequest = RuntimePublic14.Import('JobsCompleteOccurrenceRequest')
+export type JobsCompleteOccurrenceRequest = Static<typeof JobsCompleteOccurrenceRequest>
+export const JobsReserveDetachedRequest = RuntimePublic14.Import('JobsReserveDetachedRequest')
+export type JobsReserveDetachedRequest = Static<typeof JobsReserveDetachedRequest>
+export const JobsAttachDetachedRequest = RuntimePublic14.Import('JobsAttachDetachedRequest')
+export type JobsAttachDetachedRequest = Static<typeof JobsAttachDetachedRequest>
+export const JobsCancelDetachedRequest = RuntimePublic14.Import('JobsCancelDetachedRequest')
+export type JobsCancelDetachedRequest = Static<typeof JobsCancelDetachedRequest>
+export const JobsInspectRequest = RuntimePublic14.Import('JobsInspectRequest')
+export type JobsInspectRequest = Static<typeof JobsInspectRequest>
 export const JobsInspectResult = RuntimePublic14.Import('JobsInspectResult')
 export type JobsInspectResult = Omit<Static<typeof JobsInspectResult>, "occurrences"> & { "occurrences": PageJobOccurrence }
 export const ArtifactsReserveRequest = RuntimePublic14.Import('ArtifactsReserveRequest')
@@ -465,11 +479,3 @@ export const PackageInstallerApplyResourceChangeRequest = RuntimePublic14.Import
 export type PackageInstallerApplyResourceChangeRequest = Static<typeof PackageInstallerApplyResourceChangeRequest>
 export const PackageInstallerApplyResourceChangeResult = RuntimePublic14.Import('PackageInstallerApplyResourceChangeResult')
 export type PackageInstallerApplyResourceChangeResult = Static<typeof PackageInstallerApplyResourceChangeResult>
-export const ConfigReadRequest = RuntimePublic14.Import('ConfigReadRequest')
-export type ConfigReadRequest = Static<typeof ConfigReadRequest>
-export const ConfigReadResult = RuntimePublic14.Import('ConfigReadResult')
-export type ConfigReadResult = Static<typeof ConfigReadResult>
-export const AssemblyPlanRequest = RuntimePublic14.Import('AssemblyPlanRequest')
-export type AssemblyPlanRequest = Static<typeof AssemblyPlanRequest>
-export const AssemblyPrepareRequest = RuntimePublic14.Import('AssemblyPrepareRequest')
-export type AssemblyPrepareRequest = Static<typeof AssemblyPrepareRequest>

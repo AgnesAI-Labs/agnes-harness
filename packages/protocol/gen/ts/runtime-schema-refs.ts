@@ -9,8 +9,8 @@ function freeze<T>(value: T): T {
 export const RuntimeSchemaRefs = freeze({
   "PreparedModelRequest": {
     "typeId": "agh.model/prepared-request@1",
-    "revision": 3,
-    "digest": "79eacd35466bb81e4b12a7ffd360b67436270077ab801a024008813c24877ba8"
+    "revision": 4,
+    "digest": "1d363b186010ac72d6b942ecd450943e1e5de897ac18953671f951b96dd72628"
   },
   "EmbeddingVectors": {
     "typeId": "agh.embedding/vectors@1",
@@ -732,25 +732,25 @@ export const RuntimeMethodSchemaRefs = freeze({
     "prepare": {
       "input": {
         "typeId": "agh.model/prepare.request@1",
-        "revision": 3,
-        "digest": "65d3a1cb4efdf04c525cb607b76562ec74ff681cfaf723222cac319c572252a5"
+        "revision": 4,
+        "digest": "a5b0c00c0de54f74579da61f0bf410c4ea4168db29428d757b607b312420c7f1"
       },
       "output": {
         "typeId": "agh.model/prepare.response@1",
-        "revision": 2,
-        "digest": "41ab0bf444c987c1df97cc1b1e6c9216cb3bc931c2ccc3605c84599fde7ff382"
+        "revision": 3,
+        "digest": "5b203e917500b077197b6d889837572dbb87600d9d8d4078c80dba66254a3d8b"
       }
     },
     "prepareRequest": {
       "input": {
         "typeId": "agh.model/prepareRequest.request@1",
-        "revision": 3,
-        "digest": "24861fdd2922287e46e79f182641ea633c8d7bc75266e9f9963cd74a444c2b2f"
+        "revision": 4,
+        "digest": "c0a400765ccc44813d66284d830073812afb89c29ef71c82a95c92635c340c5a"
       },
       "output": {
         "typeId": "agh.model/prepareRequest.response@1",
-        "revision": 2,
-        "digest": "4ee1b1006305aa4368738f2702645916eb7a055371c8682e60612bbc68f9b67f"
+        "revision": 3,
+        "digest": "80f67c4e36d7b97be08f6ccd575be8f50ca00a822525ba213ab3b0fb4cb926b5"
       }
     },
     "infer": {
@@ -866,13 +866,13 @@ export const RuntimeMethodSchemaRefs = freeze({
     "select": {
       "input": {
         "typeId": "agh.routing/select.request@1",
-        "revision": 2,
-        "digest": "e194158e95af2158f5cddf38bfdaacbf5d3391c6e83a20d48786b9c78b79532a"
+        "revision": 3,
+        "digest": "e0dad8f5d28ca6826124158cd6496afc89a9515ded48194593068292c987f73d"
       },
       "output": {
         "typeId": "agh.routing/select.response@1",
-        "revision": 1,
-        "digest": "7a503fe7e1e224dde093732d7be6ad5f89de4be741b3da238a3a3f811d60cec9"
+        "revision": 2,
+        "digest": "eb08a582f1e598cdf6102e26a3a5498d0afb0880e27e6a77e0e4148eb57edfd1"
       }
     },
     "authorityFence": {
@@ -1560,8 +1560,8 @@ export const RuntimeMethodSchemaRefs = freeze({
     "catalog": {
       "input": {
         "typeId": "agh.tools/catalog.request@1",
-        "revision": 2,
-        "digest": "8cbb1f4b6e8aefb62f3b171e05250dc04b9ce36b8f8b93f5deea970c8e5119fa"
+        "revision": 3,
+        "digest": "e529a8e718d15c9f3c4bcd7201a34c6f0379509c9538d3b5818c010fb9df8415"
       },
       "output": {
         "typeId": "agh.tools/catalog.response@1",
@@ -1876,8 +1876,8 @@ export const RuntimeMethodSchemaRefs = freeze({
     "searchRemote": {
       "input": {
         "typeId": "agh.retrieval/searchRemote.request@1",
-        "revision": 1,
-        "digest": "48604527c6054932654e187ac9d83cc555fd6243d187ce19c5c3695b772a5762"
+        "revision": 2,
+        "digest": "8c31dd6db51cc9975b72df79d01f025bea0d98554a7c0d7a66b683ec0188b44f"
       },
       "output": {
         "typeId": "agh.retrieval/searchRemote.response@1",
@@ -1986,8 +1986,8 @@ export const RuntimeMethodSchemaRefs = freeze({
     "encode": {
       "input": {
         "typeId": "agh.embedding/encode.request@1",
-        "revision": 2,
-        "digest": "0fa02bfa5678ac2e791a549807a4bc03e2e18b95f6ec7148aec2ac27319d2e5c"
+        "revision": 3,
+        "digest": "03b5df3c42be5fb5399d4887238fd52dddce9c9f01644c95724a094febfad98f"
       },
       "output": {
         "typeId": "agh.embedding/encode.response@1",
