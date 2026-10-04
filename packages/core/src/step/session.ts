@@ -89,6 +89,7 @@ import type { ContractRef, DeriveOutput, RequestHeaderData } from '../request/de
 import { createEnvelopeCache, type EnvelopeCache } from '../request/envelope-cache.js'
 import { type EnvelopeEpochs, nonceFor, recordHeader } from '../request/envelope-epochs.js'
 import type { RequestBody as MintedRequestBody } from '../request/mint.js'
+import { validateUserMessageImages } from '../request/user-message-images.js'
 import type {
   CurrentRuntimeLookup,
   RuntimePromptPreload,
@@ -939,6 +940,11 @@ export class SessionImpl {
    * anchor and its tool arguments are addressed by.
    */
   enqueue(target: 'next-turn' | 'next-step', msg: EnqueueMsg): Promise<Seq> {
+    try {
+      validateUserMessageImages(msg.content)
+    } catch (error) {
+      return Promise.reject(error)
+    }
     return this.locked(async () => {
       if (msg.budget !== undefined) {
         if (target !== 'next-turn')

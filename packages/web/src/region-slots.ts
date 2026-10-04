@@ -33,6 +33,7 @@ import {
   Conversation,
   type ConversationChildContainers,
   type ConversationHandle,
+  downscaleImageFile,
   EMPTY_SIDEBAR_STATE,
   PANE_IDS,
   SETTINGS_DSH_SLOT_NAMES,
@@ -86,6 +87,7 @@ const COMPOSER_DEPENDENCIES: Omit<ComposerDependencies, 'translate'> = {
   createModelPicker,
   createPermissionPicker,
   createUsagePanel,
+  downscaleImage: downscaleImageFile,
   UsagePanel: ConversationUsage,
   isSubmitShortcut: isComposerSubmitShortcut,
   resize: resizeComposer,
@@ -638,6 +640,7 @@ export function mountComposerRegion(
     },
     () => createElement(SlotOutlet, { name: 'conversation.composer.bar' }),
   )
+  const removeSessionListener = registry.subscribeSession(() => handle.current?.clearImageBlocks())
   const root = createAntdRoot(container)
   flushSync(() => {
     root.render(
@@ -656,9 +659,21 @@ export function mountComposerRegion(
     getDraft() {
       return handle.current?.getDraft() ?? draft
     },
+    getImageBlocks() {
+      return handle.current?.getImageBlocks() ?? []
+    },
+    hasPendingImages() {
+      return handle.current?.hasPendingImages() ?? false
+    },
     render(next) {
       view = next
       handle.current?.render(next)
+    },
+    clearImageBlocks() {
+      handle.current?.clearImageBlocks()
+    },
+    restoreImageBlocks(images) {
+      handle.current?.restoreImageBlocks(images)
     },
     resize() {
       handle.current?.resize()
@@ -671,6 +686,7 @@ export function mountComposerRegion(
       if (disposed) return
       disposed = true
       root.unmount()
+      removeSessionListener()
       removeBuiltin()
       removeDshBarBuiltin()
       ownedShell?.dispose()

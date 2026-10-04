@@ -1,13 +1,21 @@
-import type { ModelSettings, UIPendingInput, UsageView } from '@agnes/protocol'
-import { ModelSettingsDialog } from '@agnes/web-ui'
+import type { ContentBlock, ModelSettings, ThinkingLevel, UIPendingInput, UsageView } from '@agnes/protocol'
 import {
+  decodeSafeImageBytes,
+  decodeSafeImages,
+  USER_MESSAGE_IMAGE_LIMITS,
+  USER_MESSAGE_IMAGE_MAX_COUNT,
+} from '@agnes/protocol-validation'
+import {
+  type ClipboardEvent,
   type ComponentType,
   createElement,
+  type DragEvent,
   type FormEvent,
   type ForwardedRef,
   forwardRef,
   type KeyboardEvent,
   type ReactNode,
+  useCallback,
   useImperativeHandle,
   useLayoutEffect,
   useRef,
@@ -23,6 +31,14 @@ export type ModelPickerOption = {
   /** 模型声明的「档位 → provider 取值」映射；缺省表示任意合法档位都接受。 */
   thinkingLevelMap?: Record<string, string>
 }
+/** 面板里「思考强度」与「上下文预算」两段的会话现状；字段与宿主侧 ModelPickerSettings 对齐。 */
+export type ModelPickerSettings = {
+  thinking?: ThinkingLevel
+  contextWindow?: number
+  /** 模型目录容量，同时是预算校验的上界。 */
+  capacity: number
+  thinkingLevelMap?: Record<string, string>
+}
 export type ModelPickerState = {
   accessibleName: string
   disabled: boolean
@@ -30,12 +46,14 @@ export type ModelPickerState = {
   options: readonly ModelPickerOption[]
   pending: boolean
   selected?: ModelPickerOption
+  settings?: ModelPickerSettings
 }
 export type ModelPicker = {
   destroy(): void
   render(state: ModelPickerState): void
 }
 export type PermissionMode = 'view' | 'workspace' | 'full'
+export type ComposerImageBlock = Extract<ContentBlock, { type: 'image' }>
 export type PermissionPickerState = { disabled: boolean; pending: boolean; selected: PermissionMode | null }
 export type PermissionPicker = {
   destroy(): void
@@ -50,6 +68,8 @@ export interface ComposerDependencies {
     trigger: HTMLButtonElement
     onError(error: unknown): void
     onSelect(option: ModelPickerOption): Promise<boolean>
+    /** 面板内改档位或预算时的提交口；缺省时面板只渲染模型列表。 */
+    onSettingsChange?(settings: ModelSettings): Promise<boolean>
   }): ModelPicker
   createPermissionPicker(options: {
     trigger: HTMLButtonElement
@@ -62,6 +82,8 @@ export interface ComposerDependencies {
   ): ((usage: UsageView | undefined, connected: boolean) => void) & {
     dispose?(): void
   }
+  /** 上传前把超出模型视觉上限的图片缩小；缺省时按原图发送。 */
+  downscaleImage?(file: File): Promise<File>
   /** Component injection keeps production usage in the composer root; factories remain compatible. */
   UsagePanel?: ComponentType<{ usage: UsageView | undefined; connected: boolean; t?: Translate }>
   isSubmitShortcut(event: {
@@ -85,8 +107,8 @@ export interface ComposerView {
   loading: boolean
   model: ModelPickerState
   modelSettings?: {
-    key: string
     settings: ModelSettings
+    /** 模型目录容量，不是本会话已保存的预算。 */
     contextWindow: number
     thinkingLevelMap?: Record<string, string> | undefined
   }
@@ -100,9 +122,13 @@ export interface ComposerView {
 }
 
 export interface ComposerHandle {
+  clearImageBlocks(): void
   focus(): void
   getDraft(): string
+  getImageBlocks(): readonly ComposerImageBlock[]
+  hasPendingImages(): boolean
   render(view: ComposerView): void
+  restoreImageBlocks(images: readonly ComposerImageBlock[]): void
   resize(): void
   setDraft(value: string): void
 }
@@ -110,6 +136,7 @@ export interface ComposerHandle {
 export interface ComposerRegionOptions {
   initialDraft?: string
   onCancel(): void
+  onAttachmentsChange?(): void
   onDraftChange(value: string): void
   onError(error: unknown): void
   onModelSelect(option: ModelPickerOption): Promise<boolean>
@@ -129,6 +156,23 @@ export interface ComposerSlots {
   permission?: ReactNode
   plan?: ReactNode
   right?: ReactNode
+}
+
+/** 会话设置只在已知模型上有值；缺失时面板退化成纯模型列表。 */
+function pickerState(view: ComposerView): ModelPickerState {
+  const settings = view.modelSettings
+  if (!settings) return view.model
+  return {
+    ...view.model,
+    settings: {
+      ...(settings.settings.thinking ? { thinking: settings.settings.thinking } : {}),
+      ...(settings.settings.contextWindow === undefined
+        ? {}
+        : { contextWindow: settings.settings.contextWindow }),
+      capacity: settings.contextWindow,
+      ...(settings.thinkingLevelMap ? { thinkingLevelMap: settings.thinkingLevelMap } : {}),
+    },
+  }
 }
 
 const INITIAL_VIEW: ComposerView = {
@@ -160,12 +204,70 @@ interface ComposerProps extends ComposerRegionOptions {
   slots?: ComposerSlots
 }
 
+type ComposerAttachment = ComposerImageBlock & { id: string; previewUrl: string; size: number }
+
+const MAX_IMAGE_COUNT = USER_MESSAGE_IMAGE_MAX_COUNT
+const MAX_IMAGE_BYTES = USER_MESSAGE_IMAGE_LIMITS.maxBytesPerImage
+const MAX_TOTAL_IMAGE_BYTES = USER_MESSAGE_IMAGE_LIMITS.maxAggregateBytes
+const IMAGE_PREVIEW_LIMITS = USER_MESSAGE_IMAGE_LIMITS
+
+/** 模型视觉输入的长边上限；超出的像素模型本来也读不到，上传前先缩掉，免得整张被尺寸闸拒。 */
+const IMAGE_MAX_EDGE = 1456
+
+/**
+ * 把长边超过 IMAGE_MAX_EDGE 的图片缩到该边长，格式和文件名保持不变。只对超限的图动手；
+ * canvas 不可用或编码失败时原样返回，交给服务端按原图判定。
+ */
+export async function downscaleImageFile(file: File): Promise<File> {
+  // 有些 DOM 实现没有位图解码（测试环境就是），那种情况下按原图走，交给服务端判定。
+  if (typeof createImageBitmap !== 'function') return file
+  let bitmap: ImageBitmap
+  try {
+    bitmap = await createImageBitmap(file)
+  } catch {
+    // 文件本身解不开时也按原图走：拒绝与否由服务端的格式校验决定，这里不下结论。
+    return file
+  }
+  try {
+    const longest = Math.max(bitmap.width, bitmap.height)
+    if (longest <= IMAGE_MAX_EDGE) return file
+    const ratio = IMAGE_MAX_EDGE / longest
+    const canvas = document.createElement('canvas')
+    canvas.width = Math.max(1, Math.round(bitmap.width * ratio))
+    canvas.height = Math.max(1, Math.round(bitmap.height * ratio))
+    const context = canvas.getContext('2d')
+    if (!context) return file
+    context.drawImage(bitmap, 0, 0, canvas.width, canvas.height)
+    // PNG 会忽略质量参数，JPEG 用它。保持原格式，避免截图上的小字被有损编码糊掉。
+    const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, file.type, 0.92))
+    if (!blob) return file
+    return new File([blob], file.name, { type: file.type })
+  } finally {
+    bitmap.close()
+  }
+}
+
+async function readImage(file: File): Promise<{ data: string; bytes: Uint8Array }> {
+  const bytes = new Uint8Array(await file.arrayBuffer())
+  let binary = ''
+  for (let offset = 0; offset < bytes.length; offset += 0x8000)
+    binary += String.fromCharCode(...bytes.subarray(offset, offset + 0x8000))
+  return { data: btoa(binary), bytes }
+}
+
+function blobBytes(bytes: Uint8Array): ArrayBuffer {
+  const copy = new ArrayBuffer(bytes.byteLength)
+  new Uint8Array(copy).set(bytes)
+  return copy
+}
+
 export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Composer(
   {
     initialDraft = '',
     initialView = INITIAL_VIEW,
     dependencies,
     onCancel,
+    onAttachmentsChange,
     onDraftChange,
     onError,
     onModelSelect,
@@ -179,6 +281,8 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
   ref: ForwardedRef<ComposerHandle>,
 ) {
   const [view, setView] = useState<ComposerView>(initialView)
+  const [attachments, setAttachments] = useState<ComposerAttachment[]>([])
+  const [pendingCount, setPendingCount] = useState(0)
   const form = useRef<HTMLFormElement>(null)
   const prompt = useRef<HTMLTextAreaElement>(null)
   const model = useRef<HTMLButtonElement>(null)
@@ -187,19 +291,205 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
   const modelPicker = useRef<ModelPicker>()
   const permissionPicker = useRef<PermissionPicker>()
   const renderUsage = useRef<ReturnType<ComposerDependencies['createUsagePanel']>>()
+  const attachmentsRef = useRef<ComposerAttachment[]>([])
+  const generation = useRef(0)
+  const nextAttachmentId = useRef(0)
+  const pendingCountRef = useRef(0)
+  const pendingBytes = useRef(0)
+
+  const publishAttachments = useCallback(
+    (next: ComposerAttachment[]): void => {
+      attachmentsRef.current = next
+      setAttachments(next)
+      onAttachmentsChange?.()
+    },
+    [onAttachmentsChange],
+  )
+
+  const clearImageBlocks = useCallback((): void => {
+    generation.current += 1
+    pendingCountRef.current = 0
+    pendingBytes.current = 0
+    setPendingCount(0)
+    for (const attachment of attachmentsRef.current) URL.revokeObjectURL(attachment.previewUrl)
+    publishAttachments([])
+  }, [publishAttachments])
+
+  const restoreImageBlocks = useCallback(
+    (images: readonly ComposerImageBlock[]): void => {
+      clearImageBlocks()
+      if (images.length > MAX_IMAGE_COUNT) return
+      let decoded: ReturnType<typeof decodeSafeImages>
+      try {
+        decoded = decodeSafeImages(images, IMAGE_PREVIEW_LIMITS)
+      } catch {
+        return
+      }
+
+      const restored: ComposerAttachment[] = []
+      try {
+        for (const [index, image] of images.entries()) {
+          const bytes = decoded[index]?.bytes
+          if (!bytes) throw new Error('validated image bytes are unavailable')
+          const blob = new Blob([blobBytes(bytes)], { type: image.mimeType })
+          restored.push({
+            ...image,
+            id: `restored-${++nextAttachmentId.current}`,
+            previewUrl: URL.createObjectURL(blob),
+            size: bytes.byteLength,
+          })
+        }
+      } catch {
+        for (const attachment of restored) URL.revokeObjectURL(attachment.previewUrl)
+        return
+      }
+      publishAttachments(restored)
+    },
+    [clearImageBlocks, publishAttachments],
+  )
+
+  const addFiles = async (files: readonly File[]): Promise<void> => {
+    if (view.sending) return
+    const t = dependencies.translate
+    // 这张表用于把「内容不是图片」与「读不出来」区分开，所以文案只算一次再比对。
+    const invalidImage = t('composer.image.invalid')
+    const accepted: File[] = []
+    let candidateBytes = 0
+    for (const file of files) {
+      if (file.type !== 'image/png' && file.type !== 'image/jpeg') {
+        onError(new Error(t('composer.image.invalidType')))
+        continue
+      }
+      if (file.size < 1 || file.size > MAX_IMAGE_BYTES) {
+        onError(new Error(t('composer.image.tooLarge')))
+        continue
+      }
+      if (attachmentsRef.current.length + pendingCountRef.current + accepted.length >= MAX_IMAGE_COUNT) {
+        onError(new Error(t('composer.image.tooMany')))
+        continue
+      }
+      if (
+        attachmentsRef.current.reduce((sum, image) => sum + image.size, 0) +
+          pendingBytes.current +
+          candidateBytes +
+          file.size >
+        MAX_TOTAL_IMAGE_BYTES
+      ) {
+        onError(new Error(t('composer.image.tooLarge')))
+        continue
+      }
+      accepted.push(file)
+      candidateBytes += file.size
+    }
+    if (accepted.length === 0) return
+
+    const readGeneration = generation.current
+    pendingCountRef.current += accepted.length
+    pendingBytes.current += candidateBytes
+    setPendingCount(pendingCountRef.current)
+    onAttachmentsChange?.()
+
+    await Promise.all(
+      accepted.map(async (file) => {
+        try {
+          const scaled = dependencies.downscaleImage ? await dependencies.downscaleImage(file) : file
+          const { data, bytes } = await readImage(scaled)
+          if (readGeneration !== generation.current) return
+          try {
+            decodeSafeImageBytes({ bytes, mimeType: scaled.type }, IMAGE_PREVIEW_LIMITS)
+          } catch {
+            throw new Error(invalidImage)
+          }
+          const attachment: ComposerAttachment = {
+            type: 'image',
+            data,
+            mimeType: scaled.type,
+            id: `image-${++nextAttachmentId.current}`,
+            previewUrl: URL.createObjectURL(scaled),
+            size: scaled.size,
+          }
+          publishAttachments([...attachmentsRef.current, attachment])
+        } catch (error) {
+          if (readGeneration === generation.current)
+            onError(
+              error instanceof Error && error.message === invalidImage
+                ? error
+                : new Error(t('composer.image.readFailed')),
+            )
+        } finally {
+          if (readGeneration === generation.current) {
+            pendingCountRef.current -= 1
+            pendingBytes.current -= file.size
+            setPendingCount(pendingCountRef.current)
+            onAttachmentsChange?.()
+          }
+        }
+      }),
+    )
+  }
+
+  const removeImage = (id: string): void => {
+    const removed = attachmentsRef.current.find((attachment) => attachment.id === id)
+    if (!removed) return
+    URL.revokeObjectURL(removed.previewUrl)
+    publishAttachments(attachmentsRef.current.filter((attachment) => attachment.id !== id))
+  }
+
+  const handlePaste = (event: ClipboardEvent<HTMLTextAreaElement>): void => {
+    const clipboard = event.clipboardData
+    const itemFiles: File[] = []
+    for (const item of Array.from(clipboard.items)) {
+      if (item.kind !== 'file') continue
+      const file = item.getAsFile()
+      if (file) itemFiles.push(file)
+    }
+    const files = itemFiles.length > 0 ? itemFiles : Array.from(clipboard.files)
+    if (files.length === 0) return
+    event.preventDefault()
+    const text = clipboard.getData('text/plain')
+    if (text) {
+      const textarea = event.currentTarget
+      textarea.setRangeText(text, textarea.selectionStart, textarea.selectionEnd, 'end')
+      textarea.dispatchEvent(new Event('input', { bubbles: true }))
+    }
+    void addFiles(files)
+  }
+
+  const handleDrop = (event: DragEvent<HTMLFormElement>): void => {
+    if (event.dataTransfer.files.length === 0) return
+    event.preventDefault()
+    void addFiles(Array.from(event.dataTransfer.files))
+  }
+
+  useLayoutEffect(
+    () => () => {
+      generation.current += 1
+      for (const attachment of attachmentsRef.current) URL.revokeObjectURL(attachment.previewUrl)
+      attachmentsRef.current = []
+    },
+    [],
+  )
 
   useImperativeHandle(
     ref,
     () => ({
+      clearImageBlocks,
       focus() {
         prompt.current?.focus()
       },
       getDraft() {
         return prompt.current?.value ?? ''
       },
+      getImageBlocks() {
+        return attachmentsRef.current.map(({ type, data, mimeType }) => ({ type, data, mimeType }))
+      },
+      hasPendingImages() {
+        return pendingCountRef.current > 0
+      },
       render(next) {
         flushSync(() => setView(next))
       },
+      restoreImageBlocks,
       resize() {
         if (prompt.current) dependencies.resize(prompt.current)
       },
@@ -209,7 +499,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
         dependencies.resize(prompt.current)
       },
     }),
-    [dependencies.resize],
+    [dependencies.resize, clearImageBlocks, restoreImageBlocks],
   )
 
   useLayoutEffect(() => {
@@ -218,6 +508,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
       trigger: model.current,
       onError,
       onSelect: onModelSelect,
+      ...(onModelSettingsChange ? { onSettingsChange: onModelSettingsChange } : {}),
     })
     permissionPicker.current = dependencies.createPermissionPicker({
       trigger: permission.current,
@@ -234,11 +525,11 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
       renderUsage.current?.dispose?.()
       renderUsage.current = undefined
     }
-  }, [dependencies, onError, onModelSelect, onPermissionSelect])
+  }, [dependencies, onError, onModelSelect, onModelSettingsChange, onPermissionSelect])
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: the preceding effect replaces handles when these inputs change.
   useLayoutEffect(() => {
-    modelPicker.current?.render(view.model)
+    modelPicker.current?.render(pickerState(view))
     permissionPicker.current?.render(view.permission)
     renderUsage.current?.(view.usage, view.connected)
   }, [view, dependencies, onError, onModelSelect, onPermissionSelect])
@@ -251,6 +542,10 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
       'data-agnes-region': 'composer',
       'data-agnes-region-owner': 'builtin',
       'data-agnes-region-unit': 'composer',
+      onDragOver: (event: DragEvent<HTMLFormElement>) => {
+        if (event.dataTransfer.types.includes('Files')) event.preventDefault()
+      },
+      onDrop: handleDrop,
       onSubmit: (event: SubmitEvent) => {
         event.preventDefault()
         onSubmit()
@@ -309,6 +604,48 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
             : null,
         )
       : null,
+    // 待发图片排在输入文字上方：文字行数增长时图片不会被顶出视野。空态由 CSS 收掉
+    // （style.css 的 :has 规则），这里不额外做条件渲染。
+    createElement(
+      'div',
+      { className: 'composer-image-attachments' },
+      createElement(
+        'div',
+        {
+          className: 'composer-image-preview-list',
+          'aria-label': dependencies.translate('composer.image.limit'),
+          'aria-live': 'polite',
+        },
+        ...attachments.map((attachment, index) =>
+          createElement(
+            'figure',
+            { className: 'composer-image-preview', key: attachment.id },
+            createElement('img', {
+              src: attachment.previewUrl,
+              alt: dependencies.translate('composer.image.alt', { index: index + 1 }),
+            }),
+            createElement(
+              'button',
+              {
+                type: 'button',
+                'data-remove-image': true,
+                'aria-label': dependencies.translate('composer.image.remove', { index: index + 1 }),
+                disabled: view.sending,
+                onClick: () => removeImage(attachment.id),
+              },
+              '×',
+            ),
+          ),
+        ),
+        pendingCount > 0
+          ? createElement(
+              'span',
+              { className: 'composer-image-pending', role: 'status' },
+              dependencies.translate('composer.image.reading'),
+            )
+          : undefined,
+      ),
+    ),
     createElement(
       'div',
       { className: 'composer-writing' },
@@ -342,6 +679,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
           form.current?.requestSubmit()
         },
         onInput: (event: FormEvent<HTMLTextAreaElement>) => onDraftChange(event.currentTarget.value),
+        onPaste: handlePaste,
       }),
       createElement('p', { id: 'composer-hint', 'data-kind': view.hint.kind }, view.hint.text),
       slots?.attachments,
@@ -451,14 +789,6 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
           ),
         ),
       ),
-      view.modelSettings && onModelSettingsChange
-        ? createElement(ModelSettingsDialog, {
-            ...view.modelSettings,
-            disabled: view.model.disabled || view.model.pending,
-            onApply: onModelSettingsChange,
-            t: dependencies.translate,
-          })
-        : undefined,
       createElement(
         'section',
         {

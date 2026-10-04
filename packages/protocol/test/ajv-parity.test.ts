@@ -1924,7 +1924,8 @@ const AGNES_SAMPLES: Record<string, Sample> = {
       { sessionId: 's', maxNodes: 0 },
       { sessionId: 's', maxNodes: 501 },
       { sessionId: 's', maxBytes: 16_383 },
-      { sessionId: 's', maxBytes: 1_048_577 },
+      // 投影读取上限已由 1 MiB 提到 2 MiB，越界值跟着上移一位。
+      { sessionId: 's', maxBytes: 2_097_153 },
       { sessionId: 's', surface: 'ide' },
     ],
     note: 'opening request has closed surface plus bounded node and byte budgets',
@@ -1941,7 +1942,7 @@ const AGNES_SAMPLES: Record<string, Sample> = {
       { sessionId: 's', cursor: '' },
       { sessionId: 's', cursor: 'c', limit: 0 },
       { sessionId: 's', cursor: 'c', limit: 201 },
-      { sessionId: 's', cursor: 'c', maxBytes: 1_048_577 },
+      { sessionId: 's', cursor: 'c', maxBytes: 2_097_153 }, // 同上：上限 2 MiB 之上的越界值
     ],
     note: 'history reads require an opaque cursor and clamp caller node/byte budgets',
   },

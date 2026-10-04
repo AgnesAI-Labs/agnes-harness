@@ -200,17 +200,17 @@ describe('UIProjectionSync options', () => {
   it('passes surface, opening bounds and the history page size, and keeps the TUI defaults otherwise', async () => {
     vi.useFakeTimers()
     const h = harness(
-      { surface: 'web', opening: { maxNodes: 500, maxBytes: 1_048_576 }, historyLimit: 7 },
+      { surface: 'web', opening: { maxNodes: 500, maxBytes: 2_097_152 }, historyLimit: 7 },
       open(4, [text('a', 4)], { hasEarlier: true, startIndex: 3, totalNodes: 4, cursor: 'c' as never }),
     )
     await h.sync.start()
-    expect(h.projectUIOpening).toHaveBeenCalledWith({ surface: 'web', maxNodes: 500, maxBytes: 1_048_576 })
+    expect(h.projectUIOpening).toHaveBeenCalledWith({ surface: 'web', maxNodes: 500, maxBytes: 2_097_152 })
     await h.emit({ seq: 5 })
     await vi.advanceTimersByTimeAsync(50)
     expect(h.projectUIPatch).toHaveBeenLastCalledWith(4, undefined, { surface: 'web' })
     void h.sync.loadEarlier()
     await vi.advanceTimersByTimeAsync(0)
-    expect(h.projectUIHistory).toHaveBeenCalledWith('c', { limit: 7 })
+    expect(h.projectUIHistory).toHaveBeenCalledWith('c', { limit: 7, maxBytes: 2_097_152 })
     await h.sync.stop()
   })
 
