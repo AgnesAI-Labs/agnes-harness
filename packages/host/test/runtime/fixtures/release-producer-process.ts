@@ -5,10 +5,19 @@ import { producerTestContext } from './release-producer-input.js'
 import { producerCommitFixture } from './release-producer-port.js'
 
 const [mode, root] = process.argv.slice(2)
-if (!root || (mode !== 'publish' && mode !== 'recover')) throw new Error('fixture arguments')
+if (!root || (mode !== 'publish' && mode !== 'staged' && mode !== 'recover'))
+  throw new Error('fixture arguments')
 const lock = JSON.parse(readFileSync(join(root, 'child-lock.json'), 'utf8'))
 const database = producerCommitFixture(join(root, 'publication.sqlite'), lock.producer, {
   readonly: mode === 'recover',
+  ...(mode === 'staged'
+    ? {
+        beforeCommit() {
+          process.send?.({ staged: true, pid: process.pid })
+          Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0)
+        },
+      }
+    : {}),
   ...(mode === 'publish'
     ? {
         afterCommit() {
@@ -22,7 +31,7 @@ const database = producerCommitFixture(join(root, 'publication.sqlite'), lock.pr
 const producer = createReleaseProducer(join(root, 'deployment'), database.port)
 try {
   const result =
-    mode === 'publish'
+    mode !== 'recover'
       ? await producer.publish(producerTestContext())
       : await producer.recover(lock.transactionId, producerTestContext())
   await new Promise<void>((resolve, reject) => {

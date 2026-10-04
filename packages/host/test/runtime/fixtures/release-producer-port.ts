@@ -1,3 +1,5 @@
+import { existsSync, mkdirSync } from 'node:fs'
+import { dirname, join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import type { MaintenanceStore, Outcome } from '@agnes/extension-api/runtime'
 import { jcs } from '@agnes/protocol'
@@ -7,6 +9,8 @@ import {
   type ProducerPublication,
   type ReleaseProducerCommitPort,
 } from '../../../src/runtime/assembly/release-producer.js'
+import { createPublicationObjectStore } from '../../../src/runtime/assembly/release-producer-storage.js'
+import { createBlobService } from '../../../src/runtime/providers/blob.js'
 import { fixtureHash, fixtureWire } from './assembly-maintenance-wire.js'
 import { producerTestAuthority, producerTestContext } from './release-producer-input.js'
 
@@ -14,13 +18,36 @@ import { producerTestAuthority, producerTestContext } from './release-producer-i
 export function producerCommitFixture(
   file: string,
   producer: ReleaseProducerCommitPort['producer'],
-  options: { readonly?: boolean; reverseReceipt?: boolean; afterCommit?: () => void } = {},
+  options: {
+    readonly?: boolean
+    reverseReceipt?: boolean
+    afterCommit?: () => void
+    beforeCommit?: () => void
+  } = {},
 ) {
   const db = new DatabaseSync(file, { readOnly: options.readonly ?? false })
   if (!options.readonly)
     db.exec(`PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL;
     CREATE TABLE IF NOT EXISTS records(id TEXT PRIMARY KEY, body TEXT NOT NULL);
-    CREATE TABLE IF NOT EXISTS publications(id TEXT PRIMARY KEY, fingerprint TEXT NOT NULL, request TEXT NOT NULL, receipt TEXT NOT NULL, source TEXT NOT NULL, contents TEXT NOT NULL);`)
+    CREATE TABLE IF NOT EXISTS publications(id TEXT PRIMARY KEY, fingerprint TEXT NOT NULL, request TEXT NOT NULL, receipt TEXT NOT NULL, source TEXT NOT NULL);`)
+  const objectDirectory = join(dirname(file), 'publication-objects')
+  if (!options.readonly) mkdirSync(objectDirectory, { mode: 0o700, recursive: true })
+  else if (!existsSync(join(objectDirectory, 'artifacts', 'blob-service.db')))
+    throw new Error('original_object_store_missing')
+  const owner = {
+    kind: 'artifact' as const,
+    value: { artifactId: 'synthetic-publication-owner', version: 1 },
+  }
+  const blob = createBlobService({
+    dataDir: objectDirectory,
+    authorityId: 'fixture-publication-cas',
+    binding: producer,
+    now: () => Date.parse(now),
+    authorizeRead: (context) =>
+      context.authorizationRef === producerTestContext().authorizationRef &&
+      jcs(context.scope) === jcs(producerTestContext().scope),
+  })
+  const objects = createPublicationObjectStore(blob, owner)
   const receipts = new WeakSet<MaintenanceStoreCommitResult>()
   let closed = false,
     now = '2026-10-03T00:00:00Z'
@@ -46,16 +73,10 @@ export function producerCommitFixture(
     }
     if (fixtureHash(request) !== row.fingerprint) throw new Error('original_commit_mismatch')
     receipts.add(receipt)
-    const contents = JSON.parse(String(row.contents)) as {
-      kind: 'json' | 'bytes'
-      digest: string
-      body: string
-    }[]
     return {
       request,
       receipt,
       source: fixtureWire('DataRef', JSON.parse(String(row.source))),
-      contents: contents.map((item) => ({ ...item, body: Buffer.from(item.body, 'base64') })),
     }
   }
   const store: MaintenanceStore = {
@@ -71,6 +92,7 @@ export function producerCommitFixture(
         return fixtureHash(existing.request) === fixtureHash(parsed)
           ? { ok: true, value: existing.receipt }
           : fail('maintenance_transaction_conflict')
+      options.beforeCommit?.()
       db.exec('BEGIN IMMEDIATE')
       try {
         for (const mutation of parsed.mutations) {
@@ -88,15 +110,12 @@ export function producerCommitFixture(
           transactionId: parsed.transactionId,
           revisions,
         })
-        db.prepare('INSERT INTO publications VALUES(?,?,?,?,?,?)').run(
+        db.prepare('INSERT INTO publications VALUES(?,?,?,?,?)').run(
           parsed.transactionId,
           fixtureHash(parsed),
           jcs(parsed),
           jcs(receipt),
           jcs(original.source),
-          JSON.stringify(
-            original.contents.map((item) => ({ ...item, body: Buffer.from(item.body).toString('base64') })),
-          ),
         )
         db.exec('COMMIT')
         receipts.add(receipt)
@@ -109,6 +128,7 @@ export function producerCommitFixture(
     },
   }
   const port: ReleaseProducerCommitPort = {
+    objects,
     store,
     authority: { authorityId: 'fixture-maintenance', tenantId: 'fixture-tenant', authorityEpoch: 1 },
     stateAuthority: producerTestAuthority,
@@ -127,6 +147,9 @@ export function producerCommitFixture(
   return {
     port,
     db,
+    blob,
+    objectDirectory,
+    owner,
     setNow(value: string) {
       now = value
     },
@@ -136,6 +159,7 @@ export function producerCommitFixture(
     close() {
       if (!closed) {
         closed = true
+        blob.close()
         db.close()
       }
     },

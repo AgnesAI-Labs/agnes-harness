@@ -13,7 +13,7 @@ import { maintenanceOutcome } from './maintenance-journal.js'
 import { equal, freeze, readWire, requireRelease } from './primitives.js'
 import {
   createReleaseProducer,
-  publicationRequest,
+  prepareReleaseProducerPublication,
   type ReleaseProducerCommitPort,
 } from './release-producer.js'
 import { captureReleaseProducerContents } from './release-producer-contents.js'
@@ -87,6 +87,7 @@ const occurrences = new WeakMap<
     request: MaintenanceStoreCommitRequest
     context: CallContext
     captured: Capture
+    references: Awaited<ReturnType<typeof prepareReleaseProducerPublication>>['references']
     used: boolean
   }
 >()
@@ -96,12 +97,12 @@ export interface InstalledReleaseProducer {
   readonly identityExpiresAt: string
   readonly initialFacts: ReleaseProducerFacts
   readonly initialContext: CallContext
-  prepareOriginal(): {
-    request: MaintenanceStoreCommitRequest
-    captured: Capture
-    occurrence: ReleaseProducerOccurrence
-    prepared: unknown
-  }
+  prepareOriginal(): Promise<
+    Awaited<ReturnType<typeof prepareReleaseProducerPublication>> & {
+      occurrence: ReleaseProducerOccurrence
+      prepared: unknown
+    }
+  >
 }
 
 function contextSlots(context: CallContext) {
@@ -223,6 +224,7 @@ export function issueReleaseProducerOccurrence(
   request: MaintenanceStoreCommitRequest,
   context: CallContext,
   captured: Capture,
+  references: Awaited<ReturnType<typeof prepareReleaseProducerPublication>>['references'],
 ): ReleaseProducerOccurrence {
   const original = originalInstallation(installed.installation)
   requireRelease(
@@ -250,6 +252,7 @@ export function issueReleaseProducerOccurrence(
     request,
     context,
     captured,
+    references,
     used: false,
   })
   return occurrence
@@ -287,6 +290,7 @@ export function captureReleaseProducerOccurrence(
     installation,
     factory: originalFactory,
     contextEvidence: original.selection.originalContextEvidence,
+    references: structuredClone(row.references),
     payload: structuredClone(row.captured.payload),
     qualifiedUntil: row.captured.payload.qualifiedUntil,
     contents: row.captured.contents.map((item) => ({ ...item, body: Buffer.from(item.body) })),
@@ -402,23 +406,25 @@ export async function installReleaseProducer(
         originalInstallation(installation)
         captureResolvedProducerSource(facts)
         if (prepared) return prepared
-        const request = publicationRequest(facts, selection.port)
-        const captured = captureReleaseProducerContents(
-          facts,
-          request,
-          selection.port,
-          selection.identityExpiresAt,
-          selection.originalContext.deadline,
-        )
-        const occurrence = issueReleaseProducerOccurrence(
-          installed,
-          facts,
-          request,
-          selection.originalContext,
-          captured,
-        )
-        const result = issuer.prepare(request, selection.originalContext, occurrence)
-        prepared = { request, captured, occurrence, prepared: result }
+        prepared = (async () => {
+          const external = await prepareReleaseProducerPublication(
+            facts,
+            selection.port,
+            selection.originalContext,
+            selection.identityExpiresAt,
+          )
+          originalInstallation(installation)
+          const occurrence = issueReleaseProducerOccurrence(
+            installed,
+            facts,
+            external.request,
+            selection.originalContext,
+            external.captured,
+            external.references,
+          )
+          const result = await issuer.prepare(external.request, selection.originalContext, occurrence)
+          return { ...external, occurrence, prepared: result }
+        })()
         return prepared
       },
     }
@@ -450,7 +456,7 @@ export async function installReleaseProducer(
       },
       captureOriginalPublication() {
         return maintenanceOutcome(async () => {
-          const result = installed.prepareOriginal()
+          const result = await installed.prepareOriginal()
           return Object.freeze({
             request: result.request,
             context: selection.originalContext,

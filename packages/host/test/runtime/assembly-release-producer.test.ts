@@ -11,6 +11,7 @@ import {
 } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { DatabaseSync } from 'node:sqlite'
 import { pathToFileURL } from 'node:url'
 import { afterEach, describe, expect, it } from 'vitest'
 import { ProtectedDeployment } from '../../src/runtime/assembly/protected-deployment.js'
@@ -23,6 +24,11 @@ import {
   captureReleaseProducerOccurrence,
   installReleaseProducer,
 } from '../../src/runtime/assembly/release-producer-installation.js'
+import {
+  encodeExternalPublicationReferences,
+  readExternalPublicationManifest,
+  readExternalPublicationReferences,
+} from '../../src/runtime/assembly/release-producer-reference-codec.js'
 import {
   assemblyDigest,
   assemblyGraphDigest,
@@ -88,11 +94,12 @@ async function installationInput(value: Awaited<ReturnType<typeof setup>>) {
 }
 
 describe.runIf(process.platform !== 'win32')('private release source producer', () => {
-  it('installs a real factory and captures all original bytes while refusing unsupported formal issuance', async () => {
+  it('installs a real factory, externalizes all original bytes and preserves prepare and receipt pointers', async () => {
     const value = await setup()
     const input = await installationInput(value)
     let observed: ReturnType<typeof captureReleaseProducerOccurrence> | undefined
     let sameRequest: unknown
+    let originalAccepted: unknown
     let originalServices: ReturnType<typeof captureReleaseProducerInstallation> | undefined
     const installed = await installReleaseProducer(input, (installation) => {
       expect(() => captureReleaseProducerInstallation({ ...installation }, input.originalFactory)).toThrow()
@@ -104,6 +111,7 @@ describe.runIf(process.platform !== 'win32')('private release source producer', 
       return {
         prepare(request, context, occurrence) {
           sameRequest = request
+          expect(context).toBe(input.originalContext)
           expect(() =>
             captureReleaseProducerOccurrence(
               installation,
@@ -155,6 +163,8 @@ describe.runIf(process.platform !== 'win32')('private release source producer', 
           return { qualifiedUntil: observed.qualifiedUntil }
         },
         acceptOriginalReceipt(receipt, context) {
+          originalAccepted = receipt
+          expect(context).toBe(input.originalContext)
           return value.database.port.acceptPublishedAdmissionRelease(receipt, context)
         },
       }
@@ -212,58 +222,99 @@ describe.runIf(process.platform !== 'win32')('private release source producer', 
         path,
       ).toBe(true)
     }
-    // Full originals cannot currently be encoded into the formal request/source budgets.
     const preparation = await installed.captureOriginalPublication()
-    expect(preparation.ok).toBe(false)
-    if (!preparation.ok) expect(preparation.error.detailCode).toBe('publication_content_invalid')
-    expect(observed).toBeUndefined()
-    expect(sameRequest).toBeUndefined()
-    expect(() => readPublicationPayload('source', { content: captured.mapping })).toThrow()
-    expect((await installed.ready()).ok).toBe(false)
-    expect((await installed.publish(input.originalContext)).ok).toBe(false)
+    expect(preparation.ok, JSON.stringify(preparation)).toBe(true)
+    if (!preparation.ok || !observed) throw new Error('original preparation missing')
+    expect(sameRequest).toBe(preparation.value.request)
+    expect(observed.contents).toEqual(captured.contents)
+    expect(observed.payload.content).toEqual(captured.mapping)
+    expect(observed.references.source).not.toBeNull()
+    if (!observed.references.source) throw new Error('retained mapping missing')
+    const manifest = readExternalPublicationManifest(
+      await input.port.objects.read(observed.references.source, input.originalContext),
+    )
+    for (const object of manifest.objects) {
+      const body = await input.port.objects.read(object.reference, input.originalContext)
+      const original = captured.contents.find(
+        (row) => row.kind === object.kind && row.digest === object.reference.location.digest,
+      )
+      expect(Buffer.from(body)).toEqual(Buffer.from(original?.body ?? []))
+    }
     expect(value.database.changes()).toBe(0)
-  })
+    const commit = input.port.store.commit
+    input.port.store.commit = (request, context) => {
+      expect(request).toBe(sameRequest)
+      expect(context).toBe(input.originalContext)
+      return commit(request, context)
+    }
+    expect(() => readPublicationPayload('source', { content: captured.mapping })).toThrow()
+    for (const member of preparation.value.request.mutations)
+      expect(Buffer.byteLength(JSON.stringify(member.next.payload))).toBeLessThanOrEqual(65536)
+    expect((await installed.ready()).ok).toBe(false)
+    const published = await installed.publish(input.originalContext)
+    expect(published.ok, JSON.stringify(published)).toBe(true)
+    if (published.ok) {
+      expect(published.value.receipt).toBe(originalAccepted)
+      expect(published.value.facts.release).toEqual(value.fixture.release)
+    }
+    expect(value.database.changes()).toBe(4)
+  }, 60000)
 
-  it.each(['factory method', 'context slot', 'selected code', 'missing original bytes', 'new context'])(
-    'refuses changed %s before original capture',
-    async (kind) => {
-      const value = await setup()
-      const input = await installationInput(value)
-      const installed = await installReleaseProducer(input, (installation) => {
-        captureReleaseProducerInstallation(installation, input.originalFactory)
-        return {
-          prepare(request, context, occurrence) {
-            return captureReleaseProducerOccurrence(
-              installation,
-              input.originalFactory,
-              request,
-              context,
-              occurrence,
-            )
-          },
-          acceptOriginalReceipt() {
-            throw new Error('fixture receipt not committed')
-          },
-        }
-      })
-      cleanups.push(() => installed.dispose())
-      if (kind === 'factory method')
+  it.each([
+    'factory method',
+    'factory method at commit',
+    'context slot',
+    'selected code',
+    'missing original bytes',
+    'new context',
+  ])('refuses changed %s before original capture', async (kind) => {
+    const value = await setup()
+    const input = await installationInput(value)
+    const installed = await installReleaseProducer(input, (installation) => {
+      captureReleaseProducerInstallation(installation, input.originalFactory)
+      return {
+        prepare(request, context, occurrence) {
+          return captureReleaseProducerOccurrence(
+            installation,
+            input.originalFactory,
+            request,
+            context,
+            occurrence,
+          )
+        },
+        acceptOriginalReceipt() {
+          throw new Error('fixture receipt not committed')
+        },
+      }
+    })
+    cleanups.push(() => installed.dispose())
+    if (kind === 'factory method')
+      input.originalFactory.create = async () => {
+        throw new Error('replacement')
+      }
+    else if (kind === 'context slot') Object.assign(input.originalContext, { authorizationRef: 'changed' })
+    else if (kind === 'selected code')
+      input.originalVerifiedPackage.code[0] = (input.originalVerifiedPackage.code[0] ?? 0) ^ 1
+    else if (kind === 'missing original bytes')
+      rmSync(join(value.deployment, 'packages/backend/acme.release/1.0.0/runtime.js'))
+    if (kind === 'factory method at commit') {
+      const commit = input.port.store.commit
+      input.port.store.commit = (request, context) => {
         input.originalFactory.create = async () => {
-          throw new Error('replacement')
+          throw new Error('replaced before commit')
         }
-      else if (kind === 'context slot') Object.assign(input.originalContext, { authorizationRef: 'changed' })
-      else if (kind === 'selected code')
-        input.originalVerifiedPackage.code[0] = (input.originalVerifiedPackage.code[0] ?? 0) ^ 1
-      else if (kind === 'missing original bytes')
-        rmSync(join(value.deployment, 'packages/backend/acme.release/1.0.0/runtime.js'))
-      const result =
-        kind === 'new context'
+        return commit(request, context)
+      }
+    }
+    const result =
+      kind === 'factory method at commit'
+        ? await installed.publish(input.originalContext)
+        : kind === 'new context'
           ? await installed.publish({ ...input.originalContext })
           : await installed.captureOriginalContents(input.originalContext)
-      expect(result.ok).toBe(false)
-      expect(value.database.changes()).toBe(0)
-    },
-  )
+    expect(result.ok).toBe(false)
+    expect(value.database.changes()).toBe(0)
+  })
 
   it('refuses installation without the original native issuer handshake', async () => {
     const value = await setup()
@@ -346,7 +397,7 @@ describe.runIf(process.platform !== 'win32')('private release source producer', 
     expect(read.ok, JSON.stringify(read)).toBe(true)
     if (read.ok) expect(read.value.facts).toEqual(facts)
     expect(cold.changes()).toBe(0)
-  })
+  }, 60000)
 
   it.each(['config-request.json', 'package-request.json', 'release-lock.json'])(
     'refuses missing %s with zero writes',
@@ -477,27 +528,87 @@ describe.runIf(process.platform !== 'win32')('private release source producer', 
     const result = await producer.publish(producerTestContext())
     expect(result.ok, JSON.stringify(result)).toBe(true)
     if (!result.ok) return
-    const readOriginal = database.port.readPublication
-    database.port.readPublication = async (id, context) => {
-      const original = await readOriginal(id, context)
-      return (
-        original && {
-          ...original,
-          contents: original.contents.slice(1),
-        }
-      )
+    const readObject = database.port.objects.read
+    database.port.objects.read = async () => {
+      throw Object.assign(new Error('missing'), { detailCode: 'producer_original_bytes_missing' })
     }
     const before = database.changes()
     const missingSnapshot = await producer.recover(result.value.receipt.transactionId, producerTestContext())
     expect(missingSnapshot.ok).toBe(false)
-    if (!missingSnapshot.ok) expect(missingSnapshot.error.detailCode).toBe('producer_original_bytes_missing')
     expect(database.changes()).toBe(before)
-    database.port.readPublication = readOriginal
+    database.port.objects.read = readObject
     database.db.prepare('DELETE FROM records WHERE id=?').run('fixture-current-head')
     const writes = database.changes()
     expect((await producer.recover(result.value.receipt.transactionId, producerTestContext())).ok).toBe(false)
     expect(database.changes()).toBe(writes)
   })
+
+  it.each([
+    'object missing',
+    'digest mismatch',
+    'byte count mismatch',
+    'retention missing',
+    'reference changed',
+  ])(
+    'refuses cold history with %s without source I/O or writes',
+    async (kind) => {
+      const { root, deployment, database, producer, binding } = await setup()
+      const published = await producer.publish(producerTestContext())
+      expect(published.ok, JSON.stringify(published)).toBe(true)
+      if (!published.ok) throw new Error('publication missing')
+      const references = readExternalPublicationReferences(published.value.source)
+      if (!references.source) throw new Error('external source missing')
+      const manifest = readExternalPublicationManifest(
+        await database.port.objects.read(references.source, producerTestContext()),
+      )
+      const object = manifest.objects.find((row) => row.kind === 'bytes')?.reference
+      if (!object) throw new Error('raw object missing')
+      const directory = database.objectDirectory
+      await producer.dispose()
+      database.close()
+      rmSync(deployment, { recursive: true })
+      const path = join(
+        directory,
+        'artifacts',
+        'sha256',
+        object.location.digest.slice(0, 2),
+        object.location.digest,
+      )
+      if (kind === 'object missing') rmSync(path)
+      else if (kind === 'digest mismatch') {
+        const bytes = readFileSync(path)
+        bytes[0] = (bytes[0] ?? 0) ^ 1
+        writeFileSync(path, bytes)
+      } else if (kind === 'retention missing') {
+        const pins = new DatabaseSync(join(directory, 'artifacts', 'blob-service.db'))
+        pins.prepare('DELETE FROM roots WHERE pin_id=?').run(object.location.pinId)
+        pins.close()
+      }
+      const cold = producerCommitFixture(join(root, 'publication.sqlite'), binding, { readonly: true })
+      cleanups.push(() => cold.close())
+      if (kind === 'reference changed' || kind === 'byte count mismatch') {
+        const originalRead = cold.port.readPublication
+        cold.port.readPublication = async (id, context) => {
+          const original = await originalRead(id, context)
+          if (!original) return null
+          const changed = readExternalPublicationReferences(original.source)
+          if (kind === 'reference changed') {
+            const member = changed.members[0]
+            if (!member) throw new Error('original member missing')
+            member.fingerprint = 'f'.repeat(64)
+          } else changed.release.location.bytes++
+          return { ...original, source: encodeExternalPublicationReferences(changed) }
+        }
+      }
+      const recovered = createReleaseProducer(deployment, cold.port)
+      cleanups.push(() => recovered.dispose())
+      expect((await recovered.recover(published.value.receipt.transactionId, producerTestContext())).ok).toBe(
+        false,
+      )
+      expect(cold.changes()).toBe(0)
+    },
+    60000,
+  )
 
   it('recovers a lost commit response using only the persisted original', async () => {
     const { database, producer } = await setup({

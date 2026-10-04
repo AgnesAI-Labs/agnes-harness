@@ -1,17 +1,18 @@
 import { createHash } from 'node:crypto'
 import { join } from 'node:path'
 import { jcs } from '@agnes/protocol'
-import { type DataRef, validateOwnedAuthorSchemaSource, validateRuntime } from '@agnes/protocol/runtime'
-import {
-  type AppliedPublicationSource,
-  type PublicationContentBytes,
-  publicationRequiredDigests,
-  type RetainedPublicationContent,
-  readPublicationDataRef,
+import { validateOwnedAuthorSchemaSource, validateRuntime } from '@agnes/protocol/runtime'
+import type {
+  AppliedPublicationSource,
+  PublicationContentBytes,
+  RetainedPublicationContent,
 } from '../maintenance/publication-codecs.js'
+import { APPLIED_CONFIGURATION_KIND } from './applied-configuration.js'
 import { digest, equal, freeze, readWire, requireRelease } from './primitives.js'
 import type { ReleaseProducerCommitPort } from './release-producer.js'
+import { externalPublicationRequiredDigests } from './release-producer-reference-codec.js'
 import { captureResolvedProducerSource, type ReleaseProducerFacts } from './release-producer-source.js'
+import { validateResolvedRelease } from './release-set.js'
 
 const sha = (body: Uint8Array) => createHash('sha256').update(body).digest('hex')
 const canonical = (value: unknown) => jcs(readWire('JsonValue', value))
@@ -252,10 +253,7 @@ export function captureReleaseProducerContents(
     requiredDigests: [],
   }
   const contents = [...pool.values()]
-  // The codec's bounded source serialization is a later native prepare gate.
-  // Keep the entire original capture available even when its mapping exceeds that budget.
-  // The original inventory is complete; the official exact Digest walk is still bounded by
-  // source encoding. The native issuer must compute it through publicationRequiredDigests.
+  // The complete mapping is externalized before the maintenance reference commit.
   return {
     payload,
     contents,
@@ -268,10 +266,9 @@ export function captureReleaseProducerContents(
 }
 
 export function readRetainedProducerFacts(
-  ref: DataRef,
+  source: AppliedPublicationSource,
   contents: readonly PublicationContentBytes[],
 ): ReleaseProducerFacts {
-  const source = readPublicationDataRef('source', ref)
   const pool = new Map<string, Buffer>()
   for (const row of contents) {
     const body = Buffer.from(row.body)
@@ -288,7 +285,7 @@ export function readRetainedProducerFacts(
   }
   requireRelease(
     pool.size === new Set(source.content.map((row) => `${row.kind}:${row.digest}`)).size &&
-      equal(source.requiredDigests, publicationRequiredDigests(source, contents)),
+      equal(source.requiredDigests, externalPublicationRequiredDigests(source, contents)),
     'producer_source_mismatch',
     '/publication/contents',
   )
@@ -323,7 +320,7 @@ export function readRetainedProducerFacts(
     capabilities: readWire('RuntimePluginManifest', value('package-manifest', row.packageId)).permissions
       .runtime,
   }))
-  return freeze({
+  const facts = freeze({
     configuration,
     packages,
     release: readWire('ReleaseSet', value('release-set')),
@@ -344,4 +341,28 @@ export function readRetainedProducerFacts(
     producer: readWire('BindingRef', JSON.parse(source.producerJson)),
     scope: readWire('ScopeRef', JSON.parse(source.scopeJson)),
   })
+  const plan = readWire('ReleasePlan', value('release-plan'))
+  const graph = readWire('AssemblyGraph', value('assembly-graph'))
+  const release = validateResolvedRelease(
+    {
+      plan,
+      graph,
+      configuration: configuration.result,
+      resolution: packages.result,
+      observations: facts.observations,
+    },
+    APPLIED_CONFIGURATION_KIND,
+    configuration.request,
+  )
+  requireRelease(
+    equal(release, facts.release) &&
+      digest(plan) === source.planDigest &&
+      facts.release.releaseSetId === source.releaseSetId &&
+      facts.binding.bindingId === source.bindingId &&
+      facts.binding.releaseSetId === facts.release.releaseSetId &&
+      equal(facts.binding.providers, facts.release.bindings),
+    'producer_source_mismatch',
+    '/publication/source',
+  )
+  return facts
 }

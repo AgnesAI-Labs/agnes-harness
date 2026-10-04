@@ -8,32 +8,38 @@ import type {
   ScopeRef,
   StateAuthorityRef,
 } from '@agnes/protocol/runtime'
-import {
-  encodePublicationPayload,
-  type PublicationContentBytes,
-  publicationRequiredDigests,
-  readPublicationDataRef,
-} from '../maintenance/publication-codecs.js'
-import { MaintenanceFailure, maintenanceOutcome, releaseSnapshot } from './maintenance-journal.js'
+import { encodePublicationPayload, type PublicationContentBytes } from '../maintenance/publication-codecs.js'
+import { MaintenanceFailure, maintenanceOutcome } from './maintenance-journal.js'
 import { digest, equal, readWire, requireRelease } from './primitives.js'
 import { captureReleaseProducerContents, readRetainedProducerFacts } from './release-producer-contents.js'
 import type { InstalledReleaseProducer } from './release-producer-installation.js'
 import { assertOriginalInstalledReleaseProducer } from './release-producer-installation.js'
+import {
+  encodeExternalPublicationReferences,
+  externalPublicationRequiredDigests,
+  readExternalPublicationManifest,
+  readExternalPublicationReferences,
+} from './release-producer-reference-codec.js'
 import {
   type ReleaseProducerFacts,
   readProducerDeployment,
   releaseResolvedProducerSource,
   resolveProducerSource,
 } from './release-producer-source.js'
+import {
+  type PublicationObjectStore,
+  publicationBytesDigest,
+  type RetainedPublicationObject,
+} from './release-producer-storage.js'
 
 /** Private original-reader seam. A native installer must authenticate it; ordinary JSON is insufficient. */
 export interface ProducerPublication {
   request: MaintenanceStoreCommitRequest
   receipt: MaintenanceStoreCommitResult
   source: DataRef
-  contents: readonly PublicationContentBytes[]
 }
 export interface ReleaseProducerCommitPort {
+  readonly objects: PublicationObjectStore
   readonly store: MaintenanceStore
   readonly authority: StateAuthorityRef
   readonly stateAuthority: StateAuthorityRef
@@ -52,7 +58,6 @@ const originalRequests = new WeakMap<
     context: CallContext
     source: DataRef
     qualifiedUntil: string
-    contents: readonly PublicationContentBytes[]
     preClock(): void
   }
 >()
@@ -72,13 +77,13 @@ export function captureReleaseProducerPublication(
   return {
     source: original.source,
     qualifiedUntil: original.qualifiedUntil,
-    contents: original.contents.map((row) => ({ ...row, body: Buffer.from(row.body) })),
   }
 }
 
 export function publicationRequest(
   facts: ReleaseProducerFacts,
   port: ReleaseProducerCommitPort,
+  releaseReference: RetainedPublicationObject,
 ): MaintenanceStoreCommitRequest {
   const transactionId = `publish:${facts.release.releaseSetId}`,
     now = facts.observations.now
@@ -102,7 +107,7 @@ export function publicationRequest(
   const encoded = [
     encodePublicationPayload('head', head),
     encodePublicationPayload('route', route),
-    encodePublicationPayload('release', releaseSnapshot(facts.release)),
+    encodeExternalPublicationReferences({ release: releaseReference, source: null, members: [] }),
   ]
   const ids = [
     port.headRecordId,
@@ -133,16 +138,96 @@ export function publicationRequest(
     outbox: [],
   })
 }
-function verifyPublication(
+export async function prepareReleaseProducerPublication(
+  facts: ReleaseProducerFacts,
+  port: ReleaseProducerCommitPort,
+  context: CallContext,
+  identityExpiresAt = context.deadline,
+) {
+  const captured = captureReleaseProducerContents(facts, null, port, identityExpiresAt, context.deadline)
+  const objects = []
+  for (const row of captured.contents) {
+    const reference = await port.objects.retain(row.body, context)
+    requireRelease(
+      reference.location.digest === row.digest && reference.location.bytes === row.body.length,
+      'producer_object_mismatch',
+      '/publication/storage',
+    )
+    objects.push({ kind: row.kind, reference })
+  }
+  const releaseRow = captured.payload.content.find((row) => row.role === 'release-set')
+  const releaseReference = objects.find(
+    (row) => row.kind === 'json' && row.reference.location.digest === releaseRow?.digest,
+  )?.reference
+  requireRelease(releaseReference, 'producer_original_bytes_missing', '/publication/release')
+  const request = publicationRequest(facts, port, releaseReference)
+  captured.payload.memberFingerprints = request.mutations.map(digest)
+  captured.payload.requiredDigests = externalPublicationRequiredDigests(captured.payload, captured.contents)
+  const source = await port.objects.retain(Buffer.from(jcs({ payload: captured.payload, objects })), context)
+  const references = {
+    release: releaseReference,
+    source,
+    members: request.mutations.map((row) => ({ recordId: row.recordId, fingerprint: digest(row) })),
+  }
+  const proof = encodeExternalPublicationReferences(references)
+  return { request, captured, proof, references }
+}
+async function verifyPublication(
   original: ProducerPublication,
   port: ReleaseProducerCommitPort,
-): ReleaseProducerFacts {
-  const facts = readRetainedProducerFacts(original.source, original.contents)
+  context: CallContext,
+): Promise<ReleaseProducerFacts> {
+  const references = readExternalPublicationReferences(original.source)
+  requireRelease(references.source, 'producer_original_bytes_missing', '/publication/source')
+  const checkedRead = async (reference: RetainedPublicationObject) => {
+    const body = await port.objects.read(reference, context)
+    requireRelease(
+      publicationBytesDigest(body) === reference.location.digest && body.length === reference.location.bytes,
+      'producer_object_mismatch',
+      '/publication/storage',
+    )
+    return body
+  }
+  const manifest = readExternalPublicationManifest(await checkedRead(references.source))
+  const contents: PublicationContentBytes[] = []
+  for (const row of manifest.objects) {
+    const body = await checkedRead(row.reference)
+    requireRelease(
+      publicationBytesDigest(body) === row.reference.location.digest &&
+        body.length === row.reference.location.bytes,
+      'producer_object_mismatch',
+      '/publication/storage',
+    )
+    contents.push({ kind: row.kind, digest: row.reference.location.digest, body })
+  }
+  const releaseRow = manifest.payload.content.find((row) => row.role === 'release-set')
+  requireRelease(
+    manifest.objects.some(
+      (row) =>
+        row.kind === 'json' &&
+        row.reference.location.digest === releaseRow?.digest &&
+        equal(row.reference, references.release),
+    ),
+    'producer_source_mismatch',
+    '/publication/release',
+  )
+  const releaseBytes = await checkedRead(references.release)
+  const facts = readRetainedProducerFacts(manifest.payload, contents)
+  requireRelease(
+    Buffer.from(releaseBytes).equals(Buffer.from(jcs(facts.release))),
+    'producer_source_mismatch',
+    '/publication/release',
+  )
   const request = readWire('MaintenanceStoreCommitRequest', original.request)
   const receipt = readWire('MaintenanceStoreCommitResult', original.receipt)
-  const expected = publicationRequest(facts, port)
+  const expected = publicationRequest(facts, port, references.release)
   requireRelease(
     equal(request, expected) &&
+      equal(
+        references.members,
+        request.mutations.map((row) => ({ recordId: row.recordId, fingerprint: digest(row) })),
+      ) &&
+      equal(manifest.payload.memberFingerprints, request.mutations.map(digest)) &&
       receipt.transactionId === request.transactionId &&
       receipt.revisions.length === request.mutations.length &&
       new Set(receipt.revisions.map((row) => row.recordId)).size === receipt.revisions.length &&
@@ -154,22 +239,12 @@ function verifyPublication(
     'producer_commit_mismatch',
     '/publication/commit',
   )
-  const release = request.mutations[2]
   requireRelease(
-    release &&
-      equal(
-        readPublicationDataRef('release', {
-          kind: 'inline',
-          schema: release.next.schema,
-          value: release.next.payload,
-          digest: digest(release.next.payload),
-          bytes: Buffer.byteLength(jcs(release.next.payload)),
-        }),
-        releaseSnapshot(facts.release),
-      ) &&
-      equal(facts.binding.stateAuthorityAtCreation, port.stateAuthority) &&
+    equal(facts.binding.stateAuthorityAtCreation, port.stateAuthority) &&
       equal(facts.producer, port.producer) &&
-      equal(facts.scope, port.scope),
+      equal(facts.scope, port.scope) &&
+      equal(JSON.parse(manifest.payload.maintenanceAuthorityJson), port.authority) &&
+      manifest.payload.transactionId === request.transactionId,
     'producer_source_mismatch',
     '/publication/source',
   )
@@ -209,7 +284,7 @@ export function createReleaseProducer(
     context: CallContext,
     originalPort: ReleaseProducerCommitPort,
   ) => {
-    const facts = verifyPublication(original, originalPort)
+    const facts = await verifyPublication(original, originalPort, context)
     // Preserve the exact native result pointer. Never substitute the codec's detached receipt.
     if (installation) await installation.issuer.acceptOriginalReceipt(original.receipt, context)
     else await originalPort.acceptPublishedAdmissionRelease(original.receipt, context)
@@ -237,7 +312,7 @@ export function createReleaseProducer(
           const transactionId = `publish:${source.plan.targetReleaseSet.releaseSetId}`
           const prior = await selected.readPublication(transactionId, context)
           if (prior) {
-            const fixed = verifyPublication(prior, selected)
+            const fixed = await verifyPublication(prior, selected, context)
             requireRelease(
               fixed.sourceFingerprint === source.sourceFingerprint,
               'producer_fingerprint_conflict',
@@ -263,25 +338,12 @@ export function createReleaseProducer(
           let captured: ReturnType<typeof captureReleaseProducerContents>
           let proof: DataRef
           try {
-            if (installation) {
-              const prepared = installation.prepareOriginal()
-              request = prepared.request
-              captured = prepared.captured
-            } else {
-              request = publicationRequest(facts, selected)
-              captured = captureReleaseProducerContents(
-                facts,
-                request,
-                selected,
-                context.deadline,
-                context.deadline,
-              )
-            }
-            const payload = {
-              ...captured.payload,
-              requiredDigests: [...publicationRequiredDigests(captured.payload, captured.contents)],
-            }
-            proof = encodePublicationPayload('source', payload)
+            const prepared = installation
+              ? await installation.prepareOriginal()
+              : await prepareReleaseProducerPublication(facts, selected, context)
+            request = prepared.request
+            captured = prepared.captured
+            proof = prepared.proof
           } catch (error) {
             releaseResolvedProducerSource(facts)
             throw error
@@ -290,8 +352,8 @@ export function createReleaseProducer(
             context,
             source: proof,
             qualifiedUntil: captured.payload.qualifiedUntil,
-            contents: captured.contents,
             preClock: () => {
+              if (installation) assertOriginalInstalledReleaseProducer(installation)
               source.deployment.preClock()
               requireRelease(
                 Date.parse(selected.now()) < Date.parse(captured.payload.qualifiedUntil),
@@ -309,11 +371,7 @@ export function createReleaseProducer(
             const outcome = await selected.store.commit(request, context)
             if (!outcome.ok) throw new MaintenanceFailure(outcome.error)
             permitted(context)
-            return accept(
-              { request, receipt: outcome.value, source: proof, contents: captured.contents },
-              context,
-              selected,
-            )
+            return accept({ request, receipt: outcome.value, source: proof }, context, selected)
           } catch (error) {
             // An unknown native result only probes its original commit; it never resubmits mutations.
             const committed = await selected.readPublication(transactionId, context)
