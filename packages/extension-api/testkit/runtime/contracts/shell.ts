@@ -220,8 +220,9 @@ const CLIENTS = [
 
 /**
  * A double for the services a client host hands a shell. Every call is recorded as `client.method` (or
- * `navigate`) with its input and answered asynchronously by the next queued answer for that method;
- * `navigate` is accepted by default and any other unqueued call is refused.
+ * `navigate`) with its input and answered by the next queued answer for that method; `navigate` is
+ * accepted by default and any other unqueued call is refused. The registry and the presentation answer
+ * at once, as their contract types them; every other client answers asynchronously.
  */
 function fakeServices(): {
   services: ShellServices
@@ -230,20 +231,24 @@ function fakeServices(): {
 } {
   const calls: { method: string; input: unknown }[] = []
   const queued = new Map<string, Answer[]>()
-  const call = async (method: string, input: unknown) => {
+  const answerNow = (method: string, input: unknown): Outcome<unknown> => {
     calls.push({ method, input })
     const next = queued.get(method)?.shift()
     if (next) return next(input)
     return method === 'navigate' ? ok(undefined) : { ok: false, error: refusal('denied', 'not_served') }
   }
-  const client = (name: string) =>
+  const call = async (method: string, input: unknown) => answerNow(method, input)
+  const client = (name: (typeof CLIENTS)[number]) =>
     new Proxy(
       {},
       {
         get: (_target, method) =>
           typeof method !== 'string' || method === 'then'
             ? undefined
-            : (input: unknown) => call(`${name}.${method}`, input),
+            : (input: unknown) =>
+                name === 'registry' || name === 'presentation'
+                  ? answerNow(`${name}.${method}`, input)
+                  : call(`${name}.${method}`, input),
       },
     )
   const services = {

@@ -217,6 +217,12 @@ describe('renderer presentation', () => {
     ],
     ['an undeclared target', 'web', card({ targets: ['tui'] }).definition, view(1)],
     ['an unsupported feature', 'web', card({ optionalFeatures: [] }).definition, view(1, beta)],
+    [
+      'a required feature the client did not negotiate',
+      'web',
+      card({ requiredFeatures: ['acme.sync'] }).definition,
+      view(1),
+    ],
     ['a Web target without a component', 'web', text, view(1)],
     ['a text target without format', 'tui', card().definition, view(1)],
     [
