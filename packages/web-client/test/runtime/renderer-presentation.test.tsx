@@ -251,7 +251,8 @@ describe('renderer presentation', () => {
 
   it('shows the fallback text as text when the renderer throws and keeps the rest of the tree', async () => {
     vi.spyOn(console, 'error').mockImplementation(() => {})
-    const { presenter } = setup('web', view(1))
+    const other = view(1, [command('rename')], { viewId: 'note-2' })
+    const { presenter } = setup('web', view(1), other)
     const broken = {
       descriptor: descriptor(),
       component: () => {
@@ -259,14 +260,19 @@ describe('renderer presentation', () => {
       },
     } as unknown as RendererDefinition
     const presented = element(presenter.lease({ definition: broken, ownerToken: 'owner-1' }).present(view(1)))
+    // A faulty renderer yields its own view only: another view presented beside it keeps rendering and
+    // its context keeps working.
+    const sibling = card()
     await show(
       <>
         {presented}
+        {element(presenter.lease({ definition: sibling.definition, ownerToken: 'owner-2' }).present(other))}
         <span className="sibling">still here</span>
       </>,
     )
-    expect(host.textContent).toBe('Note <b>saved</b>still here')
+    expect(host.textContent).toBe('Note <b>saved</b>card note-2@1still here')
     expect(host.querySelector('b, img')).toBeNull()
+    expect(await submitted(sibling.last()?.context as RendererContext, 'rename', 1, 'note-2')).toBe('ok')
 
     // Another definition of the same owner presenting that view mounts afresh, past the failure.
     const renderer = card({ id: 'acme.notes.other' })
@@ -362,6 +368,9 @@ describe('renderer presentation', () => {
       }),
     ],
     ['formats another view', (shown) => formattedOf({ ...shown, viewId: 'note-2' })],
+    // A malformed result yields like a throw.
+    ['returns no outcome', () => undefined as unknown as Outcome<FormattedView>],
+    ['succeeds without a view', () => ({ ok: true, value: null }) as unknown as Outcome<FormattedView>],
   ])('refuses a renderer whose format %s', (_, format) => {
     const { presenter } = setup('tui', view(1))
     const definition = textRenderer(format).definition

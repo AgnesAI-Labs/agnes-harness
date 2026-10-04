@@ -274,6 +274,18 @@ async function harness(target: ClientTarget, rows: boolean) {
 const outcome = (result: Outcome<unknown>) =>
   result.ok ? 'ok' : `${result.error.code}/${result.error.detailCode}`
 
+/** Submits the rename action of note-1 at revision 1 through `context`. */
+const submitted = (context: RendererContext, requestId: string) =>
+  context.commands
+    .submit({
+      action: { viewId: 'note-1', actionKey: 'rename', viewRevision: 1 },
+      commandSchema: schema,
+      input: { kind: 'inline', schema, value: {}, digest: 'c'.repeat(64), bytes: 2 },
+      requestId,
+      expectedRevision: 4,
+    })
+    .then(outcome)
+
 function element(result: Outcome<RendererPresentation>): ReactElement {
   if (!result.ok || result.value.target !== 'web') throw new Error(`not a Web element: ${outcome(result)}`)
   return result.value.element
@@ -352,6 +364,15 @@ describe('domain presentation through the client host', () => {
     const generic = formatDomainView(held, { locale: 'en', capabilities })
     if (!generic.ok) throw new Error(generic.error.message)
     expect(h.domain(held)).toEqual({ ok: true, value: { target: 'tui', formatted: generic.value } })
+    // A faulty renderer yields that view only: the same generation still formats another view through
+    // its own selected renderer.
+    const other = view(1, 1, { viewId: 'note-2' })
+    h.hold(other)
+    const card = h.domain(other)
+    expect(card.ok && card.value.target === 'tui' && card.value.formatted.parts).toEqual([
+      { kind: 'text', text: 'cards.card' },
+    ])
+    expect(h.runtime.current()?.revision).toBe(1)
   })
 
   // Unknown domain (case 1) and old schema (case 3) on a text client: the generic text, readable.
@@ -443,18 +464,47 @@ describe('domain presentation through the client host', () => {
       ),
     )
     const card = h.renders['cards.card']?.at(-1)?.context
-    expect(card?.signal.aborted).toBe(false)
+    if (card === undefined) throw new Error('the card was not rendered')
+    expect(card.signal.aborted).toBe(false)
+    expect(await submitted(card, 'before')).toBe('ok')
+    /** The handle the current generation's registry leases for `renderKey`. */
+    const bound = (renderKey: string) => {
+      const resolved = h.runtime.current()?.registry.resolve({
+        renderKey,
+        viewSchema: view(1, 1).viewSchema,
+        target: 'web',
+        requiredFeatures: [],
+      })
+      return resolved?.ok && resolved.value.kind === 'matched' ? resolved.value.handle : undefined
+    }
+    // What the old generation registered and leased under ids the next generation registers again.
+    const oldExtra = h.registrations['base.extra']
+    const oldCard = bound(CARD)
 
     expect(outcome(await h.runtime.activate(catalog(2, 'web', true)))).toBe('ok')
-    expect(card?.signal.aborted).toBe(true)
+    expect(card.signal.aborted).toBe(true)
+    // A late call from an old owner is refused, so the old page cannot write: its renderer's submit is
+    // refused, and nothing beyond the command accepted before the swap reaches the services.
+    expect(await submitted(card, 'after')).toBe('denied/renderer_disposed')
     // The generic card's context was released as well, so its action reaches no service.
     await act(async () => host.querySelector<HTMLButtonElement>('.generic-domain-view button')?.click())
-    expect(h.submit).not.toHaveBeenCalled()
+    expect(h.submit).toHaveBeenCalledTimes(1)
     expect(host.querySelector('.generic-domain-view [role="status"]')?.textContent).toMatch(/^Refused/)
 
     // The next generation presents the same view through a fresh context.
     await show(h.domain(view(1, 1)))
-    expect(h.renders['cards.card']?.at(-1)?.context.signal.aborted).toBe(false)
+    const fresh = h.renders['cards.card']?.at(-1)?.context
+    expect(fresh?.signal.aborted).toBe(false)
+    // Disposing an old generation's registration or lease again cannot unregister or end what the next
+    // generation holds under the same ids.
+    await oldExtra?.dispose()
+    await oldCard?.dispose()
+    expect(fresh?.signal.aborted).toBe(false)
+    expect([bound(CARD)?.id, bound(EXTRA)?.id]).toEqual(['cards.card', 'base.extra'])
+    h.hold(view(2, 1))
+    await show(h.domain(view(2, 1)))
+    expect(shown()).toBe('cards.card note-1@2')
+    expect(h.renders['cards.card']?.at(-1)?.context).toBe(fresh)
   })
 
   it('refuses a legacy slot', async () => {
