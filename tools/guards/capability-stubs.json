@@ -195,6 +195,15 @@
           "marker": "legacy slot presentation is not wired yet"
         }
       ]
+    },
+    {
+      "id": "client.runtime-transport",
+      "evidence": [
+        {
+          "path": "packages/daemon/src/runtime/transport.ts",
+          "marker": "runtime client operation is not wired to a backend"
+        }
+      ]
     }
   ]
 }
