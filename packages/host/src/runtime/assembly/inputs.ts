@@ -46,6 +46,10 @@ export interface ReleaseSetInputs {
     packagePermissions: { packageId: string; capabilities: CapabilityRequirement[] }[]
   }
 }
+/** Pure resolved facts. Parsing a fixture or issuing a publication remains the caller's boundary. */
+export type ResolvedReleaseInputs = Omit<ReleaseSetInputs, 'fixture'> & {
+  observations: Omit<ReleaseSetInputs['fixture'], 'kind'>
+}
 export function readLocatorRoute(value: unknown): LocatorRouteFixture {
   const row = fields(
     value,
