@@ -89,7 +89,6 @@ const RENDERERS: Record<Provider, () => Promise<readonly RendererDefinition[]>> 
 }
 
 type Host = Pick<RendererConformanceBinding, 'root' | 'select'>
-type HostInput = Parameters<typeof createClientHostRuntime>[0]
 
 /**
  * The web client's own selection, client host and presenter, and React roots over one happy-dom
@@ -148,11 +147,12 @@ function webHost(): Promise<Host> {
         services,
         views,
       })
-      // The cases' modules have no client entry, so nothing reads the module context.
       const host = createClientHostRuntime({
         target,
         loader: { load },
-        context: {} as HostInput['context'],
+        clientInstanceId: capabilities.clientInstanceId,
+        capabilities,
+        locale: services.locale,
         presenter,
       })
       const activated = await host.activate({ revision: 1, modules, selection: resolved.value })

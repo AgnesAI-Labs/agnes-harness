@@ -278,7 +278,9 @@ const INITIAL_CEILING: Record<string, number> = {
   // exact, no spare (+12).
   // Default renderer factory over the built-in presentation. Measured 3457, exact, no spare (+11).
   // A throwing Web renderer yields to the generic card and reports its ids. Measured 3491, exact, no spare (+34).
-  'packages/web-client/src': 3491,
+  // Each client module gets its own refusing context per generation, closed under one dispose deadline.
+  // Measured 3556, exact, no spare (+65).
+  'packages/web-client/src': 3556,
   'packages/web-slots/src': 605,
   // Failed shell calls read as their exit code (+19 lines); measured 4891, exact cap.
   // B-line diagnostics dialog: React view adds 147 lines; measured 4706, exact cap.
