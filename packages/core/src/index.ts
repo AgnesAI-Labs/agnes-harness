@@ -221,6 +221,7 @@ export type {
 export { createAccountingFactory } from './runtime/providers/accounting.js'
 export type { DefaultBudgetAuthority } from './runtime/providers/budget.js'
 export { createDefaultBudgetFactory } from './runtime/providers/budget.js'
+export { createDefaultEffectsFactory } from './runtime/providers/effects.js'
 export type { DefaultUsageAuthority } from './runtime/providers/usage.js'
 export { createDefaultUsageFactory } from './runtime/providers/usage.js'
 export { approvalDeadlineMs } from './step/approval-callback.js'
