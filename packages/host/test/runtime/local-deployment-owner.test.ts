@@ -137,4 +137,21 @@ describe.skipIf(typeof process.getuid !== 'function')('original POSIX local depl
       f.close()
     }
   })
+  it('rejects reuse of the same JavaScript database after native close and reopen', () => {
+    const f = fixture()
+    try {
+      const owner = captureLocalDeploymentOwner(f)
+      expect(localDeploymentOwnerUsesDatabase(owner, f.database)).toBe(true)
+      f.database.close()
+      f.database.open()
+      expect(localDeploymentOwnerUsesDatabase(owner, f.database)).toBe(false)
+      expect(() => owner.dynamicCheck()).toThrow()
+      expect(() => owner.staticCheck()).toThrow()
+      const fresh = captureLocalDeploymentOwner(f)
+      expect(localDeploymentOwnerUsesDatabase(fresh, f.database)).toBe(true)
+      fresh.dynamicCheck()
+    } finally {
+      f.close()
+    }
+  })
 })

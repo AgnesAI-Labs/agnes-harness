@@ -1,6 +1,6 @@
 import { lstatSync, realpathSync } from 'node:fs'
 import { dirname, isAbsolute, relative, sep } from 'node:path'
-import { DatabaseSync } from 'node:sqlite'
+import { DatabaseSync, StatementSync } from 'node:sqlite'
 import { boundedCanonicalJson, canonicalJsonDigest } from '@agnes/protocol/runtime'
 import { readStageZero } from '../maintenance/bootstrap-locator.js'
 
@@ -26,7 +26,9 @@ export type LocalDeploymentOwner = Readonly<{
   /** Fixed Host descriptors only; no filesystem, OS call, getter or clock. */
   staticCheck(): void
 }>
-const owners = new WeakMap<object, DatabaseSync>()
+const owners = new WeakMap<object, Readonly<{ database: DatabaseSync; readGeneration(): void }>>()
+const nativePrepare = DatabaseSync.prototype.prepare
+const nativeGet = StatementSync.prototype.get
 const descriptorOf = Object.getOwnPropertyDescriptor
 const originalUid = descriptorOf(process, 'getuid')
 const originalEffectiveUid = descriptorOf(process, 'geteuid')
@@ -57,7 +59,14 @@ function digestObservation(value: unknown): string {
 }
 
 export function localDeploymentOwnerUsesDatabase(owner: unknown, database: DatabaseSync): boolean {
-  return typeof owner === 'object' && owner !== null && owners.get(owner) === database
+  const binding = typeof owner === 'object' && owner !== null ? owners.get(owner) : undefined
+  if (!binding || binding.database !== database) return false
+  try {
+    binding.readGeneration()
+    return true
+  } catch {
+    return false
+  }
 }
 
 function ownerUid(): number {
@@ -95,6 +104,12 @@ export function captureLocalDeploymentOwner(
 ): LocalDeploymentOwner {
   if (!(input.database instanceof DatabaseSync)) throw new Error('Original native connection is required')
   const database = input.database
+  const originalStatement: StatementSync = apply(nativePrepare, database, ['SELECT 1 AS native_generation'])
+  const readGeneration = () => {
+    const row = apply(nativeGet, originalStatement, [])
+    if (row?.native_generation !== 1) throw new Error('Original native connection generation is unavailable')
+  }
+  readGeneration()
   const directory = input.deploymentDirectory
   if (!isAbsolute(directory) || realpathSync(directory) !== directory)
     throw new Error('Local deployment directory must be an original absolute path')
@@ -110,6 +125,7 @@ export function captureLocalDeploymentOwner(
     throw new Error('Original State file is outside the protected local deployment')
   const locatorFile = `${directory}${sep}locator.json`
   function observe() {
+    readGeneration()
     const uid = ownerUid()
     const paths = [ownedPath(directory, uid, true), ownedPath(file, uid, true)]
     let parent = dirname(file)
@@ -148,8 +164,11 @@ export function captureLocalDeploymentOwner(
       if (digestObservation(observe()) !== originalDigest)
         throw new Error('Original local deployment owner observations changed')
     },
-    staticCheck: fixedOwnerMethods,
+    staticCheck() {
+      fixedOwnerMethods()
+      readGeneration()
+    },
   })
-  owners.set(owner, database)
+  owners.set(owner, Object.freeze({ database, readGeneration }))
   return owner
 }
