@@ -13,12 +13,14 @@ import { jcs } from '@agnes/protocol'
 import type * as Wire from '@agnes/protocol/runtime'
 import {
   RuntimeArtifactPolicy,
+  RuntimeAuthorityTransferAPI,
   RuntimeClientTransportPolicy,
   RuntimeClientTransportWire,
   RuntimeErrorDetails,
   type RuntimeWireTypes,
   validateRuntime,
 } from '@agnes/protocol/runtime'
+import { openTransfer, type TransferMaintenance } from './blob-transfer.js'
 
 export const ARTIFACTS_PROVIDER = { id: 'reference.artifacts', contract: 'agh.artifacts' } as const
 
@@ -101,13 +103,25 @@ export type ArtifactsStoreOptions = Readonly<{
   /** A profile's ticket lifetime. The contract's own lifetime still caps it. */
   ticketTtlMs?: number
   now?: () => number
+  authorityId?: Wire.Id
+  /** The maintenance assembly. Without it, or without `blobTransfer`, every transfer call is refused. */
+  maintenance?: TransferMaintenance
+  /**
+   * The transfer entry of the selected blob service: whether it holds a blob intact. That service's own
+   * transfer moves the bytes the records name; this store only checks that they arrived.
+   */
+  blobTransfer?: Readonly<{ binding: Wire.BindingRef; holds(ref: Wire.BlobRef): boolean }>
+  /** Creates a new store as an import target, which takes no business write until a transfer activates it. */
+  candidate?: boolean
+  /** The most records and encoded bytes one exported part holds. */
+  exportPart?: Readonly<{ records: number; bytes: number }>
 }>
 
 /**
  * Versions point at a BlobRef of the selected blob service. Grants are stored whole. A ticket row keeps
  * no nonce: the nonce is an HMAC of the ticket id, so a repeated request rebuilds the same URL. Every
  * revoke and revokeGrant that changes something appends one row to the revocation log, whose seq only
- * grows.
+ * grows. The authority row says whether the store takes business writes: only while it serves.
  */
 const TABLES = `
 CREATE TABLE IF NOT EXISTS artifact_versions (
@@ -142,7 +156,22 @@ CREATE TABLE IF NOT EXISTS revocations (
   ref TEXT NOT NULL,
   request_id TEXT,
   at INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS authority (
+  id INTEGER PRIMARY KEY CHECK (id = 1),
+  role TEXT NOT NULL CHECK (role IN ('serving', 'fenced', 'candidate')),
+  epoch INTEGER NOT NULL
 );`
+
+/**
+ * The business tables a checkpoint covers, each with the SQL that gives a record its key; the
+ * revocation log is the watermark. Tickets stay out, as the default service leaves them out.
+ */
+const RECORDS = {
+  access_grants: 'grant_id',
+  artifact_versions: "artifact_id || '/' || printf('%016d', version)",
+  revocations: "printf('%016d', seq)",
+}
 
 /** One revocation log row; `ref` is the revoked version, or `{ grantId }` for a revoked grant. */
 export type RevocationRow = Readonly<
@@ -174,6 +203,9 @@ export function openArtifactsStore(path: string, options: ArtifactsStoreOptions)
   if (!selected.ok) throw new Error(`no blob service is selected: ${selected.error.detailCode}`)
   const blobRead: BlobReadPort | undefined = selected.value.blobRead
   if (!blobRead) throw new Error('the selected blob service has no read port')
+  const { blobTransfer, maintenance } = options
+  if (blobTransfer && jcs(blobTransfer.binding) !== jcs(selected.value.binding))
+    throw new Error('the blob transfer entry belongs to another blob service')
   const now = options.now ?? (() => Date.now())
   const lifetime = Math.min(RuntimeArtifactPolicy.downloadTicketTtlMs, options.ticketTtlMs ?? Infinity)
   const db = new DatabaseSync(path)
@@ -181,15 +213,21 @@ export function openArtifactsStore(path: string, options: ArtifactsStoreOptions)
   db.exec('PRAGMA synchronous = FULL')
   db.exec('PRAGMA busy_timeout = 5000')
   db.exec(TABLES)
+  db.prepare('INSERT OR IGNORE INTO authority (id, role, epoch) VALUES (1, ?, ?)').run(
+    ...(options.candidate ? ['candidate', 0] : ['serving', 1]),
+  )
   let open = true
 
   const live = () => {
     if (!open) refuse('blocked', 'artifacts store is closed')
   }
-  function atomically<T>(body: () => T): T {
+  /** One transaction. A business write is gated: refused as blocked unless the store serves. */
+  function atomically<T>(body: () => T, gated = true): T {
     live()
     db.exec('BEGIN IMMEDIATE')
     try {
+      const { role } = db.prepare('SELECT role FROM authority WHERE id = 1').get() as { role: string }
+      if (gated && role !== 'serving') refuse('blocked', 'store is fenced or a transfer candidate')
       const result = body()
       db.exec('COMMIT')
       return result
@@ -370,8 +408,37 @@ export function openArtifactsStore(path: string, options: ArtifactsStoreOptions)
       attempt(context, () => refuse('operation_not_supported', 'this provider does not redeem tickets')),
   }
 
+  const transferable = maintenance !== undefined && blobTransfer !== undefined
+  const transfer = openTransfer({
+    db,
+    authorityId: options.authorityId ?? 'reference-artifacts',
+    name: 'artifacts',
+    tables: RECORDS,
+    log: 'revocations',
+    assets: {
+      // Every version's blob, revoked ones too, as the default service lists every record's blob.
+      *list() {
+        const rows = db.prepare('SELECT blob FROM artifact_versions').iterate() as Iterable<{ blob: string }>
+        for (const { blob } of rows) yield JSON.parse(blob) as Wire.BlobRef
+      },
+      present: (ref) => blobTransfer?.holds(ref) === true,
+    },
+    maintenance: transferable ? maintenance : undefined,
+    part: options.exportPart ?? { records: 1000, bytes: 8 * 1024 * 1024 },
+    live,
+    transaction: (body) => atomically(body, false),
+    refuse,
+    attempt,
+  })
+
   return {
     artifactAccess,
+    /** Authority transfer: declared only with the maintenance assembly and the blob transfer entry. */
+    transfer: transfer.control,
+    readExport: transfer.readExport,
+    features: transferable
+      ? ['artifact-access.v1', RuntimeAuthorityTransferAPI.feature]
+      : ['artifact-access.v1'],
 
     /**
      * Test entry for the publication side: records a ready version over a blob the selected service
