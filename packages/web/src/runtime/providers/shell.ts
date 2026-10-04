@@ -268,6 +268,49 @@ function place(list: HTMLElement, nodes: readonly HTMLElement[]): void {
   }
 }
 
+const key = (node: ChildNode) =>
+  node.nodeType === node.ELEMENT_NODE
+    ? `${node.nodeName}:${(node as HTMLElement).dataset.agnesShellItem ?? ''}`
+    : node.nodeName
+
+/**
+ * Makes `parent`'s children match `wanted`, keeping each node already there under the same key and changing
+ * only what differs, so a selection or focus inside unchanged text stays.
+ */
+function rewrite(parent: Element, wanted: readonly ChildNode[]): void {
+  let have = parent.firstChild
+  for (const node of wanted) {
+    let found = have
+    while (found && key(found) !== key(node)) found = found.nextSibling
+    if (!found) {
+      parent.insertBefore(node, have)
+      continue
+    }
+    while (have && have !== found) {
+      const after: ChildNode | null = have.nextSibling
+      have.remove()
+      have = after
+    }
+    if (found.nodeType === found.ELEMENT_NODE) {
+      const element = found as Element
+      const next = node as Element
+      for (const name of element.getAttributeNames())
+        if (!next.hasAttribute(name)) element.removeAttribute(name)
+      for (const name of next.getAttributeNames()) {
+        const value = next.getAttribute(name) ?? ''
+        if (element.getAttribute(name) !== value) element.setAttribute(name, value)
+      }
+      rewrite(element, [...next.childNodes])
+    } else if (found.nodeValue !== node.nodeValue) found.nodeValue = node.nodeValue
+    have = found.nextSibling
+  }
+  while (have) {
+    const after: ChildNode | null = have.nextSibling
+    have.remove()
+    have = after
+  }
+}
+
 function item<K extends 'li' | 'button'>(doc: Document, tag: K, id: string, state: ItemState, text: string) {
   const element = doc.createElement(tag)
   element.dataset.agnesShellItem = id
@@ -298,7 +341,7 @@ function present(services: ShellServices, presented: Presented, view: DomainView
     }
   }
   release(presented)
-  presented.host.textContent = view.fallbackText
+  if (presented.host.textContent !== view.fallbackText) presented.host.textContent = view.fallbackText
 }
 
 function render(view: Mounted): void {
@@ -307,8 +350,9 @@ function render(view: Mounted): void {
   const doc = view.root.ownerDocument
   const timeline = snapshot.conversation?.native.timeline
   const nodes = new Map(timeline?.nodes.map((node) => [node.id, node]))
-  lists.conversation.replaceChildren(
-    ...(timeline?.turns ?? []).map((turn) => {
+  rewrite(
+    lists.conversation,
+    (timeline?.turns ?? []).map((turn) => {
       const state = stateOf(turn.reason ?? turn.status)
       const entry = item(doc, 'li', turn.id, state, '')
       const messages = turn.nodeIds.map((id) => spoken(nodes.get(id))).filter(Boolean)
@@ -323,8 +367,9 @@ function render(view: Mounted): void {
       return entry
     }),
   )
-  lists.interactions.replaceChildren(
-    ...snapshot.pending.map((record) => {
+  rewrite(
+    lists.interactions,
+    snapshot.pending.map((record) => {
       const state = stateOf(record.status)
       const entry = item(
         doc,
@@ -366,7 +411,7 @@ function render(view: Mounted): void {
       view.views.delete(viewId)
     }
   place(lists.resources, entries)
-  lists.settings.replaceChildren(
+  rewrite(lists.settings, [
     line(
       doc,
       'li',
@@ -377,7 +422,7 @@ function render(view: Mounted): void {
       'li',
       text('defaultShell.connection', { connection: text(`defaultShell.connection.${snapshot.connection}`) }),
     ),
-  )
+  ])
   renderPrompts(view)
 }
 
@@ -385,8 +430,9 @@ function renderPrompts(view: Mounted): void {
   const doc = view.root.ownerDocument
   const { text } = view
   // ponytail: one entry per prompt sent from this mount; trim settled ones if long sessions make it heavy.
-  view.lists.composer.replaceChildren(
-    ...view.prompts.map((prompt) =>
+  rewrite(
+    view.lists.composer,
+    view.prompts.map((prompt) =>
       item(
         doc,
         'li',
