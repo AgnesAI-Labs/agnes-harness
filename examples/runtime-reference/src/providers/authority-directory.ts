@@ -8,6 +8,7 @@ import type {
   AuthorityDirectoryCompareAndSwapResult,
   AuthorityDirectoryReadRequest,
   AuthorityDirectoryReadResult,
+  AuthorityFence,
   AuthorityPublication,
   AuthorityRoute,
   DataRef,
@@ -18,8 +19,8 @@ import type {
   StateAuthorityRef,
 } from '@agnes/protocol/runtime'
 import { canonicalJsonDigest, validateRuntime } from '@agnes/protocol/runtime'
-
 import { syncDirectorySync, syncFileSync, windowsVolumeInfoSync } from '@agnes/system-node'
+import { confirmSourcePlan, type ReferencePlanResolver } from './authority-publication-owner.js'
 
 export const REFERENCE_AUTHORITY_CONTRACT = 'agh.authority-directory' as const
 export const REFERENCE_AUTHORITY_DIRECTORY_ID = 'agh.reference/authority-directory' as const
@@ -97,6 +98,7 @@ export interface ReferenceDirectory {
       readonly upgradeId: string
       readonly validationRef: DataRef
       readonly authorityIds: readonly string[]
+      readonly sourceFences?: readonly AuthorityFence[]
     },
     context: CallContext,
   ): Promise<Outcome<{ readonly upgradeId: string }>>
@@ -132,6 +134,7 @@ export function createReferenceAuthorityDirectory(options: {
   readonly authority: StateAuthorityRef
   readonly filesystem?: 'local' | 'unsupported'
   readonly onPhase?: (phase: 'transaction' | 'commit' | 'notify') => void
+  readonly publicationPlan?: ReferencePlanResolver
 }): ReferenceDirectory {
   const directory = resolve(options.directory)
   const anchor = resolve(options.anchor)
@@ -247,11 +250,20 @@ export function createReferenceAuthorityDirectory(options: {
         return { ok: true as const, value: answer.value }
       })
     },
-    async compareAndSwap(request, context) {
-      const gated = admit(context, request, 'AuthorityDirectoryCompareAndSwapRequest')
+    async compareAndSwap(input, context) {
+      const gated = admit(context, input, 'AuthorityDirectoryCompareAndSwapRequest')
       if (!gated.ok) return gated
+      const request = JSON.parse(JSON.stringify(input)) as AuthorityDirectoryCompareAndSwapRequest
       const opened = ready(gated.value)
       if (!opened.ok) return opened
+      const committed = immediate(store, (db) => ({
+        ok: true as const,
+        value: takeCutover(db, request.publication.cutoverId),
+      }))
+      if (!committed.ok) return committed
+      const sourceEvidence = committed.value
+        ? null
+        : await confirmSourcePlan(request.publication, options.publicationPlan, context)
       let wrote = false
       const outcome = immediate(store, (db) => {
         const live = admit(context, null, null)
@@ -278,6 +290,7 @@ export function createReferenceAuthorityDirectory(options: {
         )
         if (verdict.tag === 'stop') return halt(verdict.stop.code, verdict.stop.detail)
         if (verdict.tag === 'replay') return { ok: true as const, value: verdict.result }
+        if (!sourceEvidence?.ok) return sourceEvidence ?? halt('incompatible', 'source_owner_unavailable')
         putHead(db, verdict.head)
         const insertOrigin = db.prepare(
           'INSERT OR IGNORE INTO domain_origin(domain_id, qualification_digest) VALUES (?, ?)',
@@ -290,6 +303,10 @@ export function createReferenceAuthorityDirectory(options: {
             )
         }
         putCutover(db, request.publication.cutoverId, verdict.fingerprint, verdict.result)
+        db.prepare('INSERT INTO route_freeze_points(cutover_key, payload) VALUES (?, ?)').run(
+          request.publication.cutoverId,
+          JSON.stringify({ publication: request.publication, sourceEvidence: sourceEvidence.value }),
+        )
         options.onPhase?.('transaction')
         wrote = true
         return { ok: true as const, value: verdict.result }
@@ -371,6 +388,7 @@ export function createReferenceAuthorityDirectory(options: {
               JSON.parse(JSON.stringify(input.validationRef)) as JsonValue,
             ),
             authorityIds: input.authorityIds,
+            sourceFences: input.sourceFences ?? [],
           }),
         )
         return { ok: true as const, value: true }
@@ -682,7 +700,11 @@ function judge(
   head: RouteHead,
   request: AuthorityDirectoryCompareAndSwapRequest,
   existing: CutoverRow | null,
-  journal: { validationDigest: string; authorityIds: readonly string[] } | null,
+  journal: {
+    validationDigest: string
+    authorityIds: readonly string[]
+    sourceFences?: readonly AuthorityFence[]
+  } | null,
 ): Verdict {
   if (request.transactionId !== request.publication.cutoverId)
     return { tag: 'stop', stop: { code: 'invalid_input', detail: 'cutover_transaction_mismatch' } }
@@ -705,6 +727,17 @@ function judge(
   if ('stop' in shaped) return { tag: 'stop', stop: shaped.stop }
   const revisions = matchRevisions(head, shaped.changes)
   if ('stop' in revisions) return { tag: 'stop', stop: revisions.stop }
+  for (const supplied of request.publication.sourceFences) {
+    const receipt = JSON.stringify(supplied)
+    if (
+      !(journal.sourceFences ?? []).some(
+        (known) =>
+          canonicalJsonDigest(JSON.parse(receipt) as JsonValue) ===
+          canonicalJsonDigest(JSON.parse(JSON.stringify(known)) as JsonValue),
+      )
+    )
+      return { tag: 'stop', stop: { code: 'incompatible', detail: 'fence_not_registered' } }
+  }
   const result = {
     transactionId: request.transactionId,
     cutoverId: request.publication.cutoverId,
@@ -760,17 +793,6 @@ function shapePublication(
     if (!fences.keys.has(key)) return { stop: { code: 'incompatible', detail: 'fence_incomplete' } }
   }
   if (fences.keys.size !== seen.size) return { stop: { code: 'incompatible', detail: 'fence_incomplete' } }
-  for (const change of publication.changes) {
-    const found = publication.sourceFences.find(
-      (fence) => fence.source.authorityId === change.previous.logicalAuthorityId,
-    )
-    if (
-      !found ||
-      canonicalJsonDigest(JSON.parse(JSON.stringify(found.checkpoint)) as JsonValue) !==
-        canonicalJsonDigest(JSON.parse(JSON.stringify(change.previous.checkpoint)) as JsonValue)
-    )
-      return { stop: { code: 'incompatible', detail: 'fence_checkpoint' } }
-  }
   const domains = growDomains(head, publication)
   if ('stop' in domains) return domains
   if (leavesCohort(head, publication, domains.domains))
@@ -991,6 +1013,9 @@ function plant(head: RouteHead, route: AuthorityRoute): RouteHead | { stop: Stop
   if (routeEntry(head, route.logicalAuthorityId))
     return { stop: { code: 'conflict', detail: 'route_exists' } }
   if (route.authorityEpoch < 1) return { stop: { code: 'invalid_input', detail: 'epoch_not_increasing' } }
+  if (route.authorityEpoch !== 1) return { stop: { code: 'invalid_input', detail: 'bootstrap_epoch' } }
+  if (route.checkpoint.authorityId !== route.logicalAuthorityId || route.checkpoint.authorityEpoch !== 1)
+    return { stop: { code: 'invalid_input', detail: 'checkpoint_mismatch' } }
   return { ...head, routes: { ...head.routes, [route.logicalAuthorityId]: { revision: 1, route } } }
 }
 
@@ -1191,11 +1216,17 @@ function takeCutover(db: DatabaseSync, id: string): CutoverRow | null {
 function takeApproval(
   db: DatabaseSync,
   key: string,
-): { validationDigest: string; authorityIds: string[] } | null {
+): { validationDigest: string; authorityIds: string[]; sourceFences?: readonly AuthorityFence[] } | null {
   const row = db.prepare('SELECT payload FROM route_approval WHERE upgrade_key = ?').get(key) as
     | { payload: string }
     | undefined
-  return row ? (JSON.parse(row.payload) as { validationDigest: string; authorityIds: string[] }) : null
+  return row
+    ? (JSON.parse(row.payload) as {
+        validationDigest: string
+        authorityIds: string[]
+        sourceFences?: readonly AuthorityFence[]
+      })
+    : null
 }
 
 function putHead(db: DatabaseSync, head: RouteHead): void {
@@ -1232,6 +1263,7 @@ function cloneRows(from: string, to: string): void {
     for (const [table, fields] of [
       ['route_cutover', ['cutover_key', 'fingerprint', 'result_json']],
       ['route_approval', ['upgrade_key', 'payload']],
+      ['route_freeze_points', ['cutover_key', 'payload']],
       ['domain_origin', ['domain_id', 'qualification_digest']],
     ] as const) {
       const insert = target.prepare(
@@ -1318,6 +1350,9 @@ function ensureStore(db: DatabaseSync): void {
 
   db.exec(
     `CREATE TABLE IF NOT EXISTS route_head (slot INTEGER PRIMARY KEY CHECK (slot = 1), payload TEXT NOT NULL)`,
+  )
+  db.exec(
+    `CREATE TABLE IF NOT EXISTS route_freeze_points (cutover_key TEXT PRIMARY KEY, payload TEXT NOT NULL)`,
   )
   db.exec(
     `CREATE TABLE IF NOT EXISTS route_cutover (cutover_key TEXT PRIMARY KEY, fingerprint TEXT NOT NULL, result_json TEXT NOT NULL)`,

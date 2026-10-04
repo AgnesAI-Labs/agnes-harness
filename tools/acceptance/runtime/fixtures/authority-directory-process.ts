@@ -2,18 +2,16 @@ import { existsSync, readFileSync, writeSync } from 'node:fs'
 import { setTimeout as delay } from 'node:timers/promises'
 import type { CallContext } from '@agnes/extension-api/runtime'
 import type { AuthorityDirectoryCompareAndSwapRequest, StateAuthorityRef } from '@agnes/protocol/runtime'
-import {
-  createReferenceAuthorityDirectory,
-  openReferenceAnchor,
-} from '../../../../examples/runtime-reference/src/providers/authority-directory.ts'
+import { openReferenceAnchor } from '../../../../examples/runtime-reference/src/providers/authority-directory.ts'
 import {
   type BootstrapLocator,
   openBootstrapAnchor,
 } from '../../../../packages/host/src/runtime/maintenance/bootstrap-locator.ts'
+import type { DurabilityPhase } from '../../../../packages/host/src/runtime/providers/authority-directory.ts'
 import {
-  createAuthorityDirectoryProvider,
-  type DurabilityPhase,
-} from '../../../../packages/host/src/runtime/providers/authority-directory.ts'
+  createFixtureAuthorityDirectory as createAuthorityDirectoryProvider,
+  createFixtureReferenceDirectory as createReferenceAuthorityDirectory,
+} from '../../../../packages/host/test/fixtures/authority-directory-owner.js'
 
 interface Payload {
   readonly implementation: 'default' | 'reference'

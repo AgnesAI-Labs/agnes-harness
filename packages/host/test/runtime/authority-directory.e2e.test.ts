@@ -1,4 +1,4 @@
-import { type ChildProcess, spawn } from 'node:child_process'
+import { type ChildProcess, execFileSync, spawn } from 'node:child_process'
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -17,10 +17,10 @@ import { inlineData } from '../../src/runtime/maintenance/authority-publication.
 import { readStageZero } from '../../src/runtime/maintenance/bootstrap-locator.js'
 import {
   type AuthorityDirectoryProvider,
-  createAuthorityDirectoryProvider,
   createDirectoryAnchor,
   type DurabilityPhase,
 } from '../../src/runtime/providers/authority-directory.js'
+import { createFixtureAuthorityDirectory as createAuthorityDirectoryProvider } from '../fixtures/authority-directory-owner.js'
 
 const fixture = fileURLToPath(
   new URL('../../../../tools/acceptance/runtime/fixtures/authority-directory-process.ts', import.meta.url),
@@ -92,7 +92,7 @@ function lockRef(): DataRef {
   return inlineData({ lock: 'directory' } as JsonValue, 'agh.maintenance/provider-lock@1')
 }
 
-function fenceFor(route: AuthorityRoute, cutoverId: string): AuthorityFence {
+function fenceFor(route: AuthorityRoute, _cutoverId: string): AuthorityFence {
   return {
     upgradeId: 'upgrade-1',
     source: {
@@ -100,9 +100,14 @@ function fenceFor(route: AuthorityRoute, cutoverId: string): AuthorityFence {
       tenantId: route.tenantId,
       authorityEpoch: route.authorityEpoch,
     },
-    fenceId: `fence-${cutoverId}-${route.logicalAuthorityId}`,
+    fenceId: `fence-upgrade-1-${route.logicalAuthorityId}`,
     fenceEpoch: route.authorityEpoch,
-    checkpoint: route.checkpoint,
+    checkpoint: {
+      ...route.checkpoint,
+      checkpointId: 'fresh-source-freeze',
+      snapshotDigest: '44'.repeat(32),
+      recordCount: route.checkpoint.recordCount + 1,
+    },
     writerCredentialsRevoked: true,
   }
 }
@@ -174,7 +179,12 @@ async function prepared(): Promise<{
   expect(
     detail(
       await provider.approveUpgrade(
-        { upgradeId: 'upgrade-1', validationRef: proof, authorityIds: ['state-auth'] },
+        {
+          upgradeId: 'upgrade-1',
+          validationRef: proof,
+          authorityIds: ['state-auth'],
+          sourceFences: requestFor(route, 'cutover-1', COHORT, proof).publication.sourceFences,
+        },
         context(),
       ),
     ),
@@ -297,6 +307,50 @@ async function revisionAt(directory: string, anchor: string): Promise<number> {
 }
 
 describe('authority directory process durability', () => {
+  it.each(
+    ['default', 'reference'].flatMap((recipe) =>
+      (
+        [
+          ['none', 'ok'],
+          ['owner-location', 'incompatible/source_owner_mismatch'],
+          ['owner-binding', 'incompatible/source_owner_mismatch'],
+          ['owner-authority', 'incompatible/source_owner_mismatch'],
+          ['lookalike-owner', 'incompatible/source_fence_unconfirmed'],
+          ['missing-owner', 'incompatible/source_owner_unavailable'],
+          ['validation-previous', 'incompatible/source_validation_mismatch'],
+          ['validation-fence', 'incompatible/source_validation_mismatch'],
+          ['validation-upgrade', 'incompatible/source_validation_mismatch'],
+          ['wrong-tenant', 'incompatible/fence_incomplete'],
+          ['wrong-epoch', 'incompatible/fence_incomplete'],
+          ['wrong-upgrade', 'invalid_input/fence_upgrade'],
+          ['wrong-checkpoint', 'invalid_input/checkpoint_mismatch'],
+          ['route-race', 'conflict/revision_mismatch'],
+        ] as const
+      ).map(([fault, expected]) => [recipe, fault, expected] as const),
+    ),
+  )('checks real C31 source evidence and cold replay through %s with %s', (recipe, fault, expected) => {
+    const root = mkdtempSync(join(tmpdir(), 'authority-blob-cold-'))
+    const fixture = fileURLToPath(new URL('../fixtures/authority-directory-blob-process.ts', import.meta.url))
+    try {
+      const run = (mode: string) =>
+        JSON.parse(
+          execFileSync(process.execPath, ['--import', 'tsx', fixture, mode, root, recipe, fault], {
+            encoding: 'utf8',
+            timeout: 30_000,
+          }),
+        )
+      const result = run('prepare')
+      if (fault === 'none') {
+        expect(result.read.revision).toBe(2)
+        expect(result.sourceProbe.fence.checkpoint.recordCount).toBeGreaterThan(0)
+        expect(run('recover')).toEqual(result)
+        expect(run('recover')).toEqual(result)
+      } else expect(detail(result.outcome)).toBe(expected)
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
   it('keeps the old route when killed before the pointer rename and the new route after it', async () => {
     for (const phase of [
       'temp',

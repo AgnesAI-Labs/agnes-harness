@@ -15,13 +15,10 @@ import type {
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createConformanceHarness, SCENARIOS } from '../../../../packages/extension-api/testkit/index.js'
 import { inlineData } from '../../../../packages/host/src/runtime/maintenance/authority-publication.js'
+import { createFixtureReferenceDirectory as createReferenceAuthorityDirectory } from '../../../../packages/host/test/fixtures/authority-directory-owner.js'
 import * as buildIdentity from '../../../../tools/acceptance/runtime/build-identity.js'
 import { bindAuthorityDirectoryContracts } from '../../../../tools/acceptance/runtime/platform/authority-directory-conformance.js'
-import {
-  createReferenceAnchor,
-  createReferenceAuthorityDirectory,
-  readReferenceAnchor,
-} from './authority-directory.ts'
+import { createReferenceAnchor, readReferenceAnchor } from './authority-directory.ts'
 
 const probe = vi.hoisted(() => ({ platform: null as string | null }))
 vi.mock('node:os', async (original) => {
@@ -148,9 +145,14 @@ function requestFor(
         {
           upgradeId: 'upgrade-1',
           source: { authorityId: 'state-auth', tenantId: 'tenant-a', authorityEpoch: 1 },
-          fenceId: `fence-${cutoverId}-state-auth`,
+          fenceId: `fence-upgrade-1-state-auth`,
           fenceEpoch: 1,
-          checkpoint: route.checkpoint,
+          checkpoint: {
+            ...route.checkpoint,
+            checkpointId: 'fresh-source-freeze',
+            snapshotDigest: '44'.repeat(32),
+            recordCount: route.checkpoint.recordCount + 1,
+          },
           writerCredentialsRevoked: true,
         },
       ],
@@ -191,7 +193,12 @@ async function prepared(): Promise<{
   expect(
     detail(
       await provider.approveUpgrade(
-        { upgradeId: 'upgrade-1', validationRef: proof, authorityIds: ['state-auth'] },
+        {
+          upgradeId: 'upgrade-1',
+          validationRef: proof,
+          authorityIds: ['state-auth'],
+          sourceFences: requestFor(route, 'cutover-1', COHORT, proof).publication.sourceFences,
+        },
         context(),
       ),
     ),
