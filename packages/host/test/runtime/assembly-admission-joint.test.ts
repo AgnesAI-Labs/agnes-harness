@@ -45,7 +45,8 @@ it('uses original C14 contexts and State creation to arbitrate unproven absence,
     await fixture.close()
     rmSync(directory, { recursive: true, force: true })
   }
-})
+  // Original State/identity wiring and repeated full wire validation exceed Linux's 5s default.
+}, 15_000)
 
 it('retains the pin when C14 refuses a copied context and only a verified cancellation releases it', async () => {
   const directory = mkdtempSync(join(tmpdir(), 'agnes-joint-cancel-'))

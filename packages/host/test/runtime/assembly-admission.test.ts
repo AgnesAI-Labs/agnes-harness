@@ -28,7 +28,9 @@ async function withFixture(provider: 'default' | 'reference', body: (fixture: Fi
   }
 }
 
-describe('restricted persistent State admission coordination', () => {
+// Full wire validation and durable coordination exceed 5s on hosted Linux runners.
+// Use the same finite functional-test budget on every platform.
+describe('restricted persistent State admission coordination', { timeout: 15_000 }, () => {
   it.each(['default', 'reference'] as const)(
     '%s explicitly refuses unqualified production admission and session control',
     async (provider) => {
