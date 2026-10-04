@@ -4011,7 +4011,7 @@ body {
   display: contents;
 }
 #config-form {
-  grid-template-columns: 11.75rem minmax(0, 1fr);
+  grid-template-columns: 13rem minmax(0, 1fr);
   grid-template-rows: minmax(0, 1fr);
   border-radius: inherit;
   height: 100%;
@@ -5899,7 +5899,7 @@ body.admin-page {
     max-height: calc(100dvh - 1.25rem);
   }
   #config-form {
-    grid-template-columns: 11.75rem minmax(0, 1fr);
+    grid-template-columns: 13rem minmax(0, 1fr);
   }
   #config-form .config-heading,
   .config-workspace {
