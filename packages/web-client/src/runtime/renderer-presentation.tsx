@@ -2,7 +2,8 @@
 // revision are read: the renderer sees, and its context is bounded by, the copy the current authorized
 // window holds under that id at that revision, and that copy must fit the renderer's descriptor for this
 // client's target. A Web view mounts one restricted context per lease and view, moved in place to newer
-// revisions, under a boundary that shows the view's fallback text when the renderer throws. A text view
+// revisions, under a boundary: when the renderer throws, its context closes, the failure is reported by
+// ids only and the view switches to the generic card, or to its fallback text if that throws. A text view
 // is only formatted; encoding and sending stay with the channel. Disposing a lease releases only what
 // that lease mounted. The built-in generic lease presents any view the window holds with the safe Web
 // card or the default text format, so basic information shows without any plugin bundle.
@@ -87,17 +88,23 @@ function mismatch(
   return undefined
 }
 
-class Guard extends Component<{ fallbackText: string; children: ReactNode }, { failed: boolean }> {
+class Guard extends Component<
+  { fallback: ReactNode; onError: () => void; children: ReactNode },
+  { failed: boolean }
+> {
   override state = { failed: false }
 
   static getDerivedStateFromError() {
     return { failed: true }
   }
 
+  override componentDidCatch() {
+    this.props.onError()
+  }
+
   override render(): ReactNode {
-    // Text only: a failed renderer leaves the view's own fallback, never its thrown value.
-    if (this.state.failed) return <p className="renderer-fallback">{this.props.fallbackText}</p>
-    return this.props.children
+    // A failed renderer leaves its fallback, never its thrown value.
+    return this.state.failed ? this.props.fallback : this.props.children
   }
 }
 
@@ -105,10 +112,15 @@ function Presented({
   open,
   component: Renderer,
   view,
+  fallback,
+  failed,
 }: {
   open: (view: DomainView) => MountedRendererContext
   component: WebRendererDefinition['component']
   view: DomainView
+  /** What the view shows once the renderer threw. */
+  fallback: ReactNode
+  failed?: () => void
 }) {
   // The context opens when this element commits and closes when it unmounts, so a render React discards
   // (after a renderer throws, say) opens nothing. One context per lease: a newer revision is moved into
@@ -124,7 +136,14 @@ function Presented({
   // Before the renderer renders, so its own effects already see the newer restriction.
   mounted.update(view)
   return (
-    <Guard fallbackText={view.fallbackText}>
+    <Guard
+      fallback={fallback}
+      onError={() => {
+        // The failed renderer's context closes now, so its old closures are refused.
+        void mounted.dispose()
+        failed?.()
+      }}
+    >
       <Renderer view={view} context={mounted.context} />
     </Guard>
   )
@@ -143,6 +162,8 @@ export function createRendererPresenter(input: {
   locale: string
   services: Pick<RendererContext, 'commands' | 'interactions' | 'artifacts' | 'locale'>
   views: AuthorizedViews
+  /** Told, with ids only, that a Web renderer threw and its view switched to the generic card. */
+  onFailure?: (failure: { rendererId: string; viewId: string }) => void
 }): {
   /** One lease for a definition the host bound under `ownerToken`. */
   lease(binding: { definition: RendererDefinition; ownerToken: string }): RendererLease
@@ -165,7 +186,7 @@ export function createRendererPresenter(input: {
     // ponytail: the calling shell or module's grant and the renderer contribution's grant are not on
     // the wire yet, so only the view's own offers (and the services' own checks) bound a context today;
     // intersect those grants here once the selection carries them.
-    const open = (view: DomainView) => {
+    const opener = (ownerToken: string) => (view: DomainView) => {
       const mounted = createRendererContext({ clientInstanceId, ownerToken, capabilities, services, view })
       if (released) {
         void mounted.dispose()
@@ -176,6 +197,16 @@ export function createRendererPresenter(input: {
         live.delete(mounted)
       })
       return mounted
+    }
+    const open = opener(ownerToken)
+    // The generic card that replaces a failed renderer is the lease's own, so releasing the lease ends it.
+    const openGeneric = opener(GENERIC_OWNER)
+    const report = (viewId: string) => {
+      try {
+        input.onFailure?.({ rendererId: String(descriptor?.id), viewId })
+      } catch {
+        // A failing report leaves the view on the generic card all the same.
+      }
     }
 
     return {
@@ -197,13 +228,24 @@ export function createRendererPresenter(input: {
           const { component } = definition as WebRendererDefinition
           // Another definition presenting the same view mounts afresh, a newer revision updates in place.
           const key = JSON.stringify([ownerToken, descriptor?.id ?? null, shown.viewId])
-          return {
-            ok: true,
-            value: {
-              target,
-              element: <Presented key={key} open={open} component={component} view={shown} />,
-            },
-          }
+          // A renderer that throws yields to the generic card, and the generic card to the text.
+          const plain = <p className="renderer-fallback">{shown.fallbackText}</p>
+          const element =
+            definition === GENERIC ? (
+              <Presented key={key} open={open} component={component} view={shown} fallback={plain} />
+            ) : (
+              <Presented
+                key={key}
+                open={open}
+                component={component}
+                view={shown}
+                fallback={
+                  <Presented open={openGeneric} component={GenericDomainView} view={shown} fallback={plain} />
+                }
+                failed={() => report(shown.viewId)}
+              />
+            )
+          return { ok: true, value: { target, element } }
         }
         let formatted: Outcome<FormattedView>
         try {
