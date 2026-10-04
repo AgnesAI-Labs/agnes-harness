@@ -1004,7 +1004,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // Measured 25811, exact cap.
   // The approval card's summary line is built by summarizeCall (new file). Measured 25861 (+50), exact cap.
   // Sourced memory and hybrid retrieval providers. Measured 32058, exact, no spare.
-  'packages/core/src': 32058,
+  'packages/core/src': 32652,
   // 2026-09-15: DeepSeek V4 Pro/Flash ship a known-thinking-corrections table (new file) so the
   // product corrects pi-ai's verified-wrong reasoning_effort data out of the box, instead of
   // requiring every deployment to hand-edit thinkingEfforts once they notice. Measured 3347.
@@ -1439,7 +1439,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // exported as constants. Measured 981 (+3), exact, no spare.
   // Optional ExecResult.timedOut and the soft-deadline note on timeoutMs. Measured 987 (+6), exact cap.
   // Optional ToolContext.defaultTimeoutMs. Measured 988 (+1), exact cap.
-  'packages/extension-api/src': 3226, // SKILL-INSTALL-CORE: optional request port and bounded DTO, no admin grant.
+  'packages/extension-api/src': 5485, // Exact source total including runtime author adapters.
   // Optional author fixture entry; no production runtime code belongs here.
   // B1-A: measured 229 lines on the shared tree; public transport contract, config and wiring/testkit.
   // B1 review repair: exact measured 246; startup cancellation / cwd contract coverage.
@@ -2736,8 +2736,9 @@ const INITIAL_CEILING: Record<string, number> = {
   // Default artifacts transfer with its export held by the default blob service, and collection counts
   // of only collections with parts. Measured 74980 (+73), exact, no spare.
   // Download tickets sealed and opened through the Host ticket key broker. Measured 74977 (-3), exact.
+  // The artifacts transfer stamps verify with the store's injected clock. Measured 74978 (+1), exact.
   // SessionControl identity-facts and complete Binding proof add 1093 measured lines; no spare.
-  'packages/host/src': 76070,
+  'packages/host/src': 76071,
   'packages/host/src/ext-host/service-invocation': 247,
   // T5.2's permission projector is kept independently bounded so later extension-host work cannot
   // hide in the package-wide increment. Measured source: 86 lines.

@@ -133,10 +133,8 @@ const ROWS = `SELECT (SELECT COUNT(*) FROM artifacts) + (SELECT COUNT(*) FROM re
 
 const masked = (value: unknown, keys: ReadonlySet<string>): unknown =>
   JSON.parse(JSON.stringify(value), (key, item) => (keys.has(key) ? '*' : item))
-/** A verify is recomputed on every call, and this store stamps it with the wall clock. */
-const CLOCK = new Set(['checkedAt'])
 /** Fence, checkpoint and export digests name one run; everything else must match a clean run. */
-const RUN_IDS = new Set([...CLOCK, 'fenceId', 'checkpointId', 'exportDigest'])
+const RUN_IDS = new Set(['fenceId', 'checkpointId', 'exportDigest'])
 
 const route = (
   service: Service,
@@ -441,7 +439,7 @@ describe('artifacts authority transfer killed inside a provider step', () => {
       try {
         done[step] = ok(await call(sides(world, 'artifacts'), step, request))
         const again = ok(await call(sides(world, 'artifacts'), step, request))
-        expect(masked(again, CLOCK)).toEqual(masked(done[step], CLOCK))
+        expect(again).toEqual(done[step])
         after = await observe(world, root, done)
         await take(world, 'artifacts', steps.slice(at + 1), done, directory)
         final = await observe(world, root, done)

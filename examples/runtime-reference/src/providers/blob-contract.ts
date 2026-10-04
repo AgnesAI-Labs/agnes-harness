@@ -34,7 +34,7 @@ import {
   streamFact,
 } from '../../../../packages/extension-api/testkit/runtime/contracts/blob.js'
 import { BLOB_PROVIDER, type BlobStore, type BlobStoreOptions, openBlobStore, PIECE_BYTES } from './blob.js'
-import { type BlobTransferMaintenance, blobDescriptor } from './blob-transfer.js'
+import { referenceDescriptor, type TransferMaintenance } from './blob-transfer.js'
 
 const sha256 = (url: URL) => createHash('sha256').update(readFileSync(url)).digest('hex')
 
@@ -111,8 +111,8 @@ export function referenceBlobPort(
 }
 
 const AUTHORITY = 'reference-blob'
-const TENANT = 'reference-tenant'
-const SOURCE = 'reference-source'
+export const TENANT = 'reference-tenant'
+export const SOURCE = 'reference-source'
 /** Small parts, so a seeded world exports many and its manifest is paged through cursors. */
 const EXPORT_PART = { records: 2, bytes: 4 * PIECE_BYTES }
 
@@ -175,6 +175,42 @@ function transferStore(path: string, options: BlobStoreOptions, seeded: Seeded) 
   } satisfies TransferStore & { current(): BlobStore }
 }
 
+export type Routes = Map<string, { route: Wire.AuthorityRoute; targetActivated: boolean }>
+
+/**
+ * The maintenance assembly of a reference store at `locationRef`, over `routes` standing in for the
+ * directory's published routes; an import reads the source's exported bytes through `readSource`.
+ */
+export function directoryMaintenance(
+  routes: Routes,
+  locationRef: string,
+  readSource: TransferMaintenance['readSource'],
+  plan: string,
+): TransferMaintenance {
+  return {
+    authorize: (context) => context.authorizationRef === TRANSFER_MAINTAINER,
+    tenantId: TENANT,
+    locationRef,
+    readRoute: async ({ logicalAuthorityId }) => {
+      const held = routes.get(logicalAuthorityId)
+      if (held) return { ok: true, value: held }
+      const message = 'the directory holds no route for this authority'
+      return {
+        ok: false,
+        error: {
+          code: 'invalid_input',
+          detailCode: 'not_found',
+          message,
+          retryAdvice: { kind: 'never' },
+          diagnosticId: 'reference-directory',
+        },
+      }
+    },
+    readSource,
+    planFingerprint: canonicalJsonDigest(plan),
+  }
+}
+
 /**
  * Reference worlds for the transfer suite: a seeded source and candidate targets as databases in one
  * temporary directory, with an in-memory maintenance directory standing in for the published routes.
@@ -189,7 +225,7 @@ function referenceTransferSubject(providerId: string, packageDigest: string): Tr
   return {
     async open(maintained) {
       const directory = mkdtempSync(join(tmpdir(), 'reference-blob-transfer-'))
-      const routes = new Map<string, { route: Wire.AuthorityRoute; targetActivated: boolean }>()
+      const routes: Routes = new Map()
       const stores = new Map<string, ReturnType<typeof transferStore>>()
       const seeded: Seeded = { live: [], deleted: [] }
       let cut: number | null = null
@@ -197,32 +233,17 @@ function referenceTransferSubject(providerId: string, packageDigest: string): Tr
         if (!/^[a-z0-9-]+$/.test(locationRef)) throw new Error('location is not a plain name')
         return join(directory, `${locationRef}.sqlite`)
       }
-      const maintenance = (locationRef: string): BlobTransferMaintenance => ({
-        authorize: (context) => context.authorizationRef === TRANSFER_MAINTAINER,
-        tenantId: TENANT,
-        locationRef,
-        readRoute: async ({ logicalAuthorityId }) => {
-          const held = routes.get(logicalAuthorityId)
-          if (held) return { ok: true, value: held }
-          const message = 'the directory holds no route for this authority'
-          return {
-            ok: false,
-            error: {
-              code: 'invalid_input',
-              detailCode: 'not_found',
-              message,
-              retryAdvice: { kind: 'never' },
-              diagnosticId: 'reference-directory',
-            },
-          }
-        },
-        async *readSource(ref, context) {
-          if (cut === 0) throw new Error('the source is unreachable')
-          if (cut !== null) cut -= 1
-          yield* source.current().readExport(ref, context)
-        },
-        planFingerprint: canonicalJsonDigest('reference-blob-transfer-plan'),
-      })
+      const maintenance = (locationRef: string) =>
+        directoryMaintenance(
+          routes,
+          locationRef,
+          async function* (ref, context) {
+            if (cut === 0) throw new Error('the source is unreachable')
+            if (cut !== null) cut -= 1
+            yield* source.current().readExport(ref, context)
+          },
+          'reference-blob-transfer-plan',
+        )
       const options = (locationRef: string, candidate: boolean): BlobStoreOptions => ({
         authorityId: AUTHORITY,
         authorizeRead: (context) => context.authorizationRef === BLOB_READER,
@@ -242,7 +263,10 @@ function referenceTransferSubject(providerId: string, packageDigest: string): Tr
         }
       }
       return {
-        descriptor: blobDescriptor(binding, source.current().features, packageDigest),
+        descriptor: referenceDescriptor(binding, source.current().features, packageDigest, {
+          omitted: ['stage'],
+          requires: [],
+        }),
         source,
         authority: { authorityId: AUTHORITY, tenantId: TENANT, authorityEpoch: 1 },
         locationRef: SOURCE,

@@ -16,7 +16,7 @@ import {
   type RuntimeWireTypes,
   validateRuntime,
 } from '@agnes/protocol/runtime'
-import { type BlobTransferMaintenance, openBlobTransfer } from './blob-transfer.js'
+import { openTransfer, type TransferMaintenance } from './blob-transfer.js'
 
 export const BLOB_PROVIDER = { id: 'reference.blob', contract: 'agh.blob' } as const
 
@@ -72,7 +72,7 @@ export type BlobStoreOptions = Readonly<{
    * The maintenance assembly. With it the store declares authority transfer; without it every transfer
    * call is refused as unsupported.
    */
-  maintenance?: BlobTransferMaintenance
+  maintenance?: TransferMaintenance
   /** Creates a new store as an import target, which serves nothing until a transfer activates it. */
   candidate?: boolean
   /** The most records and encoded bytes one exported part holds. */
@@ -128,6 +128,15 @@ CREATE TABLE IF NOT EXISTS authority (
   role TEXT NOT NULL CHECK (role IN ('serving', 'fenced', 'candidate')),
   epoch INTEGER NOT NULL
 );`
+
+/** The business tables a checkpoint covers, each with the SQL that gives a record its key. */
+const RECORDS = {
+  deletions: "printf('%016d', seq)",
+  objects: 'blob_id',
+  pieces: "blob_id || '/' || printf('%016d', seq)",
+  pins: 'pin_id',
+  uploads: 'upload_id',
+}
 
 type ObjectRow = { digest: string; size: number; media_type: string }
 type PinRow = ObjectRow & { blob_id: string; deleted: number; active: number; revision: number }
@@ -328,9 +337,12 @@ export function openBlobStore(path: string, options: BlobStoreOptions = {}) {
     })
   }
 
-  const transfer = openBlobTransfer({
+  const transfer = openTransfer({
     db,
     authorityId,
+    name: 'blob',
+    tables: RECORDS,
+    log: 'deletions',
     maintenance: options.maintenance,
     part: options.exportPart ?? { records: 1000, bytes: 8 * PIECE_BYTES },
     live,
@@ -521,6 +533,26 @@ export function openBlobStore(path: string, options: BlobStoreOptions = {}) {
         const status = row.deleted ? 'deleted' : row.active ? 'pinned' : 'staged'
         return { status, bytes: row.size, digest: row.digest, ownerRefs }
       }),
+
+    /**
+     * Whether this store holds the object a reference names with every piece intact, whatever its pins
+     * and role: the transfer entry another reference store checks the blobs its records name against.
+     */
+    holds(ref: Wire.BlobRef): boolean {
+      live()
+      const row = db
+        .prepare('SELECT digest, size, media_type, deleted FROM objects WHERE blob_id = ?')
+        .get(ref.blobId) as (ObjectRow & { deleted: number }) | undefined
+      if (!describes(row, ref) || row.deleted) return false
+      const hash = createHash('sha256')
+      try {
+        for (let seq = 0; seq * PIECE_BYTES < ref.bytes; seq++) hash.update(piece(ref, seq))
+      } catch (caught) {
+        if (caught instanceof Refusal) return false
+        throw caught
+      }
+      return hash.digest('hex') === ref.digest
+    },
 
     /** The deletion log in seq order. Internal: no agh.blob method reports it. */
     deletions(): DeletionRow[] {

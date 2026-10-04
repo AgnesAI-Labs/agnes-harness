@@ -191,6 +191,7 @@ export function openArtifactsStore(options: {
       Refusal: ArtifactsRefusal,
       ...(options.maintenance ? { maintenance: options.maintenance } : {}),
       target: options.transferTarget === true,
+      ...(options.now ? { now: options.now } : {}),
       ...(options.blobTransfer ? { copy: publicationCopy(db, options.blobTransfer) } : {}),
     })
   } catch (error) {

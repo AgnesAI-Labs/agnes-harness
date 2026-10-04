@@ -7,6 +7,9 @@ import type {
   ServiceProvider,
 } from '@agnes/extension-api/runtime'
 import { assertAuthorSchema } from '@agnes/extension-api/runtime'
+
+export { assertAuthorSchema }
+
 import {
   boundedCanonicalJson,
   type CloseReason,
