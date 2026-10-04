@@ -636,7 +636,10 @@ export class Session {
     return { call, ...(result ? { result } : {}) }
   }
 
-  async prompt(input: ContentBlock[] | string, opts: { signal?: AbortSignal } = {}): Promise<TurnResult> {
+  async prompt(
+    input: ContentBlock[] | string,
+    opts: { signal?: AbortSignal; titleLocale?: 'en' | 'zh-CN' } = {},
+  ): Promise<TurnResult> {
     // Captured by identity: the outcome of *this* turn is only the record that was
     // installed while the request was in flight, never one left over from a past turn.
     const before = this.lastTurnEnd
@@ -649,7 +652,7 @@ export class Session {
     }
     opts.signal?.addEventListener('abort', onAbort, { once: true })
     try {
-      return await this.requestPrompt(input, before)
+      return await this.requestPrompt(input, before, false, opts.titleLocale)
     } finally {
       opts.signal?.removeEventListener('abort', onAbort)
     }
@@ -659,15 +662,27 @@ export class Session {
     input: ContentBlock[] | string,
     before: TurnEndRecord | null,
     restored = false,
+    titleLocale?: 'en' | 'zh-CN',
   ): Promise<TurnResult> {
     try {
       // No deadline: a turn is bounded by the transport's liveness, not by a stopwatch.
       const r = await this.client.call<{ stopReason: AcpStopReason }>(
         'session/prompt',
-        { sessionId: this.id, prompt: toContentBlocks(input) },
+        {
+          sessionId: this.id,
+          prompt: toContentBlocks(input),
+          ...(titleLocale ? { _meta: { 'ai.agnes.harness': { titleLocale } } } : {}),
+        },
         { timeoutMs: null },
       )
-      const end = this.lastTurnEnd !== before ? this.lastTurnEnd : null
+      // A queued cancellation can finish without opening a turn; an older completed turn is not its result.
+      const end =
+        this.lastTurnEnd !== before &&
+        this.lastTurnEnd &&
+        this.lastTurnEnd.reason !== 'error' &&
+        toAcpStopReason(this.lastTurnEnd.reason) === r.stopReason
+          ? this.lastTurnEnd
+          : null
       return {
         stopReason: r.stopReason,
         reason: end?.reason ?? REASON_FROM_STOP[r.stopReason],
@@ -680,7 +695,7 @@ export class Session {
       // exactly once. No other failure is safe to replay here.
       if (!restored && this.workspace && this.isSessionNotFound(e)) {
         await this.restoreAfterReclaim()
-        return this.requestPrompt(input, before, true)
+        return this.requestPrompt(input, before, true, titleLocale)
       }
       // The request itself failing to the transport dropping, not to a cancel or a
       // protocol error, is the one case with anything to wait for: the daemon may already
@@ -736,6 +751,11 @@ export class Session {
 
   followUp(input: ContentBlock[] | string, opts: { commandId?: string } = {}): Promise<number> {
     return this.write('followUp', input, opts)
+  }
+
+  /** Stop the current turn and run this existing inbox item first, without re-enqueuing its content. */
+  sendNow(itemId: string, opts: { commandId?: string } = {}): Promise<number> {
+    return submitCommand(this.client, this.id, 'sendNow', { sessionId: this.id, itemId }, opts.commandId)
   }
 
   compact(instructions?: string, opts: { commandId?: string } = {}): Promise<number> {

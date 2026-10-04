@@ -5857,8 +5857,8 @@ export const RuntimeMethodSchemaRefs = freeze({
       },
       "output": {
         "typeId": "agh.projection/openConversation.response@1",
-        "revision": 4,
-        "digest": "3f53c1f14c22ebefa40213f81ce5335fb1f244ab101c01f867b87e74b594d870"
+        "revision": 5,
+        "digest": "070e224f7b847bd07b70b2e2c668738116fa6b5ca3e679717dabdb5a55e1d018"
       }
     },
     "conversationHistory": {
@@ -5869,8 +5869,8 @@ export const RuntimeMethodSchemaRefs = freeze({
       },
       "output": {
         "typeId": "agh.projection/conversationHistory.response@1",
-        "revision": 4,
-        "digest": "3f53c1f14c22ebefa40213f81ce5335fb1f244ab101c01f867b87e74b594d870"
+        "revision": 5,
+        "digest": "070e224f7b847bd07b70b2e2c668738116fa6b5ca3e679717dabdb5a55e1d018"
       }
     },
     "acceptCommand": {
@@ -6063,8 +6063,8 @@ export const RuntimeMethodSchemaRefs = freeze({
       },
       "output": {
         "typeId": "agh.transport/clientQuery.response@1",
-        "revision": 5,
-        "digest": "35eeb5ff6f74664734af5179c5a8ee657e3fe7baf717e2045b757e5b51dab46d"
+        "revision": 6,
+        "digest": "59f06a3d38c55722971c89caa06550e37cae5aecc47e007dfe7bcf93ab896175"
       }
     },
     "clientCommand": {
@@ -6099,8 +6099,8 @@ export const RuntimeMethodSchemaRefs = freeze({
       },
       "output": {
         "typeId": "agh.transport/subscribe.response@1",
-        "revision": 4,
-        "digest": "2114be8062ffaf4715fc3a3a90633e76a378f8a116f87202b44d4dfd72816298"
+        "revision": 5,
+        "digest": "3212b49aca394d88c97c5abd7ec40e4804bea71da7758a45f0256ab5931e1700"
       }
     },
     "readSubscription": {
@@ -6111,8 +6111,8 @@ export const RuntimeMethodSchemaRefs = freeze({
       },
       "output": {
         "typeId": "agh.transport/readSubscription.response@1",
-        "revision": 4,
-        "digest": "76975b3fa8deb30a506240b83d13dae2fa283b343bbf7a781b037351e0250d07"
+        "revision": 5,
+        "digest": "7be327ef9d6b4f790b12c15de34023186ed045e81cae26d68178ae522a28cba7"
       }
     },
     "closeSubscription": {

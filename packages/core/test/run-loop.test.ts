@@ -1,5 +1,5 @@
 import type { ModelRecord } from '@agnes/protocol'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { MemoryStorage } from '../src/log/memory-storage.js'
 import { ToolRegistry } from '../src/registry/tools.js'
 import { presetDefaults } from '../src/step/preset.js'
@@ -58,6 +58,66 @@ describe('run loop', () => {
     expect(out).toMatchObject({ reason: 'completed', lastSeq: 1 })
     expect(await log.scan({ fromSeq: 1, limit: 10 })).toHaveLength(1)
   })
+
+  it.each(['complete', 'cancel', 'fail', 'stop-active'] as const)(
+    'serializes concurrent turns and preserves queued input on %s',
+    async (mode) => {
+      let release!: () => void
+      const held = new Promise<void>((resolve) => {
+        release = resolve
+      })
+      const inner = fakeProvider([textTurn('answer')])
+      const { session, log } = await openSession({
+        provider: {
+          models: () => inner.models(),
+          async *infer(req, options) {
+            await held
+            if (mode === 'fail') {
+              yield {
+                type: 'error',
+                reason: 'error',
+                code: 'AUTH',
+                message: 'synthetic failure',
+                retryable: false,
+              } as const
+              return
+            }
+            yield* inner.infer(req, options)
+          },
+        },
+      })
+      try {
+        await session.enqueue('next-turn', { content: [{ type: 'text', text: 'A' }], actor })
+        const firstAbort = new AbortController()
+        const first = session.run({ until: 'turn-end', signal: firstAbort.signal })
+        await vi.waitFor(() => expect(session.op()?.phase.kind).toBe('inference'))
+        await session.enqueue('next-turn', { content: [{ type: 'text', text: 'B' }], actor })
+        const abort = new AbortController()
+        const second = session.run({ until: 'turn-end', signal: abort.signal })
+        await session.enqueue('next-turn', { content: [{ type: 'text', text: 'C' }], actor })
+        const third = session.run({ until: 'turn-end', signal: sig() })
+        if (mode === 'cancel') abort.abort()
+        if (mode === 'stop-active') firstAbort.abort()
+        release()
+        expect((await first).reason).toBe(
+          mode === 'fail' ? 'error' : mode === 'stop-active' ? 'aborted' : 'completed',
+        )
+        const reason = mode === 'complete' ? 'completed' : mode === 'fail' ? 'error' : 'aborted'
+        expect((await second).reason).toBe(reason)
+        expect((await third).reason).toBe(reason)
+        const messages = await log.scan({ type: 'user/message', limit: 10 })
+        expect(
+          messages.map((row) => (row.data as { content: Array<{ text: string }> }).content[0]?.text),
+        ).toEqual(mode === 'complete' ? ['A', 'B', 'C'] : ['A'])
+        expect(session.latest('inbox')).toMatchObject({
+          items: mode === 'complete' ? [] : [{ content: [{ text: 'B' }] }, { content: [{ text: 'C' }] }],
+        })
+      } finally {
+        release()
+        await session.close()
+      }
+    },
+  )
 
   it.each([
     { maxSteps: 1, reason: 'max_steps', steps: 1 },

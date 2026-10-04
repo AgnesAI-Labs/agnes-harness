@@ -106,6 +106,7 @@ type SessionDouble = {
   detach: ReturnType<typeof vi.fn>
   events: ReturnType<typeof vi.fn>
   followUp: ReturnType<typeof vi.fn>
+  sendNow: ReturnType<typeof vi.fn>
   onPermissionRequest: ReturnType<typeof vi.fn>
   onPreview: ReturnType<typeof vi.fn>
   projectUI: ReturnType<typeof vi.fn>
@@ -185,6 +186,7 @@ function session(id: string, projectUI: () => Promise<UITimeline>): SessionDoubl
         totalNodes: timeline.nodes.length,
         opState: timeline.opState,
         ...(timeline.yolo === undefined ? {} : { yolo: timeline.yolo }),
+        ...(timeline.pendingInputs === undefined ? {} : { pendingInputs: timeline.pendingInputs }),
         changes: timeline.nodes.map((node, index) => ({ op: 'upsert' as const, index, node })),
         turnChanges: timeline.turns.map((turn, index) => ({ op: 'upsert' as const, index, turn })),
         ...(timeline.usage ? { usage: timeline.usage } : {}),
@@ -207,6 +209,7 @@ function session(id: string, projectUI: () => Promise<UITimeline>): SessionDoubl
       }),
     })),
     followUp: vi.fn(async () => undefined),
+    sendNow: vi.fn(async () => 1),
     onPermissionRequest: vi.fn(() => vi.fn()),
     onPreview: vi.fn(() => vi.fn()),
     projectUI: vi.fn(projectUI),
@@ -474,7 +477,9 @@ describe('web permission synchronization', () => {
       await vi.waitFor(() => expect(label()).toBe(before ? '工作区内修改' : '完全权限'))
       old.prompt.mockClear()
       submit('use the current permission')
-      await vi.waitFor(() => expect(old.prompt).toHaveBeenCalledWith('use the current permission'))
+      await vi.waitFor(() =>
+        expect(old.prompt).toHaveBeenCalledWith('use the current permission', { titleLocale: 'zh-CN' }),
+      )
       expect.soft(pendingLabel).toBe('请选择权限')
       expect.soft(renderedLabel).toBe('请选择权限')
       expect.soft(failedLabel).toBe('请选择权限')
@@ -574,7 +579,9 @@ describe('web permission synchronization', () => {
     applied.resolve({ effectiveFromSeq: 11 })
     await vi.waitFor(() => expect(label()).toBe('工作区内修改'))
     submit('confirmed permission')
-    await vi.waitFor(() => expect(old.prompt).toHaveBeenCalledWith('confirmed permission'))
+    await vi.waitFor(() =>
+      expect(old.prompt).toHaveBeenCalledWith('confirmed permission', { titleLocale: 'zh-CN' }),
+    )
 
     const opened = old.projectUIOpening.mock.calls.length
     connect('reconnecting')
@@ -590,7 +597,9 @@ describe('web permission synchronization', () => {
     choose('工作区内修改')
     await vi.waitFor(() => expect(label()).toBe('工作区内修改'))
     submit('confirmed after reconnect')
-    await vi.waitFor(() => expect(old.prompt).toHaveBeenCalledWith('confirmed after reconnect'))
+    await vi.waitFor(() =>
+      expect(old.prompt).toHaveBeenCalledWith('confirmed after reconnect', { titleLocale: 'zh-CN' }),
+    )
     expect(old.setYolo).toHaveBeenCalledTimes(2)
   }, 20_000)
 })
@@ -824,7 +833,9 @@ describe('web session selection', () => {
         submit('use the remembered selection')
       }
       expect(fresh.setYolo).toHaveBeenCalledWith(true)
-      await vi.waitFor(() => expect(fresh.prompt).toHaveBeenCalledWith('use the remembered selection'))
+      await vi.waitFor(() =>
+        expect(fresh.prompt).toHaveBeenCalledWith('use the remembered selection', { titleLocale: 'zh-CN' }),
+      )
       expect(permission.querySelector('[data-permission-label]')?.textContent).toBe('完全权限')
     },
     20_000,
@@ -893,7 +904,9 @@ describe('web session selection', () => {
     submit('create in beta')
     await vi.waitFor(() => expect(create).toHaveBeenCalledOnce())
     expect(create).toHaveBeenCalledWith({ cwd: beta.path, sessionKey: expect.any(String) })
-    await vi.waitFor(() => expect(fresh.prompt).toHaveBeenCalledWith('create in beta'))
+    await vi.waitFor(() =>
+      expect(fresh.prompt).toHaveBeenCalledWith('create in beta', { titleLocale: 'zh-CN' }),
+    )
   })
 
   it('keeps controls usable after a pending model update and refreshes both old and new drafts', async () => {
@@ -1344,7 +1357,9 @@ describe('web session selection', () => {
     firstCreation.resolve(fresh)
     includeFresh = true
     newProjection.resolve(idleTimeline('fresh'))
-    await vi.waitFor(() => expect(fresh.prompt).toHaveBeenCalledWith('must not cross sessions'))
+    await vi.waitFor(() =>
+      expect(fresh.prompt).toHaveBeenCalledWith('must not cross sessions', { titleLocale: 'zh-CN' }),
+    )
   })
 
   it('opens directory confirmation before creation and explains an unavailable path', async () => {
@@ -1515,6 +1530,85 @@ describe('web session selection', () => {
     expect(picker.disabled).toBe(false)
   })
 
+  it.each(['slow', 'failed'] as const)(
+    'sends the first prompt independently of a %s sidebar refresh',
+    async (mode) => {
+      installPublicFixture()
+      history.replaceState(null, '', '/#test-launcher-token')
+      const fresh = session('fresh', async () => idleTimeline('fresh'))
+      const listing = deferred<{ items: Array<{ sessionId: string; title: string }> }>()
+      let created = false
+      const workspace = {
+        path: '/workspace/agnes',
+        name: 'agnes',
+        lastUsedAt: null,
+        sessionCount: 0,
+        available: true,
+      }
+      sdk.createClient.mockReturnValue({
+        apis: vi.fn(async () => ({ profile: { models: [{ route: 'local', id: 'model-a' }] } })),
+        approval: { decide: vi.fn(async () => undefined) },
+        close: vi.fn(async () => undefined),
+        config: {
+          get: vi.fn(async () => ({ configured: true })),
+          providers: vi.fn(async () => ({ providers: [] })),
+          save: vi.fn(async () => ({ configured: true })),
+          test: vi.fn(async () => ({ verified: true, models: [] })),
+        },
+        initialize: vi.fn(async () => undefined),
+        on: vi.fn(),
+        workspace: {
+          list: vi.fn(async () => ({ items: [] })),
+          add: vi.fn(async () => ({ workspace })),
+        },
+        session: {
+          list: vi.fn(async () => (created ? listing.promise : { items: [] })),
+          load: vi.fn(async () => fresh),
+          new: vi.fn(async () => {
+            created = true
+            return fresh
+          }),
+        },
+      })
+      binding.bindWebSession.mockImplementation((selected: SessionDouble) => ({
+        session: selected,
+        offPermission: vi.fn(),
+      }))
+      await import('../src/app.js')
+      const dialog = document.getElementById('new-session') as HTMLDialogElement
+      await vi.waitFor(() => expect(dialog.open).toBe(true))
+      const path = document.getElementById('new-session-cwd') as HTMLInputElement
+      path.value = workspace.path
+      path.dispatchEvent(new Event('input', { bubbles: true }))
+      await vi.waitFor(() =>
+        expect((document.getElementById('new-session-create') as HTMLButtonElement).disabled).toBe(false),
+      )
+      document
+        .getElementById('new-session-form')
+        ?.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+      await vi.waitFor(() => expect(dialog.open).toBe(false))
+      document.getElementById('model')?.click()
+      openModelList()
+      modelMenu().querySelector<HTMLElement>('[role="option"]')?.click()
+      try {
+        submit('first message')
+        await vi.waitFor(() =>
+          expect(fresh.prompt).toHaveBeenCalledWith('first message', { titleLocale: 'zh-CN' }),
+        )
+        if (mode === 'failed') {
+          listing.reject(new Error('sidebar list failed'))
+          await vi.waitFor(() =>
+            expect(document.getElementById('notice')?.textContent).toContain('sidebar list failed'),
+          )
+        }
+        expect((document.getElementById('prompt') as HTMLTextAreaElement).value).toBe('')
+        expect(fresh.prompt).toHaveBeenCalledTimes(1)
+      } finally {
+        listing.resolve({ items: [{ sessionId: 'fresh', title: 'fresh' }] })
+      }
+    },
+  )
+
   it('keeps the first draft and creation key through model and prompt failures', async () => {
     installPublicFixture()
     history.replaceState(null, '', '/#test-launcher-token')
@@ -1617,6 +1711,7 @@ describe('web session selection', () => {
     expect(document.querySelector('[data-workspace-label]')?.textContent).toBe('agnes')
     expect(document.getElementById('composer-workspace')?.title).toBe(workspace.path)
 
+    document.querySelector<HTMLInputElement>('input[name="agnes-locale"][value="en"]')?.click()
     composer.value = '成功后的第二条消息'
     composer.dispatchEvent(new Event('input', { bubbles: true }))
     await vi.waitFor(() =>
@@ -1625,14 +1720,21 @@ describe('web session selection', () => {
     document
       .getElementById('composer')
       ?.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
-    await vi.waitFor(() => expect(fresh.prompt).toHaveBeenLastCalledWith('成功后的第二条消息'))
+    await vi.waitFor(() =>
+      expect(fresh.prompt).toHaveBeenLastCalledWith('成功后的第二条消息', { titleLocale: 'en' }),
+    )
     expect(create).toHaveBeenCalledTimes(1)
     expect(create.mock.calls[0]?.[0]?.sessionKey).toBe(firstKey)
   })
 
   it('preserves the running action as a named busy mode with a separate stop control', async () => {
     installPublicFixture()
-    const running = session('old', async () => busyTimeline('old'))
+    let pendingInputs = [
+      { itemId: 'B', preview: '第二条提示词' },
+      { itemId: 'C', preview: '第三条提示词' },
+    ]
+    let sequence = 1
+    const running = session('old', async () => ({ ...busyTimeline('old'), upto: sequence, pendingInputs }))
     const titleList = vi.fn(async () => ({ items: [{ sessionId: 'old' }] }))
     sdk.createClient.mockReturnValue({
       apis: vi.fn(async () => ({ profile: { models: [{ route: 'local', id: 'model-a' }] } })),
@@ -1676,9 +1778,49 @@ describe('web session selection', () => {
     expect(hint.textContent).toBe('可补充下一轮')
     expect(cancel.hidden).toBe(false)
     expect(cancel.textContent).toBe('停止')
+    expect(document.querySelector('.composer-queue-count')?.textContent).toBe('待执行 · 2')
+    expect(
+      Array.from(document.querySelectorAll('.composer-queue-preview'), (node) => node.textContent),
+    ).toEqual(['第二条提示词', '第三条提示词'])
+    const sendNow = deferred<number>()
+    running.sendNow.mockImplementationOnce(() => sendNow.promise)
+    const queuedButton = document.querySelector<HTMLButtonElement>('[data-queue-item="C"] button')
+    if (!queuedButton) throw new Error('missing queued input action')
+    queuedButton.click()
+    queuedButton.click()
+    expect(running.sendNow).toHaveBeenCalledTimes(1)
+    expect(running.sendNow).toHaveBeenCalledWith('C')
+    expect(queuedButton.disabled).toBe(true)
+    expect(queuedButton.getAttribute('aria-busy')).toBe('true')
+    sendNow.reject(new Error('synthetic send-now refusal'))
+    await vi.waitFor(() =>
+      expect(document.querySelector('.composer-queue-error')?.textContent).toBe('synthetic send-now refusal'),
+    )
+    expect(document.querySelectorAll('[data-queue-item]')).toHaveLength(2)
+    running.sendNow.mockImplementationOnce(async () => {
+      pendingInputs = [{ itemId: 'B', preview: '第二条提示词' }]
+      sequence++
+      return sequence
+    })
+    queuedButton.click()
+    await vi.waitFor(() => expect(document.querySelectorAll('[data-queue-item]')).toHaveLength(1))
+    expect(document.querySelector('.composer-queue-count')?.textContent).toBe('待执行 · 1')
+    expect(running.prompt).not.toHaveBeenCalled()
     const reads = titleList.mock.calls.length
-    submit('本轮还没结束，先补充下一轮')
-    await vi.waitFor(() => expect(running.followUp).toHaveBeenCalledTimes(1))
+    running.followUp.mockImplementation(async (input: string) => {
+      sequence++
+      pendingInputs = [...pendingInputs, { itemId: `queued-${sequence}`, preview: input }]
+      return sequence
+    })
+    const followUps = ['本轮还没结束，先补充下一轮', '再排一条', '第三条也应立即显示']
+    for (const [index, input] of followUps.entries()) {
+      submit(input)
+      await vi.waitFor(() => expect(running.followUp).toHaveBeenCalledTimes(index + 1))
+      await vi.waitFor(() => expect(document.querySelectorAll('[data-queue-item]')).toHaveLength(index + 2))
+    }
+    expect(
+      Array.from(document.querySelectorAll('.composer-queue-preview'), (node) => node.textContent),
+    ).toEqual(['第二条提示词', ...followUps])
     expect(titleList).toHaveBeenCalledTimes(reads)
     const firstCancel = deferred<void>()
     running.cancel.mockImplementationOnce(() => firstCancel.promise)

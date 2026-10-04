@@ -23,6 +23,7 @@ export type RuntimeRunCommandFrame = { kind: 'command'; requestId: string } & (
 
 export type SessionMethod =
   | 'enqueue'
+  | 'sendQueuedNow'
   | 'run'
   | 'abort'
   | 'scan'

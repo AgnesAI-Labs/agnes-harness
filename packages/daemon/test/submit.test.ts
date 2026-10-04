@@ -1,8 +1,9 @@
 import { mkdirSync } from 'node:fs'
 import { join } from 'node:path'
+import type { HostSession } from '@agnes/host'
 import { describe, expect, it, vi } from 'vitest'
 import { signSourceAuth, sourceAuthCanonical } from '../src/local/auth.js'
-import { commandBinding } from '../src/local/command-binding.js'
+import { commandAdmissionId, commandBinding } from '../src/local/command-binding.js'
 import { compactOutcomeForRange } from '../src/local/methods/agnes.js'
 import type { JournalIdentity, JournalResult } from '../src/local/ports.js'
 import { MemoryJournal } from '../src/local/ports.js'
@@ -183,6 +184,428 @@ describe('compact outcome association', () => {
 })
 
 describe('steer / followUp / submit', () => {
+  it('starts an admitted prompt without a separate receipt read and runs older input first', async () => {
+    const h = await openTestHost()
+    const created = vi.spyOn(h.host, 'createSession')
+    const ep = h.endpoint({ pollMs: 5 })
+    try {
+      const sessionId = await newSession(ep, h.dataDir)
+      const core = (await created.mock.results[0]?.value) as HostSession
+      const scan = core.scan.bind(core)
+      vi.spyOn(core, 'scan').mockImplementation(async (query) => {
+        if (query.fromSeq !== undefined && query.fromSeq === query.toSeq && query.limit === 1 && !query.type)
+          throw new Error('synthetic receipt read failed')
+        return scan(query)
+      })
+      await core.enqueue('next-turn', {
+        actor: core.d.actor,
+        content: [{ type: 'text', text: 'older' }],
+      })
+      expect(
+        await ep.handle({
+          jsonrpc: '2.0',
+          id: 3,
+          method: 'session/prompt',
+          params: { sessionId, prompt: [{ type: 'text', text: 'A' }] },
+        }),
+      ).toHaveProperty('result')
+      expect(
+        (await core.scan({ type: 'user/message', limit: 10 })).map(
+          (row) => (row.data as { content: Array<{ text: string }> }).content[0]?.text,
+        ),
+      ).toEqual(['older', 'A'])
+      expect((await core.projectUI()).pendingInputs).toEqual([])
+    } finally {
+      await ep.close()
+      await h.close()
+      created.mockRestore()
+    }
+  })
+
+  it.each(['prompt', 'follow-up', 'background', 'receipt-loss'] as const)(
+    'sends selected queued input now during %s, retains FIFO remainder, and replays without cancellation',
+    async (mode) => {
+      const inner = slowProvider(0)
+      let releaseFirst: () => void = () => {}
+      let releaseSelected: () => void = () => {}
+      let selectedSignal: AbortSignal | undefined
+      let inference = 0
+      const h = await openTestHost({
+        provider: {
+          models: () => inner.models(),
+          async *infer(request, options) {
+            if (request.kind !== 'summary') {
+              inference++
+              if (inference <= 2) {
+                await new Promise<void>((resolve) => {
+                  if (inference === 1) releaseFirst = resolve
+                  else {
+                    releaseSelected = resolve
+                    selectedSignal = options.signal
+                  }
+                  options.signal.addEventListener('abort', () => resolve(), { once: true })
+                  if (options.signal.aborted) resolve()
+                })
+              }
+            }
+            yield* inner.infer(request, options)
+          },
+        },
+      })
+      const created = vi.spyOn(h.host, 'createSession')
+      const journal = new MemoryJournal()
+      const ep = h.endpoint({ pollMs: 5, journal })
+      try {
+        const sessionId = await newSession(ep, h.dataDir)
+        const core = (await created.mock.results[0]?.value) as HostSession | undefined
+        if (!core) throw new Error('missing session')
+        const active =
+          mode === 'prompt' || mode === 'receipt-loss'
+            ? ep.handle({
+                jsonrpc: '2.0',
+                id: 30,
+                method: 'session/prompt',
+                params: { sessionId, prompt: [{ type: 'text', text: 'A' }] },
+              })
+            : mode === 'background'
+              ? core
+                  .enqueue('next-turn', { actor: core.d.actor, content: [{ type: 'text', text: 'A' }] })
+                  .then(() => core.run({ until: 'turn-end', signal: new AbortController().signal }))
+              : ep.handle({
+                  jsonrpc: '2.0',
+                  id: 30,
+                  method: '_agnes/v1/session.followUp',
+                  params: { sessionId, commandId: 'A', content: [{ type: 'text', text: 'A' }] },
+                })
+        await vi.waitFor(() => expect(inference).toBe(1))
+        for (const text of ['B', 'C', 'D'])
+          expect(
+            await ep.handle({
+              jsonrpc: '2.0',
+              id: 31,
+              method: '_agnes/v1/session.followUp',
+              params: { sessionId, commandId: text, content: [{ type: 'text', text }] },
+            }),
+          ).toHaveProperty('result.seq')
+        const queue = (await core.projectUI()).pendingInputs ?? []
+        expect(queue.map((item) => item.preview)).toEqual(['B', 'C', 'D'])
+        const selected = queue.find((item) => item.preview === 'C')
+        if (!selected) throw new Error('missing selected input')
+        const command = {
+          jsonrpc: '2.0' as const,
+          id: 40,
+          method: '_agnes/v1/submit',
+          params: {
+            clientId: CLIENT,
+            commandId: 'send-C',
+            kind: 'sendNow',
+            payload: { sessionId, itemId: selected.itemId },
+          },
+        }
+        if (mode === 'receipt-loss')
+          vi.spyOn(journal, 'complete').mockRejectedValueOnce(new Error('lost receipt'))
+        expect(await ep.handle(command)).toMatchObject(
+          mode === 'receipt-loss'
+            ? { error: { code: -32603 } }
+            : { result: { seq: expect.any(Number), replayed: false } },
+        )
+        await active
+        await vi.waitFor(() => expect(inference).toBe(2))
+        expect((await core.projectUI()).pendingInputs?.map((item) => item.preview)).toEqual(['B', 'D'])
+        expect((await core.scan({ type: 'turn/end', limit: 10 }))[0]?.data).toMatchObject({
+          reason: 'aborted',
+        })
+        expect(await ep.handle(command)).toMatchObject({ result: { replayed: true } })
+        expect(
+          await ep.handle({ ...command, params: { ...command.params, commandId: 'already-claimed' } }),
+        ).toMatchObject({ error: { data: { code: 'QUEUED_INPUT_GONE' } } })
+        expect(selectedSignal?.aborted).toBe(false)
+        expect((await core.projectUI()).pendingInputs?.map((item) => item.preview)).toEqual(['B', 'D'])
+        releaseSelected()
+        await vi.waitFor(async () => {
+          expect(
+            (await core.scan({ type: 'user/message', limit: 10 })).map(
+              (row) => (row.data as { content: Array<{ text: string }> }).content[0]?.text,
+            ),
+          ).toEqual(['A', 'C', 'B', 'D'])
+          expect(await core.scan({ type: 'turn/end', limit: 10 })).toHaveLength(4)
+        })
+        expect((await core.projectUI()).pendingInputs).toEqual([])
+      } finally {
+        releaseFirst()
+        releaseSelected()
+        await ep.close()
+        await h.close()
+        created.mockRestore()
+      }
+    },
+    30_000,
+  )
+  it.each(['blocked', 'recovered-prompt', 'recovered-after-stop', 'recovered-owner-loss'] as const)(
+    'explicit send-now resumes after %s without repeating the selected message',
+    async (mode) => {
+      const h = await openTestHost({ provider: slowProvider(0) })
+      const created = vi.spyOn(h.host, 'createSession')
+      const journal = new MemoryJournal()
+      const ep = h.endpoint({ pollMs: 5, journal })
+      try {
+        const sessionId = await newSession(ep, h.dataDir)
+        const core = (await created.mock.results[0]?.value) as HostSession | undefined
+        if (!core) throw new Error('missing session')
+        await core.enqueue('next-turn', { actor: core.d.actor, content: [{ type: 'text', text: 'A' }] })
+        expect(await core.acceptInput()).toBe(true)
+        await core.endTurn('blocked', { error: { code: 'HOOK_BLOCKED', message: 'synthetic block' } })
+        expect((await core.scan({ type: 'turn/end', limit: 1 }))[0]?.data).toMatchObject({
+          reason: 'blocked',
+        })
+        for (const text of ['B', 'C', 'D'])
+          await core.enqueue('next-turn', {
+            actor: core.d.actor,
+            kind: mode === 'recovered-prompt' && text === 'C' ? 'prompt' : 'follow_up',
+            content: [{ type: 'text', text }],
+          })
+        const selected = (await core.projectUI()).pendingInputs?.find((item) => item.preview === 'C')
+        if (!selected) throw new Error('missing selected input')
+        const payload = { sessionId, itemId: selected.itemId }
+        const commandId = 'resume-C'
+        if (mode !== 'blocked') {
+          const owner = identity(ep.conn.principalId, CLIENT, sessionId, commandId)
+          const binding = commandBinding('sendNow', sessionId, undefined, payload)
+          expect(await journal.begin(owner, binding)).toMatchObject({ state: 'new' })
+          await core.sendQueuedNow(selected.itemId, core.d.actor, commandAdmissionId(owner, binding))
+        }
+        if (mode === 'recovered-after-stop') {
+          expect((await core.run({ until: 'turn-end', signal: new AbortController().signal })).reason).toBe(
+            'completed',
+          )
+          expect(await core.acceptInput()).toBe(true)
+          await core.abort(core.d.actor)
+          expect((await core.run({ until: 'turn-end', signal: new AbortController().signal })).reason).toBe(
+            'aborted',
+          )
+        }
+        const command = {
+          jsonrpc: '2.0' as const,
+          id: 51,
+          method: '_agnes/v1/submit',
+          params: { clientId: CLIENT, commandId, kind: 'sendNow', payload },
+        }
+        if (mode === 'recovered-owner-loss') {
+          let deny = false
+          const originalResolve = MemorySessionPrincipalOwnership.prototype.resolve
+          const resolve = vi
+            .spyOn(MemorySessionPrincipalOwnership.prototype, 'resolve')
+            .mockImplementation(function (this: MemorySessionPrincipalOwnership, key) {
+              return deny ? undefined : originalResolve.call(this, key)
+            })
+          const originalScan = core.scan.bind(core)
+          const scan = vi.spyOn(core, 'scan').mockImplementation(async (query) => {
+            const rows = await originalScan(query)
+            if (query.type === 'x/core/queued-send-now') deny = true
+            return rows
+          })
+          try {
+            expect(await ep.handle(command)).toMatchObject({
+              error: { data: { code: 'CAPABILITY_DENIED', reason: 'session owner unavailable' } },
+            })
+            expect((await core.projectUI()).pendingInputs?.map((item) => item.preview)).toEqual([
+              'C',
+              'B',
+              'D',
+            ])
+          } finally {
+            scan.mockRestore()
+            resolve.mockRestore()
+          }
+          return
+        }
+        expect(await ep.handle(command)).toMatchObject({
+          result: { replayed: mode !== 'blocked', seq: expect.any(Number) },
+        })
+        if (mode === 'recovered-after-stop') {
+          await new Promise<void>((resolve) => setImmediate(resolve))
+          expect((await core.projectUI()).pendingInputs?.map((item) => item.preview)).toEqual(['D'])
+          expect((await core.scan({ type: 'turn/end', order: 'desc', limit: 1 }))[0]?.data).toMatchObject({
+            reason: 'aborted',
+          })
+          expect(await ep.handle(command)).toMatchObject({ result: { replayed: true } })
+          return
+        }
+        await vi.waitFor(async () => {
+          expect((await core.projectUI()).pendingInputs).toEqual([])
+          expect(
+            (await core.scan({ type: 'user/message', limit: 10 })).map(
+              (row) => (row.data as { content: Array<{ text: string }> }).content[0]?.text,
+            ),
+          ).toEqual(['A', 'C', 'B', 'D'])
+          expect(await core.scan({ type: 'turn/end', limit: 10 })).toHaveLength(4)
+        })
+        expect(await ep.handle(command)).toMatchObject({ result: { replayed: true } })
+        expect((await core.projectUI()).turns).toHaveLength(4)
+      } finally {
+        await ep.close()
+        await h.close()
+        created.mockRestore()
+      }
+    },
+  )
+  it.each(['complete', 'cancel', 'fail', 'background'] as const)(
+    'automatically drains follow-ups FIFO and respects %s',
+    async (mode) => {
+      const inner = slowProvider(0)
+      let release!: () => void
+      const hold = new Promise<void>((resolve) => {
+        release = resolve
+      })
+      let releaseSecond!: () => void
+      const secondHold = new Promise<void>((resolve) => {
+        releaseSecond = resolve
+      })
+      let secondStarted!: () => void
+      const started = new Promise<void>((resolve) => {
+        secondStarted = resolve
+      })
+      let releaseLast!: () => void
+      const lastHold = new Promise<void>((resolve) => {
+        releaseLast = resolve
+      })
+      let lastStarted!: () => void
+      const last = new Promise<void>((resolve) => {
+        lastStarted = resolve
+      })
+      const paused = mode === 'cancel' || mode === 'fail'
+      let turns = 0
+      const h = await openTestHost({
+        provider: {
+          models: () => inner.models(),
+          async *infer(req, options) {
+            if (req.kind !== 'summary') {
+              turns++
+              if (turns === 1) await hold
+              if (turns === 4) {
+                lastStarted()
+                await lastHold
+              }
+              if (turns === 2 && paused) {
+                secondStarted()
+                options.signal.addEventListener('abort', releaseSecond, { once: true })
+                try {
+                  if (!options.signal.aborted) await secondHold
+                } finally {
+                  options.signal.removeEventListener('abort', releaseSecond)
+                }
+                if (mode === 'fail') {
+                  yield {
+                    type: 'error',
+                    reason: 'error',
+                    code: 'AUTH',
+                    message: 'synthetic failure',
+                    retryable: false,
+                  }
+                  return
+                }
+              }
+            }
+            yield* inner.infer(req, options)
+          },
+        },
+      })
+      const created = vi.spyOn(h.host, 'createSession')
+      const ep = h.endpoint({ pollMs: 5 })
+      try {
+        const sessionId = await newSession(ep, h.dataDir)
+        const core = await created.mock.results[0]?.value
+        if (!core) throw new Error('missing session')
+        const prompt =
+          mode === 'background'
+            ? // Scheduled work uses enqueue/run without a client prompt's inflight marker.
+              core
+                .enqueue('next-turn', {
+                  actor: core.d.actor,
+                  kind: 'prompt',
+                  titleLocale: 'en',
+                  content: [{ type: 'text', text: 'A' }],
+                })
+                .then(() => core.run({ until: 'turn-end', signal: new AbortController().signal }))
+            : ep.handle({
+                jsonrpc: '2.0',
+                id: 30,
+                method: 'session/prompt',
+                params: {
+                  sessionId,
+                  prompt: [{ type: 'text', text: 'A' }],
+                  _meta: { 'ai.agnes.harness': { titleLocale: 'en' } },
+                },
+              })
+        await vi.waitFor(() => expect(core.op()?.phase.kind).toBe('inference'))
+        for (const text of ['B', 'C']) {
+          expect(
+            await ep.handle({
+              jsonrpc: '2.0',
+              id: 31,
+              method: '_agnes/v1/session.followUp',
+              params: { sessionId, content: [{ type: 'text', text }], commandId: text },
+            }),
+          ).toMatchObject({ result: { seq: expect.any(Number) } })
+        }
+        release()
+        expect(await prompt).toMatchObject(
+          mode === 'background' ? { reason: 'completed' } : { result: { stopReason: 'end_turn' } },
+        )
+        if (paused) {
+          await started
+          if (mode === 'cancel')
+            await ep.handle({ jsonrpc: '2.0', method: 'session/cancel', params: { sessionId } })
+          else releaseSecond()
+        }
+        await vi.waitFor(async () => {
+          const messages = await core.scan({ type: 'user/message', limit: 10 })
+          expect(
+            messages.map(
+              (row: { data: unknown }) => (row.data as { content: Array<{ text: string }> }).content[0]?.text,
+            ),
+          ).toEqual(paused ? ['A', 'B'] : ['A', 'B', 'C'])
+          expect(messages[0]?.data).toMatchObject({ titleLocale: 'en' })
+          const ends = await core.scan({ type: 'turn/end', limit: 10 })
+          expect(ends).toHaveLength(paused ? 2 : 3)
+          expect(ends.at(-1)?.data).toMatchObject({
+            reason: !paused ? 'completed' : mode === 'cancel' ? 'aborted' : 'error',
+          })
+        })
+        if (paused) {
+          expect(core.latest('inbox')).toMatchObject({ items: [{ content: [{ type: 'text', text: 'C' }] }] })
+        } else expect(core.latest('inbox')).toMatchObject({ items: [] })
+        let settled = false
+        const next = ep
+          .handle({
+            jsonrpc: '2.0',
+            id: 32,
+            method: 'session/prompt',
+            params: { sessionId, prompt: [{ type: 'text', text: 'D' }] },
+          })
+          .then((result) => {
+            settled = true
+            return result
+          })
+        await last
+        expect(settled).toBe(false)
+        releaseLast()
+        expect(await next).toMatchObject({ result: { stopReason: 'end_turn' } })
+        expect((await core.scan({ type: 'user/message', limit: 10 })).at(-1)?.data).toMatchObject({
+          content: [{ type: 'text', text: 'D' }],
+        })
+        expect(core.latest('inbox')).toMatchObject({ items: [] })
+      } finally {
+        release()
+        releaseSecond()
+        releaseLast()
+        await ep.close()
+        await h.close()
+        created.mockRestore()
+      }
+    },
+  )
+
   it('releases prompt admission before the model turn so in-turn input is not blocked', async () => {
     const h = await openTestHost({ provider: slowProvider(10_000) })
     const ep = h.endpoint({ clock: () => Date.now(), pollMs: 5 })

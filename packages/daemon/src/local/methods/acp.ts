@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto'
 import {
   ActivationInProgressError,
   sessionKey as canonicalSessionKey,
@@ -8,6 +9,7 @@ import {
 import {
   type EventEnvelope,
   type HarnessMeta,
+  type Inbox,
   type RpcError,
   rpcError,
   setHarnessMeta,
@@ -22,6 +24,7 @@ import type { AttachedFeed } from '../attached.js'
 import { type AuthConfig, authGate, type NonceConsume } from '../auth.js'
 import { type CommandQueue, runQueued } from '../command-queue.js'
 import { type AttachPrefs, connActor, type Handler, type LocalEndpoint } from '../endpoint.js'
+import { createFollowUpRunner } from '../follow-up-runner.js'
 import { type MetaState, stampMeta } from '../meta.js'
 import { PreviewPipe } from '../preview.js'
 import { toSessionUpdate } from '../project.js'
@@ -67,6 +70,7 @@ export type LocalContext = {
    */
   onPromptStart?: (sessionId: string) => void
   onPromptEnd?: (sessionId: string) => void
+  continueFollowUps?: ReturnType<typeof createFollowUpRunner>
 }
 
 const HARNESS = 'ai.agnes.harness'
@@ -430,6 +434,10 @@ export function registerAcp(
     return f
   }
   // Previews refused under pressure are made good once the connection's queue has drained.
+  const continueFollowUps = createFollowUpRunner(cx, (entry, seq) =>
+    feedFor(entry).pushed(seq, { timeoutMs: cx.quiescenceWaitMs }),
+  )
+  cx.continueFollowUps = continueFollowUps
   ep.onPreviewLowWater(() => {
     for (const a of attached.values()) a.previewLowWater()
     for (const f of feeds.values()) f.previewLowWater()
@@ -575,7 +583,11 @@ export function registerAcp(
     const p = params as { sessionId: string; prompt: unknown[] }
     requireOwner('session/prompt', p.sessionId)
     const entry = cx.registry.require(p.sessionId)
+    const titleLocale = pocket(params).titleLocale
+    if (titleLocale !== undefined && titleLocale !== 'en' && titleLocale !== 'zh-CN')
+      throw rpcError('SEMANTIC_REJECTED', { reason: 'unsupported title language' })
     const abort = new AbortController()
+    let completed = false
     let queued: QueuedActivationInvocation
     try {
       queued = cx.activationBarrier.enqueue('turn')
@@ -599,12 +611,24 @@ export function registerAcp(
       await runQueued(cx.commandQueue, p.sessionId, abort.signal, async () => {
         const invocation = await queued.start()
         try {
+          const commandId = randomUUID()
           await entry.session.enqueue('next-turn', {
             content: p.prompt as never,
             actor: connActor(c.conn),
             kind: 'prompt',
+            commandId,
+            ...(titleLocale ? { titleLocale } : {}),
           })
-          running = invocation.run(() => entry.session.run({ until: 'turn-end', signal: abort.signal }))
+          running = invocation.run(async () => {
+            for (;;) {
+              const out = await entry.session.run({ until: 'turn-end', signal: abort.signal })
+              if (out.reason !== 'completed') return out
+              const [row] = await entry.session.scan({ type: 'inbox', order: 'desc', limit: 1, lane: 'main' })
+              // Older queued inputs can precede this prompt. Only its own claimed item ends the call.
+              if (!(row?.data as Inbox)?.items.some((item) => item.commandId === commandId)) return out
+              if (abort.signal.aborted) return { ...out, reason: 'aborted' as const }
+            }
+          })
         } catch (error) {
           invocation.finish()
           throw error
@@ -612,6 +636,7 @@ export function registerAcp(
       })
       if (!running) throw rpcError('INTERNAL_ERROR', { code: 'RUN_NOT_STARTED' })
       const out = await running
+      completed = out.reason === 'completed'
       // Not before terminalQuiescence: the response is the turn's last word to this client.
       await feedFor(entry).pushed(out.lastSeq, { timeoutMs: cx.quiescenceWaitMs })
       if (out.reason === 'error')
@@ -626,8 +651,25 @@ export function registerAcp(
       }
     } finally {
       queued.cancel()
-      entry.inflight = null
-      cx.onPromptEnd?.(p.sessionId)
+      const followUps =
+        entry.inflight?.abort === abort &&
+        completed &&
+        !abort.signal.aborted &&
+        (await runQueued(cx.commandQueue, p.sessionId, new AbortController().signal, async () => {
+          const [row] = await entry.session.scan({ type: 'inbox', order: 'desc', limit: 1, lane: 'main' })
+          return (
+            (row?.data as { items?: Array<{ target: string; kind?: string }> } | null)?.items?.find(
+              (item) => item.target === 'next-turn',
+            )?.kind === 'follow_up'
+          )
+        }).catch(() => false))
+      if (entry.inflight?.abort !== abort) {
+        // An explicit send-now transferred this session's activity to a fresh runner.
+      } else if (followUps && entry.inflight) continueFollowUps(entry, entry.inflight)
+      else {
+        entry.inflight = null
+        cx.onPromptEnd?.(p.sessionId)
+      }
     }
   })
 
