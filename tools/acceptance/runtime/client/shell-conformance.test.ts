@@ -5,7 +5,7 @@ import { bindConformance } from './shell-conformance.ts'
 const CONTRACT = 'agh.shell'
 
 describe('reference workbench shell: conformance', () => {
-  it('passes normal, deny, cancel and dispose and reports the rest as missing evidence', async () => {
+  it('passes select, normal, deny, cancel and dispose and reports recover as missing evidence', async () => {
     const harness = createConformanceHarness()
     const request = {
       command: 'shell-conformance',
@@ -21,13 +21,13 @@ describe('reference workbench shell: conformance', () => {
       clock: { startedAt: '2026-10-01T00:00:00.000Z', finishedAt: '2026-10-01T00:00:01.000Z' },
     })
     expect(report.assertions.map((row) => [row.providerId, row.scenario, row.status, row.fixture])).toEqual([
-      ['reference', 'select', 'skipped', 'test-client-host'],
+      ['reference', 'select', 'passed', 'test-client-host'],
       ['reference', 'normal', 'passed', 'test-client-host'],
       ['reference', 'deny', 'passed', 'test-client-host'],
       ['reference', 'cancel', 'passed', 'test-client-host'],
       ['reference', 'recover', 'skipped', 'test-client-host'],
       ['reference', 'dispose', 'passed', 'test-client-host'],
-      // No default shell binds until a client host can select one.
+      // The web app has no default shell to bind yet.
       ['default', 'select', 'failed', null],
     ])
     expect(report.status).toBe('failed')
@@ -36,10 +36,10 @@ describe('reference workbench shell: conformance', () => {
         code: 'missing-evidence',
         detail: `required ${CONTRACT} missing binding for provider default`,
       },
-      ...['recover', 'select'].map((scenario) => ({
+      {
         code: 'missing-evidence',
-        detail: `required ${CONTRACT} ${scenario} ${CONTRACT}/reference/${scenario} skipped`,
-      })),
+        detail: `required ${CONTRACT} recover ${CONTRACT}/reference/recover skipped`,
+      },
     ])
   })
 })
