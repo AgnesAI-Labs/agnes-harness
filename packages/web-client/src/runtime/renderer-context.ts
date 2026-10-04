@@ -53,16 +53,23 @@ function copy<T>(value: T): T | undefined {
 
 const artifactKey = (artifactId: unknown, version: unknown) => JSON.stringify([artifactId, version])
 
-function allowedBy(view: DomainView) {
+function allowedBy(view: DomainView, negotiated: readonly string[]) {
   const commands = new Set<string>()
   const interactions = new Set<string>()
   const artifacts = new Set<string>()
   for (const action of view.actions) {
-    // A disabled action is shown to the user but not offered.
-    if (action.availability !== 'enabled') continue
+    // A disabled action is shown to the user but not offered, and neither is one needing a feature this
+    // client did not negotiate.
+    const usable =
+      action.availability === 'enabled' &&
+      Array.isArray(action.requiredFeatures) &&
+      action.requiredFeatures.every((feature) => negotiated.includes(feature))
+    if (!usable) continue
     if (action.kind === 'command') commands.add(action.actionKey)
     else if (action.kind === 'download') artifacts.add(artifactKey(action.artifactId, action.version))
-    else interactions.add(action.interactionId)
+    // An action of a kind this client does not know offers nothing.
+    else if (action.kind === 'interaction' || action.kind === 'open-form')
+      interactions.add(action.interactionId)
   }
   for (const resource of view.resources) artifacts.add(artifactKey(resource.artifactId, resource.version))
   return { viewId: view.viewId, revision: view.revision, commands, interactions, artifacts }
@@ -76,7 +83,11 @@ export function createRendererContext(input: {
   view: DomainView
 }): MountedRendererContext {
   const { services } = input
-  let allowed = allowedBy(input.view)
+  // A capability set without a feature list negotiated none.
+  const negotiated: readonly string[] = Array.isArray(input.capabilities?.features)
+    ? [...input.capabilities.features]
+    : []
+  let allowed = allowedBy(input.view, negotiated)
   // Status reads are limited to requests this context sent, since a request id names no view target.
   const requests = new Set<string>()
   const responses = new Set<string>()
@@ -195,7 +206,7 @@ export function createRendererContext(input: {
       if (view?.viewId !== allowed.viewId) return refuse('invalid_input', 'view_mismatch', 'another view')
       if (!(view.revision >= allowed.revision))
         return refuse('conflict', 'stale_view', 'the view is older than the mounted revision')
-      allowed = allowedBy(view)
+      allowed = allowedBy(view, negotiated)
       return { ok: true, value: undefined }
     },
     dispose() {

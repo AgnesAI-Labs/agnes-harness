@@ -9,6 +9,7 @@ import type {
   ViewAction,
 } from '@agnes/protocol/runtime'
 import { canonicalJsonDigest, validateRuntime } from '@agnes/protocol/runtime'
+import { encodeForChannel, formatDomainView } from '@agnes/sdk/runtime'
 import { describe, expect, it, vi } from 'vitest'
 import { type ChannelTextRenderer, toChannelMessages } from '../../src/runtime/domain-consumer.js'
 
@@ -255,6 +256,28 @@ describe('toChannelMessages', () => {
     expect(encode.mock.calls.map(([, at]) => at.supportsButtons)).toEqual([true, false])
   })
 
+  // Unknown domain (case 1), unknown action (case 4) and HTML in server strings (case 5): through the
+  // SDK text renderer a view of a domain no renderer knows is sent as text with its markup literal, and
+  // an action of a kind this client does not know, forged past validation, leaves a read-only summary.
+  it('sends a view of an unknown domain as text and no button beside an action of an unknown kind', () => {
+    const sdk = { format: formatDomainView, encode: encodeForChannel }
+    const markup = '<img src=x onerror=alert(1)>'
+    const domain = { domainType: 'acme.unknown', renderKey: 'acme.unknown/card', fallbackText: markup }
+    const known = view({ ...domain, actions: [publish] })
+    const send = (value: DomainView) => deliver({ value, interaction: null, at: channel(4096), with: sdk })
+    expect(messages(send(known)).flatMap(offered)).toEqual(['publish'])
+
+    const forged = { ...base, kind: 'script', actionKey: 'run', label: markup } as unknown as ViewAction
+    const outcome = send({ ...known, actions: [forged, publish] })
+    const parts = messages(outcome)
+    expect(outcome.ok && outcome.value.requiresWebForm).toBe(true)
+    expect(parts.flatMap(offered)).toEqual([])
+    expect(parts.every((part) => !part.content.complete)).toBe(true)
+    expect(parts.map(textOf).join('\n')).toBe(
+      `Status: In progress\n${markup}\nActions:\n${markup}: Not available here.\nPublish`,
+    )
+  })
+
   it('refuses renderer output for other actions or views and questions the view does not ask', () => {
     const encoded = (actionKeys: string[]) => ({
       encode: () => ({
@@ -268,6 +291,22 @@ describe('toChannelMessages', () => {
     })
     expect(refused(deliver({ with: encoded(['delete']) }))).toBe('foreign_action')
     expect(refused(deliver({ with: encoded(['archive']) }))).toBe('foreign_action')
+    // A renderer that ignores negotiation cannot put a button on an action needing a feature the channel
+    // did not negotiate: the view offers it to this channel only once the feature is negotiated.
+    const ignoring = {
+      format: (value: DomainView, at: TextRendererFormatContext) =>
+        renderer.format(value, {
+          ...at,
+          capabilities: { ...at.capabilities, features: ['forms.complex'] },
+        }),
+    }
+    const reviewed = view({ actions: [publish, review] })
+    expect(refused(deliver({ value: reviewed, interaction: null, with: ignoring }))).toBe('foreign_action')
+    expect(
+      messages(
+        deliver({ value: reviewed, interaction: null, with: ignoring, features: ['forms.complex'] }),
+      ).flatMap(offered),
+    ).toEqual(['publish', 'review'])
     const other = deliver({
       with: { format: (value, at) => renderer.format({ ...value, viewId: 'note-2' }, at) },
     })

@@ -119,14 +119,19 @@ describe('export surface snapshot (规格 §20.5, SDK Task 23)', () => {
       '.': { browser: './src/index.browser.ts', default: './src/index.node.ts' },
       './browser': './src/index.browser.ts',
       './composer-selection': './src/composer-selection.ts',
-      './runtime': './src/runtime/format-view.ts',
+      './runtime': './src/runtime/index.ts',
       './surface': { browser: './src/surface.browser.ts', default: './src/surface.node.ts' },
     })
     expect(parseComposerSelection({ permission: 'full' })).toEqual({ permission: 'full' })
-    // The runtime subpath carries only the domain view text formatter, not the runtime client wire.
+    // The runtime subpath carries the runtime client wire and the domain view text formatter; the
+    // transport's own reply parsing and local error construction stay internal.
     expect(Object.keys(await import('@agnes/sdk/runtime')).sort()).toEqual([
+      'RUNTIME_JOURNAL_KEY',
+      'RuntimeClientTransport',
+      'artifactReader',
       'encodeForChannel',
       'formatDomainView',
+      'subscriptions',
     ])
   })
 })

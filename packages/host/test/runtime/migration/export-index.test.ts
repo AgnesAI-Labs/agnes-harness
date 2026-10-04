@@ -137,7 +137,9 @@ describe('bounded migration indexes', () => {
     await expect(exportIndexPage(root, EXPORT_INDEX, digest, null, 501, storage)).rejects.toMatchObject({
       detailCode: 'page_limit',
     })
-  })
+    // The 1001-part traversal and complete page serialization take 16s on hosted Linux.
+    // Keep all size/cursor checks and give this finite workload its own runner budget.
+  }, 30_000)
 
   it('rejects missing pages, changed digest, false child counts and duplicate/unsorted parts', async () => {
     for (const mode of ['missing', 'digest', 'count', 'duplicate'] as const) {

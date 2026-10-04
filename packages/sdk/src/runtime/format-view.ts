@@ -1,7 +1,7 @@
 // The default text presentation of a domain view no registered renderer presents, for the tui, sdk and
 // im targets. It is the text sibling of the generic Web card and shows the same information in the same
 // order: status, fallback text, resources, then actions. Both functions are pure and import nothing at
-// runtime, so the `@agnes/sdk/runtime` entry runs unchanged in browsers. View data becomes plain text
+// runtime, so they run unchanged in browsers. View data becomes plain text
 // parts, never markup, with control characters replaced and format characters (bidirectional controls
 // among them) removed so a terminal or chat cannot run them as escapes or reorder the text. Actions are
 // referenced only by their keys. An enabled action that needs a feature the client did not negotiate is

@@ -94,8 +94,14 @@ function ActionControl({
     domainText(context.locale.locale, key, vars)
   const [attempt, setAttempt] = useState<Attempt | null>(null)
   // ponytail: only command actions act here; forms and downloads show their label until the card
-  // gets the interaction and artifact flows.
-  if (action.kind !== 'command' || action.availability !== 'enabled')
+  // gets the interaction and artifact flows. A command needing a feature this client did not
+  // negotiate is shown, never offered.
+  const negotiated = context.capabilities?.features ?? []
+  if (
+    action.kind !== 'command' ||
+    action.availability !== 'enabled' ||
+    !action.requiredFeatures.every((feature) => negotiated.includes(feature))
+  )
     return (
       <span className="generic-domain-action" data-action-key={action.actionKey}>
         <Button disabled>{action.label}</Button>

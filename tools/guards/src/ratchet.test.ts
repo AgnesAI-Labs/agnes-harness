@@ -273,8 +273,11 @@ const INITIAL_CEILING: Record<string, number> = {
   // The default domain view text format moves to the `@agnes/sdk/runtime` export. Measured 3429, exact,
   // no spare (-204).
   // A renderer needing a feature the client did not negotiate is refused. Measured 3433, exact, no spare (+4).
-  // Default renderer factory over the built-in presentation. Measured 3444, exact, no spare (+11).
-  'packages/web-client/src': 3444,
+  // An unknown action kind grants a renderer context nothing. Measured 3434, exact, no spare (+1).
+  // Actions needing a feature the client did not negotiate are neither offered nor admitted. Measured 3446,
+  // exact, no spare (+12).
+  // Default renderer factory over the built-in presentation. Measured 3457, exact, no spare (+11).
+  'packages/web-client/src': 3457,
   'packages/web-slots/src': 605,
   // Failed shell calls read as their exit code (+19 lines); measured 4891, exact cap.
   // B-line diagnostics dialog: React view adds 147 lines; measured 4706, exact cap.
@@ -1552,8 +1555,9 @@ const INITIAL_CEILING: Record<string, number> = {
   // another version or schema are refused. Measured 13705, exact, no spare (+92).
   // The shell services double answers registry and presentation calls synchronously. Measured 13709,
   // exact, no spare (+4).
-  // Renderer contract cases through the client host on every target. Measured 14561, exact, no spare (+852).
-  'packages/extension-api/testkit': 14561,
+  // Events contract cases: resumable pages, idempotent publish, crash recovery. Measured 14341, exact (+632).
+  // Renderer contract cases through the client host on every target. Measured 15193, exact, no spare (+852).
+  'packages/extension-api/testkit': 15193,
   // 2026-09-10: raised from 2500 by Task 15 (stream-disconnect reconnection). The new
   // reattach.ts (the Reconnector: backoff loop, OVERLOADED's retryAfterMs override) plus
   // Session.recover()/waitForQuiescence and Client's reconnect wiring (emit(), the
@@ -1628,7 +1632,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // no spare.
   // The default domain view text format, moved from the web client and exported as `./runtime`, now
   // also removes format characters. Measured 6231, exact, no spare (+208).
-  'packages/sdk/src': 6231,
+  // `./runtime` becomes a barrel that also exports the runtime client. Measured 6252, exact, no spare (+21).
+  'packages/sdk/src': 6252,
   'packages/sdk/src/extensions.node': 21,
   'packages/sdk/src/package-admin.node': 147,
   'packages/sdk/src/surface.browser': 3,
@@ -2333,7 +2338,9 @@ const INITIAL_CEILING: Record<string, number> = {
   // Measured 5252, exact, no spare (+2).
   // Pure mapping of a domain view to channel send messages with an injected text renderer. Measured
   // 5379, exact, no spare (+127).
-  'packages/channels/src': 5379,
+  // A button needs an action of a known kind whose features the channel negotiated. Measured 5389, exact,
+  // no spare (+10).
+  'packages/channels/src': 5389,
   'packages/code/src': 1600,
   'packages/cli/src/args': 300,
   'packages/runtime-python/src': 400,

@@ -21,7 +21,7 @@ import {
 import { type AppendMessage, type AssistantRuntime, AssistantRuntimeProvider } from '@assistant-ui/react'
 import { act, createContext, createElement, type ReactNode, useContext, useEffect } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 let host: HTMLDivElement
 let root: Root
@@ -38,6 +38,7 @@ beforeEach(() => {
 afterEach(async () => {
   await act(async () => root.unmount())
   host.remove()
+  vi.unstubAllGlobals()
 })
 
 function Harness({ store, props }: { store: ConversationProjectionStore; props: ConversationMessagesProps }) {
@@ -181,6 +182,81 @@ describe('conversation window with domain cards', () => {
     expect(card('domain:hotel')?.textContent).toBe('Hotel booked')
   })
 
+  // Cards are keyed by entry id, which the server derives from the domain type, scope and view id, so
+  // cards sharing only a view id stay apart through an upsert, a removal and a reset, and a removed card
+  // is not presented again.
+  it('keeps cards sharing a view id apart by domain type and scope', async () => {
+    const workspace: DomainView['scope'] = {
+      kind: 'workspace',
+      installationId: 'install-1',
+      runtimeId: 'runtime-1',
+      workspaceId: 'workspace-1',
+    }
+    const shared = (id: string, text: string, revision: number, extra: Partial<DomainView>) =>
+      domain(id, 'provisional', text, 'turn:1', revision, { viewId: 'shared', ...extra })
+    const flight = shared('domain:flight', 'Flight', 1, { domainType: 'travel.flight' })
+    const hotel = shared('domain:hotel', 'Hotel', 1, { domainType: 'travel.hotel' })
+    const team = shared('domain:team', 'Team flight', 1, { domainType: 'travel.flight', scope: workspace })
+    const booked = shared('domain:team', 'Team flight booked', 2, {
+      domainType: 'travel.flight',
+      scope: workspace,
+      phase: 'finalized',
+    })
+    const presented: string[] = []
+    const texts = (...cards: DomainTimelineEntry[]) => cards.map(({ id }) => card(id)?.textContent)
+    const order = (...entries: DomainTimelineEntry[]) => [
+      native('u1'),
+      ...entries.map(({ id }) => domainRef(id)),
+    ]
+    const store = createConversationProjectionStore({
+      sessionId: 'session',
+      nodes: [],
+      window: conversationWindow([flight, hotel, team], order(flight, hotel, team)),
+    })
+    await mount(store, {
+      renderDomain: (view) => {
+        presented.push(`${view.domainType}/${view.scope.kind}@${view.revision}`)
+        return view.fallbackText
+      },
+    })
+    expect(ids()).toEqual(['u1', 'domain:flight', 'domain:hotel', 'domain:team'])
+    expect(texts(flight, hotel, team)).toEqual(['Flight', 'Hotel', 'Team flight'])
+
+    await update(store, {
+      sessionId: 'session',
+      nodes: [],
+      window: conversationWindow([flight, hotel, booked], order(flight, hotel, booked)),
+    })
+    expect(texts(flight, hotel, booked)).toEqual(['Flight', 'Hotel', 'Team flight booked'])
+    expect([card('domain:flight')?.dataset.phase, card('domain:team')?.dataset.phase]).toEqual([
+      'provisional',
+      'finalized',
+    ])
+
+    await update(store, {
+      sessionId: 'session',
+      nodes: [],
+      window: conversationWindow([hotel, booked], order(hotel, booked)),
+    })
+    expect(ids()).toEqual(['u1', 'domain:hotel', 'domain:team'])
+    expect(observed?.thread.getState().messages.map((message) => message.id)).toEqual(ids())
+
+    // assistant-ui renders the previous messages once while it catches up, so presentations are counted
+    // only after the removal settled: no later update presents the removed card again.
+    presented.length = 0
+    await update(store, {
+      sessionId: 'session',
+      nodes: [],
+      window: conversationWindow(
+        [booked, hotel],
+        [domainRef('domain:team'), native('u1'), domainRef('domain:hotel')],
+      ),
+    })
+    expect(ids()).toEqual(['domain:team', 'u1', 'domain:hotel'])
+    expect(texts(booked, hotel)).toEqual(['Team flight booked', 'Hotel'])
+    expect(new Set(presented)).toEqual(new Set(['travel.flight/workspace@2', 'travel.hotel/session@1']))
+  })
+
   it('emits messages in window order and keeps native message ids', async () => {
     const window = conversationWindow(
       [
@@ -261,8 +337,10 @@ describe('conversation window with domain cards', () => {
     expect(ids()).toEqual(['u1', 'domain:flight', 'domain:note'])
   })
 
+  // HTML in server strings (case 5) and an unknown action (case 4): markup stays text, and an action of a
+  // kind this client does not know, forged past validation, gets no control either.
   it('renders fallback text, data and resources as inert text without renderDomain', async () => {
-    const markup = '<b>x</b>'
+    const markup = '<b>x</b><img src=x onerror=alert(1)><a href="javascript:alert(1)">go</a>'
     const entry = domain('domain:flight', 'finalized', markup, 'turn:1', 1, {
       data: { html: markup },
       resources: [
@@ -288,10 +366,20 @@ describe('conversation window with domain cards', () => {
         },
       ],
     })
-    const window = conversationWindow([entry], [domainRef('domain:flight')])
+    const valid = conversationWindow([entry], [domainRef('domain:flight')])
+    const forged = {
+      kind: 'script',
+      actionKey: 'run',
+      label: 'Run',
+      requiredFeatures: [],
+      availability: 'enabled',
+      disabledReason: null,
+    }
+    const actions = [...entry.view.actions, forged] as unknown as DomainView['actions']
+    const window = { ...valid, domains: [{ ...entry, view: { ...entry.view, actions } }] }
     await mount(createConversationProjectionStore({ sessionId: 'session', nodes: [], window }))
     expect(card('domain:flight')?.textContent).toBe(`${markup}${markup}.pdf`)
-    expect(host.querySelector('b')).toBeNull()
+    expect(host.querySelector('b, img, script, [onerror], [href]')).toBeNull()
     expect(host.querySelector('button, a, input, form')).toBeNull()
   })
 
@@ -362,12 +450,18 @@ describe('conversation window with domain cards', () => {
     expect(ids()).toEqual(['u1', 'a1', 'domain:flight'])
   })
 
+  // The conversation UI never issues a model or network request: it renders the store and refuses input.
   it('keeps the runtime disabled and refuses new messages', async () => {
+    const fetch = vi.fn()
+    const socket = vi.fn()
+    vi.stubGlobal('fetch', fetch)
+    vi.stubGlobal('WebSocket', socket)
     const window = conversationWindow(
       [domain('domain:flight', 'provisional', 'Flight')],
       [native('u1'), domainRef('domain:flight')],
     )
-    await mount(createConversationProjectionStore({ sessionId: 'session', nodes: [], window }))
+    const store = createConversationProjectionStore({ sessionId: 'session', nodes: [], window })
+    await mount(store)
     expect(observed?.thread.getState().isDisabled).toBe(true)
     // ThreadRuntime.append drops the store promise, so the refusal is read from the thread core.
     const thread = observed?.thread as unknown as
@@ -389,5 +483,15 @@ describe('conversation window with domain cards', () => {
       'cannot submit a request',
     )
     expect(ids()).toEqual(['u1', 'domain:flight'])
+    await update(store, {
+      sessionId: 'session',
+      nodes: [],
+      window: conversationWindow(
+        [domain('domain:flight', 'finalized', 'Flight booked', 'turn:1', 2)],
+        [native('u1'), domainRef('domain:flight')],
+      ),
+    })
+    expect(card('domain:flight')?.textContent).toBe('Flight booked')
+    expect([fetch.mock.calls, socket.mock.calls]).toEqual([[], []])
   })
 })

@@ -481,6 +481,12 @@ describe('client host runtime', () => {
         h.definitions.filter((definition) => definition.descriptor.id === 'cards.card'),
         index,
       )
+    /** The module host cards was started with in each generation. */
+    const modules: ClientHost[] = []
+    h.entries.cards = (standard) => async (host) => {
+      modules.push(host)
+      return standard(host)
+    }
     expect(refused(await h.runtime.activate(catalog(1)))).toBe('ok')
     const first = at(h.hosts, 0)
     const bound = first.bindRenderer(card(0))
@@ -517,6 +523,23 @@ describe('client host runtime', () => {
     if (!rebound.ok) throw new Error(rebound.error.message)
     // The next generation binds the module under that generation's token.
     expect(rebound.value.ownerToken).toBe('catalog-cards-2')
+
+    // A late call from an old owner is refused: the module host the replaced generation started cards
+    // with registers, presents and observes nothing, while the current one still registers.
+    const old = at(modules, 0)
+    expect(refused(old.renderers.register(renderer('cards.other')))).toBe(
+      'cancelled/client_generation_released',
+    )
+    expect(refused(old.registerShell(shell('cards.shell')))).toBe('cancelled/client_generation_released')
+    expect(refused(old.presentation.domain({ viewId: 'v1', revision: 1 } as DomainView))).toBe(
+      'cancelled/client_generation_released',
+    )
+    expect(kind(old.renderers, 'cards.card')).toBe('fallback')
+    expect(refused(at(modules, 1).renderers.register(renderer('cards.other')))).toBe('ok')
+    const told: number[] = []
+    old.observeCatalog((revision) => told.push(revision))
+    expect(refused(await h.runtime.activate(catalog(3)))).toBe('ok')
+    expect(told).toEqual([])
   })
 
   const late = (h: ReturnType<typeof harness>) => () => async (host: ClientHost) => {

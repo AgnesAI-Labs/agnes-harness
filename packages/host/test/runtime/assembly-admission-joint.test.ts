@@ -7,6 +7,8 @@ import { admissionFixtureInput } from '../../../extension-api/testkit/runtime/co
 import { openJointAdmission } from './fixtures/assembly-admission-joint.js'
 import { maintenancePayload } from './fixtures/assembly-maintenance.js'
 
+// Original State/identity wiring and full wire validation exceed Linux's 5s default.
+// Both durable coordination paths use the same finite functional-test budget.
 it('uses original C14 contexts and State creation to arbitrate unproven absence, then replays the locked binding', async () => {
   const directory = mkdtempSync(join(tmpdir(), 'agnes-joint-context-'))
   const fixture = await openJointAdmission(directory, admissionFixtureInput())
@@ -45,7 +47,7 @@ it('uses original C14 contexts and State creation to arbitrate unproven absence,
     await fixture.close()
     rmSync(directory, { recursive: true, force: true })
   }
-})
+}, 15_000)
 
 it('retains the pin when C14 refuses a copied context and only a verified cancellation releases it', async () => {
   const directory = mkdtempSync(join(tmpdir(), 'agnes-joint-cancel-'))
@@ -108,7 +110,7 @@ it('retains the pin when C14 refuses a copied context and only a verified cancel
     await fixture.close()
     rmSync(directory, { recursive: true, force: true })
   }
-})
+}, 15_000)
 
 it.each(['separate-file', 'separate-connection'] as const)(
   'refuses %s issuer installation with stable admission_source and no State writes',
