@@ -25,6 +25,7 @@ import { createNetworkService } from '../../src/runtime/providers/network.js'
 import { createTraceFactory } from '../../src/runtime/providers/trace.js'
 import { inline, refused } from '../../src/runtime/trace/provider-support.js'
 import { createAccountingChainFixture } from './billing-accounting-fixture.js'
+import { createBillingPricingFixture } from './billing-pricing-fixture.js'
 
 export type BillingTraceFixtureOptions = {
   directory: string
@@ -36,7 +37,8 @@ export type BillingTraceFixtureOptions = {
   capacity?: number
   crashAfterSend?: boolean
   accountingChain?: boolean
-  crashBoundary?: 'usage' | 'budget' | 'intent' | 'callback'
+  pricingRate?: string
+  crashBoundary?: 'usage' | 'quote' | 'budget' | 'intent' | 'callback'
   accounting?: BillingAccountingPorts | null
 }
 export function billingTraceProviderDigest(
@@ -59,6 +61,21 @@ export function billingTraceProviderDigest(
   for (const name of names) {
     hash.update(name)
     hash.update(readFileSync(join(root, directory, name)))
+  }
+  if (service === 'billing') {
+    for (const file of [
+      'packages/ai/src/runtime/providers/pricing.ts',
+      'packages/ai/src/runtime/providers/pricing-factory.ts',
+      'packages/ai/src/runtime/index.ts',
+      'examples/runtime-reference/src/providers/pricing.ts',
+      'examples/runtime-reference/src/index.ts',
+      'packages/extension-api/src/runtime/pricing-authoring.ts',
+      'packages/host/test/runtime/billing-pricing-fixture.ts',
+      'packages/host/test/runtime/billing-accounting-fixture.ts',
+    ]) {
+      hash.update(file)
+      hash.update(readFileSync(join(root, file)))
+    }
   }
   return hash.digest('hex')
 }
@@ -163,6 +180,28 @@ export const syntheticUsage: W.UsageFact = {
   observedAt: '2026-10-04T00:00:00.000Z',
   certainty: 'measured',
 }
+export const fixturePricingInput: W.PricingQuoteInput = {
+  model: 'synthetic-model',
+  region: null,
+  currency: 'USD',
+  priceVersion: 'synthetic-price-v1',
+  usageUnits: [{ unit: 'request', value: '1' }],
+}
+const fixtureQuote = {
+  priceVersion: 'synthetic-price-v1',
+  inputDigest: canonicalJsonDigest(fixturePricingInput),
+  lineItems: [
+    {
+      unit: 'request',
+      quantity: '1',
+      unitPrice: { currency: 'USD', scale: 6, units: '100' },
+      amount: { currency: 'USD', scale: 6, units: '100' },
+      ruleId: 'synthetic-rule',
+    },
+  ],
+  amount: { currency: 'USD', scale: 6, units: '100' },
+  rounding: 'half-even' as const,
+}
 export const billingInput: W.BillingPostRequest = {
   chargeKey: 'synthetic-charge',
   accountRef: {
@@ -179,20 +218,8 @@ export const billingInput: W.BillingPostRequest = {
     },
   ],
   quoteRef: inline(RuntimeMethodSchemaRefs['agh.pricing'].quote.output, {
-    quoteId: 'synthetic-quote',
-    priceVersion: 'synthetic-price-v1',
-    inputDigest: canonicalJsonDigest({ usage: 'synthetic-leaf' }),
-    lineItems: [
-      {
-        unit: 'request',
-        quantity: '1',
-        unitPrice: { currency: 'USD', scale: 6, units: '100' },
-        amount: { currency: 'USD', scale: 6, units: '100' },
-        ruleId: 'synthetic-rule',
-      },
-    ],
-    amount: { currency: 'USD', scale: 6, units: '100' },
-    rounding: 'half-even',
+    quoteId: `quote:${canonicalJsonDigest(fixtureQuote)}`,
+    ...fixtureQuote,
   }),
 }
 export function refundInput(id: string): W.BillingRefundRequest {
@@ -215,9 +242,20 @@ export async function createBillingTraceConsumer(
   }
   const chain =
     options.accountingChain && options.service === 'billing'
-      ? await createAccountingChainFixture(options.directory, fixtureScope, billingInput, crash)
+      ? await createAccountingChainFixture(
+          options.directory,
+          fixtureScope,
+          billingInput,
+          crash,
+          options.pricingRate,
+        )
+      : undefined
+  const fallbackPricing =
+    !chain && options.service === 'billing' && options.accounting !== null && !options.accounting
+      ? await createBillingPricingFixture(options.directory, fixtureScope)
       : undefined
   const fallbackAccounting: BillingAccountingPorts = {
+    ...(fallbackPricing ? { pricing: fallbackPricing.ports } : {}),
     async readUsage(ref) {
       return ref.authorityId === 'synthetic-usage' && ref.usageId === syntheticUsage.usageId
         ? { ok: true, value: structuredClone(syntheticUsage) }
@@ -545,6 +583,7 @@ export async function createBillingTraceConsumer(
       await provider.close('shutdown')
       await network.close()
       await chain?.close()
+      await fallbackPricing?.close()
     },
   }
 }

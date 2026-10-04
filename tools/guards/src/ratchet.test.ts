@@ -1,3 +1,4 @@
+// Verify selected catalog pricing before billing settlement with exact measured ceilings.
 // Cache validated immutable assembly snapshots and share frozen assembly recipes;
 // Host 74846 and testkit 12622 are exact measured counts, with no spare allocation.
 // Measure recoverable embedding providers and their public fixture contract with exact ceilings.
@@ -1498,7 +1499,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // Recoverable embedding providers. Measured 12446, exact, no spare.
   // Fixed package plan apply. Measured 12543, exact, no spare.
   // Usage and budget settlement for billing. Measured 12594, exact, no spare.
-  'packages/extension-api/testkit': 12890,
+  'packages/extension-api/testkit': 12922,
   // 2026-09-10: raised from 2500 by Task 15 (stream-disconnect reconnection). The new
   // reattach.ts (the Reconnector: backoff loop, OVERLOADED's retryAfterMs override) plus
   // Session.recover()/waitForQuiescence and Client's reconnect wiring (emit(), the
@@ -2742,7 +2743,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // SessionControl transactions and verified cold members add 714 measured lines; no spare.
   // Original local deployment owner observations and native lifetime checks add 166 measured lines; no spare.
   // Local deployment C14 owner and native generation checks add 431 measured lines; no spare.
-  'packages/host/src': 77385,
+  // Selected pricing quotes are verified before settlement. Measured 77427, exact, no spare.
+  'packages/host/src': 77427,
   'packages/host/src/ext-host/service-invocation': 247,
   // T5.2's permission projector is kept independently bounded so later extension-host work cannot
   // hide in the package-wide increment. Measured source: 86 lines.

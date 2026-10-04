@@ -19,6 +19,7 @@ import type * as W from '@agnes/protocol/runtime'
 import { canonicalJsonDigest, RuntimeMethodSchemaRefs } from '@agnes/protocol/runtime'
 import type { BillingAccountingPorts } from '../../src/runtime/billing/accounting.js'
 import { inline, read, refused } from '../../src/runtime/trace/provider-support.js'
+import { createBillingPricingFixture } from './billing-pricing-fixture.js'
 
 type UsageTx = Parameters<Parameters<DefaultUsageAuthority['store']['transaction']>[1]>[0]
 type BudgetTx = Parameters<Parameters<DefaultBudgetAuthority['store']['transaction']>[1]>[0]
@@ -61,6 +62,18 @@ const measurementCodec = defineGeneratedAuthorSchema<W.UsageMeasurement>({
           actualModel: { type: 'string' },
           source: { const: 'adapter-counter' },
           sourceReceipt: { type: 'null' },
+          billing: {
+            type: 'object',
+            additionalProperties: false,
+            required: ['usdMicros', 'source', 'subscription'],
+            properties: {
+              usdMicros: { type: 'integer', minimum: 0, maximum: Number.MAX_SAFE_INTEGER },
+              source: { const: 'estimated' },
+              subscription: { type: 'boolean' },
+            },
+          },
+          credits: { type: 'number', minimum: 0 },
+          creditSource: { const: 'gateway' },
           replacesFactIds: { type: 'array', items: { type: 'string' }, maxItems: 0 },
         },
       },
@@ -74,6 +87,7 @@ export async function createAccountingChainFixture(
   scope: W.ScopeRef,
   original: W.BillingPostRequest,
   crash: (boundary: string) => void,
+  rate = '100',
 ) {
   mkdirSync(directory, { recursive: true, mode: 0o700 })
   const db = new DatabaseSync(join(directory, 'accounting.sqlite'))
@@ -94,9 +108,12 @@ export async function createAccountingChainFixture(
   const measurement: W.UsageMeasurement = {
     kind: 'reported',
     quantities: [{ unit: 'request', value: '1' }],
-    actualModel: 'synthetic-actual-model',
+    actualModel: 'synthetic-model',
     source: 'adapter-counter',
     sourceReceipt: null,
+    billing: { usdMicros: Number(rate), source: 'estimated', subscription: false },
+    credits: 0,
+    creditSource: 'gateway',
     replacesFactIds: [],
   }
   const encodedMeasurement = measurementCodec.encode(measurement)
@@ -126,13 +143,13 @@ export async function createAccountingChainFixture(
     parentActionId: null,
   }
   if (!get('source', 'attempt')) put('source', 'attempt', source)
-  if (!get('source', 'invoice')) put('source', 'invoice', original)
-  const quote = read<W.PriceQuote>(
+  const pricing = await createBillingPricingFixture(directory, scope, rate)
+  const initialQuote = read<W.PriceQuote>(
     original.quoteRef,
     RuntimeMethodSchemaRefs['agh.pricing'].quote.output,
     'PriceQuote',
   )
-  if (!quote.ok) throw new Error('Synthetic original price missing')
+  if (!initialQuote.ok) throw new Error('Synthetic original price missing')
   const reservationRef: W.DomainObjectRef = {
     authorityId: 'synthetic-budget',
     typeId: 'agh.budget/reservation@1',
@@ -220,8 +237,18 @@ export async function createAccountingChainFixture(
     settlement(input, reservation, ctx) {
       check(ctx)
       const invoice = get<W.BillingPostRequest>('source', 'invoice')
-      if (!invoice || canonicalJsonDigest(invoice) !== canonicalJsonDigest(original))
+      if (
+        !invoice ||
+        invoice.chargeKey !== original.chargeKey ||
+        canonicalJsonDigest(invoice.accountRef) !== canonicalJsonDigest(original.accountRef)
+      )
         throw new Error('Original price source changed')
+      const quote = read<W.PriceQuote>(
+        invoice.quoteRef,
+        RuntimeMethodSchemaRefs['agh.pricing'].quote.output,
+        'PriceQuote',
+      )
+      if (!quote.ok) throw new Error('Original quote absent')
       const records = input.usageRefs.map((ref) => {
         const known = get<StoredFact>('usage-fact', ref.usageId)
         if (
@@ -269,7 +296,7 @@ export async function createAccountingChainFixture(
     put('budget-account', original.accountRef.id, {
       ref: original.accountRef,
       parentId: null,
-      currency: quote.value.amount.currency,
+      currency: initialQuote.value.amount.currency,
       cap: '1000000',
       held: '0',
       settled: '0',
@@ -430,6 +457,7 @@ export async function createAccountingChainFixture(
     return result.ok ? read<W.RuntimeWireTypes[K]>(result.value, schema.output, output) : result
   }
   const ports: BillingAccountingPorts = {
+    pricing: pricing.ports,
     async readUsage(ref, ctx) {
       const page = await invoke(
         'usage',
@@ -455,22 +483,6 @@ export async function createAccountingChainFixture(
   return {
     ports,
     async prepare(ctx: CallContext): Promise<W.BillingPostRequest> {
-      const reserved = await invoke(
-        'budget',
-        'reserve',
-        {
-          actionRef: { existingActionId: source.actionId },
-          attemptId: source.attemptId,
-          accountRef: original.accountRef,
-          unitsByKind: measurement.quantities,
-          maxCost: quote.value.amount,
-          priceVersion: quote.value.priceVersion,
-          parentReservationRef: null,
-        },
-        'BudgetReserveResult',
-        ctx,
-      )
-      if (!reserved.ok) throw new Error(`Reserve: ${reserved.error.detailCode}`)
       const result = await invoke(
         'usage',
         'record',
@@ -498,13 +510,47 @@ export async function createAccountingChainFixture(
       )
       if (!result.ok) throw new Error(`Usage: ${result.error.detailCode}`)
       crash('usage')
-      return { ...original, usageRefs: result.value.factRefs }
+      const selected = await pricing.prepare(ctx, measurement.quantities)
+      const invoice = { ...original, usageRefs: result.value.factRefs, quoteRef: selected.quoteRef }
+      const previous = get<W.BillingPostRequest>('source', 'invoice')
+      if (previous && canonicalJsonDigest(previous) !== canonicalJsonDigest(invoice))
+        throw new Error('Original pricing changed')
+      if (!previous) put('source', 'invoice', invoice)
+      crash('quote')
+      const quote = read<W.PriceQuote>(
+        selected.quoteRef,
+        RuntimeMethodSchemaRefs['agh.pricing'].quote.output,
+        'PriceQuote',
+      )
+      if (!quote.ok) throw new Error('Computed quote absent')
+      const reserved = await invoke(
+        'budget',
+        'reserve',
+        {
+          actionRef: { existingActionId: source.actionId },
+          attemptId: source.attemptId,
+          accountRef: original.accountRef,
+          unitsByKind: measurement.quantities,
+          maxCost: quote.value.amount,
+          priceVersion: quote.value.priceVersion,
+          parentReservationRef: null,
+        },
+        'BudgetReserveResult',
+        ctx,
+      )
+      if (!reserved.ok) throw new Error(`Reserve: ${reserved.error.detailCode}`)
+      return invoice
     },
     stats() {
       const count = (kind: string) =>
         Number(db.prepare('SELECT COUNT(*) AS n FROM facts WHERE kind=?').get(kind)?.n)
       return {
         usageFacts: count('usage-fact'),
+        pricingProviderId: pricing.descriptor.providerId,
+        measurements: db
+          .prepare("SELECT body FROM facts WHERE kind='usage-fact'")
+          .all()
+          .map((row) => (JSON.parse(String(row.body)) as StoredFact).fact.dimensions),
         origins: count('budget-origin'),
         settled: get<ReturnType<BudgetTx['account']>>('budget-account', original.accountRef.id)?.settled,
         reservation: get<ReturnType<BudgetTx['reservation']>>('budget-reservation', reservationRef.id)
@@ -513,6 +559,7 @@ export async function createAccountingChainFixture(
     },
     async close() {
       for (const provider of providers.values()) await provider.close('shutdown')
+      await pricing.close()
       db.close()
     },
   }

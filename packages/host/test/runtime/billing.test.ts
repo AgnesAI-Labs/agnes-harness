@@ -12,6 +12,7 @@ import { inline } from '../../src/runtime/trace/provider-support.js'
 import {
   billingInput,
   createBillingTraceConsumer,
+  fixturePricingInput,
   refundInput,
   syntheticUsage,
 } from './billing-trace-fixture.js'
@@ -155,6 +156,37 @@ describe.each(['default', 'reference'] as const)('billing verified accounting %s
     if (billingInput.quoteRef.kind !== 'inline') throw new Error('quote absent')
     const quote = billingInput.quoteRef.value as unknown as PriceQuote
     const accounting: BillingAccountingPorts = {
+      pricing: {
+        async input() {
+          if (mismatch === 'pricing-input')
+            return { ok: true, value: { ...fixturePricingInput, priceVersion: 'later-price' } }
+          return { ok: true, value: fixturePricingInput }
+        },
+        async quote() {
+          if (mismatch === 'pricing-denied')
+            return {
+              ok: false,
+              error: {
+                code: 'denied',
+                detailCode: 'pricing_not_current',
+                message: 'Synthetic pricing denied',
+                diagnosticId: 'fixture',
+                retryAdvice: { kind: 'never' },
+              },
+            }
+          if (mismatch === 'pricing-ref')
+            return { ok: true, value: { ...billingInput.quoteRef, digest: 'f'.repeat(64) } }
+          if (mismatch === 'pricing-amount')
+            return {
+              ok: true,
+              value: inline(RuntimeMethodSchemaRefs['agh.pricing'].quote.output, {
+                ...quote,
+                amount: { ...quote.amount, units: '101' },
+              }),
+            }
+          return { ok: true, value: billingInput.quoteRef }
+        },
+      },
       async readUsage() {
         return { ok: true, value: fact }
       },
@@ -214,6 +246,10 @@ describe.each(['default', 'reference'] as const)('billing verified accounting %s
       fact = structuredClone(syntheticUsage)
       expect((await consumer.action('post', unknown)).error?.code).toBe('conflict')
       for (mismatch of [
+        'pricing-denied',
+        'pricing-input',
+        'pricing-ref',
+        'pricing-amount',
         'unknown',
         'units-only',
         'price',
@@ -225,10 +261,41 @@ describe.each(['default', 'reference'] as const)('billing verified accounting %s
       ]) {
         const result = await consumer.action('post', billingInput)
         expect(result.error?.code).toBe(
-          ['unknown', 'units-only'].includes(mismatch) ? 'unknown_effect' : 'conflict',
+          mismatch === 'pricing-denied'
+            ? 'denied'
+            : ['unknown', 'units-only'].includes(mismatch)
+              ? 'unknown_effect'
+              : 'conflict',
         )
       }
       expect(deliveries).toBe(0)
+      const savedPricing = accounting.pricing
+      if (!savedPricing) throw new Error('Pricing fixture absent')
+      delete accounting.pricing
+      await consumer.close()
+      consumer = await createBillingTraceConsumer({
+        directory,
+        kind,
+        service: 'billing',
+        port: (peer.address() as { port: number }).port,
+        createEffects: createBillingTraceNetworkFixture,
+        accounting,
+      })
+      expect((await consumer.action('post', billingInput)).error).toMatchObject({
+        code: 'denied',
+        detailCode: 'billing_pricing_absent',
+      })
+      expect(deliveries).toBe(0)
+      accounting.pricing = savedPricing
+      await consumer.close()
+      consumer = await createBillingTraceConsumer({
+        directory,
+        kind,
+        service: 'billing',
+        port: (peer.address() as { port: number }).port,
+        createEffects: createBillingTraceNetworkFixture,
+        accounting,
+      })
       mismatch = ''
       const first = await consumer.action('post', billingInput)
       expect(first.outcome).toBe('succeeded')
@@ -279,6 +346,72 @@ describe.each(['default', 'reference'] as const)('billing verified accounting %s
       rmSync(directory, { recursive: true, force: true })
     }
   })
+  it('cancels pending pricing without settling a budget or writing an outbound intent', async () => {
+    const directory = mkdtempSync(join(tmpdir(), 'billing-pricing-cancel-'))
+    let entered: () => void = () => {},
+      release: () => void = () => {}
+    const received = new Promise<void>((resolve) => {
+      entered = resolve
+    })
+    const held = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    let settled = false
+    const consumer = await createBillingTraceConsumer({
+      directory,
+      kind,
+      service: 'billing',
+      port: 1,
+      createEffects: createBillingTraceNetworkFixture,
+      accounting: {
+        readUsage: async () => ({ ok: true, value: structuredClone(syntheticUsage) }),
+        pricing: {
+          input: async () => ({ ok: true, value: fixturePricingInput }),
+          async quote() {
+            entered()
+            await held
+            return { ok: true, value: billingInput.quoteRef }
+          },
+        },
+        reservation: async () => ({
+          ok: true,
+          value: {
+            authorityId: 'synthetic-budget',
+            typeId: 'agh.budget/reservation@1',
+            id: 'synthetic-reservation',
+            revision: 1,
+          },
+        }),
+        async settle() {
+          settled = true
+          throw new Error('Cancelled pricing must not settle')
+        },
+      },
+    })
+    try {
+      const pending = consumer.action('post', billingInput)
+      await received
+      consumer.cancel()
+      release()
+      const result = await pending
+      expect(result.outcome).not.toBe('succeeded')
+      expect(settled).toBe(false)
+      const outbox = new DatabaseSync(join(directory, 'billing.sqlite'))
+      try {
+        if (kind === 'default') expect(outbox.prepare('SELECT COUNT(*) AS n FROM entries').get()?.n).toBe(0)
+        else {
+          const row = outbox.prepare('SELECT value FROM cabinet WHERE slot=1').get()
+          expect(JSON.parse(String(row?.value)).rows).toEqual([])
+        }
+      } finally {
+        outbox.close()
+      }
+    } finally {
+      release()
+      await consumer.close()
+      rmSync(directory, { recursive: true, force: true })
+    }
+  })
   it('fails closed when the accounting adapters are absent', async () => {
     const directory = mkdtempSync(join(tmpdir(), 'billing-accounting-absent-'))
     const consumer = await createBillingTraceConsumer({
@@ -301,52 +434,100 @@ describe.each(['default', 'reference'] as const)('billing verified accounting %s
   })
 })
 
-it('matches results, settlement facts and refusal codes across independent billing providers consuming public Core services', async () => {
-  const directory = mkdtempSync(join(tmpdir(), 'billing-accounting-cross-'))
-  const server = createServer(async (req, res) => {
-    const chunks: Buffer[] = []
-    for await (const chunk of req) chunks.push(Buffer.from(chunk))
-    res.end(JSON.stringify({ ...JSON.parse(Buffer.concat(chunks).toString()), status: 'posted' }))
-  })
-  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
-  const results: unknown[] = [],
-    facts: unknown[] = [],
-    failures: unknown[] = []
-  try {
-    for (const kind of ['default', 'reference'] as const) {
-      const consumer = await createBillingTraceConsumer({
-        directory: join(directory, kind),
-        kind,
-        service: 'billing',
-        port: (server.address() as { port: number }).port,
-        accountingChain: true,
-        createEffects: createBillingTraceNetworkFixture,
-      })
-      try {
-        const input = await consumer.prepareAccounting()
-        const result = await consumer.action('post', input)
-        expect(result.outcome).toBe('succeeded')
-        results.push(result)
-        facts.push(consumer.accountingStats())
-        const changed = await consumer.action('post', {
-          ...input,
-          accountRef: { ...input.accountRef, revision: 2 },
+it.each(['100', '317'])(
+  'matches results, actual price %s, settlement facts and refusal codes across independent billing providers consuming public services',
+  async (pricingRate) => {
+    const directory = mkdtempSync(join(tmpdir(), 'billing-accounting-cross-'))
+    const server = createServer(async (req, res) => {
+      const chunks: Buffer[] = []
+      for await (const chunk of req) chunks.push(Buffer.from(chunk))
+      res.end(JSON.stringify({ ...JSON.parse(Buffer.concat(chunks).toString()), status: 'posted' }))
+    })
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
+    const results: unknown[] = [],
+      facts: unknown[] = [],
+      failures: unknown[] = []
+    try {
+      for (const kind of ['default', 'reference'] as const) {
+        const consumer = await createBillingTraceConsumer({
+          directory: join(directory, kind),
+          kind,
+          service: 'billing',
+          port: (server.address() as { port: number }).port,
+          accountingChain: true,
+          pricingRate,
+          createEffects: createBillingTraceNetworkFixture,
         })
-        failures.push({
-          outcome: changed.outcome,
-          code: changed.error?.code,
-          detail: changed.error?.detailCode,
-        })
-      } finally {
-        await consumer.close()
+        try {
+          const input = await consumer.prepareAccounting()
+          if (input.quoteRef.kind !== 'inline') throw new Error('Computed quote absent')
+          const quoted = input.quoteRef.value as unknown as PriceQuote
+          for (const changed of [
+            { ...quoted, inputDigest: 'f'.repeat(64) },
+            {
+              ...quoted,
+              amount: { ...quoted.amount, units: '318' },
+              lineItems: quoted.lineItems.map((line) => ({
+                ...line,
+                amount: { ...line.amount, units: '318' },
+                unitPrice: { ...line.unitPrice, units: '318' },
+              })),
+            },
+            { ...quoted, lineItems: quoted.lineItems.map((line) => ({ ...line, ruleId: 'foreign-rule' })) },
+          ]) {
+            expect(
+              (
+                await consumer.action('post', {
+                  ...input,
+                  chargeKey: 'forged-quote',
+                  quoteRef: inline(RuntimeMethodSchemaRefs['agh.pricing'].quote.output, changed),
+                })
+              ).error,
+            ).toMatchObject({ code: 'conflict', detailCode: 'billing_pricing_source' })
+          }
+          expect(consumer.accountingStats()).toMatchObject({ origins: 0, settled: '0' })
+          const result = await consumer.action('post', input)
+          expect(result.outcome).toBe('succeeded')
+          expect(
+            result.result?.kind === 'inline' && (result.result.value as unknown as BillingEntry).amount.units,
+          ).toBe(pricingRate)
+          expect(consumer.accountingStats()).toMatchObject({
+            origins: 1,
+            settled: pricingRate,
+            pricingProviderId: pricingRate === '100' ? 'synthetic.catalog' : 'synthetic.replacement-catalog',
+            measurements: [
+              {
+                kind: 'inline',
+                value: {
+                  billing: { usdMicros: Number(pricingRate), source: 'estimated', subscription: false },
+                  credits: 0,
+                  creditSource: 'gateway',
+                },
+              },
+            ],
+          })
+          results.push(result)
+          facts.push(consumer.accountingStats())
+          const changed = await consumer.action('post', {
+            ...input,
+            accountRef: { ...input.accountRef, revision: 2 },
+          })
+          failures.push({
+            outcome: changed.outcome,
+            code: changed.error?.code,
+            detail: changed.error?.detailCode,
+          })
+        } finally {
+          await consumer.close()
+        }
       }
+      expect(results[0]).toEqual(results[1])
+      expect(facts[0]).toEqual(facts[1])
+      expect(failures[0]).toEqual(failures[1])
+      expect(failures[0]).toMatchObject({ code: 'conflict' })
+    } finally {
+      await new Promise<void>((resolve) => server.close(() => resolve()))
+      rmSync(directory, { recursive: true, force: true })
     }
-    expect(results[0]).toEqual(results[1])
-    expect(facts[0]).toEqual(facts[1])
-    expect(failures[0]).toEqual(failures[1])
-    expect(failures[0]).toMatchObject({ code: 'conflict' })
-  } finally {
-    await new Promise<void>((resolve) => server.close(() => resolve()))
-    rmSync(directory, { recursive: true, force: true })
-  }
-})
+  },
+)

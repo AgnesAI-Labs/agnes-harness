@@ -51,17 +51,18 @@ describe.each(['default', 'reference'] as const)('billing and OTLP real-process 
 })
 
 describe.each(['default', 'reference'] as const)('public Usage/Budget to billing recovery %s', (kind) => {
-  it.each(['usage', 'budget', 'intent', 'send', 'callback'] as const)(
+  it.each(['usage', 'quote', 'budget', 'intent', 'send', 'callback'] as const)(
     'retains one original usage and settlement after SIGKILL at %s',
     async (boundary) => {
       const driver = billingTraceProcessDriver('billing', kind, {
         accountingChain: true,
+        pricingRate: '317',
         ...(boundary === 'send' ? { crashAfterSend: true } : { crashBoundary: boundary }),
       })
       try {
         await driver.start()
         let input: typeof billingInput
-        if (boundary === 'usage') {
+        if (['usage', 'quote'].includes(boundary)) {
           await expect(driver.invoke('prepare-accounting')).rejects.toThrow('provider process exited')
           const cold = await driver.restart()
           expect(cold.pid).not.toBe(cold.previousPid)
@@ -72,7 +73,7 @@ describe.each(['default', 'reference'] as const)('public Usage/Budget to billing
               ? (driver.input as typeof billingInput)
               : ((await driver.invoke('prepare-accounting')) as typeof billingInput)
         }
-        if (boundary !== 'usage') {
+        if (!['usage', 'quote'].includes(boundary)) {
           await expect(driver.post(input)).rejects.toThrow('provider process exited')
           const cold = await driver.restart()
           expect(cold.pid).not.toBe(cold.previousPid)
@@ -91,12 +92,24 @@ describe.each(['default', 'reference'] as const)('public Usage/Budget to billing
         expect(stats).toMatchObject({
           usageFacts: 1,
           origins: 1,
-          settled: '100',
+          settled: '317',
+          pricingProviderId: 'synthetic.replacement-catalog',
+          measurements: [
+            {
+              kind: 'inline',
+              value: {
+                billing: { usdMicros: 317, source: 'estimated', subscription: false },
+                credits: 0,
+                creditSource: 'gateway',
+              },
+            },
+          ],
           reservation: { status: 'settled', priceVersion: 'synthetic-price-v1' },
         })
         expect(await driver.deliveries()).toBe(boundary === 'intent' ? 0 : 1)
         if (boundary !== 'intent') {
           const delivered = driver.records()[0]!.body as BillingEntry
+          expect(delivered.amount.units).toBe('317')
           const proof = { ...delivered, status: 'posted' as const }
           const callback = {
             chargeRef: {

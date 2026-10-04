@@ -1,4 +1,4 @@
-import type { EffectPorts } from '@agnes/extension-api/runtime'
+import { type EffectPorts, pricingQuoteSchema } from '@agnes/extension-api/runtime'
 import { jcs } from '@agnes/protocol'
 import type { BillingPostRequest, BillingRefundRequest, ProviderDescriptor } from '@agnes/protocol/runtime'
 import { createRestrictedEffectsFixture } from '../effects.js'
@@ -14,6 +14,7 @@ export function createBillingTraceNetworkFixture(handle: EffectPorts['invoke']):
 export type BillingContractDriver = {
   expectedProviderId: string
   expectedPackageDigest: string
+  expectedAmount: string
   start(): Promise<ProviderDescriptor>
   post(input: BillingPostRequest, mode?: 'deny' | 'cancel' | 'hang'): Promise<unknown>
   refund(input: BillingRefundRequest): Promise<unknown>
@@ -30,7 +31,15 @@ export type BillingContractDriver = {
 }
 type Reply = {
   outcome?: string
-  result?: { kind?: string; value?: { entryId?: string; status?: string } }
+  result?: {
+    kind?: string
+    value?: {
+      entryId?: string
+      status?: string
+      amount?: { units: string }
+      quoteRef?: { kind: string; value?: { priceVersion?: string } }
+    }
+  }
   error?: { code?: string }
 }
 const reply = (v: unknown) => v as Reply
@@ -61,6 +70,22 @@ export async function runBillingContractScenario(
     )
     if (scenario === 'select') assert(descriptor.providerId.startsWith('agh.'), 'selected-provider-identity')
     if (scenario === 'normal') {
+      if (driver.input.quoteRef.kind !== 'inline') throw new Error('Original quote absent')
+      const original = validateRuntime('PriceQuote', driver.input.quoteRef.value)
+      if (!original.ok) throw new Error('Original quote invalid')
+      const unknown = pricingQuoteSchema.encode({ ...original.value, priceVersion: 'unknown-version' })
+      if (!unknown.ok) throw new Error('Unknown quote codec')
+      assert(
+        reply(await driver.post({ ...driver.input, chargeKey: 'unknown-version', quoteRef: unknown.value }))
+          .error?.code === 'incompatible',
+        'unknown-version-before-settlement',
+      )
+
+      const unpriced = await driver.accountingStats()
+      assert(
+        unpriced.origins === 0 && unpriced.settled === '0' && (await driver.deliveries()) === 0,
+        'unknown-version-zero-settlement-and-delivery',
+      )
       const first = await driver.post(driver.input),
         again = await driver.post(driver.input)
       assert(
@@ -77,6 +102,10 @@ export async function runBillingContractScenario(
           }),
         ).error?.code === 'conflict',
         'changed-post-key-refused',
+      )
+      assert(
+        reply(first).result?.value?.amount?.units === driver.expectedAmount,
+        'selected-catalog-price-enters-billing',
       )
       const id = reply(first).result?.value?.entryId
       assert(typeof id === 'string', 'entry-identity')
@@ -120,7 +149,7 @@ export async function runBillingContractScenario(
       )
       const stats = await driver.accountingStats()
       assert(
-        stats.usageFacts === 1 && stats.origins === 1 && stats.settled === '100',
+        stats.usageFacts === 1 && stats.origins === 1 && stats.settled === driver.expectedAmount,
         'one-public-usage-and-budget-settlement',
       )
       assert(
@@ -148,7 +177,7 @@ export async function runBillingContractScenario(
       assert((await driver.deliveries()) === 1, 'cancel-send-boundary')
       const stats = await driver.accountingStats()
       assert(
-        stats.usageFacts === 1 && stats.origins === 1 && stats.settled === '100',
+        stats.usageFacts === 1 && stats.origins === 1 && stats.settled === driver.expectedAmount,
         'cancel-retains-real-settlement',
       )
     }
@@ -157,6 +186,10 @@ export async function runBillingContractScenario(
         id = reply(first).result?.value?.entryId
       assert(reply(first).outcome === 'succeeded', 'posted-before-restart')
       assert(typeof id === 'string', 'entry-identity-before-restart')
+      assert(
+        reply(first).result?.value?.amount?.units === driver.expectedAmount,
+        'original-selected-price-before-restart',
+      )
       if (typeof id !== 'string') throw new Error('Billing entry identity absent')
       const refund = driver.refundInput(id),
         a = await driver.refund(refund)
@@ -175,7 +208,7 @@ export async function runBillingContractScenario(
       )
       const stats = await driver.accountingStats()
       assert(
-        stats.usageFacts === 1 && stats.origins === 1 && stats.settled === '100',
+        stats.usageFacts === 1 && stats.origins === 1 && stats.settled === driver.expectedAmount,
         'cold-original-usage-and-settled-amount',
       )
       assert((await driver.deliveries()) === 2, 'cold-no-double-settlement')
@@ -189,7 +222,7 @@ export async function runBillingContractScenario(
       assert((await driver.deliveries()) === 1, 'disposed-no-new-network')
       const stats = await driver.accountingStats()
       assert(
-        stats.usageFacts === 1 && stats.origins === 1 && stats.settled === '100',
+        stats.usageFacts === 1 && stats.origins === 1 && stats.settled === driver.expectedAmount,
         'dispose-retains-real-settlement',
       )
     }
