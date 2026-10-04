@@ -2003,7 +2003,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // Durable domain store with outbox delivery, dead letters and redrive; measured 27055 (+543), exact.
   // Merged with the integration base at 26535; measured 27078, exact.
   // Diagnostics export replaces credential-carrier values in events and log rows; measured 27094 (+11), exact.
-  'packages/daemon/src': 27147,
+  // Runtime client routes on the daemon HTTP listener (validated, unported refusals); measured 27356 (+209), exact.
+  'packages/daemon/src': 27356,
   'packages/daemon/src/packages/admin-session': 46,
   // 2026-09-14: whole-branch review fix wave (Finding 1) adds the two missing
   // 'pins/inspect'/'pins/release' entries to the ACTIONS BFF route allowlist, which had been left

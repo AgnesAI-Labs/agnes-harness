@@ -1,10 +1,11 @@
 import { createHash, timingSafeEqual } from 'node:crypto'
-import { createServer as createHttpServer } from 'node:http'
+import { createServer as createHttpServer, type IncomingMessage, STATUS_CODES } from 'node:http'
 import { createServer } from 'node:https'
 import type { AddressInfo, Socket } from 'node:net'
 import { type WebSocket, WebSocketServer } from 'ws'
 import type { RpcEndpoint } from '../local/endpoint.js'
 import type { JsonRpcMessage } from '../rpc.js'
+import { type RuntimeClientPorts, runtimeClientRoutes } from '../runtime/transport.js'
 
 export const WS_MAX_MESSAGE_BYTES = 2 * 1024 * 1024
 const MAX_PENDING = 1_000
@@ -95,6 +96,8 @@ export async function listenWebSocket(options: {
   localOrigin?: string
   token: string
   endpoint(): { endpoint: RpcEndpoint; onClose(): void }
+  /** Backends for the runtime client routes; none is assembled yet, so each route refuses. */
+  runtimeClient?: RuntimeClientPorts
 }): Promise<{ url: string; stopAccepting(): Promise<void>; close(): Promise<void> }> {
   const { host, port } = target(options.addr)
   const local = options.localOrigin !== undefined
@@ -128,22 +131,43 @@ export async function listenWebSocket(options: {
     handleProtocols: (protocols) => (protocols.has('agnes-v1') ? 'agnes-v1' : false),
   })
   let expectedHost = ''
-  server.on('upgrade', (request, socket, head) => {
-    if (stopping) {
-      socket.destroy()
-      return
-    }
-    if (local && (request.headers.origin !== options.localOrigin || request.headers.host !== expectedHost)) {
-      socket.end('HTTP/1.1 403 Forbidden\r\nConnection: close\r\n\r\n')
-      return
-    }
+  // Upgrades and plain requests share one admission: local mode trusts only the exact page origin on
+  // this host, remote mode needs the bearer.
+  const refusal = (request: IncomingMessage): 401 | 403 | undefined => {
+    if (local && (request.headers.origin !== options.localOrigin || request.headers.host !== expectedHost))
+      return 403
     const bearer = protocolBearer(request.headers['sec-websocket-protocol'])
     if (
       !local &&
       !authorized(request.headers.authorization, options.token) &&
       !authorized(`Bearer ${bearer ?? ''}`, options.token)
-    ) {
-      socket.end('HTTP/1.1 401 Unauthorized\r\nConnection: close\r\n\r\n')
+    )
+      return 401
+    return undefined
+  }
+  const runtime = runtimeClientRoutes(options.runtimeClient ?? {})
+  server.on('request', (request, response) => {
+    if (stopping) return void request.socket.destroy()
+    const status = refusal(request)
+    if (status) return void response.writeHead(status, { Connection: 'close' }).end()
+    void runtime(request, response).then(
+      (served) => {
+        if (!served) response.writeHead(404).end()
+      },
+      () => {
+        if (response.headersSent) response.destroy()
+        else response.writeHead(500, { Connection: 'close' }).end()
+      },
+    )
+  })
+  server.on('upgrade', (request, socket, head) => {
+    if (stopping) {
+      socket.destroy()
+      return
+    }
+    const status = refusal(request)
+    if (status) {
+      socket.end(`HTTP/1.1 ${status} ${STATUS_CODES[status]}\r\nConnection: close\r\n\r\n`)
       return
     }
     wss.handleUpgrade(request, socket, head, (ws) => wss.emit('connection', ws, request))
