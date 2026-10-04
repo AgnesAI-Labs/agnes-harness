@@ -2749,8 +2749,9 @@ const INITIAL_CEILING: Record<string, number> = {
   // Original local deployment owner observations and native lifetime checks add 166 measured lines; no spare.
   // Local deployment C14 owner and native generation checks add 431 measured lines; no spare.
   // Selected pricing quotes are verified before settlement. Measured 77427, exact, no spare.
+  // Original same-connection Action capture adds 159 measured source lines; exact cap, no spare.
   // Private protected release sources, official resolvers and original publication seam. Exact measured cap.
-  'packages/host/src': 78476,
+  'packages/host/src': 78635,
   'packages/host/src/ext-host/service-invocation': 247,
   // T5.2's permission projector is kept independently bounded so later extension-host work cannot
   // hide in the package-wide increment. Measured source: 86 lines.
