@@ -10,6 +10,7 @@ import {
   type Stats,
 } from 'node:fs'
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
+import { jcs } from '@agnes/protocol'
 import { requireRelease } from './primitives.js'
 
 const hash = (bytes: Buffer) => createHash('sha256').update(bytes).digest('hex')
@@ -161,8 +162,8 @@ export class ProtectedDeployment {
     const material = names.map((name) => {
       const row = this.files.get(name)
       requireRelease(row, 'deployment_source_missing', '/deployment/file')
-      return { name, digest: hash(row.bytes) }
+      return { path: name, rawDigest: hash(row.bytes), bytes: row.bytes.length }
     })
-    return hash(Buffer.from(JSON.stringify(material)))
+    return hash(Buffer.from(jcs(material)))
   }
 }

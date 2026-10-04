@@ -1,22 +1,23 @@
 import { createHash } from 'node:crypto'
 import { chmodSync, cpSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { defineGeneratedAuthorSchema } from '@agnes/extension-api/runtime'
 import {
   createPackageResolverProvider,
   emptyPackageLock,
 } from '@agnes/package-manager/runtime/package-resolver'
 import { createPackageSourceProvider } from '@agnes/package-manager/runtime/package-source'
+import { jcs } from '@agnes/protocol'
 import type { AssemblyGraph, ConfigResolveRequest, ReleasePlan, ReleaseSet } from '@agnes/protocol/runtime'
+import { validateOwnedAuthorSchemaSource } from '@agnes/protocol/runtime'
 import {
   assemblyFixture,
   fixtureHash,
   fixtureRef,
   fixtureWire,
 } from '../../../../extension-api/testkit/runtime/contracts/assembly-fixture.js'
-import {
-  APPLIED_CONFIGURATION_KIND,
-  appliedConfigurationRef,
-} from '../../../src/runtime/assembly/applied-configuration.js'
+import { APPLIED_CONFIGURATION_KIND } from '../../../src/runtime/assembly/applied-configuration.js'
+import { produceClientLock } from '../../../src/runtime/assembly/client-lock.js'
 import {
   assemblyGraphDigest,
   releasePlanFingerprint,
@@ -57,9 +58,44 @@ export async function producerDeploymentFixture(directory: string) {
     uiRoot = join(directory, 'packages/ui')
   const backend = join(backendRoot, 'acme.release/1.0.0')
   mkdirSync(backend, { recursive: true, mode: 0o700 })
-  const bytes = Buffer.from('export const factories = {};\n')
+  const bytes = Buffer.from(
+    originalRelease.bindings
+      .map(
+        (_, index) =>
+          `export const factory${index} = { async create() { throw new Error('fixture provider not started') } };
+`,
+      )
+      .join(''),
+  )
   const schemaSource = originalRelease.schemasRef.value.schemas[0]
   if (!schemaSource) throw new Error('fixture schema missing')
+  const appliedSource = {
+    ownerPackageId: 'acme.release',
+    name: 'AppliedConfiguration',
+    typeId: 'acme.release/applied-configuration@1',
+    revision: 1,
+    document: {
+      $schema: 'https://json-schema.org/draft/2020-12/schema',
+      $ref: '#/$defs/AppliedConfiguration',
+      $defs: {
+        AppliedConfiguration: {
+          type: 'object',
+          additionalProperties: false,
+          properties: {
+            canonicalJson: { type: 'string', maxLength: 1048576 },
+            contentDigest: { type: 'string', minLength: 64, maxLength: 64 },
+          },
+          required: ['canonicalJson', 'contentDigest'],
+        },
+      },
+    },
+  }
+  const appliedCodec = defineGeneratedAuthorSchema<{ canonicalJson: string; contentDigest: string }>(
+    appliedSource,
+  )
+  const appliedSchemaBytes = Buffer.from(jcs(appliedSource))
+  originalRelease.schemasRef.value.schemas.push(appliedSource)
+  originalRelease.schemasRef = fixtureRef(originalRelease.schemasRef.value)
   const schemaBytes = Buffer.from(JSON.stringify(schemaSource.document))
   const { clientAssets: _clientAssets, ...backendBase } = uiManifest
   const manifest = {
@@ -67,7 +103,10 @@ export async function producerDeploymentFixture(directory: string) {
     id: 'acme.release',
     packageDigest: '0'.repeat(64),
     entries: { runtime: './runtime.js' },
-    schemas: [{ ref: input.configuration.preset.parameters.schema, path: './empty.schema.json' }],
+    schemas: [
+      { ref: input.configuration.preset.parameters.schema, path: './empty.schema.json' },
+      { ref: appliedCodec.ref, path: './applied.schema.json' },
+    ],
     providers: originalRelease.bindings.map((row, index) => ({
       descriptor: { ...row.descriptor, packageDigest: '0'.repeat(64) },
       factory: { entry: './runtime.js', export: `factory${index}` },
@@ -81,13 +120,34 @@ export async function producerDeploymentFixture(directory: string) {
     files: [
       { path: './runtime.js', bytes: bytes.length, digest: sha(bytes) },
       { path: './empty.schema.json', bytes: schemaBytes.length, digest: sha(schemaBytes) },
+      { path: './applied.schema.json', bytes: appliedSchemaBytes.length, digest: sha(appliedSchemaBytes) },
     ],
   }
   fixtureWire('RuntimePluginManifest', manifest)
   writeFileSync(join(backend, 'runtime.js'), bytes)
   writeFileSync(join(backend, 'empty.schema.json'), schemaBytes)
+  writeFileSync(join(backend, 'applied.schema.json'), appliedSchemaBytes)
   writeProducerJson(backend, 'agnes.plugin.json', manifest)
   cpSync(uiBase, join(uiRoot, uiManifest.id, uiManifest.version), { recursive: true })
+  uiManifest.clientServices = ['shell', 'registry'].map((id) => ({
+    id,
+    packageDigest: uiManifest.packageDigest,
+    contract: id === 'shell' ? 'agh.shell' : 'agh.ui-registry',
+    apiMajor: 1,
+    targets: ['web'],
+    scope: 'client',
+    configSchema: uiManifest.schemas[0].ref,
+    entry: { entry: './web/index.js', export: id },
+    requiredFeatures: [],
+  }))
+  writeProducerJson(join(uiRoot, uiManifest.id, uiManifest.version), 'agnes.plugin.json', uiManifest)
+  input.configuration.profile.client = {
+    rendererSelections: [],
+    requiredTargets: ['web'],
+    shell: { packageId: uiManifest.id, contributionId: 'shell' },
+    registry: { packageId: uiManifest.id, contributionId: 'registry' },
+    fallbackRenderer: { packageId: uiManifest.id, contributionId: uiManifest.renderers[0].id },
+  }
   protectTree(join(directory, 'packages'))
   const cacheDir = join(directory, '.fixture-package-cache')
   const source = createPackageSourceProvider({
@@ -114,10 +174,7 @@ export async function producerDeploymentFixture(directory: string) {
   if (!resolved.ok) throw new Error(resolved.detailCode)
   const catalog = createSchemaCatalog()
   for (const item of originalRelease.schemasRef.value.schemas) {
-    const ref =
-      item.ownerPackageId === 'acme.release'
-        ? input.configuration.preset.parameters.schema
-        : originalRelease.clientBundlesRef.value.bundles[0]?.schemas[0]
+    const ref = validateOwnedAuthorSchemaSource(item).ref
     if (!ref) throw new Error('fixture schema ref missing')
     const denied = catalog.admitSchema(ref, item.document)
     if (denied) throw new Error(JSON.stringify(denied))
@@ -207,15 +264,42 @@ export async function producerDeploymentFixture(directory: string) {
     digest: configuration.result.presetDigest,
     data: fixtureRef(configuration.result.preset),
   }
-  release.configSnapshotRef = appliedConfigurationRef({
+  const applied = {
     ...effective.value,
     configuration: configuration.result,
     kind: APPLIED_CONFIGURATION_KIND,
+  }
+  const appliedValue = { canonicalJson: jcs(applied), contentDigest: fixtureHash(applied) }
+  if (!appliedCodec.parse(appliedValue).ok) throw new Error('applied codec rejected original')
+  const appliedBytes = Buffer.from(jcs(appliedValue))
+  release.configSnapshotRef = fixtureWire('DataRef', {
+    kind: 'blob',
+    schema: appliedCodec.ref,
+    blob: {
+      authorityId: 'fixture-content',
+      blobId: sha(appliedBytes),
+      digest: sha(appliedBytes),
+      bytes: appliedBytes.length,
+      mediaType: 'application/json',
+      pinId: sha(appliedBytes),
+    },
   })
+  const bundles = originalRelease.clientBundlesRef.value.bundles
+  const clientLock = produceClientLock(
+    {
+      plan: { ...input.plan, targetReleaseSet: release },
+      configuration: configuration.result,
+      resolution: resolved.value,
+      fixture: { contents: input.fixture.contents },
+    },
+    bundles,
+  )
+  if (!clientLock.ok) throw new Error(clientLock.error.detailCode)
+  release.clientBundlesRef = fixtureRef({ bundles, clientLock: clientLock.value })
   release.releaseSetId = releaseSetDigest(release)
   input.graph.lock = resolved.value.lockGraph
   input.plan.permissionDifference.afterProfileDigest = configuration.result.profileDigest
-  input.fixture.contents = []
+  input.fixture.contents = [{ ref: release.configSnapshotRef, value: appliedValue }]
   for (const change of input.plan.permissionDifference.policyChanges) {
     const key = change.path.slice(1) as 'policy' | 'selectionPolicy' | 'limits'
     const ref = fixtureRef(configuration.result.profile[key])
@@ -283,11 +367,19 @@ export async function producerDeploymentFixture(directory: string) {
     sources: { 'fixture-source': 'packages/backend', 'fixture-ui-source': 'packages/ui' },
   })
   writeProducerJson(directory, 'binding-policy.json', policy)
+  const verified = []
+  for (const entry of resolved.value.lockGraph.entries) {
+    const metadata = source.resolveMetadata({ packageId: entry.packageId, version: entry.version })
+    const snapshot = await source.fetch({ locator: entry.locator, expectedDigest: entry.digest })
+    if (!metadata.ok || !snapshot.ok) throw new Error('original package fixture not verified')
+    verified.push({ packageId: entry.packageId, metadata: metadata.value, snapshot: snapshot.value })
+  }
   config.dispose()
   resolver.dispose()
   source.dispose()
   return {
     release,
+    verified,
     plan,
     graph,
     configuration: configuration.result,
