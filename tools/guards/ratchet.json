@@ -44,7 +44,7 @@
   "packages/code/src": 1600,
   "packages/cli/src/args": 300,
   "packages/runtime-python/src": 400,
-  "packages/base/extensions/tools-core": 800,
+  "packages/base/extensions/tools-core": 855,
   "packages/base/extensions/subagent": 800,
   "packages/base/extensions/skills": 1121,
   "packages/base/extensions/hooks-runner": 1028,

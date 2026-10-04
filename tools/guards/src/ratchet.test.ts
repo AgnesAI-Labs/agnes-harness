@@ -225,7 +225,9 @@ const INITIAL_CEILING: Record<string, number> = {
   'packages/web-ui/src': 4891,
   // W8a-3: retire the native tool renderer in favor of one compatibility root; measured 4630.
   'packages/web-units/src': 4646,
-  'packages/base/extensions/tools-core': 800,
+  // Write staleness guard: a per-session table of what each file looked like when read, checked by
+  // `write` (+55 counted lines, measured 855, exact cap).
+  'packages/base/extensions/tools-core': 855,
   // MCP-ROWS stage 2b, steps 1-2 (D118): connection supervisor, catalog hub, and the per-server
   // extension row wiring them together. New extension at the shared default cap; measured 276.
   'packages/base/extensions/mcp-server': 800,
@@ -2766,6 +2768,8 @@ const EXTENSION_CEILING_EXCEPTIONS = new Map([
   // SKILL-CATALOG-CLEAN-REWRITE: same reviewed exact total as the catalog/name activation budget above.
   // Skill description bounds and paged reads. Measured 1121, exact.
   ['skills', 1121],
+  // Write staleness guard (per-session table of observed file versions, checked by write). Measured 855, exact.
+  ['tools-core', 855],
 ])
 
 describe('bundled extension line budgets (default ≤ 800, named reviewed exceptions)', () => {
