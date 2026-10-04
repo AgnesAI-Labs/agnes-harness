@@ -7,6 +7,7 @@ import { defineGeneratedAuthorSchema, defineInterceptor } from '@agnes/extension
 import { jcs } from '@agnes/protocol'
 import type { ContextReturn, ToolCallReturn } from '@agnes/protocol/gen/hooks'
 import {
+  type ActionFrame,
   canonicalJsonDigest,
   type DataRef,
   type JsonValue,
@@ -728,4 +729,114 @@ describe('default Effects factory ABI scaffold', () => {
     expect(() => createDefaultEffectsFactory({ ...descriptor, contract: 'agh.usage' }, configCodec)).toThrow()
     expect(() => createDefaultEffectsFactory(descriptor, { ...configCodec })).toThrow()
   })
+})
+
+it('rejects an ordinary frozen callback without genuine Host source installation', async () => {
+  let captured = 0
+  let handled = 0
+  const pure = stage([
+    registration(
+      contextDefinition('chosen', () => {
+        handled++
+        return { additionalContext: 'selected' }
+      }),
+      0,
+    ),
+  ])
+  const source = Object.freeze({
+    async capture() {
+      captured++
+      return pure
+    },
+  })
+  // @ts-expect-error Untrusted callers cannot supply a stage source to the public factory.
+  const factory = createDefaultEffectsFactory(descriptor, configCodec, source)
+  const signal = new AbortController().signal
+  const scope = {
+    kind: 'session',
+    installationId: 'installation',
+    runtimeId: 'runtime',
+    workspaceId: 'workspace',
+    sessionId: 'session',
+  } as const
+  const provider = await factory.create(encoded(configCodec, {}), dependencies, {
+    instanceId: 'effects-instance',
+    bindingId: binding.bindingId,
+    scope,
+    signal,
+  })
+  const action = await provider.actions?.runHooks?.create({
+    instanceId: 'effects-action',
+    actionId: pure.sourceActionId,
+    runId: pure.request.owner.runId,
+    bindingId: binding.bindingId,
+    scope,
+    signal,
+  })
+  if (action?.kind !== 'leaf') throw new Error('Missing leaf')
+  const call = {
+    bindingId: binding.bindingId,
+    scope,
+    principalRef: 'principal',
+    authorizationRef: 'authorization',
+    invocationId: 'invocation',
+    deadline: '2026-10-05T00:00:00Z',
+    traceRef: 'trace',
+    signal,
+  }
+  const input: DataRef = {
+    kind: 'inline',
+    schema: refs.runHooks.input,
+    value: pure.request,
+    digest: canonicalJsonDigest(pure.request),
+    bytes: Buffer.byteLength(jcs(pure.request)),
+  }
+  const { signal: _signal, ...wireCall } = call
+  const frame: ActionFrame = {
+    actionId: pure.sourceActionId,
+    parentActionId: null,
+    runId: pure.request.owner.runId,
+    bindingId: binding.bindingId,
+    method: 'runHooks',
+    input,
+    inputDigest: canonicalJsonDigest(input),
+    attemptId: 'attempt',
+    attemptNumber: 1,
+    invocationId: call.invocationId,
+    requestIdentity: null,
+    providerRevision: 0,
+    continuation: null,
+    signals: { items: [], nextCursor: null, complete: true, snapshot: 'snapshot' },
+    receipts: { items: [], nextCursor: null, complete: true, snapshot: 'snapshot' },
+    signalHighWater: 0,
+    snapshot: 'snapshot',
+    observedAt: '2026-10-04T00:00:00Z',
+    context: wireCall,
+    actionTimebox: { defaultTimeoutMs: 1000, maxDeadline: call.deadline },
+  }
+  const context = {
+    call,
+    effects: {
+      invoke: async () => {
+        throw new Error('No external effects')
+      },
+      stream: async () => {
+        throw new Error('No external effects')
+      },
+      upload: async () => {
+        throw new Error('No external effects')
+      },
+    },
+    progress: async () => {
+      throw new Error('No progress')
+    },
+  }
+  const result = await action.execute(frame, context)
+  expect(result).toMatchObject({
+    outcome: 'failed',
+    error: { detailCode: 'effects_stage_source_unavailable' },
+  })
+  expect(captured).toBe(0)
+  expect(handled).toBe(0)
+  await provider.close('completed')
 })
