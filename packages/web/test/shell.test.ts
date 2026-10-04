@@ -1,12 +1,8 @@
 // @vitest-environment happy-dom
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { setLocaleTranslator } from '../src/locale-bridge.js'
 import { bindSidebar, showSettingsPane } from '../src/shell.js'
 import { zhT } from './helpers/locale.js'
-
-// i18n: these suites assert zh-CN catalog output; pin the translator before imports run.
-setLocaleTranslator(zhT)
 
 afterEach(() => document.body.replaceChildren())
 
@@ -18,7 +14,7 @@ describe('mobile sidebar navigation', () => {
       <main><button id="sidebar-toggle"></button><section id="transcript"></section></main>
     `
     const narrow = { matches: true, addEventListener: vi.fn() } as unknown as MediaQueryList
-    const sidebar = bindSidebar(narrow)
+    const sidebar = bindSidebar(narrow, document, zhT)
     const transcript = document.getElementById('transcript') as HTMLElement
     const toggle = document.getElementById('sidebar-toggle') as HTMLButtonElement
     const close = document.getElementById('sidebar-close') as HTMLButtonElement

@@ -5,7 +5,8 @@
  * `<SlotOutlet name="tool.card.inline">`。认领（WC9 按包认领，producer 匹配见 WC12）
  * 走 ClaimResolver——真源是名册 extIds（P1a），缺省一律未认领显示占位。
  * 容器始终在（占位骨架常驻），注册表/认领变化让占位原地变卡片，无需重拉时间线。
- * 底座未启动（boot 未运行）时降级为静态占位，不挂 React。
+ * The card context travels with each timeline renderer; a renderer mounted without one degrades to a
+ * static placeholder and never mounts React.
  */
 
 import {
@@ -29,19 +30,6 @@ export interface SlotNodeView {
 export interface SlotCardContext {
   registry: SlotRegistry
   claim: ClaimResolver
-  /** Locale for the unclaimed-slot fallback copy; optional, defaults to English. */
-  locale?: import('@agnes/web-client').LocaleService
-}
-
-let cardContext: SlotCardContext | undefined
-
-/** boot 启动后绑定；未绑定时 slot 节点只画静态占位。 */
-export function bindSlotCardContext(context: SlotCardContext): void {
-  cardContext = context
-}
-
-export function getSlotCardContext(): SlotCardContext | undefined {
-  return cardContext
 }
 
 interface SlotMount {
@@ -71,7 +59,7 @@ export function mountSlotCard(options: {
   const context = options.context
   if (!context) {
     element.setAttribute('data-slot-state', 'empty')
-    element.textContent = cardContext?.locale?.t('slot.notReady') ?? 'Plugin for this card is not ready'
+    element.textContent = 'Plugin for this card is not ready'
     return {
       element,
       update(next: SlotNodeView) {

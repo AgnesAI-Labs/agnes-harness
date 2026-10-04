@@ -10,7 +10,7 @@ import {
 import { createAntdRoot } from '@agnes/web-ui'
 import { createConversationToolCard } from '@agnes/web-units'
 import { createElement, useLayoutEffect, useSyncExternalStore } from 'react'
-import { getSlotCardContext, mountSlotCard } from './client-modules/timeline-slot.js'
+import { mountSlotCard, type SlotCardContext } from './client-modules/timeline-slot.js'
 import { isConversationNode } from './conversation-visibility.js'
 import { createMarkdownRenderer } from './markdown.js'
 import type { Translate } from './presentation.js'
@@ -30,6 +30,8 @@ export type TimelineRendererOptions = {
   session?: SessionService
   locale?: LocaleService
   resources?: ClientResourceService
+  /** Registry and claim for inline slot cards; without it slot nodes render a static placeholder. */
+  slotCards?: SlotCardContext
 }
 
 /** Whether older records exist before the loaded window, and how to load a page of them. */
@@ -197,7 +199,7 @@ function compactionSummary(node: Extract<UINode, { kind: 'compaction' }>, t: Tra
   return node.summary ?? t('timeline.compactionFallback', { range: node.range.join('–') })
 }
 
-function createEntry(node: UINode, t: Translate, entryFingerprint: string): Entry {
+function createEntry(node: UINode, t: Translate, entryFingerprint: string, cards?: SlotCardContext): Entry {
   const element = article(node)
 
   if (node.kind === 'user') {
@@ -368,7 +370,7 @@ function createEntry(node: UINode, t: Translate, entryFingerprint: string): Entr
 
   if (node.kind === 'slot') {
     // WC9：slot 节点的稳定容器。client-modules 底座未启动时由 mountSlotCard 降级为静态占位。
-    const mount = mountSlotCard({ node, context: getSlotCardContext() })
+    const mount = mountSlotCard({ node, context: cards })
     element.append(mount.element)
     return {
       kind: node.kind,
@@ -780,7 +782,7 @@ export function createTimelineRenderer(options: TimelineRendererOptions): Timeli
         old?.dispose?.()
         old?.dshNode?.dispose()
         old?.element.remove()
-        entry = createEntry(node, t, nextFingerprint)
+        entry = createEntry(node, t, nextFingerprint, options.slotCards)
         entry.dshNode = mountDshNode(entry, node, options)
         entries.set(node.id, entry)
         changed = true

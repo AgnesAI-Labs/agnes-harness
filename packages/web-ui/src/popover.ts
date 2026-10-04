@@ -36,8 +36,10 @@ export function positionPopover(
   const padding = options.viewportPadding ?? 12
   const gap = options.gap ?? 8
   const triggerBounds = trigger.getBoundingClientRect()
-  const viewportWidth = Math.max(0, window.innerWidth)
-  const viewportHeight = Math.max(0, window.innerHeight)
+  // The trigger's own window is the viewport, so a popover in another document clamps to that document.
+  const view = trigger.ownerDocument.defaultView
+  const viewportWidth = Math.max(0, view?.innerWidth ?? 0)
+  const viewportHeight = Math.max(0, view?.innerHeight ?? 0)
   const measuredWidth = panel.getBoundingClientRect().width || options.preferredWidth
   const width = Math.max(
     0,
@@ -83,8 +85,9 @@ export function positionSubmenu(
   const gap = options.gap ?? 4
   const anchorBounds = anchor.getBoundingClientRect()
   const parentBounds = parent.getBoundingClientRect()
-  const viewportWidth = Math.max(0, window.innerWidth)
-  const viewportHeight = Math.max(0, window.innerHeight)
+  const view = anchor.ownerDocument.defaultView
+  const viewportWidth = Math.max(0, view?.innerWidth ?? 0)
+  const viewportHeight = Math.max(0, view?.innerHeight ?? 0)
   const width = Math.max(0, Math.min(options.preferredWidth, viewportWidth - padding * 2))
   const toRight = parentBounds.right + gap
   const toLeft = parentBounds.left - gap - width

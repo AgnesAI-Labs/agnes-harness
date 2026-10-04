@@ -1,4 +1,4 @@
-import { tr } from './locale-bridge.js'
+import type { Translate } from './presentation.js'
 
 export type WorkspacePickerResult =
   | { status: 'selected'; path: string }
@@ -22,7 +22,10 @@ export async function workspacePickerAvailable(fetcher: Fetcher = fetch): Promis
   }
 }
 
-export async function requestWorkspacePicker(fetcher: Fetcher = fetch): Promise<WorkspacePickerResult> {
+export async function requestWorkspacePicker(
+  t: Translate,
+  fetcher: Fetcher = fetch,
+): Promise<WorkspacePickerResult> {
   const response = await fetcher('/api/workspace-picker', {
     method: 'POST',
     cache: 'no-store',
@@ -32,7 +35,7 @@ export async function requestWorkspacePicker(fetcher: Fetcher = fetch): Promise<
   try {
     body = (await response.json()) as typeof body
   } catch {
-    throw new Error(tr('settings.workspacePicker.ambiguous'))
+    throw new Error(t('settings.workspacePicker.ambiguous'))
   }
   if (body.status === 'cancelled') return { status: 'cancelled' }
   if (body.status === 'unavailable') return { status: 'unavailable' }
@@ -45,5 +48,5 @@ export async function requestWorkspacePicker(fetcher: Fetcher = fetch): Promise<
     !body.path.includes('\0')
   )
     return { status: 'selected', path: body.path }
-  throw new Error(tr('settings.workspacePicker.ambiguous'))
+  throw new Error(t('settings.workspacePicker.ambiguous'))
 }

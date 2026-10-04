@@ -7,13 +7,9 @@ import type { Client } from '@agnes/sdk/browser'
 import { unmountRegion } from '@agnes/web-ui'
 import { Window } from 'happy-dom'
 import { afterEach, expect, it, vi } from 'vitest'
-import { setLocaleTranslator } from '../src/locale-bridge.js'
 import { createSettingsController } from '../src/settings.js'
 import { renderSettingsMarkup } from '../src/settings-region.js'
 import { zhT } from './helpers/locale.js'
-
-// i18n: these suites assert zh-CN catalog output; pin the translator before imports run.
-setLocaleTranslator(zhT)
 
 let window: Window | undefined
 let disposeMarkup: (() => void) | undefined
@@ -89,6 +85,7 @@ async function setup() {
   }
   const onSaved = vi.fn(async () => undefined)
   const controller = createSettingsController({
+    t: zhT,
     client: { config } as unknown as Client,
     onSaved,
     onError: vi.fn(),

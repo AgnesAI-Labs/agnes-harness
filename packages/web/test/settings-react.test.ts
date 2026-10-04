@@ -10,12 +10,8 @@ import { createElement } from 'react'
 import { flushSync } from 'react-dom'
 import { createRoot } from 'react-dom/client'
 import { afterEach, expect, it, vi } from 'vitest'
-import { setLocaleTranslator } from '../src/locale-bridge.js'
 import { createSettingsController } from '../src/settings.js'
 import { zhT } from './helpers/locale.js'
-
-// i18n: these suites assert zh-CN catalog output; pin the translator before imports run.
-setLocaleTranslator(zhT)
 
 const stylePath = resolve(import.meta.dirname, '../public/style.css')
 
@@ -91,6 +87,7 @@ it('operates the React settings pane and account dialog without losing native fo
     effect: 'new-sessions',
   }
   const controller = createSettingsController({
+    t: zhT,
     client: {
       config: {
         get: async () => snapshot,

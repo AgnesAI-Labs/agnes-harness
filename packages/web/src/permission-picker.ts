@@ -1,6 +1,6 @@
 import * as webUi from '@agnes/web-ui'
 import { createElement, type ReactNode } from 'react'
-import { tr } from './locale-bridge.js'
+import type { Translate } from './presentation.js'
 
 export type PermissionMode = 'view' | 'workspace' | 'full'
 
@@ -22,7 +22,7 @@ const PERMISSION_OPTION_DESCRIPTION_KEYS: Record<PermissionMode, string> = {
   full: 'settings.picker.fullDescription',
 }
 
-/** 静态 id 行：label/description 渲染时经 tr 取词，不在模块加载期写死。 */
+/** 静态 id 行：label/description 渲染时经注入的 translate 取词，不在模块加载期写死。 */
 export const PERMISSION_OPTIONS: readonly PermissionOption[] = [
   {
     id: 'view',
@@ -41,9 +41,9 @@ export const PERMISSION_OPTIONS: readonly PermissionOption[] = [
   },
 ]
 
-export function permissionLabel(mode: PermissionMode | null): string {
-  if (mode === null) return tr('settings.picker.choosePermission')
-  return tr(PERMISSION_OPTION_LABEL_KEYS[mode] ?? PERMISSION_OPTION_LABEL_KEYS.workspace)
+export function permissionLabel(mode: PermissionMode | null, t: Translate): string {
+  if (mode === null) return t('settings.picker.choosePermission')
+  return t(PERMISSION_OPTION_LABEL_KEYS[mode] ?? PERMISSION_OPTION_LABEL_KEYS.workspace)
 }
 
 export function yoloEnabled(mode: PermissionMode): boolean {
@@ -96,14 +96,15 @@ function permissionOption(
 function permissionOptions(
   state: PermissionPickerState,
   activeIndex: number,
+  t: Translate,
   onSelect: (index: number) => void,
 ): ReactNode[] {
   return PERMISSION_OPTIONS.map((option, index) =>
     permissionOption(
       {
         ...option,
-        label: tr(PERMISSION_OPTION_LABEL_KEYS[option.id]),
-        description: tr(PERMISSION_OPTION_DESCRIPTION_KEYS[option.id]),
+        label: t(PERMISSION_OPTION_LABEL_KEYS[option.id]),
+        description: t(PERMISSION_OPTION_DESCRIPTION_KEYS[option.id]),
       },
       index,
       state,
@@ -116,9 +117,12 @@ function permissionOptions(
 export function createPermissionPicker(options: {
   onError(error: unknown): void
   onSelect(mode: PermissionMode): Promise<boolean>
+  t: Translate
   trigger: HTMLButtonElement
 }): PermissionPicker {
-  const { trigger } = options
+  const { t, trigger } = options
+  // Popover, outside-click and viewport listeners belong to the trigger's document, not the global one.
+  const view = trigger.ownerDocument.defaultView
   let state: PermissionPickerState = { disabled: true, pending: false, selected: 'workspace' }
   let activeIndex = 1
   let interaction = 0
@@ -136,9 +140,9 @@ export function createPermissionPicker(options: {
     trigger.disabled = state.disabled || state.pending || selecting
     trigger.setAttribute('aria-expanded', String(popover !== undefined))
     trigger.setAttribute('aria-busy', String(state.pending || selecting))
-    trigger.title = permissionLabel(state.selected)
+    trigger.title = permissionLabel(state.selected, t)
     const label = trigger.querySelector<HTMLElement>('[data-permission-label]')
-    if (label) label.textContent = permissionLabel(state.selected)
+    if (label) label.textContent = permissionLabel(state.selected, t)
   }
 
   function renderOptions(): void {
@@ -147,7 +151,7 @@ export function createPermissionPicker(options: {
     listbox.setAttribute('aria-busy', String(state.pending || selecting))
     webUi.renderRegion(
       listbox,
-      permissionOptions(state, activeIndex, (index) => {
+      permissionOptions(state, activeIndex, t, (index) => {
         selectingFromPointer = true
         void select(index)
         queueMicrotask(() => {
@@ -193,7 +197,7 @@ export function createPermissionPicker(options: {
     try {
       const accepted = await options.onSelect(option.id)
       if (request !== interaction) return
-      if (accepted) close({ returnFocus: document.activeElement === listbox })
+      if (accepted) close({ returnFocus: trigger.ownerDocument.activeElement === listbox })
     } catch (error) {
       if (request === interaction) options.onError(error)
     } finally {
@@ -209,13 +213,13 @@ export function createPermissionPicker(options: {
     if (popover || state.disabled || state.pending || selecting) return
     interaction += 1
     activeIndex = selectedIndex()
-    popover = webUi.createRegionHost(document.body, 'section', 'permission-picker')
+    popover = webUi.createRegionHost(trigger.ownerDocument.body, 'section', 'permission-picker')
     popover.id = 'permission-picker-popover'
-    popover.setAttribute('aria-label', tr('settings.picker.aria'))
+    popover.setAttribute('aria-label', t('settings.picker.aria'))
     listbox = webUi.createRegionHost(popover, 'div', 'permission-picker-list')
     listbox.id = 'permission-listbox'
     listbox.setAttribute('role', 'listbox')
-    listbox.setAttribute('aria-label', tr('settings.picker.listAria'))
+    listbox.setAttribute('aria-label', t('settings.picker.listAria'))
     listbox.tabIndex = -1
     webUi.bindListboxKeys(listbox, (intent) => {
       if (intent.kind === 'move') setActive(activeIndex + intent.delta)
@@ -228,7 +232,7 @@ export function createPermissionPicker(options: {
     setTrigger()
     renderOptions()
     position()
-    requestAnimationFrame(position)
+    view?.requestAnimationFrame(position)
     listbox.focus({ preventScroll: true })
   }
 
@@ -253,8 +257,8 @@ export function createPermissionPicker(options: {
   }
   trigger.addEventListener('click', toggle)
   trigger.addEventListener('keydown', triggerKeydown)
-  document.addEventListener('click', closeOutside)
-  window.addEventListener('resize', position)
+  trigger.ownerDocument.addEventListener('click', closeOutside)
+  view?.addEventListener('resize', position)
 
   return {
     close,
@@ -262,8 +266,8 @@ export function createPermissionPicker(options: {
       close()
       trigger.removeEventListener('click', toggle)
       trigger.removeEventListener('keydown', triggerKeydown)
-      document.removeEventListener('click', closeOutside)
-      window.removeEventListener('resize', position)
+      trigger.ownerDocument.removeEventListener('click', closeOutside)
+      view?.removeEventListener('resize', position)
     },
     render(next) {
       state = next

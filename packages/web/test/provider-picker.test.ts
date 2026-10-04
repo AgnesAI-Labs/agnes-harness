@@ -1,11 +1,7 @@
 import { type HTMLElement as HappyElement, Window } from 'happy-dom'
 import { afterEach, expect, it, vi } from 'vitest'
-import { setLocaleTranslator } from '../src/locale-bridge.js'
 import { createProviderPicker } from '../src/provider-picker.js'
 import { enT, zhT } from './helpers/locale.js'
-
-// i18n: these suites assert zh-CN catalog output; pin the translator before imports run.
-setLocaleTranslator(zhT)
 
 let window: Window
 afterEach(() => {
@@ -13,7 +9,7 @@ afterEach(() => {
   window?.happyDOM.abort()
 })
 
-function setup() {
+function setup(t = zhT) {
   window = new Window()
   vi.stubGlobal('window', window)
   const doc = window.document
@@ -26,7 +22,7 @@ function setup() {
     </select></label><input id="next" /></dialog>`
   const select = doc.querySelector('select') as unknown as HTMLSelectElement
   select.value = 'deepseek'
-  const picker = createProviderPicker(select)
+  const picker = createProviderPicker(select, t)
   const trigger = doc.querySelector('button') as unknown as HTMLButtonElement
   const key = (value: string) => {
     const event = new window.KeyboardEvent('keydown', { key: value, bubbles: true, cancelable: true })
@@ -57,16 +53,11 @@ it('renders catalogue groups and selection without changing provider/auth values
 })
 
 it('removes the localized subscription suffix from the English trigger label', () => {
-  setLocaleTranslator(enT)
-  try {
-    const h = setup()
-    h.select.innerHTML = '<option value="openai:oauth">OpenAI · subscription sign-in</option>'
-    h.select.value = 'openai:oauth'
-    h.picker.sync()
-    expect(h.trigger.textContent).toBe('OpenAI')
-  } finally {
-    setLocaleTranslator(zhT)
-  }
+  const h = setup(enT)
+  h.select.innerHTML = '<option value="openai:oauth">OpenAI · subscription sign-in</option>'
+  h.select.value = 'openai:oauth'
+  h.picker.sync()
+  expect(h.trigger.textContent).toBe('OpenAI')
 })
 
 it('supports arrows, Home/End, typeahead and Enter; Escape cancels without closing the dialog', () => {

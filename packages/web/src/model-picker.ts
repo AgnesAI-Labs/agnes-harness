@@ -1,7 +1,7 @@
 import type { ModelSettings } from '@agnes/protocol'
 import * as webUi from '@agnes/web-ui'
 import { createElement, type ReactNode } from 'react'
-import { tr } from './locale-bridge.js'
+import type { Translate } from './presentation.js'
 
 export type ModelPickerOption = {
   id: string
@@ -31,6 +31,7 @@ export type ModelPicker = {
 type ModelPickerOptions = {
   onError(error: unknown): void
   onSelect(option: ModelPickerOption): Promise<boolean>
+  t: Translate
   trigger: HTMLButtonElement
 }
 
@@ -66,6 +67,7 @@ function modelOption(
   state: ModelPickerState,
   activeIndex: number,
   selecting: boolean,
+  t: Translate,
   onSelect: (index: number) => void,
 ): ReactNode {
   return createElement(
@@ -84,7 +86,7 @@ function modelOption(
     createElement(
       'span',
       { className: 'model-picker-route' },
-      option.label ?? tr('settings.modelPicker.configuredAccount'),
+      option.label ?? t('settings.modelPicker.configuredAccount'),
     ),
   )
 }
@@ -93,20 +95,23 @@ function modelOptions(
   state: ModelPickerState,
   activeIndex: number,
   selecting: boolean,
+  t: Translate,
   onSelect: (index: number) => void,
 ): ReactNode[] {
   return state.options.map((option, index) =>
-    modelOption(option, index, state, activeIndex, selecting, onSelect),
+    modelOption(option, index, state, activeIndex, selecting, t, onSelect),
   )
 }
 
 /** Owns the transient model list while the app retains the confirmed session model. */
 export function createModelPicker(options: ModelPickerOptions): ModelPicker {
-  const { trigger } = options
+  const { t, trigger } = options
+  // Popover, outside-click and viewport listeners belong to the trigger's document, not the global one.
+  const view = trigger.ownerDocument.defaultView
   let state: ModelPickerState = {
     accessibleName: '',
     disabled: true,
-    label: tr('settings.modelPicker.select'),
+    label: t('settings.modelPicker.select'),
     options: [],
     pending: false,
   }
@@ -151,11 +156,11 @@ export function createModelPicker(options: ModelPickerOptions): ModelPicker {
     else listbox.removeAttribute('aria-activedescendant')
     if (help) {
       help.hidden = state.selected !== undefined
-      help.textContent = tr('settings.modelPicker.help')
+      help.textContent = t('settings.modelPicker.help')
     }
     webUi.renderRegion(
       listbox,
-      modelOptions(state, activeIndex, selecting, (index) => {
+      modelOptions(state, activeIndex, selecting, t, (index) => {
         selectingFromPointer = true
         void select(index)
         queueMicrotask(() => {
@@ -204,7 +209,7 @@ export function createModelPicker(options: ModelPickerOptions): ModelPicker {
     try {
       const accepted = await options.onSelect(option)
       if (request !== interaction) return
-      if (accepted) close({ returnFocus: document.activeElement === listbox })
+      if (accepted) close({ returnFocus: trigger.ownerDocument.activeElement === listbox })
     } catch (error) {
       if (request === interaction) options.onError(error)
     } finally {
@@ -220,15 +225,15 @@ export function createModelPicker(options: ModelPickerOptions): ModelPicker {
     if (popover || isUnavailable()) return
     interaction += 1
     activeIndex = Math.min(Math.max(initialIndex, 0), Math.max(state.options.length - 1, 0))
-    popover = webUi.createRegionHost(document.body, 'section', 'model-picker')
+    popover = webUi.createRegionHost(trigger.ownerDocument.body, 'section', 'model-picker')
     popover.id = 'model-picker-popover'
-    popover.setAttribute('aria-label', tr('settings.modelPicker.aria'))
+    popover.setAttribute('aria-label', t('settings.modelPicker.aria'))
     help = webUi.createRegionHost(popover, 'p', 'model-picker-help')
     help.dataset.modelPickerHelp = ''
     listbox = webUi.createRegionHost(popover, 'div', 'model-picker-list')
     listbox.id = 'model-listbox'
     listbox.setAttribute('role', 'listbox')
-    listbox.setAttribute('aria-label', tr('settings.modelPicker.listAria'))
+    listbox.setAttribute('aria-label', t('settings.modelPicker.listAria'))
     listbox.tabIndex = -1
     webUi.bindListboxKeys(listbox, (intent) => {
       if (intent.kind === 'move') setActive(activeIndex + intent.delta)
@@ -242,7 +247,7 @@ export function createModelPicker(options: ModelPickerOptions): ModelPicker {
     renderOptions()
     setActive(activeIndex)
     position()
-    requestAnimationFrame(position)
+    view?.requestAnimationFrame(position)
     listbox.focus({ preventScroll: true })
   }
 
@@ -279,9 +284,9 @@ export function createModelPicker(options: ModelPickerOptions): ModelPicker {
 
   trigger.addEventListener('click', toggle)
   trigger.addEventListener('keydown', triggerKeydown)
-  document.addEventListener('click', closeOutside)
-  window.addEventListener('resize', position)
-  document.addEventListener('scroll', position, true)
+  trigger.ownerDocument.addEventListener('click', closeOutside)
+  view?.addEventListener('resize', position)
+  trigger.ownerDocument.addEventListener('scroll', position, true)
 
   return {
     close,
@@ -289,9 +294,9 @@ export function createModelPicker(options: ModelPickerOptions): ModelPicker {
       close()
       trigger.removeEventListener('click', toggle)
       trigger.removeEventListener('keydown', triggerKeydown)
-      document.removeEventListener('click', closeOutside)
-      window.removeEventListener('resize', position)
-      document.removeEventListener('scroll', position, true)
+      trigger.ownerDocument.removeEventListener('click', closeOutside)
+      view?.removeEventListener('resize', position)
+      trigger.ownerDocument.removeEventListener('scroll', position, true)
     },
     render: (nextState) => {
       const normalized: ModelPickerState = { ...nextState, options: [...nextState.options] }
