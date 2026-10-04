@@ -35,7 +35,10 @@ import {
   UI_PROJECTION_MAX_BYTES,
   UI_PROJECTION_MIN_MAX_BYTES,
   UI_PROJECTION_RESYNC_REQUIRED,
+  type UIHistoryInfo,
+  type UIHistoryPage,
   type UINode,
+  type UIOpeningResult,
   type UIProjectionNodeChange,
   type UIProjectionUpdate,
   type UITimeline,
@@ -64,6 +67,7 @@ import type {
   JournalResult,
   SessionLister,
 } from '../ports.js'
+import type { SessionEntry } from '../sessions.js'
 import { type Feed, type LocalContext, legacyLedgerRpcError } from './acp.js'
 
 export type AuthKind = 'local' | 'jwt' | 'source-auth' | 'portal-identity' | 'surface'
@@ -187,7 +191,7 @@ function rememberProjection(
 }
 
 const UI_HISTORY_CURSOR_SECRET = randomBytes(32)
-type UIHistoryCursorPayload = {
+export type UIHistoryCursorPayload = {
   sessionId: string
   generation: number
   surface: 'tui' | 'web' | 'channel' | null
@@ -255,6 +259,120 @@ const boundedProjectionInteger = (
   if (!Number.isSafeInteger(resolved) || resolved < minimum)
     throw rpcError('INVALID_PARAMS', { reason: `invalid ${name}` })
   return Math.min(resolved, maximum)
+}
+
+/** History coordinates for a window that starts at `startIndex`, with a cursor while older nodes remain. */
+export function uiHistoryInfo(
+  at: Omit<UIHistoryCursorPayload, 'beforeIndex'>,
+  startIndex: number,
+): UIHistoryInfo {
+  return startIndex > 0
+    ? {
+        hasEarlier: true,
+        cursor: encodeUIHistoryCursor({ ...at, beforeIndex: startIndex }),
+        startIndex,
+        totalNodes: at.totalNodes,
+      }
+    : { hasEarlier: false, startIndex, totalNodes: at.totalNodes }
+}
+
+/** The newest nodes of an open session within the node and byte bounds, as the opening read serves them. */
+export async function openingWindow(
+  entry: SessionEntry,
+  sessionId: string,
+  surface: SessionProjectUIOpeningParams['surface'],
+  maxNodes: number,
+  maxBytes: number,
+): Promise<UIOpeningResult> {
+  const core = (await entry.session.projectUIOpening({
+    ...(surface ? { surface } : {}),
+    maxNodes,
+    // Leave room for timeline metadata, history coordinates, cursor and JSON object keys. The
+    // exact serialized result is checked below; this only avoids cloning avoidable nodes first.
+    maxBytes: Math.max(1, maxBytes - 4096),
+  })) as {
+    timeline: Omit<UITimeline, 'generation'>
+    hasEarlier: boolean
+    startIndex: number
+    totalNodes: number
+  }
+  const { generation } = entry
+  const at = {
+    sessionId,
+    generation,
+    surface: surface ?? null,
+    cut: core.timeline.upto,
+    totalNodes: core.totalNodes,
+  }
+  let nodes = core.timeline.nodes
+  let startIndex = core.startIndex
+  for (;;) {
+    const nodeIds = new Set(nodes.map((node) => node.id))
+    const turns = core.timeline.turns.filter((turn) => turn.nodeIds.some((id) => nodeIds.has(id)))
+    const result = {
+      timeline: { ...core.timeline, generation, nodes, turns },
+      history: uiHistoryInfo(at, startIndex),
+    }
+    if (Buffer.byteLength(JSON.stringify(result), 'utf8') <= maxBytes) return result
+    if (nodes.length <= 1) throw rpcError('INTERNAL_ERROR', { code: 'UI_PROJECTION_NODE_TOO_LARGE' })
+    nodes = nodes.slice(1)
+    startIndex += 1
+  }
+}
+
+/** The nodes before a history cursor's index at its cut, within the bounds, as the history read serves them. */
+export async function historyWindow(
+  entry: SessionEntry,
+  decoded: UIHistoryCursorPayload,
+  limit: number,
+  maxBytes: number,
+): Promise<UIHistoryPage> {
+  const outOfRange = () => rpcError('CURSOR_OUT_OF_RANGE', { earliestSeq: 0, lastSeq: entry.session.lastSeq })
+  let core: {
+    sessionId: string
+    cut: number
+    nodes: UINode[]
+    turns: UITurn[]
+    hasEarlier: boolean
+    startIndex: number
+    totalNodes: number
+  }
+  try {
+    core = (await entry.session.projectUIHistory(decoded.cut, decoded.beforeIndex, {
+      ...(decoded.surface ? { surface: decoded.surface } : {}),
+      limit,
+      maxBytes: Math.max(1, maxBytes - 4096),
+    })) as typeof core
+  } catch (error) {
+    if ((error as { code?: unknown })?.code === 'E_ENVELOPE') throw outOfRange()
+    throw error
+  }
+  if (
+    core.sessionId !== decoded.sessionId ||
+    core.cut !== decoded.cut ||
+    core.totalNodes !== decoded.totalNodes ||
+    core.startIndex + core.nodes.length !== decoded.beforeIndex
+  )
+    throw outOfRange()
+
+  let nodes = core.nodes
+  let startIndex = core.startIndex
+  for (;;) {
+    const nodeIds = new Set(nodes.map((node) => node.id))
+    const turns = core.turns.filter((turn) => turn.nodeIds.some((id) => nodeIds.has(id)))
+    const result = {
+      sessionId: decoded.sessionId,
+      generation: entry.generation,
+      cut: decoded.cut,
+      nodes,
+      turns,
+      ...uiHistoryInfo(decoded, startIndex),
+    }
+    if (Buffer.byteLength(JSON.stringify(result), 'utf8') <= maxBytes) return result
+    if (nodes.length <= 1) throw rpcError('INTERNAL_ERROR', { code: 'UI_PROJECTION_NODE_TOO_LARGE' })
+    nodes = nodes.slice(1)
+    startIndex += 1
+  }
 }
 
 const projectionResyncRequired = () => rpcError('INTERNAL_ERROR', { code: UI_PROJECTION_RESYNC_REQUIRED })
@@ -566,7 +684,7 @@ export function apisFamilies(
 /** The session-owner gate every session method runs; exported so diagnostics.events runs the same one. */
 export function requireSessionOwner(
   cx: Pick<AgnesContext, 'sessionOwnership' | 'registry' | 'workspaces'>,
-): (method: string, sessionId: string, c: CallContext) => void {
+): (method: string, sessionId: string, c: { conn: Pick<CallContext['conn'], 'principalId'> }) => void {
   return (method, sessionId, c) => {
     let owner: ReturnType<NonNullable<AgnesContext['sessionOwnership']>['resolve']>
     try {
@@ -836,52 +954,10 @@ export function registerAgnes(
       'projection byte limit',
     )
     const entry = cx.registry.require(p.sessionId)
-    const core = (await entry.session.projectUIOpening({
-      ...(p.surface ? { surface: p.surface } : {}),
-      maxNodes,
-      // Leave room for timeline metadata, history coordinates, cursor and JSON object keys. The
-      // exact serialized result is checked below; this only avoids cloning avoidable nodes first.
-      maxBytes: Math.max(1, maxBytes - 4096),
-    })) as {
-      timeline: Omit<UITimeline, 'generation'>
-      hasEarlier: boolean
-      startIndex: number
-      totalNodes: number
-    }
-    let nodes = core.timeline.nodes
-    let startIndex = core.startIndex
-    for (;;) {
-      const nodeIds = new Set(nodes.map((node) => node.id))
-      const turns = core.timeline.turns.filter((turn) => turn.nodeIds.some((id) => nodeIds.has(id)))
-      const hasEarlier = startIndex > 0
-      const history = hasEarlier
-        ? {
-            hasEarlier: true as const,
-            cursor: encodeUIHistoryCursor({
-              sessionId: p.sessionId,
-              generation: entry.generation,
-              surface: p.surface ?? null,
-              cut: core.timeline.upto,
-              beforeIndex: startIndex,
-              totalNodes: core.totalNodes,
-            }),
-            startIndex,
-            totalNodes: core.totalNodes,
-          }
-        : { hasEarlier: false as const, startIndex, totalNodes: core.totalNodes }
-      const result = {
-        timeline: { ...core.timeline, generation: entry.generation, nodes, turns },
-        history,
-      }
-      if (Buffer.byteLength(JSON.stringify(result), 'utf8') <= maxBytes) {
-        windowedProjectionConnections.add(c.conn)
-        rememberProjection(c.conn, uiProjectionKey(p.sessionId, p.surface), result.timeline, 'windowed')
-        return result
-      }
-      if (nodes.length <= 1) throw rpcError('INTERNAL_ERROR', { code: 'UI_PROJECTION_NODE_TOO_LARGE' })
-      nodes = nodes.slice(1)
-      startIndex += 1
-    }
+    const result = await openingWindow(entry, p.sessionId, p.surface, maxNodes, maxBytes)
+    windowedProjectionConnections.add(c.conn)
+    rememberProjection(c.conn, uiProjectionKey(p.sessionId, p.surface), result.timeline, 'windowed')
+    return result
   })
   ep.register('_agnes/v1/session.projectUIHistory', async (params, c) => {
     const p = params as SessionProjectUIHistoryParams
@@ -908,63 +984,7 @@ export function registerAgnes(
       UI_PROJECTION_MAX_BYTES,
       'projection byte limit',
     )
-    let core: {
-      sessionId: string
-      cut: number
-      nodes: UINode[]
-      turns: UITurn[]
-      hasEarlier: boolean
-      startIndex: number
-      totalNodes: number
-    }
-    try {
-      core = (await entry.session.projectUIHistory(decoded.cut, decoded.beforeIndex, {
-        ...(decoded.surface ? { surface: decoded.surface } : {}),
-        limit,
-        maxBytes: Math.max(1, maxBytes - 4096),
-      })) as typeof core
-    } catch (error) {
-      if ((error as { code?: unknown })?.code === 'E_ENVELOPE')
-        throw rpcError('CURSOR_OUT_OF_RANGE', { earliestSeq: 0, lastSeq: entry.session.lastSeq })
-      throw error
-    }
-    if (
-      core.sessionId !== p.sessionId ||
-      core.cut !== decoded.cut ||
-      core.totalNodes !== decoded.totalNodes ||
-      core.startIndex + core.nodes.length !== decoded.beforeIndex
-    )
-      throw rpcError('CURSOR_OUT_OF_RANGE', { earliestSeq: 0, lastSeq: entry.session.lastSeq })
-
-    let nodes = core.nodes
-    let startIndex = core.startIndex
-    for (;;) {
-      const nodeIds = new Set(nodes.map((node) => node.id))
-      const turns = core.turns.filter((turn) => turn.nodeIds.some((id) => nodeIds.has(id)))
-      const hasEarlier = startIndex > 0
-      const result = {
-        sessionId: p.sessionId,
-        generation: entry.generation,
-        cut: decoded.cut,
-        nodes,
-        turns,
-        hasEarlier,
-        ...(hasEarlier
-          ? {
-              cursor: encodeUIHistoryCursor({
-                ...decoded,
-                beforeIndex: startIndex,
-              }),
-            }
-          : {}),
-        startIndex,
-        totalNodes: core.totalNodes,
-      }
-      if (Buffer.byteLength(JSON.stringify(result), 'utf8') <= maxBytes) return result
-      if (nodes.length <= 1) throw rpcError('INTERNAL_ERROR', { code: 'UI_PROJECTION_NODE_TOO_LARGE' })
-      nodes = nodes.slice(1)
-      startIndex += 1
-    }
+    return historyWindow(entry, decoded, limit, maxBytes)
   })
   ep.register('_agnes/v1/session.readToolDetail', async (params, c) => {
     const p = params as SessionReadToolDetailParams
