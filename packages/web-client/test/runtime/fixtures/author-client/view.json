@@ -1,0 +1,25 @@
+{
+  "kind": "domain",
+  "viewId": "note-1",
+  "revision": 1,
+  "domainType": "acme.notes",
+  "viewSchema": {
+    "typeId": "acme.notes/note@1",
+    "revision": 1,
+    "digest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+  },
+  "renderKey": "acme.notes/note",
+  "scope": {
+    "kind": "session",
+    "installationId": "install-1",
+    "runtimeId": "runtime-1",
+    "workspaceId": "workspace-1",
+    "sessionId": "session-1"
+  },
+  "source": { "eventIds": ["event-1"], "projectionRevision": 1 },
+  "phase": "finalized",
+  "fallbackText": "Note: Release checklist",
+  "data": { "title": "Release checklist", "body": "Tag the build, then publish the notes." },
+  "resources": [],
+  "actions": []
+}

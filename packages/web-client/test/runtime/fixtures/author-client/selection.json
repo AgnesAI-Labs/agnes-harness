@@ -1,0 +1,9 @@
+{
+  "target": "web",
+  "shell": { "packageId": "acme.notes", "contributionId": "acme.notes/shell" },
+  "registry": { "packageId": "acme.notes", "contributionId": "acme.notes/registry" },
+  "fallbackRenderer": { "packageId": "acme.notes", "contributionId": "acme.notes/note-card" },
+  "rendererSelections": [
+    { "renderKey": "acme.notes/note", "rendererId": "acme.notes/note-card", "target": "web" }
+  ]
+}

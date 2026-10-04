@@ -258,6 +258,7 @@ describe('conversation window with domain cards', () => {
     expect(card('domain:note')?.dataset.status).toBe('running')
     expect([...views.values()].map((view) => view.phase)).toEqual(['provisional', 'provisional'])
     expect([...views.values()]).toEqual([owned.view, loose.view])
+    expect(ids()).toEqual(['u1', 'domain:flight', 'domain:note'])
   })
 
   it('renders fallback text, data and resources as inert text without renderDomain', async () => {
