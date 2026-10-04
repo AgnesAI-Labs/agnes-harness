@@ -273,7 +273,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // The default domain view text format moves to the `@agnes/sdk/runtime` export. Measured 3429, exact,
   // no spare (-204).
   // A renderer needing a feature the client did not negotiate is refused. Measured 3433, exact, no spare (+4).
-  'packages/web-client/src': 3433,
+  // A throwing Web renderer yields to the generic card and reports its ids. Measured 3467, exact, no spare (+34).
+  'packages/web-client/src': 3467,
   'packages/web-slots/src': 605,
   // Failed shell calls read as their exit code (+19 lines); measured 4891, exact cap.
   // B-line diagnostics dialog: React view adds 147 lines; measured 4706, exact cap.

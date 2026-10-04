@@ -206,7 +206,10 @@ const presenterFor = (target: ClientTarget) =>
     clientInstanceId: 'client-1',
     capabilities,
     locale: 'en',
-    services: {} as Pick<RendererContext, 'commands' | 'interactions' | 'artifacts' | 'locale'>,
+    // The generic card a failed renderer yields to reads the locale.
+    services: {
+      locale: { locale: 'en', text: (key: string) => key, formatNumber: () => '', formatDate: () => '' },
+    } as unknown as Pick<RendererContext, 'commands' | 'interactions' | 'artifacts' | 'locale'>,
     views: { current: (viewId) => (viewId === view.viewId ? view : undefined) },
   })
 
@@ -435,7 +438,7 @@ describe('renderer lifecycle', () => {
     expect(document.body.childNodes.length).toBe(0)
   })
 
-  it('shows the fallback for a renderer that throws and disposes the context it was mounted with', async () => {
+  it('switches a renderer that throws to the generic card and disposes both contexts', async () => {
     // React reports the error the boundary caught.
     vi.spyOn(console, 'error').mockImplementation(() => {})
     const presenter = presenterFor('web')
@@ -449,15 +452,20 @@ describe('renderer lifecycle', () => {
           <span>sibling</span>
         </>,
       )
-      expect(mounted.container.textContent).toBe(`${view.fallbackText}sibling`)
-      await mounted.unmount()
+      expect(mounted.container.querySelector('.generic-domain-view')?.textContent).toContain(
+        view.fallbackText,
+      )
+      expect(mounted.container.lastChild?.textContent).toBe('sibling')
+      // The failed renderer's context closes when it fails, before the view unmounts.
       expect(given.at(-1)?.signal.aborted).toBe(true)
+      await mounted.unmount()
       expect(mounted.container.childNodes.length).toBe(0)
       // The render React discarded after the throw opened no context, so unmounting closed them all.
       expect(opened.filter((entry) => entry.cleaned !== 1 || entry.aborted !== 1)).toEqual([])
       await lease.dispose()
     }
-    expect(opened.length).toBe(10)
+    // One context for each failed renderer and one for each generic card that replaced it.
+    expect(opened.length).toBe(20)
     expect(opened.filter((entry) => entry.cleaned !== 1 || entry.aborted !== 1)).toEqual([])
     expect([vi.getTimerCount(), document.body.childNodes.length]).toEqual([0, 0])
   })

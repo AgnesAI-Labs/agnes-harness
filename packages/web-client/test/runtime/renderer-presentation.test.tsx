@@ -127,18 +127,27 @@ function setup(target: ClientTarget, ...held: DomainView[]) {
   const window = new Map(held.map((entry) => [entry.viewId, entry]))
   const views: AuthorizedViews = { current: (viewId) => window.get(viewId) }
   const submit = vi.fn(async () => ({ ok: true as const, value: 'delegated' }))
+  const services = {
+    commands: { submit, commandStatus: submit },
+    locale: { locale: 'en', text: (key: string) => key, formatNumber: () => '', formatDate: () => '' },
+  } as unknown as Pick<RendererContext, 'commands' | 'interactions' | 'artifacts' | 'locale'>
+  const failures = vi.fn()
   const presenter = createRendererPresenter({
     target,
     clientInstanceId: 'client-1',
     capabilities,
     locale: 'en',
-    services: {
-      commands: { submit, commandStatus: submit },
-      locale: { locale: 'en', text: (key: string) => key, formatNumber: () => '', formatDate: () => '' },
-    } as unknown as Pick<RendererContext, 'commands' | 'interactions' | 'artifacts' | 'locale'>,
+    services,
     views,
+    onFailure: failures,
   })
-  return { presenter, submit, hold: (entry: DomainView) => window.set(entry.viewId, entry) }
+  return {
+    presenter,
+    submit,
+    services,
+    failures,
+    hold: (entry: DomainView) => window.set(entry.viewId, entry),
+  }
 }
 
 const outcome = (result: Outcome<unknown>) =>
@@ -249,24 +258,53 @@ describe('renderer presentation', () => {
     expect(renderer.last()?.context).toMatchObject({ clientInstanceId: 'client-1', ownerToken: 'owner-1' })
   })
 
-  it('shows the fallback text as text when the renderer throws and keeps the rest of the tree', async () => {
-    vi.spyOn(console, 'error').mockImplementation(() => {})
-    const { presenter } = setup('web', view(1))
-    const broken = {
+  /** A Web renderer that throws, and the contexts it was rendered with. */
+  function broken() {
+    const given: RendererContext[] = []
+    const definition = {
       descriptor: descriptor(),
-      component: () => {
+      component: ({ context }: { context: RendererContext }) => {
+        given.push(context)
         throw new Error('<img src=x>')
       },
     } as unknown as RendererDefinition
-    const presented = element(presenter.lease({ definition: broken, ownerToken: 'owner-1' }).present(view(1)))
+    return { definition, given }
+  }
+
+  it('switches the view of a throwing renderer to the generic card, releases its context and reports its ids', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    const other = view(1, [command('rename')], { viewId: 'note-2' })
+    const { presenter, submit, failures } = setup('web', view(1), other)
+    const failing = broken()
+    const sibling = card()
     await show(
       <>
-        {presented}
+        {element(presenter.lease({ definition: failing.definition, ownerToken: 'owner-1' }).present(view(1)))}
+        {element(presenter.lease({ definition: sibling.definition, ownerToken: 'owner-1' }).present(other))}
         <span className="sibling">still here</span>
       </>,
     )
-    expect(host.textContent).toBe('Note <b>saved</b>still here')
-    expect(host.querySelector('b, img')).toBeNull()
+    const generic = host.querySelector('.generic-domain-view')
+    expect(generic?.getAttribute('data-view-id')).toBe('note-1')
+    expect(generic?.querySelector('.generic-domain-text')?.textContent).toBe('Note <b>saved</b>')
+    expect(host.querySelector('b, img, .renderer-fallback')).toBeNull()
+    expect(host.querySelector('.card')?.textContent).toBe('card note-2@1')
+    expect(host.querySelector('.sibling')?.textContent).toBe('still here')
+
+    // The failed renderer's context is released at once; the sibling's stays open.
+    expect(new Set(failing.given).size).toBe(1)
+    const [dead] = failing.given as [RendererContext]
+    expect(dead.signal.aborted).toBe(true)
+    expect(await submitted(dead, 'rename', 1)).toBe('denied/renderer_disposed')
+    const live = sibling.last()?.context as RendererContext
+    expect(live.signal.aborted).toBe(false)
+    expect(await submitted(live, 'rename', 1, 'note-2')).toBe('ok')
+    // The generic card acts through a context of its own.
+    submit.mockResolvedValueOnce({ ok: true, value: { status: 'accepted' } } as never)
+    await act(async () => generic?.querySelector('button')?.click())
+    expect(submit).toHaveBeenCalledTimes(2)
+    // Ids only: no view data and no thrown value.
+    expect(failures.mock.calls).toEqual([[{ rendererId: 'acme.notes.card', viewId: 'note-1' }]])
 
     // Another definition of the same owner presenting that view mounts afresh, past the failure.
     const renderer = card({ id: 'acme.notes.other' })
@@ -274,6 +312,28 @@ describe('renderer presentation', () => {
       element(presenter.lease({ definition: renderer.definition, ownerToken: 'owner-1' }).present(view(1))),
     )
     expect(host.querySelector('.card')?.textContent).toBe('card note-1@1')
+  })
+
+  it('shows the fallback text as text when the generic card throws too', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    const other = view(1, [command('rename')], { viewId: 'note-2', fallbackText: 'Other <i>note</i>' })
+    const { presenter, services, failures } = setup('web', view(1), other)
+    // Without a locale service the generic card cannot render either.
+    Reflect.deleteProperty(services, 'locale')
+    await show(
+      <>
+        {element(
+          presenter.lease({ definition: broken().definition, ownerToken: 'owner-1' }).present(view(1)),
+        )}
+        {element(presenter.generic().present(other))}
+      </>,
+    )
+    expect([...host.querySelectorAll('.renderer-fallback')].map((node) => node.textContent)).toEqual([
+      'Note <b>saved</b>',
+      'Other <i>note</i>',
+    ])
+    expect(host.querySelector('.generic-domain-view, b, i')).toBeNull()
+    expect(failures.mock.calls).toEqual([[{ rendererId: 'acme.notes.card', viewId: 'note-1' }]])
   })
 
   it('disposes the context when the element unmounts', async () => {
