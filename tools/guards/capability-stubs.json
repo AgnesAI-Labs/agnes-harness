@@ -186,6 +186,15 @@
           "marker": "Agnes account sign-in is not available in this build yet"
         }
       ]
+    },
+    {
+      "id": "client.legacy-slot-presentation",
+      "evidence": [
+        {
+          "path": "packages/web-client/src/runtime/client-host.ts",
+          "marker": "legacy slot presentation is not wired yet"
+        }
+      ]
     }
   ]
 }

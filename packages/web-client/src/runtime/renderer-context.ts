@@ -202,12 +202,13 @@ export function createRendererContext(input: {
       closed = true
       closing ??= (async () => {
         controller.abort()
-        // Newest first, like a stack of acquired resources; one failing cleanup does not stop the rest.
-        for (const cleanup of cleanups.splice(0).reverse()) {
-          try {
-            await cleanup()
-          } catch {}
-        }
+        // Newest first, like a stack of acquired resources. Each starts without waiting for the one
+        // before, so a failing or hung cleanup stops none of the rest.
+        const running = cleanups
+          .splice(0)
+          .reverse()
+          .map(async (cleanup) => cleanup())
+        await Promise.allSettled(running)
       })()
       return closing
     },
