@@ -109,7 +109,7 @@ export function readControl(
   owner: RecordOwner,
 ): {
   head: HeadRow | null
-  state: SessionControlState | null
+  state: SessionControlState
   staticCheck(): void
   commands: ReadonlyArray<{
     row: CommandRow
@@ -118,6 +118,30 @@ export function readControl(
     result: SessionControlResult
   }>
 } {
+  const originalTime = ports.get<{ ts: string }>(
+    `SELECT e.ts FROM runtime_commit_proofs p JOIN events e ON e.session_key=? AND e.seq=p.ledger_seq WHERE p.commit_id=?`,
+    sessionId,
+    issue.commitId,
+  )
+  if (!originalTime) integrity('session control original admission time missing')
+  const base = validateRuntime('SessionControlState', {
+    sessionId,
+    revision: 0,
+    parameters: {
+      sessionId,
+      revision: 0,
+      previousRevision: null,
+      sourceRequestId: issue.ticketId,
+      presetId: issue.resolved.preset.id,
+      presetDigest: issue.resolved.presetDigest,
+      parameters: issue.resolved.preset.parameters,
+      effective: { kind: 'immediate', revision: 0, runId: issue.runId, afterRequestId: null },
+      committedAt: originalTime.ts,
+    },
+    activeRunId: issue.runId,
+    activeTurnId: null,
+  })
+  if (!base.ok) integrity('session control original admission parameters violate their codec')
   const historicalChecks: Array<() => void> = []
   const staticCheck = () => {
     for (const check of historicalChecks) check()
@@ -150,7 +174,7 @@ export function readControl(
     rows.length > 0 !== Boolean(head)
   )
     integrity('session control closed membership or original head missing')
-  if (!head) return { head: null, state: null, commands: [], staticCheck }
+  if (!head) return { head: null, state: base.value, commands: [], staticCheck }
   if (head.revision !== rows.length || head.state_record_id !== controlStateId(sessionId))
     integrity('session control global revision differs')
   let previous: SessionControlState | null = null
@@ -261,13 +285,8 @@ export function readControl(
           state.parameters.effective.afterRequestId !== null
     )
       integrity('session control effective parameter source differs')
-    const originalTime = ports.get<{ ts: string }>(
-      `SELECT e.ts FROM runtime_commit_proofs p JOIN events e ON e.session_key=? AND e.seq=p.ledger_seq WHERE p.commit_id=?`,
-      sessionId,
-      association.commitId,
-    )
-    if (!previous && (!originalTime || state.parameters.committedAt !== originalTime.ts))
-      integrity('session control initial effective boundary is not its actual commit')
+    if (!previous && !sameJson(state.parameters, base.value.parameters))
+      integrity('session control initial effective boundary differs from its original admission')
     const receipt = validateRuntime('StateCommitReceipt', JSON.parse(row.receipt_json))
     if (
       !receipt.ok ||

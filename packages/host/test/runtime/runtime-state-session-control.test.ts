@@ -5,8 +5,8 @@ const cleanup: Array<() => void> = []
 afterEach(() => {
   for (const close of cleanup.splice(0).reverse()) close()
 })
-async function fixture() {
-  const f = await createStateSessionControlFixture()
+async function fixture(options: Readonly<{ now?: () => number }> = {}) {
+  const f = await createStateSessionControlFixture(options)
   cleanup.push(f.close)
   return f
 }
@@ -18,7 +18,15 @@ function events(db: Awaited<ReturnType<typeof fixture>>['db']) {
 }
 it('accepts pending next-run in one original commit and keeps the applied binding/base effective', async () => {
   const f = await fixture()
-  expect((await f.store.readSessionControl({ sessionId: 'session' }, f.context)).ok).toBe(false)
+  const initialWrites = total(f.db)
+  expect(await f.store.readSessionControl({ sessionId: 'session' }, f.context)).toMatchObject({
+    ok: true,
+    value: {
+      revision: 0,
+      parameters: { revision: 0, presetId: 'leaf', committedAt: '2026-04-01T00:00:00.000Z' },
+    },
+  })
+  expect(total(f.db)).toBe(initialWrites)
   expect(
     await f.store.sessionControlStatus({ sessionId: 'session', requestId: 'missing' }, f.context),
   ).toEqual({ ok: true, value: null })
@@ -278,4 +286,25 @@ it('rejects an altered receipt runRevision although this command deliberately di
     await cold.store.sessionControlStatus({ sessionId: 'session', requestId: 'command' }, cold.context),
   ).toMatchObject({ ok: false })
   expect(total(cold.db)).toBe(writes)
+})
+
+it('keeps the admission effective time when the first pending command is submitted later and cold read', async () => {
+  const originalAt = '2026-04-01T00:00:00.000Z'
+  const commandAt = '2026-04-01T00:01:00.000Z'
+  let now = Date.parse(originalAt)
+  const f = await fixture({ now: () => now })
+  now = Date.parse(commandAt)
+  expect(await f.store.submitSessionControl(f.command('later'), f.context)).toMatchObject({ ok: true })
+  const original = f.db
+    .prepare('SELECT ts FROM events WHERE session_key=? ORDER BY seq LIMIT 1')
+    .get('session')
+  const latest = f.db
+    .prepare('SELECT ts FROM events WHERE session_key=? ORDER BY seq DESC LIMIT 1')
+    .get('session')
+  expect(original?.ts).toBe(originalAt)
+  expect(latest?.ts).toBe(commandAt)
+  const warm = await f.store.readSessionControl({ sessionId: 'session' }, f.context)
+  expect(warm).toMatchObject({ ok: true, value: { revision: 1, parameters: { committedAt: originalAt } } })
+  const cold = await f.reopen()
+  expect(await cold.store.readSessionControl({ sessionId: 'session' }, cold.context)).toEqual(warm)
 })

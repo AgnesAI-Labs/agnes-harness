@@ -2738,8 +2738,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // Download tickets sealed and opened through the Host ticket key broker. Measured 74977 (-3), exact.
   // The artifacts transfer stamps verify with the store's injected clock. Measured 74978 (+1), exact.
   // SessionControl identity-facts and complete Binding proof add 1093 measured lines; no spare.
-  // SessionControl transactions and verified cold members add 707 measured lines; no spare.
-  'packages/host/src': 76778,
+  // SessionControl transactions and verified cold members add 714 measured lines; no spare.
+  'packages/host/src': 76785,
   'packages/host/src/ext-host/service-invocation': 247,
   // T5.2's permission projector is kept independently bounded so later extension-host work cannot
   // hide in the package-wide increment. Measured source: 86 lines.

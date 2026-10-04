@@ -19,8 +19,8 @@ import { createSessionControlSourceFixture } from './session-control-source.js'
 
 const at = '2026-04-01T00:00:00.000Z',
   until = '2026-04-01T00:10:00.000Z'
-export async function createStateSessionControlFixture() {
-  const f = await createSessionControlSourceFixture()
+export async function createStateSessionControlFixture(options: Readonly<{ now?: () => number }> = {}) {
+  const f = await createSessionControlSourceFixture(options)
   await f.configuration.issueBase('ticket', f.request, f.context)
   const source = createSessionControlSource({ database: f.db, configuration: f.configuration })
   f.state.installSessionControlSource(source)

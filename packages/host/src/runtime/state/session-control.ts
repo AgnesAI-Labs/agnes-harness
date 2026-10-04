@@ -141,8 +141,6 @@ export function createSessionControlOwner(
         await ports.requireSession(sessionId)
         const native = originalRun(ports, cap.issue, context)
         const controls = readControl(ports, source, sessionId, cap.issue, native.owner)
-        if (!controls.state)
-          refuse('denied', 'session_control_uninitialized', 'no original committed effective state')
         finish = tail(cap.dynamicCheck, cap.finalCheck, controls.staticCheck)
         return controls.state
       },
@@ -210,17 +208,7 @@ export function createSessionControlOwner(
         const state = checked('SessionControlState', {
           sessionId: request.sessionId,
           revision,
-          parameters: controls.state?.parameters ?? {
-            sessionId: request.sessionId,
-            revision: 0,
-            previousRevision: null,
-            sourceRequestId: issue.ticketId,
-            presetId: issue.resolved.preset.id,
-            presetDigest: issue.resolved.presetDigest,
-            parameters: issue.resolved.preset.parameters,
-            effective: { kind: 'immediate', revision: 0, runId: issue.runId, afterRequestId: null },
-            committedAt: at,
-          },
+          parameters: controls.state.parameters,
           activeRunId: issue.runId,
           activeTurnId: null,
         })
