@@ -287,6 +287,8 @@ const shown = () =>
   host.querySelector('.plugin')?.textContent ??
   (host.querySelector('.generic-domain-view') ? 'generic' : 'none')
 
+const unknownDomain = { domainType: 'acme.unknown', renderKey: 'acme.unknown/card' }
+
 describe('domain presentation through the client host', () => {
   it.each<[string, boolean, DomainView, string]>([
     ['the renderer selected for the render key', true, view(1, 1), 'cards.card note-1@1'],
@@ -304,6 +306,10 @@ describe('domain presentation through the client host', () => {
       'generic',
     ],
     ['the generic card when no renderer reads the schema', true, view(1, 9), 'generic'],
+    // Unknown domain (case 1): nothing is selected or registered for its domain or render key.
+    ['the generic card for an unknown domain and render key', true, view(1, 1, unknownDomain), 'generic'],
+    // Old schema (case 3): the revision is older than every selected renderer reads.
+    ['the generic card for a schema revision older than any renderer reads', true, view(1, 0), 'generic'],
   ])('presents %s', async (_, rows, held, expected) => {
     const h = await harness('web', rows)
     h.hold(held)
@@ -346,6 +352,45 @@ describe('domain presentation through the client host', () => {
     const generic = formatDomainView(held, { locale: 'en', capabilities })
     if (!generic.ok) throw new Error(generic.error.message)
     expect(h.domain(held)).toEqual({ ok: true, value: { target: 'tui', formatted: generic.value } })
+  })
+
+  // Unknown domain (case 1) and old schema (case 3) on a text client: the generic text, readable.
+  it.each<[string, DomainView]>([
+    ['an unknown domain and render key', view(1, 1, unknownDomain)],
+    ['a schema revision older than any renderer reads', view(1, 0)],
+  ])('formats %s in the generic text', async (_, held) => {
+    const h = await harness('tui', true)
+    h.hold(held)
+    const generic = formatDomainView(held, { locale: 'en', capabilities })
+    if (!generic.ok) throw new Error(generic.error.message)
+    expect(generic.value.parts).toContainEqual({ kind: 'text', text: 'Note <b>saved</b>' })
+    expect(h.domain(held)).toEqual({ ok: true, value: { target: 'tui', formatted: generic.value } })
+  })
+
+  // Disabled plugin (case 2): once the next catalog no longer selects the card plugin, or no longer
+  // holds its module, the same history entry shows in the generic card and nothing of the plugin stays.
+  it.each<[string, (next: ReturnType<typeof catalog>) => ReturnType<typeof catalog>]>([
+    ['unselected', (next) => next],
+    [
+      'gone from the catalog',
+      (next) => ({ ...next, modules: next.modules.filter((module) => module.moduleId !== 'cards') }),
+    ],
+  ])('shows history in the generic card once the card plugin is %s', async (_, edit) => {
+    const h = await harness('web', true)
+    h.hold(view(1, 1))
+    await show(h.domain(view(1, 1)))
+    expect(shown()).toBe('cards.card note-1@1')
+    const renders = h.renders['cards.card']?.length
+    const card = h.renders['cards.card']?.at(-1)?.context
+
+    expect(outcome(await h.runtime.activate(edit(catalog(2, 'web', false))))).toBe('ok')
+    expect(card?.signal.aborted).toBe(true)
+    await show(h.domain(view(1, 1)))
+    expect(shown()).toBe('generic')
+    expect(host.querySelector('.plugin')).toBeNull()
+    expect(h.renders['cards.card']).toHaveLength(renders ?? 0)
+    expect(host.querySelector('.generic-domain-text')?.textContent).toBe('Note <b>saved</b>')
+    expect(host.querySelector('b, img')).toBeNull()
   })
 
   it('updates the same view in place, remounts for another presenter and releases on unmount', async () => {

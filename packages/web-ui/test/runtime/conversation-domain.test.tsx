@@ -261,8 +261,10 @@ describe('conversation window with domain cards', () => {
     expect(ids()).toEqual(['u1', 'domain:flight', 'domain:note'])
   })
 
+  // HTML in server strings (case 5) and an unknown action (case 4): markup stays text, and an action of a
+  // kind this client does not know, forged past validation, gets no control either.
   it('renders fallback text, data and resources as inert text without renderDomain', async () => {
-    const markup = '<b>x</b>'
+    const markup = '<b>x</b><img src=x onerror=alert(1)><a href="javascript:alert(1)">go</a>'
     const entry = domain('domain:flight', 'finalized', markup, 'turn:1', 1, {
       data: { html: markup },
       resources: [
@@ -288,10 +290,20 @@ describe('conversation window with domain cards', () => {
         },
       ],
     })
-    const window = conversationWindow([entry], [domainRef('domain:flight')])
+    const valid = conversationWindow([entry], [domainRef('domain:flight')])
+    const forged = {
+      kind: 'script',
+      actionKey: 'run',
+      label: 'Run',
+      requiredFeatures: [],
+      availability: 'enabled',
+      disabledReason: null,
+    }
+    const actions = [...entry.view.actions, forged] as unknown as DomainView['actions']
+    const window = { ...valid, domains: [{ ...entry, view: { ...entry.view, actions } }] }
     await mount(createConversationProjectionStore({ sessionId: 'session', nodes: [], window }))
     expect(card('domain:flight')?.textContent).toBe(`${markup}${markup}.pdf`)
-    expect(host.querySelector('b')).toBeNull()
+    expect(host.querySelector('b, img, script, [onerror], [href]')).toBeNull()
     expect(host.querySelector('button, a, input, form')).toBeNull()
   })
 

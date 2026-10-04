@@ -6,6 +6,8 @@
 import type * as Wire from '@agnes/protocol/runtime'
 import { canonicalJsonDigest, utf8ByteLength, validateRuntime } from '@agnes/protocol/runtime'
 
+const KINDS: readonly string[] = ['command', 'interaction', 'download', 'open-form']
+
 type Outcome<T> = { ok: true; value: T } | { ok: false; error: Wire.RuntimeError }
 
 /** The `format` and `encode` of the IM renderer the channel presents with. */
@@ -91,9 +93,19 @@ export function toChannelMessages(input: DomainViewDelivery): Outcome<ChannelMes
   if (requiresWebForm && channel.supportsButtons) encoded = encode({ ...channel, supportsButtons: false })
   if (!encoded.ok) return encoded
 
-  // A button may only carry the key of an action the view offers enabled, labelled as the renderer formatted it.
+  // A button may only carry the key of an action of a known kind the view offers enabled and whose every
+  // required feature the channel negotiated, labelled as the renderer formatted it.
+  const negotiated: unknown = input.context?.capabilities?.features
+  const features: readonly unknown[] = Array.isArray(negotiated) ? negotiated : []
   const offered = new Set(
-    view.actions.flatMap((action) => (action.availability === 'enabled' ? [action.actionKey] : [])),
+    view.actions.flatMap((action) =>
+      action.availability === 'enabled' &&
+      KINDS.includes(action.kind) &&
+      Array.isArray(action.requiredFeatures) &&
+      action.requiredFeatures.every((feature) => features.includes(feature))
+        ? [action.actionKey]
+        : [],
+    ),
   )
   const labels = new Map<string, string>()
   for (const part of full.parts)
