@@ -7,24 +7,33 @@ import {
   resolveClientSelection,
 } from '../../src/runtime/client-selection.js'
 
-/** A module factory for one package generation. */
+/** Stands for the entry of the module a renderer is declared in, filled in when the module is made. */
+const OWN_ENTRY = './own-entry.js'
+
+/** A module factory for one package generation; its renderers declare the module's entry unless a case says otherwise. */
 const generation =
   (packageId: string, digit: string) =>
-  (moduleId: string, targets: ClientModule['targets'], contributions?: ClientModuleContribution[]) =>
-    ({
+  (moduleId: string, targets: ClientModule['targets'], contributions?: ClientModuleContribution[]) => {
+    const entryPath = `./${moduleId.replaceAll('/', '-')}.js`
+    const own = (entry: ClientModuleContribution): ClientModuleContribution =>
+      entry.kind === 'renderer' && entry.descriptor?.entry === OWN_ENTRY
+        ? { ...entry, descriptor: { ...entry.descriptor, entry: entryPath } }
+        : entry
+    return {
       moduleId,
       packageId,
       packageDigest: digit.repeat(64),
       assetDigest: 'e'.repeat(64),
-      entryPath: `./${moduleId.replaceAll('/', '-')}.js`,
+      entryPath,
       ownerToken: `${packageId}-owner`,
       authorApiMajor: 1,
       targets,
       schemas: [],
       requiredFeatures: [],
       styles: [],
-      ...(contributions ? { contributions } : {}),
-    }) satisfies ClientModule
+      ...(contributions ? { contributions: contributions.map(own) } : {}),
+    } satisfies ClientModule
+  }
 
 const client = generation('acme.client', '1')
 const notes = generation('acme.notes', '2')
@@ -49,7 +58,7 @@ const renderer = (
     requiredFeatures: [],
     optionalFeatures: [],
     scope: 'view',
-    entry: './renderer.js',
+    entry: OWN_ENTRY,
     ...descriptor,
   },
 })
@@ -122,10 +131,10 @@ const blocks = (descriptor: Partial<RendererDescriptor>) =>
   )
 
 describe('resolveClientSelection', () => {
-  it('keeps the legacy path for a welcome without a selection', () => {
+  it('refuses a welcome without a selection instead of keeping an older module path', () => {
     expect(resolveClientSelection({ target: 'web', selection: undefined, modules: catalog })).toEqual({
-      ok: true,
-      value: { kind: 'legacy' },
+      ok: false,
+      error: expect.objectContaining({ code: 'incompatible', detailCode: 'client_selection_absent' }),
     })
   })
 
@@ -310,6 +319,25 @@ describe('resolveClientSelection', () => {
       name: 'a renderer descriptor for another render key than its row',
       modules: blocks({ renderKey: 'acme.code/other' }),
       detailCode: 'client_selection_descriptor',
+    },
+    {
+      name: 'a renderer descriptor naming an entry its module does not load',
+      modules: blocks({ entry: './elsewhere.js' }),
+      detailCode: 'client_selection_entry',
+    },
+    {
+      name: 'a fallback renderer descriptor naming another module entry',
+      modules: swap(
+        client(
+          'acme.client/web',
+          ['web'],
+          [
+            ...webContributions.slice(0, 2),
+            renderer('fallback', 'acme.client/fallback', ['web'], '1', { entry: './acme.code-blocks.js' }),
+          ],
+        ),
+      ),
+      detailCode: 'client_selection_entry',
     },
   ]
 

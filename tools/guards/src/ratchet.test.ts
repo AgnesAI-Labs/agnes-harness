@@ -298,7 +298,9 @@ const INITIAL_CEILING: Record<string, number> = {
   // under one dispose deadline, and a lease that misses it is reported. Measured 3646, exact (+25).
   // A generation's release holds every module to one dispose deadline, draining its renderers before
   // disposing it, and reports each late module once. Measured 3673, exact (+27).
-  'packages/web-client/src': 3673,
+  // The client selection refuses a welcome without one and a renderer entry its module does not load.
+  // Measured 3677, exact (+4).
+  'packages/web-client/src': 3677,
   'packages/web-slots/src': 605,
   // Failed shell calls read as their exit code (+19 lines); measured 4891, exact cap.
   // B-line diagnostics dialog: React view adds 147 lines; measured 4706, exact cap.
@@ -2893,8 +2895,9 @@ const INITIAL_CEILING: Record<string, number> = {
   // A frozen, restorable copy of the sealed model catalog adds 49 measured lines on top of the above; measured 81324, exact, no spare.
   // feat(host): install loop, tools and context on the new run path. Measured 81735, exact, no spare.
   // feat(host): retain model catalog captures by content digest. Measured 81775 (+40), exact, no spare.
-  // feat(host): read the original prepared model request into a verified wire source. Measured 81905 (+130), exact, no spare.
-  'packages/host/src': 81905,
+  // feat(host): Host-only native State read owner. Measured 82377 (+602), exact, no spare.
+  // feat(host): read the original prepared model request into a verified wire source (+130 on top of the above). Measured 82507, exact, no spare.
+  'packages/host/src': 82507,
   'packages/host/src/ext-host/service-invocation': 247,
   // T5.2's permission projector is kept independently bounded so later extension-host work cannot
   // hide in the package-wide increment. Measured source: 86 lines.
