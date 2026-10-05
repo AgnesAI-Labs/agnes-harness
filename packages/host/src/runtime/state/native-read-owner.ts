@@ -1,6 +1,4 @@
 import { randomUUID } from 'node:crypto'
-import type { DatabaseSync } from 'node:sqlite'
-import type { CallContext } from '@agnes/extension-api/runtime'
 import {
   type SchemaRef,
   type SignalRecordValue,
@@ -8,12 +6,13 @@ import {
   type StateScanRequest,
   validateRuntime,
 } from '@agnes/protocol/runtime'
-import {
-  type LocalDeploymentIdentity,
-  localDeploymentIdentityBinding,
-} from '../identity/local-deployment-identity.js'
 import { canonicalJson } from './canonical-json.js'
-import { DEFAULT_READABLE, type ReadableSchema, type StateReadWindow } from './read-scope.js'
+import {
+  DEFAULT_READABLE,
+  type ReadableSchema,
+  type StateReadGrant,
+  type StateReadWindow,
+} from './read-scope.js'
 import {
   ACTION_SCHEMA,
   actionRecordId,
@@ -30,14 +29,12 @@ import {
   captureNativeStateReadPort,
   type NativeStateRecordFact,
   type RuntimeStateDatabase,
-  runtimeStateUsesDatabase,
 } from './transactions.js'
 
 type SnapshotEntry = {
   original: SnapshotRef
   bytes: string
-  context: CallContext
-  principalRef: string
+  grant: StateReadGrant
   deadline: number
 }
 type CursorEntry = {
@@ -77,51 +74,57 @@ function refuseRead(): never {
   refuse('denied', 'native_read', 'original State read authority is unavailable')
 }
 
-/** A Host-only source of authenticated historical facts. It does not issue public scan items. */
+/**
+ * A Host-only source of authenticated historical facts. It does not issue public scan items.
+ * It owns State's read side: it takes neither a database handle nor an identity module. Who may read
+ * is answered only by the grant a bridge issued, whose `check()` runs before and after every read.
+ */
 export function createNativeStateReadOwner(
   input: Readonly<{
     originalState: RuntimeStateDatabase
-    originalIdentity: LocalDeploymentIdentity
-    originalDatabase: DatabaseSync
+    runtimeScope: Readonly<{ installationId: string; runtimeId: string }>
     readable?: readonly ReadableSchema[]
   }>,
 ) {
-  const { originalState: state, originalIdentity: identity, originalDatabase: database } = input
+  if (Object.keys(input).some((key) => !['originalState', 'runtimeScope', 'readable'].includes(key)))
+    refuseRead()
+  const { originalState: state } = input
   const readable = input.readable ?? DEFAULT_READABLE
-  const selectedBinding = localDeploymentIdentityBinding(identity, database)
   const selectedPort = captureNativeStateReadPort(
     state,
-    identity,
-    database,
+    input.runtimeScope,
     readable.map((entry) => entry.schema),
   )
-  if (!selectedBinding || !selectedPort || !runtimeStateUsesDatabase(state, database)) refuseRead()
-  const selectedScope = selectedBinding.scope
-  if (selectedScope.kind !== 'runtime') refuseRead()
-  const binding = selectedBinding
+  if (!selectedPort) refuseRead()
+  const selectedScope = selectedPort.scope
   const port = selectedPort
   const runtimeScope = selectedScope
   const snapshots = new Map<string, SnapshotEntry>()
   const cursors = new Map<string, CursorEntry>()
+  const inflight = new Set<Promise<unknown>>()
   let closed = false
+  let closing: Promise<void> | null = null
   let pendingSnapshots = 0
 
-  function current(context: CallContext, sessionId: string): number {
-    if (closed || !runtimeStateUsesDatabase(state, database)) refuseRead()
-    const selected = localDeploymentIdentityBinding(identity, database)
-    if (
-      !selected ||
-      !sameJson(selected.scope, binding.scope) ||
-      !sameJson(selected.authority, port.authority)
-    )
+  /** Every State read is counted from the call until it settles, so close can wait for it. */
+  function track<T>(read: Promise<T>): Promise<T> {
+    inflight.add(read)
+    const forget = () => inflight.delete(read)
+    read.then(forget, forget)
+    return read
+  }
+
+  function current(grant: StateReadGrant, sessionId: string): number {
+    if (closed) refuseRead()
+    try {
+      grant.check()
+    } catch {
       refuseRead()
-    if (!sameJson(context.scope, binding.scope) || context.principalRef !== binding.owner.facts.principalRef)
+    }
+    if (!sameJson(grant.original.scope, runtimeScope) || grant.sessionId !== sessionId || !sessionId)
       refuseRead()
-    if (context.signal.aborted) refuseRead()
-    const capture = identity.capture(context)
-    capture.dynamicCheck()
-    if (!sessionId) refuseRead()
-    const deadline = Date.parse(capture.deadline)
+    if (grant.original.signal.aborted) refuseRead()
+    const deadline = grant.deadline
     if (!Number.isFinite(deadline) || deadline <= port.now()) refuseRead()
     return deadline
   }
@@ -133,19 +136,18 @@ export function createNativeStateReadOwner(
       if (entry.deadline <= now || !snapshots.has(entry.snapshotId)) cursors.delete(id)
   }
 
-  function entryFor(snapshot: SnapshotRef, context: CallContext): SnapshotEntry {
+  function entryFor(snapshot: SnapshotRef, grant: StateReadGrant): SnapshotEntry {
     prune()
     const entry = snapshots.get(snapshot.snapshotId)
     if (
       !entry ||
       entry.original !== snapshot ||
-      entry.context !== context ||
+      entry.grant !== grant ||
       entry.bytes !== canonicalJson(snapshot) ||
-      entry.principalRef !== context.principalRef ||
       entry.deadline <= port.now()
     )
       refuseRead()
-    current(context, snapshot.sessionId)
+    current(grant, snapshot.sessionId)
     return entry
   }
 
@@ -304,24 +306,24 @@ export function createNativeStateReadOwner(
     return fact.recordId
   }
 
-  async function openResult(sessionId: string, context: CallContext) {
-    const identityDeadline = current(context, sessionId)
+  async function openResult(sessionId: string, grant: StateReadGrant) {
+    const identityDeadline = current(grant, sessionId)
     prune()
     if (snapshots.size + pendingSnapshots >= SNAPSHOT_CAP) refuseRead()
     pendingSnapshots++
     try {
-      const result = await port.open(sessionId)
+      const result = await track(port.open(sessionId))
       if (result.parent !== null)
         refuse(
           'incompatible',
           'state_session_parent',
           'a session with a parent prefix cannot be read natively',
         )
-      const afterIdentityDeadline = current(context, sessionId)
+      const afterIdentityDeadline = current(grant, sessionId)
       const snapshot = result.snapshot
       const deadline = Math.min(
         Date.parse(snapshot.expiresAt),
-        Date.parse(context.deadline),
+        Date.parse(grant.original.deadline),
         identityDeadline,
         afterIdentityDeadline,
       )
@@ -338,8 +340,7 @@ export function createNativeStateReadOwner(
       snapshots.set(snapshot.snapshotId, {
         original: snapshot,
         bytes: canonicalJson(snapshot),
-        context,
-        principalRef: context.principalRef,
+        grant,
         deadline,
       })
       return Object.freeze({
@@ -355,13 +356,13 @@ export function createNativeStateReadOwner(
 
   return Object.freeze({
     openVerifiedResult: openResult,
-    async openVerifiedSnapshot(sessionId: string, context: CallContext): Promise<SnapshotRef> {
-      return (await openResult(sessionId, context)).snapshot
+    async openVerifiedSnapshot(sessionId: string, grant: StateReadGrant): Promise<SnapshotRef> {
+      return (await openResult(sessionId, grant)).snapshot
     },
     /** Frees the snapshot slot and every continuation of that snapshot immediately. */
-    releaseSnapshot(snapshot: SnapshotRef, context: CallContext): void {
+    releaseSnapshot(snapshot: SnapshotRef, grant: StateReadGrant): void {
       const entry = snapshots.get(snapshot.snapshotId)
-      if (!entry || entry.original !== snapshot || entry.context !== context) return
+      if (!entry || entry.original !== snapshot || entry.grant !== grant) return
       snapshots.delete(snapshot.snapshotId)
       for (const [token, position] of cursors)
         if (position.snapshotId === snapshot.snapshotId) cursors.delete(token)
@@ -371,13 +372,13 @@ export function createNativeStateReadOwner(
       snapshot: SnapshotRef,
       recordId: string,
       expected: SchemaRef,
-      context: CallContext,
+      grant: StateReadGrant,
       window: StateReadWindow,
     ): Promise<NativeStateRecordFact | null> {
       if (!validateRuntime('SnapshotRef', snapshot).ok) refuseRead()
-      entryFor(snapshot, context)
-      const facts = await port.facts(snapshot)
-      entryFor(snapshot, context)
+      entryFor(snapshot, grant)
+      const facts = await track(port.facts(snapshot))
+      entryFor(snapshot, grant)
       const shown = visible(
         facts,
         snapshot,
@@ -389,13 +390,13 @@ export function createNativeStateReadOwner(
     async scanVerifiedPage(
       snapshot: SnapshotRef,
       request: StateScanRequest,
-      context: CallContext,
+      grant: StateReadGrant,
       options: ScanOptions = {},
     ) {
       const window = options.window ?? SESSION_WINDOW
       if (!validateRuntime('StateScanRequest', request).ok || request.snapshot !== snapshot) refuseRead()
       safeFilter(request)
-      const entry = entryFor(snapshot, context)
+      const entry = entryFor(snapshot, grant)
       const query = canonicalJson({
         collection: request.collection,
         filter: request.filter,
@@ -414,8 +415,8 @@ export function createNativeStateReadOwner(
           refuseRead()
         after = cursor.after
       }
-      const facts = await port.facts(snapshot)
-      entryFor(snapshot, context)
+      const facts = await track(port.facts(snapshot))
+      entryFor(snapshot, grant)
       const filtered = visible(facts, snapshot, request, window).map((fact) => ({
         fact,
         key: keyFor(fact, request.collection),
@@ -460,13 +461,19 @@ export function createNativeStateReadOwner(
           })
         }
       }
-      entryFor(snapshot, context)
+      entryFor(snapshot, grant)
       return Object.freeze({ items, nextCursor, complete: nextCursor === null })
     },
-    close() {
+    /**
+     * Stops new reads at once and resolves after every read already running has returned or failed,
+     * so State may close its database afterwards. Closing twice returns the same promise.
+     */
+    close(): Promise<void> {
       closed = true
       snapshots.clear()
       cursors.clear()
+      closing ??= Promise.allSettled([...inflight]).then(() => undefined)
+      return closing
     },
   })
 }
