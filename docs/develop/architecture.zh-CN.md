@@ -77,6 +77,18 @@ Seam 是必要执行位置的实现，例如审批、账本、沙箱；缺失必
 
 Host 启动还会打开一个固定 Cordis 服务根，受信 Host 代码通过只读 `runtimeServices` 访问器使用它。初始默认服务为 `agh.package-source` 查询与 `agh.package-resolver` 计算，共用隔离且初始为空的包缓存，没有获准的本地根、网络来源或维护操作。未登记合同返回 `service_not_registered`。该根与现有 Kernel、SQLite 会话存储、审计 sink 和 secrets 组合并行存在。初始化失败走启动回滚；Host 关闭时先释放解析器，再释放包来源并删除缓存。见 [Host 服务选择](../../packages/host/src/runtime/host-services.ts)与[启动测试](../../packages/host/test/host.test.ts)。
 
+受信 Host 代码还可使用私有 `runtimeServices.usageLedger` 装配槽。可选的
+`runtimeUsageLedgerOwners` 提供已选 C33 provider 与认证上下文、已提交 State 来源核验，
+以及原 Session/Core 身份映射与独占 ledger 写能力。缺 owner 时具名拒绝且不创建 journal。
+Session owner 必须将已认领 run 排除在旧推理结算之外；普通会话继续沿用原 ledger 路径。
+
+消费者先持久保存待处理交付，再经 C33 record/query 核实 credits，调用原按 effectId 幂等的
+ledger seam。网关零值与原估算保留来源标记；unknown 或缺 credits 保持待核对并拒绝交付。
+已有 bounded-units 预留需要 C32 结算 owner。同 run 有待处理交付时拒绝另一个 attempt；ledger
+失败也拒绝。冷恢复 owner 可枚举 `pending()`，以原 attempt 调用 `consume()`。该槽已有夹具
+与进程死亡恢复测试；生产 installer、State store 和 Core 映射 owner 仍须交付。
+见 [Host 用量装配](../../packages/host/src/assemble/usage-ledger.ts)。
+
 ## Runtime target 与热更新
 
 PackageManager 产生已核验快照和治理状态；runtime target 组合普通行、资源行与平台合成的客户端行。`web:` 行不在 Host 普通树执行。Host 在受限事务中协调可变行、依赖和实际状态，合格变更增量应用；静态边界、失败补偿或污染处理可能要求重建。

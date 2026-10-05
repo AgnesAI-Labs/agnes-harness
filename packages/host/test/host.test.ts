@@ -93,6 +93,20 @@ describe('createHost', () => {
         bytes: new TextEncoder().encode(jcs(value)).byteLength,
       })
       const services = host.runtimeServices
+      expect(
+        await services.usageLedger.consume({
+          run: {
+            runId: 'run',
+            session: {
+              sessionId: 'session',
+              authority: { authorityId: 'state', tenantId: 'tenant', authorityEpoch: 1 },
+            },
+          },
+          actionId: 'action',
+          attemptId: 'attempt',
+        }),
+      ).toMatchObject({ ok: false, error: { detailCode: 'usage_installer_owner_absent' } })
+      expect(existsSync(join(dataDir, 'runtime-services', 'usage-delivery.sqlite'))).toBe(false)
       const source = services.dependencies.get(requirement('agh.package-source'))
       const resolver = services.dependencies.get(requirement('agh.package-resolver'))
       expect(source.ok).toBe(true)

@@ -1,3 +1,4 @@
+// Measure Host usage delivery composition and its durable journal with exact ceilings; no headroom.
 // Measure combined locale catalogs, domain cards and runtime clients with exact ceilings; no headroom.
 // Verify selected catalog pricing before billing settlement with exact measured ceilings.
 // Cache validated immutable assembly snapshots and share frozen assembly recipes;
@@ -1298,7 +1299,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // A returning package must not be served a cached generation bound to revoked leases (+7), and the
   // full-access read-only roots reach the fence from the assembly (+7). Measured 4207, exact.
   // Wire the optional deployment installation through the existing service root; measured +3, exact.
-  'packages/host/src/assemble': 4242,
+  // Verified runtime usage composes with the original ledger. Measured 4257, exact, no spare.
+  'packages/host/src/assemble': 4257,
   // P1: generated-schema validators and duplicate projection-name refusal; measured exact cap.
   // F1 adds Surface JSON/identity validation and lock snapshot validation.
   // PM4 adds strict management DTO validation and method permission/identity contracts; exact total.
@@ -2857,7 +2859,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // Explicit model deployment assembly: call-bound markers, source fences and final C22 egress.
   // Exact measured total 80856 (+169); no exclusions or spare allocation.
   // One daemon store feeds commands and projection. Measured 80883, exact, no spare.
-  'packages/host/src': 80883,
+  // Verified runtime usage composes with the original ledger. Measured 81225, exact, no spare.
+  'packages/host/src': 81225,
   'packages/host/src/ext-host/service-invocation': 247,
   // T5.2's permission projector is kept independently bounded so later extension-host work cannot
   // hide in the package-wide increment. Measured source: 86 lines.
