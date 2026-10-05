@@ -1094,7 +1094,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // Installed Effects dispatch coordinator (+812); combined exact cap.
   // Pure supervisor kernel (+205) and repeatable model readiness (+1).
   // Installed pure Hook actions and current authority/lifecycle (+254); exact combined cap.
-  'packages/core/src': 37428,
+  // Shared media preflight bridge and image-model selection (+153); exact cap, no spare.
+  'packages/core/src': 37581,
   // Testkit-only reference Effects runner adds 202 measured lines; exact cap, no spare.
   // Independent Effects dispatch reference (+440); exact measurement below.
   'packages/core/testkit': 2437,
