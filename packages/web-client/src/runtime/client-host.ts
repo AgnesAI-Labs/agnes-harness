@@ -74,6 +74,15 @@ export interface ClientHostRuntime {
 
 type Catalog = Parameters<ClientHostRuntime['activate']>[0]
 type Lease = ReturnType<ReturnType<typeof createRendererPresenter>['lease']>
+type Owner = {
+  readonly id: string
+  readonly moduleId: string
+  readonly ownerToken: string
+  readonly leases: Set<Lease>
+  presenting?: Lease
+}
+/** A module whose release, or the release of one of its renderer contributions, missed the deadline. */
+type Failure = { moduleId: string; contributionId?: string; reason: 'dispose_timeout' }
 
 type Generation = {
   readonly revision: number
@@ -86,10 +95,7 @@ type Generation = {
    * Registered definitions, the module each was registered for and the leases bound to it, among them
    * the one lease the generation's presentation presents the definition through.
    */
-  readonly owners: Map<
-    RendererDefinition,
-    { readonly id: string; readonly ownerToken: string; readonly leases: Set<Lease>; presenting?: Lease }
-  >
+  readonly owners: Map<RendererDefinition, Owner>
   /** The definition of every live registration under its `moduleId`/descriptor id. */
   readonly registered: Map<string, RendererDefinition>
   /** The built-in generic view's lease, taken on first use. */
@@ -222,10 +228,10 @@ export function createClientHostRuntime(input: {
   capabilities: NegotiatedClientCapabilities
   locale: RendererContext['locale']
   /** Presents a bound renderer, or the generic view, through a restricted context for the window's view. */
-  presenter: ReturnType<typeof createRendererPresenter>
+  presenter: Pick<ReturnType<typeof createRendererPresenter>, 'lease' | 'generic'>
   limits?: { entryMs?: number; disposeMs?: number }
-  /** Told, with ids only, that a module's release missed its dispose deadline. */
-  onFailure?: (failure: { moduleId: string; reason: 'dispose_timeout' }) => void
+  /** Told, with ids only, that a module's release or a renderer lease of it missed its dispose deadline. */
+  onFailure?: (failure: Failure) => void
 }): ClientHostRuntime {
   const entryMs = input.limits?.entryMs ?? 15_000
   const disposeMs = input.limits?.disposeMs ?? 5_000
@@ -234,20 +240,37 @@ export function createClientHostRuntime(input: {
   let disposed = false
   let closing: Promise<void> | undefined
 
-  /** Runs one dispose under the dispose deadline; a throw is swallowed, and a miss resolves false. */
+  /**
+   * Runs one dispose under the dispose deadline; a throw is swallowed, and a miss, or a dispose that
+   * reports its own miss by resolving false, resolves false.
+   */
   const settle = (dispose: () => unknown) =>
     within(Promise.resolve().then(dispose), disposeMs).then(
-      (result) => result !== LATE,
+      (result) => result !== LATE && result !== false,
       () => true,
     )
 
-  /** Ends every lease bound to these registrations; a lease outliving its registration presents nothing. */
-  const revoke = (owners: Iterable<{ readonly leases: Set<Lease> }>) =>
+  const report = (failure: Failure) => {
+    try {
+      input.onFailure?.(failure)
+    } catch {
+      // A failing report changes nothing about the release.
+    }
+  }
+
+  /**
+   * Ends every lease bound to these registrations; a lease outliving its registration presents nothing.
+   * A lease whose contexts miss the deadline is reported against its module and renderer.
+   */
+  const revoke = (owners: Iterable<Owner>) =>
     Promise.all(
-      [...owners].flatMap(({ leases }) => {
-        const ending = [...leases]
-        leases.clear()
-        return ending.map((lease) => settle(() => lease.dispose()))
+      [...owners].flatMap((owner) => {
+        const ending = [...owner.leases]
+        owner.leases.clear()
+        return ending.map(async (lease) => {
+          if (!(await settle(() => lease.dispose())))
+            report({ moduleId: owner.moduleId, contributionId: owner.id, reason: 'dispose_timeout' })
+        })
       }),
     )
 
@@ -282,9 +305,9 @@ export function createClientHostRuntime(input: {
           ownerToken: owner.ownerToken,
           present: (view) => lease.present(view),
           // Ends only this lease; the registration stays with its module.
-          dispose: () => {
+          dispose: async () => {
             owner.leases.delete(lease)
-            return lease.dispose()
+            await lease.dispose()
           },
         },
       }
@@ -386,7 +409,12 @@ export function createClientHostRuntime(input: {
     const { id, ownerToken: registrationToken, dispose } = registered.value
     const cell = key(module.moduleId, descriptor.id)
     // The server binds this token to the client instance and the module generation; it grants nothing.
-    const owner = { id: descriptor.id, ownerToken: module.ownerToken, leases: new Set<Lease>() }
+    const owner: Owner = {
+      id: descriptor.id,
+      moduleId: module.moduleId,
+      ownerToken: module.ownerToken,
+      leases: new Set<Lease>(),
+    }
     generation.owners.set(definition, owner)
     generation.registered.set(cell, definition)
     let done: Promise<void> | undefined
@@ -437,11 +465,7 @@ export function createClientHostRuntime(input: {
       })
       if (done) return
       void close()
-      try {
-        input.onFailure?.({ moduleId: module.moduleId, reason: 'dispose_timeout' })
-      } catch {
-        // A failing report changes nothing about the release.
-      }
+      report({ moduleId: module.moduleId, reason: 'dispose_timeout' })
     })
     // ponytail: every call refuses; widen it once a Host-issued per-module credential is on the wire.
     const refusal = () =>

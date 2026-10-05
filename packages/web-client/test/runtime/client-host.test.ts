@@ -294,6 +294,8 @@ function harness(options: { target?: ClientTarget; limits?: { entryMs?: number; 
   const failures = vi.fn()
   /** Every lease the host took, with how often each was disposed; the generic view's is `generic`. */
   const leases: Array<{ id: string; ownerToken: string; disposed: number }> = []
+  /** What ending a lease of a renderer id answers, in place of a timely close. */
+  const leaseEnds: Record<string, () => Promise<boolean>> = {}
   const lease = (id: string, ownerToken: string) => {
     const entry = { id, ownerToken, disposed: 0 }
     leases.push(entry)
@@ -303,8 +305,10 @@ function harness(options: { target?: ClientTarget; limits?: { entryMs?: number; 
           ok: true,
           value: { target: 'tui', formatted: view },
         }) as unknown as Outcome<RendererPresentation>,
+      // True once every per-view context of the lease closed in time, unless `leaseEnds` says otherwise.
       dispose: async () => {
         entry.disposed += 1
+        return leaseEnds[id]?.() ?? true
       },
     }
   }
@@ -322,6 +326,7 @@ function harness(options: { target?: ClientTarget; limits?: { entryMs?: number; 
     leases,
     /** How often each module's standard entry ran. */
     starts,
+    leaseEnds,
     hosts: [] as UIRegistryHost[],
     definitions: [] as RendererDefinition[],
     entries: {} as Record<string, (standard: ClientEntry) => ClientEntry>,
@@ -1079,6 +1084,26 @@ describe('client host runtime', () => {
     expect(h.log).toEqual(
       expect.arrayContaining(['dispose base#1', 'unregister base.fallback', 'unregister cards.card']),
     )
+  })
+
+  it('reports a renderer whose lease misses the dispose deadline, by module and contribution', async () => {
+    const h = harness({ limits: { disposeMs: 20 } })
+    // The card's context reports that it missed its own deadline; the fallback's lease never ends.
+    h.leaseEnds['cards.card'] = async () => false
+    h.leaseEnds['base.fallback'] = () => new Promise<boolean>(() => {})
+    expect(refused(await h.runtime.activate(catalog(1)))).toBe('ok')
+    const view = { viewId: 'v1', revision: 1, renderKey: 'cards.card' } as DomainView
+    expect(refused(now(h).presentation.domain(view))).toBe('ok')
+    expect(resolved(now(h).registry, 'base.fallback')?.kind).toBe('matched')
+    await h.runtime.dispose()
+    expect(h.failures.mock.calls).toEqual(
+      expect.arrayContaining([
+        [{ moduleId: 'cards', contributionId: 'cards.card', reason: 'dispose_timeout' }],
+        [{ moduleId: 'base', contributionId: 'base.fallback', reason: 'dispose_timeout' }],
+      ]),
+    )
+    expect(h.failures).toHaveBeenCalledTimes(2)
+    expect(h.log).toEqual(expect.arrayContaining(['unregister base.fallback', 'unregister cards.card']))
   })
 
   it('refuses a second activation while one runs', async () => {
