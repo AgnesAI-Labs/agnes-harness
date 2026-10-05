@@ -241,6 +241,29 @@ describe('count calibration', () => {
     })
   })
 
+  it('records why a budget quote was refused, and ends the turn on budget', async () => {
+    const seams = fakeSeams({
+      ledger: {
+        projected: async ({ tokensEstimate }) => ({ credits: tokensEstimate, creditSource: 'estimated' }),
+      },
+      approval: { ask: async () => ({ verdict: 'rejected', reason: 'user_rejected' }) },
+    })
+    const { session, log } = await openSession({
+      provider: withCount(9000),
+      preset: preset(4000, 'quote'),
+      seams,
+    })
+    await session.enqueue('next-turn', { content: [{ type: 'text', text: 'hi' }], actor })
+    expect((await session.run({ until: 'turn-end', signal: new AbortController().signal })).reason).toBe(
+      'budget',
+    )
+    expect((await log.scan({ type: 'approval/decided', limit: 5 })).at(-1)?.data).toMatchObject({
+      verdict: 'rejected',
+      via: 'sync',
+      reason: 'user_rejected',
+    })
+  })
+
   // The empty-register branch, walked rather than reasoned about. The preflight writes the cell
   // before every inference, so reaching the recount with an empty one means the counter is broken:
   // a `?? {…}` default would invent a budget row out of the preset and hide that. Getting here needs

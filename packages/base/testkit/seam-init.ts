@@ -1,4 +1,4 @@
-import type { ApprovalRequest, PlatformSeam, Verdict } from '@agnes/core'
+import type { ApprovalAnswer, ApprovalRequest, PlatformSeam, Verdict } from '@agnes/core'
 import { WORKSPACE_SECRET_DIRS } from '@agnes/protocol'
 import type {
   HostExecResult,
@@ -56,7 +56,7 @@ export type FakeSeamInit = SeamInitContext & {
 
 export type FakeSeamInitOpts = {
   files?: Record<string, string | Uint8Array>
-  prompter?: (req: ApprovalRequest, opts: { signal: AbortSignal }) => Promise<Verdict>
+  prompter?: (req: ApprovalRequest, opts: { signal: AbortSignal }) => Promise<Verdict | ApprovalAnswer>
   platform?: Partial<PlatformSeam>
   preset?: Record<string, unknown>
   limits?: Record<string, number>

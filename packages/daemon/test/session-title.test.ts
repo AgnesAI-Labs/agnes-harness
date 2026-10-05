@@ -77,7 +77,13 @@ it('uses the same generator through the real local endpoint and worker command d
         models: (profile.provider.routes ?? []).flatMap((route) => route.models ?? []),
         scripts: [
           (req) => [
-            { type: 'text_delta', delta: req.kind === 'summary' ? '入口标题验证' : '完成回答' },
+            {
+              type: 'text_delta',
+              delta:
+                req.kind === 'summary'
+                  ? JSON.stringify({ language: 'zh-CN', title: '入口标题验证' })
+                  : '完成回答',
+            },
             { type: 'done', reason: 'stop' },
           ],
         ],

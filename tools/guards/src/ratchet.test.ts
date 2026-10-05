@@ -263,7 +263,8 @@ const INITIAL_CEILING: Record<string, number> = {
   'packages/web-client/src': 1749,
   'packages/web-slots/src': 605,
   // Failed shell calls read as their exit code (+19 lines); measured 4891, exact cap.
-  'packages/web-ui/src': 6629,
+  // Approval reasons: the approval card label reads the decision reason (+22). Measured 6651, exact cap.
+  'packages/web-ui/src': 6651,
   // W8a-3: retire the native tool renderer in favor of one compatibility root; measured 4630.
   // 2026-10-04 image upload merged onto the queue view: the composer reads, downscales and previews
   // attachments, and the queue row markup above stays. Measured: 5923, exact, no spare.
@@ -273,7 +274,9 @@ const INITIAL_CEILING: Record<string, number> = {
   // Fragment so the queue section can sit before the form, which costs the Fragment import, the
   // extracted `queueSection` binding and one extra nesting level. Measured: 5922, exact, no spare.
   'packages/web-units/src': 5922,
-  'packages/base/extensions/tools-core': 800,
+  // Write staleness guard: a per-session table of what each file looked like when read, checked by
+  // `write` (+55 counted lines, measured 855, exact cap).
+  'packages/base/extensions/tools-core': 855,
   // MCP-ROWS stage 2b, steps 1-2 (D118): connection supervisor, catalog hub, and the per-server
   // extension row wiring them together. New extension at the shared default cap; measured 276.
   'packages/base/extensions/mcp-server': 800,
@@ -471,7 +474,10 @@ const INITIAL_CEILING: Record<string, number> = {
   // much was lost. Measured 678, exact, no spare (+4).
   // Merge of CHUNK-LEDGER-SLIM (lost-text marker, +4) with the streaming-smoothness quick fixes (727):
   // sampled fingerprints also carry lostChars. Re-measured on the merged tree: 731, exact, no spare.
-  'packages/web/src/timeline': 799,
+  // Approval reasons: the approval card label reads the decision reason (+10). Measured 796, exact cap.
+  // 2026-10-05 the merge keeps both sides' additions, so neither number holds. Re-measured on the
+  // merged tree: 807, exact, no spare.
+  'packages/web/src/timeline': 807,
   // 2026-09-17：navigation.ts 的 folderIcon 换成客户端 AgnesProjectFolderIcon 两态字形
   // （两条 path + folderSvg 构造器），展开/收起由 CSS 的 [aria-expanded] 切换。实测 108。
   // SESSION-ACTIONS integrated with b/main: exact increment +43.
@@ -1006,7 +1012,12 @@ const INITIAL_CEILING: Record<string, number> = {
   // The approval card's summary line is built by summarizeCall (new file). Measured 25861 (+50), exact cap.
   // 2026-10-04 image attachments: user-message-images.ts (new) plus its session wiring, merged
   // onto the queue view. Measured: 25965, exact, no spare.
-  'packages/core/src': 25965,
+  // Guardian-decided approvals no longer reopen a parked continuation (+2), a Stop on a running mutating
+  // call is recorded as cancelled once it has stopped (+54), and approval decisions keep their reason (+82).
+  // Measured 26071 with all three merged on top of main 25934, exact cap; each alone is lower.
+  // 2026-10-05 the two sides coexist on the merged tree, so neither side's number holds. Re-measured
+  // with countLines() after the merge: 26102, exact, no spare.
+  'packages/core/src': 26102,
   // 2026-09-15: DeepSeek V4 Pro/Flash ship a known-thinking-corrections table (new file) so the
   // product corrects pi-ai's verified-wrong reasoning_effort data out of the box, instead of
   // requiring every deployment to hand-edit thinkingEfforts once they notice. Measured 3347.
@@ -1867,7 +1878,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // Windows discovery retry adds six counted lines; measured 26501, exact.
   // A cancel that arrived before the worker run began is forwarded after it. Measured 26536 (+2), exact.
   // An approval request carries the tool's ACP kind and name. Measured 26542 (+6), exact cap.
-  'packages/daemon/src': 26740,
+  // Approval reasons: the prompter router answers with a reason (+18). Measured 26758 (combined tree), exact cap.
+  'packages/daemon/src': 26758,
   'packages/daemon/src/packages/admin-session': 46,
   // 2026-09-14: whole-branch review fix wave (Finding 1) adds the two missing
   // 'pins/inspect'/'pins/release' entries to the ACTIONS BFF route allowlist, which had been left
@@ -2116,7 +2128,10 @@ const INITIAL_CEILING: Record<string, number> = {
   // The live approval card's wording, preview and session-choice rule (new file). Measured 13463 (+52), exact cap.
   // 2026-10-04 model picker cascade refactor, image attachment wiring and the i18n UI fixes, merged
   // onto the title-locale/queue work. Measured: 16839, exact, no spare.
-  'packages/web/src': 16839,
+  // Approval reasons: the approval card label reads the decision reason (+22). Measured 16081 (combined tree), exact cap.
+  // 2026-10-05 the merge keeps both sides' additions, so neither number holds. Re-measured on the
+  // merged tree: 16861, exact, no spare.
+  'packages/web/src': 16861,
   // 2026-09-17 web-client-modules frontend track (rebased onto L0/permission-picker main): re-measured exact value below.
   // 2026-09-14: Task 7 orphaned-pin-cleanup adds the orphan-pins section to PluginAdminPage — the
   // #orphanPins/#orphanPinsList/#orphanPinsStatus/#orphanPinsReleaseAll element bindings, the
@@ -2597,7 +2612,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // Generation views are pruned before each candidate builds its session views (+13). Installation state stays
   // read-only under full file access: the fence guard, the roots helper and their wiring (+40).
   // Measured 38359, exact.
-  'packages/host/src': 38396,
+  // Approval reasons: the Prompter type may answer with a reason (+2). Measured 38398 (combined tree), exact cap.
+  'packages/host/src': 38398,
   'packages/host/src/ext-host/service-invocation': 247,
   // T5.2's permission projector is kept independently bounded so later extension-host work cannot
   // hide in the package-wide increment. Measured source: 86 lines.
@@ -2764,7 +2780,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // First-cause timedOut in exec and exec-win32. Measured 5034 (+9), exact cap.
   // The fence refuses writes to the installation's own state under full file access. Measured 5053,
   // exact, no spare (+19).
-  'packages/host/src/adapters': 5053,
+  // Approval reasons: the Prompter type may answer with a reason (+2). Measured 5055, exact cap.
+  'packages/host/src/adapters': 5055,
 
   // C1b Task 5 persists child creation attempts and deferred recovery; exact total, no spare.
   // Task 17 review: sqlite_master scan + table-name refuse. Re-measured: 674, exact.
@@ -2825,6 +2842,8 @@ const EXTENSION_CEILING_EXCEPTIONS = new Map([
   // SKILL-CATALOG-CLEAN-REWRITE: same reviewed exact total as the catalog/name activation budget above.
   // Skill description bounds and paged reads. Measured 1121, exact.
   ['skills', 1121],
+  // Write staleness guard (per-session table of observed file versions, checked by write). Measured 855, exact.
+  ['tools-core', 855],
 ])
 
 describe('bundled extension line budgets (default ≤ 800, named reviewed exceptions)', () => {

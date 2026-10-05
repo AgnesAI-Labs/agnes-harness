@@ -795,6 +795,31 @@ describe('timeline reader semantics', () => {
       expect(approval?.textContent).toContain(expected)
       expect(approval?.getAttribute('aria-label')).toBe(`审批：${expected}`)
     }
+
+    // The reason, when the ledger has one, says more than the verdict does.
+    for (const [verdict, reason, expected] of [
+      ['rejected', 'timeout', '等待超时，未执行'],
+      ['unavailable', 'no_approver', '无人审批，未执行'],
+      ['cancelled', 'stopped', '已停止'],
+      ['rejected', 'policy_denied', '被命令策略拦截'],
+      ['rejected', 'subagent_scope', '子代理权限范围内，已自动拒绝'],
+      ['rejected', 'a-future-reason', '已拒绝'],
+    ] as const) {
+      timeline.render([
+        {
+          kind: 'approval',
+          id: 'approval-1',
+          seq: 1,
+          state: 'decided',
+          summary: '将在工作目录执行命令',
+          risk: 'destructive',
+          options: ['allow_once', 'reject_once'],
+          decision: { verdict, via: 'sync', reason },
+        },
+        { kind: 'compaction', id: 'history-1', seq: 2, range: [1, 6] },
+      ])
+      expect(approval?.getAttribute('aria-label')).toBe(`审批：${expected}`)
+    }
   })
 
   it('keeps bottom-follow sticky across programmatic writes, user scroll-away and bottom collapse', () => {

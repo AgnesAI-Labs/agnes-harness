@@ -525,6 +525,21 @@ describe('resume', () => {
     expect((await types(log)).filter((x) => x === 'step/end')).toHaveLength(1)
   })
 
+  // Nobody was asked, so "it did not happen" must not be written as the answer: the question stays
+  // unanswered on the ledger, with the reason, and the turn still parks.
+  it('records an unknown outcome nobody could be asked about as unavailable, never as rejected', async () => {
+    const { session, log } = await crashInToolCall('shell', {
+      seams: fakeSeams({ approval: { ask: async () => 'unavailable', resume: async () => null } }),
+    })
+    expect((await session.resume()).actions[0]?.action).toBe('unknown')
+    expect((await log.scan({ type: 'approval/decided', limit: 10 })).at(-1)?.data).toMatchObject({
+      verdict: 'unavailable',
+      via: 'sync',
+      reason: 'no_approver',
+    })
+    expect((await log.scan({ type: 'turn/end', limit: 5 }))[0]?.data).toMatchObject({ reason: 'parked' })
+  })
+
   it.each(['allowed-once', 'rejected'] as const)(
     'requires a human callback to resolve unknown as %s without replay',
     async (verdict) => {

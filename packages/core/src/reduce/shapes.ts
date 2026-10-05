@@ -110,6 +110,7 @@ export type ApprovalDecided = {
   grantId?: string
   decidedBy?: Actor
   ticket?: string
+  reason?: string
 }
 
 export type TokenCounts = {

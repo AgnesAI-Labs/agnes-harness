@@ -70,6 +70,18 @@ describe('UI projection leaf contract', () => {
       }),
     ).toBe(true)
   })
+  it('carries the reason behind an approval decision, optionally and as text only', () => {
+    const decided = {
+      ...nodes[3],
+      state: 'decided',
+      decision: { verdict: 'unavailable', via: 'sync', reason: 'no_approver' },
+    }
+    expect(Value.Check(UINode, decided)).toBe(true)
+    expect(Value.Check(UINode, { ...decided, decision: { verdict: 'rejected', via: 'sync' } })).toBe(true)
+    expect(
+      Value.Check(UINode, { ...decided, decision: { verdict: 'rejected', via: 'sync', reason: 7 } }),
+    ).toBe(false)
+  })
   it('accepts measured compaction and explicit zero cost while preserving absent data', () => {
     expect(Value.Check(UINode, { ...nodes[6], tokensBefore: 100, tokensAfter: 20 })).toBe(true)
     expect(Value.Check(UINode, { ...nodes[4], credits: 0 })).toBe(true)

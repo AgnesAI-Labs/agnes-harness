@@ -1,4 +1,5 @@
 import { minimumContextBudget } from '@agnes/protocol'
+import { decidedFields, isPending } from '../effects/approval-answer.js'
 import { scanAll } from '../log/scan-pages.js'
 import type { BudgetState, Inbox, RepairDecision } from '../reduce/shapes.js'
 import { canonicalJson } from '../request/hash.js'
@@ -325,7 +326,7 @@ async function builtinStopGate(s: SessionImpl): Promise<StepOutcome> {
           ...(overridden.summary !== undefined ? { summary: overridden.summary } : {}),
         }
       : asked
-    const v = await s.askApproval(
+    const answer = await s.askApprovalAnswer(
       {
         ...finalAsked,
         sessionKey: s.key,
@@ -337,14 +338,14 @@ async function builtinStopGate(s: SessionImpl): Promise<StepOutcome> {
       },
       s.ac.signal,
     )
-    if (typeof v === 'object') {
+    if (isPending(answer)) {
       await s.endTurn('parked', {
-        events: (seq) => [...repairEvents(seq), s.ev('approval/asked', { ...finalAsked, pending: v })],
+        events: (seq) => [...repairEvents(seq), s.ev('approval/asked', { ...finalAsked, pending: answer })],
       })
       return { phase: 'terminal', reason: 'parked' }
     }
-    const decided = s.ev('approval/decided', { requestId, verdict: v, via: 'sync' })
-    if (!v.startsWith('allowed')) {
+    const decided = s.ev('approval/decided', { requestId, ...decidedFields(answer), via: 'sync' })
+    if (!answer.verdict.startsWith('allowed')) {
       await s.endTurn('blocked', {
         events: (seq) => [...repairEvents(seq), s.ev('approval/asked', finalAsked), decided],
       })
