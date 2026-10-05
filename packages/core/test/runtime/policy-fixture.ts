@@ -144,8 +144,12 @@ function must<T>(result: Outcome<T>): T {
 }
 
 /** Test owner with actual SQLite transactions and reopen; production does not import this fixture. */
-export function createPolicyFixture(make: PolicyFactoryMaker, providerId = 'default'): DurablePolicyFixture {
-  const directory = mkdtempSync(join(tmpdir(), 'agnes-policy-'))
+export function createPolicyFixture(
+  make: PolicyFactoryMaker,
+  providerId = 'default',
+  options?: Readonly<{ directory: string; retainOnFinish: true }>,
+): DurablePolicyFixture {
+  const directory = options?.directory ?? mkdtempSync(join(tmpdir(), 'agnes-policy-'))
   const path = join(directory, 'owner.db')
   let input = policyInput()
   let evidence = policyEvidence()
@@ -493,7 +497,7 @@ export function createPolicyFixture(make: PolicyFactoryMaker, providerId = 'defa
     },
     async finish() {
       await authority.close()
-      rmSync(directory, { recursive: true, force: true })
+      if (!options?.retainOnFinish) rmSync(directory, { recursive: true, force: true })
     },
     replaceInput(value, prepared = evidence) {
       input = value

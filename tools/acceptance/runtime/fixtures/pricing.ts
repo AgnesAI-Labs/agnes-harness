@@ -96,17 +96,25 @@ const dependencies: ScopedDependencies = {
 // Restricted selected native catalog/grant issuer; it does not install production C14 or vendor pricing.
 export function createPricingContractFixture(
   kind: 'default' | 'reference',
+  options: {
+    readonly databasePath?: string
+    readonly reopen?: boolean
+    readonly recover?: boolean
+    readonly providerId?: string
+  } = {},
 ): contracts.PricingContractFixture {
-  const db = new DatabaseSync(':memory:')
+  const db = new DatabaseSync(options.databasePath ?? ':memory:')
   db.exec(
-    'CREATE TABLE catalog(id TEXT PRIMARY KEY,body TEXT NOT NULL,digest TEXT NOT NULL); CREATE TABLE grants(id TEXT PRIMARY KEY,until REAL NOT NULL)',
+    'CREATE TABLE IF NOT EXISTS catalog(id TEXT PRIMARY KEY,body TEXT NOT NULL,digest TEXT NOT NULL); CREATE TABLE IF NOT EXISTS grants(id TEXT PRIMARY KEY,until REAL NOT NULL)',
   )
   const encodedCatalog = validateRuntime('JsonValue', catalog)
   if (!encodedCatalog.ok) throw Error('Fixture catalog is not JSON')
   const text = JSON.stringify(catalog),
     digest = canonicalJsonDigest(encodedCatalog.value)
-  db.prepare('INSERT INTO catalog VALUES(?,?,?)').run('selected', text, digest)
-  db.prepare('INSERT INTO grants VALUES(?,?)').run('reader', Date.parse('2027-01-01T00:00:00.000Z'))
+  if (!options.reopen) {
+    db.prepare('INSERT INTO catalog VALUES(?,?,?)').run('selected', text, digest)
+    db.prepare('INSERT INTO grants VALUES(?,?)').run('reader', Date.parse('2027-01-01T00:00:00.000Z'))
+  }
   const controller = new AbortController(),
     issued = new WeakSet<CallContext>()
   const call: CallContext = {
@@ -174,9 +182,13 @@ export function createPricingContractFixture(
       return Date.parse('2026-10-01T00:00:00.000Z')
     },
   }
-  const options = { descriptor, configurationSchema: configCodec, owner }
+  const selectedDescriptor = { ...descriptor, providerId: options.providerId ?? descriptor.providerId }
+  const factoryOptions = { descriptor: selectedDescriptor, configurationSchema: configCodec, owner }
   const factory =
-    kind === 'default' ? createPricingProviderFactory(options) : createReferencePricingFactory(options)
+    kind === 'default'
+      ? createPricingProviderFactory(factoryOptions)
+      : createReferencePricingFactory(factoryOptions)
+  const recoveryPath = options.databasePath
   return {
     factory,
     config: value(configCodec.encode({})),
@@ -187,7 +199,7 @@ export function createPricingContractFixture(
       target: {
         bindingId: 'binding',
         contract: 'agh.pricing',
-        providerId: descriptor.providerId,
+        providerId: selectedDescriptor.providerId,
         logicalName: 'default',
       },
       method: 'quote',
@@ -203,6 +215,14 @@ export function createPricingContractFixture(
     cancel() {
       controller.abort()
     },
+    ...(options.recover && recoveryPath
+      ? {
+          async recover() {
+            const { recoverPricingInFreshProcess } = await import('./pricing-recovery.js')
+            return recoverPricingInFreshProcess(kind, recoveryPath, options.providerId)
+          },
+        }
+      : {}),
     async finish() {
       db.close()
     },
