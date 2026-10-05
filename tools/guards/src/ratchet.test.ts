@@ -305,7 +305,9 @@ const INITIAL_CEILING: Record<string, number> = {
   // Locale catalogs on LocaleService. Measured 1745, exact, no spare (+31).
   // Failed shell calls read as their exit code (+19 lines); measured 4891, exact cap.
   // W8a-3: retire the native tool renderer in favor of one compatibility root; measured 4630.
-  'packages/base/extensions/tools-core': 800,
+  // Write staleness guard: a per-session table of what each file looked like when read, checked by
+  // `write` (+55 counted lines, measured 855, exact cap).
+  'packages/base/extensions/tools-core': 855,
   // MCP-ROWS stage 2b, steps 1-2 (D118): connection supervisor, catalog hub, and the per-server
   // extension row wiring them together. New extension at the shared default cap; measured 276.
   'packages/base/extensions/mcp-server': 800,
