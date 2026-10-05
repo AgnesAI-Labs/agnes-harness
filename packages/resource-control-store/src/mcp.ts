@@ -505,6 +505,14 @@ export class McpResourceStore {
         ...journal,
         operations: journal.operations.map((entry) =>
           terminal.has(entry.operation.state) ||
+          // An operation this store is driving settles itself: its drive records the result and
+          // only then does the connection it asked for exist. A worker observation of the same
+          // server can arrive earlier (an idle worker reports `disabled` before an enable has
+          // started the process), so closing it here would drop the result or skip the work.
+          this.active.has(entry.operation.operationId) ||
+          // A test says nothing about the connection, and may be driven by another process whose
+          // `active` set this store cannot see (the resource worker runs it for a SecretRef).
+          entry.operation.kind === '_agnes/v1/mcp.servers.test' ||
           !statuses.some(
             (value) =>
               entry.operation.target === `mcp/${value.serverId}` &&

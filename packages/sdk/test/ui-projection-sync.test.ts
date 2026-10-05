@@ -73,6 +73,22 @@ function patchOf(from: number, upto: number, totalNodes: number, changes: UITime
 }
 
 describe('the pure patch functions', () => {
+  it.each([undefined, [], [{ itemId: 'C', preview: 'C' }]])(
+    'replaces pending input with %s without transcript changes',
+    (pendingInputs) => {
+      const original = [
+        { itemId: 'B', preview: 'B' },
+        { itemId: 'C', preview: 'C' },
+      ]
+      const current = deepFreeze({ ...timeline(1, []), pendingInputs: original })
+      const patch = deepFreeze({ ...patchOf(1, 2, 0, []), ...(pendingInputs ? { pendingInputs } : {}) })
+      const expected = pendingInputs ?? original
+      expect(applyUITimelinePatch(current, patch).pendingInputs).toEqual(expected)
+      expect(
+        applyWindowedUITimelinePatch(current, { startIndex: 0, totalNodes: 0 }, patch).timeline.pendingInputs,
+      ).toEqual(expected)
+    },
+  )
   it.each([
     [false, true, true],
     [true, false, false],

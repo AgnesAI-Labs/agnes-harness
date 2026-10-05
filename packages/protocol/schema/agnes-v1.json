@@ -229,6 +229,17 @@
         }
       }
     },
+    "SessionSendNowParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sessionId", "itemId", "commandId"],
+      "properties": {
+        "sessionId": { "type": "string", "maxLength": 512 },
+        "itemId": { "type": "string", "minLength": 1, "maxLength": 512 },
+        "commandId": { "type": "string", "maxLength": 128 },
+        "generation": { "type": "integer", "minimum": 1 }
+      }
+    },
     "SessionSteerResult": {
       "type": "object",
       "additionalProperties": false,
@@ -388,7 +399,7 @@
           "maxLength": 128
         },
         "kind": {
-          "enum": ["steer", "followUp", "compact", "fork", "jobs.enqueue"]
+          "enum": ["steer", "followUp", "sendNow", "compact", "fork", "jobs.enqueue"]
         },
         "generation": {
           "type": "integer",
@@ -2023,6 +2034,9 @@
                 },
                 "byLabel": {
                   "type": "string"
+                },
+                "reason": {
+                  "type": "string"
                 }
               }
             }
@@ -2761,11 +2775,25 @@
         }
       ]
     },
+    "UIPendingInput": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["itemId", "preview"],
+      "properties": {
+        "itemId": { "type": "string" },
+        "preview": { "type": "string", "maxLength": 2000 }
+      }
+    },
     "UITimeline": {
       "type": "object",
       "additionalProperties": false,
       "required": ["sessionId", "upto", "generation", "opState", "nodes", "turns"],
       "properties": {
+        "pendingInputs": {
+          "description": "Authoritative next-turn inbox order at this projection cut. Omitted by older servers.",
+          "type": "array",
+          "items": { "$ref": "#/$defs/UIPendingInput" }
+        },
         "yolo": {
           "description": "Current session full-access mode, independent of the projected history cut. Omitted by older servers.",
           "type": "boolean"
@@ -3057,6 +3085,11 @@
       "additionalProperties": false,
       "required": ["sessionId", "generation", "from", "upto", "opState", "changes", "turnChanges"],
       "properties": {
+        "pendingInputs": {
+          "description": "Full replacement of next-turn inbox order, including an empty array when drained. Omission preserves known input for older-server compatibility.",
+          "type": "array",
+          "items": { "$ref": "#/$defs/UIPendingInput" }
+        },
         "yolo": {
           "description": "Current session full-access mode. Omission preserves the client's known mode for older-server compatibility.",
           "type": "boolean"

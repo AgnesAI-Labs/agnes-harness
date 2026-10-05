@@ -253,6 +253,7 @@ export interface RuntimeWireTypes {
   RunTaintSourceRecordValue: Schemas.RunTaintSourceRecordValue
   ApprovalTaintAckRecordValue: Schemas.ApprovalTaintAckRecordValue
   PolicyDecision: Schemas.PolicyDecision
+  Externalagnes_v1_UIPendingInput: Schemas.Externalagnes_v1_UIPendingInput
   Externalagnes_v1_UIOperationState: Schemas.Externalagnes_v1_UIOperationState
   Externalsession_v1_ContentBlock: Schemas.Externalsession_v1_ContentBlock
   Externalagnes_v1_ContentBlock: Schemas.Externalagnes_v1_ContentBlock

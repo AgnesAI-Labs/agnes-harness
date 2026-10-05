@@ -509,6 +509,7 @@ export class UIProjectionCell {
       upto: this.upto,
       totalNodes: this.nodes.length,
       opState: meta.opState,
+      pendingInputs: this.pendingInputs(),
       changes: [...removals, ...upserts],
       turnChanges: [...turnRemovals, ...turnUpserts],
       ...(meta.budget ? { budget: meta.budget } : {}),
@@ -811,6 +812,8 @@ export class UIProjectionCell {
             verdict: decided.verdict,
             via: decided.via,
             ...(decided.decidedBy ? { byLabel: clip(decided.decidedBy.id, 128) } : {}),
+            // A ledger written before reasons existed has none; the card then says nothing about why.
+            ...(decided.reason ? { reason: clip(decided.reason, 128) } : {}),
           }
           changed.add(node.id)
         }
@@ -959,12 +962,19 @@ export class UIProjectionCell {
     }
   }
 
+  private pendingInputs(): NonNullable<UITimeline['pendingInputs']> {
+    return (this.state.registers.inbox.get(this.lane)?.value.items ?? [])
+      .filter((item) => item.target === 'next-turn')
+      .map((item) => ({ itemId: item.itemId, preview: clip(text(item.content), 2000) }))
+  }
+
   private timeline(nodes: UINode[], usage?: UsageView, turns?: UITurn[]): CoreUITimeline {
     const meta = this.metadata()
     return {
       sessionId: this.sessionKey,
       upto: this.upto,
       opState: meta.opState,
+      pendingInputs: this.pendingInputs(),
       nodes,
       turns: turns ?? this.turnsProjection.turns.map((turn) => structuredClone(turn)),
       ...(meta.budget ? { budget: meta.budget } : {}),

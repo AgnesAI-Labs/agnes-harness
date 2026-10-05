@@ -44,7 +44,9 @@ import {
   type UITimeline,
   type UITimelinePatch,
   type UITurn,
+  validateAgainst,
 } from '@agnes/protocol'
+import { SessionSendNowParams } from '@agnes/protocol/gen/agnes-v1'
 import {
   readToolDetailPage,
   TOOL_DETAIL_PAGE_BYTES,
@@ -412,6 +414,7 @@ export function diffUITimeline(previous: UITimeline, next: UITimeline): UITimeli
     opState: structuredClone(next.opState),
     changes,
     turnChanges,
+    ...(next.pendingInputs === undefined ? {} : { pendingInputs: structuredClone(next.pendingInputs) }),
     ...(next.yolo === undefined ? {} : { yolo: next.yolo }),
     ...(next.budget === undefined ? {} : { budget: structuredClone(next.budget) }),
     ...(next.usage === undefined ? {} : { usage: structuredClone(next.usage) }),
@@ -1478,6 +1481,29 @@ export function registerAgnes(
   ): Promise<JournalResult> => {
     const sessionId = String(payload.sessionId)
     switch (kind) {
+      case 'sendNow': {
+        if (!validateAgainst(SessionSendNowParams, { ...payload, commandId }).ok)
+          throw rpcError('INVALID_PARAMS', { reason: 'invalid queued input selection' })
+        const entry = cx.registry.require(sessionId)
+        const queued = cx.activationBarrier.enqueue('turn')
+        try {
+          const invocation = await queued.start()
+          const seq = await invocation.run(() =>
+            entry.session
+              .sendQueuedNow(String(payload.itemId), connActor(c.conn), admissionId)
+              .catch((error: unknown) => {
+                const failure = error as { code?: unknown; data?: { code?: unknown } }
+                if (failure.code === 'E_RELATION' || failure.data?.code === 'E_RELATION')
+                  throw rpcError('SEMANTIC_REJECTED', { code: 'QUEUED_INPUT_GONE', itemId: payload.itemId })
+                throw error
+              }),
+          )
+          cx.continueFollowUps?.(entry, undefined, true)
+          return { seq }
+        } finally {
+          queued.cancel()
+        }
+      }
       case 'steer':
       case 'followUp': {
         const entry = cx.registry.require(sessionId)
@@ -1505,6 +1531,7 @@ export function registerAgnes(
               commandId,
               admissionId,
             })
+            if (kind === 'followUp') cx.continueFollowUps?.(entry)
             return { seq }
           })
         } finally {
@@ -1575,7 +1602,34 @@ export function registerAgnes(
     payload: Record<string, unknown>,
     admissionId: string,
     c: CallContext,
+    guard: () => void,
   ): Promise<JournalResult | undefined> => {
+    if (kind === 'sendNow') {
+      const entry = cx.registry.get(String(payload.sessionId))
+      if (!entry) return undefined
+      const event = await scanNewest(
+        entry.session as unknown as ScannableSession,
+        'x/core/queued-send-now',
+        (candidate) =>
+          (candidate as EventEnvelope).origin === 'system' &&
+          (candidate as EventEnvelope).trust === 'trusted' &&
+          ((candidate as EventEnvelope).lane ?? 'main') === 'main' &&
+          (candidate.data as { admissionId?: unknown } | null)?.admissionId === admissionId,
+      )
+      if (!event) return undefined
+      const timeline = await entry.session.projectUI()
+      // Receipt recovery must not restart unrelated inputs after the selected item has run:
+      // the user may have stopped a later turn while this receipt was unacknowledged.
+      if (timeline.pendingInputs?.some((item) => item.itemId === payload.itemId)) {
+        guard()
+        if (timeline.opState?.phase === 'cancel_requested') {
+          await entry.session.run({ until: 'turn-end', signal: new AbortController().signal })
+          guard()
+        }
+        cx.continueFollowUps?.(entry, undefined, true)
+      }
+      return { seq: event.seq - 1 }
+    }
     if (kind === 'steer' || kind === 'followUp') {
       const entry = cx.registry.get(String(payload.sessionId))
       if (!entry) return undefined
@@ -1644,6 +1698,7 @@ export function registerAgnes(
     if (
       kind === 'steer' ||
       kind === 'followUp' ||
+      kind === 'sendNow' ||
       kind === 'compact' ||
       kind === 'fork' ||
       kind === 'jobs.enqueue'
@@ -1670,7 +1725,16 @@ export function registerAgnes(
     if (st.state === 'complete') return { ...st.result, replayed: true } as Ack
     if (st.state === 'uncertain') {
       guard()
-      const recovered = await recover(kind, payload, admissionId, c)
+      const recovered =
+        kind === 'sendNow'
+          ? await runQueued(
+              cx.commandQueue,
+              sessionId,
+              neverAbort(),
+              () => recover(kind, payload, admissionId, c, guard),
+              guard,
+            )
+          : await recover(kind, payload, admissionId, c, guard)
       if (!recovered) return { replayed: false, status: 'uncertain' }
       await cx.journal.complete(identity, recovered)
       return { ...recovered, replayed: true } as Ack

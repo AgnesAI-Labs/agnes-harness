@@ -311,6 +311,43 @@ describe('durable tool dispatch state', () => {
     },
   )
 
+  it('keeps a Host mutation unknown when the user Stop is on the ledger, even once the tool has stopped', async () => {
+    let stop = () => {}
+    const opened = await ready(
+      computerRegistry(
+        computerTool(
+          (_args, ctx) =>
+            new Promise((resolve) => {
+              ctx.signal.addEventListener(
+                'abort',
+                () => resolve({ content: [{ type: 'text', text: 'stopped' }] }),
+                { once: true },
+              )
+              stop()
+            }),
+        ),
+      ),
+      { dispatch: async (input) => ({ phase: 'responded', result: await input.invoke() }) },
+    )
+    stop = () => void opened.session.abort(actor)
+
+    await opened.session.runToolsPhase()
+
+    expect(
+      (await opened.log.scan({ type: 'x/core/op-mark', limit: 100 })).some(
+        (row) => (row.data as { control?: string } | null)?.control === 'cancel_requested',
+      ),
+    ).toBe(true)
+    expect((await opened.log.scan({ type: 'tool/result', limit: 10 }))[0]?.data).toMatchObject({
+      code: 'TOOL_OUTCOME_UNKNOWN',
+      isError: true,
+      content: [{ text: expect.stringMatching(/was cancelled/) }],
+    })
+    expect(
+      (await opened.log.scan({ type: 'effect/settled', order: 'desc', limit: 1 }))[0]?.data,
+    ).toMatchObject({ outcome: 'unknown' })
+  })
+
   it('refuses a Host-domain tool before effect intent when the private dispatch port is absent', async () => {
     let executions = 0
     const opened = await ready(

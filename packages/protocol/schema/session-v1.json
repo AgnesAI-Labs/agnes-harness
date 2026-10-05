@@ -329,7 +329,8 @@
       "required": ["content"],
       "properties": {
         "content": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/ContentBlock" } },
-        "kind": { "enum": ["prompt", "steer", "follow_up", "runtime_context"] }
+        "kind": { "enum": ["prompt", "steer", "follow_up", "runtime_context"] },
+        "titleLocale": { "enum": ["en", "zh-CN"] }
       }
     },
     "AssistantMessage": {
@@ -1685,6 +1686,7 @@
         "enqueuedAt": {
           "type": "string"
         },
+        "titleLocale": { "enum": ["en", "zh-CN"] },
         "kind": {
           "enum": ["prompt", "steer", "follow_up"]
         },

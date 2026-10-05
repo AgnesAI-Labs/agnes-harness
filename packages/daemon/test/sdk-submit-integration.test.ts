@@ -54,8 +54,14 @@ it.each(['steer', 'followUp'] as const)(
       await expect(session[kind]('queued once', { commandId: 'stable' })).rejects.toBeInstanceOf(
         RequestTimeout,
       )
+      const receiptSeq = before + 1
+      if (kind === 'followUp')
+        await vi.waitFor(async () => expect(await core.scan({ type: 'turn/end', limit: 10 })).toHaveLength(1))
       const after = core.lastSeq
-      expect(after).toBe(before + 1)
+      const inbox = await core.scan({ type: 'inbox', limit: 10 })
+      expect(
+        inbox.filter((row: { data: unknown }) => JSON.stringify(row.data).includes('"stable"')),
+      ).toHaveLength(1)
       const reopened = fileJournal(dir)
       const pending = await reopened.pending(session.id)
       expect(pending).toHaveLength(1)
@@ -63,11 +69,12 @@ it.each(['steer', 'followUp'] as const)(
       await client.resendPending(session.id)
       expect(core.lastSeq).toBe(after)
       expect(await reopened.pending(session.id)).toEqual([])
-      expect(replies[0]).toMatchObject({ result: { seq: after, replayed: false } })
-      expect(replies[1]).toMatchObject({ result: { seq: after, replayed: true } })
-      expect(await session[kind]('queued once', { commandId: 'stable' })).toBe(after)
+      expect(replies[0]).toMatchObject({ result: { seq: receiptSeq, replayed: false } })
+      expect(replies[1]).toMatchObject({ result: { seq: receiptSeq, replayed: true } })
+      expect(await session[kind]('queued once', { commandId: 'stable' })).toBe(receiptSeq)
       expect(core.lastSeq).toBe(after)
       expect(JSON.stringify(await core.scan({ toSeq: core.lastSeq }))).toContain('queued once')
+      if (kind === 'followUp') expect(await core.scan({ type: 'user/message', limit: 10 })).toHaveLength(1)
     } finally {
       await client.close()
       await server.close()

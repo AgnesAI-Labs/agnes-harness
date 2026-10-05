@@ -161,8 +161,9 @@ describe('ResourceControlStore admission barrier', () => {
   it('notifies session lifecycle only after a successful durable resource snapshot publication', async () => {
     const { createResourceControlStore } = await import('../src/index.js')
     directory = await mkdtemp(join(tmpdir(), 'agnes-resource-session-refresh-'))
-    const item = candidate('lifecycle')
+    let item = candidate('lifecycle')
     let fail = false
+    let removed = false
     const published: string[] = []
     const store = createResourceControlStore({
       directory,
@@ -170,7 +171,7 @@ describe('ResourceControlStore admission barrier', () => {
       skills: {
         refresh: async () => {
           if (fail) throw new Error('candidate rejected')
-          return [item]
+          return removed ? [] : [item]
         },
         reconcile: async ({ resources }) =>
           resources.map((resource) => ({ resourceId: resource.resourceId, actual: 'disabled' })),
@@ -245,6 +246,32 @@ describe('ResourceControlStore admission barrier', () => {
     await expect(settled(service, disable.operationId)).resolves.toMatchObject({ state: 'succeeded' })
     expect(published).toEqual([profile, profile, profile, profile])
 
+    const unchanged = await service.call(
+      '_agnes/v1/skills.refresh',
+      { profile, clientId: 'client', commandId: 'lifecycle-unchanged' },
+      authority,
+    )
+    await expect(settled(service, unchanged.operationId)).resolves.toMatchObject({ state: 'succeeded' })
+    expect(published).toEqual([profile, profile, profile, profile])
+
+    item = { ...item, descriptor: { ...item.descriptor, revision: hash('edited') } }
+    const edited = await service.call(
+      '_agnes/v1/skills.refresh',
+      { profile, clientId: 'client', commandId: 'lifecycle-edited' },
+      authority,
+    )
+    await expect(settled(service, edited.operationId)).resolves.toMatchObject({ state: 'succeeded' })
+    expect(published).toEqual([profile, profile, profile, profile, profile])
+
+    removed = true
+    const deleted = await service.call(
+      '_agnes/v1/skills.refresh',
+      { profile, clientId: 'client', commandId: 'lifecycle-deleted' },
+      authority,
+    )
+    await expect(settled(service, deleted.operationId)).resolves.toMatchObject({ state: 'succeeded' })
+    expect(published).toEqual([profile, profile, profile, profile, profile, profile])
+
     fail = true
     const failed = await service.call(
       '_agnes/v1/skills.refresh',
@@ -252,7 +279,7 @@ describe('ResourceControlStore admission barrier', () => {
       authority,
     )
     await expect(settled(service, failed.operationId)).resolves.toMatchObject({ state: 'failed' })
-    expect(published).toEqual([profile, profile, profile, profile])
+    expect(published).toEqual([profile, profile, profile, profile, profile, profile])
   }, 20_000)
 
   it('returns an operation receipt before a slow driver settles', async () => {

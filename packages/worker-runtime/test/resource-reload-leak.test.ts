@@ -296,6 +296,7 @@ describe('a reload that fails after its new generation is already bootstrapped',
       encodeFrame({ kind: 'command', requestId: 's1', method: 'resource.stale', params: {} } as CommandFrame),
     )
     await waitForReply(fromWorker, 's1')
+    await vi.waitFor(() => expect(failures).toHaveLength(1))
     for (const turn of [1, 2, 3]) {
       link.push(
         encodeFrame({
@@ -309,19 +310,23 @@ describe('a reload that fails after its new generation is already bootstrapped',
       await waitForReply(fromWorker, `r${turn}`)
     }
 
-    // Three retried reloads, three generations bootstrapped and abandoned (the review's own
-    // reproduction of this leak reported created=4 abandoned=3 abandonedClosed=0).
-    expect(tracked.generations).toHaveLength(4)
-    expect(failures).toHaveLength(3)
+    // One idle attempt and three retried reloads are abandoned and must all be closed.
+    expect(tracked.generations).toHaveLength(5)
+    expect(failures).toHaveLength(4)
     const [live, ...abandoned] = tracked.generations
-    expect(abandoned.map((generation) => generation.closed)).toEqual([1, 1, 1])
+    expect(abandoned.map((generation) => generation.closed)).toEqual([1, 1, 1, 1])
     // The generation this worker is still serving must never be closed by a failed reload - closing it
     // would break the very turn the failed reload was supposed to leave untouched.
     expect(live?.closed).toBe(0)
 
     // Each failed attempt restores the old MCP rows before the next turn retries.
-    expect(reloadCalls.map((call) => call.id)).toEqual(['agnes/skills', 'agnes/skills', 'agnes/skills'])
-    expect(rowApplies).toHaveLength(7) // boot, then target and compensation per retried turn
+    expect(reloadCalls.map((call) => call.id)).toEqual([
+      'agnes/skills',
+      'agnes/skills',
+      'agnes/skills',
+      'agnes/skills',
+    ])
+    expect(rowApplies).toHaveLength(9) // boot, then target and compensation per retried turn
     const [boot, ...retries] = rowApplies
     expect(boot?.filter((id) => id.startsWith('ext:agnes/mcp-'))).toHaveLength(1)
     for (let i = 0; i < retries.length; i += 2) {

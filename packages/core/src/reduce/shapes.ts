@@ -49,6 +49,7 @@ export type InboxItem = {
   admissionId?: string
   enqueuedAt: string
   kind?: 'prompt' | 'steer' | 'follow_up'
+  titleLocale?: 'en' | 'zh-CN'
   // Set by whoever enqueued the item, and defaulting to 'trusted' when absent. The accept path
   // stamps the resulting user/message with it.
   trust?: 'trusted' | 'untrusted'
@@ -109,6 +110,7 @@ export type ApprovalDecided = {
   grantId?: string
   decidedBy?: Actor
   ticket?: string
+  reason?: string
 }
 
 export type TokenCounts = {

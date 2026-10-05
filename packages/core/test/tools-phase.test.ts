@@ -3,6 +3,7 @@ import { Type } from '@sinclair/typebox'
 import { describe, expect, it, vi } from 'vitest'
 import { createWorkspaceInvocationPort, type FsOps, type WorkspaceInvocationSource } from '../src/index.js'
 import { ToolRegistry } from '../src/registry/tools.js'
+import { withPhase } from '../src/step/op-state.js'
 import { fakeProvider, type Script, sent, toolTurn, usage } from './helpers/fake-provider.js'
 import { fakeSeams } from './helpers/fake-seams.js'
 import { actor, openSession, openWorldTool, readTool, shellTool, writeTool } from './helpers/open-session.js'
@@ -362,6 +363,94 @@ describe('tools phase', () => {
     })
   })
 
+  // The reason table: each way an approval can end is its own fact on the ledger and its own words
+  // for the model. A bare verdict from a seam that gives no reason keeps the line it always had.
+  it.each([
+    {
+      answer: { verdict: 'rejected', reason: 'user_rejected' },
+      decided: { verdict: 'rejected', reason: 'user_rejected' },
+      code: 'APPROVAL_REJECTED',
+      text: /^the user rejected this action; do not retry the same call without asking$/,
+    },
+    {
+      answer: { verdict: 'rejected', reason: 'timeout' },
+      decided: { verdict: 'rejected', reason: 'timeout' },
+      code: 'APPROVAL_REJECTED',
+      text: /^no one answered the approval within 60s, so the action was not run; ask the user before trying again$/,
+    },
+    {
+      answer: 'unavailable',
+      decided: { verdict: 'unavailable', reason: 'no_approver' },
+      code: 'APPROVAL_UNAVAILABLE',
+      text: /^no client was connected to approve this action, so it was not run; tell the user it needs their approval$/,
+    },
+    {
+      answer: { verdict: 'cancelled', reason: 'stopped' },
+      decided: { verdict: 'cancelled', reason: 'stopped' },
+      code: 'CANCELLED',
+      text: /^cancelled while waiting for approval$/,
+    },
+    {
+      answer: { verdict: 'rejected', reason: 'policy_denied' },
+      decided: { verdict: 'rejected', reason: 'policy_denied' },
+      code: 'APPROVAL_REJECTED',
+      text: /^blocked by the command policy$/,
+    },
+    {
+      answer: 'rejected',
+      decided: { verdict: 'rejected' },
+      code: 'APPROVAL_REJECTED',
+      text: /^approval rejected$/,
+    },
+  ] as const)('records $decided and tells the model why when approval ends as $answer', async (row) => {
+    const t = await atTools(
+      [toolTurn('shell', { command: 'rm' })],
+      withTool(shellTool()),
+      fakeSeams({ approval: { ask: async () => row.answer as never, resume: async () => null } }),
+    )
+    await t.session.runToolsPhase()
+    const decided = (await t.log.scan({ type: 'approval/decided', limit: 5 }))[0]?.data as Record<
+      string,
+      unknown
+    >
+    expect(decided).toMatchObject({ ...row.decided, via: 'sync' })
+    if (!('reason' in row.decided)) expect(decided).not.toHaveProperty('reason')
+    const result = (await t.log.scan({ type: 'tool/result', limit: 5 }))[0]?.data as {
+      code: string
+      content: Array<{ text: string }>
+    }
+    expect(result.code).toBe(row.code)
+    expect(result.content[0]?.text).toMatch(row.text)
+    expect(await t.log.scan({ type: 'effect/intent', limit: 10 })).toHaveLength(1)
+  })
+
+  it('an abort while the approval is open is cancelled for the stop, not rejected', async () => {
+    let abort!: () => void
+    const t = await atTools(
+      [toolTurn('shell', { command: 'rm' })],
+      withTool(shellTool()),
+      fakeSeams({
+        approval: {
+          ask: () => {
+            queueMicrotask(abort)
+            return new Promise(() => undefined)
+          },
+          resume: async () => null,
+        },
+      }),
+    )
+    abort = () => void t.session.abort(actor)
+    await t.session.runToolsPhase()
+    expect((await t.log.scan({ type: 'approval/decided', limit: 5 }))[0]?.data).toMatchObject({
+      verdict: 'cancelled',
+      via: 'sync',
+      reason: 'stopped',
+    })
+    expect((await t.log.scan({ type: 'tool/result', limit: 5 }))[0]?.data).toMatchObject({
+      code: 'CANCELLED',
+    })
+  })
+
   it('an approvalRequest hook can raise the risk/summary an approver is shown', async () => {
     let seenRequest: unknown
     const seams = fakeSeams({
@@ -630,6 +719,144 @@ describe('tools phase', () => {
     expect(res.content[0]?.text).toMatch(/5 ms limit.*aborted.*partial.*in the background/s)
     expect((await s.log.scan({ type: 'effect/settled', limit: 10 })).at(-1)?.data).toMatchObject({
       outcome: 'unknown',
+    })
+  })
+
+  describe('a Stop on a call that is running', () => {
+    type Opened = Awaited<ReturnType<typeof atTools>>
+    type Row = {
+      code?: string
+      partial?: boolean
+      cancelledBy?: { id: string }
+      content: Array<{ text: string }>
+    }
+    // Not the session actor, so a `cancelledBy` read from the wrong place cannot pass by coincidence.
+    const stopper = { ...actor, id: 'stopper' }
+    const ledger = async (s: Opened) => ({
+      result: (await s.log.scan({ type: 'tool/result', limit: 5 }))[0]?.data as Row,
+      settled: (await s.log.scan({ type: 'effect/settled', order: 'desc', limit: 1 }))[0]?.data,
+    })
+    /**
+     * A shell call that arranges its own stop once it is running, and finishes `after` ms after the
+     * kernel tells it to; `'never'` is a tool that does not come back at all.
+     */
+    const stoppedShell = (how: 'user' | 'bare' | 'deadline', after: number | 'never', held: { s?: Opened }) =>
+      shellTool(
+        (_args, ctx) =>
+          new Promise<{ content: Array<{ type: 'text'; text: string }> }>((resolve) => {
+            if (after !== 'never')
+              ctx.signal.addEventListener(
+                'abort',
+                () => setTimeout(() => resolve({ content: [{ type: 'text', text: 'killed' }] }), after),
+                { once: true },
+              )
+            const session = held.s?.session
+            if (how === 'user') void session?.abort(stopper)
+            else if (how === 'bare') session?.ac.abort()
+            // The cancel is on the ledger but nothing has pulled the signal: only the deadline will.
+            else
+              void session?.transition([], (cur) =>
+                cur
+                  ? withPhase(cur, cur.phase, {
+                      control: { status: 'cancel_requested', requestedAt: 't', by: stopper },
+                    })
+                  : cur,
+              )
+          }),
+      )
+    const open = async (how: 'user' | 'bare' | 'deadline', after: number | 'never') => {
+      const held: { s?: Opened } = {}
+      held.s = await atTools(
+        [toolTurn('shell', { command: 'sleep 30' })],
+        withTool(stoppedShell(how, after, held)),
+      )
+      return held.s
+    }
+
+    it.each([
+      ['at once', 0],
+      ['a moment after it was told to', 25],
+    ] as const)(
+      'is recorded as cancelled, with the warning kept, once the tool stops %s',
+      async (_when, after) => {
+        const s = await open('user', after)
+        await s.session.runToolsPhase()
+        const { result, settled } = await ledger(s)
+        expect(result).toMatchObject({
+          isError: true,
+          code: 'CANCELLED',
+          partial: true,
+          cancelledBy: { id: 'stopper' },
+        })
+        const text = result.content[0]?.text ?? ''
+        expect(text).toMatch(/was cancelled while running and has stopped/)
+        expect(text).toMatch(/partial effect/)
+        expect(text).toMatch(/Inspect the current state before retrying/)
+        expect(text).toMatch(/do not rerun it unchanged/)
+        expect(text).not.toMatch(/unknown/i)
+        expect(settled).toMatchObject({ outcome: 'aborted' })
+      },
+    )
+
+    it('stays unknown when the tool has not stopped within the bounded wait', async () => {
+      const s = await open('user', 'never')
+      vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+      try {
+        let done = false
+        const phase = s.session.runToolsPhase().then(() => {
+          done = true
+        })
+        for (let i = 0; i < 40 && !done; i++) await vi.advanceTimersByTimeAsync(100)
+        // A wait that is unbounded, or bounded far past a couple of seconds, leaves the call open.
+        expect(done).toBe(true)
+        await phase
+      } finally {
+        vi.useRealTimers()
+      }
+      const { result, settled } = await ledger(s)
+      expect(result).toMatchObject({ isError: true, code: 'TOOL_OUTCOME_UNKNOWN' })
+      expect(result.content[0]?.text).toMatch(/was cancelled/)
+      expect(result.content[0]?.text).toMatch(/do not rerun it unchanged/)
+      expect(settled).toMatchObject({ outcome: 'unknown' })
+    })
+
+    it('stays unknown when nothing on the ledger asked for the stop', async () => {
+      const s = await open('bare', 0)
+      await s.session.runToolsPhase()
+      const { result, settled } = await ledger(s)
+      expect(result).toMatchObject({ isError: true, code: 'TOOL_OUTCOME_UNKNOWN' })
+      expect(result.content[0]?.text).toMatch(/was cancelled/)
+      expect(settled).toMatchObject({ outcome: 'unknown' })
+    })
+
+    it('stays unknown when the deadline fires while a cancel is already on the ledger', async () => {
+      const s = await open('deadline', 0)
+      s.session.preset = {
+        ...s.session.preset,
+        tools: { ...s.session.preset.tools, timeoutMs: 5, timeouts: {} },
+      }
+      await s.session.runToolsPhase()
+      const { result, settled } = await ledger(s)
+      expect(result).toMatchObject({ isError: true, code: 'TOOL_OUTCOME_UNKNOWN' })
+      expect(result.content[0]?.text).toMatch(/5 ms limit.*aborted/s)
+      expect(settled).toMatchObject({ outcome: 'unknown' })
+    })
+
+    it('is still recorded as cancelled, at once, for a read-only call', async () => {
+      const held: { s?: Opened } = {}
+      held.s = await atTools(
+        [toolTurn('read', {})],
+        withTool(
+          readTool(() => {
+            void held.s?.session.abort(stopper)
+            return new Promise(() => undefined)
+          }),
+        ),
+      )
+      await held.s.session.runToolsPhase()
+      const { result, settled } = await ledger(held.s)
+      expect(result).toMatchObject({ code: 'CANCELLED', partial: true })
+      expect(settled).toMatchObject({ outcome: 'aborted' })
     })
   })
 

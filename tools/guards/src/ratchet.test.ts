@@ -1,4 +1,15 @@
-// Measure Host usage delivery composition and its durable journal with exact ceilings; no headroom.
+// Measure merged queued-input projection and title/startup changes with exact source ceilings; no headroom.
+// TITLE-LOCALE / FOLLOW-UP-RUNNER: exact reviewed totals for prompt-based title language, FIFO wake-up and run serialization.
+// Core +20, Protocol +1, SDK +14, daemon +96, Web/app +4, Host +13; no spare allocation.
+// QUEUE-VIEW-SEND-NOW: persisted queue projection, atomic priority/cancellation, replay refusal cleanup,
+// worker handoff reservation and accessible queue actions. Exact measured totals; no spare allocation.
+// Core +46, Protocol +2, SDK +20, daemon +70, Web +76/app +74, Web-units +65.
+// QUEUE-REVIEW: exact measured Core +7 for locked input claims, SDK +11 for stale replay cleanup,
+// daemon +16 for serialized receipt recovery and current ownership/generation checks; no spare allocation.
+// FIRST-SEND-REVIEW: Web/app +2 to report sidebar refresh failure separately; queue row wrapper +4.
+// Synchronize JSON limits and static ceilings to the exact reviewed totals, without spare allocation.
+// TITLE-PRIORITY: explicit priority, trusted fallback and descriptive titles replace assistant context;
+// one model call selects language before title, with format-only JSON parsing. Host +13 lines, exact.
 // Measure combined locale catalogs, domain cards and runtime clients with exact ceilings; no headroom.
 // Verify selected catalog pricing before billing settlement with exact measured ceilings.
 // Cache validated immutable assembly snapshots and share frozen assembly recipes;
@@ -291,15 +302,18 @@ const INITIAL_CEILING: Record<string, number> = {
   // B-line diagnostics dialog: React view adds 147 lines; measured 4706, exact cap.
   // Domain cards in the conversation window projection and message list: measured 4792, exact cap (+86).
   // Popover placement measures the trigger's own window. Measured 6714, exact, no spare (+2).
-  'packages/web-ui/src': 6714,
+  // Sixth main synchronization brings main's queued-input CI fixes. Measured 6736, exact, no spare.
+  'packages/web-ui/src': 6736,
   // W8a-3: retire the native tool renderer in favor of one compatibility root; measured 4630.
   // The offline diagnostics viewer refuses an unknown bundle version (+7 lines); measured 4645, exact cap.
   // Sidebar binds against its own document and window. Measured 5559, exact, no spare (+1).
-  'packages/web-units/src': 5559,
+  'packages/web-units/src': 5628,
   // Locale catalogs on LocaleService. Measured 1745, exact, no spare (+31).
   // Failed shell calls read as their exit code (+19 lines); measured 4891, exact cap.
   // W8a-3: retire the native tool renderer in favor of one compatibility root; measured 4630.
-  'packages/base/extensions/tools-core': 800,
+  // Write staleness guard: a per-session table of what each file looked like when read, checked by
+  // `write` (+55 counted lines, measured 855, exact cap).
+  'packages/base/extensions/tools-core': 855,
   // MCP-ROWS stage 2b, steps 1-2 (D118): connection supervisor, catalog hub, and the per-server
   // extension row wiring them together. New extension at the shared default cap; measured 276.
   'packages/base/extensions/mcp-server': 800,
@@ -467,7 +481,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // UI integration merge: the default React transcript now receives the inline card claim callback,
   // which lands on top of the diagnostics wiring above. Re-measured with countLines(): 1827, exact.
   // Locale bridge and slot card bindings removed. Measured 2014, exact, no spare (-2).
-  'packages/web/src/app': 2014,
+  'packages/web/src/app': 2094,
   // 2026-09-22 UI plugin management: inject the embedded pane's client runtime reconciler.
   // 2026-09-25 UI refactor: permission options now render through the React region contract.
   // Re-measured with countLines(): 215, exact, no spare.
@@ -501,7 +515,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // Merge of CHUNK-LEDGER-SLIM (lost-text marker, +4) with the streaming-smoothness quick fixes (727):
   // sampled fingerprints also carry lostChars. Re-measured on the merged tree: 731, exact, no spare.
   // Slot card context travels with the renderer options. Measured 787, exact, no spare (+1).
-  'packages/web/src/timeline': 787,
+  // Sixth main synchronization brings main's queued-input CI fixes. Measured 797, exact, no spare.
+  'packages/web/src/timeline': 797,
   // 2026-09-17：navigation.ts 的 folderIcon 换成客户端 AgnesProjectFolderIcon 两态字形
   // （两条 path + folderSvg 构造器），展开/收起由 CSS 的 [aria-expanded] 切换。实测 108。
   // SESSION-ACTIONS integrated with b/main: exact increment +43.
@@ -1057,12 +1072,11 @@ const INITIAL_CEILING: Record<string, number> = {
   // Measured 25811, exact cap.
   // The approval card's summary line is built by summarizeCall (new file). Measured 25861 (+50), exact cap.
   // Sourced memory and hybrid retrieval providers. Measured 32058, exact, no spare.
-  // fixed Tools +696, bounded Context +344, restricted Loop +1066; exact, no spare.
-  // #293 (1d73af2a): measured 34773, approved +15 for the C10 model-source consumer.
-  // J-23 verifyCall convergence removes 12; #295 root exports add 12: merged total 34773, exact cap.
-  // Root export of the default projection factory and its public types (+19). Measured 34792, exact.
-  // Projection catch-up runs one pull at a time and starts the pull a refresh waits on after it asked (+3). Measured 34795, exact.
-  'packages/core/src': 34795,
+  // Sixth main synchronization brings main's queued-input CI fixes. Measured 32862, exact, no spare.
+  // Exact merged main and runtime integration source count; no spare allocation.
+  // Public factory exports and converged model-source consumption; exact merged count, no spare.
+  // Sixth main synchronization merged with the integration tip. Measured 35005, exact, no spare.
+  'packages/core/src': 35005,
   // Testkit-only reference Effects runner adds 202 measured lines; exact cap, no spare.
   'packages/core/testkit': 1997,
   // 2026-09-15: DeepSeek V4 Pro/Flash ship a known-thinking-corrections table (new file) so the
@@ -1381,7 +1395,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // Bounded schema codecs and client transport validation: exact measured 2985, no spare.
   // Reviewed runtime contracts plus the generated legacy identity metadata export: measured 3444 (+1), exact.
   // Reviewed runtime contracts with generated State metadata exports: measured 3459, exact.
-  'packages/protocol/src': 3462,
+  'packages/protocol/src': 3465,
   'packages/cli/src/tui': 38,
   // 2026-09-16: first registration of packages/cli-tui — it matched none of the (then) 113 ratchet
   // keys, so the cli-progress-surface plan's Tasks 1-4 (Loader hide/restart/stop, formatTurnSummary,
@@ -1655,7 +1669,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // also removes format characters. Measured 6231, exact, no spare (+208).
   // `./runtime` becomes a barrel that also exports the runtime client. Measured 6252, exact, no spare (+21).
   // The runtime client exposes the capabilities its welcome negotiated. Measured 6255, exact, no spare (+3).
-  'packages/sdk/src': 6255,
+  'packages/sdk/src': 6300,
   'packages/sdk/src/extensions.node': 21,
   'packages/sdk/src/package-admin.node': 147,
   'packages/sdk/src/surface.browser': 3,
@@ -2025,9 +2039,10 @@ const INITIAL_CEILING: Record<string, number> = {
   // Native conversation source for the default projection read over shared opening/history windows; measured 27424 (+68), exact.
   // Runtime HTTP credentials are generation-bound and Host read ports are wired. Measured 27535, exact, no spare.
   // Host projection lifecycle and read-port composition. Measured 27549, exact.
-  // Domain store journals accepted commands only and notifies after write commits. Measured 27567, exact, no spare (+18).
-  // Supervisor's single domain store and Host source wiring; exact measured allocation.
-  'packages/daemon/src': 27629,
+  // Sixth main synchronization merged with the current integration tip. Measured 27731, exact, no spare.
+  // Sixth main synchronization brings main's queued-input CI fixes. Measured 27749, exact, no spare.
+  // Exact merged main and runtime integration source count; no spare allocation.
+  'packages/daemon/src': 27829,
   'packages/daemon/src/packages/admin-session': 46,
   // 2026-09-14: whole-branch review fix wave (Finding 1) adds the two missing
   // 'pins/inspect'/'pins/release' entries to the ACTIONS BFF route allowlist, which had been left
@@ -2284,7 +2299,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // Region mounts go through a slot port built from the registry. Measured 16705, exact, no spare (-42).
   // The default shell rewrites its lists in place so a selection survives an update. Measured 16745, exact,
   // no spare (+40).
-  'packages/web/src': 16745,
+  // Sixth main synchronization brings main's queued-input CI fixes. Measured 16849, exact, no spare.
+  'packages/web/src': 16849,
   // 2026-09-17 web-client-modules frontend track (rebased onto L0/permission-picker main): re-measured exact value below.
   // 2026-09-14: Task 7 orphaned-pin-cleanup adds the orphan-pins section to PluginAdminPage — the
   // #orphanPins/#orphanPinsList/#orphanPinsStatus/#orphanPinsReleaseAll element bindings, the
@@ -2856,11 +2872,12 @@ const INITIAL_CEILING: Record<string, number> = {
   // Runtime HTTP credentials are generation-bound and Host read ports are wired. Measured 80050, exact, no spare.
   // Binding-scoped model Local egress adds 461 measured lines; measured 80511, exact, no spare.
   // feat(host): wire projection read ownership and daemon lifecycle. Measured 80687, exact, no spare.
-  // Explicit model deployment assembly: call-bound markers, source fences and final C22 egress.
-  // Exact measured total 80856 (+169); no exclusions or spare allocation.
-  // One daemon store feeds commands and projection. Measured 80883, exact, no spare.
-  // Verified runtime usage composes with the original ledger. Measured 81225, exact, no spare.
-  'packages/host/src': 81225,
+  // Sixth main synchronization merged with the current integration tip. Measured 80713, exact, no spare.
+  // Sixth main synchronization brings main's queued-input CI fixes. Measured 80715, exact, no spare.
+  // Exact merged main and runtime integration source count; no spare allocation.
+  // Sixth main synchronization merged with the integration tip. Measured 81225, exact, no spare.
+  // Sixth main synchronization merged with the integration tip. Measured 81253, exact, no spare.
+  'packages/host/src': 81253,
   'packages/host/src/ext-host/service-invocation': 247,
   // T5.2's permission projector is kept independently bounded so later extension-host work cannot
   // hide in the package-wide increment. Measured source: 86 lines.
@@ -3027,7 +3044,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // First-cause timedOut in exec and exec-win32. Measured 5034 (+9), exact cap.
   // The fence refuses writes to the installation's own state under full file access. Measured 5053,
   // exact, no spare (+19).
-  'packages/host/src/adapters': 5053,
+  // Approval reasons: the Prompter type may answer with a reason (+2). Measured 5055, exact cap.
+  'packages/host/src/adapters': 5055,
 
   // C1b Task 5 persists child creation attempts and deferred recovery; exact total, no spare.
   // Task 17 review: sqlite_master scan + table-name refuse. Re-measured: 674, exact.
@@ -3088,6 +3106,8 @@ const EXTENSION_CEILING_EXCEPTIONS = new Map([
   // SKILL-CATALOG-CLEAN-REWRITE: same reviewed exact total as the catalog/name activation budget above.
   // Skill description bounds and paged reads. Measured 1121, exact.
   ['skills', 1121],
+  // Write staleness guard (per-session table of observed file versions, checked by write). Measured 855, exact.
+  ['tools-core', 855],
 ])
 
 describe('bundled extension line budgets (default ≤ 800, named reviewed exceptions)', () => {

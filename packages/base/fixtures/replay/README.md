@@ -84,9 +84,9 @@ Two rules keep a case honest:
   case fail, switch it back on. A tag nobody can falsify is a label, not a claim. The known tags,
   and what each one means, are listed in the runner.
 
-`prompterSays` is what makes a policy verdict falsifiable. With nobody connected, an unmatched call
-and a denied one both come back as `approval rejected`, so a deny case would stay green with its own
-rule deleted. Connect an operator who says the opposite of what the rule says, and only the rule can
+`prompterSays` is what makes a policy verdict falsifiable. A denied call comes back as `blocked by the
+command policy`, but a deny case must still not stay green with its own rule deleted for some other
+reason. Connect an operator who says the opposite of what the rule says, and only the rule can
 produce the outcome the case asserts.
 
 A rule in `policy` is read twice: this package's approval seam evaluates it, and the host validates

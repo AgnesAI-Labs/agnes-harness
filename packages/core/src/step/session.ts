@@ -29,10 +29,11 @@ import {
   validateActor,
 } from '@agnes/protocol'
 import { hasChildControl } from '../child/store.js'
+import { isPending, normalizeApproval } from '../effects/approval-answer.js'
 import { EffectRuntime } from '../effects/effect.js'
 import { type ExecuteAttempt, ExecutePermitRegistry } from '../effects/execute-permits.js'
 import { type NestedToolLease, NestedToolScheduler } from '../effects/scheduler.js'
-import type { ApprovalRequest, Pending, Verdict, VerifierVerdict } from '../effects/seams.js'
+import type { ApprovalAnswer, ApprovalRequest, Pending, Verdict, VerifierVerdict } from '../effects/seams.js'
 import type { ChildrenFactory, ToolContextDeps } from '../effects/tool-context.js'
 import {
   assertToolDispatchAvailable,
@@ -202,7 +203,7 @@ export type CoreReplacementOutputMap = {
   Inbox: InboxReplacementOutput
   Budget: BudgetReplacementOutput
   Inference: AsyncIterable<InferenceEvent>
-  Approval: Verdict | Pending
+  Approval: Verdict | ApprovalAnswer | Pending
   ToolExecution: ToolResult
   StopGate: StopGateReplacementOutput
 }
@@ -499,6 +500,7 @@ export class SessionImpl {
   // this: both are set while a crashed turn waits to be continued, with nothing running.
   private activeOps = 0
   private resuming: Promise<unknown> | undefined
+  private running: Promise<TurnOutcome> | undefined
   // The error the last turn/end row carried, for run() to hand back with its outcome. Phases report
   // only a reason; the row is the one place the failure is written, so this repeats it verbatim.
   private turnEndError: { code: string; message: string } | undefined
@@ -955,6 +957,7 @@ export class SessionImpl {
         ...(msg.commandId ? { commandId: msg.commandId } : {}),
         ...(msg.admissionId ? { admissionId: msg.admissionId } : {}),
         kind: msg.kind ?? (target === 'next-turn' ? 'prompt' : 'steer'),
+        ...(msg.titleLocale ? { titleLocale: msg.titleLocale } : {}),
         trust: msg.trust ?? 'trusted',
       }
       const r = await this.d.log.append([
@@ -972,6 +975,48 @@ export class SessionImpl {
     })
   }
 
+  /** Atomically prioritize existing input and cancel the current turn; wait for its drain before resuming. */
+  async sendQueuedNow(itemId: string, by: Actor, admissionId: string): Promise<Seq> {
+    let draining: Promise<TurnOutcome> | undefined
+    const seq = await this.locked(async () => {
+      const inbox = (this.latest('inbox') as Inbox | undefined) ?? { items: [] }
+      const item = inbox.items.find((item) => item.itemId === itemId && item.target === 'next-turn')
+      if (!item) throw new CoreError('E_RELATION', 'queued input is no longer pending', { itemId })
+      const op = this.op()
+      draining = this.running
+      const written = await this.d.log.append(
+        [
+          inboxEvent(this.lane, this.d.actor, {
+            items: [item, ...inbox.items.filter((candidate) => candidate.itemId !== itemId)],
+          }),
+          this.ev('x/core/queued-send-now', { itemId, admissionId }, { ignorable: true }),
+        ],
+        op
+          ? {
+              expectedRegisterSeq: { register: 'op.state', key: this.lane, seq: this.opSeq() },
+              opState: {
+                lane: this.lane,
+                data: withPhase(op, op.phase, {
+                  control: {
+                    status: 'cancel_requested',
+                    requestedAt: new Date(this.d.clock()).toISOString(),
+                    by,
+                  },
+                }),
+              },
+            }
+          : {},
+      )
+      this.ac.abort()
+      return written.firstSeq
+    })
+    if (draining) await draining
+    // A parked/recovered turn has no run promise; close its cancelled state before the new run.
+    if (this.op()?.control.status === 'cancel_requested')
+      await this.run({ until: 'turn-end', signal: new AbortController().signal })
+    return seq
+  }
+
   lastTurnNumber(): number {
     return this.state.lastTurn.get(this.lane) ?? 0
   }
@@ -984,65 +1029,73 @@ export class SessionImpl {
   async acceptInput(): Promise<boolean> {
     if (this.op()) return false
     await this.restoreGrants()
-    const claimed = claimFrom(this.latest('inbox') as Inbox | undefined, 'next-turn')
-    if (!claimed) return false
-    const { item, rest } = claimed
-    const turn = this.lastTurnNumber() + 1
-    const budget = await this.inboxBudget(item.itemId)
-    await this.transition(
-      [
-        inboxEvent(this.lane, this.d.actor, rest),
-        {
-          type: 'user/message',
-          origin: 'principal',
-          // Whoever enqueued the item decided how far it is trusted; the accept path stamps what
-          // it was told rather than inferring it from the actor's role.
-          trust: item.trust ?? 'trusted',
-          actor: item.actor,
-          lane: this.lane,
-          data: { content: item.content, kind: item.kind ?? 'prompt' },
-        },
-        {
-          type: 'turn/start',
-          origin: 'system',
-          trust: 'trusted',
-          actor: this.d.actor,
-          lane: this.lane,
-          data: { turn, trigger: TRIGGER[item.kind ?? 'prompt'] },
-        },
-        ...(budget !== undefined
-          ? [
-              budgetOverrideEvent(TURN_BUDGET_EVENT, this.d.actor, {
-                turn,
-                itemId: item.itemId,
-                creditsCap: budget,
-              }),
-            ]
-          : []),
-      ],
-      // The user message is the second row of the batch, so its seq is one past the batch's first.
-      // Computed under the lock rather than from `lastSeq` outside it: an enqueue landing in
-      // between would shift the row this number is supposed to name.
-      (_cur, nextSeq) => {
-        const triggerSeq = (nextSeq + 1) as Seq
-        return newOpState(
+    return this.locked(async () => {
+      if (this.op()) return false
+      const claimed = claimFrom(this.latest('inbox') as Inbox | undefined, 'next-turn')
+      if (!claimed) return false
+      const { item, rest } = claimed
+      const turn = this.lastTurnNumber() + 1
+      const budget = await this.inboxBudget(item.itemId)
+      const triggerSeq = (this.lastSeq + 2) as Seq
+      await this.d.log.append(
+        [
+          inboxEvent(this.lane, this.d.actor, rest),
           {
-            turn,
+            type: 'user/message',
+            origin: 'principal',
+            // Whoever enqueued the item decided how far it is trusted; the accept path stamps what
+            // it was told rather than inferring it from the actor's role.
+            trust: item.trust ?? 'trusted',
+            actor: item.actor,
             lane: this.lane,
-            acceptedAt: new Date(this.d.clock()).toISOString(),
-            triggerSeq,
-            presetName: this.preset.name,
-            profileHash: this.d.resolvedProfileHash,
-            depthLimit: this.preset.depthLimit,
+            data: {
+              content: item.content,
+              kind: item.kind ?? 'prompt',
+              ...(item.titleLocale ? { titleLocale: item.titleLocale } : {}),
+            },
           },
-          triggerSeq,
-        )
-      },
-    )
-    this.hooks.resetTurn?.()
-    this.turn = this.freshTurn()
-    if (budget !== undefined) this.turn.budgetCap = budget
-    return true
+          {
+            type: 'turn/start',
+            origin: 'system',
+            trust: 'trusted',
+            actor: this.d.actor,
+            lane: this.lane,
+            data: { turn, trigger: TRIGGER[item.kind ?? 'prompt'] },
+          },
+          ...(budget !== undefined
+            ? [
+                budgetOverrideEvent(TURN_BUDGET_EVENT, this.d.actor, {
+                  turn,
+                  itemId: item.itemId,
+                  creditsCap: budget,
+                }),
+              ]
+            : []),
+        ],
+        {
+          expectedRegisterSeq: { register: 'op.state', key: this.lane, seq: this.opSeq() },
+          opState: {
+            lane: this.lane,
+            data: newOpState(
+              {
+                turn,
+                lane: this.lane,
+                acceptedAt: new Date(this.d.clock()).toISOString(),
+                triggerSeq,
+                presetName: this.preset.name,
+                profileHash: this.d.resolvedProfileHash,
+                depthLimit: this.preset.depthLimit,
+              },
+              triggerSeq,
+            ),
+          },
+        },
+      )
+      this.hooks.resetTurn?.()
+      this.turn = this.freshTurn()
+      if (budget !== undefined) this.turn.budgetCap = budget
+      return true
+    })
   }
 
   /**
@@ -1219,11 +1272,20 @@ export class SessionImpl {
     return supportsComputerUse(resolvedModelInput(this.d.provider, target))
   }
 
-  askApproval(request: ApprovalRequest, signal: AbortSignal): Promise<Verdict | Pending> {
-    if (!this.d.segments?.Approval) return this.d.runtime.approvalAsk(request, signal)
-    return runCoreReplacement(this, 'Approval', this.operationContext(), { request, signal }, () =>
-      this.d.runtime.approvalAsk(request, signal),
-    )
+  /** The verdict alone, for callers that have no use for the reason behind it. */
+  async askApproval(request: ApprovalRequest, signal: AbortSignal): Promise<Verdict | Pending> {
+    const answer = await this.askApprovalAnswer(request, signal)
+    return isPending(answer) ? answer : answer.verdict
+  }
+
+  async askApprovalAnswer(request: ApprovalRequest, signal: AbortSignal): Promise<ApprovalAnswer | Pending> {
+    const raw = this.d.segments?.Approval
+      ? await runCoreReplacement(this, 'Approval', this.operationContext(), { request, signal }, () =>
+          this.d.runtime.approvalAsk(request, signal),
+        )
+      : await this.d.runtime.approvalAsk(request, signal)
+    // A replacement that answers outside the set is refused like a seam that does.
+    return normalizeApproval(raw) ?? { verdict: 'rejected' }
   }
 
   executeTool(
@@ -1580,8 +1642,22 @@ export class SessionImpl {
     return abortSession(this, by)
   }
 
-  async run(opts: { until: 'turn-end' | 'idle'; signal: AbortSignal }): Promise<TurnOutcome> {
-    return this.active(() => this.runTurns(opts))
+  run(opts: { until: 'turn-end' | 'idle'; signal: AbortSignal }): Promise<TurnOutcome> {
+    const previous = this.running
+    const work = this.active(async () => {
+      if (previous) {
+        const outcome = await previous
+        // A queued cancellation must not reset the active run's signal or claim its next input.
+        if (opts.signal.aborted) return { reason: 'aborted' as const, lastSeq: this.lastSeq }
+        // Concurrent admissions share a stop/failure boundary; a later explicit run can resume.
+        if (outcome.reason !== 'completed') return outcome
+      }
+      return this.runTurns(opts)
+    })
+    this.running = work
+    return work.finally(() => {
+      if (this.running === work) this.running = undefined
+    })
   }
 
   private async runTurns(opts: { until: 'turn-end' | 'idle'; signal: AbortSignal }): Promise<TurnOutcome> {

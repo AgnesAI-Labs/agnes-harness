@@ -8,6 +8,7 @@ import {
   buildCompactionPlan,
 } from '@agnes/base'
 import type {
+  ApprovalAnswer,
   ApprovalRequest,
   Provider,
   SandboxSeam,
@@ -166,12 +167,12 @@ export type TestHostOptions = {
   // One argument, matching ApprovalSeam.ask. The brief wrote `(req, opts)`; core's seam takes the
   // request alone and carries the deadline on the request, so a two-argument override would have
   // been handed an undefined it then had to guess about.
-  approval?: (req: ApprovalRequest) => Promise<Verdict>
+  approval?: (req: ApprovalRequest) => Promise<Verdict | ApprovalAnswer>
   // Whoever is connected, from the assembly's point of view. It reaches a seam through
   // SeamAdapters.prompter, so it means nothing to the faked approval seam above - that one answers
   // on its own - and everything to a case that installs a real one. Without it, a real approval
   // seam runs with nobody connected, which is a different question from the one most cases ask.
-  prompter?: (req: ApprovalRequest, opts: { signal: AbortSignal }) => Promise<Verdict>
+  prompter?: (req: ApprovalRequest, opts: { signal: AbortSignal }) => Promise<Verdict | ApprovalAnswer>
   crashAt?: string
   closeTimeoutMs?: number
   hangSessionClose?: boolean

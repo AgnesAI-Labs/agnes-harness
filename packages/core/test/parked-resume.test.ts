@@ -66,6 +66,24 @@ const run = (h: Awaited<ReturnType<typeof openSession>>) =>
   h.session.run({ until: 'turn-end', signal: new AbortController().signal })
 
 describe('single-tool parked continuation', () => {
+  it('sends queued input ahead of a parked turn without approving or executing its tool', async () => {
+    const h = await setup()
+    try {
+      for (const text of ['B', 'C'])
+        await h.session.enqueue('next-turn', { actor, kind: 'follow_up', content: [{ type: 'text', text }] })
+      const selected = (await h.session.projectUI()).pendingInputs?.find((item) => item.preview === 'C')
+      if (!selected) throw new Error('missing selected input')
+      await h.session.sendQueuedNow(selected.itemId, actor, 'send-C')
+      expect(h.session.op()).toBeNull()
+      expect(h.executions()).toBe(0)
+      expect((await h.session.projectUI()).pendingInputs?.map((item) => item.preview)).toEqual(['C', 'B'])
+      expect((await run(h)).reason).toBe('completed')
+      expect((await h.session.projectUI()).pendingInputs?.map((item) => item.preview)).toEqual(['B'])
+      expect(h.executions()).toBe(0)
+    } finally {
+      await h.session.close()
+    }
+  })
   it.each(['allowed-once', 'rejected'] as const)(
     'continues %s through core and feeds the real result to the next request',
     async (verdict) => {

@@ -33,12 +33,19 @@ Session and approval traffic uses the browser SDK's direct WebSocket connection 
 
 1. Create a task from the sidebar and confirm the working directory in the creation dialog. Canceling the dialog does not create a session.
 2. Select the current session's route/model in the model picker. Changing a provider default and changing a session's selection are separate operations.
-3. Enter a message and click Send or press Cmd/Ctrl+Enter. Messages sent during a run are queued as follow-ups.
-4. Inspect tool arguments, results, and errors in their records. Reasoning text, tool state, and usage come from backend projections; the interface does not invent missing information.
-5. When approval is requested, check the current choices and scope. After submitting, wait for backend confirmation; a disappearing button alone does not prove execution.
-6. After clicking Stop, wait for the actual terminal state. A stop-request message only means cancellation has been requested.
+3. Enter a message and click Send or press Cmd/Ctrl+Enter. Messages sent during a run are queued as follow-ups and run in order after the current turn completes. Stopping, a failed turn, or pending approval pauses automatic continuation and preserves unsent input. Sending a new message after a stop or failure resumes preserved input first, then the new message.
+4. Queued messages appear above the input with their count and order, including after reopening or reconnecting. **Send now** stops the current turn and executes the selected queued message first; the other messages keep their order and continue after it completes. A message that has already started is not sent twice. If the action fails, its error appears beside the queue.
+
+5. Inspect tool arguments, results, and errors in their records. Reasoning text, tool state, and usage come from backend projections; the interface does not invent missing information.
+6. When approval is requested, check the current choices and scope. After submitting, wait for backend confirmation; a disappearing button alone does not prove execution.
+7. After clicking Stop, wait for the actual terminal state. A stop-request message only means cancellation has been requested.
+
+The first message proceeds once the new session is ready; refreshing the sidebar does not block sending. A sidebar refresh failure is reported separately and does not restore an already submitted message as a draft.
+Resource updates discovered during startup are prepared while the worker is idle. Updates discovered during a running turn remain deferred until before the next turn. Repeated Skill scans with unchanged resources do not trigger another worker reload.
 
 Choose **思考 · 上下文** beside the composer model picker to set reasoning intensity and context budget for this session. The choices reflect the selected model's supported levels. Enter a full token count or an explicit `K`/`M` suffix: `100K` means 100,000 tokens, while `100` means 100 tokens and is too small for ordinary models. Leave the budget empty to restore automatic sizing. Applying saves the settings for subsequent requests and reopening. Account settings provide defaults for new sessions. Existing sessions keep their saved settings when those defaults change.
+
+In Settings → Appearance, choose English or Simplified Chinese. Automatic titles use the language the model identifies in your first message: sending “Hi” produces an English title even in the Chinese interface. If the language is unclear, including mixed languages without a clear primary language or input consisting only of code, identifiers, numbers, or emoji, the model uses the interface language captured when that message was submitted. These language rules are prompt instructions; output is checked for format, without replacing its language or making another model request. Switching the interface language does not translate existing titles or overwrite manual names.
 
 Failed turns show the recorded error code and message below their status, even when the process is collapsed. These details remain available after reopening the session. Older records without error details are labeled explicitly.
 

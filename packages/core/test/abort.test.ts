@@ -1,13 +1,24 @@
 import type { InferenceEvent, Provider } from '@agnes/protocol'
 import { Type } from '@sinclair/typebox'
 import { describe, expect, it } from 'vitest'
+import { CORE_CHECKS } from '../src/invariants/core-checks.js'
+import { InvariantRegistry } from '../src/invariants/registry.js'
 import { MemoryStorage } from '../src/log/memory-storage.js'
+import { foldEvents } from '../src/reduce/reducer.js'
 import { ToolRegistry } from '../src/registry/tools.js'
 import { withPhase } from '../src/step/op-state.js'
 import { type HookPort, noopHooks } from '../src/step/session.js'
 import { CoreError } from '../src/types.js'
-import { fakeProvider, type Script, sent, sentFor, textTurn, usage } from './helpers/fake-provider.js'
-import { actor, openSession } from './helpers/open-session.js'
+import {
+  fakeProvider,
+  type Script,
+  sent,
+  sentFor,
+  textTurn,
+  toolTurn,
+  usage,
+} from './helpers/fake-provider.js'
+import { actor, openSession, shellTool } from './helpers/open-session.js'
 
 /** Two calls of a tool that is not concurrency safe, so the second only starts after the first. */
 const twoCalls: Script = [
@@ -98,6 +109,61 @@ describe('abort during the tools phase', () => {
     expect(t.slice(-2)).toEqual(['step/end', 'turn/end'])
     expect((await log.scan({ type: 'turn/end', limit: 5 }))[0]?.data).toMatchObject({ reason: 'aborted' })
     expect(session.op()).toBeNull()
+  })
+
+  it('records a Stop on a running mutating call as cancelled, and the ledger stays consistent', async () => {
+    let started!: () => void
+    const running = new Promise<void>((res) => {
+      started = res
+    })
+    const registry = new ToolRegistry()
+    registry.add(
+      shellTool(
+        (_args, ctx) =>
+          new Promise((resolve) => {
+            ctx.signal.addEventListener(
+              'abort',
+              () => resolve({ content: [{ type: 'text', text: 'killed' }] }),
+              { once: true },
+            )
+            started()
+          }),
+      ),
+      { source: 's', trust: 'builtin' },
+    )
+    const ac = new AbortController()
+    const { session, log } = await openSession({
+      provider: fakeProvider([toolTurn('shell', { command: 'sleep 30' })]),
+      registry,
+    })
+    await session.enqueue('next-turn', { content: [{ type: 'text', text: 'go' }], actor })
+    const run = session.run({ until: 'turn-end', signal: ac.signal })
+    await running
+    ac.abort()
+    expect((await run).reason).toBe('aborted')
+
+    const result = (await log.scan({ type: 'tool/result', limit: 10 }))[0]
+    expect(result?.data).toMatchObject({
+      isError: true,
+      code: 'CANCELLED',
+      partial: true,
+      cancelledBy: { id: 'u' },
+    })
+    const settled = (await log.scan({ type: 'effect/settled', order: 'desc', limit: 1 }))[0]
+    expect(settled?.data).toMatchObject({ outcome: 'aborted' })
+    // The request is on the ledger before the settlement it licenses.
+    const marks = await log.scan({ type: 'x/core/op-mark', limit: 100 })
+    const cancelMark = marks.find(
+      (e) => (e.data as { control?: string } | null)?.control === 'cancel_requested',
+    )
+    expect(cancelMark?.seq).toBeLessThan(settled?.seq ?? 0)
+    expect((await log.scan({ type: 'turn/end', limit: 5 }))[0]?.data).toMatchObject({ reason: 'aborted' })
+    expect(session.op()).toBeNull()
+
+    const checks = new InvariantRegistry()
+    checks.register('@agnes/core', CORE_CHECKS)
+    const events = await log.scan({ fromSeq: 1, limit: 500 } as never)
+    expect(checks.run(events, foldEvents([]))).toEqual([])
   })
 
   it('does not wedge the session: a later run() is not stuck reporting aborted', async () => {
