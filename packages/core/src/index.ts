@@ -213,6 +213,17 @@ export type {
 } from './runtime/interaction/authority.js'
 export { createInteractionAuthority } from './runtime/interaction/authority.js'
 export { defaultLoopStateCodec } from './runtime/loop/default-state.js'
+export type { CatalogPick, InlineRef, PrepareParts } from './runtime/model/prepared-call.js'
+export {
+  adapterInvokeInput,
+  assemblePrepared,
+  checkCredential,
+  externalKeyOf,
+  INFER_CHILD_KEY,
+  modelCaptureOf,
+  preparedIdOf,
+  selectionDigest,
+} from './runtime/model/prepared-call.js'
 export {
   buildWireRequest,
   MODEL_INPUT_KIND,

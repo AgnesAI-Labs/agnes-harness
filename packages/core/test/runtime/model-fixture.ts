@@ -49,6 +49,11 @@ export function fixtureCatalog(output = 2) {
       route === 'fixed-route' && model === 'fixture-model' ? pick : undefined,
   }
 }
+export function fixturePick(output = 2): CatalogPick {
+  const pick = fixtureCatalog(output).select('fixed-route', 'fixture-model')
+  if (!pick) throw new Error('fixture catalog lost its pick')
+  return pick
+}
 export function textItem(trust: 'system' | 'user', body: string): W.ContextItem {
   return {
     id: `item-${trust}-${body.length}`,

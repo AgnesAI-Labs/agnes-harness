@@ -114,7 +114,8 @@ export function assemblePrepared(
   const prepared: W.PreparedModelRequest = { ...base, preparedId: preparedIdOf(inputDigest), inputDigest }
   const wired = buildWireRequest(prepared, parts.capture, parts.wire)
   if (!wired.ok) return wired
-  if (!validateRuntime('PreparedModelRequest', prepared).ok) return refusal('invalid_input', 'model_input_schema')
+  if (!validateRuntime('PreparedModelRequest', prepared).ok)
+    return refusal('invalid_input', 'model_input_schema')
   const body = boundedCanonicalJson(prepared, LIMITS)
   if (!body.ok) return refusal('incompatible', 'model_prepared_too_large')
   return {
@@ -138,7 +139,8 @@ export function externalKeyOf(runId: string, parentActionId: string): string {
 
 export function adapterInvokeInput(preparedRef: W.DataRef, externalKey: string): Outcome<InlineRef> {
   const value = { preparedCallRef: preparedRef, externalIdempotencyKey: externalKey }
-  if (!validateRuntime('ModelAdapterInvokeRequest', value).ok) return refusal('invalid_input', 'model_infer_input')
+  if (!validateRuntime('ModelAdapterInvokeRequest', value).ok)
+    return refusal('invalid_input', 'model_infer_input')
   const body = boundedCanonicalJson(value, LIMITS)
   if (!body.ok) return refusal('incompatible', 'model_prepared_too_large')
   return {
