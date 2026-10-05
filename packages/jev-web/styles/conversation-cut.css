@@ -3,12 +3,21 @@
   padding: 6px 12px;
   font-size: var(--font-size-xs, 12px);
   line-height: 1.5;
-  color: var(--agnes-color-neutral-625, #4e586a);
-  background: var(--agnes-color-neutral-075, #fafafa);
-  border: 1px solid var(--agnes-color-neutral-150, #d9d9d9);
+  height: 32px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--agnes-text-secondary, #4e586a);
+  background: var(--agnes-bg-surface, #fafafa);
+  border: 1px solid var(--agnes-line-primary, #d9d9d9);
   border-radius: var(--radius-lg, 8px);
 }
 
 .conversation-cut-banner[hidden] {
   display: none;
+}
+
+/* The conversation region fills its shell absolutely; reserve space for the replay status. */
+.conversation-shell:has(> .conversation-cut-banner:not([hidden])) .conversation-region-root {
+  top: 40px;
 }

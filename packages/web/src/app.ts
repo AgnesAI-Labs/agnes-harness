@@ -434,7 +434,7 @@ let workspaceRows: WorkspaceEntry[] = []
 const workbench = clientModules.workbench
 const cutBanner = createConversationCutBanner(conversation)
 const conversationCut = createConversationCutView((view) => {
-  cutBanner.update(view?.through, view?.pending, view?.error)
+  cutBanner.update(view?.through, view?.pending, view?.error, view?.projectedThrough)
   if (!current || !projection || projection.sessionId !== current.id) return
   if (view) {
     renderer.render(view.nodes, view.turns, historicalMeta(current.id))

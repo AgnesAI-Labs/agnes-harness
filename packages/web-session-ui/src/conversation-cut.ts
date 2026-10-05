@@ -71,9 +71,11 @@ export function cutConversationTurns(turns: readonly UITurn[] | undefined, throu
 /** What the transcript should render while a cut is active. */
 export type ConversationCutView = Readonly<{
   through: number
+  /** The exact ledger position behind `nodes`; may lag `through` while playback advances. */
+  projectedThrough?: number
   nodes: readonly UINode[]
   turns: readonly UITurn[]
-  /** True while the authoritative projection at `through` is still on its way; nodes stay empty. */
+  /** True while the projection at `through` is still on its way; nodes may show `projectedThrough`. */
   pending: boolean
   /** True when the authoritative projection failed; nodes stay empty, never future content. */
   error?: boolean
@@ -100,9 +102,10 @@ export type ConversationCutViewHandle = {
 /**
  * Drives the conversation's fixed cut. The live window is never reused as a historical view: a
  * node born before the cut can carry later increments (final assistant text, tool results), so
- * until the authoritative projection at exactly `through` arrives the view stays empty and
- * pending, and a failed read surfaces an error view rather than future content. Reads are
- * debounced, dropped by generation once stale, and a cleared cut returns the host to live.
+ * until the first authoritative projection arrives the view stays empty and pending. A failed
+ * read surfaces an error view rather than future content. While playback advances, a verified
+ * older projection may remain visible until the newest cut is read. Reads are coalesced to one
+ * in flight, and a cleared cut returns the host to live.
  */
 export function createConversationCutView(
   onView: (view: ConversationCutView | undefined) => void,
@@ -111,45 +114,105 @@ export function createConversationCutView(
   let generation = 0
   let timer: ReturnType<typeof setTimeout> | undefined
   let current: ConversationCutView | undefined
+  let desired: { through: number; projectAt?: ConversationCutProjector } | undefined
+  let verified: { through: number; timeline: ConversationCutTimeline } | undefined
+  let reading: object | undefined
   const settle = (next: ConversationCutView | undefined): void => {
     current = next
     onView(next)
+  }
+  const schedule = (): void => {
+    if (timer !== undefined || reading || !desired?.projectAt) return
+    timer = setTimeout(() => {
+      timer = undefined
+      const target = desired
+      if (!target?.projectAt) return
+      const ticket = {}
+      const epoch = generation
+      reading = ticket
+      let result: Promise<ConversationCutTimeline>
+      try {
+        result = Promise.resolve(target.projectAt(target.through))
+      } catch (error) {
+        result = Promise.reject(error)
+      }
+      result.then(
+        (timeline) => {
+          if (reading !== ticket || generation !== epoch) return
+          reading = undefined
+          if (!desired || target.through > desired.through) {
+            schedule()
+            return
+          }
+          verified = { through: target.through, timeline }
+          if (target.through === desired.through)
+            settle({
+              through: desired.through,
+              projectedThrough: target.through,
+              pending: false,
+              nodes: timeline.nodes,
+              turns: timeline.turns,
+            })
+          else {
+            settle({
+              through: desired.through,
+              projectedThrough: target.through,
+              pending: true,
+              nodes: timeline.nodes,
+              turns: timeline.turns,
+            })
+            schedule()
+          }
+        },
+        () => {
+          if (reading !== ticket || generation !== epoch) return
+          reading = undefined
+          if (desired?.through === target.through)
+            settle({ through: target.through, pending: false, error: true, nodes: [], turns: [] })
+          else schedule()
+        },
+      )
+    }, options.delayMs ?? 180)
   }
   return {
     get view(): ConversationCutView | undefined {
       return current
     },
     apply(through: number | undefined, source: ConversationCutSource): void {
-      const ticket = ++generation
-      if (timer !== undefined) {
-        clearTimeout(timer)
-        timer = undefined
-      }
       if (through === undefined) {
+        generation++
+        desired = undefined
+        verified = undefined
+        reading = undefined
+        if (timer !== undefined) clearTimeout(timer)
+        timer = undefined
         if (current !== undefined) settle(undefined)
         return
       }
       // A verified projection of the same cut is retained across re-applies.
       if (current?.through === through && !current.pending) return
-      settle({ through, pending: true, nodes: [], turns: [] })
-      if (!source.projectAt) return
-      const projectAt = source.projectAt
-      timer = setTimeout(() => {
-        timer = undefined
-        projectAt(through).then(
-          (timeline) => {
-            if (ticket !== generation) return
-            settle({ through, pending: false, nodes: timeline.nodes, turns: timeline.turns })
-          },
-          () => {
-            if (ticket !== generation) return
-            settle({ through, pending: false, error: true, nodes: [], turns: [] })
-          },
-        )
-      }, options.delayMs ?? 180)
+      if (current && through < current.through) {
+        // A backward seek cannot show a projection from a later ledger position.
+        generation++
+        reading = undefined
+        verified = undefined
+      }
+      desired = { through, ...(source.projectAt ? { projectAt: source.projectAt } : {}) }
+      const retained = verified?.through !== undefined && verified.through <= through ? verified : undefined
+      settle({
+        through,
+        ...(retained ? { projectedThrough: retained.through } : {}),
+        pending: true,
+        nodes: retained?.timeline.nodes ?? [],
+        turns: retained?.timeline.turns ?? [],
+      })
+      schedule()
     },
     dispose() {
       generation++
+      desired = undefined
+      verified = undefined
+      reading = undefined
       if (timer !== undefined) {
         clearTimeout(timer)
         timer = undefined
@@ -164,7 +227,7 @@ export function createConversationCutView(
  * control stays on the replay surface that owns the cut.
  */
 export function createConversationCutBanner(host: HTMLElement): {
-  update(through: number | undefined, pending?: boolean, failed?: boolean): void
+  update(through: number | undefined, pending?: boolean, failed?: boolean, projectedThrough?: number): void
   dispose(): void
 } {
   const banner = document.createElement('p')
@@ -173,18 +236,22 @@ export function createConversationCutBanner(host: HTMLElement): {
   banner.hidden = true
   host.prepend(banner)
   return {
-    update(through: number | undefined, pending = false, failed = false) {
+    update(through: number | undefined, pending = false, failed = false, projectedThrough?: number) {
       if (through === undefined) {
         banner.hidden = true
         banner.textContent = ''
+        banner.title = ''
         return
       }
       banner.hidden = false
       banner.textContent = failed
         ? `回放视图 · 读取账本 #${through} 的对话内容失败；请在 Jev 流程图重试回放或点击「实时」。`
         : pending
-          ? `回放视图 · 正在读取账本 #${through} 及之前的对话内容…`
+          ? projectedThrough === undefined
+            ? `回放视图 · 正在读取账本 #${through} 及之前的对话内容…`
+            : `回放视图 · 正在同步至 #${through}，当前显示已确认的 #${projectedThrough}。`
           : `回放视图 · 显示账本 #${through} 及之前的对话内容；在 Jev 流程图点击「实时」恢复最新。`
+      banner.title = banner.textContent
     },
     dispose() {
       banner.remove()

@@ -288,8 +288,14 @@ export function createJevDecisionGraph(
       return
     }
     timer = setTimeout(() => {
-      const target = sequence()[replayIndex() + 1]
-      if (target) through = target.seq
+      const values = sequence()
+      const nextIndex = replayIndex(values) + 1
+      const target = values[nextIndex]
+      if (target && allTurns && nextIndex === values.length - 1) {
+        // The final event is the live ledger head; release the conversation cut at completion.
+        through = undefined
+        pause()
+      } else if (target) through = target.seq
       else pause()
       draw()
     }, 1000 / Number(speed.value))

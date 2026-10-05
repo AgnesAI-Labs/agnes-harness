@@ -214,8 +214,11 @@ it('replays every persisted turn together by ledger seq and drives one shared co
     )
     expect(cuts.at(-1)).toEqual({ sessionId: 'session-a', through: 10 })
     expect(cursor.max).toBe('21')
-    // Seeking while paused lands on the selected seq and emits exactly that cut.
-    host.querySelector<HTMLButtonElement>('[aria-label="暂停回放"]')!.click()
+    // Finishing playback releases the conversation cut and returns the transcript to live.
+    vi.advanceTimersByTime(500 * 12)
+    expect(cuts.at(-1)).toBeUndefined()
+    expect(status(host)).toBe('全轮实时 · #22')
+    // Seeking again lands on the selected seq and emits exactly that cut.
     cursor.value = '5'
     cursor.dispatchEvent(new Event('input'))
     expect(status(host)).toBe('全轮回放 · #6')
