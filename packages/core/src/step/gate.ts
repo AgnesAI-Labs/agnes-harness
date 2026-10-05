@@ -1,7 +1,8 @@
-import { minimumContextBudget } from '@agnes/protocol'
+import { minimumContextBudget, validateAgainst } from '@agnes/protocol'
+import { PlanItems as PlanItemsSchema } from '@agnes/protocol/gen/session-v1'
 import { decidedFields, isPending } from '../effects/approval-answer.js'
 import { scanAll } from '../log/scan-pages.js'
-import type { BudgetState, Inbox, RepairDecision } from '../reduce/shapes.js'
+import type { BudgetState, Inbox, PlanItems, RepairDecision } from '../reduce/shapes.js'
 import { canonicalJson } from '../request/hash.js'
 import { CoreError, type EventInput, type Seq } from '../types.js'
 import { quoteBudget } from './calibrate.js'
@@ -230,6 +231,26 @@ export async function budgetPreflight(s: SessionImpl): Promise<'ok' | { reason: 
   return { reason: out.reason }
 }
 
+function currentPlan(s: SessionImpl): PlanItems | undefined {
+  const value = s.latest('plan.items')
+  if (value == null) return undefined
+  const parsed = validateAgainst<PlanItems>(PlanItemsSchema, value)
+  if (!parsed.ok) throw new CoreError('E_ENVELOPE', 'completion plan is invalid')
+  return structuredClone(parsed.value)
+}
+
+function planAllowsCompletion(s: SessionImpl): boolean {
+  if (!s.preset.completionGate.enabled) return true
+  const plan = currentPlan(s)
+  return (
+    !plan ||
+    plan.items.length < s.preset.completionGate.minItems ||
+    plan.items.every((item) => item.status === 'done')
+  )
+}
+
+class CompletionPlanChanged extends Error {}
+
 /** The gate a turn has to pass to be allowed to finish. */
 async function builtinStopGate(s: SessionImpl): Promise<StepOutcome> {
   const op = s.op() as OpStateObj
@@ -265,11 +286,31 @@ async function builtinStopGate(s: SessionImpl): Promise<StepOutcome> {
     reasons: verdict.reasons,
   })
   const verifiedAfterCoreCtx: OpContext = { ...afterCoreCtx, verifier: verdict }
-  if (verdict.verdict === 'pass') {
+  async function complete(events: EventInput[] | ((seq: Seq) => EventInput[])): Promise<StepOutcome> {
+    const blocked = async (): Promise<StepOutcome> => {
+      await s.endTurn('blocked', {
+        error: { code: 'COMPLETION_GATE', message: 'The current plan still has unfinished items' },
+        events,
+      })
+      return { phase: 'terminal', reason: 'blocked' }
+    }
+    if (!planAllowsCompletion(s)) return blocked()
     await runSlot(s, 'after-core', verifiedAfterCoreCtx)
-    await s.endTurn('completed', { events: [signal] })
-    return { phase: 'terminal', reason: 'completed' }
+    try {
+      await s.endTurn('completed', {
+        events: (seq) => {
+          // Recheck after asynchronous slots and inside the existing transition lock.
+          if (!planAllowsCompletion(s)) throw new CompletionPlanChanged()
+          return typeof events === 'function' ? events(seq) : events
+        },
+      })
+      return { phase: 'terminal', reason: 'completed' }
+    } catch (error) {
+      if (!(error instanceof CompletionPlanChanged)) throw error
+      return blocked()
+    }
   }
+  if (verdict.verdict === 'pass' && planAllowsCompletion(s)) return complete([signal])
   const history = (
     await scanAll((q) => s.d.log.scan(q), {
       fromSeq: op.meta.triggerSeq,
@@ -278,25 +319,32 @@ async function builtinStopGate(s: SessionImpl): Promise<StepOutcome> {
       lane: s.lane,
     })
   ).map((e) => e.data as unknown as RepairDecision)
-  const decision = await s.d.runtime.repairDecide(
-    { turn: op.meta.turn, round: history.length + 1, history },
-    verdict,
-  )
+  const round = history.length + 1
+  const plan = currentPlan(s)
+  let decision =
+    round >= s.preset.repair.maxRounds
+      ? ('park' as const)
+      : await s.d.runtime.repairDecide(
+          { turn: op.meta.turn, round, history, ...(plan ? { plan } : {}) },
+          verdict,
+        )
+  // A strategy cannot accept a failed verifier or waive the completion plan on its own.
+  if (decision === 'complete') decision = verdict.verdict === 'pass' ? 'repair' : 'park'
   const repairEvents = (verdictSeq: Seq): EventInput[] => [
     signal,
     s.ev('repair/decision', { round: history.length + 1, decision, verdictSeq }),
   ]
-  if (decision === 'complete') {
-    await runSlot(s, 'after-core', verifiedAfterCoreCtx)
-    await s.endTurn('completed', { events: repairEvents })
-    return { phase: 'terminal', reason: 'completed' }
-  }
   if (decision === 'park') {
     const requestId = s.d.ids.requestId()
     const asked = {
       requestId,
       kind: 'unknown-outcome' as const,
-      summary: `verifier failed: ${verdict.reasons.join('; ')}`,
+      summary:
+        verdict.verdict !== 'pass'
+          ? `verifier failed: ${verdict.reasons.join('; ')}`
+          : !planAllowsCompletion(s)
+            ? 'completion blocked: the current plan has unfinished items'
+            : 'completion requires review after repair',
       risk: 'unknown' as const,
       bindingHash: '',
       deadline: new Date(s.d.clock() + s.preset.approval.timeoutMs).toISOString(),
@@ -354,25 +402,21 @@ async function builtinStopGate(s: SessionImpl): Promise<StepOutcome> {
     // The model has already proposed completion. Approval accepts this verdict's evidence,
     // not another inference over the same history (which would ask the identical question again).
     // Close this turn atomically with the decision; future turns still run their own verifier.
-    await runSlot(s, 'after-core', verifiedAfterCoreCtx)
-    await s.endTurn('completed', {
-      events: (seq) => {
-        // A steer received while approval/after-core awaited must not be stranded when this
-        // turn closes. Preserve it as a new turn, with fresh verification and its original trust.
-        const inbox = s.latest('inbox') as Inbox | undefined
-        const pending = inbox?.items.some((item) => item.target === 'next-step')
-          ? [
-              inboxEvent(s.lane, s.d.actor, {
-                items: inbox.items.map((item) =>
-                  item.target === 'next-step' ? { ...item, target: 'next-turn' as const } : item,
-                ),
-              }),
-            ]
-          : []
-        return [...repairEvents(seq), s.ev('approval/asked', finalAsked), decided, ...pending]
-      },
+    return complete((seq) => {
+      // A steer received while approval/after-core awaited must not be stranded when this
+      // turn closes. Preserve it as a new turn, with fresh verification and its original trust.
+      const inbox = s.latest('inbox') as Inbox | undefined
+      const pending = inbox?.items.some((item) => item.target === 'next-step')
+        ? [
+            inboxEvent(s.lane, s.d.actor, {
+              items: inbox.items.map((item) =>
+                item.target === 'next-step' ? { ...item, target: 'next-turn' as const } : item,
+              ),
+            }),
+          ]
+        : []
+      return [...repairEvents(seq), s.ev('approval/asked', finalAsked), decided, ...pending]
     })
-    return { phase: 'terminal', reason: 'completed' }
   }
   const prev = (s.latest('budget.state') as BudgetState | undefined) ?? {
     slot: 'primary',

@@ -22,14 +22,15 @@ type Fixture = LoopContractFixture & {
   }
   issued: W.PreparedAction[]
 }
-async function open(): Promise<Fixture> {
+type FixtureCredentials = { binding: W.SecretConsumerBinding | null; handle: W.SecretHandle | null }
+async function open(credentials?: FixtureCredentials): Promise<Fixture> {
   const module = (await import(
     new URL('../../../../tools/acceptance/runtime/platform/loop-conformance.ts', import.meta.url).href
-  )) as { openLoopFixture(): Promise<Fixture> }
-  return module.openLoopFixture()
+  )) as { openLoopFixture(options?: { credentials: FixtureCredentials }): Promise<Fixture> }
+  return module.openLoopFixture(credentials ? { credentials } : undefined)
 }
-async function ready() {
-  const fixture = await open()
+async function ready(credentials?: FixtureCredentials) {
+  const fixture = await open(credentials)
   const provider = await fixture.factory.create(fixture.config, fixture.dependencies, fixture.factoryContext)
   expect(await provider.ready(fixture.context)).toEqual({ ok: true, value: undefined })
   return { ...fixture, provider }
@@ -45,6 +46,115 @@ function failure(transition: W.LoopTransition, detail?: string) {
 }
 
 describe('full C01 SPI text Loop candidate, restricted background peers', () => {
+  it.each([
+    'normal',
+    'missing-handle',
+    'unconfigured-handle',
+    'wrong-secret',
+    'wrong-audience',
+    'wrong-consumer',
+    'expired',
+    'substituted-handle',
+    'expired-after-prepare',
+  ] as const)(
+    'consumes only the native source credential locked by model preparation: %s',
+    async (scenario) => {
+      // F02 supplies synthetic source facts; production issuance is owned by C22/model preparation.
+      const binding: W.SecretConsumerBinding = {
+        consumer: 'model',
+        secretId: 'fixed-secret',
+        accountRef: null,
+        serverRef: 'restricted-peer',
+        audience: 'restricted',
+        purpose: 'model-inference',
+      }
+      const handle: W.SecretHandle = {
+        handleId: 'fixed-handle',
+        secretId: binding.secretId,
+        version: 'fixed-version',
+        audience: binding.audience,
+        expiresAt: new Date(
+          Date.now() + (scenario === 'expired-after-prepare' ? 1000 : 300_000),
+        ).toISOString(),
+      }
+      if (scenario === 'wrong-secret') handle.secretId = 'another-secret'
+      if (scenario === 'wrong-audience') handle.audience = 'another-consumer'
+      if (scenario === 'wrong-consumer') binding.consumer = 'mcp'
+      if (scenario === 'expired') handle.expiresAt = new Date(Date.now() - 1000).toISOString()
+      const f = await ready({
+        binding: scenario === 'unconfigured-handle' ? null : binding,
+        handle: scenario === 'missing-handle' ? null : handle,
+      })
+      let clock: ReturnType<typeof vi.spyOn> | undefined
+      try {
+        const ports = {
+          ...f.ports,
+          async compute(request: W.ServiceOperation) {
+            const reply = await f.ports.compute(request)
+            if (request.target.contract === 'agh.model' && request.method === 'prepare' && reply.ok) {
+              if (scenario === 'expired-after-prepare')
+                clock = vi.spyOn(Date, 'now').mockReturnValue(Date.parse(handle.expiresAt) + 1)
+              if (scenario === 'substituted-handle' && reply.value.kind === 'inline') {
+                const prepared = validateRuntime('ModelPrepareResult', reply.value.value)
+                if (!prepared.ok || prepared.value.preparedRef.kind !== 'inline')
+                  throw new Error('Preparation fixture')
+                const locked = validateRuntime('PreparedModelRequest', prepared.value.preparedRef.value)
+                if (!locked.ok) throw new Error('Prepared source fixture')
+                return {
+                  ok: true as const,
+                  value: contextInline(reply.value.schema, {
+                    ...prepared.value,
+                    preparedRef: contextInline(RuntimeSchemaRefs.PreparedModelRequest, {
+                      ...locked.value,
+                      credentialRef: { ...handle, version: 'substituted-version' },
+                    }),
+                  }),
+                }
+              }
+            }
+            return reply
+          },
+        }
+        const first = await f.provider.start(f.frame, ports)
+        if (scenario !== 'normal') {
+          failure(
+            first,
+            scenario === 'missing-handle'
+              ? 'loop_model_credentials_unavailable'
+              : scenario === 'substituted-handle'
+                ? 'loop_prepared_identity'
+                : scenario === 'expired' || scenario === 'expired-after-prepare'
+                  ? 'loop_credential_expired'
+                  : 'loop_credential_binding',
+          )
+          expect(f.issued).toEqual([])
+          return
+        }
+        const modelAction = required(first.actions[0])
+        const inference = validateRuntime(
+          'ModelInferRequest',
+          modelAction.input.kind === 'inline' ? modelAction.input.value : null,
+        )
+        if (!inference.ok || inference.value.preparedRef.kind !== 'inline')
+          throw new Error('Inference fixture')
+        expect(validateRuntime('PreparedModelRequest', inference.value.preparedRef.value)).toMatchObject({
+          ok: true,
+          value: { credentialRef: handle },
+        })
+        await f.accept(modelAction)
+        const tool = await f.provider.resume(f.nextFrame(first), ports)
+        await f.accept(required(tool.actions[0]))
+        const second = await f.provider.resume(f.nextFrame(tool), ports)
+        expect(second.actions.map((action) => action.key)).toEqual(['second-model'])
+        await f.accept(required(second.actions[0]))
+        expect((await f.provider.resume(f.nextFrame(second), ports)).next.kind).toBe('complete')
+      } finally {
+        clock?.mockRestore()
+        await f.provider.close('shutdown')
+        await f.close()
+      }
+    },
+  )
   it.each(['select', 'normal', 'deny', 'cancel', 'dispose'] as const)(
     'public contract %s',
     async (scenario) => {

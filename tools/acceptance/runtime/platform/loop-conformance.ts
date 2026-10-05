@@ -51,7 +51,9 @@ function value(ref: W.DataRef): W.JsonValue {
   return ref.value
 }
 /** F02 peers plan real public SPI actions and expose synthetic receipts. No durable owner or cold State is manufactured. */
-export async function openLoopFixture(): Promise<
+export async function openLoopFixture(options?: {
+  credentials: { binding: W.SecretConsumerBinding | null; handle: W.SecretHandle | null }
+}): Promise<
   LoopContractFixture & {
     receipts: Map<string, W.ActionResultView>
     bindings: Record<string, W.BindingRef>
@@ -238,7 +240,7 @@ export async function openLoopFixture(): Promise<
     features,
     priceVersion: 'fixed',
     credentialAudience: 'restricted',
-    credentialBinding: null,
+    credentialBinding: options?.credentials.binding ?? null,
   }
   const input: W.ContextViewRequest = structuredClone(value(data.request.input)) as W.ContextViewRequest
   const contextSource = structuredClone(data.source)
@@ -333,7 +335,7 @@ export async function openLoopFixture(): Promise<
             hookResults: null,
             sessionParameterRef: reference,
             legacyRequestOverrides: null,
-            credentialRef: null,
+            credentialRef: parsed.value.credentialRef,
           }
           return ok(
             contextInline(M['agh.model'].prepare.output, {
@@ -418,7 +420,7 @@ export async function openLoopFixture(): Promise<
           policyRevision: 1,
         },
         generation: { maxOutputTokens: 200, thinking: null },
-        credentialRef: null,
+        credentialRef: options?.credentials.handle ?? null,
       }
       return ok(captured)
     },

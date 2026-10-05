@@ -1086,7 +1086,7 @@ describe('client host runtime', () => {
     )
   })
 
-  it('reports a renderer whose lease misses the dispose deadline, by module and contribution', async () => {
+  it('reports the module of a renderer whose lease misses the dispose deadline, once', async () => {
     const h = harness({ limits: { disposeMs: 20 } })
     // The card's context reports that it missed its own deadline; the fallback's lease never ends.
     h.leaseEnds['cards.card'] = async () => false
@@ -1098,12 +1098,62 @@ describe('client host runtime', () => {
     await h.runtime.dispose()
     expect(h.failures.mock.calls).toEqual(
       expect.arrayContaining([
-        [{ moduleId: 'cards', contributionId: 'cards.card', reason: 'dispose_timeout' }],
-        [{ moduleId: 'base', contributionId: 'base.fallback', reason: 'dispose_timeout' }],
+        [{ moduleId: 'cards', reason: 'dispose_timeout' }],
+        [{ moduleId: 'base', reason: 'dispose_timeout' }],
       ]),
     )
     expect(h.failures).toHaveBeenCalledTimes(2)
     expect(h.log).toEqual(expect.arrayContaining(['unregister base.fallback', 'unregister cards.card']))
+  })
+
+  it('ends a release one deadline after admission stops, however many of its steps hang', async () => {
+    const h = harness({ limits: { disposeMs: 100 } })
+    // A lease of cards and the contribution of each module never end; in turn they would take three deadlines.
+    h.leaseEnds['cards.card'] = () => new Promise<boolean>(() => {})
+    const opened: RendererContext[] = []
+    for (const moduleId of ['base', 'cards'])
+      h.entries[moduleId] = (standard) => async (host) => {
+        opened.push(host.context)
+        const started = await standard(host)
+        return started.ok ? { ok: true, value: { dispose: () => new Promise<void>(() => {}) } } : started
+      }
+    expect(refused(await h.runtime.activate(catalog(1)))).toBe('ok')
+    const view = { viewId: 'v1', revision: 1, renderKey: 'cards.card' } as DomainView
+    expect(refused(now(h).presentation.domain(view))).toBe('ok')
+    const started = Date.now()
+    await h.runtime.dispose()
+    expect(Date.now() - started).toBeLessThan(200)
+    // One report per module, however many of its steps missed; every context closes all the same.
+    expect(h.failures.mock.calls).toEqual(
+      expect.arrayContaining([
+        [{ moduleId: 'cards', reason: 'dispose_timeout' }],
+        [{ moduleId: 'base', reason: 'dispose_timeout' }],
+      ]),
+    )
+    expect(h.failures).toHaveBeenCalledTimes(2)
+    expect(opened.map((context) => context.signal.aborted)).toEqual([true, true])
+    expect(h.log).toEqual(expect.arrayContaining(['unregister base.fallback', 'unregister cards.card']))
+  })
+
+  it("disposes a module only once its renderers drained, without waiting for another module's", async () => {
+    const h = harness({ limits: { disposeMs: 1_000 } })
+    h.leaseEnds['cards.card'] = async () => {
+      await sleep(50)
+      h.log.push('drained cards.card')
+      return true
+    }
+    expect(refused(await h.runtime.activate(catalog(1)))).toBe('ok')
+    const view = { viewId: 'v1', revision: 1, renderKey: 'cards.card' } as DomainView
+    expect(refused(now(h).presentation.domain(view))).toBe('ok')
+    h.log.length = 0
+    await h.runtime.dispose()
+    const order = (line: string) => h.log.indexOf(line)
+    // base presents nothing, so it is disposed at once; cards waits for its card's lease alone.
+    expect(order('dispose base#1')).toBeLessThan(order('drained cards.card'))
+    expect(order('unregister base.fallback')).toBeLessThan(order('drained cards.card'))
+    expect(order('drained cards.card')).toBeLessThan(order('dispose cards#1'))
+    expect(order('drained cards.card')).toBeLessThan(order('unregister cards.card'))
+    expect(h.failures).not.toHaveBeenCalled()
   })
 
   it('refuses a second activation while one runs', async () => {
