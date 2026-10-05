@@ -1,12 +1,14 @@
 import { spawnSync } from 'node:child_process'
+import { createHash } from 'node:crypto'
 import { mkdir, mkdtemp, readFile, rm, utimes, writeFile } from 'node:fs/promises'
 import { createServer as createNetServer } from 'node:net'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { build } from 'esbuild'
+import { Window } from 'happy-dom'
 import { expect, it, vi } from 'vitest'
-import { createWebServer } from '../src/serve.js'
+import { createWebServer, HTML_VIEWER_PATH } from '../src/serve.js'
 
 const source = fileURLToPath(new URL('../src/serve.ts', import.meta.url))
 
@@ -744,4 +746,194 @@ it('serves client module assets through the injected resolver and 404s everythin
     await server.close().catch(() => undefined)
     await rm(root, { recursive: true, force: true })
   }
+})
+
+const viewerPolicy = (script: string) =>
+  `sandbox allow-scripts; default-src 'none'; script-src ${script}; style-src 'unsafe-inline'; img-src data:; font-src data:; media-src data:; connect-src 'none'; frame-src 'none'; worker-src 'none'; manifest-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'self'`
+
+async function withViewerServer(run: (url: string, mountProxy: ReturnType<typeof vi.fn>) => Promise<void>) {
+  // An empty root: the viewer document is a constant and needs no build output.
+  const root = await mkdtemp(join(tmpdir(), 'agnes-web-viewer-'))
+  const port = await availablePort()
+  const mountProxy = vi.fn(() => false)
+  const server = await createWebServer({
+    root,
+    wsUrl: 'ws://127.0.0.1:4321',
+    port,
+    origin: `http://127.0.0.1:${port}`,
+    developmentReload: true,
+    mountProxy,
+  })
+  try {
+    await run(`${server.url}${HTML_VIEWER_PATH}`, mountProxy)
+  } finally {
+    await server.close()
+    await rm(root, { recursive: true, force: true })
+  }
+}
+
+function viewerScript(document: string): string {
+  const match =
+    /^<!doctype html><html><head><meta charset="utf-8"><title><\/title><\/head><body><script>([\s\S]*)<\/script><\/body><\/html>$/.exec(
+      document,
+    )
+  if (!match?.[1]) throw new Error('viewer document has no bootstrap')
+  return match[1]
+}
+
+it('serves the sandboxed HTML viewer with its own policy for each script variant', async () => {
+  await withViewerServer(async (url, mountProxy) => {
+    expect(HTML_VIEWER_PATH).toBe('/__agnes/viewer/html')
+    const scriptless = await fetch(`${url}?scripts=0`)
+    expect(scriptless.status).toBe(200)
+    const body = await scriptless.text()
+    const hash = createHash('sha256').update(viewerScript(body), 'utf8').digest('base64')
+    const headers = (variant: Response) =>
+      Object.fromEntries(
+        [
+          'content-type',
+          'cache-control',
+          'content-security-policy',
+          'referrer-policy',
+          'x-content-type-options',
+          'x-dns-prefetch-control',
+          'permissions-policy',
+        ].map((name) => [name, variant.headers.get(name)]),
+      )
+    const expected = (script: string) => ({
+      'content-type': 'text/html; charset=utf-8',
+      'cache-control': 'no-store',
+      'content-security-policy': viewerPolicy(script),
+      'referrer-policy': 'no-referrer',
+      'x-content-type-options': 'nosniff',
+      'x-dns-prefetch-control': 'off',
+      'permissions-policy':
+        'accelerometer=(), camera=(), geolocation=(), gyroscope=(), magnetometer=(), microphone=(), payment=(), usb=(), clipboard-read=()',
+    })
+    expect(headers(scriptless)).toEqual(expected(`'sha256-${hash}'`))
+    // The development reload client is never injected into the viewer.
+    expect(body).not.toContain('reload.js')
+
+    // A hash would make browsers ignore 'unsafe-inline', and 'self' would let content load page code.
+    const scripted = await fetch(`${url}?scripts=1`)
+    expect(headers(scripted)).toEqual(expected("'unsafe-inline'"))
+    expect(await scripted.text()).toBe(body)
+
+    for (const query of ['', '?scripts=true', '?scripts=01', '?scripts=1x', '?scripts', '?script=1']) {
+      const other = await fetch(`${url}${query}`)
+      expect(other.headers.get('content-security-policy'), query).toBe(viewerPolicy(`'sha256-${hash}'`))
+    }
+    const head = await fetch(`${url}?scripts=1`, { method: 'HEAD' })
+    expect(head.status).toBe(200)
+    expect(head.headers.get('content-security-policy')).toBe(viewerPolicy("'unsafe-inline'"))
+    expect(await head.text()).toBe('')
+    const post = await fetch(url, { method: 'POST' })
+    expect(post.status).toBe(405)
+    expect(post.headers.get('allow')).toBe('GET, HEAD')
+    // A mounted Surface is consulted only after this route, so it can never claim the viewer.
+    expect(mountProxy).not.toHaveBeenCalled()
+  })
+})
+
+// The bootstrap is browser code; happy-dom runs it here with the frame's globals. Sandbox, CSP and
+// opaque origins are not modelled, so this pins only the bootstrap's own checks. Evaluation is on so
+// that an inert content script is a real result; the only code it runs is this file's fixture.
+function bootViewer(script: string, url: string, embedded = true) {
+  const frame = new Window({
+    url,
+    settings: { enableJavaScriptEvaluation: true, suppressInsecureJavaScriptEnvironmentWarning: true },
+  })
+  const page = { name: 'page' }
+  if (embedded) Object.defineProperty(frame, 'parent', { configurable: true, value: page })
+  new Function('window', 'document', 'location', 'DOMParser', script)(
+    frame,
+    frame.document,
+    frame.location,
+    frame.DOMParser,
+  )
+  const send = (data: unknown, from: { source?: unknown; origin?: string } = {}) =>
+    frame.dispatchEvent(
+      new frame.MessageEvent('message', {
+        data,
+        origin: from.origin ?? new URL(url).origin,
+        source: (from.source ?? page) as never,
+      }),
+    )
+  return { frame, page, send }
+}
+
+const viewerMessage = (overrides: Record<string, unknown> = {}) => ({
+  kind: 'agnes.html-viewer/v1',
+  html: '<html><head><base href="https://example.test/"><meta http-equiv="refresh" content="0;url=https://example.test/"><link rel="dns-prefetch" href="https://example.test/"></head><body><p id="content">chart</p><a id="away" href="https://example.test/">away</a><a id="fragment" href="#content">top</a><script>document.body.dataset.ran = "yes"</script></body></html>',
+  lang: 'zh-CN',
+  colorScheme: 'dark',
+  tokens: { '--agnes-text-primary': '#111' },
+  ...overrides,
+})
+
+it('the viewer bootstrap accepts only the first well-formed message from its embedding page', async () => {
+  await withViewerServer(async (url) => {
+    const script = viewerScript(await (await fetch(`${url}?scripts=0`)).text())
+    const viewer = `${url}?scripts=0`
+
+    // Opened as a top-level page, the bootstrap does nothing.
+    const top = bootViewer(script, viewer, false)
+    top.send(viewerMessage(), { source: top.frame })
+    expect(top.frame.document.getElementById('content')).toBeNull()
+
+    const { frame, page, send } = bootViewer(script, viewer)
+    const untouched = () => expect(frame.document.getElementById('content')).toBeNull()
+    send(viewerMessage(), { source: { name: 'another window' } })
+    untouched()
+    send(viewerMessage(), { origin: 'http://127.0.0.1:1' })
+    untouched()
+    for (const bad of [
+      { kind: 'agnes.html-viewer/v2' },
+      { html: 42 },
+      { colorScheme: 'sepia' },
+      { lang: 'zh_CN' },
+      { tokens: null },
+      { tokens: { '--other-token': 'red' } },
+      { tokens: { '--agnes-text-primary': 'red; }' } },
+      { tokens: { '--agnes-text-primary': 'a'.repeat(257) } },
+    ]) {
+      send(viewerMessage(bad))
+      untouched()
+    }
+
+    send(viewerMessage(), { source: page })
+    const document = frame.document
+    expect(document.getElementById('content')?.textContent).toBe('chart')
+    expect(document.querySelector('base, meta[http-equiv], link')).toBeNull()
+    expect(document.documentElement.getAttribute('lang')).toBe('zh-CN')
+    expect(document.documentElement.style.getPropertyValue('--agnes-text-primary')).toBe('#111')
+    expect(document.documentElement.style.getPropertyValue('color-scheme')).toBe('dark')
+    // The scriptless variant leaves the content's scripts inert.
+    expect(document.body.dataset.ran).toBeUndefined()
+
+    // Only the first accepted message counts.
+    send(viewerMessage({ html: '<p id="content">replaced</p>' }))
+    expect(document.getElementById('content')?.textContent).toBe('chart')
+
+    // Only same-document fragment links may follow.
+    const click = (id: string) => {
+      const event = new frame.MouseEvent('click', { bubbles: true, cancelable: true })
+      document.getElementById(id)?.dispatchEvent(event)
+      return event.defaultPrevented
+    }
+    expect(click('away')).toBe(true)
+    expect(click('fragment')).toBe(false)
+    await frame.happyDOM.close()
+    await top.frame.happyDOM.close()
+  })
+})
+
+it('the viewer bootstrap runs content scripts only in the scripted variant', async () => {
+  await withViewerServer(async (url) => {
+    const script = viewerScript(await (await fetch(`${url}?scripts=1`)).text())
+    const { frame, send } = bootViewer(script, `${url}?scripts=1`)
+    send(viewerMessage())
+    expect(frame.document.body.dataset.ran).toBe('yes')
+    await frame.happyDOM.close()
+  })
 })
