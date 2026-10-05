@@ -1617,8 +1617,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // Events fixed page set, full-page checkpoint and cross-session checkpoint cases (+11), exact.
   // Effects dispatch lifecycle contracts (+113); exact cap, no spare.
   // Model service public contract (six scenarios) and its restricted child peer. Measured 17753 (+557), exact, no spare.
-  // Media contract scenarios and in-memory fixture (+752); exact cap, no spare.
-  'packages/extension-api/testkit': 18505,
+  // Media contract scenarios and in-memory fixture (+763); exact cap, no spare.
+  'packages/extension-api/testkit': 18516,
   // 2026-09-10: raised from 2500 by Task 15 (stream-disconnect reconnection). The new
   // reattach.ts (the Reconnector: backoff loop, OVERLOADED's retryAfterMs override) plus
   // Session.recover()/waitForQuiescence and Client's reconnect wiring (emit(), the
