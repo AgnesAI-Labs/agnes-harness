@@ -232,6 +232,7 @@ async function readGrant(
   artifactRef: Wire.ArtifactRef,
   requestId = 'grant-1',
   granteePrincipalRef = 'user-1',
+  actor = owner(),
 ) {
   return ok(
     await artifacts.grant(
@@ -244,7 +245,7 @@ async function readGrant(
           permissions: ['read', 'download'],
           expiresAt: null,
         },
-        owner: owner(),
+        owner: actor,
         sourceAuthorizationRef: 'policy-1',
       },
       ctx(),
@@ -365,12 +366,37 @@ describe('default artifacts publication', () => {
       'revision_conflict',
     )
     expect(refused(await attempt(publishRequest('pub-9', upload)))).toBe('not_found')
+    // A stage response is an open session, never a sealed upload, and a sealed reference built from it
+    // before the seal commits neither promotes nor publishes.
+    const session = ok(
+      await blob.stage(
+        { uploadId: 'upload-3', size: 6, mediaType: 'text/plain', expectedDigest: upload.digest },
+        ctx(),
+      ),
+    )
+    expect(session.status).toBe('uploading')
+    expect(validateRuntime('UploadRef', session).ok).toBe(false)
+    const early: Wire.UploadRef = {
+      authorityId: session.authorityId,
+      uploadId: session.uploadId,
+      reservationId: session.reservationId,
+      digest: upload.digest,
+      bytes: 6,
+      mediaType: 'text/plain',
+      status: 'sealed',
+    }
+    expect(refused(await blob.promote({ upload: early, expectedDigest: early.digest }, ctx()))).toBe(
+      'not_found',
+    )
+    ok(await artifacts.reserve({ request: reserveRequest('pub-2'), owner: owner() }, ctx()))
+    expect(refused(await attempt(publishRequest('pub-2', early)))).toBe('not_found')
     const ready = ok(await attempt(publishRequest('pub-1', upload)))
     expect(ready).toMatchObject({ state: 'ready', revision: 3, title: 'Report', mediaType: 'text/plain' })
     expect(ready.pinId).toBe(ready.blob?.pinId)
     expect(refused(await attempt(publishRequest('pub-1', html, { mediaType: 'text/html' })))).toBe(
       'idempotency_conflict',
     )
+    expect(artifacts.pendingEvents().map((event) => event.eventKey)).toEqual(['pub-1:ready'])
   })
 
   it('reaches ready only after the pin is confirmed and converges on one pin and one event', async () => {
@@ -437,6 +463,43 @@ describe('default artifacts publication', () => {
       size: 6,
       status: 'ready',
     })
+  })
+
+  it('keeps each artifact version on a pin of its own, never a pinned blob or a pin lent from another owner', async () => {
+    // A selected blob service that hands back a pin another owner took instead of pinning for this one.
+    let lent: Wire.BlobRef | undefined
+    const { artifacts, blob } = await world(undefined, (service) => ({
+      pin: async (request, context) => (lent ? { ok: true, value: lent } : service.pin(request, context)),
+    }))
+    const other = owner('action-1', 'session-2')
+    const upload = await sealedUpload(blob, 'upload-1', text('report'))
+    ok(await artifacts.reserve({ request: reserveRequest('pub-a'), owner: owner() }, ctx()))
+    const first = ok(
+      await artifacts.publish({ request: publishRequest('pub-a', upload), owner: owner() }, ctx()),
+    )
+    const taken = first.blob as Wire.BlobRef
+    const second = ok(await artifacts.reserve({ request: reserveRequest('pub-b'), owner: other }, ctx()))
+    const publish = (source: unknown) =>
+      artifacts.publish({ request: publishRequest('pub-b', upload, { source }), owner: other }, ctx())
+    expect(refused(await publish({ kind: 'blob', blob: taken }))).toBe('operation_not_supported')
+    lent = taken
+    expect(refused(await publish({ kind: 'upload', upload }))).toBe('integrity')
+    lent = undefined
+    const ready = ok(await publish({ kind: 'upload', upload }))
+    expect(ready).toMatchObject({ state: 'ready', revision: 3 })
+    expect(ready.pinId).not.toBe(taken.pinId)
+    expect(artifacts.pendingEvents().map((event) => event.eventKey)).toEqual(['pub-a:ready', 'pub-b:ready'])
+
+    // Releasing the first owner's pin ends its reads; the other version reads through its own pin.
+    const refA = { artifactId: first.artifactId, version: 1 }
+    const refB = { artifactId: second.artifactId, version: 1 }
+    await readGrant(artifacts, refA)
+    await readGrant(artifacts, refB, 'grant-b', 'user-1', other)
+    ok(await blob.unpin({ pinId: taken.pinId, expectedRevision: 1 }, ctx()))
+    const read = (ref: Wire.ArtifactRef) =>
+      artifacts.artifactAccess.readRange({ ...ref, offset: 0, length: 6 }, ctx())
+    expect(refused(await read(refA))).toBe('revoked')
+    expect(ok(await read(refB)).bytes).toEqual(text('report'))
   })
 
   it('fails only from a committed failed or cancelled receipt of the owner action and never reverts', async () => {

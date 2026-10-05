@@ -16,6 +16,7 @@ import {
   createDomainCommands,
   type DispatchProgress,
   type DomainCommandStorage,
+  eventFingerprint,
   fail,
   type RegisteredDomainCommand,
   type StoredDispatch,
@@ -106,6 +107,9 @@ const domainView = (viewId: string, extra: Partial<Wire.DomainView> = {}): Wire.
   ...extra,
 })
 
+const identityOf = (event: Pick<Wire.DomainEvent, 'scope' | 'source' | 'typeId' | 'idempotencyKey'>) =>
+  canonicalJsonDigest([event.scope, event.source, event.typeId, event.idempotencyKey])
+
 /** Copy-on-write store: a body that throws leaves the committed data untouched. */
 function memoryStore() {
   const db = {
@@ -135,6 +139,8 @@ function memoryStore() {
           draft.state = state
         },
         lastSequence: () => draft.events.at(-1)?.sequence ?? 0,
+        eventByIdentity: (identity) =>
+          draft.events.find((record) => identityOf(record.event) === identityOf(identity)),
         putEvent: (record) => void draft.events.push(record),
         putDispatch: (row) => void draft.dispatches.push({ row, ack: null }),
         dispatches: (commandId) =>
@@ -208,7 +214,7 @@ function commandHarness() {
             typeId: eventSchema.typeId,
             schema: eventSchema,
             payload: inline(eventSchema, { title: 'renamed' }),
-            idempotencyKey: `${frame.requestId}/renamed`,
+            idempotencyKey: `${frame.commandId}/renamed`,
           },
         ],
         dispatches: dispatches(),
@@ -382,12 +388,73 @@ describe('domain commands', () => {
       (plan: Wire.DomainCommandPlan) => ({ ...plan, dispatches: [signal, signal] }),
       'invalid_request',
     ],
+    [
+      'events repeating an identity',
+      (plan: Wire.DomainCommandPlan) => ({ ...plan, events: [...plan.events, ...plan.events] }),
+      'invalid_request',
+    ],
   ])('refuses %s without writing anything', async (_name, override, code) => {
     const { store, env, submit } = commandHarness()
     env.planOverride = override
     expect(detail(await submit('rename'))).toBe(code)
     expect(store.db.state.revision).toBe(0)
     expect(store.db.commands.size + store.db.events.length + store.db.dispatches.length).toBe(0)
+  })
+
+  describe('an event identity another commit already holds', () => {
+    const held = {
+      typeId: eventSchema.typeId,
+      schema: eventSchema,
+      payload: inline(eventSchema, { title: 'held' }),
+      idempotencyKey: 'held',
+    }
+    const aggregate = { authorityId: 'authority-1', typeId: 'acme.tasks/board@1', id: 'board-1', revision: 1 }
+    /** The held event as another path stored it, with the fingerprint of `causation`. */
+    const stored = (causation: Wire.DomainEvent['causation']): Wire.DomainEventRecord => {
+      const event = {
+        ...held,
+        eventId: 'published-held',
+        source,
+        scope: sessionScope,
+        occurredAt: '2026-10-01T00:00:00Z',
+        causation,
+        principalRef: 'alice',
+        correlationId: null,
+        provenance: { sourceRefs: [], producer: source, trustLabels: [] },
+      }
+      return {
+        event,
+        authorityId: 'authority-1',
+        sequence: 1,
+        aggregate,
+        fingerprint: eventFingerprint(aggregate, event),
+      }
+    }
+
+    it('is not written again and takes no sequence when the fingerprint is the same', async () => {
+      const { store, env, submit } = commandHarness()
+      store.db.events = [stored({ commandId: 'id-1' })]
+      env.planOverride = (plan) => ({ ...plan, events: [held, ...plan.events] })
+      expect(detail(await submit('rename'))).toBe('ok')
+      expect(store.db.events.map((record) => [record.event.eventId, record.sequence])).toEqual([
+        ['published-held', 1],
+        [expect.any(String), 2],
+      ])
+      expect(store.db.events[1]?.event.idempotencyKey).toBe('id-1/renamed')
+      expect(store.db.state.revision).toBe(1)
+    })
+
+    it('refuses the whole command when the fingerprint differs, writing nothing', async () => {
+      const { store, env, submit } = commandHarness()
+      const other = stored({ commandId: 'another-command' })
+      store.db.events = [other]
+      // The held event comes after one the store does not have, so a partial write would show.
+      env.planOverride = (plan) => ({ ...plan, events: [...plan.events, held] })
+      expect(detail(await submit('launch'))).toBe('idempotency_conflict')
+      expect(store.db.events).toEqual([other])
+      expect(store.db.state.revision).toBe(0)
+      expect(store.db.commands.size + store.db.dispatches.length).toBe(0)
+    })
   })
 
   it('rolls the whole commit back when one write fails', async () => {

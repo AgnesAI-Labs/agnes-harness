@@ -241,6 +241,26 @@ describe('formatDomainView', () => {
     expect(offered(formatted)).toEqual(keys)
   })
 
+  // History stays readable whatever renderer it once had: a view of a domain or render key no renderer
+  // knows, as after its plugin is disabled, or of a schema revision older than any renderer reads formats
+  // exactly as a known view does. Markup stays literal text and an action of an unknown kind is not offered.
+  it.each([
+    ['an unknown domain', { domainType: 'acme.unknown', renderKey: 'acme.unknown/card' }],
+    ['an unknown renderer', { renderKey: 'acme.notes/retired-card' }],
+    [
+      'an old schema revision',
+      { viewSchema: { typeId: 'acme.notes/view@1', revision: 0, digest: 'c'.repeat(64) } },
+    ],
+  ])('formats history of %s like a known view', (_, change) => {
+    const markup = '<img src=x onerror=alert(1)>'
+    const forged = { ...base, kind: 'script', actionKey: 'run', label: markup }
+    const known = { ...view({ fallbackText: markup }), actions: [forged, publish] }
+    const formatted = format({ ...known, ...change })
+    expect(formatted).toEqual(format(known))
+    expect(formatted.parts).toContainEqual({ kind: 'text', text: markup })
+    expect(offered(formatted)).toEqual(['publish'])
+  })
+
   it('shows a malformed action by its label without offering it', () => {
     const formatted = format({ ...view(), actions: [{ ...publish, availability: 'maybe' }] })
     expect(formatted.complete).toBe(false)

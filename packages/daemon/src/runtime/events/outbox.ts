@@ -40,7 +40,12 @@ export interface DomainStoreTransaction {
   putCommand(command: StoredDomainCommand): void
   state(): StoredDomainState
   putState(state: StoredDomainState): void
+  /** The highest sequence this authority ever issued, even when its event is gone. */
   lastSequence(): number
+  /** The event holding this identity, whichever path committed it; throws when more than one does. */
+  eventByIdentity(
+    identity: Pick<Wire.DomainEvent, 'scope' | 'source' | 'typeId' | 'idempotencyKey'>,
+  ): Wire.DomainEventRecord | undefined
   putEvent(record: Wire.DomainEventRecord): void
   putDispatch(dispatch: StoredDispatch): void
   dispatches(commandId: Wire.Id): readonly DispatchProgress[]
@@ -117,6 +122,9 @@ const DDL = [
     ON domain_events (authority_id, json_extract(record_json, '$.event.idempotencyKey'))`,
   `CREATE TABLE IF NOT EXISTS domain_redrives (
     identity TEXT PRIMARY KEY, fingerprint TEXT NOT NULL, record_json TEXT NOT NULL)`,
+  // The highest sequence each authority ever issued, so a deleted tail is never numbered again.
+  `CREATE TABLE IF NOT EXISTS domain_event_highwater (
+    authority_id TEXT PRIMARY KEY, sequence INTEGER NOT NULL)`,
 ]
 
 const KEY = 'source_authority_id = ? AND event_id = ? AND destination = ?'
@@ -167,6 +175,11 @@ export function openDomainStore(options: DomainStoreOptions) {
     // Flushes WAL checkpoints past the drive cache on darwin; other platforms ignore it.
     db.exec('PRAGMA checkpoint_fullfsync = ON')
     for (const statement of DDL) db.exec(statement)
+    // A database from before the high-water starts it at its newest row; later opens keep the stored one.
+    db.prepare(
+      `INSERT OR IGNORE INTO domain_event_highwater (authority_id, sequence)
+       SELECT ?, COALESCE(MAX(sequence), 0) FROM domain_events WHERE authority_id = ?`,
+    ).run(authorityId, authorityId)
   } catch (error) {
     db.close()
     throw error
@@ -233,6 +246,22 @@ export function openDomainStore(options: DomainStoreOptions) {
     }
   }
 
+  /** Every event record under this identity, oldest first; more than one can only predate the backstop. */
+  const byIdentity = (identity: Pick<Wire.DomainEvent, 'scope' | 'source' | 'typeId' | 'idempotencyKey'>) =>
+    all<{ record_json: string }>(
+      `SELECT record_json FROM domain_events
+       WHERE authority_id = ? AND json_extract(record_json, '$.event.idempotencyKey') = ? ORDER BY sequence`,
+      authorityId,
+      identity.idempotencyKey,
+    )
+      .map((row) => stored('DomainEventRecord', row.record_json))
+      .filter(
+        ({ event }) =>
+          event.typeId === identity.typeId &&
+          jcs(event.source) === jcs(identity.source) &&
+          jcs(event.scope) === jcs(identity.scope),
+      )
+
   // Commits made through this instance only; another connection to the same file does not notify.
   const listeners = new Set<() => unknown>()
   let wrote = false
@@ -282,23 +311,37 @@ export function openDomainStore(options: DomainStoreOptions) {
       wrote = true
     },
     lastSequence() {
-      return (
-        get<{ sequence: number | null }>(
-          'SELECT MAX(sequence) AS sequence FROM domain_events WHERE authority_id = ?',
-          authorityId,
-        )?.sequence ?? 0
+      const row = get<{ sequence: number }>(
+        'SELECT sequence FROM domain_event_highwater WHERE authority_id = ?',
+        authorityId,
       )
+      if (!row) throw new Error('event high-water is missing')
+      return row.sequence
+    },
+    eventByIdentity(identity) {
+      const found = byIdentity(identity)
+      if (found.length > 1) throw new Error('more than one event holds this identity')
+      return found[0]
     },
     putEvent(input) {
       const parsed = validateRuntime('DomainEventRecord', input)
       if (!parsed.ok || parsed.value.authorityId !== authorityId)
         throw new Error('event record is not this authority')
+      // Backstops for every writer: one row per identity, and each sequence right after the high-water.
+      if (byIdentity(parsed.value.event).length > 0) throw new Error('an event already holds this identity')
+      if (parsed.value.sequence !== tx.lastSequence() + 1)
+        throw new Error('event sequence does not follow the high-water')
       run(
         'INSERT INTO domain_events (authority_id, sequence, event_id, record_json) VALUES (?, ?, ?, ?)',
         authorityId,
         parsed.value.sequence,
         parsed.value.event.eventId,
         jcs(parsed.value),
+      )
+      run(
+        'UPDATE domain_event_highwater SET sequence = ? WHERE authority_id = ?',
+        parsed.value.sequence,
+        authorityId,
       )
       wrote = true
     },
@@ -455,13 +498,18 @@ export function openDomainStore(options: DomainStoreOptions) {
     /** The authority that numbers every event of this store. */
     authorityId,
 
-    /** How many events this authority holds and its first and last sequence; a gap shows as a mismatch. */
+    /**
+     * How many events this authority holds, its first and last sequence and the highest it ever issued; a
+     * gap, or a deleted tail, shows as a mismatch.
+     */
     eventHistory() {
-      return get<{ count: number; first: number | null; last: number | null }>(
-        `SELECT COUNT(*) AS count, MIN(sequence) AS first, MAX(sequence) AS last
+      return get<{ count: number; first: number | null; last: number | null; highwater: number | null }>(
+        `SELECT COUNT(*) AS count, MIN(sequence) AS first, MAX(sequence) AS last,
+           (SELECT sequence FROM domain_event_highwater WHERE authority_id = ?) AS highwater
          FROM domain_events WHERE authority_id = ?`,
         authorityId,
-      ) as { count: number; first: number | null; last: number | null }
+        authorityId,
+      ) as { count: number; first: number | null; last: number | null; highwater: number | null }
     },
 
     /** The id of the event stored at `sequence`, if one is. */
@@ -471,16 +519,6 @@ export function openDomainStore(options: DomainStoreOptions) {
         authorityId,
         sequence,
       )?.event_id
-    },
-
-    /** Event records under an idempotency key, oldest first, whichever path committed them. */
-    eventsByKey(idempotencyKey: string): Wire.DomainEventRecord[] {
-      return all<{ record_json: string }>(
-        `SELECT record_json FROM domain_events
-         WHERE authority_id = ? AND json_extract(record_json, '$.event.idempotencyKey') = ? ORDER BY sequence`,
-        authorityId,
-        idempotencyKey,
-      ).map((row) => stored('DomainEventRecord', row.record_json))
     },
 
     /** Event records in (after, upto] within `scope` and of the listed types (any type when none is). */

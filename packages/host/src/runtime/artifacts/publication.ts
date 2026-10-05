@@ -460,8 +460,11 @@ export async function publish(
   }
   const pinned = unwrap(await blob.pin({ stagedBlob: staged, ownerRef, retentionUntil: null }, context))
   const seen = unwrap(await blob.inspect({ ref: { kind: 'blob', value: pinned } }, context))
+  // ponytail: inspect names the owners of every live pin of the content, so a pin lent while this
+  // version also holds its own still passes; an inspect result naming the pin's own owner closes that.
   if (
     seen.status !== 'pinned' ||
+    !seen.ownerRefs.some((ref) => jcs(ref) === jcs(ownerRef)) ||
     seen.digest !== upload.digest ||
     seen.bytes !== upload.bytes ||
     pinned.digest !== upload.digest ||

@@ -1,9 +1,21 @@
+import { randomBytes } from 'node:crypto'
+import { mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
+import {
+  eventFingerprint as commandFingerprint,
+  createDomainCommands,
+} from '../../../../packages/core/src/runtime/projection/commands.js'
 import { createProjectionProvider } from '../../../../packages/core/src/runtime/providers/projection.js'
 import { SessionRegistry } from '../../../../packages/daemon/src/local/sessions.js'
 import { openDomainStore } from '../../../../packages/daemon/src/runtime/events/outbox.js'
 import { nativeConversation } from '../../../../packages/daemon/src/runtime/native-conversation.js'
+import {
+  createEventsProvider,
+  type EventsGate,
+  eventFingerprint as publishFingerprint,
+} from '../../../../packages/daemon/src/runtime/providers/events.js'
 import { MemorySessionPrincipalOwnership } from '../../../../packages/daemon/src/storage/session-ownership.js'
 import { openTestHost, say } from '../../../../packages/daemon/test/host.js'
 import {
@@ -206,5 +218,218 @@ describe('projection read over the daemon sources', () => {
     expect(detail(await open(s.sessionId, callContext('intruder')))).toBe('permission_denied')
     // A page before an index the native history does not reach asks the reader to resynchronize.
     expect(detail(await s.native.page(s.sessionId, 999, 2, callContext()))).toBe('resync_required')
+  })
+})
+
+describe('one event identity across the command path and publication over the daemon domain store', () => {
+  const schemaRef = (typeId: string): Wire.SchemaRef => ({
+    typeId,
+    revision: 1,
+    digest: canonicalJsonDigest(typeId),
+  })
+  const inline = (schema: Wire.SchemaRef, value: Wire.JsonValue): Wire.DataRef => ({
+    kind: 'inline',
+    schema,
+    value,
+    digest: canonicalJsonDigest(value),
+    bytes: Buffer.byteLength(JSON.stringify(value)),
+  })
+  const NOTED = schemaRef('conformance.tasks/noted@1')
+  const INPUT = schemaRef('conformance.tasks/note-input@1')
+  const RESULT = schemaRef('conformance.tasks/note-result@1')
+  const STATE = schemaRef('conformance.tasks/state@1')
+  const BOARD = { typeId: 'conformance.tasks/board@1', id: 'board' }
+  const SESSION: Wire.ScopeRef = { ...WORKSPACE, kind: 'session', sessionId: 'session-1' }
+  const call = (principalRef: string, bindingId: string) => ({
+    principalRef,
+    scope: SESSION,
+    bindingId,
+    invocationId: `${principalRef}-invocation`,
+    deadline: '2100-01-01T00:00:00.000Z',
+    traceRef: `${principalRef}-trace`,
+    authorizationRef: `${principalRef}-authorization`,
+    signal: new AbortController().signal,
+  })
+
+  /** A command owner and the default events provider over one domain store; the producer is the owner. */
+  function paths() {
+    const dir = mkdtempSync(join(tmpdir(), 'event-identity-'))
+    const store = openDomainStore({
+      file: join(dir, 'domain.sqlite'),
+      owner: {
+        authority: { authorityId: AUTHORITY, tenantId: 'sources', authorityEpoch: 1 },
+        scope: WORKSPACE,
+        ownerBinding: BINDING,
+      },
+      permits: async () => false,
+    })
+    // The fixture authority vouches every revision and names the command that caused the object.
+    const origin = { causation: { commandId: 'id-1' } as Wire.DomainEvent['causation'] }
+    const gate: EventsGate = {
+      producer: async () => ({ ok: true, value: BINDING }),
+      revision: async (aggregate) => aggregate.revision,
+      origin: async () => ({ ok: true, value: { scope: SESSION, causation: origin.causation } }),
+      withCommit: (_typeId, _schema, aggregate, _causation, _context, body) => ({
+        ok: true,
+        value: body({
+          producer: BINDING,
+          scope: SESSION,
+          causation: origin.causation,
+          revision: aggregate.revision,
+        }),
+      }),
+      canRead: async () => true,
+    }
+    const events = createEventsProvider({ binding: BINDING, store, cursorKey: randomBytes(32), gate })
+    const action: Wire.ViewAction = {
+      actionKey: 'note',
+      label: 'Note',
+      requiredFeatures: [],
+      availability: 'enabled',
+      disabledReason: null,
+      kind: 'command',
+      command: 'note',
+      inputSchema: INPUT,
+    }
+    let ids = 0
+    const commands = createDomainCommands({
+      namespace: 'conformance.tasks',
+      authorityId: AUTHORITY,
+      aggregate: BOARD,
+      source: BINDING,
+      stateSchema: STATE,
+      destination: 'runtime-inbox',
+      storage: store,
+      views: {
+        // Only the view identity is read; the rest of the view does not take part in these commits.
+        resolve: async () => ({
+          ok: true,
+          value: { view: { viewId: 'board', revision: 1 } as Wire.DomainView, action },
+        }),
+        canRead: async () => true,
+      },
+      commands: new Map([
+        [
+          'note',
+          {
+            inputSchema: INPUT,
+            resultSchema: RESULT,
+            completion: 'domain-commit' as const,
+            async prepare(frame: Wire.DomainCommandFrame) {
+              const input = frame.input as Extract<Wire.DataRef, { kind: 'inline' }>
+              const { key, note } = input.value as { key: string; note: string }
+              return {
+                ok: true as const,
+                value: {
+                  expectedRevision: frame.stateRevision,
+                  state: inline(STATE, { revision: frame.stateRevision + 1 }),
+                  events: [
+                    {
+                      typeId: NOTED.typeId,
+                      schema: NOTED,
+                      payload: inline(NOTED, { note }),
+                      idempotencyKey: key,
+                    },
+                  ],
+                  dispatches: [],
+                  result: inline(RESULT, { ok: true }),
+                },
+              }
+            },
+          },
+        ],
+      ]),
+      clock: { now: () => '2026-10-05T00:00:00Z', newId: () => `id-${++ids}` },
+    })
+    cleanups.push(() => {
+      events.close()
+      store.close()
+      rmSync(dir, { recursive: true, force: true })
+    })
+    const command = (requestId: string, key: string, note: string, expectedRevision: number) =>
+      commands.submit({
+        request: {
+          negotiatedSession: 'negotiated-1',
+          clientInstanceId: 'client-1',
+          catalogRevision: 1,
+          ownerToken: 'owner-token',
+          action: { viewId: 'board', actionKey: 'note', viewRevision: 1 },
+          input: inline(INPUT, { key, note }),
+          requestId,
+          expectedRevision,
+          commandSchema: INPUT,
+        },
+        context: call('alice', 'client-binding'),
+        features: [],
+      })
+    const publish = (key: string, note: string, revision: number) =>
+      events.publish(
+        {
+          domainSchema: NOTED,
+          payload: inline(NOTED, { note }),
+          causationRef: {
+            kind: 'run',
+            value: {
+              runId: 'run-1',
+              session: {
+                sessionId: 'session-1',
+                authority: { authorityId: 'state-authority', tenantId: 'sources', authorityEpoch: 1 },
+              },
+            },
+          },
+          typeId: NOTED.typeId,
+          idempotencyKey: key,
+          aggregate: { authorityId: AUTHORITY, ...BOARD, revision },
+        },
+        call('producer', BINDING.bindingId),
+      )
+    const read = () =>
+      events.subscribe(
+        { scopeRef: SESSION, types: [NOTED.typeId], cursor: null, limit: 10 },
+        call('reader', 'reader'),
+      )
+    return { store, origin, command, publish, read, status: commands.commandStatus }
+  }
+
+  it('replays an event a command committed to a publication of the same content and refuses another', async () => {
+    const p = paths()
+    expect(detail(await p.command('request-1', 'k-1', 'one', 0))).toBe('ok')
+    const [record] = p.store.events(0, 10)
+    if (record === undefined) throw new Error('the command committed no event')
+    // Each path computes the stored fingerprint from the record's own content.
+    expect(commandFingerprint(record.aggregate, record.event)).toBe(record.fingerprint)
+    expect(publishFingerprint(record.aggregate, record.event)).toBe(record.fingerprint)
+    expect(await p.publish('k-1', 'one', 1)).toEqual({
+      ok: true,
+      value: { eventRef: { kind: 'event', authorityId: AUTHORITY, eventId: record.event.eventId } },
+    })
+    expect(detail(await p.publish('k-1', 'other', 1))).toBe('idempotency_conflict')
+    expect(p.store.eventHistory()).toEqual({ count: 1, first: 1, last: 1, highwater: 1 })
+  })
+
+  it('skips a planned event a publication committed with the same content and refuses a command on another', async () => {
+    const p = paths()
+    const published = must(await p.publish('k-1', 'one', 1))
+    expect(detail(await p.command('request-1', 'k-1', 'one', 0))).toBe('ok')
+    expect(detail(await p.command('request-2', 'k-2', 'two', 1))).toBe('ok')
+    // The command wrote no second row for k-1 and its next event took the next sequence.
+    const records = p.store.events(0, 10)
+    expect(records.map((record) => [record.event.idempotencyKey, record.sequence])).toEqual([
+      ['k-1', 1],
+      ['k-2', 2],
+    ])
+    expect(published.eventRef).toEqual({
+      kind: 'event',
+      authorityId: AUTHORITY,
+      eventId: records[0]?.event.eventId,
+    })
+    expect(detail(await p.read())).toBe('ok')
+
+    p.origin.causation = { commandId: 'id-7' }
+    expect(detail(await p.publish('k-3', 'published', 3))).toBe('ok')
+    expect(detail(await p.command('request-3', 'k-3', 'commanded', 2))).toBe('idempotency_conflict')
+    expect(must(await p.status('request-3', call('alice', 'client-binding'))).status).toBe('not-accepted')
+    expect(p.store.eventHistory()).toEqual({ count: 3, first: 1, last: 3, highwater: 3 })
+    expect((await p.store.transaction((tx) => tx.state())).revision).toBe(2)
   })
 })
