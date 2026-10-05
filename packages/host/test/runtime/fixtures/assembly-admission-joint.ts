@@ -27,6 +27,7 @@ export async function openJointAdmission(
   input: AdmissionFixtureInput,
   checkpoint: (point: string) => void | Promise<void> = () => {},
   split: false | 'separate-file' | 'separate-connection' = false,
+  clock?: () => number,
 ) {
   const authority = { authorityId: 'fixture-state', tenantId: 'fixture-tenant', authorityEpoch: 1 }
   const scope = {
@@ -34,7 +35,7 @@ export async function openJointAdmission(
     installationId: 'fixture-installation',
     runtimeId: 'fixture-runtime',
   }
-  const now = () => Date.parse(input.fixture.now)
+  const now = clock ?? (() => Date.parse(input.fixture.now))
   let operation = ''
   const options = {
     file: join(directory, 'joint.sqlite'),

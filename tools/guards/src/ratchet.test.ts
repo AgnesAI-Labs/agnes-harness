@@ -1084,7 +1084,9 @@ const INITIAL_CEILING: Record<string, number> = {
   // Exact credential consumption and persisted completion-plan checks. Measured 35067, no spare.
   // Pure model input digest and plain text wire request builder (+87); exact cap, no spare.
   // Domain command event identity lookup and shared event fingerprint (+19); measured 35173, exact.
-  'packages/core/src': 35173,
+  // Model service preparation: prepared request assembly and managed credential resolution (+575); measured 35748, exact, no spare.
+  // Model service infer: one stable child action, result and usage attribution from the child (+247). Measured 35995, exact, no spare.
+  'packages/core/src': 35995,
   // Testkit-only reference Effects runner adds 202 measured lines; exact cap, no spare.
   'packages/core/testkit': 1997,
   // 2026-09-15: DeepSeek V4 Pro/Flash ship a known-thinking-corrections table (new file) so the
@@ -2905,7 +2907,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // feat(host): read the original prepared model request into a verified wire source (+130 on top of the above). Measured 83038, exact, no spare.
   // Durable model call store for sent-request facts and their lookup. Measured 83038 (+465), exact, no spare.
   // fix(host): an artifact version is ready only on a pin it owns. Measured 83039 (+1), exact, no spare.
-  'packages/host/src': 83056,
+  // Host-side State read groundwork: historical meta for native facts, windowed point reads and byte-packed pages, Stored envelope encoding, port types. Measured 83319 (+280 on top of the above), exact, no spare.
+  'packages/host/src': 83336,
   'packages/host/src/ext-host/service-invocation': 247,
   // T5.2's permission projector is kept independently bounded so later extension-host work cannot
   // hide in the package-wide increment. Measured source: 86 lines.

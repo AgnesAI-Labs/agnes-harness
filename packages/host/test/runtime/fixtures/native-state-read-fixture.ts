@@ -11,7 +11,7 @@ import { createBootstrapAnchor } from '../../../src/runtime/maintenance/bootstra
 import { createNativeStateReadOwner } from '../../../src/runtime/state/native-read-owner.js'
 import { openJointAdmission } from './assembly-admission-joint.js'
 
-export async function originalNativeFixture() {
+export async function originalNativeFixture(options: { clock?: () => number } = {}) {
   const directory = realpathSync(mkdtempSync(join(tmpdir(), 'agnes-native-state-read-')))
   const input = admissionFixtureInput()
   const deploymentDirectory = join(directory, 'deployment')
@@ -47,7 +47,7 @@ export async function originalNativeFixture() {
   })
   setupIdentity.close()
   setupDatabase.close()
-  const fixture = await openJointAdmission(deploymentDirectory, input)
+  const fixture = await openJointAdmission(deploymentDirectory, input, undefined, false, options.clock)
   const identity = createLocalDeploymentIdentity({
     database: fixture.db,
     deploymentDirectory,

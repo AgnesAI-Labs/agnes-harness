@@ -148,6 +148,7 @@ import {
 import { assertStateReader } from './reader.js'
 import {
   ACTION_SCHEMA,
+  ATTEMPT_SCHEMA,
   bodyDigest,
   type ChainRow,
   type CommitMutationManifest,
@@ -803,6 +804,7 @@ type ProofRow = {
   sides_json: string
   versions_json: string
 }
+type NativeProofRow = ProofRow & { event_ts: string }
 
 type PendingRequest = { method: string; requestId: string; fingerprint: string; result: unknown }
 
@@ -832,8 +834,20 @@ const runtimeDatabaseConfigurations = new WeakMap<
 >()
 const nativeReadTokens = new WeakMap<
   object,
-  Readonly<{ state: RuntimeStateDatabase; scope: Extract<ScopeRef, { kind: 'runtime' }> }>
+  Readonly<{
+    state: RuntimeStateDatabase
+    scope: Extract<ScopeRef, { kind: 'runtime' }>
+    readable: readonly SchemaRef[]
+  }>
 >()
+const NATIVE_READABLE: readonly SchemaRef[] = Object.freeze([
+  RUN_RECORD_SCHEMA,
+  RUN_BINDING_SCHEMA,
+  ACTION_SCHEMA,
+  ATTEMPT_SCHEMA,
+  SIGNAL_SCHEMA,
+])
+const EVENT_TIMESTAMP = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z$/
 
 export type NativeStateRecordFact = Readonly<{
   recordId: string
@@ -844,20 +858,91 @@ export type NativeStateRecordFact = Readonly<{
   digest: string
   commitId: string
   ledgerSeq: number
+  minReader: number
+  createdAt: string
+  updatedAt: string
 }>
 
 type NativeVisibleVersion = Readonly<{
   revision: number
   commitId: string
   ledgerSeq: number
+  at: string
   header: PackedVersion
 }>
+
+function nativeJson<T>(text: string, message: string): T {
+  try {
+    return parseProfiled(text) as T
+  } catch {
+    integrity(message)
+  }
+}
+
+function nativeProofArray(text: string): unknown[] {
+  const parsed = nativeJson<unknown>(text, 'proof pack cannot be decoded')
+  if (!Array.isArray(parsed)) integrity('proof pack cannot be decoded')
+  return parsed
+}
+
+/**
+ * Replays commit proofs in ledger order. Creation and update times are the commit event times of
+ * the first and the selected version; nothing is read from the current head or the clock.
+ */
+export function rebuildNativeVisible(proofs: readonly NativeProofRow[]): Readonly<{
+  created: Map<string, string>
+  visible: Map<string, NativeVisibleVersion>
+}> {
+  const created = new Map<string, string>()
+  const visible = new Map<string, NativeVisibleVersion>()
+  for (const proof of proofs) {
+    if (!EVENT_TIMESTAMP.test(proof.event_ts))
+      refuse('incompatible', 'state_meta_unproven', 'a commit event has no proven timestamp')
+    const headers = nativeProofArray(proof.versions_json) as PackedVersion[]
+    for (const item of nativeProofArray(proof.manifests_json)) {
+      const packed = item as PackedManifest
+      if (packed.previousRevision === null) {
+        if (created.has(packed.recordId))
+          refuse('incompatible', 'state_meta_unproven', 'a record id was created twice')
+        created.set(packed.recordId, proof.event_ts)
+      } else if (!created.has(packed.recordId)) {
+        refuse('incompatible', 'state_meta_unproven', 'a record changed before its creation')
+      }
+      if (packed.nextJson === null) {
+        visible.delete(packed.recordId)
+        continue
+      }
+      const next = nativeJson<MutationNext>(packed.nextJson, 'original snapshot mutation invalid')
+      const header = headers.find(
+        (candidate) =>
+          candidate.recordId === packed.recordId && candidate.recordRevision === next.recordRevision,
+      )
+      if (!header || header.digest !== next.digest || header.schemaJson !== canonicalJson(next.schema))
+        integrity('original snapshot version differs from its mutation')
+      visible.set(packed.recordId, {
+        revision: next.recordRevision,
+        commitId: proof.commit_id,
+        ledgerSeq: proof.ledger_seq,
+        at: proof.event_ts,
+        header,
+      })
+    }
+  }
+  return { created, visible }
+}
+
+/** A forked session keeps a parent prefix outside its own ledger, which a native read would miss. */
+export function assertNativeSessionHasNoParent(parent: SessionIdentityValue['parent']): void {
+  if (parent !== null)
+    refuse('incompatible', 'state_session_parent', 'a session with a parent prefix cannot be read natively')
+}
 
 /** Original same-connection reader; the returned token never leaves these closures. */
 export function captureNativeStateReadPort(
   state: RuntimeStateDatabase,
   identity: LocalDeploymentIdentity,
   database: DatabaseSync,
+  readable: readonly SchemaRef[] = NATIVE_READABLE,
 ) {
   if (!runtimeStateUsesDatabase(state, database)) return null
   const binding = localDeploymentIdentityBinding(identity, database)
@@ -868,7 +953,7 @@ export function captureNativeStateReadPort(
   )
     return null
   const token = Object.freeze({})
-  nativeReadTokens.set(token, { state, scope: binding.scope })
+  nativeReadTokens.set(token, { state, scope: binding.scope, readable })
   return Object.freeze({
     authority: nativeReadMethods.authority.call(state),
     scope: binding.scope,
@@ -976,6 +1061,7 @@ export class RuntimeStateDatabase {
         if (!meta) refuse('denied', 'session', 'original State session is absent')
         const verified = await this.verifySessionFully(meta)
         this.assertNativeReadSession(token, sessionId)
+        assertNativeSessionHasNoParent(verified.parent)
         return this.openResult(
           {
             requestId: this.ids.ulid(),
@@ -1012,6 +1098,7 @@ export class RuntimeStateDatabase {
         if (!meta) refuse('denied', 'session', 'original State session is absent')
         const verified = await this.verifySessionFully(meta)
         this.assertNativeReadSession(token, snapshot.sessionId)
+        assertNativeSessionHasNoParent(verified.parent)
         if (snapshot.throughSeq > verified.lastSeq)
           integrity('original State snapshot is beyond the verified ledger')
         const boundary = this.get<{ integrity_digest: string | null }>(
@@ -1021,8 +1108,8 @@ export class RuntimeStateDatabase {
         )
         if (!boundary || boundary.integrity_digest !== snapshot.headDigest)
           integrity('original State snapshot prefix changed')
-        const proofs = this.all<ProofRow>(
-          `SELECT p.commit_id,p.ledger_seq,p.manifests_json,p.sides_json,p.versions_json
+        const proofs = this.all<NativeProofRow>(
+          `SELECT p.commit_id,p.ledger_seq,p.manifests_json,p.sides_json,p.versions_json,e.ts AS event_ts
            FROM runtime_commit_proofs p JOIN events e
              ON e.session_key=? AND e.seq=p.ledger_seq AND e.type=?
             AND json_extract(e.data,'$.commitId')=p.commit_id
@@ -1031,38 +1118,22 @@ export class RuntimeStateDatabase {
           STATE_COMMIT_EVENT,
           snapshot.throughSeq,
         )
-        const visible = new Map<string, NativeVisibleVersion>()
-        for (const proof of proofs) {
-          const headers = this.proofArray(proof.versions_json) as PackedVersion[]
-          for (const item of this.proofArray(proof.manifests_json)) {
-            const packed = item as PackedManifest
-            if (packed.nextJson === null) {
-              visible.delete(packed.recordId)
-              continue
-            }
-            const next = this.parseJson<MutationNext>(packed.nextJson, 'original snapshot mutation invalid')
-            const header = headers.find(
-              (candidate) =>
-                candidate.recordId === packed.recordId && candidate.recordRevision === next.recordRevision,
-            )
-            if (!header || header.digest !== next.digest || header.schemaJson !== canonicalJson(next.schema))
-              integrity('original snapshot version differs from its mutation')
-            visible.set(packed.recordId, {
-              revision: next.recordRevision,
-              commitId: proof.commit_id,
-              ledgerSeq: proof.ledger_seq,
-              header,
-            })
-          }
-        }
-        const allowed = [RUN_RECORD_SCHEMA, RUN_BINDING_SCHEMA, ACTION_SCHEMA, SIGNAL_SCHEMA]
+        const { created, visible } = rebuildNativeVisible(proofs)
+        const readable = nativeReadTokens.get(token)?.readable ?? []
         const facts: NativeStateRecordFact[] = []
         for (const [recordId, selected] of visible) {
           const schema = this.parseJson<SchemaRef>(
             selected.header.schemaJson,
             'original snapshot schema invalid',
           )
-          if (!allowed.some((entry) => sameJson(entry, schema))) continue
+          const kind = readable.find((entry) => entry.typeId === schema.typeId)
+          if (!kind) continue
+          if (!sameJson(kind, schema))
+            refuse(
+              'incompatible',
+              'state_legacy_version',
+              'a readable record is stored under a non-current schema revision',
+            )
           if (!selected.header.hasBody) integrity('original snapshot body has been pruned')
           const body = this.get<{ value_json: string }>(
             'SELECT value_json FROM runtime_version_bodies WHERE record_id = ? AND record_revision = ?',
@@ -1077,6 +1148,8 @@ export class RuntimeStateDatabase {
           )
           if (bodyDigest(owner, value) !== selected.header.digest)
             integrity('original snapshot body digest changed')
+          const createdAt = created.get(recordId)
+          if (createdAt === undefined) integrity('original snapshot record has no proven creation')
           facts.push(
             Object.freeze({
               recordId,
@@ -1087,6 +1160,9 @@ export class RuntimeStateDatabase {
               digest: selected.header.digest,
               commitId: selected.commitId,
               ledgerSeq: selected.ledgerSeq,
+              minReader: stateSchemaReader(schema),
+              createdAt,
+              updatedAt: selected.at,
             }),
           )
         }
