@@ -319,7 +319,7 @@ export function createReferenceModelAdapterFactory(
                 scope.actionId !== frame.actionId ||
                 scope.runId !== frame.runId ||
                 frame.method !== method ||
-                !current(call.call)
+                (method === 'invoke' && !current(call.call))
               )
                 return failure('denied')
               const signal = call.call.signal,
@@ -362,7 +362,7 @@ export function createReferenceModelAdapterFactory(
                     call,
                     request.attemptRef,
                   )
-                  if (!current(call.call) || relation() !== pinned) return failure('denied')
+                  if (relation() !== pinned) return failure('denied')
                   return {
                     outcome: 'succeeded',
                     result: encode('ReconcileResult', result),
