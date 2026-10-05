@@ -207,7 +207,8 @@ export function createProjectionProvider(options: ProjectionProviderOptions) {
   const windows = new Map<string, Map<string, Window>>()
   const secret = random()
   let closed = false
-  let pulling: Promise<void> | undefined
+  let pulling: Promise<void> = Promise.resolve()
+  let waiting = false
 
   const head = (): Cut => fold.cuts[fold.cuts.length - 1] ?? { revision: 0, state: null }
   const capability = domain.readerPolicy.capability
@@ -249,6 +250,7 @@ export function createProjectionProvider(options: ProjectionProviderOptions) {
   }
 
   async function pull() {
+    waiting = false
     for (;;) {
       const records = await options.journal(fold.watermark, PAGE)
       for (const record of records) {
@@ -262,11 +264,17 @@ export function createProjectionProvider(options: ProjectionProviderOptions) {
     }
   }
 
-  async function catchUp() {
-    pulling ??= pull().finally(() => {
-      pulling = undefined
-    })
-    await pulling
+  /**
+   * Pulls run one at a time. A pull in flight may have cut its journal page before the caller's commit, so a
+   * caller waits for a pull that starts after it asked; callers that ask before that pull starts share it.
+   * A failed pull does not fail the pull queued behind it.
+   */
+  function catchUp(): Promise<void> {
+    if (!waiting) {
+      waiting = true
+      pulling = pulling.then(pull, pull)
+    }
+    return pulling
   }
 
   /** Reader policy: only fields a rule names, and only where the reader may use the rule's resource. */
