@@ -627,7 +627,7 @@ function inferAction(
             if (result.outcome !== 'succeeded' || !result.result)
               return transition({
                 kind: 'fail',
-                error: result.error ?? refusal('denied', 'model_child_invalid').error,
+                error: result.error ?? errorOf(fault('denied', 'model_child_invalid')),
               })
             const output = validateRuntime(
               'ModelOutput',
