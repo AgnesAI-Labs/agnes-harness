@@ -95,6 +95,8 @@ AGH 的 App Server 为客户端提供共享的任务运行基础：daemon 管理
 
 runtime HTTP 监听消费 Host 所有的只读适配端口。Host 持有 projection 生命周期，接到已提交事件通知后刷新，并在每次读时核验原 C14 签发的上下文。Core 尚未公开工厂，默认 projection owner 当前返回 `projection_provider_export_unavailable`。生产读侧仍需选中的 provider 与部署签发上下文的绑定；HTTP 传输鉴权不签发业务身份。
 
+受信 `projection` 安装提供已选 domain store 的 owner 与权限。supervisor 只打开一个 store，将同一实例作为 command storage、原 events 的 async journal 包装、提交订阅，以及 daemon 原 native conversation 适配口交给 Host 装配。另一个 store 实例提交不会通知此 owner。退出时先撤订阅、abort 并 drain Host 读取/刷新、关闭 provider，再关闭 store；缺少安装事实时保留默认拒绝。
+
 ## 可复用场景的范围
 
 FDE 是交付方式，MHS 是设备接入方向。FDE 交付可通过 AGH 已有扩展入口构建企业软件，后续也可包含设备接入。知识检索、数据库连接器、业务系统与专用界面需要针对具体环境开发与验证。

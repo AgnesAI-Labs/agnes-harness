@@ -193,6 +193,7 @@ import { createMcpManageRequests } from './mcp-manage-requests.js'
 import { acquireOwnerLock } from './owner-lock.js'
 import { readOwner } from './owner-record.js'
 import { createPluginManageRequests } from './plugin-manage-requests.js'
+import { openSupervisorProjectionOwner, type SupervisorProjectionInstallation } from './projection-owner.js'
 import { type RemoteEntry, WorkerRegistry } from './registry.js'
 import { runtimeClientBearer } from './runtime-credential.js'
 import { createRuntimeTargetProbeLauncher, spawnRuntimeTargetProbeWorker } from './runtime-target-probe.js'
@@ -640,6 +641,8 @@ export type StartSupervisorOptions = {
   /** Host-owned read adapters and C14 policy; omitted services and authorization fail closed. */
   runtimeClientInstallation?: HostRuntimeClientInstallation
   projectionOwner?: HostProjectionOwner
+  /** Trusted selected domain installation; its store is opened only by this supervisor. */
+  projection?: SupervisorProjectionInstallation
   /**
    * A privileged view of core's tables, used by crash reclaim. The sqliteTables test fixture can
    * provide this combined view; Host deliberately does not expose one in production today.
@@ -859,8 +862,12 @@ export async function startSupervisor(o: StartSupervisorOptions): Promise<{
   // its own comment at `startupCleanup.length = 0`: it is wiped the moment startup succeeds and only
   // ever fires on a startup abort, never on a later `close()`).
   let surfaceController: SurfaceController | undefined
-  const projectionOwner = o.projectionOwner ?? createHostProjectionOwner()
-  const startupCleanup: Array<() => void | Promise<void>> = [() => projectionOwner.close()]
+  let projectionOwner = o.projectionOwner ?? (o.projection ? undefined : createHostProjectionOwner())
+  const startupCleanup: Array<() => void | Promise<void>> = []
+  if (projectionOwner) {
+    const owner = projectionOwner
+    startupCleanup.push(() => owner.close())
+  }
   const cleanupStartup = async (): Promise<void> => {
     for (const cleanup of startupCleanup.reverse()) {
       try {
@@ -873,6 +880,8 @@ export async function startSupervisor(o: StartSupervisorOptions): Promise<{
     await lock.release().catch(() => undefined)
   }
   try {
+    if (o.projectionOwner && o.projection)
+      throw new Error('projection store installation conflicts with an existing projection owner')
     // The profile is worker input, not a startup marker. Persist it only after the owner lock is
     // held so a competing launch cannot overwrite the profile currently used by another daemon.
     await persistResolvedProfile(o.profileFile, o.profile)
@@ -1474,6 +1483,17 @@ export async function startSupervisor(o: StartSupervisorOptions): Promise<{
       await effectivePackageAdmin.service.rebuildClientModules(o.profile.name)
     }
     const supervisorRegistry = new SupervisorRegistry(registry, workspaces)
+    if (o.projection) {
+      const owner = openSupervisorProjectionOwner(o.projection, {
+        registry: supervisorRegistry,
+        sessionOwnership,
+        workspaces: workspaceCatalog,
+      })
+      projectionOwner = owner
+      startupCleanup.push(() => owner.close())
+    }
+    if (!projectionOwner) throw new Error('projection owner was not assembled')
+    const selectedProjectionOwner = projectionOwner
     const hostFacade = supervisorHostFacade(o.profile, activationBarrier, pool)
     const host = hostFacade.host
     const callService = workerServiceCaller(pool, () => host.profile)
@@ -1929,7 +1949,7 @@ export async function startSupervisor(o: StartSupervisorOptions): Promise<{
         : undefined
     if (wsServer) startupCleanup.push(() => wsServer.close())
     const localSecret = o.config.localWeb && wsToken ? wsToken : randomBytes(32).toString('base64url')
-    const projectionPorts = createHostRuntimeClientPorts(projectionOwner.installation, {
+    const projectionPorts = createHostRuntimeClientPorts(selectedProjectionOwner.installation, {
       principalId: 'local',
       generation: lock.owner.generation,
     })
@@ -1998,7 +2018,7 @@ export async function startSupervisor(o: StartSupervisorOptions): Promise<{
             Promise.resolve().then(() => server.stopAccepting()),
             ...(wsServer ? [Promise.resolve().then(() => wsServer.stopAccepting())] : []),
             Promise.resolve().then(() => runtimeServer.stopAccepting()),
-            Promise.resolve().then(() => projectionOwner.close()),
+            Promise.resolve().then(() => selectedProjectionOwner.close()),
             ...(stopJwks ? [Promise.resolve().then(() => stopJwks())] : []),
           ])
           const errors = results
@@ -2206,6 +2226,7 @@ export type RunAgnesdDeps = {
   resources?: StartSupervisorOptions['resources']
   runtimeClientInstallation?: HostRuntimeClientInstallation
   projectionOwner?: HostProjectionOwner
+  projection?: SupervisorProjectionInstallation
 }
 
 /** `runAgnesd` accepts a partial argument object so embedded launchers can rely on scope defaults. */
@@ -2440,6 +2461,7 @@ export async function runAgnesd(args: RunAgnesdArgs = {}, deps: RunAgnesdDeps = 
     profileDir: scope.profileDir,
     ...(deps.runtimeClientInstallation ? { runtimeClientInstallation: deps.runtimeClientInstallation } : {}),
     ...(deps.projectionOwner ? { projectionOwner: deps.projectionOwner } : {}),
+    ...(deps.projection ? { projection: deps.projection } : {}),
     profileFile: scope.profileFile,
     workspaceRoot: scope.workspace,
     configuration,

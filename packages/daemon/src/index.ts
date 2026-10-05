@@ -34,6 +34,7 @@ export {
 } from './supervisor/discovery.js'
 export { type DaemonDoctorSection, daemonDoctor } from './supervisor/doctor.js'
 export { acquireDaemonOfflineMaintenance } from './supervisor/offline-maintenance.js'
+export type { SupervisorProjectionInstallation } from './supervisor/projection-owner.js'
 export {
   createRuntimeTargetProbeLauncher,
   RUNTIME_TARGET_PROBE_REAP_TIMEOUT_MS,
