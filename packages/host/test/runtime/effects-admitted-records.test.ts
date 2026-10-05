@@ -126,8 +126,8 @@ async function admittedFixture(clock?: () => number) {
   expect(admitted.state).toBe('admitted')
   const reader = createAdmittedEffectsRecordReader({
     originalState: state,
-    originalIdentity: f.identity,
-    originalDatabase: f.fixture.db,
+    runtimeScope: f.scope,
+    bridge: f.bridge,
   })
   const ids = {
     sessionId: 'fixture-session',
@@ -164,8 +164,8 @@ describe.skipIf(typeof process.getuid !== 'function')('original admitted effects
       f.identity.revoke()
       await expect(reader.read(f.context, ids)).rejects.toThrow()
     } finally {
-      reader.close()
-      f.reader.close()
+      await reader.close()
+      await f.reader.close()
       f.identity.close()
       await f.fixture.close()
       rmSync(f.directory, { recursive: true, force: true })
@@ -179,8 +179,8 @@ describe.skipIf(typeof process.getuid !== 'function')('original admitted effects
       f.identity.revoke()
       await expect(pending).rejects.toThrow()
     } finally {
-      reader.close()
-      f.reader.close()
+      await reader.close()
+      await f.reader.close()
       f.identity.close()
       await f.fixture.close()
       rmSync(f.directory, { recursive: true, force: true })
@@ -210,8 +210,8 @@ describe.skipIf(typeof process.getuid !== 'function')('original admitted effects
       ).rejects.toThrow()
       expect((await reader.read(f.context, ids)).attempt.attemptId).toBe(ids.attemptId)
     } finally {
-      reader.close()
-      f.reader.close()
+      await reader.close()
+      await f.reader.close()
       f.identity.close()
       await f.fixture.close()
       rmSync(f.directory, { recursive: true, force: true })
@@ -226,13 +226,13 @@ describe.skipIf(typeof process.getuid !== 'function')('original admitted effects
     })
     try {
       duringRead = () => {
-        reader.close()
+        void reader.close()
         duringRead = () => {}
       }
       await expect(reader.read(f.context, ids)).rejects.toThrow()
     } finally {
-      reader.close()
-      f.reader.close()
+      await reader.close()
+      await f.reader.close()
       f.identity.close()
       await f.fixture.close()
       rmSync(f.directory, { recursive: true, force: true })

@@ -2,9 +2,11 @@
 // renderer is injected, so this package presents with whatever IM renderer the client selected. The
 // mapping is pure: it copies only the renderer's text and the keys of actions the view itself offers,
 // never view data, approval values, tokens or URLs. A view the channel cannot present completely
-// becomes a read-only summary marked incomplete, and the caller sends the user to the Web form.
+// becomes a read-only summary marked incomplete, and the caller sends the user to the Web form. A
+// renderer that fails, rather than refuses, yields to the default text renderer.
 import type * as Wire from '@agnes/protocol/runtime'
 import { canonicalJsonDigest, utf8ByteLength, validateRuntime } from '@agnes/protocol/runtime'
+import { encodeForChannel, formatDomainView } from '@agnes/sdk/runtime'
 
 const KINDS: readonly string[] = ['command', 'interaction', 'download', 'open-form']
 
@@ -54,7 +56,18 @@ const digest = (value: Wire.JsonValue): string | undefined => {
   }
 }
 
+const DEFAULT: ChannelTextRenderer = { format: formatDomainView, encode: encodeForChannel }
+const FAILED = refuse('renderer_failed', 'the renderer failed')
+
 export function toChannelMessages(input: DomainViewDelivery): Outcome<ChannelMessages> {
+  // A renderer that failed presents nothing: the default renderer presents the view from the start, under
+  // the same message ids. When it fails too, nothing is sent.
+  const sent = present(input)
+  const fallback = sent === FAILED ? present({ ...input, renderer: DEFAULT }) : sent
+  return fallback === FAILED ? refuse('renderer_failed', 'the renderer failed') : fallback
+}
+
+function present(input: DomainViewDelivery): Outcome<ChannelMessages> {
   const { view, interaction, destination, channel, renderer } = input
   if (
     interaction !== null &&
@@ -67,7 +80,7 @@ export function toChannelMessages(input: DomainViewDelivery): Outcome<ChannelMes
   )
     return refuse('foreign_interaction', 'the interaction is not one the view asks')
   // A renderer that throws, as one whose plugin was disabled under the channel may, or that answers with
-  // anything but an outcome is a refusal too.
+  // anything but an outcome has failed.
   const call = <T>(run: () => Outcome<T>): Outcome<T> => {
     let result: { ok?: unknown; error?: unknown } | null | undefined
     try {
@@ -76,7 +89,7 @@ export function toChannelMessages(input: DomainViewDelivery): Outcome<ChannelMes
     return result?.ok === true ||
       (result?.ok === false && typeof result.error === 'object' && result.error !== null)
       ? (result as Outcome<T>)
-      : refuse('renderer_failed', 'the renderer failed')
+      : FAILED
   }
   const formatted = call(() => renderer.format(view, input.context))
   if (!formatted.ok) return formatted

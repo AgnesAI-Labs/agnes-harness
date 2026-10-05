@@ -54,7 +54,7 @@ describe('what the State does today with a stale parameter read guard', () => {
         }),
       ).rejects.toMatchObject({ failure: { code: 'conflict', detailCode: 'read_guard' } })
     } finally {
-      reader.close()
+      await reader.close()
       identity.close()
       await fixture.close()
       rmSync(directory, { recursive: true, force: true })
