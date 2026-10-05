@@ -1,6 +1,11 @@
 import type { LeafActionProvider, Outcome } from '@agnes/extension-api/runtime'
 import type { ToolCall } from '@agnes/protocol/runtime'
-import { canonicalJsonDigest, RuntimeMethodSchemaRefs, validateRuntime } from '@agnes/protocol/runtime'
+import {
+  canonicalJsonDigest,
+  RuntimeMethodSchemaRefs,
+  RuntimeSchemaRefs,
+  validateRuntime,
+} from '@agnes/protocol/runtime'
 import { describe, expect, it, vi } from 'vitest'
 import { createPureToolAuthorAdapter } from '../../../../packages/extension-api/src/runtime/tool-authoring.js'
 import { runToolsContractScenario } from '../../../../packages/extension-api/testkit/runtime/contracts/tools.js'
@@ -107,10 +112,16 @@ describe('independent reference text statistics Tools', () => {
       )
       expect(result.outcome).toBe('failed')
       expect(result.error?.detailCode).toBe('tools_call_identity')
-      for (const [change, detailCode] of [
-        [{ modelContextRef: selected.input.describe }, 'tools_model_context_source_unavailable'],
+      for (const [change, code, detailCode] of [
+        [{ modelContextRef: selected.input.describe }, 'denied', 'tools_model_context_schema'],
+        [
+          { modelContextRef: fixtures.toolsRef(RuntimeSchemaRefs.PreparedModelRequest, {}) },
+          'incompatible',
+          'tools_model_context_source_unavailable',
+        ],
         [
           { batchRef: { batchId: 'synthetic-batch', ordinal: 0, parentBatchId: null } },
+          'incompatible',
           'tools_batch_source_unavailable',
         ],
       ] as const) {
@@ -122,7 +133,7 @@ describe('independent reference text statistics Tools', () => {
           { ...selected.input.frame, input: unsupportedInput, inputDigest: unsupportedInput.digest },
           selected.input.actionContext,
         )
-        expect(refused).toMatchObject({ outcome: 'failed', error: { code: 'incompatible', detailCode } })
+        expect(refused).toMatchObject({ outcome: 'failed', error: { code, detailCode } })
       }
       expect(selected.input.effectsCount()).toBe(0)
     } finally {
