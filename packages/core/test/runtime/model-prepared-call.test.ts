@@ -10,7 +10,6 @@ import {
   modelCaptureOf,
   type PrepareParts,
   preparedIdOf,
-  selectionDigest,
 } from '../../src/runtime/model/prepared-call.js'
 import { modelInputDigest } from '../../src/runtime/model/wire-request.js'
 import {
@@ -46,16 +45,6 @@ describe('modelCaptureOf', () => {
       route: { ...pick.route, compat: { a: 1 }, keyless: true },
     })
     expect(withOptions.route).toMatchObject({ compat: { a: 1 }, keyless: true })
-  })
-  it('selectionDigest ignores the adapter package and other models of the route but follows the route and the model', () => {
-    const base = selectionDigest(pick)
-    expect(
-      selectionDigest({ ...pick, model: { ...pick.model, cost: { ...pick.model.cost, output: 9 } } }),
-    ).not.toBe(base)
-    expect(selectionDigest({ ...pick, route: { ...pick.route, baseUrl: 'https://other.invalid' } })).not.toBe(
-      base,
-    )
-    expect(selectionDigest({ ...pick, route: { ...pick.route, models: [] } as never })).toBe(base)
   })
 })
 

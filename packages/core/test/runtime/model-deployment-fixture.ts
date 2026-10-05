@@ -2,13 +2,7 @@ import { defineGeneratedAuthorSchema } from '@agnes/extension-api/runtime'
 import { createTestServiceContainer } from '@agnes/extension-api/testkit'
 import type * as W from '@agnes/protocol/runtime'
 import { canonicalJsonDigest } from '@agnes/protocol/runtime'
-import { refusal } from '../../src/runtime/model/prepared-call.js'
-import {
-  createDefaultModelFactory,
-  type IssuanceEntry,
-  type ModelDeployment,
-  type RevisionBinding,
-} from '../../src/runtime/providers/model.js'
+import { createDefaultModelFactory, type ModelDeployment } from '../../src/runtime/providers/model.js'
 import { callContext, fixtureAdapter, fixtureCatalog, fixtureOwner, fixtureWire } from './model-fixture.js'
 
 export function inlineRef(schema: W.SchemaRef, value: unknown): W.DataRef {
@@ -20,11 +14,9 @@ export function inlineRef(schema: W.SchemaRef, value: unknown): W.DataRef {
     bytes: new TextEncoder().encode(JSON.stringify(value)).length,
   }
 }
-export type Counters = { recorded: IssuanceEntry[]; revisions: RevisionBinding[]; network: number }
+export type Counters = { captures: number; network: number }
 export function fakeDeployment(over: Partial<ModelDeployment> = {}) {
-  const counters: Counters = { recorded: [], revisions: [], network: 0 }
-  const ledger = new Map<string, IssuanceEntry>()
-  const bindings = new Map<string, string>()
+  const counters: Counters = { captures: 0, network: 0 }
   const config = defineGeneratedAuthorSchema<Record<string, never>>({
     ownerPackageId: '@fixture/model',
     name: 'RuntimeEmptyConfig',
@@ -55,7 +47,12 @@ export function fakeDeployment(over: Partial<ModelDeployment> = {}) {
       providerId: 'agh.default/state',
     },
     current: () => true,
-    catalog: { capture: () => ({ ok: true, value: fixtureCatalog() }) },
+    catalog: {
+      capture: () => {
+        counters.captures++
+        return { ok: true, value: fixtureCatalog() }
+      },
+    },
     prices: { version: (target) => target.priceVersion },
     wire: { resolve: async () => ({ ok: true, value: fixtureWire }) },
     adapters: {
@@ -64,27 +61,10 @@ export function fakeDeployment(over: Partial<ModelDeployment> = {}) {
           ? { binding: fixtureAdapter, packageDigest: 'package-1' }
           : null,
     },
-    issuance: {
-      record: (entry) => {
-        counters.recorded.push(entry)
-        ledger.set(entry.preparedDigest, entry)
-        return { ok: true, value: undefined }
-      },
-      read: (digest) => ledger.get(digest),
-      bindRevision: (binding) => {
-        counters.revisions.push(binding)
-        const key = `${binding.routeId}\0${binding.routeRevision}\0${binding.catalogRevision}`
-        const prior = bindings.get(key)
-        if (prior !== undefined && prior !== binding.selectionDigest)
-          return refusal('conflict', 'model_revision_conflict')
-        bindings.set(key, binding.selectionDigest)
-        return { ok: true, value: undefined }
-      },
-    },
     bridge: { ready: () => ({ ok: true, value: undefined }) },
     ...over,
   }
-  return { deployment, counters, ledger, bindings }
+  return { deployment, counters }
 }
 export async function openModel(over: Partial<ModelDeployment> = {}) {
   const fake = fakeDeployment(over)
