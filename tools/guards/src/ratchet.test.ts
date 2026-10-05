@@ -1594,7 +1594,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // Runtime client transport cases over two servers with one SDK client. Measured 16143, exact, no spare (+950).
   // Tools contracts +247, Context +339, Loop +170; exact, no spare.
   // Transport recovery checks read only the report of the request in question (+2), exact.
-  'packages/extension-api/testkit': 17072,
+  // Events fixed page set, full-page checkpoint and cross-session checkpoint cases (+11), exact.
+  'packages/extension-api/testkit': 17083,
   // 2026-09-10: raised from 2500 by Task 15 (stream-disconnect reconnection). The new
   // reattach.ts (the Reconnector: backoff loop, OVERLOADED's retryAfterMs override) plus
   // Session.recover()/waitForQuiescence and Client's reconnect wiring (emit(), the
