@@ -308,7 +308,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // Domain cards in the conversation window projection and message list: measured 4792, exact cap (+86).
   // Popover placement measures the trigger's own window. Measured 6714, exact, no spare (+2).
   // Sixth main synchronization brings main's queued-input CI fixes. Measured 6736, exact, no spare.
-  'packages/web-ui/src': 6736,
+  // Sandboxed HTML viewer frame and its request checks. Measured 6871, exact, no spare (+135).
+  'packages/web-ui/src': 6871,
   // W8a-3: retire the native tool renderer in favor of one compatibility root; measured 4630.
   // The offline diagnostics viewer refuses an unknown bundle version (+7 lines); measured 4645, exact cap.
   // Sidebar binds against its own document and window. Measured 5559, exact, no spare (+1).
