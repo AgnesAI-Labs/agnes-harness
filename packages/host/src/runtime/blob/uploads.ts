@@ -79,9 +79,10 @@ const DDL = [
   `CREATE TABLE IF NOT EXISTS blobs (
     blob_id TEXT PRIMARY KEY, upload_id TEXT NOT NULL UNIQUE, staged TEXT NOT NULL, digest TEXT NOT NULL,
     deleted INTEGER NOT NULL DEFAULT 0)`,
+  // `principal` comes last, where the migration below appends it, so every store lists the same columns.
   `CREATE TABLE IF NOT EXISTS roots (
     pin_id TEXT PRIMARY KEY, target TEXT NOT NULL, target_id TEXT NOT NULL, owner TEXT, owner_key TEXT,
-    retention_until INTEGER, revision INTEGER NOT NULL, active INTEGER NOT NULL, blob TEXT)`,
+    retention_until INTEGER, revision INTEGER NOT NULL, active INTEGER NOT NULL, blob TEXT, principal TEXT)`,
   'CREATE INDEX IF NOT EXISTS roots_target ON roots (target, target_id, active)',
   // The deletion log: every collect and released pin, and both phases of a content unlink.
   `CREATE TABLE IF NOT EXISTS deletions (
@@ -136,6 +137,18 @@ export function openBlobStore(options: {
     db.exec('PRAGMA synchronous = NORMAL')
     syncCheckpointsToMedium(db)
     for (const statement of DDL) db.exec(statement)
+    // A pin records the principal that took it; one taken before this column records none, so no
+    // caller may release it. A sealed-upload root needs none: it belongs to whoever staged the upload.
+    const recorded = () =>
+      (db.prepare('PRAGMA table_info(roots)').all() as { name: string }[]).some(
+        ({ name }) => name === 'principal',
+      )
+    if (!recorded())
+      try {
+        db.exec('ALTER TABLE roots ADD COLUMN principal TEXT')
+      } catch (error) {
+        if (!recorded()) throw error // otherwise another process added it first
+      }
     authority = openAuthority(db, {
       authorityId: options.authorityId,
       tables: TABLES,
@@ -292,6 +305,13 @@ export function loadUpload(store: BlobStore, uploadId: Wire.Id): UploadRow | und
 }
 
 const ownerOf = (context: CallContext) => jcs({ principalRef: context.principalRef, scope: context.scope })
+
+/**
+ * Whether the caller is the principal that staged an upload. Its scope may differ: a publication
+ * promotes and pins from the scope of the action that publishes.
+ */
+export const stagedBy = (row: Pick<UploadRow, 'owner'>, context: CallContext) =>
+  (JSON.parse(row.owner) as { principalRef: string }).principalRef === context.principalRef
 
 export function stage(store: BlobStore, request: unknown, context: CallContext): Wire.UploadSession {
   const input = parse('BlobStageRequest', request)

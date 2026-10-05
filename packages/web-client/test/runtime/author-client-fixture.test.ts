@@ -166,6 +166,42 @@ describe('an outside author client package', () => {
     expect(card?.querySelector('p')?.textContent).toBe('Tag the build, then publish the notes.')
   })
 
+  it('gets handles through its own registry only for what the host registered and the window holds', async () => {
+    const h = await activate('web')
+    const generation = h.runtime.current()
+    if (generation === undefined) throw new Error('no current generation')
+    const request = {
+      renderKey: VIEW.renderKey,
+      viewSchema: VIEW.viewSchema,
+      target: 'web' as const,
+      requiredFeatures: [],
+    }
+    const matched = generation.registry.resolve(request)
+    if (!matched.ok || matched.value.kind !== 'matched') throw new Error('the note card was not matched')
+    const { handle, descriptor } = matched.value
+    // The handle presents only the revision the authorized window holds now, so an older one is refused.
+    h.present({ ...VIEW, revision: 2 })
+    expect(refused(handle.present(VIEW))).toBe('conflict/view_stale')
+    expect(refused(handle.present({ ...VIEW, viewId: 'note-2' }))).toBe('conflict/view_resync_required')
+    // A definition placed in the package's registry behind the host's back gets no handle, so a view
+    // under its render key shows in the generic view rather than through it.
+    const forged = {
+      descriptor: { ...descriptor, id: 'acme.notes/forged', renderKey: 'acme.notes/forged' },
+      component: author.component,
+    }
+    expect(refused(generation.registry.register(forged))).toBe('ok')
+    expect(refused(generation.registry.resolve({ ...request, renderKey: 'acme.notes/forged' }))).toBe(
+      'denied/renderer_unbound',
+    )
+    const shown = await mount(
+      h.present(wire('DomainView', { ...VIEW, viewId: 'note-3', renderKey: 'acme.notes/forged' })),
+    )
+    expect(shown.querySelector('.acme-note')).toBeNull()
+    expect(shown.querySelector('.generic-domain-view .generic-domain-text')?.textContent).toBe(
+      'Note: Release checklist',
+    )
+  })
+
   it('formats its view through the same renderer for a text client', async () => {
     const selection = wire('ClientSelection', {
       ...SELECTION,

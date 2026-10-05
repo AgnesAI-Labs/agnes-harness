@@ -15,9 +15,10 @@
 // definition registered for a module of this live generation, each lease presenting through a restricted
 // per-view context the caller's presenter builds. A candidate becomes current only once every selected
 // renderer is registered and every entry returned; otherwise everything it created is released and the
-// current generation stays. A module the selection does not name is never loaded. The generation
-// presents a domain view through the renderer the selection chose, then the selected fallback, then the
-// built-in generic view, and never through a renderer the selection did not choose.
+// current generation stays. A module the selection does not name is never loaded, and a candidate whose
+// selected module requires a feature this client did not negotiate loads none. The generation presents
+// a domain view through the renderer the selection chose, then the selected fallback, then the built-in
+// generic view, and never through a renderer the selection did not choose.
 import type {
   ClientContribution,
   ClientEntry,
@@ -37,6 +38,8 @@ import type {
   UIRegistryFactory,
   UIRegistryHost,
 } from '@agnes/extension-api/client'
+import { createElement, Fragment } from 'react'
+import { domainText } from '../locales/domain.js'
 import type {
   ClientModuleContribution,
   ClientTarget,
@@ -237,6 +240,9 @@ export function createClientHostRuntime(input: {
 }): ClientHostRuntime {
   const entryMs = input.limits?.entryMs ?? 15_000
   const disposeMs = input.limits?.disposeMs ?? 5_000
+  // A capability set without a feature list negotiated none.
+  const features: unknown = input.capabilities?.features
+  const negotiated: readonly unknown[] = Array.isArray(features) ? features : []
   let current: { generation: Generation; view: ClientGeneration } | undefined
   let activating: Promise<Outcome<void>> | undefined
   let disposed = false
@@ -378,10 +384,30 @@ export function createClientHostRuntime(input: {
     }
   }
 
+  /** `presented` with a hint first that names the desktop capabilities a renderer it replaced needs. */
+  function hinted(
+    presented: Outcome<RendererPresentation>,
+    desktop: ReadonlySet<string>,
+  ): Outcome<RendererPresentation> {
+    if (!presented.ok || desktop.size === 0) return presented
+    const hint = domainText(input.locale?.locale, 'domain.viewerNeedsDesktop', {
+      capability: [...desktop].join(', '),
+    })
+    const { value } = presented
+    if (value.target === 'web') {
+      const note = createElement('p', { className: 'viewer-hint', role: 'note' }, hint)
+      const element = createElement(Fragment, null, note, value.element)
+      return { ok: true, value: { target: 'web', element } }
+    }
+    const parts = [{ kind: 'text' as const, text: hint }, ...value.formatted.parts]
+    return { ok: true, value: { ...value, formatted: { ...value.formatted, parts } } }
+  }
+
   /**
    * Presents `view` through the renderer the selection chose for its render key, else the registry's
    * match when the selection chose that one, then the selected fallback, then the built-in generic view.
    * A resync refusal goes back unchanged so the caller rereads the window; any other refusal moves on.
+   * A renderer refused for desktop capabilities alone leaves a hint naming them on what presents instead.
    * Each definition presents through one lease per generation, so an upsert of the same view keeps its
    * mount and context, while another definition for that view mounts afresh.
    */
@@ -390,6 +416,7 @@ export function createClientHostRuntime(input: {
     const { fallbackRenderer, renderers } = generation.selection
     const row = renderers.find((entry) => entry.renderKey === view?.renderKey)
     const chosen = row ? definitionOf(generation, row.renderer) : matched(generation, view)
+    const desktop = new Set<string>()
     for (const definition of new Set([chosen, definitionOf(generation, fallbackRenderer)])) {
       const owner = definition && generation.owners.get(definition)
       if (!definition || !owner) continue
@@ -398,10 +425,13 @@ export function createClientHostRuntime(input: {
         owner.leases.add(owner.presenting)
       }
       const presented = owner.presenting.present(view)
-      if (presented.ok || presented.error.retryAdvice.kind === 'retry_read') return presented
+      if (presented.ok || presented.error.retryAdvice.kind === 'retry_read') return hinted(presented, desktop)
+      const named = presented.error.safeDetail
+      if (presented.error.detailCode === 'desktop_capability_unavailable' && Array.isArray(named))
+        for (const capability of named) desktop.add(String(capability))
     }
     generation.generic ??= input.presenter.generic()
-    return generation.generic.present(view)
+    return hinted(generation.generic.present(view), desktop)
   }
 
   /**
@@ -594,6 +624,19 @@ export function createClientHostRuntime(input: {
     const missing = named.find((contribution) => !modules.has(contribution.moduleId))?.moduleId
     if (missing !== undefined)
       return refuse('incompatible', 'client_module_missing', `the catalog has no module ${missing}`)
+    // No module starts without every feature it requires; missing only desktop capabilities says so.
+    for (const id of new Set(named.map((contribution) => contribution.moduleId))) {
+      const required = (modules.get(id) as ClientModule).requiredFeatures
+      const lacking = required.filter((feature) => !negotiated.includes(feature))
+      if (lacking.length > 0)
+        return refuse(
+          'incompatible',
+          lacking.every((feature) => feature.startsWith('desktop.'))
+            ? 'desktop_capability_unavailable'
+            : 'feature_not_negotiated',
+          `module ${id} needs features this client did not negotiate: ${lacking.join(', ')}`,
+        )
+    }
 
     // Each module loads at most once per candidate, whatever it serves; a late namespace holds nothing.
     const loads = new Map<string, Promise<Outcome<Readonly<Record<string, unknown>>>>>()

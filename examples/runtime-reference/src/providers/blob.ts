@@ -81,12 +81,14 @@ export type BlobStoreOptions = Readonly<{
 
 /**
  * Objects live in SQLite as 1 MiB pieces, each with the SHA-256 it had when written, so a damaged or
- * missing piece is found at the read that needs it. A pin names the object a reference may read and
- * the owner it was taken for; a sealed upload names the object it promotes to. A collected object
- * keeps its row as a tombstone and loses its pieces. Every released pin and collected object appends
- * one row to the deletion log, whose seq only grows. The authority row says whether the store serves:
- * a fenced store keeps serving reads but refuses business writes, and a transfer candidate serves
- * neither until it is activated.
+ * missing piece is found at the read that needs it. A pin names the object a reference may read, the
+ * owner it was taken for and the principal that took it; a sealed upload names the object it promotes
+ * to. An object records the principal that wrote it, and only that principal may promote or pin it;
+ * only the principal a pin records may release it. A row that records no principal is no caller's. A
+ * collected object keeps its row as a tombstone and loses its pieces. Every released pin and collected
+ * object appends one row to the deletion log, whose seq only grows. The authority row says whether the
+ * store serves: a fenced store keeps serving reads but refuses business writes, and a transfer
+ * candidate serves neither until it is activated.
  */
 const TABLES = `
 CREATE TABLE IF NOT EXISTS objects (
@@ -95,7 +97,8 @@ CREATE TABLE IF NOT EXISTS objects (
   size INTEGER NOT NULL,
   media_type TEXT NOT NULL,
   reservation_id TEXT NOT NULL,
-  deleted INTEGER NOT NULL DEFAULT 0
+  deleted INTEGER NOT NULL DEFAULT 0,
+  principal TEXT
 );
 CREATE TABLE IF NOT EXISTS pieces (
   blob_id TEXT NOT NULL,
@@ -109,7 +112,8 @@ CREATE TABLE IF NOT EXISTS pins (
   blob_id TEXT NOT NULL,
   owner TEXT,
   revision INTEGER NOT NULL DEFAULT 1,
-  active INTEGER NOT NULL DEFAULT 1
+  active INTEGER NOT NULL DEFAULT 1,
+  principal TEXT
 );
 CREATE TABLE IF NOT EXISTS uploads (
   upload_id TEXT PRIMARY KEY,
@@ -139,7 +143,13 @@ const RECORDS = {
 }
 
 type ObjectRow = { digest: string; size: number; media_type: string }
-type PinRow = ObjectRow & { blob_id: string; deleted: number; active: number; revision: number }
+type PinRow = ObjectRow & {
+  blob_id: string
+  deleted: number
+  active: number
+  revision: number
+  principal: string | null
+}
 type Described = Readonly<{ authorityId: Wire.Id; digest: string; bytes: number; mediaType: string }>
 
 /** One deletion log row: `pin-released` for an unpin, `blob-deleted` for an object gc collected. */
@@ -157,6 +167,9 @@ const within = (inner: Wire.ScopeRef, outer: Wire.ScopeRef) =>
     ([key, value]) => key === 'kind' || (inner as Record<string, unknown>)[key] === value,
   )
 
+/** Whether an object or pin is not the caller's; one that records no principal is no caller's. */
+const foreign = (principal: string | null, context: CallContext) => principal !== context.principalRef
+
 export function openBlobStore(path: string, options: BlobStoreOptions = {}) {
   const authorityId = options.authorityId ?? 'reference-blob'
   const db = new DatabaseSync(path)
@@ -164,6 +177,18 @@ export function openBlobStore(path: string, options: BlobStoreOptions = {}) {
   db.exec('PRAGMA synchronous = FULL')
   db.exec('PRAGMA busy_timeout = 5000')
   db.exec(TABLES)
+  // Objects and pins record a principal; rows from before the column record none, so no caller holds them.
+  const recorded = (table: string) =>
+    (db.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[]).some(
+      ({ name }) => name === 'principal',
+    )
+  for (const table of ['objects', 'pins'])
+    if (!recorded(table))
+      try {
+        db.exec(`ALTER TABLE ${table} ADD COLUMN principal TEXT`)
+      } catch (error) {
+        if (!recorded(table)) throw error // otherwise another process added it first
+      }
   db.prepare('INSERT OR IGNORE INTO authority (id, role, epoch) VALUES (1, ?, ?)').run(
     ...(options.candidate ? ['candidate', 0] : ['serving', 1]),
   )
@@ -201,7 +226,7 @@ export function openBlobStore(path: string, options: BlobStoreOptions = {}) {
   const pinRow = (pinId: Wire.Id) =>
     db
       .prepare(
-        'SELECT p.blob_id, p.revision, p.active, o.digest, o.size, o.media_type, o.deleted FROM pins p JOIN objects o ON o.blob_id = p.blob_id WHERE p.pin_id = ?',
+        'SELECT p.blob_id, p.revision, p.active, p.principal, o.digest, o.size, o.media_type, o.deleted FROM pins p JOIN objects o ON o.blob_id = p.blob_id WHERE p.pin_id = ?',
       )
       .get(pinId) as PinRow | undefined
 
@@ -316,18 +341,19 @@ export function openBlobStore(path: string, options: BlobStoreOptions = {}) {
       }),
   }
 
-  /** Stores bytes as one object and runs `link` to name it, in one transaction. */
+  /** Stores bytes as one object written by `principal` and runs `link` to name it, in one transaction. */
   function store(
     blobId: Wire.Id,
     reservationId: Wire.Id,
     bytes: Uint8Array,
     mediaType: string,
+    principal: string | null,
     link: () => void,
   ) {
     atomically(() => {
       db.prepare(
-        'INSERT INTO objects (blob_id, digest, size, media_type, reservation_id) VALUES (?, ?, ?, ?, ?)',
-      ).run(blobId, sha256(bytes), bytes.byteLength, mediaType, reservationId)
+        'INSERT INTO objects (blob_id, digest, size, media_type, reservation_id, principal) VALUES (?, ?, ?, ?, ?, ?)',
+      ).run(blobId, sha256(bytes), bytes.byteLength, mediaType, reservationId, principal)
       const insert = db.prepare('INSERT INTO pieces (blob_id, seq, data, sha) VALUES (?, ?, ?, ?)')
       for (let seq = 0; seq * PIECE_BYTES < bytes.byteLength; seq++) {
         const data = bytes.subarray(seq * PIECE_BYTES, (seq + 1) * PIECE_BYTES)
@@ -359,10 +385,11 @@ export function openBlobStore(path: string, options: BlobStoreOptions = {}) {
     features: options.maintenance ? ['blob-read.v1', RuntimeAuthorityTransferAPI.feature] : ['blob-read.v1'],
 
     /**
-     * Test write entry: stores bytes and pins them. The upload chain of agh.blob is not frozen yet, so
-     * this stands in for stage, seal, promote and pin; it is not that chain.
+     * Test write entry: stores bytes and pins them as `principal`; without one, nobody may pin, promote
+     * or release them. The upload chain of agh.blob is not frozen yet, so this stands in for stage,
+     * seal, promote and pin; it is not that chain.
      */
-    seed(bytes: Uint8Array, mediaType = 'application/octet-stream'): Wire.BlobRef {
+    seed(bytes: Uint8Array, mediaType = 'application/octet-stream', principal?: string): Wire.BlobRef {
       live()
       const ref = parse('BlobRef', {
         authorityId,
@@ -372,14 +399,19 @@ export function openBlobStore(path: string, options: BlobStoreOptions = {}) {
         mediaType,
         pinId: randomUUID(),
       })
-      store(ref.blobId, randomUUID(), bytes, mediaType, () =>
-        db.prepare('INSERT INTO pins (pin_id, blob_id) VALUES (?, ?)').run(ref.pinId, ref.blobId),
+      store(ref.blobId, randomUUID(), bytes, mediaType, principal ?? null, () =>
+        db
+          .prepare('INSERT INTO pins (pin_id, blob_id, principal) VALUES (?, ?, ?)')
+          .run(ref.pinId, ref.blobId, principal ?? null),
       )
       return ref
     },
 
-    /** Test write entry: stores bytes as a sealed upload, standing in for stage, write and seal. */
-    upload(bytes: Uint8Array, mediaType = 'application/octet-stream'): Wire.UploadRef {
+    /**
+     * Test write entry: stores bytes as a sealed upload staged by `principal`, standing in for stage,
+     * write and seal. Without a principal nobody may promote it.
+     */
+    upload(bytes: Uint8Array, mediaType = 'application/octet-stream', principal?: string): Wire.UploadRef {
       live()
       const upload = parse('UploadRef', {
         authorityId,
@@ -391,7 +423,7 @@ export function openBlobStore(path: string, options: BlobStoreOptions = {}) {
         status: 'sealed',
       })
       const blobId = randomUUID()
-      store(blobId, upload.reservationId, bytes, mediaType, () =>
+      store(blobId, upload.reservationId, bytes, mediaType, principal ?? null, () =>
         db
           .prepare('INSERT INTO uploads (upload_id, reservation_id, blob_id) VALUES (?, ?, ?)')
           .run(upload.uploadId, upload.reservationId, blobId),
@@ -406,24 +438,28 @@ export function openBlobStore(path: string, options: BlobStoreOptions = {}) {
         live()
         const row = db
           .prepare(
-            'SELECT u.blob_id, o.digest, o.size, o.media_type FROM uploads u JOIN objects o ON o.blob_id = u.blob_id WHERE u.upload_id = ? AND u.reservation_id = ?',
+            'SELECT u.blob_id, o.digest, o.size, o.media_type, o.principal FROM uploads u JOIN objects o ON o.blob_id = u.blob_id WHERE u.upload_id = ? AND u.reservation_id = ?',
           )
-          .get(upload.uploadId, upload.reservationId) as (ObjectRow & { blob_id: string }) | undefined
+          .get(upload.uploadId, upload.reservationId) as
+          | (ObjectRow & { blob_id: string; principal: string | null })
+          | undefined
         if (!describes(row, upload)) refuse('not_found', 'no such sealed upload')
+        if (foreign(row.principal, context)) refuse('permission_denied', 'caller did not stage this upload')
         if (expectedDigest !== row.digest) refuse('integrity', 'upload digest differs from the expected one')
         const { reservationId, digest, bytes, mediaType } = upload
         return { authorityId, blobId: row.blob_id, digest, bytes, mediaType, reservationId }
       }),
 
-    /** Pins a staged object for one owner; while that pin is live, the same owner gets it back. */
+    /** Pins a staged object for one owner, as the caller; while that pin is live, the owner gets it back. */
     pin: (request: unknown, context: CallContext) =>
       attempt(context, (): Wire.BlobRef => {
         const { stagedBlob, ownerRef } = parse('BlobPinRequest', request)
         return atomically(() => {
           const row = db
-            .prepare('SELECT digest, size, media_type, deleted FROM objects WHERE blob_id = ?')
-            .get(stagedBlob.blobId) as (ObjectRow & { deleted: number }) | undefined
+            .prepare('SELECT digest, size, media_type, deleted, principal FROM objects WHERE blob_id = ?')
+            .get(stagedBlob.blobId) as (ObjectRow & { deleted: number; principal: string | null }) | undefined
           if (!describes(row, stagedBlob)) refuse('not_found', 'no such staged blob')
+          if (foreign(row.principal, context)) refuse('permission_denied', 'caller did not stage this blob')
           if (row.deleted) refuse('artifact_deleted', 'staged blob was collected')
           const owner = jcs(ownerRef)
           const held = db
@@ -431,23 +467,25 @@ export function openBlobStore(path: string, options: BlobStoreOptions = {}) {
             .get(stagedBlob.blobId, owner) as { pin_id: string } | undefined
           const pinId = held?.pin_id ?? randomUUID()
           if (!held)
-            db.prepare('INSERT INTO pins (pin_id, blob_id, owner) VALUES (?, ?, ?)').run(
+            db.prepare('INSERT INTO pins (pin_id, blob_id, owner, principal) VALUES (?, ?, ?, ?)').run(
               pinId,
               stagedBlob.blobId,
               owner,
+              context.principalRef,
             )
           const { blobId, digest, bytes, mediaType } = stagedBlob
           return { authorityId, blobId, digest, bytes, mediaType, pinId }
         })
       }),
 
-    /** Releases one pin and logs it. Releasing a released pin changes nothing and reports false. */
+    /** Releases the caller's pin and logs it. Releasing a released pin changes nothing, reporting false. */
     unpin: (request: unknown, context: CallContext) =>
       attempt(context, (): Wire.BlobUnpinResult => {
         const { pinId, expectedRevision } = parse('BlobUnpinRequest', request)
         return atomically(() => {
           const row = pinRow(pinId)
           if (!row) refuse('not_found', 'no such pin')
+          if (foreign(row.principal, context)) refuse('permission_denied', 'caller does not hold this pin')
           if (!row.active) return { released: false }
           if (row.revision !== expectedRevision)
             refuse('revision_conflict', 'pin is not at the expected revision')
