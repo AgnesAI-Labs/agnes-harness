@@ -341,6 +341,18 @@ describe('renderer presentation', () => {
     expect(host.querySelector('[role="status"]')?.textContent).toBe('Done.')
   })
 
+  it('lets the user archive a request whose effect stays unknown, after which no lease reads its status', async () => {
+    const { presenter, submit, commandStatus } = setup('web', view(1))
+    submit.mockResolvedValueOnce({ ok: true, value: { status: 'unknown_effect' } } as never)
+    await show(element(presenter.generic().present(view(1))))
+    await act(async () => host.querySelector('button')?.click())
+    const [[request]] = submit.mock.calls as unknown as [[{ requestId: string }]]
+    expect(presenter.archive('note-1', 'request', request.requestId)).toBe(true)
+    const check = [...host.querySelectorAll('button')].find((button) => button.textContent === 'Check status')
+    await act(async () => check?.click())
+    expect(commandStatus).not.toHaveBeenCalled()
+  })
+
   it('shows the fallback text as text when the generic card throws too', async () => {
     vi.spyOn(console, 'error').mockImplementation(() => {})
     const other = view(1, [command('rename')], { viewId: 'note-2', fallbackText: 'Other <i>note</i>' })

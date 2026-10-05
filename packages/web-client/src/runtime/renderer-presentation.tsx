@@ -153,8 +153,11 @@ function Presented({
 
 interface RendererLease {
   present(view: DomainView): Outcome<RendererPresentation>
-  /** Refuses every later present and disposes each context this lease still has mounted. Idempotent. */
-  dispose(): Promise<void>
+  /**
+   * Refuses every later present and disposes each context this lease still has mounted; resolves whether
+   * every one closed within its dispose deadline. Idempotent.
+   */
+  dispose(): Promise<boolean>
 }
 
 export function createRendererPresenter(input: {
@@ -166,20 +169,25 @@ export function createRendererPresenter(input: {
   views: AuthorizedViews
   /** Told, with ids only, that a Web renderer threw and its view switched to the generic card. */
   onFailure?: (failure: { rendererId: string; viewId: string }) => void
-  /** How long a disposed context waits for its calls in flight before its cleanups run; 5 000 ms by default. */
-  limits?: { drainMs?: number }
+  /** The deadline a disposed context holds draining and its cleanups to; 5 000 ms by default. */
+  limits?: { disposeMs?: number }
 }): {
   /** One lease for a definition the host bound under `ownerToken`. */
   lease(binding: { definition: RendererDefinition; ownerToken: string }): RendererLease
   /** One lease for the built-in generic view, which presents any view the window holds. */
   generic(): RendererLease
+  /**
+   * Forgets a request or response id of `viewId` whose effect stays unknown, after the user confirmed
+   * it loses the local follow-up; false when the id is not unknown there. The server keeps the command.
+   */
+  archive(viewId: string, kind: 'request' | 'response', id: string): boolean
 } {
   const { target, clientInstanceId, capabilities, services, views } = input
   // A capability set without a feature list negotiated none.
   const negotiated: readonly string[] = Array.isArray(capabilities?.features) ? capabilities.features : []
   // What every context the presenter opens shares, its view index among it.
   const shared = { clientInstanceId, capabilities, services, index: createViewIndex() }
-  const drainMs = input.limits?.drainMs ?? 5_000
+  const disposeMs = input.limits?.disposeMs ?? 5_000
   /** A lease presenting through `definition`; a plugin renderer must also fit the view (`checked`). */
   function bind(definition: RendererDefinition, ownerToken: string, checked: boolean): RendererLease {
     // Read once, so a definition changed after it was bound does not move what it may present.
@@ -194,7 +202,7 @@ export function createRendererPresenter(input: {
     // the wire yet, so only the view's own offers (and the services' own checks) bound a context today;
     // intersect those grants here once the selection carries them.
     const opener = (ownerToken: string) => (view: DomainView) => {
-      const mounted = createRendererContext({ ...shared, ownerToken, view, drainMs })
+      const mounted = createRendererContext({ ...shared, ownerToken, view, disposeMs })
       if (released) {
         void mounted.dispose()
         return mounted
@@ -271,12 +279,13 @@ export function createRendererPresenter(input: {
       },
       async dispose() {
         released = true
-        await Promise.all([...live].map((mounted) => mounted.dispose()))
+        return (await Promise.all([...live].map((mounted) => mounted.dispose()))).every(Boolean)
       },
     }
   }
   return {
     lease: ({ definition, ownerToken }) => bind(definition, ownerToken, true),
     generic: () => bind(GENERIC, GENERIC_OWNER, false),
+    archive: (viewId, kind, id) => shared.index.archive(viewId, kind, id),
   }
 }

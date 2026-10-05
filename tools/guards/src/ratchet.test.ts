@@ -294,7 +294,9 @@ const INITIAL_CEILING: Record<string, number> = {
   // Measured 3556, exact, no spare (+65).
   // One view index per presenter bounds renderer status reads, and dispose drains the calls in flight.
   // Measured 3621, exact, no spare (+65).
-  'packages/web-client/src': 3621,
+  // A user may archive an id whose effect stays unknown; a renderer context drains and runs its cleanups
+  // under one dispose deadline, and a lease that misses it is reported. Measured 3646, exact (+25).
+  'packages/web-client/src': 3646,
   'packages/web-slots/src': 605,
   // Failed shell calls read as their exit code (+19 lines); measured 4891, exact cap.
   // B-line diagnostics dialog: React view adds 147 lines; measured 4706, exact cap.
