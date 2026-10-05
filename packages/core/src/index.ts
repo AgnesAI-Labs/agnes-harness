@@ -218,11 +218,20 @@ export {
   adapterInvokeInput,
   assemblePrepared,
   checkCredential,
+  decodeHandle,
   externalKeyOf,
+  handleIdOf,
+  headerOf,
   INFER_CHILD_KEY,
   modelCaptureOf,
   preparedIdOf,
 } from './runtime/model/prepared-call.js'
+export {
+  createPreparedRegistry,
+  type PreparedEntry,
+  type PreparedRegistry,
+  type PreparedRegistryOptions,
+} from './runtime/model/prepared-registry.js'
 export {
   buildWireRequest,
   MODEL_INPUT_KIND,

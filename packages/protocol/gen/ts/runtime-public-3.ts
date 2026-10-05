@@ -49,6 +49,7 @@ export const RuntimePublic3 = Type.Module({
   "ServiceOperation": Type.Object({ "target": Type.Ref('BindingRef'), "method": Type.String(), "input": Type.Ref('DataRef') }, { additionalProperties: false }),
   "ResourceRef": Type.Object({ "resourceId": Type.Ref('Id'), "version": Type.String(), "digest": Type.Ref('Digest') }, { additionalProperties: false }),
   "Revision": Type.Ref('UInt53'),
+  "DomainObjectRef": Type.Object({ "authorityId": Type.Ref('Id'), "typeId": Type.Ref('TypeId'), "id": Type.Ref('Id'), "revision": Type.Ref('Revision') }, { additionalProperties: false }),
   "ToolPlanUpdate": Type.Object({ "items": Type.Array(Type.Object({ "id": Type.Ref('Id'), "text": Type.String(), "status": Type.Union([Type.Literal('todo'), Type.Literal('doing'), Type.Literal('done'), Type.Literal('blocked')]), "check": Type.Optional(Type.String()) }, { additionalProperties: false }), { maxItems: 10000 }) }, { additionalProperties: false }),
   "SessionRef": Type.Object({ "sessionId": Type.Ref('Id'), "authority": Type.Ref('StateAuthorityRef') }, { additionalProperties: false }),
   "RunRef": Type.Object({ "runId": Type.Ref('Id'), "session": Type.Ref('SessionRef') }, { additionalProperties: false }),
@@ -57,6 +58,12 @@ export const RuntimePublic3 = Type.Module({
   "FilePath": Type.String(),
   "SecretHandle": Type.Object({ "handleId": Type.Ref('Id'), "secretId": Type.Ref('Id'), "version": Type.String(), "audience": Type.String(), "expiresAt": Type.Ref('Timestamp') }, { additionalProperties: false }),
   "ContentBlock": Type.Union([Type.Object({ "type": Type.Literal('text'), "text": Type.String({ maxLength: 1048576 }) }, { additionalProperties: false }), Type.Object({ "type": Type.Literal('image'), "data": Type.String(), "mimeType": Type.String({ maxLength: 128 }) }, { additionalProperties: false }), Type.Object({ "type": Type.Literal('resource_link'), "uri": Type.String({ maxLength: 4096 }), "name": Type.Optional(Type.String({ maxLength: 256 })), "mimeType": Type.Optional(Type.String({ maxLength: 128 })) }, { additionalProperties: false })]),
+  "ResourceLimits": Type.Object({ "cpuMs": Type.Ref('UInt53'), "wallMs": Type.Ref('UInt53'), "memoryBytes": Type.Ref('UInt53'), "outputBytes": Type.Ref('UInt53'), "processes": Type.Ref('UInt53'), "openFiles": Type.Ref('UInt53') }, { additionalProperties: false }),
+  "RunState": Type.Union([Type.Literal('admitted'), Type.Literal('runnable'), Type.Literal('waiting'), Type.Literal('failing'), Type.Literal('cancelling'), Type.Literal('draining'), Type.Literal('succeeded'), Type.Literal('failed'), Type.Literal('cancelled'), Type.Literal('frozen'), Type.Literal('migrating'), Type.Literal('blocked_incompatible'), Type.Literal('blocked_integrity')]),
+  "UsageFactRef": Type.Object({ "authorityId": Type.Ref('Id'), "usageId": Type.Ref('Id'), "digest": Type.Ref('Digest') }, { additionalProperties: false }),
+  "AgentSnapshot": Type.Object({ "agentRef": Type.Ref('DomainObjectRef'), "runRef": Type.Ref('RunRef'), "lifecycle": Type.Union([Type.Literal('active'), Type.Literal('draining'), Type.Literal('retired'), Type.Literal('blocked')]), "runState": Type.Ref('RunState'), "resultRef": Type.Union([Type.Ref('DataRef'), Type.Null()]), "error": Type.Union([Type.Ref('RuntimeError'), Type.Null()]), "usageRefs": Type.Array(Type.Ref('UsageFactRef'), { maxItems: 10000 }), "children": Type.Array(Type.Ref('DomainObjectRef'), { maxItems: 10000 }), "limits": Type.Ref('ResourceLimits') }, { additionalProperties: false }),
+  "ToolConversationHeadValue": Type.Object({ "actionId": Type.Ref('Id'), "callFactId": Type.Ref('Id'), "resultFactId": Type.Ref('Id'), "visibleReceiptId": Type.Ref('Id'), "revision": Type.Ref('UInt53') }, { additionalProperties: false }),
+  "PlanRevisionValue": Type.Object({ "sessionId": Type.Ref('Id'), "turnId": Type.Ref('Id'), "revision": Type.Ref('UInt53'), "items": Type.Ref('ToolPlanUpdate'), "sourceCommandId": Type.Ref('Id'), "seq": Type.Ref('UInt53') }, { additionalProperties: false }),
   "EffectiveHookSnapshot": Type.Object({ "workspaceId": Type.Ref('Id'), "configRevision": Type.Ref('UInt53'), "event": Type.Ref('HookEventName'), "registrations": Type.Array(Type.Ref('HookRegistrationSnapshot'), { maxItems: 10000 }), "digest": Type.Ref('Digest') }, { additionalProperties: false }),
   "PreparedHookInput": Type.Union([Type.Object({ "sourceInput": Type.Ref('DataRef'), "sourceInputDigest": Type.Ref('Digest'), "candidate": Type.Null(), "candidateDigest": Type.Null(), "effectiveHooks": Type.Ref('EffectiveHookSnapshot') }, { additionalProperties: false }), Type.Object({ "sourceInput": Type.Ref('DataRef'), "sourceInputDigest": Type.Ref('Digest'), "candidate": Type.Union([Type.Object({ "kind": Type.Literal('inline'), "schema": Type.Ref('SchemaRef'), "value": JsonValue, "digest": Type.Ref('Digest'), "bytes": Type.Ref('UInt53') }, { additionalProperties: false }), Type.Object({ "kind": Type.Literal('blob'), "schema": Type.Ref('SchemaRef'), "blob": Type.Ref('BlobRef') }, { additionalProperties: false })]), "candidateDigest": Type.String({ pattern: "^[a-f0-9]{64}$" }), "effectiveHooks": Type.Ref('EffectiveHookSnapshot') }, { additionalProperties: false })]),
   "ServiceCommandAdmission": Type.Object({ "commandId": Type.Ref('Id'), "requestDigest": Type.Ref('Digest'), "releaseSetId": Type.Ref('Id'), "bindingId": Type.Ref('Id'), "sessionId": Type.Ref('Id'), "extensionId": Type.Ref('Id'), "serviceName": Type.String(), "mode": Type.Union([Type.Literal('effect'), Type.Literal('managed-query')]), "operation": Type.Ref('ServiceOperation'), "admission": Type.Ref('RunAdmission'), "action": Type.Ref('PreparedAction') }, { additionalProperties: false }),
@@ -188,6 +195,8 @@ export const ResourceRef = RuntimePublic3.Import('ResourceRef')
 export type ResourceRef = Static<typeof ResourceRef>
 export const Revision = RuntimePublic3.Import('Revision')
 export type Revision = Static<typeof Revision>
+export const DomainObjectRef = RuntimePublic3.Import('DomainObjectRef')
+export type DomainObjectRef = Static<typeof DomainObjectRef>
 export const ToolPlanUpdate = RuntimePublic3.Import('ToolPlanUpdate')
 export type ToolPlanUpdate = Static<typeof ToolPlanUpdate>
 export const SessionRef = RuntimePublic3.Import('SessionRef')
@@ -204,6 +213,18 @@ export const SecretHandle = RuntimePublic3.Import('SecretHandle')
 export type SecretHandle = Static<typeof SecretHandle>
 export const ContentBlock = RuntimePublic3.Import('ContentBlock')
 export type ContentBlock = Static<typeof ContentBlock>
+export const ResourceLimits = RuntimePublic3.Import('ResourceLimits')
+export type ResourceLimits = Static<typeof ResourceLimits>
+export const RunState = RuntimePublic3.Import('RunState')
+export type RunState = Static<typeof RunState>
+export const UsageFactRef = RuntimePublic3.Import('UsageFactRef')
+export type UsageFactRef = Static<typeof UsageFactRef>
+export const AgentSnapshot = RuntimePublic3.Import('AgentSnapshot')
+export type AgentSnapshot = Static<typeof AgentSnapshot>
+export const ToolConversationHeadValue = RuntimePublic3.Import('ToolConversationHeadValue')
+export type ToolConversationHeadValue = Static<typeof ToolConversationHeadValue>
+export const PlanRevisionValue = RuntimePublic3.Import('PlanRevisionValue')
+export type PlanRevisionValue = Static<typeof PlanRevisionValue>
 export const EffectiveHookSnapshot = RuntimePublic3.Import('EffectiveHookSnapshot')
 export type EffectiveHookSnapshot = Static<typeof EffectiveHookSnapshot>
 export const PreparedHookInput = RuntimePublic3.Import('PreparedHookInput')

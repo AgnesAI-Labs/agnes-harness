@@ -1,14 +1,20 @@
 import type * as W from '@agnes/protocol/runtime'
-import { canonicalJsonDigest, RuntimeMethodSchemaRefs, validateRuntime } from '@agnes/protocol/runtime'
+import {
+  canonicalJsonDigest,
+  RuntimeMethodSchemaRefs,
+  RuntimeSchemaRefs,
+  validateRuntime,
+} from '@agnes/protocol/runtime'
 import { describe, expect, it } from 'vitest'
 import {
   assemblePrepared,
   externalKeyOf,
   INFER_CHILD_KEY,
   modelCaptureOf,
+  type PrepareParts,
 } from '../../src/runtime/model/prepared-call.js'
 import type { ModelDeployment } from '../../src/runtime/providers/model.js'
-import { actionFrame, inlineRef, openModel } from './model-deployment-fixture.js'
+import { actionFrame, entryOf, inlineRef, openModel } from './model-deployment-fixture.js'
 import {
   callContext,
   fixtureAdapter,
@@ -75,7 +81,7 @@ type Setup = Awaited<ReturnType<typeof startInfer>>
 type PreparedRef = Setup['ref']
 
 describe('model infer: start', () => {
-  it('creates exactly one child with a stable key, the original reference, the adapter target and no retry', async () => {
+  it('creates exactly one child with a stable key, the original handle reference, the adapter target and no retry', async () => {
     const s = await startInfer()
     const out = await s.action.start(s.frame, s.peer.ports)
     expect(out.children).toHaveLength(1)
@@ -152,22 +158,65 @@ describe('model infer: start', () => {
     expect(out.children).toHaveLength(0)
     expect(out.next).toMatchObject({ kind: 'fail', error: { detailCode: 'model_infer_input' } })
   })
-  it('refuses a prepared request that another binding owns, even with a consistent reference', async () => {
-    const s = await startInfer()
-    const parsed = validateRuntime('PreparedModelRequest', s.ref.value)
-    if (!parsed.ok) throw new Error('bad prepared')
+  const foreignHandle = (s: Setup, over: Partial<PrepareParts>) => {
+    const { hookResults: _h, ...request } = prepareRequest()
     const foreign = assemblePrepared({
-      owner: { ...fixtureOwner, bindingId: 'other-owner' },
-      request: prepareRequest(),
+      runId: 'run-1',
+      sessionId: 'session-1',
+      owner: fixtureOwner,
+      request,
       capture: modelCaptureOf('package-1', fixturePick()),
       wire: fixtureWire,
       estimatedUnits: [],
+      ...over,
     })
     if (!foreign.ok) throw new Error('assemble')
-    const input = inlineRef(refs.infer.input, { preparedRef: foreign.value.ref })
+    s.deployment.registry.put(foreign.value.handleId, foreign.value.entry)
+    return foreign.value.ref
+  }
+  it.each([
+    ['another binding owns', { owner: { ...fixtureOwner, bindingId: 'other-owner' } }],
+    ['it was prepared for another run', { runId: 'run-2' }],
+    ['it was prepared for another session', { sessionId: 'session-2' }],
+  ])('refuses a consistent handle when %s', async (_name, over) => {
+    const s = await startInfer()
+    const input = inlineRef(refs.infer.input, { preparedRef: foreignHandle(s, over) })
     const out = await s.action.start(actionFrame('infer', input), s.peer.ports)
     expect(out.children).toHaveLength(0)
     expect(out.next).toMatchObject({ kind: 'fail', error: { detailCode: 'model_binding_denied' } })
+  })
+  it('refuses the old inline prepared body in place of a handle', async () => {
+    const s = await startInfer()
+    const entry = entryOf(s.deployment, s.ref)
+    const body = inlineRef(RuntimeSchemaRefs.PreparedModelRequest, entry.prepared)
+    const out = await s.action.start(
+      actionFrame('infer', inlineRef(refs.infer.input, { preparedRef: body })),
+      s.peer.ports,
+    )
+    expect(out.children).toHaveLength(0)
+    expect(out.next).toMatchObject({ kind: 'fail', error: { detailCode: 'model_infer_input' } })
+  })
+  it('fails by name with no child when this process no longer holds the prepared call', async () => {
+    const s = await startInfer()
+    s.deployment.registry.clear()
+    const out = await s.action.start(s.frame, s.peer.ports)
+    expect(out.children).toHaveLength(0)
+    expect(out.next).toMatchObject({ kind: 'fail', error: { detailCode: 'model_prepared_lost' } })
+    expect(s.peer.deliveries()).toBe(0)
+  })
+  it('refuses an entry whose header differs from the handle', async () => {
+    const s = await startInfer()
+    const entry = entryOf(s.deployment, s.ref)
+    const swapped = {
+      ...entry,
+      header: { ...entry.header, maxOutputTokens: entry.header.maxOutputTokens + 1 },
+    }
+    const odd = await startInfer({
+      registry: { ...s.deployment.registry, get: () => swapped },
+    })
+    const refused = await odd.action.start(odd.frame, odd.peer.ports)
+    expect(refused.children).toHaveLength(0)
+    expect(refused.next).toMatchObject({ kind: 'fail', error: { detailCode: 'model_prepared_mismatch' } })
   })
   it('refuses a frame whose method, binding, run or input digest is not this action', async () => {
     const s = await startInfer()
@@ -223,6 +272,14 @@ describe('model infer: resume', () => {
     if (!output.ok) throw new Error('bad output')
     expect(output.value.usageFactRefs.map((u) => u.usageId)).toEqual(view.usageRefs)
     expect(s.peer.deliveries()).toBe(1)
+  })
+  it('does not need the registry once the child exists: a resume after the entry is gone still completes', async () => {
+    const s = await started()
+    s.deployment.registry.clear()
+    await s.peer.dispatch(s.child, 'succeeded')
+    s.peer.publish(s.child, 'receipt-1')
+    const out = await s.action.resume(s.resumed(s.receipt('succeeded')), s.peer.ports)
+    expect(out.next.kind).toBe('complete')
   })
   it('refuses a result whose usage reference is not in the child usage', async () => {
     const s = await started()

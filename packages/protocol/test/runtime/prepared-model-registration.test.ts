@@ -27,3 +27,17 @@ it('registers the existing prepared body without changing any previously registe
     Object.keys(oldRefs.RuntimeSchemaRefs).length + 1,
   )
 })
+
+it('registers the prepared handle as a new reference and leaves the prepared body reference alone', () => {
+  const { document } = loadRuntimeSchemaGraph(resolve('packages/protocol/schema/runtime'))
+  const ref = RuntimeSchemaRefs.PreparedModelHandle
+  expect(ref.typeId).toBe('agh.model/prepared-handle@1')
+  expect(ref.revision).toBe(1)
+  expect(ref.digest).toBe(
+    createHash('sha256')
+      .update(jcs(runtimeSchemaDocument(document, 'PreparedModelHandle')))
+      .digest('hex'),
+  )
+  expect(RuntimeSchemaRefs.PreparedModelRequest.typeId).toBe('agh.model/prepared-request@1')
+  expect(RuntimeSchemaRefs.PreparedModelRequest.revision).toBe(4)
+})
