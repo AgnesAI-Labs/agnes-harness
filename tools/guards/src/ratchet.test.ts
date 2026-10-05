@@ -1108,7 +1108,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // Agnes default output allowance is explicitly serialized to HTTP. Measured +6, exact allocation.
   // Injected model egress fetch in PiAdapter (the catalogue probe skipped behind it) and a required per-call
   // egress port in the runtime model adapter. Measured 5908 (+26), exact cap, no spare.
-  'packages/ai/src': 5908,
+  // Model adapter answers a lost prepared call from the store instead of loading it (+8). Measured 5916, exact, no spare.
+  'packages/ai/src': 5916,
   // 2026-09-09: raised from 500, which was exactly the measured count and so forbade every
   // further line. Two repairs were blocked by it and are landing with this raise: the provider
   // factory taking log + pricing (without which every delivered assembly denominates ledger
@@ -2915,7 +2916,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // Host-side State read groundwork: historical meta for native facts, windowed point reads and byte-packed pages, Stored envelope encoding, port types. Measured 83319 (+280 on top of the above), exact, no spare.
   // Original identity clock and State dispatch source (+467 on 83336); exact cap, no spare.
   // Verified historical admitted Action/Attempt reads (+229), exact cap.
-  'packages/host/src': 84032,
+  // Model source reader reads the in-process registry; the retained capture store is removed (-71). Measured 83961, exact, no spare.
+  'packages/host/src': 83961,
   'packages/host/src/ext-host/service-invocation': 247,
   // T5.2's permission projector is kept independently bounded so later extension-host work cannot
   // hide in the package-wide increment. Measured source: 86 lines.

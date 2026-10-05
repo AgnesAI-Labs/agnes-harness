@@ -1,26 +1,20 @@
+import { createPreparedRegistry, type PreparedEntry } from '@agnes/core'
 import { canonicalJsonDigest } from '@agnes/protocol/runtime'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
-  captureModelCatalog,
-  type SelectedModelCatalog,
-} from '../../src/runtime/model/model-catalog-capture.js'
-import {
   createModelSourceReader,
-  type IssuedPrepared,
   type ModelSourcePorts,
 } from '../../src/runtime/model/model-source-reader.js'
 import {
+  assembledFixture,
   fixtureCatalog,
   fixtureContext,
   fixtureFrame,
   fixturePorts,
   fixtureWire,
-  preparedFixture,
-  preparedRef,
   sessionWith,
 } from './model-source-fixture.js'
 
-const ok = <T>(value: T) => ({ ok: true as const, value })
 const fetchSpy = vi.spyOn(globalThis, 'fetch')
 afterEach(() => fetchSpy.mockClear())
 const network = {
@@ -31,11 +25,12 @@ const network = {
 function setup(over: Parameters<typeof fixturePorts>[0] = {}) {
   const epoch = { value: 1 }
   const controller = new AbortController()
-  const { ports, ref } = fixturePorts({ authorize: { epoch: () => epoch.value }, ...over })
+  const { ports, ref, entry } = fixturePorts({ authorize: { epoch: () => epoch.value }, ...over })
   return {
     reader: createModelSourceReader(ports),
     ports,
     ref,
+    entry,
     frame: fixtureFrame(ref),
     context: fixtureContext(controller.signal),
     network,
@@ -49,19 +44,13 @@ type Setup = ReturnType<typeof setup>
 function rebuild(s: Setup, over: Partial<ModelSourcePorts>): Setup {
   return { ...s, ports: { ...s.ports, ...over }, reader: createModelSourceReader({ ...s.ports, ...over }) }
 }
-// What the default issuance port returns for this setup.
-const issued = (s: Setup): IssuedPrepared => ({
-  preparedDigest: s.ref.digest,
-  actionId: 'act-1',
-  captureDigest: fixtureCatalog().digest,
-  wire: fixtureWire,
-})
-const emptyCatalog = (): SelectedModelCatalog =>
-  captureModelCatalog({ routes: () => [], models: () => [], seal: () => {} })
 const sessionWithSlots = sessionWith
 
+// A registry that answers every handle with the given entry, as a replaced or edited entry would.
+const answering = (entry: PreparedEntry): ModelSourcePorts['registry'] => ({ get: () => entry })
+
 describe('model source reader: load', () => {
-  it('returns a source whose four parts agree, built from the retained capture and the issued wire identity', async () => {
+  it('returns a source whose parts agree, built from the registry entry and its recorded wire identity', async () => {
     const { reader, ref, frame, context } = setup()
     const loaded = await reader.load(ref, frame, context)
     if (!loaded.ok) throw new Error(loaded.error.detailCode)
@@ -71,7 +60,7 @@ describe('model source reader: load', () => {
     expect(loaded.value.request).toMatchObject({ slot: 'primary', sessionKey: 'session-1', contractId: null })
   })
 
-  it('loads when the same model sits behind several slots, using the slot the issuance recorded', async () => {
+  it('loads when the same model sits behind several slots, using the slot recorded at prepare', async () => {
     const both = {
       primary: { route: 'fixed-route', model: 'fixture-model' },
       fast: { route: 'fixed-route', model: 'fixture-model' },
@@ -105,13 +94,21 @@ describe('model source reader: load', () => {
     expect((await reader.load(ref, frame, context)).ok).toBe(true)
   })
 
-  it('keeps loading an old request from its retained capture after the current catalog changed', async () => {
-    const original = fixtureCatalog(2)
-    const changed = fixtureCatalog(9)
-    const { reader, ref, frame, context } = setup({ retained: [original, changed] })
+  it('serves the request recorded at prepare time, whatever catalog was captured afterwards', async () => {
+    const { reader, ref, frame, context } = setup({ catalog: fixtureCatalog(2) })
+    fixtureCatalog(9)
     const loaded = await reader.load(ref, frame, context)
     if (!loaded.ok) throw new Error(loaded.error.detailCode)
     expect(loaded.value.model.cost.output).toBe(2)
+  })
+
+  it('names a registry miss and neither prepares again nor reaches the network', async () => {
+    const s = rebuild(setup(), { registry: createPreparedRegistry() })
+    expect(await s.reader.load(s.ref, s.frame, s.context)).toMatchObject({
+      ok: false,
+      error: { code: 'incompatible', detailCode: 'model_prepared_lost' },
+    })
+    expect(s.network.calls).toBe(0)
   })
 
   it.each([
@@ -124,50 +121,73 @@ describe('model source reader: load', () => {
       'reference is not the invoke input',
       (s: Setup) => ({
         ...s,
-        frame: fixtureFrame(preparedRef(preparedFixture(undefined, { ...fixtureWire, sessionKey: 'x' }))),
+        frame: fixtureFrame(assembledFixture(undefined, { ...fixtureWire, sessionKey: 'x' }).ref),
       }),
       'model_source_frame',
     ],
     [
-      'issuance names another action',
-      (s: Setup) => rebuild(s, { issuance: { read: async () => ok({ ...issued(s), actionId: 'other' }) } }),
-      'model_source_issuance',
+      'the frame belongs to another run',
+      (s: Setup) => ({ ...s, frame: { ...s.frame, runId: 'run-2' } }),
+      'model_source_frame',
     ],
     [
-      'issuance has another digest',
+      'the call belongs to another session',
+      (s: Setup) => ({ ...s, context: fixtureContext(new AbortController().signal, 'session-2') }),
+      'model_source_frame',
+    ],
+    [
+      'the entry header differs from the handle',
       (s: Setup) =>
-        rebuild(s, { issuance: { read: async () => ok({ ...issued(s), preparedDigest: 'e'.repeat(64) }) } }),
-      'model_source_issuance',
+        rebuild(s, {
+          registry: answering({
+            ...s.entry,
+            header: { ...s.entry.header, maxOutputTokens: s.entry.header.maxOutputTokens + 1 },
+          }),
+        }),
+      'model_source_drift',
     ],
     [
-      'the retained capture is missing',
-      (s: Setup) => rebuild(s, { captures: { read: () => undefined } }),
-      'model_source_capture',
+      'the entry belongs to another owner',
+      (s: Setup) =>
+        rebuild(s, {
+          registry: answering({ ...s.entry, ownerBinding: { ...s.entry.ownerBinding, bindingId: 'other' } }),
+        }),
+      'model_source_drift',
     ],
     [
-      'the route is not in the retained capture',
-      (s: Setup) => rebuild(s, { captures: { read: () => emptyCatalog() } }),
-      'model_source_capture',
+      'the prepared request in the entry was edited',
+      (s: Setup) =>
+        rebuild(s, {
+          registry: answering({
+            ...s.entry,
+            prepared: { ...s.entry.prepared, generation: { maxOutputTokens: 99, thinking: null } },
+          }),
+        }),
+      'model_source_drift',
+    ],
+    [
+      'the captured catalog in the entry was edited',
+      (s: Setup) => {
+        const capture = {
+          ...s.entry.capture,
+          model: { ...s.entry.capture.model, cost: { ...s.entry.capture.model.cost, output: 9 } },
+        }
+        return rebuild(s, { registry: answering({ ...s.entry, capture }) })
+      },
+      'model_source_drift',
+    ],
+    [
+      'the wire identity in the entry was edited',
+      (s: Setup) =>
+        rebuild(s, {
+          registry: answering({ ...s.entry, wire: { ...s.entry.wire, sessionKey: 'forged' } }),
+        }),
+      'model_source_drift',
     ],
     [
       'price version differs',
       (s: Setup) => rebuild(s, { prices: { version: () => 'fixture-price-2' } }),
       'model_source_price',
-    ],
-    [
-      'the retained capture was edited in place',
-      (s: Setup) => rebuild(s, { captures: { read: () => fixtureCatalog(9) } }),
-      'model_source_drift',
-    ],
-    [
-      'the issued wire identity was edited',
-      (s: Setup) =>
-        rebuild(s, {
-          issuance: {
-            read: async () => ok({ ...issued(s), wire: { ...fixtureWire, sessionKey: 'forged' } }),
-          },
-        }),
-      'model_source_drift',
     ],
     [
       'the adapter package changed',
