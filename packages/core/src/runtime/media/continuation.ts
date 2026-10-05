@@ -85,7 +85,7 @@ const same = (a: unknown, b: unknown) =>
 
 /** Reads one child's published result; `null` means it is not ready or does not match the receipt. */
 export async function readActionResult(
-  ports: LoopReadPorts,
+  ports: Pick<LoopReadPorts, 'query'>,
   state: W.BindingRef,
   receipt: { actionId: string; receiptId: string },
   context: CallContext,
@@ -139,7 +139,7 @@ function textOf(output: W.ModelOutput): string | null {
 export type CollectInput = Readonly<{
   plans: readonly W.MediaPlan[]
   receipts: readonly { actionId: string; receiptId: string }[]
-  ports: LoopReadPorts
+  ports: Pick<LoopReadPorts, 'query'>
   state: W.BindingRef
   context: CallContext
 }>

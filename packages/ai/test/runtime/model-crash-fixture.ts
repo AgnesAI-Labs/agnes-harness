@@ -2,6 +2,7 @@ import { existsSync, readFileSync } from 'node:fs'
 import type { ActionContext, CallContext, Outcome } from '@agnes/extension-api/runtime'
 import { defineGeneratedAuthorSchema, runtimeAuthorSchemas } from '@agnes/extension-api/runtime'
 import { createTestServiceContainer } from '@agnes/extension-api/testkit'
+import type { ModelRecord, RequestBody } from '@agnes/protocol'
 import {
   type ActionFrame,
   canonicalJsonDigest,
@@ -13,7 +14,11 @@ import {
   type UsageMeasurement,
   validateRuntime,
 } from '@agnes/protocol/runtime'
-import type { ModelAdapterDeployment, ModelWireSource } from '../../src/runtime/model-adapter/ports.js'
+import type {
+  ModelAdapterDeployment,
+  ModelWireMedia,
+  ModelWireSource,
+} from '../../src/runtime/model-adapter/ports.js'
 import { createModelAdapterFactory } from '../../src/runtime/providers/model-adapter.js'
 import { fakeModel, fakeRequest } from '../../testkit/index.js'
 import { persistModelCrashFacts } from './fixtures/model-crash-storage.js'
@@ -121,6 +126,15 @@ export type ModelCrashOwner = Readonly<{
   deadline?: string
 }>
 
+/** Optional replacements for the fixture's model and locked request; absent, the fixture is unchanged. */
+export type ModelCrashVariant = Readonly<{
+  model?: Partial<ModelRecord>
+  /** Replaces the locked request; its `inputDigest` must be the one the request carries as `derivedHash`. */
+  prepared?: (base: PreparedModelRequest) => PreparedModelRequest
+  request?: (prepared: PreparedModelRequest, model: ModelRecord) => RequestBody
+  media?: (prepared: PreparedModelRequest) => readonly ModelWireMedia[]
+}>
+
 /** Original object capability + real source codecs; restricted fixture, never a production identity. */
 export async function modelCrashFixture(
   api: 'openai-completions' | 'anthropic-messages',
@@ -129,6 +143,7 @@ export async function modelCrashFixture(
   operation: string,
   cutAfterReceipt: boolean,
   owner?: ModelCrashOwner,
+  variant?: ModelCrashVariant,
 ) {
   type SavedOperation = {
     source: ModelWireSource
@@ -162,8 +177,8 @@ export async function modelCrashFixture(
     authorizationRef: 'fixture-authority',
     signal: new AbortController().signal,
   }
-  const model = fakeModel({ id: 'fixture-model', route: 'fixed-route', api, baseUrl })
-  const prepared: PreparedModelRequest = {
+  const model = fakeModel({ id: 'fixture-model', route: 'fixed-route', api, baseUrl, ...variant?.model })
+  const base: PreparedModelRequest = {
     preparedId: 'prepared',
     ownerBinding: {
       bindingId: 'model-gateway',
@@ -230,17 +245,21 @@ export async function modelCrashFixture(
       expiresAt: context.deadline,
     },
   }
+  const prepared = variant?.prepared ? variant.prepared(base) : base
   const source: ModelWireSource = {
     prepared,
     route: { route: 'fixed-route', api, baseUrl, models: [model] },
     model,
-    request: fakeRequest({
-      route: 'fixed-route',
-      model: model.id,
-      derivedHash: prepared.inputDigest,
-      sampling: { maxTokens: 32 },
-      messages: [{ role: 'user', content: [{ type: 'text', text: 'hello' }] }],
-    }),
+    request: variant?.request
+      ? variant.request(prepared, model)
+      : fakeRequest({
+          route: 'fixed-route',
+          model: model.id,
+          derivedHash: prepared.inputDigest,
+          sampling: { maxTokens: 32 },
+          messages: [{ role: 'user', content: [{ type: 'text', text: 'hello' }] }],
+        }),
+    ...(variant?.media ? { media: variant.media(prepared) } : {}),
   }
   let revokeDuringLoad = false,
     saveFailure = false,

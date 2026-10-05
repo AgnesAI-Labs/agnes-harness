@@ -1100,8 +1100,9 @@ const INITIAL_CEILING: Record<string, number> = {
   // Wire request carries verified media parts and names structured output as unsupported (+45); exact cap, no spare.
   // The Loop reads the prepared handle instead of the prepared body and re-reads the offered tools from its fixed source (-2).
   // The Loop accepts the media plans the prepared handle header commits to, by digest, not only none (+22); exact cap, no spare.
+  // The media result and byte resolution entry points leave the package root for the model source reader (+3); exact cap, no spare.
   // Wire request builder expresses a resolved tool catalog and paired tool history (+262); exact cap, no spare.
-  'packages/core/src': 39402,
+  'packages/core/src': 39405,
   // Testkit-only reference Effects runner adds 202 measured lines; exact cap, no spare.
   // Independent Effects dispatch reference (+440); exact measurement below.
   'packages/core/testkit': 2437,
@@ -2943,7 +2944,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // Blob promote, pin and unpin check the caller's principal; pins record it. Measured 84227 (+30), exact.
   // State read owner and port capture take no database handle or identity; the owner drains in-flight reads on close (+5).
   // State scan query service over the read owner and a bridge: scan, open, typed point reads, close order (+365). Measured 84597 (+370), exact.
-  'packages/host/src': 84597,
+  // The model source reader asks a media result source for the verified media of a prepared call that carries plans (+137); exact cap, no spare.
+  'packages/host/src': 84734,
   'packages/host/src/ext-host/service-invocation': 247,
   // T5.2's permission projector is kept independently bounded so later extension-host work cannot
   // hide in the package-wide increment. Measured source: 86 lines.

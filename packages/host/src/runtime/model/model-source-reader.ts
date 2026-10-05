@@ -1,15 +1,18 @@
 import type { ModelAdapterDeployment, ModelWireSource } from '@agnes/ai/runtime'
 import {
+  buildWireRequest,
   decodeHandle,
   handleIdOf,
   type ModelCapture,
   modelInputDigest,
   type PreparedRegistry,
+  toModelWireMedia,
 } from '@agnes/core'
 import type { ActionContext, CallContext, Outcome } from '@agnes/extension-api/runtime'
 import type { SlotName } from '@agnes/protocol'
 import type * as Wire from '@agnes/protocol/runtime'
 import { type ActionFrame, canonicalJsonDigest, validateRuntime } from '@agnes/protocol/runtime'
+import { type MediaResultSource, MODEL_SOURCE_MEDIA } from './model-media-source.js'
 
 export type ModelSourcePorts = Readonly<{
   /** The adapter package this process runs; the prepared call must have been built against it. */
@@ -24,6 +27,8 @@ export type ModelSourcePorts = Readonly<{
     ): Promise<Outcome<Wire.SessionParameterRevision>>
   }>
   authorize: Readonly<{ epoch(call: CallContext): number }>
+  /** Supplies the verified media a prepared call with media plans needs; without it such a call is refused. */
+  media?: MediaResultSource
 }>
 export type ModelSourceReader = Pick<ModelAdapterDeployment, 'load' | 'current'>
 
@@ -69,7 +74,10 @@ function slotAllows(parameters: unknown, slot: SlotName, route: string, model: s
 export const PREPARED_LOST = 'model_prepared_lost'
 
 export function createModelSourceReader(ports: ModelSourcePorts): ModelSourceReader {
-  const loaded = new WeakMap<ActionFrame, { source: ModelWireSource; call: CallContext; epoch: number }>()
+  const loaded = new WeakMap<
+    ActionFrame,
+    { source: ModelWireSource; call: CallContext; epoch: number; mediaEpoch: string | null }
+  >()
   return {
     async load(ref, frame, context) {
       // The call and epoch are fixed before the first await; every await and the publish re-check them.
@@ -114,9 +122,21 @@ export function createModelSourceReader(ports: ModelSourcePorts): ModelSourceRea
       )
         return refusal('model_source_slot')
       const route = { ...capture.route, models: [capture.model] } as unknown as ModelWireSource['route']
-      const source: ModelWireSource = { prepared, route, model: capture.model, request: entry.request }
+      let source: ModelWireSource = { prepared, route, model: capture.model, request: entry.request }
+      let mediaEpoch: string | null = null
+      if (prepared.mediaPlans.length > 0) {
+        // The request body carries media only the Host verified now, from receipts, under current access.
+        if (!ports.media) return refusal(MODEL_SOURCE_MEDIA)
+        mediaEpoch = ports.media.epoch(call)
+        const media = await ports.media.read(entry, frame, call)
+        if (stale()) return refusal('model_source_stale')
+        if (!media.ok) return media
+        const request = buildWireRequest(prepared, capture, wire, media.value)
+        if (!request.ok) return request
+        source = { ...source, request: request.value, media: media.value.map(toModelWireMedia) }
+      }
       if (stale()) return refusal('model_source_stale')
-      loaded.set(frame, { source, call, epoch })
+      loaded.set(frame, { source, call, epoch, mediaEpoch })
       return { ok: true, value: source }
     },
     current(source, frame, call) {
@@ -125,7 +145,8 @@ export function createModelSourceReader(ports: ModelSourcePorts): ModelSourceRea
         entry?.source === source &&
         entry.call === call &&
         !aborted(call) &&
-        ports.authorize.epoch(call) === entry.epoch
+        ports.authorize.epoch(call) === entry.epoch &&
+        (entry.mediaEpoch === null || ports.media?.epoch(call) === entry.mediaEpoch)
       )
     },
   }
