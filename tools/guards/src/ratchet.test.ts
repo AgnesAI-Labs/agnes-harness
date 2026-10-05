@@ -1084,8 +1084,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // Exact credential consumption and persisted completion-plan checks. Measured 35067, no spare.
   // Pure model input digest and plain text wire request builder (+87); exact cap, no spare.
   // Domain command event identity lookup and shared event fingerprint (+19); measured 35173, exact.
-  // Model service preparation: prepared request assembly and managed credential resolution (+601); measured 35774, exact, no spare.
-  'packages/core/src': 35774,
+  // Model service preparation: prepared request assembly and managed credential resolution (+575); measured 35748, exact, no spare.
+  'packages/core/src': 35748,
   // Testkit-only reference Effects runner adds 202 measured lines; exact cap, no spare.
   'packages/core/testkit': 1997,
   // 2026-09-15: DeepSeek V4 Pro/Flash ship a known-thinking-corrections table (new file) so the
