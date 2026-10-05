@@ -2914,7 +2914,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // fix(host): an artifact version is ready only on a pin it owns. Measured 83039 (+1), exact, no spare.
   // Host-side State read groundwork: historical meta for native facts, windowed point reads and byte-packed pages, Stored envelope encoding, port types. Measured 83319 (+280 on top of the above), exact, no spare.
   // Original identity clock and State dispatch source (+467 on 83336); exact cap, no spare.
-  'packages/host/src': 83803,
+  // Verified historical admitted Action/Attempt reads (+229), exact cap.
+  'packages/host/src': 84032,
   'packages/host/src/ext-host/service-invocation': 247,
   // T5.2's permission projector is kept independently bounded so later extension-host work cannot
   // hide in the package-wide increment. Measured source: 86 lines.
