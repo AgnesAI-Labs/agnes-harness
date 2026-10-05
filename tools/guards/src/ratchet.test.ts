@@ -269,7 +269,10 @@ const INITIAL_CEILING: Record<string, number> = {
   // attachments, and the queue row markup above stays. Measured: 5923, exact, no spare.
   // 2026-10-05 the image size gate moved after downscaling (sources get a coarse 20 MiB bound only),
   // replacing the pre-read byte reservations and freeing 8 lines. Measured: 5915, exact.
-  'packages/web-units/src': 5915,
+  // 2026-10-05 the queued-input list moved out of the composer card. The render now returns a
+  // Fragment so the queue section can sit before the form, which costs the Fragment import, the
+  // extracted `queueSection` binding and one extra nesting level. Measured: 5922, exact, no spare.
+  'packages/web-units/src': 5922,
   'packages/base/extensions/tools-core': 800,
   // MCP-ROWS stage 2b, steps 1-2 (D118): connection supervisor, catalog hub, and the per-server
   // extension row wiring them together. New extension at the shared default cap; measured 276.
