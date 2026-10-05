@@ -40,28 +40,40 @@ afterEach(async () => {
 const DIGEST = 'a'.repeat(64)
 const CARD = 'acme.notes/card'
 const EXTRA = 'acme.notes/extra'
+const SYNCED = 'acme.notes/synced'
 const TARGETS = ['web', 'tui'] as const
 
-type Declared = readonly [string, string, number, number]
+type Declared = readonly [string, string, number, number, (readonly string[])?]
 
-// The renderers each module declares: id, render key and the schema revisions of acme.notes/view@1 it
-// reads. base also serves the registry; the selection names base.fallback as its fallback and, with
-// rows, cards.card for the card render key. base.extra is registered by base's entry but never selected.
+// The renderers each module declares: id, render key, the schema revisions of acme.notes/view@1 it
+// reads and the features it requires. base also serves the registry; the selection names base.fallback
+// as its fallback and, with rows, cards.card and cards.synced for their render keys. cards.synced
+// requires a feature this client never negotiates. base.extra is registered by base's entry but never
+// selected.
 const RENDERERS: Record<string, readonly Declared[]> = {
   base: [
     ['base.fallback', CARD, 2, 3],
     ['base.extra', EXTRA, 1, 3],
   ],
-  cards: [['cards.card', CARD, 1, 1]],
+  cards: [
+    ['cards.card', CARD, 1, 1],
+    ['cards.synced', SYNCED, 1, 3, ['acme.sync']],
+  ],
 }
 
-const descriptorOf = ([id, renderKey, minRevision, maxRevision]: Declared): RendererDescriptor => ({
+const descriptorOf = ([
+  id,
+  renderKey,
+  minRevision,
+  maxRevision,
+  required = [],
+]: Declared): RendererDescriptor => ({
   id,
   packageDigest: DIGEST,
   renderKey,
   targets: [...TARGETS],
   viewSchemaRanges: [{ typeId: 'acme.notes/view@1', minRevision, maxRevision }],
-  requiredFeatures: [],
+  requiredFeatures: [...required],
   optionalFeatures: [],
   scope: 'view',
   entry: './view.js',
@@ -132,7 +144,12 @@ function catalog(revision: number, target: ClientTarget, rows: boolean) {
         export: 'createRegistry',
       },
       fallbackRenderer: chose('base', 'base.fallback'),
-      renderers: rows ? [{ renderKey: CARD, renderer: chose('cards', 'cards.card') }] : [],
+      renderers: rows
+        ? [
+            { renderKey: CARD, renderer: chose('cards', 'cards.card') },
+            { renderKey: SYNCED, renderer: chose('cards', 'cards.synced') },
+          ]
+        : [],
     },
   }
 }
@@ -321,6 +338,13 @@ describe('domain presentation through the client host', () => {
       'generic',
     ],
     ['the generic card when no renderer reads the schema', true, view(1, 9), 'generic'],
+    // The selected renderer is refused as a mismatch, and the fallback does not render its key.
+    [
+      'the generic card when the selected renderer requires a feature this client did not negotiate',
+      true,
+      view(1, 1, { renderKey: SYNCED }),
+      'generic',
+    ],
     // Unknown domain (case 1): nothing is selected or registered for its domain or render key.
     ['the generic card for an unknown domain and render key', true, view(1, 1, unknownDomain), 'generic'],
     // Old schema (case 3): the revision is older than every selected renderer reads.
@@ -431,16 +455,25 @@ describe('domain presentation through the client host', () => {
     expect(contexts.size).toBe(1)
     const [card] = contexts
 
-    // A newer revision no selected renderer reads moves the view to the generic card, which then
-    // keeps its mount across revisions too.
-    h.hold(view(3, 9))
-    await show(h.domain(view(3, 9)))
+    // A newer revision no selected renderer reads moves the view to the generic card, which then keeps
+    // its mount, the text selected in it and the focus inside it while its provisional view finalizes.
+    const provisional = view(3, 9, { phase: 'provisional' })
+    h.hold(provisional)
+    await show(h.domain(provisional))
     expect(shown()).toBe('generic')
     expect(card?.signal.aborted).toBe(true)
-    const generic = host.querySelector('.generic-domain-view')
+    const generic = host.querySelector('.generic-domain-view') as HTMLElement
+    const text = generic.querySelector('.generic-domain-text') as HTMLElement
+    document.getSelection()?.selectAllChildren(text)
+    const action = generic.querySelector('button')
+    action?.focus()
     h.hold(view(4, 9))
     await show(h.domain(view(4, 9)))
+    expect(host.querySelectorAll('.generic-domain-view')).toHaveLength(1)
     expect(host.querySelector('.generic-domain-view')).toBe(generic)
+    expect(generic.dataset.phase).toBe('finalized')
+    expect([document.getSelection()?.anchorNode, text.isConnected]).toEqual([text, true])
+    expect([document.activeElement, action?.isConnected]).toEqual([action, true])
 
     h.hold(view(5, 2))
     await show(h.domain(view(5, 2)))

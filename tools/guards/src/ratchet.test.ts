@@ -300,7 +300,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // disposing it, and reports each late module once. Measured 3673, exact (+27).
   // The client selection refuses a welcome without one and a renderer entry its module does not load.
   // Measured 3677, exact (+4).
-  'packages/web-client/src': 3677,
+  // An unknown domain view phase finds no tone through one lookup. Measured 3672, exact (-5).
+  'packages/web-client/src': 3672,
   'packages/web-slots/src': 605,
   // Failed shell calls read as their exit code (+19 lines); measured 4891, exact cap.
   // B-line diagnostics dialog: React view adds 147 lines; measured 4706, exact cap.

@@ -15,11 +15,12 @@ import { Button, type StateLight, StateLights } from '@agnes/web-ui'
 import { useState } from 'react'
 import { type DomainMessageKey, domainText } from '../../locales/domain.js'
 
-const PHASE_TONES: Record<string, StateLight['tone']> = {
-  provisional: 'warn',
-  finalized: 'ok',
-  interrupted: 'bad',
-}
+// A Map, so a phase naming an Object prototype key finds no tone.
+const PHASE_TONES = new Map<string, StateLight['tone']>([
+  ['provisional', 'warn'],
+  ['finalized', 'ok'],
+  ['interrupted', 'bad'],
+])
 
 // sha256 of the canonical JSON `{}`.
 const EMPTY_DIGEST = '44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a'
@@ -145,16 +146,11 @@ function ActionControl({
 
 export function GenericDomainView({ view, context }: { view: DomainView; context: RendererContext }) {
   const text = (key: DomainMessageKey) => domainText(context.locale.locale, key)
-  const phase: DomainMessageKey = Object.hasOwn(PHASE_TONES, view.phase)
-    ? `domain.phase.${view.phase}`
-    : 'domain.phase.unknown'
+  const tone = PHASE_TONES.get(view.phase)
+  const phase: DomainMessageKey = tone ? `domain.phase.${view.phase}` : 'domain.phase.unknown'
   return (
     <article className="generic-domain-view" data-view-id={view.viewId} data-phase={view.phase}>
-      <StateLights
-        states={[
-          { label: text('domain.status'), value: text(phase), tone: PHASE_TONES[view.phase] ?? 'unknown' },
-        ]}
-      />
+      <StateLights states={[{ label: text('domain.status'), value: text(phase), tone: tone ?? 'unknown' }]} />
       <p className="generic-domain-text">{view.fallbackText}</p>
       {view.resources.length > 0 ? (
         <ul className="generic-domain-resources" aria-label={text('domain.resources')}>
