@@ -251,3 +251,56 @@ describe.skipIf(typeof process.getuid !== 'function')('original State native rea
     }
   }, 30_000)
 })
+
+describe.skipIf(typeof process.getuid !== 'function')('native read snapshot admission bound', () => {
+  it('admits exactly 128 simultaneous snapshots and refuses the rest before any read settles', async () => {
+    const { directory, identity, context, reader, fixture } = await originalNativeFixture()
+    try {
+      expect(await fixture.coordinator.coordinate(fixture.draft(), fixture.context())).toMatchObject({
+        ok: true,
+      })
+      const results = await Promise.allSettled(
+        Array.from({ length: 129 }, () => reader.openVerifiedSnapshot('fixture-session', context)),
+      )
+      expect(results.filter((result) => result.status === 'fulfilled')).toHaveLength(128)
+      expect(results.filter((result) => result.status === 'rejected')).toHaveLength(1)
+    } finally {
+      reader.close()
+      identity.close()
+      await fixture.close()
+      rmSync(directory, { recursive: true, force: true })
+    }
+  }, 60_000)
+})
+
+describe.skipIf(typeof process.getuid !== 'function')('native read continuation replay', () => {
+  it('returns the same page when a continuation is read again after its reply was lost', async () => {
+    const { directory, identity, context, reader, fixture } = await originalNativeFixture()
+    try {
+      expect(await fixture.coordinator.coordinate(fixture.draft(), fixture.context())).toMatchObject({
+        ok: true,
+      })
+      const snapshot = await reader.openVerifiedSnapshot('fixture-session', context)
+      const request = {
+        snapshot,
+        collection: 'records' as const,
+        filter: {},
+        order: 'asc' as const,
+        cursor: null,
+        limit: 1,
+      }
+      const first = await reader.scanVerifiedPage(snapshot, request, context)
+      expect(first.nextCursor).not.toBeNull()
+      const next = { ...request, cursor: first.nextCursor }
+      const delivered = await reader.scanVerifiedPage(snapshot, next, context)
+      const replayed = await reader.scanVerifiedPage(snapshot, next, context)
+      expect(replayed).toEqual(delivered)
+      expect(replayed.items).toHaveLength(1)
+    } finally {
+      reader.close()
+      identity.close()
+      await fixture.close()
+      rmSync(directory, { recursive: true, force: true })
+    }
+  }, 60_000)
+})
