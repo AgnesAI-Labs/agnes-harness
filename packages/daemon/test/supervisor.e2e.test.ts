@@ -394,7 +394,7 @@ describe('agnesd supervisor: real end-to-end', () => {
       )
       expect(await projectionReply.json()).toMatchObject({
         ok: false,
-        error: { detailCode: 'projection_provider_export_unavailable' },
+        error: { detailCode: 'projection_provider_installation_unavailable' },
       })
       const ownerPath = join(dir, 'daemon', 'owner.json')
       const ownerRecord = readFileSync(ownerPath, 'utf8')

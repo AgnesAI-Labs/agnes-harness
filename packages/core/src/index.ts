@@ -215,6 +215,15 @@ export { createInteractionAuthority } from './runtime/interaction/authority.js'
 export { defaultLoopStateCodec } from './runtime/loop/default-state.js'
 export type { SessionOverlayPort } from './runtime/overlay.js'
 export type {
+  DispatchProgress,
+  DomainCommandStorage,
+  DomainCommandTransaction,
+  StoredDispatch,
+  StoredDomainCommand,
+  StoredDomainState,
+} from './runtime/projection/commands.js'
+export type { ReaderGrant } from './runtime/projection/domain.js'
+export type {
   AccountingDispatch,
   AccountingMethod,
   AccountingProviderAuthority,
@@ -231,6 +240,16 @@ export { createContextFactory } from './runtime/providers/context.js'
 export { createDefaultEffectsFactory } from './runtime/providers/effects.js'
 export type { DefaultLoopInputs, DefaultLoopSource } from './runtime/providers/loop.js'
 export { createDefaultLoopFactory } from './runtime/providers/loop.js'
+export type {
+  NativeConversation,
+  ProjectionAccess,
+  ProjectionCommand,
+  ProjectionDomain,
+  ProjectionProvider,
+  ProjectionProviderOptions,
+  ReaderPolicy,
+} from './runtime/providers/projection.js'
+export { createProjectionProvider } from './runtime/providers/projection.js'
 export type { ToolsDeployment } from './runtime/providers/tools.js'
 export { createDefaultToolsFactory } from './runtime/providers/tools.js'
 export type { DefaultUsageAuthority } from './runtime/providers/usage.js'
