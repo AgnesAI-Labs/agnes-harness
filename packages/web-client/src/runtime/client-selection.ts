@@ -1,8 +1,9 @@
 // Resolves the server-chosen client selection of a welcome against the welcome's module catalog. The
 // SDK has already checked both against the wire schema; this checks what the schema cannot express:
 // every reference names exactly one catalog contribution of the right kind that serves this client's
-// target, every selected renderer's declared descriptor describes that very contribution, and no package
-// the selection uses mixes two generations. Nothing falls back to a default.
+// target, every selected renderer's declared descriptor describes that very contribution and its module's
+// entry, and no package the selection uses mixes two generations. A welcome without a selection is refused:
+// nothing falls back to a default or to an older module path.
 import type {
   ClientModule,
   ClientWelcome,
@@ -34,23 +35,18 @@ export interface SelectedService extends SelectedContribution {
   readonly export: string
 }
 
-/**
- * `legacy` is a welcome without a selection: the client keeps its old module path. `selected` names, for
- * this client's target, exactly one catalog module for every contribution the selection uses.
- */
-export type ResolvedClientSelection =
-  | { readonly kind: 'legacy' }
-  | {
-      readonly kind: 'selected'
-      readonly target: ClientTarget
-      readonly shell: SelectedService | null
-      readonly registry: SelectedService
-      readonly fallbackRenderer: SelectedRenderer
-      readonly renderers: ReadonlyArray<{
-        readonly renderKey: string
-        readonly renderer: SelectedRenderer
-      }>
-    }
+/** For this client's target, exactly one catalog module for every contribution the selection uses. */
+export type ResolvedClientSelection = {
+  readonly kind: 'selected'
+  readonly target: ClientTarget
+  readonly shell: SelectedService | null
+  readonly registry: SelectedService
+  readonly fallbackRenderer: SelectedRenderer
+  readonly renderers: ReadonlyArray<{
+    readonly renderKey: string
+    readonly renderer: SelectedRenderer
+  }>
+}
 
 type Ref = ClientSelection['registry']
 type Declared = { readonly module: ClientModule; readonly contribution: ClientModuleContribution }
@@ -99,7 +95,8 @@ const sameSet = (left: readonly string[], right: readonly string[]) => {
 
 /**
  * `found` as a selected renderer, when the descriptor it declares describes it: its own id, its package
- * generation, the targets the contribution declares and, for a row, the render key the row selects.
+ * generation, the targets the contribution declares and, for a row, the render key the row selects. Its
+ * entry must be the module's entry, the file the client loads it from.
  */
 function described(found: Declared, renderKey?: string): Outcome<SelectedRenderer> {
   const { module, contribution } = found
@@ -114,6 +111,11 @@ function described(found: Declared, renderKey?: string): Outcome<SelectedRendere
       'client_selection_descriptor',
       `renderer ${contribution.contributionId} of package ${module.packageId} declares a descriptor that does not describe it`,
     )
+  if (descriptor.entry !== module.entryPath)
+    return refuse(
+      'client_selection_entry',
+      `renderer ${contribution.contributionId} of package ${module.packageId} names an entry its module does not load`,
+    )
   return { ok: true, value: { ...selected(found), descriptor } }
 }
 
@@ -124,7 +126,8 @@ export function resolveClientSelection(input: {
 }): Outcome<ResolvedClientSelection> {
   const { target, selection, modules } = input
   // A welcome from an older server has no selection; guessing one would pick a client it never chose.
-  if (selection === undefined) return { ok: true, value: { kind: 'legacy' } }
+  if (selection === undefined)
+    return refuse('client_selection_absent', 'the welcome names no client selection')
   const rows = selection.rendererSelections
   if (selection.target !== target || rows.some((row) => row.target !== target))
     return refuse('client_selection_target', `the selection is not for the ${target} client`)

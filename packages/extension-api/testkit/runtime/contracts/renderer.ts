@@ -227,6 +227,7 @@ const ownDescriptor = (id: string, view: DomainView): RendererDescriptor => ({
   entry: './conformance.js',
 })
 
+/** A catalog module, loaded from the entry its renderers declare, as a Host lock requires. */
 const catalogModule = (
   moduleId: string,
   packageDigest: string,
@@ -236,7 +237,7 @@ const catalogModule = (
   packageId: moduleId,
   packageDigest,
   assetDigest: DIGEST,
-  entryPath: `./${moduleId}.js`,
+  entryPath: contributions.find((entry) => entry.kind === 'renderer')?.descriptor.entry ?? `./${moduleId}.js`,
   ownerToken: ownerOf(moduleId),
   authorApiMajor: 1,
   targets: [...TARGETS],
