@@ -55,4 +55,4 @@ README 与架构说明共用[英文](../assets/architecture.svg)和[中文](../a
 
 ## README 演示素材
 
-[`docs/assets/readme/`](../assets/readme/) 中的横幅、动图与截图从本地实例录制，录制时使用隔离的 `AGH_HOME`、合成的示例工作区和已配置的模型；任何一帧都不得出现凭据、个人路径或客户数据。采用某次录制前，先核对画面中每个回答是否正确，字幕不超出指南与[已知限制](../reference/limitations.zh-CN.md)的表述。界面或所演示的流程变化后，需要重新录制。动画介绍是渲染出的动态图形而不是录屏：英文 README 使用全英文文字的 `trailer.webp`，中文 README 使用中文版 `trailer.zh-CN.webp`。角色、支持状态或 FDE、MHS 表述变化时，两个版本需要与架构图一起更新，保持表述一致。
+[`docs/assets/readme/`](../assets/readme/) 中的横幅、动图与截图从本地实例录制，录制时使用隔离的 `AGH_HOME`、合成的示例工作区和已配置的模型；任何一帧都不得出现凭据、个人路径或客户数据。采用某次录制前，先核对画面中每个回答是否正确，字幕不超出指南与[已知限制](../reference/limitations.zh-CN.md)的表述。两个版本各有一套素材：英文 README 使用英文界面和英文提问录制的 `banner.png`、`hero.gif`、`plugins.gif`、`terminal.gif`、`trajectory.png`，中文 README 使用中文界面录制的 `*.zh-CN.*` 文件。界面或所演示的流程变化后，需要重新录制。动画介绍是渲染出的动态图形而不是录屏：英文 README 使用全英文文字的 `trailer.webp`，中文 README 使用中文版 `trailer.zh-CN.webp`。角色、支持状态或 FDE、MHS 表述变化时，两个版本需要与架构图一起更新，保持表述一致。
