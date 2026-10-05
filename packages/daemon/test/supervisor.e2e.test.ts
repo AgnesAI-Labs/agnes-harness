@@ -599,7 +599,11 @@ describe('agnesd supervisor: real end-to-end', () => {
             const record = projected[0]
             if (!record) throw new Error('missing committed fixture record')
             tx.putState({ value: record.event.payload, revision: 1 })
-            tx.putEvent({ ...record, sequence: 4, event: { ...record.event, eventId: 'negative-event' } })
+            tx.putEvent({
+              ...record,
+              sequence: 4,
+              event: { ...record.event, eventId: 'negative-event', idempotencyKey: 'negative-event' },
+            })
             tx.putCommand({
               key: canonicalJsonDigest('negative'),
               fingerprint: canonicalJsonDigest('negative'),

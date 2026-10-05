@@ -163,6 +163,13 @@ const open = (extra: Partial<Parameters<typeof openDomainStore>[0]> = {}) =>
     permits: async () => allowed,
     ...extra,
   })
+/** Changes the database file behind the store, as an operator or an older build would. */
+const raw = (sql: string) => {
+  const db = new DatabaseSync(join(dir, 'domain.db'))
+  db.exec(sql)
+  db.close()
+}
+const sequences = (store: DomainStore) => store.events(0, 10).map((record) => record.sequence)
 const outcome = (value: { ok: boolean; error?: Wire.RuntimeError }) =>
   value.ok ? 'ok' : value.error?.detailCode
 
@@ -225,6 +232,58 @@ describe('domain store transactions', () => {
       store.transaction((tx) => tx.putState({ value: inline(stateSchema, { n: 9 }), revision: 3 })),
     ).rejects.toThrow('revision moved')
     expect((await store.transaction((tx) => tx.state())).revision).toBe(1)
+    store.close()
+  })
+
+  it('keeps the highest issued sequence across a reopen, so a deleted tail is never numbered again', async () => {
+    const store = open()
+    await commit(store, 1)
+    await commit(store, 2)
+    store.close()
+    raw('DELETE FROM domain_events WHERE sequence = 2')
+    const reopened = open()
+    expect(reopened.eventHistory()).toEqual({ count: 1, first: 1, last: 1, highwater: 2 })
+    const [first] = reopened.events(0, 1)
+    if (first === undefined) throw new Error('missing first event')
+    const reused = {
+      ...first,
+      sequence: 2,
+      event: { ...first.event, eventId: 'reused', idempotencyKey: 'k' },
+    }
+    await expect(reopened.transaction((tx) => tx.putEvent(reused))).rejects.toThrow('high-water')
+    await commit(reopened, 3)
+    expect(sequences(reopened)).toEqual([1, 3])
+    reopened.close()
+  })
+
+  it('starts the high-water of a database written before it at its newest event, once', async () => {
+    const store = open()
+    await commit(store, 1)
+    await commit(store, 2)
+    store.close()
+    raw('DROP TABLE domain_event_highwater')
+    const migrated = open()
+    expect(await migrated.transaction((tx) => tx.lastSequence())).toBe(2)
+    migrated.close()
+    raw('DELETE FROM domain_events WHERE sequence = 2')
+    const reopened = open()
+    expect(await reopened.transaction((tx) => tx.lastSequence())).toBe(2)
+    reopened.close()
+  })
+
+  it('refuses a second event under a stored identity and rolls its whole transaction back', async () => {
+    const store = open()
+    await commit(store, 1)
+    const [first] = store.events(0, 1)
+    if (first === undefined) throw new Error('missing first event')
+    await expect(
+      store.transaction((tx) => {
+        tx.putState({ value: inline(stateSchema, { n: 2 }), revision: 2 })
+        tx.putEvent({ ...first, sequence: 2, event: { ...first.event, eventId: 'again' } })
+      }),
+    ).rejects.toThrow('already holds this identity')
+    expect((await store.transaction((tx) => tx.state())).revision).toBe(1)
+    expect(store.eventHistory()).toEqual({ count: 1, first: 1, last: 1, highwater: 1 })
     store.close()
   })
 
@@ -519,19 +578,23 @@ describe('events provider', () => {
     expect(outcome(await events.publish(publication('k-4'), producer()))).toBe('resync_required')
     events.close()
     const store = open()
-    expect(store.eventHistory()).toEqual({ count: 2, first: 1, last: 3 })
+    expect(store.eventHistory()).toEqual({ count: 2, first: 1, last: 3, highwater: 3 })
     store.close()
   })
 
-  it('refuses a checkpoint whose top event was deleted and its sequence reused', async () => {
+  it('refuses every read and publication once the tail of the history is deleted, cursor or not', async () => {
     const events = openEvents(file(), key)
     await publishAll(events, 'k-1', 'k-2')
     const before = await events.subscribe(read(null), reader())
     remove(2)
-    await publishAll(events, 'k-3')
-    expect(seen(await events.subscribe(read(cursors(before).checkpoint), reader()))).toBe('resync_required')
-    expect(seen(await events.subscribe(read(null), reader()))).toMatchObject({ keys: ['k-1', 'k-3'] })
+    for (const cursor of [null, cursors(before).checkpoint])
+      expect(seen(await events.subscribe(read(cursor), reader()))).toBe('resync_required')
+    // As the reference provider does, a publication refuses instead of numbering past the deleted tail.
+    expect(outcome(await events.publish(publication('k-3'), producer()))).toBe('resync_required')
     events.close()
+    const store = open()
+    expect(store.eventHistory()).toEqual({ count: 1, first: 1, last: 1, highwater: 2 })
+    store.close()
   })
 
   it('refuses a cursor relabelled as the other kind, signed with another key or issued by another authority', async () => {

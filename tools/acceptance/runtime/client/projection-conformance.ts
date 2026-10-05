@@ -68,6 +68,9 @@ function openStorage(path: string): DatabaseSync {
   return db
 }
 
+const identityOf = (event: Pick<Wire.DomainEvent, 'scope' | 'source' | 'typeId' | 'idempotencyKey'>) =>
+  canonicalJsonDigest([event.scope, event.source, event.typeId, event.idempotencyKey])
+
 function sqliteStorage(db: DatabaseSync): DomainCommandStorage {
   const row = <T>(sql: string, ...args: (string | number)[]) => db.prepare(sql).get(...args) as T | undefined
   return {
@@ -95,6 +98,10 @@ function sqliteStorage(db: DatabaseSync): DomainCommandStorage {
               .run(JSON.stringify(state)),
           lastSequence: () =>
             row<{ seq: number }>('SELECT COALESCE(MAX(seq), 0) AS seq FROM events')?.seq ?? 0,
+          eventByIdentity: (identity) =>
+            (db.prepare('SELECT record FROM events ORDER BY seq').all() as { record: string }[])
+              .map((found) => JSON.parse(found.record) as Wire.DomainEventRecord)
+              .find(({ event }) => identityOf(event) === identityOf(identity)),
           putEvent: (record) =>
             void db
               .prepare('INSERT INTO events (seq, record) VALUES (?, ?)')
