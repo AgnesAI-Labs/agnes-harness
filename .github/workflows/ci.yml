@@ -91,6 +91,11 @@ jobs:
       - name: Windows Job protocol and honest execution admission
         if: runner.os == 'Windows' && matrix.shard == '3/3'
         run: pnpm exec vitest run packages/host/test/runtime/exec.test.ts packages/host/test/runtime/windows-job-owner.test.ts examples/runtime-reference/src/providers/sandbox-exec-lock.test.ts --maxWorkers=1
+      # Three cold source CLI starts belong to the heavy tier. Keep cross-platform PR coverage
+      # and run them alone before the parallel fast tier consumes the runner.
+      - name: doctor subagent CLI lifecycle
+        if: runner.os != 'Windows' || matrix.shard == '1/3'
+        run: pnpm exec vitest run packages/cli/test/doctor-subagents.e2e.test.ts --maxWorkers=1
       # Bound worker fan-out so hundreds of isolated test files do not exhaust small hosted runners.
       # Split Windows files across three runners while keeping two workers per runner.
       # The fast tier discovers and runs the complete Protocol fixture tree through the same
