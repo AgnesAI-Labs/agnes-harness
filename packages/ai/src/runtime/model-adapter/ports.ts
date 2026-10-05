@@ -17,11 +17,20 @@ import type {
 } from '@agnes/protocol/runtime'
 import type { ManualRoute } from '../../adapters/pi/index.js'
 
+/** What the host verified about one media plan the request carries; digests only, never bytes. */
+export type ModelWireMedia = Readonly<{
+  planKey: string
+  planDigest: string
+  usageIds: readonly string[]
+  parts: readonly Readonly<{ kind: 'text' | 'image'; sha256: string }>[]
+}>
+
 export type ModelWireSource = Readonly<{
   prepared: PreparedModelRequest
   route: ManualRoute
   model: ModelRecord
   request: RequestBody
+  media?: readonly ModelWireMedia[]
 }>
 
 /** The original installed owner supplies purpose-bound capabilities, not caller credential JSON. */

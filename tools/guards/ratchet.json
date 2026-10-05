@@ -9,7 +9,7 @@
   "packages/web-units/src": 5628,
   "packages/core/src": 37428,
   "packages/core/testkit": 2437,
-  "packages/ai/src": 5916,
+  "packages/ai/src": 5973,
   "packages/host/src/assemble": 4273,
   "packages/protocol/src": 3465,
   "packages/cli/src/tui": 38,
