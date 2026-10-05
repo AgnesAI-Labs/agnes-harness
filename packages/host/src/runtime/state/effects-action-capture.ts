@@ -103,7 +103,8 @@ function original(
     integrity('original action-created side differs')
   const proof = ports.all<{ ledger_seq: number }>(
     `SELECT p.ledger_seq FROM runtime_commit_proofs p JOIN events e
-       ON e.session_key=? AND e.seq=p.ledger_seq WHERE p.commit_id=?`,
+       ON e.session_key=? AND e.seq=p.ledger_seq WHERE p.commit_id=?
+       AND e.type='runtime/state-commit' AND json_extract(e.data,'$.commitId')=p.commit_id`,
     sessionId,
     value.createdByCommitId,
   )
@@ -140,6 +141,12 @@ export function createEffectsActionCaptureOwner(database: DatabaseSync, ports: C
       const source = fixed.get(capture)
       if (!source || source.database !== database || source.owner !== owner) return false
       await ports.requireSession(capture.sessionId)
+      const current = original(ports, capture.sessionId, capture.actionId)
+      return source.bytes === current.bytes && sameJson(capture, current.capture)
+    },
+    verifyCurrent(capture: EffectsActionCapture): boolean {
+      const source = fixed.get(capture)
+      if (!source || source.database !== database || source.owner !== owner) return false
       const current = original(ports, capture.sessionId, capture.actionId)
       return source.bytes === current.bytes && sameJson(capture, current.capture)
     },
