@@ -232,7 +232,17 @@ export async function modelFixture(
     mutateAtSend = false
   let live = true,
     rejectSend = false,
-    sends = 0
+    sends = 0,
+    credentialUses = 0,
+    egressCalls = 0
+  // A test stand-in for the host's restricted model egress, not the host port: it forwards through
+  // the global fetch, and only to this fixture's own loopback endpoint.
+  let egress: typeof globalThis.fetch | undefined = (input, init) => {
+    egressCalls++
+    if (!(input instanceof Request ? input.url : String(input)).startsWith(baseUrl))
+      return Promise.reject(new Error('Fixture egress target refused'))
+    return globalThis.fetch(input, init)
+  }
   const originalContext = context,
     pinned = canonicalJsonDigest(source as never)
   const current = () => live && canonicalJsonDigest(source as never) === pinned
@@ -277,7 +287,9 @@ export async function modelFixture(
       return { ok: true, value: source }
     },
     current: (_source, _frame, call) => call === originalContext && current(),
+    egress: () => egress,
     async withCredential(_source, _frame, _context, consume) {
+      credentialUses++
       return { ok: true, value: await consume('fixture-wire') }
     },
     beforeSend(_source, _frame, call) {
@@ -410,6 +422,12 @@ export async function modelFixture(
     call,
     deployment,
     sends: () => sends,
+    credentialUses: () => credentialUses,
+    egressCalls: () => egressCalls,
+    /** Replaces the egress the deployment hands out; `undefined` hands out none. */
+    egress: (port: typeof globalThis.fetch | undefined) => {
+      egress = port
+    },
     revoke: () => {
       live = false
     },

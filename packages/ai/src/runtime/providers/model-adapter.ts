@@ -453,6 +453,15 @@ export function createModelAdapterFactory(
                 }
               }
               if (!alive()) return failure('denied', 'model_current')
+              // The host's egress for this call, before the credential is touched. There is no
+              // fallback: without one, nothing is sent.
+              let fetch: typeof globalThis.fetch | undefined
+              try {
+                fetch = original.egress?.(source, frame, context)
+              } catch {
+                fetch = undefined
+              }
+              if (typeof fetch !== 'function') return failure('denied', 'model_egress_missing')
               const controller = new AbortController(),
                 abort = () => controller.abort()
               if (active.has(frame.attemptId)) return failure('conflict', 'model_in_flight')
@@ -511,7 +520,7 @@ export function createModelAdapterFactory(
                     source.prepared.target.credentialBinding === null
                   )
                     throw new Error('Retired source or missing bound credential')
-                  const adapter = new PiAdapter({ manualRoutes: [source.route], maxRetries: 0 })
+                  const adapter = new PiAdapter({ manualRoutes: [source.route], maxRetries: 0, fetch })
                   adapter.bindCredential(source.route.route, credential)
                   for await (const event of adapter.stream(source.route.route, source.request, {
                     signal: controller.signal,

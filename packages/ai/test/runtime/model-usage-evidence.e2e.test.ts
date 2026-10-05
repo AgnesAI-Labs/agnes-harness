@@ -1,5 +1,6 @@
 import { spawn } from 'node:child_process'
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { createServer } from 'node:http'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -143,6 +144,8 @@ it.each([
         expect(recovered.result).toEqual(effect)
       }
       expect(readFileSync(requests, 'utf8').trim().split('\n')).toHaveLength(1)
+      // The one request that arrived went through the deployment's egress port.
+      expect(fixture.egressCalls()).toBe(1)
     } finally {
       fault?.mockRestore()
       await fixture?.provider.close('shutdown')
@@ -156,6 +159,66 @@ it.each([
   },
   20000,
 )
+
+it.each([
+  { port: 'absent', thrown: undefined },
+  { port: 'denied', thrown: { code: 'denied', detailCode: 'model_egress_target' } },
+  { port: 'unknown_effect', thrown: { code: 'unknown_effect', detailCode: 'model_egress_unknown' } },
+] as const)('sends nothing around a model egress port that is $port', async ({ thrown }) => {
+  const directory = mkdtempSync(join(tmpdir(), 'model-egress-'))
+  const arrivals: string[] = []
+  const server = createServer((request, response) => {
+    arrivals.push(request.url ?? '')
+    response.writeHead(500).end()
+  })
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
+  const address = server.address()
+  const fixture = await modelFixture(
+    'openai-completions',
+    `http://127.0.0.1:${typeof address === 'object' && address ? address.port : 1}/v1`,
+    join(directory, 'effect.json'),
+  )
+  let portCalls = 0
+  fixture.egress(
+    thrown &&
+      (async () => {
+        portCalls++
+        throw Object.assign(new Error('Model egress request refused'), thrown)
+      }),
+  )
+  try {
+    const effect = await fixture.action.execute(fixture.frame, fixture.call)
+    expect(arrivals).toEqual([])
+    if (!thrown) {
+      expect(effect).toEqual({
+        outcome: 'failed',
+        error: expect.objectContaining({ code: 'denied', detailCode: 'model_egress_missing' }),
+        externalRequests: [],
+        usage: [],
+        references: [],
+      })
+      expect(fixture.credentialUses()).toBe(0)
+      expect(fixture.sends()).toBe(0)
+      expect(existsSync(join(directory, 'effect.json'))).toBe(false)
+      return
+    }
+    // A thrown refusal arrives after the body was reported sent, and the host may use a code other
+    // than unknown_effect after its own send, so every refusal stays an unknown, saved effect.
+    expect(portCalls).toBe(1)
+    expect(fixture.sends()).toBe(1)
+    expect(effect.outcome).toBe('unknown_effect')
+    expect(effect.error).toMatchObject({ code: 'unknown_effect', detailCode: 'model_stream_unknown' })
+    expect(effect.externalRequests).toHaveLength(1)
+    expect(effect.usage.map((fact) => fact.certainty)).toEqual(['unknown'])
+    const recovered = await fixture.action.reconcile(fixture.frame, [], fixture.call)
+    expect(recovered).toMatchObject({ kind: 'resolved', result: effect })
+  } finally {
+    await fixture.provider.close('shutdown')
+    server.closeAllConnections()
+    await new Promise<void>((resolve) => server.close(() => resolve()))
+    rmSync(directory, { recursive: true, force: true })
+  }
+})
 
 it.each([0, -1, Number.NaN, Number.POSITIVE_INFINITY])(
   'refuses an explicitly invalid deployment credit rate %s before installation',

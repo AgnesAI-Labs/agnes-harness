@@ -280,6 +280,12 @@ export async function modelCrashFixture(
       return { ok: true, value: source }
     },
     current: (_source, _frame, call) => call === originalContext && current(),
+    // A test stand-in for the host's restricted model egress, not the host port: it forwards through
+    // the global fetch, and only to this fixture's own loopback endpoint.
+    egress: () => (input, init) =>
+      (input instanceof Request ? input.url : String(input)).startsWith(baseUrl)
+        ? globalThis.fetch(input, init)
+        : Promise.reject(new Error('Fixture egress target refused')),
     async withCredential(_source, _frame, _context, consume) {
       return { ok: true, value: await consume('fixture-wire') }
     },
