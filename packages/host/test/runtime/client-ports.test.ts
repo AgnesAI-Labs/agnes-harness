@@ -3,14 +3,14 @@ import { createHostRuntimeClientPorts } from '../../src/runtime/client-ports.js'
 import { assembleHostProjectionOwner, createHostProjectionOwner } from '../../src/runtime/projection-owner.js'
 
 describe('Host runtime client assembly', () => {
-  it('names a missing public projection export and cannot issue an identity from transport authentication', async () => {
+  it('names a missing projection installation and cannot issue an identity from transport authentication', async () => {
     const owner = createHostProjectionOwner()
     const caller = { principalId: 'local' as const, generation: 'daemon-generation' }
     const header = { negotiatedSession: 's1', clientInstanceId: 'ci1', catalogRevision: 1, callId: 'call1' }
     const ports = createHostRuntimeClientPorts(owner.installation, caller)
     expect(await ports['conversation.open']?.({ sessionId: 'session', limit: 1 }, header)).toMatchObject({
       ok: false,
-      error: { detailCode: 'projection_provider_export_unavailable' },
+      error: { detailCode: 'projection_provider_installation_unavailable' },
     })
     expect(Object.keys(ports)).toEqual([
       'conversation.open',

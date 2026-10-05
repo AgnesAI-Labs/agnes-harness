@@ -3,6 +3,7 @@ import { describe, expect, expectTypeOf, it } from 'vitest'
 import { defaultLoopStateCodec } from '../../src/runtime/loop/default-state.js'
 import { createContextFactory } from '../../src/runtime/providers/context.js'
 import { createDefaultLoopFactory } from '../../src/runtime/providers/loop.js'
+import { createProjectionProvider } from '../../src/runtime/providers/projection.js'
 import { createDefaultToolsFactory } from '../../src/runtime/providers/tools.js'
 import { createTextStatisticsTool } from '../../src/runtime/tools/definitions.js'
 
@@ -13,6 +14,7 @@ describe('public default assembly exports', () => {
     expect(Core.createDefaultLoopFactory).toBe(createDefaultLoopFactory)
     expect(Core.defaultLoopStateCodec).toBe(defaultLoopStateCodec)
     expect(Core.createTextStatisticsTool).toBe(createTextStatisticsTool)
+    expect(Core.createProjectionProvider).toBe(createProjectionProvider)
   })
 
   it('exports the existing deployment types for root-only assembly', () => {
@@ -33,6 +35,15 @@ describe('public default assembly exports', () => {
     >()
     expectTypeOf<Core.DefaultLoopSource>().toEqualTypeOf<
       import('../../src/runtime/providers/loop.js').DefaultLoopSource
+    >()
+    expectTypeOf<Core.ProjectionProviderOptions>().toEqualTypeOf<
+      import('../../src/runtime/providers/projection.js').ProjectionProviderOptions
+    >()
+    expectTypeOf<Core.ProjectionProvider>().toEqualTypeOf<
+      import('../../src/runtime/providers/projection.js').ProjectionProvider
+    >()
+    expectTypeOf<Core.DomainCommandStorage>().toEqualTypeOf<
+      import('../../src/runtime/projection/commands.js').DomainCommandStorage
     >()
   })
 })
