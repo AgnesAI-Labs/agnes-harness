@@ -1075,7 +1075,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // Sixth main synchronization brings main's queued-input CI fixes. Measured 32862, exact, no spare.
   // Exact merged main and runtime integration source count; no spare allocation.
   // Public factory exports and converged model-source consumption; exact merged count, no spare.
-  'packages/core/src': 35002,
+  // Sixth main synchronization merged with the integration tip. Measured 35005, exact, no spare.
+  'packages/core/src': 35005,
   // Testkit-only reference Effects runner adds 202 measured lines; exact cap, no spare.
   'packages/core/testkit': 1997,
   // 2026-09-15: DeepSeek V4 Pro/Flash ship a known-thinking-corrections table (new file) so the
@@ -1312,7 +1313,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // A returning package must not be served a cached generation bound to revoked leases (+7), and the
   // full-access read-only roots reach the fence from the assembly (+7). Measured 4207, exact.
   // Wire the optional deployment installation through the existing service root; measured +3, exact.
-  'packages/host/src/assemble': 4242,
+  // Verified runtime usage composes with the original ledger. Measured 4257, exact, no spare.
+  'packages/host/src/assemble': 4257,
   // P1: generated-schema validators and duplicate projection-name refusal; measured exact cap.
   // F1 adds Surface JSON/identity validation and lock snapshot validation.
   // PM4 adds strict management DTO validation and method permission/identity contracts; exact total.
@@ -2873,7 +2875,9 @@ const INITIAL_CEILING: Record<string, number> = {
   // Sixth main synchronization merged with the current integration tip. Measured 80713, exact, no spare.
   // Sixth main synchronization brings main's queued-input CI fixes. Measured 80715, exact, no spare.
   // Exact merged main and runtime integration source count; no spare allocation.
-  'packages/host/src': 80911,
+  // Sixth main synchronization merged with the integration tip. Measured 81225, exact, no spare.
+  // Sixth main synchronization merged with the integration tip. Measured 81253, exact, no spare.
+  'packages/host/src': 81253,
   'packages/host/src/ext-host/service-invocation': 247,
   // T5.2's permission projector is kept independently bounded so later extension-host work cannot
   // hide in the package-wide increment. Measured source: 86 lines.

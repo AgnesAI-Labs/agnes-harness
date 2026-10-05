@@ -762,16 +762,39 @@ const PROJECTION_BINDING = {
 function defaultProjection(fixture: SuiteFixture, retainedRevisions?: number) {
   const store = memoryStore()
   let ids = 0
+  // Event ids in the order the reducer folded them, and a pause after each journal read cut its page.
+  const applied: string[] = []
+  const hooks = { afterCut: undefined as (() => Promise<void>) | undefined, overlap: 0, reads: 0 }
+  let reading = 0
+  const domain = {
+    ...fixture.domain,
+    reducer: {
+      reduce(input: Wire.DomainReducerReduceRequest) {
+        applied.push(input.event.eventId)
+        return fixture.domain.reducer.reduce(input)
+      },
+    },
+  }
   const open = () =>
     createProjectionProvider({
       binding: PROJECTION_BINDING,
       reads: NO_READS,
-      domain: fixture.domain,
+      domain,
       access: fixture.gate,
       native: fixture.native,
       turnOf: fixture.turnOf,
-      journal: async (after, limit) =>
-        store.db.events.filter((record) => record.sequence > after).slice(0, limit),
+      journal: async (after, limit) => {
+        const page = store.db.events.filter((record) => record.sequence > after).slice(0, limit)
+        reading++
+        hooks.reads++
+        hooks.overlap = Math.max(hooks.overlap, reading)
+        try {
+          await hooks.afterCut?.()
+        } finally {
+          reading--
+        }
+        return page
+      },
       owner: {
         namespace: 'conformance.tasks',
         authorityId: 'conformance-authority',
@@ -797,28 +820,34 @@ function defaultProjection(fixture: SuiteFixture, retainedRevisions?: number) {
     binding: PROJECTION_BINDING,
     query: (request, context) => current.query(request, context),
   }
+  /** Commits records to the journal without asking the provider to fold them. */
+  const commit = (events: readonly Wire.DomainEvent[]) =>
+    store.storage.transaction((tx) => {
+      for (const event of events) {
+        const sequence = tx.lastSequence() + 1
+        tx.putEvent({
+          event,
+          authorityId: 'conformance-authority',
+          sequence,
+          aggregate: {
+            authorityId: 'conformance-authority',
+            typeId: 'conformance.tasks/board@1',
+            id: 'board',
+            revision: sequence,
+          },
+          fingerprint: canonicalJsonDigest(event.eventId),
+        })
+      }
+    })
   return {
     store,
     binding,
+    applied,
+    hooks,
+    commit,
     service: () => current,
     async append(events: readonly Wire.DomainEvent[]) {
-      await store.storage.transaction((tx) => {
-        for (const event of events) {
-          const sequence = tx.lastSequence() + 1
-          tx.putEvent({
-            event,
-            authorityId: 'conformance-authority',
-            sequence,
-            aggregate: {
-              authorityId: 'conformance-authority',
-              typeId: 'conformance.tasks/board@1',
-              id: 'board',
-              revision: sequence,
-            },
-            fingerprint: canonicalJsonDigest(event.eventId),
-          })
-        }
-      })
+      await commit(events)
       await current.refresh()
     },
     async reopen() {
@@ -826,6 +855,14 @@ function defaultProjection(fixture: SuiteFixture, retainedRevisions?: number) {
       current = open()
     },
   }
+}
+
+function deferred() {
+  let resolve!: () => void
+  const promise = new Promise<void>((done) => {
+    resolve = done
+  })
+  return { promise, resolve }
 }
 
 describe('default projection provider', () => {
@@ -886,6 +923,52 @@ describe('default projection provider', () => {
     const caught = await read()
     expect(caught.items.map((view) => view.viewId)).toEqual(['a', 'b', 'c'])
     expect(caught.projectionRevision).toBe(3)
+  })
+
+  it('settles a refresh asked after a commit only on a journal read taken after it, folding each event once', async () => {
+    const { subject, add } = await provider()
+    const taken = deferred()
+    const freed = deferred()
+    subject.hooks.afterCut = async () => {
+      taken.resolve()
+      await freed.promise
+    }
+    const early = subject.service().refresh()
+    await taken.promise
+    // The read in flight has already cut its page, and the page ends before this commit.
+    await subject.commit([add('a')])
+    const late = [subject.service().refresh(), subject.service().refresh()]
+    freed.resolve()
+    await Promise.all(late)
+    expect(subject.applied).toEqual(['unit-1'])
+    await early
+    expect(subject.applied).toEqual(['unit-1'])
+    expect(subject.hooks.overlap).toBe(1)
+    // The read in flight, and one read the two late refreshes share.
+    expect(subject.hooks.reads).toBe(2)
+  })
+
+  it('runs its own journal read for a refresh asked while another read fails', async () => {
+    const { subject, add } = await provider()
+    const taken = deferred()
+    const freed = deferred()
+    let offline = true
+    subject.hooks.afterCut = async () => {
+      taken.resolve()
+      await freed.promise
+      if (!offline) return
+      offline = false
+      throw new Error('journal offline')
+    }
+    const early = subject.service().refresh()
+    const refused = expect(early).rejects.toThrow('journal offline')
+    await taken.promise
+    await subject.commit([add('a')])
+    const late = subject.service().refresh()
+    freed.resolve()
+    await refused
+    await expect(late).resolves.toBeNull()
+    expect(subject.applied).toEqual(['unit-1'])
   })
 
   it('stops before an event the reducer refuses, without passing it on a later read or a restart', async () => {

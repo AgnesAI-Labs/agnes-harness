@@ -87,6 +87,20 @@ Trusted backend Cordis rows may contribute tools, hooks, and constrained service
 
 Host startup also opens one fixed Cordis service root, available to trusted Host code through the readonly `runtimeServices` accessor. Its initial defaults are `agh.package-source` queries and `agh.package-resolver` computation over an isolated, initially empty package cache. They have no admitted local roots, network sources, or maintenance operations. Unregistered contracts return `service_not_registered`. This root runs beside the existing Kernel, SQLite session storage, audit sink, and secrets composition. Initialization failure uses startup rollback; Host shutdown releases the resolver before the source and removes the cache. See [Host service selection](../../packages/host/src/runtime/host-services.ts) and [startup tests](../../packages/host/test/host.test.ts).
 
+Trusted Host code also has a private `runtimeServices.usageLedger` composition slot. Its optional
+`runtimeUsageLedgerOwners` supply the selected C33 provider and authenticated context, committed State
+source verification, and the original Session/Core mapping with an exclusive ledger write capability.
+Absent owners return named refusals and create no journal. The session owner must exclude the claimed
+run from legacy inference settlement; ordinary sessions retain their existing ledger path.
+
+The consumer journals delivery before C33 record/query and writes verified credits through the original
+effect-idempotent ledger seam. Gateway zero and original estimates keep their source labels; unknown
+or missing credits remain pending and refuse delivery. Existing bounded-units reservations require a
+C32 settlement owner. A pending delivery blocks another attempt in that run; ledger failures refuse.
+Cold owners can enumerate `pending()` and call `consume()` with the original attempt. This slot has
+fixture coverage, including process death; production installer, State store and Core mapping owners
+are still required. See [Host usage composition](../../packages/host/src/assemble/usage-ledger.ts).
+
 <a id="runtime-target-与热更新"></a>
 
 ## Runtime targets and hot updates

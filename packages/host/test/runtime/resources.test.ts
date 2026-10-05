@@ -529,6 +529,7 @@ describe('durable resource pins', () => {
     }
   })
 
+  // Full publication validation plus durable pin writes exceeded 5s on hosted Linux.
   it('binds a resource pin to the published release and stores nothing when that bind is refused', async () => {
     const directory = mkdtempSync(join(tmpdir(), 'resource-package-pin-'))
     const input = upgradeAssemblyFixture()
@@ -654,7 +655,7 @@ describe('durable resource pins', () => {
       await fixture.close()
       rmSync(directory, { recursive: true, force: true })
     }
-  })
+  }, 15_000)
 })
 
 describe('process-local resource ownership', () => {

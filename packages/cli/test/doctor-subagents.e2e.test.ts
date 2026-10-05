@@ -14,6 +14,9 @@ function runCli(home: string, args: string[]): Promise<{ code: number; stdout: s
   return new Promise((resolve, reject) => {
     const child = spawn(process.execPath, ['--import', 'tsx', bin, ...args], {
       windowsHide: true,
+      // Bound each cold source CLI startup and terminate it before fixture cleanup.
+      signal: AbortSignal.timeout(15_000),
+      killSignal: 'SIGKILL',
       env: { ...process.env, AGH_HOME: home },
       cwd: fileURLToPath(new URL('../../..', import.meta.url)),
     })
@@ -25,8 +28,14 @@ function runCli(home: string, args: string[]): Promise<{ code: number; stdout: s
     child.stderr.on('data', (chunk: Buffer) => {
       stderr += chunk.toString()
     })
-    child.on('error', reject)
-    child.on('close', (code) => resolve({ code: code ?? 1, stdout, stderr }))
+    let failure: Error | undefined
+    child.on('error', (error) => {
+      failure = error
+    })
+    child.on('close', (code) => {
+      if (failure) reject(failure)
+      else resolve({ code: code ?? 1, stdout, stderr })
+    })
   })
 }
 
@@ -141,5 +150,7 @@ describe('doctor subagents', () => {
     expect(repaired.code).toBe(2)
     expect(`${repaired.stdout}\n${repaired.stderr}`).toMatch(/disabled|refused/)
     expect(readFileSync(join(dirtyPath, 'dirty.txt'), 'utf8')).toBe('keep\n')
-  }, 20_000)
+    // Three cold CLI starts plus git/SQLite setup exceeded 20s on hosted Windows.
+    // Each child is bounded to 15s; allow the whole workflow 60s on every platform.
+  }, 60_000)
 })
