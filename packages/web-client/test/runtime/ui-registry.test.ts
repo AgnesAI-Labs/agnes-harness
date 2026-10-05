@@ -99,6 +99,29 @@ describe('web client ui registry over a private slot ledger', () => {
     expect(registry.register(everywhere(['web', 'tui'])).ok).toBe(true)
   })
 
+  // A renderer for a cell another holds, or under another's id, gets one diagnostic: the same each time,
+  // naming the holder, which keeps serving.
+  it('refuses a same-key renderer with one diagnostic naming the holder', () => {
+    const later = (extra: Partial<RendererDescriptor>, targets: RendererDescriptor['targets'] = ['tui']) =>
+      ({ ...everywhere(targets), descriptor: { ...descriptor(targets), ...extra } }) as RendererDefinition
+    const refusals = () => {
+      const registry = open()
+      expect(registry.register(everywhere(['web', 'tui'])).ok).toBe(true)
+      const seen = [
+        registry.register(later({ id: 'acme.later' })),
+        registry.register(later({ id: 'acme.later' })),
+        registry.register(later({ renderKey: 'list' }, ['web'])),
+      ]
+      expect(kinds(registry, ['web', 'tui'])).toEqual(['matched', 'matched'])
+      return seen
+    }
+    const [first, ...rest] = [...refusals(), ...refusals()]
+    expect(first).toMatchObject({ ok: false, error: { code: 'conflict', detailCode: 'renderer_conflict' } })
+    expect(!first?.ok && first?.error.message).toContain('acme.card')
+    expect(!first?.ok && first?.error.message).not.toContain('acme.later')
+    for (const refusal of rest) expect(refusal).toEqual(first)
+  })
+
   it("leaves the app's slot registry and its built-in slots untouched", async () => {
     const ctx = new Context()
     await ctx.plugin(SlotRegistry)
