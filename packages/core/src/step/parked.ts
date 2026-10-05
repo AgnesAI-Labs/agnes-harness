@@ -83,6 +83,8 @@ export async function continuationAllows(
 export async function continueParked(s: SessionImpl): Promise<'opened' | 'waiting' | 'blocked' | false> {
   if (s.op()) return false
   for (const [requestId, decision] of s.state.decisions) {
+    // Only a ticketed answer outlives its turn; a guardian decision was acted on inside it.
+    if (decision.via === 'guardian') continue
     if (decision.lane !== s.lane || decision.via === 'sync' || s.state.resumedRequests.has(requestId))
       continue
     if (!decision.askedSeq) throw new CoreError('E_RELATION', 'approval decision has no source request')

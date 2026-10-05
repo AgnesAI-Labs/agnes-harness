@@ -366,7 +366,12 @@ it.skipIf(!entry)(
       const denied = await command(['-p', 'Run the requested shell probe.'])
       expect(denied.stdout).toContain('Shared backend acceptance reply.')
       expect(provider.requests.at(-1)?.messages).toEqual(
-        expect.arrayContaining([expect.objectContaining({ role: 'tool', content: 'approval rejected' })]),
+        expect.arrayContaining([
+          expect.objectContaining({
+            role: 'tool',
+            content: 'the user rejected this action; do not retry the same call without asking',
+          }),
+        ]),
       )
       await expect(readFile(join(cwd, 'shell-should-not-run.txt'))).rejects.toMatchObject({ code: 'ENOENT' })
       // Stop the selected distribution before switching back; never overwrite a loaded binary.

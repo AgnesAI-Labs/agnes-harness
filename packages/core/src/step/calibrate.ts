@@ -1,5 +1,6 @@
 import { type CountResult, type RequestBody, validateAgainst } from '@agnes/protocol'
 import { CountResult as CountResultSchema } from '@agnes/protocol/gen/model'
+import { decidedFields, isPending } from '../effects/approval-answer.js'
 import { withTimeout } from '../effects/wrap.js'
 import type { BudgetState } from '../reduce/shapes.js'
 import type { EventInput } from '../types.js'
@@ -185,7 +186,7 @@ export async function quoteBudget(
         ...(overridden.summary !== undefined ? { summary: overridden.summary } : {}),
       }
     : asked
-  const verdict = await s.askApproval(
+  const answer = await s.askApprovalAnswer(
     {
       ...finalAsked,
       sessionKey: s.key,
@@ -197,18 +198,18 @@ export async function quoteBudget(
     },
     s.ac.signal,
   )
-  if (typeof verdict === 'object') {
+  if (isPending(answer)) {
     await s.endTurn('parked', {
-      events: [...events, s.ev('approval/asked', { ...finalAsked, pending: verdict })],
+      events: [...events, s.ev('approval/asked', { ...finalAsked, pending: answer })],
     })
     return { reason: 'parked' }
   }
   await s.d.log.append([
     ...events,
     s.ev('approval/asked', finalAsked),
-    s.ev('approval/decided', { requestId, verdict, via: 'sync' }),
+    s.ev('approval/decided', { requestId, ...decidedFields(answer), via: 'sync' }),
   ])
-  if (!verdict.startsWith('allowed')) {
+  if (!answer.verdict.startsWith('allowed')) {
     // An interrupt reaches the approval seam as a refusal, because that is how it fails closed.
     // The turn still ended because someone stopped it, not because it ran out of credit, and the
     // ledger has to say which.

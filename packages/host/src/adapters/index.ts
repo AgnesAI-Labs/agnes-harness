@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto'
 import { mkdirSync } from 'node:fs'
 import { isAbsolute, join, posix, resolve } from 'node:path'
-import type { ApprovalRequest, FsPolicy, FsRule, Verdict } from '@agnes/core'
+import type { ApprovalAnswer, ApprovalRequest, FsPolicy, FsRule, Verdict } from '@agnes/core'
 import { validateFsPolicy } from '@agnes/core'
 import { WORKSPACE_SECRET_DIRS } from '@agnes/protocol'
 import { RemoteWorkspacePool } from '@agnes/sandbox-remote'
@@ -34,7 +34,9 @@ import { createSqliteStorage, type SqliteStorage, type TableStore } from './stor
 
 // The deadline is carried by the signal rather than by a field grafted onto the request, so one
 // prompter serves both a timeout and an explicit cancellation.
-export type Prompter = { ask(req: ApprovalRequest, opts: { signal: AbortSignal }): Promise<Verdict> }
+export type Prompter = {
+  ask(req: ApprovalRequest, opts: { signal: AbortSignal }): Promise<Verdict | ApprovalAnswer>
+}
 export type AdapterBundle = {
   storage: SqliteStorage
   fs: FencedFs

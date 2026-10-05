@@ -1,3 +1,4 @@
+import { decidedFields, isPending } from '../effects/approval-answer.js'
 import { scanAll, scanPages } from '../log/scan-pages.js'
 import type { EffectNode } from '../reduce/state.js'
 import {
@@ -144,7 +145,7 @@ async function askUnknownOutcome(s: SessionImpl, toolUseId: string, name: string
         ...(overridden.summary !== undefined ? { summary: overridden.summary } : {}),
       }
     : asked
-  const verdict = await s.askApproval(
+  const answer = await s.askApprovalAnswer(
     {
       ...finalAsked,
       sessionKey: s.key,
@@ -156,10 +157,12 @@ async function askUnknownOutcome(s: SessionImpl, toolUseId: string, name: string
     },
     s.ac.signal,
   )
-  const rows =
-    typeof verdict === 'object'
-      ? [s.ev('approval/asked', { ...finalAsked, pending: verdict })]
-      : [s.ev('approval/asked', finalAsked), s.ev('approval/decided', { requestId, verdict, via: 'sync' })]
+  const rows = isPending(answer)
+    ? [s.ev('approval/asked', { ...finalAsked, pending: answer })]
+    : [
+        s.ev('approval/asked', finalAsked),
+        s.ev('approval/decided', { requestId, ...decidedFields(answer), via: 'sync' }),
+      ]
   await closeTurn(s, 'parked', { events: rows })
 }
 
