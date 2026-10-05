@@ -327,3 +327,11 @@ export type {
   WorkspacePublicationDispatch,
 } from './workspace/runtime.js'
 export { createWorkspaceInvocationPort } from './workspace/runtime.js'
+export {
+  buildWireRequest,
+  MODEL_INPUT_KIND,
+  type ModelCapture,
+  modelInputDigest,
+  modelInputPreimage,
+  type WireIdentity,
+} from './runtime/model/wire-request.js'

@@ -4,6 +4,7 @@ import type * as Wire from '@agnes/protocol/runtime'
 import { canonicalJsonDigest } from '@agnes/protocol/runtime'
 import { describe, expect, it } from 'vitest'
 import {
+  buildWireRequest,
   type ModelCapture,
   modelInputDigest,
   modelInputPreimage,
@@ -169,5 +170,105 @@ describe('model input digest', () => {
     )
     expect(preimage.kind).toBe('agh.model/input@1')
     expect(canonicalJsonDigest(preimage as Wire.JsonValue)).toBe(modelInputDigest(prepared, capture, wire))
+  })
+})
+
+function item(kind: Wire.ContextItem['kind'], trust: Wire.ContextItem['trust'], body: string): Wire.ContextItem {
+  return {
+    id: `item-${kind}-${trust}-${body}`,
+    kind,
+    body: {
+      kind: 'inline',
+      schema: prepared.view.schema,
+      value: body,
+      digest: canonicalJsonDigest(body),
+      bytes: new TextEncoder().encode(JSON.stringify(body)).length,
+    },
+    sourceRefs: [],
+    provenance: { sourceRefs: ['s'], producer: prepared.ownerBinding, trustLabels: [] },
+    trust,
+    tokenEstimate: 1,
+    protected: false,
+    toolPairRef: null,
+    sourceRanges: [],
+  } as Wire.ContextItem
+}
+
+const withItems = (items: Wire.ContextItem[]) => ({ ...prepared, view: { ...prepared.view, items } })
+
+describe('wire request', () => {
+  it('builds system and user text with the identity from the wire and a derivedHash equal to the recomputed digest', () => {
+    const input = withItems([item('message', 'system', 'be brief'), item('message', 'user', 'hello')])
+    const identity: WireIdentity = { ...wire, slot: 'fast', contractId: 'contract-1' }
+    const request = buildWireRequest(input, capture, identity)
+    if (!request.ok) throw new Error(request.error.detailCode)
+    expect(request.value).toMatchObject({
+      kind: 'inference',
+      sessionKey: 'session-1',
+      slot: 'fast',
+      route: 'fixed-route',
+      model: 'fixture-model',
+      contractId: 'contract-1',
+      system: 'be brief',
+      tools: [],
+      messages: [{ role: 'user', content: [{ type: 'text', text: 'hello' }] }],
+      sampling: { maxTokens: 32 },
+    })
+    expect(request.value.derivedHash).toBe(modelInputDigest(input, capture, identity))
+  })
+
+  it('carries a non-null thinking level and temperature into sampling', () => {
+    const input = {
+      ...withItems([item('message', 'user', 'hi')]),
+      generation: { maxOutputTokens: 8, temperature: 0.5, thinking: 'low' as const },
+    }
+    const request = buildWireRequest(input, capture, wire)
+    if (!request.ok) throw new Error(request.error.detailCode)
+    expect(request.value.sampling).toEqual({ maxTokens: 8, temperature: 0.5, thinking: 'low' })
+  })
+
+  it.each([
+    ['no user message', withItems([item('message', 'system', 'only system')]), 'model_wire_empty'],
+    ['no items', withItems([]), 'model_wire_empty'],
+    ['assistant-like text', withItems([item('message', 'user', 'q'), item('message', 'derived', 'a')]), 'model_wire_item'],
+    ['external text', withItems([item('message', 'external', 'x')]), 'model_wire_item'],
+    ['tool call', withItems([item('message', 'user', 'q'), item('tool-call', 'derived', 'call')]), 'model_wire_item'],
+    [
+      'non-text body',
+      withItems([
+        {
+          ...item('message', 'user', 'q'),
+          body: {
+            kind: 'inline',
+            schema: prepared.view.schema,
+            value: { a: 1 },
+            digest: canonicalJsonDigest({ a: 1 }),
+            bytes: 7,
+          },
+        } as Wire.ContextItem,
+      ]),
+      'model_wire_item',
+    ],
+    [
+      'tool catalog',
+      { ...withItems([item('message', 'user', 'q')]), toolCatalog: { revision: 1, digest: 'c'.repeat(64), tools: [] } },
+      'model_wire_tools',
+    ],
+    ['media plan', { ...withItems([item('message', 'user', 'q')]), mediaPlans: [{ key: 'm' } as never] }, 'model_wire_media'],
+    [
+      'legacy overrides',
+      { ...withItems([item('message', 'user', 'q')]), legacyRequestOverrides: { maxTokens: 4 } },
+      'model_wire_overrides',
+    ],
+    [
+      'seed',
+      { ...withItems([item('message', 'user', 'q')]), generation: { maxOutputTokens: 8, seed: 1, thinking: null } },
+      'model_wire_seed',
+    ],
+  ] as const)('refuses %s with incompatible/%s', (_name, input, detail) => {
+    expect(buildWireRequest(input as Wire.PreparedModelRequest, capture, wire)).toMatchObject({
+      ok: false,
+      error: { code: 'incompatible', detailCode: detail },
+    })
   })
 })
