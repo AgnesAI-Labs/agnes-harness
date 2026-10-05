@@ -46,7 +46,7 @@ type Extra = Partial<Omit<ModelSourceStoreOptions, 'path' | 'calls'>>
 function open(frames: ActionFrame[], extra: Extra = {}, directory = scratch()) {
   const path = join(directory, 'model-source.sqlite')
   const calls = registryOf(...frames)
-  const store = openModelSourceStore({ path, calls, ...extra })
+  const store = openModelSourceStore({ path, calls, soleSendFence: false, ...extra })
   cleanup.push(() => {
     try {
       store.close()
@@ -99,7 +99,7 @@ describe('save and lookup', () => {
     expect(answer.result.usage).toEqual(original.usage)
     expect(validateRuntime('ReconcileResult', answer).ok).toBe(true)
     store.close()
-    const again = openModelSourceStore({ path, calls })
+    const again = openModelSourceStore({ path, calls, soleSendFence: false })
     cleanup.push(() => again.close())
     expect(await again.deployment.lookup(frame, [], context, null)).toEqual(answer)
   })
@@ -307,33 +307,100 @@ describe('what save refuses', () => {
   })
 })
 
-describe('lookup when nothing was saved', () => {
-  it('answers unknown, never not_found, when no row exists, whatever evidence the caller brings', async () => {
+describe('the send fence', () => {
+  it('lets the first send through and refuses every later one', async () => {
     const frame = frameFor('1')
     const { store } = open([frame])
+    expect(store.fence(frame, BODY_DIGEST)).toBe(true)
+    expect(store.fence(frame, BODY_DIGEST)).toBe(false)
+    const saved = frameFor('2')
+    const other = open([saved])
+    await other.store.deployment.save(saved, resultFor(saved), BODY_DIGEST)
+    expect(other.store.fence(saved, BODY_DIGEST)).toBe(false)
+  })
+
+  it('refuses a frame State never dispatched and a malformed body digest, without throwing', () => {
+    const frame = frameFor('1')
+    const { store } = open([frame])
+    expect(store.fence(frameFor('7'), BODY_DIGEST)).toBe(false)
+    expect(store.fence(frame, 'nope')).toBe(false)
+    expect(store.fence(frame, BODY_DIGEST)).toBe(true)
+  })
+
+  it('refuses a second attempt for the same external request', () => {
+    const first = frameFor('1')
+    const second = frameFor('2', { requestIdentity: first.requestIdentity })
+    const { store } = open([first, second])
+    expect(store.fence(first, BODY_DIGEST)).toBe(true)
+    expect(store.fence(second, BODY_DIGEST)).toBe(false)
+  })
+
+  it('completes a fenced attempt when the same body digest is saved, and refuses another digest', async () => {
+    const frame = frameFor('1')
+    const { store, path } = open([frame])
+    expect(store.fence(frame, BODY_DIGEST)).toBe(true)
+    await expect(store.deployment.save(frame, resultFor(frame), 'e'.repeat(64))).rejects.toBeInstanceOf(
+      ModelSourceStoreConflict,
+    )
+    await store.deployment.save(frame, resultFor(frame), BODY_DIGEST)
+    expect(store.admin.read(keyOf(frame))?.state).toBe('saved')
+    expect(rowCount(path)).toBe(1)
+    expect(
+      raw(path, (db) => db.prepare('SELECT intent_at FROM model_attempts').get()?.intent_at),
+    ).not.toBeNull()
+  })
+
+  it('returns false instead of throwing once the store is closed', () => {
+    const frame = frameFor('1')
+    const { store } = open([frame])
+    store.close()
+    expect(store.fence(frame, BODY_DIGEST)).toBe(false)
+  })
+})
+
+describe('lookup when nothing was saved', () => {
+  it('answers sent-but-unsaved with unknown, never not_found, even with a sole send fence and forged evidence', async () => {
+    const frame = frameFor('1')
+    const { store } = open([frame], { soleSendFence: true })
+    expect(store.fence(frame, BODY_DIGEST)).toBe(true)
     const answer = await store.deployment.lookup(frame, [inlineRef({ forged: 'not found' })], context, null)
-    expect(answer).toMatchObject({ kind: 'unknown', reason: 'model_not_recorded' })
+    expect(answer).toMatchObject({ kind: 'unknown', reason: 'model_sent_unsaved' })
+    expect(store.admin.pending()).toMatchObject([{ kind: 'sent_unsaved', stored: { state: 'sent_unsaved' } }])
+  })
+
+  it('answers not_found, never safe to retry, only for a store created with a sole send fence', async () => {
+    const frame = frameFor('1')
+    const fenced = open([frame], { soleSendFence: true })
+    const answer = await fenced.store.deployment.lookup(frame, [], context, null)
+    expect(answer).toMatchObject({ kind: 'not_found', safeToRetry: false })
     expect(validateRuntime('ReconcileResult', answer).ok).toBe(true)
-    expect(store.admin.pending()).toEqual([])
+    const open2 = open([frame], { soleSendFence: false })
+    expect(
+      await open2.store.deployment.lookup(frame, [inlineRef({ forged: true })], context, null),
+    ).toMatchObject({
+      kind: 'unknown',
+      reason: 'model_not_recorded',
+    })
   })
 
   it('answers unknown when another attempt already holds the same external request', async () => {
     const first = frameFor('1')
     const second = frameFor('2', { requestIdentity: first.requestIdentity })
-    const { store } = open([first, second])
-    await store.deployment.save(first, resultFor(first), BODY_DIGEST)
+    const { store } = open([first, second], { soleSendFence: true })
+    expect(store.fence(first, BODY_DIGEST)).toBe(true)
     expect(await store.deployment.lookup(second, [], context, null)).toMatchObject({
       kind: 'unknown',
       reason: 'model_request_sent_elsewhere',
     })
   })
 
-  it('refuses to reopen a file with an unknown format', () => {
+  it('refuses to reopen a file with the other send fence declaration or an unknown format', () => {
     const frame = frameFor('1')
-    const { store, path, calls } = open([frame])
+    const { store, path, calls } = open([frame], { soleSendFence: true })
     store.close()
+    expect(() => openModelSourceStore({ path, calls, soleSendFence: false })).toThrow('model_store_mode')
     raw(path, (db) => db.exec('PRAGMA user_version=2'))
-    expect(() => openModelSourceStore({ path, calls })).toThrow('model_store_format')
+    expect(() => openModelSourceStore({ path, calls, soleSendFence: true })).toThrow('model_store_format')
   })
 })
 
@@ -348,7 +415,7 @@ describe('lookup answers', () => {
     })
     const stored = store.admin.read(keyOf(frame))
     expect(stored?.result?.usage).toEqual(unknownResultFor(frame).usage)
-    expect(stored?.result?.outcome).toBe('unknown_effect')
+    expect(stored?.state).toBe('saved')
   })
 
   it('answers unknown when the resolved answer would not fit the adapter reconcile encoding', async () => {
@@ -443,40 +510,49 @@ describe('torn and corrupted rows', () => {
   })
 
   it('rolls the row back when the save transaction fails before it commits', async () => {
-    const frame = frameFor('1')
-    const { store, path } = open([frame], {
+    const fenced = frameFor('1')
+    const plain = frameFor('2')
+    const { store, path } = open([fenced, plain], {
+      soleSendFence: true,
       beforeCommit: () => {
         throw new Error('stop before commit')
       },
     })
-    await expect(store.deployment.save(frame, resultFor(frame), BODY_DIGEST)).rejects.toThrow(
+    expect(store.fence(fenced, BODY_DIGEST)).toBe(true)
+    await expect(store.deployment.save(fenced, resultFor(fenced), BODY_DIGEST)).rejects.toThrow(
       'stop before commit',
     )
-    expect(rowCount(path)).toBe(0)
-    expect(reasonOf(await store.deployment.lookup(frame, [], context, null))).toBe('model_not_recorded')
+    expect(reasonOf(await store.deployment.lookup(fenced, [], context, null))).toBe('model_sent_unsaved')
+    await expect(store.deployment.save(plain, resultFor(plain), BODY_DIGEST)).rejects.toThrow(
+      'stop before commit',
+    )
+    expect(rowCount(path)).toBe(1)
+    expect((await store.deployment.lookup(plain, [], context, null)).kind).toBe('not_found')
   })
 })
 
 describe('pending and storage hygiene', () => {
-  it('lists nothing for healthy rows and every row whose result is gone, in key order', async () => {
+  it('lists only attempts that were fenced and never saved, in key order', async () => {
     const frames = ['1', '2', '3'].map((n) => frameFor(n))
     const [first, second, third] = frames as [ActionFrame, ActionFrame, ActionFrame]
-    const { store, path } = open(frames)
-    for (const frame of frames) await store.deployment.save(frame, resultFor(frame), BODY_DIGEST)
-    expect(store.admin.pending()).toEqual([])
-    raw(path, (db) =>
-      db
-        .prepare('UPDATE model_attempts SET result=NULL WHERE attempt_id IN (?, ?)')
-        .run(first.attemptId, third.attemptId),
-    )
-    const expected = [first, third].map((frame) => canonicalJsonDigest(keyOf(frame) as never)).sort()
-    expect(store.admin.pending()).toEqual(expected.map((attemptKey) => ({ kind: 'corrupt', attemptKey })))
-    expect(store.admin.read(keyOf(second))?.result.outcome).toBe('succeeded')
+    const { store } = open(frames)
+    for (const frame of frames) expect(store.fence(frame, BODY_DIGEST)).toBe(true)
+    await store.deployment.save(second, resultFor(second), BODY_DIGEST)
+    const expected = [first, third]
+      .map((frame) => ({ frame, key: canonicalJsonDigest(keyOf(frame) as never) }))
+      .sort((a, b) => (a.key < b.key ? -1 : 1))
+      .map((entry) => entry.frame.attemptId)
+    expect(
+      store.admin
+        .pending()
+        .map((entry) => (entry.kind === 'sent_unsaved' ? entry.stored.attempt.attemptId : '?')),
+    ).toEqual(expected)
   })
 
   it('keeps the frame input, request body and credentials out of the file', async () => {
     const frame = frameFor('1')
     const { store, path } = open([frame])
+    expect(store.fence(frame, BODY_DIGEST)).toBe(true)
     await store.deployment.save(frame, resultFor(frame), BODY_DIGEST)
     store.close()
     const bytes = () =>
@@ -492,10 +568,7 @@ describe('pending and storage hygiene', () => {
         .join('')
     expect(bytes()).not.toContain(SENTINEL)
     // Positive control: the scan would see the sentinel if it had been stored.
-    raw(path, (db) => {
-      db.exec('CREATE TABLE control(value TEXT)')
-      db.prepare('INSERT INTO control(value) VALUES(?)').run(SENTINEL)
-    })
+    raw(path, (db) => db.prepare("INSERT INTO meta(key, value) VALUES('control', ?)").run(SENTINEL))
     expect(bytes()).toContain(SENTINEL)
   })
 

@@ -35,20 +35,26 @@ export type ModelStoredAttempt = Readonly<{
   request: ExternalRequestRef
   originKey: string
   bodyDigest: string | null
-  result: EffectResult
-  resultDigest: string
+  state: 'sent_unsaved' | 'saved'
+  result: EffectResult | null
+  resultDigest: string | null
 }>
-/** A row that no longer verifies; the store never repairs or removes it. */
-export type ModelPendingAttempt = Readonly<{ kind: 'corrupt'; attemptKey: string }>
+export type ModelPendingAttempt =
+  | Readonly<{ kind: 'sent_unsaved'; stored: ModelStoredAttempt }>
+  | Readonly<{ kind: 'corrupt'; attemptKey: string }>
 export type ModelSourceStoreOptions = Readonly<{
   path: string
   calls: ModelCallRegistry
+  /** Declares that every wire send of this store's deployment passes `fence` first. Fixed at file creation. */
+  soleSendFence: boolean
   now?: () => Date
   /** Test seam: runs inside the save transaction after the row is written and before it commits. */
   beforeCommit?: () => void
 }>
 export type ModelSourceStore = Readonly<{
   deployment: Readonly<Pick<ModelAdapterDeployment, 'save' | 'lookup'>>
+  /** Synchronous, durable before it returns; false means the wire send must not happen. */
+  fence(frame: ActionFrame, bodyDigest: string): boolean
   /** Host-private recovery and usage seam; never handed to the adapter, a plugin or a client. */
   admin: Readonly<{
     pending(): ModelPendingAttempt[]
@@ -75,13 +81,14 @@ const LIMITS = { maxDepth: 128, maxMembers: 10000 }
 const SHA256 = /^[a-f0-9]{64}$/
 const REASON = /^[a-z0-9_]{1,64}$/
 const DDL = `
+  CREATE TABLE IF NOT EXISTS meta(key TEXT PRIMARY KEY, value TEXT NOT NULL);
   CREATE TABLE IF NOT EXISTS model_attempts(
     attempt_key TEXT PRIMARY KEY,
     run_id TEXT NOT NULL, action_id TEXT NOT NULL, attempt_id TEXT NOT NULL,
     binding_id TEXT NOT NULL, input_digest TEXT NOT NULL,
     request_system TEXT NOT NULL, request_id TEXT NOT NULL, request_digest TEXT NOT NULL,
     idempotency_key TEXT, origin_key TEXT NOT NULL UNIQUE,
-    body_digest TEXT,
+    body_digest TEXT, intent_at TEXT,
     result TEXT, result_digest TEXT, saved_at TEXT,
     row_digest TEXT NOT NULL
   );`
@@ -145,6 +152,7 @@ function rowDigest(row: Row): string {
     idempotencyKey: row.idempotency_key,
     origin: row.origin_key,
     body: row.body_digest,
+    intentAt: row.intent_at,
     result: row.result_digest,
     savedAt: row.saved_at,
   })
@@ -153,6 +161,7 @@ function rowDigest(row: Row): string {
 /** Re-verifies a stored row from its bytes; throws when anything differs from what save wrote. */
 function decode(row: Row): ModelStoredAttempt {
   const text = (name: string) => String(row[name])
+  const nullable = (name: string) => (row[name] === null ? null : text(name))
   const key: ModelAttemptKey = {
     runId: text('run_id'),
     actionId: text('action_id'),
@@ -167,34 +176,45 @@ function decode(row: Row): ModelStoredAttempt {
   if (
     text('attempt_key') !== attemptKeyOf(key) ||
     text('row_digest') !== rowDigest(row) ||
-    text('origin_key') !== `${request.system}:${request.requestId}`
+    text('origin_key') !== `${request.system}:${request.requestId}` ||
+    (row.intent_at === null && row.result === null)
   )
     throw new ModelSourceStoreCorrupt('model source row differs from its digest')
-  if (row.result === null || row.result_digest === null || row.saved_at === null)
-    throw new ModelSourceStoreCorrupt('model source row has no result')
-  let parsed: unknown
-  try {
-    parsed = JSON.parse(text('result'))
-  } catch {
-    throw new ModelSourceStoreCorrupt('model source result is not JSON')
-  }
-  const checked = validateRuntime('EffectResult', parsed)
-  if (!checked.ok || jcs(parsed as never) !== text('result') || text('result_digest') !== digest(parsed))
-    throw new ModelSourceStoreCorrupt('model source result differs from its digest')
-  const result = parsed as EffectResult
-  try {
-    checkResult(request, key, text('origin_key'), result)
-  } catch {
-    throw new ModelSourceStoreCorrupt('model source result no longer matches its request')
+  let result: EffectResult | null = null
+  if (row.result === null) {
+    if (row.result_digest !== null || row.saved_at !== null)
+      throw new ModelSourceStoreCorrupt('model source row has a result digest without a result')
+  } else {
+    let parsed: unknown
+    try {
+      parsed = JSON.parse(text('result'))
+    } catch {
+      throw new ModelSourceStoreCorrupt('model source result is not JSON')
+    }
+    const checked = validateRuntime('EffectResult', parsed)
+    if (
+      !checked.ok ||
+      row.saved_at === null ||
+      jcs(parsed as never) !== text('result') ||
+      text('result_digest') !== digest(parsed)
+    )
+      throw new ModelSourceStoreCorrupt('model source result differs from its digest')
+    result = parsed as EffectResult
+    try {
+      checkResult(request, key, text('origin_key'), result)
+    } catch {
+      throw new ModelSourceStoreCorrupt('model source result no longer matches its request')
+    }
   }
   return {
     attempt: key,
     bindingId: text('binding_id'),
     request,
     originKey: text('origin_key'),
-    bodyDigest: row.body_digest === null ? null : text('body_digest'),
+    bodyDigest: nullable('body_digest'),
+    state: result === null ? 'sent_unsaved' : 'saved',
     result,
-    resultDigest: text('result_digest'),
+    resultDigest: nullable('result_digest'),
   }
 }
 
@@ -209,7 +229,7 @@ function busyRetry<T>(run: () => T): T {
   }
 }
 
-/** Host-private durable owner of the saved EffectResult of a sent model call and the lookup over it. */
+/** Host-private durable owner of the send fence, the saved EffectResult and the lookup over them. */
 export function openModelSourceStore(options: ModelSourceStoreOptions): ModelSourceStore {
   const { path, calls } = options
   const clock = options.now ?? (() => new Date())
@@ -230,6 +250,10 @@ export function openModelSourceStore(options: ModelSourceStoreOptions): ModelSou
       if (version > FORMAT) refuse('model_store_format')
       db.exec(DDL)
       if (version === 0) db.exec(`PRAGMA user_version=${FORMAT}`)
+      const wanted = options.soleSendFence ? '1' : '0'
+      db.prepare("INSERT OR IGNORE INTO meta(key, value) VALUES('sole_send_fence', ?)").run(wanted)
+      if (db.prepare("SELECT value FROM meta WHERE key='sole_send_fence'").get()?.value !== wanted)
+        refuse('model_store_mode')
     })
   } catch (error) {
     db.close()
@@ -279,6 +303,52 @@ export function openModelSourceStore(options: ModelSourceStoreOptions): ModelSou
     return identity
   }
 
+  const columns = (identity: ModelCallIdentity, bodyDigest: string | null, intentAt: string | null): Row => {
+    const request = requestRefOf(identity.requestIdentity)
+    const key = attemptKeyOf(identity)
+    const row: Row = {
+      attempt_key: key,
+      run_id: identity.runId,
+      action_id: identity.actionId,
+      attempt_id: identity.attemptId,
+      binding_id: identity.bindingId,
+      input_digest: identity.inputDigest,
+      request_system: request.system,
+      request_id: request.requestId,
+      request_digest: request.requestDigest,
+      idempotency_key: request.idempotencyKey ?? null,
+      origin_key: originKeyOf(identity.requestIdentity),
+      body_digest: bodyDigest,
+      intent_at: intentAt,
+      result: null,
+      result_digest: null,
+      saved_at: null,
+      row_digest: '',
+    }
+    return { ...row, row_digest: rowDigest(row) }
+  }
+  const insert = (row: Row) =>
+    db
+      .prepare(
+        `INSERT OR IGNORE INTO model_attempts(attempt_key, run_id, action_id, attempt_id, binding_id, input_digest,
+          request_system, request_id, request_digest, idempotency_key, origin_key, body_digest, intent_at,
+          result, result_digest, saved_at, row_digest)
+         VALUES (:attempt_key, :run_id, :action_id, :attempt_id, :binding_id, :input_digest, :request_system,
+          :request_id, :request_digest, :idempotency_key, :origin_key, :body_digest, :intent_at, :result,
+          :result_digest, :saved_at, :row_digest)`,
+      )
+      .run(row).changes === 1
+
+  function fence(frame: ActionFrame, bodyDigest: string): boolean {
+    try {
+      if (!SHA256.test(bodyDigest)) return false
+      const identity = qualify(frame)
+      return transaction(() => insert(columns(identity, bodyDigest, clock().toISOString())))
+    } catch {
+      return false
+    }
+  }
+
   async function save(frame: ActionFrame, result: EffectResult, bodyDigest: string | null): Promise<void> {
     const identity = qualify(frame)
     if (bodyDigest !== null && !SHA256.test(bodyDigest)) refuse('model_store_body_digest')
@@ -300,40 +370,30 @@ export function openModelSourceStore(options: ModelSourceStoreOptions): ModelSou
           stored.bodyDigest !== bodyDigest
         )
           throw new ModelSourceStoreConflict('model source attempt was recorded with different content')
-        if (stored.resultDigest === resultDigest) return
-        throw new ModelSourceStoreConflict('model source result differs from the saved one')
+        if (stored.state === 'saved') {
+          if (stored.resultDigest === resultDigest) return
+          throw new ModelSourceStoreConflict('model source result differs from the saved one')
+        }
       }
-      const row: Row = {
-        attempt_key: attemptKeyOf(identity),
-        run_id: identity.runId,
-        action_id: identity.actionId,
-        attempt_id: identity.attemptId,
-        binding_id: identity.bindingId,
-        input_digest: identity.inputDigest,
-        request_system: request.system,
-        request_id: request.requestId,
-        request_digest: request.requestDigest,
-        idempotency_key: request.idempotencyKey ?? null,
-        origin_key: originKey,
-        body_digest: bodyDigest,
+      const savedAt = clock().toISOString()
+      const saved: Row = {
+        ...columns(identity, bodyDigest, found ? String(found.intent_at) : null),
         result: canonical.value.canonical,
         result_digest: resultDigest,
-        saved_at: clock().toISOString(),
-        row_digest: '',
+        saved_at: savedAt,
       }
-      row.row_digest = rowDigest(row)
-      const inserted = db
-        .prepare(
-          `INSERT OR IGNORE INTO model_attempts(attempt_key, run_id, action_id, attempt_id, binding_id,
-            input_digest, request_system, request_id, request_digest, idempotency_key, origin_key, body_digest,
-            result, result_digest, saved_at, row_digest)
-           VALUES (:attempt_key, :run_id, :action_id, :attempt_id, :binding_id, :input_digest, :request_system,
-            :request_id, :request_digest, :idempotency_key, :origin_key, :body_digest, :result, :result_digest,
-            :saved_at, :row_digest)`,
-        )
-        .run(row)
-      if (inserted.changes !== 1)
+      const savedDigest = rowDigest(saved)
+      saved.row_digest = savedDigest
+      if (found) {
+        const updated = db
+          .prepare(
+            'UPDATE model_attempts SET result=?, result_digest=?, saved_at=?, row_digest=? WHERE attempt_key=? AND result IS NULL',
+          )
+          .run(canonical.value.canonical, resultDigest, savedAt, savedDigest, attemptKeyOf(identity))
+        if (updated.changes !== 1) throw new ModelSourceStoreConflict('model source row changed during save')
+      } else if (!insert(saved)) {
         throw new ModelSourceStoreConflict('model source request identity is already recorded')
+      }
       options.beforeCommit?.()
     })
   }
@@ -373,11 +433,13 @@ export function openModelSourceStore(options: ModelSourceStoreOptions): ModelSou
       const request = requestRefOf(identity.requestIdentity)
       const row = find(key)
       if (!row) {
-        // No row in this store is not evidence about the external system.
         const elsewhere = db
           .prepare('SELECT attempt_key FROM model_attempts WHERE origin_key=?')
           .get(originKeyOf(identity.requestIdentity))
-        return unresolved(elsewhere ? 'model_request_sent_elsewhere' : 'model_not_recorded')
+        if (elsewhere) return unresolved('model_request_sent_elsewhere')
+        return options.soleSendFence
+          ? { kind: 'not_found', evidence: evidence('not_sent'), safeToRetry: false }
+          : unresolved('model_not_recorded')
       }
       let stored: ModelStoredAttempt
       try {
@@ -388,6 +450,7 @@ export function openModelSourceStore(options: ModelSourceStoreOptions): ModelSou
       if (stored.bindingId !== identity.bindingId || !same(stored.request, request))
         return unresolved('model_attempt_mismatch')
       const proof = { resultDigest: stored.resultDigest, bodyDigest: stored.bodyDigest }
+      if (!stored.result) return unresolved('model_sent_unsaved', proof)
       if (stored.result.outcome !== 'succeeded') {
         const detail = stored.result.error?.detailCode ?? ''
         return unresolved(REASON.test(detail) ? detail : 'model_stream_unknown', proof)
@@ -410,9 +473,13 @@ export function openModelSourceStore(options: ModelSourceStoreOptions): ModelSou
       const rows = db
         .prepare('SELECT * FROM model_attempts WHERE result IS NULL ORDER BY attempt_key')
         .all() as Row[]
-      return rows.map(
-        (row): ModelPendingAttempt => ({ kind: 'corrupt', attemptKey: String(row.attempt_key) }),
-      )
+      return rows.map((row): ModelPendingAttempt => {
+        try {
+          return { kind: 'sent_unsaved', stored: decode(row) }
+        } catch {
+          return { kind: 'corrupt', attemptKey: String(row.attempt_key) }
+        }
+      })
     },
     read(key: ModelAttemptKey): ModelStoredAttempt | undefined {
       const row = find(key)
@@ -421,6 +488,7 @@ export function openModelSourceStore(options: ModelSourceStoreOptions): ModelSou
   })
   return Object.freeze({
     deployment: Object.freeze({ save, lookup }),
+    fence,
     admin,
     close: () => db.close(),
   })
