@@ -1056,7 +1056,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // Sourced memory and hybrid retrieval providers. Measured 32058, exact, no spare.
   // fixed Tools +696, bounded Context +344, restricted Loop +1066; exact, no spare.
   // #293 (1d73af2a): measured 34773, approved +15 for the C10 model-source consumer.
-  // J-23 verifyCall convergence reduces the working tree to 34761; no additional allocation.
+  // J-23 verifyCall convergence removes 12; #295 root exports add 12: merged total 34773, exact cap.
   'packages/core/src': 34773,
   // Testkit-only reference Effects runner adds 202 measured lines; exact cap, no spare.
   'packages/core/testkit': 1997,
