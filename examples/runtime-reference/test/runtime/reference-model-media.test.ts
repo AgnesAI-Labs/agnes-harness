@@ -1,6 +1,9 @@
+import { mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { createTestServiceContainer } from '@agnes/extension-api/testkit'
 import { canonicalJsonDigest, type JsonValue, type MediaPlan } from '@agnes/protocol/runtime'
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it } from 'vitest'
 import {
   createReferenceModelAdapterFactory,
   type ReferenceModelSource,
@@ -43,16 +46,20 @@ const entry = (media: MediaPlan, usageIds: string[] = [], imageCount = 1) => ({
   imageCount,
 })
 
+const directories: string[] = []
+afterEach(() => {
+  for (const directory of directories.splice(0)) rmSync(directory, { recursive: true, force: true })
+})
+
 /** Runs the reference adapter on a source built from the fixture's, without changing what it pins. */
 async function run(
   shape: (
     fixture: Awaited<ReturnType<typeof referenceModelFixture>>,
   ) => Partial<ReferenceModelSource> & { plans?: MediaPlan[] },
 ) {
-  const fixture = await referenceModelFixture(
-    'http://127.0.0.1:1/v1',
-    `${process.cwd()}/no-such-receipt.json`,
-  )
+  const directory = mkdtempSync(join(tmpdir(), 'reference-media-'))
+  directories.push(directory)
+  const fixture = await referenceModelFixture('http://127.0.0.1:1/v1', join(directory, 'receipt.json'))
   const { plans, ...rest } = shape(fixture)
   const source: ReferenceModelSource = {
     ...fixture.source,
