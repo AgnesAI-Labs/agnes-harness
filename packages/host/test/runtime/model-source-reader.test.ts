@@ -195,7 +195,7 @@ describe('model source reader: load', () => {
     const { reader, ref, frame, context } = rebuild(setup(), { prices: { version: () => null } })
     expect(await reader.load(ref, frame, context)).toMatchObject({
       ok: false,
-      error: { code: 'backend_unavailable', detailCode: 'model_source_not_ready' },
+      error: { code: 'internal', detailCode: 'model_source_not_ready' },
     })
   })
 

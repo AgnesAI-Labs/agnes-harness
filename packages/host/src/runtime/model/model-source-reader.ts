@@ -39,7 +39,7 @@ export type ModelSourcePorts = Readonly<{
 }>
 export type ModelSourceReader = Pick<ModelAdapterDeployment, 'load' | 'current'>
 
-const refusal = (detailCode: string, code: 'denied' | 'backend_unavailable' = 'denied'): Outcome<never> => ({
+const refusal = (detailCode: string, code: 'denied' | 'internal' = 'denied'): Outcome<never> => ({
   ok: false,
   error: {
     code,
@@ -113,7 +113,7 @@ export function createModelSourceReader(ports: ModelSourcePorts): ModelSourceRea
         model: picked.model,
       }
       const price = ports.prices.version(prepared.target, capture)
-      if (price === null) return refusal('model_source_not_ready', 'backend_unavailable')
+      if (price === null) return refusal('model_source_not_ready', 'internal')
       if (price !== prepared.target.priceVersion) return refusal('model_source_price')
       if (modelInputDigest(prepared, capture, issued.value.wire) !== prepared.inputDigest)
         return refusal('model_source_drift')

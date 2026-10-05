@@ -4,7 +4,7 @@ import { createModelSourceReader } from '../../../src/runtime/model/model-source
 import { fixtureContext, fixtureFrame, fixturePorts } from '../model-source-fixture.js'
 
 // Fresh process: only the store file and the prepared reference arrive from the parent.
-const [storePath, refJson] = process.argv.slice(2)
+const [storePath = '', refJson = ''] = process.argv.slice(2)
 let network = 0
 globalThis.fetch = (() => {
   network++
