@@ -2543,8 +2543,11 @@ body.session-switching #approval {
 .composer-queue button:active:not(:disabled) {
   transform: none;
 }
+/* 字色取 --agnes-text-tertiary，与全局 button:disabled 一致：本块的 .composer-queue button
+   跟它同优先级且更靠后，不显式写这一条会被上面的品牌色盖住，禁用态看着仍像可点。
+   不用更弱的 --agnes-text-disabled——style-tokens 门禁把那档限定在不可交互的装饰性标签上。 */
 .composer-queue button:disabled {
-  color: var(--agnes-text-disabled);
+  color: var(--agnes-text-tertiary);
   border-color: transparent;
   background: transparent;
 }
