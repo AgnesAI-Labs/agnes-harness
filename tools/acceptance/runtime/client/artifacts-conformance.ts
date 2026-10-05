@@ -105,9 +105,15 @@ function ok<T>(outcome: Outcome<T>): T {
   return outcome.value
 }
 
-async function sealed(blob: BlobService, uploadId: string, bytes: Uint8Array, mediaType: string) {
-  ok(await blob.stage({ uploadId, size: bytes.byteLength, mediaType, expectedDigest: null }, writer()))
-  const upload = ok(blob.openWriter(uploadId, writer()))
+async function sealed(
+  blob: BlobService,
+  uploadId: string,
+  bytes: Uint8Array,
+  mediaType: string,
+  context = writer(),
+) {
+  ok(await blob.stage({ uploadId, size: bytes.byteLength, mediaType, expectedDigest: null }, context))
+  const upload = ok(blob.openWriter(uploadId, context))
   for (let at = 0; at < bytes.byteLength; at += MIB) ok(upload.write(at, bytes.subarray(at, at + MIB)))
   const result = ok(await upload.seal())
   upload.close()
@@ -162,6 +168,13 @@ function bindDefaultBlob(harness: ConformanceHarness, command: string): void {
     },
     close: async () => shut(),
     remains: () => existsSync(join(dataDir, 'artifacts', 'blob-service.db')),
+    actions: {
+      upload: async (bytes, context) => sealed(current, `conformance-${++seeds}`, bytes, MEDIA_TYPE, context),
+      promote: (request, context) => current.promote(request, context),
+      pin: (request, context) => current.pin(request, context),
+      unpin: (request, context) => current.unpin(request, context),
+      inspect: (request, context) => current.inspect(request, context),
+    },
   })
   registerBlobContract(withDeploymentStandIns(harness, BLOB_STAND_INS), {
     providerId: 'default',

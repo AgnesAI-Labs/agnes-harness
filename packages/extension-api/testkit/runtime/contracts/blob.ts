@@ -187,6 +187,72 @@ export function createBlobReadGate(): BlobReadGate {
   }
 }
 
+/** A provider's agh.blob actions, and its own entry that seals an upload staged by the caller. */
+export interface BlobActions {
+  upload(bytes: Uint8Array, context: CallContext): Promise<Wire.UploadRef>
+  promote(request: Wire.BlobPromoteRequest, context: CallContext): Promise<Outcome<Wire.StagedBlobRef>>
+  pin(request: Wire.BlobPinRequest, context: CallContext): Promise<Outcome<Wire.BlobRef>>
+  unpin(request: Wire.BlobUnpinRequest, context: CallContext): Promise<Outcome<Wire.BlobUnpinResult>>
+  inspect(request: Wire.BlobInspectRequest, context: CallContext): Promise<Outcome<Wire.BlobInspectResult>>
+}
+
+type Result = { readonly value: unknown } | { readonly refused: string }
+
+/**
+ * Another principal's promote of the owner's upload before and after the owner's, its pins of the
+ * owner's staged blob for another and for the same owner ref, its unpin of the owner's pin, and that
+ * unpin again once the owner released it, each as a refusal code or `accepted`; then the owner's view
+ * of its pin and its unpin at revision 1.
+ */
+export type CrossPrincipalFacts = {
+  readonly refusals: readonly string[]
+  readonly inspected: Result
+  readonly released: Result
+}
+
+const CROSS_OWNER: Wire.PublicRef = { kind: 'artifact', value: { artifactId: 'blob-owner', version: 1 } }
+const crossObject = () => content(12, 9)
+
+/** Drives one owner's upload and pin and another principal's attempts on them. */
+export async function crossPrincipalFacts(actions: BlobActions): Promise<CrossPrincipalFacts> {
+  const owner = callContext('blob-principal', BLOB_READER)
+  const other = callContext('blob-other-principal', BLOB_READER)
+  const take = async <T>(call: Promise<Outcome<T>>) => {
+    const outcome = await call
+    if (!outcome.ok) throw new Error(outcome.error.message)
+    return outcome.value
+  }
+  const upload = await actions.upload(crossObject(), owner)
+  const promote = { upload, expectedDigest: upload.digest }
+  const early = await outcomeOf(() => actions.promote(promote, other))
+  const stagedBlob = await take(actions.promote(promote, owner))
+  const pinned = await take(actions.pin({ stagedBlob, ownerRef: CROSS_OWNER, retentionUntil: null }, owner))
+  const otherRef: Wire.PublicRef = { kind: 'artifact', value: { artifactId: 'blob-other', version: 1 } }
+  const attempts = [
+    early,
+    await outcomeOf(() => actions.promote(promote, other)),
+    await outcomeOf(() => actions.pin({ stagedBlob, ownerRef: otherRef, retentionUntil: null }, other)),
+    await outcomeOf(() => actions.pin({ stagedBlob, ownerRef: CROSS_OWNER, retentionUntil: null }, other)),
+    await outcomeOf(() => actions.unpin({ pinId: pinned.pinId, expectedRevision: 1 }, other)),
+  ]
+  const inspected = await outcomeOf(() => actions.inspect({ ref: { kind: 'blob', value: pinned } }, owner))
+  const released = await outcomeOf(() => actions.unpin({ pinId: pinned.pinId, expectedRevision: 1 }, owner))
+  attempts.push(await outcomeOf(() => actions.unpin({ pinId: pinned.pinId, expectedRevision: 2 }, other)))
+  return {
+    refusals: attempts.map((attempt) => ('refused' in attempt ? attempt.refused : 'accepted')),
+    inspected,
+    released,
+  }
+}
+
+/** Every attempt was refused as not the caller's, and the owner's pin is exactly as it was. */
+export const crossPrincipalRefused = (facts: CrossPrincipalFacts) =>
+  same(facts.refusals, Array(6).fill('permission_denied')) &&
+  same(facts.inspected, {
+    value: { status: 'pinned', bytes: 12, digest: sha256(crossObject()), ownerRefs: [CROSS_OWNER] },
+  }) &&
+  same(facts.released, { value: { released: true } })
+
 /** One blob provider as the suite drives it. */
 export interface BlobSubject {
   /** The binding the provider offers, carrying its read port. */
@@ -203,6 +269,8 @@ export interface BlobSubject {
   close(): Promise<void>
   /** Whether the provider's stored data is still on disk. */
   remains(): boolean
+  /** Deny checks through them that another principal cannot act on an upload or a pin. */
+  readonly actions: BlobActions
 }
 
 /**
@@ -236,6 +304,7 @@ export interface BlobObservations {
     readonly short: readonly (RangeFact | StreamFact)[]
     readonly revoked: StreamFact
     readonly selection: readonly string[]
+    readonly crossPrincipal: CrossPrincipalFacts
   }
   /**
    * A range and a stream opened with an aborted signal; a stream cancelled twice and closed after its
@@ -342,6 +411,7 @@ export function blobContractPort(subject: BlobSubject): BlobContractPort {
           await selectRead({ ...offered, blobRead: partial }),
           await selectRead(offered, requirement, true),
         ],
+        crossPrincipal: await crossPrincipalFacts(subject.actions),
       }
     },
     async cancel() {
@@ -460,7 +530,8 @@ const JUDGE: Judge<BlobObservations> = {
       'operation_not_supported',
       'operation_not_supported',
       'service_container_closed',
-    ]),
+    ]) &&
+    crossPrincipalRefused(seen.crossPrincipal),
   cancel: (seen) =>
     same(seen.aborted, [{ refused: 'cancelled' }, { refused: 'cancelled' }]) &&
     interrupted(seen.cancelled, (detail) => detail === 'cancelled') &&

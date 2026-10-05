@@ -2,6 +2,7 @@ import { createHash, randomBytes } from 'node:crypto'
 import { readFile, stat } from 'node:fs/promises'
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http'
 import { extname, isAbsolute, join, posix } from 'node:path'
+import { HTML_VIEWER_DOCUMENT, HTML_VIEWER_PATH, htmlViewerHeaders } from './html-viewer.js'
 import { VENDOR_ENTRY_NAMES } from './vendor-assets.js'
 
 export const DEFAULT_WEB_PORT = 4177
@@ -514,6 +515,16 @@ export async function createWebServer(options: WebServerOptions): Promise<WebSer
         }
         request.once('aborted', close)
         response.once('close', close)
+        return
+      }
+      if (requestUrl.pathname === HTML_VIEWER_PATH) {
+        if (request.method !== 'GET' && request.method !== 'HEAD') {
+          response.writeHead(405, { Allow: 'GET, HEAD' }).end()
+          return
+        }
+        // Only an exact `scripts=1` selects the scripted variant; any other value is scriptless.
+        response.writeHead(200, htmlViewerHeaders(requestUrl.searchParams.get('scripts') === '1'))
+        response.end(request.method === 'HEAD' ? undefined : HTML_VIEWER_DOCUMENT)
         return
       }
       if (options.handleAdmin && (await options.handleAdmin(request, response))) return

@@ -1110,7 +1110,7 @@ type ReferenceBlob = {
     options: { authorizeRead(context: CallContext): boolean },
   ): Omit<SelectedBlobActions, 'binding'> & {
     blobRead: BlobReadPort
-    upload(bytes: Uint8Array, mediaType: string): Wire.UploadRef
+    upload(bytes: Uint8Array, mediaType: string, principal: string): Wire.UploadRef
     close(): void
   }
 }
@@ -1486,7 +1486,8 @@ describe('default artifacts service: conformance', () => {
         binding,
         blobRead: blob.blobRead,
         actions: { binding, promote, pin, inspect },
-        upload: async (bytes) => blob.upload(bytes, MEDIA_TYPE),
+        // Staged by the principal that publishes it.
+        upload: async (bytes) => blob.upload(bytes, MEDIA_TYPE, ctx().principalRef),
         close: () => blob.close(),
       }
     })

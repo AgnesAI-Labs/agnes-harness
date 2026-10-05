@@ -258,6 +258,16 @@ describe('runtime domain consumer', () => {
       'Finish this in the Web client.',
     ])
     expect(shown).toMatchObject({ complete: false, needsWeb: true })
+
+    // A view missing only a desktop capability, which the Web client lacks too, names it and stays here.
+    const desktop = createDomainConsumer({ locale: 'en', capabilities }).present(
+      view({ actions: [answer, { ...review, requiredFeatures: ['desktop.open-path.v1'] }] }),
+    )
+    expect(desktop.lines.slice(-2)).toEqual([
+      '[1] answer',
+      'Review: Needs a desktop capability this client does not have (desktop.open-path.v1).',
+    ])
+    expect(desktop).toMatchObject({ complete: true, needsWeb: false })
   })
 
   it('replaces a view in place on a newer revision and ignores an older one', () => {
