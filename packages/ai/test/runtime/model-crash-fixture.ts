@@ -111,6 +111,16 @@ function ref(schema: DataRef['schema'], value: JsonValue): DataRef {
   return { kind: 'inline', schema, value, digest: canonicalJsonDigest(value), bytes: Buffer.byteLength(body) }
 }
 
+/** A durable owner supplied by the caller in place of the fixture's own journal. */
+export type ModelCrashOwner = Readonly<{
+  save: ModelAdapterDeployment['save']
+  lookup: ModelAdapterDeployment['lookup']
+  /** Runs last in `beforeSend`; false refuses the send. */
+  beforeSend?: (frame: ActionFrame, bodyDigest: string) => boolean
+  /** Call deadline for a first run; a later run reads the one saved with the issued operation. */
+  deadline?: string
+}>
+
 /** Original object capability + real source codecs; restricted fixture, never a production identity. */
 export async function modelCrashFixture(
   api: 'openai-completions' | 'anthropic-messages',
@@ -118,6 +128,7 @@ export async function modelCrashFixture(
   journal: string,
   operation: string,
   cutAfterReceipt: boolean,
+  owner?: ModelCrashOwner,
 ) {
   type SavedOperation = {
     source: ModelWireSource
@@ -146,7 +157,7 @@ export async function modelCrashFixture(
     scope,
     bindingId: 'fixture-adapter',
     invocationId: 'fixture-invocation',
-    deadline: saved?.frame.context.deadline ?? new Date(Date.now() + 20000).toISOString(),
+    deadline: saved?.frame.context.deadline ?? owner?.deadline ?? new Date(Date.now() + 20000).toISOString(),
     traceRef: 'fixture-trace',
     authorizationRef: 'fixture-authority',
     signal: new AbortController().signal,
@@ -289,9 +300,10 @@ export async function modelCrashFixture(
     async withCredential(_source, _frame, _context, consume) {
       return { ok: true, value: await consume('fixture-wire') }
     },
-    beforeSend(_source, _frame, call) {
+    beforeSend(_source, frame, call, bodyDigest) {
       if (rejectSend || call.call !== originalContext || !current()) return false
       if (mutateAtSend) Reflect.set(context, 'authorizationRef', 'changed-authorization')
+      if (owner?.beforeSend && !owner.beforeSend(frame, bodyDigest)) return false
       sends++
       return true
     },
@@ -365,7 +377,9 @@ export async function modelCrashFixture(
     },
   }
   const container = createTestServiceContainer(),
-    factory = createModelAdapterFactory(deployment)
+    factory = createModelAdapterFactory(
+      owner ? { ...deployment, save: owner.save, lookup: owner.lookup } : deployment,
+    )
   const provider = await factory.create(value(config.encode({})), container.dependencies, {
     instanceId: 'fixture-instance',
     scope,
