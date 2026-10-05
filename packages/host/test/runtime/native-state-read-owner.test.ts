@@ -9,10 +9,12 @@ import { describe, expect, it } from 'vitest'
 import { admissionFixtureInput } from '../../../extension-api/testkit/runtime/contracts/assembly-admission.js'
 import { createLocalDeploymentIdentity } from '../../src/runtime/identity/local-deployment-identity.js'
 import { captureLocalDeploymentOwner } from '../../src/runtime/identity/local-deployment-owner.js'
+import { digestOf } from '../../src/runtime/state/records.js'
 import { inlineData } from '../../src/runtime/maintenance/authority-publication.js'
 import { createBootstrapAnchor } from '../../src/runtime/maintenance/bootstrap-locator.js'
 import { createNativeStateReadOwner } from '../../src/runtime/state/native-read-owner.js'
 import { openJointAdmission } from './fixtures/assembly-admission-joint.js'
+import { fixtureRef } from './fixtures/assembly-maintenance-wire.js'
 
 async function originalNativeFixture() {
   const directory = realpathSync(mkdtempSync(join(tmpdir(), 'agnes-native-state-read-')))
@@ -78,6 +80,103 @@ async function originalNativeFixture() {
     authority,
     scope,
     now,
+  }
+}
+
+/** Commits `count` prepared Actions to the fixture run through real State invocations, 64 per transition. */
+async function commitPreparedActions(
+  fixture: Awaited<ReturnType<typeof originalNativeFixture>>,
+  count: number,
+) {
+  const { authority, input } = fixture
+  const { state, binding } = fixture.fixture
+  const data = fixtureRef({ prompt: 'synthetic' })
+  const target = {
+    bindingId: binding.bindingId,
+    contract: 'agh.tool',
+    logicalName: 'tool',
+    providerId: 'provider',
+  }
+  const deadline = '2027-01-01T00:00:00Z'
+  const opened = await state.open({
+    requestId: 'native-read-bulk-writer',
+    authority,
+    sessionId: 'fixture-session',
+    mode: 'write',
+    writerId: 'native-read-bulk',
+    ttlMs: 10_000,
+  })
+  if (!opened.claim) throw Error('write claim missing')
+  let committed = 0
+  let revision = 0
+  for (let batch = 0; committed < count; batch++) {
+    const invocationId = `native-read-invocation-${batch}`
+    await state.admitInvocation({
+      requestId: `native-read-admit-${batch}`,
+      runId: 'fixture-run-old',
+      targetActionId: null,
+      baseRevision: revision,
+      bindingId: binding.bindingId,
+      writerEpoch: opened.claim.writerEpoch,
+      invocationId,
+      deadline,
+      queryAllowance: 0,
+    })
+    await state.closeInvocation({
+      requestId: `native-read-close-${batch}`,
+      invocationId,
+      state: 'prepared',
+      readGuards: [],
+      domainReads: [],
+      unresolvedInflightIds: [],
+      observedQueryCount: 0,
+    })
+    const actions = Array.from({ length: Math.min(64, count - committed) }, (_, index) => {
+      const body = {
+        key: `native-read-action-${String(committed + index).padStart(4, '0')}`,
+        target,
+        method: 'run',
+        input: data,
+        dependencies: [],
+        retry: { mode: 'never' as const, maxAttempts: 0, backoffMs: [] },
+        obligation: 'mandatory' as const,
+        deadline,
+        resultSchema: data.schema,
+        references: [],
+      }
+      return { ...body, intentFingerprint: digestOf(body) }
+    })
+    await state.advanceRun({
+      commitId: `native-read-advance-${batch}`,
+      guard: {
+        authority,
+        sessionId: 'fixture-session',
+        runId: 'fixture-run-old',
+        writerId: 'native-read-bulk',
+        writerEpoch: opened.claim.writerEpoch,
+        expectedRunRevision: revision,
+        bindingId: binding.bindingId,
+        invocationId,
+        readGuards: [],
+        queryUsage: null,
+      },
+      transition: {
+        expectedRevision: revision,
+        continuation: {
+          namespace: 'agh.test',
+          codecVersion: '1',
+          data,
+          provenance: { sourceRefs: [], producer: target, trustLabels: [] },
+          createdAt: input.fixture.now,
+          references: [],
+        },
+        consumeSignals: [],
+        actions,
+        next: { kind: 'continue' },
+      },
+    })
+    committed += actions.length
+    revision++
   }
 }
 
@@ -303,4 +402,44 @@ describe.skipIf(typeof process.getuid !== 'function')('native read continuation 
       rmSync(directory, { recursive: true, force: true })
     }
   }, 60_000)
+})
+
+describe.skipIf(typeof process.getuid !== 'function')('native read full page budget', () => {
+  it('serves a full 500-item page and then the remainder from one fixed snapshot', async () => {
+    const native = await originalNativeFixture()
+    const { directory, identity, context, reader, fixture } = native
+    try {
+      expect(await fixture.coordinator.coordinate(fixture.draft(), fixture.context())).toMatchObject({
+        ok: true,
+      })
+      await commitPreparedActions(native, 512)
+      const snapshot = await reader.openVerifiedSnapshot('fixture-session', context)
+      const request = {
+        snapshot,
+        collection: 'records' as const,
+        filter: {},
+        order: 'asc' as const,
+        cursor: null,
+        limit: 500,
+      }
+      const first = await reader.scanVerifiedPage(snapshot, request, context)
+      expect(first.items).toHaveLength(500)
+      expect(first.complete).toBe(false)
+      expect(first.nextCursor).not.toBeNull()
+      const next = { ...request, cursor: first.nextCursor }
+      const second = await reader.scanVerifiedPage(snapshot, next, context)
+      expect(second.items).toHaveLength(514 - 500)
+      expect(second.complete).toBe(true)
+      expect(second.nextCursor).toBeNull()
+      const ids = [...first.items, ...second.items].map((item) => item.recordId)
+      expect(new Set(ids).size).toBe(514)
+      expect(ids).toEqual([...ids].sort())
+      expect(await reader.scanVerifiedPage(snapshot, request, context)).toEqual(first)
+    } finally {
+      reader.close()
+      identity.close()
+      await fixture.close()
+      rmSync(directory, { recursive: true, force: true })
+    }
+  }, 120_000)
 })
