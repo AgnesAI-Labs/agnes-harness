@@ -165,6 +165,11 @@ export async function runMediaContractScenario(
       } else if (scenario === 'deny') {
         const foreign = await action.start(fixture.foreignFrame, fixture.ports)
         assert(code(foreign) === 'denied' && foreign.children.length === 0, 'foreign-plan-denied')
+        await fixture.withdrawPermission()
+        for (const frame of [fixture.nativeFrame, fixture.convertFrame]) {
+          const refused = await action.start(frame, fixture.ports)
+          assert(code(refused) === 'denied' && refused.children.length === 0, 'withdrawn-permission-denied')
+        }
         await fixture.revoke()
         for (const frame of [fixture.nativeFrame, fixture.convertFrame]) {
           const refused = await action.start(frame, fixture.ports)

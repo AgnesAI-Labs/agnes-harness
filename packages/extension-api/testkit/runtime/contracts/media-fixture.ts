@@ -76,12 +76,15 @@ export interface MediaWorld {
   receipts: Map<string, W.ActionResultView>
   counters: { vision: number; computes: number; children: number; preparedIds: number }
   allowed: { value: boolean }
+  /** Permission withdrawn while the sources would still answer. */
+  permitted: { value: boolean }
 }
 export const newWorld = (): MediaWorld => ({
   bytes: new Map(),
   receipts: new Map(),
   counters: { vision: 0, computes: 0, children: 0, preparedIds: 0 },
   allowed: { value: true },
+  permitted: { value: true },
 })
 
 export interface MediaContractFixture {
@@ -102,6 +105,8 @@ export interface MediaContractFixture {
   visionRequests(): number
   computeCalls(): number
   childrenPrepared(): number
+  /** Withdraws permission only; the sources would still answer. */
+  withdrawPermission(): Promise<void>
   revoke(): Promise<void>
   restart(): Promise<MediaContractFixture>
   close(): Promise<void>
@@ -348,7 +353,7 @@ export async function createMediaContractFixture(
         }
       },
     },
-    authorize: () => world.allowed.value,
+    authorize: () => world.allowed.value && world.permitted.value,
   }
   const ports: LoopReadPorts = {
     async query(request) {
@@ -476,6 +481,9 @@ export async function createMediaContractFixture(
     visionRequests: () => world.counters.vision,
     computeCalls: () => world.counters.computes,
     childrenPrepared: () => world.counters.children,
+    async withdrawPermission() {
+      world.permitted.value = false
+    },
     async revoke() {
       world.allowed.value = false
     },
