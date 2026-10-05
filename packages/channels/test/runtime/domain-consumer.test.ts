@@ -137,6 +137,8 @@ const renderer: ChannelTextRenderer = {
   },
 }
 
+const sdk: ChannelTextRenderer = { format: formatDomainView, encode: encodeForChannel }
+
 function deliver(
   options: {
     value?: DomainView
@@ -256,14 +258,20 @@ describe('toChannelMessages', () => {
     expect(encode.mock.calls.map(([, at]) => at.supportsButtons)).toEqual([true, false])
   })
 
-  // Unknown domain (case 1), unknown action (case 4) and HTML in server strings (case 5): through the
-  // SDK text renderer a view of a domain no renderer knows is sent as text with its markup literal, and
+  // Unknown domain or renderer (case 1), old schema (case 3), unknown action (case 4) and HTML in server
+  // strings (case 5): through the SDK text renderer a view of a domain or render key no renderer knows,
+  // or of a schema revision older than any renderer reads, is sent as text with its markup literal, and
   // an action of a kind this client does not know, forged past validation, leaves a read-only summary.
-  it('sends a view of an unknown domain as text and no button beside an action of an unknown kind', () => {
-    const sdk = { format: formatDomainView, encode: encodeForChannel }
+  it.each([
+    ['an unknown domain', { domainType: 'acme.unknown', renderKey: 'acme.unknown/card' }],
+    ['an unknown renderer', { renderKey: 'acme.notes/retired-card' }],
+    [
+      'an old schema revision',
+      { viewSchema: { typeId: 'acme.notes/view@1', revision: 0, digest: 'c'.repeat(64) } },
+    ],
+  ])('sends a view of %s as text and no button beside an action of an unknown kind', (_, change) => {
     const markup = '<img src=x onerror=alert(1)>'
-    const domain = { domainType: 'acme.unknown', renderKey: 'acme.unknown/card', fallbackText: markup }
-    const known = view({ ...domain, actions: [publish] })
+    const known = view({ ...change, fallbackText: markup, actions: [publish] })
     const send = (value: DomainView) => deliver({ value, interaction: null, at: channel(4096), with: sdk })
     expect(messages(send(known)).flatMap(offered)).toEqual(['publish'])
 
@@ -275,6 +283,53 @@ describe('toChannelMessages', () => {
     expect(parts.every((part) => !part.content.complete)).toBe(true)
     expect(parts.map(textOf).join('\n')).toBe(
       `Status: In progress\n${markup}\nActions:\n${markup}: Not available here.\nPublish`,
+    )
+  })
+
+  // Disabled plugin (case 2): the IM renderer of a plugin disabled under the channel throws, refuses or
+  // answers with no outcome at all. Nothing is sent and the caller gets a refusal, never an exception, so
+  // it can present the history again through the default renderer, which reads it as text with its
+  // markup literal.
+  it.each<[string, Partial<ChannelTextRenderer>]>([
+    [
+      'throws while formatting',
+      {
+        format: () => {
+          throw new Error('the plugin is disabled')
+        },
+      },
+    ],
+    [
+      'throws while encoding',
+      {
+        encode: () => {
+          throw new Error('the plugin is disabled')
+        },
+      },
+    ],
+    ['answers with no outcome while formatting', { format: () => undefined as never }],
+    ['answers with no outcome while encoding', { encode: () => undefined as never }],
+    ['answers with a refusal that carries no error', { format: () => ({ ok: false }) as never }],
+    [
+      'refuses',
+      {
+        format: () => ({
+          ok: false,
+          error: {
+            code: 'incompatible',
+            detailCode: 'renderer_failed',
+            message: 'the plugin is disabled',
+            retryAdvice: { kind: 'never' },
+            diagnosticId: 'd-1',
+          },
+        }),
+      },
+    ],
+  ])('sends nothing when the renderer of a disabled plugin %s', (_, broken) => {
+    const value = view({ fallbackText: '<b>Draft</b> note', actions: [publish, archive] })
+    expect(refused(deliver({ value, interaction: null, with: broken }))).toBe('renderer_failed')
+    expect(messages(deliver({ value, interaction: null, at: channel(4096), with: sdk })).map(textOf)).toEqual(
+      ['Status: In progress\n<b>Draft</b> note\nActions:\nArchive: Locked'],
     )
   })
 

@@ -2400,7 +2400,9 @@ const INITIAL_CEILING: Record<string, number> = {
   // 5379, exact, no spare (+127).
   // A button needs an action of a known kind whose features the channel negotiated. Measured 5389, exact,
   // no spare (+10).
-  'packages/channels/src': 5389,
+  // A renderer that throws or answers with no outcome is refused like one that refuses. Measured 5399,
+  // exact, no spare (+10).
+  'packages/channels/src': 5399,
   'packages/code/src': 1600,
   'packages/cli/src/args': 300,
   'packages/runtime-python/src': 400,

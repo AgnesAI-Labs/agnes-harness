@@ -186,15 +186,17 @@ describe('runtime domain consumer', () => {
       (input) => plain({ ...input, viewId: 'other' }, { locale: 'en', capabilities }),
     ],
   ])('shows only the sanitized fallback text when the formatter %s', (_name, format) => {
+    // Disabled plugin (case 2): the formatter of a plugin disabled under the terminal throws or refuses,
+    // and the history entry still reads as its fallback text, markup literal, with nothing offered.
     for (const [locale, notice] of [
       ['en', 'This view cannot be shown in the terminal.'],
       ['zh-CN', '此视图无法在终端显示。'],
     ] as const) {
-      const shown = consumer(format, locale).present(view({ fallbackText: 'Draft\u202e note' }))
+      const shown = consumer(format, locale).present(view({ fallbackText: 'Draft\u202e <b>note</b>' }))
       expect(shown).toEqual({
         viewId: 'note-1',
         revision: 3,
-        lines: ['Draft note', notice],
+        lines: ['Draft <b>note</b>', notice],
         actions: [],
         complete: false,
         needsWeb: true,
@@ -203,14 +205,24 @@ describe('runtime domain consumer', () => {
     }
   })
 
-  // Unknown domain (case 1), unknown action (case 4) and HTML in server strings (case 5): a view of a
-  // domain no renderer knows reads as text, its markup stays literal, and an action of a kind this
-  // client does not know, forged past validation, gets no number from any formatter.
-  it('shows a view of an unknown domain as text and never numbers an action of an unknown kind', () => {
+  // Unknown domain or renderer (case 1), old schema (case 3), unknown action (case 4) and HTML in server
+  // strings (case 5): a view of a domain or render key no renderer knows, or of a schema revision older
+  // than any renderer reads, reads as text, its markup stays literal, and an action of a kind this client
+  // does not know, forged past validation, gets no number from any formatter.
+  it.each([
+    ['an unknown domain', { domainType: 'acme.unknown', renderKey: 'acme.unknown/card' }],
+    ['an unknown renderer', { renderKey: 'acme.notes/retired-card' }],
+    [
+      'an old schema revision',
+      { viewSchema: { typeId: 'acme.notes/view@1', revision: 0, digest: 'c'.repeat(64) } },
+    ],
+  ])('shows a view of %s as text and never numbers an action of an unknown kind', (_, change) => {
     const markup = '<img src=x onerror=alert(1)>'
     const forged = { ...base, kind: 'script', actionKey: 'run', label: markup } as unknown as ViewAction
-    const domain = { domainType: 'acme.unknown', renderKey: 'acme.unknown/card', fallbackText: markup }
-    const value = { ...view({ ...domain, actions: [review] }), actions: [forged, review] }
+    const value = {
+      ...view({ ...change, fallbackText: markup, actions: [review] }),
+      actions: [forged, review],
+    }
     const tui = createDomainConsumer({ locale: 'en', capabilities })
     const shown = tui.present(value)
     expect(shown.lines).toEqual([
