@@ -41,6 +41,7 @@ const hookResults = (): W.HookResultSet => ({
   digest: 'f'.repeat(64),
   sourceActionId: null,
 })
+type Row = [string, Partial<ModelDeployment>, W.ModelPrepareRequest, W.RuntimeError['code'], string]
 const detail = (r: { ok: boolean; error?: W.RuntimeError }) => r.error?.detailCode
 
 describe('model prepare', () => {
@@ -86,7 +87,7 @@ describe('model prepare', () => {
     ).toBe(true)
   })
 
-  it.each([
+  const refusals: Row[] = [
     [
       'hooks are supplied',
       {},
@@ -134,7 +135,7 @@ describe('model prepare', () => {
       'no trusted price source exists',
       { prices: { version: () => null } },
       prepareRequest(),
-      'backend_unavailable',
+      'internal',
       'model_not_ready',
     ],
     [
@@ -155,20 +156,24 @@ describe('model prepare', () => {
       'the issuance cannot be written',
       {
         issuance: {
-          record: () => failure('model_issuance_write', 'backend_unavailable'),
+          record: () => failure('model_issuance_write', 'internal'),
           read: () => undefined,
           bindRevision: () => ({ ok: true as const, value: undefined }),
         },
       },
       prepareRequest(),
-      'backend_unavailable',
+      'internal',
       'model_issuance_write',
     ],
-  ] as const)('refuses when %s, and returns no reference', async (_name, over, request, code, detailCode) => {
-    const { prepare } = await open(over as Partial<ModelDeployment>)
-    const result = await prepare(request as W.ModelPrepareRequest)
-    expect(result).toMatchObject({ ok: false, error: { code, detailCode } })
-  })
+  ]
+  it.each(refusals)(
+    'refuses when %s, and returns no reference',
+    async (_name, over, request, code, detailCode) => {
+      const { prepare } = await open(over)
+      const result = await prepare(request)
+      expect(result).toMatchObject({ ok: false, error: { code, detailCode } })
+    },
+  )
 
   it('refuses once the system is no longer current', async () => {
     let current = true
@@ -266,7 +271,7 @@ describe('model prepare', () => {
   })
 
   it('is not ready while the parent and child bridge cannot commit', async () => {
-    const bridge = { ready: () => failure('model_child_bridge_not_ready', 'backend_unavailable') }
+    const bridge = { ready: () => failure('model_child_bridge_not_ready', 'internal') }
     await expect(openModel({ bridge })).rejects.toThrow('model_child_bridge_not_ready')
   })
 

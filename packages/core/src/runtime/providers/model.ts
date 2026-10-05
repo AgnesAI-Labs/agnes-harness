@@ -186,7 +186,7 @@ async function prepareOnce(
   if (!picked) throw fault('denied', 'model_catalog_missing')
   const capture: ModelCapture = modelCaptureOf(adapter.packageDigest, picked)
   const price = d.prices.version(route, capture)
-  if (price === null) throw fault('backend_unavailable', 'model_not_ready')
+  if (price === null) throw fault('internal', 'model_not_ready')
   if (price !== route.priceVersion) throw fault('denied', 'model_price_mismatch')
   const wire = await raced(
     d.wire.resolve({ context: call, sessionParameterRef: input.sessionParameterRef, route }),
@@ -413,7 +413,7 @@ function prepareRequestAction(
               call,
             )
             if (!reply.ok || reply.value.kind !== 'value')
-              throw fault('backend_unavailable', 'model_credential_unavailable')
+              throw fault('internal', 'model_credential_unavailable')
             handle = decode(reply.value.output, resolve.output, 'SecretHandle')
           }
           if (input.credentialRef !== null && !same(input.credentialRef, handle))
