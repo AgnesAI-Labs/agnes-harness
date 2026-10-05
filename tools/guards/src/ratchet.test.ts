@@ -1619,7 +1619,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // Effects dispatch lifecycle contracts (+113); exact cap, no spare.
   // Model service public contract (six scenarios) and its restricted child peer. Measured 17753 (+557), exact, no spare.
   // Renderer and shell cases for a desktop capability the client lacks. Measured 17808, exact (+55).
-  'packages/extension-api/testkit': 17808,
+  // Blob deny case: another principal's promote, pin and unpin are refused. Measured 17863 (+55), exact.
+  'packages/extension-api/testkit': 17863,
   // 2026-09-10: raised from 2500 by Task 15 (stream-disconnect reconnection). The new
   // reattach.ts (the Reconnector: backoff loop, OVERLOADED's retryAfterMs override) plus
   // Session.recover()/waitForQuiescence and Client's reconnect wiring (emit(), the
@@ -2929,7 +2930,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // Model source reader reads the in-process registry; the retained capture store is removed (-71). Measured 83961, exact, no spare.
   // Model parent and child bridge readiness probe. Measured 83981 (+20), exact, no spare.
   // Session model selection: resolution against the current catalog, switch checks and the loop input overlay. Measured 84197 (+216), exact, no spare.
-  'packages/host/src': 84197,
+  // Blob promote, pin and unpin check the caller's principal; pins record it. Measured 84227 (+30), exact.
+  'packages/host/src': 84227,
   'packages/host/src/ext-host/service-invocation': 247,
   // T5.2's permission projector is kept independently bounded so later extension-host work cannot
   // hide in the package-wide increment. Measured source: 86 lines.

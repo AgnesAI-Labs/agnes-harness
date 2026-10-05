@@ -106,6 +106,13 @@ export function referenceBlobPort(
     },
     close: async () => current.close(),
     remains: () => existsSync(databasePath),
+    actions: {
+      upload: async (bytes, context) => current.upload(bytes, undefined, context.principalRef),
+      promote: (request, context) => current.promote(request, context),
+      pin: (request, context) => current.pin(request, context),
+      unpin: (request, context) => current.unpin(request, context),
+      inspect: (request, context) => current.inspect(request, context),
+    },
   })
   return { port, close: () => current.close() }
 }
@@ -131,11 +138,13 @@ async function seed(store: BlobStore): Promise<Seeded> {
     bytes,
   ])
   const owned = content(300, 23)
-  const upload = store.upload(owned)
+  const upload = store.upload(owned, undefined, context.principalRef)
   const stagedBlob = must(await store.promote({ upload, expectedDigest: upload.digest }, context))
   const ownerRef = { kind: 'artifact', value: { artifactId: 'reference-artifact', version: 1 } } as const
   live.push([must(await store.pin({ stagedBlob, ownerRef, retentionUntil: null }, context)), owned])
-  const deleted = [store.seed(content(7, 24)), store.seed(content(9, 25))]
+  const deleted = [content(7, 24), content(9, 25)].map((bytes) =>
+    store.seed(bytes, undefined, context.principalRef),
+  )
   for (const ref of deleted) must(await store.unpin({ pinId: ref.pinId, expectedRevision: 1 }, context))
   must(await store.gc({ scopeRef: CONFORMANCE_SCOPE, dryRun: false, cursor: null, limit: 100 }, context))
   return { live, deleted }
