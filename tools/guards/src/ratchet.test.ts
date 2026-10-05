@@ -296,7 +296,9 @@ const INITIAL_CEILING: Record<string, number> = {
   // Measured 3621, exact, no spare (+65).
   // A user may archive an id whose effect stays unknown; a renderer context drains and runs its cleanups
   // under one dispose deadline, and a lease that misses it is reported. Measured 3646, exact (+25).
-  'packages/web-client/src': 3646,
+  // A generation's release holds every module to one dispose deadline, draining its renderers before
+  // disposing it, and reports each late module once. Measured 3673, exact (+27).
+  'packages/web-client/src': 3673,
   'packages/web-slots/src': 605,
   // Failed shell calls read as their exit code (+19 lines); measured 4891, exact cap.
   // B-line diagnostics dialog: React view adds 147 lines; measured 4706, exact cap.
