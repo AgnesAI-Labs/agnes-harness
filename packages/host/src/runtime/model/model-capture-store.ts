@@ -25,6 +25,9 @@ export function openModelCaptureStore(path: string): ModelCaptureStore {
     CREATE TABLE IF NOT EXISTS captures (digest TEXT PRIMARY KEY, body TEXT NOT NULL);`)
   return {
     retain(catalog) {
+      if (restoreModelCatalog(catalog.snapshot()).digest !== catalog.digest) {
+        throw new ModelCaptureConflict('capture digest does not match its content')
+      }
       const body = jcs(catalog.snapshot())
       db.prepare('INSERT OR IGNORE INTO captures(digest, body) VALUES(?, ?)').run(catalog.digest, body)
       const stored = db.prepare('SELECT body FROM captures WHERE digest = ?').get(catalog.digest)

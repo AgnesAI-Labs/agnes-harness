@@ -71,4 +71,17 @@ describe('model capture store', () => {
     expect(() => store.retain(wanted)).toThrow(ModelCaptureConflict)
     store.close()
   })
+
+  it('refuses to retain a catalog whose digest does not match its content, and stores nothing', () => {
+    const path = file()
+    const store = openModelCaptureStore(path)
+    const genuine = catalog(2)
+    const forged = { ...genuine, digest: 'e'.repeat(64) }
+    expect(() => store.retain(forged)).toThrow(ModelCaptureConflict)
+    expect(store.read('e'.repeat(64))).toBeUndefined()
+    const direct = new DatabaseSync(path)
+    expect(direct.prepare('SELECT count(*) AS n FROM captures').get()?.n).toBe(0)
+    direct.close()
+    store.close()
+  })
 })
