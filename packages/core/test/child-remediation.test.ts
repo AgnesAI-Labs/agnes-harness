@@ -38,7 +38,12 @@ const catalogue = (): ModelRecord => ({
 })
 
 const vision = (): ModelRecord => ({ ...catalogue(), input: ['text', 'image'] })
-const png = { type: 'image' as const, data: 'AAA', mimeType: 'image/png' }
+/** 1×1 PNG：发送入口现在会真正解码校验，占位串不再能通过。 */
+const png = {
+  type: 'image' as const,
+  data: 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=',
+  mimeType: 'image/png',
+}
 
 function kernel(
   over: Partial<Parameters<typeof Kernel.create>[0]> = {},

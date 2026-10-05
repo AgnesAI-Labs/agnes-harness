@@ -13,6 +13,12 @@ export type SettingsAccountsProps = {
   t?: Translate
 }
 
+/** 指示灯先看启用状态再看凭据；红色只留给「启用但凭据缺失」，该状态会使模型列表构造失败。 */
+function accountStatus(account: ConfigAccount): 'inactive' | 'ready' | 'missing' {
+  if (!account.enabled) return 'inactive'
+  return account.credentialConfigured ? 'ready' : 'missing'
+}
+
 export function SettingsAccounts({
   accounts,
   defaultAccountId,
@@ -42,7 +48,7 @@ export function SettingsAccounts({
         key={account.accountId}
         className="config-account"
         data-selected={account.accountId === editingId}
-        data-credential={account.credentialConfigured ? 'configured' : 'missing'}
+        data-status={accountStatus(account)}
       >
         <button
           type="button"

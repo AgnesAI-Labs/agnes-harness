@@ -199,6 +199,23 @@ describe('ratchet key path-boundary matching (regression: sibling-prefix false m
 // origin/main merge dropped, and removed the destructive settings-shell re-render on locale change
 // (it replaced the pane hosts and left the content area blank). The model pane still re-renders because
 // it is a React component with no data-i18n nodes. web/src remeasured at 15977; the other keys are exact.
+// MODEL-PICKER-CASCADE-20261004: the composer's model picker now replaces the modal ModelSettingsDialog
+// (deleted with its web-ui test) with a three-level cascade: model list -> the hovered model's session
+// settings (capacity / reasoning level / context window) -> the options for one parameter. Hovering a row
+// opens its settings without switching the model; committing a value switches first, because
+// session.setModel writes to the current session model. The levels, the hover/close timing, their
+// keyboard routing and the shared submit guards live in one file because they share the popover state
+// machine; the pure label and budget helpers moved to packages/web-ui/src/model-settings.ts. Measured
+// with this guard's countLines(): web/src/model-picker 284 -> 968, web/src 15977 -> 16662,
+// web-units/src 5540 -> 5554 (composer forwards the session settings into the picker state).
+// Exact measured values, no exclusions or spare allocation.
+// IMAGE-ATTACHMENTS-MERGE-20261004: merged feat/web-image-attachments (Web 图片附件) into the i18n
+// branch. Conflict resolutions kept this branch's i18n and the cascade model picker, and re-applied
+// the feature's image handling on top (paste/drag in the composer, inline images in user messages,
+// server-side image validation, 2 MiB projection budget). Measured with this guard's countLines():
+// web/src 16662 -> 16751, web/src/app 2016 -> 2068, web/src/timeline 786 -> 799,
+// web/src/model-picker 968 -> 969, web-units/src 5554 -> 5825, core/src 25861 -> 25892,
+// sdk/src 5130 -> 5131. Exact measured values, no exclusions or spare allocation.
 const INITIAL_CEILING: Record<string, number> = {
   // 2026-09-22 M11 browser effect-command closure: exact measured deltas for the explicit
   // authorization facade, private BFF/RPC, durable journal reuse, and cross-platform test repair.
@@ -249,7 +266,14 @@ const INITIAL_CEILING: Record<string, number> = {
   // Approval reasons: the approval card label reads the decision reason (+22). Measured 6651, exact cap.
   'packages/web-ui/src': 6651,
   // W8a-3: retire the native tool renderer in favor of one compatibility root; measured 4630.
-  'packages/web-units/src': 5609,
+  // 2026-10-04 image upload merged onto the queue view: the composer reads, downscales and previews
+  // attachments, and the queue row markup above stays. Measured: 5923, exact, no spare.
+  // 2026-10-05 the image size gate moved after downscaling (sources get a coarse 20 MiB bound only),
+  // replacing the pre-read byte reservations and freeing 8 lines. Measured: 5915, exact.
+  // 2026-10-05 the queued-input list moved out of the composer card. The render now returns a
+  // Fragment so the queue section can sit before the form, which costs the Fragment import, the
+  // extracted `queueSection` binding and one extra nesting level. Measured: 5922, exact, no spare.
+  'packages/web-units/src': 5922,
   // Write staleness guard: a per-session table of what each file looked like when read, checked by
   // `write` (+55 counted lines, measured 855, exact cap).
   'packages/base/extensions/tools-core': 855,
@@ -415,7 +439,9 @@ const INITIAL_CEILING: Record<string, number> = {
   // Measured 1825, exact (+1).
   // UI integration merge: the default React transcript now receives the inline card claim callback,
   // which lands on top of the diagnostics wiring above. Re-measured with countLines(): 1827, exact.
-  'packages/web/src/app': 2096,
+  // 2026-10-04 image attachments: app.ts submits ContentBlock content while keeping the title locale.
+  // Measured: 2148, exact, no spare.
+  'packages/web/src/app': 2148,
   // 2026-09-22 UI plugin management: inject the embedded pane's client runtime reconciler.
   // 2026-09-25 UI refactor: permission options now render through the React region contract.
   // Re-measured with countLines(): 215, exact, no spare.
@@ -429,7 +455,10 @@ const INITIAL_CEILING: Record<string, number> = {
   // @agnes/web-admin-frame, so this file only keeps its own state machine and rendering.
   // 2026-09-25 UI refactor: model options now render through the React region contract.
   // Re-measured with countLines(): 274, exact, no spare.
-  'packages/web/src/model-picker': 284,
+  // 2026-10-04 preview-path fixes: the leaf keyboard boundary follows the previewed model, the
+  // duplicate-submit short circuit applies only to the current model, the blur guard covers the
+  // detail panel, and hover matches the keyboard path (+6 counted lines). Measured: 975, exact.
+  'packages/web/src/model-picker': 975,
   // 2026-09-25 UI refactor: settings-owned element construction uses the shared UI host boundary.
   // Re-measured with countLines(): 754, exact, no spare.
   'packages/web/src/settings': 900,
@@ -446,7 +475,9 @@ const INITIAL_CEILING: Record<string, number> = {
   // Merge of CHUNK-LEDGER-SLIM (lost-text marker, +4) with the streaming-smoothness quick fixes (727):
   // sampled fingerprints also carry lostChars. Re-measured on the merged tree: 731, exact, no spare.
   // Approval reasons: the approval card label reads the decision reason (+10). Measured 796, exact cap.
-  'packages/web/src/timeline': 796,
+  // 2026-10-05 the merge keeps both sides' additions, so neither number holds. Re-measured on the
+  // merged tree: 807, exact, no spare.
+  'packages/web/src/timeline': 807,
   // 2026-09-17：navigation.ts 的 folderIcon 换成客户端 AgnesProjectFolderIcon 两态字形
   // （两条 path + folderSvg 构造器），展开/收起由 CSS 的 [aria-expanded] 切换。实测 108。
   // SESSION-ACTIONS integrated with b/main: exact increment +43.
@@ -979,10 +1010,14 @@ const INITIAL_CEILING: Record<string, number> = {
   // prefix, so the first request after a compaction lands below the threshold (+8).
   // Measured 25811, exact cap.
   // The approval card's summary line is built by summarizeCall (new file). Measured 25861 (+50), exact cap.
+  // 2026-10-04 image attachments: user-message-images.ts (new) plus its session wiring, merged
+  // onto the queue view. Measured: 25965, exact, no spare.
   // Guardian-decided approvals no longer reopen a parked continuation (+2), a Stop on a running mutating
   // call is recorded as cancelled once it has stopped (+54), and approval decisions keep their reason (+82).
   // Measured 26071 with all three merged on top of main 25934, exact cap; each alone is lower.
-  'packages/core/src': 26071,
+  // 2026-10-05 the two sides coexist on the merged tree, so neither side's number holds. Re-measured
+  // with countLines() after the merge: 26102, exact, no spare.
+  'packages/core/src': 26102,
   // 2026-09-15: DeepSeek V4 Pro/Flash ship a known-thinking-corrections table (new file) so the
   // product corrects pi-ai's verified-wrong reasoning_effort data out of the box, instead of
   // requiring every deployment to hand-edit thinkingEfforts once they notice. Measured 3347.
@@ -1480,7 +1515,9 @@ const INITIAL_CEILING: Record<string, number> = {
   // CHUNK-LEDGER-SLIM final tree: the stream keep-alive and its sizing are gone. Measured 5013, exact, no spare (-61).
   // Permission cancellation distinction on the merged tree: measured 5051, no spare.
   // TRACE-INSPECTION-20260925: bounded, abortable paged detail read; measured 5127, exact.
-  'packages/sdk/src': 5175,
+  // 2026-10-04 image attachments: image blocks flow through the UI projection sync.
+  // Measured: 5176, exact, no spare.
+  'packages/sdk/src': 5176,
   'packages/sdk/src/extensions.node': 21,
   'packages/sdk/src/package-admin.node': 147,
   'packages/sdk/src/surface.browser': 3,
@@ -2089,8 +2126,12 @@ const INITIAL_CEILING: Record<string, number> = {
   // which carries its own key. Re-measured with countLines() on the merged tree: 13120, exact.
   // Output-limit and rate-limit presentation adds four counted lines, exact allocation.
   // The live approval card's wording, preview and session-choice rule (new file). Measured 13463 (+52), exact cap.
+  // 2026-10-04 model picker cascade refactor, image attachment wiring and the i18n UI fixes, merged
+  // onto the title-locale/queue work. Measured: 16839, exact, no spare.
   // Approval reasons: the approval card label reads the decision reason (+22). Measured 16081 (combined tree), exact cap.
-  'packages/web/src': 16081,
+  // 2026-10-05 the merge keeps both sides' additions, so neither number holds. Re-measured on the
+  // merged tree: 16861, exact, no spare.
+  'packages/web/src': 16861,
   // 2026-09-17 web-client-modules frontend track (rebased onto L0/permission-picker main): re-measured exact value below.
   // 2026-09-14: Task 7 orphaned-pin-cleanup adds the orphan-pins section to PluginAdminPage — the
   // #orphanPins/#orphanPinsList/#orphanPinsStatus/#orphanPinsReleaseAll element bindings, the
