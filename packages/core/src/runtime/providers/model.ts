@@ -307,7 +307,8 @@ export function createDefaultModelFactory(d: ModelDeployment): ProviderFactory<S
         async ready(call) {
           const bridge = d.bridge.ready(call)
           if (!bridge.ok) return bridge
-          if (phase !== 'starting' || !d.current(call)) return refusal('denied', 'model_binding_denied')
+          if ((phase !== 'starting' && phase !== 'ready') || !d.current(call))
+            return refusal('denied', 'model_binding_denied')
           phase = 'ready'
           return { ok: true, value: undefined }
         },
