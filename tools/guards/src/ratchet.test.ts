@@ -1054,7 +1054,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // Measured 25811, exact cap.
   // The approval card's summary line is built by summarizeCall (new file). Measured 25861 (+50), exact cap.
   // Sourced memory and hybrid retrieval providers. Measured 32058, exact, no spare.
-  // R11 fixed Tools +696; exact, no spare.
+  // fixed Tools +696; exact, no spare.
   'packages/core/src': 33348,
   // Testkit-only reference Effects runner adds 202 measured lines; exact cap, no spare.
   'packages/core/testkit': 1997,
@@ -1569,7 +1569,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // Events contract cases: resumable pages, idempotent publish, crash recovery. Measured 14341, exact (+632).
   // Renderer contract cases through the client host on every target. Measured 15193, exact, no spare (+852).
   // Runtime client transport cases over two servers with one SDK client. Measured 16143, exact, no spare (+950).
-  // R11 Tools contracts +247; exact, no spare.
+  // Tools contracts +247; exact, no spare.
   'packages/extension-api/testkit': 16390,
   // 2026-09-10: raised from 2500 by Task 15 (stream-disconnect reconnection). The new
   // reattach.ts (the Reconnector: backoff loop, OVERLOADED's retryAfterMs override) plus
