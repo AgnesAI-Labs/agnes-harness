@@ -2938,7 +2938,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // Model parent and child bridge readiness probe. Measured 83981 (+20), exact, no spare.
   // Session model selection: resolution against the current catalog, switch checks and the loop input overlay. Measured 84197 (+216), exact, no spare.
   // Blob promote, pin and unpin check the caller's principal; pins record it. Measured 84227 (+30), exact.
-  'packages/host/src': 84227,
+  // State read owner and port capture take no database handle or identity; the owner drains in-flight reads on close. Measured 84232 (+5), exact.
+  'packages/host/src': 84232,
   'packages/host/src/ext-host/service-invocation': 247,
   // T5.2's permission projector is kept independently bounded so later extension-host work cannot
   // hide in the package-wide increment. Measured source: 86 lines.

@@ -1,9 +1,14 @@
 /**
- * Test-only bridge. It trusts the fixture's own original context and does not prove scope
- * ancestry; a production bridge replaces it.
+ * Test fixtures for the State read side. The bridge adapter below is test-only and is not a
+ * production bridge; it does not prove run or action ancestry.
  */
+import type { DatabaseSync } from 'node:sqlite'
 import type { CallContext } from '@agnes/extension-api/runtime'
 import { canonicalJsonDigest, type ScopeRef } from '@agnes/protocol/runtime'
+import {
+  type LocalDeploymentIdentity,
+  localDeploymentIdentityBinding,
+} from '../../../src/runtime/identity/local-deployment-identity.js'
 import type {
   StateReadBridge,
   StateReadGrant,
@@ -50,19 +55,57 @@ export function actionScope(native: NativeFixture, actionId: string, runId = FIX
   }
 }
 
-/** Test-only bridge: trusts the fixture's own original context. */
-export function localTestBridge(native: NativeFixture): StateReadBridge {
-  const original = native.context
-  const capture = native.identity.capture(original)
-  return {
+/** The only owner name the deployment has: one local user, no user-management system. */
+export const LOCAL_SESSION_OWNER = 'local'
+
+export type BridgeBasis = Readonly<{
+  /** The context the real local identity issued for this deployment. */
+  context: CallContext
+  identity: LocalDeploymentIdentity
+  scope: ScopeRef
+  /** Only used to ask the identity who the verified local principal is; never given to the reader. */
+  database: DatabaseSync
+}>
+
+/**
+ * TEST-ONLY bridge adapter, not a production bridge. The identity owner's real bridge replaces it.
+ * The deployment has exactly one user: the verified local principal owns every session whose owner
+ * is `local`. There is no per-user ACL. The mapping is still bound to the real verified principal:
+ * a context is accepted only when its principal is the identity's own verified local principal, its
+ * authorization is the one the identity issued, and its scope belongs to this deployment's runtime.
+ * check() asks the real identity (revocation, connection generation) on every call and also
+ * re-verifies the principal, the session-owner mapping and the caller's signal.
+ */
+export function localTestBridge(
+  basis: BridgeBasis,
+  sessionOwners: Map<string, string> = new Map([[FIXTURE_SESSION, LOCAL_SESSION_OWNER]]),
+) {
+  const original = basis.context
+  const capture = basis.identity.capture(original)
+  const calls = { grant: 0, check: 0 }
+  const verifiedPrincipal = (): string | null => {
+    try {
+      return localDeploymentIdentityBinding(basis.identity, basis.database)?.owner.facts.principalRef ?? null
+    } catch {
+      return null
+    }
+  }
+  const owns = (sessionId: string) => sessionOwners.get(sessionId) === LOCAL_SESSION_OWNER
+  const bridge: StateReadBridge = {
     grant(caller, requested): StateReadGrant | null {
+      calls.grant++
+      const principal = verifiedPrincipal()
+      const scope = caller.scope
       if (
-        caller.principalRef !== original.principalRef ||
+        principal === null ||
+        caller.principalRef !== principal ||
         caller.authorizationRef !== original.authorizationRef ||
+        scope.installationId !== original.scope.installationId ||
+        !('runtimeId' in scope) ||
+        scope.runtimeId !== (original.scope as { runtimeId: string }).runtimeId ||
         caller.signal.aborted
       )
         return null
-      const scope = caller.scope
       let sessionId: string
       let window: StateReadWindow
       if (scope.kind === 'runtime') {
@@ -80,32 +123,54 @@ export function localTestBridge(native: NativeFixture): StateReadBridge {
         window = { kind: 'action', runId: scope.runId, actionId: scope.actionId }
       } else return null
       if (requested !== null && requested !== sessionId) return null
+      if (!owns(sessionId)) return null
+      try {
+        capture.dynamicCheck()
+      } catch {
+        return null
+      }
       return Object.freeze({
         sessionId,
         window,
         fingerprint: canonicalJsonDigest({
           principalRef: caller.principalRef,
           authorizationRef: caller.authorizationRef,
-          installationId: native.scope.installationId,
-          runtimeId: native.scope.runtimeId,
+          installationId: scope.installationId,
+          runtimeId: scope.runtimeId,
           sessionId,
           window,
         }),
         original,
-        deadline: Date.parse(original.deadline),
+        deadline: Math.min(Date.parse(original.deadline), Date.parse(caller.deadline)),
         check() {
+          calls.check++
           capture.dynamicCheck()
+          if (verifiedPrincipal() !== caller.principalRef)
+            throw new Error('principal is not the verified local principal')
+          if (!owns(sessionId)) throw new Error('session owner mapping is missing')
           if (caller.signal.aborted) throw new Error('caller cancelled')
         },
       })
     },
     ownedSessions(caller, page) {
-      if (caller.principalRef !== original.principalRef) return null
-      return page.after === null
-        ? { sessionIds: [FIXTURE_SESSION], next: null }
-        : { sessionIds: [], next: null }
+      if (caller.principalRef !== verifiedPrincipal()) return null
+      const all = [...sessionOwners]
+        .filter(([, owner]) => owner === LOCAL_SESSION_OWNER)
+        .map(([id]) => id)
+        .sort()
+      const rest = page.after === null ? all : all.filter((id) => id > (page.after as string))
+      const sessionIds = rest.slice(0, page.limit)
+      return { sessionIds, next: rest.length > sessionIds.length ? (sessionIds.at(-1) ?? null) : null }
     },
   }
+  return Object.freeze({
+    bridge,
+    calls,
+    /** Real, durable revocation of the local installation. */
+    revoke: () => basis.identity.revoke(),
+    /** Makes the session-owner mapping disappear, as if the session had no owner. */
+    dropSessionOwner: (sessionId: string) => sessionOwners.delete(sessionId),
+  })
 }
 
 /**

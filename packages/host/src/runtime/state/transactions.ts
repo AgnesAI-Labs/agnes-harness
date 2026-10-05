@@ -73,10 +73,6 @@ import { TypeCompiler } from '@sinclair/typebox/compiler'
 import { DDL } from '../../adapters/ddl.js'
 import { syncCheckpointsToMedium } from '../../adapters/sqlite-durability.js'
 import {
-  type LocalDeploymentIdentity,
-  localDeploymentIdentityBinding,
-} from '../identity/local-deployment-identity.js'
-import {
   admissionSourceUsesDatabase,
   captureAdmissionStateFence,
   isRuntimeAdmissionSource,
@@ -960,26 +956,27 @@ export function assertNativeSessionHasNoParent(parent: SessionIdentityValue['par
     refuse('incompatible', 'state_session_parent', 'a session with a parent prefix cannot be read natively')
 }
 
-/** Original same-connection reader; the returned token never leaves these closures. */
+/**
+ * State's own reader over its own connection; the returned token never leaves these closures.
+ * No connection or identity is passed in: the caller names only the runtime scope it serves.
+ */
 export function captureNativeStateReadPort(
   state: RuntimeStateDatabase,
-  identity: LocalDeploymentIdentity,
-  database: DatabaseSync,
+  runtime: Readonly<{ installationId: string; runtimeId: string }>,
   readable: readonly SchemaRef[] = NATIVE_READABLE,
 ) {
-  if (!runtimeStateUsesDatabase(state, database)) return null
-  const binding = localDeploymentIdentityBinding(identity, database)
-  if (
-    !binding ||
-    !sameJson(binding.authority, nativeReadMethods.authority.call(state)) ||
-    binding.scope.kind !== 'runtime'
-  )
-    return null
+  if (!originalStateConfiguration(state)) return null
+  const scope = {
+    kind: 'runtime' as const,
+    installationId: runtime.installationId,
+    runtimeId: runtime.runtimeId,
+  }
+  if (!validateRuntime('ScopeRef', scope).ok) return null
   const token = Object.freeze({})
-  nativeReadTokens.set(token, { state, scope: binding.scope, readable })
+  nativeReadTokens.set(token, { state, scope, readable })
   return Object.freeze({
     authority: nativeReadMethods.authority.call(state),
-    scope: binding.scope,
+    scope,
     async open(sessionId: string) {
       return nativeReadMethods.open.call(state, token, sessionId)
     },
@@ -992,18 +989,21 @@ export function captureNativeStateReadPort(
   })
 }
 
-export function runtimeStateUsesDatabase(state: RuntimeStateDatabase, database: DatabaseSync): boolean {
+function originalStateConfiguration(state: RuntimeStateDatabase) {
   const selected = runtimeDatabaseConfigurations.get(state)
   const authority = Object.getOwnPropertyDescriptor(state, 'authority')?.value
-  return (
-    selected !== undefined &&
+  return selected !== undefined &&
     Object.getPrototypeOf(state) === RuntimeStateDatabase.prototype &&
-    selected.database === database &&
-    Object.getOwnPropertyDescriptor(state, 'db')?.value === database &&
+    Object.getOwnPropertyDescriptor(state, 'db')?.value === selected.database &&
     Object.getOwnPropertyDescriptor(state, 'now')?.value === selected.now &&
     authority !== undefined &&
     selected.authorityDigest === digestOf(authority)
-  )
+    ? selected
+    : undefined
+}
+
+export function runtimeStateUsesDatabase(state: RuntimeStateDatabase, database: DatabaseSync): boolean {
+  return originalStateConfiguration(state)?.database === database
 }
 export function matchesRuntimeStateDatabaseOptions(
   database: RuntimeStateDatabase,
