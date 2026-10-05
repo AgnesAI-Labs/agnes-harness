@@ -2896,7 +2896,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // feat(host): install loop, tools and context on the new run path. Measured 81735, exact, no spare.
   // feat(host): retain model catalog captures by content digest. Measured 81775 (+40), exact, no spare.
   // feat(host): Host-only native State read owner. Measured 82377 (+602), exact, no spare.
-  'packages/host/src': 82377,
+  // feat(host): hand the loop the issued model credential handle. Measured 82443, exact, no spare.
+  'packages/host/src': 82443,
   'packages/host/src/ext-host/service-invocation': 247,
   // T5.2's permission projector is kept independently bounded so later extension-host work cannot
   // hide in the package-wide increment. Measured source: 86 lines.
