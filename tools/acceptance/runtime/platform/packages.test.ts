@@ -7,7 +7,9 @@ import { runPackageAcceptance } from './packages.js'
 
 const CLOCK = { startedAt: '2026-10-01T00:00:00.000Z', finishedAt: '2026-10-01T00:00:01.000Z' } as const
 
-describe('package source and resolver conformance', () => {
+// This aggregate runs both providers, all scenarios and a second split-provider report.
+// Hosted Windows measured 17.4s; keep a finite budget independent of platform defaults.
+describe('package source and resolver conformance', { timeout: 30_000 }, () => {
   it('passes both providers across the six scenarios', async () => {
     const directory = mkdtempSync(join(tmpdir(), 'package-conformance-'))
     try {
