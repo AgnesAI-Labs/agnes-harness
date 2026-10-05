@@ -2892,7 +2892,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // feat(host): build the projection owner from the core root export. Measured 81275, exact, no spare.
   // A frozen, restorable copy of the sealed model catalog adds 49 measured lines on top of the above; measured 81324, exact, no spare.
   // feat(host): install loop, tools and context on the new run path. Measured 81735, exact, no spare.
-  'packages/host/src': 81735,
+  // feat(host): retain model catalog captures by content digest. Measured 81775 (+40), exact, no spare.
+  'packages/host/src': 81775,
   'packages/host/src/ext-host/service-invocation': 247,
   // T5.2's permission projector is kept independently bounded so later extension-host work cannot
   // hide in the package-wide increment. Measured source: 86 lines.
