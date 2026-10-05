@@ -1,3 +1,4 @@
+import { randomBytes } from 'node:crypto'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -6,6 +7,8 @@ import type * as Wire from '@agnes/protocol/runtime'
 import { canonicalJsonDigest } from '@agnes/protocol/runtime'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { type DomainStore, type OutboxSink, openDomainStore } from '../../src/runtime/events/outbox.js'
+import { createEventsProvider, type EventsGate } from '../../src/runtime/providers/events.js'
+import { openEvents, producer, publication, read, reader, testGate } from './fixtures/events-issuer.js'
 
 const schema = (typeId: string): Wire.SchemaRef => ({
   typeId,
@@ -447,6 +450,221 @@ describe('outbox administration', () => {
     expect(await store.flush(sink)).toMatchObject({ acked: 1 })
     expect(seen).toEqual(['wake-1'])
     expect(store.record(keyOf(1))).toMatchObject({ delivery: 'acked', attempts: 21, lastError: null })
+    store.close()
+  })
+})
+
+describe('events provider', () => {
+  const key = randomBytes(32)
+  const file = () => join(dir, 'domain.db')
+  type Read = Awaited<ReturnType<ReturnType<typeof openEvents>['subscribe']>>
+  const seen = (result: Read) =>
+    result.ok
+      ? {
+          keys: result.value.page.items.map((record) => record.event.idempotencyKey),
+          complete: result.value.page.complete,
+          next: result.value.page.nextCursor,
+          checkpoint: result.value.checkpoint,
+        }
+      : result.error.detailCode
+  const cursors = (result: Read) => ({
+    next: result.ok ? (result.value.page.nextCursor ?? '') : '',
+    checkpoint: result.ok ? (result.value.checkpoint ?? '') : '',
+  })
+  const remove = (sequence: number) => {
+    const db = new DatabaseSync(file())
+    db.prepare('DELETE FROM domain_events WHERE sequence = ?').run(sequence)
+    db.close()
+  }
+  const relabel = (cursor: string, kind: 'page' | 'checkpoint') => {
+    const fields = JSON.parse(Buffer.from(cursor, 'base64url').toString('utf8')) as unknown[]
+    fields[3] = kind
+    return Buffer.from(JSON.stringify(fields)).toString('base64url')
+  }
+  const publishAll = async (events: ReturnType<typeof openEvents>, ...keys: string[]) => {
+    for (const key of keys) expect(outcome(await events.publish(publication(key), producer()))).toBe('ok')
+  }
+
+  it('keeps a page cursor to its page set and completes empty and exactly full pages with a checkpoint', async () => {
+    const events = openEvents(file(), key)
+    const complete = { complete: true, next: null, checkpoint: expect.any(String) }
+    expect(seen(await events.subscribe(read(null), reader()))).toEqual({ keys: [], ...complete })
+    await publishAll(events, 'k-1', 'k-2')
+    expect(seen(await events.subscribe(read(null), reader()))).toEqual({ keys: ['k-1', 'k-2'], ...complete })
+    await publishAll(events, 'k-3')
+    const first = await events.subscribe(read(null), reader())
+    expect(seen(first)).toEqual({
+      keys: ['k-1', 'k-2'],
+      complete: false,
+      next: expect.any(String),
+      checkpoint: null,
+    })
+    await publishAll(events, 'k-4')
+    const rest = await events.subscribe(read(cursors(first).next), reader())
+    expect(seen(rest)).toEqual({ keys: ['k-3'], ...complete })
+    expect(seen(await events.subscribe(read(cursors(rest).checkpoint), reader()))).toEqual({
+      keys: ['k-4'],
+      ...complete,
+    })
+    events.close()
+  })
+
+  it('refuses every read and publication once a row of the history is missing', async () => {
+    const events = openEvents(file(), key)
+    await publishAll(events, 'k-1', 'k-2', 'k-3')
+    const first = await events.subscribe(read(null), reader())
+    remove(2)
+    for (const cursor of [null, cursors(first).next])
+      expect(seen(await events.subscribe(read(cursor), reader()))).toBe('resync_required')
+    expect(outcome(await events.publish(publication('k-4'), producer()))).toBe('resync_required')
+    events.close()
+    const store = open()
+    expect(store.eventHistory()).toEqual({ count: 2, first: 1, last: 3 })
+    store.close()
+  })
+
+  it('refuses a checkpoint whose top event was deleted and its sequence reused', async () => {
+    const events = openEvents(file(), key)
+    await publishAll(events, 'k-1', 'k-2')
+    const before = await events.subscribe(read(null), reader())
+    remove(2)
+    await publishAll(events, 'k-3')
+    expect(seen(await events.subscribe(read(cursors(before).checkpoint), reader()))).toBe('resync_required')
+    expect(seen(await events.subscribe(read(null), reader()))).toMatchObject({ keys: ['k-1', 'k-3'] })
+    events.close()
+  })
+
+  it('refuses a cursor relabelled as the other kind, signed with another key or issued by another authority', async () => {
+    const events = openEvents(file(), key)
+    await publishAll(events, 'k-1', 'k-2', 'k-3')
+    const first = await events.subscribe(read(null), reader())
+    const { checkpoint } = cursors(await events.subscribe(read(cursors(first).next), reader()))
+    for (const cursor of [relabel(cursors(first).next, 'checkpoint'), relabel(checkpoint, 'page')])
+      expect(seen(await events.subscribe(read(cursor), reader()))).toBe('resync_required')
+    const restarted = openEvents(file(), randomBytes(32))
+    expect(seen(await restarted.subscribe(read(checkpoint), reader()))).toBe('resync_required')
+    expect(seen(await restarted.subscribe(read(null), reader()))).toMatchObject({ keys: ['k-1', 'k-2'] })
+    restarted.close()
+    const foreign = openEvents(join(dir, 'foreign.db'), key, testGate(), 'authority-2')
+    const issued = cursors(await foreign.subscribe(read(null), reader())).checkpoint
+    foreign.close()
+    expect(seen(await events.subscribe(read(issued), reader()))).toBe('resync_required')
+    expect(seen(await events.subscribe(read(checkpoint), reader()))).toMatchObject({
+      keys: [],
+      complete: true,
+    })
+    events.close()
+  })
+
+  it('refuses a ninth concurrent read without queueing it and settles waiting reads on close', async () => {
+    const gate = testGate()
+    let entered = 0
+    let eight = () => {}
+    const waiting = new Promise<void>((resolve) => {
+      eight = resolve
+    })
+    const events = openEvents(file(), key, {
+      ...gate,
+      canRead: () => {
+        if (++entered === 8) eight()
+        return new Promise<boolean>(() => {})
+      },
+    })
+    const pending = Array.from({ length: 8 }, () => events.subscribe(read(null), reader()))
+    await waiting
+    const refused = await events.subscribe(read(null), reader())
+    expect(refused).toMatchObject({
+      ok: false,
+      error: { code: 'quota', detailCode: 'rate_limit', retryAdvice: { kind: 'retry_read' } },
+    })
+    const advice = refused.ok ? undefined : refused.error.retryAdvice
+    const retryAt = Date.parse(advice?.kind === 'retry_read' ? (advice.notBefore ?? '') : '')
+    expect(retryAt - Date.now()).toBeGreaterThan(0)
+    expect(retryAt - Date.now()).toBeLessThanOrEqual(1000)
+    expect(entered).toBe(8)
+    events.close()
+    expect((await Promise.all(pending)).map(outcome)).toEqual(Array(8).fill('backend_unavailable'))
+    expect(outcome(await events.subscribe(read(null), reader()))).toBe('backend_unavailable')
+    expect(outcome(await events.publish(publication('k-1'), producer()))).toBe('backend_unavailable')
+  })
+
+  it('commits inside the gate hold after producer, origin, replay lookup and revision, and keeps a borrowed store', async () => {
+    const store = open()
+    const gate = testGate()
+    const calls: string[] = []
+    const noted = <T>(call: string, value: T) => {
+      calls.push(call)
+      return value
+    }
+    const recording: EventsGate = {
+      ...gate,
+      producer: async (...args) => noted('producer', gate.producer(...args)),
+      origin: async (...args) => noted('origin', gate.origin(...args)),
+      revision: async (target) => noted('revision', gate.revision(target)),
+      withCommit(typeId, schema, aggregate, causation, context, body) {
+        const before = store.eventHistory().count
+        const held = gate.withCommit(typeId, schema, aggregate, causation, context, body)
+        calls.push(`hold ${before}->${store.eventHistory().count}`)
+        return held
+      },
+    }
+    expect(() => createEventsProvider({ binding, store, cursorKey: new Uint8Array(31) })).toThrow('32 bytes')
+    const events = createEventsProvider({ binding, store, cursorKey: key, gate: recording })
+    const published = await events.publish(publication('k-1'), producer())
+    expect(calls).toEqual(['producer', 'origin', 'hold 0->0', 'revision', 'hold 0->1'])
+    calls.length = 0
+    expect(await events.publish(publication('k-1'), producer())).toEqual(published)
+    expect(calls).toEqual(['producer', 'origin', 'hold 1->1'])
+    events.close()
+    expect(store.events(0, 10)).toHaveLength(1)
+    store.close()
+  })
+
+  it('refuses a publication no gate vouches for and writes nothing', async () => {
+    const gate = testGate()
+    const unvouched: (EventsGate | null)[] = [
+      null,
+      { ...gate, producer: async () => ({ ok: true, value: undefined as never }) },
+      { ...gate, origin: async () => undefined as never },
+    ]
+    for (const candidate of unvouched) {
+      const events = openEvents(file(), key, candidate)
+      expect(outcome(await events.publish(publication('k-1'), producer()))).toBe('permission_denied')
+      if (candidate === null)
+        expect(seen(await events.subscribe(read(null), reader()))).toBe('permission_denied')
+      events.close()
+    }
+    const store = open()
+    expect(store.eventHistory().count).toBe(0)
+    store.close()
+  })
+
+  it('replays or refuses a publication whose identity an event committed through the command path holds', async () => {
+    const scratch = openEvents(join(dir, 'scratch.db'), key)
+    await publishAll(scratch, 'k-1')
+    const issued = await scratch.subscribe(read(null), reader())
+    const published = issued.ok ? issued.value.page.items[0] : undefined
+    scratch.close()
+    if (published === undefined) throw new Error('scratch provider published nothing')
+    const store = open()
+    await store.transaction((tx) => {
+      // The same identity under the command path: once with the same fingerprint, once with another.
+      tx.putEvent({ ...published, sequence: 1, event: { ...published.event, eventId: 'command-k-1' } })
+      tx.putEvent({
+        ...published,
+        sequence: 2,
+        event: { ...published.event, eventId: 'command-k-2', idempotencyKey: 'k-2' },
+        fingerprint: canonicalJsonDigest('another plan'),
+      })
+    })
+    const events = createEventsProvider({ binding, store, cursorKey: key, gate: testGate() })
+    expect(await events.publish(publication('k-1'), producer())).toEqual({
+      ok: true,
+      value: { eventRef: { kind: 'event', authorityId: 'authority-1', eventId: 'command-k-1' } },
+    })
+    expect(outcome(await events.publish(publication('k-2'), producer()))).toBe('idempotency_conflict')
+    expect(store.eventHistory().count).toBe(2)
+    events.close()
     store.close()
   })
 })

@@ -2052,7 +2052,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // Sixth main synchronization merged with the current integration tip. Measured 27731, exact, no spare.
   // Sixth main synchronization brings main's queued-input CI fixes. Measured 27749, exact, no spare.
   // Exact merged main and runtime integration source count; no spare allocation.
-  'packages/daemon/src': 27829,
+  // Default agh.events provider over the domain store, with its event lookups; measured 28215 (+386), exact.
+  'packages/daemon/src': 28215,
   'packages/daemon/src/packages/admin-session': 46,
   // 2026-09-14: whole-branch review fix wave (Finding 1) adds the two missing
   // 'pins/inspect'/'pins/release' entries to the ACTIONS BFF route allowlist, which had been left
