@@ -1097,7 +1097,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // Shared media preflight bridge and image-model selection (+153); exact cap, no spare.
   // Runtime media identity, planner, verification and byte resolution (+542); exact cap, no spare.
   // Default runtime media provider with conversion continuation (+952); exact cap, no spare.
-  'packages/core/src': 39075,
+  // Wire request carries verified media parts and names structured output as unsupported (+45); exact cap, no spare.
+  'packages/core/src': 39120,
   // Testkit-only reference Effects runner adds 202 measured lines; exact cap, no spare.
   // Independent Effects dispatch reference (+440); exact measurement below.
   'packages/core/testkit': 2437,
