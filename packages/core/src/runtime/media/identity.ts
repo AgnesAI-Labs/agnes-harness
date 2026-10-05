@@ -52,7 +52,7 @@ export type ManifestSource = Readonly<{
   sourceTool: string
 }>
 export type MediaManifest = Readonly<{
-  kind: 'native' | 'converted' | 'degraded'
+  kind: 'native' | 'converted' | 'degraded' | 'omitted'
   planDigest: W.Digest
   header: RequestMediaHeader
   mediaHash: string
@@ -111,6 +111,16 @@ const isRecord = (v: unknown): v is Record<string, unknown> =>
   typeof v === 'object' && v !== null && !Array.isArray(v)
 const posInt = (v: unknown, max = Number.MAX_SAFE_INTEGER): v is number =>
   Number.isSafeInteger(v) && (v as number) >= 1 && (v as number) <= max
+
+/** True only when every product limit is an explicit positive integer; there are no defaults to fall back on. */
+export function limitsConfigured(limits: unknown): limits is RequestMediaLimits {
+  return isRecord(limits) && LIMIT_KEYS.every((key) => posInt(limits[key]))
+}
+
+/** A plan may narrow the deployment's limits but never widen them. */
+export function limitsWithin(plan: RequestMediaLimits, ceiling: RequestMediaLimits): boolean {
+  return LIMIT_KEYS.every((key) => plan[key] <= ceiling[key])
+}
 
 export function packParameters(parameters: MediaParameters): Outcome<W.DataRef> {
   return pack(MEDIA_PARAMETERS_SCHEMA, parameters, 16_384)
@@ -196,7 +206,7 @@ export function parseManifest(ref: W.DataRef): Outcome<MediaManifest> {
   const v = body.value
   if (
     !isRecord(v) ||
-    !['native', 'converted', 'degraded'].includes(v.kind as string) ||
+    !['native', 'converted', 'degraded', 'omitted'].includes(v.kind as string) ||
     typeof v.planDigest !== 'string' ||
     typeof v.mediaHash !== 'string' ||
     !Array.isArray(v.sources) ||

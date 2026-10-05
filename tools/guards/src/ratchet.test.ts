@@ -1096,8 +1096,10 @@ const INITIAL_CEILING: Record<string, number> = {
   // Installed pure Hook actions and current authority/lifecycle (+254); exact combined cap.
   // Shared media preflight bridge and image-model selection (+153); exact cap, no spare.
   // Runtime media identity, planner, verification and byte resolution (+542); exact cap, no spare.
+  // Default runtime media provider with conversion continuation (+952); exact cap, no spare.
+  // Wire request carries verified media parts and names structured output as unsupported (+45); exact cap, no spare.
   // The Loop reads the prepared handle instead of the prepared body and re-reads the offered tools from its fixed source (-2).
-  'packages/core/src': 38121,
+  'packages/core/src': 39118,
   // Testkit-only reference Effects runner adds 202 measured lines; exact cap, no spare.
   // Independent Effects dispatch reference (+440); exact measurement below.
   'packages/core/testkit': 2437,
@@ -1624,7 +1626,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // Model service public contract (six scenarios) and its restricted child peer. Measured 17753 (+557), exact, no spare.
   // Renderer and shell cases for a desktop capability the client lacks. Measured 17808, exact (+55).
   // Blob deny case: another principal's promote, pin and unpin are refused. Measured 17863 (+55), exact.
-  'packages/extension-api/testkit': 17863,
+  // Media contract scenarios and in-memory fixture (+763); exact cap, no spare.
+  'packages/extension-api/testkit': 18626,
   // 2026-09-10: raised from 2500 by Task 15 (stream-disconnect reconnection). The new
   // reattach.ts (the Reconnector: backoff loop, OVERLOADED's retryAfterMs override) plus
   // Session.recover()/waitForQuiescence and Client's reconnect wiring (emit(), the

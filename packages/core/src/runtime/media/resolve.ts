@@ -38,6 +38,7 @@ export async function resolveMediaParts(
     trust: verified.trust,
     usageIds: verified.usageIds,
   }
+  if (manifest.kind === 'omitted') return { ok: true, value: { ...base, parts: [] } }
   if (manifest.kind !== 'native') {
     const text = derivedTextOf(media.contentRefs[1])
     const anchor =
