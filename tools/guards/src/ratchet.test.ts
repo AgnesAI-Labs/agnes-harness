@@ -300,7 +300,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // disposing it, and reports each late module once. Measured 3673, exact (+27).
   // The client selection refuses a welcome without one and a renderer entry its module does not load.
   // Measured 3677, exact (+4).
-  'packages/web-client/src': 3677,
+  // An unknown domain view phase finds no tone through one lookup. Measured 3672, exact (-5).
+  'packages/web-client/src': 3672,
   'packages/web-slots/src': 605,
   // Failed shell calls read as their exit code (+19 lines); measured 4891, exact cap.
   // B-line diagnostics dialog: React view adds 147 lines; measured 4706, exact cap.
@@ -1082,9 +1083,10 @@ const INITIAL_CEILING: Record<string, number> = {
   // Sixth main synchronization merged with the integration tip. Measured 35005, exact, no spare.
   // Exact credential consumption and persisted completion-plan checks. Measured 35067, no spare.
   // Pure model input digest and plain text wire request builder (+87); exact cap, no spare.
-  // Model service preparation: prepared request assembly and managed credential resolution. Measured 35729 (+575), exact, no spare.
-  // Model service infer: one stable child action, result and usage attribution from the child. Measured 35976 (+247), exact, no spare.
-  'packages/core/src': 35976,
+  // Domain command event identity lookup and shared event fingerprint (+19); measured 35173, exact.
+  // Model service preparation: prepared request assembly and managed credential resolution (+575); measured 35748, exact, no spare.
+  // Model service infer: one stable child action, result and usage attribution from the child (+247). Measured 35995, exact, no spare.
+  'packages/core/src': 35995,
   // Testkit-only reference Effects runner adds 202 measured lines; exact cap, no spare.
   'packages/core/testkit': 1997,
   // 2026-09-15: DeepSeek V4 Pro/Flash ship a known-thinking-corrections table (new file) so the
@@ -2058,7 +2060,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // Sixth main synchronization brings main's queued-input CI fixes. Measured 27749, exact, no spare.
   // Exact merged main and runtime integration source count; no spare allocation.
   // Default agh.events provider over the domain store, with its event lookups; measured 28215 (+386), exact.
-  'packages/daemon/src': 28215,
+  // Durable event high-water, identity backstop and shared event fingerprint (+30); measured 28245, exact.
+  'packages/daemon/src': 28245,
   'packages/daemon/src/packages/admin-session': 46,
   // 2026-09-14: whole-branch review fix wave (Finding 1) adds the two missing
   // 'pins/inspect'/'pins/release' entries to the ACTIONS BFF route allowlist, which had been left
@@ -2402,7 +2405,9 @@ const INITIAL_CEILING: Record<string, number> = {
   // 5379, exact, no spare (+127).
   // A button needs an action of a known kind whose features the channel negotiated. Measured 5389, exact,
   // no spare (+10).
-  'packages/channels/src': 5389,
+  // A renderer that throws or answers with no outcome is refused like one that refuses. Measured 5399,
+  // exact, no spare (+10).
+  'packages/channels/src': 5399,
   'packages/code/src': 1600,
   'packages/cli/src/args': 300,
   'packages/runtime-python/src': 400,
@@ -2901,7 +2906,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // feat(host): hand the loop the issued model credential handle. Measured 82443, exact, no spare.
   // feat(host): read the original prepared model request into a verified wire source (+130 on top of the above). Measured 83038, exact, no spare.
   // Durable model call store for sent-request facts and their lookup. Measured 83038 (+465), exact, no spare.
-  'packages/host/src': 83038,
+  // fix(host): an artifact version is ready only on a pin it owns. Measured 83039 (+1), exact, no spare.
+  'packages/host/src': 83039,
   'packages/host/src/ext-host/service-invocation': 247,
   // T5.2's permission projector is kept independently bounded so later extension-host work cannot
   // hide in the package-wide increment. Measured source: 86 lines.
