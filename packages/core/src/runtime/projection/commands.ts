@@ -62,11 +62,27 @@ export interface DomainCommandTransaction {
   putCommand(command: StoredDomainCommand): void
   state(): StoredDomainState
   putState(state: StoredDomainState): void
+  /** The highest sequence this authority ever issued, even when its event is gone. */
   lastSequence(): number
+  /** The event holding this identity, whichever path committed it; a store that cannot tell must throw. */
+  eventByIdentity(
+    identity: Pick<Wire.DomainEvent, 'scope' | 'source' | 'typeId' | 'idempotencyKey'>,
+  ): Wire.DomainEventRecord | undefined
   putEvent(record: Wire.DomainEventRecord): void
   putDispatch(dispatch: StoredDispatch): void
   dispatches(commandId: Wire.Id): readonly DispatchProgress[]
 }
+
+/**
+ * The fingerprint of a domain event, from the stored record's own content. The daemon events provider
+ * has an `eventFingerprint` of its own that must stay identical, so either write path replays the other's
+ * event.
+ */
+export const eventFingerprint = (
+  aggregate: Wire.DomainObjectRef,
+  event: Pick<Wire.DomainEvent, 'schema' | 'payload' | 'causation'>,
+): Wire.Digest =>
+  canonicalJsonDigest({ aggregate, schema: event.schema, payload: event.payload, causation: event.causation })
 
 export interface DomainCommandStorage {
   /** Commits every put of one body together. A body that throws leaves nothing behind. */
@@ -155,6 +171,10 @@ function planError(
   for (const event of plan.events)
     if (event.typeId !== event.schema.typeId || !same(event.schema, event.payload.schema))
       return 'planned event type and payload schema disagree'
+  if (
+    new Set(plan.events.map((event) => jcs([event.typeId, event.idempotencyKey]))).size !== plan.events.length
+  )
+    return 'planned events repeat an identity'
   if (new Set(plan.dispatches.map((dispatch) => dispatch.key)).size !== plan.dispatches.length)
     return 'dispatch keys repeat'
   for (const dispatch of plan.dispatches)
@@ -329,7 +349,7 @@ export function createDomainCommands(owner: DomainCommandOwner) {
         if (!built.ok) return fail('invalid_request', 'planned event does not form a valid event')
         events.push({
           event: built.value,
-          fingerprint: canonicalJsonDigest({ intent, aggregate, causation }),
+          fingerprint: eventFingerprint({ ...aggregate, revision }, built.value),
         })
       }
       const dispatches: StoredDispatch[] = []
@@ -370,8 +390,16 @@ export function createDomainCommands(owner: DomainCommandOwner) {
         if (tx.command(key)) return 'raced'
         if (tx.state().revision !== plan.expectedRevision)
           return fail('revision_conflict', 'domain state moved while the plan was prepared')
+        // An event another commit already holds is not written again and takes no sequence.
+        const fresh: typeof events = []
+        for (const planned of events) {
+          const stored = tx.eventByIdentity(planned.event)
+          if (stored === undefined) fresh.push(planned)
+          else if (stored.fingerprint !== planned.fingerprint)
+            return fail('idempotency_conflict', 'a planned event key already names another event')
+        }
         const first = tx.lastSequence() + 1
-        const records = events.map(({ event, fingerprint }, index) =>
+        const records = fresh.map(({ event, fingerprint }, index) =>
           validateRuntime('DomainEventRecord', {
             event,
             authorityId: owner.authorityId,

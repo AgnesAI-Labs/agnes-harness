@@ -145,6 +145,16 @@ describe('generic domain view', () => {
         : ['状态进行中', '状态最终结果', '状态已中断，可能不完整'],
     )
     expect(host.querySelector('.state-light')?.getAttribute('data-tone')).toBe('bad')
+    // A phase this client does not know, forged past validation, reads as unknown, even one that names
+    // an Object prototype key.
+    for (const phase of ['archived', 'constructor']) {
+      await show({ ...view('finalized'), phase } as unknown as DomainView, context)
+      expect(host.querySelector('.state-light')?.textContent).toBe(
+        locale === 'en' ? 'StatusUnknown' : '状态未知',
+      )
+      expect(host.querySelector('.state-light')?.getAttribute('data-tone')).toBe('unknown')
+      expect(host.querySelector('.generic-domain-text')?.textContent).toBe('Draft note')
+    }
   })
 
   it('keeps one request id per click across rerenders and retries, and shows each outcome', async () => {

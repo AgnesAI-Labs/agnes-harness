@@ -200,7 +200,8 @@ export async function referenceModelFixture(baseUrl: string, journal: string) {
     mutateAtSend = false
   let live = true,
     rejectSend = false,
-    sends = 0
+    sends = 0,
+    loads = 0
   const originalContext = context,
     pinned = canonicalJsonDigest(source as never)
   const current = () => live && canonicalJsonDigest(source as never) === pinned
@@ -215,6 +216,7 @@ export async function referenceModelFixture(baseUrl: string, journal: string) {
     },
     installed: (call) => call === originalContext && live,
     async load(reference, _frame, call) {
+      loads++
       const parsed =
         reference.kind === 'inline' &&
         canonicalJsonDigest(reference.schema) === canonicalJsonDigest(preparedLocator.ref)
@@ -350,6 +352,49 @@ export async function referenceModelFixture(baseUrl: string, journal: string) {
   })
   if (action.kind !== 'leaf') throw new Error('Unexpected composite')
   value(await action.ready(context))
+  const reconcileFactory = provider.actions?.reconcile
+  if (!reconcileFactory) throw new Error('Missing reconcile factory')
+  const reconciler = await reconcileFactory.create({
+    instanceId: 'reconcile-leaf',
+    actionId: frame.actionId,
+    runId: frame.runId,
+    bindingId: context.bindingId,
+    scope: {
+      ...scope,
+      kind: 'action',
+      workspaceId: 'workspace',
+      sessionId: 'session',
+      runId: 'run',
+      actionId: 'action',
+    },
+    signal: new AbortController().signal,
+  })
+  if (reconciler.kind !== 'leaf') throw new Error('Unexpected composite')
+  value(await reconciler.ready(context))
+  /** A reconcile frame for the given attempt of the fixture's action (default: the issued attempt). */
+  const reconcileFrame = (attemptId = frame.attemptId): ActionFrame => {
+    const input = ref(RuntimeMethodSchemaRefs['agh.model-adapter'].reconcile.input, {
+      attemptRef: {
+        run: {
+          runId: frame.runId,
+          session: {
+            sessionId: 'session',
+            authority: { authorityId: 'authority', tenantId: 'tenant', authorityEpoch: 1 },
+          },
+        },
+        actionId: frame.actionId,
+        attemptId,
+      },
+      externalReceipt: null,
+    })
+    return {
+      ...frame,
+      method: 'reconcile',
+      input,
+      inputDigest: canonicalJsonDigest(input.kind === 'inline' ? input.value : null),
+      attemptId,
+    }
+  }
   const call: ActionContext = {
     call: context,
     effects: {
@@ -373,6 +418,10 @@ export async function referenceModelFixture(baseUrl: string, journal: string) {
     provider,
     call,
     deployment,
+    /** The reconcile action, created while the grant was live, and a reconcile frame builder. */
+    reconciler,
+    reconcileFrame,
+    loads: () => loads,
     sends: () => sends,
     revoke: () => {
       live = false

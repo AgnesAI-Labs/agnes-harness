@@ -99,6 +99,17 @@ const covers = (outer: Wire.ScopeRef, inner: Wire.ScopeRef) =>
   )
 
 /**
+ * The fingerprint of a domain event, from the stored record's own content. The core domain command path
+ * has an `eventFingerprint` of its own that must stay identical, so either write path replays the other's
+ * event.
+ */
+export const eventFingerprint = (
+  aggregate: Wire.DomainObjectRef,
+  event: Pick<Wire.DomainEvent, 'schema' | 'payload' | 'causation'>,
+): Wire.Digest =>
+  canonicalJsonDigest({ aggregate, schema: event.schema, payload: event.payload, causation: event.causation })
+
+/**
  * The default agh.events provider over the daemon domain store: events share its table, sequence and
  * commit notifications with the command path. A cursor is signed with the process key and names the
  * read it was issued for, the sequence read up to, the snapshot top and the event at that top, so any
@@ -116,10 +127,10 @@ export function createEventsProvider(options: EventsProviderOptions) {
   let pendingReads = 0
   const waitingReads = new Set<() => void>()
 
-  /** The newest sequence; any missing row of the history refuses the call. */
+  /** The newest sequence; any missing row up to the high-water, a deleted tail too, refuses the call. */
   const head = () => {
-    const { count, first, last } = store.eventHistory()
-    if (count !== (last ?? 0) || (count > 0 && first !== 1))
+    const { count, first, last, highwater } = store.eventHistory()
+    if (count !== highwater || (last ?? 0) !== highwater || (count > 0 && first !== 1))
       stop('resync_required', 'event history has a gap')
     return count
   }
@@ -245,28 +256,24 @@ export function createEventsProvider(options: EventsProviderOptions) {
     if (!covers(context.scope, scope))
       stop('permission_denied', 'producer context does not cover the original object scope')
     if (context.signal.aborted) stop('cancelled', 'publication was cancelled')
-    const fingerprint = canonicalJsonDigest({
-      aggregate: request.aggregate,
+    // The stored causation is the original object's, the same one the command path records.
+    const fingerprint = eventFingerprint(request.aggregate, {
       schema: request.domainSchema,
       payload: request.payload,
-      causation: request.causationRef,
+      causation: origin.causation,
     })
     const refOf = (eventId: string): Wire.EventsPublishResult => ({
       eventRef: { kind: 'event', authorityId: authority, eventId },
     })
     // One identity whichever path committed the event: the original object's scope, the producer, the
     // type and the key. The same fingerprint replays it; another one conflicts.
-    const earlier = () => {
-      const found = store
-        .eventsByKey(request.idempotencyKey)
-        .filter(
-          (record) =>
-            record.event.typeId === request.typeId &&
-            jcs(record.event.source) === jcs(producer) &&
-            jcs(record.event.scope) === jcs(scope),
-        )
-      if (found.length > 1) stop('integrity', 'more than one event holds this publication identity')
-      const [record] = found
+    const earlier = (tx: DomainStoreTransaction) => {
+      const record = tx.eventByIdentity({
+        scope,
+        source: producer,
+        typeId: request.typeId,
+        idempotencyKey: request.idempotencyKey,
+      })
       if (record === undefined) return undefined
       if (record.fingerprint !== fingerprint)
         stop('idempotency_conflict', 'idempotency key was used for another publication')
@@ -304,7 +311,7 @@ export function createEventsProvider(options: EventsProviderOptions) {
       return box.committed ?? stop('permission_denied', 'the events gate did not run the publication')
     }
 
-    const replayed = await held(earlier)
+    const replayed = await held((_, tx) => earlier(tx))
     if (replayed) return replayed
     const current = await gate.revision(request.aggregate)
     if (current === null) stop('not_found', 'aggregate is unknown to its authority')
@@ -315,7 +322,7 @@ export function createEventsProvider(options: EventsProviderOptions) {
     if (context.signal.aborted) stop('cancelled', 'publication was cancelled')
     return held((facts, tx) => {
       // A call with the same identity may have committed while this one waited for admission.
-      const raced = earlier()
+      const raced = earlier(tx)
       if (raced) return raced
       if (facts.revision !== request.aggregate.revision)
         stop('revision_conflict', 'aggregate is not at its current revision')
