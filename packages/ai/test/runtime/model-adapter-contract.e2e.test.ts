@@ -3,6 +3,7 @@ import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'no
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import type { CallContext } from '@agnes/extension-api/runtime'
 import { createTestServiceContainer } from '@agnes/extension-api/testkit'
 import type { EffectResult } from '@agnes/protocol/runtime'
 import { expect, it } from 'vitest'
@@ -159,6 +160,33 @@ it('keeps an unsaved or unknown attempt unknown after the grant is revoked', asy
     expect(await fixture.reconciler.reconcile(fixture.frame, [], fixture.call)).toMatchObject({
       kind: 'unknown',
     })
+    expect(fixture.loads()).toBe(0)
+    expect(fixture.sends()).toBe(0)
+  })
+})
+
+it.each([
+  ['an aborted call', (call: CallContext): CallContext => ({ ...call, signal: AbortSignal.abort() })],
+  [
+    'an expired deadline',
+    (call: CallContext): CallContext => ({ ...call, deadline: '2000-01-01T00:00:00.000Z' }),
+  ],
+  [
+    'a scope the factory does not own',
+    (call: CallContext): CallContext => ({ ...call, scope: { ...call.scope, runtimeId: 'other-runtime' } }),
+  ],
+  [
+    'a binding the factory does not own',
+    (call: CallContext): CallContext => ({ ...call, bindingId: 'other-binding' }),
+  ],
+])('still refuses reconcile execute for %s after the grant is revoked', async (_name, change) => {
+  const { fixture, settle } = await revokedFixture(true)
+  await settle(async () => {
+    const effect = await fixture.reconciler.execute(fixture.reconcileFrame(), {
+      ...fixture.call,
+      call: change(fixture.context),
+    })
+    expect(effect).toMatchObject({ outcome: 'failed', error: { code: 'denied' } })
     expect(fixture.loads()).toBe(0)
     expect(fixture.sends()).toBe(0)
   })

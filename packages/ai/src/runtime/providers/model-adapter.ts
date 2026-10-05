@@ -368,7 +368,7 @@ export function createModelAdapterFactory(
                 closed ||
                 draining ||
                 scope.signal.aborted ||
-                (method === 'invoke' && !current(context.call)) ||
+                !(method === 'invoke' ? current(context.call) : staticCurrent(context.call)) ||
                 frame.actionId !== scope.actionId ||
                 frame.runId !== scope.runId ||
                 frame.method !== method
