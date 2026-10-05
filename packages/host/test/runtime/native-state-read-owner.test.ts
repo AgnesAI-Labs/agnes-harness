@@ -225,6 +225,9 @@ describe.skipIf(typeof process.getuid !== 'function')('original State native rea
       expect(new Set([...first.items, ...second.items].map((item) => item.schema.typeId))).toEqual(
         new Set(['agh.runtime/run-record@1', 'agh.runtime/run-binding@1']),
       )
+      const [firstItem] = first.items
+      const [secondItem] = second.items
+      if (!firstItem || !secondItem) throw Error('paged records missing')
       expect(fixture.db.prepare('SELECT total_changes() n').get()?.n).toBe(before)
       const advanced = await fixture.state.open({
         requestId: 'native-read-next-commit',
@@ -236,10 +239,7 @@ describe.skipIf(typeof process.getuid !== 'function')('original State native rea
       })
       expect(advanced.snapshot.throughSeq).toBeGreaterThan(snapshot.throughSeq)
       const historical = await reader.scanVerifiedPage(snapshot, { ...request, limit: 500 }, context)
-      expect(historical.items.map((item) => item.recordId)).toEqual([
-        first.items[0].recordId,
-        second.items[0].recordId,
-      ])
+      expect(historical.items.map((item) => item.recordId)).toEqual([firstItem.recordId, secondItem.recordId])
       await expect(reader.scanVerifiedPage({ ...snapshot }, request, context)).rejects.toThrow()
       await expect(
         reader.scanVerifiedPage(snapshot, { ...request, snapshot: { ...snapshot } }, context),
@@ -269,15 +269,15 @@ describe.skipIf(typeof process.getuid !== 'function')('original State native rea
       }
       const original = fixture.db
         .prepare('SELECT value_json FROM runtime_version_bodies WHERE record_id=?')
-        .get(first.items[0].recordId)?.value_json
+        .get(firstItem.recordId)?.value_json
       if (typeof original !== 'string') throw Error('original history missing')
       fixture.db
         .prepare("UPDATE runtime_version_bodies SET value_json='{}' WHERE record_id=?")
-        .run(first.items[0].recordId)
+        .run(firstItem.recordId)
       await expect(reader.scanVerifiedPage(snapshot, request, context)).rejects.toThrow()
       fixture.db
         .prepare('UPDATE runtime_version_bodies SET value_json=? WHERE record_id=?')
-        .run(original, first.items[0].recordId)
+        .run(original, firstItem.recordId)
       expect((await reader.scanVerifiedPage(snapshot, request, context)).items).toHaveLength(1)
       input.fixture.now = '2026-10-03T00:02:00Z'
       await expect(reader.scanVerifiedPage(snapshot, request, context)).rejects.toThrow()
@@ -565,7 +565,7 @@ describe.skipIf(typeof process.getuid !== 'function')('native read integrity', (
       const body = fixture.db
         .prepare('SELECT * FROM runtime_version_bodies WHERE record_id=? AND record_revision=?')
         .get(target.recordId, target.recordRevision)
-      if (!body) throw Error('original body missing')
+      if (typeof body?.value_json !== 'string') throw Error('original body missing')
       fixture.db
         .prepare('DELETE FROM runtime_version_bodies WHERE record_id=? AND record_revision=?')
         .run(target.recordId, target.recordRevision)
@@ -577,6 +577,7 @@ describe.skipIf(typeof process.getuid !== 'function')('native read integrity', (
       const boundary = fixture.db
         .prepare('SELECT integrity_digest FROM events WHERE session_key=? AND seq=?')
         .get(snapshot.sessionId, snapshot.throughSeq)?.integrity_digest
+      if (typeof boundary !== 'string') throw Error('original ledger boundary missing')
       fixture.db
         .prepare('UPDATE events SET integrity_digest=? WHERE session_key=? AND seq=?')
         .run('0'.repeat(64), snapshot.sessionId, snapshot.throughSeq)
