@@ -2921,7 +2921,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // Verified historical admitted Action/Attempt reads (+229), exact cap.
   // Model source reader reads the in-process registry; the retained capture store is removed (-71). Measured 83961, exact, no spare.
   // Model parent and child bridge readiness probe. Measured 83981 (+20), exact, no spare.
-  'packages/host/src': 83981,
+  // Session model selection: resolution against the current catalog, switch checks and the loop input overlay. Measured 84197 (+216), exact, no spare.
+  'packages/host/src': 84197,
   'packages/host/src/ext-host/service-invocation': 247,
   // T5.2's permission projector is kept independently bounded so later extension-host work cannot
   // hide in the package-wide increment. Measured source: 86 lines.
