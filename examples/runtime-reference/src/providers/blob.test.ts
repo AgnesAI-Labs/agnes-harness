@@ -7,7 +7,11 @@ import type { CallContext, Outcome } from '@agnes/extension-api/runtime'
 import { createConformanceHarness, SCENARIOS } from '@agnes/extension-api/testkit'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import type { TransferContractPort } from '../../../../packages/extension-api/testkit/runtime/contracts/authority-transfer.js'
-import type { BlobContractPort } from '../../../../packages/extension-api/testkit/runtime/contracts/blob.js'
+import {
+  type BlobContractPort,
+  crossPrincipalFacts,
+  crossPrincipalRefused,
+} from '../../../../packages/extension-api/testkit/runtime/contracts/blob.js'
 import { createReferenceRegistry } from '../index.js'
 import { BLOB_PROVIDER, type BlobStore, type BlobStoreOptions, openBlobStore, PIECE_BYTES } from './blob.js'
 import { bindBlobContract, damage } from './blob-contract.js'
@@ -16,9 +20,11 @@ import type { TransferMaintenance } from './blob-transfer.js'
 const sha = (bytes: Uint8Array) => createHash('sha256').update(bytes).digest('hex')
 const bytesOf = (size: number) => new Uint8Array(size).map((_, index) => (index * 13) % 256)
 
+const USER = 'user-1'
+
 function ctx(authorizationRef = 'reader', signal = new AbortController().signal): CallContext {
   return {
-    principalRef: 'user-1',
+    principalRef: USER,
     scope: { kind: 'runtime', installationId: 'install-1', runtimeId: 'runtime-1' },
     bindingId: 'binding-1',
     invocationId: 'invocation-1',
@@ -124,7 +130,7 @@ describe('reference blob store', () => {
 
   it('promotes a sealed upload, pins it once per owner and reports the pin', async () => {
     const bytes = bytesOf(PIECE_BYTES + 3)
-    const upload = store.upload(bytes, 'text/plain')
+    const upload = store.upload(bytes, 'text/plain', USER)
     const wrong = { upload, expectedDigest: sha(bytesOf(1)) }
     expect(refused(await store.promote(wrong, ctx()))).toBe('integrity')
     const stagedBlob = must(await store.promote({ upload, expectedDigest: upload.digest }, ctx()))
@@ -141,10 +147,43 @@ describe('reference blob store', () => {
     expect(tail.bytes).toEqual(bytes.subarray(PIECE_BYTES))
   })
 
+  it('leaves objects and pins to the principal that wrote them; a row that records none is held by no caller', async () => {
+    const actions = {
+      upload: async (bytes: Uint8Array, context: CallContext) =>
+        store.upload(bytes, undefined, context.principalRef),
+      promote: store.promote,
+      pin: store.pin,
+      unpin: store.unpin,
+      inspect: store.inspect,
+    }
+    expect(crossPrincipalRefused(await crossPrincipalFacts(actions))).toBe(true)
+    const promote = (upload: ReturnType<BlobStore['upload']>) =>
+      store.promote({ upload, expectedDigest: upload.digest }, ctx())
+    const unpin = (pinId: string) => store.unpin({ pinId, expectedRevision: 1 }, ctx())
+    expect(refused(await promote(store.upload(bytesOf(7))))).toBe('permission_denied')
+    expect(refused(await unpin(store.seed(bytesOf(8)).pinId))).toBe('permission_denied')
+
+    const upload = store.upload(bytesOf(5), undefined, USER)
+    const stagedBlob = must(await promote(upload))
+    const ownerRef = { kind: 'artifact', value: { artifactId: 'artifact-1', version: 1 } } as const
+    const taken = must(await store.pin({ stagedBlob, ownerRef, retentionUntil: null }, ctx()))
+    // The store as it was before objects and pins recorded their principal.
+    store.close()
+    const db = new DatabaseSync(path)
+    try {
+      for (const table of ['objects', 'pins']) db.exec(`ALTER TABLE ${table} DROP COLUMN principal`)
+    } finally {
+      db.close()
+    }
+    store = openBlobStore(path, { authorizeRead: (context) => context.authorizationRef === 'reader' })
+    expect(refused(await unpin(taken.pinId))).toBe('permission_denied')
+    expect(refused(await promote(upload))).toBe('permission_denied')
+  })
+
   it('releases a pin once and logs it; gc collects only what no pin or sealed upload holds', async () => {
     const kept = store.seed(bytesOf(3))
-    const dropped = store.seed(bytesOf(PIECE_BYTES + 1))
-    const upload = store.upload(bytesOf(4))
+    const dropped = store.seed(bytesOf(PIECE_BYTES + 1), undefined, USER)
+    const upload = store.upload(bytesOf(4), undefined, USER)
     const stagedBlob = must(await store.promote({ upload, expectedDigest: upload.digest }, ctx()))
     const ownerRef = { kind: 'artifact', value: { artifactId: 'artifact-1', version: 1 } } as const
     const held = must(await store.pin({ stagedBlob, ownerRef, retentionUntil: null }, ctx()))
@@ -282,7 +321,7 @@ describe('reference blob authority transfer', { timeout: 30_000 }, () => {
   it('refuses every business write as blocked while fenced, keeps reads, and a candidate serves nothing', async () => {
     const source = at('source')
     const ref = source.seed(bytesOf(5))
-    const upload = source.upload(bytesOf(6))
+    const upload = source.upload(bytesOf(6), undefined, USER)
     const stagedBlob = must(await source.promote({ upload, expectedDigest: upload.digest }, ctx()))
     await exported(source)
     const ownerRef = { kind: 'artifact', value: { artifactId: 'artifact-1', version: 1 } } as const
@@ -353,7 +392,7 @@ describe('reference blob authority transfer', { timeout: 30_000 }, () => {
 
   it('exports the same manifest for the same records and never imports past the deletion watermark', async () => {
     let source = at('source')
-    const dropped = source.seed(bytesOf(3))
+    const dropped = source.seed(bytesOf(3), undefined, USER)
     source.seed(bytesOf(PIECE_BYTES + 1))
     must(await source.unpin({ pinId: dropped.pinId, expectedRevision: 1 }, ctx()))
     must(await source.gc({ scopeRef: ctx().scope, dryRun: false, cursor: null, limit: 10 }, ctx()))

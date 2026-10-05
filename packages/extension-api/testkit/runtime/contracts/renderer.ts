@@ -125,6 +125,8 @@ const LOCALE = 'en'
 const ACT = 'conformance.act'
 const REQUIRED = 'conformance.required-feature'
 const UNKNOWN = 'conformance.unknown-feature'
+// A desktop capability no case negotiates.
+const DESKTOP = 'desktop.open-path.v1'
 const INPUT = { typeId: 'conformance.act/input@1', revision: 1, digest: DIGEST }
 // sha256 of the canonical JSON `{}`.
 const EMPTY_DIGEST = '44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a'
@@ -514,6 +516,37 @@ function generic(shown: Shown, view: DomainView): boolean {
   return value.formatted.viewId === view.viewId && value.formatted.revision === view.revision
 }
 
+/** The text a presentation shows: the Web container's text, or every formatted part, labels included. */
+const said = ({ outcome, text }: Shown) =>
+  outcome.ok && outcome.value.target !== 'web'
+    ? outcome.value.formatted.parts.map((part) => (part.kind === 'text' ? part.text : part.label)).join('\n')
+    : (text ?? '')
+
+/** Whether `shown` offers `actionKey`: an action part, or an enabled Web button labelled `label`. */
+const offers = ({ outcome, root }: Shown, actionKey: string, label: string) =>
+  outcome.ok && outcome.value.target !== 'web'
+    ? outcome.value.formatted.parts.some((part) => part.kind === 'action' && part.actionKey === actionKey)
+    : [...(root?.container.querySelectorAll('button') ?? [])].some(
+        (button) => button.textContent === label && !button.disabled,
+      )
+
+/** Presents `view` through a run over `chosen` and judges what it showed; a refused selection fails. */
+async function judged(
+  binding: Subject,
+  chosen: Catalog,
+  view: DomainView,
+  judge: (shown: Shown) => boolean,
+): Promise<boolean> {
+  const run = await start(binding, chosen)
+  if (!run.ok) return false
+  try {
+    run.value.window.set(view.viewId, view)
+    return judge(show(binding, run.value, view))
+  } finally {
+    await close(run.value)
+  }
+}
+
 async function presented(binding: Subject, chosen: Catalog): Promise<string> {
   const run = await start(binding, chosen)
   if (!run.ok) return `refused ${run.error.code}`
@@ -736,9 +769,10 @@ const CASES: Record<ScenarioName, (binding: RendererConformanceBinding) => Promi
     }),
 
   // A view the renderer's descriptor does not fit, or a renderer requiring a feature the client did not
-  // negotiate, presents through the generic view, never the renderer. A view the window does not hold at
-  // that revision is refused for a reread. A renderer without its export, or with a descriptor of another
-  // package, fails the selection. Context calls outside the view are refused.
+  // negotiate, presents through the generic view, never the renderer; a desktop capability it lacks is
+  // named there. A view the window does not hold at that revision is refused for a reread. A renderer
+  // without its export, or with a descriptor of another package, fails the selection. Context calls
+  // outside the view are refused.
   deny: (binding) =>
     perTarget(binding, async (target, run, view) => {
       const checks: Checks = target === 'web' ? await outside(binding, run, view) : {}
@@ -783,6 +817,28 @@ const CASES: Record<ScenarioName, (binding: RendererConformanceBinding) => Promi
       checks[`${target}: the same feature negotiated: presented by the renderer`] =
         (await presented(binding, catalog(binding, target, { ...required, features: [REQUIRED] }))) ===
         'provider'
+      // A desktop capability the client lacks: the generic view presents instead and names it, and an
+      // action needing one is shown there with that reason, never offered.
+      checks[`${target}: a required desktop capability the client lacks: the generic view names it`] =
+        await judged(
+          binding,
+          catalog(binding, target, { required: DESKTOP }),
+          view,
+          (shown) => generic(shown, view) && said(shown).includes(DESKTOP),
+        )
+      const reveal = { ...action('conformance.reveal', [DESKTOP]), label: 'Reveal' }
+      const revealing = { ...view, actions: [...view.actions, reveal] }
+      checks[
+        `${target}: an action needing a desktop capability the client lacks: shown with it, not offered`
+      ] = await judged(
+        binding,
+        catalog(binding, target, { row: null }),
+        revealing,
+        (shown) =>
+          generic(shown, revealing) &&
+          said(shown).includes(DESKTOP) &&
+          !offers(shown, reveal.actionKey, reveal.label),
+      )
       for (const [what, options] of [
         [`a renderer without its ${PART[target]} export`, { drop: PART[target] }],
         ['a descriptor of another package', { foreign: true }],

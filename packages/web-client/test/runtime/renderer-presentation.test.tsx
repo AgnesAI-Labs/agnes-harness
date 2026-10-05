@@ -215,7 +215,9 @@ describe('renderer presentation', () => {
   const beta = [command('rename', ['acme.beta'])]
   const text = textRenderer().definition
   const { component } = card().definition as { component: unknown }
-  it.each<[string, ClientTarget, RendererDefinition, DomainView]>([
+  const desktop = ['desktop.open-path.v1', 'desktop.reveal-path.v1']
+  // The last column names the desktop capabilities a renderer that otherwise fits is refused for.
+  it.each<[string, ClientTarget, RendererDefinition, DomainView, string[]?]>([
     ['another render key', 'web', card({ renderKey: 'acme.notes/list' }).definition, view(1)],
     [
       'another schema type',
@@ -239,6 +241,25 @@ describe('renderer presentation', () => {
       card({ requiredFeatures: ['acme.sync'] }).definition,
       view(1),
     ],
+    [
+      'required desktop capabilities the client did not negotiate',
+      'web',
+      card({ requiredFeatures: desktop }).definition,
+      view(1),
+      desktop,
+    ],
+    [
+      'a required desktop capability and feature the client did not negotiate',
+      'web',
+      card({ requiredFeatures: ['desktop.open-path.v1', 'acme.sync'] }).definition,
+      view(1),
+    ],
+    [
+      'an unsupported feature of a renderer requiring a desktop capability',
+      'web',
+      card({ requiredFeatures: ['desktop.open-path.v1'], optionalFeatures: [] }).definition,
+      view(1, beta),
+    ],
     ['a Web target without a component', 'web', text, view(1)],
     ['a text target without format', 'tui', card().definition, view(1)],
     [
@@ -248,10 +269,14 @@ describe('renderer presentation', () => {
       view(1),
     ],
     ['a definition without a descriptor', 'web', { component } as unknown as RendererDefinition, view(1)],
-  ])('refuses %s', (_, target, definition, shown) => {
+  ])('refuses %s', (_, target, definition, shown, lacking) => {
     const { presenter } = setup(target, shown)
     const result = presenter.lease({ definition, ownerToken: 'owner-1' }).present(shown)
-    expect(outcome(result)).toBe('incompatible/renderer_mismatch')
+    expect(outcome(result)).toBe(
+      lacking ? 'incompatible/desktop_capability_unavailable' : 'incompatible/renderer_mismatch',
+    )
+    expect(!result.ok && result.error.retryAdvice).toEqual({ kind: 'never' })
+    expect(!result.ok && result.error.safeDetail).toEqual(lacking)
   })
 
   it('mounts the renderer with a context for this owner, the view and an optional feature', async () => {

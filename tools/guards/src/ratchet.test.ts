@@ -301,14 +301,18 @@ const INITIAL_CEILING: Record<string, number> = {
   // The client selection refuses a welcome without one and a renderer entry its module does not load.
   // Measured 3677, exact (+4).
   // An unknown domain view phase finds no tone through one lookup. Measured 3672, exact (-5).
-  'packages/web-client/src': 3672,
+  // Missing desktop capabilities are named: the generic card's reason, a renderer refused for them with a
+  // viewer hint, and a module requiring an unnegotiated feature fails its candidate. Measured 3733,
+  // exact (+61).
+  'packages/web-client/src': 3733,
   'packages/web-slots/src': 605,
   // Failed shell calls read as their exit code (+19 lines); measured 4891, exact cap.
   // B-line diagnostics dialog: React view adds 147 lines; measured 4706, exact cap.
   // Domain cards in the conversation window projection and message list: measured 4792, exact cap (+86).
   // Popover placement measures the trigger's own window. Measured 6714, exact, no spare (+2).
   // Sixth main synchronization brings main's queued-input CI fixes. Measured 6736, exact, no spare.
-  'packages/web-ui/src': 6736,
+  // Sandboxed HTML viewer frame and its request checks. Measured 6871, exact, no spare (+135).
+  'packages/web-ui/src': 6871,
   // W8a-3: retire the native tool renderer in favor of one compatibility root; measured 4630.
   // The offline diagnostics viewer refuses an unknown bundle version (+7 lines); measured 4645, exact cap.
   // Sidebar binds against its own document and window. Measured 5559, exact, no spare (+1).
@@ -1086,11 +1090,17 @@ const INITIAL_CEILING: Record<string, number> = {
   // Domain command event identity lookup and shared event fingerprint (+19); measured 35173, exact.
   // Model service preparation: prepared request assembly and managed credential resolution (+575); measured 35748, exact, no spare.
   // Model service infer: one stable child action, result and usage attribution from the child (+247). Measured 35995, exact, no spare.
-  // Model prepared handle and bounded in-process registry replace the persisted prepared body (+161). Measured 36156, exact, no spare.
-  // The Loop reads the prepared handle instead of the prepared body and re-reads the offered tools from its fixed source (-2). Measured 36154, exact, no spare.
-  'packages/core/src': 36154,
+  // Model prepared handle and bounded in-process registry (+161).
+  // Installed Effects dispatch coordinator (+812); combined exact cap.
+  // Pure supervisor kernel (+205) and repeatable model readiness (+1).
+  // Installed pure Hook actions and current authority/lifecycle (+254); exact combined cap.
+  // Shared media preflight bridge and image-model selection (+153); exact cap, no spare.
+  // Runtime media identity, planner, verification and byte resolution (+542); exact cap, no spare.
+  // The Loop reads the prepared handle instead of the prepared body and re-reads the offered tools from its fixed source (-2).
+  'packages/core/src': 38121,
   // Testkit-only reference Effects runner adds 202 measured lines; exact cap, no spare.
-  'packages/core/testkit': 1997,
+  // Independent Effects dispatch reference (+440); exact measurement below.
+  'packages/core/testkit': 2437,
   // 2026-09-15: DeepSeek V4 Pro/Flash ship a known-thinking-corrections table (new file) so the
   // product corrects pi-ai's verified-wrong reasoning_effort data out of the box, instead of
   // requiring every deployment to hand-edit thinkingEfforts once they notice. Measured 3347.
@@ -1107,7 +1117,9 @@ const INITIAL_CEILING: Record<string, number> = {
   // Agnes default output allowance is explicitly serialized to HTTP. Measured +6, exact allocation.
   // Injected model egress fetch in PiAdapter (the catalogue probe skipped behind it) and a required per-call
   // egress port in the runtime model adapter. Measured 5908 (+26), exact cap, no spare.
-  'packages/ai/src': 5908,
+  // Model adapter answers a lost prepared call from the store instead of loading it (+8). Measured 5916, exact, no spare.
+  // Model source check consumes verified media evidence (+57). Measured 5973, exact, no spare.
+  'packages/ai/src': 5973,
   // 2026-09-09: raised from 500, which was exactly the measured count and so forbade every
   // further line. Two repairs were blocked by it and are landing with this raise: the provider
   // factory taking log + pricing (without which every delivered assembly denominates ledger
@@ -1608,7 +1620,11 @@ const INITIAL_CEILING: Record<string, number> = {
   // Tools contracts +247, Context +339, Loop +170; exact, no spare.
   // Transport recovery checks read only the report of the request in question (+2), exact.
   // Events fixed page set, full-page checkpoint and cross-session checkpoint cases (+11), exact.
-  'packages/extension-api/testkit': 17083,
+  // Effects dispatch lifecycle contracts (+113); exact cap, no spare.
+  // Model service public contract (six scenarios) and its restricted child peer. Measured 17753 (+557), exact, no spare.
+  // Renderer and shell cases for a desktop capability the client lacks. Measured 17808, exact (+55).
+  // Blob deny case: another principal's promote, pin and unpin are refused. Measured 17863 (+55), exact.
+  'packages/extension-api/testkit': 17863,
   // 2026-09-10: raised from 2500 by Task 15 (stream-disconnect reconnection). The new
   // reattach.ts (the Reconnector: backoff loop, OVERLOADED's retryAfterMs override) plus
   // Session.recover()/waitForQuiescence and Client's reconnect wiring (emit(), the
@@ -1688,7 +1704,9 @@ const INITIAL_CEILING: Record<string, number> = {
   // Runtime commands journal per identity partition, stay accepted until final, are capped and archivable.
   // Measured 6349, exact (+49).
   // The runtime client exposes the client selection its welcome carried. Measured 6352, exact (+3).
-  'packages/sdk/src': 6352,
+  // The text format names a missing desktop capability and keeps such a view complete. Measured 6359,
+  // exact (+7).
+  'packages/sdk/src': 6359,
   'packages/sdk/src/extensions.node': 21,
   'packages/sdk/src/package-admin.node': 147,
   'packages/sdk/src/surface.browser': 3,
@@ -2063,7 +2081,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // Exact merged main and runtime integration source count; no spare allocation.
   // Default agh.events provider over the domain store, with its event lookups; measured 28215 (+386), exact.
   // Durable event high-water, identity backstop and shared event fingerprint (+30); measured 28245, exact.
-  'packages/daemon/src': 28245,
+  // Original supervisor session-owner facts and rechecks (+36), exact cap.
+  'packages/daemon/src': 28281,
   'packages/daemon/src/packages/admin-session': 46,
   // 2026-09-14: whole-branch review fix wave (Finding 1) adds the two missing
   // 'pins/inspect'/'pins/release' entries to the ACTIONS BFF route allowlist, which had been left
@@ -2910,7 +2929,13 @@ const INITIAL_CEILING: Record<string, number> = {
   // Durable model call store for sent-request facts and their lookup. Measured 83038 (+465), exact, no spare.
   // fix(host): an artifact version is ready only on a pin it owns. Measured 83039 (+1), exact, no spare.
   // Host-side State read groundwork: historical meta for native facts, windowed point reads and byte-packed pages, Stored envelope encoding, port types. Measured 83319 (+280 on top of the above), exact, no spare.
-  'packages/host/src': 83336,
+  // Original identity clock and State dispatch source (+467 on 83336); exact cap, no spare.
+  // Verified historical admitted Action/Attempt reads (+229), exact cap.
+  // Model source reader reads the in-process registry; the retained capture store is removed (-71). Measured 83961, exact, no spare.
+  // Model parent and child bridge readiness probe. Measured 83981 (+20), exact, no spare.
+  // Session model selection: resolution against the current catalog, switch checks and the loop input overlay. Measured 84197 (+216), exact, no spare.
+  // Blob promote, pin and unpin check the caller's principal; pins record it. Measured 84227 (+30), exact.
+  'packages/host/src': 84227,
   'packages/host/src/ext-host/service-invocation': 247,
   // T5.2's permission projector is kept independently bounded so later extension-host work cannot
   // hide in the package-wide increment. Measured source: 86 lines.

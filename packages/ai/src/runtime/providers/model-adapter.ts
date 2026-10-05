@@ -27,6 +27,7 @@ import {
   validateRuntime,
 } from '@agnes/protocol/runtime'
 import { PiAdapter } from '../../adapters/pi/index.js'
+import { mediaConsumed } from '../model-adapter/media.js'
 import type { ModelAdapterDeployment, ModelWireSource } from '../model-adapter/ports.js'
 import { type ModelUsageEvidence, modelUsageEvidence } from '../model-adapter/usage-evidence.js'
 
@@ -94,7 +95,7 @@ function validSource(source: ModelWireSource, frame: ActionFrame, factory: Facto
     ['openai-completions', 'anthropic-messages'].includes(source.route.api) &&
     source.request.sampling?.maxTokens === p.generation.maxOutputTokens &&
     (source.request.sampling?.thinking ?? null) === p.generation.thinking &&
-    p.mediaPlans.length === 0 &&
+    mediaConsumed(source) &&
     p.outputSchema === null
   )
 }
@@ -418,7 +419,17 @@ export function createModelAdapterFactory(
               } catch {
                 return failure('denied', 'model_source_unavailable')
               }
-              if (!loaded.ok) return failure(loaded.error.code, loaded.error.detailCode)
+              if (!loaded.ok) {
+                if (loaded.error.detailCode !== 'model_prepared_lost')
+                  return failure(loaded.error.code, loaded.error.detailCode)
+                // The prepared call is gone from this process: never prepare or send again. The store says
+                // whether a send was fenced for this attempt and what it saved.
+                const found = await original.lookup(frame, [], context, null).catch(() => null)
+                if (found?.kind === 'resolved') return found.result
+                return found?.kind === 'not_found'
+                  ? failure('incompatible', 'model_prepared_lost')
+                  : failure('unknown_effect', 'model_prepared_unknown')
+              }
               const source = loaded.value
               if (
                 !validSource(source, frame, factory) ||

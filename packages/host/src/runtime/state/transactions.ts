@@ -118,6 +118,12 @@ import {
   type WriteCommitInput,
 } from './control.js'
 import { createEffectsActionCaptureOwner, type EffectsActionCapture } from './effects-action-capture.js'
+import {
+  captureEffectsDispatchNativeFence,
+  type EffectsDispatchSource,
+  readCurrentEffectsDispatchSource,
+  readEffectsDispatchSource,
+} from './effects-dispatch-source.js'
 import { type EffectsReceiptSource, readEffectsReceiptSource } from './effects-receipt-source.js'
 import {
   createInteractionReads,
@@ -206,6 +212,23 @@ import {
 import { integrity, refuse, StateRefusal } from './refusal.js'
 import { createSessionControlOwner, type SessionControlOwner } from './session-control.js'
 import type { SessionControlSource } from './session-control-source.js'
+
+type EffectsCaptureOwner = ReturnType<typeof createEffectsActionCaptureOwner>
+const effectsActionOwners = new WeakMap<
+  RuntimeStateDatabase,
+  { owner: EffectsCaptureOwner; database: DatabaseSync }
+>()
+const effectsDispatchSources = new WeakMap<
+  EffectsDispatchSource,
+  {
+    state: RuntimeStateDatabase
+    database: DatabaseSync
+    owner: EffectsCaptureOwner
+    action: EffectsActionCapture
+    authorityDigest: string
+    bytes: string
+  }
+>()
 
 const SNAPSHOT_TTL_MS = 60_000
 const PROOF_PAGE = 500
@@ -1377,6 +1400,7 @@ export class RuntimeStateDatabase {
     if (this.effectsActionCapture)
       refuse('denied', 'effects_action', 'Effects Action capture is already installed')
     this.effectsActionCapture = createEffectsActionCaptureOwner(this.db, this.controlPorts())
+    effectsActionOwners.set(this, { owner: this.effectsActionCapture, database: this.db })
   }
 
   readSessionControl(sessionId: string, context: CallContext) {
@@ -1882,6 +1906,131 @@ export class RuntimeStateDatabase {
     const source = this.effectsActionCapture
     if (this.closed || !source) return false
     return this.tx('verifyEffectsActionCapture', 'fixed-capture', () => source.verify(capture))
+  }
+
+  /** A source cannot trust the hot session cache after same-connection proof changes. */
+  private async verifyEffectsSourceLedger(sessionId: string): Promise<void> {
+    const meta = this.sessionMeta(sessionId)
+    if (!meta) refuse('invalid_input', 'session_absent', 'session does not exist')
+    await this.verifySessionFully(meta)
+  }
+
+  /** Host-private original State source. It grants no policy, budget, or EffectPorts authority. */
+  async captureEffectsDispatchSource(sessionId: string, actionId: string): Promise<EffectsDispatchSource> {
+    const installed = effectsActionOwners.get(this)
+    if (this.closed || !installed)
+      refuse('denied', 'effects_dispatch_source', 'Effects dispatch source is unavailable')
+    let captured: EffectsDispatchSource | undefined
+    let capturedAction: EffectsActionCapture | undefined
+    let originalNativeFence: (() => void) | undefined
+    return this.tx(
+      'captureEffectsDispatchSource',
+      actionId,
+      async () => {
+        const action = await installed.owner.capture(sessionId, actionId)
+        const facts = await readEffectsDispatchSource(this.controlPorts(), sessionId, actionId, (id) =>
+          this.loadLease(id),
+        )
+        await this.verifyEffectsSourceLedger(sessionId)
+        const source = structuredClone(facts)
+        const freeze = (value: unknown): void => {
+          if (!value || typeof value !== 'object' || Object.isFrozen(value)) return
+          for (const child of Object.values(value)) freeze(child)
+          Object.freeze(value)
+        }
+        freeze(source)
+        effectsDispatchSources.set(source, {
+          state: this,
+          database: installed.database,
+          owner: installed.owner,
+          action,
+          authorityDigest: digestOf(this.authority),
+          bytes: canonicalJson(source),
+        })
+        captured = source
+        capturedAction = action
+        originalNativeFence = captureEffectsDispatchNativeFence(this.db, source)
+        return source
+      },
+      () => {
+        if (
+          this.closed ||
+          !captured ||
+          !capturedAction ||
+          !originalNativeFence ||
+          effectsActionOwners.get(this) !== installed ||
+          !installed.owner.verifyCurrent(capturedAction) ||
+          canonicalJson(captured) !==
+            canonicalJson(
+              readCurrentEffectsDispatchSource(this.controlPorts(), sessionId, actionId, (id) =>
+                this.loadLease(id),
+              ),
+            )
+        )
+          integrity('Effects dispatch source changed before transaction completion')
+        const at = this.now()
+        if (this.closed || at >= captured.writer.leaseUntil)
+          refuse('conflict', 'writer_lease', 'Effects source writer lease expired before completion')
+        originalNativeFence()
+      },
+    )
+  }
+
+  async verifyEffectsDispatchSource(source: EffectsDispatchSource): Promise<boolean> {
+    const branded = effectsDispatchSources.get(source)
+    const installed = effectsActionOwners.get(this)
+    if (
+      this.closed ||
+      !installed ||
+      !branded ||
+      branded.state !== this ||
+      branded.database !== this.db ||
+      branded.database !== installed.database ||
+      branded.owner !== installed.owner ||
+      branded.authorityDigest !== digestOf(this.authority) ||
+      branded.authorityDigest !== runtimeDatabaseConfigurations.get(this)?.authorityDigest
+    )
+      return false
+    let verified = false
+    let originalNativeFence: (() => void) | undefined
+    return this.tx(
+      'verifyEffectsDispatchSource',
+      source.actionId,
+      async () => {
+        if (!(await installed.owner.verify(branded.action))) return false
+        const current = await readEffectsDispatchSource(
+          this.controlPorts(),
+          source.sessionId,
+          source.actionId,
+          (id) => this.loadLease(id),
+        )
+        await this.verifyEffectsSourceLedger(source.sessionId)
+        verified = branded.bytes === canonicalJson(current) && branded.bytes === canonicalJson(source)
+        if (verified) originalNativeFence = captureEffectsDispatchNativeFence(this.db, source)
+        return verified
+      },
+      () => {
+        if (!verified) return
+        if (
+          this.closed ||
+          !originalNativeFence ||
+          effectsActionOwners.get(this) !== installed ||
+          !installed.owner.verifyCurrent(branded.action) ||
+          branded.bytes !== canonicalJson(source) ||
+          branded.bytes !==
+            canonicalJson(
+              readCurrentEffectsDispatchSource(this.controlPorts(), source.sessionId, source.actionId, (id) =>
+                this.loadLease(id),
+              ),
+            )
+        )
+          integrity('Effects dispatch source changed before transaction completion')
+        const at = this.now()
+        if (this.closed || at >= source.writer.leaseUntil)
+          refuse('conflict', 'writer_lease', 'Effects source writer lease expired before completion')
+        originalNativeFence()
+      },
+    )
   }
 
   /** Original accepted no-hook receipt fact; does not establish an Effects stage. */

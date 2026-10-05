@@ -32,6 +32,13 @@ export interface ReferenceModelSource {
   readonly prepared: PreparedModelRequest
   readonly endpoint: string
   readonly body: JsonValue
+  /** Verified media evidence for the locked plans: counts and identities only, never bytes. */
+  readonly media?: readonly {
+    readonly planKey: string
+    readonly planDigest: string
+    readonly usageIds: readonly string[]
+    readonly imageCount: number
+  }[]
 }
 /** Original capabilities installed by the source owner; no browser authentication projection. */
 export interface ReferenceModelDeployment {
@@ -61,6 +68,31 @@ export interface ReferenceModelDeployment {
 const providerId = 'agh.reference/model-adapter',
   methods = RuntimeMethodSchemaRefs['agh.model-adapter']
 const same = (a: unknown, b: unknown) => canonicalJsonDigest(a as never) === canonicalJsonDigest(b as never)
+
+/** The plans the request is locked to are exactly the media it carries, with no usage counted twice. */
+function mediaCovered(source: ReferenceModelSource): boolean {
+  const plans = source.prepared.mediaPlans
+  const media = source.media ?? []
+  const body = source.body as { messages?: { content?: unknown }[] } | null
+  let images = 0
+  for (const message of body?.messages ?? [])
+    if (Array.isArray(message.content))
+      images += message.content.filter(
+        (part) => (part as { type?: unknown } | null)?.type === 'image_url',
+      ).length
+  if (plans.length !== media.length) return false
+  const usage = media.flatMap((entry) => entry.usageIds)
+  return (
+    new Set(usage).size === usage.length &&
+    plans.every(
+      (plan, index) =>
+        media[index]?.planKey === plan.key &&
+        media[index]?.planDigest === canonicalJsonDigest(plan as never) &&
+        same(plan.targetFeatures, source.prepared.target.features),
+    ) &&
+    media.reduce((sum, entry) => sum + entry.imageCount, 0) === images
+  )
+}
 const error = (code: RuntimeError['code']): RuntimeError => ({
   code,
   detailCode: 'reference_model',
@@ -395,7 +427,7 @@ export function createReferenceModelAdapterFactory(
                 source.prepared.target.adapter.providerId !== providerId ||
                 source.prepared.target.adapter.bindingId !== factory.bindingId ||
                 source.prepared.outputSchema !== null ||
-                source.prepared.mediaPlans.length ||
+                !mediaCovered(source) ||
                 source.prepared.toolCatalog !== null ||
                 !frame.requestIdentity ||
                 request.externalIdempotencyKey !== frame.requestIdentity.idempotencyKey ||

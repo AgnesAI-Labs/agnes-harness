@@ -9,8 +9,6 @@ export type SelectedModelCatalog = Readonly<{
   digest: string
   routes(): readonly string[]
   select(route: string, model: string): Readonly<{ route: ManualRoute; model: ModelRecord }> | undefined
-  /** The frozen captured routes, for persistence. */
-  snapshot(): readonly ManualRoute[]
 }>
 
 function deepFreeze<T>(value: T): T {
@@ -30,7 +28,6 @@ function build(captured: readonly ManualRoute[]): SelectedModelCatalog {
       const record = picked?.models.find((candidate) => candidate.id === model)
       return picked && record ? { route: picked, model: record } : undefined
     },
-    snapshot: () => captured,
   })
 }
 
@@ -54,9 +51,4 @@ export function captureModelCatalog(
       } as ManualRoute),
     ),
   )
-}
-
-/** Rebuilds a catalog from persisted routes; its digest is recomputed from the content, never trusted. */
-export function restoreModelCatalog(routes: readonly ManualRoute[]): SelectedModelCatalog {
-  return build(structuredClone(routes).map((route) => deepFreeze(route)))
 }
