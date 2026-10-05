@@ -76,6 +76,7 @@ import { initStaticSeams } from './assemble/seams.js'
 import type { HostBuiltinRowClaim, HostPluginTreeBase } from './assemble/seams-cordis.js'
 import { SKILL_ROW_ID, skillRowRevision, withSkillRow } from './assemble/skill-row.js'
 import { trustedHookCommands } from './assemble/trusted-hooks.js'
+import { assembleRuntimeUsageLedger } from './assemble/usage-ledger.js'
 import type { AssembleDeps } from './assembly-deps.js'
 import fixedComputerUseDriverLock from './computer-use/computer-use-driver-lock.json' with { type: 'json' }
 import {
@@ -256,7 +257,9 @@ export type OrdinaryReconciliationLifecycle = Readonly<{
 /** Where this host lives on disk. Every one is required: none of them has a safe default. */
 export type { AssembleDeps, HostPaths } from './assembly-deps.js'
 export type Assembled = {
-  readonly runtimeServices: import('./runtime/host-services.js').HostRuntimeServices
+  readonly runtimeServices: import('./runtime/host-services.js').HostRuntimeServices & {
+    readonly usageLedger: ReturnType<typeof assembleRuntimeUsageLedger>
+  }
   activationBarrier: ReturnType<typeof createExtensionActivationBarrier>
   approvalGrants: ApprovalGrantManagement
   callService: ReturnType<typeof serviceInvoker>['call']
@@ -2355,7 +2358,13 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
     })
     await serviceRoot.publish(selectedServices)
     servicesPublished = true
+    const usageLedger = assembleRuntimeUsageLedger(
+      join(dataDir, 'runtime-services', 'usage-delivery.sqlite'),
+      deps.runtimeUsageLedgerOwners,
+    )
+    rollback.push('runtime-usage-ledger', () => usageLedger.close())
     const runtimeServices = Object.freeze({
+      usageLedger,
       dependencies: serviceRoot.dependencies,
       contextFor: selectedServices.contextFor,
       runAdmission: (request: import('./runtime/entry-admission.js').HostRuntimeRunRequest) =>

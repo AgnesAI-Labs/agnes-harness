@@ -86,6 +86,7 @@ export type { DynamicExtension } from './assemble/ext-rows.js'
 export * from './assemble/packages.js'
 export * from './assemble/routes.js'
 export type { HostPluginTreeBase } from './assemble/seams-cordis.js'
+export { assembleRuntimeUsageLedger, type UsageLedgerOwners } from './assemble/usage-ledger.js'
 export { ASSEMBLY_STEPS, type AssembleDeps, type Assembled, type AssemblyStep, assemble } from './assemble.js'
 export * from './audit.js'
 export {
