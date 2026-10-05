@@ -1,6 +1,7 @@
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { DatabaseSync } from 'node:sqlite'
 import type * as Wire from '@agnes/protocol/runtime'
 import { canonicalJsonDigest } from '@agnes/protocol/runtime'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
@@ -222,6 +223,73 @@ describe('domain store transactions', () => {
     ).rejects.toThrow('revision moved')
     expect((await store.transaction((tx) => tx.state())).revision).toBe(1)
     store.close()
+  })
+
+  it('notifies each subscriber once after a commit that wrote, past listeners that fail', async () => {
+    const store = open()
+    const seen: number[] = []
+    store.subscribeCommitted(() => {
+      throw new Error('listener threw')
+    })
+    store.subscribeCommitted(() => Promise.reject(new Error('listener rejected')))
+    store.subscribeCommitted(() => seen.push(store.events(0, 10).length))
+    const committed = commit(store, 1)
+    // Called after commit and before the transaction resolves, so the listener already reads the event.
+    expect(seen).toEqual([1])
+    await committed
+    await store.transaction((tx) => tx.state())
+    await expect(
+      commit(store, 2, () => {
+        throw new Error('rolled back')
+      }),
+    ).rejects.toThrow('rolled back')
+    expect(seen).toEqual([1])
+    const kept = await store.transaction((tx) => {
+      tx.putState({ value: inline(stateSchema, { n: 2 }), revision: 2 })
+      return 'kept'
+    })
+    expect(kept).toBe('kept')
+    expect(seen).toEqual([1, 1])
+    store.close()
+  })
+
+  it('stops notifying after unsubscribe or close, and a cold reopen reads accepted commands only', async () => {
+    const store = open()
+    let calls = 0
+    const stop = store.subscribeCommitted(() => calls++)
+    store.subscribeCommitted(() => calls++)
+    await commit(store, 1)
+    stop()
+    stop()
+    await commit(store, 2)
+    expect(calls).toBe(3)
+    store.close()
+
+    // Only accepted commands are journaled, so a not-accepted row here can only be corruption.
+    const key = canonicalJsonDigest('request-x')
+    const handle = {
+      requestId: 'request-x',
+      status: 'not-accepted',
+      commandId: null,
+      revision: null,
+      completion: null,
+      result: null,
+      error: null,
+    }
+    const body = { key, fingerprint: key, name: 'launch', handle, value: null, dispatchKeys: [] }
+    const raw = new DatabaseSync(join(dir, 'domain.db'))
+    raw
+      .prepare('INSERT INTO domain_commands (key, command_id, body_json) VALUES (?, ?, ?)')
+      .run(key, 'cmd-x', JSON.stringify(body))
+    raw.close()
+
+    const reopened = open()
+    await commit(reopened, 3)
+    expect(calls).toBe(3)
+    const accepted = await reopened.transaction((tx) => tx.command(canonicalJsonDigest('request-1')))
+    expect(accepted?.handle).toMatchObject({ commandId: 'cmd-1', status: 'running' })
+    await expect(reopened.transaction((tx) => tx.command(key))).rejects.toThrow('never accepted')
+    reopened.close()
   })
 })
 

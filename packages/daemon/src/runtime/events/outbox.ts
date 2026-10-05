@@ -12,12 +12,14 @@ import {
 // depend on either, so they meet structurally at assembly.
 type Outcome<T> = { ok: true; value: T } | { ok: false; error: Wire.RuntimeError }
 type Delivery = Readonly<{ deliveryId: Wire.Id; runtimeRef: Wire.PublicRef }>
+type AcceptedHandle = Exclude<Wire.CommandHandle, { status: 'not-accepted' }>
 
+/** One accepted command; a not-accepted result stays with the daemon and is never journaled. */
 export type StoredDomainCommand = Readonly<{
   key: Wire.Digest
   fingerprint: Wire.Digest
   name: string
-  handle: Wire.CommandHandle
+  handle: AcceptedHandle
   value: Wire.DataRef | null
   dispatchKeys: readonly string[]
 }>
@@ -228,23 +230,31 @@ export function openDomainStore(options: DomainStoreOptions) {
     }
   }
 
+  // Commits made through this instance only; another connection to the same file does not notify.
+  const listeners = new Set<() => unknown>()
+  let wrote = false
   const tx: DomainStoreTransaction = {
     command(key) {
       const row = get<{ body_json: string }>('SELECT body_json FROM domain_commands WHERE key = ?', key)
       if (!row) return undefined
       const command = JSON.parse(row.body_json) as StoredDomainCommand
-      if (!validateRuntime('CommandHandle', command.handle).ok)
-        throw new Error('stored command handle failed its schema')
+      const handle = validateRuntime('CommandHandle', command.handle)
+      if (!handle.ok) throw new Error('stored command handle failed its schema')
+      // Such a row can only be corruption, so it proves nothing about this key.
+      if (handle.value.status === 'not-accepted') throw new Error('stored command was never accepted')
       return command
     },
     putCommand(command) {
-      if (command.handle.status === 'not-accepted') throw new Error('only accepted commands are journaled')
+      // The type already excludes it; an untyped caller is refused here.
+      if ((command.handle as Wire.CommandHandle).status === 'not-accepted')
+        throw new Error('only accepted commands are journaled')
       run(
         'INSERT INTO domain_commands (key, command_id, body_json) VALUES (?, ?, ?)',
         command.key,
         command.handle.commandId,
         jcs(command),
       )
+      wrote = true
     },
     state() {
       const row = get<{ revision: number; value_json: string }>(
@@ -266,6 +276,7 @@ export function openDomainStore(options: DomainStoreOptions) {
         state.revision,
       )
       if (changed.changes !== 1) throw new Error('domain state revision moved')
+      wrote = true
     },
     lastSequence() {
       return (
@@ -286,6 +297,7 @@ export function openDomainStore(options: DomainStoreOptions) {
         parsed.value.event.eventId,
         jcs(parsed.value),
       )
+      wrote = true
     },
     putDispatch(row) {
       const at = now()
@@ -308,6 +320,7 @@ export function openDomainStore(options: DomainStoreOptions) {
         at,
         at,
       )
+      wrote = true
     },
     dispatches(commandId) {
       return all<OutboxRow>('SELECT * FROM domain_outbox WHERE command_id = ?', commandId).map((row) => ({
@@ -412,7 +425,18 @@ export function openDomainStore(options: DomainStoreOptions) {
 
   return {
     async transaction<T>(body: (transaction: DomainStoreTransaction) => T): Promise<T> {
-      return atomic(() => body(tx))
+      wrote = false
+      const value = atomic(() => body(tx))
+      // After a commit that wrote and before this resolves; a listener's failure never reaches the commit.
+      if (wrote) for (const listener of [...listeners]) void (async () => listener())().catch(() => {})
+      return value
+    },
+
+    /** Calls the listener after each commit that wrote through this store; returns its unsubscribe. */
+    subscribeCommitted(listener: () => unknown): () => void {
+      const own = () => listener()
+      listeners.add(own)
+      return () => listeners.delete(own)
     },
 
     /** Event records of this authority after a sequence, oldest first. */
@@ -585,6 +609,7 @@ export function openDomainStore(options: DomainStoreOptions) {
     },
 
     close() {
+      listeners.clear()
       db.close()
     },
   }

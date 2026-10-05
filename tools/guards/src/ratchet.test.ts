@@ -2017,7 +2017,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // Native conversation source for the default projection read over shared opening/history windows; measured 27424 (+68), exact.
   // Runtime HTTP credentials are generation-bound and Host read ports are wired. Measured 27535, exact, no spare.
   // Host projection lifecycle and read-port composition. Measured 27549, exact.
-  'packages/daemon/src': 27549,
+  // Domain store journals accepted commands only and notifies after write commits. Measured 27567, exact, no spare (+18).
+  'packages/daemon/src': 27567,
   'packages/daemon/src/packages/admin-session': 46,
   // 2026-09-14: whole-branch review fix wave (Finding 1) adds the two missing
   // 'pins/inspect'/'pins/release' entries to the ACTIONS BFF route allowlist, which had been left
