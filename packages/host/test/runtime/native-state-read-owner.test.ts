@@ -9,10 +9,10 @@ import { describe, expect, it } from 'vitest'
 import { admissionFixtureInput } from '../../../extension-api/testkit/runtime/contracts/assembly-admission.js'
 import { createLocalDeploymentIdentity } from '../../src/runtime/identity/local-deployment-identity.js'
 import { captureLocalDeploymentOwner } from '../../src/runtime/identity/local-deployment-owner.js'
-import { digestOf } from '../../src/runtime/state/records.js'
 import { inlineData } from '../../src/runtime/maintenance/authority-publication.js'
 import { createBootstrapAnchor } from '../../src/runtime/maintenance/bootstrap-locator.js'
 import { createNativeStateReadOwner } from '../../src/runtime/state/native-read-owner.js'
+import { digestOf } from '../../src/runtime/state/records.js'
 import { openJointAdmission } from './fixtures/assembly-admission-joint.js'
 import { fixtureRef } from './fixtures/assembly-maintenance-wire.js'
 
@@ -571,9 +571,7 @@ describe.skipIf(typeof process.getuid !== 'function')('native read integrity', (
         .run(target.recordId, target.recordRevision)
       await expect(reader.scanVerifiedPage(snapshot, request, context)).rejects.toThrow()
       fixture.db
-        .prepare(
-          'INSERT INTO runtime_version_bodies (record_id,record_revision,value_json) VALUES (?,?,?)',
-        )
+        .prepare('INSERT INTO runtime_version_bodies (record_id,record_revision,value_json) VALUES (?,?,?)')
         .run(target.recordId, target.recordRevision, body.value_json)
       expect(await reader.scanVerifiedPage(snapshot, request, context)).toEqual(baseline)
       const boundary = fixture.db
