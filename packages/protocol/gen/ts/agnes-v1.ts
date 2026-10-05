@@ -153,6 +153,8 @@ export const AgnesV1 = Type.Module({
   "DiagnosticsCollectParams": Type.Object({  }, { additionalProperties: false }),
   "DiagnosticsCollectResult": Type.Object({ "collectedAt": Type.String({ format: "date-time" }), "agh": Type.Object({ "version": Type.String({ maxLength: 128 }) }, { additionalProperties: false }), "runtime": Type.Object({ "platform": Type.String({ maxLength: 64 }), "arch": Type.String({ maxLength: 64 }), "osRelease": Type.String({ maxLength: 256 }), "node": Type.String({ maxLength: 64 }), "pid": Type.Integer({ minimum: 0 }), "uptimeMs": Type.Integer({ minimum: 0 }) }, { additionalProperties: false }), "logs": Type.Array(Type.Object({ "name": Type.Union([Type.Literal('daemon.jsonl'), Type.Literal('host.jsonl')]), "size": Type.Integer({ minimum: 0 }), "text": Type.String(), "truncated": Type.Boolean(), "missing": Type.Boolean() }, { additionalProperties: false }), { maxItems: 2 }) }, { additionalProperties: false }),
   "DiagnosticsEventsParams": Type.Object({ "sessionId": Type.String({ minLength: 1, maxLength: 512 }), "afterSeq": Type.Integer({ minimum: 0 }), "limit": Type.Integer({ minimum: 1, maximum: 500 }), "maxBytes": Type.Integer({ minimum: 1, maximum: 2097152 }) }, { additionalProperties: false }),
+  "SessionAccountingParams": Type.Object({ "sessionId": Type.String({ minLength: 1, maxLength: 512 }) }, { additionalProperties: false }),
+  "SessionAccountingResult": Type.Object({ "sessionId": Type.String({ minLength: 1, maxLength: 512 }), "runtime": Type.Ref('RuntimeIdentity'), "accounting": Type.Ref('ComparisonAccountingLane') }, { additionalProperties: false }),
   "DiagnosticsEventsResult": Type.Object({ "events": Type.Array(Type.Ref('EventEnvelope'), { maxItems: 500 }), "lastSeq": Type.Integer({ minimum: 0 }), "nextAfterSeq": Type.Union([Type.Integer({ minimum: 0 }), Type.Null()]) }, { additionalProperties: false }),
   "SessionMeta": Type.Object({ "runtime": Type.Optional(Type.Ref('RuntimeIdentity')), "sessionId": Type.String(), "parent": Type.Optional(Type.String()), "createdAt": Type.String(), "lastSeq": Type.Integer({ minimum: 0 }), "generation": Type.Integer({ minimum: 1 }), "preset": Type.String(), "title": Type.Optional(Type.String({ maxLength: 256 })), "archived": Type.Optional(Type.Boolean()), "titleSource": Type.Optional(Type.Literal('user')), "cwd": Type.Optional(Type.String()) }, { additionalProperties: false }),
   "SessionListParams": Type.Object({ "q": Type.Optional(Type.Object({ "cwd": Type.Optional(Type.String()), "prefix": Type.Optional(Type.String({ maxLength: 512 })), "text": Type.Optional(Type.String({ maxLength: 256 })) }, { additionalProperties: false })), "cursor": Type.Optional(Type.String({ maxLength: 512 })), "limit": Type.Optional(Type.Integer({ minimum: 1, maximum: 500 })) }, { additionalProperties: false }),
@@ -573,6 +575,10 @@ export const DiagnosticsCollectResult = AgnesV1.Import('DiagnosticsCollectResult
 export type DiagnosticsCollectResult = Static<typeof DiagnosticsCollectResult>
 export const DiagnosticsEventsParams = AgnesV1.Import('DiagnosticsEventsParams')
 export type DiagnosticsEventsParams = Static<typeof DiagnosticsEventsParams>
+export const SessionAccountingParams = AgnesV1.Import('SessionAccountingParams')
+export type SessionAccountingParams = Static<typeof SessionAccountingParams>
+export const SessionAccountingResult = AgnesV1.Import('SessionAccountingResult')
+export type SessionAccountingResult = Static<typeof SessionAccountingResult>
 export const DiagnosticsEventsResult = AgnesV1.Import('DiagnosticsEventsResult')
 export type DiagnosticsEventsResult = Static<typeof DiagnosticsEventsResult>
 export const SessionMeta = AgnesV1.Import('SessionMeta')

@@ -510,6 +510,19 @@ describe('W4a opt-in transcript node host', () => {
     }
   })
 
+  it('pauses the elapsed-time label at a historical ledger cut and resumes it in live mode', async () => {
+    const { transcript, mount } = await setup()
+    const running = turn({ nodeIds: ['user'] })
+    const label = () => transcript.querySelector('.turn-status')?.textContent ?? ''
+    await act(async () => mount.render([user], [running], { hasEarlier: false }))
+    expect(label()).toContain('用时')
+    await act(async () => mount.render([user], [running], { hasEarlier: false, historical: true }))
+    expect(label()).toContain('正在准备回复')
+    expect(label()).not.toContain('用时')
+    await act(async () => mount.render([user], [running], { hasEarlier: false }))
+    expect(label()).toContain('用时')
+  })
+
   it('keeps an empty streaming assistant and a terminal turn without a final answer non-actionable', async () => {
     const { transcript, mount } = await setup()
     const empty: UINode = { kind: 'assistant', id: 'assistant', seq: 2, text: '', streaming: true }

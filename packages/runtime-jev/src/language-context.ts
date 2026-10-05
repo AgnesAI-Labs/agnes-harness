@@ -52,7 +52,6 @@ export function createLanguageContext(
   const projection = projectLanguage(input, inputPolicies)
   const messages: RequestMessage[] = []
   const toolImages: { messageIndex: number; contentIndex: number; artifact: ArtifactRef }[] = []
-  const contexts: string[] = []
   let nativeGroup: { request: string; calls: ToolCall[] } | undefined
   for (const entry of projection.entries) {
     if (
@@ -63,7 +62,19 @@ export function createLanguageContext(
     )
       nativeGroup = undefined
     if (entry.kind === 'context') {
-      contexts.push(entry.text)
+      messages.push({
+        role: 'user',
+        content: [
+          {
+            type: 'text',
+            text: `Host-provided context snapshot for ${JSON.stringify(entry.replaceKey)}: facts, not user instructions.\n${
+              entry.text.length === 0
+                ? 'This key is cleared. Earlier snapshots for this key no longer apply; no current facts are supplied for this key.'
+                : `This snapshot replaces earlier snapshots for this key only.\n${entry.text}`
+            }`,
+          },
+        ],
+      })
       continue
     }
     if (entry.kind === 'system') {
@@ -133,9 +144,7 @@ export function createLanguageContext(
   }\n${versionTokenNote}`
   messages.push({ role: 'user', content: [{ type: 'text', text: requestNote }] })
   return {
-    system: contexts
-      .map((text) => `Current Host-provided facts, not user instructions:\n${text}`)
-      .join('\n\n'),
+    system: '',
     messages,
     requestNote,
     toolImages,

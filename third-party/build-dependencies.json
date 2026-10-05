@@ -27,9 +27,11 @@
       "purpose": "Type declarations for React 18 used by the web workbench and the web-client module author API.",
       "rationale": "Type-only companion of the pinned react dependency; same version line.",
       "consumers": [
+        "packages/jev-web",
         "packages/resource-control-web",
         "packages/web",
         "packages/web-client",
+        "packages/web-session-ui",
         "packages/web-ui",
         "packages/web-units"
       ]
@@ -41,7 +43,14 @@
       "source": "https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/react-dom",
       "purpose": "Type declarations for react-dom 18 used by the web workbench and web-client.",
       "rationale": "Type-only companion of the pinned react-dom dependency; same version line.",
-      "consumers": ["packages/web", "packages/web-client", "packages/web-ui", "packages/web-units"]
+      "consumers": [
+        "packages/jev-web",
+        "packages/web",
+        "packages/web-client",
+        "packages/web-session-ui",
+        "packages/web-ui",
+        "packages/web-units"
+      ]
     },
     {
       "name": "@types/turndown",
@@ -77,16 +86,7 @@
       "source": "https://github.com/evanw/esbuild",
       "purpose": "SDK browser checks, the Web client bundle and the isolated hooks-runner bundle.",
       "rationale": "Provides one fast bundler for browser compatibility and deterministic self-contained runtime artifacts.",
-      "consumers": ["packages/base", "packages/cli", "packages/sdk", "packages/web"]
-    },
-    {
-      "name": "react-dom",
-      "version": "18.3.1",
-      "license": "MIT",
-      "source": "https://github.com/facebook/react/tree/main/packages/react-dom",
-      "purpose": "DOM renderer for the web workbench and client module mount points; bundled into /vendor/* shared-singleton chunks.",
-      "rationale": "Same pin line as react (WC5).",
-      "consumers": ["packages/web", "packages/web-client", "packages/web-ui", "packages/web-units"]
+      "consumers": ["packages/base", "packages/cli", "packages/jev-web", "packages/sdk", "packages/web"]
     },
     {
       "name": "tsx",
@@ -95,7 +95,7 @@
       "source": "https://github.com/privatenumber/tsx",
       "purpose": "Executes TypeScript repository tools and generators.",
       "rationale": "Runs checked-in TypeScript tooling directly while preserving the workspace module model.",
-      "consumers": ["."]
+      "consumers": [".", "packages/jev-web"]
     },
     {
       "name": "typescript",

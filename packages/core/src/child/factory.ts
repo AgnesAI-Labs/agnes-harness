@@ -2,6 +2,7 @@ import type { Provider } from '@agnes/protocol'
 import type { ChildHandle, ChildrenFactory, ChildStatus } from '../effects/tool-context.js'
 import type { Kernel } from '../kernel.js'
 import { canonicalJson, sha256Hex } from '../request/hash.js'
+import { runWithInheritedConfigurationApproval } from '../step/configuration-admission.js'
 import { resolveModel as resolvePrimaryModel } from '../step/inference.js'
 import type { SessionImpl } from '../step/session.js'
 import { assertSessionIdleGateMutable } from '../step/session-idle-gate.js'
@@ -1296,7 +1297,7 @@ export class KernelChildren implements ChildrenFactory {
             }
           }
         }
-        const result = run()
+        const result = runWithInheritedConfigurationApproval(parent, child, run)
         activeRun = result
         this.runningChildren.set(record.childKey, result)
         const settled = () => {

@@ -1,3 +1,8 @@
+// JEV-CLIENT-PLUGIN: move feature UI/CSS/subscriptions to descriptor-loaded jev-web; shared session
+// renderers have their own package budget. Exact public workbench/lifecycle and default-distribution
+// counts; tighten transferred Web budgets, preserve all checks and unrelated work.
+// JEV-ACCOUNTING-REPLAY: single-session accounting, exact-cut all-turn replay and history-safe
+// conversation rendering are measured at the final source tree; these eight ceilings have no headroom.
 // COMPARISON-NAVIGATION: reviewed private workspace provenance and pre-query session discovery filtering;
 // local and supervisor authority/wire shapes unchanged. Exact daemon +66 / Host +8; no exclusions or headroom.
 // JEV-VERSION-SEMANTICS: +2 counted lines for new-request-only freshness guidance; old prefixes stay intact.
@@ -213,7 +218,8 @@ const INITIAL_CEILING: Record<string, number> = {
   'packages/jev-trace/src': 734,
   'packages/jev-runtime/src': 4845,
   'packages/runtime-comparison/src': 1574,
-  'packages/runtime-jev/src': 1176,
+  // Ordered Host context snapshots and explicit per-key clearing; exact measured source count.
+  'packages/runtime-jev/src': 1183,
   'packages/runtime-api/src': 203,
   // 2026-09-22 M11 browser effect-command closure: exact measured deltas for the explicit
   // authorization facade, private BFF/RPC, durable journal reuse, and cross-platform test repair.
@@ -257,10 +263,12 @@ const INITIAL_CEILING: Record<string, number> = {
   // 2026-09-22 Web Plugins parity: row-scoped client services and stable web-unit contracts. Exact.
   // CU-ARTIFACT-RETENTION-GC-INDEX C8: measured 1714, exact, no spare (+9). ClientResourceReclaimedError
   // thrown on a 410 artifact_reclaimed read.
-  'packages/web-client/src': 1714,
+  'packages/web-session-ui/src': 2508,
+  'packages/jev-web/src': 6106,
+  'packages/web-client/src': 2073,
   'packages/web-slots/src': 605,
   // Failed shell calls read as their exit code (+19 lines); measured 4891, exact cap.
-  'packages/web-ui/src': 4997,
+  'packages/web-ui/src': 5024,
   // W8a-3: retire the native tool renderer in favor of one compatibility root; measured 4630.
   'packages/web-units/src': 5117,
   'packages/base/extensions/tools-core': 1010,
@@ -359,14 +367,14 @@ const INITIAL_CEILING: Record<string, number> = {
   // PLUGIN-HELPER: measured 5763 -> 5770; approved feature scope, no spare allocation.
   // Windows stale-lock reclamation added 17 counted lines; exact baseline total, no spare.
   // Windows Unicode package copying replaces three crashing cpSync paths; exact measured total.
-  'packages/package-manager/src': 5796,
+  'packages/package-manager/src': 5810,
   'packages/package-manager/src/catalog': 211,
   // Web open-source UI: safe Markdown DOM, compact presentation helpers, task-first creation,
   // and explicit controls. v2 adds accessible compact composer state; exact measured allocation; evidence is tracked with the UI execution.
   // 2026-09-20: map the already-sanitized turn AUTH category to a reconnect instruction. Exact.
   // Output-limit and rate-limit failures render actionable guidance. Measured +4, exact allocation.
   'packages/web/src/presentation': 121,
-  'packages/web/src/markdown': 48,
+  'packages/web/src/markdown': 1,
   // Phase03 Web workbench: separate settings controller, stable keyed timeline, run receipts,
   // and client integration. Each component is bounded independently; no execution state
   // machine is added to Web. SDK adds reconnect-start and pre-load permission registration.
@@ -427,11 +435,11 @@ const INITIAL_CEILING: Record<string, number> = {
   // UI integration merge: the default React transcript now receives the inline card claim callback,
   // which lands on top of the diagnostics wiring above. Re-measured with countLines(): 1827, exact.
   // 2026-10-03: connect complete Jev ledger evidence to the shared direct-call reading.
-  'packages/web/src/app': 2173,
+  'packages/web/src/app': 2234,
   // 2026-09-22 UI plugin management: inject the embedded pane's client runtime reconciler.
   // 2026-09-25 UI refactor: permission options now render through the React region contract.
   // Re-measured with countLines(): 215, exact, no spare.
-  'packages/web/src/permission-picker': 223,
+  'packages/web/src/permission-picker': 1,
   // 2026-09-17 WEB-RUN-TRACE: new panel renderer. Measured 130; exact cap, no spare.
   // 2026-09-17 DSH parity: gantt + event list + inspector. Measured 411.
   // 2026-09-17 DSH layout: idle-compressed gantt. Measured 445.
@@ -457,7 +465,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // much was lost. Measured 678, exact, no spare (+4).
   // Merge of CHUNK-LEDGER-SLIM (lost-text marker, +4) with the streaming-smoothness quick fixes (727):
   // sampled fingerprints also carry lostChars. Re-measured on the merged tree: 731, exact, no spare.
-  'packages/web/src/timeline': 789,
+  'packages/web/src/timeline': 1,
   // 2026-09-17：navigation.ts 的 folderIcon 换成客户端 AgnesProjectFolderIcon 两态字形
   // （两条 path + folderSvg 构造器），展开/收起由 CSS 的 [aria-expanded] 切换。实测 108。
   // SESSION-ACTIONS integrated with b/main: exact increment +43.
@@ -475,12 +483,12 @@ const INITIAL_CEILING: Record<string, number> = {
   'packages/web/src/shell': 106,
   // 2026-09-17 rebase 后的重新实测：turns.ts 把过程摘要搬进过程行、用量面板只留关键项、
   // 运行中页脚整行隐藏（原 432 是旧实现的实测值），收紧到实测精确值 399。
-  'packages/web/src/turns': 407,
+  'packages/web/src/turns': 1,
   // 2026-09-24 WEB-INCREMENTAL-PROJECTION-TRACE-INDEX C6 (Web incremental wiring) and its review fixes,
   // rebased onto main after C0-C2: merged tree re-measured with countLines(): 99, exact.
-  'packages/web/src/view': 100,
+  'packages/web/src/view': 1,
   // Approval ownership handoff and Host expiry share existing services; no protocol fork.
-  'packages/web/src/session-binding': 31,
+  'packages/web/src/session-binding': 1,
   // 2026-09-24 SHARED-SESSION-IDLE-CLOSE C2-C5 and review fixes (user-approved raise for the perf
   // batch), rebased onto main with the other perf lanes: merged tree re-measured with
   // countLines(): 105, exact, no spare.
@@ -620,7 +628,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // SEA reuses that exact directory. Measured build-local total: 203; exact cap.
   // W5a merges pinned XMarkdown CSS and ships its MIT license with the local Web assets.
   // Measured with countLines(): 287, exact cap.
-  'packages/cli/tools/build-local': 292,
+  'packages/cli/tools/build-local': 302,
   // The PM5 bootstrap fallback retains the existing scoped owner/data-dir contract when a selected
   // Profile has not yet been materialized. The final recovery retry admits only an explicit
   // E_LOCK_MISMATCH path and re-resolves with an empty package lock; this is exact compatibility
@@ -982,7 +990,9 @@ const INITIAL_CEILING: Record<string, number> = {
   // A mutating tool cut short by its deadline or a cancel names that cause in its unknown-outcome result
   // text instead of reading as a lost transport. Measured 25741 (+18), exact cap.
   // DSH-ALIGNMENT: durable child continuation, interrupt delivery and retirement admission; exact measured allocation.
-  'packages/core/src': 29460,
+  // Child-run approval scopes bind the original live admission owner and revoke to manual;
+  // collect follows lease renewal. Measured +53 code lines; exact allocation, no spare.
+  'packages/core/src': 29513,
   // 2026-09-15: DeepSeek V4 Pro/Flash ship a known-thinking-corrections table (new file) so the
   // product corrects pi-ai's verified-wrong reasoning_effort data out of the box, instead of
   // requiring every deployment to hand-edit thinkingEfforts once they notice. Measured 3347.
@@ -1289,7 +1299,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // TRACE-INSPECTION-20260925: readToolDetail method types; measured 2201, exact.
   // Response metadata on cost/ledger: ResponseMeta root type export. Re-measured on the rebased
   // tree: 2201, exact.
-  'packages/protocol/src': 2623,
+  'packages/protocol/src': 2627,
   'packages/cli/src/tui': 4000,
   // 2026-09-16: first registration of packages/cli-tui — it matched none of the (then) 113 ratchet
   // keys, so the cli-progress-surface plan's Tasks 1-4 (Loader hide/restart/stop, formatTurnSummary,
@@ -1835,7 +1845,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // libuv aborts on a directory watched by its 8.3 short name; measured 26451, exact, no spare (+11).
   // TRACE-INSPECTION-20260925: owner-gated detail dispatch; measured 26495, exact.
   // Windows discovery retry adds six counted lines; measured 26501, exact.
-  'packages/daemon/src': 30123,
+  'packages/daemon/src': 30176,
   'packages/daemon/src/packages/admin-session': 46,
   // 2026-09-14: whole-branch review fix wave (Finding 1) adds the two missing
   // 'pins/inspect'/'pins/release' entries to the ACTIONS BFF route allowlist, which had been left
@@ -2083,7 +2093,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // Output-limit and rate-limit presentation adds four counted lines, exact allocation.
   // Jev repair: pure-projection SVG circuit and bounded historical ledger reader (+496), exact.
   // Jev visual polish: candidate group disclosure, measured ports and bounded evidence pulses (+66).
-  'packages/web/src': 19743,
+  'packages/web/src': 11895,
   // 2026-09-17 web-client-modules frontend track (rebased onto L0/permission-picker main): re-measured exact value below.
   // 2026-09-14: Task 7 orphaned-pin-cleanup adds the orphan-pins section to PluginAdminPage — the
   // #orphanPins/#orphanPinsList/#orphanPinsStatus/#orphanPinsReleaseAll element bindings, the

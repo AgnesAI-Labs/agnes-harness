@@ -19,6 +19,7 @@ import {
   ThemeService,
 } from './services.js'
 import type { SlotName } from './slots.js'
+import { type WorkbenchClient, WorkbenchService } from './workbench.js'
 
 export interface ClientModule {
   inject?: readonly string[]
@@ -37,6 +38,7 @@ export interface ClientContext extends Context {
   session: import('./services.js').SessionService
   theme: import('./services.js').ThemeService
   locale: import('./services.js').LocaleService
+  workbench?: WorkbenchClient
   resources: ClientResourceService
 }
 
@@ -133,6 +135,12 @@ export function clientModule(mod: ClientModule): {
           return commands.executeOwned(config.rowId ?? config.packageId, id, input)
         },
       }
+      const workbench = getService?.('workbench', false)
+      if (workbench instanceof WorkbenchService)
+        Object.defineProperty(ctx, 'workbench', {
+          value: workbench.bind(ctx, config.rowId ?? config.packageId),
+          configurable: true,
+        })
       const stop = registry.bindSession(session)
       ctx.effect(() => stop)
       registry.setLocaleSource(locale)

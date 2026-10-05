@@ -155,14 +155,41 @@ describe('objective skill and child candidates', () => {
       ),
     ).toEqual([])
   })
-  it('collects real child handles without blocking and stops after a terminal collection', () => {
+  it('waits for real child handles and stops after a terminal collection', () => {
     const records = receipt('subagent_spawn', { childKey: 'child' })
-    expect(candidates('subagent_collect', records)[0]?.arguments).toEqual({ childKey: 'child', wait: false })
+    expect(candidates('subagent_collect', records)[0]).toMatchObject({
+      arguments: { childKey: 'child', wait: true },
+      sourceRecordIds: ['call-result'],
+      evidence: [{ pointer: '/outcome/value/childKey', value: 'child' }],
+    })
     const running = [
       ...records,
-      ...receipt('subagent_collect', { childKey: 'child', status: 'running' }, {}, 'running'),
+      ...receipt(
+        'subagent_collect',
+        { childKey: 'child', status: 'running' },
+        { childKey: 'child', wait: false },
+        'running',
+      ),
     ]
     expect(candidates('subagent_collect', running)).toHaveLength(1)
+    expect(candidates('subagent_collect', running)[0]).toMatchObject({
+      arguments: { childKey: 'child', wait: true },
+      sourceRecordIds: ['running-result'],
+      evidence: [{ sourceRecordId: 'running-result', pointer: '/outcome/value/childKey', value: 'child' }],
+    })
+    const repeated = [
+      ...running,
+      ...receipt(
+        'subagent_collect',
+        { childKey: 'child', status: 'running' },
+        { childKey: 'child', wait: false },
+        'running-again',
+      ),
+    ]
+    expect(candidates('subagent_collect', repeated)[0]).toMatchObject({
+      arguments: { childKey: 'child', wait: true },
+      sourceRecordIds: ['running-again-result'],
+    })
     expect(
       candidates('subagent_collect', [
         ...running,
@@ -188,7 +215,56 @@ describe('objective skill and child candidates', () => {
         ...receipt('subagent_collect', { childKey: 'child', status: 'completed' }, {}, 'terminal'),
         ...receipt('subagent_send_message', { childKey: 'child' }, {}, 'resume'),
       ])[0]?.arguments,
-    ).toEqual({ childKey: 'child', wait: false })
+    ).toEqual({ childKey: 'child', wait: true })
+    const cancelled = [
+      ...running,
+      ...receipt(
+        'subagent_cancel',
+        { childKey: 'child', status: 'cancelled' },
+        { childKey: 'child' },
+        'cancel',
+      ),
+    ]
+    expect(candidates('subagent_collect', cancelled)[0]).toMatchObject({
+      arguments: { childKey: 'child', wait: true },
+      sourceRecordIds: ['cancel-result'],
+    })
+    expect(
+      candidates('subagent_collect', [
+        ...cancelled,
+        ...receipt(
+          'subagent_collect',
+          { childKey: 'child', status: 'cancelled' },
+          { childKey: 'child', wait: true },
+          'confirmed',
+        ),
+      ]),
+    ).toEqual([])
+    const siblings = [
+      ...running,
+      ...receipt('subagent_spawn', { childKey: 'sibling' }, {}, 'sibling'),
+      ...receipt(
+        'subagent_collect',
+        { childKey: 'child', status: 'completed' },
+        { childKey: 'child', wait: true },
+        'terminal-child',
+      ),
+    ]
+    expect(candidates('subagent_collect', siblings).map((candidate) => candidate.arguments)).toEqual([
+      { childKey: 'sibling', wait: true },
+    ])
+    for (const effect of ['unknown', 'not_applied'] as const) {
+      const refused = records.map((record) =>
+        record.kind === 'action.settled' ? { ...record, effect } : record,
+      )
+      expect(candidates('subagent_collect', refused)).toEqual([])
+    }
+    expect(
+      candidates(
+        'subagent_collect',
+        receipt('subagent_spawn', { childKey: 'foreign' }, {}, 'foreign', 'replacement'),
+      ),
+    ).toEqual([])
     expect(candidates('subagent_collect', receipt('subagent_send_message', { childKey: 'parent' }))).toEqual(
       [],
     )

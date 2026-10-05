@@ -25,8 +25,16 @@ it('ships private conversation styles in the existing three-page style asset', a
   ])
   expect(built.startsWith(base)).toBe(true)
   expect(built).toContain(conversation.trim())
-  for (const sheet of ['jev-workspace.css', 'jev-graph.css', 'runtime-process.css'])
+  for (const sheet of ['runtime-process.css'])
     expect(built).toContain((await readFile(resolve(web, 'public', sheet), 'utf8')).trim())
+  expect(built).not.toContain('.jev-decision-graph')
+  expect(built).not.toContain('.comparison-workspace')
+  expect(files).not.toContain('jev-workspace.css')
+  expect(files).not.toContain('jev-graph.css')
+  for (const file of files.filter((file) => file.endsWith('.js.map'))) {
+    const map = JSON.parse(await readFile(resolve(web, 'dist/web', file), 'utf8')) as { sources: string[] }
+    expect(map.sources.filter((source) => /\/(jev-web|jev-runtime|jev-trace)\//.test(source))).toEqual([])
+  }
   expect(built).toContain('.x-markdown')
   expect(built).toContain('.x-markdown-light')
   expect(built).toContain('.x-markdown-dark')

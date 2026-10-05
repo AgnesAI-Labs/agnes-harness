@@ -15,8 +15,6 @@
   "dependencies": {
     "@agnes/base": "workspace:*",
     "@agnes/cordis": "workspace:*",
-    "@agnes/jev-runtime": "workspace:*",
-    "@agnes/jev-trace": "workspace:*",
     "@agnes/protocol": "workspace:*",
     "@agnes/resource-control-web": "workspace:*",
     "@agnes/sdk": "workspace:*",
@@ -25,7 +23,8 @@
     "@agnes/web-server": "workspace:*",
     "@agnes/web-ui": "workspace:*",
     "@agnes/web-units": "workspace:*",
-    "marked": "18.0.12"
+    "marked": "18.0.12",
+    "@agnes/web-session-ui": "workspace:*"
   },
   "devDependencies": {
     "@types/react": "18.3.12",

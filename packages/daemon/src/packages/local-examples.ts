@@ -14,7 +14,7 @@ import {
 function helperEntry(helper: (typeof BUNDLED_HELPERS)[number]) {
   const root = bundledPluginSourceRoot(helper.ref)
   if (!root) throw new Error('Bundled plugin root unavailable')
-  const directory = join(root, 'bundled-plugins', helper.name)
+  const directory = join(root, helper.ref.slice('file:'.length))
   const pkg = JSON.parse(readFileSync(join(directory, 'package.json'), 'utf8'))
   if (pkg.name !== helper.id || pkg.version !== helper.version || pkg.license !== helper.license)
     throw new Error('Bundled helper identity mismatch')

@@ -1,8 +1,8 @@
 /** @vitest-environment happy-dom */
 
+import { createPermissionPicker, permissionLabel, yoloEnabled } from '@agnes/web-session-ui/permission-picker'
 import { afterEach, expect, it, vi } from 'vitest'
 import { COMPARISON_PERMISSION_OPTIONS } from '../src/comparison-permission.js'
-import { createPermissionPicker, permissionLabel, yoloEnabled } from '../src/permission-picker.js'
 
 afterEach(() => {
   vi.unstubAllGlobals()

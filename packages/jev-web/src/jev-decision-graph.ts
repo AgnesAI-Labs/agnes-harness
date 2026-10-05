@@ -60,8 +60,14 @@ const requestText = (request?: TraceRequest) =>
     ? `${request.observedModel ?? request.requestedModel ?? request.backend}\n请求 #${request.requestedSeq}\n${request.settledSeq ? `结算 #${request.settledSeq} · ${request.status}` : '未观测结算'}`
     : '未观测请求'
 
+/** A fixed conversation cut the graph owns while all-turn replay scrubs the durable ledger. */
+export type JevReplayCut = { sessionId: string; through: number }
+
 /** Instance-local, read-only circuit. Every highlighted edge is backed by committed evidence. */
-export function createJevDecisionGraph(host: HTMLElement, options: { sharedReplay?: boolean } = {}) {
+export function createJevDecisionGraph(
+  host: HTMLElement,
+  options: { sharedReplay?: boolean; onCut?: (cut: JevReplayCut | undefined) => void } = {},
+) {
   const root = el('section')
   root.className = 'jev-decision-graph'
   root.setAttribute('aria-label', 'Jev 决策流程图')
@@ -88,6 +94,8 @@ export function createJevDecisionGraph(host: HTMLElement, options: { sharedRepla
       through = undefined
       selected = ''
       replayTurn = ''
+      allTurns = false
+      scopeSelect.value = 'turn'
       pause()
       closeInspector()
       draw()
@@ -173,10 +181,22 @@ export function createJevDecisionGraph(host: HTMLElement, options: { sharedRepla
   speed.value = '2'
   const previousEvent = button('上一个事件', () => seek(-1), '‹')
   const nextEvent = button('下一个事件', () => seek(1), '›')
+  // 单轮 keeps the historical per-turn replay; 全轮 scrubs every persisted event by ledger seq.
+  const scopeSelect = el('select')
+  scopeSelect.setAttribute('aria-label', 'Jev 回放范围')
+  for (const [value, label] of [
+    ['turn', '单轮'],
+    ['all', '全轮'],
+  ] as const) {
+    const option = el('option', label)
+    option.value = value
+    scopeSelect.append(option)
+  }
+  scopeSelect.value = 'turn'
   const replay = el('div')
   replay.className = 'jev-graph-replay'
   replay.hidden = options.sharedReplay === true
-  replay.append(play, restart, speed, position, previousEvent, cursor, nextEvent)
+  replay.append(scopeSelect, play, restart, speed, position, previousEvent, cursor, nextEvent)
   const note = el('p')
   note.className = 'jev-graph-evidence'
   const zoomLabel = el('output')
@@ -200,6 +220,7 @@ export function createJevDecisionGraph(host: HTMLElement, options: { sharedRepla
   let actionStep = ''
   let through: number | undefined
   let replayTurn = ''
+  let allTurns = false
   let playing = false
   let timer: ReturnType<typeof setTimeout> | undefined
   let scope = ''
@@ -213,12 +234,23 @@ export function createJevDecisionGraph(host: HTMLElement, options: { sharedRepla
   let previousPrefix: number | undefined
   let observedEdges = new Set<string>()
   const edgePulses = new Map<string, number>()
+  /** Cut notifications fire only on real changes; the host conversation re-renders per change. */
+  let emittedCut = ''
+  function emitCut() {
+    if (!options.onCut) return
+    const cut = allTurns && through !== undefined && scope ? { sessionId: scope, through } : undefined
+    const key = cut ? `${cut.sessionId}:${cut.through}` : ''
+    if (key === emittedCut) return
+    emittedCut = key
+    options.onCut(cut)
+  }
   function pause() {
     playing = false
     if (timer !== undefined) clearTimeout(timer)
     timer = undefined
   }
   function sequence() {
+    if (allTurns) return entries
     const turn = replayTurn || [...new Set(entries.map((entry) => entry.record.turn))].at(-1)
     return entries.filter((entry) => entry.record.turn === turn)
   }
@@ -263,6 +295,23 @@ export function createJevDecisionGraph(host: HTMLElement, options: { sharedRepla
     }, 1000 / Number(speed.value))
   }
   speed.addEventListener('change', scheduleReplay)
+  scopeSelect.addEventListener('change', () => {
+    pause()
+    const next = scopeSelect.value === 'all'
+    if (next === allTurns) {
+      draw()
+      return
+    }
+    if (!next && through !== undefined) {
+      // Keep the inspected position: single-turn replay continues from the turn at the cut.
+      const bound = through
+      const at = entries.findLast((entry) => entry.seq <= bound)
+      if (at) replayTurn = at.record.turn
+    }
+    allTurns = next
+    closeInspector()
+    draw()
+  })
   function applyZoom() {
     const diagram = scene.querySelector<HTMLElement>('.jev-circuit')
     const space = scene.querySelector<HTMLElement>('.jev-canvas-space')
@@ -360,6 +409,7 @@ export function createJevDecisionGraph(host: HTMLElement, options: { sharedRepla
     }
   })
   function draw() {
+    emitCut()
     const scrollTop = scene.scrollTop
     const scrollLeft = scene.scrollLeft
     scene.replaceChildren()
@@ -379,12 +429,13 @@ export function createJevDecisionGraph(host: HTMLElement, options: { sharedRepla
         }),
       )
       const latest = visible.turns
-        .filter((turn) => !replayTurn || turn.id === replayTurn)
+        .filter((turn) => allTurns || !replayTurn || turn.id === replayTurn)
         .flatMap((turn) =>
           turn.steps.map((step) => ({ turn, step, key: JSON.stringify([turn.id, step.id ?? step.number]) })),
         )
       const active = latest.find((value) => value.key === selected) ?? latest.at(-1)
-      const turn = active?.turn ?? visible.turns.findLast((turn) => !replayTurn || turn.id === replayTurn)
+      const turn =
+        active?.turn ?? visible.turns.findLast((turn) => allTurns || !replayTurn || turn.id === replayTurn)
       const step = active?.step
       if (active) select.value = active.key
       select.disabled = options.sharedReplay === true || choices.length === 0
@@ -407,7 +458,9 @@ export function createJevDecisionGraph(host: HTMLElement, options: { sharedRepla
       play.textContent = playing ? '暂停' : '播放'
       play.setAttribute('aria-label', playing ? '暂停回放' : '播放回放')
       play.setAttribute('aria-pressed', String(playing))
-      position.textContent = `${playing ? '播放中' : through === undefined ? '实时' : '回放'} · #${through ?? full.throughSeq ?? 0}`
+      position.textContent = allTurns
+        ? `${playing ? '全轮播放中' : through === undefined ? '全轮实时' : '全轮回放'} · #${through ?? full.throughSeq ?? 0}`
+        : `${playing ? '播放中' : through === undefined ? '实时' : '回放'} · #${through ?? full.throughSeq ?? 0}`
       const request = step?.requests.findLast((value) => value.purpose === 'decision')
       activeRequestSeq = request?.requestedSeq
       const savedRequests = requestEntries()
@@ -1027,6 +1080,8 @@ export function createJevDecisionGraph(host: HTMLElement, options: { sharedRepla
         requestViewer = undefined
         pause()
         replayTurn = ''
+        allTurns = false
+        scopeSelect.value = 'turn'
         scope = sessionId
         autoFit = true
         canvasHeight = 680
@@ -1057,10 +1112,14 @@ export function createJevDecisionGraph(host: HTMLElement, options: { sharedRepla
         history.replaceChildren()
         note.setAttribute('role', 'alert')
         note.textContent = `无法投影 Jev 记录：${error instanceof Error ? error.message : String(error)}`
+        emitCut()
       }
     },
     dispose() {
       pause()
+      allTurns = false
+      through = undefined
+      emitCut()
       requestViewer?.dispose()
       observer?.disconnect()
       root.remove()

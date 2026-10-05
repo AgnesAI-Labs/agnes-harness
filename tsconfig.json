@@ -150,6 +150,12 @@
     },
     {
       "path": "packages/runtime-comparison"
+    },
+    {
+      "path": "./packages/web-session-ui"
+    },
+    {
+      "path": "./packages/jev-web"
     }
   ]
 }

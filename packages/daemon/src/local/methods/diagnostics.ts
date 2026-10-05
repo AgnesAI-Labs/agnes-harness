@@ -1,13 +1,15 @@
 import { open } from 'node:fs/promises'
 import { release } from 'node:os' // guards-allow-platform: diagnostics report
 import { join } from 'node:path'
-import { redactDetail } from '@agnes/host'
+import { accountComparisonLane, redactDetail } from '@agnes/host'
 import {
   type DiagnosticsCollectResult,
   type DiagnosticsEventsParams,
   type DiagnosticsEventsResult,
   type EventEnvelope,
   rpcError,
+  type SessionAccountingParams,
+  type SessionAccountingResult,
 } from '@agnes/protocol'
 import type { Registry } from '../../registry.js'
 import type { CallContext, LocalEndpoint } from '../endpoint.js'
@@ -136,5 +138,58 @@ export function registerDiagnostics(
       cursor = row.seq
     }
     return { events, lastSeq, nextAfterSeq: more && cursor < lastSeq ? cursor : null }
+  })
+
+  endpoint.register('_agnes/v1/session.accounting', async (params, c): Promise<SessionAccountingResult> => {
+    const { sessionId } = params as SessionAccountingParams
+    localOwner(c)
+    deps.requireSessionOwner('session.accounting', sessionId, c)
+    const { session } = deps.registry.require(sessionId)
+    const throughSeq = session.lastSeq
+    const events: EventEnvelope[] = []
+    let next = 1
+    let bytes = 0
+    let complete = true
+    // Identical per-root limits to comparison accounting. A limit or gap degrades coverage;
+    // it can never turn an unknown provider amount into zero or a known total.
+    while (next <= throughSeq) {
+      if (events.length >= 100_000 || bytes >= 16 * 1024 * 1024) {
+        complete = false
+        break
+      }
+      const page = (await session.scan({
+        fromSeq: next,
+        toSeq: throughSeq,
+        order: 'asc',
+        limit: Math.min(128, throughSeq - next + 1),
+      })) as EventEnvelope[]
+      if (page.length === 0) {
+        complete = false
+        break
+      }
+      for (const event of page) {
+        const size = Buffer.byteLength(JSON.stringify(event), 'utf8')
+        if (event.seq !== next || events.length >= 100_000 || bytes + size > 16 * 1024 * 1024) {
+          complete = false
+          break
+        }
+        events.push(event)
+        bytes += size
+        next++
+      }
+      if (!complete) break
+    }
+    return {
+      sessionId,
+      runtime: session.runtimeIdentity,
+      accounting: accountComparisonLane({
+        sessionId,
+        runtime: session.runtimeIdentity,
+        events,
+        afterSeq: 0,
+        throughSeq,
+        complete,
+      }),
+    }
   })
 }

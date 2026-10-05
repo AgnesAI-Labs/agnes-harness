@@ -1,0 +1,55 @@
+{
+  "name": "@agnes/jev-web",
+  "version": "0.1.0",
+  "type": "module",
+  "license": "Apache-2.0",
+  "exports": "./index.mjs",
+  "files": [
+    "index.mjs",
+    "agnes.client.json",
+    "client",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "tsx tools/build.ts",
+    "prepack": "pnpm build",
+    "typecheck": "tsc -b",
+    "test": "vitest run"
+  },
+  "agnes": {
+    "plugins": [
+      {
+        "export": "main",
+        "id": "ext:jev-web/main",
+        "runtime": "in-process"
+      }
+    ],
+    "clientDescriptors": [
+      {
+        "rowId": "ext:jev-web/main",
+        "path": "./client/agnes.client.json"
+      }
+    ]
+  },
+  "dependencies": {
+    "@agnes/web-client": "workspace:*",
+    "@agnes/web-ui": "workspace:*",
+    "@agnes/web-units": "workspace:*",
+    "@agnes/sdk": "workspace:*",
+    "@agnes/protocol": "workspace:*",
+    "@agnes/jev-trace": "workspace:*",
+    "@agnes/jev-runtime": "workspace:*",
+    "react": "18.3.1",
+    "react-dom": "18.3.1",
+    "@agnes/web-session-ui": "workspace:*"
+  },
+  "devDependencies": {
+    "esbuild": "0.28.2",
+    "tsx": "4.23.13",
+    "@types/react": "18.3.12",
+    "@types/react-dom": "18.3.1",
+    "@agnes/cordis": "workspace:*"
+  },
+  "private": true
+}

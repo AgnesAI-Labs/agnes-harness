@@ -28,7 +28,7 @@ export interface LanguageHost {
   readonly artifacts?: Pick<ArtifactPort, 'read'>
   /** Combined decoded image bytes per actual provider request; checked before artifact I/O. */
   readonly maxImageRequestBytes?: number
-  /** Exact Host-owned input sources; only declared replaceable context snapshots are elevated. */
+  /** Exact Host-owned input sources; declared snapshots become chronological facts, not instructions. */
   readonly inputPolicies?: Readonly<Record<string, DecisionInputPolicy>>
   readonly sampling?: RequestBody['sampling']
   readonly maxFormatRetries: number
@@ -66,7 +66,7 @@ export function createLanguageBackend(host: LanguageHost): LanguageBackend {
         kind: 'inference',
         sessionKey: host.sessionKey,
         ...selection,
-        system: [host.system, context.system].filter(Boolean).join('\n\n'),
+        system: host.system,
         messages: context.messages,
         tools: context.tools,
         ...(host.sampling === undefined ? {} : { sampling: structuredClone(host.sampling) }),

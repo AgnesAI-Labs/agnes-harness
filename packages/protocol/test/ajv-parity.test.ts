@@ -529,6 +529,8 @@ const AGNES_DEFS: Record<string, TSchema> = {
   DiagnosticsCollectResult: AgnesGen.DiagnosticsCollectResult,
   DiagnosticsEventsParams: AgnesGen.DiagnosticsEventsParams,
   DiagnosticsEventsResult: AgnesGen.DiagnosticsEventsResult,
+  SessionAccountingParams: AgnesGen.SessionAccountingParams,
+  SessionAccountingResult: AgnesGen.SessionAccountingResult,
   SessionMeta: AgnesGen.SessionMeta,
   SessionListParams: AgnesGen.SessionListParams,
   PageSessionMeta: AgnesGen.PageSessionMeta,
@@ -3920,6 +3922,16 @@ const AGNES_SAMPLES: Record<string, Sample> = {
     valid: { events: [envOk], lastSeq: 5, nextAfterSeq: null },
     invalid: [{ events: [], lastSeq: 0 }],
   },
+  SessionAccountingParams: {
+    note: 'one authorized root session',
+    valid: { sessionId: 's' },
+    invalid: [{ sessionId: '' }, { sessionId: rep(513) }],
+  },
+  SessionAccountingResult: {
+    note: 'durable root accounting projection',
+    valid: { sessionId: 's', runtime: { id: 'jevloop', version: '1' }, accounting: accountingLane },
+    invalid: [{ sessionId: 's', runtime: { id: 'jevloop', version: '1' } }],
+  },
   SessionMeta: {
     valid: { sessionId: 's', createdAt: '2026-09-10T00:00:00Z', lastSeq: 3, generation: 1, preset: 'code' },
     invalid: [
@@ -7182,6 +7194,11 @@ const METHOD_DEF: Record<MethodName, MethodDefRef> = {
     params: 'DiagnosticsEventsParams',
     result: 'DiagnosticsEventsResult',
   },
+  '_agnes/v1/session.accounting': {
+    fileId: AGNES_ID,
+    params: 'SessionAccountingParams',
+    result: 'SessionAccountingResult',
+  },
   '_agnes/v1/session.list': { fileId: AGNES_ID, params: 'SessionListParams', result: 'PageSessionMeta' },
   '_agnes/v1/workspace.list': {
     fileId: AGNES_ID,
@@ -7395,6 +7412,7 @@ const METHOD_PARAMS_SAMPLE: Record<MethodName, Sample> = {
   },
   '_agnes/v1/diagnostics.collect': AGNES_SAMPLES.DiagnosticsCollectParams as Sample,
   '_agnes/v1/diagnostics.events': AGNES_SAMPLES.DiagnosticsEventsParams as Sample,
+  '_agnes/v1/session.accounting': AGNES_SAMPLES.SessionAccountingParams as Sample,
   '_agnes/v1/session.list': AGNES_SAMPLES.SessionListParams as Sample,
   '_agnes/v1/workspace.list': AGNES_SAMPLES.WorkspaceListParams as Sample,
   '_agnes/v1/workspace.add': AGNES_SAMPLES.WorkspaceAddParams as Sample,
@@ -7447,6 +7465,7 @@ const METHOD_RESULT_SAMPLE: Partial<Record<MethodName, Sample>> = {
     valid: { events: [], lastSeq: 0, nextAfterSeq: null },
     invalid: [{ events: [], lastSeq: 0 }],
   },
+  '_agnes/v1/session.accounting': AGNES_SAMPLES.SessionAccountingResult as Sample,
   '_agnes/v1/resources.list': ResourceControlSamples.ResourceListResult,
   '_agnes/v1/resources.get': ResourceControlSamples.ResourceDescriptor,
   '_agnes/v1/resources.desired.set': ResourceControlSamples.ResourceOperationReceipt,

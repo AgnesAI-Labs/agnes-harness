@@ -354,6 +354,15 @@ it('ignores a late old-session read and reports malformed history instead of inv
   await Promise.resolve()
   expect(host.querySelectorAll('.runtime-record-rows > li')).toHaveLength(1)
   expect(host.querySelector('[data-stage="result"]')).toBeNull()
+  trace.dispose()
+  const callsBefore = call.mock.calls.length
+  const markup = host.innerHTML
+  trace.select('ignored-after-dispose')
+  trace.head(999)
+  trace.observe(fixture()[0]!)
+  await Promise.resolve()
+  expect(call.mock.calls.length).toBe(callsBefore)
+  expect(host.innerHTML).toBe(markup)
 })
 
 it('marks a bounded history batch partial and continues only on an explicit read', async () => {

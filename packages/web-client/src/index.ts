@@ -104,3 +104,14 @@ export type {
   WorkbenchPanelProps,
 } from './slots.js'
 export { SLOT_TABLE } from './slots.js'
+export type {
+  ReplayCut,
+  WorkbenchClient,
+  WorkbenchMode,
+  WorkbenchPermission,
+  WorkbenchProvider,
+  WorkbenchSnapshot,
+  WorkbenchSurfaces,
+  WorkbenchTarget,
+} from './workbench.js'
+export { WorkbenchService } from './workbench.js'

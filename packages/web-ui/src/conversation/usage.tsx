@@ -1,5 +1,6 @@
 import type { UsageView } from '@agnes/protocol'
 import { type CSSProperties, Fragment, useLayoutEffect, useRef } from 'react'
+import { positionPopover } from '../popover.js'
 
 export type ConversationUsageProps = { usage: UsageView | undefined; connected: boolean }
 const compact = (n: number) =>
@@ -13,11 +14,35 @@ export function ConversationUsage({ usage, connected }: ConversationUsageProps) 
     const element = details.current
     if (!element) return
     const doc = element.ownerDocument
+    const view = doc.defaultView
+    const panel = element.querySelector<HTMLElement>('.usage-popover')
+    panel?.setAttribute('popover', 'manual')
+    const trigger = element.querySelector<HTMLElement>('summary')
+    const place = () => {
+      if (panel && trigger && element.open)
+        positionPopover(trigger, panel, { preferredWidth: 320, preferredHeight: 576 })
+    }
+    const sync = () => {
+      if (!panel || typeof panel.showPopover !== 'function') return
+      if (element.open) {
+        if (!panel.matches(':popover-open')) panel.showPopover()
+        place()
+      } else if (panel.matches(':popover-open')) panel.hidePopover()
+    }
     const dismiss = (event: Event) => {
       if (element.open && !event.composedPath().includes(element)) element.open = false
     }
+    element.addEventListener('toggle', sync)
     doc.addEventListener('click', dismiss)
-    return () => doc.removeEventListener('click', dismiss)
+    view?.addEventListener('resize', place)
+    doc.addEventListener('scroll', place, true)
+    return () => {
+      element.removeEventListener('toggle', sync)
+      doc.removeEventListener('click', dismiss)
+      view?.removeEventListener('resize', place)
+      doc.removeEventListener('scroll', place, true)
+      if (panel?.matches(':popover-open')) panel.hidePopover()
+    }
   }, [])
   useLayoutEffect(() => {
     if (!usage && details.current) details.current.open = false

@@ -16,6 +16,12 @@ import {
   type Session,
 } from '@agnes/sdk/browser'
 import { bindDismissibleDialog } from '@agnes/web-admin-frame'
+import type { WorkbenchTarget } from '@agnes/web-client'
+import {
+  activeConversationCut,
+  createConversationCutBanner,
+  createConversationCutView,
+} from '@agnes/web-session-ui/conversation-cut'
 import { createPendingCoordinator } from './admin-pane-coordinator.js'
 import { bindAppearance, bindSkinGroup } from './appearance.js'
 import type { ApprovalAction } from './approval.js'
@@ -24,14 +30,10 @@ import { type ClaimResolver, startClientModules } from './client-modules/boot.js
 import { startPluginHotReload } from './client-modules/hot-reload.js'
 import type { RosterSource } from './client-modules/reconcile.js'
 import { bindSlotCardContext } from './client-modules/timeline-slot.js'
-import { comparisonCreationMessage } from './comparison-errors.js'
-import { COMPARISON_PERMISSION_OPTIONS, comparisonPermissionLabel } from './comparison-permission.js'
-import { createComparisonWorkspace } from './comparison-workspace.js'
 import type { ComposerView } from './composer.js'
 import { rememberWebComposer, selectionFromMemory } from './composer-memory.js'
 import { createComputerUsePaneController } from './computer-use-pane.js'
 import { createDiagnosticsDialog } from './diagnostics-dialog.js'
-import { bindJevWorkspace } from './jev-workspace.js'
 import {
   APPROVAL_SEARCH_PAGES,
   approvalOutsideWindow,
@@ -55,7 +57,6 @@ import {
 } from './presentation.js'
 import { createQuestionController } from './question-controller.js'
 import { bootstrapProbe, createReconnectController, type ReconnectPhase } from './reconnect.js'
-import { createRuntimeRecordTrace } from './runtime-record-trace.js'
 import { RuntimeSelection } from './runtime-selection.js'
 import { createSessionActions, forkTitle } from './session-actions.js'
 import { SessionPaneController } from './session-pane.js'
@@ -379,6 +380,7 @@ let approvalSearchTicket: string | undefined
 let streamFrame: number | undefined
 let stopEvents: (() => Promise<void>) | undefined
 let currentPane: SessionPaneController | undefined
+let observedSessionHead = 0
 let sending = false
 let awaitingPromptStart = false
 let stopping = false
@@ -397,7 +399,7 @@ let modelChangePending = false
 let modelSelectionSeq = 0
 let draftModelSettingsEdited = false
 let permissionMode: PermissionMode = 'workspace'
-let comparisonPermissionMode: PermissionMode = 'workspace'
+let extensionPermissionMode: PermissionMode = 'workspace'
 let initialPermissionPending: PermissionMode | undefined
 let permissionChangePending = false
 let permissionRefreshPending = false
@@ -429,68 +431,67 @@ function updateTitle(id: string, title: string): void {
 }
 let sessionRows: PageSessionMeta['items'] = []
 let workspaceRows: WorkspaceEntry[] = []
-const jevWorkspace = bindJevWorkspace(
-  element('session-workspace', 'div'),
-  element('jev-workspace-split', 'hr'),
+const workbench = clientModules.workbench
+const cutBanner = createConversationCutBanner(conversation)
+const conversationCut = createConversationCutView((view) => {
+  cutBanner.update(view?.through, view?.pending, view?.error)
+  if (!current || !projection || projection.sessionId !== current.id) return
+  if (view) {
+    renderer.render(view.nodes, view.turns, historicalMeta(current.id))
+  } else {
+    renderer.render(webView(projection).nodes, projection.turns, transcriptMeta())
+  }
+})
+workbench.observeReplayCut((cut) => {
+  const session = current
+  const through = activeConversationCut(cut, session?.id)
+  conversationCut.apply(through, {
+    ...(session ? { projectAt: (seq: number) => session.projectUI(seq, { surface: 'web' }) } : {}),
+  })
+  if (through !== undefined && session && conversationCut.view?.through !== through) {
+    cutBanner.update(through, true)
+    renderer.render([], [], historicalMeta(session.id))
+  }
+})
+addEventListener(
+  'pagehide',
+  () => {
+    conversationCut.dispose()
+    cutBanner.dispose()
+  },
+  { once: true },
 )
-const runtimeRecords = createRuntimeRecordTrace(
-  element('runtime-records', 'section'),
-  client,
-  jevWorkspace.directStats.update,
-)
-const comparisonWorkspace = createComparisonWorkspace(
-  client,
-  () => ({
-    runtimes: runtimeSelection.items,
-    workspaces: workspaceRows,
-    permissionMode: comparisonPermissionMode,
-    ...(selectedWorkspace ? { cwd: selectedWorkspace.path } : {}),
-    ...(knownSessionModel
-      ? {
-          model: {
-            route: knownSessionModel.route,
-            model: knownSessionModel.id,
-            ...(knownSessionModel.settings?.thinking === undefined
-              ? {}
-              : { thinking: knownSessionModel.settings.thinking }),
-            ...(knownSessionModel.settings?.contextWindow === undefined
-              ? {}
-              : { contextWindow: knownSessionModel.settings.contextWindow }),
-          },
-        }
-      : {}),
-  }),
-  { select: selectComparison },
-)
-button('open-comparison').addEventListener('click', () =>
-  run(() => comparisonWorkspace.open(currentComparisonId)),
-)
-
+runtimeSelection.extensions = () => [...workbench.modes]
 let sessionNext: string | undefined
-let currentComparisonId: string | undefined
+let currentView: WorkbenchTarget | undefined
 let selectedWorkspace: WorkspaceEntry | undefined
 let draftingNew = false
 let pendingSessionKey: string | undefined
 
-async function selectComparison(id: string | undefined): Promise<void> {
-  if (id === currentComparisonId) return
-  if (!id) {
-    currentComparisonId = undefined
+async function selectWorkbenchTarget(
+  target: WorkbenchTarget | undefined,
+  currentSelection: () => boolean = () => true,
+): Promise<void> {
+  if (!currentSelection()) return
+  if (target?.id === currentView?.id && target?.provider === currentView?.provider) return
+  if (!target) {
+    currentView = undefined
     await beginNewDraft(false, true)
     return
   }
-  if (current || (!draftingNew && !currentComparisonId)) {
+  if (current || (!draftingNew && !currentView)) {
     const expected = selection + 1
     await beginNewDraft(false, true)
-    if (selection !== expected || current || !draftingNew) throw new Error('页面选择已改变，请重新打开对比。')
+    if (selection !== expected || current || !draftingNew) throw new Error('页面选择已改变，请重新打开目标。')
   }
-  currentComparisonId = id
+  if (!currentSelection()) return
+  currentView = target
   draftingNew = false
   const url = new URL(location.href)
-  url.searchParams.delete('session')
-  url.searchParams.set('comparison', id)
+  url.search = ''
+  for (const [key, value] of Object.entries(target.query)) url.searchParams.set(key, value)
   history.replaceState(null, '', `${url.pathname}${url.search}`)
-  topbarRuntime.setTaskTitle(`双线对比 ${id.slice(-8)}`)
+  topbarRuntime.setTaskTitle(target.title)
   renderControls()
 }
 let liveApproval:
@@ -539,8 +540,8 @@ const sessionActions = createSessionActions({
 })
 let sessionRecovery: { id: string; message: string } | undefined
 function errorMessage(error: unknown): string {
-  const comparison = comparisonCreationMessage(error)
-  if (comparison) return comparison
+  const extension = workbench.errorMessage(error)
+  if (extension) return extension
   // Provider values are redacted by settings before leaving that controller.
   const message = error instanceof Error ? error.message : '操作失败，请重试。'
   const diagnostic =
@@ -656,7 +657,41 @@ function setConnection(value: 'connecting' | 'connected' | 'reconnecting' | 'clo
   renderControls()
 }
 function renderControls(): void {
-  button('open-comparison').disabled = !connected || sending || sessionPending
+  workbench.publish({
+    runtimes: runtimeSelection.items,
+    workspaces: workspaceRows,
+    selectedMode: runtimeSelection.selected,
+    permissionMode: workbench.mode(runtimeSelection.selected) ? extensionPermissionMode : permissionMode,
+    connected,
+    sending,
+    loading: sessionPending,
+    view: button('view-trace').getAttribute('aria-selected') === 'true' ? 'trace' : 'chat',
+    ...(selectedWorkspace ? { cwd: selectedWorkspace.path } : {}),
+    ...(knownSessionModel
+      ? {
+          model: {
+            route: knownSessionModel.route,
+            model: knownSessionModel.id,
+            ...(knownSessionModel.settings?.thinking === undefined
+              ? {}
+              : { thinking: knownSessionModel.settings.thinking }),
+            ...(knownSessionModel.settings?.contextWindow === undefined
+              ? {}
+              : { contextWindow: knownSessionModel.settings.contextWindow }),
+          },
+        }
+      : {}),
+    ...(current
+      ? {
+          session: {
+            id: current.id,
+            ...(currentPane?.identity ? { runtime: currentPane.identity } : {}),
+            head: observedSessionHead,
+          },
+        }
+      : {}),
+  })
+  const extensionMode = workbench.mode(runtimeSelection.selected)
 
   // 切换会话加载期间的视觉态：旧画面降不透明度提示「正在准备」，新投影就绪后
   // 由 sessionPending = false 的那次 renderControls 平滑恢复。
@@ -668,6 +703,8 @@ function renderControls(): void {
   const action = composerActionPresentation({ busy, loading: sessionPending, sending })
   for (const control of notice.querySelectorAll<HTMLButtonElement>('[data-recovery-action]'))
     control.disabled = recoveryDisabled()
+  const targetAvailable =
+    workbench.available && (!workbench.hasLocation(new URL(location.href)) || currentView !== undefined)
   const canStartDraft = draftingNew && selectedWorkspace?.available === true
   const permissionUnknown =
     current !== undefined && (permissionRefreshPending || sessionYoloEnabled === undefined)
@@ -681,12 +718,12 @@ function renderControls(): void {
       label: stopping ? '正在请求停止…' : '停止',
     },
     connected,
-    configured: configured || currentComparisonId !== undefined,
-    hasSession: current !== undefined || draftingNew || currentComparisonId !== undefined,
-    hint: currentComparisonId
+    configured: configured || currentView !== undefined,
+    hasSession: current !== undefined || draftingNew || currentView !== undefined,
+    hint: currentView
       ? {
           kind: 'state',
-          text: '继续发送给当前双线；工作区与模型已冻结。打开双线对比可查看结果、审批或停止。',
+          text: workbench.available ? currentView.hint : '当前页面插件已禁用或不可用，请启用后继续。',
         }
       : permissionUnknown
         ? {
@@ -695,8 +732,8 @@ function renderControls(): void {
               ? '正在同步会话权限，请稍后发送'
               : '请先选择本会话权限，确认后再发送',
           }
-        : !current && runtimeSelection.comparison
-          ? { kind: 'state', text: '双线使用相同模型与默认预设，在隔离副本中运行；审批分别处理。' }
+        : !current && extensionMode
+          ? { kind: 'state', text: extensionMode.hint ?? extensionMode.label }
           : knownSessionModel && !selectedModelAvailable()
             ? { kind: 'state', text: '当前模型已不可用，请重新选择模型' }
             : composerHintPresentation({
@@ -710,7 +747,7 @@ function renderControls(): void {
     input: {
       disabled:
         !available ||
-        (!current && !draftingNew && !currentComparisonId) ||
+        (!current && !draftingNew && !currentView) ||
         stopping ||
         sessionPending ||
         initialSubmissionPending,
@@ -718,33 +755,28 @@ function renderControls(): void {
     },
     loading: sessionPending,
     runtime: {
-      selected: currentComparisonId ? 'comparison' : (currentPane?.identity?.id ?? runtimeSelection.selected),
-      label: currentComparisonId
-        ? '双线对比 · Native + JevLoop'
-        : runtimeSelection.label(currentPane?.identity),
-      fixed: current !== undefined || currentComparisonId !== undefined,
-      disabled:
-        !connected || sessionPending || sending || current !== undefined || currentComparisonId !== undefined,
+      selected: currentView ? currentView.mode : (currentPane?.identity?.id ?? runtimeSelection.selected),
+      label: currentView ? currentView.label : runtimeSelection.label(currentPane?.identity),
+      fixed: current !== undefined || currentView !== undefined,
+      disabled: !connected || sessionPending || sending || current !== undefined || currentView !== undefined,
       options: runtimeSelection.options,
     },
     model: {
-      accessibleName: currentComparisonId
-        ? '对比模型配置已冻结'
-        : modelSelectAccessibleName(knownSessionModel),
+      accessibleName: currentView ? currentView.modelLabel : modelSelectAccessibleName(knownSessionModel),
       disabled:
         !available ||
-        currentComparisonId !== undefined ||
+        currentView !== undefined ||
         (!current && !draftingNew) ||
         busy ||
         sessionPending ||
         initialSubmissionPending ||
         !runtimeModels.length,
-      label: currentComparisonId ? '对比模型已冻结' : modelSelectLabel(knownSessionModel),
+      label: currentView ? currentView.modelLabel : modelSelectLabel(knownSessionModel),
       options: runtimeModels,
       pending: modelChangePending,
       ...(knownSessionModel ? { selected: knownSessionModel } : {}),
     },
-    ...(!currentComparisonId && knownSessionModel && selectedRecord?.contextWindow
+    ...(!currentView && knownSessionModel && selectedRecord?.contextWindow
       ? {
           modelSettings: {
             key: current?.id ?? 'draft',
@@ -755,7 +787,7 @@ function renderControls(): void {
         }
       : {}),
     permission: {
-      hidden: currentComparisonId !== undefined,
+      hidden: currentView !== undefined,
       disabled:
         !available ||
         (!current && !draftingNew) ||
@@ -765,19 +797,16 @@ function renderControls(): void {
         permissionRefreshPending,
       pending: permissionChangePending || permissionRefreshPending,
       selected:
-        !current && runtimeSelection.comparison
-          ? comparisonPermissionMode
-          : permissionUnknown
-            ? null
-            : permissionMode,
-      ...(!current && runtimeSelection.comparison ? { options: COMPARISON_PERMISSION_OPTIONS } : {}),
+        !current && extensionMode ? extensionPermissionMode : permissionUnknown ? null : permissionMode,
+      ...(!current && extensionMode ? { options: extensionMode.permissions } : {}),
     },
     sending,
     send: {
       disabled:
+        !targetAvailable ||
         !available ||
-        (!currentComparisonId && (!configured || !selectedModelAvailable())) ||
-        (!current && !currentComparisonId && (!canStartDraft || !runtimeSelection.available)) ||
+        (!currentView && (!configured || !selectedModelAvailable())) ||
+        (!current && !currentView && (!canStartDraft || !runtimeSelection.available)) ||
         !hasInput ||
         sending ||
         stopping ||
@@ -791,12 +820,12 @@ function renderControls(): void {
     stopping,
     usage: projection?.usage,
     workspace: {
-      disabled: !available || sending || sessionPending || currentComparisonId !== undefined,
-      label: currentComparisonId
-        ? '双线隔离工作区'
+      disabled: !available || sending || sessionPending || currentView !== undefined,
+      label: currentView
+        ? currentView.workspaceLabel
         : (selectedWorkspace?.name ?? (current ? '当前工作区' : '选择工作区')),
-      title: currentComparisonId
-        ? '工作区在创建对比时固定'
+      title: currentView
+        ? currentView.workspaceLabel
         : (selectedWorkspace?.path ?? (current ? '当前会话工作区' : '选择工作区')),
     },
   }
@@ -805,7 +834,7 @@ function renderControls(): void {
   if (sessionPending) {
     topbarRuntime.setStatus('正在准备会话', 'loading')
   }
-  conversationRuntime.setEmptyStateVisible(!currentComparisonId && shouldShowEmptyState(projection))
+  conversationRuntime.setEmptyStateVisible(!currentView && shouldShowEmptyState(projection))
   renderNewSessionControls()
 }
 // 流式期间每个事件都会让轨迹面板全量走查一遍节点，长会话里比时间线本身还贵。
@@ -915,7 +944,15 @@ function render(): void {
     view.busy ? 'running' : (receipt?.reason ?? 'idle'),
   )
   const meta = transcriptMeta()
-  renderer.render(view.nodes, projection.turns, meta)
+  const fixed = conversationCut.view
+  const cutThrough = activeConversationCut(workbench.replayCut, current.id)
+  if (cutThrough !== undefined)
+    renderer.render(
+      fixed?.through === cutThrough ? fixed.nodes : [],
+      fixed?.through === cutThrough ? fixed.turns : [],
+      historicalMeta(current.id),
+    )
+  else renderer.render(view.nodes, projection.turns, meta)
   renderTrace(view, projection.turns, meta)
   if (approvalOutsideWindow(projection)) {
     const ticket = projection.opState?.parked?.ticket
@@ -1024,11 +1061,19 @@ function renderApproval(): void {
   })
   if (stick) renderer.pinToBottom()
 }
-function transcriptMeta(): { hasEarlier: boolean; loadEarlier?: () => void; sessionId?: string } {
+function transcriptMeta(): {
+  hasEarlier: boolean
+  loadEarlier?: () => void
+  sessionId?: string
+  historical?: boolean
+} {
   const session = live
   const identity = current ? { sessionId: current.id } : {}
   if (!session?.hasEarlier()) return { hasEarlier: false, ...identity }
   return { hasEarlier: true, ...identity, loadEarlier: () => void session.loadEarlier().catch(showError) }
+}
+function historicalMeta(sessionId: string): ReturnType<typeof transcriptMeta> {
+  return { hasEarlier: false, sessionId, historical: true }
 }
 /** Loads earlier pages, `limit` at most, until the parked approval's node is loaded. */
 function searchApproval(limit?: number): void {
@@ -1046,7 +1091,7 @@ function searchApproval(limit?: number): void {
 }
 /** What watching the event stream used to do per event: titles, the list, the run receipt. */
 async function followEvent(session: Session, event: LedgerEvent): Promise<void> {
-  runtimeRecords.observe(event)
+  workbench.event(session.id, event)
   const title = readSessionTitle(event)
   if (title?.status === 'generated') {
     // The list owns user overrides; a late automatic event cannot overwrite one.
@@ -1101,8 +1146,8 @@ async function open(
     initialModel?: KnownSessionModel
   } = {},
 ): Promise<void> {
-  comparisonWorkspace.close()
-  currentComparisonId = undefined
+  workbench.clear()
+  currentView = undefined
   const epoch = ++selection
   questions.select()
   if (!options.preserveSending) submissionGeneration++
@@ -1112,7 +1157,7 @@ async function open(
   renderControls()
   const previousPane = currentPane
   currentPane = undefined
-  runtimeRecords.select()
+  observedSessionHead = 0
   // 投影与转录区都保留到新投影就绪：加载期间旧画面继续显示（body.session-switching
   // 半透明提示，状态栏「正在准备会话」），不经历「清空 → 空白 → 填充」的闪屏，
   // 也避免 `body:has(#transcript:empty)` 把布局跳进空态模式。
@@ -1180,7 +1225,7 @@ async function open(
     }
     current = loaded
     questions.select(loaded.id)
-    runtimeRecords.select(pane.identity?.id === 'native' ? undefined : loaded.id, 0, pane.identity)
+    observedSessionHead = 0
     clientModules.session.setSession(loaded.id)
     if (!options.created) permissionMode = 'workspace'
     const metadata = sessionRows.find((row) => row.sessionId === id) as
@@ -1192,7 +1237,7 @@ async function open(
         workspaceRows.find((entry) => entry.path === workspacePath) ??
         (options.workspace?.path === workspacePath ? options.workspace : undefined)
     const url = new URL(location.href)
-    url.searchParams.delete('comparison')
+    url.search = ''
     url.searchParams.set('session', id)
     history.replaceState(null, '', `${url.pathname}${url.search}`)
     let opened = false
@@ -1229,7 +1274,8 @@ async function open(
           }
         }
         projection = value
-        runtimeRecords.head(value.upto)
+        observedSessionHead = value.upto
+        renderControls()
         render()
       },
       stream(value) {
@@ -1239,7 +1285,7 @@ async function open(
         if (streamFrame !== undefined) return
         streamFrame = requestAnimationFrame(() => {
           streamFrame = undefined
-          if (projection && selected())
+          if (projection && selected() && activeConversationCut(workbench.replayCut, loaded.id) === undefined)
             renderer.render(webView(projection).nodes, projection.turns, transcriptMeta())
         })
       },
@@ -1268,7 +1314,7 @@ async function open(
       const failedPane = currentPane
       currentPane = undefined
       questions.select()
-      runtimeRecords.select()
+      observedSessionHead = 0
       current = undefined
       clientModules.session.setSession(undefined)
       projection = undefined
@@ -1344,6 +1390,8 @@ async function forkTurn(turn: UITurn): Promise<void> {
   composerRuntime.focus()
 }
 function renderNewSessionControls(): void {
+  element('new-session-runtime-hint', 'p').textContent =
+    workbench.mode(runtimeSelection.selected)?.hint ?? '首次发送前可切换可用的运行方式；会话创建后固定。'
   newSessionRuntime.replaceChildren(
     ...runtimeSelection.options.map((runtime) => {
       const option = document.createElement('option')
@@ -1458,10 +1506,10 @@ async function pickWorkspace(): Promise<void> {
     renderNewSessionControls()
   }
 }
-async function beginNewDraft(showWorkspacePicker = true, preserveComparisonView = false): Promise<void> {
+async function beginNewDraft(showWorkspacePicker = true, preserveExtensionView = false): Promise<void> {
   if (sessionPending || sending) return
-  if (!preserveComparisonView) comparisonWorkspace.close()
-  currentComparisonId = undefined
+  if (!preserveExtensionView) workbench.clear()
+  currentView = undefined
   clearSessionRecovery()
   const epoch = ++selection
   questions.select()
@@ -1488,10 +1536,10 @@ async function beginNewDraft(showWorkspacePicker = true, preserveComparisonView 
   stopEvents = undefined
   live = undefined
   renderer.reset()
-  runtimeRecords.select()
+  observedSessionHead = 0
   const url = new URL(location.href)
   url.searchParams.delete('session')
-  url.searchParams.delete('comparison')
+  url.search = ''
   history.replaceState(null, '', `${url.pathname}${url.search}`)
   topbarRuntime.setTaskTitle('新会话')
   render()
@@ -1564,13 +1612,14 @@ async function refreshModels(): Promise<ModelPickerOption[]> {
 async function selectPermission(mode: PermissionMode): Promise<boolean> {
   if (!connected || sessionPending || permissionChangePending || permissionRefreshPending) return false
   if (!current && draftingNew) {
-    if (runtimeSelection.comparison) comparisonPermissionMode = mode
+    const extensionMode = workbench.mode(runtimeSelection.selected)
+    if (extensionMode) extensionPermissionMode = mode
     else {
       permissionMode = mode
       rememberWebComposer({ permission: mode })
     }
-    notice.textContent = runtimeSelection.comparison
-      ? `双侧下一轮将使用「${comparisonPermissionLabel(mode)}」，对比目录保持隔离。`
+    notice.textContent = extensionMode
+      ? (extensionMode.permissionMessage?.(mode) ?? `执行权限已更新。`)
       : `新会话将使用「${permissionLabel(mode)}」。`
     notice.dataset.kind = ''
     renderControls()
@@ -1970,11 +2019,13 @@ function submitComposer(): void {
   let session = current
   if (
     !input ||
-    (!currentComparisonId && (!configured || !selectedModelAvailable())) ||
+    !workbench.available ||
+    (workbench.hasLocation(new URL(location.href)) && !currentView) ||
+    (!currentView && (!configured || !selectedModelAvailable())) ||
     permissionChangePending ||
     permissionRefreshPending ||
     (session && sessionYoloEnabled === undefined) ||
-    (!session && !currentComparisonId && (!draftingNew || !selectedWorkspace?.available)) ||
+    (!session && !currentView && (!draftingNew || !selectedWorkspace?.available)) ||
     !canSubmitComposer({ connected, hasSession: true, sending, stopping, loading: sessionPending })
   )
     return
@@ -1993,22 +2044,16 @@ function submitComposer(): void {
   renderControls()
   // A prompt can remain pending for the entire run. Controls follow daemon state, not this promise.
   const work = (async () => {
-    if (currentComparisonId) {
-      await comparisonWorkspace.submitDraft(currentComparisonId, input)
+    const key = pendingSessionKey ?? crypto.randomUUID()
+    if (currentView || (!session && workbench.mode(runtimeSelection.selected))) {
+      if (!(await workbench.submit(key, input))) throw new Error('当前执行目标不可用。')
       pendingSessionKey = undefined
       return
     }
     if (!session) {
-      const key = pendingSessionKey ?? crypto.randomUUID()
       const draftModel = knownSessionModel
       const workspace = selectedWorkspace
       pendingSessionKey = key
-      if (runtimeSelection.comparison) {
-        if (!runtimeSelection.available) throw new Error('双线对比需要 Native 与 JevLoop 均可用。')
-        await comparisonWorkspace.startDraft(key, input)
-        pendingSessionKey = undefined
-        return
-      }
       const created = await client.session.new({
         cwd: workspace?.path ?? '',
         sessionKey: key,
@@ -2168,6 +2213,7 @@ document.addEventListener('visibilitychange', () => {
   }
 })
 for (const [index, tab] of [button('view-chat'), button('view-trace')].entries()) {
+  tab.addEventListener('click', () => queueMicrotask(renderControls))
   tab.addEventListener('keydown', (event) => {
     if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return
     event.preventDefault()
@@ -2175,6 +2221,7 @@ for (const [index, tab] of [button('view-chat'), button('view-trace')].entries()
     const target = next === 0 ? button('view-chat') : button('view-trace')
     target.focus()
     tracePanel.setOpen(next === 1)
+    renderControls()
   })
   tab.setAttribute('aria-posinset', String(index + 1))
   tab.setAttribute('aria-setsize', '2')
@@ -2182,17 +2229,13 @@ for (const [index, tab] of [button('view-chat'), button('view-trace')].entries()
 addEventListener('popstate', () => {
   const params = new URL(location.href).searchParams
   const id = params.get('session')
-  const comparisonId = params.get('comparison')
   run(async () => {
-    if (comparisonId) {
-      await comparisonWorkspace.open(comparisonId)
-      return
-    }
+    if (await workbench.restore(new URL(location.href))) return
     if (id) {
       if (current?.id !== id) await open(id)
       return
     }
-    if (current || currentComparisonId || !draftingNew) await beginNewDraft()
+    if (current || currentView || !draftingNew) await beginNewDraft()
   })
 })
 async function refreshModelConfiguration(): Promise<void> {
@@ -2216,11 +2259,29 @@ const modelRefreshTimer = setInterval(() => {
 window.addEventListener('pagehide', () => {
   clearInterval(modelRefreshTimer)
   intentionalClose = true
+  void clientModules.dispose()
   reconnect.cancel()
   titleRefresh.close()
   void (stopEvents?.() ?? Promise.resolve()).finally(() => client.close())
 })
 
+workbench.configure({
+  surfaces: {
+    root: element('session-workspace', 'div'),
+    chat: element('session-chat', 'div'),
+    aside: element('workspace-aside', 'section'),
+    divider: element('workspace-divider', 'hr'),
+    footer: element('workspace-footer', 'div'),
+    toolbar: element('workspace-toolbar', 'span'),
+    overlay: element('workspace-overlay', 'div'),
+  },
+  select: selectWorkbenchTarget,
+  changed() {
+    if (!currentView && !runtimeSelection.options.some((item) => item.id === runtimeSelection.selected))
+      runtimeSelection.selected = 'native'
+    renderControls()
+  },
+})
 composerRuntime.resize()
 
 run(async () => {
@@ -2241,13 +2302,13 @@ run(async () => {
   profileName = snapshot.profile
   void skinGroup.refresh()
   // profile 就绪后做首次真实名册对账（此前名册源按空处理）。
-  scheduleClientRosterRead(true)
+  await clientModules.reconciler.reconcileNow()
   accountLabels = new Map(
     (snapshot.accounts ?? []).map((row) => [row.route, `${row.label} · ${row.providerId}`]),
   )
   await refreshModels()
   await runtimeSelection.refresh(client)
-  if (!configured && !new URL(location.href).searchParams.has('comparison')) {
+  if (!configured && !workbench.hasLocation(new URL(location.href))) {
     renderControls()
     notice.textContent = '先配置模型，即可开始第一个任务。'
     await settings.open()
@@ -2260,9 +2321,8 @@ run(async () => {
   const page = await list()
   const params = new URL(location.href).searchParams
   const selected = params.get('session')
-  const comparisonId = params.get('comparison')
-  if (comparisonId) {
-    await comparisonWorkspace.open(comparisonId)
+  if (await workbench.restore(new URL(location.href))) {
+    renderControls()
   } else if (selected) {
     const candidates = page.items.some((item) => item.sessionId === selected)
       ? page

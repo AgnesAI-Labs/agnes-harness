@@ -12,7 +12,7 @@ export type ConversationProjection = Readonly<{
   sessionId: string
   nodes: readonly UINode[]
   turns?: readonly UITurn[]
-  meta?: Readonly<{ hasEarlier: boolean; loadEarlier?: () => void }>
+  meta?: Readonly<{ hasEarlier: boolean; loadEarlier?: () => void; historical?: boolean }>
 }>
 
 export type ConversationMessage = ThreadMessageLike &

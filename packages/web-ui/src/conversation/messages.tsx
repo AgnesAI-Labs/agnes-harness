@@ -19,6 +19,8 @@ export interface ConversationMarkdownState {
 
 export interface ConversationMessagesProps {
   turns?: readonly UITurn[]
+  /** Historical ledger cuts do not accrue wall-clock time while the viewer is paused. */
+  historical?: boolean
   /** Optional snapshot gate when a host supplies turns and messages through separate subscriptions. */
   visibleNodeIds?: readonly string[]
   renderTurnActions?: (turn: UITurn, finalText: string, settled: boolean) => ReactNode
@@ -446,7 +448,8 @@ function Turn({
   const thinkingFinalId = useInteractionSnapshot(thinkingHost, turn.finalAssistantId)
   const preference = useRef<boolean | undefined>(undefined)
   const wasActive = useRef<boolean | undefined>(undefined)
-  const active = !turn.endedAt && (turn.status === 'running' || turn.status === 'waiting')
+  const active =
+    !props.historical && !turn.endedAt && (turn.status === 'running' || turn.status === 'waiting')
   const processActive = turn.status === 'running' || turn.status === 'waiting'
   const response = useRef<HTMLDivElement>(null)
   const shownProcessActive = useInteractionSnapshot(response, processActive)

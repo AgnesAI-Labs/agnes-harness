@@ -1,0 +1,9 @@
+{
+  "client": {
+    "entry": "./index.js",
+    "styles": ["./index.css"],
+    "slots": [],
+    "services": [],
+    "projections": []
+  }
+}

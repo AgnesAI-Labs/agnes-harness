@@ -123,6 +123,7 @@ export function projectLanguage(
   const settled = new Set<string>()
   const toolAdditions = new Set<string>()
   const resources = new Map<string, string>()
+  const contexts = new Map<string, string>()
   let system: string | undefined
   let environment: string | undefined
   let catalog: readonly ToolDescriptor[] | undefined
@@ -171,18 +172,17 @@ export function projectLanguage(
           policy.replaceKey !== undefined &&
           !toolAdditions.has(record.input.id)
         ) {
-          for (let index = entries.length - 1; index >= 0; index--) {
-            const entry = entries[index]
-            if (entry?.kind === 'context' && entry.replaceKey === policy.replaceKey) entries.splice(index, 1)
-          }
           const text = record.input.content
             .map((block) => {
               if (block.kind !== 'text') throw new Error('Host context snapshot must contain text content')
               return block.text
             })
             .join('\n')
-          if (text)
+          // Preserve prior facts at their ledger positions. Only the latest text for this key
+          // governs deduplication; an empty snapshot is an explicit, replayable clear.
+          if (text !== contexts.get(policy.replaceKey))
             entries.push({ kind: 'context', id: record.input.id, replaceKey: policy.replaceKey, text })
+          contexts.set(policy.replaceKey, text)
           break
         }
         if (record.input.source === 'system-prompt' && !toolAdditions.has(record.input.id)) {

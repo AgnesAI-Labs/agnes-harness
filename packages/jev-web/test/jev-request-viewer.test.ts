@@ -58,8 +58,8 @@ afterEach(() => {
 it('shows and copies the full saved HTTP body beyond 24k without the record wrapper', async () => {
   const styles = document.createElement('style')
   styles.dataset.jevRequestTestStyles = ''
-  styles.textContent = ['style.css', 'jev-graph.css']
-    .map((name) => readFileSync(`packages/web/public/${name}`, 'utf8'))
+  styles.textContent = ['packages/web/public/style.css', 'packages/jev-web/styles/jev-graph.css']
+    .map((name) => readFileSync(name, 'utf8'))
     .join('\n')
   document.body.append(styles)
   const input = {

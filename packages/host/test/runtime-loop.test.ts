@@ -59,7 +59,155 @@ function respondingJev(onInvoke = () => {}, purposeConfidence = 1): JevLoopOptio
   }
 }
 
-it('reuses current code runtime facts in Jev requests without accumulating stale context or user messages', async () => {
+it.each(['complete', 'cancel'] as const)(
+  'waits on a Jev child candidate until %s without polling turns',
+  async (ending) => {
+    const root = await mkdtemp(join(tmpdir(), 'agnes-jev-child-wait-'))
+    let parentKey = ''
+    let parentCalls = 0
+    let decisions = 0
+    let releaseChild!: () => void
+    const childGate = new Promise<void>((resolve) => {
+      releaseChild = resolve
+    })
+    const provider: Provider = {
+      models: () => [fakeModel({ route: 'gw', id: 'm1' })],
+      async *infer(request, options) {
+        const isParent = request.sessionKey === parentKey
+        if (!isParent) await childGate
+        const script =
+          isParent && parentCalls++ === 0
+            ? toolTurn('subagent_spawn', { task: 'WAIT_CHILD', isolation: 'shared' })
+            : textTurn(isParent ? 'PARENT_DONE' : 'CHILD_DONE')
+        yield* fakeProvider([script], '2').infer(request, options)
+      },
+    }
+    const { host } = await createTestHost({
+      dataDir: root,
+      provider,
+      packageDirs: { '@agnes/base': fileURLToPath(new URL('../../base', import.meta.url)) },
+      presets: {
+        children: {
+          name: 'children',
+          extends: 'base',
+          model: { route: { primary: 'gw' }, id: { primary: 'm1' } },
+          subagent: {
+            max_depth: 2,
+            max_fan_out: 4,
+            isolation: 'shared',
+            budget_inherit: 'aggregate',
+            tree_budget_credits: 'unlimited',
+          },
+        },
+      },
+      allowed: ['base', 'standard', 'children'],
+      disableSessionTitle: true,
+      jev: {
+        decision: {
+          backend: 'jev',
+          endpoint: 'https://jev.invalid/v1',
+          model: 'jev-test',
+          transport: {
+            async invoke({ questions }) {
+              const binding = questions.binding_subagent_collect as
+                | { criteria?: Record<string, unknown> }
+                | undefined
+              const candidate = Object.keys(binding?.criteria ?? {}).find((key) => key !== 'LLM_PARAMETERS')
+              const operation =
+                decisions++ === 0 ? 'subagent_spawn' : candidate ? 'subagent_collect' : 'RESPOND'
+              const purpose = operation === 'subagent_spawn' ? 'ACT' : candidate ? 'INSPECT' : 'RESPOND'
+              const answers: Record<string, JsonValue> = {}
+              for (const [name, question] of Object.entries(questions)) {
+                const criteria = (question as { criteria?: Record<string, unknown> }).criteria
+                if (!criteria) continue
+                const choice =
+                  name === 'purpose'
+                    ? purpose
+                    : name.startsWith('operation_')
+                      ? name === `operation_${purpose}`
+                        ? operation
+                        : 'RESPOND'
+                      : name.startsWith('binding_')
+                        ? name === 'binding_subagent_collect' && candidate
+                          ? candidate
+                          : 'LLM_PARAMETERS'
+                        : undefined
+                if (!choice) continue
+                answers[name] = {
+                  type: 'choice',
+                  choice,
+                  confidence: 1,
+                  probabilities: Object.fromEntries(
+                    Object.keys(criteria).map((key) => [key, key === choice ? 1 : 0]),
+                  ),
+                }
+              }
+              return { output: { answers }, observedModel: 'jev-test' }
+            },
+          },
+        },
+      },
+    })
+    const controller = new AbortController()
+    let running: Promise<unknown> | undefined
+    try {
+      const parent = await host.createSession({ cwd: root, runtime: 'jevloop', preset: 'children' })
+      parentKey = parent.key
+      await parent.enqueue('next-turn', {
+        actor,
+        content: [{ type: 'text', text: 'Delegate and wait for the result' }],
+      })
+      let settled = false
+      const run = parent.run({ until: 'turn-end', signal: controller.signal }).finally(() => {
+        settled = true
+      })
+      running = run
+      await vi.waitFor(async () => {
+        const calls = await parent.scan({ type: 'tool/call', limit: 10 })
+        expect(calls.map((row) => row.data)).toContainEqual(
+          expect.objectContaining({
+            name: 'subagent_collect',
+            args: { childKey: expect.any(String), wait: true },
+          }),
+        )
+      })
+      expect(settled).toBe(false)
+      const before = await parent.scan({ type: 'tool/result', limit: 10 })
+      expect(before).toHaveLength(1)
+      if (ending === 'cancel') controller.abort(new Error('Cancel while waiting for child'))
+      else releaseChild()
+      expect((await run).reason).toBe(ending === 'cancel' ? 'aborted' : 'completed')
+      const rows = await scanAll((query) => parent.scan(query), { toSeq: parent.lastSeq })
+      const records = rows
+        .filter((row) => row.type === 'runtime/record')
+        .map((row) => runtimeRecord(row.data))
+      expect(
+        records.filter(
+          (record) => record.kind === 'action.intended' && record.intent.tool === 'subagent_collect',
+        ),
+      ).toHaveLength(1)
+      expect(records.some((record) => record.kind === 'run.stopped' && record.reason === 'budget')).toBe(
+        false,
+      )
+      if (ending === 'complete') {
+        expect(rows.filter((row) => row.type === 'tool/result').map((row) => row.data)).toContainEqual(
+          expect.objectContaining({
+            isError: false,
+            structured: expect.objectContaining({ status: 'completed' }),
+          }),
+        )
+      }
+    } finally {
+      controller.abort()
+      releaseChild()
+      await running?.catch(() => undefined)
+      await host.close()
+      await rm(root, { recursive: true, force: true })
+    }
+  },
+)
+
+it('appends changed Jev runtime facts without rewriting the language prefix or retaining stale decision state', async () => {
   const root = await mkdtemp(join(tmpdir(), 'agnes-jev-context-'))
   const models = [
     fakeModel({
@@ -121,9 +269,16 @@ it('reuses current code runtime facts in Jev requests without accumulating stale
     expect(provider.requests).toHaveLength(3)
     expect(provider.requests.map((request) => request.sampling?.thinking)).toEqual(['high', 'low', undefined])
     for (const [index, request] of provider.requests.entries()) {
-      const facts = [...request.system.matchAll(/\[runtime context\]\n([^\n]+)/g)]
-      expect(facts).toHaveLength(1)
-      const serialized = facts[0]?.[1]
+      expect(request.system).toBe('')
+      const facts = request.messages.flatMap((message) =>
+        message.role === 'user'
+          ? message.content.flatMap((block) =>
+              block.type === 'text' ? [...block.text.matchAll(/\[runtime context\]\n([^\n]+)/g)] : [],
+            )
+          : [],
+      )
+      expect(facts).toHaveLength(index === 0 ? 1 : 2)
+      const serialized = facts.at(-1)?.[1]
       if (!serialized) throw new Error('Missing runtime facts')
       const context = JSON.parse(serialized)
       expect(context).toMatchObject({
@@ -140,17 +295,15 @@ it('reuses current code runtime facts in Jev requests without accumulating stale
         },
         tools: { complete: expect.any(String) },
       })
-      // The historical system instruction describes this marker; only the changing fact block
-      // must remain outside history so later requests do not inherit stale runtime facts.
-      expect(
-        request.messages
-          .flatMap((message) => message.content.filter((block) => block.type === 'text'))
-          .filter((block) => block.type === 'text')
-          .map((block) => block.text)
-          .join('\n'),
-      ).not.toContain('[runtime context]\n')
       expect(request.messages.filter((message) => message.role === 'system')).toHaveLength(1)
-      if (index > 0) expect(request.system).not.toContain('2026-01-02')
+      const previous = provider.requests[index - 1]
+      if (previous) {
+        expect(request.system).toBe(previous.system)
+        expect(request.tools).toEqual(previous.tools)
+        expect(JSON.stringify(request.messages.slice(0, previous.messages.length))).toBe(
+          JSON.stringify(previous.messages),
+        )
+      }
     }
     const rows = await scanAll((query) => session.scan(query), { toSeq: session.lastSeq })
     expect(rows.filter((row) => row.type === 'user/message')).toHaveLength(3)
@@ -221,11 +374,21 @@ it('reuses current code runtime facts in Jev requests without accumulating stale
     const key = session.key
     await session.close()
     const reopened = await host.createSession({ key, cwd: root })
+    reopened.d.clock = () => Date.UTC(2026, 0, 4)
     await reopened.enqueue('next-turn', { actor, content: [{ type: 'text', text: 'restored settings' }] })
     expect((await reopened.run({ until: 'turn-end', signal: new AbortController().signal })).reason).toBe(
       'completed',
     )
     expect(provider.requests[3]?.sampling?.thinking).toBe('high')
+    const previous = provider.requests[2]
+    const restored = provider.requests[3]
+    if (!previous || !restored) throw new Error('Missing requests around session reopen')
+    expect(restored.system).toBe(previous.system)
+    expect(restored.tools).toEqual(previous.tools)
+    expect(JSON.stringify(restored.messages.slice(0, previous.messages.length))).toBe(
+      JSON.stringify(previous.messages),
+    )
+    expect(JSON.stringify(restored.messages.slice(previous.messages.length))).toContain('2026-01-04')
     await reopened.close()
   } finally {
     await host.close()

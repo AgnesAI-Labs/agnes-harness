@@ -1,8 +1,8 @@
 import type { EventEnvelope, UISpan, UITimeline } from '@agnes/protocol'
 import type { Client } from '@agnes/sdk/browser'
+import { createTimelineRenderer } from '@agnes/web-session-ui/timeline'
 import { createComparisonTrace } from './comparison-trace.js'
 import { createJevDecisionGraph } from './jev-decision-graph.js'
-import { createTimelineRenderer } from './timeline.js'
 
 type Timeline = Omit<UITimeline, 'generation'>
 function children(value: Timeline): string[] {

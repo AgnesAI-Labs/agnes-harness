@@ -146,7 +146,8 @@ export function* operationCandidates(
       latest.add(value.childKey)
       // Cancel receipts are not collection receipts: collect once to confirm their terminal state.
       if (intended.intent.tool === 'subagent_collect' && value.status !== 'running') continue
-      candidate = offer({ childKey: value.childKey, wait: false }, [evidence('childKey')])
+      // Use the native cancellable wait instead of spending decision steps polling the same state.
+      candidate = offer({ childKey: value.childKey, wait: true }, [evidence('childKey')])
     } else if (
       (tool.name === 'skill_read' || tool.name === 'skill_read_file') &&
       intended.intent.tool === tool.name

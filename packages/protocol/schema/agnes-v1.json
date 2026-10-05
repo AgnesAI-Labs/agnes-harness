@@ -6247,6 +6247,37 @@
         }
       }
     },
+    "SessionAccountingParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sessionId"],
+      "properties": {
+        "sessionId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        }
+      }
+    },
+    "SessionAccountingResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sessionId", "runtime", "accounting"],
+      "properties": {
+        "sessionId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "runtime": {
+          "$ref": "#/$defs/RuntimeIdentity"
+        },
+        "accounting": {
+          "$ref": "#/$defs/ComparisonAccountingLane"
+        }
+      },
+      "description": "Read-only bounded root-session ledger accounting at a snapped durable sequence. Does not include child sessions. Incomplete prefixes and missing provider evidence remain unknown."
+    },
     "DiagnosticsEventsResult": {
       "type": "object",
       "additionalProperties": false,

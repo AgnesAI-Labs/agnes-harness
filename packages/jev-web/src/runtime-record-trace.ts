@@ -1,6 +1,6 @@
 import type { DiagnosticsEventsResult, EventEnvelope, RuntimeIdentity } from '@agnes/protocol'
 import type { Client } from '@agnes/sdk/browser'
-import { createJevDecisionGraph } from './jev-decision-graph.js'
+import { createJevDecisionGraph, type JevReplayCut } from './jev-decision-graph.js'
 import type { JevStatsEvidence } from './jev-stats.js'
 
 /** Read-only ledger observation shared by normal chat and comparison lanes. */
@@ -8,8 +8,10 @@ export function createRuntimeRecordTrace(
   host: HTMLElement,
   client: Pick<Client, 'call'>,
   onRecords?: (evidence: JevStatsEvidence) => void,
+  options: { onCut?: (cut: JevReplayCut | undefined) => void } = {},
 ) {
-  const graph = createJevDecisionGraph(host)
+  const previousHidden = host.hidden
+  const graph = createJevDecisionGraph(host, options.onCut ? { onCut: options.onCut } : {})
   const note = document.createElement('p')
   note.className = 'runtime-trace-coverage'
   note.setAttribute('role', 'status')
@@ -29,6 +31,7 @@ export function createRuntimeRecordTrace(
   host.hidden = true
   let sessionId: string | undefined
   let runtime: RuntimeIdentity | undefined
+  let disposed = false
   let generation = 0
   let bound: number | undefined
   let afterSeq = 0
@@ -91,7 +94,7 @@ export function createRuntimeRecordTrace(
     records.set(event.seq, event)
   }
   async function readHistory() {
-    if (!sessionId || loading || complete) return
+    if (disposed || !sessionId || loading || complete) return
     const ticket = generation
     const id = sessionId
     const startingAfterSeq = afterSeq
@@ -147,10 +150,16 @@ export function createRuntimeRecordTrace(
   more.addEventListener('click', () => void readHistory())
   return {
     dispose() {
+      if (disposed) return
       this.select()
+      disposed = true
+      generation++
       graph.dispose()
+      footer.remove()
+      host.hidden = previousHidden
     },
     select(id?: string, head = 0, identity?: RuntimeIdentity) {
+      if (disposed) return
       generation++
       sessionId = id
       runtime = identity
@@ -167,6 +176,7 @@ export function createRuntimeRecordTrace(
       if (id) void readHistory()
     },
     head(seq: number) {
+      if (disposed) return
       latestHead = Math.max(latestHead, seq)
       if (complete && latestHead > (bound ?? 0)) {
         bound = undefined
@@ -175,6 +185,7 @@ export function createRuntimeRecordTrace(
       }
     },
     observe(event: EventEnvelope) {
+      if (disposed) return
       if (!sessionId || (event.type !== 'runtime/record' && event.type !== 'runtime/cancel')) return
       try {
         remember(event)

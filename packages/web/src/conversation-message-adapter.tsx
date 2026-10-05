@@ -119,6 +119,7 @@ export function WebConversationMessages({
   locale,
   resources,
   turns,
+  historical,
   visibleNodeIds,
   onFork,
 }: {
@@ -128,6 +129,7 @@ export function WebConversationMessages({
   locale?: LocaleService
   resources?: ClientResourceService
   turns?: readonly UITurn[]
+  historical?: boolean
   visibleNodeIds?: readonly string[]
   onFork?: (turn: UITurn) => Promise<void>
   /** Compatibility selector; both values now use the same React-owned Markdown. */
@@ -139,6 +141,7 @@ export function WebConversationMessages({
   )
   const props: ConversationMessagesProps = {
     ...(turns ? { turns } : {}),
+    ...(historical ? { historical } : {}),
     ...(visibleNodeIds ? { visibleNodeIds } : {}),
     renderTurnActions: (turn, finalText, settled) => (
       <ConversationTurnActions

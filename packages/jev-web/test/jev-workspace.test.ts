@@ -1,6 +1,5 @@
 /** @vitest-environment happy-dom */
 import { readFileSync } from 'node:fs'
-import { resolve } from 'node:path'
 import type { EventEnvelope } from '@agnes/protocol'
 import type { Client } from '@agnes/sdk/browser'
 import { afterEach, expect, it, vi } from 'vitest'
@@ -14,9 +13,14 @@ afterEach(() => {
 })
 
 it('keeps one conversation/composer beside the graph and remembers accessible split changes', () => {
-  document.documentElement.innerHTML = readFileSync(resolve(__dirname, '../public/index.html'), 'utf8')
-    .replace(/<script[\s\S]*?<\/script>/g, '')
-    .replace(/<link\b[^>]*>/g, '')
+  document.body.innerHTML = `<section id="session-workspace" data-workbench-surface="workspace">
+    <aside id="runtime-records" data-workbench-surface="aside"></aside>
+    <div id="jev-workspace-split" data-workbench-surface="divider"></div>
+    <div class="session-chat" data-workbench-surface="conversation">
+      <nav data-workbench-surface="toolbar"></nav>
+      <div id="conversation-shell"></div><div id="trace-panel"></div><div id="approval"></div>
+      <footer data-workbench-surface="footer"></footer><div id="composer-mount"></div>
+    </div></section>`
   const root = document.getElementById('session-workspace')!
   const separator = document.getElementById('jev-workspace-split')!
   const graph = document.getElementById('runtime-records')!
@@ -25,17 +29,31 @@ it('keeps one conversation/composer beside the graph and remembers accessible sp
     expect(document.querySelectorAll(`#${id}`)).toHaveLength(1)
     expect(document.getElementById(id)?.closest('.session-chat')?.parentElement).toBe(root)
   }
-  const workspace = bindJevWorkspace(root, separator)
+  const workspace = bindJevWorkspace(
+    {
+      root,
+      divider: separator,
+      aside: graph,
+      chat: root.querySelector('[data-workbench-surface="conversation"]')!,
+      toolbar: root.querySelector('[data-workbench-surface="toolbar"]')!,
+      footer: root.querySelector('[data-workbench-surface="footer"]')!,
+    },
+    { call: vi.fn() } as unknown as Pick<Client, 'call'>,
+  )
   workspace.directStats.update({
     runtime: { id: 'jevloop', version: '1' },
     events: withDirectRoutes(),
     complete: true,
   })
   const dock = root.querySelector('.jev-stats-dock')
-  expect(dock?.nextElementSibling?.id).toBe('composer-mount')
+  expect(separator.tabIndex).toBe(0)
+  expect(separator.getAttribute('role')).toBe('separator')
+  expect(separator.getAttribute('aria-orientation')).toBe('vertical')
+  expect(separator.getAttribute('aria-label')).toBe('调整决策图与对话宽度')
+  expect(dock?.parentElement?.dataset.workbenchSurface).toBe('footer')
   expect(dock?.closest('[hidden]')).toBeNull()
   expect(dock?.querySelector<HTMLElement>('[data-jev-direct-count]')?.hidden).toBe(false)
-  expect(dock?.textContent).toBe('Jev 直通 2 次')
+  expect(dock?.textContent).toContain('Jev 直通 2 次')
   separator.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowLeft' }))
   expect(separator.getAttribute('aria-valuenow')).toBe('53')
   expect(localStorage.getItem('agnes.jev-workspace.graph-percent')).toBe('53')
@@ -57,6 +75,16 @@ it('keeps one conversation/composer beside the graph and remembers accessible sp
   expect(separator.getAttribute('aria-valuemin')).toBe('40')
   separator.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight' }))
   expect(separator.getAttribute('aria-valuenow')).toBe('42')
+  workspace.dispose()
+  expect(root.querySelector('.jev-stats-dock')).toBeNull()
+  expect(root.querySelector('.jev-workspace-views')).toBeNull()
+  expect(root.style.getPropertyValue('--jev-graph-width')).toBe('')
+  for (const attribute of ['role', 'tabindex', 'aria-orientation', 'aria-label'])
+    expect(separator.hasAttribute(attribute)).toBe(false)
+  separator.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight' }))
+  expect(separator.hasAttribute('aria-valuenow')).toBe(false)
+  workspace.updateView('trace')
+  expect(root.style.getPropertyValue('--jev-graph-width')).toBe('')
 })
 
 function capturedEvents(): EventEnvelope[] {

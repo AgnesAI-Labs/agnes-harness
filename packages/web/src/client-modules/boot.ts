@@ -21,6 +21,7 @@ import {
   SlotRegistry,
   SlotsProvider,
   ThemeService,
+  WorkbenchService,
 } from '@agnes/web-client'
 import type { AntdRoot } from '@agnes/web-ui'
 import { createAntdRoot } from '@agnes/web-ui'
@@ -60,6 +61,7 @@ export interface ClientModulesRuntime {
   ctx: Context
   registry: SlotRegistry
   session: SessionService
+  workbench: WorkbenchService
   theme: ThemeService
   locale: LocaleService
   resources: ClientResourceService
@@ -137,6 +139,7 @@ export async function startClientModules(options: {
   new AgnesClientService(ctx, options.agnes, options.clientServiceCaller, options.clientEffectCaller)
   const theme = new ThemeService(ctx, resolveTheme(pref, prefersDark.matches))
   const session = new SessionService(ctx, undefined, options.agnes)
+  const workbench = new WorkbenchService(ctx)
   const resources = new ClientResourceService(ctx, options.agnes, session)
   const locale = new LocaleService(ctx, document.documentElement.lang || 'zh-CN')
   const commands = new CommandService(ctx, options.authorizeCommand)
@@ -344,6 +347,7 @@ export async function startClientModules(options: {
     ctx,
     registry,
     session,
+    workbench,
     resources,
     theme,
     locale,

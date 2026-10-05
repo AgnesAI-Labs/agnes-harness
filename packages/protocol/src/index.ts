@@ -159,6 +159,8 @@ export type {
   RuntimeDescriptor,
   RuntimeListResult,
   SeqResult,
+  SessionAccountingParams,
+  SessionAccountingResult,
   SessionArchiveParams,
   SessionAttachParams,
   SessionAttachResult,

@@ -29,11 +29,14 @@ export async function initializeDefaultHelpers(options: {
       const integrity: Record<string, string> =
         state && ['pending', 'installed'].includes(state.phase) ? { ...state.integrity } : {}
       for (const helper of BUNDLED_HELPERS) {
+        // Only first initialization opts into the browser plugin. Existing receipts may reflect
+        // a user removal, and must never be interpreted as permission to reinstall it.
+        if (state && helper.name === 'jev-web' && !Object.hasOwn(integrity, helper.id)) continue
         if (state?.version === 1 && state.phase !== 'existing' && helper.name !== 'plugin-helper') continue
         if (inventory?.packages.some((pkg) => pkg.id === helper.id)) continue
         const root = bundledPluginSourceRoot(helper.ref)
         if (!root) throw new Error('Bundled helper source unavailable')
-        integrity[helper.id] = hashDirectory(join(root, 'bundled-plugins', helper.name))
+        integrity[helper.id] = hashDirectory(join(root, helper.ref.slice('file:'.length)))
       }
       state = { version: 2, phase: 'pending', integrity }
       // This intent precedes policy creation, so a failed first startup can resume safely.

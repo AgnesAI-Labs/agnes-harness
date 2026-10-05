@@ -43,12 +43,12 @@ function setup() {
           'harness',
         ].map((n) => [n, '@agnes/base']),
       ),
-      policySnapshot: { capabilityCeiling: ['tools'], workspacePackages: 'require-project-trust' },
+      policySnapshot: { capabilityCeiling: ['tools', 'ui'], workspacePackages: 'require-project-trust' },
     })
   }
   return { root, profileDir, manager, exec, initializePolicy }
 }
-it('installs three release packages offline once and preserves disable/remove on subsequent starts', async () => {
+it('installs release packages offline once and preserves disable/remove on subsequent starts', async () => {
   const s = setup()
   await initializeDefaultHelpers(s)
   expect(
@@ -58,6 +58,7 @@ it('installs three release packages offline once and preserves disable/remove on
       !!p.entry.state.trusted,
     ]),
   ).toEqual([
+    ['@agnes/jev-web', true, true],
     ['@agnes/mcp-helper', true, true],
     ['@agnes/plugin-helper', true, true],
     ['@agnes/skill-helper', true, true],
@@ -70,6 +71,8 @@ it('installs three release packages offline once and preserves disable/remove on
     publish,
   })
   expect(publish).toHaveBeenCalledOnce()
+  await s.manager.setEnabled(s.profileDir, '@agnes/jev-web', false)
+  await s.manager.remove(s.profileDir, '@agnes/jev-web')
   await s.manager.setEnabled(s.profileDir, '@agnes/mcp-helper', false)
   await s.manager.setEnabled(s.profileDir, '@agnes/skill-helper', false)
   await s.manager.remove(s.profileDir, '@agnes/skill-helper')
@@ -86,7 +89,7 @@ it('provisions old profiles and rejects damaged initialization records', async (
   const s = setup()
   await s.initializePolicy()
   await initializeDefaultHelpers(s)
-  expect((await s.manager.inventory(s.profileDir)).packages).toHaveLength(3)
+  expect((await s.manager.inventory(s.profileDir)).packages).toHaveLength(4)
   writeFileSync(join(s.profileDir, 'default-helpers', 'state.json'), '{}')
   await expect(initializeDefaultHelpers(s)).rejects.toThrow('Invalid helper initialization')
 })
@@ -167,8 +170,8 @@ it('migrates the earlier existing marker without enabling or replacing an instal
 it('records completion without activation when all helpers are already installed', async () => {
   const s = setup()
   await s.initializePolicy()
-  for (const name of ['skill-helper', 'mcp-helper', 'plugin-helper']) {
-    const source = parseSource(`file:./bundled-plugins/${name}`)
+  for (const name of ['skill-helper', 'mcp-helper', 'plugin-helper', 'jev-web']) {
+    const source = parseSource(name === 'jev-web' ? 'file:./jev-web' : `file:./bundled-plugins/${name}`)
     const preview = await s.manager.inspect(s.profileDir, source)
     await s.manager.install(s.profileDir, source, { expectedIntegrity: preview.integrity })
   }
@@ -207,6 +210,18 @@ it('migrates a completed v1 profile by adding only plugin-helper, preserving pri
   )
   await s.manager.setEnabled(s.profileDir, '@agnes/plugin-helper', false)
   await s.manager.remove(s.profileDir, '@agnes/plugin-helper')
+  await initializeDefaultHelpers(s)
+  expect((await s.manager.inventory(s.profileDir)).packages).toHaveLength(0)
+})
+
+it('does not opt completed v2 profiles into a new client default', async () => {
+  const s = setup()
+  await s.initializePolicy()
+  mkdirSync(join(s.profileDir, 'default-helpers'))
+  writeFileSync(
+    join(s.profileDir, 'default-helpers', 'state.json'),
+    JSON.stringify({ version: 2, phase: 'complete', integrity: {} }),
+  )
   await initializeDefaultHelpers(s)
   expect((await s.manager.inventory(s.profileDir)).packages).toHaveLength(0)
 })

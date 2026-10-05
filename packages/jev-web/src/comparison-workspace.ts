@@ -12,6 +12,11 @@ import type {
   WorkspaceEntry,
 } from '@agnes/protocol'
 import { type Client, JsonRpcError, type PermissionOutcome, type PermissionRequest } from '@agnes/sdk/browser'
+import { createPermissionPicker, type PermissionMode } from '@agnes/web-session-ui/permission-picker'
+import { createQuestionController } from '@agnes/web-session-ui/question-controller'
+import { SessionPaneController } from '@agnes/web-session-ui/session-pane'
+import { createTimelineRenderer } from '@agnes/web-session-ui/timeline'
+import { durableApprovalActions, webView } from '@agnes/web-session-ui/view'
 import { Approval, type ApprovalView } from '@agnes/web-units'
 import { createElement } from 'react'
 import { createRoot } from 'react-dom/client'
@@ -40,11 +45,6 @@ import { createComparisonReplay } from './comparison-replay.js'
 import { createComparisonTrace } from './comparison-trace.js'
 import { createJevDecisionGraph } from './jev-decision-graph.js'
 import { createJevDirectStats } from './jev-stats.js'
-import { createPermissionPicker, type PermissionMode } from './permission-picker.js'
-import { createQuestionController } from './question-controller.js'
-import { SessionPaneController } from './session-pane.js'
-import { createTimelineRenderer } from './timeline.js'
-import { durableApprovalActions, webView } from './view.js'
 
 type PendingInput = PermissionInput
 type ComparisonTimeline = Omit<UITimeline, 'generation'> & { generation?: number }
@@ -109,7 +109,7 @@ function rejectedBeforeAdmission(error: unknown, id: string, inputId: string): b
 export function createComparisonWorkspace(
   client: Client,
   defaults: () => ComparisonDefaults,
-  navigation: { select?(id: string | undefined): void | Promise<void> } = {},
+  navigation: { select?(id: string | undefined): void | Promise<void>; host: HTMLElement },
 ) {
   const dialog = element('dialog')
   dialog.className = 'comparison-workspace'
@@ -263,7 +263,7 @@ export function createComparisonWorkspace(
     form,
   )
   // This is the active main workspace, not a modal layered over the original chat.
-  const workspaceHost = document.getElementById('main-content') ?? document.body
+  const workspaceHost = navigation.host
   workspaceHost.append(dialog)
   let snapshot: ComparisonSnapshot | undefined
   let pending: PendingInput | undefined
@@ -280,6 +280,8 @@ export function createComparisonWorkspace(
   let busy = false
   let opening = false
   let cancelling = false
+  let disposed = false
+  let disposal: Promise<void> | undefined
   let selection = 0
   const drafts = new Map<string, string>()
   let epoch = 0
@@ -364,7 +366,10 @@ export function createComparisonWorkspace(
     pendingFailure = pending ? { input: pending, message: message.textContent } : undefined
   }
   const run = (action: () => Promise<void>) => {
-    void action().catch(fail)
+    if (disposed) return
+    void action().catch((error) => {
+      if (!disposed) fail(error)
+    })
   }
   const connected = () => client.connectionState === undefined || client.connectionState === 'connected'
   const selectedPermission = () =>
@@ -1663,6 +1668,7 @@ export function createComparisonWorkspace(
     render()
   })
   dialog.addEventListener('close', () => {
+    if (disposed) return
     permissionPicker.close()
     offConnection?.()
     offConnection = undefined
@@ -1673,6 +1679,7 @@ export function createComparisonWorkspace(
     run(detach)
   })
   async function openEntry(id?: string): Promise<boolean> {
+    if (disposed) return false
     if (dialog.open) {
       if (!id || snapshot?.id === id || creation?.params.requestId === id) return !opening
       throw new Error('请先关闭当前对比视图。')
@@ -1748,6 +1755,7 @@ export function createComparisonWorkspace(
     }
   }
   async function startDraft(requestId: string, text: string) {
+    if (disposed) throw new Error('对比视图已卸载。')
     if (dialog.open || busy || opening || cancelling) throw new Error('请先关闭当前对比视图。')
     const previous = comparisonPermissionEntry(readComparisonEntry(requestId))
     if (previous?.pending) throw new Error('上次对比输入尚待确认，请打开双线对比核对后再新建。')
@@ -1775,7 +1783,9 @@ export function createComparisonWorkspace(
     pendingCreate = creation.params
     input.value = creation.firstInput?.text ?? text
     writeComparisonEntry({ id: requestId, creation, draft: input.value })
+    const navigationTicket = selection
     await navigation.select?.(requestId)
+    if (disposed || navigationTicket !== selection) throw new Error('对比视图已卸载。')
     workspaceView = 'chat'
     dialog.show()
     watchConnection()
@@ -1820,6 +1830,19 @@ export function createComparisonWorkspace(
     void history.refresh()
   }
   return {
+    dispose(): Promise<void> {
+      if (disposal) return disposal
+      disposed = true
+      selection++
+      epoch++
+      opening = busy = cancelling = false
+      offConnection?.()
+      offConnection = undefined
+      permissionPicker.destroy()
+      dialog.removeAttribute('open')
+      disposal = detach().finally(() => dialog.remove())
+      return disposal
+    },
     startDraft,
     async open(id?: string) {
       if (dialog.open && id && id !== snapshot?.id && id !== creation?.params.requestId) dialog.close()

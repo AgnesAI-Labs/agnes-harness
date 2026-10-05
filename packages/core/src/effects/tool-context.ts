@@ -355,9 +355,10 @@ export function buildToolContext(
           }
         }
         if (opts?.wait !== true) return snapshot()
-        const deadline = Date.now() + Math.max(1, d.lease.remainingMs())
         const signal = managedHumanWaitSignal(context) ?? call.signal
-        while (Date.now() < deadline) {
+        // An open parent turn renews its writer lease while the child runs. Follow that live
+        // lease; the managed tool signal still enforces execution timeout and cancellation.
+        while (d.lease.remainingMs() > 0) {
           signal.throwIfAborted()
           const current = await snapshot()
           signal.throwIfAborted()

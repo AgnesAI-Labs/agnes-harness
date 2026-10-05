@@ -1,0 +1,42 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "rootDir": ".",
+    "outDir": "dist",
+    "lib": ["ES2023", "DOM", "DOM.Iterable"],
+    "jsx": "react-jsx"
+  },
+  "include": ["src/**/*.ts", "src/**/*.tsx", "tools/**/*.ts", "test/**/*.ts"],
+  "exclude": ["dist", "client", "node_modules"],
+  "references": [
+    {
+      "path": "../../tsconfig.config.json"
+    },
+    {
+      "path": "../web-client"
+    },
+    {
+      "path": "../web-ui"
+    },
+    {
+      "path": "../web-units"
+    },
+    {
+      "path": "../sdk"
+    },
+    {
+      "path": "../protocol"
+    },
+    {
+      "path": "../jev-trace"
+    },
+    {
+      "path": "../jev-runtime"
+    },
+    {
+      "path": "../web-session-ui"
+    }
+  ]
+}

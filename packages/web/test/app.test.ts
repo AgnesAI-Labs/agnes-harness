@@ -3,6 +3,7 @@ import { readFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import type { ConfigSnapshot, UIOpeningResult, UIProjectionUpdate, UITimeline } from '@agnes/protocol'
 import type { Client, LedgerEvent } from '@agnes/sdk/browser'
+import { type ClientModule, clientModule } from '@agnes/web-client'
 import { act } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -15,8 +16,14 @@ const configurationCallback = vi.hoisted(() => ({
 }))
 const comparisonDraft = vi.hoisted(() => vi.fn(async (_requestId: string, _text: string) => {}))
 const comparisonSubmit = vi.hoisted(() => vi.fn(async (_id: string, _text: string) => {}))
-vi.mock('../src/comparison-workspace.js', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('../src/comparison-workspace.js')>()
+vi.mock('../../jev-web/src/comparison-workspace.js', async (importOriginal) => {
+  const actual = await importOriginal<{
+    createComparisonWorkspace: (
+      client: Client,
+      defaults: () => unknown,
+      navigation?: { select?(id: string): void | Promise<void> },
+    ) => Record<string, unknown>
+  }>()
   return {
     ...actual,
     createComparisonWorkspace: (...args: Parameters<typeof actual.createComparisonWorkspace>) => ({
@@ -44,6 +51,20 @@ vi.mock('../src/client-modules/boot.js', async (importOriginal) => {
       traceBridge.transcriptOptions = options.transcript
       traceBridge.claim = options.claim
       const runtime = await actual.startClientModules(options)
+      // Install the real optional module through the public fiber adapter after host setup.
+      // A variable import keeps this integration fixture out of the Web production project graph.
+      const pluginSource = '../../jev-web/src/index.js'
+      const plugin = (await import(pluginSource)) as ClientModule
+      const configureWorkbench = runtime.workbench.configure.bind(runtime.workbench)
+      runtime.workbench.configure = (host) => {
+        configureWorkbench(host)
+        void runtime.ctx.plugin(clientModule(plugin), {
+          packageId: '@agnes/jev-web',
+          rowId: 'ext:jev-web/main',
+          revision: 'fixture',
+          allowedSlots: [],
+        })
+      }
       if (runtime.trace) {
         const render = runtime.trace.render.bind(runtime.trace)
         runtime.trace.render = (nodes, turns, meta) => {
@@ -131,11 +152,11 @@ vi.mock('@agnes/sdk/browser', async (importOriginal) => ({
   },
   memoryJournal: sdk.memoryJournal,
 }))
-vi.mock('../src/session-binding.js', () => ({
+vi.mock('@agnes/web-session-ui/session-binding', () => ({
   bindWebSession: binding.bindWebSession,
   loadWebSession: binding.loadWebSession,
 }))
-vi.mock('../src/timeline.js', () => ({
+vi.mock('@agnes/web-session-ui/timeline', () => ({
   createTimelineRenderer: timelineRenderer.createTimelineRenderer,
   nearBottom: timelineRenderer.nearBottom,
 }))
@@ -584,6 +605,8 @@ describe('web session selection', () => {
     expect(traceBridge.transcriptOptions).toMatchObject({ nodeHost: 'react' })
     expect(traceBridge.claim).toEqual(expect.any(Function))
     await vi.waitFor(() => expect(traceBridge.metas.at(-1)).toMatchObject({ sessionId: 'old' }))
+    // A single-line session must not offer the dual-line comparison entry beside its tabs.
+    expect(document.querySelector<HTMLButtonElement>('.jev-open-comparison')?.hidden).toBe(true)
     const reportProblem = document.getElementById('report-problem') as HTMLButtonElement
     reportProblem.click()
     const diagnostics = document.querySelector('dialog.diagnostics-dialog') as HTMLDialogElement
@@ -603,13 +626,18 @@ describe('web session selection', () => {
     const detached = deferred<void>()
     old.detach.mockImplementationOnce(() => detached.promise)
     sessionStorage.setItem('agnes-web-comparison', JSON.stringify({ id: 'late-comparison' }))
-    document.getElementById('open-comparison')?.click()
+    document.querySelector<HTMLButtonElement>('.jev-open-comparison')?.click()
     await vi.waitFor(() => expect(old.detach).toHaveBeenCalledTimes(1))
     history.replaceState(null, '', '/?session=next')
     window.dispatchEvent(new PopStateEvent('popstate'))
     await vi.waitFor(() => expect(traceBridge.metas.at(-1)).toMatchObject({ sessionId: 'next' }))
+    expect(document.querySelector<HTMLButtonElement>('.jev-open-comparison')?.hidden).toBe(true)
     detached.resolve()
-    await vi.waitFor(() => expect(document.getElementById('notice')?.textContent).toContain('页面选择已改变'))
+    await vi.waitFor(() =>
+      expect(document.querySelector('.jev-workspace-status')?.textContent).toMatch(
+        /页面选择已改变|失效|卸载/,
+      ),
+    )
     expect(new URL(location.href).searchParams.get('session')).toBe('next')
     expect(new URL(location.href).searchParams.has('comparison')).toBe(false)
     expect((document.querySelector('.comparison-workspace') as HTMLDialogElement | null)?.open).not.toBe(true)
@@ -634,6 +662,8 @@ describe('web session selection', () => {
     await vi.waitFor(() =>
       expect(document.querySelector<HTMLSelectElement>('.composer-runtime')?.disabled).toBe(false),
     )
+    // Back on a fresh draft the entry returns, so dual-line selection stays reachable.
+    expect(document.querySelector<HTMLButtonElement>('.jev-open-comparison')?.hidden).toBe(false)
     await act(async () => {
       await new Promise((resolve) => setTimeout(resolve, 0))
     })
@@ -1179,7 +1209,7 @@ describe('web session selection', () => {
     const newSessionCwd = document.getElementById('new-session-cwd') as HTMLInputElement
     const newSessionCancel = document.getElementById('new-session-cancel') as HTMLButtonElement
     const newSessionCreate = document.getElementById('new-session-create') as HTMLButtonElement
-    const records = document.getElementById('runtime-records') as HTMLElement
+    const records = document.querySelector('[data-workbench-surface=aside]') as HTMLElement
     const draftRuntime = document.getElementById('new-session-runtime') as HTMLSelectElement
 
     await vi.waitFor(() => expect(prompt.disabled).toBe(false))

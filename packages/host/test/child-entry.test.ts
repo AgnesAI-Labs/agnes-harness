@@ -7,12 +7,15 @@ import { fakeModel, ScriptedProvider } from '@agnes/ai/testkit'
 import { subagentCollectTool, subagentForkTool, subagentSpawnTool } from '@agnes/base'
 import {
   CoreError,
+  canonicalJson,
   createWorkspaceInvocationPort,
   hasChildControl,
   Kernel,
   KernelChildren,
   presetDefaults,
+  reserveSessionConfiguration,
   scanAll,
+  sha256Hex,
 } from '@agnes/core'
 import {
   fakeProvider,
@@ -147,15 +150,107 @@ const jevChildrenPreset = {
 }
 
 describe('same-runtime Host child construction', () => {
-  it.each(['native', 'jevloop'] as const)(
-    '%s can spawn and naturally close a child under pinned configuration admission',
-    async (runtime) => {
+  it.each(['full', 'workspace', 'deny'] as const)(
+    'inherits %s round approvals into Jev child shell without granting yolo or bypassing deny',
+    async (mode) => {
+      const root = mkdtempSync(join(tmpdir(), 'agnes-child-approval-'))
+      dirs.push(root)
+      const approval = vi.fn(async () => 'rejected' as const)
+      const execute = vi.fn(async () => ({ code: 0, stdout: 'child output', stderr: '', truncated: false }))
+      const { host } = await createTestHost({
+        dataDir: root,
+        packageDirs: { '@agnes/base': baseDir },
+        provider: Object.assign(
+          fakeProvider(
+            [toolTurn('shell', { command: 'synthetic-child-command' }), textTurn('child done')],
+            '2',
+          ),
+          { models: () => [fakeModel({ route: 'gw', id: 'm1' })] },
+        ),
+        presets: { children: jevChildrenPreset },
+        allowed: ['base', 'standard', 'children'],
+        jev: childJev(
+          (index) => (index === 0 ? 'ACT' : 'RESPOND'),
+          () => 'shell',
+        ),
+        approval,
+        seams: {
+          sandbox: { exec: execute },
+          ...(mode === 'deny'
+            ? {
+                principals: {
+                  authorize: async (_actor, _action, resource) => ({
+                    decisionId: 'explicit-deny',
+                    effect: resource.id === 'shell' ? ('deny' as const) : ('allow' as const),
+                    reason: 'test-policy',
+                  }),
+                },
+              }
+            : {}),
+        },
+        disableSessionTitle: true,
+      })
+      try {
+        const parent = await host.createSession({ cwd: root, runtime: 'jevloop', preset: 'children' })
+        const original = parent.d.approvalMode
+        const handle = await (parent.d.children as KernelChildren).createWithKind('spawn', {
+          parent: parent.key,
+          cwd: root,
+          input: 'child task',
+          isolation: 'shared',
+        })
+        const capture = () => ({ approvalMode: parent.d.approvalMode ?? null })
+        const receipt = await reserveSessionConfiguration(
+          parent,
+          {
+            id: 'child-approval',
+            commandId: 'child-approval',
+            payloadDigest: comparisonPayloadDigest([{ type: 'text', text: 'child task' }]),
+            expectedConfigurationDigest: sha256Hex(canonicalJson(capture())),
+            approvalMode: mode === 'workspace' ? 'manual' : 'off',
+          },
+          capture,
+          () => undefined,
+        )
+        const child = host.kernel.get(handle.key)
+        if (!child) throw new Error('Missing child')
+        const childMode = child.d.approvalMode
+        expect(child.yolo).toBe(false)
+        expect((await handle.run('child task')).text).toBe('child done')
+        const results = await parent.d.log.storage.scan(handle.key, { type: 'tool/result', limit: 10 })
+        expect(results).toHaveLength(1)
+        expect(results[0]?.data).toMatchObject(
+          mode === 'full'
+            ? { isError: false }
+            : { isError: true, code: mode === 'deny' ? 'AUTHZ_DENIED' : 'APPROVAL_REJECTED' },
+        )
+        expect(execute).toHaveBeenCalledTimes(mode === 'full' ? 1 : 0)
+        expect(approval).toHaveBeenCalledTimes(mode === 'workspace' ? 1 : 0)
+        expect(child.d.approvalMode).toBe(childMode)
+        expect(child.yolo).toBe(false)
+        await receipt.lease.release()
+        expect(parent.d.approvalMode).toBe(original)
+      } finally {
+        await host.close()
+      }
+    },
+  )
+
+  it.each([
+    ['native', undefined],
+    ['jevloop', undefined],
+    ['jevloop', 'full'],
+  ] as const)(
+    '%s can spawn and naturally close a child under pinned configuration admission (%s)',
+    async (runtime, permissionMode) => {
       const root = mkdtempSync(join(tmpdir(), 'agnes-admitted-spawn-'))
       dirs.push(root)
       let requests = 0
+      let observeChild = () => {}
       const provider: Provider = {
         models: () => [fakeModel({ route: 'gw', id: 'm1' })],
         async *infer(request, options) {
+          observeChild()
           const script =
             requests++ === 0
               ? toolTurn('subagent_spawn', { task: 'CHILD_ADMISSION_TASK', isolation: 'shared' })
@@ -175,8 +270,18 @@ describe('same-runtime Host child construction', () => {
         ),
         disableSessionTitle: true,
       })
+      const childModes = new Map<
+        string,
+        { during: string | undefined; session: import('@agnes/core').SessionImpl }
+      >()
+      observeChild = () => {
+        for (const session of host.kernel.sessions.values())
+          if (session.d.runtimeOwnerSessionKey && session.executionActive)
+            childModes.set(session.key, { during: session.d.approvalMode, session })
+      }
       try {
         const parent = await host.createSession({ cwd: root, runtime, preset: 'children' })
+        const originalApprovalMode = parent.d.approvalMode
         const prepared = await host.prepareSessionConfiguration(parent.key)
         const content = [{ type: 'text' as const, text: 'SPAWN_ADMISSION' }]
         const receipt = await host.configurationAdmissions.acquire({
@@ -184,6 +289,7 @@ describe('same-runtime Host child construction', () => {
           inputId: 'spawn',
           payloadDigest: comparisonPayloadDigest(content),
           prepared,
+          ...(permissionMode ? { permissionMode } : {}),
         })
         await host.configurationAdmissions.enqueue(parent.key, receipt.token, {
           commandId: 'spawn',
@@ -207,6 +313,10 @@ describe('same-runtime Host child construction', () => {
           expect((await controls.lookupByKey(child.childKey))?.state).toBe('completed')
           expect(controls.readSessionOwnerEvidence(child.childKey)?.closed).toBeDefined()
         })
+        const observed = childModes.get(child.childKey)
+        expect(observed?.during).toBe(permissionMode === 'full' ? 'off' : originalApprovalMode)
+        expect(observed?.session.yolo).toBe(false)
+        await vi.waitFor(() => expect(observed?.session.d.approvalMode).toBe(originalApprovalMode))
         expect(parent.configurationReserved).toBe(false)
         const outbox = await controls.scan(child.childKey, { type: 'x/core/child-outbox', limit: 10 })
         const settlement = outbox.find((row) => (row.data as { kind?: string }).kind === 'subagent-settled')

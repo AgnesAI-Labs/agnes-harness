@@ -1,6 +1,6 @@
 import type { ComparisonSnapshot } from '@agnes/protocol'
+import type { PermissionMode, PermissionOption } from '@agnes/web-session-ui/permission-picker'
 import type { ComparisonCreation, ComparisonEntry, ComparisonPendingInput } from './comparison-entry.js'
-import type { PermissionMode, PermissionOption } from './permission-picker.js'
 
 export const COMPARISON_PERMISSION_OPTIONS: readonly PermissionOption[] = [
   { id: 'view', label: '自动拒绝审批', description: '需审批的操作自动拒绝；不等同于文件系统只读隔离' },

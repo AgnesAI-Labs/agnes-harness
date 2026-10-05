@@ -11,18 +11,41 @@
   "include": ["**/*.ts", "**/*.tsx"],
   "exclude": ["dist", "node_modules"],
   "references": [
-    { "path": "../../tsconfig.config.json" },
-    { "path": "../base" },
-    { "path": "../cordis" },
-    { "path": "../web-client" },
-    { "path": "../web-units" },
-    { "path": "../protocol" },
-    { "path": "../sdk" },
-    { "path": "../resource-control-web" },
-    { "path": "../web-admin-frame" },
-    { "path": "../web-server" },
-    { "path": "../web-ui" },
-    { "path": "../jev-trace" },
-    { "path": "../jev-runtime" }
+    {
+      "path": "../../tsconfig.config.json"
+    },
+    {
+      "path": "../base"
+    },
+    {
+      "path": "../cordis"
+    },
+    {
+      "path": "../web-client"
+    },
+    {
+      "path": "../web-units"
+    },
+    {
+      "path": "../protocol"
+    },
+    {
+      "path": "../sdk"
+    },
+    {
+      "path": "../resource-control-web"
+    },
+    {
+      "path": "../web-admin-frame"
+    },
+    {
+      "path": "../web-server"
+    },
+    {
+      "path": "../web-ui"
+    },
+    {
+      "path": "../web-session-ui"
+    }
   ]
 }

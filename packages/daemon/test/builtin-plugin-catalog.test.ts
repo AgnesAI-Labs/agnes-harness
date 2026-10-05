@@ -14,7 +14,11 @@ it.each([false, true])('discovers optional pinned helper even with broken exampl
   if (broken) mkdirSync(join(root, 'examples', 'packages'), { recursive: true })
   const catalog = await discoverLocalExamples(root)
   const result = await catalog.read({ offline: true })
-  expect(result.entries).toHaveLength(3)
+  expect(result.entries).toHaveLength(4)
+  expect(result.entries.find((entry) => entry.id === '@agnes/jev-web')).toMatchObject({
+    source: { type: 'file', ref: 'file:./jev-web' },
+    sourceId: 'builtin-plugins',
+  })
   expect(result.entries[0]).toMatchObject({
     id: '@agnes/skill-helper',
     version: '0.1.1',

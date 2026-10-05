@@ -1,7 +1,12 @@
 import { mkdirSync, mkdtempSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import type { DiagnosticsCollectResult, DiagnosticsEventsResult, EventEnvelope } from '@agnes/protocol'
+import type {
+  DiagnosticsCollectResult,
+  DiagnosticsEventsResult,
+  EventEnvelope,
+  SessionAccountingResult,
+} from '@agnes/protocol'
 import { afterEach, describe, expect, it } from 'vitest'
 import { openTestHost } from './host.js'
 
@@ -269,5 +274,32 @@ describe('diagnostics.events', () => {
         maxBytes: 65536,
       }),
     ).toHaveProperty('error.data.code', 'SESSION_NOT_FOUND')
+  })
+})
+
+describe('session.accounting', () => {
+  it('reads a durable root prefix without writing and refuses another local principal', async () => {
+    const { h, ep } = await setup()
+    const sessionId = await newSession(ep, h.dataDir)
+    const session = h.host.kernel.get(sessionId)
+    if (!session) throw new Error('session not open')
+    const head = session.lastSeq
+    const result = await call<SessionAccountingResult>(ep, '_agnes/v1/session.accounting', { sessionId })
+    expect(result.result).toMatchObject({
+      sessionId,
+      runtime: { id: 'native', version: '1' },
+      accounting: { afterSeq: 0, throughSeq: head, jev: { attempts: 0 }, llm: { attempts: 0 } },
+    })
+    expect(session.lastSeq).toBe(head)
+    const stranger = h.endpoint({
+      pollMs: 5,
+      identity: { principalId: 'other-principal', authKind: 'local', credentialKind: 'local' },
+    })
+    cleanups.push(() => stranger.close())
+    await stranger.handle(initialize)
+    expect(await call(stranger, '_agnes/v1/session.accounting', { sessionId })).toHaveProperty(
+      'error.data.code',
+      'CAPABILITY_DENIED',
+    )
   })
 })

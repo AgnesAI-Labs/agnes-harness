@@ -409,7 +409,7 @@ describe('a pending approval before the loaded window', () => {
 
 function capturedGenerationLane(side: 'left' | 'right') {
   const capture = JSON.parse(
-    readFileSync('packages/web/test/fixtures/comparison-real-journal-views.json', 'utf8'),
+    readFileSync('packages/jev-web/test/fixtures/comparison-real-journal-views.json', 'utf8'),
   ) as {
     projections: Record<'left' | 'right', Record<string, Omit<UITimeline, 'generation'>>>
   }

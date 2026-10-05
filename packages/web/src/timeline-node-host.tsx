@@ -193,6 +193,7 @@ export const TimelineNodeHost = forwardRef<TranscriptHandle, TimelineNodeHostPro
             registry={registry}
             {...(markdownRenderer ? { markdownRenderer } : {})}
             {...(projection.turns ? { turns: projection.turns } : {})}
+            {...(projection.meta?.historical ? { historical: true } : {})}
             visibleNodeIds={projection.nodes.map((node) => node.id)}
             {...(onFork ? { onFork } : {})}
             {...(claim ? { claim } : {})}

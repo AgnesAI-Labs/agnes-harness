@@ -60,6 +60,16 @@ Trust and enable using hashes from the preview, then open Web for the same insta
 
 Package desired=enabled, backend web row ready, and successful loading in this page are distinct stages. A closed browser, failed script/CSS fetch, unauthorized slot, or exception in apply can prevent frontend activation. Inspect per-row actual state as well as package enablement.
 
+## Extend execution views through Workbench
+
+The optional `ctx.workbench` interface provides a fiber-owned execution-view provider. Its public contracts are [WorkbenchClient, WorkbenchProvider and WorkbenchSnapshot](../../packages/web-client/src/workbench.ts). A provider registers modes, resolves its URL fields, opens a saved target and handles submissions. The host captures an immutable snapshot of the selected workspace, model and permission for each first submission. `subscribe` delivers host state; `observe` delivers events for the selected session. Registration and subscriptions are removed with the calling module's fiber.
+
+`workbench.surfaces` exposes `root`, `chat`, `aside`, `divider`, `footer`, `toolbar` and `overlay`. Contribute owned children to these explicit surfaces and remove them on disposal; do not query private host IDs or move existing shell children. Reuse the public renderers and controllers exported by [@agnes/web-session-ui](../../packages/web-session-ui/package.json). The host retains connection, composer, session selection and authorization ownership.
+
+[JevLoop's browser package](../../packages/jev-web/README.md) uses this interface for decision graphs and the two-lane workspace. Its `ext:jev-web/main` backend row owns the client descriptor; it does not install a backend runtime. The built descriptor is `client/agnes.client.json`, with independently loaded browser ESM and styles. Shared platform instances resolve through the existing import map; remaining browser dependencies are bundled. Disabled or removed packages leave the roster, triggering fiber cleanup and stylesheet removal. A target already bound to an unavailable provider remains unavailable: submitting must refuse rather than switch to Native. UI disposal does not cancel tasks already accepted by the backend.
+
+Fresh default initialization installs the Jev browser package through the ordinary install/trust/enable path. Profiles that completed earlier default initialization are not automatically opted in; users can install it explicitly. Later startup preserves disable/remove choices. Backend runtime registration remains static Host assembly and is outside this frontend plugin change. Browser package installation, backend runtime availability and page activation are separate conditions.
+
 <a id="验证"></a>
 
 ## Verification

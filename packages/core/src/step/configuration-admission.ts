@@ -82,6 +82,63 @@ type State = {
 }
 const owners = new WeakMap<SessionImpl, State>()
 const verified = new WeakMap<SessionImpl, { seq: number; value: RecordValue | undefined }>()
+type InheritedApproval = { mode: ApprovalMode; current(): boolean }
+const inheritedApprovals = new WeakMap<SessionImpl, InheritedApproval>()
+
+/** A child activation borrows only its original live owner's approval policy, never filesystem authority. */
+export async function runWithInheritedConfigurationApproval<T>(
+  parent: SessionImpl,
+  child: SessionImpl,
+  run: () => Promise<T>,
+): Promise<T> {
+  const owner = owners.get(parent)
+  const source =
+    inheritedApprovals.get(parent) ??
+    (owner?.record.approvalMode === undefined
+      ? undefined
+      : {
+          mode: owner.record.approvalMode,
+          current: () => owners.get(parent) === owner,
+        })
+  if (!source) return run()
+  if (inheritedApprovals.has(child))
+    throw new CoreError('E_LANE_BUSY', 'Child approval scope is already active')
+  const writerRunId = parent.writerRunId
+  const runtime = parent.d.currentRuntime?.current(parent.key)
+  const signal = parent.ac.signal
+  const previous = Object.getOwnPropertyDescriptor(child.d, 'approvalMode')
+  let active = true
+  const scope: InheritedApproval = {
+    mode: source.mode,
+    current: () =>
+      active &&
+      !parent.closingOrClosed &&
+      !child.closingOrClosed &&
+      !signal.aborted &&
+      !parent.ac.signal.aborted &&
+      parent.writerRunId === writerRunId &&
+      parent.d.currentRuntime?.current(parent.key) === runtime &&
+      source.current(),
+  }
+  inheritedApprovals.set(child, scope)
+  try {
+    Object.defineProperty(child.d, 'approvalMode', {
+      configurable: true,
+      enumerable: previous?.enumerable ?? true,
+      // A revoked manual scope must not fall back to a profile whose default is off.
+      // Descendants retain this same revoked scope; a later owner cannot revive it.
+      get: () => (scope.current() ? scope.mode : 'manual'),
+    })
+    return await run()
+  } finally {
+    active = false
+    if (inheritedApprovals.get(child) === scope) {
+      inheritedApprovals.delete(child)
+      if (previous) Object.defineProperty(child.d, 'approvalMode', previous)
+      else delete child.d.approvalMode
+    }
+  }
+}
 
 /** Privileged capability; not part of a tool context or an extension API. */
 export interface SessionConfigurationAdmission {

@@ -124,7 +124,7 @@ await Promise.all(
 // Conversation rules share the existing style.css URL on all three pages. The local CLI build
 // must apply the same composition when copying Web assets into its own static root.
 await appendFile(join(out, 'style.css'), `\n${await readFile(conversationCss, 'utf8')}`)
-for (const sheet of ['jev-workspace.css', 'jev-graph.css', 'runtime-process.css'])
+for (const sheet of ['runtime-process.css'])
   await appendFile(join(out, 'style.css'), `\n${await readFile(join(root, 'public', sheet), 'utf8')}`)
 // esbuild emits this CSS companion because XMarkdown imports its core stylesheet. All pages
 // already load /style.css, so merge core + published themes + Agnes overrides there.

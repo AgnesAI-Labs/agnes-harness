@@ -8,6 +8,7 @@ import { fileURLToPath } from 'node:url'
 import { type BuildOptions, type BuildResult, build, type Plugin } from 'esbuild'
 import { collectThirdPartyNotices } from '../../../tools/third-party-notices.mjs'
 import { beginRuntimeDirectory } from '../../base/tools/runtime-directory.js'
+import { buildJevWeb } from '../../jev-web/tools/build.js'
 import { copySystemRuntime, withBuiltSystemRuntime } from './windows-runtime.js'
 
 const cliRoot = join(dirname(fileURLToPath(import.meta.url)), '..')
@@ -26,6 +27,7 @@ export async function copyComputerUseNotice(outputDirectory: string): Promise<vo
 
 /** Copy only runtime payload, never repository tests or personal working files. */
 export async function copyBundledPlugins(outputDirectory: string): Promise<void> {
+  await buildJevWeb()
   for (const helper of ['skill-helper', 'mcp-helper', 'plugin-helper']) {
     const source = join(repoPackages, 'package-manager', 'bundled-plugins', helper)
     const destination = join(outputDirectory, 'bundled-plugins', helper)
@@ -37,6 +39,14 @@ export async function copyBundledPlugins(outputDirectory: string): Promise<void>
         errorOnExist: true,
       })
   }
+  const clientDestination = join(outputDirectory, 'bundled-plugins', 'jev-web')
+  await mkdir(clientDestination, { recursive: true })
+  for (const name of ['package.json', 'index.mjs', 'agnes.client.json', 'client', 'README.md', 'LICENSE'])
+    await cp(join(repoPackages, 'jev-web', name), join(clientDestination, name), {
+      recursive: true,
+      force: false,
+      errorOnExist: true,
+    })
 }
 
 const bundleJitiTransform: Plugin = {
@@ -255,7 +265,7 @@ export async function buildLocalWeb(webOut: string): Promise<void> {
   ])
   const conversationCss = await readFile(join(webUi, 'src', 'conversation', 'messages.css'), 'utf8')
   await appendFile(join(webOut, 'style.css'), `\n${conversationCss}`)
-  for (const sheet of ['jev-workspace.css', 'jev-graph.css', 'runtime-process.css'])
+  for (const sheet of ['runtime-process.css'])
     await appendFile(
       join(webOut, 'style.css'),
       `\n${await readFile(join(repoPackages, 'web', 'public', sheet), 'utf8')}`,

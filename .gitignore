@@ -41,3 +41,5 @@ docs/task-records/
 .env.*
 !.env.example
 dev.env
+
+/packages/jev-web/client/

@@ -8,7 +8,7 @@ import {
   useRef,
 } from 'react'
 /** Whether older records exist before the loaded window, and how to load a page of them. */
-export type TranscriptMeta = { hasEarlier: boolean; loadEarlier?: () => void }
+export type TranscriptMeta = { hasEarlier: boolean; loadEarlier?: () => void; historical?: boolean }
 
 export interface TranscriptRenderer {
   render(nodes: readonly UINode[], turns?: readonly UITurn[], meta?: TranscriptMeta): void

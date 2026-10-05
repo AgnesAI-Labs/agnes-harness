@@ -3,10 +3,10 @@
 import { Context } from '@agnes/cordis'
 import type { UINode, UITurn } from '@agnes/protocol'
 import { SlotRegistry } from '@agnes/web-client'
+import { createTimelineRenderer } from '@agnes/web-session-ui/timeline'
 import { createElement, useEffect, useLayoutEffect } from 'react'
 import { createRoot } from 'react-dom/client'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { createTimelineRenderer } from '../src/timeline.js'
 
 afterEach(() => {
   vi.unstubAllGlobals()
@@ -856,6 +856,31 @@ describe('turn grouping at the edge of a loaded window', () => {
     expect(transcript.querySelector<HTMLElement>('.timeline-unassigned')?.hidden).toBe(true)
     timeline.reset()
   })
+
+  it('does not count wall-clock time while showing an unfinished historical turn', () => {
+    const { transcript, timeline } = renderer()
+    const completed = turn(1, ['u1'], 'a1')
+    const running: UITurn = {
+      id: completed.id,
+      turn: completed.turn,
+      startSeq: completed.startSeq,
+      status: 'running',
+      startedAt: new Date(Date.now() - 10_000).toISOString(),
+      nodeIds: ['u1'],
+      usage: completed.usage,
+      inherited: false,
+      forkable: false,
+    }
+    const label = () => transcript.querySelector('.turn-status')?.textContent ?? ''
+    timeline.render(nodes.slice(0, 1), [running], { hasEarlier: false })
+    expect(label()).toContain('用时')
+    timeline.render(nodes.slice(0, 1), [running], { hasEarlier: false, historical: true })
+    expect(label()).toContain('正在准备回复')
+    expect(label()).not.toContain('用时')
+    timeline.render(nodes.slice(0, 1), [running], { hasEarlier: false })
+    expect(label()).toContain('用时')
+    timeline.reset()
+  })
 })
 
 describe('loading earlier records', () => {
@@ -1171,4 +1196,83 @@ it('renders verified Agent reports and settlement notices through the shared con
   expect(transcript.querySelector('[data-node-id="agent"]')?.classList.contains('user')).toBe(false)
   expect(transcript.querySelector('[data-node-id="agent"] img')).toBeNull()
   timeline.reset()
+})
+
+it('renders plugin slot cards with an explicit context isolated from other timelines', async () => {
+  const ctx = new Context()
+  const fiber = await ctx.plugin(SlotRegistry)
+  const registry = (ctx as unknown as { slots: SlotRegistry }).slots
+  registry.setSession('plugin-session')
+  registry.register('tool.card.inline', () => createElement('div', {}, 'plugin-owned card'), {
+    owner: 'plugin-a',
+  })
+  const transcript = document.createElement('div')
+  const blockedTranscript = document.createElement('div')
+  const button = document.createElement('button')
+  document.body.append(transcript, blockedTranscript, button)
+  const timeline = createTimelineRenderer({
+    transcript,
+    newContentButton: button,
+    slotCardContext: { registry, claim: (entry, extId) => entry.owner === extId },
+  })
+  const blocked = createTimelineRenderer({
+    transcript: blockedTranscript,
+    newContentButton: button,
+    slotCardContext: { registry, claim: () => false },
+  })
+  const node: UINode = {
+    kind: 'slot',
+    id: 'plugin-card',
+    seq: 1,
+    fill: { slot: 'tool.card.inline', extId: 'plugin-a', payload: {} },
+  }
+  timeline.render([node])
+  blocked.render([node])
+  await vi.waitFor(() => expect(transcript.textContent).toContain('plugin-owned card'))
+  expect(blockedTranscript.textContent).not.toContain('plugin-owned card')
+  timeline.dispose?.()
+  blocked.dispose?.()
+  await fiber.dispose()
+})
+
+it('updates and releases a plugin-provided runtime card', () => {
+  const transcript = document.createElement('div')
+  const button = document.createElement('button')
+  document.body.append(transcript, button)
+  const released: string[] = []
+  const timeline = createTimelineRenderer({
+    transcript,
+    newContentButton: button,
+    runtimeNodeCard(host, initial) {
+      const card = document.createElement('div')
+      host.append(card)
+      card.textContent = initial.summary
+      return {
+        update: (node) => {
+          card.textContent = node.summary
+        },
+        dispose: () => {
+          card.remove()
+          released.push(initial.id)
+        },
+      }
+    },
+  })
+  const node: UINode = {
+    kind: 'runtime',
+    id: 'plugin-runtime',
+    seq: 1,
+    lastSeq: 2,
+    runtime: { id: 'fixture', version: '1' },
+    category: 'model',
+    status: 'running',
+    title: 'Plugin runtime',
+    summary: 'initial',
+  }
+  timeline.render([node])
+  expect(transcript.textContent).toContain('initial')
+  timeline.render([{ ...node, summary: 'updated' }])
+  expect(transcript.textContent).toContain('updated')
+  timeline.reset()
+  expect(released).toEqual(['plugin-runtime'])
 })

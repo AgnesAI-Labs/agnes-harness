@@ -136,8 +136,7 @@
     "@agnes/web-server",
     "@agnes/web-ui",
     "@agnes/web-units",
-    "@agnes/jev-trace",
-    "@agnes/jev-runtime"
+    "@agnes/web-session-ui"
   ],
   "@agnes/guards": [],
   "@agnes/sandbox-remote": ["@agnes/core"],
@@ -154,5 +153,22 @@
   "@agnes/jev-trace": ["@agnes/jev-runtime"],
   "@agnes/runtime-api": [],
   "@agnes/runtime-jev": ["@agnes/jev-runtime", "@agnes/protocol"],
-  "@agnes/runtime-comparison": ["@agnes/protocol"]
+  "@agnes/runtime-comparison": ["@agnes/protocol"],
+  "@agnes/web-session-ui": [
+    "@agnes/protocol",
+    "@agnes/sdk",
+    "@agnes/web-client",
+    "@agnes/web-ui",
+    "@agnes/web-units"
+  ],
+  "@agnes/jev-web": [
+    "@agnes/web-client",
+    "@agnes/web-ui",
+    "@agnes/web-units",
+    "@agnes/sdk",
+    "@agnes/protocol",
+    "@agnes/jev-trace",
+    "@agnes/jev-runtime",
+    "@agnes/web-session-ui"
+  ]
 }

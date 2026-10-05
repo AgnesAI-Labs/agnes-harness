@@ -3,6 +3,7 @@ import { mkdir, mkdtemp, readdir, readFile, rename, rm, writeFile } from 'node:f
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { validatePackageAdminCall } from '@agnes/protocol'
 import { build } from 'esbuild'
 import { afterEach, expect, it } from 'vitest'
 import { copyBundledPlugins } from '../tools/build-local.js'
@@ -15,20 +16,41 @@ it.each([
   { name: 'skill-helper', exportName: 'skillHelper', tools: 4 },
   { name: 'mcp-helper', exportName: 'mcpHelper', tools: 1 },
   { name: 'plugin-helper', exportName: 'pluginHelper', tools: 3 },
+  { name: 'jev-web', exportName: 'main', tools: 0 },
 ])('ships and relocates $name outside source workspace', async (helper) => {
   const root = await mkdtemp(join(tmpdir(), 'agnes-helper-delivery-'))
   roots.push(root)
   const output = join(root, 'runtime')
   await copyBundledPlugins(output)
   expect((await readdir(join(output, 'bundled-plugins', helper.name))).sort()).toEqual(
-    ['LICENSE', 'README.md', 'index.mjs', 'package.json', 'src'].sort(),
+    (helper.name === 'jev-web'
+      ? ['LICENSE', 'README.md', 'index.mjs', 'package.json', 'agnes.client.json', 'client']
+      : ['LICENSE', 'README.md', 'index.mjs', 'package.json', 'src']
+    ).sort(),
   )
+  if (helper.name === 'jev-web') {
+    const directory = join(output, 'bundled-plugins', helper.name)
+    const descriptor = JSON.parse(await readFile(join(directory, 'client', 'agnes.client.json'), 'utf8'))
+    expect(await readFile(join(directory, 'client', descriptor.client.entry), 'utf8')).toContain('export')
+    expect(typeof (await readFile(join(directory, 'client', descriptor.client.styles[0]), 'utf8'))).toBe(
+      'string',
+    )
+    for (const file of (await readdir(join(directory, 'client'))).filter((name) =>
+      /\.(js|css)$/.test(name),
+    )) {
+      const base64 = (await readFile(join(directory, 'client', file))).toString('base64')
+      expect(
+        validatePackageAdminCall('_agnes/v1/clientModules.read', 'result', { found: true, base64 }),
+        file,
+      ).toMatchObject({ ok: true })
+    }
+  }
   const resolver = fileURLToPath(
     new URL('../../package-manager/src/bundled-plugin-source.ts', import.meta.url),
   )
   await build({
     stdin: {
-      contents: `import { bundledPluginSourceRoot, BUNDLED_HELPERS } from ${JSON.stringify(resolver)}; import { readFileSync } from 'node:fs'; import { join } from 'node:path'; import { pathToFileURL } from 'node:url'; const tools = []; (await import(pathToFileURL(join(bundledPluginSourceRoot(BUNDLED_HELPERS.find(h=>h.name===${JSON.stringify(helper.name)}).ref), 'bundled-plugins/'+${JSON.stringify(helper.name)}+'/index.mjs')).href))[${JSON.stringify(helper.exportName)}].apply({extension:()=>({registerTool: tool => tools.push(tool.name)})}); if (tools.length !== ${helper.tools}) throw new Error('Missing tools'); console.log(JSON.parse(readFileSync(join(bundledPluginSourceRoot(BUNDLED_HELPERS.find(h=>h.name===${JSON.stringify(helper.name)}).ref), 'bundled-plugins/'+${JSON.stringify(helper.name)}+'/package.json'), 'utf8')).name)`,
+      contents: `import { bundledPluginSourceRoot, BUNDLED_HELPERS } from ${JSON.stringify(resolver)}; import { readFileSync } from 'node:fs'; import { join } from 'node:path'; import { pathToFileURL } from 'node:url'; const tools = []; (await import(pathToFileURL(join(bundledPluginSourceRoot(BUNDLED_HELPERS.find(h=>h.name===${JSON.stringify(helper.name)}).ref), ${JSON.stringify(helper.name === 'jev-web' ? 'jev-web/index.mjs' : `bundled-plugins/${helper.name}/index.mjs`)})).href))[${JSON.stringify(helper.exportName)}].apply({extension:()=>({registerTool: tool => tools.push(tool.name)})}); if (tools.length !== ${helper.tools}) throw new Error('Missing tools'); console.log(JSON.parse(readFileSync(join(bundledPluginSourceRoot(BUNDLED_HELPERS.find(h=>h.name===${JSON.stringify(helper.name)}).ref), ${JSON.stringify(helper.name === 'jev-web' ? 'jev-web/package.json' : `bundled-plugins/${helper.name}/package.json`)}), 'utf8')).name)`,
       resolveDir: root,
     },
     outfile: join(output, 'probe.mjs'),

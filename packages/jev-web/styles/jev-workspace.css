@@ -1,22 +1,5 @@
 /* DSH's Jev workspace structure: circuit and the original conversation side by side. */
-main {
-  container-type: inline-size;
-}
-.session-workspace {
-  flex: 1;
-  min-height: 0;
-  min-width: 0;
-  display: flex;
-}
-.session-chat {
-  display: flex;
-  flex-direction: column;
-  flex: 1;
-  min-width: 0;
-  min-height: 0;
-  overflow: hidden;
-}
-.jev-stats-dock:has(.jev-direct-stats[hidden]) {
+.jev-stats-dock:has(.jev-direct-stats[hidden]):has(.jev-session-accounting[hidden]) {
   display: none;
 }
 .jev-stats-dock {
@@ -25,11 +8,52 @@ main {
   color: var(--agnes-text-tertiary);
   font-size: 0.75rem;
 }
-.jev-workspace-views,
-#jev-workspace-split {
+.jev-session-accounting {
+  display: inline-block;
+  margin-left: 0.75rem;
+  vertical-align: middle;
+  position: relative;
+}
+.jev-session-accounting[hidden] {
   display: none;
 }
-.session-workspace:has(#runtime-records:not([hidden])) {
+.jev-session-accounting > summary {
+  cursor: pointer;
+}
+.jev-session-accounting-body {
+  position: absolute;
+  bottom: calc(100% + 0.5rem);
+  right: 0;
+  width: min(23rem, calc(100vw - 1.5rem));
+  max-height: min(30rem, calc(100vh - 1.5rem));
+  overflow: auto;
+  padding: 0.75rem;
+  border: 1px solid var(--agnes-line-primary);
+  border-radius: 0.75rem;
+  color: var(--agnes-text-secondary);
+  background: var(--agnes-bg-page);
+  box-shadow: var(--shadow-elevation-prominent);
+}
+.jev-session-accounting-body:popover-open {
+  position: fixed;
+  inset: auto;
+  margin: 0;
+}
+.jev-session-accounting-body dl {
+  display: grid;
+  grid-template-columns: minmax(9rem, 1fr) minmax(10rem, 2fr);
+  gap: 0.25rem 1rem;
+  margin: 0;
+}
+.jev-session-accounting-body dt,
+.jev-session-accounting-body dd {
+  margin: 0;
+}
+.jev-workspace-views,
+[data-workbench-surface="divider"] {
+  display: none;
+}
+[data-workbench-surface="workspace"]:has([data-workbench-surface="aside"]:not([hidden])) {
   display: grid;
   grid-template-columns: minmax(320px, min(var(--jev-graph-width, 55%), calc(100% - 369px))) 9px minmax(
       0,
@@ -38,7 +62,7 @@ main {
   grid-template-rows: minmax(0, 1fr);
   overflow: hidden;
 }
-#runtime-records {
+[data-workbench-surface="aside"] {
   margin: 0;
   padding: 0;
   min-width: 0;
@@ -48,7 +72,8 @@ main {
   flex-direction: column;
   background: var(--agnes-bg-page);
 }
-.session-workspace:has(#runtime-records:not([hidden])) #jev-workspace-split {
+[data-workbench-surface="workspace"]:has([data-workbench-surface="aside"]:not([hidden]))
+  [data-workbench-surface="divider"] {
   display: block;
   position: relative;
   border: 0;
@@ -59,22 +84,18 @@ main {
   touch-action: none;
   background: var(--agnes-bg-app-content);
 }
-#jev-workspace-split::after {
+[data-workbench-surface="divider"]::after {
   content: "";
   position: absolute;
   inset: 0 4px;
   background: var(--agnes-line-primary);
 }
-#jev-workspace-split:hover::after,
-#jev-workspace-split:focus-visible::after,
-#jev-workspace-split[data-dragging]::after {
+[data-workbench-surface="divider"]:hover::after,
+[data-workbench-surface="divider"]:focus-visible::after,
+[data-workbench-surface="divider"][data-dragging]::after {
   background: var(--agnes-text-emphasis);
 }
-.session-chat .session-tabs-bar {
-  gap: 1rem;
-  padding-inline: 1rem;
-}
-.session-chat #open-comparison {
+.jev-open-comparison {
   min-height: 1.75rem;
   padding: 0.125rem 0.5rem;
   border: 0;
@@ -95,38 +116,13 @@ main {
   max-height: 35%;
   overflow: auto;
 }
-#runtime-records > .jev-decision-graph {
+[data-workbench-surface="aside"] > .jev-decision-graph {
   flex: 1;
   height: auto;
   min-height: 0;
 }
-#runtime-records .jev-graph-workspace {
+[data-workbench-surface="aside"] .jev-graph-workspace {
   min-height: 0;
-}
-.session-workspace:has(#runtime-records:not([hidden])) .composer-controls {
-  flex-wrap: wrap;
-  gap: 0.35rem;
-}
-.session-workspace:has(#runtime-records:not([hidden])) .composer-runtime {
-  flex: none;
-  white-space: nowrap;
-  font-size: 0.75rem;
-}
-.session-workspace:has(#runtime-records:not([hidden])) .composer-workspace,
-.session-workspace:has(#runtime-records:not([hidden])) .composer-permission {
-  flex: 0 1 auto;
-  max-width: 34%;
-}
-.session-workspace:has(#runtime-records:not([hidden])) .model-field {
-  flex: 1 0 140px;
-  margin-left: 0;
-}
-.session-workspace:has(#runtime-records:not([hidden])) #model {
-  max-width: 100%;
-}
-.session-chat #composer-model-settings {
-  color: var(--agnes-text-secondary);
-  font-size: 0.75rem;
 }
 .runtime-trace-footer .runtime-trace-coverage {
   margin: 0;
@@ -146,27 +142,18 @@ main {
   margin: 0.5rem 0;
   padding-left: 1.5rem;
 }
-.session-workspace:has(#runtime-records:not([hidden])) .session-chat #composer {
-  width: calc(100% - 1.5rem);
-  margin: 0.5rem auto 0.75rem;
-}
-body:has(#runtime-records:not([hidden])) main {
-  padding-bottom: 0;
-}
-body:has(#runtime-records:not([hidden])) .conversation-shell {
-  margin-top: 0;
-}
 @container (max-width: 780px) {
-  .session-workspace:has(#runtime-records:not([hidden])) {
+  [data-workbench-surface="workspace"]:has([data-workbench-surface="aside"]:not([hidden])) {
     grid-template-columns: minmax(0, 1fr);
     grid-template-rows: auto minmax(0, 1fr);
   }
-  .session-workspace > #runtime-records,
-  .session-workspace > .session-chat {
+  [data-workbench-surface="workspace"] > [data-workbench-surface="aside"],
+  [data-workbench-surface="workspace"] > [data-workbench-surface="conversation"] {
     grid-column: 1 / -1;
     grid-row: 2;
   }
-  .session-workspace:has(#runtime-records:not([hidden])) > .jev-workspace-views {
+  [data-workbench-surface="workspace"]:has([data-workbench-surface="aside"]:not([hidden]))
+    .jev-workspace-views {
     display: flex;
     grid-column: 1 / -1;
     grid-row: 1;
@@ -184,14 +171,16 @@ body:has(#runtime-records:not([hidden])) .conversation-shell {
     background: var(--agnes-bg-selected);
     color: var(--agnes-text-emphasis);
   }
-  .session-workspace:has(#runtime-records:not([hidden])) #jev-workspace-split {
+  [data-workbench-surface="workspace"]:has([data-workbench-surface="aside"]:not([hidden]))
+    [data-workbench-surface="divider"] {
     display: none;
   }
-  .session-workspace:not([data-view="graph"]) > #runtime-records {
+  [data-workbench-surface="workspace"]:not([data-view="graph"]) > [data-workbench-surface="aside"] {
     visibility: hidden;
     pointer-events: none;
   }
-  .session-workspace[data-view="graph"]:has(#runtime-records:not([hidden])) > .session-chat {
+  [data-workbench-surface="workspace"][data-view="graph"]:has([data-workbench-surface="aside"]:not([hidden]))
+    > [data-workbench-surface="conversation"] {
     visibility: hidden;
     pointer-events: none;
   }

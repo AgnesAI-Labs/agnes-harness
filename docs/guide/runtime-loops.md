@@ -79,6 +79,20 @@ candidate invalidation or rewrite historical requests. The answer instruction re
 tool calls; this is a model instruction, not a provider-enforced prohibition. Answer tool calls are
 rejected, never executed, and do not enter the parameter/arbitration format-repair loop.
 
+Host-declared runtime-context snapshots enter the LLM conversation as user-role facts at their
+recorded positions, not as a mutable top-level system prompt. Each changed snapshot supersedes
+earlier snapshots for its own key; unchanged text adds no message. Clearing a key appends an
+explicit notice that its earlier facts no longer apply, without deleting history. Date, mode and
+working-directory changes therefore preserve the previous language-request message prefix when
+the tool catalog and system instructions remain unchanged. The decision projection still uses only
+the latest state. User text and tool-provided additions cannot acquire Host-snapshot semantics by
+claiming the same source. Native projection and authorization are unchanged.
+
+Persisted request snapshots and request notes are not rewritten by this change. Continuing a session
+created with the older projection can change its next request prefix once; cache reuse across that
+projection change is not guaranteed. Stable serialized prefixes enable provider caching, but tests
+of request bytes do not establish actual cache-hit rates, which require provider usage evidence.
+
 New system-prompt records retain full LLM text plus a section snapshot. Jev separately projects
 known producer persona, environment, skill catalog and constraints. Only an exact identity-only persona
 is omitted; behavioral obligations remain. The exact bundled skill catalog becomes name/description
@@ -90,7 +104,7 @@ This adds no AGENTS.md file loader: `agents-md` remains a reserved Core section.
 New runtime-context records also retain their sanitized structured facts. Jev checks the snapshot
 against the recorded text before presenting named environment facts, omitting only known producer
 transport/model identity. Unknown fields remain intact. Legacy or inconsistent snapshots fall back to
-their full recorded text; the LLM projection is unchanged. Root directory discovery candidates use only
+their full recorded text; the language history retains that text in ordered snapshots. Root directory discovery candidates use only
 persisted workspace observations and verified bundled tools, not inferred paths from user prose.
 
 Ordered system history and Host-selected tool calls are preserved as distinct request messages.
@@ -196,6 +210,11 @@ approval policy only while that round owns its configuration admission; it never
 widens filesystem access, or overrides hook/authorization denials. Settlement or release before
 input acceptance restores the prior policy. Reject mode retains the ordinary Web client's refusal
 of approval requests: it is not a read-only sandbox, and tools requiring no approval can still run.
+Delegated child runs and their descendants inherit the live round's approval policy, including
+continuations started during that round. This capability is bound to the original live owner and
+writer, not copied permanently into the child preset or reconstructed from history. Once that
+owner is released, cancelled or closed, an unfinished child run falls back to manual approval;
+a later round cannot reauthorize that old run. Ending the child run restores its original policy.
 Manual approvals show lane-specific allow/reject actions from the live request without waiting for
 post-decision ledger publication. Historical replay, disconnection, cancellation and settled requests
 cannot decide an obsolete live request.
@@ -337,7 +356,11 @@ installed helper packages require an explicit package update to adopt changed co
 Complete candidates use persisted objective evidence. Initial file reads from directory/search
 results bind only the path; text paging is retained for known text and version-checked continuations.
 Skill catalogs expose name candidates without loading their instructions; skill continuations bind
-the returned byte offset and version key. Known child receipts support nonblocking collect candidates.
+the returned byte offset and version key. Known child receipts offer `subagent_collect(wait: true)`
+candidates, reusing the native cancellable wait instead of spending decision steps repeatedly polling
+`running`. Waiting follows live writer-lease renewals rather than freezing the initial expiry.
+Existing tool timeouts, lease expiry and cancellation still apply; a wait can return a nonterminal result.
+Terminal collection receipts suppress further candidates until new child work is admitted.
 Failed reads invalidate stale continuation evidence, complete catalog removal suppresses obsolete
 Skill candidates, and a delivered child continuation reopens collection. Native validation still owns
 resource freshness and child relationships. Historical request snapshots keep their original profiles.
@@ -357,7 +380,7 @@ uncertain accounting as unknown; the portable accounting module keeps Jev and la
 separate. Static registration can later be replaced by plugin discovery without changing the portable
 state machine or session ownership contract.
 
-Single Jev sessions place the decision canvas beside the native conversation. Resize the split by dragging or using arrow keys; double-click to reset. Narrow screens switch between conversation and canvas. The composer, approvals and messages remain in the same session. Step selection and replay only update the graph; node details and raw records open on demand.
+Single Jev sessions place the decision canvas beside the native conversation. Resize the split by dragging or using arrow keys; double-click to reset. Narrow screens switch between conversation and canvas. The composer, approvals and messages remain in the same session. Step selection and single-turn replay update the graph; all-turn replay also holds the conversation at the same persisted ledger cut. Node details and raw records open on demand. The comparison shortcut is hidden while viewing a single-line session; start a comparison from a new draft's runtime selector.
 
 The graph toolbar's request-body shortcut and the Jev request node open the complete saved
 `systemone-json-v1` body (`model`, `state`, `questions`). Select a recorded request to view, copy or
@@ -366,7 +389,7 @@ are available. Missing or unsupported snapshots remain unavailable; the UI never
 current settings. A saved request does not by itself prove delivery to the provider. Credentials and
 HTTP headers are not part of this viewer. Conversation cards remain bounded display summaries.
 
-Replay advances through actual event prefixes in the selected turn, with play, pause, restart and 1/2/4/8 events per second. It never executes tools. Candidate groups expand independently inside the canvas; the final adopted path after arbitration is distinguished from the original Jev selection.
+Replay advances through actual event prefixes, either within the selected turn or across all turns, with play, pause, restart and 1/2/4/8 events per second. In all-turn mode the native conversation is read through `session.projectUI` at the same ledger sequence. Until that projection arrives, or if it fails, the historical conversation stays empty rather than showing later content; the banner identifies the cut or read failure. “Live” restores the latest conversation. Replay never executes tools. Candidate groups expand independently inside the canvas; the final adopted path after arbitration is distinguished from the original Jev selection.
 
 Conversation process cards show decision models, selected paths, action settlement, answer generation and stop reasons. Expand a card for its model, request reference and record range. The trace view provides a separate runtime lane with clickable evidence. Historical restoration and live updates use the same backend projection; native messages continue to display tool results and final answers.
 
@@ -388,6 +411,8 @@ API. The SDK exposes `client.questions.pending`, `answer` and `cancel`; clients 
 answering UI opt in with `createClient({ questions: true, ... })`.
 
 Jev estimates follow the DSH exact TypeSafe System One route for `jev-latest` and `jev-1.13.0`: USD 0.042 per million total input tokens, output zero. Unknown cache splits remain unknown. New calls freeze `call.pricing` outside the actual wire input. Missing legacy quotes may use explicit current configuration, labeled as current estimates with request coverage; this read-only calculation never rewrites the ledger or claims provider billing. Invalid saved quotes and unsupported endpoint/model identities remain unknown.
+
+The single-line Jev workspace has a bottom accounting disclosure. It reads a snapped, bounded root-session ledger without executing a turn and uses the same Host accounting projection as comparison. It shows observed LLM/Jev request counts, input/output tokens, LLM cached input and hit rate, estimated family costs and a combined estimate. Missing usage remains unknown or an explicitly labeled known subtotal. The displayed root-session scope excludes child sessions; comparison metrics include the observed child-session tree.
 
 The Jev direct count follows DSH: a non-arbitrated selected decision, a persisted direct route, its intent and dispatch must all exist. Language parameter generation, arbitration and pre-dispatch refusal do not count; failure after dispatch does. Single sessions count complete session history; comparison lane headers count only the shared committed playback prefix and show pending synchronization before that prefix is available. This is not a successful-action count.
 

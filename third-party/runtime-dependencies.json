@@ -29,30 +29,6 @@
       "consumers": ["packages/web-ui"]
     },
     {
-      "name": "antd",
-      "version": "6.6.5",
-      "license": "MIT",
-      "source": "https://github.com/ant-design/ant-design",
-      "purpose": "Accessible browser UI primitives used by the shared Web UI foundation.",
-      "rationale": "Keeps the A-line UI migration on one pinned component implementation while the web package consumes only the @agnes/web-ui boundary.",
-      "consumers": ["packages/web-ui"]
-    },
-    {
-      "name": "react",
-      "version": "18.3.1",
-      "license": "MIT",
-      "source": "https://github.com/facebook/react",
-      "purpose": "UI runtime for the web workbench, resource administration and in-page client module host; bundled into /vendor/* shared-singleton chunks.",
-      "rationale": "Pinned to 18.3.1 per the web client modules design (WC5); a single split build keeps exactly one React copy on the page.",
-      "consumers": [
-        "packages/resource-control-web",
-        "packages/web",
-        "packages/web-client",
-        "packages/web-ui",
-        "packages/web-units"
-      ]
-    },
-    {
       "name": "@earendil-works/pi-ai",
       "version": "0.87.1",
       "license": "MIT",
@@ -60,15 +36,6 @@
       "purpose": "Provider adapters, model catalog and streaming AI protocol support.",
       "rationale": "Uses the project's selected public AI abstraction instead of maintaining parallel provider implementations.",
       "consumers": ["packages/ai"]
-    },
-    {
-      "name": "@modelcontextprotocol/sdk",
-      "version": "1.25.2",
-      "license": "MIT",
-      "source": "https://github.com/modelcontextprotocol/typescript-sdk",
-      "purpose": "MCP client transport and protocol interoperability.",
-      "rationale": "Provides the canonical TypeScript implementation of the external MCP contract.",
-      "consumers": ["packages/base", "packages/resource-control-runtime"]
     },
     {
       "name": "@joplin/turndown-plugin-gfm",
@@ -80,13 +47,13 @@
       "consumers": ["packages/base"]
     },
     {
-      "name": "@standard-schema/spec",
-      "version": "1.1.0",
+      "name": "@modelcontextprotocol/sdk",
+      "version": "1.25.2",
       "license": "MIT",
-      "source": "https://github.com/standard-schema/standard-schema",
-      "purpose": "Schema specification interface consumed by the vendored Cordis core at runtime.",
-      "rationale": "Vendored @agnes/cordis (from npm @deepseek-ai/cordis@4.0.2) pins this exact version; provenance recorded in packages/cordis/VENDORED.md.",
-      "consumers": ["packages/cordis", "packages/plugin-runtime"]
+      "source": "https://github.com/modelcontextprotocol/typescript-sdk",
+      "purpose": "MCP client transport and protocol interoperability.",
+      "rationale": "Provides the canonical TypeScript implementation of the external MCP contract.",
+      "consumers": ["packages/base", "packages/resource-control-runtime"]
     },
     {
       "name": "@sinclair/typebox",
@@ -110,13 +77,22 @@
       ]
     },
     {
-      "name": "es-module-lexer",
-      "version": "2.3.2",
+      "name": "@standard-schema/spec",
+      "version": "1.1.0",
       "license": "MIT",
-      "source": "https://github.com/guybedford/es-module-lexer",
-      "purpose": "Parses the static and literal dynamic ESM dependency graph of browser client-module snapshots.",
-      "rationale": "Avoids treating comments or ordinary strings as imports while enumerating the immutable browser resource closure.",
-      "consumers": ["packages/daemon"]
+      "source": "https://github.com/standard-schema/standard-schema",
+      "purpose": "Schema specification interface consumed by the vendored Cordis core at runtime.",
+      "rationale": "Vendored @agnes/cordis (from npm @deepseek-ai/cordis@4.0.2) pins this exact version; provenance recorded in packages/cordis/VENDORED.md.",
+      "consumers": ["packages/cordis", "packages/plugin-runtime"]
+    },
+    {
+      "name": "ajv",
+      "version": "8.20.0",
+      "license": "MIT",
+      "source": "https://github.com/ajv-validator/ajv",
+      "purpose": "Compile Extension and MCP tool schemas at runtime and independently verify protocol conformance.",
+      "rationale": "Reuse the established schema implementation; reject invalid or external references before callbacks run.",
+      "consumers": ["packages/base", "packages/host", "packages/protocol"]
     },
     {
       "name": "ajv-formats",
@@ -128,6 +104,15 @@
       "consumers": ["packages/base", "packages/protocol"]
     },
     {
+      "name": "antd",
+      "version": "6.6.5",
+      "license": "MIT",
+      "source": "https://github.com/ant-design/ant-design",
+      "purpose": "Accessible browser UI primitives used by the shared Web UI foundation.",
+      "rationale": "Keeps the A-line UI migration on one pinned component implementation while the web package consumes only the @agnes/web-ui boundary.",
+      "consumers": ["packages/web-ui"]
+    },
+    {
       "name": "dingtalk-stream",
       "version": "2.1.6-beta.1",
       "license": "MIT",
@@ -135,6 +120,15 @@
       "purpose": "Optional DingTalk streaming channel integration.",
       "rationale": "Uses DingTalk's maintained stream SDK for its proprietary gateway protocol.",
       "consumers": ["packages/channels"]
+    },
+    {
+      "name": "es-module-lexer",
+      "version": "2.3.2",
+      "license": "MIT",
+      "source": "https://github.com/guybedford/es-module-lexer",
+      "purpose": "Parses the static and literal dynamic ESM dependency graph of browser client-module snapshots.",
+      "rationale": "Avoids treating comments or ordinary strings as imports while enumerating the immutable browser resource closure.",
+      "consumers": ["packages/daemon"]
     },
     {
       "name": "get-east-asian-width",
@@ -146,15 +140,6 @@
       "consumers": ["packages/cli", "packages/cli-tui"]
     },
     {
-      "name": "isomorphic-git",
-      "version": "1.41.9",
-      "license": "MIT",
-      "source": "https://github.com/isomorphic-git/isomorphic-git",
-      "purpose": "Programmatic Git operations for base extensions.",
-      "rationale": "Provides Git behavior through a JavaScript API without assuming a shell Git executable.",
-      "consumers": ["packages/base"]
-    },
-    {
       "name": "ipaddr.js",
       "version": "2.5.0",
       "license": "MIT",
@@ -162,6 +147,15 @@
       "purpose": "Parses and classifies resolved IPv4 and IPv6 addresses for bounded public retrieval.",
       "rationale": "Provides well-tested address parsing for the public-network deny rules, including IPv4-mapped IPv6 forms.",
       "consumers": ["packages/host"]
+    },
+    {
+      "name": "isomorphic-git",
+      "version": "1.41.9",
+      "license": "MIT",
+      "source": "https://github.com/isomorphic-git/isomorphic-git",
+      "purpose": "Programmatic Git operations for base extensions.",
+      "rationale": "Provides Git behavior through a JavaScript API without assuming a shell Git executable.",
+      "consumers": ["packages/base"]
     },
     {
       "name": "jiti",
@@ -180,6 +174,39 @@
       "purpose": "Parses assistant Markdown for terminal and Web rendering.",
       "rationale": "Uses one maintained Markdown lexer; the Web client renders tokens through a DOM allowlist rather than inserting parser HTML.",
       "consumers": ["packages/cli", "packages/cli-tui", "packages/web"]
+    },
+    {
+      "name": "react",
+      "version": "18.3.1",
+      "license": "MIT",
+      "source": "https://github.com/facebook/react",
+      "purpose": "UI runtime for the web workbench, resource administration and in-page client module host; bundled into /vendor/* shared-singleton chunks.",
+      "rationale": "Pinned to 18.3.1 per the web client modules design (WC5); a single split build keeps exactly one React copy on the page.",
+      "consumers": [
+        "packages/jev-web",
+        "packages/resource-control-web",
+        "packages/web",
+        "packages/web-client",
+        "packages/web-session-ui",
+        "packages/web-ui",
+        "packages/web-units"
+      ]
+    },
+    {
+      "name": "react-dom",
+      "version": "18.3.1",
+      "license": "MIT",
+      "source": "https://github.com/facebook/react/tree/main/packages/react-dom",
+      "purpose": "DOM renderer for the web workbench and client module mount points; bundled into /vendor/* shared-singleton chunks.",
+      "rationale": "Same pin line as react (WC5).",
+      "consumers": [
+        "packages/jev-web",
+        "packages/web",
+        "packages/web-client",
+        "packages/web-session-ui",
+        "packages/web-ui",
+        "packages/web-units"
+      ]
     },
     {
       "name": "turndown",
@@ -223,15 +250,6 @@
         "packages/host",
         "packages/package-manager"
       ]
-    },
-    {
-      "name": "ajv",
-      "version": "8.20.0",
-      "license": "MIT",
-      "source": "https://github.com/ajv-validator/ajv",
-      "purpose": "Compile Extension and MCP tool schemas at runtime and independently verify protocol conformance.",
-      "rationale": "Reuse the established schema implementation; reject invalid or external references before callbacks run.",
-      "consumers": ["packages/base", "packages/host", "packages/protocol"]
     }
   ]
 }

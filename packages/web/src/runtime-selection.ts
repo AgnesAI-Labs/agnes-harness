@@ -15,6 +15,7 @@ export class RuntimeSelection {
   items: RuntimeDescriptor[] = []
   selected = 'native'
   private legacy = false
+  extensions: () => Pick<RuntimeDescriptor, 'id' | 'label' | 'available' | 'unavailableReason'>[] = () => []
 
   async refresh(client: Pick<Client, 'runtime'>): Promise<void> {
     try {
@@ -33,23 +34,9 @@ export class RuntimeSelection {
     this.selected = id
   }
 
-  get comparison(): boolean {
-    return this.selected === 'comparison'
-  }
-
-  /** Draft UI choices; comparison is not a runtime registered with the backend. */
+  /** Extra execution destinations are registered by client modules. */
   get options(): Pick<RuntimeDescriptor, 'id' | 'label' | 'available' | 'unavailableReason'>[] {
-    return [
-      ...this.items,
-      {
-        id: 'comparison',
-        label: '双线对比 · Native + JevLoop',
-        available: ['native', 'jevloop'].every((id) =>
-          this.items.some((item) => item.id === id && item.available),
-        ),
-        unavailableReason: '需要 Native 与 JevLoop 均可用',
-      },
-    ]
+    return [...this.items, ...this.extensions()]
   }
 
   get available(): boolean {
@@ -58,7 +45,8 @@ export class RuntimeSelection {
 
   creation(): { runtime?: string } {
     if (!this.available) throw new Error('所选运行循环不可用，请刷新运行循环列表。')
-    if (this.comparison) throw new Error('双线对比必须通过对比创建接口。')
+    if (!this.items.some((item) => item.id === this.selected))
+      throw new Error('扩展执行方式必须由其客户端模块处理。')
     return this.legacy ? {} : { runtime: this.selected }
   }
 

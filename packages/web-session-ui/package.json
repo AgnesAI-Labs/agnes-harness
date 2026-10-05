@@ -1,0 +1,46 @@
+{
+  "name": "@agnes/web-session-ui",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Shared session projections, interactions and timeline renderers for web hosts and plugins",
+  "exports": {
+    ".": "./src/index.ts",
+    "./conversation-visibility": "./src/conversation-visibility.ts",
+    "./conversation-cut": "./src/conversation-cut.ts",
+    "./live-projection": "./src/live-projection.ts",
+    "./markdown": "./src/markdown.ts",
+    "./permission-picker": "./src/permission-picker.ts",
+    "./question-controller": "./src/question-controller.ts",
+    "./runtime-node-card": "./src/runtime-node-card.ts",
+    "./session-binding": "./src/session-binding.ts",
+    "./session-pane": "./src/session-pane.ts",
+    "./timeline": "./src/timeline.ts",
+    "./timeline-slot": "./src/timeline-slot.ts",
+    "./tool-icon": "./src/tool-icon.ts",
+    "./turns": "./src/turns.ts",
+    "./usage": "./src/usage.ts",
+    "./view": "./src/view.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -b"
+  },
+  "dependencies": {
+    "@agnes/protocol": "workspace:*",
+    "@agnes/sdk": "workspace:*",
+    "@agnes/web-client": "workspace:*",
+    "@agnes/web-ui": "workspace:*",
+    "@agnes/web-units": "workspace:*"
+  },
+  "peerDependencies": {
+    "react": "18.3.1",
+    "react-dom": "18.3.1"
+  },
+  "devDependencies": {
+    "@types/react": "18.3.12",
+    "@types/react-dom": "18.3.1",
+    "react": "18.3.1",
+    "react-dom": "18.3.1"
+  },
+  "license": "Apache-2.0"
+}

@@ -103,6 +103,7 @@ export type MethodName =
   | '_agnes/v1/session.archive'
   | '_agnes/v1/diagnostics.collect'
   | '_agnes/v1/diagnostics.events'
+  | '_agnes/v1/session.accounting'
   | '_agnes/v1/session.list'
   | '_agnes/v1/workspace.list'
   | '_agnes/v1/workspace.add'
@@ -280,6 +281,7 @@ export const METHODS: Record<MethodName, MethodSpec> = {
   '_agnes/v1/session.archive': clientRequest(A.SessionArchiveParams, A.SessionPreferences),
   '_agnes/v1/diagnostics.collect': clientRequest(A.DiagnosticsCollectParams, A.DiagnosticsCollectResult),
   '_agnes/v1/diagnostics.events': clientRequest(A.DiagnosticsEventsParams, A.DiagnosticsEventsResult),
+  '_agnes/v1/session.accounting': clientRequest(A.SessionAccountingParams, A.SessionAccountingResult),
   '_agnes/v1/session.list': {
     kind: 'request',
     direction: 'c2s',

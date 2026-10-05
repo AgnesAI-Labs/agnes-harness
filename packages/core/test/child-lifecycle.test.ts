@@ -5,7 +5,7 @@ import { KernelChildren } from '../src/child/factory.js'
 import { CHILD_CONTROL_FORMAT } from '../src/child/types.js'
 import { Kernel } from '../src/kernel.js'
 import { MemoryStorage } from '../src/log/memory-storage.js'
-import { sha256Hex } from '../src/request/hash.js'
+import { canonicalJson, sha256Hex } from '../src/request/hash.js'
 import { reserveSessionConfiguration } from '../src/step/configuration-admission.js'
 import { presetDefaults } from '../src/step/preset.js'
 import { acquireSessionIdleGate } from '../src/step/session-idle-gate.js'
@@ -62,6 +62,127 @@ function kernel(
 const sessionOpts = { actor, resolvedProfileHash: 'h1', cwd: '/w', writerRunId: 'r1' }
 
 describe('Kernel child lifecycle (generation, fan-out, budget)', () => {
+  it.each([
+    { baseline: 'manual', mode: 'off', cancel: false },
+    { baseline: 'off', mode: 'manual', cancel: false },
+    { baseline: 'manual', mode: 'off', cancel: true },
+  ] as const)(
+    'scopes inherited $mode approval over a $baseline profile to the original owner and child run (cancel=$cancel)',
+    async ({ baseline, mode, cancel }) => {
+      let finishInference!: () => void
+      const waiting = new Promise<void>((resolve) => {
+        finishInference = resolve
+      })
+      let calls = 0
+      const observed: Array<{ key: string; mode: string | undefined }> = []
+      const k = kernel({
+        approvalMode: baseline,
+        preset: { ...presetDefaults(), treeBudgetCredits: 100, generationLimit: 3, maxFanOut: 3 },
+        provider: {
+          models: () => [catalogue()],
+          async *infer(request, options) {
+            calls++
+            for (const session of k.sessions.values())
+              if (session.executionActive) observed.push({ key: session.key, mode: session.d.approvalMode })
+            await waiting
+            yield* fakeProvider([textTurn('done')]).infer(request, options)
+          },
+        },
+      })
+      const runs: Promise<unknown>[] = []
+      try {
+        const parent = await k.session('parent', sessionOpts)
+        const capture = () => ({ approvalMode: parent.d.approvalMode })
+        const reserve = (id: string, approvalMode: 'manual' | 'off') =>
+          reserveSessionConfiguration(
+            parent,
+            {
+              id,
+              commandId: id,
+              payloadDigest: sha256Hex('[]'),
+              approvalMode,
+              expectedConfigurationDigest: sha256Hex(canonicalJson(capture())),
+            },
+            capture,
+            () => undefined,
+          )
+        const first = await reserve('first', mode)
+        const factory = parent.d.children as KernelChildren
+        const handle = await factory.createWithKind('spawn', {
+          parent: parent.key,
+          cwd: '/w',
+          input: 'child',
+        })
+        const child = k.get(handle.key)
+        if (!child) throw new Error('Missing child')
+        const childDescriptor = Object.getOwnPropertyDescriptor(child.d, 'approvalMode')
+        const running = handle.run('child')
+        runs.push(running)
+        void running.catch(() => undefined)
+        await vi.waitFor(() => expect(calls).toBe(1))
+        expect(child.d.approvalMode).toBe(mode)
+        const grandchildHandle = await (child.d.children as KernelChildren).createWithKind('spawn', {
+          parent: child.key,
+          cwd: '/w',
+          input: 'grandchild',
+        })
+        const grandchild = k.get(grandchildHandle.key)
+        if (!grandchild) throw new Error('Missing grandchild')
+        const descendant = grandchildHandle.run('grandchild')
+        runs.push(descendant)
+        void descendant.catch(() => undefined)
+        await vi.waitFor(() => expect(calls).toBe(2))
+        expect(grandchild.d.approvalMode).toBe(mode)
+        expect(child.yolo).toBe(false)
+        expect(grandchild.yolo).toBe(false)
+        if (cancel) {
+          await parent.abort(actor)
+          expect(child.d.approvalMode).toBe('manual')
+          expect(grandchild.d.approvalMode).toBe('manual')
+        }
+        await first.lease.release()
+        expect(parent.d.approvalMode).toBe(baseline)
+        expect(child.d.approvalMode).toBe('manual')
+        expect(grandchild.d.approvalMode).toBe('manual')
+        const second = await reserve('second', 'off')
+        expect(parent.d.approvalMode).toBe('off')
+        expect(child.d.approvalMode).toBe('manual')
+        expect(grandchild.d.approvalMode).toBe('manual')
+        const lateHandle = await (child.d.children as KernelChildren).createWithKind('spawn', {
+          parent: child.key,
+          cwd: '/w',
+          input: 'late descendant',
+        })
+        const late = lateHandle.run('late descendant')
+        runs.push(late)
+        void late.catch(() => undefined)
+        await vi.waitFor(() => expect(calls).toBe(3))
+        expect(k.get(lateHandle.key)?.d.approvalMode).toBe('manual')
+        finishInference()
+        await Promise.all(runs)
+        expect(Object.getOwnPropertyDescriptor(child.d, 'approvalMode')).toEqual(childDescriptor)
+        await second.lease.release()
+        // Releasing the owner also flushes canonical descendant reports to the parent writer.
+        await new Promise<void>((resolve) => setImmediate(resolve))
+        const manual = await reserve('manual-continuation', 'manual')
+        const before = observed.length
+        await factory.sendMessage(handle.key, 'another task', {
+          deliveryId: 'manual-followup',
+          parentEffectId: 'followup',
+          signal: new AbortController().signal,
+        })
+        await vi.waitFor(async () => expect((await factory.inspect(handle.key))?.state).toBe('done'))
+        expect(observed.slice(before)).toContainEqual({ key: handle.key, mode: 'manual' })
+        await manual.lease.release()
+        expect(parent.d.approvalMode).toBe(baseline)
+      } finally {
+        finishInference()
+        await Promise.allSettled(runs)
+        await k.close()
+      }
+    },
+  )
+
   it('keeps receipted child reports pending after cancellation until an explicit new user run', async () => {
     const k = kernel({
       childParentWake: async (parent) => {

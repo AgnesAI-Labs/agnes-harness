@@ -19,12 +19,15 @@ describe('runtime selection', () => {
     await selection.refresh({ runtime: { list: async () => ({ items: [native, jev] }) } })
     selection.select('jevloop')
     expect(selection.creation()).toEqual({ runtime: 'jevloop' })
-    selection.select('comparison')
+    expect(() => selection.select('external')).toThrow('不可用')
+    selection.extensions = () => [
+      { id: 'external', label: '扩展目标', available: selection.items.every((runtime) => runtime.available) },
+    ]
+    selection.select('external')
     expect(selection.available).toBe(true)
-    expect(selection.comparison).toBe(true)
-    expect(selection.label()).toContain('双线对比')
+    expect(selection.label()).toBe('扩展目标')
     expect(selection.items.map((item) => item.id)).toEqual(['native', 'jevloop'])
-    expect(() => selection.creation()).toThrow('对比创建接口')
+    expect(() => selection.creation()).toThrow('客户端模块处理')
     selection.select('jevloop')
     await selection.refresh({
       runtime: {
@@ -36,7 +39,7 @@ describe('runtime selection', () => {
     expect(selection.selected).toBe('jevloop')
     expect(selection.items[1]?.unavailableReason).toBe('Adapter unavailable')
     expect(selection.available).toBe(false)
-    expect(() => selection.select('comparison')).toThrow('不可用')
+    expect(() => selection.select('external')).toThrow('不可用')
     expect(() => selection.creation()).toThrow('不可用')
     expect(selection.label({ id: 'native', version: '1' })).toBe('Native · v1')
   })
@@ -52,7 +55,7 @@ describe('runtime selection', () => {
     })
     expect(selection.creation()).toEqual({})
     expect(() => selection.select('jevloop')).toThrow('不可用')
-    expect(() => selection.select('comparison')).toThrow('不可用')
+    expect(() => selection.select('external')).toThrow('不可用')
     await expect(
       selection.refresh({
         runtime: {

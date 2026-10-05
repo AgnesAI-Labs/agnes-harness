@@ -12,6 +12,7 @@ function setup(
     invoke?: Parameters<typeof buildToolContext>[0]['invoke']
     parentSignal?: AbortSignal
     children?: ChildrenFactory
+    lease?: Parameters<typeof buildToolContext>[0]['lease']
   } = {},
 ) {
   const created: unknown[] = []
@@ -62,7 +63,7 @@ function setup(
       requestCompaction: () => undefined,
       progress: () => undefined,
       artifactJobEvent: async () => undefined,
-      lease: { remainingMs: () => 1_000 },
+      lease: over.lease ?? { remainingMs: () => 1_000 },
     },
     {
       toolUseId: 'tool-1',
@@ -225,70 +226,68 @@ describe('ToolContext subagent options', () => {
     expect(cancel).not.toHaveBeenCalled()
   })
 
-  it('collect wait timeout does not cancel the child', async () => {
-    const cancel = vi.fn(async () => undefined)
-    const close = vi.fn(async () => undefined)
-    const child: ChildHandle = {
-      key: 'child-1',
-      run: async () => ({ text: '', lastSeq: 1 }),
-      status: async () => ({ state: 'running', lastSeq: 1 }),
-      close,
-      cancel,
-    }
-    const children: ChildrenFactory = {
-      create: async () => child,
-      get: () => child,
-      inspect: async () => ({ state: 'running', lastSeq: 1 }),
-    }
-    const runtime = new SeamRuntime(fakeSeams(), presetDefaults(), {
-      clock: () => 0,
-      onFailure: () => undefined,
-    })
-    const context = buildToolContext(
-      {
-        sessionKey: 'parent-1',
-        lane: 'main',
-        turn: 1,
-        step: 1,
-        depth: 0,
-        generationDepth: 0,
-        actor: { id: 'u', org: 'local', role: 'owner', deptPath: [], attrs: {} },
-        cwd: '/workspace/parent',
-        runtime,
-        preset: presetDefaults(),
-        children,
-        fsOps: {
-          read: async () => new Uint8Array(),
-          write: async () => undefined,
-          list: async () => [],
-          stat: async () => ({ kind: 'file', size: 0, mtimeMs: 0 }),
-        },
-        netFetch: async () => new Response(''),
-        log: { debug: () => undefined, info: () => undefined, warn: () => undefined, error: () => undefined },
-        invoke: async () => ({ content: [] }),
-        listTools: () => [],
-        appendPlan: async () => 1,
-        requestCompaction: () => undefined,
-        progress: () => undefined,
-        artifactJobEvent: async () => undefined,
-        lease: { remainingMs: () => 5 },
-      },
-      {
-        toolUseId: 'tool-1',
-        name: 'fixture',
-        signal: new AbortController().signal,
-        timeoutMs: 1_000,
-        outputMaxBytes: 32768,
-      },
-    )
-    await expect(context.subagent.collect('child-1', { wait: true })).resolves.toMatchObject({
-      childKey: 'child-1',
-      status: 'running',
-      waitTimedOut: true,
-    })
-    expect(cancel).not.toHaveBeenCalled()
-    expect(close).not.toHaveBeenCalled()
-  })
+  it.each(['renewed', 'expired'] as const)(
+    'collect follows the %s lease without cancelling the child',
+    async (lease) => {
+      vi.useFakeTimers()
+      const startedAt = Date.now()
+      let leaseUntil = startedAt + 25
+      const renewal =
+        lease === 'renewed'
+          ? setInterval(() => {
+              leaseUntil = Date.now() + 25
+            }, 10)
+          : undefined
+      try {
+        const cancel = vi.fn(async () => undefined)
+        const close = vi.fn(async () => undefined)
+        const child: ChildHandle = {
+          key: 'child-1',
+          run: async () => ({ text: '', lastSeq: 1 }),
+          status: async () =>
+            lease === 'renewed' && Date.now() - startedAt >= 60
+              ? { state: 'done', lastSeq: 1, text: 'finished after renewal' }
+              : { state: 'running', lastSeq: 1 },
+          close,
+          cancel,
+        }
+        const children: ChildrenFactory = {
+          create: async () => child,
+          get: () => child,
+          inspect: async () => ({ state: 'running', lastSeq: 1 }),
+        }
+        const { context } = setup(fakeSeams(), undefined, {
+          children,
+          lease: { remainingMs: () => Math.max(0, leaseUntil - Date.now()) },
+        })
+        let finished = false
+        const collecting = context.subagent.collect('child-1', { wait: true }).finally(() => {
+          finished = true
+        })
+        await vi.advanceTimersByTimeAsync(55)
+        if (lease === 'renewed') {
+          expect(finished).toBe(false)
+          await vi.advanceTimersByTimeAsync(10)
+          await expect(collecting).resolves.toEqual({
+            childKey: 'child-1',
+            status: 'completed',
+            text: 'finished after renewal',
+          })
+        } else {
+          await expect(collecting).resolves.toMatchObject({
+            childKey: 'child-1',
+            status: 'running',
+            waitTimedOut: true,
+          })
+        }
+        expect(cancel).not.toHaveBeenCalled()
+        expect(close).not.toHaveBeenCalled()
+      } finally {
+        if (renewal !== undefined) clearInterval(renewal)
+        vi.useRealTimers()
+      }
+    },
+  )
 })
 
 describe('ToolContext platform view and sandbox enforcement (spec 2026-09-15 §4 rows 1 and 9)', () => {
