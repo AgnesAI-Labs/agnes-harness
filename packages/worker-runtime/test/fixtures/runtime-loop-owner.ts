@@ -6,6 +6,7 @@ import { createPureToolAuthorAdapter } from '../../../extension-api/src/runtime/
 import { contextFixtureData } from '../../../extension-api/testkit/runtime/contracts/context.js'
 import type { LoopContractFixture } from '../../../extension-api/testkit/runtime/contracts/loop.js'
 import { admissionRequest } from './runtime-admission-owner.js'
+import { loopCredentialsFixture } from './runtime-loop-credentials.js'
 
 function required<T>(value: T | undefined | null): T {
   if (value == null) throw Error('Restricted owner fixture value missing')
@@ -88,6 +89,9 @@ export async function loopOwnerFixture(
     generation: model.generation,
     credentialRef: null,
   }
+  const credentials = mode.startsWith('credential-') ? await loopCredentialsFixture(mode, observe) : undefined
+  if (credentials) required(inputs.routing.allowedRoutes[0]).credentialBinding = credentials.consumer
+  if (credentials && mode === 'credential-wire') inputs.credentialRef = credentials.wireHandle
   const toolsBinding = required(f.bindings.tools)
   const loopBinding = required(f.bindings.loop)
   const contextBinding = required(f.bindings.context)
@@ -192,7 +196,26 @@ export async function loopOwnerFixture(
       ownerId: required(f.bindings[name]).providerId,
       permissions: [],
       query: (request, _context) => f.ports.query(request),
-      compute: (request, _context) => f.ports.compute(request),
+      async compute(request, _context) {
+        if (credentials && request.method === 'prepare' && mode === 'credential-c04')
+          return failed('loop_model_action_unavailable')
+        const result = await f.ports.compute(request)
+        if (credentials && result.ok && result.value.kind === 'inline') {
+          const payload = result.value.value as Record<string, W.JsonValue>
+          if (request.method === 'select')
+            return ok(
+              toolsRef(result.value.schema, { ...payload, route: required(inputs.routing.allowedRoutes[0]) }),
+            )
+          if (request.method === 'prepare')
+            return ok(
+              toolsRef(result.value.schema, {
+                ...payload,
+                targetSnapshot: required(inputs.routing.allowedRoutes[0]),
+              }),
+            )
+        }
+        return result
+      },
     })),
     grants: Object.values(f.bindings).map((binding) => ({
       authorizationRef: f.context.authorizationRef,
@@ -227,6 +250,9 @@ export async function loopOwnerFixture(
         contextFor,
         factoryContextFor: (binding) => ({ ...f.factoryContext, bindingId: binding.bindingId, signal }),
         reads: f.ports,
+        ...(credentials && !['credential-none', 'credential-wire'].includes(mode)
+          ? { credentials: credentials.owner }
+          : {}),
         ...(mode === 'state' ? {} : { state }),
         ...(mode === 'model'
           ? {}
@@ -256,6 +282,26 @@ export async function loopOwnerFixture(
                       throw Error('fixture_model_reconcile_unavailable')
                     },
                     async execute() {
+                      if (credentials) {
+                        if (action.input.kind !== 'inline') throw Error('Model infer input missing')
+                        const input = validateRuntime('ModelInferRequest', action.input.value)
+                        if (!input.ok || input.value.preparedRef.kind !== 'inline')
+                          throw Error('Prepared model missing')
+                        const prepared = validateRuntime(
+                          'PreparedModelRequest',
+                          input.value.preparedRef.value,
+                        )
+                        if (!prepared.ok) throw Error('Prepared model invalid')
+                        await credentials.execute(prepared.value)
+                        // The restricted C04 substitute proves egress only; it owns no real model result.
+                        return {
+                          outcome: 'failed' as const,
+                          error: failed('loop_model_action_unavailable').error,
+                          externalRequests: [],
+                          usage: [],
+                          references: [],
+                        }
+                      }
                       await f.accept(action)
                       const receipt = required(f.receipts.get(action.key))
                       return {
@@ -414,6 +460,7 @@ export async function loopOwnerFixture(
           observe({ method: 'run.close', live })
           await f.close()
           await t.dependencies.close()
+          await credentials?.close()
         },
       }
       return ok(run)
