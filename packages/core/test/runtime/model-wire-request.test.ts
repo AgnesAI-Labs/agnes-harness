@@ -109,7 +109,11 @@ describe('model input digest', () => {
     const base = modelInputDigest(prepared, capture, wire)
     expect(modelInputDigest({ ...prepared, preparedId: 'other' }, capture, wire)).toBe(base)
     expect(
-      modelInputDigest({ ...prepared, estimatedUnits: [{ unit: 'tokens', quantity: '1' }] as never }, capture, wire),
+      modelInputDigest(
+        { ...prepared, estimatedUnits: [{ unit: 'tokens', quantity: '1' }] as never },
+        capture,
+        wire,
+      ),
     ).toBe(base)
     expect(modelInputDigest({ ...prepared, inputDigest: 'c'.repeat(64) }, capture, wire)).toBe(base)
     const reordered = Object.fromEntries(Object.entries(prepared).reverse()) as Wire.PreparedModelRequest
@@ -117,8 +121,18 @@ describe('model input digest', () => {
   })
 
   it.each([
-    ['target.priceVersion', { ...prepared, target: { ...prepared.target, priceVersion: 'fixture-price-2' } }, capture, wire],
-    ['target.routeRevision', { ...prepared, target: { ...prepared.target, routeRevision: 2 } }, capture, wire],
+    [
+      'target.priceVersion',
+      { ...prepared, target: { ...prepared.target, priceVersion: 'fixture-price-2' } },
+      capture,
+      wire,
+    ],
+    [
+      'target.routeRevision',
+      { ...prepared, target: { ...prepared.target, routeRevision: 2 } },
+      capture,
+      wire,
+    ],
     [
       'generation.maxOutputTokens',
       { ...prepared, generation: { ...prepared.generation, maxOutputTokens: 33 } },
@@ -132,9 +146,19 @@ describe('model input digest', () => {
       wire,
     ],
     ['view', { ...prepared, view: { ...prepared.view, tokenEstimate: 2 } }, capture, wire],
-    ['capture.model.cost', prepared, { ...capture, model: { ...model, cost: { ...model.cost, output: 3 } } }, wire],
+    [
+      'capture.model.cost',
+      prepared,
+      { ...capture, model: { ...model, cost: { ...model.cost, output: 3 } } },
+      wire,
+    ],
     ['capture.adapterPackageDigest', prepared, { ...capture, adapterPackageDigest: 'package-2' }, wire],
-    ['capture.route.baseUrl', prepared, { ...capture, route: { ...capture.route, baseUrl: 'https://other.invalid' } }, wire],
+    [
+      'capture.route.baseUrl',
+      prepared,
+      { ...capture, route: { ...capture.route, baseUrl: 'https://other.invalid' } },
+      wire,
+    ],
     ['wire.slot', prepared, capture, { ...wire, slot: 'fast' as const }],
     ['wire.sessionKey', prepared, capture, { ...wire, sessionKey: 'session-2' }],
     ['wire.contractId', prepared, capture, { ...wire, contractId: 'contract-1' }],
@@ -173,7 +197,11 @@ describe('model input digest', () => {
   })
 })
 
-function item(kind: Wire.ContextItem['kind'], trust: Wire.ContextItem['trust'], body: string): Wire.ContextItem {
+function item(
+  kind: Wire.ContextItem['kind'],
+  trust: Wire.ContextItem['trust'],
+  body: string,
+): Wire.ContextItem {
   return {
     id: `item-${kind}-${trust}-${body}`,
     kind,
@@ -230,9 +258,17 @@ describe('wire request', () => {
   it.each([
     ['no user message', withItems([item('message', 'system', 'only system')]), 'model_wire_empty'],
     ['no items', withItems([]), 'model_wire_empty'],
-    ['assistant-like text', withItems([item('message', 'user', 'q'), item('message', 'derived', 'a')]), 'model_wire_item'],
+    [
+      'assistant-like text',
+      withItems([item('message', 'user', 'q'), item('message', 'derived', 'a')]),
+      'model_wire_item',
+    ],
     ['external text', withItems([item('message', 'external', 'x')]), 'model_wire_item'],
-    ['tool call', withItems([item('message', 'user', 'q'), item('tool-call', 'derived', 'call')]), 'model_wire_item'],
+    [
+      'tool call',
+      withItems([item('message', 'user', 'q'), item('tool-call', 'derived', 'call')]),
+      'model_wire_item',
+    ],
     [
       'non-text body',
       withItems([
@@ -251,10 +287,17 @@ describe('wire request', () => {
     ],
     [
       'tool catalog',
-      { ...withItems([item('message', 'user', 'q')]), toolCatalog: { revision: 1, digest: 'c'.repeat(64), tools: [] } },
+      {
+        ...withItems([item('message', 'user', 'q')]),
+        toolCatalog: { revision: 1, digest: 'c'.repeat(64), tools: [] },
+      },
       'model_wire_tools',
     ],
-    ['media plan', { ...withItems([item('message', 'user', 'q')]), mediaPlans: [{ key: 'm' } as never] }, 'model_wire_media'],
+    [
+      'media plan',
+      { ...withItems([item('message', 'user', 'q')]), mediaPlans: [{ key: 'm' } as never] },
+      'model_wire_media',
+    ],
     [
       'legacy overrides',
       { ...withItems([item('message', 'user', 'q')]), legacyRequestOverrides: { maxTokens: 4 } },
@@ -262,7 +305,10 @@ describe('wire request', () => {
     ],
     [
       'seed',
-      { ...withItems([item('message', 'user', 'q')]), generation: { maxOutputTokens: 8, seed: 1, thinking: null } },
+      {
+        ...withItems([item('message', 'user', 'q')]),
+        generation: { maxOutputTokens: 8, seed: 1, thinking: null },
+      },
       'model_wire_seed',
     ],
   ] as const)('refuses %s with incompatible/%s', (_name, input, detail) => {

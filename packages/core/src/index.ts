@@ -213,6 +213,14 @@ export type {
 } from './runtime/interaction/authority.js'
 export { createInteractionAuthority } from './runtime/interaction/authority.js'
 export { defaultLoopStateCodec } from './runtime/loop/default-state.js'
+export {
+  buildWireRequest,
+  MODEL_INPUT_KIND,
+  type ModelCapture,
+  modelInputDigest,
+  modelInputPreimage,
+  type WireIdentity,
+} from './runtime/model/wire-request.js'
 export type { SessionOverlayPort } from './runtime/overlay.js'
 export type {
   DispatchProgress,
@@ -327,11 +335,3 @@ export type {
   WorkspacePublicationDispatch,
 } from './workspace/runtime.js'
 export { createWorkspaceInvocationPort } from './workspace/runtime.js'
-export {
-  buildWireRequest,
-  MODEL_INPUT_KIND,
-  type ModelCapture,
-  modelInputDigest,
-  modelInputPreimage,
-  type WireIdentity,
-} from './runtime/model/wire-request.js'
