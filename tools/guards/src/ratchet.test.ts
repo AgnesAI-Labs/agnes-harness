@@ -2018,7 +2018,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // Runtime HTTP credentials are generation-bound and Host read ports are wired. Measured 27535, exact, no spare.
   // Host projection lifecycle and read-port composition. Measured 27549, exact.
   // Domain store journals accepted commands only and notifies after write commits. Measured 27567, exact, no spare (+18).
-  'packages/daemon/src': 27567,
+  // Supervisor's single domain store and Host source wiring; exact measured allocation.
+  'packages/daemon/src': 27629,
   'packages/daemon/src/packages/admin-session': 46,
   // 2026-09-14: whole-branch review fix wave (Finding 1) adds the two missing
   // 'pins/inspect'/'pins/release' entries to the ACTIONS BFF route allowlist, which had been left
@@ -2849,7 +2850,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // feat(host): wire projection read ownership and daemon lifecycle. Measured 80687, exact, no spare.
   // Explicit model deployment assembly: call-bound markers, source fences and final C22 egress.
   // Exact measured total 80856 (+169); no exclusions or spare allocation.
-  'packages/host/src': 80856,
+  // One daemon store feeds commands and projection. Measured 80883, exact, no spare.
+  'packages/host/src': 80883,
   'packages/host/src/ext-host/service-invocation': 247,
   // T5.2's permission projector is kept independently bounded so later extension-host work cannot
   // hide in the package-wide increment. Measured source: 86 lines.

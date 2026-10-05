@@ -1,6 +1,12 @@
 import * as Core from '@agnes/core'
 import type { CallContext, Outcome } from '@agnes/extension-api/runtime'
-import type { ClientCallHeader, ClientOperationTypes, RuntimeError } from '@agnes/protocol/runtime'
+import type {
+  ClientCallHeader,
+  ClientOperationTypes,
+  DomainEventRecord,
+  RuntimeError,
+  UIOpeningResult,
+} from '@agnes/protocol/runtime'
 import type { HostRuntimeClientCaller, HostRuntimeClientInstallation } from './client-ports.js'
 import { captureIdentityContextFence } from './identity/authority.js'
 
@@ -31,6 +37,22 @@ type Issue = (
   request: Readonly<{ operation: Operation; input: unknown; header: ClientCallHeader }>,
   signal: AbortSignal,
 ) => Promise<Outcome<CallContext>>
+
+/** Trusted assembly inputs; Storage preserves the accepted-command port's concrete type. */
+export type HostProjectionSources<Storage> = Readonly<{
+  commandStorage: Storage
+  journal(afterSequence: number, limit: number): Promise<readonly DomainEventRecord[]>
+  subscribeCommitted(listener: () => Promise<RuntimeError | null>): () => void
+  native: Readonly<{
+    head(sessionId: string): Readonly<{ generation: number; upto: number }>
+    page(
+      sessionId: string,
+      beforeIndex: number | null,
+      limit: number,
+      context: CallContext,
+    ): Promise<Outcome<UIOpeningResult>>
+  }>
+}>
 
 export type HostProjectionOwner = Readonly<{
   installation: HostRuntimeClientInstallation
@@ -162,11 +184,11 @@ export function assembleHostProjectionOwner(
     close() {
       if (closing) return closing
       closed = true
-      lifetime.abort()
       closing = (async () => {
         try {
           unsubscribe?.()
         } finally {
+          lifetime.abort()
           await Promise.allSettled([...active])
           try {
             await options.disposeContextIssuer?.()
@@ -181,8 +203,11 @@ export function assembleHostProjectionOwner(
 }
 
 /** Until Core exposes a typed factory and the deployment supplies its issuer, reads fail closed. */
-export function createHostProjectionOwner(): HostProjectionOwner {
+export function createHostProjectionOwner<Storage>(
+  sources?: HostProjectionSources<Storage>,
+): HostProjectionOwner {
   return assembleHostProjectionOwner({
+    ...(sources ? { subscribeCommitted: sources.subscribeCommitted } : {}),
     unavailable: Object.hasOwn(Core, 'createProjectionProvider')
       ? 'projection_provider_installation_unavailable'
       : 'projection_provider_export_unavailable',

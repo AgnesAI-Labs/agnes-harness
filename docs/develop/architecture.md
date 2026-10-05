@@ -111,6 +111,8 @@ AGH's App Server provides shared task execution: the daemon manages sessions and
 
 The runtime HTTP listener consumes Host-owned read adapters. Host owns the projection lifecycle, refreshes after committed-event notifications, and checks original C14-issued contexts on each read. The default projection owner currently refuses with `projection_provider_export_unavailable`: Core has not published its factory. A selected provider and a deployment-issued context binding are required before production reads can be installed; HTTP transport authentication does not issue a business identity.
 
+A trusted `projection` installation supplies the selected domain store's owner and permissions. The supervisor opens one store and passes that same instance as command storage, an async wrapper of its event journal, its commit subscription, and the daemon's native conversation adapter to Host assembly. Commits through another store instance do not notify this owner. Shutdown unsubscribes, aborts and drains Host reads/refreshes, closes the provider, and then closes the store; absent installation facts keep the default refusal.
+
 <a id="可复用场景的范围"></a>
 
 ## Scope of reusable applications
