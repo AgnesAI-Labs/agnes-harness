@@ -241,6 +241,13 @@ describe('model prepare', () => {
     expect(result).toMatchObject({ ok: false, error: { code: 'cancelled' } })
   })
 
+  it('stays ready when readiness is asked again, and is not ready once drained', async () => {
+    const { provider } = await open()
+    expect((await provider.ready(callContext())).ok).toBe(true)
+    await provider.drain(callContext().deadline, callContext())
+    expect((await provider.ready(callContext())).ok).toBe(false)
+  })
+
   it('is not ready while the parent and child bridge cannot commit', async () => {
     const bridge = { ready: () => failure('model_child_bridge_not_ready', 'internal') }
     await expect(openModel({ bridge })).rejects.toThrow('model_child_bridge_not_ready')
