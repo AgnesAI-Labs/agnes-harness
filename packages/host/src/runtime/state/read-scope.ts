@@ -11,17 +11,25 @@ export type StateReadWindow =
   | Readonly<{ kind: 'run'; runId: string }>
   | Readonly<{ kind: 'action'; runId: string; actionId: string }>
 
-/** What the identity owner proved about one caller. The wrapper never builds or widens one. */
+/**
+ * What the identity owner proved about one caller. The wrapper never builds or widens one.
+ * A grant covers only the window of the scope the caller was issued; run and action ids come from
+ * that scope, never from caller JSON.
+ */
 export type StateReadGrant = Readonly<{
   sessionId: string
   window: StateReadWindow
-  /** Equal across calls of the same authority; changes on reconnect, generation change or revoke. */
+  /**
+   * Binds the original authorization and the window. It is not a freshness signal: revocation,
+   * generation change, a missing owner mapping and abort are rejected by `check()`, which must be
+   * called on every page.
+   */
   fingerprint: string
   /** The original runtime-scope context the native owner accepts; one object for this grant's life. */
   original: CallContext
   /** Epoch ms, never later than the original deadline, identity expiry or the caller's deadline. */
   deadline: number
-  /** Synchronous and throwing. It is not a flag a caller can set. */
+  /** Synchronous and throwing; valid for every page, never a flag a caller can set. */
   check(): void
 }>
 
