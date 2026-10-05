@@ -234,15 +234,16 @@ async function harness(target: ClientTarget, rows: boolean) {
 
   const window = new Map<string, DomainView>()
   const submit = vi.fn(async () => ({ ok: true as const, value: 'delegated' }))
+  const services = {
+    commands: { submit, commandStatus: submit },
+    locale: { locale: 'en', text: (key: string) => key, formatNumber: () => '', formatDate: () => '' },
+  } as unknown as Pick<RendererContext, 'commands' | 'interactions' | 'artifacts' | 'locale'>
   const presenter = createRendererPresenter({
     target,
     clientInstanceId: 'client-1',
     capabilities,
     locale: 'en',
-    services: {
-      commands: { submit, commandStatus: submit },
-      locale: { locale: 'en', text: (key: string) => key, formatNumber: () => '', formatDate: () => '' },
-    } as unknown as Pick<RendererContext, 'commands' | 'interactions' | 'artifacts' | 'locale'>,
+    services,
     views: { current: (viewId) => window.get(viewId) },
   })
   const runtime = createClientHostRuntime({
@@ -256,7 +257,9 @@ async function harness(target: ClientTarget, rows: boolean) {
             : fixed('cards.card'),
       }),
     },
-    context: {} as RendererContext,
+    clientInstanceId: 'client-1',
+    capabilities,
+    locale: services.locale,
     presenter,
   })
   expect(outcome(await runtime.activate(catalog(1, target, rows)))).toBe('ok')

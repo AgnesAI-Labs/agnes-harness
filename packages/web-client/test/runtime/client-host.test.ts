@@ -4,6 +4,7 @@ import type {
   ClientHost,
   ClientModule,
   DomainView,
+  NegotiatedClientCapabilities,
   Outcome,
   RendererContext,
   RendererDefinition,
@@ -266,7 +267,31 @@ function harness(options: { target?: ClientTarget; limits?: { entryMs?: number; 
       return { ok: true, value: loaded }
     },
   }
-  const context = { ownerToken: 'caller' } as unknown as RendererContext
+  // The caller's services: the host takes their locale alone, and a module context reaches none of the rest.
+  const services = {
+    commands: { submit: vi.fn(), commandStatus: vi.fn() },
+    interactions: {
+      pending: vi.fn(),
+      read: vi.fn(),
+      respond: vi.fn(),
+      formLink: vi.fn(),
+      responseStatus: vi.fn(),
+    },
+    artifacts: {
+      describe: vi.fn(),
+      openDownload: vi.fn(),
+      readRange: vi.fn(),
+      openStream: vi.fn(),
+      followDownload: vi.fn(),
+    },
+    locale: { locale: 'en', text: (key: string) => key, formatNumber: () => '', formatDate: () => '' },
+  }
+  const capabilities = {
+    clientInstanceId: 'client-1',
+    target,
+    features: [],
+  } as unknown as NegotiatedClientCapabilities
+  const failures = vi.fn()
   /** Every lease the host took, with how often each was disposed; the generic view's is `generic`. */
   const leases: Array<{ id: string; ownerToken: string; disposed: number }> = []
   const lease = (id: string, ownerToken: string) => {
@@ -290,7 +315,10 @@ function harness(options: { target?: ClientTarget; limits?: { entryMs?: number; 
   }
   const h = {
     log,
-    context,
+    services,
+    capabilities,
+    /** Every module release that missed its dispose deadline, as reported. */
+    failures,
     leases,
     /** How often each module's standard entry ran. */
     starts,
@@ -305,12 +333,78 @@ function harness(options: { target?: ClientTarget; limits?: { entryMs?: number; 
     runtime: createClientHostRuntime({
       target,
       loader,
-      context,
+      clientInstanceId: 'client-1',
+      capabilities,
+      locale: services.locale,
       presenter,
       limits: options.limits ?? {},
+      onFailure: failures,
     }),
   }
   return h
+}
+
+/** One call of every command, interaction and artifact method of `context`. */
+const serviceCalls = (context: RendererContext) => {
+  const { commands, interactions, artifacts } = context
+  const request = {} as never
+  return Promise.all([
+    commands.submit(request),
+    commands.commandStatus('request-1'),
+    interactions.pending(request),
+    interactions.read('interaction-1'),
+    interactions.respond(request),
+    interactions.formLink('interaction-1', 1),
+    interactions.responseStatus('response-1'),
+    artifacts.describe('artifact-1', 1),
+    artifacts.openDownload(request),
+    artifacts.readRange(request),
+    artifacts.openStream(request),
+    artifacts.followDownload(request),
+  ])
+}
+/** How many calls reached the caller's services. */
+const reached = ({ services }: ReturnType<typeof harness>) =>
+  [services.commands, services.interactions, services.artifacts]
+    .flatMap((client) => Object.values(client))
+    .reduce((calls, spy) => calls + spy.mock.calls.length, 0)
+
+type Opened = { moduleId: string; context: RendererContext; ran: string[] }
+/** Records the context each module entry starts with, on which it registers two cleanups. */
+function track(h: ReturnType<typeof harness>) {
+  const opened: Opened[] = []
+  const record = (moduleId: string, host: ClientHost) => {
+    const ran: string[] = []
+    host.context.onDispose(() => {
+      ran.push('older')
+    })
+    host.context.onDispose(async () => {
+      ran.push('newer')
+    })
+    opened.push({ moduleId, context: host.context, ran })
+  }
+  for (const moduleId of ['base', 'cards'])
+    h.entries[moduleId] = (standard) => async (host) => {
+      record(moduleId, host)
+      return standard(host)
+    }
+  return { opened, record }
+}
+
+/**
+ * `entry`'s context closed once: every call is refused as released, its signal aborted, each cleanup ran
+ * once, newest first, and one registered afterwards runs right away.
+ */
+async function closedOnce(entry: Opened) {
+  expect((await serviceCalls(entry.context)).map(refused)).toEqual(
+    Array(12).fill('cancelled/client_generation_released'),
+  )
+  expect(entry.context.signal.aborted).toBe(true)
+  expect(entry.ran).toEqual(['newer', 'older'])
+  entry.context.onDispose(() => {
+    entry.ran.push('later')
+  })
+  await vi.waitFor(() => expect(entry.ran).toEqual(['newer', 'older', 'later']))
 }
 
 function now(h: ReturnType<typeof harness>) {
@@ -344,10 +438,93 @@ describe('client host runtime', () => {
     // base serves the registry, the shell and a renderer, and still loads once. The host registers only
     // the selected renderers, so cards.other, declared by the same module, stays unregistered.
     expect(h.log).toEqual(['load base', 'register base.fallback', 'load cards', 'register cards.card'])
-    expect(seen?.context).toBe(h.context)
     // A module presents through its generation's presentation.
     expect(seen?.presentation).toBe(generation.presentation)
     expect(seen && kind(seen.renderers, 'base.fallback')).toBe('matched')
+  })
+
+  it('gives each module its own context per generation, which reaches no service', async () => {
+    const h = harness()
+    const { opened } = track(h)
+    expect(refused(await h.runtime.activate(catalog(1)))).toBe('ok')
+    expect(refused(await h.runtime.activate(catalog(2)))).toBe('ok')
+    // Each context carries the owner token the catalog issued its module for that generation.
+    expect(opened.map(({ moduleId, context }) => `${moduleId} ${context.ownerToken}`)).toEqual([
+      'base catalog-base-1',
+      'cards catalog-cards-1',
+      'base catalog-base-2',
+      'cards catalog-cards-2',
+    ])
+    for (const { context } of opened) {
+      expect(context.clientInstanceId).toBe('client-1')
+      expect(context.capabilities).toEqual(h.capabilities)
+      expect(context.capabilities).not.toBe(h.capabilities)
+      expect(context.locale).toBe(h.services.locale)
+    }
+    expect(at(opened, 2).context.capabilities).not.toBe(at(opened, 3).context.capabilities)
+    // A module context presents no view, so the live generation's contexts refuse every call outright.
+    for (const { context, ran } of opened.slice(2)) {
+      expect((await serviceCalls(context)).map(refused)).toEqual(Array(12).fill('denied/outside_view'))
+      expect(context.signal.aborted).toBe(false)
+      expect(ran).toEqual([])
+    }
+    expect(reached(h)).toBe(0)
+  })
+
+  it.each<{
+    name: string
+    release: (h: ReturnType<typeof harness>, tracked: ReturnType<typeof track>) => Promise<Opened[]>
+  }>([
+    {
+      name: 'its generation is replaced',
+      release: async (h, { opened }) => {
+        expect(refused(await h.runtime.activate(catalog(1)))).toBe('ok')
+        expect(refused(await h.runtime.activate(catalog(2)))).toBe('ok')
+        for (const { context } of opened.slice(2)) expect(context.signal.aborted).toBe(false)
+        return opened.slice(0, 2)
+      },
+    },
+    {
+      name: 'its candidate fails',
+      release: async (h, { opened, record }) => {
+        h.entries.cards = () => async (host) => {
+          record('cards', host)
+          throw new Error('broken')
+        }
+        expect(refused(await h.runtime.activate(catalog(1)))).toBe('internal/client_entry_failed')
+        return opened
+      },
+    },
+    {
+      name: 'its entry returns late',
+      release: async (h, { opened, record }) => {
+        h.entries.cards = () => async (host) => {
+          record('cards', host)
+          await sleep(100)
+          return contribution(h.log, 'late')
+        }
+        expect(refused(await h.runtime.activate(catalog(1)))).toBe('timeout/client_entry_timeout')
+        await vi.waitFor(() => expect(h.log).toContain('dispose late'))
+        return opened
+      },
+    },
+    {
+      name: 'the runtime is disposed',
+      release: async (h, { opened }) => {
+        expect(refused(await h.runtime.activate(catalog(1)))).toBe('ok')
+        await h.runtime.dispose()
+        return opened
+      },
+    },
+  ])('closes each module context once when $name', async ({ release }) => {
+    const h = harness({ limits: { entryMs: 50 } })
+    const closed = await release(h, track(h))
+    expect(closed.map(({ moduleId }) => moduleId)).toEqual(['base', 'cards'])
+    for (const entry of closed) await closedOnce(entry)
+    await h.runtime.dispose()
+    for (const { ran } of closed) expect(ran).toEqual(['newer', 'older', 'later'])
+    expect(reached(h)).toBe(0)
+    expect(h.failures).not.toHaveBeenCalled()
   })
 
   it('activates a text target without a shell and refuses registerShell there', async () => {
@@ -856,9 +1033,11 @@ describe('client host runtime', () => {
     expect(kind(now(h).registry, 'cards.other')).toBe('matched')
   })
 
-  it('gives up on a dispose past its deadline and still releases the rest', async () => {
+  it('gives up on a dispose past its deadline, reports it and still releases the rest', async () => {
     const h = harness({ limits: { disposeMs: 20 } })
+    let context: RendererContext | undefined
     h.entries.cards = (standard) => async (host) => {
+      context = host.context
       const started = await standard(host)
       return started.ok ? { ok: true, value: { dispose: () => new Promise<void>(() => {}) } } : started
     }
@@ -881,6 +1060,25 @@ describe('client host runtime', () => {
     expect(Date.now() - started).toBeLessThan(1_000)
     expect(h.log).toEqual(expect.arrayContaining(['unregister base.fallback', 'unregister cards.card']))
     expect(h.runtime.current()).toBeUndefined()
+    // Only the hung release is reported, by module id alone; its context closes all the same.
+    expect(h.failures.mock.calls).toEqual([[{ moduleId: 'cards', reason: 'dispose_timeout' }]])
+    expect(context?.signal.aborted).toBe(true)
+  })
+
+  it("holds a module's contribution and its cleanups to one dispose deadline", async () => {
+    const h = harness({ limits: { disposeMs: 40 } })
+    // Each part fits the deadline on its own; together they miss it.
+    h.entries.cards = (standard) => async (host) => {
+      host.context.onDispose(() => sleep(30))
+      const started = await standard(host)
+      return started.ok ? { ok: true, value: { dispose: () => sleep(30) } } : started
+    }
+    expect(refused(await h.runtime.activate(catalog(1)))).toBe('ok')
+    await h.runtime.dispose()
+    expect(h.failures.mock.calls).toEqual([[{ moduleId: 'cards', reason: 'dispose_timeout' }]])
+    expect(h.log).toEqual(
+      expect.arrayContaining(['dispose base#1', 'unregister base.fallback', 'unregister cards.card']),
+    )
   })
 
   it('refuses a second activation while one runs', async () => {
