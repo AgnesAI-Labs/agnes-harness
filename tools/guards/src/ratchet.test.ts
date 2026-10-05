@@ -1060,7 +1060,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // #293 (1d73af2a): measured 34773, approved +15 for the C10 model-source consumer.
   // J-23 verifyCall convergence removes 12; #295 root exports add 12: merged total 34773, exact cap.
   // Root export of the default projection factory and its public types (+19). Measured 34792, exact.
-  'packages/core/src': 34792,
+  // Projection catch-up runs one pull at a time and starts the pull a refresh waits on after it asked (+3). Measured 34795, exact.
+  'packages/core/src': 34795,
   // Testkit-only reference Effects runner adds 202 measured lines; exact cap, no spare.
   'packages/core/testkit': 1997,
   // 2026-09-15: DeepSeek V4 Pro/Flash ship a known-thinking-corrections table (new file) so the
