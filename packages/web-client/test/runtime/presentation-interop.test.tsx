@@ -234,15 +234,16 @@ async function harness(target: ClientTarget, rows: boolean) {
 
   const window = new Map<string, DomainView>()
   const submit = vi.fn(async () => ({ ok: true as const, value: 'delegated' }))
+  const services = {
+    commands: { submit, commandStatus: submit },
+    locale: { locale: 'en', text: (key: string) => key, formatNumber: () => '', formatDate: () => '' },
+  } as unknown as Pick<RendererContext, 'commands' | 'interactions' | 'artifacts' | 'locale'>
   const presenter = createRendererPresenter({
     target,
     clientInstanceId: 'client-1',
     capabilities,
     locale: 'en',
-    services: {
-      commands: { submit, commandStatus: submit },
-      locale: { locale: 'en', text: (key: string) => key, formatNumber: () => '', formatDate: () => '' },
-    } as unknown as Pick<RendererContext, 'commands' | 'interactions' | 'artifacts' | 'locale'>,
+    services,
     views: { current: (viewId) => window.get(viewId) },
   })
   const runtime = createClientHostRuntime({
@@ -256,7 +257,9 @@ async function harness(target: ClientTarget, rows: boolean) {
             : fixed('cards.card'),
       }),
     },
-    context: {} as RendererContext,
+    clientInstanceId: 'client-1',
+    capabilities,
+    locale: services.locale,
     presenter,
   })
   expect(outcome(await runtime.activate(catalog(1, target, rows)))).toBe('ok')
@@ -494,12 +497,17 @@ describe('domain presentation through the client host', () => {
     // The next generation presents the same view through a fresh context.
     await show(h.domain(view(1, 1)))
     const fresh = h.renders['cards.card']?.at(-1)?.context
-    expect(fresh?.signal.aborted).toBe(false)
+    if (fresh === undefined) throw new Error('the card was not rendered again')
+    expect(fresh.signal.aborted).toBe(false)
+    // It reads the status of the command the old generation sent for this view, and of no id never sent.
+    const status = (requestId: string) => fresh.commands.commandStatus(requestId).then(outcome)
+    expect([await status('before'), await status('never-sent')]).toEqual(['ok', 'denied/outside_view'])
+    expect(h.submit).toHaveBeenLastCalledWith('before')
     // Disposing an old generation's registration or lease again cannot unregister or end what the next
     // generation holds under the same ids.
     await oldExtra?.dispose()
     await oldCard?.dispose()
-    expect(fresh?.signal.aborted).toBe(false)
+    expect(fresh.signal.aborted).toBe(false)
     expect([bound(CARD)?.id, bound(EXTRA)?.id]).toEqual(['cards.card', 'base.extra'])
     h.hold(view(2, 1))
     await show(h.domain(view(2, 1)))

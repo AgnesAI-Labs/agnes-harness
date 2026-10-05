@@ -1,7 +1,7 @@
 import type { DomainView, NegotiatedClientCapabilities, RendererContext } from '@agnes/extension-api/client'
 import { validateRuntime } from '@agnes/protocol/runtime'
 import { describe, expect, it, vi } from 'vitest'
-import { createRendererContext } from '../../src/runtime/renderer-context.js'
+import { createRendererContext, createViewIndex } from '../../src/runtime/renderer-context.js'
 
 const schema = { typeId: 'acme.notes/rename@1', revision: 1, digest: 'a'.repeat(64) }
 const scope = {
@@ -96,16 +96,22 @@ const capabilities = {
   features: [],
 } as unknown as NegotiatedClientCapabilities
 
-const submitted = (requestId: string, actionKey = 'rename', viewRevision = 7) => ({
-  action: { viewId: 'note-1', actionKey, viewRevision },
+const submitted = (requestId: string, actionKey = 'rename', viewRevision = 7, viewId = 'note-1') => ({
+  action: { viewId, actionKey, viewRevision },
   commandSchema: schema,
   input: { kind: 'inline' as const, schema, value: {}, digest: 'c'.repeat(64), bytes: 2 },
   requestId,
   expectedRevision: 4,
 })
 
-function mount() {
-  const ok = async () => ({ ok: true as const, value: 'delegated' })
+/** A context for `viewId` at revision 7; contexts given one `index` share what they sent per view. */
+function mount({
+  index = createViewIndex(),
+  viewId = 'note-1',
+  ownerToken = 'owner-1',
+  drainMs = 5_000,
+} = {}) {
+  const ok = async (..._: unknown[]): Promise<unknown> => ({ ok: true as const, value: 'delegated' })
   const services = {
     commands: { submit: vi.fn(ok), commandStatus: vi.fn(ok) },
     interactions: {
@@ -126,13 +132,15 @@ function mount() {
   }
   const mounted = createRendererContext({
     clientInstanceId: 'client-1',
-    ownerToken: 'owner-1',
+    ownerToken,
     capabilities,
     services: services as unknown as Pick<
       RendererContext,
       'commands' | 'interactions' | 'artifacts' | 'locale'
     >,
-    view: view(7),
+    view: { ...view(7), viewId },
+    index,
+    drainMs,
   })
   return { services, ...mounted }
 }
@@ -141,13 +149,20 @@ const code = async (outcome: unknown) => {
   const settled = (await outcome) as { ok: boolean; error?: { code: string } }
   return settled.ok ? 'ok' : settled.error?.code
 }
+const detail = async (outcome: unknown) => {
+  const settled = (await outcome) as { ok: boolean; error?: { code: string; detailCode: string } }
+  return settled.ok ? 'ok' : `${settled.error?.code}/${settled.error?.detailCode}`
+}
+
+/** A command handle for `requestId` in `status`, as a submit or status read answers it. */
+const handle = (requestId: string, status: string) => ({ ok: true as const, value: { requestId, status } })
 
 /** Every client call a renderer can make, keyed by what it names. */
-function calls(context: RendererContext) {
+function calls(context: RendererContext, viewId = 'note-1') {
   const ticket = { url: 'u', expiresAt: 't', grantRevision: 1 }
   return {
     submit: (requestId: string, actionKey?: string, viewRevision?: number) =>
-      context.commands.submit(submitted(requestId, actionKey, viewRevision)),
+      context.commands.submit(submitted(requestId, actionKey, viewRevision, viewId)),
     status: (requestId: string) => context.commands.commandStatus(requestId),
     artifact: (artifactId: string, version: number) => [
       context.artifacts.describe(artifactId, version),
@@ -276,5 +291,176 @@ describe('renderer context restricted to the mounted view', () => {
     context.onDispose(late)
     await Promise.resolve()
     expect(late).toHaveBeenCalledTimes(1)
+  })
+
+  it('lets every context of one index read the status of what any of them sent for the view, and nothing else', async () => {
+    const index = createViewIndex()
+    const sender = mount({ index })
+    const reader = mount({ index, ownerToken: 'owner-2' })
+    const other = mount({ index, viewId: 'note-2', ownerToken: 'owner-3' })
+    expect(
+      await codes([
+        calls(sender.context).submit('request-1'),
+        ...calls(sender.context).interaction('ask-1', 'response-1'),
+        calls(other.context, 'note-2').submit('request-2'),
+      ]),
+    ).toEqual(Array(5).fill('ok'))
+    await sender.dispose()
+
+    const { commands, interactions } = reader.context
+    expect(
+      await codes([commands.commandStatus('request-1'), interactions.responseStatus('response-1')]),
+    ).toEqual(['ok', 'ok'])
+    // Another view's request, a request never sent and a response id read as a request stay outside.
+    expect(
+      await Promise.all(
+        ['request-2', 'request-9', 'response-1'].map((id) => detail(commands.commandStatus(id))),
+      ),
+    ).toEqual(Array(3).fill('denied/outside_view'))
+    expect(reader.services.commands.commandStatus.mock.calls).toEqual([['request-1']])
+    expect(reader.services.interactions.responseStatus.mock.calls).toEqual([['response-1']])
+    expect(await detail(sender.context.commands.commandStatus('request-1'))).toBe('denied/renderer_disposed')
+    expect(sender.services.commands.commandStatus).not.toHaveBeenCalled()
+  })
+
+  it('makes room in a full view by forgetting its oldest settled id', async () => {
+    const { services, context } = mount()
+    const call = calls(context)
+    services.commands.submit.mockImplementation(async (request) =>
+      handle((request as { requestId: string }).requestId, 'succeeded'),
+    )
+    const ids = Array.from({ length: 128 }, (_, n) => `request-${n}`)
+    expect(await codes(ids.map((id) => call.submit(id)))).toEqual(Array(128).fill('ok'))
+    expect(await code(call.submit('request-128'))).toBe('ok')
+    expect(services.commands.submit).toHaveBeenCalledTimes(129)
+    expect(
+      await Promise.all(['request-0', 'request-1', 'request-128'].map((id) => detail(call.status(id)))),
+    ).toEqual(['denied/outside_view', 'ok', 'ok'])
+  })
+
+  it('refuses a new id before any service call while the view holds no settled one to forget', async () => {
+    const { services, context } = mount()
+    const call = calls(context)
+    const { submit, commandStatus } = services.commands
+    submit.mockImplementation(async (request) =>
+      handle((request as { requestId: string }).requestId, 'accepted'),
+    )
+    submit.mockResolvedValueOnce(handle('request-0', 'unknown_effect'))
+    const ids = Array.from({ length: 128 }, (_, n) => `request-${n}`)
+    expect(await codes(ids.map((id) => call.submit(id)))).toEqual(Array(128).fill('ok'))
+    expect(await detail(call.submit('request-128'))).toBe('quota/command_ledger_full')
+    expect(submit).toHaveBeenCalledTimes(128)
+    // A retry of a sent id takes no new entry.
+    expect(await code(call.submit('request-5'))).toBe('ok')
+
+    // Running is not final, and a refused read leaves a final id final.
+    commandStatus.mockResolvedValueOnce(handle('request-1', 'running'))
+    commandStatus.mockResolvedValueOnce(handle('request-2', 'succeeded'))
+    commandStatus.mockResolvedValueOnce({ ok: false, error: { code: 'timeout' } })
+    expect(
+      await codes([call.status('request-1'), call.status('request-2'), call.status('request-2')]),
+    ).toEqual(['ok', 'ok', 'timeout'])
+    // Only request-2 is settled, so it makes the room though request-0 and request-1 are older.
+    expect(await code(call.submit('request-128'))).toBe('ok')
+    expect(await detail(call.submit('request-129'))).toBe('quota/command_ledger_full')
+    expect(submit).toHaveBeenCalledTimes(130)
+    expect(
+      await Promise.all(['request-0', 'request-1', 'request-2'].map((id) => detail(call.status(id)))),
+    ).toEqual(['ok', 'ok', 'denied/outside_view'])
+  })
+
+  it('settles an id whose first send was refused outright, but not one refused on a resend', async () => {
+    const { services, context } = mount()
+    const call = calls(context)
+    const { submit } = services.commands
+    submit.mockImplementation(async (request) =>
+      handle((request as { requestId: string }).requestId, 'accepted'),
+    )
+    submit.mockResolvedValueOnce({ ok: false, error: { code: 'denied' } })
+    submit.mockResolvedValueOnce({ ok: false, error: { code: 'timeout' } })
+    const ids = Array.from({ length: 128 }, (_, n) => `request-${n}`)
+    expect(await codes(ids.map((id) => call.submit(id)))).toEqual([
+      'denied',
+      'timeout',
+      ...Array(126).fill('ok'),
+    ])
+    // The refused request-0 makes the room; request-1 may have reached the server, so it stays.
+    expect(await code(call.submit('request-128'))).toBe('ok')
+    expect(await detail(call.submit('request-129'))).toBe('quota/command_ledger_full')
+    // A resend refused outright leaves the id as it was, since its first send may still be live.
+    submit.mockResolvedValueOnce({ ok: false, error: { code: 'conflict' } })
+    expect(await code(call.submit('request-5'))).toBe('conflict')
+    expect(await detail(call.submit('request-129'))).toBe('quota/command_ledger_full')
+    expect(
+      await Promise.all(['request-0', 'request-1', 'request-5'].map((id) => detail(call.status(id)))),
+    ).toEqual(['denied/outside_view', 'ok', 'ok'])
+  })
+
+  it('holds all views of one index to 1024 ids together', async () => {
+    const index = createViewIndex()
+    const filled = async (viewId: string) => {
+      const mounted = mount({ index, viewId })
+      const call = calls(mounted.context, viewId)
+      const ids = Array.from({ length: 128 }, (_, n) => `${viewId}-${n}`)
+      expect(await codes(ids.map((id) => call.submit(id)))).toEqual(Array(128).fill('ok'))
+      return { ...mounted, call }
+    }
+    const first = await filled('note-0')
+    for (let n = 1; n < 8; n++) await filled(`note-${n}`)
+    const last = mount({ index, viewId: 'note-8' })
+    const next = calls(last.context, 'note-8')
+    expect(await detail(next.submit('note-8-0'))).toBe('quota/command_ledger_full')
+    expect(last.services.commands.submit).not.toHaveBeenCalled()
+
+    // An id settled in another view makes the room.
+    first.services.commands.commandStatus.mockResolvedValueOnce(handle('note-0-5', 'failed'))
+    expect(await code(first.call.status('note-0-5'))).toBe('ok')
+    expect(await code(next.submit('note-8-0'))).toBe('ok')
+    expect(await detail(first.call.status('note-0-5'))).toBe('denied/outside_view')
+  })
+
+  it('waits for its calls in flight before the cleanups run, and leaves their results as they are', async () => {
+    const { services, context, dispose, state } = mount()
+    let answer: (outcome: unknown) => void = () => {}
+    services.commands.submit.mockReturnValueOnce(
+      new Promise((resolve) => {
+        answer = resolve
+      }),
+    )
+    const pending = context.commands.submit(submitted('request-1'))
+    const cleanup = vi.fn()
+    context.onDispose(cleanup)
+    expect(state()).toBe('open')
+    const closing = dispose()
+    expect([state(), context.signal.aborted]).toEqual(['draining', true])
+    expect(await detail(context.commands.submit(submitted('request-2')))).toBe('denied/renderer_disposed')
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(cleanup).not.toHaveBeenCalled()
+
+    const accepted = handle('request-1', 'accepted')
+    answer(accepted)
+    expect(await pending).toBe(accepted)
+    await closing
+    expect([state(), cleanup.mock.calls.length]).toEqual(['disposed', 1])
+    expect(services.commands.submit).toHaveBeenCalledTimes(1)
+  })
+
+  it('runs the cleanups once drainMs passes when a call in flight never settles', async () => {
+    vi.useFakeTimers()
+    try {
+      const { services, context, dispose, state } = mount({ drainMs: 5_000 })
+      services.commands.submit.mockReturnValueOnce(new Promise(() => {}))
+      void context.commands.submit(submitted('request-1'))
+      const cleanup = vi.fn()
+      context.onDispose(cleanup)
+      const closing = dispose()
+      await vi.advanceTimersByTimeAsync(4_999)
+      expect([state(), cleanup.mock.calls.length]).toEqual(['draining', 0])
+      await vi.advanceTimersByTimeAsync(1)
+      expect([state(), cleanup.mock.calls.length]).toEqual(['disposed', 1])
+      await closing
+    } finally {
+      vi.useRealTimers()
+    }
   })
 })

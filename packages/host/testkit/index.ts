@@ -36,6 +36,10 @@ import type { SessionRecovery } from '../src/session.js'
 import type { TrajectoryResolver } from '../src/trajectory-network.js'
 import { attachTestSeamPlugins } from './cordis-seams.js'
 
+export {
+  assembleHostProjectionOwner,
+  type HostProjectionProvider,
+} from '../src/runtime/projection-owner.js'
 export { attachTestSeamPlugins } from './cordis-seams.js'
 export type { CapturedRequest, WireApi, WireReply } from './wire-capture.js'
 export { expectExtends, renderedParts, sharedPrefix, startWireCapture } from './wire-capture.js'

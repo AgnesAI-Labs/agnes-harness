@@ -290,7 +290,11 @@ const INITIAL_CEILING: Record<string, number> = {
   // exact, no spare (+12).
   // Default renderer factory over the built-in presentation. Measured 3457, exact, no spare (+11).
   // A throwing Web renderer yields to the generic card and reports its ids. Measured 3491, exact, no spare (+34).
-  'packages/web-client/src': 3491,
+  // Each client module gets its own refusing context per generation, closed under one dispose deadline.
+  // Measured 3556, exact, no spare (+65).
+  // One view index per presenter bounds renderer status reads, and dispose drains the calls in flight.
+  // Measured 3621, exact, no spare (+65).
+  'packages/web-client/src': 3621,
   'packages/web-slots/src': 605,
   // Failed shell calls read as their exit code (+19 lines); measured 4891, exact cap.
   // B-line diagnostics dialog: React view adds 147 lines; measured 4706, exact cap.
@@ -1067,7 +1071,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // The approval card's summary line is built by summarizeCall (new file). Measured 25861 (+50), exact cap.
   // Sourced memory and hybrid retrieval providers. Measured 32058, exact, no spare.
   // Sixth main synchronization brings main's queued-input CI fixes. Measured 32862, exact, no spare.
-  'packages/core/src': 32862,
+  // Exact merged main and runtime integration source count; no spare allocation.
+  'packages/core/src': 34983,
   // Testkit-only reference Effects runner adds 202 measured lines; exact cap, no spare.
   'packages/core/testkit': 1997,
   // 2026-09-15: DeepSeek V4 Pro/Flash ship a known-thinking-corrections table (new file) so the
@@ -1084,7 +1089,9 @@ const INITIAL_CEILING: Record<string, number> = {
   // Response metadata on cost/ledger: per-attempt fetch capture of status, allowlisted header values
   // and header names, plus provider-side shape checks. Measured 3886 (+51).
   // Agnes default output allowance is explicitly serialized to HTTP. Measured +6, exact allocation.
-  'packages/ai/src': 5882,
+  // Injected model egress fetch in PiAdapter (the catalogue probe skipped behind it) and a required per-call
+  // egress port in the runtime model adapter. Measured 5908 (+26), exact cap, no spare.
+  'packages/ai/src': 5908,
   // 2026-09-09: raised from 500, which was exactly the measured count and so forbade every
   // further line. Two repairs were blocked by it and are landing with this raise: the provider
   // factory taking log + pricing (without which every delivered assembly denominates ledger
@@ -1579,7 +1586,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // Events contract cases: resumable pages, idempotent publish, crash recovery. Measured 14341, exact (+632).
   // Renderer contract cases through the client host on every target. Measured 15193, exact, no spare (+852).
   // Runtime client transport cases over two servers with one SDK client. Measured 16143, exact, no spare (+950).
-  'packages/extension-api/testkit': 16143,
+  // Tools contracts +247, Context +339, Loop +170; exact, no spare.
+  'packages/extension-api/testkit': 16899,
   // 2026-09-10: raised from 2500 by Task 15 (stream-disconnect reconnection). The new
   // reattach.ts (the Reconnector: backoff loop, OVERLOADED's retryAfterMs override) plus
   // Session.recover()/waitForQuiescence and Client's reconnect wiring (emit(), the
@@ -2028,7 +2036,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // Host projection lifecycle and read-port composition. Measured 27549, exact.
   // Sixth main synchronization merged with the current integration tip. Measured 27731, exact, no spare.
   // Sixth main synchronization brings main's queued-input CI fixes. Measured 27749, exact, no spare.
-  'packages/daemon/src': 27749,
+  // Exact merged main and runtime integration source count; no spare allocation.
+  'packages/daemon/src': 27829,
   'packages/daemon/src/packages/admin-session': 46,
   // 2026-09-14: whole-branch review fix wave (Finding 1) adds the two missing
   // 'pins/inspect'/'pins/release' entries to the ACTIONS BFF route allowlist, which had been left
@@ -2860,7 +2869,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // feat(host): wire projection read ownership and daemon lifecycle. Measured 80687, exact, no spare.
   // Sixth main synchronization merged with the current integration tip. Measured 80713, exact, no spare.
   // Sixth main synchronization brings main's queued-input CI fixes. Measured 80715, exact, no spare.
-  'packages/host/src': 80715,
+  // Exact merged main and runtime integration source count; no spare allocation.
+  'packages/host/src': 80911,
   'packages/host/src/ext-host/service-invocation': 247,
   // T5.2's permission projector is kept independently bounded so later extension-host work cannot
   // hide in the package-wide increment. Measured source: 86 lines.

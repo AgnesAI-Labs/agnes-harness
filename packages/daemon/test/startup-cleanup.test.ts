@@ -1,10 +1,11 @@
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
-import type { ResolvedProfile } from '@agnes/host'
+import { createHostProjectionOwner, DEFAULT_COMPUTER_USE, type ResolvedProfile } from '@agnes/host'
 import { createPrivateDirectorySync } from '@agnes/system-node'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { DEFAULT_LIMITS } from '../src/config.js'
+import type { DomainStore } from '../src/runtime/events/outbox.js'
 import { acquireOwnerLock } from '../src/supervisor/owner-lock.js'
 import { listenUnix } from '../src/supervisor/socket.js'
 import { daemonSocketPaths } from '../src/supervisor/socket-paths.js'
@@ -88,13 +89,14 @@ describe('supervisor startup cleanup', () => {
     const dir = mkdtempSync(join(tmpdir(), 'agnes-startup-cleanup-'))
     const daemonDir = join(dir, 'daemon')
     createPrivateDirectorySync(daemonDir)
-    const workersSocketPath = socketPaths(dir).workersSocketPath
-    const blocker = await listenUnix(workersSocketPath, () => undefined)
+    const { workersSocketPath, socketPath } = socketPaths(dir)
+    const blocker = await listenUnix(socketPath, () => undefined)
     const profile = {
       name: 'local-dev',
       dataDir: dir,
       presets: { default: 'standard', allowed: ['standard'] },
       hash: 'startup-cleanup',
+      computerUse: DEFAULT_COMPUTER_USE,
     } as unknown as ResolvedProfile
     const profileFile = join(daemonDir, 'profile.json')
     writeFileSync(profileFile, JSON.stringify(profile))
@@ -111,6 +113,7 @@ describe('supervisor startup cleanup', () => {
         },
       },
     }))
+    let store: DomainStore | undefined
     try {
       await expect(
         startSupervisor({
@@ -128,8 +131,39 @@ describe('supervisor startup cleanup', () => {
           remoteAuth: { jwt: { issuer: 'issuer', jwksUrl: 'https://issuer.test/keys' } },
           jwksResolver: async () => ['8.8.8.8'],
           jwksTransport: transport,
+          projection: {
+            store: {
+              file: join(dir, 'domain.sqlite'),
+              owner: {
+                authority: {
+                  authorityId: 'fixture-authority',
+                  tenantId: 'fixture-tenant',
+                  authorityEpoch: 1,
+                },
+                scope: {
+                  kind: 'workspace',
+                  installationId: 'install',
+                  runtimeId: 'runtime',
+                  workspaceId: 'workspace',
+                },
+                ownerBinding: {
+                  bindingId: 'projection',
+                  contract: 'agh.projection',
+                  logicalName: 'fixture',
+                  providerId: 'fixture',
+                },
+              },
+              permits: async () => false,
+            },
+            createOwner(sources) {
+              store = sources.commandStorage
+              return createHostProjectionOwner(sources)
+            },
+          },
         }),
       ).rejects.toThrow('daemon socket unavailable')
+      if (!store) throw new Error('projection store was not assembled before the listener failed')
+      await expect(store.transaction((tx) => tx.lastSequence())).rejects.toThrow()
       expect(transport).toHaveBeenCalledTimes(1)
       const lock = await acquireOwnerLock(dir, {
         socketPath: socketPaths(dir).socketPath,

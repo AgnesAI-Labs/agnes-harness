@@ -250,6 +250,8 @@ describe.skipIf(typeof process.getuid !== 'function')('local original C14 deploy
     })
     let drained = false
     let disposed = false
+    let issuedSignal: AbortSignal | undefined
+    let unsubscribed = false
     const unavailable = async () => {
       throw new Error('unused projection method')
     }
@@ -262,7 +264,14 @@ describe.skipIf(typeof process.getuid !== 'function')('local original C14 deploy
         async snapshot(_request, context) {
           entered()
           await new Promise<void>((resolve) =>
-            context.signal.addEventListener('abort', () => resolve(), { once: true }),
+            context.signal.addEventListener(
+              'abort',
+              () => {
+                expect(unsubscribed).toBe(true)
+                resolve()
+              },
+              { once: true },
+            ),
           )
           drained = true
           return {
@@ -279,7 +288,14 @@ describe.skipIf(typeof process.getuid !== 'function')('local original C14 deploy
       disposeContextIssuer() {
         connection?.close()
       },
+      subscribeCommitted() {
+        return () => {
+          expect(issuedSignal?.aborted).toBe(false)
+          unsubscribed = true
+        }
+      },
       async issue(_caller, _request, signal) {
+        issuedSignal = signal
         connection = await identity.connect(signal)
         return { ok: true, value: connection.issue('2026-10-04T00:01:00Z', 'projection-trace') }
       },

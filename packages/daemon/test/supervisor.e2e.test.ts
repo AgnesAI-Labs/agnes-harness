@@ -7,17 +7,21 @@ import {
   canonicalJson,
   createHostProjectionOwner,
   DEFAULT_COMPUTER_USE,
+  type HostProjectionOwner,
+  type HostProjectionSources,
   hashInput,
   type ResolvedProfile,
   sha256hex,
 } from '@agnes/host'
-import { createTestHost } from '@agnes/host/testkit'
-import { RuntimeClientTransportWire } from '@agnes/protocol/runtime'
+import { assembleHostProjectionOwner, createTestHost, type HostProjectionProvider } from '@agnes/host/testkit'
+import type * as Wire from '@agnes/protocol/runtime'
+import { canonicalJsonDigest, RuntimeClientTransportWire } from '@agnes/protocol/runtime'
 import { createClient, memoryJournal, wsTransport } from '@agnes/sdk'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { WebSocket } from 'ws'
 import { type DaemonConfig, DEFAULT_LIMITS } from '../src/config.js'
 import { signSourceAuth, sourceAuthCanonical } from '../src/local/auth.js'
+import { type DomainStore, openDomainStore } from '../src/runtime/events/outbox.js'
 import { SessionPrincipalOwnershipIndex } from '../src/storage/session-ownership.js'
 import { ensure } from '../src/storage/table.js'
 import { encodeFrame, JsonlDecoder } from '../src/supervisor/framing.js'
@@ -243,6 +247,84 @@ describe('agnesd supervisor: real end-to-end', () => {
     const profile = buildProfile(dir)
     const profileFile = join(dir, 'profile.json')
     writeFileSync(profileFile, JSON.stringify(profile))
+    const binding = {
+      bindingId: 'projection',
+      contract: 'agh.projection',
+      logicalName: 'tasks',
+      providerId: 'fixture',
+    }
+    const scope = {
+      kind: 'workspace' as const,
+      installationId: 'install',
+      runtimeId: 'runtime',
+      workspaceId: 'workspace',
+    }
+    const storeOptions = {
+      file: join(dir, 'domain.sqlite'),
+      owner: {
+        authority: { authorityId: 'projection-authority', tenantId: 'tenant', authorityEpoch: 1 },
+        scope,
+        ownerBinding: binding,
+      },
+      permits: async () => false,
+    }
+    let sources!: HostProjectionSources<DomainStore>
+    const commit = (storage: DomainStore, sequence: number, abort = false) =>
+      storage.transaction((tx) => {
+        const schema = {
+          typeId: 'fixture/fact@1',
+          revision: 1,
+          digest: canonicalJsonDigest('fixture/fact@1'),
+        }
+        tx.putEvent({
+          sequence,
+          authorityId: storeOptions.owner.authority.authorityId,
+          aggregate: {
+            authorityId: storeOptions.owner.authority.authorityId,
+            typeId: 'fixture/board@1',
+            id: 'board',
+            revision: sequence,
+          },
+          fingerprint: canonicalJsonDigest(sequence),
+          event: {
+            eventId: `event-${sequence}`,
+            typeId: schema.typeId,
+            schema,
+            source: binding,
+            scope,
+            occurredAt: '2026-10-05T00:00:00Z',
+            payload: {
+              kind: 'inline',
+              schema,
+              value: sequence,
+              digest: canonicalJsonDigest(sequence),
+              bytes: 1,
+            },
+            idempotencyKey: `event-${sequence}`,
+            causation: {},
+            principalRef: 'fixture',
+            correlationId: null,
+            provenance: { sourceRefs: [], producer: binding, trustLabels: [] },
+          },
+        })
+        tx.putCommand({
+          key: canonicalJsonDigest(`request-${sequence}`),
+          fingerprint: canonicalJsonDigest(sequence),
+          name: 'append',
+          handle: {
+            requestId: `request-${sequence}`,
+            commandId: `command-${sequence}`,
+            status: 'succeeded',
+            revision: 1,
+            completion: 'domain-commit',
+            result: null,
+            error: null,
+          },
+          value: null,
+          dispatchKeys: [],
+        })
+        if (abort) throw new Error('rollback fixture')
+      })
     const options = {
       config: buildConfigFor(dir),
       profile,
@@ -251,10 +333,34 @@ describe('agnesd supervisor: real end-to-end', () => {
       workspaceRoot: dir,
       processIdentity,
       ...workerSpawnOpts,
+      projection: {
+        store: storeOptions,
+        createOwner(next: HostProjectionSources<DomainStore>) {
+          sources = next
+          return createHostProjectionOwner(next)
+        },
+      },
     }
     let supervisor: Awaited<ReturnType<typeof startSupervisor>> | undefined
     try {
+      await expect(
+        startSupervisor({
+          ...options,
+          projection: {
+            store: storeOptions,
+            createOwner(next) {
+              sources = next
+              throw new Error('fixture projection construction failed')
+            },
+          },
+        }),
+      ).rejects.toThrow('fixture projection construction failed')
+      await expect(sources.commandStorage.transaction((tx) => tx.lastSequence())).rejects.toThrow()
       supervisor = await startSupervisor(options)
+      expect(sources.native.head('missing')).toEqual({ generation: 0, upto: 0 })
+      await commit(sources.commandStorage, 1)
+      const coldJournal = await sources.journal(0, 10)
+      expect(coldJournal.map((row) => row.sequence)).toEqual([1])
       expect(supervisor.ws).toBeUndefined()
       const first = supervisor.runtimeClient
       if (!first) throw new Error('missing runtime HTTP listener')
@@ -303,16 +409,45 @@ describe('agnesd supervisor: real end-to-end', () => {
       }
       const firstGeneration = supervisor.owner.generation
       await supervisor.close()
+      await expect(sources.commandStorage.transaction((tx) => tx.lastSequence())).rejects.toThrow()
       await expect(fetch(first.baseUrl)).rejects.toThrow()
-      const projectionOwner = createHostProjectionOwner()
       let projectionClosed = false
+      let installedOwner!: HostProjectionOwner
+      let projected: readonly Wire.DomainEventRecord[] = []
+      let refreshed: Promise<void> = Promise.resolve()
+      let finishRefresh = () => {}
+      let refreshes = 0
+      const unread = async () => {
+        throw new Error('fixture read requires the formal issuer')
+      }
+      const provider: HostProjectionProvider = {
+        openConversation: unread,
+        conversationHistory: unread,
+        listConversations: unread,
+        snapshot: unread,
+        commandStatus: unread,
+        async refresh() {
+          if (projectionClosed) throw new Error('refresh after close')
+          projected = await sources.journal(0, 10)
+          refreshes++
+          finishRefresh()
+          return null
+        },
+        close() {
+          projectionClosed = true
+        },
+      }
       supervisor = await startSupervisor({
         ...options,
-        projectionOwner: {
-          ...projectionOwner,
-          close: async () => {
-            await projectionOwner.close()
-            projectionClosed = true
+        projection: {
+          store: storeOptions,
+          createOwner(next) {
+            sources = next
+            installedOwner = assembleHostProjectionOwner({
+              provider,
+              subscribeCommitted: next.subscribeCommitted,
+            })
+            return installedOwner
           },
         },
         runtimeClientInstallation: {
@@ -333,6 +468,66 @@ describe('agnesd supervisor: real end-to-end', () => {
           },
         },
       })
+      expect(await sources.journal(0, 10)).toEqual(coldJournal)
+      const secondStore = openDomainStore(storeOptions)
+      try {
+        // A different connection to the same journal never notifies this owner's provider.
+        await commit(secondStore, 2)
+        expect(projected).toEqual([])
+        expect(refreshes).toBe(0)
+        await expect(commit(sources.commandStorage, 3, true)).rejects.toThrow('rollback fixture')
+        await sources.commandStorage.transaction((tx) => tx.lastSequence())
+        expect(refreshes).toBe(0)
+        const unsubscribeThrower = sources.commandStorage.subscribeCommitted(() => {
+          throw new Error('subscriber fixture')
+        })
+        refreshed = new Promise<void>((resolve) => {
+          finishRefresh = resolve
+        })
+        await commit(sources.commandStorage, 3)
+        await refreshed
+        expect(projected.map((row) => row.sequence)).toEqual([1, 2, 3])
+        expect(refreshes).toBe(1)
+        expect(
+          await sources.commandStorage.transaction((tx) => tx.command(canonicalJsonDigest('request-3'))),
+        ).toMatchObject({ handle: { status: 'succeeded' } })
+        await expect(
+          sources.commandStorage.transaction((tx) => {
+            const record = projected[0]
+            if (!record) throw new Error('missing committed fixture record')
+            tx.putState({ value: record.event.payload, revision: 1 })
+            tx.putEvent({ ...record, sequence: 4, event: { ...record.event, eventId: 'negative-event' } })
+            tx.putCommand({
+              key: canonicalJsonDigest('negative'),
+              fingerprint: canonicalJsonDigest('negative'),
+              name: 'append',
+              handle: {
+                requestId: 'negative',
+                status: 'not-accepted',
+                commandId: null,
+                revision: null,
+                completion: null,
+                result: null,
+                error: null,
+              } as never,
+              value: null,
+              dispatchKeys: [],
+            })
+          }),
+        ).rejects.toThrow('only accepted commands')
+        expect(refreshes).toBe(1)
+        expect(await sources.commandStorage.transaction((tx) => tx.state())).toEqual({
+          value: null,
+          revision: 0,
+        })
+        expect(await sources.journal(0, 10)).toEqual(projected)
+        expect(
+          await sources.commandStorage.transaction((tx) => tx.command(canonicalJsonDigest('negative'))),
+        ).toBeUndefined()
+        unsubscribeThrower()
+      } finally {
+        secondStore.close()
+      }
       const second = supervisor.runtimeClient
       if (!second) throw new Error('missing replacement runtime listener')
       expect(supervisor.owner.generation).not.toBe(firstGeneration)
@@ -368,8 +563,20 @@ describe('agnesd supervisor: real end-to-end', () => {
         ok: true,
         value: { reply: { operation: 'conversation.list', value: { snapshot: 'explicit-list' } } },
       })
+      // Dispose the Host installation while its store is still open: later commits cannot refresh it.
+      await installedOwner.close()
+      await commit(sources.commandStorage, 4)
+      expect(refreshes).toBe(1)
       await supervisor.close()
       expect(projectionClosed).toBe(true)
+      const reopened = openDomainStore(storeOptions)
+      try {
+        await commit(reopened, 5)
+        expect(refreshes).toBe(1)
+        expect(reopened.events(0, 10).slice(0, 3)).toEqual(projected)
+      } finally {
+        reopened.close()
+      }
       await expect(fetch(second.baseUrl)).rejects.toThrow()
     } finally {
       await supervisor?.close()

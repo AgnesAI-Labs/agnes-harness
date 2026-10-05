@@ -132,8 +132,9 @@ function setup(target: ClientTarget, ...held: DomainView[]) {
   const window = new Map(held.map((entry) => [entry.viewId, entry]))
   const views: AuthorizedViews = { current: (viewId) => window.get(viewId) }
   const submit = vi.fn(async () => ({ ok: true as const, value: 'delegated' }))
+  const commandStatus = vi.fn(async () => ({ ok: true as const, value: 'delegated' }))
   const services = {
-    commands: { submit, commandStatus: submit },
+    commands: { submit, commandStatus },
     locale: { locale: 'en', text: (key: string) => key, formatNumber: () => '', formatDate: () => '' },
   } as unknown as Pick<RendererContext, 'commands' | 'interactions' | 'artifacts' | 'locale'>
   const failures = vi.fn()
@@ -149,6 +150,7 @@ function setup(target: ClientTarget, ...held: DomainView[]) {
   return {
     presenter,
     submit,
+    commandStatus,
     services,
     failures,
     hold: (entry: DomainView) => window.set(entry.viewId, entry),
@@ -319,6 +321,24 @@ describe('renderer presentation', () => {
       element(presenter.lease({ definition: renderer.definition, ownerToken: 'owner-1' }).present(view(1))),
     )
     expect(host.querySelector('.card')?.textContent).toBe('card note-1@1')
+  })
+
+  it('lets the generic card presented through a new lease check the request its old lease sent', async () => {
+    const { presenter, submit, commandStatus } = setup('web', view(1))
+    submit.mockResolvedValueOnce({ ok: true, value: { status: 'accepted' } } as never)
+    commandStatus.mockResolvedValueOnce({ ok: true, value: { status: 'succeeded' } } as never)
+    const first = presenter.generic()
+    await show(element(first.present(view(1))))
+    await act(async () => host.querySelector('button')?.click())
+    const [[request]] = submit.mock.calls as unknown as [[{ requestId: string }]]
+
+    // The next client generation presents the view through its own lease, and the old one is released.
+    await show(element(presenter.generic().present(view(1))))
+    await first.dispose()
+    const check = [...host.querySelectorAll('button')].find((button) => button.textContent === 'Check status')
+    await act(async () => check?.click())
+    expect(commandStatus).toHaveBeenCalledWith(request.requestId)
+    expect(host.querySelector('[role="status"]')?.textContent).toBe('Done.')
   })
 
   it('shows the fallback text as text when the generic card throws too', async () => {

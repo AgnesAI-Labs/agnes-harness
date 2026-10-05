@@ -1,9 +1,10 @@
 import { createServer, type Server } from 'node:http'
-import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import type { ManualRoute } from '../src/adapters/pi/index.js'
 import { toContext } from '../src/adapters/pi/to-context.js'
 import { streamOverApi } from '../src/adapters/pi/wire.js'
-import type { WireEvent } from '../src/index.js'
+import { sha256Hex } from '../src/hash.js'
+import type { AdapterStreamOptions, WireEvent } from '../src/index.js'
 import { PiAdapter, toPiModel } from '../src/index.js'
 import { fakeModel, fakeRequest } from '../testkit/index.js'
 import { assertLoopbackOnly, installLoopbackOnly, restoreLoopbackOnly } from './loopback-only.js'
@@ -130,20 +131,34 @@ const route = (api: string, over: Partial<ManualRoute> = {}): ManualRoute => ({
   ...over,
 })
 
-const runAdapter = async (decl: ManualRoute, credential?: string): Promise<WireEvent[]> => {
-  const adapter = new PiAdapter({ manualRoutes: [decl], maxRetries: 0, sleep: async () => {} })
+const runAdapter = async (
+  decl: ManualRoute,
+  credential?: string,
+  cfg: Partial<ConstructorParameters<typeof PiAdapter>[0]> = {},
+  opts: Partial<AdapterStreamOptions> = {},
+): Promise<WireEvent[]> => {
+  const adapter = new PiAdapter({ manualRoutes: [decl], maxRetries: 0, sleep: async () => {}, ...cfg })
   if (credential !== undefined) adapter.bindCredential(decl.route, credential)
   const out: WireEvent[] = []
-  for await (const event of adapter.stream(decl.route, fakeRequest({ route: decl.route, model: 'm1' }), {
+  const options = {
     signal: new AbortController().signal,
     toolNames: [],
     sessionKey: 'agnes:t:a:cli:dm:x',
     timeoutMs: { firstToken: 1000, total: 5000 },
-  })) {
+    ...opts,
+  }
+  const request = fakeRequest({ route: decl.route, model: 'm1', sessionKey: options.sessionKey })
+  for await (const event of adapter.stream(decl.route, request, options)) {
     out.push(event)
   }
   return out
 }
+
+// A key that is not a JWT throws in the codex client before any transport opens, so this one is
+// shaped like a token and carries nothing.
+const codexKey = `notaheader.${Buffer.from(
+  JSON.stringify({ 'https://api.openai.com/auth': { chatgpt_account_id: 'acct-for-the-test' } }),
+).toString('base64url')}.notasignature`
 
 /** The wire path with the adapter's gate stepped around, to show what the gate is holding back. */
 const runLibraryDirectly = async (api: string): Promise<void> => {
@@ -229,17 +244,12 @@ describe('a bound credential still reaches the wire on both apis', () => {
     expect(allHeaders()).not.toContain(MARKER)
   })
 
-  // The positive control for the `upgrade` listener, and the only api that exercises it. A key that
-  // is not a JWT throws before any transport opens, so this one is shaped like a token and carries
-  // nothing: the point is only to get the WebSocket attempt made, and then recorded.
+  // The positive control for the `upgrade` listener, and the only api that exercises it: the point
+  // is only to get the WebSocket attempt made, and then recorded.
   it('records the WebSocket handshake codex tries before falling back', async () => {
-    const claims = Buffer.from(
-      JSON.stringify({ 'https://api.openai.com/auth': { chatgpt_account_id: 'acct-for-the-test' } }),
-    ).toString('base64url')
-    const key = `notaheader.${claims}.notasignature`
-    await runAdapter(route('openai-codex-responses', { credentialRef: 'secret://agnes/codex' }), key)
+    await runAdapter(route('openai-codex-responses', { credentialRef: 'secret://agnes/codex' }), codexKey)
     expect(hits.map((h) => h.url)).toEqual(['upgrade:/codex/responses', '/codex/responses'])
-    for (const hit of hits) expect(hit.headers.authorization).toBe(`Bearer ${key}`)
+    for (const hit of hits) expect(hit.headers.authorization).toBe(`Bearer ${codexKey}`)
     expect(allHeaders()).not.toContain(MARKER)
   })
 
@@ -258,5 +268,163 @@ describe('a bound credential still reaches the wire on both apis', () => {
   it('cannot switch off the bedrock SDK retry loop', async () => {
     await runAdapter(route('bedrock-converse-stream', { credentialRef: 'secret://agnes/bed' }), 'bed-BOUND')
     expect(hits.length).toBe(3)
+  })
+})
+
+describe('an injected egress fetch is the only way out', () => {
+  // A test stand-in for the host's restricted model egress. It answers every request itself, so a
+  // request that reaches the recorder, the global fetch or a WebSocket went around it.
+  const egress = (answer?: (request: Request) => Promise<Response>) => {
+    const requests: Request[] = []
+    const bodies: Uint8Array[] = []
+    const fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (!(input instanceof Request) || init !== undefined) throw new Error('expected one Request')
+      requests.push(input)
+      bodies.push(new Uint8Array(await input.clone().arrayBuffer()))
+      return answer
+        ? answer(input)
+        : new Response('{"message":"the egress answered this"}', {
+            status: 400,
+            headers: { 'content-type': 'application/json' },
+          })
+    }) as typeof globalThis.fetch
+    return { fetch, requests, bodies }
+  }
+  const bound = (api: string) => route(api, { credentialRef: 'secret://agnes/egress' })
+  const key = (api: string) => (api === 'openai-codex-responses' ? codexKey : 'egress-BOUND')
+
+  it.each([
+    'openai-completions',
+    'openai-responses',
+    'openai-codex-responses',
+    'azure-openai-responses',
+    'anthropic-messages',
+    'mistral-conversations',
+    'pi-messages',
+  ])('%s sends through it alone and reports the hash of the bytes it received', async (api) => {
+    const global = vi.spyOn(globalThis, 'fetch')
+    try {
+      const port = egress()
+      const sent: string[] = []
+      const events = await runAdapter(
+        bound(api),
+        key(api),
+        { fetch: port.fetch },
+        {
+          redirect: 'error',
+          reportSent: (report) => sent.push(report.sentHash),
+          // Codex remembers a WebSocket fallback per session; a fresh one keeps its WebSocket attempt.
+          sessionKey: `egress:${api}`,
+        },
+      )
+      expect(port.requests).toHaveLength(1)
+      expect(port.requests[0]?.redirect).toBe('error')
+      expect(sent).toEqual(port.bodies.map((body) => sha256Hex(body)))
+      expect(events.at(-1)).toMatchObject({ type: 'error', response: { status: 400 } })
+      expect(global).not.toHaveBeenCalled()
+      expect(hits).toEqual([])
+    } finally {
+      global.mockRestore()
+    }
+  })
+
+  it('aborting the caller aborts the call in flight through it', async () => {
+    const global = vi.spyOn(globalThis, 'fetch')
+    try {
+      let entered!: () => void
+      const reached = new Promise<void>((resolve) => {
+        entered = resolve
+      })
+      const port = egress(
+        (request) =>
+          new Promise<Response>((_, reject) => {
+            request.signal.addEventListener('abort', () => reject(request.signal.reason), { once: true })
+            entered()
+          }),
+      )
+      const caller = new AbortController()
+      const run = runAdapter(
+        bound('openai-completions'),
+        'egress-BOUND',
+        { fetch: port.fetch },
+        { signal: caller.signal },
+      )
+      await Promise.race([reached, run])
+      caller.abort()
+      const events = await run
+      expect(port.requests[0]?.signal.aborted).toBe(true)
+      expect(events.at(-1)).toMatchObject({ type: 'error', reason: 'aborted', code: 'ABORTED' })
+      expect(global).not.toHaveBeenCalled()
+      expect(hits).toEqual([])
+    } finally {
+      global.mockRestore()
+    }
+  })
+
+  it('a refusal it throws is reported, and nothing goes around it', async () => {
+    const global = vi.spyOn(globalThis, 'fetch')
+    try {
+      const port = egress(async () => {
+        throw Object.assign(new Error('Model egress request refused'), {
+          code: 'denied',
+          detailCode: 'model_egress_target',
+        })
+      })
+      const events = await runAdapter(bound('anthropic-messages'), 'egress-BOUND', { fetch: port.fetch })
+      expect(port.requests).toHaveLength(1)
+      expect(events).toHaveLength(1)
+      expect(events[0]).toMatchObject({ type: 'error', reason: 'error' })
+      expect(global).not.toHaveBeenCalled()
+      expect(hits).toEqual([])
+    } finally {
+      global.mockRestore()
+    }
+  })
+
+  it.each(['google-generative-ai', 'google-vertex', 'bedrock-converse-stream'])(
+    '%s, whose client cannot send through it, is refused before a credential or a request',
+    async (api) => {
+      const global = vi.spyOn(globalThis, 'fetch')
+      try {
+        const port = egress()
+        const resolveCredential = vi.fn(async () => 'egress-BOUND')
+        const events = await runAdapter(bound(api), undefined, { fetch: port.fetch, resolveCredential })
+        expect(events).toEqual([
+          {
+            type: 'error',
+            reason: 'error',
+            code: 'NO_ADAPTER',
+            message: `route=gw api=${api} cannot send through the injected fetch`,
+            retryable: false,
+          },
+        ])
+        expect(resolveCredential).not.toHaveBeenCalled()
+        expect(port.requests).toEqual([])
+        expect(global).not.toHaveBeenCalled()
+        expect(hits).toEqual([])
+      } finally {
+        global.mockRestore()
+      }
+    },
+  )
+
+  it('a probe reads no catalogue around it', async () => {
+    const global = vi.spyOn(globalThis, 'fetch')
+    try {
+      const port = egress()
+      const adapter = new PiAdapter({ manualRoutes: [bound('openai-completions')], fetch: port.fetch })
+      adapter.bindCredential('gw', 'egress-BOUND')
+      const report = await adapter.probe('gw', new AbortController().signal)
+      expect(report.checks.find((check) => check.name === 'models_endpoint')).toEqual({
+        name: 'models_endpoint',
+        ok: false,
+        detail: 'the catalogue is not probed through an injected egress',
+      })
+      expect(port.requests.every((request) => request.method === 'POST')).toBe(true)
+      expect(global).not.toHaveBeenCalled()
+      expect(hits).toEqual([])
+    } finally {
+      global.mockRestore()
+    }
   })
 })

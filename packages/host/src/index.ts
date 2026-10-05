@@ -427,7 +427,11 @@ export {
   readStageZero,
   type StageZeroView,
 } from './runtime/maintenance/bootstrap-locator.js'
-export { createHostProjectionOwner, type HostProjectionOwner } from './runtime/projection-owner.js'
+export {
+  createHostProjectionOwner,
+  type HostProjectionOwner,
+  type HostProjectionSources,
+} from './runtime/projection-owner.js'
 // The directory provider factory stays off the package root. Selected services are reached
 // through the scoped dependencies; only the anchor helper is needed before any plugin loads.
 export { createDirectoryAnchor } from './runtime/providers/authority-directory.js'

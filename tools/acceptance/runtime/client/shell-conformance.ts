@@ -65,8 +65,11 @@ const select: ShellConformanceBinding['select'] = async ({ modules, selection, l
   const host = createClientHostRuntime({
     target: 'web',
     loader: { load },
-    // The cases' modules read neither, and their registry binds no renderer, so nothing is presented.
-    context: {} as HostInput['context'],
+    // The cases' modules read neither their context nor the presenter, and their registry binds no
+    // renderer, so nothing is presented.
+    clientInstanceId: 'shell-conformance',
+    capabilities: {} as HostInput['capabilities'],
+    locale: {} as HostInput['locale'],
     presenter: {
       lease: () => {
         throw new Error('nothing is presented while a shell is selected')
