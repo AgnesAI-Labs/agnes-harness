@@ -280,7 +280,9 @@ const INITIAL_CEILING: Record<string, number> = {
   // A throwing Web renderer yields to the generic card and reports its ids. Measured 3491, exact, no spare (+34).
   // Each client module gets its own refusing context per generation, closed under one dispose deadline.
   // Measured 3556, exact, no spare (+65).
-  'packages/web-client/src': 3556,
+  // One view index per presenter bounds renderer status reads, and dispose drains the calls in flight.
+  // Measured 3621, exact, no spare (+65).
+  'packages/web-client/src': 3621,
   'packages/web-slots/src': 605,
   // Failed shell calls read as their exit code (+19 lines); measured 4891, exact cap.
   // B-line diagnostics dialog: React view adds 147 lines; measured 4706, exact cap.

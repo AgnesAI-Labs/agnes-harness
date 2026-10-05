@@ -3,8 +3,10 @@
 // resources and download actions, and the interactions its actions name. Only then does the call reach
 // the caller's services, which still apply the caller's authorization, the plugin's granted
 // capabilities and the owner generation. A renderer cannot name another artifact, command or
-// interaction to probe the user's other resources, and after dispose every call, including one from an
-// old closure, is refused. The registry never builds a context; the client host does, through this.
+// interaction to probe the user's other resources, nor read the status of a request or response no
+// context of its presenter sent for the view. After dispose every call, including one from an old
+// closure, is refused, and the cleanups run once the calls already in flight settle. The registry never
+// builds a context; the client host does, through this.
 import type {
   DomainView,
   NegotiatedClientCapabilities,
@@ -19,12 +21,17 @@ export interface MountedRendererContext {
   readonly context: RendererContext
   /** Moves the restriction to a newer revision of the same view. */
   update(view: DomainView): Outcome<void>
-  /** Refuses every later call, aborts `context.signal` and runs each cleanup once. Idempotent. */
+  /** Open until dispose, then draining until the calls in flight settle, then disposed. */
+  state(): 'open' | 'draining' | 'disposed'
+  /**
+   * Refuses every later call, aborts `context.signal`, waits up to `drainMs` for the calls in flight to
+   * settle and runs each cleanup once. Idempotent.
+   */
   dispose(): Promise<void>
 }
 
 const refuse = (
-  code: 'denied' | 'invalid_input' | 'conflict',
+  code: 'denied' | 'invalid_input' | 'conflict' | 'quota',
   detailCode: string,
   message: string,
 ): { ok: false; error: RuntimeError } => ({
@@ -41,6 +48,8 @@ const refuse = (
 const outside = (what: string) =>
   refuse('denied', 'outside_view', `${what} is not offered by the mounted view`)
 const disposed = () => refuse('denied', 'renderer_disposed', 'the renderer was disposed')
+const full = () =>
+  refuse('quota', 'command_ledger_full', 'the view holds too many sends that may still change')
 
 /** A structured copy, so a renderer cannot change what was checked before the service reads it. */
 function copy<T>(value: T): T | undefined {
@@ -75,25 +84,89 @@ function allowedBy(view: DomainView, negotiated: readonly string[]) {
   return { viewId: view.viewId, revision: view.revision, commands, interactions, artifacts }
 }
 
+type Sent = 'request' | 'response'
+
+// The answers after which a command or a response can change no more. An accepted, running or
+// unknown_effect command and an accepted response still may.
+const FINAL = new Set<unknown>(['succeeded', 'failed', 'cancelled', 'not-accepted', 'applied', 'rejected'])
+// The refusals of a first send after which it was not accepted; a timeout or a cancel may have reached it.
+const UNSENT = new Set<unknown>(['invalid_input', 'denied', 'incompatible', 'conflict', 'quota'])
+const PER_VIEW = 128
+const PER_INDEX = 1024
+
+/**
+ * The request and response ids the contexts of one presenter sent, per view, oldest first. A request id
+ * names no view target, so a status read is held to the ids sent for its view through any lease, owner
+ * or generation; it grants nothing on the server, which checks each read again. A full view, or a full
+ * index, forgets its oldest settled id for a new one, and refuses the new one while every id may change.
+ */
+export function createViewIndex() {
+  const entries = new Map<string, { viewId: string; settled: boolean }>()
+  const key = (viewId: string, kind: Sent, id: string) => JSON.stringify([viewId, kind, id])
+  return {
+    has: (viewId: string, kind: Sent, id: string) => entries.has(key(viewId, kind, id)),
+    /** Records `id` before it is sent: new, resent, or full when there is no room for it. */
+    add(viewId: string, kind: Sent, id: string): 'new' | 'resent' | 'full' {
+      const known = entries.get(key(viewId, kind, id))
+      // A resend may be accepted this time, so the id may change again; it takes no new entry.
+      if (known !== undefined) {
+        known.settled = false
+        return 'resent'
+      }
+      let inView = 0
+      for (const entry of entries.values()) if (entry.viewId === viewId) inView++
+      // ponytail: an id whose effect stays unknown is never forgotten, so a view full of them refuses new
+      // sends until the client restarts; let the user archive old unknown ids if that shows up.
+      if (inView >= PER_VIEW || entries.size >= PER_INDEX) {
+        // A full view forgets one of its own ids, a full index one of any view.
+        const own = inView >= PER_VIEW
+        const oldest = [...entries].find(([, entry]) => entry.settled && (!own || entry.viewId === viewId))
+        if (oldest === undefined) return 'full'
+        entries.delete(oldest[0])
+      }
+      entries.set(key(viewId, kind, id), { viewId, settled: false })
+      return 'new'
+    },
+    /**
+     * Notes what a send or status read of `id` answered. A refusal leaves the entry as it was, unless a
+     * first send was refused outright and so never accepted.
+     */
+    saw(viewId: string, kind: Sent, id: string, outcome: unknown, first = false) {
+      const entry = entries.get(key(viewId, kind, id))
+      const answer = outcome as
+        | { ok?: unknown; value?: { status?: unknown }; error?: { code?: unknown } }
+        | undefined
+      if (entry === undefined) return
+      if (answer?.ok === true) entry.settled = FINAL.has(answer.value?.status)
+      else if (first && UNSENT.has(answer?.error?.code)) entry.settled = true
+    },
+  }
+}
+
+export type ViewIndex = ReturnType<typeof createViewIndex>
+
 export function createRendererContext(input: {
   clientInstanceId: string
   ownerToken: string
   capabilities: NegotiatedClientCapabilities
   services: Services
   view: DomainView
+  /** The presenter's index of what its contexts sent per view. */
+  index: ViewIndex
+  /** How long dispose waits for the calls in flight before the cleanups run. */
+  drainMs: number
 }): MountedRendererContext {
-  const { services } = input
+  const { services, index } = input
   // A capability set without a feature list negotiated none.
   const negotiated: readonly string[] = Array.isArray(input.capabilities?.features)
     ? [...input.capabilities.features]
     : []
   let allowed = allowedBy(input.view, negotiated)
-  // Status reads are limited to requests this context sent, since a request id names no view target.
-  const requests = new Set<string>()
-  const responses = new Set<string>()
   const controller = new AbortController()
   const cleanups: (() => void | Promise<void>)[] = []
-  let closed = false
+  // Each service call this context made, until it settles.
+  const inflight = new Set<Promise<unknown>>()
+  let phase: 'open' | 'draining' | 'disposed' = 'open'
   let closing: Promise<void> | undefined
 
   /** Runs `call` with a copy of `args` when the context is open and `admits` the copy. */
@@ -103,10 +176,28 @@ export function createRendererContext(input: {
     admits: (...values: NoInfer<A>) => boolean,
     call: (...values: NoInfer<A>) => R,
   ): R | { ok: false; error: RuntimeError } {
-    if (closed) return disposed()
+    if (phase !== 'open') return disposed()
     const values = copy(args)
     if (values === undefined || !admits(...values)) return outside(what)
-    return call(...values)
+    const result = call(...values)
+    if (result instanceof Promise) {
+      const settled: Promise<unknown> = result.catch(() => {}).then(() => inflight.delete(settled))
+      inflight.add(settled)
+    }
+    return result
+  }
+
+  /** Hands an answer about `id` on as it is, after noting in the index whether it is final. */
+  const noted =
+    (kind: Sent, id: string, first = false) =>
+    <O>(outcome: O): O => {
+      index.saw(allowed.viewId, kind, id, outcome, first)
+      return outcome
+    }
+  /** Sends `id` through `send` once the index has room for it. */
+  const sent = <O>(kind: Sent, id: string, send: () => Promise<O>) => {
+    const added = index.add(allowed.viewId, kind, id)
+    return added === 'full' ? full() : send().then(noted(kind, id, added === 'new'))
   }
 
   const hasArtifact = (artifactId: unknown, version: unknown) =>
@@ -133,23 +224,20 @@ export function createRendererContext(input: {
             value.action.viewRevision === allowed.revision &&
             allowed.commands.has(value.action.actionKey) &&
             typeof value.requestId === 'string',
-          (value) => {
-            requests.add(value.requestId)
-            return services.commands.submit(value)
-          },
+          (value) => sent('request', value.requestId, () => services.commands.submit(value)),
         ),
       commandStatus: async (requestId) =>
         guarded(
           'the request',
           [requestId],
-          (id) => requests.has(id),
-          (id) => services.commands.commandStatus(id),
+          (id) => index.has(allowed.viewId, 'request', id),
+          (id) => services.commands.commandStatus(id).then(noted('request', id)),
         ),
     },
     interactions: {
       // ponytail: listing pending interactions reaches past the view, so it is refused outright; a
       // renderer reads the interactions its actions name. Filter by those ids if a renderer needs it.
-      pending: async () => (closed ? disposed() : outside('listing interactions')),
+      pending: async () => (phase !== 'open' ? disposed() : outside('listing interactions')),
       read: async (interactionId) =>
         guarded('the interaction', [interactionId], hasInteraction, (id) => services.interactions.read(id)),
       respond: async (request) =>
@@ -157,10 +245,7 @@ export function createRendererContext(input: {
           'the interaction',
           [request],
           (value) => hasInteraction(value?.interactionId) && typeof value.responseId === 'string',
-          (value) => {
-            responses.add(value.responseId)
-            return services.interactions.respond(value)
-          },
+          (value) => sent('response', value.responseId, () => services.interactions.respond(value)),
         ),
       formLink: async (interactionId, expectedVersion) =>
         guarded(
@@ -173,8 +258,8 @@ export function createRendererContext(input: {
         guarded(
           'the response',
           [responseId],
-          (id) => responses.has(id),
-          (id) => services.interactions.responseStatus(id),
+          (id) => index.has(allowed.viewId, 'response', id),
+          (id) => services.interactions.responseStatus(id).then(noted('response', id)),
         ),
     },
     artifacts: {
@@ -191,7 +276,7 @@ export function createRendererContext(input: {
     locale: services.locale,
     onDispose(cleanup) {
       if (typeof cleanup !== 'function') return
-      if (closed)
+      if (phase === 'disposed')
         void Promise.resolve()
           .then(cleanup)
           .catch(() => {})
@@ -201,8 +286,9 @@ export function createRendererContext(input: {
 
   return {
     context,
+    state: () => phase,
     update(view) {
-      if (closed) return disposed()
+      if (phase !== 'open') return disposed()
       if (view?.viewId !== allowed.viewId) return refuse('invalid_input', 'view_mismatch', 'another view')
       if (!(view.revision >= allowed.revision))
         return refuse('conflict', 'stale_view', 'the view is older than the mounted revision')
@@ -210,9 +296,20 @@ export function createRendererContext(input: {
       return { ok: true, value: undefined }
     },
     dispose() {
-      closed = true
+      if (phase === 'open') phase = 'draining'
       closing ??= (async () => {
         controller.abort()
+        // The calls in flight settle first, so their results reach the renderer as they are before its
+        // cleanups run; one that never settles holds the cleanups back `drainMs` at most.
+        if (inflight.size > 0) {
+          let timer: ReturnType<typeof setTimeout> | undefined
+          const late = new Promise((resolve) => {
+            timer = setTimeout(resolve, input.drainMs)
+          })
+          await Promise.race([Promise.allSettled(inflight), late])
+          clearTimeout(timer)
+        }
+        phase = 'disposed'
         // Newest first, like a stack of acquired resources. Each starts without waiting for the one
         // before, so a failing or hung cleanup stops none of the rest.
         const running = cleanups
