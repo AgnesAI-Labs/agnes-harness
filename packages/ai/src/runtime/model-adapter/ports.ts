@@ -42,6 +42,16 @@ export type ModelAdapterDeployment = {
   installed(context: CallContext): boolean
   load(ref: DataRef, frame: ActionFrame, context: ActionContext): Promise<Outcome<ModelWireSource>>
   current(source: ModelWireSource, frame: ActionFrame, context: CallContext): boolean
+  /**
+   * The host's restricted model egress for this call. Every request goes through the fetch it
+   * returns; without one the call is refused before the credential is used. The global fetch is
+   * never a fallback.
+   */
+  egress?(
+    source: ModelWireSource,
+    frame: ActionFrame,
+    context: ActionContext,
+  ): typeof globalThis.fetch | undefined
   withCredential<T>(
     source: ModelWireSource,
     frame: ActionFrame,

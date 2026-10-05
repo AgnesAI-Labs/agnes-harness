@@ -213,6 +213,7 @@ export class PiAdapter extends WireAdapter {
   private readonly manual: Map<string, ManualRoute>
   private readonly maxRetries: number
   private readonly sleep: (ms: number, signal: AbortSignal) => Promise<void>
+  private readonly egress: typeof globalThis.fetch | undefined
 
   constructor(cfg: {
     id?: string
@@ -229,10 +230,17 @@ export class PiAdapter extends WireAdapter {
     recoverRejectedAuth?: (route: string, rejected: ModelAuth, signal: AbortSignal) => Promise<boolean>
     maxRetries?: number
     sleep?: (ms: number, signal: AbortSignal) => Promise<void>
+    /**
+     * The host's restricted model egress. Given, every request is sent through it and never through
+     * the global fetch, and an api whose client cannot send through it is refused. Absent, requests
+     * use the global fetch.
+     */
+    fetch?: typeof globalThis.fetch
   }) {
     super()
     this.id = cfg.id ?? 'pi'
     this.providerId = cfg.providerId
+    this.egress = cfg.fetch
     this.streamImpl = cfg.streamImpl ?? streamOverApi
     this.resolveCredential = cfg.resolveCredential
     this.recoverRejectedAuth = cfg.recoverRejectedAuth
@@ -273,12 +281,14 @@ export class PiAdapter extends WireAdapter {
     try {
       const decl = this.manual.get(route)
       const models = [...this.models(route)]
-      const catalogue = await probeModelsEndpoint(
-        decl,
-        this.credentialFor(route),
-        decl?.keyless === true,
-        ac.signal,
-      )
+      // The catalogue probe sends with the global fetch, so behind an injected egress it is not sent.
+      const catalogue = this.egress
+        ? {
+            name: 'models_endpoint',
+            ok: false,
+            detail: 'the catalogue is not probed through an injected egress',
+          }
+        : await probeModelsEndpoint(decl, this.credentialFor(route), decl?.keyless === true, ac.signal)
       // Codex has no compatible /models endpoint; its real inference checks remain authoritative.
       const checks = decl?.api === 'openai-codex-responses' ? [] : [catalogue]
       for (const model of models.length > 0 ? models : [undefined]) {
@@ -414,6 +424,18 @@ export class PiAdapter extends WireAdapter {
       'mistral-conversations',
       'pi-messages',
     ])
+    // An injected egress only restricts what is sent through it. The other apis send with a client
+    // of their own, so they are refused here, before a credential is resolved or a socket opened.
+    if (this.egress && !observable.has(decl.api)) {
+      yield {
+        type: 'error',
+        reason: 'error',
+        code: 'NO_ADAPTER',
+        message: `route=${route} api=${decl.api} cannot send through the injected fetch`,
+        retryable: false,
+      }
+      return
+    }
     // `wire` belongs to one attempt: an abandoned attempt's late response must not overwrite the
     // metadata of the attempt that replaced it.
     const fetchBody =
@@ -425,7 +447,7 @@ export class PiAdapter extends WireAdapter {
         })
         const bytes = new Uint8Array(await request.clone().arrayBuffer())
         opts.reportSent?.({ sentHash: sha256Hex(bytes), transforms })
-        const response = await globalThis.fetch(request)
+        const response = await (this.egress ? this.egress(request) : globalThis.fetch(request))
         Object.assign(wire, responseMeta(response))
         return response
       }
@@ -511,7 +533,8 @@ export class PiAdapter extends WireAdapter {
           // pi-ai checks header-owned authentication in stream options before it
           // constructs a client. Model headers alone cannot authenticate Kimi OAuth.
           ...(requestAuth?.headers === undefined ? {} : { headers: requestAuth.headers }),
-          ...(decl.api === 'openai-codex-responses' && this.resolveCredential
+          // Codex otherwise tries a WebSocket first, which would not go through an injected egress.
+          ...(decl.api === 'openai-codex-responses' && (this.resolveCredential || this.egress)
             ? { transport: 'sse' as const }
             : {}),
           ...(observable.has(decl.api) ? { fetch: fetchBody(wire) } : {}),
