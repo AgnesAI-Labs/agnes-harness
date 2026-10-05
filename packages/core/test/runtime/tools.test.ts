@@ -1,7 +1,14 @@
 import { defineTool, runtimeAuthorSchemas } from '@agnes/extension-api/runtime'
-import { canonicalJsonDigest, RuntimeMethodSchemaRefs } from '@agnes/protocol/runtime'
+import type { DataRef } from '@agnes/protocol/runtime'
+import {
+  canonicalJsonDigest,
+  RuntimeMethodSchemaRefs,
+  RuntimeSchemaRefs,
+  validateRuntime,
+} from '@agnes/protocol/runtime'
 import { describe, expect, it, vi } from 'vitest'
 import { createPureToolAuthorAdapter } from '../../../extension-api/src/runtime/tool-authoring.js'
+import type { LoopContractFixture } from '../../../extension-api/testkit/runtime/contracts/loop.js'
 import { runToolsContractScenario } from '../../../extension-api/testkit/runtime/contracts/tools.js'
 import { openToolsFixture, toolsRef, toolsValue } from './tools-fixture.js'
 
@@ -38,7 +45,90 @@ async function setup(
     target: fixture.definition.executor,
   }
 }
+async function preparedModelReference(): Promise<DataRef> {
+  const module = (await import(
+    new URL('../../../../tools/acceptance/runtime/platform/loop-conformance.ts', import.meta.url).href
+  )) as { openLoopFixture(): Promise<LoopContractFixture> }
+  const fixture = await module.openLoopFixture()
+  const loop = await fixture.factory.create(fixture.config, fixture.dependencies, fixture.factoryContext)
+  try {
+    toolsValue(await loop.ready(fixture.context))
+    const pending = await loop.start(fixture.frame, fixture.ports)
+    const first = pending.actions[0]
+    if (first?.input.kind !== 'inline') throw new Error('Missing prepared model intent')
+    const input = validateRuntime('ModelInferRequest', first.input.value)
+    if (!input.ok) throw new Error('Invalid prepared model input')
+    const ref = input.value.preparedRef
+    if (ref.kind !== 'inline' || !validateRuntime('PreparedModelRequest', ref.value).ok)
+      throw new Error('Invalid original model source')
+    return ref
+  } finally {
+    await loop.close('shutdown')
+    await fixture.close()
+  }
+}
 describe.each(['default', 'reference'] as const)('fixed text Tools %s', (kind) => {
+  it.each(['verified', 'denied', 'throws', 'revoked', 'bad-schema', 'call-denied'] as const)(
+    'consumes an explicit model source verifier: %s',
+    async (scenario) => {
+      const sourceRef = await preparedModelReference()
+      const denied = {
+        ok: false as const,
+        error: {
+          code: 'denied' as const,
+          detailCode: 'model_source_denied',
+          message: 'Source denied',
+          diagnosticId: 'fixture',
+          retryAdvice: { kind: 'never' as const },
+        },
+      }
+      let checked = false
+      const verifyCall = vi.fn(async () =>
+        scenario === 'call-denied' ? denied : { ok: true as const, value: undefined },
+      )
+      const test = await setup(kind, {
+        verifyCall,
+        async verifyModelContext(call, frame, context) {
+          checked = true
+          expect(this.definition).toEqual(test.definition)
+          expect(call.modelContextRef).toEqual(sourceRef)
+          expect(frame.runId).toBe(test.frame.runId)
+          expect(context.bindingId).toBe(test.call.bindingId)
+          if (scenario === 'denied') return denied
+          if (scenario === 'throws') throw new Error('Source unavailable')
+          if (scenario === 'revoked') test.revoke()
+          return { ok: true, value: undefined }
+        },
+      })
+      try {
+        if (test.frame.input.kind !== 'inline') throw new Error('Inline fixture')
+        const input = toolsRef(RuntimeMethodSchemaRefs['agh.tools'].invoke.input, {
+          ...(test.frame.input.value as object),
+          modelContextRef:
+            scenario === 'bad-schema' ? { ...sourceRef, schema: RuntimeSchemaRefs.ToolResult } : sourceRef,
+        })
+        if (input.kind !== 'inline') throw new Error('Inline fixture')
+        const result = await test.leaf.execute(
+          { ...test.frame, input, inputDigest: input.digest },
+          test.actionContext,
+        )
+        if (scenario === 'verified') {
+          expect(result.outcome).toBe('succeeded')
+          expect(verifyCall).toHaveBeenCalled()
+        } else {
+          expect(result.outcome).toBe('failed')
+          if (scenario === 'denied' || scenario === 'call-denied')
+            expect(result.error?.detailCode).toBe('model_source_denied')
+          if (scenario === 'bad-schema') expect(result.error?.detailCode).toBe('tools_model_context_schema')
+        }
+        expect(checked).toBe(scenario !== 'bad-schema')
+        expect(test.effectsCount()).toBe(0)
+      } finally {
+        await test.leaf.close('shutdown')
+        await test.provider.close('shutdown')
+      }
+    },
+  )
   it.each(['select', 'normal', 'deny', 'cancel', 'dispose'] as const)('contract %s', async (scenario) => {
     await runToolsContractScenario(scenario, {
       open: () => openToolsFixture(kind),

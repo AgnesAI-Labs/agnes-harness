@@ -39,6 +39,8 @@ export interface ReferenceToolsDeployment {
   readonly catalogRevision: number
   checkCurrent(context: CallContext): Promise<Outcome<void>>
   verifyCall(call: ToolCall, frame: ActionFrame, context: CallContext): Promise<Outcome<void>>
+  /** Trusted installed owner checks original model context, current permission and causal admission. */
+  verifyModelContext?(call: ToolCall, frame: ActionFrame, context: CallContext): Promise<Outcome<void>>
   createExecutor(call: ToolCall): ActionProviderFactory
 }
 
@@ -503,7 +505,7 @@ export function createReferenceToolsFactory(
                   invocation.expectedDefinitionDigest !== classified.value.definitionDigest
                 )
                   return failed(problem('denied', 'tools_call_identity'))
-                if (invocation.modelContextRef !== null)
+                if (invocation.modelContextRef !== null && typeof source.verifyModelContext !== 'function')
                   return failed(problem('incompatible', 'tools_model_context_source_unavailable'))
                 if (invocation.batchRef !== null)
                   return failed(problem('incompatible', 'tools_batch_source_unavailable'))
@@ -511,6 +513,22 @@ export function createReferenceToolsFactory(
                 if (typeof source.verifyCall !== 'function')
                   return failed(problem('incompatible', 'tools_action_source_unavailable'))
                 try {
+                  if (invocation.modelContextRef !== null) {
+                    if (
+                      !equivalent(invocation.modelContextRef.schema, RuntimeSchemaRefs.PreparedModelRequest)
+                    )
+                      return failed(problem('denied', 'tools_model_context_schema'))
+                    const verify = source.verifyModelContext
+                    if (!verify)
+                      return failed(problem('incompatible', 'tools_model_context_source_unavailable'))
+                    const verified = await awaitSource(
+                      call,
+                      () => verify.call(source, invocation, frame, call),
+                      false,
+                      frame.actionTimebox.maxDeadline,
+                    )
+                    if (!verified.ok) return failed(verified.error)
+                  }
                   sourceVerified = await awaitSource(
                     call,
                     () => source.verifyCall(invocation, frame, call),

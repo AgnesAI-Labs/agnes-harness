@@ -38,6 +38,9 @@ export interface ToolsDeployment {
   checkCurrent(context: CallContext): Promise<Outcome<void>>
   /** Exact source/policy/action admission checks, including the original input and producer. */
   verifyCall(call: ToolCall, frame: ActionFrame, context: CallContext): Promise<Outcome<void>>
+  /** Installed owner verifies the original PreparedModelRequest, current read permission and
+   * model/Run/Action causal source (including pure-stage admission). A schema match alone is not proof. */
+  verifyModelContext?(call: ToolCall, frame: ActionFrame, context: CallContext): Promise<Outcome<void>>
   /** Trusted dispatcher supplies the existing pure author adapter; no private package import here. */
   createExecutor(call: ToolCall): ActionProviderFactory
 }
@@ -452,7 +455,7 @@ export function createDefaultToolsFactory(deployment: ToolsDeployment): Provider
                 if (!policy.ok) return failure(policy.error)
                 if (toolCall.batchRef !== null)
                   return failure(refuse('incompatible', 'tools_batch_source_unavailable').error)
-                if (toolCall.modelContextRef !== null)
+                if (toolCall.modelContextRef !== null && typeof deployment.verifyModelContext !== 'function')
                   return failure(refuse('incompatible', 'tools_model_context_source_unavailable').error)
                 if (
                   !same(toolCall.definition, definition) ||
@@ -460,6 +463,20 @@ export function createDefaultToolsFactory(deployment: ToolsDeployment): Provider
                   !same(toolCall.policy, policy.value)
                 )
                   return failure(refuse('denied', 'tools_call_identity').error)
+                if (toolCall.modelContextRef !== null) {
+                  if (!same(toolCall.modelContextRef.schema, RuntimeSchemaRefs.PreparedModelRequest))
+                    return failure(refuse('denied', 'tools_model_context_schema').error)
+                  const verify = deployment.verifyModelContext
+                  if (!verify)
+                    return failure(refuse('incompatible', 'tools_model_context_source_unavailable').error)
+                  const modelVerified = await authority(
+                    () => verify.call(deployment, toolCall, frame, call),
+                    call,
+                    true,
+                    frame.actionTimebox.maxDeadline,
+                  )
+                  if (!modelVerified.ok) return failure(modelVerified.error)
+                }
                 if (typeof deployment.verifyCall !== 'function')
                   return failure(refuse('incompatible', 'tools_action_source_unavailable').error)
                 const verified = await authority(
