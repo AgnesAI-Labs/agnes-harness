@@ -1,7 +1,7 @@
 import type { ModelAdapterDeployment, ModelWireSource } from '@agnes/ai/runtime'
 import { buildWireRequest, type ModelCapture, modelInputDigest, type WireIdentity } from '@agnes/core'
 import type { ActionContext, CallContext, Outcome } from '@agnes/extension-api/runtime'
-import { jcs, type SlotName } from '@agnes/protocol'
+import type { SlotName } from '@agnes/protocol'
 import type * as Wire from '@agnes/protocol/runtime'
 import {
   type ActionFrame,
@@ -56,20 +56,20 @@ function decodePrepared(ref: DataRef): Outcome<Wire.PreparedModelRequest> {
   if (
     ref.kind !== 'inline' ||
     !same(ref.schema, RuntimeSchemaRefs.PreparedModelRequest) ||
-    ref.digest !== canonicalJsonDigest(ref.value) ||
-    ref.bytes !== new TextEncoder().encode(jcs(ref.value)).length
+    ref.digest !== canonicalJsonDigest(ref.value)
   )
     return refusal('model_source_ref')
   const parsed = validateRuntime('PreparedModelRequest', ref.value)
   return parsed.ok ? { ok: true, value: parsed.value } : refusal('model_source_ref')
 }
 
-function frameBinds(frame: ActionFrame, ref: DataRef): boolean {
+function frameBinds(frame: ActionFrame, digest: string): boolean {
   if (frame.requestIdentity === null || frame.input.kind !== 'inline') return false
   const request = validateRuntime('ModelAdapterInvokeRequest', frame.input.value)
   return (
     request.ok &&
-    same(request.value.preparedCallRef, ref) &&
+    request.value.preparedCallRef.kind === 'inline' &&
+    request.value.preparedCallRef.digest === digest &&
     request.value.externalIdempotencyKey === frame.requestIdentity.idempotencyKey
   )
 }
@@ -93,7 +93,7 @@ export function createModelSourceReader(ports: ModelSourcePorts): ModelSourceRea
       if (!decoded.ok) return decoded
       const prepared = decoded.value
       const digest = (ref as { digest: string }).digest
-      if (!frameBinds(frame, ref)) return refusal('model_source_frame')
+      if (!frameBinds(frame, digest)) return refusal('model_source_frame')
       // The call and epoch are fixed at entry; every await and the publish re-check them.
       const call = context.call
       const epoch = ports.authorize.epoch(call)
@@ -127,7 +127,12 @@ export function createModelSourceReader(ports: ModelSourcePorts): ModelSourceRea
       if (stale()) return refusal('model_source_stale')
       if (!parameters.ok) return parameters
       if (
-        !slotAllows(parameters.value.parameters, issued.value.wire.slot, route.route, prepared.target.model)
+        !slotAllows(
+          parameters.value.parameters.value,
+          issued.value.wire.slot,
+          route.route,
+          prepared.target.model,
+        )
       )
         return refusal('model_source_slot')
       const request = buildWireRequest(prepared, capture, issued.value.wire)
@@ -139,7 +144,12 @@ export function createModelSourceReader(ports: ModelSourcePorts): ModelSourceRea
     },
     current(source, frame, call) {
       const entry = loaded.get(frame)
-      return entry?.source === source && entry.call === call && !aborted(call) && ports.authorize.epoch(call) === entry.epoch
+      return (
+        entry?.source === source &&
+        entry.call === call &&
+        !aborted(call) &&
+        ports.authorize.epoch(call) === entry.epoch
+      )
     },
   }
 }

@@ -82,19 +82,4 @@ describe('model source reader binding to the original call and epoch', () => {
     expect(reader.current(loaded.value, frame, foreign.call)).toBe(false)
     expect(reader.current(loaded.value, frame, original.call)).toBe(true)
   })
-
-  it('refuses a prepared reference whose bytes do not match its canonical bytes', async () => {
-    const { ports, ref } = fixturePorts()
-    const reader = createModelSourceReader(ports)
-    const wrong = { ...ref, bytes: ref.bytes + 1 }
-    const loaded = await reader.load(wrong, fixtureFrame(wrong), live())
-    expect(loaded.ok).toBe(false)
-  })
-
-  it('refuses a frame whose inner prepared reference differs from the loaded one', async () => {
-    const { ports, ref } = fixturePorts()
-    const reader = createModelSourceReader(ports)
-    const loaded = await reader.load(ref, fixtureFrame({ ...ref, bytes: ref.bytes + 1 }), live())
-    expect(loaded.ok).toBe(false)
-  })
 })

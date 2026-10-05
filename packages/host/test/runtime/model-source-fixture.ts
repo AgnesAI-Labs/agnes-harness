@@ -1,7 +1,7 @@
 import { fakeModel } from '@agnes/ai/testkit'
 import { type ModelCapture, modelInputDigest, type WireIdentity } from '@agnes/core'
 import { type ActionContext, runtimeAuthorSchemas } from '@agnes/extension-api/runtime'
-import { jcs, type ModelRecord, type RouteDecl } from '@agnes/protocol'
+import type { ModelRecord, RouteDecl } from '@agnes/protocol'
 import type * as Wire from '@agnes/protocol/runtime'
 import {
   type ActionFrame,
@@ -35,7 +35,7 @@ const inline = (schema: DataRef['schema'], value: Wire.JsonValue): Extract<DataR
   schema,
   value,
   digest: canonicalJsonDigest(value),
-  bytes: new TextEncoder().encode(jcs(value)).length,
+  bytes: new TextEncoder().encode(JSON.stringify(value)).length,
 })
 
 export function captureOf(catalog: SelectedModelCatalog): ModelCapture {
@@ -199,7 +199,10 @@ export function sessionWith(slots: Slots): ModelSourcePorts['session'] {
       ok: true,
       value: {
         sessionId: 'session-1',
-        parameters: { model: { route: slots } },
+        parameters: {
+          schema: runtimeAuthorSchemas.StandardToolOutput.ref,
+          value: { model: { route: slots } },
+        },
       } as unknown as Wire.SessionParameterRevision,
     }),
   }
