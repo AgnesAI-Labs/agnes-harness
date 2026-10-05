@@ -59,34 +59,62 @@ const readyEvent = (reservation: Wire.ArtifactReservation) => ({
 
 /**
  * Each point is where the first process is killed, with what a fresh process must then see: the
- * publication state, the upload state, and which records a dry-run cleanup could collect.
+ * publication state, the upload state and its acknowledged bytes, and which records a dry-run cleanup
+ * could collect. With `pause`, the publication process is killed there and a blob process resumes its
+ * upload and is killed inside the commit the point names.
  */
 const POINTS: {
   point: string
+  pause?: string
   state: Wire.ArtifactReservation['state']
-  upload: 'uploading' | 'sealed' | null
+  upload: ['uploading' | 'sealed', number] | null
   collectable: string[]
 }[] = [
   { point: 'reserved', state: 'reserved', upload: null, collectable: [] },
   // An expired, writer-less upload reservation holds nothing and is only a cleanup candidate.
-  { point: 'uploading', state: 'reserved', upload: 'uploading', collectable: ['upload'] },
-  { point: 'pending-publish', state: 'pending-publish', upload: 'sealed', collectable: [] },
-  { point: 'promoted', state: 'pending-publish', upload: 'sealed', collectable: [] },
-  { point: 'pinned', state: 'pending-publish', upload: 'sealed', collectable: [] },
+  { point: 'uploading', state: 'reserved', upload: ['uploading', MIB], collectable: ['upload'] },
+  // Every byte was acknowledged and the content written, but the seal never committed.
+  {
+    point: 'seal',
+    pause: 'uploading',
+    state: 'reserved',
+    upload: ['uploading', CONTENT.bytes],
+    collectable: ['upload'],
+  },
+  { point: 'pending-publish', state: 'pending-publish', upload: ['sealed', CONTENT.bytes], collectable: [] },
+  { point: 'promoted', state: 'pending-publish', upload: ['sealed', CONTENT.bytes], collectable: [] },
+  { point: 'pinned', state: 'pending-publish', upload: ['sealed', CONTENT.bytes], collectable: [] },
   // Killed after the ready record was written but before its event and the commit.
-  { point: 'ready-transaction', state: 'pending-publish', upload: 'sealed', collectable: [] },
-  { point: 'ready', state: 'ready', upload: 'sealed', collectable: [] },
+  {
+    point: 'ready-transaction',
+    state: 'pending-publish',
+    upload: ['sealed', CONTENT.bytes],
+    collectable: [],
+  },
+  { point: 'ready', state: 'ready', upload: ['sealed', CONTENT.bytes], collectable: [] },
 ]
 
 describe('artifact publication recovery across a killed process', () => {
   it.each(POINTS)(
     'converges on one ready publication after a kill at $point',
-    async ({ point, state, upload, collectable: expected }) => {
+    async ({ point, pause, state, upload, collectable: expected }) => {
       const dataDir = await mkdtemp(join(tmpdir(), 'agh-publication-'))
       dirs.push(dataDir)
-      const first = start(dataDir, point)
-      const paused = await first.until('paused', point)
+      const first = start(dataDir, pause ?? point)
+      const paused = await first.until('paused', pause ?? point)
       await first.kill()
+      if (pause !== undefined) {
+        const halted = startChild('./blob-backend-child.ts', [
+          'default',
+          dataDir,
+          'write',
+          JSON.stringify(CONTENT),
+          point,
+        ])
+        children.push(halted)
+        await halted.until('paused', point)
+        await halted.kill()
+      }
       const reserved = need(reported<Wire.ArtifactReservation>(first, 'reserved'), 'reservation')
       const artifactRef = { artifactId: reserved.artifactId, version: 1 }
 
@@ -103,13 +131,39 @@ describe('artifact publication recovery across a killed process', () => {
         expect(seen.artifacts.pendingEvents()).toEqual(state === 'ready' ? [readyEvent(record)] : [])
         const session = reported<Wire.UploadSession>(first, 'staged')
         if (session === undefined) expect(upload).toBeNull()
-        else
+        else {
+          const [status, bytes] = need(upload, 'upload state')
           expect(
             ok(await seen.blob.inspect({ ref: { kind: 'upload', value: session } }, ctx())),
-          ).toMatchObject({
-            status: upload,
-            bytes: upload === 'uploading' ? MIB : CONTENT.bytes,
-          })
+          ).toMatchObject({ status, bytes })
+          // A restarted publisher stages again and rebuilds a sealed reference only from a sealed
+          // session. An open session is never reported sealed, and a sealed reference built from it
+          // anyway names no sealed upload.
+          const { uploadId, mediaType } = CONTENT
+          const digest = need(CONTENT.digest, 'declared digest')
+          const restaged = ok(
+            await seen.blob.stage(
+              { uploadId, size: CONTENT.bytes, mediaType, expectedDigest: digest },
+              ctx(),
+            ),
+          )
+          expect(restaged).toMatchObject({ status, receivedBytes: bytes })
+          if (status === 'uploading') {
+            const { authorityId, reservationId } = restaged
+            const early: Wire.UploadRef = {
+              authorityId,
+              uploadId,
+              reservationId,
+              digest,
+              bytes: CONTENT.bytes,
+              mediaType,
+              status: 'sealed',
+            }
+            expect(refused(await seen.blob.promote({ upload: early, expectedDigest: digest }, ctx()))).toBe(
+              'not_found',
+            )
+          }
+        }
         if (point === 'promoted') {
           // The sealed upload's retention root holds the staged blob but is not a pin of it.
           const staged = paused as Wire.StagedBlobRef
