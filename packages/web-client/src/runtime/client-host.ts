@@ -83,6 +83,8 @@ type Owner = {
 }
 /** A module whose release, or the release of one of its renderer contributions, missed the deadline. */
 type Failure = { moduleId: string; contributionId?: string; reason: 'dispose_timeout' }
+/** One part of a generation's release: what it runs, the module it is part of and what a miss still closes. */
+type Step = { moduleId?: string; run: () => unknown; missed?: () => void }
 
 type Generation = {
   readonly revision: number
@@ -103,8 +105,8 @@ type Generation = {
   /** The selected shell's export. */
   shell: (() => ShellProvider) | undefined
   readonly listeners: Set<(revision: number) => void>
-  /** Module releases and renderer registrations, released newest first, each under its own deadline. */
-  readonly releases: (() => Promise<unknown>)[]
+  /** Each module context and renderer registration, released with the leases under one deadline. */
+  readonly releases: Step[]
   /** Set once a module registers a renderer the host registered; it fails the candidate. */
   conflict: { ok: false; error: RuntimeError } | undefined
 }
@@ -274,17 +276,34 @@ export function createClientHostRuntime(input: {
       }),
     )
 
+  /**
+   * Stops admission, then starts every step of the release at once, so one deadline counted from that
+   * moment holds them all: each renderer lease, the generic view's lease, each renderer registration and
+   * each module context. A module with any step left at the deadline is reported once, by its id; its
+   * context closes all the same, and no step waits for another.
+   */
   async function release(generation: Generation): Promise<void> {
     generation.live = false
-    const owners = [...generation.owners.values()]
-    generation.owners.clear()
-    const generic = generation.generic
-    generation.generic = undefined
-    await revoke(owners)
-    if (generic) await settle(() => generic.dispose())
     generation.shell = undefined
     generation.listeners.clear()
-    for (const dispose of generation.releases.splice(0).reverse()) await dispose()
+    const steps: Step[] = []
+    for (const owner of generation.owners.values()) {
+      for (const lease of owner.leases) steps.push({ moduleId: owner.moduleId, run: () => lease.dispose() })
+      owner.leases.clear()
+    }
+    const generic = generation.generic
+    generation.generic = undefined
+    if (generic) steps.push({ run: () => generic.dispose() })
+    steps.push(...generation.releases.splice(0).reverse())
+    const late = new Set<string>()
+    await Promise.all(
+      steps.map(async ({ moduleId, run, missed }) => {
+        if (await settle(run)) return
+        missed?.()
+        if (moduleId !== undefined) late.add(moduleId)
+      }),
+    )
+    for (const moduleId of late) report({ moduleId, reason: 'dispose_timeout' })
   }
 
   const rendererHost = (generation: Generation): UIRegistryHost => ({
@@ -427,7 +446,7 @@ export function createClientHostRuntime(input: {
       })()
       return done
     }
-    generation.releases.push(() => settle(unregister))
+    generation.releases.push({ moduleId: module.moduleId, run: unregister })
     return { ok: true, value: { id, ownerToken: registrationToken, dispose: unregister } }
   }
 
@@ -436,8 +455,7 @@ export function createClientHostRuntime(input: {
    * no view, so it refuses every command, interaction and artifact call; module actions go through their
    * renderer's per-view context. Its release is pushed before the entry runs, so a failed candidate, a
    * late entry and dispose all close the context: the contribution the entry returned, then the context,
-   * under one dispose deadline. A miss is reported and closes the context anyway, without holding up the
-   * rest of the release.
+   * alongside the rest of the release and under its deadline. A miss closes the context anyway.
    */
   function moduleHost(generation: Generation, module: ClientModule) {
     const registry = generation.registry as UIRegistry
@@ -454,18 +472,17 @@ export function createClientHostRuntime(input: {
           .map(async (cleanup) => cleanup()),
       )
     }
-    generation.releases.push(async () => {
-      const done = await settle(async () => {
+    generation.releases.push({
+      moduleId: module.moduleId,
+      run: async () => {
         try {
           await contribution?.dispose()
         } catch {
           // A failed dispose still closes the context.
         }
         await close()
-      })
-      if (done) return
-      void close()
-      report({ moduleId: module.moduleId, reason: 'dispose_timeout' })
+      },
+      missed: () => void close(),
     })
     // ponytail: every call refuses; widen it once a Host-issued per-module credential is on the wire.
     const refusal = () =>
