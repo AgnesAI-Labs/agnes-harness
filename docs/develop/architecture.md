@@ -127,6 +127,10 @@ The runtime HTTP listener consumes Host-owned read adapters. Host owns the proje
 
 A trusted `projection` installation supplies the selected domain store's owner and permissions. The supervisor opens one store and passes that same instance as command storage, an async wrapper of its event journal, its commit subscription, and the daemon's native conversation adapter to Host assembly. Commits through another store instance do not notify this owner. Shutdown unsubscribes, aborts and drains Host reads/refreshes, closes the provider, and then closes the store; absent installation facts keep the default refusal.
 
+The private `runtimeAdmissionInstallation.loop` slot registers selected Tools, Context and Loop factories in that same Host service root. The explicit worker `runtime.run.create` command starts an installed Loop after confirmed admission; an empty slot preserves admission-only behavior and existing session execution. Run providers close before the root and admission owner. Cancellation reaches the run only after the original admission owner accepts the request.
+
+Tools invokes the injected original source through `ToolsDeployment.verifyCall`. A missing model source returns `tools_model_context_source_unavailable`; Host does not construct model provenance. Native State transaction, Supervisor, Model action and cold-reader adapters are also required. Refusals are saved by the installation's original State owner; an unavailable writer returns failure rather than a successful terminal claim. Restricted worker fixtures verify both Tools implementations, but do not establish production model sources or cold recovery.
+
 <a id="可复用场景的范围"></a>
 
 ## Scope of reusable applications

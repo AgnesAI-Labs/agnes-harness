@@ -1317,7 +1317,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // full-access read-only roots reach the fence from the assembly (+7). Measured 4207, exact.
   // Wire the optional deployment installation through the existing service root; measured +3, exact.
   // Verified runtime usage composes with the original ledger. Measured 4257, exact, no spare.
-  'packages/host/src/assemble': 4257,
+  // Installed Loop/Tools/Context assembly retained with usage/ledger: exact measured total.
+  'packages/host/src/assemble': 4273,
   // P1: generated-schema validators and duplicate projection-name refusal; measured exact cap.
   // F1 adds Surface JSON/identity validation and lock snapshot validation.
   // PM4 adds strict management DTO validation and method permission/identity contracts; exact total.
@@ -2887,7 +2888,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // Sixth main synchronization merged with the integration tip. Measured 81253, exact, no spare.
   // feat(host): build the projection owner from the core root export. Measured 81275, exact, no spare.
   // A frozen, restorable copy of the sealed model catalog adds 49 measured lines on top of the above; measured 81324, exact, no spare.
-  'packages/host/src': 81324,
+  // feat(host): install loop, tools and context on the new run path. Measured 81735, exact, no spare.
+  'packages/host/src': 81735,
   'packages/host/src/ext-host/service-invocation': 247,
   // T5.2's permission projector is kept independently bounded so later extension-host work cannot
   // hide in the package-wide increment. Measured source: 86 lines.

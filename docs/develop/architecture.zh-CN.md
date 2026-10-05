@@ -109,6 +109,10 @@ runtime HTTP 监听消费 Host 所有的只读适配端口。Host 持有 project
 
 受信 `projection` 安装提供已选 domain store 的 owner 与权限。supervisor 只打开一个 store，将同一实例作为 command storage、原 events 的 async journal 包装、提交订阅，以及 daemon 原 native conversation 适配口交给 Host 装配。另一个 store 实例提交不会通知此 owner。退出时先撤订阅、abort 并 drain Host 读取/刷新、关闭 provider，再关闭 store；缺少安装事实时保留默认拒绝。
 
+私有 `runtimeAdmissionInstallation.loop` 槽将选定 Tools、Context、Loop 工厂登记到同一个 Host 服务根。worker 的显式 `runtime.run.create` 命令在准入确认后启动已安装 Loop；空槽保持只准入的行为及既有会话执行。run provider 先于服务根和准入 owner 关闭。取消请求经原准入 owner 接受后才传给运行中的 run。
+
+Tools 通过 `ToolsDeployment.verifyCall` 调用注入的原来源。模型来源缺失时返回 `tools_model_context_source_unavailable`，Host 不自行构造模型来源证明。原 State 事务、Supervisor、Model action 和冷读取适配口同样必须具备。拒绝事实由安装器的原 State owner 保存；写口不可用时返回失败，不声称终态已成功保存。受限 worker 夹具验证两套 Tools 实现，不代表生产模型来源或冷恢复交付。
+
 ## 可复用场景的范围
 
 FDE 是交付方式，MHS 是设备接入方向。FDE 交付可通过 AGH 已有扩展入口构建企业软件，后续也可包含设备接入。知识检索、数据库连接器、业务系统与专用界面需要针对具体环境开发与验证。

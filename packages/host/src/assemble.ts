@@ -2341,6 +2341,12 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
     rollback.push('runtime-admission', selectedServices.closeAdmission)
     rollback.push('runtime-services', async () => {
       selectedServices.stop()
+      let loopCloseFailure: unknown
+      try {
+        await selectedServices.closeLoop()
+      } catch (error) {
+        loopCloseFailure = error
+      }
       if (!servicesPublished) {
         await serviceRoot.dependencies.close()
         try {
@@ -2349,12 +2355,14 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
         } catch (error) {
           if (!(error instanceof AssemblyRefusal && error.code === 'unknown_generation')) throw error
         }
+        if (loopCloseFailure) throw loopCloseFailure
         return
       }
       serviceRoot.disable(selectedServices.generationId)
       await serviceRoot.drain(selectedServices.generationId, clock())
       const result = await serviceRoot.close(selectedServices.generationId)
       if (result.residualOwnerIds.length > 0) throw new Error('Runtime services left residual owners')
+      if (loopCloseFailure) throw loopCloseFailure
     })
     await serviceRoot.publish(selectedServices)
     servicesPublished = true
@@ -2363,12 +2371,20 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
       deps.runtimeUsageLedgerOwners,
     )
     rollback.push('runtime-usage-ledger', () => usageLedger.close())
+    const selectedLoop = selectedServices.loop
     const runtimeServices = Object.freeze({
       usageLedger,
       dependencies: serviceRoot.dependencies,
       contextFor: selectedServices.contextFor,
       runAdmission: (request: import('./runtime/entry-admission.js').HostRuntimeRunRequest) =>
         selectedServices.runAdmission(serviceRoot.dependencies, request),
+      ...(selectedLoop
+        ? {
+            runLoop: (request: import('@agnes/protocol/runtime').RunAdmission) =>
+              selectedLoop.run(serviceRoot.dependencies, request),
+            cancelLoop: (ticketId: string) => selectedLoop.cancel(ticketId),
+          }
+        : {}),
     })
 
     // 10 ready

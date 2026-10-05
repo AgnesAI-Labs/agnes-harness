@@ -31,6 +31,7 @@ import {
   type HostRuntimeRunRequest,
   selectHostRuntimeAdmission,
 } from './entry-admission.js'
+import { selectHostRuntimeLoop } from './loop-installation.js'
 import type { HostPermissionGrant, HostSelectedProvider } from './scoped-dependencies.js'
 
 // SHA-256 of the bundled package runtime sources, pinned by the product source guard.
@@ -45,6 +46,8 @@ export type HostRuntimeServices = Readonly<{
   runAdmission(
     request: HostRuntimeRunRequest,
   ): Promise<Outcome<import('@agnes/protocol/runtime').AdmissionProbe>>
+  runLoop?(request: import('@agnes/protocol/runtime').RunAdmission): Promise<Outcome<void>>
+  cancelLoop?(ticketId: string): Promise<void>
 }>
 
 type PackageResult =
@@ -132,6 +135,7 @@ export function selectDefaultHostServices(
   installation?: HostRuntimeAdmissionInstallation,
 ) {
   const admission = selectHostRuntimeAdmission(installation, clock)
+  const loop = installation?.loop ? selectHostRuntimeLoop(installation.loop) : undefined
   const generationId = `host:${randomUUID()}`
   const authorizationRef = randomUUID()
   const scope = Object.freeze({
@@ -267,19 +271,34 @@ export function selectDefaultHostServices(
     permissions: [],
     scope: 'runtime',
   }))
+  if (loop) {
+    providers.push(...loop.providers)
+    grants.push(...loop.grants)
+  }
   return {
     generationId,
     providers,
     grants,
     stop: () => {
       lifetime.abort()
+      loop?.stop()
       admission.stop()
     },
-    closeAdmission: admission.close,
+    closeAdmission: async () => {
+      try {
+        await loop?.close()
+      } finally {
+        await admission.close()
+      }
+    },
+    closeLoop: () => loop?.close(),
     runAdmission: admission.run,
+    loop,
     contextFor(selected: BindingRef): CallContext {
       if (admission.providers.some((provider) => same(provider.binding, selected)))
         throw new Error('Runtime admission requires an original local-owner context')
+      if (loop?.providers.some((provider) => same(provider.binding, selected)))
+        throw new Error('Runtime loop requires an original run-owner context')
       if (lifetime.signal.aborted || !providers.some((provider) => same(provider.binding, selected)))
         throw new Error('Host runtime services are closed or the binding is not selected')
       return {

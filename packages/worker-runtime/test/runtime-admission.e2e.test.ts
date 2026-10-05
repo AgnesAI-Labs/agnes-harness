@@ -1,6 +1,6 @@
 import { spawn } from 'node:child_process'
 import { createHash, randomUUID } from 'node:crypto'
-import { mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { createServer, type Socket } from 'node:net'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -11,8 +11,9 @@ import { expect, it } from 'vitest'
 import type { RuntimeRunCommandFrame, WorkerReplyFrame, WorkerToSupervisor } from '../src/frames.js'
 import { encodeFrame, JsonlDecoder } from '../src/framing.js'
 import { admissionRequest } from './fixtures/runtime-admission-owner.js'
+import { loopAdmissionRequest } from './fixtures/runtime-loop-owner.js'
 
-async function worker(withOwner: boolean) {
+async function worker(withOwner: boolean, loopMode?: string) {
   const root = realpathSync(mkdtempSync(join(tmpdir(), 'a1-')))
   const socketPath = process.platform === 'win32' ? `\\\\.\\pipe\\entry-${randomUUID()}` : join(root, 's')
   const profileFile = join(root, 'profile.json')
@@ -57,6 +58,7 @@ async function worker(withOwner: boolean) {
         AGNES_WORKER_GENERATION: '1',
         AGNES_GATE_FD: '3',
         ...(withOwner ? { ADMISSION_FIXTURE_LOG: ownerLog } : {}),
+        ...(loopMode ? { LOOP_FIXTURE_MODE: loopMode } : {}),
       },
       stdio: ['ignore', 'pipe', 'pipe', 'pipe'],
     },
@@ -186,6 +188,185 @@ it('refuses the explicit runtime commands without an installation in a real work
     rmSync(w.root, { recursive: true, force: true })
   }
 }, 60_000)
+
+it.each([
+  ['tools-source-default', 'tools_model_context_source_unavailable'],
+  ['tools-source-reference', 'tools_model_context_source_unavailable'],
+  ['wrong-ref-default', 'tools_model_context_source_mismatch'],
+  ['wrong-ref-reference', 'tools_model_context_source_mismatch'],
+  ['revoked-default', 'tools_model_context_source_revoked'],
+  ['revoked-reference', 'tools_model_context_source_revoked'],
+  ['state', 'loop_state_transactions_unavailable'],
+  ['supervisor', 'loop_supervisor_unavailable'],
+  ['model', 'loop_model_action_unavailable'],
+  ['cold', 'loop_cold_state_consumer_unavailable'],
+])(
+  'persists the named %s refusal and closes its run in a real worker',
+  async (mode, detailCode) => {
+    const w = await worker(true, mode)
+    try {
+      const created = await w.runtime({
+        method: 'runtime.run.create',
+        params: { request: loopAdmissionRequest },
+      })
+      expect(created.error).toBeUndefined()
+      expect(created.result).toMatchObject({ ok: false, error: { detailCode } })
+      const replay = await w.runtime({
+        method: 'runtime.run.create',
+        params: { request: loopAdmissionRequest },
+      })
+      expect(replay.result).toEqual(created.result)
+      expect(await w.close()).toBe(0)
+      const events = readFileSync(w.ownerLog, 'utf8')
+        .trim()
+        .split('\n')
+        .map((line) => JSON.parse(line))
+      expect(events).toContainEqual(
+        expect.objectContaining({
+          method: 'state.refused',
+          state: 'refused',
+          error: expect.objectContaining({ detailCode }),
+        }),
+      )
+      expect(events.filter((event) => event.method === 'run.close')).toEqual([
+        { method: 'run.close', live: 0 },
+      ])
+      if (['tools-source', 'wrong-ref', 'revoked'].some((prefix) => mode.startsWith(prefix))) {
+        expect(events.filter((event) => event.method === 'dispatch').map((event) => event.key)).toEqual([
+          'first-model',
+          'tool',
+        ])
+        expect(events.find((event) => event.method === 'tool.result')).toMatchObject({
+          outcome: 'failed',
+          modelContextRef: { schema: { typeId: 'agh.model/prepared-request@1' } },
+          error: { detailCode },
+        })
+        expect(events).toContainEqual({ method: 'action.close' })
+        expect(events.some((event) => event.method === 'executor.create')).toBe(false)
+        expect(events.some((event) => event.method === 'source.verifyCall')).toBe(
+          !mode.startsWith('tools-source'),
+        )
+      } else expect(events.some((event) => event.method === 'dispatch')).toBe(false)
+    } finally {
+      await w.close()
+      rmSync(w.root, { recursive: true, force: true })
+    }
+  },
+  60_000,
+)
+
+it.each(['default', 'reference'] as const)(
+  'completes the installed model/tool/model chain through C10 %s in a real worker',
+  async (kind) => {
+    const w = await worker(true, `normal-${kind}`)
+    try {
+      const created = await w.runtime({
+        method: 'runtime.run.create',
+        params: { request: loopAdmissionRequest },
+      })
+      expect(created.error).toBeUndefined()
+      expect(created.result).toMatchObject({
+        ok: true,
+        value: { state: 'created', runId: loopAdmissionRequest.runId },
+      })
+      const replay = await w.runtime({
+        method: 'runtime.run.create',
+        params: { request: loopAdmissionRequest },
+      })
+      expect(replay.result).toEqual(created.result)
+      expect(await w.close()).toBe(0)
+      const events = readFileSync(w.ownerLog, 'utf8')
+        .trim()
+        .split('\n')
+        .map((line) => JSON.parse(line))
+      expect(events.filter((event) => event.method === 'dispatch').map((event) => event.key)).toEqual([
+        'first-model',
+        'tool',
+        'second-model',
+      ])
+      expect(events.find((event) => event.method === 'tool.result')).toMatchObject({
+        outcome: 'succeeded',
+        modelContextRef: { schema: { typeId: 'agh.model/prepared-request@1' } },
+      })
+      expect(events.find((event) => event.method === 'state.complete')).toMatchObject({
+        output: { value: { content: [{ type: 'text', text: 'statistics complete' }] } },
+      })
+      expect(events.some((event) => event.method === 'state.refused')).toBe(false)
+      expect(events.filter((event) => event.method === 'run.close')).toEqual([
+        { method: 'run.close', live: 0 },
+      ])
+    } finally {
+      await w.close()
+      rmSync(w.root, { recursive: true, force: true })
+    }
+  },
+  60_000,
+)
+
+it.each(['cancel', 'exit'] as const)(
+  'drains a blocked installed run on worker %s',
+  async (operation) => {
+    const w = await worker(true, 'blocked')
+    const events = () =>
+      existsSync(w.ownerLog)
+        ? readFileSync(w.ownerLog, 'utf8')
+            .trim()
+            .split('\n')
+            .filter(Boolean)
+            .map((line) => JSON.parse(line))
+        : []
+    try {
+      const running = w.runtime({ method: 'runtime.run.create', params: { request: loopAdmissionRequest } })
+      // Observe the original admitted action before asking a separate worker command to cancel it.
+      const settled = running.catch(() => undefined)
+      await expect
+        .poll(() => events().some((event) => event.method === 'dispatch'), { timeout: 10_000 })
+        .toBe(true)
+      if (operation === 'cancel') {
+        const denied = await w.runtime({
+          method: 'runtime.run.cancel',
+          params: {
+            request: {
+              ticketId: loopAdmissionRequest.ticketId,
+              fingerprint: 'b'.repeat(64),
+            },
+          },
+        })
+        expect(denied.result).toMatchObject({ ok: false, error: { detailCode: 'fingerprint_conflict' } })
+        expect(events().some((event) => event.method === 'run.close')).toBe(false)
+        const cancelled = await w.runtime({
+          method: 'runtime.run.cancel',
+          params: {
+            request: {
+              ticketId: loopAdmissionRequest.ticketId,
+              fingerprint: loopAdmissionRequest.fingerprint,
+            },
+          },
+        })
+        expect(cancelled.error).toBeUndefined()
+        expect((await settled)?.result).toMatchObject({
+          ok: false,
+          error: { code: 'cancelled', detailCode: 'loop_cancelled' },
+        })
+      }
+      expect(await w.close()).toBe(0)
+      await settled
+      expect(events()).toContainEqual(
+        expect.objectContaining({
+          method: 'state.refused',
+          error: expect.objectContaining({ code: 'cancelled', detailCode: 'loop_cancelled' }),
+        }),
+      )
+      expect(events().filter((event) => event.method === 'run.close')).toEqual([
+        { method: 'run.close', live: 0 },
+      ])
+    } finally {
+      await w.close()
+      rmSync(w.root, { recursive: true, force: true })
+    }
+  },
+  60_000,
+)
 
 it('routes official admission shapes and original owner contexts through the real worker service root', async () => {
   const w = await worker(true)
