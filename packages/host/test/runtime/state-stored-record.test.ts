@@ -4,18 +4,18 @@ import {
   bodyItem,
   ITEM_MAX_BYTES,
   PAGE_MAX_BYTES,
-  type ProvenFact,
   STORED_SCHEMA_PENDING,
   storedItem,
   storedOf,
 } from '../../src/runtime/state/stored-record.js'
+import type { NativeStateRecordFact } from '../../src/runtime/state/transactions.js'
 
 const owner = {
   authority: { authorityId: 'state', tenantId: 'tenant', authorityEpoch: 1 },
   scope: { kind: 'runtime' as const, installationId: 'i', runtimeId: 'r' },
   ownerBinding: { bindingId: 'b', contract: 'agh.state', logicalName: 'state', providerId: 'p' },
 }
-const fact = (over: Partial<ProvenFact> = {}): ProvenFact => ({
+const fact = (over: Partial<NativeStateRecordFact> = {}): NativeStateRecordFact => ({
   recordId: 'run:r',
   recordRevision: 3,
   schema: RuntimeSchemaRefs.RunRecordValue,

@@ -27,8 +27,6 @@ export const STORED_SCHEMA_PENDING: SchemaRef = Object.freeze({
 })
 
 export type Stored = Readonly<{ meta: RecordMeta; owner: RecordOwner; value: JsonValue }>
-export type ProvenFact = NativeStateRecordFact &
-  Readonly<{ minReader: number; createdAt: string; updatedAt: string }>
 type Inline = Extract<DataRef, { kind: 'inline' }>
 
 function unproven(): never {
@@ -36,7 +34,7 @@ function unproven(): never {
 }
 
 /** The only constructor of a Stored envelope. Every meta member is a field of the proven fact. */
-export function storedOf(fact: ProvenFact): Stored {
+export function storedOf(fact: NativeStateRecordFact): Stored {
   if (
     !TIMESTAMP.test(fact.createdAt) ||
     !TIMESTAMP.test(fact.updatedAt) ||
@@ -74,11 +72,11 @@ function inline(schema: SchemaRef, value: unknown): Inline {
   })
 }
 
-export function storedItem(fact: ProvenFact): Inline {
+export function storedItem(fact: NativeStateRecordFact): Inline {
   return inline(STORED_SCHEMA_PENDING, storedOf(fact))
 }
 
 /** Actions and signals travel as their own body schema, without an envelope. */
-export function bodyItem(fact: ProvenFact): Inline {
+export function bodyItem(fact: NativeStateRecordFact): Inline {
   return inline(fact.schema, fact.value)
 }

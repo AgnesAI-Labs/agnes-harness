@@ -68,6 +68,11 @@ describe.skipIf(typeof process.getuid !== 'function')('historical meta of native
         .get(FIXTURE_SESSION, run.commitId)?.ts
       expect(run.updatedAt).toBe(ts)
       expect(run.minReader).toBe(2)
+      // The binding is written once and never updated, so its update time must stay the creation
+      // time even though later commits exist in the same prefix.
+      const bound = before.items.find((item) => item.schema.typeId === 'agh.runtime/run-binding@1')
+      expect(instant(bound.createdAt)).toBe(created)
+      expect(instant(bound.updatedAt)).toBe(created)
       expect(await page(native, old)).toEqual(before)
       // min_reader is not tampered here: State's own head verification already rejects a wrong value.
       fixture.db
