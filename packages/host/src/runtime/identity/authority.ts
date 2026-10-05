@@ -63,6 +63,9 @@ export interface IdentityAuthority {
 }
 
 export type IdentityCurrentFence = (staticCheck?: () => void) => boolean
+/** Returns the original issuer's single final Clock value only after its native fence succeeds. */
+export type IdentityCurrentAtFence = (staticCheck?: () => void) => number | null
+type NativeIdentityCurrentFence = IdentityCurrentFence & { readonly checkAt: IdentityCurrentAtFence }
 
 /** Host-private role proof; its final check never reads the issuer clock. */
 export type IdentityRoleCurrentChecks = Readonly<{
@@ -105,11 +108,11 @@ function sameOwnDataDescriptors(
 }
 const commitFences = new WeakMap<
   IdentityAuthority,
-  (context: CallContext, deadlineCeiling?: Timestamp) => IdentityCurrentFence | null
+  (context: CallContext, deadlineCeiling?: Timestamp) => NativeIdentityCurrentFence | null
 >()
 const jointCommitFences = new WeakMap<
   IdentityAuthority,
-  (contexts: readonly [CallContext, CallContext], ceiling?: Timestamp) => IdentityCurrentFence | null
+  (contexts: readonly [CallContext, CallContext], ceiling?: Timestamp) => NativeIdentityCurrentFence | null
 >()
 
 const roleCurrentChecks = new WeakMap<
@@ -137,7 +140,8 @@ export function captureIdentityCurrentFences(
   contexts: readonly [CallContext, CallContext],
   deadlineCeiling?: Timestamp,
 ): IdentityCurrentFence | null {
-  return jointCommitFences.get(authority)?.(contexts, deadlineCeiling) ?? null
+  const fence = jointCommitFences.get(authority)?.(contexts, deadlineCeiling)
+  return fence ? (staticCheck) => fence(staticCheck) : null
 }
 
 /** Only authorities created here can fence a genuine issued context without running source callbacks. */
@@ -146,7 +150,17 @@ export function captureIdentityCurrentFence(
   context: CallContext,
   deadlineCeiling?: Timestamp,
 ): IdentityCurrentFence | null {
-  return commitFences.get(authority)?.(context, deadlineCeiling) ?? null
+  const fence = commitFences.get(authority)?.(context, deadlineCeiling)
+  return fence ? (staticCheck) => fence(staticCheck) : null
+}
+
+/** Private timestamped form of the same original C14 fence; callers must use it once per commit. */
+export function captureIdentityCurrentAtFence(
+  authority: IdentityAuthority,
+  context: CallContext,
+  deadlineCeiling?: Timestamp,
+): IdentityCurrentAtFence | null {
+  return commitFences.get(authority)?.(context, deadlineCeiling)?.checkAt ?? null
 }
 
 /** Capture the real issuer registered when this exact context was created. */
@@ -366,7 +380,7 @@ export function createIdentityAuthority(
   const captureNativeFence = (
     pair: readonly [CallContext] | readonly [CallContext, CallContext],
     deadlineCeiling?: Timestamp,
-  ): IdentityCurrentFence | null => {
+  ): NativeIdentityCurrentFence | null => {
     const ceilingAt = deadlineCeiling === undefined ? Number.POSITIVE_INFINITY : Date.parse(deadlineCeiling)
     if (types.isProxy(pair) || !Array.isArray(pair)) return null
     const first = Object.getOwnPropertyDescriptor(pair, '0')
@@ -422,14 +436,14 @@ export function createIdentityAuthority(
     const right = pair.length === 2 ? capture(second?.value) : undefined
     if (!left || (pair.length === 2 && !right)) return null
     const retained = right ? [left, right] : [left]
-    return (staticCheck) => {
+    const checkAt: IdentityCurrentAtFence = (staticCheck) => {
       // Any dynamic source or policy work must already have run before this gate.
       const at = now()
       staticCheck?.()
-      if (closed || !nativeIsFinite(at) || at >= ceilingAt) return false
+      if (closed || !nativeIsFinite(at) || at >= ceilingAt) return null
       for (let retainedIndex = 0; retainedIndex < retained.length; retainedIndex++) {
         const entry = retained[retainedIndex]
-        if (!entry) return false
+        if (!entry) return null
         const { context, instance, issued, row, keys } = entry
         if (
           context.signal !== entry.signal ||
@@ -443,18 +457,19 @@ export function createIdentityAuthority(
           context.principalRef !== instance.identity.principalRef ||
           context.bindingId !== issued.bindingId
         )
-          return false
+          return null
         const actualSignal = nativeGetOwnPropertyDescriptors(entry.signal)
-        if (!sameOwnDataDescriptors(entry.signalDescriptors, actualSignal, entry.signalKeys)) return false
+        if (!sameOwnDataDescriptors(entry.signalDescriptors, actualSignal, entry.signalKeys)) return null
         const current = readJointIdentityRow(instance.authorizationRef)
-        if (current?.revoked !== 0 || nativeObjectKeys(current).length !== keys.length) return false
+        if (current?.revoked !== 0 || nativeObjectKeys(current).length !== keys.length) return null
         for (let index = 0; index < keys.length; index++) {
           const key = keys[index]
-          if (key === undefined || current[key] !== row[key]) return false
+          if (key === undefined || current[key] !== row[key]) return null
         }
       }
-      return true
+      return at
     }
+    return Object.assign((staticCheck?: () => void) => checkAt(staticCheck) !== null, { checkAt })
   }
   roleCurrentChecks.set(authority, (context) => {
     const instance = originalCurrent(context)
