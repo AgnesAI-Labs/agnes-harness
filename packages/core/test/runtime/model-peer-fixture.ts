@@ -12,11 +12,28 @@ export type RestrictedPeer = Readonly<{
   /** Creates the child the way State would: stable per parent and key, one fingerprint per key. */
   commit(parentActionId: string, child: W.PreparedAction): Outcome<PeerChild>
   /** Runs the child on a fake adapter leaf, once per child id, and records its result. */
-  dispatch(child: PeerChild, outcome: 'succeeded' | 'failed' | 'unknown_effect', options?: DispatchOptions): Promise<void>
+  dispatch(
+    child: PeerChild,
+    outcome: 'succeeded' | 'failed' | 'unknown_effect',
+    options?: DispatchOptions,
+  ): Promise<void>
   /** Publishes the recorded result under a receipt so the state query can answer it. */
   publish(child: PeerChild, receiptId: string): W.ActionResultView
   deliveries(): number
 }>
+
+/** The identity State's dispatch admission assigns a child: the whole input reference is what the request digest covers. */
+export function requestIdentityOf(spec: W.PreparedAction): NonNullable<W.ActionFrame['requestIdentity']> {
+  const request =
+    spec.input.kind === 'inline' ? validateRuntime('ModelAdapterInvokeRequest', spec.input.value) : null
+  if (!request?.ok) throw new Error('child input is not an adapter invoke request')
+  return {
+    system: 'peer',
+    aghRequestId: 'peer-request',
+    idempotencyKey: request.value.externalIdempotencyKey,
+    requestDigest: canonicalJsonDigest(spec.input),
+  }
+}
 
 const refused = (code: W.RuntimeError['code'], detailCode: string): { ok: false; error: W.RuntimeError } => ({
   ok: false,
@@ -37,13 +54,19 @@ export function restrictedPeer(options: {
   const probe = RuntimeMethodSchemaRefs['agh.state'].probeActionResult
   const ports: LoopReadPorts = {
     prepare(spec) {
-      const prepared = validateRuntime('PreparedAction', { ...spec, intentFingerprint: canonicalJsonDigest(spec) })
+      const prepared = validateRuntime('PreparedAction', {
+        ...spec,
+        intentFingerprint: canonicalJsonDigest(spec),
+      })
       return prepared.ok ? { ok: true, value: prepared.value } : refused('invalid_input', 'peer_prepare')
     },
     async query(request) {
       if (request.target.bindingId !== (options.state ?? 'state') || request.method !== 'probeActionResult')
         return refused('denied', 'peer_method')
-      const input = request.input.kind === 'inline' ? validateRuntime('ProbeActionResultRequest', request.input.value) : null
+      const input =
+        request.input.kind === 'inline'
+          ? validateRuntime('ProbeActionResultRequest', request.input.value)
+          : null
       if (!input?.ok) return refused('invalid_input', 'peer_query')
       const view = published.get(`${input.value.actionId}\0${input.value.sourceReceiptId}`) ?? null
       return { ok: true, value: { kind: 'value', snapshot: 'peer', output: inlineRef(probe.output, view) } }
@@ -92,7 +115,10 @@ export function restrictedPeer(options: {
       }
       const refs = [...usageIds, ...(dispatch.foreignUsage ? ['usage-foreign'] : [])]
       const output: W.ModelOutput = {
-        outputRef: inlineRef(runtimeAuthorSchemas.StandardToolOutput.ref, { content: [], structured: { text: 'ok' } }),
+        outputRef: inlineRef(runtimeAuthorSchemas.StandardToolOutput.ref, {
+          content: [],
+          structured: { text: 'ok' },
+        }),
         finishReason: 'stop',
         usageFactRefs: refs.map((usageId) => ({ authorityId: 'usage', usageId, digest: 'd'.repeat(64) })),
         providerReceipt: null,

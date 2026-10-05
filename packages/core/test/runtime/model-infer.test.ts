@@ -1,22 +1,31 @@
 import type * as W from '@agnes/protocol/runtime'
-import { RuntimeMethodSchemaRefs, validateRuntime } from '@agnes/protocol/runtime'
+import { canonicalJsonDigest, RuntimeMethodSchemaRefs, validateRuntime } from '@agnes/protocol/runtime'
 import { describe, expect, it } from 'vitest'
-import { externalKeyOf, INFER_CHILD_KEY } from '../../src/runtime/model/prepared-call.js'
+import {
+  assemblePrepared,
+  externalKeyOf,
+  INFER_CHILD_KEY,
+  modelCaptureOf,
+} from '../../src/runtime/model/prepared-call.js'
 import type { ModelDeployment } from '../../src/runtime/providers/model.js'
 import { actionFrame, inlineRef, openModel } from './model-deployment-fixture.js'
-import { restrictedPeer } from './model-peer-fixture.js'
 import {
   callContext,
   fixtureAdapter,
   fixtureOwner,
+  fixturePick,
+  fixtureWire,
   prepareRequest,
   runScope,
 } from './model-fixture.js'
+import { requestIdentityOf, restrictedPeer } from './model-peer-fixture.js'
 
 const refs = RuntimeMethodSchemaRefs['agh.model']
 type Select = ModelDeployment['adapters']['select']
 const standard: Select = (target) =>
-  target.bindingId === fixtureAdapter.bindingId ? { binding: fixtureAdapter, packageDigest: 'package-1' } : null
+  target.bindingId === fixtureAdapter.bindingId
+    ? { binding: fixtureAdapter, packageDigest: 'package-1' }
+    : null
 
 async function startInfer(
   over: Partial<ModelDeployment> = {},
@@ -63,6 +72,7 @@ async function startInfer(
   }
 }
 type Setup = Awaited<ReturnType<typeof startInfer>>
+type PreparedRef = Setup['ref']
 
 describe('model infer: start', () => {
   it('creates exactly one child with a stable key, the original reference, the adapter target and no retry', async () => {
@@ -82,11 +92,20 @@ describe('model infer: start', () => {
     })
     expect(child.resultSchema).toEqual(RuntimeMethodSchemaRefs['agh.model-adapter'].invoke.output)
     expect(Date.parse(child.deadline)).toBeLessThanOrEqual(Date.parse(s.frame.context.deadline))
-    const input = validateRuntime('ModelAdapterInvokeRequest', child.input.kind === 'inline' ? child.input.value : null)
+    const input = validateRuntime(
+      'ModelAdapterInvokeRequest',
+      child.input.kind === 'inline' ? child.input.value : null,
+    )
     if (!input.ok) throw new Error('bad child input')
     expect(input.value.preparedCallRef).toEqual(s.ref)
     expect(input.value.externalIdempotencyKey).toBe(externalKeyOf('run-1', 'parent-1'))
     expect(out.next).toMatchObject({ kind: 'wait' })
+  })
+  it('checks the parent input, the prepared reference and the child input separately', async () => {
+    const s = await startInfer()
+    expect(s.frame.inputDigest).not.toBe(s.ref.digest)
+    const out = await s.action.start(s.frame, s.peer.ports)
+    expect(out.next.kind).toBe('wait')
   })
   it('never calls the adapter itself and never reads a secret or the network while deciding', async () => {
     const s = await startInfer()
@@ -95,25 +114,15 @@ describe('model infer: start', () => {
     expect(s.counters.network).toBe(0)
   })
   it.each([
-    ['an unissued reference', (s: Setup) => s.ledger.clear(), 'model_prepared_not_issued'],
     [
-      'a reference issued to another run',
-      (s: Setup) => {
-        for (const [key, entry] of s.ledger) s.ledger.set(key, { ...entry, scope: { ...entry.scope, runId: 'run-2' } })
-      },
-      'model_prepared_scope',
+      'an adapter that is no longer selected',
+      (s: Setup) => s.setAdapter(() => null),
+      'model_adapter_unavailable',
     ],
-    [
-      'an issuance for another owner',
-      (s: Setup) => {
-        for (const [key, entry] of s.ledger) s.ledger.set(key, { ...entry, ownerBindingId: 'other' })
-      },
-      'model_prepared_not_issued',
-    ],
-    ['an adapter that is no longer selected', (s: Setup) => s.setAdapter(() => null), 'model_adapter_unavailable'],
     [
       'another adapter selected than the one prepared for',
-      (s: Setup) => s.setAdapter(() => ({ binding: { ...fixtureAdapter, bindingId: 'other' }, packageDigest: 'p' })),
+      (s: Setup) =>
+        s.setAdapter(() => ({ binding: { ...fixtureAdapter, bindingId: 'other' }, packageDigest: 'p' })),
       'model_target_changed',
     ],
   ])('refuses %s with no child', async (_name, tweak, detailCode) => {
@@ -122,6 +131,43 @@ describe('model infer: start', () => {
     const out = await s.action.start(s.frame, s.peer.ports)
     expect(out.children).toHaveLength(0)
     expect(out.next).toMatchObject({ kind: 'fail', error: { detailCode } })
+  })
+  it.each([
+    [
+      'a prepared reference whose digest does not match its body',
+      (ref: PreparedRef) => ({ ...ref, digest: 'e'.repeat(64) }),
+    ],
+    [
+      'a prepared reference whose byte count is wrong',
+      (ref: PreparedRef) => ({ ...ref, bytes: ref.bytes + 1 }),
+    ],
+    [
+      'a prepared reference under another schema',
+      (ref: PreparedRef) => ({ ...ref, schema: refs.infer.output }),
+    ],
+  ])('refuses %s with no child', async (_name, forge) => {
+    const s = await startInfer()
+    const input = inlineRef(refs.infer.input, { preparedRef: forge(s.ref) })
+    const out = await s.action.start(actionFrame('infer', input), s.peer.ports)
+    expect(out.children).toHaveLength(0)
+    expect(out.next).toMatchObject({ kind: 'fail', error: { detailCode: 'model_infer_input' } })
+  })
+  it('refuses a prepared request that another binding owns, even with a consistent reference', async () => {
+    const s = await startInfer()
+    const parsed = validateRuntime('PreparedModelRequest', s.ref.value)
+    if (!parsed.ok) throw new Error('bad prepared')
+    const foreign = assemblePrepared({
+      owner: { ...fixtureOwner, bindingId: 'other-owner' },
+      request: prepareRequest(),
+      capture: modelCaptureOf('package-1', fixturePick()),
+      wire: fixtureWire,
+      estimatedUnits: [],
+    })
+    if (!foreign.ok) throw new Error('assemble')
+    const input = inlineRef(refs.infer.input, { preparedRef: foreign.value.ref })
+    const out = await s.action.start(actionFrame('infer', input), s.peer.ports)
+    expect(out.children).toHaveLength(0)
+    expect(out.next).toMatchObject({ kind: 'fail', error: { detailCode: 'model_binding_denied' } })
   })
   it('refuses a frame whose method, binding, run or input digest is not this action', async () => {
     const s = await startInfer()
@@ -183,7 +229,10 @@ describe('model infer: resume', () => {
     await s.peer.dispatch(s.child, 'succeeded', { foreignUsage: true })
     s.peer.publish(s.child, 'receipt-1')
     const out = await s.action.resume(s.resumed(s.receipt('succeeded')), s.peer.ports)
-    expect(out.next).toMatchObject({ kind: 'fail', error: { code: 'denied', detailCode: 'model_usage_attribution' } })
+    expect(out.next).toMatchObject({
+      kind: 'fail',
+      error: { code: 'denied', detailCode: 'model_usage_attribution' },
+    })
   })
   it('passes a failed child through unchanged, including a refresh-required detail, and starts no second child', async () => {
     const s = await started()
@@ -206,7 +255,10 @@ describe('model infer: resume', () => {
     }
     const out = await s.action.resume(late, s.peer.ports)
     expect(out.children).toHaveLength(0)
-    expect(out.next).toMatchObject({ kind: 'fail', error: { code: 'unknown_effect', detailCode: 'model_child_unknown' } })
+    expect(out.next).toMatchObject({
+      kind: 'fail',
+      error: { code: 'unknown_effect', detailCode: 'model_child_unknown' },
+    })
   })
   it('ignores a receipt of another action, and never creates a child on resume', async () => {
     const s = await started()
@@ -268,6 +320,22 @@ describe('model infer: resume', () => {
   })
 })
 
+describe('model infer: child request identity', () => {
+  it('binds the committed child input to the whole input reference, not to its inner digest', async () => {
+    const s = await startInfer()
+    const out = await s.action.start(s.frame, s.peer.ports)
+    const spec = out.children[0]
+    if (!spec || spec.input.kind !== 'inline') throw new Error('no child')
+    const identity = requestIdentityOf(spec)
+    const request = validateRuntime('ModelAdapterInvokeRequest', spec.input.value)
+    if (!request.ok) throw new Error('bad child input')
+    expect(identity.idempotencyKey).toBe(request.value.externalIdempotencyKey)
+    expect(identity.requestDigest).toBe(canonicalJsonDigest(spec.input))
+    expect(identity.requestDigest).not.toBe(spec.input.digest)
+    expect(identity.requestDigest).not.toBe(s.ref.digest)
+  })
+})
+
 describe('model infer: stable identity under the restricted peer', () => {
   it('returns the original child for the same key and refuses another fingerprint', async () => {
     const s = await startInfer()
@@ -278,6 +346,9 @@ describe('model infer: stable identity under the restricted peer', () => {
     const b = s.peer.commit('parent-1', spec)
     expect(a.ok && b.ok && a.value.actionId === b.value.actionId).toBe(true)
     const changed = { ...spec, intentFingerprint: 'c'.repeat(64) }
-    expect(s.peer.commit('parent-1', changed)).toMatchObject({ ok: false, error: { detailCode: 'idempotency_conflict' } })
+    expect(s.peer.commit('parent-1', changed)).toMatchObject({
+      ok: false,
+      error: { detailCode: 'idempotency_conflict' },
+    })
   })
 })

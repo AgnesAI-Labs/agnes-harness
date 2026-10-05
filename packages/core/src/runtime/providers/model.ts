@@ -18,12 +18,16 @@ import {
   type ProviderDescriptor,
   RuntimeAuthorCapabilities,
   RuntimeMethodSchemaRefs,
+  RuntimeSchemaRefs,
   validateRuntime,
 } from '@agnes/protocol/runtime'
 import {
+  adapterInvokeInput,
   assemblePrepared,
   type CatalogPick,
   checkCredential,
+  externalKeyOf,
+  INFER_CHILD_KEY,
   modelCaptureOf,
   refusal,
 } from '../model/prepared-call.js'
@@ -208,6 +212,22 @@ const prepareRequestCodec: W.StateCodecRef = {
   },
 }
 
+const inferCodec: W.StateCodecRef = {
+  namespace: 'agh.default/model-infer',
+  codecVersion: '1',
+  schema: {
+    typeId: 'agh.model/infer-continuation@1',
+    revision: 1,
+    digest: canonicalJsonDigest({
+      type: 'object',
+      additionalProperties: false,
+      required: ['request', 'child'],
+      properties: { request: { type: 'string' }, child: { type: 'object' } },
+    }),
+  },
+}
+type InferChild = { childKey: string; externalKey: string; adapter: W.BindingRef; childInputDigest: W.Digest }
+
 export function createDefaultModelFactory(d: ModelDeployment): ProviderFactory<ServiceProvider> {
   const inferenceCapability = {
     ...RuntimeAuthorCapabilities.modelInference,
@@ -240,7 +260,7 @@ export function createDefaultModelFactory(d: ModelDeployment): ProviderFactory<S
     capabilities: [inferenceCapability],
     recovery: 'R2',
     isolation: ['trusted-in-process'],
-    stateCodecs: [prepareRequestCodec],
+    stateCodecs: [prepareRequestCodec, inferCodec],
     activationMode: 'eager',
     operations: [
       op('prepare', 'compute', 'read-only'),
@@ -306,6 +326,7 @@ export function createDefaultModelFactory(d: ModelDeployment): ProviderFactory<S
       }
       service.actions = {
         prepareRequest: prepareRequestAction(d, owner, factory, () => phase, active),
+        infer: inferAction(d, owner, factory, () => phase, active),
       }
       return service
     },
@@ -429,6 +450,238 @@ function prepareRequestAction(
           active.add(frame.invocationId)
           try {
             return await step(frame, ports)
+          } finally {
+            active.delete(frame.invocationId)
+          }
+        },
+      }
+    },
+  }
+}
+
+/** Schema- and digest-checked inline value without a named validator (continuations, State read output). */
+function inlineValue(ref: W.DataRef, schema: W.SchemaRef): unknown {
+  if (ref.kind !== 'inline' || !same(ref.schema, schema) || ref.digest !== canonicalJsonDigest(ref.value))
+    throw fault('incompatible', 'model_child_invalid')
+  return ref.value
+}
+
+/** The inline prepared reference as the caller sent it: schema, digest and byte count must all be its own body's. */
+function preparedOf(ref: W.DataRef): {
+  ref: Extract<W.DataRef, { kind: 'inline' }>
+  prepared: W.PreparedModelRequest
+} {
+  const body = ref.kind === 'inline' ? boundedCanonicalJson(ref.value, LIMITS) : null
+  if (
+    ref.kind !== 'inline' ||
+    !body?.ok ||
+    !same(ref.schema, RuntimeSchemaRefs.PreparedModelRequest) ||
+    ref.digest !== canonicalJsonDigest(ref.value) ||
+    ref.bytes !== body.value.bytes
+  )
+    throw fault('invalid_input', 'model_infer_input')
+  const parsed = validateRuntime('PreparedModelRequest', ref.value)
+  if (!parsed.ok) throw fault('invalid_input', 'model_infer_input')
+  return { ref, prepared: parsed.value }
+}
+
+function inferAction(
+  d: ModelDeployment,
+  owner: W.BindingRef,
+  factory: FactoryContext,
+  phase: () => string,
+  active: Set<string>,
+): ActionProviderFactory {
+  return {
+    kind: 'composite',
+    recovery: 'R2',
+    stateCodec: inferCodec,
+    async create(scope: ActionHandlerScope) {
+      const stop = new AbortController()
+      async function step(
+        frame: W.ActionFrame,
+        ports: LoopReadPorts,
+        resumed: boolean,
+      ): Promise<W.ProviderTransition> {
+        const call: CallContext = {
+          ...frame.context,
+          signal: AbortSignal.any([scope.signal, stop.signal, factory.signal]),
+        }
+        let child: InferChild | null = null
+        const state = (): W.VersionedState => ({
+          namespace: inferCodec.namespace,
+          codecVersion: '1',
+          data: encode(inferCodec.schema, { request: frame.inputDigest, child: child ?? {} }),
+          provenance: { sourceRefs: [], producer: owner, trustLabels: [] },
+          createdAt: frame.observedAt,
+          references: [],
+        })
+        const transition = (next: W.NextStep, children: W.PreparedAction[] = []): W.ProviderTransition => ({
+          expectedProviderRevision: frame.providerRevision,
+          continuation: state(),
+          consumeSignals: [],
+          children,
+          next,
+        })
+        const wait = (): W.NextStep => ({
+          kind: 'wait',
+          condition: {
+            anyOf: [
+              {
+                kind: 'actions',
+                mode: 'all',
+                actions: [{ localKey: INFER_CHILD_KEY }],
+                readyWhen: 'resolved',
+              },
+            ],
+            deadline: frame.context.deadline,
+          },
+        })
+        try {
+          if (stop.signal.aborted || phase() !== 'ready') throw fault('denied', 'provider_closed')
+          if (call.signal.aborted) throw fault('cancelled', 'model_cancelled')
+          if (!d.current(call)) throw fault('denied', 'model_binding_denied')
+          if (
+            scope.bindingId !== factory.bindingId ||
+            frame.bindingId !== factory.bindingId ||
+            frame.runId !== scope.runId ||
+            frame.actionId !== scope.actionId ||
+            frame.method !== 'infer' ||
+            frame.inputDigest !==
+              (frame.input.kind === 'inline' ? frame.input.digest : frame.input.blob.digest)
+          )
+            throw fault('denied', 'model_binding_denied')
+          const request = decode(frame.input, methods.infer.input, 'ModelInferRequest')
+          const { ref, prepared } = preparedOf(request.preparedRef)
+          if (!same(prepared.ownerBinding, owner)) throw fault('denied', 'model_binding_denied')
+          const adapter = d.adapters.select(prepared.target.adapter, call)
+          if (!adapter) throw fault('denied', 'model_adapter_unavailable')
+          if (!same(adapter.binding, prepared.target.adapter)) throw fault('denied', 'model_target_changed')
+          const credential = checkCredential(prepared.target, prepared.credentialRef, (d.now ?? Date.now)())
+          if (!credential.ok) throw fault(credential.error.code, credential.error.detailCode)
+          const externalKey = externalKeyOf(frame.runId, frame.actionId)
+          const input = adapterInvokeInput(ref, externalKey)
+          if (!input.ok) throw fault(input.error.code, input.error.detailCode)
+          child = {
+            childKey: INFER_CHILD_KEY,
+            externalKey,
+            adapter: adapter.binding,
+            childInputDigest: input.value.digest,
+          }
+          if (!resumed) {
+            if (frame.continuation !== null) throw fault('conflict', 'model_continuation_conflict')
+            const spec = ports.prepare({
+              key: INFER_CHILD_KEY,
+              target: adapter.binding,
+              method: 'invoke',
+              input: input.value,
+              dependencies: [],
+              retry: { mode: 'never', maxAttempts: 1, backoffMs: [] },
+              obligation: 'mandatory',
+              deadline: frame.context.deadline,
+              resultSchema: RuntimeMethodSchemaRefs['agh.model-adapter'].invoke.output,
+              references: [],
+            })
+            if (!spec.ok) throw fault(spec.error.code, spec.error.detailCode)
+            return transition(wait(), [spec.value])
+          }
+          const saved = frame.continuation
+          if (!saved || saved.namespace !== inferCodec.namespace || saved.codecVersion !== '1')
+            throw fault('conflict', 'model_continuation_conflict')
+          if (!same(inlineValue(saved.data, inferCodec.schema), { request: frame.inputDigest, child }))
+            throw fault('conflict', 'model_continuation_conflict')
+          const probe = RuntimeMethodSchemaRefs['agh.state'].probeActionResult
+          for (const receipt of frame.receipts.items) {
+            const reply = await raced(
+              ports.query({
+                target: d.state,
+                method: 'probeActionResult',
+                input: encode(probe.input, {
+                  actionId: receipt.actionId,
+                  sourceReceiptId: receipt.receiptId,
+                }),
+              }),
+              call,
+            )
+            if (!reply.ok) throw fault(reply.error.code, 'model_child_invalid')
+            if (reply.value.kind !== 'value') continue
+            const view = validateRuntime(
+              'ProbeActionResultResult',
+              inlineValue(reply.value.output, probe.output),
+            )
+            if (!view.ok) throw fault('incompatible', 'model_child_invalid')
+            if (view.value === null || view.value.state !== 'ready') continue
+            const result = view.value.result
+            if (
+              result.actionId !== receipt.actionId ||
+              result.sourceReceiptId !== receipt.receiptId ||
+              result.bindingId !== child.adapter.bindingId ||
+              result.inputDigest !== child.childInputDigest
+            )
+              continue
+            if (result.outcome === 'unknown_effect') {
+              if (Date.parse(frame.context.deadline) <= Date.now())
+                throw fault('unknown_effect', 'model_child_unknown')
+              return transition(wait())
+            }
+            if (result.outcome !== 'succeeded' || !result.result)
+              return transition({
+                kind: 'fail',
+                error: result.error ?? refusal('denied', 'model_child_invalid').error,
+              })
+            const output = validateRuntime(
+              'ModelOutput',
+              result.result.kind === 'inline' ? result.result.value : null,
+            )
+            if (!output.ok) throw fault('incompatible', 'model_child_invalid')
+            if (output.value.usageFactRefs.some((u) => !result.usageRefs.includes(u.usageId)))
+              throw fault('denied', 'model_usage_attribution')
+            return transition({
+              kind: 'complete',
+              output: encode(methods.infer.output, output.value),
+              references: [...result.references],
+            })
+          }
+          return transition(wait())
+        } catch (error) {
+          return transition({ kind: 'fail', error: errorOf(error) })
+        }
+      }
+      return {
+        kind: 'composite',
+        async ready() {
+          return stop.signal.aborted ? refusal('denied', 'provider_closed') : { ok: true, value: undefined }
+        },
+        async health() {
+          return { ok: true, value: { status: stop.signal.aborted ? 'failed' : 'ready', diagnosticIds: [] } }
+        },
+        async drain() {
+          stop.abort()
+          return {
+            ok: true,
+            value: {
+              state: active.size ? 'blocked' : 'drained',
+              activeInvocationIds: [...active],
+              durableOwnerRefs: [],
+              diagnosticIds: [],
+            },
+          }
+        },
+        async close() {
+          stop.abort()
+        },
+        async start(frame, ports) {
+          active.add(frame.invocationId)
+          try {
+            return await step(frame, ports, false)
+          } finally {
+            active.delete(frame.invocationId)
+          }
+        },
+        async resume(frame, ports) {
+          active.add(frame.invocationId)
+          try {
+            return await step(frame, ports, true)
           } finally {
             active.delete(frame.invocationId)
           }
