@@ -1084,7 +1084,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // Pure model input digest and plain text wire request builder (+87); exact cap, no spare.
   // Model service preparation: prepared request assembly and managed credential resolution. Measured 35729 (+575), exact, no spare.
   // Model service infer: one stable child action, result and usage attribution from the child. Measured 35976 (+247), exact, no spare.
-  'packages/core/src': 35976,
+  // Readiness may be asked again once ready. Measured 35977 (+1), exact, no spare.
+  'packages/core/src': 35977,
   // Testkit-only reference Effects runner adds 202 measured lines; exact cap, no spare.
   'packages/core/testkit': 1997,
   // 2026-09-15: DeepSeek V4 Pro/Flash ship a known-thinking-corrections table (new file) so the
@@ -1604,7 +1605,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // Tools contracts +247, Context +339, Loop +170; exact, no spare.
   // Transport recovery checks read only the report of the request in question (+2), exact.
   // Events fixed page set, full-page checkpoint and cross-session checkpoint cases (+11), exact.
-  'packages/extension-api/testkit': 17083,
+  // Model service public contract and its restricted child peer. Measured 17607 (+524), exact, no spare.
+  'packages/extension-api/testkit': 17607,
   // 2026-09-10: raised from 2500 by Task 15 (stream-disconnect reconnection). The new
   // reattach.ts (the Reconnector: backoff loop, OVERLOADED's retryAfterMs override) plus
   // Session.recover()/waitForQuiescence and Client's reconnect wiring (emit(), the
@@ -2901,7 +2903,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // feat(host): hand the loop the issued model credential handle. Measured 82443, exact, no spare.
   // feat(host): read the original prepared model request into a verified wire source (+130 on top of the above). Measured 83038, exact, no spare.
   // Durable model call store for sent-request facts and their lookup. Measured 83038 (+465), exact, no spare.
-  'packages/host/src': 83038,
+  // Model service parent/child bridge readiness probe. Measured 83058 (+20), exact, no spare.
+  'packages/host/src': 83058,
   'packages/host/src/ext-host/service-invocation': 247,
   // T5.2's permission projector is kept independently bounded so later extension-host work cannot
   // hide in the package-wide increment. Measured source: 86 lines.
