@@ -1086,9 +1086,11 @@ const INITIAL_CEILING: Record<string, number> = {
   // Domain command event identity lookup and shared event fingerprint (+19); measured 35173, exact.
   // Model service preparation: prepared request assembly and managed credential resolution (+575); measured 35748, exact, no spare.
   // Model service infer: one stable child action, result and usage attribution from the child (+247). Measured 35995, exact, no spare.
-  'packages/core/src': 35995,
+  // Installed Effects dispatch coordinator (+812); exact cap, no spare.
+  'packages/core/src': 36807,
   // Testkit-only reference Effects runner adds 202 measured lines; exact cap, no spare.
-  'packages/core/testkit': 1997,
+  // Independent Effects dispatch reference (+440); exact measurement below.
+  'packages/core/testkit': 2437,
   // 2026-09-15: DeepSeek V4 Pro/Flash ship a known-thinking-corrections table (new file) so the
   // product corrects pi-ai's verified-wrong reasoning_effort data out of the box, instead of
   // requiring every deployment to hand-edit thinkingEfforts once they notice. Measured 3347.
@@ -1606,7 +1608,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // Tools contracts +247, Context +339, Loop +170; exact, no spare.
   // Transport recovery checks read only the report of the request in question (+2), exact.
   // Events fixed page set, full-page checkpoint and cross-session checkpoint cases (+11), exact.
-  'packages/extension-api/testkit': 17083,
+  // Effects dispatch lifecycle contracts (+113); exact cap, no spare.
+  'packages/extension-api/testkit': 17196,
   // 2026-09-10: raised from 2500 by Task 15 (stream-disconnect reconnection). The new
   // reattach.ts (the Reconnector: backoff loop, OVERLOADED's retryAfterMs override) plus
   // Session.recover()/waitForQuiescence and Client's reconnect wiring (emit(), the
@@ -2908,6 +2911,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // Durable model call store for sent-request facts and their lookup. Measured 83038 (+465), exact, no spare.
   // fix(host): an artifact version is ready only on a pin it owns. Measured 83039 (+1), exact, no spare.
   // Host-side State read groundwork: historical meta for native facts, windowed point reads and byte-packed pages, Stored envelope encoding, port types. Measured 83319 (+280 on top of the above), exact, no spare.
+  // Original identity clock and State dispatch source (+467 on 83336); exact cap, no spare.
   'packages/host/src': 83803,
   'packages/host/src/ext-host/service-invocation': 247,
   // T5.2's permission projector is kept independently bounded so later extension-host work cannot
