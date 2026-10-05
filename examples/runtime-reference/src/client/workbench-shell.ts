@@ -2,7 +2,8 @@
 // snapshots and the ShellServices it is mounted with, and lays out the five public regions:
 //
 //   conversation  the turns of the authorized conversation window
-//   composer      the draft and what became of each submission through the conversation client
+//   composer      the draft, sent as a prompt or a follow-up, a stop for the session's active run, and
+//                 what became of each through the conversation client
 //   resources     the domain views; choosing one navigates through the services
 //   interactions  pending interactions, so a forced approval is never hidden
 //   settings      the session and its connection
@@ -10,7 +11,8 @@
 // Each region carries the public region hook `data-agnes-region`. Every turn, view, interaction and
 // submission is an item with `data-agnes-shell-item` and a `data-agnes-shell-state` of pending, unknown,
 // blocked, error, interrupted or done, also spelled out in its text. Only the draft, the chosen view and
-// the focused region are kept, as ShellViewState.
+// the focused region are kept, as ShellViewState; a request still waiting for its outcome is held only
+// here, so the shell refuses to export its state until the outcome arrives rather than lose it.
 //
 // The browser entry reaches no package, so the shapes used here are mirrored; the Node binding in
 // providers/shell.ts assigns the factory to the generated ShellProvider type.
@@ -64,12 +66,18 @@ interface Services {
   conversation: {
     submit(input: {
       sessionId: string
-      kind: 'prompt'
+      kind: 'prompt' | 'follow-up'
       content: { type: 'text'; text: string }[]
       requestId: string
       expectedGeneration: number
     }): Promise<Result<{ status: string }>>
+    cancel(input: {
+      sessionId: string
+      runId: string
+      requestId: string
+    }): Promise<Result<{ status: string }>>
   }
+  control: { read(sessionId: string): Promise<Result<{ activeRunId: string | null }>> }
   navigate(target: { sessionId: string; viewId?: string }): Promise<Result<void>>
 }
 
@@ -159,7 +167,7 @@ interface Mounted {
   readonly root: HTMLElement
   readonly regions: Record<Region, HTMLElement>
   readonly draft: HTMLTextAreaElement
-  readonly submissions: { requestId: string; text: string; state: State }[]
+  readonly submissions: { requestId: string; text: string; state: State; settled: boolean }[]
   snapshot: Snapshot
 }
 
@@ -238,34 +246,74 @@ export function createWorkbenchShell(): WorkbenchShell {
     view.regions.composer.querySelector('ul')?.replaceWith(list(view, items))
   }
 
-  async function submit(): Promise<void> {
+  /** Shows `text` as a pending request until `call` answers, then in the state of its outcome. */
+  async function track(
+    view: Mounted,
+    text: string,
+    call: (requestId: string) => Promise<Result<{ status: string }>>,
+  ): Promise<boolean> {
+    sent += 1
+    const request = {
+      requestId: `${view.ownerToken}:${sent}`,
+      text,
+      state: 'pending' as State,
+      settled: false,
+    }
+    view.submissions.push(request)
+    renderSubmissions(view)
+    let accepted = false
+    try {
+      const outcome = await call(request.requestId)
+      accepted = outcome.ok
+      request.state = outcome.ok
+        ? stateOf(outcome.value.status)
+        : outcome.error.code === 'denied'
+          ? 'blocked'
+          : 'error'
+    } catch {
+      // A services call that throws is shown as failed, never as done.
+      request.state = 'error'
+    }
+    request.settled = true
+    if (mounted === view) renderSubmissions(view)
+    return accepted
+  }
+
+  async function submit(kind: 'prompt' | 'follow-up'): Promise<void> {
     const view = mounted
     const text = view?.draft.value.trim()
     const sessionId = view?.snapshot.sessionId
     if (!view || !admitting || !text || !sessionId) return
-    sent += 1
-    const submission = { requestId: `${view.ownerToken}:${sent}`, text, state: 'pending' as State }
-    view.submissions.push(submission)
-    renderSubmissions(view)
-    let state: State = 'error'
-    try {
-      const outcome = await view.services.conversation.submit({
+    const expectedGeneration = view.snapshot.conversation?.native.timeline.generation ?? 0
+    const accepted = await track(view, text, (requestId) =>
+      view.services.conversation.submit({
         sessionId,
-        kind: 'prompt',
+        kind,
         content: [{ type: 'text', text }],
-        requestId: submission.requestId,
-        expectedGeneration: view.snapshot.conversation?.native.timeline.generation ?? 0,
-      })
-      if (outcome.ok) {
-        state = stateOf(outcome.value.status)
-        if (view.draft.value.trim() === text) view.draft.value = ''
-      } else state = outcome.error.code === 'denied' ? 'blocked' : 'error'
+        requestId,
+        expectedGeneration,
+      }),
+    )
+    if (accepted && view.draft.value.trim() === text) view.draft.value = ''
+  }
+
+  /** Cancels the run the session's control state names as active, by its id; with none, sends nothing. */
+  async function stop(): Promise<void> {
+    const view = mounted
+    const sessionId = view?.snapshot.sessionId
+    if (!view || !admitting || !sessionId) return
+    let runId: string | null = null
+    try {
+      const control = await view.services.control.read(sessionId)
+      if (control.ok) runId = control.value.activeRunId
     } catch {
-      // A services call that throws is shown as failed, never as done.
+      // Without the control state there is no run to name, so nothing is cancelled.
     }
-    if (mounted !== view) return
-    submission.state = state
-    renderSubmissions(view)
+    const run = runId
+    if (run === null || mounted !== view || !admitting) return
+    await track(view, 'Stop', (requestId) =>
+      view.services.conversation.cancel({ sessionId, runId: run, requestId }),
+    )
   }
 
   async function navigate(viewId: string): Promise<void> {
@@ -298,10 +346,11 @@ export function createWorkbenchShell(): WorkbenchShell {
     const form = doc.createElement('form')
     const draft = doc.createElement('textarea')
     draft.setAttribute('aria-label', 'Draft')
-    const button = doc.createElement('button')
-    button.type = 'submit'
-    button.textContent = 'Send'
-    form.append(draft, button)
+    const button = (type: 'submit' | 'button', label: string) =>
+      Object.assign(doc.createElement('button'), { type, textContent: label })
+    const followUp = button('button', 'Follow up')
+    const stopRun = button('button', 'Stop')
+    form.append(draft, button('submit', 'Send'), followUp, stopRun)
     regions.composer.append(form, doc.createElement('ul'))
     const view: Mounted = { services, ownerToken, root, regions, draft, submissions: [], snapshot }
     const signal = listeners.signal
@@ -309,10 +358,12 @@ export function createWorkbenchShell(): WorkbenchShell {
       'submit',
       (event) => {
         event.preventDefault()
-        void submit()
+        void submit('prompt')
       },
       { signal },
     )
+    followUp.addEventListener('click', () => void submit('follow-up'), { signal })
+    stopRun.addEventListener('click', () => void stop(), { signal })
     regions.resources.addEventListener(
       'click',
       (event) => {
@@ -374,6 +425,8 @@ export function createWorkbenchShell(): WorkbenchShell {
     async exportState() {
       const view = live()
       if ('ok' in view) return view
+      if (view.submissions.some((request) => !request.settled))
+        return refuse('conflict', 'request_in_flight', 'a request is still waiting for its outcome')
       const active = view.root.ownerDocument.activeElement
       const focused = active && view.root.contains(active) ? active.closest('[data-agnes-region]') : null
       const focus = (focused?.getAttribute('data-agnes-region') ?? null) as Region | null

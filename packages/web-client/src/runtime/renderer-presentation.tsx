@@ -38,6 +38,7 @@ const refuse = (
   detailCode: string,
   message: string,
   retry: 'never' | 'retry_read' = 'never',
+  safeDetail?: RuntimeError['safeDetail'],
 ): { ok: false; error: RuntimeError } => ({
   ok: false,
   error: {
@@ -46,6 +47,7 @@ const refuse = (
     message,
     retryAdvice: { kind: retry },
     diagnosticId: 'web-client-renderer-presentation',
+    ...(safeDetail === undefined ? {} : { safeDetail }),
   },
 })
 // Like any resync: the client rereads the window before it presents again.
@@ -57,14 +59,17 @@ const text = (error: unknown) => (error instanceof Error ? error.message : Strin
 const GENERIC = { component: GenericDomainView, format: formatDomainView } as unknown as RendererDefinition
 const GENERIC_OWNER = 'web-client-generic'
 
-/** Why `definition` cannot present `view` to `target`, or undefined when it can. */
+/**
+ * Why `definition` cannot present `view` to `target`, or undefined when it can. A renderer that fits but
+ * for desktop capabilities this client did not negotiate answers their names.
+ */
 function mismatch(
   definition: RendererDefinition,
   descriptor: RendererDescriptor | undefined,
   view: DomainView,
   target: ClientTarget,
   negotiated: readonly string[],
-): string | undefined {
+): string | string[] | undefined {
   const has = (part: string) => typeof (definition as unknown as Record<string, unknown>)[part] === 'function'
   if (!(target === 'web' ? has('component') : has('format') && (target !== 'im' || has('encode'))))
     return `the renderer cannot present to ${target}`
@@ -78,12 +83,14 @@ function mismatch(
     )
     if (!reads) return `the renderer does not read ${typeId} revision ${revision}`
     // A renderer that needs a feature this client did not negotiate is not compatible with it.
-    const unnegotiated = descriptor.requiredFeatures.find((feature) => !negotiated.includes(feature))
-    if (unnegotiated !== undefined) return `the client did not negotiate feature ${unnegotiated}`
+    const unnegotiated = descriptor.requiredFeatures.filter((feature) => !negotiated.includes(feature))
+    const lacking = unnegotiated.find((feature) => !feature.startsWith('desktop.'))
+    if (lacking !== undefined) return `the client did not negotiate feature ${lacking}`
     // The view states its features per action; the renderer presents every action, disabled ones too.
     const known = [...descriptor.requiredFeatures, ...descriptor.optionalFeatures]
     const missing = view.actions.flatMap((action) => action.requiredFeatures).find((f) => !known.includes(f))
     if (missing !== undefined) return `the renderer does not support feature ${missing}`
+    if (unnegotiated.length > 0) return unnegotiated
   } catch {
     return 'the renderer descriptor is malformed'
   }
@@ -237,6 +244,15 @@ export function createRendererPresenter(input: {
         // A copy, so a renderer cannot change what the window holds.
         const shown = structuredClone(current)
         const reason = checked ? mismatch(definition, descriptor, shown, target, negotiated) : undefined
+        // Missing only desktop capabilities is its own refusal, naming them so the caller can say so.
+        if (Array.isArray(reason))
+          return refuse(
+            'incompatible',
+            'desktop_capability_unavailable',
+            `the renderer needs desktop capabilities this client lacks: ${reason.join(', ')}`,
+            'never',
+            reason,
+          )
         if (reason !== undefined) return refuse('incompatible', 'renderer_mismatch', reason)
 
         if (target === 'web') {

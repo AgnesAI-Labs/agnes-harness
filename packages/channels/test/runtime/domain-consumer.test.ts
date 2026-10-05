@@ -256,6 +256,25 @@ describe('toChannelMessages', () => {
     expect(declared.ok && declared.value.requiresWebForm).toBe(true)
     expect(messages(declared).flatMap(offered)).toEqual([])
     expect(encode.mock.calls.map(([, at]) => at.supportsButtons)).toEqual([true, false])
+
+    // Through the SDK text renderer, an action missing only a desktop capability, which the Web form
+    // lacks too, loses its own button and says why; every other enabled action keeps its button.
+    const reveal = {
+      ...review,
+      actionKey: 'reveal',
+      label: 'Reveal',
+      requiredFeatures: ['desktop.reveal-path.v1'],
+    }
+    const desktop = deliver({
+      value: view({ actions: [publish, reveal, answer] }),
+      at: channel(4096),
+      with: sdk,
+    })
+    expect(desktop.ok && desktop.value.requiresWebForm).toBe(false)
+    expect(messages(desktop).flatMap(offered)).toEqual(['publish', 'answer'])
+    expect(messages(desktop).map(textOf).join('\n')).toContain(
+      'Reveal: Needs a desktop capability this client does not have (desktop.reveal-path.v1).',
+    )
   })
 
   // Unknown domain or renderer (case 1), old schema (case 3), unknown action (case 4) and HTML in server
