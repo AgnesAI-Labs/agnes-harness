@@ -219,13 +219,34 @@ describe('model prepare', () => {
     })
   })
 
-  it('is cancelled before anything is recorded when the call is already aborted', async () => {
-    const { prepare, counters } = await open()
+  it('is cancelled before anything is read or recorded when the call is already aborted', async () => {
+    let captures = 0
+    const catalog = {
+      capture: () => {
+        captures++
+        return { ok: true as const, value: fixtureCatalog() }
+      },
+    }
+    const { prepare, counters } = await open({ catalog })
     const controller = new AbortController()
     controller.abort()
     const result = await prepare(prepareRequest(), callContext({ signal: controller.signal }))
     expect(result).toMatchObject({ ok: false, error: { code: 'cancelled' } })
+    expect(captures).toBe(0)
     expect(counters.recorded).toHaveLength(0)
+  })
+
+  it('is cancelled and records nothing when the call is aborted after the request was assembled', async () => {
+    const controller = new AbortController()
+    const estimate = () => {
+      controller.abort()
+      return []
+    }
+    const { prepare, counters } = await open({ estimate })
+    const result = await prepare(prepareRequest(), callContext({ signal: controller.signal }))
+    expect(result).toMatchObject({ ok: false, error: { code: 'cancelled' } })
+    expect(counters.recorded).toHaveLength(0)
+    expect(counters.revisions).toHaveLength(0)
   })
 
   it('is cancelled and records nothing when the call is aborted while the wire identity resolves', async () => {

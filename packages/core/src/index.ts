@@ -260,6 +260,13 @@ export { createDefaultEffectsFactory } from './runtime/providers/effects.js'
 export type { DefaultLoopInputs, DefaultLoopSource } from './runtime/providers/loop.js'
 export { createDefaultLoopFactory } from './runtime/providers/loop.js'
 export type {
+  IssuanceEntry,
+  ModelCatalogView,
+  ModelDeployment,
+  RevisionBinding,
+} from './runtime/providers/model.js'
+export { createDefaultModelFactory } from './runtime/providers/model.js'
+export type {
   NativeConversation,
   ProjectionAccess,
   ProjectionCommand,
