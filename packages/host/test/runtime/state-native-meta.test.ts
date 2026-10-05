@@ -23,7 +23,7 @@ async function page(native: Native, snapshot: SnapshotRef) {
   return native.reader.scanVerifiedPage(
     snapshot,
     { snapshot, collection: 'records', filter: {}, order: 'asc', cursor: null, limit: 500 },
-    native.context,
+    native.grant,
   )
 }
 async function withNative(
@@ -54,11 +54,11 @@ const refusal = (detailCode: string) =>
 describe.skipIf(typeof process.getuid !== 'function')('historical meta of native facts', () => {
   it('takes createdAt, updatedAt and lastCommitId from the original commit events, not from the head or the clock', async () => {
     await withNative(async (native, clock) => {
-      const { context, reader, fixture } = native
+      const { grant, reader, fixture } = native
       const created = clock.now
       clock.now = created + 2_000
       const position = await commitPreparedActions(native, 3)
-      const old = await reader.openVerifiedSnapshot(FIXTURE_SESSION, context)
+      const old = await reader.openVerifiedSnapshot(FIXTURE_SESSION, grant)
       const before = await page(native, old)
       clock.now = created + 6_000
       await commitPreparedActions(native, 5, position)
@@ -83,7 +83,7 @@ describe.skipIf(typeof process.getuid !== 'function')('historical meta of native
         .prepare(`UPDATE runtime_record_heads SET created_at=?, updated_at=? WHERE record_id=?`)
         .run('1999-01-01T00:00:00Z', '1999-01-01T00:00:00Z', run.recordId)
       expect(await page(native, old)).toEqual(before)
-      const later = await reader.openVerifiedSnapshot(FIXTURE_SESSION, context)
+      const later = await reader.openVerifiedSnapshot(FIXTURE_SESSION, grant)
       const newest = present((await page(native, later)).items.find((item) => item.recordId === run.recordId))
       expect(newest.createdAt).toBe(run.createdAt)
       expect(instant(newest.updatedAt)).toBe(created + 6_000)
@@ -93,8 +93,8 @@ describe.skipIf(typeof process.getuid !== 'function')('historical meta of native
 
   it('refuses to read once a commit event time is damaged', async () => {
     await withNative(async (native) => {
-      const { context, reader, fixture } = native
-      const snapshot = await reader.openVerifiedSnapshot(FIXTURE_SESSION, context)
+      const { grant, reader, fixture } = native
+      const snapshot = await reader.openVerifiedSnapshot(FIXTURE_SESSION, grant)
       fixture.db
         .prepare(`UPDATE events SET ts='yesterday' WHERE session_key=? AND type='runtime/state-commit'`)
         .run(FIXTURE_SESSION)
@@ -104,13 +104,13 @@ describe.skipIf(typeof process.getuid !== 'function')('historical meta of native
 
   it('refuses the whole page when a readable record is stored under a revision the table does not list', async () => {
     await withNative(async (native) => {
-      const { fixture, identity } = native
+      const { fixture } = native
       const stale = { ...RUN_RECORD_SCHEMA, digest: '0'.repeat(64) }
-      const port = captureNativeStateReadPort(fixture.state, identity, fixture.db, [stale])
+      const port = captureNativeStateReadPort(fixture.state, native.scope, [stale])
       if (!port) throw Error('port unavailable')
       const opened = await port.open(FIXTURE_SESSION)
       await expect(port.facts(opened.snapshot)).rejects.toThrow(refusal('state_legacy_version'))
-      const current = captureNativeStateReadPort(fixture.state, identity, fixture.db)
+      const current = captureNativeStateReadPort(fixture.state, native.scope)
       if (!current) throw Error('port unavailable')
       const facts = await current.facts((await current.open(FIXTURE_SESSION)).snapshot)
       expect(facts.some((fact) => fact.recordId.startsWith('run:'))).toBe(true)

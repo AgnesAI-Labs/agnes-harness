@@ -20,7 +20,7 @@ async function withNative(body: (native: Native) => Promise<void>) {
     await native.fixture.coordinator.coordinate(native.fixture.draft(), native.fixture.context())
     await body(native)
   } finally {
-    native.reader.close()
+    await native.reader.close()
     native.identity.close()
     await native.fixture.close()
     rmSync(native.directory, { recursive: true, force: true })
@@ -30,47 +30,47 @@ async function withNative(body: (native: Native) => Promise<void>) {
 describe.skipIf(typeof process.getuid !== 'function')('native owner windows, point reads and packing', () => {
   it('shows only the action window to an action reader, and reads one record without paging', async () => {
     await withNative(async (native) => {
-      const { context, reader, fixture } = native
+      const { grant, reader, fixture } = native
       await commitPreparedActions(native, 3)
-      const snapshot = await reader.openVerifiedSnapshot(FIXTURE_SESSION, context)
+      const snapshot = await reader.openVerifiedSnapshot(FIXTURE_SESSION, grant)
       const all = await reader.scanVerifiedPage(
         snapshot,
         req(snapshot, 'actions', { runId: FIXTURE_RUN }),
-        context,
+        grant,
       )
       const [mine, sibling] = [all.items[0], all.items[1]]
       if (!mine || !sibling) throw Error('fixture actions missing')
       const target = (mine.value as { actionId: string }).actionId
       const window = { kind: 'action' as const, runId: FIXTURE_RUN, actionId: target }
-      const seen = await reader.scanVerifiedPage(snapshot, req(snapshot, 'records'), context, { window })
+      const seen = await reader.scanVerifiedPage(snapshot, req(snapshot, 'records'), grant, { window })
       expect(seen.items.map((item) => item.schema.typeId).sort()).toEqual([
         'agh.runtime/action-record@1',
         'agh.runtime/run-binding@1',
         'agh.runtime/run-record@1',
       ])
       expect(
-        await reader.readVerifiedRecord(snapshot, sibling.recordId, sibling.schema, context, window),
+        await reader.readVerifiedRecord(snapshot, sibling.recordId, sibling.schema, grant, window),
       ).toBeNull()
       expect(
-        (await reader.readVerifiedRecord(snapshot, mine.recordId, mine.schema, context, window))?.recordId,
+        (await reader.readVerifiedRecord(snapshot, mine.recordId, mine.schema, grant, window))?.recordId,
       ).toBe(mine.recordId)
       const before = fixture.db.prepare('SELECT total_changes() n').get()?.n
-      await reader.readVerifiedRecord(snapshot, sibling.recordId, sibling.schema, context, window)
+      await reader.readVerifiedRecord(snapshot, sibling.recordId, sibling.schema, grant, window)
       expect(fixture.db.prepare('SELECT total_changes() n').get()?.n).toBe(before)
     })
   }, 120_000)
 
   it('binds a cursor to its window so another window cannot continue it', async () => {
     await withNative(async (native) => {
-      const { context, reader } = native
+      const { grant, reader } = native
       await commitPreparedActions(native, 3)
-      const snapshot = await reader.openVerifiedSnapshot(FIXTURE_SESSION, context)
-      const first = await reader.scanVerifiedPage(snapshot, req(snapshot, 'records', {}, null, 1), context, {
+      const snapshot = await reader.openVerifiedSnapshot(FIXTURE_SESSION, grant)
+      const first = await reader.scanVerifiedPage(snapshot, req(snapshot, 'records', {}, null, 1), grant, {
         window: { kind: 'run', runId: FIXTURE_RUN },
       })
       expect(first.nextCursor).not.toBeNull()
       await expect(
-        reader.scanVerifiedPage(snapshot, req(snapshot, 'records', {}, first.nextCursor, 1), context, {
+        reader.scanVerifiedPage(snapshot, req(snapshot, 'records', {}, first.nextCursor, 1), grant, {
           window: { kind: 'session' },
         }),
       ).rejects.toThrow()
@@ -79,13 +79,13 @@ describe.skipIf(typeof process.getuid !== 'function')('native owner windows, poi
 
   it('lets pack shorten a page and continues from the last included item', async () => {
     await withNative(async (native) => {
-      const { context, reader } = native
+      const { grant, reader } = native
       await commitPreparedActions(native, 4)
-      const snapshot = await reader.openVerifiedSnapshot(FIXTURE_SESSION, context)
+      const snapshot = await reader.openVerifiedSnapshot(FIXTURE_SESSION, grant)
       const seen: string[] = []
       let cursor: string | null = null
       for (let pageNumber = 0; pageNumber < 10; pageNumber++) {
-        const page = await reader.scanVerifiedPage(snapshot, req(snapshot, 'records', {}, cursor), context, {
+        const page = await reader.scanVerifiedPage(snapshot, req(snapshot, 'records', {}, cursor), grant, {
           pack: () => 2,
         })
         expect(page.items.length).toBeLessThanOrEqual(2)
@@ -95,37 +95,37 @@ describe.skipIf(typeof process.getuid !== 'function')('native owner windows, poi
       }
       expect(new Set(seen).size).toBe(6)
       await expect(
-        reader.scanVerifiedPage(snapshot, req(snapshot, 'records'), context, { pack: () => 0 }),
+        reader.scanVerifiedPage(snapshot, req(snapshot, 'records'), grant, { pack: () => 0 }),
       ).rejects.toThrow()
     })
   }, 120_000)
 
   it('frees the reserved slot on release while other snapshots stay readable', async () => {
     await withNative(async (native) => {
-      const { context, reader } = native
+      const { grant, reader } = native
       const opened = await Promise.allSettled(
-        Array.from({ length: 129 }, () => reader.openVerifiedSnapshot(FIXTURE_SESSION, context)),
+        Array.from({ length: 129 }, () => reader.openVerifiedSnapshot(FIXTURE_SESSION, grant)),
       )
       const ok = opened.filter(
         (item): item is PromiseFulfilledResult<SnapshotRef> => item.status === 'fulfilled',
       )
       expect(ok.length).toBe(128)
-      await expect(reader.openVerifiedSnapshot(FIXTURE_SESSION, context)).rejects.toThrow()
+      await expect(reader.openVerifiedSnapshot(FIXTURE_SESSION, grant)).rejects.toThrow()
       const [first, second] = [ok[0]?.value, ok[1]?.value]
       if (!first || !second) throw Error('snapshots missing')
-      reader.releaseSnapshot(first, context)
-      const again = await reader.openVerifiedSnapshot(FIXTURE_SESSION, context)
+      reader.releaseSnapshot(first, grant)
+      const again = await reader.openVerifiedSnapshot(FIXTURE_SESSION, grant)
       expect(again.snapshotId).not.toBe(first.snapshotId)
-      await expect(reader.scanVerifiedPage(first, req(first, 'records'), context)).rejects.toThrow()
+      await expect(reader.scanVerifiedPage(first, req(first, 'records'), grant)).rejects.toThrow()
       expect(
-        (await reader.scanVerifiedPage(second, req(second, 'records'), context)).items.length,
+        (await reader.scanVerifiedPage(second, req(second, 'records'), grant)).items.length,
       ).toBeGreaterThan(0)
     })
   }, 120_000)
 
   it('reports the session facts of an open', async () => {
-    await withNative(async ({ context, reader }) => {
-      const result = await reader.openVerifiedResult(FIXTURE_SESSION, context)
+    await withNative(async ({ grant, reader }) => {
+      const result = await reader.openVerifiedResult(FIXTURE_SESSION, grant)
       expect(result.snapshot.sessionId).toBe(FIXTURE_SESSION)
       expect(result.formatVersion).toBeGreaterThan(0)
       expect([1, 2]).toContain(result.minReader)
