@@ -48,8 +48,6 @@ describe.skipIf(typeof process.getuid !== 'function')('native owner windows, poi
         'agh.runtime/run-binding@1',
         'agh.runtime/run-record@1',
       ])
-      const [mine, sibling] = [all.items[0], all.items[1]]
-      if (!mine || !sibling) throw Error('fixture actions missing')
       expect(
         await reader.readVerifiedRecord(snapshot, sibling.recordId, sibling.schema, context, window),
       ).toBeNull()
