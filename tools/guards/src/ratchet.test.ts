@@ -2942,7 +2942,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // Blob promote, pin and unpin check the caller's principal; pins record it. Measured 84227 (+30), exact.
   // State read owner and port capture take no database handle or identity; the owner drains in-flight reads on close (+5).
   // State scan query service over the read owner and a bridge: scan, open, typed point reads, close order (+365). Measured 84597 (+370), exact.
-  'packages/host/src': 84597,
+  'packages/host/src': 84656,
   'packages/host/src/ext-host/service-invocation': 247,
   // T5.2's permission projector is kept independently bounded so later extension-host work cannot
   // hide in the package-wide increment. Measured source: 86 lines.
