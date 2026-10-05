@@ -2443,31 +2443,73 @@ body.session-switching #approval {
   box-shadow: var(--shadow-elevation-soft);
   backdrop-filter: none;
 }
+/* 队列是输入卡上方的一张独立卡片。排队的消息和正在写的草稿是两件事，早先把它塞在输入卡
+   内部，两者读起来是一件事。现在它是 form 的前一个兄弟节点：宽度和居中与输入卡对齐，
+   圆角取同一个值，成为一组而不是一体。 */
 .composer-queue {
-  margin: 0.25rem 0.875rem 0;
-  padding: 0.625rem 0.875rem;
-  border-bottom: 1px solid var(--agnes-line-primary);
-  font-size: 0.8125rem;
+  width: min(calc(100% - 2rem), var(--composer-card-max-width));
+  margin: 0 auto 0.5rem;
+  padding: 0.5rem 0.625rem;
+  border: 1px solid var(--agnes-line-primary);
+  border-radius: var(--radius-panel);
+  background: var(--agnes-bg-card);
+  box-shadow: var(--shadow-elevation-soft);
+  color: var(--agnes-text-secondary);
+  font-size: var(--font-size-sm);
 }
 .composer-queue-count {
-  margin: 0 0 0.5rem;
+  margin: 0 0 0.25rem;
+  padding: 0 0.375rem;
+  color: var(--agnes-text-tertiary);
+  font-size: var(--font-size-xs);
   font-weight: 600;
+  letter-spacing: 0.02em;
   font-variant-numeric: tabular-nums;
 }
+/* 列表标记换成自绘序号：默认的 ol 数字是浏览器给的字形，跟卡片其余部分不是一套。
+   仍用 ol，读屏时的"第 N 项"语义不变。 */
 .composer-queue ol {
   margin: 0;
-  padding-left: 1.25rem;
+  padding: 0;
+  list-style: none;
+  counter-reset: composer-queue-item;
   max-height: 10rem;
   overflow-y: auto;
+  overscroll-behavior: contain;
+  /* 第 6 节开头把全局滚动条外观藏了。队列这里破例恢复细滚动条：超过 max-height 时若只靠
+     计数行提示还有内容，用户不会想到这块能滚。 */
+  scrollbar-width: thin;
+  scrollbar-color: var(--agnes-line-emphasis) transparent;
 }
 .composer-queue li {
-  padding: 0.25rem 0;
+  counter-increment: composer-queue-item;
+}
+/* 行间距沿用侧栏的 2px 组内节奏。 */
+.composer-queue li + li {
+  margin-top: 0.125rem;
 }
 .composer-queue-row {
   display: flex;
   align-items: center;
   gap: 0.5rem;
   min-width: 0;
+  padding: 0.25rem 0.375rem;
+  border-radius: var(--radius-md);
+}
+/* 行本身不可点，所以底色只在指针或焦点落到这一行的动作上时出现，用来说明你正要操作哪一条。 */
+.composer-queue-row:hover,
+.composer-queue-row:focus-within {
+  background: var(--agnes-bg-hover);
+}
+/* 序号跟按钮的 aria-label「立即发送第 N 条待执行消息」指的是同一件事，右对齐让个位对齐。 */
+.composer-queue-row::before {
+  content: counter(composer-queue-item);
+  flex: none;
+  min-width: 1rem;
+  color: var(--agnes-text-tertiary);
+  font-size: var(--font-size-xs);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
 }
 .composer-queue-preview {
   flex: 1;
@@ -2476,16 +2518,71 @@ body.session-switching #approval {
   overflow: hidden;
   text-overflow: ellipsis;
 }
+/* 全局 button 是带边框的 36px 控件，放这里既和右下角的主发送键抢视线，又把每行撑高。
+   退成无边框文字按钮，只留品牌色。底色/边框/字色必须显式写：全局的 button:disabled 与本块
+   同为 (0,1,1)，靠本块更靠后生效，漏掉哪一条都会让禁用态变回一块灰底方块。 */
 .composer-queue button {
   flex: none;
-  white-space: nowrap;
+  min-height: 1.5rem;
   padding: 0.125rem 0.5rem;
-  font-size: inherit;
+  border-color: transparent;
+  border-radius: var(--radius-full);
+  color: var(--agnes-brand-primary);
+  background: transparent;
+  font-size: var(--font-size-xs);
+  font-weight: 600;
+  white-space: nowrap;
+  transition:
+    background-color var(--transition-fast),
+    color var(--transition-fast);
+}
+.composer-queue button:hover:not(:disabled) {
+  border-color: transparent;
+  background: var(--agnes-brand-emphasis-soft);
+}
+.composer-queue button:active:not(:disabled) {
+  transform: none;
+}
+.composer-queue button:disabled {
+  color: var(--agnes-text-disabled);
+  border-color: transparent;
+  background: transparent;
+}
+/* 「正在停止并发送」是这块里唯一进行中的动作，给个转圈。必须排在 :disabled 之后：发送中的
+   那一行两条同时命中，靠后的一条决定它显示为进行中，而不是跟着整列一起灰掉。 */
+.composer-queue button[aria-busy="true"] {
+  gap: 0.375rem;
+  color: var(--agnes-text-tertiary);
+}
+.composer-queue button[aria-busy="true"]::before {
+  content: "";
+  flex: none;
+  width: 0.625rem;
+  height: 0.625rem;
+  border: 1.5px solid var(--agnes-line-emphasis);
+  border-top-color: var(--agnes-brand-primary);
+  border-radius: var(--radius-full);
+  animation: composer-queue-spin 700ms linear infinite;
+}
+@keyframes composer-queue-spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 .composer-queue-error {
   margin: 0.5rem 0 0;
+  padding: 0.375rem 0.5rem;
+  border-radius: var(--radius-md);
   color: var(--agnes-status-danger-text);
+  background: var(--agnes-status-danger-bg);
+  font-size: var(--font-size-xs);
   overflow-wrap: anywhere;
+}
+/* 全局那份 reduced-motion 只清 transition，转圈是 animation，得单独关。 */
+@media (prefers-reduced-motion: reduce) {
+  .composer-queue button[aria-busy="true"]::before {
+    animation: none;
+  }
 }
 .composer-writing {
   min-height: 0;
