@@ -83,10 +83,19 @@ async function originalNativeFixture() {
   }
 }
 
-/** Commits `count` prepared Actions to the fixture run through real State invocations, 64 per transition. */
+/**
+ * Commits prepared Actions to the fixture run through real State invocations (64 per transition)
+ * until `count` exist in total.
+ * `from` is the position the previous call returned; the result is the position after this call.
+ */
 async function commitPreparedActions(
   fixture: Awaited<ReturnType<typeof originalNativeFixture>>,
   count: number,
+  from: { committed: number; revision: number; writerEpoch: number | null } = {
+    committed: 0,
+    revision: 0,
+    writerEpoch: null,
+  },
 ) {
   const { authority, input } = fixture
   const { state, binding } = fixture.fixture
@@ -98,18 +107,21 @@ async function commitPreparedActions(
     providerId: 'provider',
   }
   const deadline = '2027-01-01T00:00:00Z'
-  const opened = await state.open({
-    requestId: 'native-read-bulk-writer',
-    authority,
-    sessionId: 'fixture-session',
-    mode: 'write',
-    writerId: 'native-read-bulk',
-    ttlMs: 10_000,
-  })
-  if (!opened.claim) throw Error('write claim missing')
-  let committed = 0
-  let revision = 0
-  for (let batch = 0; committed < count; batch++) {
+  const writerEpoch =
+    from.writerEpoch ??
+    (
+      await state.open({
+        requestId: 'native-read-bulk-writer',
+        authority,
+        sessionId: 'fixture-session',
+        mode: 'write',
+        writerId: 'native-read-bulk',
+        ttlMs: 10_000,
+      })
+    ).claim?.writerEpoch
+  if (writerEpoch === undefined) throw Error('write claim missing')
+  let { committed, revision } = from
+  for (let batch = revision; committed < count; batch++) {
     const invocationId = `native-read-invocation-${batch}`
     await state.admitInvocation({
       requestId: `native-read-admit-${batch}`,
@@ -117,7 +129,7 @@ async function commitPreparedActions(
       targetActionId: null,
       baseRevision: revision,
       bindingId: binding.bindingId,
-      writerEpoch: opened.claim.writerEpoch,
+      writerEpoch: writerEpoch,
       invocationId,
       deadline,
       queryAllowance: 0,
@@ -153,7 +165,7 @@ async function commitPreparedActions(
         sessionId: 'fixture-session',
         runId: 'fixture-run-old',
         writerId: 'native-read-bulk',
-        writerEpoch: opened.claim.writerEpoch,
+        writerEpoch: writerEpoch,
         expectedRunRevision: revision,
         bindingId: binding.bindingId,
         invocationId,
@@ -178,6 +190,7 @@ async function commitPreparedActions(
     committed += actions.length
     revision++
   }
+  return { committed, revision, writerEpoch }
 }
 
 describe.skipIf(typeof process.getuid !== 'function')('original State native read snapshot', () => {
@@ -442,4 +455,143 @@ describe.skipIf(typeof process.getuid !== 'function')('native read full page bud
       rmSync(directory, { recursive: true, force: true })
     }
   }, 120_000)
+})
+
+describe.skipIf(typeof process.getuid !== 'function')('native read snapshot slot release', () => {
+  it('releases the reserved slot when an open is refused or cancelled in flight', async () => {
+    const { directory, identity, context, reader, fixture } = await originalNativeFixture()
+    try {
+      expect(await fixture.coordinator.coordinate(fixture.draft(), fixture.context())).toMatchObject({
+        ok: true,
+      })
+      const refused = await Promise.allSettled(
+        Array.from({ length: 129 }, () => reader.openVerifiedSnapshot('absent-session', context)),
+      )
+      expect(refused.every((result) => result.status === 'rejected')).toBe(true)
+      const controller = new AbortController()
+      const connection = await identity.connect(controller.signal)
+      const cancellable = connection.issue('2030-01-01T00:00:00Z', 'native-read-cancel')
+      const cancelled = Promise.allSettled(
+        Array.from({ length: 8 }, () => reader.openVerifiedSnapshot('fixture-session', cancellable)),
+      )
+      controller.abort()
+      expect((await cancelled).every((result) => result.status === 'rejected')).toBe(true)
+      const admitted = await Promise.allSettled(
+        Array.from({ length: 129 }, () => reader.openVerifiedSnapshot('fixture-session', context)),
+      )
+      expect(admitted.filter((result) => result.status === 'fulfilled')).toHaveLength(128)
+    } finally {
+      reader.close()
+      identity.close()
+      await fixture.close()
+      rmSync(directory, { recursive: true, force: true })
+    }
+  }, 120_000)
+})
+
+describe.skipIf(typeof process.getuid !== 'function')('native read visibility', () => {
+  it('shows only controlled Run, Binding and Action records from the fixed snapshot', async () => {
+    const native = await originalNativeFixture()
+    const { directory, identity, context, reader, fixture } = native
+    try {
+      expect(await fixture.coordinator.coordinate(fixture.draft(), fixture.context())).toMatchObject({
+        ok: true,
+      })
+      const position = await commitPreparedActions(native, 3)
+      const snapshot = await reader.openVerifiedSnapshot('fixture-session', context)
+      await commitPreparedActions(native, 5, position)
+      const scan = (
+        target: typeof snapshot,
+        collection: 'records' | 'actions' | 'signals',
+        filter: Record<string, unknown> = {},
+      ) =>
+        reader.scanVerifiedPage(
+          target,
+          { snapshot: target, collection, filter, order: 'asc', cursor: null, limit: 500 } as never,
+          context,
+        )
+      const records = await scan(snapshot, 'records')
+      expect(records.items).toHaveLength(5)
+      expect(records.items.map((item) => item.schema.typeId).sort()).toEqual([
+        'agh.runtime/action-record@1',
+        'agh.runtime/action-record@1',
+        'agh.runtime/action-record@1',
+        'agh.runtime/run-binding@1',
+        'agh.runtime/run-record@1',
+      ])
+      const stored = fixture.db.prepare('SELECT COUNT(*) n FROM runtime_records').get()?.n
+      expect(Number(stored)).toBeGreaterThan(records.items.length)
+      expect(Object.isFrozen(records)).toBe(true)
+      expect(records.items.every((item) => Object.isFrozen(item))).toBe(true)
+      const actions = await scan(snapshot, 'actions', { runId: 'fixture-run-old' })
+      expect(actions.items).toHaveLength(3)
+      expect(
+        (await scan(snapshot, 'actions', { runId: 'fixture-run-old', states: ['completed'] })).items,
+      ).toHaveLength(0)
+      expect((await scan(snapshot, 'signals', { runId: 'fixture-run-old' })).items).toHaveLength(0)
+      const later = await reader.openVerifiedSnapshot('fixture-session', context)
+      expect((await scan(later, 'records')).items).toHaveLength(7)
+      expect((await scan(later, 'actions', { runId: 'fixture-run-old' })).items).toHaveLength(5)
+      expect((await scan(snapshot, 'actions', { runId: 'fixture-run-old' })).items).toHaveLength(3)
+    } finally {
+      reader.close()
+      identity.close()
+      await fixture.close()
+      rmSync(directory, { recursive: true, force: true })
+    }
+  }, 120_000)
+})
+
+describe.skipIf(typeof process.getuid !== 'function')('native read integrity', () => {
+  it('refuses a snapshot whose history was pruned or whose ledger boundary changed, then recovers when restored', async () => {
+    const { directory, identity, context, reader, fixture } = await originalNativeFixture()
+    try {
+      expect(await fixture.coordinator.coordinate(fixture.draft(), fixture.context())).toMatchObject({
+        ok: true,
+      })
+      const snapshot = await reader.openVerifiedSnapshot('fixture-session', context)
+      const request = {
+        snapshot,
+        collection: 'records' as const,
+        filter: {},
+        order: 'asc' as const,
+        cursor: null,
+        limit: 500,
+      }
+      const baseline = await reader.scanVerifiedPage(snapshot, request, context)
+      expect(baseline.items).toHaveLength(2)
+      const target = baseline.items[0]
+      if (!target) throw Error('baseline record missing')
+      const body = fixture.db
+        .prepare('SELECT * FROM runtime_version_bodies WHERE record_id=? AND record_revision=?')
+        .get(target.recordId, target.recordRevision)
+      if (!body) throw Error('original body missing')
+      fixture.db
+        .prepare('DELETE FROM runtime_version_bodies WHERE record_id=? AND record_revision=?')
+        .run(target.recordId, target.recordRevision)
+      await expect(reader.scanVerifiedPage(snapshot, request, context)).rejects.toThrow()
+      fixture.db
+        .prepare(
+          'INSERT INTO runtime_version_bodies (record_id,record_revision,value_json) VALUES (?,?,?)',
+        )
+        .run(target.recordId, target.recordRevision, body.value_json)
+      expect(await reader.scanVerifiedPage(snapshot, request, context)).toEqual(baseline)
+      const boundary = fixture.db
+        .prepare('SELECT integrity_digest FROM events WHERE session_key=? AND seq=?')
+        .get(snapshot.sessionId, snapshot.throughSeq)?.integrity_digest
+      fixture.db
+        .prepare('UPDATE events SET integrity_digest=? WHERE session_key=? AND seq=?')
+        .run('0'.repeat(64), snapshot.sessionId, snapshot.throughSeq)
+      await expect(reader.scanVerifiedPage(snapshot, request, context)).rejects.toThrow()
+      fixture.db
+        .prepare('UPDATE events SET integrity_digest=? WHERE session_key=? AND seq=?')
+        .run(boundary, snapshot.sessionId, snapshot.throughSeq)
+      expect(await reader.scanVerifiedPage(snapshot, request, context)).toEqual(baseline)
+    } finally {
+      reader.close()
+      identity.close()
+      await fixture.close()
+      rmSync(directory, { recursive: true, force: true })
+    }
+  }, 60_000)
 })
