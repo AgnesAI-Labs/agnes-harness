@@ -309,6 +309,35 @@ describe('default blob service retention', () => {
     expect(ok(await blob.inspect(stagedRef, ctx()))).toMatchObject({ status: 'staged', ownerRefs: [] })
   })
 
+  it('leaves an upload and its pins to the principal that staged it in any scope; no caller holds an older pin', async () => {
+    const dataDir = await fresh()
+    let blob = open(dataDir)
+    const elsewhere = ctx({ scope: scope('session-2') })
+    const ownerRef: Wire.PublicRef = { kind: 'artifact', value: { artifactId: 'artifact-1', version: 1 } }
+    const pinOf = async ({ upload }: Wire.UploadResult) => {
+      const stagedBlob = ok(await blob.promote({ upload, expectedDigest: upload.digest }, elsewhere))
+      const ref = ok(await blob.pin({ stagedBlob, ownerRef, retentionUntil: null }, elsewhere))
+      return { stagedBlob, ref }
+    }
+    const first = await sealed(blob, 'upload-1', text('one'))
+    const old = await pinOf(first)
+    // The store as it was before pins recorded their principal.
+    blob.close()
+    sql(dataDir, 'ALTER TABLE roots DROP COLUMN principal')
+    blob = reopen(reopen(blob, dataDir), dataDir)
+    const second = await sealed(blob, 'upload-2', text('two'))
+    const { ref } = await pinOf(second)
+    const unpin = (pinId: string, context: CallContext) => blob.unpin({ pinId, expectedRevision: 1 }, context)
+    const other = ctx({ principalRef: 'user-2' })
+    expect(refused(await unpin(first.retention.pinId, other))).toBe('permission_denied')
+    expect(refused(await unpin(old.ref.pinId, ctx()))).toBe('permission_denied')
+    expect(
+      refused(await blob.pin({ stagedBlob: old.stagedBlob, ownerRef, retentionUntil: null }, ctx())),
+    ).toBe('permission_denied')
+    expect(ok(await unpin(first.retention.pinId, elsewhere))).toEqual({ released: true })
+    expect(ok(await unpin(ref.pinId, elsewhere))).toEqual({ released: true })
+  })
+
   it('keeps its content under the runtime service directory, apart from the legacy artifact store', async () => {
     const root = await fresh()
     const blob = open(runtimeServiceDataDir(root, 'blob'))
@@ -1440,6 +1469,14 @@ describe('default blob service: conformance', () => {
       },
       close: async () => shut(),
       remains: () => existsSync(join(dataDir, 'artifacts', 'blob-service.db')),
+      actions: {
+        upload: async (bytes: Uint8Array, context: CallContext) =>
+          (await sealed(current, `conformance-${++seeds}`, bytes, context)).upload,
+        promote: (request: unknown, context: CallContext) => current.promote(request, context),
+        pin: (request: unknown, context: CallContext) => current.pin(request, context),
+        unpin: (request: unknown, context: CallContext) => current.unpin(request, context),
+        inspect: (request: unknown, context: CallContext) => current.inspect(request, context),
+      },
     })
     const harness = createConformanceHarness()
     const binding = {

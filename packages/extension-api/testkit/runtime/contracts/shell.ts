@@ -562,7 +562,8 @@ export async function recoverShell(
 const CASES: Record<ScenarioName, (binding: ShellConformanceBinding) => Promise<Checks>> = {
   // Three selections that differ only in the shell they name, by package and contribution id, each mount
   // exactly that shell through the same host, with the catalog in either order. A selection of an
-  // undeclared shell, or of one whose export is missing or not a function, is refused.
+  // undeclared shell, of one whose export is missing or not a function, or of one whose module requires a
+  // desktop capability the client lacks, is refused.
   async select(binding) {
     const { shell, container } = binding
     const workbench = shell().descriptor.id
@@ -595,7 +596,10 @@ const CASES: Record<ScenarioName, (binding: ShellConformanceBinding) => Promise<
           (await provider.dispose('shutdown')).ok
       }
     // A refused selection hands back no shell, so nothing can be mounted from it.
-    const refusals: [string, Wire.ClientContributionRef, Namespace?][] = [
+    const desktop = forward.map((module) =>
+      module.moduleId === SHELLS ? { ...module, requiredFeatures: ['desktop.open-path.v1'] } : module,
+    )
+    const refusals: [string, Wire.ClientContributionRef, (Namespace | undefined)?, Wire.ClientModule[]?][] = [
       ['an undeclared shell', { packageId: SHELLS, contributionId: 'conformance.undeclared-shell' }],
       ['a shell its package does not declare', { packageId: FRAME, contributionId: PLAIN }],
       ['a missing export', { packageId: SHELLS, contributionId: PLAIN }, { workbenchShell: shell }],
@@ -604,9 +608,15 @@ const CASES: Record<ScenarioName, (binding: ShellConformanceBinding) => Promise<
         { packageId: SHELLS, contributionId: PLAIN },
         { workbenchShell: shell, plainShell: markedShell('plain') },
       ],
+      [
+        'a shell whose module requires a desktop capability the client lacks',
+        { packageId: SHELLS, contributionId: workbench },
+        undefined,
+        desktop,
+      ],
     ]
-    for (const [what, ref, shells] of refusals)
-      checks[`selecting ${what} refused`] = !(await run(ref, forward, shells)).ok
+    for (const [what, ref, shells, modules = forward] of refusals)
+      checks[`selecting ${what} refused`] = !(await run(ref, modules, shells)).ok
     return checks
   },
 

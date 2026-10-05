@@ -3,7 +3,16 @@ import { rmSync } from 'node:fs'
 import type { CallContext } from '@agnes/extension-api/runtime'
 import { jcs } from '@agnes/protocol'
 import type * as Wire from '@agnes/protocol/runtime'
-import { type BlobStore, checked, contentPath, loadUpload, parse, refuse, within } from './uploads.js'
+import {
+  type BlobStore,
+  checked,
+  contentPath,
+  loadUpload,
+  parse,
+  refuse,
+  stagedBy,
+  within,
+} from './uploads.js'
 
 type BlobRow = { blob_id: string; upload_id: string; staged: string; digest: string; deleted: number }
 type RootRow = {
@@ -15,6 +24,7 @@ type RootRow = {
   revision: number
   active: number
   blob: string | null
+  principal: string | null
 }
 
 const loadBlob = (store: BlobStore, blobId: Wire.Id) =>
@@ -94,8 +104,11 @@ function finishUnlinks(store: BlobStore) {
   }
 }
 
-/** A sealed upload becomes one staged content object; repeating the promote returns the same object. */
-export function promote(store: BlobStore, request: unknown): Wire.StagedBlobRef {
+/**
+ * A sealed upload becomes one staged content object; repeating the promote returns the same object.
+ * Only the principal that staged the upload may promote it.
+ */
+export function promote(store: BlobStore, request: unknown, context: CallContext): Wire.StagedBlobRef {
   const { upload, expectedDigest } = parse('BlobPromoteRequest', request)
   if (upload.authorityId !== store.authorityId) refuse('not_found', 'upload belongs to another authority')
   if (expectedDigest !== upload.digest) refuse('integrity', 'expected digest differs from the sealed upload')
@@ -104,6 +117,7 @@ export function promote(store: BlobStore, request: unknown): Wire.StagedBlobRef 
     if (!row?.result) refuse('not_found', 'no such sealed upload')
     const sealed = JSON.parse(row.result) as Wire.UploadResult
     if (jcs(sealed.upload) !== jcs(upload)) refuse('not_found', 'upload reference does not match')
+    if (!stagedBy(row, context)) refuse('permission_denied', 'caller did not stage this upload')
     const prior = store.db.prepare('SELECT * FROM blobs WHERE upload_id = ?').get(upload.uploadId) as
       | BlobRow
       | undefined
@@ -124,18 +138,25 @@ export function promote(store: BlobStore, request: unknown): Wire.StagedBlobRef 
   })
 }
 
-/** One live pin per content object and owner; a retry with the same owner returns that pin. */
-export function pin(store: BlobStore, request: unknown): Wire.BlobRef {
+/**
+ * One live pin per content object and owner; a retry with the same owner returns that pin. Only the
+ * principal that staged the content may pin it, and the pin records that principal.
+ */
+export function pin(store: BlobStore, request: unknown, context: CallContext): Wire.BlobRef {
   const { stagedBlob, ownerRef, retentionUntil } = parse('BlobPinRequest', request)
   const until = retentionUntil === null ? null : Date.parse(retentionUntil)
   if (until !== null && until <= store.now()) refuse('invalid_request', 'retention already ended')
   return store.write(() => {
     const blob = loadBlob(store, stagedBlob.blobId)
     if (!blob || blob.staged !== jcs(stagedBlob)) refuse('not_found', 'no such staged blob')
+    const upload = loadUpload(store, blob.upload_id)
+    if (!upload || !stagedBy(upload, context)) refuse('permission_denied', 'caller did not stage this blob')
     if (blob.deleted) refuse('artifact_deleted', 'staged blob was collected')
     const ownerKey = jcs(ownerRef)
     const prior = liveRoots(store, 'blob', blob.blob_id).find((root) => root.owner === ownerKey)
     if (prior) {
+      if (prior.principal !== context.principalRef)
+        refuse('permission_denied', 'caller does not hold this pin')
       if (prior.retention_until !== until) refuse('idempotency_conflict', 'owner already pins this blob')
       return JSON.parse(prior.blob ?? 'null') as Wire.BlobRef
     }
@@ -149,20 +170,26 @@ export function pin(store: BlobStore, request: unknown): Wire.BlobRef {
     })
     store.db
       .prepare(
-        `INSERT INTO roots (pin_id, target, target_id, owner, owner_key, retention_until, revision, active, blob)
-         VALUES (?, 'blob', ?, ?, ?, ?, 1, 1, ?)`,
+        `INSERT INTO roots (pin_id, target, target_id, owner, owner_key, retention_until, revision, active, blob, principal)
+         VALUES (?, 'blob', ?, ?, ?, ?, 1, 1, ?, ?)`,
       )
-      .run(ref.pinId, blob.blob_id, ownerKey, ownerKey, until, jcs(ref))
+      .run(ref.pinId, blob.blob_id, ownerKey, ownerKey, until, jcs(ref), context.principalRef)
     return ref
   })
 }
 
-/** Releases one pin or sealed-upload root. Releasing a released root changes nothing. */
-export function unpin(store: BlobStore, request: unknown): Wire.BlobUnpinResult {
+/**
+ * Releases one pin or sealed-upload root. Releasing a released root changes nothing. A sealed-upload
+ * root belongs to the principal that staged the upload, a pin to the principal it records.
+ */
+export function unpin(store: BlobStore, request: unknown, context: CallContext): Wire.BlobUnpinResult {
   const { pinId, expectedRevision } = parse('BlobUnpinRequest', request)
   return store.write(() => {
     const root = loadRoot(store, pinId)
     if (!root) refuse('not_found', 'no such pin')
+    const upload = root.target === 'upload' ? loadUpload(store, root.target_id) : undefined
+    if (upload ? !stagedBy(upload, context) : root.principal !== context.principalRef)
+      refuse('permission_denied', 'caller does not hold this pin')
     if (root.active === 0) return { released: false }
     if (root.revision !== expectedRevision) refuse('revision_conflict', 'pin is not at the expected revision')
     store.db
