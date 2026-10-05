@@ -105,7 +105,7 @@ Skills 包含磁盘/包资源治理与运行时 Cordis 贡献。当前共享 wor
 
 AGH 的 App Server 为客户端提供共享的任务运行基础：daemon 管理会话与控制面，worker 承载执行，SDK 提供通信入口。开发自己的客户端时，从本仓的[API 合同](../reference/api.zh-CN.md)选择接入方式。
 
-runtime HTTP 监听消费 Host 所有的只读适配端口。Host 持有 projection 生命周期，接到已提交事件通知后刷新，并在每次读时核验原 C14 签发的上下文。Core 已公开默认 projection 工厂，但尚无部署装配它，默认 projection owner 当前返回 `projection_provider_installation_unavailable`。生产读侧仍需选中的 provider 与部署签发上下文的绑定；HTTP 传输鉴权不签发业务身份。
+runtime HTTP 监听消费 Host 所有的只读适配端口。Host 持有 projection 生命周期，接到已提交事件通知后刷新，并在每次读时核验原 C14 签发的上下文。Host 从 Core 包根入口导入默认 projection 工厂，在受信装配提供已选 domain、binding、access 和 owner 事实时构造它。安装事实缺失时返回 `projection_provider_installation_unavailable`；provider 已安装但缺签发口时，读取返回 `projection_context_issuer_unavailable`。生产 HTTP 的 C14 签发绑定仍待交付；HTTP 传输鉴权不签发业务身份。
 
 受信 `projection` 安装提供已选 domain store 的 owner 与权限。supervisor 只打开一个 store，将同一实例作为 command storage、原 events 的 async journal 包装、提交订阅，以及 daemon 原 native conversation 适配口交给 Host 装配。另一个 store 实例提交不会通知此 owner。退出时先撤订阅、abort 并 drain Host 读取/刷新、关闭 provider，再关闭 store；缺少安装事实时保留默认拒绝。
 

@@ -1,4 +1,8 @@
-import * as Core from '@agnes/core'
+import {
+  createProjectionProvider,
+  type DomainCommandStorage,
+  type ProjectionProviderOptions,
+} from '@agnes/core'
 import type { CallContext, Outcome } from '@agnes/extension-api/runtime'
 import type {
   ClientCallHeader,
@@ -37,6 +41,15 @@ type Issue = (
   request: Readonly<{ operation: Operation; input: unknown; header: ClientCallHeader }>,
   signal: AbortSignal,
 ) => Promise<Outcome<CallContext>>
+
+/** Selected domain facts and the original issuer come from trusted deployment assembly. */
+export type HostProjectionInstallation = Readonly<
+  Omit<ProjectionProviderOptions, 'native' | 'journal' | 'owner'> & {
+    owner: Omit<ProjectionProviderOptions['owner'], 'storage'>
+    issue?: Issue
+    disposeContextIssuer?(): void | Promise<void>
+  }
+>
 
 /** Trusted assembly inputs; Storage preserves the accepted-command port's concrete type. */
 export type HostProjectionSources<Storage> = Readonly<{
@@ -202,14 +215,24 @@ export function assembleHostProjectionOwner(
   }
 }
 
-/** Until a deployment installs the Core provider and supplies its issuer, reads fail closed. */
-export function createHostProjectionOwner<Storage>(
+/** Construct the selected Core provider over the command owner's original committed sources. */
+export function createHostProjectionOwner<Storage extends DomainCommandStorage>(
   sources?: HostProjectionSources<Storage>,
+  installation?: HostProjectionInstallation,
 ): HostProjectionOwner {
+  if (!sources || !installation)
+    return assembleHostProjectionOwner({ unavailable: 'projection_provider_installation_unavailable' })
+  const { issue, disposeContextIssuer, owner, ...selected } = installation
+  const provider = createProjectionProvider({
+    ...selected,
+    owner: { ...owner, storage: sources.commandStorage },
+    native: sources.native,
+    journal: sources.journal,
+  })
   return assembleHostProjectionOwner({
-    ...(sources ? { subscribeCommitted: sources.subscribeCommitted } : {}),
-    unavailable: Object.hasOwn(Core, 'createProjectionProvider')
-      ? 'projection_provider_installation_unavailable'
-      : 'projection_provider_export_unavailable',
+    provider,
+    ...(issue ? { issue } : {}),
+    ...(disposeContextIssuer ? { disposeContextIssuer } : {}),
+    subscribeCommitted: sources.subscribeCommitted,
   })
 }
