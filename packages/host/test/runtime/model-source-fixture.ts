@@ -1,7 +1,7 @@
 import { fakeModel } from '@agnes/ai/testkit'
 import { type ModelCapture, modelInputDigest, type WireIdentity } from '@agnes/core'
 import { type ActionContext, runtimeAuthorSchemas } from '@agnes/extension-api/runtime'
-import type { ModelRecord, RouteDecl } from '@agnes/protocol'
+import { jcs, type ModelRecord, type RouteDecl } from '@agnes/protocol'
 import type * as Wire from '@agnes/protocol/runtime'
 import {
   type ActionFrame,
@@ -35,7 +35,7 @@ const inline = (schema: DataRef['schema'], value: Wire.JsonValue): Extract<DataR
   schema,
   value,
   digest: canonicalJsonDigest(value),
-  bytes: new TextEncoder().encode(JSON.stringify(value)).length,
+  bytes: new TextEncoder().encode(jcs(value)).length,
 })
 
 export function captureOf(catalog: SelectedModelCatalog): ModelCapture {
