@@ -321,27 +321,33 @@ export async function openLoopFixture(options?: {
         if (requirement.contract === 'agh.model' && request.method === 'prepare') {
           const parsed = validateRuntime('ModelPrepareRequest', payload)
           if (!parsed.ok) return { ok: false, error: error('model_prepare_request') }
-          const prepared: W.PreparedModelRequest = {
-            preparedId: 'fixed-preparation',
+          // Same shape the model service returns: a handle, never the prepared body.
+          const inputDigest = canonicalJsonDigest(payload)
+          const handle: W.PreparedModelHandle = {
+            kind: 'agh.model/prepared-handle@1',
+            handleId: `hdl-${inputDigest.slice(0, 32)}`,
+            inputDigest,
             ownerBinding: required(bindings.model),
-            target: parsed.value.route,
-            view: parsed.value.view,
-            inputDigest: canonicalJsonDigest(payload),
-            outputSchema: parsed.value.outputSchema,
-            toolCatalog: parsed.value.toolCatalog,
-            generation: parsed.value.generation,
-            mediaPlans: [],
-            estimatedUnits: [],
-            hookResults: null,
-            sessionParameterRef: reference,
-            legacyRequestOverrides: null,
-            credentialRef: parsed.value.credentialRef,
+            header: {
+              route: parsed.value.route,
+              adapterPackageDigest: 'fixture-adapter',
+              maxOutputTokens: parsed.value.generation.maxOutputTokens,
+              thinking: parsed.value.generation.thinking,
+              wire: {
+                slot: 'primary',
+                contractId: null,
+                sessionKeyDigest: canonicalJsonDigest('fixture-session-key'),
+              },
+              sessionParameterRef: reference,
+              credentialRef: parsed.value.credentialRef,
+              mediaPlanDigests: [],
+            },
           }
           return ok(
             contextInline(M['agh.model'].prepare.output, {
-              preparedRef: contextInline(S.PreparedModelRequest, prepared),
+              preparedRef: contextInline(S.PreparedModelHandle, handle),
               targetSnapshot: route,
-              inputDigest: prepared.inputDigest,
+              inputDigest,
               estimatedUnits: [],
               mediaPlanRefs: [],
             }),

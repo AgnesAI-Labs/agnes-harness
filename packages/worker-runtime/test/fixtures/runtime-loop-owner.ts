@@ -287,12 +287,9 @@ export async function loopOwnerFixture(
                         const input = validateRuntime('ModelInferRequest', action.input.value)
                         if (!input.ok || input.value.preparedRef.kind !== 'inline')
                           throw Error('Prepared model missing')
-                        const prepared = validateRuntime(
-                          'PreparedModelRequest',
-                          input.value.preparedRef.value,
-                        )
+                        const prepared = validateRuntime('PreparedModelHandle', input.value.preparedRef.value)
                         if (!prepared.ok) throw Error('Prepared model invalid')
-                        await credentials.execute(prepared.value)
+                        await credentials.execute(prepared.value.header.credentialRef)
                         // The restricted C04 substitute proves egress only; it owns no real model result.
                         return {
                           outcome: 'failed' as const,
@@ -384,7 +381,7 @@ export async function loopOwnerFixture(
                   if (mode === 'wrong-ref' && actionInput.kind === 'inline') {
                     const call = validateRuntime('ToolCall', actionInput.value)
                     if (!call.ok) return failed('fixture_tool_call_invalid')
-                    call.value.modelContextRef = toolsRef(RuntimeSchemaRefs.PreparedModelRequest, {})
+                    call.value.modelContextRef = toolsRef(RuntimeSchemaRefs.PreparedModelHandle, {})
                     Object.assign(actionInput, toolsRef(actionInput.schema, call.value))
                   }
                   const frame: W.ActionFrame = {

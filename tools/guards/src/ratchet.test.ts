@@ -1098,7 +1098,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // Runtime media identity, planner, verification and byte resolution (+542); exact cap, no spare.
   // Default runtime media provider with conversion continuation (+952); exact cap, no spare.
   // Wire request carries verified media parts and names structured output as unsupported (+45); exact cap, no spare.
-  'packages/core/src': 39120,
+  // The Loop reads the prepared handle instead of the prepared body and re-reads the offered tools from its fixed source (-2).
+  'packages/core/src': 39118,
   // Testkit-only reference Effects runner adds 202 measured lines; exact cap, no spare.
   // Independent Effects dispatch reference (+440); exact measurement below.
   'packages/core/testkit': 2437,

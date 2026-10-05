@@ -152,6 +152,60 @@ function checkCredential(route: W.ModelRouteSnapshot, handle: W.SecretHandle | n
   )
   insist(Date.parse(handle.expiresAt) > Date.now(), 'loop_credential_expired', 'denied')
 }
+export async function readFixedInputs(
+  frame: W.RunFrame,
+  stage: 'first-model' | 'second-model',
+  ports: LoopReadPorts,
+  ctx: CallContext,
+  api: Pick<PlanningPorts, 'source' | 'current' | 'raced'>,
+): Promise<DefaultLoopInputs> {
+  const { source, current, raced } = api
+  insist(source, 'loop_source_unavailable', 'incompatible')
+  await current(ctx)
+  const data = await raced(source.readInputs(structuredClone(frame), stage, ports), ctx)
+  const fixedInput = structuredClone(data)
+  canonical(fixedInput)
+  await current(ctx)
+  insist(
+    fixedInput.snapshot === frame.snapshot &&
+      fixedInput.inputDigest === inputDigest(frame) &&
+      equal(fixedInput.sessionParameterRef, frame.sessionParameters.reference),
+    'loop_source_snapshot',
+    'conflict',
+  )
+  insist(
+    validateRuntime('ContextViewRequest', fixedInput.context).ok &&
+      validateRuntime('RoutingSelectInput', fixedInput.routing).ok &&
+      validateRuntime('ToolCatalogPolicy', fixedInput.catalogPolicy).ok &&
+      validateRuntime('GenerationOptions', fixedInput.generation).ok &&
+      (fixedInput.credentialRef === null || validateRuntime('SecretHandle', fixedInput.credentialRef).ok) &&
+      fixedInput.tools.length === 1 &&
+      fixedInput.tools.every((tool) => validateRuntime('ToolDefinition', tool).ok),
+    'loop_source_invalid',
+  )
+  insist(
+    fixedInput.context.hookResults === null &&
+      fixedInput.context.resourceRefs.length === 0 &&
+      fixedInput.context.contributions.runtimeContext.length === 0,
+    'loop_context_preparation_unavailable',
+    'incompatible',
+  )
+  insist(
+    fixedInput.context.sessionRef.sessionId === frame.sessionId &&
+      fixedInput.context.atRevision === frame.sessionParameters.value.revision,
+    'loop_context_source_identity',
+    'denied',
+  )
+  insist(
+    fixedInput.routing.allowedRoutes.length === 1 && fixedInput.routing.allowedRoutes[0],
+    'loop_model_credentials_unavailable',
+    'incompatible',
+  )
+  checkCredential(fixedInput.routing.allowedRoutes[0], fixedInput.credentialRef)
+  freeze(fixedInput)
+  return fixedInput
+}
+
 export async function planDefaultModel(
   frame: W.RunFrame,
   state: DefaultLoopState,
@@ -160,60 +214,9 @@ export async function planDefaultModel(
   ctx: CallContext,
   api: PlanningPorts,
 ): Promise<W.LoopTransition> {
-  const { source, selected, current, raced, read, compute, transition, wait } = api
-  async function inputs(
-    frame: W.RunFrame,
-    stage: 'first-model' | 'second-model',
-    ports: LoopReadPorts,
-    ctx: CallContext,
-  ): Promise<DefaultLoopInputs> {
-    insist(source, 'loop_source_unavailable', 'incompatible')
-    await current(ctx)
-    const data = await raced(source.readInputs(structuredClone(frame), stage, ports), ctx)
-    const fixedInput = structuredClone(data)
-    canonical(fixedInput)
-    await current(ctx)
-    insist(
-      fixedInput.snapshot === frame.snapshot &&
-        fixedInput.inputDigest === inputDigest(frame) &&
-        equal(fixedInput.sessionParameterRef, frame.sessionParameters.reference),
-      'loop_source_snapshot',
-      'conflict',
-    )
-    insist(
-      validateRuntime('ContextViewRequest', fixedInput.context).ok &&
-        validateRuntime('RoutingSelectInput', fixedInput.routing).ok &&
-        validateRuntime('ToolCatalogPolicy', fixedInput.catalogPolicy).ok &&
-        validateRuntime('GenerationOptions', fixedInput.generation).ok &&
-        (fixedInput.credentialRef === null || validateRuntime('SecretHandle', fixedInput.credentialRef).ok) &&
-        fixedInput.tools.length === 1 &&
-        fixedInput.tools.every((tool) => validateRuntime('ToolDefinition', tool).ok),
-      'loop_source_invalid',
-    )
-    insist(
-      fixedInput.context.hookResults === null &&
-        fixedInput.context.resourceRefs.length === 0 &&
-        fixedInput.context.contributions.runtimeContext.length === 0,
-      'loop_context_preparation_unavailable',
-      'incompatible',
-    )
-    insist(
-      fixedInput.context.sessionRef.sessionId === frame.sessionId &&
-        fixedInput.context.atRevision === frame.sessionParameters.value.revision,
-      'loop_context_source_identity',
-      'denied',
-    )
-    insist(
-      fixedInput.routing.allowedRoutes.length === 1 && fixedInput.routing.allowedRoutes[0],
-      'loop_model_credentials_unavailable',
-      'incompatible',
-    )
-    checkCredential(fixedInput.routing.allowedRoutes[0], fixedInput.credentialRef)
-    freeze(fixedInput)
-    return fixedInput
-  }
+  const { selected, current, raced, read, compute, transition, wait } = api
   insist(selected, 'loop_not_ready', 'incompatible')
-  const fixedInput = await inputs(frame, stage, ports, ctx)
+  const fixedInput = await readFixedInputs(frame, stage, ports, ctx, api)
   const routed = await compute('routing', 'select', fixedInput.routing, ports, ctx)
   const route = validateRuntime('RoutingSelectResult', routed)
   insist(
@@ -297,24 +300,22 @@ export async function planDefaultModel(
     'loop_prepared_mismatch',
     'denied',
   )
-  const locked = validateRuntime(
-    'PreparedModelRequest',
-    await read(prepared.value.preparedRef, RuntimeSchemaRefs.PreparedModelRequest, ports, ctx),
+  // The ref carries only a handle; the prepared body stays with the model service. The Loop checks
+  // the facts the handle and its header really carry and never sees the capture or the wire.
+  const handle = validateRuntime(
+    'PreparedModelHandle',
+    await read(prepared.value.preparedRef, RuntimeSchemaRefs.PreparedModelHandle, ports, ctx),
   )
   insist(
-    locked.ok &&
-      equal(locked.value.ownerBinding, selected.model) &&
-      equal(locked.value.target, route.value.route) &&
-      equal(locked.value.view, view.value) &&
-      equal(locked.value.toolCatalog, catalogInput) &&
-      equal(locked.value.generation, fixedInput.generation) &&
-      locked.value.outputSchema === null &&
-      equal(locked.value.credentialRef, fixedInput.credentialRef) &&
-      locked.value.hookResults === null &&
-      locked.value.legacyRequestOverrides === null &&
-      locked.value.mediaPlans.length === 0 &&
-      equal(locked.value.sessionParameterRef, frame.sessionParameters.reference) &&
-      locked.value.inputDigest === prepared.value.inputDigest,
+    handle.ok &&
+      handle.value.inputDigest === prepared.value.inputDigest &&
+      equal(handle.value.ownerBinding, selected.model) &&
+      equal(handle.value.header.route, route.value.route) &&
+      handle.value.header.maxOutputTokens === fixedInput.generation.maxOutputTokens &&
+      handle.value.header.thinking === fixedInput.generation.thinking &&
+      equal(handle.value.header.credentialRef, fixedInput.credentialRef) &&
+      equal(handle.value.header.sessionParameterRef, frame.sessionParameters.reference) &&
+      handle.value.header.mediaPlanDigests.length === 0,
     'loop_prepared_identity',
     'denied',
   )

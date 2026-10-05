@@ -290,7 +290,7 @@ it.each([
         ])
         expect(events.find((event) => event.method === 'tool.result')).toMatchObject({
           outcome: 'failed',
-          modelContextRef: { schema: { typeId: 'agh.model/prepared-request@1' } },
+          modelContextRef: { schema: { typeId: 'agh.model/prepared-handle@1' } },
           error: { detailCode },
         })
         expect(events).toContainEqual({ method: 'action.close' })
@@ -338,7 +338,7 @@ it.each(['default', 'reference'] as const)(
       ])
       expect(events.find((event) => event.method === 'tool.result')).toMatchObject({
         outcome: 'succeeded',
-        modelContextRef: { schema: { typeId: 'agh.model/prepared-request@1' } },
+        modelContextRef: { schema: { typeId: 'agh.model/prepared-handle@1' } },
       })
       expect(events.find((event) => event.method === 'state.complete')).toMatchObject({
         output: { value: { content: [{ type: 'text', text: 'statistics complete' }] } },
