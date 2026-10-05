@@ -21,6 +21,8 @@ import {
 import { authorHookReturn, contextReturnToWire } from '../../hooks/returns.js'
 import { assertAuthorSchema } from '../providers/accounting.js'
 
+class HookAuthorityFailure extends Error {}
+
 type Event = 'context' | 'tool_call'
 type Definition = InterceptorDefinition<'context', JsonValue> | InterceptorDefinition<'tool_call', JsonValue>
 export interface PureHookRegistration {
@@ -290,7 +292,15 @@ function project(payload: JsonValue, fields: readonly string[]): JsonValue {
 /** No State, effects ports, identity issuer or implicit permission/current checks are installed here. */
 export async function runPureHookStage(
   stage: PureHookStage,
+  checkCurrent?: () => Promise<void>,
 ): Promise<Readonly<{ outcome: 'completed' | 'denied'; result: HookResultSet }>> {
+  const verify = async () => {
+    try {
+      await checkCurrent?.()
+    } catch {
+      throw new HookAuthorityFailure('Hook authority changed')
+    }
+  }
   stage = {
     ...stage,
     codecs: Object.freeze({ context: stage.codecs.context, tool_call: stage.codecs.tool_call }),
@@ -311,6 +321,7 @@ export async function runPureHookStage(
   let denied = false
   const results: HookResultSet['entries'] = []
   for (const entry of entries) {
+    await verify()
     if (stage.signal.aborted) throw new PureHookStageFailure('cancelled', 'hook_cancelled')
     try {
       const value = await bounded(stage.signal, entry.metadata.timeoutMs, async (signal) => {
@@ -348,6 +359,7 @@ export async function runPureHookStage(
           await d.handle(projected as InterceptorInput<'tool_call'>, context),
         )
       })
+      await verify()
       const safe = json(value)
       if (!safe || typeof safe !== 'object' || Array.isArray(safe)) refuse('hook_return_object')
       for (const key of Object.keys(safe))
@@ -384,6 +396,7 @@ export async function runPureHookStage(
         diagnosticId: null,
       })
     } catch (error) {
+      if (error instanceof HookAuthorityFailure) throw error
       if (stage.signal.aborted || (error instanceof PureHookStageFailure && error.error.code === 'cancelled'))
         throw new PureHookStageFailure('cancelled', 'hook_cancelled')
       const closed = entry.metadata.failPolicy === 'closed'

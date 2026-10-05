@@ -21,6 +21,7 @@ import {
 import { createDefaultEffectsFactory } from '../providers/effects.js'
 import type { EffectsAuthority } from './authority.js'
 import { dispatchCommittedEffect, EffectUncertain } from './dispatch.js'
+import { createInstalledHookActions, type HookActionOwner } from './hook-actions.js'
 import { reconcileCommittedEffect } from './reconciliation.js'
 
 const wire = (context: CallContext) => {
@@ -65,6 +66,7 @@ export function createInstalledEffectsFactory(
   authority: EffectsAuthority,
   descriptor: ProviderDescriptor,
   configCodec: AuthorSchema<EmptyAuthorConfig>,
+  hookOwner?: HookActionOwner,
 ): ProviderFactory<ServiceProvider> {
   const base = createDefaultEffectsFactory(descriptor, configCodec)
   const selectedDescriptor = base.descriptor
@@ -118,6 +120,7 @@ export function createInstalledEffectsFactory(
       const clock = capture('now')
       let phase: 'created' | 'ready' | 'draining' | 'closed' = 'created'
       const active = new Map<Promise<unknown>, string>()
+      const hookStop = new AbortController()
       const source = () => {
         if (
           canonicalJsonDigest(selectedDescriptor as never) !== descriptorRelation ||
@@ -298,6 +301,7 @@ export function createInstalledEffectsFactory(
         },
         async drain(_deadline, _context) {
           if (phase !== 'closed') phase = 'draining'
+          hookStop.abort()
           return {
             ok: true,
             value: {
@@ -310,10 +314,29 @@ export function createInstalledEffectsFactory(
         },
         async close(reason) {
           phase = 'closed'
+          hookStop.abort()
           await authority.close(reason)
         },
       }
-      return provider
+      return hookOwner
+        ? {
+            ...provider,
+            actions: {
+              ...provider.actions,
+              runHooks: createInstalledHookActions(hookOwner, {
+                check: current,
+                signal: hookStop.signal,
+                track(pending, invocationId) {
+                  active.set(pending, invocationId)
+                  void pending.then(
+                    () => active.delete(pending),
+                    () => active.delete(pending),
+                  )
+                },
+              }),
+            },
+          }
+        : provider
     },
   }
 }
