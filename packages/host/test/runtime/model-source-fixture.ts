@@ -147,7 +147,10 @@ export function fixtureFrame(ref: DataRef, key = 'ext-1'): ActionFrame {
   const request = { preparedCallRef: ref, externalIdempotencyKey: key }
   return {
     actionId: 'act-1',
-    input: inline(RuntimeMethodSchemaRefs['agh.model-adapter'].invoke.input, request as unknown as Wire.JsonValue),
+    input: inline(
+      RuntimeMethodSchemaRefs['agh.model-adapter'].invoke.input,
+      request as unknown as Wire.JsonValue,
+    ),
     requestIdentity: { system: 's', aghRequestId: 'r', idempotencyKey: key, requestDigest: 'a'.repeat(64) },
   } as unknown as ActionFrame
 }
@@ -174,7 +177,12 @@ export function fixturePorts(
     issuance: over.issuance ?? {
       read: async () => ({
         ok: true,
-        value: { preparedDigest: ref.digest, actionId: 'act-1', captureDigest: retained[0]?.digest ?? '', wire },
+        value: {
+          preparedDigest: ref.digest,
+          actionId: 'act-1',
+          captureDigest: retained[0]?.digest ?? '',
+          wire,
+        },
       }),
     },
     captures: over.captures ?? { read: (digest) => retained.find((catalog) => catalog.digest === digest) },
