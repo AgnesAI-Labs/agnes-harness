@@ -6,6 +6,7 @@ import {
   RuntimeSchemaRefs,
   validateRuntime,
 } from '@agnes/protocol/runtime'
+import { lockedMediaPlansMatch } from '../media/locked.js'
 import {
   canonical,
   checkedPrepare,
@@ -315,7 +316,7 @@ export async function planDefaultModel(
       handle.value.header.thinking === fixedInput.generation.thinking &&
       equal(handle.value.header.credentialRef, fixedInput.credentialRef) &&
       equal(handle.value.header.sessionParameterRef, frame.sessionParameters.reference) &&
-      handle.value.header.mediaPlanDigests.length === 0,
+      lockedMediaPlansMatch(handle.value, prepared.value.mediaPlanRefs, route.value.route),
     'loop_prepared_identity',
     'denied',
   )
