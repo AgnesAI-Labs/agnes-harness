@@ -448,6 +448,36 @@ function internalRuntimePortViolations(base: string): string[] {
   return violations
 }
 
+/**
+ * Client modules that replace the default Web app's shell, UI registry and renderers: the reference
+ * package's client entry and the fixture of a package written outside this repository. They read
+ * session data only from the snapshot and the services the client host mounts them with, so their
+ * source imports its own modules, the public client API and the host's shared React, nothing else.
+ * Every other edge, type-only ones included, fails: `@agnes/web` exports no client entry,
+ * `@agnes/web-client` is the default app's own module instance with its slots, stores and services,
+ * its client host, conversation window and default registry are not exported, a raw SDK client is
+ * not the mounted services, and a relative path leaving the root reaches all of these from source.
+ */
+const INDEPENDENT_CLIENT_ROOTS = [
+  'examples/runtime-reference/src/client',
+  'packages/web-client/test/runtime/fixtures/author-client',
+] as const
+const INDEPENDENT_CLIENT_IMPORTS = new Set(['@agnes/extension-api/client', 'react', 'react/jsx-runtime'])
+
+function independentClientViolations(base: string): string[] {
+  const violations: string[] = []
+  for (const dir of INDEPENDENT_CLIENT_ROOTS) {
+    eachSourceFile(join(base, dir), (file) => {
+      for (const edge of importEdges(readFileSync(file, 'utf8'))) {
+        if (INDEPENDENT_CLIENT_IMPORTS.has(edge.specifier)) continue
+        if (resolvesInside(base, file, edge.specifier, dir)) continue
+        violations.push(`${repoRelative(file, base)}: imports ${edge.specifier}`)
+      }
+    })
+  }
+  return violations
+}
+
 function writeTree(base: string, files: Record<string, string>): void {
   for (const [rel, text] of Object.entries(files)) {
     const abs = join(base, rel)
@@ -833,6 +863,49 @@ describe('public runtime and client entries', () => {
         expect(text).not.toContain('packages/other/src/wire.ts')
         expect(text).not.toContain('packages/extension-api/src/runtime/local.ts')
         expect(text).not.toContain('note.ts')
+      },
+    )
+  })
+})
+
+describe('independent client modules and the default Web app', () => {
+  it('import only their own modules, the public client API and React', () => {
+    const missing = INDEPENDENT_CLIENT_ROOTS.filter((dir) => !existsSync(join(root, dir)))
+    expect(missing, 'an independent client root moved; point the guard at its new place').toEqual([])
+    const violations = independentClientViolations(root)
+    expect(violations, violations.join('\n')).toEqual([])
+  })
+
+  it('rejects the default app, its client package, the SDK and paths out of the root', () => {
+    const shell = 'examples/runtime-reference/src/client'
+    withTemp(
+      'agnes-independent-client-',
+      {
+        [`${shell}/public.ts`]:
+          "import type { ShellProvider } from '@agnes/extension-api/client'\nimport { useState } from 'react'\nimport { list } from './nested/list.js'\n// import { x } from '@agnes/web-client'\n",
+        [`${shell}/nested/list.ts`]: "export { refuse } from '../public.js'\n",
+        [`${shell}/app-state.ts`]:
+          "import { createShellSwitcher } from '../../../../packages/web/src/runtime/shell-state.js'\n",
+        [`${shell}/legacy.ts`]: "import type { ClientContext } from '@agnes/web-client'\n",
+        [`${shell}/host.ts`]: "export * from '@agnes/web-client/src/runtime/client-host.js'\n",
+        [`${shell}/sdk.ts`]: "const sdk = await import('@agnes/sdk')\n",
+        [`${shell}/node-side.ts`]: "import { bindShellContract } from '../providers/shell.js'\n",
+        [`${shell}/skipped.test.ts`]: "import { createDefaultShell } from '@agnes/web'\n",
+        'packages/web-client/test/runtime/fixtures/author-client/client.tsx':
+          "import { SlotOutlet } from '../../../../src/outlet.js'\n",
+      },
+      (base) => {
+        const files = independentClientViolations(base)
+          .map((violation) => violation.split(':')[0])
+          .sort()
+        expect(files).toEqual([
+          `${shell}/app-state.ts`,
+          `${shell}/host.ts`,
+          `${shell}/legacy.ts`,
+          `${shell}/node-side.ts`,
+          `${shell}/sdk.ts`,
+          'packages/web-client/test/runtime/fixtures/author-client/client.tsx',
+        ])
       },
     )
   })

@@ -2431,7 +2431,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // no spare (+10).
   // A renderer that throws or answers with no outcome is refused like one that refuses. Measured 5399,
   // exact, no spare (+10).
-  'packages/channels/src': 5399,
+  // Such a renderer now yields to the default text renderer instead. Measured 5407, exact, no spare (+8).
+  'packages/channels/src': 5407,
   'packages/code/src': 1600,
   'packages/cli/src/args': 300,
   'packages/runtime-python/src': 400,
