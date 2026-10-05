@@ -1088,7 +1088,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // Model service infer: one stable child action, result and usage attribution from the child (+247). Measured 35995, exact, no spare.
   // Model prepared handle and bounded in-process registry (+161).
   // Installed Effects dispatch coordinator (+812); combined exact cap.
-  'packages/core/src': 36968,
+  // Installed pure Hook actions, authority checks and parent lifecycle (+254), exact cap.
+  'packages/core/src': 37222,
   // Testkit-only reference Effects runner adds 202 measured lines; exact cap, no spare.
   // Independent Effects dispatch reference (+440); exact measurement below.
   'packages/core/testkit': 2437,
