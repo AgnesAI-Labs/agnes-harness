@@ -156,6 +156,7 @@ function publish(body: string, artifactId: string | null = null) {
   return { ref, grant }
 }
 
+// Opens three durable stores that flush every commit; a stalled hosted Windows runner took about 15s here.
 beforeEach(() => {
   directory = mkdtempSync(join(tmpdir(), 'reference-artifacts-'))
   clock = START
@@ -163,7 +164,7 @@ beforeEach(() => {
   blob = openBlobStore(join(directory, 'blob.sqlite'), { authorizeRead: trusted })
   tickets = referenceTickets()
   artifacts = open()
-})
+}, 30_000)
 
 afterEach(async () => {
   artifacts.close()
@@ -488,7 +489,9 @@ describe('reference artifacts authority transfer', () => {
   })
 })
 
-describe('reference artifacts: conformance', () => {
+// One run opens about fifty durable stores that flush every commit; hosted Windows measured 4s to at
+// least 22s, so the budget does not rest on the platform default.
+describe('reference artifacts: conformance', { timeout: 60_000 }, () => {
   it('fills the artifacts slot of the reference registry', () => {
     const slot = createReferenceRegistry([ARTIFACTS_PROVIDER, BLOB_PROVIDER]).find(
       (item) => item.contract === 'agh.artifacts',
