@@ -301,7 +301,10 @@ const INITIAL_CEILING: Record<string, number> = {
   // The client selection refuses a welcome without one and a renderer entry its module does not load.
   // Measured 3677, exact (+4).
   // An unknown domain view phase finds no tone through one lookup. Measured 3672, exact (-5).
-  'packages/web-client/src': 3672,
+  // Missing desktop capabilities are named: the generic card's reason, a renderer refused for them with a
+  // viewer hint, and a module requiring an unnegotiated feature fails its candidate. Measured 3733,
+  // exact (+61).
+  'packages/web-client/src': 3733,
   'packages/web-slots/src': 605,
   // Failed shell calls read as their exit code (+19 lines); measured 4891, exact cap.
   // B-line diagnostics dialog: React view adds 147 lines; measured 4706, exact cap.
@@ -1615,7 +1618,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // Events fixed page set, full-page checkpoint and cross-session checkpoint cases (+11), exact.
   // Effects dispatch lifecycle contracts (+113); exact cap, no spare.
   // Model service public contract (six scenarios) and its restricted child peer. Measured 17753 (+557), exact, no spare.
-  'packages/extension-api/testkit': 17753,
+  // Renderer and shell cases for a desktop capability the client lacks. Measured 17808, exact (+55).
+  'packages/extension-api/testkit': 17808,
   // 2026-09-10: raised from 2500 by Task 15 (stream-disconnect reconnection). The new
   // reattach.ts (the Reconnector: backoff loop, OVERLOADED's retryAfterMs override) plus
   // Session.recover()/waitForQuiescence and Client's reconnect wiring (emit(), the
@@ -1695,7 +1699,9 @@ const INITIAL_CEILING: Record<string, number> = {
   // Runtime commands journal per identity partition, stay accepted until final, are capped and archivable.
   // Measured 6349, exact (+49).
   // The runtime client exposes the client selection its welcome carried. Measured 6352, exact (+3).
-  'packages/sdk/src': 6352,
+  // The text format names a missing desktop capability and keeps such a view complete. Measured 6359,
+  // exact (+7).
+  'packages/sdk/src': 6359,
   'packages/sdk/src/extensions.node': 21,
   'packages/sdk/src/package-admin.node': 147,
   'packages/sdk/src/surface.browser': 3,
