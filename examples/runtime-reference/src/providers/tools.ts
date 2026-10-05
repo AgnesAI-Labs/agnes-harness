@@ -507,7 +507,7 @@ export function createReferenceToolsFactory(
                   return failed(problem('denied', 'tools_call_identity'))
                 if (
                   invocation.modelContextRef !== null &&
-                  !equivalent(invocation.modelContextRef.schema, RuntimeSchemaRefs.PreparedModelRequest)
+                  !equivalent(invocation.modelContextRef.schema, RuntimeSchemaRefs.PreparedModelHandle)
                 )
                   return failed(problem('denied', 'tools_model_context_schema'))
                 if (invocation.batchRef !== null)

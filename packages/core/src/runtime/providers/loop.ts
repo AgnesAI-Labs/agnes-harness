@@ -25,6 +25,7 @@ import {
   leafDeadline,
   modelTool,
   planDefaultModel,
+  readFixedInputs,
   standardContentSchema,
 } from '../loop/default-plan.js'
 import {
@@ -370,18 +371,18 @@ export function createDefaultLoopFactory(
             await read(pending.input, RuntimeMethodSchemaRefs['agh.model'].infer.input, ports, ctx),
           )
           insist(originalRequest.ok, 'loop_model_context_invalid')
-          const modelContext = validateRuntime(
-            'PreparedModelRequest',
-            await read(originalRequest.value.preparedRef, RuntimeSchemaRefs.PreparedModelRequest, ports, ctx),
+          // The ref carries only a handle; the tools offered are the ones the first request offered.
+          const handle = validateRuntime(
+            'PreparedModelHandle',
+            await read(originalRequest.value.preparedRef, RuntimeSchemaRefs.PreparedModelHandle, ports, ctx),
           )
           insist(
-            modelContext.ok &&
-              equal(modelContext.value.ownerBinding, selected.model) &&
-              modelContext.value.toolCatalog,
+            handle.ok && equal(handle.value.ownerBinding, selected.model),
             'loop_model_context_invalid',
             'denied',
           )
-          const tool = modelTool(content, modelContext.value.toolCatalog.tools)
+          const offered = await readFixedInputs(frame, 'first-model', ports, ctx, { source, current, raced })
+          const tool = modelTool(content, offered.tools)
           const policy = validateRuntime(
             'ToolPolicySnapshot',
             await compute('tools', 'classify', tool, ports, ctx),

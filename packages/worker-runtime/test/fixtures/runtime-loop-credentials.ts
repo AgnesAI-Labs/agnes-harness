@@ -71,11 +71,10 @@ export async function loopCredentialsFixture(
     consumer,
     wireHandle: structuredClone(f.options.installation.handle),
     owner,
-    async execute(prepared: W.PreparedModelRequest) {
+    async execute(credentialRef: W.SecretHandle | null) {
       observe({
         method: 'model.infer',
-        sameHandle:
-          !!retained && canonicalJsonDigest(prepared.credentialRef) === canonicalJsonDigest(retained),
+        sameHandle: !!retained && canonicalJsonDigest(credentialRef) === canonicalJsonDigest(retained),
       })
       const response = await f.port().fetch(f.request())
       await response.text()

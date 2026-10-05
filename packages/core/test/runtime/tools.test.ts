@@ -59,7 +59,7 @@ async function preparedModelReference(): Promise<DataRef> {
     const input = validateRuntime('ModelInferRequest', first.input.value)
     if (!input.ok) throw new Error('Invalid prepared model input')
     const ref = input.value.preparedRef
-    if (ref.kind !== 'inline' || !validateRuntime('PreparedModelRequest', ref.value).ok)
+    if (ref.kind !== 'inline' || !validateRuntime('PreparedModelHandle', ref.value).ok)
       throw new Error('Invalid original model source')
     return ref
   } finally {
