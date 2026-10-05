@@ -1055,8 +1055,10 @@ const INITIAL_CEILING: Record<string, number> = {
   // The approval card's summary line is built by summarizeCall (new file). Measured 25861 (+50), exact cap.
   // Sourced memory and hybrid retrieval providers. Measured 32058, exact, no spare.
   // fixed Tools +696, bounded Context +344, restricted Loop +1066; exact, no spare.
-  // Root export of the default projection factory and its public types (+19). Measured 34804, exact.
-  'packages/core/src': 34804,
+  // #293 (1d73af2a): measured 34773, approved +15 for the C10 model-source consumer.
+  // J-23 verifyCall convergence removes 12; #295 root exports add 12: merged total 34773, exact cap.
+  // Root export of the default projection factory and its public types (+19). Measured 34792, exact.
+  'packages/core/src': 34792,
   // Testkit-only reference Effects runner adds 202 measured lines; exact cap, no spare.
   'packages/core/testkit': 1997,
   // 2026-09-15: DeepSeek V4 Pro/Flash ship a known-thinking-corrections table (new file) so the
