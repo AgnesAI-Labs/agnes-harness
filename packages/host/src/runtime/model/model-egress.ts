@@ -44,7 +44,7 @@ export interface ModelEgressPort {
   readonly resolveCredential: (route: string, signal: AbortSignal) => Promise<string>
   close(): Promise<void>
 }
-class ModelEgressError extends Error {
+export class ModelEgressError extends Error {
   constructor(
     readonly code: string,
     readonly detailCode: string,

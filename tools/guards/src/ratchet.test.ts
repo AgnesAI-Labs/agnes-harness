@@ -2847,7 +2847,9 @@ const INITIAL_CEILING: Record<string, number> = {
   // Runtime HTTP credentials are generation-bound and Host read ports are wired. Measured 80050, exact, no spare.
   // Binding-scoped model Local egress adds 461 measured lines; measured 80511, exact, no spare.
   // feat(host): wire projection read ownership and daemon lifecycle. Measured 80687, exact, no spare.
-  'packages/host/src': 80687,
+  // Explicit model deployment assembly: call-bound markers, source fences and final C22 egress.
+  // Exact measured total 80856 (+169); no exclusions or spare allocation.
+  'packages/host/src': 80856,
   'packages/host/src/ext-host/service-invocation': 247,
   // T5.2's permission projector is kept independently bounded so later extension-host work cannot
   // hide in the package-wide increment. Measured source: 86 lines.
