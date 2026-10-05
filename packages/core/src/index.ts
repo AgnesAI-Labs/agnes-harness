@@ -222,7 +222,6 @@ export {
   INFER_CHILD_KEY,
   modelCaptureOf,
   preparedIdOf,
-  selectionDigest,
 } from './runtime/model/prepared-call.js'
 export {
   buildWireRequest,
@@ -259,12 +258,7 @@ export { createContextFactory } from './runtime/providers/context.js'
 export { createDefaultEffectsFactory } from './runtime/providers/effects.js'
 export type { DefaultLoopInputs, DefaultLoopSource } from './runtime/providers/loop.js'
 export { createDefaultLoopFactory } from './runtime/providers/loop.js'
-export type {
-  IssuanceEntry,
-  ModelCatalogView,
-  ModelDeployment,
-  RevisionBinding,
-} from './runtime/providers/model.js'
+export type { ModelCatalogView, ModelDeployment } from './runtime/providers/model.js'
 export { createDefaultModelFactory } from './runtime/providers/model.js'
 export type {
   NativeConversation,

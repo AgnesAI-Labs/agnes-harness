@@ -26,29 +26,12 @@ import {
   checkCredential,
   modelCaptureOf,
   refusal,
-  selectionDigest,
 } from '../model/prepared-call.js'
 import type { ModelCapture, WireIdentity } from '../model/wire-request.js'
 
 export type ModelCatalogView = Readonly<{
   digest: string
   select(route: string, model: string): CatalogPick | undefined
-}>
-export type IssuanceEntry = Readonly<{
-  /** Digest of the whole inline prepared body, which is the digest of the prepared reference. */
-  preparedDigest: W.Digest
-  inputDigest: W.Digest
-  /** The retained whole-catalog digest the source reader reads the capture back by. */
-  captureDigest: string
-  wire: WireIdentity
-  scope: Readonly<{ sessionId: string; runId: string }>
-  ownerBindingId: string
-}>
-export type RevisionBinding = Readonly<{
-  routeId: string
-  routeRevision: number
-  catalogRevision: number
-  selectionDigest: W.Digest
 }>
 export interface ModelDeployment {
   readonly packageDigest: string
@@ -73,11 +56,6 @@ export interface ModelDeployment {
       target: W.BindingRef,
       context: CallContext,
     ): { binding: W.BindingRef; packageDigest: string } | null
-  }
-  issuance: {
-    record(entry: IssuanceEntry): Outcome<void>
-    read(preparedDigest: string): IssuanceEntry | undefined
-    bindRevision(binding: RevisionBinding): Outcome<void>
   }
   credentials?: {
     verifyIssued(handle: W.SecretHandle, binding: W.SecretConsumerBinding, context: CallContext): boolean
@@ -151,7 +129,10 @@ const runOf = (scope: W.ScopeRef): { sessionId: string; runId: string } => {
   return { sessionId: scope.sessionId, runId: scope.runId }
 }
 
-/** The one preparation path shared by compute `prepare` and the managed `prepareRequest`. */
+/**
+ * The one preparation path shared by compute `prepare` and the managed `prepareRequest`. It builds a
+ * deterministic candidate from explicit input and the captured catalog and writes nothing durable.
+ */
 async function prepareOnce(
   d: ModelDeployment,
   owner: W.BindingRef,
@@ -161,7 +142,7 @@ async function prepareOnce(
 ): Promise<W.ModelPrepareResult> {
   if (call.signal.aborted) throw fault('cancelled', 'model_cancelled')
   if (!d.current(call)) throw fault('denied', 'model_binding_denied')
-  const scope = runOf(call.scope)
+  runOf(call.scope)
   if (input.hookResults !== null) throw fault('incompatible', 'model_hooks_unsupported')
   const route = input.route
   const relation = checkCredential(route, input.credentialRef, (d.now ?? Date.now)())
@@ -203,23 +184,6 @@ async function prepareOnce(
   if (!assembled.ok) throw fault(assembled.error.code, assembled.error.detailCode)
   const final = assembled.value
   if (call.signal.aborted) throw fault('cancelled', 'model_cancelled')
-  // Everything is validated; only now is anything written. The route revision is pinned together with the issuance.
-  const bound = d.issuance.bindRevision({
-    routeId: route.routeId,
-    routeRevision: route.routeRevision,
-    catalogRevision: route.catalogRevision,
-    selectionDigest: selectionDigest(picked),
-  })
-  if (!bound.ok) throw fault(bound.error.code, bound.error.detailCode)
-  const recorded = d.issuance.record({
-    preparedDigest: final.ref.digest,
-    inputDigest: final.prepared.inputDigest,
-    captureDigest: catalog.value.digest,
-    wire: wire.value,
-    scope,
-    ownerBindingId: owner.bindingId,
-  })
-  if (!recorded.ok) throw fault(recorded.error.code, recorded.error.detailCode)
   return {
     preparedRef: final.ref,
     targetSnapshot: route,

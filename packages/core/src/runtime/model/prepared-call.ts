@@ -49,12 +49,6 @@ export function modelCaptureOf(adapterPackageDigest: string, picked: CatalogPick
   }
 }
 
-/** What a route revision pins: the selected route and model only, never the other models of the catalog. */
-export function selectionDigest(picked: CatalogPick): W.Digest {
-  const { route, model } = modelCaptureOf('', picked)
-  return canonicalJsonDigest({ route, model } as never)
-}
-
 /** Relation only: the handle is never trusted from here, and no secret is read. */
 export function checkCredential(
   route: W.ModelRouteSnapshot,

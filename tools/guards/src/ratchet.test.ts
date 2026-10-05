@@ -1082,8 +1082,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // Sixth main synchronization merged with the integration tip. Measured 35005, exact, no spare.
   // Exact credential consumption and persisted completion-plan checks. Measured 35067, no spare.
   // Pure model input digest and plain text wire request builder (+87); exact cap, no spare.
-  // Model service preparation: prepared request assembly, issuance record and managed credential resolution. Measured 35775 (+621), exact, no spare.
-  'packages/core/src': 35775,
+  // Model service preparation: prepared request assembly and managed credential resolution. Measured 35729 (+575), exact, no spare.
+  'packages/core/src': 35729,
   // Testkit-only reference Effects runner adds 202 measured lines; exact cap, no spare.
   'packages/core/testkit': 1997,
   // 2026-09-15: DeepSeek V4 Pro/Flash ship a known-thinking-corrections table (new file) so the

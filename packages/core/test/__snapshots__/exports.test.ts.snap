@@ -138,7 +138,6 @@ exports[`keeps the public runtime export surface stable 1`] = `
   "scanPages",
   "scanTruncated",
   "scheduleBatch",
-  "selectionDigest",
   "sha256Hex",
   "stopGate",
   "toProviderRequest",
