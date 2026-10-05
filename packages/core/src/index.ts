@@ -213,6 +213,16 @@ export type {
 } from './runtime/interaction/authority.js'
 export { createInteractionAuthority } from './runtime/interaction/authority.js'
 export { defaultLoopStateCodec } from './runtime/loop/default-state.js'
+export type { CatalogPick, InlineRef, PrepareParts } from './runtime/model/prepared-call.js'
+export {
+  adapterInvokeInput,
+  assemblePrepared,
+  checkCredential,
+  externalKeyOf,
+  INFER_CHILD_KEY,
+  modelCaptureOf,
+  preparedIdOf,
+} from './runtime/model/prepared-call.js'
 export {
   buildWireRequest,
   MODEL_INPUT_KIND,
@@ -248,6 +258,8 @@ export { createContextFactory } from './runtime/providers/context.js'
 export { createDefaultEffectsFactory } from './runtime/providers/effects.js'
 export type { DefaultLoopInputs, DefaultLoopSource } from './runtime/providers/loop.js'
 export { createDefaultLoopFactory } from './runtime/providers/loop.js'
+export type { ModelCatalogView, ModelDeployment } from './runtime/providers/model.js'
+export { createDefaultModelFactory } from './runtime/providers/model.js'
 export type {
   NativeConversation,
   ProjectionAccess,
