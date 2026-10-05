@@ -29,10 +29,11 @@ import {
   validateActor,
 } from '@agnes/protocol'
 import { hasChildControl } from '../child/store.js'
+import { isPending, normalizeApproval } from '../effects/approval-answer.js'
 import { EffectRuntime } from '../effects/effect.js'
 import { type ExecuteAttempt, ExecutePermitRegistry } from '../effects/execute-permits.js'
 import { type NestedToolLease, NestedToolScheduler } from '../effects/scheduler.js'
-import type { ApprovalRequest, Pending, Verdict, VerifierVerdict } from '../effects/seams.js'
+import type { ApprovalAnswer, ApprovalRequest, Pending, Verdict, VerifierVerdict } from '../effects/seams.js'
 import type { ChildrenFactory, ToolContextDeps } from '../effects/tool-context.js'
 import {
   assertToolDispatchAvailable,
@@ -202,7 +203,7 @@ export type CoreReplacementOutputMap = {
   Inbox: InboxReplacementOutput
   Budget: BudgetReplacementOutput
   Inference: AsyncIterable<InferenceEvent>
-  Approval: Verdict | Pending
+  Approval: Verdict | ApprovalAnswer | Pending
   ToolExecution: ToolResult
   StopGate: StopGateReplacementOutput
 }
@@ -1271,11 +1272,20 @@ export class SessionImpl {
     return supportsComputerUse(resolvedModelInput(this.d.provider, target))
   }
 
-  askApproval(request: ApprovalRequest, signal: AbortSignal): Promise<Verdict | Pending> {
-    if (!this.d.segments?.Approval) return this.d.runtime.approvalAsk(request, signal)
-    return runCoreReplacement(this, 'Approval', this.operationContext(), { request, signal }, () =>
-      this.d.runtime.approvalAsk(request, signal),
-    )
+  /** The verdict alone, for callers that have no use for the reason behind it. */
+  async askApproval(request: ApprovalRequest, signal: AbortSignal): Promise<Verdict | Pending> {
+    const answer = await this.askApprovalAnswer(request, signal)
+    return isPending(answer) ? answer : answer.verdict
+  }
+
+  async askApprovalAnswer(request: ApprovalRequest, signal: AbortSignal): Promise<ApprovalAnswer | Pending> {
+    const raw = this.d.segments?.Approval
+      ? await runCoreReplacement(this, 'Approval', this.operationContext(), { request, signal }, () =>
+          this.d.runtime.approvalAsk(request, signal),
+        )
+      : await this.d.runtime.approvalAsk(request, signal)
+    // A replacement that answers outside the set is refused like a seam that does.
+    return normalizeApproval(raw) ?? { verdict: 'rejected' }
   }
 
   executeTool(

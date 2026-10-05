@@ -282,7 +282,7 @@ export function createPluginManageRequests(options: {
             return ep
           },
         })
-        const verdict = await prompt.ask(
+        const verdict = await prompt.askVerdict(
           {
             requestId: `plugin-${randomUUID()}`,
             kind: 'tool',

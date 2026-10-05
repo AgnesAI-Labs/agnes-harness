@@ -7,7 +7,7 @@ import type { Host, HostSession } from '@agnes/host'
 import type { McpStatus } from '@agnes/protocol'
 import { bootstrapWorkerResources, type WorkerResourceBootstrapInput } from '@agnes/resource-control-worker'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { applyMcpRowChange, handleCommand } from '../src/commands.js'
+import { applyMcpRowChange, handleCommand, prepareIdleResources } from '../src/commands.js'
 import type { McpRowRuntime } from '../src/mcp-row-runtime.js'
 
 type CommandFrame = Parameters<typeof handleCommand>[1]
@@ -709,6 +709,22 @@ describe('applyMcpRowChange (worker side of resourceMcpApply/resourceMcpReconnec
     await applying
     expect(events).toEqual(['run:start', 'run:done', 'applied'])
     expect(rows.applied).toEqual([['a']])
+  })
+
+  it('reloads again for its own mark when it joins a reload that began before it', async () => {
+    const { context, resources, rows } = await fixtureContext('a')
+    // A resource.stale frame already arrived and an idle preparation is reloading for it. The row
+    // change below lands while that reload is in flight and joins its admission batch.
+    resources.staleMarks = 1
+    const idle = prepareIdleResources(context())
+    const applying = applyMcpRowChange(context(), 'a', false)
+
+    await Promise.all([idle, applying])
+
+    // The status it returns must come from a generation that includes its own mark, not the older
+    // one the joined reload was built for.
+    expect(resources.reloadedMarks).toBeGreaterThanOrEqual(resources.staleMarks)
+    expect(rows.applied.length).toBeGreaterThanOrEqual(2)
   })
 
   it('returns undefined for a server the current snapshot does not name', async () => {

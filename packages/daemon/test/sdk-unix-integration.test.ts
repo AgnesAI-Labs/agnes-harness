@@ -204,6 +204,7 @@ it('projects the actual core timeline with generation and historical cuts throug
     upto: 0,
     opState: null,
     nodes: [],
+    pendingInputs: [],
     turns: [],
     usage: {
       totals: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, reasoning: 0 },

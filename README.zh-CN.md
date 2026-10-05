@@ -3,7 +3,7 @@
 [English](README.md) | 简体中文
 
 <p align="center">
-  <img src="docs/assets/readme/banner.png" alt="Agnes Harness：面向前线交付工程（FDE）的插件化智能体框架。LLM 是大脑，Jev 是小脑，Harness 是记忆，MHS 是身体。" width="100%" />
+  <img src="docs/assets/readme/banner.zh-CN.png" alt="Agnes Harness：面向前线交付工程（FDE）的插件化智能体框架。LLM 是大脑，Jev 是小脑，Harness 是记忆，MHS 是身体。" width="100%" />
 </p>
 
 <div align="center">
@@ -24,7 +24,7 @@
 </div>
 
 <p align="center">
-  <img src="docs/assets/readme/trailer.webp" alt="动画介绍：大脑（LLM）、小脑（Jev）、记忆（Harness）与身体（MHS，经 MCP 连接设备）合为 Agnes Harness，一套执行底座支撑企业 FDE 交付与物理世界的 MHS 接入" width="100%" />
+  <img src="docs/assets/readme/trailer.zh-CN.webp" alt="动画介绍：大脑（LLM）、小脑（Jev）、记忆（Harness）与身体（MHS，经 MCP 连接设备）合为 Agnes Harness，一套执行底座支撑企业 FDE 交付与物理世界的 MHS 接入" width="100%" />
 </p>
 
 <p align="center">
@@ -35,7 +35,7 @@
 把 AI 带进真实现场，难点往往不在模型本身，而在客户的业务系统、负责审批的人，以及每个现场都不一样的细节。Agnes Harness（AGH）把模型、工具、任务状态和业务界面连接在一起：**把现场差异写进插件，让 Harness 负责执行并留下记录，把验证过的能力带到下一个项目。**
 
 <p align="center">
-  <img src="docs/assets/readme/hero.gif" alt="AGH 在真实项目中工作：Agent 读取退款规则与订单数据，运行命令前请求审批，实际验证结果，给出可核对的表格，并在轨迹视图中记录每一步" width="100%" />
+  <img src="docs/assets/readme/hero.zh-CN.gif" alt="AGH 在真实项目中工作：Agent 读取退款规则与订单数据，运行命令前请求审批，实际验证结果，给出可核对的表格，并在轨迹视图中记录每一步" width="100%" />
 </p>
 
 <p align="center"><sub>读代码、运行命令前先审批、验证、作答，每一步都留痕。</sub></p>
@@ -106,7 +106,7 @@ Agent 需要调用你的订单查询、知识库、内部接口。如果把这�
 在 AGH 里，业务能力就是插件：通过[后端插件](docs/develop/backend.zh-CN.md)注册工具，或通过 [MCP](docs/guide/mcp.zh-CN.md) 连接已有服务。安装前会先展示版本、来源、完整性摘要、能力哈希和许可证；启用时绑定并校验这些哈希。之后 Agent 就能调用它，每次调用的输入和结构化输出都有记录。
 
 <p align="center">
-  <img src="docs/assets/readme/plugins.gif" alt="在 Web 工作台安装插件：检查来源，核对完整性、能力与许可，确认启用，随后 Agent 调用新工具 demo_text_stats，其输入与结构化输出都被记录" width="100%" />
+  <img src="docs/assets/readme/plugins.zh-CN.gif" alt="在 Web 工作台安装插件：检查来源，核对完整性、能力与许可，确认启用，随后 Agent 调用新工具 demo_text_stats，其输入与结构化输出都被记录" width="100%" />
 </p>
 
 ### 2. 任务在 Web 上开始，在终端里继续
@@ -116,7 +116,7 @@ Agent 需要调用你的订单查询、知识库、内部接口。如果把这�
 CLI、Web 与 SDK 共享同一套后台会话。在终端用 `/resume <id>` 恢复 Web 上的会话，历史、工具记录和结论都在；在终端里追加的内容，回到 Web 同样能看到。详见[会话与恢复](docs/guide/sessions.zh-CN.md)。
 
 <p align="center">
-  <img src="docs/assets/readme/terminal.gif" alt="终端界面恢复在 Web 上开始的会话，显示历史、工具记录与结论表，回答追问；回到 Web，同一条对话已经更新" width="100%" />
+  <img src="docs/assets/readme/terminal.zh-CN.gif" alt="终端界面恢复在 Web 上开始的会话，显示历史、工具记录与结论表，回答追问；回到 Web，同一条对话已经更新" width="100%" />
 </p>
 
 ### 3. "AI 改了什么？谁批准的？"
@@ -126,7 +126,7 @@ CLI、Web 与 SDK 共享同一套后台会话。在终端用 `/resume <id>` 恢�
 默认情况下，运行命令要先经你批准：仅允许这次、本会话允许或拒绝。轨迹视图按时间轴记录模型调用、工具与审批，逐步可查。包信任、工具审批、执行约束与会话记录，让集成有明确的控制点。详见[安全与信任](docs/guide/security.zh-CN.md)。
 
 <p align="center">
-  <img src="docs/assets/readme/trajectory.png" alt="轨迹视图：输入、模型与工具的时间轴，以及逐步记录，包括用户请求、文件读取、shell 命令及其审批记录和最终回答" width="100%" />
+  <img src="docs/assets/readme/trajectory.zh-CN.png" alt="轨迹视图：输入、模型与工具的时间轴，以及逐步记录，包括用户请求、文件读取、shell 命令及其审批记录和最终回答" width="100%" />
 </p>
 
 ### 4. 不同岗位需要不同的界面

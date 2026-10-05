@@ -24,6 +24,21 @@ describe('fakeToolContext', () => {
     await expect(ctx.fs.stat('nope')).rejects.toMatchObject({ code: 'ENOENT' })
   })
 
+  it('lets two contexts share one filesystem under different session keys', async () => {
+    const a = fakeToolContext({ sessionKey: 'session-a', files: { 'a.txt': 'one' } })
+    const b = fakeToolContext({ sessionKey: 'session-b', mem: a.mem })
+    expect([a.session.key, b.session.key]).toEqual(['session-a', 'session-b'])
+    await b.fs.write('a.txt', 'two')
+    expect(new TextDecoder().decode(await a.fs.read('a.txt'))).toBe('two')
+  })
+
+  it('reports the modification time a test sets, and 0 otherwise', async () => {
+    const ctx = fakeToolContext({ files: { 'a.txt': 'x' } })
+    expect((await ctx.fs.stat('a.txt')).mtimeMs).toBe(0)
+    ctx.mem.mtimes.set('/work/proj/a.txt', 1234)
+    expect(await ctx.fs.stat('a.txt')).toEqual({ kind: 'file', size: 1, mtimeMs: 1234 })
+  })
+
   it('records exec calls with their options and returns the scripted result', async () => {
     const ctx = fakeToolContext({ exec: (cmd) => ({ code: 3, stdout: cmd.join(' '), stderr: 'e' }) })
     const r = await ctx.exec(['sh', '-c', 'x'], { cwd: '/tmp', timeoutMs: 5 })

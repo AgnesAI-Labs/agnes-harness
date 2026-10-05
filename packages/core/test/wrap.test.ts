@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { FsPolicy } from '../src/effects/fs-guard.js'
 import { buildToolContext, type FsOps } from '../src/effects/tool-context.js'
-import { SeamRuntime, withTimeout } from '../src/effects/wrap.js'
+import { SeamRuntime, settlesWithin, withTimeout } from '../src/effects/wrap.js'
 import { presetDefaults } from '../src/step/preset.js'
 import {
   createWorkspaceInvocationPort,
@@ -101,7 +101,7 @@ describe('SeamRuntime', () => {
     expect(events).toEqual(['publication:enter', 'publication:release', 'handler', 'workspace:release'])
   })
 
-  it('approval timeout is rejected; an out-of-set verdict is rejected; unavailable passes through only under park', async () => {
+  it('approval timeout is rejected with its reason; an out-of-set verdict is rejected without one', async () => {
     const never = fakeSeams({
       approval: { ask: () => new Promise(() => undefined), resume: async () => null },
     })
@@ -112,7 +112,7 @@ describe('SeamRuntime', () => {
         req,
         sig(),
       ),
-    ).toBe('rejected')
+    ).toEqual({ verdict: 'rejected', reason: 'timeout' })
     expect(timeouts).toEqual([{ seam: 'approval', op: 'ask', message: 'timeout: approval.ask' }])
 
     const weird = fakeSeams({ approval: { ask: async () => 'yes' as never, resume: async () => null } })
@@ -124,24 +124,71 @@ describe('SeamRuntime', () => {
       }).approvalAsk(req, sig()),
     ).toBe('rejected')
     expect(odd).toEqual([{ seam: 'approval', op: 'ask', message: 'verdict out of set: yes' }])
-
-    const unavailable = fakeSeams({ approval: { ask: async () => 'unavailable', resume: async () => null } })
-    const park = {
-      ...presetDefaults(),
-      approval: { ...presetDefaults().approval, onUnavailable: 'park' as const },
-    }
+    const oddAnswer = fakeSeams({
+      approval: { ask: async () => ({ verdict: 'yes' }) as never, resume: async () => null },
+    })
     expect(
-      await new SeamRuntime(unavailable, park, { clock: () => 0, onFailure: () => undefined }).approvalAsk(
-        req,
-        sig(),
-      ),
-    ).toBe('unavailable')
-    expect(
-      await new SeamRuntime(unavailable, presetDefaults(), {
+      await new SeamRuntime(oddAnswer, presetDefaults(), {
         clock: () => 0,
         onFailure: () => undefined,
       }).approvalAsk(req, sig()),
     ).toBe('rejected')
+  })
+
+  it.each(['deny', 'park'] as const)(
+    'unavailable is recorded as unavailable and not folded into rejected under on_unavailable=%s',
+    async (onUnavailable) => {
+      const unavailable = fakeSeams({
+        approval: { ask: async () => 'unavailable', resume: async () => null },
+      })
+      const preset = {
+        ...presetDefaults(),
+        approval: { ...presetDefaults().approval, onUnavailable },
+      }
+      expect(
+        await new SeamRuntime(unavailable, preset, {
+          clock: () => 0,
+          onFailure: () => undefined,
+        }).approvalAsk(req, sig()),
+      ).toEqual({ verdict: 'unavailable', reason: 'no_approver' })
+    },
+  )
+
+  it('an abort while waiting is cancelled for the stop, not a rejection by the approver', async () => {
+    const never = fakeSeams({
+      approval: { ask: () => new Promise(() => undefined), resume: async () => null },
+    })
+    const stop = new AbortController()
+    const rt = new SeamRuntime(never, presetDefaults(), { clock: () => 0, onFailure: () => undefined })
+    const answer = rt.approvalAsk(req, stop.signal)
+    stop.abort()
+    expect(await answer).toEqual({ verdict: 'cancelled', reason: 'stopped' })
+    expect(await rt.approvalAsk(req, stop.signal)).toEqual({ verdict: 'cancelled', reason: 'stopped' })
+  })
+
+  it('keeps a bare verdict bare, passes a known reason through and drops an unknown one', async () => {
+    const answers: unknown[] = [
+      'rejected',
+      { verdict: 'rejected', reason: 'user_rejected' },
+      { verdict: 'rejected', reason: 'because I said so' },
+      { verdict: 'allowed-once' },
+    ]
+    const got: unknown[] = []
+    for (const answer of answers) {
+      const seams = fakeSeams({ approval: { ask: async () => answer as never, resume: async () => null } })
+      got.push(
+        await new SeamRuntime(seams, presetDefaults(), {
+          clock: () => 0,
+          onFailure: () => undefined,
+        }).approvalAsk(req, sig()),
+      )
+    }
+    expect(got).toEqual([
+      'rejected',
+      { verdict: 'rejected', reason: 'user_rejected' },
+      'rejected',
+      'allowed-once',
+    ])
   })
 
   it('a Pending ticket is passed through rather than read as a verdict', async () => {
@@ -282,7 +329,10 @@ describe('SeamRuntime', () => {
       timers: immediateTimers,
       workspaceInvocation: workspacePort(timeoutApproval, timeoutRelease),
     })
-    await expect(timeoutRuntime.approvalAsk(req, sig())).resolves.toBe('rejected')
+    await expect(timeoutRuntime.approvalAsk(req, sig())).resolves.toEqual({
+      verdict: 'rejected',
+      reason: 'timeout',
+    })
     expect(timeoutRelease).not.toHaveBeenCalled()
     settleTimedOutApproval('allowed-once')
     await vi.waitFor(() => expect(timeoutRelease).toHaveBeenCalledOnce())
@@ -314,7 +364,10 @@ describe('SeamRuntime', () => {
       onFailure: () => undefined,
       workspaceInvocation: workspacePort(parkedApproval, parkRelease),
     })
-    await expect(parkRuntime.approvalAsk(req, sig())).resolves.toBe('unavailable')
+    await expect(parkRuntime.approvalAsk(req, sig())).resolves.toEqual({
+      verdict: 'unavailable',
+      reason: 'no_approver',
+    })
     expect(parkRelease).toHaveBeenCalledOnce()
   })
 
@@ -677,6 +730,47 @@ describe('withTimeout resource lifecycle', () => {
     await expect(
       withTimeout(Promise.reject(new Error('late')), 100, 'cancelled', controller.signal, timers),
     ).rejects.toThrow('aborted: cancelled')
+    await Promise.resolve()
+    expect(pending.size).toBe(0)
+  })
+})
+
+describe('settlesWithin', () => {
+  const setup = () => {
+    const pending = new Map<number, () => void>()
+    let id = 0
+    const timers = {
+      setTimeout: (fn: () => void) => {
+        pending.set(++id, fn)
+        return id
+      },
+      clearTimeout: (handle: unknown) => {
+        pending.delete(handle as number)
+      },
+    }
+    return { pending, timers }
+  }
+
+  it.each(['resolves', 'rejects'] as const)(
+    'is true once the promise %s, and leaves no timer behind',
+    async (kind) => {
+      const { pending, timers } = setup()
+      const p = kind === 'resolves' ? Promise.resolve(7) : Promise.reject(new Error('the work failed'))
+      await expect(settlesWithin(p, 100, timers)).resolves.toBe(true)
+      expect(pending.size).toBe(0)
+    },
+  )
+
+  it('is false when the time runs out first, and a later failure is still consumed', async () => {
+    const { pending, timers } = setup()
+    let fail!: (error: Error) => void
+    const p = new Promise<never>((_, reject) => {
+      fail = reject
+    })
+    const rested = settlesWithin(p, 100, timers)
+    pending.values().next().value?.()
+    await expect(rested).resolves.toBe(false)
+    fail(new Error('late'))
     await Promise.resolve()
     expect(pending.size).toBe(0)
   })

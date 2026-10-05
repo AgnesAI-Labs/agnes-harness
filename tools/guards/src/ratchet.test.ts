@@ -296,7 +296,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // B-line diagnostics dialog: React view adds 147 lines; measured 4706, exact cap.
   // Domain cards in the conversation window projection and message list: measured 4792, exact cap (+86).
   // Popover placement measures the trigger's own window. Measured 6714, exact, no spare (+2).
-  'packages/web-ui/src': 6714,
+  // Sixth main synchronization brings main's queued-input CI fixes. Measured 6736, exact, no spare.
+  'packages/web-ui/src': 6736,
   // W8a-3: retire the native tool renderer in favor of one compatibility root; measured 4630.
   // The offline diagnostics viewer refuses an unknown bundle version (+7 lines); measured 4645, exact cap.
   // Sidebar binds against its own document and window. Measured 5559, exact, no spare (+1).
@@ -506,7 +507,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // Merge of CHUNK-LEDGER-SLIM (lost-text marker, +4) with the streaming-smoothness quick fixes (727):
   // sampled fingerprints also carry lostChars. Re-measured on the merged tree: 731, exact, no spare.
   // Slot card context travels with the renderer options. Measured 787, exact, no spare (+1).
-  'packages/web/src/timeline': 787,
+  // Sixth main synchronization brings main's queued-input CI fixes. Measured 797, exact, no spare.
+  'packages/web/src/timeline': 797,
   // 2026-09-17：navigation.ts 的 folderIcon 换成客户端 AgnesProjectFolderIcon 两态字形
   // （两条 path + folderSvg 构造器），展开/收起由 CSS 的 [aria-expanded] 切换。实测 108。
   // SESSION-ACTIONS integrated with b/main: exact increment +43.
@@ -1062,7 +1064,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // Measured 25811, exact cap.
   // The approval card's summary line is built by summarizeCall (new file). Measured 25861 (+50), exact cap.
   // Sourced memory and hybrid retrieval providers. Measured 32058, exact, no spare.
-  'packages/core/src': 32725,
+  // Sixth main synchronization brings main's queued-input CI fixes. Measured 32862, exact, no spare.
+  'packages/core/src': 32862,
   // Testkit-only reference Effects runner adds 202 measured lines; exact cap, no spare.
   'packages/core/testkit': 1997,
   // 2026-09-15: DeepSeek V4 Pro/Flash ship a known-thinking-corrections table (new file) so the
@@ -2022,7 +2025,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // Runtime HTTP credentials are generation-bound and Host read ports are wired. Measured 27535, exact, no spare.
   // Host projection lifecycle and read-port composition. Measured 27549, exact.
   // Sixth main synchronization merged with the current integration tip. Measured 27731, exact, no spare.
-  'packages/daemon/src': 27731,
+  // Sixth main synchronization brings main's queued-input CI fixes. Measured 27749, exact, no spare.
+  'packages/daemon/src': 27749,
   'packages/daemon/src/packages/admin-session': 46,
   // 2026-09-14: whole-branch review fix wave (Finding 1) adds the two missing
   // 'pins/inspect'/'pins/release' entries to the ACTIONS BFF route allowlist, which had been left
@@ -2279,7 +2283,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // Region mounts go through a slot port built from the registry. Measured 16705, exact, no spare (-42).
   // The default shell rewrites its lists in place so a selection survives an update. Measured 16745, exact,
   // no spare (+40).
-  'packages/web/src': 16827,
+  // Sixth main synchronization brings main's queued-input CI fixes. Measured 16849, exact, no spare.
+  'packages/web/src': 16849,
   // 2026-09-17 web-client-modules frontend track (rebased onto L0/permission-picker main): re-measured exact value below.
   // 2026-09-14: Task 7 orphaned-pin-cleanup adds the orphan-pins section to PluginAdminPage — the
   // #orphanPins/#orphanPinsList/#orphanPinsStatus/#orphanPinsReleaseAll element bindings, the
@@ -2852,7 +2857,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // Binding-scoped model Local egress adds 461 measured lines; measured 80511, exact, no spare.
   // feat(host): wire projection read ownership and daemon lifecycle. Measured 80687, exact, no spare.
   // Sixth main synchronization merged with the current integration tip. Measured 80713, exact, no spare.
-  'packages/host/src': 80713,
+  // Sixth main synchronization brings main's queued-input CI fixes. Measured 80715, exact, no spare.
+  'packages/host/src': 80715,
   'packages/host/src/ext-host/service-invocation': 247,
   // T5.2's permission projector is kept independently bounded so later extension-host work cannot
   // hide in the package-wide increment. Measured source: 86 lines.
@@ -3019,7 +3025,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // First-cause timedOut in exec and exec-win32. Measured 5034 (+9), exact cap.
   // The fence refuses writes to the installation's own state under full file access. Measured 5053,
   // exact, no spare (+19).
-  'packages/host/src/adapters': 5053,
+  // Approval reasons: the Prompter type may answer with a reason (+2). Measured 5055, exact cap.
+  'packages/host/src/adapters': 5055,
 
   // C1b Task 5 persists child creation attempts and deferred recovery; exact total, no spare.
   // Task 17 review: sqlite_master scan + table-name refuse. Re-measured: 674, exact.
@@ -3080,6 +3087,8 @@ const EXTENSION_CEILING_EXCEPTIONS = new Map([
   // SKILL-CATALOG-CLEAN-REWRITE: same reviewed exact total as the catalog/name activation budget above.
   // Skill description bounds and paged reads. Measured 1121, exact.
   ['skills', 1121],
+  // Write staleness guard (per-session table of observed file versions, checked by write). Measured 855, exact.
+  ['tools-core', 855],
 ])
 
 describe('bundled extension line budgets (default ≤ 800, named reviewed exceptions)', () => {

@@ -73,7 +73,7 @@ describe('approval-policy sync path', () => {
         },
       }),
     )
-    expect(verdict).toBe('rejected')
+    expect(verdict).toEqual({ verdict: 'rejected', reason: 'policy_denied' })
   })
 
   // A deny in the table beats the prompter too: nobody is asked a question whose answer is already
@@ -89,7 +89,10 @@ describe('approval-policy sync path', () => {
         return 'allowed-session'
       },
     })
-    expect(await (await approvalPolicy(init)).ask(req())).toBe('rejected')
+    expect(await (await approvalPolicy(init)).ask(req())).toEqual({
+      verdict: 'rejected',
+      reason: 'policy_denied',
+    })
     expect(asked).toBe(0)
   })
 
@@ -103,6 +106,14 @@ describe('approval-policy sync path', () => {
     })
     expect(await (await approvalPolicy(init)).ask(req())).toBe('allowed-session')
     expect(asked).toEqual(['edit src/a.ts'])
+  })
+
+  it("hands the prompter's reason on untouched", async () => {
+    const init = fakeSeamInit({ prompter: async () => ({ verdict: 'rejected', reason: 'user_rejected' }) })
+    expect(await (await approvalPolicy(init)).ask(req())).toEqual({
+      verdict: 'rejected',
+      reason: 'user_rejected',
+    })
   })
 
   it('asks about a tainted call even when a rule allows it', async () => {

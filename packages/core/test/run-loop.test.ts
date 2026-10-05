@@ -354,6 +354,25 @@ describe('run loop', () => {
     })
   })
 
+  it('StopGate: a park question nobody could be asked is recorded as unavailable and blocks the turn', async () => {
+    const seams = fakeSeams({
+      verifier: {
+        verify: async (scope) =>
+          scope === 'turn' ? { verdict: 'fail', reasons: ['x'] } : { verdict: 'pass', reasons: [] },
+      },
+      repair: { decide: async () => 'park' },
+      approval: { ask: async () => 'unavailable', resume: async () => null },
+    })
+    const p = await openSession({ provider: fakeProvider([textTurn('draft')]), seams })
+    await p.session.enqueue('next-turn', { content: [{ type: 'text', text: 'do' }], actor })
+    expect((await p.session.run({ until: 'turn-end', signal: sig() })).reason).toBe('blocked')
+    expect((await p.log.scan({ type: 'approval/decided', limit: 5 }))[0]?.data).toMatchObject({
+      verdict: 'unavailable',
+      via: 'sync',
+      reason: 'no_approver',
+    })
+  })
+
   it('StopGate: repair rounds are numbered from the decisions already on the ledger', async () => {
     let verifies = 0
     const seams = fakeSeams({

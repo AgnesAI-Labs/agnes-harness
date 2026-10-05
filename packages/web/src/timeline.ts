@@ -84,6 +84,16 @@ const APPROVAL_DECISION_KEYS = new Map<string, string>([
   ['cancelled', 'timeline.decision.cancelled'],
 ])
 
+/** Why the decision ended as it did. A ledger from before reasons existed has none and falls back to the verdict. */
+const APPROVAL_REASON_KEYS = new Map<string, string>([
+  ['user_rejected', 'timeline.reason.userRejected'],
+  ['timeout', 'timeline.reason.timeout'],
+  ['no_approver', 'timeline.reason.noApprover'],
+  ['stopped', 'timeline.reason.stopped'],
+  ['policy_denied', 'timeline.reason.policyDenied'],
+  ['subagent_scope', 'timeline.reason.subagentScope'],
+])
+
 const textContent = (node: UserNode): string =>
   node.content
     .filter(
@@ -122,7 +132,7 @@ function fingerprint(node: UINode): string {
         node.argsPreview,
       )}:${sampledPart(node.resultPreview)}`
     case 'approval':
-      return `${node.kind}:${node.id}:${node.state}:${node.summary}:${node.decision?.verdict ?? ''}`
+      return `${node.kind}:${node.id}:${node.state}:${node.summary}:${node.decision?.verdict ?? ''}:${node.decision?.reason ?? ''}`
     case 'contribute-conflict':
       return `${node.kind}:${node.id}:${node.key}:${JSON.stringify(node.ops)}`
     case 'compaction':
@@ -186,7 +196,9 @@ function article(node: UINode): HTMLElement {
 const approvalStatus = (node: ApprovalNode, t: Translate): string =>
   (node.state === 'decided' && node.decision
     ? (() => {
-        const key = APPROVAL_DECISION_KEYS.get(node.decision.verdict)
+        const key =
+          APPROVAL_REASON_KEYS.get(node.decision.reason ?? '') ??
+          APPROVAL_DECISION_KEYS.get(node.decision.verdict)
         return key === undefined ? undefined : t(key)
       })()
     : undefined) ?? t(APPROVAL_LABEL_KEYS[node.state])

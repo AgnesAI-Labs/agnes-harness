@@ -693,6 +693,43 @@ it('cancelled planned tools remain cancelled after close, reopen and resume', as
   await expect(session.projectUI()).rejects.toMatchObject({ code: 'E_CLOSED' })
 })
 
+it('shows a Stop on a running shell call as cancelled, not failed', async () => {
+  let started!: () => void
+  const running = new Promise<void>((resolve) => {
+    started = resolve
+  })
+  const registry = new ToolRegistry()
+  registry.add(
+    shellTool(
+      (_args, ctx) =>
+        new Promise((resolve) => {
+          ctx.signal.addEventListener(
+            'abort',
+            () => resolve({ content: [{ type: 'text', text: 'killed' }] }),
+            { once: true },
+          )
+          started()
+        }),
+    ),
+    { source: 'test', trust: 'builtin' },
+  )
+  const { session } = await open({
+    provider: fakeProvider([toolTurn('shell', { command: 'sleep 30' })]),
+    registry,
+  })
+  await input(session)
+  const ac = new AbortController()
+  const turn = session.run({ until: 'turn-end', signal: ac.signal })
+  await running
+  ac.abort()
+  expect((await turn).reason).toBe('aborted')
+  expect(kind((await session.projectUI()).nodes, 'tool')[0]).toMatchObject({
+    name: 'shell',
+    status: 'cancelled',
+    resultPreview: expect.stringMatching(/cancelled while running.*partial effect/s),
+  })
+})
+
 it('preserves a turn error before inference in live patches and through a reopen', async () => {
   const provider = fakeProvider([])
   const { session, storage } = await open({ provider })
@@ -732,9 +769,13 @@ it('preserves a failed tool result through a reopen without declaring completion
 })
 
 describe('approval cards', () => {
-  it.each(['allowed-once', 'rejected', 'unavailable'] as ApprovalVerdict[])(
-    'shows real %s decision and result',
-    async (verdict) => {
+  it.each([
+    ['allowed-once', undefined],
+    ['rejected', undefined],
+    ['unavailable', 'no_approver'],
+  ] as [ApprovalVerdict, string | undefined][])(
+    'shows real %s decision and result, with its reason when it has one',
+    async (verdict, reason) => {
       const registry = new ToolRegistry()
       registry.add(shellTool(), { source: 'test', trust: 'builtin' })
       const { session } = await open({
@@ -745,10 +786,14 @@ describe('approval cards', () => {
       await input(session)
       await run(session)
       const timeline = await session.projectUI()
-      expect(kind(timeline.nodes, 'approval')[0]).toMatchObject({
+      const card = kind(timeline.nodes, 'approval')[0]
+      expect(card).toMatchObject({
         state: 'decided',
-        decision: { verdict: verdict === 'unavailable' ? 'rejected' : verdict, via: 'sync' },
+        decision: { verdict, via: 'sync', ...(reason ? { reason } : {}) },
       })
+      // A decision with no reason on the ledger, which is every one written before reasons existed,
+      // shows none rather than a guess.
+      if (!reason) expect(card?.decision).not.toHaveProperty('reason')
       expect(kind(timeline.nodes, 'tool')[0]?.status).toBe(
         verdict === 'allowed-once' ? 'completed' : 'failed',
       )

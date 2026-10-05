@@ -491,6 +491,43 @@ describe('parent close reasons and late approval', () => {
   })
 })
 
+describe('a delegated sub-agent with nobody to ask', () => {
+  it('is refused as outside its fixed scope, with a reason of its own, and the tool does not run', async () => {
+    let runs = 0
+    const storage = new MemoryStorage()
+    const provider = fakeProvider([toolTurn('shell', {}), textTurn('done')])
+    Object.assign(provider, { models: () => [model()] })
+    const k = kernel({
+      storage,
+      provider,
+      seams: fakeSeams({ approval: { ask: async () => 'unavailable' } }),
+    })
+    k.tools.add(
+      shellTool(async () => {
+        runs += 1
+        return { content: [{ type: 'text', text: 'ran' }] }
+      }),
+      { source: 't', trust: 'builtin' },
+    )
+    const parent = await k.session('parent', sessionOpts)
+    const child = await parent.d.children.create({ parent: parent.key, cwd: '/w', input: 'tool' })
+    await child.run('tool')
+    expect(runs).toBe(0)
+    expect((await storage.scan(child.key, { type: 'approval/decided', limit: 5 }))[0]?.data).toMatchObject({
+      verdict: 'rejected',
+      via: 'sync',
+      reason: 'subagent_scope',
+    })
+    const result = (await storage.scan(child.key, { type: 'tool/result', limit: 5 }))[0]?.data as {
+      code: string
+      content: Array<{ text: string }>
+    }
+    expect(result.code).toBe('APPROVAL_REJECTED')
+    expect(result.content[0]?.text).toMatch(/sub-agent.*fixed permission scope.*do not retry/s)
+    await k.close()
+  })
+})
+
 describe('subagent cost isolation', () => {
   it('records subagent/cost without changing parent lastLedgerTokens', async () => {
     const k = kernel()

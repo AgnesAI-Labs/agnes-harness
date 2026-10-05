@@ -254,6 +254,15 @@ describe('W3b projected message DOM', () => {
     expect(toolButton?.getAttribute('aria-expanded')).toBe('true')
     expect(item('tool')?.dataset.expanded).toBe('true')
     expect(item('approval')?.getAttribute('aria-label')).toBe('已拒绝')
+    await update(
+      store,
+      settled.map((node) =>
+        node.kind === 'approval'
+          ? { ...node, decision: { verdict: 'unavailable', via: 'sync', reason: 'no_approver' } }
+          : node,
+      ),
+    )
+    expect(item('approval')?.getAttribute('aria-label')).toBe('无人审批，未执行')
     expect(item('approval')?.querySelectorAll('button')).toHaveLength(0)
     expect(item('cost')?.textContent).toContain('1.25 credits（网关记录）')
     expect(cost?.open).toBe(true)

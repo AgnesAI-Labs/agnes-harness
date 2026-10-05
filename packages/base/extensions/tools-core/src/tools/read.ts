@@ -1,5 +1,7 @@
 import { defineTool, type ToolContext, type ToolResult } from '@agnes/extension-api'
+import { observe, versionOf } from '../guards/observed.js'
 import { byteLength, describeFailure, parseSpillLocator, splitByBytes } from '../guards/output.js'
+import { normalizeWorkspacePath } from '../paths.js'
 import { ReadParams } from './schemas.js'
 
 // Ceiling on how much of a file is pulled into memory for one call. Without it a single read of a
@@ -177,6 +179,7 @@ export const readTool = defineTool({
         ],
       }
     }
+    const abs = normalizeWorkspacePath(args.path, ctx.cwd).abs
     let bytes: Uint8Array
     try {
       // The path is passed on exactly as given: whatever enforces the workspace boundary must see
@@ -185,6 +188,9 @@ export const readTool = defineTool({
       // as truncated.
       bytes = await ctx.fs.read(args.path, { offset: 0, limit: MAX_READ_BYTES + 1 })
     } catch (e) {
+      // Having been told the file is not there is what a session now knows of it. Keeping an older
+      // version would leave a write that creates the file refused for a change the model has seen.
+      if ((e as { code?: string }).code === 'ENOENT') observe(ctx.session.key, abs, undefined)
       return { content: [{ type: 'text', text: `read failed: ${(e as Error).message}` }], isError: true }
     }
     if (isBinary(bytes))
@@ -197,6 +203,10 @@ export const readTool = defineTool({
         ],
         isError: true,
       }
+    // What this session has now seen of the file, taken from the whole of what came back and before
+    // the cut below, so that `write` can refuse to replace it once it has changed. A page of a file
+    // counts as having read the file.
+    observe(ctx.session.key, abs, await versionOf(ctx, args.path, bytes, MAX_READ_BYTES))
     let notes = ''
     if (bytes.byteLength > MAX_READ_BYTES) {
       bytes = bytes.subarray(0, MAX_READ_BYTES)

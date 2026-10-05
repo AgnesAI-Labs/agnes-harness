@@ -1,6 +1,7 @@
 import type { ToolResult } from '@agnes/extension-api'
 import type { Actor, ExecutionDomain, JsonValue, ResolvedToolCallPolicy } from '@agnes/protocol'
 import { hasChildControl, transitionChildState } from '../child/store.js'
+import { approvalRefusal, isPending } from '../effects/approval-answer.js'
 import { type EffectHandle, type EffectOutcome, effectOutcome } from '../effects/effect.js'
 import type { ExecuteAttempt } from '../effects/execute-permits.js'
 import type { NestedToolLease } from '../effects/scheduler.js'
@@ -8,7 +9,7 @@ import { scheduleBatch } from '../effects/scheduler.js'
 import { buildToolContext, type FsOps, type ToolContextDeps } from '../effects/tool-context.js'
 import type { HostDispatchObservation } from '../effects/tool-dispatch.js'
 import { toLedgerContent } from '../effects/tool-result.js'
-import { withTimeout } from '../effects/wrap.js'
+import { settlesWithin, withTimeout } from '../effects/wrap.js'
 import { scanAll } from '../log/scan-pages.js'
 import {
   hasAuthenticToolPolicyHash,
@@ -190,6 +191,33 @@ function unknownOutcomeMessage(name: string, cause: 'timeout' | 'cancelled' | un
       ? ' Split it into shorter steps, or run it in the background if the tool offers that.'
       : '')
   )
+}
+
+/**
+ * How long a call that was cancelled has to come to rest before the ledger is written. A killed
+ * process group answers well inside it; a tool still running when it ends is not known to have stopped.
+ */
+const STOPPED_CALL_REST_MS = 1500
+
+/**
+ * Model-facing text for a mutation call a cancel stopped and that then came to rest. It says
+ * "cancelled", not "unknown", but keeps the warning: what it did before it stopped is not known.
+ * It does not say who cancelled: a shutdown writes the same row as a user's Stop.
+ */
+function userStoppedMessage(name: string): string {
+  return (
+    `${name} was cancelled while running and has stopped, so it may have taken partial effect. ` +
+    'Inspect the current state before retrying; do not rerun it unchanged.'
+  )
+}
+
+/**
+ * Who asked for the stop, if the ledger says anyone did. Read afresh: the request is recorded after
+ * the call began, so an op read earlier cannot hold it.
+ */
+function stopRequestedBy(s: SessionImpl): Actor | undefined {
+  const control = s.op()?.control
+  return control?.status === 'cancel_requested' ? control.by : undefined
 }
 
 async function settleSyntheticDispatch(
@@ -739,19 +767,24 @@ export async function approveAndExecute(
       }
       const storage = s.d.log.storage
       if (hasChildControl(storage)) await transitionChildState(storage, s.key, 'waiting_approval')
-      const verdict = await s.askApproval(approvalRequest, o.signal ?? s.ac.signal)
-      if (hasChildControl(storage) && (typeof verdict !== 'object' || verdict === null))
+      const answer = await s.askApprovalAnswer(approvalRequest, o.signal ?? s.ac.signal)
+      if (hasChildControl(storage) && !isPending(answer))
         await transitionChildState(storage, s.key, 'running')
-      if (typeof verdict === 'object') {
+      if (isPending(answer)) {
         // The ask is handed back rather than written here. Parking closes the turn, and a member of a
         // concurrent batch that closes the turn under its siblings leaves the next one writing a
         // `step/end` into a turn that is already over. One writer ends the batch, and it carries
         // every unanswered question with it rather than dropping the ones that lost the race.
         return {
           result: errorResult('parked'),
-          park: s.ev('approval/asked', { ...finalAsked, pending: verdict }),
+          park: s.ev('approval/asked', { ...finalAsked, pending: answer }),
         }
       }
+      // A delegated sub-agent has no one to ask: unanswered is refused, and says why.
+      const refused =
+        answer.verdict === 'unavailable' && hasChildControl(storage) && !!(await storage.lookupByKey(s.key))
+      const verdict = refused ? 'rejected' : answer.verdict
+      const reason = refused ? 'subagent_scope' : answer.reason
       const grantId =
         verdict === 'allowed-permanent'
           ? permanentGrantId({ sessionKey: s.key, toolUseId: call.toolUseId, scope })
@@ -764,6 +797,7 @@ export async function approveAndExecute(
             verdict,
             via: 'sync',
             scope,
+            ...(reason ? { reason } : {}),
             ...(grantId ? { grantId } : {}),
           }),
         ],
@@ -835,10 +869,10 @@ export async function approveAndExecute(
         continue
       }
       if (verdict === 'allowed-session') s.sessionAllows.add(grantKey)
-      if (!verdict.startsWith('allowed'))
-        return {
-          result: await refuse(s, call.toolUseId, 'APPROVAL_REJECTED', `approval ${verdict}`, decisionId),
-        }
+      if (!verdict.startsWith('allowed')) {
+        const refusal = approvalRefusal(verdict, reason, s.preset.approval.timeoutMs)
+        return { result: await refuse(s, call.toolUseId, refusal.code, refusal.text, decisionId) }
+      }
     }
   }
   if (call.executionDomain === 'workspace' && !policy.isReadOnly && !s.d.runtime.sandboxAllowed())
@@ -1055,6 +1089,8 @@ export async function approveAndExecute(
     let observation: HostDispatchObservation
     let timedOut = false
     let cancelled = false
+    // The call itself, which `withTimeout` stops waiting for the moment a cancel lands.
+    let dispatched: Promise<HostDispatchObservation> | undefined
     while (true) {
       if (ac.signal.aborted) {
         return {
@@ -1079,7 +1115,8 @@ export async function approveAndExecute(
       try {
         // Deliberately not the injected timers: those drive the writer lease, and a test that freezes
         // them to hold a lease still has to be able to watch a tool run out of time.
-        observation = await withTimeout(invokeAttempt(attempt), timeoutMs, call.name, ac.signal)
+        dispatched = invokeAttempt(attempt)
+        observation = await withTimeout(dispatched, timeoutMs, call.name, ac.signal)
       } catch (error) {
         timedOut = error instanceof Error && error.message.startsWith('timeout:')
         cancelled = !timedOut && ac.signal.aborted
@@ -1136,6 +1173,32 @@ export async function approveAndExecute(
       ac.abort()
       const mutation = policy.isDestructive || !policy.isReadOnly || policy.replay === 'never'
       if (mutation) {
+        // A cancel is ours when it is on the ledger: recorded before it is delivered, and a workspace
+        // tool such as the shell is told to stop and kills its process group. Once the call has come to
+        // rest it is cancelled, not unknown. Whatever cannot show all of that stays unknown: a deadline,
+        // a bare abort with no cancel on the ledger, a Host call, and a call still running when the wait ends.
+        const stoppedBy = cancelled && call.executionDomain === 'workspace' ? stopRequestedBy(s) : undefined
+        if (stoppedBy && dispatched && (await settlesWithin(dispatched, STOPPED_CALL_REST_MS))) {
+          const result = await settleSyntheticDispatch(
+            s,
+            call,
+            effect,
+            attempt,
+            'may_have_sent',
+            decisionId,
+            {
+              code: 'CANCELLED',
+              message: userStoppedMessage(call.name),
+              outcome: 'aborted',
+              partial: true,
+              cancelledBy: stoppedBy,
+            },
+          )
+          return {
+            result,
+            ...(nestedParks[0] ? { park: nestedParks[0] } : {}),
+          }
+        }
         // Code and `unknown` settlement stay: the call may have changed the world, so it is never replayed.
         const result = await settleSyntheticDispatch(s, call, effect, attempt, 'may_have_sent', decisionId, {
           code: 'TOOL_OUTCOME_UNKNOWN',

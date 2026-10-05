@@ -1,8 +1,9 @@
 import { defineTool, type ToolResult } from '@agnes/extension-api'
 import { withFileLock } from '../guards/mutation-queue.js'
+import { observe, versionOf } from '../guards/observed.js'
 import { looksTruncated } from '../guards/truncation.js'
 import { normalizeWorkspacePath } from '../paths.js'
-import { isBinary } from './read.js'
+import { isBinary, MAX_READ_BYTES } from './read.js'
 import { EditParams } from './schemas.js'
 
 // Keep the BOM in the decoded text so an unrelated edit preserves it on writeback.
@@ -39,10 +40,11 @@ export const editTool = defineTool({
     deferLoading: false,
     requiresApproval: 'destructive',
   },
-  execute: (args, ctx): Promise<ToolResult> =>
+  execute: (args, ctx): Promise<ToolResult> => {
     // Keyed on the resolved path rather than on the argument: `a.ts` and `/work/proj/a.ts` are one
     // file, and two spellings taking two locks is the same as taking no lock at all.
-    withFileLock(normalizeWorkspacePath(args.path, ctx.cwd).abs, async () => {
+    const abs = normalizeWorkspacePath(args.path, ctx.cwd).abs
+    return withFileLock(abs, async () => {
       let bytes: Uint8Array
       try {
         bytes = await ctx.fs.read(args.path)
@@ -76,6 +78,11 @@ export const editTool = defineTool({
         if ((e as { code?: string }).code !== 'E_FS_DENIED') throw e
         return fail(`edit failed: ${(e as Error).message}`)
       }
+      // An edit is never refused for a file that changed: its oldText must still match, which is
+      // the check, and refusing here would make two sessions editing different parts of one file
+      // fail each other. It does record what it wrote, so a later `write` of this session compares
+      // against the file as this edit left it.
+      observe(ctx.session.key, abs, await versionOf(ctx, args.path, enc.encode(text), MAX_READ_BYTES))
       const delta = text.split('\n').length - original.split('\n').length
       return {
         content: [
@@ -86,5 +93,6 @@ export const editTool = defineTool({
         ],
         details: { path: args.path, bytes: enc.encode(text).byteLength },
       }
-    }),
+    })
+  },
 })

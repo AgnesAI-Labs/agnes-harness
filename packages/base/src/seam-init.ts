@@ -1,4 +1,11 @@
-import type { ApprovalRequest, Enforcement, PlatformSeam, SandboxSeam, Verdict } from '@agnes/core'
+import type {
+  ApprovalAnswer,
+  ApprovalRequest,
+  Enforcement,
+  PlatformSeam,
+  SandboxSeam,
+  Verdict,
+} from '@agnes/core'
 import type { FsEntry, FsStat, Logger, SessionRef } from '@agnes/extension-api'
 import type { ComputerUseBackendProvider } from '../extensions/computer-use/src/backend.js'
 import type { ComputerUseToolOptions } from '../extensions/computer-use/src/tool.js'
@@ -106,7 +113,9 @@ export type SandboxHostServices = {
 }
 
 /** The way to put a question to whoever is connected. The deadline travels on the signal. */
-export type Prompter = { ask(req: ApprovalRequest, opts: { signal: AbortSignal }): Promise<Verdict> }
+export type Prompter = {
+  ask(req: ApprovalRequest, opts: { signal: AbortSignal }): Promise<Verdict | ApprovalAnswer>
+}
 
 /**
  * Two file handles, not one, and they are fenced at different roots. `fs` is the workspace: it is

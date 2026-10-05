@@ -35,10 +35,10 @@ Developer preview (pre-alpha) · [Source build](#run-from-source) · [Apache-2.0
 Taking AI into a real deployment is rarely about the model alone. It is about the customer's systems, the people who approve the work, and the details that differ at every site. Agnes Harness (AGH) connects models, tools, task state, and business interfaces: **put the differences into plugins, let the harness run and record the work, and carry what you validated into the next deployment.**
 
 <p align="center">
-  <img src="docs/assets/readme/hero.gif" alt="AGH working in a real project: the agent reads the refund rules and order data, asks for approval before running a command, verifies the result, returns a checkable table, and records every step in the trajectory view" width="100%" />
+  <img src="docs/assets/readme/hero.gif" alt="AGH working in a real project: the agent reads the refund rules and order data, asks for approval before running a command, verifies the result, returns a checkable table, and records every step in the Trace view" width="100%" />
 </p>
 
-<p align="center"><sub>Read the code, ask before running a command, verify, answer, and record every step. The Web interface currently ships in Chinese, so captions are bilingual.</sub></p>
+<p align="center"><sub>Read the code, ask before running a command, verify, answer, and record every step.</sub></p>
 
 <details>
 <summary><kbd>Contents</kbd></summary>
@@ -123,10 +123,10 @@ CLI, Web, and SDK share the same backend sessions. Resume a Web session in the t
 
 In a customer environment, a result is not enough: you need to show how it was produced.
 
-Running a command waits for your approval by default: allow once, allow for the session, or deny. The trajectory view keeps a timeline of model calls, tools, and approvals, step by step. Package trust, tool approvals, execution constraints, and session records give the integration explicit points of control. See [security and trust](docs/guide/security.md).
+Running a command waits for your approval by default: allow once, allow for the session, or deny. The Trace view keeps a timeline of model calls, tools, and approvals, step by step. Package trust, tool approvals, execution constraints, and session records give the integration explicit points of control. See [security and trust](docs/guide/security.md).
 
 <p align="center">
-  <img src="docs/assets/readme/trajectory.png" alt="The trajectory view: a timeline of input, model and tool activity, followed by step records that include the user request, file reads, the shell command and its approval record, and the final answer" width="100%" />
+  <img src="docs/assets/readme/trajectory.png" alt="The Trace view: a timeline of input, model and tool activity, followed by step records that include the user request, file reads, the shell command and its approval record, and the final answer" width="100%" />
 </p>
 
 ### 4. Each role needs its own screen
