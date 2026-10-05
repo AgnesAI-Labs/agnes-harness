@@ -298,7 +298,9 @@ const INITIAL_CEILING: Record<string, number> = {
   // under one dispose deadline, and a lease that misses it is reported. Measured 3646, exact (+25).
   // A generation's release holds every module to one dispose deadline, draining its renderers before
   // disposing it, and reports each late module once. Measured 3673, exact (+27).
-  'packages/web-client/src': 3673,
+  // The client selection refuses a welcome without one and a renderer entry its module does not load.
+  // Measured 3677, exact (+4).
+  'packages/web-client/src': 3677,
   'packages/web-slots/src': 605,
   // Failed shell calls read as their exit code (+19 lines); measured 4891, exact cap.
   // B-line diagnostics dialog: React view adds 147 lines; measured 4706, exact cap.
