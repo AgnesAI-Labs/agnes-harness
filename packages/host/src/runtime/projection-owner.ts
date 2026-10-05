@@ -73,7 +73,7 @@ const refuse = (detailCode: string, code?: RuntimeError['code']): Outcome<never>
   error: fault(detailCode, code),
 })
 
-/** Host-internal assembly seam. Test fixtures can supply a provider before Core publishes its factory. */
+/** Host-internal assembly seam. Test fixtures can supply a provider before a deployment installs one. */
 export function assembleHostProjectionOwner(
   options: Readonly<{
     provider?: HostProjectionProvider
@@ -202,7 +202,7 @@ export function assembleHostProjectionOwner(
   }
 }
 
-/** Until Core exposes a typed factory and the deployment supplies its issuer, reads fail closed. */
+/** Until a deployment installs the Core provider and supplies its issuer, reads fail closed. */
 export function createHostProjectionOwner<Storage>(
   sources?: HostProjectionSources<Storage>,
 ): HostProjectionOwner {

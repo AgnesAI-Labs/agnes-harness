@@ -68,67 +68,80 @@ async function preparedModelReference(): Promise<DataRef> {
   }
 }
 describe.each(['default', 'reference'] as const)('fixed text Tools %s', (kind) => {
-  it.each(['verified', 'denied', 'throws', 'revoked', 'bad-schema', 'call-denied'] as const)(
-    'consumes an explicit model source verifier: %s',
-    async (scenario) => {
-      const sourceRef = await preparedModelReference()
-      const denied = {
-        ok: false as const,
-        error: {
-          code: 'denied' as const,
-          detailCode: 'model_source_denied',
-          message: 'Source denied',
-          diagnosticId: 'fixture',
-          retryAdvice: { kind: 'never' as const },
-        },
-      }
-      let checked = false
-      const verifyCall = vi.fn(async () =>
-        scenario === 'call-denied' ? denied : { ok: true as const, value: undefined },
-      )
-      const test = await setup(kind, {
-        verifyCall,
-        async verifyModelContext(call, frame, context) {
-          checked = true
-          expect(this.definition).toEqual(test.definition)
-          expect(call.modelContextRef).toEqual(sourceRef)
-          expect(frame.runId).toBe(test.frame.runId)
-          expect(context.bindingId).toBe(test.call.bindingId)
-          if (scenario === 'denied') return denied
-          if (scenario === 'throws') throw new Error('Source unavailable')
-          if (scenario === 'revoked') test.revoke()
-          return { ok: true, value: undefined }
-        },
+  it.each([
+    'verified',
+    'denied',
+    'throws',
+    'revoked',
+    'bad-schema',
+    'missing-source',
+    'missing-verifier',
+  ] as const)('consumes model source verification through verifyCall: %s', async (scenario) => {
+    const sourceRef = await preparedModelReference()
+    const denied = {
+      ok: false as const,
+      error: {
+        code: 'denied' as const,
+        detailCode: 'model_source_denied',
+        message: 'Source denied',
+        diagnosticId: 'fixture',
+        retryAdvice: { kind: 'never' as const },
+      },
+    }
+    let checked = false
+    const test = await setup(kind, {
+      async verifyCall(call, frame, context) {
+        checked = true
+        expect(this.definition).toEqual(test.definition)
+        expect(call.modelContextRef).toEqual(sourceRef)
+        expect(frame.runId).toBe(test.frame.runId)
+        expect(context.bindingId).toBe(test.call.bindingId)
+        if (scenario === 'denied') return denied
+        if (scenario === 'missing-source')
+          return {
+            ...denied,
+            error: {
+              ...denied.error,
+              code: 'incompatible',
+              detailCode: 'tools_model_context_source_unavailable',
+            },
+          }
+        if (scenario === 'throws') throw new Error('Source unavailable')
+        if (scenario === 'revoked') test.revoke()
+        return { ok: true, value: undefined }
+      },
+    })
+    try {
+      if (scenario === 'missing-verifier') Reflect.deleteProperty(test.deployment, 'verifyCall')
+      if (test.frame.input.kind !== 'inline') throw new Error('Inline fixture')
+      const input = toolsRef(RuntimeMethodSchemaRefs['agh.tools'].invoke.input, {
+        ...(test.frame.input.value as object),
+        modelContextRef:
+          scenario === 'bad-schema' ? { ...sourceRef, schema: RuntimeSchemaRefs.ToolResult } : sourceRef,
       })
-      try {
-        if (test.frame.input.kind !== 'inline') throw new Error('Inline fixture')
-        const input = toolsRef(RuntimeMethodSchemaRefs['agh.tools'].invoke.input, {
-          ...(test.frame.input.value as object),
-          modelContextRef:
-            scenario === 'bad-schema' ? { ...sourceRef, schema: RuntimeSchemaRefs.ToolResult } : sourceRef,
-        })
-        if (input.kind !== 'inline') throw new Error('Inline fixture')
-        const result = await test.leaf.execute(
-          { ...test.frame, input, inputDigest: input.digest },
-          test.actionContext,
-        )
-        if (scenario === 'verified') {
-          expect(result.outcome).toBe('succeeded')
-          expect(verifyCall).toHaveBeenCalled()
-        } else {
-          expect(result.outcome).toBe('failed')
-          if (scenario === 'denied' || scenario === 'call-denied')
-            expect(result.error?.detailCode).toBe('model_source_denied')
-          if (scenario === 'bad-schema') expect(result.error?.detailCode).toBe('tools_model_context_schema')
-        }
-        expect(checked).toBe(scenario !== 'bad-schema')
-        expect(test.effectsCount()).toBe(0)
-      } finally {
-        await test.leaf.close('shutdown')
-        await test.provider.close('shutdown')
+      if (input.kind !== 'inline') throw new Error('Inline fixture')
+      const result = await test.leaf.execute(
+        { ...test.frame, input, inputDigest: input.digest },
+        test.actionContext,
+      )
+      if (scenario === 'verified') {
+        expect(result.outcome).toBe('succeeded')
+      } else {
+        expect(result.outcome).toBe('failed')
+        if (scenario === 'denied') expect(result.error?.detailCode).toBe('model_source_denied')
+        if (scenario === 'missing-source')
+          expect(result.error?.detailCode).toBe('tools_model_context_source_unavailable')
+        if (scenario === 'missing-verifier')
+          expect(result.error?.detailCode).toBe('tools_action_source_unavailable')
+        if (scenario === 'bad-schema') expect(result.error?.detailCode).toBe('tools_model_context_schema')
       }
-    },
-  )
+      expect(checked).toBe(scenario !== 'bad-schema' && scenario !== 'missing-verifier')
+      expect(test.effectsCount()).toBe(0)
+    } finally {
+      await test.leaf.close('shutdown')
+      await test.provider.close('shutdown')
+    }
+  })
   it.each(['select', 'normal', 'deny', 'cancel', 'dispose'] as const)('contract %s', async (scenario) => {
     await runToolsContractScenario(scenario, {
       open: () => openToolsFixture(kind),
@@ -198,7 +211,7 @@ describe.each(['default', 'reference'] as const)('fixed text Tools %s', (kind) =
         ),
       ).toMatchObject({
         outcome: 'failed',
-        error: { code: 'incompatible', detailCode: 'tools_model_context_source_unavailable' },
+        error: { code: 'denied', detailCode: 'tools_model_context_schema' },
       })
       expect(test.effectsCount()).toBe(0)
     } finally {

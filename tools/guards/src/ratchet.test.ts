@@ -1072,7 +1072,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // Sourced memory and hybrid retrieval providers. Measured 32058, exact, no spare.
   // Sixth main synchronization brings main's queued-input CI fixes. Measured 32862, exact, no spare.
   // Exact merged main and runtime integration source count; no spare allocation.
-  'packages/core/src': 34983,
+  // Public factory exports and converged model-source consumption; exact merged count, no spare.
+  'packages/core/src': 35002,
   // Testkit-only reference Effects runner adds 202 measured lines; exact cap, no spare.
   'packages/core/testkit': 1997,
   // 2026-09-15: DeepSeek V4 Pro/Flash ship a known-thinking-corrections table (new file) so the

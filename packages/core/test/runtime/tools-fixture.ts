@@ -182,7 +182,20 @@ export async function openToolsFixture(
     snapshot: 'fixed-snapshot',
     catalogRevision: 1,
     checkCurrent: permitted,
-    verifyCall: permitted,
+    async verifyCall(invocation) {
+      if (invocation.modelContextRef !== null)
+        return {
+          ok: false,
+          error: {
+            code: 'incompatible',
+            detailCode: 'tools_model_context_source_unavailable',
+            message: 'Direct-tool fixture has no model source',
+            retryAdvice: { kind: 'never' },
+            diagnosticId: 'tools-fixture',
+          },
+        }
+      return permitted()
+    },
     createExecutor: (toolCall) =>
       createPureToolAuthorAdapter(author, {
         definition,

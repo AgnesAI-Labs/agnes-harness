@@ -212,7 +212,17 @@ export type {
   StoredInteractionWake,
 } from './runtime/interaction/authority.js'
 export { createInteractionAuthority } from './runtime/interaction/authority.js'
+export { defaultLoopStateCodec } from './runtime/loop/default-state.js'
 export type { SessionOverlayPort } from './runtime/overlay.js'
+export type {
+  DispatchProgress,
+  DomainCommandStorage,
+  DomainCommandTransaction,
+  StoredDispatch,
+  StoredDomainCommand,
+  StoredDomainState,
+} from './runtime/projection/commands.js'
+export type { ReaderGrant } from './runtime/projection/domain.js'
 export type {
   AccountingDispatch,
   AccountingMethod,
@@ -221,9 +231,30 @@ export type {
 export { createAccountingFactory } from './runtime/providers/accounting.js'
 export type { DefaultBudgetAuthority } from './runtime/providers/budget.js'
 export { createDefaultBudgetFactory } from './runtime/providers/budget.js'
+export type {
+  ContextDeployment,
+  ContextFactoryOptions,
+  ContextSourceSnapshot,
+} from './runtime/providers/context.js'
+export { createContextFactory } from './runtime/providers/context.js'
 export { createDefaultEffectsFactory } from './runtime/providers/effects.js'
+export type { DefaultLoopInputs, DefaultLoopSource } from './runtime/providers/loop.js'
+export { createDefaultLoopFactory } from './runtime/providers/loop.js'
+export type {
+  NativeConversation,
+  ProjectionAccess,
+  ProjectionCommand,
+  ProjectionDomain,
+  ProjectionProvider,
+  ProjectionProviderOptions,
+  ReaderPolicy,
+} from './runtime/providers/projection.js'
+export { createProjectionProvider } from './runtime/providers/projection.js'
+export type { ToolsDeployment } from './runtime/providers/tools.js'
+export { createDefaultToolsFactory } from './runtime/providers/tools.js'
 export type { DefaultUsageAuthority } from './runtime/providers/usage.js'
 export { createDefaultUsageFactory } from './runtime/providers/usage.js'
+export { createTextStatisticsTool } from './runtime/tools/definitions.js'
 export { approvalDeadlineMs } from './step/approval-callback.js'
 export type { BeforeCompactPayload, CompactionPlan, CompactPayload } from './step/compaction.js'
 export { CompactionRunner, runCompaction } from './step/compaction.js'
