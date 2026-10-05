@@ -2897,8 +2897,9 @@ const INITIAL_CEILING: Record<string, number> = {
   // feat(host): retain model catalog captures by content digest. Measured 81775 (+40), exact, no spare.
   // feat(host): Host-only native State read owner. Measured 82377 (+602), exact, no spare.
   // feat(host): hand the loop the issued model credential handle. Measured 82443, exact, no spare.
-  // feat(host): read the original prepared model request into a verified wire source (+130 on top of the above). Measured 82573, exact, no spare.
-  'packages/host/src': 82573,
+  // feat(host): read the original prepared model request into a verified wire source (+130 on top of the above). Measured 83038, exact, no spare.
+  // Durable model call store for sent-request facts and their lookup. Measured 83038 (+465), exact, no spare.
+  'packages/host/src': 83038,
   'packages/host/src/ext-host/service-invocation': 247,
   // T5.2's permission projector is kept independently bounded so later extension-host work cannot
   // hide in the package-wide increment. Measured source: 86 lines.
