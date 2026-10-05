@@ -27,6 +27,7 @@ import {
   validateRuntime,
 } from '@agnes/protocol/runtime'
 import { PiAdapter } from '../../adapters/pi/index.js'
+import { mediaConsumed } from '../model-adapter/media.js'
 import type { ModelAdapterDeployment, ModelWireSource } from '../model-adapter/ports.js'
 import { type ModelUsageEvidence, modelUsageEvidence } from '../model-adapter/usage-evidence.js'
 
@@ -94,7 +95,7 @@ function validSource(source: ModelWireSource, frame: ActionFrame, factory: Facto
     ['openai-completions', 'anthropic-messages'].includes(source.route.api) &&
     source.request.sampling?.maxTokens === p.generation.maxOutputTokens &&
     (source.request.sampling?.thinking ?? null) === p.generation.thinking &&
-    p.mediaPlans.length === 0 &&
+    mediaConsumed(source) &&
     p.outputSchema === null
   )
 }

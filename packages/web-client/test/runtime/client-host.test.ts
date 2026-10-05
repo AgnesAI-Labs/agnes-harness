@@ -296,15 +296,18 @@ function harness(options: { target?: ClientTarget; limits?: { entryMs?: number; 
   const leases: Array<{ id: string; ownerToken: string; disposed: number }> = []
   /** What ending a lease of a renderer id answers, in place of a timely close. */
   const leaseEnds: Record<string, () => Promise<boolean>> = {}
+  /** What presenting through a lease of a renderer id answers, in place of the view as its format. */
+  const presents: Record<string, () => Outcome<RendererPresentation>> = {}
   const lease = (id: string, ownerToken: string) => {
     const entry = { id, ownerToken, disposed: 0 }
     leases.push(entry)
     return {
       present: (view: DomainView) =>
+        presents[id]?.() ??
         ({
           ok: true,
           value: { target: 'tui', formatted: view },
-        }) as unknown as Outcome<RendererPresentation>,
+        } as unknown as Outcome<RendererPresentation>),
       // True once every per-view context of the lease closed in time, unless `leaseEnds` says otherwise.
       dispose: async () => {
         entry.disposed += 1
@@ -327,6 +330,7 @@ function harness(options: { target?: ClientTarget; limits?: { entryMs?: number; 
     /** How often each module's standard entry ran. */
     starts,
     leaseEnds,
+    presents,
     hosts: [] as UIRegistryHost[],
     definitions: [] as RendererDefinition[],
     entries: {} as Record<string, (standard: ClientEntry) => ClientEntry>,
@@ -655,6 +659,39 @@ describe('client host runtime', () => {
     expect(kind(now(h).registry, 'cards.card')).toBe('matched')
   })
 
+  it('names the desktop capabilities a refused renderer needs above the fallback that presents', async () => {
+    const h = harness({ target: 'tui' })
+    expect(refused(await h.runtime.activate(catalog(1, 'tui')))).toBe('ok')
+    h.presents['cards.card'] = () => ({
+      ok: false,
+      error: {
+        code: 'incompatible',
+        detailCode: 'desktop_capability_unavailable',
+        message: 'needs a desktop capability',
+        retryAdvice: { kind: 'never' },
+        diagnosticId: 'client-host-test',
+        safeDetail: ['desktop.open-path.v1'],
+      },
+    })
+    const formatted = { viewId: 'v1', revision: 1, parts: [{ kind: 'text' as const, text: 'fallback' }] }
+    h.presents['base.fallback'] = () => ({
+      ok: true,
+      value: { target: 'tui', formatted: { ...formatted, complete: true, unsupportedRequiredFeatures: [] } },
+    })
+    const presented = now(h).presentation.domain({
+      viewId: 'v1',
+      revision: 1,
+      renderKey: 'cards.card',
+    } as DomainView)
+    expect(presented.ok && presented.value.target === 'tui' && presented.value.formatted.parts).toEqual([
+      {
+        kind: 'text',
+        text: 'This viewer needs a desktop capability (desktop.open-path.v1); showing the basic view.',
+      },
+      { kind: 'text', text: 'fallback' },
+    ])
+  })
+
   it('leases handles only for definitions registered for a module of the live generation', async () => {
     const h = harness()
     /** The card definition the host registered in each generation. */
@@ -950,6 +987,32 @@ describe('client host runtime', () => {
       expected: 'incompatible/client_module_missing',
       log: [],
     },
+    // A selected module requiring a feature this client did not negotiate loads nothing: base, which
+    // serves the shell, needs only a desktop capability, cards a desktop capability and another feature.
+    ...(
+      [
+        ['the shell module requires a desktop capability', 'base', [], 'desktop_capability_unavailable'],
+        [
+          'a renderer module requires a desktop capability and another feature',
+          'cards',
+          ['acme.sync'],
+          'feature_not_negotiated',
+        ],
+      ] as const
+    ).map(([name, moduleId, also, detail]) => ({
+      name,
+      arrange: () => {},
+      select: (next: ReturnType<typeof catalog>) => ({
+        ...next,
+        modules: next.modules.map((module) =>
+          module.moduleId === moduleId
+            ? { ...module, requiredFeatures: ['desktop.open-path.v1', ...also] }
+            : module,
+        ),
+      }),
+      expected: `incompatible/${detail}`,
+      log: [],
+    })),
   ]
 
   it.each(failing)('keeps the current generation and releases the candidate when $name', async (row) => {
