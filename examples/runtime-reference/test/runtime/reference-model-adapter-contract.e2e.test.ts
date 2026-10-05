@@ -176,7 +176,10 @@ it.each([
   ],
   [
     'a scope the factory does not own',
-    (call: CallContext): CallContext => ({ ...call, scope: { ...call.scope, runtimeId: 'other-runtime' } }),
+    (call: CallContext): CallContext => ({
+      ...call,
+      scope: { ...call.scope, installationId: 'other-installation' },
+    }),
   ],
   [
     'a binding the factory does not own',
