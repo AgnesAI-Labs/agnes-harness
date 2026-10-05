@@ -1086,7 +1086,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // Domain command event identity lookup and shared event fingerprint (+19); measured 35173, exact.
   // Model service preparation: prepared request assembly and managed credential resolution (+575); measured 35748, exact, no spare.
   // Model service infer: one stable child action, result and usage attribution from the child (+247). Measured 35995, exact, no spare.
-  'packages/core/src': 35995,
+  // Model prepared handle and bounded in-process registry replace the persisted prepared body (+161). Measured 36156, exact, no spare.
+  'packages/core/src': 36156,
   // Testkit-only reference Effects runner adds 202 measured lines; exact cap, no spare.
   'packages/core/testkit': 1997,
   // 2026-09-15: DeepSeek V4 Pro/Flash ship a known-thinking-corrections table (new file) so the

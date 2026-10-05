@@ -2893,6 +2893,116 @@
         }
       }
     },
+    "PreparedModelHeader": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "route",
+        "adapterPackageDigest",
+        "maxOutputTokens",
+        "thinking",
+        "wire",
+        "sessionParameterRef",
+        "credentialRef",
+        "mediaPlanDigests"
+      ],
+      "properties": {
+        "route": {
+          "$ref": "#/$defs/ModelRouteSnapshot"
+        },
+        "adapterPackageDigest": {
+          "$ref": "prototype.json#/$defs/Id"
+        },
+        "maxOutputTokens": {
+          "$ref": "prototype.json#/$defs/UInt53"
+        },
+        "thinking": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ThinkingLevel"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "wire": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "slot",
+            "contractId",
+            "sessionKeyDigest"
+          ],
+          "properties": {
+            "slot": {
+              "enum": ["primary", "escalation", "fast", "compaction", "verifier", "image", "video"]
+            },
+            "contractId": {
+              "anyOf": [
+                {
+                  "$ref": "prototype.json#/$defs/Id"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "sessionKeyDigest": {
+              "$ref": "prototype.json#/$defs/Digest"
+            }
+          }
+        },
+        "sessionParameterRef": {
+          "$ref": "prototype.json#/$defs/DomainReference"
+        },
+        "credentialRef": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/SecretHandle"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "mediaPlanDigests": {
+          "type": "array",
+          "items": {
+            "$ref": "prototype.json#/$defs/Digest"
+          },
+          "maxItems": 10000
+        }
+      }
+    },
+    "PreparedModelHandle": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "handleId",
+        "inputDigest",
+        "ownerBinding",
+        "header"
+      ],
+      "properties": {
+        "kind": {
+          "const": "agh.model/prepared-handle@1"
+        },
+        "handleId": {
+          "$ref": "prototype.json#/$defs/Id"
+        },
+        "inputDigest": {
+          "$ref": "prototype.json#/$defs/Digest"
+        },
+        "ownerBinding": {
+          "$ref": "prototype.json#/$defs/BindingRef"
+        },
+        "header": {
+          "$ref": "#/$defs/PreparedModelHeader"
+        }
+      }
+    },
     "PreparedModelRequest": {
       "type": "object",
       "additionalProperties": false,
@@ -39819,6 +39929,7 @@
     }
   },
   "x-schema-ids": {
+    "PreparedModelHandle": "agh.model/prepared-handle@1",
     "PreparedModelRequest": "agh.model/prepared-request@1",
     "EmbeddingVectors": "agh.embedding/vectors@1",
     "RuntimeCommitData": "agh.runtime/state-commit@1",

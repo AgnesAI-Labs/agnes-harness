@@ -1,11 +1,16 @@
 import { type LoopReadPorts, runtimeAuthorSchemas } from '@agnes/extension-api/runtime'
 import type * as W from '@agnes/protocol/runtime'
-import { canonicalJsonDigest, RuntimeMethodSchemaRefs, validateRuntime } from '@agnes/protocol/runtime'
+import {
+  canonicalJsonDigest,
+  RuntimeMethodSchemaRefs,
+  RuntimeSchemaRefs,
+  validateRuntime,
+} from '@agnes/protocol/runtime'
 import { describe, expect, it } from 'vitest'
 import { modelCaptureOf } from '../../src/runtime/model/prepared-call.js'
 import { modelInputDigest } from '../../src/runtime/model/wire-request.js'
 import type { ModelDeployment } from '../../src/runtime/providers/model.js'
-import { actionFrame, inlineRef, openModel } from './model-deployment-fixture.js'
+import { actionFrame, entryOf, inlineRef, openModel } from './model-deployment-fixture.js'
 import {
   callContext,
   fixtureAdapter,
@@ -46,20 +51,24 @@ const detail = (r: { ok: boolean; error?: W.RuntimeError }) => r.error?.detailCo
 
 describe('model prepare', () => {
   it('returns a reference the shared digest agrees with, and changes nothing durable', async () => {
-    const { prepare, counters } = await open()
+    const { prepare, counters, deployment } = await open()
     const result = await prepare(prepareRequest())
     if (!result.ok || result.value.kind !== 'inline') throw new Error('prepare failed')
     const out = validateRuntime('ModelPrepareResult', result.value.value)
     if (!out.ok) throw new Error('bad result')
     const ref = out.value.preparedRef
     if (ref.kind !== 'inline') throw new Error('not inline')
-    const prepared = validateRuntime('PreparedModelRequest', ref.value)
-    if (!prepared.ok) throw new Error('bad prepared')
-    expect(prepared.value.inputDigest).toBe(
-      modelInputDigest(prepared.value, modelCaptureOf('package-1', fixturePick()), fixtureWire),
+    const handle = validateRuntime('PreparedModelHandle', ref.value)
+    if (!handle.ok) throw new Error('bad handle')
+    const { prepared } = entryOf(deployment, ref)
+    expect(prepared.inputDigest).toBe(
+      modelInputDigest(prepared, modelCaptureOf('package-1', fixturePick()), fixtureWire),
     )
+    expect(handle.value).toMatchObject({ inputDigest: prepared.inputDigest, ownerBinding: fixtureOwner })
+    expect(ref.schema).toEqual(RuntimeSchemaRefs.PreparedModelHandle)
+    expect(JSON.stringify(ref.value)).not.toContain('"view"')
     expect(out.value).toMatchObject({
-      inputDigest: prepared.value.inputDigest,
+      inputDigest: prepared.inputDigest,
       targetSnapshot: prepareRequest().route,
       estimatedUnits: [],
       mediaPlanRefs: [],
@@ -75,17 +84,14 @@ describe('model prepare', () => {
         return { ok: true as const, value: { ...fixtureWire, slot: 'fast' as const } }
       },
     }
-    const { prepare } = await open({ wire })
+    const { prepare, deployment } = await open({ wire })
     const result = await prepare(prepareRequest())
     if (!result.ok || result.value.kind !== 'inline') throw new Error('prepare failed')
     const out = validateRuntime('ModelPrepareResult', result.value.value)
     if (!out.ok || out.value.preparedRef.kind !== 'inline') throw new Error('bad result')
-    const prepared = validateRuntime('PreparedModelRequest', out.value.preparedRef.value)
-    if (!prepared.ok) throw new Error('bad prepared')
+    const { prepared } = entryOf(deployment, out.value.preparedRef)
     const capture = modelCaptureOf('package-1', fixturePick())
-    expect(out.value.inputDigest).toBe(
-      modelInputDigest(prepared.value, capture, { ...fixtureWire, slot: 'fast' }),
-    )
+    expect(out.value.inputDigest).toBe(modelInputDigest(prepared, capture, { ...fixtureWire, slot: 'fast' }))
     expect(seen).toEqual([prepareRequest().route])
   })
 
@@ -347,17 +353,20 @@ describe('model prepareRequest', () => {
       actionFrame('prepareRequest', inlineRef(refs.prepareRequest.input, input)),
       ports,
     )
-    return { out }
+    return { out, deployment: model.deployment }
   }
   it('resolves the exact handle through the secrets query and writes it into the prepared request', async () => {
     const queries: W.ServiceQuery[] = []
-    const { out } = await start({ secrets }, requestInput({ route: bound }), resolvePorts(queries, handle))
+    const { out, deployment } = await start(
+      { secrets },
+      requestInput({ route: bound }),
+      resolvePorts(queries, handle),
+    )
     if (out.next.kind !== 'complete' || out.next.output.kind !== 'inline') throw new Error('not complete')
     expect(queries).toHaveLength(1)
     const result = validateRuntime('ModelPrepareResult', out.next.output.value)
     if (!result.ok || result.value.preparedRef.kind !== 'inline') throw new Error('bad result')
-    const prepared = validateRuntime('PreparedModelRequest', result.value.preparedRef.value)
-    expect(prepared.ok && prepared.value.credentialRef).toEqual(handle)
+    expect(entryOf(deployment, result.value.preparedRef).prepared.credentialRef).toEqual(handle)
     expect(out.children).toHaveLength(0)
   })
   it.each([
