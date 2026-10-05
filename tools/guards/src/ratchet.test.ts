@@ -301,14 +301,18 @@ const INITIAL_CEILING: Record<string, number> = {
   // The client selection refuses a welcome without one and a renderer entry its module does not load.
   // Measured 3677, exact (+4).
   // An unknown domain view phase finds no tone through one lookup. Measured 3672, exact (-5).
-  'packages/web-client/src': 3672,
+  // Missing desktop capabilities are named: the generic card's reason, a renderer refused for them with a
+  // viewer hint, and a module requiring an unnegotiated feature fails its candidate. Measured 3733,
+  // exact (+61).
+  'packages/web-client/src': 3733,
   'packages/web-slots/src': 605,
   // Failed shell calls read as their exit code (+19 lines); measured 4891, exact cap.
   // B-line diagnostics dialog: React view adds 147 lines; measured 4706, exact cap.
   // Domain cards in the conversation window projection and message list: measured 4792, exact cap (+86).
   // Popover placement measures the trigger's own window. Measured 6714, exact, no spare (+2).
   // Sixth main synchronization brings main's queued-input CI fixes. Measured 6736, exact, no spare.
-  'packages/web-ui/src': 6736,
+  // Sandboxed HTML viewer frame and its request checks. Measured 6871, exact, no spare (+135).
+  'packages/web-ui/src': 6871,
   // W8a-3: retire the native tool renderer in favor of one compatibility root; measured 4630.
   // The offline diagnostics viewer refuses an unknown bundle version (+7 lines); measured 4645, exact cap.
   // Sidebar binds against its own document and window. Measured 5559, exact, no spare (+1).
@@ -1114,7 +1118,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // Injected model egress fetch in PiAdapter (the catalogue probe skipped behind it) and a required per-call
   // egress port in the runtime model adapter. Measured 5908 (+26), exact cap, no spare.
   // Model adapter answers a lost prepared call from the store instead of loading it (+8). Measured 5916, exact, no spare.
-  'packages/ai/src': 5916,
+  // Model source check consumes verified media evidence (+57). Measured 5973, exact, no spare.
+  'packages/ai/src': 5973,
   // 2026-09-09: raised from 500, which was exactly the measured count and so forbade every
   // further line. Two repairs were blocked by it and are landing with this raise: the provider
   // factory taking log + pricing (without which every delivered assembly denominates ledger
@@ -1617,7 +1622,9 @@ const INITIAL_CEILING: Record<string, number> = {
   // Events fixed page set, full-page checkpoint and cross-session checkpoint cases (+11), exact.
   // Effects dispatch lifecycle contracts (+113); exact cap, no spare.
   // Model service public contract (six scenarios) and its restricted child peer. Measured 17753 (+557), exact, no spare.
-  'packages/extension-api/testkit': 17753,
+  // Renderer and shell cases for a desktop capability the client lacks. Measured 17808, exact (+55).
+  // Blob deny case: another principal's promote, pin and unpin are refused. Measured 17863 (+55), exact.
+  'packages/extension-api/testkit': 17863,
   // 2026-09-10: raised from 2500 by Task 15 (stream-disconnect reconnection). The new
   // reattach.ts (the Reconnector: backoff loop, OVERLOADED's retryAfterMs override) plus
   // Session.recover()/waitForQuiescence and Client's reconnect wiring (emit(), the
@@ -1697,7 +1704,9 @@ const INITIAL_CEILING: Record<string, number> = {
   // Runtime commands journal per identity partition, stay accepted until final, are capped and archivable.
   // Measured 6349, exact (+49).
   // The runtime client exposes the client selection its welcome carried. Measured 6352, exact (+3).
-  'packages/sdk/src': 6352,
+  // The text format names a missing desktop capability and keeps such a view complete. Measured 6359,
+  // exact (+7).
+  'packages/sdk/src': 6359,
   'packages/sdk/src/extensions.node': 21,
   'packages/sdk/src/package-admin.node': 147,
   'packages/sdk/src/surface.browser': 3,
@@ -2925,7 +2934,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // Model source reader reads the in-process registry; the retained capture store is removed (-71). Measured 83961, exact, no spare.
   // Model parent and child bridge readiness probe. Measured 83981 (+20), exact, no spare.
   // Session model selection: resolution against the current catalog, switch checks and the loop input overlay. Measured 84197 (+216), exact, no spare.
-  'packages/host/src': 84197,
+  // Blob promote, pin and unpin check the caller's principal; pins record it. Measured 84227 (+30), exact.
+  'packages/host/src': 84227,
   'packages/host/src/ext-host/service-invocation': 247,
   // T5.2's permission projector is kept independently bounded so later extension-host work cannot
   // hide in the package-wide increment. Measured source: 86 lines.

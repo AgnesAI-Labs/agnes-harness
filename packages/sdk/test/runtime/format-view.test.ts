@@ -161,28 +161,83 @@ describe('formatDomainView', () => {
     ])
   })
 
+  const reveal: ViewAction = {
+    ...review,
+    actionKey: 'reveal',
+    label: 'Reveal',
+    requiredFeatures: ['desktop.reveal-path.v1'],
+  }
+  const lacking = 'Reveal: Needs a desktop capability this client does not have (desktop.reveal-path.v1).'
   it.each([
     {
       name: 'missing feature',
+      actions: [review],
       features: [],
       complete: false,
       unsupported: ['forms.complex'],
       keys: ['publish'],
+      reasons: ['Review: Not available here.'],
     },
     {
       name: 'negotiated feature',
+      actions: [review],
       features: ['forms.complex'],
       complete: true,
       unsupported: [],
       keys: ['publish', 'review'],
+      reasons: [],
     },
-  ])('marks an enabled action that needs a $name', ({ features, complete, unsupported, keys }) => {
-    // The disabled action's feature asks nothing of the client.
-    const blocked: ViewAction = { ...archive, requiredFeatures: ['never.negotiated'] }
-    const formatted = format(view({ actions: [publish, review, review, blocked] }), features)
-    expect(formatted).toMatchObject({ complete, unsupportedRequiredFeatures: unsupported })
-    expect(new Set(offered(formatted))).toEqual(new Set(keys))
-  })
+    // The Web client lacks a desktop capability too, so the view stays complete and sends nobody there.
+    {
+      name: 'missing desktop capability',
+      actions: [reveal],
+      features: [],
+      complete: true,
+      unsupported: [],
+      keys: ['publish'],
+      reasons: [lacking],
+    },
+    {
+      name: 'negotiated desktop capability',
+      actions: [reveal],
+      features: ['desktop.reveal-path.v1'],
+      complete: true,
+      unsupported: [],
+      keys: ['publish', 'reveal'],
+      reasons: [],
+    },
+    {
+      name: 'missing desktop capability beside another action missing a feature',
+      actions: [review, reveal],
+      features: [],
+      complete: false,
+      unsupported: ['forms.complex'],
+      keys: ['publish'],
+      reasons: ['Review: Not available here.', lacking],
+    },
+    {
+      name: 'missing desktop capability and a missing feature',
+      actions: [{ ...reveal, requiredFeatures: ['desktop.reveal-path.v1', 'forms.complex'] }],
+      features: [],
+      complete: false,
+      unsupported: ['desktop.reveal-path.v1', 'forms.complex'],
+      keys: ['publish'],
+      reasons: ['Reveal: Not available here.'],
+    },
+  ])(
+    'marks an enabled action that needs a $name',
+    ({ actions, features, complete, unsupported, keys, reasons }) => {
+      // The disabled action's feature asks nothing of the client.
+      const blocked: ViewAction = { ...archive, requiredFeatures: ['never.negotiated'] }
+      const formatted = format(view({ actions: [publish, ...actions, ...actions, blocked] }), features)
+      expect(formatted).toMatchObject({ complete, unsupportedRequiredFeatures: unsupported })
+      expect(new Set(offered(formatted))).toEqual(new Set(keys))
+      const shownReasons = formatted.parts.flatMap((part) =>
+        part.kind === 'text' && /^Re(view|veal):/.test(part.text) ? [part.text] : [],
+      )
+      expect(new Set(shownReasons)).toEqual(new Set(reasons))
+    },
+  )
 
   it('reads every feature as missing when the context lists none', () => {
     const outcome = formatDomainView(view({ actions: [review] }), {
