@@ -1088,8 +1088,9 @@ const INITIAL_CEILING: Record<string, number> = {
   // Model service infer: one stable child action, result and usage attribution from the child (+247). Measured 35995, exact, no spare.
   // Model prepared handle and bounded in-process registry (+161).
   // Installed Effects dispatch coordinator (+812); combined exact cap.
-  // Installed pure Hook actions, authority checks and parent lifecycle (+254), exact cap.
-  'packages/core/src': 37222,
+  // Pure supervisor kernel (+205) and repeatable model readiness (+1).
+  // Installed pure Hook actions and current authority/lifecycle (+254); exact combined cap.
+  'packages/core/src': 37428,
   // Testkit-only reference Effects runner adds 202 measured lines; exact cap, no spare.
   // Independent Effects dispatch reference (+440); exact measurement below.
   'packages/core/testkit': 2437,
@@ -1612,7 +1613,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // Transport recovery checks read only the report of the request in question (+2), exact.
   // Events fixed page set, full-page checkpoint and cross-session checkpoint cases (+11), exact.
   // Effects dispatch lifecycle contracts (+113); exact cap, no spare.
-  'packages/extension-api/testkit': 17196,
+  // Model service public contract (six scenarios) and its restricted child peer. Measured 17753 (+557), exact, no spare.
+  'packages/extension-api/testkit': 17753,
   // 2026-09-10: raised from 2500 by Task 15 (stream-disconnect reconnection). The new
   // reattach.ts (the Reconnector: backoff loop, OVERLOADED's retryAfterMs override) plus
   // Session.recover()/waitForQuiescence and Client's reconnect wiring (emit(), the
@@ -2918,7 +2920,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // Original identity clock and State dispatch source (+467 on 83336); exact cap, no spare.
   // Verified historical admitted Action/Attempt reads (+229), exact cap.
   // Model source reader reads the in-process registry; the retained capture store is removed (-71). Measured 83961, exact, no spare.
-  'packages/host/src': 83961,
+  // Model parent and child bridge readiness probe. Measured 83981 (+20), exact, no spare.
+  'packages/host/src': 83981,
   'packages/host/src/ext-host/service-invocation': 247,
   // T5.2's permission projector is kept independently bounded so later extension-host work cannot
   // hide in the package-wide increment. Measured source: 86 lines.
