@@ -1,5 +1,12 @@
 import { fakeModel } from '@agnes/ai/testkit'
-import { type ModelCapture, modelInputDigest, type WireIdentity } from '@agnes/core'
+import {
+  assemblePrepared,
+  createPreparedRegistry,
+  type ModelCapture,
+  type PreparedEntry,
+  type PreparedRegistry,
+  type WireIdentity,
+} from '@agnes/core'
 import { type ActionContext, runtimeAuthorSchemas } from '@agnes/extension-api/runtime'
 import type { ModelRecord, RouteDecl } from '@agnes/protocol'
 import type * as Wire from '@agnes/protocol/runtime'
@@ -8,7 +15,6 @@ import {
   canonicalJsonDigest,
   type DataRef,
   RuntimeMethodSchemaRefs,
-  RuntimeSchemaRefs,
 } from '@agnes/protocol/runtime'
 import {
   captureModelCatalog,
@@ -45,7 +51,7 @@ export function captureOf(catalog: SelectedModelCatalog): ModelCapture {
   return { adapterPackageDigest: 'package-1', route: { route, api, baseUrl }, model: picked.model }
 }
 
-export function preparedFixture(catalog = fixtureCatalog(), wire = fixtureWire): Wire.PreparedModelRequest {
+export function preparedFixture(): Wire.PreparedModelRequest {
   const schema = runtimeAuthorSchemas.StandardToolOutput.ref
   const base: Wire.PreparedModelRequest = {
     preparedId: 'prepared',
@@ -136,17 +142,50 @@ export function preparedFixture(catalog = fixtureCatalog(), wire = fixtureWire):
       expiresAt: '2026-10-05T10:00:00Z',
     },
   }
-  return { ...base, inputDigest: modelInputDigest(base, captureOf(catalog), wire) }
+  return base
 }
 
-export function preparedRef(prepared = preparedFixture()): Extract<DataRef, { kind: 'inline' }> {
-  return inline(RuntimeSchemaRefs.PreparedModelRequest, prepared as unknown as Wire.JsonValue)
+export const fixtureIds = { runId: 'run-1', sessionId: 'session-1' }
+
+/** The handle reference and registry entry that a real prepare would produce for the fixture request. */
+export function assembledFixture(
+  catalog = fixtureCatalog(),
+  wire = fixtureWire,
+  ids: { runId: string; sessionId: string } = fixtureIds,
+) {
+  const base = preparedFixture()
+  const assembled = assemblePrepared({
+    ...ids,
+    owner: base.ownerBinding,
+    request: {
+      view: base.view,
+      route: base.target,
+      outputSchema: base.outputSchema,
+      toolCatalog: base.toolCatalog,
+      generation: base.generation,
+      sessionParameterRef: base.sessionParameterRef,
+      credentialRef: base.credentialRef,
+    },
+    capture: captureOf(catalog),
+    wire,
+    estimatedUnits: [],
+  })
+  if (!assembled.ok) throw new Error(assembled.error.detailCode)
+  return assembled.value
+}
+
+export function preparedRef(
+  catalog = fixtureCatalog(),
+  wire = fixtureWire,
+): Extract<DataRef, { kind: 'inline' }> {
+  return assembledFixture(catalog, wire).ref
 }
 
 export function fixtureFrame(ref: DataRef, key = 'ext-1'): ActionFrame {
   const request = { preparedCallRef: ref, externalIdempotencyKey: key }
   return {
     actionId: 'act-1',
+    runId: fixtureIds.runId,
     input: inline(
       RuntimeMethodSchemaRefs['agh.model-adapter'].invoke.input,
       request as unknown as Wire.JsonValue,
@@ -155,8 +194,9 @@ export function fixtureFrame(ref: DataRef, key = 'ext-1'): ActionFrame {
   } as unknown as ActionFrame
 }
 
-export function fixtureContext(signal?: AbortSignal): ActionContext {
-  return { call: { signal } } as unknown as ActionContext
+export function fixtureContext(signal?: AbortSignal, sessionId = fixtureIds.sessionId): ActionContext {
+  const scope = { kind: 'action', sessionId, runId: fixtureIds.runId, actionId: 'act-1' }
+  return { call: { signal, scope } } as unknown as ActionContext
 }
 
 type Slots = Record<string, { route: string; model: string; fallbacks?: { route: string; model: string }[] }>
@@ -164,33 +204,29 @@ type Slots = Record<string, { route: string; model: string; fallbacks?: { route:
 export function fixturePorts(
   over: Partial<ModelSourcePorts> & {
     slots?: Slots
-    retained?: SelectedModelCatalog[]
+    catalog?: SelectedModelCatalog
     wire?: WireIdentity
+    registry?: PreparedRegistry
   } = {},
-): { ports: ModelSourcePorts; ref: Extract<DataRef, { kind: 'inline' }> } {
-  const retained = over.retained ?? [fixtureCatalog()]
+): {
+  ports: ModelSourcePorts
+  ref: Extract<DataRef, { kind: 'inline' }>
+  registry: PreparedRegistry
+  entry: PreparedEntry
+} {
   const wire = over.wire ?? fixtureWire
-  const ref = preparedRef(preparedFixture(retained[0], wire))
+  const assembled = assembledFixture(over.catalog ?? fixtureCatalog(), wire)
+  const registry = over.registry ?? createPreparedRegistry()
+  registry.put(assembled.handleId, assembled.entry)
   const slots = over.slots ?? { primary: { route: 'fixed-route', model: 'fixture-model' } }
   const ports: ModelSourcePorts = {
     packageDigest: over.packageDigest ?? 'package-1',
-    issuance: over.issuance ?? {
-      read: async () => ({
-        ok: true,
-        value: {
-          preparedDigest: ref.digest,
-          actionId: 'act-1',
-          captureDigest: retained[0]?.digest ?? '',
-          wire,
-        },
-      }),
-    },
-    captures: over.captures ?? { read: (digest) => retained.find((catalog) => catalog.digest === digest) },
+    registry: over.registry ?? registry,
     prices: over.prices ?? { version: (target) => target.priceVersion },
     session: over.session ?? sessionWith(slots),
     authorize: over.authorize ?? { epoch: () => 1 },
   }
-  return { ports, ref }
+  return { ports, ref: assembled.ref, registry, entry: assembled.entry }
 }
 
 export function sessionWith(slots: Slots): ModelSourcePorts['session'] {
