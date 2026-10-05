@@ -8,7 +8,8 @@
 // each target that descriptor declares, the module's fixed own function exports (`component` for Web,
 // `format` for TUI and SDK, `format` and `encode` for IM); the namespace itself goes no further. Only then
 // is a selected module that exports the fixed `clientEntry` activated through it with a ClientHost bound
-// to the same token; it may register the other renderers its catalog entry declares, and registering a
+// to the same token and a context of its own for this generation, which presents no view and so refuses
+// every service call; it may register the other renderers its catalog entry declares, and registering a
 // selected one again fails the candidate. A module without `clientEntry` is not activated, and a default
 // export or another function never stands in for a named one. The registry leases a handle only for a
 // definition registered for a module of this live generation, each lease presenting through a restricted
@@ -24,6 +25,7 @@ import type {
   ClientModule,
   ClientPresentation,
   DomainView,
+  NegotiatedClientCapabilities,
   Outcome,
   RendererContext,
   RendererDefinition,
@@ -95,8 +97,8 @@ type Generation = {
   /** The selected shell's export. */
   shell: (() => ShellProvider) | undefined
   readonly listeners: Set<(revision: number) => void>
-  /** Entry contributions and renderer registrations, released newest first. */
-  readonly releases: (() => Promise<void>)[]
+  /** Module releases and renderer registrations, released newest first, each under its own deadline. */
+  readonly releases: (() => Promise<unknown>)[]
   /** Set once a module registers a renderer the host registered; it fails the candidate. */
   conflict: { ok: false; error: RuntimeError } | undefined
 }
@@ -216,10 +218,14 @@ async function bounded<T>(
 export function createClientHostRuntime(input: {
   target: ClientTarget
   loader: ClientModuleLoader
-  context: RendererContext
+  clientInstanceId: string
+  capabilities: NegotiatedClientCapabilities
+  locale: RendererContext['locale']
   /** Presents a bound renderer, or the generic view, through a restricted context for the window's view. */
   presenter: ReturnType<typeof createRendererPresenter>
   limits?: { entryMs?: number; disposeMs?: number }
+  /** Told, with ids only, that a module's release missed its dispose deadline. */
+  onFailure?: (failure: { moduleId: string; reason: 'dispose_timeout' }) => void
 }): ClientHostRuntime {
   const entryMs = input.limits?.entryMs ?? 15_000
   const disposeMs = input.limits?.disposeMs ?? 5_000
@@ -228,11 +234,11 @@ export function createClientHostRuntime(input: {
   let disposed = false
   let closing: Promise<void> | undefined
 
-  /** Runs one dispose under the dispose deadline; a throw or a miss is swallowed. */
+  /** Runs one dispose under the dispose deadline; a throw is swallowed, and a miss resolves false. */
   const settle = (dispose: () => unknown) =>
     within(Promise.resolve().then(dispose), disposeMs).then(
-      () => {},
-      () => {},
+      (result) => result !== LATE,
+      () => true,
     )
 
   /** Ends every lease bound to these registrations; a lease outliving its registration presents nothing. */
@@ -255,7 +261,7 @@ export function createClientHostRuntime(input: {
     if (generic) await settle(() => generic.dispose())
     generation.shell = undefined
     generation.listeners.clear()
-    for (const dispose of generation.releases.splice(0).reverse()) await settle(dispose)
+    for (const dispose of generation.releases.splice(0).reverse()) await dispose()
   }
 
   const rendererHost = (generation: Generation): UIRegistryHost => ({
@@ -393,16 +399,86 @@ export function createClientHostRuntime(input: {
       })()
       return done
     }
-    generation.releases.push(unregister)
+    generation.releases.push(() => settle(unregister))
     return { ok: true, value: { id, ownerToken: registrationToken, dispose: unregister } }
   }
 
+  /**
+   * The host `module` is started with. Its context is the module's own for this generation and presents
+   * no view, so it refuses every command, interaction and artifact call; module actions go through their
+   * renderer's per-view context. Its release is pushed before the entry runs, so a failed candidate, a
+   * late entry and dispose all close the context: the contribution the entry returned, then the context,
+   * under one dispose deadline. A miss is reported and closes the context anyway, without holding up the
+   * rest of the release.
+   */
   function moduleHost(generation: Generation, module: ClientModule) {
     const registry = generation.registry as UIRegistry
+    const controller = new AbortController()
+    const cleanups: (() => void | Promise<void>)[] = []
+    let contribution: ClientContribution | undefined
+    const close = () => {
+      controller.abort()
+      // Newest first, each started without waiting for the one before; a failure stops none of the rest.
+      return Promise.allSettled(
+        cleanups
+          .splice(0)
+          .reverse()
+          .map(async (cleanup) => cleanup()),
+      )
+    }
+    generation.releases.push(async () => {
+      const done = await settle(async () => {
+        try {
+          await contribution?.dispose()
+        } catch {
+          // A failed dispose still closes the context.
+        }
+        await close()
+      })
+      if (done) return
+      void close()
+      try {
+        input.onFailure?.({ moduleId: module.moduleId, reason: 'dispose_timeout' })
+      } catch {
+        // A failing report changes nothing about the release.
+      }
+    })
+    // ponytail: every call refuses; widen it once a Host-issued per-module credential is on the wire.
+    const refusal = () =>
+      generation.live ? refuse('denied', 'outside_view', 'a module context presents no view') : released()
+    const refusing = async () => refusal()
     const host: ClientHost = {
-      // ponytail: every module shares the caller's context; only a presented renderer gets a per-view
-      // restricted context. Bind it to the module when it needs one.
-      context: input.context,
+      context: {
+        clientInstanceId: input.clientInstanceId,
+        ownerToken: module.ownerToken,
+        signal: controller.signal,
+        capabilities: structuredClone(input.capabilities),
+        commands: { submit: refusing, commandStatus: refusing },
+        interactions: {
+          pending: refusing,
+          read: refusing,
+          respond: refusing,
+          formLink: refusing,
+          responseStatus: refusing,
+        },
+        artifacts: {
+          describe: refusing,
+          openDownload: refusing,
+          readRange: refusing,
+          openStream: refusing,
+          followDownload: refusal,
+        },
+        // Formatting reads no user resource, so locale calls pass through.
+        locale: input.locale,
+        onDispose(cleanup) {
+          if (typeof cleanup !== 'function') return
+          if (controller.signal.aborted)
+            void Promise.resolve()
+              .then(cleanup)
+              .catch(() => {})
+          else cleanups.push(cleanup)
+        },
+      },
       presentation: generation.presentation,
       renderers: {
         register: (definition) => enroll(generation, module, definition, 'module'),
@@ -437,7 +513,12 @@ export function createClientHostRuntime(input: {
         }
       },
     }
-    return host
+    return {
+      host,
+      started: (value: ClientContribution) => {
+        contribution = value
+      },
+    }
   }
 
   async function build(generation: Generation, catalog: Catalog): Promise<Outcome<void>> {
@@ -552,19 +633,16 @@ export function createClientHostRuntime(input: {
           'client_entry_invalid',
           `the clientEntry export of module ${id} is not a function`,
         )
-      const host = moduleHost(generation, module)
+      const activated = moduleHost(generation, module)
       const started = await bounded(
         entryMs,
         'client_entry',
         `the client entry of ${id}`,
-        async () => (entry as ClientEntry)(host),
+        async () => (entry as ClientEntry)(activated.host),
         // A late entry finds its generation released; what it returns is released as well.
         (contribution: ClientContribution) => void settle(() => contribution.dispose()),
       )
-      if (started.ok) {
-        const contribution = started.value
-        generation.releases.push(() => contribution.dispose())
-      }
+      if (started.ok) activated.started(started.value)
       if (generation.conflict) return generation.conflict
       if (!started.ok) return started
     }

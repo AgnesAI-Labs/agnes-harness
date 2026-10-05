@@ -76,22 +76,26 @@ type Edit = { modules?: ClientModule[]; selection?: ClientSelection; namespace?:
 async function activate(target: ClientTarget, edit: Edit = {}) {
   const modules = edit.modules ?? [MODULE]
   const held = new Map<string, DomainView>()
+  const capabilities = {
+    clientInstanceId: 'client-1',
+    target,
+    features: [],
+  } as unknown as NegotiatedClientCapabilities
+  const services = {
+    locale: { locale: 'en', text: (key: string) => key, formatNumber: () => '', formatDate: () => '' },
+  } as unknown as Pick<RendererContext, 'commands' | 'interactions' | 'artifacts' | 'locale'>
   const runtime = createClientHostRuntime({
     target,
     loader: loader(edit.namespace ?? author),
-    context: {} as RendererContext,
+    clientInstanceId: 'client-1',
+    capabilities,
+    locale: services.locale,
     presenter: createRendererPresenter({
       target,
       clientInstanceId: 'client-1',
-      capabilities: {
-        clientInstanceId: 'client-1',
-        target,
-        features: [],
-      } as unknown as NegotiatedClientCapabilities,
+      capabilities,
       locale: 'en',
-      services: {
-        locale: { locale: 'en', text: (key: string) => key, formatNumber: () => '', formatDate: () => '' },
-      } as unknown as Pick<RendererContext, 'commands' | 'interactions' | 'artifacts' | 'locale'>,
+      services,
       views: { current: (viewId) => held.get(viewId) },
     }),
   })

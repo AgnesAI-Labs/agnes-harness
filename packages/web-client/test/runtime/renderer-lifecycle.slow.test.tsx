@@ -200,16 +200,18 @@ const capabilities = {
   features: [],
 } as unknown as NegotiatedClientCapabilities
 
+// The generic card a failed renderer yields to reads the locale.
+const services = {
+  locale: { locale: 'en', text: (key: string) => key, formatNumber: () => '', formatDate: () => '' },
+} as unknown as Pick<RendererContext, 'commands' | 'interactions' | 'artifacts' | 'locale'>
+
 const presenterFor = (target: ClientTarget) =>
   createRendererPresenter({
     target,
     clientInstanceId: 'client-1',
     capabilities,
     locale: 'en',
-    // The generic card a failed renderer yields to reads the locale.
-    services: {
-      locale: { locale: 'en', text: (key: string) => key, formatNumber: () => '', formatDate: () => '' },
-    } as unknown as Pick<RendererContext, 'commands' | 'interactions' | 'artifacts' | 'locale'>,
+    services,
     views: { current: (viewId) => (viewId === view.viewId ? view : undefined) },
   })
 
@@ -374,7 +376,9 @@ function harness(target: ClientTarget, component: Component = Card) {
   const runtime = createClientHostRuntime({
     target,
     loader,
-    context: {} as RendererContext,
+    clientInstanceId: 'client-1',
+    capabilities,
+    locale: services.locale,
     presenter: presenterFor(target),
   })
   /** The current generation's handle for the card view. */
