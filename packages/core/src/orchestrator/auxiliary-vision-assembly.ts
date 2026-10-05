@@ -164,12 +164,12 @@ function validatedModels(provider: Provider): readonly ModelRecord[] | undefined
 }
 
 /** Resolves image capability from the fitted provider catalogue; callers cannot self-assert it. */
-function resolveImageTarget(session: SessionImpl): ResolvedImageTarget | undefined {
-  const records = validatedModels(session.d.provider)
-  if (!records) return undefined
-  const route = session.preset.model.route.image
-  if (!route) return undefined
-  const pinned = session.preset.model.id.image
+/** The single image-slot model on `route`: the pinned id, else the slot-tagged record, else the only record. */
+export function selectImageModel(
+  records: readonly ModelRecord[],
+  route: string,
+  pinned: string | undefined,
+): ModelRecord | undefined {
   const onRoute = records.filter((record) => record.route === route)
   const candidates = pinned
     ? onRoute.filter((record) => record.id === pinned)
@@ -180,7 +180,17 @@ function resolveImageTarget(session: SessionImpl): ResolvedImageTarget | undefin
       : !pinned && candidates.length === 0 && onRoute.length === 1
         ? onRoute[0]
         : undefined
-  if (!selected?.input.includes('image')) return undefined
+  return selected?.input.includes('image') ? selected : undefined
+}
+
+function resolveImageTarget(session: SessionImpl): ResolvedImageTarget | undefined {
+  const records = validatedModels(session.d.provider)
+  if (!records) return undefined
+  const route = session.preset.model.route.image
+  if (!route) return undefined
+  const pinned = session.preset.model.id.image
+  const selected = selectImageModel(records, route, pinned)
+  if (!selected) return undefined
   let rawContract: unknown
   try {
     rawContract = session.d.contractForModel?.({ route, model: selected.id }) ?? session.d.contract

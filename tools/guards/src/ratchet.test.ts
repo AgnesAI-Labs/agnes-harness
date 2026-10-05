@@ -1089,8 +1089,9 @@ const INITIAL_CEILING: Record<string, number> = {
   // Model prepared handle and bounded in-process registry (+161).
   // Installed Effects dispatch coordinator (+812); combined exact cap.
   // Pure supervisor kernel: admission ids, wait evaluation, completion judgement, drain plan, recovery step (+205); exact cap.
-  // Model readiness may be asked again once ready. Measured 37174 (+1), exact, no spare.
-  'packages/core/src': 37174,
+  // Model readiness may be asked again once ready (+1).
+  // Shared media preflight bridge and image-model selection (+153); exact cap, no spare.
+  'packages/core/src': 37327,
   // Testkit-only reference Effects runner adds 202 measured lines; exact cap, no spare.
   // Independent Effects dispatch reference (+440); exact measurement below.
   'packages/core/testkit': 2437,
