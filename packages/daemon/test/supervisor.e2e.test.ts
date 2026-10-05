@@ -7,13 +7,19 @@ import {
   canonicalJson,
   createHostProjectionOwner,
   DEFAULT_COMPUTER_USE,
+  type HostProjectionInstallation,
   type HostProjectionOwner,
   type HostProjectionSources,
   hashInput,
   type ResolvedProfile,
   sha256hex,
 } from '@agnes/host'
-import { assembleHostProjectionOwner, createTestHost, type HostProjectionProvider } from '@agnes/host/testkit'
+import {
+  assembleHostProjectionOwner,
+  createProjectionIssuerFixture,
+  createTestHost,
+  type HostProjectionProvider,
+} from '@agnes/host/testkit'
 import type * as Wire from '@agnes/protocol/runtime'
 import { canonicalJsonDigest, RuntimeClientTransportWire } from '@agnes/protocol/runtime'
 import { createClient, memoryJournal, wsTransport } from '@agnes/sdk'
@@ -268,6 +274,103 @@ describe('agnesd supervisor: real end-to-end', () => {
       },
       permits: async () => false,
     }
+    const schema = (typeId: string): Wire.SchemaRef => ({
+      typeId,
+      revision: 1,
+      digest: canonicalJsonDigest(typeId),
+    })
+    const stateSchema = schema('fixture/state@1')
+    const viewSchema = schema('fixture/view@1')
+    const data = (value: Wire.JsonValue): Wire.DataRef => ({
+      kind: 'inline',
+      schema: stateSchema,
+      value,
+      digest: canonicalJsonDigest(value),
+      bytes: Buffer.byteLength(JSON.stringify(value)),
+    })
+    let folded = 0
+    let onFold = () => {}
+    const installation: HostProjectionInstallation = {
+      binding,
+      domain: {
+        domainType: 'fixture',
+        stateSchema,
+        readStateSchema: stateSchema,
+        viewSchema,
+        onCommittedTypes: ['fixture/fact@1'],
+        readerPolicy: {
+          capability: 'fixture.read',
+          rules: [{ pointer: '', resourcePointer: '', operation: 'read' }],
+        },
+        reducer: {
+          reduce({ event }) {
+            if (event.payload.kind !== 'inline') throw new Error('fixture inline event required')
+            folded = Number(event.payload.value)
+            onFold()
+            return { ok: true, value: data({ n: folded }) }
+          },
+        },
+        selector: {
+          async selectAuthorized(request) {
+            const viewScope = request.query.scope
+            if (viewScope.kind !== 'workspace' && viewScope.kind !== 'session')
+              throw new Error('fixture workspace or session scope required')
+            return {
+              ok: true,
+              value: {
+                items: [
+                  {
+                    kind: 'domain',
+                    viewId: 'board',
+                    revision: request.projectionRevision,
+                    domainType: 'fixture',
+                    viewSchema,
+                    renderKey: 'fixture/board',
+                    scope: viewScope,
+                    source: { eventIds: [], projectionRevision: request.projectionRevision },
+                    phase: 'finalized',
+                    fallbackText: 'fixture board',
+                    data: request.state.kind === 'inline' ? request.state.value : null,
+                    resources: [],
+                    actions: [],
+                  },
+                ],
+                complete: true,
+                pageState: null,
+              },
+            }
+          },
+        },
+        checkReadState: () => true,
+        listQuery: data(null),
+        commands: new Map(),
+      },
+      access: {
+        grant: async (_capability, _scope, context) => ({
+          ok: true,
+          value: { readerId: context.principalRef, role: 'reader' },
+        }),
+        allows: async () => true,
+        canReadResource: async () => false,
+      },
+      reads: {
+        query: async () => {
+          throw new Error('fixture selector has no external reads')
+        },
+        resolveData: async () => {
+          throw new Error('fixture selector has no external data')
+        },
+      },
+      owner: {
+        namespace: 'fixture',
+        authorityId: storeOptions.owner.authority.authorityId,
+        aggregate: { typeId: 'fixture/board@1', id: 'board' },
+        source: binding,
+        stateSchema,
+        destination: 'fixture-inbox',
+        clock: { now: () => '2026-10-05T00:00:00Z', newId: () => 'fixture-id' },
+      },
+    }
     let sources!: HostProjectionSources<DomainStore>
     const commit = (storage: DomainStore, sequence: number, abort = false) =>
       storage.transaction((tx) => {
@@ -337,7 +440,7 @@ describe('agnesd supervisor: real end-to-end', () => {
         store: storeOptions,
         createOwner(next: HostProjectionSources<DomainStore>) {
           sources = next
-          return createHostProjectionOwner(next)
+          return createHostProjectionOwner(next, installation)
         },
       },
     }
@@ -394,7 +497,7 @@ describe('agnesd supervisor: real end-to-end', () => {
       )
       expect(await projectionReply.json()).toMatchObject({
         ok: false,
-        error: { detailCode: 'projection_provider_installation_unavailable' },
+        error: { code: 'denied', detailCode: 'projection_context_issuer_unavailable' },
       })
       const ownerPath = join(dir, 'daemon', 'owner.json')
       const ownerRecord = readFileSync(ownerPath, 'utf8')
@@ -578,6 +681,100 @@ describe('agnesd supervisor: real end-to-end', () => {
         reopened.close()
       }
       await expect(fetch(second.baseUrl)).rejects.toThrow()
+      // The original local issuer is a fixture seam, not a production HTTP identity mapping.
+      if (typeof process.getuid === 'function') {
+        const issuer = createProjectionIssuerFixture({
+          directory: join(dir, 'projection-identity'),
+          scope,
+          authority: storeOptions.owner.authority,
+        })
+        try {
+          supervisor = await startSupervisor({
+            ...options,
+            projection: {
+              store: storeOptions,
+              createOwner(next) {
+                sources = next
+                installedOwner = createHostProjectionOwner(next, { ...installation, ...issuer.issuer })
+                return installedOwner
+              },
+            },
+          })
+          const runtime = supervisor.runtimeClient
+          if (!runtime) throw new Error('missing projection runtime listener')
+          const generation = supervisor.owner.generation
+          const read = async () =>
+            (
+              await fetch(runtime.baseUrl + RuntimeClientTransportWire.routes.clientQuery.path, {
+                method: 'POST',
+                headers: {
+                  authorization: `Bearer ${runtimeClientBearer(runtime.token, generation)}`,
+                  'content-type': 'application/json',
+                },
+                body: JSON.stringify({
+                  header: input.header,
+                  call: {
+                    operation: 'domain.query',
+                    input: {
+                      domainType: 'fixture',
+                      query: data(null),
+                      scope,
+                      cursor: null,
+                      limit: 10,
+                    },
+                  },
+                }),
+              })
+            ).json()
+          const initialProjection = await read()
+          expect(initialProjection.ok, JSON.stringify(initialProjection)).toBe(true)
+          expect(initialProjection).toMatchObject({
+            ok: true,
+            value: {
+              reply: {
+                operation: 'domain.query',
+                value: {
+                  projectionRevision: 5,
+                  items: [{ data: { n: 5 } }],
+                },
+              },
+            },
+          })
+          expect(issuer.activeConnections()).toBe(1)
+          const refreshed = new Promise<void>((resolve) => {
+            onFold = resolve
+          })
+          await commit(sources.commandStorage, 6)
+          await refreshed
+          expect(await read()).toMatchObject({
+            ok: true,
+            value: {
+              reply: {
+                value: {
+                  projectionRevision: 6,
+                  items: [{ data: { n: 6 } }],
+                },
+              },
+            },
+          })
+          await expect(commit(sources.commandStorage, 7, true)).rejects.toThrow('rollback fixture')
+          expect(await read()).toMatchObject({
+            ok: true,
+            value: { reply: { value: { projectionRevision: 6 } } },
+          })
+          await installedOwner.close()
+          expect(issuer.activeConnections()).toBe(0)
+          await commit(sources.commandStorage, 7)
+          expect(folded).toBe(6)
+          expect(await read()).toMatchObject({ ok: false, error: { detailCode: 'projection_owner_closed' } })
+          await supervisor.close()
+          await expect(sources.commandStorage.transaction((tx) => tx.lastSequence())).rejects.toThrow()
+          await expect(fetch(runtime.baseUrl)).rejects.toThrow()
+        } finally {
+          await supervisor?.close()
+          issuer.close()
+        }
+      }
     } finally {
       await supervisor?.close()
       rmSync(dir, { recursive: true, force: true })
