@@ -1100,7 +1100,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // Wire request carries verified media parts and names structured output as unsupported (+45); exact cap, no spare.
   // The Loop reads the prepared handle instead of the prepared body and re-reads the offered tools from its fixed source (-2).
   // The Loop accepts the media plans the prepared handle header commits to, by digest, not only none (+22); exact cap, no spare.
-  'packages/core/src': 39140,
+  // Wire request builder expresses a resolved tool catalog and paired tool history (+262); exact cap, no spare.
+  'packages/core/src': 39402,
   // Testkit-only reference Effects runner adds 202 measured lines; exact cap, no spare.
   // Independent Effects dispatch reference (+440); exact measurement below.
   'packages/core/testkit': 2437,
