@@ -1135,6 +1135,27 @@ describe('client host runtime', () => {
     expect(h.log).toEqual(expect.arrayContaining(['unregister base.fallback', 'unregister cards.card']))
   })
 
+  it("disposes a module only once its renderers drained, without waiting for another module's", async () => {
+    const h = harness({ limits: { disposeMs: 1_000 } })
+    h.leaseEnds['cards.card'] = async () => {
+      await sleep(50)
+      h.log.push('drained cards.card')
+      return true
+    }
+    expect(refused(await h.runtime.activate(catalog(1)))).toBe('ok')
+    const view = { viewId: 'v1', revision: 1, renderKey: 'cards.card' } as DomainView
+    expect(refused(now(h).presentation.domain(view))).toBe('ok')
+    h.log.length = 0
+    await h.runtime.dispose()
+    const order = (line: string) => h.log.indexOf(line)
+    // base presents nothing, so it is disposed at once; cards waits for its card's lease alone.
+    expect(order('dispose base#1')).toBeLessThan(order('drained cards.card'))
+    expect(order('unregister base.fallback')).toBeLessThan(order('drained cards.card'))
+    expect(order('drained cards.card')).toBeLessThan(order('dispose cards#1'))
+    expect(order('drained cards.card')).toBeLessThan(order('unregister cards.card'))
+    expect(h.failures).not.toHaveBeenCalled()
+  })
+
   it('refuses a second activation while one runs', async () => {
     const h = harness()
     let open = () => {}

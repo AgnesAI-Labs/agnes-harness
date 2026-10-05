@@ -105,7 +105,7 @@ type Generation = {
   /** The selected shell's export. */
   shell: (() => ShellProvider) | undefined
   readonly listeners: Set<(revision: number) => void>
-  /** Each module context and renderer registration, released with the leases under one deadline. */
+  /** Each module context and renderer registration, disposed once its module's leases drained. */
   readonly releases: Step[]
   /** Set once a module registers a renderer the host registered; it fails the candidate. */
   conflict: { ok: false; error: RuntimeError } | undefined
@@ -277,32 +277,49 @@ export function createClientHostRuntime(input: {
     )
 
   /**
-   * Stops admission, then starts every step of the release at once, so one deadline counted from that
-   * moment holds them all: each renderer lease, the generic view's lease, each renderer registration and
-   * each module context. A module with any step left at the deadline is reported once, by its id; its
-   * context closes all the same, and no step waits for another.
+   * Stops admission, then releases each module at once under one deadline counted from that moment: its
+   * renderer leases drain and close first, then its registrations and its context are disposed together.
+   * A module still releasing at the deadline is reported once, by its id; what it had left is started
+   * without waiting, and its context closes all the same.
    */
   async function release(generation: Generation): Promise<void> {
     generation.live = false
     generation.shell = undefined
     generation.listeners.clear()
-    const steps: Step[] = []
+    const modules = new Map<string | undefined, { drain: Step[]; dispose: Step[] }>()
+    const of = (moduleId?: string) => {
+      const phases = modules.get(moduleId) ?? { drain: [], dispose: [] }
+      modules.set(moduleId, phases)
+      return phases
+    }
     for (const owner of generation.owners.values()) {
-      for (const lease of owner.leases) steps.push({ moduleId: owner.moduleId, run: () => lease.dispose() })
+      for (const lease of owner.leases) of(owner.moduleId).drain.push({ run: () => lease.dispose() })
       owner.leases.clear()
     }
     const generic = generation.generic
     generation.generic = undefined
-    if (generic) steps.push({ run: () => generic.dispose() })
-    steps.push(...generation.releases.splice(0).reverse())
-    const late = new Set<string>()
+    if (generic) of().drain.push({ run: () => generic.dispose() })
+    for (const step of generation.releases.splice(0).reverse()) of(step.moduleId).dispose.push(step)
+    let timer: ReturnType<typeof setTimeout> | undefined
+    const deadline = new Promise<typeof LATE>((resolve) => {
+      timer = setTimeout(resolve, disposeMs, LATE)
+    })
+    // True when the step finished in time; a throw counts as finished, a step resolving false as missed.
+    const timely = async ({ run, missed }: Step) => {
+      const result = await Promise.race([Promise.resolve().then(run), deadline]).catch(() => true)
+      if (result !== LATE && result !== false) return true
+      missed?.()
+      return false
+    }
+    const late: string[] = []
     await Promise.all(
-      steps.map(async ({ moduleId, run, missed }) => {
-        if (await settle(run)) return
-        missed?.()
-        if (moduleId !== undefined) late.add(moduleId)
+      [...modules].map(async ([moduleId, { drain, dispose }]) => {
+        const drained = await Promise.all(drain.map(timely))
+        const disposed = await Promise.all(dispose.map(timely))
+        if (moduleId !== undefined && [...drained, ...disposed].includes(false)) late.push(moduleId)
       }),
     )
+    clearTimeout(timer)
     for (const moduleId of late) report({ moduleId, reason: 'dispose_timeout' })
   }
 
@@ -455,7 +472,7 @@ export function createClientHostRuntime(input: {
    * no view, so it refuses every command, interaction and artifact call; module actions go through their
    * renderer's per-view context. Its release is pushed before the entry runs, so a failed candidate, a
    * late entry and dispose all close the context: the contribution the entry returned, then the context,
-   * alongside the rest of the release and under its deadline. A miss closes the context anyway.
+   * after its renderers drained and under the release's deadline. A miss closes the context anyway.
    */
   function moduleHost(generation: Generation, module: ClientModule) {
     const registry = generation.registry as UIRegistry
