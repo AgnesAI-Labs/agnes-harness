@@ -186,10 +186,11 @@ export async function commitPreparedActions(
     revision: 0,
     writerEpoch: null,
   },
+  payload = 'synthetic',
 ) {
   const { authority, input } = fixture
   const { state, binding } = fixture.fixture
-  const data = fixtureRef({ prompt: 'synthetic' })
+  const data = fixtureRef({ prompt: payload })
   const target = {
     bindingId: binding.bindingId,
     contract: 'agh.tool',
@@ -281,4 +282,19 @@ export async function commitPreparedActions(
     revision++
   }
   return { committed, revision, writerEpoch }
+}
+
+/**
+ * Holds every State read that is queued after this call until `release()`: the read has been
+ * started by the reader and is in flight, but State has not begun it. Test-only; it reaches into
+ * State's private read queue.
+ */
+export function holdStateReads(native: NativeFixture) {
+  const state = native.fixture.state as unknown as { writeChain: Promise<void> }
+  let release = () => {}
+  const gate = new Promise<void>((resolve) => {
+    release = resolve
+  })
+  state.writeChain = state.writeChain.then(() => gate)
+  return { release }
 }
