@@ -16,8 +16,8 @@ import {
   canonicalJsonDigest,
   type ModelOutput,
   type PreparedAction,
-  RuntimeMethodSchemaRefs,
   type RuntimeError,
+  RuntimeMethodSchemaRefs,
   type SchemaRef,
   validateRuntime,
 } from '@agnes/protocol/runtime'
@@ -89,14 +89,19 @@ export function createModelChildPeer(options: {
   let delivered = 0
   const ports: LoopReadPorts = {
     prepare(spec) {
-      const prepared = validateRuntime('PreparedAction', { ...spec, intentFingerprint: canonicalJsonDigest(spec) })
+      const prepared = validateRuntime('PreparedAction', {
+        ...spec,
+        intentFingerprint: canonicalJsonDigest(spec),
+      })
       return prepared.ok ? { ok: true, value: prepared.value } : failure('invalid_input', 'peer_prepare')
     },
     async query(request) {
       if (request.target.bindingId !== options.state || request.method !== 'probeActionResult')
         return failure('denied', 'peer_method')
       const input =
-        request.input.kind === 'inline' ? validateRuntime('ProbeActionResultRequest', request.input.value) : null
+        request.input.kind === 'inline'
+          ? validateRuntime('ProbeActionResultRequest', request.input.value)
+          : null
       if (!input?.ok) return failure('invalid_input', 'peer_query')
       const view = published.get(`${input.value.actionId}\0${input.value.sourceReceiptId}`) ?? null
       return { ok: true, value: { kind: 'value', snapshot: 'peer', output: inline(probe.output, view) } }
@@ -126,13 +131,18 @@ export function createModelChildPeer(options: {
       delivered++
       const input = child.spec.input
       const output: ModelOutput = {
-        outputRef: inline(runtimeAuthorSchemas.StandardToolOutput.ref, { content: [], structured: { text: 'ok' } }),
+        outputRef: inline(runtimeAuthorSchemas.StandardToolOutput.ref, {
+          content: [],
+          structured: { text: 'ok' },
+        }),
         finishReason: 'stop',
-        usageFactRefs: [...usageIds, ...(dispatchOptions.foreignUsage ? ['usage-foreign'] : [])].map((usageId) => ({
-          authorityId: 'usage',
-          usageId,
-          digest: 'd'.repeat(64),
-        })),
+        usageFactRefs: [...usageIds, ...(dispatchOptions.foreignUsage ? ['usage-foreign'] : [])].map(
+          (usageId) => ({
+            authorityId: 'usage',
+            usageId,
+            digest: 'd'.repeat(64),
+          }),
+        ),
         providerReceipt: null,
         actualModel: 'fixture-model',
       }
@@ -187,7 +197,11 @@ function assert(condition: unknown, id: string): asserts condition {
   if (!condition) throw new Error(`Model contract assertion failed: ${id}`)
 }
 
-function inferFrame(fixture: ModelContractFixture, preparedRef: DataRef, over: Partial<ActionFrame> = {}): ActionFrame {
+function inferFrame(
+  fixture: ModelContractFixture,
+  preparedRef: DataRef,
+  over: Partial<ActionFrame> = {},
+): ActionFrame {
   const { signal: _signal, ...context } = fixture.call
   const input = inline(refs.infer.input, { preparedRef })
   return {
@@ -225,7 +239,11 @@ export async function runModelContractScenario(
   open: () => Promise<ModelContractFixture>,
 ) {
   let fixture = await open()
-  let provider = await fixture.factory.create(fixture.configuration, fixture.dependencies, fixture.factoryContext)
+  let provider = await fixture.factory.create(
+    fixture.configuration,
+    fixture.dependencies,
+    fixture.factoryContext,
+  )
   const binding = () => ({
     bindingId: fixture.factoryContext.bindingId,
     contract: 'agh.model',
@@ -251,17 +269,20 @@ export async function runModelContractScenario(
   const prepared = async () => {
     const result = await prepare()
     assert(result.ok && result.value.kind === 'inline', 'prepare-inline')
-    assert(canonicalJsonDigest(result.value.schema) === canonicalJsonDigest(refs.prepare.output), 'prepare-output-schema')
+    assert(
+      canonicalJsonDigest(result.value.schema) === canonicalJsonDigest(refs.prepare.output),
+      'prepare-output-schema',
+    )
     const parsed = validateRuntime('ModelPrepareResult', result.value.value)
     assert(parsed.ok && parsed.value.preparedRef.kind === 'inline', 'prepare-result')
     return { output: result.value, ref: parsed.value.preparedRef, result: parsed.value }
   }
-  const createInfer = async (signal: AbortSignal = new AbortController().signal) => {
+  const createInfer = async (signal: AbortSignal = new AbortController().signal, actionId = 'parent-1') => {
     const factory = provider.actions?.infer
     assert(factory, 'infer-present')
     const action = await factory.create({
       instanceId: 'contract-instance',
-      actionId: 'parent-1',
+      actionId,
       runId: runIdOf(fixture.call),
       bindingId: fixture.factoryContext.bindingId,
       scope: fixture.call.scope,
@@ -270,7 +291,8 @@ export async function runModelContractScenario(
     assert(action.kind === 'composite', 'infer-composite')
     return action
   }
-  const startWith = async (ref: DataRef) => (await createInfer()).start(inferFrame(fixture, ref), fixture.peer.ports)
+  const startWith = async (ref: DataRef) =>
+    (await createInfer()).start(inferFrame(fixture, ref), fixture.peer.ports)
   try {
     assert((await provider.ready(fixture.call)).ok, 'ready')
     if (scenario === 'select') {
@@ -279,7 +301,8 @@ export async function runModelContractScenario(
       assert(descriptor.contract === 'agh.model', 'contract')
       const shape = descriptor.operations.map((operation) => `${operation.method}:${operation.kind}`).sort()
       assert(shape.join() === 'infer:action,prepare:compute,prepareRequest:action', 'exact-operations')
-      const byMethod = (method: string) => descriptor.operations.find((operation) => operation.method === method)
+      const byMethod = (method: string) =>
+        descriptor.operations.find((operation) => operation.method === method)
       assert(
         byMethod('infer')?.requiredCapabilities.length &&
           !byMethod('prepare')?.requiredCapabilities.length &&
@@ -293,7 +316,8 @@ export async function runModelContractScenario(
         'retry-safety',
       )
       assert(
-        provider.actions?.prepareRequest?.kind === 'composite' && provider.actions.infer?.kind === 'composite',
+        provider.actions?.prepareRequest?.kind === 'composite' &&
+          provider.actions.infer?.kind === 'composite',
         'composite-kinds',
       )
       const { result } = await prepared()
@@ -314,8 +338,12 @@ export async function runModelContractScenario(
           spec.obligation === 'mandatory',
         'child-shape',
       )
-      const invoke = spec.input.kind === 'inline' ? validateRuntime('ModelAdapterInvokeRequest', spec.input.value) : null
-      assert(invoke?.ok && canonicalJsonDigest(invoke.value.preparedCallRef) === canonicalJsonDigest(ref), 'original-ref')
+      const invoke =
+        spec.input.kind === 'inline' ? validateRuntime('ModelAdapterInvokeRequest', spec.input.value) : null
+      assert(
+        invoke?.ok && canonicalJsonDigest(invoke.value.preparedCallRef) === canonicalJsonDigest(ref),
+        'original-ref',
+      )
       const committed = fixture.peer.commit(frame.actionId, spec)
       const again = fixture.peer.commit(frame.actionId, spec)
       assert(committed.ok && again.ok && committed.value.actionId === again.value.actionId, 'stable-child')
@@ -335,7 +363,10 @@ export async function runModelContractScenario(
       const done = await action.resume(resumed, fixture.peer.ports)
       assert(done.children.length === 0 && done.next.kind === 'complete', 'complete')
       assert(done.next.output.kind === 'inline', 'complete-inline')
-      assert(canonicalJsonDigest(done.next.output.schema) === canonicalJsonDigest(refs.infer.output), 'complete-schema')
+      assert(
+        canonicalJsonDigest(done.next.output.schema) === canonicalJsonDigest(refs.infer.output),
+        'complete-schema',
+      )
       const output = validateRuntime('ModelOutput', done.next.output.value)
       assert(output.ok, 'complete-output')
       assert(
@@ -344,6 +375,33 @@ export async function runModelContractScenario(
       )
       assert(fixture.peer.deliveries() === 1, 'one-delivery')
       assert(!('usage' in done) && !('usageFacts' in done), 'no-parent-usage')
+      const foreign = await createInfer(undefined, 'parent-2')
+      const foreignFrame = inferFrame(fixture, ref, { actionId: 'parent-2' })
+      const foreignStart = await foreign.start(foreignFrame, fixture.peer.ports)
+      const foreignSpec = foreignStart.children[0]
+      assert(foreignSpec, 'foreign-child-present')
+      const foreignChild = fixture.peer.commit('parent-2', foreignSpec)
+      assert(foreignChild.ok, 'foreign-commit')
+      await fixture.peer.dispatch(foreignChild.value, 'succeeded', { foreignUsage: true })
+      fixture.peer.publish(foreignChild.value, 'receipt-2')
+      const refused = await foreign.resume(
+        {
+          ...foreignFrame,
+          providerRevision: 1,
+          continuation: foreignStart.continuation,
+          receipts: {
+            items: [{ actionId: foreignChild.value.actionId, receiptId: 'receipt-2', outcome: 'succeeded' }],
+            snapshot: 'published',
+            nextCursor: null,
+            complete: true,
+          },
+        },
+        fixture.peer.ports,
+      )
+      assert(
+        refused.next.kind === 'fail' && refused.next.error.detailCode === 'model_usage_attribution',
+        'usage-attribution',
+      )
     } else if (scenario === 'deny') {
       const { ref } = await prepared()
       const foreign = await startWith(fixture.foreignOwnedPrepared())
@@ -362,8 +420,14 @@ export async function runModelContractScenario(
       const cancelled = await prepare(fixture.prepareInput, { ...fixture.call, signal: aborted.signal })
       assert(!cancelled.ok && cancelled.error.code === 'cancelled', 'prepare-cancelled')
       const { ref } = await prepared()
-      const early = await (await createInfer(aborted.signal)).start(inferFrame(fixture, ref), fixture.peer.ports)
-      assert(early.children.length === 0 && early.next.kind === 'fail' && early.next.error.code === 'cancelled', 'start-cancelled')
+      const early = await (await createInfer(aborted.signal)).start(
+        inferFrame(fixture, ref),
+        fixture.peer.ports,
+      )
+      assert(
+        early.children.length === 0 && early.next.kind === 'fail' && early.next.error.code === 'cancelled',
+        'start-cancelled',
+      )
       const live = new AbortController()
       const action = await createInfer(live.signal)
       const frame = inferFrame(fixture, ref)
@@ -414,7 +478,11 @@ export async function runModelContractScenario(
       await action.close('shutdown')
       await provider.close('shutdown')
       fixture = await fixture.restart()
-      provider = await fixture.factory.create(fixture.configuration, fixture.dependencies, fixture.factoryContext)
+      provider = await fixture.factory.create(
+        fixture.configuration,
+        fixture.dependencies,
+        fixture.factoryContext,
+      )
       assert((await provider.ready(fixture.call)).ok, 'reopened-ready')
       const second = await prepared()
       assert(canonicalJsonDigest(second.output) === canonicalJsonDigest(first.output), 'replay-same-ref')
