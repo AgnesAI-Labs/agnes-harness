@@ -3,6 +3,11 @@ import { type RequestMediaHeader, validateRequestMedia } from '@agnes/protocol'
 import type { RuntimeError } from '@agnes/protocol/runtime'
 import { decodeSafeImageBytes, SafeImageError } from '@agnes/protocol-validation'
 import {
+  AUXILIARY_VISION_MAX_EDGE,
+  AUXILIARY_VISION_RESULT_HEADER,
+  AUXILIARY_VISION_SYSTEM_PROMPT,
+} from '../../orchestrator/auxiliary-vision.js'
+import {
   hashPreparedRequestMedia,
   type PreparedRequestMedia,
   prepareRequestMedia,
@@ -12,17 +17,7 @@ import {
   restoreRequestMedia,
 } from '../../orchestrator/request-media.js'
 import { sha256Hex } from '../../request/hash.js'
-
-const refuse = (code: RuntimeError['code'], detailCode: string): { ok: false; error: RuntimeError } => ({
-  ok: false,
-  error: {
-    code,
-    detailCode,
-    message: 'Media operation refused',
-    diagnosticId: 'media-prepare',
-    retryAdvice: { kind: 'never' },
-  },
-})
+import { refuse } from './errors.js'
 
 export type LegacyImage = Readonly<{
   /** 1-based view node ordinal; sources in one node share it. */
@@ -157,3 +152,8 @@ export function checkEdge(prepared: PreparedRequestMedia, maxEdge: number): Outc
     ? refuse('incompatible', 'media_image_resize_required')
     : { ok: true, value: undefined }
 }
+
+export const VISION_MAX_EDGE = AUXILIARY_VISION_MAX_EDGE
+export const VISION_SYSTEM_PROMPT = AUXILIARY_VISION_SYSTEM_PROMPT
+/** Derived analysis text is always framed as untrusted data. */
+export const framedVisionText = (text: string): string => `${AUXILIARY_VISION_RESULT_HEADER}\n${text}`
