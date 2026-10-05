@@ -1086,8 +1086,9 @@ const INITIAL_CEILING: Record<string, number> = {
   // Domain command event identity lookup and shared event fingerprint (+19); measured 35173, exact.
   // Model service preparation: prepared request assembly and managed credential resolution (+575); measured 35748, exact, no spare.
   // Model service infer: one stable child action, result and usage attribution from the child (+247). Measured 35995, exact, no spare.
-  // Installed Effects dispatch coordinator (+812); exact cap, no spare.
-  'packages/core/src': 36807,
+  // Model prepared handle and bounded in-process registry (+161).
+  // Installed Effects dispatch coordinator (+812); combined exact cap.
+  'packages/core/src': 36968,
   // Testkit-only reference Effects runner adds 202 measured lines; exact cap, no spare.
   // Independent Effects dispatch reference (+440); exact measurement below.
   'packages/core/testkit': 2437,

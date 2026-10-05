@@ -7,6 +7,11 @@ function freeze<T>(value: T): T {
   return value
 }
 export const RuntimeSchemaRefs = freeze({
+  "PreparedModelHandle": {
+    "typeId": "agh.model/prepared-handle@1",
+    "revision": 1,
+    "digest": "0770bad581b94bcc6b3ed11bfc5f65d597230890f79cf617db31d8a475b0ebb1"
+  },
   "PreparedModelRequest": {
     "typeId": "agh.model/prepared-request@1",
     "revision": 4,
