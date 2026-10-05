@@ -15,6 +15,10 @@ type Native = Awaited<ReturnType<typeof originalNativeFixture>>
 
 // Event times keep the spelling they were written with, so compare instants, not strings.
 const instant = (text: string) => Date.parse(text)
+function present<T>(value: T | undefined): T {
+  if (value === undefined) throw Error('expected fact is missing')
+  return value
+}
 async function page(native: Native, snapshot: SnapshotRef) {
   return native.reader.scanVerifiedPage(
     snapshot,
@@ -58,7 +62,7 @@ describe.skipIf(typeof process.getuid !== 'function')('historical meta of native
       const before = await page(native, old)
       clock.now = created + 6_000
       await commitPreparedActions(native, 5, position)
-      const run = before.items.find((item) => item.schema.typeId === 'agh.runtime/run-record@1')
+      const run = present(before.items.find((item) => item.schema.typeId === 'agh.runtime/run-record@1'))
       expect(instant(run.createdAt)).toBe(created)
       expect(instant(run.updatedAt)).toBe(created + 2_000)
       const ts = fixture.db
@@ -70,7 +74,7 @@ describe.skipIf(typeof process.getuid !== 'function')('historical meta of native
       expect(run.minReader).toBe(2)
       // The binding is written once and never updated, so its update time must stay the creation
       // time even though later commits exist in the same prefix.
-      const bound = before.items.find((item) => item.schema.typeId === 'agh.runtime/run-binding@1')
+      const bound = present(before.items.find((item) => item.schema.typeId === 'agh.runtime/run-binding@1'))
       expect(instant(bound.createdAt)).toBe(created)
       expect(instant(bound.updatedAt)).toBe(created)
       expect(await page(native, old)).toEqual(before)
@@ -80,7 +84,7 @@ describe.skipIf(typeof process.getuid !== 'function')('historical meta of native
         .run('1999-01-01T00:00:00Z', '1999-01-01T00:00:00Z', run.recordId)
       expect(await page(native, old)).toEqual(before)
       const later = await reader.openVerifiedSnapshot(FIXTURE_SESSION, context)
-      const newest = (await page(native, later)).items.find((item) => item.recordId === run.recordId)
+      const newest = present((await page(native, later)).items.find((item) => item.recordId === run.recordId))
       expect(newest.createdAt).toBe(run.createdAt)
       expect(instant(newest.updatedAt)).toBe(created + 6_000)
       expect(newest.recordRevision).toBeGreaterThan(run.recordRevision)

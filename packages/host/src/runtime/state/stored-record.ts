@@ -6,6 +6,7 @@ import {
   type RecordMeta,
   type RecordOwner,
   type SchemaRef,
+  validateRuntime,
 } from '@agnes/protocol/runtime'
 import { refuse } from './refusal.js'
 import type { NativeStateRecordFact } from './transactions.js'
@@ -35,7 +36,9 @@ function unproven(): never {
 
 /** The only constructor of a Stored envelope. Every meta member is a field of the proven fact. */
 export function storedOf(fact: NativeStateRecordFact): Stored {
+  const owner = validateRuntime('RecordOwner', fact.owner)
   if (
+    !owner.ok ||
     !TIMESTAMP.test(fact.createdAt) ||
     !TIMESTAMP.test(fact.updatedAt) ||
     (fact.minReader !== 1 && fact.minReader !== 2) ||
@@ -54,7 +57,7 @@ export function storedOf(fact: NativeStateRecordFact): Stored {
       createdAt: fact.createdAt,
       updatedAt: fact.updatedAt,
     }),
-    owner: fact.owner,
+    owner: owner.value,
     value: fact.value,
   })
 }

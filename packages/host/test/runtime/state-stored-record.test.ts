@@ -74,6 +74,7 @@ describe('Stored envelope', () => {
     const unproven = expect.objectContaining({
       failure: expect.objectContaining({ detailCode: 'state_meta_unproven' }),
     })
+    expect(() => storedOf(fact({ owner: { ...owner, scope: { kind: 'nowhere' } } }))).toThrowError(unproven)
     expect(() => storedOf(fact({ createdAt: '' }))).toThrowError(unproven)
     expect(() => storedOf(fact({ minReader: 0 }))).toThrowError(unproven)
     expect(() => storedOf(fact({ updatedAt: '2026-10-05T00:05:00' }))).toThrowError(unproven)
