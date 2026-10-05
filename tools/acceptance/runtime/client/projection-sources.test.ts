@@ -87,12 +87,13 @@ async function sources() {
       source: BINDING,
       stateSchema: fixture.domain.commandStateSchema,
       destination: 'runtime-inbox',
-      // Commands are not read here; the daemon store's command handle type is not core's port yet.
-      storage: { transaction: unused },
+      storage: writer,
       clock: { now: () => new Date().toISOString(), newId: () => crypto.randomUUID() },
     },
   })
   cleanups.push(() => provider.close())
+  // A writer commit starts the fold before its transaction resolves, so nothing here refreshes by hand.
+  cleanups.push(writer.subscribeCommitted(() => provider.refresh()))
 
   const sessionId = entry.key
   return {
@@ -153,10 +154,8 @@ describe('projection read over the daemon sources', () => {
     const s = await sources()
     const first = await s.turn('first')
     await s.commit('card-1')
-    expect(await s.provider.refresh()).toBeNull()
     const second = await s.turn('second')
     await s.commit('card-2')
-    expect(await s.provider.refresh()).toBeNull()
     const third = await s.turn('third')
 
     expect(third.length).toBeGreaterThan(second.length)
@@ -172,7 +171,6 @@ describe('projection read over the daemon sources', () => {
     await s.commit('card-3')
     expect((await s.journal(2, 10)).map((record) => record.sequence)).toEqual([3])
     expect((await s.journal(0, 2)).map((record) => record.sequence)).toEqual([1, 2])
-    expect(await s.provider.refresh()).toBeNull()
     const all = await s.read(3)
     expect(all.filter((id) => id.startsWith('card-'))).toEqual(['card-1', 'card-2', 'card-3'])
     expect(all.at(-1)).toBe('card-3')
@@ -194,7 +192,6 @@ describe('projection read over the daemon sources', () => {
       pending = s.journal(0, 10)
     })
     expect(await pending).toEqual([])
-    expect(await s.provider.refresh()).toBeNull()
     const cards = (await s.read(10)).filter((id) => id === 'rolled-back' || id.startsWith('card-'))
     expect(cards).toEqual(['card-1'])
   })
