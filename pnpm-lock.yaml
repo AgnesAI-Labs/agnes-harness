@@ -767,6 +767,9 @@ importers:
       '@agnes/protocol':
         specifier: workspace:*
         version: link:../protocol
+      '@agnes/protocol-validation':
+        specifier: workspace:*
+        version: link:../protocol-validation
       '@ant-design/x-markdown':
         specifier: 2.9.0
         version: 2.9.0(@types/react@18.3.12)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
@@ -804,6 +807,9 @@ importers:
       '@agnes/protocol':
         specifier: workspace:*
         version: link:../protocol
+      '@agnes/protocol-validation':
+        specifier: workspace:*
+        version: link:../protocol-validation
       '@agnes/web-slots':
         specifier: workspace:*
         version: link:../web-slots

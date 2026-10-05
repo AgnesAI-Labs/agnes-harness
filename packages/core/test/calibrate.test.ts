@@ -182,7 +182,13 @@ describe('count calibration', () => {
     const { session } = await openSession({ provider, preset: preset(4000), seams })
     session.d.imageInputTokenFallback = async ({ imageCount }) => ({ tokens: 9000, imageCount })
     await session.enqueue('next-turn', {
-      content: [{ type: 'image', data: 'AAA', mimeType: 'image/png' }],
+      content: [
+        {
+          type: 'image',
+          data: 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=',
+          mimeType: 'image/png',
+        },
+      ],
       actor,
     })
     expect((await session.run({ until: 'turn-end', signal: new AbortController().signal })).reason).toBe(

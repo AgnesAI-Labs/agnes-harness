@@ -4,6 +4,7 @@ import type { LocaleCatalog } from '@agnes/web-client'
 export const timelineLocaleCatalog: LocaleCatalog = {
   en: {
     'timeline.userLabel': 'You',
+    'timeline.imageUnavailable': 'Image preview unavailable in this view',
     'timeline.thinkingSummary': 'Deep thinking',
     'timeline.lostOutput': '_Output interrupted; at least {count} characters were not saved_',
     'timeline.approvalLabel': 'Approval: {status}',
@@ -70,6 +71,7 @@ export const timelineLocaleCatalog: LocaleCatalog = {
   },
   'zh-CN': {
     'timeline.userLabel': '你',
+    'timeline.imageUnavailable': '图片附件暂不可预览',
     'timeline.thinkingSummary': '深度思考',
     'timeline.lostOutput': '_输出中断，至少 {count} 字未保存_',
     'timeline.approvalLabel': '审批：{status}',

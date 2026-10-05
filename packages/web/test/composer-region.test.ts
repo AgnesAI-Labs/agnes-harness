@@ -8,6 +8,10 @@ import { COMPOSER_SLOT } from '../src/region-slots.js'
 import { enT, zhT } from './helpers/locale.js'
 import { mountRenderedIndex, resetWebDom } from './web-dom-fixture.js'
 
+const imagePngData =
+  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII='
+const imagePngBytes = Uint8Array.from(atob(imagePngData), (character) => character.charCodeAt(0))
+
 const usage: UsageView = {
   totals: { input: 12, output: 8, cacheRead: 0, cacheWrite: 0, reasoning: 0 },
   reasoningComplete: true,
@@ -19,6 +23,8 @@ const usage: UsageView = {
 // A slot contribution renders in well under half a second, but under a loaded runner an
 // occasional commit takes longer than vi.waitFor's default one second.
 const slotRender = { timeout: 5_000 }
+const originalCreateObjectURL = Object.getOwnPropertyDescriptor(URL, 'createObjectURL')
+const originalRevokeObjectURL = Object.getOwnPropertyDescriptor(URL, 'revokeObjectURL')
 
 describe('rendered composer region', () => {
   let runtime: Awaited<ReturnType<typeof mountRenderedIndex>> | undefined
@@ -28,6 +34,10 @@ describe('rendered composer region', () => {
     runtime = undefined
     localStorage.clear()
     resetWebDom()
+    if (originalCreateObjectURL) Object.defineProperty(URL, 'createObjectURL', originalCreateObjectURL)
+    else Reflect.deleteProperty(URL, 'createObjectURL')
+    if (originalRevokeObjectURL) Object.defineProperty(URL, 'revokeObjectURL', originalRevokeObjectURL)
+    else Reflect.deleteProperty(URL, 'revokeObjectURL')
   })
 
   it('renders the complete composer through its public handle and keeps native keyboard submit', async () => {
@@ -100,6 +110,32 @@ describe('rendered composer region', () => {
     expect(drafts).toEqual(['键盘提交'])
     expect(submitted).toEqual(['submit'])
     expect(document.activeElement).toBe(prompt)
+  })
+
+  it('clears session-scoped attachments and revokes their preview when the session changes', async () => {
+    Object.defineProperty(URL, 'createObjectURL', {
+      configurable: true,
+      value: vi.fn(() => 'blob:session-image'),
+    })
+    Object.defineProperty(URL, 'revokeObjectURL', { configurable: true, value: vi.fn() })
+    runtime = await mountRenderedIndex()
+    const prompt = document.querySelector<HTMLTextAreaElement>('#prompt')
+    if (!prompt) throw new Error('composer input is missing')
+    const pasted = new Event('paste', { bubbles: true, cancelable: true })
+    Object.defineProperty(pasted, 'clipboardData', {
+      value: {
+        files: [new File([imagePngBytes], 'one.png', { type: 'image/png' })],
+        items: [],
+        getData: () => '',
+      },
+    })
+    prompt.dispatchEvent(pasted)
+    await vi.waitFor(() => expect(runtime?.composer?.getImageBlocks()).toHaveLength(1), slotRender)
+
+    runtime.session.setSession('another-session')
+
+    await vi.waitFor(() => expect(runtime?.composer?.getImageBlocks()).toHaveLength(0), slotRender)
+    expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:session-image')
   })
 
   it('preserves context interaction across connection updates, session clear, DSH replacement and disposal', async () => {

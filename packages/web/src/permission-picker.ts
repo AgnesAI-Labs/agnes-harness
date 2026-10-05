@@ -163,7 +163,7 @@ export function createPermissionPicker(options: {
 
   function position(): void {
     if (!popover) return
-    webUi.positionPopover(trigger, popover, { preferredWidth: 280, preferredHeight: 220, viewportPadding })
+    webUi.positionPopover(trigger, popover, { preferredWidth: 360, preferredHeight: 220, viewportPadding })
   }
 
   function close(closeOptions: { returnFocus?: boolean } = {}): void {

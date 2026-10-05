@@ -63,6 +63,22 @@ describe('timeline reader semantics', () => {
     expect(transcript.querySelector('.node-label')?.textContent).toBe('Approval')
   })
 
+  it('shows an explicit unavailable state for images in the legacy transcript renderer', () => {
+    const { transcript, timeline } = renderer()
+    timeline.render([
+      {
+        kind: 'user',
+        id: 'image-message',
+        seq: 1,
+        content: [{ type: 'image', mimeType: 'image/png', data: 'invalid' }],
+      },
+    ])
+
+    expect(transcript.querySelector('.timeline-node.user .node-body')?.textContent).toContain(
+      '图片附件暂不可预览',
+    )
+  })
+
   it('projects a keyed DSH chat renderer for one node kind and restores native fallback on removal', async () => {
     const ctx = new Context()
     await ctx.plugin(SlotRegistry)

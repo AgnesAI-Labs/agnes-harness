@@ -79,7 +79,7 @@ export const UI_HISTORY_DEFAULT_LIMIT = 100
 export const UI_HISTORY_MAX_LIMIT = 200
 export const UI_PROJECTION_DEFAULT_MAX_BYTES = 256 * 1024
 export const UI_PROJECTION_MIN_MAX_BYTES = 16 * 1024
-export const UI_PROJECTION_MAX_BYTES = 1024 * 1024
+export const UI_PROJECTION_MAX_BYTES = 2 * 1024 * 1024
 /** Safe detail code requesting a fresh bounded opening snapshot, not an unbounded replacement. */
 export const UI_PROJECTION_RESYNC_REQUIRED = 'UI_PROJECTION_RESYNC_REQUIRED' as const
 export const ULID_PATTERN = /^[0-9A-HJKMNP-TV-Z]{26}$/

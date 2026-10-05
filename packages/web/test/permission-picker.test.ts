@@ -30,6 +30,7 @@ it('opens the list and reports the chosen mode', async () => {
   picker.render({ disabled: false, pending: false, selected: 'workspace' })
   expect(label.textContent).toBe('工作区内修改')
   trigger.click()
+  expect(document.querySelector<HTMLElement>('.permission-picker')?.style.width).toBe('360px')
   const listbox = document.querySelector('[role="listbox"]')
   if (!listbox) throw new Error('permission listbox did not open')
   expect([...listbox.children].map((child) => child.getAttribute('role'))).toEqual([
