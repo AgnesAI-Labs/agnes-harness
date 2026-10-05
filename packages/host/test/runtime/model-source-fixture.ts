@@ -161,7 +161,6 @@ export function fixturePorts(
   over: Partial<ModelSourcePorts> & {
     slots?: Slots
     retained?: SelectedModelCatalog[]
-    current?: SelectedModelCatalog
     wire?: WireIdentity
   } = {},
 ): { ports: ModelSourcePorts; ref: Extract<DataRef, { kind: 'inline' }> } {

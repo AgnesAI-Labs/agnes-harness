@@ -83,6 +83,16 @@ describe('model source reader: load', () => {
     expect(loaded.value.request.slot).toBe('fast')
   })
 
+  it('judges the recorded slot alone, not whichever slot happens to come first', async () => {
+    const slots = {
+      primary: { route: 'other', model: 'other' },
+      fast: { route: 'fixed-route', model: 'fixture-model' },
+    }
+    const wire = { ...fixtureWire, slot: 'fast' as const }
+    const { reader, ref, frame, context } = setup({ slots, wire })
+    expect((await reader.load(ref, frame, context)).ok).toBe(true)
+  })
+
   it('accepts a slot whose fallbacks name the target', async () => {
     const slots = {
       primary: {
@@ -98,7 +108,7 @@ describe('model source reader: load', () => {
   it('keeps loading an old request from its retained capture after the current catalog changed', async () => {
     const original = fixtureCatalog(2)
     const changed = fixtureCatalog(9)
-    const { reader, ref, frame, context } = setup({ retained: [original], current: changed })
+    const { reader, ref, frame, context } = setup({ retained: [original, changed] })
     const loaded = await reader.load(ref, frame, context)
     if (!loaded.ok) throw new Error(loaded.error.detailCode)
     expect(loaded.value.model.cost.output).toBe(2)
