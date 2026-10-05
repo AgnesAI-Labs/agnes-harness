@@ -1082,7 +1082,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // Sixth main synchronization merged with the integration tip. Measured 35005, exact, no spare.
   // Exact credential consumption and persisted completion-plan checks. Measured 35067, no spare.
   // Pure model input digest and plain text wire request builder (+87); exact cap, no spare.
-  'packages/core/src': 35154,
+  // Domain command event identity lookup and shared event fingerprint (+19); measured 35173, exact.
+  'packages/core/src': 35173,
   // Testkit-only reference Effects runner adds 202 measured lines; exact cap, no spare.
   'packages/core/testkit': 1997,
   // 2026-09-15: DeepSeek V4 Pro/Flash ship a known-thinking-corrections table (new file) so the
@@ -2056,7 +2057,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // Sixth main synchronization brings main's queued-input CI fixes. Measured 27749, exact, no spare.
   // Exact merged main and runtime integration source count; no spare allocation.
   // Default agh.events provider over the domain store, with its event lookups; measured 28215 (+386), exact.
-  'packages/daemon/src': 28215,
+  // Durable event high-water, identity backstop and shared event fingerprint (+30); measured 28245, exact.
+  'packages/daemon/src': 28245,
   'packages/daemon/src/packages/admin-session': 46,
   // 2026-09-14: whole-branch review fix wave (Finding 1) adds the two missing
   // 'pins/inspect'/'pins/release' entries to the ACTIONS BFF route allowlist, which had been left
