@@ -118,15 +118,15 @@ async function commitPreparedActions(
 
 describe.skipIf(typeof process.getuid !== 'function')('original State native read snapshot', () => {
   it('reads committed Run and Binding from the original connection and rejects copies and damaged history', async () => {
-    const { directory, file, input, fixture, identity, context, reader, authority } =
-      await originalNativeFixture()
+    const native = await originalNativeFixture()
+    const { directory, file, input, fixture, identity, grant, reader, authority } = native
     try {
       expect(await fixture.coordinator.coordinate(fixture.draft(), fixture.context())).toMatchObject({
         ok: true,
         value: { state: 'created' },
       })
       const before = fixture.db.prepare('SELECT total_changes() n').get()?.n
-      const snapshot = await reader.openVerifiedSnapshot('fixture-session', context)
+      const snapshot = await reader.openVerifiedSnapshot('fixture-session', grant)
       const request = {
         snapshot,
         collection: 'records' as const,
@@ -135,14 +135,10 @@ describe.skipIf(typeof process.getuid !== 'function')('original State native rea
         cursor: null,
         limit: 1,
       }
-      const first = await reader.scanVerifiedPage(snapshot, request, context)
+      const first = await reader.scanVerifiedPage(snapshot, request, grant)
       expect(first.items).toHaveLength(1)
       expect(first.nextCursor).not.toBeNull()
-      const second = await reader.scanVerifiedPage(
-        snapshot,
-        { ...request, cursor: first.nextCursor },
-        context,
-      )
+      const second = await reader.scanVerifiedPage(snapshot, { ...request, cursor: first.nextCursor }, grant)
       expect(second.items).toHaveLength(1)
       expect(second.nextCursor).toBeNull()
       expect(new Set([...first.items, ...second.items].map((item) => item.schema.typeId))).toEqual(
@@ -161,30 +157,40 @@ describe.skipIf(typeof process.getuid !== 'function')('original State native rea
         ttlMs: 10_000,
       })
       expect(advanced.snapshot.throughSeq).toBeGreaterThan(snapshot.throughSeq)
-      const historical = await reader.scanVerifiedPage(snapshot, { ...request, limit: 500 }, context)
+      const historical = await reader.scanVerifiedPage(snapshot, { ...request, limit: 500 }, grant)
       expect(historical.items.map((item) => item.recordId)).toEqual([firstItem.recordId, secondItem.recordId])
-      await expect(reader.scanVerifiedPage({ ...snapshot }, request, context)).rejects.toThrow()
+      await expect(reader.scanVerifiedPage({ ...snapshot }, request, grant)).rejects.toThrow()
       await expect(
-        reader.scanVerifiedPage(snapshot, { ...request, snapshot: { ...snapshot } }, context),
+        reader.scanVerifiedPage(snapshot, { ...request, snapshot: { ...snapshot } }, grant),
       ).rejects.toThrow()
-      await expect(reader.scanVerifiedPage(snapshot, request, { ...context })).rejects.toThrow()
+      await expect(reader.scanVerifiedPage(snapshot, request, { ...grant })).rejects.toThrow()
       await expect(
-        reader.scanVerifiedPage(snapshot, { ...request, cursor: 'invented' }, context),
-      ).rejects.toThrow()
-      await expect(
-        reader.scanVerifiedPage(snapshot, { ...request, filter: { runId: 'fixture-run-old' } }, context),
+        reader.scanVerifiedPage(snapshot, { ...request, cursor: 'invented' }, grant),
       ).rejects.toThrow()
       await expect(
-        reader.scanVerifiedPage(snapshot, { ...request, collection: 'record-versions' }, context),
+        reader.scanVerifiedPage(snapshot, { ...request, filter: { runId: 'fixture-run-old' } }, grant),
       ).rejects.toThrow()
-      await expect(reader.scanVerifiedPage(snapshot, { ...request, limit: 501 }, context)).rejects.toThrow()
+      await expect(
+        reader.scanVerifiedPage(snapshot, { ...request, collection: 'record-versions' }, grant),
+      ).rejects.toThrow()
+      await expect(reader.scanVerifiedPage(snapshot, { ...request, limit: 501 }, grant)).rejects.toThrow()
       const foreign = new DatabaseSync(file)
       try {
+        // The owner takes no database handle and no identity: such a key is refused, not ignored.
         expect(() =>
           createNativeStateReadOwner({
             originalState: fixture.state,
-            originalIdentity: identity,
+            runtimeScope: native.scope,
+            // @ts-expect-error a database handle is not part of the owner's input
             originalDatabase: foreign,
+          }),
+        ).toThrow()
+        expect(() =>
+          createNativeStateReadOwner({
+            originalState: fixture.state,
+            runtimeScope: native.scope,
+            // @ts-expect-error an identity module is not part of the owner's input
+            originalIdentity: identity,
           }),
         ).toThrow()
       } finally {
@@ -197,18 +203,18 @@ describe.skipIf(typeof process.getuid !== 'function')('original State native rea
       fixture.db
         .prepare("UPDATE runtime_version_bodies SET value_json='{}' WHERE record_id=?")
         .run(firstItem.recordId)
-      await expect(reader.scanVerifiedPage(snapshot, request, context)).rejects.toThrow()
+      await expect(reader.scanVerifiedPage(snapshot, request, grant)).rejects.toThrow()
       fixture.db
         .prepare('UPDATE runtime_version_bodies SET value_json=? WHERE record_id=?')
         .run(original, firstItem.recordId)
-      expect((await reader.scanVerifiedPage(snapshot, request, context)).items).toHaveLength(1)
+      expect((await reader.scanVerifiedPage(snapshot, request, grant)).items).toHaveLength(1)
       input.fixture.now = '2026-10-03T00:02:00Z'
-      await expect(reader.scanVerifiedPage(snapshot, request, context)).rejects.toThrow()
-      const fresh = await reader.openVerifiedSnapshot('fixture-session', context)
+      await expect(reader.scanVerifiedPage(snapshot, request, grant)).rejects.toThrow()
+      const fresh = await reader.openVerifiedSnapshot('fixture-session', grant)
       identity.revoke()
-      await expect(reader.scanVerifiedPage(fresh, { ...request, snapshot: fresh }, context)).rejects.toThrow()
+      await expect(reader.scanVerifiedPage(fresh, { ...request, snapshot: fresh }, grant)).rejects.toThrow()
     } finally {
-      reader.close()
+      await reader.close()
       identity.close()
       await fixture.close()
       rmSync(directory, { recursive: true, force: true })
@@ -218,18 +224,18 @@ describe.skipIf(typeof process.getuid !== 'function')('original State native rea
 
 describe.skipIf(typeof process.getuid !== 'function')('native read snapshot admission bound', () => {
   it('admits exactly 128 simultaneous snapshots and refuses the rest before any read settles', async () => {
-    const { directory, identity, context, reader, fixture } = await originalNativeFixture()
+    const { directory, identity, grant, reader, fixture } = await originalNativeFixture()
     try {
       expect(await fixture.coordinator.coordinate(fixture.draft(), fixture.context())).toMatchObject({
         ok: true,
       })
       const results = await Promise.allSettled(
-        Array.from({ length: 129 }, () => reader.openVerifiedSnapshot('fixture-session', context)),
+        Array.from({ length: 129 }, () => reader.openVerifiedSnapshot('fixture-session', grant)),
       )
       expect(results.filter((result) => result.status === 'fulfilled')).toHaveLength(128)
       expect(results.filter((result) => result.status === 'rejected')).toHaveLength(1)
     } finally {
-      reader.close()
+      await reader.close()
       identity.close()
       await fixture.close()
       rmSync(directory, { recursive: true, force: true })
@@ -239,12 +245,12 @@ describe.skipIf(typeof process.getuid !== 'function')('native read snapshot admi
 
 describe.skipIf(typeof process.getuid !== 'function')('native read continuation replay', () => {
   it('returns the same page when a continuation is read again after its reply was lost', async () => {
-    const { directory, identity, context, reader, fixture } = await originalNativeFixture()
+    const { directory, identity, grant, reader, fixture } = await originalNativeFixture()
     try {
       expect(await fixture.coordinator.coordinate(fixture.draft(), fixture.context())).toMatchObject({
         ok: true,
       })
-      const snapshot = await reader.openVerifiedSnapshot('fixture-session', context)
+      const snapshot = await reader.openVerifiedSnapshot('fixture-session', grant)
       const request = {
         snapshot,
         collection: 'records' as const,
@@ -253,15 +259,15 @@ describe.skipIf(typeof process.getuid !== 'function')('native read continuation 
         cursor: null,
         limit: 1,
       }
-      const first = await reader.scanVerifiedPage(snapshot, request, context)
+      const first = await reader.scanVerifiedPage(snapshot, request, grant)
       expect(first.nextCursor).not.toBeNull()
       const next = { ...request, cursor: first.nextCursor }
-      const delivered = await reader.scanVerifiedPage(snapshot, next, context)
-      const replayed = await reader.scanVerifiedPage(snapshot, next, context)
+      const delivered = await reader.scanVerifiedPage(snapshot, next, grant)
+      const replayed = await reader.scanVerifiedPage(snapshot, next, grant)
       expect(replayed).toEqual(delivered)
       expect(replayed.items).toHaveLength(1)
     } finally {
-      reader.close()
+      await reader.close()
       identity.close()
       await fixture.close()
       rmSync(directory, { recursive: true, force: true })
@@ -272,13 +278,13 @@ describe.skipIf(typeof process.getuid !== 'function')('native read continuation 
 describe.skipIf(typeof process.getuid !== 'function')('native read full page budget', () => {
   it('serves a full 500-item page and then the remainder from one fixed snapshot', async () => {
     const native = await originalNativeFixture()
-    const { directory, identity, context, reader, fixture } = native
+    const { directory, identity, grant, reader, fixture } = native
     try {
       expect(await fixture.coordinator.coordinate(fixture.draft(), fixture.context())).toMatchObject({
         ok: true,
       })
       await commitPreparedActions(native, 512)
-      const snapshot = await reader.openVerifiedSnapshot('fixture-session', context)
+      const snapshot = await reader.openVerifiedSnapshot('fixture-session', grant)
       const request = {
         snapshot,
         collection: 'records' as const,
@@ -287,21 +293,21 @@ describe.skipIf(typeof process.getuid !== 'function')('native read full page bud
         cursor: null,
         limit: 500,
       }
-      const first = await reader.scanVerifiedPage(snapshot, request, context)
+      const first = await reader.scanVerifiedPage(snapshot, request, grant)
       expect(first.items).toHaveLength(500)
       expect(first.complete).toBe(false)
       expect(first.nextCursor).not.toBeNull()
       const next = { ...request, cursor: first.nextCursor }
-      const second = await reader.scanVerifiedPage(snapshot, next, context)
+      const second = await reader.scanVerifiedPage(snapshot, next, grant)
       expect(second.items).toHaveLength(514 - 500)
       expect(second.complete).toBe(true)
       expect(second.nextCursor).toBeNull()
       const ids = [...first.items, ...second.items].map((item) => item.recordId)
       expect(new Set(ids).size).toBe(514)
       expect(ids).toEqual([...ids].sort())
-      expect(await reader.scanVerifiedPage(snapshot, request, context)).toEqual(first)
+      expect(await reader.scanVerifiedPage(snapshot, request, grant)).toEqual(first)
     } finally {
-      reader.close()
+      await reader.close()
       identity.close()
       await fixture.close()
       rmSync(directory, { recursive: true, force: true })
@@ -311,29 +317,33 @@ describe.skipIf(typeof process.getuid !== 'function')('native read full page bud
 
 describe.skipIf(typeof process.getuid !== 'function')('native read snapshot slot release', () => {
   it('releases the reserved slot when an open is refused or cancelled in flight', async () => {
-    const { directory, identity, context, reader, fixture } = await originalNativeFixture()
+    const native = await originalNativeFixture()
+    const { directory, identity, grant, reader, fixture } = native
     try {
       expect(await fixture.coordinator.coordinate(fixture.draft(), fixture.context())).toMatchObject({
         ok: true,
       })
       const refused = await Promise.allSettled(
-        Array.from({ length: 129 }, () => reader.openVerifiedSnapshot('absent-session', context)),
+        Array.from({ length: 129 }, () => reader.openVerifiedSnapshot('absent-session', grant)),
       )
       expect(refused.every((result) => result.status === 'rejected')).toBe(true)
       const controller = new AbortController()
-      const connection = await identity.connect(controller.signal)
-      const cancellable = connection.issue('2030-01-01T00:00:00Z', 'native-read-cancel')
+      const cancellable = native.bridge.grant(
+        { ...native.context, signal: controller.signal },
+        'fixture-session',
+      )
+      if (!cancellable) throw Error('test bridge refused the cancellable caller')
       const cancelled = Promise.allSettled(
         Array.from({ length: 8 }, () => reader.openVerifiedSnapshot('fixture-session', cancellable)),
       )
       controller.abort()
       expect((await cancelled).every((result) => result.status === 'rejected')).toBe(true)
       const admitted = await Promise.allSettled(
-        Array.from({ length: 129 }, () => reader.openVerifiedSnapshot('fixture-session', context)),
+        Array.from({ length: 129 }, () => reader.openVerifiedSnapshot('fixture-session', grant)),
       )
       expect(admitted.filter((result) => result.status === 'fulfilled')).toHaveLength(128)
     } finally {
-      reader.close()
+      await reader.close()
       identity.close()
       await fixture.close()
       rmSync(directory, { recursive: true, force: true })
@@ -344,13 +354,13 @@ describe.skipIf(typeof process.getuid !== 'function')('native read snapshot slot
 describe.skipIf(typeof process.getuid !== 'function')('native read visibility', () => {
   it('shows only controlled Run, Binding and Action records from the fixed snapshot', async () => {
     const native = await originalNativeFixture()
-    const { directory, identity, context, reader, fixture } = native
+    const { directory, identity, grant, reader, fixture } = native
     try {
       expect(await fixture.coordinator.coordinate(fixture.draft(), fixture.context())).toMatchObject({
         ok: true,
       })
       const position = await commitPreparedActions(native, 3)
-      const snapshot = await reader.openVerifiedSnapshot('fixture-session', context)
+      const snapshot = await reader.openVerifiedSnapshot('fixture-session', grant)
       await commitPreparedActions(native, 5, position)
       const scan = (
         target: typeof snapshot,
@@ -360,7 +370,7 @@ describe.skipIf(typeof process.getuid !== 'function')('native read visibility', 
         reader.scanVerifiedPage(
           target,
           { snapshot: target, collection, filter, order: 'asc', cursor: null, limit: 500 } as never,
-          context,
+          grant,
         )
       const records = await scan(snapshot, 'records')
       expect(records.items).toHaveLength(5)
@@ -381,12 +391,12 @@ describe.skipIf(typeof process.getuid !== 'function')('native read visibility', 
         (await scan(snapshot, 'actions', { runId: 'fixture-run-old', states: ['completed'] })).items,
       ).toHaveLength(0)
       expect((await scan(snapshot, 'signals', { runId: 'fixture-run-old' })).items).toHaveLength(0)
-      const later = await reader.openVerifiedSnapshot('fixture-session', context)
+      const later = await reader.openVerifiedSnapshot('fixture-session', grant)
       expect((await scan(later, 'records')).items).toHaveLength(7)
       expect((await scan(later, 'actions', { runId: 'fixture-run-old' })).items).toHaveLength(5)
       expect((await scan(snapshot, 'actions', { runId: 'fixture-run-old' })).items).toHaveLength(3)
     } finally {
-      reader.close()
+      await reader.close()
       identity.close()
       await fixture.close()
       rmSync(directory, { recursive: true, force: true })
@@ -396,12 +406,12 @@ describe.skipIf(typeof process.getuid !== 'function')('native read visibility', 
 
 describe.skipIf(typeof process.getuid !== 'function')('native read integrity', () => {
   it('refuses a snapshot whose history was pruned or whose ledger boundary changed, then recovers when restored', async () => {
-    const { directory, identity, context, reader, fixture } = await originalNativeFixture()
+    const { directory, identity, grant, reader, fixture } = await originalNativeFixture()
     try {
       expect(await fixture.coordinator.coordinate(fixture.draft(), fixture.context())).toMatchObject({
         ok: true,
       })
-      const snapshot = await reader.openVerifiedSnapshot('fixture-session', context)
+      const snapshot = await reader.openVerifiedSnapshot('fixture-session', grant)
       const request = {
         snapshot,
         collection: 'records' as const,
@@ -410,7 +420,7 @@ describe.skipIf(typeof process.getuid !== 'function')('native read integrity', (
         cursor: null,
         limit: 500,
       }
-      const baseline = await reader.scanVerifiedPage(snapshot, request, context)
+      const baseline = await reader.scanVerifiedPage(snapshot, request, grant)
       expect(baseline.items).toHaveLength(2)
       const target = baseline.items[0]
       if (!target) throw Error('baseline record missing')
@@ -421,11 +431,11 @@ describe.skipIf(typeof process.getuid !== 'function')('native read integrity', (
       fixture.db
         .prepare('DELETE FROM runtime_version_bodies WHERE record_id=? AND record_revision=?')
         .run(target.recordId, target.recordRevision)
-      await expect(reader.scanVerifiedPage(snapshot, request, context)).rejects.toThrow()
+      await expect(reader.scanVerifiedPage(snapshot, request, grant)).rejects.toThrow()
       fixture.db
         .prepare('INSERT INTO runtime_version_bodies (record_id,record_revision,value_json) VALUES (?,?,?)')
         .run(target.recordId, target.recordRevision, body.value_json)
-      expect(await reader.scanVerifiedPage(snapshot, request, context)).toEqual(baseline)
+      expect(await reader.scanVerifiedPage(snapshot, request, grant)).toEqual(baseline)
       const boundary = fixture.db
         .prepare('SELECT integrity_digest FROM events WHERE session_key=? AND seq=?')
         .get(snapshot.sessionId, snapshot.throughSeq)?.integrity_digest
@@ -433,13 +443,13 @@ describe.skipIf(typeof process.getuid !== 'function')('native read integrity', (
       fixture.db
         .prepare('UPDATE events SET integrity_digest=? WHERE session_key=? AND seq=?')
         .run('0'.repeat(64), snapshot.sessionId, snapshot.throughSeq)
-      await expect(reader.scanVerifiedPage(snapshot, request, context)).rejects.toThrow()
+      await expect(reader.scanVerifiedPage(snapshot, request, grant)).rejects.toThrow()
       fixture.db
         .prepare('UPDATE events SET integrity_digest=? WHERE session_key=? AND seq=?')
         .run(boundary, snapshot.sessionId, snapshot.throughSeq)
-      expect(await reader.scanVerifiedPage(snapshot, request, context)).toEqual(baseline)
+      expect(await reader.scanVerifiedPage(snapshot, request, grant)).toEqual(baseline)
     } finally {
-      reader.close()
+      await reader.close()
       identity.close()
       await fixture.close()
       rmSync(directory, { recursive: true, force: true })

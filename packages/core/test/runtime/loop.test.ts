@@ -351,6 +351,87 @@ describe('full C01 SPI text Loop candidate, restricted background peers', () => 
       await f.close()
     }
   })
+  it.each([
+    'announced',
+    'plan the handle header does not commit to',
+    'header commitment without an announced plan',
+    'announcement that differs from the committed plan',
+    'plan wider than the locked target',
+  ] as const)('accepts only the media plans the handle header commits to: %s', async (scenario) => {
+    const f = await ready(undefined, 'agh.default/model')
+    const model = await realModelPorts(f)
+    try {
+      const ports = {
+        ...model.ports,
+        async compute(request: W.ServiceOperation) {
+          const reply = await model.ports.compute(request)
+          if (request.method !== 'prepare' || !reply.ok || reply.value.kind !== 'inline') return reply
+          const result = validateRuntime('ModelPrepareResult', reply.value.value)
+          if (!result.ok || result.value.preparedRef.kind !== 'inline') throw new Error('Preparation fixture')
+          const handle = validateRuntime('PreparedModelHandle', result.value.preparedRef.value)
+          if (!handle.ok) throw new Error('Handle fixture')
+          const planFor = (features: W.ModelFeatures): W.MediaPlan => ({
+            key: 'media:fixed',
+            sourceRefs: [],
+            sourceDigest: 'a'.repeat(64),
+            transformSchema: { typeId: 'agh.media/transform-native@1', revision: 1, digest: 'b'.repeat(64) },
+            parameters: contextInline(
+              { typeId: 'agh.media/parameters@1', revision: 1, digest: 'c'.repeat(64) },
+              {},
+            ),
+            targetFeatures: features,
+            provider: {
+              bindingId: 'media',
+              providerId: 'agh.default/media',
+              contract: 'agh.media',
+              logicalName: 'default',
+            },
+          })
+          const features = handle.value.header.route.features
+          const plan = planFor(
+            scenario === 'plan wider than the locked target'
+              ? { ...features, input: [...features.input, 'audio'] }
+              : features,
+          )
+          const committed = scenario === 'plan the handle header does not commit to' ? [] : [plan]
+          const announced =
+            scenario === 'header commitment without an announced plan'
+              ? []
+              : [
+                  contextInline(
+                    { typeId: 'agh.media/plan@1', revision: 1, digest: 'd'.repeat(64) },
+                    scenario === 'announcement that differs from the committed plan'
+                      ? { ...plan, key: 'media:other' }
+                      : plan,
+                  ),
+                ]
+          return {
+            ok: true as const,
+            value: contextInline(reply.value.schema, {
+              ...result.value,
+              mediaPlanRefs: announced,
+              preparedRef: contextInline(RuntimeSchemaRefs.PreparedModelHandle, {
+                ...handle.value,
+                header: {
+                  ...handle.value.header,
+                  mediaPlanDigests: committed.map((p) => canonicalJsonDigest(p as never)),
+                },
+              }),
+            }),
+          }
+        },
+      }
+      const first = await f.provider.start(f.frame, ports)
+      if (scenario === 'announced') {
+        expect(first.next.kind).toBe('wait')
+        expect(first.actions.map((a) => a.method)).toEqual(['infer'])
+      } else failure(first, 'loop_prepared_identity')
+    } finally {
+      await model.close()
+      await f.provider.close('shutdown')
+      await f.close()
+    }
+  })
   it('binds the classified tool to the original prepared model request and canonical definition', async () => {
     const f = await ready()
     try {
