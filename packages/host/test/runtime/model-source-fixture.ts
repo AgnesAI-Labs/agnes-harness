@@ -199,7 +199,10 @@ export function sessionWith(slots: Slots): ModelSourcePorts['session'] {
       ok: true,
       value: {
         sessionId: 'session-1',
-        parameters: { model: { route: slots } },
+        parameters: {
+          schema: runtimeAuthorSchemas.StandardToolOutput.ref,
+          value: { model: { route: slots } },
+        },
       } as unknown as Wire.SessionParameterRevision,
     }),
   }

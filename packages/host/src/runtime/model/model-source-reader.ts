@@ -49,6 +49,7 @@ const refusal = (detailCode: string, code: 'denied' | 'internal' = 'denied'): Ou
     diagnosticId: 'model-source',
   },
 })
+const aborted = (call: CallContext) => (call.signal as AbortSignal | undefined)?.aborted === true
 const same = (a: unknown, b: unknown) => canonicalJsonDigest(a as never) === canonicalJsonDigest(b as never)
 
 function decodePrepared(ref: DataRef): Outcome<Wire.PreparedModelRequest> {
@@ -85,7 +86,7 @@ function slotAllows(parameters: unknown, slot: SlotName, route: string, model: s
 }
 
 export function createModelSourceReader(ports: ModelSourcePorts): ModelSourceReader {
-  const loaded = new WeakMap<ActionFrame, { source: ModelWireSource; epoch: number }>()
+  const loaded = new WeakMap<ActionFrame, { source: ModelWireSource; call: CallContext; epoch: number }>()
   return {
     async load(ref, frame, context) {
       const decoded = decodePrepared(ref)
@@ -93,7 +94,12 @@ export function createModelSourceReader(ports: ModelSourcePorts): ModelSourceRea
       const prepared = decoded.value
       const digest = (ref as { digest: string }).digest
       if (!frameBinds(frame, digest)) return refusal('model_source_frame')
+      // The call and epoch are fixed at entry; every await and the publish re-check them.
+      const call = context.call
+      const epoch = ports.authorize.epoch(call)
+      const stale = () => aborted(call) || ports.authorize.epoch(call) !== epoch
       const issued = await ports.issuance.read(prepared, frame, context)
+      if (stale()) return refusal('model_source_stale')
       if (!issued.ok) return issued
       if (issued.value.preparedDigest !== digest || issued.value.actionId !== frame.actionId)
         return refusal('model_source_issuance')
@@ -118,20 +124,32 @@ export function createModelSourceReader(ports: ModelSourcePorts): ModelSourceRea
       if (modelInputDigest(prepared, capture, issued.value.wire) !== prepared.inputDigest)
         return refusal('model_source_drift')
       const parameters = await ports.session.parameters(prepared.sessionParameterRef, context)
+      if (stale()) return refusal('model_source_stale')
       if (!parameters.ok) return parameters
       if (
-        !slotAllows(parameters.value.parameters, issued.value.wire.slot, route.route, prepared.target.model)
+        !slotAllows(
+          parameters.value.parameters.value,
+          issued.value.wire.slot,
+          route.route,
+          prepared.target.model,
+        )
       )
         return refusal('model_source_slot')
       const request = buildWireRequest(prepared, capture, issued.value.wire)
       if (!request.ok) return request
       const source: ModelWireSource = { prepared, route, model: picked.model, request: request.value }
-      loaded.set(frame, { source, epoch: ports.authorize.epoch(context.call) })
+      if (stale()) return refusal('model_source_stale')
+      loaded.set(frame, { source, call, epoch })
       return { ok: true, value: source }
     },
     current(source, frame, call) {
       const entry = loaded.get(frame)
-      return entry?.source === source && !call.signal.aborted && ports.authorize.epoch(call) === entry.epoch
+      return (
+        entry?.source === source &&
+        entry.call === call &&
+        !aborted(call) &&
+        ports.authorize.epoch(call) === entry.epoch
+      )
     },
   }
 }
