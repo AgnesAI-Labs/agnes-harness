@@ -301,7 +301,10 @@ const INITIAL_CEILING: Record<string, number> = {
   // The client selection refuses a welcome without one and a renderer entry its module does not load.
   // Measured 3677, exact (+4).
   // An unknown domain view phase finds no tone through one lookup. Measured 3672, exact (-5).
-  'packages/web-client/src': 3672,
+  // Missing desktop capabilities are named: the generic card's reason, a renderer refused for them with a
+  // viewer hint, and a module requiring an unnegotiated feature fails its candidate. Measured 3733,
+  // exact (+61).
+  'packages/web-client/src': 3733,
   'packages/web-slots/src': 605,
   // Failed shell calls read as their exit code (+19 lines); measured 4891, exact cap.
   // B-line diagnostics dialog: React view adds 147 lines; measured 4706, exact cap.
@@ -1091,7 +1094,9 @@ const INITIAL_CEILING: Record<string, number> = {
   // Installed Effects dispatch coordinator (+812); combined exact cap.
   // Pure supervisor kernel (+205) and repeatable model readiness (+1).
   // Installed pure Hook actions and current authority/lifecycle (+254); exact combined cap.
-  'packages/core/src': 37428,
+  // Shared media preflight bridge and image-model selection (+153); exact cap, no spare.
+  // Runtime media identity, planner, verification and byte resolution (+542); exact cap, no spare.
+  'packages/core/src': 38123,
   // Testkit-only reference Effects runner adds 202 measured lines; exact cap, no spare.
   // Independent Effects dispatch reference (+440); exact measurement below.
   'packages/core/testkit': 2437,
@@ -1616,7 +1621,9 @@ const INITIAL_CEILING: Record<string, number> = {
   // Events fixed page set, full-page checkpoint and cross-session checkpoint cases (+11), exact.
   // Effects dispatch lifecycle contracts (+113); exact cap, no spare.
   // Model service public contract (six scenarios) and its restricted child peer. Measured 17753 (+557), exact, no spare.
-  'packages/extension-api/testkit': 17753,
+  // Renderer and shell cases for a desktop capability the client lacks. Measured 17808, exact (+55).
+  // Blob deny case: another principal's promote, pin and unpin are refused. Measured 17863 (+55), exact.
+  'packages/extension-api/testkit': 17863,
   // 2026-09-10: raised from 2500 by Task 15 (stream-disconnect reconnection). The new
   // reattach.ts (the Reconnector: backoff loop, OVERLOADED's retryAfterMs override) plus
   // Session.recover()/waitForQuiescence and Client's reconnect wiring (emit(), the
@@ -1696,7 +1703,9 @@ const INITIAL_CEILING: Record<string, number> = {
   // Runtime commands journal per identity partition, stay accepted until final, are capped and archivable.
   // Measured 6349, exact (+49).
   // The runtime client exposes the client selection its welcome carried. Measured 6352, exact (+3).
-  'packages/sdk/src': 6352,
+  // The text format names a missing desktop capability and keeps such a view complete. Measured 6359,
+  // exact (+7).
+  'packages/sdk/src': 6359,
   'packages/sdk/src/extensions.node': 21,
   'packages/sdk/src/package-admin.node': 147,
   'packages/sdk/src/surface.browser': 3,
@@ -2924,7 +2933,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // Model source reader reads the in-process registry; the retained capture store is removed (-71). Measured 83961, exact, no spare.
   // Model parent and child bridge readiness probe. Measured 83981 (+20), exact, no spare.
   // Session model selection: resolution against the current catalog, switch checks and the loop input overlay. Measured 84197 (+216), exact, no spare.
-  'packages/host/src': 84197,
+  // Blob promote, pin and unpin check the caller's principal; pins record it. Measured 84227 (+30), exact.
+  'packages/host/src': 84227,
   'packages/host/src/ext-host/service-invocation': 247,
   // T5.2's permission projector is kept independently bounded so later extension-host work cannot
   // hide in the package-wide increment. Measured source: 86 lines.

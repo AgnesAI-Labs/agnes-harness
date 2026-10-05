@@ -224,29 +224,48 @@ describe('generic domain view', () => {
     expect(commandStatus).not.toHaveBeenCalled()
   })
 
-  it('offers a command only once every feature it needs was negotiated', async () => {
-    const batch = {
-      ...publishAction(),
-      actionKey: 'batch',
-      label: 'Send to all',
-      requiredFeatures: ['acme.batch'],
-    }
-    const shown = { ...view('finalized'), actions: [batch] }
-    const { submit, context } = contextWith([])
-    await show(shown, context)
-    const [unnegotiated] = buttons()
-    expect(unnegotiated?.disabled).toBe(true)
-    expect(host.querySelector('.generic-domain-action')?.textContent).toBe('Send to allNot available here.')
-    await act(async () => unnegotiated?.click())
-    expect(submit).not.toHaveBeenCalled()
+  // A command missing only desktop capabilities names them, since no other client of this kind has them.
+  it.each([
+    ['a feature', ['acme.batch'], 'en', 'Not available here.'],
+    [
+      'a desktop capability',
+      ['desktop.open-path.v1'],
+      'en',
+      'Needs a desktop capability this client does not have (desktop.open-path.v1).',
+    ],
+    [
+      'a desktop capability',
+      ['desktop.open-path.v1'],
+      'zh-CN',
+      '需要此客户端没有的桌面能力（desktop.open-path.v1）。',
+    ],
+    [
+      'a desktop capability and a feature',
+      ['desktop.open-path.v1', 'acme.batch'],
+      'en',
+      'Not available here.',
+    ],
+  ])(
+    'offers a command needing %s only once it was negotiated (%s, %s)',
+    async (_, requiredFeatures, locale, reason) => {
+      const batch = { ...publishAction(), actionKey: 'batch', label: 'Send to all', requiredFeatures }
+      const shown = { ...view('finalized'), actions: [batch] }
+      const { submit, context } = contextWith([], locale)
+      await show(shown, context)
+      const [unnegotiated] = buttons()
+      expect(unnegotiated?.disabled).toBe(true)
+      expect(host.querySelector('.generic-domain-action')?.textContent).toBe(`Send to all${reason}`)
+      await act(async () => unnegotiated?.click())
+      expect(submit).not.toHaveBeenCalled()
 
-    const negotiated = {
-      ...context,
-      capabilities: { features: ['acme.batch'] },
-    } as unknown as RendererContext
-    await show(shown, negotiated)
-    expect(buttons()[0]?.disabled).toBe(false)
-  })
+      const negotiated = {
+        ...context,
+        capabilities: { features: requiredFeatures },
+      } as unknown as RendererContext
+      await show(shown, negotiated)
+      expect(buttons()[0]?.disabled).toBe(false)
+    },
+  )
 
   // HTML in server strings (case 5): markup in the fallback text, resource titles, labels, disabled
   // reasons and action keys stays text; no element, event attribute or link is built from it.
