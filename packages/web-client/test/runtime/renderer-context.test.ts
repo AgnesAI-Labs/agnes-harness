@@ -109,7 +109,7 @@ function mount({
   index = createViewIndex(),
   viewId = 'note-1',
   ownerToken = 'owner-1',
-  drainMs = 5_000,
+  disposeMs = 5_000,
 } = {}) {
   const ok = async (..._: unknown[]): Promise<unknown> => ({ ok: true as const, value: 'delegated' })
   const services = {
@@ -140,7 +140,7 @@ function mount({
     >,
     view: { ...view(7), viewId },
     index,
-    drainMs,
+    disposeMs,
   })
   return { services, ...mounted }
 }
@@ -348,7 +348,7 @@ describe('renderer context restricted to the mounted view', () => {
     submit.mockResolvedValueOnce(handle('request-0', 'unknown_effect'))
     const ids = Array.from({ length: 128 }, (_, n) => `request-${n}`)
     expect(await codes(ids.map((id) => call.submit(id)))).toEqual(Array(128).fill('ok'))
-    expect(await detail(call.submit('request-128'))).toBe('quota/command_ledger_full')
+    expect(await detail(call.submit('request-128'))).toBe('quota/client_command_index_full')
     expect(submit).toHaveBeenCalledTimes(128)
     // A retry of a sent id takes no new entry.
     expect(await code(call.submit('request-5'))).toBe('ok')
@@ -362,7 +362,7 @@ describe('renderer context restricted to the mounted view', () => {
     ).toEqual(['ok', 'ok', 'timeout'])
     // Only request-2 is settled, so it makes the room though request-0 and request-1 are older.
     expect(await code(call.submit('request-128'))).toBe('ok')
-    expect(await detail(call.submit('request-129'))).toBe('quota/command_ledger_full')
+    expect(await detail(call.submit('request-129'))).toBe('quota/client_command_index_full')
     expect(submit).toHaveBeenCalledTimes(130)
     expect(
       await Promise.all(['request-0', 'request-1', 'request-2'].map((id) => detail(call.status(id)))),
@@ -386,11 +386,11 @@ describe('renderer context restricted to the mounted view', () => {
     ])
     // The refused request-0 makes the room; request-1 may have reached the server, so it stays.
     expect(await code(call.submit('request-128'))).toBe('ok')
-    expect(await detail(call.submit('request-129'))).toBe('quota/command_ledger_full')
+    expect(await detail(call.submit('request-129'))).toBe('quota/client_command_index_full')
     // A resend refused outright leaves the id as it was, since its first send may still be live.
     submit.mockResolvedValueOnce({ ok: false, error: { code: 'conflict' } })
     expect(await code(call.submit('request-5'))).toBe('conflict')
-    expect(await detail(call.submit('request-129'))).toBe('quota/command_ledger_full')
+    expect(await detail(call.submit('request-129'))).toBe('quota/client_command_index_full')
     expect(
       await Promise.all(['request-0', 'request-1', 'request-5'].map((id) => detail(call.status(id)))),
     ).toEqual(['denied/outside_view', 'ok', 'ok'])
@@ -409,7 +409,7 @@ describe('renderer context restricted to the mounted view', () => {
     for (let n = 1; n < 8; n++) await filled(`note-${n}`)
     const last = mount({ index, viewId: 'note-8' })
     const next = calls(last.context, 'note-8')
-    expect(await detail(next.submit('note-8-0'))).toBe('quota/command_ledger_full')
+    expect(await detail(next.submit('note-8-0'))).toBe('quota/client_command_index_full')
     expect(last.services.commands.submit).not.toHaveBeenCalled()
 
     // An id settled in another view makes the room.
@@ -417,6 +417,47 @@ describe('renderer context restricted to the mounted view', () => {
     expect(await code(first.call.status('note-0-5'))).toBe('ok')
     expect(await code(next.submit('note-8-0'))).toBe('ok')
     expect(await detail(first.call.status('note-0-5'))).toBe('denied/outside_view')
+  })
+
+  it('forgets an id only when the user archives it while its effect stays unknown', async () => {
+    const index = createViewIndex()
+    const { services, context } = mount({ index })
+    const call = calls(context)
+    const { submit, commandStatus } = services.commands
+    submit.mockImplementation(async (request) =>
+      handle((request as { requestId: string }).requestId, 'accepted'),
+    )
+    submit.mockResolvedValueOnce(handle('request-0', 'unknown_effect'))
+    submit.mockResolvedValueOnce({ ok: false, error: { code: 'timeout' } })
+    const ids = Array.from({ length: 128 }, (_, n) => `request-${n}`)
+    expect(await codes(ids.map((id) => call.submit(id)))).toEqual(['ok', 'timeout', ...Array(126).fill('ok')])
+    expect(await detail(call.submit('request-128'))).toBe('quota/client_command_index_full')
+    // An accepted id, an id never sent, another view's name and a response's name archive nothing.
+    expect([
+      index.archive('note-1', 'request', 'request-2'),
+      index.archive('note-1', 'request', 'request-999'),
+      index.archive('note-2', 'request', 'request-0'),
+      index.archive('note-1', 'response', 'request-0'),
+    ]).toEqual([false, false, false, false])
+    // An unknown_effect answer and a first send that timed out stay unknown until the user archives them.
+    expect([
+      index.archive('note-1', 'request', 'request-0'),
+      index.archive('note-1', 'request', 'request-1'),
+      index.archive('note-1', 'request', 'request-0'),
+    ]).toEqual([true, true, false])
+    // Archiving forgets the id locally only: this view no longer reads its status, and the room is free.
+    expect(await detail(call.status('request-0'))).toBe('denied/outside_view')
+    expect(commandStatus).not.toHaveBeenCalled()
+    expect(await codes([call.submit('request-128'), call.submit('request-129')])).toEqual(['ok', 'ok'])
+    expect(await detail(call.submit('request-130'))).toBe('quota/client_command_index_full')
+    // A status read that finds an accepted id's effect unknown makes it archivable; a final one does not.
+    commandStatus.mockResolvedValueOnce(handle('request-2', 'unknown_effect'))
+    commandStatus.mockResolvedValueOnce(handle('request-3', 'succeeded'))
+    expect(await codes([call.status('request-2'), call.status('request-3')])).toEqual(['ok', 'ok'])
+    expect([
+      index.archive('note-1', 'request', 'request-2'),
+      index.archive('note-1', 'request', 'request-3'),
+    ]).toEqual([true, false])
   })
 
   it('waits for its calls in flight before the cleanups run, and leaves their results as they are', async () => {
@@ -440,15 +481,15 @@ describe('renderer context restricted to the mounted view', () => {
     const accepted = handle('request-1', 'accepted')
     answer(accepted)
     expect(await pending).toBe(accepted)
-    await closing
+    expect(await closing).toBe(true)
     expect([state(), cleanup.mock.calls.length]).toEqual(['disposed', 1])
     expect(services.commands.submit).toHaveBeenCalledTimes(1)
   })
 
-  it('runs the cleanups once drainMs passes when a call in flight never settles', async () => {
+  it('runs the cleanups at the dispose deadline when a call in flight never settles, and reports the miss', async () => {
     vi.useFakeTimers()
     try {
-      const { services, context, dispose, state } = mount({ drainMs: 5_000 })
+      const { services, context, dispose, state } = mount({ disposeMs: 5_000 })
       services.commands.submit.mockReturnValueOnce(new Promise(() => {}))
       void context.commands.submit(submitted('request-1'))
       const cleanup = vi.fn()
@@ -458,7 +499,37 @@ describe('renderer context restricted to the mounted view', () => {
       expect([state(), cleanup.mock.calls.length]).toEqual(['draining', 0])
       await vi.advanceTimersByTimeAsync(1)
       expect([state(), cleanup.mock.calls.length]).toEqual(['disposed', 1])
-      await closing
+      expect(await closing).toBe(false)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('holds draining and the cleanups to one dispose deadline', async () => {
+    vi.useFakeTimers()
+    try {
+      // Each part fits the deadline on its own; together they miss it.
+      const { services, context, dispose } = mount({ disposeMs: 5_000 })
+      services.commands.submit.mockReturnValueOnce(
+        new Promise((resolve) => setTimeout(resolve, 3_000, handle('request-1', 'accepted'))),
+      )
+      void context.commands.submit(submitted('request-1'))
+      let cleaned = false
+      context.onDispose(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 3_000))
+        cleaned = true
+      })
+      let missed: boolean | undefined
+      void dispose().then((done) => {
+        missed = !done
+      })
+      await vi.advanceTimersByTimeAsync(4_999)
+      expect(missed).toBeUndefined()
+      await vi.advanceTimersByTimeAsync(1)
+      // The deadline answers for the whole dispose; the late cleanup still finishes on its own.
+      expect([missed, cleaned]).toEqual([true, false])
+      await vi.advanceTimersByTimeAsync(1_000)
+      expect(cleaned).toBe(true)
     } finally {
       vi.useRealTimers()
     }
