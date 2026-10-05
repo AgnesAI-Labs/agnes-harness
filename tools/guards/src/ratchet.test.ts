@@ -1,3 +1,4 @@
+// Combined current integration sources are remeasured without spare allocation.
 // Re-measure merged image attachments, model menus and runtime clients with exact ceilings.
 // Measure merged queued-input projection and title/startup changes with exact source ceilings; no headroom.
 // TITLE-LOCALE / FOLLOW-UP-RUNNER: exact reviewed totals for prompt-based title language, FIFO wake-up and run serialization.
@@ -1123,7 +1124,9 @@ const INITIAL_CEILING: Record<string, number> = {
   // Pure model input digest and plain text wire request builder (+87); exact cap, no spare.
   // Domain command event identity lookup and shared event fingerprint (+19); measured 35173, exact.
   // Combined image-attachment and runtime sources: measured 35204, exact, no spare.
-  'packages/core/src': 35204,
+  'packages/core/src': 36026,
+  // Model service preparation: prepared request assembly and managed credential resolution (+575); measured 35748, exact, no spare.
+  // Model service infer: one stable child action, result and usage attribution from the child (+247). Measured 35995, exact, no spare.
   // Testkit-only reference Effects runner adds 202 measured lines; exact cap, no spare.
   'packages/core/testkit': 1997,
   // 2026-10-04 image attachments: user-message-images.ts (new) plus its session wiring, merged
@@ -2960,7 +2963,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // feat(host): read the original prepared model request into a verified wire source (+130 on top of the above). Measured 83038, exact, no spare.
   // Durable model call store for sent-request facts and their lookup. Measured 83038 (+465), exact, no spare.
   // fix(host): an artifact version is ready only on a pin it owns. Measured 83039 (+1), exact, no spare.
-  'packages/host/src': 83039,
+  // Host-side State read groundwork: historical meta for native facts, windowed point reads and byte-packed pages, Stored envelope encoding, port types. Measured 83319 (+280 on top of the above), exact, no spare.
+  'packages/host/src': 83319,
   'packages/host/src/ext-host/service-invocation': 247,
   // T5.2's permission projector is kept independently bounded so later extension-host work cannot
   // hide in the package-wide increment. Measured source: 86 lines.
