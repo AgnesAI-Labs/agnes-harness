@@ -31,7 +31,8 @@ export function openModelCaptureStore(path: string): ModelCaptureStore {
       const body = jcs(catalog.snapshot())
       db.prepare('INSERT OR IGNORE INTO captures(digest, body) VALUES(?, ?)').run(catalog.digest, body)
       const stored = db.prepare('SELECT body FROM captures WHERE digest = ?').get(catalog.digest)
-      if (!stored || stored.body !== body) throw new ModelCaptureConflict('capture digest already holds other content')
+      if (!stored || stored.body !== body)
+        throw new ModelCaptureConflict('capture digest already holds other content')
       return catalog.digest
     },
     read(digest) {
