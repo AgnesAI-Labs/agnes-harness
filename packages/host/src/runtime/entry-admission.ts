@@ -28,6 +28,7 @@ type LocalConnection = Pick<
 
 /** Deployment-only adapter slot. No installation capability is accepted from a wire request. */
 export type HostRuntimeAdmissionInstallation = Readonly<{
+  loop?: import('./loop-installation.js').HostRuntimeLoopInstallation
   ready(): Promise<void>
   connectLocalOwner(signal: AbortSignal): Promise<LocalConnection>
   admission: Readonly<{

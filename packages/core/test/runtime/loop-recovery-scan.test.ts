@@ -46,7 +46,7 @@ async function fixture(pages: W.StateScanResult[]) {
       expiresAt: call.deadline,
     },
     collection: 'records',
-    filter: { runId: 'r' },
+    filter: {},
     order: 'asc',
     cursor: null,
     limit: 10,
@@ -107,6 +107,11 @@ describe('public State scan preparation for the Loop cold consumer', () => {
       expect(f.calls.map((call) => call.snapshot)).toEqual(['snapshot', 'snapshot'])
       expect(
         f.calls.map(
+          (call) => call.input.kind === 'inline' && (call.input.value as { filter: object }).filter,
+        ),
+      ).toEqual([{}, {}])
+      expect(
+        f.calls.map(
           (call) => call.input.kind === 'inline' && (call.input.value as { cursor: string | null }).cursor,
         ),
       ).toEqual([null, 'next'])
@@ -141,12 +146,16 @@ describe('public State scan preparation for the Loop cold consumer', () => {
       }
     },
   )
-  it.each(['run', 'session', 'binding', 'collection', 'expired'] as const)(
+  it.each(['scope', 'session', 'binding', 'collection', 'expired'] as const)(
     'rejects %s before querying State',
     async (kind) => {
       const f = await fixture([page()])
       try {
-        if (kind === 'run') f.request.filter.runId = 'other'
+        let call = f.call
+        if (kind === 'scope') {
+          const { runId: _runId, ...scope } = f.call.scope as Extract<W.ScopeRef, { kind: 'run' }>
+          call = { ...f.call, scope: { ...scope, kind: 'session' } }
+        }
         if (kind === 'session') f.request.snapshot.sessionId = 'other'
         if (kind === 'collection') f.request.collection = 'actions'
         if (kind === 'expired') f.request.snapshot.expiresAt = '2000-01-01T00:00:00Z'
@@ -154,7 +163,7 @@ describe('public State scan preparation for the Loop cold consumer', () => {
           await f.scan(
             f.state,
             f.request,
-            kind === 'binding' ? { ...f.call, bindingId: 'other' } : f.call,
+            kind === 'binding' ? { ...call, bindingId: 'other' } : call,
             f.resolve,
           ),
           kind === 'collection'
@@ -164,6 +173,42 @@ describe('public State scan preparation for the Loop cold consumer', () => {
               : 'loop_recovery_scan_scope',
         )
         expect(f.calls).toEqual([])
+      } finally {
+        await f.close()
+      }
+    },
+  )
+  it.each([
+    { runId: 'r' },
+    { parentActionId: null },
+    { targetActionId: null },
+    { states: ['waiting'] },
+    { commitId: 'commit' },
+    { fromSeq: 0 },
+    { toSeq: 1 },
+  ] satisfies W.StateScanRequest['filter'][])(
+    'rejects filters outside the records collection contract: %j',
+    async (filter) => {
+      const f = await fixture([page()])
+      try {
+        f.request.filter = { ...filter }
+        refused(await f.scan(f.state, f.request, f.call, f.resolve), 'loop_recovery_scan_request')
+        expect(f.calls).toEqual([])
+      } finally {
+        await f.close()
+      }
+    },
+  )
+  it.each([{ typeIds: [] }, { typeIds: ['agh.runtime/run-record@1'] }] as const)(
+    'preserves typeIds %j under the supplied authorized run scope',
+    async ({ typeIds }) => {
+      const f = await fixture([page()])
+      try {
+        f.request.filter = { typeIds: [...typeIds] }
+        expect(await f.scan(f.state, f.request, f.call, f.resolve)).toEqual({ ok: true, value: [] })
+        expect(f.calls[0]?.input.kind === 'inline' && f.calls[0].input.value).toMatchObject({
+          filter: { typeIds: [...typeIds] },
+        })
       } finally {
         await f.close()
       }

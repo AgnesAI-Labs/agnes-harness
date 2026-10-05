@@ -296,7 +296,9 @@ const INITIAL_CEILING: Record<string, number> = {
   // Measured 3621, exact, no spare (+65).
   // A user may archive an id whose effect stays unknown; a renderer context drains and runs its cleanups
   // under one dispose deadline, and a lease that misses it is reported. Measured 3646, exact (+25).
-  'packages/web-client/src': 3646,
+  // A generation's release holds every module to one dispose deadline, draining its renderers before
+  // disposing it, and reports each late module once. Measured 3673, exact (+27).
+  'packages/web-client/src': 3673,
   'packages/web-slots/src': 605,
   // Failed shell calls read as their exit code (+19 lines); measured 4891, exact cap.
   // B-line diagnostics dialog: React view adds 147 lines; measured 4706, exact cap.
@@ -1076,8 +1078,9 @@ const INITIAL_CEILING: Record<string, number> = {
   // Exact merged main and runtime integration source count; no spare allocation.
   // Public factory exports and converged model-source consumption; exact merged count, no spare.
   // Sixth main synchronization merged with the integration tip. Measured 35005, exact, no spare.
+  // Exact credential consumption and persisted completion-plan checks. Measured 35067, no spare.
   // Pure model input digest and plain text wire request builder (+87); exact cap, no spare.
-  'packages/core/src': 35092,
+  'packages/core/src': 35154,
   // Testkit-only reference Effects runner adds 202 measured lines; exact cap, no spare.
   'packages/core/testkit': 1997,
   // 2026-09-15: DeepSeek V4 Pro/Flash ship a known-thinking-corrections table (new file) so the
@@ -1315,7 +1318,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // full-access read-only roots reach the fence from the assembly (+7). Measured 4207, exact.
   // Wire the optional deployment installation through the existing service root; measured +3, exact.
   // Verified runtime usage composes with the original ledger. Measured 4257, exact, no spare.
-  'packages/host/src/assemble': 4257,
+  // Installed Loop/Tools/Context assembly retained with usage/ledger: exact measured total.
+  'packages/host/src/assemble': 4273,
   // P1: generated-schema validators and duplicate projection-name refusal; measured exact cap.
   // F1 adds Surface JSON/identity validation and lock snapshot validation.
   // PM4 adds strict management DTO validation and method permission/identity contracts; exact total.
@@ -1595,7 +1599,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // Runtime client transport cases over two servers with one SDK client. Measured 16143, exact, no spare (+950).
   // Tools contracts +247, Context +339, Loop +170; exact, no spare.
   // Transport recovery checks read only the report of the request in question (+2), exact.
-  'packages/extension-api/testkit': 17072,
+  // Events fixed page set, full-page checkpoint and cross-session checkpoint cases (+11), exact.
+  'packages/extension-api/testkit': 17083,
   // 2026-09-10: raised from 2500 by Task 15 (stream-disconnect reconnection). The new
   // reattach.ts (the Reconnector: backoff loop, OVERLOADED's retryAfterMs override) plus
   // Session.recover()/waitForQuiescence and Client's reconnect wiring (emit(), the
@@ -2882,7 +2887,10 @@ const INITIAL_CEILING: Record<string, number> = {
   // Exact merged main and runtime integration source count; no spare allocation.
   // Sixth main synchronization merged with the integration tip. Measured 81225, exact, no spare.
   // Sixth main synchronization merged with the integration tip. Measured 81253, exact, no spare.
-  'packages/host/src': 81253,
+  // feat(host): build the projection owner from the core root export. Measured 81275, exact, no spare.
+  // A frozen, restorable copy of the sealed model catalog adds 49 measured lines on top of the above; measured 81324, exact, no spare.
+  // feat(host): install loop, tools and context on the new run path. Measured 81735, exact, no spare.
+  'packages/host/src': 81735,
   'packages/host/src/ext-host/service-invocation': 247,
   // T5.2's permission projector is kept independently bounded so later extension-host work cannot
   // hide in the package-wide increment. Measured source: 86 lines.

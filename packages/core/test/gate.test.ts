@@ -7,9 +7,181 @@ import {
   contextTokens,
   nearlyFull,
 } from '../src/step/gate.js'
+import { readPreset } from '../src/step/preset.js'
 import { fakeProvider, textTurn } from './helpers/fake-provider.js'
 import { fakeSeams } from './helpers/fake-seams.js'
 import { actor, openSession } from './helpers/open-session.js'
+
+describe('completion gate', () => {
+  const items = (count: number, status: 'todo' | 'done' = 'todo') =>
+    Array.from({ length: count }, (_, index) => ({ id: String(index), text: 'task', status }))
+
+  it.each([
+    [3, true, 'todo', 'blocked'],
+    [2, true, 'todo', 'completed'],
+    [3, false, 'todo', 'completed'],
+    [3, true, 'done', 'completed'],
+  ] as const)(
+    'checks a %s-item plan with enabled=%s and status=%s',
+    async (count, enabled, status, expected) => {
+      let planSeen: unknown,
+        afterCore = 0
+      const h = await openSession({
+        provider: fakeProvider([textTurn('draft')]),
+        preset: readPreset({ completion_gate: { enabled } }, 'gate'),
+        operations: [
+          {
+            name: 'finish',
+            slot: 'after-core',
+            replay: 'safe',
+            applicable: async () => 'applied',
+            run: async () => {
+              afterCore++
+              return {}
+            },
+          },
+        ],
+        seams: fakeSeams({
+          repair: {
+            decide: async (view) => {
+              planSeen = (view as { plan?: unknown }).plan
+              return 'park'
+            },
+          },
+          approval: { ask: async () => 'allowed-once' },
+        }),
+      })
+      try {
+        await h.session.enqueue('next-turn', { content: [{ type: 'text', text: 'go' }], actor })
+        await h.session.step()
+        const plan = { items: items(count, status) }
+        await h.session.append([h.session.ev('plan.items', plan, { register: 'plan.items' })])
+        expect((await h.session.run({ until: 'turn-end', signal: sig() })).reason).toBe(expected)
+        expect(afterCore).toBe(expected === 'completed' ? 1 : 0)
+        if (expected === 'blocked') {
+          expect(planSeen).toEqual(plan)
+          expect(await h.log.scan({ type: 'approval/asked', limit: 1 })).toMatchObject([
+            { data: { summary: 'completion blocked: the current plan has unfinished items' } },
+          ])
+        }
+      } finally {
+        await h.session.close()
+      }
+    },
+  )
+
+  it('bounds repairs using committed decisions even when the selected strategy keeps repairing', async () => {
+    const h = await openSession({
+      provider: fakeProvider([textTurn('draft')]),
+      preset: readPreset({ repair: { max_rounds: 2 }, budget: { max_steps: 6 } }, 'gate'),
+      seams: fakeSeams({
+        repair: { decide: async () => 'repair' },
+        approval: { ask: async () => 'allowed-once' },
+      }),
+    })
+    try {
+      await h.session.enqueue('next-turn', { content: [{ type: 'text', text: 'go' }], actor })
+      await h.session.step()
+      await h.session.append([h.session.ev('plan.items', { items: items(3) }, { register: 'plan.items' })])
+      expect((await h.session.run({ until: 'turn-end', signal: sig() })).reason).toBe('blocked')
+      expect((await h.log.scan({ type: 'repair/decision', limit: 10 })).map((row) => row.data)).toMatchObject(
+        [
+          { round: 1, decision: 'repair' },
+          { round: 2, decision: 'park' },
+        ],
+      )
+    } finally {
+      await h.session.close()
+    }
+  })
+
+  it.each(['after-core', 'approval'] as const)(
+    'does not complete when the plan changes during %s',
+    async (boundary) => {
+      const h = await openSession({
+        provider: fakeProvider([textTurn('draft')]),
+        operations: [
+          {
+            name: 'finish',
+            slot: 'after-core',
+            replay: 'safe',
+            applicable: async () => 'applied',
+            run: async () => {
+              if (boundary === 'after-core')
+                await h.session.append([
+                  h.session.ev('plan.items', { items: items(3) }, { register: 'plan.items' }),
+                ])
+              return {}
+            },
+          },
+        ],
+        seams: fakeSeams({
+          verifier: {
+            verify: async () => ({ verdict: boundary === 'approval' ? 'fail' : 'pass', reasons: [] }),
+          },
+          repair: { decide: async () => 'park' },
+          approval: {
+            ask: async () => {
+              await h.session.append([
+                h.session.ev('plan.items', { items: items(3) }, { register: 'plan.items' }),
+              ])
+              return 'allowed-once'
+            },
+          },
+        }),
+      })
+      try {
+        await h.session.enqueue('next-turn', { content: [{ type: 'text', text: 'go' }], actor })
+        expect((await h.session.run({ until: 'turn-end', signal: sig() })).reason).toBe('blocked')
+        expect(await h.log.scan({ type: 'turn/end', limit: 10 })).toMatchObject([
+          { data: { reason: 'blocked' } },
+        ])
+      } finally {
+        await h.session.close()
+      }
+    },
+  )
+
+  it.each(['pass', 'fail'] as const)(
+    'feeds the persisted plan and round to the installed repair strategy after reopen: %s',
+    async (verdict) => {
+      const { repairPolicy } = await import(
+        new URL('../../base/extensions/loop-hygiene/src/repair.ts', import.meta.url).href
+      )
+      const { fakeSeamInit } = await import(new URL('../../base/testkit/seam-init.ts', import.meta.url).href)
+      const repair = await repairPolicy(fakeSeamInit())
+      const seams = fakeSeams({
+        repair,
+        verifier: { verify: async () => ({ verdict, reasons: [] }) },
+        approval: { ask: async () => 'rejected' },
+      })
+      const provider = fakeProvider([textTurn('draft')])
+      const h = await openSession({ provider, seams })
+      await h.session.enqueue('next-turn', { content: [{ type: 'text', text: 'go' }], actor })
+      await h.session.step()
+      await h.session.append([h.session.ev('plan.items', { items: items(3) }, { register: 'plan.items' })])
+      for (let steps = 0; steps < 10; steps++) {
+        if ((await h.log.scan({ type: 'repair/decision', limit: 1 })).length) break
+        await h.session.step()
+      }
+      expect(await h.log.scan({ type: 'repair/decision', limit: 2 })).toHaveLength(1)
+      await h.session.close()
+      const reopened = await openSession({ provider, seams, storage: h.storage, writerRunId: 'reopened' })
+      try {
+        expect((await reopened.session.run({ until: 'turn-end', signal: sig() })).reason).toBe('blocked')
+        const rows = await reopened.log.scan({ type: 'repair/decision', limit: 10 })
+        expect(rows.map((row) => (row.data as { round: number }).round)).toEqual([1, 2, 3, 4, 5])
+        expect(rows.map((row) => (row.data as { decision: string }).decision)).toEqual(
+          verdict === 'pass'
+            ? ['repair', 'repair', 'repair', 'repair', 'park']
+            : ['repair', 'repair', 'escalate', 'escalate', 'park'],
+        )
+      } finally {
+        await reopened.session.close()
+      }
+    },
+  )
+})
 
 const sig = () => new AbortController().signal
 

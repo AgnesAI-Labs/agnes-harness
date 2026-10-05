@@ -419,6 +419,7 @@ export {
   type HostRuntimeClientPorts,
 } from './runtime/client-ports.js'
 export type { HostRuntimeAdmissionInstallation, HostRuntimeRunRequest } from './runtime/entry-admission.js'
+export type { HostRuntimeLoopInstallation, HostRuntimeLoopRun } from './runtime/loop-installation.js'
 export {
   type BootstrapAnchor,
   type BootstrapLocator,
@@ -430,6 +431,7 @@ export {
 } from './runtime/maintenance/bootstrap-locator.js'
 export {
   createHostProjectionOwner,
+  type HostProjectionInstallation,
   type HostProjectionOwner,
   type HostProjectionSources,
 } from './runtime/projection-owner.js'

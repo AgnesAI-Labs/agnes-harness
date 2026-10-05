@@ -229,7 +229,9 @@ describe('reference blob store', () => {
   })
 })
 
-describe('reference blob authority transfer', () => {
+// Each case imports into durable stores that flush every commit; hosted Windows measured the 500-part
+// import at 3.7s to 14.4s, so the budget does not rest on the platform default.
+describe('reference blob authority transfer', { timeout: 30_000 }, () => {
   const MAINTAINER = ctx('maintainer')
   const UPGRADE = 'upgrade-1'
   const expected = { authorityId: 'reference-blob', tenantId: 'tenant-1', authorityEpoch: 1 }
@@ -393,7 +395,9 @@ describe('reference blob authority transfer', () => {
   })
 })
 
-describe('reference blob: conformance', () => {
+// One run opens 24 durable stores and commits 156 times, each flushed; hosted Windows measured 3.3s to
+// past 15s, so the budget does not rest on the platform default.
+describe('reference blob: conformance', { timeout: 60_000 }, () => {
   it('fills the blob slot of the reference registry', () => {
     const slot = createReferenceRegistry([BLOB_PROVIDER]).find((item) => item.contract === 'agh.blob')
     expect(slot?.provider).toEqual(BLOB_PROVIDER)

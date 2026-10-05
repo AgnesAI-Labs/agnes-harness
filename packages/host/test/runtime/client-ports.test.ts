@@ -1,6 +1,8 @@
+import type { DomainCommandStorage } from '@agnes/core'
+import { contracts } from '@agnes/extension-api/testkit'
 import { describe, expect, it } from 'vitest'
 import { createHostRuntimeClientPorts } from '../../src/runtime/client-ports.js'
-import { assembleHostProjectionOwner, createHostProjectionOwner } from '../../src/runtime/projection-owner.js'
+import { createHostProjectionOwner } from '../../src/runtime/projection-owner.js'
 
 describe('Host runtime client assembly', () => {
   it('names a missing projection installation and cannot issue an identity from transport authentication', async () => {
@@ -24,27 +26,48 @@ describe('Host runtime client assembly', () => {
       ok: false,
       error: { detailCode: 'projection_owner_closed' },
     })
-    const missing = assembleHostProjectionOwner({
-      provider: {
-        openConversation: async () => {
-          throw new Error('unreachable')
-        },
-        conversationHistory: async () => {
-          throw new Error('unreachable')
-        },
-        listConversations: async () => {
-          throw new Error('unreachable')
-        },
-        snapshot: async () => {
-          throw new Error('unreachable')
-        },
-        commandStatus: async () => {
-          throw new Error('unreachable')
-        },
-        refresh: async () => null,
-        close() {},
+    const fixture = contracts.createProjectionFixture()
+    const binding = {
+      bindingId: 'projection',
+      contract: 'agh.projection',
+      logicalName: 'tasks',
+      providerId: 'fixture',
+    }
+    const storage: DomainCommandStorage = {
+      async transaction() {
+        throw new Error('read before issuance')
       },
-    })
+    }
+    const missing = createHostProjectionOwner(
+      {
+        commandStorage: storage,
+        journal: async () => [],
+        native: fixture.native,
+        subscribeCommitted: () => () => {},
+      },
+      {
+        binding,
+        domain: fixture.domain,
+        access: fixture.gate,
+        reads: {
+          query: async () => {
+            throw new Error('read before issuance')
+          },
+          resolveData: async () => {
+            throw new Error('read before issuance')
+          },
+        },
+        owner: {
+          namespace: 'fixture',
+          authorityId: 'fixture-authority',
+          aggregate: { typeId: 'fixture/board@1', id: 'board' },
+          source: binding,
+          stateSchema: fixture.domain.commandStateSchema,
+          destination: 'fixture-inbox',
+          clock: { now: () => '2026-10-05T00:00:00Z', newId: () => 'fixture-id' },
+        },
+      },
+    )
     expect(
       await createHostRuntimeClientPorts(missing.installation, caller)['conversation.open']?.(
         { sessionId: 'session', limit: 1 },
@@ -52,7 +75,7 @@ describe('Host runtime client assembly', () => {
       ),
     ).toMatchObject({
       ok: false,
-      error: { detailCode: 'projection_context_issuer_unavailable' },
+      error: { code: 'denied', detailCode: 'projection_context_issuer_unavailable' },
     })
     await missing.close()
   })
