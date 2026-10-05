@@ -105,9 +105,13 @@ Skills 包含磁盘/包资源治理与运行时 Cordis 贡献。当前共享 wor
 
 AGH 的 App Server 为客户端提供共享的任务运行基础：daemon 管理会话与控制面，worker 承载执行，SDK 提供通信入口。开发自己的客户端时，从本仓的[API 合同](../reference/api.zh-CN.md)选择接入方式。
 
-runtime HTTP 监听消费 Host 所有的只读适配端口。Host 持有 projection 生命周期，接到已提交事件通知后刷新，并在每次读时核验原 C14 签发的上下文。Core 已公开默认 projection 工厂，但尚无部署装配它，默认 projection owner 当前返回 `projection_provider_installation_unavailable`。生产读侧仍需选中的 provider 与部署签发上下文的绑定；HTTP 传输鉴权不签发业务身份。
+runtime HTTP 监听消费 Host 所有的只读适配端口。Host 持有 projection 生命周期，接到已提交事件通知后刷新，并在每次读时核验原 C14 签发的上下文。Host 从 Core 包根入口导入默认 projection 工厂，在受信装配提供已选 domain、binding、access 和 owner 事实时构造它。安装事实缺失时返回 `projection_provider_installation_unavailable`；provider 已安装但缺签发口时，读取返回 `projection_context_issuer_unavailable`。生产 HTTP 的 C14 签发绑定仍待交付；HTTP 传输鉴权不签发业务身份。
 
 受信 `projection` 安装提供已选 domain store 的 owner 与权限。supervisor 只打开一个 store，将同一实例作为 command storage、原 events 的 async journal 包装、提交订阅，以及 daemon 原 native conversation 适配口交给 Host 装配。另一个 store 实例提交不会通知此 owner。退出时先撤订阅、abort 并 drain Host 读取/刷新、关闭 provider，再关闭 store；缺少安装事实时保留默认拒绝。
+
+私有 `runtimeAdmissionInstallation.loop` 槽将选定 Tools、Context、Loop 工厂登记到同一个 Host 服务根。worker 的显式 `runtime.run.create` 命令在准入确认后启动已安装 Loop；空槽保持只准入的行为及既有会话执行。run provider 先于服务根和准入 owner 关闭。取消请求经原准入 owner 接受后才传给运行中的 run。
+
+Tools 通过 `ToolsDeployment.verifyCall` 调用注入的原来源。模型来源缺失时返回 `tools_model_context_source_unavailable`，Host 不自行构造模型来源证明。原 State 事务、Supervisor、Model action 和冷读取适配口同样必须具备。拒绝事实由安装器的原 State owner 保存；写口不可用时返回失败，不声称终态已成功保存。受限 worker 夹具验证两套 Tools 实现，不代表生产模型来源或冷恢复交付。
 
 ## 可复用场景的范围
 

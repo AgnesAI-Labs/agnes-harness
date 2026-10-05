@@ -108,6 +108,17 @@ export function admissionOwnerFixture(
     async cancel(ticketId, fingerprint, context) {
       if (this !== admission) throw Error('Admission receiver lost')
       capture('admission.cancel', { ticketId, fingerprint }, context)
+      if (outcomes.has(ticketId) && fingerprint !== admissionRequest.fingerprint)
+        return {
+          ok: false,
+          error: {
+            code: 'conflict',
+            detailCode: 'fingerprint_conflict',
+            message: 'Original request fingerprint differs',
+            diagnosticId: 'fixture',
+            retryAdvice: { kind: 'never' },
+          },
+        }
       const value: AdmissionProbe = outcomes.get(ticketId) ?? {
         state: 'cancelled',
         tombstoneId: 'tombstone-entry',

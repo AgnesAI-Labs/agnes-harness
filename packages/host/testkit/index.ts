@@ -41,6 +41,7 @@ export {
   type HostProjectionProvider,
 } from '../src/runtime/projection-owner.js'
 export { attachTestSeamPlugins } from './cordis-seams.js'
+export { createProjectionIssuerFixture } from './projection-issuer.js'
 export type { CapturedRequest, WireApi, WireReply } from './wire-capture.js'
 export { expectExtends, renderedParts, sharedPrefix, startWireCapture } from './wire-capture.js'
 export { ASSEMBLY_STEPS, type AssemblyStep }

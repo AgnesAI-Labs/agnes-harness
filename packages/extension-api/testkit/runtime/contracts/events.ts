@@ -392,9 +392,10 @@ export interface EventsObservations {
    * Session `normal`: five publications of two types (`refs`) and one in another session. `pages` reads
    * both types two at a time from the start, following each cursor; `filtered` reads one type. `replay`
    * publishes the first again after its aggregate moved on. A sixth publication follows at the new
-   * revision (the last of `refs`) and `resumed` reads from the last page cursor. Revocation
-   * refuses a same-key replay without a new event; a broader authorized context replays the
-   * original event under its aggregate-owned namespace.
+   * revision (the last of `refs`) and `resumed` reads from the last page cursor. Then `fixed` follows
+   * the second page's cursor again and `exactResumed` reads one type from the checkpoint of `exact`.
+   * Revocation refuses a same-key replay without a new event; a broader authorized context replays
+   * the original event under its aggregate-owned namespace.
    */
   readonly normal: {
     readonly refs: readonly Ref[]
@@ -407,6 +408,8 @@ export interface EventsObservations {
     readonly coveringReplay: Ref
     readonly replay: Ref
     readonly resumed: Page
+    readonly fixed: Page
+    readonly exactResumed: Page
   }
   /**
    * Session `deny`, one publication committed first. `refusals` are detail codes, in order, of
@@ -414,8 +417,8 @@ export interface EventsObservations {
    * request does not define; of a type nobody registered; from a binding that is no registered producer;
    * at a stale aggregate revision; for an aggregate its authority does not know; the committed key with
    * another payload and with another aggregate; from a wrong scope, aggregate or causation; then of reads of a closed session; with a cursor issued
-   * for another type filter; with a cursor the provider never issued; with a tampered signed
-   * checkpoint; from another authorized reader; with the reader revoked. `visible`
+   * for another type filter; for another session; with a cursor the provider never issued; with a
+   * tampered signed checkpoint; from another authorized reader; with the reader revoked. `visible`
    * reads the session after the reader is restored.
    */
   readonly deny: { readonly refusals: readonly string[]; readonly visible: Page }
@@ -531,6 +534,8 @@ export function eventsContractPort(subject: EventsSubject): EventsContractPort {
       const replay = await publish(normalRequest(1), producer('normal'))
       refs.push(await publish(normalRequest(6), producer('normal')))
       const resumed = await subscribe(subscription('normal', cursorOf(pages[2]), TYPES, 2))
+      const fixed = await subscribe(subscription('normal', cursorOf(pages[1]), TYPES, 2))
+      const exactResumed = await subscribe(subscription('normal', cursorOf(exact), [CLOSED.typeId], 2))
       return {
         refs,
         pages,
@@ -542,6 +547,8 @@ export function eventsContractPort(subject: EventsSubject): EventsContractPort {
         coveringReplay,
         replay,
         resumed,
+        fixed,
+        exactResumed,
       }
     },
     async deny() {
@@ -566,6 +573,7 @@ export function eventsContractPort(subject: EventsSubject): EventsContractPort {
         await sent(publication('deny', 'deny-2', NOTED, { causationRef: runRef('deny', 'forged-run') })),
         await subscribe(subscription(CLOSED_SESSION)),
         await subscribe(subscription('deny', cursorOf(narrow), [CLOSED.typeId])),
+        await subscribe(subscription('normal', cursorOf(narrow), [NOTED.typeId])),
         await subscribe(subscription('deny', 'conformance-foreign-cursor')),
         await subscribe(subscription('deny', forgedCheckpoint(cursorOf(narrow)), [NOTED.typeId])),
         await subscribe(
@@ -785,7 +793,11 @@ const JUDGE: Judge = {
       page(seen.resumed)?.complete === true &&
       issued(sixth, normalRequest(6), 'normal') &&
       same(refOf(sixth), refs[5]) &&
-      ascending([...read, ...records(seen.resumed)])
+      ascending([...read, ...records(seen.resumed)]) &&
+      // A page cursor keeps its page set; the event published after it waits for the checkpoint.
+      same(records(seen.fixed).map(refOf), records(seen.pages[2]).map(refOf)) &&
+      page(seen.fixed)?.complete === true &&
+      same(keys(seen.exactResumed), ['normal-6'])
     )
   },
   deny: (seen) =>
@@ -803,6 +815,7 @@ const JUDGE: Judge = {
       'permission_denied',
       'permission_denied',
       'permission_denied',
+      'resync_required',
       'resync_required',
       'resync_required',
       'resync_required',

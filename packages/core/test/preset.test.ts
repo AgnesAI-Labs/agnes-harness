@@ -45,8 +45,8 @@ describe('preset view', () => {
     expect(d.sandbox).toEqual({ onUnavailable: 'deny' })
     expect(d.tools).toEqual({ timeoutMs: 120000, timeouts: {}, outputMaxBytes: DEFAULT_OUTPUT_MAX_BYTES })
     expect(d.verifier).toEqual({ timeoutMs: 30000, defaultTier: 0 })
-    expect(d.repair).toEqual({ timeoutMs: 10000 })
-    expect(d.completionGate).toEqual({ minItems: 3 })
+    expect(d.repair).toEqual({ timeoutMs: 10000, maxRounds: 5 })
+    expect(d.completionGate).toEqual({ enabled: true, minItems: 3 })
     expect(d.telemetry).toEqual({ invariants: false, timing: false })
     expect(d.recovery).toEqual({ unknownChild: 'model' })
     expect(d.deferred).toEqual({ pollMs: 2000 })
@@ -116,8 +116,8 @@ describe('preset view', () => {
         sandbox: { on_unavailable: 'allow' },
         tools: { timeout_ms: 29, output_max_bytes: 9000, timeouts: { shell: 31 } },
         verifier: { timeout_ms: 37, default_tier: 2 },
-        repair: { timeout_ms: 41 },
-        completion_gate: { min_items: 43 },
+        repair: { timeout_ms: 41, max_rounds: 7 },
+        completion_gate: { enabled: false, min_items: 43 },
         compaction: {
           enabled: false,
           reserve_tokens: 47,
@@ -148,8 +148,8 @@ describe('preset view', () => {
       sandbox: { onUnavailable: 'allow' },
       tools: { timeoutMs: 29, outputMaxBytes: 9000, timeouts: { shell: 31 } },
       verifier: { timeoutMs: 37, defaultTier: 2 },
-      repair: { timeoutMs: 41 },
-      completionGate: { minItems: 43 },
+      repair: { timeoutMs: 41, maxRounds: 7 },
+      completionGate: { enabled: false, minItems: 43 },
       compaction: { enabled: false, reserveTokens: 47, keepRecentTokens: 53, agentCallable: false },
       telemetry: { invariants: 'strict', timing: true },
       recovery: { unknownChild: 'human' },

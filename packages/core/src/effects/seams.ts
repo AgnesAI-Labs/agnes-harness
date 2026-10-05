@@ -188,7 +188,7 @@ export interface VerifierSeam {
 
 export interface RepairSeam {
   decide(
-    view: { turn: number; round: number; history: RepairDecision[] },
+    view: { turn: number; round: number; history: RepairDecision[]; plan?: { items: { status: string }[] } },
     verdict: VerifierVerdict,
   ): Promise<'repair' | 'park' | 'escalate' | 'complete'>
 }

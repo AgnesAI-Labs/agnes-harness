@@ -236,6 +236,14 @@ export class RuntimeClientTransport {
     return this.session ? structuredClone(this.session.welcome.capabilities) : null
   }
 
+  /**
+   * A copy of the client selection the server's welcome carried in the current session: undefined when
+   * the welcome names none, as an older server's does, and null without a session.
+   */
+  get clientSelection(): ClientWelcome['clientSelection'] | null {
+    return this.session ? structuredClone(this.session.welcome.clientSelection) : null
+  }
+
   get catalog(): { complete: boolean; modules: ClientModule[]; domainSchemas: SchemaRef[] } | null {
     const session = this.session
     return (

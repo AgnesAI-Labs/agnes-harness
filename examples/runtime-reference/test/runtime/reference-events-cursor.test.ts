@@ -10,6 +10,7 @@ import { createEventsFixture } from '../../../../packages/extension-api/testkit/
 import { inline } from '../../../../packages/extension-api/testkit/runtime/contracts/projection.js'
 import { openEventsStore } from '../../src/providers/events.js'
 import { referenceEventsPort } from '../../src/providers/events-contract.js'
+import { openStore, read, reader } from './fixtures/reference-events-issuer.js'
 
 it('rejects an interior sequence gap even when count and max still equal highwater', async () => {
   const directory = mkdtempSync(join(tmpdir(), 'reference-events-disguised-gap-'))
@@ -68,16 +69,19 @@ it('rejects an interior sequence gap even when count and max still equal highwat
   }
 })
 
-it('rejects an old checkpoint after persisted event history has a gap', async () => {
+it('rejects a fresh read, a page cursor and an old checkpoint after persisted history has a gap', async () => {
   const directory = mkdtempSync(join(tmpdir(), 'reference-events-gap-'))
   const path = join(directory, 'events.sqlite')
   const reference = referenceEventsPort(path)
   try {
     const seen = await reference.port.normal({} as CaseContext)
+    const [first] = seen.pages
     const last = seen.resumed
+    if (first === undefined || 'refused' in first || first.page.nextCursor === null)
+      throw new Error('normal scenario did not issue a page cursor')
     if (last === undefined || 'refused' in last || last.checkpoint === null)
       throw new Error('normal scenario did not issue a checkpoint')
-    const checkpoint = last.checkpoint
+    const cursors = [null, first.page.nextCursor, last.checkpoint]
     const selected = await reference.port.select({} as CaseContext)
     reference.close()
     const db = new DatabaseSync(path)
@@ -105,22 +109,38 @@ it('rejects an old checkpoint after persisted event history has a gap', async ()
         authorizationRef: 'gap-authorization',
         signal: new AbortController().signal,
       }
-      const result = await store.subscribe(
-        {
-          scopeRef: { ...context.scope, kind: 'session', sessionId: 'normal' },
-          types: ['conformance.events/noted@1', 'conformance.events/closed@1'],
-          cursor: checkpoint,
-          limit: 2,
-        },
-        context,
-      )
-      expect(result.ok).toBe(false)
-      if (!result.ok) expect(result.error.detailCode).toBe('resync_required')
+      const request = {
+        scopeRef: { ...context.scope, kind: 'session', sessionId: 'normal' },
+        types: ['conformance.events/noted@1', 'conformance.events/closed@1'],
+        limit: 2,
+      }
+      for (const cursor of cursors) {
+        const result = await store.subscribe({ ...request, cursor }, context)
+        expect(result).toMatchObject({ ok: false, error: { detailCode: 'resync_required' } })
+      }
     } finally {
       store.close()
     }
   } finally {
     reference.close()
+    rmSync(directory, { recursive: true, force: true })
+  }
+})
+
+it('refuses a checkpoint signed by another authority', async () => {
+  const directory = mkdtempSync(join(tmpdir(), 'reference-events-foreign-'))
+  const ours = openStore(join(directory, 'ours.sqlite'))
+  const theirs = openStore(join(directory, 'theirs.sqlite'), 'foreign-events-authority')
+  try {
+    const issued = await theirs.subscribe(read(null), reader)
+    if (!issued.ok || issued.value.checkpoint === null) throw new Error('foreign store issued no checkpoint')
+    expect(await ours.subscribe(read(issued.value.checkpoint), reader)).toMatchObject({
+      ok: false,
+      error: { detailCode: 'resync_required' },
+    })
+  } finally {
+    ours.close()
+    theirs.close()
     rmSync(directory, { recursive: true, force: true })
   }
 })

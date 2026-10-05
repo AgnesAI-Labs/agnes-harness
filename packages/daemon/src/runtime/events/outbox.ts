@@ -112,6 +112,9 @@ const DDL = [
     last_error_json TEXT, delivery_revision INTEGER NOT NULL DEFAULT 1, dead_ms INTEGER,
     PRIMARY KEY (source_authority_id, event_id, destination), UNIQUE (command_id, dispatch_key))`,
   'CREATE INDEX IF NOT EXISTS domain_outbox_due ON domain_outbox (delivery, next_attempt_ms)',
+  // Publication identity lookups find events by key whichever path committed them.
+  `CREATE INDEX IF NOT EXISTS domain_events_key
+    ON domain_events (authority_id, json_extract(record_json, '$.event.idempotencyKey'))`,
   `CREATE TABLE IF NOT EXISTS domain_redrives (
     identity TEXT PRIMARY KEY, fingerprint TEXT NOT NULL, record_json TEXT NOT NULL)`,
 ]
@@ -222,11 +225,11 @@ export function openDomainStore(options: DomainStoreOptions) {
   }
 
   // A row belongs to a scope when every field the scope names matches the row's own scope.
-  function scopeFilter(scope: Wire.ScopeRef) {
+  function scopeFilter(scope: Wire.ScopeRef, column = 'scope_json', root = '$') {
     const fields = Object.entries(scope).filter(([field]) => field !== 'kind')
     return {
-      sql: fields.map(() => ' AND json_extract(scope_json, ?) = ?').join(''),
-      params: fields.flatMap(([field, value]) => [`$.${field}`, value as string]),
+      sql: fields.map(() => ` AND json_extract(${column}, ?) = ?`).join(''),
+      params: fields.flatMap(([field, value]) => [`${root}.${field}`, value as string]),
     }
   }
 
@@ -445,6 +448,61 @@ export function openDomainStore(options: DomainStoreOptions) {
         'SELECT record_json FROM domain_events WHERE authority_id = ? AND sequence > ? ORDER BY sequence LIMIT ?',
         authorityId,
         afterSequence,
+        limit,
+      ).map((row) => stored('DomainEventRecord', row.record_json))
+    },
+
+    /** The authority that numbers every event of this store. */
+    authorityId,
+
+    /** How many events this authority holds and its first and last sequence; a gap shows as a mismatch. */
+    eventHistory() {
+      return get<{ count: number; first: number | null; last: number | null }>(
+        `SELECT COUNT(*) AS count, MIN(sequence) AS first, MAX(sequence) AS last
+         FROM domain_events WHERE authority_id = ?`,
+        authorityId,
+      ) as { count: number; first: number | null; last: number | null }
+    },
+
+    /** The id of the event stored at `sequence`, if one is. */
+    eventIdAt(sequence: number): string | undefined {
+      return get<{ event_id: string }>(
+        'SELECT event_id FROM domain_events WHERE authority_id = ? AND sequence = ?',
+        authorityId,
+        sequence,
+      )?.event_id
+    },
+
+    /** Event records under an idempotency key, oldest first, whichever path committed them. */
+    eventsByKey(idempotencyKey: string): Wire.DomainEventRecord[] {
+      return all<{ record_json: string }>(
+        `SELECT record_json FROM domain_events
+         WHERE authority_id = ? AND json_extract(record_json, '$.event.idempotencyKey') = ? ORDER BY sequence`,
+        authorityId,
+        idempotencyKey,
+      ).map((row) => stored('DomainEventRecord', row.record_json))
+    },
+
+    /** Event records in (after, upto] within `scope` and of the listed types (any type when none is). */
+    eventsIn(
+      after: number,
+      upto: number,
+      scope: Wire.ScopeRef,
+      types: readonly string[],
+      limit: number,
+    ): Wire.DomainEventRecord[] {
+      const filter = scopeFilter(scope, 'record_json', '$.event.scope')
+      const listed = JSON.stringify(types)
+      return all<{ record_json: string }>(
+        `SELECT record_json FROM domain_events WHERE authority_id = ? AND sequence > ? AND sequence <= ?
+           AND (? = '[]' OR json_extract(record_json, '$.event.typeId') IN (SELECT value FROM json_each(?)))
+           ${filter.sql} ORDER BY sequence LIMIT ?`,
+        authorityId,
+        after,
+        upto,
+        listed,
+        listed,
+        ...filter.params,
         limit,
       ).map((row) => stored('DomainEventRecord', row.record_json))
     },
