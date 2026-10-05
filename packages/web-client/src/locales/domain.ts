@@ -15,6 +15,9 @@ const en = {
   'domain.cancelled': 'Cancelled.',
   'domain.failed': 'Failed: {message}',
   'domain.unavailable': 'Not available here.',
+  'domain.desktopUnavailable': 'Needs a desktop capability this client does not have ({capability}).',
+  'domain.viewerNeedsDesktop':
+    'This viewer needs a desktop capability ({capability}); showing the basic view.',
   'domain.sending': 'Sending.',
   'domain.retry': 'Retry {label}',
   'domain.checkStatus': 'Check status',
@@ -36,6 +39,8 @@ const zh: Record<keyof typeof en, string> = {
   'domain.cancelled': '已取消。',
   'domain.failed': '失败：{message}',
   'domain.unavailable': '此处不可用。',
+  'domain.desktopUnavailable': '需要此客户端没有的桌面能力（{capability}）。',
+  'domain.viewerNeedsDesktop': '该查看器需要桌面能力（{capability}），已改用基础视图。',
   'domain.sending': '正在发送。',
   'domain.retry': '重试 {label}',
   'domain.checkStatus': '查询状态',

@@ -6,7 +6,8 @@
 // among them) removed so a terminal or chat cannot run them as escapes or reorder the text. Actions are
 // referenced only by their keys. An enabled action that needs a feature the client did not negotiate is
 // shown but not offered, and the result is marked incomplete so the consumer can send the user to the
-// Web client.
+// Web client. When every missing feature is a desktop capability, which the Web client lacks too, the
+// action names it instead and the result stays complete.
 import type {
   DomainView,
   FormattedView,
@@ -26,6 +27,8 @@ const PHASES: Record<string, string> = {
 }
 const ACTION_KINDS: readonly unknown[] = ['command', 'interaction', 'download', 'open-form']
 const UNAVAILABLE = 'Not available here.'
+const DESKTOP_UNAVAILABLE = (capability: string) =>
+  `Needs a desktop capability this client does not have (${capability}).`
 // The DomainView schema holds at most 32 resources and 32 actions.
 const MAX_ITEMS = 32
 // The IMRendererEncodeResult schema holds at most this many messages.
@@ -158,12 +161,17 @@ export function formatDomainView(
       readable && action.availability === 'enabled'
         ? (action.requiredFeatures as string[]).filter((feature) => !negotiated.has(feature))
         : []
-    for (const feature of missing) unsupported.add(feature)
+    const desktop = missing.length > 0 && missing.every((feature) => feature.startsWith('desktop.'))
+    if (!desktop) for (const feature of missing) unsupported.add(feature)
     if (readable && action.availability === 'enabled' && missing.length === 0)
       actions.push({ kind: 'action', actionKey: action.actionKey as string, label: plain(action.label) })
     else {
       const reason =
-        readable && action.availability === 'disabled' ? (action.disabledReason as string | null) : null
+        readable && action.availability === 'disabled'
+          ? (action.disabledReason as string | null)
+          : desktop
+            ? DESKTOP_UNAVAILABLE(missing.join(', '))
+            : null
       actions.push({ kind: 'text', text: plain(`${action.label}: ${reason ?? UNAVAILABLE}`) })
     }
   }
