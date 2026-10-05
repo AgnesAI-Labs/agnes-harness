@@ -888,9 +888,11 @@ const CASES: Record<ScenarioName, (binding: TransportConformanceBinding) => Prom
         const sent = await client.command('conversation.cancel', cancel(id))
         checks[`${label} is reported without an outcome and not resent`] =
           sent.state === 'unknown' && run.owner.count(id) === 1
+        // An admitted command that is not final stays journaled, so later recoveries report it again.
         const reports = await client.recover()
         checks[`${label} is recovered by the status of the same request id`] =
-          jcs(reports) === jcs([{ id, operation: 'conversation.cancel', state: 'accepted' }]) &&
+          jcs(reports.filter((report) => report.id === id)) ===
+            jcs([{ id, operation: 'conversation.cancel', state: 'accepted' }]) &&
           statuses().includes(id) &&
           run.owner.count(id) === 1 &&
           (await client.pending()).length === 0
@@ -909,7 +911,8 @@ const CASES: Record<ScenarioName, (binding: TransportConformanceBinding) => Prom
       const unsent = await client.recover()
       checks['a request lost before the owner stays pending and is never resent'] =
         dropped.state === 'unknown' &&
-        jcs(unsent) === jcs([{ id: 'recover-4', operation: 'conversation.cancel', state: 'not-accepted' }]) &&
+        jcs(unsent.filter((report) => report.id === 'recover-4')) ===
+          jcs([{ id: 'recover-4', operation: 'conversation.cancel', state: 'not-accepted' }]) &&
         run.owner.count('recover-4') === 0 &&
         jcs(await client.pending()) === jcs(['recover-4'])
 

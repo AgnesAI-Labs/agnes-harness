@@ -18,8 +18,8 @@ import { canonicalJsonDigest } from '../../../../packages/protocol/src/runtime/i
 import { type JournalStore, memoryJournal } from '../../../../packages/sdk/src/journal.js'
 import { subscriptions } from '../../../../packages/sdk/src/runtime/client-subscriptions.js'
 import {
-  RUNTIME_JOURNAL_KEY,
   RuntimeClientTransport,
+  runtimeJournalKey,
 } from '../../../../packages/sdk/src/runtime/client-transport.js'
 import {
   getConformanceBuildIdentity,
@@ -85,17 +85,24 @@ const journals = new Map<string, JournalStore>()
 function sdkClient(options: TransportClientOptions): TransportClient {
   const journal = journals.get(options.journal) ?? memoryJournal(options.journal)
   journals.set(options.journal, journal)
+  // One identity for the whole run, as the assembly that authenticated it would derive.
+  const journalPartitionKey = 'transport-conformance'
   const transport = new RuntimeClientTransport({
     baseUrl: options.baseUrl,
     hello: options.hello,
     journal,
+    journalPartitionKey,
     fetch: options.fetch,
     ...(options.credential === undefined ? {} : { credential: options.credential }),
   })
   const { subscribe } = subscriptions(transport, { pollIntervalMs: options.pollIntervalMs })
   return Object.assign(transport, {
     subscribe,
-    pending: async () => (await journal.pending(RUNTIME_JOURNAL_KEY)).map((entry) => entry.commandId),
+    // Pending means not yet known to be admitted; an accepted command waits only for its final status.
+    pending: async () =>
+      (await journal.pending(runtimeJournalKey(journalPartitionKey)))
+        .filter((entry) => entry.state !== 'accepted')
+        .map((entry) => entry.commandId),
   })
 }
 

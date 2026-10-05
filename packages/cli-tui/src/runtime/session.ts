@@ -8,9 +8,9 @@ import { RuntimeClientTransportPolicy, RuntimeClientTransportWire } from '@agnes
 import type { JournalStore } from '@agnes/sdk'
 import {
   artifactReader,
-  RUNTIME_JOURNAL_KEY,
   RuntimeClientTransport,
   type RuntimeFetch,
+  runtimeJournalKey,
 } from '@agnes/sdk/runtime'
 import { escapeServerText } from '../component.js'
 import type { ArtifactPorts } from './artifact-actions.js'
@@ -80,6 +80,9 @@ export async function connectRuntime(options: {
   /** The endpoint the daemon offers over its local socket, or undefined while it offers none. */
   endpoint: () => Promise<RuntimeEndpoint | undefined>
   journal: JournalStore
+  /** The journal partition the trusted assembly derived from this terminal's authentication. Without
+   * it, answers that need recovery across runs are refused before they are sent. */
+  journalPartitionKey?: string
   locale: string
   fetch?: RuntimeFetch
 }) {
@@ -94,6 +97,9 @@ export async function connectRuntime(options: {
       credential: endpoint.bearer,
       hello: hello(),
       journal,
+      ...(options.journalPartitionKey === undefined
+        ? {}
+        : { journalPartitionKey: options.journalPartitionKey }),
       ...(options.fetch ? { fetch: options.fetch } : {}),
     })
     await transport.connect()
@@ -111,7 +117,10 @@ export async function connectRuntime(options: {
     respondApproval: (input) => transport.command('approval.respond', input),
     responseStatus: (responseId) => transport.query('interaction.responseStatus', responseId),
     formLink: (input) => transport.command('interaction.formLink', input),
-    pendingJournal: () => journal.pending(RUNTIME_JOURNAL_KEY),
+    pendingJournal: async () => {
+      const partition = options.journalPartitionKey
+      return partition === undefined ? [] : journal.pending(runtimeJournalKey(partition))
+    },
   }
   const artifacts: ArtifactPorts = {
     describe: (input) => transport.query('artifact.describe', input),

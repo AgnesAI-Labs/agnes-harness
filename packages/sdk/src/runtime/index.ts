@@ -21,5 +21,6 @@ export {
   type RuntimeFetch,
   type RuntimeSocket,
   type RuntimeWebSocketFactory,
+  runtimeJournalKey,
 } from './client-transport.js'
 export { encodeForChannel, formatDomainView } from './format-view.js'

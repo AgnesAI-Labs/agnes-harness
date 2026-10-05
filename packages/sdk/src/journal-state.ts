@@ -23,7 +23,8 @@ const command = (value: unknown): value is PendingCommand =>
   !!value.commandId &&
   typeof value.method === 'string' &&
   !!value.method &&
-  Object.hasOwn(value, 'params')
+  Object.hasOwn(value, 'params') &&
+  (!('state' in value) || value.state === 'accepted')
 
 export function freshJournal(clientId: string = randomId()): JournalState {
   if (typeof clientId !== 'string' || !clientId) throw invalidJournal()
@@ -82,7 +83,12 @@ export function storedJournal(transact: JournalTransaction): JournalStore {
     },
     async markPending(sessionId, pending) {
       const saved = snapshotPending(pending)
-      transact((s) => put(s.pending, sessionId, [...(own(s.pending, sessionId) ?? []), saved]), true)
+      transact((s) => {
+        // In place of an entry with the same command id, or appended.
+        const entries = own(s.pending, sessionId) ?? []
+        const at = entries.findIndex((entry) => entry.commandId === saved.commandId)
+        put(s.pending, sessionId, at < 0 ? [...entries, saved] : entries.with(at, saved))
+      }, true)
     },
     async clearPending(sessionId, commandId) {
       transact(

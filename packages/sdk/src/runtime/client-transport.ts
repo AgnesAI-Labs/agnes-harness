@@ -2,8 +2,9 @@
 // validated calls over HTTP or the push socket. Routes, limits and per-operation metadata come
 // from the generated protocol tables; nothing here restates them. A command leaves this client
 // only while the catalog is complete and current, and a command carrying a business id is
-// journaled before its first byte is sent. Nothing is ever resent automatically, not even after
-// the socket reconnects.
+// journaled before its first byte is sent, under the partition of the identity that authenticated
+// this client. An admitted command stays journaled as accepted until its owner reports it final.
+// Nothing is ever resent automatically, not even after the socket reconnects.
 import { jcs } from '@agnes/protocol'
 import {
   type ClientBootstrapRejected,
@@ -35,12 +36,18 @@ import {
   validateRuntimeErrorDetail,
 } from '@agnes/protocol/runtime'
 import { ProtocolViolation } from '../errors.js'
-import { type JournalStore, randomId } from '../journal.js'
+import { type JournalStore, type PendingCommand, randomId } from '../journal.js'
 
 const { routes } = RuntimeClientTransportWire
 
-/** The journal key pending runtime commands live under; their entry id is the business id. */
+/** The prefix of the journal keys runtime commands live under; their entry id is the business id. */
 export const RUNTIME_JOURNAL_KEY = 'agh.runtime.client'
+/** The journal key of one identity's runtime commands. Another identity's key never reads them. */
+export const runtimeJournalKey = (partitionKey: string) => `${RUNTIME_JOURNAL_KEY}:${partitionKey}`
+// ponytail: the partition key is opaque here; check its encoding once the issuer freezes one.
+const MAX_PARTITION_KEY = 256
+/** The commands one partition may hold that are not known to be final. */
+const JOURNAL_LIMIT = 1024
 
 export type RuntimeFetch = (url: string, init: RequestInit) => Promise<Response>
 /** The part of the WHATWG WebSocket that browsers and the `ws` package both provide. */
@@ -65,6 +72,12 @@ export type RuntimeClientOptions = {
   baseUrl: string
   hello: ClientHello
   journal: JournalStore
+  /**
+   * The journal partition the trusted assembly derived from this client's authentication; it never
+   * comes from a module, the welcome or the caller, and grants nothing on the server. Without it, a
+   * command that needs recovery across reloads is refused before it is journaled or sent.
+   */
+  journalPartitionKey?: string
   /** Sent as `Authorization: Bearer`. A browser leaves it out and relies on its session cookie. */
   credential?: string
   fetch?: RuntimeFetch
@@ -84,6 +97,8 @@ export type LocalRefusal =
   | 'not-negotiated'
   | 'invalid-request'
   | 'identity-conflict'
+  | 'journal-unpartitioned'
+  | 'journal-full'
 /** `refused` never left this client; `unknown` was sent but has no current, verified reply. */
 export type CallResult<T> =
   | { state: 'ok'; value: T }
@@ -118,6 +133,8 @@ const refusedCodes = new Set<string>(['invalid_input', 'denied', 'incompatible',
 const record = (value: unknown): value is Record<string, unknown> =>
   value !== null && typeof value === 'object' && !Array.isArray(value)
 const admitted = (value: unknown) => !(record(value) && value.status === 'not-accepted')
+// The statuses after which an admitted command or response can change no more.
+const FINAL = new Set<unknown>(['succeeded', 'failed', 'cancelled', 'applied', 'rejected'])
 
 /** A locally detected failure in the registered classification, so callers handle one error shape. */
 export function localRuntimeError(
@@ -192,6 +209,8 @@ export class RuntimeClientTransport {
   private connecting: Promise<void> | null = null
   private readonly base: string
   private readonly fetch: RuntimeFetch
+  /** Where this identity's commands are journaled; null when no partition was given. */
+  private readonly journalKey: string | null
 
   constructor(private readonly options: RuntimeClientOptions) {
     const url = new URL(options.baseUrl)
@@ -199,6 +218,13 @@ export class RuntimeClientTransport {
       throw new TypeError('invalid runtime base URL')
     this.base = url.href.replace(/\/+$/, '')
     this.fetch = options.fetch ?? ((input, init) => globalThis.fetch(input, init))
+    const partition = options.journalPartitionKey
+    if (
+      partition !== undefined &&
+      (typeof partition !== 'string' || !partition || partition.length > MAX_PARTITION_KEY)
+    )
+      throw new TypeError('invalid journal partition key')
+    this.journalKey = partition === undefined ? null : runtimeJournalKey(partition)
   }
 
   get mode(): RuntimeClientMode {
@@ -283,11 +309,15 @@ export class RuntimeClientTransport {
     return frame.ok && frame.value.kind === 'catalog-changed' ? this.invalidate() : Promise.resolve()
   }
 
-  /** Asks each pending command's owner by its original id. Only an admitted status clears the entry;
-   * `not-accepted` stays pending for the user to resend or drop, and nothing is resent from here. */
+  /** After authentication, asks the owner of each command journaled for this identity by its original
+   * id. An admitted command stays as accepted until its status is final; `not-accepted` stays pending
+   * for the user to resend or drop, and nothing is resent from here. Without a session or a partition
+   * no entry is read. */
   async recover(): Promise<RecoveryReport[]> {
     const reports: RecoveryReport[] = []
-    for (const saved of await this.options.journal.pending(RUNTIME_JOURNAL_KEY)) {
+    const key = this.journalKey
+    if (!this.session || key === null) return reports
+    for (const saved of await this.options.journal.pending(key)) {
       const entry = Object.hasOwn(RuntimeClientOperations, saved.method)
         ? RuntimeClientOperations[saved.method as ClientJsonOperation]
         : undefined
@@ -303,10 +333,25 @@ export class RuntimeClientTransport {
           : admitted(result.value)
             ? 'accepted'
             : 'not-accepted'
-      if (state === 'accepted') await this.options.journal.clearPending(RUNTIME_JOURNAL_KEY, saved.commandId)
+      if (state === 'accepted')
+        await this.settle(key, saved, result?.state === 'ok' ? result.value : undefined)
       reports.push({ id: saved.commandId, operation: saved.method, state })
     }
     return reports
+  }
+
+  /**
+   * Forgets a journaled command of this identity that never got an admitted reply, once the user chose
+   * to after being told it loses the local follow-up; false for an accepted or unknown id. The server
+   * keeps the command, and its status can still be read by the same id.
+   */
+  async archive(id: string): Promise<boolean> {
+    const key = this.journalKey
+    if (key === null) return false
+    const saved = (await this.options.journal.pending(key)).find((command) => command.commandId === id)
+    if (!saved || saved.state === 'accepted') return false
+    await this.options.journal.clearPending(key, id)
+    return true
   }
 
   /** Closes writes at once, ends the push socket and every subscription, and reads a fresh catalog.
@@ -323,6 +368,16 @@ export class RuntimeClientTransport {
     this.emit('session-replaced')
     this.listeners.clear()
     if (this.push) this.closePush(this.push)
+  }
+
+  /** An admitted command leaves the journal once its status is final, or when its operation has no
+   * status to ask; otherwise it stays as accepted. */
+  private async settle(key: string, saved: PendingCommand, value: unknown): Promise<void> {
+    const entry = RuntimeClientOperations[saved.method as ClientJsonOperation]
+    if (!('statusOperation' in entry) || (record(value) && FINAL.has(value.status)))
+      await this.options.journal.clearPending(key, saved.commandId)
+    else if (saved.state !== 'accepted')
+      await this.options.journal.markPending(key, { ...saved, state: 'accepted' })
   }
 
   private emit(event: PushEvent): void {
@@ -528,16 +583,24 @@ export class RuntimeClientTransport {
     const { request } = valid.value
 
     const journal = this.options.journal
+    const key = this.journalKey
     const id = 'identityField' in entry && record(value) ? value[entry.identityField] : undefined
+    let saved: PendingCommand | undefined
+    let journaled: PendingCommand | undefined
     if (typeof id === 'string') {
-      const saved = (await journal.pending(RUNTIME_JOURNAL_KEY)).find((command) => command.commandId === id)
+      // A command that needs recovery across reloads is not sent unless it can be journaled for its identity.
+      if (key === null) return { state: 'refused', reason: 'journal-unpartitioned' }
+      const entries = await journal.pending(key)
+      saved = entries.find((command) => command.commandId === id)
       if (saved && (saved.method !== operation || jcs(saved.params) !== jcs(value)))
         return { state: 'refused', reason: 'identity-conflict' }
+      // Nothing that may still change is dropped for room; the user archives an unknown one instead.
+      if (!saved && entries.length >= JOURNAL_LIMIT) return { state: 'refused', reason: 'journal-full' }
+      journaled = saved ?? { commandId: id, method: operation, params: value }
       // Durable before the first byte is sent: a reply lost after this point stays recoverable.
-      if (!saved)
-        await journal.markPending(RUNTIME_JOURNAL_KEY, { commandId: id, method: operation, params: value })
+      if (!saved) await journal.markPending(key, journaled)
       if (this.session !== session) {
-        if (!saved) await journal.clearPending(RUNTIME_JOURNAL_KEY, id)
+        if (!saved) await journal.clearPending(key, id)
         return { state: 'refused', reason: 'disconnected' }
       }
     }
@@ -559,14 +622,15 @@ export class RuntimeClientTransport {
     if (!outcome) return { state: 'unknown', reason: 'invalid reply' }
     if (!outcome.ok) {
       if (outcome.error.detailCode === 'catalog_changed') void this.invalidate().catch(() => undefined)
-      if (typeof id === 'string' && refusedCodes.has(outcome.error.code))
-        await journal.clearPending(RUNTIME_JOURNAL_KEY, id)
+      // A typed refusal admitted nothing this time, but never undoes an earlier admission.
+      if (key !== null && journaled && saved?.state !== 'accepted' && refusedCodes.has(outcome.error.code))
+        await journal.clearPending(key, journaled.commandId)
       return { state: 'failed', error: outcome.error }
     }
     const reply = validateClientReply(request, outcome.value)
     if (!reply.ok) return { state: 'unknown', reason: 'reply does not match the call' }
     const result = reply.value.reply.value
-    if (typeof id === 'string' && admitted(result)) await journal.clearPending(RUNTIME_JOURNAL_KEY, id)
+    if (key !== null && journaled && admitted(result)) await this.settle(key, journaled, result)
     if (
       reply.value.reply.operation === 'transport.catalogStatus' &&
       (reply.value.reply.value.catalogRevision !== session.base.catalogRevision ||

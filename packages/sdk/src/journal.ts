@@ -6,7 +6,8 @@
 import { type Cursor, jcs } from '@agnes/protocol'
 import { journalCommandId } from './journal-command-id.js'
 
-export type PendingCommand = { commandId: string; method: string; params: unknown }
+/** A command journaled before it was sent; `accepted` once its owner admitted it but it may still change. */
+export type PendingCommand = { commandId: string; method: string; params: unknown; state?: 'accepted' }
 
 /** The exact JSON value to resend, without invoking getters/toJSON or silently dropping fields. */
 export function snapshotPending(value: PendingCommand): PendingCommand {
@@ -22,7 +23,8 @@ export function snapshotPending(value: PendingCommand): PendingCommand {
       !('method' in copy) ||
       typeof copy.method !== 'string' ||
       !copy.method ||
-      !Object.hasOwn(copy, 'params')
+      !Object.hasOwn(copy, 'params') ||
+      ('state' in copy && copy.state !== 'accepted')
     )
       throw new Error('invalid journal state')
     return copy as PendingCommand
@@ -37,6 +39,7 @@ export interface JournalStore {
   cursor(sessionId: string): Promise<Cursor | null>
   setCursor(sessionId: string, c: Cursor): Promise<void>
   pending(sessionId: string): Promise<PendingCommand[]>
+  /** Saves `cmd`, replacing in place an entry with the same commandId. */
   markPending(sessionId: string, cmd: PendingCommand): Promise<void>
   clearPending(sessionId: string, commandId: string): Promise<void>
 }
@@ -74,7 +77,11 @@ export function memoryJournal(clientId: string = randomId()): JournalStore {
       return structuredClone(pending.get(sessionId) ?? [])
     },
     async markPending(sessionId, cmd) {
-      pending.set(sessionId, [...(pending.get(sessionId) ?? []), snapshotPending(cmd)])
+      // In place of an entry with the same command id, or appended.
+      const saved = snapshotPending(cmd)
+      const entries = pending.get(sessionId) ?? []
+      const at = entries.findIndex((entry) => entry.commandId === saved.commandId)
+      pending.set(sessionId, at < 0 ? [...entries, saved] : entries.with(at, saved))
     },
     async clearPending(sessionId, commandId) {
       pending.set(

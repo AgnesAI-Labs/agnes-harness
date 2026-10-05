@@ -37,6 +37,7 @@ import {
   RuntimeClientTransport,
   type RuntimeSubscription,
   type RuntimeWebSocketFactory,
+  runtimeJournalKey,
   subscriptions,
 } from '@agnes/sdk/runtime'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -91,13 +92,14 @@ const failure = (detailCode: string, code: RuntimeError['code'], advice: 'never'
   }) as RuntimeError
 
 const cancel = (requestId: string) => ({ sessionId: 'conv-1', runId: 'run-1', requestId })
-const handle = (requestId: string, status: 'accepted' | 'not-accepted') =>
-  status === 'accepted'
+const handle = (requestId: string, status: 'accepted' | 'not-accepted' | 'unknown_effect' | 'succeeded') =>
+  status !== 'not-accepted'
     ? {
         commandId: `cmd-${requestId}`,
         requestId,
         revision: 1,
-        completion: 'runtime-accepted',
+        // A runtime-accepted success carries its acceptance record; a domain commit may carry none.
+        completion: status === 'succeeded' ? 'domain-commit' : 'runtime-accepted',
         status,
         result: null,
         error: null,
@@ -379,6 +381,10 @@ async function peer() {
   return created
 }
 
+/** The partition the test assembly derives from the client's authentication, and its journal key. */
+const PARTITION = 'partition-1'
+const KEY = runtimeJournalKey(PARTITION)
+
 async function connected(
   p: Peer,
   credential: string | null = 'token-1',
@@ -389,6 +395,7 @@ async function connected(
     baseUrl: p.url,
     hello,
     journal,
+    journalPartitionKey: PARTITION,
     ...(credential === null ? {} : { credential }),
     ...options,
   })
@@ -429,7 +436,7 @@ const drain = async (subscription: RuntimeSubscription) => {
   return seen
 }
 const pendingIds = async (journal: ReturnType<typeof memoryJournal>) =>
-  (await journal.pending(RUNTIME_JOURNAL_KEY)).map((command) => command.commandId)
+  (await journal.pending(KEY)).map((command) => command.commandId)
 
 describe('bootstrap and the write gate', () => {
   it.each([
@@ -646,11 +653,12 @@ describe('the command journal', () => {
       baseUrl: p.url,
       hello,
       credential: 'token-1',
+      journalPartitionKey: PARTITION,
       journal: {
         ...journal,
         markPending: async (key, command) => {
           await journal.markPending(key, command)
-          events.push(`journaled ${command.commandId}`)
+          events.push(`${command.state ?? 'journaled'} ${command.commandId}`)
         },
       },
       fetch: (url, init) => {
@@ -661,14 +669,14 @@ describe('the command journal', () => {
     await client.connect()
     let seen: unknown
     p.handlers.clientCommand = async () => {
-      seen = await journal.pending(RUNTIME_JOURNAL_KEY)
+      seen = await journal.pending(KEY)
       return 'drop' as const
     }
     expect(await client.command('conversation.cancel', cancel('req-1'))).toMatchObject({ state: 'unknown' })
     expect(events).toEqual(['sent bootstrap', 'journaled req-1', 'sent clientCommand'])
     const saved = [{ commandId: 'req-1', method: 'conversation.cancel', params: cancel('req-1') }]
     expect(seen).toEqual(saved)
-    expect(await journal.pending(RUNTIME_JOURNAL_KEY)).toEqual(saved)
+    expect(await journal.pending(KEY)).toEqual(saved)
 
     // Only the user resends, with the original id and input; another input under that id never leaves.
     expect(await client.command('conversation.cancel', { ...cancel('req-1'), runId: 'run-2' })).toEqual({
@@ -678,7 +686,8 @@ describe('the command journal', () => {
     p.handlers.clientCommand = (request) => reply(request, handle('req-1', 'accepted'))
     expect(await client.command('conversation.cancel', cancel('req-1'))).toMatchObject({ state: 'ok' })
     expect(p.count('clientCommand')).toBe(2)
-    expect(await journal.pending(RUNTIME_JOURNAL_KEY)).toEqual([])
+    // Admitted but not final, so it stays journaled as accepted, in place.
+    expect(await journal.pending(KEY)).toEqual([{ ...saved[0], state: 'accepted' }])
   })
 
   const control = {
@@ -687,6 +696,139 @@ describe('the command journal', () => {
     expectedRevision: null,
     command: { kind: 'set-yolo', enabled: true },
   }
+  it('refuses a command that needs recovery without a journal partition, before journaling or sending it', async () => {
+    const p = await peer()
+    const journal = memoryJournal('client-1')
+    const client = new RuntimeClientTransport({ baseUrl: p.url, hello, credential: 'token-1', journal })
+    await client.connect()
+    p.handlers.clientQuery = (request) => reply(request, handle('req-1', 'not-accepted'))
+    expect(await client.command('conversation.cancel', cancel('req-1'))).toEqual({
+      state: 'refused',
+      reason: 'journal-unpartitioned',
+    })
+    expect(p.count('clientCommand')).toBe(0)
+    expect(await journal.pending(RUNTIME_JOURNAL_KEY)).toEqual([])
+    // A read, and a command without a business id, need no recovery and still go out.
+    expect(await client.query('conversation.status', 'req-1')).toMatchObject({ state: 'ok' })
+    p.handlers.clientCommand = () => 'drop'
+    const formLink = { interactionId: 'int-1', expectedVersion: 1 }
+    expect(await client.command('interaction.formLink', formLink)).toMatchObject({ state: 'unknown' })
+    expect(p.count('clientCommand')).toBe(1)
+    // Recovery opens no entry without a partition, not even one an older client left unpartitioned.
+    await journal.markPending(RUNTIME_JOURNAL_KEY, {
+      commandId: 'req-0',
+      method: 'conversation.cancel',
+      params: cancel('req-0'),
+    })
+    expect(await client.recover()).toEqual([])
+    expect(p.count('clientQuery')).toBe(1)
+  })
+
+  it("keeps each identity's commands in its own partition and opens them only after authentication", async () => {
+    const p = await peer()
+    const journal = memoryJournal('client-1')
+    const make = (journalPartitionKey: string) =>
+      new RuntimeClientTransport({
+        baseUrl: p.url,
+        hello,
+        credential: 'token-1',
+        journal,
+        journalPartitionKey,
+      })
+    p.handlers.clientQuery = (request) => reply(request, handle(request.call.input as string, 'not-accepted'))
+    p.handlers.clientCommand = () => 'drop'
+    const first = make('partition-a')
+    await journal.markPending(runtimeJournalKey('partition-a'), {
+      commandId: 'req-0',
+      method: 'conversation.cancel',
+      params: cancel('req-0'),
+    })
+    // Before the client has authenticated, nothing is read, whatever the journal holds.
+    expect(await first.recover()).toEqual([])
+    await first.connect()
+    expect(await first.command('conversation.cancel', cancel('req-1'))).toMatchObject({ state: 'unknown' })
+    const second = make('partition-b')
+    await second.connect()
+    expect(await second.recover()).toEqual([])
+    expect(p.count('clientQuery')).toBe(0)
+    // The same id under another identity is that identity's own command, not an identity conflict.
+    const other = { ...cancel('req-1'), runId: 'run-2' }
+    expect(await second.command('conversation.cancel', other)).toMatchObject({ state: 'unknown' })
+    expect((await first.recover()).map((report) => [report.id, report.state])).toEqual([
+      ['req-0', 'not-accepted'],
+      ['req-1', 'not-accepted'],
+    ])
+    expect(await journal.pending(runtimeJournalKey('partition-b'))).toEqual([
+      { commandId: 'req-1', method: 'conversation.cancel', params: other },
+    ])
+    for (const key of ['', 'k'.repeat(257)]) expect(() => make(key)).toThrow('invalid journal partition key')
+  })
+
+  it('drops a command once its reply is final or its operation has no status, and never on a later refusal', async () => {
+    const p = await peer()
+    const { client, journal } = await connected(p)
+    p.handlers.clientCommand = (request) => reply(request, handle('req-1', 'succeeded'))
+    expect(await client.command('conversation.cancel', cancel('req-1'))).toMatchObject({ state: 'ok' })
+    p.handlers.clientCommand = (request) => reply(request, handle('req-2', 'accepted'))
+    expect(await client.command('conversation.cancel', cancel('req-2'))).toMatchObject({ state: 'ok' })
+    // jobs.cancel has no status operation to ask later, so its answer is all there will be.
+    p.handlers.clientCommand = (request) => reply(request, { jobId: 'job-1', cancelRequested: true })
+    expect(await client.command('jobs.cancel', { jobId: 'job-1', requestId: 'req-3' })).toMatchObject({
+      state: 'ok',
+    })
+    expect(await pendingIds(journal)).toEqual(['req-2'])
+    // A resend refused outright admitted nothing this time, but req-2 was admitted before.
+    p.handlers.clientCommand = () => ({ error: failure('revision_conflict', 'conflict') })
+    expect(await client.command('conversation.cancel', cancel('req-2'))).toMatchObject({ state: 'failed' })
+    expect((await journal.pending(KEY)).map((entry) => entry.state)).toEqual(['accepted'])
+  })
+
+  it('refuses a new command while the partition holds 1024 open ones, until the user archives an unknown one', async () => {
+    const p = await peer()
+    const { client, journal } = await connected(p)
+    for (let n = 0; n < 1024; n++)
+      await journal.markPending(KEY, {
+        commandId: `old-${n}`,
+        method: 'conversation.cancel',
+        params: cancel(`old-${n}`),
+        ...(n === 0 ? { state: 'accepted' as const } : {}),
+      })
+    expect(await client.command('conversation.cancel', cancel('req-1'))).toEqual({
+      state: 'refused',
+      reason: 'journal-full',
+    })
+    expect(p.count('clientCommand')).toBe(0)
+    // An accepted command and an id never journaled cannot be archived; one without an admitted reply can.
+    expect([
+      await client.archive('old-0'),
+      await client.archive('req-1'),
+      await client.archive('old-1'),
+    ]).toEqual([false, false, true])
+    expect((await pendingIds(journal)).includes('old-1')).toBe(false)
+    p.handlers.clientCommand = () => 'drop'
+    expect(await client.command('conversation.cancel', cancel('req-1'))).toMatchObject({ state: 'unknown' })
+    expect(p.count('clientCommand')).toBe(1)
+    const unpartitioned = new RuntimeClientTransport({ baseUrl: p.url, hello, journal })
+    expect(await unpartitioned.archive('old-2')).toBe(false)
+  })
+
+  const controlled = (status: string) => ({
+    sessionId: 'conv-1',
+    requestId: 'req-1',
+    status,
+    revision: 1,
+    effective: null,
+    runId: null,
+    childSessionId: null,
+    compact: null,
+    error: null,
+  })
+  const cancelled = {
+    operation: 'conversation.cancel',
+    input: cancel('req-1'),
+    status: 'conversation.status',
+  }
+  const submitted = { operation: 'control.submit', input: control, status: 'control.status' }
   it.each<{
     operation: ClientJsonOperation
     input: unknown
@@ -694,56 +836,71 @@ describe('the command journal', () => {
     statusInput: unknown
     value: unknown
     state: 'accepted' | 'not-accepted'
+    /** What stays journaled after recovery: nothing once final, else the entry and its state. */
+    kept: 'accepted' | 'pending' | null
   }>([
     {
-      operation: 'conversation.cancel',
-      input: cancel('req-1'),
-      status: 'conversation.status',
+      ...cancelled,
       statusInput: 'req-1',
       value: handle('req-1', 'accepted'),
       state: 'accepted',
+      kept: 'accepted',
     },
     {
-      operation: 'conversation.cancel',
-      input: cancel('req-1'),
-      status: 'conversation.status',
+      ...cancelled,
+      statusInput: 'req-1',
+      value: handle('req-1', 'unknown_effect'),
+      state: 'accepted',
+      kept: 'accepted',
+    },
+    {
+      ...cancelled,
+      statusInput: 'req-1',
+      value: handle('req-1', 'succeeded'),
+      state: 'accepted',
+      kept: null,
+    },
+    {
+      ...cancelled,
       statusInput: 'req-1',
       value: handle('req-1', 'not-accepted'),
       state: 'not-accepted',
+      kept: 'pending',
     },
     {
-      operation: 'control.submit',
-      input: control,
-      status: 'control.status',
+      ...submitted,
       statusInput: { sessionId: 'conv-1', requestId: 'req-1' },
-      value: {
-        sessionId: 'conv-1',
-        requestId: 'req-1',
-        status: 'accepted',
-        revision: 1,
-        effective: null,
-        runId: null,
-        childSessionId: null,
-        compact: null,
-        error: null,
-      },
+      value: controlled('accepted'),
       state: 'accepted',
+      kept: 'accepted',
     },
-  ])('recover reports $state for $operation and never resends it', async (row) => {
-    const p = await peer()
-    const { client, journal } = await connected(p)
-    p.handlers.clientCommand = () => 'drop'
-    p.handlers.clientQuery = (request) => reply(request, row.value)
-    expect(await client.command(row.operation, row.input as never)).toMatchObject({ state: 'unknown' })
-    expect(await client.recover()).toEqual([{ id: 'req-1', operation: row.operation, state: row.state }])
-    expect(await client.recover()).toEqual(
-      row.state === 'accepted' ? [] : [{ id: 'req-1', operation: row.operation, state: row.state }],
-    )
-    const queries = p.requests.filter((r) => r.route === 'clientQuery').map((r) => r.body.call)
-    expect(queries[0]).toEqual({ operation: row.status, input: row.statusInput })
-    expect(p.count('clientCommand')).toBe(1)
-    expect(await pendingIds(journal)).toEqual(row.state === 'accepted' ? [] : ['req-1'])
-  })
+    {
+      ...submitted,
+      statusInput: { sessionId: 'conv-1', requestId: 'req-1' },
+      value: controlled('applied'),
+      state: 'accepted',
+      kept: null,
+    },
+  ] as never[])(
+    'recover reports $state for $operation answering $value.status and never resends it',
+    async (row) => {
+      const p = await peer()
+      const { client, journal } = await connected(p)
+      p.handlers.clientCommand = () => 'drop'
+      p.handlers.clientQuery = (request) => reply(request, row.value)
+      expect(await client.command(row.operation, row.input as never)).toMatchObject({ state: 'unknown' })
+      const report = [{ id: 'req-1', operation: row.operation, state: row.state }]
+      expect(await client.recover()).toEqual(report)
+      // An entry that stays is asked again on the next recovery; a final one is gone.
+      expect(await client.recover()).toEqual(row.kept === null ? [] : report)
+      const queries = p.requests.filter((r) => r.route === 'clientQuery').map((r) => r.body.call)
+      expect(queries[0]).toEqual({ operation: row.status, input: row.statusInput })
+      expect(p.count('clientCommand')).toBe(1)
+      expect((await journal.pending(KEY)).map((entry) => entry.state ?? 'pending')).toEqual(
+        row.kept === null ? [] : [row.kept],
+      )
+    },
+  )
 
   it.each<{ operation: ClientJsonOperation; input: unknown; journaled: string[] }>([
     {
@@ -903,11 +1060,12 @@ describe('the push socket', () => {
       hello,
       credential: 'token-1',
       webSocket: tapped(log),
+      journalPartitionKey: PARTITION,
       journal: {
         ...journal,
         markPending: async (key, command) => {
           await journal.markPending(key, command)
-          log.push(`journaled ${command.commandId}`)
+          log.push(`${command.state ?? 'journaled'} ${command.commandId}`)
         },
       },
     })
@@ -922,14 +1080,21 @@ describe('the push socket', () => {
       state: 'ok',
       value: handle('req-1', 'accepted'),
     })
-    expect(log).toEqual(['sent query', 'received reply', 'journaled req-1', 'sent command', 'received reply'])
+    expect(log).toEqual([
+      'sent query',
+      'received reply',
+      'journaled req-1',
+      'sent command',
+      'received reply',
+      'accepted req-1',
+    ])
     expect([
       p.count('ws:query'),
       p.count('ws:command'),
       p.count('clientQuery'),
       p.count('clientCommand'),
     ]).toEqual([1, 1, 0, 0])
-    expect(await journal.pending(RUNTIME_JOURNAL_KEY)).toEqual([])
+    expect(await pendingIds(journal)).toEqual(['req-1'])
   })
 
   it('waits for its own reply and ignores another call id or a stale session', async () => {
@@ -954,7 +1119,10 @@ describe('the push socket', () => {
       state: 'ok',
       value: handle('req-1', 'accepted'),
     })
-    expect(await pendingIds(journal)).toEqual([])
+    // Only its own reply counts: the command is journaled as accepted, not dropped as not-accepted.
+    expect(await journal.pending(KEY)).toEqual([
+      { commandId: 'req-1', method: 'conversation.cancel', params: cancel('req-1'), state: 'accepted' },
+    ])
   })
 
   it.each([

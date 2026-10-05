@@ -6,9 +6,9 @@ import { RuntimeClientTransportPolicy, RuntimeClientTransportWire } from '@agnes
 import { afterEach, describe, expect, it } from 'vitest'
 import { memoryJournal } from '../../../sdk/src/journal.js'
 import {
-  RUNTIME_JOURNAL_KEY,
   RuntimeClientTransport,
   readOutcome,
+  runtimeJournalKey,
 } from '../../../sdk/src/runtime/client-transport.js'
 import type { RuntimeClientPorts } from '../../src/runtime/transport.js'
 import { runtimeClientBearer } from '../../src/supervisor/runtime-credential.js'
@@ -412,6 +412,7 @@ describe('the SDK client against the runtime client routes', () => {
       baseUrl,
       hello,
       journal,
+      journalPartitionKey: 'partition-1',
       fetch: (url, init) =>
         fetch(url, { ...init, headers: { ...(init.headers as Record<string, string>), origin } }),
     })
@@ -462,6 +463,6 @@ describe('the SDK client against the runtime client routes', () => {
     const refused = await client.command('conversation.cancel', cancel)
     expect(refused).toMatchObject({ state: 'failed', error: { detailCode: 'operation_not_supported' } })
     // A typed refusal admitted nothing, so the journaled command is cleared.
-    expect(await journal.pending(RUNTIME_JOURNAL_KEY)).toEqual([])
+    expect(await journal.pending(runtimeJournalKey('partition-1'))).toEqual([])
   })
 })
