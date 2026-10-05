@@ -1481,7 +1481,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // The domain consumer formats through the SDK text format by default. Measured 5487, exact, no spare (+1).
   // Runtime session: preset resolution and the SDK runtime client with its ports. Measured 5588, exact,
   // no spare (+101).
-  'packages/cli-tui/src': 5588,
+  // The terminal passes its journal partition through to the runtime client. Measured 5595, exact (+7).
+  'packages/cli-tui/src': 5595,
   // Initial ceilings for the remaining packages, registered all at once so that each parallel lane
   // does not have to edit these two files separately. The sdk ceiling of 2500 was newly set by
   // estimate: 404 lines today, plus roughly 360 for the three transports, plus roughly 1650 for the
@@ -1592,7 +1593,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // Renderer contract cases through the client host on every target. Measured 15193, exact, no spare (+852).
   // Runtime client transport cases over two servers with one SDK client. Measured 16143, exact, no spare (+950).
   // Tools contracts +247, Context +339, Loop +170; exact, no spare.
-  'packages/extension-api/testkit': 17070,
+  // Transport recovery checks read only the report of the request in question (+2), exact.
+  'packages/extension-api/testkit': 17072,
   // 2026-09-10: raised from 2500 by Task 15 (stream-disconnect reconnection). The new
   // reattach.ts (the Reconnector: backoff loop, OVERLOADED's retryAfterMs override) plus
   // Session.recover()/waitForQuiescence and Client's reconnect wiring (emit(), the
@@ -1669,7 +1671,9 @@ const INITIAL_CEILING: Record<string, number> = {
   // also removes format characters. Measured 6231, exact, no spare (+208).
   // `./runtime` becomes a barrel that also exports the runtime client. Measured 6252, exact, no spare (+21).
   // The runtime client exposes the capabilities its welcome negotiated. Measured 6255, exact, no spare (+3).
-  'packages/sdk/src': 6300,
+  // Runtime commands journal per identity partition, stay accepted until final, are capped and archivable.
+  // Measured 6349, exact (+49).
+  'packages/sdk/src': 6349,
   'packages/sdk/src/extensions.node': 21,
   'packages/sdk/src/package-admin.node': 147,
   'packages/sdk/src/surface.browser': 3,

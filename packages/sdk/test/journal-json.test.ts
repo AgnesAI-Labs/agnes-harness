@@ -71,6 +71,19 @@ for (const [name, create] of stores)
       expect(json).not.toHaveBeenCalled()
       expect(await store.pending('s')).toEqual([])
     })
+    it('replaces an entry with the same command id in place and keeps only an accepted state', async () => {
+      const store = create()
+      const first = { commandId: 'first', method: 'submit', params: { n: 1 } }
+      const second = { commandId: 'second', method: 'submit', params: { n: 2 } }
+      await store.markPending('s', first)
+      await store.markPending('s', second)
+      await store.markPending('s', { ...first, state: 'accepted' })
+      expect(await store.pending('s')).toEqual([{ ...first, state: 'accepted' }, second])
+      await expect(
+        store.markPending('s', { ...second, state: 'final' } as unknown as typeof second),
+      ).rejects.toThrow(/^invalid journal state$/)
+      expect(await store.pending('s')).toEqual([{ ...first, state: 'accepted' }, second])
+    })
     it('preserves valid nested JSON and does not share nested returned objects', async () => {
       const store = create()
       const params = JSON.parse('{"__proto__":{"keep":true},"values":[null,false,0,"中😀"]}')

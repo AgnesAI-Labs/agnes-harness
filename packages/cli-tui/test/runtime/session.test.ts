@@ -168,12 +168,32 @@ describe('runtime connection', () => {
     expect(fetch).toHaveBeenCalledTimes(requests)
   })
 
+  it('refuses an answer before sending it while the assembly gave no journal partition', async () => {
+    const journal = memoryJournal()
+    const served = runtime({ 'interaction.read': () => record })
+    const connected = await connectRuntime({
+      endpoint: async () => endpoint,
+      journal,
+      locale: 'en',
+      fetch: served.fetch,
+    })
+    if (!connected.ok) throw new Error(connected.message)
+    expect(await connected.questions.read('ix-1')).toEqual({ state: 'ok', value: record })
+    expect(await connected.questions.respond(answer)).toEqual({
+      state: 'refused',
+      reason: 'journal-unpartitioned',
+    })
+    expect(served.seen.map(({ call }) => call)).toEqual(['bootstrap', 'interaction.read'])
+    expect(await connected.questions.pendingJournal()).toEqual([])
+  })
+
   it('sends the bearer, recovers before anything else, and wires the ports to the runtime', async () => {
     const journal = memoryJournal()
     const first = runtime({ 'interaction.read': () => record, 'artifact.describe': () => ready })
     const one = await connectRuntime({
       endpoint: async () => endpoint,
       journal,
+      journalPartitionKey: 'partition-1',
       locale: 'en',
       fetch: first.fetch,
     })
@@ -206,6 +226,7 @@ describe('runtime connection', () => {
     const two = await connectRuntime({
       endpoint: async () => endpoint,
       journal,
+      journalPartitionKey: 'partition-1',
       locale: 'en',
       fetch: second.fetch,
     })

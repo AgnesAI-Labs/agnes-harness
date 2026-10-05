@@ -131,6 +131,7 @@ describe('export surface snapshot (规格 §20.5, SDK Task 23)', () => {
       'artifactReader',
       'encodeForChannel',
       'formatDomainView',
+      'runtimeJournalKey',
       'subscriptions',
     ])
   })
