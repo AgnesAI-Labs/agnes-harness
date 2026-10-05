@@ -135,6 +135,23 @@ interface PlanningPorts {
   ): W.LoopTransition
   wait(action: W.PreparedAction): W.NextStep
 }
+function checkCredential(route: W.ModelRouteSnapshot, handle: W.SecretHandle | null): void {
+  const binding = route.credentialBinding
+  if (binding === null) {
+    insist(handle === null, 'loop_credential_binding', 'denied')
+    return
+  }
+  insist(handle !== null, 'loop_model_credentials_unavailable', 'incompatible')
+  insist(
+    binding.consumer === 'model' &&
+      binding.secretId === handle.secretId &&
+      binding.audience === handle.audience &&
+      route.credentialAudience === handle.audience,
+    'loop_credential_binding',
+    'denied',
+  )
+  insist(Date.parse(handle.expiresAt) > Date.now(), 'loop_credential_expired', 'denied')
+}
 export async function planDefaultModel(
   frame: W.RunFrame,
   state: DefaultLoopState,
@@ -187,12 +204,11 @@ export async function planDefaultModel(
       'denied',
     )
     insist(
-      fixedInput.routing.allowedRoutes.length === 1 &&
-        fixedInput.routing.allowedRoutes[0]?.credentialBinding === null &&
-        fixedInput.credentialRef === null,
+      fixedInput.routing.allowedRoutes.length === 1 && fixedInput.routing.allowedRoutes[0],
       'loop_model_credentials_unavailable',
       'incompatible',
     )
+    checkCredential(fixedInput.routing.allowedRoutes[0], fixedInput.credentialRef)
     freeze(fixedInput)
     return fixedInput
   }
@@ -270,7 +286,7 @@ export async function planDefaultModel(
         generation: fixedInput.generation,
         hookResults: null,
         sessionParameterRef: frame.sessionParameters.reference,
-        credentialRef: null,
+        credentialRef: fixedInput.credentialRef,
       },
       ports,
       ctx,
@@ -293,7 +309,7 @@ export async function planDefaultModel(
       equal(locked.value.toolCatalog, catalogInput) &&
       equal(locked.value.generation, fixedInput.generation) &&
       locked.value.outputSchema === null &&
-      locked.value.credentialRef === null &&
+      equal(locked.value.credentialRef, fixedInput.credentialRef) &&
       locked.value.hookResults === null &&
       locked.value.legacyRequestOverrides === null &&
       locked.value.mediaPlans.length === 0 &&
@@ -303,6 +319,7 @@ export async function planDefaultModel(
     'denied',
   )
   await current(ctx)
+  checkCredential(route.value.route, fixedInput.credentialRef)
   const action = checkedPrepare(ports, {
     key: stage,
     target: selected.model,
@@ -320,7 +337,9 @@ export async function planDefaultModel(
   return transition(frame, { ...state, phase: stage, pending: action }, wait(action), [action])
 }
 
-/** Native assembly supplies authorized, fixed inputs. This seam is not a public service or an owner. */
+/** Native assembly supplies authorized, fixed inputs, including the exact credential handle
+ * issued for the selected consumer by C22/model preparation. Wire equality cannot prove issuance.
+ * This seam is not a public service or an owner; missing source or current permission must refuse. */
 export interface DefaultLoopSource {
   checkCurrent(context: CallContext): Promise<Outcome<void>>
   readInputs(

@@ -396,23 +396,30 @@ describe('run loop', () => {
     expect(rounds).toEqual([1, 2])
   })
 
-  it('StopGate: a repair verdict of complete finishes despite the failed check', async () => {
-    const seams = fakeSeams({
-      verifier: {
-        verify: async (scope) =>
-          scope === 'turn' ? { verdict: 'fail', reasons: ['x'] } : { verdict: 'pass', reasons: [] },
-      },
-      repair: { decide: async () => 'complete' },
-    })
-    const { session, log } = await openSession({ provider: fakeProvider([textTurn('draft')]), seams })
-    await session.enqueue('next-turn', { content: [{ type: 'text', text: 'do' }], actor })
-    expect((await session.run({ until: 'turn-end', signal: sig() })).reason).toBe('completed')
-    expect(await log.scan({ type: 'step/start', limit: 5 })).toHaveLength(1)
-    expect((await log.scan({ type: 'repair/decision', limit: 5 }))[0]?.data).toMatchObject({
-      decision: 'complete',
-      round: 1,
-    })
-  })
+  it.each(['allowed-once', 'rejected'] as const)(
+    'StopGate: repair complete cannot waive failed quality without %s approval',
+    async (approval) => {
+      const seams = fakeSeams({
+        verifier: {
+          verify: async (scope) =>
+            scope === 'turn' ? { verdict: 'fail', reasons: ['x'] } : { verdict: 'pass', reasons: [] },
+        },
+        repair: { decide: async () => 'complete' },
+        approval: { ask: async () => approval },
+      })
+      const { session, log } = await openSession({ provider: fakeProvider([textTurn('draft')]), seams })
+      await session.enqueue('next-turn', { content: [{ type: 'text', text: 'do' }], actor })
+      expect((await session.run({ until: 'turn-end', signal: sig() })).reason).toBe(
+        approval === 'allowed-once' ? 'completed' : 'blocked',
+      )
+      expect(await log.scan({ type: 'step/start', limit: 5 })).toHaveLength(1)
+      expect((await log.scan({ type: 'repair/decision', limit: 5 }))[0]?.data).toMatchObject({
+        decision: 'park',
+        round: 1,
+      })
+      expect(await log.scan({ type: 'approval/asked', limit: 5 })).toHaveLength(1)
+    },
+  )
 
   it('StopGate: an escalate verdict marks the budget and takes another step', async () => {
     let verifies = 0

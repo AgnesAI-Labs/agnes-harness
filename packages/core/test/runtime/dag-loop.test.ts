@@ -415,4 +415,24 @@ describe('independent bounded DAG author algorithm through public Loop SPI', () 
       await f.close()
     }
   })
+  it.each(['all', 'any'] as const)(
+    'refuses saved %s joins whose required predecessors were never issued',
+    async (join) => {
+      const f = await open(join)
+      try {
+        const first = await f.provider.start(f.frame, f.ports)
+        const frame = f.nextFrame(first)
+        const saved = required(frame.continuation)
+        if (saved.data.kind !== 'inline') throw new Error('Expected inline private state')
+        const joined = f.ports.prepare(required(f.graph.nodes.find((node) => node.id === 'join')).action)
+        if (!joined.ok) throw new Error('Fixture refused graph action')
+        const body = saved.data.value as unknown as { issued: W.PreparedAction[] }
+        body.issued = join === 'all' ? [action(first, 'left'), joined.value] : [joined.value]
+        saved.data = contextInline(saved.data.schema, saved.data.value)
+        fail(await f.provider.resume(frame, f.ports), 'dag_saved_dependencies_missing')
+      } finally {
+        await f.close()
+      }
+    },
+  )
 })

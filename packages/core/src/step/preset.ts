@@ -42,8 +42,8 @@ export type PresetView = {
   sandbox: { onUnavailable: 'deny' | 'allow' }
   tools: { timeoutMs: number; timeouts: Record<string, number>; outputMaxBytes: number }
   verifier: { timeoutMs: number; defaultTier: 0 | 1 | 2 }
-  repair: { timeoutMs: number }
-  completionGate: { minItems: number }
+  repair: { timeoutMs: number; maxRounds: number }
+  completionGate: { enabled: boolean; minItems: number }
   compaction: { enabled: boolean; reserveTokens: number; keepRecentTokens: number; agentCallable: boolean }
   telemetry: { invariants: boolean | 'strict'; timing: boolean }
   recovery: { unknownChild: 'model' | 'human' }
@@ -75,8 +75,8 @@ export function presetDefaults(): PresetView {
     sandbox: { onUnavailable: 'deny' },
     tools: { timeoutMs: 120000, timeouts: {}, outputMaxBytes: 32768 },
     verifier: { timeoutMs: 30000, defaultTier: 0 },
-    repair: { timeoutMs: 10000 },
-    completionGate: { minItems: 3 },
+    repair: { timeoutMs: 10000, maxRounds: 5 },
+    completionGate: { enabled: true, minItems: 3 },
     compaction: { enabled: true, reserveTokens: 16384, keepRecentTokens: 20000, agentCallable: true },
     telemetry: { invariants: false, timing: false },
     recovery: { unknownChild: 'model' },
@@ -151,8 +151,14 @@ export function readPreset(raw: Record<string, unknown>, name: string): PresetVi
       timeoutMs: pick(raw, 'verifier.timeout_ms', d.verifier.timeoutMs),
       defaultTier: pick(raw, 'verifier.default_tier', d.verifier.defaultTier),
     },
-    repair: { timeoutMs: pick(raw, 'repair.timeout_ms', d.repair.timeoutMs) },
-    completionGate: { minItems: pick(raw, 'completion_gate.min_items', d.completionGate.minItems) },
+    repair: {
+      timeoutMs: pick(raw, 'repair.timeout_ms', d.repair.timeoutMs),
+      maxRounds: pick(raw, 'repair.max_rounds', d.repair.maxRounds),
+    },
+    completionGate: {
+      enabled: pick(raw, 'completion_gate.enabled', d.completionGate.enabled),
+      minItems: pick(raw, 'completion_gate.min_items', d.completionGate.minItems),
+    },
     compaction: {
       enabled: pick(raw, 'compaction.enabled', d.compaction.enabled),
       reserveTokens: pick(raw, 'compaction.reserve_tokens', d.compaction.reserveTokens),
