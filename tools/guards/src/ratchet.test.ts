@@ -2882,7 +2882,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // Sixth main synchronization merged with the integration tip. Measured 81225, exact, no spare.
   // Sixth main synchronization merged with the integration tip. Measured 81253, exact, no spare.
   // feat(host): build the projection owner from the core root export. Measured 81275, exact, no spare.
-  'packages/host/src': 81275,
+  // feat(host): retain model catalog captures by content digest. Measured 81314 (+39), exact, no spare.
+  'packages/host/src': 81314,
   'packages/host/src/ext-host/service-invocation': 247,
   // T5.2's permission projector is kept independently bounded so later extension-host work cannot
   // hide in the package-wide increment. Measured source: 86 lines.
