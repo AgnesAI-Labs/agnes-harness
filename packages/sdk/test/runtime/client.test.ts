@@ -537,6 +537,28 @@ describe('negotiated capabilities', () => {
     negotiated?.features.push('acme.added')
     expect(client.capabilities?.features).toEqual(['acme.only'])
   })
+
+  it('exposes a copy of the client selection the welcome carried, and none it did not', async () => {
+    const selection = {
+      target: 'web',
+      shell: { packageId: 'acme.client', contributionId: 'workbench' },
+      registry: { packageId: 'acme.client', contributionId: 'registry' },
+      fallbackRenderer: { packageId: 'acme.client', contributionId: 'fallback' },
+      rendererSelections: [{ renderKey: 'acme.notes/card', rendererId: 'note-card', target: 'web' }],
+    }
+    const p = await peer()
+    p.state.adjust = (welcome) => ({ ...welcome, clientSelection: selection })
+    const { client } = await connected(p)
+    const carried = client.clientSelection
+    expect(carried).toEqual(selection)
+    carried?.rendererSelections.pop()
+    expect(client.clientSelection).toEqual(selection)
+    // Without a session there is no welcome to ask; an older server's welcome names no selection.
+    const older = await peer()
+    const unconnected = new RuntimeClientTransport({ baseUrl: older.url, hello, journal: memoryJournal('c') })
+    expect(unconnected.clientSelection).toBeNull()
+    expect((await connected(older)).client.clientSelection).toBeUndefined()
+  })
 })
 
 describe('the catalog', () => {

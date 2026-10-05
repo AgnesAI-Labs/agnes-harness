@@ -1679,7 +1679,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // The runtime client exposes the capabilities its welcome negotiated. Measured 6255, exact, no spare (+3).
   // Runtime commands journal per identity partition, stay accepted until final, are capped and archivable.
   // Measured 6349, exact (+49).
-  'packages/sdk/src': 6349,
+  // The runtime client exposes the client selection its welcome carried. Measured 6352, exact (+3).
+  'packages/sdk/src': 6352,
   'packages/sdk/src/extensions.node': 21,
   'packages/sdk/src/package-admin.node': 147,
   'packages/sdk/src/surface.browser': 3,
