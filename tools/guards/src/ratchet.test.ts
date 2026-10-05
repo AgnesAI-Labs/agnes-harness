@@ -273,7 +273,9 @@ const INITIAL_CEILING: Record<string, number> = {
   // 2026-10-05 the queued-input list moved out of the composer card. The render now returns a
   // Fragment so the queue section can sit before the form, which costs the Fragment import, the
   // extracted `queueSection` binding and one extra nesting level. Measured: 5922, exact, no spare.
-  'packages/web-units/src': 5922,
+  // 2026-10-05 图片超限的文案按失败原因分开：解码失败不再一律报「不是有效图片」，尺寸/体积各有
+  // 一条（composer.ts 的分支与注释，加语言目录两条词条）。Measured: 5931, exact, no spare.
+  'packages/web-units/src': 5931,
   // Write staleness guard: a per-session table of what each file looked like when read, checked by
   // `write` (+55 counted lines, measured 855, exact cap).
   'packages/base/extensions/tools-core': 855,

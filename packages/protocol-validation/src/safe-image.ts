@@ -575,8 +575,10 @@ function jpegDimensions(bytes: Uint8Array, maxPixels: number) {
     if (marker === 0x00)
       throw new SafeImageError('FORMAT_INVALID', 'unexpected stuffed byte outside JPEG scan')
     if (marker === 0xd9) {
-      if (!size || !sawScan || offset !== bytes.length)
-        throw new SafeImageError('FORMAT_INVALID', 'JPEG ended before image data or has trailing bytes')
+      if (!size || !sawScan) throw new SafeImageError('FORMAT_INVALID', 'JPEG ended before image data')
+      // EOI 之后的内容不属于图像数据：解码器读到 EOI 就停，尾随字节影响不到解码结果。实测有
+      // 工具会在此后附加定长尾迹（真机截图的 JPEG 各带 24 字节），要求文件正好止于 EOI 会把
+      // 合法图片判成损坏——比解码器更严同样是一种 parser differential，只是方向相反。
       return size
     }
     if (marker === 0xd8 || marker === 0x01 || (marker >= 0xd0 && marker <= 0xd7)) continue

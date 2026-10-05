@@ -56,6 +56,46 @@ const PNG_DATA =
 const pngBytes = Uint8Array.from(atob(PNG_DATA), (character) => character.charCodeAt(0))
 const pngFile = (name = 'one.png', bytes: Uint8Array = pngBytes) =>
   new File([Uint8Array.from(bytes)], name, { type: 'image/png' })
+/** 声明尺寸远超像素上限、字节数却只有几十字节的 JPEG：校验器读到 SOF 就会按尺寸拒绝。 */
+const oversizedJpegFile = (width = 2000, height = 2000) =>
+  new File(
+    [
+      Uint8Array.from([
+        0xff,
+        0xd8,
+        0xff,
+        0xc0,
+        0,
+        11,
+        8,
+        height >>> 8,
+        height & 0xff,
+        width >>> 8,
+        width & 0xff,
+        1,
+        1,
+        0x11,
+        0,
+        0xff,
+        0xda,
+        0,
+        8,
+        1,
+        1,
+        0,
+        0,
+        63,
+        0,
+        1,
+        2,
+        3,
+        0xff,
+        0xd9,
+      ]),
+    ],
+    'huge.jpg',
+    { type: 'image/jpeg' },
+  )
 const imagePasteEvent = (files: File[], text = '') => {
   const event = new Event('paste', { bubbles: true, cancelable: true })
   Object.defineProperty(event, 'clipboardData', {
@@ -483,6 +523,44 @@ describe('composer image attachments', () => {
 
     expect(downscaleImage).toHaveBeenCalledTimes(3)
     expect(onError).not.toHaveBeenCalled()
+    await act(async () => root.unmount())
+    root = createRoot(host)
+  })
+
+  it('names an over-pixel image as too large instead of as an invalid file', async () => {
+    const handle = createRef<ComposerHandle>()
+    const onError = vi.fn()
+    await act(async () => {
+      root.render(
+        createElement(Composer, {
+          ref: handle,
+          dependencies,
+          initialView: view,
+          onCancel() {},
+          onDraftChange() {},
+          onError,
+          onModelSelect: async () => false,
+          onPermissionSelect: async () => false,
+          onSubmit() {},
+          onWorkspace() {},
+        }),
+      )
+    })
+
+    const prompt = host.querySelector<HTMLTextAreaElement>('#prompt')
+    if (!prompt) throw new Error('composer input is missing')
+    await act(async () => {
+      prompt.dispatchEvent(imagePasteEvent([oversizedJpegFile()]))
+      await vi.waitFor(() => expect(onError).toHaveBeenCalled())
+    })
+
+    // 尺寸超限以前被报成「文件内容不是有效的 PNG 或 JPEG 图片」，用户会去改图片格式，
+    // 而该做的是把图缩小。
+    expect(onError.mock.calls[0]?.[0]?.message).toBe(
+      webUnitsLocaleCatalog['zh-CN']['composer.image.tooLargePixels'],
+    )
+    expect(handle.current?.getImageBlocks()).toEqual([])
+    expect(URL.createObjectURL).not.toHaveBeenCalled()
     await act(async () => root.unmount())
     root = createRoot(host)
   })

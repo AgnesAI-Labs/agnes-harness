@@ -372,6 +372,16 @@ describe('safe image decoder', () => {
     })
   })
 
+  it('accepts a JPEG whose producer appended bytes after the terminal marker', () => {
+    // 实测来源：真机截图（iPhone/微信那条管线）在 EOI 后附加 24 字节。解码器读到 EOI 就停，
+    // 尾随字节不属于图像数据，据此判成损坏会把合法图片挡在门外。
+    const bytes = [...jpeg(10, 10), ...new Array<number>(24).fill(0x5a)]
+    expect(decodeSafeImage({ data: base64(bytes), mimeType: 'image/jpeg' }, limits)).toMatchObject({
+      width: 10,
+      height: 10,
+    })
+  })
+
   it('fails closed on zero dimensions and compact dimension bombs', () => {
     expect(() => decodeSafeImage({ data: base64(png(0, 10)), mimeType: 'image/png' }, limits)).toThrow(
       /dimensions/,

@@ -23,6 +23,7 @@ export const composerLocaleCatalog: LocaleCatalog = {
     'composer.image.remove': 'Remove image {index}',
     'composer.image.tooMany': 'A message can hold at most 4 images.',
     'composer.image.tooLarge': 'Images in one message must total no more than 1 MiB.',
+    'composer.image.tooLargePixels': 'The image is too large to attach. Crop or scale it down and try again.',
   },
   'zh-CN': {
     'composer.input.label': '任务内容',
@@ -45,5 +46,6 @@ export const composerLocaleCatalog: LocaleCatalog = {
     'composer.image.remove': '移除图片 {index}',
     'composer.image.tooMany': '一条消息最多添加 4 张图片。',
     'composer.image.tooLarge': '单条消息中的图片合计不能超过 1 MiB。',
+    'composer.image.tooLargePixels': '图片尺寸过大，无法添加。请裁剪或缩小后重试。',
   },
 }

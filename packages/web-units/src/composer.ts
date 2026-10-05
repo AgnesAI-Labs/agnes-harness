@@ -2,6 +2,7 @@ import type { ContentBlock, ModelSettings, ThinkingLevel, UIPendingInput, UsageV
 import {
   decodeSafeImageBytes,
   decodeSafeImages,
+  SafeImageError,
   USER_MESSAGE_IMAGE_LIMITS,
   USER_MESSAGE_IMAGE_MAX_COUNT,
 } from '@agnes/protocol-validation'
@@ -355,9 +356,10 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
   const addFiles = async (files: readonly File[]): Promise<void> => {
     if (view.sending) return
     const t = dependencies.translate
-    // 这张表用于把「内容不是图片」与「读不出来」区分开，所以文案只算一次再比对。
+    // 三条文案分别对应三类失败：内容不是图片、超出尺寸或体积上限、读取失败。
     const invalidImage = t('composer.image.invalid')
     const tooLargeMessage = t('composer.image.tooLarge')
+    const tooLargePixelsMessage = t('composer.image.tooLargePixels')
     const accepted: File[] = []
     for (const file of files) {
       if (file.type !== 'image/png' && file.type !== 'image/jpeg') {
@@ -398,8 +400,20 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
           }
           try {
             decodeSafeImageBytes({ bytes, mimeType: scaled.type }, IMAGE_PREVIEW_LIMITS)
-          } catch {
-            throw new Error(invalidImage)
+          } catch (error) {
+            // 解码自身也卡同一批上限：尺寸或体积超限报成「不是有效图片」，用户会去改图片格式，
+            // 而该做的是把图缩小。缩放没接线、或缩放后仍超限时会走到这里。
+            const code = error instanceof SafeImageError ? error.code : undefined
+            onError(
+              new Error(
+                code === 'PIXEL_LIMIT'
+                  ? tooLargePixelsMessage
+                  : code === 'BYTE_LIMIT'
+                    ? tooLargeMessage
+                    : invalidImage,
+              ),
+            )
+            return
           }
           const attachment: ComposerAttachment = {
             type: 'image',
@@ -412,13 +426,9 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
           // 这里到 publishAttachments 之间没有 await：并发读出的多张图会依次看到彼此已提交的
           // 体积，不会各自按同一份旧快照判定而一起越过合计上限。
           publishAttachments([...current, attachment])
-        } catch (error) {
-          if (readGeneration === generation.current)
-            onError(
-              error instanceof Error && error.message === invalidImage
-                ? error
-                : new Error(t('composer.image.readFailed')),
-            )
+        } catch {
+          // 解码失败的文案已经在上面按失败原因发过；走到这里只剩读文件本身出错。
+          if (readGeneration === generation.current) onError(new Error(t('composer.image.readFailed')))
         } finally {
           if (readGeneration === generation.current) {
             pendingCountRef.current -= 1
