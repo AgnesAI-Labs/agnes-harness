@@ -20,6 +20,7 @@ import type {
 import type * as W from '@agnes/protocol/runtime'
 import { canonicalJsonDigest, validateRuntime } from '@agnes/protocol/runtime'
 import { runtimeAdmissionRefusal as refusal } from './entry-admission.js'
+import { type HostRuntimeLoopCredentials, hostLoopCredentialSource } from './loop-credentials.js'
 import type { HostPermissionGrant, HostSelectedProvider } from './scoped-dependencies.js'
 
 /** Native owner adapters only. State owns commits, refusal facts and replay decisions. */
@@ -43,6 +44,8 @@ export type HostRuntimeLoopRun = Readonly<{
   }>
   /** C04 infer factory, assembled by its owner with the binding-scoped model egress. */
   model?: ActionProviderFactory
+  /** Native credential issuance owner shared with the selected model egress. */
+  credentials?: HostRuntimeLoopCredentials
   /** Cold frames must come from the original durable continuation/source reader. */
   coldState?: Readonly<{ check(frame: W.RunFrame): Promise<Outcome<void>> }>
   close(): Promise<void>
@@ -207,7 +210,11 @@ export function selectHostRuntimeLoop(installation: HostRuntimeLoopInstallation)
               [installation.context.binding.bindingId, context],
             ]),
           )
-          const loop = await loopFactory.create(
+          const runLoopFactory = createDefaultLoopFactory(
+            installation.loop.descriptor,
+            hostLoopCredentialSource(installation.loop.source, run.credentials),
+          )
+          const loop = await runLoopFactory.create(
             installation.loop.configuration,
             dependencies,
             factoryContext(installation.loop.binding),

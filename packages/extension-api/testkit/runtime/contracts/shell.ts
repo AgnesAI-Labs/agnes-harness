@@ -365,12 +365,13 @@ function shown(box: HTMLElement): string | null {
   return marks.length === 0 && regions === REGIONS.length ? 'regions' : null
 }
 
+/** A catalog module, loaded from the entry its renderers declare, as a Host lock requires. */
 const catalogModule = (id: string, contributions: Contribution[]): Wire.ClientModule => ({
   moduleId: id,
   packageId: id,
   packageDigest: DIGEST,
   assetDigest: DIGEST,
-  entryPath: `./${id}.js`,
+  entryPath: contributions.find((entry) => entry.kind === 'renderer')?.descriptor.entry ?? `./${id}.js`,
   ownerToken: `owner-${id}`,
   authorApiMajor: 1,
   targets: ['web'],

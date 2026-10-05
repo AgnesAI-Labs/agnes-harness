@@ -12,6 +12,7 @@ import {
   type ModelEgressOptions,
   type ModelEgressPort,
 } from '../../src/runtime/model/model-egress.js'
+import type { SecretsOptions } from '../../src/runtime/providers/secrets.js'
 import {
   boundary,
   cleanup,
@@ -46,7 +47,13 @@ const make = (
 ): ModelEgressPort =>
   kind === 'default' ? createModelEgress(options, call) : createReferenceModelEgress(options, call)
 
-export async function modelFixture(kind: Recipe, api = 'openai-completions', path = '/v1/chat/completions') {
+export async function modelFixture(
+  kind: Recipe,
+  api = 'openai-completions',
+  path = '/v1/chat/completions',
+  consumer = CONSUMER,
+  lifetime: Pick<SecretsOptions, 'handleMs'> = {},
+) {
   const root = scratch(),
     auth = boundary()
   const key = `sk-local-${randomBytes(24).toString('hex')}`
@@ -90,13 +97,14 @@ export async function modelFixture(kind: Recipe, api = 'openai-completions', pat
   if (!address || typeof address === 'string') throw new Error('Peer did not bind')
   const call = auth.call({ bindingId: MODEL.bindingId })
   const broker = secrets(kind, join(root, 'broker'), auth, {
+    ...lifetime,
     source: createSecretsFile({ dir: join(root, 'home', 'secrets') }),
-    entries: [{ secretId: 'credential', versions: [{ version: 'v1', ref: 'secret://model/key' }] }],
-    grants: [{ principalRef: call.principalRef, scope, binding: CONSUMER }],
+    entries: [{ secretId: consumer.secretId, versions: [{ version: 'v1', ref: 'secret://model/key' }] }],
+    grants: [{ principalRef: call.principalRef, scope, binding: consumer }],
   })
   const handle = must(
     await broker.resolve(
-      { secretId: CONSUMER.secretId, audience: CONSUMER.audience, purpose: CONSUMER.purpose },
+      { secretId: consumer.secretId, audience: consumer.audience, purpose: consumer.purpose },
       call,
     ),
   )
@@ -117,7 +125,7 @@ export async function modelFixture(kind: Recipe, api = 'openai-completions', pat
       route: 'local-model',
       api,
       endpointRef: 'model-endpoint',
-      consumer: CONSUMER,
+      consumer,
       handle,
     },
     endpoints: [endpoint],

@@ -67,7 +67,10 @@ async function worker(withOwner: boolean, loopMode?: string) {
   child.stderr?.on('data', (chunk) => {
     stderr += String(chunk)
   })
-  child.stdout?.resume()
+  let stdout = ''
+  child.stdout?.on('data', (chunk) => {
+    stdout += String(chunk)
+  })
   child.once('error', rejectHello)
   const exited = new Promise<number | null>((resolve) =>
     child.once('exit', (code) => {
@@ -104,6 +107,7 @@ async function worker(withOwner: boolean, loopMode?: string) {
       root,
       ownerLog,
       pid: child.pid,
+      diagnostics: () => stdout + stderr,
       call,
       runtime(frame: Pick<RuntimeRunCommandFrame, 'method' | 'params'>) {
         return call({ kind: 'command', ...frame })
@@ -200,6 +204,14 @@ it.each([
   ['supervisor', 'loop_supervisor_unavailable'],
   ['model', 'loop_model_action_unavailable'],
   ['cold', 'loop_cold_state_consumer_unavailable'],
+  ['credential-egress', 'loop_model_action_unavailable'],
+  ['credential-c04', 'loop_model_action_unavailable'],
+  ['credential-secret', 'loop_credential_binding'],
+  ['credential-audience', 'loop_credential_binding'],
+  ['credential-expired', 'loop_credential_expired'],
+  ['credential-none', 'loop_model_credentials_unavailable'],
+  ['credential-wire', 'loop_model_credentials_unavailable'],
+  ['credential-owner-denied', 'secret_denied'],
 ])(
   'persists the named %s refusal and closes its run in a real worker',
   async (mode, detailCode) => {
@@ -231,7 +243,47 @@ it.each([
       expect(events.filter((event) => event.method === 'run.close')).toEqual([
         { method: 'run.close', live: 0 },
       ])
-      if (['tools-source', 'wrong-ref', 'revoked'].some((prefix) => mode.startsWith(prefix))) {
+      if (mode.startsWith('credential-')) {
+        expect(created.result).toMatchObject({
+          error: {
+            code: ['credential-egress', 'credential-c04', 'credential-none', 'credential-wire'].includes(mode)
+              ? 'incompatible'
+              : 'denied',
+          },
+        })
+        const reached = mode === 'credential-egress'
+        expect(events.some((event) => event.method === 'dispatch')).toBe(reached)
+        expect(events.filter((event) => event.method === 'secrets.resolve')).toEqual(
+          ['credential-none', 'credential-wire'].includes(mode)
+            ? []
+            : [{ method: 'secrets.resolve', correctBinding: true }],
+        )
+        expect(events.filter((event) => event.method === 'model.infer')).toEqual(
+          reached ? [{ method: 'model.infer', sameHandle: true }] : [],
+        )
+        expect(events.filter((event) => event.method === 'model.egress')).toEqual(
+          reached
+            ? [
+                expect.objectContaining({
+                  exactHandle: true,
+                  observations: [
+                    {
+                      path: '/v1/chat/completions',
+                      correctKey: true,
+                      body: '{"model":"local","messages":[]}',
+                    },
+                  ],
+                }),
+              ]
+            : [],
+        )
+        if (['credential-egress', 'credential-c04'].includes(mode))
+          expect(events).toContainEqual({ method: 'credential.accept', exactHandle: true })
+        expect(events).toContainEqual({ method: 'credential.close', keyAbsent: true })
+        expect(readFileSync(w.ownerLog, 'utf8')).not.toContain('sk-local-')
+        expect(w.diagnostics()).not.toContain('sk-local-')
+        expect(events.some((event) => event.method === 'state.complete')).toBe(false)
+      } else if (['tools-source', 'wrong-ref', 'revoked'].some((prefix) => mode.startsWith(prefix))) {
         expect(events.filter((event) => event.method === 'dispatch').map((event) => event.key)).toEqual([
           'first-model',
           'tool',

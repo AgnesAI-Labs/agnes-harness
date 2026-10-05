@@ -64,12 +64,18 @@ import {
   RuntimeSchemaRefs,
   RuntimeStateLegacyReaders,
   type SchemaRef,
+  type ScopeRef,
   type Signal,
+  type SnapshotRef,
   validateRuntime,
 } from '@agnes/protocol/runtime'
 import { TypeCompiler } from '@sinclair/typebox/compiler'
 import { DDL } from '../../adapters/ddl.js'
 import { syncCheckpointsToMedium } from '../../adapters/sqlite-durability.js'
+import {
+  type LocalDeploymentIdentity,
+  localDeploymentIdentityBinding,
+} from '../identity/local-deployment-identity.js'
 import {
   admissionSourceUsesDatabase,
   captureAdmissionStateFence,
@@ -141,6 +147,7 @@ import {
 } from './profile.js'
 import { assertStateReader } from './reader.js'
 import {
+  ACTION_SCHEMA,
   bodyDigest,
   type ChainRow,
   type CommitMutationManifest,
@@ -821,8 +828,75 @@ type CommitStaging = {
 
 const runtimeDatabaseConfigurations = new WeakMap<
   RuntimeStateDatabase,
-  { database: DatabaseSync; options: RuntimeStateDatabaseOptions; authorityDigest: string }
+  { database: DatabaseSync; options: RuntimeStateDatabaseOptions; authorityDigest: string; now: () => number }
 >()
+const nativeReadTokens = new WeakMap<
+  object,
+  Readonly<{ state: RuntimeStateDatabase; scope: Extract<ScopeRef, { kind: 'runtime' }> }>
+>()
+
+export type NativeStateRecordFact = Readonly<{
+  recordId: string
+  recordRevision: number
+  schema: SchemaRef
+  owner: RecordOwner
+  value: JsonValue
+  digest: string
+  commitId: string
+  ledgerSeq: number
+}>
+
+type NativeVisibleVersion = Readonly<{
+  revision: number
+  commitId: string
+  ledgerSeq: number
+  header: PackedVersion
+}>
+
+/** Original same-connection reader; the returned token never leaves these closures. */
+export function captureNativeStateReadPort(
+  state: RuntimeStateDatabase,
+  identity: LocalDeploymentIdentity,
+  database: DatabaseSync,
+) {
+  if (!runtimeStateUsesDatabase(state, database)) return null
+  const binding = localDeploymentIdentityBinding(identity, database)
+  if (
+    !binding ||
+    !sameJson(binding.authority, nativeReadMethods.authority.call(state)) ||
+    binding.scope.kind !== 'runtime'
+  )
+    return null
+  const token = Object.freeze({})
+  nativeReadTokens.set(token, { state, scope: binding.scope })
+  return Object.freeze({
+    authority: nativeReadMethods.authority.call(state),
+    scope: binding.scope,
+    async open(sessionId: string) {
+      return nativeReadMethods.open.call(state, token, sessionId)
+    },
+    facts(snapshot: SnapshotRef) {
+      return nativeReadMethods.facts.call(state, token, snapshot)
+    },
+    now() {
+      return nativeReadMethods.now.call(state, token)
+    },
+  })
+}
+
+export function runtimeStateUsesDatabase(state: RuntimeStateDatabase, database: DatabaseSync): boolean {
+  const selected = runtimeDatabaseConfigurations.get(state)
+  const authority = Object.getOwnPropertyDescriptor(state, 'authority')?.value
+  return (
+    selected !== undefined &&
+    Object.getPrototypeOf(state) === RuntimeStateDatabase.prototype &&
+    selected.database === database &&
+    Object.getOwnPropertyDescriptor(state, 'db')?.value === database &&
+    Object.getOwnPropertyDescriptor(state, 'now')?.value === selected.now &&
+    authority !== undefined &&
+    selected.authorityDigest === digestOf(authority)
+  )
+}
 export function matchesRuntimeStateDatabaseOptions(
   database: RuntimeStateDatabase,
   options: RuntimeStateDatabaseOptions,
@@ -881,6 +955,175 @@ export class RuntimeStateDatabase {
   private draft: ProofDraft | null = null
   private closed = false
 
+  /** Only the same-connection lexical port may use this cold read entry. */
+  authorityForNativeRead(): StateAuthorityRef {
+    if (this.closed) refuse('internal', 'closed', 'State store is closed')
+    return this.authority
+  }
+
+  nowForNativeRead(token: object): number {
+    if (nativeReadTokens.get(token)?.state !== this || this.closed)
+      refuse('denied', 'source', 'original State read source is unavailable')
+    return this.now()
+  }
+
+  nativeOpenRead(token: object, sessionId: string): Promise<StateOpenResult> {
+    if (nativeReadTokens.get(token)?.state !== this || this.closed)
+      refuse('denied', 'source', 'original State read source is unavailable')
+    return this.interactionReadSnapshot(
+      async () => {
+        const meta = this.sessionMeta(sessionId)
+        if (!meta) refuse('denied', 'session', 'original State session is absent')
+        const verified = await this.verifySessionFully(meta)
+        this.assertNativeReadSession(token, sessionId)
+        return this.openResult(
+          {
+            requestId: this.ids.ulid(),
+            authority: this.authority,
+            sessionId,
+            mode: 'read',
+            writerId: null,
+            ttlMs: null,
+          },
+          verified,
+          null,
+        )
+      },
+      () => {
+        if (this.closed) refuse('denied', 'source', 'original State read source closed')
+      },
+    )
+  }
+
+  nativeSnapshotFacts(token: object, snapshot: SnapshotRef): Promise<readonly NativeStateRecordFact[]> {
+    if (nativeReadTokens.get(token)?.state !== this || this.closed)
+      refuse('denied', 'source', 'original State read source is unavailable')
+    if (!validateRuntime('SnapshotRef', snapshot).ok || !sameJson(snapshot.authority, this.authority))
+      refuse('denied', 'snapshot', 'original State snapshot is invalid')
+    return this.interactionReadSnapshot(
+      async () => {
+        if (
+          nativeReadTokens.get(token)?.state !== this ||
+          this.closed ||
+          this.now() >= Date.parse(snapshot.expiresAt)
+        )
+          refuse('denied', 'snapshot', 'original State snapshot expired')
+        const meta = this.sessionMeta(snapshot.sessionId)
+        if (!meta) refuse('denied', 'session', 'original State session is absent')
+        const verified = await this.verifySessionFully(meta)
+        this.assertNativeReadSession(token, snapshot.sessionId)
+        if (snapshot.throughSeq > verified.lastSeq)
+          integrity('original State snapshot is beyond the verified ledger')
+        const boundary = this.get<{ integrity_digest: string | null }>(
+          'SELECT integrity_digest FROM events WHERE session_key = ? AND seq = ?',
+          snapshot.sessionId,
+          snapshot.throughSeq,
+        )
+        if (!boundary || boundary.integrity_digest !== snapshot.headDigest)
+          integrity('original State snapshot prefix changed')
+        const proofs = this.all<ProofRow>(
+          `SELECT p.commit_id,p.ledger_seq,p.manifests_json,p.sides_json,p.versions_json
+           FROM runtime_commit_proofs p JOIN events e
+             ON e.session_key=? AND e.seq=p.ledger_seq AND e.type=?
+            AND json_extract(e.data,'$.commitId')=p.commit_id
+          WHERE p.ledger_seq<=? ORDER BY p.ledger_seq`,
+          snapshot.sessionId,
+          STATE_COMMIT_EVENT,
+          snapshot.throughSeq,
+        )
+        const visible = new Map<string, NativeVisibleVersion>()
+        for (const proof of proofs) {
+          const headers = this.proofArray(proof.versions_json) as PackedVersion[]
+          for (const item of this.proofArray(proof.manifests_json)) {
+            const packed = item as PackedManifest
+            if (packed.nextJson === null) {
+              visible.delete(packed.recordId)
+              continue
+            }
+            const next = this.parseJson<MutationNext>(packed.nextJson, 'original snapshot mutation invalid')
+            const header = headers.find(
+              (candidate) =>
+                candidate.recordId === packed.recordId && candidate.recordRevision === next.recordRevision,
+            )
+            if (!header || header.digest !== next.digest || header.schemaJson !== canonicalJson(next.schema))
+              integrity('original snapshot version differs from its mutation')
+            visible.set(packed.recordId, {
+              revision: next.recordRevision,
+              commitId: proof.commit_id,
+              ledgerSeq: proof.ledger_seq,
+              header,
+            })
+          }
+        }
+        const allowed = [RUN_RECORD_SCHEMA, RUN_BINDING_SCHEMA, ACTION_SCHEMA, SIGNAL_SCHEMA]
+        const facts: NativeStateRecordFact[] = []
+        for (const [recordId, selected] of visible) {
+          const schema = this.parseJson<SchemaRef>(
+            selected.header.schemaJson,
+            'original snapshot schema invalid',
+          )
+          if (!allowed.some((entry) => sameJson(entry, schema))) continue
+          if (!selected.header.hasBody) integrity('original snapshot body has been pruned')
+          const body = this.get<{ value_json: string }>(
+            'SELECT value_json FROM runtime_version_bodies WHERE record_id = ? AND record_revision = ?',
+            recordId,
+            selected.revision,
+          )
+          if (!body) integrity('original snapshot version body is absent')
+          const value = this.parseJson<JsonValue>(body.value_json, 'original snapshot body invalid')
+          const owner = this.parseJson<RecordOwner>(
+            selected.header.ownerJson,
+            'original snapshot owner invalid',
+          )
+          if (bodyDigest(owner, value) !== selected.header.digest)
+            integrity('original snapshot body digest changed')
+          facts.push(
+            Object.freeze({
+              recordId,
+              recordRevision: selected.revision,
+              schema,
+              owner,
+              value,
+              digest: selected.header.digest,
+              commitId: selected.commitId,
+              ledgerSeq: selected.ledgerSeq,
+            }),
+          )
+        }
+        return facts
+      },
+      () => {
+        if (this.closed || this.now() >= Date.parse(snapshot.expiresAt))
+          refuse('denied', 'snapshot', 'original State snapshot expired')
+      },
+    )
+  }
+
+  private assertNativeReadSession(token: object, sessionId: string): void {
+    const selected = nativeReadTokens.get(token)
+    if (!selected || selected.state !== this) refuse('denied', 'source', 'original State read source changed')
+    const original = this.get<HeadRow>(HEAD_BY_ID, sessionIdentityRecordId(sessionId))
+    if (
+      !original ||
+      !sameJson(
+        this.parseJson<SchemaRef>(original.schema_json, 'session schema invalid'),
+        SESSION_IDENTITY_SCHEMA,
+      )
+    )
+      integrity('original State session identity is absent')
+    const owner = this.parseJson<RecordOwner>(original.owner_json, 'session owner invalid')
+    const scope = validateRuntime('ScopeRef', owner.scope)
+    if (
+      !sameJson(owner.authority, this.authority) ||
+      !scope.ok ||
+      scope.value.installationId !== selected.scope.installationId ||
+      !('runtimeId' in scope.value) ||
+      scope.value.runtimeId !== selected.scope.runtimeId ||
+      ('sessionId' in scope.value && scope.value.sessionId !== sessionId)
+    )
+      refuse('denied', 'scope', 'original State session is outside selected runtime')
+  }
+
   constructor(options: RuntimeStateDatabaseOptions) {
     this.authority = options.authority
     this.now = options.now ?? (() => Date.now())
@@ -931,6 +1174,7 @@ export class RuntimeStateDatabase {
         database: this.db,
         options: { ...options },
         authorityDigest: digestOf(options.authority),
+        now: this.now,
       })
     } catch (error) {
       this.db.close()
@@ -5247,6 +5491,13 @@ export class RuntimeStateDatabase {
     }
   }
 }
+
+const nativeReadMethods = Object.freeze({
+  authority: RuntimeStateDatabase.prototype.authorityForNativeRead,
+  open: RuntimeStateDatabase.prototype.nativeOpenRead,
+  facts: RuntimeStateDatabase.prototype.nativeSnapshotFacts,
+  now: RuntimeStateDatabase.prototype.nowForNativeRead,
+})
 
 export function openRuntimeStateDatabase(options: RuntimeStateDatabaseOptions): RuntimeStateDatabase {
   return new RuntimeStateDatabase(options)
