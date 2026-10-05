@@ -1,4 +1,3 @@
-import type { DatabaseSync } from 'node:sqlite'
 import { types } from 'node:util'
 import type { CallContext } from '@agnes/extension-api/runtime'
 import {
@@ -10,8 +9,8 @@ import {
   RuntimeSchemaRefs,
   validateRuntime,
 } from '@agnes/protocol/runtime'
-import type { LocalDeploymentIdentity } from '../identity/local-deployment-identity.js'
 import { createNativeStateReadOwner } from '../state/native-read-owner.js'
+import type { StateReadBridge, StateReadGrant } from '../state/read-scope.js'
 import {
   actionRecordId,
   attemptRecordId,
@@ -107,24 +106,28 @@ function captureIds(ids: unknown) {
 export function createAdmittedEffectsRecordReader(
   input: Readonly<{
     originalState: RuntimeStateDatabase
-    originalIdentity: LocalDeploymentIdentity
-    originalDatabase: DatabaseSync
+    runtimeScope: Readonly<{ installationId: string; runtimeId: string }>
+    bridge: StateReadBridge
   }>,
 ) {
-  const reader = createNativeStateReadOwner(input)
+  const reader = createNativeStateReadOwner({
+    originalState: input.originalState,
+    runtimeScope: input.runtimeScope,
+  })
+  const { bridge } = input
   let closed = false
   function denied(): never {
     refuse('denied', 'effects_admitted_record', 'original admitted effect facts are unavailable')
   }
   async function read<T>(
     snapshot: Awaited<ReturnType<typeof reader.openVerifiedSnapshot>>,
-    context: CallContext,
+    grant: StateReadGrant,
     window: { kind: 'action'; runId: string; actionId: string },
     recordId: string,
     schema: (typeof RuntimeSchemaRefs)[keyof typeof RuntimeSchemaRefs],
     definition: 'RunRecordValue' | 'RunBinding' | 'ActionRecordValue' | 'AttemptRecordValue',
   ): Promise<{ value: T; fact: NativeStateRecordFact }> {
-    const fact = await reader.readVerifiedRecord(snapshot, recordId, schema, context, window)
+    const fact = await reader.readVerifiedRecord(snapshot, recordId, schema, grant, window)
     if (!fact) denied()
     const parsed = validateRuntime(definition, fact.value)
     if (!parsed.ok) denied()
@@ -147,13 +150,22 @@ export function createAdmittedEffectsRecordReader(
       const check = () => {
         if (closed || !selector.check()) denied()
       }
-      const snapshot = await reader.openVerifiedSnapshot(chosen.sessionId, context)
+      const grant = bridge.grant(context, chosen.sessionId)
+      const granted = grant?.window
+      if (
+        !grant ||
+        (granted?.kind === 'run' && granted.runId !== chosen.runId) ||
+        (granted?.kind === 'action' &&
+          (granted.runId !== chosen.runId || granted.actionId !== chosen.actionId))
+      )
+        denied()
+      const snapshot = await reader.openVerifiedSnapshot(chosen.sessionId, grant)
       const window = { kind: 'action' as const, runId: chosen.runId, actionId: chosen.actionId }
       try {
         check()
         const run = await read<RunRecordValue>(
           snapshot,
-          context,
+          grant,
           window,
           runRecordId(chosen.runId),
           RuntimeSchemaRefs.RunRecordValue,
@@ -162,7 +174,7 @@ export function createAdmittedEffectsRecordReader(
         check()
         const binding = await read<RunBinding>(
           snapshot,
-          context,
+          grant,
           window,
           runBindingRecordId(chosen.runId),
           RuntimeSchemaRefs.RunBinding,
@@ -171,7 +183,7 @@ export function createAdmittedEffectsRecordReader(
         check()
         const action = await read<ActionRecordValue>(
           snapshot,
-          context,
+          grant,
           window,
           actionRecordId(chosen.actionId),
           RuntimeSchemaRefs.ActionRecordValue,
@@ -180,7 +192,7 @@ export function createAdmittedEffectsRecordReader(
         check()
         const attempt = await read<AttemptRecordValue>(
           snapshot,
-          context,
+          grant,
           window,
           attemptRecordId(chosen.attemptId),
           RuntimeSchemaRefs.AttemptRecordValue,
@@ -224,12 +236,12 @@ export function createAdmittedEffectsRecordReader(
           attemptCommitId: attempt.fact.commitId,
         })
       } finally {
-        reader.releaseSnapshot(snapshot, context)
+        reader.releaseSnapshot(snapshot, grant)
       }
     },
-    close(): void {
+    close(): Promise<void> {
       closed = true
-      reader.close()
+      return reader.close()
     },
   })
 }
