@@ -3,13 +3,28 @@
 // Web client's generic card (the built-in presentation for a view no renderer presents), the SDK text
 // format, the terminal consumer and the chat channel mapping. Every surface must mean the same thing,
 // and nothing outside the view's display text may reach any of them. Each surface's own tests pin its
-// layout; this test only compares the surfaces with each other.
+// layout; this test only compares the surfaces with each other. The last case starts one step earlier,
+// at a private domain event read through the default authorized projection.
 
 import { describe, expect, it, vi } from 'vitest'
 import { toChannelMessages } from '../../../../packages/channels/src/runtime/domain-consumer.js'
 import { t } from '../../../../packages/cli-tui/src/locale.js'
-import { createDomainConsumer } from '../../../../packages/cli-tui/src/runtime/domain-consumer.js'
 import {
+  createDomainConsumer,
+  type FormatDomainView,
+} from '../../../../packages/cli-tui/src/runtime/domain-consumer.js'
+import { fail } from '../../../../packages/core/src/runtime/projection/commands.js'
+import { createProjectionProvider } from '../../../../packages/core/src/runtime/providers/projection.js'
+import {
+  callContext,
+  createProjectionFixture,
+  domainEvent,
+  TASKS_DOMAIN,
+  WORKSPACE,
+} from '../../../../packages/extension-api/testkit/runtime/contracts/projection.js'
+import {
+  canonicalJsonDigest,
+  type DomainEventRecord,
   type DomainView,
   type NegotiatedClientCapabilities,
   type ViewAction,
@@ -216,8 +231,13 @@ function sdk(shown: DomainView): Collected & { complete: boolean } {
   return { meaning: fromLines(lines, offered), output: JSON.stringify(outcome.value), complete }
 }
 
-function tui(shown: DomainView): Collected {
-  const presented = createDomainConsumer({ locale: 'en', capabilities: capabilities('tui') }).present(shown)
+/** The terminal's presentation, through the SDK text format unless another `format` is injected. */
+function tui(shown: DomainView, format?: FormatDomainView): Collected {
+  const presented = createDomainConsumer({
+    locale: 'en',
+    capabilities: capabilities('tui'),
+    ...(format ? { format } : {}),
+  }).present(shown)
   const needsWeb = t('runtime.view.needsWeb', 'en')
   const [missing = ''] = t('runtime.view.missingFeatures', 'en', { features: '\n' }).split('\n')
   const [before = '', after = ''] = t('runtime.view.actionUnavailable', 'en', { label: '\n' }).split('\n')
@@ -234,12 +254,12 @@ function tui(shown: DomainView): Collected {
   return { meaning: fromLines(lines, offered), output: JSON.stringify(presented) }
 }
 
-function im(shown: DomainView): Collected {
+function im(shown: DomainView, supportsButtons = true): Collected {
   const outcome = toChannelMessages({
     view: shown,
     interaction: null,
     destination: { channelId: 'chat-1', accountId: 'bot-1', conversationId: 'room-1', threadId: null },
-    channel: { kind: 'test-chat', maxTextBytes: 4096, supportsButtons: true },
+    channel: { kind: 'test-chat', maxTextBytes: 4096, supportsButtons },
     context: { locale: 'en', capabilities: capabilities('im') },
     renderer: { format: formatDomainView, encode: encodeForChannel },
   })
@@ -303,6 +323,34 @@ async function web(shown: DomainView): Promise<Collected> {
 const carries = (surface: Surface, kind: ViewAction['kind'] | undefined, complete: boolean) =>
   surface === 'web' ? kind === 'command' : surface === 'tui' ? kind !== 'command' : complete
 
+/** `meaning` with each offered action a surface cannot carry out moved to unavailable. */
+const limited = (meaning: Meaning, carried: (label: string) => boolean): Meaning => ({
+  ...meaning,
+  actions: Object.fromEntries(
+    Object.entries(meaning.actions).map(([label, state]) => [
+      label,
+      state === 'offered' && !carried(label) ? 'unavailable' : state,
+    ]),
+  ),
+})
+
+/** Every surface's meaning as the reference's, limited to what that surface carries out. */
+function compare(shown: DomainView, reference: ReturnType<typeof sdk>, surfaces: [Surface, Collected][]) {
+  const kind = (label: string) => shown.actions.find((entry) => entry.label === label)?.kind
+  // Soft, so one run names every surface that differs and still checks for leaks.
+  for (const [surface, { meaning }] of surfaces)
+    expect.soft({ surface, ...meaning }).toEqual({
+      surface,
+      ...limited(reference.meaning, (label) => carries(surface, kind(label), reference.complete)),
+    })
+}
+
+/** Which of `values` each output shows. */
+const leaked = (outputs: [string, Collected][], values: readonly string[]) =>
+  Object.fromEntries(
+    outputs.map(([surface, { output }]) => [surface, values.filter((value) => output.includes(value))]),
+  )
+
 describe('one domain view on every client surface', () => {
   it.each(VIEWS)('%s means the same everywhere and shows no secret', async (_, shown) => {
     expect(validateRuntime('DomainView', shown).ok).toBe(true)
@@ -312,24 +360,132 @@ describe('one domain view on every client surface', () => {
       ['tui', tui(shown)],
       ['im', im(shown)],
     ]
-    const kind = (label: string) => shown.actions.find((entry) => entry.label === label)?.kind
-    for (const [surface, { meaning }] of surfaces) {
-      const actions = Object.fromEntries(
-        Object.entries(reference.meaning.actions).map(([label, state]) => [
-          label,
-          state === 'offered' && !carries(surface, kind(label), reference.complete) ? 'unavailable' : state,
-        ]),
-      )
-      // Soft, so one run names every surface that differs.
-      expect.soft({ surface, ...meaning }).toEqual({ surface, ...reference.meaning, actions })
-    }
+    compare(shown, reference, surfaces)
+    expect(leaked([['sdk', reference], ...surfaces], SECRETS)).toEqual({ sdk: [], web: [], tui: [], im: [] })
+  })
+})
 
-    const leaks = Object.fromEntries(
-      [['sdk', reference] as const, ...surfaces].map(([surface, { output }]) => [
-        surface,
-        SECRETS.filter((secret) => output.includes(secret)),
-      ]),
+// The fixture domain's reader policy releases a task's title but neither the board it sits on nor the
+// note its reducer keeps (`private-<taskId>`), and its selector writes any field that reaches it
+// unreleased into the fallback text, so a projection that let one through would show it there. A task
+// on a board the reader may not read, and one whose artifact the reader may not read, leave no trace.
+const PRIVATE = {
+  board: 'finance-board-7Hq2',
+  note: 'private-',
+  vaultTitle: 'Vault payroll export',
+  hiddenTitle: 'Hidden merger memo',
+  hiddenFile: 'artifact-0f9a-merger',
+  unreleased: 'unreleased',
+}
+const AUTHORITY = 'cross-client-authority'
+const BINDING = {
+  bindingId: 'cross-client',
+  contract: 'agh.projection',
+  logicalName: 'tasks',
+  providerId: 'default',
+}
+const AGGREGATE = { typeId: 'conformance.tasks/board@1', id: 'board' }
+
+/** The views the default projection serves the fixture reader after three committed task events. */
+async function project(): Promise<DomainView[]> {
+  const fixture = createProjectionFixture()
+  const records: DomainEventRecord[] = []
+  const provider = createProjectionProvider({
+    binding: BINDING,
+    reads: {
+      query: async () => fail('unsupported', 'no selector reads here'),
+      resolveData: async () => fail('unsupported', 'no selector reads here'),
+    },
+    domain: fixture.domain,
+    access: fixture.gate,
+    native: fixture.native,
+    turnOf: fixture.turnOf,
+    journal: async (after, limit) => records.filter((record) => record.sequence > after).slice(0, limit),
+    owner: {
+      namespace: 'conformance.tasks',
+      authorityId: AUTHORITY,
+      aggregate: AGGREGATE,
+      source: BINDING,
+      stateSchema: fixture.domain.commandStateSchema,
+      destination: 'runtime-inbox',
+      storage: {
+        transaction: async () => {
+          throw new Error('no commands are submitted here')
+        },
+      },
+      clock: { now: () => '2026-10-01T00:00:00.000Z', newId: () => 'unused' },
+    },
+  })
+  const commit = (taskId: string, payload: Record<string, string>) => {
+    const sequence = records.length + 1
+    const event = domainEvent(`event-${taskId}`, 'added', 'session-cross-client', { taskId, ...payload })
+    records.push({
+      event,
+      authorityId: AUTHORITY,
+      sequence,
+      aggregate: { authorityId: AUTHORITY, ...AGGREGATE, revision: sequence },
+      fingerprint: canonicalJsonDigest(event.eventId),
+    })
+  }
+  commit('report', { board: PRIVATE.board, title: 'Quarterly report', artifact: 'report-file' })
+  // The fixture reader may not read the vault board, nor the artifact hidden below.
+  commit('payroll', { board: 'vault', title: PRIVATE.vaultTitle })
+  commit('merger', { board: PRIVATE.board, title: PRIVATE.hiddenTitle, artifact: PRIVATE.hiddenFile })
+  fixture.gate.hideArtifact(PRIVATE.hiddenFile)
+  expect(await provider.refresh()).toBeNull()
+  const query = {
+    domainType: TASKS_DOMAIN,
+    query: fixture.domain.listQuery,
+    scope: WORKSPACE,
+    cursor: null,
+    limit: 10,
+  }
+  const snapshot = await provider.snapshot(query, callContext())
+  provider.close()
+  if (!snapshot.ok) throw new Error(snapshot.error.message)
+  return snapshot.value.items
+}
+
+describe('one projected domain event on every client surface', () => {
+  it('means the same everywhere and no private value reaches any surface or fallback', async () => {
+    const views = await project()
+    // The readable task alone: the vault task and the one with the hidden artifact are gone whole.
+    expect(views.map((view) => view.viewId)).toEqual(['report'])
+    const [shown] = views as [DomainView]
+    const reference = sdk(shown)
+    expect.soft(reference.meaning).toEqual({
+      status: 'In progress',
+      text: 'Task Quarterly report (provisional)',
+      resources: ['Quarterly report'],
+      actions: { rename: 'offered', archive: 'unavailable' },
+    })
+    const surfaces: [Surface, Collected][] = [
+      ['web', await web(shown)],
+      ['tui', tui(shown)],
+      ['im', im(shown)],
+    ]
+    compare(shown, reference, surfaces)
+
+    // What a surface degrades to: the terminal's fallback text when its formatter fails, as the
+    // formatter of a disabled plugin does, and a chat's read-only summary when it has no buttons.
+    const failed = tui(shown, () => {
+      throw new Error('the renderer is gone')
+    })
+    expect.soft(JSON.parse(failed.output)).toMatchObject({
+      lines: [shown.fallbackText, t('runtime.view.unavailable', 'en')],
+      actions: [],
+    })
+    const readOnly = im(shown, false)
+    expect.soft(readOnly.meaning).toEqual(limited(reference.meaning, () => false))
+
+    const outputs: [string, Collected][] = [
+      ['sdk', reference],
+      ...surfaces,
+      ['tui fallback', failed],
+      ['im read-only', readOnly],
+    ]
+    expect(leaked(outputs, Object.values(PRIVATE))).toEqual(
+      Object.fromEntries(outputs.map(([surface]) => [surface, []])),
     )
-    expect(leaks).toEqual({ sdk: [], web: [], tui: [], im: [] })
   })
 })

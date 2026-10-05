@@ -66,7 +66,19 @@ export function toChannelMessages(input: DomainViewDelivery): Outcome<ChannelMes
     )
   )
     return refuse('foreign_interaction', 'the interaction is not one the view asks')
-  const formatted = renderer.format(view, input.context)
+  // A renderer that throws, as one whose plugin was disabled under the channel may, or that answers with
+  // anything but an outcome is a refusal too.
+  const call = <T>(run: () => Outcome<T>): Outcome<T> => {
+    let result: { ok?: unknown; error?: unknown } | null | undefined
+    try {
+      result = run()
+    } catch {}
+    return result?.ok === true ||
+      (result?.ok === false && typeof result.error === 'object' && result.error !== null)
+      ? (result as Outcome<T>)
+      : refuse('renderer_failed', 'the renderer failed')
+  }
+  const formatted = call(() => renderer.format(view, input.context))
   if (!formatted.ok) return formatted
   const full = formatted.value
   if (
@@ -76,7 +88,7 @@ export function toChannelMessages(input: DomainViewDelivery): Outcome<ChannelMes
   )
     return refuse('invalid_formatted_view', 'the renderer did not format this view')
   const encode = (at: Wire.IMRendererEncodeChannel): Outcome<Wire.IMRendererEncodeResult> => {
-    const result = renderer.encode(full, at)
+    const result = call(() => renderer.encode(full, at))
     return !result.ok ||
       (validateRuntime('IMRendererEncodeResult', result.value).ok && result.value.messages.length > 0)
       ? result
