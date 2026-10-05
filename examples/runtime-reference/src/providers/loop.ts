@@ -259,6 +259,14 @@ export function createReferenceDagLoop(input: ReferenceDagDefinition, binding: W
                 'dag_saved_action_changed',
                 'conflict',
               )
+              demand(
+                node.after.length === 0 ||
+                  (node.join === 'all'
+                    ? node.after.every((id) => keys.has(`dag/${id}`))
+                    : node.after.some((id) => keys.has(`dag/${id}`))),
+                'dag_saved_dependencies_missing',
+                'conflict',
+              )
               const prepared = unwrap(ports.prepare(copy(spec)))
               demand(equal(prepared, action), 'dag_preparation_changed', 'conflict')
               keys.add(action.key)

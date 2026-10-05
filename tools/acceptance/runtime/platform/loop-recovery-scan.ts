@@ -69,9 +69,9 @@ export async function scanLoopRecoveryRecords(
     require(binding.contract === 'agh.state' &&
       call.bindingId === binding.bindingId &&
       'runId' in call.scope &&
-      request.filter.runId === call.scope.runId &&
       request.snapshot.sessionId === call.scope.sessionId, 'loop_recovery_scan_scope')
     require(request.collection === 'records' &&
+      Object.keys(request.filter).every((key) => key === 'typeIds') &&
       request.cursor === null &&
       request.limit > 0 &&
       request.limit <= 500, 'loop_recovery_scan_request')
