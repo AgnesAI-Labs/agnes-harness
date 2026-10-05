@@ -72,6 +72,7 @@ import {
   outboxRecordId,
   PREPARE_QUOTA_SCHEMA,
   prepareRecordId,
+  providerStateRecordId,
   QUERY_GRANT_SCHEMA,
   QUOTA_MIRROR_SCHEMA,
   quotaRecordId,
@@ -93,10 +94,12 @@ import {
   signalRecordId,
   stableId,
   taintRecordId,
+  timerRecordId,
   USAGE_MIRROR_SCHEMA,
   usageMirrorRecordId,
   VISIBILITY_SCHEMA,
   visibilityRecordId,
+  waitRecordId,
 } from './records.js'
 import { integrity, refuse } from './refusal.js'
 
@@ -2970,6 +2973,53 @@ export function noteControlVersion(scan: ControlScan, version: ControlVersionNot
   else if (id.startsWith('signal:')) noteSignalVersion(scan, version)
   else if (id.startsWith('outbox:')) noteOutboxVersion(scan, version)
   else if (id.startsWith('usage:')) noteUsageVersion(scan, version)
+  else if (id.startsWith('provider:')) noteProviderStateVersion(version)
+  else if (id.startsWith('wait:')) noteWaitVersion(version)
+  else if (id.startsWith('timer:')) noteTimerVersion(version)
+}
+
+const PROVIDER_STATES = ['runnable', 'waiting', 'draining', 'completed', 'failed']
+const WAIT_STATES = ['waiting', 'ready', 'cancelled']
+const TIMER_STATES = ['scheduled', 'fired', 'cancelled']
+const NEW_WORK_RUN_STATES = ['admitted', 'runnable', 'waiting']
+
+/** True when a run in this state may still take new actions. Defined for the drain gate; no command calls it yet. */
+export function runAcceptsNewWork(state: string): boolean {
+  return NEW_WORK_RUN_STATES.includes(state)
+}
+
+function noteProviderStateVersion(version: ControlVersionNote): void {
+  const body = bodyRecord(version.value_json)
+  const actionId = typeof body.actionId === 'string' ? body.actionId : ''
+  const state = typeof body.state === 'string' ? body.state : ''
+  if (actionId === '' || version.record_id !== providerStateRecordId(actionId))
+    integrity('provider state record id does not match its action')
+  if (!PROVIDER_STATES.includes(state)) integrity('provider state is not a known state')
+  if ((state === 'waiting') !== (body.waitId !== null))
+    integrity('provider state wait does not match its state')
+}
+
+function noteWaitVersion(version: ControlVersionNote): void {
+  const body = bodyRecord(version.value_json)
+  const waitId = typeof body.waitId === 'string' ? body.waitId : ''
+  if (waitId === '' || version.record_id !== waitRecordId(waitId))
+    integrity('wait record id does not match its wait')
+  if (typeof body.runId !== 'string' || body.runId === '') integrity('wait record has no run')
+  if (typeof body.state !== 'string' || !WAIT_STATES.includes(body.state))
+    integrity('wait record is not in a known state')
+  if (!Array.isArray(body.matchedSignalIds)) integrity('wait record has no matched signals')
+}
+
+function noteTimerVersion(version: ControlVersionNote): void {
+  const body = bodyRecord(version.value_json)
+  const timerId = typeof body.timerId === 'string' ? body.timerId : ''
+  if (timerId === '' || version.record_id !== timerRecordId(timerId))
+    integrity('timer record id does not match its timer')
+  if (typeof body.runId !== 'string' || body.runId === '') integrity('timer record has no run')
+  if (typeof body.state !== 'string' || !TIMER_STATES.includes(body.state))
+    integrity('timer record is not in a known state')
+  if ((body.state === 'fired') !== (body.firedByCommitId !== null))
+    integrity('timer record fire commit does not match its state')
 }
 
 function noteActionVersion(scan: ControlScan, version: ControlVersionNote): void {

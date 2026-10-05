@@ -217,6 +217,9 @@ export const VISIBILITY_SCHEMA = RuntimeSchemaRefs.ActionVisibilityValue
 export const USAGE_MIRROR_SCHEMA = RuntimeSchemaRefs.UsageMirrorValue
 export const OUTBOX_SCHEMA = RuntimeSchemaRefs.OutboxRecord
 export const REFERENCE_SCHEMA = RuntimeSchemaRefs.ReferenceRecordValue
+export const PROVIDER_STATE_SCHEMA = RuntimeSchemaRefs.ProviderStateValue
+export const WAIT_SCHEMA = RuntimeSchemaRefs.WaitRecordValue
+export const TIMER_SCHEMA = RuntimeSchemaRefs.TimerRecordValue
 export const STATE_LEASE_SCHEMA = RuntimeSchemaRefs.StateLeaseRecordValue
 export const STATE_OPEN_PROOF_SCHEMA = RuntimeSchemaRefs.StateWriteOpenProofValue
 export const STATE_LEASE_PROOF_SCHEMA = RuntimeSchemaRefs.StateLeaseProofValue
@@ -253,6 +256,9 @@ const SCHEMAS: Readonly<Record<string, SchemaRef>> = {
   [USAGE_MIRROR_SCHEMA.typeId]: USAGE_MIRROR_SCHEMA,
   [OUTBOX_SCHEMA.typeId]: OUTBOX_SCHEMA,
   [REFERENCE_SCHEMA.typeId]: REFERENCE_SCHEMA,
+  [PROVIDER_STATE_SCHEMA.typeId]: PROVIDER_STATE_SCHEMA,
+  [WAIT_SCHEMA.typeId]: WAIT_SCHEMA,
+  [TIMER_SCHEMA.typeId]: TIMER_SCHEMA,
   [STATE_LEASE_SCHEMA.typeId]: STATE_LEASE_SCHEMA,
   [STATE_OPEN_PROOF_SCHEMA.typeId]: STATE_OPEN_PROOF_SCHEMA,
   [STATE_LEASE_PROOF_SCHEMA.typeId]: STATE_LEASE_PROOF_SCHEMA,
@@ -337,6 +343,18 @@ export function outboxRecordId(eventId: string): string {
 
 export function referenceRecordId(referenceId: string): string {
   return `reference:${referenceId}`
+}
+
+export function providerStateRecordId(actionId: string): string {
+  return `provider:${actionId}`
+}
+
+export function waitRecordId(waitId: string): string {
+  return `wait:${waitId}`
+}
+
+export function timerRecordId(timerId: string): string {
+  return `timer:${timerId}`
 }
 
 export function stableId(prefix: string, material: string): string {
