@@ -2893,7 +2893,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // A frozen, restorable copy of the sealed model catalog adds 49 measured lines on top of the above; measured 81324, exact, no spare.
   // feat(host): install loop, tools and context on the new run path. Measured 81735, exact, no spare.
   // feat(host): retain model catalog captures by content digest. Measured 81775 (+40), exact, no spare.
-  'packages/host/src': 81775,
+  // feat(host): read the original prepared model request into a verified wire source. Measured 81905 (+130), exact, no spare.
+  'packages/host/src': 81905,
   'packages/host/src/ext-host/service-invocation': 247,
   // T5.2's permission projector is kept independently bounded so later extension-host work cannot
   // hide in the package-wide increment. Measured source: 86 lines.
