@@ -94,7 +94,12 @@ export function verifyPreparedMedia(
   }
   const wantsImage = plan.targetFeatures.input.includes('image')
 
-  if (manifest.kind === 'native') {
+  if (manifest.kind === 'omitted') {
+    if (manifest.header.selectionOrder.length !== 0 || manifest.header.route !== 'text-only')
+      return fail('manifest')
+    if (media.contentRefs.length !== 1 || media.transformChain.length !== 0 || media.usageRefs.length !== 0)
+      return fail('chain')
+  } else if (manifest.kind === 'native') {
     if (!same(plan.transformSchema, MEDIA_NATIVE_SCHEMA) || !wantsImage) return fail('features')
     if (media.usageRefs.length !== 0) return fail('usage')
     if (media.transformChain.length !== 0) return fail('chain')

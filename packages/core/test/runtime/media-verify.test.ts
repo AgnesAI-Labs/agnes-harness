@@ -187,4 +187,28 @@ describe('verifyPreparedMedia', () => {
     ).toBe('media_verify_manifest')
     expect(MEDIA_MANIFEST_SCHEMA.typeId).toBe('agh.media/manifest@1')
   })
+  it('accepts an omitted result only when nothing was selected', () => {
+    const c = nativeBuilt()
+    const omittedManifest = {
+      ...c.manifest,
+      kind: 'omitted' as const,
+      header: {
+        ...c.manifest.header,
+        route: 'text-only' as const,
+        selectionOrder: [],
+        manifest: c.manifest.header.manifest.map((e) => ({
+          ...e,
+          selected: false,
+          reason: 'too-small' as const,
+        })),
+      },
+    }
+    const next = manifestRef(omittedManifest)
+    if (!next.ok) throw new Error('manifest')
+    const media = { ...c.media, contentRefs: [next.value] }
+    expect(verifyPreparedMedia(c.plan, media, { child: null }).ok).toBe(true)
+    expect(detail(verifyPreparedMedia(c.plan, c.media, { child: null }))).toBe('ok')
+    const withBytes = { ...media, contentRefs: [next.value, c.media.contentRefs[1] as W.DataRef] }
+    expect(detail(verifyPreparedMedia(c.plan, withBytes, { child: null }))).toBe('media_verify_chain')
+  })
 })
