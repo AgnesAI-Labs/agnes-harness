@@ -379,6 +379,14 @@ describe('interaction, projection, command and event contracts', () => {
     ).toBe(false)
   })
 
+  it('requires the checkpoint field in the revised events response', () => {
+    const response = fixture('EventsSubscribeResult')
+    expect(validateRuntime('EventsSubscribeResult', response).ok).toBe(true)
+    const { checkpoint: _checkpoint, ...legacy } = response
+    expect(validateRuntime('EventsSubscribeResult', legacy).ok).toBe(false)
+    expect(validateRuntime('EventsSubscribeResult', { ...response, checkpoint: 42 }).ok).toBe(false)
+  })
+
   it('requires authority identity on events and a target-assigned positive inbox sequence', () => {
     const event = fixture('DomainEvent')
     expect(validateRuntime('DomainEvent', event).ok).toBe(true)

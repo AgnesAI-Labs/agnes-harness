@@ -5694,13 +5694,13 @@ export const RuntimeMethodSchemaRefs = freeze({
     "subscribe": {
       "input": {
         "typeId": "agh.events/subscribe.request@1",
-        "revision": 2,
+        "revision": 3,
         "digest": "cb28f1c8147218a84b54da76c70f46043bd050937be11ee3478d48d5763cb6ca"
       },
       "output": {
         "typeId": "agh.events/subscribe.response@1",
-        "revision": 3,
-        "digest": "4161ffcf711fbadf9b5f7edb154ac77c907cb28dd801c13e64d3cc8aaf7443d7"
+        "revision": 4,
+        "digest": "06b015a5fc8115220a45ee5d75f326bc33e5213a3ed03e019c12a80eed708e91"
       }
     },
     "publish": {

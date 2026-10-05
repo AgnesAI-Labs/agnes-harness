@@ -1592,7 +1592,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // Renderer contract cases through the client host on every target. Measured 15193, exact, no spare (+852).
   // Runtime client transport cases over two servers with one SDK client. Measured 16143, exact, no spare (+950).
   // Tools contracts +247, Context +339, Loop +170; exact, no spare.
-  'packages/extension-api/testkit': 16899,
+  'packages/extension-api/testkit': 17070,
   // 2026-09-10: raised from 2500 by Task 15 (stream-disconnect reconnection). The new
   // reattach.ts (the Reconnector: backoff loop, OVERLOADED's retryAfterMs override) plus
   // Session.recover()/waitForQuiescence and Client's reconnect wiring (emit(), the

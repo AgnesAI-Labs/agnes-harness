@@ -35,6 +35,16 @@ const WORKSPACE = {
   workspaceId: 'conformance',
 } as const
 const sessionScope = (sessionId: string): Wire.ScopeRef => ({ ...WORKSPACE, kind: 'session', sessionId })
+const runRef = (sessionId: string, runId = `${sessionId}-run`): Wire.PublicRef => ({
+  kind: 'run',
+  value: {
+    runId,
+    session: {
+      sessionId,
+      authority: { authorityId: 'conformance-state', tenantId: 'conformance', authorityEpoch: 1 },
+    },
+  },
+})
 /** A session no reader may read. */
 const CLOSED_SESSION = 'vault'
 
@@ -47,6 +57,7 @@ const EVENTS_PRODUCER: Wire.BindingRef = {
 }
 const PRODUCER_PRINCIPAL = 'events-producer'
 const READER = 'events-reader'
+const OTHER_READER = 'events-other-reader'
 
 const refusal = (detail: keyof typeof RuntimeErrorDetails, message: string): Outcome<never> => ({
   ok: false,
@@ -87,6 +98,27 @@ export interface EventsGate {
   producer(typeId: string, schema: Wire.SchemaRef, context: CallContext): Promise<Outcome<Wire.BindingRef>>
   /** The current revision of `aggregate` at its authority, or null when the authority does not know it. */
   revision(aggregate: Wire.DomainObjectRef): Promise<number | null>
+  /** Reads immutable aggregate/causation ownership and current coverage, even for a stale replay. */
+  origin(
+    aggregate: Wire.DomainObjectRef,
+    causation: Wire.PublicRef,
+    producer: Wire.BindingRef,
+    context: CallContext,
+  ): Promise<Outcome<{ scope: Wire.ScopeRef; causation: Wire.DomainEvent['causation'] }>>
+  /** Holds current producer, origin and aggregate revision until `body` returns. */
+  withCommit<T>(
+    typeId: string,
+    schema: Wire.SchemaRef,
+    aggregate: Wire.DomainObjectRef,
+    causation: Wire.PublicRef,
+    context: CallContext,
+    body: (facts: {
+      producer: Wire.BindingRef
+      scope: Wire.ScopeRef
+      causation: Wire.DomainEvent['causation']
+      revision: number | null
+    }) => T,
+  ): Outcome<T>
   /** Whether the caller may read events in `scope` now. */
   canRead(scope: Wire.ScopeRef, context: CallContext): Promise<boolean>
 }
@@ -95,6 +127,9 @@ export interface EventsFixture {
   readonly gate: EventsGate
   /** Moves an aggregate on by one revision, as a commit at its authority does. */
   revise(id: string): void
+  recordAggregate(id: string, scope: Wire.ScopeRef): void
+  revokeProducer(): void
+  restoreProducer(): void
   revokeReader(principalRef: string): void
   restoreReader(principalRef: string): void
   /** Holds the next producer or revision check until `release`; `started` settles once it waits. */
@@ -104,6 +139,12 @@ export interface EventsFixture {
 export function createEventsFixture(): EventsFixture {
   const revisions = new Map<string, number>()
   const revoked = new Set<string>()
+  const origins = new Map<string, Wire.ScopeRef>()
+  for (const session of ['normal', 'elsewhere', 'deny', 'cancel', 'recover', 'dispose'])
+    origins.set(`${session}-item`, sessionScope(session))
+  origins.set('deny-other', sessionScope('deny'))
+  let producerActive = true
+  let publicationHeld = false
   let hold: { begin(): void; wait: Promise<void> } | null = null
   const admit = async () => {
     const held = hold
@@ -112,25 +153,83 @@ export function createEventsFixture(): EventsFixture {
     held.begin()
     await held.wait
   }
+  const producerNow = (
+    typeId: string,
+    schema: Wire.SchemaRef,
+    context: CallContext,
+  ): Outcome<Wire.BindingRef> => {
+    if (!TYPES.includes(typeId) || jcs(schema) !== jcs(schemaRef(typeId)))
+      return refusal('invalid_request', 'event type is not registered with this schema')
+    return producerActive &&
+      context.principalRef === PRODUCER_PRINCIPAL &&
+      context.bindingId === EVENTS_PRODUCER.bindingId
+      ? { ok: true, value: EVENTS_PRODUCER }
+      : refusal('permission_denied', 'binding is not a registered producer of this type')
+  }
+  const originNow = (
+    aggregate: Wire.DomainObjectRef,
+    causation: Wire.PublicRef,
+    producer: Wire.BindingRef,
+    context: CallContext,
+  ): Outcome<{ scope: Wire.ScopeRef; causation: Wire.DomainEvent['causation'] }> => {
+    const scope = origins.get(aggregate.id)
+    if (scope === undefined && aggregate.authorityId === DOMAIN_AUTHORITY)
+      return refusal('not_found', 'aggregate is unknown to its authority')
+    if (
+      scope === undefined ||
+      aggregate.authorityId !== DOMAIN_AUTHORITY ||
+      aggregate.typeId !== 'conformance.events/item@1' ||
+      !producerActive ||
+      producer.bindingId !== EVENTS_PRODUCER.bindingId ||
+      context.principalRef !== PRODUCER_PRINCIPAL ||
+      context.bindingId !== EVENTS_PRODUCER.bindingId
+    )
+      return refusal('permission_denied', 'aggregate has no authorized producer origin')
+    const covers = Object.entries(context.scope).every(
+      ([field, value]) => field === 'kind' || scope[field as keyof Wire.ScopeRef] === value,
+    )
+    if (!covers || scope.kind !== 'session' || !same(causation, runRef(scope.sessionId)))
+      return refusal('permission_denied', 'aggregate scope or causation is not owned by this producer')
+    return { ok: true, value: { scope, causation: { runId: `${scope.sessionId}-run` } } }
+  }
   return {
     gate: {
       async producer(typeId, schema, context) {
         await admit()
-        if (!TYPES.includes(typeId) || jcs(schema) !== jcs(schemaRef(typeId)))
-          return refusal('invalid_request', 'event type is not registered with this schema')
-        return context.bindingId === EVENTS_PRODUCER.bindingId
-          ? { ok: true, value: EVENTS_PRODUCER }
-          : refusal('permission_denied', 'binding is not a registered producer of this type')
+        return producerNow(typeId, schema, context)
       },
       async revision(aggregate) {
         await admit()
-        return aggregate.authorityId === DOMAIN_AUTHORITY && !aggregate.id.endsWith('-unknown')
+        return aggregate.authorityId === DOMAIN_AUTHORITY && origins.has(aggregate.id)
           ? (revisions.get(aggregate.id) ?? 1)
           : null
       },
+      async origin(aggregate, causation, producer, context) {
+        return originNow(aggregate, causation, producer, context)
+      },
+      withCommit(typeId, schema, aggregate, causation, context, body) {
+        if (publicationHeld) return refusal('permission_denied', 'publication authority is already held')
+        const producer = producerNow(typeId, schema, context)
+        if (!producer.ok) return producer
+        const origin = originNow(aggregate, causation, producer.value, context)
+        if (!origin.ok) return origin
+        publicationHeld = true
+        try {
+          return {
+            ok: true,
+            value: body({
+              producer: producer.value,
+              ...origin.value,
+              revision: revisions.get(aggregate.id) ?? 1,
+            }),
+          }
+        } finally {
+          publicationHeld = false
+        }
+      },
       async canRead(scope, context) {
         return (
-          context.principalRef === READER &&
+          (context.principalRef === READER || context.principalRef === OTHER_READER) &&
           !revoked.has(context.principalRef) &&
           'workspaceId' in scope &&
           scope.installationId === WORKSPACE.installationId &&
@@ -140,7 +239,22 @@ export function createEventsFixture(): EventsFixture {
         )
       },
     },
-    revise: (id) => revisions.set(id, (revisions.get(id) ?? 1) + 1),
+    revise: (id) => {
+      if (publicationHeld) throw new Error('aggregate revision is held by a publication')
+      revisions.set(id, (revisions.get(id) ?? 1) + 1)
+    },
+    recordAggregate: (id, scope) => {
+      if (publicationHeld) throw new Error('aggregate origin is held by a publication')
+      origins.set(id, scope)
+    },
+    revokeProducer: () => {
+      if (publicationHeld) throw new Error('producer is held by a publication')
+      producerActive = false
+    },
+    restoreProducer: () => {
+      if (publicationHeld) throw new Error('producer is held by a publication')
+      producerActive = true
+    },
     revokeReader: (principalRef) => revoked.add(principalRef),
     restoreReader: (principalRef) => revoked.delete(principalRef),
     holdAdmission() {
@@ -175,16 +289,7 @@ function publication(
   return {
     domainSchema: schema,
     payload: inline(schema, { note: key }),
-    causationRef: {
-      kind: 'run',
-      value: {
-        runId: `${sessionId}-run`,
-        session: {
-          sessionId,
-          authority: { authorityId: 'conformance-state', tenantId: 'conformance', authorityEpoch: 1 },
-        },
-      },
-    },
+    causationRef: runRef(sessionId),
     typeId: schema.typeId,
     idempotencyKey: key,
     aggregate: aggregate(`${sessionId}-item`),
@@ -287,12 +392,19 @@ export interface EventsObservations {
    * Session `normal`: five publications of two types (`refs`) and one in another session. `pages` reads
    * both types two at a time from the start, following each cursor; `filtered` reads one type. `replay`
    * publishes the first again after its aggregate moved on. A sixth publication follows at the new
-   * revision (the last of `refs`) and `resumed` reads from the last page cursor.
+   * revision (the last of `refs`) and `resumed` reads from the last page cursor. Revocation
+   * refuses a same-key replay without a new event; a broader authorized context replays the
+   * original event under its aggregate-owned namespace.
    */
   readonly normal: {
     readonly refs: readonly Ref[]
     readonly pages: readonly Page[]
     readonly filtered: Page
+    readonly exact: Page
+    readonly empty: Page
+    readonly revokedReplay: Ref
+    readonly revokedVisible: Page
+    readonly coveringReplay: Ref
     readonly replay: Ref
     readonly resumed: Page
   }
@@ -301,8 +413,9 @@ export interface EventsObservations {
    * publications whose type disagrees with the schema; whose payload schema disagrees; with a field the
    * request does not define; of a type nobody registered; from a binding that is no registered producer;
    * at a stale aggregate revision; for an aggregate its authority does not know; the committed key with
-   * another payload and with another aggregate; then of reads of a closed session; with a cursor issued
-   * for another type filter; with a cursor the provider never issued; with the reader revoked. `visible`
+   * another payload and with another aggregate; from a wrong scope, aggregate or causation; then of reads of a closed session; with a cursor issued
+   * for another type filter; with a cursor the provider never issued; with a tampered signed
+   * checkpoint; from another authorized reader; with the reader revoked. `visible`
    * reads the session after the reader is restored.
    */
   readonly deny: { readonly refusals: readonly string[]; readonly visible: Page }
@@ -375,7 +488,15 @@ const code = (fact: unknown): string =>
 const openHandles = () => (existsSync('/dev/fd') ? readdirSync('/dev/fd').length : null)
 
 const cursorOf = (fact: Page | undefined) =>
-  fact !== undefined && !('refused' in fact) ? (fact.page.nextCursor ?? '') : ''
+  fact !== undefined && !('refused' in fact)
+    ? ((fact.page.complete ? fact.checkpoint : fact.page.nextCursor) ?? '')
+    : ''
+
+const forgedCheckpoint = (cursor: string) => {
+  const fields = JSON.parse(Buffer.from(cursor, 'base64url').toString('utf8')) as unknown[]
+  fields[3] = 'page'
+  return Buffer.from(JSON.stringify(fields)).toString('base64url')
+}
 
 /** Drives one events provider through the six scenarios. */
 export function eventsContractPort(subject: EventsSubject): EventsContractPort {
@@ -396,11 +517,32 @@ export function eventsContractPort(subject: EventsSubject): EventsContractPort {
       for (let next = 1; next < 3; next++)
         pages.push(await subscribe(subscription('normal', cursorOf(pages[next - 1]), TYPES, 2)))
       const filtered = await subscribe(subscription('normal', null, [NOTED.typeId]))
+      const exact = await subscribe(subscription('normal', null, [CLOSED.typeId], 2))
+      const empty = await subscribe(subscription('normal', null, [UNREGISTERED.typeId], 2))
+      fixture.revokeProducer()
+      const revokedReplay = await publish(normalRequest(1), producer('normal'))
+      const revokedVisible = await subscribe(subscription('normal'))
+      fixture.restoreProducer()
+      const coveringReplay = await publish(
+        normalRequest(1),
+        call(PRODUCER_PRINCIPAL, WORKSPACE, EVENTS_PRODUCER.bindingId),
+      )
       fixture.revise('normal-item')
       const replay = await publish(normalRequest(1), producer('normal'))
       refs.push(await publish(normalRequest(6), producer('normal')))
       const resumed = await subscribe(subscription('normal', cursorOf(pages[2]), TYPES, 2))
-      return { refs, pages, filtered, replay, resumed }
+      return {
+        refs,
+        pages,
+        filtered,
+        exact,
+        empty,
+        revokedReplay,
+        revokedVisible,
+        coveringReplay,
+        replay,
+        resumed,
+      }
     },
     async deny() {
       const sent = (request: unknown, context = producer('deny')) => publish(request, context)
@@ -419,9 +561,17 @@ export function eventsContractPort(subject: EventsSubject): EventsContractPort {
         await sent(publication('deny', 'deny-2', NOTED, { aggregate: aggregate('deny-unknown') })),
         await sent(publication('deny', 'deny-1', NOTED, { payload: inline(NOTED, { note: 'changed' }) })),
         await sent(publication('deny', 'deny-1', NOTED, { aggregate: aggregate('deny-other') })),
+        await sent(publication('deny', 'deny-2'), producer('elsewhere')),
+        await sent(publication('deny', 'deny-2', NOTED, { aggregate: aggregate('normal-item') })),
+        await sent(publication('deny', 'deny-2', NOTED, { causationRef: runRef('deny', 'forged-run') })),
         await subscribe(subscription(CLOSED_SESSION)),
         await subscribe(subscription('deny', cursorOf(narrow), [CLOSED.typeId])),
         await subscribe(subscription('deny', 'conformance-foreign-cursor')),
+        await subscribe(subscription('deny', forgedCheckpoint(cursorOf(narrow)), [NOTED.typeId])),
+        await subscribe(
+          subscription('deny', cursorOf(narrow), [NOTED.typeId]),
+          call(OTHER_READER, WORKSPACE, 'events-reader-binding'),
+        ),
       )
       fixture.revokeReader(READER)
       refusals.push(await subscribe(subscription('deny', cursorOf(narrow), [NOTED.typeId])))
@@ -595,11 +745,20 @@ const JUDGE: Judge = {
     const [sixth] = records(seen.resumed)
     return (
       same(
-        pages.map((item) => [item?.items.length, item?.complete, typeof item?.nextCursor]),
+        seen.pages.map((fact) =>
+          'refused' in fact
+            ? null
+            : [
+                fact.page.items.length,
+                fact.page.complete,
+                fact.page.nextCursor === null ? null : typeof fact.page.nextCursor,
+                fact.checkpoint === null ? null : typeof fact.checkpoint,
+              ],
+        ),
         [
-          [2, false, 'string'],
-          [2, false, 'string'],
-          [1, true, 'string'],
+          [2, false, 'string', null],
+          [2, false, 'string', null],
+          [1, true, null, 'string'],
         ],
       ) &&
       read.every((record, index) => issued(record, normalRequest(index + 1), 'normal')) &&
@@ -607,7 +766,20 @@ const JUDGE: Judge = {
       ascending(read) &&
       new Set(read.map((record) => record.event.eventId)).size === 5 &&
       same(keys(seen.filtered), ['normal-1', 'normal-3', 'normal-5']) &&
+      same(keys(seen.exact), ['normal-2', 'normal-4']) &&
+      page(seen.exact)?.complete === true &&
+      page(seen.exact)?.nextCursor === null &&
+      !('refused' in seen.exact) &&
+      typeof seen.exact.checkpoint === 'string' &&
+      records(seen.empty).length === 0 &&
+      page(seen.empty)?.complete === true &&
+      page(seen.empty)?.nextCursor === null &&
+      !('refused' in seen.empty) &&
+      typeof seen.empty.checkpoint === 'string' &&
       refs[0] !== undefined &&
+      code(seen.revokedReplay) === 'permission_denied' &&
+      same(records(seen.revokedVisible).map(refOf), refs.slice(0, 5)) &&
+      same(eventRef(seen.coveringReplay), refs[0]) &&
       same(eventRef(seen.replay), refs[0]) &&
       records(seen.resumed).length === 1 &&
       page(seen.resumed)?.complete === true &&
@@ -628,6 +800,11 @@ const JUDGE: Judge = {
       'idempotency_conflict',
       'idempotency_conflict',
       'permission_denied',
+      'permission_denied',
+      'permission_denied',
+      'permission_denied',
+      'resync_required',
+      'resync_required',
       'resync_required',
       'resync_required',
       'permission_denied',

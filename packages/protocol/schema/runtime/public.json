@@ -31235,11 +31235,21 @@
         "page": {
           "$ref": "#/$defs/PageDomainEventRecord"
         },
+        "checkpoint": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Cursor"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "resyncRequired": {
           "const": false
         }
       },
-      "required": ["page", "resyncRequired"]
+      "required": ["page", "checkpoint", "resyncRequired"]
     },
     "EventsPublishRequest": {
       "type": "object",
@@ -40818,8 +40828,8 @@
     "EmbeddingEncodeResult": 2,
     "EventsPublishRequest": 3,
     "EventsPublishResult": 3,
-    "EventsSubscribeRequest": 2,
-    "EventsSubscribeResult": 3,
+    "EventsSubscribeRequest": 3,
+    "EventsSubscribeResult": 4,
     "HookEvaluationRecordValue": 2,
     "HookResultSet": 2,
     "HookStageRequest": 2,
