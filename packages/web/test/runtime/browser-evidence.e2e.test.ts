@@ -1,4 +1,5 @@
 import { type ChildProcess, execFileSync, spawn } from 'node:child_process'
+import { createHash } from 'node:crypto'
 import { existsSync } from 'node:fs'
 import { mkdtemp, readdir, readFile, rm } from 'node:fs/promises'
 import { createServer as createNetServer } from 'node:net'
@@ -6,8 +7,12 @@ import { tmpdir } from 'node:os'
 import { delimiter, join, resolve } from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
 import { pathToFileURL } from 'node:url'
-import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { DSH_PUBLIC_SLOT_NAMES, DSH_SLOT_CATALOG_VERSION, DSH_SLOT_NAMES, externals } from '@agnes/web-client'
+import { build as bundle } from 'esbuild'
+import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
+import type { ReadyClientModule } from '../../src/client-modules/reconcile.js'
 import { createWebServer, type WebServer } from '../../src/serve.js'
+import { SKIN_CACHE_VERSION, SKIN_STORAGE_KEY } from '../../src/skin.js'
 
 const web = resolve(import.meta.dirname, '../..')
 const buildLocal = pathToFileURL(resolve(web, '../cli/tools/build-local.ts')).href
@@ -23,6 +28,67 @@ const STATIC = new Set(['Document', 'Script', 'Stylesheet', 'Image', 'Font'])
 // module that owns the hooks dispatcher; a second copy is what breaks hooks across bundles. A
 // minified build drops the path and fails this check closed rather than passing it.
 const REACT_CORE = /node_modules\/react\/cjs\/react\.(?:development|production)\b/
+const VIOLATIONS = `window.__violations = []; document.addEventListener('securitypolicyviolation', (event) =>
+  window.__violations.push({ violatedDirective: event.violatedDirective, blockedURI: event.blockedURI }))`
+
+// Two author stylesheets set the same border color, so the cascade shows which one applied last.
+const CSS = {
+  base: '.evidence-fixture { color: var(--agnes-text-primary); border-left: 1px solid rgb(1, 1, 1); }',
+  accent: '.evidence-fixture { border-left-color: rgb(2, 2, 2); }',
+  // Served under the digest pinned for `accent`; it would paint rgb(3, 3, 3) if the page applied it.
+  tampered: '.evidence-fixture { border-left-color: rgb(3, 3, 3); }',
+}
+const sha256 = (text: string): string => createHash('sha256').update(text).digest('hex')
+const sheet = (file: string, pinned: keyof typeof CSS = file as keyof typeof CSS) => ({
+  url: `/plugins/fixture/${file}.css`,
+  assetDigest: sha256(CSS[pinned]),
+})
+const fixtureModule = (revision: string, styles: ReturnType<typeof sheet>[]): ReadyClientModule => ({
+  packageId: 'fixture-plugin',
+  revision,
+  entryUrl: '/plugins/fixture/module.js',
+  styleUrls: [],
+  styles,
+  slots: [...DSH_PUBLIC_SLOT_NAMES],
+  slotCatalogVersion: DSH_SLOT_CATALOG_VERSION,
+  extIds: [],
+})
+const AUTHOR_STYLES = `(() => {
+  const fixtures = [...document.querySelectorAll('#fixture-slots .evidence-fixture')]
+  return {
+    links: [...document.head.querySelectorAll('link[data-plugin="fixture-plugin"]')].map(
+      (link) => new URL(link.href).pathname + ' ' + link.media),
+    fixtures: fixtures.length,
+    border: [...new Set(fixtures.map((fixture) => getComputedStyle(fixture).borderLeftColor))],
+  }
+})()`
+type AuthorStyles = { links: string[]; fixtures: number; border: string[] }
+// Theme, the fixture in each slot outlet, motion tokens, focus and the document selection.
+const SHELL = `(() => {
+  const selection = getSelection()
+  return {
+    dark: document.documentElement.classList.contains('dark'),
+    background: getComputedStyle(document.body).backgroundColor,
+    slots: [...document.querySelectorAll('#fixture-slots > [data-slot]')].map((outlet) =>
+      outlet.dataset.slot + ' ' + outlet.dataset.slotState + ' ' + outlet.querySelectorAll('.evidence-fixture').length),
+    colors: [...new Set([...document.querySelectorAll('#fixture-slots .evidence-fixture')].map(
+      (fixture) => getComputedStyle(fixture).color))],
+    transition: getComputedStyle(document.documentElement).getPropertyValue('--transition').trim(),
+    motion: getComputedStyle(document.getElementById('transcript')).transitionDuration,
+    focus: document.activeElement?.id,
+    selection: [selection.toString(), selection.anchorNode?.parentElement?.id ?? null],
+  }
+})()`
+type Shell = {
+  dark: boolean
+  background: string
+  slots: string[]
+  colors: string[]
+  transition: string
+  motion: string
+  focus: string | undefined
+  selection: [string, string | null]
+}
 
 function findChrome(): string | undefined {
   if (process.env.CHROME_PATH) return process.env.CHROME_PATH
@@ -108,6 +174,61 @@ async function connect(url: string) {
 }
 type Cdp = Awaited<ReturnType<typeof connect>>
 
+function evaluator(cdp: Cdp, sessionId: string) {
+  return async <T>(expression: string): Promise<T> => {
+    const { result, exceptionDetails } = await cdp.send<{
+      result: { value: T }
+      exceptionDetails?: { text: string; exception?: { description?: string } }
+    }>('Runtime.evaluate', { expression, awaitPromise: true, returnByValue: true }, sessionId)
+    if (exceptionDetails)
+      throw new Error(`${expression}: ${exceptionDetails.exception?.description ?? exceptionDetails.text}`)
+    return result.value
+  }
+}
+
+/** One page target kept open across steps, for checks that change media features or page state. */
+async function openPage(cdp: Cdp, origin: string) {
+  const { targetId } = await cdp.send<{ targetId: string }>('Target.createTarget', { url: 'about:blank' })
+  const { sessionId } = await cdp.send<{ sessionId: string }>('Target.attachToTarget', {
+    targetId,
+    flatten: true,
+  })
+  await cdp.send('Page.enable', {}, sessionId)
+  await cdp.send('Page.addScriptToEvaluateOnNewDocument', { source: VIOLATIONS }, sessionId)
+  const evaluate = evaluator(cdp, sessionId)
+  return {
+    evaluate,
+    async navigate(path: string): Promise<void> {
+      let stop: () => void = () => undefined
+      const loaded = new Promise<void>((resolve) => {
+        stop = cdp.listen(({ method, sessionId: from }) => {
+          if (from === sessionId && method === 'Page.loadEventFired') resolve()
+        })
+      })
+      await cdp.send('Page.navigate', { url: new URL(path, origin).href }, sessionId)
+      await loaded
+      stop()
+    },
+    /** Polls until `done` holds or five seconds pass, then returns the last value for the assertion. */
+    async settle<T>(expression: string, done: (value: T) => boolean): Promise<T> {
+      const deadline = Date.now() + 5_000
+      for (;;) {
+        const value = await evaluate<T>(expression)
+        if (done(value) || Date.now() > deadline) return value
+        await delay(50)
+      }
+    },
+    emulate: (features: Record<string, string>) =>
+      cdp.send(
+        'Emulation.setEmulatedMedia',
+        { features: Object.entries(features).map(([name, value]) => ({ name, value })) },
+        sessionId,
+      ),
+    close: () => cdp.send('Target.closeTarget', { targetId }),
+  }
+}
+type Page = Awaited<ReturnType<typeof openPage>>
+
 type Visit = {
   imports: Record<string, string>
   requested: string[]
@@ -173,25 +294,11 @@ async function visit(cdp: Cdp, url: string): Promise<Visit> {
     while (Date.now() < deadline && !(loaded && open.size === 0 && Date.now() - activity >= 500))
       await delay(50)
   }
-  const evaluate = async <T>(expression: string): Promise<T> => {
-    const { result, exceptionDetails } = await cdp.send<{
-      result: { value: T }
-      exceptionDetails?: { text: string }
-    }>('Runtime.evaluate', { expression, awaitPromise: true, returnByValue: true }, sessionId)
-    if (exceptionDetails) throw new Error(`${expression}: ${exceptionDetails.text}`)
-    return result.value
-  }
+  const evaluate = evaluator(cdp, sessionId)
   try {
     for (const domain of ['Page', 'Network', 'Runtime', 'Log'])
       await cdp.send(`${domain}.enable`, {}, sessionId)
-    await cdp.send(
-      'Page.addScriptToEvaluateOnNewDocument',
-      {
-        source: `window.__violations = []; document.addEventListener('securitypolicyviolation', (event) =>
-          window.__violations.push({ violatedDirective: event.violatedDirective, blockedURI: event.blockedURI }))`,
-      },
-      sessionId,
-    )
+    await cdp.send('Page.addScriptToEvaluateOnNewDocument', { source: VIOLATIONS }, sessionId)
     const { errorText } = await cdp.send<{ errorText?: string }>('Page.navigate', { url }, sessionId)
     if (errorText) throw new Error(`${url}: ${errorText}`)
     await quiet()
@@ -253,12 +360,27 @@ describe.skipIf(process.platform === 'win32' || !chrome)('release Web builds in 
       `import { buildLocalWeb } from ${JSON.stringify(buildLocal)}; await buildLocalWeb(process.argv[1])`,
       outputs.get('local CLI build') ?? '',
     ])
+    // The fixture is served like an installed client module: same-origin, platform modules external.
+    const fixture = await bundle({
+      entryPoints: [resolve(import.meta.dirname, 'fixtures/browser-evidence-plugin.ts')],
+      bundle: true,
+      format: 'esm',
+      platform: 'browser',
+      target: ['es2023'],
+      external: [...externals],
+      write: false,
+    })
+    const assets = new Map([['/plugins/fixture/module.js', fixture.outputFiles[0]?.contents ?? null]])
+    for (const [file, text] of Object.entries(CSS))
+      assets.set(`/plugins/fixture/${file}.css`, new TextEncoder().encode(text))
+    const clientModuleAsset = (path: string) => assets.get(path) ?? null
     // Nothing listens on this port: the pages must render without a daemon.
     const wsUrl = `ws://127.0.0.1:${await availablePort()}`
     for (const build of BUILDS) {
       const port = await availablePort()
       const root = outputs.get(build) ?? ''
-      servers.set(build, await createWebServer({ root, wsUrl, port, origin: `http://127.0.0.1:${port}` }))
+      const origin = `http://127.0.0.1:${port}`
+      servers.set(build, await createWebServer({ root, wsUrl, port, origin, clientModuleAsset }))
     }
 
     profile = await mkdtemp(join(tmpdir(), 'agnes-browser-profile-'))
@@ -324,6 +446,159 @@ describe.skipIf(process.platform === 'win32' || !chrome)('release Web builds in 
         expect(Object.fromEntries(counts)).toEqual(Object.fromEntries(targets.map((target) => [target, 1])))
       }, 60_000)
     })
+  })
+
+  describe('author styles, theme, slots, focus and motion in the web package build', () => {
+    let page: Page | undefined
+    const fixturePage = (): Page => {
+      if (!page) throw new Error('fixture page is not open')
+      return page
+    }
+    type Status = { phase: string; revision?: string; error?: { code: string } }
+    const publish = (modules: ReadyClientModule[]) =>
+      fixturePage().evaluate<Record<string, Status>>(
+        `globalThis.fixtureHost.publish(${JSON.stringify(modules)})`,
+      )
+    const allFixtures = (state: AuthorStyles) => state.fixtures === DSH_SLOT_NAMES.length
+
+    beforeAll(async () => {
+      if (!cdp) throw new Error('browser is not connected')
+      page = await openPage(cdp, server('web package build').url)
+      await page.navigate('/')
+      await page.evaluate(`import('/plugins/fixture/module.js').then(async (fixture) => {
+        globalThis.fixtureHost = await fixture.startHost()
+      })`)
+    }, 60_000)
+
+    afterEach(async () => {
+      await publish([])
+      await fixturePage().emulate({})
+    }, 60_000)
+
+    afterAll(async () => {
+      await page?.close()
+    })
+
+    it('applies two author stylesheets in declared order and reclaims them with their owner', async () => {
+      for (const [revision, order, border] of [
+        ['v1', ['base', 'accent'], 'rgb(2, 2, 2)'],
+        ['v2', ['accent', 'base'], 'rgb(1, 1, 1)'],
+      ] as const) {
+        const styles = order.map((file) => sheet(file))
+        expect(await publish([fixtureModule(revision, styles)])).toMatchObject({
+          'fixture-plugin': { phase: 'active', revision },
+        })
+        expect(await fixturePage().settle(AUTHOR_STYLES, allFixtures)).toEqual({
+          links: order.map((file) => `/plugins/fixture/${file}.css all`),
+          fixtures: 63,
+          border: [border],
+        })
+      }
+      await publish([])
+      // Only the host's own root fixture is left, and no author rule paints it.
+      const withdrawn = await fixturePage().settle<AuthorStyles>(
+        AUTHOR_STYLES,
+        (state) => state.fixtures === 1,
+      )
+      expect(withdrawn).toMatchObject({ links: [], fixtures: 1 })
+      expect(withdrawn.border).not.toContain('rgb(1, 1, 1)')
+    }, 60_000)
+
+    it.each(['missing', 'tampered'])(
+      'refuses a %s stylesheet and keeps the active generation',
+      async (file) => {
+        await publish([fixtureModule('v1', [sheet('base'), sheet('accent')])])
+        const active = await fixturePage().settle(AUTHOR_STYLES, allFixtures)
+        expect(active).toMatchObject({ fixtures: 63, border: ['rgb(2, 2, 2)'] })
+
+        const candidate = fixtureModule('v2', [sheet('base'), sheet(file, 'accent')])
+        expect(await publish([candidate])).toMatchObject({
+          'fixture-plugin': {
+            phase: 'failed',
+            revision: 'v1',
+            error: { code: 'CLIENT_MODULE_STYLES_FAILED' },
+          },
+        })
+        expect(await fixturePage().evaluate(AUTHOR_STYLES)).toEqual(active)
+      },
+      60_000,
+    )
+
+    it('keeps every slot themed and the page focus and selection across theme, motion and style changes', async () => {
+      const target = fixturePage()
+      await target.emulate({ 'prefers-color-scheme': 'light', 'prefers-reduced-motion': 'no-preference' })
+      await publish([fixtureModule('v1', [sheet('base'), sheet('accent')])])
+      // Without a daemon the composer stays disabled, so focus a shell control and select heading text.
+      await target.settle<boolean>(`!!document.getElementById('empty-state-title')?.firstChild`, Boolean)
+      await target.evaluate(`(() => {
+        document.getElementById('sidebar-toggle').focus()
+        const text = document.getElementById('empty-state-title').firstChild
+        getSelection().setBaseAndExtent(text, 0, text, 5)
+      })()`)
+      const ready = DSH_SLOT_NAMES.map((name) => `${name} ready 1`)
+      const kept = { focus: 'sidebar-toggle', selection: ['Agnes', 'empty-state-title'] }
+
+      const light = await target.settle<Shell>(SHELL, (state) => state.slots.join() === ready.join())
+      expect(ready).toHaveLength(63)
+      expect(light).toMatchObject({
+        dark: false,
+        slots: ready,
+        transition: '170ms ease-out',
+        motion: '0.17s',
+        ...kept,
+      })
+      expect(light.colors).toHaveLength(1)
+
+      await target.emulate({ 'prefers-color-scheme': 'dark', 'prefers-reduced-motion': 'reduce' })
+      const dark = await target.settle<Shell>(SHELL, (state) => state.dark)
+      expect(dark).toMatchObject({ dark: true, slots: ready, transition: '0ms', motion: '0s', ...kept })
+      expect(dark.colors).toHaveLength(1)
+      expect(dark.colors).not.toEqual(light.colors)
+      expect(dark.background).not.toBe(light.background)
+
+      await publish([fixtureModule('v2', [sheet('accent'), sheet('base')])])
+      expect(await target.settle<Shell>(SHELL, (state) => state.slots.join() === ready.join())).toMatchObject(
+        kept,
+      )
+      expect(await target.evaluate('window.__violations')).toEqual([])
+    }, 60_000)
+
+    it('applies the selected cached skin inside the page policy and repaints its tokens with the theme', async () => {
+      if (!cdp) throw new Error('browser is not connected')
+      const skinPage = await openPage(cdp, server('web package build').url)
+      const skin = {
+        version: SKIN_CACHE_VERSION,
+        id: 'fixture-skin',
+        revision: 'r1',
+        css: ':root { --fixture-skin-sheet: applied; }',
+        tokens: { '--fixture-skin-token': { light: 'rgb(1, 2, 3)', dark: 'rgb(4, 5, 6)' } },
+      }
+      const SKIN = `(() => {
+        const root = getComputedStyle(document.documentElement)
+        return [root.getPropertyValue('--fixture-skin-sheet').trim(), root.getPropertyValue('--fixture-skin-token').trim()]
+      })()`
+      try {
+        await skinPage.emulate({ 'prefers-color-scheme': 'light' })
+        await skinPage.navigate('/')
+        await skinPage.evaluate(
+          `localStorage.setItem(${JSON.stringify(SKIN_STORAGE_KEY)}, ${JSON.stringify(JSON.stringify(skin))})`,
+        )
+        await skinPage.navigate('/')
+        expect(await skinPage.evaluate(SKIN)).toEqual(['applied', 'rgb(1, 2, 3)'])
+        await skinPage.emulate({ 'prefers-color-scheme': 'dark' })
+        expect(await skinPage.settle<string[]>(SKIN, ([, token]) => token !== 'rgb(1, 2, 3)')).toEqual([
+          'applied',
+          'rgb(4, 5, 6)',
+        ])
+        expect(await skinPage.evaluate('window.__violations')).toEqual([])
+        // The one-shot override selects the built-in look over the cached choice.
+        await skinPage.navigate('/?skin=none')
+        expect(await skinPage.evaluate(SKIN)).toEqual(['', ''])
+      } finally {
+        await skinPage.evaluate('localStorage.clear()')
+        await skinPage.close()
+      }
+    }, 60_000)
   })
 
   it.todo('renders a fixture plugin component under the host assistant-ui Provider')

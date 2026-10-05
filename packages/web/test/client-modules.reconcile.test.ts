@@ -1069,7 +1069,7 @@ describe('default stylesheet preparer in a document', () => {
     }))
   }
 
-  it('appends pinned stylesheets in declared order with integrity and asset digest', async () => {
+  it("appends pinned stylesheets in declared order and removes only a withdrawn owner's links", async () => {
     const h = await harness()
     stubPlugin(h.ctx, { loaded: [], disposed: [] })
     const [first, second, third] = [digestOf('0f'), EMPTY_SHA256, digestOf('a1')]
@@ -1081,9 +1081,10 @@ describe('default stylesheet preparer in a document', () => {
       ]),
       styleUrls: ['/a/v1/legacy.css'],
     }
+    let current = roster([pinned, styledMod('legacy', 'v1')])
     const reconciler = createReconciler({
       ctx: h.ctx,
-      source: { list: async () => roster([pinned, styledMod('legacy', 'v1')]) },
+      source: { list: async () => current },
       importer: h.importer,
     })
 
@@ -1094,48 +1095,99 @@ describe('default stylesheet preparer in a document', () => {
       { href: '/a/v1/m.css', media: 'all', integrity: sri(second), digest: second },
       { href: '/a/v1/a.css', media: 'all', integrity: sri(third), digest: third },
     ])
-    expect(links('legacy')).toEqual([
+    const legacy = links('legacy')
+    expect(legacy).toEqual([
       { href: '/legacy/v1/index.css', media: 'all', integrity: undefined, digest: null },
     ])
+
+    current = roster([styledMod('legacy', 'v1')])
+    await reconciler.invalidate()
+    expect(links('a')).toEqual([])
+    expect(links('legacy')).toEqual(legacy)
   })
 
-  it('keeps the active version when one pinned stylesheet fails and retries the same revision', async () => {
+  it.each([
+    ['a new revision', 'v2'],
+    ['a same-revision hot replace', 'v1'],
+  ])(
+    'keeps the active version when a pinned stylesheet of %s fails and retries it',
+    async (_label, revision) => {
+      const h = await harness()
+      const log = { loaded: [] as string[], disposed: [] as string[] }
+      stubPlugin(h.ctx, log)
+      let current = roster([pinnedMod('a', 'v1', [['a.css', digestOf('01')]])])
+      const reconciler = createReconciler({
+        ctx: h.ctx,
+        source: { list: async () => current },
+        importer: h.importer,
+      })
+      const replace = () => (revision === 'v1' ? reconciler.reload('a', 'v1') : reconciler.invalidate())
+      await reconciler.reconcileNow()
+      const active = links('a')
+      expect(active).toMatchObject([{ href: '/a/v1/a.css', media: 'all' }])
+
+      missing.add(`/a/${revision}/b.css`)
+      current = roster([
+        pinnedMod('a', revision, [
+          ['a.css', digestOf('02')],
+          ['b.css', digestOf('03')],
+        ]),
+      ])
+      await replace()
+      expect(reconciler.snapshot().get('a')).toMatchObject({
+        phase: 'failed',
+        revision: 'v1',
+        error: { code: 'CLIENT_MODULE_STYLES_FAILED' },
+      })
+      expect(log.disposed).toEqual([])
+      expect(links('a')).toEqual(active)
+
+      missing.clear()
+      await replace()
+      expect(reconciler.snapshot().get('a')).toMatchObject({ phase: 'active', revision })
+      expect(links('a')).toMatchObject([
+        { href: `/a/${revision}/a.css`, media: 'all', digest: digestOf('02') },
+        { href: `/a/${revision}/b.css`, media: 'all', digest: digestOf('03') },
+      ])
+    },
+  )
+
+  it('keeps the old stylesheets until a late old-generation dispose settles, then swaps them once', async () => {
     const h = await harness()
-    const log = { loaded: [] as string[], disposed: [] as string[] }
-    stubPlugin(h.ctx, log)
-    let current = roster([pinnedMod('a', 'v1', [['a.css', digestOf('01')]])])
+    let release!: () => void
+    const late = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    ;(h.ctx as unknown as { plugin: unknown }).plugin = (_mod: unknown, config?: unknown) => {
+      const revision = (config as { revision: string }).revision
+      const fiber = { dispose: () => (revision === 'v1' ? late : undefined) }
+      return Object.assign(Promise.resolve(fiber), fiber)
+    }
+    let current = roster([pinnedMod('a', 'v1', [['a.css', digestOf('06')]])])
     const reconciler = createReconciler({
       ctx: h.ctx,
       source: { list: async () => current },
       importer: h.importer,
+      timeouts: { dispose: 10 },
     })
     await reconciler.reconcileNow()
     const active = links('a')
-    expect(active).toMatchObject([{ href: '/a/v1/a.css', media: 'all' }])
 
-    missing.add('/a/v2/b.css')
-    current = roster([
-      pinnedMod('a', 'v2', [
-        ['a.css', digestOf('02')],
-        ['b.css', digestOf('03')],
-      ]),
-    ])
+    // The old fiber outlives the dispose deadline: the candidate's links go, the old ones stay.
+    current = roster([pinnedMod('a', 'v2', [['a.css', digestOf('07')]])])
     await reconciler.invalidate()
     expect(reconciler.snapshot().get('a')).toMatchObject({
       phase: 'failed',
       revision: 'v1',
-      error: { code: 'CLIENT_MODULE_STYLES_FAILED' },
+      error: { code: 'CLIENT_MODULE_TIMEOUT' },
     })
-    expect(log.disposed).toEqual([])
     expect(links('a')).toEqual(active)
 
-    missing.clear()
+    release()
     await reconciler.invalidate()
     expect(reconciler.snapshot().get('a')).toMatchObject({ phase: 'active', revision: 'v2' })
-    expect(links('a')).toMatchObject([
-      { href: '/a/v2/a.css', media: 'all' },
-      { href: '/a/v2/b.css', media: 'all' },
-    ])
+    const digest = digestOf('07')
+    expect(links('a')).toEqual([{ href: '/a/v2/a.css', media: 'all', integrity: sri(digest), digest }])
   })
 
   it.each<[string, Array<[string, string]>]>([
