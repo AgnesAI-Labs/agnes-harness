@@ -130,6 +130,8 @@ const BUDGET_RESERVATION = 'bounded-units and cost-hard budget reservation is no
 const LIVE_AGENT_QUOTA = 'live-agent quota is not implemented'
 const HOOK_RESULTS = 'hook results and approval taint acknowledgement are not implemented'
 const CONTROL_COMMAND = 'control command is not implemented'
+const NEW_WORK_REFUSED = 'run does not accept new work in its current state'
+const SUSPENDED_RUN_STATES = ['frozen', 'migrating', 'blocked_incompatible', 'blocked_integrity']
 const SIGNAL_INDEX_MISMATCH = 'signal sequence index does not match the records'
 const INVOCATION_INDEX_MISMATCH = 'active invocation index does not match the records'
 const QUOTA_REF_MISMATCH = 'active quota reservation does not match the held mirror'
@@ -1861,6 +1863,8 @@ export async function advanceRunTx(
       create: record(actionRecordId(actionId), ACTION_SCHEMA, 1, guarded.owner, value),
     })
   }
+  if (created > 0 && !runAcceptsNewWork(guarded.value.state))
+    refuse('conflict', 'run_state', NEW_WORK_REFUSED)
   const stamp = at(ports)
   const step = planRunStep(
     ports,
@@ -2054,6 +2058,15 @@ function decideDispatch(
       reason: 'cancelled',
       outcome: 'cancelled',
       error: rejectionError(ports, 'cancelled', 'cancelled', 'run is cancelled'),
+    }
+  }
+  if (!runAcceptsNewWork(run.state)) {
+    if (SUSPENDED_RUN_STATES.includes(run.state)) refuse('conflict', 'run_state', NEW_WORK_REFUSED)
+    return {
+      kind: 'reject',
+      reason: 'cancelled',
+      outcome: 'cancelled',
+      error: rejectionError(ports, 'cancelled', 'run_closing', 'run no longer accepts new work'),
     }
   }
   if (requested > 0 && heldParallel(ports, request.guard.runId) + requested > MAX_PARALLEL_ACTIONS) {
@@ -2554,6 +2567,8 @@ export async function commitControlTx(
     return approvalControlTx(ports, request, verified, fingerprint)
   if (request.command.kind === 'start_composite')
     return startCompositeTx(ports, request, verified, fingerprint)
+  if (request.command.kind === 'begin_drain') return beginDrainTx(ports, request, verified, fingerprint)
+  if (request.command.kind === 'cancel_run') return cancelRunTx(ports, request, verified, fingerprint)
   if (request.command.kind !== 'mark_running') refuse('internal', 'unsupported', CONTROL_COMMAND)
   const command = request.command
   const guarded = assertGuard(ports, request.guard, 'follow')
@@ -3212,7 +3227,7 @@ const WAIT_STATES = ['waiting', 'ready', 'cancelled']
 const TIMER_STATES = ['scheduled', 'fired', 'cancelled']
 const NEW_WORK_RUN_STATES = ['admitted', 'runnable', 'waiting']
 
-/** True when a run in this state may still take new actions. Defined for the drain gate; no command calls it yet. */
+/** True when a run in this state may still take new actions. The drain gate of every path that creates or starts work. */
 export function runAcceptsNewWork(state: string): boolean {
   return NEW_WORK_RUN_STATES.includes(state)
 }
@@ -3961,6 +3976,7 @@ async function startCompositeTx(
   const command = request.command
   if (command.kind !== 'start_composite') refuse('internal', 'unsupported', CONTROL_COMMAND)
   const guarded = assertGuard(ports, request.guard, 'follow')
+  if (!runAcceptsNewWork(guarded.value.state)) refuse('conflict', 'run_state', NEW_WORK_REFUSED)
   if (guarded.value.cancellation != null) refuse('conflict', 'run_cancelled', 'run is cancelled')
   const actionHead = ports.loadHead(actionRecordId(command.actionId))
   if (!actionHead || actionHead.record_revision !== command.expectedActionRevision)
@@ -4181,6 +4197,8 @@ export async function advanceProviderTx(
       } satisfies ActionValue),
     )
   }
+  if (planned.some((item) => item.created) && !runAcceptsNewWork(guarded.value.state))
+    refuse('conflict', 'run_state', NEW_WORK_REFUSED)
   const next = request.transition.next
   let waitId: string | null = null
   if (next.kind === 'wait') {
@@ -4280,5 +4298,144 @@ export async function advanceProviderTx(
     ],
   })
   ports.rememberRequest('advanceProvider', request.commitId, fingerprint, written.receipt)
+  return { result: written.receipt, sessionId: request.guard.sessionId, verified: written.verified }
+}
+
+const DRAINABLE_RUN_STATES = [...NEW_WORK_RUN_STATES, 'failing', 'cancelling']
+
+function commandRun(request: CommitControlRequest, runId: string): void {
+  if (runId !== request.guard.runId) refuse('invalid_input', 'run_target', 'command names another run')
+}
+
+/**
+ * Closes the admission of new work for the run, or for one composite parent. Existing actions stay. The reason is
+ * checked by the schema and covered by the commit fingerprint; the finishing commands carry the terminal error.
+ */
+async function beginDrainTx(
+  ports: ControlPorts,
+  request: CommitControlRequest,
+  verified: SessionView,
+  fingerprint: string,
+): Promise<Committed<StateCommitReceipt>> {
+  const command = request.command
+  if (command.kind !== 'begin_drain') refuse('internal', 'unsupported', CONTROL_COMMAND)
+  commandRun(request, command.target.runId)
+  const guarded = assertGuard(ports, request.guard, 'follow')
+  const updates: RecordUpdate[] = []
+  if (command.target.actionId === null) {
+    const run = guarded.value
+    if (!DRAINABLE_RUN_STATES.includes(run.state)) refuse('conflict', 'run_state', 'run does not take a drain')
+    if (run.state === 'waiting') updates.push(...closeRunWait(ports, run, [], 'cancelled'))
+    updates.push(
+      updated(guarded.head, RUN_RECORD_SCHEMA, guarded.owner, {
+        ...run,
+        state: 'draining',
+        waitId: null,
+        writerEpoch: request.guard.writerEpoch,
+      }),
+    )
+  } else {
+    const parent = storedValue<ActionValue>(
+      requireHead(ports, actionRecordId(command.target.actionId), 'action_state', 'action does not exist'),
+    )
+    if (parent.runId !== request.guard.runId || parent.state !== 'running' || parent.providerStateId === null)
+      refuse('conflict', 'action_state', 'action is not a running composite parent')
+    const providerHead = requireHead(
+      ports,
+      providerStateRecordId(parent.actionId),
+      'provider_absent',
+      'provider state does not exist',
+    )
+    const provider = storedValue<ProviderStateValue>(providerHead)
+    if (provider.state !== 'runnable' && provider.state !== 'waiting')
+      refuse('conflict', 'provider_state', 'provider state does not take a drain')
+    if (provider.state === 'waiting') {
+      if (provider.waitId === null) integrity('waiting provider has no wait record')
+      const waitHead = requireHead(
+        ports,
+        waitRecordId(provider.waitId),
+        'wait_absent',
+        'wait record does not exist',
+      )
+      const wait = storedValue<WaitRecordValue>(waitHead)
+      if (wait.state !== 'waiting' || wait.targetActionId !== parent.actionId)
+        refuse('conflict', 'wait_state', 'wait record is not waiting for this parent')
+      updates.push(
+        updated(waitHead, WAIT_SCHEMA, ownerOf(waitHead), {
+          ...wait,
+          state: 'cancelled',
+        } satisfies WaitRecordValue),
+      )
+    }
+    updates.push(
+      updated(providerHead, PROVIDER_STATE_SCHEMA, ownerOf(providerHead), {
+        ...provider,
+        state: 'draining',
+        waitId: null,
+        writerEpoch: request.guard.writerEpoch,
+      } satisfies ProviderStateValue),
+    )
+  }
+  const written = ports.writeCommit({
+    ...blankInput(
+      request.guard.sessionId,
+      verified,
+      request.commitId,
+      at(ports),
+      fingerprint,
+      request.guard.runId,
+      request.guard.writerEpoch,
+      guarded.value.revision,
+    ),
+    updates,
+  })
+  ports.rememberRequest('commitControl', request.commitId, fingerprint, written.receipt)
+  return { result: written.receipt, sessionId: request.guard.sessionId, verified: written.verified }
+}
+
+/**
+ * Records the cancellation and closes admission. The first cancellation of a run wins: another request on a
+ * cancelling run commits the run record unchanged, so it still has its own receipt and changes nothing.
+ */
+async function cancelRunTx(
+  ports: ControlPorts,
+  request: CommitControlRequest,
+  verified: SessionView,
+  fingerprint: string,
+): Promise<Committed<StateCommitReceipt>> {
+  const command = request.command
+  if (command.kind !== 'cancel_run') refuse('internal', 'unsupported', CONTROL_COMMAND)
+  commandRun(request, command.runId)
+  const guarded = assertGuard(ports, request.guard, 'follow')
+  const run = guarded.value
+  const stamp = at(ports)
+  const updates: RecordUpdate[] = []
+  let next: RunRecordValue = run
+  if (run.state !== 'cancelling') {
+    if (!NEW_WORK_RUN_STATES.includes(run.state)) refuse('conflict', 'run_state', 'run does not take a cancel')
+    if (run.state === 'waiting') updates.push(...closeRunWait(ports, run, [], 'cancelled'))
+    next = {
+      ...run,
+      state: 'cancelling',
+      waitId: null,
+      cancellation: { reason: command.reason, requestedAt: stamp, by: command.requestedBy },
+      writerEpoch: request.guard.writerEpoch,
+    }
+  }
+  updates.push(updated(guarded.head, RUN_RECORD_SCHEMA, guarded.owner, next))
+  const written = ports.writeCommit({
+    ...blankInput(
+      request.guard.sessionId,
+      verified,
+      request.commitId,
+      stamp,
+      fingerprint,
+      request.guard.runId,
+      request.guard.writerEpoch,
+      run.revision,
+    ),
+    updates,
+  })
+  ports.rememberRequest('commitControl', request.commitId, fingerprint, written.receipt)
   return { result: written.receipt, sessionId: request.guard.sessionId, verified: written.verified }
 }
