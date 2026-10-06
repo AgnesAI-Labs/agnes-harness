@@ -558,9 +558,16 @@ export function createModelAdapterFactory(
                   return undefined
                 }
                 if (!refusal || !/^[a-z0-9_]{1,64}$/.test(String(refusal.detailCode))) return undefined
-                const known = ['denied', 'retryable', 'cancelled', 'timeout'].includes(refusal.code)
+                const known = ['denied', 'retryable', 'cancelled', 'timeout', 'incompatible'].includes(
+                  refusal.code,
+                )
                 const code = known ? (refusal.code as RuntimeError['code']) : 'internal'
-                const proven = failure(code, refusal.detailCode)
+                // The fence says nothing was sent, so an unknown_effect label cannot be kept: its detail
+                // is reserved for sent requests and would contradict the internal code.
+                const proven = failure(
+                  code,
+                  refusal.code === 'unknown_effect' ? 'model_not_sent' : refusal.detailCode,
+                )
                 return code === 'retryable' && proven.error
                   ? { ...proven, error: { ...proven.error, retryAdvice: { kind: 'retry_same_action' } } }
                   : proven

@@ -189,7 +189,7 @@
     },
     {
       "path": "packages/protocol/schema/runtime/public.json",
-      "sha256": "08cfbea45b7187a2d63d893b0942c326ca7848180e5d4aca7f0df701327856f9"
+      "sha256": "64353cc98235de31715fdb74f25dd004a648d259e49189b4c5df502bac37e3ac"
     },
     {
       "path": "packages/protocol/schema/runtime/simple-loop.schema.json",
@@ -423,7 +423,7 @@
     },
     {
       "path": "packages/protocol/gen/ts/runtime-artifact-policy.ts",
-      "sha256": "5a98ecaa6ebceb27163192026fad6ac806ce04fa12519378b9841b1a9ff3c068"
+      "sha256": "8037129551dafef436c17e69a3ad51b3765be9f08d5a5d61cf3edb68037723fe"
     },
     {
       "path": "packages/protocol/gen/ts/runtime-catalog.ts",
@@ -932,7 +932,7 @@
       },
       {
         "path": "packages/protocol/gen/ts/runtime-artifact-policy.ts",
-        "sha256": "5a98ecaa6ebceb27163192026fad6ac806ce04fa12519378b9841b1a9ff3c068"
+        "sha256": "8037129551dafef436c17e69a3ad51b3765be9f08d5a5d61cf3edb68037723fe"
       },
       {
         "path": "packages/protocol/gen/ts/runtime-catalog.ts",
@@ -1176,7 +1176,7 @@
       },
       {
         "path": "packages/protocol/schema/runtime/public.json",
-        "sha256": "08cfbea45b7187a2d63d893b0942c326ca7848180e5d4aca7f0df701327856f9"
+        "sha256": "64353cc98235de31715fdb74f25dd004a648d259e49189b4c5df502bac37e3ac"
       },
       {
         "path": "packages/protocol/schema/runtime/simple-loop.schema.json",
@@ -1467,9 +1467,9 @@
         "sha256": "5368e00eb1fe320fa21e015f95911b6af6ca8a3c405c3be6585ff521c4832ce0"
       }
     ],
-    "inputDigest": "a7dc1d1c4890255677dc0cf0a442bc01e510c7fc1db2efd6ac8aba4ee2a0c1eb",
+    "inputDigest": "03f5706cc54ad8f429abc1a363d826ce0624bdbc207f31b9aa1dbaf0fde8bb90",
     "diagnostics": [],
-    "reportDigest": "612b5550cc878f41ab85e7f1c73393ac4cfb3d808f89d0899bb9dcdcaff7681a"
+    "reportDigest": "ffa3d08bbffe70c573dceabde0b4322635181e828203999e314f029a16d8c224"
   },
-  "snapshotDigest": "b3045f6d26f353365f03c36bc46a7437e8ce4a2fbec5a468cecd2f8d4898f376"
+  "snapshotDigest": "d8d1e34efb586e75312525e955559ddc33cda4d57200421498c5665a7e5ee354"
 }
