@@ -1,4 +1,5 @@
 import { readFileSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
 import { runtimeAuthorSchemas } from '@agnes/extension-api/runtime'
 import type { ModelRecord } from '@agnes/protocol'
 import type * as Wire from '@agnes/protocol/runtime'
@@ -190,7 +191,7 @@ const must = (r: ReturnType<typeof buildWireRequest>) => {
 describe('schema reference digest', () => {
   it('is the canonical digest of the resolved schema document', () => {
     const root = (name: string) =>
-      `${new URL(`../../../protocol/schema/runtime/${name}`, import.meta.url).pathname}`
+      fileURLToPath(new URL(`../../../protocol/schema/runtime/${name}`, import.meta.url))
     const pub = JSON.parse(readFileSync(root('public.json'), 'utf8')).$defs as Record<string, Wire.JsonValue>
     const proto = JSON.parse(readFileSync(root('prototype.json'), 'utf8')).$defs as Record<
       string,
