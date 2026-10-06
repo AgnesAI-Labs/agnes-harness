@@ -1143,7 +1143,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // Model source check consumes verified media evidence (+57). Measured 5973, exact, no spare.
   // The model adapter's unknown-effect errors carry reconcile advice naming the unresolved action (+9); exact cap, no spare.
   // The model adapter refuses a returned tool call whose arguments or id the next request cannot carry (+32); exact cap, no spare.
-  'packages/ai/src': 6049,
+  // A not-sent model refusal keeps a code its detail is registered under (+1); exact cap, no spare.
+  'packages/ai/src': 6050,
   // 2026-09-09: raised from 500, which was exactly the measured count and so forbade every
   // further line. Two repairs were blocked by it and are landing with this raise: the provider
   // factory taking log + pricing (without which every delivered assembly denominates ledger

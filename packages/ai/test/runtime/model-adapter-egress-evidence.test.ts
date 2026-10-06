@@ -196,7 +196,21 @@ describe('egress not-sent evidence', () => {
         fail: true,
       }),
     )
-    expect(odd.effect).toMatchObject({ outcome: 'failed', error: { code: 'internal', detailCode: 'x' } })
+    expect(odd.effect).toMatchObject({
+      outcome: 'failed',
+      error: { code: 'internal', detailCode: 'model_not_sent' },
+    })
+    expect(validateRuntimeErrorDetail(odd.effect.error).ok).toBe(true)
+    const replay = await run(
+      egress({
+        fenced: 'owned',
+        refusal: { code: 'unknown_effect', detailCode: 'model_egress_replay' },
+        bytes: false,
+        fail: true,
+      }),
+    )
+    expect(replay.effect).toMatchObject({ error: { code: 'internal', detailCode: 'model_not_sent' } })
+    expect(validateRuntimeErrorDetail(replay.effect.error).ok).toBe(true)
     const odder = await run(
       egress({ fenced: 'owned', refusal: { code: 'surprise', detailCode: 'x' }, bytes: false, fail: true }),
     )
