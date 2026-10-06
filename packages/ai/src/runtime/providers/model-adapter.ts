@@ -28,7 +28,7 @@ import {
 } from '@agnes/protocol/runtime'
 import { PiAdapter } from '../../adapters/pi/index.js'
 import { mediaConsumed } from '../model-adapter/media.js'
-import type { ModelAdapterDeployment, ModelWireSource } from '../model-adapter/ports.js'
+import type { ModelAdapterDeployment, ModelWireFetch, ModelWireSource } from '../model-adapter/ports.js'
 import { type ModelUsageEvidence, modelUsageEvidence } from '../model-adapter/usage-evidence.js'
 
 const methods = RuntimeMethodSchemaRefs['agh.model-adapter']
@@ -466,13 +466,17 @@ export function createModelAdapterFactory(
               if (!alive()) return failure('denied', 'model_current')
               // The host's egress for this call, before the credential is touched. There is no
               // fallback: without one, nothing is sent.
-              let fetch: typeof globalThis.fetch | undefined
+              let fetch: ModelWireFetch | undefined
               try {
                 fetch = original.egress?.(source, frame, context)
               } catch {
                 fetch = undefined
               }
               if (typeof fetch !== 'function') return failure('denied', 'model_egress_missing')
+              // An egress that owns the send fence says so by providing `fenced`; only then is its
+              // evidence used. Anything else keeps the adapter's own fence and its classification.
+              const wire = fetch,
+                owned = typeof wire.fenced === 'function'
               const controller = new AbortController(),
                 abort = () => controller.abort()
               if (active.has(frame.attemptId)) return failure('conflict', 'model_in_flight')
@@ -522,6 +526,33 @@ export function createModelAdapterFactory(
               let usage: UsageFact[] = [unknownFact],
                 finish: ModelOutput['finishReason'] | null = null
               let result: EffectResult
+              // The egress's own answer, missing or throwing read as possibly sent.
+              const settle = () => {
+                if (!owned) return
+                try {
+                  sent = wire.fenced?.() !== false
+                } catch {
+                  sent = true
+                }
+                if (finish !== null) sent = true
+              }
+              // Proven not sent: the egress owns the fence, did not commit it, and said why.
+              const notSent = (): EffectResult | undefined => {
+                if (!owned || sent) return undefined
+                let refusal: ReturnType<NonNullable<ModelWireFetch['refusal']>>
+                try {
+                  refusal = wire.refusal?.()
+                } catch {
+                  return undefined
+                }
+                if (!refusal || !/^[a-z0-9_]{1,64}$/.test(String(refusal.detailCode))) return undefined
+                const known = ['denied', 'retryable', 'cancelled', 'timeout'].includes(refusal.code)
+                const code = known ? (refusal.code as RuntimeError['code']) : 'internal'
+                const proven = failure(code, refusal.detailCode)
+                return code === 'retryable' && proven.error
+                  ? { ...proven, error: { ...proven.error, retryAdvice: { kind: 'retry_same_action' } } }
+                  : proven
+              }
               try {
                 const output = await original.withCredential(source, frame, context, async (credential) => {
                   if (
@@ -544,6 +575,13 @@ export function createModelAdapterFactory(
                       total: Math.max(1, Math.min(600000, Date.parse(context.call.deadline) - Date.now())),
                     },
                     reportSent(report) {
+                      if (owned) {
+                        // The egress commits the fence at the connector; only record the digest.
+                        if (!alive() || controller.signal.aborted || !staticAlive())
+                          throw new Error('Model send refused')
+                        bodyDigest = report.sentHash
+                        return
+                      }
                       if (
                         !alive() ||
                         controller.signal.aborted ||
@@ -581,6 +619,7 @@ export function createModelAdapterFactory(
                     }
                   }
                 })
+                settle()
                 if (!output.ok) throw new Error('Credential owner refused')
                 const receipt = response
                   ? checked(runtimeAuthorSchemas.ProviderResponseEvidence.encode(response))
@@ -653,15 +692,16 @@ export function createModelAdapterFactory(
                       usage,
                       references: [],
                     }
-                  : {
+                  : (notSent() ?? {
                       ...failure(
                         sent ? 'unknown_effect' : controller.signal.aborted ? 'cancelled' : 'internal',
                         sent ? 'model_stream_unknown' : 'model_not_sent',
                       ),
                       externalRequests: sent ? [requestRef] : [],
                       usage: sent ? usage : [],
-                    }
+                    })
               } catch {
+                settle()
                 if (sent && usageState.tokens !== null) {
                   usage = [unknownFact]
                   try {
@@ -674,7 +714,7 @@ export function createModelAdapterFactory(
                     // Preserve the already encoded unknown fact when the selected codec cannot retain fees.
                   }
                 }
-                result = {
+                result = notSent() ?? {
                   ...failure(
                     sent ? 'unknown_effect' : controller.signal.aborted ? 'cancelled' : 'denied',
                     sent ? 'model_stream_unknown' : 'model_send_refused',

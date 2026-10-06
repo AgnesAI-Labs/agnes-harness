@@ -33,6 +33,16 @@ export type ModelWireSource = Readonly<{
   media?: readonly ModelWireMedia[]
 }>
 
+/**
+ * The fetch an egress hands out. `fenced` and `refusal` are optional evidence from whoever owns the
+ * connector boundary: when `fenced` exists the egress commits the send fence itself, just before the
+ * first request byte, and `fenced() === false` after a failure means nothing was written.
+ */
+export type ModelWireFetch = typeof globalThis.fetch & {
+  fenced?(): boolean
+  refusal?(): { code: string; detailCode: string } | undefined
+}
+
 /** The original installed owner supplies purpose-bound capabilities, not caller credential JSON. */
 export type ModelAdapterDeployment = {
   readonly packageDigest: string
@@ -56,11 +66,7 @@ export type ModelAdapterDeployment = {
    * returns; without one the call is refused before the credential is used. The global fetch is
    * never a fallback.
    */
-  egress?(
-    source: ModelWireSource,
-    frame: ActionFrame,
-    context: ActionContext,
-  ): typeof globalThis.fetch | undefined
+  egress?(source: ModelWireSource, frame: ActionFrame, context: ActionContext): ModelWireFetch | undefined
   withCredential<T>(
     source: ModelWireSource,
     frame: ActionFrame,
