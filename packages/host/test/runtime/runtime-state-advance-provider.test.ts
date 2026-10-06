@@ -49,8 +49,13 @@ async function setup() {
   // Only the composite parent declares a state codec; the adapter and the tools stay leaf.
   parentProvider.descriptor.stateCodecs = [{ ...CODEC, schema: parentProvider.descriptor.configSchema }]
   parentProvider.codecRefs = parentProvider.descriptor.stateCodecs
-  const { releaseSetId: _previous, ...releaseBody } = release
-  release.releaseSetId = fixtureHash(releaseBody)
+  // A non-action operation and a duplicated action operation, neither of which may start a composite.
+  const queryOp = parentProvider.descriptor.operations.find((row) => row.kind !== 'action')
+  const twice = parentProvider.descriptor.operations.find((row) => row.method === 'prepareRequest')
+  if (!queryOp || !twice) throw Error('fixture operations missing')
+  parentProvider.descriptor.operations.push({ ...twice })
+  const { releaseSetId: _before, ...resealed } = release
+  release.releaseSetId = fixtureHash(resealed)
   let failBeforeCommit = false
   const joint = await openJointAdmission(directory, input, (point) => {
     if (failBeforeCommit && point.endsWith(':before')) throw Error('injected failure before commit')
@@ -90,6 +95,8 @@ async function setup() {
   }
   const parentIntent = action('parent', parentProvider, 'infer', infer)
   const leafParentIntent = action('leaf-parent', toolProvider, 'invoke', toolInvoke)
+  const queryParentIntent = action('query-parent', parentProvider, queryOp.method, queryOp)
+  const duplicateParentIntent = action('duplicate-parent', parentProvider, 'prepareRequest', twice)
   const child = (key: string, laterDeadline = false) => {
     const intent = action(key, leafProvider, 'invoke', invoke)
     if (!laterDeadline) return intent
@@ -150,12 +157,14 @@ async function setup() {
       expectedRevision: 0,
       continuation: continuation('loop'),
       consumeSignals: [],
-      actions: [parentIntent, leafParentIntent],
+      actions: [parentIntent, leafParentIntent, queryParentIntent, duplicateParentIntent],
       next: { kind: 'continue' },
     },
   })
   const parentId = stableId('act', `${runId}\0parent`)
   const leafParentId = stableId('act', `${runId}\0leaf-parent`)
+  const queryParentId = stableId('act', `${runId}\0query-parent`)
+  const duplicateParentId = stableId('act', `${runId}\0duplicate-parent`)
   const owner = joint.state as unknown as Owner
   const head = (recordId: string) => {
     const row = joint.db
@@ -273,6 +282,8 @@ async function setup() {
     joint,
     parentId,
     leafParentId,
+    queryParentId,
+    duplicateParentId,
     leafParentIntent,
     prepared,
     start,
@@ -321,6 +332,7 @@ describe('start_composite', () => {
       budgetReservationRefs: [],
       executeDeadline: null,
       actionId: f.parentId,
+      startedAt: '2026-10-03T00:00:00.000Z',
     })
     expect(f.head(providerStateRecordId(f.parentId))).toMatchObject({
       revision: 1,
@@ -346,13 +358,23 @@ describe('start_composite', () => {
   })
   it.each([
     ['an action whose target declares no state codec', 'leaf', 1, 'composite_target'],
+    ['an action whose operation is not an action', 'query', 1, 'composite_target'],
+    ['an action whose operation is declared twice', 'duplicate', 1, 'composite_target'],
     ['a stale action revision', 'parent', 7, 'action_state'],
   ])('refuses %s and writes nothing', async (_name, which, revision, detail) => {
     const f = await setup()
     const invocation = await f.prepared(null, 1)
     const writes = f.writes()
     await expect(
-      f.start(invocation, which === 'leaf' ? f.leafParentId : f.parentId, 'start-x', 'attempt-x', revision),
+      f.start(
+        invocation,
+        { leaf: f.leafParentId, query: f.queryParentId, duplicate: f.duplicateParentId, parent: f.parentId }[
+          which as string
+        ] as string,
+        'start-x',
+        'attempt-x',
+        revision,
+      ),
     ).rejects.toMatchObject({ failure: { detailCode: detail } })
     expect(f.writes()).toBe(writes)
     expect(f.head('attempt:attempt-x')).toBeUndefined()
@@ -366,6 +388,19 @@ describe('start_composite', () => {
       failure: { detailCode: 'action_state' },
     })
     expect(f.writes()).toBe(writes)
+  })
+})
+
+describe('start_composite attempt ids', () => {
+  it('refuses an attempt id that is already taken before it looks at the target', async () => {
+    const f = await setup()
+    await f.start(await f.prepared(f.parentId, 1), f.parentId, 'start-1', 'attempt-1')
+    const writes = f.writes()
+    await expect(
+      f.start(await f.prepared(null, 1), f.leafParentId, 'start-2', 'attempt-1'),
+    ).rejects.toMatchObject({ failure: { detailCode: 'attempt_exists' } })
+    expect(f.head(providerStateRecordId(f.leafParentId))).toBeUndefined()
+    expect(f.writes()).toBeGreaterThan(writes)
   })
 })
 
@@ -411,6 +446,7 @@ describe('advanceProvider', () => {
     const after = f.head(`run-quota:${f.admission.runId}`)?.value
     expect(after?.totalTransitions).toBe(quota?.totalTransitions + 1)
     expect(after?.submittedActions).toBe(quota?.submittedActions + 2)
+    expect(after?.lastProgressRef).toBe(stableId('act', `${f.admission.runId}\0${f.parentId}\0child-b`))
     const sides = f.joint.db
       .prepare("SELECT identity FROM runtime_side_entries WHERE commit_id=? AND kind='action-created'")
       .all(receipt.commitId)
@@ -530,6 +566,124 @@ describe('advanceProvider', () => {
     })
     expect(f.head(actionRecordId(childId))?.value.state).toBe('settled')
     await reopened(f)
+  })
+  it.each([
+    ['transition and request that name different revisions', 'provider_revision'],
+    ['a signal listed twice', 'signal_duplicate'],
+    ['more children than one transition may carry', 'action_count'],
+    ['a child key listed twice', 'child_key_duplicate'],
+    ['a continuation above the size limit', 'continuation'],
+  ])('refuses %s before it reads anything', async (name, detail) => {
+    const f = await started()
+    const invocation = await f.prepared(f.parentId, 1)
+    const request = f.advanceRequest(invocation, 'step-x', {})
+    const shaped = {
+      'transition and request that name different revisions': {
+        ...request,
+        transition: { ...request.transition, expectedProviderRevision: 4 },
+      },
+      'a signal listed twice': {
+        ...request,
+        transition: { ...request.transition, consumeSignals: ['s', 's'] },
+      },
+      'more children than one transition may carry': {
+        ...request,
+        transition: {
+          ...request.transition,
+          children: Array.from({ length: 65 }, (_, index) => f.child(`many-${index}`)),
+        },
+      },
+      'a child key listed twice': {
+        ...request,
+        transition: { ...request.transition, children: [f.child('same'), f.child('same')] },
+      },
+      'a continuation above the size limit': {
+        ...request,
+        transition: {
+          ...request.transition,
+          continuation: {
+            ...request.transition.continuation,
+            data: fixtureRef({ big: 'x'.repeat(300_000) }),
+          },
+        },
+      },
+    }[name as string] as typeof request
+    await expect(f.joint.state.advanceProvider(shaped)).rejects.toMatchObject({
+      failure: { detailCode: detail },
+    })
+    expect(f.head(providerStateRecordId(f.parentId))?.value.providerRevision).toBe(0)
+  })
+  it('counts a transition that creates nothing as no progress, a wait as progress, and closes the prepare quota', async () => {
+    const f = await started()
+    const quota = () => f.head(`run-quota:${f.admission.runId}`)?.value
+    const spin = await f.prepared(f.parentId, 1)
+    await f.advance(spin, 'spin-1', {})
+    expect(quota()?.noProgressTransitions).toBe(1)
+    expect(f.head(`prepare:${stableId('prep', `${f.admission.runId}\0${spin}`)}`)?.value.closed).toBe(true)
+    await f.advance(await f.prepared(f.parentId, 1), 'spin-2', { revision: 1 })
+    expect(quota()?.noProgressTransitions).toBe(2)
+    await f.advance(await f.prepared(f.parentId, 1), 'park', {
+      revision: 2,
+      next: {
+        kind: 'wait',
+        condition: { anyOf: [{ kind: 'signals', typeIds: ['agh.runtime/action-completed@1'], afterSeq: 0 }] },
+      },
+    })
+    expect(quota()?.noProgressTransitions).toBe(0)
+  })
+  it('refuses a codec version the provider does not declare, and a commit id reused for another parent', async () => {
+    const f = await started()
+    const invocation = await f.prepared(f.parentId, 1)
+    const request = f.advanceRequest(invocation, 'step-1', {})
+    await expect(
+      f.joint.state.advanceProvider({
+        ...request,
+        transition: {
+          ...request.transition,
+          continuation: { ...request.transition.continuation, codecVersion: '99' },
+        },
+      }),
+    ).rejects.toMatchObject({ failure: { detailCode: 'continuation_codec' } })
+    await f.joint.state.advanceProvider(request)
+    await expect(
+      f.joint.state.advanceProvider({ ...request, actionId: f.leafParentId }),
+    ).rejects.toMatchObject({ failure: { code: 'conflict' } })
+    expect(f.head(providerStateRecordId(f.parentId))?.value.providerRevision).toBe(1)
+  })
+  it('counts children and consumed signals as progress even when they are all a transition does', async () => {
+    const f = await started()
+    const quota = () => f.head(`run-quota:${f.admission.runId}`)?.value
+    const childIntent = f.child('child-a')
+    await f.advance(await f.prepared(f.parentId, 1), 'spin', {})
+    expect(quota()?.noProgressTransitions).toBe(1)
+    const parkInvocation = await f.prepared(f.parentId, 1)
+    await f.advance(parkInvocation, 'park', {
+      revision: 1,
+      children: [childIntent],
+      next: {
+        kind: 'wait',
+        condition: { anyOf: [{ kind: 'signals', typeIds: ['agh.runtime/action-completed@1'], afterSeq: 0 }] },
+      },
+    })
+    await f.complete(
+      stableId('act', `${f.admission.runId}\0${f.parentId}\0child-a`),
+      childIntent,
+      parkInvocation,
+      'child',
+    )
+    const [signal] = f.signalsFor(f.parentId)
+    await f.advance(await f.prepared(f.parentId, 1), 'spin-again', {
+      revision: 2,
+      consume: [signal as string],
+    })
+    expect(quota()?.noProgressTransitions).toBe(0)
+    await f.advance(await f.prepared(f.parentId, 1), 'spin-3', { revision: 3 })
+    expect(quota()?.noProgressTransitions).toBe(1)
+    await f.advance(await f.prepared(f.parentId, 1), 'children-only', {
+      revision: 4,
+      children: [f.child('child-b')],
+    })
+    expect(quota()?.noProgressTransitions).toBe(0)
   })
   it.each([
     ['a wait with a deadline', { kind: 'wait', condition: { anyOf: [], deadline: '2027-01-01T00:00:00Z' } }],
