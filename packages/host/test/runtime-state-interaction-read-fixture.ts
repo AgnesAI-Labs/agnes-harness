@@ -20,7 +20,6 @@ import {
   RuntimeSchemaRefs,
   validateRuntime,
 } from '@agnes/protocol/runtime'
-import { afterEach } from 'vitest'
 import { defaultPolicyDecision } from '../../core/src/runtime/policy/decision-composition.js'
 import { jcs } from '../../protocol/src/jcs.js'
 import { createIdentityAuthority } from '../src/runtime/identity/authority.js'
@@ -545,9 +544,11 @@ export async function interactionStateFixture(
       }),
   }
 }
-// The conformance runner also loads this fixture outside Vitest, where it has no teardown to join.
-if (process.env.VITEST !== undefined)
-  afterEach(() => {
-    for (const store of stores.splice(0)) store.close()
-    for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true })
-  })
+/**
+ * Closes every fixture store and removes its directory. Test files register it with `afterEach`; the
+ * fixture registers no hook itself, because the conformance runner also loads it outside a test.
+ */
+export function closeInteractionStateFixtures(): void {
+  for (const store of stores.splice(0)) store.close()
+  for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true })
+}
