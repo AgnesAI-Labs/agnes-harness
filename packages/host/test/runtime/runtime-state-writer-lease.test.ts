@@ -180,6 +180,8 @@ describe('writer.acquire', () => {
     expect(f.lease()).toMatchObject({ writer_epoch: claim.writerEpoch })
     await expect(f.commitAs(claim)).resolves.toBeDefined()
     expect(f.lease().last_writer_epoch).toBe(1)
+    // The local view followed the renewal: past the first lease length it is still the same live claim.
+    expect(f.ok(await f.acquire({ ttlMs: 1000, heartbeatMs: 20 }))).toBe(claim)
   })
 
   it('reclaims with a higher epoch once the claim ran out, and State refuses the old claim', async () => {
