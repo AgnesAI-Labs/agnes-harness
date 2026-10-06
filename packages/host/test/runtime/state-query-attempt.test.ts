@@ -59,7 +59,7 @@ function itemsOf(reply: Loose): Loose[] {
   const page = validateRuntime('StateScanResult', reply.value.output.value)
   if (!page.ok) throw Error('page invalid')
   expect(page.value.complete).toBe(true)
-  return page.value.items
+  return [...page.value.items]
 }
 
 function ok<T>(outcome: { ok: true; value: T } | { ok: false; error: unknown }): T {
@@ -111,12 +111,12 @@ describe.skipIf(typeof process.getuid !== 'function')('State read of real attemp
       kind: 'leaf',
       state: 'settled',
       bindingId: native.fixture.binding.bindingId,
-      inputDigest: canonicalJsonDigest(kids[0]?.input),
+      inputDigest: canonicalJsonDigest(kids[0]?.input ?? null),
       requestIdentity: {
         system: 'fixture-peer',
         aghRequestId: 'request-child-a',
         idempotencyKey: null,
-        requestDigest: canonicalJsonDigest(kids[0]?.input),
+        requestDigest: canonicalJsonDigest(kids[0]?.input ?? null),
       },
       receiptIds: [expect.any(String)],
     })
@@ -342,7 +342,7 @@ describe.skipIf(typeof process.getuid !== 'function')('State read of real attemp
         .run(
           JSON.stringify({ ...JSON.parse(String(row.body)), inputDigest: 'sha256:'.padEnd(71, '0') }),
           attemptRecordId('attempt-child-a'),
-          row.revision,
+          Number(row.revision),
         )
     } finally {
       raw.close()
