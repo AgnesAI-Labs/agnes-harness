@@ -33,9 +33,12 @@ export default defineConfig({
     reporters: ['default', zeroTestReporter],
     // Windows suites start real PowerShell, daemon and worker processes; macOS hosted runners
     // also hit the default 5s deadline in unrelated suites when the full gate runs concurrently.
-    // Keep functional checks finite without changing product-level deadlines.
+    // Hosted Linux runners do too: the native State fixtures (real SQLite files with fsync) take
+    // 1-8s on a laptop and several times that on a shared runner, so every platform gets the same
+    // finite functional deadline. Product-level deadlines are not changed.
     // Explicit per-test timeouts and CLI maxWorkers overrides still take precedence.
-    ...(['win32', 'darwin'].includes(process.platform) ? { maxWorkers: 2, testTimeout: 15_000 } : {}), // guards-allow-platform: hosted OS test-runner limits.
+    testTimeout: 15_000,
+    ...(['win32', 'darwin'].includes(process.platform) ? { maxWorkers: 2 } : {}), // guards-allow-platform: hosted OS test-runner limits.
     projects: [
       // `extends: true` concatenates the root exclude, so fast only adds the heavy globs.
       { extends: true, test: { name: 'fast', include: ['**/*.test.{ts,tsx,jsx}'], exclude: heavy } },
