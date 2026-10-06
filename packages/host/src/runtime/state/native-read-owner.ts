@@ -25,6 +25,7 @@ import {
   runRecordId,
   sameJson,
   signalRecordId,
+  visibilityRecordId,
   waitRecordId,
 } from './records.js'
 import { integrity, refuse } from './refusal.js'
@@ -264,6 +265,14 @@ export function createNativeStateReadOwner(
         if (!wait.ok || !runs.has(wait.value.runId) || fact.recordId !== waitRecordId(wait.value.waitId))
           refuseRead()
         rel = { runId: wait.value.runId, actionId: wait.value.targetActionId, target: null, kind }
+      } else if (kind === 'visibility') {
+        const visibility = validateRuntime('ActionVisibilityValue', fact.value)
+        if (!visibility.ok || fact.recordId !== visibilityRecordId(visibility.value.sourceReceiptId))
+          refuseRead()
+        // A visibility record whose action is not in the verified history is not State's own record.
+        const named = actions.get(visibility.value.actionId)
+        if (named === undefined) integrity('a visibility record names no action in this session')
+        rel = { runId: named.runId, actionId: named.actionId, target: null, kind }
       } else if (kind === 'issuance') {
         const related = entry?.relate?.(fact.value)
         if (!related || !runs.has(related.runId)) refuseRead()

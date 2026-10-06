@@ -221,6 +221,7 @@ describe.skipIf(typeof process.getuid !== 'function')('State read of real attemp
         RuntimeSchemaRefs.AttemptRecordValue,
         RuntimeSchemaRefs.SignalRecordValue,
         RuntimeSchemaRefs.WaitRecordValue,
+        RuntimeSchemaRefs.ActionVisibilityValue,
       ].map((schema) => schema.typeId),
     )
     expect(all.length).toBeGreaterThan(items.length)
