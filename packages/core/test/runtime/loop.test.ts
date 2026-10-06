@@ -32,6 +32,24 @@ async function open(credentials?: FixtureCredentials): Promise<Fixture> {
   )) as { openLoopFixture(options?: { credentials: FixtureCredentials }): Promise<Fixture> }
   return module.openLoopFixture(credentials ? { credentials } : undefined)
 }
+// The real model service serves only a route with a bound credential and the handle it names.
+const modelCredentials: FixtureCredentials = {
+  binding: {
+    consumer: 'model',
+    secretId: 'fixed-secret',
+    accountRef: null,
+    serverRef: 'restricted-peer',
+    audience: 'restricted',
+    purpose: 'model-inference',
+  },
+  handle: {
+    handleId: 'fixed-handle',
+    secretId: 'fixed-secret',
+    version: 'fixed-version',
+    audience: 'restricted',
+    expiresAt: '2099-01-01T00:00:00Z',
+  },
+}
 async function ready(credentials?: FixtureCredentials, modelProviderId?: string) {
   const fixture = await open(credentials)
   if (modelProviderId) required(fixture.bindings.model).providerId = modelProviderId
@@ -352,7 +370,7 @@ describe('full C01 SPI text Loop candidate, restricted background peers', () => 
     },
   )
   it('plans against the handle the real model service returns', async () => {
-    const f = await ready(undefined, 'agh.default/model')
+    const f = await ready(modelCredentials, 'agh.default/model')
     const model = await realModelPorts(f)
     try {
       const first = await f.provider.start(f.frame, model.ports)
@@ -374,7 +392,7 @@ describe('full C01 SPI text Loop candidate, restricted background peers', () => 
     }
   })
   it('refuses a handle whose input digest differs from the prepare result', async () => {
-    const f = await ready(undefined, 'agh.default/model')
+    const f = await ready(modelCredentials, 'agh.default/model')
     const model = await realModelPorts(f)
     try {
       const ports = {
@@ -413,7 +431,7 @@ describe('full C01 SPI text Loop candidate, restricted background peers', () => 
     'announcement that differs from the committed plan',
     'plan wider than the locked target',
   ] as const)('accepts only the media plans the handle header commits to: %s', async (scenario) => {
-    const f = await ready(undefined, 'agh.default/model')
+    const f = await ready(modelCredentials, 'agh.default/model')
     const model = await realModelPorts(f)
     try {
       const ports = {

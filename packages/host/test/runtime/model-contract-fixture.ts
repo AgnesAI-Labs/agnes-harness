@@ -122,7 +122,14 @@ export function prepareRequest(): W.ModelPrepareRequest {
       features: { input: ['text'], output: ['text'], tools: false, structuredOutput: false, streaming: true },
       priceVersion: 'fixture-price-1',
       credentialAudience: 'fixture-endpoint',
-      credentialBinding: null,
+      credentialBinding: {
+        consumer: 'model',
+        secretId: 's',
+        accountRef: null,
+        serverRef: 'e',
+        audience: 'fixture-endpoint',
+        purpose: 'model-inference',
+      },
     },
     outputSchema: null,
     toolCatalog: null,
@@ -135,7 +142,13 @@ export function prepareRequest(): W.ModelPrepareRequest {
       schema,
       digest: canonicalJsonDigest({}),
     },
-    credentialRef: null,
+    credentialRef: {
+      handleId: 'h',
+      secretId: 's',
+      version: 'v1',
+      audience: 'fixture-endpoint',
+      expiresAt: '2099-01-01T00:00:00Z',
+    },
   }
 }
 export function runCall(signal = new AbortController().signal) {
@@ -192,6 +205,7 @@ export function defaultModelFixture(
     packageDigest: 'f'.repeat(64),
     config,
     secrets: null,
+    credentials: { verifyIssued: () => true },
     state: stateBinding,
     current: () => state.current,
     catalog: {

@@ -17,6 +17,7 @@ import {
 import { modelInputDigest } from '../../src/runtime/model/wire-request.js'
 import {
   fixtureAdapter,
+  fixtureHandle,
   fixtureOwner,
   fixturePick,
   fixtureWire,
@@ -114,7 +115,7 @@ describe('assemblePrepared', () => {
   })
   it('carries the credential handle and the media digests in the header', () => {
     expect(assembled().entry.header).toMatchObject({
-      credentialRef: null,
+      credentialRef: fixtureHandle,
       mediaPlanDigests: [],
       maxOutputTokens: 32,
     })
