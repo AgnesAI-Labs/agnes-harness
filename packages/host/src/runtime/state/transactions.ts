@@ -51,9 +51,15 @@ import {
 } from '@agnes/protocol/gen/session-v1'
 import type {
   ReconciliationCheckValue,
+  ServiceCommandAdmission,
+  ServiceCommandRecord,
   SessionControlRequest,
+  SignalDelivery,
+  SignalIntakeReceipt,
   StateStoreControlBeginReconciliationRequest,
   StateStoreControlCompleteReconciliationRequest,
+  StateStoreControlFireTimerRequest,
+  StateStoreControlReadServiceCommandRequest,
   StateStoreControlSessionControlStatusRequest,
 } from '@agnes/protocol/runtime'
 import {
@@ -95,6 +101,8 @@ import {
 } from './approval.js'
 import { canonicalJson } from './canonical-json.js'
 import {
+  acceptInboxTx,
+  acceptServiceCommandTx,
   ackOutboxTx,
   admitInvocationTx,
   admitQueryTx,
@@ -112,12 +120,16 @@ import {
   dispatchAdmissionTx,
   failOutboxTx,
   finishControlScan,
+  fireTimerTx,
   intakeReceiptTx,
   noteControlSide,
   noteControlVersion,
   probeActionResultTx,
   probeDispatchTx,
+  readServiceCommandTx,
+  type SignalSource,
   type StoredHead,
+  serviceCaller,
   type WriteCommitInput,
 } from './control.js'
 import { createEffectsActionCaptureOwner, type EffectsActionCapture } from './effects-action-capture.js'
@@ -1072,6 +1084,7 @@ export class RuntimeStateDatabase {
   private admissionSource: RuntimeAdmissionSource | undefined
   private sessionControl: SessionControlOwner | undefined
   private effectsActionCapture: ReturnType<typeof createEffectsActionCaptureOwner> | undefined
+  private signalSource: SignalSource | undefined
   private readonly beforeCommit: (() => void) | undefined
   private readonly onCommit: ((commit: CommitNotice) => void) | undefined
   private readonly ids: ReturnType<typeof defaultIds>
@@ -1475,6 +1488,12 @@ export class RuntimeStateDatabase {
       this.controlPorts(),
       (method, id, body, final) => this.tx(method, id, body, final),
     )
+  }
+
+  installSignalSource(source: SignalSource): void {
+    if (this.closed) refuse('denied', 'signal_source', 'State connection is closed')
+    if (this.signalSource) refuse('denied', 'signal_source', 'signal source is already installed')
+    this.signalSource = source
   }
 
   installEffectsActionCapture(): void {
@@ -1982,6 +2001,44 @@ export class RuntimeStateDatabase {
     return this.finishControl(
       await this.tx('advanceProvider', request.commitId, () =>
         advanceProviderTx(this.controlPorts(), request),
+      ),
+    )
+  }
+
+  async acceptInbox(delivery: SignalDelivery, context: CallContext): Promise<SignalIntakeReceipt> {
+    return this.finishControl(
+      await this.tx('acceptInbox', delivery.intakeId, () =>
+        acceptInboxTx(this.controlPorts(), delivery, this.signalSource?.verify(delivery, context)),
+      ),
+    )
+  }
+
+  async fireTimer(request: StateStoreControlFireTimerRequest): Promise<SignalIntakeReceipt> {
+    return this.finishControl(
+      await this.tx('fireTimer', request.requestId, () => fireTimerTx(this.controlPorts(), request)),
+    )
+  }
+
+  async acceptServiceCommand(
+    request: ServiceCommandAdmission,
+    context: CallContext,
+  ): Promise<ServiceCommandRecord> {
+    const caller = serviceCaller(context)
+    return this.finishControl(
+      await this.tx('acceptServiceCommand', request.commandId, () =>
+        acceptServiceCommandTx(this.controlPorts(), request, caller),
+      ),
+    )
+  }
+
+  async readServiceCommand(
+    request: StateStoreControlReadServiceCommandRequest,
+    context: CallContext,
+  ): Promise<ServiceCommandRecord | null> {
+    const caller = serviceCaller(context)
+    return this.finishControl(
+      await this.tx('readServiceCommand', request.commandId, () =>
+        readServiceCommandTx(this.controlPorts(), request, caller),
       ),
     )
   }

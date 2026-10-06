@@ -40007,6 +40007,7 @@
     "TimerRecordValue": "agh.runtime/timer-record@1",
     "ResolutionRecordValue": "agh.runtime/resolution-record@1",
     "ReconciliationCheckValue": "agh.runtime/reconciliation-check@1",
+    "ServiceCommandRecord": "agh.runtime/service-command@1",
     "InteractionRecord": "agh.interaction/interaction-record@1",
     "InboxRecord": "agh.runtime/inbox-record@1",
     "ApprovalTaintAckRecordValue": "agh.runtime/approval-taint-ack-record@1",
