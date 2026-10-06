@@ -13,7 +13,7 @@
     },
     {
       "path": "packages/extension-api/src/runtime/artifact-authoring.ts",
-      "sha256": "660a8111bcf13d494491ae4e0bb623ca4b921a06f01402374ba1500e13ad5833"
+      "sha256": "f4e92b7a44a207c7712719148b3c3969c6523b7a39fe0d1c84cdc32c59a94518"
     },
     {
       "path": "packages/extension-api/src/runtime/authoring-hook-operations.ts",
@@ -33,7 +33,7 @@
     },
     {
       "path": "packages/extension-api/src/runtime/authoring.ts",
-      "sha256": "edf5f9a829e3f107cf22d0b0c4d7421fb639be86093716bda7d7a7ded17972d3"
+      "sha256": "45fdc0556c4c3ec00e7518d4521376413147cd5053fc3209070169b3e80775b0"
     },
     {
       "path": "packages/extension-api/src/runtime/compaction-authoring.ts",
@@ -189,7 +189,7 @@
     },
     {
       "path": "packages/protocol/schema/runtime/public.json",
-      "sha256": "8e172face583d906eec5cdca6e9ef78d67d8a860e1eee2044ff7c638c8bd3012"
+      "sha256": "fcc2758636c1695d4cf08d7fb2e6099958c2fb0cae6756553e3738d97dc588af"
     },
     {
       "path": "packages/protocol/schema/runtime/simple-loop.schema.json",
@@ -423,7 +423,7 @@
     },
     {
       "path": "packages/protocol/gen/ts/runtime-artifact-policy.ts",
-      "sha256": "ca644d13c49716c476155cdc563f2ff92c2fb0a3b039582891e1164bd271b6e1"
+      "sha256": "b4fe4bd476ca3d11370bf1bcb1fc72e9ec207c832ef47213145c23a2e88d5ab4"
     },
     {
       "path": "packages/protocol/gen/ts/runtime-catalog.ts",
@@ -499,7 +499,7 @@
     },
     {
       "path": "packages/protocol/gen/ts/runtime-public-23.ts",
-      "sha256": "c83d4ec8a383e6788907b55b0819fbc5ed5634e74f13bc859d74b5209bc34a07"
+      "sha256": "5dbb9794212f066e8e208cadf5cc4cab40e98683700c44e71794a869f2c02f80"
     },
     {
       "path": "packages/protocol/gen/ts/runtime-public-24.ts",
@@ -539,15 +539,15 @@
     },
     {
       "path": "packages/protocol/gen/ts/runtime-public.ts",
-      "sha256": "8ee362df2c089a0cc6c91c8143ffc75c1568b3f76e7dd14e80a3a8536f3d1d33"
+      "sha256": "abdfdc426a20048b49b96502b839e54b9a69ec2c006a7563fb7f72daacac840d"
     },
     {
       "path": "packages/protocol/gen/ts/runtime-schema-refs.ts",
-      "sha256": "6410e0dc039a1f7d5ea519bda5b990c50ef354918002af7a9d767ec93b1a5231"
+      "sha256": "05bfc6d49f2c9508f15c7db08d23d3cf884d3fe0d8458ad7b3f1c855ca6f224a"
     },
     {
       "path": "packages/protocol/gen/ts/runtime-wire-types.ts",
-      "sha256": "e5ccfb8e00f8d867fd906d435b63549af4281a04a2f38f3d7705b6fabe22320c"
+      "sha256": "3235ebd13d8611bdf862fe226c61927200de24e236fe06e979bffda1952ba5be"
     },
     {
       "path": "packages/protocol/gen/ts/session-v1.ts",
@@ -680,7 +680,7 @@
       },
       {
         "path": "packages/extension-api/src/runtime/artifact-authoring.ts",
-        "sha256": "660a8111bcf13d494491ae4e0bb623ca4b921a06f01402374ba1500e13ad5833"
+        "sha256": "f4e92b7a44a207c7712719148b3c3969c6523b7a39fe0d1c84cdc32c59a94518"
       },
       {
         "path": "packages/extension-api/src/runtime/authoring-hook-operations.ts",
@@ -704,7 +704,7 @@
       },
       {
         "path": "packages/extension-api/src/runtime/authoring.ts",
-        "sha256": "edf5f9a829e3f107cf22d0b0c4d7421fb639be86093716bda7d7a7ded17972d3"
+        "sha256": "45fdc0556c4c3ec00e7518d4521376413147cd5053fc3209070169b3e80775b0"
       },
       {
         "path": "packages/extension-api/src/runtime/compaction-authoring.ts",
@@ -932,7 +932,7 @@
       },
       {
         "path": "packages/protocol/gen/ts/runtime-artifact-policy.ts",
-        "sha256": "ca644d13c49716c476155cdc563f2ff92c2fb0a3b039582891e1164bd271b6e1"
+        "sha256": "b4fe4bd476ca3d11370bf1bcb1fc72e9ec207c832ef47213145c23a2e88d5ab4"
       },
       {
         "path": "packages/protocol/gen/ts/runtime-catalog.ts",
@@ -1008,7 +1008,7 @@
       },
       {
         "path": "packages/protocol/gen/ts/runtime-public-23.ts",
-        "sha256": "c83d4ec8a383e6788907b55b0819fbc5ed5634e74f13bc859d74b5209bc34a07"
+        "sha256": "5dbb9794212f066e8e208cadf5cc4cab40e98683700c44e71794a869f2c02f80"
       },
       {
         "path": "packages/protocol/gen/ts/runtime-public-24.ts",
@@ -1048,15 +1048,15 @@
       },
       {
         "path": "packages/protocol/gen/ts/runtime-public.ts",
-        "sha256": "8ee362df2c089a0cc6c91c8143ffc75c1568b3f76e7dd14e80a3a8536f3d1d33"
+        "sha256": "abdfdc426a20048b49b96502b839e54b9a69ec2c006a7563fb7f72daacac840d"
       },
       {
         "path": "packages/protocol/gen/ts/runtime-schema-refs.ts",
-        "sha256": "6410e0dc039a1f7d5ea519bda5b990c50ef354918002af7a9d767ec93b1a5231"
+        "sha256": "05bfc6d49f2c9508f15c7db08d23d3cf884d3fe0d8458ad7b3f1c855ca6f224a"
       },
       {
         "path": "packages/protocol/gen/ts/runtime-wire-types.ts",
-        "sha256": "e5ccfb8e00f8d867fd906d435b63549af4281a04a2f38f3d7705b6fabe22320c"
+        "sha256": "3235ebd13d8611bdf862fe226c61927200de24e236fe06e979bffda1952ba5be"
       },
       {
         "path": "packages/protocol/gen/ts/session-v1.ts",
@@ -1176,7 +1176,7 @@
       },
       {
         "path": "packages/protocol/schema/runtime/public.json",
-        "sha256": "8e172face583d906eec5cdca6e9ef78d67d8a860e1eee2044ff7c638c8bd3012"
+        "sha256": "fcc2758636c1695d4cf08d7fb2e6099958c2fb0cae6756553e3738d97dc588af"
       },
       {
         "path": "packages/protocol/schema/runtime/simple-loop.schema.json",
@@ -1467,9 +1467,9 @@
         "sha256": "5368e00eb1fe320fa21e015f95911b6af6ca8a3c405c3be6585ff521c4832ce0"
       }
     ],
-    "inputDigest": "72987b94ebe27c76089d0e4e20b52d431a0737b0d1d59cdaea0c71b0b915e390",
+    "inputDigest": "159d54118ba9f236d4acb5b565a10bc7772b7f478895e1604c494dc49f30929c",
     "diagnostics": [],
-    "reportDigest": "8e4d3828a6a9d7704d91729c67efe1f20c0556c393245666e6e7eb510ed0d590"
+    "reportDigest": "53e8693da84c6dd9a03e68131cc5a3f88496d38806dda86357c4af734b0d786b"
   },
-  "snapshotDigest": "775545e6cbbdbac2cc49aec35fb1afadd3d74d92eb26cb01d9c9f29661ec0df1"
+  "snapshotDigest": "8a50f39bb57c7847319de64909b033a6cc2707c2998a535837eec0852ce1ea91"
 }
