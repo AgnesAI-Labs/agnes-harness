@@ -21,6 +21,8 @@ export type WireEvent =
 export type AdapterStreamOptions = {
   /** Called before network I/O with the actual serialized body digest, never credentials. */
   reportSent?: (report: SentReport) => void
+  /** Called before a finished tool call is emitted with the argument text the provider streamed for it ('' if none). */
+  reportToolArguments?: (ordinal: number, raw: string) => void
   /** Refuse automatic redirects when the caller authorizes only the original physical endpoint. */
   redirect?: 'error'
   signal: AbortSignal

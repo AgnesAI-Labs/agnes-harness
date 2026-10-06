@@ -25,11 +25,9 @@ export async function cleanup(): Promise<void> {
 
 export const CODEC = { namespace: 'agh.default/model-infer', codecVersion: '1' }
 
-/** `secondParent` also creates a second composite parent in the Loop step. */
-export async function setup(options: { secondParent?: boolean } = {}) {
-  const directory = mkdtempSync(join(tmpdir(), 'agnes-advance-provider-'))
-  directories.push(directory)
-  const input = admissionFixtureInput()
+type AdmissionInput = ReturnType<typeof admissionFixtureInput>
+
+function adjustProviders(input: AdmissionInput) {
   const release = input.fixture.previousRelease
   if (!release) throw Error('locked release missing')
   const parentProvider = release.bindings.find((row) => row.binding.contract === 'agh.model')
@@ -50,11 +48,42 @@ export async function setup(options: { secondParent?: boolean } = {}) {
   parentProvider.descriptor.operations.push({ ...twice } as never)
   const { releaseSetId: _before, ...resealed } = release
   release.releaseSetId = fixtureHash(resealed)
+  return { parentProvider, leafProvider, toolProvider, infer, invoke, toolInvoke, queryOp, twice }
+}
+const preparedProviders = new WeakMap<object, ReturnType<typeof adjustProviders>>()
+
+/** Adjusts the admission fixture so the parent is a composite and the adapter and tools stay leaves. Idempotent. */
+export function prepareProviders(input: AdmissionInput) {
+  const known = preparedProviders.get(input)
+  if (known) return known
+  const adjusted = adjustProviders(input)
+  preparedProviders.set(input, adjusted)
+  return adjusted
+}
+
+/**
+ * With `native` the run lives in that fixture's joint State, which the caller built from
+ * `prepareProviders` and closes itself; otherwise the fixture opens and cleans up its own.
+ */
+export async function setup(
+  options: {
+    native?: { directory: string; input: AdmissionInput; fixture: Joint }
+    /** Also creates a second composite parent in the Loop step. */
+    secondParent?: boolean
+  } = {},
+) {
+  const directory = options.native?.directory ?? mkdtempSync(join(tmpdir(), 'agnes-advance-provider-'))
+  if (!options.native) directories.push(directory)
+  const input = options.native?.input ?? admissionFixtureInput()
+  const { parentProvider, leafProvider, toolProvider, infer, invoke, toolInvoke, queryOp, twice } =
+    prepareProviders(input)
   let failBeforeCommit = false
-  const joint = await openJointAdmission(directory, input, (point) => {
-    if (failBeforeCommit && point.endsWith(':before')) throw Error('injected failure before commit')
-  })
-  joints.push(joint)
+  const joint =
+    options.native?.fixture ??
+    (await openJointAdmission(directory, input, (point) => {
+      if (failBeforeCommit && point.endsWith(':before')) throw Error('injected failure before commit')
+    }))
+  if (!options.native) joints.push(joint)
   const created = await joint.coordinator.coordinate(joint.draft(), joint.context())
   if (!(created.ok && created.value.state === 'created'))
     throw Error(`run was not created ${JSON.stringify(created)}`)
@@ -119,6 +148,7 @@ export async function setup(options: { secondParent?: boolean } = {}) {
     readGuards: [],
     queryUsage: null,
   })
+  /** An invocation that is prepared for a commit and not yet used by one. */
   /** The revision an invocation for this target is based on: the provider revision once the parent has started. */
   function baseOf(targetActionId: string | null, runRevision: number) {
     if (targetActionId === null) return runRevision
@@ -129,7 +159,6 @@ export async function setup(options: { secondParent?: boolean } = {}) {
       .get(`provider:${targetActionId}`)
     return row ? Number(row.rev) : runRevision
   }
-  /** An invocation that is prepared for a commit and not yet used by one. */
   async function prepared(targetActionId: string | null, runRevision: number) {
     const invocationId = `invocation-${++counter}`
     await joint.state.admitInvocation({
