@@ -215,7 +215,8 @@ it.each([
   ['model', 'loop_model_action_unavailable'],
   ['cold', 'loop_cold_state_consumer_unavailable'],
   ['credential-egress', 'loop_model_action_unavailable'],
-  ['credential-c04', 'loop_model_action_unavailable'],
+  ['credential-c04', 'loop_supervisor_composite_unavailable'],
+  ['credential-c04-unverified', 'model_credential_unverified'],
   ['credential-secret', 'loop_credential_binding'],
   ['credential-audience', 'loop_credential_binding'],
   ['credential-expired', 'loop_credential_expired'],
@@ -256,13 +257,19 @@ it.each([
       if (mode.startsWith('credential-')) {
         expect(created.result).toMatchObject({
           error: {
-            code: ['credential-egress', 'credential-c04', 'credential-none', 'credential-wire'].includes(mode)
+            code: [
+              'credential-egress',
+              'credential-c04',
+              'credential-c04-unverified',
+              'credential-none',
+              'credential-wire',
+            ].includes(mode)
               ? 'incompatible'
               : 'denied',
           },
         })
         const reached = mode === 'credential-egress'
-        expect(events.some((event) => event.method === 'dispatch')).toBe(reached)
+        expect(events.some((event) => event.method === 'dispatch')).toBe(reached || mode === 'credential-c04')
         expect(events.filter((event) => event.method === 'secrets.resolve')).toEqual(
           ['credential-none', 'credential-wire'].includes(mode)
             ? []
@@ -287,8 +294,20 @@ it.each([
               ]
             : [],
         )
-        if (['credential-egress', 'credential-c04'].includes(mode))
+        if (['credential-egress', 'credential-c04', 'credential-c04-unverified'].includes(mode))
           expect(events).toContainEqual({ method: 'credential.accept', exactHandle: true })
+        if (mode === 'credential-c04') {
+          expect(events).toContainEqual({ method: 'credential.verifyIssued', verified: true })
+          expect(events).toContainEqual({
+            method: 'model.prepare',
+            registered: true,
+            toolNames: ['textstatistics'],
+          })
+        }
+        if (mode === 'credential-c04-unverified') {
+          expect(events).toContainEqual({ method: 'credential.verifyIssued', verified: false })
+          expect(events.some((event) => event.method === 'model.prepare')).toBe(false)
+        }
         expect(events).toContainEqual({ method: 'credential.close', keyAbsent: true })
         expect(readFileSync(w.ownerLog, 'utf8')).not.toContain('sk-local-')
         expect(w.diagnostics()).not.toContain('sk-local-')
