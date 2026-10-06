@@ -581,6 +581,39 @@ describe('composer image attachments', () => {
     expect(host.querySelector('#composer-attach')?.getAttribute('aria-disabled')).toBe('true')
   })
 
+  it('shows the attachment limits in a Tooltip instead of a native title', async () => {
+    await act(async () =>
+      root.render(
+        createElement(Composer, {
+          dependencies,
+          initialView: view,
+          onCancel() {},
+          onDraftChange() {},
+          onError() {},
+          onModelSelect: async () => false,
+          onPermissionSelect: async () => false,
+          onSubmit() {},
+          onWorkspace() {},
+        }),
+      ),
+    )
+    const attach = host.querySelector<HTMLButtonElement>('#composer-attach')
+    if (!attach) throw new Error('missing attach button')
+    // 原生 title 会同时给出浏览器自己那套气泡，两者叠加等于两个提示。
+    expect(attach.getAttribute('title')).toBeNull()
+    // 无障碍说明不受影响：仍然由按钮自己指向那段 visually-hidden 的文案。
+    expect(attach.getAttribute('aria-describedby')).toBe('composer-image-hint')
+    expect(host.querySelector('#composer-image-hint')?.textContent).toContain('可上传各类文件')
+
+    // React 的 onMouseEnter 由 mouseover 合成，直接派发 mouseenter 不会触发浮层。
+    await act(async () => {
+      attach.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }))
+    })
+    await vi.waitFor(() =>
+      expect(document.querySelector('.agnes-ui-tooltip')?.textContent).toContain('可上传各类文件'),
+    )
+  })
+
   it('says attachments cannot be added yet instead of quoting the limits', async () => {
     const handle = createRef<ComposerHandle>()
     const onError = vi.fn()

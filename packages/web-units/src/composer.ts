@@ -26,6 +26,7 @@ import {
   USER_MESSAGE_IMAGE_LIMITS,
   validateUserAttachments,
 } from '@agnes/protocol-validation'
+import { Tooltip } from '@agnes/web-ui'
 import {
   type ChangeEvent,
   type ClipboardEvent,
@@ -1053,46 +1054,52 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
           },
         }),
         createElement('span', { id: 'composer-image-hint', className: 'visually-hidden' }, imageHint),
+        // 悬停说明走 antd Tooltip：原生 title 的气泡样式、延迟和位置都不可控，和界面其它浮层也不一致。
+        // 无障碍说明仍由按钮自己的 aria-describedby 指向下面那个 visually-hidden 的 #composer-image-hint，
+        // 所以去掉 title 不丢信息。
         createElement(
-          'button',
-          {
-            id: 'composer-attach',
-            type: 'button',
-            className: 'secondary-button compact',
-            'aria-label': dependencies.translate('composer.attachment.add'),
-            'aria-describedby': 'composer-image-hint',
-            'aria-disabled':
-              imageDisabled || attachments.length + pendingCount >= USER_MESSAGE_ATTACHMENT_LIMITS.maxCount,
-            title: imageHint,
-            onClick: () => {
-              if (imageDisabled) {
-                // 条件比 addFiles 那处窄，是有意保留的：只有模型不接受图片时才说话，正在发送
-                // 或输入框未就绪时点它不提示。走到这里原因确定是模型不收图片，取
-                // image.unsupported；addFiles 那条路是文件一个都没加进去，报的是
-                // attachment.unavailable，两处的条件与文案都不通用。
-                if (!policy.supported)
-                  onError(new Error(dependencies.translate('composer.image.unsupported')))
-                return
-              }
-              if (attachments.length + pendingCount >= USER_MESSAGE_ATTACHMENT_LIMITS.maxCount) {
-                onError(
-                  new Error(
-                    dependencies.translate('composer.attachment.tooMany', {
-                      count: USER_MESSAGE_ATTACHMENT_LIMITS.maxCount,
-                    }),
-                  ),
-                )
-                return
-              }
-              fileInput.current?.click()
-            },
-          },
+          Tooltip,
+          { title: imageHint },
           createElement(
-            'svg',
-            { className: 'icon', viewBox: '0 0 24 24', 'aria-hidden': true },
-            createElement('path', {
-              d: 'm16 6l-8.414 8.586a2 2 0 0 0 2.829 2.829l8.414-8.586a4 4 0 1 0-5.657-5.657l-8.379 8.551a6 6 0 1 0 8.485 8.485l8.379-8.551',
-            }),
+            'button',
+            {
+              id: 'composer-attach',
+              type: 'button',
+              className: 'secondary-button compact',
+              'aria-label': dependencies.translate('composer.attachment.add'),
+              'aria-describedby': 'composer-image-hint',
+              'aria-disabled':
+                imageDisabled || attachments.length + pendingCount >= USER_MESSAGE_ATTACHMENT_LIMITS.maxCount,
+              onClick: () => {
+                if (imageDisabled) {
+                  // 条件比 addFiles 那处窄，是有意保留的：只有模型不接受图片时才说话，正在发送
+                  // 或输入框未就绪时点它不提示。走到这里原因确定是模型不收图片，取
+                  // image.unsupported；addFiles 那条路是文件一个都没加进去，报的是
+                  // attachment.unavailable，两处的条件与文案都不通用。
+                  if (!policy.supported)
+                    onError(new Error(dependencies.translate('composer.image.unsupported')))
+                  return
+                }
+                if (attachments.length + pendingCount >= USER_MESSAGE_ATTACHMENT_LIMITS.maxCount) {
+                  onError(
+                    new Error(
+                      dependencies.translate('composer.attachment.tooMany', {
+                        count: USER_MESSAGE_ATTACHMENT_LIMITS.maxCount,
+                      }),
+                    ),
+                  )
+                  return
+                }
+                fileInput.current?.click()
+              },
+            },
+            createElement(
+              'svg',
+              { className: 'icon', viewBox: '0 0 24 24', 'aria-hidden': true },
+              createElement('path', {
+                d: 'm16 6l-8.414 8.586a2 2 0 0 0 2.829 2.829l8.414-8.586a4 4 0 1 0-5.657-5.657l-8.379 8.551a6 6 0 1 0 8.485 8.485l8.379-8.551',
+              }),
+            ),
           ),
         ),
         createElement(

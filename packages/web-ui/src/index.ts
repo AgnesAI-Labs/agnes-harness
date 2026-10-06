@@ -70,4 +70,5 @@ export {
 } from './ui/state-lights.js'
 export { Switch, type SwitchProps } from './ui/switch.js'
 export { Tabs, type TabsProps } from './ui/tabs.js'
+export { Tooltip, type TooltipProps } from './ui/tooltip.js'
 export * from './ui-locale.js'
