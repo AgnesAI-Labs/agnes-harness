@@ -253,7 +253,7 @@ describe('model prepare', () => {
     await expect(openModel({ bridge })).rejects.toThrow('model_child_bridge_not_ready')
   })
 
-  it('keeps the credential rules: a handle on a keyless route, or a bound route without a verifier, is refused by name', async () => {
+  it('keeps the credential rules: a handle on a keyless route, or a bound route the issuer does not vouch for, is refused by name', async () => {
     const bound = {
       ...prepareRequest().route,
       credentialBinding: {
@@ -272,7 +272,7 @@ describe('model prepare', () => {
       audience: 'fixture-endpoint',
       expiresAt: '2099-01-01T00:00:00Z',
     }
-    const plain = await open({ credentials: undefined })
+    const plain = await open({ credentials: { verifyIssued: () => false } })
     const keyless = { ...prepareRequest().route, credentialBinding: null }
     expect(detail(await plain.prepare(prepareRequest({ route: keyless, credentialRef: handle })))).toBe(
       'model_credential_binding',
@@ -489,7 +489,7 @@ describe('model prepare with resolved tools', () => {
     ['no resolver is installed', undefined],
     ['the resolver refuses', { resolve: async () => failure('model_tools_unavailable', 'denied') }],
   ])('keeps the refusal model_wire_tools when %s', async (_name, tools) => {
-    const { prepare } = await open({ tools })
+    const { prepare } = await open(tools ? { tools } : {})
     const result = await prepare(request())
     expect(result).toMatchObject({
       ok: false,

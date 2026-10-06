@@ -1,4 +1,4 @@
-import { createPreparedRegistry, type PreparedEntry } from '@agnes/core'
+import { assemblePrepared, createPreparedRegistry, type PreparedEntry } from '@agnes/core'
 import { canonicalJsonDigest } from '@agnes/protocol/runtime'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
@@ -7,11 +7,13 @@ import {
 } from '../../src/runtime/model/model-source-reader.js'
 import {
   assembledFixture,
+  captureOf,
   fixtureCatalog,
   fixtureContext,
   fixtureFrame,
   fixturePorts,
   fixtureWire,
+  preparedFixture,
   sessionWith,
 } from './model-source-fixture.js'
 
@@ -238,6 +240,103 @@ describe('model source reader: load', () => {
     expect(source.request.sampling?.thinking ?? null).toBe(source.prepared.generation.thinking)
     expect(source.prepared.mediaPlans).toHaveLength(0)
     expect(s.network.calls).toBe(0)
+  })
+})
+
+describe('model source reader: tools kept at prepare time', () => {
+  const schema = { type: 'object', properties: { q: { type: 'string' } } }
+  const document = {
+    $schema: 'https://json-schema.org/draft/2020-12/schema',
+    $ref: '#/$defs/Input',
+    $defs: { Input: schema },
+  }
+  const base = preparedFixture()
+  const definition = {
+    resource: { resourceId: 'read', version: '1', digest: canonicalJsonDigest('read') },
+    executor: base.ownerBinding,
+    name: 'read',
+    inputSchema: { ...base.view.schema, digest: canonicalJsonDigest(document) },
+    outputSchema: base.view.schema,
+    requiredCapabilities: [],
+    retrySafety: 'idempotent',
+    publicAnnotations: {
+      kind: 'inline',
+      schema: base.view.schema,
+      value: {},
+      digest: canonicalJsonDigest({}),
+      bytes: 2,
+    },
+    policy: {
+      version: '1',
+      classifierRef: null,
+      defaults: {
+        isReadOnly: true,
+        isDestructive: false,
+        replay: 'idempotent',
+        requiresApproval: 'never',
+        approvalScopes: [],
+      },
+    },
+    execution: {
+      concurrency: 'parallel',
+      isOpenWorld: false,
+      costHint: null,
+      deferLoading: false,
+      requiredModelInput: [],
+    },
+  }
+  const toolCatalog = {
+    revision: 1,
+    digest: canonicalJsonDigest({ revision: 1, tools: [definition] } as never),
+    tools: [definition],
+  }
+  const tools = [{ name: 'read', description: 'Read a file', document }]
+  const assembled = assemblePrepared({
+    runId: 'run-1',
+    sessionId: 'session-1',
+    owner: base.ownerBinding,
+    request: {
+      view: base.view,
+      route: { ...base.target, features: { ...base.target.features, tools: true } },
+      outputSchema: null,
+      toolCatalog: toolCatalog as never,
+      generation: base.generation,
+      sessionParameterRef: base.sessionParameterRef,
+      credentialRef: base.credentialRef,
+    },
+    capture: captureOf(fixtureCatalog()),
+    wire: fixtureWire,
+    estimatedUnits: [],
+    tools,
+  })
+  if (!assembled.ok) throw new Error(assembled.error.detailCode)
+  const { entry, ref } = assembled.value
+
+  it('loads a tool-carrying entry, checking the digest against the tools it kept', async () => {
+    const s = rebuild(setup(), { registry: answering(entry) })
+    const loaded = await s.reader.load(ref, fixtureFrame(ref), s.context)
+    if (!loaded.ok) throw new Error(loaded.error.detailCode)
+    expect(loaded.value.request.tools).toEqual([
+      { name: 'read', description: 'Read a file', parameters: schema },
+    ])
+    expect(loaded.value.request.derivedHash).toBe(entry.inputDigest)
+  })
+
+  it('names drift when the entry no longer holds the tools its digest covers', async () => {
+    const s = rebuild(setup(), { registry: answering({ ...entry, resolvedTools: null }) })
+    expect(await s.reader.load(ref, fixtureFrame(ref), s.context)).toMatchObject({
+      ok: false,
+      error: { detailCode: 'model_source_drift' },
+    })
+  })
+
+  it('names drift when a kept description differs from the one the digest covers', async () => {
+    const other = { ...entry, resolvedTools: [{ ...tools[0], description: 'Read a file quietly' }] }
+    const s = rebuild(setup(), { registry: answering(other as never) })
+    expect(await s.reader.load(ref, fixtureFrame(ref), s.context)).toMatchObject({
+      ok: false,
+      error: { detailCode: 'model_source_drift' },
+    })
   })
 })
 

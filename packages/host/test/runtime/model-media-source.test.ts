@@ -142,6 +142,7 @@ async function published(kind: 'native' | 'convert') {
     capture,
     wire: fixtureWire,
     request,
+    resolvedTools: null,
   }
   return { h, plan, entry, ref, handleId, header }
 }

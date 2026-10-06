@@ -32,8 +32,7 @@ export function standardToolDocument() {
 }
 
 /** One catalog tool bound to the real document by its schema digest, and what a resolver answers for it. */
-export function standardTool(name: string, description: string) {
-  const document = standardToolDocument()
+export function standardTool(name: string, description: string, document: unknown = standardToolDocument()) {
   const annotations = { content: [{ type: 'text', text: description }] }
   const definition: W.ToolDefinition = {
     resource: { resourceId: name, version: '1', digest: canonicalJsonDigest(`fixture-${name}`) },
@@ -44,7 +43,7 @@ export function standardTool(name: string, description: string) {
       providerId: 'agh.default/tools',
     },
     name,
-    inputSchema: RuntimeSchemaRefs.StandardToolOutput,
+    inputSchema: { ...RuntimeSchemaRefs.StandardToolOutput, digest: canonicalJsonDigest(document as never) },
     outputSchema: RuntimeSchemaRefs.StandardToolOutput,
     requiredCapabilities: [],
     retrySafety: 'idempotent',
