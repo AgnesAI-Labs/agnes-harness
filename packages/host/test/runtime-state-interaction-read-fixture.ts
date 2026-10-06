@@ -545,7 +545,9 @@ export async function interactionStateFixture(
       }),
   }
 }
-afterEach(() => {
-  for (const store of stores.splice(0)) store.close()
-  for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true })
-})
+// The conformance runner also loads this fixture outside Vitest, where it has no teardown to join.
+if (process.env.VITEST !== undefined)
+  afterEach(() => {
+    for (const store of stores.splice(0)) store.close()
+    for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true })
+  })
