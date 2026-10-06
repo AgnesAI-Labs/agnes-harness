@@ -103,13 +103,13 @@ async function setup() {
     readGuards: [],
     queryUsage: null,
   })
-  async function prepared(targetActionId: string | null, runRevision: number) {
+  async function prepared(targetActionId: string | null, runRevision: number, baseRevision = runRevision) {
     const invocationId = `invocation-${++counter}`
     await joint.state.admitInvocation({
       requestId: `admit-${counter}`,
       runId,
       targetActionId,
-      baseRevision: runRevision,
+      baseRevision,
       bindingId: joint.binding.bindingId,
       writerEpoch,
       invocationId,
@@ -471,7 +471,7 @@ describe('advanceRun complete', () => {
     expect(started.runRevision).toBe(2)
     const advanced = await f.joint.state.advanceProvider({
       commitId: 'child-1',
-      guard: f.guardFor(await f.prepared(parent, 2), 2),
+      guard: f.guardFor(await f.prepared(parent, 2, 0), 2),
       actionId: parent,
       expectedProviderRevision: 0,
       transition: {

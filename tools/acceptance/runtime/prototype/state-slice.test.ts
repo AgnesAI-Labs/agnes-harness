@@ -2532,7 +2532,7 @@ describe('runtime state advance, dispatch, and invocation', () => {
     expect(count(path, 'events')).toBe(before)
     expect(recordValue<{ state: string }>(path, 'invocation:invocation-1').state).toBe('active')
     expect(
-      query<{ invocation_id: string }>(path, 'SELECT invocation_id FROM runtime_active_invocation'),
+      query<{ invocation_id: string }>(path, 'SELECT invocation_id FROM runtime_active_invocation_target'),
     ).toEqual([{ invocation_id: 'invocation-1' }])
     const second = await store.admitInvocation(
       {
@@ -2565,7 +2565,7 @@ describe('runtime state advance, dispatch, and invocation', () => {
       ),
       'close',
     )
-    expect(count(path, 'runtime_active_invocation')).toBe(0)
+    expect(count(path, 'runtime_active_invocation_target')).toBe(0)
     store.close()
   })
 
@@ -3915,7 +3915,7 @@ describe('runtime state receipt intake, outbox, and query flush', () => {
         'SELECT target_key, next_seq FROM runtime_signal_seq',
       ),
     ).toEqual([{ target_key: '', next_seq: 2 }])
-    expect(count(path, 'runtime_active_invocation')).toBe(0)
+    expect(count(path, 'runtime_active_invocation_target')).toBe(0)
     store.close()
   })
 
@@ -5052,11 +5052,11 @@ describe('runtime state receipt intake, outbox, and query flush', () => {
       'admit',
     )
     expect(
-      query<{ invocation_id: string }>(activePath, 'SELECT invocation_id FROM runtime_active_invocation'),
+      query<{ invocation_id: string }>(activePath, 'SELECT invocation_id FROM runtime_active_invocation_target'),
     ).toEqual([{ invocation_id: 'invocation-1' }])
     activeStore.close()
     mutate(activePath, (db) => {
-      db.prepare('DELETE FROM runtime_active_invocation').run()
+      db.prepare('DELETE FROM runtime_active_invocation_target').run()
     })
     const activeOpen = openStore(activePath)
     const activeRefused = await activeOpen.open(readOpen('open-active-invocation'), context())

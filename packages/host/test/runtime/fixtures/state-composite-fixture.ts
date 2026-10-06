@@ -66,7 +66,11 @@ export function prepareProviders(input: AdmissionInput) {
  * `prepareProviders` and closes itself; otherwise the fixture opens and cleans up its own.
  */
 export async function setup(
-  options: { native?: { directory: string; input: AdmissionInput; fixture: Joint } } = {},
+  options: {
+    native?: { directory: string; input: AdmissionInput; fixture: Joint }
+    /** Also creates a second composite parent in the Loop step. */
+    secondParent?: boolean
+  } = {},
 ) {
   const directory = options.native?.directory ?? mkdtempSync(join(tmpdir(), 'agnes-advance-provider-'))
   if (!options.native) directories.push(directory)
@@ -113,6 +117,7 @@ export async function setup(
     return { ...intent, intentFingerprint: fixtureHash(intent) } satisfies PreparedAction
   }
   const parentIntent = action('parent', parentProvider, 'infer', infer)
+  const secondParentIntent = action('second-parent', parentProvider, 'infer', infer)
   const leafParentIntent = action('leaf-parent', toolProvider, 'invoke', toolInvoke)
   const queryParentIntent = action('query-parent', parentProvider, queryOp.method, queryOp)
   const duplicateParentIntent = action('duplicate-parent', parentProvider, 'prepareRequest', twice)
@@ -144,13 +149,23 @@ export async function setup(
     queryUsage: null,
   })
   /** An invocation that is prepared for a commit and not yet used by one. */
+  /** The revision an invocation for this target is based on: the provider revision once the parent has started. */
+  function baseOf(targetActionId: string | null, runRevision: number) {
+    if (targetActionId === null) return runRevision
+    const row = joint.db
+      .prepare(
+        "SELECT json_extract(b.value_json,'$.providerRevision') AS rev FROM runtime_record_heads h JOIN runtime_version_bodies b ON b.record_id=h.record_id AND b.record_revision=h.record_revision WHERE h.record_id=?",
+      )
+      .get(`provider:${targetActionId}`)
+    return row ? Number(row.rev) : runRevision
+  }
   async function prepared(targetActionId: string | null, runRevision: number) {
     const invocationId = `invocation-${++counter}`
     await joint.state.admitInvocation({
       requestId: `admit-${counter}`,
       runId,
       targetActionId,
-      baseRevision: runRevision,
+      baseRevision: baseOf(targetActionId, runRevision),
       bindingId: joint.binding.bindingId,
       writerEpoch,
       invocationId,
@@ -176,12 +191,19 @@ export async function setup(
       expectedRevision: 0,
       continuation: continuation('loop'),
       consumeSignals: [],
-      actions: [parentIntent, leafParentIntent, queryParentIntent, duplicateParentIntent],
+      actions: [
+        parentIntent,
+        leafParentIntent,
+        queryParentIntent,
+        duplicateParentIntent,
+        ...(options.secondParent ? [secondParentIntent] : []),
+      ],
       next: { kind: 'continue' },
     },
   })
   const parentId = stableId('act', `${runId}\0parent`)
   const leafParentId = stableId('act', `${runId}\0leaf-parent`)
+  const secondParentId = stableId('act', `${runId}\0second-parent`)
   const queryParentId = stableId('act', `${runId}\0query-parent`)
   const duplicateParentId = stableId('act', `${runId}\0duplicate-parent`)
   const owner = joint.state as unknown as Owner
@@ -305,10 +327,12 @@ export async function setup(
     joint,
     parentId,
     leafParentId,
+    secondParentId,
     queryParentId,
     duplicateParentId,
     leafParentIntent,
     prepared,
+    baseOf,
     start,
     advance,
     advanceRequest,

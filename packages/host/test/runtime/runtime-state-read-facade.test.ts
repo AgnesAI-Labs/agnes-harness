@@ -117,13 +117,14 @@ async function world(options: { secondLoop?: boolean } = {}) {
     targetActionId: string | null,
     runRevision: number,
     readGuards: CommitGuard['readGuards'] = [],
+    baseRevision = runRevision,
   ) {
     const invocationId = `invocation-${++counter}`
     await state.admitInvocation({
       requestId: `admit-${counter}`,
       runId: FIXTURE_RUN,
       targetActionId,
-      baseRevision: runRevision,
+      baseRevision,
       bindingId,
       writerEpoch,
       invocationId,
@@ -234,7 +235,7 @@ async function world(options: { secondLoop?: boolean } = {}) {
       attemptId: 'attempt-p',
     },
   })
-  const parkInvocation = await prepared(parentId, 1)
+  const parkInvocation = await prepared(parentId, 1, [], 0)
   const parked = await state.advanceProvider({
     commitId: 'park-1',
     guard: guardFor(parkInvocation, 1),
