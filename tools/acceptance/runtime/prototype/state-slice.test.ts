@@ -2464,12 +2464,19 @@ describe('runtime state advance, dispatch, and invocation', () => {
       commitId: 'control-other',
       guard: commitGuard('invocation-1', 0),
       command: {
-        kind: 'mark_unknown',
+        kind: 'allocate_attempt',
+        actionId: 'action-x',
+        expectedActionRevision: 1,
         attemptId: 'attempt-x',
-        expectedAttemptRevision: 1,
-        evidence: [],
-        reconciliationOwnerRef: { kind: 'run', id: 'run-1' },
-        reason: 'lost',
+        requestIdentity: {
+          system: 'peer',
+          aghRequestId: 'request-x',
+          idempotencyKey: null,
+          requestDigest: 'a'.repeat(64),
+        },
+        authorizationRef: 'authorization-x',
+        reservationRefs: [],
+        deadline: future,
       },
     }
     const refused = await store.commitControl(other, context())

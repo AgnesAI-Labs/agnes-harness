@@ -421,7 +421,7 @@ describe('prepare: the default and the reference answer every input alike', () =
     const verifies: Partial<ReferenceModelDeployment> = {
       ...over,
       credentials: {
-        verifyIssued: (handle) => handle.version === '1',
+        verifyIssued: async (handle) => handle.version === '1',
       },
     }
     const outcome = await same((rig) => prepareOf(rig, build()), verifies)
@@ -721,6 +721,27 @@ describe('prepareRequest: the managed preparation path', () => {
   it.each(rows)('%s', async (_name, input, answer, over) => {
     const out = await same((rig) => run(rig, input, answer as never), over)
     expect(out.next.kind === 'complete' || out.next.kind === 'fail').toBe(true)
+  })
+  it('never consults the credential verifier, in either', async () => {
+    for (const kind of ['default', 'reference'] as const) {
+      let calls = 0
+      const rig = await open(kind, {
+        secrets: SECRETS,
+        credentials: {
+          verifyIssued: async () => {
+            calls++
+            return false
+          },
+        },
+      })
+      const out = await run(
+        rig,
+        request({ route: route({ credentialBinding: bound }) }),
+        handleAnswer(longLived()),
+      )
+      expect(out.next.kind).toBe('complete')
+      expect(calls).toBe(0)
+    }
   })
   it('the rows reach completion and several distinct refusals', async () => {
     const seen = new Set<string>()
@@ -1465,7 +1486,7 @@ describe('prepare with tools: the default and the reference answer every input a
   it.each(rows)('%s', async (_name, build, over = {}) => {
     const verifies: Partial<ReferenceModelDeployment> = {
       ...over,
-      credentials: { verifyIssued: () => true },
+      credentials: { verifyIssued: async () => true },
     }
     const outcome = await same(async (rig) => {
       const request = build()
@@ -1483,7 +1504,7 @@ describe('prepare with tools: the default and the reference answer every input a
   it('the rows reach completion and the named wire refusals', async () => {
     const seen = new Set<string>()
     for (const [, build, over] of rows) {
-      const rig = await open('default', { ...over, credentials: { verifyIssued: () => true } })
+      const rig = await open('default', { ...over, credentials: { verifyIssued: async () => true } })
       const out = await prepareOf(rig, build())
       seen.add(out.ok ? 'ok' : out.detail)
     }
@@ -1510,7 +1531,7 @@ describe('prepare with tools: the default and the reference answer every input a
     const digestOf = async (kind: Kind, description: string) => {
       const rig = await open(kind, {
         tools: portOf([tool('text_statistics', description)]),
-        credentials: { verifyIssued: () => true },
+        credentials: { verifyIssued: async () => true },
       })
       const out = await prepareOf(rig, request([one]))
       if (!out.ok || out.value.kind !== 'inline') throw new Error('refused')
@@ -1552,9 +1573,46 @@ describe('prepare refuses modes the adapter cannot serve, alike in both', () => 
   ]
   it.each(rows)('%s', async (_name, build, expected) => {
     const outcome = await same((rig) => prepareOf(rig, build()), {
-      credentials: { verifyIssued: () => true },
+      credentials: { verifyIssued: async () => true },
     })
     expect(outcome.ok ? 'ok' : outcome.detail).toBe(expected)
+  })
+})
+
+describe('an asynchronous credential verifier is awaited, alike in both', () => {
+  const answered = (verifyIssued: NonNullable<ReferenceModelDeployment['credentials']>['verifyIssued']) =>
+    same((rig) => prepareOf(rig, prepareRequestOf()), { credentials: { verifyIssued } })
+  const code = (out: { ok: boolean; code?: string; detail?: string }) => `${out.code}/${out.detail}`
+  it('accepts a later true and refuses a later false', async () => {
+    expect((await answered(async () => true)).ok).toBe(true)
+    const no = await answered(async () => false)
+    expect(code(no as never)).toBe('incompatible/model_credential_unverified')
+  })
+  it('refuses a rejection or a throw as an unavailable dependency', async () => {
+    const rejected = await answered(() => Promise.reject(new Error('down')))
+    expect(code(rejected as never)).toBe('retryable/model_dependency_unavailable')
+    const thrown = await answered(() => {
+      throw new Error('down')
+    })
+    expect(code(thrown as never)).toBe('retryable/model_dependency_unavailable')
+  })
+  it('is cancelled when the call aborts during the await', async () => {
+    let control = new AbortController()
+    const out = await same(
+      (rig) => {
+        control = new AbortController()
+        return prepareOf(rig, prepareRequestOf(), runCall(control.signal))
+      },
+      {
+        credentials: {
+          verifyIssued: () => {
+            control.abort()
+            return new Promise<boolean>(() => {})
+          },
+        },
+      },
+    )
+    expect(code(out as never)).toBe('cancelled/model_cancelled')
   })
 })
 

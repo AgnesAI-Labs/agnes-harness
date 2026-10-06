@@ -968,6 +968,7 @@ export interface RuntimeWireTypes {
   StateScanResult: Schemas.StateScanResult
   StateProbeCommitRequest: Schemas.StateProbeCommitRequest
   StateProbeCommitResult: Schemas.StateProbeCommitResult
+  StoredRecord: Schemas.StoredRecord
   StateLeaseRecordValue: Schemas.StateLeaseRecordValue
   StateLeaseProofValue: Schemas.StateLeaseProofValue
   StateWriteOpenRequest: Schemas.StateWriteOpenRequest

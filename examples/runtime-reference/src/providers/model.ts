@@ -123,7 +123,7 @@ export interface ReferenceModelDeployment {
     }): Promise<Outcome<ReferenceResolvedTools>>
   }
   credentials?: {
-    verifyIssued(handle: SecretHandle, binding: SecretConsumerBinding, context: CallContext): boolean
+    verifyIssued(handle: SecretHandle, binding: SecretConsumerBinding, context: CallContext): Promise<boolean>
   }
   estimate?(prepared: PreparedModelRequest): readonly ExactQuantity[]
   registry: ReferenceModelRegistry
@@ -427,7 +427,7 @@ type Gate = (
   call: CallContext,
   s: Scratch,
   viaAction: boolean,
-) => Refusal | null | undefined
+) => Refusal | null | undefined | Promise<Refusal | null>
 const credentialRefusal = (
   route: ModelRouteSnapshot,
   handle: SecretHandle | null,
@@ -451,12 +451,16 @@ const PREPARE_GATES: readonly Gate[] = [
     call.scope.kind === 'run' || call.scope.kind === 'action' ? null : ['denied', 'model_scope'],
   (_d, i) => (i.hookResults === null ? null : ['incompatible', 'model_hooks_unsupported']),
   (d, i) => credentialRefusal(i.route, i.credentialRef, clockOf(d)),
-  (d, i, call, _s, viaAction) =>
-    viaAction || i.route.credentialBinding === null
-      ? null
-      : d.credentials?.verifyIssued(i.credentialRef as SecretHandle, i.route.credentialBinding, call) === true
-        ? null
-        : ['incompatible', 'model_credential_unverified'],
+  async (d, i, call, _s, viaAction) => {
+    if (viaAction || i.route.credentialBinding === null) return null
+    const verified =
+      d.credentials !== undefined &&
+      (await until(
+        d.credentials.verifyIssued(i.credentialRef as SecretHandle, i.route.credentialBinding, call),
+        call,
+      )) === true
+    return verified ? null : ['incompatible', 'model_credential_unverified']
+  },
   (d, i, call, s) => {
     const picked = d.adapters.select(i.route.adapter, call)
     if (picked) s.adapter = picked
@@ -504,7 +508,7 @@ async function prepareOnce(
   if (call.signal.aborted) cancelled()
   const scratch: Scratch = {}
   for (const gate of PREPARE_GATES) {
-    const failure = gate(d, input, call, scratch, viaAction)
+    const failure = await gate(d, input, call, scratch, viaAction)
     if (failure) stop(failure[0], failure[1])
   }
   const { sessionId, runId } = ownerOf(call.scope)
