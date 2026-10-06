@@ -211,7 +211,11 @@ describe('Session', () => {
       })
       const s = await c.session.new({ cwd: '/w' })
 
-      const r = await s.prompt('hello', titleLocale ? { titleLocale } : {})
+      const input =
+        titleLocale === 'zh-CN'
+          ? [{ type: 'file' as const, name: '资料.txt', mimeType: 'text/plain', data: 'aGVsbG8=' }]
+          : 'hello'
+      const r = await s.prompt(input, titleLocale ? { titleLocale } : {})
 
       expect(r).toEqual({
         stopReason: 'end_turn',
@@ -221,7 +225,19 @@ describe('Session', () => {
       })
       expect(f.calls.find((x) => x.method === 'session/prompt')?.params).toEqual({
         sessionId: 's1',
-        prompt: [{ type: 'text', text: 'hello' }],
+        prompt:
+          titleLocale === 'zh-CN'
+            ? [
+                {
+                  type: 'resource',
+                  resource: {
+                    uri: 'agnes-attachment:%E8%B5%84%E6%96%99.txt',
+                    mimeType: 'text/plain',
+                    blob: 'aGVsbG8=',
+                  },
+                },
+              ]
+            : [{ type: 'text', text: 'hello' }],
         ...(titleLocale ? { _meta: { 'ai.agnes.harness': { titleLocale } } } : {}),
       })
     },
@@ -494,7 +510,7 @@ describe('Session', () => {
     await flush()
   })
 
-  it('steer / followUp / compact / sendNow carry a journal commandId and return seq; cancel is a notification', async () => {
+  it('steer / followUp / compact / sendNow / removeQueued carry a journal commandId and return seq; cancel is a notification', async () => {
     const f = fakeEndpoint({
       initialize: init,
       'session/new': () => ({ sessionId: 's3' }),
@@ -515,6 +531,7 @@ describe('Session', () => {
     expect(await s.followUp([{ type: 'text', text: 'later' }])).toBe(42)
     expect(await s.compact('keep decisions')).toBe(43)
     expect(await s.sendNow('queued-C')).toBe(43)
+    expect(await s.removeQueued('queued-D')).toBe(43)
     await s.cancel()
 
     const steer = f.calls.find((x) => x.method === '_agnes/v1/submit')?.params as {
@@ -543,30 +560,43 @@ describe('Session', () => {
       commandId: 'cid:s3:4',
       payload: { sessionId: 's3', itemId: 'queued-C' },
     })
+    expect(
+      f.calls.find(
+        (call) =>
+          call.method === '_agnes/v1/submit' && (call.params as { kind?: string }).kind === 'removeQueued',
+      )?.params,
+    ).toMatchObject({
+      kind: 'removeQueued',
+      commandId: 'cid:s3:5',
+      payload: { sessionId: 's3', itemId: 'queued-D' },
+    })
   })
 
-  it('does not replay a definitive send-now refusal when attaching again', async () => {
-    const f = fakeEndpoint({
-      initialize: init,
-      'session/new': () => ({ sessionId: 's3' }),
-      '_agnes/v1/session.attach': () => ({ generation: 1, lastSeq: 0, resolvedProfileHash: null }),
-      '_agnes/v1/submit': () => {
-        throw rpcError('SEMANTIC_REJECTED', { code: 'QUEUED_INPUT_GONE' })
-      },
-    })
-    const journal = memoryJournal('cid')
-    const client = createClient({
-      transport: { kind: 'inproc', endpoint: f.endpoint },
-      journal,
-      authProviders: providers,
-    })
-    const session = await client.session.new({ cwd: '/w' })
-    await expect(session.sendNow('gone')).rejects.toMatchObject({ data: { code: 'QUEUED_INPUT_GONE' } })
-    expect(await journal.pending(session.id)).toEqual([])
-    await session.attach()
-    expect(f.calls.filter((call) => call.method === '_agnes/v1/submit')).toHaveLength(1)
-    await client.close()
-  })
+  it.each(['sendNow', 'removeQueued'] as const)(
+    'does not replay a definitive %s refusal when attaching again',
+    async (kind) => {
+      const f = fakeEndpoint({
+        initialize: init,
+        'session/new': () => ({ sessionId: 's3' }),
+        '_agnes/v1/session.attach': () => ({ generation: 1, lastSeq: 0, resolvedProfileHash: null }),
+        '_agnes/v1/submit': () => {
+          throw rpcError('SEMANTIC_REJECTED', { code: 'QUEUED_INPUT_GONE' })
+        },
+      })
+      const journal = memoryJournal('cid')
+      const client = createClient({
+        transport: { kind: 'inproc', endpoint: f.endpoint },
+        journal,
+        authProviders: providers,
+      })
+      const session = await client.session.new({ cwd: '/w' })
+      await expect(session[kind]('gone')).rejects.toMatchObject({ data: { code: 'QUEUED_INPUT_GONE' } })
+      expect(await journal.pending(session.id)).toEqual([])
+      await session.attach()
+      expect(f.calls.filter((call) => call.method === '_agnes/v1/submit')).toHaveLength(1)
+      await client.close()
+    },
+  )
 
   it.each([
     [

@@ -1,5 +1,5 @@
 import type { HostSession } from '@agnes/host'
-import { type DaemonNotice, type EventEnvelope, META_KEY } from '@agnes/protocol'
+import { type DaemonNotice, type EventEnvelope, MAX_FRAME_BYTES, META_KEY } from '@agnes/protocol'
 import type { PreviewSnapshotEntry, PreviewUpdate } from '../registry.js'
 import { notify } from '../rpc.js'
 import { type AttachPrefs, type LocalEndpoint, utf8JsonBytes } from './endpoint.js'
@@ -7,7 +7,7 @@ import { type MetaState, stampMeta } from './meta.js'
 import { PreviewPipe } from './preview.js'
 
 export type Limits = { subscribeBufferEvents: number; subscribeBufferBytes: number }
-export const DEFAULT_LIMITS: Limits = { subscribeBufferEvents: 1000, subscribeBufferBytes: 8 * 1024 * 1024 }
+export const DEFAULT_LIMITS: Limits = { subscribeBufferEvents: 1000, subscribeBufferBytes: MAX_FRAME_BYTES }
 export type DaemonNoticeKind = DaemonNotice['kind']
 
 /**

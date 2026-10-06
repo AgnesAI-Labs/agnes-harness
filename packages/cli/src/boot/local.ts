@@ -45,7 +45,7 @@ import { BootError } from '../errors.js'
 import { resolveLocale } from '../tui/locale.js'
 import type { BootDeps, Booted, ParsedArgs } from '../types.js'
 import { profileNameFrom, readProfileInputs } from './inputs.js'
-import { readScreenshotBytes } from './screenshot-read.js'
+import { readScreenshotBytes, requestMediaOriginIsValid } from './screenshot-read.js'
 
 /** Defined by the normal packaged local build; absent in source and SEA development runs. */
 declare const AGNES_PACKAGED_BUILTINS: boolean | undefined
@@ -289,8 +289,7 @@ export async function bootLocal(p: ParsedArgs, deps: LocalBootDeps): Promise<Boo
           !event ||
           event.seq !== nodeSeq ||
           event.type !== 'tool/result' ||
-          event.origin !== 'tool:computer_use' ||
-          event.trust !== 'untrusted' ||
+          !requestMediaOriginIsValid(event) ||
           (event.lane ?? 'main') !== lane
         )
           return undefined

@@ -73,6 +73,10 @@ export class RemoteSession {
     return this.link.command('enqueue', { target, msg }) as Promise<number>
   }
 
+  removeQueuedInput(itemId: string, actor: Actor, admissionId: string): Promise<number> {
+    return this.link.command('removeQueuedInput', { itemId, actor, admissionId }) as Promise<number>
+  }
+
   async sendQueuedNow(itemId: string, actor: Actor, admissionId: string): Promise<number> {
     const release = this.beginActivity()
     try {
@@ -157,8 +161,40 @@ export class RemoteSession {
     return (await this.status()).preset
   }
 
-  scan(q: unknown): Promise<unknown[]> {
-    return this.link.command('scan', q as Record<string, unknown>) as Promise<unknown[]>
+  async scan(q: unknown): Promise<unknown[]> {
+    const query = q as Record<string, unknown>
+    try {
+      return (await this.link.command('scan', query)) as unknown[]
+    } catch (error) {
+      if ((error as { data?: { code?: string } } | null)?.data?.code !== 'SCAN_PAGE_TOO_LARGE') throw error
+      const { fromSeq, toSeq } = query
+      if (
+        typeof fromSeq !== 'number' ||
+        typeof toSeq !== 'number' ||
+        !Number.isSafeInteger(fromSeq) ||
+        !Number.isSafeInteger(toSeq) ||
+        fromSeq >= toSeq
+      )
+        throw error
+      // Keep the caller's complete page and order; only the private worker reads are split.
+      const mid = fromSeq + Math.floor((toSeq - fromSeq) / 2)
+      const ranges = [
+        { fromSeq, toSeq: mid },
+        { fromSeq: mid + 1, toSeq },
+      ]
+      if (query.order === 'desc') ranges.reverse()
+      const firstQuery = { ...query, ...ranges[0] }
+      const first = await this.scan(firstQuery)
+      const limit = typeof query.limit === 'number' ? query.limit : Infinity
+      if (first.length >= limit) return first.slice(0, limit)
+      const restQuery = {
+        ...query,
+        ...ranges[1],
+        ...(Number.isFinite(limit) ? { limit: limit - first.length } : {}),
+      }
+      const rest = await this.scan(restQuery)
+      return [...first, ...rest]
+    }
   }
 
   readToolDetailPage(input: ToolDetailRead): Promise<ToolDetailReadResult> {

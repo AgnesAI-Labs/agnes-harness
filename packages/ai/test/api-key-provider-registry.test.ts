@@ -8,6 +8,7 @@ import type {
   ProviderStreamOptions,
 } from '@earendil-works/pi-ai'
 import { describe, expect, it, vi } from 'vitest'
+import { modelRecord } from '../src/adapters/pi/api-key-providers.js'
 import {
   API_KEY_CREDENTIAL_REFS,
   API_KEY_PROVIDER_REGISTRY,
@@ -293,6 +294,8 @@ describe('API-key provider registry', () => {
       'agnes-2.0-flash': ['text', 'image'],
     })
     if (!adapter) throw new Error('missing Agnes adapter')
+    for (const record of adapter.models('agnes-ai'))
+      expect(record.inputLimits?.images?.maxPerRequest).toBe(record.input.includes('image') ? 4 : undefined)
     adapter.bindCredential('agnes-ai', 'fixture-output-limit-key')
     const bodies: Array<Record<string, unknown>> = []
     const fetch = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
@@ -358,4 +361,33 @@ describe('API-key provider registry', () => {
       },
     ])
   })
+})
+
+it('retains pi image input limits in the public model catalogue', () => {
+  const inputLimits = {
+    maxRequestBytes: 2048,
+    images: {
+      maxPerMessage: 2,
+      maxPerRequest: 3,
+      resize: { maxWidth: 100, maxBytes: 1000, jpegQuality: 80 },
+    },
+  }
+  const source = {
+    id: 'vision',
+    name: 'Vision',
+    api: 'openai-completions',
+    provider: 'gw',
+    baseUrl: 'https://gw.invalid',
+    input: ['text', 'image'],
+    inputLimits,
+    reasoning: false,
+    cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+    contextWindow: 10000,
+    maxTokens: 1000,
+  } as Model<Api>
+  const record = modelRecord({ id: 'gw', api: source.api, baseUrl: source.baseUrl }, source)
+  expect(record.inputLimits).toEqual(inputLimits)
+  expect(validateModelRecord(record).ok).toBe(true)
+  inputLimits.images.maxPerMessage = 9
+  expect(record.inputLimits?.images?.maxPerMessage).toBe(2)
 })

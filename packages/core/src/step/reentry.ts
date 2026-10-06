@@ -43,6 +43,7 @@ export async function invokeTool(
     parentEffectId?: string
     nestedLease?: NestedToolLease
     onPark?: (event: EventInput) => void
+    onAttachmentRead?: () => void
   },
 ): Promise<ToolResult> {
   if (o.depth > s.preset.depthLimit)
@@ -125,6 +126,7 @@ export async function invokeTool(
             nestedLease,
             ...(o.parentEffectId ? { parentEffectId: o.parentEffectId } : {}),
             ...(o.signal ? { signal: o.signal } : {}),
+            ...(o.onAttachmentRead ? { onAttachmentRead: o.onAttachmentRead } : {}),
           },
         ),
       o.nestedLease,

@@ -900,7 +900,7 @@ describe('agnesd supervisor: ACP subscriptions follow the connection', () => {
     protocolVersion: 1,
     clientCapabilities: { fs: { readTextFile: false, writeTextFile: false } },
   }
-  it('shows the durable queue through a real worker and immediately sends a selected item once', async () => {
+  it('shows and removes durable queued input through a real worker and immediately sends a selected item once', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'agnes-queue-now-'))
     process.env.AGNES_FAKE_WORKER_QUEUE = '1'
     const { sup, tables } = await supervisorFor(dir).finally(() => {
@@ -918,14 +918,30 @@ describe('agnesd supervisor: ACP subscriptions follow the connection', () => {
         timeout: 10_000,
       })
       const cut = (await session.projectUIOpening({ surface: 'web' })).timeline.upto
-      for (const input of ['queue-B', 'queue-C', 'queue-D']) await session.followUp(input)
+      for (const input of ['queue-B', 'queue-C', 'queue-remove', 'queue-D']) await session.followUp(input)
       const queue = (await session.projectUI()).pendingInputs ?? []
-      expect(queue.map((item) => item.preview)).toEqual(['queue-B', 'queue-C', 'queue-D'])
+      expect(queue.map((item) => item.preview)).toEqual(['queue-B', 'queue-C', 'queue-remove', 'queue-D'])
       expect(await session.projectUIPatch(cut, undefined, { surface: 'web' })).toMatchObject({
         kind: 'patch',
         patch: { pendingInputs: queue },
       })
       expect((await session.projectUIOpening({ surface: 'web' })).timeline.pendingInputs).toEqual(queue)
+      const removed = queue.find((item) => item.preview === 'queue-remove')
+      if (!removed) throw new Error('missing input to remove')
+      const beforeRemoval = (await session.projectUI()).upto
+      await session.removeQueued(removed.itemId, { commandId: 'remove-input' })
+      expect((await session.projectUI()).opState?.phase).toBe('inference')
+      expect((await session.projectUI()).pendingInputs).toEqual(
+        queue.filter((item) => item.itemId !== removed.itemId),
+      )
+      expect(await session.projectUIPatch(beforeRemoval, undefined, { surface: 'web' })).toMatchObject({
+        kind: 'patch',
+        patch: { pendingInputs: queue.filter((item) => item.itemId !== removed.itemId) },
+      })
+      await session.removeQueued(removed.itemId, { commandId: 'remove-input' })
+      await expect(
+        session.removeQueued(removed.itemId, { commandId: 'stale-removal' }),
+      ).rejects.toMatchObject({ data: { code: 'QUEUED_INPUT_GONE' } })
       const selected = queue.find((item) => item.preview === 'queue-C')
       if (!selected) throw new Error('missing selected input')
       await session.sendNow(selected.itemId, { commandId: 'send-C' })

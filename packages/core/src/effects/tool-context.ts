@@ -97,6 +97,8 @@ export type ToolContextDeps = {
   listTools(): ToolDef[]
   appendPlan(items: PlanItem[]): Promise<Seq>
   requestCompaction(instructions?: string): void
+  readImages?: ToolContext['session']['readImages']
+  readAttachment?: ToolContext['session']['readAttachment']
   progress(note: string): void
   artifactJobEvent(job: ArtifactJob): Promise<void>
   lease: { remainingMs(): number }
@@ -138,6 +140,8 @@ export function buildToolContext(
       toolUseId: call.toolUseId,
       depth: d.depth,
       generationDepth: d.generationDepth,
+      ...(d.readImages ? { readImages: d.readImages } : {}),
+      ...(d.readAttachment ? { readAttachment: d.readAttachment } : {}),
     },
     projections: unavailableProjections,
     actor: d.actor,

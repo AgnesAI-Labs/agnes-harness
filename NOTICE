@@ -16,6 +16,13 @@ following material retains its original notices and license terms:
   provenance, changes, and the full license text.
 - Bundled Skill Helper in packages/package-manager/bundled-plugins/skill-helper:
   Copyright (c) 2026 2812348473. MIT License. See its local LICENSE.
+- Bundled Document Reader in packages/package-manager/bundled-plugins/document-reader:
+  its own code is Apache-2.0. Pinned PDF, Word, ZIP and offline OCR dependencies
+  retain their upstream licenses; the plugin payload includes THIRD-PARTY-NOTICES.
+  See its README.md and third-party/build-dependencies.json for provenance.
+- Legacy DOC test fixture in packages/package-manager/test/fixtures/document-reader:
+  Copyright (c) 2016-2021 Stuart Watt. MIT License. The source revision and LICENSE
+  are retained alongside the fixture.
 - XMarkdown in the generated Web UI vendor and stylesheet:
   Copyright (c) 2015-present Ant UED. MIT License. The build copies its
   license to web/THIRD-PARTY-NOTICES/ant-design-x-markdown.txt.
@@ -26,6 +33,11 @@ following material retains its original notices and license terms:
   their package.json retain that separate declaration. Their authorship and
   accompanying license text must be checked before distributing those example
   packages independently.
+
+- Paperclip icon in packages/web-units/src/composer.ts:
+  Copyright (c) 2026 Lucide Icons and Contributors. ISC License.
+  Source: https://github.com/lucide-icons/lucide; retrieved through Iconify.
+  See packages/web-units/LUCIDE-LICENSE.
 
 This NOTICE is informational and does not modify any license. It records known
 source-tree attributions; a separately distributed binary or package must also

@@ -121,7 +121,7 @@ export const appLocaleCatalog: LocaleCatalog = {
     'app.error.connectionChanged': 'The connection changed. Wait for permissions to sync, then send again.',
     'app.error.permissionRequired': "Choose this session's permission before sending.",
     'app.error.messageTooLarge':
-      'This message exceeds the 2 MiB WebSocket limit. Shorten the text or remove an image.',
+      'This message exceeds the 144 MiB WebSocket limit. Shorten the text or remove an attachment.',
     'app.approval.impact.write':
       'Will create or overwrite the file{target}. Check the request before deciding.',
     'app.approval.impact.edit': 'Will modify the file{target}. Check the request before deciding.',
@@ -241,7 +241,7 @@ export const appLocaleCatalog: LocaleCatalog = {
     'app.error.sessionChanged': '会话选择已改变。',
     'app.error.connectionChanged': '连接已变化，请等待权限同步后重新发送。',
     'app.error.permissionRequired': '请先选择本会话权限，确认后再发送。',
-    'app.error.messageTooLarge': '消息超过 WebSocket 的 2 MiB 限制，请缩短文字或移除图片。',
+    'app.error.messageTooLarge': '消息超过 WebSocket 的 144 MiB 限制，请缩短文字或移除附件。',
     'app.approval.impact.write': '将创建或覆盖文件{target}。请核对后决定。',
     'app.approval.impact.edit': '将修改文件{target}。请核对后决定。',
     'app.approval.impact.execute': '将在此任务的工作目录执行命令。请核对命令后决定。',

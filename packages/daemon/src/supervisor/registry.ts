@@ -351,7 +351,13 @@ export class WorkerRegistry implements Registry<RemoteEntry> {
           let fromSeq = 1
           let replayedThrough = 0
           for (;;) {
-            const page = (await session.scan({ fromSeq, order: 'asc', limit: 500 })) as EventEnvelope[]
+            // Explicit bounds allow large attachment pages to be split across worker frames.
+            const page = (await session.scan({
+              fromSeq,
+              toSeq: fromSeq + 499,
+              order: 'asc',
+              limit: 500,
+            })) as EventEnvelope[]
             if (page.length === 0) break
             for (const event of page) {
               await this.artifactAuthority.observe(key, event, entry.ac.signal)

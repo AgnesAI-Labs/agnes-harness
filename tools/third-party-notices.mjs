@@ -28,7 +28,12 @@ function compare(left, right) {
 }
 
 /** Copy licenses for packages present in esbuild's browser bundle graphs. */
-export async function collectThirdPartyNotices(workingDirectory, outputDirectory, builds) {
+export async function collectThirdPartyNotices(
+  workingDirectory,
+  outputDirectory,
+  builds,
+  fallbackLicenses = {},
+) {
   const destination = join(outputDirectory, 'THIRD-PARTY-NOTICES')
   await rm(destination, { recursive: true, force: true })
   await mkdir(destination, { recursive: true })
@@ -54,12 +59,16 @@ export async function collectThirdPartyNotices(workingDirectory, outputDirectory
         if (right.toLowerCase() === 'license') return 1
         return compare(left, right)
       })[0]
-    if (!license) {
+    const fallback = Object.hasOwn(fallbackLicenses, name) ? fallbackLicenses[name] : undefined
+    if (!license && !fallback) {
       console.warn(`[third-party-notices] No LICENSE file found for ${name}`)
       continue
     }
 
     const fileName = `${name.replace(/^@/, '').replaceAll('/', '-')}.txt`
-    await writeFile(join(destination, fileName), await readFile(join(directory, license)))
+    await writeFile(
+      join(destination, fileName),
+      await readFile(license ? join(directory, license) : fallback),
+    )
   }
 }

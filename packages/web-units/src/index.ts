@@ -9,6 +9,7 @@ export {
 } from './approval.js'
 export {
   Composer,
+  type ComposerAttachmentBlock,
   type ComposerDependencies,
   type ComposerHandle,
   type ComposerRegionOptions,

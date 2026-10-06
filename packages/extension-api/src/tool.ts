@@ -181,6 +181,17 @@ export interface ToolContext {
     readonly toolUseId: string
     readonly depth: number
     readonly generationDepth: number
+    /** Current session image originals and a paged index; unavailable in older runtimes. */
+    readImages?(input: { path: string; offset?: number; limit?: number }): Promise<ToolResult>
+    /** Uploaded originals in this session/lane only; names never become filesystem paths. */
+    readAttachment?(input: { path: string; offset?: number; limit?: number; maxBytes?: number }): Promise<
+      | {
+          bytes: Bytes
+          name: string
+          mimeType: string
+        }
+      | undefined
+    >
   }
   readonly actor: Actor // recorded on the call; never the basis for an authorization decision
   readonly cwd: string

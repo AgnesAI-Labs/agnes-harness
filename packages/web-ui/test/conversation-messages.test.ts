@@ -82,6 +82,7 @@ const nodes: UINode[] = [
       { type: 'text', text: '第一行' },
       { type: 'image', data: 'a', mimeType: 'image/png' },
       { type: 'text', text: '第二行' },
+      { type: 'file', data: 'YWJj', name: '<script>附件.txt</script>', mimeType: 'text/plain' },
     ],
   },
   { kind: 'assistant', id: 'assistant', seq: 3, thinking: '思考中', text: '回答 **正文**', streaming: true },
@@ -256,12 +257,14 @@ describe('W3b projected message DOM', () => {
         },
       ],
     }
+    user.content = Array.from({ length: 5 }, () => user.content[0] as (typeof user.content)[number])
     const store = createConversationProjectionStore({ sessionId: 'session', nodes: [user] })
     await mount(store)
     const article = item('persisted-image')
     // 门户那份是界面上真正显示的内容，兜底只是被 CSS 隐藏的备份：图只出现在兜底里等于没显示。
     const portal = article?.querySelector<HTMLElement>('[data-agnes-assistant-ui-target]')
     expect(portal?.dataset.agnesAssistantUiReady).toBe('true')
+    expect(portal?.querySelectorAll('img.user-message-image')).toHaveLength(5)
     const thumbnail = portal?.querySelector<HTMLImageElement>('img.user-message-image')
     expect(thumbnail?.src).toBe('blob:history-image')
     // 固定缩略图尺寸，不跟着原图比例走：否则竖长图会把消息撑成一根。
@@ -276,6 +279,10 @@ describe('W3b projected message DOM', () => {
     await mount(store)
     const article = item('user')
     for (const copy of ['[data-agnes-assistant-ui-target]', '[data-agnes-assistant-ui-fallback]']) {
+      expect(article?.querySelector(`${copy} .user-message-files`)?.textContent).toContain(
+        '<script>附件.txt</script>',
+      )
+      expect(article?.querySelector(`${copy} .user-message-files script`)).toBeNull()
       const images = article?.querySelector(`${copy} .user-message-images`) as Element
       const text = article?.querySelector(`${copy} .node-body`) as Element
       expect(images).not.toBeNull()

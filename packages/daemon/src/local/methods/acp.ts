@@ -8,6 +8,7 @@ import {
 } from '@agnes/host'
 import {
   type EventEnvelope,
+  fromAcpPrompt,
   type HarnessMeta,
   type Inbox,
   type RpcError,
@@ -461,7 +462,7 @@ export function registerAcp(
       protocolVersion: 1,
       agentCapabilities: {
         loadSession: true,
-        promptCapabilities: { image: true, audio: false, embeddedContext: false },
+        promptCapabilities: { image: true, audio: false, embeddedContext: true },
       },
       _meta: { agnes: { agnesVersion: cx.agnesVersion, apis: 'call apis.list' } },
     }
@@ -582,6 +583,12 @@ export function registerAcp(
   ep.register('session/prompt', async (params, c) => {
     const p = params as { sessionId: string; prompt: unknown[] }
     requireOwner('session/prompt', p.sessionId)
+    let content: ReturnType<typeof fromAcpPrompt>
+    try {
+      content = fromAcpPrompt(p.prompt)
+    } catch {
+      throw rpcError('INVALID_PARAMS', { reason: 'Invalid attachment resource or locator.' })
+    }
     const entry = cx.registry.require(p.sessionId)
     const titleLocale = pocket(params).titleLocale
     if (titleLocale !== undefined && titleLocale !== 'en' && titleLocale !== 'zh-CN')
@@ -613,7 +620,7 @@ export function registerAcp(
         try {
           const commandId = randomUUID()
           await entry.session.enqueue('next-turn', {
-            content: p.prompt as never,
+            content,
             actor: connActor(c.conn),
             kind: 'prompt',
             commandId,

@@ -1252,7 +1252,7 @@ export const Trace = forwardRef<TraceHandle, TraceProps>(function Trace(
         'p',
         { className: 'trace-detail-resource', key: `resource:${index}` },
         traceText('trace.resource.link', {
-          name: `${block.name ?? block.uri}${block.mimeType ? ` · ${block.mimeType}` : ''}`,
+          name: `${block.name ?? (block.type === 'resource_link' ? block.uri : '')}${block.mimeType ? ` · ${block.mimeType}` : ''}`,
         }),
       )
     })

@@ -1,6 +1,6 @@
 import type { EventEnvelope, ToolCall, ToolResult } from '@agnes/protocol'
 
-/** Small enough that base64 and the JSON-RPC envelope stay below the WebSocket's 2 MiB limit. */
+/** Small enough that base64 and the JSON-RPC envelope stay below the transport frame limit. */
 export const TOOL_DETAIL_PAGE_BYTES = 256 * 1024
 
 export type ToolDetailRead = {

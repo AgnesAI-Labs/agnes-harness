@@ -2544,11 +2544,11 @@ body.session-switching #approval {
   transform: none;
 }
 .composer-queue button:disabled {
-  color: var(--agnes-text-disabled);
+  color: var(--agnes-text-tertiary);
   border-color: transparent;
   background: transparent;
 }
-/* 「正在停止并发送」是这块里唯一进行中的动作，给个转圈。必须排在 :disabled 之后：发送中的
+/* 正在发送或删除的按钮给个转圈。必须排在 :disabled 之后：进行中的
    那一行两条同时命中，靠后的一条决定它显示为进行中，而不是跟着整列一起灰掉。 */
 .composer-queue button[aria-busy="true"] {
   gap: 0.375rem;
@@ -2636,7 +2636,9 @@ body.session-switching #approval {
 }
 /* 没有待发图片（也没有正在读取的）时整块不占位：容器常驻 DOM，靠这条把空态收掉，
    否则这段上边距会把输入框整体顶下去。 */
-.composer-image-attachments:not(:has(.composer-image-preview, .composer-image-pending)) {
+.composer-image-attachments:not(
+  :has(.composer-image-preview, .composer-file-preview, .composer-image-pending)
+) {
   display: none;
 }
 .composer-image-preview-list {
@@ -2659,7 +2661,27 @@ body.session-switching #approval {
   border-radius: 0.5rem;
   object-fit: cover;
 }
-.composer-image-preview [data-remove-image] {
+.composer-file-preview {
+  position: relative;
+  display: grid;
+  gap: 0.25rem;
+  min-width: 0;
+  max-width: min(16rem, 100%);
+  margin: 0;
+  padding: 0.5rem 1rem 0.5rem 0.75rem;
+  border: 1px solid var(--agnes-line-primary);
+  border-radius: 0.5rem;
+}
+.composer-file-preview span {
+  overflow-wrap: anywhere;
+}
+.composer-file-preview small {
+  color: var(--agnes-text-tertiary);
+  font-size: var(--font-size-xs);
+  font-variant-numeric: tabular-nums;
+}
+.composer-image-preview [data-remove-image],
+.composer-file-preview [data-remove-image] {
   position: absolute;
   top: -0.375rem;
   right: -0.375rem;
@@ -6516,4 +6538,18 @@ body.admin-page {
   select {
     min-height: var(--control-height-touch) !important;
   }
+}
+
+#composer-attach {
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  width: 2rem;
+  min-height: 2rem;
+  padding: 0;
+  border-radius: 50%;
+}
+#composer-attach[aria-disabled="true"] {
+  opacity: 0.5;
+  cursor: not-allowed;
 }

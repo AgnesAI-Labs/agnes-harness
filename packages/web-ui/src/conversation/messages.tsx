@@ -1,9 +1,5 @@
 import type { ContentBlock, UINode, UITurn } from '@agnes/protocol'
-import {
-  decodeSafeImage,
-  USER_MESSAGE_IMAGE_LIMITS,
-  USER_MESSAGE_IMAGE_MAX_COUNT,
-} from '@agnes/protocol-validation'
+import { decodeSafeImage, USER_MESSAGE_IMAGE_LIMITS } from '@agnes/protocol-validation'
 import { MessagePrimitive, ThreadPrimitive, useAssistantState, useThread } from '@assistant-ui/react'
 import { Image } from 'antd'
 import {
@@ -223,7 +219,6 @@ function UserMessageImages({ node, t }: { node: Extract<UINode, { kind: 'user' }
             Math.floor((block.data.length * 3) / 4) -
             (block.data.endsWith('==') ? 2 : block.data.endsWith('=') ? 1 : 0)
           const allowed =
-            index < USER_MESSAGE_IMAGE_MAX_COUNT &&
             decodedLength > 0 &&
             decodedLength <= USER_MESSAGE_IMAGE_LIMITS.maxBytesPerImage &&
             imageBytes + decodedLength <= USER_MESSAGE_IMAGE_LIMITS.maxAggregateBytes
@@ -255,8 +250,30 @@ function UserMessage({ node, t }: { node: Extract<UINode, { kind: 'user' }>; t: 
     <>
       <p className="node-label">{t('timeline.userLabel')}</p>
       <UserMessageImages node={node} t={t} />
+      <UserMessageFiles node={node} />
       <div className="node-body">{value}</div>
     </>
+  )
+}
+
+function UserMessageFiles({ node }: { node: Extract<UINode, { kind: 'user' }> }) {
+  const files = node.content.filter((block) => block.type === 'file')
+  if (files.length === 0) return null
+  const occurrences = new Map<string, number>()
+  return (
+    <ul className="user-message-files">
+      {files.map((file) => {
+        const key = `${file.name}:${file.mimeType}:${file.data.length}`
+        const occurrence = occurrences.get(key) ?? 0
+        occurrences.set(key, occurrence + 1)
+        return (
+          <li key={`${key}:${occurrence}`} title={file.name}>
+            <span>{file.name}</span>
+            <small>{file.mimeType}</small>
+          </li>
+        )
+      })}
+    </ul>
   )
 }
 
@@ -399,6 +416,7 @@ function ConversationMessageView() {
           <div className="aui-user-message-content aui:rounded-3xl aui:border aui:border-[var(--agnes-line-primary)] aui:bg-[var(--agnes-bg-card)] aui:px-5 aui:py-2.5 aui:text-sm aui:leading-relaxed aui:text-[var(--agnes-text-primary)]">
             <p className="node-label">{t('timeline.userLabel')}</p>
             <UserMessageImages node={node} t={t} />
+            <UserMessageFiles node={node} />
             <MessagePrimitive.Parts components={userMessageParts} />
           </div>
         </div>

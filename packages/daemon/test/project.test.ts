@@ -1,3 +1,4 @@
+import { validateMethod } from '@agnes/protocol'
 import { describe, expect, it } from 'vitest'
 import { toSessionUpdate } from '../src/local/project.js'
 
@@ -16,6 +17,24 @@ const ev = (type: string, data: unknown) =>
   }) as never
 
 describe('toSessionUpdate', () => {
+  it('replays file-only messages as a valid ACP embedded blob resource', () => {
+    const projected = toSessionUpdate(
+      ev('user/message', {
+        content: [{ type: 'file', name: 'video.mp4', mimeType: 'video/mp4', data: 'AA==' }],
+      }),
+      { replay: true },
+    )
+    expect(projected?.payload.content).toEqual({
+      type: 'resource',
+      resource: { uri: 'agnes-attachment:video.mp4', mimeType: 'video/mp4', blob: 'AA==' },
+    })
+    expect(
+      validateMethod('session/update', 'params', {
+        sessionId: 's',
+        update: { sessionUpdate: projected?.sessionUpdate, ...projected?.payload },
+      }).ok,
+    ).toBe(true)
+  })
   it('maps tool call, tool result and plan; streamed text never comes from a row', () => {
     expect(
       toSessionUpdate(

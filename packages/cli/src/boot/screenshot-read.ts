@@ -3,6 +3,15 @@ import {
   type LocalArtifactReadStore,
   REQUEST_MEDIA_ARTIFACT_RECLAIMED,
 } from '@agnes/host'
+import type { EventEnvelope } from '@agnes/protocol'
+
+/** Allow only known image producers, retaining their trust and session-bound artifact checks. */
+export function requestMediaOriginIsValid(event: Pick<EventEnvelope, 'origin' | 'trust'>): boolean {
+  return (
+    (['tool:computer_use', 'tool:document_read'].includes(event.origin) && event.trust === 'untrusted') ||
+    (event.origin === 'tool:read' && event.trust === 'trusted')
+  )
+}
 
 /**
  * Reads one authorized screenshot's bytes. The store keeps no MIME sidecar, so both image types

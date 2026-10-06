@@ -5,10 +5,12 @@ import { appendFile, chmod, copyFile, cp, mkdir, readdir, readFile, rm } from 'n
 import { createRequire } from 'node:module'
 import { dirname, isAbsolute, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { BUNDLED_HELPERS } from '@agnes/package-manager'
 import { type BuildOptions, type BuildResult, build, type Plugin } from 'esbuild'
 import { collectThirdPartyNotices } from '../../../tools/third-party-notices.mjs'
 import { beginRuntimeDirectory } from '../../base/tools/runtime-directory.js'
 import { buildConversationCss } from '../../web-ui/tools/build-conversation-css.js'
+import { prepareDocumentReader } from './document-reader.js'
 import { copySystemRuntime, withBuiltSystemRuntime } from './windows-runtime.js'
 
 const cliRoot = join(dirname(fileURLToPath(import.meta.url)), '..')
@@ -27,7 +29,7 @@ export async function copyComputerUseNotice(outputDirectory: string): Promise<vo
 
 /** Copy only runtime payload, never repository tests or personal working files. */
 export async function copyBundledPlugins(outputDirectory: string): Promise<void> {
-  for (const helper of ['skill-helper', 'mcp-helper', 'plugin-helper']) {
+  for (const { name: helper } of BUNDLED_HELPERS) {
     const source = join(repoPackages, 'package-manager', 'bundled-plugins', helper)
     const destination = join(outputDirectory, 'bundled-plugins', helper)
     await mkdir(destination, { recursive: true })
@@ -37,6 +39,7 @@ export async function copyBundledPlugins(outputDirectory: string): Promise<void>
         force: false,
         errorOnExist: true,
       })
+    if (helper === 'document-reader') await prepareDocumentReader(destination)
   }
 }
 

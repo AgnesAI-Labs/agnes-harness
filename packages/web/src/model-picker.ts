@@ -1,4 +1,9 @@
-import { type ModelSettings, minimumContextBudget, type ThinkingLevel } from '@agnes/protocol'
+import {
+  type ModelInputLimits,
+  type ModelSettings,
+  minimumContextBudget,
+  type ThinkingLevel,
+} from '@agnes/protocol'
 import * as webUi from '@agnes/web-ui'
 import { type ChangeEvent, createElement, type FocusEvent, type ReactNode } from 'react'
 import { tr } from './locale-bridge.js'
@@ -7,6 +12,7 @@ export type ModelPickerOption = {
   id: string
   route: string
   input?: readonly ('text' | 'image')[]
+  inputLimits?: ModelInputLimits
   label?: string
   /** 弹窗取用的档位映射；模型列表本身不展示或修改档位。 */
   thinkingLevelMap?: Record<string, string>

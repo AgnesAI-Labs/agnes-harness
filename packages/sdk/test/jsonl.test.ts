@@ -24,7 +24,7 @@ describe('jsonl framing', () => {
     expect(out).toEqual([{ jsonrpc: '2.0', method: 'm', params: { s: '漢字🌱' } }])
   })
 
-  it('rejects frames over 16 MiB on both directions', () => {
+  it('rejects frames over the protocol ceiling on both directions', () => {
     const big = 'x'.repeat(MAX_FRAME_BYTES)
     expect(() => encodeFrame({ jsonrpc: '2.0', method: 'm', params: { big } })).toThrow(ProtocolViolation)
     const d = new FrameDecoder()
