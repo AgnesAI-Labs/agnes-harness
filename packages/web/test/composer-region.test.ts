@@ -119,7 +119,7 @@ describe('rendered composer region', () => {
     })
     Object.defineProperty(URL, 'revokeObjectURL', { configurable: true, value: vi.fn() })
     runtime = await mountRenderedIndex()
-    const prompt = document.querySelector<HTMLTextAreaElement>('#prompt')
+    const prompt = document.querySelector<HTMLTextAreaElement>('.composer-prompt')
     if (!prompt) throw new Error('composer input is missing')
     const pasted = new Event('paste', { bubbles: true, cancelable: true })
     Object.defineProperty(pasted, 'clipboardData', {
