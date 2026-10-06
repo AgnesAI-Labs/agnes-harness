@@ -25,10 +25,10 @@ describe('trace region layout', () => {
     resetWebDom()
   })
 
-  it('renders the trace pane through exactly two slot wrappers around #trace-content', async () => {
+  it('renders the trace pane through exactly two slot wrappers around .trace-content', async () => {
     runtime = await mountRenderedIndex()
-    const region = document.querySelector('#trace-panel')
-    const content = region?.querySelector('#trace-content')
+    const region = document.querySelector('.trace-panel')
+    const content = region?.querySelector('.trace-content')
 
     expect(content?.getAttribute('style')).toContain('display: contents')
     expect(content?.parentElement?.hasAttribute('data-slot-entry')).toBe(true)
