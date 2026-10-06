@@ -5,6 +5,7 @@ import { RequestBody as WireSchema } from '@agnes/protocol/gen/model'
 import type * as Wire from '@agnes/protocol/runtime'
 import { canonicalJsonDigest } from '@agnes/protocol/runtime'
 import type { ResolvedMedia } from '../media/resolve.js'
+import { type ResolvedTools, renderToolHistory, resolveToolSchemas } from './wire-tools.js'
 
 /** What the retained catalog contributes to the digest: the adapter package, the route and the whole model record. */
 export type ModelCapture = Readonly<{
@@ -95,7 +96,8 @@ function mediaBlocks(
 
 /**
  * The wire request the adapter sends. First slice: plain text system and user messages, images and
- * verified media text on the user message that carries their source, and no tools.
+ * verified media text on the user message that carries their source, and, when the caller passes resolved
+ * tools, the catalog and paired tool history. A catalog without resolved tools is refused.
  * Anything else is refused by name; a role is never guessed and an item is never dropped.
  */
 export function buildWireRequest(
@@ -103,8 +105,14 @@ export function buildWireRequest(
   capture: ModelCapture,
   wire: WireIdentity,
   media: readonly ResolvedMedia[] = [],
+  tools: ResolvedTools | null = null,
 ): Outcome<RequestBody> {
-  if (prepared.toolCatalog !== null) return incompatible('model_wire_tools')
+  if ((prepared.toolCatalog === null) !== (tools === null)) return incompatible('model_wire_tools')
+  const schemas =
+    prepared.toolCatalog === null || tools === null
+      ? null
+      : resolveToolSchemas(prepared.toolCatalog, tools, prepared, capture)
+  if (schemas !== null && !schemas.ok) return schemas
   if (prepared.outputSchema !== null) return incompatible('model_wire_output_schema')
   const attached = mediaBlocks(prepared, capture, media)
   if (!attached.ok) return attached
@@ -114,7 +122,15 @@ export function buildWireRequest(
   if (generation.seed !== undefined) return incompatible('model_wire_seed')
   const system: string[] = []
   const messages: RequestBody['messages'] = []
-  for (const [at, item] of prepared.view.items.entries()) {
+  for (let at = 0; at < prepared.view.items.length; at += 1) {
+    const item = prepared.view.items[at] as Wire.ContextItem
+    if (tools !== null && (item.kind === 'tool-call' || item.kind === 'tool-result')) {
+      const history = renderToolHistory(prepared.view.items, at, generation, capture)
+      if (!history.ok) return history
+      messages.push(...history.value.messages)
+      at = history.value.next - 1
+      continue
+    }
     const text = item.body.kind === 'inline' && typeof item.body.value === 'string' ? item.body.value : null
     if (item.kind !== 'message' || text === null) return incompatible('model_wire_item')
     if (item.trust === 'system') system.push(text)
@@ -133,7 +149,7 @@ export function buildWireRequest(
     derivedHash: modelInputDigest(prepared, capture, wire),
     system: system.join('\n\n'),
     messages,
-    tools: [],
+    tools: schemas === null ? [] : schemas.value,
     sampling: {
       maxTokens: generation.maxOutputTokens,
       ...(generation.temperature === undefined ? {} : { temperature: generation.temperature }),

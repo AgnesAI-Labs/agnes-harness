@@ -213,6 +213,9 @@ export type {
 } from './runtime/interaction/authority.js'
 export { createInteractionAuthority } from './runtime/interaction/authority.js'
 export { defaultLoopStateCodec } from './runtime/loop/default-state.js'
+export { collectPreparedMedia } from './runtime/media/continuation.js'
+export type { MediaByteReader, ResolvedMedia } from './runtime/media/resolve.js'
+export { resolveMediaParts, toModelWireMedia } from './runtime/media/resolve.js'
 export type { CatalogPick, InlineRef, PrepareParts } from './runtime/model/prepared-call.js'
 export {
   adapterInvokeInput,

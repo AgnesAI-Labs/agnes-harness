@@ -47,8 +47,9 @@ export interface ReferenceToolsDeployment {
 /** Independent array/regular-expression implementation of the fixed pure tool. */
 export function createReferenceTextStatisticsTool(): PureToolDefinition<StandardToolOutput> {
   return defineTool({
-    id: 'text-statistics',
-    description: 'Count Unicode code points, whitespace-delimited words and lines in one text block',
+    id: 'textstatistics',
+    description:
+      'Count Unicode code points, whitespace-delimited words and lines. Input: {"content":[{"type":"text","text":"..."}]}; exactly one text block, no structured field.',
     execution: 'pure',
     input: runtimeAuthorSchemas.StandardToolOutput,
     execute(input, context) {
@@ -217,7 +218,7 @@ export function createReferenceToolsFactory(
   )
     throw new TypeError('Reference Tools methods differ from the official slice')
   if (
-    definition.name !== 'text-statistics' ||
+    definition.name !== 'textstatistics' ||
     definition.executor.providerId !== descriptor.providerId ||
     definition.executor.logicalName !== descriptor.logicalName ||
     definition.executor.contract !== descriptor.contract ||
@@ -235,7 +236,7 @@ export function createReferenceToolsFactory(
     definition.execution.deferLoading ||
     definition.execution.requiredModelInput.length !== 0
   )
-    throw new TypeError('Reference Tools definition is not the closed text-statistics tool')
+    throw new TypeError('Reference Tools definition is not the closed textstatistics tool')
   function policy(input: DataRef): Outcome<ToolPolicySnapshot> {
     const parsed = data(input, definition.inputSchema, 'StandardToolOutput')
     if (!parsed.ok) return parsed

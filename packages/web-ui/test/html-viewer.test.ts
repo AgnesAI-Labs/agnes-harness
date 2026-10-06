@@ -100,7 +100,7 @@ it('frames the viewer with only allow-scripts and posts the content once on the 
   ])
 })
 
-it('removes a frame that loads a second time and reports it once', async () => {
+it('removes a frame that loads a second time, keeps the same content removed and frames new content', async () => {
   const onNavigatedAway = vi.fn()
   await render({ onNavigatedAway })
   const iframe = frame()
@@ -113,6 +113,18 @@ it('removes a frame that loads a second time and reports it once', async () => {
   expect(notice?.textContent).toBe(zhT('htmlViewer.navigated'))
   expect(onNavigatedAway).toHaveBeenCalledTimes(1)
   expect(postMessage).toHaveBeenCalledTimes(1)
+  // The same content, re-rendered or re-themed, is not loaded again to leave again.
+  await render({ onNavigatedAway })
+  await act(async () => document.documentElement.classList.add('dark'))
+  expect(host.querySelector('iframe')).toBeNull()
+  expect(host.querySelector('[role="alert"]')?.getAttribute('data-html-viewer-refused')).toBe('navigated')
+  await render({ onNavigatedAway, request: viewerRequest({ html: '<p>next</p>' }) })
+  expect(host.querySelector('[role="alert"]')).toBeNull()
+  const next = frame()
+  const nextPostMessage = standInWindow(next)
+  await load(next)
+  expect(nextPostMessage.mock.calls[0]?.[0]).toMatchObject({ html: '<p>next</p>', colorScheme: 'dark' })
+  expect(onNavigatedAway).toHaveBeenCalledTimes(1)
 })
 
 it.each([
@@ -191,8 +203,12 @@ it('mounts a fresh frame for a theme switch or new content without reading it as
   const onNavigatedAway = vi.fn()
   await render({ onNavigatedAway, allowScripts: true })
   let previous = frame()
-  standInWindow(previous)
+  const first = standInWindow(previous)
   await load(previous)
+  // An equal request in a new render keeps the live frame and posts nothing more.
+  await render({ onNavigatedAway, allowScripts: true })
+  expect(frame()).toBe(previous)
+  expect(first).toHaveBeenCalledTimes(1)
   for (const [change, expected] of [
     [() => document.documentElement.classList.add('dark'), { colorScheme: 'dark' }],
     [
