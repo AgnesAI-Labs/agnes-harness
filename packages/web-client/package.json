@@ -5,7 +5,8 @@
   "type": "module",
   "description": "Author-facing API for Agnes web client modules (in-page plugins); WC6 of the web client modules design",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./runtime": "./src/runtime/index.ts"
   },
   "scripts": {
     "typecheck": "tsc -b",

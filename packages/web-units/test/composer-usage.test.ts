@@ -77,7 +77,7 @@ it('uses component ownership and disposes compatible custom factories on replace
       workspace: { disabled: true, label: 'workspace', title: 'workspace' },
     }
     await act(async () => handle.current?.render(view))
-    expect(host.querySelector('#session-usage')?.textContent).toContain('上次同步')
+    expect(host.querySelector('.composer-usage')?.textContent).toContain('上次同步')
     await render(dependencies)
     expect(dependencies.createUsagePanel).toHaveBeenCalledTimes(1)
     expect(update).toHaveBeenLastCalledWith(view.usage, false)

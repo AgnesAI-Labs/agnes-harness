@@ -397,7 +397,7 @@ describe('trace panel', () => {
     search.value = ''
     search.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'deleteContentBackward' }))
     expect(root.querySelector('[data-trace-row-id="child-tool"]')).toBeNull()
-    const mode = root.querySelector<HTMLSelectElement>('#trace-timeline-mode') as HTMLSelectElement
+    const mode = root.querySelector<HTMLSelectElement>('.trace-timeline-mode') as HTMLSelectElement
     mode.value = 'sequence'
     flushSync(() => mode.dispatchEvent(new Event('change', { bubbles: true })))
     root.querySelector<HTMLButtonElement>('[data-target-id="child-tool"]')?.click()
@@ -710,7 +710,7 @@ describe('trace panel', () => {
   it('filters the ledger by a dragged timeline interval and resets it with Escape', () => {
     const { root, panel } = mount()
     panel.render(nodes, [turn(sampleTrace, ['u1', 'c1', 'a1', 't1'])])
-    const mode = root.querySelector<HTMLSelectElement>('#trace-timeline-mode') as HTMLSelectElement
+    const mode = root.querySelector<HTMLSelectElement>('.trace-timeline-mode') as HTMLSelectElement
     mode.value = 'sequence'
     flushSync(() => mode.dispatchEvent(new Event('change', { bubbles: true })))
     expect((root.querySelector('.trace-gantt-bar.tone-user') as HTMLElement).style.width).toBe('25%')
@@ -814,7 +814,7 @@ describe('trace panel', () => {
       content: [{ type: 'text', text: `stable ${index}` }],
     }))
     panel.render(current)
-    const mode = root.querySelector<HTMLSelectElement>('#trace-timeline-mode') as HTMLSelectElement
+    const mode = root.querySelector<HTMLSelectElement>('.trace-timeline-mode') as HTMLSelectElement
     mode.value = 'sequence'
     flushSync(() => mode.dispatchEvent(new Event('change', { bubbles: true })))
     const track = root.querySelectorAll<HTMLElement>('.trace-gantt-track')[1] as HTMLElement
@@ -860,7 +860,7 @@ describe('trace panel', () => {
       content: [{ type: 'text', text: `input ${index}` }],
     }))
     panel.render(many)
-    const mode = root.querySelector<HTMLSelectElement>('#trace-timeline-mode') as HTMLSelectElement
+    const mode = root.querySelector<HTMLSelectElement>('.trace-timeline-mode') as HTMLSelectElement
     mode.value = 'sequence'
     flushSync(() => mode.dispatchEvent(new Event('change', { bubbles: true })))
     const track = root.querySelector<HTMLElement>('.trace-gantt-track') as HTMLElement
@@ -898,7 +898,7 @@ describe('trace panel', () => {
       content: [{ type: 'text', text: `input ${index}` }],
     }))
     panel.render(many)
-    const mode = root.querySelector<HTMLSelectElement>('#trace-timeline-mode') as HTMLSelectElement
+    const mode = root.querySelector<HTMLSelectElement>('.trace-timeline-mode') as HTMLSelectElement
     mode.value = 'sequence'
     flushSync(() => mode.dispatchEvent(new Event('change', { bubbles: true })))
     const track = root.querySelector<HTMLElement>('.trace-gantt-track') as HTMLElement
@@ -956,7 +956,7 @@ describe('trace panel', () => {
     }))
     panel.render([...older, ...history])
     expect(list.scrollTop).toBe(32 * 80)
-    const mode = root.querySelector<HTMLSelectElement>('#trace-timeline-mode') as HTMLSelectElement
+    const mode = root.querySelector<HTMLSelectElement>('.trace-timeline-mode') as HTMLSelectElement
     mode.value = 'sequence'
     flushSync(() => mode.dispatchEvent(new Event('change', { bubbles: true })))
     root.querySelector<HTMLButtonElement>('[data-target-id="r239"]')?.click()
@@ -974,7 +974,7 @@ describe('trace panel', () => {
       content: [{ type: 'text', text: `dense ${index}` }],
     }))
     panel.render(history)
-    const mode = root.querySelector<HTMLSelectElement>('#trace-timeline-mode') as HTMLSelectElement
+    const mode = root.querySelector<HTMLSelectElement>('.trace-timeline-mode') as HTMLSelectElement
     mode.value = 'sequence'
     flushSync(() => mode.dispatchEvent(new Event('change', { bubbles: true })))
     expect(root.querySelectorAll('.trace-row').length).toBeLessThan(100)

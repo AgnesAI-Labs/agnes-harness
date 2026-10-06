@@ -157,13 +157,19 @@ it('the settings dialog no longer frames the admin pages', () => {
 
 it('exposes native tab and live status semantics for the rendered workbench', async () => {
   const runtime = await mountRenderedIndex()
-  const html = read('index.html')
-  expect(html).toContain('<div class="session-tabs" role="tablist"')
-  expect(html).toContain('id="view-chat" role="tab"')
-  expect(html).toContain('id="view-trace" role="tab"')
-  expect(html).toContain('aria-controls="conversation-shell"')
-  expect(html).toContain('aria-controls="trace-panel"')
-  expect(document.querySelector('#connection[role="status"][aria-live="polite"]')).not.toBeNull()
+  const tabs = [...document.querySelectorAll<HTMLElement>('.session-tabs[role="tablist"] > [role="tab"]')]
+  expect(tabs.map((tab) => tab.className)).toEqual(['session-tab-chat', 'session-tab-trace'])
+  // Each tab controls its panel, which is labelled by that tab, through ids minted for this mount.
+  for (const [tab, panel] of [
+    [tabs[0], '.conversation-shell'],
+    [tabs[1], '.trace-panel'],
+  ] as const) {
+    const controlled = document.getElementById(tab?.getAttribute('aria-controls') ?? '')
+    expect(controlled).toBe(document.querySelector(panel))
+    expect(controlled?.getAttribute('role')).toBe('tabpanel')
+    expect(controlled?.getAttribute('aria-labelledby')).toBe(tab?.id)
+  }
+  expect(document.querySelector('.connection-status[role="status"][aria-live="polite"]')).not.toBeNull()
   await runtime.dispose()
   resetWebDom()
 })

@@ -68,7 +68,7 @@ Key rules:
 
 ## 2. Region hooks: the stable selector contract
 
-**Use `data-agnes-region`.** Internal classes and IDs such as `.sidebar`, `#composer`, and `turn-*` are not a public contract and may change. Region hooks are versioned contracts: a rename must be reflected in contract checks.
+**Use `data-agnes-region`.** Internal classes and IDs such as `.sidebar`, `.composer-form`, and `turn-*` are not a public contract and may change. Region hooks are versioned contracts: a rename must be reflected in contract checks.
 
 | Hook | Element | Pages |
 | --- | --- | --- |

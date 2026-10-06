@@ -1,7 +1,7 @@
 /**
  * 页面区域的宿主实现。
  *
- * The first migrated region deliberately keeps its existing outer `<section id="empty-state">`
+ * The first migrated region deliberately keeps its existing outer `<section class="empty-state">`
  * so the legacy layout, CSS selectors and app state machine remain the authority for visibility.
  * Only the section's children move behind a SlotOutlet.  A browser module can shadow the built-in
  * entry by registering the same slot with a lower priority; the surrounding page remains intact.
@@ -56,7 +56,7 @@ import {
   type TranscriptDependencies,
   type TranscriptHandle,
 } from '@agnes/web-units'
-import { createElement, type ReactNode, useLayoutEffect, useMemo, useState } from 'react'
+import { createElement, type ReactNode, useId, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { flushSync } from 'react-dom'
 import type { ClaimResolver } from './client-modules/boot.js'
 import { observeSlotCards } from './client-modules/timeline-slot.js'
@@ -192,9 +192,19 @@ function EmptyStateBuiltin({
 }: {
   t?: (key: string) => string
 }): ReturnType<typeof createElement> {
+  // The heading names its empty-state region; the id is minted per mount so two never collide.
+  const titleId = useId()
+  const root = useRef<HTMLDivElement>(null)
+  useLayoutEffect(() => {
+    const region = root.current?.closest('[data-agnes-region="empty-state"]')
+    region?.setAttribute('aria-labelledby', titleId)
+    return () => {
+      if (region?.getAttribute('aria-labelledby') === titleId) region.removeAttribute('aria-labelledby')
+    }
+  }, [titleId])
   return createElement(
     'div',
-    { 'data-agnes-region-owner': 'builtin', 'data-agnes-region-unit': 'empty-state' },
+    { ref: root, 'data-agnes-region-owner': 'builtin', 'data-agnes-region-unit': 'empty-state' },
     createElement(
       'div',
       { className: 'conversation-hero-dsh', 'data-agnes-conversation-hero': true },
@@ -220,7 +230,7 @@ function EmptyStateBuiltin({
       }),
     ),
     createElement('span', { className: 'agnes-mark empty-brand-mark', 'aria-hidden': 'true' }),
-    createElement('h2', { id: 'empty-state-title', className: 'empty-state-heading' }, 'Agnes Harness'),
+    createElement('h2', { id: titleId, className: 'empty-state-heading' }, 'Agnes Harness'),
     createElement('p', { className: 'empty-state-copy' }, t('app.emptyState.tagline')),
   )
 }
@@ -828,7 +838,7 @@ function RightbarSessionBuiltin({
   })
   return createElement(
     'div',
-    { id: 'rightbar-session', 'data-agnes-rightbar-session': true },
+    { className: 'rightbar-session', 'data-agnes-rightbar-session': true },
     createElement(
       'nav',
       { className: 'rightbar-tabs', 'aria-label': t('app.rightbarTabs') },
@@ -863,7 +873,7 @@ function RightbarSessionBuiltin({
 function RightbarBuiltin(): ReturnType<typeof createElement> {
   return createElement(
     'div',
-    { id: 'rightbar-content', 'data-agnes-region-unit': 'rightbar' },
+    { className: 'rightbar-content', 'data-agnes-region-unit': 'rightbar' },
     createElement(SlotOutlet, { name: 'rightbar.session', hideWhenEmpty: true }),
   )
 }
@@ -1316,7 +1326,7 @@ export function mountSidebarRegion(
   const translate: Translate = (key, vars) => locale.t(key, vars)
   const sidebarDependencies: SidebarDependencies = {
     translate,
-    bindSidebar: (narrow, ownerDocument) => bindSidebar(narrow, ownerDocument, translate),
+    bindSidebar: (narrow, root) => bindSidebar(narrow, root, translate),
     renderNavigation: (options) => renderSessionNavigation(options, translate),
   }
   slots.declare(SIDEBAR_SLOT as string, { kind: 'single', scope: 'root' })

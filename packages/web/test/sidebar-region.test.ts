@@ -71,9 +71,9 @@ describe('rendered sidebar region', () => {
     sidebar?.querySelector<HTMLButtonElement>('.session-menu-trigger')?.click()
     document.querySelector<HTMLButtonElement>('[role="menuitem"]')?.click()
     expect(sessionAction).toHaveBeenCalledWith('rename', 'one', '会话 one', expect.any(HTMLElement))
-    sidebar?.querySelector<HTMLButtonElement>('#new')?.click()
-    sidebar?.querySelector<HTMLButtonElement>('#workspace-add')?.click()
-    sidebar?.querySelector<HTMLButtonElement>('#settings')?.click()
+    sidebar?.querySelector<HTMLButtonElement>('.new-session')?.click()
+    sidebar?.querySelector<HTMLButtonElement>('.workspace-add')?.click()
+    sidebar?.querySelector<HTMLButtonElement>('.settings-entry')?.click()
     expect(newSession).toHaveBeenCalledOnce()
     expect(addWorkspace).toHaveBeenCalledOnce()
     expect(openSettings).toHaveBeenCalledOnce()
@@ -251,7 +251,7 @@ describe('rendered sidebar region', () => {
 
   it('keeps collapsed state and replaces/restores the built-in through a lower-priority shadow', async () => {
     runtime = await mountRenderedIndex()
-    const toggle = document.getElementById('sidebar-toggle') as HTMLButtonElement
+    const toggle = document.querySelector<HTMLElement>('.sidebar-toggle') as HTMLButtonElement
     toggle.click()
     expect(document.body.classList.contains('sidebar-collapsed')).toBe(true)
     expect((document.querySelector('aside.sidebar') as HTMLElement | null)?.inert).toBe(true)
@@ -265,10 +265,10 @@ describe('rendered sidebar region', () => {
     )
     await new Promise<void>((resolve) => queueMicrotask(resolve))
     expect(document.getElementById('fixture-sidebar-shadow')?.textContent).toBe('shadow sidebar')
-    expect(document.getElementById('new')).toBeNull()
+    expect(document.querySelector<HTMLElement>('.new-session')).toBeNull()
     remove()
     await new Promise<void>((resolve) => queueMicrotask(resolve))
-    expect(document.getElementById('new')).not.toBeNull()
+    expect(document.querySelector<HTMLElement>('.new-session')).not.toBeNull()
     expect(document.querySelector('[data-agnes-region-unit="sidebar"]')).not.toBeNull()
   })
 })

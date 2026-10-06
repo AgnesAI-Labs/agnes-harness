@@ -57,7 +57,7 @@ export const TimelineNodeHost = forwardRef<TranscriptHandle, TimelineNodeHostPro
   const runtime = useConversationRuntime(store, locale?.t.bind(locale))
   const projection = useSyncExternalStore(store.subscribe, store.getSnapshot, store.getSnapshot)
   const viewport = useCallback(
-    () => content.current?.closest<HTMLElement>('#transcript') ?? content.current,
+    () => content.current?.closest<HTMLElement>('.transcript') ?? content.current,
     [],
   )
   const scrollToBottom = useCallback(() => {
@@ -187,7 +187,7 @@ export const TimelineNodeHost = forwardRef<TranscriptHandle, TimelineNodeHostPro
           {locale ? locale.t('timeline.loadEarlier') : 'Load earlier records'}
         </button>
       </div>
-      <div id="transcript-content" ref={content}>
+      <div className="transcript-content" ref={content}>
         <AssistantRuntimeProvider runtime={runtime}>
           <WebConversationMessages
             registry={registry}

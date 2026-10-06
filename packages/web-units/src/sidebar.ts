@@ -39,8 +39,11 @@ export interface SidebarDependencies {
   /** Locale-bound translate (host injects); called during render, never cached. */
   translate: Translate
   renderNavigation(options: SidebarNavigationOptions): void
-  /** `ownerDocument` is the sidebar's own document; listeners, body classes and `inert` stay there. */
-  bindSidebar(narrow: MediaQueryList, ownerDocument: Document): SidebarShell
+  /**
+   * `root` is the workbench that holds this sidebar (the closest `[data-agnes-workbench]`, else the
+   * body); its controls are found inside it. Listeners and body classes stay on its document.
+   */
+  bindSidebar(narrow: MediaQueryList, root: HTMLElement): SidebarShell
 }
 
 export interface SidebarState {
@@ -249,9 +252,10 @@ const SidebarBuiltin = forwardRef<
     const ownerDocument = nav.current?.ownerDocument
     const view = ownerDocument?.defaultView
     if (!dependencies || !ownerDocument || !view) return
-    const toggle = ownerDocument.getElementById('sidebar-toggle')
-    const close = ownerDocument.getElementById('sidebar-close')
-    const backdrop = ownerDocument.getElementById('sidebar-backdrop')
+    const root = nav.current?.closest<HTMLElement>('[data-agnes-workbench]') ?? ownerDocument.body
+    const toggle = root.querySelector('.sidebar-toggle')
+    const close = root.querySelector('.sidebar-close')
+    const backdrop = root.querySelector('.sidebar-backdrop')
     if (
       !(toggle instanceof HTMLButtonElement) ||
       !(close instanceof HTMLButtonElement) ||
@@ -261,7 +265,7 @@ const SidebarBuiltin = forwardRef<
     // 断点必须与 style.css 的移动抽屉媒体查询一致（`.sidebar-backdrop` 所在的那个
     // `@media (max-width: …)`）。两者不一致时，中间那段宽度里 JS 走桌面折叠分支、
     // CSS 却已把侧栏移出视口，按钮点了没有任何反应。回归由 sidebar-breakpoint.test.ts 兜住。
-    const controller = dependencies.bindSidebar(view.matchMedia('(max-width: 900px)'), ownerDocument)
+    const controller = dependencies.bindSidebar(view.matchMedia('(max-width: 900px)'), root)
     shell.current = controller
     return () => {
       controller.dispose()
@@ -289,7 +293,6 @@ const SidebarBuiltin = forwardRef<
       createElement(
         'button',
         {
-          id: 'sidebar-close',
           className: 'icon-button sidebar-close',
           type: 'button',
           'aria-label': t('sidebar.closeNav'),
@@ -303,9 +306,8 @@ const SidebarBuiltin = forwardRef<
       createElement(
         'button',
         {
-          id: 'new',
           ref: newButton,
-          className: 'primary-button',
+          className: 'new-session primary-button',
           type: 'button',
           disabled: state.newDisabled,
         },
@@ -320,9 +322,8 @@ const SidebarBuiltin = forwardRef<
       createElement(
         'button',
         {
-          id: 'workspace-add',
           ref: workspaceAdd,
-          className: 'icon-button subtle',
+          className: 'workspace-add icon-button subtle',
           type: 'button',
           'aria-label': t('sidebar.addWorkspace'),
           title: t('sidebar.addWorkspace'),
@@ -331,7 +332,7 @@ const SidebarBuiltin = forwardRef<
       ),
       slots?.workspaces,
     ),
-    createElement('nav', { id: 'sessions', 'aria-label': t('sidebar.sessionsNav'), ref: nav }),
+    createElement('nav', { className: 'session-nav', 'aria-label': t('sidebar.sessionsNav'), ref: nav }),
     slots?.panellist,
     createElement(
       'div',
@@ -339,7 +340,7 @@ const SidebarBuiltin = forwardRef<
       slots?.footerAction,
       createElement(
         'button',
-        { id: 'settings', ref: settingsButton, className: 'secondary-button', type: 'button' },
+        { ref: settingsButton, className: 'settings-entry secondary-button', type: 'button' },
         icon(SETTINGS_ICON, '0 0 16 16', 'icon icon-settings'),
         createElement('span', null, t('sidebar.settings')),
       ),

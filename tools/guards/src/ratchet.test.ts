@@ -304,7 +304,9 @@ const INITIAL_CEILING: Record<string, number> = {
   // Missing desktop capabilities are named: the generic card's reason, a renderer refused for them with a
   // viewer hint, and a module requiring an unnegotiated feature fails its candidate. Measured 3733,
   // exact (+61).
-  'packages/web-client/src': 3733,
+  // The runtime entry re-exports the client host, selection, window merge and presenter. Measured 3752,
+  // exact, no spare (+19).
+  'packages/web-client/src': 3752,
   'packages/web-slots/src': 605,
   // Failed shell calls read as their exit code (+19 lines); measured 4891, exact cap.
   // B-line diagnostics dialog: React view adds 147 lines; measured 4706, exact cap.
@@ -318,7 +320,9 @@ const INITIAL_CEILING: Record<string, number> = {
   // W8a-3: retire the native tool renderer in favor of one compatibility root; measured 4630.
   // The offline diagnostics viewer refuses an unknown bundle version (+7 lines); measured 4645, exact cap.
   // Sidebar binds against its own document and window. Measured 5559, exact, no spare (+1).
-  'packages/web-units/src': 5628,
+  // Workbench units mint per-mount ids or carry classes instead of fixed ids. Measured 5637, exact, no
+  // spare.
+  'packages/web-units/src': 5637,
   // Locale catalogs on LocaleService. Measured 1745, exact, no spare (+31).
   // Failed shell calls read as their exit code (+19 lines); measured 4891, exact cap.
   // W8a-3: retire the native tool renderer in favor of one compatibility root; measured 4630.
@@ -492,12 +496,15 @@ const INITIAL_CEILING: Record<string, number> = {
   // UI integration merge: the default React transcript now receives the inline card claim callback,
   // which lands on top of the diagnostics wiring above. Re-measured with countLines(): 1827, exact.
   // Locale bridge and slot card bindings removed. Measured 2014, exact, no spare (-2).
-  'packages/web/src/app': 2094,
+  // The app mounts the workbench through the shell switch and keeps its shell snapshot. Measured 2137,
+  // exact, no spare (+43).
+  'packages/web/src/app': 2137,
   // 2026-09-22 UI plugin management: inject the embedded pane's client runtime reconciler.
   // 2026-09-25 UI refactor: permission options now render through the React region contract.
   // Re-measured with countLines(): 215, exact, no spare.
   // Injected translate; popover on the trigger's document. Measured 251, exact, no spare (+3).
-  'packages/web/src/permission-picker': 251,
+  // Popover, listbox and option ids are numbered per picker. Measured 256, exact, no spare (+5).
+  'packages/web/src/permission-picker': 256,
   // 2026-09-17 WEB-RUN-TRACE: new panel renderer. Measured 130; exact cap, no spare.
   // 2026-09-17 DSH parity: gantt + event list + inspector. Measured 411.
   // 2026-09-17 DSH layout: idle-compressed gantt. Measured 445.
@@ -508,7 +515,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // 2026-09-25 UI refactor: model options now render through the React region contract.
   // Re-measured with countLines(): 274, exact, no spare.
   // Injected translate; popover on the trigger's document. Measured 286, exact, no spare (+4).
-  'packages/web/src/model-picker': 286,
+  // Popover, listbox and option ids are numbered per picker. Measured 290, exact, no spare (+4).
+  'packages/web/src/model-picker': 290,
   // 2026-09-25 UI refactor: settings-owned element construction uses the shared UI host boundary.
   // Re-measured with countLines(): 754, exact, no spare.
   // Settings controller receives translate explicitly. Measured 902, exact, no spare (+2).
@@ -543,7 +551,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // #resource-settings-pane），showSettingsPane 改按 aria-selected 决定哪一条高亮。实测 89。
   // SESSION-ACTIONS integrated with b/main: exact increment +1.
   // bindSidebar receives its document and translate. Measured 110, exact, no spare (+3).
-  'packages/web/src/shell': 110,
+  // The sidebar binding finds its controls by class inside its workbench. Measured 114, exact, no spare (+4).
+  'packages/web/src/shell': 114,
   // 2026-09-17 rebase 后的重新实测：turns.ts 把过程摘要搬进过程行、用量面板只留关键项、
   // 运行中页脚整行隐藏（原 432 是旧实现的实测值），收紧到实测精确值 399。
   'packages/web/src/turns': 407,
@@ -2352,7 +2361,10 @@ const INITIAL_CEILING: Record<string, number> = {
   // The default shell rewrites its lists in place so a selection survives an update. Measured 16745, exact,
   // no spare (+40).
   // Sixth main synchronization brings main's queued-input CI fixes. Measured 16849, exact, no spare.
-  'packages/web/src': 16849,
+  // The built-in workbench mounts as a ShellProvider through the shell switch, with transitional
+  // ShellServices and a snapshot store; fixed shell ids become classes or per-mount ids. Measured 17192,
+  // exact, no spare (+343).
+  'packages/web/src': 17192,
   // 2026-09-17 web-client-modules frontend track (rebased onto L0/permission-picker main): re-measured exact value below.
   // 2026-09-14: Task 7 orphaned-pin-cleanup adds the orphan-pins section to PluginAdminPage — the
   // #orphanPins/#orphanPinsList/#orphanPinsStatus/#orphanPinsReleaseAll element bindings, the
