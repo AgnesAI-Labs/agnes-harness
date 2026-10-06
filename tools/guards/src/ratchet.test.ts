@@ -2104,7 +2104,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // Default agh.events provider over the domain store, with its event lookups; measured 28215 (+386), exact.
   // Durable event high-water, identity backstop and shared event fingerprint (+30); measured 28245, exact.
   // Original supervisor session-owner facts and rechecks (+36), exact cap.
-  'packages/daemon/src': 28281,
+  // Runtime client subscriptions close idle readers, answer stale reads with resync and bound control commands (+141); measured 28422, exact.
+  'packages/daemon/src': 28422,
   'packages/daemon/src/packages/admin-session': 46,
   // 2026-09-14: whole-branch review fix wave (Finding 1) adds the two missing
   // 'pins/inspect'/'pins/release' entries to the ACTIONS BFF route allowlist, which had been left
