@@ -32,6 +32,7 @@ import {
   createConfigurationAdmissions,
 } from './runtime/comparison-config-admission.js'
 import { bindPreparedSandbox, prepareSessionConfiguration } from './runtime/comparison-prepared.js'
+import { createJevDecisionFetch } from './runtime/jev-fetch.js'
 import type { JevLoopOptions } from './runtime/jev-loop.js'
 import { createSessionIdleGates, type SessionIdleGatePort } from './runtime/session-idle-gates.js'
 import { sessionOwnerCloseFinalizer } from './runtime/session-owner-close.js'
@@ -175,7 +176,13 @@ export async function createHost(profile: ResolvedProfile, opts: HostOptions): P
   // Built only once the loader is known good: createFileAudit's constructor eagerly mkdir's, so
   // building it before this check left a real audit/ directory on disk behind a createHost() call
   // that was always going to refuse - a rejected assembly is supposed to have no side effects.
-  const jev = opts.jev ?? jevFromEnvironment(opts.env ?? process.env)
+  const hostEnv = opts.env ?? process.env
+  // Pooled decision connections: created lazily on the first Jev call (no socket for a
+  // Native-only Host or an injected opts.jev transport) and closed together with the Host.
+  const jevConnections = createJevDecisionFetch({
+    http2: (hostEnv.AGNES_JEV_HTTP2 ?? '').trim().toLowerCase() !== 'off',
+  })
+  const jev = opts.jev ?? jevFromEnvironment(hostEnv, jevConnections.fetch)
   const sessionRuntimes = createSessionRuntimeRegistry(jev)
   let a!: Assembled
   let closed = false
@@ -612,10 +619,16 @@ export async function createHost(profile: ResolvedProfile, opts: HostOptions): P
             await recoverCreatingChildAttempts(a.adapters.storage, { staleBefore: now, now })
           }
         },
-      }).catch((error: unknown) => {
-        closePromise = undefined
-        throw error
       })
+        .then(async () => {
+          // Sessions have drained by now, so no decision call is in flight; a failing socket
+          // close is swallowed inside and never reopens an already closed Host.
+          await jevConnections.close()
+        })
+        .catch((error: unknown) => {
+          closePromise = undefined
+          throw error
+        })
       return closePromise
     },
   }

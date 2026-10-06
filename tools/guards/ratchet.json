@@ -51,7 +51,7 @@
   "packages/base/src/mcp": 932,
   "packages/base/extensions/computer-use": 1786,
   "packages/base/extensions/privacy": 800,
-  "packages/host/src": 50594,
+  "packages/host/src": 50674,
   "packages/host/src/ext-host/service-invocation": 247,
   "packages/host/src/ext-host/tool-context-capabilities": 111,
   "packages/host/src/ext-host/hooks-isolation-client": 390,
@@ -134,6 +134,6 @@
   "packages/runtime-comparison/src": 1574,
   "packages/jev-runtime/src": 4845,
   "packages/jev-trace/src": 734,
-  "packages/web-session-ui/src": 2508,
-  "packages/jev-web/src": 6106
+  "packages/web-session-ui/src": 2558,
+  "packages/jev-web/src": 6111
 }

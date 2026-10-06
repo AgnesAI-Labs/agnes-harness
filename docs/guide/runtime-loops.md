@@ -38,12 +38,20 @@ Configure the daemon environment before startup:
 | `AGNES_JEV_AUTHENTICATION` | `bearer` by default. Set `none` explicitly only for an anonymous decision service. |
 | `AGNES_JEV_API_KEY` | Bearer credential; takes precedence over `TYPESAFE_API_KEY`. Retained only in the transport closure. |
 | `TYPESAFE_API_KEY` | Fallback alias for the Jev bearer credential. |
+| `AGNES_JEV_HTTP2` | Empty by default (HTTP/2 where the endpoint speaks it). Set `off` to force HTTP/1.1 for a proxy that cannot carry HTTP/2. |
 | `AGNES_JEV_DECISION_REQUEST_CREDITS` | Optional finite, positive request-cost upper estimate for the decision backend, in the deployment's credit unit. |
 | `AGNES_JEV_LANGUAGE_REQUEST_CREDITS` | Optional finite, positive request-cost upper estimate for the language backend, in the same unit. |
 
 Missing bearer credentials make JevLoop unavailable with an explanatory catalog message; Native
 startup remains available. Anonymous access is never inferred from a local endpoint. An explicitly
 supplied `HostOptions.jev` transport owns its authentication and does not require these environment keys.
+
+Environment-configured decision calls share Host-owned pooled connections: one warm keep-alive
+connection per origin (HTTP/2 where the endpoint speaks it), created lazily on the first decision
+call and closed together with the Host. A connection that stops answering is detected well before
+the transport timeout and the pool is replaced, so a silently dead connection cannot stall later
+decisions; the failed request itself is still settled as a failure and never retried at this layer.
+An injected `HostOptions.jev` transport keeps whatever connection behaviour its fetcher provides.
 
 The language backend uses the session's existing provider/model selection. The decision transport
 does not substitute the language provider; the runtime may make a separate language arbitration

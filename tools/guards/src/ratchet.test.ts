@@ -1,3 +1,11 @@
+// JEV-CONNECTIONS: reviewed Host-owned pooled decision connections (keep-alive, HTTP/2 with an
+// off switch, dead-connection reconnect bounds, header-timeout fast fail) closed with the Host;
+// exact measured count, no headroom.
+// DSH-REPLAY-VISIBILITY: backfills the ratchet bookkeeping d964abb left undone - the conversation
+// cut retains a verified older projection while playback advances (desired/verified/reading state,
+// coalesced reads, backward-seek invalidation) and the decision graph releases the cut at the live
+// head. web-session-ui count is after behaviour-preserving dedup (twin settles merged, shared
+// reset); exact measured counts, no headroom.
 // JEV-CLIENT-PLUGIN: move feature UI/CSS/subscriptions to descriptor-loaded jev-web; shared session
 // renderers have their own package budget. Exact public workbench/lifecycle and default-distribution
 // counts; tighten transferred Web budgets, preserve all checks and unrelated work.
@@ -263,8 +271,11 @@ const INITIAL_CEILING: Record<string, number> = {
   // 2026-09-22 Web Plugins parity: row-scoped client services and stable web-unit contracts. Exact.
   // CU-ARTIFACT-RETENTION-GC-INDEX C8: measured 1714, exact, no spare (+9). ClientResourceReclaimedError
   // thrown on a 410 artifact_reclaimed read.
-  'packages/web-session-ui/src': 2508,
-  'packages/jev-web/src': 6106,
+  // DSH-REPLAY-VISIBILITY: d964abb's conversation cut retains a verified older projection while
+  // playback advances; web-session-ui measured after behaviour-preserving dedup (-14), exact, no spare.
+  'packages/web-session-ui/src': 2558,
+  // DSH-REPLAY-VISIBILITY: decision graph releases the conversation cut at the live head (+5), exact.
+  'packages/jev-web/src': 6111,
   'packages/web-client/src': 2073,
   'packages/web-slots/src': 605,
   // Failed shell calls read as their exit code (+19 lines); measured 4891, exact cap.
@@ -2569,7 +2580,9 @@ const INITIAL_CEILING: Record<string, number> = {
   // Stable macOS boot-session UUID identity validation adds two lines, exact.
   // DSH-ALIGNMENT: prepared receipts, cold child workspace proof, retirement archive/purge and GC roots; exact allocation.
   // 2026-10-04: comparison snapshot links/dependency revalidation and durable sandbox floor; exact measured cap.
-  'packages/host/src': 50594,
+  // JEV-CONNECTIONS: Host-owned pooled decision connections (keep-alive, HTTP/2 off switch,
+  // dead-connection reconnect, header-timeout fast fail) closed with the Host; +80 exact, no headroom.
+  'packages/host/src': 50674,
   'packages/host/src/ext-host/service-invocation': 247,
   // T5.2's permission projector is kept independently bounded so later extension-host work cannot
   // hide in the package-wide increment. Measured source: 86 lines.

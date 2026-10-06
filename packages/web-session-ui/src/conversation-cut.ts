@@ -121,6 +121,15 @@ export function createConversationCutView(
     current = next
     onView(next)
   }
+  const reset = (): void => {
+    generation++
+    desired = undefined
+    verified = undefined
+    reading = undefined
+    if (timer !== undefined) clearTimeout(timer)
+    timer = undefined
+    if (current !== undefined) settle(undefined)
+  }
   const schedule = (): void => {
     if (timer !== undefined || reading || !desired?.projectAt) return
     timer = setTimeout(() => {
@@ -145,24 +154,16 @@ export function createConversationCutView(
             return
           }
           verified = { through: target.through, timeline }
-          if (target.through === desired.through)
-            settle({
-              through: desired.through,
-              projectedThrough: target.through,
-              pending: false,
-              nodes: timeline.nodes,
-              turns: timeline.turns,
-            })
-          else {
-            settle({
-              through: desired.through,
-              projectedThrough: target.through,
-              pending: true,
-              nodes: timeline.nodes,
-              turns: timeline.turns,
-            })
-            schedule()
-          }
+          // An older verified projection stays visible, pending, until the newest cut is read.
+          const caughtUp = target.through === desired.through
+          settle({
+            through: desired.through,
+            projectedThrough: target.through,
+            pending: !caughtUp,
+            nodes: timeline.nodes,
+            turns: timeline.turns,
+          })
+          if (!caughtUp) schedule()
         },
         () => {
           if (reading !== ticket || generation !== epoch) return
@@ -180,13 +181,7 @@ export function createConversationCutView(
     },
     apply(through: number | undefined, source: ConversationCutSource): void {
       if (through === undefined) {
-        generation++
-        desired = undefined
-        verified = undefined
-        reading = undefined
-        if (timer !== undefined) clearTimeout(timer)
-        timer = undefined
-        if (current !== undefined) settle(undefined)
+        reset()
         return
       }
       // A verified projection of the same cut is retained across re-applies.
@@ -209,15 +204,7 @@ export function createConversationCutView(
       schedule()
     },
     dispose() {
-      generation++
-      desired = undefined
-      verified = undefined
-      reading = undefined
-      if (timer !== undefined) {
-        clearTimeout(timer)
-        timer = undefined
-      }
-      if (current !== undefined) settle(undefined)
+      reset()
     },
   }
 }

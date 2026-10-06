@@ -35,12 +35,18 @@ Host 环境适配真实工具 schema、修订绑定候选、审批、执行许�
 | `AGNES_JEV_AUTHENTICATION` | 默认 `bearer`；仅匿名决策服务可显式设为 `none`。 |
 | `AGNES_JEV_API_KEY` | Bearer 凭据，优先于 `TYPESAFE_API_KEY`，仅留在传输闭包中。 |
 | `TYPESAFE_API_KEY` | Jev Bearer 凭据的备用变量名。 |
+| `AGNES_JEV_HTTP2` | 默认留空（在端点支持时使用 HTTP/2）。设为 `off` 强制 HTTP/1.1，供不支持 HTTP/2 的代理使用。 |
 | `AGNES_JEV_DECISION_REQUEST_CREDITS` | 决策请求的可选费用上界预估，须为有限正数，使用部署的 credit 单位。 |
 | `AGNES_JEV_LANGUAGE_REQUEST_CREDITS` | 语言模型请求的可选费用上界预估，须为有限正数，使用相同单位。 |
 
 缺少 Bearer 凭据时，JevLoop 会标为不可用并说明原因，Native 仍可正常启动。不会因为地址是
 本地地址就自动允许匿名访问。显式传入的 `HostOptions.jev` transport 自行管理认证，不要求上述
 环境密钥。
+
+经环境变量配置的决策请求共享 Host 管理的连接池：每个源一条保温的 keep-alive 连接（端点支持
+时使用 HTTP/2），首次决策调用时惰性创建，随 Host 关闭。停止应答的连接会在传输超时之前被
+发现并整池替换，静默失效的连接不会拖住后续决策；失败的那次请求仍按失败结算，该层不做重试。
+显式注入的 `HostOptions.jev` transport 保持其 fetcher 自带的连接行为。
 
 语言模型沿用会话的 provider/model。决策传输不会替换为语言模型；runtime 可按策略另行发起
 语言模型仲裁请求。门控与 DSH 对齐：Purpose/Operation（`escalateBelow`）、Binding 和
