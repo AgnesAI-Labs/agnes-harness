@@ -3,6 +3,7 @@ import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { runAgnesd } from '@agnes/daemon'
 import { createHostProjectionOwner } from '@agnes/host'
+import { createProjectionInstallationFixture } from '@agnes/host/testkit'
 
 const root = process.env.AGH_HOME
 const log = process.env.FIRST_PATH_LOG
@@ -45,11 +46,22 @@ await runAgnesd(
         } satisfies Pick<Parameters<typeof runAgnesd>[1] & {}, 'runtimeClientInstallation'>)
       : {}),
     // The real accepted-only store and default projection owner share the daemon lifetime.
-    // Core publishes the real projection factory. No deployment installs its provider or issuer
-    // here, and acceptInbox remains unavailable: default reads must name the missing installation.
+    // Install the real Core provider over an explicit synthetic domain registration.
+    // There is no production C14 HTTP-to-session issuer; reads must refuse before backend access.
     projection: {
       createOwner(sources) {
-        const owner = createHostProjectionOwner(sources)
+        const owner = createHostProjectionOwner(
+          sources,
+          createProjectionInstallationFixture(
+            {
+              contract: 'agh.projection',
+              logicalName: 'default',
+              providerId: 'fixture/projection',
+              bindingId: 'fixture-projection',
+            },
+            { authorityId: 'fixture-authority', tenantId: 'fixture-tenant', authorityEpoch: 1 },
+          ),
+        )
         return {
           ...owner,
           async close() {

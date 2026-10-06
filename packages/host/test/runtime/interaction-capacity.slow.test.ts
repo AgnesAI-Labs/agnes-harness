@@ -20,7 +20,12 @@ import {
 } from '../../../../examples/runtime-reference/src/providers/interaction-contract.js'
 import { createInteractionService } from '../../src/runtime/providers/interaction.js'
 import { createRuntimeStateStore, type RuntimeStateStore } from '../../src/runtime/providers/state.js'
-import { interactionStateFixture } from '../runtime-state-interaction-read-fixture.js'
+import {
+  closeInteractionStateFixtures,
+  interactionStateFixture,
+} from '../runtime-state-interaction-read-fixture.js'
+
+afterEach(closeInteractionStateFixtures)
 
 /** Target load: 1,000 concurrent pending questions in one session. */
 const PENDING = 1000
@@ -73,105 +78,113 @@ describe('reference interaction provider', () => {
     )
   }
 
-  it('keeps 1000 pending approvals readable after base load and a restart, with no handle or timer per question', async () => {
-    const { clock, open } = setup()
-    let store = open()
-    const inbox = createRuntimeInboxFixture()
-    must(store.request({ request: ask('warm'), owner }))
-    const handles = openHandles()
-    const timersBefore = timers()
-    const ids = openPending(store, 'pending')
-    // Base load: other approvals are asked, answered and delivered while the 1000 stay pending.
-    for (let i = 0; i < LOAD; i++) {
-      clock.at = start + Math.floor((i * LOAD_SPAN_MS) / LOAD)
-      const request = ask(`load-${i}`)
-      const { interactionId } = must(store.request({ request, owner }))
-      const answer = approve(interactionId, { responseId: `load-${i}`, intentDigest: request.intentDigest })
-      expect(must(store.respond(answer)).status).toBe('accepted')
-      expect(await store.flush(deliverTo(inbox))).toEqual({ acked: 1, retrying: 0, dead: 0 })
-    }
-    expect(openHandles()).toBe(handles)
-    expect(timers()).toBe(timersBefore)
-    expect(store.wakes()).toHaveLength(LOAD)
-    expect(store.wakes().every((wake) => wake.delivery === 'acked')).toBe(true)
-
-    store.close()
-    store = open()
-    try {
-      expect(new Set(ids).size).toBe(PENDING)
-      for (const id of ids) expect(must(store.read(id))).toMatchObject({ status: 'pending', version: 1 })
-      // Reopening each question by its key returns the stored one; nothing is duplicated.
-      expect(openPending(store, 'pending')).toEqual(ids)
+  it(
+    'keeps 1000 pending approvals readable after base load and a restart, with no handle or timer per question',
+    async () => {
+      const { clock, open } = setup()
+      let store = open()
+      const inbox = createRuntimeInboxFixture()
+      must(store.request({ request: ask('warm'), owner }))
+      const handles = openHandles()
+      const timersBefore = timers()
+      const ids = openPending(store, 'pending')
+      // Base load: other approvals are asked, answered and delivered while the 1000 stay pending.
+      for (let i = 0; i < LOAD; i++) {
+        clock.at = start + Math.floor((i * LOAD_SPAN_MS) / LOAD)
+        const request = ask(`load-${i}`)
+        const { interactionId } = must(store.request({ request, owner }))
+        const answer = approve(interactionId, { responseId: `load-${i}`, intentDigest: request.intentDigest })
+        expect(must(store.respond(answer)).status).toBe('accepted')
+        expect(await store.flush(deliverTo(inbox))).toEqual({ acked: 1, retrying: 0, dead: 0 })
+      }
+      expect(openHandles()).toBe(handles)
+      expect(timers()).toBe(timersBefore)
       expect(store.wakes()).toHaveLength(LOAD)
-      expect(await store.flush(deliverTo(inbox))).toEqual({ acked: 0, retrying: 0, dead: 0 })
-    } finally {
+      expect(store.wakes().every((wake) => wake.delivery === 'acked')).toBe(true)
+
       store.close()
-    }
-  }, REFERENCE_TIMEOUT_MS)
-
-  it('expires 1000 pending approvals at the TTL, keeps their history and wakes each waiter once in bounded batches', async () => {
-    const { clock, open } = setup()
-    let store = open()
-    const inbox = createRuntimeInboxFixture()
-    const ids = openPending(store, 'ttl')
-    const [early] = ids
-    if (early === undefined) throw Error('no pending interaction')
-    clock.at = start + TTL_MS - 1
-    expect(code(store.expire({ interactionId: early, expectedVersion: 1, reason: 'ttl' }))).toBe('blocked')
-    clock.at = start + TTL_MS
-    const woken = ids.map((id) => waiter(inbox, `${id}@2`))
-    for (const id of ids) must(store.expire({ interactionId: id, expectedVersion: 1, reason: 'ttl' }))
-    // Answers that arrive after the expiry are refused and never accepted.
-    const late = approve(early, { responseId: 'late', intentDigest: ask('ttl-0').intentDigest })
-    expect(code(store.respond(late))).toBe('revision_conflict')
-
-    let inflight = 0
-    let peak = 0
-    const relay = deliverTo(inbox)
-    const sink = async (wake: Parameters<typeof relay>[0]) => {
-      peak = Math.max(peak, ++inflight)
+      store = open()
       try {
-        return await relay(wake)
+        expect(new Set(ids).size).toBe(PENDING)
+        for (const id of ids) expect(must(store.read(id))).toMatchObject({ status: 'pending', version: 1 })
+        // Reopening each question by its key returns the stored one; nothing is duplicated.
+        expect(openPending(store, 'pending')).toEqual(ids)
+        expect(store.wakes()).toHaveLength(LOAD)
+        expect(await store.flush(deliverTo(inbox))).toEqual({ acked: 0, retrying: 0, dead: 0 })
       } finally {
-        inflight--
+        store.close()
       }
-    }
-    const rounds: number[] = []
-    for (;;) {
-      const { acked, retrying, dead } = await store.flush(sink)
-      expect({ retrying, dead }).toEqual({ retrying: 0, dead: 0 })
-      if (acked === 0) break
-      rounds.push(acked)
-    }
-    expect(rounds).toEqual(Array(PENDING / PAGE).fill(PAGE))
-    expect(peak).toBe(1)
+    },
+    REFERENCE_TIMEOUT_MS,
+  )
 
-    store.close()
-    store = open()
-    try {
-      expect(await store.flush(sink)).toEqual({ acked: 0, retrying: 0, dead: 0 })
-      expect(woken.every((seen) => seen.woken === 1)).toBe(true)
-      expect(must(store.responseStatus('late')).status).toBe('not-accepted')
-      for (const [i, id] of ids.entries()) {
-        const record = must(store.read(id))
-        expect(record).toMatchObject({
-          status: 'expired',
-          version: 2,
-          terminationReason: 'ttl',
-          resolution: null,
-          createdAt: new Date(start).toISOString(),
-          request: { idempotencyKey: `ttl-${i}` },
-        })
+  it(
+    'expires 1000 pending approvals at the TTL, keeps their history and wakes each waiter once in bounded batches',
+    async () => {
+      const { clock, open } = setup()
+      let store = open()
+      const inbox = createRuntimeInboxFixture()
+      const ids = openPending(store, 'ttl')
+      const [early] = ids
+      if (early === undefined) throw Error('no pending interaction')
+      clock.at = start + TTL_MS - 1
+      expect(code(store.expire({ interactionId: early, expectedVersion: 1, reason: 'ttl' }))).toBe('blocked')
+      clock.at = start + TTL_MS
+      const woken = ids.map((id) => waiter(inbox, `${id}@2`))
+      for (const id of ids) must(store.expire({ interactionId: id, expectedVersion: 1, reason: 'ttl' }))
+      // Answers that arrive after the expiry are refused and never accepted.
+      const late = approve(early, { responseId: 'late', intentDigest: ask('ttl-0').intentDigest })
+      expect(code(store.respond(late))).toBe('revision_conflict')
+
+      let inflight = 0
+      let peak = 0
+      const relay = deliverTo(inbox)
+      const sink = async (wake: Parameters<typeof relay>[0]) => {
+        peak = Math.max(peak, ++inflight)
+        try {
+          return await relay(wake)
+        } finally {
+          inflight--
+        }
       }
-      // The opening identity survives expiry: asking again by key returns the expired record.
-      expect(must(store.request({ request: ask('ttl-0'), owner }))).toMatchObject({
-        interactionId: early,
-        status: 'expired',
-      })
-    } finally {
+      const rounds: number[] = []
+      for (;;) {
+        const { acked, retrying, dead } = await store.flush(sink)
+        expect({ retrying, dead }).toEqual({ retrying: 0, dead: 0 })
+        if (acked === 0) break
+        rounds.push(acked)
+      }
+      expect(rounds).toEqual(Array(PENDING / PAGE).fill(PAGE))
+      expect(peak).toBe(1)
+
       store.close()
-    }
-  }, REFERENCE_TIMEOUT_MS)
+      store = open()
+      try {
+        expect(await store.flush(sink)).toEqual({ acked: 0, retrying: 0, dead: 0 })
+        expect(woken.every((seen) => seen.woken === 1)).toBe(true)
+        expect(must(store.responseStatus('late')).status).toBe('not-accepted')
+        for (const [i, id] of ids.entries()) {
+          const record = must(store.read(id))
+          expect(record).toMatchObject({
+            status: 'expired',
+            version: 2,
+            terminationReason: 'ttl',
+            resolution: null,
+            createdAt: new Date(start).toISOString(),
+            request: { idempotencyKey: `ttl-${i}` },
+          })
+        }
+        // The opening identity survives expiry: asking again by key returns the expired record.
+        expect(must(store.request({ request: ask('ttl-0'), owner }))).toMatchObject({
+          interactionId: early,
+          status: 'expired',
+        })
+      } finally {
+        store.close()
+      }
+    },
+    REFERENCE_TIMEOUT_MS,
+  )
 })
 
 describe('default State interaction provider', () => {

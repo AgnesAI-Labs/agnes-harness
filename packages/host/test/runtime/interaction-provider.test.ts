@@ -2,7 +2,12 @@ import type { Outcome } from '@agnes/extension-api/runtime'
 import { afterEach, expect, it } from 'vitest'
 import { createInteractionService, type InteractionOptions } from '../../src/runtime/providers/interaction.js'
 import { createRuntimeStateStore, type RuntimeStateStore } from '../../src/runtime/providers/state.js'
-import { interactionStateFixture } from '../runtime-state-interaction-read-fixture.js'
+import {
+  closeInteractionStateFixtures,
+  interactionStateFixture,
+} from '../runtime-state-interaction-read-fixture.js'
+
+afterEach(closeInteractionStateFixtures)
 
 const stores: RuntimeStateStore[] = []
 afterEach(() => {

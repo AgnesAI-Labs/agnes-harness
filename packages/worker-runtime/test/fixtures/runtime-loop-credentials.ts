@@ -69,6 +69,23 @@ export async function loopCredentialsFixture(
   }
   return {
     consumer,
+    async verifyIssued(
+      handle: W.SecretHandle,
+      binding: W.SecretConsumerBinding,
+      context: { signal: AbortSignal },
+    ) {
+      const original =
+        retained === issued &&
+        !!issued &&
+        canonicalJsonDigest(handle) === canonicalJsonDigest(issued) &&
+        canonicalJsonDigest(binding) === canonicalJsonDigest(consumer)
+      if (mode === 'credential-c04-unverified') f.auth.revoke()
+      const identity = await f.auth.identity.resolve({ principalRef: f.call.principalRef }, f.call)
+      const verified =
+        original && identity.ok && !context.signal.aborted && Date.parse(handle.expiresAt) > Date.now()
+      observe({ method: 'credential.verifyIssued', verified })
+      return verified
+    },
     wireHandle: structuredClone(f.options.installation.handle),
     owner,
     async execute(credentialRef: W.SecretHandle | null) {
