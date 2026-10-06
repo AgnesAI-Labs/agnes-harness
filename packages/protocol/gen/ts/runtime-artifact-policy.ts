@@ -2487,6 +2487,111 @@ export const RuntimeErrorDetails = freeze({
     "retryAdviceKinds": [
       "never"
     ]
+  },
+  "quota_absent": {
+    "code": "invalid_input",
+    "httpStatus": 404,
+    "retryAdviceKinds": [
+      "never"
+    ]
+  },
+  "prepare_absent": {
+    "code": "invalid_input",
+    "httpStatus": 404,
+    "retryAdviceKinds": [
+      "never"
+    ]
+  },
+  "attempt_absent": {
+    "code": "invalid_input",
+    "httpStatus": 404,
+    "retryAdviceKinds": [
+      "never"
+    ]
+  },
+  "wait_absent": {
+    "code": "invalid_input",
+    "httpStatus": 404,
+    "retryAdviceKinds": [
+      "never"
+    ]
+  },
+  "action_absent": {
+    "code": "invalid_input",
+    "httpStatus": 404,
+    "retryAdviceKinds": [
+      "never"
+    ]
+  },
+  "provider_absent": {
+    "code": "invalid_input",
+    "httpStatus": 404,
+    "retryAdviceKinds": [
+      "never"
+    ]
+  },
+  "run_absent": {
+    "code": "invalid_input",
+    "httpStatus": 404,
+    "retryAdviceKinds": [
+      "never"
+    ]
+  },
+  "taint_absent": {
+    "code": "invalid_input",
+    "httpStatus": 404,
+    "retryAdviceKinds": [
+      "never"
+    ]
+  },
+  "approval_preparation_absent": {
+    "code": "invalid_input",
+    "httpStatus": 404,
+    "retryAdviceKinds": [
+      "never"
+    ]
+  },
+  "receipt_absent": {
+    "code": "invalid_input",
+    "httpStatus": 404,
+    "retryAdviceKinds": [
+      "never"
+    ]
+  },
+  "outbox_absent": {
+    "code": "invalid_input",
+    "httpStatus": 404,
+    "retryAdviceKinds": [
+      "never"
+    ]
+  },
+  "binding_absent": {
+    "code": "invalid_input",
+    "httpStatus": 404,
+    "retryAdviceKinds": [
+      "never"
+    ]
+  },
+  "finalize_children": {
+    "code": "conflict",
+    "httpStatus": 409,
+    "retryAdviceKinds": [
+      "never"
+    ]
+  },
+  "owner_ref": {
+    "code": "invalid_input",
+    "httpStatus": 400,
+    "retryAdviceKinds": [
+      "never"
+    ]
+  },
+  "termination": {
+    "code": "conflict",
+    "httpStatus": 409,
+    "retryAdviceKinds": [
+      "never"
+    ]
   }
 } as const)
 export const RuntimeErrorHttpDefaults = freeze({
