@@ -292,6 +292,11 @@ export const RuntimeSchemaRefs = freeze({
     "revision": 2,
     "digest": "f27abf2cfa4620973cbb592e65fc667f1fc5fca53b2196a4d3c07fb420db1bae"
   },
+  "StoredRecord": {
+    "typeId": "agh.state/stored-record@1",
+    "revision": 1,
+    "digest": "e34de9da662c170a2f82c2c8617e2b19c036836a316d2d984df220dced575f0b"
+  },
   "WaitRecordValue": {
     "typeId": "agh.runtime/wait-record@1",
     "revision": 2,

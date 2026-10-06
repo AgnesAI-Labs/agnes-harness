@@ -5,13 +5,13 @@ import {
   boundedCanonicalJson,
   canonicalJsonDigest,
   RuntimeMethodSchemaRefs,
+  RuntimeSchemaRefs,
   type ScopeRef,
   validateRuntime,
 } from '@agnes/protocol/runtime'
 import { describe, expect, it } from 'vitest'
 import { createStateQueryService } from '../../src/runtime/state/query-service.js'
 import type { StateReadBridge } from '../../src/runtime/state/read-scope.js'
-import { STORED_SCHEMA_PENDING } from '../../src/runtime/state/stored-record.js'
 import { originalNativeFixture } from './fixtures/native-state-read-fixture.js'
 import {
   actionScope,
@@ -154,7 +154,7 @@ describe.skipIf(typeof process.getuid !== 'function')('State scan query', () => 
       expect(result.items).toHaveLength(2)
       for (const item of result.items) {
         expect(item.kind).toBe('inline')
-        expect(item.schema).toEqual(STORED_SCHEMA_PENDING)
+        expect(item.schema).toEqual(RuntimeSchemaRefs.StoredRecord)
         const value = (item as Loose).value
         expect(Object.keys(value).sort()).toEqual(['meta', 'owner', 'value'])
         expect(value.meta.schema).not.toEqual(item.schema)
