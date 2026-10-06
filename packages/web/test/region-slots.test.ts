@@ -69,7 +69,7 @@ describe('DSH top-level shell', () => {
         kind: 'single',
         scope: 'session-maybe',
       })
-      expect(conversation.querySelector('[data-slot="main"] #empty-state')).toBeTruthy()
+      expect(conversation.querySelector('[data-slot="main"] .empty-state')).toBeTruthy()
       expect(
         document.querySelector('[data-agnes-dsh-shell-overlay] #fixture-shell-overlay-content'),
       ).toBeTruthy()
@@ -83,6 +83,7 @@ describe('migrated empty-state region', () => {
     const slots = await registry()
     const section = document.createElement('section')
     section.id = 'empty-state'
+    section.dataset.agnesRegion = 'empty-state'
     section.innerHTML = '<h2>legacy duplicate</h2>'
     document.body.append(section)
 
@@ -91,7 +92,10 @@ describe('migrated empty-state region', () => {
     await vi.waitFor(() => {
       expect(section.querySelector('[data-slot="ui:empty-state"]')).toBeTruthy()
       expect(section.querySelector('[data-agnes-region-unit="empty-state"]')).toBeTruthy()
-      expect(section.querySelector('#empty-state-title')?.textContent).toBe('Agnes Harness')
+      const heading = section.querySelector('.empty-state-heading')
+      expect(heading?.textContent).toBe('Agnes Harness')
+      // The heading names its region through an id minted for this mount.
+      expect(section.getAttribute('aria-labelledby')).toBe(heading?.id)
     }, committed)
   })
 
@@ -125,7 +129,7 @@ describe('migrated empty-state region', () => {
     )
     await vi.waitFor(() => {
       expect(section.querySelector('[data-agnes-conversation-hero] #fixture-hero-workspace')).toBeTruthy()
-      expect(section.querySelector('#empty-state-title')?.textContent).toBe('Agnes Harness')
+      expect(section.querySelector('.empty-state-heading')?.textContent).toBe('Agnes Harness')
     }, committed)
     remove()
   })
@@ -142,14 +146,14 @@ describe('migrated sidebar region', () => {
     mounts.push(mountSidebarRegion(registryRegionSlots(slots), sidebar, {}, zhLocaleService()))
 
     expect(sidebar.querySelector('[data-slot="ui:sidebar"]')).toBeTruthy()
-    expect(sidebar.querySelector('#new')?.textContent).toBe('新会话')
+    expect(sidebar.querySelector('.new-session')?.textContent).toBe('新会话')
     const remove = slots.register(
       { name: SIDEBAR_SLOT as string, id: 'plugin-sidebar', owner: 'fixture', priority: -1 },
       () => createElement('div', { id: 'replacement-sidebar' }, '替换侧栏'),
     )
     await vi.waitFor(() => {
       expect(sidebar.querySelector('#replacement-sidebar')).toBeTruthy()
-      expect(sidebar.querySelector('#new')).toBeNull()
+      expect(sidebar.querySelector('.new-session')).toBeNull()
     }, committed)
     remove()
   })
@@ -166,7 +170,7 @@ describe('migrated sidebar region', () => {
       () => createElement('button', { id: 'fixture-sidebar-action', type: 'button' }, '扩展动作'),
     )
     await vi.waitFor(() => {
-      expect(sidebar.querySelector('#new')).toBeTruthy()
+      expect(sidebar.querySelector('.new-session')).toBeTruthy()
       expect(sidebar.querySelector('#fixture-sidebar-action')?.textContent).toBe('扩展动作')
       expect(sidebar.querySelector('#fixture-sidebar-action')?.closest('.sidebar-footer')).toBeTruthy()
       expect(slots.entriesByOwner('fixture').map((entry) => entry.name)).toEqual(['sidebar.footer.action'])
@@ -204,7 +208,7 @@ describe('migrated transcript region', () => {
     document.body.append(newContentButton)
     const mount = mountTranscriptRegion(registryRegionSlots(slots), transcript, { newContentButton })
     mounts.push(mount)
-    const content = transcript.querySelector('#transcript-content')
+    const content = transcript.querySelector('.transcript-content')
     expect(content?.closest('[data-slot]')?.getAttribute('data-slot')).toBe('ui:transcript')
     const node: UINode = { kind: 'assistant', id: 'assistant-1', seq: 1, text: 'timeline item' }
     mount.render([node])
@@ -217,7 +221,7 @@ describe('migrated transcript region', () => {
     )
     await vi.waitFor(() => {
       expect(transcript.querySelector('#replacement-transcript')).toBeTruthy()
-      expect(transcript.querySelector('#transcript-content')).toBeNull()
+      expect(transcript.querySelector('.transcript-content')).toBeNull()
     }, committed)
     remove()
   })
@@ -393,21 +397,21 @@ describe('migrated conversation region', () => {
     mounts.push(mount)
     expect(conversation.querySelector('#legacy-conversation')).toBeNull()
     expect(conversation.querySelector('[data-slot="ui:conversation"]')).toBeTruthy()
-    expect(conversation.querySelector('#transcript')).toBeTruthy()
-    expect(conversation.querySelector('#empty-state')).toBeTruthy()
-    expect(conversation.querySelector('#new-content')).toBeInstanceOf(HTMLButtonElement)
+    expect(conversation.querySelector('.transcript')).toBeTruthy()
+    expect(conversation.querySelector('.empty-state')).toBeTruthy()
+    expect(conversation.querySelector('.new-content')).toBeInstanceOf(HTMLButtonElement)
     const remove = slots.register(
       { name: CONVERSATION_SLOT as string, id: 'plugin-conversation', owner: 'fixture', priority: -1 },
       () => createElement('div', { id: 'replacement-conversation' }, '替换对话'),
     )
     await vi.waitFor(() => {
       expect(conversation.querySelector('#replacement-conversation')).toBeTruthy()
-      expect(conversation.querySelector('#transcript')).toBeNull()
+      expect(conversation.querySelector('.transcript')).toBeNull()
     }, committed)
     remove()
     await vi.waitFor(() => {
-      expect(conversation.querySelector('#transcript')).toBeTruthy()
-      expect(conversation.querySelector('#empty-state')).toBeTruthy()
+      expect(conversation.querySelector('.transcript')).toBeTruthy()
+      expect(conversation.querySelector('.empty-state')).toBeTruthy()
     }, committed)
   })
 
@@ -429,7 +433,7 @@ describe('migrated conversation region', () => {
     await vi.waitFor(() => {
       expect(conversation.querySelector('#fixture-conversation-session-content')).toBeTruthy()
       expect(conversation.querySelector('#fixture-conversation-header-content')).toBeTruthy()
-      expect(conversation.querySelector('#transcript')).toBeTruthy()
+      expect(conversation.querySelector('.transcript')).toBeTruthy()
     }, committed)
     removeSession()
     removeHeader()
@@ -447,26 +451,26 @@ describe('migrated topbar region', () => {
     mounts.push(mount)
     expect(topbar.querySelector('#legacy-topbar')).toBeNull()
     expect(topbar.querySelector('[data-slot="ui:topbar"]')).toBeTruthy()
-    expect(topbar.querySelector('#sidebar-toggle')).toBeTruthy()
-    expect(topbar.querySelector('#task-title')?.textContent).toBe('新会话')
+    expect(topbar.querySelector('.sidebar-toggle')).toBeTruthy()
+    expect(topbar.querySelector('.task-title')?.textContent).toBe('新会话')
     mount.setTaskTitle('组件标题')
     mount.setStatus('运行中', 'running')
     mount.setConnectionState('connected')
-    expect(topbar.querySelector('#task-title')?.textContent).toBe('组件标题')
-    expect(topbar.querySelector('#status')?.textContent).toBe('运行中')
-    expect(topbar.querySelector<HTMLElement>('#status')?.dataset.state).toBe('running')
-    expect(topbar.querySelector('#connection')?.textContent).toBe('本地后台已连接')
+    expect(topbar.querySelector('.task-title')?.textContent).toBe('组件标题')
+    expect(topbar.querySelector('.task-status')?.textContent).toBe('运行中')
+    expect(topbar.querySelector<HTMLElement>('.task-status')?.dataset.state).toBe('running')
+    expect(topbar.querySelector('.connection-status')?.textContent).toBe('本地后台已连接')
     const remove = slots.register(
       { name: TOPBAR_SLOT as string, id: 'plugin-topbar', owner: 'fixture', priority: -1 },
       () => createElement('div', { id: 'replacement-topbar' }, '替换顶部栏'),
     )
     await vi.waitFor(() => {
       expect(topbar.querySelector('#replacement-topbar')).toBeTruthy()
-      expect(topbar.querySelector('#task-title')).toBeNull()
+      expect(topbar.querySelector('.task-title')).toBeNull()
     }, committed)
     remove()
     await vi.waitFor(() => {
-      expect(topbar.querySelector('#task-title')).toBeTruthy()
+      expect(topbar.querySelector('.task-title')).toBeTruthy()
     }, committed)
   })
 
@@ -487,13 +491,13 @@ describe('migrated topbar region', () => {
     const topbar = document.createElement('header')
     document.body.append(topbar)
     const builtin = mountTopbarRegion(port, topbar, zhLocaleService())
-    expect(topbar.querySelector('#task-title')?.textContent).toBe('新会话')
+    expect(topbar.querySelector('.task-title')?.textContent).toBe('新会话')
     builtin.dispose()
     expect(builtins.size).toBe(0)
     occupant = createElement('div', { id: 'port-topbar' })
     mounts.push(mountTopbarRegion(port, topbar, zhLocaleService()))
     expect(topbar.querySelector('#port-topbar')).toBeTruthy()
-    expect(topbar.querySelector('#task-title')).toBeNull()
+    expect(topbar.querySelector('.task-title')).toBeNull()
   })
 })
 
@@ -513,7 +517,7 @@ describe('migrated approval region', () => {
       () => createElement('p', { id: 'fixture-approval-detail-content' }, '扩展审批详情'),
     )
     expect(approval.getAttribute('aria-live')).toBe('polite')
-    expect(approval.querySelector('#approval-content')).toBeTruthy()
+    expect(approval.querySelector('.approval-content')).toBeTruthy()
     mount.render({
       key: 'approval-1',
       title: '需要你的确认',
@@ -577,11 +581,11 @@ describe('migrated approval region', () => {
     )
     await vi.waitFor(() => {
       expect(approval.querySelector('#replacement-approval')).toBeTruthy()
-      expect(approval.querySelector('#approval-content')).toBeNull()
+      expect(approval.querySelector('.approval-content')).toBeNull()
     }, committed)
     remove()
     await vi.waitFor(() => {
-      expect(approval.querySelector('#approval-content')).toBeTruthy()
+      expect(approval.querySelector('.approval-content')).toBeTruthy()
     }, committed)
     mount.render(undefined)
     await vi.waitFor(() => {
@@ -614,7 +618,7 @@ describe('migrated trace region', () => {
     })
     mounts.push(mount)
     expect(trace.querySelector('[data-slot="ui:trace"]')).toBeTruthy()
-    expect(trace.querySelector('#trace-content')).toBeTruthy()
+    expect(trace.querySelector('.trace-content')).toBeTruthy()
     mount.render([{ kind: 'assistant', id: 'trace-a', seq: 1, text: 'trace content' }])
     expect(trace.textContent).toContain('trace content')
     mount.render([{ kind: 'assistant', id: 'trace-a', seq: 1, text: 'trace content' }], [], {
@@ -628,11 +632,11 @@ describe('migrated trace region', () => {
     )
     await vi.waitFor(() => {
       expect(trace.querySelector('#replacement-trace')).toBeTruthy()
-      expect(trace.querySelector('#trace-content')).toBeNull()
+      expect(trace.querySelector('.trace-content')).toBeNull()
     }, committed)
     remove()
     await vi.waitFor(() => {
-      expect(trace.querySelector('#trace-content')).toBeTruthy()
+      expect(trace.querySelector('.trace-content')).toBeTruthy()
     }, committed)
   })
 })

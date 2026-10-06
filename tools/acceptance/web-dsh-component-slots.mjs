@@ -15,9 +15,9 @@ export const DSH_REQUIRED_SURFACES = Object.freeze([
   ['shell-overlay', '[data-agnes-dsh-shell-overlay]'],
   ['sidebar', 'aside.sidebar'],
   ['settings-content-grid', '#config-form #settings-content-slots'],
-  ['rightbar', '#rightbar-panel'],
+  ['rightbar', '.rightbar-panel'],
   ['conversation-header', '[data-agnes-conversation-header]'],
-  ['composer', '#composer'],
+  ['composer', '.composer-form'],
   ['conversation-view', '[data-slot="conversation.view"]'],
 ])
 

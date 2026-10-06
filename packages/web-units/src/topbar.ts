@@ -63,7 +63,6 @@ export const Topbar = forwardRef<TopbarHandle, TopbarProps>(function Topbar(
     createElement(
       'button',
       {
-        id: 'sidebar-toggle',
         className: 'icon-button sidebar-toggle',
         type: 'button',
         'aria-label': t('sidebar.openNav'),
@@ -83,10 +82,16 @@ export const Topbar = forwardRef<TopbarHandle, TopbarProps>(function Topbar(
     createElement(
       'div',
       { className: 'task-heading' },
-      createElement('h1', { ref: taskTitle, id: 'task-title' }, t('topbar.defaultTitle')),
+      createElement('h1', { ref: taskTitle, className: 'task-title' }, t('topbar.defaultTitle')),
       createElement(
         'span',
-        { ref: status, id: 'status', role: 'status', 'aria-live': 'polite', 'data-state': 'idle' },
+        {
+          ref: status,
+          className: 'task-status',
+          role: 'status',
+          'aria-live': 'polite',
+          'data-state': 'idle',
+        },
         t('topbar.defaultStatus'),
       ),
     ),
@@ -97,7 +102,7 @@ export const Topbar = forwardRef<TopbarHandle, TopbarProps>(function Topbar(
         'span',
         {
           ref: connection,
-          id: 'connection',
+          className: 'connection-status',
           role: 'status',
           'aria-live': 'polite',
           'data-state': 'connecting',

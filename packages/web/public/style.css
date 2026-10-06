@@ -392,6 +392,12 @@ body {
   grid-template-columns: 288px minmax(0, 1fr);
   overflow: hidden;
 }
+/* The shell surface and the workbench container wrap the layout without boxes of their own, so the
+   sidebar and the main area stay the body grid's items. */
+#agnes-shell,
+[data-agnes-workbench] {
+  display: contents;
+}
 /* 区域表面钩子（不变量 R1，设计 §20）：可换肤表面属性必须声明在 data-agnes-region 选择器 (0,1,0) 上，
    不能声明在元素的 #id (1,0,0) 上。皮肤样式表靠 adoptedStyleSheets 排在文档样式表之后取胜，
    同特异性下皮肤必胜；但只要基础样式把同一属性声明在 #id 上，皮肤就永远赢不了。
@@ -601,7 +607,7 @@ textarea {
   display: flex;
   flex-direction: column;
   padding: 0.375rem 0.75rem;
-  /* 侧栏自己**不滚动**：滚动职责只归 `#sessions`。此前这里是 `auto`，
+  /* 侧栏自己**不滚动**：滚动职责只归 `.session-nav`。此前这里是 `auto`，
      一旦内容总高超出视口（窗口拉矮，或 `sidebar.panellist` 插槽有内容），
      整个侧栏变成滚动容器，底部的「设置」行会随列表一起滚出视野。
      裁掉溢出即可 —— 列表在剩余空间里自己滚，底部行始终留在原位。 */
@@ -613,7 +619,7 @@ textarea {
 /* 插槽只承载组件生命周期；会话列表和底部操作仍参与侧栏的纵向 flex 布局。
    必须覆盖到**最内层**的 slot 包装：侧栏实际有 `ui:sidebar` → `sidebar` 两组各两层包装，
    只让外层透明时，内层 `[data-slot="sidebar"]` / `[data-slot-entry]` 仍是普通 block 盒子，
-   `#sessions` 的 flex:1 与 `.sidebar-footer` 的 flex:none 全部失效 ——
+   `.session-nav` 的 flex:1 与 `.sidebar-footer` 的 flex:none 全部失效 ——
    列表不再自己滚动，底部「设置」也不会钉在侧栏底部。这里按后代泛化，避免写死嵌套深度。 */
 .sidebar :where([data-slot], [data-slot-entry]) {
   display: contents;
@@ -668,7 +674,7 @@ textarea {
 .section-label,
 .task-heading h1,
 .task-heading span,
-#composer-hint,
+.composer-hint,
 .field-hint,
 .dialog-intro {
   margin: 0;
@@ -709,7 +715,7 @@ textarea {
 .section-label {
   margin: 0;
 }
-#sessions {
+.session-nav {
   min-height: 0;
   flex: 1;
   display: grid;
@@ -1097,7 +1103,7 @@ textarea {
 }
 .sidebar-footer {
   /* 底部操作行不参与压缩：侧栏是 flex column，空间紧张时若不显式 flex:none，
-     这一行会被 `#sessions` 挤扁。配合 `.sidebar` 的 overflow:hidden，
+     这一行会被 `.session-nav` 挤扁。配合 `.sidebar` 的 overflow:hidden，
      「设置」始终完整留在侧栏底部。 */
   flex: none;
   margin-top: 0.5rem;
@@ -1161,10 +1167,10 @@ main {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-#status[data-state="running"] {
+.task-status[data-state="running"] {
   color: var(--agnes-text-emphasis);
 }
-#status[data-state="error"] {
+.task-status[data-state="error"] {
   color: var(--agnes-status-danger-text);
 }
 .connection-group {
@@ -1188,29 +1194,29 @@ main {
   border-radius: 50%;
   background: var(--agnes-icon-secondary);
 }
-.connection-group:has(#connection[data-state="connecting"]) {
+.connection-group:has(.connection-status[data-state="connecting"]) {
   border-color: color-mix(in srgb, var(--agnes-status-warning-text) 20%, transparent);
   color: var(--agnes-status-warning-text);
   background: var(--agnes-status-warning-bg);
 }
-.connection-group:has(#connection[data-state="reconnecting"]) {
+.connection-group:has(.connection-status[data-state="reconnecting"]) {
   border-color: color-mix(in srgb, var(--agnes-status-warning-text) 20%, transparent);
   color: var(--agnes-status-warning-text);
   background: var(--agnes-status-warning-bg);
 }
-.connection-group:has(#connection[data-state="connected"]) {
+.connection-group:has(.connection-status[data-state="connected"]) {
   border-color: color-mix(in srgb, var(--agnes-status-success-text) 20%, transparent);
   color: var(--agnes-status-success-text);
   background: var(--agnes-status-success-bg);
 }
-.connection-group:has(#connection[data-state="closed"]) {
+.connection-group:has(.connection-status[data-state="closed"]) {
   border-color: color-mix(in srgb, var(--agnes-status-danger-text) 20%, transparent);
   color: var(--agnes-status-danger-text);
   background: var(--agnes-status-danger-bg);
 }
-.connection-group:has(#connection[data-state="connected"])::before,
-.connection-group:has(#connection[data-state="reconnecting"])::before,
-.connection-group:has(#connection[data-state="closed"])::before {
+.connection-group:has(.connection-status[data-state="connected"])::before,
+.connection-group:has(.connection-status[data-state="reconnecting"])::before,
+.connection-group:has(.connection-status[data-state="closed"])::before {
   background: currentcolor;
 }
 /* 连接正常是默认态，常驻一行「已连接」没有信息量；只有中断和已关闭才值得占位置。
@@ -1252,7 +1258,7 @@ body:not([data-connection="reconnecting"]):not([data-connection="closed"]) .conn
   display: flex;
   gap: 1rem;
 }
-#report-problem {
+.report-problem {
   margin-left: auto;
 }
 .session-tabs button {
@@ -1304,11 +1310,11 @@ body:not([data-connection="reconnecting"]):not([data-connection="closed"]) .conn
 [data-agnes-region="rightbar"] > [data-slot="rightbar"] {
   min-height: 100%;
 }
-#rightbar-content,
-#rightbar-session {
+.rightbar-content,
+.rightbar-session {
   min-height: 100%;
 }
-#rightbar-session {
+.rightbar-session {
   display: flex;
   flex-direction: column;
   gap: 0.75rem;
@@ -1799,7 +1805,7 @@ button.trace-gantt-bar:focus-visible {
     transition: none;
   }
 }
-#transcript {
+.transcript {
   height: 100%;
   /* 切换会话时旧画面降不透明度提示「正在准备」（body.session-switching），
      新投影就绪后平滑恢复。 */
@@ -1811,15 +1817,15 @@ button.trace-gantt-bar:focus-visible {
   scroll-behavior: smooth;
   width: 100%;
 }
-/* 滚动容器占满整个中列，内容列自己限宽居中。限宽若落回 #transcript，两侧留白就属于
+/* 滚动容器占满整个中列，内容列自己限宽居中。限宽若落回 .transcript，两侧留白就属于
    不可滚动的祖先（.conversation-region-root / .conversation-shell / body 都是
    overflow: hidden），鼠标停在留白上时找不到可滚动祖先，滚轮会毫无反应。 */
-#transcript-content {
+.transcript-content {
   margin-inline: auto;
   padding: 1rem 2rem;
   width: min(100%, var(--chat-content-width));
 }
-#empty-state {
+.empty-state {
   position: absolute;
   inset: 0;
   width: min(100%, var(--composer-card-max-width));
@@ -1834,14 +1840,14 @@ button.trace-gantt-bar:focus-visible {
   transition: opacity var(--transition);
 }
 @starting-style {
-  #empty-state:not([hidden]) {
+  .empty-state:not([hidden]) {
     opacity: 0;
   }
 }
 [data-agnes-region="empty-state"] {
   color: var(--agnes-text-secondary);
 }
-#empty-state .eyebrow {
+.empty-state .eyebrow {
   color: var(--agnes-text-emphasis);
 }
 .empty-state-heading {
@@ -2010,7 +2016,7 @@ button.trace-gantt-bar:focus-visible {
 .markdown code,
 .tool-name,
 .tool-summary,
-#approval p {
+.approval-panel p {
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
 }
 .markdown :where(:not(pre)) > code {
@@ -2287,7 +2293,7 @@ button.trace-gantt-bar:focus-visible {
   background: var(--agnes-button-primary-bg-hover);
   box-shadow: var(--shadow-elevation-prominent);
 }
-#approval {
+.approval-panel {
   width: min(calc(100% - 2rem), var(--chat-content-width));
   margin: 0 auto 0.75rem;
   padding: 0.75rem 1rem;
@@ -2310,29 +2316,29 @@ button.trace-gantt-bar:focus-visible {
     translate: 0 4px;
   }
 }
-#approval h2 {
+.approval-panel h2 {
   margin: 0;
   color: var(--agnes-text-primary);
   font-size: 0.9375rem;
   font-weight: 500;
   line-height: 1.5rem;
 }
-#approval p {
+.approval-panel p {
   margin: 0.375rem 0 0;
   color: var(--agnes-text-tertiary);
   font-size: 0.8125rem;
   line-height: 1.25rem;
   overflow-wrap: anywhere;
 }
-#approval .approval-impact {
+.approval-panel .approval-impact {
   font-family: inherit;
 }
-#approval .approval-warning {
+.approval-panel .approval-warning {
   color: var(--agnes-status-warning-text);
   font-family: inherit;
 }
 /* The arguments can be long: they scroll inside the card instead of pushing the choices off screen. */
-#approval pre {
+.approval-panel pre {
   max-height: 14rem;
   margin: 0.5rem 0 0;
   padding: 0.5rem 0.75rem;
@@ -2353,45 +2359,45 @@ button.trace-gantt-bar:focus-visible {
   gap: 0.5rem;
   margin-top: 0.875rem;
 }
-/* 空态判据取 `#empty-state` 的 hidden，与 app 的 shouldShowEmptyState 同一个信号。
-   此前用的 `#transcript:empty` 永远不成立：React 树恒定渲染一个 `#transcript-content`
+/* 空态判据取 `.empty-state` 的 hidden，与 app 的 shouldShowEmptyState 同一个信号。
+   此前用的 `.transcript:empty` 永远不成立：React 树恒定渲染一个 `.transcript-content`
    子节点，`:empty` 不匹配，下面这一组规则全是死规则，实际效果一直是"输入卡贴底"。 */
-body:has(#empty-state:not([hidden])) #prompt {
+body:has(.empty-state:not([hidden])) .composer-prompt {
   min-height: 3.25rem;
 }
 /* 新会话（空态）：hero 与输入卡作为**一组**在剩余空间里垂直居中。两级绝对定位
-   （.conversation-region-root 与 #empty-state）必须在空态下放开，hero 才撑得出真实
+   （.conversation-region-root 与 .empty-state）必须在空态下放开，hero 才撑得出真实
    高度；否则 shell 高度为 0，后面两份 auto 外边距无处可吃。顶栏在空态是绝对定位的
    悬浮开关，不占流，所以不再需要补偿它的高度。 */
-body:has(#empty-state:not([hidden])) .workbench-split {
+body:has(.empty-state:not([hidden])) .workbench-split {
   flex: 0 1 auto;
   margin-top: auto;
 }
-body:has(#empty-state:not([hidden])) .conversation-region-root,
-body:has(#empty-state:not([hidden])) #empty-state {
+body:has(.empty-state:not([hidden])) .conversation-region-root,
+body:has(.empty-state:not([hidden])) .empty-state {
   position: static;
   inset: auto;
 }
-body:has(#empty-state:not([hidden])) .conversation-shell {
+body:has(.empty-state:not([hidden])) .conversation-shell {
   overflow: visible;
 }
 /* 空态下会话清单里没有内容，但它带着 16px 上下内边距会占位、把 hero 顶下去，
    于是 hero 跑出 shell 而整体偏离居中。空态时直接让位。 */
-body:has(#empty-state:not([hidden])) #transcript {
+body:has(.empty-state:not([hidden])) .transcript {
   display: none;
 }
-/* 下边那份 auto 必须挂在 main 的 flex 子项上：挂到 #composer 上会被 #composer-mount
+/* 下边那份 auto 必须挂在 main 的 flex 子项上：挂到 .composer-form 上会被 .composer-mount
    挡住，块级上下文里的纵向 auto 外边距会算成 0，居中就只剩上面那一份。 */
-body:has(#empty-state:not([hidden])) #composer-mount {
+body:has(.empty-state:not([hidden])) .composer-mount {
   margin-bottom: auto;
 }
 /* 新会话时顶栏不成立：标题、状态都没有内容，页签也没有会话可切。容器降为不占流的
    透明浮层，只留下左上角的侧栏开关——窄屏和折叠态下它是唤出导航的唯一入口，不能
    跟着一起消失。连接异常那一行仍然保留（见 connection-group 的可见性规则）。 */
-body:has(#empty-state:not([hidden])) main {
+body:has(.empty-state:not([hidden])) main {
   position: relative;
 }
-body:has(#empty-state:not([hidden])) .topbar {
+body:has(.empty-state:not([hidden])) .topbar {
   position: absolute;
   inset: 0 0 auto 0;
   z-index: 6;
@@ -2400,22 +2406,22 @@ body:has(#empty-state:not([hidden])) .topbar {
   border-bottom: 0;
   background: transparent;
 }
-body:has(#empty-state:not([hidden])) .topbar .task-heading,
-body:has(#empty-state:not([hidden])) .session-tabs-bar {
+body:has(.empty-state:not([hidden])) .topbar .task-heading,
+body:has(.empty-state:not([hidden])) .session-tabs-bar {
   display: none;
 }
 /* .task-heading 平时靠 flex:1 把连接组顶到右边；它退场后这份推力要显式补回来。 */
-body:has(#empty-state:not([hidden])) .connection-group {
+body:has(.empty-state:not([hidden])) .connection-group {
   margin-left: auto;
 }
 /* 切换会话的加载态：上一会话画面降不透明度（含会话区外的审批卡），提示内容
    正在被替换；新投影就绪后由 body.session-switching 移除而平滑恢复。
-   空态时 #transcript 不显示，这条自然落空，不影响新建草稿的 hero。 */
-body.session-switching #transcript,
-body.session-switching #approval {
+   空态时 .transcript 不显示，这条自然落空，不影响新建草稿的 hero。 */
+body.session-switching .transcript,
+body.session-switching .approval-panel {
   opacity: 0.55;
 }
-#composer {
+.composer-form {
   width: min(calc(100% - 2rem), var(--composer-card-max-width));
   margin: 0 auto 1rem;
   display: flex;
@@ -2485,7 +2491,7 @@ body.session-switching #approval {
      两侧各留 14px，加上 textarea 自身的 14px 左内边距，字形离卡缘 28px，稳出圆角。 */
   padding: 0 0.875rem;
 }
-#prompt {
+.composer-prompt {
   display: block;
   width: 100%;
   min-height: 2.25rem;
@@ -2499,12 +2505,12 @@ body.session-switching #approval {
   color: var(--agnes-text-primary);
   background: transparent;
 }
-#prompt:focus-visible {
+.composer-prompt:focus-visible {
   outline: none;
   border-color: transparent;
   box-shadow: none;
 }
-#composer-hint {
+.composer-hint {
   margin-top: 0.25rem;
   /* 与 textarea 的字形左缘对齐（writing 区 14px + 自身 14px），否则 hint 贴着卡片边。 */
   padding: 0 0.875rem;
@@ -2512,8 +2518,8 @@ body.session-switching #approval {
   font-size: var(--font-size-xs);
   line-height: 1.125rem;
 }
-#composer-hint:empty,
-#composer-hint:not([data-kind="state"]) {
+.composer-hint:empty,
+.composer-hint:not([data-kind="state"]) {
   position: absolute;
   width: 1px;
   height: 1px;
@@ -2542,10 +2548,10 @@ body.session-switching #approval {
   font-weight: 600;
   white-space: nowrap;
 }
-/* #model 的完整样式只在这里声明一次。此前 .composer-workspace, #model 那一组
+/* .composer-model 的完整样式只在这里声明一次。此前 .composer-workspace, .composer-model 那一组
    又声明了一遍 max-width/color/padding/min-height，因后声明而生效，
    使这里的 max-width: min(12rem,100%) 与 color 变成死值。 */
-#model {
+.composer-model {
   min-width: 0;
   width: auto;
   max-width: min(360px, 45cqw);
@@ -2576,10 +2582,10 @@ body.session-switching #approval {
   color: var(--agnes-text-tertiary);
   transition: transform var(--transition-fast);
 }
-#model[aria-expanded="true"] .model-chevron {
+.composer-model[aria-expanded="true"] .model-chevron {
   transform: rotate(180deg);
 }
-#model:focus-visible {
+.composer-model:focus-visible {
   outline: 2px solid var(--agnes-input-border-focus);
   outline-offset: 2px;
 }
@@ -2722,12 +2728,12 @@ body.session-switching #approval {
   height: 0.875rem;
   color: var(--agnes-icon-secondary);
 }
-#cancel,
-#send {
+.composer-cancel,
+.composer-send {
   flex: 0 0 auto;
   white-space: nowrap;
 }
-#send[data-mode="idle"] {
+.composer-send[data-mode="idle"] {
   width: 2.125rem;
   min-width: 2.125rem;
   height: 2.125rem;
@@ -2735,6 +2741,20 @@ body.session-switching #approval {
   padding: 0;
   border-radius: 999px;
   transform: translateY(-2px);
+}
+/* The model, cancel and send controls used to carry ids, which outranked the generic button state
+   rules (button:disabled, :hover, :active). These keep those states looking as they did. */
+.composer-send[data-mode="idle"]:active:not(:disabled) {
+  transform: translateY(-2px);
+}
+.composer-model:disabled {
+  border-color: currentcolor;
+  color: var(--agnes-text-secondary);
+  background: transparent;
+}
+.composer-cancel:hover:not(:disabled),
+.composer-cancel:disabled {
+  border-color: transparent;
 }
 dialog {
   inset: 0;
@@ -2957,7 +2977,7 @@ body {
     display: none;
   }
   body.sidebar-collapsed .sidebar-section-heading,
-  body.sidebar-collapsed #sessions {
+  body.sidebar-collapsed .session-nav {
     display: none;
   }
   body.sidebar-collapsed .sidebar-footer {
@@ -3030,12 +3050,12 @@ body {
   }
   #notice,
   #reconnect-notice,
-  #approval,
-  #composer,
-  #empty-state {
+  .approval-panel,
+  .composer-form,
+  .empty-state {
     width: calc(100% - 2rem);
   }
-  #transcript-content {
+  .transcript-content {
     padding-inline: 1rem;
   }
   .new-content {
@@ -3060,7 +3080,7 @@ body {
   }
   /* 窄屏只留一个状态点：文字仍对屏幕阅读器可见，视觉上的原因说明交给
      #reconnect-notice。「断开连接」按钮已移除，不再需要为它单独放宽触控尺寸。 */
-  #connection {
+  .connection-status {
     position: absolute;
     width: 1px;
     height: 1px;
@@ -3081,7 +3101,7 @@ body {
     min-height: 2.75rem;
   }
   /* 页签行里的按钮与页签同高，不把 2.25rem 的页签行撑高。 */
-  #report-problem {
+  .report-problem {
     width: 2.25rem;
     min-width: 2.25rem;
     height: 2.25rem;
@@ -3097,16 +3117,16 @@ body {
   .new-content {
     min-height: 2.75rem;
   }
-  #composer {
+  .composer-form {
     margin-bottom: max(1rem, env(safe-area-inset-bottom));
   }
-  #prompt {
+  .composer-prompt {
     min-height: 3rem;
   }
-  #model {
+  .composer-model {
     min-height: 2.75rem;
   }
-  #send[data-mode="idle"] {
+  .composer-send[data-mode="idle"] {
     width: 2.75rem;
     min-width: 2.75rem;
     height: 2.75rem;
@@ -3124,12 +3144,12 @@ body {
 @media (max-width: 380px) {
   #notice,
   #reconnect-notice,
-  #approval,
-  #composer,
-  #empty-state {
+  .approval-panel,
+  .composer-form,
+  .empty-state {
     width: calc(100% - 1.5rem);
   }
-  #transcript-content {
+  .transcript-content {
     padding-inline: 0.75rem;
   }
   .composer-controls {
@@ -3140,11 +3160,11 @@ body {
     max-width: none;
     flex: 1 1 3.5rem;
   }
-  #model {
+  .composer-model {
     max-width: 100%;
   }
-  #cancel,
-  #send:not([data-mode="idle"]) {
+  .composer-cancel,
+  .composer-send:not([data-mode="idle"]) {
     padding-inline: 0.625rem;
   }
   .dialog-heading {
@@ -3160,10 +3180,10 @@ body {
   .sidebar,
   .skip-link,
   button,
-  #composer,
-  #transcript,
-  #approval,
-  #empty-state,
+  .composer-form,
+  .transcript,
+  .approval-panel,
+  .empty-state,
   [data-agnes-region="approval"],
   dialog,
   dialog::backdrop,
@@ -3175,7 +3195,7 @@ body {
   .message-reveal-fragment {
     animation: none;
   }
-  #transcript {
+  .transcript {
     scroll-behavior: auto;
   }
 }
@@ -3714,13 +3734,13 @@ body {
   font-weight: 500;
 }
 .composer-workspace:hover:not(:disabled),
-#model:hover:not(:disabled) {
+.composer-model:hover:not(:disabled) {
   border-color: transparent;
   color: var(--agnes-text-emphasis);
   background: var(--agnes-bg-hover);
 }
 .composer-workspace [data-workspace-label],
-#model [data-model-label],
+.composer-model [data-model-label],
 .composer-permission [data-permission-label] {
   overflow: hidden;
   text-overflow: ellipsis;
@@ -3803,7 +3823,7 @@ body {
   font-size: 0.75rem;
   line-height: 1.3;
 }
-#cancel {
+.composer-cancel {
   min-height: 2.125rem;
   padding: 0 0.75rem;
   border-color: transparent;
@@ -3811,7 +3831,7 @@ body {
   font-size: 0.8125rem;
   font-weight: 500;
 }
-#session-usage {
+.composer-usage {
   width: auto;
 
   z-index: 15;
@@ -4121,7 +4141,7 @@ body {
     min-height: 3.4rem;
     padding-inline: 0.75rem;
   }
-  #transcript-content {
+  .transcript-content {
     padding: 1.5rem 1rem 5rem;
   }
   .timeline-node.user {
@@ -4136,7 +4156,7 @@ body {
   .timeline-node.compaction {
     margin-left: 2rem;
   }
-  #composer {
+  .composer-form {
     width: calc(100% - 1rem);
     min-height: 6.75rem;
   }
@@ -4144,7 +4164,7 @@ body {
   [data-agnes-region="composer"] {
     border-radius: var(--radius-xl);
   }
-  #session-usage {
+  .composer-usage {
     margin-left: auto;
   }
   .composer-workspace {
@@ -6118,7 +6138,7 @@ body.admin-page {
   color: var(--agnes-text-tertiary);
   font-size: var(--font-size-xs);
 }
-#send[data-mode="idle"] > span {
+.composer-send[data-mode="idle"] > span {
   position: absolute;
   width: 1px;
   height: 1px;

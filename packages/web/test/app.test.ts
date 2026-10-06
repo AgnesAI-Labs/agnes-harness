@@ -249,19 +249,21 @@ function installPublicFixture(): void {
 }
 
 function submit(text: string): void {
-  const composer = document.getElementById('prompt') as HTMLTextAreaElement
+  const composer = document.querySelector<HTMLElement>('.composer-prompt') as HTMLTextAreaElement
   composer.value = text
-  document.getElementById('composer')?.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+  document
+    .querySelector<HTMLElement>('.composer-form')
+    ?.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
 }
 
 /** The model trigger opens the complete flat model list. */
 function openModelList(): void {
-  if (!document.querySelector('#model-listbox')) throw new Error('model picker did not open')
+  if (!document.querySelector('.model-picker-list')) throw new Error('model picker did not open')
 }
 
 /** The model list is rendered directly in the picker. */
 function modelMenu(): HTMLElement {
-  const found = document.querySelector<HTMLElement>('#model-listbox')
+  const found = document.querySelector<HTMLElement>('.model-picker-list')
   if (!found) throw new Error('model picker did not open')
   return found
 }
@@ -284,7 +286,7 @@ afterEach(async () => {
 describe('web permission synchronization', () => {
   const label = () => document.querySelector('[data-permission-label]')?.textContent
   const choose = (name: string) => {
-    document.getElementById('composer-permission')?.click()
+    document.querySelector<HTMLElement>('.composer-permission')?.click()
     const option = [...document.querySelectorAll<HTMLElement>('[role="option"]')].find(
       (row) => row.querySelector('.permission-picker-label')?.textContent === name,
     )
@@ -367,7 +369,9 @@ describe('web permission synchronization', () => {
     binding.loadWebSession.mockResolvedValue({ session: old, offPermission: vi.fn() })
     await import('../src/app.js')
     await vi.waitFor(() =>
-      expect((document.getElementById('composer-permission') as HTMLButtonElement).disabled).toBe(false),
+      expect(
+        (document.querySelector<HTMLElement>('.composer-permission') as HTMLButtonElement).disabled,
+      ).toBe(false),
     )
     const connect = (event: 'reconnecting' | 'reconnected') => {
       client.connectionState = event === 'reconnected' ? 'connected' : 'reconnecting'
@@ -511,7 +515,7 @@ describe('web permission synchronization', () => {
       await boot(false)
       const permission = binding.loadWebSession.mock.calls.at(-1)?.[2]
       const answer = permission(request, { signal: new AbortController().signal })
-      const region = document.getElementById('approval') as HTMLElement
+      const region = document.querySelector<HTMLElement>('.approval-panel') as HTMLElement
       await vi.waitFor(() => expect(region.querySelector('.approval-actions button')).toBeTruthy())
       const buttons = () => [...region.querySelectorAll<HTMLButtonElement>('.approval-actions button')]
       return { answer, region, buttons, preview: () => region.querySelector('pre')?.textContent ?? '' }
@@ -633,7 +637,7 @@ describe('web session selection', () => {
     expect(traceBridge.transcriptOptions).toMatchObject({ nodeHost: 'react' })
     expect(traceBridge.claim).toEqual(expect.any(Function))
     await vi.waitFor(() => expect(traceBridge.metas.at(-1)).toMatchObject({ sessionId: 'old' }))
-    const reportProblem = document.getElementById('report-problem') as HTMLButtonElement
+    const reportProblem = document.querySelector<HTMLElement>('.report-problem') as HTMLButtonElement
     reportProblem.click()
     const diagnostics = document.querySelector('dialog.diagnostics-dialog') as HTMLDialogElement
     expect(diagnostics.open).toBe(true)
@@ -654,7 +658,7 @@ describe('web session selection', () => {
     expect(next.readToolDetail).toHaveBeenCalledWith(9, undefined, undefined)
     expect(old.readToolDetail).toHaveBeenCalledTimes(1)
 
-    document.getElementById('new')?.click()
+    document.querySelector<HTMLElement>('.new-session')?.click()
     await vi.waitFor(() => expect(traceBridge.metas.at(-1)).toBeUndefined())
     await expect(trace.readToolDetail('next', 9)).rejects.toThrow('没有当前会话')
     expect(next.readToolDetail).toHaveBeenCalledTimes(1)
@@ -729,8 +733,8 @@ describe('web session selection', () => {
         offPermission: vi.fn(),
       }))
       await import('../src/app.js')
-      const model = document.getElementById('model') as HTMLButtonElement
-      const permission = document.getElementById('composer-permission') as HTMLButtonElement
+      const model = document.querySelector<HTMLElement>('.composer-model') as HTMLButtonElement
+      const permission = document.querySelector<HTMLElement>('.composer-permission') as HTMLButtonElement
       await vi.waitFor(() => {
         expect(model.disabled).toBe(false)
         expect(model.querySelector('[data-model-label]')?.textContent).toBe('model-b')
@@ -779,11 +783,11 @@ describe('web session selection', () => {
       await vi.waitFor(() =>
         expect((document.getElementById('new-session') as HTMLDialogElement).open).toBe(false),
       )
-      const prompt = document.getElementById('prompt') as HTMLTextAreaElement
+      const prompt = document.querySelector<HTMLElement>('.composer-prompt') as HTMLTextAreaElement
       prompt.value = 'use the remembered selection'
       prompt.dispatchEvent(new Event('input', { bubbles: true }))
       document
-        .getElementById('composer')
+        .querySelector<HTMLElement>('.composer-form')
         ?.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
       await vi.waitFor(() => expect(fresh.setModel).toHaveBeenCalled())
       expect(fresh.setModel).toHaveBeenCalledWith({
@@ -898,7 +902,9 @@ describe('web session selection', () => {
     expect((document.getElementById('new-session') as HTMLDialogElement).open).toBe(false)
     expect(create).not.toHaveBeenCalled()
     await vi.waitFor(() =>
-      expect((document.getElementById('prompt') as HTMLTextAreaElement).disabled).toBe(false),
+      expect((document.querySelector<HTMLElement>('.composer-prompt') as HTMLTextAreaElement).disabled).toBe(
+        false,
+      ),
     )
 
     submit('create in beta')
@@ -927,8 +933,8 @@ describe('web session selection', () => {
     })
     binding.loadWebSession.mockResolvedValue({ session: old, offPermission: vi.fn() })
     await import('../src/app.js')
-    const control = (id: string) => document.getElementById(id) as HTMLButtonElement
-    await vi.waitFor(() => expect(control('model').disabled).toBe(false))
+    const control = (name: string) => document.querySelector(`.${name}`) as HTMLButtonElement
+    await vi.waitFor(() => expect(control('composer-model').disabled).toBe(false))
     const snapshot = {
       configured: true,
       effect: 'restart-required',
@@ -937,24 +943,30 @@ describe('web session selection', () => {
     const savedCallback = configurationCallback.saved
     if (!savedCallback) throw new Error('settings callback not bound')
     await savedCallback(snapshot)
-    for (const id of ['model', 'composer-workspace', 'composer-permission', 'new', 'prompt'])
+    for (const id of [
+      'composer-model',
+      'composer-workspace',
+      'composer-permission',
+      'new-session',
+      'composer-prompt',
+    ])
       expect(control(id).disabled).toBe(false)
     expect(document.getElementById('notice')?.textContent).toContain('尚未生效')
     models = [...models, { route: 'new', id: 'model-b' }]
     await savedCallback({ ...snapshot, effect: 'new-sessions' })
-    control('model').click()
+    control('composer-model').click()
     openModelList()
     expect(modelMenu().textContent).toContain('model-b')
-    control('model').click()
-    control('new').click()
-    await vi.waitFor(() => expect(control('model').disabled).toBe(false))
-    for (const id of ['composer-workspace', 'composer-permission', 'prompt'])
+    control('composer-model').click()
+    control('new-session').click()
+    await vi.waitFor(() => expect(control('composer-model').disabled).toBe(false))
+    for (const id of ['composer-workspace', 'composer-permission', 'composer-prompt'])
       expect(control(id).disabled).toBe(false)
     models = []
     await savedCallback({ ...snapshot, configured: false })
-    for (const id of ['composer-workspace', 'composer-permission', 'new', 'prompt'])
+    for (const id of ['composer-workspace', 'composer-permission', 'new-session', 'composer-prompt'])
       expect(control(id).disabled).toBe(false)
-    expect(control('send').disabled).toBe(true)
+    expect(control('composer-send').disabled).toBe(true)
   })
 
   it('keeps the model picker flat and applies the selected model settings', async () => {
@@ -990,11 +1002,11 @@ describe('web session selection', () => {
     })
     binding.loadWebSession.mockResolvedValue({ session: old, offPermission: vi.fn() })
     await import('../src/app.js')
-    const control = (id: string) => document.getElementById(id) as HTMLButtonElement
-    await vi.waitFor(() => expect(control('model').disabled).toBe(false))
+    const control = (name: string) => document.querySelector(`.${name}`) as HTMLButtonElement
+    await vi.waitFor(() => expect(control('composer-model').disabled).toBe(false))
 
     const rows = () => Array.from(modelMenu().querySelectorAll<HTMLElement>('[role="option"]'))
-    control('model').click()
+    control('composer-model').click()
     openModelList()
     rows()[0]?.click()
     await vi.waitFor(() =>
@@ -1008,11 +1020,11 @@ describe('web session selection', () => {
     )
 
     // The flat picker changes only the model; thinking controls stay in account settings.
-    await vi.waitFor(() => expect(control('model').disabled).toBe(false))
-    control('model').click()
+    await vi.waitFor(() => expect(control('composer-model').disabled).toBe(false))
+    control('composer-model').click()
     expect(document.querySelector('.model-picker-entry, #model-submenu-listbox')).toBeNull()
     expect(rows().map((row) => row.textContent?.trim())).toContain('model-a已配置账户')
-    control('model').click()
+    control('composer-model').click()
   }, 20_000)
 
   it.each(['save-first', 'poll-first', 'poll-fails'])(
@@ -1038,7 +1050,7 @@ describe('web session selection', () => {
       })
       binding.loadWebSession.mockResolvedValue({ session: old, offPermission: vi.fn() })
       await import('../src/app.js')
-      const modelButton = document.getElementById('model') as HTMLButtonElement
+      const modelButton = document.querySelector<HTMLElement>('.composer-model') as HTMLButtonElement
       await vi.waitFor(() => expect(modelButton.disabled).toBe(false))
       const saveRead = deferred<Awaited<ReturnType<typeof apis>>>()
       const pollRead = deferred<Awaited<ReturnType<typeof apis>>>()
@@ -1119,21 +1131,23 @@ describe('web session selection', () => {
           kind === 'missing-profile' ? '旧配置文件已缺失' : '00000000-0000-4000-8000-000000000001',
         )
       // The session list renders whatever the failed open was.
-      expect(document.querySelector('#sessions')?.textContent).toContain('Old')
+      expect(document.querySelector('.session-nav')?.textContent).toContain('Old')
       document.body.click()
-      document.getElementById('settings')?.click()
+      document.querySelector<HTMLElement>('.settings-entry')?.click()
       await vi.waitFor(() => expect((document.getElementById('config') as HTMLDialogElement).open).toBe(true))
       expect(notice.dataset.kind).toBe('session-recovery')
       document.getElementById('config-close')?.click()
       notice.querySelector('button')?.click()
       await vi.waitFor(() =>
-        expect((document.getElementById('prompt') as HTMLTextAreaElement).disabled).toBe(false),
+        expect(
+          (document.querySelector<HTMLElement>('.composer-prompt') as HTMLTextAreaElement).disabled,
+        ).toBe(false),
       )
       expect(notice.textContent).toBe('')
       expect(create).not.toHaveBeenCalled()
       binding.loadWebSession.mockRejectedValueOnce(error)
       // Reload the same historical task explicitly; preserve recovery rather than deleting its row.
-      const row = [...document.querySelectorAll<HTMLButtonElement>('#sessions button')].find((button) =>
+      const row = [...document.querySelectorAll<HTMLButtonElement>('.session-nav button')].find((button) =>
         button.textContent?.includes('Old'),
       )
       row?.click()
@@ -1195,7 +1209,7 @@ describe('web session selection', () => {
         binding.loadWebSession.mockImplementationOnce(() => pendingLoad.promise)
         const event = (name: string) => client.on.mock.calls.find(([key]: [string]) => key === name)?.[1]()
         event('reconnecting')
-        expect((document.getElementById('new') as HTMLButtonElement).disabled).toBe(true)
+        expect((document.querySelector<HTMLElement>('.new-session') as HTMLButtonElement).disabled).toBe(true)
         for (const control of recoveryButtons) {
           expect(control.disabled).toBe(true)
           // Programmatic dispatch also exercises the handler guard.
@@ -1284,10 +1298,10 @@ describe('web session selection', () => {
     }))
 
     await import('../src/app.js')
-    const newButton = document.getElementById('new') as HTMLButtonElement
-    const prompt = document.getElementById('prompt') as HTMLTextAreaElement
-    const send = document.getElementById('send') as HTMLButtonElement
-    const model = document.getElementById('model') as HTMLButtonElement
+    const newButton = document.querySelector<HTMLElement>('.new-session') as HTMLButtonElement
+    const prompt = document.querySelector<HTMLElement>('.composer-prompt') as HTMLTextAreaElement
+    const send = document.querySelector<HTMLElement>('.composer-send') as HTMLButtonElement
+    const model = document.querySelector<HTMLElement>('.composer-model') as HTMLButtonElement
     const newSession = document.getElementById('new-session') as HTMLDialogElement
     const newSessionForm = document.getElementById('new-session-form') as HTMLFormElement
     const newSessionCwd = document.getElementById('new-session-cwd') as HTMLInputElement
@@ -1300,7 +1314,7 @@ describe('web session selection', () => {
     expect(send.dataset.mode).toBe('idle')
     expect(send.getAttribute('aria-label')).toBe('发送')
     expect(send.title).toBe('发送（Enter）')
-    expect(document.getElementById('composer-hint')?.dataset.kind).toBe('shortcut')
+    expect(document.querySelector<HTMLElement>('.composer-hint')?.dataset.kind).toBe('shortcut')
     expect(model.tagName).toBe('BUTTON')
     expect(model.querySelector('[data-model-label]')?.textContent).toBe('选择模型')
     expect(model.getAttribute('aria-label')).toBe('选择当前会话模型')
@@ -1587,7 +1601,7 @@ describe('web session selection', () => {
         .getElementById('new-session-form')
         ?.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
       await vi.waitFor(() => expect(dialog.open).toBe(false))
-      document.getElementById('model')?.click()
+      document.querySelector<HTMLElement>('.composer-model')?.click()
       openModelList()
       modelMenu().querySelector<HTMLElement>('[role="option"]')?.click()
       try {
@@ -1601,7 +1615,9 @@ describe('web session selection', () => {
             expect(document.getElementById('notice')?.textContent).toContain('sidebar list failed'),
           )
         }
-        expect((document.getElementById('prompt') as HTMLTextAreaElement).value).toBe('')
+        expect((document.querySelector<HTMLElement>('.composer-prompt') as HTMLTextAreaElement).value).toBe(
+          '',
+        )
         expect(fresh.prompt).toHaveBeenCalledTimes(1)
       } finally {
         listing.resolve({ items: [{ sessionId: 'fresh', title: 'fresh' }] })
@@ -1672,7 +1688,7 @@ describe('web session selection', () => {
     const path = document.getElementById('new-session-cwd') as HTMLInputElement
     const form = document.getElementById('new-session-form') as HTMLFormElement
     const createButton = document.getElementById('new-session-create') as HTMLButtonElement
-    const composer = document.getElementById('prompt') as HTMLTextAreaElement
+    const composer = document.querySelector<HTMLElement>('.composer-prompt') as HTMLTextAreaElement
 
     await vi.waitFor(() => expect(dialog.open).toBe(true))
     path.value = workspace.path
@@ -1680,7 +1696,7 @@ describe('web session selection', () => {
     await vi.waitFor(() => expect(createButton.disabled).toBe(false))
     form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
     await vi.waitFor(() => expect(dialog.open).toBe(false))
-    document.getElementById('model')?.click()
+    document.querySelector<HTMLElement>('.composer-model')?.click()
     openModelList()
     modelMenu().querySelector<HTMLElement>('[role="option"]')?.click()
 
@@ -1709,16 +1725,18 @@ describe('web session selection', () => {
     await vi.waitFor(() => expect(fresh.prompt).toHaveBeenCalledTimes(2))
     await vi.waitFor(() => expect(composer.disabled).toBe(false))
     expect(document.querySelector('[data-workspace-label]')?.textContent).toBe('agnes')
-    expect(document.getElementById('composer-workspace')?.title).toBe(workspace.path)
+    expect(document.querySelector<HTMLElement>('.composer-workspace')?.title).toBe(workspace.path)
 
     document.querySelector<HTMLInputElement>('input[name="agnes-locale"][value="en"]')?.click()
     composer.value = '成功后的第二条消息'
     composer.dispatchEvent(new Event('input', { bubbles: true }))
     await vi.waitFor(() =>
-      expect((document.getElementById('send') as HTMLButtonElement).disabled).toBe(false),
+      expect((document.querySelector<HTMLElement>('.composer-send') as HTMLButtonElement).disabled).toBe(
+        false,
+      ),
     )
     document
-      .getElementById('composer')
+      .querySelector<HTMLElement>('.composer-form')
       ?.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
     await vi.waitFor(() =>
       expect(fresh.prompt).toHaveBeenLastCalledWith('成功后的第二条消息', { titleLocale: 'en' }),
@@ -1767,9 +1785,9 @@ describe('web session selection', () => {
     }))
 
     await import('../src/app.js')
-    const send = document.getElementById('send') as HTMLButtonElement
-    const cancel = document.getElementById('cancel') as HTMLButtonElement
-    const hint = document.getElementById('composer-hint') as HTMLParagraphElement
+    const send = document.querySelector<HTMLElement>('.composer-send') as HTMLButtonElement
+    const cancel = document.querySelector<HTMLElement>('.composer-cancel') as HTMLButtonElement
+    const hint = document.querySelector<HTMLElement>('.composer-hint') as HTMLParagraphElement
 
     await vi.waitFor(() => expect(send.dataset.mode).toBe('busy'))
     expect(send.getAttribute('aria-label')).toBe('加入下一轮')
@@ -1864,7 +1882,7 @@ describe('composer draft persistence', () => {
       offPermission: vi.fn(),
     }))
     await import('../src/app.js')
-    const composer = document.getElementById('prompt') as HTMLTextAreaElement
+    const composer = document.querySelector<HTMLElement>('.composer-prompt') as HTMLTextAreaElement
     const draftKey = 'agnes-web-composer-draft'
     const type = (text: string) => {
       composer.value = text
@@ -1875,7 +1893,7 @@ describe('composer draft persistence', () => {
     // A rejected send is a failure the user can retry: the draft comes back and stays stored.
     type('一段较长的任务提示词')
     document
-      .getElementById('composer')
+      .querySelector<HTMLElement>('.composer-form')
       ?.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
     await vi.waitFor(() => expect(old.prompt).toHaveBeenCalledTimes(1))
     await vi.waitFor(() => expect(composer.value).toBe('一段较长的任务提示词'))
@@ -1884,7 +1902,7 @@ describe('composer draft persistence', () => {
     // The prompt was accepted and the run is in flight. Unloading closes the connection, which rejects
     // the pending call, but that is not a failed send: nothing may be stored or put back.
     document
-      .getElementById('composer')
+      .querySelector<HTMLElement>('.composer-form')
       ?.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
     await vi.waitFor(() => expect(old.prompt).toHaveBeenCalledTimes(2))
     expect(composer.value).toBe('')
@@ -1956,7 +1974,7 @@ describe('web model confirmation', () => {
     }))
 
     await import('../src/app.js')
-    const model = document.getElementById('model') as HTMLButtonElement
+    const model = document.querySelector<HTMLElement>('.composer-model') as HTMLButtonElement
     await vi.waitFor(() => expect(model.disabled).toBe(false))
     expect(model.querySelector('[data-model-label]')?.textContent).toBe('model-a')
     expect(model.getAttribute('aria-label')).toBe('当前会话模型：model-a')
@@ -2038,7 +2056,9 @@ describe('session action review regressions', () => {
     })
     binding.loadWebSession.mockResolvedValue({ session: old, offPermission: vi.fn() })
     await import('../src/app.js')
-    await vi.waitFor(() => expect(document.getElementById('task-title')?.textContent).toBe('改名前'))
+    await vi.waitFor(() =>
+      expect(document.querySelector<HTMLElement>('.task-title')?.textContent).toBe('改名前'),
+    )
     return { old, rename, on }
   }
 
@@ -2052,25 +2072,27 @@ describe('session action review regressions', () => {
     dialog.querySelector('form')?.dispatchEvent(new Event('submit', { cancelable: true }))
     await vi.waitFor(() => expect(dialog.open).toBe(false))
     expect(rename).toHaveBeenCalledOnce()
-    expect(document.getElementById('task-title')?.textContent).toBe('改名后')
+    expect(document.querySelector<HTMLElement>('.task-title')?.textContent).toBe('改名后')
     const prior = old.projectUIOpening.mock.calls.length
     on.mock.calls.find(([event]) => event === 'gap')?.[1]({ sessionId: 'old', earliestSeq: 1 })
     // A gap reopens the bounded window; it no longer reads the whole projection.
     await vi.waitFor(() => expect(old.projectUIOpening.mock.calls.length).toBeGreaterThan(prior))
-    await vi.waitFor(() => expect(document.getElementById('task-title')?.textContent).toBe('改名后'))
+    await vi.waitFor(() =>
+      expect(document.querySelector<HTMLElement>('.task-title')?.textContent).toBe('改名后'),
+    )
     expect(document.querySelector('[data-session="old"]')?.textContent).toBe('改名后')
   })
 
   it('reveals sidebar failures to narrow-screen users and restores keyboard focus', async () => {
     await boot({ value: false }, true)
-    document.getElementById('sidebar-toggle')?.click()
+    document.querySelector<HTMLElement>('.sidebar-toggle')?.click()
     expect(document.querySelector('main')?.inert).toBe(true)
     document.querySelector<HTMLButtonElement>('[data-session-action-id="old"]')?.click()
     menuItem('分叉会话')?.click()
     await vi.waitFor(() => expect(document.getElementById('notice')?.textContent).toContain('没有可分叉'))
     expect(document.body.classList.contains('sidebar-open')).toBe(false)
     expect(document.querySelector('main')?.inert).toBe(false)
-    expect(document.activeElement).toBe(document.getElementById('sidebar-toggle'))
+    expect(document.activeElement).toBe(document.querySelector<HTMLElement>('.sidebar-toggle'))
   })
 })
 
@@ -2113,8 +2135,10 @@ describe('sidebar recency', () => {
     binding.loadWebSession.mockResolvedValue({ session: old, offPermission: vi.fn() })
     await import('../src/app.js')
     const order = () =>
-      [...document.querySelectorAll<HTMLElement>('#sessions [data-session]')].map((b) => b.dataset.session)
-    await vi.waitFor(() => expect(document.getElementById('task-title')?.textContent).toBe('旧任务'))
+      [...document.querySelectorAll<HTMLElement>('.session-nav [data-session]')].map((b) => b.dataset.session)
+    await vi.waitFor(() =>
+      expect(document.querySelector<HTMLElement>('.task-title')?.textContent).toBe('旧任务'),
+    )
     expect(order()).toEqual(['other', 'old'])
     const before = list.mock.calls.length
     chatted = true
@@ -2179,7 +2203,9 @@ describe('incremental opening', () => {
 
   it('opens with one bounded opening and no full projection, and seeds the run receipt from the last turn', async () => {
     const { old } = await bootWith(async () => ({ ...idleTimeline('old'), upto: 4, turns: [finishedTurn] }))
-    await vi.waitFor(() => expect(document.getElementById('status')?.textContent).toBe('已完成'))
+    await vi.waitFor(() =>
+      expect(document.querySelector<HTMLElement>('.task-status')?.textContent).toBe('已完成'),
+    )
     expect(old.projectUIOpening).toHaveBeenCalledTimes(1)
     expect(old.projectUI).not.toHaveBeenCalled()
     expect(old.events).toHaveBeenCalledWith({ preview: true, cursor: { fromSeq: 4, generation: 1 } })
@@ -2216,7 +2242,7 @@ describe('incremental opening', () => {
         parked: { ticket: 't-1', expiresAt: '2026-09-25T00:00:00Z' },
       },
     }))
-    const approval = document.getElementById('approval') as HTMLElement
+    const approval = document.querySelector<HTMLElement>('.approval-panel') as HTMLElement
     await vi.waitFor(() => expect(approval.textContent).toContain('有一项审批等待处理'))
     const buttons = [...approval.querySelectorAll('button')].map((button) => button.textContent)
     expect(buttons).toEqual(['定位审批'])
@@ -2245,7 +2271,7 @@ describe('incremental opening', () => {
         old.projectUIHistory.mockImplementation(() => new Promise(() => undefined))
       },
     )
-    const approval = document.getElementById('approval') as HTMLElement
+    const approval = document.querySelector<HTMLElement>('.approval-panel') as HTMLElement
     await vi.waitFor(() => expect(approval.textContent).toContain('正在查找'))
     expect(approval.querySelectorAll('button')).toHaveLength(0)
   })
@@ -2265,7 +2291,7 @@ describe('incremental opening', () => {
     await vi.waitFor(() =>
       expect(traceBridge.metas.at(-1)).toMatchObject({ sessionId: 'old', hasEarlier: true }),
     )
-    document.getElementById('report-problem')?.click()
+    document.querySelector<HTMLElement>('.report-problem')?.click()
     const dialog = document.querySelector('dialog.diagnostics-dialog') as HTMLDialogElement
     const press = (label: string) =>
       [...dialog.querySelectorAll<HTMLButtonElement>('section:not([hidden]) button')]
@@ -2298,7 +2324,7 @@ describe('incremental opening', () => {
 
     it('reloads once the Web page serves a new daemon address, never into the old one', async () => {
       const { emit } = await bootWith(async () => idleTimeline('old'))
-      const connection = document.getElementById('connection') as HTMLElement
+      const connection = document.querySelector<HTMLElement>('.connection-status') as HTMLElement
       await vi.waitFor(() => expect(connection.dataset.state).toBe('connected'))
       const fetcher = vi.fn<typeof fetch>(async () => new Response('', { status: 502 }))
       vi.stubGlobal('fetch', fetcher)
@@ -2338,7 +2364,7 @@ describe('incremental opening', () => {
 
     it('keeps a retry control through later errors, retries by hand, and resumes when shown again', async () => {
       const { emit } = await bootWith(async () => idleTimeline('old'))
-      const connection = document.getElementById('connection') as HTMLElement
+      const connection = document.querySelector<HTMLElement>('.connection-status') as HTMLElement
       await vi.waitFor(() => expect(connection.dataset.state).toBe('connected'))
       const fetcher = vi.fn<typeof fetch>(async () => new Response('', { status: 502 }))
       vi.stubGlobal('fetch', fetcher)
@@ -2371,7 +2397,7 @@ describe('incremental opening', () => {
 
   it('looks for the approval again after a reopen, and ignores gaps of other sessions', async () => {
     const { old, emit } = await bootWith(async () => parkedTimeline())
-    const approval = document.getElementById('approval') as HTMLElement
+    const approval = document.querySelector<HTMLElement>('.approval-panel') as HTMLElement
     await vi.waitFor(() => expect(approval.textContent).toContain('有一项审批等待处理'))
     const openings = old.projectUIOpening.mock.calls.length
     emit('gap', { sessionId: 'other', earliestSeq: 1 })

@@ -74,7 +74,7 @@ export const Approval = forwardRef<ApprovalHandle, ApprovalProps>(function Appro
     'div',
     {
       ref: content,
-      id: 'approval-content',
+      className: 'approval-content',
       style: { display: 'contents' },
       'data-agnes-region-owner': 'builtin',
       'data-agnes-region-unit': 'approval',
