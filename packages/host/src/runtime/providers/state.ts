@@ -37,14 +37,11 @@ import {
 export const UNIMPLEMENTED_STATE_METHODS = [
   'abortMigration',
   'acceptBridgeChild',
-  'acceptInbox',
-  'acceptServiceCommand',
   'appendStream',
   'beginMigration',
   'cancelPreparedActionAdmission',
   'commitMigratedRun',
   'createChild',
-  'fireTimer',
   'importConversation',
   'probeBridgeChild',
   'probeConversationImport',
@@ -52,7 +49,6 @@ export const UNIMPLEMENTED_STATE_METHODS = [
   'probePreparedActionAdmission',
   'pruneRecordVersions',
   'publishActionResult',
-  'readServiceCommand',
   'registerStream',
 ] as const
 
@@ -334,8 +330,18 @@ export function createRuntimeStateStore(
         database.createRun({ admission: result.value, scope: context.scope }, context),
       )
     },
-    acceptServiceCommand: (_request, context) => unavailable('acceptServiceCommand', context),
-    readServiceCommand: (_request, context) => unavailable('readServiceCommand', context),
+    acceptServiceCommand: (request, context) => {
+      const result = validateRuntime('ServiceCommandAdmission', request)
+      if (!result.ok)
+        return Promise.resolve(failure('invalid_input', 'schema', 'ServiceCommandAdmission is not valid'))
+      return run(context, () => database.acceptServiceCommand(result.value, context))
+    },
+    readServiceCommand: (request, context) => {
+      const result = validateRuntime('StateStoreControlReadServiceCommandRequest', request)
+      if (!result.ok)
+        return Promise.resolve(failure('invalid_input', 'schema', 'readServiceCommand input is not valid'))
+      return run(context, () => database.readServiceCommand(result.value, context))
+    },
     importConversation: (_request, context) => unavailable('importConversation', context),
     probeConversationImport: (_requestId, context) => unavailable('probeConversationImport', context),
     createChild: (_request, context) => unavailable('createChild', context),
@@ -372,7 +378,12 @@ export function createRuntimeStateStore(
         )
       return run(context, () => database.sessionControlStatus(parsed.value, context))
     },
-    fireTimer: (_request, context) => unavailable('fireTimer', context),
+    fireTimer: (request, context) => {
+      const result = validateRuntime('StateStoreControlFireTimerRequest', request)
+      if (!result.ok)
+        return Promise.resolve(failure('invalid_input', 'schema', 'fireTimer input is not valid'))
+      return run(context, () => database.fireTimer(result.value))
+    },
     registerStream: (_request, context) => unavailable('registerStream', context),
     appendStream: (_request, context) => unavailable('appendStream', context),
     beginReconciliation: (request, context) => {
@@ -469,7 +480,12 @@ export function createRuntimeStateStore(
         return Promise.resolve(failure('invalid_input', 'schema', 'ProbeActionResultRequest is not valid'))
       return run(context, () => database.probeActionResult(result.value))
     },
-    acceptInbox: (_delivery, context) => unavailable('acceptInbox', context),
+    acceptInbox: (delivery, context) => {
+      const result = validateRuntime('SignalDelivery', delivery)
+      if (!result.ok)
+        return Promise.resolve(failure('invalid_input', 'schema', 'SignalDelivery is not valid'))
+      return run(context, () => database.acceptInbox(result.value, context))
+    },
     claimOutbox: (request, context) => {
       const result = validateRuntime('ClaimOutboxRequest', request)
       if (!result.ok)
