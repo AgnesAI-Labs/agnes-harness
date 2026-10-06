@@ -1907,6 +1907,20 @@ export const RuntimeErrorDetails = freeze({
       "never"
     ]
   },
+  "model_tool_call_arguments": {
+    "code": "unknown_effect",
+    "httpStatus": 503,
+    "retryAdviceKinds": [
+      "reconcile"
+    ]
+  },
+  "model_tool_call_id": {
+    "code": "unknown_effect",
+    "httpStatus": 503,
+    "retryAdviceKinds": [
+      "reconcile"
+    ]
+  },
   "model_usage_attribution": {
     "code": "denied",
     "httpStatus": 403,
