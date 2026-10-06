@@ -130,22 +130,22 @@ it('maps State-local input and denial refusals and passes registered details thr
   const { f, service, prepare, answer } = await setup()
   const { interactionId } = value(await prepare())
   const other = { ...f.context, bindingId: 'other-binding' }
-  const denied = { code: 'denied', detailCode: 'permission_denied' }
+  const denied = { code: 'denied', detailCode: 'interaction_owner' }
   const cases: [string, () => Promise<Outcome<unknown>>, object][] = [
     [
       'absent interaction',
       () => service.respondApproval(answer('missing-interaction'), f.context),
-      { code: 'invalid_input', detailCode: 'invalid_request', message: 'approval interaction is absent' },
+      { code: 'invalid_input', detailCode: 'interaction_absent', message: 'approval interaction is absent' },
     ],
     [
       'preparation of another run',
       () => prepare(f.question, 'other-run'),
-      { code: 'invalid_input', detailCode: 'invalid_request' },
+      { code: 'invalid_input', detailCode: 'approval_preparation' },
     ],
     [
       'question for another scope',
       () => prepare({ ...f.question, scope: { kind: 'installation', installationId: 'elsewhere' } }),
-      denied,
+      { code: 'denied', detailCode: 'approval_scope' },
     ],
     ['read by another binding', () => service.read(interactionId, other), denied],
     ['response status by another binding', () => service.responseStatus('response', other), denied],
