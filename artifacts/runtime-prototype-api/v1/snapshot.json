@@ -189,7 +189,7 @@
     },
     {
       "path": "packages/protocol/schema/runtime/public.json",
-      "sha256": "fb420f9c32f9c5318dee6785bdf7cade0f44b32b93cd900326fe85ebdb07b240"
+      "sha256": "212a83f17e8fb1d913c14a1ad060631e07ea12af696983efba31abf60e0f6dd1"
     },
     {
       "path": "packages/protocol/schema/runtime/simple-loop.schema.json",
@@ -543,7 +543,7 @@
     },
     {
       "path": "packages/protocol/gen/ts/runtime-schema-refs.ts",
-      "sha256": "674f713dc496615edf2f7abcfe8cdb8c95cf5444d888b67631bf93b7d481b6ae"
+      "sha256": "63f3972998b7450f354ef4ae00e240195fd6b691138186a26c773d1f3e8ace38"
     },
     {
       "path": "packages/protocol/gen/ts/runtime-wire-types.ts",
@@ -1052,7 +1052,7 @@
       },
       {
         "path": "packages/protocol/gen/ts/runtime-schema-refs.ts",
-        "sha256": "674f713dc496615edf2f7abcfe8cdb8c95cf5444d888b67631bf93b7d481b6ae"
+        "sha256": "63f3972998b7450f354ef4ae00e240195fd6b691138186a26c773d1f3e8ace38"
       },
       {
         "path": "packages/protocol/gen/ts/runtime-wire-types.ts",
@@ -1176,7 +1176,7 @@
       },
       {
         "path": "packages/protocol/schema/runtime/public.json",
-        "sha256": "fb420f9c32f9c5318dee6785bdf7cade0f44b32b93cd900326fe85ebdb07b240"
+        "sha256": "212a83f17e8fb1d913c14a1ad060631e07ea12af696983efba31abf60e0f6dd1"
       },
       {
         "path": "packages/protocol/schema/runtime/simple-loop.schema.json",
@@ -1467,9 +1467,9 @@
         "sha256": "5368e00eb1fe320fa21e015f95911b6af6ca8a3c405c3be6585ff521c4832ce0"
       }
     ],
-    "inputDigest": "1273d5481ce1f5338663e6aa52e0b1f7a65d1bc86a23dad08d25c501538f9f98",
+    "inputDigest": "9a036c5259c3acafeff4ea79d72a2f5173a6d07cda526b00bbc2071603d3fce2",
     "diagnostics": [],
-    "reportDigest": "e21048f0816a4b95429045e572d7b4af35a7e19af2ba2c4c02df53d583a99ddf"
+    "reportDigest": "ad5b27b51950f1a4dabd0ed7f503d98eb58cd9cccc155629312c90310c404eb3"
   },
-  "snapshotDigest": "217c397324f0ffae03898292bac93badc6bd564308ec95e10c05ba6cc5397bd9"
+  "snapshotDigest": "6317245e288ed2a0f60266fbc516ab568688fdfa4a471f0727897e2570a2693f"
 }

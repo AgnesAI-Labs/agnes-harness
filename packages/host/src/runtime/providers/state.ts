@@ -40,10 +40,8 @@ export const UNIMPLEMENTED_STATE_METHODS = [
   'acceptServiceCommand',
   'appendStream',
   'beginMigration',
-  'beginReconciliation',
   'cancelPreparedActionAdmission',
   'commitMigratedRun',
-  'completeReconciliation',
   'createChild',
   'fireTimer',
   'importConversation',
@@ -366,8 +364,20 @@ export function createRuntimeStateStore(
     fireTimer: (_request, context) => unavailable('fireTimer', context),
     registerStream: (_request, context) => unavailable('registerStream', context),
     appendStream: (_request, context) => unavailable('appendStream', context),
-    beginReconciliation: (_request, context) => unavailable('beginReconciliation', context),
-    completeReconciliation: (_request, context) => unavailable('completeReconciliation', context),
+    beginReconciliation: (request, context) => {
+      const result = validateRuntime('StateStoreControlBeginReconciliationRequest', request)
+      if (!result.ok)
+        return Promise.resolve(failure('invalid_input', 'schema', 'beginReconciliation input is not valid'))
+      return run(context, () => database.beginReconciliation(result.value))
+    },
+    completeReconciliation: (request, context) => {
+      const result = validateRuntime('StateStoreControlCompleteReconciliationRequest', request)
+      if (!result.ok)
+        return Promise.resolve(
+          failure('invalid_input', 'schema', 'completeReconciliation input is not valid'),
+        )
+      return run(context, () => database.completeReconciliation(result.value))
+    },
     acceptBridgeChild: (_request, context) => unavailable('acceptBridgeChild', context),
     probeBridgeChild: (_request, context) => unavailable('probeBridgeChild', context),
     beginMigration: (_request, context) => unavailable('beginMigration', context),

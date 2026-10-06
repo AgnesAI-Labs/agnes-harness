@@ -307,6 +307,11 @@ export const RuntimeSchemaRefs = freeze({
     "revision": 2,
     "digest": "bcdb221fca9f46494199b489e35acfa8d93b31164741700c54aafe9451a410d3"
   },
+  "ReconciliationCheckValue": {
+    "typeId": "agh.runtime/reconciliation-check@1",
+    "revision": 2,
+    "digest": "8d87f0504c43c8427f71ca13100c7d5f03f557b9cdd6750a25a7020cd435229b"
+  },
   "InteractionRecord": {
     "typeId": "agh.interaction/interaction-record@1",
     "revision": 3,

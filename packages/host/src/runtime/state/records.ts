@@ -221,6 +221,7 @@ export const PROVIDER_STATE_SCHEMA = RuntimeSchemaRefs.ProviderStateValue
 export const WAIT_SCHEMA = RuntimeSchemaRefs.WaitRecordValue
 export const TIMER_SCHEMA = RuntimeSchemaRefs.TimerRecordValue
 export const RESOLUTION_SCHEMA = RuntimeSchemaRefs.ResolutionRecordValue
+export const RECONCILIATION_CHECK_SCHEMA = RuntimeSchemaRefs.ReconciliationCheckValue
 export const STATE_LEASE_SCHEMA = RuntimeSchemaRefs.StateLeaseRecordValue
 export const STATE_OPEN_PROOF_SCHEMA = RuntimeSchemaRefs.StateWriteOpenProofValue
 export const STATE_LEASE_PROOF_SCHEMA = RuntimeSchemaRefs.StateLeaseProofValue
@@ -261,6 +262,7 @@ const SCHEMAS: Readonly<Record<string, SchemaRef>> = {
   [WAIT_SCHEMA.typeId]: WAIT_SCHEMA,
   [TIMER_SCHEMA.typeId]: TIMER_SCHEMA,
   [RESOLUTION_SCHEMA.typeId]: RESOLUTION_SCHEMA,
+  [RECONCILIATION_CHECK_SCHEMA.typeId]: RECONCILIATION_CHECK_SCHEMA,
   [STATE_LEASE_SCHEMA.typeId]: STATE_LEASE_SCHEMA,
   [STATE_OPEN_PROOF_SCHEMA.typeId]: STATE_OPEN_PROOF_SCHEMA,
   [STATE_LEASE_PROOF_SCHEMA.typeId]: STATE_LEASE_PROOF_SCHEMA,
@@ -361,6 +363,10 @@ export function timerRecordId(timerId: string): string {
 
 export function resolutionRecordId(resolutionId: string): string {
   return `resolution:${resolutionId}`
+}
+
+export function reconciliationCheckRecordId(checkId: string): string {
+  return `reconciliation:${checkId}`
 }
 
 export function stableId(prefix: string, material: string): string {

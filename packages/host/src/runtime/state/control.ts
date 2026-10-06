@@ -49,9 +49,12 @@ import type {
   InteractionRecord,
   PolicyDecision,
   ProviderStateValue,
+  ReconciliationCheckValue,
   ResolutionRecordValue,
   RunBinding,
   RunTermination,
+  StateStoreControlBeginReconciliationRequest,
+  StateStoreControlCompleteReconciliationRequest,
   TimerRecordValue,
   TrustedPolicyFacts,
   WaitRecordValue,
@@ -85,6 +88,7 @@ import {
   QUOTA_MIRROR_SCHEMA,
   quotaRecordId,
   RECEIPT_SCHEMA,
+  RECONCILIATION_CHECK_SCHEMA,
   REFERENCE_SCHEMA,
   RESOLUTION_SCHEMA,
   type RecordOwner,
@@ -93,6 +97,7 @@ import {
   type RunRecordValue,
   type RunTaintValue,
   receiptRecordId,
+  reconciliationCheckRecordId,
   referenceRecordId,
   resolutionRecordId,
   runBindingRecordId,
@@ -3232,6 +3237,7 @@ export function noteControlVersion(scan: ControlScan, version: ControlVersionNot
   else if (id.startsWith('wait:')) noteWaitVersion(version)
   else if (id.startsWith('timer:')) noteTimerVersion(version)
   else if (id.startsWith('resolution:')) noteResolutionVersion(version)
+  else if (id.startsWith('reconciliation:')) noteReconciliationVersion(version)
 }
 
 const PROVIDER_STATES = ['runnable', 'waiting', 'draining', 'completed', 'failed']
@@ -3287,6 +3293,27 @@ function noteResolutionVersion(version: ControlVersionNote): void {
     integrity('resolution record receipt does not match its state')
   if (body.state !== 'resolved' && objectRecord(body.ownerRef)?.kind !== 'reconciliation')
     integrity('unresolved record has no reconciliation owner')
+}
+
+const CHECK_RESULT_KINDS: Record<string, readonly string[]> = {
+  admitted: [],
+  running: [],
+  completed: ['resolved', 'not_found'],
+  unknown: ['unknown'],
+}
+
+function noteReconciliationVersion(version: ControlVersionNote): void {
+  const body = bodyRecord(version.value_json)
+  const checkId = typeof body.checkId === 'string' ? body.checkId : ''
+  if (checkId === '' || version.record_id !== reconciliationCheckRecordId(checkId))
+    integrity('reconciliation check id does not match its record')
+  if (typeof body.actionId !== 'string' || body.actionId === '')
+    integrity('reconciliation check has no action')
+  const kinds = typeof body.state === 'string' ? CHECK_RESULT_KINDS[body.state] : undefined
+  if (!kinds) integrity('reconciliation check is not in a known state')
+  const kind = objectRecord(body.result)?.kind
+  if (kinds.length === 0 ? body.result !== null : typeof kind !== 'string' || !kinds.includes(kind))
+    integrity('reconciliation check result does not match its state')
 }
 
 function noteTimerVersion(version: ControlVersionNote): void {
@@ -5073,4 +5100,202 @@ async function finalizeRunTx(
   })
   ports.rememberRequest('commitControl', request.commitId, fingerprint, written.receipt)
   return { result: written.receipt, sessionId: request.guard.sessionId, verified: written.verified }
+}
+
+function liveWriterEpoch(ports: ControlPorts, sessionId: string): number {
+  const lease = loadLease(ports, sessionId)
+  if (
+    lease.writer_epoch === null ||
+    !leaseLive(lease, ports.now(), lease.writer_epoch, ports.authority.authorityEpoch)
+  )
+    refuse('conflict', 'writer_lease', 'writer lease is not live')
+  return lease.writer_epoch
+}
+
+function loadCheck(ports: ControlPorts, request: { checkId: string }) {
+  const head = ports.loadHead(reconciliationCheckRecordId(request.checkId))
+  return head ? { head, check: storedValue<ReconciliationCheckValue>(head) } : undefined
+}
+
+/**
+ * Persists the identity of one receipt lookup before it runs. The action must be an unresolved effect of its
+ * original binding and the lookup must be another declared operation of the action target, so a lookup never
+ * repeats the business request. The same check id with the same content returns the stored check.
+ */
+export async function beginReconciliationTx(
+  ports: ControlPorts,
+  request: StateStoreControlBeginReconciliationRequest,
+): Promise<Committed<ReconciliationCheckValue>> {
+  const { requestId, expectedActionRevision, ...content } = request
+  const fingerprint = digestOf({ expectedActionRevision, ...content })
+  const actionHead = requireHead(
+    ports,
+    actionRecordId(request.actionId),
+    'action_absent',
+    'action does not exist',
+  )
+  const action = storedValue<ActionValue>(actionHead)
+  const loaded = loadRun(ports, action.runId)
+  const sessionId = loaded.value.sessionId
+  const verified = await ports.requireSession(sessionId)
+  const replayed = replayWrapped<ReconciliationCheckValue>(
+    ports,
+    sessionId,
+    'beginReconciliation',
+    requestId,
+    fingerprint,
+  )
+  if (replayed) return { result: replayed, sessionId }
+  const existing = loadCheck(ports, request)
+  if (existing) {
+    const { check } = existing
+    if (
+      !sameJson(
+        { ...check, state: null, result: null, evidenceRefs: null },
+        { ...content, state: null, result: null, evidenceRefs: null },
+      )
+    )
+      refuse('conflict', 'check_exists', 'the check id belongs to another lookup')
+    return { result: check, sessionId }
+  }
+  if (
+    actionHead.record_revision !== expectedActionRevision ||
+    !UNRESOLVED_ACTION_STATES.includes(action.state)
+  )
+    refuse('conflict', 'action_state', 'action is not an unresolved effect at this revision')
+  if (action.currentAttemptId === null) integrity('unresolved action has no attempt')
+  const attempt = storedValue<AttemptValue>(
+    requireHead(ports, attemptRecordId(action.currentAttemptId), 'attempt_absent', 'attempt does not exist'),
+  )
+  if (request.bindingId !== attempt.bindingId)
+    refuse('conflict', 'binding', 'the check does not use the binding of the original attempt')
+  const binding = storedValue<RunBinding>(
+    requireHead(ports, runBindingRecordId(action.runId), 'binding_absent', 'run binding record is missing'),
+  )
+  const declared = binding.providers
+    .filter((candidate) => sameJson(candidate.binding, action.intent.target))
+    .some((candidate) => candidate.descriptor.operations.some((op) => op.method === request.lookupMethod))
+  if (!declared || request.lookupMethod === action.intent.method)
+    refuse('invalid_input', 'lookup_method', 'the lookup is not a declared operation other than the effect')
+  if (loadInvocation(ports, request.invocationId).runId !== action.runId)
+    refuse('conflict', 'invocation_state', 'invocation belongs to another run')
+  if (Date.parse(request.deadline) <= ports.now())
+    refuse('invalid_input', 'deadline', 'the check deadline has passed')
+  const check: ReconciliationCheckValue = {
+    checkId: request.checkId,
+    actionId: action.actionId,
+    bindingId: request.bindingId,
+    invocationId: request.invocationId,
+    lookupMethod: request.lookupMethod,
+    input: request.input,
+    state: 'admitted',
+    deadline: request.deadline,
+    result: null,
+    evidenceRefs: [],
+  }
+  const owner = ownerOf(actionHead)
+  return rememberWrapped(
+    ports,
+    {
+      ...blankInput(
+        sessionId,
+        verified,
+        ports.ulid(),
+        at(ports),
+        fingerprint,
+        action.runId,
+        liveWriterEpoch(ports, sessionId),
+        loaded.value.revision,
+      ),
+      actionId: action.actionId,
+      creates: [
+        record(reconciliationCheckRecordId(check.checkId), RECONCILIATION_CHECK_SCHEMA, 1, owner, check),
+      ],
+      updates:
+        action.state === 'unknown'
+          ? [updated(actionHead, ACTION_SCHEMA, owner, { ...action, state: 'reconciling' })]
+          : [],
+    },
+    'beginReconciliation',
+    requestId,
+    fingerprint,
+    check,
+  )
+}
+
+/**
+ * Stores the result and the evidence of a lookup. A lookup that stays unknown puts a reconciling action back to
+ * unknown; a resolved or not-found answer changes nothing else: settling the action is resolve_action, and
+ * not-found never proves that the effect did not happen.
+ */
+export async function completeReconciliationTx(
+  ports: ControlPorts,
+  request: StateStoreControlCompleteReconciliationRequest,
+): Promise<Committed<ReconciliationCheckValue>> {
+  const { requestId, ...content } = request
+  const fingerprint = digestOf(content)
+  const found = loadCheck(ports, request)
+  if (!found) refuse('invalid_input', 'check_absent', 'the check does not exist')
+  const actionHead = requireHead(
+    ports,
+    actionRecordId(found.check.actionId),
+    'action_absent',
+    'action does not exist',
+  )
+  const action = storedValue<ActionValue>(actionHead)
+  const loaded = loadRun(ports, action.runId)
+  const sessionId = loaded.value.sessionId
+  const verified = await ports.requireSession(sessionId)
+  const replayed = replayWrapped<ReconciliationCheckValue>(
+    ports,
+    sessionId,
+    'completeReconciliation',
+    requestId,
+    fingerprint,
+  )
+  if (replayed) return { result: replayed, sessionId }
+  const known = new Set<string>()
+  const evidenceRefs = [...request.evidence, request.result.evidence].filter((ref) => {
+    const digest = digestOf(ref)
+    return !known.has(digest) && known.add(digest)
+  })
+  const check = found.check
+  if (check.state === 'completed' || check.state === 'unknown') {
+    if (!sameJson(check.result, request.result) || !sameJson(check.evidenceRefs, evidenceRefs))
+      refuse('conflict', 'check_state', 'the check already has another result')
+    return { result: check, sessionId }
+  }
+  const done: ReconciliationCheckValue = {
+    ...check,
+    state: request.result.kind === 'unknown' ? 'unknown' : 'completed',
+    result: request.result,
+    evidenceRefs,
+  }
+  const owner = ownerOf(found.head)
+  return rememberWrapped(
+    ports,
+    {
+      ...blankInput(
+        sessionId,
+        verified,
+        ports.ulid(),
+        at(ports),
+        fingerprint,
+        action.runId,
+        liveWriterEpoch(ports, sessionId),
+        loaded.value.revision,
+      ),
+      actionId: action.actionId,
+      updates: [
+        updated(found.head, RECONCILIATION_CHECK_SCHEMA, owner, done),
+        ...(request.result.kind === 'unknown' && action.state === 'reconciling'
+          ? [updated(actionHead, ACTION_SCHEMA, ownerOf(actionHead), { ...action, state: 'unknown' })]
+          : []),
+      ],
+    },
+    'completeReconciliation',
+    requestId,
+    fingerprint,
+    done,
+  )
 }

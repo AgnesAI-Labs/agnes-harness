@@ -13,8 +13,10 @@ import {
   matchesKnownSchema,
   PROVIDER_STATE_SCHEMA,
   providerStateRecordId,
+  RECONCILIATION_CHECK_SCHEMA,
   RESOLUTION_SCHEMA,
   type RecordOwner,
+  reconciliationCheckRecordId,
   resolutionRecordId,
   stableId,
   stateSchemaDefinition,
@@ -70,6 +72,26 @@ const resolution = (over: Record<string, unknown> = {}) => ({
   reason: 'no answer',
   ...over,
 })
+const check = (over: Record<string, unknown> = {}) => ({
+  checkId: 'check-1',
+  actionId: 'action-1',
+  bindingId: 'binding-1',
+  invocationId: 'invocation-1',
+  lookupMethod: 'reconcile',
+  input: {
+    kind: 'inline',
+    schema: RuntimeSchemaRefs.StateLeaseRecordValue,
+    value: {},
+    digest: canonicalJsonDigest({}),
+    bytes: 2,
+  },
+  state: 'admitted',
+  deadline: '2026-05-01T00:00:00Z',
+  result: null,
+  evidenceRefs: [],
+  ...over,
+})
+const found = { kind: 'resolved', evidence: {}, result: {} }
 const unresolvedAction = (over: Record<string, unknown> = {}) => ({
   actionId: 'action-1',
   state: 'unknown',
@@ -115,6 +137,14 @@ describe('the three record schemas', () => {
     expect(validateRuntime('ResolutionRecordValue', resolution()).ok).toBe(true)
     expect(validateRuntime('ResolutionRecordValue', resolution({ state: 'lost' })).ok).toBe(false)
   })
+  it('registers the reconciliation check and accepts the wire value it is written from', () => {
+    expect(RECONCILIATION_CHECK_SCHEMA.typeId).toBe('agh.runtime/reconciliation-check@1')
+    expect(matchesKnownSchema(RECONCILIATION_CHECK_SCHEMA)).toBe(true)
+    expect(stateSchemaDefinition(RECONCILIATION_CHECK_SCHEMA)).toBe('ReconciliationCheckValue')
+    expect(reconciliationCheckRecordId('c')).toBe('reconciliation:c')
+    expect(validateRuntime('ReconciliationCheckValue', check()).ok).toBe(true)
+    expect(validateRuntime('ReconciliationCheckValue', check({ state: 'lost' })).ok).toBe(false)
+  })
   it('get record ids with distinct prefixes that carry the owning id', () => {
     expect(providerStateRecordId('a')).toBe('provider:a')
     expect(waitRecordId('w')).toBe('wait:w')
@@ -141,6 +171,42 @@ describe('what the control scan does with the new records', () => {
         ),
       ),
     ).not.toThrow()
+  })
+  it('accepts a reconciliation check through its states', () => {
+    expect(scanned(note('reconciliation:check-1', check()))).not.toThrow()
+    expect(scanned(note('reconciliation:check-1', check({ state: 'running' }), 2))).not.toThrow()
+    expect(
+      scanned(note('reconciliation:check-1', check({ state: 'completed', result: found }), 3)),
+    ).not.toThrow()
+    expect(
+      scanned(
+        note('reconciliation:check-1', check({ state: 'completed', result: { kind: 'not_found' } }), 3),
+      ),
+    ).not.toThrow()
+    expect(
+      scanned(note('reconciliation:check-1', check({ state: 'unknown', result: { kind: 'unknown' } }), 3)),
+    ).not.toThrow()
+  })
+  it.each([
+    ['check id that names another check', 'reconciliation:other', check()],
+    ['check with an empty id', 'reconciliation:', check({ checkId: '' })],
+    ['check without an action', 'reconciliation:check-1', check({ actionId: '' })],
+    ['check with an unknown state', 'reconciliation:check-1', check({ state: 'lost' })],
+    ['admitted check that has a result', 'reconciliation:check-1', check({ result: found })],
+    ['completed check without a result', 'reconciliation:check-1', check({ state: 'completed' })],
+    [
+      'completed check with an unknown result',
+      'reconciliation:check-1',
+      check({ state: 'completed', result: { kind: 'unknown' } }),
+    ],
+    [
+      'unknown check with a resolved result',
+      'reconciliation:check-1',
+      check({ state: 'unknown', result: found }),
+    ],
+    ['unknown check without a result', 'reconciliation:check-1', check({ state: 'unknown' })],
+  ])('refuses a %s', (_name, recordId, value) => {
+    expect(scanned(note(recordId, value))).toThrow()
   })
   it.each([
     ['resolution id that names another record', 'resolution:other', resolution()],
