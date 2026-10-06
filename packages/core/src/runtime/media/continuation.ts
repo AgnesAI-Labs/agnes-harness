@@ -668,7 +668,12 @@ export function mediaPrepareAction(
           if (found === null || found.outcome === 'unknown_effect') {
             if (!expired) return move(waitFor(record.childKey, ctx.deadline), saved)
             if (degrade) return degraded()
-            throw new MediaFault('unknown_effect', 'media_conversion_unknown', { childKey: record.childKey })
+            throw new MediaFault(
+              'unknown_effect',
+              'media_conversion_unknown',
+              { childKey: record.childKey },
+              { kind: 'action', id: found?.actionId ?? frame.actionId },
+            )
           }
           if (found.outcome !== 'succeeded') {
             if (degrade) return degraded()

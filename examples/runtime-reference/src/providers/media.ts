@@ -87,20 +87,29 @@ const methods = RuntimeMethodSchemaRefs
 const prepare = methods['agh.media'].prepare
 const digestOf = (v: unknown) => canonicalJsonDigest(v as W.JsonValue)
 const sha = (b: Uint8Array | string) => createHash('sha256').update(b).digest('hex')
-const refusal = (code: W.RuntimeError['code'], detailCode: string): { ok: false; error: W.RuntimeError } => ({
-  ok: false,
-  error: {
-    code,
-    detailCode,
-    message: 'Reference media refused',
-    diagnosticId: 'reference-media',
-    retryAdvice: { kind: 'never' },
-  },
-})
+const refusal = (
+  code: W.RuntimeError['code'],
+  detailCode: string,
+  owner?: W.OwnerRef,
+): { ok: false; error: W.RuntimeError } => {
+  if (code === 'unknown_effect' && !owner) throw new TypeError('unknown_effect needs an owner')
+  return {
+    ok: false,
+    error: {
+      code,
+      detailCode,
+      message: 'Reference media refused',
+      diagnosticId: 'reference-media',
+      retryAdvice:
+        owner && code === 'unknown_effect' ? { kind: 'reconcile', ownerRef: owner } : { kind: 'never' },
+    },
+  }
+}
 class Refused extends Error {
   constructor(
     readonly code: W.RuntimeError['code'],
     readonly detail: string,
+    readonly owner?: W.OwnerRef,
   ) {
     super(detail)
   }
@@ -597,7 +606,10 @@ function prepareAction(
           }
           if (found === null || found.outcome === 'unknown_effect') {
             if (Date.parse(ctx.deadline) > Date.now()) return move(waitFor(raw.childKey!, ctx.deadline), raw)
-            throw new Refused('unknown_effect', 'media_conversion_unknown')
+            throw new Refused('unknown_effect', 'media_conversion_unknown', {
+              kind: 'action',
+              id: found?.actionId ?? frame.actionId,
+            })
           }
           if (found.outcome !== 'succeeded' || !found.result)
             throw new Refused(found.error?.code ?? 'internal', 'media_conversion_failed')
@@ -656,7 +668,7 @@ function prepareAction(
         } catch (error) {
           const e =
             error instanceof Refused
-              ? refusal(error.code, error.detail)
+              ? refusal(error.code, error.detail, error.owner)
               : refusal('retryable', 'media_dependency_unavailable')
           return end({ kind: 'fail', error: e.error })
         }

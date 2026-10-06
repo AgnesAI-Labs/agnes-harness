@@ -4,6 +4,7 @@ import {
   RuntimeMethodSchemaRefs,
   RuntimeSchemaRefs,
   validateRuntime,
+  validateRuntimeErrorDetail,
 } from '@agnes/protocol/runtime'
 import { describe, expect, it } from 'vitest'
 import {
@@ -314,8 +315,13 @@ describe('model infer: resume', () => {
     expect(out.children).toHaveLength(0)
     expect(out.next).toMatchObject({
       kind: 'fail',
-      error: { code: 'unknown_effect', detailCode: 'model_child_unknown' },
+      error: {
+        code: 'unknown_effect',
+        detailCode: 'model_child_unknown',
+        retryAdvice: { kind: 'reconcile', ownerRef: { kind: 'action', id: expect.any(String) } },
+      },
     })
+    expect(out.next.kind === 'fail' && validateRuntimeErrorDetail(out.next.error).ok).toBe(true)
   })
   it('ignores a receipt of another action, and never creates a child on resume', async () => {
     const s = await started()

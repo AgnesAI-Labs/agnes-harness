@@ -4,7 +4,9 @@ export function refuse(
   code: W.RuntimeError['code'],
   detailCode: string,
   safeDetail?: W.JsonValue,
+  owner?: W.OwnerRef,
 ): { ok: false; error: W.RuntimeError } {
+  if (code === 'unknown_effect' && !owner) throw new TypeError('unknown_effect needs an owner')
   return {
     ok: false,
     error: {
@@ -12,7 +14,8 @@ export function refuse(
       detailCode,
       message: 'Media operation refused',
       diagnosticId: 'media-prepare',
-      retryAdvice: { kind: 'never' },
+      retryAdvice:
+        owner && code === 'unknown_effect' ? { kind: 'reconcile', ownerRef: owner } : { kind: 'never' },
       ...(safeDetail === undefined ? {} : { safeDetail }),
     },
   }
@@ -24,6 +27,7 @@ export class MediaFault extends Error {
     readonly code: W.RuntimeError['code'],
     readonly detail: string,
     readonly safe?: W.JsonValue,
+    readonly owner?: W.OwnerRef,
   ) {
     super(detail)
   }
@@ -31,5 +35,5 @@ export class MediaFault extends Error {
 
 export const faultOf = (error: unknown): { ok: false; error: W.RuntimeError } =>
   error instanceof MediaFault
-    ? refuse(error.code, error.detail, error.safe)
+    ? refuse(error.code, error.detail, error.safe, error.owner)
     : refuse('retryable', 'media_dependency_unavailable')

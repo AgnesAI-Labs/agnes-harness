@@ -1,7 +1,12 @@
 import { readdirSync, readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import type * as W from '@agnes/protocol/runtime'
-import { canonicalJsonDigest, RuntimeMethodSchemaRefs, validateRuntime } from '@agnes/protocol/runtime'
+import {
+  canonicalJsonDigest,
+  RuntimeMethodSchemaRefs,
+  validateRuntime,
+  validateRuntimeErrorDetail,
+} from '@agnes/protocol/runtime'
 import { describe, expect, it } from 'vitest'
 import { collectPreparedMedia } from '../../src/runtime/media/continuation.js'
 import { mediaSourceDigest, pack } from '../../src/runtime/media/identity.js'
@@ -217,6 +222,7 @@ describe('conversion', () => {
     }
     const unknown = await action.resume(late, h.ports)
     expect(detail(unknown)).toBe('unknown_effect/media_conversion_unknown')
+    expect(unknown.next.kind === 'fail' && validateRuntimeErrorDetail(unknown.next.error).ok).toBe(true)
     expect(unknown.children).toHaveLength(0)
     expect(h.log.prepared).toHaveLength(1)
   })
@@ -255,6 +261,9 @@ describe('conversion', () => {
       h.ports,
     )
     expect(detail(late)).toBe('unknown_effect/media_conversion_unknown')
+    expect(late.next).toMatchObject({
+      error: { retryAdvice: { kind: 'reconcile', ownerRef: { kind: 'action', id: expect.any(String) } } },
+    })
     expect(h.log.prepared).toHaveLength(1)
   })
 

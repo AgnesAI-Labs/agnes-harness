@@ -23,14 +23,21 @@ const HANDLE_KIND = 'agh.model/prepared-handle@1' as const
 const ZERO = '0'.repeat(64)
 const LIMITS = { maxBytes: MAX_AUTHOR_INLINE_BYTES, maxDepth: 128, maxMembers: 10000 }
 
-export function refusal(code: W.RuntimeError['code'], detailCode: string): Outcome<never> {
+/** An unresolved effect is reconciled by its owner; every other refusal is final. */
+export function refusal(
+  code: W.RuntimeError['code'],
+  detailCode: string,
+  owner?: W.OwnerRef,
+): Outcome<never> {
+  if (code === 'unknown_effect' && !owner) throw new TypeError('unknown_effect needs an owner')
   return {
     ok: false,
     error: {
       code,
       detailCode,
       message: 'Model request refused',
-      retryAdvice: { kind: 'never' },
+      retryAdvice:
+        owner && code === 'unknown_effect' ? { kind: 'reconcile', ownerRef: owner } : { kind: 'never' },
       diagnosticId: 'model-provider',
     },
   }

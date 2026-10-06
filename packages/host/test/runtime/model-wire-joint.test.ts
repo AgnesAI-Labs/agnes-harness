@@ -2,7 +2,12 @@ import { createHash } from 'node:crypto'
 import { createServer } from 'node:http'
 import { join } from 'node:path'
 import { createTestServiceContainer } from '@agnes/extension-api/testkit'
-import { canonicalJsonDigest, type EffectResult, type ReconcileResult } from '@agnes/protocol/runtime'
+import {
+  canonicalJsonDigest,
+  type EffectResult,
+  type ReconcileResult,
+  validateRuntimeErrorDetail,
+} from '@agnes/protocol/runtime'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   createReferenceModelAdapterFactory,
@@ -43,6 +48,14 @@ type Shape = {
   text: string | null
   finish: string | null
   tokens: string[]
+}
+/** An unknown effect is valid only when it points at the action whose outcome is unresolved. */
+function expectReconcileAdvice(effect: EffectResult, actionId?: string) {
+  expect(validateRuntimeErrorDetail(effect.error).ok).toBe(true)
+  expect(effect.error?.retryAdvice).toMatchObject({
+    kind: 'reconcile',
+    ownerRef: { kind: 'action', id: actionId ?? expect.any(String) },
+  })
 }
 function shape(effect: EffectResult): Shape {
   const output = effect.result?.kind === 'inline' ? (effect.result.value as Record<string, unknown>) : null
@@ -225,6 +238,7 @@ describe.each(APIS)('default adapter over the %s wire', (api) => {
     f.abort.abort()
     const effect = await job
     expect(effect.outcome).toBe('unknown_effect')
+    expectReconcileAdvice(effect, f.frame.actionId)
     expect(effect.externalRequests).toHaveLength(1)
     expect(f.observations).toHaveLength(1)
     expect((await reconcile(f)).kind).toBe('unknown')
@@ -323,6 +337,7 @@ describe.each(APIS)('transport failure before any byte over the %s wire', (api) 
       detail: 'model_stream_unknown',
       externals: 1,
     })
+    expectReconcileAdvice(effect, f.frame.actionId)
     expect(stored(f)?.state).toBe('saved')
     expect(f.hashes).toHaveLength(1)
     expect((await reconcile(f)).kind).toBe('unknown')
@@ -647,6 +662,7 @@ describe.each(APIS)('reference adapter over the %s wire', (api) => {
     expect(r.server.stats.bytes).toBe(0)
     expect(r.server.observed).toEqual([])
     expect(shape(effect)).toMatchObject({ outcome: 'unknown_effect', externals: 1 })
+    expectReconcileAdvice(effect)
     expect(r.read()?.state).toBe('saved')
     expect((await r.reconcile()).kind).toBe('unknown')
   })
