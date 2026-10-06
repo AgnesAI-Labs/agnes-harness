@@ -1327,7 +1327,7 @@ function invocationBaseRevision(
   if (targetActionId === null) return run.revision
   const action = ports.loadHead(actionRecordId(targetActionId))
   if (!action || storedValue<ActionValue>(action).runId !== run.runId)
-    refuse('invalid_input', 'invocation_target', 'invocation target is not an action of the run')
+    refuse('conflict', 'invocation_target', 'invocation target is not an action of the run')
   const provider = ports.loadHead(providerStateRecordId(targetActionId))
   return provider ? storedValue<ProviderStateValue>(provider).providerRevision : run.revision
 }
