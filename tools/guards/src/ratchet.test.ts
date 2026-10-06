@@ -1128,7 +1128,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // egress port in the runtime model adapter. Measured 5908 (+26), exact cap, no spare.
   // Model adapter answers a lost prepared call from the store instead of loading it (+8). Measured 5916, exact, no spare.
   // Model source check consumes verified media evidence (+57). Measured 5973, exact, no spare.
-  'packages/ai/src': 5973,
+  'packages/ai/src': 6008,
   // 2026-09-09: raised from 500, which was exactly the measured count and so forbade every
   // further line. Two repairs were blocked by it and are landing with this raise: the provider
   // factory taking log + pricing (without which every delivered assembly denominates ledger

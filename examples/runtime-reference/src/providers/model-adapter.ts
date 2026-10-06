@@ -28,8 +28,14 @@ import {
   validateRuntime,
 } from '@agnes/protocol/runtime'
 
+/** The two wire formats this adapter speaks. */
+export type ReferenceModelApi = 'openai-completions' | 'anthropic-messages'
+const apis: readonly ReferenceModelApi[] = ['openai-completions', 'anthropic-messages']
+
 export interface ReferenceModelSource {
   readonly prepared: PreparedModelRequest
+  /** The wire format of `body`; absent means `openai-completions`. */
+  readonly api?: ReferenceModelApi
   readonly endpoint: string
   readonly body: JsonValue
   /** Verified media evidence for the locked plans: counts and identities only, never bytes. */
@@ -50,6 +56,12 @@ export interface ReferenceModelDeployment {
   installed(call: CallContext): boolean
   load(ref: DataRef, frame: ActionFrame, call: ActionContext): Promise<Outcome<ReferenceModelSource>>
   current(source: ReferenceModelSource, frame: ActionFrame, call: CallContext): boolean
+  /**
+   * The host's restricted model egress for this call. Every request goes through the fetch it
+   * returns; without one the call is refused before the credential is used. The global fetch is
+   * never a fallback.
+   */
+  egress?(source: ReferenceModelSource, frame: ActionFrame, call: ActionContext): typeof fetch | undefined
   withCredential<T>(
     source: ReferenceModelSource,
     frame: ActionFrame,
@@ -74,11 +86,12 @@ function mediaCovered(source: ReferenceModelSource): boolean {
   const plans = source.prepared.mediaPlans
   const media = source.media ?? []
   const body = source.body as { messages?: { content?: unknown }[] } | null
+  const imageType = source.api === 'anthropic-messages' ? 'image' : 'image_url'
   let images = 0
   for (const message of body?.messages ?? [])
     if (Array.isArray(message.content))
       images += message.content.filter(
-        (part) => (part as { type?: unknown } | null)?.type === 'image_url',
+        (part) => (part as { type?: unknown } | null)?.type === imageType,
       ).length
   if (plans.length !== media.length) return false
   const usage = media.flatMap((entry) => entry.usageIds)
@@ -93,16 +106,16 @@ function mediaCovered(source: ReferenceModelSource): boolean {
     media.reduce((sum, entry) => sum + entry.imageCount, 0) === images
   )
 }
-const error = (code: RuntimeError['code']): RuntimeError => ({
+const error = (code: RuntimeError['code'], detailCode = 'reference_model'): RuntimeError => ({
   code,
-  detailCode: 'reference_model',
+  detailCode,
   message: 'Reference model operation refused',
   retryAdvice: { kind: 'never' },
   diagnosticId: 'reference-model',
 })
-const failure = (code: RuntimeError['code']): EffectResult => ({
+const failure = (code: RuntimeError['code'], detailCode?: string): EffectResult => ({
   outcome: code === 'unknown_effect' ? 'unknown_effect' : 'failed',
-  error: error(code),
+  error: error(code, detailCode),
   externalRequests: [],
   usage: [],
   references: [],
@@ -125,6 +138,73 @@ function encode(name: 'ModelOutput' | 'ReconcileResult', value: unknown): DataRe
 function checked<T>(value: Outcome<T>): T {
   if (!value.ok) throw new Error('Reference codec refused')
   return value.value
+}
+
+const anthropicVersion = '2023-06-01'
+/** Credential header and version header per wire; the credential is whatever the credential owner hands out. */
+function wireHeaders(api: ReferenceModelApi, credential: string): Record<string, string> {
+  return api === 'anthropic-messages'
+    ? { 'content-type': 'application/json', 'x-api-key': credential, 'anthropic-version': anthropicVersion }
+    : { 'content-type': 'application/json', authorization: `Bearer ${credential}` }
+}
+const count = (value: unknown): value is number => Number.isSafeInteger(value) && (value as number) >= 0
+type StreamResult = {
+  text: string
+  /** `null` until the stream names a clean end; a tool-call end is not one, as no tools are offered. */
+  finish: 'stop' | 'length' | null
+  tokens: { input: number; output: number } | null
+  model: string | null
+}
+/** Reads a complete SSE body of either wire; a malformed event throws and the effect stays unknown. */
+function parseStream(api: ReferenceModelApi, raw: string): StreamResult {
+  const result: StreamResult = { text: '', finish: null, tokens: null, model: null }
+  let input: number | undefined, output: number | undefined
+  const named = (value: unknown) => {
+    if (typeof value === 'string' && value.length > 0 && value.length <= 8192) result.model = value
+  }
+  for (const line of raw.split('\n')) {
+    if (!line.startsWith('data: ') || line === 'data: [DONE]') continue
+    if (api === 'anthropic-messages') {
+      const item = JSON.parse(line.slice(6)) as {
+        type?: string
+        message?: { model?: string; usage?: { input_tokens?: unknown; output_tokens?: unknown } }
+        delta?: { type?: string; text?: string; stop_reason?: string | null }
+        usage?: { input_tokens?: unknown; output_tokens?: unknown }
+      }
+      if (item.type === 'error') throw new Error('Reference stream error event')
+      if (item.type === 'message_start') {
+        named(item.message?.model)
+        if (count(item.message?.usage?.input_tokens)) input = item.message.usage.input_tokens
+        if (count(item.message?.usage?.output_tokens)) output = item.message.usage.output_tokens
+      }
+      if (item.type === 'content_block_delta' && item.delta?.type === 'text_delta')
+        result.text += item.delta.text ?? ''
+      if (item.type === 'message_delta') {
+        const reason = item.delta?.stop_reason
+        if (reason === 'end_turn' || reason === 'stop_sequence') result.finish = 'stop'
+        if (reason === 'max_tokens') result.finish = 'length'
+        if (count(item.usage?.input_tokens)) input = item.usage.input_tokens
+        if (count(item.usage?.output_tokens)) output = item.usage.output_tokens
+      }
+      continue
+    }
+    const item = JSON.parse(line.slice(6)) as {
+      model?: string
+      choices?: { delta?: { content?: string }; finish_reason?: string | null }[]
+      usage?: { prompt_tokens?: unknown; completion_tokens?: unknown }
+    }
+    named(item.model)
+    result.text += item.choices?.[0]?.delta?.content ?? ''
+    const reason = item.choices?.[0]?.finish_reason
+    if (reason === 'stop') result.finish = 'stop'
+    if (reason === 'length') result.finish = 'length'
+    if (count(item.usage?.prompt_tokens) && count(item.usage?.completion_tokens)) {
+      input = item.usage.prompt_tokens
+      output = item.usage.completion_tokens
+    }
+  }
+  if (input !== undefined && output !== undefined) result.tokens = { input, output }
+  return result
 }
 
 /** Independent HTTP/SSE implementation; it does not import the default adapter or its wire library. */
@@ -161,7 +241,7 @@ export function createReferenceModelAdapterFactory(
     logicalName: 'default',
     packageVersion: '1.0.0',
     packageDigest: deployment.packageDigest,
-    features: ['openai-completions'],
+    features: [...apis],
     scope: 'runtime' as const,
     configSchema: deployment.config.ref,
     requires: [],
@@ -421,6 +501,9 @@ export function createReferenceModelAdapterFactory(
                 maxDepth: 128,
                 maxMembers: 10000,
               })
+              const api = source.api ?? 'openai-completions'
+              if (!apis.includes(api)) return failure('invalid_input', 'reference_model_api')
+              const tokenLimit = api === 'anthropic-messages' ? 'max_tokens' : 'max_completion_tokens'
               if (
                 !body.ok ||
                 !validateRuntime('PreparedModelRequest', source.prepared).ok ||
@@ -435,7 +518,7 @@ export function createReferenceModelAdapterFactory(
                 source.body === null ||
                 Array.isArray(source.body) ||
                 source.body.model !== source.prepared.target.model ||
-                source.body.max_completion_tokens !== source.prepared.generation.maxOutputTokens ||
+                source.body[tokenLimit] !== source.prepared.generation.maxOutputTokens ||
                 !source.prepared.credentialRef ||
                 !source.prepared.target.credentialBinding
               )
@@ -462,7 +545,17 @@ export function createReferenceModelAdapterFactory(
                   return false
                 }
               }
-              if (!alive() || active.has(frame.attemptId)) return failure('denied')
+              if (!alive()) return failure('denied')
+              // The host's egress for this call, before the credential is touched. There is no
+              // fallback: without one, nothing is sent.
+              let seam: typeof fetch | undefined
+              try {
+                seam = original.egress?.(source, frame, call)
+              } catch {
+                seam = undefined
+              }
+              if (typeof seam !== 'function') return failure('denied', 'reference_model_egress_missing')
+              if (active.has(frame.attemptId)) return failure('denied')
               const controller = new AbortController(),
                 abort = () => controller.abort(),
                 timer = setTimeout(
@@ -528,10 +621,10 @@ export function createReferenceModelAdapterFactory(
                   )
                     throw new Error('Reference send refused')
                   sent = true
-                  const response = await fetch(source.endpoint, {
+                  const response = await seam(source.endpoint, {
                     method: 'POST',
                     redirect: 'error',
-                    headers: { 'content-type': 'application/json', authorization: `Bearer ${credential}` },
+                    headers: wireHeaders(api, credential),
                     body: body.value.canonical,
                     signal: controller.signal,
                   })
@@ -547,7 +640,7 @@ export function createReferenceModelAdapterFactory(
                   usage = [measurement('unknown', null, null)]
                   let raw = '',
                     text = '',
-                    finished = false,
+                    finish: 'stop' | 'length' | null = null,
                     tokens: { input: number; output: number } | null = null
                   if (!response.body) throw new Error('Reference stream missing')
                   const reader = response.body.getReader(),
@@ -565,26 +658,11 @@ export function createReferenceModelAdapterFactory(
                   } finally {
                     reader.releaseLock()
                   }
-                  for (const line of raw.split('\n')) {
-                    if (!line.startsWith('data: ') || line === 'data: [DONE]') continue
-                    const item = JSON.parse(line.slice(6)) as {
-                      model?: string
-                      choices?: { delta?: { content?: string }; finish_reason?: string | null }[]
-                      usage?: { prompt_tokens: number; completion_tokens: number }
-                    }
-                    if (typeof item.model === 'string' && item.model.length > 0 && item.model.length <= 8192)
-                      actualModel = item.model
-                    text += item.choices?.[0]?.delta?.content ?? ''
-                    if (item.choices?.[0]?.finish_reason === 'stop') finished = true
-                    if (
-                      item.usage &&
-                      Number.isSafeInteger(item.usage.prompt_tokens) &&
-                      item.usage.prompt_tokens >= 0 &&
-                      Number.isSafeInteger(item.usage.completion_tokens) &&
-                      item.usage.completion_tokens >= 0
-                    )
-                      tokens = { input: item.usage.prompt_tokens, output: item.usage.completion_tokens }
-                  }
+                  const parsed = parseStream(api, raw)
+                  text = parsed.text
+                  finish = parsed.finish
+                  tokens = parsed.tokens
+                  if (parsed.model) actualModel = parsed.model
                   if (receipt?.kind === 'inline')
                     receipt = checked(
                       runtimeAuthorSchemas.ProviderResponseEvidence.encode({
@@ -601,7 +679,7 @@ export function createReferenceModelAdapterFactory(
                   )
                   const output: ModelOutput = {
                     outputRef,
-                    finishReason: response.ok && finished ? 'stop' : 'error',
+                    finishReason: response.ok && finish ? finish : 'error',
                     usageFactRefs: [
                       {
                         authorityId: original.usageAuthorityId,
@@ -612,7 +690,7 @@ export function createReferenceModelAdapterFactory(
                     providerReceipt: receipt,
                     actualModel,
                   }
-                  return response.ok && !finished
+                  return response.ok && !finish
                     ? {
                         ...failure('unknown_effect'),
                         externalRequests: [identity],

@@ -4,7 +4,11 @@ import { join } from 'node:path'
 import { createTestServiceContainer } from '@agnes/extension-api/testkit'
 import { canonicalJsonDigest, type EffectResult, type ReconcileResult } from '@agnes/protocol/runtime'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { createReferenceModelAdapterFactory } from '../../../../examples/runtime-reference/src/providers/model-adapter.js'
+import {
+  createReferenceModelAdapterFactory,
+  type ReferenceModelDeployment,
+  type ReferenceModelSource,
+} from '../../../../examples/runtime-reference/src/providers/model-adapter.js'
 import { referenceModelFixture } from '../../../../examples/runtime-reference/test/runtime/reference-model-fixture.js'
 import type { ModelEgressOptions } from '../../src/runtime/model/model-egress.js'
 import { openModelSourceStore } from '../../src/runtime/model/model-source-store.js'
@@ -338,11 +342,12 @@ describe.each(APIS)('transport failure before any byte over the %s wire', (api) 
   )
 })
 
-/** Reference adapter: independent implementation, OpenAI-style chat completions, its own stand-in owner. */
-describe('reference adapter over the openai-completions wire', () => {
+/** Reference adapter: independent implementation of both wires, its own stand-in owner and stand-in egress. */
+describe.each(APIS)('reference adapter over the %s wire', (api) => {
   type RefMode = 'normal' | 'cut-mid' | 'cut-silent' | 'close-first' | 'reset-first' | 'hang'
   async function peer(mode: RefMode) {
     const observed: string[] = []
+    const headers: Record<string, string | string[] | undefined>[] = []
     const stats = { bytes: 0, connections: 0 }
     let arrived!: () => void
     const arrival = new Promise<void>((resolve) => {
@@ -352,11 +357,34 @@ describe('reference adapter over the openai-completions wire', () => {
       let body = ''
       for await (const chunk of request) body += chunk
       observed.push(body)
+      headers.push(request.headers)
       arrived()
       if (mode === 'hang') return
       if (mode === 'cut-silent') return void request.socket.destroy()
       response.writeHead(200, { 'content-type': 'text/event-stream', 'x-request-id': 'joint-response' })
-      const send = (value: unknown) => response.write(`data: ${JSON.stringify(value)}\n\n`)
+      const send = (value: unknown, event?: string) =>
+        response.write(`${event ? `event: ${event}\n` : ''}data: ${JSON.stringify(value)}\n\n`)
+      if (api === 'anthropic-messages') {
+        const model = JSON.parse(body).model
+        send(
+          {
+            type: 'message_start',
+            message: { id: 'joint-response', model, usage: { input_tokens: 7, output_tokens: 0 } },
+          },
+          'message_start',
+        )
+        send(
+          { type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: 'joint answer' } },
+          'content_block_delta',
+        )
+        if (mode === 'cut-mid') return void setTimeout(() => request.socket.destroy(), 20)
+        send(
+          { type: 'message_delta', delta: { stop_reason: 'end_turn' }, usage: { output_tokens: 3 } },
+          'message_delta',
+        )
+        send({ type: 'message_stop' }, 'message_stop')
+        return void response.end()
+      }
       const base = {
         id: 'joint-response',
         object: 'chat.completion.chunk',
@@ -390,6 +418,7 @@ describe('reference adapter over the openai-completions wire', () => {
     return {
       port: address.port,
       observed,
+      headers,
       stats,
       arrival,
       async close() {
@@ -413,7 +442,11 @@ describe('reference adapter over the openai-completions wire', () => {
     if (mode === 'closed') await server.close()
     const root = scratch()
     roots.push(root)
-    const base = await referenceModelFixture(`http://127.0.0.1:${server.port}/v1`, join(root, 'journal.json'))
+    const base = await referenceModelFixture(
+      `http://127.0.0.1:${server.port}${api === 'anthropic-messages' ? '' : '/v1'}`,
+      join(root, 'journal.json'),
+      { api },
+    )
     await base.action.close('shutdown')
     await base.provider.close('shutdown')
     const frame = base.frame
@@ -527,6 +560,10 @@ describe('reference adapter over the openai-completions wire', () => {
     expect(JSON.parse(required(r.server.observed[0])).model).toBe(r.base.source.prepared.target.model)
     expect(r.hashes).toHaveLength(1)
     expect(r.read()).toMatchObject({ state: 'saved' })
+    const headers = required(r.server.headers[0])
+    expect(api === 'anthropic-messages' ? headers['x-api-key'] : headers.authorization).toBe(
+      api === 'anthropic-messages' ? 'fixture-wire' : 'Bearer fixture-wire',
+    )
     expect(effect.externalRequests[0]?.requestId).toBe(r.frame.requestIdentity?.aghRequestId)
     expect(effect.usage[0]?.externalRequest).toEqual(effect.externalRequests[0])
     const again = await r.reconcile()
@@ -565,7 +602,8 @@ describe('reference adapter over the openai-completions wire', () => {
       expect((await r.reconcile()).kind).toBe('unknown')
       expect((await r.execute()).outcome).not.toBe('succeeded')
       expect([r.server.observed.length, r.server.stats.connections]).toEqual([1, 1])
-      // The reference enters its credential callback before the fence refuses; no byte follows.
+      // The stand-in credential owner holds no secret and is entered before the fence refuses; no byte
+      // follows. The real secret use is counted behind the Host egress in the rows further below.
       expect(r.credentials()).toBe(2)
     },
   )
@@ -624,7 +662,7 @@ describe('reference adapter over the openai-completions wire', () => {
   it.each(['normal', 'cut-mid', 'cut-silent'] as const)(
     'switching from the default to the reference gives equal observable results: %s',
     async (mode) => {
-      const f = await joint('openai-completions', mode)
+      const f = await joint(api, mode)
       const mine = shape(await f.execute())
       const r = await reference(mode)
       const theirs = shape(await r.execute())
@@ -634,6 +672,225 @@ describe('reference adapter over the openai-completions wire', () => {
       expect((await r.reconcile()).kind).toBe((await reconcile(f)).kind)
       expect([r.server.observed.length, r.hashes.length]).toEqual([f.observations.length, f.hashes.length])
       expect(r.read()?.state).toBe(stored(f)?.state)
+    },
+  )
+})
+
+/**
+ * The reference adapter behind the real Host restricted egress. The Host deployment, the network
+ * and secret services, the source store and the loopback peer are the ones the default adapter runs
+ * on; only the source owner is a thin shim that hands the reference its own source shape.
+ */
+describe.each(APIS)('reference adapter behind the Host egress over the %s wire', (api) => {
+  const closers: (() => Promise<void>)[] = []
+  afterEach(async () => {
+    while (closers.length) await closers.pop()?.()
+  })
+  async function behindHost(
+    mode: Mode = 'normal',
+    patch: Parameters<typeof modelJointFixture>[2] = {},
+    injected = true,
+    extra: Parameters<typeof modelJointFixture>[4] = {},
+  ) {
+    const f = await joint(api, mode, patch, injected, extra)
+    const target = required(f.options.endpoints?.[0]).target
+    const { prepared } = f.source
+    const model = prepared.target.model,
+      limit = prepared.generation.maxOutputTokens
+    const source: ReferenceModelSource = {
+      api,
+      prepared: {
+        ...prepared,
+        target: {
+          ...prepared.target,
+          adapter: { ...prepared.target.adapter, providerId: 'agh.reference/model-adapter' },
+        },
+      },
+      endpoint: `http://${target.host}:${target.port}${target.path}`,
+      body:
+        api === 'anthropic-messages'
+          ? {
+              model,
+              max_tokens: limit,
+              messages: [{ role: 'user', content: [{ type: 'text', text: 'hello' }] }],
+              stream: true,
+            }
+          : {
+              model,
+              max_completion_tokens: limit,
+              messages: [{ role: 'user', content: 'hello' }],
+              stream: true,
+              stream_options: { include_usage: true },
+            },
+    }
+    const host = f.deployment
+    const deployment: ReferenceModelDeployment = {
+      packageDigest: host.packageDigest,
+      config: host.config,
+      usage: host.usage,
+      usageAuthorityId: host.usageAuthorityId,
+      units: { input: host.units.input, output: host.units.output },
+      installed: (call) => host.installed(call),
+      async load(ref, frame, call) {
+        const loaded = await host.load(ref, frame, call)
+        return loaded.ok ? { ok: true, value: source } : loaded
+      },
+      current: (_source, frame, call) => host.current(f.source, frame, call),
+      ...(host.egress ? { egress: (_source, frame, call) => host.egress?.(f.source, frame, call) } : {}),
+      withCredential: (_source, frame, call, consume) =>
+        host.withCredential(f.source, frame, call, (credential) => consume(credential as string)),
+      beforeSend: (_source, frame, call, digest) => host.beforeSend(f.source, frame, call, digest),
+      save: (frame, result, digest) => host.save(frame, result, digest),
+      lookup: (frame, refs, call, target) => host.lookup(frame, refs, call, target),
+    }
+    const provider = await createReferenceModelAdapterFactory(deployment).create(
+      must(deployment.config.encode({})),
+      createTestServiceContainer().dependencies,
+      {
+        instanceId: 'ref-host',
+        bindingId: f.call.bindingId,
+        scope: f.call.scope,
+        signal: new AbortController().signal,
+      },
+    )
+    must(await provider.ready(f.call))
+    const action = await required(provider.actions?.invoke).create({
+      instanceId: 'ref-host-leaf',
+      actionId: f.frame.actionId,
+      runId: f.frame.runId,
+      bindingId: f.call.bindingId,
+      scope: {
+        kind: 'action',
+        installationId: 'fixture-installation',
+        runtimeId: 'fixture-runtime',
+        workspaceId: 'workspace',
+        sessionId: 'session',
+        runId: f.frame.runId,
+        actionId: f.frame.actionId,
+      },
+      signal: new AbortController().signal,
+    })
+    if (action.kind !== 'leaf') throw new Error('Unexpected reference action')
+    must(await action.ready(f.call))
+    closers.push(async () => {
+      await action.close('shutdown')
+      await provider.close('shutdown')
+    })
+    return {
+      f,
+      action,
+      provider,
+      execute: () => action.execute(f.frame, f.context),
+      reconcile: () => action.reconcile(f.frame, [], f.context),
+    }
+  }
+
+  it('sends once through the Host egress; the adapter never holds the secret and the digest traces to the peer', async () => {
+    const ambient = vi.spyOn(globalThis, 'fetch')
+    const r = await behindHost()
+    const effect = await r.execute()
+    expect(effect.outcome, JSON.stringify(r.f.diagnostics)).toBe('succeeded')
+    expect(shape(effect)).toMatchObject({
+      text: 'joint answer',
+      finish: 'stop',
+      usage: ['measured'],
+      tokens: expect.arrayContaining(['7', '3']),
+      externals: 1,
+    })
+    const peer = required(r.f.observations[0])
+    expect(r.f.observations).toHaveLength(1)
+    expect(peer.correctKey).toBe(true)
+    expect(JSON.parse(peer.body).model).toBe(r.f.source.prepared.target.model)
+    expect(r.f.wire.map((entry) => [entry.hash, entry.redirect, entry.markerOnly])).toEqual([
+      [sha(peer.body), 'error', true],
+    ])
+    expect(r.f.hashes).toEqual([sha(peer.body)])
+    expect(stored(r.f)).toMatchObject({ state: 'saved', bodyDigest: sha(peer.body) })
+    expect(r.f.uses()).toBe(1)
+    expect(ambient).not.toHaveBeenCalled()
+    expect((await r.reconcile()).kind).toBe('resolved')
+    expect([r.f.observations.length, r.f.uses()]).toEqual([1, 1])
+  })
+
+  it('has no ambient fallback when the host hands out no egress', async () => {
+    const ambient = vi.spyOn(globalThis, 'fetch')
+    const r = await behindHost('normal', {}, false)
+    const effect = await r.execute()
+    expect(effect).toMatchObject({ outcome: 'failed', error: { code: 'denied' }, externalRequests: [] })
+    expect([r.f.peerStats.connections, r.f.uses(), r.f.hashes.length]).toEqual([0, 0, 0])
+    expect(stored(r.f)).toBeUndefined()
+    expect(ambient).not.toHaveBeenCalled()
+    expect((await r.reconcile()).kind).toBe('not_found')
+  })
+
+  it('refuses a missing network service at Host assembly before any byte, fence or secret use', async () => {
+    const r = await behindHost('normal', { network: undefined })
+    const effect = await r.execute()
+    expect(effect.outcome).toBe('failed')
+    expect([r.f.peerStats.connections, r.f.uses(), r.f.hashes.length]).toEqual([0, 0, 0])
+    expect(stored(r.f)).toBeUndefined()
+  })
+
+  it.each(['cut-mid', 'cut-silent'] as const)(
+    'peer %s: unknown effect, and the second send is stopped by the fence before any secret use or byte',
+    async (mode) => {
+      const r = await behindHost(mode)
+      const effect = await r.execute()
+      expect(shape(effect)).toMatchObject({ outcome: 'unknown_effect', externals: 1, text: null })
+      expect((await r.reconcile()).kind).toBe('unknown')
+      const second = await r.execute()
+      expect(second.outcome).not.toBe('succeeded')
+      expect(r.f.observations).toHaveLength(1)
+      expect(r.f.peerStats.connections).toBe(1)
+      // The real secret is used once, at the final send of the first attempt only.
+      expect(r.f.uses()).toBe(1)
+      expect(r.f.hashes).toHaveLength(2)
+      expect(stored(r.f)?.state).toBe('saved')
+    },
+  )
+
+  it('cancel after the request left: unknown effect, reconcile unknown, no resend, one secret use', async () => {
+    const r = await behindHost('hang')
+    const job = r.execute()
+    await r.f.arrival
+    r.f.abort.abort()
+    expect((await job).outcome).toBe('unknown_effect')
+    expect((await r.reconcile()).kind).toBe('unknown')
+    expect((await r.execute()).outcome).not.toBe('succeeded')
+    expect([r.f.observations.length, r.f.uses()]).toEqual([1, 1])
+  })
+
+  it('a finished call leaves no usable egress behind and its credential scope is spent', async () => {
+    const r = await behindHost()
+    expect((await r.execute()).outcome).toBe('succeeded')
+    expect(await refusedBy(required(r.f.fetches[0]), r.f)).toBe('model_egress_binding')
+    const consume = vi.fn(async () => 'never')
+    expect(await r.f.deployment.withCredential(r.f.source, r.f.frame, r.f.context, consume)).toMatchObject({
+      ok: false,
+      error: { detailCode: 'model_egress_binding' },
+    })
+    expect(consume).not.toHaveBeenCalled()
+    await r.action.close('shutdown')
+    expect((await r.execute()).outcome).toBe('failed')
+    expect([r.f.observations.length, r.f.uses()]).toEqual([1, 1])
+  })
+
+  it.each(['normal', 'cut-mid', 'cut-silent'] as const)(
+    'gives the same observable results as the default adapter on the same wire: %s',
+    async (mode) => {
+      const mine = await joint(api, mode)
+      const mineShape = shape(await mine.execute())
+      const r = await behindHost(mode)
+      const theirs = shape(await r.execute())
+      expect({ ...theirs, detail: undefined }).toEqual({ ...mineShape, detail: undefined })
+      expect(theirs.detail === undefined).toBe(mineShape.detail === undefined)
+      expect((await r.reconcile()).kind).toBe((await reconcile(mine)).kind)
+      expect([r.f.observations.length, r.f.hashes.length, r.f.uses()]).toEqual([
+        mine.observations.length,
+        mine.hashes.length,
+        mine.uses(),
+      ])
+      expect(stored(r.f)?.state).toBe(stored(mine)?.state)
     },
   )
 })
