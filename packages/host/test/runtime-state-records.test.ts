@@ -98,6 +98,22 @@ describe('what the control scan does with the new records', () => {
     expect(
       scanned(note('provider:action-1', provider({ state: 'waiting', waitId: 'wait-1' }), 2)),
     ).not.toThrow()
+    const error = {
+      code: 'internal',
+      detailCode: 'x',
+      message: 'x',
+      retryAdvice: { kind: 'never' },
+      diagnosticId: 'd',
+    }
+    const ended = { outcome: 'failed', error }
+    expect(scanned(note('provider:action-1', provider({ state: 'draining' }), 2))).not.toThrow()
+    expect(
+      scanned(note('provider:action-1', provider({ state: 'draining', termination: ended }), 3)),
+    ).not.toThrow()
+    expect(
+      scanned(note('provider:action-1', provider({ state: 'failed', termination: ended }), 4)),
+    ).not.toThrow()
+    expect(scanned(note('provider:action-1', provider({ state: 'completed' }), 4))).not.toThrow()
     expect(scanned(note('wait:wait-1', wait()))).not.toThrow()
     expect(scanned(note('wait:wait-1', wait({ state: 'ready' }), 2))).not.toThrow()
     expect(scanned(note('wait:wait-1', wait({ state: 'cancelled' }), 2))).not.toThrow()
@@ -113,6 +129,20 @@ describe('what the control scan does with the new records', () => {
     ['waiting provider without a wait', 'provider:action-1', provider({ state: 'waiting' })],
     ['runnable provider that still names a wait', 'provider:action-1', provider({ waitId: 'wait-1' })],
     ['provider with an empty action id', 'provider:', provider({ actionId: '' })],
+    ['failed provider without a termination', 'provider:action-1', provider({ state: 'failed' })],
+    [
+      'completed provider with a termination',
+      'provider:action-1',
+      provider({
+        state: 'completed',
+        termination: { outcome: 'failed', error: { code: 'internal', detailCode: 'x' } },
+      }),
+    ],
+    [
+      'runnable provider with a termination',
+      'provider:action-1',
+      provider({ termination: { outcome: 'cancelled', error: { code: 'cancelled', detailCode: 'x' } } }),
+    ],
     ['wait with an empty id', 'wait:', wait({ waitId: '' })],
     ['timer with an empty id', 'timer:', timer({ timerId: '' })],
     ['wait id that names another wait', 'wait:other', wait()],
