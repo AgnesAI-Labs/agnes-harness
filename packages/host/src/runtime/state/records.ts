@@ -220,6 +220,7 @@ export const REFERENCE_SCHEMA = RuntimeSchemaRefs.ReferenceRecordValue
 export const PROVIDER_STATE_SCHEMA = RuntimeSchemaRefs.ProviderStateValue
 export const WAIT_SCHEMA = RuntimeSchemaRefs.WaitRecordValue
 export const TIMER_SCHEMA = RuntimeSchemaRefs.TimerRecordValue
+export const RESOLUTION_SCHEMA = RuntimeSchemaRefs.ResolutionRecordValue
 export const STATE_LEASE_SCHEMA = RuntimeSchemaRefs.StateLeaseRecordValue
 export const STATE_OPEN_PROOF_SCHEMA = RuntimeSchemaRefs.StateWriteOpenProofValue
 export const STATE_LEASE_PROOF_SCHEMA = RuntimeSchemaRefs.StateLeaseProofValue
@@ -259,6 +260,7 @@ const SCHEMAS: Readonly<Record<string, SchemaRef>> = {
   [PROVIDER_STATE_SCHEMA.typeId]: PROVIDER_STATE_SCHEMA,
   [WAIT_SCHEMA.typeId]: WAIT_SCHEMA,
   [TIMER_SCHEMA.typeId]: TIMER_SCHEMA,
+  [RESOLUTION_SCHEMA.typeId]: RESOLUTION_SCHEMA,
   [STATE_LEASE_SCHEMA.typeId]: STATE_LEASE_SCHEMA,
   [STATE_OPEN_PROOF_SCHEMA.typeId]: STATE_OPEN_PROOF_SCHEMA,
   [STATE_LEASE_PROOF_SCHEMA.typeId]: STATE_LEASE_PROOF_SCHEMA,
@@ -355,6 +357,10 @@ export function waitRecordId(waitId: string): string {
 
 export function timerRecordId(timerId: string): string {
   return `timer:${timerId}`
+}
+
+export function resolutionRecordId(resolutionId: string): string {
+  return `resolution:${resolutionId}`
 }
 
 export function stableId(prefix: string, material: string): string {

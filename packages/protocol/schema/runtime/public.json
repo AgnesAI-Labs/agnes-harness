@@ -40005,6 +40005,7 @@
     "StoredRecord": "agh.state/stored-record@1",
     "WaitRecordValue": "agh.runtime/wait-record@1",
     "TimerRecordValue": "agh.runtime/timer-record@1",
+    "ResolutionRecordValue": "agh.runtime/resolution-record@1",
     "InteractionRecord": "agh.interaction/interaction-record@1",
     "InboxRecord": "agh.runtime/inbox-record@1",
     "ApprovalTaintAckRecordValue": "agh.runtime/approval-taint-ack-record@1",
