@@ -2,6 +2,7 @@ import type { RequestBody } from '@agnes/protocol'
 import type * as W from '@agnes/protocol/runtime'
 import { canonicalJsonDigest } from '@agnes/protocol/runtime'
 import type { ModelCapture, WireIdentity } from './wire-request.js'
+import type { ResolvedTools } from './wire-tools.js'
 
 /** What stays in this process for one prepared call: never serialised, never written to a ledger. */
 export type PreparedEntry = Readonly<{
@@ -14,6 +15,8 @@ export type PreparedEntry = Readonly<{
   capture: ModelCapture
   wire: WireIdentity
   request: RequestBody
+  /** The tools the request was built from; kept so a later rebuild of the wire and the digest check reuse them. */
+  resolvedTools: ResolvedTools | null
 }>
 
 /**

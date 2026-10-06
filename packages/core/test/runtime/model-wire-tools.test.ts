@@ -8,6 +8,8 @@ import type { ResolvedMedia } from '../../src/runtime/media/resolve.js'
 import {
   buildWireRequest,
   type ModelCapture,
+  modelInputDigest,
+  modelInputPreimage,
   type WireIdentity,
 } from '../../src/runtime/model/wire-request.js'
 import {
@@ -658,6 +660,27 @@ describe('compatibility with the tool-less builder', () => {
     const other = pairOf('read', 'Read a file', { type: 'object' })
     const a = must(build(items, [read])).derivedHash
     expect(must(build(items, [other])).derivedHash).not.toBe(a)
+  })
+
+  it('changes the input digest when only a description changes, with the schema untouched', () => {
+    const schema: Wire.JsonValue = { type: 'object', properties: { path: { type: 'string' } } }
+    const a = pairOf('read', 'Read a file', schema)
+    const b = pairOf('read', 'Read a file from disk', schema)
+    expect(a.definition).toEqual(b.definition)
+    expect(must(build(items, [b])).derivedHash).not.toBe(must(build(items, [a])).derivedHash)
+  })
+
+  it('binds the descriptions without adding a preimage field, and the digest equals the builder hash', () => {
+    const prepared = preparedWith(items, catalogOf([read]))
+    const bare = Object.keys(modelInputPreimage(prepared, capture, wire) as object).sort()
+    const tooled = modelInputPreimage(prepared, capture, wire, resolvedOf([read])) as Record<string, unknown>
+    expect(Object.keys(tooled).sort()).toEqual(bare)
+    expect(must(build(items, [read])).derivedHash).toBe(
+      modelInputDigest(prepared, capture, wire, resolvedOf([read])),
+    )
+    expect(modelInputDigest(prepared, capture, wire, resolvedOf([read]))).not.toBe(
+      modelInputDigest(prepared, capture, wire),
+    )
   })
 })
 

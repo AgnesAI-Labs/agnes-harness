@@ -38,16 +38,19 @@ const specifiers = (source: string) =>
 describe('the reference model service stays independent of the default', () => {
   const reference = read('./model.ts')
   const fixture = read('./model-contract.ts')
+  const tools = read('./model-tools.ts')
   const production = read('../../../../packages/core/src/runtime/providers/model.ts')
 
   it('imports only the public packages and no core, host or default provider file', () => {
     expect([...new Set(specifiers(reference))].sort()).toEqual([
+      './model-tools.js',
       '@agnes/extension-api/runtime',
       '@agnes/protocol',
       '@agnes/protocol/gen/model',
       '@agnes/protocol/runtime',
     ])
-    for (const source of [reference, fixture])
+    expect([...new Set(specifiers(tools))].sort()).toEqual(['@agnes/protocol', '@agnes/protocol/runtime'])
+    for (const source of [reference, fixture, tools])
       expect(source).not.toMatch(
         /(?:from|import\s*\()[^\n]*(?:@agnes\/core|@agnes\/host|packages\/(?:core|host)|runtime\/providers)/u,
       )
@@ -57,6 +60,9 @@ describe('the reference model service stays independent of the default', () => {
     expect(reference).not.toContain('createDefaultModelFactory')
     expect(overlap(reference, production)).toBeLessThanOrEqual(0.5)
     expect(overlap(production, production)).toBeGreaterThan(0.5)
+    expect(
+      overlap(tools, read('../../../../packages/core/src/runtime/model/wire-tools.ts')),
+    ).toBeLessThanOrEqual(0.5)
   })
 })
 

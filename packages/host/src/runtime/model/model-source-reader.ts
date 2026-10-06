@@ -110,7 +110,7 @@ export function createModelSourceReader(ports: ModelSourcePorts): ModelSourceRea
       if (price === null) return refusal('model_source_not_ready', 'internal')
       if (price !== prepared.target.priceVersion) return refusal('model_source_price')
       if (
-        modelInputDigest(prepared, capture, wire) !== prepared.inputDigest ||
+        modelInputDigest(prepared, capture, wire, entry.resolvedTools) !== prepared.inputDigest ||
         entry.inputDigest !== prepared.inputDigest
       )
         return refusal('model_source_drift')
@@ -131,7 +131,7 @@ export function createModelSourceReader(ports: ModelSourcePorts): ModelSourceRea
         const media = await ports.media.read(entry, frame, call)
         if (stale()) return refusal('model_source_stale')
         if (!media.ok) return media
-        const request = buildWireRequest(prepared, capture, wire, media.value)
+        const request = buildWireRequest(prepared, capture, wire, media.value, entry.resolvedTools)
         if (!request.ok) return request
         source = { ...source, request: request.value, media: media.value.map(toModelWireMedia) }
       }
