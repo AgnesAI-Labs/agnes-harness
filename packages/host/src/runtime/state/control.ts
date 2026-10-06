@@ -4324,7 +4324,8 @@ async function beginDrainTx(
   const updates: RecordUpdate[] = []
   if (command.target.actionId === null) {
     const run = guarded.value
-    if (!DRAINABLE_RUN_STATES.includes(run.state)) refuse('conflict', 'run_state', 'run does not take a drain')
+    if (!DRAINABLE_RUN_STATES.includes(run.state))
+      refuse('conflict', 'run_state', 'run does not take a drain')
     if (run.state === 'waiting') updates.push(...closeRunWait(ports, run, [], 'cancelled'))
     updates.push(
       updated(guarded.head, RUN_RECORD_SCHEMA, guarded.owner, {
@@ -4412,7 +4413,8 @@ async function cancelRunTx(
   const updates: RecordUpdate[] = []
   let next: RunRecordValue = run
   if (run.state !== 'cancelling') {
-    if (!NEW_WORK_RUN_STATES.includes(run.state)) refuse('conflict', 'run_state', 'run does not take a cancel')
+    if (!NEW_WORK_RUN_STATES.includes(run.state))
+      refuse('conflict', 'run_state', 'run does not take a cancel')
     if (run.state === 'waiting') updates.push(...closeRunWait(ports, run, [], 'cancelled'))
     next = {
       ...run,

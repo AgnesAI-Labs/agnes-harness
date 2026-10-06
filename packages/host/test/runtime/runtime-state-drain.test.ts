@@ -91,6 +91,7 @@ describe('begin_drain on a run', () => {
     expect(f.head(`run:${runId(f)}`)).toMatchObject({
       value: { state: 'draining', waitId: null, revision: 1 },
     })
+    expect(f.head(`run:${runId(f)}`)?.value.writerEpoch).toBe(f.guardFor(invocation, 1).writerEpoch)
     const writes = f.writes()
     expect(await drainRun(f, invocation, 'drain-1')).toEqual(receipt)
     expect(f.writes()).toBe(writes)
@@ -227,7 +228,7 @@ describe('the drain gate on the paths that create work', () => {
     const decided = await f.dispatch(f.leafParentId, f.leafParentIntent, invocation, 'late')
     expect(decided).toMatchObject({ state: 'rejected', reason: 'cancelled' })
     expect(f.head(actionRecordId(f.leafParentId))?.value).toMatchObject({ state: 'settled' })
-    expect(f.head('attempt:' + stableId('ctl', 'admit-late'))?.value).toMatchObject({
+    expect(f.head(`attempt:${stableId('ctl', 'admit-late')}`)?.value).toMatchObject({
       kind: 'control',
       number: 0,
       state: 'settled',
