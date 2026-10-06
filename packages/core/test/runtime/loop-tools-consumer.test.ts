@@ -134,7 +134,7 @@ describe.each(['default', 'reference'] as const)('Loop to C10 %s consumer', (kin
         const { signal: _signal, ...wire } = call
         const toolCall = structuredClone(invocation)
         if (mode === 'wrong-model-ref')
-          toolCall.modelContextRef = toolsRef(RuntimeSchemaRefs.PreparedModelRequest, {})
+          toolCall.modelContextRef = toolsRef(RuntimeSchemaRefs.PreparedModelHandle, {})
         const input = toolsRef(RuntimeMethodSchemaRefs['agh.tools'].invoke.input, toolCall)
         if (input.kind !== 'inline') throw new Error('Inline input required')
         const frame: W.ActionFrame = {

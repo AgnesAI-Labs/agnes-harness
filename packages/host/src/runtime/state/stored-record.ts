@@ -5,6 +5,7 @@ import {
   type JsonValue,
   type RecordMeta,
   type RecordOwner,
+  RuntimeSchemaRefs,
   type SchemaRef,
   validateRuntime,
 } from '@agnes/protocol/runtime'
@@ -15,17 +16,6 @@ export const ITEM_MAX_BYTES = 196_608
 export const PAGE_MAX_BYTES = 262_144
 const LIMITS = { maxBytes: 1_048_576, maxDepth: 64, maxMembers: 10_000 }
 const TIMESTAMP = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z$/
-
-/**
- * Placeholder for the envelope schema reference. The envelope schema is not registered in the
- * public protocol yet, so this digest is not a real schema digest and an item built with it must
- * not be published. Replace it with the registered reference once the schema exists.
- */
-export const STORED_SCHEMA_PENDING: SchemaRef = Object.freeze({
-  typeId: 'agh.state/stored-record@1',
-  revision: 1,
-  digest: '0'.repeat(64),
-})
 
 export type Stored = Readonly<{ meta: RecordMeta; owner: RecordOwner; value: JsonValue }>
 type Inline = Extract<DataRef, { kind: 'inline' }>
@@ -76,7 +66,7 @@ function inline(schema: SchemaRef, value: unknown): Inline {
 }
 
 export function storedItem(fact: NativeStateRecordFact): Inline {
-  return inline(STORED_SCHEMA_PENDING, storedOf(fact))
+  return inline(RuntimeSchemaRefs.StoredRecord, storedOf(fact))
 }
 
 /** Actions and signals travel as their own body schema, without an envelope. */

@@ -18,6 +18,7 @@ import {
 } from '@agnes/protocol/runtime'
 import { describe, expect, it } from 'vitest'
 import * as Core from '../../src/index.js'
+import { createInstalledHookActions } from '../../src/runtime/effects/hook-actions.js'
 import {
   type PureHookRegistration,
   type PureHookStage,
@@ -1072,5 +1073,105 @@ describe('reference Effects value runner', () => {
     expect((await f.provider.ready(f.context.call)).ok).toBe(false)
     expect((await f.action.execute(f.frame, f.context)).outcome).toBe('cancelled')
     expect(calls).toBe(0)
+  })
+})
+
+describe('installed Hook action owner consumption', () => {
+  async function installed(pure: PureHookStage, check: () => Promise<void>) {
+    const h = await referenceHarness(pure)
+    const action = await createInstalledHookActions({ capture: async () => pure, check }).create({
+      instanceId: 'installed-hook',
+      actionId: h.frame.actionId,
+      runId: h.frame.runId,
+      bindingId: h.frame.bindingId,
+      scope: h.context.call.scope,
+      signal: h.signal.signal,
+    })
+    if (action.kind !== 'leaf') throw new Error('Expected leaf')
+    return { ...h, action }
+  }
+  it('calls the selected pure handler once and rechecks current authority on replay', async () => {
+    let calls = 0,
+      allowed = true
+    const pure = stage([
+      registration(
+        contextDefinition('installed', () => {
+          calls++
+          return {}
+        }),
+        0,
+      ),
+    ])
+    const h = await installed(pure, async () => {
+      if (!allowed) throw new Error('revoked')
+    })
+    const [a, b] = await Promise.all([
+      h.action.execute(h.frame, h.context),
+      h.action.execute(h.frame, h.context),
+    ])
+    expect(a.outcome).toBe('succeeded')
+    expect(b).toEqual(a)
+    expect(calls).toBe(1)
+    allowed = false
+    expect((await h.action.execute(h.frame, h.context)).outcome).toBe('failed')
+    expect(calls).toBe(1)
+  })
+  it('does not let fail-open hide authority loss after an awaited handler', async () => {
+    let allowed = true,
+      later = 0
+    const pure = stage([
+      registration(
+        contextDefinition('first', async () => {
+          await Promise.resolve()
+          allowed = false
+          return {}
+        }),
+        0,
+      ),
+      registration(
+        contextDefinition(
+          'second',
+          () => {
+            later++
+            return {}
+          },
+          { after: ['first'] },
+        ),
+        1,
+      ),
+    ])
+    const h = await installed(pure, async () => {
+      if (!allowed) throw new Error('revoked')
+    })
+    expect((await h.action.execute(h.frame, h.context)).outcome).toBe('failed')
+    expect(later).toBe(0)
+  })
+  it('rejects mismatched call identity and discards a result after close during execution', async () => {
+    let release: (() => void) | undefined
+    let entered: (() => void) | undefined
+    const started = new Promise<void>((resolve) => {
+      entered = resolve
+    })
+    const wait = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    const pure = stage([
+      registration(
+        contextDefinition('slow', async () => {
+          entered?.()
+          await wait
+          return {}
+        }),
+        0,
+      ),
+    ])
+    const h = await installed(pure, async () => {})
+    const wrong = { ...h.context, call: { ...h.context.call, principalRef: 'foreign' } }
+    expect((await h.action.execute(h.frame, wrong)).outcome).toBe('failed')
+    const pending = h.action.execute(h.frame, h.context)
+    await started
+    await h.action.close('shutdown')
+    release?.()
+    expect((await pending).outcome).toBe('cancelled')
   })
 })

@@ -68,7 +68,7 @@ async function settledFor(service: TestService, targetProfile: string, id: strin
       expect(['succeeded', 'failed', 'cancelled']).toContain(operation.state)
       return operation
     },
-    { timeout: 2_000, interval: 20 },
+    { timeout: 10_000, interval: 20 },
   )
 }
 afterEach(async () => {

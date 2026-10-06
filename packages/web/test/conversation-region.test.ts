@@ -20,23 +20,23 @@ describe('rendered conversation region', () => {
 
   it('renders the outer component boundary with all existing child region mounts', async () => {
     runtime = await mountRenderedIndex()
-    const conversation = document.querySelector('#conversation-shell')
+    const conversation = document.querySelector('.conversation-shell')
     await vi.waitFor(
       () =>
-        expect(conversation?.querySelector('[data-slot="ui:empty-state"] #empty-state-title')).toBeTruthy(),
+        expect(conversation?.querySelector('[data-slot="ui:empty-state"] .empty-state-heading')).toBeTruthy(),
       committed,
     )
     expect(conversation?.querySelector('[data-slot="ui:conversation"]')).toBeTruthy()
-    expect(conversation?.querySelector('[data-slot="ui:transcript"] #transcript-content')).toBeTruthy()
-    expect(conversation?.querySelector('[data-slot="ui:empty-state"] #empty-state-title')).toBeTruthy()
-    expect(conversation?.querySelector('#new-content')).toBeInstanceOf(HTMLButtonElement)
-    expect(document.querySelector('[data-slot="ui:approval"] #approval-content')).toBeTruthy()
-    expect(document.querySelector('[data-slot="ui:composer"] #prompt')).toBeTruthy()
+    expect(conversation?.querySelector('[data-slot="ui:transcript"] .transcript-content')).toBeTruthy()
+    expect(conversation?.querySelector('[data-slot="ui:empty-state"] .empty-state-heading')).toBeTruthy()
+    expect(conversation?.querySelector('.new-content')).toBeInstanceOf(HTMLButtonElement)
+    expect(document.querySelector('[data-slot="ui:approval"] .approval-content')).toBeTruthy()
+    expect(document.querySelector('[data-slot="ui:composer"] .composer-prompt')).toBeTruthy()
   })
 
   it('shadows only the conversation boundary and restores child mounts after unload', async () => {
     runtime = await mountRenderedIndex()
-    const conversation = document.querySelector('#conversation-shell')
+    const conversation = document.querySelector('.conversation-shell')
     const remove = runtime.registry.register(
       {
         name: CONVERSATION_SLOT as string,
@@ -48,17 +48,17 @@ describe('rendered conversation region', () => {
     )
     await vi.waitFor(() => {
       expect(conversation?.querySelector('#shadow-conversation')?.textContent).toBe('替换对话容器')
-      expect(conversation?.querySelector('#transcript')).toBeNull()
-      expect(conversation?.querySelector('#empty-state')).toBeNull()
+      expect(conversation?.querySelector('.transcript')).toBeNull()
+      expect(conversation?.querySelector('.empty-state')).toBeNull()
     }, committed)
-    expect(document.querySelector('[data-slot="ui:approval"] #approval-content')).toBeTruthy()
-    expect(document.querySelector('[data-slot="ui:composer"] #prompt')).toBeTruthy()
+    expect(document.querySelector('[data-slot="ui:approval"] .approval-content')).toBeTruthy()
+    expect(document.querySelector('[data-slot="ui:composer"] .composer-prompt')).toBeTruthy()
 
     remove()
     await vi.waitFor(() => {
       expect(conversation?.querySelector('#shadow-conversation')).toBeNull()
-      expect(conversation?.querySelector('[data-slot="ui:transcript"] #transcript-content')).toBeTruthy()
-      expect(conversation?.querySelector('[data-slot="ui:empty-state"] #empty-state-title')).toBeTruthy()
+      expect(conversation?.querySelector('[data-slot="ui:transcript"] .transcript-content')).toBeTruthy()
+      expect(conversation?.querySelector('[data-slot="ui:empty-state"] .empty-state-heading')).toBeTruthy()
     }, committed)
   })
 

@@ -1,11 +1,16 @@
 import { type LoopReadPorts, runtimeAuthorSchemas } from '@agnes/extension-api/runtime'
 import type * as W from '@agnes/protocol/runtime'
-import { canonicalJsonDigest, RuntimeMethodSchemaRefs, validateRuntime } from '@agnes/protocol/runtime'
+import {
+  canonicalJsonDigest,
+  RuntimeMethodSchemaRefs,
+  RuntimeSchemaRefs,
+  validateRuntime,
+} from '@agnes/protocol/runtime'
 import { describe, expect, it } from 'vitest'
 import { modelCaptureOf } from '../../src/runtime/model/prepared-call.js'
 import { modelInputDigest } from '../../src/runtime/model/wire-request.js'
 import type { ModelDeployment } from '../../src/runtime/providers/model.js'
-import { actionFrame, inlineRef, openModel } from './model-deployment-fixture.js'
+import { actionFrame, entryOf, inlineRef, openModel } from './model-deployment-fixture.js'
 import {
   callContext,
   fixtureAdapter,
@@ -16,6 +21,7 @@ import {
   prepareRequest,
   runScope,
 } from './model-fixture.js'
+import { resolverOf, standardTool, toolCatalogOf, toolRoute } from './model-tools-fixture.js'
 
 const refs = RuntimeMethodSchemaRefs['agh.model']
 const open = async (over: Partial<ModelDeployment> = {}) => {
@@ -46,20 +52,24 @@ const detail = (r: { ok: boolean; error?: W.RuntimeError }) => r.error?.detailCo
 
 describe('model prepare', () => {
   it('returns a reference the shared digest agrees with, and changes nothing durable', async () => {
-    const { prepare, counters } = await open()
+    const { prepare, counters, deployment } = await open()
     const result = await prepare(prepareRequest())
     if (!result.ok || result.value.kind !== 'inline') throw new Error('prepare failed')
     const out = validateRuntime('ModelPrepareResult', result.value.value)
     if (!out.ok) throw new Error('bad result')
     const ref = out.value.preparedRef
     if (ref.kind !== 'inline') throw new Error('not inline')
-    const prepared = validateRuntime('PreparedModelRequest', ref.value)
-    if (!prepared.ok) throw new Error('bad prepared')
-    expect(prepared.value.inputDigest).toBe(
-      modelInputDigest(prepared.value, modelCaptureOf('package-1', fixturePick()), fixtureWire),
+    const handle = validateRuntime('PreparedModelHandle', ref.value)
+    if (!handle.ok) throw new Error('bad handle')
+    const { prepared } = entryOf(deployment, ref)
+    expect(prepared.inputDigest).toBe(
+      modelInputDigest(prepared, modelCaptureOf('package-1', fixturePick()), fixtureWire),
     )
+    expect(handle.value).toMatchObject({ inputDigest: prepared.inputDigest, ownerBinding: fixtureOwner })
+    expect(ref.schema).toEqual(RuntimeSchemaRefs.PreparedModelHandle)
+    expect(JSON.stringify(ref.value)).not.toContain('"view"')
     expect(out.value).toMatchObject({
-      inputDigest: prepared.value.inputDigest,
+      inputDigest: prepared.inputDigest,
       targetSnapshot: prepareRequest().route,
       estimatedUnits: [],
       mediaPlanRefs: [],
@@ -75,17 +85,14 @@ describe('model prepare', () => {
         return { ok: true as const, value: { ...fixtureWire, slot: 'fast' as const } }
       },
     }
-    const { prepare } = await open({ wire })
+    const { prepare, deployment } = await open({ wire })
     const result = await prepare(prepareRequest())
     if (!result.ok || result.value.kind !== 'inline') throw new Error('prepare failed')
     const out = validateRuntime('ModelPrepareResult', result.value.value)
     if (!out.ok || out.value.preparedRef.kind !== 'inline') throw new Error('bad result')
-    const prepared = validateRuntime('PreparedModelRequest', out.value.preparedRef.value)
-    if (!prepared.ok) throw new Error('bad prepared')
+    const { prepared } = entryOf(deployment, out.value.preparedRef)
     const capture = modelCaptureOf('package-1', fixturePick())
-    expect(out.value.inputDigest).toBe(
-      modelInputDigest(prepared.value, capture, { ...fixtureWire, slot: 'fast' }),
-    )
+    expect(out.value.inputDigest).toBe(modelInputDigest(prepared, capture, { ...fixtureWire, slot: 'fast' }))
     expect(seen).toEqual([prepareRequest().route])
   })
 
@@ -246,7 +253,7 @@ describe('model prepare', () => {
     await expect(openModel({ bridge })).rejects.toThrow('model_child_bridge_not_ready')
   })
 
-  it('keeps the credential rules: a handle on a keyless route, or a bound route without a verifier, is refused by name', async () => {
+  it('keeps the credential rules: a handle on a keyless route, or a bound route the issuer does not vouch for, is refused by name', async () => {
     const bound = {
       ...prepareRequest().route,
       credentialBinding: {
@@ -265,19 +272,79 @@ describe('model prepare', () => {
       audience: 'fixture-endpoint',
       expiresAt: '2099-01-01T00:00:00Z',
     }
-    const plain = await open()
-    expect(detail(await plain.prepare(prepareRequest({ credentialRef: handle })))).toBe(
+    const plain = await open({ credentials: { verifyIssued: async () => false } })
+    const keyless = { ...prepareRequest().route, credentialBinding: null }
+    expect(detail(await plain.prepare(prepareRequest({ route: keyless, credentialRef: handle })))).toBe(
       'model_credential_binding',
     )
     expect(detail(await plain.prepare(prepareRequest({ route: bound, credentialRef: handle })))).toBe(
       'model_credential_unverified',
     )
-    const verified = await open({ credentials: { verifyIssued: () => true } })
+    const verified = await open({ credentials: { verifyIssued: async () => true } })
     expect((await verified.prepare(prepareRequest({ route: bound, credentialRef: handle }))).ok).toBe(true)
-    const denied = await open({ credentials: { verifyIssued: () => false } })
+    const denied = await open({ credentials: { verifyIssued: async () => false } })
     expect(detail(await denied.prepare(prepareRequest({ route: bound, credentialRef: handle })))).toBe(
       'model_credential_unverified',
     )
+  })
+})
+
+describe('model credential verifier', () => {
+  const bound = {
+    ...prepareRequest().route,
+    credentialBinding: {
+      consumer: 'model' as const,
+      secretId: 's',
+      accountRef: null,
+      serverRef: 'e',
+      audience: 'fixture-endpoint',
+      purpose: 'model-inference',
+    },
+  }
+  const handle = {
+    handleId: 'h',
+    secretId: 's',
+    version: 'v1',
+    audience: 'fixture-endpoint',
+    expiresAt: '2099-01-01T00:00:00Z',
+  }
+  const run = async (
+    verifyIssued: NonNullable<ModelDeployment['credentials']>['verifyIssued'],
+    call?: ReturnType<typeof callContext>,
+  ) => {
+    const { prepare } = await open({ credentials: { verifyIssued } })
+    return prepare(prepareRequest({ route: bound, credentialRef: handle }), call)
+  }
+  it('awaits a later answer: true proceeds, false is unverified', async () => {
+    const later = (v: boolean) => async () => {
+      await new Promise((r) => setTimeout(r, 5))
+      return v
+    }
+    expect((await run(later(true))).ok).toBe(true)
+    expect(detail(await run(later(false)))).toBe('model_credential_unverified')
+  })
+  it('refuses a rejection or a throw as an unavailable dependency', async () => {
+    for (const verifier of [
+      () => Promise.reject(new Error('down')),
+      () => {
+        throw new Error('down')
+      },
+    ])
+      expect(await run(verifier)).toMatchObject({
+        ok: false,
+        error: { code: 'retryable', detailCode: 'model_dependency_unavailable' },
+      })
+  })
+  it('is cancelled when the call aborts during the await', async () => {
+    const controller = new AbortController()
+    const result = await run(
+      () => {
+        controller.abort()
+        return new Promise<boolean>(() => {})
+      },
+      callContext({ signal: controller.signal }),
+    )
+    expect(result).toMatchObject({ ok: false, error: { code: 'cancelled', detailCode: 'model_cancelled' } })
   })
 })
 
@@ -347,18 +414,37 @@ describe('model prepareRequest', () => {
       actionFrame('prepareRequest', inlineRef(refs.prepareRequest.input, input)),
       ports,
     )
-    return { out }
+    return { out, deployment: model.deployment }
   }
   it('resolves the exact handle through the secrets query and writes it into the prepared request', async () => {
     const queries: W.ServiceQuery[] = []
-    const { out } = await start({ secrets }, requestInput({ route: bound }), resolvePorts(queries, handle))
+    const { out, deployment } = await start(
+      { secrets },
+      requestInput({ route: bound }),
+      resolvePorts(queries, handle),
+    )
     if (out.next.kind !== 'complete' || out.next.output.kind !== 'inline') throw new Error('not complete')
     expect(queries).toHaveLength(1)
     const result = validateRuntime('ModelPrepareResult', out.next.output.value)
     if (!result.ok || result.value.preparedRef.kind !== 'inline') throw new Error('bad result')
-    const prepared = validateRuntime('PreparedModelRequest', result.value.preparedRef.value)
-    expect(prepared.ok && prepared.value.credentialRef).toEqual(handle)
+    expect(entryOf(deployment, result.value.preparedRef).prepared.credentialRef).toEqual(handle)
     expect(out.children).toHaveLength(0)
+  })
+  it('never calls the credential verifier, because the service resolved the handle itself', async () => {
+    let calls = 0
+    const credentials = {
+      verifyIssued: async () => {
+        calls++
+        return false
+      },
+    }
+    const { out } = await start(
+      { secrets, credentials },
+      requestInput({ route: bound }),
+      resolvePorts([], handle),
+    )
+    expect(out.next.kind).toBe('complete')
+    expect(calls).toBe(0)
   })
   it.each([
     [
@@ -396,5 +482,172 @@ describe('model prepareRequest', () => {
     expect(out).toMatchObject({
       next: { kind: 'fail', error: { detailCode: 'model_credential_unverified' } },
     })
+  })
+})
+
+describe('model prepare with resolved tools', () => {
+  const tool = standardTool('text_statistics', 'Count the words of a text')
+  const request = (over: Partial<W.ModelPrepareRequest> = {}) =>
+    prepareRequest({
+      route: toolRoute(prepareRequest().route),
+      toolCatalog: toolCatalogOf([tool.definition]),
+      ...over,
+    })
+
+  it('asks the resolver once with the request catalog and prepares with the resolved tools', async () => {
+    const asked: W.ToolCatalog[] = []
+    const tools = {
+      resolve: async (r: { catalog: W.ToolCatalog }) => {
+        asked.push(r.catalog)
+        return { ok: true as const, value: [tool.resolved] }
+      },
+    }
+    const { prepare, deployment } = await open({ tools })
+    const result = await prepare(request())
+    if (!result.ok || result.value.kind !== 'inline') throw new Error('prepare failed')
+    const out = validateRuntime('ModelPrepareResult', result.value.value)
+    if (!out.ok) throw new Error('bad result')
+    expect(asked).toEqual([request().toolCatalog])
+    const entry = entryOf(deployment, out.value.preparedRef)
+    expect(entry.resolvedTools).toEqual([tool.resolved])
+    expect(entry.request.tools).toHaveLength(1)
+    expect(entry.request.tools[0]).toMatchObject({
+      name: 'text_statistics',
+      description: 'Count the words of a text',
+    })
+    expect(entry.request.derivedHash).toBe(entry.prepared.inputDigest)
+    expect(entry.prepared.inputDigest).toBe(
+      modelInputDigest(
+        entry.prepared,
+        modelCaptureOf('package-1', fixturePick()),
+        fixtureWire,
+        entry.resolvedTools,
+      ),
+    )
+    expect(entry.prepared.inputDigest).not.toBe(
+      modelInputDigest(entry.prepared, modelCaptureOf('package-1', fixturePick()), fixtureWire),
+    )
+  })
+
+  it('does not call the resolver for a request without a catalog, and keeps no tools', async () => {
+    let calls = 0
+    const tools = {
+      resolve: async () => {
+        calls++
+        return { ok: true as const, value: [tool.resolved] }
+      },
+    }
+    const { prepare, deployment } = await open({ tools })
+    const result = await prepare(prepareRequest())
+    if (!result.ok || result.value.kind !== 'inline') throw new Error('prepare failed')
+    const out = validateRuntime('ModelPrepareResult', result.value.value)
+    if (!out.ok) throw new Error('bad result')
+    expect(calls).toBe(0)
+    expect(entryOf(deployment, out.value.preparedRef).resolvedTools).toBeNull()
+  })
+
+  it('changes the input digest when only a description changes', async () => {
+    const digestWith = async (description: string) => {
+      const { prepare } = await open({
+        tools: resolverOf([{ ...tool.resolved, description }]),
+      })
+      const result = await prepare(request())
+      if (!result.ok || result.value.kind !== 'inline') throw new Error('prepare failed')
+      return (result.value.value as { inputDigest: string }).inputDigest
+    }
+    const first = await digestWith('Count the words of a text')
+    expect(await digestWith('Count the words of a text')).toBe(first)
+    expect(await digestWith('Count the lines of a text')).not.toBe(first)
+  })
+
+  it.each([
+    ['no resolver is installed', undefined],
+    ['the resolver refuses', { resolve: async () => failure('model_tools_unavailable', 'denied') }],
+  ])('keeps the refusal model_wire_tools when %s', async (_name, tools) => {
+    const { prepare } = await open(tools ? { tools } : {})
+    const result = await prepare(request())
+    expect(result).toMatchObject({
+      ok: false,
+      error: {
+        code: 'incompatible',
+        detailCode: 'model_wire_tools',
+        message: 'Model request refused',
+        retryAdvice: { kind: 'never' },
+        diagnosticId: 'model-provider',
+      },
+    })
+  })
+
+  it('refuses by name a resolved document that is not the one the catalog binds, and a count mismatch', async () => {
+    const other = { ...tool.resolved.document, $defs: { ...tool.resolved.document.$defs, Extra: {} } }
+    const wrong = await open({ tools: resolverOf([{ ...tool.resolved, document: other }]) })
+    expect(detail(await wrong.prepare(request()))).toBe('model_wire_tool_schema')
+    const empty = await open({ tools: resolverOf([]) })
+    expect(detail(await empty.prepare(request()))).toBe('model_wire_tools')
+  })
+
+  it('reports an unreachable resolver as a retryable dependency fault and an abort as cancelled', async () => {
+    const down = await open({
+      tools: {
+        resolve: async () => {
+          throw new Error('down')
+        },
+      },
+    })
+    expect(await down.prepare(request())).toMatchObject({
+      ok: false,
+      error: { code: 'retryable', detailCode: 'model_dependency_unavailable' },
+    })
+    const controller = new AbortController()
+    const aborting = await open({
+      tools: {
+        resolve: async () => {
+          controller.abort()
+          return { ok: true as const, value: [tool.resolved] }
+        },
+      },
+    })
+    expect(await aborting.prepare(request(), callContext({ signal: controller.signal }))).toMatchObject({
+      ok: false,
+      error: { code: 'cancelled' },
+    })
+  })
+})
+
+describe('model prepare refuses modes the adapter cannot serve', () => {
+  it('refuses a route without a credential binding, by name, before anything is recorded', async () => {
+    const { prepare, counters } = await open()
+    const keyless = { ...prepareRequest().route, credentialBinding: null }
+    const result = await prepare(prepareRequest({ route: keyless, credentialRef: null }))
+    expect(result).toMatchObject({
+      ok: false,
+      error: { code: 'incompatible', detailCode: 'model_credential_required' },
+    })
+    expect(counters.network).toBe(0)
+  })
+
+  it('keeps the binding mismatch name for a handle on a route without a binding', async () => {
+    const { prepare } = await open()
+    const keyless = { ...prepareRequest().route, credentialBinding: null }
+    expect(detail(await prepare(prepareRequest({ route: keyless })))).toBe('model_credential_binding')
+  })
+
+  it('refuses an output schema by name even when the route declares structured output', async () => {
+    const { prepare } = await open()
+    const route = {
+      ...prepareRequest().route,
+      features: { ...prepareRequest().route.features, structuredOutput: true },
+    }
+    const outputSchema = runtimeAuthorSchemas.StandardToolOutput.ref
+    expect(await prepare(prepareRequest({ route, outputSchema }))).toMatchObject({
+      ok: false,
+      error: { code: 'incompatible', detailCode: 'model_wire_output_schema' },
+    })
+  })
+
+  it('still names the feature mismatch when the route does not declare structured output', async () => {
+    const { prepare } = await open()
+    const outputSchema = runtimeAuthorSchemas.StandardToolOutput.ref
+    expect(detail(await prepare(prepareRequest({ outputSchema })))).toBe('model_feature_mismatch')
   })
 })

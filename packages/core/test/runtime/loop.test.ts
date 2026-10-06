@@ -12,6 +12,9 @@ import {
   runLoopContractScenario,
 } from '../../../extension-api/testkit/runtime/contracts/loop.js'
 import { createDefaultLoopFactory } from '../../src/runtime/providers/loop.js'
+import { createDefaultModelFactory } from '../../src/runtime/providers/model.js'
+import { fakeDeployment } from './model-deployment-fixture.js'
+import { fixtureModel } from './model-fixture.js'
 
 type Fixture = LoopContractFixture & {
   receipts: Map<string, W.ActionResultView>
@@ -29,11 +32,43 @@ async function open(credentials?: FixtureCredentials): Promise<Fixture> {
   )) as { openLoopFixture(options?: { credentials: FixtureCredentials }): Promise<Fixture> }
   return module.openLoopFixture(credentials ? { credentials } : undefined)
 }
-async function ready(credentials?: FixtureCredentials) {
+// The real model service serves only a route with a bound credential and the handle it names.
+const modelCredentials: FixtureCredentials = {
+  binding: {
+    consumer: 'model',
+    secretId: 'fixed-secret',
+    accountRef: null,
+    serverRef: 'restricted-peer',
+    audience: 'restricted',
+    purpose: 'model-inference',
+  },
+  handle: {
+    handleId: 'fixed-handle',
+    secretId: 'fixed-secret',
+    version: 'fixed-version',
+    audience: 'restricted',
+    expiresAt: '2099-01-01T00:00:00Z',
+  },
+}
+async function ready(credentials?: FixtureCredentials, modelProviderId?: string) {
   const fixture = await open(credentials)
+  if (modelProviderId) required(fixture.bindings.model).providerId = modelProviderId
   const provider = await fixture.factory.create(fixture.config, fixture.dependencies, fixture.factoryContext)
   expect(await provider.ready(fixture.context)).toEqual({ ok: true, value: undefined })
   return { ...fixture, provider }
+}
+async function pendingAt(
+  f: Awaited<ReturnType<typeof ready>>,
+  stage: 'first-model' | 'tool' | 'second-model',
+) {
+  let transition = await f.provider.start(f.frame, f.ports)
+  for (const key of ['first-model', 'tool'] as const) {
+    if (stage === key) break
+    await f.accept(required(transition.actions[0]))
+    transition = await f.provider.resume(f.nextFrame(transition), f.ports)
+  }
+  expect(transition.actions[0]?.key).toBe(stage)
+  return transition
 }
 function required<T>(value: T | undefined): T {
   if (value === undefined) throw new Error('Loop fixture value absent')
@@ -43,6 +78,66 @@ function failure(transition: W.LoopTransition, detail?: string) {
   expect(transition.actions).toEqual([])
   expect(transition.next.kind).toBe('fail')
   if (transition.next.kind === 'fail' && detail) expect(transition.next.error.detailCode).toBe(detail)
+}
+
+/** The Loop's own model peer becomes the real model service: the handle it plans against is real. */
+async function realModelPorts(f: Fixture) {
+  const owner = required(f.bindings.model)
+  const pick = {
+    route: { route: 'fixture-model', api: 'openai-completions', baseUrl: 'https://fake.invalid' },
+    model: { ...fixtureModel, id: 'f02-text', route: 'fixture-model' },
+  }
+  const { deployment } = fakeDeployment({
+    catalog: {
+      capture: () => ({
+        ok: true,
+        value: {
+          digest: canonicalJsonDigest({ routes: [pick] } as never) as string,
+          select: (route: string, model: string) =>
+            route === pick.route.route && model === pick.model.id ? pick : undefined,
+        },
+      }),
+    },
+    adapters: { select: (target) => ({ binding: target, packageDigest: 'package-1' }) },
+  })
+  const config = deployment.config.encode({})
+  if (!config.ok) throw new Error('model config rejected')
+  const { signal } = f.context
+  const model = await createDefaultModelFactory(deployment).create(config.value, f.dependencies, {
+    instanceId: 'model-instance',
+    bindingId: owner.bindingId,
+    scope: { kind: 'runtime', installationId: 'installation', runtimeId: 'runtime' } as W.ScopeRef,
+    signal,
+  })
+  expect(await model.ready(f.context)).toEqual({ ok: true, value: undefined })
+  const prepared: W.ModelPrepareResult[] = []
+  const ports = {
+    ...f.ports,
+    async compute(request: W.ServiceOperation) {
+      if (request.target.contract !== 'agh.model' || request.method !== 'prepare')
+        return f.ports.compute(request)
+      // The first wire slice has no tools, so the catalog is dropped on the way in; the handle the
+      // service returns is still real and its header does not carry the catalog.
+      const body = validateRuntime(
+        'ModelPrepareRequest',
+        request.input.kind === 'inline' ? request.input.value : null,
+      )
+      if (!body.ok) throw new Error('Preparation request fixture')
+      const input = contextInline(
+        request.input.kind === 'inline'
+          ? request.input.schema
+          : RuntimeMethodSchemaRefs['agh.model'].prepare.input,
+        { ...body.value, toolCatalog: null },
+      )
+      const reply = await model.compute?.({ ...request, input }, f.context)
+      if (reply?.ok && reply.value.kind === 'inline') {
+        const result = validateRuntime('ModelPrepareResult', reply.value.value)
+        if (result.ok) prepared.push(result.value)
+      }
+      return reply ?? f.ports.compute(request)
+    },
+  }
+  return { ports, prepared, close: () => model.close('shutdown') }
 }
 
 describe('full C01 SPI text Loop candidate, restricted background peers', () => {
@@ -98,15 +193,18 @@ describe('full C01 SPI text Loop candidate, restricted background peers', () => 
                 const prepared = validateRuntime('ModelPrepareResult', reply.value.value)
                 if (!prepared.ok || prepared.value.preparedRef.kind !== 'inline')
                   throw new Error('Preparation fixture')
-                const locked = validateRuntime('PreparedModelRequest', prepared.value.preparedRef.value)
+                const locked = validateRuntime('PreparedModelHandle', prepared.value.preparedRef.value)
                 if (!locked.ok) throw new Error('Prepared source fixture')
                 return {
                   ok: true as const,
                   value: contextInline(reply.value.schema, {
                     ...prepared.value,
-                    preparedRef: contextInline(RuntimeSchemaRefs.PreparedModelRequest, {
+                    preparedRef: contextInline(RuntimeSchemaRefs.PreparedModelHandle, {
                       ...locked.value,
-                      credentialRef: { ...handle, version: 'substituted-version' },
+                      header: {
+                        ...locked.value.header,
+                        credentialRef: { ...handle, version: 'substituted-version' },
+                      },
                     }),
                   }),
                 }
@@ -137,9 +235,9 @@ describe('full C01 SPI text Loop candidate, restricted background peers', () => 
         )
         if (!inference.ok || inference.value.preparedRef.kind !== 'inline')
           throw new Error('Inference fixture')
-        expect(validateRuntime('PreparedModelRequest', inference.value.preparedRef.value)).toMatchObject({
+        expect(validateRuntime('PreparedModelHandle', inference.value.preparedRef.value)).toMatchObject({
           ok: true,
-          value: { credentialRef: handle },
+          value: { header: { credentialRef: handle } },
         })
         await f.accept(modelAction)
         const tool = await f.provider.resume(f.nextFrame(first), ports)
@@ -186,25 +284,67 @@ describe('full C01 SPI text Loop candidate, restricted background peers', () => 
       await f.close()
     }
   })
-  it('keeps unknown effects unresolved even after the saved deadline', async () => {
+  it.each(['first-model', 'tool', 'second-model'] as const)(
+    'keeps %s unknown effects unresolved even after the saved deadline',
+    async (stage) => {
+      const f = await ready()
+      try {
+        const first = await pendingAt(f, stage)
+        const action = required(first.actions[0])
+        await f.accept(action)
+        required(f.receipts.get(action.key)).outcome = 'unknown_effect'
+        const frame = f.nextFrame(first)
+        frame.observedAt = '2090-01-01T00:00:00Z'
+        const waiting = await f.provider.resume(frame, f.ports)
+        expect(waiting.actions).toEqual([])
+        expect(waiting.next).toEqual({
+          kind: 'wait',
+          condition: {
+            anyOf: [{ kind: 'actions', mode: 'all', actions: [{ localKey: stage }], readyWhen: 'resolved' }],
+          },
+        })
+      } finally {
+        await f.provider.close('shutdown')
+        await f.close()
+      }
+    },
+  )
+  it.each([
+    ['first-model', 'model_prepared_lost'],
+    ['second-model', 'model_prepared_lost'],
+    ['first-model', 'model_not_sent'],
+    ['second-model', 'model_not_sent'],
+  ] as const)('ends %s on %s without planning another handle or action', async (stage, detailCode) => {
     const f = await ready()
     try {
-      const first = await f.provider.start(f.frame, f.ports)
-      const action = required(first.actions[0])
+      const pending = await pendingAt(f, stage)
+      const action = required(pending.actions[0])
+      expect(action.retry).toEqual({ mode: 'never', maxAttempts: 1, backoffMs: [] })
       await f.accept(action)
-      required(f.receipts.get(action.key)).outcome = 'unknown_effect'
-      const frame = f.nextFrame(first)
-      frame.observedAt = '2090-01-01T00:00:00Z'
-      const waiting = await f.provider.resume(frame, f.ports)
-      expect(waiting.actions).toEqual([])
-      expect(waiting.next).toEqual({
-        kind: 'wait',
-        condition: {
-          anyOf: [
-            { kind: 'actions', mode: 'all', actions: [{ localKey: 'first-model' }], readyWhen: 'resolved' },
-          ],
+      const receipt = required(f.receipts.get(action.key))
+      receipt.outcome = 'failed'
+      delete receipt.result
+      receipt.error = {
+        code: 'incompatible',
+        detailCode,
+        message: 'Model failed',
+        diagnosticId: 'fixture',
+        retryAdvice: { kind: 'never' },
+      }
+      expect(validateRuntime('ActionResultView', receipt).ok).toBe(true)
+      const ports = {
+        ...f.ports,
+        async compute() {
+          throw new Error('Failure must not replan')
         },
-      })
+      }
+      const frame = f.nextFrame(pending)
+      for (let replay = 0; replay < 2; replay++) {
+        const result = await f.provider.resume(frame, ports)
+        failure(result, detailCode)
+        expect(result.next).toMatchObject({ kind: 'fail', error: { retryAdvice: { kind: 'never' } } })
+        expect(result.continuation).toEqual(pending.continuation)
+      }
     } finally {
       await f.provider.close('shutdown')
       await f.close()
@@ -229,6 +369,142 @@ describe('full C01 SPI text Loop candidate, restricted background peers', () => 
       }
     },
   )
+  it('plans against the handle the real model service returns', async () => {
+    const f = await ready(modelCredentials, 'agh.default/model')
+    const model = await realModelPorts(f)
+    try {
+      const first = await f.provider.start(f.frame, model.ports)
+      const action = required(first.actions[0])
+      expect(first.next.kind).toBe('wait')
+      const sent = model.prepared[0]
+      expect(sent?.preparedRef.kind === 'inline' && sent.preparedRef.schema).toEqual(
+        RuntimeSchemaRefs.PreparedModelHandle,
+      )
+      const infer = validateRuntime(
+        'ModelInferRequest',
+        action.input.kind === 'inline' ? action.input.value : null,
+      )
+      expect(infer.ok && infer.value.preparedRef).toEqual(sent?.preparedRef)
+    } finally {
+      await model.close()
+      await f.provider.close('shutdown')
+      await f.close()
+    }
+  })
+  it('refuses a handle whose input digest differs from the prepare result', async () => {
+    const f = await ready(modelCredentials, 'agh.default/model')
+    const model = await realModelPorts(f)
+    try {
+      const ports = {
+        ...model.ports,
+        async compute(request: W.ServiceOperation) {
+          const reply = await model.ports.compute(request)
+          if (request.method !== 'prepare' || !reply.ok || reply.value.kind !== 'inline') return reply
+          const result = validateRuntime('ModelPrepareResult', reply.value.value)
+          if (!result.ok || result.value.preparedRef.kind !== 'inline') throw new Error('Preparation fixture')
+          const handle = validateRuntime('PreparedModelHandle', result.value.preparedRef.value)
+          if (!handle.ok) throw new Error('Handle fixture')
+          return {
+            ok: true as const,
+            value: contextInline(reply.value.schema, {
+              ...result.value,
+              preparedRef: contextInline(RuntimeSchemaRefs.PreparedModelHandle, {
+                ...handle.value,
+                inputDigest: canonicalJsonDigest('another input'),
+              }),
+            }),
+          }
+        },
+      }
+      failure(await f.provider.start(f.frame, ports), 'loop_prepared_identity')
+      expect(f.issued).toEqual([])
+    } finally {
+      await model.close()
+      await f.provider.close('shutdown')
+      await f.close()
+    }
+  })
+  it.each([
+    'announced',
+    'plan the handle header does not commit to',
+    'header commitment without an announced plan',
+    'announcement that differs from the committed plan',
+    'plan wider than the locked target',
+  ] as const)('accepts only the media plans the handle header commits to: %s', async (scenario) => {
+    const f = await ready(modelCredentials, 'agh.default/model')
+    const model = await realModelPorts(f)
+    try {
+      const ports = {
+        ...model.ports,
+        async compute(request: W.ServiceOperation) {
+          const reply = await model.ports.compute(request)
+          if (request.method !== 'prepare' || !reply.ok || reply.value.kind !== 'inline') return reply
+          const result = validateRuntime('ModelPrepareResult', reply.value.value)
+          if (!result.ok || result.value.preparedRef.kind !== 'inline') throw new Error('Preparation fixture')
+          const handle = validateRuntime('PreparedModelHandle', result.value.preparedRef.value)
+          if (!handle.ok) throw new Error('Handle fixture')
+          const planFor = (features: W.ModelFeatures): W.MediaPlan => ({
+            key: 'media:fixed',
+            sourceRefs: [],
+            sourceDigest: 'a'.repeat(64),
+            transformSchema: { typeId: 'agh.media/transform-native@1', revision: 1, digest: 'b'.repeat(64) },
+            parameters: contextInline(
+              { typeId: 'agh.media/parameters@1', revision: 1, digest: 'c'.repeat(64) },
+              {},
+            ),
+            targetFeatures: features,
+            provider: {
+              bindingId: 'media',
+              providerId: 'agh.default/media',
+              contract: 'agh.media',
+              logicalName: 'default',
+            },
+          })
+          const features = handle.value.header.route.features
+          const plan = planFor(
+            scenario === 'plan wider than the locked target'
+              ? { ...features, input: [...features.input, 'audio'] }
+              : features,
+          )
+          const committed = scenario === 'plan the handle header does not commit to' ? [] : [plan]
+          const announced =
+            scenario === 'header commitment without an announced plan'
+              ? []
+              : [
+                  contextInline(
+                    { typeId: 'agh.media/plan@1', revision: 1, digest: 'd'.repeat(64) },
+                    scenario === 'announcement that differs from the committed plan'
+                      ? { ...plan, key: 'media:other' }
+                      : plan,
+                  ),
+                ]
+          return {
+            ok: true as const,
+            value: contextInline(reply.value.schema, {
+              ...result.value,
+              mediaPlanRefs: announced,
+              preparedRef: contextInline(RuntimeSchemaRefs.PreparedModelHandle, {
+                ...handle.value,
+                header: {
+                  ...handle.value.header,
+                  mediaPlanDigests: committed.map((p) => canonicalJsonDigest(p as never)),
+                },
+              }),
+            }),
+          }
+        },
+      }
+      const first = await f.provider.start(f.frame, ports)
+      if (scenario === 'announced') {
+        expect(first.next.kind).toBe('wait')
+        expect(first.actions.map((a) => a.method)).toEqual(['infer'])
+      } else failure(first, 'loop_prepared_identity')
+    } finally {
+      await model.close()
+      await f.provider.close('shutdown')
+      await f.close()
+    }
+  })
   it('binds the classified tool to the original prepared model request and canonical definition', async () => {
     const f = await ready()
     try {

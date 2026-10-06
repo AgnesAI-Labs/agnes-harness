@@ -37,7 +37,7 @@ export interface ToolsDeployment {
   readonly catalogRevision: number
   checkCurrent(context: CallContext): Promise<Outcome<void>>
   /** Verify original input/policy/action admission and, for model calls, the original
-   * PreparedModelRequest, selected model/catalog, same Run/Action and pure-stage eligibility.
+   * prepared model handle, selected model/catalog, same Run/Action and pure-stage eligibility.
    * The installed owner must recheck identity, source and current read permission after awaits;
    * a matching DataRef/schema/digest alone is not proof. Missing source must refuse. */
   verifyCall(call: ToolCall, frame: ActionFrame, context: CallContext): Promise<Outcome<void>>
@@ -194,7 +194,7 @@ export function createDefaultToolsFactory(deployment: ToolsDeployment): Provider
     definition.executor.contract !== descriptor.contract ||
     definition.executor.providerId !== descriptor.providerId ||
     definition.executor.logicalName !== descriptor.logicalName ||
-    definition.name !== 'text-statistics' ||
+    definition.name !== 'textstatistics' ||
     !same(definition.inputSchema, definition.outputSchema) ||
     definition.inputSchema.typeId !== 'agh.tool/standard-output@1' ||
     definition.policy.classifierRef !== null ||
@@ -209,7 +209,7 @@ export function createDefaultToolsFactory(deployment: ToolsDeployment): Provider
     definition.execution.requiredModelInput.length ||
     definition.execution.deferLoading
   )
-    throw new TypeError('Tools definition must be the closed text-statistics pure tool')
+    throw new TypeError('Tools definition must be the closed textstatistics pure tool')
   const classify = (input: DataRef): Outcome<ToolPolicySnapshot> => {
     const parsed = decode(input, definition.inputSchema, 'StandardToolOutput')
     if (!parsed.ok) return parsed
@@ -463,7 +463,7 @@ export function createDefaultToolsFactory(deployment: ToolsDeployment): Provider
                   return failure(refuse('denied', 'tools_call_identity').error)
                 if (
                   toolCall.modelContextRef !== null &&
-                  !same(toolCall.modelContextRef.schema, RuntimeSchemaRefs.PreparedModelRequest)
+                  !same(toolCall.modelContextRef.schema, RuntimeSchemaRefs.PreparedModelHandle)
                 )
                   return failure(refuse('denied', 'tools_model_context_schema').error)
                 if (typeof deployment.verifyCall !== 'function')

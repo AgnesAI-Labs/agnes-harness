@@ -113,21 +113,20 @@ export const Conversation = forwardRef<ConversationHandle, ConversationProps>(fu
     ),
     createElement('section', {
       ref: transcript,
-      id: 'transcript',
+      className: 'transcript',
       'data-agnes-region': 'transcript',
       'aria-label': t('conversation.transcriptAria'),
       tabIndex: -1,
     }),
     createElement('section', {
       ref: emptyState,
-      id: 'empty-state',
+      className: 'empty-state',
       'data-agnes-region': 'empty-state',
-      'aria-labelledby': 'empty-state-title',
       hidden: true,
     }),
     createElement(
       'button',
-      { ref: newContentButton, id: 'new-content', className: 'new-content', type: 'button', hidden: true },
+      { ref: newContentButton, className: 'new-content', type: 'button', hidden: true },
       createElement(
         'svg',
         { className: 'icon', 'data-agnes-region': 'icon', viewBox: '0 0 24 24', 'aria-hidden': true },

@@ -9,6 +9,7 @@ import {
   type EffectResult,
   type ReconcileResult,
   validateRuntime,
+  validateRuntimeErrorDetail,
 } from '@agnes/protocol/runtime'
 import { afterEach, describe, expect, it } from 'vitest'
 
@@ -235,8 +236,12 @@ describe('model source store across process death', () => {
     const { seen } = await w.original('save-fails')
     expect(effect(seen.result)).toMatchObject({
       outcome: 'unknown_effect',
-      error: { detailCode: 'model_receipt_unconfirmed' },
+      error: {
+        detailCode: 'model_receipt_unconfirmed',
+        retryAdvice: { kind: 'reconcile', ownerRef: { kind: 'action', id: expect.any(String) } },
+      },
     })
+    expect(validateRuntimeErrorDetail(effect(seen.result).error).ok).toBe(true)
     const answer = await w.recover()
     for (const reply of [answer.leaf, answer.targeted])
       expect(reply).toMatchObject({ kind: 'unknown', reason: 'model_sent_unsaved' })

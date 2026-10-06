@@ -18,7 +18,6 @@ import {
   type ProviderDescriptor,
   RuntimeAuthorCapabilities,
   RuntimeMethodSchemaRefs,
-  RuntimeSchemaRefs,
   validateRuntime,
 } from '@agnes/protocol/runtime'
 import {
@@ -26,12 +25,16 @@ import {
   assemblePrepared,
   type CatalogPick,
   checkCredential,
+  decodeHandle,
   externalKeyOf,
+  handleIdOf,
   INFER_CHILD_KEY,
   modelCaptureOf,
   refusal,
 } from '../model/prepared-call.js'
+import type { PreparedRegistry } from '../model/prepared-registry.js'
 import type { ModelCapture, WireIdentity } from '../model/wire-request.js'
+import type { ResolvedTools } from '../model/wire-tools.js'
 
 export type ModelCatalogView = Readonly<{
   digest: string
@@ -61,10 +64,24 @@ export interface ModelDeployment {
       context: CallContext,
     ): { binding: W.BindingRef; packageDigest: string } | null
   }
+  /**
+   * Resolves the prepare request's tool catalog to each tool's description and parameters document. Absent,
+   * or answering with a refusal, leaves a request that carries a catalog refused as before; the result stays
+   * in this process only.
+   */
+  tools?: {
+    resolve(request: { context: CallContext; catalog: W.ToolCatalog }): Promise<Outcome<ResolvedTools>>
+  }
   credentials?: {
-    verifyIssued(handle: W.SecretHandle, binding: W.SecretConsumerBinding, context: CallContext): boolean
+    verifyIssued(
+      handle: W.SecretHandle,
+      binding: W.SecretConsumerBinding,
+      context: CallContext,
+    ): Promise<boolean>
   }
   estimate?(prepared: W.PreparedModelRequest): readonly W.ExactQuantity[]
+  /** Prepared calls of this process; the source reader must be given the same instance. */
+  registry: PreparedRegistry
   bridge: { ready(context: CallContext): Outcome<void> }
   now?(): number
 }
@@ -77,14 +94,16 @@ class ModelFault extends Error {
   constructor(
     readonly code: W.RuntimeError['code'],
     readonly detail: string,
+    readonly owner?: W.OwnerRef,
   ) {
     super(detail)
   }
 }
-const fault = (code: W.RuntimeError['code'], detail: string) => new ModelFault(code, detail)
+const fault = (code: W.RuntimeError['code'], detail: string, owner?: W.OwnerRef) =>
+  new ModelFault(code, detail, owner)
 const failed = (error: unknown): Outcome<never> =>
   error instanceof ModelFault
-    ? refusal(error.code, error.detail)
+    ? refusal(error.code, error.detail, error.owner)
     : refusal('retryable', 'model_dependency_unavailable')
 const errorOf = (error: unknown): W.RuntimeError => {
   const refused = failed(error)
@@ -146,15 +165,18 @@ async function prepareOnce(
 ): Promise<W.ModelPrepareResult> {
   if (call.signal.aborted) throw fault('cancelled', 'model_cancelled')
   if (!d.current(call)) throw fault('denied', 'model_binding_denied')
-  runOf(call.scope)
+  const { sessionId, runId } = runOf(call.scope)
   if (input.hookResults !== null) throw fault('incompatible', 'model_hooks_unsupported')
   const route = input.route
   const relation = checkCredential(route, input.credentialRef, (d.now ?? Date.now)())
   if (!relation.ok) throw fault(relation.error.code, relation.error.detailCode)
   if (!resolved && route.credentialBinding !== null) {
     const verified =
-      d.credentials?.verifyIssued(input.credentialRef as W.SecretHandle, route.credentialBinding, call) ===
-      true
+      d.credentials !== undefined &&
+      (await raced(
+        d.credentials.verifyIssued(input.credentialRef as W.SecretHandle, route.credentialBinding, call),
+        call,
+      )) === true
     if (!verified) throw fault('incompatible', 'model_credential_unverified')
   }
   const adapter = d.adapters.select(route.adapter, call)
@@ -178,16 +200,42 @@ async function prepareOnce(
     call,
   )
   if (!wire.ok) throw fault(wire.error.code, wire.error.detailCode)
-  const first = assemblePrepared({ owner, request: input, capture, wire: wire.value, estimatedUnits: [] })
+  // The adapter sends only with a bound credential, so a route without one is refused here, by name.
+  if (route.credentialBinding === null) throw fault('incompatible', 'model_credential_required')
+  const resolvedTools =
+    input.toolCatalog === null || !d.tools
+      ? null
+      : await raced(d.tools.resolve({ context: call, catalog: input.toolCatalog }), call)
+  const tools = resolvedTools?.ok ? resolvedTools.value : null
+  const first = assemblePrepared({
+    runId,
+    sessionId,
+    owner,
+    request: input,
+    capture,
+    wire: wire.value,
+    estimatedUnits: [],
+    tools,
+  })
   if (!first.ok) throw fault(first.error.code, first.error.detailCode)
   const units = d.estimate ? [...d.estimate(first.value.prepared)] : []
   const assembled =
     units.length === 0
       ? first
-      : assemblePrepared({ owner, request: input, capture, wire: wire.value, estimatedUnits: units })
+      : assemblePrepared({
+          runId,
+          sessionId,
+          owner,
+          request: input,
+          capture,
+          wire: wire.value,
+          estimatedUnits: units,
+          tools,
+        })
   if (!assembled.ok) throw fault(assembled.error.code, assembled.error.detailCode)
   const final = assembled.value
   if (call.signal.aborted) throw fault('cancelled', 'model_cancelled')
+  d.registry.put(final.handleId, final.entry)
   return {
     preparedRef: final.ref,
     targetSnapshot: route,
@@ -286,7 +334,8 @@ export function createDefaultModelFactory(d: ModelDeployment): ProviderFactory<S
         async ready(call) {
           const bridge = d.bridge.ready(call)
           if (!bridge.ok) return bridge
-          if (phase !== 'starting' || !d.current(call)) return refusal('denied', 'model_binding_denied')
+          if ((phase !== 'starting' && phase !== 'ready') || !d.current(call))
+            return refusal('denied', 'model_binding_denied')
           phase = 'ready'
           return { ok: true, value: undefined }
         },
@@ -307,6 +356,7 @@ export function createDefaultModelFactory(d: ModelDeployment): ProviderFactory<S
         },
         async close() {
           phase = 'closed'
+          d.registry.clear()
         },
         compute: async (request, call) => {
           if (request.target.bindingId !== factory.bindingId || request.method !== 'prepare')
@@ -466,25 +516,6 @@ function inlineValue(ref: W.DataRef, schema: W.SchemaRef): unknown {
   return ref.value
 }
 
-/** The inline prepared reference as the caller sent it: schema, digest and byte count must all be its own body's. */
-function preparedOf(ref: W.DataRef): {
-  ref: Extract<W.DataRef, { kind: 'inline' }>
-  prepared: W.PreparedModelRequest
-} {
-  const body = ref.kind === 'inline' ? boundedCanonicalJson(ref.value, LIMITS) : null
-  if (
-    ref.kind !== 'inline' ||
-    !body?.ok ||
-    !same(ref.schema, RuntimeSchemaRefs.PreparedModelRequest) ||
-    ref.digest !== canonicalJsonDigest(ref.value) ||
-    ref.bytes !== body.value.bytes
-  )
-    throw fault('invalid_input', 'model_infer_input')
-  const parsed = validateRuntime('PreparedModelRequest', ref.value)
-  if (!parsed.ok) throw fault('invalid_input', 'model_infer_input')
-  return { ref, prepared: parsed.value }
-}
-
 function inferAction(
   d: ModelDeployment,
   owner: W.BindingRef,
@@ -552,13 +583,33 @@ function inferAction(
           )
             throw fault('denied', 'model_binding_denied')
           const request = decode(frame.input, methods.infer.input, 'ModelInferRequest')
-          const { ref, prepared } = preparedOf(request.preparedRef)
-          if (!same(prepared.ownerBinding, owner)) throw fault('denied', 'model_binding_denied')
-          const adapter = d.adapters.select(prepared.target.adapter, call)
+          const decoded = decodeHandle(request.preparedRef)
+          if (!decoded) throw fault('invalid_input', 'model_infer_input')
+          const { ref, handle } = decoded
+          const { sessionId } = runOf(call.scope)
+          if (
+            handle.handleId !== handleIdOf({ runId: frame.runId, sessionId, inputDigest: handle.inputDigest })
+          )
+            throw fault('denied', 'model_binding_denied')
+          if (!same(handle.ownerBinding, owner)) throw fault('denied', 'model_binding_denied')
+          const target = handle.header.route
+          const adapter = d.adapters.select(target.adapter, call)
           if (!adapter) throw fault('denied', 'model_adapter_unavailable')
-          if (!same(adapter.binding, prepared.target.adapter)) throw fault('denied', 'model_target_changed')
-          const credential = checkCredential(prepared.target, prepared.credentialRef, (d.now ?? Date.now)())
+          if (!same(adapter.binding, target.adapter)) throw fault('denied', 'model_target_changed')
+          const credential = checkCredential(target, handle.header.credentialRef, (d.now ?? Date.now)())
           if (!credential.ok) throw fault(credential.error.code, credential.error.detailCode)
+          if (!resumed) {
+            const held = d.registry.get(handle.handleId)
+            if (!held) throw fault('incompatible', 'model_prepared_lost')
+            if (
+              held.runId !== frame.runId ||
+              held.sessionId !== sessionId ||
+              held.inputDigest !== handle.inputDigest ||
+              !same(held.ownerBinding, handle.ownerBinding) ||
+              !same(held.header, handle.header)
+            )
+              throw fault('denied', 'model_prepared_mismatch')
+          }
           const externalKey = externalKeyOf(frame.runId, frame.actionId)
           const input = adapterInvokeInput(ref, externalKey)
           if (!input.ok) throw fault(input.error.code, input.error.detailCode)
@@ -603,7 +654,8 @@ function inferAction(
               }),
               call,
             )
-            if (!reply.ok) throw fault(reply.error.code, 'model_child_invalid')
+            if (!reply.ok)
+              throw fault(reply.error.code, 'model_child_invalid', { kind: 'action', id: receipt.actionId })
             if (reply.value.kind !== 'value') continue
             const view = validateRuntime(
               'ProbeActionResultResult',
@@ -621,7 +673,7 @@ function inferAction(
               continue
             if (result.outcome === 'unknown_effect') {
               if (Date.parse(frame.context.deadline) <= Date.now())
-                throw fault('unknown_effect', 'model_child_unknown')
+                throw fault('unknown_effect', 'model_child_unknown', { kind: 'action', id: result.actionId })
               return transition(wait())
             }
             if (result.outcome !== 'succeeded' || !result.result)

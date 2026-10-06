@@ -41,15 +41,17 @@ const DIGEST = 'a'.repeat(64)
 const CARD = 'acme.notes/card'
 const EXTRA = 'acme.notes/extra'
 const SYNCED = 'acme.notes/synced'
+const VIEWER = 'acme.notes/viewer'
+const HINT = 'This viewer needs a desktop capability (desktop.open-path.v1); showing the basic view.'
 const TARGETS = ['web', 'tui'] as const
 
 type Declared = readonly [string, string, number, number, (readonly string[])?]
 
 // The renderers each module declares: id, render key, the schema revisions of acme.notes/view@1 it
 // reads and the features it requires. base also serves the registry; the selection names base.fallback
-// as its fallback and, with rows, cards.card and cards.synced for their render keys. cards.synced
-// requires a feature this client never negotiates. base.extra is registered by base's entry but never
-// selected.
+// as its fallback and, with rows, cards.card, cards.synced and cards.viewer for their render keys.
+// cards.synced requires a feature this client never negotiates, cards.viewer a desktop capability it
+// lacks. base.extra is registered by base's entry but never selected.
 const RENDERERS: Record<string, readonly Declared[]> = {
   base: [
     ['base.fallback', CARD, 2, 3],
@@ -58,6 +60,7 @@ const RENDERERS: Record<string, readonly Declared[]> = {
   cards: [
     ['cards.card', CARD, 1, 1],
     ['cards.synced', SYNCED, 1, 3, ['acme.sync']],
+    ['cards.viewer', VIEWER, 1, 3, ['desktop.open-path.v1']],
   ],
 }
 
@@ -148,6 +151,7 @@ function catalog(revision: number, target: ClientTarget, rows: boolean) {
         ? [
             { renderKey: CARD, renderer: chose('cards', 'cards.card') },
             { renderKey: SYNCED, renderer: chose('cards', 'cards.synced') },
+            { renderKey: VIEWER, renderer: chose('cards', 'cards.viewer') },
           ]
         : [],
     },
@@ -322,7 +326,8 @@ const shown = () =>
 const unknownDomain = { domainType: 'acme.unknown', renderKey: 'acme.unknown/card' }
 
 describe('domain presentation through the client host', () => {
-  it.each<[string, boolean, DomainView, string]>([
+  // The last column is the hint shown above the view, if any.
+  it.each<[string, boolean, DomainView, string, string?]>([
     ['the renderer selected for the render key', true, view(1, 1), 'cards.card note-1@1'],
     [
       'the selected fallback when the chosen renderer does not fit',
@@ -345,15 +350,24 @@ describe('domain presentation through the client host', () => {
       view(1, 1, { renderKey: SYNCED }),
       'generic',
     ],
+    // The selected renderer is refused for a desktop capability alone, which the hint names.
+    [
+      'the generic card with a hint when the selected renderer requires a desktop capability',
+      true,
+      view(1, 1, { renderKey: VIEWER }),
+      'generic',
+      HINT,
+    ],
     // Unknown domain (case 1): nothing is selected or registered for its domain or render key.
     ['the generic card for an unknown domain and render key', true, view(1, 1, unknownDomain), 'generic'],
     // Old schema (case 3): the revision is older than every selected renderer reads.
     ['the generic card for a schema revision older than any renderer reads', true, view(1, 0), 'generic'],
-  ])('presents %s', async (_, rows, held, expected) => {
+  ])('presents %s', async (_, rows, held, expected, hint) => {
     const h = await harness('web', rows)
     h.hold(held)
     await show(h.domain(held))
     expect(shown()).toBe(expected)
+    expect(host.querySelector('[role="note"]')?.textContent).toBe(hint)
     expect(h.renders['base.extra']).toBeUndefined()
     // View data is never markup, whoever presents the view.
     expect(host.querySelector('b, img')).toBeNull()
@@ -403,16 +417,22 @@ describe('domain presentation through the client host', () => {
   })
 
   // Unknown domain (case 1) and old schema (case 3) on a text client: the generic text, readable.
-  it.each<[string, DomainView]>([
+  // A view whose selected renderer needs a desktop capability gets the hint as its first part.
+  it.each<[string, DomainView, string?]>([
     ['an unknown domain and render key', view(1, 1, unknownDomain)],
     ['a schema revision older than any renderer reads', view(1, 0)],
-  ])('formats %s in the generic text', async (_, held) => {
+    ['a view whose selected renderer requires a desktop capability', view(1, 1, { renderKey: VIEWER }), HINT],
+  ])('formats %s in the generic text', async (_, held, hint) => {
     const h = await harness('tui', true)
     h.hold(held)
     const generic = formatDomainView(held, { locale: 'en', capabilities })
     if (!generic.ok) throw new Error(generic.error.message)
     expect(generic.value.parts).toContainEqual({ kind: 'text', text: 'Note <b>saved</b>' })
-    expect(h.domain(held)).toEqual({ ok: true, value: { target: 'tui', formatted: generic.value } })
+    const parts = hint ? [{ kind: 'text', text: hint }, ...generic.value.parts] : generic.value.parts
+    expect(h.domain(held)).toEqual({
+      ok: true,
+      value: { target: 'tui', formatted: { ...generic.value, parts } },
+    })
   })
 
   // Disabled plugin (case 2): once the next catalog no longer selects the card plugin, or no longer

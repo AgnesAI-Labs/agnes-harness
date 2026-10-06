@@ -5,7 +5,10 @@ import {
   adapterInvokeInput,
   assemblePrepared,
   checkCredential,
+  decodeHandle,
   externalKeyOf,
+  handleIdOf,
+  headerOf,
   INFER_CHILD_KEY,
   modelCaptureOf,
   type PrepareParts,
@@ -14,6 +17,7 @@ import {
 import { modelInputDigest } from '../../src/runtime/model/wire-request.js'
 import {
   fixtureAdapter,
+  fixtureHandle,
   fixtureOwner,
   fixturePick,
   fixtureWire,
@@ -25,7 +29,16 @@ const pick = fixturePick()
 const capture = modelCaptureOf('package-1', pick)
 const parts = (over: Partial<PrepareParts> = {}): PrepareParts => {
   const { hookResults: _h, ...request } = prepareRequest()
-  return { owner: fixtureOwner, request, capture, wire: fixtureWire, estimatedUnits: [], ...over }
+  return {
+    runId: 'run-1',
+    sessionId: 'session-1',
+    owner: fixtureOwner,
+    request,
+    capture,
+    wire: fixtureWire,
+    estimatedUnits: [],
+    ...over,
+  }
 }
 const assembled = (over: Partial<PrepareParts> = {}) => {
   const result = assemblePrepared(parts(over))
@@ -50,7 +63,7 @@ describe('modelCaptureOf', () => {
 
 describe('assemblePrepared', () => {
   it('builds a schema-valid prepared request whose inputDigest is the shared digest and whose id follows it', () => {
-    const { prepared, ref } = assembled()
+    const { prepared, entry } = assembled()
     expect(validateRuntime('PreparedModelRequest', prepared).ok).toBe(true)
     expect(prepared.inputDigest).toBe(modelInputDigest(prepared, capture, fixtureWire))
     expect(prepared.preparedId).toBe(preparedIdOf(prepared.inputDigest))
@@ -60,11 +73,52 @@ describe('assemblePrepared', () => {
       legacyRequestOverrides: null,
       ownerBinding: fixtureOwner,
     })
-    expect(ref.schema).toEqual(RuntimeSchemaRefs.PreparedModelRequest)
-    expect(ref.digest).toBe(canonicalJsonDigest(prepared as never))
+    expect(entry).toMatchObject({
+      runId: 'run-1',
+      sessionId: 'session-1',
+      prepared,
+      capture,
+      wire: fixtureWire,
+    })
+    expect(entry.header).toEqual(headerOf(prepared, capture, fixtureWire))
+    expect(entry.request.derivedHash).toBe(prepared.inputDigest)
+  })
+  it('returns a handle reference whose content is only the handle, with no request text and no secret', () => {
+    const { prepared, ref, handleId } = assembled()
+    expect(ref.schema).toEqual(RuntimeSchemaRefs.PreparedModelHandle)
+    expect(validateRuntime('PreparedModelHandle', ref.value).ok).toBe(true)
+    expect(ref.value).toMatchObject({
+      kind: 'agh.model/prepared-handle@1',
+      handleId,
+      inputDigest: prepared.inputDigest,
+      ownerBinding: fixtureOwner,
+    })
+    expect(Object.keys(ref.value as object).sort()).toEqual(
+      ['handleId', 'header', 'inputDigest', 'kind', 'ownerBinding'].sort(),
+    )
+    expect(JSON.stringify(ref.value)).not.toContain('hello')
+    expect(ref.digest).toBe(canonicalJsonDigest(ref.value))
+    expect(decodeHandle(ref)).toMatchObject({ handle: { handleId } })
   })
   it('is byte-identical when run again, so a replay after a crash yields the same reference', () => {
     expect(assembled().ref).toEqual(assembled().ref)
+    expect(assembled().handleId).toBe(assembled().handleId)
+  })
+  it('names the handle over run, session and input, so it cannot move between runs or sessions', () => {
+    const base = assembled().handleId
+    expect(base).toBe(
+      handleIdOf({ runId: 'run-1', sessionId: 'session-1', inputDigest: assembled().prepared.inputDigest }),
+    )
+    expect(assembled({ runId: 'run-2' }).handleId).not.toBe(base)
+    expect(assembled({ sessionId: 'session-2' }).handleId).not.toBe(base)
+    expect(assembled({ wire: { ...fixtureWire, slot: 'fast' } }).handleId).not.toBe(base)
+  })
+  it('carries the credential handle and the media digests in the header', () => {
+    expect(assembled().entry.header).toMatchObject({
+      credentialRef: fixtureHandle,
+      mediaPlanDigests: [],
+      maxOutputTokens: 32,
+    })
   })
   it.each([
     ['the wire slot', { wire: { ...fixtureWire, slot: 'fast' as const } }],
@@ -101,6 +155,28 @@ describe('assemblePrepared', () => {
       ok: false,
       error: { code: 'incompatible', detailCode: 'model_prepared_too_large' },
     })
+  })
+})
+
+describe('decodeHandle', () => {
+  const { ref } = assembled()
+  it.each([
+    ['a digest that is not the body', { ...ref, digest: 'e'.repeat(64) }],
+    ['a wrong byte count', { ...ref, bytes: ref.bytes + 1 }],
+    ['another schema', { ...ref, schema: RuntimeSchemaRefs.PreparedModelRequest }],
+    [
+      'a body that is not a handle',
+      {
+        ...ref,
+        value: { kind: 'agh.model/prepared-handle@1' },
+        digest: canonicalJsonDigest({ kind: 'agh.model/prepared-handle@1' }),
+      },
+    ],
+  ])('refuses %s', (_name, forged) => {
+    expect(decodeHandle(forged as W.DataRef)).toBeNull()
+  })
+  it('refuses a blob reference', () => {
+    expect(decodeHandle({ kind: 'blob' } as unknown as W.DataRef)).toBeNull()
   })
 })
 
@@ -181,7 +257,7 @@ describe('child input', () => {
       vi.useRealTimers()
     }
   })
-  it('wraps the original prepared reference unchanged with the external key', () => {
+  it('wraps the original handle reference unchanged with the external key', () => {
     const input = adapterInvokeInput(ref, externalKeyOf('run-1', 'parent-1'))
     if (!input.ok) throw new Error(input.error.detailCode)
     expect(validateRuntime('ModelAdapterInvokeRequest', input.value.value).ok).toBe(true)

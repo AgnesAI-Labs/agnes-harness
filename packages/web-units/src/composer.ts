@@ -17,6 +17,7 @@ import {
   type KeyboardEvent,
   type ReactNode,
   useCallback,
+  useId,
   useImperativeHandle,
   useLayoutEffect,
   useRef,
@@ -287,6 +288,9 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
   ref: ForwardedRef<ComposerHandle>,
 ) {
   const [view, setView] = useState<ComposerView>(initialView)
+  // Ids are minted per mount so two composers in one document never share one.
+  const promptId = useId()
+  const hintId = useId()
   const [attachments, setAttachments] = useState<ComposerAttachment[]>([])
   const [pendingCount, setPendingCount] = useState(0)
   const form = useRef<HTMLFormElement>(null)
@@ -600,7 +604,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
       'form',
       {
         ref: form,
-        id: 'composer',
+        className: 'composer-form',
         'data-agnes-region': 'composer',
         'data-agnes-region-owner': 'builtin',
         'data-agnes-region-unit': 'composer',
@@ -661,15 +665,16 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
         { className: 'composer-writing' },
         createElement(
           'label',
-          { className: 'visually-hidden', htmlFor: 'prompt' },
+          { className: 'visually-hidden', htmlFor: promptId },
           dependencies.translate('composer.input.label'),
         ),
         createElement('textarea', {
           ref: prompt,
-          id: 'prompt',
+          id: promptId,
+          className: 'composer-prompt',
           'data-agnes-region': 'composer-input',
           rows: 1,
-          'aria-describedby': 'composer-hint',
+          'aria-describedby': hintId,
           disabled: view.input.disabled,
           placeholder: view.input.placeholder,
           defaultValue: initialDraft,
@@ -691,7 +696,11 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
           onInput: (event: FormEvent<HTMLTextAreaElement>) => onDraftChange(event.currentTarget.value),
           onPaste: handlePaste,
         }),
-        createElement('p', { id: 'composer-hint', 'data-kind': view.hint.kind }, view.hint.text),
+        createElement(
+          'p',
+          { id: hintId, className: 'composer-hint', 'data-kind': view.hint.kind },
+          view.hint.text,
+        ),
         slots?.attachments,
       ),
       createElement(
@@ -701,7 +710,6 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
         createElement(
           'button',
           {
-            id: 'composer-workspace',
             className: 'composer-workspace',
             type: 'button',
             'aria-haspopup': 'dialog',
@@ -738,7 +746,6 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
           'button',
           {
             ref: permission,
-            id: 'composer-permission',
             className: 'composer-permission',
             type: 'button',
             'aria-haspopup': 'listbox',
@@ -780,7 +787,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
             'button',
             {
               ref: model,
-              id: 'model',
+              className: 'composer-model',
               type: 'button',
               'aria-haspopup': 'listbox',
               'aria-expanded': false,
@@ -803,7 +810,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
           'section',
           {
             ref: usage,
-            id: 'session-usage',
+            className: 'composer-usage',
             'aria-label': dependencies.translate('composer.usage.label'),
             hidden: dependencies.UsagePanel ? !view.usage : true,
           },
@@ -818,8 +825,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
         createElement(
           'button',
           {
-            id: 'cancel',
-            className: 'secondary-button compact',
+            className: 'composer-cancel secondary-button',
             type: 'button',
             hidden: view.cancel.hidden,
             disabled: view.cancel.disabled,
@@ -830,8 +836,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
         createElement(
           'button',
           {
-            id: 'send',
-            className: 'primary-button',
+            className: 'composer-send primary-button',
             type: 'submit',
             disabled: view.send.disabled,
             'data-mode': view.send.mode,

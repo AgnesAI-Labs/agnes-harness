@@ -115,7 +115,7 @@ describe('independent reference text statistics Tools', () => {
       for (const [change, code, detailCode] of [
         [{ modelContextRef: selected.input.describe }, 'denied', 'tools_model_context_schema'],
         [
-          { modelContextRef: fixtures.toolsRef(RuntimeSchemaRefs.PreparedModelRequest, {}) },
+          { modelContextRef: fixtures.toolsRef(RuntimeSchemaRefs.PreparedModelHandle, {}) },
           'incompatible',
           'tools_model_context_source_unavailable',
         ],

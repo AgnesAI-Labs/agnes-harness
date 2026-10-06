@@ -353,9 +353,9 @@ export function createBlobService(options: BlobServiceOptions): BlobService {
   return Object.freeze({
     binding: options.binding,
     stage: (request, context) => call(context, () => stage(store, request, context)),
-    promote: (request, context) => call(context, () => promote(store, request)),
-    pin: (request, context) => call(context, () => pin(store, request)),
-    unpin: (request, context) => call(context, () => unpin(store, request)),
+    promote: (request, context) => call(context, () => promote(store, request, context)),
+    pin: (request, context) => call(context, () => pin(store, request, context)),
+    unpin: (request, context) => call(context, () => unpin(store, request, context)),
     gc: (request, context) => call(context, () => gc(store, request, context)),
     inspect: (request, context) => call(context, () => inspect(store, request)),
     blobRead,

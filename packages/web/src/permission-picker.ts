@@ -65,6 +65,7 @@ export type PermissionPicker = {
 const viewportPadding = 12
 
 function permissionOption(
+  idPrefix: string,
   option: PermissionOption,
   index: number,
   state: PermissionPickerState,
@@ -74,7 +75,7 @@ function permissionOption(
   return createElement(
     'div',
     {
-      id: `permission-picker-option-${index}`,
+      id: `${idPrefix}-option-${index}`,
       key: option.id,
       className: 'permission-picker-option',
       role: 'option',
@@ -94,6 +95,7 @@ function permissionOption(
 }
 
 function permissionOptions(
+  idPrefix: string,
   state: PermissionPickerState,
   activeIndex: number,
   t: Translate,
@@ -101,6 +103,7 @@ function permissionOptions(
 ): ReactNode[] {
   return PERMISSION_OPTIONS.map((option, index) =>
     permissionOption(
+      idPrefix,
       {
         ...option,
         label: t(PERMISSION_OPTION_LABEL_KEYS[option.id]),
@@ -114,6 +117,9 @@ function permissionOptions(
   )
 }
 
+// Each picker numbers its own element ids, so two pickers in one document never share one.
+let pickers = 0
+
 export function createPermissionPicker(options: {
   onError(error: unknown): void
   onSelect(mode: PermissionMode): Promise<boolean>
@@ -121,6 +127,7 @@ export function createPermissionPicker(options: {
   trigger: HTMLButtonElement
 }): PermissionPicker {
   const { t, trigger } = options
+  const idPrefix = `permission-picker-${++pickers}`
   // Popover, outside-click and viewport listeners belong to the trigger's document, not the global one.
   const view = trigger.ownerDocument.defaultView
   let state: PermissionPickerState = { disabled: true, pending: false, selected: 'workspace' }
@@ -147,11 +154,11 @@ export function createPermissionPicker(options: {
 
   function renderOptions(): void {
     if (!listbox) return
-    listbox.setAttribute('aria-activedescendant', `permission-picker-option-${activeIndex}`)
+    listbox.setAttribute('aria-activedescendant', `${idPrefix}-option-${activeIndex}`)
     listbox.setAttribute('aria-busy', String(state.pending || selecting))
     webUi.renderRegion(
       listbox,
-      permissionOptions(state, activeIndex, t, (index) => {
+      permissionOptions(idPrefix, state, activeIndex, t, (index) => {
         selectingFromPointer = true
         void select(index)
         queueMicrotask(() => {
@@ -182,7 +189,7 @@ export function createPermissionPicker(options: {
   function setActive(index: number): void {
     if (!listbox) return
     activeIndex = (index + PERMISSION_OPTIONS.length) % PERMISSION_OPTIONS.length
-    listbox.setAttribute('aria-activedescendant', `permission-picker-option-${activeIndex}`)
+    listbox.setAttribute('aria-activedescendant', `${idPrefix}-option-${activeIndex}`)
     renderOptions()
   }
 
@@ -214,10 +221,10 @@ export function createPermissionPicker(options: {
     interaction += 1
     activeIndex = selectedIndex()
     popover = webUi.createRegionHost(trigger.ownerDocument.body, 'section', 'permission-picker')
-    popover.id = 'permission-picker-popover'
+    popover.id = idPrefix
     popover.setAttribute('aria-label', t('settings.picker.aria'))
     listbox = webUi.createRegionHost(popover, 'div', 'permission-picker-list')
-    listbox.id = 'permission-listbox'
+    listbox.id = `${idPrefix}-listbox`
     listbox.setAttribute('role', 'listbox')
     listbox.setAttribute('aria-label', t('settings.picker.listAria'))
     listbox.tabIndex = -1

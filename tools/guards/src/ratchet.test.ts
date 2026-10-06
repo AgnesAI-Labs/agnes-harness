@@ -320,20 +320,28 @@ const INITIAL_CEILING: Record<string, number> = {
   // The client selection refuses a welcome without one and a renderer entry its module does not load.
   // Measured 3677, exact (+4).
   // An unknown domain view phase finds no tone through one lookup. Measured 3672, exact (-5).
-  'packages/web-client/src': 3672,
+  // Missing desktop capabilities are named: the generic card's reason, a renderer refused for them with a
+  // viewer hint, and a module requiring an unnegotiated feature fails its candidate. Measured 3733,
+  // exact (+61).
+  // The runtime entry re-exports the client host, selection, window merge and presenter. Measured 3752,
+  // exact, no spare (+19).
+  'packages/web-client/src': 3752,
   'packages/web-slots/src': 605,
   // Failed shell calls read as their exit code (+19 lines); measured 4891, exact cap.
   // B-line diagnostics dialog: React view adds 147 lines; measured 4706, exact cap.
   // Domain cards in the conversation window projection and message list: measured 4792, exact cap (+86).
   // Popover placement measures the trigger's own window. Measured 6714, exact, no spare (+2).
   // Sixth main synchronization brings main's queued-input CI fixes. Measured 6736, exact, no spare.
-  // Combined image-attachment and runtime sources: measured 6708, exact, no spare.
-  'packages/web-ui/src': 6708,
+  // Sandboxed HTML viewer frame and its request checks. Measured 6871, exact, no spare (+135).
+  // The viewer keys its frame by a mount count and clears a navigation notice for new content.
+  // Measured 6873, exact, no spare (+2).
+  'packages/web-ui/src': 6873,
   // W8a-3: retire the native tool renderer in favor of one compatibility root; measured 4630.
   // The offline diagnostics viewer refuses an unknown bundle version (+7 lines); measured 4645, exact cap.
   // Sidebar binds against its own document and window. Measured 5559, exact, no spare (+1).
-  // Combined image-attachment and runtime sources: measured 5941, exact, no spare.
-  'packages/web-units/src': 5941,
+  // Workbench units mint per-mount ids or carry classes instead of fixed ids. Measured 5637, exact, no
+  // spare.
+  'packages/web-units/src': 5637,
   // Locale catalogs on LocaleService. Measured 1745, exact, no spare (+31).
   // Failed shell calls read as their exit code (+19 lines); measured 4891, exact cap.
   // W8a-3: retire the native tool renderer in favor of one compatibility root; measured 4630.
@@ -514,15 +522,15 @@ const INITIAL_CEILING: Record<string, number> = {
   // UI integration merge: the default React transcript now receives the inline card claim callback,
   // which lands on top of the diagnostics wiring above. Re-measured with countLines(): 1827, exact.
   // Locale bridge and slot card bindings removed. Measured 2014, exact, no spare (-2).
-  // Combined image-attachment and runtime sources: measured 2146, exact, no spare.
-  'packages/web/src/app': 2146,
-  // 2026-10-04 image attachments: app.ts submits ContentBlock content while keeping the title locale.
-  // Measured: 2148, exact, no spare.
+  // The app mounts the workbench through the shell switch and keeps its shell snapshot. Measured 2137,
+  // exact, no spare (+43).
+  'packages/web/src/app': 2137,
   // 2026-09-22 UI plugin management: inject the embedded pane's client runtime reconciler.
   // 2026-09-25 UI refactor: permission options now render through the React region contract.
   // Re-measured with countLines(): 215, exact, no spare.
   // Injected translate; popover on the trigger's document. Measured 251, exact, no spare (+3).
-  'packages/web/src/permission-picker': 251,
+  // Popover, listbox and option ids are numbered per picker. Measured 256, exact, no spare (+5).
+  'packages/web/src/permission-picker': 256,
   // 2026-09-17 WEB-RUN-TRACE: new panel renderer. Measured 130; exact cap, no spare.
   // 2026-09-17 DSH parity: gantt + event list + inspector. Measured 411.
   // 2026-09-17 DSH layout: idle-compressed gantt. Measured 445.
@@ -533,11 +541,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // 2026-09-25 UI refactor: model options now render through the React region contract.
   // Re-measured with countLines(): 274, exact, no spare.
   // Injected translate; popover on the trigger's document. Measured 286, exact, no spare (+4).
-  // Combined image-attachment and runtime sources: measured 983, exact, no spare.
-  'packages/web/src/model-picker': 983,
-  // 2026-10-04 preview-path fixes: the leaf keyboard boundary follows the previewed model, the
-  // duplicate-submit short circuit applies only to the current model, the blur guard covers the
-  // detail panel, and hover matches the keyboard path (+6 counted lines). Measured: 975, exact.
+  // Popover, listbox and option ids are numbered per picker. Measured 290, exact, no spare (+4).
+  'packages/web/src/model-picker': 290,
   // 2026-09-25 UI refactor: settings-owned element construction uses the shared UI host boundary.
   // Re-measured with countLines(): 754, exact, no spare.
   // Settings controller receives translate explicitly. Measured 902, exact, no spare (+2).
@@ -576,7 +581,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // #resource-settings-pane），showSettingsPane 改按 aria-selected 决定哪一条高亮。实测 89。
   // SESSION-ACTIONS integrated with b/main: exact increment +1.
   // bindSidebar receives its document and translate. Measured 110, exact, no spare (+3).
-  'packages/web/src/shell': 110,
+  // The sidebar binding finds its controls by class inside its workbench. Measured 114, exact, no spare (+4).
+  'packages/web/src/shell': 114,
   // 2026-09-17 rebase 后的重新实测：turns.ts 把过程摘要搬进过程行、用量面板只留关键项、
   // 运行中页脚整行隐藏（原 432 是旧实现的实测值），收紧到实测精确值 399。
   'packages/web/src/turns': 407,
@@ -1127,15 +1133,27 @@ const INITIAL_CEILING: Record<string, number> = {
   'packages/core/src': 36026,
   // Model service preparation: prepared request assembly and managed credential resolution (+575); measured 35748, exact, no spare.
   // Model service infer: one stable child action, result and usage attribution from the child (+247). Measured 35995, exact, no spare.
+  // Model prepared handle and bounded in-process registry (+161).
+  // Installed Effects dispatch coordinator (+812); combined exact cap.
+  // Pure supervisor kernel (+205) and repeatable model readiness (+1).
+  // Installed pure Hook actions and current authority/lifecycle (+254); exact combined cap.
+  // Shared media preflight bridge and image-model selection (+153); exact cap, no spare.
+  // Runtime media identity, planner, verification and byte resolution (+542); exact cap, no spare.
+  // Default runtime media provider with conversion continuation (+952); exact cap, no spare.
+  // Wire request carries verified media parts and names structured output as unsupported (+45); exact cap, no spare.
+  // The Loop reads the prepared handle instead of the prepared body and re-reads the offered tools from its fixed source (-2).
+  // The Loop accepts the media plans the prepared handle header commits to, by digest, not only none (+22); exact cap, no spare.
+  // The media result and byte resolution entry points leave the package root for the model source reader (+3); exact cap, no spare.
+  // Clarify the single-text tool input description (+1); 39144 measured, no spare allocation.
+  // Wire request builder expresses a resolved tool catalog and paired tool history (+262); exact cap, no spare.
+  // The Model service resolves a request's tool catalog through an injected port, binds the descriptions into the input digest and refuses a route without a credential binding (+24); exact cap, no spare.
+  // An unknown effect from the Model and Media providers carries reconcile advice naming the unresolved action (+18); exact cap, no spare.
+  // Supervisor ports, wire helpers, session-control forwarding and provider shell (+555); exact cap, no spare.
+  // The Supervisor measures a call's deadline against the deployment's trusted clock (+4); exact cap, no spare.
+  'packages/core/src': 40014,
   // Testkit-only reference Effects runner adds 202 measured lines; exact cap, no spare.
-  'packages/core/testkit': 1997,
-  // 2026-10-04 image attachments: user-message-images.ts (new) plus its session wiring, merged
-  // onto the queue view. Measured: 25965, exact, no spare.
-  // Guardian-decided approvals no longer reopen a parked continuation (+2), a Stop on a running mutating
-  // call is recorded as cancelled once it has stopped (+54), and approval decisions keep their reason (+82).
-  // Measured 26071 with all three merged on top of main 25934, exact cap; each alone is lower.
-  // 2026-10-05 the two sides coexist on the merged tree, so neither side's number holds. Re-measured
-  // with countLines() after the merge: 26102, exact, no spare.
+  // Independent Effects dispatch reference (+440); exact measurement below.
+  'packages/core/testkit': 2437,
   // 2026-09-15: DeepSeek V4 Pro/Flash ship a known-thinking-corrections table (new file) so the
   // product corrects pi-ai's verified-wrong reasoning_effort data out of the box, instead of
   // requiring every deployment to hand-edit thinkingEfforts once they notice. Measured 3347.
@@ -1152,7 +1170,10 @@ const INITIAL_CEILING: Record<string, number> = {
   // Agnes default output allowance is explicitly serialized to HTTP. Measured +6, exact allocation.
   // Injected model egress fetch in PiAdapter (the catalogue probe skipped behind it) and a required per-call
   // egress port in the runtime model adapter. Measured 5908 (+26), exact cap, no spare.
-  'packages/ai/src': 5908,
+  // Model adapter answers a lost prepared call from the store instead of loading it (+8). Measured 5916, exact, no spare.
+  // Model source check consumes verified media evidence (+57). Measured 5973, exact, no spare.
+  // The model adapter's unknown-effect errors carry reconcile advice naming the unresolved action (+9); exact cap, no spare.
+  'packages/ai/src': 6017,
   // 2026-09-09: raised from 500, which was exactly the measured count and so forbade every
   // further line. Two repairs were blocked by it and are landing with this raise: the provider
   // factory taking log + pricing (without which every delivered assembly denominates ledger
@@ -1580,7 +1601,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // exported as constants. Measured 981 (+3), exact, no spare.
   // Optional ExecResult.timedOut and the soft-deadline note on timeoutMs. Measured 987 (+6), exact cap.
   // Optional ToolContext.defaultTimeoutMs. Measured 988 (+1), exact cap.
-  'packages/extension-api/src': 5485, // Exact source total including runtime author adapters.
+  // Standard artifact adapter (reserve, render, publish over EffectPorts). Measured 5667 (+182), exact.
+  'packages/extension-api/src': 5667, // Exact source total including runtime author adapters.
   // Optional author fixture entry; no production runtime code belongs here.
   // B1-A: measured 229 lines on the shared tree; public transport contract, config and wiring/testkit.
   // B1 review repair: exact measured 246; startup cancellation / cwd contract coverage.
@@ -1653,7 +1675,14 @@ const INITIAL_CEILING: Record<string, number> = {
   // Tools contracts +247, Context +339, Loop +170; exact, no spare.
   // Transport recovery checks read only the report of the request in question (+2), exact.
   // Events fixed page set, full-page checkpoint and cross-session checkpoint cases (+11), exact.
-  'packages/extension-api/testkit': 17083,
+  // Effects dispatch lifecycle contracts (+113); exact cap, no spare.
+  // Model service public contract (six scenarios) and its restricted child peer. Measured 17753 (+557), exact, no spare.
+  // Renderer and shell cases for a desktop capability the client lacks. Measured 17808, exact (+55).
+  // Blob deny case: another principal's promote, pin and unpin are refused. Measured 17863 (+55), exact.
+  // Media contract scenarios and in-memory fixture (+763); exact cap, no spare.
+  // Supervisor descriptor and config helpers (+73); exact cap, no spare.
+  // Supervisor public contract: six scenarios and the restricted peer fixture interface (+372); exact cap, no spare.
+  'packages/extension-api/testkit': 19071,
   // 2026-09-10: raised from 2500 by Task 15 (stream-disconnect reconnection). The new
   // reattach.ts (the Reconnector: backoff loop, OVERLOADED's retryAfterMs override) plus
   // Session.recover()/waitForQuiescence and Client's reconnect wiring (emit(), the
@@ -1733,10 +1762,13 @@ const INITIAL_CEILING: Record<string, number> = {
   // Runtime commands journal per identity partition, stay accepted until final, are capped and archivable.
   // Measured 6349, exact (+49).
   // The runtime client exposes the client selection its welcome carried. Measured 6352, exact (+3).
-  // Combined image-attachment and runtime sources: measured 6353, exact, no spare.
-  'packages/sdk/src': 6353,
-  // 2026-10-04 image attachments: image blocks flow through the UI projection sync.
-  // Measured: 5176, exact, no spare.
+  // The text format names a missing desktop capability and keeps such a view complete. Measured 6359,
+  // exact (+7).
+  // The runtime client's local interfaces as one client, with ticket-checked download following.
+  // Measured 6498, exact (+139).
+  // The runtime client refuses a welcome at a wire version its hello did not offer. Measured 6502,
+  // exact (+4).
+  'packages/sdk/src': 6502,
   'packages/sdk/src/extensions.node': 21,
   'packages/sdk/src/package-admin.node': 147,
   'packages/sdk/src/surface.browser': 3,
@@ -2111,7 +2143,9 @@ const INITIAL_CEILING: Record<string, number> = {
   // Exact merged main and runtime integration source count; no spare allocation.
   // Default agh.events provider over the domain store, with its event lookups; measured 28215 (+386), exact.
   // Durable event high-water, identity backstop and shared event fingerprint (+30); measured 28245, exact.
-  'packages/daemon/src': 28245,
+  // Original supervisor session-owner facts and rechecks (+36), exact cap.
+  // Runtime client subscriptions close idle readers, answer stale reads with resync and bound control commands (+141); measured 28422, exact.
+  'packages/daemon/src': 28422,
   'packages/daemon/src/packages/admin-session': 46,
   // 2026-09-14: whole-branch review fix wave (Finding 1) adds the two missing
   // 'pins/inspect'/'pins/release' entries to the ACTIONS BFF route allowlist, which had been left
@@ -2369,13 +2403,10 @@ const INITIAL_CEILING: Record<string, number> = {
   // The default shell rewrites its lists in place so a selection survives an update. Measured 16745, exact,
   // no spare (+40).
   // Sixth main synchronization brings main's queued-input CI fixes. Measured 16849, exact, no spare.
-  // Combined image-attachment and runtime sources: measured 17637, exact, no spare.
-  'packages/web/src': 17637,
-  // 2026-10-04 model picker cascade refactor, image attachment wiring and the i18n UI fixes, merged
-  // onto the title-locale/queue work. Measured: 16839, exact, no spare.
-  // Approval reasons: the approval card label reads the decision reason (+22). Measured 16081 (combined tree), exact cap.
-  // 2026-10-05 the merge keeps both sides' additions, so neither number holds. Re-measured on the
-  // merged tree: 16861, exact, no spare.
+  // The built-in workbench mounts as a ShellProvider through the shell switch, with transitional
+  // ShellServices and a snapshot store; fixed shell ids become classes or per-mount ids. Measured 17192,
+  // exact, no spare (+343).
+  'packages/web/src': 17192,
   // 2026-09-17 web-client-modules frontend track (rebased onto L0/permission-picker main): re-measured exact value below.
   // 2026-09-14: Task 7 orphaned-pin-cleanup adds the orphan-pins section to PluginAdminPage — the
   // #orphanPins/#orphanPinsList/#orphanPinsStatus/#orphanPinsReleaseAll element bindings, the
@@ -2463,7 +2494,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // no spare (+10).
   // A renderer that throws or answers with no outcome is refused like one that refuses. Measured 5399,
   // exact, no spare (+10).
-  'packages/channels/src': 5399,
+  // Such a renderer now yields to the default text renderer instead. Measured 5407, exact, no spare (+8).
+  'packages/channels/src': 5407,
   'packages/code/src': 1600,
   'packages/cli/src/args': 300,
   'packages/runtime-python/src': 400,
@@ -2964,7 +2996,22 @@ const INITIAL_CEILING: Record<string, number> = {
   // Durable model call store for sent-request facts and their lookup. Measured 83038 (+465), exact, no spare.
   // fix(host): an artifact version is ready only on a pin it owns. Measured 83039 (+1), exact, no spare.
   // Host-side State read groundwork: historical meta for native facts, windowed point reads and byte-packed pages, Stored envelope encoding, port types. Measured 83319 (+280 on top of the above), exact, no spare.
-  'packages/host/src': 83319,
+  // Original identity clock and State dispatch source (+467 on 83336); exact cap, no spare.
+  // Verified historical admitted Action/Attempt reads (+229), exact cap.
+  // Model source reader reads the in-process registry; the retained capture store is removed (-71). Measured 83961, exact, no spare.
+  // Model parent and child bridge readiness probe. Measured 83981 (+20), exact, no spare.
+  // Session model selection: resolution against the current catalog, switch checks and the loop input overlay. Measured 84197 (+216), exact, no spare.
+  // Blob promote, pin and unpin check the caller's principal; pins record it. Measured 84227 (+30), exact.
+  // State read owner and port capture take no database handle or identity; the owner drains in-flight reads on close (+5).
+  // State scan query service over the read owner and a bridge: scan, open, typed point reads, close order (+365). Measured 84597 (+370), exact.
+  // The model source reader asks a media result source for the verified media of a prepared call that carries plans (+137); exact cap, no spare.
+  // State closes admission: the run-state gate on every path that creates work, begin_drain and cancel_run (+147); exact cap, no spare.
+  // State finishes composite parents: provider complete and fail, finalize_composite and settle_undispatched (+293 on 85855); exact cap, no spare.
+  // State's stored envelope uses its registered schema reference; the pending placeholder is removed (-4). Measured 86144, exact.
+  // State marks an open leaf attempt unknown and resolves an unresolved action: mark_unknown, resolve_action and the resolution record (+225 on 86144); exact cap, no spare.
+  // State finishes a draining run as failed or cancelled and hands unresolved effects over with their owners: finalize_run (+75 on 86369); exact cap, no spare.
+  // State persists a receipt lookup before it runs and stores its result: beginReconciliation, completeReconciliation and the check record (+247 on 86444); exact cap, no spare.
+  'packages/host/src': 86691,
   'packages/host/src/ext-host/service-invocation': 247,
   // T5.2's permission projector is kept independently bounded so later extension-host work cannot
   // hide in the package-wide increment. Measured source: 86 lines.

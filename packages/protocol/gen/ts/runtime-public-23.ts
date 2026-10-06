@@ -53,6 +53,7 @@ export const RuntimePublic23 = Type.Module({
   "Externalagnes_v1_JobSpec": Type.Ref('Externaljobs_JobSpec'),
   "JobSpec": Type.Ref('Externalagnes_v1_JobSpec'),
   "Cursor": Type.String(),
+  "RecordMeta": Type.Object({ "recordId": Type.Ref('Id'), "schema": Type.Ref('SchemaRef'), "minReader": Type.Ref('UInt53'), "recordRevision": Type.Ref('UInt53'), "lastCommitId": Type.Ref('Id'), "createdAt": Type.Ref('Timestamp'), "updatedAt": Type.Ref('Timestamp') }, { additionalProperties: false }),
   "RecordOwner": Type.Object({ "authority": Type.Ref('StateAuthorityRef'), "scope": Type.Ref('ScopeRef'), "ownerBinding": Type.Ref('BindingRef') }, { additionalProperties: false }),
   "AuthorizedViewScope": Type.Union([Type.Object({ "installationId": Type.Ref('Id'), "runtimeId": Type.Ref('Id'), "workspaceId": Type.Ref('Id'), "kind": Type.Literal('workspace') }, { additionalProperties: false }), Type.Object({ "installationId": Type.Ref('Id'), "runtimeId": Type.Ref('Id'), "workspaceId": Type.Ref('Id'), "sessionId": Type.Ref('Id'), "kind": Type.Literal('session') }, { additionalProperties: false })]),
   "ArtifactTitle": Object.assign(Type.String({ minLength: 1, pattern: "^[^\\u0000-\\u001f\\u007f]+$" }), {"x-max-utf8-bytes":1024}),
@@ -131,6 +132,7 @@ export const RuntimePublic23 = Type.Module({
   "StateScanResult": Type.Object({ "items": Type.Array(Type.Ref('DataRef'), { maxItems: 500 }), "snapshot": Type.Ref('Id'), "nextCursor": Type.Union([Type.Ref('Cursor'), Type.Null()]), "complete": Type.Boolean() }, { additionalProperties: false }),
   "StateProbeCommitRequest": Type.Object({ "commitId": Type.Ref('Id') }, { additionalProperties: false }),
   "StateProbeCommitResult": Type.Union([Type.Ref('StateCommitReceipt'), Type.Null()]),
+  "StoredRecord": Type.Object({ "meta": Type.Ref('RecordMeta'), "owner": Type.Ref('RecordOwner'), "value": JsonValue }, { additionalProperties: false }),
   "StateLeaseRecordValue": Type.Object({ "sessionId": Type.Ref('Id'), "lastWriterEpoch": Type.Ref('UInt53'), "claim": Type.Union([Type.Ref('WriterClaim'), Type.Null()]) }, { additionalProperties: false }),
   "StateLeaseProofValue": Type.Object({ "request": Type.Ref('StateLeaseRequest'), "requestFingerprint": Type.Ref('Digest'), "evaluatedAt": Type.Ref('Timestamp'), "sessionIdentityVersion": Type.Ref('ReadGuard'), "previousLeaseVersion": Type.Union([Type.Ref('ReadGuard'), Type.Null()]), "leaseVersion": Type.Ref('ReadGuard') }, { additionalProperties: false }),
   "StateWriteOpenRequest": Type.Object({ "requestId": Type.Ref('Id'), "authority": Type.Ref('StateAuthorityRef'), "sessionId": Type.Ref('Id'), "mode": Type.Literal('write'), "writerId": Type.Ref('Id'), "ttlMs": Type.Ref('UInt53') }, { additionalProperties: false }),
@@ -220,6 +222,8 @@ export const JobSpec = RuntimePublic23.Import('JobSpec')
 export type JobSpec = Static<typeof JobSpec>
 export const Cursor = RuntimePublic23.Import('Cursor')
 export type Cursor = Static<typeof Cursor>
+export const RecordMeta = RuntimePublic23.Import('RecordMeta')
+export type RecordMeta = Static<typeof RecordMeta>
 export const RecordOwner = RuntimePublic23.Import('RecordOwner')
 export type RecordOwner = Static<typeof RecordOwner>
 export const AuthorizedViewScope = RuntimePublic23.Import('AuthorizedViewScope')
@@ -376,6 +380,8 @@ export const StateProbeCommitRequest = RuntimePublic23.Import('StateProbeCommitR
 export type StateProbeCommitRequest = Static<typeof StateProbeCommitRequest>
 export const StateProbeCommitResult = RuntimePublic23.Import('StateProbeCommitResult')
 export type StateProbeCommitResult = Static<typeof StateProbeCommitResult>
+export const StoredRecord = RuntimePublic23.Import('StoredRecord')
+export type StoredRecord = Static<typeof StoredRecord>
 export const StateLeaseRecordValue = RuntimePublic23.Import('StateLeaseRecordValue')
 export type StateLeaseRecordValue = Static<typeof StateLeaseRecordValue>
 export const StateLeaseProofValue = RuntimePublic23.Import('StateLeaseProofValue')

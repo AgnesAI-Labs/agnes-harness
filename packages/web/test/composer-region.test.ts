@@ -77,19 +77,19 @@ describe('rendered composer region', () => {
     }
     handle?.render(view)
 
-    const composer = document.querySelector<HTMLFormElement>('#composer')
-    const prompt = document.querySelector<HTMLTextAreaElement>('#prompt')
+    const composer = document.querySelector<HTMLFormElement>('.composer-form')
+    const prompt = document.querySelector<HTMLTextAreaElement>('.composer-prompt')
     expect(composer?.closest('[data-slot="ui:composer"]')).toBeTruthy()
     expect(composer?.getAttribute('data-agnes-region')).toBe('composer')
     expect(prompt?.getAttribute('data-agnes-region')).toBe('composer-input')
     expect(prompt?.disabled).toBe(false)
-    expect(document.querySelector('#composer-workspace')).toBeTruthy()
-    expect(document.querySelector('#composer-permission')).toBeTruthy()
-    expect(document.querySelector('#model')).toBeTruthy()
-    expect(document.querySelector<HTMLElement>('#session-usage')?.hidden).toBe(false)
+    expect(document.querySelector('.composer-workspace')).toBeTruthy()
+    expect(document.querySelector('.composer-permission')).toBeTruthy()
+    expect(document.querySelector('.composer-model')).toBeTruthy()
+    expect(document.querySelector<HTMLElement>('.composer-usage')?.hidden).toBe(false)
     // Picker copy comes from the locale bound at mount, read on every render rather than cached.
     const permissionLabel = () =>
-      document.querySelector('#composer-permission [data-permission-label]')?.textContent
+      document.querySelector('.composer-permission [data-permission-label]')?.textContent
     expect(permissionLabel()).toBe(zhT('settings.picker.workspace'))
     runtime.locale.setLocale('en')
     handle?.render({ ...view })
@@ -168,7 +168,7 @@ describe('rendered composer region', () => {
         workspace: { disabled: false, label: 'agnes', title: '/workspace/agnes' },
       }
       const render = (next: Partial<ComposerView>) => runtime?.composer?.render({ ...view, ...next })
-      const host = () => required(document.querySelector<HTMLElement>('#session-usage'))
+      const host = () => required(document.querySelector<HTMLElement>('.composer-usage'))
       expect(host().hidden).toBe(true)
       render({})
       const details = required(host().querySelector('details'))
@@ -265,15 +265,15 @@ describe('rendered composer region', () => {
     )
     await vi.waitFor(() => {
       expect(document.querySelector('#shadow-composer')?.textContent).toBe('替换输入区')
-      expect(document.querySelector('#composer')).toBeNull()
-      expect(document.querySelector('#prompt')).toBeNull()
+      expect(document.querySelector('.composer-form')).toBeNull()
+      expect(document.querySelector('.composer-prompt')).toBeNull()
     }, slotRender)
 
     remove()
     await vi.waitFor(() => {
-      expect(document.querySelector('#composer')).toBeTruthy()
-      expect(document.querySelector<HTMLTextAreaElement>('#prompt')?.value).toBe('保留草稿')
-      expect(document.querySelector('#session-usage')).toBeTruthy()
+      expect(document.querySelector('.composer-form')).toBeTruthy()
+      expect(document.querySelector<HTMLTextAreaElement>('.composer-prompt')?.value).toBe('保留草稿')
+      expect(document.querySelector('.composer-usage')).toBeTruthy()
     }, slotRender)
   })
 
@@ -295,9 +295,9 @@ describe('rendered composer region', () => {
       expect(
         document.querySelector('#fixture-input-left-content')?.closest('.composer-controls'),
       ).toBeTruthy()
-      expect(document.querySelector('#fixture-input-overlay-content')?.closest('#composer')).toBeTruthy()
-      expect(document.querySelector('#composer-workspace')).toBeTruthy()
-      expect(document.querySelector('#send')).toBeTruthy()
+      expect(document.querySelector('#fixture-input-overlay-content')?.closest('.composer-form')).toBeTruthy()
+      expect(document.querySelector('.composer-workspace')).toBeTruthy()
+      expect(document.querySelector('.composer-send')).toBeTruthy()
     }, slotRender)
     removeLeft()
     removeOverlay()
@@ -314,7 +314,7 @@ describe('rendered composer region', () => {
       expect(
         document.querySelector('#fixture-composer-dock-content')?.closest('[data-agnes-composer-dock]'),
       ).toBeTruthy()
-      expect(document.querySelector('#send')).toBeTruthy()
+      expect(document.querySelector('.composer-send')).toBeTruthy()
     }, slotRender)
     remove()
   })

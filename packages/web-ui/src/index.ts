@@ -6,6 +6,7 @@ export * from './admin-text.js'
 export type { AntdRoot } from './antd-root.js'
 export { createAntdRoot } from './antd-root.js'
 export * from './confirm.js'
+export { HtmlViewer, type HtmlViewerRefusal, htmlViewerRefusal } from './conversation/html-viewer.js'
 export * from './diagnostics-dialog.js'
 export { ADMIN_LOCALE_NAMESPACE, adminLocaleCatalog } from './locales/admin.js'
 export {

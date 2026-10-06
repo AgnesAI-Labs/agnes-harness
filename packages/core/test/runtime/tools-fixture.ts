@@ -107,7 +107,7 @@ export async function openToolsFixture(
       digest: canonicalJsonDigest('fixed-text-statistics-version-1'),
     },
     executor: binding,
-    name: 'text-statistics',
+    name: 'textstatistics',
     inputSchema: runtimeAuthorSchemas.StandardToolOutput.ref,
     outputSchema: runtimeAuthorSchemas.StandardToolOutput.ref,
     requiredCapabilities: [],

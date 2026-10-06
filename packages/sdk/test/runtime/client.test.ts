@@ -15,6 +15,7 @@ import {
   type ClientSubscribeRequest,
   type ClientSubscriptionFrame,
   encodeClientBinaryMetadata,
+  RuntimeClientOperations,
   RuntimeClientTransportPolicy,
   RuntimeClientTransportWire,
   type RuntimeError,
@@ -31,6 +32,7 @@ import {
 } from '@agnes/protocol/runtime'
 import {
   artifactReader,
+  createRuntimeClient,
   type LocalRefusal,
   RUNTIME_JOURNAL_KEY,
   type RuntimeClientOptions,
@@ -493,24 +495,6 @@ describe('bootstrap and the write gate', () => {
         p.handlers.catalogPage = () => ({ error: failure('permission_denied', 'denied') })
       },
     },
-    {
-      name: 'a reload-required welcome',
-      reason: 'reload-required',
-      arrange: (p) => {
-        p.state.adjust = (welcome) => ({ ...welcome, mode: 'reload-required' })
-      },
-    },
-    {
-      name: 'a degraded welcome without the operation feature',
-      reason: 'not-negotiated',
-      arrange: (p) => {
-        p.state.adjust = (welcome) => ({
-          ...welcome,
-          mode: 'degraded',
-          capabilities: { ...(welcome.capabilities as object), features: [] },
-        })
-      },
-    },
     { name: 'a session made stale by a catalog change', reason: 'disconnected', stale: true },
   ])('$name refuses commands locally', async ({ reason, arrange, stale }) => {
     const p = await peer()
@@ -521,6 +505,143 @@ describe('bootstrap and the write gate', () => {
     await again
     expect(p.count('clientCommand')).toBe(0)
     expect(await pendingIds(journal)).toEqual([])
+  })
+
+  // Every welcomed mode keeps reads open; a degraded session sends only the operations its
+  // negotiated features declare, and a reload-required one sends no new command.
+  it.each<{ name: string; mode: string; features?: string[]; write: 'sent' | LocalRefusal }>([
+    { name: 'a compatible welcome', mode: 'compatible', write: 'sent' },
+    { name: 'a degraded welcome declaring the operation feature', mode: 'degraded', write: 'sent' },
+    {
+      name: 'a degraded welcome without the operation feature',
+      mode: 'degraded',
+      features: [],
+      write: 'not-negotiated',
+    },
+    { name: 'a reload-required welcome', mode: 'reload-required', write: 'reload-required' },
+  ])('$name reports its mode, reads and subscribes, and a command is $write', async (row) => {
+    const p = await peer()
+    p.state.adjust = (welcome) => ({
+      ...welcome,
+      mode: row.mode,
+      reasons:
+        row.mode === 'compatible'
+          ? []
+          : [{ code: 'renderer_missing', message: 'no renderer', moduleId: 'm1' }],
+      ...(row.features && { capabilities: { ...(welcome.capabilities as object), features: row.features } }),
+    })
+    p.handlers.clientQuery = (request) => reply(request, handle('req-0', 'accepted'))
+    p.handlers.clientCommand = (request) => reply(request, handle('req-1', 'accepted'))
+    const { client, journal } = await connected(p)
+    expect(client.mode).toBe(row.mode)
+    expect(await client.query('conversation.status', 'req-0')).toMatchObject({ state: 'ok' })
+    const subscription = await subscribed(client)
+    expect(subscription.first).toEqual(frame('snapshot', 'c0'))
+    expect(await subscription.close()).toEqual({ state: 'ok', value: { closed: true } })
+    expect(await client.command('conversation.cancel', cancel('req-1'))).toMatchObject(
+      row.write === 'sent'
+        ? { state: 'ok', value: { status: 'accepted' } }
+        : { state: 'refused', reason: row.write },
+    )
+    expect([p.count('clientCommand'), await pendingIds(journal)]).toEqual(
+      row.write === 'sent' ? [1, ['req-1']] : [0, []],
+    )
+  })
+})
+
+// Only wire 2.0 is a released version. The later minors below are synthetic: they exercise how a
+// client offers its reader range and which welcome it accepts, and are not evidence that any real
+// minor release is compatible.
+describe('wire minor negotiation', () => {
+  // A synthetic server at minor N that keeps the reader contracts of N, N-1 and N-2 and picks the
+  // highest minor both sides offer; it answers a hello with no common version with the fixed refusal.
+  const N = 3
+  const served = { major: 2, minMinor: N - 2, maxMinor: N }
+  const negotiate = (p: Peer) => {
+    const selected: number[] = []
+    p.handlers.bootstrap = () => {
+      // The hello this bootstrap answers is the request the peer just recorded.
+      const offered = (p.requests.at(-1)?.body ?? hello) as typeof hello
+      const common = offered.capabilities.protocols
+        .filter((range) => range.major === served.major)
+        .map((range) => [
+          Math.max(range.minMinor, served.minMinor),
+          Math.min(range.maxMinor, served.maxMinor),
+        ])
+        .filter(([low = 0, high = -1]) => low <= high)
+        .map(([, high = -1]) => high)
+      if (!common.length)
+        return {
+          value: {
+            mode: 'incompatible',
+            reasonCode: 'wire_version',
+            message: 'no common wire version',
+            supportedProtocols: [served],
+          },
+        }
+      const minor = Math.max(...common)
+      selected.push(minor)
+      const welcome = {
+        negotiatedSession: 's1',
+        wireVersion: { major: served.major, minor },
+        catalogRevision: 1,
+        capabilities: { ...offered.capabilities, negotiatedSession: 's1', effectivePolicyRevision: 1 },
+        ...page(['m1', 1]),
+        mode: 'compatible',
+        reasons: [],
+        clientInstanceId: 'ci-1',
+      }
+      return {
+        value: { welcome: p.state.adjust(welcome), catalogPage: { nextCursor: null, complete: true } },
+      }
+    }
+    p.handlers.clientQuery = (request) => reply(request, handle('req-0', 'accepted'))
+    return selected
+  }
+  const reader = (major: number, minMinor: number, maxMinor = minMinor) => ({
+    ...hello,
+    capabilities: { ...capabilities, protocols: [{ major, minMinor, maxMinor }] },
+  })
+
+  it.each([
+    { name: 'a reader at minor N', offered: reader(2, N), minor: N },
+    { name: 'a reader at minor N-1', offered: reader(2, N - 1), minor: N - 1 },
+    { name: 'a reader at minor N-2', offered: reader(2, N - 2), minor: N - 2 },
+    { name: 'a reader of minors 0 to N+1', offered: reader(2, 0, N + 1), minor: N },
+  ])('$name is welcomed at minor $minor and reads', async ({ offered, minor }) => {
+    const p = await peer()
+    const selected = negotiate(p)
+    const { client } = await connected(p, 'token-1', { hello: offered })
+    expect(p.requests[0]?.body).toEqual(offered)
+    expect(selected).toEqual([minor])
+    expect(client.mode).toBe('compatible')
+    expect(await client.query('conversation.status', 'req-0')).toMatchObject({ state: 'ok' })
+  })
+
+  it.each([
+    { name: 'a reader at minor N-3', offered: reader(2, N - 3) },
+    { name: 'a hello offering only wire major 1', offered: reader(1, 0) },
+    {
+      name: 'a welcome at a minor the hello did not offer',
+      offered: reader(2, N - 1),
+      adjust: (welcome: Record<string, unknown>) => ({ ...welcome, wireVersion: { major: 2, minor: N } }),
+    },
+  ])('$name is incompatible and sends nothing more', async ({ offered, adjust }) => {
+    const p = await peer()
+    negotiate(p)
+    if (adjust) p.state.adjust = adjust
+    const { client } = await connected(p, 'token-1', { hello: offered })
+    expect(client.mode).toBe('incompatible')
+    expect(client.header()).toBeNull()
+    expect(await client.query('conversation.status', 'req-0')).toEqual({
+      state: 'refused',
+      reason: 'incompatible',
+    })
+    expect(await client.command('conversation.cancel', cancel('req-1'))).toEqual({
+      state: 'refused',
+      reason: 'incompatible',
+    })
+    expect(p.requests.map((request) => request.route)).toEqual(['bootstrap'])
   })
 })
 
@@ -577,6 +698,24 @@ describe('the catalog', () => {
       ['1:1', RuntimeClientTransportPolicy.defaultCatalogPageLimit],
       ['1:2', RuntimeClientTransportPolicy.defaultCatalogPageLimit],
     ])
+  })
+
+  it('refuses a page that repeats a module with other content and keeps the first copy', async () => {
+    const p = await peer()
+    p.state.catalogs.set(1, [page(['m1', 1]), page(['m1', 2])])
+    const client = new RuntimeClientTransport({
+      baseUrl: p.url,
+      hello,
+      journal: memoryJournal('client-1'),
+      journalPartitionKey: PARTITION,
+      credential: 'token-1',
+    })
+    await expect(client.connect()).rejects.toThrow('conflicting catalog entries')
+    expect(client.catalog).toEqual({
+      complete: false,
+      modules: [module('m1', 1)],
+      domainSchemas: [schema(1)],
+    })
   })
 
   it('drops collected pages and bootstraps again after a catalog_changed refusal', async () => {
@@ -1442,5 +1581,140 @@ describe('subscriptions', () => {
     expect(p.requests.filter((r) => r.route === 'closeSubscription').map((r) => r.body)).toMatchObject([
       { subscriptionId: 'sub-1' },
     ])
+  })
+})
+
+describe('the local interfaces', () => {
+  it('offers every generated method and sends each as its own operation, unserved ones refused by the server', async () => {
+    const p = await peer()
+    const { client, journal } = await connected(p)
+    const rt = createRuntimeClient(client)
+    const facades: Record<string, object> = {
+      ShellConversationClient: rt.conversations,
+      ShellDomainClient: rt.domain,
+      DomainCommandClient: rt.domain,
+      SessionControlClient: rt.controls,
+      SessionBudgetClient: rt.budget,
+      PermissionClient: rt.permissions,
+      SessionJobsClient: rt.jobs,
+      InteractionClient: rt.interactions,
+      ApprovalClient: rt.approvals,
+      ArtifactClient: rt.artifacts,
+      ClientTransportClient: rt.status,
+    }
+    const missing = Object.values(RuntimeClientOperations).filter(
+      ({ localInterface, localMethod }) =>
+        typeof (facades[localInterface] as Record<string, unknown> | undefined)?.[localMethod] !== 'function',
+    )
+    expect(missing).toEqual([])
+
+    const unserved = {
+      state: 'failed',
+      error: { code: 'incompatible', detailCode: 'operation_not_supported' },
+    }
+    expect(await rt.conversations.open({ sessionId: 'conv-1', limit: 10 })).toMatchObject(unserved)
+    expect(await rt.controls.read('conv-1')).toMatchObject(unserved)
+    expect(await rt.conversations.cancel(cancel('req-1'))).toMatchObject(unserved)
+    expect(await rt.interactions.formLink('int-1', 3)).toMatchObject(unserved)
+    expect(await rt.approvals.formLink('int-2', 4)).toMatchObject(unserved)
+    expect(await rt.artifacts.describe('art-1', 2)).toMatchObject(unserved)
+    const calls = p.requests.filter(({ route }) => route === 'clientQuery' || route === 'clientCommand')
+    expect(calls.map(({ route, body }) => [route, body.call])).toEqual([
+      ['clientQuery', { operation: 'conversation.open', input: { sessionId: 'conv-1', limit: 10 } }],
+      ['clientQuery', { operation: 'control.read', input: 'conv-1' }],
+      ['clientCommand', { operation: 'conversation.cancel', input: cancel('req-1') }],
+      [
+        'clientCommand',
+        { operation: 'interaction.formLink', input: { interactionId: 'int-1', expectedVersion: 3 } },
+      ],
+      [
+        'clientCommand',
+        { operation: 'approval.formLink', input: { interactionId: 'int-2', expectedVersion: 4 } },
+      ],
+      ['clientQuery', { operation: 'artifact.describe', input: { artifactId: 'art-1', version: 2 } }],
+    ])
+    // A typed refusal admitted nothing, so the journaled command does not linger.
+    expect(await journal.pending(KEY)).toEqual([])
+
+    // The transport status query takes its call header from the transport, never from the caller.
+    p.handlers.clientQuery = (request) => reply(request, catalogStatus)
+    expect(await rt.status.catalogStatus({})).toEqual({ state: 'ok', value: catalogStatus })
+    const status = p.requests.at(-1)?.body as { header: unknown; call: { input: unknown } }
+    expect(status.call.input).toEqual({ header: status.header })
+  })
+
+  describe('following a download ticket', () => {
+    const ticket = {
+      url: `${routes.download.path.replace('{ticketId}', 'ticket-1')}?nonce=${'a'.repeat(43)}`,
+      expiresAt: '2026-10-06T00:05:00.000Z',
+      artifactId: 'art-1',
+      version: 1,
+      grantRevision: 1,
+    }
+    const issue = async (issued: unknown, options: Parameters<typeof createRuntimeClient>[1] = {}) => {
+      const p = await peer()
+      const { client } = await connected(p)
+      p.handlers.clientCommand = (request) => reply(request, issued)
+      const rt = createRuntimeClient(client, {
+        now: () => Date.parse('2026-10-06T00:00:00.000Z'),
+        ...options,
+      })
+      const opened = await rt.artifacts.openDownload({
+        artifactId: 'art-1',
+        version: 1,
+        disposition: 'attachment',
+      })
+      if (opened.state !== 'ok') throw new Error(`not issued: ${opened.state}`)
+      return { p, rt, issued: opened.value }
+    }
+
+    it('hands the follower the absolute URL of a ticket this client issued, and only that one', async () => {
+      const followed: string[] = []
+      const { p, rt, issued } = await issue(ticket, { followDownload: (url) => followed.push(url) })
+      expect(rt.artifacts.followDownload(issued)).toEqual({ state: 'ok', value: undefined })
+      expect(followed).toEqual([p.url + ticket.url])
+      // An equal ticket this client did not receive, or the issued one edited, is never followed.
+      expect(rt.artifacts.followDownload({ ...ticket })).toEqual({
+        state: 'refused',
+        reason: 'invalid-request',
+      })
+      expect(() => Object.assign(issued, { url: 'https://evil.example/' })).toThrow(TypeError)
+      expect(followed).toHaveLength(1)
+    })
+
+    it.each([
+      {
+        name: 'an expired ticket',
+        issued: { ...ticket, expiresAt: '2026-10-06T00:00:00.000Z' },
+        follower: true,
+        result: { state: 'failed', error: { code: 'denied', detailCode: 'ticket_expired' } },
+      },
+      {
+        name: 'a ticket naming another origin',
+        issued: { ...ticket, url: 'https://evil.example/download' },
+        follower: true,
+        result: { state: 'refused', reason: 'invalid-request' },
+      },
+      {
+        name: 'a ticket naming another route',
+        issued: { ...ticket, url: `${routes.bootstrap.path}?nonce=x` },
+        follower: true,
+        result: { state: 'refused', reason: 'invalid-request' },
+      },
+      {
+        name: 'a client without a follower',
+        issued: ticket,
+        follower: false,
+        result: { state: 'failed', error: { code: 'incompatible', detailCode: 'operation_not_supported' } },
+      },
+    ])('refuses $name without following it', async ({ issued, follower, result }) => {
+      const followed: string[] = []
+      const { rt, issued: value } = await issue(
+        issued,
+        follower ? { followDownload: (url) => followed.push(url) } : {},
+      )
+      expect(rt.artifacts.followDownload(value)).toMatchObject(result)
+      expect(followed).toEqual([])
+    })
   })
 })

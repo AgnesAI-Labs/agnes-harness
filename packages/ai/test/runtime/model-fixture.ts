@@ -124,6 +124,7 @@ export async function modelFixture(
   cost?: ModelRecord['cost'],
   legacyUsage = false,
   creditsPerUsd?: number,
+  preparedLost = false,
 ) {
   const usage = usageCodec(legacyUsage)
   const scope = {
@@ -263,6 +264,17 @@ export async function modelFixture(
     installed: (call) => call === originalContext && live,
     async load(reference, _frame, call) {
       loads++
+      if (preparedLost)
+        return {
+          ok: false,
+          error: {
+            code: 'incompatible',
+            detailCode: 'model_prepared_lost',
+            message: 'Fixture prepared call is gone',
+            retryAdvice: { kind: 'never' },
+            diagnosticId: 'fixture',
+          },
+        }
       const parsed =
         reference.kind === 'inline' &&
         canonicalJsonDigest(reference.schema) === canonicalJsonDigest(preparedLocator.ref)

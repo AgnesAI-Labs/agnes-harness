@@ -166,19 +166,25 @@ export async function readOutcome(response: Response): Promise<Outcome | null> {
     : null
 }
 
-/** The welcome supplies every header field but callId; one this client cannot speak yields none. */
-function headerBase(welcome: ClientWelcome): Session['base'] | null {
-  if (welcome.mode === 'incompatible' || welcome.wireVersion.major !== RuntimeClientTransportWire.wireMajor)
+/** The welcome supplies every header field but callId; one this client cannot speak, or at a wire
+ * version its hello did not offer, yields none. */
+function headerBase(welcome: ClientWelcome, hello: ClientHello): Session['base'] | null {
+  const { major, minor } = welcome.wireVersion
+  const offered = hello.capabilities.protocols.some(
+    (range) => range.major === major && range.minMinor <= minor && minor <= range.maxMinor,
+  )
+  if (welcome.mode === 'incompatible' || major !== RuntimeClientTransportWire.wireMajor || !offered)
     return null
   const { negotiatedSession, clientInstanceId, catalogRevision } = welcome
   return { negotiatedSession, clientInstanceId, catalogRevision }
 }
 
-/** Pages repeat the schemas their modules need; an id seen twice must name identical content. */
+/** Pages repeat the schemas their modules need; an id seen twice must name identical content, and a
+ * conflicting copy never replaces the first. */
 function merge(session: Session, page: Pick<ClientCatalogPageResult, 'modules' | 'domainSchemas'>): boolean {
   const add = <T>(map: Map<string, T>, key: string, value: T) => {
     const seen = map.get(key)
-    map.set(key, value)
+    if (seen === undefined) map.set(key, value)
     return seen === undefined || jcs(seen) === jcs(value)
   }
   return (
@@ -274,6 +280,11 @@ export class RuntimeClientTransport {
     return this.connecting.then(() => this.openPush())
   }
 
+  /** A generated route path, or a server-issued path under one, on this client's deployment. */
+  url(path: string): string {
+    return this.base + path
+  }
+
   /** One authenticated POST to a generated route; the artifact reader sends through it too. */
   post(path: string, body: unknown, signal?: AbortSignal): Promise<Response> {
     const headers = {
@@ -281,7 +292,7 @@ export class RuntimeClientTransport {
       ...this.auth(),
     }
     const init: RequestInit = { method: 'POST', headers, body: JSON.stringify(body) }
-    return this.fetch(this.base + path, signal ? { ...init, signal } : init)
+    return this.fetch(this.url(path), signal ? { ...init, signal } : init)
   }
 
   query<K extends ClientJsonOperation>(
@@ -511,7 +522,7 @@ export class RuntimeClientTransport {
       if (!result.ok) throw new ProtocolViolation('invalid bootstrap reply')
       if (!('welcome' in result.value)) return this.refuse(result.value)
       const { welcome, catalogPage } = result.value
-      const base = headerBase(welcome)
+      const base = headerBase(welcome, this.options.hello)
       if (!base) return this.refuse(localRuntimeError('incompatible', 'unsupported', 'no usable call header'))
       const session: Session = { welcome, base, modules: new Map(), schemas: new Map(), complete: false }
       this.session = session

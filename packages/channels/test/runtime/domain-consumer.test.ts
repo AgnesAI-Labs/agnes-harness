@@ -13,6 +13,21 @@ import { encodeForChannel, formatDomainView } from '@agnes/sdk/runtime'
 import { describe, expect, it, vi } from 'vitest'
 import { type ChannelTextRenderer, toChannelMessages } from '../../src/runtime/domain-consumer.js'
 
+// The default renderer is the SDK text format; with `now` set, its formatter throws.
+const defaultFails = vi.hoisted(() => ({ now: false }))
+vi.mock('@agnes/sdk/runtime', async (original) => {
+  const actual = await original<typeof import('@agnes/sdk/runtime')>()
+  return {
+    ...actual,
+    formatDomainView: (...args: Parameters<typeof actual.formatDomainView>) =>
+      defaultFails.now ? fails() : actual.formatDomainView(...args),
+  }
+})
+
+function fails(): never {
+  throw new Error('the plugin is disabled')
+}
+
 const schema = { typeId: 'acme.notes/publish@1', revision: 1, digest: 'a'.repeat(64) }
 const base = { requiredFeatures: [], availability: 'enabled' as const, disabledReason: null }
 const publish: ViewAction = {
@@ -256,6 +271,25 @@ describe('toChannelMessages', () => {
     expect(declared.ok && declared.value.requiresWebForm).toBe(true)
     expect(messages(declared).flatMap(offered)).toEqual([])
     expect(encode.mock.calls.map(([, at]) => at.supportsButtons)).toEqual([true, false])
+
+    // Through the SDK text renderer, an action missing only a desktop capability, which the Web form
+    // lacks too, loses its own button and says why; every other enabled action keeps its button.
+    const reveal = {
+      ...review,
+      actionKey: 'reveal',
+      label: 'Reveal',
+      requiredFeatures: ['desktop.reveal-path.v1'],
+    }
+    const desktop = deliver({
+      value: view({ actions: [publish, reveal, answer] }),
+      at: channel(4096),
+      with: sdk,
+    })
+    expect(desktop.ok && desktop.value.requiresWebForm).toBe(false)
+    expect(messages(desktop).flatMap(offered)).toEqual(['publish', 'answer'])
+    expect(messages(desktop).map(textOf).join('\n')).toContain(
+      'Reveal: Needs a desktop capability this client does not have (desktop.reveal-path.v1).',
+    )
   })
 
   // Unknown domain or renderer (case 1), old schema (case 3), unknown action (case 4) and HTML in server
@@ -286,51 +320,61 @@ describe('toChannelMessages', () => {
     )
   })
 
-  // Disabled plugin (case 2): the IM renderer of a plugin disabled under the channel throws, refuses or
-  // answers with no outcome at all. Nothing is sent and the caller gets a refusal, never an exception, so
-  // it can present the history again through the default renderer, which reads it as text with its
-  // markup literal.
+  // Disabled plugin (case 2): the IM renderer of a plugin disabled under the channel throws or answers
+  // with no outcome at all. The view goes out through the default renderer instead, as text with its
+  // markup literal and under the same message ids, and nothing the failed renderer produced is sent.
   it.each<[string, Partial<ChannelTextRenderer>]>([
+    ['throws while formatting', { format: fails }],
+    ['throws while encoding', { encode: fails }],
     [
-      'throws while formatting',
+      'throws while encoding again without buttons',
       {
-        format: () => {
-          throw new Error('the plugin is disabled')
-        },
-      },
-    ],
-    [
-      'throws while encoding',
-      {
-        encode: () => {
-          throw new Error('the plugin is disabled')
+        encode: (formatted, at) => {
+          if (!at.supportsButtons) return fails()
+          const result = renderer.encode(formatted, at)
+          return result.ok ? { ok: true, value: { ...result.value, requiresWebForm: true } } : result
         },
       },
     ],
     ['answers with no outcome while formatting', { format: () => undefined as never }],
     ['answers with no outcome while encoding', { encode: () => undefined as never }],
     ['answers with a refusal that carries no error', { format: () => ({ ok: false }) as never }],
-    [
-      'refuses',
-      {
-        format: () => ({
-          ok: false,
-          error: {
-            code: 'incompatible',
-            detailCode: 'renderer_failed',
-            message: 'the plugin is disabled',
-            retryAdvice: { kind: 'never' },
-            diagnosticId: 'd-1',
-          },
-        }),
-      },
-    ],
-  ])('sends nothing when the renderer of a disabled plugin %s', (_, broken) => {
+  ])('sends through the default renderer when the renderer of a disabled plugin %s', (_, broken) => {
     const value = view({ fallbackText: '<b>Draft</b> note', actions: [publish, archive] })
-    expect(refused(deliver({ value, interaction: null, with: broken }))).toBe('renderer_failed')
-    expect(messages(deliver({ value, interaction: null, at: channel(4096), with: sdk })).map(textOf)).toEqual(
-      ['Status: In progress\n<b>Draft</b> note\nActions:\nArchive: Locked'],
-    )
+    const send = (using: Partial<ChannelTextRenderer>) =>
+      deliver({ value, interaction: null, at: channel(4096), with: using })
+    const sent = send(broken)
+    expect(sent).toEqual(send(sdk))
+    expect(messages(sent).map(textOf)).toEqual([
+      'Status: In progress\n<b>Draft</b> note\nActions:\nArchive: Locked',
+    ])
+  })
+
+  // A renderer that refuses has answered, and its refusal stands. When the default renderer refuses or
+  // fails too, nothing is sent either.
+  it('sends nothing when the renderer refuses or the default renderer fails too', () => {
+    const refusal = {
+      code: 'incompatible',
+      detailCode: 'renderer_failed',
+      message: 'the plugin is disabled',
+      retryAdvice: { kind: 'never' },
+      diagnosticId: 'd-1',
+    } as const
+    const value = view({ fallbackText: '<b>Draft</b> note', actions: [publish, archive] })
+    const send = (at: IMRendererEncodeChannel, using: Partial<ChannelTextRenderer>) =>
+      deliver({ value, interaction: null, at, with: using })
+    expect(send(channel(4096), { format: () => ({ ok: false, error: refusal }) })).toEqual({
+      ok: false,
+      error: refusal,
+    })
+    // The default text renderer refuses a channel too small for one character.
+    expect(refused(send(channel(3), { format: fails }))).toBe('invalid_limit')
+    defaultFails.now = true
+    try {
+      expect(refused(send(channel(4096), { format: fails }))).toBe('renderer_failed')
+    } finally {
+      defaultFails.now = false
+    }
   })
 
   it('refuses renderer output for other actions or views and questions the view does not ask', () => {

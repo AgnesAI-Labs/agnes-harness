@@ -65,8 +65,8 @@ export const Transcript = forwardRef<TranscriptHandle, TranscriptProps>(function
   useLayoutEffect(() => {
     const element = content.current
     // SlotOutlet adds a ledger wrapper between this leaf and the real viewport. Keep DOM ownership
-    // in #transcript-content, but bind scrolling to the stable region surface rather than that wrapper.
-    const scrollContainer = element?.closest<HTMLElement>('#transcript') ?? element?.parentElement
+    // in .transcript-content, but bind scrolling to the stable region surface rather than that wrapper.
+    const scrollContainer = element?.closest<HTMLElement>('.transcript') ?? element?.parentElement
     if (!element || !scrollContainer || !newContentButton) return
     if (!dependencies) return
     const nextRenderer = dependencies.createRenderer({
@@ -92,6 +92,6 @@ export const Transcript = forwardRef<TranscriptHandle, TranscriptProps>(function
       'data-agnes-region-owner': 'builtin',
       'data-agnes-region-unit': 'transcript',
     },
-    createElement('div', { ref: content, id: 'transcript-content' }),
+    createElement('div', { ref: content, className: 'transcript-content' }),
   )
 })

@@ -160,16 +160,18 @@ export interface RuntimeWireTypes {
   FilePath: Schemas.FilePath
   FileCheckpointProof: Schemas.FileCheckpointProof
   PromptContributionSnapshot: Schemas.PromptContributionSnapshot
+  ThinkingLevel: Schemas.ThinkingLevel
+  SecretHandle: Schemas.SecretHandle
+  PreparedModelHeader: Schemas.PreparedModelHeader
+  PreparedModelHandle: Schemas.PreparedModelHandle
   SourceRange: Schemas.SourceRange
   ContextItem: Schemas.ContextItem
   ContextView: Schemas.ContextView
   ToolCatalog: Schemas.ToolCatalog
-  ThinkingLevel: Schemas.ThinkingLevel
   GenerationOptions: Schemas.GenerationOptions
   MediaPlan: Schemas.MediaPlan
   ExactQuantity: Schemas.ExactQuantity
   LegacyRequestOverrides: Schemas.LegacyRequestOverrides
-  SecretHandle: Schemas.SecretHandle
   PreparedModelRequest: Schemas.PreparedModelRequest
   ContentBlock: Schemas.ContentBlock
   SlotName: Schemas.SlotName
@@ -966,6 +968,7 @@ export interface RuntimeWireTypes {
   StateScanResult: Schemas.StateScanResult
   StateProbeCommitRequest: Schemas.StateProbeCommitRequest
   StateProbeCommitResult: Schemas.StateProbeCommitResult
+  StoredRecord: Schemas.StoredRecord
   StateLeaseRecordValue: Schemas.StateLeaseRecordValue
   StateLeaseProofValue: Schemas.StateLeaseProofValue
   StateWriteOpenRequest: Schemas.StateWriteOpenRequest

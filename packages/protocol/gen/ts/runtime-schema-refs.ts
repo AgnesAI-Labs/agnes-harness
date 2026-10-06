@@ -7,6 +7,11 @@ function freeze<T>(value: T): T {
   return value
 }
 export const RuntimeSchemaRefs = freeze({
+  "PreparedModelHandle": {
+    "typeId": "agh.model/prepared-handle@1",
+    "revision": 1,
+    "digest": "0770bad581b94bcc6b3ed11bfc5f65d597230890f79cf617db31d8a475b0ebb1"
+  },
   "PreparedModelRequest": {
     "typeId": "agh.model/prepared-request@1",
     "revision": 4,
@@ -281,6 +286,36 @@ export const RuntimeSchemaRefs = freeze({
     "typeId": "agh.runtime/reference-record@1",
     "revision": 2,
     "digest": "d641cf854a83b7108f1a651604389d3fadbffb43c094dc90094a15e087d9dbec"
+  },
+  "ProviderStateValue": {
+    "typeId": "agh.runtime/provider-state@1",
+    "revision": 2,
+    "digest": "f27abf2cfa4620973cbb592e65fc667f1fc5fca53b2196a4d3c07fb420db1bae"
+  },
+  "StoredRecord": {
+    "typeId": "agh.state/stored-record@1",
+    "revision": 1,
+    "digest": "e34de9da662c170a2f82c2c8617e2b19c036836a316d2d984df220dced575f0b"
+  },
+  "WaitRecordValue": {
+    "typeId": "agh.runtime/wait-record@1",
+    "revision": 2,
+    "digest": "346fb921cd61612a2e51081813164e0b6774d0b528e3b875766cd28d30b18ef1"
+  },
+  "TimerRecordValue": {
+    "typeId": "agh.runtime/timer-record@1",
+    "revision": 1,
+    "digest": "a6e7b51629a3ef4422e86685a84207f4e124fa87263474e22e846d3c354b4d73"
+  },
+  "ResolutionRecordValue": {
+    "typeId": "agh.runtime/resolution-record@1",
+    "revision": 2,
+    "digest": "bcdb221fca9f46494199b489e35acfa8d93b31164741700c54aafe9451a410d3"
+  },
+  "ReconciliationCheckValue": {
+    "typeId": "agh.runtime/reconciliation-check@1",
+    "revision": 2,
+    "digest": "8d87f0504c43c8427f71ca13100c7d5f03f557b9cdd6750a25a7020cd435229b"
   },
   "InteractionRecord": {
     "typeId": "agh.interaction/interaction-record@1",

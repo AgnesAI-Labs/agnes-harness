@@ -110,6 +110,7 @@ function sameState(left: ModelPickerState, right: ModelPickerState): boolean {
 }
 
 function modelOption(
+  idPrefix: string,
   option: ModelPickerOption,
   index: number,
   state: ModelPickerState,
@@ -123,7 +124,7 @@ function modelOption(
   return createElement(
     'div',
     {
-      id: `model-picker-option-${index}`,
+      id: `${idPrefix}-option-${index}`,
       key: `${option.route}:${option.id}`,
       className: 'model-picker-option',
       role: 'option',
@@ -146,6 +147,7 @@ function modelOption(
 }
 
 function modelOptions(
+  idPrefix: string,
   state: ModelPickerState,
   activeIndex: number,
   openedIndex: number | undefined,
@@ -155,7 +157,7 @@ function modelOptions(
   onHover: (index: number) => void,
 ): ReactNode[] {
   return state.options.map((option, index) =>
-    modelOption(option, index, state, activeIndex, openedIndex, selecting, t, onSelect, onHover),
+    modelOption(idPrefix, option, index, state, activeIndex, openedIndex, selecting, t, onSelect, onHover),
   )
 }
 
@@ -233,8 +235,11 @@ function levelOption(
  * 选模型即切换并展开它的详情；详情里的档位与预算改动经 `onSettingsChange` 立即提交，
  * 选完一个值就收起整条菜单，没有模态对话框和「应用」按钮。
  */
+let pickers = 0
+
 export function createModelPicker(options: ModelPickerOptions): ModelPicker {
   const { t, trigger } = options
+  const idPrefix = `model-picker-${++pickers}`
   // Popover, outside-click and viewport listeners belong to the trigger's document, not the global one.
   const view = trigger.ownerDocument.defaultView
   let state: ModelPickerState = {
@@ -366,7 +371,7 @@ export function createModelPicker(options: ModelPickerOptions): ModelPicker {
   }
 
   function activeOptionId(): string {
-    return `model-picker-option-${activeIndex}`
+    return `${idPrefix}-option-${activeIndex}`
   }
 
   // ---------------------------------------------------------------- rendering
@@ -384,6 +389,7 @@ export function createModelPicker(options: ModelPickerOptions): ModelPicker {
     webUi.renderRegion(
       listbox,
       modelOptions(
+        idPrefix,
         state,
         activeIndex,
         openedIndex,
@@ -614,7 +620,7 @@ export function createModelPicker(options: ModelPickerOptions): ModelPicker {
     const anchor =
       openedIndex === undefined
         ? undefined
-        : listbox?.querySelector<HTMLElement>(`#model-picker-option-${openedIndex}`)
+        : listbox?.querySelector<HTMLElement>(`#${idPrefix}-option-${openedIndex}`)
     // 子菜单的高度上限就是视口本身：内容该多高就多高，放不下时由 positionSubmenu 整体上移。
     // 这里若给一个比内容小的数，面板会被截断，底下几行看着像没有了。
     if (detailPanel && anchor)
@@ -1038,12 +1044,12 @@ export function createModelPicker(options: ModelPickerOptions): ModelPicker {
     openedIndex = undefined
     resetBudgetDraft()
     popover = webUi.createRegionHost(trigger.ownerDocument.body, 'section', 'model-picker')
-    popover.id = 'model-picker-popover'
+    popover.id = idPrefix
     popover.setAttribute('aria-label', t('settings.modelPicker.aria'))
     help = webUi.createRegionHost(popover, 'p', 'model-picker-help')
     help.dataset.modelPickerHelp = ''
     listbox = webUi.createRegionHost(popover, 'div', 'model-picker-list model-picker-models')
-    listbox.id = 'model-listbox'
+    listbox.id = `${idPrefix}-listbox`
     listbox.setAttribute('role', 'listbox')
     listbox.setAttribute('aria-label', t('settings.modelPicker.listAria'))
     listbox.tabIndex = -1

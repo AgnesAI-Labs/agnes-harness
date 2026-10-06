@@ -4,6 +4,7 @@ import {
   canonicalJsonDigest,
   RuntimeMethodSchemaRefs,
   RuntimeSchemaRefs,
+  type StandardToolOutput,
   validateRuntime,
 } from '@agnes/protocol/runtime'
 import { describe, expect, it, vi } from 'vitest'
@@ -59,7 +60,7 @@ async function preparedModelReference(): Promise<DataRef> {
     const input = validateRuntime('ModelInferRequest', first.input.value)
     if (!input.ok) throw new Error('Invalid prepared model input')
     const ref = input.value.preparedRef
-    if (ref.kind !== 'inline' || !validateRuntime('PreparedModelRequest', ref.value).ok)
+    if (ref.kind !== 'inline' || !validateRuntime('PreparedModelHandle', ref.value).ok)
       throw new Error('Invalid original model source')
     return ref
   } finally {
@@ -68,6 +69,74 @@ async function preparedModelReference(): Promise<DataRef> {
   }
 }
 describe.each(['default', 'reference'] as const)('fixed text Tools %s', (kind) => {
+  it('publishes the wire-compatible name at the source and refuses the old name', async () => {
+    const fixture = await openToolsFixture(kind)
+    expect(fixture.definition.name).toBe('textstatistics')
+    expect(fixture.author.id).toBe(fixture.definition.name)
+    await expect(
+      openToolsFixture(kind, undefined, {
+        definition: { ...fixture.definition, name: 'text-statistics' },
+      }),
+    ).rejects.toThrow(TypeError)
+  })
+  it.each([
+    { content: [] },
+    {
+      content: [
+        { type: 'text', text: 'one' },
+        { type: 'text', text: 'two' },
+      ],
+    },
+    { content: [{ type: 'text', text: 'one' }], structured: null },
+    { content: [{ type: 'text', text: 'one' }], structured: {} },
+  ] satisfies StandardToolOutput[])(
+    'refuses schema-valid input outside the single-text contract: %j',
+    async (input) => {
+      const test = await setup(kind)
+      const createExecutor = vi.spyOn(test.deployment, 'createExecutor')
+      try {
+        const inputRef = toolsValue(runtimeAuthorSchemas.StandardToolOutput.encode(input))
+        const result = await test.provider.compute(
+          {
+            target: test.target,
+            method: 'classify',
+            input: toolsRef(RuntimeMethodSchemaRefs['agh.tools'].classify.input, {
+              definition: test.definition,
+              input: inputRef,
+            }),
+          },
+          test.call,
+        )
+        expect(result).toMatchObject({ ok: false, error: { detailCode: 'tools_one_text_required' } })
+        if (test.frame.input.kind !== 'inline') throw new Error('Inline fixture')
+        const actionInput = toolsRef(RuntimeMethodSchemaRefs['agh.tools'].invoke.input, {
+          ...(test.frame.input.value as object),
+          input: inputRef,
+        })
+        if (actionInput.kind !== 'inline') throw new Error('Inline fixture')
+        expect(
+          await test.leaf.execute(
+            { ...test.frame, input: actionInput, inputDigest: actionInput.digest },
+            test.actionContext,
+          ),
+        ).toMatchObject({ outcome: 'failed', error: { detailCode: 'tools_one_text_required' } })
+        expect(createExecutor).not.toHaveBeenCalled()
+        await expect(
+          Promise.resolve().then(() =>
+            test.author.execute(input, {
+              signal: test.call.signal,
+              config: {},
+            }),
+          ),
+        ).rejects.toThrow('exactly one text block')
+        expect(test.effectsCount()).toBe(0)
+      } finally {
+        createExecutor.mockRestore()
+        await test.leaf.close('shutdown')
+        await test.provider.close('shutdown')
+      }
+    },
+  )
   it.each([
     'verified',
     'denied',
@@ -266,7 +335,7 @@ describe.each(['default', 'reference'] as const)('fixed text Tools %s', (kind) =
         started = resolve
       })
     const delayed = defineTool({
-      id: 'text-statistics',
+      id: 'textstatistics',
       description: 'Delayed synthetic pure computation',
       execution: 'pure',
       input: runtimeAuthorSchemas.StandardToolOutput,
@@ -461,7 +530,7 @@ describe.each(['default', 'reference'] as const)('fixed text Tools %s', (kind) =
           admissionEntered = resolve
         })
       const delayed = defineTool({
-        id: 'text-statistics',
+        id: 'textstatistics',
         description: 'Synthetic pending pure tool',
         execution: 'pure',
         input: runtimeAuthorSchemas.StandardToolOutput,

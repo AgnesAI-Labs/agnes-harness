@@ -4,8 +4,9 @@ import type { StandardToolOutput } from '@agnes/protocol/runtime'
 /** Fixed text-only example: code points, whitespace-delimited words and CRLF/LF/CR lines. */
 export function createTextStatisticsTool(): PureToolDefinition<StandardToolOutput> {
   return defineTool({
-    id: 'text-statistics',
-    description: 'Count Unicode code points, whitespace-delimited words and lines in one text block',
+    id: 'textstatistics',
+    description:
+      'Count Unicode code points, whitespace-delimited words and lines. Input: {"content":[{"type":"text","text":"..."}]}; exactly one text block, no structured field.',
     execution: 'pure',
     input: runtimeAuthorSchemas.StandardToolOutput,
     execute(input, { signal }) {

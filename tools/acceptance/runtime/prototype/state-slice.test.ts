@@ -2364,25 +2364,6 @@ describe('runtime state advance, dispatch, and invocation', () => {
       },
       context(),
     )
-    const failed = await store.advanceRun(
-      {
-        ...advanceBody('advance-fail', 'invocation-1', 0, []),
-        transition: {
-          ...advanceBody('advance-fail', 'invocation-1', 0, []).transition,
-          next: {
-            kind: 'fail',
-            error: {
-              code: 'internal',
-              detailCode: 'stop',
-              message: 'stop',
-              retryAdvice: { kind: 'never' },
-              diagnosticId: 'diag-1',
-            },
-          },
-        },
-      },
-      context(),
-    )
     const flushed = await store.advanceRun(
       {
         commitId: 'advance-flush',
@@ -2464,12 +2445,19 @@ describe('runtime state advance, dispatch, and invocation', () => {
       commitId: 'control-other',
       guard: commitGuard('invocation-1', 0),
       command: {
-        kind: 'mark_unknown',
+        kind: 'allocate_attempt',
+        actionId: 'action-x',
+        expectedActionRevision: 1,
         attemptId: 'attempt-x',
-        expectedAttemptRevision: 1,
-        evidence: [],
-        reconciliationOwnerRef: { kind: 'run', id: 'run-1' },
-        reason: 'lost',
+        requestIdentity: {
+          system: 'peer',
+          aghRequestId: 'request-x',
+          idempotencyKey: null,
+          requestDigest: 'a'.repeat(64),
+        },
+        authorizationRef: 'authorization-x',
+        reservationRefs: [],
+        deadline: future,
       },
     }
     const refused = await store.commitControl(other, context())
@@ -2483,9 +2471,6 @@ describe('runtime state advance, dispatch, and invocation', () => {
     expect(conversation.ok).toBe(false)
     if (!conversation.ok)
       expect(conversation.error.message).toBe('conversation contribution is not implemented')
-    expect(failed.ok).toBe(false)
-    if (!failed.ok)
-      expect(failed.error.message).toBe('wait, complete, and fail transitions are not implemented')
     expect(flushed.ok).toBe(false)
     if (!flushed.ok)
       expect(flushed.error).toMatchObject({ code: 'invalid_input', detailCode: 'grant_absent' })
@@ -4045,24 +4030,6 @@ describe('runtime state receipt intake, outbox, and query flush', () => {
     )
     const signalId = stableId('sig', 'authority-1\0receipt-1\0run')
     await preparedInvocation(store, 'invocation-2', 1)
-    const waiting = await store.advanceRun(
-      {
-        ...advanceBody('advance-wait', 'invocation-2', 1, []),
-        transition: {
-          ...advanceBody('advance-wait', 'invocation-2', 1, []).transition,
-          next: {
-            kind: 'wait',
-            condition: {
-              anyOf: [{ kind: 'signals', typeIds: ['agh.runtime/action-completed@1'], afterSeq: 0 }],
-            },
-          },
-        },
-      },
-      context(),
-    )
-    expect(waiting.ok).toBe(false)
-    if (!waiting.ok)
-      expect(waiting.error.message).toBe('wait, complete, and fail transitions are not implemented')
     const before = count(path, 'events')
     const unknown = await store.advanceRun(
       {

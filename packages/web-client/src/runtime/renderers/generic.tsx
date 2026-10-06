@@ -96,19 +96,26 @@ function ActionControl({
   const [attempt, setAttempt] = useState<Attempt | null>(null)
   // ponytail: only command actions act here; forms and downloads show their label until the card
   // gets the interaction and artifact flows. A command needing a feature this client did not
-  // negotiate is shown, never offered.
+  // negotiate is shown, never offered; one missing only desktop capabilities names them.
   const negotiated = context.capabilities?.features ?? []
-  if (
-    action.kind !== 'command' ||
-    action.availability !== 'enabled' ||
-    !action.requiredFeatures.every((feature) => negotiated.includes(feature))
-  )
+  const missing = action.requiredFeatures.filter((feature) => !negotiated.includes(feature))
+  if (action.kind !== 'command' || action.availability !== 'enabled' || missing.length > 0) {
+    const desktop =
+      action.availability === 'enabled' &&
+      missing.length > 0 &&
+      missing.every((feature) => feature.startsWith('desktop.'))
     return (
       <span className="generic-domain-action" data-action-key={action.actionKey}>
         <Button disabled>{action.label}</Button>
-        <span>{action.disabledReason ?? text('domain.unavailable')}</span>
+        <span>
+          {action.disabledReason ??
+            (desktop
+              ? text('domain.desktopUnavailable', { capability: missing.join(', ') })
+              : text('domain.unavailable'))}
+        </span>
       </span>
     )
+  }
   const waiting = attempt?.state === 'pending' || attempt?.state === 'unknown'
 
   const send = async (check: boolean) => {

@@ -287,6 +287,8 @@ it('keeps original unselected direct database genesis and attested replay availa
 it('denies production create without selected maintenance source', async () => {
   const f = await fixture()
   const provider = createRuntimeStateStore({ file: f.file, authority })
+  // Registered after the fixture's directory removal, so it closes first (Windows cannot remove an open file).
+  cleanups.push(() => provider.close())
   const result = await provider.createRun(f.admission, f.context)
   expect(result.ok).toBe(false)
   if (!result.ok) expect(result.error.code).toBe('denied')

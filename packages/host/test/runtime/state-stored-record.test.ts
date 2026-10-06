@@ -4,7 +4,6 @@ import {
   bodyItem,
   ITEM_MAX_BYTES,
   PAGE_MAX_BYTES,
-  STORED_SCHEMA_PENDING,
   storedItem,
   storedOf,
 } from '../../src/runtime/state/stored-record.js'
@@ -44,15 +43,16 @@ describe('Stored envelope', () => {
     })
     expect(stored.owner).toEqual(owner)
     expect(Object.keys(stored).sort()).toEqual(['meta', 'owner', 'value'])
-    // The envelope schema is not registered in the public protocol yet, so there is no
-    // validateRuntime('StoredRecord') assertion here; the shape is asserted structurally.
+    expect(validateRuntime('StoredRecord', stored).ok).toBe(true)
     expect(validateRuntime('RecordMeta', stored.meta).ok).toBe(true)
     expect(validateRuntime('RecordOwner', stored.owner).ok).toBe(true)
   })
   it('wraps the record in an inline DataRef whose schema is the envelope, never the body schema', () => {
     const item = storedItem(fact())
-    expect(item.schema).toEqual(STORED_SCHEMA_PENDING)
+    expect(item.schema).toEqual(RuntimeSchemaRefs.StoredRecord)
     expect(item.schema).not.toEqual(RuntimeSchemaRefs.RunRecordValue)
+    expect(item.schema.digest).not.toBe('0'.repeat(64))
+    expect(validateRuntime('StoredRecord', item.value).ok).toBe(true)
     expect(item.digest).toBe(canonicalJsonDigest(item.value))
     expect(item.bytes).toBe(Buffer.byteLength(JSON.stringify(item.value), 'utf8'))
     expect(storedItem(fact())).toEqual(item)

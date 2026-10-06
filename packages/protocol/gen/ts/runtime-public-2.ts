@@ -93,16 +93,18 @@ export const RuntimePublic2 = Type.Module({
   "FilePath": Type.String(),
   "FileCheckpointProof": Type.Object({ "requestId": Type.Ref('Id'), "path": Type.Ref('FilePath'), "beforeVersion": Type.Union([Type.Ref('Revision'), Type.Null()]), "before": Type.Union([Type.Literal('present'), Type.Literal('absent')]), "restoration": Type.Ref('RetentionRef'), "digest": Type.Ref('Digest') }, { additionalProperties: false }),
   "PromptContributionSnapshot": Type.Object({ "digest": Type.Ref('Digest'), "registrationDigest": Type.Ref('Digest'), "sections": Type.Array(Type.Object({ "id": Type.Ref('Id'), "source": Type.Ref('BindingRef'), "order": Type.Ref('UInt53'), "content": Type.Ref('DataRef') }, { additionalProperties: false }), { maxItems: 10000 }), "runtimeContext": Type.Array(Type.Object({ "source": Type.Ref('BindingRef'), "content": Type.Ref('DataRef') }, { additionalProperties: false }), { maxItems: 10000 }), "candidateTools": Type.Array(Type.Ref('ResourceRef'), { maxItems: 10000 }), "conflictDiagnostics": Type.Array(Type.Ref('Id'), { maxItems: 10000 }) }, { additionalProperties: false }),
+  "ThinkingLevel": Type.Union([Type.Literal('off'), Type.Literal('minimal'), Type.Literal('low'), Type.Literal('medium'), Type.Literal('high'), Type.Literal('xhigh'), Type.Literal('max')]),
+  "SecretHandle": Type.Object({ "handleId": Type.Ref('Id'), "secretId": Type.Ref('Id'), "version": Type.String(), "audience": Type.String(), "expiresAt": Type.Ref('Timestamp') }, { additionalProperties: false }),
+  "PreparedModelHeader": Type.Object({ "route": Type.Ref('ModelRouteSnapshot'), "adapterPackageDigest": Type.Ref('Id'), "maxOutputTokens": Type.Ref('UInt53'), "thinking": Type.Union([Type.Ref('ThinkingLevel'), Type.Null()]), "wire": Type.Object({ "slot": Type.Union([Type.Literal('primary'), Type.Literal('escalation'), Type.Literal('fast'), Type.Literal('compaction'), Type.Literal('verifier'), Type.Literal('image'), Type.Literal('video')]), "contractId": Type.Union([Type.Ref('Id'), Type.Null()]), "sessionKeyDigest": Type.Ref('Digest') }, { additionalProperties: false }), "sessionParameterRef": Type.Ref('DomainReference'), "credentialRef": Type.Union([Type.Ref('SecretHandle'), Type.Null()]), "mediaPlanDigests": Type.Array(Type.Ref('Digest'), { maxItems: 10000 }) }, { additionalProperties: false }),
+  "PreparedModelHandle": Type.Object({ "kind": Type.Literal('agh.model/prepared-handle@1'), "handleId": Type.Ref('Id'), "inputDigest": Type.Ref('Digest'), "ownerBinding": Type.Ref('BindingRef'), "header": Type.Ref('PreparedModelHeader') }, { additionalProperties: false }),
   "SourceRange": Type.Object({ "session": Type.Ref('SessionRef'), "fromSeq": Type.Ref('UInt53'), "toSeq": Type.Ref('UInt53'), "digest": Type.Ref('Digest') }, { additionalProperties: false }),
   "ContextItem": Type.Object({ "id": Type.Ref('Id'), "kind": Type.Union([Type.Literal('message'), Type.Literal('tool-call'), Type.Literal('tool-result'), Type.Literal('skill'), Type.Literal('resource'), Type.Literal('summary'), Type.Literal('memory')]), "body": Type.Ref('DataRef'), "sourceRefs": Type.Array(Type.Ref('PublicRef'), { maxItems: 10000 }), "provenance": Type.Ref('Provenance'), "trust": Type.Union([Type.Literal('system'), Type.Literal('user'), Type.Literal('external'), Type.Literal('derived')]), "tokenEstimate": Type.Ref('UInt53'), "protected": Type.Boolean(), "toolPairRef": Type.Union([Type.Ref('Id'), Type.Null()]), "sourceRanges": Type.Array(Type.Ref('SourceRange'), { maxItems: 10000 }) }, { additionalProperties: false }),
   "ContextView": Type.Object({ "viewId": Type.Ref('Id'), "format": Type.String(), "schema": Type.Ref('SchemaRef'), "baseRevision": Type.Ref('Revision'), "items": Type.Array(Type.Ref('ContextItem'), { maxItems: 10000 }), "tokenEstimate": Type.Ref('UInt53'), "protectedRefs": Type.Array(Type.Ref('PublicRef'), { maxItems: 10000 }), "inputDigest": Type.Ref('Digest'), "digest": Type.Ref('Digest'), "runtimeInstructionRefs": Type.Array(Type.Ref('DataRef'), { maxItems: 10000 }) }, { additionalProperties: false }),
   "ToolCatalog": Type.Object({ "revision": Type.Ref('Revision'), "digest": Type.Ref('Digest'), "tools": Type.Array(Type.Ref('ToolDefinition'), { maxItems: 10000 }) }, { additionalProperties: false }),
-  "ThinkingLevel": Type.Union([Type.Literal('off'), Type.Literal('minimal'), Type.Literal('low'), Type.Literal('medium'), Type.Literal('high'), Type.Literal('xhigh'), Type.Literal('max')]),
   "GenerationOptions": Type.Object({ "maxOutputTokens": Type.Ref('UInt53'), "temperature": Type.Optional(Type.Number()), "seed": Type.Optional(Type.Ref('UInt53')), "thinking": Type.Union([Type.Ref('ThinkingLevel'), Type.Null()]) }, { additionalProperties: false }),
   "MediaPlan": Type.Object({ "key": Type.Ref('Id'), "sourceRefs": Type.Array(Type.Ref('PublicRef'), { maxItems: 10000 }), "sourceDigest": Type.Ref('Digest'), "transformSchema": Type.Ref('SchemaRef'), "parameters": Type.Ref('DataRef'), "targetFeatures": Type.Ref('ModelFeatures'), "provider": Type.Ref('BindingRef') }, { additionalProperties: false }),
   "ExactQuantity": Type.Object({ "unit": Type.String(), "value": Type.String() }, { additionalProperties: false }),
   "LegacyRequestOverrides": Type.Object({ "samplingParams": Type.Optional(Type.Intersect([Type.Record(Type.String(), JsonValue, { maxProperties: 10000 }), Type.Object({})])), "maxTokens": Type.Optional(Type.Ref('UInt53')), "metadata": Type.Optional(Type.Intersect([Type.Record(Type.String(), JsonValue, { maxProperties: 10000 }), Type.Object({})])) }, { additionalProperties: false }),
-  "SecretHandle": Type.Object({ "handleId": Type.Ref('Id'), "secretId": Type.Ref('Id'), "version": Type.String(), "audience": Type.String(), "expiresAt": Type.Ref('Timestamp') }, { additionalProperties: false }),
   "PreparedModelRequest": Type.Object({ "preparedId": Type.Ref('Id'), "ownerBinding": Type.Ref('BindingRef'), "target": Type.Ref('ModelRouteSnapshot'), "view": Type.Ref('ContextView'), "inputDigest": Type.Ref('Digest'), "outputSchema": Type.Union([Type.Ref('SchemaRef'), Type.Null()]), "toolCatalog": Type.Union([Type.Ref('ToolCatalog'), Type.Null()]), "generation": Type.Ref('GenerationOptions'), "mediaPlans": Type.Array(Type.Ref('MediaPlan'), { maxItems: 10000 }), "estimatedUnits": Type.Array(Type.Ref('ExactQuantity'), { maxItems: 10000 }), "hookResults": Type.Union([Type.Ref('HookResultSet'), Type.Null()]), "sessionParameterRef": Type.Ref('DomainReference'), "legacyRequestOverrides": Type.Union([Type.Ref('LegacyRequestOverrides'), Type.Null()]), "credentialRef": Type.Union([Type.Ref('SecretHandle'), Type.Null()]) }, { additionalProperties: false }),
   "ContentBlock": Type.Union([Type.Object({ "type": Type.Literal('text'), "text": Type.String({ maxLength: 1048576 }) }, { additionalProperties: false }), Type.Object({ "type": Type.Literal('image'), "data": Type.String(), "mimeType": Type.String({ maxLength: 128 }) }, { additionalProperties: false }), Type.Object({ "type": Type.Literal('resource_link'), "uri": Type.String({ maxLength: 4096 }), "name": Type.Optional(Type.String({ maxLength: 256 })), "mimeType": Type.Optional(Type.String({ maxLength: 128 })) }, { additionalProperties: false })]),
   "SlotName": Type.Union([Type.Literal('primary'), Type.Literal('escalation'), Type.Literal('fast'), Type.Literal('compaction'), Type.Literal('verifier'), Type.Literal('image'), Type.Literal('video')]),
@@ -118,9 +120,6 @@ export const RuntimePublic2 = Type.Module({
   "FileStat": Type.Object({ "kind": Type.Union([Type.Literal('file'), Type.Literal('directory'), Type.Literal('symlink'), Type.Literal('other')]), "bytes": Type.Ref('UInt53'), "mtimeMs": Type.Number(), "version": Type.Ref('Revision') }, { additionalProperties: false }),
   "RunState": Type.Union([Type.Literal('admitted'), Type.Literal('runnable'), Type.Literal('waiting'), Type.Literal('failing'), Type.Literal('cancelling'), Type.Literal('draining'), Type.Literal('succeeded'), Type.Literal('failed'), Type.Literal('cancelled'), Type.Literal('frozen'), Type.Literal('migrating'), Type.Literal('blocked_incompatible'), Type.Literal('blocked_integrity')]),
   "UsageFactRef": Type.Object({ "authorityId": Type.Ref('Id'), "usageId": Type.Ref('Id'), "digest": Type.Ref('Digest') }, { additionalProperties: false }),
-  "AgentSnapshot": Type.Object({ "agentRef": Type.Ref('DomainObjectRef'), "runRef": Type.Ref('RunRef'), "lifecycle": Type.Union([Type.Literal('active'), Type.Literal('draining'), Type.Literal('retired'), Type.Literal('blocked')]), "runState": Type.Ref('RunState'), "resultRef": Type.Union([Type.Ref('DataRef'), Type.Null()]), "error": Type.Union([Type.Ref('RuntimeError'), Type.Null()]), "usageRefs": Type.Array(Type.Ref('UsageFactRef'), { maxItems: 10000 }), "children": Type.Array(Type.Ref('DomainObjectRef'), { maxItems: 10000 }), "limits": Type.Ref('ResourceLimits') }, { additionalProperties: false }),
-  "ToolConversationHeadValue": Type.Object({ "actionId": Type.Ref('Id'), "callFactId": Type.Ref('Id'), "resultFactId": Type.Ref('Id'), "visibleReceiptId": Type.Ref('Id'), "revision": Type.Ref('UInt53') }, { additionalProperties: false }),
-  "PlanRevisionValue": Type.Object({ "sessionId": Type.Ref('Id'), "turnId": Type.Ref('Id'), "revision": Type.Ref('UInt53'), "items": Type.Ref('ToolPlanUpdate'), "sourceCommandId": Type.Ref('Id'), "seq": Type.Ref('UInt53') }, { additionalProperties: false }),
 })
 
 export const Id = RuntimePublic2.Import('Id')
@@ -291,6 +290,14 @@ export const FileCheckpointProof = RuntimePublic2.Import('FileCheckpointProof')
 export type FileCheckpointProof = Static<typeof FileCheckpointProof>
 export const PromptContributionSnapshot = RuntimePublic2.Import('PromptContributionSnapshot')
 export type PromptContributionSnapshot = Static<typeof PromptContributionSnapshot>
+export const ThinkingLevel = RuntimePublic2.Import('ThinkingLevel')
+export type ThinkingLevel = Static<typeof ThinkingLevel>
+export const SecretHandle = RuntimePublic2.Import('SecretHandle')
+export type SecretHandle = Static<typeof SecretHandle>
+export const PreparedModelHeader = RuntimePublic2.Import('PreparedModelHeader')
+export type PreparedModelHeader = Static<typeof PreparedModelHeader>
+export const PreparedModelHandle = RuntimePublic2.Import('PreparedModelHandle')
+export type PreparedModelHandle = Static<typeof PreparedModelHandle>
 export const SourceRange = RuntimePublic2.Import('SourceRange')
 export type SourceRange = Static<typeof SourceRange>
 export const ContextItem = RuntimePublic2.Import('ContextItem')
@@ -299,8 +306,6 @@ export const ContextView = RuntimePublic2.Import('ContextView')
 export type ContextView = Static<typeof ContextView>
 export const ToolCatalog = RuntimePublic2.Import('ToolCatalog')
 export type ToolCatalog = Static<typeof ToolCatalog>
-export const ThinkingLevel = RuntimePublic2.Import('ThinkingLevel')
-export type ThinkingLevel = Static<typeof ThinkingLevel>
 export const GenerationOptions = RuntimePublic2.Import('GenerationOptions')
 export type GenerationOptions = Static<typeof GenerationOptions>
 export const MediaPlan = RuntimePublic2.Import('MediaPlan')
@@ -309,8 +314,6 @@ export const ExactQuantity = RuntimePublic2.Import('ExactQuantity')
 export type ExactQuantity = Static<typeof ExactQuantity>
 export const LegacyRequestOverrides = RuntimePublic2.Import('LegacyRequestOverrides')
 export type LegacyRequestOverrides = Static<typeof LegacyRequestOverrides>
-export const SecretHandle = RuntimePublic2.Import('SecretHandle')
-export type SecretHandle = Static<typeof SecretHandle>
 export const PreparedModelRequest = RuntimePublic2.Import('PreparedModelRequest')
 export type PreparedModelRequest = Static<typeof PreparedModelRequest>
 export const ContentBlock = RuntimePublic2.Import('ContentBlock')
@@ -341,9 +344,3 @@ export const RunState = RuntimePublic2.Import('RunState')
 export type RunState = Static<typeof RunState>
 export const UsageFactRef = RuntimePublic2.Import('UsageFactRef')
 export type UsageFactRef = Static<typeof UsageFactRef>
-export const AgentSnapshot = RuntimePublic2.Import('AgentSnapshot')
-export type AgentSnapshot = Static<typeof AgentSnapshot>
-export const ToolConversationHeadValue = RuntimePublic2.Import('ToolConversationHeadValue')
-export type ToolConversationHeadValue = Static<typeof ToolConversationHeadValue>
-export const PlanRevisionValue = RuntimePublic2.Import('PlanRevisionValue')
-export type PlanRevisionValue = Static<typeof PlanRevisionValue>

@@ -7,6 +7,7 @@ import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { createTestHost } from '@agnes/host/testkit'
 import { validateRuntime } from '@agnes/protocol/runtime'
+import { windowsProcessStartTimeSync } from '@agnes/system-node'
 import { expect, it } from 'vitest'
 import type { RuntimeRunCommandFrame, WorkerReplyFrame, WorkerToSupervisor } from '../src/frames.js'
 import { encodeFrame, JsonlDecoder } from '../src/framing.js'
@@ -14,6 +15,9 @@ import { admissionRequest } from './fixtures/runtime-admission-owner.js'
 import { loopAdmissionRequest } from './fixtures/runtime-loop-owner.js'
 
 async function worker(withOwner: boolean, loopMode?: string) {
+  const supervisorStartId = process.platform === 'win32' ? windowsProcessStartTimeSync(process.pid) : null
+  if (process.platform === 'win32' && !supervisorStartId)
+    throw Error('Current supervisor process identity unavailable')
   const root = realpathSync(mkdtempSync(join(tmpdir(), 'a1-')))
   const socketPath = process.platform === 'win32' ? `\\\\.\\pipe\\entry-${randomUUID()}` : join(root, 's')
   const profileFile = join(root, 'profile.json')
@@ -52,6 +56,12 @@ async function worker(withOwner: boolean, loopMode?: string) {
         AGH_HOME: root,
         AGNES_WORKER_TOKEN: 'entry-fixture',
         AGNES_SUPERVISOR_SOCKET: socketPath,
+        ...(supervisorStartId
+          ? {
+              AGNES_SUPERVISOR_PID: String(process.pid),
+              AGNES_SUPERVISOR_START_ID: supervisorStartId,
+            }
+          : {}),
         AGNES_WORKER_KEY: '@shared',
         AGNES_WORKER_KIND: 'session',
         AGNES_PROFILE_FILE: profileFile,
@@ -290,7 +300,7 @@ it.each([
         ])
         expect(events.find((event) => event.method === 'tool.result')).toMatchObject({
           outcome: 'failed',
-          modelContextRef: { schema: { typeId: 'agh.model/prepared-request@1' } },
+          modelContextRef: { schema: { typeId: 'agh.model/prepared-handle@1' } },
           error: { detailCode },
         })
         expect(events).toContainEqual({ method: 'action.close' })
@@ -338,7 +348,7 @@ it.each(['default', 'reference'] as const)(
       ])
       expect(events.find((event) => event.method === 'tool.result')).toMatchObject({
         outcome: 'succeeded',
-        modelContextRef: { schema: { typeId: 'agh.model/prepared-request@1' } },
+        modelContextRef: { schema: { typeId: 'agh.model/prepared-handle@1' } },
       })
       expect(events.find((event) => event.method === 'state.complete')).toMatchObject({
         output: { value: { content: [{ type: 'text', text: 'statistics complete' }] } },

@@ -18,6 +18,10 @@ const currentModel: ModelPickerOption = {
   thinkingLevelMap: { low: 'low', high: 'high' },
 }
 
+/** The option the listbox's aria-activedescendant points at, resolved in its own document. */
+const activeOption = (box: HTMLElement) =>
+  box.ownerDocument.getElementById(box.getAttribute('aria-activedescendant') ?? '')
+
 const models: readonly ModelPickerOption[] = [
   currentModel,
   {
@@ -69,7 +73,7 @@ function mountPicker(
 }
 
 function modelList(): HTMLElement {
-  const found = document.querySelector<HTMLElement>('#model-listbox')
+  const found = document.querySelector<HTMLElement>('.model-picker-list')
   if (!found) throw new Error('model picker did not open')
   return found
 }
@@ -273,7 +277,7 @@ describe('model picker', () => {
     await vi.waitFor(() =>
       expect(onSettingsChange).toHaveBeenCalledWith({ thinking: 'high', contextWindow: 64000 }),
     )
-    await vi.waitFor(() => expect(document.querySelector('#model-picker-popover')).toBeNull())
+    await vi.waitFor(() => expect(document.querySelector('.model-picker')).toBeNull())
     expect(document.activeElement).toBe(trigger)
     picker.destroy()
   })
@@ -292,7 +296,7 @@ describe('model picker', () => {
     await vi.waitFor(() =>
       expect(onSettingsChange).toHaveBeenCalledWith({ thinking: 'low', contextWindow: 32000 }),
     )
-    await vi.waitFor(() => expect(document.querySelector('#model-picker-popover')).toBeNull())
+    await vi.waitFor(() => expect(document.querySelector('.model-picker')).toBeNull())
     picker.destroy()
   })
 
@@ -369,7 +373,7 @@ describe('model picker', () => {
     await vi.waitFor(() =>
       expect(onSettingsChange).toHaveBeenCalledWith({ thinking: 'low', contextWindow: 96000 }),
     )
-    await vi.waitFor(() => expect(document.querySelector('#model-picker-popover')).toBeNull())
+    await vi.waitFor(() => expect(document.querySelector('.model-picker')).toBeNull())
 
     await hoverFirstModel(trigger)
     detailRow('model-detail-budget').click()
@@ -483,9 +487,9 @@ describe('model picker', () => {
     const { picker, trigger } = mountPicker()
     trigger.dispatchEvent(new KeyboardEvent('keydown', { key: 'End', bubbles: true }))
 
-    expect(modelList().getAttribute('aria-activedescendant')).toBe('model-picker-option-2')
+    expect(activeOption(modelList())).toBe(modelList().querySelectorAll('[role="option"]')[2])
     modelList().dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
-    expect(document.querySelector('#model-listbox')).toBeNull()
+    expect(document.querySelector('.model-picker-list')).toBeNull()
     expect(document.activeElement).toBe(trigger)
     picker.destroy()
   })
@@ -540,13 +544,13 @@ describe('model picker', () => {
         picker.render(state({ selected: currentModel, settings }))
 
         trigger.click()
-        expect(doc.querySelector('#model-picker-popover')?.parentElement).toBe(doc.body)
-        expect(doc.querySelector('#model-listbox')?.getAttribute('aria-label')).toBe(
+        expect(doc.querySelector('.model-picker')?.parentElement).toBe(doc.body)
+        expect(doc.querySelector('.model-picker-list')?.getAttribute('aria-label')).toBe(
           translate('settings.modelPicker.listAria'),
         )
-        expect(document.querySelector('#model-picker-popover')).toBeNull()
+        expect(document.querySelector('.model-picker')).toBeNull()
         doc
-          .querySelector('#model-listbox')
+          .querySelector('.model-picker-list')
           ?.dispatchEvent(
             new other.KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }) as unknown as Event,
           )
@@ -567,11 +571,11 @@ describe('model picker', () => {
         expect(document.querySelector('#model-settings-popover')).toBeNull()
         expect(document.querySelector('#model-settings-options-popover')).toBeNull()
         doc.body.dispatchEvent(new other.MouseEvent('click', { bubbles: true }) as unknown as Event)
-        expect(doc.querySelector('#model-picker-popover')).toBeNull()
+        expect(doc.querySelector('.model-picker')).toBeNull()
 
         trigger.click()
         picker.destroy()
-        expect(doc.querySelector('#model-picker-popover')).toBeNull()
+        expect(doc.querySelector('.model-picker')).toBeNull()
         expect(doc.querySelector('#model-settings-popover')).toBeNull()
         expect(doc.querySelector('#model-settings-options-popover')).toBeNull()
         bound.forEach((calls, index) => {
@@ -589,7 +593,7 @@ describe('model picker', () => {
     const { picker, trigger } = mountPicker()
     trigger.click()
     picker.render(state({ disabled: true, settings }))
-    expect(document.querySelector('#model-listbox')).toBeNull()
+    expect(document.querySelector('.model-picker-list')).toBeNull()
     expect(trigger.disabled).toBe(true)
     picker.destroy()
   })
@@ -600,7 +604,7 @@ describe('model picker', () => {
     modelRow(1).click()
 
     await vi.waitFor(() => expect(onSelect).toHaveBeenCalledWith(models[1]))
-    await vi.waitFor(() => expect(document.querySelector('#model-picker-popover')).toBeNull())
+    await vi.waitFor(() => expect(document.querySelector('.model-picker')).toBeNull())
     expect(document.querySelector('#model-settings-popover')).toBeNull()
     picker.destroy()
   })

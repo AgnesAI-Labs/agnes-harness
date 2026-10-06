@@ -1,11 +1,7 @@
 import { fakeModel } from '@agnes/ai/testkit'
 import type { ModelRecord, RouteDecl } from '@agnes/protocol'
 import { describe, expect, it } from 'vitest'
-import {
-  type CatalogRegistry,
-  captureModelCatalog,
-  restoreModelCatalog,
-} from '../../src/runtime/model/model-catalog-capture.js'
+import { type CatalogRegistry, captureModelCatalog } from '../../src/runtime/model/model-catalog-capture.js'
 
 const decl = (route: string): RouteDecl =>
   ({ route, api: 'openai-completions', baseUrl: 'https://fake.invalid' }) as RouteDecl
@@ -61,13 +57,10 @@ describe('model catalog capture', () => {
     expect(catalog.select('r2', 'b')?.route.keyless).toBe(true)
   })
 
-  it('round-trips through its snapshot with the same digest, and a changed snapshot has another digest', () => {
-    const catalog = captureModelCatalog(registry([fakeModel({ id: 'a', route: 'r1', cost: cost(2) })]).view)
-    const restored = restoreModelCatalog(JSON.parse(JSON.stringify(catalog.snapshot())))
-    expect(restored.digest).toBe(catalog.digest)
-    expect(restored.select('r1', 'a')?.model).toEqual(catalog.select('r1', 'a')?.model)
-    const changed = JSON.parse(JSON.stringify(catalog.snapshot()))
-    changed[0].models[0].cost.output = 7
-    expect(restoreModelCatalog(changed).digest).not.toBe(catalog.digest)
+  it('has the same digest for the same content and another digest when a model cost changes', () => {
+    const make = (output: number) =>
+      captureModelCatalog(registry([fakeModel({ id: 'a', route: 'r1', cost: cost(output) })]).view)
+    expect(make(2).digest).toBe(make(2).digest)
+    expect(make(7).digest).not.toBe(make(2).digest)
   })
 })

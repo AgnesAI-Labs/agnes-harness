@@ -14,7 +14,7 @@ import {
 } from '@agnes/protocol/runtime'
 import { openBootstrapAnchor } from '../maintenance/bootstrap-locator.js'
 import {
-  captureIdentityCurrentFence,
+  captureIdentityCurrentAtFence,
   createIdentityAuthority,
   type IdentityClaimsBinding,
   type IdentityClaimsOwner,
@@ -302,7 +302,7 @@ export function createLocalDeploymentIdentity(
       localGate: 'local-peer'
     }
   >()
-  function capture(context: CallContext) {
+  function capture(context: CallContext, deadlineCeiling?: Timestamp) {
     const actor = authority.current(context)
     if (actor?.source.kind !== 'deployment') throw new Error('Original local context is required')
     const sourceGeneration = actor.source.generation
@@ -312,7 +312,7 @@ export function createLocalDeploymentIdentity(
       originalClaims = claimsGet(actor.authorizationRef)?.body_json
     if (!row || typeof originalClaims !== 'string')
       throw new Error('Original local identity evidence is missing')
-    const fence = captureIdentityCurrentFence(authority, context)
+    const fence = captureIdentityCurrentAtFence(authority, context, deadlineCeiling)
     if (!fence) throw new Error('Original local identity fence is unavailable')
     const entryId = entry[0]
     const originalRow = row
@@ -340,7 +340,13 @@ export function createLocalDeploymentIdentity(
       },
       staticCheck,
       finalCheck() {
-        if (!fence(staticCheck)) throw new Error('Original local identity final fence refused')
+        if (fence(staticCheck) === null) throw new Error('Original local identity final fence refused')
+      },
+      /** Actual value from the same single issuer Clock; no second Clock or source callback. */
+      finalCheckAt() {
+        const at = fence(staticCheck)
+        if (at === null) throw new Error('Original local identity final fence refused')
+        return at
       },
     })
   }
@@ -448,6 +454,24 @@ export function createLocalDeploymentIdentity(
   const api = Object.freeze({
     connect,
     capture,
+    /** Identity alias only. The consumer must still check the original session ownership index. */
+    captureSessionPrincipal(context: CallContext) {
+      const proof = capture(context)
+      const deadline = Math.min(Date.parse(proof.deadline), Date.parse(context.deadline))
+      if (!Number.isFinite(deadline)) throw new Error('Original local identity deadline is unavailable')
+      const check = () => {
+        proof.dynamicCheck()
+        proof.finalCheck()
+      }
+      check()
+      return Object.freeze({
+        principalId: 'local' as const,
+        principalRef: owner.facts.principalRef,
+        authorizationRef: context.authorizationRef,
+        deadline,
+        check,
+      })
+    },
     revoke() {
       db.prepare('UPDATE runtime_local_identity_installation SET revoked=1 WHERE id=?').run(configDigest)
     },

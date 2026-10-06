@@ -53,6 +53,7 @@
     "runtime/client/events-conformance.ts",
     "runtime/client/events-conformance.e2e.test.ts",
     "runtime/client/interaction-conformance.ts",
+    "runtime/client/interaction-conformance.e2e.test.ts",
     "runtime/client/projection-conformance.ts",
     "runtime/client/projection-conformance.e2e.test.ts",
     "runtime/client/projection-sources.test.ts",
@@ -63,7 +64,18 @@
     "runtime/client/transport-conformance.ts",
     "runtime/client/transport-conformance.e2e.test.ts",
     "runtime/client/ui-registry-conformance.ts",
-    "runtime/client/ui-registry-conformance.e2e.test.ts"
+    "runtime/client/ui-registry-conformance.e2e.test.ts",
+    "runtime/platform/policy-conformance.ts",
+    "runtime/fixtures/policy-cold-process.ts",
+    "runtime/platform/audit-conformance.ts",
+    "runtime/fixtures/audit-cold-process.ts",
+    "runtime/fixtures/pricing-recovery.ts",
+    "runtime/fixtures/pricing-recovery-worker.ts",
+    "runtime/pricing-conformance.ts",
+    "runtime/model-conformance.ts",
+    "runtime/model-conformance.test.ts",
+    "runtime/platform/identity-conformance.ts",
+    "runtime/fixtures/identity-cold-process.ts"
   ],
   "exclude": ["dist", "runtime/prototype/**"],
   "references": [

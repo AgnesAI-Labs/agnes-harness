@@ -150,20 +150,20 @@ describe('independent core web-unit implementations', () => {
     )
 
     expect(host.querySelector('[data-agnes-region-unit="conversation"]')).toBeTruthy()
-    expect(host.querySelector('#transcript')).toBeTruthy()
-    expect(host.querySelector('#empty-state')).toBeTruthy()
-    expect(host.querySelector('#new-content')).toBeInstanceOf(HTMLButtonElement)
-    expect(children?.transcript.id).toBe('transcript')
+    expect(host.querySelector('.transcript')).toBeTruthy()
+    expect(host.querySelector('.empty-state')).toBeTruthy()
+    expect(host.querySelector('.new-content')).toBeInstanceOf(HTMLButtonElement)
+    expect(children?.transcript.className).toBe('transcript')
     ref.current?.setEmptyStateVisible(true)
-    expect(host.querySelector('#empty-state')?.hasAttribute('hidden')).toBe(false)
+    expect(host.querySelector('.empty-state')?.hasAttribute('hidden')).toBe(false)
   })
 
   it('renders sidebar through injected host adapters while owning its surface', () => {
     const host = document.createElement('aside')
     document.body.append(
       host,
-      Object.assign(document.createElement('button'), { id: 'sidebar-toggle' }),
-      Object.assign(document.createElement('button'), { id: 'sidebar-backdrop' }),
+      Object.assign(document.createElement('button'), { className: 'sidebar-toggle' }),
+      Object.assign(document.createElement('button'), { className: 'sidebar-backdrop' }),
     )
     const ref = createRef<import('../src/index.js').SidebarHandle>()
     let rendered = 0
@@ -195,7 +195,7 @@ describe('independent core web-unit implementations', () => {
     )
 
     expect(host.querySelector('[data-agnes-region-unit="sidebar"]')).toBeTruthy()
-    expect(host.querySelector('#sessions')?.textContent).toBe('navigation')
+    expect(host.querySelector('.session-nav')?.textContent).toBe('navigation')
     expect(rendered).toBeGreaterThan(0)
     root.unmount()
     expect(disposed).toBe(1)
@@ -242,7 +242,7 @@ describe('independent core web-unit implementations', () => {
 
     const node: UINode = { kind: 'assistant', id: 'assistant-1', seq: 1, text: 'hello' }
     ref.current?.render([node])
-    expect(host.querySelector('#transcript-content')).toBeTruthy()
+    expect(host.querySelector('.transcript-content')).toBeTruthy()
     expect(rendered).toEqual([node])
     expect(observed).toBe(1)
     root.unmount()

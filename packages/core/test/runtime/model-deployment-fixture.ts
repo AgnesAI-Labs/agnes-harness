@@ -1,7 +1,8 @@
 import { defineGeneratedAuthorSchema } from '@agnes/extension-api/runtime'
 import { createTestServiceContainer } from '@agnes/extension-api/testkit'
 import type * as W from '@agnes/protocol/runtime'
-import { canonicalJsonDigest } from '@agnes/protocol/runtime'
+import { canonicalJsonDigest, validateRuntime } from '@agnes/protocol/runtime'
+import { createPreparedRegistry, type PreparedEntry } from '../../src/runtime/model/prepared-registry.js'
 import { createDefaultModelFactory, type ModelDeployment } from '../../src/runtime/providers/model.js'
 import { callContext, fixtureAdapter, fixtureCatalog, fixtureOwner, fixtureWire } from './model-fixture.js'
 
@@ -61,6 +62,8 @@ export function fakeDeployment(over: Partial<ModelDeployment> = {}) {
           ? { binding: fixtureAdapter, packageDigest: 'package-1' }
           : null,
     },
+    credentials: { verifyIssued: async () => true },
+    registry: createPreparedRegistry(),
     bridge: { ready: () => ({ ok: true, value: undefined }) },
     ...over,
   }
@@ -111,4 +114,13 @@ export function actionFrame(
     actionTimebox: { defaultTimeoutMs: 10_000, maxDeadline: context.deadline },
     ...over,
   }
+}
+/** The registry entry a handle reference names; fails the test when the reference is not a handle or is unknown. */
+export function entryOf(deployment: ModelDeployment, ref: W.DataRef): PreparedEntry {
+  if (ref.kind !== 'inline') throw new Error('not inline')
+  const handle = validateRuntime('PreparedModelHandle', ref.value)
+  if (!handle.ok) throw new Error('not a handle')
+  const entry = deployment.registry.get(handle.value.handleId)
+  if (!entry) throw new Error('handle unknown to the registry')
+  return entry
 }

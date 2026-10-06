@@ -1,7 +1,8 @@
 import { createHash, randomBytes } from 'node:crypto'
 import { createServer } from 'node:http'
+import type { Socket } from 'node:net'
 import { join } from 'node:path'
-import { createModelAdapterFactory } from '@agnes/ai/runtime'
+import { createModelAdapterFactory, type ModelWireSource } from '@agnes/ai/runtime'
 import { createTestServiceContainer } from '@agnes/extension-api/testkit'
 import {
   boundedCanonicalJson,
@@ -16,6 +17,7 @@ import { createCredentialStore } from '../../src/adapters/credential-store.js'
 import { createSecretsFile } from '../../src/adapters/secrets.js'
 import { createHostModelAdapterDeployment } from '../../src/runtime/model/model-deployment.js'
 import type { ModelEgressOptions } from '../../src/runtime/model/model-egress.js'
+import { openModelSourceStore } from '../../src/runtime/model/model-source-store.js'
 import { boundary, cleanup, loopback, must, rule, scan, scratch, secrets } from './network-secrets-fixture.js'
 
 function inline(schema: DataRef['schema'], input: unknown): DataRef {
@@ -35,9 +37,29 @@ function inline(schema: DataRef['schema'], input: unknown): DataRef {
 /** Synthetic source/identity owners, real legacy credential store/C22 broker, Pi and HTTP peer. */
 export async function modelJointFixture(
   api: 'openai-completions' | 'anthropic-messages' = 'openai-completions',
-  mode: 'normal' | 'redirect' | 'hang' = 'normal',
+  mode:
+    | 'normal'
+    | 'redirect'
+    | 'hang'
+    // Peer behaviours for the wire joint: the response is cut after the request was read, the peer
+    // closes or resets the connection before reading, or nothing listens on the endpoint port.
+    | 'cut-mid'
+    | 'cut-silent'
+    | 'close-first'
+    | 'reset-first'
+    | 'refused' = 'normal',
   patch: Partial<ModelEgressOptions> | ((options: ModelEgressOptions) => Partial<ModelEgressOptions>) = {},
   injected = true,
+  extra: {
+    /** Use the real Host source store for the fence, save and lookup instead of the journal stand-in. */
+    store?: boolean
+    /** The egress fetch throws before it writes anything. */
+    throwEgress?: boolean
+    /** Replaces the wire source the template built (for example with one prepared by the real Model service). */
+    source?: (template: ModelWireSource) => Promise<ModelWireSource> | ModelWireSource
+    /** What the peer streams back on a normal response: the default text, or tool calls (arguments sent as given). */
+    reply?: { toolCalls: { id: string; name: string; arguments: string }[] }
+  } = {},
 ) {
   const root = scratch(),
     auth = boundary(),
@@ -50,6 +72,7 @@ export async function modelJointFixture(
   const arrival = new Promise<void>((resolve) => {
     arrived = resolve
   })
+  const peerStats = { bytes: 0, connections: 0 }
   const server = createServer(async (request, response) => {
     let body = ''
     for await (const chunk of request) body += chunk
@@ -63,6 +86,7 @@ export async function modelJointFixture(
     })
     arrived()
     if (mode === 'hang') return
+    if (mode === 'cut-silent') return void request.socket.destroy()
     if (mode === 'redirect') {
       response.writeHead(307, { location: '/escaped' }).end()
       return
@@ -88,43 +112,87 @@ export async function modelJointFixture(
         },
         'message_start',
       )
-      send(
-        { type: 'content_block_start', index: 0, content_block: { type: 'text', text: '' } },
-        'content_block_start',
-      )
-      send(
-        { type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: 'joint answer' } },
-        'content_block_delta',
-      )
-      send({ type: 'content_block_stop', index: 0 }, 'content_block_stop')
+      if (extra.reply) {
+        for (const [index, call] of extra.reply.toolCalls.entries()) {
+          send(
+            {
+              type: 'content_block_start',
+              index,
+              content_block: { type: 'tool_use', id: call.id, name: call.name, input: {} },
+            },
+            'content_block_start',
+          )
+          const half = Math.ceil(call.arguments.length / 2)
+          for (const part of [call.arguments.slice(0, half), call.arguments.slice(half)])
+            send(
+              { type: 'content_block_delta', index, delta: { type: 'input_json_delta', partial_json: part } },
+              'content_block_delta',
+            )
+          send({ type: 'content_block_stop', index }, 'content_block_stop')
+        }
+      } else {
+        send(
+          { type: 'content_block_start', index: 0, content_block: { type: 'text', text: '' } },
+          'content_block_start',
+        )
+        send(
+          { type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: 'joint answer' } },
+          'content_block_delta',
+        )
+        if (mode === 'cut-mid') return void setTimeout(() => request.socket.destroy(), 20)
+        send({ type: 'content_block_stop', index: 0 }, 'content_block_stop')
+      }
       send(
         {
           type: 'message_delta',
-          delta: { stop_reason: 'end_turn', stop_sequence: null },
+          delta: { stop_reason: extra.reply ? 'tool_use' : 'end_turn', stop_sequence: null },
           usage: { output_tokens: 3 },
         },
         'message_delta',
       )
       send({ type: 'message_stop' }, 'message_stop')
     } else {
-      send({
+      const chunk = (delta: unknown, finish: string | null) => ({
         id: 'joint-response',
         object: 'chat.completion.chunk',
         created: 1,
         model,
-        choices: [{ index: 0, delta: { role: 'assistant', content: 'joint answer' }, finish_reason: null }],
+        choices: [{ index: 0, delta, finish_reason: finish }],
       })
+      if (extra.reply) {
+        for (const [index, call] of extra.reply.toolCalls.entries()) {
+          const half = Math.ceil(call.arguments.length / 2)
+          send(
+            chunk(
+              {
+                role: 'assistant',
+                tool_calls: [
+                  { index, id: call.id, type: 'function', function: { name: call.name, arguments: '' } },
+                ],
+              },
+              null,
+            ),
+          )
+          for (const part of [call.arguments.slice(0, half), call.arguments.slice(half)])
+            send(chunk({ tool_calls: [{ index, function: { arguments: part } }] }, null))
+        }
+      } else send(chunk({ role: 'assistant', content: 'joint answer' }, null))
+      if (mode === 'cut-mid') return void setTimeout(() => request.socket.destroy(), 20)
       send({
-        id: 'joint-response',
-        object: 'chat.completion.chunk',
-        created: 1,
-        model,
-        choices: [{ index: 0, delta: {}, finish_reason: 'stop' }],
+        ...chunk({}, extra.reply ? 'tool_calls' : 'stop'),
         usage: { prompt_tokens: 7, completion_tokens: 3, total_tokens: 10 },
       })
       response.write('data: [DONE]\n\n')
     }
     response.end()
+  })
+  server.on('connection', (socket: Socket) => {
+    peerStats.connections++
+    if (mode === 'close-first') return void socket.destroy()
+    if (mode === 'reset-first') return void socket.resetAndDestroy()
+    socket.on('data', (chunk) => {
+      peerStats.bytes += chunk.length
+    })
   })
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
   const address = server.address()
@@ -136,6 +204,7 @@ export async function modelJointFixture(
   )
   await template.action.close('shutdown')
   await template.provider.close('shutdown')
+  if (extra.source) Object.assign(template.source, await extra.source(template.source))
   const abort = new AbortController(),
     call = auth.call({ ...template.context, signal: abort.signal })
   const store = createCredentialStore({ root: join(root, 'home') })
@@ -171,8 +240,28 @@ export async function modelJointFixture(
   const context = { ...template.call, call }
   let live = true,
     uses = 0
+  const sourceStore = extra.store
+    ? openModelSourceStore({
+        path: join(root, 'model-source.sqlite'),
+        soleSendFence: true,
+        calls: {
+          attempt: (attemptId) =>
+            attemptId === frame.attemptId && frame.requestIdentity
+              ? {
+                  runId: frame.runId,
+                  actionId: frame.actionId,
+                  attemptId,
+                  bindingId: frame.bindingId,
+                  inputDigest: frame.inputDigest,
+                  requestIdentity: frame.requestIdentity,
+                }
+              : undefined,
+        },
+      })
+    : undefined
   const owner = {
     ...template.deployment,
+    ...(sourceStore ? { save: sourceStore.deployment.save, lookup: sourceStore.deployment.lookup } : {}),
     installed: (input: typeof call) => live && input === call,
     current: (source: typeof template.source, input: typeof frame, actual: typeof call) =>
       live &&
@@ -195,7 +284,7 @@ export async function modelJointFixture(
       hash: string,
     ) => {
       hashes.push(hash)
-      return live
+      return live && (sourceStore ? sourceStore.fence(_frame, hash) : true)
     },
   }
   const path = api === 'anthropic-messages' ? '/v1/messages?beta=true' : '/v1/chat/completions'
@@ -233,10 +322,11 @@ export async function modelJointFixture(
   const options = { ...defaults, ...(typeof patch === 'function' ? patch(defaults) : patch) }
   const deployment = createHostModelAdapterDeployment(owner, [options])
   const egress = deployment.egress
+  const fetches: (typeof globalThis.fetch)[] = []
   if (injected)
     deployment.egress = (source, input, actual) => {
       const fetch = egress?.(source, input, actual)
-      return (
+      const wrapped: typeof globalThis.fetch | undefined =
         fetch &&
         (async (request, init) => {
           const sent = new Request(request, init)
@@ -248,6 +338,7 @@ export async function modelJointFixture(
             markerOnly: ![...sent.headers.values()].some((value) => value.includes(key)),
           })
           try {
+            if (extra.throwEgress) throw new TypeError('fetch failed before any write')
             return await fetch(sent)
           } catch (problem) {
             const error = problem as Error & { code: string; detailCode: string }
@@ -263,7 +354,8 @@ export async function modelJointFixture(
             throw problem
           }
         })
-      )
+      if (wrapped) fetches.push(wrapped)
+      return wrapped
     }
   else delete deployment.egress
   const factory = createModelAdapterFactory(deployment)
@@ -278,6 +370,10 @@ export async function modelJointFixture(
     },
   )
   must(await provider.ready(call))
+  if (mode === 'refused') {
+    server.closeAllConnections()
+    await new Promise<void>((resolve) => server.close(() => resolve()))
+  }
   const invoke = provider.actions?.invoke
   if (!invoke) throw new Error('Missing joint invoke factory')
   const action = await invoke.create({
@@ -318,6 +414,9 @@ export async function modelJointFixture(
     action,
     provider,
     abort,
+    store: sourceStore,
+    fetches,
+    peerStats,
     uses: () => uses,
     retire: () => {
       live = false
@@ -331,8 +430,9 @@ export async function modelJointFixture(
       await action.close('shutdown')
       await provider.close('shutdown')
       await broker.close()
+      sourceStore?.close()
       server.closeAllConnections()
-      await new Promise<void>((resolve) => server.close(() => resolve()))
+      if (server.listening) await new Promise<void>((resolve) => server.close(() => resolve()))
       scan(join(root, 'broker'), [key], diagnostics)
       cleanup(root)
     },

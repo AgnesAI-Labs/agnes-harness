@@ -213,16 +213,28 @@ export type {
 } from './runtime/interaction/authority.js'
 export { createInteractionAuthority } from './runtime/interaction/authority.js'
 export { defaultLoopStateCodec } from './runtime/loop/default-state.js'
+export { collectPreparedMedia } from './runtime/media/continuation.js'
+export type { MediaByteReader, ResolvedMedia } from './runtime/media/resolve.js'
+export { resolveMediaParts, toModelWireMedia } from './runtime/media/resolve.js'
 export type { CatalogPick, InlineRef, PrepareParts } from './runtime/model/prepared-call.js'
 export {
   adapterInvokeInput,
   assemblePrepared,
   checkCredential,
+  decodeHandle,
   externalKeyOf,
+  handleIdOf,
+  headerOf,
   INFER_CHILD_KEY,
   modelCaptureOf,
   preparedIdOf,
 } from './runtime/model/prepared-call.js'
+export {
+  createPreparedRegistry,
+  type PreparedEntry,
+  type PreparedRegistry,
+  type PreparedRegistryOptions,
+} from './runtime/model/prepared-registry.js'
 export {
   buildWireRequest,
   MODEL_INPUT_KIND,
@@ -270,10 +282,36 @@ export type {
   ReaderPolicy,
 } from './runtime/providers/projection.js'
 export { createProjectionProvider } from './runtime/providers/projection.js'
+export { createDefaultSupervisorFactory } from './runtime/providers/supervisor.js'
 export type { ToolsDeployment } from './runtime/providers/tools.js'
 export { createDefaultToolsFactory } from './runtime/providers/tools.js'
 export type { DefaultUsageAuthority } from './runtime/providers/usage.js'
 export { createDefaultUsageFactory } from './runtime/providers/usage.js'
+export type {
+  AttentionItem,
+  DispatchOutcome,
+  DispatchPlan,
+  IssuedContext,
+  PublishedRelease,
+  RecalledTicket,
+  RunFacts,
+  RunScope,
+  SessionControlPort,
+  SupervisorAdmissionPort,
+  SupervisorAdvancePort,
+  SupervisorDeployment,
+  SupervisorDirectoryPort,
+  SupervisorDispatchPlanPort,
+  SupervisorEffectsPort,
+  SupervisorIdentityPort,
+  SupervisorLimits,
+  SupervisorNotifyPort,
+  SupervisorReadPort,
+  SupervisorRunScopePort,
+  SupervisorTicketDraft,
+  SupervisorWriterPort,
+  WriterClaim,
+} from './runtime/supervisor/ports.js'
 export { createTextStatisticsTool } from './runtime/tools/definitions.js'
 export { approvalDeadlineMs } from './step/approval-callback.js'
 export type { BeforeCompactPayload, CompactionPlan, CompactPayload } from './step/compaction.js'

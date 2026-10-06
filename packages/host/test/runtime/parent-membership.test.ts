@@ -1,8 +1,13 @@
-import { expect, it } from 'vitest'
+import { afterEach, expect, it } from 'vitest'
 import { canonicalJson } from '../../src/runtime/state/canonical-json.js'
 import { createParentMembershipReader } from '../../src/runtime/state/parent-membership.js'
 import { bodyDigest } from '../../src/runtime/state/records.js'
-import { interactionStateFixture } from '../runtime-state-interaction-read-fixture.js'
+import {
+  closeInteractionStateFixtures,
+  interactionStateFixture,
+} from '../runtime-state-interaction-read-fixture.js'
+
+afterEach(closeInteractionStateFixtures)
 
 it('reads real State records without treating a root with no children as completed accounting', async () => {
   const f = await interactionStateFixture(),
