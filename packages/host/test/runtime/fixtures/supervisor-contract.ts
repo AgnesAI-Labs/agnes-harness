@@ -3,9 +3,11 @@ import type { CallContext } from '@agnes/extension-api/runtime'
 import type * as W from '@agnes/protocol/runtime'
 import { createReferenceSupervisorFactory } from '../../../../../examples/runtime-reference/src/providers/supervisor.js'
 import {
+  createRestrictedSupervisorAdmission,
   type SupervisorContractFixture,
   supervisorConfig,
   supervisorDescriptor,
+  supervisorInput,
 } from '../../../../extension-api/testkit/runtime/contracts/supervisor.js'
 import { createTestServiceContainer } from '../../../../extension-api/testkit/runtime/harness.js'
 import { createStateSessionControlFixture } from './runtime-session-control.js'
@@ -47,10 +49,62 @@ export async function openSupervisorHostFixture(
       return store.sessionControlStatus(request, context)
     },
   }
+  // Admission runs on a restricted in-memory mirror of the coordinator; the real coordinator is covered by the joint test.
+  const peer = createRestrictedSupervisorAdmission()
+  let revoked = false
+  const authority = {
+    authorityId: 'supervisor-contract-state',
+    tenantId: 'supervisor-contract',
+    authorityEpoch: 1,
+  }
+  const loopBinding: W.BindingRef = {
+    contract: 'agh.loop',
+    logicalName: 'default',
+    providerId: 'supervisor-contract-loop',
+    bindingId: 'supervisor-contract-loop-binding',
+  }
+  const release = {
+    releaseSetId: 'supervisor-contract-release',
+    stateAuthorityRef: authority,
+    lane: 'foreground',
+    runBinding: {
+      bindingId: 'supervisor-contract-binding',
+      providers: [{ binding: loopBinding }],
+    } as unknown as W.RunBinding,
+  }
+  const unused = async (): Promise<never> => {
+    throw new Error('not used by this scenario')
+  }
   const providerId = kind === 'default' ? 'agh.default/supervisor' : 'agh.reference/supervisor'
   const descriptor = supervisorDescriptor(providerId)
   // The identity fixture runs on a frozen clock, so the Supervisor must measure context deadlines against it.
-  const deployment = { clock: f.options.now, sessionControl }
+  const deployment = {
+    clock: f.options.now,
+    sessionControl,
+    admission: peer.port as never,
+    releases: {
+      select: async () => ({ ok: true as const, value: release }),
+      bound: async () => ({ ok: true as const, value: release }),
+    },
+    identity: {
+      issue: unused,
+      issueRuntime: unused,
+      check() {
+        if (revoked) throw new Error('revoked')
+      },
+      delegationExpiresAt: () => null,
+    },
+    limits: {
+      workflowLifetimeMs: 86_400_000,
+      actionDefaultTimeoutMs: 120_000,
+      pollMs: 1000,
+      leaseTtlMs: 15_000,
+      cycleMs: 30_000,
+      invocationMs: 5000,
+      graceMs: 2000,
+      queryAllowance: 64,
+    },
+  }
   const factory =
     kind === 'default'
       ? createDefaultSupervisorFactory(descriptor, deployment)
@@ -94,6 +148,20 @@ export async function openSupervisorHostFixture(
       else signal.addEventListener('abort', () => own.abort(), { once: true })
       return issued
     },
+    admission: {
+      spec: (key) => ({
+        presetRef: 'supervisor-contract-preset',
+        // Any schema-valid inline DataRef serves as the run input.
+        inputRef: supervisorInput('readSessionControl', key),
+        idempotencyKey: key,
+      }),
+      holdCreate: () => {
+        peer.hold.next = true
+      },
+      runRefOf: (key) => peer.runRefOf(key),
+      issued: () => peer.tickets.size,
+      created: () => peer.created(),
+    },
     state: {
       calls: () => calls,
       hang() {
@@ -104,7 +172,10 @@ export async function openSupervisorHostFixture(
           hold = null
         }
       },
-      revoke: () => f.identity.close(),
+      revoke: () => {
+        revoked = true
+        f.identity.close()
+      },
     },
     close: async () => f.close(),
   }
