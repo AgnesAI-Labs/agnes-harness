@@ -1118,7 +1118,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // An unknown effect from the Model and Media providers carries reconcile advice naming the unresolved action (+18); exact cap, no spare.
   // Supervisor ports, wire helpers, session-control forwarding and provider shell (+555); exact cap, no spare.
   // The Supervisor measures a call's deadline against the deployment's trusted clock (+4); exact cap, no spare.
-  'packages/core/src': 40014,
+  // Supervisor admission and pre-run cancellation (+182); exact cap, no spare.
+  'packages/core/src': 40196,
   // Testkit-only reference Effects runner adds 202 measured lines; exact cap, no spare.
   // Independent Effects dispatch reference (+440); exact measurement below.
   'packages/core/testkit': 2437,
@@ -1650,7 +1651,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // Media contract scenarios and in-memory fixture (+763); exact cap, no spare.
   // Supervisor descriptor and config helpers (+73); exact cap, no spare.
   // Supervisor public contract: six scenarios and the restricted peer fixture interface (+372); exact cap, no spare.
-  'packages/extension-api/testkit': 19071,
+  // Restricted admission peer for the Supervisor contract (+93); exact cap, no spare.
+  'packages/extension-api/testkit': 19164,
   // 2026-09-10: raised from 2500 by Task 15 (stream-disconnect reconnection). The new
   // reattach.ts (the Reconnector: backoff loop, OVERLOADED's retryAfterMs override) plus
   // Session.recover()/waitForQuiescence and Client's reconnect wiring (emit(), the

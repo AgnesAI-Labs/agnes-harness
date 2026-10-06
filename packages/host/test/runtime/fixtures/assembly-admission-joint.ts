@@ -3,7 +3,7 @@ import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import type { CallContext } from '@agnes/extension-api/runtime'
 import { jcs } from '@agnes/protocol'
-import type { RunBinding } from '@agnes/protocol/runtime'
+import type { RunBinding, ScopeRef } from '@agnes/protocol/runtime'
 import { createAdmissionCoordinator } from '../../../src/runtime/assembly/admission.js'
 import { createAdmissionTickets } from '../../../src/runtime/assembly/admission-ticket.js'
 import { journalData, journalRef } from '../../../src/runtime/assembly/maintenance-journal.js'
@@ -28,10 +28,11 @@ export async function openJointAdmission(
   checkpoint: (point: string) => void | Promise<void> = () => {},
   split: false | 'separate-file' | 'separate-connection' = false,
   clock?: () => number,
+  callerScope?: ScopeRef,
 ) {
   const authority = { authorityId: 'fixture-state', tenantId: 'fixture-tenant', authorityEpoch: 1 }
-  const scope = {
-    kind: 'runtime' as const,
+  const scope: ScopeRef = callerScope ?? {
+    kind: 'runtime',
     installationId: 'fixture-installation',
     runtimeId: 'fixture-runtime',
   }

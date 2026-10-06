@@ -14,6 +14,7 @@ import {
   RuntimeServiceCatalog,
   validateRuntime,
 } from '@agnes/protocol/runtime'
+import { referenceAdmit, referenceCancel } from './supervisor-admission.js'
 import type { RefPorts } from './supervisor-ports.js'
 import { refuse, same, sessionOf, until } from './supervisor-wire.js'
 
@@ -80,6 +81,10 @@ function route(name: Name): Route | null {
         needs: ['sessionControl'],
         run: (ports, value, context) => forward(ports, name, value, context),
       }
+    case 'admit':
+      return { needs: ['admission', 'releases', 'identity', 'limits'], run: referenceAdmit }
+    case 'cancel':
+      return { needs: ['admission', 'identity'], run: referenceCancel }
     default:
       return null
   }
