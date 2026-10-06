@@ -13,7 +13,11 @@ import {
   type UsageMeasurement,
 } from '@agnes/protocol/runtime'
 import { fakeModel } from '../../../../packages/ai/testkit/index.js'
-import type { ReferenceModelDeployment, ReferenceModelSource } from '../../src/providers/model-adapter.js'
+import type {
+  ReferenceModelApi,
+  ReferenceModelDeployment,
+  ReferenceModelSource,
+} from '../../src/providers/model-adapter.js'
 import { createReferenceModelAdapterFactory } from '../../src/providers/model-adapter.js'
 
 const string = (maxLength = 256) => ({ type: 'string', minLength: 0, maxLength })
@@ -100,7 +104,20 @@ function ref(schema: DataRef['schema'], value: JsonValue): DataRef {
 }
 
 /** Original object capability + real source codecs; restricted fixture, never a production identity. */
-export async function referenceModelFixture(baseUrl: string, journal: string) {
+export async function referenceModelFixture(
+  baseUrl: string,
+  journal: string,
+  options: {
+    api?: ReferenceModelApi
+    /**
+     * The egress fetch the stand-in host hands out. By default a thin pass-through to the global
+     * fetch at call time (a stand-in for the host transport, never used by the adapter on its own);
+     * `false` hands out none, so the adapter must refuse before any credential use.
+     */
+    egress?: typeof fetch | false
+  } = {},
+) {
+  const api = options.api ?? 'openai-completions'
   const scope = {
     kind: 'runtime' as const,
     installationId: 'fixture-installation',
@@ -116,7 +133,7 @@ export async function referenceModelFixture(baseUrl: string, journal: string) {
     authorizationRef: 'fixture-authority',
     signal: new AbortController().signal,
   }
-  const model = fakeModel({ id: 'fixture-model', route: 'fixed-route', api: 'openai-completions', baseUrl })
+  const model = fakeModel({ id: 'fixture-model', route: 'fixed-route', api, baseUrl })
   const prepared: PreparedModelRequest = {
     preparedId: 'prepared',
     ownerBinding: {
@@ -186,14 +203,23 @@ export async function referenceModelFixture(baseUrl: string, journal: string) {
   }
   const source: ReferenceModelSource = {
     prepared,
-    endpoint: `${baseUrl}/chat/completions`,
-    body: {
-      model: model.id,
-      messages: [{ role: 'user', content: 'hello' }],
-      max_completion_tokens: 32,
-      stream: true,
-      stream_options: { include_usage: true },
-    },
+    api,
+    endpoint: api === 'anthropic-messages' ? `${baseUrl}/v1/messages` : `${baseUrl}/chat/completions`,
+    body:
+      api === 'anthropic-messages'
+        ? {
+            model: model.id,
+            messages: [{ role: 'user', content: [{ type: 'text', text: 'hello' }] }],
+            max_tokens: 32,
+            stream: true,
+          }
+        : {
+            model: model.id,
+            messages: [{ role: 'user', content: 'hello' }],
+            max_completion_tokens: 32,
+            stream: true,
+            stream_options: { include_usage: true },
+          },
   }
   let revokeDuringLoad = false,
     saveFailure = false,
@@ -214,6 +240,9 @@ export async function referenceModelFixture(baseUrl: string, journal: string) {
       input: 'fixture.input-token',
       output: 'fixture.output-token',
     },
+    ...(options.egress === false
+      ? {}
+      : { egress: () => options.egress ?? ((input, init) => globalThis.fetch(input, init)) }),
     installed: (call) => call === originalContext && live,
     async load(reference, _frame, call) {
       loads++
