@@ -53,7 +53,7 @@ async function setup() {
   const queryOp = parentProvider.descriptor.operations.find((row) => row.kind !== 'action')
   const twice = parentProvider.descriptor.operations.find((row) => row.method === 'prepareRequest')
   if (!queryOp || !twice) throw Error('fixture operations missing')
-  parentProvider.descriptor.operations.push({ ...twice })
+  parentProvider.descriptor.operations.push({ ...twice } as never)
   const { releaseSetId: _before, ...resealed } = release
   release.releaseSetId = fixtureHash(resealed)
   let failBeforeCommit = false

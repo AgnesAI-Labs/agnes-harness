@@ -3708,8 +3708,8 @@ export function finishControlScan(scan: ControlScan, evidence: ControlEvidence):
   }
 }
 
-const PROVIDER_COMPLETION = 'complete and fail transitions of a composite provider are not implemented'
-const PROVIDER_DEADLINE = 'a composite provider wait with a deadline is not implemented'
+const PROVIDER_COMPLETION = 'complete and fail transitions of a composite provider are not accepted yet'
+const PROVIDER_DEADLINE = 'a composite provider wait with a deadline is not accepted yet'
 
 function compositeTarget(ports: ControlPorts, runId: string, action: ActionValue) {
   const binding = storedValue<RunBinding>(
