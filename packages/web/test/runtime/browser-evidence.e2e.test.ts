@@ -785,6 +785,8 @@ describe.skipIf(process.platform === 'win32' || !chrome)('release Web builds in 
     })
 
     afterAll(async () => {
+      // Chrome is still running here and keeps its connections to this page open; close() alone waits for them.
+      other?.closeAllConnections()
       await new Promise((resolve) => other?.close(resolve))
     })
 
