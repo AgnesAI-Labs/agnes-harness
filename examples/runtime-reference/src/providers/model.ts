@@ -44,6 +44,7 @@ import {
   type VersionedState,
   validateRuntime,
 } from '@agnes/protocol/runtime'
+import { type ReferenceResolvedTools, toolHistoryOf, toolSchemasOf, withDescriptions } from './model-tools.js'
 
 /*
  * Independent reference for the `agh.model` provider. It shares no code with the default: the
@@ -113,6 +114,13 @@ export interface ReferenceModelDeployment {
   }
   adapters: {
     select(target: BindingRef, context: CallContext): { binding: BindingRef; packageDigest: string } | null
+  }
+  /** Resolves a request's tool catalog to descriptions and schema documents; absent or refusing keeps `model_wire_tools`. */
+  tools?: {
+    resolve(request: {
+      context: CallContext
+      catalog: NonNullable<ModelPrepareRequest['toolCatalog']>
+    }): Promise<Outcome<ReferenceResolvedTools>>
   }
   credentials?: {
     verifyIssued(handle: SecretHandle, binding: SecretConsumerBinding, context: CallContext): boolean
@@ -255,13 +263,19 @@ function inputDigestOf(
   prepared: PreparedModelRequest,
   capture: Capture,
   wire: ReferenceWireIdentity,
+  tools: ReferenceResolvedTools | null = null,
 ): Digest {
   const kept = Object.entries(prepared).filter(([name]) => !PREIMAGE_DROPS.has(name))
-  return digestOf({ kind: 'agh.model/input@1', ...Object.fromEntries(kept), wire, capture })
+  return digestOf({
+    kind: 'agh.model/input@1',
+    ...Object.fromEntries(kept),
+    wire: withDescriptions(wire, tools),
+    capture,
+  })
 }
 
 const WIRE_REFUSALS: ReadonlyArray<readonly [string, (p: PreparedModelRequest) => boolean]> = [
-  ['model_wire_tools', (p) => p.toolCatalog !== null],
+  ['model_wire_output_schema', (p) => p.outputSchema !== null],
   ['model_wire_media', (p) => p.mediaPlans.length > 0],
   ['model_wire_overrides', (p) => p.hookResults !== null || p.legacyRequestOverrides !== null],
   ['model_wire_seed', (p) => p.generation.seed !== undefined],
@@ -270,11 +284,26 @@ function wireBodyOf(
   prepared: PreparedModelRequest,
   capture: Capture,
   wire: ReferenceWireIdentity,
+  tools: ReferenceResolvedTools | null = null,
 ): RequestBody {
-  for (const [detail, applies] of WIRE_REFUSALS) if (applies(prepared)) stop('incompatible', detail)
+  const fail = (detail: string): never => stop('incompatible', detail)
+  const { toolCatalog } = prepared
+  if ((toolCatalog === null) !== (tools === null)) fail('model_wire_tools')
+  const schemas =
+    toolCatalog === null || tools === null
+      ? []
+      : toolSchemasOf(toolCatalog, tools, prepared, capture as never, fail)
+  for (const [detail, applies] of WIRE_REFUSALS) if (applies(prepared)) fail(detail)
   const system: string[] = []
   const messages: RequestBody['messages'] = []
-  for (const item of prepared.view.items) {
+  for (let at = 0; at < prepared.view.items.length; at += 1) {
+    const item = prepared.view.items[at] as PreparedModelRequest['view']['items'][number]
+    if (tools !== null && (item.kind === 'tool-call' || item.kind === 'tool-result')) {
+      const run = toolHistoryOf(prepared.view.items, at, prepared, capture as never, fail)
+      messages.push(...run.messages)
+      at = run.end - 1
+      continue
+    }
     const text = item.body.kind === 'inline' && typeof item.body.value === 'string' ? item.body.value : null
     const side = item.kind === 'message' && text !== null ? item.trust : null
     if (side === 'system') system.push(text as string)
@@ -291,10 +320,10 @@ function wireBodyOf(
     route: capture.route.route,
     model: prepared.target.model,
     contractId: wire.contractId,
-    derivedHash: inputDigestOf(prepared, capture, wire),
+    derivedHash: inputDigestOf(prepared, capture, wire, tools),
     system: system.join('\n\n'),
     messages,
-    tools: [],
+    tools: schemas,
     sampling: {
       maxTokens: generation.maxOutputTokens,
       ...(generation.temperature === undefined ? {} : { temperature: generation.temperature }),
@@ -323,8 +352,9 @@ function assemble(args: {
   capture: Capture
   wire: ReferenceWireIdentity
   units: readonly ExactQuantity[]
+  tools: ReferenceResolvedTools | null
 }): Assembly {
-  const { request, capture, wire, owner } = args
+  const { request, capture, wire, owner, tools } = args
   const draft: PreparedModelRequest = {
     preparedId: 'pending',
     ownerBinding: owner,
@@ -341,9 +371,9 @@ function assemble(args: {
     legacyRequestOverrides: null,
     credentialRef: request.credentialRef,
   }
-  const inputDigest = inputDigestOf(draft, capture, wire)
+  const inputDigest = inputDigestOf(draft, capture, wire, tools)
   const prepared = { ...draft, inputDigest, preparedId: `prep-${inputDigest.slice(0, 32)}` }
-  const body = wireBodyOf(prepared, capture, wire)
+  const body = wireBodyOf(prepared, capture, wire, tools)
   if (!validateRuntime('PreparedModelRequest', prepared).ok) stop('invalid_input', 'model_input_schema')
   if (!boundedCanonicalJson(prepared, BOUNDS).ok) stop('incompatible', 'model_prepared_too_large')
   const header: PreparedModelHeader = {
@@ -484,6 +514,13 @@ async function prepareOnce(
     call,
   )
   if (!wire.ok) stop(wire.error.code, wire.error.detailCode)
+  // The adapter sends only with a bound credential, so a route without one is refused by name.
+  if (input.route.credentialBinding === null) stop('incompatible', 'model_credential_required')
+  const answer =
+    input.toolCatalog === null || !d.tools
+      ? null
+      : await until(d.tools.resolve({ context: call, catalog: input.toolCatalog }), call)
+  const tools = answer?.ok ? answer.value : null
   const build = (units: readonly ExactQuantity[]) =>
     assemble({
       runId,
@@ -493,6 +530,7 @@ async function prepareOnce(
       capture,
       wire: (wire as Extract<typeof wire, { ok: true }>).value,
       units,
+      tools,
     })
   const first = build([])
   const estimated = d.estimate ? [...d.estimate(first.prepared)] : []

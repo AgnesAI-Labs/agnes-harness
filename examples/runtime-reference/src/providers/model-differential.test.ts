@@ -20,6 +20,12 @@ import {
   type ModelDeployment,
 } from '../../../../packages/core/src/runtime/providers/model.js'
 import {
+  standardTool,
+  standardToolDocument,
+  toolCatalogOf,
+  toolRoute,
+} from '../../../../packages/core/test/runtime/model-tools-fixture.js'
+import {
   createModelChildPeer,
   type ModelChildPeer,
 } from '../../../../packages/extension-api/testkit/runtime/contracts/model.js'
@@ -279,6 +285,7 @@ const hookResultSet = () => ({
   digest: 'f'.repeat(64),
   sourceActionId: null,
 })
+const runtimeAuthorSchemasRef = () => prepareRequestOf().view.schema
 const TOO_LARGE = 'x'.repeat(Math.floor(MAX_AUTHOR_INLINE_BYTES * 0.9))
 const secretHandle = (expiresAt: string): SecretHandle => ({
   handleId: 'h',
@@ -622,7 +629,11 @@ describe('prepareRequest: the managed preparation path', () => {
       diagnosticId: 'd',
     },
   })
-  const request = (over: object = {}) => ({ ...prepareRequestOf(), credentialRefresh: null, ...over })
+  const request = (over: object = {}) => ({
+    ...prepareRequestOf({ credentialRef: null }),
+    credentialRefresh: null,
+    ...over,
+  })
   const rows: Array<
     [
       string,
@@ -631,7 +642,12 @@ describe('prepareRequest: the managed preparation path', () => {
       Partial<ReferenceModelDeployment>,
     ]
   > = [
-    ['no credential', request(), refused as never, { secrets: SECRETS }],
+    [
+      'a route without a credential binding',
+      request({ route: route({ credentialBinding: null }) }),
+      refused as never,
+      { secrets: SECRETS },
+    ],
     [
       'a resolved handle',
       request({ route: route({ credentialBinding: bound }) }),
@@ -1199,6 +1215,346 @@ describe('refusal order, registry contents and closing', () => {
       { secrets: SECRETS },
     )
     expect(out.drained).toMatchObject({ value: { state: 'drained', activeInvocationIds: [] } })
+  })
+})
+
+describe('prepare with tools: the default and the reference answer every input alike', () => {
+  const DOC = standardToolDocument()
+  const tool = (name = 'text_statistics', description = 'Count the words of a text') =>
+    standardTool(name, description)
+  const withDoc = (name: string, document: unknown, description = 'A tool') =>
+    standardTool(name, description, document)
+  const objectDoc = (schema: object, defs: Record<string, unknown> = {}) => ({
+    $schema: DOC.$schema,
+    $ref: '#/$defs/Input',
+    $defs: { ...defs, Input: schema },
+  })
+  type Entry = ReturnType<typeof standardTool>
+  const portOf = (entries: readonly Entry[]) => ({
+    resolve: async () => ({ ok: true as const, value: entries.map((entry) => entry.resolved) }),
+  })
+  const toolItem = (
+    kind: 'tool-call' | 'tool-result',
+    trust: 'derived' | 'external',
+    value: unknown,
+    pair: string | null,
+  ) =>
+    ({
+      ...textItem('user', 'x'),
+      id: `item-${kind}-${String(pair)}-${JSON.stringify(value).length}`,
+      kind,
+      trust,
+      toolPairRef: pair,
+      body: inlineRef(
+        {
+          typeId: kind === 'tool-call' ? 'agh.context/tool-call-body@1' : 'agh.context/tool-result-body@1',
+          revision: 1,
+          digest: 'a'.repeat(64),
+        },
+        value,
+      ),
+    }) as never
+  const call = (id: string, ordinal = 0, name = 'text_statistics') =>
+    toolItem('tool-call', 'derived', { toolUseId: id, name, args: { q: 1 }, ordinal }, id)
+  const back = (id: string, isError = false) =>
+    toolItem(
+      'tool-result',
+      'external',
+      { toolUseId: id, content: [{ type: 'text', text: 'done' }], isError },
+      id,
+    )
+  const request = (entries: readonly Entry[], items: unknown[] = [], over: object = {}) =>
+    prepareRequestOf({
+      route: toolRoute(prepareRequestOf().route) as never,
+      toolCatalog: toolCatalogOf(entries.map((entry) => entry.definition)) as never,
+      view: { ...prepareRequestOf().view, items: [textItem('user', 'hi'), ...items] as never },
+      ...over,
+    })
+  const one = tool()
+  const big = withDoc('big_tool', objectDoc({ type: 'object', enum: ['x'.repeat(270_000)] }))
+  const rows: Array<[string, () => ModelPrepareRequest, Partial<ReferenceModelDeployment>?]> = [
+    ['one tool', () => request([one]), { tools: portOf([one]) }],
+    [
+      'two tools keep catalog order',
+      () => request([one, tool('read_file', 'Read')]),
+      { tools: portOf([one, tool('read_file', 'Read')]) },
+    ],
+    ['an empty catalog', () => request([]), { tools: portOf([]) }],
+    [
+      'a description changed under the same schema',
+      () => request([one]),
+      { tools: portOf([tool('text_statistics', 'Count the lines of a text')]) },
+    ],
+    ['no resolver installed', () => request([one])],
+    [
+      'a resolver that refuses',
+      () => request([one]),
+      {
+        tools: {
+          resolve: async () => ({
+            ok: false as const,
+            error: {
+              code: 'denied' as const,
+              detailCode: 'no',
+              message: 'm',
+              retryAdvice: { kind: 'never' as const },
+              diagnosticId: 'd',
+            },
+          }),
+        },
+      },
+    ],
+    [
+      'a resolver that throws',
+      () => request([one]),
+      {
+        tools: {
+          resolve: async () => {
+            throw new Error('down')
+          },
+        },
+      },
+    ],
+    ['one answer too few', () => request([one, tool('read_file')]), { tools: portOf([one]) }],
+    ['an answer for another name', () => request([one]), { tools: portOf([tool('other_name')]) }],
+    [
+      'a document that is not the bound one',
+      () => request([one]),
+      {
+        tools: portOf([
+          { ...one, resolved: { ...one.resolved, document: { ...DOC, $defs: { ...DOC.$defs, X: {} } } } },
+        ]),
+      },
+    ],
+    [
+      'a name with a hyphen',
+      () => request([tool('text-statistics')]),
+      { tools: portOf([tool('text-statistics')]) },
+    ],
+    ['the same name twice', () => request([one, tool()]), { tools: portOf([one, tool()]) }],
+    ['an empty description', () => request([tool('a', '')]), { tools: portOf([tool('a', '')]) }],
+    [
+      'a description over the limit',
+      () => request([tool('a', 'x'.repeat(4097))]),
+      { tools: portOf([tool('a', 'x'.repeat(4097))]) },
+    ],
+    [
+      'a keyword outside the subset',
+      () => request([withDoc('a', objectDoc({ type: 'object', pattern: 'x' }))]),
+      { tools: portOf([withDoc('a', objectDoc({ type: 'object', pattern: 'x' }))]) },
+    ],
+    [
+      'an x- extension is dropped',
+      () => request([withDoc('a', objectDoc({ type: 'object', 'x-max-bytes': 5 }))]),
+      { tools: portOf([withDoc('a', objectDoc({ type: 'object', 'x-max-bytes': 5 }))]) },
+    ],
+    [
+      'a recursive definition',
+      () =>
+        request([
+          withDoc(
+            'a',
+            objectDoc(
+              { $ref: '#/$defs/Loop' },
+              { Loop: { type: 'object', properties: { next: { $ref: '#/$defs/Loop' } } } },
+            ),
+          ),
+        ]),
+      {
+        tools: portOf([
+          withDoc(
+            'a',
+            objectDoc(
+              { $ref: '#/$defs/Loop' },
+              { Loop: { type: 'object', properties: { next: { $ref: '#/$defs/Loop' } } } },
+            ),
+          ),
+        ]),
+      },
+    ],
+    [
+      'a root that is not an object',
+      () => request([withDoc('a', objectDoc({ type: 'string' }))]),
+      { tools: portOf([withDoc('a', objectDoc({ type: 'string' }))]) },
+    ],
+    ['an oversize parameter schema', () => request([big]), { tools: portOf([big]) }],
+    [
+      'tools together with an output schema',
+      () =>
+        request([one], [], {
+          outputSchema: runtimeAuthorSchemasRef(),
+          route: route({
+            features: { ...prepareRequestOf().route.features, tools: true, structuredOutput: true },
+          }),
+        }),
+      { tools: portOf([one]) },
+    ],
+    ['a call and its result', () => request([one], [call('c1'), back('c1')]), { tools: portOf([one]) }],
+    [
+      'two calls answered out of order',
+      () => request([one], [call('b', 1), call('a', 0), back('b'), back('a')]),
+      { tools: portOf([one]) },
+    ],
+    [
+      'an error result',
+      () => request([one], [call('c1'), back('c1', true), textItem('user', 'again')]),
+      { tools: portOf([one]) },
+    ],
+    ['a result without a call', () => request([one], [back('c1')]), { tools: portOf([one]) }],
+    ['a call without a result', () => request([one], [call('c1')]), { tools: portOf([one]) }],
+    ['a result for another call', () => request([one], [call('c1'), back('c2')]), { tools: portOf([one]) }],
+    [
+      'a repeated ordinal',
+      () => request([one], [call('a', 0), call('b', 0), back('a'), back('b')]),
+      { tools: portOf([one]) },
+    ],
+    [
+      'a call trusted as external',
+      () =>
+        request(
+          [one],
+          [
+            toolItem('tool-call', 'external', { toolUseId: 'a', name: 'x', args: {}, ordinal: 0 }, 'a'),
+            back('a'),
+          ],
+        ),
+      { tools: portOf([one]) },
+    ],
+    [
+      'a call body with an extra key',
+      () =>
+        request(
+          [one],
+          [
+            toolItem(
+              'tool-call',
+              'derived',
+              { toolUseId: 'a', name: 'x', args: {}, ordinal: 0, more: 1 },
+              'a',
+            ),
+            back('a'),
+          ],
+        ),
+      { tools: portOf([one]) },
+    ],
+    ['a call id with a space', () => request([one], [call('a b'), back('a b')]), { tools: portOf([one]) }],
+    [
+      'a message between a call and its result',
+      () => request([one], [call('a'), textItem('user', 'x'), back('a')]),
+      { tools: portOf([one]) },
+    ],
+    [
+      'history with thinking on a native replay model',
+      () =>
+        request([one], [call('a'), back('a')], {
+          generation: { maxOutputTokens: 32, thinking: 'low' },
+        }),
+      { tools: portOf([one]) },
+    ],
+    [
+      'history without a catalog',
+      () =>
+        prepareRequestOf({
+          view: {
+            ...prepareRequestOf().view,
+            items: [textItem('user', 'hi'), call('a'), back('a')] as never,
+          },
+        }),
+    ],
+  ]
+  it.each(rows)('%s', async (_name, build, over = {}) => {
+    const verifies: Partial<ReferenceModelDeployment> = {
+      ...over,
+      credentials: { verifyIssued: () => true },
+    }
+    const outcome = await same(async (rig) => {
+      const request = build()
+      const answer = await prepareOf(rig, request)
+      if (!answer.ok) return { answer }
+      const held = rig.hold(idOf(await handleOf(rig, request)))
+      return {
+        answer,
+        body: (held as { body?: unknown; request?: unknown }).body ?? (held as { request?: unknown }).request,
+      }
+    }, verifies)
+    expect(outcome).toBeDefined()
+  })
+
+  it('the rows reach completion and the named wire refusals', async () => {
+    const seen = new Set<string>()
+    for (const [, build, over] of rows) {
+      const rig = await open('default', { ...over, credentials: { verifyIssued: () => true } })
+      const out = await prepareOf(rig, build())
+      seen.add(out.ok ? 'ok' : out.detail)
+    }
+    expect(seen.has('ok')).toBe(true)
+    for (const name of [
+      'model_wire_tools',
+      'model_wire_tool_name',
+      'model_wire_tool_description',
+      'model_wire_tool_schema',
+      'model_wire_tool_schema_recursive',
+      'model_wire_tools_oversize',
+      'model_wire_tool_pair',
+      'model_wire_tool_id',
+      'model_wire_tool_history',
+      'model_wire_tool_thinking',
+      'model_wire_output_schema',
+      'model_wire_item',
+      'model_dependency_unavailable',
+    ])
+      expect(seen.has(name), name).toBe(true)
+  })
+
+  it('both bind the descriptions into the input digest, and to the same value', async () => {
+    const digestOf = async (kind: Kind, description: string) => {
+      const rig = await open(kind, {
+        tools: portOf([tool('text_statistics', description)]),
+        credentials: { verifyIssued: () => true },
+      })
+      const out = await prepareOf(rig, request([one]))
+      if (!out.ok || out.value.kind !== 'inline') throw new Error('refused')
+      return (out.value.value as { inputDigest: string }).inputDigest
+    }
+    const [a, b] = [await digestOf('default', 'one'), await digestOf('default', 'two')]
+    expect(a).not.toBe(b)
+    expect(await digestOf('reference', 'one')).toBe(a)
+    expect(await digestOf('reference', 'two')).toBe(b)
+  })
+})
+
+describe('prepare refuses modes the adapter cannot serve, alike in both', () => {
+  const structured = (over: object = {}) =>
+    prepareRequestOf({
+      route: route({ features: { ...prepareRequestOf().route.features, structuredOutput: true } }) as never,
+      ...over,
+    })
+  const unbound = (over: object = {}) =>
+    prepareRequestOf({ route: route({ credentialBinding: null }) as never, credentialRef: null, ...over })
+  const rows: Array<[string, () => ModelPrepareRequest, string]> = [
+    [
+      'an output schema on a route that declares structured output',
+      () => structured({ outputSchema: runtimeAuthorSchemasRef() }),
+      'model_wire_output_schema',
+    ],
+    [
+      'an output schema without the feature',
+      () => prepareRequestOf({ outputSchema: runtimeAuthorSchemasRef() }),
+      'model_feature_mismatch',
+    ],
+    ['a route without a credential binding', () => unbound(), 'model_credential_required'],
+    [
+      'a handle on a route without a binding',
+      () => unbound({ credentialRef: longLived() }),
+      'model_credential_binding',
+    ],
+    ['a bound route with its handle', () => prepareRequestOf(), 'ok'],
+  ]
+  it.each(rows)('%s', async (_name, build, expected) => {
+    const outcome = await same((rig) => prepareOf(rig, build()), {
+      credentials: { verifyIssued: () => true },
+    })
+    expect(outcome.ok ? 'ok' : outcome.detail).toBe(expected)
   })
 })
 

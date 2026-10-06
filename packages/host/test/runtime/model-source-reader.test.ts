@@ -1,17 +1,20 @@
-import { createPreparedRegistry, type PreparedEntry } from '@agnes/core'
+import { assemblePrepared, createPreparedRegistry, type PreparedEntry } from '@agnes/core'
 import { canonicalJsonDigest } from '@agnes/protocol/runtime'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { standardTool, toolCatalogOf } from '../../../core/test/runtime/model-tools-fixture.js'
 import {
   createModelSourceReader,
   type ModelSourcePorts,
 } from '../../src/runtime/model/model-source-reader.js'
 import {
   assembledFixture,
+  captureOf,
   fixtureCatalog,
   fixtureContext,
   fixtureFrame,
   fixturePorts,
   fixtureWire,
+  preparedFixture,
   sessionWith,
 } from './model-source-fixture.js'
 
@@ -238,6 +241,60 @@ describe('model source reader: load', () => {
     expect(source.request.sampling?.thinking ?? null).toBe(source.prepared.generation.thinking)
     expect(source.prepared.mediaPlans).toHaveLength(0)
     expect(s.network.calls).toBe(0)
+  })
+})
+
+describe('model source reader: tools kept at prepare time', () => {
+  const base = preparedFixture()
+  const tool = standardTool('text_statistics', 'Count the words of a text')
+  const toolCatalog = toolCatalogOf([tool.definition])
+  const tools = [tool.resolved]
+  const assembled = assemblePrepared({
+    runId: 'run-1',
+    sessionId: 'session-1',
+    owner: base.ownerBinding,
+    request: {
+      view: base.view,
+      route: { ...base.target, features: { ...base.target.features, tools: true } },
+      outputSchema: null,
+      toolCatalog: toolCatalog as never,
+      generation: base.generation,
+      sessionParameterRef: base.sessionParameterRef,
+      credentialRef: base.credentialRef,
+    },
+    capture: captureOf(fixtureCatalog()),
+    wire: fixtureWire,
+    estimatedUnits: [],
+    tools,
+  })
+  if (!assembled.ok) throw new Error(assembled.error.detailCode)
+  const { entry, ref } = assembled.value
+
+  it('loads a tool-carrying entry, checking the digest against the tools it kept', async () => {
+    const s = rebuild(setup(), { registry: answering(entry) })
+    const loaded = await s.reader.load(ref, fixtureFrame(ref), s.context)
+    if (!loaded.ok) throw new Error(loaded.error.detailCode)
+    expect(loaded.value.request.tools.map((t) => [t.name, t.description])).toEqual([
+      ['text_statistics', 'Count the words of a text'],
+    ])
+    expect(loaded.value.request.derivedHash).toBe(entry.inputDigest)
+  })
+
+  it('names drift when the entry no longer holds the tools its digest covers', async () => {
+    const s = rebuild(setup(), { registry: answering({ ...entry, resolvedTools: null }) })
+    expect(await s.reader.load(ref, fixtureFrame(ref), s.context)).toMatchObject({
+      ok: false,
+      error: { detailCode: 'model_source_drift' },
+    })
+  })
+
+  it('names drift when a kept description differs from the one the digest covers', async () => {
+    const other = { ...entry, resolvedTools: [{ ...tools[0], description: 'Count the lines of a text' }] }
+    const s = rebuild(setup(), { registry: answering(other as never) })
+    expect(await s.reader.load(ref, fixtureFrame(ref), s.context)).toMatchObject({
+      ok: false,
+      error: { detailCode: 'model_source_drift' },
+    })
   })
 })
 

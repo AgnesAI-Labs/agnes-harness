@@ -126,7 +126,14 @@ export function prepareRequestOf(over: Partial<ModelPrepareRequest> = {}): Model
       features: { input: ['text'], output: ['text'], tools: false, structuredOutput: false, streaming: true },
       priceVersion: 'fixture-price-1',
       credentialAudience: 'fixture-endpoint',
-      credentialBinding: null,
+      credentialBinding: {
+        consumer: 'model',
+        secretId: 's',
+        accountRef: null,
+        serverRef: 'srv',
+        audience: 'fixture-endpoint',
+        purpose: 'p',
+      },
     },
     outputSchema: null,
     toolCatalog: null,
@@ -139,7 +146,13 @@ export function prepareRequestOf(over: Partial<ModelPrepareRequest> = {}): Model
       schema: TEXT,
       digest: canonicalJsonDigest({}),
     },
-    credentialRef: null,
+    credentialRef: {
+      handleId: 'h',
+      secretId: 's',
+      version: '1',
+      audience: 'fixture-endpoint',
+      expiresAt: '2999-01-01T00:00:00.000Z',
+    },
     ...over,
   }
 }
@@ -183,6 +196,7 @@ export function referenceDeployment(
     packageDigest: 'f'.repeat(64),
     config,
     secrets: null,
+    credentials: { verifyIssued: () => true },
     state: STATE,
     current: () => state.current,
     catalog: {
