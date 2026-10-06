@@ -219,12 +219,13 @@ describe.each(APIS)('default adapter over the %s wire', (api) => {
       expect(stored(f)).toMatchObject({ state: 'saved', bodyDigest: sha(required(f.observations[0]).body) })
       // Reconcile finds the saved unknown result and never says it is safe to retry.
       expect((await reconcile(f)).kind).toBe('unknown')
-      // A second attempt at the same child is stopped by the fence before credential use and any byte.
+      // A second attempt opens its own connection; the durable fence prevents any second request byte.
+      const firstBytes = f.peerStats.bytes
       const second = await f.execute()
       expect(second.outcome).not.toBe('succeeded')
       expect(f.observations).toHaveLength(1)
-      expect(f.peerStats.connections).toBe(1)
-      expect(f.uses()).toBe(1)
+      expect(f.peerStats.bytes).toBe(firstBytes)
+      expect(f.uses()).toBe(2)
       expect(f.hashes.length).toBe(2)
       expect(stored(f)?.state).toBe('saved')
       expect((await reconcile(f)).kind).toBe('unknown')
@@ -286,24 +287,29 @@ async function refusedBy(fetch: typeof globalThis.fetch, f: Joint): Promise<stri
   return undefined
 }
 
-/**
- * Transport failures before the peer read any byte. The adapter marks the request sent at the
- * fence (before the transport writes), so every row below reports unknown_effect today although the
- * peer provably read nothing. These rows pin the CURRENT behaviour; the expected-red companion
- * below states the definite-failure answer and must turn green only if that classification changes.
- */
+// Zero peer bytes are conclusive only with Host evidence that the connector fence never committed.
 type PreByte = {
   name: string
   mode?: Mode
   patch?: Parameters<typeof modelJointFixture>[2]
   extra?: Parameters<typeof modelJointFixture>[4]
   revoke?: boolean
+  refusal?: { code: string; detailCode: string }
 }
 const PRE_BYTE: PreByte[] = [
-  { name: 'connection refused (closed loopback port)', mode: 'refused' },
+  {
+    name: 'connection refused (closed loopback port)',
+    mode: 'refused',
+    refusal: { code: 'retryable', detailCode: 'model_egress_connect' },
+  },
   { name: 'peer closes before reading the request', mode: 'close-first' },
   { name: 'peer resets before reading the request', mode: 'reset-first' },
-  { name: 'egress fetch throws before writing', extra: { throwEgress: true } },
+  { name: 'egress fetch throws an unproved TypeError before writing', extra: { throwEgress: true } },
+  {
+    name: 'egress fetch throws with Host proof of no write',
+    extra: { throwEgress: 'proven' },
+    refusal: { code: 'retryable', detailCode: 'model_egress_connect' },
+  },
   {
     name: 'network policy denies the target',
     patch: (o) => ({
@@ -312,8 +318,13 @@ const PRE_BYTE: PreByte[] = [
         rules: required(o.network).rules.map((r) => ({ ...r, effect: 'deny' as const })),
       },
     }),
+    refusal: { code: 'denied', detailCode: 'model_egress_network' },
   },
-  { name: 'credential revoked before the final use', revoke: true },
+  {
+    name: 'credential revoked before the final use',
+    revoke: true,
+    refusal: { code: 'denied', detailCode: 'model_egress_credential' },
+  },
 ]
 async function runPreByte(api: Api, row: PreByte) {
   const f = await joint(api, row.mode ?? 'normal', row.patch ?? {}, true, row.extra ?? {})
@@ -324,37 +335,48 @@ async function runPreByte(api: Api, row: PreByte) {
         f.auth.call({}, true),
       ),
     )
-  const effect = await f.execute()
-  return { f, effect }
+  return { f, effect: await f.execute() }
 }
 describe.each(APIS)('transport failure before any byte over the %s wire', (api) => {
-  it.each(PRE_BYTE)('PIN current behaviour, owner decision pending: $name', async (row) => {
+  it.each(PRE_BYTE)('classifies at the connector fence: $name', async (row) => {
     const { f, effect } = await runPreByte(api, row)
     expect(f.peerStats.bytes).toBe(0)
     expect(f.observations).toEqual([])
-    expect(shape(effect)).toMatchObject({
-      outcome: 'unknown_effect',
-      detail: 'model_stream_unknown',
-      externals: 1,
-    })
-    expectReconcileAdvice(effect, f.frame.actionId)
-    expect(stored(f)?.state).toBe('saved')
-    expect(f.hashes).toHaveLength(1)
-    expect((await reconcile(f)).kind).toBe('unknown')
-    // Even so, no second send and no second credential use.
-    const before = f.uses()
-    expect((await f.execute()).outcome).not.toBe('succeeded')
-    expect([f.observations.length, f.uses()]).toEqual([0, before])
-  })
-  it.fails.each(PRE_BYTE)(
-    'EXPECTED-RED definite not-sent when the peer read zero bytes: $name',
-    async (row) => {
-      const { f, effect } = await runPreByte(api, row)
+    if (row.refusal) {
+      expect(effect).toMatchObject({
+        outcome: 'failed',
+        error: row.refusal,
+        externalRequests: [],
+        usage: [],
+        references: [],
+      })
+      expect(effect.error?.retryAdvice).toEqual({
+        kind: row.refusal.code === 'retryable' ? 'retry_same_action' : 'never',
+      })
+      expect(stored(f)).toBeUndefined()
+      expect(f.hashes).toEqual([])
+      const answer = await reconcile(f)
+      expect(answer).toMatchObject({ kind: 'not_found', safeToRetry: false })
+      expect(JSON.stringify(answer)).toContain('not_sent')
+      expect(f.peerStats.connections).toBe(0)
+    } else {
+      // Permanent PIN: after a committed fence, or without Host evidence, zero peer bytes cannot
+      // prove that nothing was written. Neither case may be downgraded to a definite failure.
+      expect(shape(effect)).toMatchObject({
+        outcome: 'unknown_effect',
+        detail: 'model_stream_unknown',
+        externals: 1,
+      })
+      expectReconcileAdvice(effect, f.frame.actionId)
+      expect(stored(f)?.state).toBe('saved')
+      expect(f.hashes).toHaveLength(row.extra?.throwEgress ? 0 : 1)
+      expect((await reconcile(f)).kind).toBe('unknown')
+      expect((await f.execute()).outcome).not.toBe('succeeded')
       expect(f.peerStats.bytes).toBe(0)
-      expect(effect.outcome).toBe('failed')
-      expect(effect.externalRequests).toEqual([])
-    },
-  )
+      expect(f.observations).toEqual([])
+      expect(stored(f)?.state).toBe('saved')
+    }
+  })
 })
 
 /** Reference adapter: independent implementation of both wires, its own stand-in owner and stand-in egress. */
@@ -657,7 +679,7 @@ describe.each(APIS)('reference adapter over the %s wire', (api) => {
       vi.spyOn(globalThis, 'fetch').mockRejectedValue(new TypeError('fetch failed before any write'))
     return { r, effect: await r.execute() }
   }
-  it.each(preByte)('PIN current behaviour, owner decision pending: %s', async (_name, mode) => {
+  it.each(preByte)('PIN unknown without Host send evidence: %s', async (_name, mode) => {
     const { r, effect } = await runPre(mode)
     expect(r.server.stats.bytes).toBe(0)
     expect(r.server.observed).toEqual([])
@@ -666,15 +688,6 @@ describe.each(APIS)('reference adapter over the %s wire', (api) => {
     expect(r.read()?.state).toBe('saved')
     expect((await r.reconcile()).kind).toBe('unknown')
   })
-  it.fails.each(preByte)(
-    'EXPECTED-RED definite not-sent when the peer read zero bytes: %s',
-    async (_name, mode) => {
-      const { r, effect } = await runPre(mode)
-      expect(r.server.stats.bytes).toBe(0)
-      expect(effect.outcome).toBe('failed')
-    },
-  )
-
   it.each(['normal', 'cut-mid', 'cut-silent'] as const)(
     'switching from the default to the reference gives equal observable results: %s',
     async (mode) => {
@@ -848,18 +861,19 @@ describe.each(APIS)('reference adapter behind the Host egress over the %s wire',
   })
 
   it.each(['cut-mid', 'cut-silent'] as const)(
-    'peer %s: unknown effect, and the second send is stopped by the fence before any secret use or byte',
+    'peer %s: unknown effect, and the connector fence prevents a second request',
     async (mode) => {
       const r = await behindHost(mode)
       const effect = await r.execute()
       expect(shape(effect)).toMatchObject({ outcome: 'unknown_effect', externals: 1, text: null })
       expect((await r.reconcile()).kind).toBe('unknown')
+      const firstBytes = r.f.peerStats.bytes
       const second = await r.execute()
       expect(second.outcome).not.toBe('succeeded')
       expect(r.f.observations).toHaveLength(1)
-      expect(r.f.peerStats.connections).toBe(1)
-      // The real secret is used once, at the final send of the first attempt only.
-      expect(r.f.uses()).toBe(1)
+      expect(r.f.peerStats.bytes).toBe(firstBytes)
+      // Each attempt resolves the credential before reaching its own connector fence.
+      expect(r.f.uses()).toBe(2)
       expect(r.f.hashes).toHaveLength(2)
       expect(stored(r.f)?.state).toBe('saved')
     },

@@ -1,8 +1,9 @@
+import { createHash } from 'node:crypto'
 import { isIP } from 'node:net'
 import type { CallContext, Outcome } from '@agnes/extension-api/runtime'
 import type { BindingRef, NetworkTarget, SecretConsumerBinding, SecretHandle } from '@agnes/protocol/runtime'
 import { canonicalJsonDigest, validateRuntime } from '@agnes/protocol/runtime'
-import { Agent, request as send } from 'undici'
+import { Agent, buildConnector, request as send } from 'undici'
 import {
   type AddressResolver,
   createPinnedLookup,
@@ -36,12 +37,20 @@ export interface ModelEgressOptions {
       })
     | undefined
   readonly secrets?: Pick<SecretsService, 'use'> | undefined
+  /**
+   * soleSendFence declaration: exactly once per connected attempt, synchronously after the transport
+   * connection (TCP, plus TLS for HTTPS) is established and before any request bytes reach the socket.
+   * False destroys the connection without sending request bytes. Failures before this fence are
+   * definitively not sent; only failures after the fence and before a receipt are unknown_effect.
+   */
+  readonly beforeWrite?: ((bodyDigest: string) => boolean) | undefined
   readonly maxRequestBytes?: number
   readonly maxResponseBytes?: number
 }
 export interface ModelEgressPort {
   readonly fetch: typeof globalThis.fetch
   readonly resolveCredential: (route: string, signal: AbortSignal) => Promise<string>
+  fenced(): boolean
   close(): Promise<void>
 }
 export class ModelEgressError extends Error {
@@ -84,7 +93,9 @@ export function createModelEgress(options: ModelEgressOptions, context: CallCont
   const lifetime = new AbortController()
   const work = new Set<Promise<unknown>>()
   let closing: Promise<void> | undefined
-  let sent = false
+  let attempted = false,
+    fenced = false
+  const beforeWrite = options.beforeWrite
   const identityResolve = network?.identity.resolve
   const auth = network?.authorize,
     identity = network?.identity,
@@ -132,6 +143,7 @@ export function createModelEgress(options: ModelEgressOptions, context: CallCont
       options.network !== network ||
       options.secrets !== broker ||
       options.current !== owner ||
+      options.beforeWrite !== beforeWrite ||
       options.endpoints !== endpoints ||
       network.authorize !== auth ||
       network.identity !== identity ||
@@ -149,6 +161,7 @@ export function createModelEgress(options: ModelEgressOptions, context: CallCont
       lifetime.signal.aborted ||
       context.signal !== originalSignal ||
       options.current !== owner ||
+      options.beforeWrite !== beforeWrite ||
       options.network !== network ||
       options.secrets !== broker ||
       network.authorize !== auth ||
@@ -233,8 +246,8 @@ export function createModelEgress(options: ModelEgressOptions, context: CallCont
             problem instanceof ModelEgressError
               ? problem
               : new ModelEgressError(
-                  sent ? 'unknown_effect' : 'denied',
-                  sent ? 'model_egress_unknown' : 'model_egress_unavailable',
+                  fenced ? 'unknown_effect' : 'denied',
+                  fenced ? 'model_egress_unknown' : 'model_egress_unavailable',
                 )
           throw localError
         }
@@ -260,15 +273,18 @@ export function createModelEgress(options: ModelEgressOptions, context: CallCont
       .then(() => operation(signal))
       .catch((problem) => {
         if (problem instanceof ModelEgressError) {
-          if (sent && problem.code === 'cancelled') refuse('model_egress_unknown', 'unknown_effect')
+          if (fenced && problem.code === 'cancelled') refuse('model_egress_unknown', 'unknown_effect')
           throw problem
         }
         if (signal.aborted)
           refuse(
-            sent ? 'model_egress_unknown' : 'model_egress_cancelled',
-            sent ? 'unknown_effect' : 'cancelled',
+            fenced ? 'model_egress_unknown' : 'model_egress_cancelled',
+            fenced ? 'unknown_effect' : 'cancelled',
           )
-        refuse(sent ? 'model_egress_unknown' : 'model_egress_unavailable', sent ? 'unknown_effect' : 'denied')
+        refuse(
+          fenced ? 'model_egress_unknown' : 'model_egress_unavailable',
+          fenced ? 'unknown_effect' : 'denied',
+        )
       })
       .finally(() => {
         clearTimeout(timer)
@@ -313,7 +329,7 @@ export function createModelEgress(options: ModelEgressOptions, context: CallCont
             request.method !== declaration.method
           )
             refuse('model_egress_target')
-          if (sent) refuse('model_egress_replay', 'unknown_effect')
+          if (attempted) refuse('model_egress_replay', 'unknown_effect')
           const chunks: Uint8Array[] = []
           let bodyBytes = 0
           const reader = request.body?.getReader()
@@ -333,15 +349,16 @@ export function createModelEgress(options: ModelEgressOptions, context: CallCont
           if (bytes.length > (options.maxRequestBytes ?? 1024 * 1024)) refuse('model_egress_limits')
           const rule = await gate(target, requestSignal)
           if (!network) refuse('model_egress_owner')
-          const addresses = rule.addresses
-            ? await wait(
+          const addresses = await (rule.addresses
+            ? wait(
                 network.resolver(target.host.replace(/^\[|\]$/g, ''), { all: true, order: 'verbatim' }),
                 requestSignal,
               )
-            : await resolvePublicAddresses(target.host, requestSignal, network.resolver).catch(() => {
-                if (requestSignal.aborted) refuse('model_egress_cancelled', 'cancelled')
-                refuse('model_egress_dns')
-              })
+            : resolvePublicAddresses(target.host, requestSignal, network.resolver)
+          ).catch(() => {
+            if (requestSignal.aborted) refuse('model_egress_cancelled', 'cancelled')
+            refuse('model_egress_connect', 'retryable')
+          })
           if (
             !addresses.length ||
             addresses.some(
@@ -397,21 +414,51 @@ export function createModelEgress(options: ModelEgressOptions, context: CallCont
               refuse('model_egress_headers')
             await gate(target, finalSignal)
             check(finalSignal)
-            if (sent) refuse('model_egress_replay', 'unknown_effect')
+            if (attempted) refuse('model_egress_replay', 'unknown_effect')
             headers[name] = expected
+            attempted = true
+            const bodyDigest = createHash('sha256').update(bytes).digest('hex')
+            const connect = buildConnector({
+              allowH2: false,
+              lookup: createPinnedLookup(
+                addresses.map((item) => ({ address: item.address, family: item.family as 4 | 6 })),
+              ),
+            })
+            // A fresh Agent for every attempt is essential: a reused socket would bypass this fence.
+            let connectorRefusal: ModelEgressError | undefined
             const dispatcher = new Agent({
-              connect: {
-                lookup: createPinnedLookup(
-                  addresses.map((item) => ({
-                    address: item.address,
-                    family: item.family as 4 | 6,
-                  })),
-                ),
+              connect(connection, callback) {
+                connect(connection, (error, socket) => {
+                  if (error) {
+                    callback(new ModelEgressError('retryable', 'model_egress_connect'), null)
+                    return
+                  }
+                  try {
+                    if (fenced) refuse('model_egress_unknown', 'unknown_effect')
+                    check(finalSignal)
+                    if (beforeWrite && beforeWrite(bodyDigest) !== true) refuse('model_egress_fence')
+                    fenced = true
+                  } catch (problem) {
+                    socket.destroy()
+                    // Use a private connector error code: UND_ERR_SOCKET/INFO can trigger a resend.
+                    connectorRefusal =
+                      problem instanceof ModelEgressError
+                        ? problem
+                        : new ModelEgressError('denied', 'model_egress_fence')
+                    callback(
+                      Object.assign(new Error('Model egress request refused'), {
+                        code: connectorRefusal.detailCode,
+                      }),
+                      null,
+                    )
+                    return
+                  }
+                  callback(null, socket)
+                })
               },
               maxHeaderSize: 16 * 1024,
             })
             try {
-              sent = true
               const response = await send(url, {
                 dispatcher,
                 method: 'POST',
@@ -449,6 +496,12 @@ export function createModelEgress(options: ModelEgressOptions, context: CallCont
               } finally {
                 response.body.destroy()
               }
+            } catch (problem) {
+              if (!fenced && finalSignal.aborted) refuse('model_egress_cancelled', 'cancelled')
+              if (problem instanceof ModelEgressError) throw problem
+              if (fenced) refuse('model_egress_unknown', 'unknown_effect')
+              if (connectorRefusal) throw connectorRefusal
+              refuse('model_egress_connect', 'retryable')
             } finally {
               await dispatcher.destroy()
             }
@@ -456,6 +509,7 @@ export function createModelEgress(options: ModelEgressOptions, context: CallCont
         },
       )
     },
+    fenced: () => fenced,
     close() {
       if (!closing) {
         lifetime.abort()
