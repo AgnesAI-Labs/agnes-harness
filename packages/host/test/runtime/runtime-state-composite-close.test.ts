@@ -159,7 +159,11 @@ describe('advanceProvider complete', () => {
     expect(f.head(providerStateRecordId(f.parentId))?.value.state).toBe('completed')
     const g = await setup()
     await startedParent(g, [])
+    const idle = () => g.head(`run-quota:${runId(g)}`)?.value.noProgressTransitions
+    await g.advance(await g.prepared(g.parentId, 1), 'idle', {})
+    expect(idle()).toBe(1)
     await complete(g, await g.prepared(g.parentId, 1), 'complete-empty')
+    expect(idle()).toBe(0)
     expect(g.head(actionRecordId(g.parentId))?.value.state).toBe('settled')
   })
   it('refuses while a child is open, new children, an unresolved child and references, and writes nothing', async () => {
@@ -346,8 +350,13 @@ describe('advanceProvider fail and finalize_composite', () => {
       finalize(f, invocation, 'finalize-2', { ownerRefs: [{ kind: 'reconciliation', id: 'other' }] }),
     ).rejects.toMatchObject({ failure: { detailCode: 'finalize_children' } })
     expect(f.writes()).toBe(writes)
-    forge(f, childRecord, { state: 'unknown', ownerRef: { kind: 'run', id: runId(f) } })
-    await expect(finalize(f, invocation, 'finalize-3', { ownerRefs: [OWNER] })).rejects.toMatchObject({
+    const runOwner = { kind: 'run' as const, id: runId(f) }
+    forge(f, childRecord, { state: 'unknown', ownerRef: runOwner })
+    await expect(finalize(f, invocation, 'finalize-3', { ownerRefs: [runOwner] })).rejects.toMatchObject({
+      failure: { detailCode: 'finalize_children' },
+    })
+    forge(f, childRecord, { state: 'prepared', ownerRef: OWNER })
+    await expect(finalize(f, invocation, 'finalize-3b', { ownerRefs: [OWNER] })).rejects.toMatchObject({
       failure: { detailCode: 'finalize_children' },
     })
     forge(f, childRecord, { state: 'unknown', ownerRef: OWNER })
@@ -446,6 +455,20 @@ describe('settle_undispatched', () => {
       settleUndispatched(f, invocation, 'settle-3', 'no-such-action', { expectedActionRevision: 1 }),
     ).rejects.toMatchObject({ failure: { detailCode: 'action_state' } })
     expect(f.writes()).toBe(writes)
+    const leaf = actionRecordId(f.leafParentId)
+    forge(f, leaf, { state: 'awaiting-approval' })
+    await expect(settleUndispatched(f, invocation, 'settle-6', f.leafParentId)).rejects.toMatchObject({
+      failure: { detailCode: 'action_state' },
+    })
+    forge(f, leaf, { state: 'prepared', currentAttemptId: 'attempt-x' })
+    await expect(settleUndispatched(f, invocation, 'settle-7', f.leafParentId)).rejects.toMatchObject({
+      failure: { detailCode: 'action_state' },
+    })
+    forge(f, leaf, { currentAttemptId: null, runId: 'another-run' })
+    await expect(settleUndispatched(f, invocation, 'settle-8', f.leafParentId)).rejects.toMatchObject({
+      failure: { detailCode: 'action_state' },
+    })
+    forge(f, leaf, { runId: runId(f) })
     await settleUndispatched(f, invocation, 'settle-4', f.leafParentId)
     const settled = f.writes()
     await expect(settleUndispatched(f, invocation, 'settle-5', f.leafParentId)).rejects.toMatchObject({
