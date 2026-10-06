@@ -302,6 +302,11 @@ export const RuntimeSchemaRefs = freeze({
     "revision": 1,
     "digest": "a6e7b51629a3ef4422e86685a84207f4e124fa87263474e22e846d3c354b4d73"
   },
+  "ResolutionRecordValue": {
+    "typeId": "agh.runtime/resolution-record@1",
+    "revision": 2,
+    "digest": "bcdb221fca9f46494199b489e35acfa8d93b31164741700c54aafe9451a410d3"
+  },
   "InteractionRecord": {
     "typeId": "agh.interaction/interaction-record@1",
     "revision": 3,

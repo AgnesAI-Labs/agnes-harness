@@ -185,7 +185,15 @@ describe('advanceProvider complete', () => {
       failure: { detailCode: 'complete_new_actions' },
     })
     expect(f.writes()).toBe(writes)
-    forge(f, actionRecordId(childId(f, 'child-a')), { state: 'unknown' })
+    await f.dispatch(childId(f, 'child-a'), f.child('child-a'), await f.prepared(f.parentId, 1), 'child-a')
+    await control(f, await f.prepared(null, 1), 'unknown-1', {
+      kind: 'mark_unknown',
+      attemptId: 'attempt-child-a',
+      expectedAttemptRevision: 1,
+      evidence: [],
+      reconciliationOwnerRef: OWNER,
+      reason: 'the answer was lost',
+    })
     await expect(complete(f, first, 'complete-3')).rejects.toMatchObject({
       failure: { detailCode: 'complete_unknown' },
     })
@@ -337,10 +345,19 @@ describe('advanceProvider fail and finalize_composite', () => {
   })
   it('accepts an unresolved child only with its reconciliation owner named, and never as a success', async () => {
     const f = await setup()
-    await startedParent(f, ['child-a'])
+    const [child] = await startedParent(f, ['child-a'])
+    const open = await f.prepared(f.parentId, 1)
+    await f.dispatch(childId(f, 'child-a'), child as PreparedAction, open, 'child-a')
+    await control(f, await f.prepared(null, 1), 'unknown-1', {
+      kind: 'mark_unknown',
+      attemptId: 'attempt-child-a',
+      expectedAttemptRevision: 1,
+      evidence: [],
+      reconciliationOwnerRef: OWNER,
+      reason: 'the answer was lost',
+    })
     await fail(f, await f.prepared(f.parentId, 1), 'fail-1')
     const childRecord = actionRecordId(childId(f, 'child-a'))
-    forge(f, childRecord, { state: 'unknown', ownerRef: OWNER })
     const invocation = await f.prepared(f.parentId, 1)
     const writes = f.writes()
     await expect(finalize(f, invocation, 'finalize-1')).rejects.toMatchObject({

@@ -13,7 +13,10 @@ import {
   matchesKnownSchema,
   PROVIDER_STATE_SCHEMA,
   providerStateRecordId,
+  RESOLUTION_SCHEMA,
   type RecordOwner,
+  resolutionRecordId,
+  stableId,
   stateSchemaDefinition,
   TIMER_SCHEMA,
   timerRecordId,
@@ -55,6 +58,25 @@ const timer = (over: Record<string, unknown> = {}) => ({
   firedByCommitId: null,
   ...over,
 })
+const resolution = (over: Record<string, unknown> = {}) => ({
+  resolutionId: stableId('res', 'action-1'),
+  actionId: 'action-1',
+  previousReceiptIds: [],
+  selectedReceiptId: null,
+  evidenceRefs: [],
+  state: 'unresolved',
+  ownerRef: { kind: 'reconciliation', id: 'owner-1' },
+  nextCheckAt: null,
+  reason: 'no answer',
+  ...over,
+})
+const unresolvedAction = (over: Record<string, unknown> = {}) => ({
+  actionId: 'action-1',
+  state: 'unknown',
+  resolutionId: stableId('res', 'action-1'),
+  ownerRef: { kind: 'reconciliation', id: 'owner-1' },
+  ...over,
+})
 const note = (recordId: string, value: unknown, revision = 1): ControlVersionNote => ({
   record_id: recordId,
   record_revision: revision,
@@ -85,6 +107,14 @@ describe('the three record schemas', () => {
     expect(validateRuntime('TimerRecordValue', timer()).ok).toBe(true)
     expect(validateRuntime('WaitRecordValue', wait({ state: 'late' })).ok).toBe(false)
   })
+  it('registers the resolution record and accepts the wire value it is written from', () => {
+    expect(RESOLUTION_SCHEMA.typeId).toBe('agh.runtime/resolution-record@1')
+    expect(matchesKnownSchema(RESOLUTION_SCHEMA)).toBe(true)
+    expect(stateSchemaDefinition(RESOLUTION_SCHEMA)).toBe('ResolutionRecordValue')
+    expect(resolutionRecordId('r')).toBe('resolution:r')
+    expect(validateRuntime('ResolutionRecordValue', resolution()).ok).toBe(true)
+    expect(validateRuntime('ResolutionRecordValue', resolution({ state: 'lost' })).ok).toBe(false)
+  })
   it('get record ids with distinct prefixes that carry the owning id', () => {
     expect(providerStateRecordId('a')).toBe('provider:a')
     expect(waitRecordId('w')).toBe('wait:w')
@@ -93,6 +123,66 @@ describe('the three record schemas', () => {
 })
 
 describe('what the control scan does with the new records', () => {
+  it('accepts a resolution through its states and an unresolved action that names its owner', () => {
+    const id = `resolution:${stableId('res', 'action-1')}`
+    expect(scanned(note(id, resolution()))).not.toThrow()
+    expect(scanned(note(id, resolution({ state: 'conflicting' }), 2))).not.toThrow()
+    expect(
+      scanned(note(id, resolution({ state: 'resolved', selectedReceiptId: 'receipt-1' }), 3)),
+    ).not.toThrow()
+    expect(scanned(note('action:action-1', unresolvedAction()))).not.toThrow()
+    expect(scanned(note('action:action-1', unresolvedAction({ state: 'reconciling' }), 2))).not.toThrow()
+    expect(
+      scanned(
+        note(
+          'action:action-1',
+          unresolvedAction({ state: 'settled', ownerRef: { kind: 'run', id: 'r' } }),
+          3,
+        ),
+      ),
+    ).not.toThrow()
+  })
+  it.each([
+    ['resolution id that names another record', 'resolution:other', resolution()],
+    [
+      'resolution of another action',
+      `resolution:${stableId('res', 'action-1')}`,
+      resolution({ actionId: 'action-2' }),
+    ],
+    [
+      'resolution with an unknown state',
+      `resolution:${stableId('res', 'action-1')}`,
+      resolution({ state: 'lost' }),
+    ],
+    [
+      'resolved resolution without a receipt',
+      `resolution:${stableId('res', 'action-1')}`,
+      resolution({ state: 'resolved' }),
+    ],
+    [
+      'open resolution that selects a receipt',
+      `resolution:${stableId('res', 'action-1')}`,
+      resolution({ selectedReceiptId: 'receipt-1' }),
+    ],
+    [
+      'open resolution without a reconciliation owner',
+      `resolution:${stableId('res', 'action-1')}`,
+      resolution({ ownerRef: { kind: 'run', id: 'r' } }),
+    ],
+    ['unknown action without a resolution', 'action:action-1', unresolvedAction({ resolutionId: null })],
+    [
+      'unknown action with another action resolution',
+      'action:action-1',
+      unresolvedAction({ resolutionId: stableId('res', 'action-2') }),
+    ],
+    [
+      'reconciling action owned by its run',
+      'action:action-1',
+      unresolvedAction({ state: 'reconciling', ownerRef: { kind: 'run', id: 'r' } }),
+    ],
+  ])('refuses a %s', (_name, recordId, value) => {
+    expect(scanned(note(recordId, value))).toThrow()
+  })
   it('accepts well-formed versions of each', () => {
     expect(scanned(note('provider:action-1', provider()))).not.toThrow()
     expect(

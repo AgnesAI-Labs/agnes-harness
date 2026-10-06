@@ -49,6 +49,7 @@ import type {
   InteractionRecord,
   PolicyDecision,
   ProviderStateValue,
+  ResolutionRecordValue,
   RunBinding,
   TimerRecordValue,
   TrustedPolicyFacts,
@@ -84,6 +85,7 @@ import {
   quotaRecordId,
   RECEIPT_SCHEMA,
   REFERENCE_SCHEMA,
+  RESOLUTION_SCHEMA,
   type RecordOwner,
   RUN_QUOTA_SCHEMA,
   RUN_RECORD_SCHEMA,
@@ -91,6 +93,7 @@ import {
   type RunTaintValue,
   receiptRecordId,
   referenceRecordId,
+  resolutionRecordId,
   runBindingRecordId,
   runQuotaRecordId,
   runRecordId,
@@ -2573,6 +2576,8 @@ export async function commitControlTx(
     return finalizeCompositeTx(ports, request, verified, fingerprint)
   if (request.command.kind === 'settle_undispatched')
     return settleUndispatchedTx(ports, request, verified, fingerprint)
+  if (request.command.kind === 'mark_unknown') return markUnknownTx(ports, request, verified, fingerprint)
+  if (request.command.kind === 'resolve_action') return resolveActionTx(ports, request, verified, fingerprint)
   if (request.command.kind !== 'mark_running') refuse('internal', 'unsupported', CONTROL_COMMAND)
   const command = request.command
   const guarded = assertGuard(ports, request.guard, 'follow')
@@ -3224,6 +3229,7 @@ export function noteControlVersion(scan: ControlScan, version: ControlVersionNot
   else if (id.startsWith('provider:')) noteProviderStateVersion(version)
   else if (id.startsWith('wait:')) noteWaitVersion(version)
   else if (id.startsWith('timer:')) noteTimerVersion(version)
+  else if (id.startsWith('resolution:')) noteResolutionVersion(version)
 }
 
 const PROVIDER_STATES = ['runnable', 'waiting', 'draining', 'completed', 'failed']
@@ -3260,6 +3266,27 @@ function noteWaitVersion(version: ControlVersionNote): void {
   if (!Array.isArray(body.matchedSignalIds)) integrity('wait record has no matched signals')
 }
 
+const RESOLUTION_STATES = ['unresolved', 'resolved', 'conflicting']
+
+function noteResolutionVersion(version: ControlVersionNote): void {
+  const body = bodyRecord(version.value_json)
+  const resolutionId = typeof body.resolutionId === 'string' ? body.resolutionId : ''
+  if (resolutionId === '' || version.record_id !== resolutionRecordId(resolutionId))
+    integrity('resolution record id does not match its resolution')
+  if (
+    typeof body.actionId !== 'string' ||
+    body.actionId === '' ||
+    resolutionId !== stableId('res', body.actionId)
+  )
+    integrity('resolution record does not belong to its action')
+  if (typeof body.state !== 'string' || !RESOLUTION_STATES.includes(body.state))
+    integrity('resolution record is not in a known state')
+  if ((body.state === 'resolved') !== (body.selectedReceiptId != null))
+    integrity('resolution record receipt does not match its state')
+  if (body.state !== 'resolved' && objectRecord(body.ownerRef)?.kind !== 'reconciliation')
+    integrity('unresolved record has no reconciliation owner')
+}
+
 function noteTimerVersion(version: ControlVersionNote): void {
   const body = bodyRecord(version.value_json)
   const timerId = typeof body.timerId === 'string' ? body.timerId : ''
@@ -3279,6 +3306,12 @@ function noteActionVersion(scan: ControlScan, version: ControlVersionNote): void
   const states = scan.actionStates.get(version.commit_id) ?? []
   states.push({ actionId, state })
   scan.actionStates.set(version.commit_id, states)
+  if (
+    (state === 'unknown' || state === 'reconciling') &&
+    (body.resolutionId !== stableId('res', actionId) ||
+      objectRecord(body.ownerRef)?.kind !== 'reconciliation')
+  )
+    integrity('unresolved action has no resolution and reconciliation owner')
   if (version.record_revision !== 1) return
   const createdBy = typeof body.createdByCommitId === 'string' ? body.createdByCommitId : ''
   const prior = scan.actions.get(actionId)
@@ -4753,6 +4786,208 @@ async function settleUndispatchedTx(
     creates: [record(attemptRecordId(controlId), ATTEMPT_SCHEMA, 1, owner, attempt), ...published.creates],
     updates: [updated(actionHead, ACTION_SCHEMA, owner, settledAction), ...published.updates],
     sides: published.sides,
+  })
+  ports.rememberRequest('commitControl', request.commitId, fingerprint, written.receipt)
+  return { result: written.receipt, sessionId: request.guard.sessionId, verified: written.verified }
+}
+
+type ResolutionValue = ResolutionRecordValue
+
+/**
+ * Moves an open leaf attempt and its action to unknown and names the reconciliation owner, in one commit. It
+ * settles nothing and retries nothing: the held quota stays held and no receipt is written. The evidence and the
+ * reason are kept on the unresolved resolution record that the action points to from now on.
+ */
+async function markUnknownTx(
+  ports: ControlPorts,
+  request: CommitControlRequest,
+  verified: SessionView,
+  fingerprint: string,
+): Promise<Committed<StateCommitReceipt>> {
+  const command = request.command
+  if (command.kind !== 'mark_unknown') refuse('internal', 'unsupported', CONTROL_COMMAND)
+  if (command.reconciliationOwnerRef.kind !== 'reconciliation')
+    refuse('invalid_input', 'owner_ref', 'an unknown effect is handed to a reconciliation owner')
+  const guarded = assertGuard(ports, request.guard, 'follow')
+  const attemptHead = requireHead(
+    ports,
+    attemptRecordId(command.attemptId),
+    'attempt_absent',
+    'attempt does not exist',
+  )
+  if (attemptHead.record_revision !== command.expectedAttemptRevision)
+    refuse('conflict', 'attempt_revision', 'attempt revision does not match')
+  const attempt = storedValue<AttemptValue>(attemptHead)
+  const actionHead = requireHead(
+    ports,
+    actionRecordId(attempt.actionId),
+    'action_state',
+    'action does not exist',
+  )
+  const action = storedValue<ActionValue>(actionHead)
+  if (
+    attempt.kind !== 'leaf' ||
+    (attempt.state !== 'dispatching' && attempt.state !== 'running') ||
+    action.runId !== request.guard.runId ||
+    action.currentAttemptId !== attempt.attemptId ||
+    (action.state !== 'dispatching' && action.state !== 'running')
+  )
+    refuse('conflict', 'attempt_state', 'only an open leaf attempt of this run can become unknown')
+  const resolutionId = stableId('res', action.actionId)
+  const owner = ownerOf(actionHead)
+  const written = ports.writeCommit({
+    ...blankInput(
+      request.guard.sessionId,
+      verified,
+      request.commitId,
+      at(ports),
+      fingerprint,
+      request.guard.runId,
+      request.guard.writerEpoch,
+      guarded.value.revision,
+    ),
+    creates: [
+      record(resolutionRecordId(resolutionId), RESOLUTION_SCHEMA, 1, owner, {
+        resolutionId,
+        actionId: action.actionId,
+        previousReceiptIds: [],
+        selectedReceiptId: null,
+        evidenceRefs: command.evidence,
+        state: 'unresolved',
+        ownerRef: command.reconciliationOwnerRef,
+        nextCheckAt: null,
+        reason: command.reason,
+      } satisfies ResolutionValue),
+    ],
+    updates: [
+      updated(attemptHead, ATTEMPT_SCHEMA, ownerOf(attemptHead), { ...attempt, state: 'unknown' }),
+      updated(actionHead, ACTION_SCHEMA, owner, {
+        ...action,
+        state: 'unknown',
+        resolutionId,
+        ownerRef: command.reconciliationOwnerRef,
+      }),
+    ],
+  })
+  ports.rememberRequest('commitControl', request.commitId, fingerprint, written.receipt)
+  return { result: written.receipt, sessionId: request.guard.sessionId, verified: written.verified }
+}
+
+/**
+ * Records what reconciliation found for an unresolved action. Unresolved and conflicting only update the
+ * resolution record and the owner; the action stays unknown. Resolved needs a receipt State already holds for
+ * this action and attempt that is not itself an unknown-effect receipt, and only then settles the action.
+ */
+async function resolveActionTx(
+  ports: ControlPorts,
+  request: CommitControlRequest,
+  verified: SessionView,
+  fingerprint: string,
+): Promise<Committed<StateCommitReceipt>> {
+  const command = request.command
+  if (command.kind !== 'resolve_action') refuse('internal', 'unsupported', CONTROL_COMMAND)
+  const guarded = assertGuard(ports, request.guard, 'follow')
+  const actionHead = ports.loadHead(actionRecordId(command.actionId))
+  if (!actionHead || actionHead.record_revision !== command.expectedActionRevision)
+    refuse('conflict', 'action_state', 'action state does not match the resolution')
+  const action = storedValue<ActionValue>(actionHead)
+  if (action.runId !== request.guard.runId || !UNRESOLVED_ACTION_STATES.includes(action.state))
+    refuse('conflict', 'action_state', 'action is not an unresolved effect of this run')
+  const resolutionHead = action.resolutionId ? ports.loadHead(resolutionRecordId(action.resolutionId)) : null
+  if (!resolutionHead) integrity('unresolved action has no resolution record')
+  const resolution = storedValue<ResolutionValue>(resolutionHead)
+  const known = new Set(resolution.evidenceRefs.map((ref) => digestOf(ref)))
+  const evidenceRefs = [...resolution.evidenceRefs]
+  for (const ref of command.evidence) {
+    if (!known.has(digestOf(ref))) evidenceRefs.push(ref)
+    known.add(digestOf(ref))
+  }
+  const owner = ownerOf(actionHead)
+  const updates: RecordUpdate[] = []
+  let next: ResolutionValue = {
+    ...resolution,
+    evidenceRefs,
+    state: command.state,
+    nextCheckAt: command.nextCheckAt,
+  }
+  if (command.state !== 'resolved') {
+    if (command.selectedReceiptId !== null || command.ownerRef.kind !== 'reconciliation')
+      refuse(
+        'invalid_input',
+        'resolution',
+        'an open resolution selects no receipt and keeps a reconciliation owner',
+      )
+    next = { ...next, ownerRef: command.ownerRef }
+    updates.push(updated(actionHead, ACTION_SCHEMA, owner, { ...action, ownerRef: command.ownerRef }))
+  } else {
+    if (
+      command.selectedReceiptId === null ||
+      command.nextCheckAt !== null ||
+      !sameJson(command.ownerRef, action.ownerRef) ||
+      action.currentAttemptId === null
+    )
+      refuse(
+        'invalid_input',
+        'resolution',
+        'a resolved action selects a receipt, no next check and keeps its owner',
+      )
+    const receiptHead = requireHead(
+      ports,
+      receiptRecordId(command.selectedReceiptId),
+      'receipt_absent',
+      'the selected receipt does not exist',
+    )
+    const { receipt } = storedValue<StoredReceiptValue>(receiptHead)
+    if (
+      receipt.actionId !== action.actionId ||
+      receipt.attemptId !== action.currentAttemptId ||
+      receipt.outcome === 'unknown_effect'
+    )
+      refuse('conflict', 'receipt_conflict', 'the selected receipt does not settle this attempt')
+    const attemptHead = requireHead(
+      ports,
+      attemptRecordId(action.currentAttemptId),
+      'attempt_absent',
+      'attempt does not exist',
+    )
+    const attempt = storedValue<AttemptValue>(attemptHead)
+    const stamp = at(ports)
+    next = {
+      ...next,
+      selectedReceiptId: receipt.receiptId,
+      previousReceiptIds: attempt.receiptIds.filter((id) => id !== receipt.receiptId),
+    }
+    updates.push(
+      updated(attemptHead, ATTEMPT_SCHEMA, ownerOf(attemptHead), {
+        ...attempt,
+        state: 'settled',
+        finishedAt: stamp,
+        receiptIds: attempt.receiptIds.includes(receipt.receiptId)
+          ? attempt.receiptIds
+          : [...attempt.receiptIds, receipt.receiptId],
+      }),
+      updated(actionHead, ACTION_SCHEMA, owner, {
+        ...action,
+        state: 'settled',
+        firstReceiptId: action.firstReceiptId ?? receipt.receiptId,
+        resolvedReceiptId: receipt.receiptId,
+      }),
+      ...releaseHeldMirrors(ports, action.runId, action.actionId, stamp),
+    )
+  }
+  updates.push(updated(resolutionHead, RESOLUTION_SCHEMA, ownerOf(resolutionHead), next))
+  const written = ports.writeCommit({
+    ...blankInput(
+      request.guard.sessionId,
+      verified,
+      request.commitId,
+      at(ports),
+      fingerprint,
+      request.guard.runId,
+      request.guard.writerEpoch,
+      guarded.value.revision,
+    ),
+    updates,
   })
   ports.rememberRequest('commitControl', request.commitId, fingerprint, written.receipt)
   return { result: written.receipt, sessionId: request.guard.sessionId, verified: written.verified }

@@ -2967,7 +2967,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // The model source reader asks a media result source for the verified media of a prepared call that carries plans (+137); exact cap, no spare.
   // State closes admission: the run-state gate on every path that creates work, begin_drain and cancel_run (+147); exact cap, no spare.
   // State finishes composite parents: provider complete and fail, finalize_composite and settle_undispatched (+293 on 85855); exact cap, no spare.
-  'packages/host/src': 86148,
+  // State marks an open leaf attempt unknown and resolves an unresolved action: mark_unknown, resolve_action and the resolution record (+225 on 86148); exact cap, no spare.
+  'packages/host/src': 86373,
   'packages/host/src/ext-host/service-invocation': 247,
   // T5.2's permission projector is kept independently bounded so later extension-host work cannot
   // hide in the package-wide increment. Measured source: 86 lines.
