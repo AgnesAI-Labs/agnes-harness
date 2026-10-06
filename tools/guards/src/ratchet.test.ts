@@ -1116,7 +1116,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // Wire request builder expresses a resolved tool catalog and paired tool history (+262); exact cap, no spare.
   // The Model service resolves a request's tool catalog through an injected port, binds the descriptions into the input digest and refuses a route without a credential binding (+24); exact cap, no spare.
   // An unknown effect from the Model and Media providers carries reconcile advice naming the unresolved action (+18); exact cap, no spare.
-  'packages/core/src': 39455,
+  // Supervisor ports, wire helpers, session-control forwarding and provider shell (+555); exact cap, no spare.
+  'packages/core/src': 40010,
   // Testkit-only reference Effects runner adds 202 measured lines; exact cap, no spare.
   // Independent Effects dispatch reference (+440); exact measurement below.
   'packages/core/testkit': 2437,
@@ -1646,7 +1647,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // Renderer and shell cases for a desktop capability the client lacks. Measured 17808, exact (+55).
   // Blob deny case: another principal's promote, pin and unpin are refused. Measured 17863 (+55), exact.
   // Media contract scenarios and in-memory fixture (+763); exact cap, no spare.
-  'packages/extension-api/testkit': 18626,
+  // Supervisor descriptor and config helpers (+73); exact cap, no spare.
+  'packages/extension-api/testkit': 18699,
   // 2026-09-10: raised from 2500 by Task 15 (stream-disconnect reconnection). The new
   // reattach.ts (the Reconnector: backoff loop, OVERLOADED's retryAfterMs override) plus
   // Session.recover()/waitForQuiescence and Client's reconnect wiring (emit(), the

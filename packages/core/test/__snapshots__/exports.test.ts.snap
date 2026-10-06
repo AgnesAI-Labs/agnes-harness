@@ -79,6 +79,7 @@ exports[`keeps the public runtime export surface stable 1`] = `
   "createDefaultEffectsFactory",
   "createDefaultLoopFactory",
   "createDefaultModelFactory",
+  "createDefaultSupervisorFactory",
   "createDefaultToolsFactory",
   "createDefaultUsageFactory",
   "createEnvelopeCache",
