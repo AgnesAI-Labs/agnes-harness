@@ -60,6 +60,46 @@ const PNG_DATA =
 const pngBytes = Uint8Array.from(atob(PNG_DATA), (character) => character.charCodeAt(0))
 const pngFile = (name = 'one.png', bytes: Uint8Array = pngBytes) =>
   new File([Uint8Array.from(bytes)], name, { type: 'image/png' })
+/** 声明尺寸远超像素上限、字节数却只有几十字节的 JPEG：校验器读到 SOF 就会按尺寸拒绝。 */
+const oversizedJpegFile = (width = 2000, height = 2000) =>
+  new File(
+    [
+      Uint8Array.from([
+        0xff,
+        0xd8,
+        0xff,
+        0xc0,
+        0,
+        11,
+        8,
+        height >>> 8,
+        height & 0xff,
+        width >>> 8,
+        width & 0xff,
+        1,
+        1,
+        0x11,
+        0,
+        0xff,
+        0xda,
+        0,
+        8,
+        1,
+        1,
+        0,
+        0,
+        63,
+        0,
+        1,
+        2,
+        3,
+        0xff,
+        0xd9,
+      ]),
+    ],
+    'huge.jpg',
+    { type: 'image/jpeg' },
+  )
 const imagePasteEvent = (files: File[], text = '') => {
   const event = new Event('paste', { bubbles: true, cancelable: true })
   Object.defineProperty(event, 'clipboardData', {
@@ -95,11 +135,10 @@ afterEach(async () => {
 })
 
 it.each([
-  [false, true, true],
-  [true, true, true],
-  [true, false, true],
-  [true, true, false],
-])('handles JPEG trailing data %s, decoding %s, encoding %s', async (trailing, decodable, encodable) => {
+  [false, true],
+  [true, true],
+  [true, false],
+])('leaves the original JPEG in place: trailing data %s, bitmap decoding %s', async (trailing, decodable) => {
   const bytes = Uint8Array.of(
     0xff,
     0xd8,
@@ -140,20 +179,23 @@ it.each([
     if (!decodable) throw new Error('invalid JPEG')
     return { width: 1, height: 1, close }
   })
-  vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue({
+  // canvas 桩保留：缩放器若又去重编码，result === file 和下面两条 spy 断言会一起失败。
+  const getContext = vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue({
     drawImage() {},
   } as unknown as CanvasRenderingContext2D)
-  vi.spyOn(HTMLCanvasElement.prototype, 'toBlob').mockImplementation((callback) =>
-    callback(encodable ? new Blob([bytes], { type: 'image/jpeg' }) : null),
-  )
+  const toBlob = vi
+    .spyOn(HTMLCanvasElement.prototype, 'toBlob')
+    .mockImplementation((callback) => callback(new Blob([bytes], { type: 'image/jpeg' })))
   const result = await downscaleImageFile(file, view.imagePolicy)
-  expect(result === file).toBe(!trailing || !decodable || !encodable)
+  // 尾迹落在 EOI 之后，不属于图像数据：校验器放过它，缩放器也就不必为剥掉它而重编码整张图。
+  expect(result === file).toBe(true)
+  expect(getContext).not.toHaveBeenCalled()
+  expect(toBlob).not.toHaveBeenCalled()
   expect(result.name).toBe('photo.jpg')
   const resultBytes = new Uint8Array(await result.arrayBuffer())
-  const decode = () =>
-    decodeSafeImageBytes({ bytes: resultBytes, mimeType: result.type }, USER_MESSAGE_IMAGE_LIMITS)
-  if (trailing && (!decodable || !encodable)) expect(decode).toThrow(/trailing bytes/)
-  else expect(decode()).toMatchObject({ mime: 'image/jpeg', width: 1, height: 1 })
+  expect(
+    decodeSafeImageBytes({ bytes: resultBytes, mimeType: result.type }, USER_MESSAGE_IMAGE_LIMITS),
+  ).toMatchObject({ mime: 'image/jpeg', width: 1, height: 1 })
   if (decodable) expect(close).toHaveBeenCalledOnce()
   else expect(close).not.toHaveBeenCalled()
 })
@@ -648,6 +690,44 @@ describe('composer image attachments', () => {
 
     expect(downscaleImage).toHaveBeenCalledTimes(3)
     expect(onError).not.toHaveBeenCalled()
+    await act(async () => root.unmount())
+    root = createRoot(host)
+  })
+
+  it('names an over-pixel image as too large instead of as an invalid file', async () => {
+    const handle = createRef<ComposerHandle>()
+    const onError = vi.fn()
+    await act(async () => {
+      root.render(
+        createElement(Composer, {
+          ref: handle,
+          dependencies,
+          initialView: view,
+          onCancel() {},
+          onDraftChange() {},
+          onError,
+          onModelSelect: async () => false,
+          onPermissionSelect: async () => false,
+          onSubmit() {},
+          onWorkspace() {},
+        }),
+      )
+    })
+
+    const prompt = host.querySelector<HTMLTextAreaElement>('#prompt')
+    if (!prompt) throw new Error('composer input is missing')
+    await act(async () => {
+      prompt.dispatchEvent(imagePasteEvent([oversizedJpegFile()]))
+      await vi.waitFor(() => expect(onError).toHaveBeenCalled())
+    })
+
+    // 尺寸超限以前被报成「文件内容不是有效的 PNG 或 JPEG 图片」，用户会去改图片格式，
+    // 而该做的是把图缩小。
+    expect(onError.mock.calls[0]?.[0]?.message).toBe(
+      webUnitsLocaleCatalog['zh-CN']['composer.image.tooLargePixels'],
+    )
+    expect(handle.current?.getImageBlocks()).toEqual([])
+    expect(URL.createObjectURL).not.toHaveBeenCalled()
     await act(async () => root.unmount())
     root = createRoot(host)
   })

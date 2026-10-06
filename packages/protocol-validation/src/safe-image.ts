@@ -580,8 +580,11 @@ function jpegDimensions(bytes: Uint8Array, maxPixels: number) {
     if (marker === 0x00)
       throw new SafeImageError('FORMAT_INVALID', 'unexpected stuffed byte outside JPEG scan')
     if (marker === 0xd9) {
-      if (!size || !sawScan || offset !== bytes.length)
-        throw new SafeImageError('FORMAT_INVALID', 'JPEG ended before image data or has trailing bytes')
+      if (!size || !sawScan) throw new SafeImageError('FORMAT_INVALID', 'JPEG ended before image data')
+      // Anything after EOI is outside the image: decoders stop there, so trailing bytes cannot change
+      // what gets decoded. Real device screenshots append a fixed 24-byte trailer, and demanding that
+      // the file end exactly at EOI rejects them — being stricter than the decoder is a parser
+      // differential too, just in the opposite direction.
       return size
     }
     if (marker === 0xd8 || marker === 0x01 || (marker >= 0xd0 && marker <= 0xd7)) continue
