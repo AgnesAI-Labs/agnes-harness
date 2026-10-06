@@ -38,7 +38,6 @@ export const UNIMPLEMENTED_STATE_METHODS = [
   'acceptBridgeChild',
   'acceptInbox',
   'acceptServiceCommand',
-  'advanceProvider',
   'appendStream',
   'beginMigration',
   'beginReconciliation',
@@ -292,7 +291,14 @@ export function createRuntimeStateStore(
       if (rejected) return Promise.resolve(rejected)
       return run(context, () => database.advanceRun(result.value))
     },
-    advanceProvider: (_request, context) => unavailable('advanceProvider', context),
+    advanceProvider: (request, context) => {
+      const result = validateRuntime('AdvanceProviderRequest', request)
+      if (!result.ok)
+        return Promise.resolve(failure('invalid_input', 'schema', 'AdvanceProviderRequest is not valid'))
+      const rejected = rejectAuthority(result.value.guard.authority)
+      if (rejected) return Promise.resolve(rejected)
+      return run(context, () => database.advanceProvider(result.value))
+    },
     dispatchAdmission: (request, context) => {
       const result = validateProfiled('DispatchAdmissionRequest', request)
       if (!result.ok)

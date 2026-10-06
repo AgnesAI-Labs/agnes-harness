@@ -5,6 +5,7 @@ import type {
   ActionVisibilityValue,
   AdmitInvocationResult,
   AdmitQueryResult,
+  AdvanceProviderRequest,
   AdvanceRunRequest,
   BindingRef,
   ClaimOutboxRequest,
@@ -47,7 +48,10 @@ import type {
   InboxRecord,
   InteractionRecord,
   PolicyDecision,
+  ProviderStateValue,
+  RunBinding,
   TrustedPolicyFacts,
+  WaitRecordValue,
 } from '@agnes/protocol/runtime'
 import { RuntimeMethodSchemaRefs, RuntimeStateLegacyReaders, validateRuntime } from '@agnes/protocol/runtime'
 import { canonicalJson } from './canonical-json.js'
@@ -71,6 +75,7 @@ import {
   OUTBOX_SCHEMA,
   outboxRecordId,
   PREPARE_QUOTA_SCHEMA,
+  PROVIDER_STATE_SCHEMA,
   prepareRecordId,
   providerStateRecordId,
   QUERY_GRANT_SCHEMA,
@@ -85,6 +90,7 @@ import {
   type RunTaintValue,
   receiptRecordId,
   referenceRecordId,
+  runBindingRecordId,
   runQuotaRecordId,
   runRecordId,
   type SessionIdentityValue,
@@ -99,6 +105,7 @@ import {
   usageMirrorRecordId,
   VISIBILITY_SCHEMA,
   visibilityRecordId,
+  WAIT_SCHEMA,
   waitRecordId,
 } from './records.js'
 import { integrity, refuse } from './refusal.js'
@@ -2325,6 +2332,8 @@ export async function commitControlTx(
     (request.command.kind === 'authorize_action' && request.command.decision === 'ask')
   )
     return approvalControlTx(ports, request, verified, fingerprint)
+  if (request.command.kind === 'start_composite')
+    return startCompositeTx(ports, request, verified, fingerprint)
   if (request.command.kind !== 'mark_running') refuse('internal', 'unsupported', CONTROL_COMMAND)
   const command = request.command
   const guarded = assertGuard(ports, request.guard, 'follow')
@@ -3697,4 +3706,359 @@ export function finishControlScan(scan: ControlScan, evidence: ControlEvidence):
   for (const domain of domains) {
     if (!sameJson(domain, pinned)) integrity('dispatch domain does not match the pinned domain')
   }
+}
+
+const PROVIDER_COMPLETION = 'complete and fail transitions of a composite provider are not accepted yet'
+const PROVIDER_DEADLINE = 'a composite provider wait with a deadline is not accepted yet'
+
+function compositeTarget(ports: ControlPorts, runId: string, action: ActionValue) {
+  const binding = storedValue<RunBinding>(
+    requireHead(ports, runBindingRecordId(runId), 'binding_absent', 'run binding record is missing'),
+  )
+  const targets = binding.providers.filter((candidate) => sameJson(candidate.binding, action.intent.target))
+  const target = targets[0]
+  if (targets.length !== 1 || !target)
+    refuse('invalid_input', 'composite_target', 'action target is not one provider of the run binding')
+  const operations = target.descriptor.operations.filter(
+    (operation) => operation.method === action.intent.method,
+  )
+  if (
+    operations.length !== 1 ||
+    operations[0]?.kind !== 'action' ||
+    target.descriptor.stateCodecs.length === 0
+  )
+    refuse('invalid_input', 'composite_target', 'action target does not declare a composite method')
+  return target
+}
+
+/** Starts a composite parent: its composite attempt and revision-zero provider state in one commit. */
+async function startCompositeTx(
+  ports: ControlPorts,
+  request: CommitControlRequest,
+  verified: SessionView,
+  fingerprint: string,
+): Promise<Committed<StateCommitReceipt>> {
+  const command = request.command
+  if (command.kind !== 'start_composite') refuse('internal', 'unsupported', CONTROL_COMMAND)
+  const guarded = assertGuard(ports, request.guard, 'follow')
+  if (guarded.value.cancellation != null) refuse('conflict', 'run_cancelled', 'run is cancelled')
+  const actionHead = ports.loadHead(actionRecordId(command.actionId))
+  if (!actionHead || actionHead.record_revision !== command.expectedActionRevision)
+    refuse('conflict', 'action_state', 'action state does not match the start')
+  const action = storedValue<ActionValue>(actionHead)
+  if (
+    action.state !== 'prepared' ||
+    action.currentAttemptId !== null ||
+    action.providerStateId !== null ||
+    action.runId !== request.guard.runId
+  )
+    refuse('conflict', 'action_state', 'action state does not match the start')
+  if (ports.loadHead(attemptRecordId(command.attemptId)))
+    refuse('conflict', 'attempt_exists', 'attempt already exists')
+  if (ports.loadHead(providerStateRecordId(action.actionId)))
+    refuse('conflict', 'provider_exists', 'provider state already exists')
+  compositeTarget(ports, request.guard.runId, action)
+  const stamp = at(ports)
+  const owner = ownerOf(actionHead)
+  const attempt: AttemptValue = {
+    attemptId: command.attemptId,
+    actionId: action.actionId,
+    number: 1,
+    kind: 'composite',
+    bindingId: request.guard.bindingId,
+    inputDigest: actionInputDigest(action),
+    state: 'running',
+    requestIdentity: null,
+    externalRequests: [],
+    authorizationRef: null,
+    budgetReservationRefs: [],
+    streamIds: [],
+    startedAt: stamp,
+    executeDeadline: null,
+    finishedAt: null,
+    receiptIds: [],
+    writerEpoch: request.guard.writerEpoch,
+  }
+  const provider: ProviderStateValue = {
+    actionId: action.actionId,
+    providerRevision: 0,
+    state: 'runnable',
+    continuation: null,
+    waitId: null,
+    writerEpoch: request.guard.writerEpoch,
+    termination: null,
+  }
+  const written = ports.writeCommit({
+    ...blankInput(
+      request.guard.sessionId,
+      verified,
+      request.commitId,
+      stamp,
+      fingerprint,
+      request.guard.runId,
+      request.guard.writerEpoch,
+      guarded.value.revision,
+    ),
+    creates: [
+      record(attemptRecordId(command.attemptId), ATTEMPT_SCHEMA, 1, owner, attempt),
+      record(providerStateRecordId(action.actionId), PROVIDER_STATE_SCHEMA, 1, owner, provider),
+    ],
+    updates: [
+      updated(actionHead, ACTION_SCHEMA, owner, {
+        ...action,
+        state: 'running',
+        currentAttemptId: command.attemptId,
+        providerStateId: providerStateRecordId(action.actionId),
+      }),
+    ],
+  })
+  ports.rememberRequest('commitControl', request.commitId, fingerprint, written.receipt)
+  return { result: written.receipt, sessionId: request.guard.sessionId, verified: written.verified }
+}
+
+function assertProviderTransition(request: AdvanceProviderRequest): void {
+  const transition = request.transition
+  if (transition.expectedProviderRevision !== request.expectedProviderRevision)
+    refuse('invalid_input', 'provider_revision', 'the request and the transition name different revisions')
+  if (new Set(transition.consumeSignals).size !== transition.consumeSignals.length)
+    refuse('invalid_input', 'signal_duplicate', 'signal is listed more than once')
+  if (transition.next.kind !== 'continue' && transition.next.kind !== 'wait')
+    refuse('internal', 'unsupported', PROVIDER_COMPLETION)
+  if (transition.next.kind === 'wait' && transition.next.condition.deadline !== undefined)
+    refuse('internal', 'unsupported', PROVIDER_DEADLINE)
+  if (transition.children.length > MAX_ACTIONS)
+    refuse('invalid_input', 'action_count', 'a transition has too many actions')
+  if (new Set(transition.children.map((child) => child.key)).size !== transition.children.length)
+    refuse('invalid_input', 'child_key_duplicate', 'a child key is listed more than once')
+  if (Buffer.byteLength(canonicalJson(transition.continuation)) > MAX_CONTINUATION_BYTES)
+    refuse('invalid_input', 'continuation', 'continuation is too large')
+}
+
+/**
+ * One commit for a composite parent step: provider revision plus one, the continuation, the children, the
+ * consumed signals and the wait. The run revision does not move.
+ */
+export async function advanceProviderTx(
+  ports: ControlPorts,
+  request: AdvanceProviderRequest,
+): Promise<Committed<StateCommitReceipt>> {
+  const verified = await ports.requireSession(request.guard.sessionId)
+  const fingerprint = digestOf({
+    guard: request.guard,
+    actionId: request.actionId,
+    expectedProviderRevision: request.expectedProviderRevision,
+    transition: request.transition,
+  })
+  const stored = ports.replayRequest<StateCommitReceipt>('advanceProvider', request.commitId, fingerprint)
+  if (stored) {
+    ports.assertReceipt(request.guard.sessionId, stored, fingerprint)
+    return { result: stored, sessionId: request.guard.sessionId }
+  }
+  const commitId = attestedCommitId(ports, request.commitId)
+  assertProviderTransition(request)
+  const guarded = assertGuard(ports, request.guard, 'advance')
+  if (guarded.invocation.targetActionId !== request.actionId)
+    refuse('conflict', 'invocation_target', 'invocation does not target this composite parent')
+  if (guarded.value.cancellation != null) refuse('conflict', 'run_cancelled', 'run is cancelled')
+  const parentHead = requireHead(
+    ports,
+    actionRecordId(request.actionId),
+    'action_state',
+    'action does not exist',
+  )
+  const parent = storedValue<ActionValue>(parentHead)
+  if (parent.runId !== request.guard.runId || parent.state !== 'running' || parent.currentAttemptId === null)
+    refuse('conflict', 'action_state', 'action is not a running composite parent')
+  const attempt = storedValue<AttemptValue>(
+    requireHead(ports, attemptRecordId(parent.currentAttemptId), 'attempt_absent', 'attempt does not exist'),
+  )
+  if (attempt.kind !== 'composite' || attempt.state !== 'running' || attempt.actionId !== parent.actionId)
+    refuse('conflict', 'attempt_state', 'attempt is not the running composite attempt')
+  const providerHead = requireHead(
+    ports,
+    providerStateRecordId(parent.actionId),
+    'provider_absent',
+    'provider state does not exist',
+  )
+  const provider = storedValue<ProviderStateValue>(providerHead)
+  if (provider.providerRevision !== request.expectedProviderRevision)
+    refuse('conflict', 'provider_revision', 'provider revision does not match')
+  if (provider.state !== 'runnable' && provider.state !== 'waiting')
+    refuse('conflict', 'provider_state', 'provider state does not take a transition')
+  const target = compositeTarget(ports, request.guard.runId, parent)
+  const continuation = request.transition.continuation
+  if (
+    !target.descriptor.stateCodecs.some(
+      (codec) =>
+        codec.namespace === continuation.namespace && codec.codecVersion === continuation.codecVersion,
+    )
+  )
+    refuse('invalid_input', 'continuation_codec', 'continuation codec is not declared by the provider')
+  for (const signalId of request.transition.consumeSignals) {
+    const head = ports.loadHead(signalRecordId(signalId))
+    if (head && storedValue<SignalRecordValue>(head).signal.targetActionId !== parent.actionId)
+      refuse('conflict', 'signal_absent', 'signal does not exist')
+  }
+  const consumed = consumeSignals(ports, request.guard.runId, request.transition.consumeSignals, commitId)
+  const flushed = request.guard.queryUsage
+    ? planQueryFlush(ports, guarded.invocation, request.guard.queryUsage)
+    : undefined
+  const creates: StoredRecord[] = []
+  const updates: RecordUpdate[] = []
+  let resumedWait: StoredHead | undefined
+  if (provider.state === 'waiting') {
+    if (provider.waitId === null || request.transition.consumeSignals.length === 0)
+      refuse('conflict', 'wait_not_satisfied', 'a waiting provider resumes only on consumed signals')
+    resumedWait = requireHead(
+      ports,
+      waitRecordId(provider.waitId),
+      'wait_absent',
+      'wait record does not exist',
+    )
+    const previous = storedValue<WaitRecordValue>(resumedWait)
+    if (previous.state !== 'waiting' || previous.targetActionId !== parent.actionId)
+      refuse('conflict', 'wait_state', 'wait record is not waiting for this parent')
+    updates.push(
+      updated(resumedWait, WAIT_SCHEMA, ownerOf(resumedWait), {
+        ...previous,
+        state: 'ready',
+        matchedSignalIds: request.transition.consumeSignals,
+      } satisfies WaitRecordValue),
+    )
+  }
+  const planned: { key: string; actionId: string; created: boolean }[] = []
+  const snapshot = taintOf(ports, request.guard.runId)
+  for (const child of request.transition.children) {
+    const childFingerprint = actionFingerprint(child)
+    const childId = stableId('act', `${request.guard.runId}\0${parent.actionId}\0${child.key}`)
+    const existing = ports.loadHead(actionRecordId(childId))
+    if (existing) {
+      if (storedValue<ActionValue>(existing).intentFingerprint !== childFingerprint)
+        refuse('conflict', 'intent_fingerprint', 'action intent fingerprint does not match')
+      planned.push({ key: child.key, actionId: childId, created: false })
+      continue
+    }
+    planned.push({ key: child.key, actionId: childId, created: true })
+    creates.push(
+      record(actionRecordId(childId), ACTION_SCHEMA, 1, guarded.owner, {
+        actionId: childId,
+        runId: request.guard.runId,
+        parentActionId: parent.actionId,
+        key: child.key,
+        intent: child,
+        intentFingerprint: childFingerprint,
+        state: 'prepared',
+        currentAttemptId: null,
+        providerStateId: null,
+        firstReceiptId: null,
+        resolvedReceiptId: null,
+        resolutionId: null,
+        ownerRef: { kind: 'action', id: parent.actionId },
+        createdByCommitId: commitId,
+        resultHookPlan: null,
+        taintSnapshot: snapshot,
+        authorizationTaintSnapshot: null,
+      } satisfies ActionValue),
+    )
+  }
+  const next = request.transition.next
+  let waitId: string | null = null
+  if (next.kind === 'wait') {
+    waitId = stableId('wait', commitId)
+    creates.push(
+      record(waitRecordId(waitId), WAIT_SCHEMA, 1, guarded.owner, {
+        waitId,
+        runId: request.guard.runId,
+        targetActionId: parent.actionId,
+        condition: next.condition,
+        registeredByCommitId: commitId,
+        state: 'waiting',
+        matchedSignalIds: [],
+        deadlineSignalId: null,
+      } satisfies WaitRecordValue),
+    )
+  }
+  const createdCount = creates.filter((item) => item.recordId.startsWith('action:')).length
+  const quotaHead = requireHead(
+    ports,
+    runQuotaRecordId(request.guard.runId),
+    'quota_absent',
+    'run quota record is missing',
+  )
+  const quota = storedValue<RunQuotaValue>(quotaHead)
+  const progressed = createdCount > 0 || request.transition.consumeSignals.length > 0 || waitId !== null
+  const noProgress = progressed ? 0 : quota.noProgressTransitions + 1
+  if (noProgress > MAX_NO_PROGRESS || quota.totalTransitions + 1 > MAX_TRANSITIONS)
+    refuse('conflict', 'quota', 'run transition quota is exhausted')
+  const prepareHead = requireHead(
+    ports,
+    prepareRecordId(guarded.invocation.prepareId),
+    'prepare_absent',
+    'prepare quota record is missing',
+  )
+  const prepare = storedValue<PrepareValue>(prepareHead)
+  const lastCreated = planned.filter((item) => item.created).at(-1)
+  const quotaNext = {
+    ...quota,
+    totalTransitions: quota.totalTransitions + 1,
+    noProgressTransitions: noProgress,
+    submittedActions: quota.submittedActions + createdCount,
+    lastProgressRef: lastCreated?.actionId ?? quota.lastProgressRef,
+  }
+  const stamp = at(ports)
+  const nextProvider: ProviderStateValue = {
+    actionId: parent.actionId,
+    providerRevision: provider.providerRevision + 1,
+    state: waitId === null ? 'runnable' : 'waiting',
+    continuation,
+    waitId,
+    writerEpoch: request.guard.writerEpoch,
+    termination: null,
+  }
+  const written = ports.writeCommit({
+    ...blankInput(
+      request.guard.sessionId,
+      verified,
+      commitId,
+      stamp,
+      fingerprint,
+      request.guard.runId,
+      request.guard.writerEpoch,
+      guarded.value.revision,
+    ),
+    actionIds: planned.map((item) => ({ key: item.key, actionId: item.actionId })),
+    creates,
+    updates: [
+      ...updates,
+      updated(providerHead, PROVIDER_STATE_SCHEMA, ownerOf(providerHead), nextProvider),
+      updated(guarded.invocationHead, INVOCATION_SCHEMA, ownerOf(guarded.invocationHead), {
+        ...guarded.invocation,
+        state: 'committed',
+      }),
+      updated(
+        flushed ? flushed.prepareHead : prepareHead,
+        PREPARE_QUOTA_SCHEMA,
+        ownerOf(flushed ? flushed.prepareHead : prepareHead),
+        flushed ? { ...flushed.prepare, closed: true } : { ...prepare, closed: true },
+      ),
+      updated(
+        quotaHead,
+        RUN_QUOTA_SCHEMA,
+        ownerOf(quotaHead),
+        flushed ? applyQueryDelta(quotaNext, flushed.delta) : quotaNext,
+      ),
+      ...(flushed
+        ? [updated(flushed.grantHead, QUERY_GRANT_SCHEMA, ownerOf(flushed.grantHead), flushed.grant)]
+        : []),
+      ...consumed.updates,
+    ],
+    sides: [
+      ...planned.flatMap((item) =>
+        item.created ? [{ commitId, kind: 'action-created' as const, actionId: item.actionId }] : [],
+      ),
+      ...consumed.sides,
+    ],
+  })
+  ports.rememberRequest('advanceProvider', request.commitId, fingerprint, written.receipt)
+  return { result: written.receipt, sessionId: request.guard.sessionId, verified: written.verified }
 }

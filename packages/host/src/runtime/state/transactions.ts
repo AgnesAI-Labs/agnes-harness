@@ -14,6 +14,7 @@ import type {
   AdmissionProbe,
   AdmitInvocationResult,
   AdmitQueryResult,
+  AdvanceProviderRequest,
   AdvanceRunRequest,
   CallContext,
   ClaimOutboxRequest,
@@ -94,6 +95,7 @@ import {
   ackOutboxTx,
   admitInvocationTx,
   admitQueryTx,
+  advanceProviderTx,
   advanceRunTx,
   assertStoredOutbox,
   type ControlPorts,
@@ -1893,6 +1895,14 @@ export class RuntimeStateDatabase {
   async advanceRun(request: AdvanceRunRequest): Promise<StateCommitReceipt> {
     return this.finishControl(
       await this.tx('advanceRun', request.commitId, () => advanceRunTx(this.controlPorts(), request)),
+    )
+  }
+
+  async advanceProvider(request: AdvanceProviderRequest): Promise<StateCommitReceipt> {
+    return this.finishControl(
+      await this.tx('advanceProvider', request.commitId, () =>
+        advanceProviderTx(this.controlPorts(), request),
+      ),
     )
   }
 

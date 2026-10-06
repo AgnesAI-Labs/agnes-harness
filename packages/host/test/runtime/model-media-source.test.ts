@@ -426,8 +426,8 @@ describe('state query adapter', () => {
     expect(probed).toHaveLength(1)
   })
 
-  it('names the production State limit that keeps this port out of production', () => {
-    // Fails once the State commits composite children itself; then listing a parent's children is the next gap.
-    expect(UNIMPLEMENTED_STATE_METHODS).toContain('advanceProvider')
+  it('no longer lists the composite child commit as a State limit', () => {
+    // Listing a parent's children is the next gap.
+    expect(UNIMPLEMENTED_STATE_METHODS).not.toContain('advanceProvider')
   })
 })
