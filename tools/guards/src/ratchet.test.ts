@@ -2982,7 +2982,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // State marks an open leaf attempt unknown and resolves an unresolved action: mark_unknown, resolve_action and the resolution record (+225 on 86144); exact cap, no spare.
   // State finishes a draining run as failed or cancelled and hands unresolved effects over with their owners: finalize_run (+75 on 86369); exact cap, no spare.
   // State persists a receipt lookup before it runs and stores its result: beginReconciliation, completeReconciliation and the check record (+247 on 86444); exact cap, no spare.
-  'packages/host/src': 86716,
+  // Model sends are fenced after transport establishment. Measured 86779, exact, no spare.
+  'packages/host/src': 86779,
   'packages/host/src/ext-host/service-invocation': 247,
   // T5.2's permission projector is kept independently bounded so later extension-host work cannot
   // hide in the package-wide increment. Measured source: 86 lines.

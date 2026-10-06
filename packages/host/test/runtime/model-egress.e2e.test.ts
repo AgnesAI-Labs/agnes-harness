@@ -1,9 +1,18 @@
+import { createHash } from 'node:crypto'
 import { readFileSync } from 'node:fs'
+import { getCACertificates, setDefaultCACertificates } from 'node:tls'
 import { describe, expect, it, vi } from 'vitest'
 import { createReferenceModelEgress } from '../../../../examples/runtime-reference/src/providers/model-egress.js'
+import { createHostModelAdapterDeployment } from '../../src/runtime/model/model-deployment.js'
 import { createModelEgress } from '../../src/runtime/model/model-egress.js'
 import { CONSUMER, coldModelEgress, modelFixture, type Recipe } from './model-egress-fixture.js'
+import { modelJointFixture } from './model-joint-fixture.js'
 import { must } from './network-secrets-fixture.js'
+
+function required<T>(value: T | undefined): T {
+  if (value === undefined) throw new Error('Missing fixture value')
+  return value
+}
 
 async function fixture(kind: Recipe, api?: string, path?: string) {
   const f = await modelFixture(kind, api, path)
@@ -63,6 +72,119 @@ describe.each(['default', 'reference'] as const)('%s model egress', (kind) => {
       }
     },
   )
+  it.each(['http', 'https'] as const)(
+    'fences exactly once on each fresh %s connection, and rejects before any request bytes',
+    async (scheme) => {
+      const authorities = getCACertificates('default')
+      if (scheme === 'https')
+        setDefaultCACertificates([
+          ...authorities,
+          readFileSync(
+            new URL('../../../../tools/test-fixtures/tls/localhost-cert.pem', import.meta.url),
+            'utf8',
+          ),
+        ])
+      const f = await modelFixture(
+        kind,
+        'openai-completions',
+        undefined,
+        CONSUMER,
+        {},
+        {
+          scheme,
+          host: '127.0.0.1',
+        },
+      )
+      const digests: string[] = []
+      try {
+        for (const refusal of ['false', 'throw']) {
+          const rejecting = f.port({
+            beforeWrite: (digest) => {
+              digests.push(digest)
+              if (refusal === 'throw') throw new Error(f.key)
+              return false
+            },
+          })
+          expect(await f.code(rejecting.fetch(f.request()))).toBe('denied/model_egress_fence')
+          expect(rejecting.fenced()).toBe(false)
+          expect(f.stats.bytes).toBe(0)
+          // A connector refusal must fail the queued request, never reconnect or replay it.
+          expect(await f.code(rejecting.fetch(f.request()))).toBe('unknown_effect/model_egress_replay')
+        }
+        for (let attempt = 0; attempt < 2; attempt++) {
+          const port = f.port({
+            beforeWrite: (digest) => {
+              digests.push(digest)
+              return true
+            },
+          })
+          expect(port.fenced()).toBe(false)
+          expect((await port.fetch(f.request())).status).toBe(200)
+          expect(port.fenced()).toBe(true)
+        }
+        const hash = createHash('sha256')
+          .update(await f.request().text())
+          .digest('hex')
+        expect(digests).toEqual([hash, hash, hash, hash])
+        expect(f.observations).toHaveLength(2)
+        expect(f.observations.every((item) => item.correctKey)).toBe(true)
+      } finally {
+        await f.close()
+        setDefaultCACertificates(authorities)
+      }
+      expect(f.stats.connections).toBe(4)
+    },
+  )
+  it('leaves a failed TLS handshake unfenced with zero HTTP bytes', async () => {
+    const f = await modelFixture(
+      kind,
+      'openai-completions',
+      undefined,
+      CONSUMER,
+      {},
+      {
+        scheme: 'https',
+        host: '127.0.0.1',
+      },
+    )
+    const digests: string[] = []
+    try {
+      const port = f.port({
+        beforeWrite: (digest) => {
+          digests.push(digest)
+          return true
+        },
+      })
+      expect(await f.code(port.fetch(f.request()))).toBe('retryable/model_egress_connect')
+      expect(port.fenced()).toBe(false)
+      expect(digests).toEqual([])
+      expect(f.observations).toEqual([])
+    } finally {
+      await f.close()
+    }
+    expect(f.stats.bytes).toBe(0)
+    expect(f.stats.connections).toBe(1)
+  })
+  it('keeps a peer disconnect after the fence unknown and never sends again', async () => {
+    const f = await fixture(kind, 'openai-completions', '/disconnect')
+    const digests: string[] = []
+    try {
+      const port = f.port({
+        beforeWrite: (digest) => {
+          digests.push(digest)
+          return true
+        },
+      })
+      expect(await f.code(port.fetch(f.request()))).toBe('unknown_effect/model_egress_unknown')
+      expect(port.fenced()).toBe(true)
+      expect(await f.code(port.fetch(f.request()))).toBe('unknown_effect/model_egress_replay')
+      expect(digests).toHaveLength(1)
+      expect(f.observations).toHaveLength(1)
+    } finally {
+      await f.close()
+    }
+    expect(f.stats.connections).toBe(1)
+  })
   it('refuses same-host different ports/paths, missing or ambiguous endpoints and unapproved target identities', async () => {
     const f = await fixture(kind)
     try {
@@ -349,7 +471,7 @@ describe.each(['default', 'reference'] as const)('%s model egress', (kind) => {
           },
         },
       })
-      expect(await f.code(port.fetch(f.request()))).toBe('denied/model_egress_unavailable')
+      expect(await f.code(port.fetch(f.request()))).toBe('retryable/model_egress_connect')
       expect(await f.code(f.port().fetch(f.request(f.url, { body: f.key })))).toBe(
         'denied/model_egress_headers',
       )
@@ -423,3 +545,122 @@ it('cross-checks the same installed input, HTTP result and refusals between both
     await f.close()
   }
 })
+
+// Exercise the real source store through deployment evidence, without a fetch wrapper hiding it.
+it.each(['refused', 'dns', 'tls', 'policy', 'revoke', 'fence', 'normal', 'disconnect'] as const)(
+  'connects the durable owner only at the boundary for %s',
+  async (mode) => {
+    const f = await modelJointFixture(
+      'openai-completions',
+      mode === 'refused' ? 'refused' : mode === 'disconnect' ? 'cut-silent' : 'normal',
+      {},
+      true,
+      { store: true },
+    )
+    const tlsPeer =
+      mode === 'tls'
+        ? await modelFixture(
+            'default',
+            'openai-completions',
+            undefined,
+            CONSUMER,
+            {},
+            {
+              scheme: 'https',
+              host: '127.0.0.1',
+            },
+          )
+        : undefined
+    const options = { ...f.options }
+    if (tlsPeer) {
+      options.endpoints = [{ ...required(required(options.endpoints)[0]), target: tlsPeer.target }]
+      options.network = { ...required(options.network), rules: [tlsPeer.networkRule] }
+    }
+    if (mode === 'dns')
+      options.network = {
+        ...required(f.options.network),
+        resolver: async () => {
+          throw new Error(f.key)
+        },
+      }
+    if (mode === 'policy') options.network = { ...required(f.options.network), authorize: () => false }
+    if (mode === 'revoke')
+      options.secrets = {
+        use: async (...args) => {
+          must(
+            await f.broker.revoke(
+              { secretId: required(f.options.installation).handle.secretId, reason: 'test' },
+              f.auth.call({}, true),
+            ),
+          )
+          return required(f.options.secrets).use(...args)
+        },
+      }
+    const owner = mode === 'fence' ? { ...f.owner, beforeSend: () => false } : f.owner
+    const deployment = createHostModelAdapterDeployment(owner, [options])
+    const fetch = required(required(deployment.egress)(f.source, f.frame, f.context))
+    const store = required(f.store)
+    const body = '{"model":"local","messages":[]}'
+    try {
+      const target = required(required(options.endpoints)[0]).target
+      const url = `${target.scheme}://${target.host}:${target.port}${target.path}`
+      const outcome = await deployment.withCredential(f.source, f.frame, f.context, async (marker) => {
+        // Legacy preflight must not commit the fence before the connector either.
+        expect(deployment.beforeSend(f.source, f.frame, f.context, '0'.repeat(64))).toBe(true)
+        expect(store.admin.read(f.frame)).toBeUndefined()
+        const job = fetch(url, {
+          method: 'POST',
+          body,
+          headers: { authorization: `Bearer ${marker}`, 'content-type': 'application/json' },
+        })
+        if (mode === 'normal') expect((await job).status).toBe(200)
+        else
+          await expect(job).rejects.toMatchObject({
+            code:
+              mode === 'disconnect'
+                ? 'unknown_effect'
+                : ['refused', 'dns', 'tls'].includes(mode)
+                  ? 'retryable'
+                  : 'denied',
+            detailCode:
+              mode === 'disconnect'
+                ? 'model_egress_unknown'
+                : ['refused', 'dns', 'tls'].includes(mode)
+                  ? 'model_egress_connect'
+                  : mode === 'policy'
+                    ? 'model_egress_network'
+                    : mode === 'revoke'
+                      ? 'model_egress_credential'
+                      : 'model_egress_fence',
+          })
+      })
+      expect(outcome.ok).toBe(true)
+      const connected = ['normal', 'disconnect'].includes(mode)
+      expect(required(fetch.fenced)()).toBe(connected)
+      const row = store.admin.read(f.frame)
+      expect(store.admin.pending()).toHaveLength(connected ? 1 : 0)
+      if (connected) {
+        expect(row).toMatchObject({
+          state: 'sent_unsaved',
+          bodyDigest: createHash('sha256').update(body).digest('hex'),
+        })
+        expect(f.hashes).toHaveLength(1)
+      } else {
+        expect(row).toBeUndefined()
+        expect(f.hashes).toEqual([])
+        expect(f.peerStats.bytes).toBe(0)
+        expect(f.observations).toEqual([])
+        expect(required(fetch.refusal)()).toBeDefined()
+        expect(await store.deployment.lookup(f.frame, [], f.context, null)).toMatchObject({
+          kind: 'not_found',
+          safeToRetry: false,
+        })
+      }
+      if (tlsPeer) expect(tlsPeer.stats.bytes).toBe(0)
+      expect(JSON.stringify({ refusal: required(fetch.refusal)(), row })).not.toContain(f.key)
+    } finally {
+      await f.close()
+      await tlsPeer?.close()
+    }
+  },
+)
