@@ -1,16 +1,21 @@
 import { readFileSync } from 'node:fs'
-import { request as httpRequest } from 'node:http'
+import { createServer, request as httpRequest } from 'node:http'
 import { request as httpsRequest } from 'node:https'
+import type { AddressInfo } from 'node:net'
 import { createHostRuntimeClientPorts } from '@agnes/host'
 import { RuntimeClientTransportPolicy, RuntimeClientTransportWire } from '@agnes/protocol/runtime'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { memoryJournal } from '../../../sdk/src/journal.js'
 import {
   RuntimeClientTransport,
   readOutcome,
   runtimeJournalKey,
 } from '../../../sdk/src/runtime/client-transport.js'
-import type { RuntimeClientPorts } from '../../src/runtime/transport.js'
+import {
+  type RuntimeClientPorts,
+  type RuntimeClientRouteOptions,
+  runtimeClientRoutes,
+} from '../../src/runtime/transport.js'
 import { runtimeClientBearer } from '../../src/supervisor/runtime-credential.js'
 import { listenWebSocket } from '../../src/supervisor/ws.js'
 
@@ -464,5 +469,228 @@ describe('the SDK client against the runtime client routes', () => {
     expect(refused).toMatchObject({ state: 'failed', error: { detailCode: 'operation_not_supported' } })
     // A typed refusal admitted nothing, so the journaled command is cleared.
     expect(await journal.pending(runtimeJournalKey('partition-1'))).toEqual([])
+  })
+})
+
+describe('subscription readers and the control channel', () => {
+  const { readerIdleTimeoutMs, controlMaxConcurrentPerWorkspace, controlMaxRequestsPerPrincipalPerMinute } =
+    RuntimeClientTransportPolicy
+
+  async function served(ports: RuntimeClientPorts, options: RuntimeClientRouteOptions = {}) {
+    const handle = runtimeClientRoutes(ports, options)
+    const server = createServer((request, response) => {
+      void handle(request, response).then((done) => done || response.writeHead(404).end())
+    })
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
+    closers.add(
+      () =>
+        new Promise((resolve) => {
+          server.closeAllConnections()
+          server.close(() => resolve())
+        }),
+    )
+    return `http://127.0.0.1:${(server.address() as AddressInfo).port}`
+  }
+  const post = async (base: string, name: Served, body: unknown) => {
+    const response = await call(base, name, body)
+    const outcome = await readOutcome(response)
+    return outcome?.ok
+      ? { status: response.status, value: outcome.value }
+      : outcome && { status: response.status, detailCode: outcome.error.detailCode }
+  }
+  /** Idle timers that run only when the test fires them. */
+  function timers() {
+    const due = new Map<number, () => void>()
+    let next = 0
+    return {
+      schedule: (task: () => void, ms: number) => {
+        expect(ms).toBe(readerIdleTimeoutMs)
+        const id = ++next
+        due.set(id, task)
+        return () => void due.delete(id)
+      },
+      get pending() {
+        return due.size
+      },
+      fire: async () => {
+        const tasks = [...due.values()]
+        due.clear()
+        for (const task of tasks) task()
+        await new Promise((resolve) => setImmediate(resolve))
+      },
+    }
+  }
+  const snapshot = {
+    page: { items: [], snapshot: 'snap-1', nextCursor: null, complete: true },
+    nextCursor: null,
+    complete: true,
+  }
+  /** An interactions owner that logs what reaches it; a subscription in `ended` reads its end frame. */
+  function owner() {
+    const log: string[] = []
+    const ended = new Set<string>()
+    let opened = 0
+    const frame = (subscriptionId: string, kind: 'snapshot' | 'end', cursor: string) => ({
+      subscriptionId,
+      topic: 'interactions' as const,
+      kind,
+      cursor,
+      payload: kind === 'end' ? { reason: 'done' } : snapshot,
+    })
+    const ports: RuntimeClientPorts = {
+      subscribe: async (request) => {
+        const subscriptionId = `sub-${++opened}`
+        log.push(`subscribe ${subscriptionId}`)
+        const value = { header: request.header, subscriptionId, topic: 'interactions', cursor: 'c0' }
+        return { ok: true, value: { ...value, frame: frame(subscriptionId, 'snapshot', 'c0') } as never }
+      },
+      readSubscription: async (request) => {
+        log.push(`read ${request.subscriptionId}`)
+        const frames = ended.has(request.subscriptionId) ? [frame(request.subscriptionId, 'end', 'c9')] : []
+        return {
+          ok: true,
+          value: { header: request.header, frames, nextCursor: null, hasMore: false } as never,
+        }
+      },
+      closeSubscription: async (request) => {
+        log.push(`close ${request.subscriptionId}`)
+        return { ok: true, value: { closed: true } }
+      },
+    }
+    return { log, ended, ports }
+  }
+  const other = { ...header, negotiatedSession: 's2' }
+  const read = (subscriptionId: string, callHeader = header) => ({
+    header: callHeader,
+    subscriptionId,
+    cursor: null,
+    limit: 256,
+  })
+  const resync = { status: 409, detailCode: 'resync_required' }
+
+  it('closes a reader left unread for the idle timeout at its owner and asks it to subscribe again', async () => {
+    const clock = timers()
+    const { log, ports } = owner()
+    const base = await served(ports, { schedule: clock.schedule })
+    expect(await post(base, 'subscribe', valid.subscribe)).toMatchObject({ status: 200 })
+    expect(await post(base, 'readSubscription', read('sub-1'))).toMatchObject({ status: 200 })
+    expect(clock.pending).toBe(1)
+    await clock.fire()
+    expect(log).toEqual(['subscribe sub-1', 'read sub-1', 'close sub-1'])
+    expect(await post(base, 'readSubscription', read('sub-1'))).toEqual(resync)
+    expect(await post(base, 'closeSubscription', { header, subscriptionId: 'sub-1' })).toEqual({
+      status: 200,
+      value: { closed: false },
+    })
+    expect(log).toHaveLength(3)
+    expect(clock.pending).toBe(0)
+  })
+
+  it('never idles a reader while its read is in flight', async () => {
+    const clock = timers()
+    const { log, ports } = owner()
+    let release = (): void => undefined
+    const reading = ports.readSubscription
+    const base = await served(
+      {
+        ...ports,
+        readSubscription: async (request) => {
+          await new Promise<void>((resolve) => {
+            release = resolve
+          })
+          return (reading as NonNullable<typeof reading>)(request)
+        },
+      },
+      { schedule: clock.schedule },
+    )
+    await post(base, 'subscribe', valid.subscribe)
+    const pending = post(base, 'readSubscription', read('sub-1'))
+    await vi.waitFor(() => expect(clock.pending).toBe(0))
+    release()
+    expect(await pending).toMatchObject({ status: 200 })
+    expect(clock.pending).toBe(1)
+    expect(log).toEqual(['subscribe sub-1', 'read sub-1'])
+  })
+
+  it('answers resync_required, without reaching the owner, for a reader it does not hold for that session', async () => {
+    const clock = timers()
+    const { log, ended, ports } = owner()
+    const base = await served(ports, { schedule: clock.schedule })
+    await post(base, 'subscribe', valid.subscribe)
+    // Another session, an id never opened, and every id after a restart of the routes.
+    expect(await post(base, 'readSubscription', read('sub-1', other))).toEqual(resync)
+    expect(await post(base, 'closeSubscription', { header: other, subscriptionId: 'sub-1' })).toEqual({
+      status: 200,
+      value: { closed: false },
+    })
+    expect(await post(base, 'readSubscription', read('sub-9'))).toEqual(resync)
+    const restarted = await served(ports, { schedule: clock.schedule })
+    expect(await post(restarted, 'readSubscription', read('sub-1'))).toEqual(resync)
+    expect(log).toEqual(['subscribe sub-1'])
+    // An end frame ends the reader: its timer stops and a later read is a resync.
+    ended.add('sub-1')
+    expect(await post(base, 'readSubscription', read('sub-1'))).toMatchObject({ status: 200 })
+    expect(clock.pending).toBe(0)
+    expect(await post(base, 'readSubscription', read('sub-1'))).toEqual(resync)
+    expect(log).toEqual(['subscribe sub-1', 'read sub-1'])
+  })
+
+  it('bounds control commands on their own channel, apart from work', async () => {
+    let at = Date.parse('2026-10-06T00:00:00.000Z')
+    let delivered = 0
+    let open = (): void => undefined
+    const gate = new Promise<void>((resolve) => {
+      open = resolve
+    })
+    const base = await served(
+      {
+        'conversation.cancel': async (input) => {
+          delivered++
+          await gate
+          return {
+            ok: true,
+            value: {
+              commandId: `cmd-${input.requestId}`,
+              requestId: input.requestId,
+              revision: 1,
+              completion: 'runtime-accepted',
+              status: 'accepted',
+              result: null,
+              error: null,
+            },
+          }
+        },
+        'transport.catalogStatus': async () => ({ ok: true, value: catalogStatus }),
+      },
+      { now: () => at },
+    )
+    const cancelling = (n: number) =>
+      post(base, 'clientCommand', {
+        header,
+        call: { operation: 'conversation.cancel', input: { ...cancel, requestId: `req-${n}` } },
+      })
+    const held = Array.from({ length: controlMaxConcurrentPerWorkspace }, (_, n) => cancelling(n))
+    await vi.waitFor(() => expect(delivered).toBe(controlMaxConcurrentPerWorkspace))
+    expect(await cancelling(99)).toEqual({ status: 429, detailCode: 'control_concurrency' })
+    // Work is never counted against control.
+    expect(await post(base, 'clientQuery', valid.clientQuery)).toMatchObject({ status: 200 })
+    open()
+    expect((await Promise.all(held)).every((answer) => answer?.status === 200)).toBe(true)
+
+    for (let n = controlMaxConcurrentPerWorkspace; n < controlMaxRequestsPerPrincipalPerMinute; n++)
+      expect(await cancelling(n)).toMatchObject({ status: 200 })
+    const limited = await call(base, 'clientCommand', {
+      header,
+      call: { operation: 'conversation.cancel', input: { ...cancel, requestId: 'req-over' } },
+    })
+    const outcome = await readOutcome(limited)
+    expect([limited.status, outcome?.ok === false && outcome.error.detailCode]).toEqual([429, 'rate_limit'])
+    expect(outcome?.ok === false && outcome.error.retryAdvice).toEqual({
+      kind: 'retry_read',
+      notBefore: '2026-10-06T00:01:00.000Z',
+    })
+    expect(delivered).toBe(controlMaxRequestsPerPrincipalPerMinute)
+    at += 60_000
+    expect(await cancelling(500)).toMatchObject({ status: 200 })
   })
 })

@@ -4,6 +4,10 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createModelPicker, type ModelPickerOption, type ModelPickerState } from '../src/model-picker.js'
 import { zhT } from './helpers/locale.js'
 
+/** The option the listbox's aria-activedescendant points at, resolved in its own document. */
+const activeOption = (box: HTMLElement) =>
+  box.ownerDocument.getElementById(box.getAttribute('aria-activedescendant') ?? '')
+
 const models: readonly ModelPickerOption[] = [
   { route: 'openai', id: 'gpt-5.6' },
   { route: 'local', id: 'local-model' },
@@ -31,7 +35,7 @@ function mountPicker(onSelect: (option: ModelPickerOption) => Promise<boolean> =
 }
 
 function listbox(): HTMLElement {
-  const found = document.querySelector<HTMLElement>('#model-listbox')
+  const found = document.querySelector<HTMLElement>('.model-picker-list')
   if (!found) throw new Error('model picker did not open')
   return found
 }
@@ -52,7 +56,7 @@ describe('model picker', () => {
 
     listbox().querySelectorAll<HTMLElement>('[role="option"]')[1]?.click()
     await vi.waitFor(() => expect(onSelect).toHaveBeenCalledWith(models[1]))
-    await vi.waitFor(() => expect(document.querySelector('#model-listbox')).toBeNull())
+    await vi.waitFor(() => expect(document.querySelector('.model-picker-list')).toBeNull())
     picker.destroy()
   })
 
@@ -64,9 +68,9 @@ describe('model picker', () => {
     const { picker, trigger } = mountPicker()
     trigger.dispatchEvent(new KeyboardEvent('keydown', { key: 'End', bubbles: true }))
 
-    expect(listbox().getAttribute('aria-activedescendant')).toBe('model-picker-option-2')
+    expect(activeOption(listbox())).toBe(listbox().querySelectorAll('[role="option"]')[2])
     listbox().dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
-    expect(document.querySelector('#model-listbox')).toBeNull()
+    expect(document.querySelector('.model-picker-list')).toBeNull()
     expect(document.activeElement).toBe(trigger)
     picker.destroy()
   })
@@ -120,15 +124,15 @@ describe('model picker', () => {
       picker.render(state())
 
       trigger.click()
-      expect(doc.querySelector('#model-picker-popover')?.parentElement).toBe(doc.body)
-      expect(doc.querySelector('#model-listbox')?.getAttribute('aria-label')).toBe('可用模型')
-      expect(document.querySelector('#model-picker-popover')).toBeNull()
+      expect(doc.querySelector('.model-picker')?.parentElement).toBe(doc.body)
+      expect(doc.querySelector('.model-picker-list')?.getAttribute('aria-label')).toBe('可用模型')
+      expect(document.querySelector('.model-picker')).toBeNull()
       doc.body.dispatchEvent(new other.MouseEvent('click', { bubbles: true }) as unknown as Event)
-      expect(doc.querySelector('#model-picker-popover')).toBeNull()
+      expect(doc.querySelector('.model-picker')).toBeNull()
 
       trigger.click()
       picker.destroy()
-      expect(doc.querySelector('#model-picker-popover')).toBeNull()
+      expect(doc.querySelector('.model-picker')).toBeNull()
       bound.forEach((calls, index) => {
         expect(removed[index]?.mock.calls).toEqual(expect.arrayContaining(calls))
       })
@@ -143,7 +147,7 @@ describe('model picker', () => {
     const { picker, trigger } = mountPicker()
     trigger.click()
     picker.render(state({ disabled: true }))
-    expect(document.querySelector('#model-listbox')).toBeNull()
+    expect(document.querySelector('.model-picker-list')).toBeNull()
     expect(trigger.disabled).toBe(true)
     picker.destroy()
   })

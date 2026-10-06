@@ -6,6 +6,7 @@ import {
   type MouseEvent as ReactMouseEvent,
   type PointerEvent as ReactPointerEvent,
   useEffect,
+  useId,
   useImperativeHandle,
   useLayoutEffect,
   useMemo,
@@ -632,6 +633,7 @@ export const Trace = forwardRef<TraceHandle, TraceProps>(function Trace(
   ref: ForwardedRef<TraceHandle>,
 ) {
   const store = options.store ?? sessionStorage
+  const timelineModeId = useId()
   const open = useRef(store.getItem(TRACE_PANEL_STORAGE_KEY) === 'open')
   type Snapshot = { nodes: readonly UINode[]; turns: readonly UITurn[]; meta?: TraceMeta | undefined }
   const [snapshot, setSnapshot] = useState<Snapshot>({ nodes: [], turns: [] })
@@ -1513,7 +1515,7 @@ export const Trace = forwardRef<TraceHandle, TraceProps>(function Trace(
   return createElement(
     'div',
     {
-      id: 'trace-content',
+      className: 'trace-content',
       style: { display: 'contents' },
       'data-agnes-region-owner': 'builtin',
       'data-agnes-region-unit': 'trace',
@@ -1571,11 +1573,12 @@ export const Trace = forwardRef<TraceHandle, TraceProps>(function Trace(
       createElement(
         'div',
         { className: 'trace-gantt-controls' },
-        createElement('label', { htmlFor: 'trace-timeline-mode' }, traceText('trace.timeline.label')),
+        createElement('label', { htmlFor: timelineModeId }, traceText('trace.timeline.label')),
         createElement(
           'select',
           {
-            id: 'trace-timeline-mode',
+            id: timelineModeId,
+            className: 'trace-timeline-mode',
             value: timelineMode,
             onChange: changeTimelineMode,
             'aria-label': traceText('trace.timeline.mode'),

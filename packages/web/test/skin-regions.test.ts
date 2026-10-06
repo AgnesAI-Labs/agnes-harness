@@ -296,6 +296,6 @@ describe('skin region surface invariant (R1)', () => {
   })
 
   it('fails when an id surface property is restored', () => {
-    expect(() => assertNoIdSurfaceProperties(`${css}\n#composer { background: red; }`, samples)).toThrow()
+    expect(() => assertNoIdSurfaceProperties(`${css}\n#new-session { background: red; }`, samples)).toThrow()
   })
 })
