@@ -62,7 +62,7 @@ export function fakeDeployment(over: Partial<ModelDeployment> = {}) {
           ? { binding: fixtureAdapter, packageDigest: 'package-1' }
           : null,
     },
-    credentials: { verifyIssued: () => true },
+    credentials: { verifyIssued: async () => true },
     registry: createPreparedRegistry(),
     bridge: { ready: () => ({ ok: true, value: undefined }) },
     ...over,

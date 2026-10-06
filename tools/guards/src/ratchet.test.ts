@@ -1115,7 +1115,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // Clarify the single-text tool input description (+1); 39144 measured, no spare allocation.
   // Wire request builder expresses a resolved tool catalog and paired tool history (+262); exact cap, no spare.
   // The Model service resolves a request's tool catalog through an injected port, binds the descriptions into the input digest and refuses a route without a credential binding (+24); exact cap, no spare.
-  'packages/core/src': 39430,
+  'packages/core/src': 39437,
   // Testkit-only reference Effects runner adds 202 measured lines; exact cap, no spare.
   // Independent Effects dispatch reference (+440); exact measurement below.
   'packages/core/testkit': 2437,
@@ -1728,7 +1728,9 @@ const INITIAL_CEILING: Record<string, number> = {
   // exact (+7).
   // The runtime client's local interfaces as one client, with ticket-checked download following.
   // Measured 6498, exact (+139).
-  'packages/sdk/src': 6498,
+  // The runtime client refuses a welcome at a wire version its hello did not offer. Measured 6502,
+  // exact (+4).
+  'packages/sdk/src': 6502,
   'packages/sdk/src/extensions.node': 21,
   'packages/sdk/src/package-admin.node': 147,
   'packages/sdk/src/surface.browser': 3,
@@ -2967,9 +2969,10 @@ const INITIAL_CEILING: Record<string, number> = {
   // The model source reader asks a media result source for the verified media of a prepared call that carries plans (+137); exact cap, no spare.
   // State closes admission: the run-state gate on every path that creates work, begin_drain and cancel_run (+147); exact cap, no spare.
   // State finishes composite parents: provider complete and fail, finalize_composite and settle_undispatched (+293 on 85855); exact cap, no spare.
-  // State marks an open leaf attempt unknown and resolves an unresolved action: mark_unknown, resolve_action and the resolution record (+225 on 86148); exact cap, no spare.
-  // State finishes a draining run as failed or cancelled and hands unresolved effects over with their owners: finalize_run (+75 on 86373); exact cap, no spare.
-  'packages/host/src': 86448,
+  // State's stored envelope uses its registered schema reference; the pending placeholder is removed (-4). Measured 86144, exact.
+  // State marks an open leaf attempt unknown and resolves an unresolved action: mark_unknown, resolve_action and the resolution record (+225 on 86144); exact cap, no spare.
+  // State finishes a draining run as failed or cancelled and hands unresolved effects over with their owners: finalize_run (+75 on 86369); exact cap, no spare.
+  'packages/host/src': 86444,
   'packages/host/src/ext-host/service-invocation': 247,
   // T5.2's permission projector is kept independently bounded so later extension-host work cannot
   // hide in the package-wide increment. Measured source: 86 lines.
