@@ -33,16 +33,24 @@ import { type ModelUsageEvidence, modelUsageEvidence } from '../model-adapter/us
 
 const methods = RuntimeMethodSchemaRefs['agh.model-adapter']
 const same = (a: unknown, b: unknown) => canonicalJsonDigest(a as never) === canonicalJsonDigest(b as never)
-const error = (code: RuntimeError['code'], detailCode: string): RuntimeError => ({
-  code,
-  detailCode,
-  message: 'Model adapter request refused',
-  retryAdvice: { kind: 'never' },
-  diagnosticId: 'model-adapter',
-})
-const failure = (code: RuntimeError['code'], detailCode: string): EffectResult => ({
+/** An unknown effect names the action whose outcome is unresolved; any other code needs no owner. */
+const error = (code: RuntimeError['code'], detailCode: string, actionId?: string): RuntimeError => {
+  if (code === 'unknown_effect' && actionId === undefined)
+    throw new TypeError('unknown_effect needs an owner')
+  return {
+    code,
+    detailCode,
+    message: 'Model adapter request refused',
+    retryAdvice:
+      code === 'unknown_effect' && actionId !== undefined
+        ? { kind: 'reconcile', ownerRef: { kind: 'action', id: actionId } }
+        : { kind: 'never' },
+    diagnosticId: 'model-adapter',
+  }
+}
+const failure = (code: RuntimeError['code'], detailCode: string, actionId?: string): EffectResult => ({
   outcome: code === 'unknown_effect' ? 'unknown_effect' : code === 'cancelled' ? 'cancelled' : 'failed',
-  error: error(code, detailCode),
+  error: error(code, detailCode, actionId),
   externalRequests: [],
   usage: [],
   references: [],
@@ -421,14 +429,14 @@ export function createModelAdapterFactory(
               }
               if (!loaded.ok) {
                 if (loaded.error.detailCode !== 'model_prepared_lost')
-                  return failure(loaded.error.code, loaded.error.detailCode)
+                  return failure(loaded.error.code, loaded.error.detailCode, frame.actionId)
                 // The prepared call is gone from this process: never prepare or send again. The store says
                 // whether a send was fenced for this attempt and what it saved.
                 const found = await original.lookup(frame, [], context, null).catch(() => null)
                 if (found?.kind === 'resolved') return found.result
                 return found?.kind === 'not_found'
                   ? failure('incompatible', 'model_prepared_lost')
-                  : failure('unknown_effect', 'model_prepared_unknown')
+                  : failure('unknown_effect', 'model_prepared_unknown', frame.actionId)
               }
               const source = loaded.value
               if (
@@ -696,6 +704,7 @@ export function createModelAdapterFactory(
                       ...failure(
                         sent ? 'unknown_effect' : controller.signal.aborted ? 'cancelled' : 'internal',
                         sent ? 'model_stream_unknown' : 'model_not_sent',
+                        frame.actionId,
                       ),
                       externalRequests: sent ? [requestRef] : [],
                       usage: sent ? usage : [],
@@ -718,6 +727,7 @@ export function createModelAdapterFactory(
                   ...failure(
                     sent ? 'unknown_effect' : controller.signal.aborted ? 'cancelled' : 'denied',
                     sent ? 'model_stream_unknown' : 'model_send_refused',
+                    frame.actionId,
                   ),
                   externalRequests: sent && frame.requestIdentity ? [external(frame)] : [],
                   usage: sent ? usage : [],
@@ -729,7 +739,7 @@ export function createModelAdapterFactory(
                 return {
                   ...result,
                   outcome: 'unknown_effect',
-                  error: error('unknown_effect', 'model_receipt_unconfirmed'),
+                  error: error('unknown_effect', 'model_receipt_unconfirmed', frame.actionId),
                 }
               } finally {
                 active.delete(frame.attemptId)

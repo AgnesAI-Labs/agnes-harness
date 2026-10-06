@@ -147,4 +147,29 @@ describe('registered runtime error details', () => {
     expect(validateRuntimeErrorDetail({ ...unknown, code: 'timeout' }).ok).toBe(false)
     expect(validateRuntimeErrorDetail({ ...unknown, retryAdvice: { kind: 'never' } }).ok).toBe(false)
   })
+  it('has no Model, Media or adapter source that builds an unknown effect with a final advice', () => {
+    const owned = [
+      'packages/core/src/runtime/model',
+      'packages/core/src/runtime/media',
+      'packages/core/src/runtime/providers/model.ts',
+      'packages/core/src/runtime/providers/media.ts',
+      'packages/ai/src/runtime/model-adapter',
+      'packages/ai/src/runtime/providers/model-adapter.ts',
+      'packages/host/src/runtime/model',
+      'examples/runtime-reference/src/providers/model.ts',
+      'examples/runtime-reference/src/providers/model-adapter.ts',
+      'examples/runtime-reference/src/providers/media.ts',
+    ]
+    const files = owned.flatMap((path) => (path.endsWith('.ts') ? [path] : sources(path)))
+    expect(files.length).toBeGreaterThan(20)
+    const offenders = files.filter((path) => {
+      const text = readFileSync(join(root, path), 'utf8')
+      return (
+        text.includes("'unknown_effect'") &&
+        text.includes("retryAdvice: { kind: 'never' }") &&
+        !text.includes("kind: 'reconcile'")
+      )
+    })
+    expect(offenders).toEqual([])
+  })
 })

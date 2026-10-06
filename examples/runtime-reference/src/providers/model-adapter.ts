@@ -106,16 +106,28 @@ function mediaCovered(source: ReferenceModelSource): boolean {
     media.reduce((sum, entry) => sum + entry.imageCount, 0) === images
   )
 }
-const error = (code: RuntimeError['code'], detailCode = 'reference_model'): RuntimeError => ({
-  code,
-  detailCode,
-  message: 'Reference model operation refused',
-  retryAdvice: { kind: 'never' },
-  diagnosticId: 'reference-model',
-})
-const failure = (code: RuntimeError['code'], detailCode?: string): EffectResult => ({
+/** An unknown effect names the action whose outcome is unresolved; any other code needs no owner. */
+const error = (
+  code: RuntimeError['code'],
+  detailCode = 'reference_model',
+  actionId?: string,
+): RuntimeError => {
+  if (code === 'unknown_effect' && actionId === undefined)
+    throw new TypeError('unknown_effect needs an owner')
+  return {
+    code,
+    detailCode,
+    message: 'Reference model operation refused',
+    retryAdvice:
+      code === 'unknown_effect' && actionId !== undefined
+        ? { kind: 'reconcile', ownerRef: { kind: 'action', id: actionId } }
+        : { kind: 'never' },
+    diagnosticId: 'reference-model',
+  }
+}
+const failure = (code: RuntimeError['code'], detailCode?: string, actionId?: string): EffectResult => ({
   outcome: code === 'unknown_effect' ? 'unknown_effect' : 'failed',
-  error: error(code, detailCode),
+  error: error(code, detailCode, actionId),
   externalRequests: [],
   usage: [],
   references: [],
@@ -493,7 +505,7 @@ export function createReferenceModelAdapterFactory(
               } catch {
                 return failure('denied')
               }
-              if (!loaded.ok) return failure(loaded.error.code)
+              if (!loaded.ok) return failure(loaded.error.code, undefined, frame.actionId)
               const source = loaded.value,
                 sourceDigest = canonicalJsonDigest(source as never)
               const body = boundedCanonicalJson(source.body, {
@@ -692,7 +704,7 @@ export function createReferenceModelAdapterFactory(
                   }
                   return response.ok && !finish
                     ? {
-                        ...failure('unknown_effect'),
+                        ...failure('unknown_effect', undefined, frame.actionId),
                         externalRequests: [identity],
                         usage,
                         references: [],
@@ -709,7 +721,7 @@ export function createReferenceModelAdapterFactory(
                 result = outcome.value
               } catch {
                 result = {
-                  ...failure(sent ? 'unknown_effect' : 'denied'),
+                  ...failure(sent ? 'unknown_effect' : 'denied', undefined, frame.actionId),
                   externalRequests: sent ? [identity] : [],
                   usage: sent ? usage : [],
                   references: [],
@@ -718,7 +730,11 @@ export function createReferenceModelAdapterFactory(
               try {
                 if (sent) await original.save(frame, result, canonicalJsonDigest(body.value.json), receipt)
               } catch {
-                result = { ...result, outcome: 'unknown_effect', error: error('unknown_effect') }
+                result = {
+                  ...result,
+                  outcome: 'unknown_effect',
+                  error: error('unknown_effect', undefined, frame.actionId),
+                }
               } finally {
                 clearTimeout(timer)
                 for (const item of signals) item.removeEventListener('abort', abort)

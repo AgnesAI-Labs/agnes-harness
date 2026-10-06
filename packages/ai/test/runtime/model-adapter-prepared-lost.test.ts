@@ -1,7 +1,7 @@
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import type { EffectResult } from '@agnes/protocol/runtime'
+import { type EffectResult, validateRuntimeErrorDetail } from '@agnes/protocol/runtime'
 import { expect, it } from 'vitest'
 import { modelFixture } from './model-fixture.js'
 
@@ -51,8 +51,12 @@ it('reports an unknown effect, without resending, when the prepared call is lost
     const effect = await fixture.action.execute(fixture.frame, fixture.call)
     expect(effect).toMatchObject({
       outcome: 'unknown_effect',
-      error: { detailCode: 'model_prepared_unknown' },
+      error: {
+        detailCode: 'model_prepared_unknown',
+        retryAdvice: { kind: 'reconcile', ownerRef: { kind: 'action', id: fixture.frame.actionId } },
+      },
     })
+    expect(validateRuntimeErrorDetail(effect.error).ok).toBe(true)
     expect(fixture.sends()).toBe(0)
     expect(fixture.credentialUses()).toBe(0)
   })

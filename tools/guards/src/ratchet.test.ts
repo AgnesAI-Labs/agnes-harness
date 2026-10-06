@@ -1115,7 +1115,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // Clarify the single-text tool input description (+1); 39144 measured, no spare allocation.
   // Wire request builder expresses a resolved tool catalog and paired tool history (+262); exact cap, no spare.
   // The Model service resolves a request's tool catalog through an injected port, binds the descriptions into the input digest and refuses a route without a credential binding (+24); exact cap, no spare.
-  'packages/core/src': 39437,
+  // An unknown effect from the Model and Media providers carries reconcile advice naming the unresolved action (+18); exact cap, no spare.
+  'packages/core/src': 39455,
   // Testkit-only reference Effects runner adds 202 measured lines; exact cap, no spare.
   // Independent Effects dispatch reference (+440); exact measurement below.
   'packages/core/testkit': 2437,
@@ -1137,7 +1138,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // egress port in the runtime model adapter. Measured 5908 (+26), exact cap, no spare.
   // Model adapter answers a lost prepared call from the store instead of loading it (+8). Measured 5916, exact, no spare.
   // Model source check consumes verified media evidence (+57). Measured 5973, exact, no spare.
-  'packages/ai/src': 6008,
+  // The model adapter's unknown-effect errors carry reconcile advice naming the unresolved action (+9); exact cap, no spare.
+  'packages/ai/src': 6017,
   // 2026-09-09: raised from 500, which was exactly the measured count and so forbade every
   // further line. Two repairs were blocked by it and are landing with this raise: the provider
   // factory taking log + pricing (without which every delivered assembly denominates ledger

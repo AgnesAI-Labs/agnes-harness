@@ -94,14 +94,16 @@ class ModelFault extends Error {
   constructor(
     readonly code: W.RuntimeError['code'],
     readonly detail: string,
+    readonly owner?: W.OwnerRef,
   ) {
     super(detail)
   }
 }
-const fault = (code: W.RuntimeError['code'], detail: string) => new ModelFault(code, detail)
+const fault = (code: W.RuntimeError['code'], detail: string, owner?: W.OwnerRef) =>
+  new ModelFault(code, detail, owner)
 const failed = (error: unknown): Outcome<never> =>
   error instanceof ModelFault
-    ? refusal(error.code, error.detail)
+    ? refusal(error.code, error.detail, error.owner)
     : refusal('retryable', 'model_dependency_unavailable')
 const errorOf = (error: unknown): W.RuntimeError => {
   const refused = failed(error)
@@ -652,7 +654,8 @@ function inferAction(
               }),
               call,
             )
-            if (!reply.ok) throw fault(reply.error.code, 'model_child_invalid')
+            if (!reply.ok)
+              throw fault(reply.error.code, 'model_child_invalid', { kind: 'action', id: receipt.actionId })
             if (reply.value.kind !== 'value') continue
             const view = validateRuntime(
               'ProbeActionResultResult',
@@ -670,7 +673,7 @@ function inferAction(
               continue
             if (result.outcome === 'unknown_effect') {
               if (Date.parse(frame.context.deadline) <= Date.now())
-                throw fault('unknown_effect', 'model_child_unknown')
+                throw fault('unknown_effect', 'model_child_unknown', { kind: 'action', id: result.actionId })
               return transition(wait())
             }
             if (result.outcome !== 'succeeded' || !result.result)

@@ -27,6 +27,7 @@ import {
   type ModelPrepareResult,
   type ModelRouteSnapshot,
   type NextStep,
+  type OwnerRef,
   type PreparedAction,
   type PreparedModelHeader,
   type PreparedModelRequest,
@@ -184,27 +185,32 @@ class Refused extends Error {
   constructor(
     readonly code: Code,
     readonly detail: string,
+    readonly owner?: OwnerRef,
   ) {
     super(detail)
   }
 }
-const stop = (code: Code, detail: string): never => {
-  throw new Refused(code, detail)
+const stop = (code: Code, detail: string, owner?: OwnerRef): never => {
+  throw new Refused(code, detail, owner)
 }
-const refuse = (code: Code, detail: string): Outcome<never> => ({
-  ok: false,
-  error: {
-    code,
-    detailCode: detail,
-    message: 'Model request refused',
-    retryAdvice: { kind: 'never' },
-    diagnosticId: 'model-provider',
-  },
-})
+const refuse = (code: Code, detail: string, owner?: OwnerRef): Outcome<never> => {
+  if (code === 'unknown_effect' && !owner) throw new TypeError('unknown_effect needs an owner')
+  return {
+    ok: false,
+    error: {
+      code,
+      detailCode: detail,
+      message: 'Model request refused',
+      retryAdvice:
+        owner && code === 'unknown_effect' ? { kind: 'reconcile', ownerRef: owner } : { kind: 'never' },
+      diagnosticId: 'model-provider',
+    },
+  }
+}
 const errorOf = (cause: unknown): RuntimeError => {
   const out =
     cause instanceof Refused
-      ? refuse(cause.code, cause.detail)
+      ? refuse(cause.code, cause.detail, cause.owner)
       : refuse('retryable', 'model_dependency_unavailable')
   return out.ok ? stop('internal', 'unreachable') : out.error
 }
@@ -846,7 +852,7 @@ function inferAction(shared: Shared): ActionProviderFactory {
           if (!ours) continue
           if (found.outcome === 'unknown_effect') {
             if (Date.parse(frame.context.deadline) <= Date.now())
-              stop('unknown_effect', 'model_child_unknown')
+              stop('unknown_effect', 'model_child_unknown', { kind: 'action', id: found.actionId })
             return finish(waitForChild())
           }
           if (found.outcome !== 'succeeded' || !found.result)
