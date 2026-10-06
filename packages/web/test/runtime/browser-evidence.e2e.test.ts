@@ -2,6 +2,7 @@ import { type ChildProcess, execFileSync, spawn } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { existsSync } from 'node:fs'
 import { mkdtemp, readdir, readFile, rm } from 'node:fs/promises'
+import { createServer as createHttpServer, type Server } from 'node:http'
 import { createServer as createNetServer } from 'node:net'
 import { tmpdir } from 'node:os'
 import { delimiter, join, resolve } from 'node:path'
@@ -9,9 +10,9 @@ import { setTimeout as delay } from 'node:timers/promises'
 import { pathToFileURL } from 'node:url'
 import { DSH_PUBLIC_SLOT_NAMES, DSH_SLOT_CATALOG_VERSION, DSH_SLOT_NAMES, externals } from '@agnes/web-client'
 import { build as bundle } from 'esbuild'
-import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest'
 import type { ReadyClientModule } from '../../src/client-modules/reconcile.js'
-import { createWebServer, type WebServer } from '../../src/serve.js'
+import { createWebServer, HTML_VIEWER_PATH, type WebServer } from '../../src/serve.js'
 import { SKIN_CACHE_VERSION, SKIN_STORAGE_KEY } from '../../src/skin.js'
 
 const web = resolve(import.meta.dirname, '../..')
@@ -126,6 +127,11 @@ type Params = {
   args: { value?: unknown; description?: string }[]
   exceptionDetails: { text: string; exception?: { description?: string } }
   entry: { text: string }
+  frameId?: string
+  blockedReason?: string
+  url: string
+  sessionId: string
+  targetInfo: { targetId: string }
 }
 type Message = {
   id?: number
@@ -186,6 +192,16 @@ function evaluator(cdp: Cdp, sessionId: string) {
   }
 }
 
+/** Polls until `done` holds or five seconds pass, then returns the last value for the assertion. */
+async function poll<T>(read: () => Promise<T>, done: (value: T) => boolean): Promise<T> {
+  const deadline = Date.now() + 5_000
+  for (;;) {
+    const value = await read()
+    if (done(value) || Date.now() > deadline) return value
+    await delay(50)
+  }
+}
+
 /** One page target kept open across steps, for checks that change media features or page state. */
 async function openPage(cdp: Cdp, origin: string) {
   const { targetId } = await cdp.send<{ targetId: string }>('Target.createTarget', { url: 'about:blank' })
@@ -197,6 +213,7 @@ async function openPage(cdp: Cdp, origin: string) {
   await cdp.send('Page.addScriptToEvaluateOnNewDocument', { source: VIOLATIONS }, sessionId)
   const evaluate = evaluator(cdp, sessionId)
   return {
+    sessionId,
     evaluate,
     async navigate(path: string): Promise<void> {
       let stop: () => void = () => undefined
@@ -209,15 +226,8 @@ async function openPage(cdp: Cdp, origin: string) {
       await loaded
       stop()
     },
-    /** Polls until `done` holds or five seconds pass, then returns the last value for the assertion. */
-    async settle<T>(expression: string, done: (value: T) => boolean): Promise<T> {
-      const deadline = Date.now() + 5_000
-      for (;;) {
-        const value = await evaluate<T>(expression)
-        if (done(value) || Date.now() > deadline) return value
-        await delay(50)
-      }
-    },
+    settle: <T>(expression: string, done: (value: T) => boolean): Promise<T> =>
+      poll(() => evaluate<T>(expression), done),
     emulate: (features: Record<string, string>) =>
       cdp.send(
         'Emulation.setEmulatedMedia',
@@ -228,6 +238,153 @@ async function openPage(cdp: Cdp, origin: string) {
   }
 }
 type Page = Awaited<ReturnType<typeof openPage>>
+
+type FrameRequest = { url: string; frameId: string | undefined; status?: number; failed?: string }
+
+/**
+ * A page for embedding viewer frames. It records the requests of every frame inside it, including
+ * frames Chrome runs as targets of their own, and its console log. `frameEvaluate` reads a frame
+ * from an isolated world, which neither the frame's origin nor its policy restricts.
+ */
+async function openFramingPage(cdp: Cdp, origin: string) {
+  const page = await openPage(cdp, origin)
+  const frameSessions = new Map<string, string>()
+  const requests = new Map<string, FrameRequest>()
+  const log: string[] = []
+  const stop = cdp.listen(({ method, params, sessionId: from }) => {
+    const frame = [...frameSessions].find(([, session]) => session === from)?.[0]
+    if (from !== page.sessionId && !frame) return
+    const request = requests.get(params?.requestId)
+    switch (method) {
+      case 'Target.attachedToTarget':
+        frameSessions.set(params.targetInfo.targetId, params.sessionId)
+        // The frame starts paused until its requests are recorded. A frame removed meanwhile has
+        // nothing left to record.
+        cdp
+          .send('Network.enable', {}, params.sessionId)
+          .then(() => cdp.send('Runtime.runIfWaitingForDebugger', {}, params.sessionId))
+          .catch(() => undefined)
+        break
+      case 'Network.requestWillBeSent':
+        requests.set(params.requestId, { url: params.request.url, frameId: params.frameId ?? frame })
+        break
+      case 'Network.webSocketCreated':
+        requests.set(params.requestId, { url: params.url, frameId: frame })
+        break
+      case 'Network.responseReceived':
+        if (request) request.status = params.response.status
+        break
+      case 'Network.loadingFailed':
+        if (request) request.failed = params.blockedReason ?? params.errorText
+        break
+      case 'Log.entryAdded':
+        log.push(params.entry.text)
+    }
+  })
+  for (const domain of ['Network', 'Log']) await cdp.send(`${domain}.enable`, {}, page.sessionId)
+  await cdp.send(
+    'Target.setAutoAttach',
+    { autoAttach: true, waitForDebuggerOnStart: true, flatten: true },
+    page.sessionId,
+  )
+  type Tree = { frame: { id: string; name?: string }; childFrames?: Tree[] }
+  const tree = () =>
+    cdp.send<{ frameTree: Tree }>('Page.getFrameTree', {}, page.sessionId).then(({ frameTree }) => frameTree)
+  const main = (await tree()).frame.id
+  return {
+    ...page,
+    log,
+    /** Requests made by frames inside the page, not by the page itself. */
+    frameRequests: () =>
+      [...requests.values()].filter((request) => request.frameId !== undefined && request.frameId !== main),
+    /** The id of a child frame the page runs in its own process, found by its name. */
+    childFrame: async (name: string) =>
+      (await tree()).childFrames?.find(({ frame }) => frame.name === name)?.frame.id,
+    async frameEvaluate<T>(frameId: string, expression: string): Promise<T> {
+      const session = frameSessions.get(frameId) ?? page.sessionId
+      const { executionContextId: contextId } = await cdp.send<{ executionContextId: number }>(
+        'Page.createIsolatedWorld',
+        { frameId },
+        session,
+      )
+      const { result } = await cdp.send<{ result: { value: T } }>(
+        'Runtime.evaluate',
+        { expression, contextId, returnByValue: true },
+        session,
+      )
+      return result.value
+    },
+    close: async () => {
+      stop()
+      await page.close()
+    },
+  }
+}
+type FramingPage = Awaited<ReturnType<typeof openFramingPage>>
+type FrameState = { loads: number; messages: unknown[] }
+
+const viewerMessage = (html: string) =>
+  JSON.stringify({ kind: 'agnes.html-viewer/v1', html, lang: '', colorScheme: 'light', tokens: {} })
+// Frames a viewer address as the host does, records the frame's loads and the messages it posts to
+// the page, and on its first load posts `html` to it the way the host does.
+const addFrame = (name: string, src: string, html?: string) => `(() => {
+  const frame = document.createElement('iframe')
+  frame.setAttribute('sandbox', 'allow-scripts')
+  frame.dataset.evidence = ${JSON.stringify(name)}
+  frame.src = ${JSON.stringify(src)}
+  const state = { loads: 0, messages: [] }
+  ;(window.__frames ??= {})[${JSON.stringify(name)}] = state
+  frame.addEventListener('load', () => {
+    if (++state.loads === 1 && ${html !== undefined})
+      frame.contentWindow.postMessage(${html === undefined ? 'null' : viewerMessage(html)}, '*')
+  })
+  addEventListener('message', (event) => {
+    if (event.source === frame.contentWindow) state.messages.push(event.data)
+  })
+  document.body.append(frame)
+})()`
+const frameState = (name: string) => `window.__frames[${JSON.stringify(name)}]`
+const posts = (value: string) => `<script>parent.postMessage(${JSON.stringify(value)}, '*')</script>`
+// Content that tries every way out of the frame and reports to the page what happened. A request
+// the frame's policy blocks also reports a violation inside the frame, by directive and scheme.
+const probe = (daemon: string) => `<form id="form" action="/"></form><script>(async () => {
+  const violations = []
+  document.addEventListener('securitypolicyviolation', (event) =>
+    violations.push(event.effectiveDirective + ' ' + event.blockedURI.split(':')[0]))
+  const read = (value) => { try { value(); return 'read' } catch { return 'refused' } }
+  const load = (start) => new Promise((resolve) => {
+    try { start(() => resolve('loaded'), () => resolve('failed')) } catch { resolve('failed') }
+  })
+  const report = {
+    origin: self.origin,
+    cookie: read(() => document.cookie),
+    localStorage: read(() => localStorage.length),
+    parent: read(() => parent.document.title),
+    fetch: await fetch('/').then(() => 'loaded', () => 'failed'),
+    xhr: await load((ok, fail) => {
+      const request = new XMLHttpRequest()
+      request.onload = ok
+      request.onerror = fail
+      request.open('GET', '/')
+      request.send()
+    }),
+    webSocket: await load((ok, fail) => {
+      const socket = new WebSocket(${JSON.stringify(daemon)})
+      socket.onopen = ok
+      socket.onerror = fail
+    }),
+    image: await load((ok, fail) => {
+      const image = new Image()
+      image.onload = ok
+      image.onerror = fail
+      image.src = '/brand-mark.png'
+    }),
+    popup: window.open('/') === null ? 'refused' : 'opened',
+  }
+  document.getElementById('form').submit()
+  await new Promise((resolve) => setTimeout(resolve, 100))
+  parent.postMessage({ ...report, violations: [...new Set(violations)].sort() }, '*')
+})()</script>`
 
 type Visit = {
   imports: Record<string, string>
@@ -598,6 +755,210 @@ describe.skipIf(process.platform === 'win32' || !chrome)('release Web builds in 
         await skinPage.evaluate('localStorage.clear()')
         await skinPage.close()
       }
+    }, 60_000)
+  })
+
+  // Each check opens its own page, so the violations the viewer's own policy reports by design
+  // never reach the page checks above.
+  describe.each(BUILDS)('sandboxed HTML viewer served with the %s', (build) => {
+    let page: FramingPage | undefined
+    let other: Server | undefined
+    let otherOrigin = ''
+    const framing = (): FramingPage => {
+      if (!page) throw new Error('framing page is not open')
+      return page
+    }
+    const viewer = (scripts: 0 | 1) => `${server(build).url}${HTML_VIEWER_PATH}?scripts=${scripts}`
+    const probeReport = async (target: FramingPage) => {
+      const daemon = await target.evaluate<string>(`document.getElementById('agnes-config').dataset.ws`)
+      await target.evaluate(addFrame('probe', viewer(1), probe(daemon)))
+      return target.settle<FrameState>(frameState('probe'), (state) => state.messages.length > 0)
+    }
+
+    beforeAll(async () => {
+      // A page of another origin with no policy of its own.
+      other = createHttpServer((_request, response) => response.end('<!doctype html><title>other</title>'))
+      await new Promise<void>((resolve) => other?.listen(0, '127.0.0.1', resolve))
+      const address = other.address()
+      if (!address || typeof address === 'string') throw new Error('other origin did not bind')
+      otherOrigin = `http://127.0.0.1:${address.port}`
+    })
+
+    afterAll(async () => {
+      await new Promise((resolve) => other?.close(resolve))
+    })
+
+    beforeEach(async () => {
+      if (!cdp) throw new Error('browser is not connected')
+      page = await openFramingPage(cdp, server(build).url)
+    }, 60_000)
+
+    afterEach(async () => {
+      await page?.close()
+      page = undefined
+    }, 60_000)
+
+    it('gives content scripts an opaque origin with no cookie, storage, parent, network, popup or form', async () => {
+      const target = framing()
+      await target.navigate('/')
+      const { messages } = await probeReport(target)
+      expect(messages).toEqual([
+        {
+          origin: 'null',
+          cookie: 'refused',
+          localStorage: 'refused',
+          parent: 'refused',
+          fetch: 'failed',
+          xhr: 'failed',
+          webSocket: 'failed',
+          image: 'failed',
+          popup: 'refused',
+          violations: ['connect-src http', 'connect-src ws', 'img-src http'],
+        },
+      ])
+      // The form submitted before the report: it would have loaded the frame a second time.
+      await delay(300)
+      expect(await target.evaluate<FrameState>(frameState('probe'))).toMatchObject({ loads: 1 })
+      // Everything the frame asked for besides the viewer document was blocked before it left.
+      expect(target.frameRequests().filter((request) => !request.failed)).toEqual([
+        expect.objectContaining({ url: viewer(1), status: 200 }),
+      ])
+    }, 60_000)
+
+    it('runs no content script or inline handler in the scriptless variant', async () => {
+      const target = framing()
+      await target.navigate('/')
+      const content = `<p id="inert">inert</p>${posts('script')}<img src="data:," onerror="parent.postMessage('handler', '*')">`
+      await target.evaluate(addFrame('inert', viewer(0), content))
+      await target.settle<FrameState>(frameState('inert'), (state) => state.loads > 0)
+      const frameId = target.frameRequests().find((request) => request.url === viewer(0))?.frameId
+      if (!frameId) throw new Error('the viewer frame was not requested')
+      // The content is in place, so its script and handler had their chance to run. A read that
+      // races the frame's move into its own process is retried.
+      expect(
+        await poll(
+          () =>
+            target
+              .frameEvaluate<string | null>(frameId, `document.getElementById('inert')?.textContent ?? null`)
+              .catch(() => null),
+          (text) => text === 'inert',
+        ),
+      ).toBe('inert')
+      await delay(500)
+      expect(await target.evaluate<FrameState>(frameState('inert'))).toEqual({ loads: 1, messages: [] })
+    }, 60_000)
+
+    it('stays in an opaque origin and ignores messages when opened as a top-level page', async () => {
+      const target = framing()
+      await target.navigate(viewer(1))
+      const opened = await target.evaluate(`new Promise((resolve) => {
+        postMessage(${viewerMessage('<p id="content">content</p>')}, '*')
+        setTimeout(() => resolve({ origin: self.origin, content: document.getElementById('content') !== null }), 300)
+      })`)
+      expect(opened).toEqual({ origin: 'null', content: false })
+    }, 60_000)
+
+    it('refuses to be framed by a page of another origin', async () => {
+      const target = framing()
+      await target.navigate(`${otherOrigin}/`)
+      await target.evaluate(addFrame('foreign', viewer(1), posts('framed')))
+      await target.settle<FrameState>(frameState('foreign'), (state) => state.loads > 0)
+      await delay(500)
+      expect(await target.evaluate<FrameState>(frameState('foreign'))).toEqual({ loads: 1, messages: [] })
+      expect(target.frameRequests().find((request) => request.url === viewer(1))?.failed).toEqual(
+        expect.any(String),
+      )
+      expect(target.log.filter((text) => text.includes(`"frame-ancestors 'self'"`))).toHaveLength(1)
+    }, 60_000)
+
+    it('ignores content from a sibling frame and accepts only the first message of the embedding page', async () => {
+      const target = framing()
+      await target.navigate('/')
+      await target.evaluate(addFrame('viewer', viewer(1)))
+      await target.settle<FrameState>(frameState('viewer'), (state) => state.loads > 0)
+      expect(
+        await target.evaluate(
+          `frames[0] === document.querySelector('[data-evidence="viewer"]').contentWindow`,
+        ),
+      ).toBe(true)
+      // A sibling of the page's own origin: the right origin from the wrong window.
+      await target.evaluate(
+        `document.body.append(Object.assign(document.createElement('iframe'), { name: 'sibling' }))`,
+      )
+      const sibling = await poll(() => target.childFrame('sibling'), Boolean)
+      if (!sibling) throw new Error('the sibling frame did not attach')
+      await target.frameEvaluate(
+        sibling,
+        `parent.frames[0].postMessage(${viewerMessage(posts('same-origin sibling'))}, '*')`,
+      )
+      // A sandboxed sibling: the wrong window and an opaque origin.
+      const offer = viewerMessage(posts('opaque sibling')).replaceAll('</', '<\\/')
+      await target.evaluate(
+        addFrame(
+          'opaque',
+          viewer(1),
+          `<script>parent.frames[0].postMessage(${offer}, '*')</script>${posts('sent')}`,
+        ),
+      )
+      await target.settle<FrameState>(frameState('opaque'), (state) => state.messages.length > 0)
+      await delay(500)
+      expect(await target.evaluate<FrameState>(frameState('viewer'))).toEqual({ loads: 1, messages: [] })
+      for (const content of ['page', 'page again'])
+        await target.evaluate(
+          `document.querySelector('[data-evidence="viewer"]').contentWindow.postMessage(${viewerMessage(posts(content))}, '*')`,
+        )
+      await target.settle<FrameState>(frameState('viewer'), (state) => state.messages.length > 0)
+      await delay(500)
+      expect(await target.evaluate<FrameState>(frameState('viewer'))).toEqual({
+        loads: 1,
+        messages: ['page'],
+      })
+    }, 60_000)
+
+    it('removes a frame its content navigates away and shows a notice in its place', async () => {
+      const target = framing()
+      await target.navigate('/')
+      const request = {
+        html: `<script>location.href = ${JSON.stringify(`${otherOrigin}/away`)}</script>`,
+        title: 'Navigating content',
+        height: 240,
+        scripts: true,
+      }
+      await target.evaluate(`import('/plugins/fixture/module.js').then((fixture) => fixture.mountHtmlViewer({
+        request: ${JSON.stringify(request)},
+        viewerUrl: ${JSON.stringify(HTML_VIEWER_PATH)},
+        allowScripts: true,
+        onNavigatedAway: () => { window.__navigatedAway = (window.__navigatedAway ?? 0) + 1 },
+      }))`)
+      const HOST = `(() => {
+        const host = document.getElementById('viewer-host')
+        const notice = host.querySelector('[data-html-viewer-refused]')
+        return {
+          frames: host.querySelectorAll('iframe').length,
+          notice: notice ? [notice.getAttribute('role'), notice.dataset.htmlViewerRefused] : null,
+          reports: window.__navigatedAway ?? 0,
+        }
+      })()`
+      expect(await target.settle<{ notice: unknown }>(HOST, ({ notice }) => notice !== null)).toEqual({
+        frames: 0,
+        notice: ['alert', 'navigated'],
+        reports: 1,
+      })
+    }, 60_000)
+
+    it('keeps the page policy and keeps the frame policy violations out of the page', async () => {
+      const policy = (await fetch(new URL('/', server(build).url))).headers.get('content-security-policy')
+      expect(policy?.split('; ').filter((directive) => /^(?:frame|img)-src /.test(directive))).toEqual([
+        "img-src 'self' blob:",
+        "frame-src 'self' blob:",
+      ])
+      const target = framing()
+      await target.navigate('/')
+      const { messages } = await probeReport(target)
+      expect(messages).toEqual([
+        expect.objectContaining({ violations: expect.arrayContaining(['img-src http']) }),
+      ])
+      expect(await target.evaluate('window.__violations')).toEqual([])
     }, 60_000)
   })
 
