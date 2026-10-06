@@ -50,7 +50,10 @@ import {
   RuntimeFormatData,
 } from '@agnes/protocol/gen/session-v1'
 import type {
+  ReconciliationCheckValue,
   SessionControlRequest,
+  StateStoreControlBeginReconciliationRequest,
+  StateStoreControlCompleteReconciliationRequest,
   StateStoreControlSessionControlStatusRequest,
 } from '@agnes/protocol/runtime'
 import {
@@ -98,11 +101,13 @@ import {
   advanceProviderTx,
   advanceRunTx,
   assertStoredOutbox,
+  beginReconciliationTx,
   type ControlPorts,
   type ControlScan,
   claimOutboxTx,
   closeInvocationTx,
   commitControlTx,
+  completeReconciliationTx,
   createControlScan,
   dispatchAdmissionTx,
   failOutboxTx,
@@ -3033,6 +3038,26 @@ export class RuntimeStateDatabase {
   async intakeReceipt(request: ReceiptIntakeRequest): Promise<ReceiptIntakeResult> {
     return this.finishControl(
       await this.tx('intakeReceipt', request.intakeId, () => intakeReceiptTx(this.controlPorts(), request)),
+    )
+  }
+
+  async beginReconciliation(
+    request: StateStoreControlBeginReconciliationRequest,
+  ): Promise<ReconciliationCheckValue> {
+    return this.finishControl(
+      await this.tx('beginReconciliation', request.requestId, () =>
+        beginReconciliationTx(this.controlPorts(), request),
+      ),
+    )
+  }
+
+  async completeReconciliation(
+    request: StateStoreControlCompleteReconciliationRequest,
+  ): Promise<ReconciliationCheckValue> {
+    return this.finishControl(
+      await this.tx('completeReconciliation', request.requestId, () =>
+        completeReconciliationTx(this.controlPorts(), request),
+      ),
     )
   }
 
