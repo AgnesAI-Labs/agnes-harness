@@ -166,6 +166,31 @@
         "cacheWrite": { "type": "number" }
       }
     },
+    "ModelInputLimits": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "maxRequestBytes": { "type": "integer", "minimum": 1 },
+        "images": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "maxPerMessage": { "type": "integer", "minimum": 1 },
+            "maxPerRequest": { "type": "integer", "minimum": 1 },
+            "resize": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "maxWidth": { "type": "integer", "minimum": 1 },
+                "maxHeight": { "type": "integer", "minimum": 1 },
+                "maxBytes": { "type": "integer", "minimum": 1 },
+                "jpegQuality": { "type": "number", "minimum": 1, "maximum": 100 }
+              }
+            }
+          }
+        }
+      }
+    },
     "ModelRecord": {
       "type": "object",
       "additionalProperties": false,
@@ -193,6 +218,7 @@
         "reasoning": { "type": "boolean" },
         "thinkingLevelMap": { "type": "object", "additionalProperties": { "type": "string" } },
         "input": { "type": "array", "items": { "enum": ["text", "image"] } },
+        "inputLimits": { "$ref": "#/$defs/ModelInputLimits" },
         "cost": { "$ref": "#/$defs/ModelCost" },
         "contextWindow": { "type": "integer", "minimum": 1 },
         "defaultSettings": { "$ref": "#/$defs/ModelSettings" },

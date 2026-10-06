@@ -329,7 +329,10 @@ describe('export', () => {
         ...source,
         actor: { ...source.actor, attrs: { owner: FIXTURE_EMAIL, home: `${FIXTURE_HOME}/.ssh` } },
         data: {
-          content: [{ type: 'text', text: `${FIXTURE_WORKSPACE}/private` }],
+          content: [
+            { type: 'text', text: `${FIXTURE_WORKSPACE}/private` },
+            { type: 'file', name: 'private.bin', mimeType: 'application/octet-stream', data: media },
+          ],
         },
       },
     ]
@@ -356,6 +359,7 @@ describe('export', () => {
       expect(output).toContain('<workspace>/private')
       expect(output).toContain('~/.ssh')
       expect(output).not.toContain(media)
+      expect(output).toContain('[OMITTED:file:base64]')
       expect(output).not.toContain(FIXTURE_HOME)
     } finally {
       await client.close()

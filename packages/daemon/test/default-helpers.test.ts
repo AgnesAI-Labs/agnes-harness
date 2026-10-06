@@ -48,7 +48,7 @@ function setup() {
   }
   return { root, profileDir, manager, exec, initializePolicy }
 }
-it('installs three release packages offline once and preserves disable/remove on subsequent starts', async () => {
+it('installs four release packages offline once and preserves disable/remove on subsequent starts', async () => {
   const s = setup()
   await initializeDefaultHelpers(s)
   expect(
@@ -58,6 +58,7 @@ it('installs three release packages offline once and preserves disable/remove on
       !!p.entry.state.trusted,
     ]),
   ).toEqual([
+    ['@agnes/document-reader', true, true],
     ['@agnes/mcp-helper', true, true],
     ['@agnes/plugin-helper', true, true],
     ['@agnes/skill-helper', true, true],
@@ -77,6 +78,7 @@ it('installs three release packages offline once and preserves disable/remove on
   expect(
     (await s.manager.inventory(s.profileDir)).packages.map((p) => [p.id, p.entry.state.enabled]),
   ).toEqual([
+    ['@agnes/document-reader', true],
     ['@agnes/mcp-helper', false],
     ['@agnes/plugin-helper', true],
   ])
@@ -86,7 +88,7 @@ it('provisions old profiles and rejects damaged initialization records', async (
   const s = setup()
   await s.initializePolicy()
   await initializeDefaultHelpers(s)
-  expect((await s.manager.inventory(s.profileDir)).packages).toHaveLength(3)
+  expect((await s.manager.inventory(s.profileDir)).packages).toHaveLength(4)
   writeFileSync(join(s.profileDir, 'default-helpers', 'state.json'), '{}')
   await expect(initializeDefaultHelpers(s)).rejects.toThrow('Invalid helper initialization')
 })
@@ -162,12 +164,12 @@ it('migrates the earlier existing marker without enabling or replacing an instal
   await s.manager.setEnabled(s.profileDir, '@agnes/mcp-helper', false)
   await s.manager.remove(s.profileDir, '@agnes/mcp-helper')
   await initializeDefaultHelpers(s)
-  expect((await s.manager.inventory(s.profileDir)).packages).toHaveLength(2)
+  expect((await s.manager.inventory(s.profileDir)).packages).toHaveLength(3)
 })
 it('records completion without activation when all helpers are already installed', async () => {
   const s = setup()
   await s.initializePolicy()
-  for (const name of ['skill-helper', 'mcp-helper', 'plugin-helper']) {
+  for (const name of ['skill-helper', 'mcp-helper', 'plugin-helper', 'document-reader']) {
     const source = parseSource(`file:./bundled-plugins/${name}`)
     const preview = await s.manager.inspect(s.profileDir, source)
     await s.manager.install(s.profileDir, source, { expectedIntegrity: preview.integrity })
@@ -184,29 +186,34 @@ it('records completion without activation when all helpers are already installed
   )
 })
 
-it('migrates a completed v1 profile by adding only plugin-helper, preserving prior removals', async () => {
-  const s = setup()
-  await s.initializePolicy()
-  mkdirSync(join(s.profileDir, 'default-helpers'))
-  writeFileSync(
-    join(s.profileDir, 'default-helpers', 'state.json'),
-    JSON.stringify({ version: 1, phase: 'complete', integrity: {} }),
-  )
-  await initializeDefaultHelpers(s)
-  expect((await s.manager.inventory(s.profileDir)).packages.map((p) => p.id)).toEqual([
-    '@agnes/plugin-helper',
-  ])
-  await activateDefaultHelpers({
-    profileDir: s.profileDir,
-    inventory: await s.manager.inventory(s.profileDir),
-    previous: undefined,
-    publish: async () => {},
-  })
-  expect(JSON.parse(readFileSync(join(s.profileDir, 'default-helpers', 'state.json'), 'utf8')).version).toBe(
-    2,
-  )
-  await s.manager.setEnabled(s.profileDir, '@agnes/plugin-helper', false)
-  await s.manager.remove(s.profileDir, '@agnes/plugin-helper')
-  await initializeDefaultHelpers(s)
-  expect((await s.manager.inventory(s.profileDir)).packages).toHaveLength(0)
-})
+it.each([1, 2])(
+  'migrates a completed v%s profile by adding new helpers, preserving prior removals',
+  async (version) => {
+    const s = setup()
+    await s.initializePolicy()
+    mkdirSync(join(s.profileDir, 'default-helpers'))
+    writeFileSync(
+      join(s.profileDir, 'default-helpers', 'state.json'),
+      JSON.stringify({ version, phase: 'complete', integrity: {} }),
+    )
+    await initializeDefaultHelpers(s)
+    expect((await s.manager.inventory(s.profileDir)).packages.map((p) => p.id)).toEqual(
+      version === 1 ? ['@agnes/document-reader', '@agnes/plugin-helper'] : ['@agnes/document-reader'],
+    )
+    await activateDefaultHelpers({
+      profileDir: s.profileDir,
+      inventory: await s.manager.inventory(s.profileDir),
+      previous: undefined,
+      publish: async () => {},
+    })
+    expect(
+      JSON.parse(readFileSync(join(s.profileDir, 'default-helpers', 'state.json'), 'utf8')).version,
+    ).toBe(3)
+    for (const pkg of (await s.manager.inventory(s.profileDir)).packages) {
+      await s.manager.setEnabled(s.profileDir, pkg.id, false)
+      await s.manager.remove(s.profileDir, pkg.id)
+    }
+    await initializeDefaultHelpers(s)
+    expect((await s.manager.inventory(s.profileDir)).packages).toHaveLength(0)
+  },
+)

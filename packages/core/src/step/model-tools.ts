@@ -6,26 +6,33 @@ import { canonicalJson, sha256Hex } from '../request/hash.js'
 
 export type ModelInput = readonly ('text' | 'image')[]
 
-/** Resolve one exact model capability record. Any catalogue ambiguity fails closed to text-only. */
-export function resolvedModelInput(
+/** Resolve one exact validated model snapshot. Catalogue ambiguity exposes no capabilities. */
+export function resolvedModelRecord(
   provider: Pick<Provider, 'models'>,
   target: { route: string; model: string },
-): ModelInput {
+): ModelRecord | undefined {
   try {
     const raw: unknown = provider.models()
-    if (!Array.isArray(raw) || raw.length > 10_000) return Object.freeze(['text'])
+    if (!Array.isArray(raw) || raw.length > 10_000) return undefined
     const matches: ModelRecord[] = []
     for (const value of raw) {
       const checked = validateAgainst<ModelRecord>(ModelRecordSchema, value)
-      if (!checked.ok) return Object.freeze(['text'])
+      if (!checked.ok) return undefined
       if (checked.value.route === target.route && checked.value.id === target.model)
         matches.push(checked.value)
     }
     const selected = matches.length === 1 ? matches[0] : undefined
-    return selected ? Object.freeze([...selected.input]) : Object.freeze(['text'])
+    return selected ? structuredClone(selected) : undefined
   } catch {
-    return Object.freeze(['text'])
+    return undefined
   }
+}
+
+export function resolvedModelInput(
+  provider: Pick<Provider, 'models'>,
+  target: { route: string; model: string },
+): ModelInput {
+  return Object.freeze(resolvedModelRecord(provider, target)?.input ?? ['text'])
 }
 
 export function supportsComputerUse(input: ModelInput): boolean {

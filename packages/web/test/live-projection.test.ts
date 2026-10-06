@@ -5,6 +5,7 @@ import type {
   UIProjectionUpdate,
   UITimeline,
 } from '@agnes/protocol'
+import { UI_PROJECTION_MAX_BYTES } from '@agnes/protocol'
 import type { LedgerEvent } from '@agnes/sdk/browser'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
@@ -199,7 +200,11 @@ describe('Web live projection', () => {
     const live = createLiveProjection(d.session as never, connected, s.sink)
     await live.start()
     expect(d.projectUIOpening).toHaveBeenCalledTimes(1)
-    expect(d.projectUIOpening).toHaveBeenCalledWith({ surface: 'web', maxNodes: 500, maxBytes: 2_097_152 })
+    expect(d.projectUIOpening).toHaveBeenCalledWith({
+      surface: 'web',
+      maxNodes: 500,
+      maxBytes: UI_PROJECTION_MAX_BYTES,
+    })
     expect(d.events).toHaveBeenCalledWith({ preview: true, cursor: { fromSeq: 40, generation: 1 } })
     expect(d.projectUIPatch).not.toHaveBeenCalled()
     await live.stop()

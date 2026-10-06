@@ -1,5 +1,14 @@
 import { describe, expect, it } from 'vitest'
-import { canAccessResourceControl, METHODS, type ValidationError, validateMethod } from '../src/index.js'
+import {
+  canAccessResourceControl,
+  fromAcpPrompt,
+  METHODS,
+  toAcpPrompt,
+  UI_PROJECTION_MAX_BYTES,
+  type ValidationError,
+  validateMethod,
+  validateUserAttachments,
+} from '../src/index.js'
 
 // One ledger row shaped exactly as EventEnvelope demands. `_agnes/v1/session.event` carries a whole
 // row inside its params, so the row has to be spelled out here rather than reduced to a stub.
@@ -30,6 +39,43 @@ function errorsOf(r: ReturnType<typeof validateMethod>): ValidationError[] {
 }
 
 describe('methods (I1 set)', () => {
+  it('carries file originals through standard ACP embedded resources and the native follow-up schema', () => {
+    const blocks = [
+      { type: 'file' as const, name: '资料 #%../video.mp4', mimeType: 'video/mp4', data: 'AAAAAA==' },
+    ]
+    const prompt = toAcpPrompt(blocks)
+    expect(validateMethod('session/prompt', 'params', { sessionId: 's', prompt }).ok).toBe(true)
+    expect(fromAcpPrompt(prompt)).toEqual(blocks)
+    const embedded = fromAcpPrompt([
+      {
+        type: 'resource',
+        resource: { uri: 'file:///报告.txt', text: '正文 🐇', mimeType: ' text/plain; charset=utf-8 ' },
+      },
+      { type: 'resource', resource: { uri: 'https://test.invalid/video', blob: '', mimeType: null } },
+    ])
+    expect(embedded).toEqual([
+      {
+        type: 'file',
+        name: 'file:///报告.txt',
+        mimeType: 'text/plain',
+        data: Buffer.from('正文 🐇').toString('base64'),
+      },
+      { type: 'file', name: 'https://test.invalid/video', mimeType: 'application/octet-stream', data: '' },
+    ])
+    expect(() => validateUserAttachments(embedded)).not.toThrow()
+    expect(
+      validateMethod('_agnes/v1/session.followUp', 'params', {
+        sessionId: 's',
+        content: blocks,
+        commandId: 'c',
+      }).ok,
+    ).toBe(true)
+    expect(() =>
+      fromAcpPrompt([
+        { type: 'resource', resource: { uri: 'agnes-attachment:%ZZ', blob: '', mimeType: 'text/plain' } },
+      ]),
+    ).toThrow()
+  })
   it('lists the I1 methods with kind and direction', () => {
     expect(Object.keys(METHODS).sort()).toEqual([
       '_agnes/v1/apis.list',
@@ -615,7 +661,7 @@ describe('methods (I1 set)', () => {
       errorsOf(
         validateMethod('_agnes/v1/session.projectUIOpening', 'params', {
           sessionId: 's',
-          maxBytes: 2 * 1024 * 1024 + 1,
+          maxBytes: UI_PROJECTION_MAX_BYTES + 1,
         }),
       ),
     ).toContainEqual(expect.objectContaining({ code: 'RANGE', key: 'maxBytes' }))
@@ -660,7 +706,7 @@ describe('methods (I1 set)', () => {
         validateMethod('_agnes/v1/session.projectUIHistory', 'params', {
           sessionId: 's',
           cursor: 'opaque-page-1',
-          maxBytes: 2 * 1024 * 1024 + 1,
+          maxBytes: UI_PROJECTION_MAX_BYTES + 1,
         }),
       ),
     ).toContainEqual(expect.objectContaining({ code: 'RANGE', key: 'maxBytes' }))

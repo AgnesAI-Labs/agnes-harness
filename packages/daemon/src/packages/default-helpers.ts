@@ -22,20 +22,26 @@ export async function initializeDefaultHelpers(options: {
   initializePolicy(): Promise<void>
 }): Promise<void> {
   await withDefaultHelperState(options.profileDir, async (state, save) => {
-    if (!state || state.phase === 'existing' || state.version === 1) {
+    if (!state || state.phase === 'existing' || state.version < 3) {
       const inventory = existsSync(lockPath(options.profileDir))
         ? await options.manager.inventory(options.profileDir)
         : undefined
       const integrity: Record<string, string> =
         state && ['pending', 'installed'].includes(state.phase) ? { ...state.integrity } : {}
       for (const helper of BUNDLED_HELPERS) {
-        if (state?.version === 1 && state.phase !== 'existing' && helper.name !== 'plugin-helper') continue
+        if (
+          state?.version === 1 &&
+          state.phase !== 'existing' &&
+          !['plugin-helper', 'document-reader'].includes(helper.name)
+        )
+          continue
+        if (state?.version === 2 && helper.name !== 'document-reader') continue
         if (inventory?.packages.some((pkg) => pkg.id === helper.id)) continue
         const root = bundledPluginSourceRoot(helper.ref)
         if (!root) throw new Error('Bundled helper source unavailable')
         integrity[helper.id] = hashDirectory(join(root, 'bundled-plugins', helper.name))
       }
-      state = { version: 2, phase: 'pending', integrity }
+      state = { version: 3, phase: 'pending', integrity }
       // This intent precedes policy creation, so a failed first startup can resume safely.
       save(state)
     }

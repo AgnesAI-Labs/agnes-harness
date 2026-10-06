@@ -1,4 +1,4 @@
-import type { EventEnvelope } from '@agnes/protocol'
+import { type ContentBlock, type EventEnvelope, toAcpPrompt } from '@agnes/protocol'
 import type { ToolKind } from '@agnes/protocol/gen/acp'
 
 // Typed against ACP's own ToolKind: a value outside it fails the outbound validation, and for an
@@ -60,7 +60,12 @@ export function toSessionUpdate(
       if (d.kind === 'runtime_context') return null
       return {
         sessionUpdate: 'user_message_chunk',
-        payload: { content: (d.content as unknown[] | undefined)?.[0] ?? { type: 'text', text: '' } },
+        payload: {
+          content: toAcpPrompt((d.content as ContentBlock[] | undefined) ?? [])[0] ?? {
+            type: 'text',
+            text: '',
+          },
+        },
       }
     case 'tool/call':
       return {
@@ -79,7 +84,10 @@ export function toSessionUpdate(
         payload: {
           toolCallId: d.toolUseId,
           status: d.isError ? 'failed' : 'completed',
-          content: ((d.content as unknown[] | undefined) ?? []).map((c) => ({ type: 'content', content: c })),
+          content: toAcpPrompt((d.content as ContentBlock[] | undefined) ?? []).map((c) => ({
+            type: 'content',
+            content: c,
+          })),
         },
       }
     case 'plan.items':

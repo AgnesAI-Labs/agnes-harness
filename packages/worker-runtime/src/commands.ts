@@ -4,6 +4,7 @@ import {
   type Actor,
   type ApprovalVerdict,
   type ExtensionCallParams,
+  MAX_FRAME_BYTES,
   type McpStatus,
   rpcError,
   type SkillDescriptor,
@@ -290,6 +291,8 @@ export async function handleCommand(
       return session.enqueue(p.target as 'next-turn' | 'next-step', p.msg as never)
     case 'sendQueuedNow':
       return session.sendQueuedNow(String(p.itemId), p.actor as Actor, String(p.admissionId))
+    case 'removeQueuedInput':
+      return session.removeQueuedInput(String(p.itemId), p.actor as Actor, String(p.admissionId))
     case 'manualCompact':
       return session.requestCompaction({
         actor: p.actor as Actor,
@@ -316,8 +319,12 @@ export async function handleCommand(
     case 'abort':
       o.aborts.get(String(p.runId))?.abort()
       return {}
-    case 'scan':
-      return session.scan(p as never)
+    case 'scan': {
+      const rows = await session.scan(p as never)
+      if (Buffer.byteLength(JSON.stringify(rows), 'utf8') > MAX_FRAME_BYTES - 4096)
+        throw rpcError('INTERNAL_ERROR', { code: 'SCAN_PAGE_TOO_LARGE' })
+      return rows
+    }
     case 'readToolDetail':
       return readToolDetailPage(session, {
         callSeq: Number(p.callSeq),

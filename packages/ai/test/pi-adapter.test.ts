@@ -724,3 +724,136 @@ describe('toPiModel', () => {
     })
   })
 })
+
+const tinyPng = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII='
+const pngBlock = { type: 'image' as const, data: tinyPng, mimeType: 'image/png' }
+it.each([
+  ['text-only', { input: ['text'] }, [{ role: 'user', content: [pngBlock] }]],
+  [
+    'per-message count',
+    { inputLimits: { images: { maxPerMessage: 1 } } },
+    [{ role: 'user', content: [pngBlock, pngBlock] }],
+  ],
+  [
+    'history and tool count',
+    { inputLimits: { images: { maxPerRequest: 1 } } },
+    [
+      { role: 'user', content: [pngBlock] },
+      { role: 'tool_result', toolUseId: 't', content: [pngBlock] },
+    ],
+  ],
+  [
+    'four-image request cap includes history and tool results',
+    { inputLimits: { images: { maxPerRequest: 4 } } },
+    [
+      { role: 'user', content: [pngBlock, pngBlock, pngBlock] },
+      { role: 'tool_result', toolUseId: 't', content: [pngBlock] },
+      { role: 'user', content: [pngBlock] },
+    ],
+  ],
+  [
+    'Base64 bytes',
+    { inputLimits: { images: { resize: { maxBytes: tinyPng.length - 1 } } } },
+    [{ role: 'user', content: [pngBlock] }],
+  ],
+] as const)('refuses %s before sending images to pi', async (_label, overrides, messages) => {
+  const record = fakeModel({
+    id: 'flash',
+    route: 'gw',
+    input: ['text', 'image'],
+    ...structuredClone(overrides),
+  } as Parameters<typeof fakeModel>[0])
+  const wire = fakeStream([[{ type: 'done', reason: 'stop', message: assistant() }]])
+  const adapter = bound({ manualRoutes: [{ ...route, models: [record] }], streamImpl: wire.impl })
+  const result = await collect(
+    adapter.stream(
+      'gw',
+      fakeRequest({ route: 'gw', model: 'flash', messages: structuredClone(messages) as never }),
+      opts(),
+    ),
+  )
+  expect(result).toMatchObject([{ type: 'error', code: 'FORMAT', retryable: false }])
+  expect(wire.seen).toEqual([])
+})
+it.each([1, 6])('passes %s supported images and catalogue limits unchanged to pi', async (count) => {
+  const inputLimits = {
+    images: {
+      maxPerMessage: count,
+      maxPerRequest: count,
+      resize: { maxWidth: 1, maxHeight: 1, maxBytes: tinyPng.length },
+    },
+  }
+  const content = Array.from({ length: count }, () => pngBlock)
+  const record = fakeModel({ id: 'flash', route: 'gw', input: ['text', 'image'], inputLimits })
+  const wire = fakeStream([[{ type: 'done', reason: 'stop', message: assistant() }]])
+  const adapter = bound({ manualRoutes: [{ ...route, models: [record] }], streamImpl: wire.impl })
+  await collect(
+    adapter.stream(
+      'gw',
+      fakeRequest({ route: 'gw', model: 'flash', messages: [{ role: 'user', content }] }),
+      opts(),
+    ),
+  )
+  expect(wire.seen[0]?.model.inputLimits).toEqual(inputLimits)
+  expect(wire.seen[0]?.context.messages[0]).toMatchObject({ content })
+})
+
+it('checks tool images again after pi combines them into one provider message', async () => {
+  const record = fakeModel({
+    id: 'flash',
+    route: 'gw',
+    input: ['image'],
+    inputLimits: { images: { maxPerMessage: 1 } },
+  })
+  const adapter = bound({
+    manualRoutes: [{ ...route, models: [record] }],
+    streamImpl: (model, _context, options) =>
+      (async function* () {
+        await options?.onPayload?.(
+          {
+            messages: [
+              {
+                role: 'user',
+                content: [
+                  {
+                    toolResult: {
+                      content: [{ image: { format: 'png', source: { bytes: new Uint8Array([1]) } } }],
+                    },
+                  },
+                  {
+                    toolResult: {
+                      content: [{ image: { format: 'png', source: { bytes: new Uint8Array([1]) } } }],
+                    },
+                  },
+                ],
+              },
+            ],
+          },
+          model,
+        )
+        yield { type: 'done' as const, reason: 'stop' as const, message: assistant() }
+      })(),
+  })
+  const result = await collect(
+    adapter.stream(
+      'gw',
+      fakeRequest({
+        route: 'gw',
+        model: 'flash',
+        messages: [
+          { role: 'tool_result', toolUseId: 'one', isError: false, content: [pngBlock] },
+          { role: 'tool_result', toolUseId: 'two', isError: false, content: [pngBlock] },
+        ],
+      }),
+      opts(),
+    ),
+  )
+  expect(result).toMatchObject([
+    {
+      type: 'error',
+      code: 'FORMAT',
+      message: expect.stringContaining('serialized provider message'),
+      retryable: false,
+    },
+  ])
+})

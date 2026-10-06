@@ -251,6 +251,7 @@ export function modelRecord(
     reasoning,
     ...(reasoning && Object.keys(thinkingLevelMap).length > 0 ? { thinkingLevelMap } : {}),
     input: [...model.input],
+    ...(model.inputLimits ? { inputLimits: structuredClone(model.inputLimits) } : {}),
     cost: modelCost(model),
     contextWindow: model.contextWindow,
     maxTokens: model.maxTokens,

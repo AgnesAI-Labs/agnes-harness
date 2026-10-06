@@ -1,4 +1,4 @@
-import type { EventEnvelope } from '@agnes/protocol'
+import { type EventEnvelope, rpcError } from '@agnes/protocol'
 import { describe, expect, it, vi } from 'vitest'
 import type { LocalContext } from '../src/local/methods/acp.js'
 import type { SessionEntry } from '../src/local/sessions.js'
@@ -141,8 +141,18 @@ describe('Registry<T> extraction (local/sessions.ts SessionRegistry, supervisor/
     const scan = new Promise<EventEnvelope[]>((resolve) => {
       releaseScan = resolve
     })
-    const replay = { seq: 1, type: 'request/header' } as EventEnvelope
-    const live = { seq: 2, type: 'request/header' } as EventEnvelope
+    const replay: EventEnvelope[] = [1, 2, 3].map((seq) => ({
+      seq,
+      ts: '2026-10-06T00:00:00.000Z',
+      id: `replay-${seq}`,
+      type: 'request/header',
+      v: 1,
+      actor: { id: 'local', org: 'local', role: 'owner', deptPath: [], attrs: {} },
+      origin: 'system',
+      trust: 'trusted',
+      data: { padding: 'x'.repeat(512) },
+    }))
+    const live = { seq: 4, type: 'request/header' } as EventEnvelope
     const order: string[] = []
     const link = {
       alive: true,
@@ -158,9 +168,19 @@ describe('Registry<T> extraction (local/sessions.ts SessionRegistry, supervisor/
       closeSession: vi.fn(async () => {
         order.push('worker-close')
       }),
-      command: vi.fn((method: string) => {
-        if (method === 'scan') return scan
-        return Promise.resolve(undefined)
+      command: vi.fn(async (method: string, params: Record<string, unknown>) => {
+        if (method !== 'scan') return undefined
+        const page = (await scan)
+          .filter(
+            (event) =>
+              event.seq >= Number(params.fromSeq) &&
+              (params.toSeq === undefined || event.seq <= Number(params.toSeq)),
+          )
+          .slice(0, Number(params.limit))
+        // A small synthetic wire budget exercises the real oversized-page refusal without large fixtures.
+        if (Buffer.byteLength(JSON.stringify(page)) > 1024)
+          throw rpcError('INTERNAL_ERROR', { code: 'SCAN_PAGE_TOO_LARGE' })
+        return page
       }),
     }
     const pool = { acquire: vi.fn(async () => link), retire: vi.fn() } as unknown as WorkerPool
@@ -177,12 +197,12 @@ describe('Registry<T> extraction (local/sessions.ts SessionRegistry, supervisor/
     // Startup delivery must only buffer. Awaiting the replay chain here puts the scan reply behind
     // an event which itself waits for that reply and deadlocks the real worker wire.
     expect(delivering).toBeUndefined()
-    releaseScan?.([replay])
+    releaseScan?.(replay)
     const entry = await opening
     await delivering
 
-    expect(order).toEqual(['reset', 'observe-1', 'observe-2'])
-    expect(entry.session.lastSeq).toBe(2)
+    expect(order).toEqual(['reset', 'observe-1', 'observe-2', 'observe-3', 'observe-4'])
+    expect(entry.session.lastSeq).toBe(4)
     const closing = registry.close('artifact-session')
     await closing
     expect(order.slice(-2)).toEqual(['reset', 'worker-close'])

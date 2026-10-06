@@ -40,75 +40,103 @@ async function fixture() {
 }
 
 describe('production artifact read composition', () => {
-  it('uses projected ledger authority as the production RPC scope', async () => {
-    const item = await fixture()
-    const tables = sqliteTables()
-    const index = new PersistentArtifactReadAuthorityIndex(tables.table('artifact-read-authority'))
-    const projected = composeProductionProjectedArtifactRead(item.dataDir, {
-      authority: createArtifactReadAuthorityPort(index),
-      writer: Object.freeze({ append: index.append.bind(index), revoke: index.revoke.bind(index) }),
-      ownership: Object.freeze({
-        resolve: async () => Object.freeze({ active: true, principalId: 'local' }),
-      }),
-      limits: { maxArtifactBytes: 1024, maxResponseBytes: 1024 },
-      operationTimeoutMs: 1_000,
-      scopeTimeoutMs: 1_000,
-    })
-    const request = { sessionId: 'session-a', laneId: 'main', artifact: item.artifact }
-    const caller = {
-      principalId: 'local',
-      authKind: 'local' as const,
-      sessionId: 'session-a',
-      laneId: 'main',
-    }
-    await expect(projected.rpc.read(request, caller)).resolves.toMatchObject({
-      ok: false,
-      status: 404,
-      code: 'artifact_not_found',
-    })
-    await projected.projection.observe(
-      'session-a',
-      {
-        seq: 4,
-        ts: '2026-09-17T00:00:00.000Z',
-        id: '01J6ZM2Q3R4S5T6V7W8X9Y0Z04',
-        lane: 'main',
-        type: 'request/header',
-        v: 1,
-        actor: { id: 'local', org: 'local', role: 'owner', deptPath: [], attrs: {} },
-        origin: 'system',
-        trust: 'trusted',
-        data: {
-          derived_hash: 'a'.repeat(64),
-          prompt_prefix_hash: 'b'.repeat(64),
-          tool_schema_hash: 'c'.repeat(64),
-          parser_version: '1',
-          contract_id: null,
-          model: 'm',
-          envelopeNonce: 'd'.repeat(32),
-          media: {
-            version: 1,
-            selectionOrder: [0],
-            route: 'native-image',
-            manifest: [
-              {
-                nodeSeq: 2,
-                artifactUri: `artifact://${item.artifact.sha256}`,
-                sha256: item.artifact.sha256,
-                mime: item.artifact.mime,
-                width: 8,
-                height: 8,
-                selected: true,
-              },
-            ],
+  it.each(['header', 'session image', 'document image'] as const)(
+    'uses projected %s authority as the production RPC scope',
+    async (source) => {
+      const item = await fixture()
+      const tables = sqliteTables()
+      const index = new PersistentArtifactReadAuthorityIndex(tables.table('artifact-read-authority'))
+      const projected = composeProductionProjectedArtifactRead(item.dataDir, {
+        authority: createArtifactReadAuthorityPort(index),
+        writer: Object.freeze({ append: index.append.bind(index), revoke: index.revoke.bind(index) }),
+        ownership: Object.freeze({
+          resolve: async () => Object.freeze({ active: true, principalId: 'local' }),
+        }),
+        limits: { maxArtifactBytes: 1024, maxResponseBytes: 1024 },
+        operationTimeoutMs: 1_000,
+        scopeTimeoutMs: 1_000,
+      })
+      const request = { sessionId: 'session-a', laneId: 'main', artifact: item.artifact }
+      const caller = {
+        principalId: 'local',
+        authKind: 'local' as const,
+        sessionId: 'session-a',
+        laneId: 'main',
+      }
+      await expect(projected.rpc.read(request, caller)).resolves.toMatchObject({
+        ok: false,
+        status: 404,
+        code: 'artifact_not_found',
+      })
+      await projected.projection.observe(
+        'session-a',
+        {
+          seq: 4,
+          ts: '2026-09-17T00:00:00.000Z',
+          id: '01J6ZM2Q3R4S5T6V7W8X9Y0Z04',
+          lane: 'main',
+          type: 'request/header',
+          v: 1,
+          actor: { id: 'local', org: 'local', role: 'owner', deptPath: [], attrs: {} },
+          origin: 'system',
+          trust: 'trusted',
+          data: {
+            derived_hash: 'a'.repeat(64),
+            prompt_prefix_hash: 'b'.repeat(64),
+            tool_schema_hash: 'c'.repeat(64),
+            parser_version: '1',
+            contract_id: null,
+            model: 'm',
+            envelopeNonce: 'd'.repeat(32),
+            media: {
+              version: 1,
+              selectionOrder: [0],
+              route: 'native-image',
+              manifest: [
+                {
+                  nodeSeq: 2,
+                  artifactUri: `artifact://${item.artifact.sha256}`,
+                  sha256: item.artifact.sha256,
+                  mime: item.artifact.mime,
+                  width: 8,
+                  height: 8,
+                  selected: true,
+                },
+              ],
+            },
           },
+          ...(source !== 'header'
+            ? {
+                type: 'tool/result',
+                origin: source === 'document image' ? 'tool:document_read' : 'tool:read',
+                trust: source === 'document image' ? 'untrusted' : 'trusted',
+                sourceEventSeqs: [3],
+                data: {
+                  toolUseId: 'read-original',
+                  content: [
+                    {
+                      type: 'resource_link',
+                      name: 'image',
+                      uri: `artifact://${item.artifact.sha256}`,
+                      mimeType: 'image/png',
+                    },
+                  ],
+                  isError: false,
+                  enforcement: { level: 'full', scope: [] },
+                  authz: { decisionId: 'n/a' },
+                },
+              }
+            : {}),
         },
-      },
-      new AbortController().signal,
-    )
-    await expect(projected.rpc.read(request, caller)).resolves.toMatchObject({ ok: true, status: 200 })
-    await tables.close()
-  })
+        new AbortController().signal,
+      )
+      await expect(projected.rpc.read(request, caller)).resolves.toMatchObject({ ok: true, status: 200 })
+      await expect(
+        projected.rpc.read(request, { ...caller, principalId: 'other-owner' }),
+      ).resolves.toMatchObject({ ok: false })
+      await tables.close()
+    },
+  )
 
   it('fits the authenticated handler to real content-addressed bytes', async () => {
     const item = await fixture()

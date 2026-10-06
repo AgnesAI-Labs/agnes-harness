@@ -10,6 +10,8 @@ it('handles split UTF-8 RPC frames and flushes a terminal error through a plain 
   const [server, peer] = duplexPair()
   const handle = vi.fn<RpcEndpoint['handle']>(async (message) => {
     if (!('id' in message) || message.id === undefined) return undefined
+    if ('method' in message && message.method === 'echo')
+      return { jsonrpc: '2.0', id: message.id, result: message.params }
     return { jsonrpc: '2.0', id: message.id, result: '中文回复' }
   })
   const close = vi.fn(async () => {})
@@ -29,6 +31,10 @@ it('handles split UTF-8 RPC frames and flushes a terminal error through a plain 
     peer.write(frame.subarray(cut))
     expect(JSON.parse((await response)[0].toString())).toEqual({ jsonrpc: '2.0', id: 1, result: '中文回复' })
     expect(handle).toHaveBeenCalledOnce()
+    const large = 'A'.repeat(4 * Math.ceil((100 * 1024 * 1024) / 3))
+    const echoed = once(peer, 'data')
+    peer.write(encodeFrame({ jsonrpc: '2.0', id: 2, method: 'echo', params: { image: large } }))
+    expect(JSON.parse((await echoed)[0].toString()).result.image).toBe(large)
     const terminal = once(peer, 'data')
     peer.write('null\n')
     expect(JSON.parse((await terminal)[0].toString())).toMatchObject({

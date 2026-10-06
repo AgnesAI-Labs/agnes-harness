@@ -26,6 +26,7 @@ import {
   type ToolCall,
   type ToolResult,
   type TurnEndReason,
+  toAcpPrompt,
   toAcpStopReason,
   UI_HISTORY_DEFAULT_LIMIT,
   UI_OPENING_DEFAULT_MAX_NODES,
@@ -670,7 +671,7 @@ export class Session {
         'session/prompt',
         {
           sessionId: this.id,
-          prompt: toContentBlocks(input),
+          prompt: toAcpPrompt(toContentBlocks(input)),
           ...(titleLocale ? { _meta: { 'ai.agnes.harness': { titleLocale } } } : {}),
         },
         { timeoutMs: null },
@@ -756,6 +757,11 @@ export class Session {
   /** Stop the current turn and run this existing inbox item first, without re-enqueuing its content. */
   sendNow(itemId: string, opts: { commandId?: string } = {}): Promise<number> {
     return submitCommand(this.client, this.id, 'sendNow', { sessionId: this.id, itemId }, opts.commandId)
+  }
+
+  /** Remove an existing pending input without stopping the current turn or starting another one. */
+  removeQueued(itemId: string, opts: { commandId?: string } = {}): Promise<number> {
+    return submitCommand(this.client, this.id, 'removeQueued', { sessionId: this.id, itemId }, opts.commandId)
   }
 
   compact(instructions?: string, opts: { commandId?: string } = {}): Promise<number> {

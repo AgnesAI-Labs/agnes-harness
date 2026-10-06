@@ -154,7 +154,7 @@ describe('real stdio subprocess', () => {
     expect(closes).toHaveLength(1)
     expect(closes[0]?.error).toMatchObject({ kind: 'protocol-violation', violationKind })
   })
-  it('accepts exactly 16 MiB inbound and rejects one byte more', async () => {
+  it('accepts exactly the protocol byte ceiling inbound and rejects one byte more', async () => {
     const { c, closes } = connect()
     await c.connect()
     expect(typeof (await c.request('large', { bytes: MAX_FRAME_BYTES }))).toBe('string')

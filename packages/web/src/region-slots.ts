@@ -662,6 +662,9 @@ export function mountComposerRegion(
     getImageBlocks() {
       return handle.current?.getImageBlocks() ?? []
     },
+    getAttachmentBlocks() {
+      return handle.current?.getAttachmentBlocks() ?? []
+    },
     hasPendingImages() {
       return handle.current?.hasPendingImages() ?? false
     },
@@ -674,6 +677,9 @@ export function mountComposerRegion(
     },
     restoreImageBlocks(images) {
       handle.current?.restoreImageBlocks(images)
+    },
+    restoreAttachmentBlocks(attachments) {
+      handle.current?.restoreAttachmentBlocks(attachments)
     },
     resize() {
       handle.current?.resize()

@@ -2,7 +2,7 @@ import type { ToolDef } from '@agnes/extension-api'
 import { validateEvent } from '@agnes/protocol'
 import { describe, expect, it } from 'vitest'
 import { computeSurface } from '../src/project/surface.js'
-import type { DeriveOutput, RequestHeaderData } from '../src/request/derive.js'
+import type { DeriveInput, DeriveOutput, RequestHeaderData } from '../src/request/derive.js'
 import {
   assertKind,
   assertNonce,
@@ -1917,4 +1917,97 @@ describe('toProviderRequest (fix round 1)', () => {
     expect(caught).toBeInstanceOf(CoreError)
     expect((caught as CoreError).code).toBe('E_ENVELOPE')
   })
+})
+
+it('selects image history by model limits while preserving references, text, hashes and original rows', () => {
+  seq = 0
+  const png = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII='
+  const rows = Array.from({ length: 30 }, (_, i) => [
+    ev('user/message', {
+      content: [
+        { type: 'text', text: `picture ${i + 1}` },
+        { type: 'image', mimeType: 'image/png', data: png },
+      ],
+    }),
+    ev('assistant/message', {
+      content: [{ type: 'text', text: `description ${i + 1}` }],
+      stopReason: 'end_turn',
+    }),
+  ]).flat()
+  rows.push(
+    ev('user/message', {
+      content: [
+        { type: 'image', mimeType: 'image/png', data: png },
+        { type: 'image', mimeType: 'image/png', data: png },
+      ],
+    }),
+  )
+  const surface = computeSurface(rows, {})
+  const original = JSON.stringify(surface)
+  const model = { input: ['image'], inputLimits: { images: { maxPerRequest: 4 } } } as NonNullable<
+    DeriveInput['inlineImages']
+  >['model']
+  const input = { ...base(), surface, ...NO_RC, inlineImages: { model, canRead: true } }
+  const out = deriveRequest(input)
+  expect(out.request.messages.flatMap((m) => m.content.filter((b) => b.type === 'image'))).toHaveLength(4)
+  expect(out.request.messages.at(-1)?.content.filter((b) => b.type === 'image')).toHaveLength(2)
+  const text = out.request.messages
+    .flatMap((m) => m.content.flatMap((b) => ('text' in b ? [b.text] : [])))
+    .join('\n')
+  expect(text).toContain('session-image://1/1')
+  expect(text).toContain('original not included')
+  expect(text).toContain('description 1')
+  expect(JSON.stringify(surface)).toBe(original)
+  expect(deriveRequest(input).header.derived_hash).toBe(out.header.derived_hash)
+  const switched = deriveRequest({
+    ...input,
+    surface: computeSurface(rows.slice(0, -1), {}),
+    inlineImages: { model: { ...model, input: ['text'] } as typeof model, canRead: true },
+  })
+  expect(switched.request.messages.flatMap((m) => m.content.filter((b) => b.type === 'image'))).toEqual([])
+  expect(() =>
+    deriveRequest({
+      ...input,
+      inlineImages: {
+        model: { ...model, inputLimits: { images: { maxPerRequest: 1 } } } as typeof model,
+        canRead: true,
+      },
+    }),
+  ).toThrow(/current images/)
+  const summary = deriveRequest({
+    ...input,
+    kind: 'summary',
+    summaryPlan: { system: '', instruction: 'summarize references and descriptions' },
+  })
+  expect(
+    summary.request.messages.flatMap((m) => m.content.filter((b) => b.type === 'image')).length,
+  ).toBeLessThanOrEqual(4)
+  const smallHistory = computeSurface(rows.slice(0, 6), {})
+  const byteBase = deriveRequest({
+    ...input,
+    surface: smallHistory,
+    inlineImages: { model: { ...model, input: ['text'] } as typeof model, canRead: true },
+  })
+  const maxRequestBytes = new TextEncoder().encode(JSON.stringify(byteBase.request)).length + 40
+  const bounded = deriveRequest({
+    ...input,
+    surface: smallHistory,
+    inlineImages: { model: { ...model, inputLimits: { maxRequestBytes } } as typeof model, canRead: true },
+  })
+  expect(new TextEncoder().encode(JSON.stringify(bounded.request)).length).toBeLessThanOrEqual(
+    maxRequestBytes,
+  )
+  expect(
+    bounded.request.messages.flatMap((m) => m.content.filter((b) => b.type === 'image')).length,
+  ).toBeLessThan(3)
+  expect(() =>
+    deriveRequest({
+      ...input,
+      surface: computeSurface([rows.at(-1) as Event], {}),
+      inlineImages: {
+        model: { ...model, inputLimits: { maxRequestBytes: 1 } } as typeof model,
+        canRead: true,
+      },
+    }),
+  ).toThrow(/current images/)
 })
