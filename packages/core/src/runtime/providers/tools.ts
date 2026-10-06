@@ -194,7 +194,7 @@ export function createDefaultToolsFactory(deployment: ToolsDeployment): Provider
     definition.executor.contract !== descriptor.contract ||
     definition.executor.providerId !== descriptor.providerId ||
     definition.executor.logicalName !== descriptor.logicalName ||
-    definition.name !== 'text-statistics' ||
+    definition.name !== 'textstatistics' ||
     !same(definition.inputSchema, definition.outputSchema) ||
     definition.inputSchema.typeId !== 'agh.tool/standard-output@1' ||
     definition.policy.classifierRef !== null ||
@@ -209,7 +209,7 @@ export function createDefaultToolsFactory(deployment: ToolsDeployment): Provider
     definition.execution.requiredModelInput.length ||
     definition.execution.deferLoading
   )
-    throw new TypeError('Tools definition must be the closed text-statistics pure tool')
+    throw new TypeError('Tools definition must be the closed textstatistics pure tool')
   const classify = (input: DataRef): Outcome<ToolPolicySnapshot> => {
     const parsed = decode(input, definition.inputSchema, 'StandardToolOutput')
     if (!parsed.ok) return parsed
