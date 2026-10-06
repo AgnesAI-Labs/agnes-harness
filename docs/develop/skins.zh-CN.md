@@ -64,7 +64,7 @@
 
 ## 2. 区域钩子（稳定的选择器契约）
 
-**只依赖 `data-agnes-region`。** 内部 class 与 id（`.sidebar`、`#composer`、`turn-*` …）**不是**契约，
+**只依赖 `data-agnes-region`。** 内部 class 与 id（`.sidebar`、`.composer-form`、`turn-*` …）**不是**契约，
 Agnes 可以随时重命名它们；钩子则是版本化契约，改名会让机检变红而不是让你的皮肤悄悄失效。
 
 | 钩子 | 承载元素 | 出现在 |

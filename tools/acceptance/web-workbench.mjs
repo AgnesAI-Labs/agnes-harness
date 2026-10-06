@@ -254,7 +254,7 @@ async function updateDshClientFixture(
 
 async function openPluginManagement(page) {
   if (!(await page.locator('#config[open]').count())) {
-    await page.locator('#settings').click()
+    await page.locator('.settings-entry').click()
   }
   await page.locator('#config[open]').waitFor()
   await page.locator('#plugin-management').click()
@@ -301,9 +301,9 @@ async function fillWorkspacePath(page, value) {
   await input.fill(value)
 }
 async function startNextTask(page) {
-  await page.locator('#new').click()
-  await page.locator('#prompt').waitFor({ state: 'visible' })
-  await page.waitForFunction(() => !document.querySelector('#prompt').disabled)
+  await page.locator('.new-session').click()
+  await page.locator('.composer-prompt').waitFor({ state: 'visible' })
+  await page.waitForFunction(() => !document.querySelector('.composer-prompt').disabled)
 }
 async function launchWeb() {
   web = spawn(process.execPath, [entry, 'serve'], {
@@ -411,37 +411,37 @@ try {
   await page.locator('#account-dialog[open]').waitFor({ state: 'hidden' })
   await page.locator('#config-close').click()
   await page.locator('#config[open]').waitFor({ state: 'hidden' })
-  await page.locator('#new').click()
+  await page.locator('.new-session').click()
   await page.locator('#new-session[open]').waitFor()
   await page.screenshot({ path: join(artifacts, '00-new-task.png'), fullPage: true, animations: 'disabled' })
   await fillWorkspacePath(page, cwd)
   await page.locator('#new-session-create').click()
-  await page.locator('#prompt').waitFor({ state: 'visible' })
-  await page.waitForFunction(() => !document.querySelector('#prompt').disabled)
-  assert(await page.locator('#send').isDisabled())
+  await page.locator('.composer-prompt').waitFor({ state: 'visible' })
+  await page.waitForFunction(() => !document.querySelector('.composer-prompt').disabled)
+  assert(await page.locator('.composer-send').isDisabled())
   assert.equal(await page.locator('#config-api-key').inputValue(), '')
   assert(!page.url().includes('#'))
   checkpoint('first-run Provider failure/correction/test/model/save and task creation')
-  const composerBox = await page.locator('#composer').boundingBox()
-  const modelBox = await page.locator('#model').boundingBox()
+  const composerBox = await page.locator('.composer-form').boundingBox()
+  const modelBox = await page.locator('.composer-model').boundingBox()
   assert(modelBox.width < composerBox.width / 2, 'model control should remain compact')
   assert(composerBox.height <= 128, 'idle desktop composer should be compact')
-  assert.equal(await page.locator('#send').getAttribute('aria-label'), '发送')
+  assert.equal(await page.locator('.composer-send').getAttribute('aria-label'), '发送')
   await page.screenshot({ path: join(artifacts, '00-empty.png'), fullPage: true, animations: 'disabled' })
-  await page.locator('#prompt').fill('检查这个项目，说明主要模块的职责。')
-  assert(await page.locator('#send').isEnabled())
+  await page.locator('.composer-prompt').fill('检查这个项目，说明主要模块的职责。')
+  assert(await page.locator('.composer-send').isEnabled())
   await page.screenshot({ path: join(artifacts, '00-composer.png'), fullPage: true, animations: 'disabled' })
-  await page.locator('#prompt').fill('逐步检查代码，并保留验证证据。\n'.repeat(30))
-  const longInput = await page.locator('#prompt').evaluate((node) => ({
+  await page.locator('.composer-prompt').fill('逐步检查代码，并保留验证证据。\n'.repeat(30))
+  const longInput = await page.locator('.composer-prompt').evaluate((node) => ({
     height: node.getBoundingClientRect().height,
     scroll: node.scrollHeight,
     overflow: getComputedStyle(node).overflowY,
   }))
   assert(longInput.height <= 180 && longInput.scroll > longInput.height && longInput.overflow === 'auto')
-  await page.locator('#prompt').fill('')
-  assert(await page.locator('#send').isDisabled())
+  await page.locator('.composer-prompt').fill('')
+  assert(await page.locator('.composer-send').isDisabled())
   checkpoint('compact composer keeps accessible send, narrow model, draft growth and blank protection')
-  const modelTrigger = page.locator('#model')
+  const modelTrigger = page.locator('.composer-model')
   const modelList = page.getByRole('listbox')
   await modelTrigger.click()
   await modelList.waitFor()
@@ -462,7 +462,7 @@ try {
   assert(await modelTrigger.evaluate((node) => node === document.activeElement))
   assert.equal(modelSwitchRequests, 0)
   await modelTrigger.click()
-  await page.locator('#prompt').click()
+  await page.locator('.composer-prompt').click()
   await modelList.waitFor({ state: 'hidden' })
   assert.equal(modelSwitchRequests, 0)
   await modelTrigger.press('ArrowDown')
@@ -491,8 +491,8 @@ try {
   await modelList.getByRole('option').click()
   await page.waitForFunction(
     () =>
-      document.querySelector('#model').textContent.includes('deepseek-v4-flash') &&
-      !document.querySelector('#model').disabled,
+      document.querySelector('.composer-model').textContent.includes('deepseek-v4-flash') &&
+      !document.querySelector('.composer-model').disabled,
   )
   // This is still a draft session. Its chosen model is carried into session creation instead of
   // issuing a write for a session that does not yet exist.
@@ -508,11 +508,11 @@ try {
   checkpoint('320px model popover fits; draft selection is retained without a premature daemon write')
   let sessionUrl = page.url()
   const send = async (text) => {
-    await page.locator('#prompt').fill(text)
-    await page.locator('#send').click()
+    await page.locator('.composer-prompt').fill(text)
+    await page.locator('.composer-send').click()
   }
   const terminal = async (text = '已完成') =>
-    page.waitForFunction((label) => document.querySelector('#status').textContent === label, text, {
+    page.waitForFunction((label) => document.querySelector('.task-status').textContent === label, text, {
       timeout: 45000,
     })
   if (process.env.AGNES_WEB_ACCEPTANCE_FOCUS === 'model-hot-update') {
@@ -520,8 +520,8 @@ try {
     await terminal()
     const peerPage = await context.newPage()
     await peerPage.goto(launch)
-    await peerPage.waitForFunction(() => !document.querySelector('#model')?.disabled)
-    await page.locator('#settings').click()
+    await peerPage.waitForFunction(() => !document.querySelector('.composer-model')?.disabled)
+    await page.locator('.settings-entry').click()
     await page.locator('#config-add-account').click()
     await page.locator('#config-account-name').fill('热更新验收账户')
     await page.locator('#config-provider').selectOption('deepseek')
@@ -537,22 +537,22 @@ try {
     await page.locator('#config[open]').waitFor({ state: 'hidden' })
     for (const id of ['model', 'composer-workspace', 'composer-permission', 'new', 'prompt'])
       assert(await page.locator(`#${id}`).isEnabled(), `${id} remains enabled after save`)
-    await page.locator('#model').click()
+    await page.locator('.composer-model').click()
     await page.getByRole('option').filter({ hasText: '热更新验收账户' }).click()
     await send('WB_MODEL_HOT_UPDATE_AFTER')
     await terminal()
-    await page.locator('#composer-permission').click()
+    await page.locator('.composer-permission').click()
     assert(await page.getByRole('listbox').isVisible())
     await page.keyboard.press('Escape')
-    await page.locator('#composer-workspace').click()
+    await page.locator('.composer-workspace').click()
     await page.locator('#new-session[open]').waitFor()
     await page.keyboard.press('Escape')
     // A second already-open page learns the new account without reload or protocol changes.
-    await peerPage.locator('#model').click()
+    await peerPage.locator('.composer-model').click()
     await peerPage.getByRole('option').filter({ hasText: '热更新验收账户' }).waitFor()
     await peerPage.close()
-    await page.locator('#new').click()
-    await page.waitForFunction(() => !document.querySelector('#model').disabled)
+    await page.locator('.new-session').click()
+    await page.waitForFunction(() => !document.querySelector('.composer-model').disabled)
     for (const id of ['composer-workspace', 'composer-permission', 'prompt'])
       assert(await page.locator(`#${id}`).isEnabled())
     await send('WB_MODEL_HOT_UPDATE_NEW_SESSION')
@@ -572,13 +572,13 @@ try {
   await send('WB_STREAM')
   await page.waitForFunction(
     () =>
-      document.querySelector('#transcript').scrollHeight >
-      document.querySelector('#transcript').clientHeight + 200,
+      document.querySelector('.transcript').scrollHeight >
+      document.querySelector('.transcript').clientHeight + 200,
   )
-  assert((await page.locator('#status').innerText()).startsWith('正在执行'))
+  assert((await page.locator('.task-status').innerText()).startsWith('正在执行'))
   // Freeze the CSS-only smooth behavior while producing an immediate browser scroll event. This
   // lets the assertion observe the reader contract itself, instead of a transient animation frame.
-  await page.locator('#transcript').evaluate((area) => {
+  await page.locator('.transcript').evaluate((area) => {
     const previousBehavior = area.style.scrollBehavior
     try {
       area.style.scrollBehavior = 'auto'
@@ -592,9 +592,9 @@ try {
   })
   await page.waitForFunction(
     () =>
-      document.querySelector('#transcript').scrollTop < 20 && !document.querySelector('#new-content').hidden,
+      document.querySelector('.transcript').scrollTop < 20 && !document.querySelector('.new-content').hidden,
   )
-  const selected = await page.locator('#transcript').evaluate((area) => {
+  const selected = await page.locator('.transcript').evaluate((area) => {
     const walker = document.createTreeWalker(area, NodeFilter.SHOW_TEXT)
     let text = walker.nextNode()
     while (text && !text.textContent.includes('第 1 项')) text = walker.nextNode()
@@ -609,9 +609,9 @@ try {
   })
   await terminal()
   assert.equal(await page.evaluate(() => window.getSelection().toString()), selected)
-  assert((await page.locator('#transcript').evaluate((area) => area.scrollTop)) < 20)
+  assert((await page.locator('.transcript').evaluate((area) => area.scrollTop)) < 20)
   assert.equal(await page.evaluate(() => window.workbenchUnsafe), undefined)
-  await page.locator('#new-content').click()
+  await page.locator('.new-content').click()
   await page.screenshot({ path: join(artifacts, '01-reading.png'), fullPage: true, animations: 'disabled' })
   checkpoint('streaming preserves selection/scroll and renders untrusted text safely')
   await startNextTask(page)
@@ -619,13 +619,13 @@ try {
   await page.waitForFunction((previous) => location.href !== previous, sessionUrl)
   sessionUrl = page.url()
   await page.waitForFunction(() =>
-    document.querySelector('#transcript').textContent.includes('我会先检查工作目录'),
+    document.querySelector('.transcript').textContent.includes('我会先检查工作目录'),
   )
   await page.screenshot({ path: join(artifacts, '01-executing.png'), fullPage: true, animations: 'disabled' })
   await page.setViewportSize({ width: 320, height: 740 })
-  await page.locator('#prompt').fill('完成后再总结一下。')
-  assert.equal(await page.locator('#send').getAttribute('aria-label'), '加入下一轮')
-  for (const selector of ['#send', '#cancel', '#model']) {
+  await page.locator('.composer-prompt').fill('完成后再总结一下。')
+  assert.equal(await page.locator('.composer-send').getAttribute('aria-label'), '加入下一轮')
+  for (const selector of ['.composer-send', '.composer-cancel', '.composer-model']) {
     const box = await page.locator(selector).boundingBox()
     assert(box && box.x >= 0 && box.x + box.width <= 320, `${selector} must stay reachable at 320px`)
   }
@@ -634,41 +634,43 @@ try {
     fullPage: true,
     animations: 'disabled',
   })
-  await page.locator('#prompt').fill('')
+  await page.locator('.composer-prompt').fill('')
   await page.setViewportSize({ width: 1440, height: 1000 })
   checkpoint('320px running composer retains separate stop and next-round actions')
   provider.continueTool()
-  await page.locator('#approval:not([hidden]) button').first().waitFor({ timeout: 45000 })
-  assert.equal(await page.locator('#status').innerText(), '等待审批')
+  await page.locator('.approval-panel:not([hidden]) button').first().waitFor({ timeout: 45000 })
+  assert.equal(await page.locator('.task-status').innerText(), '等待审批')
   await page.screenshot({ path: join(artifacts, '02-approval.png'), fullPage: true, animations: 'disabled' })
   const peerPage = await context.newPage()
   const peerUrl = new URL(launch)
   peerUrl.search = new URL(sessionUrl).search
   await peerPage.goto(peerUrl.href)
-  await peerPage.waitForFunction(() => document.querySelector('#connection').dataset.state === 'connected')
-  await peerPage.waitForFunction(() => document.querySelector('#transcript .tool'))
-  await page.locator('#approval button').first().click()
+  await peerPage.waitForFunction(
+    () => document.querySelector('.connection-status').dataset.state === 'connected',
+  )
+  await peerPage.waitForFunction(() => document.querySelector('.transcript .tool'))
+  await page.locator('.approval-panel button').first().click()
   await terminal()
-  await peerPage.waitForFunction(() => document.querySelector('#status').textContent === '已完成')
-  assert(await peerPage.locator('#approval').isHidden())
-  assert.equal(await peerPage.locator('#transcript .tool').count(), 1)
-  assert.equal(await page.locator('#transcript .tool').count(), 1)
+  await peerPage.waitForFunction(() => document.querySelector('.task-status').textContent === '已完成')
+  assert(await peerPage.locator('.approval-panel').isHidden())
+  assert.equal(await peerPage.locator('.transcript .tool').count(), 1)
+  assert.equal(await page.locator('.transcript .tool').count(), 1)
   await peerPage.close()
   checkpoint('second Web client observes same approval result without duplicate tools')
-  assert((await page.locator('#transcript').innerText()).includes('工具结果已经返回'))
+  assert((await page.locator('.transcript').innerText()).includes('工具结果已经返回'))
   await page.screenshot({ path: join(artifacts, '03-completed.png'), fullPage: true, animations: 'disabled' })
   checkpoint('real shell permission/result and completed turn')
   await send('WB_STREAM keep prior tool detail open during output')
-  await page.waitForFunction(() => document.querySelector('#transcript').textContent.includes('第 1 项'))
-  assert((await page.locator('#status').innerText()).startsWith('正在执行'))
-  const tool = page.locator('#transcript .tool button').last()
+  await page.waitForFunction(() => document.querySelector('.transcript').textContent.includes('第 1 项'))
+  assert((await page.locator('.task-status').innerText()).startsWith('正在执行'))
+  const tool = page.locator('.transcript .tool button').last()
   await tool.click()
-  await page.locator('#transcript .tool-detail-body:not([hidden])').waitFor()
+  await page.locator('.transcript .tool-detail-body:not([hidden])').waitFor()
   assert.equal(await tool.getAttribute('aria-expanded'), 'true')
-  assert((await page.locator('#transcript .tool-detail-body').innerText()).includes('workbench-ok'))
+  assert((await page.locator('.transcript .tool-detail-body').innerText()).includes('workbench-ok'))
   await terminal()
   assert.equal(await tool.getAttribute('aria-expanded'), 'true')
-  assert((await page.locator('#transcript .tool-detail-body').innerText()).includes('workbench-ok'))
+  assert((await page.locator('.transcript .tool-detail-body').innerText()).includes('workbench-ok'))
   await page.screenshot({
     path: join(artifacts, '03-tool-detail-expanded.png'),
     fullPage: true,
@@ -679,75 +681,77 @@ try {
   assert(await tool.evaluate((node) => node === document.activeElement))
   checkpoint('inline tool detail persists across streaming and restores keyboard focus')
   await send('WB_FAILURE')
-  await page.locator('#approval:not([hidden]) button').first().waitFor()
-  await page.locator('#approval button').first().click()
+  await page.locator('.approval-panel:not([hidden]) button').first().waitFor()
+  await page.locator('.approval-panel button').first().click()
   await terminal()
-  assert((await page.locator('#transcript').innerText()).includes('失败'))
+  assert((await page.locator('.transcript').innerText()).includes('失败'))
   checkpoint('real failed tool remains visible')
   await send('WB_PROVIDER_ERROR')
   await terminal('执行失败')
   checkpoint('model request failure has explicit failed terminal')
   await send('WB_CANCEL pending approval')
-  await page.locator('#approval:not([hidden]) button').first().waitFor()
+  await page.locator('.approval-panel:not([hidden]) button').first().waitFor()
   const beforePendingCancel = provider.completions
-  await page.locator('#cancel').click()
+  await page.locator('.composer-cancel').click()
   await page.waitForFunction(
-    () => document.querySelector('#prompt').disabled && document.querySelector('#send').disabled,
+    () =>
+      document.querySelector('.composer-prompt').disabled &&
+      document.querySelector('.composer-send').disabled,
   )
-  await page.locator('#cancel').evaluate(() => {
-    const prompt = document.querySelector('#prompt')
+  await page.locator('.composer-cancel').evaluate(() => {
+    const prompt = document.querySelector('.composer-prompt')
     prompt.value = 'MUST_NOT_QUEUE_DURING_STOP'
-    document.querySelector('#composer').requestSubmit()
+    document.querySelector('.composer-form').requestSubmit()
   })
   await terminal('已取消')
-  await page.locator('#approval').waitFor({ state: 'hidden' })
+  await page.locator('.approval-panel').waitFor({ state: 'hidden' })
   assert.equal(provider.completions, beforePendingCancel)
   assert(
-    !(await page.locator('#transcript .user').allTextContents()).some((text) =>
+    !(await page.locator('.transcript .user').allTextContents()).some((text) =>
       text.includes('MUST_NOT_QUEUE_DURING_STOP'),
     ),
   )
   checkpoint('cancel during approval clears card and prevents follow-up admission')
   await send('WB_CANCEL')
-  await page.locator('#approval:not([hidden]) button').first().waitFor()
-  await page.locator('#approval button').first().click()
-  await page.waitForFunction(() => document.querySelector('#transcript').textContent.includes('正在执行'))
-  await page.locator('#cancel').click()
+  await page.locator('.approval-panel:not([hidden]) button').first().waitFor()
+  await page.locator('.approval-panel button').first().click()
+  await page.waitForFunction(() => document.querySelector('.transcript').textContent.includes('正在执行'))
+  await page.locator('.composer-cancel').click()
   await terminal('已取消')
   checkpoint('Stop waits for real cancelled terminal')
   await page.reload()
   await terminal('已取消')
   assert.equal(page.url(), sessionUrl)
-  assert((await page.locator('#transcript').innerText()).includes('工具结果已经返回'))
+  assert((await page.locator('.transcript').innerText()).includes('工具结果已经返回'))
   assert.equal(JSON.parse(await readFile(ownerPath, 'utf8')).generation, owner.generation)
   checkpoint('refresh restores selected session, history and terminal without new daemon')
   dropConnections = true
   await socketRoute.close({ code: 1012, reason: 'controlled transport interruption' })
-  await page.waitForFunction(() => document.querySelector('#connection').dataset.state !== 'connected')
-  assert.equal(await page.locator('#status').innerText(), '已取消')
+  await page.waitForFunction(() => document.querySelector('.connection-status').dataset.state !== 'connected')
+  assert.equal(await page.locator('.task-status').innerText(), '已取消')
   dropConnections = false
-  await page.waitForFunction(() => document.querySelector('#connection').dataset.state === 'connected')
+  await page.waitForFunction(() => document.querySelector('.connection-status').dataset.state === 'connected')
   checkpoint('transport reconnect separate from execution state')
   await page.setViewportSize({ width: 390, height: 844 })
-  await page.locator('#sidebar-toggle').click()
+  await page.locator('.sidebar-toggle').click()
   await page.waitForFunction(() => document.querySelector('.sidebar').getBoundingClientRect().left >= 0)
   await page.screenshot({
     path: join(artifacts, '04-mobile-navigation.png'),
     fullPage: true,
     animations: 'disabled',
   })
-  await page.locator('#settings').click()
+  await page.locator('.settings-entry').click()
   await page.locator('#config[open]').waitFor()
   assert.equal(await page.locator('#config-api-key').inputValue(), '')
   await page.keyboard.press('Escape')
-  assert(await page.locator('#settings').evaluate((node) => node === document.activeElement))
+  assert(await page.locator('.settings-entry').evaluate((node) => node === document.activeElement))
   await page.keyboard.press('Escape')
   await page.waitForFunction(
     () =>
       !document.body.classList.contains('sidebar-open') &&
       document.querySelector('.sidebar').getBoundingClientRect().right <= 0,
   )
-  assert(await page.locator('#sidebar-toggle').evaluate((node) => node === document.activeElement))
+  assert(await page.locator('.sidebar-toggle').evaluate((node) => node === document.activeElement))
   assert(await page.locator('.sidebar').evaluate((node) => node.inert))
   assert(!(await page.locator('main').evaluate((node) => node.inert)))
   assert((await page.evaluate(() => document.documentElement.scrollWidth)) <= 390)
@@ -760,7 +764,7 @@ try {
       .map((node) => node.id),
   )
   assert.deepEqual(smallTargets, [])
-  const mobileTool = page.locator('#transcript .tool button').last()
+  const mobileTool = page.locator('.transcript .tool button').last()
   const mobileProcess = mobileTool
     .locator('xpath=ancestor::details[contains(@class, "turn-process")]')
     .first()
@@ -782,7 +786,7 @@ try {
   })
   await mobileTool.click()
   assert(await mobileTool.evaluate((node) => node === document.activeElement))
-  await page.locator('#sidebar-toggle').focus()
+  await page.locator('.sidebar-toggle').focus()
   await page.screenshot({ path: join(artifacts, '04-mobile.png'), fullPage: true, animations: 'disabled' })
   checkpoint('390px navigation/settings/inline tool detail and keyboard dismissal')
   await page.setViewportSize({ width: 320, height: 700 })
@@ -798,7 +802,7 @@ try {
   await page.screenshot({ path: join(artifacts, '06-tablet.png'), fullPage: true, animations: 'disabled' })
   checkpoint('1024px workbench keeps a readable task column')
   await page.emulateMedia({ reducedMotion: 'reduce' })
-  for (const selector of ['#composer', '#config', '#new-session']) {
+  for (const selector of ['.composer-form', '#config', '#new-session']) {
     const seconds = await page.locator(selector).evaluate((node) =>
       getComputedStyle(node)
         .transitionDuration.split(',')
@@ -818,11 +822,11 @@ try {
   restarted.search = new URL(sessionUrl).search
   await page.goto(restarted.href)
   await page.waitForFunction(
-    () => !location.hash && document.querySelector('#connection').dataset.state === 'connected',
+    () => !location.hash && document.querySelector('.connection-status').dataset.state === 'connected',
   )
   await terminal('已取消')
   assert.notEqual(JSON.parse(await readFile(ownerPath, 'utf8')).generation, owner.generation)
-  assert((await page.locator('#transcript').innerText()).includes('工具结果已经返回'))
+  assert((await page.locator('.transcript').innerText()).includes('工具结果已经返回'))
   checkpoint('backend stop/relaunch restores same browser task with new lifecycle credential')
 
   const currentOwner = JSON.parse(await readFile(ownerPath, 'utf8'))
@@ -832,7 +836,7 @@ try {
     journal: memoryJournal(),
   })
   try {
-    await page.locator('#settings').click()
+    await page.locator('.settings-entry').click()
     await page.locator('#config[open]').waitFor()
     await openSettingsAccount(page)
     // The configuration test endpoint accepts an explicit candidate secret. Re-enter the fixture
@@ -893,8 +897,8 @@ try {
     assert.equal(await page.locator('[data-demo-plugin]').count(), 0)
     assert.equal(await page.locator('[data-demo-model]').count(), 0)
     assert.equal(await page.locator('[data-demo-tool-view]').count(), 0)
-    assert(await page.locator('#composer').isVisible())
-    assert(await page.locator('#model').isVisible())
+    assert(await page.locator('.composer-form').isVisible())
+    assert(await page.locator('.composer-model').isVisible())
 
     const dshInputV1 = await installAndEnableClientFixture(
       peer,
@@ -927,7 +931,7 @@ try {
     await page.locator('[data-demo-plugin="dsh-input-controls"][data-demo-version="v1"]').waitFor()
     await page.locator('[data-demo-model="a"][data-demo-version="v1"]').waitFor()
     assert.equal(await page.locator('[data-demo-model="b"]').count(), 0)
-    assert.equal(await page.locator('#model').count(), 1)
+    assert.equal(await page.locator('.composer-model').count(), 1)
     assert.equal(await page.locator(`link[data-plugin="${dshInputId}"]`).count(), 1)
     const initialDshRows = (await peer.clientModules.list('local-dev')).rows
     const dshInputRowV1 = initialDshRows.find((row) => row.packageId === dshInputId)
@@ -941,24 +945,24 @@ try {
     await startNextTask(page)
     await send('WB_APPROVAL')
     await page.waitForFunction(() =>
-      document.querySelector('#transcript').textContent.includes('我会先检查工作目录'),
+      document.querySelector('.transcript').textContent.includes('我会先检查工作目录'),
     )
     provider.continueTool()
-    await page.locator('#approval button').first().waitFor()
-    await page.locator('#approval button').first().click()
+    await page.locator('.approval-panel button').first().waitFor()
+    await page.locator('.approval-panel button').first().click()
     await terminal()
-    const genericToolCount = await page.locator('#transcript .tool').count()
+    const genericToolCount = await page.locator('.transcript .tool').count()
     await send('WB_DSH_BASH')
     await page.waitForFunction(
-      (previous) => document.querySelectorAll('#transcript .tool').length > previous,
+      (previous) => document.querySelectorAll('.transcript .tool').length > previous,
       genericToolCount,
     )
-    if (await page.locator('#approval:not([hidden])').isVisible()) {
-      await page.locator('#approval button').first().click()
+    if (await page.locator('.approval-panel:not([hidden])').isVisible()) {
+      await page.locator('.approval-panel button').first().click()
     }
     await terminal()
     await page.locator('[data-demo-tool-view="bash"]').waitFor()
-    assert((await page.locator('#transcript .tool').count()) > genericToolCount)
+    assert((await page.locator('.transcript .tool').count()) > genericToolCount)
     assert.equal(await page.locator('[data-node-id] [data-demo-tool-view="bash"]').count(), 1)
     checkpoint('provider-generated bash selects the keyed tool renderer while the generic tool row remains')
 
@@ -971,7 +975,7 @@ try {
     await waitForPackageOperation(peer, disableModelA)
     await page.locator('[data-demo-model="b"]').waitFor()
     assert.equal(await page.locator('[data-demo-model="a"]').count(), 0)
-    assert(await page.locator('#model').isVisible())
+    assert(await page.locator('.composer-model').isVisible())
     const disableModelB = await peer.packages.disable({
       profile: 'local-dev',
       clientId: packageClientId,
@@ -980,9 +984,9 @@ try {
     })
     await waitForPackageOperation(peer, disableModelB)
     await page.locator('[data-demo-model]').waitFor({ state: 'hidden' })
-    assert(await page.locator('#model').isVisible())
+    assert(await page.locator('.composer-model').isVisible())
     checkpoint(
-      'model priority fallback shows B after A is disabled and restores native #model after B is disabled',
+      'model priority fallback shows B after A is disabled and restores native .composer-model after B is disabled',
     )
 
     // Re-enable B for the broken-A fallback assertion after the explicit A/B disable sequence.
@@ -1072,7 +1076,7 @@ try {
     await waitForClientModuleRow(peer, dshModelAId)
     await page.locator('[data-demo-model="b"]').waitFor()
     assert.equal(await page.locator('[data-demo-model="a"]').count(), 0)
-    assert(await page.locator('#model').isVisible())
+    assert(await page.locator('.composer-model').isVisible())
     await openPluginManagement(page)
     await assertBrowserRuntimeFailure(page, dshModelAId, '插件 UI 渲染失败，可重试')
     await closePluginManagement(page)
@@ -1099,8 +1103,8 @@ try {
         ?.integrity,
     )
     assert.equal(await page.locator('[data-demo-tool-view="bash"]').count(), 0)
-    assert((await page.locator('#transcript .tool').count()) > genericToolCount)
-    assert((await page.locator('#transcript').innerText()).includes('bash'))
+    assert((await page.locator('.transcript .tool').count()) > genericToolCount)
+    assert((await page.locator('.transcript').innerText()).includes('bash'))
     await openPluginManagement(page)
     await assertBrowserRuntimeFailure(page, dshToolId, '插件 UI 渲染失败，可重试')
     await closePluginManagement(page)
@@ -1130,7 +1134,7 @@ try {
       .first()
       .waitFor({ state: 'hidden' })
     assert.equal(await page.locator('[data-demo-plugin],[data-demo-model],[data-demo-tool-view]').count(), 0)
-    assert(await page.locator('#model').isVisible())
+    assert(await page.locator('.composer-model').isVisible())
     const remainingDshPackages = (await peer.packages.list({ profile: 'local-dev' })).packages.filter(
       (item) => dshIds.includes(item.id),
     )
@@ -1224,9 +1228,9 @@ try {
     checkpoint('DSH input and model contributions cross PackageManager → daemon → browser rows')
     await send('WB_DSH_BASH')
     await provider.continueTool()
-    await page.locator('#approval:not([hidden]) button').first().waitFor()
+    await page.locator('.approval-panel:not([hidden]) button').first().waitFor()
     await page.locator('[data-demo-tool-view="bash"]').waitFor()
-    await page.locator('#approval button').first().click()
+    await page.locator('.approval-panel button').first().click()
     await terminal()
     assert.equal(await page.locator('[data-demo-tool-view="bash"]').count(), 1)
     checkpoint('DSH keyed bash tool renderer mounts in the live transcript and survives completion')
@@ -1696,7 +1700,7 @@ try {
     })
     await waitForPackageOperation(peer, disable)
     await page.getByText('Agnes client module demo · v1').waitFor({ state: 'hidden' })
-    await page.locator('#new').waitFor()
+    await page.locator('.new-session').waitFor()
     const remove = await peer.packages.remove({
       profile: 'local-dev',
       clientId: packageClientId,
@@ -1710,11 +1714,11 @@ try {
     afterRemoval.search = new URL(sessionUrl).search
     await page.goto(afterRemoval.href)
     await page.waitForFunction(
-      () => !location.hash && document.querySelector('#connection').dataset.state === 'connected',
+      () => !location.hash && document.querySelector('.connection-status').dataset.state === 'connected',
     )
     assert.equal(await page.getByText(/Agnes client module demo · v[12]/).count(), 0)
     assert.equal(await page.getByText(/Agnes client service demo/).count(), 0)
-    await page.locator('#new').waitFor()
+    await page.locator('.new-session').waitFor()
     checkpoint(
       'disabled/removed client package withdraws browser code and cannot revive after daemon restart',
     )
@@ -1740,7 +1744,7 @@ try {
       await page.waitForFunction((previous) => location.href !== previous, sessionUrl)
       await page.waitForFunction(
         () =>
-          [...document.querySelectorAll('#transcript .assistant .node-body')].some((node) =>
+          [...document.querySelectorAll('.transcript .assistant .node-body')].some((node) =>
             node.textContent.includes('AGNES_WEB_REAL_READY'),
           ),
         undefined,
@@ -1755,7 +1759,7 @@ try {
       await page.reload()
       await terminal()
       assert(
-        (await page.locator('#transcript .assistant .node-body').allTextContents()).some((text) =>
+        (await page.locator('.transcript .assistant .node-body').allTextContents()).some((text) =>
           text.includes('AGNES_WEB_REAL_READY'),
         ),
       )
@@ -1779,7 +1783,7 @@ try {
           .catch(() => {})
         console.error(
           'VISIBLE STATE',
-          await page.locator('#status,#connection,#notice,#config-error').allTextContents(),
+          await page.locator('.task-status,.connection-status,#notice,#config-error').allTextContents(),
         )
       }
     }

@@ -9,15 +9,15 @@ afterEach(() => document.body.replaceChildren())
 describe('mobile sidebar navigation', () => {
   it('preserves the current reading position when dismissed without restoring it across a session open', () => {
     document.body.innerHTML = `
-      <button id="sidebar-backdrop"></button>
-      <aside class="sidebar"><button id="sidebar-close"></button></aside>
-      <main><button id="sidebar-toggle"></button><section id="transcript"></section></main>
+      <button class="sidebar-backdrop"></button>
+      <aside class="sidebar"><button class="sidebar-close"></button></aside>
+      <main><button class="sidebar-toggle"></button><section class="transcript"></section></main>
     `
     const narrow = { matches: true, addEventListener: vi.fn() } as unknown as MediaQueryList
-    const sidebar = bindSidebar(narrow, document, zhT)
-    const transcript = document.getElementById('transcript') as HTMLElement
-    const toggle = document.getElementById('sidebar-toggle') as HTMLButtonElement
-    const close = document.getElementById('sidebar-close') as HTMLButtonElement
+    const sidebar = bindSidebar(narrow, document.body, zhT)
+    const transcript = document.querySelector<HTMLElement>('.transcript') as HTMLElement
+    const toggle = document.querySelector<HTMLElement>('.sidebar-toggle') as HTMLButtonElement
+    const close = document.querySelector<HTMLElement>('.sidebar-close') as HTMLButtonElement
     const focus = vi.spyOn(toggle, 'focus')
 
     transcript.scrollTop = 653.5

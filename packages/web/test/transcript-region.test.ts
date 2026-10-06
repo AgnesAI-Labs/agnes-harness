@@ -23,8 +23,8 @@ describe('rendered transcript region', () => {
 
   it('renders the component-owned timeline through the public region handle', async () => {
     runtime = await mountRenderedIndex()
-    const transcript = document.querySelector('section#transcript')
-    const content = transcript?.querySelector('#transcript-content')
+    const transcript = document.querySelector('section.transcript')
+    const content = transcript?.querySelector('.transcript-content')
     expect(content?.closest('[data-slot]')?.getAttribute('data-slot')).toBe('ui:transcript')
     expect(runtime.transcript).toBeDefined()
 
@@ -56,12 +56,12 @@ describe('rendered transcript region', () => {
     )
     await vi.waitFor(() => {
       expect(document.querySelector('#shadow-transcript')?.textContent).toBe('替换时间线')
-      expect(document.querySelector('#transcript-content')).toBeNull()
+      expect(document.querySelector('.transcript-content')).toBeNull()
     }, committed)
 
     remove()
     await vi.waitFor(() => {
-      expect(document.querySelector('#transcript-content')).toBeTruthy()
+      expect(document.querySelector('.transcript-content')).toBeTruthy()
       expect(document.querySelector('#shadow-transcript')).toBeNull()
     }, committed)
   })

@@ -24,7 +24,8 @@ import {
 import type * as Local from './public-api.js'
 
 export { canonicalJsonDigest } from '@agnes/protocol/runtime'
-export type { ArtifactPublicationDeclaration } from './artifact-authoring.js'
+export type { ArtifactPublicationDeclaration, ArtifactToolRun } from './artifact-authoring.js'
+export { runArtifactTool } from './artifact-authoring.js'
 export { runtimeAuthorSchemas } from './authoring-schemas.js'
 
 export const standardHookCapabilities = Object.freeze({

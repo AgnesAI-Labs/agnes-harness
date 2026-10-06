@@ -20,7 +20,7 @@ describe('rendered approval region', () => {
 
   it('renders the live-region card through the public approval handle', async () => {
     runtime = await mountRenderedIndex()
-    const approval = document.querySelector<HTMLElement>('#approval')
+    const approval = document.querySelector<HTMLElement>('.approval-panel')
     const handle = runtime.approval
     expect(handle).toBeDefined()
     expect(approval?.getAttribute('aria-live')).toBe('polite')
@@ -104,11 +104,11 @@ describe('rendered approval region', () => {
       disabled: false,
     })
     await vi.waitFor(
-      () => expect(document.querySelector('#approval .approval-actions button')).toBeTruthy(),
+      () => expect(document.querySelector('.approval-panel .approval-actions button')).toBeTruthy(),
       committed,
     )
 
-    const allow = document.querySelector<HTMLButtonElement>('#approval .approval-actions button')
+    const allow = document.querySelector<HTMLButtonElement>('.approval-panel .approval-actions button')
     expect(allow?.type).toBe('button')
     allow?.focus()
     const enter = new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true })
@@ -120,7 +120,7 @@ describe('rendered approval region', () => {
 
   it('shadows only approval and restores the built-in component after unload', async () => {
     runtime = await mountRenderedIndex()
-    const approval = document.querySelector('#approval')
+    const approval = document.querySelector('.approval-panel')
     runtime.approval?.render({
       key: 'shadow-replay',
       title: '需要你的确认',
@@ -141,15 +141,15 @@ describe('rendered approval region', () => {
     )
     await vi.waitFor(() => {
       expect(approval?.querySelector('#shadow-approval')?.textContent).toBe('替换审批')
-      expect(approval?.querySelector('#approval-content')).toBeNull()
+      expect(approval?.querySelector('.approval-content')).toBeNull()
     }, committed)
-    expect(document.querySelector('[data-slot="ui:conversation"] #transcript')).toBeTruthy()
-    expect(document.querySelector('[data-slot="ui:composer"] #prompt')).toBeTruthy()
+    expect(document.querySelector('[data-slot="ui:conversation"] .transcript')).toBeTruthy()
+    expect(document.querySelector('[data-slot="ui:composer"] .composer-prompt')).toBeTruthy()
 
     remove()
     await vi.waitFor(() => {
       expect(approval?.querySelector('[data-agnes-region-unit="approval"]')).toBeTruthy()
-      expect(approval?.querySelector('#approval-content')).toBeTruthy()
+      expect(approval?.querySelector('.approval-content')).toBeTruthy()
       expect(approval?.querySelector('h2')?.textContent).toBe('需要你的确认')
       expect(approval?.querySelector('p')?.textContent).toBe('恢复当前审批')
     }, committed)

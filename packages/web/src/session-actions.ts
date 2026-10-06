@@ -288,7 +288,7 @@ export function createSessionActions(options: {
           await options.client.session.archive(id, true)
           archivedSuccessfully = true
           await options.changed()
-          document.querySelector<HTMLElement>('#sessions button')?.focus()
+          document.querySelector<HTMLElement>('.session-nav button')?.focus()
         }
       } catch (failure) {
         options.error(

@@ -4,6 +4,10 @@ import { afterEach, expect, it, vi } from 'vitest'
 import { createPermissionPicker, permissionLabel, yoloEnabled } from '../src/permission-picker.js'
 import { zhT } from './helpers/locale.js'
 
+/** The option the listbox's aria-activedescendant points at, resolved in its own document. */
+const activeOption = (box: HTMLElement) =>
+  box.ownerDocument.getElementById(box.getAttribute('aria-activedescendant') ?? '')
+
 afterEach(() => {
   vi.unstubAllGlobals()
   document.body.replaceChildren()
@@ -65,14 +69,14 @@ it('moves the active permission with keys and returns focus on Escape', () => {
   if (!listbox) throw new Error('permission listbox did not open')
   expect(document.activeElement).toBe(listbox)
   expect(trigger.getAttribute('aria-controls')).toBe(listbox.id)
-  expect(listbox.getAttribute('aria-activedescendant')).toBe('permission-picker-option-1')
+  expect(activeOption(listbox)).toBe(listbox.querySelectorAll('[role="option"]')[1])
 
   listbox.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }))
-  expect(listbox.getAttribute('aria-activedescendant')).toBe('permission-picker-option-2')
+  expect(activeOption(listbox)).toBe(listbox.querySelectorAll('[role="option"]')[2])
   listbox.dispatchEvent(new KeyboardEvent('keydown', { key: 'Home', bubbles: true }))
-  expect(listbox.getAttribute('aria-activedescendant')).toBe('permission-picker-option-0')
+  expect(activeOption(listbox)).toBe(listbox.querySelectorAll('[role="option"]')[0])
   listbox.dispatchEvent(new KeyboardEvent('keydown', { key: 'End', bubbles: true }))
-  expect(listbox.getAttribute('aria-activedescendant')).toBe('permission-picker-option-2')
+  expect(activeOption(listbox)).toBe(listbox.querySelectorAll('[role="option"]')[2])
   listbox.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
 
   expect(document.querySelector('[role="listbox"]')).toBeNull()

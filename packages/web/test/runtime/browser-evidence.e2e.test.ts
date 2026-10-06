@@ -75,9 +75,9 @@ const SHELL = `(() => {
     colors: [...new Set([...document.querySelectorAll('#fixture-slots .evidence-fixture')].map(
       (fixture) => getComputedStyle(fixture).color))],
     transition: getComputedStyle(document.documentElement).getPropertyValue('--transition').trim(),
-    motion: getComputedStyle(document.getElementById('transcript')).transitionDuration,
-    focus: document.activeElement?.id,
-    selection: [selection.toString(), selection.anchorNode?.parentElement?.id ?? null],
+    motion: getComputedStyle(document.querySelector('.transcript')).transitionDuration,
+    focus: document.activeElement?.className,
+    selection: [selection.toString(), selection.anchorNode?.parentElement?.className ?? null],
   }
 })()`
 type Shell = {
@@ -686,14 +686,14 @@ describe.skipIf(process.platform === 'win32' || !chrome)('release Web builds in 
       await target.emulate({ 'prefers-color-scheme': 'light', 'prefers-reduced-motion': 'no-preference' })
       await publish([fixtureModule('v1', [sheet('base'), sheet('accent')])])
       // Without a daemon the composer stays disabled, so focus a shell control and select heading text.
-      await target.settle<boolean>(`!!document.getElementById('empty-state-title')?.firstChild`, Boolean)
+      await target.settle<boolean>(`!!document.querySelector('.empty-state-heading')?.firstChild`, Boolean)
       await target.evaluate(`(() => {
-        document.getElementById('sidebar-toggle').focus()
-        const text = document.getElementById('empty-state-title').firstChild
+        document.querySelector('.sidebar-toggle').focus()
+        const text = document.querySelector('.empty-state-heading').firstChild
         getSelection().setBaseAndExtent(text, 0, text, 5)
       })()`)
       const ready = DSH_SLOT_NAMES.map((name) => `${name} ready 1`)
-      const kept = { focus: 'sidebar-toggle', selection: ['Agnes', 'empty-state-title'] }
+      const kept = { focus: 'icon-button sidebar-toggle', selection: ['Agnes', 'empty-state-heading'] }
 
       const light = await target.settle<Shell>(SHELL, (state) => state.slots.join() === ready.join())
       expect(ready).toHaveLength(63)
@@ -785,6 +785,8 @@ describe.skipIf(process.platform === 'win32' || !chrome)('release Web builds in 
     })
 
     afterAll(async () => {
+      // Chrome is still running here and keeps its connections to this page open; close() alone waits for them.
+      other?.closeAllConnections()
       await new Promise((resolve) => other?.close(resolve))
     })
 

@@ -6,27 +6,34 @@ const getButton = (doc: Document, id: string) => {
   return value
 }
 
-/** Binds the sidebar controls of `doc`; body classes, `inert` and the Escape listener stay on `doc`. */
+/**
+ * Binds the sidebar controls inside `root`, found by class so that two workbenches in one document
+ * never share them. Body classes, `inert` and the Escape listener stay on the root's document.
+ */
 export function bindSidebar(
   narrow: MediaQueryList,
-  doc: Document,
+  root: HTMLElement,
   t: Translate,
 ): { close(): void; dismiss(): void; dispose(): void } {
-  let readingTop: number | undefined
-  const transcript = (): HTMLElement | undefined => {
-    const value = doc.getElementById('transcript')
-    return value instanceof HTMLElement ? value : undefined
+  const doc = root.ownerDocument
+  const control = (name: string) => {
+    const value = root.querySelector(`.${name}`)
+    if (!(value instanceof HTMLButtonElement)) throw new Error(`missing button.${name}`)
+    return value
   }
+  let readingTop: number | undefined
+  const transcript = (): HTMLElement | undefined =>
+    root.querySelector<HTMLElement>('.transcript') ?? undefined
   const sync = (): void => {
     const visible = narrow.matches
       ? doc.body.classList.contains('sidebar-open')
       : !doc.body.classList.contains('sidebar-collapsed')
-    const toggle = getButton(doc, 'sidebar-toggle')
+    const toggle = control('sidebar-toggle')
     toggle.setAttribute('aria-expanded', String(visible))
     toggle.setAttribute('aria-label', visible ? t('shell.collapseNav') : t('shell.openNav'))
-    const sidebar = doc.querySelector<HTMLElement>('.sidebar')
+    const sidebar = root.querySelector<HTMLElement>('.sidebar')
     if (sidebar) sidebar.inert = !visible
-    const main = doc.querySelector('main')
+    const main = root.querySelector('main')
     if (main) main.inert = narrow.matches && visible
   }
   const hide = (): void => {
@@ -39,22 +46,22 @@ export function bindSidebar(
   }
   const dismiss = (): void => {
     hide()
-    getButton(doc, 'sidebar-toggle').focus({ preventScroll: true })
+    control('sidebar-toggle').focus({ preventScroll: true })
     if (readingTop !== undefined) {
       const value = transcript()
       if (value) value.scrollTop = readingTop
       readingTop = undefined
     }
   }
-  const toggle = getButton(doc, 'sidebar-toggle')
-  const closeButton = getButton(doc, 'sidebar-close')
-  const backdrop = getButton(doc, 'sidebar-backdrop')
+  const toggle = control('sidebar-toggle')
+  const closeButton = control('sidebar-close')
+  const backdrop = control('sidebar-backdrop')
   const onToggle = () => {
     if (narrow.matches && !doc.body.classList.contains('sidebar-open')) readingTop = transcript()?.scrollTop
     doc.body.classList.toggle(narrow.matches ? 'sidebar-open' : 'sidebar-collapsed')
     sync()
     if (narrow.matches && doc.body.classList.contains('sidebar-open'))
-      getButton(doc, 'sidebar-close').focus({ preventScroll: true })
+      closeButton.focus({ preventScroll: true })
   }
   const onDismiss = () => dismiss()
   const onMediaChange = () => sync()
