@@ -21,7 +21,7 @@ import { bindAppearance, bindSkinGroup } from './appearance.js'
 import type { ApprovalAction } from './approval.js'
 import { liveApprovalCard } from './approval-card.js'
 import { installBrowserLogCapture } from './browser-log.js'
-import { type ClaimResolver, startClientModules } from './client-modules/boot.js'
+import { type ClaimResolver, type ClientModulesRuntime, startClientModules } from './client-modules/boot.js'
 import { startPluginHotReload } from './client-modules/hot-reload.js'
 import type { RosterSource } from './client-modules/reconcile.js'
 import type { ComposerView } from './composer.js'
@@ -53,6 +53,10 @@ import {
   workspaceErrorNotice,
 } from './presentation.js'
 import { bootstrapProbe, createReconnectController, type ReconnectPhase } from './reconnect.js'
+import { createWorkbenchShell, type WorkbenchRegions } from './runtime/providers/workbench-shell.js'
+import { createLegacyShellServices } from './runtime/services/legacy-shell-services.js'
+import { createShellSnapshotStore } from './runtime/services/snapshot-store.js'
+import { createShellSwitcher } from './runtime/shell-state.js'
 import { createSessionActions, forkTitle } from './session-actions.js'
 import { bindWebSession, loadWebSession } from './session-binding.js'
 import { createTitleRefresh, sessionTitle } from './session-title.js'
@@ -89,7 +93,6 @@ const button = (id: string) => element(id, 'button')
 const composerDraftKey = 'agnes-web-composer-draft'
 const savedComposerDraft = sessionStorage.getItem(composerDraftKey)
 const notice = element('notice', 'p')
-const conversation = element('conversation-shell', 'div')
 const newSessionDialog = element('new-session', 'dialog')
 const newSessionForm = element('new-session-form', 'form')
 const newSessionCwd = element('new-session-cwd', 'input')
@@ -193,133 +196,166 @@ const claimSlotCard: ClaimResolver = (entry, extId) =>
   entry.owner !== undefined && (moduleExtIds.get(entry.owner)?.includes(extId) ?? false)
 const computerUseStatus = createComputerUsePaneController(client)
 addEventListener('pagehide', () => computerUseStatus.dispose(), { once: true })
-const clientModules = await startClientModules({
-  agnes: client,
-  claim: claimSlotCard,
-  clientServiceCaller: async (module, sessionId, service, input) => {
-    const response = await fetch('/api/client-modules/service', {
-      method: 'POST',
-      credentials: 'same-origin',
-      headers: {
-        'Content-Type': 'application/json',
-        Accept: 'application/json',
-      },
-      body: JSON.stringify({ rowId: module.rowId ?? module.packageId, sessionId, service, input }),
-    })
-    if (!response.ok) throw new Error(t('app.plugin.serviceUnavailable'))
-    const body: unknown = await response.json().catch(() => undefined)
-    if (!body || typeof body !== 'object' || !('output' in body))
-      throw new Error(t('app.plugin.serviceInvalid'))
-    return (body as { output: unknown }).output
-  },
-  clientEffectCaller: async (module, sessionId, service, commandId, input) => {
-    const response = await fetch('/api/client-modules/effect', {
-      method: 'POST',
-      credentials: 'same-origin',
-      headers: {
-        'Content-Type': 'application/json',
-        Accept: 'application/json',
-      },
-      body: JSON.stringify({
-        rowId: module.rowId ?? module.packageId,
-        sessionId,
-        service,
-        commandId,
-        input,
-      }),
-    })
-    if (!response.ok) throw new Error(t('app.plugin.effectUnavailable'))
-    const body: unknown = await response.json().catch(() => undefined)
-    if (!body || typeof body !== 'object' || !('output' in body))
-      throw new Error(t('app.plugin.effectInvalid'))
-    return (body as { output: unknown }).output
-  },
-  authorizeCommand: ({ owner, command }) =>
-    window.confirm(
-      t('app.plugin.authorize', {
-        owner,
-        command: command.title ?? command.id,
-        service: command.effectService
-          ? t('app.plugin.authorizeService', { service: command.effectService })
-          : '',
-      }),
-    ),
-  panelContainer: document.getElementById('main-content') ?? undefined,
-  sidebarContainer: document.querySelector<HTMLElement>('aside.sidebar') ?? undefined,
-  sidebar: {
-    actions: {
-      newSession: (workspace) => run(() => beginNewDraft(workspace === undefined, workspace)),
-      addWorkspace: () =>
-        run(async () => {
-          if (!draftingNew) await beginNewDraft()
-          openNewSessionDialog()
-        }),
-      openSettings: () => {
-        settingsRegion.open('model')
-        run(() => settings.open())
-      },
-      openSession: (id) =>
-        run(async () => {
-          if (sessionPending) return
-          await open(id)
-          clientModules.sidebar?.close()
-        }),
-      sessionAction: (action, id, title, trigger) => {
-        void sessionActions.act(action, id, title, trigger)
-      },
-      loadMore: (cursor) =>
-        run(async () => {
-          await list(cursor)
-        }),
-    },
-  },
-  transcript: { nodeHost: 'react', onFork: forkTurn },
-  conversationContainer: conversation,
-  topbarContainer: document.querySelector<HTMLElement>('header.topbar') ?? undefined,
-  approvalContainer: document.getElementById('approval') ?? undefined,
-  composerContainer: document.getElementById('composer-mount') ?? undefined,
-  composer: {
-    initialDraft: savedComposerDraft ?? '',
-    onCancel: handleComposerCancel,
-    onDraftChange: handleComposerDraftChange,
-    onError: showError,
-    onModelSelect: selectModel,
-    onModelSettingsChange: selectModelSettings,
-    onPermissionSelect: selectPermission,
-    onSubmit: submitComposer,
-    onSendNow: handleQueuedSendNow,
-    onWorkspace: handleComposerWorkspace,
-  },
-  traceContainer: document.getElementById('trace-panel') ?? undefined,
-  trace: {
-    toggle: button('view-trace'),
-    chatToggle: button('view-chat'),
-    conversation,
-    readToolDetail: async (sessionId, callSeq, resultSeq, signal) => {
-      const session = current
-      if (!session) throw new Error(t('app.trace.noSession'))
-      if (session.id !== sessionId) throw new Error(t('app.trace.sessionSwitched'))
-      return session.readToolDetail(callSeq, resultSeq, signal ? { signal } : undefined)
-    },
-  },
-  rightbarContainer: document.getElementById('rightbar-panel') ?? undefined,
-  settingsPaneContainer: document.getElementById('config') ?? undefined,
-  settings: {
-    computerUse: computerUseStatus.render(),
-    onChange: ({ pane, tab }) => {
-      if (pane === 'model') void settings.open()
-      else if (pane === 'plugin') void openAdminPane('plugin')
-      else if (pane === 'resources') void openAdminPane('resources', tab ?? 'skills')
-      else if (pane === 'archived') void sessionActions.loadArchived()
-      else if (pane === 'computer-use') void computerUseStatus.refresh()
-      else {
-        appearance.sync()
-        void skinGroup.refresh()
+// The workbench is this page's shell, mounted through the shell switch. A server-chosen shell needs a
+// runtime welcome, which this page does not receive yet, so the built-in workbench is the only one.
+let workbench: { regions: WorkbenchRegions; runtime: ClientModulesRuntime } | undefined
+const snapshots = createShellSnapshotStore()
+const shells = createShellSwitcher({
+  surface: element('agnes-shell', 'div'),
+  services: createLegacyShellServices({ open: openFromShell }),
+  snapshot: () => snapshots.current(),
+})
+const mountedShell = await shells.switchTo(() =>
+  createWorkbenchShell({
+    notices: [notice, reconnectNotice],
+    async mount(regions) {
+      const runtime = await startClientModules(clientModuleOptions(regions))
+      workbench = { regions, runtime }
+      return {
+        translate: (key) => runtime.locale.t(key),
+        draft: () => runtime.composer?.getDraft() ?? '',
+        setDraft: (draft) => runtime.composer?.setDraft(draft),
+        dispose: () => runtime.dispose(),
       }
     },
-  },
-  rosterSource,
-})
+  }),
+)
+if (!mountedShell.ok || !workbench) {
+  notice.textContent = mountedShell.ok ? 'The workbench did not mount.' : mountedShell.error.message
+  notice.dataset.kind = 'error'
+  throw new Error(notice.textContent)
+}
+snapshots.subscribe((snapshot) => void shells.current()?.update(snapshot))
+const { regions, runtime: clientModules } = workbench
+function clientModuleOptions(regions: WorkbenchRegions): Parameters<typeof startClientModules>[0] {
+  return {
+    agnes: client,
+    claim: claimSlotCard,
+    clientServiceCaller: async (module, sessionId, service, input) => {
+      const response = await fetch('/api/client-modules/service', {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: {
+          'Content-Type': 'application/json',
+          Accept: 'application/json',
+        },
+        body: JSON.stringify({ rowId: module.rowId ?? module.packageId, sessionId, service, input }),
+      })
+      if (!response.ok) throw new Error(t('app.plugin.serviceUnavailable'))
+      const body: unknown = await response.json().catch(() => undefined)
+      if (!body || typeof body !== 'object' || !('output' in body))
+        throw new Error(t('app.plugin.serviceInvalid'))
+      return (body as { output: unknown }).output
+    },
+    clientEffectCaller: async (module, sessionId, service, commandId, input) => {
+      const response = await fetch('/api/client-modules/effect', {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: {
+          'Content-Type': 'application/json',
+          Accept: 'application/json',
+        },
+        body: JSON.stringify({
+          rowId: module.rowId ?? module.packageId,
+          sessionId,
+          service,
+          commandId,
+          input,
+        }),
+      })
+      if (!response.ok) throw new Error(t('app.plugin.effectUnavailable'))
+      const body: unknown = await response.json().catch(() => undefined)
+      if (!body || typeof body !== 'object' || !('output' in body))
+        throw new Error(t('app.plugin.effectInvalid'))
+      return (body as { output: unknown }).output
+    },
+    authorizeCommand: ({ owner, command }) =>
+      window.confirm(
+        t('app.plugin.authorize', {
+          owner,
+          command: command.title ?? command.id,
+          service: command.effectService
+            ? t('app.plugin.authorizeService', { service: command.effectService })
+            : '',
+        }),
+      ),
+    panelContainer: regions.main,
+    sidebarContainer: regions.sidebar,
+    sidebar: {
+      actions: {
+        newSession: (workspace) => run(() => beginNewDraft(workspace === undefined, workspace)),
+        addWorkspace: () =>
+          run(async () => {
+            if (!draftingNew) await beginNewDraft()
+            openNewSessionDialog()
+          }),
+        openSettings: () => {
+          settingsRegion.open('model')
+          run(() => settings.open())
+        },
+        openSession: (id) =>
+          run(async () => {
+            if (sessionPending) return
+            await open(id)
+            clientModules.sidebar?.close()
+          }),
+        sessionAction: (action, id, title, trigger) => {
+          void sessionActions.act(action, id, title, trigger)
+        },
+        loadMore: (cursor) =>
+          run(async () => {
+            await list(cursor)
+          }),
+      },
+    },
+    transcript: { nodeHost: 'react', onFork: forkTurn },
+    conversationContainer: regions.conversation,
+    topbarContainer: regions.topbar,
+    approvalContainer: regions.approval,
+    composerContainer: regions.composer,
+    composer: {
+      initialDraft: savedComposerDraft ?? '',
+      onCancel: handleComposerCancel,
+      onDraftChange: handleComposerDraftChange,
+      onError: showError,
+      onModelSelect: selectModel,
+      onModelSettingsChange: selectModelSettings,
+      onPermissionSelect: selectPermission,
+      onSubmit: submitComposer,
+      onSendNow: handleQueuedSendNow,
+      onWorkspace: handleComposerWorkspace,
+    },
+    traceContainer: regions.trace,
+    trace: {
+      toggle: regions.traceTab,
+      chatToggle: regions.chatTab,
+      conversation: regions.conversation,
+      readToolDetail: async (sessionId, callSeq, resultSeq, signal) => {
+        const session = current
+        if (!session) throw new Error(t('app.trace.noSession'))
+        if (session.id !== sessionId) throw new Error(t('app.trace.sessionSwitched'))
+        return session.readToolDetail(callSeq, resultSeq, signal ? { signal } : undefined)
+      },
+    },
+    rightbarContainer: regions.rightbar,
+    settingsPaneContainer: document.getElementById('config') ?? undefined,
+    settings: {
+      computerUse: computerUseStatus.render(),
+      onChange: ({ pane, tab }) => {
+        if (pane === 'model') void settings.open()
+        else if (pane === 'plugin') void openAdminPane('plugin')
+        else if (pane === 'resources') void openAdminPane('resources', tab ?? 'skills')
+        else if (pane === 'archived') void sessionActions.loadArchived()
+        else if (pane === 'computer-use') void computerUseStatus.refresh()
+        else {
+          appearance.sync()
+          void skinGroup.refresh()
+        }
+      },
+    },
+    rosterSource,
+  }
+}
 const tracePanel = clientModules.trace as NonNullable<typeof clientModules.trace>
 if (!tracePanel) throw new Error('missing trace region')
 const settingsRegion = clientModules.settings as NonNullable<typeof clientModules.settings>
@@ -585,6 +621,7 @@ function setConnection(value: 'connecting' | 'connected' | 'reconnecting' | 'clo
     }
   }
   topbarRuntime.setConnectionState(value)
+  snapshots.set({ connection: value })
   settings.setConnected(connected)
   renderControls()
 }
@@ -882,7 +919,7 @@ function renderApproval(): void {
     return
   }
   const key = liveApproval ? `live:${liveApproval.request.toolCall.toolCallId}` : (durable?.ticket ?? '')
-  // 审批卡是会话区外的流内兄弟：显示/收回都会改变 #transcript 的视口高度。
+  // 审批卡是会话区外的流内兄弟：显示/收回都会改变 .transcript 的视口高度。
   // 原本贴底的会话要保持贴底，否则最新过程被压出可视区、贴底跟随也会被破坏。
   const stick = conversationRuntime.isTranscriptNearBottom()
   if (!key) {
@@ -1025,6 +1062,11 @@ async function list(cursor?: string): Promise<PageSessionMeta> {
     topbarRuntime.setTaskTitle(selectedRow.title ?? t('app.status.newTask'))
   return page
 }
+/** Opens a session a shell navigates to; refuses while another one is still opening. */
+async function openFromShell(sessionId: string): Promise<void> {
+  if (sessionPending) throw new Error('another session is still opening')
+  await open(sessionId)
+}
 async function open(
   id: string,
   options: {
@@ -1043,8 +1085,9 @@ async function open(
   const previous = current
   // 投影与转录区都保留到新投影就绪：加载期间旧画面继续显示（body.session-switching
   // 半透明提示，状态栏「正在准备会话」），不经历「清空 → 空白 → 填充」的闪屏，
-  // 也避免 `body:has(#transcript:empty)` 把布局跳进空态模式。
+  // 也避免 `body:has(.transcript:empty)` 把布局跳进空态模式。
   current = undefined
+  snapshots.set({ sessionId: null })
   clientModules.session.setSession(undefined)
   sessionYoloEnabled = options.created ? false : undefined
   permissionRefreshPending = false
@@ -1106,6 +1149,7 @@ async function open(
     }
     const loaded = binding.session
     current = loaded
+    snapshots.set({ sessionId: loaded.id })
     clientModules.session.setSession(loaded.id)
     if (!options.created) permissionMode = 'workspace'
     const metadata = sessionRows.find((row) => row.sessionId === id) as
@@ -1189,6 +1233,7 @@ async function open(
     if (!selectionReady) {
       const failed = current
       current = undefined
+      snapshots.set({ sessionId: null })
       clientModules.session.setSession(undefined)
       projection = undefined
       knownSessionModel = undefined
@@ -1379,6 +1424,7 @@ async function beginNewDraft(showWorkspacePicker = true, workspace?: WorkspaceEn
   const inherited = selectionFromMemory(runtimeModels, accountProvider)
   const stop = stopEvents
   current = undefined
+  snapshots.set({ sessionId: null })
   clientModules.session.setSession(undefined)
   projection = undefined
   draftingNew = true
@@ -2042,7 +2088,7 @@ const diagnostics = createDiagnosticsDialog({
     projectionHasEarlier: live?.hasEarlier() ?? false,
   }),
 })
-const reportProblem = button('report-problem')
+const reportProblem = regions.reportProblem
 reportProblem.addEventListener('click', () => diagnostics.open(reportProblem))
 client.on('reconnecting', () => setConnection('reconnecting'))
 client.on('reconnected', () => {
@@ -2099,12 +2145,12 @@ document.addEventListener('visibilitychange', () => {
     scheduleClientRosterRead()
   }
 })
-for (const [index, tab] of [button('view-chat'), button('view-trace')].entries()) {
+for (const [index, tab] of [regions.chatTab, regions.traceTab].entries()) {
   tab.addEventListener('keydown', (event) => {
     if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return
     event.preventDefault()
     const next = event.key === 'Home' ? 0 : event.key === 'End' ? 1 : event.key === 'ArrowLeft' ? 0 : 1
-    const target = next === 0 ? button('view-chat') : button('view-trace')
+    const target = next === 0 ? regions.chatTab : regions.traceTab
     target.focus()
     tracePanel.setOpen(next === 1)
   })

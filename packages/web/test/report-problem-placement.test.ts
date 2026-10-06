@@ -20,11 +20,11 @@ describe('report-problem button placement', () => {
 
   it('sits at the right end of the session tab row, outside the tablist and the topbar', async () => {
     runtime = await mountRenderedIndex()
-    const buttons = document.querySelectorAll('#report-problem')
+    const buttons = document.querySelectorAll('.report-problem')
     expect(buttons).toHaveLength(1)
     const button = buttons[0] as HTMLButtonElement
     expect(button).toBeInstanceOf(HTMLButtonElement)
-    expect(document.querySelector('header.topbar #report-problem')).toBeNull()
+    expect(document.querySelector('header.topbar .report-problem')).toBeNull()
     expect(button.closest('.connection-group')).toBeNull()
     expect(button.closest('[role="tablist"]')).toBeNull()
 
@@ -35,7 +35,7 @@ describe('report-problem button placement', () => {
     expect(bar?.lastElementChild).toBe(button)
 
     expect(button.type).toBe('button')
-    expect(button.className).toBe('icon-button')
+    expect(button.classList.contains('icon-button')).toBe(true)
     expect(button.getAttribute('aria-label')).toBe('Report a problem')
     expect(button.getAttribute('title')).toBe('Report a problem')
 
@@ -54,9 +54,9 @@ describe('report-problem button placement', () => {
       new RegExp(`^\\s*${selector.replace(/[.#]/g, '\\$&')} \\{([^}]*)\\}`, 'm').exec(css.slice(from))?.[1]
     expect(rule('.session-tabs-bar')).toMatch(/border-bottom: 1px solid var\(--agnes-line-primary\)/)
     expect(rule('.session-tabs')).not.toMatch(/padding|border/)
-    expect(rule('#report-problem')).toMatch(/margin-left: auto/)
+    expect(rule('.report-problem')).toMatch(/margin-left: auto/)
     const phone = css.indexOf('@media (max-width: 540px) {')
     expect(phone).toBeGreaterThan(-1)
-    expect(rule('#report-problem', phone)).toMatch(/height: 2\.25rem/)
+    expect(rule('.report-problem', phone)).toMatch(/height: 2\.25rem/)
   })
 })

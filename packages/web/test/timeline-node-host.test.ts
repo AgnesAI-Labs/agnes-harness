@@ -20,7 +20,7 @@ async function setup(options: { onFork?: (turn: UITurn) => Promise<void> } = {})
   const registry = (ctx as unknown as { slots: SlotRegistry }).slots
   registry.setSession('session-a')
   const transcript = document.createElement('section')
-  transcript.id = 'transcript'
+  transcript.className = 'transcript'
   transcript.tabIndex = -1
   const button = document.createElement('button')
   document.body.append(transcript, button)
@@ -113,7 +113,7 @@ describe('W4a opt-in transcript node host', () => {
   it('owns creation, in-place update, order, deletion and reset in one React tree', async () => {
     const { transcript, mount } = await setup()
     await act(async () => mount.render([slot(1), tool('running')]))
-    const content = transcript.querySelector('#transcript-content')
+    const content = transcript.querySelector('.transcript-content')
     expect(content?.querySelector('[data-agnes-conversation-messages]')).toBeTruthy()
     const original = item(transcript, 'slot')
     expect(original?.querySelector('[data-slot-node="tool.card.inline"]')).toBeTruthy()

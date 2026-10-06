@@ -563,7 +563,7 @@ async function configureWorkbench(page, runtime) {
     await page.locator('#config-close').click()
     await page.locator('#config[open]').waitFor({ state: 'hidden' })
   } else {
-    await page.locator('#prompt').waitFor({ timeout: 30000 })
+    await page.locator('.composer-prompt').waitFor({ timeout: 30000 })
   }
   if (
     !(await page
@@ -573,12 +573,12 @@ async function configureWorkbench(page, runtime) {
   ) {
     if (
       await page
-        .locator('#prompt')
+        .locator('.composer-prompt')
         .isDisabled()
         .catch(() => false)
     ) {
       await openMobileSidebar(page)
-      await page.locator('#new').click()
+      await page.locator('.new-session').click()
     } else {
       if (
         await page
@@ -586,15 +586,15 @@ async function configureWorkbench(page, runtime) {
           .isVisible()
           .catch(() => false)
       )
-        await page.locator('#sidebar-close').click()
-      await page.locator('#composer-workspace').click()
+        await page.locator('.sidebar-close').click()
+      await page.locator('.composer-workspace').click()
     }
   }
   await page.locator('#new-session[open]').waitFor()
   await fillWorkspacePath(page, runtime.cwd)
   await page.locator('#new-session-create').click()
-  await page.locator('#prompt').waitFor()
-  await page.waitForFunction(() => !document.querySelector('#prompt')?.disabled)
+  await page.locator('.composer-prompt').waitFor()
+  await page.waitForFunction(() => !document.querySelector('.composer-prompt')?.disabled)
   await ensureSessionModel(page)
 }
 
@@ -607,7 +607,7 @@ async function fillWorkspacePath(page, cwd) {
 async function openMobileSidebar(page) {
   const narrow = await page.evaluate(() => matchMedia('(max-width: 720px)').matches)
   if (!narrow) return
-  const toggle = page.locator('#sidebar-toggle')
+  const toggle = page.locator('.sidebar-toggle')
   const isOpen = await page.locator('body').evaluate((node) => node.classList.contains('sidebar-open'))
   if ((await toggle.isVisible().catch(() => false)) && !isOpen) {
     await toggle.click()
@@ -618,7 +618,7 @@ async function openMobileSidebar(page) {
 async function ensureSessionModel(page) {
   const label = page.locator('[data-model-label]')
   if ((await label.textContent())?.trim() !== '选择模型') return
-  await page.locator('#model').click()
+  await page.locator('.composer-model').click()
   await page.getByRole('listbox').waitFor()
   const option = page.getByRole('option').first()
   await option.waitFor()
@@ -630,13 +630,14 @@ async function ensureSessionModel(page) {
 
 async function openSettings(page) {
   await openMobileSidebar(page)
-  await page.locator('#settings').click()
+  await page.locator('.settings-entry').click()
   await page.locator('#config[open]').waitFor()
 }
 
 async function waitTerminal(page) {
   await page.waitForFunction(
-    () => ['已完成', '执行失败', '已取消'].includes(document.querySelector('#status')?.textContent ?? ''),
+    () =>
+      ['已完成', '执行失败', '已取消'].includes(document.querySelector('.task-status')?.textContent ?? ''),
     null,
     { timeout: 45000 },
   )
@@ -692,49 +693,49 @@ async function setupState(page, runtime, stateId) {
           .isVisible()
           .catch(() => false)
       )
-        await page.locator('#sidebar-close').click()
+        await page.locator('.sidebar-close').click()
       // The composer workspace control is the product path that always opens the workspace
       // picker, even when the current session already has a selected workspace.
-      await page.locator('#composer-workspace').click()
+      await page.locator('.composer-workspace').click()
     }
     await page.locator('#new-session[open]').waitFor()
     return
   }
   if (stateId === 'composer-short') {
-    await page.locator('#prompt').fill('D31 short input')
+    await page.locator('.composer-prompt').fill('D31 short input')
     return
   }
   if (stateId === 'composer-long') {
-    await page.locator('#prompt').fill('D31 long input\n'.repeat(30))
-    await page.locator('#prompt').evaluate((node) => (node.scrollTop = 0))
+    await page.locator('.composer-prompt').fill('D31 long input\n'.repeat(30))
+    await page.locator('.composer-prompt').evaluate((node) => (node.scrollTop = 0))
     return
   }
   if (stateId === 'model-open') {
-    await page.locator('#model').click()
+    await page.locator('.composer-model').click()
     await page.getByRole('listbox').waitFor()
     return
   }
   if (stateId === 'permission-open') {
-    await page.locator('#composer-permission').click()
+    await page.locator('.composer-permission').click()
     await page.getByRole('listbox').waitFor()
     return
   }
   if (stateId === 'conversation-markdown') {
-    await page.locator('#prompt').fill('D31_MARKDOWN')
-    await page.locator('#send').click()
+    await page.locator('.composer-prompt').fill('D31_MARKDOWN')
+    await page.locator('.composer-send').click()
     await waitTerminal(page)
     return
   }
   if (stateId === 'tool-card-inline' || stateId === 'approval-pending') {
     await selectWorkspacePermission(page)
-    await page.locator('#prompt').fill('D31_APPROVAL')
-    await page.locator('#send').click()
+    await page.locator('.composer-prompt').fill('D31_APPROVAL')
+    await page.locator('.composer-send').click()
     // Release the deterministic provider stream so the real tool-call/approval event can reach
     // the browser. Waiting for the card before releasing would deadlock the fixture itself.
     runtime.provider.releaseApproval()
-    const approvalAction = page.locator('#approval [data-approval-key] [data-approval-action]').first()
+    const approvalAction = page.locator('.approval-panel [data-approval-key] [data-approval-action]').first()
     await approvalAction.waitFor({ state: 'visible', timeout: 45000 })
-    await page.waitForFunction(() => document.querySelector('#status')?.textContent === '等待审批')
+    await page.waitForFunction(() => document.querySelector('.task-status')?.textContent === '等待审批')
     if (stateId === 'tool-card-inline') {
       await approvalAction.click()
       await waitTerminal(page)
@@ -742,8 +743,8 @@ async function setupState(page, runtime, stateId) {
     return
   }
   if (stateId === 'trace-open') {
-    await page.locator('#view-trace').click()
-    await page.locator('#trace-panel:not([hidden])').waitFor()
+    await page.locator('.session-tab-trace').click()
+    await page.locator('.trace-panel:not([hidden])').waitFor()
     return
   }
   if (stateId === 'sidebar-menu') {
@@ -758,16 +759,16 @@ async function setupState(page, runtime, stateId) {
     const mobileSidebarOpen = await page
       .locator('body')
       .evaluate((node) => node.classList.contains('sidebar-open'))
-    if (mobileSidebarOpen) await page.locator('#sidebar-close').click()
-    await page.locator('#prompt').fill('D31_MARKDOWN')
-    await page.locator('#send').click()
+    if (mobileSidebarOpen) await page.locator('.sidebar-close').click()
+    await page.locator('.composer-prompt').fill('D31_MARKDOWN')
+    await page.locator('.composer-send').click()
     await waitTerminal(page)
     await openMobileSidebar(page)
     // A completed matrix has many historical rows.  Target the current active session instead
     // of whichever row happens to be first, then allow the just-refreshed sidebar one event turn
     // to bind its menu listener.  This keeps the capture on the same product click path while
     // avoiding a cumulative-state race that a single-state run cannot expose.
-    const trigger = page.locator('#sessions .session-row[data-active="true"] button[aria-haspopup="menu"]')
+    const trigger = page.locator('.session-nav .session-row[data-active="true"] button[aria-haspopup="menu"]')
     await trigger.waitFor({ state: 'visible' })
     const narrow = await page.evaluate(() => matchMedia('(max-width: 720px)').matches)
     for (let attempt = 0; attempt < 2; attempt += 1) {
@@ -803,7 +804,7 @@ async function setupState(page, runtime, stateId) {
         await page.waitForFunction(
           () => {
             const active = document.querySelector(
-              '#sessions .session-row[data-active="true"] button[aria-haspopup="menu"]',
+              '.session-nav .session-row[data-active="true"] button[aria-haspopup="menu"]',
             )
             return active instanceof HTMLElement && getComputedStyle(active).pointerEvents !== 'none'
           },
@@ -816,7 +817,7 @@ async function setupState(page, runtime, stateId) {
         .waitForFunction(
           () => {
             const active = document.querySelector(
-              '#sessions .session-row[data-active="true"] button[aria-haspopup="menu"]',
+              '.session-nav .session-row[data-active="true"] button[aria-haspopup="menu"]',
             )
             return (
               active?.getAttribute('aria-expanded') === 'true' &&
@@ -839,12 +840,12 @@ async function setupState(page, runtime, stateId) {
 }
 
 async function selectWorkspacePermission(page) {
-  await page.locator('#composer-permission').click()
+  await page.locator('.composer-permission').click()
   const option = page.getByRole('option', { name: /工作区内修改/ })
   await option.waitFor()
   await option.click()
   await page.waitForFunction(
-    () => document.querySelector('#composer-permission')?.getAttribute('aria-expanded') === 'false',
+    () => document.querySelector('.composer-permission')?.getAttribute('aria-expanded') === 'false',
   )
 }
 
@@ -874,7 +875,7 @@ async function keyboardContract(page) {
   // very first Tab can be body in one run and a sidebar row in the next.  Start from the same
   // real, visible product control on every capture; the following Tab sequence still validates
   // the actual keyboard traversal rather than a synthetic tab order.
-  const newSession = page.locator('#new')
+  const newSession = page.locator('.new-session')
   if (await newSession.isVisible().catch(() => false)) await newSession.focus()
   // Admin/resource pages deliberately do not mount the workbench sidebar.  They retain the
   // native, unfocused start state rather than making the D31 keyboard probe depend on a control
@@ -901,7 +902,7 @@ async function keyboardContract(page) {
     await page.keyboard.press(key)
     await page.waitForTimeout(100)
     await page
-      .waitForFunction(() => document.querySelector('#status')?.textContent !== '正在准备会话')
+      .waitForFunction(() => document.querySelector('.task-status')?.textContent !== '正在准备会话')
       .catch(() => {})
     events.push({
       key,
@@ -914,7 +915,7 @@ async function keyboardContract(page) {
   if (await visible(page, '#config[open]')) {
     await press('Enter', '#config-close')
     await page
-      .locator('#settings')
+      .locator('.settings-entry')
       .click()
       .catch(() => {})
     await page
@@ -925,7 +926,7 @@ async function keyboardContract(page) {
   } else if (await visible(page, '#new-session[open]')) {
     await press('Enter', '#new-session-cancel')
     await page
-      .locator('#new')
+      .locator('.new-session')
       .click()
       .catch(() => {})
     await page
@@ -948,16 +949,16 @@ async function keyboardContract(page) {
       .waitFor()
       .catch(() => {})
     await press('Escape', '#account-dialog-close')
-  } else if (await visible(page, '#model[aria-expanded="true"]')) {
-    await press('Escape', '#model')
-    await press('Enter', '#model')
-    await press('Escape', '#model')
-  } else if (await visible(page, '#composer-permission[aria-expanded="true"]')) {
-    await press('Escape', '#composer-permission')
-    await press('Enter', '#composer-permission')
-    await press('Escape', '#composer-permission')
+  } else if (await visible(page, '.composer-model[aria-expanded="true"]')) {
+    await press('Escape', '.composer-model')
+    await press('Enter', '.composer-model')
+    await press('Escape', '.composer-model')
+  } else if (await visible(page, '.composer-permission[aria-expanded="true"]')) {
+    await press('Escape', '.composer-permission')
+    await press('Enter', '.composer-permission')
+    await press('Escape', '.composer-permission')
   } else {
-    await press('Enter', '#new')
+    await press('Enter', '.new-session')
     await press('Escape', '#new-session-cancel')
   }
   return { tab, keys: events }
@@ -970,26 +971,26 @@ async function settleState(page, stateId) {
   // of adding an arbitrary sleep.
   if (stateId === 'conversation-markdown')
     await page.waitForFunction(() => {
-      const text = document.querySelector('#transcript-content')?.textContent ?? ''
+      const text = document.querySelector('.transcript-content')?.textContent ?? ''
       return text.includes('D31 fixture response.') && text.includes('动态内容')
     })
   if (stateId === 'tool-card-inline')
     await page.waitForFunction(() => {
-      const text = document.querySelector('#transcript-content')?.textContent ?? ''
+      const text = document.querySelector('.transcript-content')?.textContent ?? ''
       return text.includes('D31 fixture response.') && text.includes('执行结果')
     })
   if (stateId === 'sidebar-menu')
     await page.waitForFunction(() => {
-      const text = document.querySelector('#transcript-content')?.textContent ?? ''
+      const text = document.querySelector('.transcript-content')?.textContent ?? ''
       return text.includes('D31 fixture response.') && text.includes('动态内容')
     })
   if (stateId === 'approval-pending')
     await page.waitForFunction(() => {
-      const approval = document.querySelector('#approval [data-approval-key]')
+      const approval = document.querySelector('.approval-panel [data-approval-key]')
       return (
         approval instanceof HTMLElement &&
         !approval.hidden &&
-        document.querySelector('#status')?.textContent === '等待审批'
+        document.querySelector('.task-status')?.textContent === '等待审批'
       )
     })
   if (stateId === 'settings-plugins')
@@ -1039,7 +1040,7 @@ async function capturePage(page, artifactId, outDir) {
   // command.  Freeze only the transcript reading position for this capture window: visual parity
   // compares the same viewport, while the keyboard contract below still exercises the live UI.
   await page.evaluate(() => {
-    const transcript = document.getElementById('transcript')
+    const transcript = document.querySelector < HTMLElement > '.transcript'
     if (!(transcript instanceof HTMLElement)) return
     const frozen = () => {
       if (transcript.scrollTop) transcript.scrollTop = 0
