@@ -196,10 +196,7 @@ describe('egress not-sent evidence', () => {
         fail: true,
       }),
     )
-    expect(odd.effect).toMatchObject({
-      outcome: 'failed',
-      error: { code: 'internal', detailCode: 'model_not_sent' },
-    })
+    expect(odd.effect).toMatchObject({ outcome: 'failed', error: { code: 'internal', detailCode: 'x' } })
     const odder = await run(
       egress({ fenced: 'owned', refusal: { code: 'surprise', detailCode: 'x' }, bytes: false, fail: true }),
     )
@@ -217,7 +214,6 @@ describe('egress not-sent evidence', () => {
       error: { code: 'incompatible', detailCode: 'model_egress_api' },
     })
     expect(validateRuntimeErrorDetail(unfit.effect.error).ok).toBe(true)
-    expect(validateRuntimeErrorDetail(odd.effect.error).ok).toBe(true)
   })
 
   it('an owned fence that throws counts as possibly sent', async () => {

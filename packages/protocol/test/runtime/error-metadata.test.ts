@@ -67,7 +67,7 @@ function emittedPairs(): Map<string, Map<string, string[]>> {
 const KNOWN_SCAN_DISAGREEMENTS: Readonly<Record<string, readonly string[]>> = {
   unsupported: ['internal'],
   integrity: ['incompatible'],
-  cancelled: ['denied', 'timeout'],
+  cancelled: ['denied'],
   revision_conflict: ['cancelled'],
 }
 
