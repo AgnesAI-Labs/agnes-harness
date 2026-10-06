@@ -27,17 +27,25 @@ export function modelInputPreimage(
   prepared: Wire.PreparedModelRequest,
   capture: ModelCapture,
   wire: WireIdentity,
+  tools: ResolvedTools | null = null,
 ): Wire.JsonValue {
   const { preparedId: _id, inputDigest: _digest, estimatedUnits: _units, ...rest } = prepared
-  return { kind: MODEL_INPUT_KIND, ...rest, wire, capture } as unknown as Wire.JsonValue
+  // The catalog binds each schema by digest; the descriptions come from the resolver, so they are bound here,
+  // inside the wire identity that shapes the request, without adding a preimage field.
+  const shaped =
+    tools === null
+      ? wire
+      : { ...wire, toolDescriptionsDigest: canonicalJsonDigest(tools.map((tool) => tool.description)) }
+  return { kind: MODEL_INPUT_KIND, ...rest, wire: shaped, capture } as unknown as Wire.JsonValue
 }
 
 export function modelInputDigest(
   prepared: Wire.PreparedModelRequest,
   capture: ModelCapture,
   wire: WireIdentity,
+  tools: ResolvedTools | null = null,
 ): Wire.Digest {
-  return canonicalJsonDigest(modelInputPreimage(prepared, capture, wire))
+  return canonicalJsonDigest(modelInputPreimage(prepared, capture, wire, tools))
 }
 
 const incompatible = (detailCode: string): Outcome<never> => ({
@@ -146,7 +154,7 @@ export function buildWireRequest(
     route: capture.route.route,
     model: prepared.target.model,
     contractId: wire.contractId,
-    derivedHash: modelInputDigest(prepared, capture, wire),
+    derivedHash: modelInputDigest(prepared, capture, wire, tools),
     system: system.join('\n\n'),
     messages,
     tools: schemas === null ? [] : schemas.value,

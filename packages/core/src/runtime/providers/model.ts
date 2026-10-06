@@ -34,6 +34,7 @@ import {
 } from '../model/prepared-call.js'
 import type { PreparedRegistry } from '../model/prepared-registry.js'
 import type { ModelCapture, WireIdentity } from '../model/wire-request.js'
+import type { ResolvedTools } from '../model/wire-tools.js'
 
 export type ModelCatalogView = Readonly<{
   digest: string
@@ -62,6 +63,14 @@ export interface ModelDeployment {
       target: W.BindingRef,
       context: CallContext,
     ): { binding: W.BindingRef; packageDigest: string } | null
+  }
+  /**
+   * Resolves the prepare request's tool catalog to each tool's description and parameters document. Absent,
+   * or answering with a refusal, leaves a request that carries a catalog refused as before; the result stays
+   * in this process only.
+   */
+  tools?: {
+    resolve(request: { context: CallContext; catalog: W.ToolCatalog }): Promise<Outcome<ResolvedTools>>
   }
   credentials?: {
     verifyIssued(handle: W.SecretHandle, binding: W.SecretConsumerBinding, context: CallContext): boolean
@@ -182,6 +191,13 @@ async function prepareOnce(
     call,
   )
   if (!wire.ok) throw fault(wire.error.code, wire.error.detailCode)
+  // The adapter sends only with a bound credential, so a route without one is refused here, by name.
+  if (route.credentialBinding === null) throw fault('incompatible', 'model_credential_required')
+  const resolvedTools =
+    input.toolCatalog === null || !d.tools
+      ? null
+      : await raced(d.tools.resolve({ context: call, catalog: input.toolCatalog }), call)
+  const tools = resolvedTools?.ok ? resolvedTools.value : null
   const first = assemblePrepared({
     runId,
     sessionId,
@@ -190,6 +206,7 @@ async function prepareOnce(
     capture,
     wire: wire.value,
     estimatedUnits: [],
+    tools,
   })
   if (!first.ok) throw fault(first.error.code, first.error.detailCode)
   const units = d.estimate ? [...d.estimate(first.value.prepared)] : []
@@ -204,6 +221,7 @@ async function prepareOnce(
           capture,
           wire: wire.value,
           estimatedUnits: units,
+          tools,
         })
   if (!assembled.ok) throw fault(assembled.error.code, assembled.error.detailCode)
   const final = assembled.value

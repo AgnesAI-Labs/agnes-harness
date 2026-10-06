@@ -74,6 +74,22 @@ export function textItem(trust: 'system' | 'user', body: string): W.ContextItem 
     sourceRanges: [],
   } as W.ContextItem
 }
+/** The credential a route must carry to be served: a model binding and the one issued handle it names. */
+export const fixtureBinding = {
+  consumer: 'model' as const,
+  secretId: 's',
+  accountRef: null,
+  serverRef: 'e',
+  audience: 'fixture-endpoint',
+  purpose: 'model-inference',
+}
+export const fixtureHandle: W.SecretHandle = {
+  handleId: 'h',
+  secretId: 's',
+  version: 'v1',
+  audience: 'fixture-endpoint',
+  expiresAt: '2099-01-01T00:00:00Z',
+}
 export function prepareRequest(over: Partial<W.ModelPrepareRequest> = {}): W.ModelPrepareRequest {
   return {
     view: {
@@ -98,7 +114,7 @@ export function prepareRequest(over: Partial<W.ModelPrepareRequest> = {}): W.Mod
       features: { input: ['text'], output: ['text'], tools: false, structuredOutput: false, streaming: true },
       priceVersion: 'fixture-price-1',
       credentialAudience: 'fixture-endpoint',
-      credentialBinding: null,
+      credentialBinding: fixtureBinding,
     },
     outputSchema: null,
     toolCatalog: null,
@@ -111,7 +127,7 @@ export function prepareRequest(over: Partial<W.ModelPrepareRequest> = {}): W.Mod
       schema: runtimeAuthorSchemas.StandardToolOutput.ref,
       digest: canonicalJsonDigest({}),
     },
-    credentialRef: null,
+    credentialRef: fixtureHandle,
     ...over,
   }
 }

@@ -11,6 +11,7 @@ import {
 } from '@agnes/protocol/runtime'
 import type { PreparedEntry } from './prepared-registry.js'
 import { buildWireRequest, type ModelCapture, modelInputDigest, type WireIdentity } from './wire-request.js'
+import type { ResolvedTools } from './wire-tools.js'
 
 export type CatalogPick = Readonly<{
   route: Readonly<{ route: string; api: string; baseUrl: string; compat?: unknown; keyless?: boolean }>
@@ -129,6 +130,8 @@ export type PrepareParts = Readonly<{
   capture: ModelCapture
   wire: WireIdentity
   estimatedUnits: readonly W.ExactQuantity[]
+  /** The resolver's answer for the request's tool catalog; null when it carries none or none could be resolved. */
+  tools?: ResolvedTools | null
 }>
 
 export function assemblePrepared(parts: PrepareParts): Outcome<
@@ -156,9 +159,10 @@ export function assemblePrepared(parts: PrepareParts): Outcome<
     legacyRequestOverrides: null,
     credentialRef: request.credentialRef,
   }
-  const inputDigest = modelInputDigest(base, parts.capture, parts.wire)
+  const tools = parts.tools ?? null
+  const inputDigest = modelInputDigest(base, parts.capture, parts.wire, tools)
   const prepared: W.PreparedModelRequest = { ...base, preparedId: preparedIdOf(inputDigest), inputDigest }
-  const wired = buildWireRequest(prepared, parts.capture, parts.wire)
+  const wired = buildWireRequest(prepared, parts.capture, parts.wire, [], tools)
   if (!wired.ok) return wired
   if (!validateRuntime('PreparedModelRequest', prepared).ok)
     return refusal('invalid_input', 'model_input_schema')
@@ -198,6 +202,7 @@ export function assemblePrepared(parts: PrepareParts): Outcome<
         capture: parts.capture,
         wire: parts.wire,
         request: wired.value,
+        resolvedTools: tools,
       },
     },
   }
