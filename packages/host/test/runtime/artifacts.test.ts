@@ -783,11 +783,11 @@ async function seedTransfer({ artifacts, blob }: World) {
   await readGrant(artifacts, live, 'grant-live')
   const withdrawn = await readGrant(artifacts, live, 'grant-withdrawn', 'user-2')
   const request = { requestId: 'revoke-1', grantId: withdrawn.grantId, expectedRevision: 1, reason: 'done' }
-  ok(await artifacts.revokeGrant({ request, owner: owner() }, ctx()))
+  const revocation = { request, grant: ok(await artifacts.revokeGrant({ request, owner: owner() }, ctx())) }
   const revoked = await publishOne('pub-revoked', text('revoked artifact'))
   await readGrant(artifacts, revoked, 'grant-revoked')
   ok(await artifacts.revoke({ artifactRef: revoked, reason: 'withdrawn' }, ctx()))
-  return { live, revoked }
+  return { live, revoked, revocation }
 }
 
 /** Whether the service serves what `seedTransfer` left: the live bytes, but not the revoked grant or version. */
@@ -909,6 +909,9 @@ describe('default artifacts authority transfer', () => {
     expect(await servesSeed(target.artifacts, seeded)).toBe(true)
     expect(target.reads.count).toBeGreaterThan(0)
     expect(target.artifacts.pendingEvents()).toEqual(pending)
+    // Replaying the source's revocation by its request id returns the revoked grant instead of refusing.
+    const { request, grant } = seeded.revocation
+    expect(ok(await target.artifacts.revokeGrant({ request, owner: owner() }, ctx()))).toEqual(grant)
     ok(await target.artifacts.reserve({ request: reserveRequest('pub-next'), owner: owner() }, ctx()))
   })
 })
