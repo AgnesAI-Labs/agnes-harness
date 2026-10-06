@@ -2985,8 +2985,10 @@ const INITIAL_CEILING: Record<string, number> = {
   // State finishes a draining run as failed or cancelled and hands unresolved effects over with their owners: finalize_run (+75 on 86369); exact cap, no spare.
   // State persists a receipt lookup before it runs and stores its result: beginReconciliation, completeReconciliation and the check record (+247 on 86444); exact cap, no spare.
   // Model sends are fenced after transport establishment. Measured 86779, exact, no spare.
-  // State read facade lists a run's actions and reads action visibility. Measured 86942, exact, no spare.
-  'packages/host/src': 86942,
+  // Issued secret handles are verified without being consumed. Measured 86864, exact, no spare.
+  // State accepts signals, fires due timers and records service commands: acceptInbox, fireTimer, acceptServiceCommand, readServiceCommand and their scan rules (+883 on 86864); exact cap, no spare.
+  // State read facade lists a run's actions and reads action visibility (+78 on 87747); exact cap, no spare.
+  'packages/host/src': 87825,
   'packages/host/src/ext-host/service-invocation': 247,
   // T5.2's permission projector is kept independently bounded so later extension-host work cannot
   // hide in the package-wide increment. Measured source: 86 lines.
