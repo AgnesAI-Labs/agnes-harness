@@ -50,6 +50,7 @@ import type {
   PolicyDecision,
   ProviderStateValue,
   RunBinding,
+  TimerRecordValue,
   TrustedPolicyFacts,
   WaitRecordValue,
 } from '@agnes/protocol/runtime'
@@ -99,6 +100,7 @@ import {
   sameJson,
   signalRecordId,
   stableId,
+  TIMER_SCHEMA,
   taintRecordId,
   timerRecordId,
   USAGE_MIRROR_SCHEMA,
@@ -122,7 +124,6 @@ const MAX_PARALLEL_ACTIONS = 16
 const LIMIT_POLICY = 'default-limits'
 
 const CONVERSATION_CONTRIBUTION = 'conversation contribution is not implemented'
-const OTHER_TRANSITION = 'wait, complete, and fail transitions are not implemented'
 const INLINE_PURE_RESULT = 'inline pure result handling is not implemented'
 const STAGED_RESULT = 'staged result handling is not implemented'
 const BUDGET_RESERVATION = 'bounded-units and cost-hard budget reservation is not implemented'
@@ -1551,7 +1552,6 @@ function assertTransition(request: AdvanceRunRequest): void {
   }
   if (transition.conversation !== undefined && transition.conversation.length > 0)
     refuse('internal', 'unsupported', CONVERSATION_CONTRIBUTION)
-  if (transition.next.kind !== 'continue') refuse('internal', 'unsupported', OTHER_TRANSITION)
   if (transition.actions.length > MAX_ACTIONS)
     refuse('invalid_input', 'action_count', 'a transition has too many actions')
   if (Buffer.byteLength(canonicalJson(transition.continuation)) > MAX_CONTINUATION_BYTES)
@@ -1590,6 +1590,215 @@ function assertGuard(ports: ControlPorts, guard: CommitGuard, mode: 'advance' | 
     refuse('conflict', 'read_guard', 'read guard does not match the invocation')
   assertReadGuards(ports, guard.readGuards)
   return { ...loaded, invocationHead, invocation }
+}
+
+const RUN_STEP_STATES = ['admitted', 'runnable', 'waiting']
+const UNRESOLVED_ACTION_STATES = ['unknown', 'reconciling']
+
+type RunStep = {
+  creates: StoredRecord[]
+  updates: RecordUpdate[]
+  run: Partial<RunRecordValue>
+  progressed: boolean
+}
+
+function runActions(ports: ControlPorts, runId: string): ActionValue[] {
+  return ports
+    .all<{ value_json: string }>(
+      "SELECT b.value_json FROM runtime_record_heads h JOIN runtime_version_bodies b ON b.record_id=h.record_id AND b.record_revision=h.record_revision WHERE h.record_id LIKE 'action:%' AND json_extract(b.value_json,'$.runId')=?",
+      runId,
+    )
+    .map((row) => JSON.parse(row.value_json) as ActionValue)
+}
+
+/** Refuses unless the run may complete now. Same refusal order as the supervisor completion judgement. */
+function judgeRunComplete(proposed: number, actions: readonly ActionValue[]): OwnerRef[] {
+  if (proposed > 0) refuse('conflict', 'complete_new_actions', 'a completing transition creates no action')
+  const open = actions.filter((item) => item.intent.obligation === 'mandatory' && item.state !== 'settled')
+  if (open.some((item) => UNRESOLVED_ACTION_STATES.includes(item.state)))
+    refuse('conflict', 'complete_unknown', 'an action has an unresolved effect')
+  if (open.some((item) => item.parentActionId !== null))
+    refuse('conflict', 'complete_children', 'a child action is still open')
+  if (open.length > 0) refuse('conflict', 'complete_pending', 'a mandatory action is not settled')
+  const detached = actions.filter((item) => item.intent.obligation === 'detached' && item.state !== 'settled')
+  if (detached.some((item) => item.ownerRef.kind !== 'job'))
+    refuse('conflict', 'detached_owner_missing', 'a detached action has no owning job')
+  return detached.map((item) => item.ownerRef)
+}
+
+function assertWaitTargets(
+  ports: ControlPorts,
+  runId: string,
+  condition: WaitRecordValue['condition'],
+  planned: ReadonlySet<string>,
+): void {
+  for (const clause of condition.anyOf) {
+    if (clause.kind !== 'actions') continue
+    for (const ref of clause.actions) {
+      const actionId =
+        'existingActionId' in ref ? ref.existingActionId : stableId('act', `${runId}\0${ref.localKey}`)
+      const head = planned.has(actionId) ? undefined : ports.loadHead(actionRecordId(actionId))
+      if (!planned.has(actionId) && (!head || storedValue<ActionValue>(head).runId !== runId))
+        refuse('invalid_input', 'wait_action_unknown', 'a wait names an action of another run or none')
+    }
+  }
+}
+
+/** Closes the run's open wait and its timer; the wait id of a scheduled timer derives from its commit. */
+function closeRunWait(
+  ports: ControlPorts,
+  run: RunRecordValue,
+  consumed: readonly string[],
+  outcome: 'ready' | 'cancelled',
+): RecordUpdate[] {
+  if (typeof run.waitId !== 'string') integrity('waiting run has no wait record')
+  const head = requireHead(ports, waitRecordId(run.waitId), 'wait_absent', 'wait record does not exist')
+  const wait = storedValue<WaitRecordValue>(head)
+  if (wait.state !== 'waiting' || wait.runId !== run.runId)
+    refuse('conflict', 'wait_state', 'wait record is not waiting for this run')
+  const closed: RecordUpdate[] = [
+    updated(head, WAIT_SCHEMA, ownerOf(head), {
+      ...wait,
+      state: outcome,
+      matchedSignalIds: [...consumed],
+    } satisfies WaitRecordValue),
+  ]
+  if (wait.condition.deadline === undefined) return closed
+  const timerHead = ports.loadHead(timerRecordId(stableId('timer', wait.registeredByCommitId)))
+  if (!timerHead) integrity('wait deadline has no timer record')
+  const timer = storedValue<TimerRecordValue>(timerHead)
+  if (timer.state === 'scheduled')
+    closed.push(
+      updated(timerHead, TIMER_SCHEMA, ownerOf(timerHead), {
+        ...timer,
+        state: 'cancelled',
+      } satisfies TimerRecordValue),
+    )
+  return closed
+}
+
+/**
+ * The run-level part of a transition: wait, complete and fail, plus resuming a waiting run. Every refusal
+ * happens before anything is written. Resuming needs a consumed signal; whether the signal satisfies the wait
+ * condition is not evaluated here.
+ */
+function planRunStep(
+  ports: ControlPorts,
+  request: AdvanceRunRequest,
+  run: RunRecordValue,
+  owner: RecordOwner,
+  commitId: string,
+  stamp: string,
+  planned: ReadonlySet<string>,
+): RunStep {
+  const { transition } = request
+  const next = transition.next
+  const step: RunStep = { creates: [], updates: [], run: {}, progressed: false }
+  if (next.kind !== 'continue' && !RUN_STEP_STATES.includes(run.state))
+    refuse('conflict', 'run_state', 'run does not take this transition')
+  if ((next.kind === 'wait' || next.kind === 'complete') && run.cancellation != null)
+    refuse('conflict', 'run_cancelled', 'run is cancelled')
+  if (run.state === 'waiting') {
+    if (next.kind !== 'fail' && transition.consumeSignals.length === 0)
+      refuse('conflict', 'wait_not_satisfied', 'a waiting run resumes only on consumed signals')
+    step.updates.push(
+      ...closeRunWait(ports, run, transition.consumeSignals, next.kind === 'fail' ? 'cancelled' : 'ready'),
+    )
+    step.run = { state: 'runnable', waitId: null }
+  }
+  if (next.kind === 'continue') return step
+  step.progressed = true
+  if (next.kind === 'wait') {
+    assertWaitTargets(ports, run.runId, next.condition, planned)
+    const waitId = stableId('wait', commitId)
+    step.creates.push(
+      record(waitRecordId(waitId), WAIT_SCHEMA, 1, owner, {
+        waitId,
+        runId: run.runId,
+        targetActionId: null,
+        condition: next.condition,
+        registeredByCommitId: commitId,
+        state: 'waiting',
+        matchedSignalIds: [],
+        deadlineSignalId: null,
+      } satisfies WaitRecordValue),
+    )
+    if (next.condition.deadline !== undefined) {
+      const timerId = stableId('timer', commitId)
+      step.creates.push(
+        record(timerRecordId(timerId), TIMER_SCHEMA, 1, owner, {
+          timerId,
+          runId: run.runId,
+          targetActionId: null,
+          waitId,
+          dueAt: next.condition.deadline,
+          state: 'scheduled',
+          signalId: stableId('sig', `timer\0${timerId}`),
+          registeredByCommitId: commitId,
+          firedByCommitId: null,
+        } satisfies TimerRecordValue),
+      )
+    }
+    step.run = { state: 'waiting', waitId }
+    return step
+  }
+  const actions = runActions(ports, run.runId)
+  if (next.kind === 'complete') {
+    const detachedOwnerRefs = judgeRunComplete(transition.actions.length, actions)
+    const pins = new Set<string>()
+    for (const pin of next.references) {
+      if (pins.has(pin.pinId)) refuse('invalid_input', 'reference_duplicate', 'a reference is listed twice')
+      pins.add(pin.pinId)
+      const referenceId = stableId('ref', `${run.runId}\0${pin.pinId}`)
+      step.creates.push(
+        record(referenceRecordId(referenceId), REFERENCE_SCHEMA, 1, owner, {
+          referenceId,
+          sourceRecordId: runRecordId(run.runId),
+          status: 'pending',
+          target: { kind: 'retained', retention: pin },
+          releaseReason: null,
+        }),
+      )
+    }
+    step.run = {
+      ...step.run,
+      state: 'succeeded',
+      waitId: null,
+      terminal: {
+        outcome: 'succeeded',
+        output: next.output,
+        references: next.references,
+        error: null,
+        unknownActionIds: [],
+        detachedOwnerRefs,
+      },
+    }
+    return step
+  }
+  if (transition.actions.length > 0)
+    refuse('conflict', 'fail_new_actions', 'a failing transition creates no action')
+  const open = actions.filter((item) => item.state !== 'settled')
+  step.run = {
+    ...step.run,
+    state: 'failing',
+    waitId: null,
+    cancellation: { reason: next.error.detailCode, requestedAt: stamp, by: request.guard.writerId },
+    terminal: {
+      outcome: 'failed',
+      output: null,
+      references: [],
+      error: next.error,
+      unknownActionIds: open
+        .filter(
+          (item) => item.intent.obligation === 'mandatory' && UNRESOLVED_ACTION_STATES.includes(item.state),
+        )
+        .map((item) => item.actionId),
+      detachedOwnerRefs: open
+        .filter((item) => item.intent.obligation === 'detached' && item.ownerRef.kind === 'job')
+        .map((item) => item.ownerRef),
+    },
+  }
+  return step
 }
 
 export async function advanceRunTx(
@@ -1652,6 +1861,16 @@ export async function advanceRunTx(
       create: record(actionRecordId(actionId), ACTION_SCHEMA, 1, guarded.owner, value),
     })
   }
+  const stamp = at(ports)
+  const step = planRunStep(
+    ports,
+    request,
+    guarded.value,
+    guarded.owner,
+    commitId,
+    stamp,
+    new Set(planned.map((item) => item.actionId)),
+  )
   const quotaHead = requireHead(
     ports,
     runQuotaRecordId(request.guard.runId),
@@ -1659,7 +1878,7 @@ export async function advanceRunTx(
     'run quota record is missing',
   )
   const quota = storedValue<RunQuotaValue>(quotaHead)
-  const progressed = created > 0 || request.transition.consumeSignals.length > 0
+  const progressed = created > 0 || request.transition.consumeSignals.length > 0 || step.progressed
   const noProgress = progressed ? 0 : quota.noProgressTransitions + 1
   if (noProgress > MAX_NO_PROGRESS || quota.totalTransitions + 1 > MAX_TRANSITIONS)
     refuse('conflict', 'quota', 'run transition quota is exhausted')
@@ -1679,7 +1898,6 @@ export async function advanceRunTx(
     submittedActions: quota.submittedActions + created,
     lastProgressRef: lastCreated?.actionId ?? quota.lastProgressRef,
   }
-  const stamp = at(ports)
   const written = ports.writeCommit({
     ...blankInput(
       request.guard.sessionId,
@@ -1693,13 +1911,14 @@ export async function advanceRunTx(
     ),
     actionId: actionIds.length === 1 ? (actionIds[0]?.actionId ?? null) : null,
     actionIds,
-    creates: planned.flatMap((item) => (item.create ? [item.create] : [])),
+    creates: [...planned.flatMap((item) => (item.create ? [item.create] : [])), ...step.creates],
     updates: [
       updated(guarded.head, RUN_RECORD_SCHEMA, guarded.owner, {
         ...guarded.value,
         continuation: request.transition.continuation,
         revision: guarded.value.revision + 1,
         writerEpoch: request.guard.writerEpoch,
+        ...step.run,
       }),
       updated(guarded.invocationHead, INVOCATION_SCHEMA, ownerOf(guarded.invocationHead), {
         ...guarded.invocation,
@@ -1721,6 +1940,7 @@ export async function advanceRunTx(
         ? [updated(flushed.grantHead, QUERY_GRANT_SCHEMA, ownerOf(flushed.grantHead), flushed.grant)]
         : []),
       ...consumed.updates,
+      ...step.updates,
     ],
     sides: [
       ...planned.flatMap((item) =>
