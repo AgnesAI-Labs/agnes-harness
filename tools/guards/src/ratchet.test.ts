@@ -2988,7 +2988,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // Issued secret handles are verified without being consumed. Measured 86864, exact, no spare.
   // State accepts signals, fires due timers and records service commands: acceptInbox, fireTimer, acceptServiceCommand, readServiceCommand and their scan rules (+883 on 86864); exact cap, no spare.
   // State read facade lists a run's actions and reads action visibility (+78 on 87747); exact cap, no spare.
-  'packages/host/src': 87825,
+  // The State provider routes read opens and scans through an optional read service (+7 on 87825); exact cap, no spare.
+  'packages/host/src': 87832,
   'packages/host/src/ext-host/service-invocation': 247,
   // T5.2's permission projector is kept independently bounded so later extension-host work cannot
   // hide in the package-wide increment. Measured source: 86 lines.

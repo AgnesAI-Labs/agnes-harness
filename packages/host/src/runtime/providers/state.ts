@@ -24,6 +24,7 @@ import type {
 import { validateRuntime } from '@agnes/protocol/runtime'
 import type { ApprovalPreparationInput, ApprovalResolutionInput } from '../state/approval.js'
 import { enterPhase, leavePhase, profiling } from '../state/profile.js'
+import type { StateQueryService } from '../state/query-service.js'
 import {
   matchesRuntimeStateDatabaseOptions,
   openRuntimeStateDatabase,
@@ -70,6 +71,13 @@ export type StateWriterOptions = Readonly<{
 
 export type RuntimeStateStore = StateStoreControl & {
   close(): void
+  /**
+   * Host-private. The agh.state scan handler of the read service the assembler supplied; null when
+   * none was. The store never closes the service: the assembler closes it before this store.
+   */
+  readonly query: StateQueryService['query'] | null
+  /** Host-private. The typed record reader of the supplied read service; null when none was. */
+  readonly reader: StateQueryService['reader'] | null
   /**
    * Host-private. Returns the live writer claim this store holds for the session, or takes the lease
    * (a reclaim with a higher epoch when an earlier claim of this store ran out). While the claim is held
@@ -139,6 +147,7 @@ function validateProfiled<K extends 'DispatchAdmissionRequest' | 'ReceiptIntakeR
 export function createRuntimeStateStore(
   options: RuntimeStateDatabaseOptions,
   supplied?: RuntimeStateDatabase,
+  readService?: StateQueryService,
 ): RuntimeStateStore {
   if (supplied && !matchesRuntimeStateDatabaseOptions(supplied, options))
     throw new StateRefusal({
@@ -302,6 +311,8 @@ export function createRuntimeStateStore(
         return Promise.resolve(failure('invalid_input', 'schema', 'StateOpenRequest is not valid'))
       const rejected = rejectAuthority(result.value.authority)
       if (rejected) return Promise.resolve(rejected)
+      // Read snapshots come from the read service so that a scan accepts only what it minted.
+      if (readService && result.value.mode === 'read') return readService.open(result.value, context)
       return run(context, () => database.open(result.value))
     },
     lease: (request, context) => {
@@ -567,6 +578,8 @@ export function createRuntimeStateStore(
       database.close()
     },
     durability: () => database.durability(),
+    query: readService?.query ?? null,
+    reader: readService?.reader ?? null,
   }
   return store
 }

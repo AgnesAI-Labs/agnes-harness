@@ -445,19 +445,21 @@ describe.skipIf(typeof process.getuid !== 'function')('State query service const
     }
   }, 60_000)
 
-  it('is not constructed or imported by any production path', () => {
+  it('is not constructed by any production path and imported only as a type by the State provider', () => {
     const root = join(import.meta.dirname, '../../src')
     const offenders: string[] = []
     const walk = (dir: string) => {
       for (const name of readdirSync(dir)) {
         const path = join(dir, name)
         if (statSync(path).isDirectory()) walk(path)
-        else if (
-          name.endsWith('.ts') &&
-          !path.endsWith('state/query-service.ts') &&
-          /query-service\.js|createStateQueryService/.test(readFileSync(path, 'utf8'))
-        )
-          offenders.push(path)
+        else if (name.endsWith('.ts') && !path.endsWith('state/query-service.ts')) {
+          const source = readFileSync(path, 'utf8')
+          // The State provider may name the service type for its optional argument, and nothing else may.
+          const text = path.endsWith('providers/state.ts')
+            ? source.replace("import type { StateQueryService } from '../state/query-service.js'", '')
+            : source
+          if (/query-service\.js|createStateQueryService/.test(text)) offenders.push(path)
+        }
       }
     }
     walk(root)

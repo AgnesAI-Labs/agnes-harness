@@ -183,9 +183,9 @@ type Registered = { snapshot: SnapshotRef; grant: StateReadGrant; deadline: numb
 /**
  * Host-private State read service over State's own read owner. It receives no database handle and
  * no identity module: who may read is answered only by the bridge, whose `check()` runs on every
- * page and every point read, before and after the owner reads. Envelope items carry a placeholder
- * schema reference until the envelope is registered in the public protocol, so this service must
- * not be wired into a production path or its items published yet.
+ * page and every point read, before and after the owner reads. The provider accepts one as an
+ * optional argument; no production path builds one until the identity owner's production bridge
+ * exists.
  */
 export function createStateQueryService(
   input: Readonly<{
