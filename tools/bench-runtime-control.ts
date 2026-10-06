@@ -987,7 +987,7 @@ export type ByteReport = {
 const AUXILIARY = [
   'runtime_request_results',
   'runtime_signal_seq',
-  'runtime_active_invocation',
+  'runtime_active_invocation_target',
   'runtime_leases',
   'runtime_session_meta',
   'runtime_dispatch_domains',
