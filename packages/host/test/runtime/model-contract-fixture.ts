@@ -205,7 +205,7 @@ export function defaultModelFixture(
     packageDigest: 'f'.repeat(64),
     config,
     secrets: null,
-    credentials: { verifyIssued: () => true },
+    credentials: { verifyIssued: async () => true },
     state: stateBinding,
     current: () => state.current,
     catalog: {

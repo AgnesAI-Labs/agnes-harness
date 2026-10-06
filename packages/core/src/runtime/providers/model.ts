@@ -73,7 +73,11 @@ export interface ModelDeployment {
     resolve(request: { context: CallContext; catalog: W.ToolCatalog }): Promise<Outcome<ResolvedTools>>
   }
   credentials?: {
-    verifyIssued(handle: W.SecretHandle, binding: W.SecretConsumerBinding, context: CallContext): boolean
+    verifyIssued(
+      handle: W.SecretHandle,
+      binding: W.SecretConsumerBinding,
+      context: CallContext,
+    ): Promise<boolean>
   }
   estimate?(prepared: W.PreparedModelRequest): readonly W.ExactQuantity[]
   /** Prepared calls of this process; the source reader must be given the same instance. */
@@ -166,8 +170,11 @@ async function prepareOnce(
   if (!relation.ok) throw fault(relation.error.code, relation.error.detailCode)
   if (!resolved && route.credentialBinding !== null) {
     const verified =
-      d.credentials?.verifyIssued(input.credentialRef as W.SecretHandle, route.credentialBinding, call) ===
-      true
+      d.credentials !== undefined &&
+      (await raced(
+        d.credentials.verifyIssued(input.credentialRef as W.SecretHandle, route.credentialBinding, call),
+        call,
+      )) === true
     if (!verified) throw fault('incompatible', 'model_credential_unverified')
   }
   const adapter = d.adapters.select(route.adapter, call)
