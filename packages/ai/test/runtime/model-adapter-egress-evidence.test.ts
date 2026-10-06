@@ -2,6 +2,7 @@ import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { EffectResult } from '@agnes/protocol/runtime'
+import { runtimeErrorHttpStatus, validateRuntimeErrorDetail } from '@agnes/protocol/runtime'
 import { describe, expect, it } from 'vitest'
 import type { ModelWireFetch } from '../../src/runtime/model-adapter/ports.js'
 import { modelFixture } from './model-fixture.js'
@@ -184,6 +185,9 @@ describe('egress not-sent evidence', () => {
         retryAdvice: { kind: 'retry_same_action' },
       },
     })
+    // The registered rows accept what the adapter emits and map it to the registered HTTP status.
+    expect(validateRuntimeErrorDetail(retry.effect.error).ok).toBe(true)
+    expect(runtimeErrorHttpStatus(retry.effect.error as never)).toBe(503)
     const odd = await run(
       egress({
         fenced: 'owned',
@@ -192,7 +196,38 @@ describe('egress not-sent evidence', () => {
         fail: true,
       }),
     )
-    expect(odd.effect).toMatchObject({ outcome: 'failed', error: { code: 'internal', detailCode: 'x' } })
+    expect(odd.effect).toMatchObject({
+      outcome: 'failed',
+      error: { code: 'internal', detailCode: 'model_not_sent' },
+    })
+    expect(validateRuntimeErrorDetail(odd.effect.error).ok).toBe(true)
+    const replay = await run(
+      egress({
+        fenced: 'owned',
+        refusal: { code: 'unknown_effect', detailCode: 'model_egress_replay' },
+        bytes: false,
+        fail: true,
+      }),
+    )
+    expect(replay.effect).toMatchObject({ error: { code: 'internal', detailCode: 'model_not_sent' } })
+    expect(validateRuntimeErrorDetail(replay.effect.error).ok).toBe(true)
+    const odder = await run(
+      egress({ fenced: 'owned', refusal: { code: 'surprise', detailCode: 'x' }, bytes: false, fail: true }),
+    )
+    expect(odder.effect).toMatchObject({ outcome: 'failed', error: { code: 'internal', detailCode: 'x' } })
+    const unfit = await run(
+      egress({
+        fenced: 'owned',
+        refusal: { code: 'incompatible', detailCode: 'model_egress_api' },
+        bytes: false,
+        fail: true,
+      }),
+    )
+    expect(unfit.effect).toMatchObject({
+      outcome: 'failed',
+      error: { code: 'incompatible', detailCode: 'model_egress_api' },
+    })
+    expect(validateRuntimeErrorDetail(unfit.effect.error).ok).toBe(true)
   })
 
   it('an owned fence that throws counts as possibly sent', async () => {
