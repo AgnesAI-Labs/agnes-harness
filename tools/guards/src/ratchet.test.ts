@@ -1728,7 +1728,9 @@ const INITIAL_CEILING: Record<string, number> = {
   // exact (+7).
   // The runtime client's local interfaces as one client, with ticket-checked download following.
   // Measured 6498, exact (+139).
-  'packages/sdk/src': 6498,
+  // The runtime client refuses a welcome at a wire version its hello did not offer. Measured 6502,
+  // exact (+4).
+  'packages/sdk/src': 6502,
   'packages/sdk/src/extensions.node': 21,
   'packages/sdk/src/package-admin.node': 147,
   'packages/sdk/src/surface.browser': 3,
