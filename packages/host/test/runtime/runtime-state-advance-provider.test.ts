@@ -502,6 +502,23 @@ describe('advanceProvider', () => {
     })
     expect(activeRows(f)).toHaveLength(2)
   })
+  it('refuses a target action that belongs to another run', async () => {
+    const f = await started()
+    const id = `action:${f.leafParentId}`
+    const body = f.head(id)?.value
+    const set = (runId: unknown) =>
+      f.joint.db
+        .prepare(
+          "UPDATE runtime_version_bodies SET value_json=json_set(value_json,'$.runId',?) WHERE record_id=?",
+        )
+        .run(runId as string, id)
+    set('another-run')
+    await expect(admit(f, 'foreign', f.leafParentId, 1)).rejects.toMatchObject({
+      failure: { detailCode: 'invocation_target' },
+    })
+    set(body?.runId)
+    await admit(f, 'own', f.leafParentId, 1)
+  })
   it('refuses a run advance on an invocation that targets a parent', async () => {
     const f = await started()
     const invocation = await f.prepared(f.parentId, 1)
