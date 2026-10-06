@@ -201,6 +201,12 @@ for (const [name, api] of Object.entries(impls)) {
       })
       const second = await api.inspect(draining, { runRef }, context(sessionScope))
       expect(second.ok && second.value.blockedReason).toBe('unknown_effect')
+      // An unknown action does not make a run that is still waiting normally look blocked.
+      const waiting = deployment({
+        run: async () => ok(facts({ state: 'waiting', actions: [row('a', 'act-a', 'unknown')] })),
+      })
+      const healthy = await api.inspect(waiting, { runRef }, context(sessionScope))
+      expect(healthy.ok && healthy.value.blockedReason).toBe(null)
     })
     it('answers absent and outside-the-window identically, and refuses another session or a swapped run', async () => {
       const none = deployment({ run: async () => ok(null) })
