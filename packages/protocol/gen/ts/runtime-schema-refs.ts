@@ -287,6 +287,21 @@ export const RuntimeSchemaRefs = freeze({
     "revision": 2,
     "digest": "d641cf854a83b7108f1a651604389d3fadbffb43c094dc90094a15e087d9dbec"
   },
+  "ProviderStateValue": {
+    "typeId": "agh.runtime/provider-state@1",
+    "revision": 2,
+    "digest": "f27abf2cfa4620973cbb592e65fc667f1fc5fca53b2196a4d3c07fb420db1bae"
+  },
+  "WaitRecordValue": {
+    "typeId": "agh.runtime/wait-record@1",
+    "revision": 2,
+    "digest": "346fb921cd61612a2e51081813164e0b6774d0b528e3b875766cd28d30b18ef1"
+  },
+  "TimerRecordValue": {
+    "typeId": "agh.runtime/timer-record@1",
+    "revision": 1,
+    "digest": "a6e7b51629a3ef4422e86685a84207f4e124fa87263474e22e846d3c354b4d73"
+  },
   "InteractionRecord": {
     "typeId": "agh.interaction/interaction-record@1",
     "revision": 3,
