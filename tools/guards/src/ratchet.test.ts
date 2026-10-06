@@ -2966,7 +2966,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // State scan query service over the read owner and a bridge: scan, open, typed point reads, close order (+365). Measured 84597 (+370), exact.
   // The model source reader asks a media result source for the verified media of a prepared call that carries plans (+137); exact cap, no spare.
   // State closes admission: the run-state gate on every path that creates work, begin_drain and cancel_run (+147); exact cap, no spare.
-  'packages/host/src': 85855,
+  // State's stored envelope uses its registered schema reference; the pending placeholder is removed (-4). Measured 85851, exact.
+  'packages/host/src': 85851,
   'packages/host/src/ext-host/service-invocation': 247,
   // T5.2's permission projector is kept independently bounded so later extension-host work cannot
   // hide in the package-wide increment. Measured source: 86 lines.
