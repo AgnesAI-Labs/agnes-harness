@@ -1301,6 +1301,23 @@ function anySessionId(ports: ControlPorts): string {
   return row.session_id
 }
 
+/**
+ * The revision an invocation is based on: the run for the run itself and for a composite parent that has no
+ * provider state yet, the provider revision for a started composite parent.
+ */
+function invocationBaseRevision(
+  ports: ControlPorts,
+  run: RunRecordValue,
+  targetActionId: string | null,
+): number {
+  if (targetActionId === null) return run.revision
+  const action = ports.loadHead(actionRecordId(targetActionId))
+  if (!action || storedValue<ActionValue>(action).runId !== run.runId)
+    refuse('invalid_input', 'invocation_target', 'invocation target is not an action of the run')
+  const provider = ports.loadHead(providerStateRecordId(targetActionId))
+  return provider ? storedValue<ProviderStateValue>(provider).providerRevision : run.revision
+}
+
 export async function admitInvocationTx(
   ports: ControlPorts,
   request: InvocationAdmission,
@@ -1319,15 +1336,16 @@ export async function admitInvocationTx(
   assertLiveEpoch(ports, loaded.value.sessionId, request.writerEpoch)
   if (request.bindingId !== loaded.value.bindingId)
     refuse('conflict', 'binding', 'binding does not match the run')
-  if (request.baseRevision !== loaded.value.revision)
-    refuse('conflict', 'revision', 'invocation base revision does not match the run')
+  if (request.baseRevision !== invocationBaseRevision(ports, loaded.value, request.targetActionId))
+    refuse('conflict', 'revision', 'invocation base revision does not match its target')
   if (ports.loadHead(invocationRecordId(request.invocationId)))
     refuse('conflict', 'invocation_exists', 'invocation already exists')
   const active = ports.get<{ invocation_id: string }>(
-    'SELECT invocation_id FROM runtime_active_invocation WHERE run_id = ?',
+    'SELECT invocation_id FROM runtime_active_invocation_target WHERE run_id = ? AND target_key = ?',
     request.runId,
+    signalTargetKey(request.targetActionId),
   )
-  if (active) refuse('conflict', 'invocation_state', 'an invocation is already active')
+  if (active) refuse('conflict', 'invocation_state', 'an invocation is already active for this target')
   const existing = loadQuota(ports, request.runId)
   const totalQueries = existing.value?.totalQueries ?? 0
   const reservedQueries = existing.value?.reservedQueries ?? 0
@@ -1414,8 +1432,9 @@ export async function admitInvocationTx(
   else creates.push(record(runQuotaRecordId(request.runId), RUN_QUOTA_SCHEMA, 1, loaded.owner, quota))
   ports.openQueryMeter(grantId, capacity)
   ports.run(
-    'INSERT INTO runtime_active_invocation (run_id, invocation_id) VALUES (?, ?)',
+    'INSERT INTO runtime_active_invocation_target (run_id, target_key, invocation_id) VALUES (?, ?, ?)',
     request.runId,
+    signalTargetKey(request.targetActionId),
     request.invocationId,
   )
   return rememberWrapped(
@@ -1498,11 +1517,16 @@ export async function closeInvocationTx(
   if (quota.reservedQueries < delta + unused) integrity('query reservation is larger than the run reserve')
   const stamp = at(ports)
   const active = ports.get<{ invocation_id: string }>(
-    'SELECT invocation_id FROM runtime_active_invocation WHERE run_id = ?',
+    'SELECT invocation_id FROM runtime_active_invocation_target WHERE run_id = ? AND target_key = ?',
     invocation.runId,
+    signalTargetKey(invocation.targetActionId),
   )
   if (!active || active.invocation_id !== invocation.invocationId) integrity(INVOCATION_INDEX_MISMATCH)
-  ports.run('DELETE FROM runtime_active_invocation WHERE run_id = ?', invocation.runId)
+  ports.run(
+    'DELETE FROM runtime_active_invocation_target WHERE run_id = ? AND target_key = ?',
+    invocation.runId,
+    signalTargetKey(invocation.targetActionId),
+  )
   const result: CloseInvocationResult = { invocationId: request.invocationId, state: resulting }
   return rememberWrapped(
     ports,
@@ -1826,6 +1850,8 @@ export async function advanceRunTx(
   const commitId = attestedCommitId(ports, request.commitId)
   assertTransition(request)
   const guarded = assertGuard(ports, request.guard, 'advance')
+  if (guarded.invocation.targetActionId !== null)
+    refuse('conflict', 'invocation_target', 'invocation does not target the run')
   const flushed = request.guard.queryUsage
     ? planQueryFlush(ports, guarded.invocation, request.guard.queryUsage)
     : undefined
@@ -3078,7 +3104,13 @@ type RunQuotaNote = { revision: number; refs: string[] | undefined }
 
 type SignalHeadNote = { revision: number; runId: string; targetKey: string; seq: number }
 
-type InvocationHeadNote = { revision: number; runId: string; invocationId: string; state: string }
+type InvocationHeadNote = {
+  revision: number
+  runId: string
+  targetActionId: string | null
+  invocationId: string
+  state: string
+}
 
 type AdmissionNote = {
   revision: number
@@ -3155,7 +3187,7 @@ export type ControlEvidence = {
   requests(): { request_id: string; fingerprint: string; result_json: string }[]
   domainJson(): string | undefined
   signalSeqIndex(): { run_id: string; target_key: string; next_seq: unknown }[]
-  activeInvocations(): { run_id: string; invocation_id: string }[]
+  activeInvocations(): { run_id: string; target_key: string; invocation_id: string }[]
 }
 
 export function createControlScan(): ControlScan {
@@ -3445,6 +3477,7 @@ function noteInvocationVersion(scan: ControlScan, version: ControlVersionNote): 
   noteLatest(scan.invocations, version.record_id, {
     revision: version.record_revision,
     runId: typeof body.runId === 'string' ? body.runId : '',
+    targetActionId: typeof body.targetActionId === 'string' ? body.targetActionId : null,
     invocationId: typeof body.invocationId === 'string' ? body.invocationId : '',
     state: typeof body.state === 'string' ? body.state : '',
   })
@@ -3878,17 +3911,18 @@ function assertActiveInvocations(scan: ControlScan, evidence: ControlEvidence): 
   const expected = new Map<string, string>()
   for (const note of scan.invocations.values()) {
     if (note.state !== 'active') continue
-    if (note.runId === '' || note.invocationId === '' || expected.has(note.runId))
+    const key = `${note.runId}\0${signalTargetKey(note.targetActionId)}`
+    if (note.runId === '' || note.invocationId === '' || expected.has(key))
       integrity(INVOCATION_INDEX_MISMATCH)
-    expected.set(note.runId, note.invocationId)
+    expected.set(key, note.invocationId)
   }
   const rows = evidence.activeInvocations()
   if (rows.length !== expected.size) integrity(INVOCATION_INDEX_MISMATCH)
   const seen = new Set<string>()
   for (const row of rows) {
-    if (seen.has(row.run_id) || expected.get(row.run_id) !== row.invocation_id)
-      integrity(INVOCATION_INDEX_MISMATCH)
-    seen.add(row.run_id)
+    const key = `${row.run_id}\0${row.target_key}`
+    if (seen.has(key) || expected.get(key) !== row.invocation_id) integrity(INVOCATION_INDEX_MISMATCH)
+    seen.add(key)
   }
 }
 

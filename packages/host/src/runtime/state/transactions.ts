@@ -251,6 +251,20 @@ const HEADS_BY_COMMIT = `SELECT record_id, schema_json, min_reader, record_revis
 const PROOFS_BY_COMMIT = `SELECT commit_id, ledger_seq, manifests_json, sides_json, versions_json
   FROM runtime_commit_proofs WHERE commit_id IN (SELECT value FROM json_each(?))`
 
+/** Moves the rows of the earlier one-per-run index into the per-target index, then drops it. */
+function migrateActiveInvocations(db: DatabaseSync): void {
+  if (
+    !db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='runtime_active_invocation'").get()
+  )
+    return
+  db.exec(`INSERT OR IGNORE INTO runtime_active_invocation_target (run_id, target_key, invocation_id)
+    SELECT a.run_id, COALESCE(json_extract(b.value_json,'$.targetActionId'),''), a.invocation_id
+    FROM runtime_active_invocation a
+    JOIN runtime_record_heads h ON h.record_id='invocation:'||a.invocation_id
+    JOIN runtime_version_bodies b ON b.record_id=h.record_id AND b.record_revision=h.record_revision`)
+  db.exec('DROP TABLE runtime_active_invocation')
+}
+
 const RUNTIME_DDL = [
   `CREATE TABLE IF NOT EXISTS runtime_state_control_requests (
     authority_id TEXT NOT NULL, tenant_id TEXT NOT NULL, authority_epoch INTEGER NOT NULL,
@@ -305,9 +319,12 @@ const RUNTIME_DDL = [
      next_seq INTEGER NOT NULL,
      PRIMARY KEY (run_id, target_key)
    ) WITHOUT ROWID`,
-  `CREATE TABLE IF NOT EXISTS runtime_active_invocation (
-     run_id TEXT PRIMARY KEY,
-     invocation_id TEXT NOT NULL
+  // At most one active invocation per run and target; target_key is empty for the run itself.
+  `CREATE TABLE IF NOT EXISTS runtime_active_invocation_target (
+     run_id TEXT NOT NULL,
+     target_key TEXT NOT NULL,
+     invocation_id TEXT NOT NULL,
+     PRIMARY KEY (run_id, target_key)
    ) WITHOUT ROWID`,
   `CREATE TABLE IF NOT EXISTS runtime_leases (
      scope_id TEXT PRIMARY KEY,
@@ -1274,6 +1291,7 @@ export class RuntimeStateDatabase {
       this.db.exec('PRAGMA foreign_keys = ON')
       for (const statement of DDL) this.db.exec(statement)
       for (const statement of RUNTIME_DDL) this.db.exec(statement)
+      migrateActiveInvocations(this.db)
       if (this.admissionSource && !admissionSourceUsesDatabase(this.admissionSource, this.db))
         refuse('denied', 'admission_source', 'admission source belongs to another State connection')
       runtimeDatabaseConfigurations.set(this, {
@@ -3511,8 +3529,8 @@ export class RuntimeStateDatabase {
           'SELECT run_id, target_key, next_seq FROM runtime_signal_seq',
         ),
       activeInvocations: () =>
-        this.all<{ run_id: string; invocation_id: string }>(
-          'SELECT run_id, invocation_id FROM runtime_active_invocation',
+        this.all<{ run_id: string; target_key: string; invocation_id: string }>(
+          'SELECT run_id, target_key, invocation_id FROM runtime_active_invocation_target',
         ),
     })
     await this.verifySessionAdmissions(sessionId, runs, formatSeq)

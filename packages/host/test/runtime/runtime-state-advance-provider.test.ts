@@ -103,8 +103,8 @@ describe('start_composite attempt ids', () => {
 })
 
 describe('advanceProvider', () => {
-  async function started() {
-    const f = await setup()
+  async function started(options: { secondParent?: boolean } = {}) {
+    const f = await setup(options)
     await f.start(await f.prepared(f.parentId, 1), f.parentId, 'start-1', 'attempt-1')
     return f
   }
@@ -436,32 +436,143 @@ describe('advanceProvider', () => {
     expect(snapshot().child?.revision).toBe(1)
     expect(snapshot().provider?.value.providerRevision).toBe(1)
   })
-  it('keeps one active invocation per run, so a second parent waits for the first invocation to close', async () => {
-    const f = await started()
-    await f.joint.state.admitInvocation({
-      requestId: 'second-active',
+  const admit = (f: Awaited<ReturnType<typeof started>>, id: string, target: string | null, base?: number) =>
+    f.joint.state.admitInvocation({
+      requestId: `req-${id}`,
       runId: f.admission.runId,
-      targetActionId: f.parentId,
-      baseRevision: 1,
+      targetActionId: target,
+      baseRevision: base ?? f.baseOf(target, 1),
       bindingId: f.joint.binding.bindingId,
       writerEpoch: 1,
-      invocationId: 'second-active',
+      invocationId: id,
       deadline: '2027-01-01T00:00:00Z',
       queryAllowance: 0,
     })
+  const activeRows = (f: Awaited<ReturnType<typeof started>>) =>
+    f.joint.db
+      .prepare(
+        'SELECT target_key, invocation_id FROM runtime_active_invocation_target ORDER BY invocation_id',
+      )
+      .all()
+      .map((row) => `${String(row.target_key)}=${String(row.invocation_id)}`)
+  it('allows one active invocation per target, so parents and the run itself each have their own', async () => {
+    const f = await started({ secondParent: true })
+    await f.start(await f.prepared(f.secondParentId, 1), f.secondParentId, 'start-2', 'attempt-2')
+    await admit(f, 'run-level', null)
+    await admit(f, 'parent-a', f.parentId)
+    await admit(f, 'parent-b', f.secondParentId)
+    expect(activeRows(f)).toEqual([`${f.parentId}=parent-a`, `${f.secondParentId}=parent-b`, `=run-level`])
+    await expect(admit(f, 'run-again', null)).rejects.toMatchObject({
+      failure: { detailCode: 'invocation_state' },
+    })
+    await expect(admit(f, 'parent-a-again', f.parentId)).rejects.toMatchObject({
+      failure: { detailCode: 'invocation_state' },
+    })
+    expect(activeRows(f)).toHaveLength(3)
+    await f.joint.state.closeInvocation({
+      requestId: 'close-parent-a',
+      invocationId: 'parent-a',
+      state: 'prepared',
+      readGuards: [],
+      domainReads: [],
+      unresolvedInflightIds: [],
+      observedQueryCount: 0,
+    })
+    expect(activeRows(f)).toEqual([`${f.secondParentId}=parent-b`, `=run-level`])
+    await admit(f, 'parent-a-next', f.parentId)
+  })
+  it('compares the base revision with the target provider revision, and verifies the target', async () => {
+    const f = await started({ secondParent: true })
+    // The provider revision is 0 and the run revision is 1: the run revision is stale for a started parent.
+    await expect(admit(f, 'stale-parent', f.parentId, 1)).rejects.toMatchObject({
+      failure: { detailCode: 'revision' },
+    })
+    await expect(admit(f, 'stale-run', null, 0)).rejects.toMatchObject({
+      failure: { detailCode: 'revision' },
+    })
+    await f.advance(await f.prepared(f.parentId, 1), 'step-1', {})
+    await expect(admit(f, 'old-provider', f.parentId, 0)).rejects.toMatchObject({
+      failure: { detailCode: 'revision' },
+    })
+    await admit(f, 'current-provider', f.parentId, 1)
+    // A parent that has not started has no provider revision of its own and is based on the run.
+    await admit(f, 'unstarted', f.secondParentId, 1)
+    await expect(admit(f, 'unknown-target', 'no-such-action', 1)).rejects.toMatchObject({
+      failure: { detailCode: 'invocation_target' },
+    })
+    expect(activeRows(f)).toHaveLength(2)
+  })
+  it('refuses a run advance on an invocation that targets a parent', async () => {
+    const f = await started()
+    const invocation = await f.prepared(f.parentId, 1)
     await expect(
-      f.joint.state.admitInvocation({
-        requestId: 'third-active',
-        runId: f.admission.runId,
-        targetActionId: f.leafParentId,
-        baseRevision: 1,
-        bindingId: f.joint.binding.bindingId,
-        writerEpoch: 1,
-        invocationId: 'third-active',
-        deadline: '2027-01-01T00:00:00Z',
-        queryAllowance: 0,
+      f.joint.state.advanceRun({
+        commitId: 'wrong-target',
+        guard: f.guardFor(invocation, 1),
+        transition: {
+          expectedRevision: 1,
+          continuation: f.continuation('x'),
+          consumeSignals: [],
+          actions: [],
+          next: { kind: 'continue' },
+        },
       }),
-    ).rejects.toMatchObject({ failure: { detailCode: 'invocation_state' } })
+    ).rejects.toMatchObject({ failure: { detailCode: 'invocation_target' } })
+  })
+  it('advances several waiting parents of one run independently, and survives a cold reopen with the scan', async () => {
+    const f = await started({ secondParent: true })
+    await f.start(await f.prepared(f.secondParentId, 1), f.secondParentId, 'start-2', 'attempt-2')
+    const wait = {
+      kind: 'wait',
+      condition: { anyOf: [{ kind: 'signals', typeIds: ['agh.runtime/action-completed@1'], afterSeq: 0 }] },
+    }
+    const a = f.child('child-a')
+    const b = f.child('child-b')
+    const invocationA = await f.prepared(f.parentId, 1)
+    const invocationB = await f.prepared(f.secondParentId, 1)
+    await f.advance(invocationA, 'park-a', { children: [a], next: wait })
+    await f.advance(invocationB, 'park-b', { children: [b], next: wait }, f.secondParentId)
+    const childA = stableId('act', `${f.admission.runId}\0${f.parentId}\0child-a`)
+    const childB = stableId('act', `${f.admission.runId}\0${f.secondParentId}\0child-b`)
+    await f.complete(childB, b, invocationB, 'b')
+    expect(f.signalsFor(f.parentId)).toEqual([])
+    const [signalB] = f.signalsFor(f.secondParentId)
+    await f.advance(
+      await f.prepared(f.secondParentId, 1),
+      'resume-b',
+      {
+        revision: 1,
+        consume: [signalB as string],
+      },
+      f.secondParentId,
+    )
+    expect(f.head(providerStateRecordId(f.secondParentId))?.value.providerRevision).toBe(2)
+    expect(f.head(providerStateRecordId(f.parentId))?.value).toMatchObject({
+      providerRevision: 1,
+      state: 'waiting',
+    })
+    await f.complete(childA, a, invocationA, 'a')
+    // Two parents hold active invocations at the moment of the reopen.
+    await admit(f, 'open-a', f.parentId)
+    await admit(f, 'open-b', f.secondParentId, 2)
+    const again = await reopened(f)
+    expect(again.db.prepare('SELECT count(*) AS n FROM runtime_active_invocation_target').get()?.n).toBe(2)
+  })
+  it('migrates a database written with the one-per-run index and still passes the scan', async () => {
+    const f = await started()
+    await admit(f, 'old-active', null)
+    f.joint.db.exec(`DROP TABLE runtime_active_invocation_target;
+      CREATE TABLE runtime_active_invocation (run_id TEXT PRIMARY KEY, invocation_id TEXT NOT NULL) WITHOUT ROWID;`)
+    f.joint.db
+      .prepare('INSERT INTO runtime_active_invocation (run_id, invocation_id) VALUES (?, ?)')
+      .run(f.admission.runId, 'old-active')
+    const again = await reopened(f)
+    expect(
+      again.db.prepare("SELECT 1 FROM sqlite_master WHERE name='runtime_active_invocation'").get(),
+    ).toBeUndefined()
+    expect(
+      again.db.prepare('SELECT target_key, invocation_id FROM runtime_active_invocation_target').all(),
+    ).toEqual([{ target_key: '', invocation_id: 'old-active' }])
   })
   it('survives a cold reopen with the full integrity scan, and a child can be captured for effects', async () => {
     const f = await started()
