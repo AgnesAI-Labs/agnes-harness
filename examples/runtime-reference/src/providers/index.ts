@@ -11,3 +11,4 @@ export type {
 } from './pricing.js'
 export { createReferencePricingFactory } from './pricing.js'
 export * from './routing.js'
+export * from './supervisor.js'

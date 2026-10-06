@@ -24,7 +24,7 @@ export const sessionControlMethods = {
       if (!sameSession(context, sessionId)) return outside()
       const port = deployment.sessionControl
       if (!port) return fail('incompatible', 'supervisor_port_unavailable')
-      const reply = await race(port.readSessionControl({ sessionId }, context), context)
+      const reply = await race(port.readSessionControl({ sessionId }, context), context, deployment.clock)
       if (!reply.ok) return reply
       return reply.value.sessionId === sessionId ? reply : mismatch()
     },
@@ -36,7 +36,7 @@ export const sessionControlMethods = {
       if (!sameSession(context, request.sessionId)) return outside()
       const port = deployment.sessionControl
       if (!port) return fail('incompatible', 'supervisor_port_unavailable')
-      const reply = await race(port.submitSessionControl(request, context), context)
+      const reply = await race(port.submitSessionControl(request, context), context, deployment.clock)
       if (!reply.ok) return reply
       return reply.value.sessionId === request.sessionId && reply.value.requestId === request.requestId
         ? reply
@@ -50,7 +50,7 @@ export const sessionControlMethods = {
       if (!sameSession(context, request.sessionId)) return outside()
       const port = deployment.sessionControl
       if (!port) return fail('incompatible', 'supervisor_port_unavailable')
-      const reply = await race(port.sessionControlStatus(request, context), context)
+      const reply = await race(port.sessionControlStatus(request, context), context, deployment.clock)
       if (!reply.ok) return reply
       if (reply.value === null) return fail('invalid_input', 'not_found')
       return reply.value.sessionId === request.sessionId && reply.value.requestId === request.requestId
