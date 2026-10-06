@@ -53,6 +53,7 @@
     "runtime/client/events-conformance.ts",
     "runtime/client/events-conformance.e2e.test.ts",
     "runtime/client/interaction-conformance.ts",
+    "runtime/client/interaction-conformance.e2e.test.ts",
     "runtime/client/projection-conformance.ts",
     "runtime/client/projection-conformance.e2e.test.ts",
     "runtime/client/projection-sources.test.ts",
