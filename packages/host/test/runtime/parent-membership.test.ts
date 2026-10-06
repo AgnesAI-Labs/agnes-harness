@@ -2,7 +2,10 @@ import { afterEach, expect, it } from 'vitest'
 import { canonicalJson } from '../../src/runtime/state/canonical-json.js'
 import { createParentMembershipReader } from '../../src/runtime/state/parent-membership.js'
 import { bodyDigest } from '../../src/runtime/state/records.js'
-import { closeInteractionStateFixtures, interactionStateFixture } from '../runtime-state-interaction-read-fixture.js'
+import {
+  closeInteractionStateFixtures,
+  interactionStateFixture,
+} from '../runtime-state-interaction-read-fixture.js'
 
 afterEach(closeInteractionStateFixtures)
 
