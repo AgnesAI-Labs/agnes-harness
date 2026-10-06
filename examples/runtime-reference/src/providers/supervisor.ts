@@ -16,6 +16,7 @@ import {
 } from '@agnes/protocol/runtime'
 import { referenceAdmit, referenceCancel } from './supervisor-admission.js'
 import type { RefPorts } from './supervisor-ports.js'
+import { referenceActionReceipt, referenceInspect } from './supervisor-reads.js'
 import { refuse, same, sessionOf, until } from './supervisor-wire.js'
 
 export type ReferenceSupervisorDeployment = RefPorts
@@ -85,6 +86,11 @@ function route(name: Name): Route | null {
       return { needs: ['admission', 'releases', 'identity', 'limits'], run: referenceAdmit }
     case 'cancel':
       return { needs: ['admission', 'identity'], run: referenceCancel }
+    case 'actionReceipt':
+      return { needs: ['read'], run: referenceActionReceipt }
+    case 'inspect':
+      return { needs: ['read'], run: referenceInspect }
+    // sessionParameters stays unserved until State exposes the effective parameters of a run.
     default:
       return null
   }

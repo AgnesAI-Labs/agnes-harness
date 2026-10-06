@@ -1119,7 +1119,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // Supervisor ports, wire helpers, session-control forwarding and provider shell (+555); exact cap, no spare.
   // The Supervisor measures a call's deadline against the deployment's trusted clock (+4); exact cap, no spare.
   // Supervisor admission and pre-run cancellation (+182); exact cap, no spare.
-  'packages/core/src': 40196,
+  // Supervisor actionReceipt and inspect reads (+107); exact cap, no spare.
+  'packages/core/src': 40303,
   // Testkit-only reference Effects runner adds 202 measured lines; exact cap, no spare.
   // Independent Effects dispatch reference (+440); exact measurement below.
   'packages/core/testkit': 2437,

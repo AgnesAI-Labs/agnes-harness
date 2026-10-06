@@ -15,6 +15,7 @@ import {
 } from '@agnes/protocol/runtime'
 import { admissionMethods } from '../supervisor/admission.js'
 import type { MethodEntry, SupervisorDeployment } from '../supervisor/ports.js'
+import { readMethods } from '../supervisor/reads.js'
 import { sessionControlMethods } from '../supervisor/session-controls.js'
 import { canonical, decodeInline, encodeInline, equal, fail } from '../supervisor/wire.js'
 
@@ -29,6 +30,7 @@ const NAMES = Object.keys(catalog) as readonly MethodName[]
 const TABLE: Readonly<Partial<Record<MethodName, MethodEntry>>> = Object.freeze({
   ...sessionControlMethods,
   ...admissionMethods,
+  ...readMethods,
 })
 
 function checkedDescriptor(descriptor: W.ProviderDescriptor): W.ProviderDescriptor {
