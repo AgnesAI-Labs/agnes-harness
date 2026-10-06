@@ -103,8 +103,9 @@ const colorScheme = (): 'light' | 'dark' =>
 /**
  * Shows renderer-generated HTML in the sandboxed viewer frame. The frame has an opaque origin, gets
  * the content once on its first load, and has no channel back. A second load means the frame left
- * the viewer document, so it is removed. A theme switch or new content mounts a fresh frame: the
- * viewer takes one message only, and a new address for a live frame would read as navigation.
+ * the viewer document, so it is removed until the content changes. A theme switch or new content
+ * mounts a fresh frame: the viewer takes one message only, and a new address for a live frame would
+ * read as navigation.
  */
 export function HtmlViewer({
   request,
@@ -115,7 +116,11 @@ export function HtmlViewer({
   t = fallbackT,
 }: HtmlViewerProps) {
   const [scheme, setScheme] = useState(colorScheme)
-  const [navigated, setNavigated] = useState(false)
+  const refusal = htmlViewerRefusal(request, allowScripts)
+  const html = refusal === 'invalid_request' ? undefined : request.html
+  // Each new content counts one mount, which keys its frame in place of the content itself.
+  const [content, setContent] = useState({ html, mount: 0, navigated: false })
+  if (content.html !== html) setContent({ html, mount: content.mount + 1, navigated: false })
   const loaded = useRef(new WeakSet<HTMLIFrameElement>())
   useEffect(() => {
     const observer = new MutationObserver(() => setScheme(colorScheme()))
@@ -123,8 +128,7 @@ export function HtmlViewer({
     setScheme(colorScheme())
     return () => observer.disconnect()
   }, [])
-  const refusal = htmlViewerRefusal(request, allowScripts)
-  if (refusal || navigated)
+  if (refusal || content.navigated)
     return (
       <p className="html-viewer-notice" role="alert" data-html-viewer-refused={refusal ?? 'navigated'}>
         {t(refusal ? 'htmlViewer.unavailable' : 'htmlViewer.navigated')}
@@ -134,7 +138,7 @@ export function HtmlViewer({
   const contentLang = /^[A-Za-z0-9-]{1,35}$/.test(lang) ? lang : ''
   return (
     <iframe
-      key={`${scheme} ${src} ${contentLang} ${request.html}`}
+      key={`${scheme} ${src} ${contentLang} ${content.mount}`}
       src={src}
       sandbox="allow-scripts"
       allow=""
@@ -145,7 +149,7 @@ export function HtmlViewer({
       onLoad={(event) => {
         const frame = event.currentTarget
         if (loaded.current.has(frame)) {
-          setNavigated(true)
+          setContent((current) => ({ ...current, navigated: true }))
           onNavigatedAway?.()
           return
         }
