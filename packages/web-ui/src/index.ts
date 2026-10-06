@@ -53,6 +53,13 @@ export {
 export { Button, type ButtonProps } from './ui/button.js'
 export { Dialog, type DialogProps } from './ui/dialog.js'
 export { Field, type FieldProps } from './ui/field.js'
+export {
+  type NoticeKind,
+  NotificationHost,
+  type NotificationHostProps,
+  type Notifier,
+  type NotifyInput,
+} from './ui/notification.js'
 export { Select, type SelectProps } from './ui/select.js'
 export {
   type StateLight,

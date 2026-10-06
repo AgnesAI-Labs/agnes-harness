@@ -24,7 +24,10 @@ import {
   type Session,
 } from '@agnes/sdk/browser'
 import { bindDismissibleDialog } from '@agnes/web-admin-frame'
+import { createAntdRoot, NotificationHost, type Notifier, type NotifyInput } from '@agnes/web-ui'
 import { attachmentErrorNotice } from '@agnes/web-units'
+import { createElement } from 'react'
+import { flushSync } from 'react-dom'
 import { createPendingCoordinator } from './admin-pane-coordinator.js'
 import { bindAppearance, bindSkinGroup } from './appearance.js'
 import type { ApprovalAction } from './approval.js'
@@ -101,6 +104,9 @@ const composerDraftKey = 'agnes-web-composer-draft'
 // Keep image submissions below the daemon's WebSocket frame cap, including their JSON-RPC envelope.
 const savedComposerDraft = sessionStorage.getItem(composerDraftKey)
 const notice = element('notice', 'p')
+// 首屏配置引导刻意留在 #notice 上：它和设置面板同时出现，是页面级说明，做成 6 秒消失的通知会把
+// 说明弄丢。这个 kind 只服务于它的退场判断，写入点和清空点靠它对齐（见 clearFirstRunNotice）。
+const FIRST_RUN_NOTICE_KIND = 'first-run-configure'
 const conversation = element('conversation-shell', 'div')
 const newSessionDialog = element('new-session', 'dialog')
 const newSessionForm = element('new-session-form', 'form')
@@ -129,6 +135,49 @@ const reconnect = createReconnectController({
   reload: () => location.reload(),
   onPhase: renderReconnect,
 })
+// 即时提示走屏幕右上角的通知浮层：会自己消失、能手动关掉，不像 #notice 那样一直挂在会话面板
+// 顶部等下一次操作顶掉。独立节点，不复用 region-slots 的 overlayHost。
+const notificationHost = document.createElement('div')
+notificationHost.dataset.agnesNotifications = 'true'
+document.body.append(notificationHost)
+const notificationRoot = createAntdRoot(notificationHost)
+let notifier: Notifier | undefined
+// flushSync：首帧同步提交，layout effect 里的 onReady 才会在同一帧把 notifier 交出来，
+// 否则挂载到首次渲染之间那段时间的提示只能落到下面的兜底路径上（假定时器的环境里那次渲染
+// 可能一直排不到）。
+flushSync(() =>
+  notificationRoot.render(
+    createElement(NotificationHost, {
+      onReady(ready: Notifier) {
+        notifier = ready
+      },
+    }),
+  ),
+)
+/**
+ * `#notice` 上是否挂着不该被顶掉的常驻内容：会话恢复块（带说明和两个重试按钮）或首屏配置引导
+ * （靠 data-kind 上的 first-run-configure 认自己）。两者都有自己的退场路径——`clearSessionRecovery`
+ * 与 `clearFirstRunNotice`——别的写入点一律让开：被顶掉就再也找不回来，而瞬时提示只是过时了。
+ * 判断集中在这里，是因为写入点有四处（notify 的兜底、run、submitComposer、savedConfiguration 的
+ * 退场），各写各的条件迟早会漏掉一处。
+ */
+function noticeHoldsPersistentContent(): boolean {
+  return sessionRecovery !== undefined || notice.dataset.kind === FIRST_RUN_NOTICE_KIND
+}
+/** 通知浮层就是 #notice 的迁移目标：常驻的恢复块与两条页面级提示仍留在 #notice 上。 */
+function notify(input: NotifyInput): void {
+  // 宿主还没就绪时退回 #notice，避免提示静默丢失。kind 必须跟着走：写死空值会让兜底路径里的
+  // 错误提示丢掉 [data-kind="error"] 的配色。
+  if (!notifier) {
+    // 兜底要往 #notice 上写，同样得给常驻内容让路；放弃这条提示，与 showError、closed、gap
+    // 三处分流同一取舍：那三处在有恢复块时都不走 notify。
+    if (noticeHoldsPersistentContent()) return
+    notice.textContent = input.text
+    notice.dataset.kind = input.kind ?? ''
+    return
+  }
+  notifier.notify(input)
+}
 function renderReconnect(phase: ReconnectPhase): void {
   reconnectNotice.hidden = phase === 'idle'
   if (phase === 'idle') {
@@ -204,7 +253,11 @@ const rosterSource: RosterSource = {
 const claimSlotCard: ClaimResolver = (entry, extId) =>
   entry.owner !== undefined && (moduleExtIds.get(entry.owner)?.includes(extId) ?? false)
 const computerUseStatus = createComputerUsePaneController(client)
-addEventListener('pagehide', () => computerUseStatus.dispose(), { once: true })
+// 与下面主 pagehide 同一取舍：进往返缓存不是关闭，恢复后这个面板还要用。这里也不能写 once——
+// 它按触发次数注销，persisted 那一次即使什么都不做，监听器照样会被摘掉。
+addEventListener('pagehide', (event) => {
+  if (!event.persisted) computerUseStatus.dispose()
+})
 const clientModules = await startClientModules({
   agnes: client,
   claim: claimSlotCard,
@@ -370,7 +423,10 @@ const stopPluginHotReload = startPluginHotReload({
   reconciler: clientModules.reconciler,
   onError: (error) => console.warn('[client-modules] SSE 热替换失败', error),
 })
-addEventListener('pagehide', () => stopPluginHotReload(), { once: true })
+// 同上：热替换流只在真正离开页面时关闭。
+addEventListener('pagehide', (event) => {
+  if (!event.persisted) stopPluginHotReload()
+})
 let connected = false
 let configured = false
 let current: Session | undefined
@@ -524,19 +580,17 @@ function errorMessage(error: unknown): string {
 }
 function showError(error: unknown): void {
   const message = errorMessage(error)
+  // 恢复块带两个按钮，不能被会自己消失的通知顶掉；其余错误走通知浮层。
   if (sessionRecovery) {
     renderSessionRecovery(message)
     notice.dataset.kind = 'error'
-  } else {
-    notice.textContent = message
-    notice.dataset.kind = 'error'
-  }
+  } else notify({ text: message, kind: 'error' })
   if (newSessionDialog.open) element('new-session-error', 'p').textContent = message
 }
 function run(op: () => Promise<void>): void {
   element('new-session-error', 'p').textContent = ''
   if (sessionRecovery) renderSessionRecovery()
-  else {
+  else if (!noticeHoldsPersistentContent()) {
     notice.textContent = ''
     notice.dataset.kind = ''
   }
@@ -1117,8 +1171,7 @@ async function open(
     stopEvents = undefined
     live = undefined
     if (!stopped) {
-      notice.textContent = t('app.notice.oldSessionClosing')
-      notice.dataset.kind = 'warning'
+      notify({ text: t('app.notice.oldSessionClosing'), kind: 'warning' })
     }
     await previous?.detach()
     if (epoch !== selection) return
@@ -1306,8 +1359,7 @@ async function forkTurn(turn: UITurn): Promise<void> {
     throw new Error(t('app.fork.notIdle'))
   const forked = await client.session.fork(parent.id, turn.endSeq)
   await open(forked.id, { created: forked })
-  notice.textContent = t('app.fork.created')
-  notice.dataset.kind = ''
+  notify({ text: t('app.fork.created'), kind: 'info' })
   composerRuntime.focus()
 }
 function renderNewSessionControls(): void {
@@ -1456,8 +1508,7 @@ async function beginNewDraft(showWorkspacePicker = true, workspace?: WorkspaceEn
   try {
     const stopped = await stopWithTimeout(stop)
     if (!stopped) {
-      notice.textContent = t('app.notice.oldSessionClosing')
-      notice.dataset.kind = 'warning'
+      notify({ text: t('app.notice.oldSessionClosing'), kind: 'warning' })
     }
   } catch (error) {
     cleanupError = error
@@ -1517,8 +1568,7 @@ async function selectPermission(mode: PermissionMode): Promise<boolean> {
   if (!current && draftingNew) {
     permissionMode = mode
     rememberWebComposer({ permission: mode })
-    notice.textContent = t('app.permission.draftNotice', { mode: permissionLabel(mode) })
-    notice.dataset.kind = ''
+    notify({ text: t('app.permission.draftNotice', { mode: permissionLabel(mode) }), kind: 'info' })
     renderControls()
     return true
   }
@@ -1543,11 +1593,13 @@ async function selectPermission(mode: PermissionMode): Promise<boolean> {
     sessionYoloEnabled = requestedYolo
     permissionMode = mode
     rememberWebComposer({ permission: mode })
-    notice.textContent =
-      mode === 'full'
-        ? t('app.permission.notice.full')
-        : t('app.permission.notice.mode', { mode: permissionLabel(mode) })
-    notice.dataset.kind = ''
+    notify({
+      text:
+        mode === 'full'
+          ? t('app.permission.notice.full')
+          : t('app.permission.notice.mode', { mode: permissionLabel(mode) }),
+      kind: 'info',
+    })
     return true
   } catch (error) {
     if (current === session && selection === epoch && !sessionPending) showError(error)
@@ -1598,8 +1650,7 @@ async function selectModel(option: ModelPickerOption, settings?: ModelSettings):
     else if (!sameModel) draftModelSettingsEdited = false
     knownSessionModel = selected
     rememberWebComposer({ model: knownSessionModel })
-    notice.textContent = t('app.notice.newSessionModel')
-    notice.dataset.kind = ''
+    notify({ text: t('app.notice.newSessionModel'), kind: 'info' })
     renderControls()
     return true
   }
@@ -1620,8 +1671,7 @@ async function selectModel(option: ModelPickerOption, settings?: ModelSettings):
     knownSessionModel = selected
     rememberWebComposer({ model: knownSessionModel })
     initialModelPending = undefined
-    notice.textContent = t('app.notice.modelSaved')
-    notice.dataset.kind = ''
+    notify({ text: t('app.notice.modelSaved'), kind: 'info' })
     live?.refresh()
     return true
   } catch (error) {
@@ -1634,8 +1684,17 @@ async function selectModel(option: ModelPickerOption, settings?: ModelSettings):
     }
   }
 }
-async function savedConfiguration(saved: ConfigSnapshot): Promise<void> {
+/**
+ * 首屏配置引导的退场：保存设置走 `options.onSaved` 直接回调，不经过 `run(op)`，那里那次清空接不住它。
+ * 不能无条件清空——同一个元素还挂着会话恢复块和它的两个按钮，保存设置时可能正显示着恢复块。
+ */
+function clearFirstRunNotice(): void {
+  if (sessionRecovery || notice.dataset.kind !== FIRST_RUN_NOTICE_KIND) return
+  notice.textContent = ''
   notice.dataset.kind = ''
+}
+async function savedConfiguration(saved: ConfigSnapshot): Promise<void> {
+  clearFirstRunNotice()
   accountProvider = saved.provider
   accountLabels = new Map(
     (saved.accounts ?? []).map((row) => [row.route, `${row.label} · ${row.providerId}`]),
@@ -1646,14 +1705,14 @@ async function savedConfiguration(saved: ConfigSnapshot): Promise<void> {
       entry.route === (saved.provider?.route ?? saved.provider?.id) && entry.id === saved.provider?.model,
   )
   if (!saved.configured && !savedModels.length) {
-    notice.textContent = t('app.model.noAccounts')
+    notify({ text: t('app.model.noAccounts'), kind: 'info' })
     return
   }
   if (saved.effect === 'restart-required' || !published) {
-    notice.textContent = t('app.model.savedNotEffective')
+    notify({ text: t('app.model.savedNotEffective'), kind: 'info' })
     return
   }
-  notice.textContent = t('app.model.savedNotice')
+  notify({ text: t('app.model.savedNotice'), kind: 'info' })
 }
 newSessionForm.addEventListener('submit', (event) => {
   event.preventDefault()
@@ -2017,8 +2076,13 @@ function submitComposer(): void {
     showError(new Error(t('app.error.messageTooLarge')))
     return
   }
-  notice.textContent = ''
-  notice.dataset.kind = ''
+  // 留在 #notice 上的两条页面级提示不会自己退场，用户看完可能接着发消息，这里顺手退掉它们。
+  // 常驻内容另有退场路径，由 noticeHoldsPersistentContent 挡着——老实现是无条件清空，
+  // 恢复块显示时提交消息会连它的两个按钮一起抹掉。
+  if (!noticeHoldsPersistentContent()) {
+    notice.textContent = ''
+    notice.dataset.kind = ''
+  }
   const submission = ++submissionGeneration
   const connectionEpoch = permissionConnectionEpoch
   let ownedSelection = selection
@@ -2156,10 +2220,7 @@ client.on('closed', () => {
   // While the page recovers by itself, the notice only states the fact; the recovery status says what happens next.
   const message = intentionalClose ? t('app.connection.closedIntentional') : t('app.connection.lost')
   if (sessionRecovery) renderSessionRecovery(message)
-  else {
-    notice.textContent = message
-    notice.dataset.kind = 'error'
-  }
+  else notify({ text: message, kind: 'error' })
   if (!intentionalClose) reconnect.start()
 })
 /** Gap and generation notices name their session; another session's are not this view's concern. */
@@ -2169,7 +2230,7 @@ client.on('gap', (payload) => {
   if (!forCurrent(payload)) return
   const message = t('app.gap.partial')
   if (sessionRecovery) renderSessionRecovery(message)
-  else notice.textContent = message
+  else notify({ text: message })
   void live?.resync().catch(showError)
 })
 client.on('generationChanged', (payload) => {
@@ -2234,11 +2295,18 @@ const modelRefreshTimer = setInterval(() => {
       modelRefreshPending = false
     })
 }, 2000)
-window.addEventListener('pagehide', () => {
+window.addEventListener('pagehide', (event) => {
+  // 进往返缓存（bfcache）不是关闭：页面会被原样恢复。这时卸载通知根，恢复出来的页面就再也
+  // 报不出任何提示；关掉连接也会让它变成一具尸体。只有真正离开页面才做这些清理。
+  if (event.persisted) return
   clearInterval(modelRefreshTimer)
   intentionalClose = true
   reconnect.cancel()
   titleRefresh.close()
+  // 通知浮层自己带着自动关闭计时器：页面已经在关，留着它只会让计时器空转。
+  notificationRoot.unmount()
+  // 根卸掉之后这个 api 就是死引用，留着它 notify() 会被静默丢弃、永远轮不到下面的兜底。
+  notifier = undefined
   void (stopEvents?.() ?? Promise.resolve()).finally(() => client.close())
 })
 
@@ -2270,6 +2338,8 @@ run(async () => {
   if (!configured) {
     renderControls()
     notice.textContent = t('app.firstRun.configure')
+    // 退场由 savedConfiguration 开头的 clearFirstRunNotice 负责。
+    notice.dataset.kind = FIRST_RUN_NOTICE_KIND
     await settings.open()
   }
   try {
@@ -2286,6 +2356,9 @@ run(async () => {
     if (candidates.items.some((item) => item.sessionId === selected)) await open(selected)
     else {
       notice.textContent = t('app.session.notFound')
+      // 这条可能紧跟在首屏引导之后写入：不复位 kind，元素还带着 first-run-configure 标记，
+      // 用户随后保存设置时 clearFirstRunNotice 会把这条提示一并清掉。
+      notice.dataset.kind = ''
       renderControls()
     }
   } else {
