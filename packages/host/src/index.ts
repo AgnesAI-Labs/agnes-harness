@@ -419,7 +419,10 @@ export {
   type HostRuntimeClientPorts,
 } from './runtime/client-ports.js'
 export type { HostRuntimeAdmissionInstallation, HostRuntimeRunRequest } from './runtime/entry-admission.js'
-export type { HostRuntimeLoopCredentials } from './runtime/loop-credentials.js'
+export {
+  type HostRuntimeLoopCredentials,
+  hostModelCredentialVerifier,
+} from './runtime/loop-credentials.js'
 export type { HostRuntimeLoopInstallation, HostRuntimeLoopRun } from './runtime/loop-installation.js'
 export {
   type BootstrapAnchor,

@@ -88,6 +88,16 @@ export interface SecretsService {
   readonly providerDigest: string
   readonly features: readonly string[]
   resolve(request: unknown, context: CallContext): Promise<Outcome<Wire.SecretHandle>>
+  /**
+   * Host-local companion, excluded from the public descriptor and method map.
+   * Ok means this broker issued the handle and it is still valid. It writes nothing,
+   * unseals nothing, and is not permission to send.
+   */
+  verifyIssued(
+    handle: unknown,
+    consumer: Wire.SecretConsumerBinding,
+    context: CallContext,
+  ): Promise<Outcome<void>>
   use(
     handle: unknown,
     consumer: Wire.SecretConsumerBinding,
@@ -495,6 +505,32 @@ export function createSecretsService(options: SecretsOptions): SecretsService {
     return output
   }
 
+  async function preface(
+    handle: unknown,
+    consumer: Wire.SecretConsumerBinding,
+    context: CallContext,
+    signal: AbortSignal,
+  ): Promise<{ locator: Wire.SecretHandle; row: RecordRow }> {
+    const locator = decode('SecretHandle', handle)
+    const allowed = await grant(locator.secretId, locator.audience, consumer.purpose, context, signal)
+    if (canonicalJsonDigest(consumer) !== canonicalJsonDigest(allowed.binding))
+      throw new SecretFault('denied', 'secret_consumer')
+    const held = db.prepare('SELECT * FROM handles WHERE id = ?').get(locator.handleId)
+    const row = record(locator.secretId)
+    if (db.prepare('SELECT request_id FROM credential_locks WHERE secret_id = ?').get(locator.secretId))
+      throw new SecretFault('denied', 'secret_refresh_pending')
+    if (
+      !held ||
+      canonicalJsonDigest(decode('SecretHandle', JSON.parse(String(held.locator)))) !==
+        canonicalJsonDigest(locator) ||
+      held.grant_digest !== canonicalJsonDigest({ ...allowed }) ||
+      held.revision !== row.revision ||
+      locator.version !== row.version ||
+      Date.parse(locator.expiresAt) <= now()
+    )
+      throw new SecretFault('denied', 'secret_handle')
+    return { locator, row }
+  }
   let ticketPort: ReturnType<typeof createArtifactTicketKeyPort> | undefined
   try {
     if (options.artifactTickets)
@@ -555,26 +591,20 @@ export function createSecretsService(options: SecretsOptions): SecretsService {
         return issue(allowed, record(input.secretId))
       })
     },
+    verifyIssued(handle, consumer, context) {
+      return run(context, async (signal) => {
+        try {
+          await preface(handle, consumer, context, signal)
+        } catch (error) {
+          if (signal.aborted || (error instanceof SecretFault && error.code === 'cancelled'))
+            throw new SecretFault('cancelled', 'secret_cancelled')
+          throw new SecretFault('denied', 'secret_handle')
+        }
+      })
+    },
     use(handle, consumer, context, consume) {
       return run(context, async (signal) => {
-        const locator = decode('SecretHandle', handle)
-        const allowed = await grant(locator.secretId, locator.audience, consumer.purpose, context, signal)
-        if (canonicalJsonDigest(consumer) !== canonicalJsonDigest(allowed.binding))
-          throw new SecretFault('denied', 'secret_consumer')
-        const held = db.prepare('SELECT * FROM handles WHERE id = ?').get(locator.handleId)
-        const row = record(locator.secretId)
-        if (db.prepare('SELECT request_id FROM credential_locks WHERE secret_id = ?').get(locator.secretId))
-          throw new SecretFault('denied', 'secret_refresh_pending')
-        if (
-          !held ||
-          canonicalJsonDigest(decode('SecretHandle', JSON.parse(String(held.locator)))) !==
-            canonicalJsonDigest(locator) ||
-          held.grant_digest !== canonicalJsonDigest({ ...allowed }) ||
-          held.revision !== row.revision ||
-          locator.version !== row.version ||
-          Date.parse(locator.expiresAt) <= now()
-        )
-          throw new SecretFault('denied', 'secret_handle')
+        const { locator, row } = await preface(handle, consumer, context, signal)
         const material = options.source.resolve(row.ref)
         // Resolving legacy storage does not grant permission. Recheck before exposing any material.
         await grant(locator.secretId, locator.audience, consumer.purpose, context, signal)
