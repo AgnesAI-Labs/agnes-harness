@@ -237,7 +237,7 @@ describe('default blob service uploads', () => {
     expect(ok(await inspectUpload(blob, session))).toMatchObject({ status: 'sealed', digest: sha('abcdef') })
   })
 
-  it('seal checks the total size and the full digest, and repeats its first result', async () => {
+  it('seal checks the total size and the full digest, refuses a cancelled writer and repeats its first result', async () => {
     const blob = open(await fresh())
     const session = ok(
       await blob.stage(
@@ -251,6 +251,22 @@ describe('default blob service uploads', () => {
     ok(writer.write(2, text('x')))
     expect(refused(await writer.seal())).toBe('integrity')
     expect(ok(await inspectUpload(blob, session))).toMatchObject({ status: 'uploading', digest: null })
+
+    // A cancelled writer never seals, even with every byte acknowledged.
+    const cancelledSession = ok(
+      await blob.stage(
+        { uploadId: 'upload-3', size: 3, mediaType: 'text/plain', expectedDigest: sha('abc') },
+        ctx(),
+      ),
+    )
+    const cancelled = ok(blob.openWriter('upload-3', ctx()))
+    ok(cancelled.write(0, text('abc')))
+    cancelled.close()
+    expect(refused(await cancelled.seal())).toBe('revision_conflict')
+    expect(ok(await inspectUpload(blob, cancelledSession))).toMatchObject({
+      status: 'uploading',
+      digest: null,
+    })
 
     ok(
       await blob.stage(

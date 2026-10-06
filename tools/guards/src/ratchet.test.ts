@@ -1556,7 +1556,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // exported as constants. Measured 981 (+3), exact, no spare.
   // Optional ExecResult.timedOut and the soft-deadline note on timeoutMs. Measured 987 (+6), exact cap.
   // Optional ToolContext.defaultTimeoutMs. Measured 988 (+1), exact cap.
-  'packages/extension-api/src': 5485, // Exact source total including runtime author adapters.
+  // Standard artifact adapter (reserve, render, publish over EffectPorts). Measured 5667 (+182), exact.
+  'packages/extension-api/src': 5667, // Exact source total including runtime author adapters.
   // Optional author fixture entry; no production runtime code belongs here.
   // B1-A: measured 229 lines on the shared tree; public transport contract, config and wiring/testkit.
   // B1 review repair: exact measured 246; startup cancellation / cwd contract coverage.
