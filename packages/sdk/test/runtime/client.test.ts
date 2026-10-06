@@ -15,6 +15,7 @@ import {
   type ClientSubscribeRequest,
   type ClientSubscriptionFrame,
   encodeClientBinaryMetadata,
+  RuntimeClientOperations,
   RuntimeClientTransportPolicy,
   RuntimeClientTransportWire,
   type RuntimeError,
@@ -31,6 +32,7 @@ import {
 } from '@agnes/protocol/runtime'
 import {
   artifactReader,
+  createRuntimeClient,
   type LocalRefusal,
   RUNTIME_JOURNAL_KEY,
   type RuntimeClientOptions,
@@ -1442,5 +1444,140 @@ describe('subscriptions', () => {
     expect(p.requests.filter((r) => r.route === 'closeSubscription').map((r) => r.body)).toMatchObject([
       { subscriptionId: 'sub-1' },
     ])
+  })
+})
+
+describe('the local interfaces', () => {
+  it('offers every generated method and sends each as its own operation, unserved ones refused by the server', async () => {
+    const p = await peer()
+    const { client, journal } = await connected(p)
+    const rt = createRuntimeClient(client)
+    const facades: Record<string, object> = {
+      ShellConversationClient: rt.conversations,
+      ShellDomainClient: rt.domain,
+      DomainCommandClient: rt.domain,
+      SessionControlClient: rt.controls,
+      SessionBudgetClient: rt.budget,
+      PermissionClient: rt.permissions,
+      SessionJobsClient: rt.jobs,
+      InteractionClient: rt.interactions,
+      ApprovalClient: rt.approvals,
+      ArtifactClient: rt.artifacts,
+      ClientTransportClient: rt.status,
+    }
+    const missing = Object.values(RuntimeClientOperations).filter(
+      ({ localInterface, localMethod }) =>
+        typeof (facades[localInterface] as Record<string, unknown> | undefined)?.[localMethod] !== 'function',
+    )
+    expect(missing).toEqual([])
+
+    const unserved = {
+      state: 'failed',
+      error: { code: 'incompatible', detailCode: 'operation_not_supported' },
+    }
+    expect(await rt.conversations.open({ sessionId: 'conv-1', limit: 10 })).toMatchObject(unserved)
+    expect(await rt.controls.read('conv-1')).toMatchObject(unserved)
+    expect(await rt.conversations.cancel(cancel('req-1'))).toMatchObject(unserved)
+    expect(await rt.interactions.formLink('int-1', 3)).toMatchObject(unserved)
+    expect(await rt.approvals.formLink('int-2', 4)).toMatchObject(unserved)
+    expect(await rt.artifacts.describe('art-1', 2)).toMatchObject(unserved)
+    const calls = p.requests.filter(({ route }) => route === 'clientQuery' || route === 'clientCommand')
+    expect(calls.map(({ route, body }) => [route, body.call])).toEqual([
+      ['clientQuery', { operation: 'conversation.open', input: { sessionId: 'conv-1', limit: 10 } }],
+      ['clientQuery', { operation: 'control.read', input: 'conv-1' }],
+      ['clientCommand', { operation: 'conversation.cancel', input: cancel('req-1') }],
+      [
+        'clientCommand',
+        { operation: 'interaction.formLink', input: { interactionId: 'int-1', expectedVersion: 3 } },
+      ],
+      [
+        'clientCommand',
+        { operation: 'approval.formLink', input: { interactionId: 'int-2', expectedVersion: 4 } },
+      ],
+      ['clientQuery', { operation: 'artifact.describe', input: { artifactId: 'art-1', version: 2 } }],
+    ])
+    // A typed refusal admitted nothing, so the journaled command does not linger.
+    expect(await journal.pending(KEY)).toEqual([])
+
+    // The transport status query takes its call header from the transport, never from the caller.
+    p.handlers.clientQuery = (request) => reply(request, catalogStatus)
+    expect(await rt.status.catalogStatus({})).toEqual({ state: 'ok', value: catalogStatus })
+    const status = p.requests.at(-1)?.body as { header: unknown; call: { input: unknown } }
+    expect(status.call.input).toEqual({ header: status.header })
+  })
+
+  describe('following a download ticket', () => {
+    const ticket = {
+      url: `${routes.download.path.replace('{ticketId}', 'ticket-1')}?nonce=${'a'.repeat(43)}`,
+      expiresAt: '2026-10-06T00:05:00.000Z',
+      artifactId: 'art-1',
+      version: 1,
+      grantRevision: 1,
+    }
+    const issue = async (issued: unknown, options: Parameters<typeof createRuntimeClient>[1] = {}) => {
+      const p = await peer()
+      const { client } = await connected(p)
+      p.handlers.clientCommand = (request) => reply(request, issued)
+      const rt = createRuntimeClient(client, {
+        now: () => Date.parse('2026-10-06T00:00:00.000Z'),
+        ...options,
+      })
+      const opened = await rt.artifacts.openDownload({
+        artifactId: 'art-1',
+        version: 1,
+        disposition: 'attachment',
+      })
+      if (opened.state !== 'ok') throw new Error(`not issued: ${opened.state}`)
+      return { p, rt, issued: opened.value }
+    }
+
+    it('hands the follower the absolute URL of a ticket this client issued, and only that one', async () => {
+      const followed: string[] = []
+      const { p, rt, issued } = await issue(ticket, { followDownload: (url) => followed.push(url) })
+      expect(rt.artifacts.followDownload(issued)).toEqual({ state: 'ok', value: undefined })
+      expect(followed).toEqual([p.url + ticket.url])
+      // An equal ticket this client did not receive, or the issued one edited, is never followed.
+      expect(rt.artifacts.followDownload({ ...ticket })).toEqual({
+        state: 'refused',
+        reason: 'invalid-request',
+      })
+      expect(() => Object.assign(issued, { url: 'https://evil.example/' })).toThrow(TypeError)
+      expect(followed).toHaveLength(1)
+    })
+
+    it.each([
+      {
+        name: 'an expired ticket',
+        issued: { ...ticket, expiresAt: '2026-10-06T00:00:00.000Z' },
+        follower: true,
+        result: { state: 'failed', error: { code: 'denied', detailCode: 'ticket_expired' } },
+      },
+      {
+        name: 'a ticket naming another origin',
+        issued: { ...ticket, url: 'https://evil.example/download' },
+        follower: true,
+        result: { state: 'refused', reason: 'invalid-request' },
+      },
+      {
+        name: 'a ticket naming another route',
+        issued: { ...ticket, url: `${routes.bootstrap.path}?nonce=x` },
+        follower: true,
+        result: { state: 'refused', reason: 'invalid-request' },
+      },
+      {
+        name: 'a client without a follower',
+        issued: ticket,
+        follower: false,
+        result: { state: 'failed', error: { code: 'incompatible', detailCode: 'operation_not_supported' } },
+      },
+    ])('refuses $name without following it', async ({ issued, follower, result }) => {
+      const followed: string[] = []
+      const { rt, issued: value } = await issue(
+        issued,
+        follower ? { followDownload: (url) => followed.push(url) } : {},
+      )
+      expect(rt.artifacts.followDownload(value)).toMatchObject(result)
+      expect(followed).toEqual([])
+    })
   })
 })

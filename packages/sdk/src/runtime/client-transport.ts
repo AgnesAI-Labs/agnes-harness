@@ -274,6 +274,11 @@ export class RuntimeClientTransport {
     return this.connecting.then(() => this.openPush())
   }
 
+  /** A generated route path, or a server-issued path under one, on this client's deployment. */
+  url(path: string): string {
+    return this.base + path
+  }
+
   /** One authenticated POST to a generated route; the artifact reader sends through it too. */
   post(path: string, body: unknown, signal?: AbortSignal): Promise<Response> {
     const headers = {
@@ -281,7 +286,7 @@ export class RuntimeClientTransport {
       ...this.auth(),
     }
     const init: RequestInit = { method: 'POST', headers, body: JSON.stringify(body) }
-    return this.fetch(this.base + path, signal ? { ...init, signal } : init)
+    return this.fetch(this.url(path), signal ? { ...init, signal } : init)
   }
 
   query<K extends ClientJsonOperation>(
