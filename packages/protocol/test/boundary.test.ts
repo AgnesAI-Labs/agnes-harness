@@ -59,7 +59,12 @@ describe('protocol src boundary', () => {
     expect(Object.keys(mod).sort()).toEqual(
       [
         'AGNES_ERRORS',
+        // The two refusal classes travel with the validators they are thrown by: a caller that
+        // reaches validateUserAttachments through this package has to be able to tell the refusal
+        // apart by type, and `instanceof` only matches the class the thrower actually used.
+        'AttachmentValidationError',
         'decodeAttachmentData',
+        'SafeImageError',
         'USER_MESSAGE_ATTACHMENT_LIMITS',
         'validateUserAttachments',
         'fromAcpPrompt',

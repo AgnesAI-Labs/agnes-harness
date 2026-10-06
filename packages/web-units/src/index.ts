@@ -21,6 +21,8 @@ export {
   type PermissionMode,
   type PermissionPickerState,
 } from './composer.js'
+// 输入框与宿主提交路径共用同一份「校验错误 → 词条」映射，避免各写一套后文案漂移。
+export { type AttachmentErrorNotice, attachmentErrorNotice } from './composer-errors.js'
 export {
   type ConversationAttachmentsRenderer,
   createConversationAttachmentsRenderer,

@@ -581,6 +581,90 @@ describe('composer image attachments', () => {
     expect(host.querySelector('#composer-attach')?.getAttribute('aria-disabled')).toBe('true')
   })
 
+  it('says attachments cannot be added yet instead of quoting the limits', async () => {
+    const handle = createRef<ComposerHandle>()
+    const onError = vi.fn()
+    await act(async () =>
+      root.render(
+        createElement(Composer, {
+          ref: handle,
+          dependencies,
+          initialView: { ...view, sending: true },
+          onCancel() {},
+          onDraftChange() {},
+          onError,
+          onModelSelect: async () => false,
+          onPermissionSelect: async () => false,
+          onSubmit() {},
+          onWorkspace() {},
+        }),
+      ),
+    )
+    await act(async () => {
+      host.querySelector('textarea')?.dispatchEvent(imagePasteEvent([pngFile()]))
+    })
+    // 文件一个都没加进去，这时报「各类文件都能传、最多 50 个」的限制说明会被读成加成功了。
+    expect(handle.current?.getAttachmentBlocks()).toEqual([])
+    expect(onError).toHaveBeenCalledTimes(1)
+    expect(onError.mock.calls[0]?.[0]?.message).toBe('当前无法添加附件。')
+  })
+
+  it('names the model when the attach button is refused for a model without image input', async () => {
+    const onError = vi.fn()
+    await act(async () =>
+      root.render(
+        createElement(Composer, {
+          dependencies,
+          // 回形针这条路的判断比 addFiles 窄：输入框不可用、且模型不收图片时才说话。
+          initialView: { ...view, sending: true, imagePolicy: userImagePolicy({ input: ['text'] }) },
+          onCancel() {},
+          onDraftChange() {},
+          onError,
+          onModelSelect: async () => false,
+          onPermissionSelect: async () => false,
+          onSubmit() {},
+          onWorkspace() {},
+        }),
+      ),
+    )
+    const attach = host.querySelector<HTMLButtonElement>('#composer-attach')
+    if (!attach) throw new Error('missing attach button')
+    await act(async () => attach.click())
+    // 走到这里原因只有一个：模型不接受图片输入。报成「当前无法添加附件」会让人去等输入框。
+    expect(onError).toHaveBeenCalledTimes(1)
+    expect(onError.mock.calls[0]?.[0]?.message).toBe('请先选择支持图片输入的模型。')
+  })
+
+  it('reports a refused file block through the attachment map, not as an unreadable attachment', async () => {
+    const onError = vi.fn()
+    await act(async () =>
+      root.render(
+        createElement(Composer, {
+          dependencies,
+          initialView: view,
+          onCancel() {},
+          onDraftChange() {},
+          onError,
+          onModelSelect: async () => false,
+          onPermissionSelect: async () => false,
+          onSubmit() {},
+          onWorkspace() {},
+        }),
+      ),
+    )
+    // 换行的文件名会被 validateUserAttachments 按 ATTACHMENT_NAME 拒收。这里要说清是名字的问题：
+    // 报成「无法读取该附件」会让人把同一个文件再传一遍。
+    await act(async () => {
+      host
+        .querySelector('textarea')
+        ?.dispatchEvent(
+          imagePasteEvent([new File([new Uint8Array([1, 2, 3])], 'bad\nname.txt', { type: 'text/plain' })]),
+        )
+    })
+    expect(onError).toHaveBeenCalledTimes(1)
+    expect(onError.mock.calls[0]?.[0]?.message).toBe('附件名称或文件类型无效。')
+  })
+
   it('accepts a large source image once downscaling brings it under the per-image limit', async () => {
     const handle = createRef<ComposerHandle>()
     const onError = vi.fn()

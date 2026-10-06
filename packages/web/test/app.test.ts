@@ -267,6 +267,16 @@ function modelMenu(): HTMLElement {
   return found
 }
 
+/** 用真实校验器造一个错误实例：断言本地化时不必依赖 protocol-validation 的内部类。 */
+function raisedBy(run: () => void): unknown {
+  try {
+    run()
+  } catch (error) {
+    return error
+  }
+  throw new Error('the invalid input was accepted')
+}
+
 afterEach(async () => {
   window.dispatchEvent(new Event('pagehide'))
   await Promise.resolve()
@@ -2253,6 +2263,38 @@ describe('image composer submissions', () => {
     validation.mockRestore()
     submit('保留文字和图片')
     await vi.waitFor(() => expect(active.prompt).toHaveBeenCalledTimes(1))
+  })
+
+  it('names an attachment refusal in the interface language instead of the validator’s English', async () => {
+    const active = session('old', async () => idleTimeline('old', { route: 'local', id: 'model-a' }))
+    await start(active)
+    await attachPng()
+    const protocol = await import('@agnes/protocol')
+    // 同一个「附件过多」有两处报出：输入框侧取词条，提交侧此前只能原样转发英文。用真实校验器造一个
+    // 带 code 的实例，断言就不必依赖 protocol-validation 的内部类。
+    const tooMany = raisedBy(() =>
+      protocol.validateUserAttachments(
+        Array.from({ length: protocol.USER_MESSAGE_ATTACHMENT_LIMITS.maxCount + 1 }, () => ({
+          type: 'file',
+          name: 'a.txt',
+          mimeType: 'text/plain',
+          data: 'eA==',
+        })),
+      ),
+    )
+    const validation = vi.spyOn(protocol, 'validateUserAttachments').mockImplementationOnce(() => {
+      throw tooMany
+    })
+    submit('带附件发送')
+
+    expect(active.prompt).not.toHaveBeenCalled()
+    await vi.waitFor(() =>
+      expect(document.getElementById('notice')?.textContent).toContain('一条消息最多添加 50 个附件。'),
+    )
+    expect(document.getElementById('notice')?.textContent).not.toContain(
+      'A message can hold at most 50 attachments.',
+    )
+    validation.mockRestore()
   })
 
   it('keeps an image draft and refuses a WebSocket frame that exceeds the transport limit', async () => {

@@ -24,6 +24,7 @@ import {
   type Session,
 } from '@agnes/sdk/browser'
 import { bindDismissibleDialog } from '@agnes/web-admin-frame'
+import { attachmentErrorNotice } from '@agnes/web-units'
 import { createPendingCoordinator } from './admin-pane-coordinator.js'
 import { bindAppearance, bindSkinGroup } from './appearance.js'
 import type { ApprovalAction } from './approval.js'
@@ -496,6 +497,10 @@ const sessionActions = createSessionActions({
 })
 let sessionRecovery: { id: string; message: string } | undefined
 function errorMessage(error: unknown): string {
+  // 附件与图片校验错误自带 code，先按词条本地化；其余错误沿用后台返回的文案。
+  // 这一步必须在 errorNotice 之前：它只看得见 error.data 里的 code/reason。
+  const attachment = attachmentErrorNotice(error)
+  if (attachment) return t(attachment.key, attachment.vars)
   // Provider values are redacted by settings before leaving that controller.
   const message = error instanceof Error ? error.message : t('app.error.fallback')
   const diagnostic =

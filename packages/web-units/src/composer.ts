@@ -22,7 +22,6 @@ import {
   decodeAttachmentData,
   decodeSafeImageBytes,
   decodeSafeImages,
-  SafeImageError,
   USER_MESSAGE_ATTACHMENT_LIMITS,
   USER_MESSAGE_IMAGE_LIMITS,
   validateUserAttachments,
@@ -46,6 +45,7 @@ import {
   useState,
 } from 'react'
 import { flushSync } from 'react-dom'
+import { attachmentErrorNotice } from './composer-errors.js'
 import type { Translate } from './locales/index.js'
 
 export type ModelPickerOption = {
@@ -443,14 +443,15 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
   )
 
   const addFiles = async (files: readonly File[]): Promise<void> => {
+    const t = dependencies.translate
     if (imageDisabled) {
-      onError(new Error(imageHint))
+      // 文件一个都没加进去，这时报 attachment.hint 那段「各类文件都能传」的限制说明，
+      // 读起来像是加成功了。
+      onError(new Error(t('composer.attachment.unavailable')))
       return
     }
-    const t = dependencies.translate
     const invalidImage = t('composer.image.invalid')
     const tooLargeMessage = t('composer.image.tooLarge')
-    const tooLargePixelsMessage = t('composer.image.tooLargePixels')
     const accepted: File[] = []
     let acceptedImages = 0
     for (const file of files) {
@@ -561,16 +562,9 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
           } catch (error) {
             // 解码自己也卡同一批上限：尺寸或体积超限若报成「不是有效图片」，用户会去改图片格式，
             // 而该做的是把图缩小。缩放没接线、或缩放后仍超限时才会走到这里。
-            const code = error instanceof SafeImageError ? error.code : undefined
-            onError(
-              new Error(
-                code === 'PIXEL_LIMIT'
-                  ? tooLargePixelsMessage
-                  : code === 'BYTE_LIMIT'
-                    ? tooLargeMessage
-                    : invalidImage,
-              ),
-            )
+            // 不是校验错误的（读取失败）没有对应词条，沿用 invalidImage 兜底。
+            const notice = attachmentErrorNotice(error)
+            onError(new Error(notice ? t(notice.key, notice.vars) : invalidImage))
             return
           }
           const attachment: ComposerAttachment = {
@@ -585,9 +579,14 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
           // 这里到 publishAttachments 之间没有 await：并发读出的多张图会依次看到彼此已提交的
           // 体积，不会各自按同一份旧快照判定而一起越过合计上限。
           publishAttachments([...current, attachment])
-        } catch {
-          // 解码失败的原因在上面那个 catch 里已经按错误码报过，走到这里的是读取或文件块校验失败。
-          if (readGeneration === generation.current) onError(new Error(t('composer.image.readFailed')))
+        } catch (error) {
+          // 解码失败的原因在上面那个 catch 里已经按错误码报过，走到这里的是读取失败或文件块的
+          // 附件校验失败。后者带 code（数量、文件名、体积），走共享映射取词条：一律说成
+          // 「无法读取该附件」，用户会去重传，而该做的是少加几个或换个名字。
+          if (readGeneration === generation.current) {
+            const refusal = attachmentErrorNotice(error)
+            onError(new Error(refusal ? t(refusal.key, refusal.vars) : t('composer.image.readFailed')))
+          }
         } finally {
           if (readGeneration === generation.current) {
             pendingCountRef.current -= 1
@@ -1067,7 +1066,12 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
             title: imageHint,
             onClick: () => {
               if (imageDisabled) {
-                if (!policy.supported) onError(new Error(imageHint))
+                // 条件比 addFiles 那处窄，是有意保留的：只有模型不接受图片时才说话，正在发送
+                // 或输入框未就绪时点它不提示。走到这里原因确定是模型不收图片，取
+                // image.unsupported；addFiles 那条路是文件一个都没加进去，报的是
+                // attachment.unavailable，两处的条件与文案都不通用。
+                if (!policy.supported)
+                  onError(new Error(dependencies.translate('composer.image.unsupported')))
                 return
               }
               if (attachments.length + pendingCount >= USER_MESSAGE_ATTACHMENT_LIMITS.maxCount) {

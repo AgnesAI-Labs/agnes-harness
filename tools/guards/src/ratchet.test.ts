@@ -1,3 +1,15 @@
+// 2026-10-06 error notices move to an Ant Design notification overlay: a web-ui wrapper owns the antd
+// notification api, #notice keeps only the session-recovery block and the two page-level prompts, and
+// attachment refusals carry codes so the submit path translates them too.
+// Reviewed exact countLines totals: Web 16932/app 2207, Web-units 6235, Web-UI 6671; no exclusions or spare allocation.
+// 2026-10-06 the composer's paperclip hint moves from the native title to an Ant Design Tooltip,
+// which adds the wrapper in packages/web-ui and the wrap site in the composer.
+// Reviewed exact countLines totals: Web-units 6239, Web-UI 6678; no exclusions or spare allocation.
+// 2026-10-06 review fixes on the same notification work: a bfcache-safe pagehide on all three
+// listeners, the first-run kind reset before the missing-session prompt, the recovery-block and
+// first-run sentinel guards in notify's fallback, the detached-notifier reset on close, the two
+// refusal classes forwarded onto the protocol surface, and the page-level notice cleared on submit.
+// Reviewed exact countLines totals: Web 16947/app 2222, Web-units 6242, Protocol 2276; no exclusions or spare allocation.
 // 2026-10-06 attachment history reopening: bound authority replay so worker frames can be split.
 // Reviewed exact countLines daemon 26847 (+5); no exclusions or spare allocation.
 // 2026-10-06 bundled document reader: default-helper migration and release payload preparation.
@@ -278,7 +290,12 @@ const INITIAL_CEILING: Record<string, number> = {
   'packages/web-slots/src': 605,
   // Failed shell calls read as their exit code (+19 lines); measured 4891, exact cap.
   // Approval reasons: the approval card label reads the decision reason (+22). Measured 6651, exact cap.
-  'packages/web-ui/src': 6640,
+  // 2026-10-06 error notices move to an Ant Design notification overlay: the web-ui wrapper that
+  // owns the antd api (placement, duration, closable, role) is new source here. Measured: 6671, exact,
+  // no spare.
+  // 2026-10-06 the composer's paperclip hint moves off the native title onto a Tooltip, which needs
+  // its own wrapper here (antd's Tooltip consumes `rootClassName`, not `className`). Measured: 6678.
+  'packages/web-ui/src': 6678,
   // W8a-3: retire the native tool renderer in favor of one compatibility root; measured 4630.
   // 2026-10-04 image upload merged onto the queue view: the composer reads, downscales and previews
   // attachments, and the queue row markup above stays. Measured: 5923, exact, no spare.
@@ -290,7 +307,12 @@ const INITIAL_CEILING: Record<string, number> = {
   // 2026-10-06: normalize JPEGs that fail strict validation and update the 10 MiB copy; 6090, exact.
   // 2026-10-06: accept JPEGs whose EOI has trailing bytes, and name an over-pixel image as too large
   // instead of as an invalid file. Measured: 6202, exact, no spare.
-  'packages/web-units/src': 6202,
+  // 2026-10-06: name the attachment limits the validator refuses (file data, name, aggregate bytes)
+  // and move the shared error-code to locale map out of the composer. Measured: 6235, exact, no spare.
+  // 2026-10-06 the paperclip wraps its button in that Tooltip and drops `title`. Measured: 6239.
+  // 2026-10-06 review fix: a refused file block reports through the shared attachment-error map
+  // instead of claiming the attachment could not be read. Measured: 6242, exact, no spare.
+  'packages/web-units/src': 6242,
   // Write staleness guard: a per-session table of what each file looked like when read, checked by
   // `write` (+55 counted lines, measured 855, exact cap).
   'packages/base/extensions/tools-core': 922,
@@ -458,7 +480,12 @@ const INITIAL_CEILING: Record<string, number> = {
   // which lands on top of the diagnostics wiring above. Re-measured with countLines(): 1827, exact.
   // 2026-10-04 image attachments: app.ts submits ContentBlock content while keeping the title locale.
   // Measured: 2148, exact, no spare.
-  'packages/web/src/app': 2183,
+  // 2026-10-06 error notices move off #notice: the notification host mount, the showError split and
+  // the first-run guide's own dismiss path land here, while the interactive sites write through
+  // `notify`. Two rounds of review fixes on that work added the bfcache guards on all three pagehide
+  // listeners, the detached-notifier reset, the shared noticeHoldsPersistentContent predicate every
+  // notice writer now goes through, and the dismiss on submit. Measured: 2222, exact, no spare.
+  'packages/web/src/app': 2222,
   // 2026-09-22 UI plugin management: inject the embedded pane's client runtime reconciler.
   // 2026-09-25 UI refactor: permission options now render through the React region contract.
   // Re-measured with countLines(): 215, exact, no spare.
@@ -1344,7 +1371,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // TRACE-INSPECTION-20260925: readToolDetail method types; measured 2201, exact.
   // Response metadata on cost/ledger: ResponseMeta root type export. Re-measured on the rebased
   // tree: 2201, exact.
-  'packages/protocol/src': 2272,
+  'packages/protocol/src': 2276,
   'packages/cli/src/tui': 4000,
   // 2026-09-16: first registration of packages/cli-tui — it matched none of the (then) 113 ratchet
   // keys, so the cli-progress-surface plan's Tasks 1-4 (Loader hide/restart/stop, formatTurnSummary,
@@ -2150,7 +2177,9 @@ const INITIAL_CEILING: Record<string, number> = {
   // Approval reasons: the approval card label reads the decision reason (+22). Measured 16081 (combined tree), exact cap.
   // 2026-10-05 the merge keeps both sides' additions, so neither number holds. Re-measured on the
   // merged tree: 16861, exact, no spare.
-  'packages/web/src': 16908,
+  // 2026-10-06 the same notification migration, counted over the whole web source scope.
+  // Re-measured with countLines() after the review fixes on that work: 16947, exact, no spare.
+  'packages/web/src': 16947,
   // 2026-09-17 web-client-modules frontend track (rebased onto L0/permission-picker main): re-measured exact value below.
   // 2026-09-14: Task 7 orphaned-pin-cleanup adds the orphan-pins section to PluginAdminPage — the
   // #orphanPins/#orphanPinsList/#orphanPinsStatus/#orphanPinsReleaseAll element bindings, the
