@@ -51,6 +51,7 @@ import type {
   ProviderStateValue,
   ResolutionRecordValue,
   RunBinding,
+  RunTermination,
   TimerRecordValue,
   TrustedPolicyFacts,
   WaitRecordValue,
@@ -2578,6 +2579,7 @@ export async function commitControlTx(
     return settleUndispatchedTx(ports, request, verified, fingerprint)
   if (request.command.kind === 'mark_unknown') return markUnknownTx(ports, request, verified, fingerprint)
   if (request.command.kind === 'resolve_action') return resolveActionTx(ports, request, verified, fingerprint)
+  if (request.command.kind === 'finalize_run') return finalizeRunTx(ports, request, verified, fingerprint)
   if (request.command.kind !== 'mark_running') refuse('internal', 'unsupported', CONTROL_COMMAND)
   const command = request.command
   const guarded = assertGuard(ports, request.guard, 'follow')
@@ -4988,6 +4990,86 @@ async function resolveActionTx(
       guarded.value.revision,
     ),
     updates,
+  })
+  ports.rememberRequest('commitControl', request.commitId, fingerprint, written.receipt)
+  return { result: written.receipt, sessionId: request.guard.sessionId, verified: written.verified }
+}
+
+/**
+ * Ends a draining run as failed or cancelled. A mandatory action that is not settled must be an unresolved effect
+ * with a reconciliation owner: the command lists exactly those actions and owners, and the run records them as
+ * handed over. It never turns an unresolved effect into a success and never finishes a run that still has work
+ * nothing has closed. A failure recorded by the failing transition is kept; success is only reached by complete.
+ */
+async function finalizeRunTx(
+  ports: ControlPorts,
+  request: CommitControlRequest,
+  verified: SessionView,
+  fingerprint: string,
+): Promise<Committed<StateCommitReceipt>> {
+  const command = request.command
+  if (command.kind !== 'finalize_run') refuse('internal', 'unsupported', CONTROL_COMMAND)
+  commandRun(request, command.runId)
+  const guarded = assertGuard(ports, request.guard, 'follow')
+  const run = guarded.value
+  if (command.expectedRunRevision !== run.revision)
+    refuse('conflict', 'revision', 'run revision does not match')
+  if (run.state !== 'draining') refuse('conflict', 'run_state', 'a run finishes only after it drained')
+  const chosen = run.terminal as RunTermination | null
+  if (
+    chosen !== null
+      ? chosen.outcome !== command.outcome
+      : command.outcome === 'cancelled' && run.cancellation == null
+  )
+    refuse('conflict', 'termination', 'the finish differs from the termination the run already chose')
+  const actions = runActions(ports, run.runId)
+  const handedOver = actions.filter(
+    (item) => item.intent.obligation === 'mandatory' && item.state !== 'settled',
+  )
+  if (
+    handedOver.some(
+      (item) => !UNRESOLVED_ACTION_STATES.includes(item.state) || item.ownerRef.kind !== 'reconciliation',
+    )
+  )
+    refuse('conflict', 'finalize_open', 'a mandatory action is neither settled nor handed to an owner')
+  const detached = actions.filter((item) => item.intent.obligation === 'detached' && item.state !== 'settled')
+  if (detached.some((item) => item.ownerRef.kind !== 'job'))
+    refuse('conflict', 'detached_owner_missing', 'a detached action has no owning job')
+  const sameSet = (listed: readonly unknown[], actual: readonly unknown[]) =>
+    listed.length === actual.length && actual.every((item) => listed.some((other) => sameJson(other, item)))
+  const openIds = handedOver.map((item) => item.actionId)
+  const openOwners = handedOver.map((item) => item.ownerRef)
+  if (!sameSet(command.unknownActionIds, openIds))
+    refuse('invalid_input', 'unknown_actions', 'the listed actions are not the open unresolved ones')
+  if (!sameSet(command.ownerRefs, openOwners))
+    refuse('invalid_input', 'owner_ref', 'the listed owners are not the owners of the open actions')
+  const written = ports.writeCommit({
+    ...blankInput(
+      request.guard.sessionId,
+      verified,
+      request.commitId,
+      at(ports),
+      fingerprint,
+      request.guard.runId,
+      request.guard.writerEpoch,
+      run.revision,
+    ),
+    updates: [
+      updated(guarded.head, RUN_RECORD_SCHEMA, guarded.owner, {
+        ...run,
+        state: command.outcome,
+        waitId: null,
+        writerEpoch: request.guard.writerEpoch,
+        terminal: {
+          outcome: command.outcome,
+          output: null,
+          references: [],
+          error: chosen?.error ?? null,
+          unknownActionIds: command.unknownActionIds,
+          detachedOwnerRefs: detached.map((item) => item.ownerRef),
+        },
+      } satisfies RunRecordValue),
+    ],
   })
   ports.rememberRequest('commitControl', request.commitId, fingerprint, written.receipt)
   return { result: written.receipt, sessionId: request.guard.sessionId, verified: written.verified }
