@@ -80,13 +80,28 @@ const interactionBinding = {
   logicalName: 'default',
   providerId: 'default-interaction',
 }
+type FixtureApproval = {
+  actionId: string
+  question: Extract<InteractionRecord['request'], { kind: 'approval' }>
+  facts: TrustedPolicyFacts
+  preparation: AuthorizationPreparation
+  decision: PolicyDecision
+  prepare: ApprovalPreparation
+}
 export async function interactionStateFixture(
-  options: { failBeforeCommit?: () => boolean; missingOwner?: boolean; beforeCommit?: () => void } = {},
+  options: {
+    failBeforeCommit?: () => boolean
+    missingOwner?: boolean
+    beforeCommit?: () => void
+    /** Prepared actions in the run, each with its own approval preparation. */
+    actions?: number
+  } = {},
 ) {
   let auth:
     | { context: CallContext; capability: object; evidence: DataRef; revoke(): void; current(): boolean }
     | undefined
-  let actualQuestion: InteractionRecord | undefined
+  const approvals = new Map<string, FixtureApproval>()
+  const actualQuestions = new Map<string, InteractionRecord>()
   const joint: RuntimeApprovalJointOwner = {
     owner: {
       authority: { authorityId: 'interaction-authority', tenantId: 'tenant', authorityEpoch: 1 },
@@ -110,30 +125,36 @@ export async function interactionStateFixture(
     },
     ask(context, request, record) {
       this.assertJoint(context, authority, 'session')
-      actualQuestion = record
+      const approval = approvals.get(request.command.actionId)
+      if (!approval) refuseSource()
+      actualQuestions.set(approval.actionId, record)
       return {
         kind: 'authorize_action',
         actionId: request.command.actionId,
         expectedActionRevision: request.command.expectedActionRevision,
         decision: 'ask',
-        decisionRef: inline(decision, 'decision'),
+        decisionRef: inline(approval.decision, 'decision'),
         interactionId: record.interactionId,
-        validUntil: decision.validUntil,
+        validUntil: approval.decision.validUntil,
         hookResults: [],
       }
     },
     verifyAuthorizationPreparation(value) {
-      if (!auth?.current() || jcs(value) !== jcs(preparation)) return undefined
-      return facts
+      const approval = approvals.get(value.actionId)
+      if (!auth?.current() || !approval || jcs(value) !== jcs(approval.preparation)) return undefined
+      return approval.facts
     },
     verifyApprovalAsk(command) {
+      const approval = approvals.get(command.actionId)
+      const interaction = actualQuestions.get(command.actionId)
       if (
         !auth?.current() ||
-        !actualQuestion ||
-        jcs(command.decisionRef) !== jcs(inline(decision, 'decision'))
+        !approval ||
+        !interaction ||
+        jcs(command.decisionRef) !== jcs(inline(approval.decision, 'decision'))
       )
         return undefined
-      return { preparationId: preparation.preparationId, decision, interaction: actualQuestion }
+      return { preparationId: approval.preparation.preparationId, decision: approval.decision, interaction }
     },
   }
   function refuseSource(): never {
@@ -207,39 +228,6 @@ export async function interactionStateFixture(
     writerId: 'writer',
     ttlMs: 600000,
   })
-  await store.admitInvocation({
-    requestId: 'invoke',
-    runId: 'run',
-    targetActionId: null,
-    baseRevision: 0,
-    bindingId: 'binding',
-    writerEpoch: 1,
-    invocationId: 'invocation',
-    deadline,
-    queryAllowance: 0,
-  })
-  await store.closeInvocation({
-    requestId: 'close',
-    invocationId: 'invocation',
-    state: 'prepared',
-    readGuards: [],
-    domainReads: [],
-    unresolvedInflightIds: [],
-    observedQueryCount: 0,
-  })
-  const actionBody = {
-    key: 'tool',
-    target: binding,
-    method: 'run',
-    input: data,
-    dependencies: [],
-    retry: { mode: 'never' as const, maxAttempts: 0, backoffMs: [] },
-    obligation: 'mandatory' as const,
-    deadline,
-    resultSchema: data.schema,
-    references: [],
-  }
-  const action: PreparedAction = { ...actionBody, intentFingerprint: digestOf(actionBody) }
   const guard: CommitGuard = {
     authority,
     sessionId: 'session',
@@ -252,119 +240,171 @@ export async function interactionStateFixture(
     readGuards: [],
     queryUsage: null,
   }
-  await store.advanceRun({
-    commitId: 'advance',
-    guard,
-    transition: {
-      expectedRevision: 0,
-      continuation: {
-        namespace: 'agh.test',
-        codecVersion: '1',
-        data,
-        provenance: { sourceRefs: [], producer: binding, trustLabels: [] },
-        createdAt: now,
-        references: [],
-      },
-      consumeSignals: [],
-      actions: [action],
-      next: { kind: 'continue' },
-    },
-  })
-  const actionId = stableId('act', 'run\0tool'),
-    owner = store as unknown as Owner
-  guard.expectedRunRevision = 1
-  guard.readGuards = [{ recordId: 'taint:run', expectedRecordRevision: 1 }]
-  const question = {
-    kind: 'approval' as const,
-    title: 'Approve tool',
-    body: 'Original question',
-    actionRef: actionId,
-    inputDigest: digestOf(data),
-    policyDecisionRef: 'decision',
-    scope,
-    allowedResponders: ['human'],
-    expiresAt: deadline,
-    idempotencyKey: 'question',
-    risk: 'always' as const,
-    intentDigest: '0'.repeat(64),
-  }
-  const intent = computeApprovalIntentDigest(question)
-  if (!intent.ok) throw Error('actual intent construction failed')
-  question.intentDigest = intent.value
-  const facts: TrustedPolicyFacts = {
-    factsId: 'facts',
-    actionId,
-    inputDigest: digestOf(data),
-    evaluatedAt: now,
-    toolPolicy: null,
-    actor: { principalRef: 'human', revision: 1, executionDomain: 'domain', packageDigest: 'a'.repeat(64) },
-    taint: {
+  // One action keeps the original identifiers; more are advanced in transitions of at most 64 actions.
+  const actionCount = options.actions ?? 1
+  const suffix = (i: number) => (i === 0 ? '' : `-${i}`)
+  const keys = Array.from({ length: actionCount }, (_, i) => `tool${suffix(i)}`)
+  for (let batch = 0; batch * 64 < actionCount; batch++) {
+    const invocationId = `invocation${suffix(batch)}`
+    await store.admitInvocation({
+      requestId: `invoke${suffix(batch)}`,
       runId: 'run',
-      current: { recordRevision: 1, sourceSeq: 0, clearedThroughSeq: 0 },
-      captured: { recordRevision: 1, sourceSeq: 0, clearedThroughSeq: 0 },
-      tainted: false,
-      sourceRefs: [],
-    },
-    configuration: { revision: 1, profileDigest: 'a'.repeat(64), mode: 'manual', yolo: false },
-    authorization: { decision: 'require-approval', policyRevision: 1, sourceRefs: [] },
-    grants: [],
-    guardian: { state: 'not-needed', actionId: null, resultRef: null, decision: null },
-    hookResults: null,
-    approvalRequestRef: inline(question),
-  }
-  const preparation: AuthorizationPreparation = {
-    preparationId: 'preparation',
-    actionId,
-    inputDigest: question.inputDigest,
-    toolCallResults: null,
-    approvalRequest: question,
-    policyFactsRef: inline(facts, 'facts'),
-    fingerprint: digestOf({ actionId, inputDigest: question.inputDigest, request: question, facts }),
-  }
-  const prepare: ApprovalPreparation = {
-    commitId: 'prepare',
-    guard,
-    command: { kind: 'prepare_authorization', actionId, expectedActionRevision: 1, preparation },
-  }
-  const composed = defaultPolicyDecision(
-    {
-      principalRef: 'human',
-      resourceRef: {
-        kind: 'resource',
-        value: { resourceId: 'tool', version: 'v1', digest: question.inputDigest },
+      targetActionId: null,
+      baseRevision: batch,
+      bindingId: 'binding',
+      writerEpoch: 1,
+      invocationId,
+      deadline,
+      queryAllowance: 0,
+    })
+    await store.closeInvocation({
+      requestId: `close${suffix(batch)}`,
+      invocationId,
+      state: 'prepared',
+      readGuards: [],
+      domainReads: [],
+      unresolvedInflightIds: [],
+      observedQueryCount: 0,
+    })
+    const actions = keys.slice(batch * 64, batch * 64 + 64).map((key): PreparedAction => {
+      const actionBody = {
+        key,
+        target: binding,
+        method: 'run',
+        input: data,
+        dependencies: [],
+        retry: { mode: 'never' as const, maxAttempts: 0, backoffMs: [] },
+        obligation: 'mandatory' as const,
+        deadline,
+        resultSchema: data.schema,
+        references: [],
+      }
+      return { ...actionBody, intentFingerprint: digestOf(actionBody) }
+    })
+    await store.advanceRun({
+      commitId: `advance${suffix(batch)}`,
+      guard: { ...guard, invocationId, expectedRunRevision: batch },
+      transition: {
+        expectedRevision: batch,
+        continuation: {
+          namespace: 'agh.test',
+          codecVersion: '1',
+          data,
+          provenance: { sourceRefs: [], producer: binding, trustLabels: [] },
+          createdAt: now,
+          references: [],
+        },
+        consumeSignals: [],
+        actions,
+        next: { kind: 'continue' },
       },
-      actionType: 'agh.test/tool@1',
-      inputDigest: question.inputDigest,
-      scope,
-      policyRevision: 1,
-      verifiedFacts: facts,
-    },
-    {
-      toolName: 'tool',
-      trustedManagementTool: false,
-      hookDenied: false,
-      priorDecisions: {},
-      rules: {},
-      argvNormalized: true,
-      approval: question,
-      guardianVerified: false,
-      guardianScopes: [],
-    },
-  )
-  if (composed.decision !== 'ask') throw Error('actual policy did not require human approval')
-  const decision: PolicyDecision = {
-    decisionId: 'decision',
-    decision: composed.decision,
-    principalRef: 'human',
-    scope,
-    inputDigest: question.inputDigest,
-    policyRevision: 1,
-    factsRef: preparation.policyFactsRef,
-    conditions: data,
-    reasonCodes: [...composed.reasonCodes],
-    approvalSpec: question,
-    validUntil: deadline,
+    })
   }
+  const owner = store as unknown as Owner
+  guard.expectedRunRevision = Math.ceil(actionCount / 64)
+  guard.readGuards = [{ recordId: 'taint:run', expectedRecordRevision: 1 }]
+  function approvalFor(i: number): FixtureApproval {
+    const actionId = stableId('act', `run\0${keys[i]}`)
+    const question = {
+      kind: 'approval' as const,
+      title: 'Approve tool',
+      body: 'Original question',
+      actionRef: actionId,
+      inputDigest: digestOf(data),
+      policyDecisionRef: `decision${suffix(i)}`,
+      scope,
+      allowedResponders: ['human'],
+      expiresAt: deadline,
+      idempotencyKey: `question${suffix(i)}`,
+      risk: 'always' as const,
+      intentDigest: '0'.repeat(64),
+    }
+    const intent = computeApprovalIntentDigest(question)
+    if (!intent.ok) throw Error('actual intent construction failed')
+    question.intentDigest = intent.value
+    const facts: TrustedPolicyFacts = {
+      factsId: `facts${suffix(i)}`,
+      actionId,
+      inputDigest: digestOf(data),
+      evaluatedAt: now,
+      toolPolicy: null,
+      actor: { principalRef: 'human', revision: 1, executionDomain: 'domain', packageDigest: 'a'.repeat(64) },
+      taint: {
+        runId: 'run',
+        current: { recordRevision: 1, sourceSeq: 0, clearedThroughSeq: 0 },
+        captured: { recordRevision: 1, sourceSeq: 0, clearedThroughSeq: 0 },
+        tainted: false,
+        sourceRefs: [],
+      },
+      configuration: { revision: 1, profileDigest: 'a'.repeat(64), mode: 'manual', yolo: false },
+      authorization: { decision: 'require-approval', policyRevision: 1, sourceRefs: [] },
+      grants: [],
+      guardian: { state: 'not-needed', actionId: null, resultRef: null, decision: null },
+      hookResults: null,
+      approvalRequestRef: inline(question),
+    }
+    const preparation: AuthorizationPreparation = {
+      preparationId: `preparation${suffix(i)}`,
+      actionId,
+      inputDigest: question.inputDigest,
+      toolCallResults: null,
+      approvalRequest: question,
+      policyFactsRef: inline(facts, 'facts'),
+      fingerprint: digestOf({ actionId, inputDigest: question.inputDigest, request: question, facts }),
+    }
+    const prepare: ApprovalPreparation = {
+      commitId: `prepare${suffix(i)}`,
+      guard,
+      command: { kind: 'prepare_authorization', actionId, expectedActionRevision: 1, preparation },
+    }
+    const composed = defaultPolicyDecision(
+      {
+        principalRef: 'human',
+        resourceRef: {
+          kind: 'resource',
+          value: { resourceId: 'tool', version: 'v1', digest: question.inputDigest },
+        },
+        actionType: 'agh.test/tool@1',
+        inputDigest: question.inputDigest,
+        scope,
+        policyRevision: 1,
+        verifiedFacts: facts,
+      },
+      {
+        toolName: 'tool',
+        trustedManagementTool: false,
+        hookDenied: false,
+        priorDecisions: {},
+        rules: {},
+        argvNormalized: true,
+        approval: question,
+        guardianVerified: false,
+        guardianScopes: [],
+      },
+    )
+    if (composed.decision !== 'ask') throw Error('actual policy did not require human approval')
+    const decision: PolicyDecision = {
+      decisionId: `decision${suffix(i)}`,
+      decision: composed.decision,
+      principalRef: 'human',
+      scope,
+      inputDigest: question.inputDigest,
+      policyRevision: 1,
+      factsRef: preparation.policyFactsRef,
+      conditions: data,
+      reasonCodes: [...composed.reasonCodes],
+      approvalSpec: question,
+      validUntil: deadline,
+    }
+    return { actionId, question, facts, preparation, decision, prepare }
+  }
+  for (let i = 0; i < actionCount; i++) {
+    const approval = approvalFor(i)
+    approvals.set(approval.actionId, approval)
+  }
+  const first = [...approvals.values()][0]
+  if (!first) throw Error('fixture needs at least one action')
+  const { actionId, question, prepare } = first
   // Restricted actual JWT/claims issuer fixture; actual current authority is durable SQLite, not JSON.
   const projections = new Map<string, string>()
   const identity = createIdentityAuthority(
@@ -484,6 +524,12 @@ export async function interactionStateFixture(
     prepare,
     question,
     actionId,
+    /** Every prepared action's approval, the first being `prepare`/`question`/`actionId`. */
+    approvals: [...approvals.values()].map(({ actionId, question, prepare }) => ({
+      actionId,
+      question,
+      prepare,
+    })),
     prepareApproval,
     resolveApproval,
     body,
