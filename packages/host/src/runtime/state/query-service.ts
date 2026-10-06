@@ -2,6 +2,8 @@ import { defaultIds } from '@agnes/core'
 import type { CallContext, Outcome, QueryHandler, RuntimeError } from '@agnes/extension-api/runtime'
 import {
   type ActionRecordValue,
+  type ActionState,
+  type ActionVisibilityValue,
   type AttemptRecordValue,
   type BindingRef,
   boundedCanonicalJson,
@@ -38,6 +40,7 @@ import {
   runBindingRecordId,
   runRecordId,
   sameJson,
+  visibilityRecordId,
   waitRecordId,
 } from './records.js'
 import { StateRefusal } from './refusal.js'
@@ -136,6 +139,22 @@ export type StateRecordReader = Readonly<{
     snapshot: SnapshotRef,
     runId: string,
   ): Promise<Outcome<BindingRef | null>>
+  /** The visibility record of one action receipt; null when the receipt has no visibility record yet. */
+  getActionVisibility(
+    caller: CallContext,
+    snapshot: SnapshotRef,
+    sourceReceiptId: string,
+  ): Promise<Outcome<StoredRead<ActionVisibilityValue> | null>>
+  /**
+   * Every action of one run (optionally of one parent or in given states) as of the snapshot, in
+   * State's scan order. All pages are read; a run outside the caller's window yields an empty list,
+   * the same as a run with no actions.
+   */
+  actions(
+    caller: CallContext,
+    snapshot: SnapshotRef,
+    filter: Readonly<{ runId: string; parentActionId?: string | null; states?: readonly ActionState[] }>,
+  ): Promise<Outcome<readonly StoredRead<ActionRecordValue>[]>>
   signals(
     caller: CallContext,
     snapshot: SnapshotRef,
@@ -367,6 +386,15 @@ export function createStateQueryService(
       return reply(registered.snapshot, { items, nextCursor: page.nextCursor, complete: page.complete })
     })
 
+  function readOf(fact: NativeStateRecordFact): StoredRead {
+    return Object.freeze({
+      stored: storedOf(fact),
+      valueDigest: canonicalJsonDigest(fact.value),
+      versionDigest: fact.digest,
+      ledgerSeq: fact.ledgerSeq,
+    })
+  }
+
   async function point(caller: CallContext, wire: SnapshotRef, recordId: string, schema: SchemaRef) {
     if (!readable.some((entry) => sameJson(entry.schema, schema)))
       throw new Failure('incompatible', 'state_type', 'the record type is not readable')
@@ -380,13 +408,7 @@ export function createStateQueryService(
       registered.grant.window,
     )
     recheck(caller, resolved)
-    if (!fact) return null
-    return Object.freeze({
-      stored: storedOf(fact),
-      valueDigest: canonicalJsonDigest(fact.value),
-      versionDigest: fact.digest,
-      ledgerSeq: fact.ledgerSeq,
-    })
+    return fact ? readOf(fact) : null
   }
   const schemaOf = (definition: keyof RuntimeWireTypes) => {
     const entry = readable.find((item) => item.definition === definition)
@@ -471,6 +493,55 @@ export function createStateQueryService(
     return { items, complete, signalHighWater }
   }
 
+  async function listActions(
+    caller: CallContext,
+    wire: SnapshotRef,
+    filter: Readonly<{ runId: string; parentActionId?: string | null; states?: readonly ActionState[] }>,
+  ): Promise<readonly StoredRead<ActionRecordValue>[]> {
+    if (
+      typeof filter.runId !== 'string' ||
+      (filter.parentActionId !== undefined &&
+        filter.parentActionId !== null &&
+        typeof filter.parentActionId !== 'string') ||
+      (filter.states !== undefined && !Array.isArray(filter.states))
+    )
+      throw requestFailure()
+    const resolved = resolve(caller, wire)
+    const { registered } = resolved
+    const base: StateScanRequest = {
+      snapshot: registered.snapshot,
+      collection: 'actions',
+      filter: {
+        runId: filter.runId,
+        ...(filter.parentActionId === undefined ? {} : { parentActionId: filter.parentActionId }),
+        ...(filter.states === undefined ? {} : { states: [...filter.states] }),
+      },
+      order: 'asc',
+      cursor: null,
+      limit: 500,
+    }
+    if (!validateRuntime('StateScanRequest', base).ok) throw requestFailure()
+    checkFilter(base, registered.grant)
+    const items: StoredRead<ActionRecordValue>[] = []
+    let cursor: string | null = null
+    do {
+      const scanned: Awaited<ReturnType<Owner['scanVerifiedPage']>> = await owner.scanVerifiedPage(
+        registered.snapshot,
+        { ...base, cursor },
+        registered.grant,
+        { window: registered.grant.window },
+      )
+      for (const fact of scanned.items) {
+        if (!validateRuntime('ActionRecordValue', fact.value).ok)
+          throw new Failure('incompatible', 'state_integrity', 'original State history failed verification')
+        items.push(readOf(fact) as unknown as StoredRead<ActionRecordValue>)
+      }
+      cursor = scanned.nextCursor
+    } while (cursor !== null)
+    recheck(caller, resolved)
+    return items
+  }
+
   const reader: StateRecordReader = Object.freeze({
     open: (caller, sessionId) => guard(caller, async () => (await openSnapshot(caller, sessionId)).snapshot),
     release(snapshot) {
@@ -486,6 +557,8 @@ export function createStateQueryService(
     getAction: typed<ActionRecordValue>('ActionRecordValue', actionRecordId),
     getAttempt: typed<AttemptRecordValue>('AttemptRecordValue', attemptRecordId),
     getWait: typed<WaitRecordValue>('WaitRecordValue', waitRecordId),
+    getActionVisibility: typed<ActionVisibilityValue>('ActionVisibilityValue', visibilityRecordId),
+    actions: (caller, snapshot, filter) => guard(caller, () => listActions(caller, snapshot, filter)),
     getActionByKey: (caller, snapshot, namespace, key) =>
       guard(caller, async () => {
         if (
