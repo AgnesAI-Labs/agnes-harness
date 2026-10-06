@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fakeModel, ScriptedProvider } from '@agnes/ai/testkit'
 import { createTestHost } from '@agnes/host/testkit'
+import { type ApisListResult, METHODS, userImagePolicy, validateAgainst } from '@agnes/protocol'
 import { describe, expect, it } from 'vitest'
 import { signSourceAuth, sourceAuthCanonical } from '../src/local/auth.js'
 import { createLocalEndpoint } from '../src/local/index.js'
@@ -129,7 +130,17 @@ describe('apis.list / auth.claim', () => {
     await h.close()
   })
 
-  it('carries a declared model reasoning and thinkingLevelMap through to the wire', async () => {
+  it.each([
+    { input: ['text'] as const },
+    { input: ['text', 'image'] as const },
+    {
+      input: ['text', 'image'] as const,
+      inputLimits: {
+        maxRequestBytes: 2000000,
+        images: { maxPerRequest: 4, resize: { maxWidth: 1024, maxHeight: 768, maxBytes: 512000 } },
+      },
+    },
+  ])('carries declared model capabilities and defaults through to the wire: %j', async (capabilities) => {
     // apis.list projects `pr.provider.routes` (the profile's DECLARED route table, from
     // profileInputs.user.provider.routes), not the runtime Provider's published catalogue - so the
     // model that must carry reasoning/thinkingLevelMap is the one on this route table, not merely one
@@ -144,6 +155,8 @@ describe('apis.list / auth.claim', () => {
       reasoning: true,
       thinkingLevelMap: { high: 'high' },
       defaultSettings: { thinking: 'high', contextWindow: 64000 },
+      ...capabilities,
+      input: [...capabilities.input],
     })
     const dataDir = mkdtempSync(join(tmpdir(), 'agnesd-apis-list-'))
     try {
@@ -165,23 +178,34 @@ describe('apis.list / auth.claim', () => {
         },
       })
       const ep = createLocalEndpoint(host, { clock: () => Date.now() })
-      await ep.handle(init)
-      const r = (await ep.handle({
-        jsonrpc: '2.0',
-        id: 2,
-        method: '_agnes/v1/apis.list',
-        params: {},
-      })) as { result: { profile: { models: Array<Record<string, unknown>> } } }
-      expect(r.result.profile.models).toContainEqual({
-        route: 'gw',
-        id: 'm1',
-        reasoning: true,
-        thinkingLevelMap: { high: 'high' },
-        contextWindow: model.contextWindow,
-        defaultSettings: { thinking: 'high', contextWindow: 64000 },
-      })
-      await ep.close()
-      await host.close()
+      try {
+        await ep.handle(init)
+        const r = (await ep.handle({
+          jsonrpc: '2.0',
+          id: 2,
+          method: '_agnes/v1/apis.list',
+          params: {},
+        })) as { result: ApisListResult }
+        expect(r.result.profile.models).toContainEqual({
+          route: 'gw',
+          id: 'm1',
+          reasoning: true,
+          thinkingLevelMap: { high: 'high' },
+          contextWindow: model.contextWindow,
+          defaultSettings: { thinking: 'high', contextWindow: 64000 },
+          ...capabilities,
+        })
+        const schema = METHODS['_agnes/v1/apis.list'].result
+        if (!schema) throw new Error('apis.list result schema is missing')
+        expect(validateAgainst(schema, r.result).ok).toBe(true)
+        expect(userImagePolicy(r.result.profile.models?.[0])).toMatchObject({
+          supported: capabilities.input.some((mode) => mode === 'image'),
+          maxCount: 'inputLimits' in capabilities ? 4 : Infinity,
+        })
+      } finally {
+        await ep.close()
+        await host.close()
+      }
     } finally {
       rmSync(dataDir, { recursive: true, force: true })
     }

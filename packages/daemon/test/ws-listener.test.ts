@@ -19,6 +19,8 @@ function tls(): { cert: string; key: string } {
 const endpoint = (): RpcEndpoint => ({
   async handle(message) {
     if (!('id' in message) || message.id === undefined) return undefined
+    if ('method' in message && message.method === 'echo')
+      return { jsonrpc: '2.0', id: message.id, result: message.params }
     return { jsonrpc: '2.0', id: message.id, result: { accepted: true } }
   },
   notifications: (async function* () {})(),
@@ -77,6 +79,10 @@ describe('daemon WebSocket listener', () => {
       )
       first.send(JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'ping' }))
       expect(JSON.parse(await reply)).toMatchObject({ result: { accepted: true } })
+      const large = 'x'.repeat(14 * 1024 * 1024)
+      const echoed = once(first, 'message')
+      first.send(JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'echo', params: { image: large } }))
+      expect(JSON.parse(String((await echoed)[0])).result.image).toBe(large)
       first.close()
 
       const second = await connect(listener.url, 'test-lifecycle-token')
@@ -106,6 +112,64 @@ describe('daemon WebSocket listener', () => {
       await listener.close()
     }
   })
+})
+
+it.each(['pending requests', 'oversized reply'])('bounds total bytes for %s', async (mode) => {
+  let started!: () => void
+  const handling = new Promise<void>((resolve) => {
+    started = resolve
+  })
+  let release!: () => void
+  const held = new Promise<void>((resolve) => {
+    release = resolve
+  })
+  const listener = await listenWebSocket({
+    addr: '127.0.0.1:0',
+    ...tls(),
+    token: 'test-byte-budget',
+    endpoint: () => ({
+      endpoint: {
+        async handle() {
+          started()
+          if (mode === 'oversized reply')
+            return { jsonrpc: '2.0', id: 1, result: 'x'.repeat(WS_MAX_MESSAGE_BYTES + 1) }
+          await held
+          return undefined
+        },
+        notifications: (async function* () {})(),
+        async close() {
+          release()
+        },
+      },
+      onClose() {},
+    }),
+  })
+  try {
+    const socket = await connect(listener.url, 'test-byte-budget')
+    const closed = once(socket, 'close')
+    socket.send(
+      JSON.stringify({
+        jsonrpc: '2.0',
+        id: 1,
+        method: 'held',
+        params: { data: 'x'.repeat(Math.ceil(WS_MAX_MESSAGE_BYTES / 2)) },
+      }),
+    )
+    await handling
+    if (mode === 'pending requests')
+      socket.send(
+        JSON.stringify({
+          jsonrpc: '2.0',
+          id: 2,
+          method: 'held',
+          params: { data: 'x'.repeat(Math.ceil(WS_MAX_MESSAGE_BYTES / 2)) },
+        }),
+      )
+    expect((await closed)[0]).toBe(1013)
+  } finally {
+    release()
+    await listener.close()
+  }
 })
 
 it('local Web accepts no-token browser upgrades but rejects wrong Origin and Host before creating an endpoint', async () => {

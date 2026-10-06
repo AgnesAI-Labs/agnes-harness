@@ -364,7 +364,7 @@ describe('AttachedFeed replay ordering', () => {
   })
 
   it('holds a live row that lands mid-replay instead of putting it ahead of older history', async () => {
-    const { AttachedFeed } = await import('../src/local/attached.js')
+    const { AttachedFeed, DEFAULT_LIMITS } = await import('../src/local/attached.js')
     const { LocalEndpoint } = await import('../src/local/endpoint.js')
     const ep = new LocalEndpoint({ clock: () => 0, principalId: 'local' })
     let release: (() => void) | undefined
@@ -385,13 +385,20 @@ describe('AttachedFeed replay ordering', () => {
         cursor: { fromSeq: 0, generation: 1 },
         filter: { preview: false, acpUpdates: false },
       },
-      limits: { subscribeBufferEvents: 100, subscribeBufferBytes: 1 << 20 },
+      limits: DEFAULT_LIMITS,
       clock: () => 0,
       onDrop: () => undefined,
     })
     const replaying = feed.replay(session as never, 0, 3)
     // A live row arrives while the history page is still being read.
-    feed.onEvent(row(4) as never)
+    feed.onEvent({
+      ...row(4),
+      data: {
+        content: [
+          { type: 'image', mimeType: 'image/jpeg', data: 'A'.repeat(4 * Math.ceil((10 * 1024 * 1024) / 3)) },
+        ],
+      },
+    } as never)
     release?.()
     await replaying
     const seen: number[] = []

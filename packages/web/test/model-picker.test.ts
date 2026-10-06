@@ -90,21 +90,25 @@ function hoverRow(index: number): void {
 }
 
 function leavePanel(id: string): void {
-  document.getElementById(id)?.dispatchEvent(new Event('mouseleave'))
+  document
+    .querySelector<HTMLElement>(id === 'model-picker-popover' ? '.model-picker-root' : '[id$="-' + id + '"]')
+    ?.dispatchEvent(new Event('mouseleave'))
 }
 
 function enterPanel(id: string): void {
-  document.getElementById(id)?.dispatchEvent(new Event('mouseenter'))
+  document
+    .querySelector<HTMLElement>(id === 'model-picker-popover' ? '.model-picker-root' : '[id$="-' + id + '"]')
+    ?.dispatchEvent(new Event('mouseenter'))
 }
 
 function detail(): HTMLElement {
-  const found = document.querySelector<HTMLElement>('#model-settings-popover')
+  const found = document.querySelector<HTMLElement>('[id$="-model-settings-popover"]')
   if (!found) throw new Error('model detail did not open')
   return found
 }
 
 function detailRow(id: string): HTMLElement {
-  const found = detail().querySelector<HTMLElement>(`#${id}`)
+  const found = detail().querySelector<HTMLElement>(`[id$="-${id}"]`)
   if (!found) throw new Error(`missing detail row: ${id}`)
   return found
 }
@@ -114,7 +118,7 @@ function detailValue(id: string): string {
 }
 
 function leaf(): HTMLElement {
-  const found = document.querySelector<HTMLElement>('#model-settings-options-popover')
+  const found = document.querySelector<HTMLElement>('[id$="-model-settings-options-popover"]')
   if (!found) throw new Error('parameter list did not open')
   return found
 }
@@ -138,7 +142,7 @@ function leafLabels(): string[] {
 }
 
 function budget(): HTMLInputElement {
-  const found = leaf().querySelector<HTMLInputElement>('#session-model-window')
+  const found = leaf().querySelector<HTMLInputElement>('[id$="-session-model-window"]')
   if (!found) throw new Error('custom budget field is missing')
   return found
 }
@@ -158,7 +162,9 @@ function press(target: HTMLElement, key: string): void {
 async function hoverFirstModel(trigger: HTMLButtonElement): Promise<void> {
   trigger.click()
   hoverRow(0)
-  await vi.waitFor(() => expect(document.getElementById('model-settings-popover')).not.toBeNull())
+  await vi.waitFor(() =>
+    expect(document.querySelector<HTMLElement>('[id$="-model-settings-popover"]')).not.toBeNull(),
+  )
 }
 
 afterEach(() => {
@@ -245,8 +251,10 @@ describe('model picker', () => {
     await hoverFirstModel(trigger)
     leavePanel('model-picker-popover')
 
-    await vi.waitFor(() => expect(document.getElementById('model-settings-popover')).toBeNull())
-    expect(document.getElementById('model-picker-popover')).not.toBeNull()
+    await vi.waitFor(() =>
+      expect(document.querySelector<HTMLElement>('[id$="-model-settings-popover"]')).toBeNull(),
+    )
+    expect(document.querySelector<HTMLElement>('.model-picker-root')).not.toBeNull()
     picker.destroy()
   })
 
@@ -260,7 +268,7 @@ describe('model picker', () => {
     enterPanel('model-settings-popover')
 
     await new Promise((resolve) => setTimeout(resolve, 320))
-    expect(document.getElementById('model-settings-popover')).not.toBeNull()
+    expect(document.querySelector<HTMLElement>('[id$="-model-settings-popover"]')).not.toBeNull()
     picker.destroy()
   })
 
@@ -352,12 +360,12 @@ describe('model picker', () => {
     })
     trigger.click()
     hoverRow(0)
-    expect(document.getElementById('model-settings-popover')).toBeNull()
+    expect(document.querySelector<HTMLElement>('[id$="-model-settings-popover"]')).toBeNull()
 
     // 点选仍然可用，只是没有详情可展开，按老行为切换后收起面板。
     modelRow(0).click()
     await vi.waitFor(() => expect(onSelect).toHaveBeenCalledWith({ route: 'openai', id: 'fresh-model' }))
-    await vi.waitFor(() => expect(document.getElementById('model-picker-popover')).toBeNull())
+    await vi.waitFor(() => expect(document.querySelector<HTMLElement>('.model-picker-root')).toBeNull())
     picker.destroy()
   })
 
@@ -399,7 +407,7 @@ describe('model picker', () => {
     budget().dispatchEvent(blur)
 
     expect(onSettingsChange).not.toHaveBeenCalled()
-    expect(document.getElementById('model-settings-options-popover')).not.toBeNull()
+    expect(document.querySelector<HTMLElement>('[id$="-model-settings-options-popover"]')).not.toBeNull()
     picker.destroy()
   })
 
@@ -413,10 +421,12 @@ describe('model picker', () => {
       typeBudget(invalid)
       press(budget(), 'Enter')
       expect(budget().getAttribute('aria-invalid'), invalid).toBe('true')
-      expect(document.getElementById('session-model-settings-error')?.textContent).toContain('正整数')
+      expect(
+        document.querySelector<HTMLElement>('[id$="-session-model-settings-error"]')?.textContent,
+      ).toContain('正整数')
     }
     expect(onSettingsChange).not.toHaveBeenCalled()
-    expect(document.getElementById('model-settings-options-popover')).not.toBeNull()
+    expect(document.querySelector<HTMLElement>('[id$="-model-settings-options-popover"]')).not.toBeNull()
     picker.destroy()
   })
 
@@ -435,7 +445,7 @@ describe('model picker', () => {
 
     await vi.waitFor(() => expect(onError).toHaveBeenCalledWith(failure))
     expect(budget().value).toBe('96K')
-    expect(document.getElementById('model-picker-popover')).not.toBeNull()
+    expect(document.querySelector<HTMLElement>('.model-picker-root')).not.toBeNull()
     picker.destroy()
   })
 
@@ -467,10 +477,12 @@ describe('model picker', () => {
     const { picker, trigger } = mountPicker(undefined, onSettingsChange)
     trigger.click()
     press(modelList(), 'ArrowRight')
-    await vi.waitFor(() => expect(document.getElementById('model-settings-popover')).not.toBeNull())
+    await vi.waitFor(() =>
+      expect(document.querySelector<HTMLElement>('[id$="-model-settings-popover"]')).not.toBeNull(),
+    )
 
     press(detailRow('model-detail-thinking'), 'ArrowRight')
-    expect(document.getElementById('model-settings-options-popover')).not.toBeNull()
+    expect(document.querySelector<HTMLElement>('[id$="-model-settings-options-popover"]')).not.toBeNull()
     press(leafOptions(), 'ArrowDown')
     press(leafOptions(), 'Enter')
     await vi.waitFor(() =>
@@ -555,29 +567,61 @@ describe('model picker', () => {
             new other.KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }) as unknown as Event,
           )
         await Promise.resolve()
-        expect(doc.querySelector('#model-settings-popover')?.parentElement).toBe(doc.body)
-        expect(doc.querySelector('#model-detail-thinking')?.textContent).toContain(
+        expect(doc.querySelector('[id$="-model-settings-popover"]')?.parentElement).toBe(doc.body)
+        expect(doc.querySelector('[id$="-model-detail-thinking"]')?.textContent).toContain(
           translate('modelSettings.thinkingLabel'),
         )
         doc
-          .querySelector('#model-settings-popover')
+          .querySelector('[id$="-model-settings-popover"]')
           ?.dispatchEvent(
             new other.KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }) as unknown as Event,
           )
-        expect(doc.querySelector('#model-settings-options-popover')?.parentElement).toBe(doc.body)
-        expect(doc.querySelector('#model-settings-options-popover')?.getAttribute('aria-label')).toBe(
+        expect(doc.querySelector('[id$="-model-settings-options-popover"]')?.parentElement).toBe(doc.body)
+        expect(doc.querySelector('[id$="-model-settings-options-popover"]')?.getAttribute('aria-label')).toBe(
           translate('modelSettings.thinkingLabel'),
         )
-        expect(document.querySelector('#model-settings-popover')).toBeNull()
-        expect(document.querySelector('#model-settings-options-popover')).toBeNull()
+        expect(document.querySelector('[id$="-model-settings-popover"]')).toBeNull()
+        expect(document.querySelector('[id$="-model-settings-options-popover"]')).toBeNull()
+        // A second picker may open through the keyboard while the first cascade is still mounted.
+        const peerTrigger = doc.createElement('button')
+        doc.body.append(peerTrigger)
+        const peer = createModelPicker({
+          trigger: peerTrigger,
+          onSelect: vi.fn(async () => true),
+          onSettingsChange: vi.fn(async () => true),
+          onError: vi.fn(),
+          t: translate,
+        })
+        try {
+          peer.render(state({ selected: currentModel, settings }))
+          peerTrigger.dispatchEvent(
+            new other.KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }) as unknown as Event,
+          )
+          const peerList = doc.getElementById(peerTrigger.getAttribute('aria-controls') ?? '')
+          peerList?.dispatchEvent(
+            new other.KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }) as unknown as Event,
+          )
+          await Promise.resolve()
+          const peerDetail = doc.querySelectorAll('[id$="-model-settings-popover"]')[1]
+          expect(peerDetail).toBeDefined()
+          peerDetail?.dispatchEvent(
+            new other.KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }) as unknown as Event,
+          )
+          expect(doc.querySelectorAll('[id$="-model-settings-options-popover"]')).toHaveLength(2)
+          const ids = [...doc.querySelectorAll('[id]')].map((element) => element.id)
+          expect(ids.filter((id, index) => ids.indexOf(id) !== index)).toEqual([])
+        } finally {
+          peer.destroy()
+          peerTrigger.remove()
+        }
         doc.body.dispatchEvent(new other.MouseEvent('click', { bubbles: true }) as unknown as Event)
         expect(doc.querySelector('.model-picker')).toBeNull()
 
         trigger.click()
         picker.destroy()
         expect(doc.querySelector('.model-picker')).toBeNull()
-        expect(doc.querySelector('#model-settings-popover')).toBeNull()
-        expect(doc.querySelector('#model-settings-options-popover')).toBeNull()
+        expect(doc.querySelector('[id$="-model-settings-popover"]')).toBeNull()
+        expect(doc.querySelector('[id$="-model-settings-options-popover"]')).toBeNull()
         bound.forEach((calls, index) => {
           expect(removed[index]?.mock.calls).toEqual(expect.arrayContaining(calls))
         })
@@ -605,7 +649,7 @@ describe('model picker', () => {
 
     await vi.waitFor(() => expect(onSelect).toHaveBeenCalledWith(models[1]))
     await vi.waitFor(() => expect(document.querySelector('.model-picker')).toBeNull())
-    expect(document.querySelector('#model-settings-popover')).toBeNull()
+    expect(document.querySelector('[id$="-model-settings-popover"]')).toBeNull()
     picker.destroy()
   })
 })

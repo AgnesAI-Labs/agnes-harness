@@ -26,6 +26,13 @@ export const BUNDLED_HELPERS = Object.freeze([
     license: 'Apache-2.0',
     ref: 'file:./bundled-plugins/plugin-helper',
   },
+  {
+    name: 'document-reader',
+    id: '@agnes/document-reader',
+    version: '0.1.2',
+    license: 'Apache-2.0',
+    ref: 'file:./bundled-plugins/document-reader',
+  },
 ])
 
 /** Only this reserved identity is runtime-owned; ordinary file sources keep workspace semantics. */

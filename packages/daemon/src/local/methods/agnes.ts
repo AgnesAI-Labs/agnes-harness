@@ -46,7 +46,7 @@ import {
   type UITurn,
   validateAgainst,
 } from '@agnes/protocol'
-import { SessionSendNowParams } from '@agnes/protocol/gen/agnes-v1'
+import { SessionRemoveQueuedParams, SessionSendNowParams } from '@agnes/protocol/gen/agnes-v1'
 import {
   readToolDetailPage,
   TOOL_DETAIL_PAGE_BYTES,
@@ -1481,24 +1481,31 @@ export function registerAgnes(
   ): Promise<JournalResult> => {
     const sessionId = String(payload.sessionId)
     switch (kind) {
-      case 'sendNow': {
-        if (!validateAgainst(SessionSendNowParams, { ...payload, commandId }).ok)
+      case 'sendNow':
+      case 'removeQueued': {
+        if (
+          !validateAgainst(kind === 'sendNow' ? SessionSendNowParams : SessionRemoveQueuedParams, {
+            ...payload,
+            commandId,
+          }).ok
+        )
           throw rpcError('INVALID_PARAMS', { reason: 'invalid queued input selection' })
         const entry = cx.registry.require(sessionId)
         const queued = cx.activationBarrier.enqueue('turn')
         try {
           const invocation = await queued.start()
           const seq = await invocation.run(() =>
-            entry.session
-              .sendQueuedNow(String(payload.itemId), connActor(c.conn), admissionId)
-              .catch((error: unknown) => {
-                const failure = error as { code?: unknown; data?: { code?: unknown } }
-                if (failure.code === 'E_RELATION' || failure.data?.code === 'E_RELATION')
-                  throw rpcError('SEMANTIC_REJECTED', { code: 'QUEUED_INPUT_GONE', itemId: payload.itemId })
-                throw error
-              }),
+            (kind === 'sendNow'
+              ? entry.session.sendQueuedNow(String(payload.itemId), connActor(c.conn), admissionId)
+              : entry.session.removeQueuedInput(String(payload.itemId), connActor(c.conn), admissionId)
+            ).catch((error: unknown) => {
+              const failure = error as { code?: unknown; data?: { code?: unknown } }
+              if (failure.code === 'E_RELATION' || failure.data?.code === 'E_RELATION')
+                throw rpcError('SEMANTIC_REJECTED', { code: 'QUEUED_INPUT_GONE', itemId: payload.itemId })
+              throw error
+            }),
           )
-          cx.continueFollowUps?.(entry, undefined, true)
+          if (kind === 'sendNow') cx.continueFollowUps?.(entry, undefined, true)
           return { seq }
         } finally {
           queued.cancel()
@@ -1591,7 +1598,7 @@ export function registerAgnes(
         return { result: await cx.jobs.enqueue(payload, { local: c.conn.authKind === 'local' }) }
       }
       default:
-        // SubmitParams pins the five kinds, so the wire cannot reach this. It stands for a caller
+        // SubmitParams pins the supported kinds, so the wire cannot reach this. It stands for a caller
         // inside this process that passes something else.
         throw rpcError('SEMANTIC_REJECTED', { reason: `unknown submit kind ${kind}` })
     }
@@ -1604,12 +1611,12 @@ export function registerAgnes(
     c: CallContext,
     guard: () => void,
   ): Promise<JournalResult | undefined> => {
-    if (kind === 'sendNow') {
+    if (kind === 'sendNow' || kind === 'removeQueued') {
       const entry = cx.registry.get(String(payload.sessionId))
       if (!entry) return undefined
       const event = await scanNewest(
         entry.session as unknown as ScannableSession,
-        'x/core/queued-send-now',
+        kind === 'sendNow' ? 'x/core/queued-send-now' : 'x/core/queued-input-removed',
         (candidate) =>
           (candidate as EventEnvelope).origin === 'system' &&
           (candidate as EventEnvelope).trust === 'trusted' &&
@@ -1617,6 +1624,10 @@ export function registerAgnes(
           (candidate.data as { admissionId?: unknown } | null)?.admissionId === admissionId,
       )
       if (!event) return undefined
+      if (kind === 'removeQueued') {
+        guard()
+        return { seq: event.seq - 1 }
+      }
       const timeline = await entry.session.projectUI()
       // Receipt recovery must not restart unrelated inputs after the selected item has run:
       // the user may have stopped a later turn while this receipt was unacknowledged.
@@ -1699,6 +1710,7 @@ export function registerAgnes(
       kind === 'steer' ||
       kind === 'followUp' ||
       kind === 'sendNow' ||
+      kind === 'removeQueued' ||
       kind === 'compact' ||
       kind === 'fork' ||
       kind === 'jobs.enqueue'
@@ -1726,7 +1738,7 @@ export function registerAgnes(
     if (st.state === 'uncertain') {
       guard()
       const recovered =
-        kind === 'sendNow'
+        kind === 'sendNow' || kind === 'removeQueued'
           ? await runQueued(
               cx.commandQueue,
               sessionId,
@@ -1815,6 +1827,8 @@ export function registerAgnes(
           (route.models ?? []).map((model) => ({
             route: route.route,
             id: model.id,
+            input: model.input,
+            ...(model.inputLimits === undefined ? {} : { inputLimits: model.inputLimits }),
             ...(model.reasoning === undefined ? {} : { reasoning: model.reasoning }),
             ...(model.thinkingLevelMap === undefined ? {} : { thinkingLevelMap: model.thinkingLevelMap }),
             contextWindow: model.contextWindow,

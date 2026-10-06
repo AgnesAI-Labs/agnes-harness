@@ -1,11 +1,33 @@
+/*! @license Lucide paperclip, https://github.com/lucide-icons/lucide
+ISC License
+
+Copyright (c) 2026 Lucide Icons and Contributors
+
+Permission to use, copy, modify, and/or distribute this software for any
+purpose with or without fee is hereby granted, provided that the above
+copyright notice and this permission notice appear in all copies.
+
+THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
+WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
+MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
+ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
+WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
+ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
+OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+*/
+
 import type { ContentBlock, ModelSettings, ThinkingLevel, UIPendingInput, UsageView } from '@agnes/protocol'
+import { userImagePolicy } from '@agnes/protocol'
 import {
+  decodeAttachmentData,
   decodeSafeImageBytes,
   decodeSafeImages,
+  USER_MESSAGE_ATTACHMENT_LIMITS,
   USER_MESSAGE_IMAGE_LIMITS,
-  USER_MESSAGE_IMAGE_MAX_COUNT,
+  validateUserAttachments,
 } from '@agnes/protocol-validation'
 import {
+  type ChangeEvent,
   type ClipboardEvent,
   type ComponentType,
   createElement,
@@ -56,6 +78,7 @@ export type ModelPicker = {
 }
 export type PermissionMode = 'view' | 'workspace' | 'full'
 export type ComposerImageBlock = Extract<ContentBlock, { type: 'image' }>
+export type ComposerAttachmentBlock = Extract<ContentBlock, { type: 'image' | 'file' }>
 export type PermissionPickerState = { disabled: boolean; pending: boolean; selected: PermissionMode | null }
 export type PermissionPicker = {
   destroy(): void
@@ -85,7 +108,7 @@ export interface ComposerDependencies {
     dispose?(): void
   }
   /** 上传前把超出模型视觉上限的图片缩小；缺省时按原图发送。 */
-  downscaleImage?(file: File): Promise<File>
+  downscaleImage?(file: File, policy?: ReturnType<typeof userImagePolicy>): Promise<File>
   /** Component injection keeps production usage in the composer root; factories remain compatible. */
   UsagePanel?: ComponentType<{ usage: UsageView | undefined; connected: boolean; t?: Translate }>
   isSubmitShortcut(event: {
@@ -100,6 +123,7 @@ export interface ComposerDependencies {
 }
 
 export interface ComposerView {
+  imagePolicy?: ReturnType<typeof userImagePolicy>
   cancel: { disabled: boolean; hidden: boolean; label: string }
   connected: boolean
   configured: boolean
@@ -115,7 +139,14 @@ export interface ComposerView {
     thinkingLevelMap?: Record<string, string> | undefined
   }
   permission: PermissionPickerState
-  queue?: { items: readonly UIPendingInput[]; disabled: boolean; sending?: string; error?: string }
+  queue?: {
+    items: readonly UIPendingInput[]
+    disabled: boolean
+    removeDisabled?: boolean
+    sending?: string
+    removing?: string
+    error?: string
+  }
   sending: boolean
   send: { disabled: boolean; label: string; mode: 'idle' | 'busy' | 'pending'; title: string }
   stopping: boolean
@@ -124,6 +155,8 @@ export interface ComposerView {
 }
 
 export interface ComposerHandle {
+  getAttachmentBlocks(): readonly ComposerAttachmentBlock[]
+  restoreAttachmentBlocks(attachments: readonly ComposerAttachmentBlock[]): void
   clearImageBlocks(): void
   focus(): void
   getDraft(): string
@@ -146,6 +179,7 @@ export interface ComposerRegionOptions {
   onPermissionSelect(mode: PermissionMode): Promise<boolean>
   onSubmit(): void
   onSendNow?(itemId: string): void
+  onRemoveQueued?(itemId: string): void
   onWorkspace(): void
 }
 
@@ -206,9 +240,13 @@ interface ComposerProps extends ComposerRegionOptions {
   slots?: ComposerSlots
 }
 
-type ComposerAttachment = ComposerImageBlock & { id: string; previewUrl: string; size: number }
+type ComposerAttachment = ComposerAttachmentBlock & {
+  id: string
+  previewUrl?: string
+  size: number
+  pixels: number
+}
 
-const MAX_IMAGE_COUNT = USER_MESSAGE_IMAGE_MAX_COUNT
 const MAX_IMAGE_BYTES = USER_MESSAGE_IMAGE_LIMITS.maxBytesPerImage
 const MAX_TOTAL_IMAGE_BYTES = USER_MESSAGE_IMAGE_LIMITS.maxAggregateBytes
 const IMAGE_PREVIEW_LIMITS = USER_MESSAGE_IMAGE_LIMITS
@@ -216,16 +254,17 @@ const IMAGE_PREVIEW_LIMITS = USER_MESSAGE_IMAGE_LIMITS
  * 源文件的粗上限，只为避免把超大文件整体读进内存再交给 canvas。真正的每张与合计上限看
  * 缩放之后的结果：一张几 MB 的截图缩完往往只剩几百 KB，按原图卡会在能缩小之前就拒掉。
  */
-const MAX_SOURCE_IMAGE_BYTES = 20 * 1024 * 1024
+const MAX_SOURCE_IMAGE_BYTES = USER_MESSAGE_ATTACHMENT_LIMITS.maxAggregateBytes
 
-/** 模型视觉输入的长边上限；超出的像素模型本来也读不到，上传前先缩掉，免得整张被尺寸闸拒。 */
+/** Product preprocessing limit; a model may declare stricter dimensions. */
 const IMAGE_MAX_EDGE = 1456
 
 /**
  * 把长边超过 IMAGE_MAX_EDGE 的图片缩到该边长，格式和文件名保持不变。只对超限的图动手；
+ * 浏览器可读但严格校验不接受的 JPEG 也会重新编码；正常小图保持原样。
  * canvas 不可用或编码失败时原样返回，交给服务端按原图判定。
  */
-export async function downscaleImageFile(file: File): Promise<File> {
+export async function downscaleImageFile(file: File, policy = userImagePolicy(undefined)): Promise<File> {
   // 有些 DOM 实现没有位图解码（测试环境就是），那种情况下按原图走，交给服务端判定。
   if (typeof createImageBitmap !== 'function') return file
   let bitmap: ImageBitmap
@@ -237,8 +276,25 @@ export async function downscaleImageFile(file: File): Promise<File> {
   }
   try {
     const longest = Math.max(bitmap.width, bitmap.height)
-    if (longest <= IMAGE_MAX_EDGE) return file
-    const ratio = IMAGE_MAX_EDGE / longest
+    const ratio = Math.min(
+      1,
+      IMAGE_MAX_EDGE / longest,
+      policy.maxWidth / bitmap.width,
+      policy.maxHeight / bitmap.height,
+    )
+    const encodedSize = 4 * Math.ceil(file.size / 3)
+    if (ratio === 1 && encodedSize <= (policy.maxBase64Bytes ?? Infinity)) {
+      if (file.type !== 'image/jpeg') return file
+      try {
+        decodeSafeImageBytes(
+          { bytes: new Uint8Array(await file.arrayBuffer()), mimeType: file.type },
+          IMAGE_PREVIEW_LIMITS,
+        )
+        return file
+      } catch {
+        // 浏览器已成功解码；通过 canvas 去掉尾部附加数据等不兼容结构。
+      }
+    }
     const canvas = document.createElement('canvas')
     canvas.width = Math.max(1, Math.round(bitmap.width * ratio))
     canvas.height = Math.max(1, Math.round(bitmap.height * ratio))
@@ -246,7 +302,9 @@ export async function downscaleImageFile(file: File): Promise<File> {
     if (!context) return file
     context.drawImage(bitmap, 0, 0, canvas.width, canvas.height)
     // PNG 会忽略质量参数，JPEG 用它。保持原格式，避免截图上的小字被有损编码糊掉。
-    const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, file.type, 0.92))
+    const blob = await new Promise<Blob | null>((resolve) =>
+      canvas.toBlob(resolve, file.type, (policy.jpegQuality ?? 92) / 100),
+    )
     if (!blob) return file
     return new File([blob], file.name, { type: file.type })
   } finally {
@@ -268,6 +326,11 @@ function blobBytes(bytes: Uint8Array): ArrayBuffer {
   return copy
 }
 
+const nativeImageFile = (file: File): boolean =>
+  file.type === 'image/png' ||
+  file.type === 'image/jpeg' ||
+  (!file.type && /\.(png|jpe?g)$/iu.test(file.name))
+
 export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Composer(
   {
     initialDraft = '',
@@ -282,6 +345,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
     onPermissionSelect,
     onSubmit,
     onSendNow,
+    onRemoveQueued,
     onWorkspace,
     slots,
   }: ComposerProps,
@@ -291,8 +355,15 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
   // Ids are minted per mount so two composers in one document never share one.
   const promptId = useId()
   const hintId = useId()
+  const imageHintId = useId()
   const [attachments, setAttachments] = useState<ComposerAttachment[]>([])
   const [pendingCount, setPendingCount] = useState(0)
+  const fileInput = useRef<HTMLInputElement>(null)
+  const policy = view.imagePolicy ?? userImagePolicy(undefined)
+  const currentView = useRef(view)
+  currentView.current = view
+  const imageDisabled = view.input.disabled || view.sending || view.model.pending
+  const imageHint = dependencies.translate('composer.attachment.hint')
   const form = useRef<HTMLFormElement>(null)
   const prompt = useRef<HTMLTextAreaElement>(null)
   const model = useRef<HTMLButtonElement>(null)
@@ -305,6 +376,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
   const generation = useRef(0)
   const nextAttachmentId = useRef(0)
   const pendingCountRef = useRef(0)
+  const pendingImageCountRef = useRef(0)
 
   const publishAttachments = useCallback(
     (next: ComposerAttachment[]): void => {
@@ -318,80 +390,133 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
   const clearImageBlocks = useCallback((): void => {
     generation.current += 1
     pendingCountRef.current = 0
+    pendingImageCountRef.current = 0
     setPendingCount(0)
-    for (const attachment of attachmentsRef.current) URL.revokeObjectURL(attachment.previewUrl)
+    for (const attachment of attachmentsRef.current)
+      if (attachment.previewUrl) URL.revokeObjectURL(attachment.previewUrl)
     publishAttachments([])
   }, [publishAttachments])
 
-  const restoreImageBlocks = useCallback(
-    (images: readonly ComposerImageBlock[]): void => {
-      clearImageBlocks()
-      if (images.length > MAX_IMAGE_COUNT) return
+  const restoreAttachmentBlocks = useCallback(
+    (blocks: readonly ComposerAttachmentBlock[]): void => {
       let decoded: ReturnType<typeof decodeSafeImages>
       try {
-        decoded = decodeSafeImages(images, IMAGE_PREVIEW_LIMITS)
+        validateUserAttachments(blocks)
+        decoded = decodeSafeImages(
+          blocks.filter((block): block is ComposerImageBlock => block.type === 'image'),
+          IMAGE_PREVIEW_LIMITS,
+        )
       } catch {
         return
       }
 
       const restored: ComposerAttachment[] = []
       try {
-        for (const [index, image] of images.entries()) {
-          const bytes = decoded[index]?.bytes
-          if (!bytes) throw new Error('validated image bytes are unavailable')
+        let imageIndex = 0
+        for (const image of blocks) {
+          if (image.type === 'file') {
+            restored.push({
+              ...image,
+              id: `restored-${++nextAttachmentId.current}`,
+              size: decodeAttachmentData(image.data, MAX_TOTAL_IMAGE_BYTES).byteLength,
+              pixels: 0,
+            })
+            continue
+          }
+          const imageData = decoded[imageIndex++]
+          if (!imageData) throw new Error('validated image bytes are unavailable')
+          const bytes = imageData.bytes
           const blob = new Blob([blobBytes(bytes)], { type: image.mimeType })
           restored.push({
             ...image,
             id: `restored-${++nextAttachmentId.current}`,
             previewUrl: URL.createObjectURL(blob),
             size: bytes.byteLength,
+            pixels: imageData.pixels,
           })
         }
       } catch {
-        for (const attachment of restored) URL.revokeObjectURL(attachment.previewUrl)
+        for (const attachment of restored)
+          if (attachment.previewUrl) URL.revokeObjectURL(attachment.previewUrl)
         return
       }
+      clearImageBlocks()
       publishAttachments(restored)
     },
     [clearImageBlocks, publishAttachments],
   )
 
   const addFiles = async (files: readonly File[]): Promise<void> => {
-    if (view.sending) return
+    if (imageDisabled) {
+      onError(new Error(imageHint))
+      return
+    }
     const t = dependencies.translate
     // 这张表用于把「内容不是图片」与「读不出来」区分开，所以文案只算一次再比对。
     const invalidImage = t('composer.image.invalid')
     const tooLargeMessage = t('composer.image.tooLarge')
     const accepted: File[] = []
+    let acceptedImages = 0
     for (const file of files) {
-      if (file.type !== 'image/png' && file.type !== 'image/jpeg') {
-        onError(new Error(t('composer.image.invalidType')))
-        continue
-      }
+      const visual = policy.supported && nativeImageFile(file)
       // 源图只做粗筛：体积上限留到缩放之后再判，否则大截图会在能被缩小之前就被拒掉。
-      if (file.size < 1 || file.size > MAX_SOURCE_IMAGE_BYTES) {
+      if (file.size > (visual ? MAX_SOURCE_IMAGE_BYTES : MAX_TOTAL_IMAGE_BYTES)) {
         onError(new Error(tooLargeMessage))
         continue
       }
-      if (attachmentsRef.current.length + pendingCountRef.current + accepted.length >= MAX_IMAGE_COUNT) {
-        onError(new Error(t('composer.image.tooMany')))
+      if (
+        attachmentsRef.current.length + pendingCountRef.current + accepted.length >=
+        USER_MESSAGE_ATTACHMENT_LIMITS.maxCount
+      ) {
+        onError(
+          new Error(t('composer.attachment.tooMany', { count: USER_MESSAGE_ATTACHMENT_LIMITS.maxCount })),
+        )
+        continue
+      }
+      if (
+        visual &&
+        attachmentsRef.current.filter((block) => block.type === 'image').length +
+          pendingImageCountRef.current +
+          acceptedImages >=
+          policy.maxCount
+      ) {
+        onError(new Error(t('composer.image.tooMany', { count: policy.maxCount })))
         continue
       }
       accepted.push(file)
+      if (visual) acceptedImages++
     }
     if (accepted.length === 0) return
 
     const readGeneration = generation.current
     pendingCountRef.current += accepted.length
+    pendingImageCountRef.current += acceptedImages
     setPendingCount(pendingCountRef.current)
     onAttachmentsChange?.()
 
-    await Promise.all(
-      accepted.map(async (file) => {
+    for (const file of accepted) {
+      if (readGeneration !== generation.current) break
+      const visual = policy.supported && nativeImageFile(file)
+      await (async () => {
         try {
-          const scaled = dependencies.downscaleImage ? await dependencies.downscaleImage(file) : file
+          const candidate =
+            !file.type && /\.(png|jpe?g)$/iu.test(file.name)
+              ? new File([file], file.name, { type: /\.png$/iu.test(file.name) ? 'image/png' : 'image/jpeg' })
+              : file
+          const scaled =
+            visual && dependencies.downscaleImage
+              ? await dependencies.downscaleImage(candidate, policy)
+              : candidate
           const { data, bytes } = await readImage(scaled)
           if (readGeneration !== generation.current) return
+          if (
+            visual &&
+            (JSON.stringify(currentView.current.imagePolicy) !== JSON.stringify(view.imagePolicy) ||
+              !currentView.current.imagePolicy?.supported)
+          ) {
+            onError(new Error(t('composer.image.modelChanged')))
+            return
+          }
           // 每张与合计都按缩放后的体积结算，且必须排在解码之前：解码自己也卡同一批上限，
           // 先解码的话「太大」会被当成「不是有效图片」报出去。
           const current = attachmentsRef.current
@@ -400,8 +525,43 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
             onError(new Error(tooLargeMessage))
             return
           }
+          if (!visual || (scaled.type !== 'image/png' && scaled.type !== 'image/jpeg')) {
+            const block = {
+              type: 'file' as const,
+              data,
+              mimeType: scaled.type.split(';')[0]?.trim() || 'application/octet-stream',
+              name: file.name,
+            }
+            validateUserAttachments([block])
+            publishAttachments([
+              ...current,
+              { ...block, id: `file-${++nextAttachmentId.current}`, size: bytes.byteLength, pixels: 0 },
+            ])
+            return
+          }
+          if (data.length > (policy.maxBase64Bytes ?? Infinity)) {
+            onError(new Error(t('composer.image.modelLimit')))
+            return
+          }
+          if (current.filter((block) => block.type === 'image').length >= policy.maxCount) {
+            onError(new Error(t('composer.image.tooMany', { count: policy.maxCount })))
+            return
+          }
+          let pixels: number
           try {
-            decodeSafeImageBytes({ bytes, mimeType: scaled.type }, IMAGE_PREVIEW_LIMITS)
+            const decoded = decodeSafeImageBytes({ bytes, mimeType: scaled.type }, IMAGE_PREVIEW_LIMITS)
+            pixels = decoded.pixels
+            if (
+              current.reduce((sum, image) => sum + image.pixels, pixels) >
+              IMAGE_PREVIEW_LIMITS.maxAggregatePixels
+            ) {
+              onError(new Error(t('composer.image.tooManyPixels')))
+              return
+            }
+            if (decoded.width > policy.maxWidth || decoded.height > policy.maxHeight) {
+              onError(new Error(t('composer.image.modelLimit')))
+              return
+            }
           } catch {
             throw new Error(invalidImage)
           }
@@ -412,6 +572,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
             id: `image-${++nextAttachmentId.current}`,
             previewUrl: URL.createObjectURL(scaled),
             size: scaled.size,
+            pixels,
           }
           // 这里到 publishAttachments 之间没有 await：并发读出的多张图会依次看到彼此已提交的
           // 体积，不会各自按同一份旧快照判定而一起越过合计上限。
@@ -426,18 +587,19 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
         } finally {
           if (readGeneration === generation.current) {
             pendingCountRef.current -= 1
+            if (visual) pendingImageCountRef.current -= 1
             setPendingCount(pendingCountRef.current)
             onAttachmentsChange?.()
           }
         }
-      }),
-    )
+      })()
+    }
   }
 
   const removeImage = (id: string): void => {
     const removed = attachmentsRef.current.find((attachment) => attachment.id === id)
     if (!removed) return
-    URL.revokeObjectURL(removed.previewUrl)
+    if (removed.previewUrl) URL.revokeObjectURL(removed.previewUrl)
     publishAttachments(attachmentsRef.current.filter((attachment) => attachment.id !== id))
   }
 
@@ -470,7 +632,8 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
   useLayoutEffect(
     () => () => {
       generation.current += 1
-      for (const attachment of attachmentsRef.current) URL.revokeObjectURL(attachment.previewUrl)
+      for (const attachment of attachmentsRef.current)
+        if (attachment.previewUrl) URL.revokeObjectURL(attachment.previewUrl)
       attachmentsRef.current = []
     },
     [],
@@ -487,15 +650,25 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
         return prompt.current?.value ?? ''
       },
       getImageBlocks() {
-        return attachmentsRef.current.map(({ type, data, mimeType }) => ({ type, data, mimeType }))
+        return attachmentsRef.current
+          .filter((block): block is ComposerAttachment & ComposerImageBlock => block.type === 'image')
+          .map(({ type, data, mimeType }) => ({ type, data, mimeType }))
       },
+      getAttachmentBlocks() {
+        return attachmentsRef.current.map((block) =>
+          block.type === 'file'
+            ? { type: block.type, data: block.data, mimeType: block.mimeType, name: block.name }
+            : { type: block.type, data: block.data, mimeType: block.mimeType },
+        )
+      },
+      restoreAttachmentBlocks,
       hasPendingImages() {
         return pendingCountRef.current > 0
       },
       render(next) {
         flushSync(() => setView(next))
       },
-      restoreImageBlocks,
+      restoreImageBlocks: restoreAttachmentBlocks,
       resize() {
         if (prompt.current) dependencies.resize(prompt.current)
       },
@@ -505,7 +678,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
         dependencies.resize(prompt.current)
       },
     }),
-    [dependencies.resize, clearImageBlocks, restoreImageBlocks],
+    [dependencies.resize, clearImageBlocks, restoreAttachmentBlocks],
   )
 
   useLayoutEffect(() => {
@@ -571,6 +744,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
                   createElement(
                     'button',
                     {
+                      className: 'composer-queue-send',
                       type: 'button',
                       disabled: view.queue?.disabled || !onSendNow,
                       'aria-label': dependencies.translate('composer.queue.sendAccessible', {
@@ -587,6 +761,30 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
                       view.queue?.sending === item.itemId ? 'composer.queue.sending' : 'composer.queue.send',
                     ),
                   ),
+                  onRemoveQueued
+                    ? createElement(
+                        'button',
+                        {
+                          type: 'button',
+                          className: 'composer-queue-remove',
+                          disabled: view.queue?.removeDisabled ?? view.queue?.disabled,
+                          'aria-label': dependencies.translate('composer.queue.removeAccessible', {
+                            index: index + 1,
+                          }),
+                          title: dependencies.translate('composer.queue.removeTitle'),
+                          'aria-busy': view.queue?.removing === item.itemId,
+                          onClick: () => {
+                            onRemoveQueued(item.itemId)
+                            prompt.current?.focus()
+                          },
+                        },
+                        dependencies.translate(
+                          view.queue?.removing === item.itemId
+                            ? 'composer.queue.removing'
+                            : 'composer.queue.remove',
+                        ),
+                      )
+                    : null,
                 ),
               ),
             ),
@@ -627,23 +825,31 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
           'div',
           {
             className: 'composer-image-preview-list',
-            'aria-label': dependencies.translate('composer.image.limit'),
+            'aria-label': imageHint,
             'aria-live': 'polite',
           },
           ...attachments.map((attachment, index) =>
             createElement(
               'figure',
-              { className: 'composer-image-preview', key: attachment.id },
-              createElement('img', {
-                src: attachment.previewUrl,
-                alt: dependencies.translate('composer.image.alt', { index: index + 1 }),
-              }),
+              {
+                className: attachment.type === 'image' ? 'composer-image-preview' : 'composer-file-preview',
+                key: attachment.id,
+              },
+              attachment.type === 'image'
+                ? createElement('img', {
+                    src: attachment.previewUrl,
+                    alt: dependencies.translate('composer.image.alt', { index: index + 1 }),
+                  })
+                : createElement('span', { title: attachment.name }, attachment.name),
+              attachment.type === 'file'
+                ? createElement('small', null, `${(attachment.size / 1024).toFixed(1)} KiB`)
+                : null,
               createElement(
                 'button',
                 {
                   type: 'button',
                   'data-remove-image': true,
-                  'aria-label': dependencies.translate('composer.image.remove', { index: index + 1 }),
+                  'aria-label': dependencies.translate('composer.attachment.remove', { index: index + 1 }),
                   disabled: view.sending,
                   onClick: () => removeImage(attachment.id),
                 },
@@ -832,6 +1038,55 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
             onClick: onCancel,
           },
           view.cancel.label,
+        ),
+        createElement('input', {
+          ref: fileInput,
+          type: 'file',
+          hidden: true,
+          multiple: true,
+          'aria-label': dependencies.translate('composer.attachment.add'),
+          onChange: (event: ChangeEvent<HTMLInputElement>) => {
+            const files = Array.from(event.currentTarget.files ?? [])
+            event.currentTarget.value = ''
+            void addFiles(files)
+          },
+        }),
+        createElement('span', { id: imageHintId, className: 'visually-hidden' }, imageHint),
+        createElement(
+          'button',
+          {
+            className: 'composer-attach secondary-button compact',
+            type: 'button',
+            'aria-label': dependencies.translate('composer.attachment.add'),
+            'aria-describedby': imageHintId,
+            'aria-disabled':
+              imageDisabled || attachments.length + pendingCount >= USER_MESSAGE_ATTACHMENT_LIMITS.maxCount,
+            title: imageHint,
+            onClick: () => {
+              if (imageDisabled) {
+                if (!policy.supported) onError(new Error(imageHint))
+                return
+              }
+              if (attachments.length + pendingCount >= USER_MESSAGE_ATTACHMENT_LIMITS.maxCount) {
+                onError(
+                  new Error(
+                    dependencies.translate('composer.attachment.tooMany', {
+                      count: USER_MESSAGE_ATTACHMENT_LIMITS.maxCount,
+                    }),
+                  ),
+                )
+                return
+              }
+              fileInput.current?.click()
+            },
+          },
+          createElement(
+            'svg',
+            { className: 'icon', viewBox: '0 0 24 24', 'aria-hidden': true },
+            createElement('path', {
+              d: 'm16 6l-8.414 8.586a2 2 0 0 0 2.829 2.829l8.414-8.586a4 4 0 1 0-5.657-5.657l-8.379 8.551a6 6 0 1 0 8.485 8.485l8.379-8.551',
+            }),
+          ),
         ),
         createElement(
           'button',

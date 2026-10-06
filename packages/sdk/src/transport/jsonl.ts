@@ -1,4 +1,4 @@
-// JSONL framing: one message per line, UTF-8, with the 16 MiB ceiling protocol defines.
+// JSONL framing: one message per line, UTF-8, with the shared byte ceiling the protocol defines.
 import { MAX_FRAME_BYTES } from '@agnes/protocol'
 import { ProtocolViolation } from '../errors.js'
 import type { JsonRpcMessage } from './types.js'

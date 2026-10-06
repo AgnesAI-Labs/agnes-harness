@@ -222,6 +222,141 @@ describe('steer / followUp / submit', () => {
     }
   })
 
+  it.each(['active', 'paused', 'receipt-loss'] as const)(
+    'removes selected queued input during %s and replays its receipt without starting work',
+    async (mode) => {
+      const h = await openTestHost({ provider: slowProvider(0) })
+      const created = vi.spyOn(h.host, 'createSession')
+      const journal = mode === 'receipt-loss' ? new CrashAfterDispatchJournal() : new MemoryJournal()
+      const ep = h.endpoint({ journal })
+      try {
+        const sessionId = await newSession(ep, h.dataDir)
+        const core = (await created.mock.results[0]?.value) as HostSession | undefined
+        if (!core) throw new Error('missing session')
+        await core.enqueue('next-turn', { actor: core.d.actor, content: [{ type: 'text', text: 'A' }] })
+        await core.acceptInput()
+        if (mode !== 'active') await core.endTurn('aborted')
+        for (const text of ['B', 'C', 'D'])
+          await core.enqueue('next-turn', { actor: core.d.actor, content: [{ type: 'text', text }] })
+        const selected = (await core.projectUI()).pendingInputs?.[1]
+        if (!selected) throw new Error('missing selected input')
+        const op = structuredClone(core.op())
+        const command = {
+          jsonrpc: '2.0' as const,
+          id: 40,
+          method: '_agnes/v1/submit',
+          params: {
+            clientId: CLIENT,
+            commandId: 'remove-C',
+            kind: 'removeQueued',
+            payload: { sessionId, itemId: selected.itemId },
+          },
+        }
+        expect(await ep.handle(command)).toMatchObject(
+          mode === 'receipt-loss'
+            ? { error: { code: -32603 } }
+            : { result: { seq: expect.any(Number), replayed: false } },
+        )
+        const afterRemoval = core.lastSeq
+        expect(await ep.handle(command)).toMatchObject({ result: { seq: afterRemoval - 1, replayed: true } })
+        expect(core.lastSeq).toBe(afterRemoval)
+        expect(
+          await ep.handle({ ...command, params: { ...command.params, commandId: 'new-stale-removal' } }),
+        ).toMatchObject({ error: { data: { code: 'QUEUED_INPUT_GONE' } } })
+        expect(
+          await ep.handle({
+            ...command,
+            params: { ...command.params, commandId: 'invalid-removal', payload: { sessionId, itemId: '' } },
+          }),
+        ).toMatchObject({ error: { code: -32602 } })
+        expect(core.op()).toEqual(op)
+        expect((await core.projectUI()).pendingInputs?.map((item) => item.preview)).toEqual(['B', 'D'])
+        expect(await core.scan({ type: 'user/message', limit: 10 })).toHaveLength(1)
+        expect(await core.scan({ type: 'x/core/queued-input-removed', limit: 10 })).toHaveLength(1)
+        expect(core.lastSeq).toBe(afterRemoval)
+      } finally {
+        await ep.close()
+        await h.close()
+        created.mockRestore()
+      }
+    },
+  )
+
+  it.each(['foreign-marker', 'owner-loss'] as const)(
+    'refuses queue-removal receipt recovery after %s',
+    async (mode) => {
+      const h = await openTestHost({ provider: slowProvider(0) })
+      const created = vi.spyOn(h.host, 'createSession')
+      const journal = new MemoryJournal()
+      const ep = h.endpoint({ journal })
+      try {
+        const sessionId = await newSession(ep, h.dataDir)
+        const core = (await created.mock.results[0]?.value) as HostSession | undefined
+        if (!core) throw new Error('missing session')
+        for (const text of ['B', 'C'])
+          await core.enqueue('next-turn', { actor: core.d.actor, content: [{ type: 'text', text }] })
+        const selected = (await core.projectUI()).pendingInputs?.[1]
+        if (!selected) throw new Error('missing selected input')
+        const payload = { sessionId, itemId: selected.itemId }
+        const commandId = 'recover-removal'
+        const owner = identity(ep.conn.principalId, CLIENT, sessionId, commandId)
+        const binding = commandBinding('removeQueued', sessionId, undefined, payload)
+        const admissionId = commandAdmissionId(owner, binding)
+        await journal.begin(owner, binding)
+        if (mode === 'foreign-marker')
+          await core.append([
+            {
+              type: 'x/core/queued-input-removed',
+              actor: core.d.actor,
+              origin: 'principal',
+              trust: 'untrusted',
+              ignorable: true,
+              data: { itemId: selected.itemId, admissionId },
+            },
+          ])
+        else await core.removeQueuedInput(selected.itemId, core.d.actor, admissionId)
+        let deny = false
+        const originalResolve = MemorySessionPrincipalOwnership.prototype.resolve
+        const resolve = vi
+          .spyOn(MemorySessionPrincipalOwnership.prototype, 'resolve')
+          .mockImplementation(function (this: MemorySessionPrincipalOwnership, key) {
+            return deny ? undefined : originalResolve.call(this, key)
+          })
+        const originalScan = core.scan.bind(core)
+        const scan = vi.spyOn(core, 'scan').mockImplementation(async (query) => {
+          const rows = await originalScan(query)
+          if (mode === 'owner-loss' && query.type === 'x/core/queued-input-removed') deny = true
+          return rows
+        })
+        try {
+          expect(
+            await ep.handle({
+              jsonrpc: '2.0',
+              id: 51,
+              method: '_agnes/v1/submit',
+              params: { clientId: CLIENT, commandId, kind: 'removeQueued', payload },
+            }),
+          ).toMatchObject(
+            mode === 'foreign-marker'
+              ? { result: { status: 'uncertain', replayed: false } }
+              : { error: { data: { code: 'CAPABILITY_DENIED', reason: 'session owner unavailable' } } },
+          )
+          expect((await core.projectUI()).pendingInputs?.map((item) => item.preview)).toEqual(
+            mode === 'foreign-marker' ? ['B', 'C'] : ['B'],
+          )
+          expect(await core.scan({ type: 'user/message', limit: 10 })).toEqual([])
+        } finally {
+          scan.mockRestore()
+          resolve.mockRestore()
+        }
+      } finally {
+        await ep.close()
+        await h.close()
+        created.mockRestore()
+      }
+    },
+  )
+
   it.each(['prompt', 'follow-up', 'background', 'receipt-loss'] as const)(
     'sends selected queued input now during %s, retains FIFO remainder, and replays without cancellation',
     async (mode) => {

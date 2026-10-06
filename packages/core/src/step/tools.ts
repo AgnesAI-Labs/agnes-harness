@@ -17,6 +17,8 @@ import {
   hasTrustedToolCallProvenance,
   toolPolicyBindingProblem,
 } from '../registry/tool-policy.js'
+import { readSessionAttachment } from '../request/session-files.js'
+import { readSessionImages } from '../request/session-images.js'
 import { CoreError, type EventInput, type Seq } from '../types.js'
 import {
   approvalBindingHash,
@@ -41,6 +43,8 @@ export type ExecOpts = {
   parentEffectId?: string
   nestedLease?: NestedToolLease
   signal?: AbortSignal
+  /** Propagates attachment provenance to the parent tool without changing clean nested results. */
+  onAttachmentRead?: () => void
   /** A crash-recovered second dispatch of the already-durable effect. */
   resumeDispatch?: { effectId: string; startSeq: Seq; attempt: 2 }
 }
@@ -999,12 +1003,18 @@ export async function approveAndExecute(
   if (parent.aborted) ac.abort()
   else parent.addEventListener('abort', onAbort, { once: true })
   try {
+    let attachmentRead = false
+    const markAttachmentRead = () => {
+      attachmentRead = true
+      o.onAttachmentRead?.()
+    }
     const invokeNested = (name: string, args: unknown, io: { signal?: AbortSignal; depth: number }) => {
       return s.invokeTool(name, args, {
         ...io,
         parentEffectId: effect.effectId,
         ...(o.nestedLease ? { nestedLease: o.nestedLease } : {}),
         onPark: (event) => nestedParks.push(event),
+        onAttachmentRead: markAttachmentRead,
       })
     }
     const computerUseAllowed = s.computerUseAllowed()
@@ -1037,6 +1047,11 @@ export async function approveAndExecute(
               .then((r) => r.firstSeq),
           requestCompaction: (i) => {
             t.compactionRequested = i ?? null
+          },
+          ...(s.d.requestMedia ? { readImages: (input) => readSessionImages(s, input, ac.signal) } : {}),
+          readAttachment: (input) => {
+            markAttachmentRead()
+            return readSessionAttachment(s, input, ac.signal)
           },
           progress: () => undefined,
           artifactJobEvent: (job) =>
@@ -1287,7 +1302,7 @@ export async function approveAndExecute(
             {
               // An open-world tool brings back text the harness did not write, so the row that carries
               // it is untrusted and the request builder wraps it.
-              trust: policy.isOpenWorld === false ? 'trusted' : 'untrusted',
+              trust: policy.isOpenWorld === false && !attachmentRead ? 'trusted' : 'untrusted',
               origin: `tool:${call.name}`,
               sourceEventSeqs: [call.argsSeq],
             },

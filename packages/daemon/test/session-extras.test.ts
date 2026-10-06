@@ -1,8 +1,9 @@
 import { mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { fakeModel, ScriptedProvider } from '@agnes/ai/testkit'
+import { TOOLS_CORE } from '@agnes/base'
 import type { HostSession } from '@agnes/host'
-import type { UITimeline } from '@agnes/protocol'
+import { MAX_FRAME_BYTES, toAcpPrompt, UI_PROJECTION_MAX_BYTES, type UITimeline } from '@agnes/protocol'
 import { describe, expect, it, vi } from 'vitest'
 import { diffUITimeline } from '../src/local/methods/agnes.js'
 import { RegistryLister, SessionRegistry } from '../src/local/sessions.js'
@@ -24,6 +25,123 @@ const init = {
 }
 
 describe('session extras: budget, projectUI (real, per the 2026-09-10 revision notes)', () => {
+  it('accepts file-only ACP prompts and retains exact file bytes in the history projection', async () => {
+    const provider = new ScriptedProvider({
+      models: [fakeModel({ id: 'm1', route: 'gw', input: ['text'] })],
+      scripts: [
+        (request) => {
+          const references = request.messages.flatMap((message) =>
+            message.content.flatMap((block) =>
+              block.type === 'text' ? (block.text.match(/session-file:\/\/[0-9]+\/[0-9]+/gu) ?? []) : [],
+            ),
+          )
+          expect(references).toHaveLength(2)
+          return [
+            ...references.map((path, ordinal) => ({
+              type: 'toolcall_end' as const,
+              call: { toolUseId: '', name: 'read', args: { path }, ordinal },
+              via: 'native' as const,
+            })),
+            { type: 'done' as const, reason: 'toolUse' as const },
+          ]
+        },
+        say('attachments handled'),
+      ],
+    })
+    const h = await openTestHost({ provider })
+    // This fixture has no installed extension manifests. Exercise the exported builtin definition.
+    const reader = TOOLS_CORE.find((tool) => tool.name === 'read')
+    if (!reader) throw new Error('builtin attachment reader is missing')
+    h.host.kernel.tools.add(reader, { source: 'agnes/tools-core', trust: 'builtin' })
+    const ep = h.endpoint({ clock: () => Date.now(), pollMs: 5 })
+    const draining = (async () => {
+      for await (const _ of ep.notifications) {
+        /* drain */
+      }
+    })()
+    try {
+      expect(await ep.handle(init)).toMatchObject({
+        result: { agentCapabilities: { promptCapabilities: { embeddedContext: true, audio: false } } },
+      })
+      const created = (await ep.handle({
+        jsonrpc: '2.0',
+        id: 2,
+        method: 'session/new',
+        params: { cwd: h.dataDir, mcpServers: [] },
+      })) as { result: { sessionId: string } }
+      const sessionId = created.result.sessionId
+      expect(
+        await ep.handle({
+          jsonrpc: '2.0',
+          id: 5,
+          method: 'session/prompt',
+          params: {
+            sessionId,
+            prompt: [
+              {
+                type: 'resource',
+                resource: { uri: 'agnes-attachment:%ZZ', mimeType: 'text/plain', blob: '' },
+              },
+            ],
+          },
+        }),
+      ).toMatchObject({ error: { code: -32602 } })
+      const content = [
+        {
+          type: 'file' as const,
+          name: '资料.mp4',
+          mimeType: 'video/mp4',
+          data: Buffer.from([0, 1, 2, 3]).toString('base64'),
+        },
+        {
+          type: 'file' as const,
+          name: '../资料.txt',
+          mimeType: 'text/plain',
+          data: Buffer.from('附件正文 🐇').toString('base64'),
+        },
+      ]
+      expect(
+        await ep.handle({
+          jsonrpc: '2.0',
+          id: 3,
+          method: 'session/prompt',
+          params: { sessionId, prompt: toAcpPrompt(content) },
+        }),
+      ).toMatchObject({ result: { stopReason: 'end_turn' } })
+      const projected = (await ep.handle({
+        jsonrpc: '2.0',
+        id: 4,
+        method: '_agnes/v1/session.projectUI',
+        params: { sessionId },
+      })) as { result: UITimeline }
+      const user = projected.result.nodes.find((node) => node.kind === 'user')
+      expect(user).toMatchObject({ kind: 'user', content })
+      const results = provider.calls.at(-1)?.messages.filter((message) => message.role === 'tool_result')
+      expect(results).toHaveLength(2)
+      expect(results).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            isError: true,
+            content: expect.arrayContaining([
+              expect.objectContaining({ text: expect.stringContaining('cannot parse this binary format') }),
+            ]),
+          }),
+          expect.objectContaining({
+            isError: false,
+            content: expect.arrayContaining([
+              expect.objectContaining({ text: expect.stringContaining('附件正文 🐇') }),
+            ]),
+          }),
+        ]),
+      )
+      expect(JSON.stringify(results)).toContain('<untrusted')
+      expect(JSON.stringify(provider.calls)).not.toContain(content[1]?.data)
+    } finally {
+      await ep.close()
+      await draining
+      await h.close()
+    }
+  })
   it('budget keeps sparse ledger rows in chronological order and a nullable state', async () => {
     const h = await openTestHost({ script: [say('hello')] })
     const _host = h.host
@@ -377,9 +495,13 @@ describe('session extras: budget, projectUI (real, per the 2026-09-10 revision n
       error: { code: -32603, data: { code: 'UI_PROJECTION_RESYNC_REQUIRED' } },
     })
 
-    await opened.append([
-      opened.ev('user/message', { content: [{ type: 'text', text: 'z'.repeat(24 * 1024) }] }),
+    const imageBytes = Buffer.alloc(10 * 1024 * 1024)
+    imageBytes.set([
+      0xff, 0xd8, 0xff, 0xc0, 0, 11, 8, 0, 1, 0, 1, 1, 1, 0x11, 0, 0xff, 0xda, 0, 8, 1, 1, 0, 0, 63, 0,
     ])
+    imageBytes.set([0xff, 0xd9], imageBytes.length - 2)
+    const image = { type: 'image' as const, mimeType: 'image/jpeg', data: imageBytes.toString('base64') }
+    await opened.append([opened.ev('user/message', { content: [image] })])
     const oversizedOpening = await ep.handle({
       jsonrpc: '2.0',
       id: 101,
@@ -389,6 +511,19 @@ describe('session extras: budget, projectUI (real, per the 2026-09-10 revision n
     expect(oversizedOpening).toMatchObject({
       error: { code: -32603, data: { code: 'UI_PROJECTION_NODE_TOO_LARGE' } },
     })
+    const largeOpening = (await ep.handle({
+      jsonrpc: '2.0',
+      id: 1011,
+      method: '_agnes/v1/session.projectUIOpening',
+      params: {
+        sessionId: created.result.sessionId,
+        surface: 'web',
+        maxNodes: 1,
+        maxBytes: UI_PROJECTION_MAX_BYTES,
+      },
+    })) as { result: { timeline: UITimeline } }
+    expect(largeOpening.result.timeline.nodes).toMatchObject([{ kind: 'user', content: [image] }])
+    expect(Buffer.byteLength(JSON.stringify(largeOpening), 'utf8')).toBeLessThan(MAX_FRAME_BYTES)
 
     await opened.append([
       opened.ev('user/message', { content: [{ type: 'text', text: 'small node after oversized history' }] }),
@@ -415,6 +550,19 @@ describe('session extras: budget, projectUI (real, per the 2026-09-10 revision n
     expect(oversizedHistory).toMatchObject({
       error: { code: -32603, data: { code: 'UI_PROJECTION_NODE_TOO_LARGE' } },
     })
+    const largeHistory = (await ep.handle({
+      jsonrpc: '2.0',
+      id: 1031,
+      method: '_agnes/v1/session.projectUIHistory',
+      params: {
+        sessionId: created.result.sessionId,
+        cursor: oversizedHistoryCursor,
+        limit: 1,
+        maxBytes: UI_PROJECTION_MAX_BYTES,
+      },
+    })) as { result: { nodes: UITimeline['nodes'] } }
+    expect(largeHistory.result.nodes).toMatchObject([{ kind: 'user', content: [image] }])
+    expect(Buffer.byteLength(JSON.stringify(largeHistory), 'utf8')).toBeLessThan(MAX_FRAME_BYTES)
 
     // Evict this session's bounded baseline from the 32-entry LRU. A bounded-opening connection
     // must still fail closed with a resync request, never regress to an unbounded full replacement.

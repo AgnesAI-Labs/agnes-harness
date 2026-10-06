@@ -23,6 +23,8 @@ function contentOf(blocks: RequestMessage extends { content: infer C } ? C : nev
   return blocks.map((b) => {
     if (b.type === 'image') return { type: 'image', data: b.data, mimeType: b.mimeType }
     if (b.type === 'resource_link') return { type: 'text', text: `${b.name ?? ''} ${b.uri}`.trim() }
+    if (b.type === 'file')
+      throw new Error('pi-ai has no native file input; resolve session attachments before inference')
     return { type: 'text', text: b.text }
   })
 }

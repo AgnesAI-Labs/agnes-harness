@@ -12,17 +12,20 @@ Follow a plugin from inspection and installation through updates and removal. St
 
 ## Built-in helper plugins
 
-AGH includes three official helpers. On a new local configuration, or the first upgrade of an existing configuration to a version with default helpers, missing helpers are automatically installed, trusted, and enabled without a network download:
+AGH includes four official helpers. On a new local configuration, or the first upgrade of an existing configuration to a version with default helpers, missing helpers are automatically installed, trusted, and enabled without a network download:
 
 | Plugin | Purpose |
 | --- | --- |
 | `@agnes/skill-helper` | Create, import, and install Skills in a session |
 | `@agnes/mcp-helper` | Prepare MCP integrations and query actual connection state |
 | `@agnes/plugin-helper` | Create tool or Skill plugins, inspect packages, and install/enable them after confirmation |
+| `@agnes/document-reader` | Read PDF text and page images, scanned PDF, DOC, DOCX, and selected ZIP entries; OCR runs offline |
+
+Existing installations keep their pinned plugin snapshots when the application is rebuilt or restarted. To pick up the PDF page images and expanded ZIP handling in `@agnes/document-reader` 0.1.2, select the installed package's **Update from a new source** action in Web Plugin management and use `file:./bundled-plugins/document-reader` from the newly built application. Check the preview and complete the normal update/activation flow.
 
 They appear under Settings → Plugin management → Installed and can be disabled or removed. Later startups and upgrades respect that choice. Removing a helper does not delete plugins, Skills, or MCP services it previously created or integrated. Installing third-party capabilities still requires the relevant confirmation.
 
-When upgrading from a version with only Skill/MCP Helper, AGH adds the new Plugin Helper without restoring the two older helpers if you removed them. Existing packages with the same IDs retain their versions and enabled/trusted state. After initial setup, you can reinstall a removed helper from discovery. Initial installation follows deployment policy, preserves failure records, and resumes after recovery without marking a failed installation as enabled.
+When upgrading from a version with only Skill/MCP Helper, AGH adds Plugin Helper and Document Reader without restoring removed older helpers. Upgrading from the three-helper version adds only Document Reader. Existing packages with the same IDs retain their versions and enabled/trusted state. After initial setup, you can reinstall a removed helper from discovery. Initial installation follows deployment policy, preserves failure records, and resumes after recovery without marking a failed installation as enabled.
 
 <a id="管理其他插件"></a>
 

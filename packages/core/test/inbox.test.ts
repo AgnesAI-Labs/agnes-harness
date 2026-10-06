@@ -7,6 +7,95 @@ import { fakeProvider } from './helpers/fake-provider.js'
 import { actor, openSession } from './helpers/open-session.js'
 
 describe('Inbox segment', () => {
+  it('removes only the selected pending input durably without changing the active turn', async () => {
+    const { session, log } = await openSession({ provider: fakeProvider([]) })
+    await session.enqueue('next-turn', { actor, content: [{ type: 'text', text: 'active' }] })
+    const activeId = (await session.projectUI()).pendingInputs?.[0]?.itemId
+    if (!activeId) throw new Error('missing active input')
+    await session.acceptInput()
+    for (const text of ['same', 'same', 'last'])
+      await session.enqueue('next-turn', { actor, content: [{ type: 'text', text }] })
+    await session.enqueue('next-step', { actor, content: [{ type: 'text', text: 'steer' }] })
+    const queued = (await session.projectUI()).pendingInputs ?? []
+    const selected = queued[1]
+    if (!selected) throw new Error('missing selected input')
+    const cut = session.lastSeq
+    const op = structuredClone(session.op())
+    const append = vi.spyOn(log, 'append').mockRejectedValueOnce(new Error('synthetic storage failure'))
+    await expect(session.removeQueuedInput(selected.itemId, actor, 'failed-remove')).rejects.toThrow(
+      'synthetic storage failure',
+    )
+    append.mockRestore()
+    expect((await session.projectUI()).pendingInputs).toEqual(queued)
+    expect(session.op()).toEqual(op)
+    await session.removeQueuedInput(selected.itemId, actor, 'remove-same')
+    const remaining = [queued[0], queued[2]]
+    expect((await session.projectUI()).pendingInputs).toEqual(remaining)
+    expect((await session.projectUI(cut)).pendingInputs).toEqual(queued)
+    expect(await session.projectUIPatch(cut)).toMatchObject({
+      kind: 'patch',
+      patch: { pendingInputs: remaining },
+    })
+    expect(session.op()).toEqual(op)
+    const inbox = session.latest('inbox') as { items: Array<{ itemId: string; target: string }> }
+    const steer = inbox.items.find((item) => item.target === 'next-step')
+    if (!steer) throw new Error('missing steer input')
+    const before = session.lastSeq
+    for (const itemId of [selected.itemId, activeId, steer.itemId, 'missing'])
+      await expect(session.removeQueuedInput(itemId, actor, 'refused')).rejects.toMatchObject({
+        code: 'E_RELATION',
+      })
+    expect(session.lastSeq).toBe(before)
+    expect((await session.projectUI()).pendingInputs).toEqual(remaining)
+    const { projectUI } = await import('../src/project/ui.js')
+    expect(
+      (await projectUI(await log.scan({ fromSeq: 1, limit: 100 }), { sessionKey: session.key }))
+        .pendingInputs,
+    ).toEqual(remaining)
+  })
+
+  it.each(['remove-first', 'claim-first'] as const)(
+    'serializes removal against claiming input: %s',
+    async (order) => {
+      const { session, log } = await openSession({ provider: fakeProvider([]) })
+      await session.enqueue('next-turn', { actor, content: [{ type: 'text', text: 'selected' }] })
+      const selected = (await session.projectUI()).pendingInputs?.[0]
+      if (!selected) throw new Error('missing selected input')
+      // Hold the shared lock so both operations are waiting on the same queue.
+      let release!: () => void
+      const held = session.locked(
+        () =>
+          new Promise<void>((resolve) => {
+            release = resolve
+          }),
+      )
+      await vi.waitFor(() => expect(release).toBeTypeOf('function'))
+      const first =
+        order === 'remove-first'
+          ? session.removeQueuedInput(selected.itemId, actor, 'remove')
+          : session.acceptInput()
+      const second =
+        order === 'remove-first'
+          ? session.acceptInput()
+          : session.removeQueuedInput(selected.itemId, actor, 'remove')
+      const outcomes = Promise.allSettled([first, second])
+      release()
+      await held
+      const results = await outcomes
+      const removal = results[order === 'remove-first' ? 0 : 1]
+      const claim = results[order === 'remove-first' ? 1 : 0]
+      if (removal?.status === 'fulfilled') {
+        expect(claim).toMatchObject({ status: 'fulfilled', value: false })
+        expect(await log.scan({ type: 'user/message', limit: 10 })).toEqual([])
+      } else {
+        expect(removal).toMatchObject({ status: 'rejected', reason: { code: 'E_RELATION' } })
+        expect(claim).toMatchObject({ status: 'fulfilled', value: true })
+        expect(await log.scan({ type: 'user/message', limit: 10 })).toHaveLength(1)
+      }
+      expect((await session.projectUI()).pendingInputs).toEqual([])
+    },
+  )
+
   it('projects pending input at each cut, promotes the same item, and preserves the rest on refusal', async () => {
     const { session, log } = await openSession({ provider: fakeProvider([]) })
     const baseline = session.lastSeq

@@ -88,6 +88,17 @@
         {
           "type": "object",
           "additionalProperties": false,
+          "required": ["type", "data", "mimeType", "name"],
+          "properties": {
+            "type": { "const": "file" },
+            "data": { "type": "string" },
+            "mimeType": { "type": "string", "minLength": 1, "maxLength": 128 },
+            "name": { "type": "string", "minLength": 1, "maxLength": 256 }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
           "required": ["type", "uri"],
           "properties": {
             "type": { "const": "resource_link" },

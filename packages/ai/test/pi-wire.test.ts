@@ -272,3 +272,21 @@ describe('a route has to declare where it points', () => {
     expect(() => new PiAdapter({ manualRoutes: [withBaseUrl('http://127.0.0.1:8080')] })).not.toThrow()
   })
 })
+
+it.each(['openai-completions', 'anthropic-messages', 'google-generative-ai'])(
+  'blocks an oversized %s payload before network I/O',
+  async (api) => {
+    const decl = routeDecl({ route: 'gw', api })
+    decl.models = decl.models.map((model) => ({ ...model, api, inputLimits: { maxRequestBytes: 1 } }))
+    const events = await run(decl, 'explicit-test-key')
+    expect(calls).toEqual([])
+    expect(events).toMatchObject([
+      {
+        type: 'error',
+        code: 'FORMAT',
+        retryable: false,
+        message: expect.stringContaining('exceeds 1 bytes'),
+      },
+    ])
+  },
+)

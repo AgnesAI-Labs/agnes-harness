@@ -1,4 +1,5 @@
 import type { ModelRecord, RequestBody, ResponseMeta, RouteDecl } from '@agnes/protocol'
+import { modelImageInputError } from '@agnes/protocol'
 import type {
   Api,
   AssistantMessageEvent,
@@ -10,6 +11,7 @@ import type {
 import { type AdapterStreamOptions, WireAdapter, type WireEvent } from '../../adapter.js'
 import { AiSetupError } from '../../errors.js'
 import { sha256Hex } from '../../hash.js'
+import { providerPayloadImageError } from './input-limits.js'
 import { probeInference } from './probe.js'
 import { probeModelsEndpoint } from './probe-models.js'
 import { AGNES_AI_BASE_URL } from './providers/agnes-ai.js'
@@ -175,6 +177,7 @@ export function toPiModel(
     reasoning: record.reasoning,
     ...(thinkingLevelMap ? { thinkingLevelMap } : {}),
     input: record.input,
+    ...(record.inputLimits ? { inputLimits: structuredClone(record.inputLimits) } : {}),
     cost: { ...record.cost },
     contextWindow: record.contextWindow,
     maxTokens: record.maxTokens,
@@ -402,6 +405,18 @@ export class PiAdapter extends WireAdapter {
       }
       return
     }
+    const imageError = modelImageInputError(record, req.messages)
+    if (imageError) {
+      yield { type: 'error', reason: 'error', code: 'FORMAT', message: imageError, retryable: false }
+      return
+    }
+    let payloadError: string | undefined
+    const checkPayloadBytes = (bytes: number): void => {
+      if (record.inputLimits?.maxRequestBytes !== undefined && bytes > record.inputLimits.maxRequestBytes) {
+        payloadError = `The model request exceeds ${record.inputLimits.maxRequestBytes} bytes. Reduce images or start a new conversation.`
+        throw new Error(payloadError)
+      }
+    }
     const requestHeaders = this.requestHeaders(route, req)
     const dropThinking = record.thinkingReplay === 'drop'
     const { context } = toContext(req, { dropThinking })
@@ -446,6 +461,7 @@ export class PiAdapter extends WireAdapter {
           ...(opts.redirect === 'error' ? { redirect: 'error' } : {}),
         })
         const bytes = new Uint8Array(await request.clone().arrayBuffer())
+        checkPayloadBytes(bytes.byteLength)
         opts.reportSent?.({ sentHash: sha256Hex(bytes), transforms })
         const response = await (this.egress ? this.egress(request) : globalThis.fetch(request))
         Object.assign(wire, responseMeta(response))
@@ -525,6 +541,20 @@ export class PiAdapter extends WireAdapter {
         if (this.providerId) requestModel.provider = this.providerId
         const it = this.streamImpl(requestModel, context, {
           ...this.streamOptions(route, req, { ...opts, signal: inner.signal }),
+          onPayload: (payload) => {
+            payloadError = providerPayloadImageError(payload, record.inputLimits)
+            if (payloadError) throw new Error(payloadError)
+            // SDK-backed transports expose their provider payload here. Binary fields (Bedrock)
+            // serialize as Base64, not JSON objects with numeric keys.
+            checkPayloadBytes(
+              Buffer.byteLength(
+                JSON.stringify(payload, (_key, value) =>
+                  value instanceof Uint8Array ? Buffer.from(value).toString('base64') : value,
+                ),
+                'utf8',
+              ),
+            )
+          },
           // Raw pi streaming does not apply catalog limits; Agnes otherwise defaults to 4096 upstream.
           ...(decl.baseUrl.replace(/\/$/, '') === AGNES_AI_BASE_URL
             ? { maxTokens: req.sampling?.maxTokens ?? record.maxTokens }
@@ -544,6 +574,16 @@ export class PiAdapter extends WireAdapter {
             // Racing rather than `for await`, because a hung stream never produces the next value
             // and a loop waiting on it could not notice its own deadline passing.
             const next = await Promise.race([it.next(), stopped])
+            if (payloadError) {
+              yield {
+                type: 'error',
+                reason: 'error',
+                code: 'FORMAT',
+                message: payloadError,
+                retryable: false,
+              }
+              return
+            }
             if (next === ABORTED || next.done) break
             for (const w of translateEvent(next.value, requestModel, nextOrdinal, wire)) {
               // HTTP headers and pi's start markers contain no model output.
@@ -595,6 +635,10 @@ export class PiAdapter extends WireAdapter {
             }
             if (retryAfter !== undefined) break
           }
+        } catch (error) {
+          if (!payloadError) throw error
+          yield { type: 'error', reason: 'error', code: 'FORMAT', message: payloadError, retryable: false }
+          return
         } finally {
           // Abandoning an iterator without closing it leaves the previous attempt's request running
           // beside the retry. The result is not awaited: a hung generator's `return` settles only

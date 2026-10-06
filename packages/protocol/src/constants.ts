@@ -63,11 +63,11 @@ export const WORKSPACE_SECRET_DIRS = ['.agh/secrets', '.agnes/secrets'] as const
 export const META_KEY = 'ai.agnes.harness' as const
 export const AGNES_NS = '_agnes/v1' as const
 export const SESSION_FORMAT = 'agnes-session/v1' as const
-/** UTF-8 JSON message bytes, excluding the JSONL delimiter (LF). */
-export const MAX_FRAME_BYTES = 16 * 1024 * 1024
+/** UTF-8 JSON bytes; room for 100 MiB attachments encoded as Base64 plus the envelope. */
+export const MAX_FRAME_BYTES = 144 * 1024 * 1024
 /**
- * Largest canonical base64 payload whose closed `runtime.stale` JSON envelope fits in one frame.
- * Base64 length must be a multiple of four; the current envelope has 425 fixed ASCII bytes.
+ * Runtime targets retain their original 16 MiB frame budget independently of attachment frames.
+ * Base64 length is a multiple of four; the closed envelope has 425 fixed ASCII bytes.
  */
 export const MAX_RUNTIME_TARGET_ARTIFACT_BASE64_LENGTH = 16_776_788
 /** Raw-byte ceiling for one JSON-RPC artifact range response. Larger artifacts are read in ranges. */
@@ -79,7 +79,7 @@ export const UI_HISTORY_DEFAULT_LIMIT = 100
 export const UI_HISTORY_MAX_LIMIT = 200
 export const UI_PROJECTION_DEFAULT_MAX_BYTES = 256 * 1024
 export const UI_PROJECTION_MIN_MAX_BYTES = 16 * 1024
-export const UI_PROJECTION_MAX_BYTES = 2 * 1024 * 1024
+export const UI_PROJECTION_MAX_BYTES = MAX_FRAME_BYTES - 4096
 /** Safe detail code requesting a fresh bounded opening snapshot, not an unbounded replacement. */
 export const UI_PROJECTION_RESYNC_REQUIRED = 'UI_PROJECTION_RESYNC_REQUIRED' as const
 export const ULID_PATTERN = /^[0-9A-HJKMNP-TV-Z]{26}$/

@@ -47,6 +47,8 @@ async function listSessions(options: CreateClientOptions) {
 
 Create sessions with `client.session.new({ cwd, preset?, sessionKey? })`, or load them with `client.session.load(id, { cwd? })`. Execute with `session.prompt(text)` and cancel with `session.cancel()`. Register the workspace and handle permission requests according to current server requirements before business use. Closing the client cleans up the connection; it does not cancel backend tasks.
 
+Read pending messages from the UI projection's `pendingInputs`. `session.removeQueued(itemId, { commandId? })` removes one pending message and returns its committed sequence through `_agnes/v1/submit` with kind `removeQueued`; `session.sendNow(itemId, { commandId? })` stops the current turn and prioritizes that queued message. Both require session ownership and reject an already claimed or missing item with `QUEUED_INPUT_GONE`. Removal preserves the other messages and does not start or stop a turn. Reuse the same command ID when retrying an unknown outcome.
+
 Node transports include unix, stdio, and ws. Deployment contracts determine authentication, named-pipe process identity, TLS, and Origin checks. Start with automatic discovery through CLI/Web when possible. Embedders must retain handshake and server identity checks. The runnable [documentation smoke](../../tools/public-docs/smoke.mjs) demonstrates connections and package management using local fixture credentials and models. [Shared local acceptance](../../tools/acceptance/shared-local-delivery.test.ts) covers flows including distribution relocation. See [verification](../maintainers/verification.md) for reproduction and coverage.
 
 <a id="协议方法分组"></a>
@@ -100,6 +102,12 @@ Use `client.resources.operation.get({ profile, operationId })` to wait for succe
 | ACP provenance and deviations | [UPSTREAM](../../packages/protocol/schema/acp/UPSTREAM.md), [DEVIATIONS](../../packages/protocol/schema/acp/DEVIATIONS.md) |
 
 Generated types are under [gen/ts](../../packages/protocol/gen/ts). Passing schema validation establishes shape. Implementations still verify cross-object relationships, authorization, transactions, and execution.
+
+Model records optionally carry pi-ai `inputLimits`: `maxRequestBytes` and `images` (`maxPerMessage`, `maxPerRequest`, `resize`). `resize.maxBytes` counts Base64 bytes; `jpegQuality` uses 1–100. Omitted limits do not remove product caps. Image support still requires `image` in `input`.
+
+`_agnes/v1/apis.list` includes `input` and optional `inputLimits` in each `profile.models` entry, so clients use the resolved model capabilities. Older servers may omit both fields; clients must not infer image support from a model name.
+
+`ToolContext.session.readImages` is an optional Core-owned capability used by the built-in `read` tool. It accepts `{ path, offset?, limit? }` and returns a `ToolResult`. `session-image://list` pages the current session lane’s image originals; `session-image://<message-seq>/<image-index>` reads one original, and comma-separated references read a batch. Offsets and image indexes are one-based. Listing defaults to 20 entries and caps at 100. Reads cannot select another session or lane, observe future rows, or bypass model and runtime media limits. Tool cancellation also cancels image reads. Older runtimes omit the capability and `read` reports reloading as unavailable.
 
 ## Runtime author schema CLI (source build preview)
 

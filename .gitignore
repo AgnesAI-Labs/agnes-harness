@@ -2,6 +2,7 @@
 node_modules/
 dist/
 *.tsbuildinfo
+packages/package-manager/bundled-plugins/document-reader/src/runtime/
 .agnes-tmp/
 
 # A literal tilde directory: host defaults dataDir to the string "~/.agnes" and nothing

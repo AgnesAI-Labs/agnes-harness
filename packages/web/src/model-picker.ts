@@ -1,4 +1,9 @@
-import { type ModelSettings, minimumContextBudget, type ThinkingLevel } from '@agnes/protocol'
+import {
+  type ModelInputLimits,
+  type ModelSettings,
+  minimumContextBudget,
+  type ThinkingLevel,
+} from '@agnes/protocol'
 import * as webUi from '@agnes/web-ui'
 import { type ChangeEvent, createElement, type FocusEvent, type ReactNode } from 'react'
 import type { Translate } from './presentation.js'
@@ -7,6 +12,7 @@ export type ModelPickerOption = {
   id: string
   route: string
   input?: readonly ('text' | 'image')[]
+  inputLimits?: ModelInputLimits
   label?: string
   /** 弹窗取用的档位映射；模型列表本身不展示或修改档位。 */
   thinkingLevelMap?: Record<string, string>
@@ -205,6 +211,7 @@ function detailRow(options: {
 
 /** 第三级的候选项：档位与预算预设共用同一行样式。 */
 function levelOption(
+  idPrefix: string,
   option: { label: string; value: string },
   index: number,
   active: boolean,
@@ -215,7 +222,7 @@ function levelOption(
   return createElement(
     'div',
     {
-      id: `model-level-option-${index}`,
+      id: `${idPrefix}-model-level-option-${index}`,
       key: option.value || 'auto',
       className: 'model-picker-level',
       role: 'option',
@@ -228,6 +235,9 @@ function levelOption(
   )
 }
 
+// Each picker numbers its own element ids, including its nested settings menus.
+let pickers = 0
+
 /**
  * Owns the transient model list while the app retains the confirmed session model.
  *
@@ -235,8 +245,6 @@ function levelOption(
  * 选模型即切换并展开它的详情；详情里的档位与预算改动经 `onSettingsChange` 立即提交，
  * 选完一个值就收起整条菜单，没有模态对话框和「应用」按钮。
  */
-let pickers = 0
-
 export function createModelPicker(options: ModelPickerOptions): ModelPicker {
   const { t, trigger } = options
   const idPrefix = `model-picker-${++pickers}`
@@ -415,8 +423,8 @@ export function createModelPicker(options: ModelPickerOptions): ModelPicker {
 
   function detailRows(): Array<{ id: string; kind: 'thinking' | 'budget' }> {
     const rows: Array<{ id: string; kind: 'thinking' | 'budget' }> = []
-    if (hasThinkingRow()) rows.push({ id: 'model-detail-thinking', kind: 'thinking' })
-    if (settingsAvailable()) rows.push({ id: 'model-detail-budget', kind: 'budget' })
+    if (hasThinkingRow()) rows.push({ id: `${idPrefix}-model-detail-thinking`, kind: 'thinking' })
+    if (settingsAvailable()) rows.push({ id: `${idPrefix}-model-detail-budget`, kind: 'budget' })
     return rows
   }
 
@@ -430,7 +438,7 @@ export function createModelPicker(options: ModelPickerOptions): ModelPicker {
       createElement('p', { key: 'title', className: 'model-picker-detail-title' }, values.option.id),
       // 模型容量只读，对应参考里「消耗速度 0.89x倍率」那一行的位置。
       detailRow({
-        id: 'model-detail-capacity',
+        id: `${idPrefix}-model-detail-capacity`,
         label: t('modelSettings.capacityLabel'),
         value: webUi.contextBudgetLabel(values.capacity),
         active: false,
@@ -495,15 +503,16 @@ export function createModelPicker(options: ModelPickerOptions): ModelPicker {
           'div',
           {
             key: 'levels',
-            id: 'session-model-thinking',
+            id: `${idPrefix}-session-model-thinking`,
             className: 'model-picker-list',
             role: 'listbox',
             tabIndex: -1,
             'aria-label': t('modelSettings.thinkingLabel'),
-            'aria-activedescendant': `model-level-option-${leafActive}`,
+            'aria-activedescendant': `${idPrefix}-model-level-option-${leafActive}`,
           },
           list.map((option, index) =>
             levelOption(
+              idPrefix,
               option,
               index,
               index === leafActive,
@@ -531,15 +540,16 @@ export function createModelPicker(options: ModelPickerOptions): ModelPicker {
         'div',
         {
           key: 'presets',
-          id: 'session-model-budget',
+          id: `${idPrefix}-session-model-budget`,
           className: 'model-picker-list',
           role: 'listbox',
           tabIndex: -1,
           'aria-label': t('modelSettings.windowLabel'),
-          'aria-activedescendant': `model-level-option-${leafActive}`,
+          'aria-activedescendant': `${idPrefix}-model-level-option-${leafActive}`,
         },
         presets.map((option, index) =>
           levelOption(
+            idPrefix,
             option,
             index,
             index === leafActive,
@@ -551,7 +561,7 @@ export function createModelPicker(options: ModelPickerOptions): ModelPicker {
       ),
       createElement('input', {
         key: 'custom',
-        id: 'session-model-window',
+        id: `${idPrefix}-session-model-window`,
         className: 'model-picker-budget',
         type: 'text',
         maxLength: 32,
@@ -561,7 +571,7 @@ export function createModelPicker(options: ModelPickerOptions): ModelPicker {
         placeholder: t('modelSettings.windowPlaceholder', { tokens: capacity }),
         'aria-label': t('modelSettings.customAria'),
         'aria-invalid': String(!check.valid),
-        'aria-describedby': 'session-model-window-hint session-model-settings-error',
+        'aria-describedby': `${idPrefix}-session-model-window-hint ${idPrefix}-session-model-settings-error`,
         // 逐字符提交会让每次按键都发一次 setModel；回车或离开输入框才算一次确定输入。
         onChange: (event: ChangeEvent<HTMLInputElement>) => {
           budgetDraft = event.currentTarget.value
@@ -577,21 +587,21 @@ export function createModelPicker(options: ModelPickerOptions): ModelPicker {
       }),
       createElement(
         'p',
-        { key: 'hint', id: 'session-model-window-hint', className: 'model-picker-hint' },
+        { key: 'hint', id: `${idPrefix}-session-model-window-hint`, className: 'model-picker-hint' },
         t('modelSettings.windowHint', { tokens: capacity }),
       ),
       createElement(
         'p',
         {
           key: 'error',
-          id: 'session-model-settings-error',
+          id: `${idPrefix}-session-model-settings-error`,
           className: 'model-picker-error',
           role: 'alert',
         },
         check.valid ? '' : check.message,
       ),
     ])
-    budgetInput = leafPanel.querySelector<HTMLInputElement>('#session-model-window') ?? undefined
+    budgetInput = leafPanel.querySelector<HTMLInputElement>(`#${idPrefix}-session-model-window`) ?? undefined
   }
 
   function renderPanels(): void {
@@ -629,7 +639,8 @@ export function createModelPicker(options: ModelPickerOptions): ModelPicker {
         preferredHeight: view?.innerHeight ?? 0,
         viewportPadding,
       })
-    const rowId = leafKind === 'thinking' ? 'model-detail-thinking' : 'model-detail-budget'
+    const rowId =
+      leafKind === 'thinking' ? `${idPrefix}-model-detail-thinking` : `${idPrefix}-model-detail-budget`
     const rowAnchor = detailPanel?.querySelector<HTMLElement>(`#${rowId}`)
     if (leafPanel && detailPanel && rowAnchor)
       webUi.positionSubmenu(rowAnchor, detailPanel, leafPanel, {
@@ -650,8 +661,12 @@ export function createModelPicker(options: ModelPickerOptions): ModelPicker {
     resetBudgetDraft()
     // 换模型时复用同一个宿主，只换内容，免得旧面板留在屏幕上。
     if (!detailPanel) {
-      detailPanel = webUi.createRegionHost(trigger.ownerDocument.body, 'section', 'model-picker')
-      detailPanel.id = 'model-settings-popover'
+      detailPanel = webUi.createRegionHost(
+        trigger.ownerDocument.body,
+        'section',
+        'model-picker model-picker-root',
+      )
+      detailPanel.id = `${idPrefix}-model-settings-popover`
       detailPanel.setAttribute('aria-label', t('modelSettings.detailAria'))
       detailPanel.addEventListener('keydown', detailKeydown)
       detailPanel.addEventListener('mouseenter', cancelDetailClose)
@@ -708,7 +723,7 @@ export function createModelPicker(options: ModelPickerOptions): ModelPicker {
         'section',
         'model-picker model-picker-submenu',
       )
-      leafPanel.id = 'model-settings-options-popover'
+      leafPanel.id = `${idPrefix}-model-settings-options-popover`
       leafPanel.addEventListener('keydown', leafKeydown)
       leafPanel.addEventListener('mouseenter', cancelDetailClose)
       leafPanel.addEventListener('mouseleave', scheduleDetailClose)
@@ -815,10 +830,10 @@ export function createModelPicker(options: ModelPickerOptions): ModelPicker {
     if (!count) return
     leafActive = (index + count) % count
     const list = leafPanel?.querySelector<HTMLElement>('[role="listbox"]')
-    list?.setAttribute('aria-activedescendant', `model-level-option-${leafActive}`)
+    list?.setAttribute('aria-activedescendant', `${idPrefix}-model-level-option-${leafActive}`)
     renderLeaf()
     list
-      ?.querySelector<HTMLElement>(`#model-level-option-${leafActive}`)
+      ?.querySelector<HTMLElement>(`#${idPrefix}-model-level-option-${leafActive}`)
       ?.scrollIntoView({ block: 'nearest' })
   }
 
@@ -1043,7 +1058,7 @@ export function createModelPicker(options: ModelPickerOptions): ModelPicker {
     activeIndex = Math.min(Math.max(initialIndex, 0), Math.max(state.options.length - 1, 0))
     openedIndex = undefined
     resetBudgetDraft()
-    popover = webUi.createRegionHost(trigger.ownerDocument.body, 'section', 'model-picker')
+    popover = webUi.createRegionHost(trigger.ownerDocument.body, 'section', 'model-picker model-picker-root')
     popover.id = idPrefix
     popover.setAttribute('aria-label', t('settings.modelPicker.aria'))
     help = webUi.createRegionHost(popover, 'p', 'model-picker-help')

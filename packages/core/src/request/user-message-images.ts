@@ -3,7 +3,7 @@ import {
   decodeSafeImages,
   SafeImageError,
   USER_MESSAGE_IMAGE_LIMITS,
-  USER_MESSAGE_IMAGE_MAX_COUNT,
+  validateUserAttachments,
 } from '@agnes/protocol-validation'
 import { CoreError } from '../types.js'
 
@@ -11,13 +11,13 @@ type UserImage = Extract<ContentBlock, { type: 'image' }>
 
 /** Validate untrusted image blocks before an inbox event can persist them. */
 export function validateUserMessageImages(content: readonly ContentBlock[]): void {
+  try {
+    validateUserAttachments(content)
+  } catch (error) {
+    throw new CoreError('E_ENVELOPE', error instanceof Error ? error.message : 'Invalid attachment.')
+  }
   const images = content.filter((block): block is UserImage => block.type === 'image')
   if (images.length === 0) return
-  if (images.length > USER_MESSAGE_IMAGE_MAX_COUNT)
-    throw new CoreError(
-      'E_ENVELOPE',
-      `a user message can contain at most ${USER_MESSAGE_IMAGE_MAX_COUNT} images`,
-    )
 
   try {
     decodeSafeImages(images, USER_MESSAGE_IMAGE_LIMITS)

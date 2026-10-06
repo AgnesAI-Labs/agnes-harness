@@ -1,6 +1,7 @@
 // jcs is the shared strict RFC 8785 serializer for SDK/daemon signature bytes; it does not replace core request hashing.
 export { type ValidatedRequestMedia, validateRequestMedia } from './request-media.js'
 export { readSessionTitle, SESSION_TITLE_EVENT, SessionTitleRecord } from './session-title.js'
+
 // ── What belongs on the root export surface ──────────────────────────────────────────────────
 // This surface used to have no discernible rule. Only 8 of the 11 event data types were exported
 // (missing exactly the three that core needs when writing step/start, step/end and request/header);
@@ -109,6 +110,7 @@ export type {
   SessionProjectUIPatchParams,
   SessionReadToolDetailParams,
   SessionReadToolDetailResult,
+  SessionRemoveQueuedParams,
   SessionRenameParams,
   SessionSendNowParams,
   SessionSetModelParams,
@@ -177,6 +179,7 @@ export type {
   DecodeRule,
   InferenceEvent,
   ModelCost,
+  ModelInputLimits,
   ModelRecord,
   ModelSettings,
   ProbeReport,
@@ -420,6 +423,7 @@ export type {
   RuntimeTargetIdentity,
   WorkerGeneration,
 } from '../gen/ts/worker.js'
+export * from './attachments.js'
 export * from './codec/permission.js'
 export * from './codec/stop-reason.js'
 export * from './configs.js'
@@ -454,11 +458,18 @@ export * from './slots.js'
 export * from './surfaces.js'
 export type { ValidationError, ValidationResult } from './validate.js'
 export {
+  decodeAttachmentData,
+  decodeSafeImages,
   isDateTime,
+  modelImageInputError,
   toRpcError,
+  USER_MESSAGE_ATTACHMENT_LIMITS,
+  USER_MESSAGE_IMAGE_LIMITS,
+  userImagePolicy,
   validateAgainst,
   validateEvent,
   validateOpState,
   validateToolDef,
+  validateUserAttachments,
 } from './validate.js'
 export * from './worker-generation.js'

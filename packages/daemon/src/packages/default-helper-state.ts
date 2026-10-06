@@ -4,7 +4,7 @@ import { join } from 'node:path'
 import { BUNDLED_HELPERS, withLock } from '@agnes/package-manager'
 
 export type DefaultHelperState = {
-  version: 1 | 2
+  version: 1 | 2 | 3
   phase: 'pending' | 'installed' | 'complete' | 'existing'
   integrity: Record<string, string>
 }
@@ -14,7 +14,7 @@ function decode(raw: unknown): DefaultHelperState {
   const s = raw as Record<string, unknown>
   if (
     Object.keys(s).sort().join(',') !== 'integrity,phase,version' ||
-    (s.version !== 1 && s.version !== 2) ||
+    (s.version !== 1 && s.version !== 2 && s.version !== 3) ||
     !['pending', 'installed', 'complete', 'existing'].includes(String(s.phase)) ||
     !s.integrity ||
     typeof s.integrity !== 'object' ||

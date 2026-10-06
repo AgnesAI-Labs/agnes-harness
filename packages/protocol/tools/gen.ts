@@ -164,7 +164,10 @@ const TARGETS: Array<{
       { from: 'schema/jobs.json', defs: ['Schedule', 'JobSpec', 'JobStatus'] },
       // SessionSetModelParams.slot reuses the one closed SlotName enum (model.json) rather than
       // retyping the seven-value set a second time.
-      { from: 'schema/model.json', defs: ['SlotName', 'ThinkingLevel', 'ModelSettings', 'TokenCounts'] },
+      {
+        from: 'schema/model.json',
+        defs: ['SlotName', 'ThinkingLevel', 'ModelSettings', 'ModelInputLimits', 'TokenCounts'],
+      },
     ],
   },
   { schema: 'schema/acp/schema.json', out: 'gen/ts/acp.ts', module: 'Acp' },
@@ -255,6 +258,7 @@ const TARGETS: Array<{
         defs: [
           'RouteDecl',
           'ModelRecord',
+          'ModelInputLimits',
           'ModelSettings',
           'ThinkingLevel',
           'ModelCost',

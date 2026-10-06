@@ -8,13 +8,12 @@ export type SafeImageLimits = Readonly<{
 }>
 
 /** Shared trust-boundary limits for inline images in user session messages. */
-export const USER_MESSAGE_IMAGE_MAX_COUNT = 4
 export const USER_MESSAGE_IMAGE_LIMITS = Object.freeze({
-  maxBytesPerImage: 1024 * 1024,
+  maxBytesPerImage: 100 * 1024 * 1024,
   // Matches the 1456 edge limit the vision paths enforce: a full-HD screenshot is 2,073,600px,
   // which a round 2,000,000 rejects along with most Retina and phone captures.
   maxPixelsPerImage: 1456 * 1456,
-  maxAggregateBytes: 1024 * 1024,
+  maxAggregateBytes: 100 * 1024 * 1024,
   maxAggregatePixels: 8_000_000,
 }) satisfies SafeImageLimits
 
@@ -104,6 +103,12 @@ function decodeBase64(value: string, maxBytes: number): Uint8Array {
     if (out < byteLength) bytes[out++] = ((vc & 3) << 6) | vd
   }
   return bytes
+}
+
+/** The same canonical Base64 validation as images; empty attachments are valid files. */
+export function decodeAttachmentData(value: string, maxBytes: number): Uint8Array {
+  positiveLimit(maxBytes, 'maxBytes')
+  return value === '' ? new Uint8Array() : decodeBase64(value, maxBytes)
 }
 
 function u16(bytes: Uint8Array, offset: number): number {

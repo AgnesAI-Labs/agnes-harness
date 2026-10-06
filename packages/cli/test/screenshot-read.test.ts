@@ -1,6 +1,6 @@
 import { ARTIFACT_RECLAIMED_FAILURE, REQUEST_MEDIA_ARTIFACT_RECLAIMED } from '@agnes/host'
 import { describe, expect, it, vi } from 'vitest'
-import { readScreenshotBytes } from '../src/boot/screenshot-read.js'
+import { readScreenshotBytes, requestMediaOriginIsValid } from '../src/boot/screenshot-read.js'
 
 const sha256 = 'a'.repeat(64)
 const signal = new AbortController().signal
@@ -13,6 +13,18 @@ function store(get: (mime: string) => Promise<Uint8Array>) {
 }
 
 describe('local screenshot read for request media', () => {
+  it.each([
+    ['tool:read', 'trusted', true],
+    ['tool:read', 'untrusted', false],
+    ['tool:computer_use', 'untrusted', true],
+    ['tool:computer_use', 'trusted', false],
+    ['tool:document_read', 'untrusted', true],
+    ['tool:document_read', 'trusted', false],
+    ['tool:other', 'trusted', false],
+    ['tool:other', 'untrusted', false],
+  ] as const)('checks image result origin %s and trust %s', (origin, trust, allowed) => {
+    expect(requestMediaOriginIsValid({ origin, trust })).toBe(allowed)
+  })
   it('returns the reclaimed sentinel at the first MIME, after re-checking the reader', async () => {
     const artifacts = store(async () => {
       throw ARTIFACT_RECLAIMED_FAILURE

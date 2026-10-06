@@ -14,6 +14,114 @@ const textOf = (r: { content: { type: string }[] }): string =>
   (r.content[0] as { type: 'text'; text: string }).text
 
 describe('read', () => {
+  it.each([
+    ['UTF-8', 'text/plain', new TextEncoder().encode('第一行\n第二行\n第三行'), false],
+    [
+      'UTF-16',
+      'text/plain',
+      Uint8Array.from(
+        Buffer.concat([Buffer.from([0xff, 0xfe]), Buffer.from('第一行\n第二行\n第三行', 'utf16le')]),
+      ),
+      false,
+    ],
+    [
+      'CSV with an Excel MIME',
+      'application/vnd.ms-excel',
+      new TextEncoder().encode('name,value\n兔子,2\n猫,3'),
+      false,
+    ],
+    [
+      'TSV with an Excel MIME',
+      'application/vnd.ms-excel',
+      new TextEncoder().encode('name\tvalue\n兔子\t2\n猫\t3'),
+      false,
+    ],
+    [
+      'binary Excel',
+      'application/vnd.ms-excel',
+      Uint8Array.of(0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1),
+      true,
+    ],
+    [
+      'Office archive',
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      Uint8Array.of(0x50, 0x4b, 0x03, 0x04),
+      true,
+    ],
+    ['empty file', 'application/octet-stream', new Uint8Array(), false],
+    ['PDF with a misleading MIME', 'text/plain', new TextEncoder().encode('%PDF-1.7\ncontent'), true],
+    ['video', 'video/mp4', new TextEncoder().encode('placeholder'), true],
+    ['archive', 'application/zip', new TextEncoder().encode('placeholder'), true],
+    ['invalid UTF-8', 'text/plain', Uint8Array.of(0xff, 0xff), true],
+    ['binary', 'text/plain', Uint8Array.of(65, 0, 66), true],
+  ])(
+    'reads uploaded %s honestly and never falls through to the workspace',
+    async (_label, mimeType, bytes, rejected) => {
+      const base = ctxOf()
+      const ctx = {
+        ...base,
+        session: {
+          ...base.session,
+          readAttachment: async () => ({
+            name: 'uploaded',
+            mimeType: mimeType as string,
+            bytes: bytes as Uint8Array,
+          }),
+        },
+      }
+      const result = await readTool.execute({ path: 'session-file://3/1', offset: 2, limit: 1 }, ctx)
+      expect(result.isError === true).toBe(rejected)
+      if (['Office archive', 'PDF with a misleading MIME', 'archive'].includes(_label as string))
+        expect(textOf(result)).toContain('document-reading tool')
+      if (_label === 'UTF-8' || _label === 'UTF-16') expect(textOf(result)).toBe('2\t第二行')
+      if (_label === 'CSV with an Excel MIME') expect(textOf(result)).toBe('2\t兔子,2')
+      if (_label === 'TSV with an Excel MIME') expect(textOf(result)).toBe('2\t兔子\t2')
+      expect(base.calls.read).toEqual([])
+    },
+  )
+
+  it('pages a long attachment line without losing its middle or confusing list offsets', async () => {
+    const base = ctxOf()
+    const bytes = new TextEncoder().encode('中'.repeat(12000))
+    const ctx = {
+      ...base,
+      session: {
+        ...base.session,
+        readAttachment: async (input: { path: string }) => ({
+          name: 'long.txt',
+          mimeType: 'text/plain',
+          bytes:
+            input.path === 'session-file://list'
+              ? new TextEncoder().encode(
+                  '21. session-file://3/1\n[read session-file://list with offset=22 to continue]',
+                )
+              : bytes,
+        }),
+      },
+    }
+    let offset = 1
+    let reconstructed = ''
+    for (let attempt = 0; attempt < 20; attempt++) {
+      const result = await readTool.execute({ path: 'session-file://3/1', offset }, ctx)
+      const page = textOf(result)
+      expect(byteLength(page)).toBeLessThanOrEqual(ctx.outputMaxBytes)
+      reconstructed += page
+        .split('\n')
+        .filter((row) => /^\d+\t/u.test(row))
+        .map((row) => row.slice(row.indexOf('\t') + 1))
+        .join('')
+      const next = /offset=(\d+)/u.exec(page)
+      if (!next) break
+      offset = Number(next[1])
+    }
+    expect(reconstructed).toBe('中'.repeat(12000))
+    expect(textOf(await readTool.execute({ path: 'session-file://list', offset: 21 }, ctx))).toContain(
+      'offset=22',
+    )
+    expect((await readTool.execute({ path: 'session-file://3/1' }, base)).isError).toBe(true)
+    expect(base.calls.read).toEqual([])
+  })
+
   it('has a complete definition', () => {
     expect(checkToolDef(readTool)).toEqual({ ok: true })
     expect(readTool.name).toBe('read')
@@ -237,4 +345,26 @@ describe('read of an artifact the output guard stored', () => {
     expect(hostile.isError).toBe(true)
     expect(textOf(hostile)).toContain('read failed')
   })
+})
+
+it('reads session images through the session port and fails closed on older runtimes', async () => {
+  const ctx = ctxOf()
+  const path = 'session-image://12/1,34/2'
+  expect((await readTool.execute({ path }, ctx)).isError).toBe(true)
+  expect(ctx.calls.read).toEqual([])
+  const content = [{ type: 'text' as const, text: 'image index' }]
+  const withImages = {
+    ...ctx,
+    session: {
+      ...ctx.session,
+      readImages: async (input: { path: string; offset?: number; limit?: number }) => {
+        expect(input).toEqual({ path: 'session-image://list', offset: 21, limit: 5 })
+        return { content }
+      },
+    },
+  }
+  expect(await readTool.execute({ path: 'session-image://list', offset: 21, limit: 5 }, withImages)).toEqual({
+    content,
+  })
+  expect(ctx.calls.read).toEqual([])
 })
