@@ -1,6 +1,7 @@
 import { assemblePrepared, createPreparedRegistry, type PreparedEntry } from '@agnes/core'
 import { canonicalJsonDigest } from '@agnes/protocol/runtime'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { standardTool, toolCatalogOf } from '../../../core/test/runtime/model-tools-fixture.js'
 import {
   createModelSourceReader,
   type ModelSourcePorts,
@@ -244,53 +245,10 @@ describe('model source reader: load', () => {
 })
 
 describe('model source reader: tools kept at prepare time', () => {
-  const schema = { type: 'object', properties: { q: { type: 'string' } } }
-  const document = {
-    $schema: 'https://json-schema.org/draft/2020-12/schema',
-    $ref: '#/$defs/Input',
-    $defs: { Input: schema },
-  }
   const base = preparedFixture()
-  const definition = {
-    resource: { resourceId: 'read', version: '1', digest: canonicalJsonDigest('read') },
-    executor: base.ownerBinding,
-    name: 'read',
-    inputSchema: { ...base.view.schema, digest: canonicalJsonDigest(document) },
-    outputSchema: base.view.schema,
-    requiredCapabilities: [],
-    retrySafety: 'idempotent',
-    publicAnnotations: {
-      kind: 'inline',
-      schema: base.view.schema,
-      value: {},
-      digest: canonicalJsonDigest({}),
-      bytes: 2,
-    },
-    policy: {
-      version: '1',
-      classifierRef: null,
-      defaults: {
-        isReadOnly: true,
-        isDestructive: false,
-        replay: 'idempotent',
-        requiresApproval: 'never',
-        approvalScopes: [],
-      },
-    },
-    execution: {
-      concurrency: 'parallel',
-      isOpenWorld: false,
-      costHint: null,
-      deferLoading: false,
-      requiredModelInput: [],
-    },
-  }
-  const toolCatalog = {
-    revision: 1,
-    digest: canonicalJsonDigest({ revision: 1, tools: [definition] } as never),
-    tools: [definition],
-  }
-  const tools = [{ name: 'read', description: 'Read a file', document }]
+  const tool = standardTool('text_statistics', 'Count the words of a text')
+  const toolCatalog = toolCatalogOf([tool.definition])
+  const tools = [tool.resolved]
   const assembled = assemblePrepared({
     runId: 'run-1',
     sessionId: 'session-1',
@@ -316,8 +274,8 @@ describe('model source reader: tools kept at prepare time', () => {
     const s = rebuild(setup(), { registry: answering(entry) })
     const loaded = await s.reader.load(ref, fixtureFrame(ref), s.context)
     if (!loaded.ok) throw new Error(loaded.error.detailCode)
-    expect(loaded.value.request.tools).toEqual([
-      { name: 'read', description: 'Read a file', parameters: schema },
+    expect(loaded.value.request.tools.map((t) => [t.name, t.description])).toEqual([
+      ['text_statistics', 'Count the words of a text'],
     ])
     expect(loaded.value.request.derivedHash).toBe(entry.inputDigest)
   })
@@ -331,7 +289,7 @@ describe('model source reader: tools kept at prepare time', () => {
   })
 
   it('names drift when a kept description differs from the one the digest covers', async () => {
-    const other = { ...entry, resolvedTools: [{ ...tools[0], description: 'Read a file quietly' }] }
+    const other = { ...entry, resolvedTools: [{ ...tools[0], description: 'Count the lines of a text' }] }
     const s = rebuild(setup(), { registry: answering(other as never) })
     expect(await s.reader.load(ref, fixtureFrame(ref), s.context)).toMatchObject({
       ok: false,

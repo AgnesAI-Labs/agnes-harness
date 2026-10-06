@@ -471,7 +471,7 @@ describe('model prepare with resolved tools', () => {
     expect(entryOf(deployment, out.value.preparedRef).resolvedTools).toBeNull()
   })
 
-  it('changes the input digest when only a description changes, and when only the schema document changes', async () => {
+  it('changes the input digest when only a description changes', async () => {
     const digestWith = async (description: string) => {
       const { prepare } = await open({
         tools: resolverOf([{ ...tool.resolved, description }]),

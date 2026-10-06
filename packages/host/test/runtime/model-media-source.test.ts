@@ -26,6 +26,7 @@ import {
   openAction,
   readyView,
 } from '../../../core/test/runtime/media-provider-fixture.js'
+import { standardTool, toolCatalogOf } from '../../../core/test/runtime/model-tools-fixture.js'
 import {
   createMediaResultSource,
   type MediaChildReceipts,
@@ -58,7 +59,7 @@ const detail = (r: { ok: boolean; error?: W.RuntimeError }) =>
   r.ok ? 'ok' : `${r.error?.code}/${r.error?.detailCode}`
 
 /** Runs the real default media service, publishes its parent receipt and builds the locked request around it. */
-async function published(kind: 'native' | 'convert') {
+async function published(kind: 'native' | 'convert', withTools = false) {
   const h = harness()
   const { action } = await openAction(h.deployment())
   const plan = planOf(kind === 'native' ? images : [images[0]!], kind)
@@ -103,13 +104,16 @@ async function published(kind: 'native' | 'convert') {
     id: 'media-item',
     sourceRefs: plan.sourceRefs,
   } as W.ContextItem
+  const tool = withTools ? standardTool('text_statistics', 'Count the words of a text') : null
+  const resolved = tool ? [tool.resolved] : null
   const unsealed: W.PreparedModelRequest = {
     ...base,
-    target: { ...base.target, features: plan.targetFeatures },
+    target: { ...base.target, features: { ...plan.targetFeatures, tools: tool !== null } },
+    toolCatalog: tool ? toolCatalogOf([tool.definition]) : null,
     view: { ...base.view, items: [item] },
     mediaPlans: [plan],
   }
-  const inputDigest = modelInputDigest(unsealed, capture, fixtureWire)
+  const inputDigest = modelInputDigest(unsealed, capture, fixtureWire, resolved)
   const prepared = { ...unsealed, inputDigest, preparedId: preparedIdOf(inputDigest) }
   const header = headerOf(prepared, capture, fixtureWire)
   const handleId = handleIdOf({ runId, sessionId, inputDigest })
@@ -131,7 +135,7 @@ async function published(kind: 'native' | 'convert') {
   }
   // The model service does not announce media plans yet, so no real entry carries them; this one stands in,
   // with the body a plan-free request would have had.
-  const request = must(buildWireRequest({ ...prepared, mediaPlans: [] }, capture, fixtureWire))
+  const request = must(buildWireRequest({ ...prepared, mediaPlans: [] }, capture, fixtureWire, [], resolved))
   const entry: PreparedEntry = {
     runId,
     sessionId,
@@ -142,7 +146,7 @@ async function published(kind: 'native' | 'convert') {
     capture,
     wire: fixtureWire,
     request,
-    resolvedTools: null,
+    resolvedTools: resolved,
   }
   return { h, plan, entry, ref, handleId, header }
 }
@@ -229,6 +233,17 @@ describe('model source reader with media', () => {
     expect(loaded.value.request.derivedHash).toBe(loaded.value.prepared.inputDigest)
     expect(mediaConsumed(loaded.value)).toBe(true)
     expect(reader.current(loaded.value, frame, actionContext.call)).toBe(true)
+  })
+
+  it('rebuilds the request with the tools the entry kept, next to the verified media', async () => {
+    const p = await published('native', true)
+    const reader = readerOver(p, sourceOver(p).media)
+    const loaded = await reader.load(p.ref, frameOf(p), actionContext)
+    if (!loaded.ok) throw new Error(loaded.error.detailCode)
+    expect(loaded.value.request.tools.map((tool) => tool.name)).toEqual(['text_statistics'])
+    expect(loaded.value.request.tools[0]?.description).toBe('Count the words of a text')
+    expect(imageBlocks(loaded.value.request as never)).toBe(2)
+    expect(loaded.value.request.derivedHash).toBe(loaded.value.prepared.inputDigest)
   })
 
   it('loads a converted result: the vision text rides on the request and the usage stays the child usage', async () => {
