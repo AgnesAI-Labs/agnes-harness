@@ -59,8 +59,34 @@ export const UNIMPLEMENTED_STATE_METHODS = [
 
 export type UnimplementedStateMethod = (typeof UNIMPLEMENTED_STATE_METHODS)[number]
 
+/** What the Supervisor holds while it drives a session; the lease is renewed until `release()`. */
+export type StateWriterClaim = Readonly<{
+  writerId: string
+  writerEpoch: number
+  release(): Promise<void>
+}>
+
+export type StateWriterOptions = Readonly<{
+  /** Lease length. Default 30 seconds. */
+  ttlMs?: number
+  /** Time between renewals. Default a third of the lease length. */
+  heartbeatMs?: number
+  writerId?: string
+}>
+
 export type RuntimeStateStore = StateStoreControl & {
   close(): void
+  /**
+   * Host-private. Returns the live writer claim this store holds for the session, or takes the lease
+   * (a reclaim with a higher epoch when an earlier claim of this store ran out). While the claim is held
+   * the lease is renewed in the background; a renewal State refuses ends the claim, and the next
+   * `acquireWriter` reclaims. A lease held by someone else is `conflict/writer_lease`.
+   */
+  acquireWriter(
+    sessionId: string,
+    context: CallContext,
+    options?: StateWriterOptions,
+  ): Promise<Outcome<StateWriterClaim>>
   durability(): RuntimeDurability
   /** Host-private default-provider composition in the original State transaction. */
   prepareApproval(input: ApprovalPreparationInput): Promise<Outcome<InteractionRecord>>
@@ -178,6 +204,95 @@ export function createRuntimeStateStore(
     sameAuthority(authority, options.authority)
       ? undefined
       : failure('conflict', 'authority', 'authority does not match this store')
+
+  type HeldWriter = {
+    writerId: string
+    writerEpoch: number
+    leaseUntil: number
+    ttlMs: number
+    ended: boolean
+    timer: ReturnType<typeof setTimeout> | undefined
+    claim: StateWriterClaim
+  }
+  const writers = new Map<string, HeldWriter>()
+  const taking = new Map<string, Promise<HeldWriter>>()
+  const clock = options.now ?? (() => Date.now())
+  const endWriter = (sessionId: string, held: HeldWriter) => {
+    held.ended = true
+    if (held.timer !== undefined) clearTimeout(held.timer)
+    held.timer = undefined
+    if (writers.get(sessionId) === held) writers.delete(sessionId)
+  }
+  const takeWriter = async (
+    sessionId: string,
+    writerId: string,
+    ttlMs: number,
+    heartbeatMs: number,
+  ): Promise<HeldWriter> => {
+    const result = await database.leaseAtHead({
+      requestId: ids.ulid(),
+      sessionId,
+      writerId,
+      ttlMs,
+      operation: 'claim',
+      expectedWriterEpoch: null,
+    })
+    const granted = result.claim
+    if (granted === null)
+      throw new StateRefusal({ code: 'internal', detailCode: 'fault', message: 'no claim' })
+    const held: HeldWriter = {
+      writerId,
+      writerEpoch: granted.writerEpoch,
+      leaseUntil: Date.parse(granted.leaseUntil),
+      ttlMs,
+      ended: false,
+      timer: undefined,
+      claim: Object.freeze({
+        writerId,
+        writerEpoch: granted.writerEpoch,
+        async release() {
+          if (held.ended) return
+          endWriter(sessionId, held)
+          try {
+            await database.leaseAtHead({
+              requestId: ids.ulid(),
+              sessionId,
+              writerId,
+              ttlMs,
+              operation: 'release',
+              expectedWriterEpoch: granted.writerEpoch,
+            })
+          } catch {
+            // The lease already ran out or the store is closed: there is nothing left to release.
+          }
+        },
+      }),
+    }
+    const beat = async () => {
+      held.timer = undefined
+      if (held.ended) return
+      try {
+        const renewed = await database.leaseAtHead({
+          requestId: ids.ulid(),
+          sessionId,
+          writerId,
+          ttlMs,
+          operation: 'renew',
+          expectedWriterEpoch: held.writerEpoch,
+        })
+        if (renewed.claim) held.leaseUntil = Date.parse(renewed.claim.leaseUntil)
+      } catch {
+        endWriter(sessionId, held)
+        return
+      }
+      if (held.ended) return
+      held.timer = setTimeout(beat, heartbeatMs)
+      held.timer.unref()
+    }
+    held.timer = setTimeout(beat, heartbeatMs)
+    held.timer.unref()
+    return held
+  }
 
   const store: RuntimeStateStore = {
     readInteraction: (id, context) => query(context, () => database.readInteraction(id, context)),
@@ -391,7 +506,40 @@ export function createRuntimeStateStore(
       }
       return run(context, () => database.ackOutboxMany(validated))
     },
-    close: () => database.close(),
+    acquireWriter: (sessionId, context, writer = {}) =>
+      run(context, async () => {
+        const ttlMs = writer.ttlMs ?? 30_000
+        const heartbeatMs = writer.heartbeatMs ?? Math.max(1, Math.floor(ttlMs / 3))
+        if (
+          !Number.isSafeInteger(ttlMs) ||
+          ttlMs < 1 ||
+          !Number.isSafeInteger(heartbeatMs) ||
+          heartbeatMs < 1
+        )
+          throw new StateRefusal({
+            code: 'invalid_input',
+            detailCode: 'lease_timing',
+            message: 'lease length and heartbeat must be positive whole milliseconds',
+          })
+        const inflight = taking.get(sessionId)
+        if (inflight) return (await inflight).claim
+        const existing = writers.get(sessionId)
+        if (existing && !existing.ended && existing.leaseUntil > clock()) return existing.claim
+        if (existing) endWriter(sessionId, existing)
+        const taken = takeWriter(sessionId, writer.writerId ?? `writer-${ids.ulid()}`, ttlMs, heartbeatMs)
+        taking.set(sessionId, taken)
+        try {
+          const held = await taken
+          writers.set(sessionId, held)
+          return held.claim
+        } finally {
+          taking.delete(sessionId)
+        }
+      }),
+    close: () => {
+      for (const [sessionId, held] of [...writers]) endWriter(sessionId, held)
+      database.close()
+    },
     durability: () => database.durability(),
   }
   return store

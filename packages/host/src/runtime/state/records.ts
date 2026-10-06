@@ -361,6 +361,11 @@ export function stableId(prefix: string, material: string): string {
   return `${prefix}-${digestText(material).slice(0, 40)}`
 }
 
+/** The id State gives an action: the run, its parent action (null for a run-level action) and its key. */
+export function actionIdOf(runId: string, parentActionId: string | null, key: string): string {
+  return stableId('act', parentActionId === null ? `${runId}\0${key}` : `${runId}\0${parentActionId}\0${key}`)
+}
+
 export function bodyDigest(owner: RecordOwner, value: unknown): string {
   return digestOf({ owner, value })
 }
