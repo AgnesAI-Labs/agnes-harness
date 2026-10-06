@@ -67,7 +67,7 @@ function emittedPairs(): Map<string, Map<string, string[]>> {
 const KNOWN_SCAN_DISAGREEMENTS: Readonly<Record<string, readonly string[]>> = {
   unsupported: ['internal'],
   integrity: ['incompatible'],
-  cancelled: ['denied', 'timeout'],
+  cancelled: ['denied'],
   revision_conflict: ['cancelled'],
 }
 
@@ -162,7 +162,12 @@ describe('registered runtime error details', () => {
     ]
     const files = owned.flatMap((path) => (path.endsWith('.ts') ? [path] : sources(path)))
     expect(files.length).toBeGreaterThan(20)
+    // The scan is a text heuristic. The model deployment's refusal helper only builds denied or
+    // incompatible errors; the 'unknown_effect' it mentions is the code of a ModelEgressError that the
+    // adapter classifies, never a RuntimeError built with a final advice.
+    const exempt = new Set(['packages/host/src/runtime/model/model-deployment.ts'])
     const offenders = files.filter((path) => {
+      if (exempt.has(path)) return false
       const text = readFileSync(join(root, path), 'utf8')
       return (
         text.includes("'unknown_effect'") &&

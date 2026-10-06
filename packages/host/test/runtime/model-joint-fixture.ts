@@ -17,6 +17,7 @@ import { createCredentialStore } from '../../src/adapters/credential-store.js'
 import { createSecretsFile } from '../../src/adapters/secrets.js'
 import { createHostModelAdapterDeployment } from '../../src/runtime/model/model-deployment.js'
 import type { ModelEgressOptions } from '../../src/runtime/model/model-egress.js'
+import { ModelEgressError } from '../../src/runtime/model/model-egress.js'
 import { openModelSourceStore } from '../../src/runtime/model/model-source-store.js'
 import { boundary, cleanup, loopback, must, rule, scan, scratch, secrets } from './network-secrets-fixture.js'
 
@@ -54,7 +55,7 @@ export async function modelJointFixture(
     /** Use the real Host source store for the fence, save and lookup instead of the journal stand-in. */
     store?: boolean
     /** The egress fetch throws before it writes anything. */
-    throwEgress?: boolean
+    throwEgress?: boolean | 'proven'
     /** Replaces the wire source the template built (for example with one prepared by the real Model service). */
     source?: (template: ModelWireSource) => Promise<ModelWireSource> | ModelWireSource
     /** What the peer streams back on a normal response: the default text, or tool calls (arguments sent as given). */
@@ -73,6 +74,12 @@ export async function modelJointFixture(
     arrived = resolve
   })
   const peerStats = { bytes: 0, connections: 0 }
+  let connectedPeer: Socket | undefined,
+    fenceCrossed = false
+  const cutPeer = (socket: Socket) => {
+    if (mode === 'reset-first') socket.resetAndDestroy()
+    else socket.destroy()
+  }
   const server = createServer(async (request, response) => {
     let body = ''
     for await (const chunk of request) body += chunk
@@ -188,8 +195,12 @@ export async function modelJointFixture(
   })
   server.on('connection', (socket: Socket) => {
     peerStats.connections++
-    if (mode === 'close-first') return void socket.destroy()
-    if (mode === 'reset-first') return void socket.resetAndDestroy()
+    connectedPeer = socket
+    if (mode === 'close-first' || mode === 'reset-first') {
+      socket.pause()
+      if (fenceCrossed) cutPeer(socket)
+      return
+    }
     socket.on('data', (chunk) => {
       peerStats.bytes += chunk.length
     })
@@ -284,7 +295,14 @@ export async function modelJointFixture(
       hash: string,
     ) => {
       hashes.push(hash)
-      return live && (sourceStore ? sourceStore.fence(_frame, hash) : true)
+      const accepted = live && (sourceStore ? sourceStore.fence(_frame, hash) : true)
+      // Hold the zero-byte close/reset until the durable fence: an immediate server-side reset can
+      // race TCP establishment and would correctly be classified as a pre-fence connect failure.
+      if (accepted && (mode === 'close-first' || mode === 'reset-first')) {
+        fenceCrossed = true
+        if (connectedPeer) cutPeer(connectedPeer)
+      }
+      return accepted
     },
   }
   const path = api === 'anthropic-messages' ? '/v1/messages?beta=true' : '/v1/chat/completions'
@@ -326,7 +344,8 @@ export async function modelJointFixture(
   if (injected)
     deployment.egress = (source, input, actual) => {
       const fetch = egress?.(source, input, actual)
-      const wrapped: typeof globalThis.fetch | undefined =
+      let refused: { code: string; detailCode: string } | undefined
+      const wrapped: ReturnType<NonNullable<typeof egress>> =
         fetch &&
         (async (request, init) => {
           const sent = new Request(request, init)
@@ -338,10 +357,14 @@ export async function modelJointFixture(
             markerOnly: ![...sent.headers.values()].some((value) => value.includes(key)),
           })
           try {
+            if (extra.throwEgress === 'proven')
+              throw new ModelEgressError('retryable', 'model_egress_connect')
             if (extra.throwEgress) throw new TypeError('fetch failed before any write')
             return await fetch(sent)
           } catch (problem) {
             const error = problem as Error & { code: string; detailCode: string }
+            if (problem instanceof ModelEgressError)
+              refused = { code: error.code, detailCode: error.detailCode }
             diagnostics.push({
               name: error.name,
               message: error.message,
@@ -354,6 +377,11 @@ export async function modelJointFixture(
             throw problem
           }
         })
+      // Only the explicit unproved TypeError row omits evidence, preserving the legacy fallback.
+      if (wrapped && extra.throwEgress !== true) {
+        wrapped.fenced = () => fetch?.fenced?.() !== false
+        wrapped.refusal = () => refused ?? fetch?.refusal?.()
+      }
       if (wrapped) fetches.push(wrapped)
       return wrapped
     }

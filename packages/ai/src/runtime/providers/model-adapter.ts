@@ -558,9 +558,11 @@ export function createModelAdapterFactory(
                   return undefined
                 }
                 if (!refusal || !/^[a-z0-9_]{1,64}$/.test(String(refusal.detailCode))) return undefined
-                const known = ['denied', 'retryable', 'cancelled', 'timeout'].includes(refusal.code)
-                const code = known ? (refusal.code as RuntimeError['code']) : 'internal'
-                const proven = failure(code, refusal.detailCode)
+                const known = 'denied retryable cancelled timeout incompatible'.split(' ')
+                const code = known.includes(refusal.code) ? refusal.code : 'internal'
+                // Nothing was sent: a reserved unknown_effect detail cannot stay on an internal code.
+                const detail = refusal.code === 'unknown_effect' ? 'model_not_sent' : refusal.detailCode
+                const proven = failure(code as RuntimeError['code'], detail)
                 return code === 'retryable' && proven.error
                   ? { ...proven, error: { ...proven.error, retryAdvice: { kind: 'retry_same_action' } } }
                   : proven

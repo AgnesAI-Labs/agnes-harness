@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import type { ModelAdapterDeployment, ModelWireSource } from '@agnes/ai/runtime'
+import type { ModelAdapterDeployment, ModelWireFetch, ModelWireSource } from '@agnes/ai/runtime'
 import type { ActionContext, Outcome } from '@agnes/extension-api/runtime'
 import { type ActionFrame, canonicalJsonDigest, type RuntimeError } from '@agnes/protocol/runtime'
 import {
@@ -105,7 +105,20 @@ export function createHostModelAdapterDeployment(
         ) &&
         sourceDigest === canonicalJsonDigest(source as never) &&
         frameDigest === canonicalJsonDigest(frame as never)
-      const port = createModelEgress({ ...options, current }, call)
+      const beforeWrite = (digest: string) => {
+        try {
+          return !!(
+            state.active &&
+            !state.closed &&
+            state.current() &&
+            original.beforeSend(source, frame, context, digest) === true &&
+            state.current()
+          )
+        } catch {
+          return false
+        }
+      }
+      const port = createModelEgress({ ...options, current, beforeWrite }, call)
       const state: CallEgress = {
         source,
         marker: `agh-model-${randomUUID()}`,
@@ -120,7 +133,8 @@ export function createHostModelAdapterDeployment(
         calls.set(frame, pending)
       }
       pending.set(context, state)
-      return async (input, init) => {
+      let lastRefusal: ReturnType<NonNullable<ModelWireFetch['refusal']>>
+      const fetch: ModelWireFetch = async (input, init) => {
         try {
           if (!state.active || state.closed || !current()) refuse('model_egress_binding')
           const request = new Request(input, init)
@@ -132,10 +146,20 @@ export function createHostModelAdapterDeployment(
           headers.delete(header)
           return await port.fetch(new Request(request, { headers }))
         } catch (problem) {
-          if (problem instanceof ModelEgressError) throw problem
-          refuse('model_egress_unavailable')
+          const error =
+            problem instanceof ModelEgressError
+              ? problem
+              : new ModelEgressError(
+                  port.fenced() ? 'unknown_effect' : 'retryable',
+                  port.fenced() ? 'model_egress_unknown' : 'model_egress_connect',
+                )
+          lastRefusal = { code: error.code, detailCode: error.detailCode }
+          throw error
         }
       }
+      fetch.fenced = () => port.fenced()
+      fetch.refusal = () => lastRefusal
+      return fetch
     },
     async withCredential(source, frame, context, consume) {
       const state = find(frame, context)
@@ -155,17 +179,11 @@ export function createHostModelAdapterDeployment(
         await state.port.close()
       }
     },
-    beforeSend(source, frame, context, digest) {
+    // Legacy adapters may preflight here; the durable owner is called only at beforeWrite.
+    beforeSend(source, frame, context, _digest) {
       const state = find(frame, context)
       try {
-        return !!(
-          state?.active &&
-          !state.closed &&
-          state.source === source &&
-          state.current() &&
-          original.beforeSend(source, frame, context, digest) === true &&
-          state.current()
-        )
+        return !!(state?.active && !state.closed && state.source === source && state.current())
       } catch {
         return false
       }
