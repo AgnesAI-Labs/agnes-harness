@@ -9,7 +9,10 @@ afterEach(() => {
   for (const close of cleanup.splice(0).reverse()) close()
 })
 
-describe('what the State does today with a stale parameter read guard', () => {
+// The native State fixture binds the POSIX process owner; Windows has no uid and cannot build it.
+const describeWithPosixOwner = describe.skipIf(typeof process.getuid !== 'function')
+
+describeWithPosixOwner('what the State does today with a stale parameter read guard', () => {
   it('refuses the commit of an invocation whose read guard names a record revision that has moved', async () => {
     const world = await originalNativeFixture()
     const { directory, fixture, identity, reader, authority } = world
