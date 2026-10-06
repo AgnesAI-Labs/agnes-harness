@@ -5052,7 +5052,10 @@ describe('runtime state receipt intake, outbox, and query flush', () => {
       'admit',
     )
     expect(
-      query<{ invocation_id: string }>(activePath, 'SELECT invocation_id FROM runtime_active_invocation_target'),
+      query<{ invocation_id: string }>(
+        activePath,
+        'SELECT invocation_id FROM runtime_active_invocation_target',
+      ),
     ).toEqual([{ invocation_id: 'invocation-1' }])
     activeStore.close()
     mutate(activePath, (db) => {
