@@ -1716,7 +1716,9 @@ const INITIAL_CEILING: Record<string, number> = {
   // The runtime client exposes the client selection its welcome carried. Measured 6352, exact (+3).
   // The text format names a missing desktop capability and keeps such a view complete. Measured 6359,
   // exact (+7).
-  'packages/sdk/src': 6359,
+  // The runtime client's local interfaces as one client, with ticket-checked download following.
+  // Measured 6498, exact (+139).
+  'packages/sdk/src': 6498,
   'packages/sdk/src/extensions.node': 21,
   'packages/sdk/src/package-admin.node': 147,
   'packages/sdk/src/surface.browser': 3,

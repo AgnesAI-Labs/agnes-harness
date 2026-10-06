@@ -129,6 +129,7 @@ describe('export surface snapshot (规格 §20.5, SDK Task 23)', () => {
       'RUNTIME_JOURNAL_KEY',
       'RuntimeClientTransport',
       'artifactReader',
+      'createRuntimeClient',
       'encodeForChannel',
       'formatDomainView',
       'runtimeJournalKey',
