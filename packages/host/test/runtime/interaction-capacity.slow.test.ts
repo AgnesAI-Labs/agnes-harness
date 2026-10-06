@@ -20,7 +20,9 @@ import {
 } from '../../../../examples/runtime-reference/src/providers/interaction-contract.js'
 import { createInteractionService } from '../../src/runtime/providers/interaction.js'
 import { createRuntimeStateStore, type RuntimeStateStore } from '../../src/runtime/providers/state.js'
-import { interactionStateFixture } from '../runtime-state-interaction-read-fixture.js'
+import { closeInteractionStateFixtures, interactionStateFixture } from '../runtime-state-interaction-read-fixture.js'
+
+afterEach(closeInteractionStateFixtures)
 
 /** Target load: 1,000 concurrent pending questions in one session. */
 const PENDING = 1000

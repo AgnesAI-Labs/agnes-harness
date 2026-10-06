@@ -1,7 +1,9 @@
-import { expect, it } from 'vitest'
+import { afterEach, expect, it } from 'vitest'
 import { createRuntimeStateStore } from '../src/runtime/providers/state.js'
 import { RuntimeStateDatabase } from '../src/runtime/state/transactions.js'
-import { interactionStateFixture } from './runtime-state-interaction-read-fixture.js'
+import { closeInteractionStateFixtures, interactionStateFixture } from './runtime-state-interaction-read-fixture.js'
+
+afterEach(closeInteractionStateFixtures)
 
 it('reads actual State preparation and response through cold immutable proofs with no query writes', async () => {
   const f = await interactionStateFixture()

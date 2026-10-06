@@ -1,7 +1,10 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it } from 'vitest'
 import { SCENARIOS } from '../../../../packages/extension-api/testkit/runtime/evidence.js'
 import { createConformanceHarness } from '../../../../packages/extension-api/testkit/runtime/harness.js'
+import { closeInteractionStateFixtures } from '../../../../packages/host/test/runtime-state-interaction-read-fixture.js'
 import { bindConformance } from './interaction-conformance.js'
+
+afterEach(closeInteractionStateFixtures)
 
 const CONTRACT = 'agh.interaction'
 const PROVIDERS = ['default', 'reference']
