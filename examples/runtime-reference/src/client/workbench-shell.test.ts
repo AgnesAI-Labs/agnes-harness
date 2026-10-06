@@ -10,12 +10,39 @@ const OK: Outcome<void> = { ok: true, value: undefined }
 const SNAPSHOT = {
   sessionId: SESSION,
   catalogRevision: 1,
-  conversation: { native: { timeline: { generation: 7, turns: [{ id: 'turn-1', status: 'running' }] } } },
+  conversation: {
+    native: { timeline: { generation: 7, turns: [{ id: 'turn-1', status: 'running' }] } },
+    domains: [],
+    order: [],
+  },
   views: [],
   pending: [],
   connection: 'connected',
   cursor: null,
 } as unknown as ShellSnapshot
+
+type Card = { id: string; turnId: string | null; view: Record<string, unknown> }
+const SCOPE = { kind: 'session', installationId: 'i', runtimeId: 'r', workspaceId: 'w', sessionId: SESSION }
+/** A domain entry of the conversation window, scoped to this session unless told. */
+const card = (id: string, phase: string, turnId: string | null = null, scope: object = SCOPE): Card => ({
+  id,
+  turnId,
+  view: { kind: 'domain', viewId: id, phase, fallbackText: `Card ${id}`, scope },
+})
+/** The snapshot whose window holds `cards` and `turns`, ordered by `order` (the cards' own by default). */
+const windowOf = (
+  cards: Card[],
+  order: [kind: string, id: string][] = cards.map((entry) => ['domain', entry.id]),
+  turns = [{ id: 'turn-1', status: 'running' }],
+) =>
+  ({
+    ...SNAPSHOT,
+    conversation: {
+      native: { timeline: { generation: 7, turns } },
+      domains: cards,
+      order: order.map(([kind, id]) => ({ kind, id })),
+    },
+  }) as unknown as ShellSnapshot
 
 const refused = {
   ok: false,
@@ -65,7 +92,7 @@ function fakeServices(answers: Record<string, Answer> = {}) {
   return { services, made: (method: string) => calls.filter((call) => call.method === method) }
 }
 
-async function mount(answers?: Record<string, Answer>) {
+async function mount(answers?: Record<string, Answer>, snapshot = SNAPSHOT) {
   const fake = fakeServices(answers)
   const container = document.body.appendChild(document.createElement('div'))
   const shell: ShellProvider = createWorkbenchShell()
@@ -73,7 +100,7 @@ async function mount(answers?: Record<string, Answer>) {
   expect(
     await shell.mount({
       container,
-      snapshot: SNAPSHOT,
+      snapshot,
       services: fake.services,
       ownerToken: 'owner-1',
       signal,
@@ -96,6 +123,12 @@ const shown = (box: HTMLElement) =>
       item.dataset.agnesShellItem,
       item.dataset.agnesShellState,
     ]),
+  )
+
+/** Each item the conversation shows: its id, state and text. */
+const conversation = (box: HTMLElement) =>
+  [...box.querySelectorAll<HTMLElement>('[data-agnes-region="conversation"] [data-agnes-shell-item]')].map(
+    (item) => [item.dataset.agnesShellItem, item.dataset.agnesShellState, item.textContent],
   )
 
 /** Sends the draft `text` as a prompt, through the form, or as a follow-up, through its own button. */
@@ -196,5 +229,77 @@ describe('reference workbench shell', () => {
       [],
       [],
     ])
+  })
+
+  const TURN = ['turn-1', 'pending', 'Turn turn-1: pending']
+  it.each<[string, ShellSnapshot, string[][]]>([
+    [
+      'its domain cards after the turns, in the window order, each phase in the contract words',
+      windowOf(
+        [card('a', 'finalized'), card('b', 'provisional'), card('c', 'interrupted')],
+        [
+          ['native', 'node-1'],
+          ['domain', 'c'],
+          ['domain', 'b'],
+          ['native', 'node-2'],
+          ['domain', 'a'],
+        ],
+      ),
+      [
+        TURN,
+        ['c', 'interrupted', 'Card c: incomplete'],
+        ['b', 'pending', 'Card b: running'],
+        ['a', 'done', 'Card a: complete'],
+      ],
+    ],
+    [
+      'no card of another session or of the workspace',
+      windowOf([
+        card('other', 'finalized', null, { ...SCOPE, sessionId: 'session-2' }),
+        card('workspace', 'finalized', null, {
+          kind: 'workspace',
+          installationId: 'i',
+          runtimeId: 'r',
+          workspaceId: 'w',
+        }),
+        card('own', 'finalized'),
+      ]),
+      [TURN, ['own', 'done', 'Card own: complete']],
+    ],
+    [
+      'a running card of a cancelled turn as interrupted, and a card of no turn as still running',
+      windowOf([card('linked', 'provisional', 'turn-2'), card('free', 'provisional')], undefined, [
+        { id: 'turn-1', status: 'running' },
+        { id: 'turn-2', status: 'cancelled' },
+      ]),
+      [
+        TURN,
+        ['turn-2', 'interrupted', 'Turn turn-2: interrupted'],
+        ['linked', 'interrupted', 'Card linked: turn interrupted, refresh pending'],
+        ['free', 'pending', 'Card free: running'],
+      ],
+    ],
+  ])('shows the conversation: %s', async (_, snapshot, shownItems) => {
+    const { container } = await mount(undefined, snapshot)
+    expect(conversation(container)).toEqual(shownItems)
+  })
+
+  it.each<[string, ShellSnapshot]>([
+    ['a card of an unknown phase', windowOf([card('a', 'done')])],
+    ['an order naming a card the window lacks', windowOf([card('a', 'finalized')], [['domain', 'b']])],
+    [
+      'a window without its domains',
+      {
+        ...SNAPSHOT,
+        conversation: { ...SNAPSHOT.conversation, domains: undefined },
+      } as unknown as ShellSnapshot,
+    ],
+  ])('refuses %s and stays usable', async (_, snapshot) => {
+    const kept = windowOf([card('a', 'finalized')])
+    const { shell, container, made } = await mount(undefined, kept)
+    expect(await shell.update(snapshot)).toMatchObject({ ok: false, error: { code: 'invalid_input' } })
+    expect(conversation(container)).toEqual([TURN, ['a', 'done', 'Card a: complete']])
+    await send(container, 'Draft the deck')
+    expect(made('conversation.submit')).toHaveLength(1)
   })
 })

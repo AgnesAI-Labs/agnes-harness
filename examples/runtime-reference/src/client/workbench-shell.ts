@@ -1,7 +1,8 @@
 // A simplified artifact workbench shell on plain DOM APIs. It reads session data only from the
 // snapshots and the ShellServices it is mounted with, and lays out the five public regions:
 //
-//   conversation  the turns of the authorized conversation window
+//   conversation  the turns of the authorized conversation window, then its domain cards in the
+//                 window's order as their fallback text; only cards scoped to this session show
 //   composer      the draft, sent as a prompt or a follow-up, a stop for the session's active run, and
 //                 what became of each through the conversation client
 //   resources     the domain views; choosing one navigates through the services
@@ -10,7 +11,8 @@
 //
 // Each region carries the public region hook `data-agnes-region`. Every turn, view, interaction and
 // submission is an item with `data-agnes-shell-item` and a `data-agnes-shell-state` of pending, unknown,
-// blocked, error, interrupted or done, also spelled out in its text. Only the draft, the chosen view and
+// blocked, error, interrupted or done, also spelled out in its text; a domain card spells out its phase
+// in the contract's words instead. Only the draft, the chosen view and
 // the focused region are kept, as ShellViewState; a request still waiting for its outcome is held only
 // here, so the shell refuses to export its state until the outcome arrives rather than lose it.
 //
@@ -47,12 +49,26 @@ const STATES = new Map(
 const stateOf = (...words: (string | undefined)[]): State =>
   words.map((word) => STATES.get(word ?? '')).find((state) => state !== undefined) ?? 'unknown'
 const CONNECTIONS = ['connected', 'reconnecting', 'offline']
+// A domain card's phase as its state and in the contract's words.
+const PHASES: Record<string, [State, string]> = {
+  provisional: ['pending', 'running'],
+  interrupted: ['interrupted', 'incomplete'],
+  finalized: ['done', 'complete'],
+}
+
+interface DomainEntry {
+  id: string
+  turnId: string | null
+  view: { phase: string; fallbackText: string; scope: { kind: string; sessionId?: string } }
+}
 
 interface Snapshot {
   sessionId: string | null
   catalogRevision: number
   conversation: {
     native: { timeline: { generation: number; turns: { id: string; status: string; reason?: string }[] } }
+    domains: DomainEntry[]
+    order: { kind: 'native' | 'domain'; id: string }[]
   } | null
   views: { viewId: string; phase: string; fallbackText: string }[]
   pending: { interactionId: string; status: string; request: { title: string } }[]
@@ -91,7 +107,8 @@ interface Refusal {
 type Outcome<T> = { ok: true; value: T } | { ok: false; error: Refusal }
 type Refused = { ok: false; error: Refusal }
 type ViewState = { draft: string; viewId: string | null; focus: Region | null }
-type Item = [id: string, label: string, state: State]
+// The text spells out `word` when there is one, else the state.
+type Item = [id: string, label: string, state: State, word?: string]
 
 export interface WorkbenchShell {
   readonly descriptor: {
@@ -138,15 +155,35 @@ const listOf = (value: unknown, valid: (item: Record<string, unknown>) => boolea
 function readSnapshot(value: unknown): Snapshot | null {
   if (!isObject(value)) return null
   const { conversation } = value
-  const timeline =
-    isObject(conversation) && isObject(conversation.native) ? conversation.native.timeline : null
+  const window = isObject(conversation) ? conversation : null
+  const timeline = isObject(window?.native) ? window.native.timeline : null
+  // Every domain the order names must be in the window; the merged window is otherwise taken as it is.
+  const domainIds = new Set(
+    Array.isArray(window?.domains) ? window.domains.map((entry) => isObject(entry) && entry.id) : [],
+  )
   const valid =
     isTextOrNull(value.sessionId) &&
     typeof value.catalogRevision === 'number' &&
     (conversation === null ||
       (isObject(timeline) &&
         typeof timeline.generation === 'number' &&
-        listOf(timeline.turns, (turn) => isText(turn.id) && isText(turn.status)))) &&
+        listOf(timeline.turns, (turn) => isText(turn.id) && isText(turn.status)) &&
+        listOf(
+          window?.domains,
+          (entry) =>
+            isText(entry.id) &&
+            isTextOrNull(entry.turnId) &&
+            isObject(entry.view) &&
+            Object.hasOwn(PHASES, entry.view.phase as string) &&
+            isText(entry.view.fallbackText) &&
+            isObject(entry.view.scope),
+        ) &&
+        listOf(
+          window?.order,
+          (entry) =>
+            isText(entry.id) &&
+            (entry.kind === 'native' || (entry.kind === 'domain' && domainIds.has(entry.id))),
+        ))) &&
     listOf(value.views, (view) => isText(view.viewId) && isText(view.phase) && isText(view.fallbackText)) &&
     listOf(
       value.pending,
@@ -159,6 +196,27 @@ function readSnapshot(value: unknown): Snapshot | null {
     CONNECTIONS.includes(value.connection as string) &&
     isTextOrNull(value.cursor)
   return valid ? (value as unknown as Snapshot) : null
+}
+
+/**
+ * The conversation's domain cards in the window's order, each scoped to this session. A provisional card
+ * of a turn that failed or was cancelled shows that turn as interrupted, never as still running.
+ */
+function cards(snapshot: Snapshot, turns: Item[]): Item[] {
+  const window = snapshot.conversation
+  const domains = new Map(window?.domains.map((entry) => [entry.id, entry]))
+  const turnStates = new Map(turns.map(([id, , state]) => [id, state]))
+  return (window?.order ?? []).flatMap((at): Item[] => {
+    const card = at.kind === 'domain' ? domains.get(at.id) : undefined
+    const scope = card?.view.scope
+    if (!card || scope?.kind !== 'session' || scope.sessionId !== snapshot.sessionId) return []
+    const turn = card.turnId === null ? undefined : turnStates.get(card.turnId)
+    const [state, word] =
+      card.view.phase === 'provisional' && (turn === 'error' || turn === 'interrupted')
+        ? (['interrupted', 'turn interrupted, refresh pending'] as const)
+        : (PHASES[card.view.phase] as [State, string])
+    return [[card.id, card.view.fallbackText, state, word]]
+  })
 }
 
 interface Mounted {
@@ -194,11 +252,11 @@ export function createWorkbenchShell(): WorkbenchShell {
   function list(view: Mounted, items: Item[], tag: 'span' | 'button' = 'span'): HTMLElement {
     const doc = view.root.ownerDocument
     const ul = doc.createElement('ul')
-    for (const [id, label, state] of items) {
+    for (const [id, label, state, word] of items) {
       const element = doc.createElement(tag)
       element.dataset.agnesShellItem = id
       element.dataset.agnesShellState = state
-      element.textContent = `${label}: ${state}`
+      element.textContent = `${label}: ${word ?? state}`
       if (tag === 'button') element.setAttribute('type', 'button')
       if (tag === 'button' && id === chosen) element.setAttribute('aria-current', 'true')
       ul.appendChild(doc.createElement('li')).append(element)
@@ -208,13 +266,10 @@ export function createWorkbenchShell(): WorkbenchShell {
 
   function render(view: Mounted): void {
     const { snapshot, regions } = view
-    const turns = snapshot.conversation?.native.timeline.turns ?? []
-    regions.conversation.replaceChildren(
-      list(
-        view,
-        turns.map((turn): Item => [turn.id, `Turn ${turn.id}`, stateOf(turn.reason, turn.status)]),
-      ),
+    const turns = (snapshot.conversation?.native.timeline.turns ?? []).map(
+      (turn): Item => [turn.id, `Turn ${turn.id}`, stateOf(turn.reason, turn.status)],
     )
+    regions.conversation.replaceChildren(list(view, [...turns, ...cards(snapshot, turns)]))
     regions.resources.replaceChildren(
       list(
         view,
