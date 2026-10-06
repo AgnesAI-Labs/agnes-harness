@@ -297,6 +297,8 @@ export async function openJointAdmission(
   return {
     db,
     state,
+    /** The options `state` was opened with, for a store that must match its owner. */
+    options,
     source,
     store,
     coordinator,

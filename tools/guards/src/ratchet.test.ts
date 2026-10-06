@@ -2986,7 +2986,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // State persists a receipt lookup before it runs and stores its result: beginReconciliation, completeReconciliation and the check record (+247 on 86444); exact cap, no spare.
   // Model sends are fenced after transport establishment. Measured 86779, exact, no spare.
   // State read facade lists a run's actions and reads action visibility. Measured 86942, exact, no spare.
-  'packages/host/src': 86942,
+  // The State provider routes read opens and scans through an optional read service (+7 on 86942); exact cap, no spare.
+  'packages/host/src': 86949,
   'packages/host/src/ext-host/service-invocation': 247,
   // T5.2's permission projector is kept independently bounded so later extension-host work cannot
   // hide in the package-wide increment. Measured source: 86 lines.
