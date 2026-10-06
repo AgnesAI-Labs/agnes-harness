@@ -272,7 +272,7 @@ describe('model prepare', () => {
       audience: 'fixture-endpoint',
       expiresAt: '2099-01-01T00:00:00Z',
     }
-    const plain = await open({ credentials: { verifyIssued: () => false } })
+    const plain = await open({ credentials: { verifyIssued: async () => false } })
     const keyless = { ...prepareRequest().route, credentialBinding: null }
     expect(detail(await plain.prepare(prepareRequest({ route: keyless, credentialRef: handle })))).toBe(
       'model_credential_binding',
@@ -280,12 +280,71 @@ describe('model prepare', () => {
     expect(detail(await plain.prepare(prepareRequest({ route: bound, credentialRef: handle })))).toBe(
       'model_credential_unverified',
     )
-    const verified = await open({ credentials: { verifyIssued: () => true } })
+    const verified = await open({ credentials: { verifyIssued: async () => true } })
     expect((await verified.prepare(prepareRequest({ route: bound, credentialRef: handle }))).ok).toBe(true)
-    const denied = await open({ credentials: { verifyIssued: () => false } })
+    const denied = await open({ credentials: { verifyIssued: async () => false } })
     expect(detail(await denied.prepare(prepareRequest({ route: bound, credentialRef: handle })))).toBe(
       'model_credential_unverified',
     )
+  })
+})
+
+describe('model credential verifier', () => {
+  const bound = {
+    ...prepareRequest().route,
+    credentialBinding: {
+      consumer: 'model' as const,
+      secretId: 's',
+      accountRef: null,
+      serverRef: 'e',
+      audience: 'fixture-endpoint',
+      purpose: 'model-inference',
+    },
+  }
+  const handle = {
+    handleId: 'h',
+    secretId: 's',
+    version: 'v1',
+    audience: 'fixture-endpoint',
+    expiresAt: '2099-01-01T00:00:00Z',
+  }
+  const run = async (
+    verifyIssued: NonNullable<ModelDeployment['credentials']>['verifyIssued'],
+    call?: ReturnType<typeof callContext>,
+  ) => {
+    const { prepare } = await open({ credentials: { verifyIssued } })
+    return prepare(prepareRequest({ route: bound, credentialRef: handle }), call)
+  }
+  it('awaits a later answer: true proceeds, false is unverified', async () => {
+    const later = (v: boolean) => async () => {
+      await new Promise((r) => setTimeout(r, 5))
+      return v
+    }
+    expect((await run(later(true))).ok).toBe(true)
+    expect(detail(await run(later(false)))).toBe('model_credential_unverified')
+  })
+  it('refuses a rejection or a throw as an unavailable dependency', async () => {
+    for (const verifier of [
+      () => Promise.reject(new Error('down')),
+      () => {
+        throw new Error('down')
+      },
+    ])
+      expect(await run(verifier)).toMatchObject({
+        ok: false,
+        error: { code: 'retryable', detailCode: 'model_dependency_unavailable' },
+      })
+  })
+  it('is cancelled when the call aborts during the await', async () => {
+    const controller = new AbortController()
+    const result = await run(
+      () => {
+        controller.abort()
+        return new Promise<boolean>(() => {})
+      },
+      callContext({ signal: controller.signal }),
+    )
+    expect(result).toMatchObject({ ok: false, error: { code: 'cancelled', detailCode: 'model_cancelled' } })
   })
 })
 
@@ -370,6 +429,22 @@ describe('model prepareRequest', () => {
     if (!result.ok || result.value.preparedRef.kind !== 'inline') throw new Error('bad result')
     expect(entryOf(deployment, result.value.preparedRef).prepared.credentialRef).toEqual(handle)
     expect(out.children).toHaveLength(0)
+  })
+  it('never calls the credential verifier, because the service resolved the handle itself', async () => {
+    let calls = 0
+    const credentials = {
+      verifyIssued: async () => {
+        calls++
+        return false
+      },
+    }
+    const { out } = await start(
+      { secrets, credentials },
+      requestInput({ route: bound }),
+      resolvePorts([], handle),
+    )
+    expect(out.next.kind).toBe('complete')
+    expect(calls).toBe(0)
   })
   it.each([
     [

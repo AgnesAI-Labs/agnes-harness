@@ -2569,6 +2569,10 @@ export async function commitControlTx(
     return startCompositeTx(ports, request, verified, fingerprint)
   if (request.command.kind === 'begin_drain') return beginDrainTx(ports, request, verified, fingerprint)
   if (request.command.kind === 'cancel_run') return cancelRunTx(ports, request, verified, fingerprint)
+  if (request.command.kind === 'finalize_composite')
+    return finalizeCompositeTx(ports, request, verified, fingerprint)
+  if (request.command.kind === 'settle_undispatched')
+    return settleUndispatchedTx(ports, request, verified, fingerprint)
   if (request.command.kind !== 'mark_running') refuse('internal', 'unsupported', CONTROL_COMMAND)
   const command = request.command
   const guarded = assertGuard(ports, request.guard, 'follow')
@@ -3241,6 +3245,8 @@ function noteProviderStateVersion(version: ControlVersionNote): void {
   if (!PROVIDER_STATES.includes(state)) integrity('provider state is not a known state')
   if ((state === 'waiting') !== (body.waitId !== null))
     integrity('provider state wait does not match its state')
+  if ((state === 'failed') !== (body.termination != null) && state !== 'draining')
+    integrity('provider state termination does not match its state')
 }
 
 function noteWaitVersion(version: ControlVersionNote): void {
@@ -3943,7 +3949,7 @@ export function finishControlScan(scan: ControlScan, evidence: ControlEvidence):
   }
 }
 
-const PROVIDER_COMPLETION = 'complete and fail transitions of a composite provider are not accepted yet'
+const PROVIDER_REFERENCES = 'a composite parent completion with retention references is not accepted yet'
 const PROVIDER_DEADLINE = 'a composite provider wait with a deadline is not accepted yet'
 
 function compositeTarget(ports: ControlPorts, runId: string, action: ActionValue) {
@@ -4058,8 +4064,6 @@ function assertProviderTransition(request: AdvanceProviderRequest): void {
     refuse('invalid_input', 'provider_revision', 'the request and the transition name different revisions')
   if (new Set(transition.consumeSignals).size !== transition.consumeSignals.length)
     refuse('invalid_input', 'signal_duplicate', 'signal is listed more than once')
-  if (transition.next.kind !== 'continue' && transition.next.kind !== 'wait')
-    refuse('internal', 'unsupported', PROVIDER_COMPLETION)
   if (transition.next.kind === 'wait' && transition.next.condition.deadline !== undefined)
     refuse('internal', 'unsupported', PROVIDER_DEADLINE)
   if (transition.children.length > MAX_ACTIONS)
@@ -4143,7 +4147,10 @@ export async function advanceProviderTx(
   const updates: RecordUpdate[] = []
   let resumedWait: StoredHead | undefined
   if (provider.state === 'waiting') {
-    if (provider.waitId === null || request.transition.consumeSignals.length === 0)
+    if (
+      provider.waitId === null ||
+      (request.transition.consumeSignals.length === 0 && request.transition.next.kind !== 'fail')
+    )
       refuse('conflict', 'wait_not_satisfied', 'a waiting provider resumes only on consumed signals')
     resumedWait = requireHead(
       ports,
@@ -4157,7 +4164,7 @@ export async function advanceProviderTx(
     updates.push(
       updated(resumedWait, WAIT_SCHEMA, ownerOf(resumedWait), {
         ...previous,
-        state: 'ready',
+        state: request.transition.next.kind === 'fail' ? 'cancelled' : 'ready',
         matchedSignalIds: request.transition.consumeSignals,
       } satisfies WaitRecordValue),
     )
@@ -4200,6 +4207,11 @@ export async function advanceProviderTx(
   if (planned.some((item) => item.created) && !runAcceptsNewWork(guarded.value.state))
     refuse('conflict', 'run_state', NEW_WORK_REFUSED)
   const next = request.transition.next
+  const closing = closeParentStep(ports, request, commitId, parent, parentHead)
+  if (closing) {
+    creates.push(...closing.creates)
+    updates.push(...closing.updates)
+  }
   let waitId: string | null = null
   if (next.kind === 'wait') {
     waitId = stableId('wait', commitId)
@@ -4224,7 +4236,11 @@ export async function advanceProviderTx(
     'run quota record is missing',
   )
   const quota = storedValue<RunQuotaValue>(quotaHead)
-  const progressed = createdCount > 0 || request.transition.consumeSignals.length > 0 || waitId !== null
+  const progressed =
+    createdCount > 0 ||
+    request.transition.consumeSignals.length > 0 ||
+    waitId !== null ||
+    closing !== undefined
   const noProgress = progressed ? 0 : quota.noProgressTransitions + 1
   if (noProgress > MAX_NO_PROGRESS || quota.totalTransitions + 1 > MAX_TRANSITIONS)
     refuse('conflict', 'quota', 'run transition quota is exhausted')
@@ -4247,11 +4263,11 @@ export async function advanceProviderTx(
   const nextProvider: ProviderStateValue = {
     actionId: parent.actionId,
     providerRevision: provider.providerRevision + 1,
-    state: waitId === null ? 'runnable' : 'waiting',
+    state: closing?.state ?? (waitId === null ? 'runnable' : 'waiting'),
     continuation,
     waitId,
     writerEpoch: request.guard.writerEpoch,
-    termination: null,
+    termination: closing?.termination ?? null,
   }
   const written = ports.writeCommit({
     ...blankInput(
@@ -4295,6 +4311,7 @@ export async function advanceProviderTx(
         item.created ? [{ commitId, kind: 'action-created' as const, actionId: item.actionId }] : [],
       ),
       ...consumed.sides,
+      ...(closing?.sides ?? []),
     ],
   })
   ports.rememberRequest('advanceProvider', request.commitId, fingerprint, written.receipt)
@@ -4437,6 +4454,305 @@ async function cancelRunTx(
       run.revision,
     ),
     updates,
+  })
+  ports.rememberRequest('commitControl', request.commitId, fingerprint, written.receipt)
+  return { result: written.receipt, sessionId: request.guard.sessionId, verified: written.verified }
+}
+
+type ParentClose = {
+  state: ProviderStateValue['state']
+  termination: ProviderStateValue['termination']
+  creates: StoredRecord[]
+  updates: RecordUpdate[]
+  sides: CommitSideEntry[]
+}
+
+function directChildren(ports: ControlPorts, runId: string, parentActionId: string): ActionValue[] {
+  return runActions(ports, runId).filter((item) => item.parentActionId === parentActionId)
+}
+
+/**
+ * Settles a composite parent: its receipt with the published result, the composite attempt and the parent action
+ * all move in the commit that calls this. The parent receipt never carries usage or external requests.
+ */
+function settleParent(
+  ports: ControlPorts,
+  input: {
+    commitId: string
+    request: { guard: CommitGuard }
+    run: RunRecordValue
+    parent: ActionValue
+    parentHead: StoredHead
+    outcome: Receipt['outcome']
+    result?: DataRef
+    error?: RuntimeError
+  },
+): { creates: StoredRecord[]; updates: RecordUpdate[]; sides: CommitSideEntry[] } {
+  const { parent, parentHead } = input
+  if (parent.currentAttemptId === null) integrity('running composite parent has no attempt')
+  const attemptHead = requireHead(
+    ports,
+    attemptRecordId(parent.currentAttemptId),
+    'attempt_absent',
+    'attempt does not exist',
+  )
+  const attempt = storedValue<AttemptValue>(attemptHead)
+  const owner = ownerOf(parentHead)
+  const stamp = at(ports)
+  const receipt: Receipt = {
+    receiptId: stableId('rcpt', `${parent.actionId}\0close`),
+    actionId: parent.actionId,
+    attemptId: attempt.attemptId,
+    bindingId: input.request.guard.bindingId,
+    inputDigest: attempt.inputDigest,
+    outcome: input.outcome,
+    ...(input.result ? { result: input.result } : {}),
+    ...(input.error ? { error: input.error } : {}),
+    externalRequests: [],
+    usageRefs: [],
+    references: [],
+    provenance: { sourceRefs: [], producer: owner.ownerBinding, trustLabels: [] },
+    completedAt: stamp,
+  }
+  return publishNoHook(ports, {
+    commitId: input.commitId,
+    stamp,
+    sessionId: input.request.guard.sessionId,
+    owner,
+    run: input.run,
+    action: parent,
+    attempt,
+    receipt,
+    usage: [],
+    evidence: [],
+    acceptedBy: input.request.guard.writerId,
+    actionHead: parentHead,
+    attemptHead,
+    includeReceipt: true,
+  })
+}
+
+/**
+ * The closing part of a parent transition. complete settles the parent now and needs every child settled; fail
+ * only starts the drain, and finalize_composite later writes the parent receipt.
+ */
+function closeParentStep(
+  ports: ControlPorts,
+  request: AdvanceProviderRequest,
+  commitId: string,
+  parent: ActionValue,
+  parentHead: StoredHead,
+): ParentClose | undefined {
+  const next = request.transition.next
+  if (next.kind === 'continue' || next.kind === 'wait') return undefined
+  if (next.kind === 'fail') {
+    if (request.transition.children.length > 0)
+      refuse('conflict', 'fail_new_actions', 'a failing transition creates no action')
+    return {
+      state: 'draining',
+      termination: { outcome: 'failed', error: next.error },
+      creates: [],
+      updates: [],
+      sides: [],
+    }
+  }
+  judgeRunComplete(
+    request.transition.children.length,
+    directChildren(ports, request.guard.runId, parent.actionId),
+  )
+  if (next.references.length > 0) refuse('internal', 'unsupported', PROVIDER_REFERENCES)
+  const run = loadRun(ports, request.guard.runId).value
+  const settled = settleParent(ports, {
+    commitId,
+    request,
+    run,
+    parent,
+    parentHead,
+    outcome: 'succeeded',
+    result: next.output,
+  })
+  return { state: 'completed', termination: null, ...settled }
+}
+
+/**
+ * Finishes a draining composite parent as failed or cancelled. Every mandatory child is settled, or is an
+ * unresolved effect that has a durable reconciliation owner named in the command. The command never turns an
+ * unresolved child into a success.
+ */
+async function finalizeCompositeTx(
+  ports: ControlPorts,
+  request: CommitControlRequest,
+  verified: SessionView,
+  fingerprint: string,
+): Promise<Committed<StateCommitReceipt>> {
+  const command = request.command
+  if (command.kind !== 'finalize_composite') refuse('internal', 'unsupported', CONTROL_COMMAND)
+  const guarded = assertGuard(ports, request.guard, 'follow')
+  const parentHead = requireHead(
+    ports,
+    actionRecordId(command.actionId),
+    'action_state',
+    'action does not exist',
+  )
+  const parent = storedValue<ActionValue>(parentHead)
+  if (parent.runId !== request.guard.runId || parent.state !== 'running' || parent.currentAttemptId === null)
+    refuse('conflict', 'action_state', 'action is not a running composite parent')
+  const providerHead = requireHead(
+    ports,
+    providerStateRecordId(parent.actionId),
+    'provider_absent',
+    'provider state does not exist',
+  )
+  const provider = storedValue<ProviderStateValue>(providerHead)
+  if (provider.state !== 'draining')
+    refuse('conflict', 'provider_state', 'a composite parent finishes only after it drained')
+  if (provider.providerRevision !== command.expectedProviderRevision)
+    refuse('conflict', 'provider_revision', 'provider revision does not match')
+  if (
+    provider.termination !== null &&
+    (provider.termination.outcome !== command.outcome || !sameJson(provider.termination.error, command.error))
+  )
+    refuse('conflict', 'termination', 'the finish differs from the failure the parent already chose')
+  const handedOver = directChildren(ports, request.guard.runId, parent.actionId).filter(
+    (item) => item.intent.obligation === 'mandatory' && item.state !== 'settled',
+  )
+  for (const child of handedOver) {
+    if (
+      !UNRESOLVED_ACTION_STATES.includes(child.state) ||
+      child.ownerRef.kind !== 'reconciliation' ||
+      !command.ownerRefs.some((ref) => sameJson(ref, child.ownerRef))
+    )
+      refuse('conflict', 'finalize_children', 'a mandatory child is neither settled nor handed to an owner')
+  }
+  if (command.ownerRefs.some((ref) => !handedOver.some((child) => sameJson(child.ownerRef, ref))))
+    refuse('invalid_input', 'owner_ref', 'an owner reference does not belong to an open child')
+  const settled = settleParent(ports, {
+    commitId: request.commitId,
+    request,
+    run: guarded.value,
+    parent,
+    parentHead,
+    outcome: command.outcome,
+    error: command.error,
+  })
+  const written = ports.writeCommit({
+    ...blankInput(
+      request.guard.sessionId,
+      verified,
+      request.commitId,
+      at(ports),
+      fingerprint,
+      request.guard.runId,
+      request.guard.writerEpoch,
+      guarded.value.revision,
+    ),
+    creates: settled.creates,
+    updates: [
+      ...settled.updates,
+      updated(providerHead, PROVIDER_STATE_SCHEMA, ownerOf(providerHead), {
+        ...provider,
+        providerRevision: provider.providerRevision + 1,
+        state: 'failed',
+        termination: { outcome: command.outcome, error: command.error },
+        writerEpoch: request.guard.writerEpoch,
+      } satisfies ProviderStateValue),
+    ],
+    sides: settled.sides,
+  })
+  ports.rememberRequest('commitControl', request.commitId, fingerprint, written.receipt)
+  return { result: written.receipt, sessionId: request.guard.sessionId, verified: written.verified }
+}
+
+/**
+ * Settles an action that never got an attempt: a zero-effect control attempt and a failed or cancelled receipt,
+ * published like a rejected admission. A parent of the action gets its completion signal.
+ */
+async function settleUndispatchedTx(
+  ports: ControlPorts,
+  request: CommitControlRequest,
+  verified: SessionView,
+  fingerprint: string,
+): Promise<Committed<StateCommitReceipt>> {
+  const command = request.command
+  if (command.kind !== 'settle_undispatched') refuse('internal', 'unsupported', CONTROL_COMMAND)
+  const guarded = assertGuard(ports, request.guard, 'follow')
+  const actionHead = ports.loadHead(actionRecordId(command.actionId))
+  if (!actionHead || actionHead.record_revision !== command.expectedActionRevision)
+    refuse('conflict', 'action_state', 'action state does not match the settlement')
+  const action = storedValue<ActionValue>(actionHead)
+  if (action.state !== 'prepared' || action.currentAttemptId !== null || action.runId !== request.guard.runId)
+    refuse('conflict', 'action_state', 'action state does not match the settlement')
+  const stamp = at(ports)
+  const owner = ownerOf(actionHead)
+  const controlId = stableId('ctl', `settle\0${action.actionId}`)
+  const receiptId = stableId('rcpt', `settle\0${action.actionId}`)
+  const attempt: AttemptValue = {
+    attemptId: controlId,
+    actionId: action.actionId,
+    number: 0,
+    kind: 'control',
+    bindingId: request.guard.bindingId,
+    inputDigest: actionInputDigest(action),
+    state: 'settled',
+    requestIdentity: null,
+    externalRequests: [],
+    authorizationRef: null,
+    budgetReservationRefs: [],
+    streamIds: [],
+    startedAt: stamp,
+    executeDeadline: null,
+    finishedAt: stamp,
+    receiptIds: [receiptId],
+    writerEpoch: request.guard.writerEpoch,
+  }
+  const receipt: Receipt = {
+    receiptId,
+    actionId: action.actionId,
+    attemptId: controlId,
+    bindingId: request.guard.bindingId,
+    inputDigest: actionInputDigest(action),
+    outcome: command.outcome,
+    error: command.error,
+    externalRequests: [],
+    usageRefs: [],
+    references: [],
+    provenance: { sourceRefs: [], producer: owner.ownerBinding, trustLabels: [] },
+    completedAt: stamp,
+  }
+  const settledAction: ActionValue = {
+    ...action,
+    state: 'settled',
+    currentAttemptId: controlId,
+    firstReceiptId: receiptId,
+  }
+  const published = publishNoHook(ports, {
+    commitId: request.commitId,
+    stamp,
+    sessionId: request.guard.sessionId,
+    owner,
+    run: guarded.value,
+    action: settledAction,
+    attempt,
+    receipt,
+    usage: [],
+    evidence: [],
+    acceptedBy: request.guard.writerId,
+    includeReceipt: true,
+  })
+  const written = ports.writeCommit({
+    ...blankInput(
+      request.guard.sessionId,
+      verified,
+      request.commitId,
+      stamp,
+      fingerprint,
+      request.guard.runId,
+      request.guard.writerEpoch,
+      guarded.value.revision,
+    ),
+    creates: [record(attemptRecordId(controlId), ATTEMPT_SCHEMA, 1, owner, attempt), ...published.creates],
+    updates: [updated(actionHead, ACTION_SCHEMA, owner, settledAction), ...published.updates],
+    sides: published.sides,
   })
   ports.rememberRequest('commitControl', request.commitId, fingerprint, written.receipt)
   return { result: written.receipt, sessionId: request.guard.sessionId, verified: written.verified }

@@ -1115,7 +1115,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // Clarify the single-text tool input description (+1); 39144 measured, no spare allocation.
   // Wire request builder expresses a resolved tool catalog and paired tool history (+262); exact cap, no spare.
   // The Model service resolves a request's tool catalog through an injected port, binds the descriptions into the input digest and refuses a route without a credential binding (+24); exact cap, no spare.
-  'packages/core/src': 39430,
+  'packages/core/src': 39437,
   // Testkit-only reference Effects runner adds 202 measured lines; exact cap, no spare.
   // Independent Effects dispatch reference (+440); exact measurement below.
   'packages/core/testkit': 2437,
@@ -2966,8 +2966,9 @@ const INITIAL_CEILING: Record<string, number> = {
   // State scan query service over the read owner and a bridge: scan, open, typed point reads, close order (+365). Measured 84597 (+370), exact.
   // The model source reader asks a media result source for the verified media of a prepared call that carries plans (+137); exact cap, no spare.
   // State closes admission: the run-state gate on every path that creates work, begin_drain and cancel_run (+147); exact cap, no spare.
-  // State's stored envelope uses its registered schema reference; the pending placeholder is removed (-4). Measured 85851, exact.
-  'packages/host/src': 85851,
+  // State finishes composite parents: provider complete and fail, finalize_composite and settle_undispatched (+293 on 85855); exact cap, no spare.
+  // State's stored envelope uses its registered schema reference; the pending placeholder is removed (-4). Measured 86144, exact.
+  'packages/host/src': 86144,
   'packages/host/src/ext-host/service-invocation': 247,
   // T5.2's permission projector is kept independently bounded so later extension-host work cannot
   // hide in the package-wide increment. Measured source: 86 lines.
