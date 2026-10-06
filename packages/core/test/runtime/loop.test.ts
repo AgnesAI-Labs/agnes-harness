@@ -39,6 +39,19 @@ async function ready(credentials?: FixtureCredentials, modelProviderId?: string)
   expect(await provider.ready(fixture.context)).toEqual({ ok: true, value: undefined })
   return { ...fixture, provider }
 }
+async function pendingAt(
+  f: Awaited<ReturnType<typeof ready>>,
+  stage: 'first-model' | 'tool' | 'second-model',
+) {
+  let transition = await f.provider.start(f.frame, f.ports)
+  for (const key of ['first-model', 'tool'] as const) {
+    if (stage === key) break
+    await f.accept(required(transition.actions[0]))
+    transition = await f.provider.resume(f.nextFrame(transition), f.ports)
+  }
+  expect(transition.actions[0]?.key).toBe(stage)
+  return transition
+}
 function required<T>(value: T | undefined): T {
   if (value === undefined) throw new Error('Loop fixture value absent')
   return value
@@ -253,25 +266,67 @@ describe('full C01 SPI text Loop candidate, restricted background peers', () => 
       await f.close()
     }
   })
-  it('keeps unknown effects unresolved even after the saved deadline', async () => {
+  it.each(['first-model', 'tool', 'second-model'] as const)(
+    'keeps %s unknown effects unresolved even after the saved deadline',
+    async (stage) => {
+      const f = await ready()
+      try {
+        const first = await pendingAt(f, stage)
+        const action = required(first.actions[0])
+        await f.accept(action)
+        required(f.receipts.get(action.key)).outcome = 'unknown_effect'
+        const frame = f.nextFrame(first)
+        frame.observedAt = '2090-01-01T00:00:00Z'
+        const waiting = await f.provider.resume(frame, f.ports)
+        expect(waiting.actions).toEqual([])
+        expect(waiting.next).toEqual({
+          kind: 'wait',
+          condition: {
+            anyOf: [{ kind: 'actions', mode: 'all', actions: [{ localKey: stage }], readyWhen: 'resolved' }],
+          },
+        })
+      } finally {
+        await f.provider.close('shutdown')
+        await f.close()
+      }
+    },
+  )
+  it.each([
+    ['first-model', 'model_prepared_lost'],
+    ['second-model', 'model_prepared_lost'],
+    ['first-model', 'model_not_sent'],
+    ['second-model', 'model_not_sent'],
+  ] as const)('ends %s on %s without planning another handle or action', async (stage, detailCode) => {
     const f = await ready()
     try {
-      const first = await f.provider.start(f.frame, f.ports)
-      const action = required(first.actions[0])
+      const pending = await pendingAt(f, stage)
+      const action = required(pending.actions[0])
+      expect(action.retry).toEqual({ mode: 'never', maxAttempts: 1, backoffMs: [] })
       await f.accept(action)
-      required(f.receipts.get(action.key)).outcome = 'unknown_effect'
-      const frame = f.nextFrame(first)
-      frame.observedAt = '2090-01-01T00:00:00Z'
-      const waiting = await f.provider.resume(frame, f.ports)
-      expect(waiting.actions).toEqual([])
-      expect(waiting.next).toEqual({
-        kind: 'wait',
-        condition: {
-          anyOf: [
-            { kind: 'actions', mode: 'all', actions: [{ localKey: 'first-model' }], readyWhen: 'resolved' },
-          ],
+      const receipt = required(f.receipts.get(action.key))
+      receipt.outcome = 'failed'
+      delete receipt.result
+      receipt.error = {
+        code: 'incompatible',
+        detailCode,
+        message: 'Model failed',
+        diagnosticId: 'fixture',
+        retryAdvice: { kind: 'never' },
+      }
+      expect(validateRuntime('ActionResultView', receipt).ok).toBe(true)
+      const ports = {
+        ...f.ports,
+        async compute() {
+          throw new Error('Failure must not replan')
         },
-      })
+      }
+      const frame = f.nextFrame(pending)
+      for (let replay = 0; replay < 2; replay++) {
+        const result = await f.provider.resume(frame, ports)
+        failure(result, detailCode)
+        expect(result.next).toMatchObject({ kind: 'fail', error: { retryAdvice: { kind: 'never' } } })
+        expect(result.continuation).toEqual(pending.continuation)
+      }
     } finally {
       await f.provider.close('shutdown')
       await f.close()
