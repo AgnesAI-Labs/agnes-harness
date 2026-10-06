@@ -12,9 +12,16 @@ import { createNativeStateReadOwner } from '../../../src/runtime/state/native-re
 import { openJointAdmission } from './assembly-admission-joint.js'
 import { localTestBridge } from './state-query-fixture.js'
 
-export async function originalNativeFixture(options: { clock?: () => number } = {}) {
+export async function originalNativeFixture(
+  options: {
+    clock?: () => number
+    /** Adjusts the admission fixture before the joint State opens. */
+    prepare?: (input: ReturnType<typeof admissionFixtureInput>) => void
+  } = {},
+) {
   const directory = realpathSync(mkdtempSync(join(tmpdir(), 'agnes-native-state-read-')))
   const input = admissionFixtureInput()
+  options.prepare?.(input)
   const deploymentDirectory = join(directory, 'deployment')
   const anchor = createBootstrapAnchor(deploymentDirectory, {
     principalRef: 'not-an-authentication-proof',

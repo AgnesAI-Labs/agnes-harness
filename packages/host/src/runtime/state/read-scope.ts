@@ -44,7 +44,7 @@ export type StateReadBridge = Readonly<{
 export type ReadableSchema = Readonly<{
   schema: SchemaRef
   definition: keyof RuntimeWireTypes
-  kind: 'run' | 'binding' | 'action' | 'attempt' | 'signal' | 'issuance'
+  kind: 'run' | 'binding' | 'action' | 'attempt' | 'signal' | 'wait' | 'issuance'
   relate?: (value: JsonValue) => Readonly<{ runId: string; actionId: string | null }> | null
 }>
 
@@ -54,4 +54,5 @@ export const DEFAULT_READABLE: readonly ReadableSchema[] = Object.freeze([
   { schema: RuntimeSchemaRefs.ActionRecordValue, definition: 'ActionRecordValue', kind: 'action' },
   { schema: RuntimeSchemaRefs.AttemptRecordValue, definition: 'AttemptRecordValue', kind: 'attempt' },
   { schema: RuntimeSchemaRefs.SignalRecordValue, definition: 'SignalRecordValue', kind: 'signal' },
+  { schema: RuntimeSchemaRefs.WaitRecordValue, definition: 'WaitRecordValue', kind: 'wait' },
 ])

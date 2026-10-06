@@ -3,21 +3,26 @@ import type { CallContext, Outcome, QueryHandler, RuntimeError } from '@agnes/ex
 import {
   type ActionRecordValue,
   type AttemptRecordValue,
+  type BindingRef,
   boundedCanonicalJson,
   canonicalJsonDigest,
   type DataRef,
   type JsonValue,
+  type ReadGuard,
   type RunBinding,
   type RunRecordValue,
   RuntimeMethodSchemaRefs,
   type RuntimeWireTypes,
   type SchemaRef,
+  type Signal,
+  type SignalRecordValue,
   type SnapshotRef,
   type StateAuthorityRef,
   type StateOpenRequest,
   type StateOpenResult,
   type StateScanRequest,
   validateRuntime,
+  type WaitRecordValue,
 } from '@agnes/protocol/runtime'
 import type { createNativeStateReadOwner } from './native-read-owner.js'
 import {
@@ -26,7 +31,15 @@ import {
   type StateReadBridge,
   type StateReadGrant,
 } from './read-scope.js'
-import { actionRecordId, attemptRecordId, runBindingRecordId, runRecordId, sameJson } from './records.js'
+import {
+  actionIdOf,
+  actionRecordId,
+  attemptRecordId,
+  runBindingRecordId,
+  runRecordId,
+  sameJson,
+  waitRecordId,
+} from './records.js'
 import { StateRefusal } from './refusal.js'
 import { bodyItem, PAGE_MAX_BYTES, type Stored, storedItem, storedOf } from './stored-record.js'
 import type { NativeStateRecordFact } from './transactions.js'
@@ -62,6 +75,20 @@ export type StoredRead<T = JsonValue> = Readonly<{
   ledgerSeq: number
 }>
 
+/** The guard a commit uses to prove a record is still the revision a read saw; null revision means absent. */
+export function readGuardOf(recordId: string, read: StoredRead<unknown> | null): ReadGuard {
+  return { recordId, expectedRecordRevision: read === null ? null : read.stored.meta.recordRevision }
+}
+
+/** Unconsumed signals of one target in sequence order. The high water covers consumed signals too. */
+export type SignalPage = Readonly<{
+  items: readonly Signal[]
+  /** False when more unconsumed signals follow the last item; ask again after its `seq`. */
+  complete: boolean
+  /** The highest `seq` State assigned to this target as of the snapshot; 0 when it has none. */
+  signalHighWater: number
+}>
+
 export type StateRecordReader = Readonly<{
   open(caller: CallContext, sessionId: string | null): Promise<Outcome<SnapshotRef>>
   release(snapshot: SnapshotRef): void
@@ -91,6 +118,30 @@ export type StateRecordReader = Readonly<{
     snapshot: SnapshotRef,
     attemptId: string,
   ): Promise<Outcome<StoredRead<AttemptRecordValue> | null>>
+  /** The action id is State's own hash, so a caller names an action by its run, parent and key. */
+  getActionByKey(
+    caller: CallContext,
+    snapshot: SnapshotRef,
+    namespace: Readonly<{ runId: string; parentActionId: string | null }>,
+    key: string,
+  ): Promise<Outcome<StoredRead<ActionRecordValue> | null>>
+  getWait(
+    caller: CallContext,
+    snapshot: SnapshotRef,
+    waitId: string,
+  ): Promise<Outcome<StoredRead<WaitRecordValue> | null>>
+  /** The provider binding of the run's selected Loop; null when the run is absent or has no Loop. */
+  getLoopBinding(
+    caller: CallContext,
+    snapshot: SnapshotRef,
+    runId: string,
+  ): Promise<Outcome<BindingRef | null>>
+  signals(
+    caller: CallContext,
+    snapshot: SnapshotRef,
+    target: Readonly<{ runId: string; targetActionId: string | null }>,
+    page: Readonly<{ afterSeq: number; limit: number }>,
+  ): Promise<Outcome<SignalPage>>
 }>
 
 export type StateQueryService = Readonly<{
@@ -353,6 +404,73 @@ export function createStateQueryService(
         return read as unknown as StoredRead<T>
       })
 
+  async function unconsumedSignals(
+    caller: CallContext,
+    wire: SnapshotRef,
+    target: Readonly<{ runId: string; targetActionId: string | null }>,
+    page: Readonly<{ afterSeq: number; limit: number }>,
+  ): Promise<SignalPage> {
+    if (
+      !Number.isSafeInteger(page.afterSeq) ||
+      page.afterSeq < 0 ||
+      !Number.isSafeInteger(page.limit) ||
+      page.limit < 1 ||
+      page.limit > 500 ||
+      typeof target.runId !== 'string' ||
+      (target.targetActionId !== null && typeof target.targetActionId !== 'string')
+    )
+      throw requestFailure()
+    const resolved = resolve(caller, wire)
+    const { registered } = resolved
+    const base: StateScanRequest = {
+      snapshot: registered.snapshot,
+      collection: 'signals',
+      filter: { runId: target.runId, targetActionId: target.targetActionId },
+      order: 'asc',
+      cursor: null,
+      limit: 500,
+    }
+    checkFilter(base, registered.grant)
+    const options = { window: registered.grant.window }
+    const signalOf = (fact: NativeStateRecordFact): SignalRecordValue => {
+      const parsed = validateRuntime('SignalRecordValue', fact.value)
+      if (!parsed.ok)
+        throw new Failure('incompatible', 'state_integrity', 'original State history failed verification')
+      return parsed.value
+    }
+    const top = await owner.scanVerifiedPage(
+      registered.snapshot,
+      { ...base, order: 'desc', limit: 1 },
+      registered.grant,
+      options,
+    )
+    const signalHighWater = top.items[0] ? signalOf(top.items[0]).signal.seq : 0
+    const items: Signal[] = []
+    let complete = true
+    let cursor: string | null = null
+    scanning: for (;;) {
+      const scanned: Awaited<ReturnType<Owner['scanVerifiedPage']>> = await owner.scanVerifiedPage(
+        registered.snapshot,
+        { ...base, filter: { ...base.filter, fromSeq: page.afterSeq + 1 }, cursor },
+        registered.grant,
+        options,
+      )
+      for (const fact of scanned.items) {
+        const value = signalOf(fact)
+        if (value.consumedByCommitId !== null) continue
+        if (items.length === page.limit) {
+          complete = false
+          break scanning
+        }
+        items.push(value.signal)
+      }
+      if (scanned.nextCursor === null) break
+      cursor = scanned.nextCursor
+    }
+    recheck(caller, resolved)
+    return { items, complete, signalHighWater }
+  }
+
   const reader: StateRecordReader = Object.freeze({
     open: (caller, sessionId) => guard(caller, async () => (await openSnapshot(caller, sessionId)).snapshot),
     release(snapshot) {
@@ -367,6 +485,41 @@ export function createStateQueryService(
     getRunBinding: typed<RunBinding>('RunBinding', runBindingRecordId),
     getAction: typed<ActionRecordValue>('ActionRecordValue', actionRecordId),
     getAttempt: typed<AttemptRecordValue>('AttemptRecordValue', attemptRecordId),
+    getWait: typed<WaitRecordValue>('WaitRecordValue', waitRecordId),
+    getActionByKey: (caller, snapshot, namespace, key) =>
+      guard(caller, async () => {
+        if (
+          typeof namespace.runId !== 'string' ||
+          (namespace.parentActionId !== null && typeof namespace.parentActionId !== 'string') ||
+          typeof key !== 'string'
+        )
+          throw requestFailure()
+        const read = await point(
+          caller,
+          snapshot,
+          actionRecordId(actionIdOf(namespace.runId, namespace.parentActionId, key)),
+          schemaOf('ActionRecordValue'),
+        )
+        if (!read) return null
+        const value = validateRuntime('ActionRecordValue', read.stored.value)
+        if (!value.ok || value.value.runId !== namespace.runId || value.value.key !== key)
+          throw new Failure('incompatible', 'state_integrity', 'original State history failed verification')
+        return read as unknown as StoredRead<ActionRecordValue>
+      }),
+    getLoopBinding: (caller, snapshot, runId) =>
+      guard(caller, async () => {
+        const read = await point(caller, snapshot, runBindingRecordId(runId), schemaOf('RunBinding'))
+        if (!read) return null
+        const binding = validateRuntime('RunBinding', read.stored.value)
+        if (!binding.ok)
+          throw new Failure('incompatible', 'state_integrity', 'original State history failed verification')
+        const loops = binding.value.providers.filter((provider) => provider.binding.contract === 'agh.loop')
+        if (loops.length > 1)
+          throw new Failure('incompatible', 'state_loop_binding', 'the run binding names more than one Loop')
+        return loops[0]?.binding ?? null
+      }),
+    signals: (caller, snapshot, target, page) =>
+      guard(caller, () => unconsumedSignals(caller, snapshot, target, page)),
   })
 
   return Object.freeze({

@@ -23,6 +23,7 @@ import {
   runRecordId,
   sameJson,
   signalRecordId,
+  waitRecordId,
 } from './records.js'
 import { refuse } from './refusal.js'
 import {
@@ -254,6 +255,11 @@ export function createNativeStateReadOwner(
           target: signal.value.signal.targetActionId,
           kind,
         }
+      } else if (kind === 'wait') {
+        const wait = validateRuntime('WaitRecordValue', fact.value)
+        if (!wait.ok || !runs.has(wait.value.runId) || fact.recordId !== waitRecordId(wait.value.waitId))
+          refuseRead()
+        rel = { runId: wait.value.runId, actionId: wait.value.targetActionId, target: null, kind }
       } else if (kind === 'issuance') {
         const related = entry?.relate?.(fact.value)
         if (!related || !runs.has(related.runId)) refuseRead()

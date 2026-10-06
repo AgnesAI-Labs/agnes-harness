@@ -1372,6 +1372,63 @@ export class RuntimeStateDatabase {
     return written.result
   }
 
+  /**
+   * Host-private. One lease operation whose expected head is read inside the same transaction, so a
+   * commit that lands between a view and the call cannot turn it into a conflict. `claim` takes a free
+   * lease: an acquire for a session that never had a writer, a reclaim otherwise.
+   */
+  async leaseAtHead(input: {
+    requestId: string
+    sessionId: string
+    writerId: string
+    ttlMs: number
+    operation: 'claim' | 'renew' | 'release'
+    expectedWriterEpoch: number | null
+  }): Promise<StateLeaseResult> {
+    const written = await this.tx('leaseAtHead', input.requestId, async () => {
+      const meta = this.sessionMeta(input.sessionId)
+      if (!meta) refuse('invalid_input', 'session_absent', 'session does not exist')
+      const verified = await this.verifySessionFully(meta)
+      const current = this.loadLease(input.sessionId)
+      const request: StateLeaseRequest = {
+        requestId: input.requestId,
+        authority: this.authority,
+        sessionId: input.sessionId,
+        writerId: input.writerId,
+        operation:
+          input.operation === 'claim'
+            ? current.last_writer_epoch === 0
+              ? 'acquire'
+              : 'reclaim'
+            : input.operation,
+        expectedWriterEpoch:
+          input.operation === 'claim' ? current.last_writer_epoch : input.expectedWriterEpoch,
+        expectedLastSeq: verified.lastSeq,
+        ttlMs: input.ttlMs,
+      }
+      if (!validateRuntime('StateLeaseRequest', request).ok)
+        refuse('invalid_input', 'request', 'invalid State lease request')
+      const replayed = this.replayAuthorityControl('lease', request)
+      if (replayed) return { result: replayed as StateLeaseResult, verified }
+      const sources = this.controlSources(request),
+        at = this.now()
+      if (!Number.isSafeInteger(at + request.ttlMs) || Math.abs(at + request.ttlMs) > 8.64e15)
+        refuse('invalid_input', 'ttl', 'lease expiry is outside timestamp range')
+      const result = this.applyLease(request, current, at)
+      const committed = this.writeAuthorityControl(
+        'lease',
+        request,
+        verified,
+        sources,
+        result,
+        new Date(at).toISOString(),
+      )
+      return { result: committed.result as StateLeaseResult, verified: committed.verified }
+    })
+    this.rememberVerified(input.sessionId, written.verified)
+    return written.result
+  }
+
   installAdmissionSource(source: RuntimeAdmissionSource): void {
     if (
       this.admissionSource ||
