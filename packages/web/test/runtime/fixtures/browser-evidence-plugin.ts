@@ -3,7 +3,7 @@
  * platform modules left external and serves it under `/plugins/`, so it runs in a release page
  * against the import-map React, Cordis and web-client singletons. It plays both sides: `apply` is
  * the author client module, and `startHost` is a host with the whole DSH slot catalog declared and
- * a reconciler whose roster the suite publishes.
+ * a reconciler whose roster the suite publishes. `mountHtmlViewer` renders the host's HTML viewer.
  */
 import { Context } from '@agnes/cordis'
 import {
@@ -20,7 +20,7 @@ import {
   SlotsProvider,
   ThemeService,
 } from '@agnes/web-client'
-import { createElement } from 'react'
+import { type ComponentProps, createElement } from 'react'
 import { createRoot } from 'react-dom/client'
 import { createReconciler, type ReadyClientModule } from '../../../src/client-modules/reconcile.js'
 
@@ -79,4 +79,15 @@ export async function startHost() {
       return Object.fromEntries(reconciler.snapshot())
     },
   }
+}
+
+/** Host side of the HTML viewer: renders the component at the top of the page, over the shell. */
+export async function mountHtmlViewer(props: ComponentProps<typeof import('@agnes/web-ui').HtmlViewer>) {
+  // Loaded on first use, so the slot checks run without the component layer in the page.
+  const { HtmlViewer } = await import('@agnes/web-ui')
+  const mount = document.createElement('div')
+  mount.id = 'viewer-host'
+  Object.assign(mount.style, { position: 'fixed', inset: '0', zIndex: '1' })
+  document.body.append(mount)
+  createRoot(mount).render(createElement(HtmlViewer, props))
 }

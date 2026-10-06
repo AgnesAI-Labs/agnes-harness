@@ -312,7 +312,9 @@ const INITIAL_CEILING: Record<string, number> = {
   // Popover placement measures the trigger's own window. Measured 6714, exact, no spare (+2).
   // Sixth main synchronization brings main's queued-input CI fixes. Measured 6736, exact, no spare.
   // Sandboxed HTML viewer frame and its request checks. Measured 6871, exact, no spare (+135).
-  'packages/web-ui/src': 6871,
+  // The viewer keys its frame by a mount count and clears a navigation notice for new content.
+  // Measured 6873, exact, no spare (+2).
+  'packages/web-ui/src': 6873,
   // W8a-3: retire the native tool renderer in favor of one compatibility root; measured 4630.
   // The offline diagnostics viewer refuses an unknown bundle version (+7 lines); measured 4645, exact cap.
   // Sidebar binds against its own document and window. Measured 5559, exact, no spare (+1).
