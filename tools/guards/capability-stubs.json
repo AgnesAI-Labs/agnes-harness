@@ -25,10 +25,6 @@
         {
           "path": "packages/host/src/runtime/state/control.ts",
           "marker": "conversation contribution is not implemented"
-        },
-        {
-          "path": "packages/host/src/runtime/state/control.ts",
-          "marker": "wait, complete, and fail transitions are not implemented"
         }
       ]
     },

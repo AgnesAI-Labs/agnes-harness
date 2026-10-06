@@ -64,13 +64,7 @@ async function setup() {
   const writerEpoch = opened.claim.writerEpoch
   const runId = admission.runId
   const deadline = '2027-01-01T00:00:00Z'
-  const action = (
-    key: string,
-    provider: typeof modelProvider,
-    method: string,
-    schemas: typeof infer,
-    obligation: 'mandatory' | 'detached' = 'mandatory',
-  ) => {
+  const action = (key: string, provider: typeof modelProvider, method: string, schemas: typeof infer) => {
     const intent = {
       key,
       target: provider.binding,
@@ -78,15 +72,14 @@ async function setup() {
       input: { ...fixtureRef({ key }), schema: schemas.inputSchema },
       dependencies: [],
       retry: { mode: 'never' as const, maxAttempts: 0, backoffMs: [] },
-      obligation,
+      obligation: 'mandatory' as const,
       deadline,
       resultSchema: schemas.outputSchema,
       references: [],
     }
     return { ...intent, intentFingerprint: fixtureHash(intent) } satisfies PreparedAction
   }
-  const tool = (key: string, obligation: 'mandatory' | 'detached' = 'mandatory') =>
-    action(key, toolProvider, 'invoke', toolInvoke, obligation)
+  const tool = (key: string) => action(key, toolProvider, 'invoke', toolInvoke)
   const parentIntent = action('parent', modelProvider, 'infer', infer)
   const childIntent = action('child', leafProvider, 'invoke', invoke)
   const continuation = (marker: string) => ({
@@ -305,13 +298,17 @@ const refusal = (detailCode: string) => ({ failure: { detailCode } })
 describe('advanceRun wait', () => {
   it('parks the run on a wait record in one commit and leaves the conversation empty', async () => {
     const f = await setup()
+    await f.step('idle', {})
+    const idle = () => f.head(`run-quota:${f.runId}`)?.value.noProgressTransitions
+    expect(idle()).toBe(1)
     await f.prime()
     const before = f.events()
     const receipt = await f.step('wait-1', { next: { kind: 'wait', condition: SIGNALS } })
+    expect(idle()).toBe(0)
     expect(f.events()).toBe(before + 1)
     const waitId = stableId('wait', receipt.commitId)
-    expect(receipt.runRevision).toBe(2)
-    expect(f.runHead()?.value).toMatchObject({ state: 'waiting', waitId, revision: 2, terminal: null })
+    expect(receipt.runRevision).toBe(3)
+    expect(f.runHead()?.value).toMatchObject({ state: 'waiting', waitId, revision: 3, terminal: null })
     expect(f.head(waitRecordId(waitId))).toMatchObject({
       revision: 1,
       value: {
