@@ -2,7 +2,7 @@ import { createHash, randomBytes } from 'node:crypto'
 import { createServer } from 'node:http'
 import type { Socket } from 'node:net'
 import { join } from 'node:path'
-import { createModelAdapterFactory } from '@agnes/ai/runtime'
+import { createModelAdapterFactory, type ModelWireSource } from '@agnes/ai/runtime'
 import { createTestServiceContainer } from '@agnes/extension-api/testkit'
 import {
   boundedCanonicalJson,
@@ -55,6 +55,10 @@ export async function modelJointFixture(
     store?: boolean
     /** The egress fetch throws before it writes anything. */
     throwEgress?: boolean
+    /** Replaces the wire source the template built (for example with one prepared by the real Model service). */
+    source?: (template: ModelWireSource) => Promise<ModelWireSource> | ModelWireSource
+    /** What the peer streams back on a normal response: the default text, or tool calls (arguments sent as given). */
+    reply?: { toolCalls: { id: string; name: string; arguments: string }[] }
   } = {},
 ) {
   const root = scratch(),
@@ -108,40 +112,74 @@ export async function modelJointFixture(
         },
         'message_start',
       )
-      send(
-        { type: 'content_block_start', index: 0, content_block: { type: 'text', text: '' } },
-        'content_block_start',
-      )
-      send(
-        { type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: 'joint answer' } },
-        'content_block_delta',
-      )
-      if (mode === 'cut-mid') return void setTimeout(() => request.socket.destroy(), 20)
-      send({ type: 'content_block_stop', index: 0 }, 'content_block_stop')
+      if (extra.reply) {
+        for (const [index, call] of extra.reply.toolCalls.entries()) {
+          send(
+            {
+              type: 'content_block_start',
+              index,
+              content_block: { type: 'tool_use', id: call.id, name: call.name, input: {} },
+            },
+            'content_block_start',
+          )
+          const half = Math.ceil(call.arguments.length / 2)
+          for (const part of [call.arguments.slice(0, half), call.arguments.slice(half)])
+            send(
+              { type: 'content_block_delta', index, delta: { type: 'input_json_delta', partial_json: part } },
+              'content_block_delta',
+            )
+          send({ type: 'content_block_stop', index }, 'content_block_stop')
+        }
+      } else {
+        send(
+          { type: 'content_block_start', index: 0, content_block: { type: 'text', text: '' } },
+          'content_block_start',
+        )
+        send(
+          { type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: 'joint answer' } },
+          'content_block_delta',
+        )
+        if (mode === 'cut-mid') return void setTimeout(() => request.socket.destroy(), 20)
+        send({ type: 'content_block_stop', index: 0 }, 'content_block_stop')
+      }
       send(
         {
           type: 'message_delta',
-          delta: { stop_reason: 'end_turn', stop_sequence: null },
+          delta: { stop_reason: extra.reply ? 'tool_use' : 'end_turn', stop_sequence: null },
           usage: { output_tokens: 3 },
         },
         'message_delta',
       )
       send({ type: 'message_stop' }, 'message_stop')
     } else {
-      send({
+      const chunk = (delta: unknown, finish: string | null) => ({
         id: 'joint-response',
         object: 'chat.completion.chunk',
         created: 1,
         model,
-        choices: [{ index: 0, delta: { role: 'assistant', content: 'joint answer' }, finish_reason: null }],
+        choices: [{ index: 0, delta, finish_reason: finish }],
       })
+      if (extra.reply) {
+        for (const [index, call] of extra.reply.toolCalls.entries()) {
+          const half = Math.ceil(call.arguments.length / 2)
+          send(
+            chunk(
+              {
+                role: 'assistant',
+                tool_calls: [
+                  { index, id: call.id, type: 'function', function: { name: call.name, arguments: '' } },
+                ],
+              },
+              null,
+            ),
+          )
+          for (const part of [call.arguments.slice(0, half), call.arguments.slice(half)])
+            send(chunk({ tool_calls: [{ index, function: { arguments: part } }] }, null))
+        }
+      } else send(chunk({ role: 'assistant', content: 'joint answer' }, null))
       if (mode === 'cut-mid') return void setTimeout(() => request.socket.destroy(), 20)
       send({
-        id: 'joint-response',
-        object: 'chat.completion.chunk',
-        created: 1,
-        model,
-        choices: [{ index: 0, delta: {}, finish_reason: 'stop' }],
+        ...chunk({}, extra.reply ? 'tool_calls' : 'stop'),
         usage: { prompt_tokens: 7, completion_tokens: 3, total_tokens: 10 },
       })
       response.write('data: [DONE]\n\n')
@@ -166,6 +204,7 @@ export async function modelJointFixture(
   )
   await template.action.close('shutdown')
   await template.provider.close('shutdown')
+  if (extra.source) Object.assign(template.source, await extra.source(template.source))
   const abort = new AbortController(),
     call = auth.call({ ...template.context, signal: abort.signal })
   const store = createCredentialStore({ root: join(root, 'home') })
