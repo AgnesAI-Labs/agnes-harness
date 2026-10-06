@@ -16,10 +16,32 @@ export interface HostRuntimeLoopCredentials {
     Outcome<{
       consumer: W.SecretConsumerBinding
       context: CallContext
-      /** Retain the exact issued object for model preparation and the selected egress installation. */
+      /**
+       * Retain the exact issued object for model preparation and the selected egress installation.
+       * Retention is not a genuineness check and records no digest set.
+       */
       accept(handle: W.SecretHandle): Promise<Outcome<void>>
     }>
   >
+}
+
+/**
+ * Model prepare asks this process's C22 whether a handle is still one it issued.
+ * `secrets` must be the same object egress receives as `options.secrets`.
+ * `context` is the prepare call's CallContext. A true result is not permission to send.
+ */
+export function hostModelCredentialVerifier(secrets: Pick<SecretsService, 'verifyIssued'>): {
+  verifyIssued(
+    handle: W.SecretHandle,
+    binding: W.SecretConsumerBinding,
+    context: CallContext,
+  ): Promise<boolean>
+} {
+  return {
+    async verifyIssued(handle, binding, context) {
+      return (await secrets.verifyIssued(handle, binding, context)).ok
+    },
+  }
 }
 
 /** Host-only issuance seam; never infer an owner from a wire handle supplied by the input source. */
