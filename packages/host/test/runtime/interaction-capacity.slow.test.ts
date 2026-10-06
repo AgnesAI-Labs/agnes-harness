@@ -43,6 +43,9 @@ afterEach(() => {
   for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true })
 })
 
+// Each reference case takes about 3 s on darwin-arm64 and went past the 5 s default on a Linux CI runner.
+const REFERENCE_TIMEOUT_MS = 60_000
+
 describe('reference interaction provider', () => {
   const start = Date.parse('2026-10-01T00:00:00Z')
   const expiresAt = new Date(start + TTL_MS).toISOString()
@@ -104,7 +107,7 @@ describe('reference interaction provider', () => {
     } finally {
       store.close()
     }
-  })
+  }, REFERENCE_TIMEOUT_MS)
 
   it('expires 1000 pending approvals at the TTL, keeps their history and wakes each waiter once in bounded batches', async () => {
     const { clock, open } = setup()
@@ -168,7 +171,7 @@ describe('reference interaction provider', () => {
     } finally {
       store.close()
     }
-  })
+  }, REFERENCE_TIMEOUT_MS)
 })
 
 describe('default State interaction provider', () => {
@@ -288,7 +291,7 @@ describe('default State interaction provider', () => {
     for (const limit of [0, 10_001])
       expect(await service.pending({ scope, limit }, f.context)).toMatchObject({
         ok: false,
-        error: { detailCode: 'invalid_request' },
+        error: { code: 'invalid_input', detailCode: 'interaction_limit' },
       })
     expect(
       await service.pending({ scope, limit: SCALED_PAGE + 1, cursor: midCursor }, f.context),
