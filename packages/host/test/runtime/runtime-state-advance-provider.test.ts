@@ -385,20 +385,6 @@ describe('advanceProvider', () => {
   })
   it.each([
     ['a wait with a deadline', { kind: 'wait', condition: { anyOf: [], deadline: '2027-01-01T00:00:00Z' } }],
-    ['a completion', { kind: 'complete', output: fixtureRef({}), references: [] }],
-    [
-      'a failure',
-      {
-        kind: 'fail',
-        error: {
-          code: 'internal',
-          detailCode: 'x',
-          message: 'x',
-          retryAdvice: { kind: 'never' },
-          diagnosticId: 'd',
-        },
-      },
-    ],
   ])('does not accept %s yet and writes nothing', async (_name, next) => {
     const f = await started()
     const invocation = await f.prepared(f.parentId, 1)
