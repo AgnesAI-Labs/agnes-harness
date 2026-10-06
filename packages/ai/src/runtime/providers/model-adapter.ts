@@ -29,6 +29,7 @@ import {
 import { PiAdapter } from '../../adapters/pi/index.js'
 import { mediaConsumed } from '../model-adapter/media.js'
 import type { ModelAdapterDeployment, ModelWireFetch, ModelWireSource } from '../model-adapter/ports.js'
+import { toolCallRefusal } from '../model-adapter/tool-calls.js'
 import { type ModelUsageEvidence, modelUsageEvidence } from '../model-adapter/usage-evidence.js'
 
 const methods = RuntimeMethodSchemaRefs['agh.model-adapter']
@@ -534,6 +535,9 @@ export function createModelAdapterFactory(
               let usage: UsageFact[] = [unknownFact],
                 finish: ModelOutput['finishReason'] | null = null
               let result: EffectResult
+              // A call the provider returned that the next request cannot carry; named in the post-send outcome.
+              const rawArguments = new Map<number, string>()
+              let toolRefusal: string | null = null
               // The egress's own answer, missing or throwing read as possibly sent.
               const settle = () => {
                 if (!owned) return
@@ -582,6 +586,9 @@ export function createModelAdapterFactory(
                       firstToken: 120000,
                       total: Math.max(1, Math.min(600000, Date.parse(context.call.deadline) - Date.now())),
                     },
+                    reportToolArguments(ordinal, raw) {
+                      rawArguments.set(ordinal, raw)
+                    },
                     reportSent(report) {
                       if (owned) {
                         // The egress commits the fence at the connector; only record the digest.
@@ -603,7 +610,10 @@ export function createModelAdapterFactory(
                   })) {
                     if (event.type === 'text_delta') text += event.delta
                     if (event.type === 'thinking_delta') thinking += event.delta
-                    if (event.type === 'toolcall_end') tools.push(event.call)
+                    if (event.type === 'toolcall_end') {
+                      toolRefusal ??= toolCallRefusal(event.call, rawArguments.get(event.call.ordinal) ?? '')
+                      tools.push(event.call)
+                    }
                     if (event.type === 'usage') {
                       usageState.tokens = event.tokens
                       usageState.evidence = modelUsageEvidence(source.model, event, original.creditsPerUsd)
@@ -629,6 +639,7 @@ export function createModelAdapterFactory(
                 })
                 settle()
                 if (!output.ok) throw new Error('Credential owner refused')
+                if (toolRefusal !== null) throw new Error('Model tool call refused')
                 const receipt = response
                   ? checked(runtimeAuthorSchemas.ProviderResponseEvidence.encode(response))
                   : null
@@ -726,7 +737,7 @@ export function createModelAdapterFactory(
                 result = notSent() ?? {
                   ...failure(
                     sent ? 'unknown_effect' : controller.signal.aborted ? 'cancelled' : 'denied',
-                    sent ? 'model_stream_unknown' : 'model_send_refused',
+                    sent ? (toolRefusal ?? 'model_stream_unknown') : 'model_send_refused',
                     frame.actionId,
                   ),
                   externalRequests: sent && frame.requestIdentity ? [external(frame)] : [],

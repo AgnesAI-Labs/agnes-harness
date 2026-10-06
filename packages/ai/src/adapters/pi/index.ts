@@ -479,6 +479,8 @@ export class PiAdapter extends WireAdapter {
         // ordinals from one counter.
         let ordinal = 0
         const nextOrdinal = () => ordinal++
+        // Pi parses streamed arguments leniently (malformed text becomes `{}`), so the raw text is kept per block.
+        const rawArguments = new Map<number, string>()
         let emitted = false
         const wire: ResponseMeta = {}
         let retryAfter: number | undefined
@@ -545,7 +547,15 @@ export class PiAdapter extends WireAdapter {
             // and a loop waiting on it could not notice its own deadline passing.
             const next = await Promise.race([it.next(), stopped])
             if (next === ABORTED || next.done) break
-            for (const w of translateEvent(next.value, requestModel, nextOrdinal, wire)) {
+            const piEvent = next.value
+            if (piEvent.type === 'toolcall_delta')
+              rawArguments.set(
+                piEvent.contentIndex,
+                (rawArguments.get(piEvent.contentIndex) ?? '') + piEvent.delta,
+              )
+            for (const w of translateEvent(piEvent, requestModel, nextOrdinal, wire)) {
+              if (w.type === 'toolcall_end' && piEvent.type === 'toolcall_end')
+                opts.reportToolArguments?.(w.call.ordinal, rawArguments.get(piEvent.contentIndex) ?? '')
               // HTTP headers and pi's start markers contain no model output.
               if (!firstSeen && w.type !== 'error' && (!('delta' in w) || w.delta.length > 0)) {
                 firstSeen = true
