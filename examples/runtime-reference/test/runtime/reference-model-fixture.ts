@@ -118,6 +118,8 @@ export async function referenceModelFixture(
   } = {},
 ) {
   const api = options.api ?? 'openai-completions'
+  const seam =
+    options.egress ?? ((input: RequestInfo | URL, init?: RequestInit) => globalThis.fetch(input, init))
   const scope = {
     kind: 'runtime' as const,
     installationId: 'fixture-installation',
@@ -240,9 +242,7 @@ export async function referenceModelFixture(
       input: 'fixture.input-token',
       output: 'fixture.output-token',
     },
-    ...(options.egress === false
-      ? {}
-      : { egress: () => options.egress ?? ((input, init) => globalThis.fetch(input, init)) }),
+    ...(seam === false ? {} : { egress: () => seam }),
     installed: (call) => call === originalContext && live,
     async load(reference, _frame, call) {
       loads++

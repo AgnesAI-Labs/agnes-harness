@@ -141,7 +141,7 @@ async function run(options: Options = {}) {
     },
     signal: new AbortController().signal,
   })
-  if (!action || action.kind !== 'leaf') throw new Error('leaf')
+  if (action?.kind !== 'leaf') throw new Error('leaf')
   if (!(await action.ready(fixture.context)).ok) throw new Error('action')
   const result = await action.execute(fixture.frame, fixture.call)
   await provider.close('shutdown')
