@@ -64,8 +64,12 @@ export function decodeInline(ref: W.DataRef, schema: W.SchemaRef): Outcome<W.Jso
   return { ok: true, value: body.json }
 }
 
-/** Abort and deadline are enforced by racing, never by re-wrapping the identity-issued context object. */
-export async function race<T>(work: Promise<Outcome<T>>, context: CallContext): Promise<Outcome<T>> {
+/** Abort and deadline are enforced by racing (the deadline against the deployment's trusted clock), never by re-wrapping the identity-issued context object. */
+export async function race<T>(
+  work: Promise<Outcome<T>>,
+  context: CallContext,
+  now: () => number = Date.now,
+): Promise<Outcome<T>> {
   let release = () => {}
   let timer: ReturnType<typeof setTimeout> | undefined
   const stopped = new Promise<Outcome<never>>((resolve) => {
@@ -75,7 +79,7 @@ export async function race<T>(work: Promise<Outcome<T>>, context: CallContext): 
     release = () => context.signal.removeEventListener('abort', abort)
     timer = setTimeout(
       () => resolve(fail('timeout', 'supervisor_invocation_expired')),
-      Math.min(2_147_483_647, Math.max(0, Date.parse(context.deadline) - Date.now())),
+      Math.min(2_147_483_647, Math.max(0, Date.parse(context.deadline) - now())),
     )
   })
   try {
