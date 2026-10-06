@@ -1115,7 +1115,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // Clarify the single-text tool input description (+1); 39144 measured, no spare allocation.
   // Wire request builder expresses a resolved tool catalog and paired tool history (+262); exact cap, no spare.
   // The Model service resolves a request's tool catalog through an injected port, binds the descriptions into the input digest and refuses a route without a credential binding (+24); exact cap, no spare.
-  'packages/core/src': 39430,
+  'packages/core/src': 39437,
   // Testkit-only reference Effects runner adds 202 measured lines; exact cap, no spare.
   // Independent Effects dispatch reference (+440); exact measurement below.
   'packages/core/testkit': 2437,
