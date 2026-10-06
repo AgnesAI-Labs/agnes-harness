@@ -21,11 +21,10 @@ import { openJointAdmission } from './fixtures/assembly-admission-joint.js'
 import { fixtureRef } from './fixtures/assembly-maintenance-wire.js'
 
 const ok = <T>(value: T): Outcome<T> => ({ ok: true, value })
-const sessionScope: W.ScopeRef = {
-  kind: 'session',
+const sessionScope = {
+  kind: 'session' as const,
   installationId: 'fixture-installation',
   runtimeId: 'fixture-runtime',
-  tenantId: 'fixture-tenant',
   workspaceId: 'fixture-workspace',
   sessionId: 'fixture-session',
 }
@@ -165,6 +164,9 @@ it('admits through the real coordinator and State, converges on a retry with zer
     expect(fixture.inspect()).toEqual(settled)
 
     // 4. cancel before createRun: tombstone, a repeat returns the same pointer, a later admit is cancelled
+    // The coordinator's own clock stays frozen at the fixture time, so a ticket issued an hour later would be
+    // judged expired; the Supervisor clock returns to it for this step.
+    now = Date.parse(input.fixture.now)
     hold.next = true
     const lost = await admit('key-2')
     expect(!lost?.ok && lost?.error).toMatchObject({
@@ -191,6 +193,23 @@ it('admits through the real coordinator and State, converges on a retry with zer
     })
     expect(fixture.inspect().cancelled).toHaveLength(1)
     expect(fixture.inspect().created).toHaveLength(1)
+
+    // 5. a copied context is refused by the identity owner and nothing is written
+    const before = fixture.inspect()
+    const copied = await provider.control?.(
+      {
+        target: supervisorBinding,
+        method: 'admit',
+        input: supervisorInput('admit', {
+          presetRef: 'fixture-preset-v2',
+          inputRef: fixtureRef({ prompt: 'synthetic' }),
+          idempotencyKey: 'key-3',
+        }),
+      },
+      { ...fixture.context() },
+    )
+    expect(copied?.ok).toBe(false)
+    expect(fixture.inspect()).toEqual(before)
   } finally {
     await fixture.close()
     rmSync(directory, { recursive: true, force: true })

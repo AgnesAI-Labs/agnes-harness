@@ -92,6 +92,10 @@ function deployment(over: Partial<SupervisorDeployment> & { revoked?: { at: numb
       actionDefaultTimeoutMs: 120_000,
       pollMs: 1000,
       leaseTtlMs: 15_000,
+      cycleMs: 30_000,
+      invocationMs: 5000,
+      graceMs: 2000,
+      queryAllowance: 64,
     },
     ...over,
   }
@@ -120,13 +124,21 @@ const reference = (await import(
   referenceAdmit: (p: never, i: unknown, c: CallContext) => Promise<Outcome<unknown>>
   referenceCancel: (p: never, i: unknown, c: CallContext) => Promise<Outcome<unknown>>
 }
-const impls = {
+type Replies = Readonly<{
+  admit(d: SupervisorDeployment, i: unknown, c: CallContext): Promise<Outcome<{ bindingRef: W.BindingRef }>>
+  cancel(
+    d: SupervisorDeployment,
+    i: unknown,
+    c: CallContext,
+  ): Promise<Outcome<{ cancellationRef: { receiptId: string } }>>
+}>
+const impls: Record<string, Replies> = {
   default: { admit: defaultAdmit, cancel: defaultCancel },
   reference: {
     admit: (d: SupervisorDeployment, i: unknown, c: CallContext) =>
-      reference.referenceAdmit(d as never, i, c),
+      reference.referenceAdmit(d as never, i, c) as ReturnType<Replies['admit']>,
     cancel: (d: SupervisorDeployment, i: unknown, c: CallContext) =>
-      reference.referenceCancel(d as never, i, c),
+      reference.referenceCancel(d as never, i, c) as ReturnType<Replies['cancel']>,
   },
 }
 
