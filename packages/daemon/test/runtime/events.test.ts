@@ -6,7 +6,7 @@ import { DatabaseSync } from 'node:sqlite'
 import type * as Wire from '@agnes/protocol/runtime'
 import { canonicalJsonDigest } from '@agnes/protocol/runtime'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { type DomainStore, type OutboxSink, openDomainStore } from '../../src/runtime/events/outbox.js'
+import { type DomainStore, fail, type OutboxSink, openDomainStore } from '../../src/runtime/events/outbox.js'
 import { createEventsProvider, type EventsGate } from '../../src/runtime/providers/events.js'
 import { openEvents, producer, publication, read, reader, testGate } from './fixtures/events-issuer.js'
 
@@ -727,6 +727,107 @@ describe('events provider', () => {
     })
     expect(outcome(await events.publish(publication('k-2'), producer()))).toBe('idempotency_conflict')
     expect(store.eventHistory().count).toBe(2)
+    events.close()
+    store.close()
+  })
+
+  it('catches up from its own checkpoint after a commit hint, which grants no cursor, scope, read or write', async () => {
+    // A transport hint only says records may be new. The reader answers it by reading from the checkpoint
+    // this provider issued to it; a cursor or scope the hint names, or the hint itself, authorizes nothing.
+    const gate = testGate()
+    let readable = true
+    let producing = true
+    const revocable: EventsGate = {
+      ...gate,
+      producer: async (...args) =>
+        producing ? gate.producer(...args) : fail('permission_denied', 'producer revoked', 'test-gate'),
+      canRead: async (_scope, context) => readable && ['reader', 'auditor'].includes(context.principalRef),
+    }
+    let store = open()
+    let events = createEventsProvider({ binding, store, cursorKey: key, gate: revocable })
+    let hints = 0
+    store.subscribeCommitted(() => hints++)
+    const elsewhere = { ...session, sessionId: 'session-2' }
+    /** Reads two at a time until a page completes; each event is named with the session it belongs to. */
+    const catchUp = async (from: string | null, context = reader(), scopeRef: Wire.ScopeRef = session) => {
+      const keys: string[] = []
+      for (let cursor = from; ; ) {
+        const result = await events.subscribe({ ...read(cursor), scopeRef }, context)
+        if (!result.ok) return result.error.detailCode
+        const { page, checkpoint } = result.value
+        for (const { event } of page.items)
+          keys.push(`${event.idempotencyKey}@${'sessionId' in event.scope ? event.scope.sessionId : '-'}`)
+        // An unfinished page continues by its page cursor only; a finished one by its checkpoint only.
+        expect({ next: page.nextCursor !== null, checkpoint: checkpoint !== null }).toEqual({
+          next: !page.complete,
+          checkpoint: page.complete,
+        })
+        if (page.nextCursor === null) return { keys, checkpoint: checkpoint ?? '' }
+        cursor = page.nextCursor
+      }
+    }
+    const at = (caught: Awaited<ReturnType<typeof catchUp>>) =>
+      typeof caught === 'string' ? caught : caught.checkpoint
+
+    const start = at(await catchUp(null))
+    // Published from the covering workspace context, each event keeps its original object's session.
+    const covering = { ...producer(), scope: workspace }
+    for (const n of [1, 2, 3])
+      expect(outcome(await events.publish(publication(`k-${n}`), covering))).toBe('ok')
+    expect(hints).toBe(3)
+    // Checkpoints a hint could carry: another reader's, and one issued for a read of another session.
+    const auditor = await catchUp(null, reader(undefined, 'auditor'))
+    expect(auditor).toMatchObject({ keys: ['k-1@session-1', 'k-2@session-1', 'k-3@session-1'] })
+    const foreign = await catchUp(null, reader(), elsewhere)
+    expect(foreign).toEqual({ keys: [], checkpoint: expect.any(String) })
+    for (const hinted of [at(auditor), at(foreign)]) expect(await catchUp(hinted)).toBe('resync_required')
+    expect(await catchUp(start, reader(), elsewhere)).toBe('resync_required')
+
+    // Three hints, answered once from the own checkpoint; a commit hinted mid-page stays out of that page set.
+    const first = await events.subscribe(read(start), reader())
+    expect(seen(first)).toMatchObject({ keys: ['k-1', 'k-2'], complete: false, checkpoint: null })
+    expect(outcome(await events.publish(publication('k-4'), producer()))).toBe('ok')
+    const rest = await catchUp(cursors(first).next)
+    expect(rest).toEqual({ keys: ['k-3@session-1'], checkpoint: expect.any(String) })
+    const fourth = await catchUp(at(rest))
+    expect(fourth).toEqual({ keys: ['k-4@session-1'], checkpoint: expect.any(String) })
+    // A repeated hint with nothing new completes empty, still with a checkpoint.
+    expect(await catchUp(at(fourth))).toEqual({ keys: [], checkpoint: expect.any(String) })
+
+    // A revoked producer's replay writes nothing, so no hint follows; restored, the same key replays.
+    producing = false
+    expect(outcome(await events.publish(publication('k-1'), producer()))).toBe('permission_denied')
+    producing = true
+    expect(outcome(await events.publish(publication('k-1'), producer()))).toBe('ok')
+    expect({ hints, events: store.eventHistory().count }).toEqual({ hints: 4, events: 4 })
+    expect(await catchUp(at(fourth))).toEqual({ keys: [], checkpoint: expect.any(String) })
+
+    // A hint after the reader lost its permission reads nothing; restored, nothing was skipped.
+    expect(outcome(await events.publish(publication('k-5'), producer()))).toBe('ok')
+    readable = false
+    for (const principal of ['reader', 'auditor'])
+      expect(await catchUp(at(fourth), reader(undefined, principal))).toBe('permission_denied')
+    readable = true
+    expect(await catchUp(at(fourth))).toEqual({ keys: ['k-5@session-1'], checkpoint: expect.any(String) })
+
+    // After a restart the new process's hint cannot revive an old checkpoint; a resync reads all once.
+    events.close()
+    store.close()
+    store = open()
+    events = createEventsProvider({ binding, store, cursorKey: randomBytes(32), gate: revocable })
+    store.subscribeCommitted(() => hints++)
+    expect(outcome(await events.publish(publication('k-6'), producer()))).toBe('ok')
+    expect(hints).toBe(6)
+    expect(await catchUp(at(fourth))).toBe('resync_required')
+    const resynced = await catchUp(null)
+    expect(resynced).toEqual({
+      keys: [1, 2, 3, 4, 5, 6].map((n) => `k-${n}@session-1`),
+      checkpoint: expect.any(String),
+    })
+
+    // A history gap refuses the hinted catch-up and the resync alike rather than skipping it.
+    remove(3)
+    for (const from of [at(resynced), null]) expect(await catchUp(from)).toBe('resync_required')
     events.close()
     store.close()
   })
