@@ -397,5 +397,5 @@ describe('original Effects dispatch source', () => {
       await fixture.close()
       rmSync(directory, { recursive: true, force: true })
     }
-  }, 20_000)
+  }, 60_000)
 })

@@ -62,19 +62,31 @@ it.each(['absent', 'fixture'] as const)(
     let cli: ReturnType<typeof launch> | undefined
     try {
       // Startup is observed at the fixture installer's ready seam, after the real worker gate/Host.
-      await expect
-        .poll(
-          () => {
-            if (daemon.child.exitCode !== null) throw Error(daemon.stderr())
-            try {
-              return readFileSync(log, 'utf8').includes('"method":"ready"')
-            } catch {
-              return false
-            }
-          },
-          { timeout: 30_000, interval: 100 },
+      try {
+        await expect
+          .poll(
+            () => {
+              if (daemon.child.exitCode !== null) throw Error(daemon.stderr())
+              try {
+                return readFileSync(log, 'utf8').includes('"method":"ready"')
+              } catch {
+                return false
+              }
+            },
+            { timeout: 30_000, interval: 100 },
+          )
+          .toBe(true)
+      } catch (error) {
+        // A hosted runner that never reaches the seam otherwise leaves nothing to diagnose from.
+        let seen = '(no log)'
+        try {
+          seen = readFileSync(log, 'utf8').slice(-2000)
+        } catch {}
+        throw new Error(
+          `daemon never reached the ready seam (alive: ${daemon.child.exitCode === null})\nlog: ${seen}\nstdout: ${daemon.stdout().slice(-2000)}\nstderr: ${daemon.stderr().slice(-2000)}`,
+          { cause: error },
         )
-        .toBe(true)
+      }
       cli = launch('cli', env)
       const timer = setTimeout(() => cli?.child.kill('SIGKILL'), 30_000)
       try {

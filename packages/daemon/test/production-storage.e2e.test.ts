@@ -483,7 +483,10 @@ describe('production supervisor storage', () => {
         throw new Error('health operation did not settle')
       }
       const pid = async (file: string): Promise<number> => {
-        for (let attempt = 0; attempt < 100; attempt++) {
+        // A deadline for an event, not a timing check: a shared runner can take longer than 2s to
+        // start the fixture's node process after the activation settles.
+        const deadline = performance.now() + 15_000
+        while (performance.now() < deadline) {
           if (existsSync(file)) {
             const value = Number(readFileSync(file, 'utf8'))
             if (Number.isSafeInteger(value) && value > 0) return value
