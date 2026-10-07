@@ -19,6 +19,8 @@ import type {
   SessionGenerationMigrationResult,
 } from '@agnes/protocol'
 import {
+  ChildEnginesSaveParams,
+  ChildEnginesState,
   isAdminLoop,
   isAdminModelAdapter,
   isSessionDefaultsSnapshot,
@@ -219,6 +221,19 @@ export class PluginAdminApi {
     return body as import('@agnes/protocol').RuntimeAdminSnapshot
   }
 
+  async childEngines(): Promise<ChildEnginesState> {
+    const body = await this.#selection('child-engines')
+    if (!validateAgainst(ChildEnginesState, body).ok) throw invalidSelection()
+    return body as ChildEnginesState
+  }
+
+  async saveChildEngines(input: ChildEnginesSaveParams): Promise<ChildEnginesState> {
+    if (!validateAgainst(ChildEnginesSaveParams, input).ok) throw invalidSelection()
+    const body = await this.#selection('child-engines', input)
+    if (!validateAgainst(ChildEnginesState, body).ok) throw invalidSelection()
+    return body as ChildEnginesState
+  }
+
   async reloadLocal(): Promise<void> {
     const fetcher = this.#fetch
     const response = await fetcher('/admin/api/reload-local', {
@@ -232,7 +247,11 @@ export class PluginAdminApi {
 
   async #selection(
     path: string,
-    input?: SessionDefaultsSnapshot | { revision: number; bundles: string[] } | { preset: string },
+    input?:
+      | SessionDefaultsSnapshot
+      | ChildEnginesSaveParams
+      | { revision: number; bundles: string[] }
+      | { preset: string },
   ): Promise<unknown> {
     const fetcher = this.#fetch
     const response = await fetcher(`/admin/api/${path}`, {

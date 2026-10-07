@@ -99,6 +99,17 @@ it('redacts provider errors and reports persisted-but-not-applied configuration 
   }
 })
 
+it('fails closed when child engine methods are absent', async () => {
+  const ep = endpoint(true, service())
+  try {
+    expect(await request(ep, '_agnes/v1/config.childEngines.get')).toMatchObject({
+      error: { data: { reason: 'CONFIG_FAILED' } },
+    })
+  } finally {
+    await ep.close()
+  }
+})
+
 it('applies account changes through the same authenticated configuration callback', async () => {
   const s = service(),
     ep = endpoint(true, s),

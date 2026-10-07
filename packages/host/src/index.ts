@@ -107,6 +107,11 @@ export type { HostPluginTreeBase } from './assemble/seams-cordis.js'
 export { ASSEMBLY_STEPS, type AssembleDeps, type Assembled, type AssemblyStep, assemble } from './assemble.js'
 export * from './audit.js'
 export {
+  childEnginePluginLayers,
+  loadChildEnginePluginLayers,
+  overlayChildEngineTarget,
+} from './child-engine-layers.js'
+export {
   type ChildCandidate,
   listChildCandidates,
   maintenanceTick,
@@ -291,6 +296,8 @@ export {
   createComputerUseArtifactGcRuntime,
 } from './computer-use-artifact-gc.js'
 export {
+  type ChildEnginesConfigurationService,
+  type ChildEnginesSnapshot,
   ConfigurationError,
   type ConfigurationErrorCode,
   type ConfigurationService,

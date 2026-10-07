@@ -145,7 +145,7 @@ export function SettingsHub({
         )}
         {page === 'providers' && snapshot && <ProvidersPanel snapshot={snapshot} t={t} />}
         {page === 'search' && <SearchPanel t={t} canSave={canSave} />}
-        {page === 'engines' && <ChildEnginesPanel canSave={canSave} t={t} />}
+        {page === 'engines' && <ChildEnginesPanel api={api} canSave={canSave} t={t} />}
         {page === 'models' && (
           <>
             <p>{t('modelsHelp')}</p>

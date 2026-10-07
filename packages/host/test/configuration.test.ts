@@ -568,3 +568,48 @@ it('persists session defaults in existing configuration with cross-instance revi
   await service.saveSessionDefaults({ revision: 1, defaults: {} })
   expect(await reloaded.sessionDefaults()).toEqual({ revision: 2, defaults: {} })
 })
+
+it('persists child engines beside session defaults and drops invalid fields', async () => {
+  const { DISABLED_CHILD_ENGINES } = await import('@agnes/base/child-engines')
+  const root = await home()
+  const service = createConfigurationService({ home: root, profile: 'local-dev' })
+  const file = join(root, 'profiles', 'local-dev', 'configuration.json')
+  const engines = structuredClone(DISABLED_CHILD_ENGINES)
+  engines.codex = { ...engines.codex, enabled: true, command: 'codex', allow: ['codex'] }
+  expect(await service.childEngines()).toEqual({ revision: 0, engines: DISABLED_CHILD_ENGINES })
+  await expect(
+    service.saveChildEngines({
+      revision: 0,
+      engines: { ...engines, codex: { ...engines.codex, command: '', allow: [] } },
+    }),
+  ).rejects.toMatchObject({ code: 'CONFIG_INVALID_INPUT' })
+  await expect(
+    service.saveChildEngines({
+      revision: 0,
+      engines: { ...engines, codex: { ...engines.codex, allow: [] } },
+    }),
+  ).rejects.toMatchObject({ code: 'CONFIG_INVALID_INPUT' })
+  expect((await service.childEngines()).revision).toBe(0)
+  await expect(service.saveChildEngines({ revision: 0, engines })).resolves.toEqual({ revision: 1, engines })
+  await service.saveChildEngines({
+    revision: 1,
+    engines: {
+      ...engines,
+      codex: { ...engines.codex, env: { SECRET: 'super-secret' } },
+    },
+  } as never)
+  expect(await readFile(file, 'utf8')).not.toContain('super-secret')
+  await service.saveSessionDefaults({ revision: 2, defaults: { preset: 'read-only' } })
+  expect((await service.childEngines()).engines.codex).toMatchObject({ enabled: true, allow: ['codex'] })
+  await service.saveChildEngines({ revision: 3, engines })
+  expect(await service.sessionDefaults()).toEqual({ revision: 4, defaults: { preset: 'read-only' } })
+  const stored = JSON.parse(await readFile(file, 'utf8')) as { childEngines?: unknown }
+  stored.childEngines = { broken: true }
+  await writeFile(file, JSON.stringify(stored))
+  const reloaded = createConfigurationService({ home: root, profile: 'local-dev' })
+  expect(await reloaded.sessionDefaults()).toEqual({ revision: 4, defaults: { preset: 'read-only' } })
+  expect((await reloaded.childEngines()).engines.codex.enabled).toBe(false)
+  await expect(reloaded.saveChildEngines({ revision: 0, engines })).rejects.toMatchObject({
+    code: 'CONFIG_REVISION_CONFLICT',
+  })
+})

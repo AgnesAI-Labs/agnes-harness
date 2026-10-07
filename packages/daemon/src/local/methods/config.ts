@@ -1,4 +1,8 @@
-import type { ConfigurationService } from '@agnes/host'
+import type {
+  ChildEnginesConfigurationService,
+  ChildEnginesSnapshot,
+  ConfigurationService,
+} from '@agnes/host'
 import {
   type ConfigAccountInput,
   type ConfigOAuthInput,
@@ -9,12 +13,27 @@ import {
 } from '@agnes/protocol'
 import type { CallContext, LocalEndpoint } from '../endpoint.js'
 
+export type PublishChildEngines = (
+  engines: ChildEnginesSnapshot['engines'],
+) => Promise<'new-sessions' | 'restart-required'>
+
+function childEngineConfiguration(
+  service: ConfigurationService,
+): ChildEnginesConfigurationService | undefined {
+  if (!('childEngines' in service) || !('saveChildEngines' in service)) return undefined
+  const candidate = service as ChildEnginesConfigurationService
+  if (typeof candidate.childEngines !== 'function' || typeof candidate.saveChildEngines !== 'function')
+    return undefined
+  return candidate
+}
+
 /** Configuration is deployment-local authority, not a capability granted by an RPC parameter. */
 export function registerConfiguration(
   endpoint: LocalEndpoint,
   service?: ConfigurationService,
   applied?: (snapshot: ConfigSnapshot) => Promise<ConfigSnapshot>,
   present?: (snapshot: ConfigSnapshot) => ConfigSnapshot,
+  publishChildEngines?: PublishChildEngines,
 ): void {
   let restartRevision: number | undefined
   const status = (snapshot: ConfigSnapshot): ConfigSnapshot =>
@@ -69,6 +88,28 @@ export function registerConfiguration(
         throw Object.assign(new Error('CONFIG_AUTH_UNAVAILABLE'), { code: 'CONFIG_AUTH_UNAVAILABLE' })
       const result = await service.oauth(params as ConfigOAuthInput, context.conn, context.signal)
       return result.snapshot ? { ...result, snapshot: await apply(result.snapshot) } : result
+    }),
+  )
+  const requireChildEngines = (configuration: ConfigurationService): ChildEnginesConfigurationService => {
+    const child = childEngineConfiguration(configuration)
+    if (!child) throw Object.assign(new Error('CONFIG_FAILED'), { code: 'CONFIG_FAILED' })
+    return child
+  }
+  endpoint.register('_agnes/v1/config.childEngines.get', (_params, context) =>
+    invoke(context, async (configuration) => requireChildEngines(configuration).childEngines()),
+  )
+  endpoint.register('_agnes/v1/config.childEngines.save', (params, context) =>
+    invoke(context, async (configuration) => {
+      const saved = await requireChildEngines(configuration).saveChildEngines(params as ChildEnginesSnapshot)
+      let effect: 'new-sessions' | 'restart-required' = 'restart-required'
+      if (publishChildEngines) {
+        try {
+          effect = await publishChildEngines(saved.engines)
+        } catch {
+          effect = 'restart-required'
+        }
+      }
+      return { ...saved, effect }
     }),
   )
 }

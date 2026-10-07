@@ -194,7 +194,7 @@ export const settingsCatalog: LocaleCatalog = {
     historyCapped: 'Results are capped. Narrow the query.',
     engines: 'Child engines',
     enginesHelp:
-      'Codex CLI, Claude Code CLI, and the generic SDK engine are off until you enable an allowlisted command. They run outside this process. Mounting the saved configuration applies on the next runtime start.',
+      'Codex CLI, Claude Code CLI, and the generic SDK engine stay off until you enable an allowlisted command. Settings are stored in the host configuration. A published change applies to new sessions. Open sessions keep the generation they started with.',
     'engine.codex': 'Codex CLI',
     'engine.claude-code': 'Claude Code CLI',
     'engine.sdk': 'Generic ACP / SDK',
@@ -205,7 +205,11 @@ export const settingsCatalog: LocaleCatalog = {
     'engine.protocol': 'Protocol',
     'engine.capabilities': 'Honest capabilities',
     'engine.save': 'Save child engines',
-    'engine.saved': 'Saved in this browser session. Mount the same document to register the enabled engines.',
+    'engine.saved':
+      'Saved. New sessions use these engines. Open sessions keep the generation they started with.',
+    'engine.savedRestart': 'Saved. Restart the runtime before new sessions use these engines.',
+    'engine.unavailable': 'Child engine settings are unavailable.',
+    'engine.conflict': 'Configuration changed. Reload and try again.',
     'engine.allowRequired': 'An enabled command must exactly match one allowlist entry.',
     'engine.commandRequired': 'An enabled engine needs a command.',
     'engine.restart':
@@ -399,7 +403,7 @@ export const settingsCatalog: LocaleCatalog = {
     historyCapped: '结果已达上限。请缩小查询。',
     engines: '子代理引擎',
     enginesHelp:
-      'Codex CLI、Claude Code CLI 和通用 SDK 引擎默认关闭，只有启用且命令在允许名单中才会注册。它们在本进程外运行。保存的配置在下次运行时挂载后生效。',
+      'Codex CLI、Claude Code CLI 和通用 SDK 引擎默认关闭，只有启用且命令在允许名单中才会注册。设置保存在宿主配置里。发布成功后对新会话生效。已经打开的会话仍使用启动时的那一代运行时。',
     'engine.codex': 'Codex CLI',
     'engine.claude-code': 'Claude Code CLI',
     'engine.sdk': '通用 ACP / SDK',
@@ -410,7 +414,10 @@ export const settingsCatalog: LocaleCatalog = {
     'engine.protocol': '协议',
     'engine.capabilities': '如实能力',
     'engine.save': '保存子代理引擎',
-    'engine.saved': '已保存在本次浏览器会话。挂载同一份配置后才会注册已启用的引擎。',
+    'engine.saved': '已保存。新会话会使用这些引擎。已经打开的会话仍使用启动时的那一代运行时。',
+    'engine.savedRestart': '已保存。请重启运行时后，新会话才会使用这些引擎。',
+    'engine.unavailable': '子代理引擎设置当前不可用。',
+    'engine.conflict': '配置已变化。请重新加载后再试。',
     'engine.allowRequired': '已启用的命令必须与允许名单中的某一项完全一致。',
     'engine.commandRequired': '已启用的引擎需要填写命令。',
     'engine.restart':

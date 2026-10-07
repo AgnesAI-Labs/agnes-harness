@@ -20,6 +20,7 @@ import {
   HostError,
   type HostSession,
   type TableStore as HostTableStore,
+  overlayChildEngineTarget,
   type PresetDoc,
   type ProcessIdentity,
   type ResolvedPreset,
@@ -90,7 +91,7 @@ import {
   requireSessionOwner,
 } from '../local/methods/agnes.js'
 import { type ArtifactReadRpcOptions, registerArtifactRead } from '../local/methods/artifacts.js'
-import { registerConfiguration } from '../local/methods/config.js'
+import { type PublishChildEngines, registerConfiguration } from '../local/methods/config.js'
 import { registerDiagnostics } from '../local/methods/diagnostics.js'
 import { executeJournaledEffect, registerExtensions } from '../local/methods/extensions.js'
 import { registerSessionPreferences } from '../local/methods/session-preferences.js'
@@ -1295,6 +1296,7 @@ export async function startSupervisor(o: StartSupervisorOptions): Promise<{
         ) => Promise<ExtensionCallResult>)
       | undefined
     let stopClientModuleNotices: (() => void) | undefined
+    let publishChildEngines: PublishChildEngines | undefined
     if (o.packageRuntime) {
       const packageRuntime = o.packageRuntime
       const packageProfileDirectory = await packageRuntime.profileDirectory(o.profile.name)
@@ -1318,6 +1320,24 @@ export async function startSupervisor(o: StartSupervisorOptions): Promise<{
           })
         : undefined
       await pinCoordinator?.recover()
+      const basePackage = o.profile.packages.find((pkg) => pkg.id === '@agnes/base')
+      if (runtimeStore && pinCoordinator && runtimeTargetProbe && basePackage) {
+        const store = runtimeStore
+        const coordinator = pinCoordinator
+        const probe = runtimeTargetProbe
+        const integrity = basePackage.integrity
+        publishChildEngines = async (engines) => {
+          try {
+            const previous = store.desired()
+            if (!previous) return 'restart-required'
+            const artifact = overlayChildEngineTarget(previous, engines, integrity)
+            if (artifact.digest !== previous.digest) await coordinator.publish(artifact, probe)
+            return 'new-sessions'
+          } catch {
+            return 'restart-required'
+          }
+        }
+      }
       if (runtimeStore && pinCoordinator && runtimeTargetProbe)
         await activateDefaultHelpers({
           profileDir: o.profileDir,
@@ -1939,7 +1959,13 @@ export async function startSupervisor(o: StartSupervisorOptions): Promise<{
           registry.retireAtTurnBoundary(sessionId)
         },
       }
-      registerConfiguration(ep, o.configuration, profileApplication?.apply, profileApplication?.present)
+      registerConfiguration(
+        ep,
+        o.configuration,
+        profileApplication?.apply,
+        profileApplication?.present,
+        publishChildEngines,
+      )
       registerSessionPreferences(ep, lister, preferences)
       registerWorkspaces(ep, workspaceCatalog)
       registerAcp(ep, cx, feeds, attached)

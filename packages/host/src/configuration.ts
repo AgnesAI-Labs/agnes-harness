@@ -20,6 +20,7 @@ import {
   testSubscriptionCredential,
 } from '@agnes/ai'
 import type {
+  ChildEngineSettings,
   ConfigAccount,
   ConfigAccountInput,
   ConfigModel,
@@ -35,9 +36,12 @@ import type {
   ModelSettings,
 } from '@agnes/protocol'
 import {
+  childEngineSettingsError,
+  DISABLED_CHILD_ENGINES,
   isSessionDefaults,
   isSessionDefaultsSnapshot,
   minimumContextBudget,
+  readChildEngineSettings,
   type SessionDefaults,
   type SessionDefaultsSnapshot,
 } from '@agnes/protocol'
@@ -129,6 +133,16 @@ export interface SessionDefaultsConfigurationService {
   saveSessionDefaults(input: SessionDefaultsSnapshot): Promise<SessionDefaultsSnapshot>
 }
 
+export type ChildEnginesSnapshot = {
+  revision: number
+  engines: ChildEngineSettings
+}
+
+export interface ChildEnginesConfigurationService {
+  childEngines(): Promise<ChildEnginesSnapshot>
+  saveChildEngines(input: ChildEnginesSnapshot): Promise<ChildEnginesSnapshot>
+}
+
 export type ConfigurationServiceOptions = {
   subscriptionLogin?: CodexLoginDependencies['login']
   subscriptionTest?: typeof testSubscriptionCredential
@@ -170,6 +184,7 @@ type StoredConfiguration = {
   accounts: StoredAccount[]
   defaultAccountId: string | null
   sessionDefaults?: SessionDefaults
+  childEngines?: ChildEngineSettings
   /** Defaults-only writes must preserve the existing YAML provider overlay. */
   inheritProvider?: true
 }
@@ -228,6 +243,20 @@ const exactKeys = (value: Record<string, unknown>, expected: readonly string[]):
   const actual = Object.keys(value).sort()
   const keys = [...expected].sort()
   return actual.length === keys.length && actual.every((key, i) => key === keys[i])
+}
+
+/** A corrupt child-engine field is omitted so accounts and session defaults still load. */
+function acceptedChildEngines(value: unknown): ChildEngineSettings | undefined {
+  const engines = readChildEngineSettings(value)
+  if (!engines || childEngineSettingsError(engines)) return undefined
+  return engines
+}
+
+function retainedConfiguration(current: StoredConfiguration | undefined) {
+  return {
+    ...(current?.sessionDefaults === undefined ? {} : { sessionDefaults: current.sessionDefaults }),
+    ...(current?.childEngines === undefined ? {} : { childEngines: current.childEngines }),
+  }
 }
 
 const isUsableCredential = (value: string): boolean => /\P{C}/u.test(value.trim())
@@ -438,6 +467,7 @@ function decodeState(value: unknown, profile: string): StoredConfiguration | und
       'defaultAccountId',
       ...(value.sessionDefaults === undefined ? [] : ['sessionDefaults']),
       ...(value.inheritProvider === undefined ? [] : ['inheritProvider']),
+      ...(value.childEngines === undefined ? [] : ['childEngines']),
     ]) ||
     (value.sessionDefaults !== undefined && !isSessionDefaults(value.sessionDefaults)) ||
     (value.inheritProvider !== undefined &&
@@ -541,6 +571,7 @@ function decodeState(value: unknown, profile: string): StoredConfiguration | und
   )
     return undefined
   if (value.defaultAccountId === null && accounts.some((row) => row.enabled)) return undefined
+  const childEngines = acceptedChildEngines(value.childEngines)
   return {
     version: 2,
     profile,
@@ -551,6 +582,7 @@ function decodeState(value: unknown, profile: string): StoredConfiguration | und
     ...(value.sessionDefaults === undefined
       ? {}
       : { sessionDefaults: value.sessionDefaults as SessionDefaults }),
+    ...(childEngines === undefined ? {} : { childEngines }),
   }
 }
 
@@ -616,7 +648,7 @@ async function atomicWrite(path: string, contents: string): Promise<void> {
 
 export function createConfigurationService(
   options: ConfigurationServiceOptions,
-): ConfigurationService & SessionDefaultsConfigurationService {
+): ConfigurationService & SessionDefaultsConfigurationService & ChildEnginesConfigurationService {
   const home = resolve(options.home)
   if (!PROFILE.test(options.profile)) throw new ConfigurationError('CONFIG_INVALID_INPUT')
   const profile = options.profile
@@ -1053,7 +1085,7 @@ export function createConfigurationService(
       revision: nextRevision,
       accounts,
       defaultAccountId,
-      ...(current?.sessionDefaults === undefined ? {} : { sessionDefaults: current.sessionDefaults }),
+      ...retainedConfiguration(current),
     }
     await persistState(next)
     return snapshot(next)
@@ -1214,7 +1246,7 @@ export function createConfigurationService(
             revision,
             accounts: [...(current?.accounts ?? []).filter((a) => a.accountId !== input.accountId), row],
             defaultAccountId: current?.defaultAccountId ?? (row.enabled ? row.accountId : null),
-            ...(current?.sessionDefaults === undefined ? {} : { sessionDefaults: current.sessionDefaults }),
+            ...retainedConfiguration(current),
           }
           await persistState(next)
           return snapshot(next)
@@ -1256,6 +1288,41 @@ export function createConfigurationService(
         }
         await persistState(next)
         return { revision: next.revision, defaults: structuredClone(next.sessionDefaults ?? {}) }
+      }),
+    async childEngines() {
+      const state = await loadState()
+      return {
+        revision: state?.revision ?? 0,
+        engines: structuredClone(state?.childEngines ?? DISABLED_CHILD_ENGINES),
+      }
+    },
+    saveChildEngines: (input) =>
+      serialized(async () => {
+        const raw = inputObject(input)
+        const engines = readChildEngineSettings(raw.engines)
+        if (
+          !exactKeys(raw, ['revision', 'engines']) ||
+          !Number.isSafeInteger(raw.revision) ||
+          (raw.revision as number) < 0 ||
+          !engines ||
+          childEngineSettingsError(engines)
+        )
+          throw new ConfigurationError('CONFIG_INVALID_INPUT')
+        const current = await loadState()
+        if ((raw.revision as number) !== (current?.revision ?? 0))
+          throw new ConfigurationError('CONFIG_REVISION_CONFLICT')
+        const next: StoredConfiguration = {
+          version: 2,
+          profile,
+          accounts: [],
+          defaultAccountId: null,
+          ...current,
+          ...(!current ? { inheritProvider: true as const } : {}),
+          revision: (raw.revision as number) + 1,
+          childEngines: structuredClone(engines),
+        }
+        await persistState(next)
+        return { revision: next.revision, engines: structuredClone(next.childEngines ?? engines) }
       }),
     async profileInput() {
       const state = await loadState()

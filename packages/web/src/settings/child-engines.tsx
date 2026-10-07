@@ -3,25 +3,33 @@ import {
   type ChildEngineSettings,
   childEngineSettingsError,
   DISABLED_CHILD_ENGINES,
-  parseChildEngineSettings,
 } from '@agnes/base/child-engines'
 import { Button } from '@agnes/web-ui'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 
-const STORAGE_KEY = 'agnes.child-engines'
 type Text = (key: string) => string
 type EngineId = 'codex' | 'claude-code' | 'sdk'
 const ENGINES: readonly EngineId[] = ['codex', 'claude-code', 'sdk']
 
-function load(): ChildEngineSettings {
-  try {
-    const raw = sessionStorage.getItem(STORAGE_KEY)
-    return raw
-      ? parseChildEngineSettings(JSON.parse(raw) as unknown)
-      : structuredClone(DISABLED_CHILD_ENGINES)
-  } catch {
-    return structuredClone(DISABLED_CHILD_ENGINES)
-  }
+export type ChildEnginesClient = {
+  childEngines(): Promise<{
+    revision: number
+    engines: ChildEngineSettings
+    effect?: 'new-sessions' | 'restart-required'
+  }>
+  saveChildEngines(input: { revision: number; engines: ChildEngineSettings }): Promise<{
+    revision: number
+    engines: ChildEngineSettings
+    effect?: 'new-sessions' | 'restart-required'
+  }>
+}
+
+function failureCode(error: unknown): string | undefined {
+  if (!error || typeof error !== 'object') return undefined
+  const details = 'details' in error ? (error as { details?: { code?: unknown } }).details : undefined
+  if (typeof details?.code === 'string') return details.code
+  const code = (error as { code?: unknown }).code
+  return typeof code === 'string' ? code : undefined
 }
 
 function lines(value: string): string[] {
@@ -36,10 +44,41 @@ function flags(id: EngineId, protocol: 'sdk' | 'acp') {
   return CHILD_ENGINE_CAPABILITIES[key]
 }
 
-export function ChildEnginesPanel({ canSave, t }: { canSave: boolean; t: Text }) {
-  const [draft, setDraft] = useState<ChildEngineSettings>(load)
+export function ChildEnginesPanel({
+  api,
+  canSave,
+  t,
+}: {
+  api?: ChildEnginesClient | undefined
+  canSave: boolean
+  t: Text
+}) {
+  const [draft, setDraft] = useState<ChildEngineSettings>(structuredClone(DISABLED_CHILD_ENGINES))
+  const [revision, setRevision] = useState(0)
+  const [ready, setReady] = useState(false)
   const [status, setStatus] = useState('')
   const [saved, setSaved] = useState('')
+  useEffect(() => {
+    let cancelled = false
+    if (!api) {
+      setStatus('engine.unavailable')
+      return
+    }
+    void api.childEngines().then(
+      (state) => {
+        if (cancelled) return
+        setDraft(state.engines)
+        setRevision(state.revision)
+        setReady(true)
+      },
+      () => {
+        if (!cancelled) setStatus('engine.unavailable')
+      },
+    )
+    return () => {
+      cancelled = true
+    }
+  }, [api])
   const update = (next: ChildEngineSettings) => {
     setDraft(next)
     setStatus('')
@@ -139,7 +178,10 @@ export function ChildEnginesPanel({ canSave, t }: { canSave: boolean; t: Text })
       })}
       <p>{t('engine.restart')}</p>
       {status && (
-        <p role={status === 'engine.saved' ? 'status' : 'alert'} data-testid="child-engine-status">
+        <p
+          role={status === 'engine.saved' || status === 'engine.savedRestart' ? 'status' : 'alert'}
+          data-testid="child-engine-status"
+        >
           {t(status)}
         </p>
       )}
@@ -150,17 +192,30 @@ export function ChildEnginesPanel({ canSave, t }: { canSave: boolean; t: Text })
       )}
       <Button
         data-testid="child-engine-save"
-        disabled={!canSave}
+        disabled={!canSave || !ready}
         onClick={() => {
           const error = childEngineSettingsError(draft)
           if (error) {
             setStatus(error === 'allow' ? 'engine.allowRequired' : 'engine.commandRequired')
             return
           }
-          const document = JSON.stringify(draft)
-          sessionStorage.setItem(STORAGE_KEY, document)
-          setSaved(document)
-          setStatus('engine.saved')
+          if (!api) {
+            setStatus('engine.unavailable')
+            return
+          }
+          void api.saveChildEngines({ revision, engines: draft }).then(
+            (state) => {
+              setRevision(state.revision)
+              setDraft(state.engines)
+              setSaved(JSON.stringify(state.engines))
+              setStatus(state.effect === 'restart-required' ? 'engine.savedRestart' : 'engine.saved')
+            },
+            (error: unknown) => {
+              setStatus(
+                failureCode(error) === 'CONFIG_REVISION_CONFLICT' ? 'engine.conflict' : 'engine.unavailable',
+              )
+            },
+          )
         }}
       >
         {t('engine.save')}

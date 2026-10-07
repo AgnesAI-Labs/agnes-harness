@@ -34,6 +34,7 @@ import {
   type Host,
   type HostOptions,
   isServicePreDispatchFailure,
+  loadChildEnginePluginLayers,
   type PackageLoader,
   type Prompter,
   packageDirs,
@@ -426,7 +427,12 @@ export async function runWorker(
           ...(workerServiceAuthority ? { serviceAuthority: workerServiceAuthority } : {}),
           ...(skillContribution ? { skillContribution } : {}),
         })
-      : (() => {
+      : (async () => {
+          const childEngineLayers = await loadChildEnginePluginLayers({
+            home: agnesHome(env),
+            profile: profile.name,
+            profileDir,
+          })
           // Resource-control workers and embedders with a custom buildHost never import extension
           // source, and their intentionally minimal profile fixtures need not provide cacheDir.
           const moduleLoader =
@@ -461,6 +467,7 @@ export async function runWorker(
             ...(bootResources ?? {}),
             ...bootPackageSnapshots,
             ...(skillContribution ? { skillContribution } : {}),
+            ...(childEngineLayers ? { ordinaryPluginLayers: childEngineLayers } : {}),
             ...(deps.loader
               ? { loader: deps.loader }
               : {

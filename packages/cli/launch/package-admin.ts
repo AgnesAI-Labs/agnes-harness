@@ -4,6 +4,7 @@ import { type AdminSurfaceAction, createAdminSurface } from '@agnes/daemon/packa
 import { agnesHome, createCredentialStore, resolveFileSecretsDirectory } from '@agnes/host'
 import type {
   AdminSessionSelection,
+  ChildEnginesSaveParams,
   ClientModuleEffectCallParams,
   ClientModuleServiceCallParams,
   PackageCatalogGetParams,
@@ -236,6 +237,23 @@ export function localPackageAdmin(
         await initialize()
         try {
           return await client.sessionSelection.saveDefaults(input)
+        } catch (error) {
+          const reason = (error as { data?: { reason?: unknown } }).data?.reason
+          if (typeof reason === 'string' && /^CONFIG_[A-Z_]{1,48}$/.test(reason))
+            throw Object.assign(new Error(reason), { code: reason })
+          throw error
+        }
+      },
+    },
+    childEngines: {
+      get: async () => {
+        await initialize()
+        return client.config.childEngines.get()
+      },
+      save: async (input) => {
+        await initialize()
+        try {
+          return await client.config.childEngines.save(input as ChildEnginesSaveParams)
         } catch (error) {
           const reason = (error as { data?: { reason?: unknown } }).data?.reason
           if (typeof reason === 'string' && /^CONFIG_[A-Z_]{1,48}$/.test(reason))

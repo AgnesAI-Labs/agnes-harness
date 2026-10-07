@@ -8,6 +8,8 @@ import {
   type ApprovalGrantListResult,
   type ApprovalGrantRecord,
   type AttachFilter,
+  type ChildEnginesSaveParams,
+  type ChildEnginesState,
   type ClientModuleEffectCallParams,
   type ClientModuleListResult,
   type ClientModuleReadResult,
@@ -311,6 +313,11 @@ export class Client {
           ? { timeoutMs: Math.max(this.timeouts.request, 90_000) }
           : {},
       ),
+    childEngines: {
+      get: (): Promise<ChildEnginesState> => this.call('_agnes/v1/config.childEngines.get', {}),
+      save: (input: ChildEnginesSaveParams): Promise<ChildEnginesState> =>
+        this.call('_agnes/v1/config.childEngines.save', input),
+    },
   }
 
   readonly workspace = {

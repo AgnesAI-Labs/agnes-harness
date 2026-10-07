@@ -2,6 +2,8 @@ import { createHash } from 'node:crypto'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import {
   type AdminSessionSelection,
+  ChildEnginesSaveParams,
+  ChildEnginesState,
   isAdminLoop,
   isAdminModelAdapter,
   isSessionDefaultsSnapshot,
@@ -70,6 +72,11 @@ export type AdminSurfaceOptions = {
   surfaceLinks?: () => Promise<readonly AdminSurfaceLink[]>
   /** Real host catalogs plus configuration storage. Missing means selection is unavailable. */
   sessionSelection?: AdminSessionSelection
+  /** Host configuration for the three child-engine plugin rows. */
+  childEngines?: {
+    get(): Promise<unknown>
+    save(input: unknown): Promise<unknown>
+  }
   /** Owner-checked SDK catalog for a durable session key. */
   sessionTools?: (sessionId: string) => Promise<import('@agnes/protocol').SessionToolsResult>
   runtimeAdmin?: {
@@ -353,6 +360,59 @@ export function createAdminSurface(options: AdminSurfaceOptions) {
             reply(response, result.status, result.body)
           } catch {
             error(response, 502, 'E_ADMIN_SEARCH', 'Search settings could not be confirmed.')
+          }
+          return true
+        }
+        if (route === 'child-engines') {
+          const write = request.method === 'PUT'
+          if (!write && request.method !== 'GET') {
+            error(response, 404, 'E_ADMIN_ROUTE', 'The admin operation does not exist.')
+            return true
+          }
+          if (!configuredPermissions.includes(write ? 'packages.activate' : 'packages.read')) {
+            error(response, 403, 'E_ADMIN_FORBIDDEN', 'You do not have permission to perform this action.')
+            return true
+          }
+          if (write && readOnly) {
+            error(response, 409, 'E_ADMIN_READ_ONLY', 'The admin surface is in read-only recovery mode.')
+            return true
+          }
+          const provider = options.childEngines
+          if (!provider) {
+            error(response, 503, 'E_ADMIN_CATALOG_UNAVAILABLE', 'Child engine configuration is unavailable.')
+            return true
+          }
+          try {
+            let result: unknown
+            if (write) {
+              let body: unknown
+              try {
+                body = await readBody(request)
+              } catch {
+                body = undefined
+              }
+              if (!validateAgainst(ChildEnginesSaveParams, body).ok) {
+                error(response, 400, 'E_ADMIN_REQUEST', 'The admin parameters are not valid.')
+                return true
+              }
+              result = await provider.save(body)
+            } else result = await provider.get()
+            if (!validateAgainst(ChildEnginesState, result).ok) throw new Error('invalid child engines')
+            reply(response, 200, result)
+          } catch (cause) {
+            const code = record(cause) && typeof cause.code === 'string' ? cause.code : undefined
+            const conflict = code === 'CONFIG_REVISION_CONFLICT'
+            const invalid = code === 'CONFIG_INVALID_INPUT'
+            error(
+              response,
+              conflict ? 409 : invalid ? 400 : 502,
+              conflict ? 'CONFIG_REVISION_CONFLICT' : invalid ? 'CONFIG_INVALID_INPUT' : 'E_ADMIN_BACKEND',
+              conflict
+                ? 'Configuration changed; reload and try again.'
+                : invalid
+                  ? 'The child engine configuration is not valid.'
+                  : 'The backend response could not be confirmed.',
+            )
           }
           return true
         }
