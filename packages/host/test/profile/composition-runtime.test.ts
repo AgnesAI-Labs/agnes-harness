@@ -133,6 +133,16 @@ it('runs preset compositions side by side, filters tools and retains the generat
     expect(host.kernel.get(reader.key)).toBe(reader)
     expect(host.kernel.get(writer.key)).toBe(writer)
     expect(host.compositionSessions?.()).toHaveLength(2)
+    const beforeSkills = buildCompleteRuntimeTarget({
+      rows: host.extensionRows.current().filter((row) => row.id === 'ext:agnes/skills'),
+      resources: host.runtimeTargetSnapshot!().resource.resources,
+    }).target
+    await host.refreshSkillRow({
+      list: () => [],
+      read: () => ({ ok: false, code: 'NOT_FOUND' }),
+      readFile: () => ({ ok: false, code: 'NOT_FOUND' }),
+    })
+    expect(await host.applyRuntimeTarget(beforeSkills)).toMatchObject({ ok: true })
     const rows = await host.extensionRows.apply(host.extensionRows.current())
     expect(rows).toMatchObject({ ok: true })
     expect(host.compositionPublicationStatus?.()).toMatchObject({

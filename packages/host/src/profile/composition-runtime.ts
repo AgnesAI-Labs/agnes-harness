@@ -2,6 +2,7 @@ import { dirname } from 'node:path'
 import { RuntimeGenerationSnapshotStore } from '@agnes/package-manager'
 import type { RuntimeTarget } from '@agnes/plugin-runtime/host'
 import { readAdminLoopDefault } from '../assemble/loop-selection.js'
+import { SKILL_ROW_ID } from '../assemble/skill-row.js'
 import { createConfigurationService } from '../configuration.js'
 import { HostError } from '../errors.js'
 import type { Host, HostOptions } from '../host.js'
@@ -58,9 +59,13 @@ export async function createCompositionHost(
   const projectRows = <T extends RuntimeTarget['tree']['rows'][number]>(
     rows: readonly T[],
     tree: ResolvedComposition,
+    host?: Host,
   ): T[] => {
     const packages = new Map(tree.selection.packages?.map((pkg) => [pkg.id, pkg.enabled !== false]))
+    const skill = host?.extensionRows.current().find((row) => row.id === SKILL_ROW_ID)
     return rows.map((row) => {
+      // Skills are live resources. A container's filtered view owns its current importer identity.
+      if (skill && row.id === SKILL_ROW_ID) row = skill as T
       const identity = pluginSnapshotIdentity(row.plugin)
       const packageId =
         identity?.packageId ??
@@ -77,11 +82,12 @@ export async function createCompositionHost(
       })
     })
   }
-  const project = (target: RuntimeTarget, tree: ResolvedComposition): RuntimeTarget => {
+  const project = (target: RuntimeTarget, tree: ResolvedComposition, host?: Host): RuntimeTarget => {
     return buildCompleteRuntimeTarget({
       rows: projectRows(
         [...target.tree.rows, ...Object.values(target.resource.rows).filter((row) => row !== null)],
         tree,
+        host,
       ),
       resources: target.resource.resources,
     }).target
@@ -156,13 +162,13 @@ export async function createCompositionHost(
           rows.set(row.id, row)
         }
         if (latestTarget) {
-          const report = await host.applyRuntimeTarget(project(latestTarget, binding.tree))
+          const report = await host.applyRuntimeTarget(project(latestTarget, binding.tree, host))
           assertHostPublication(report.publication)
           if (!report.ok) throw new Error('E_COMPOSITION_PUBLICATION: new container did not converge')
         }
         const selectedRows = latestRows ?? (prepared.size ? [...rows.values()] : undefined)
         if (selectedRows) {
-          const report = await host.extensionRows.apply(projectRows(selectedRows, binding.tree))
+          const report = await host.extensionRows.apply(projectRows(selectedRows, binding.tree, host))
           assertHostPublication(report.publication)
           if (!report.ok) throw new Error('E_COMPOSITION_PUBLICATION: new container rows did not converge')
         }
@@ -435,7 +441,7 @@ export async function createCompositionHost(
         latestTarget = target
         latestRows = undefined
         await broadcast('runtime-target', (container) =>
-          container.host.applyRuntimeTarget(project(target, container.tree)),
+          container.host.applyRuntimeTarget(project(target, container.tree, container.host)),
         )
         return convergence(target)
       }),
@@ -493,7 +499,7 @@ export async function createCompositionHost(
           const selected = new Set(rows.map((row) => row.id))
           for (const id of prepared.keys()) if (!selected.has(`ext:${id}`)) prepared.delete(id)
           await broadcast('extension-rows', (container) =>
-            container.host.extensionRows.apply(projectRows(rows, container.tree)),
+            container.host.extensionRows.apply(projectRows(rows, container.tree, container.host)),
           )
           return convergence()
         }),
