@@ -122,6 +122,11 @@ it('keeps old plugin leases across update, close and cold resume, and drains on 
     const execute = (session: typeof a) =>
       required(session.currentTools().resolve('generation_value')).execute({}, {
         signal: new AbortController().signal,
+        net: {
+          fetch: async () => {
+            throw new Error('generation fixture tools do not use network')
+          },
+        },
         session: {
           key: session.key,
           lane: session.lane,

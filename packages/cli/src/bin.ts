@@ -660,7 +660,11 @@ export async function main(argv: string[], io: MainIO, boot: Partial<LocalBootDe
       io.stdout.write((await packPlugin(p.positional[1], p.positional[2])) + '\n')
       return 0
     }
-    if (p.command === 'plugins' || p.command === 'package' || p.command === 'install') {
+    if (
+      (p.command === 'plugins' && p.positional[0] !== 'reload') ||
+      p.command === 'package' ||
+      p.command === 'install'
+    ) {
       const booted = await bootDefault(p, deps, { useEmbedded: Object.keys(boot).length > 0 })
       try {
         const { runPackageCommand } = await import('./commands/package.js')
