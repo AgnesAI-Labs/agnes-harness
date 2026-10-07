@@ -24,6 +24,8 @@ export const ACP_CHILD_CAPABILITIES: ChildAgentCapabilities = Object.freeze({
   modelSelection: false,
   inheritsParentContext: false,
   worktree: false,
+  budget: false,
+  toolFilter: false,
 })
 
 export type AcpChildAgentOptions = Omit<AcpCommand, 'cwd'> & {
@@ -69,6 +71,8 @@ export function acpChildAgentProvider(options: AcpChildAgentOptions): ChildAgent
       requireCapability(!startOptions.fork, 'provider cannot inherit parent context')
       requireCapability(!startOptions.model, 'provider cannot select a child model')
       requireCapability(startOptions.isolation !== 'worktree', 'provider cannot isolate a child worktree')
+      requireCapability(startOptions.budget === undefined, 'provider cannot enforce a child budget')
+      requireCapability(startOptions.toolFilter === undefined, 'provider cannot filter child tools')
       assertChildAgentAllowed(startOptions.sessionKey, {
         providerId: ACP_CHILD_PROVIDER_ID,
         ...(startOptions.model ? { model: startOptions.model } : {}),
@@ -80,7 +84,9 @@ export function acpChildAgentProvider(options: AcpChildAgentOptions): ChildAgent
         cwd: startOptions.cwd,
         ...(options.env ? { env: options.env } : {}),
       })
-      const abortStartup = () => acp.kill()
+      const abortStartup = () => {
+        void acp.kill()
+      }
       startOptions.signal.addEventListener('abort', abortStartup, { once: true })
       try {
         await acp.request('initialize', {
@@ -96,7 +102,8 @@ export function acpChildAgentProvider(options: AcpChildAgentOptions): ChildAgent
         startOptions.signal.throwIfAborted()
         return openSession(acp, created.sessionId, task, startOptions, capabilities)
       } catch (error) {
-        acp.kill()
+        await acp.kill()
+        startOptions.signal.throwIfAborted()
         throw error
       } finally {
         startOptions.signal.removeEventListener('abort', abortStartup)
@@ -118,6 +125,7 @@ function openSession(
   let text = ''
   let busy = false
   let disposed = false
+  let disposal: Promise<void> | undefined
   let status: ChildAgentStatus = 'starting'
   const listing = (): ChildAgentListing => ({
     id,
@@ -144,7 +152,9 @@ function openSession(
     disposed = true
     untrack()
     forget(options.sessionKey, id)
+    options.signal.removeEventListener('abort', onAbort)
     queue.settle({ status: next, text })
+    void acp.kill()
   }
   const pump = () => {
     if (disposed || busy) return
@@ -198,13 +208,27 @@ function openSession(
     sendMessage: deliver,
     interrupt: stopTurn,
     result: () => queue.result,
-    async dispose() {
-      if (disposed) return
-      if (busy) acp.notify('session/cancel', { sessionId })
-      finish('cancelled')
-      acp.kill()
+    dispose() {
+      disposal ??= (async () => {
+        if (!disposed) {
+          if (busy) acp.notify('session/cancel', { sessionId })
+          finish('cancelled')
+        }
+        await acp.kill()
+      })()
+      return disposal
     },
   }
+  const onAbort = () => {
+    void handle.dispose().catch((error) => queue.fail(error))
+  }
+  options.signal.addEventListener('abort', onAbort, { once: true })
+  acp.onExit = (error) => {
+    if (disposed) return
+    queue.push({ type: 'error', message: error.message })
+    finish('failed')
+  }
+  if (options.signal.aborted) onAbort()
   publishListing('starting')
   void deliver(task, new AbortController().signal)
   return handle

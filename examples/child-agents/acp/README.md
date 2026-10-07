@@ -2,7 +2,7 @@
 
 This is a usage note for the `acp` child provider. The implementation ships in `@agnes/base` and is not part of the default extension list.
 
-`acp` runs an external process that speaks newline-delimited JSON-RPC. It can continue after a turn and it can be interrupted. It does not select a model, inherit the parent transcript, or create a git worktree. Those requests fail at start.
+`acp` runs an external process that speaks newline-delimited JSON-RPC. It can continue after a turn and it can be interrupted. It does not select a model, inherit the parent transcript, or create a git worktree. It also cannot enforce a child credit budget or filter remote tool names. Those requests fail at start. Parent lifetime cancellation disposes the child; disposal waits for process exit.
 
 ```ts
 import type { ChildAgentPluginContext } from '@agnes/extension-api'

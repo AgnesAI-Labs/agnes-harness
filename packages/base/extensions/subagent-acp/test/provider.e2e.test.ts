@@ -83,6 +83,17 @@ it('interrupts an in-flight ACP turn and refuses capabilities it does not have',
     await expect(
       child.start('x', { signal: new AbortController().signal, sessionKey: 's', cwd, fork: true }),
     ).rejects.toThrow('cannot inherit parent context')
+    await expect(
+      child.start('x', { signal: new AbortController().signal, sessionKey: 's', cwd, budget: 1 }),
+    ).rejects.toThrow('cannot enforce a child budget')
+    await expect(
+      child.start('x', {
+        signal: new AbortController().signal,
+        sessionKey: 's',
+        cwd,
+        toolFilter: { deny: ['shell'] },
+      }),
+    ).rejects.toThrow('cannot filter child tools')
     setChildAgentAllowlist('s', { providers: [] })
     await expect(
       child.start('x', { signal: new AbortController().signal, sessionKey: 's', cwd }),
@@ -92,4 +103,15 @@ it('interrupts an in-flight ACP turn and refuses capabilities it does not have',
     await reading
     resetChildAgentAllowlists()
   }
+})
+
+it('drains the fixture process when the parent lifetime aborts', async () => {
+  const lifetime = new AbortController()
+  const child = provider()
+  const handle = await child.start('hello', { signal: lifetime.signal, sessionKey: 'abort-parent', cwd })
+  lifetime.abort()
+  await handle.dispose()
+  await expect(handle.result()).resolves.toMatchObject({ status: 'cancelled' })
+  expect(await child.list?.('abort-parent')).toEqual([])
+  await expect(handle.sendMessage('late', new AbortController().signal)).rejects.toThrow('closed')
 })

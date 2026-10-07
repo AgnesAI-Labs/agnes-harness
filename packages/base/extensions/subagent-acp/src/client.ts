@@ -27,6 +27,8 @@ export class AcpChildProcess {
   private buffer = ''
   private onText: ((text: string) => void) | undefined
   private closed = false
+  readonly exited: Promise<void>
+  onExit: ((error: Error) => void) | undefined
 
   constructor(command: AcpCommand) {
     const env: NodeJS.ProcessEnv = {}
@@ -39,16 +41,21 @@ export class AcpChildProcess {
       env,
       stdio: ['pipe', 'pipe', 'pipe'],
     })
+    this.exited = new Promise((resolve) => this.proc.once('close', () => resolve()))
+    // Consume diagnostics so a verbose child cannot block on a full stderr pipe.
+    this.proc.stderr.resume()
     this.proc.stdout.setEncoding('utf8')
     this.proc.stdout.on('data', (chunk: string) => this.ingest(chunk))
     this.proc.on('error', (error) => this.failAll(error))
     this.proc.on('exit', (code) => {
       this.closed = true
       this.failAll(new Error(`acp child exited (${code ?? 'null'})`))
+      this.onExit?.(new Error(`acp child exited (${code ?? 'null'})`))
     })
   }
 
   request(method: string, params: unknown): Promise<unknown> {
+    if (this.closed) return Promise.reject(new Error('acp child is closed'))
     const id = this.nextId++
     const result = new Promise((resolve, reject) => {
       this.pending.set(id, { resolve, reject })
@@ -65,11 +72,20 @@ export class AcpChildProcess {
     this.onText = listener
   }
 
-  kill(): void {
-    if (this.closed) return
-    this.closed = true
-    this.proc.kill()
-    this.proc.stdin.destroy()
+  async kill(): Promise<void> {
+    if (!this.closed) {
+      this.closed = true
+      this.failAll(new Error('acp child is closed'))
+      this.proc.kill()
+      this.proc.stdin.destroy()
+    }
+    const escalation = setTimeout(() => this.proc.kill('SIGKILL'), 1000)
+    escalation.unref()
+    try {
+      await this.exited
+    } finally {
+      clearTimeout(escalation)
+    }
   }
 
   private send(message: RpcMessage): void {
