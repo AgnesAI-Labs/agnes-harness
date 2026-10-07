@@ -64,7 +64,7 @@ export function observePluginCapabilities(
     const paths = [
       path,
       absolute,
-      ...(!rel.startsWith('..') && !isAbsolute(rel) ? [rel, './' + rel, 'workspace/' + rel] : []),
+      ...(!rel.startsWith('..') && !isAbsolute(rel) ? [rel, `./${rel}`, `workspace/${rel}`] : []),
     ]
     report(
       `filesystem.${kind}`,
@@ -73,49 +73,66 @@ export function observePluginCapabilities(
   }
   return {
     ...context,
-    exec: (argv, opts) => {
-      exec(argv)
-      return context.exec(argv, opts)
-    },
-    sandbox: {
-      ...context.sandbox,
-      confine: (argv) => {
-        exec(argv)
-        return context.sandbox.confine(argv)
-      },
-    },
-    net: {
-      ...context.net,
-      fetch: (url, init) => {
-        net(url)
-        return context.net.fetch(url, init)
-      },
-      ...(context.net.fetchPublic
-        ? {
-            fetchPublic: (url: string, opts?: { responseType: 'zip' }) => {
-              net(url)
-              return context.net.fetchPublic!(url, opts)
+    ...(context.exec
+      ? {
+          exec: (argv, opts) => {
+            exec(argv)
+            return context.exec(argv, opts)
+          },
+        }
+      : {}),
+    ...(context.sandbox
+      ? {
+          sandbox: {
+            ...context.sandbox,
+            confine: (argv) => {
+              exec(argv)
+              return context.sandbox.confine(argv)
             },
-          }
-        : {}),
-    },
-    fs: {
-      read: (path, opts) => {
-        fs('read', path)
-        return context.fs.read(path, opts)
-      },
-      write: (path, data) => {
-        fs('write', path)
-        return context.fs.write(path, data)
-      },
-      list: (path) => {
-        fs('read', path)
-        return context.fs.list(path)
-      },
-      stat: (path) => {
-        fs('read', path)
-        return context.fs.stat(path)
-      },
-    },
+          },
+        }
+      : {}),
+    ...(context.net
+      ? {
+          net: {
+            ...context.net,
+            fetch: (url, init) => {
+              net(url)
+              return context.net.fetch(url, init)
+            },
+            ...(context.net.fetchPublic
+              ? {
+                  fetchPublic: (url: string, opts?: { responseType: 'zip' }) => {
+                    net(url)
+                    return context.net.fetchPublic!(url, opts)
+                  },
+                }
+              : {}),
+          },
+        }
+      : {}),
+    ...(context.fs
+      ? {
+          fs: {
+            ...context.fs,
+            read: (path, opts) => {
+              fs('read', path)
+              return context.fs.read(path, opts)
+            },
+            write: (path, data) => {
+              fs('write', path)
+              return context.fs.write(path, data)
+            },
+            list: (path) => {
+              fs('read', path)
+              return context.fs.list(path)
+            },
+            stat: (path) => {
+              fs('read', path)
+              return context.fs.stat(path)
+            },
+          },
+        }
+      : {}),
   }
 }

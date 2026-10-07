@@ -19,6 +19,8 @@ it('reports undeclared Host port use without exposing targets or changing port o
     fs: { read: async () => new Uint8Array([1]) },
     sandbox: { confine: async (argv: string[]) => argv },
   } as unknown as ToolContext
+  const minimal = { cwd: '/workspace', signal: new AbortController().signal } as ToolContext
+  expect(observePluginCapabilities(minimal, undefined, log)).toEqual(minimal)
   const declared = observePluginCapabilities(
     context,
     { exec: ['node'], network: ['*.example.com'], filesystem: { read: ['workspace/*'] } },
