@@ -19,6 +19,45 @@ type Snapshot = {
   workspaces: { path: string; available: boolean }[]
   rules?: { files: { path: string; scope: string; content: string; trust: string }[]; skipped: string[] }
 }
+function object(value: unknown): Record<string, unknown> | undefined {
+  return value !== null && typeof value === 'object' && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : undefined
+}
+function strings(value: unknown): value is string[] {
+  return Array.isArray(value) && value.every((item) => typeof item === 'string')
+}
+function validSnapshot(value: unknown): value is Snapshot {
+  const snapshot = object(value)
+  const config = object(snapshot?.config)
+  if (
+    !config ||
+    typeof config.rulesEnabled !== 'boolean' ||
+    typeof config.timeEnabled !== 'boolean' ||
+    typeof config.timeZone !== 'string' ||
+    !['refreshIntervalMs', 'maxBytes', 'maxSourceBytes'].every(
+      (key) => typeof config[key] === 'number' && Number.isFinite(config[key]),
+    ) ||
+    !['customSkillRoots', 'instructionFiles', 'localInstructionFiles'].every((key) => strings(config[key])) ||
+    !Array.isArray(snapshot?.workspaces) ||
+    !snapshot.workspaces.every((entry) => {
+      const workspace = object(entry)
+      return typeof workspace?.path === 'string' && typeof workspace.available === 'boolean'
+    })
+  )
+    return false
+  if (snapshot.rules === undefined) return true
+  const rules = object(snapshot.rules)
+  return (
+    !!rules &&
+    strings(rules.skipped) &&
+    Array.isArray(rules.files) &&
+    rules.files.every((entry) => {
+      const file = object(entry)
+      return !!file && ['path', 'scope', 'content', 'trust'].every((key) => typeof file[key] === 'string')
+    })
+  )
+}
 export async function contextRequest(
   input: { cwd?: string; config?: Config },
   fetcher = fetch,
@@ -33,7 +72,9 @@ export async function contextRequest(
     ...(signal ? { signal } : {}),
   })
   if (!response.ok) throw new Error('context unavailable')
-  return response.json()
+  const value: unknown = await response.json()
+  if (!validSnapshot(value)) throw new Error('invalid context response')
+  return value
 }
 export function ContextPanel({ canSave }: { canSave: boolean }) {
   const { t } = useUiText(SETTINGS_NAMESPACE, settingsCatalog)

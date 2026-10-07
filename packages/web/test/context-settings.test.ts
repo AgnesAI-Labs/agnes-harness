@@ -18,11 +18,13 @@ it('loads and saves installation context, previews workspace rules and composes 
     customSkillRoots: [],
   }
   const requests: Record<string, unknown>[] = []
+  let malformed = false
   vi.stubGlobal(
     'fetch',
     vi.fn(async (_url, init) => {
       const input = JSON.parse(init.body)
       requests.push(input)
+      if (malformed) return Response.json({ configured: false })
       return Response.json({
         config: input.config ?? config,
         workspaces: [{ path: '/synthetic/project', available: true }],
@@ -80,6 +82,11 @@ it('loads and saves installation context, previews workspace rules and composes 
       input.dispatchEvent(new Event('input', { bubbles: true }))
     })
     expect(control('context-skill-invoke').getAttribute('href')).toContain('prompt=%2Fskill+invoke+review')
+    await vi.waitFor(() => expect(control('context-panel').getAttribute('aria-busy')).toBe('false'))
+    malformed = true
+    flushSync(() => control('context-refresh').click())
+    await vi.waitFor(() => expect(host.querySelector('[role="alert"]')).not.toBeNull())
+    expect(host.textContent).toContain('Follow project conventions')
   } finally {
     flushSync(() => root.unmount())
     host.remove()
