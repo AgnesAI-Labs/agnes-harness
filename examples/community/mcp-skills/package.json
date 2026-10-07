@@ -1,0 +1,47 @@
+{
+  "name": "@community/mcp-skills",
+  "version": "0.1.0",
+  "type": "module",
+  "license": "Apache-2.0",
+  "engines": {
+    "node": ">=24.10"
+  },
+  "exports": "./dist/index.js",
+  "files": [
+    "dist",
+    "mcp",
+    "skills"
+  ],
+  "scripts": {
+    "build": "tsc -b",
+    "test": "node --test test/*.test.mjs",
+    "mcp": "node mcp/server.mjs"
+  },
+  "dependencies": {
+    "@agnes/plugin-runtime": "0.0.0",
+    "@agnes/extension-api": "1.4.0",
+    "@agnes/resource-control-runtime": "0.0.0",
+    "@agnes/protocol": "0.0.0",
+    "@modelcontextprotocol/sdk": "1.25.2"
+  },
+  "devDependencies": {
+    "typescript": "7.0.2",
+    "@types/node": "26.4.1",
+    "@agnes/cordis": "0.0.0"
+  },
+  "agnes": {
+    "plugins": [
+      {
+        "export": "main",
+        "id": "ext:@community/mcp-skills/main",
+        "inject": [
+          "skills"
+        ]
+      }
+    ],
+    "kinds": [
+      "mcp",
+      "skills"
+    ]
+  }
+}

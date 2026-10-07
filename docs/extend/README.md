@@ -40,3 +40,17 @@ Bind registrations and long-lived resources to the plugin fiber lifecycle. Bind 
 A Host must supply the corresponding registration service before a loop/adapter plugin can load. Installing a package differs from selecting its loop or adapter for a session. Existing sessions and restart requirements follow the Host's integration and generation support.
 
 Use [plugin management](../guide/packages.md) to inspect, install, trust and enable a built package. Author tests use deterministic ports and do not establish real-model behavior, remote MCP connectivity or browser rendering.
+
+## Community examples
+
+The [community examples](../../examples/community/) are standalone packages that
+build and run their own small tests after installing preview tarballs outside
+the repository, with an isolated HOME and no workspace links. Start with
+[tool-panel](../../examples/community/tool-panel/) for schemas, configuration and
+a tool-result client slot, or [mcp-skills](../../examples/community/mcp-skills/)
+for a local stdio MCP server, resources and a packaged Skill. Their READMEs cover
+installation, activation, new-session checks and cleanup.
+
+Run `node --import tsx tools/release/external-examples.ts --keep` from a checkout
+to pack the public author APIs, testkit dependencies and harness, then verify the
+external author path. `--author-only` skips the harness build for a light check.

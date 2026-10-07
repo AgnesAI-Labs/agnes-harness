@@ -1,0 +1,57 @@
+{
+  "name": "@community/tool-panel",
+  "version": "0.1.0",
+  "type": "module",
+  "license": "Apache-2.0",
+  "engines": {
+    "node": ">=24.10"
+  },
+  "exports": "./dist/index.js",
+  "files": [
+    "dist",
+    "client"
+  ],
+  "scripts": {
+    "build": "tsc -b",
+    "test": "node --test test/*.test.mjs"
+  },
+  "dependencies": {
+    "@agnes/plugin-runtime": "0.0.0",
+    "@agnes/extension-api": "1.4.0",
+    "@sinclair/typebox": "0.34.33"
+  },
+  "devDependencies": {
+    "typescript": "7.0.2",
+    "@types/node": "26.4.1",
+    "@agnes/host": "0.0.0",
+    "react": "18.3.1",
+    "react-dom": "18.3.1"
+  },
+  "agnes": {
+    "plugins": [
+      {
+        "export": "main",
+        "id": "ext:@community/tool-panel/main",
+        "inject": [
+          "extension"
+        ],
+        "config": {
+          "prefix": "Echo: "
+        }
+      }
+    ],
+    "clientDescriptors": [
+      {
+        "rowId": "ext:@community/tool-panel/main",
+        "path": "./client/agnes.client.json"
+      }
+    ],
+    "kinds": [
+      "tool",
+      "ui"
+    ]
+  },
+  "peerDependencies": {
+    "react": "18.3.1"
+  }
+}

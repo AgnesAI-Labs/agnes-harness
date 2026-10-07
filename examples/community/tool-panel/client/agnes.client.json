@@ -1,0 +1,14 @@
+{
+  "client": {
+    "entry": "./index.js",
+    "styles": [],
+    "slots": [
+      "tool.call.toolview"
+    ],
+    "publicConfig": {
+      "label": "Echo result"
+    },
+    "services": [],
+    "projections": []
+  }
+}
