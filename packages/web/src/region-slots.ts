@@ -65,6 +65,7 @@ import type { ClaimResolver } from './client-modules/boot.js'
 import { observeSlotCards } from './client-modules/timeline-slot.js'
 import type { DocumentPreviewInput, DocumentPreviewKind } from './document-preview.js'
 import { applyLocaleText } from './locale-preference.js'
+import { LoopPicker } from './loop-picker.js'
 import { createModelPicker } from './model-picker.js'
 import { renderSessionNavigation } from './navigation.js'
 import { createPermissionPicker } from './permission-picker.js'
@@ -549,7 +550,12 @@ function ComposerDshFrame({
             }),
             outlet('conversation.input.dock'),
           ),
-          left: outlet('conversation.input.left'),
+          left: createElement(
+            'span',
+            { style: { display: 'contents' } },
+            createElement(LoopPicker),
+            outlet('conversation.input.left'),
+          ),
           model: outlet('conversation.input.model'),
           overlay: outlet('conversation.input.overlay'),
           permission: outlet('conversation.input.permission'),

@@ -3,6 +3,10 @@ import type { LocaleCatalog } from '@agnes/web-client'
 /** 输入框、会话编排提示与工作区/会话错误说明（W1）。宿主组装 view 时渲染取词。 */
 export const composerLocaleCatalog: LocaleCatalog = {
   en: {
+    'composer.loop.select': 'Agent Loop for the new session',
+    'composer.loop.inherited': 'Configured Loop default',
+    'composer.loop.unavailable': 'This Loop is unavailable; choose another',
+    'composer.loop.loadFailed': 'Could not load Agent Loops',
     'composer.hint.disconnected': 'Connect to the backend to start',
     'composer.hint.unconfigured': 'Configure a model to start',
     'composer.hint.preparing': 'Preparing…',
@@ -52,6 +56,10 @@ export const composerLocaleCatalog: LocaleCatalog = {
     'topbar.preparing': 'Preparing session',
   },
   'zh-CN': {
+    'composer.loop.select': '新会话的 Agent Loop',
+    'composer.loop.inherited': '使用已配置的 Loop 默认值',
+    'composer.loop.unavailable': '此 Loop 已不可用，请重新选择',
+    'composer.loop.loadFailed': '无法加载 Agent Loop 列表',
     'composer.hint.disconnected': '连接后台后开始',
     'composer.hint.unconfigured': '配置模型后开始',
     'composer.hint.preparing': '正在准备…',

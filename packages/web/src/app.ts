@@ -47,6 +47,13 @@ import {
 } from './live-projection.js'
 import { setLocaleTranslator } from './locale-bridge.js'
 import { applyDocumentLocale, readLocalePreference, writeLocalePreference } from './locale-preference.js'
+import {
+  type LoopSelection,
+  loadNewSessionCatalog,
+  loopIdentity,
+  type NewSessionCatalog,
+  updateLoopPicker,
+} from './loop-picker.js'
 import type { ModelPickerOption } from './model-picker.js'
 import { renderWorkspaceOptions } from './navigation.js'
 import { type PermissionMode, permissionLabel, yoloEnabled } from './permission-picker.js'
@@ -412,6 +419,34 @@ let initialModelPending: KnownSessionModel | undefined
 let modelChangePending = false
 let modelSelectionSeq = 0
 let draftModelSettingsEdited = false
+let draftModelExplicit = false
+let draftLoop: LoopSelection | undefined
+let draftLoopEdited = false
+let newSessionCatalog: NewSessionCatalog | undefined
+let loopCatalogError = false
+let loopCatalogPending = false
+async function refreshSessionCatalog(): Promise<void> {
+  loopCatalogPending = !newSessionCatalog
+  renderControls()
+  try {
+    newSessionCatalog = await loadNewSessionCatalog()
+    loopCatalogError = false
+    if (draftingNew && !draftLoopEdited) draftLoop = newSessionCatalog.defaults.loop
+  } catch {
+    loopCatalogError = true
+  } finally {
+    loopCatalogPending = false
+    renderControls()
+  }
+}
+function draftLoopAvailable(): boolean {
+  return (
+    !draftLoop ||
+    !!newSessionCatalog?.loops.some(
+      (entry) => loopIdentity(entry) === loopIdentity(draftLoop as LoopSelection),
+    )
+  )
+}
 let permissionMode: PermissionMode = 'workspace'
 let initialPermissionPending: PermissionMode | undefined
 let permissionChangePending = false
@@ -775,6 +810,24 @@ function renderControls(): void {
         (current ? t('composer.workspace.currentTitle') : t('composer.workspace.select')),
     },
   }
+  if (draftingNew && !draftLoopAvailable()) composerView.send.disabled = true
+  if (draftingNew && loopCatalogPending) composerView.send.disabled = true
+  updateLoopPicker({
+    visible: draftingNew,
+    disabled: !connected || sending || sessionPending || loopCatalogPending,
+    loops: newSessionCatalog?.loops ?? [],
+    ...(draftLoop ? { selected: draftLoop } : {}),
+    ...(loopCatalogError ? { error: t('composer.loop.loadFailed') } : {}),
+    label: t('composer.loop.select'),
+    inherited: t('composer.loop.inherited'),
+    unavailable: t('composer.loop.unavailable'),
+    onSelect(loop) {
+      if (!draftingNew || sending || sessionPending) return
+      draftLoop = loop
+      draftLoopEdited = true
+      renderControls()
+    },
+  })
   composerRuntime.render(composerView)
   updateSidebar()
   if (sessionPending) {
@@ -1069,6 +1122,7 @@ async function list(cursor?: string): Promise<PageSessionMeta> {
     }
   }
   sessionRows = [...rows.values()]
+  if (current && projection) render()
   sessionNext = page.next
   updateSidebar()
   const selectedRow = sessionRows.find((row) => row.sessionId === current?.id)
@@ -1422,11 +1476,13 @@ async function pickWorkspace(): Promise<void> {
 }
 async function beginNewDraft(showWorkspacePicker = true, workspace?: WorkspaceEntry): Promise<void> {
   if (sessionPending || sending) return
+  sessionPending = true
   if (workspace) selectedWorkspace = workspace
   clearSessionRecovery()
   const epoch = ++selection
   const previous = current
   if (previous && knownSessionModel) rememberWebComposer({ model: knownSessionModel })
+  await refreshSessionCatalog()
   const inherited = selectionFromMemory(runtimeModels, accountProvider)
   const stop = stopEvents
   current = undefined
@@ -1434,8 +1490,25 @@ async function beginNewDraft(showWorkspacePicker = true, workspace?: WorkspaceEn
   projection = undefined
   draftingNew = true
   draftModelSettingsEdited = false
+  draftModelExplicit = false
+  draftLoopEdited = false
+  draftLoop = newSessionCatalog?.defaults.loop
   pendingSessionKey = crypto.randomUUID()
   knownSessionModel = inherited.model ? modelDefaults(inherited.model) : undefined
+  const adminModel = newSessionCatalog?.defaults.modelAdapter
+  const preferred = adminModel
+    ? runtimeModels.find(
+        (model) =>
+          model.id === adminModel.model &&
+          newSessionCatalog?.modelAdapters.some(
+            (adapter) =>
+              adapter.id === adminModel.id &&
+              adapter.version === adminModel.version &&
+              adapter.models.some((entry) => entry.id === model.id && entry.route === model.route),
+          ),
+      )
+    : undefined
+  if (preferred) knownSessionModel = modelDefaults(preferred)
   permissionMode = inherited.permission
   permissionRefreshPending = false
   initialPermissionPending = undefined
@@ -1508,9 +1581,32 @@ async function refreshModels(): Promise<ModelPickerOption[]> {
     modelAppliedGeneration = generation
     runtimeModels = models
     configured = runtimeModels.length > 0
-    if (draftingNew && !draftModelSettingsEdited && !modelChangePending && !permissionChangePending) {
+    if (
+      draftingNew &&
+      !draftModelExplicit &&
+      !draftModelSettingsEdited &&
+      !modelChangePending &&
+      !permissionChangePending
+    ) {
       const next = selectionFromMemory(runtimeModels, accountProvider)
-      knownSessionModel = next.model ? modelDefaults(next.model) : undefined
+      const adminDefault = newSessionCatalog?.defaults.modelAdapter
+      const preferred = adminDefault
+        ? models.find(
+            (model) =>
+              model.id === adminDefault.model &&
+              newSessionCatalog?.modelAdapters.some(
+                (adapter) =>
+                  adapter.id === adminDefault.id &&
+                  adapter.version === adminDefault.version &&
+                  adapter.models.some((entry) => entry.id === model.id && entry.route === model.route),
+              ),
+          )
+        : undefined
+      knownSessionModel = preferred
+        ? modelDefaults(preferred)
+        : next.model
+          ? modelDefaults(next.model)
+          : undefined
       permissionMode = next.permission
     }
     renderControls()
@@ -1599,6 +1695,7 @@ async function selectModel(option: ModelPickerOption, settings?: ModelSettings):
   const session = current
   if (sessionPending || modelChangePending) return false
   if (!session && draftingNew) {
+    draftModelExplicit = true
     if (settings !== undefined) draftModelSettingsEdited = true
     else if (!sameModel) draftModelSettingsEdited = false
     knownSessionModel = selected
@@ -2042,7 +2139,12 @@ function submitComposer(): void {
       const draftModel = knownSessionModel
       const workspace = selectedWorkspace
       pendingSessionKey = key
-      const created = await client.session.new({ cwd: workspace?.path ?? '', sessionKey: key })
+      if (!draftLoopAvailable() || loopCatalogPending) throw new Error(t('composer.loop.unavailable'))
+      const created = await client.session.new({
+        cwd: workspace?.path ?? '',
+        sessionKey: key,
+        ...(draftLoop ? { loop: draftLoop } : {}),
+      })
       try {
         await open(created.id, {
           created,
@@ -2227,6 +2329,7 @@ async function refreshModelConfiguration(): Promise<void> {
   accountLabels = new Map(
     (snapshot.accounts ?? []).map((row) => [row.route, `${row.label} · ${row.providerId}`]),
   )
+  await refreshSessionCatalog()
   await refreshModels()
 }
 let modelRefreshPending = false
