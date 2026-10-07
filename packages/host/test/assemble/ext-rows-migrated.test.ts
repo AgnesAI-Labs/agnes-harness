@@ -87,6 +87,14 @@ const SUPPLIED: Record<string, string[]> = {
     'slot:tool.card.inline',
     'projection:agnes/workflow/runs',
   ],
+  'agnes/session-query': [
+    'tool:session_search',
+    'tool:session_event_search',
+    'tool:session_trace',
+    'tool:session_event_trace',
+    'tool:session_event_read',
+    'hook:context',
+  ],
 }
 
 const listed = (h: { host: { extensions(): { id: string; loaded: boolean }[] } }, id: string) =>
@@ -125,6 +133,7 @@ describe('the builtin extensions that moved to the shared row host', () => {
       'agnes/plan-mode',
       'agnes/mcp-resources',
       'agnes/workflow',
+      'agnes/session-query',
     ])
     for (const [id, registrations] of Object.entries(SUPPLIED)) {
       expect(listed(h, id)?.loaded, id).toBe(true)

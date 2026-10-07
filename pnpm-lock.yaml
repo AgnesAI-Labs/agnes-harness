@@ -84,6 +84,9 @@ importers:
       '@agnes/core':
         specifier: workspace:*
         version: link:../core
+      '@agnes/history-index':
+        specifier: workspace:*
+        version: link:../history-index
       '@agnes/loop-default':
         specifier: workspace:*
         version: link:../loop-default

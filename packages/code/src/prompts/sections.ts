@@ -66,6 +66,7 @@ export const PROMPT_SECTIONS: ReadonlyArray<PromptSectionSpec> = validateSection
   { id: 'skills', order: 160, source: 'dynamic', owner: 'base' },
   { id: 'plan-mode', order: 162, source: 'dynamic', owner: 'base' },
   { id: 'plugin-creator', order: 165, source: 'dynamic', owner: 'base' },
+  { id: 'session-query', order: 168, source: 'dynamic', owner: 'base' },
   { id: 'channel-style', order: 170, source: 'file', owner: 'code' },
 ])
 

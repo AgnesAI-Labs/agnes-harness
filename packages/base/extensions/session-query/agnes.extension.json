@@ -1,0 +1,23 @@
+{
+  "id": "agnes/session-query",
+  "version": "0.1.0",
+  "apiRange": "^1.0",
+  "entry": "./src/index.ts",
+  "capabilities": {
+    "tools": {
+      "prefix": "",
+      "names": [
+        "session_search",
+        "session_event_search",
+        "session_trace",
+        "session_event_trace",
+        "session_event_read"
+      ]
+    },
+    "hooks": ["context"],
+    "slots": [],
+    "events": false,
+    "resources": [],
+    "network": []
+  }
+}

@@ -22,6 +22,7 @@ import { createPrivacyExtension, sessionEgressAuthority } from '../extensions/pr
 import { createRefineExtension } from '../extensions/refine/src/index.js'
 import { RefineQueue } from '../extensions/refine/src/queue.js'
 import { createRefineHarness } from '../extensions/refine/src/seam.js'
+import { createSessionQueryExtension } from '../extensions/session-query/src/index.js'
 import { skillsExtension } from '../extensions/skills/src/runtime.js'
 import { createSubagentExtension, type SubagentLimits } from '../extensions/subagent/src/index.js'
 import { gitWorktrees, type WorktreeEntry } from '../extensions/subagent/src/worktree.js'
@@ -225,4 +226,6 @@ export const ecosystem = {
       throw new Error('computer-use extension requires the Host-owned backend provider')
     return createComputerUseExtension(init.computerUseBackendProvider, init.computerUseOptions)
   },
+  'agnes/session-query': (init: SeamInitContext): ExtensionFactory =>
+    createSessionQueryExtension({ dataDir: init.profile.dataDir }),
 } as const

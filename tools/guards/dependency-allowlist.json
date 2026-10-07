@@ -60,7 +60,8 @@
     "@agnes/ai",
     "@agnes/mcp-transport-health",
     "@agnes/system-node",
-    "@agnes/loop-default"
+    "@agnes/loop-default",
+    "@agnes/history-index"
   ],
   "@agnes/mcp-transport-health": [],
   "@agnes/code": ["@agnes/protocol", "@agnes/extension-api", "@agnes/core", "@agnes/base"],

@@ -289,6 +289,7 @@ describe('a host assembled from a profile naming @agnes/base', () => {
         'agnes/plan-mode',
         'agnes/mcp-resources',
         'agnes/workflow',
+        'agnes/session-query',
       ])
       const byId = (id: string) => status.find((entry) => entry.id === id)
       const skills = byId('agnes/skills')
@@ -823,8 +824,8 @@ describe('a host assembled from a profile naming @agnes/base', () => {
     // snapshot, and this host does not load code-mode. Count: tools-core 5, tools-search 3,
     // tools-web 2, interaction 1, deliverables 1, jobs 3, compaction 1, refine 1, subagent 8,
     // mcp-search 2, computer-use 1, plugin-creator 4, exit_plan_mode, and the three stable MCP
-    // resource tools, plus workflow and workflow_status.
-    expect(host.kernel.tools.size).toBe(38)
+    // resource tools, plus workflow and workflow_status, and session-query 5.
+    expect(host.kernel.tools.size).toBe(43)
     for (const name of [
       'subagent_list',
       'subagent_send_message',
