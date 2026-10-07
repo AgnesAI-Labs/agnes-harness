@@ -91,7 +91,9 @@ const meta = {
 }
 
 function active(runtime: SkillRuntimeInput): readonly SkillRuntimeActual[] {
-  return runtime.list().filter((skill) => skill.actual === 'ready' && modelVisibleSkill(runtime, skill.resourceId))
+  return runtime
+    .list()
+    .filter((skill) => skill.actual === 'ready' && modelVisibleSkill(runtime, skill.resourceId))
 }
 
 type CatalogRow = Readonly<{ name: string; resourceId: string; description: string }>

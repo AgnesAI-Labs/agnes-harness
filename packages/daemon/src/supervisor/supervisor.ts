@@ -1,4 +1,3 @@
-import type { LoopSelection } from '@agnes/protocol'
 import { randomBytes, randomUUID } from 'node:crypto'
 import { mkdir, rename, rm, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
@@ -37,6 +36,7 @@ import {
   snapshotPolicy,
 } from '@agnes/package-manager'
 import type { RuntimeTargetArtifact } from '@agnes/plugin-runtime/host'
+import type { LoopSelection } from '@agnes/protocol'
 import {
   type ClientModuleEffectCallParams,
   type ClientModuleServiceCallParams,

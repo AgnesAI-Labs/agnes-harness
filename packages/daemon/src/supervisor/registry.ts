@@ -1,5 +1,5 @@
-import type { LoopSelection } from '@agnes/protocol'
 import { randomUUID } from 'node:crypto'
+import type { LoopSelection } from '@agnes/protocol'
 import { type EventEnvelope, rpcError } from '@agnes/protocol'
 import type { Disposer } from '../local/tail.js'
 import type { PreviewSnapshotEntry, PreviewUpdate, Registry } from '../registry.js'

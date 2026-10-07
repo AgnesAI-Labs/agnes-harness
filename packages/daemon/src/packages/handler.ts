@@ -1,4 +1,3 @@
-import { pluginFailureHelp } from '@agnes/protocol'
 import { createHash } from 'node:crypto'
 import { readFileSync, statSync } from 'node:fs'
 import type {
@@ -33,10 +32,11 @@ import {
   type PackageCatalogDescriptor,
   type PackageInstalledDescriptor,
   type PackageListResult,
-  type PluginGenerationStatus,
   type PackageOperation,
   type PackageOperationReceipt,
   type PackagePreview,
+  type PluginGenerationStatus,
+  pluginFailureHelp,
   projectClientModuleRows,
   type RuntimePinDescriptor,
   type RuntimePinReleaseResult,

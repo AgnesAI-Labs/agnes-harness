@@ -55,6 +55,7 @@ export {
   type RetainedArtifactCandidate,
   type StoredArtifactCandidate,
 } from '@agnes/core/artifacts'
+export { toolPolicy, toolPolicyPlugin } from '../extensions/approval-policy/src/tool-policy.js'
 export { prepareArtifactGcExecutionPrerequisite } from '../extensions/artifacts-local/src/gc-execution-prerequisite.js'
 export {
   type ArtifactGcExecutionLease,
@@ -74,7 +75,6 @@ export {
 } from '../extensions/artifacts-local/src/recent-metadata.js'
 export { buildCompactionPlan } from '../extensions/compaction/src/plan.js'
 export { toolDescribeTool, toolSearchTool } from '../extensions/mcp-search/src/search-tools.js'
-export { toolPolicy, toolPolicyPlugin } from '../extensions/approval-policy/src/tool-policy.js'
 export {
   type McpCatalogHub,
   type McpCatalogHubContext,
@@ -113,10 +113,10 @@ export {
   discoverSkillRoot,
   locateSkillEntry,
   type SkillCandidate as DiscoveredSkillCandidate,
-  type SkillInvocation,
   type SkillFile,
   type SkillFileKind,
   type SkillFs,
+  type SkillInvocation,
   type SkillRoot,
   type SkillRootDir,
   type SkillRootFailure,
@@ -193,13 +193,6 @@ export {
 } from './mcp/index-table.js'
 export { mcpLocalToolPrefix } from './mcp/naming.js'
 export {
-  MCP_RESOURCE_LIST_SUFFIX,
-  MCP_RESOURCE_READ_SUFFIX,
-  MCP_RESOURCE_TEMPLATES_SUFFIX,
-  type McpResourceToolSuffix,
-  mcpResourceToolName,
-} from './mcp/resources.js'
-export {
   inspectRemoteCatalog,
   type McpConnection,
   type McpRemoteResource,
@@ -209,6 +202,13 @@ export {
   registerRemoteToolsStrict,
   validateRemoteCatalog,
 } from './mcp/register.js'
+export {
+  MCP_RESOURCE_LIST_SUFFIX,
+  MCP_RESOURCE_READ_SUFFIX,
+  MCP_RESOURCE_TEMPLATES_SUFFIX,
+  type McpResourceToolSuffix,
+  mcpResourceToolName,
+} from './mcp/resources.js'
 
 export type {
   HostExec,
@@ -275,7 +275,7 @@ export { createDefaultCompactionEngine } from '../extensions/compaction/src/engi
 export {
   ACP_CHILD_CAPABILITIES,
   ACP_CHILD_PROVIDER_ID,
+  type AcpChildAgentOptions,
   acpChildAgentProvider,
   acpChildAgentsPlugin,
-  type AcpChildAgentOptions,
 } from '../extensions/subagent-acp/src/index.js'

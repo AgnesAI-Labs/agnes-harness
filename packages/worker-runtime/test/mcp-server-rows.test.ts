@@ -2,8 +2,8 @@ import { mcpLocalToolPrefix } from '@agnes/base'
 import { MemTable } from '@agnes/base/testkit'
 import type { McpServerDefinitionInput } from '@agnes/protocol'
 import { describe, expect, it, vi } from 'vitest'
-import { generationExtensionRestorer } from '../src/runtime-generation-restore.js'
 import { type McpServerSnapshotEntry, mcpServerRowsFromDefinitions } from '../src/mcp-server-rows.js'
+import { generationExtensionRestorer } from '../src/runtime-generation-restore.js'
 
 function stdioEntry(
   serverId: string,

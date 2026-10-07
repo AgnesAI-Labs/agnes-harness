@@ -1,5 +1,4 @@
-import type { LoopSelection } from '@agnes/protocol'
-import type { EventEnvelope, SessionPreviewParams } from '@agnes/protocol'
+import type { EventEnvelope, LoopSelection, SessionPreviewParams } from '@agnes/protocol'
 import type { Disposer } from './local/tail.js'
 import type { WorkspaceBindingEnvelope } from './storage/workspaces.js'
 

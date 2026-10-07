@@ -1,7 +1,7 @@
 import { defineTool, type ToolDef, type ToolResult } from '@agnes/extension-api'
 import { Type } from '@sinclair/typebox'
 import { guardOutput, refBlock } from '../../extensions/tools-core/src/guards/output.js'
-import { mcpErrorText, redactMcpSecrets, type McpServerConfig } from './config.js'
+import { type McpServerConfig, mcpErrorText, redactMcpSecrets } from './config.js'
 import { mcpLocalToolPrefix } from './naming.js'
 import type {
   McpConnection,
@@ -18,11 +18,7 @@ export const MCP_RESOURCE_LIST_SUFFIX = 'res_list'
 export const MCP_RESOURCE_TEMPLATES_SUFFIX = 'res_tpls'
 export const MCP_RESOURCE_READ_SUFFIX = 'res_read'
 
-const SUFFIXES = [
-  MCP_RESOURCE_LIST_SUFFIX,
-  MCP_RESOURCE_TEMPLATES_SUFFIX,
-  MCP_RESOURCE_READ_SUFFIX,
-] as const
+const SUFFIXES = [MCP_RESOURCE_LIST_SUFFIX, MCP_RESOURCE_TEMPLATES_SUFFIX, MCP_RESOURCE_READ_SUFFIX] as const
 export type McpResourceToolSuffix = (typeof SUFFIXES)[number]
 
 /** One server page. A larger page is refused rather than silently truncated. */
@@ -81,7 +77,10 @@ export function readRemoteResource(value: {
   return Object.freeze({
     uri: bound(value?.uri, MAX_URI, 'uri'),
     name: bound(value?.name, MAX_NAME, 'name'),
-    ...withOptional(optional(value?.description, MAX_TEXT, 'description'), optional(value?.mimeType, MAX_MIME, 'mimeType')),
+    ...withOptional(
+      optional(value?.description, MAX_TEXT, 'description'),
+      optional(value?.mimeType, MAX_MIME, 'mimeType'),
+    ),
   })
 }
 
@@ -94,7 +93,10 @@ export function readRemoteResourceTemplate(value: {
   return Object.freeze({
     uriTemplate: bound(value?.uriTemplate, MAX_URI, 'uriTemplate'),
     name: bound(value?.name, MAX_NAME, 'name'),
-    ...withOptional(optional(value?.description, MAX_TEXT, 'description'), optional(value?.mimeType, MAX_MIME, 'mimeType')),
+    ...withOptional(
+      optional(value?.description, MAX_TEXT, 'description'),
+      optional(value?.mimeType, MAX_MIME, 'mimeType'),
+    ),
   })
 }
 

@@ -61,10 +61,7 @@ async function bindWorkspace(workspace: SeamWorkspace): Promise<SandboxSeam> {
     },
     async confine(argv) {
       if (external)
-        throw fault(
-          'SANDBOX_UNAVAILABLE',
-          'the selected sandbox provider does not rewrite host argv',
-        )
+        throw fault('SANDBOX_UNAVAILABLE', 'the selected sandbox provider does not rewrite host argv')
       return [...(await backend.confine({ argv, cwd: workspace.root }))]
     },
     fsPolicy: () => policy,

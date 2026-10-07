@@ -12,8 +12,8 @@ import {
   syncManagedMcpExecutableAllowlist,
   type WorkerResourceBootstrapInput,
 } from '@agnes/resource-control-worker'
-import { connectSupervisor } from './supervisor-connection.js'
 import { generationExtensionRestorer } from './runtime-generation-restore.js'
+import { connectSupervisor } from './supervisor-connection.js'
 
 export { scanSkills } from '@agnes/resource-control-worker'
 

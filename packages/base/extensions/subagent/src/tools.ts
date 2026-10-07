@@ -106,9 +106,7 @@ function allowChild(ctx: ToolContext, model?: string): ToolResult | undefined {
 }
 
 function missedChild(error: unknown): boolean {
-  return (
-    error instanceof CoreError && (error.code === 'E_UNSUPPORTED' || error.code === 'E_CHILD_NOT_FOUND')
-  )
+  return error instanceof CoreError && (error.code === 'E_UNSUPPORTED' || error.code === 'E_CHILD_NOT_FOUND')
 }
 
 function controlFailure(error: unknown): ToolResult {
@@ -379,7 +377,10 @@ const controlMeta = {
   requiresApproval: 'never' as const,
 }
 
-function listedChildren(local: readonly ChildAgentListing[], external: readonly ChildAgentListing[]): ChildAgentListing[] {
+function listedChildren(
+  local: readonly ChildAgentListing[],
+  external: readonly ChildAgentListing[],
+): ChildAgentListing[] {
   const seen = new Set(local.map((child) => child.id))
   return [...local, ...external.filter((child) => !seen.has(child.id))]
 }
@@ -422,7 +423,11 @@ const sendParameters = Type.Object(
   { additionalProperties: false },
 )
 
-async function deliverMessage(ctx: ToolContext, childKey: string, text: string): Promise<{ messageId: string }> {
+async function deliverMessage(
+  ctx: ToolContext,
+  childKey: string,
+  text: string,
+): Promise<{ messageId: string }> {
   ctx.signal.throwIfAborted()
   if (ctx.subagent.sendMessage) {
     try {
@@ -482,7 +487,9 @@ export const subagentInterruptTool = defineTool({
     try {
       const result = await interruptChild(ctx, args.childKey)
       return {
-        content: [{ type: 'text', text: result.accepted ? `interrupted ${args.childKey}` : `idle ${args.childKey}` }],
+        content: [
+          { type: 'text', text: result.accepted ? `interrupted ${args.childKey}` : `idle ${args.childKey}` },
+        ],
         details: { childKey: args.childKey, accepted: result.accepted },
       }
     } catch (error) {

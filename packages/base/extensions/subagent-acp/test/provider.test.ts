@@ -1,6 +1,6 @@
+import { fileURLToPath } from 'node:url'
 import { resetChildAgentAllowlists, setChildAgentAllowlist } from '@agnes/core'
 import type { ChildAgentEvent } from '@agnes/extension-api'
-import { fileURLToPath } from 'node:url'
 import { expect, it } from 'vitest'
 import { acpChildAgentProvider } from '../src/provider.js'
 
@@ -37,12 +37,16 @@ it('runs an ACP child, continues it, and rejects a permission request', async ()
     for await (const event of handle.events()) events.push(event)
   })()
   try {
-    await readUntil(events, () => events.some((event) => event.type === 'text' && event.text.includes('echo:hello:hidden')))
+    await readUntil(events, () =>
+      events.some((event) => event.type === 'text' && event.text.includes('echo:hello:hidden')),
+    )
     expect(events.some((event) => event.type === 'text' && event.text.includes('super-secret'))).toBe(false)
     await handle.sendMessage('permit', new AbortController().signal)
     await readUntil(events, () => events.some((event) => event.type === 'text' && event.text === 'perm:no'))
     await handle.sendMessage('unknown', new AbortController().signal)
-    await readUntil(events, () => events.some((event) => event.type === 'text' && event.text === 'unknown-ok'))
+    await readUntil(events, () =>
+      events.some((event) => event.type === 'text' && event.text === 'unknown-ok'),
+    )
     const listed = await child.list?.('s')
     expect(listed?.some((entry) => entry.id === handle.id && entry.continuable)).toBe(true)
   } finally {
@@ -66,9 +70,13 @@ it('interrupts an in-flight ACP turn and refuses capabilities it does not have',
     for await (const event of handle.events()) events.push(event)
   })()
   try {
-    await readUntil(events, () => events.some((event) => event.type === 'status' && event.status === 'running'))
+    await readUntil(events, () =>
+      events.some((event) => event.type === 'status' && event.status === 'running'),
+    )
     await expect(handle.interrupt()).resolves.toEqual({ accepted: true })
-    await readUntil(events, () => events.some((event) => event.type === 'status' && event.status === 'interrupted'))
+    await readUntil(events, () =>
+      events.some((event) => event.type === 'status' && event.status === 'interrupted'),
+    )
     await expect(
       child.start('x', { signal: new AbortController().signal, sessionKey: 's', cwd, model: 'fast' }),
     ).rejects.toThrow('cannot select a child model')

@@ -15,7 +15,9 @@
       {
         "export": "toolPolicyPlugin",
         "id": "tool-policy:default",
-        "inject": ["toolPolicies"],
+        "inject": [
+          "toolPolicies"
+        ],
         "runtime": "in-process"
       },
       {

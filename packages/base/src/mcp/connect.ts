@@ -17,6 +17,7 @@ import {
   ToolListChangedNotificationSchema,
 } from '@modelcontextprotocol/sdk/types.js'
 import type { McpServerConfig } from './config.js'
+import type { McpConnection, McpResourceCallOptions } from './register.js'
 import {
   MAX_MCP_RESOURCE_CONTENTS,
   MAX_MCP_RESOURCE_PAGE,
@@ -24,7 +25,6 @@ import {
   readRemoteResourceContent,
   readRemoteResourceTemplate,
 } from './resources.js'
-import type { McpConnection, McpResourceCallOptions } from './register.js'
 
 type SdkTool = {
   name: string
@@ -528,7 +528,8 @@ export async function connectMcp(
         ),
         resourceCall(listOptions),
       )
-      if (page.resources.length > MAX_MCP_RESOURCE_PAGE) throw new Error('MCP resource page exceeds Host limit')
+      if (page.resources.length > MAX_MCP_RESOURCE_PAGE)
+        throw new Error('MCP resource page exceeds Host limit')
       return {
         resources: page.resources.map((resource) => readRemoteResource(resource)),
         ...(typeof page.nextCursor === 'string' ? { nextCursor: page.nextCursor } : {}),
@@ -551,7 +552,10 @@ export async function connectMcp(
     },
     async readResource(uri, readOptions = {}) {
       const page = await bounded(
-        client.readResource({ uri }, readOptions.signal === undefined ? undefined : { signal: readOptions.signal }),
+        client.readResource(
+          { uri },
+          readOptions.signal === undefined ? undefined : { signal: readOptions.signal },
+        ),
         {
           ...(readOptions.timeoutMs === undefined ? {} : { timeoutMs: readOptions.timeoutMs }),
           ...(readOptions.signal === undefined ? {} : { signal: readOptions.signal }),

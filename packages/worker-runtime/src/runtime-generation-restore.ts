@@ -5,7 +5,7 @@ import {
   deploymentMcpPolicy,
   type WorkerResourceBootstrapInput,
 } from '@agnes/resource-control-worker'
-import { mcpServerRowsFromDefinitions, type McpServerSnapshotEntry } from './mcp-server-rows.js'
+import { type McpServerSnapshotEntry, mcpServerRowsFromDefinitions } from './mcp-server-rows.js'
 
 /** Recreate factories from pinned definitions; resolve SecretRefs only when connecting. */
 export function generationExtensionRestorer(

@@ -19,7 +19,10 @@ type RpcMessage = {
 /** Newline-delimited JSON-RPC for one ACP agent process. The child sees PATH, HOME, and `env` only. */
 export class AcpChildProcess {
   private readonly proc: ChildProcessWithoutNullStreams
-  private readonly pending = new Map<number, { resolve: (value: unknown) => void; reject: (error: unknown) => void }>()
+  private readonly pending = new Map<
+    number,
+    { resolve: (value: unknown) => void; reject: (error: unknown) => void }
+  >()
   private nextId = 1
   private buffer = ''
   private onText: ((text: string) => void) | undefined
@@ -107,9 +110,14 @@ export class AcpChildProcess {
       return
     }
     if (message.method !== 'session/update') return
-    const update = (message.params as { update?: { sessionUpdate?: string; content?: { type?: string; text?: string } } })
-      ?.update
-    if (update?.sessionUpdate === 'agent_message_chunk' && update.content?.type === 'text' && update.content.text)
+    const update = (
+      message.params as { update?: { sessionUpdate?: string; content?: { type?: string; text?: string } } }
+    )?.update
+    if (
+      update?.sessionUpdate === 'agent_message_chunk' &&
+      update.content?.type === 'text' &&
+      update.content.text
+    )
       this.onText?.(update.content.text)
   }
 
@@ -118,7 +126,8 @@ export class AcpChildProcess {
     const id = message.id
     if (message.method === 'session/request_permission') {
       const options =
-        (message.params as { options?: Array<{ optionId?: string; kind?: string }> } | undefined)?.options ?? []
+        (message.params as { options?: Array<{ optionId?: string; kind?: string }> } | undefined)?.options ??
+        []
       const reject = options.find(
         (option): option is { optionId: string; kind?: string } =>
           typeof option.optionId === 'string' && option.kind?.includes('reject') === true,

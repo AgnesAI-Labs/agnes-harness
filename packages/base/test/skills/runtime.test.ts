@@ -893,7 +893,11 @@ describe('skill runtime extension', () => {
     const shown = await read?.execute({ name: 'visible' } as never, ctx)
     expect(shown?.content[0]).toMatchObject({ text: expect.stringContaining('visible body') })
     const hiddenFile = await file?.execute(
-      { resourceId: userOnly.resourceId, expectedRevision: userOnly.revision, relativePath: 'guide.md' } as never,
+      {
+        resourceId: userOnly.resourceId,
+        expectedRevision: userOnly.revision,
+        relativePath: 'guide.md',
+      } as never,
       ctx,
     )
     expect(hiddenFile).toMatchObject({ isError: true, structured: { code: 'NOT_FOUND' } })

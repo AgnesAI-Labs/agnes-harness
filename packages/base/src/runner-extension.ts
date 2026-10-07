@@ -3,12 +3,12 @@ import { readFileSync, realpathSync } from 'node:fs'
 import { dirname, isAbsolute, relative } from 'node:path'
 import type { ExtensionAPI, HookEvent, HookHandler } from '@agnes/extension-api'
 import * as extensionApi from '@agnes/extension-api'
-import * as protocol from '@agnes/protocol'
 import {
   checkProvidedExternals,
   missingPluginModule,
   providedExternalModules,
 } from '@agnes/plugin-runtime/provided-externals'
+import * as protocol from '@agnes/protocol'
 import { createJiti } from 'jiti/static'
 import { runnerLease } from './runner-context.js'
 

@@ -3,13 +3,13 @@ import { createRequire } from 'node:module'
 import { checkToolDef, type ExtensionAPI, type ToolDef } from '@agnes/extension-api'
 import { afterEach, describe, expect, it } from 'vitest'
 import { connectMcp } from '../../src/mcp/connect.js'
+import { type McpConnection, registerRemoteToolsStrict } from '../../src/mcp/register.js'
 import {
   MCP_RESOURCE_LIST_SUFFIX,
   MCP_RESOURCE_READ_SUFFIX,
   MCP_RESOURCE_TEMPLATES_SUFFIX,
   mcpResourceToolName,
 } from '../../src/mcp/resources.js'
-import { type McpConnection, registerRemoteToolsStrict } from '../../src/mcp/register.js'
 import { fakeToolContext } from '../../testkit/tool-context.js'
 
 const require = createRequire(import.meta.url)
@@ -20,7 +20,10 @@ const { createFixtureServer } = require('./fixture-server.cjs') as {
   }
 }
 const { StreamableHTTPServerTransport } = require('@modelcontextprotocol/sdk/server/streamableHttp.js') as {
-  StreamableHTTPServerTransport: new (options: { sessionIdGenerator: undefined; enableJsonResponse: boolean }) => {
+  StreamableHTTPServerTransport: new (options: {
+    sessionIdGenerator: undefined
+    enableJsonResponse: boolean
+  }) => {
     handleRequest(req: unknown, res: unknown): Promise<void>
     close(): Promise<void>
   }
@@ -50,7 +53,16 @@ function apiOf() {
       resources.push(resource)
       return () => undefined
     },
-    ctx: { log: { debug() {}, info() {}, warn(message: string) { warn.calls.push(message) }, error() {} } },
+    ctx: {
+      log: {
+        debug() {},
+        info() {},
+        warn(message: string) {
+          warn.calls.push(message)
+        },
+        error() {},
+      },
+    },
   } as unknown as ExtensionAPI
   return { api, tools, resources, warn }
 }
@@ -131,7 +143,10 @@ describe('MCP resource tools', () => {
     const ctx = fakeToolContext()
     const result = await read?.execute({ uri: 'memo://readme' }, ctx)
     expect(seen).toBe(ctx.signal)
-    expect(result?.content[0]).toMatchObject({ type: 'text', text: expect.stringContaining('fixture readme') })
+    expect(result?.content[0]).toMatchObject({
+      type: 'text',
+      text: expect.stringContaining('fixture readme'),
+    })
   })
 })
 
@@ -163,9 +178,7 @@ describe('MCP resource transports', () => {
     cleanup.push(() => conn.close())
     expect(conn.supportsResources).toBe(true)
     const listed = await conn.listResources?.()
-    expect(listed?.resources).toEqual([
-      expect.objectContaining({ uri: 'memo://readme', name: 'readme' }),
-    ])
+    expect(listed?.resources).toEqual([expect.objectContaining({ uri: 'memo://readme', name: 'readme' })])
     const templates = await conn.listResourceTemplates?.()
     expect(templates?.resourceTemplates[0]?.uriTemplate).toBe('memo://item/{id}')
     const read = await conn.readResource?.('memo://item/7')
@@ -183,7 +196,10 @@ describe('MCP resource transports', () => {
 
   it('reads resources over Streamable HTTP', async () => {
     const mcp = createFixtureServer()
-    const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined, enableJsonResponse: true })
+    const transport = new StreamableHTTPServerTransport({
+      sessionIdGenerator: undefined,
+      enableJsonResponse: true,
+    })
     await mcp.connect(transport)
     const server = createServer((req, res) => {
       void transport.handleRequest(req, res)

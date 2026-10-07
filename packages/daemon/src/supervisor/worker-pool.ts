@@ -1,9 +1,9 @@
-import type { LoopSelection } from '@agnes/protocol'
 import { type ChildProcess, spawn as nodeSpawn } from 'node:child_process'
 import { randomBytes } from 'node:crypto'
 import type { Duplex, Writable } from 'node:stream'
 import { fileURLToPath } from 'node:url'
 import type { ResolvedProfile } from '@agnes/host'
+import type { LoopSelection } from '@agnes/protocol'
 import {
   type DaemonNotice,
   type EventEnvelope,

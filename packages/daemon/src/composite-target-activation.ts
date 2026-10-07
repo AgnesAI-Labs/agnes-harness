@@ -1,8 +1,8 @@
 import { PackageError, type PackageManager } from '@agnes/package-manager'
 import { decodeRuntimeTargetArtifact, type RuntimeTargetArtifact } from '@agnes/plugin-runtime/host'
 import type {
-  PluginGenerationStatus,
   PackageAdminError,
+  PluginGenerationStatus,
   RuntimePinDescriptor,
   RuntimePinReleaseResult,
 } from '@agnes/protocol'

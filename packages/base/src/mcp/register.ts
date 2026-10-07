@@ -20,7 +20,7 @@ import {
 } from '../../extensions/tools-core/src/guards/output.js'
 import { MAX_READ_BYTES } from '../../extensions/tools-core/src/tools/read.js'
 import { remoteInputSchema } from '../mcp-json-schema.js'
-import { mcpErrorText, redactMcpSecrets, type McpServerConfig } from './config.js'
+import { type McpServerConfig, mcpErrorText, redactMcpSecrets } from './config.js'
 import { mcpLocalToolPrefix } from './naming.js'
 import { admitMcpResourceTools } from './resources.js'
 
@@ -93,10 +93,7 @@ export type McpConnection = {
   listResourceTemplates?(
     options?: McpResourceCallOptions,
   ): Promise<{ resourceTemplates: McpRemoteResourceTemplate[]; nextCursor?: string }>
-  readResource?(
-    uri: string,
-    options?: McpResourceCallOptions,
-  ): Promise<{ contents: McpResourceContent[] }>
+  readResource?(uri: string, options?: McpResourceCallOptions): Promise<{ contents: McpResourceContent[] }>
   /** Reports an unexpected transport close/error; disposal stops the subscription. */
   onClose?(listener: () => void): () => void
   /** Reports the server's `notifications/tools/list_changed`; disposal stops the subscription. */
@@ -548,7 +545,10 @@ export async function registerRemoteToolsStrict(
     const definitions = remote.map((tool) => remoteDefinition(conn, cfg, tool, mediaLimits))
     const duplicate = definitions.find((definition) => opts.claimedNames?.has(definition.name))
     if (duplicate) throw new Error(`duplicate MCP tool name: ${duplicate.name}`)
-    const taken = new Set<string>([...definitions.map((definition) => definition.name), ...(opts.claimedNames ?? [])])
+    const taken = new Set<string>([
+      ...definitions.map((definition) => definition.name),
+      ...(opts.claimedNames ?? []),
+    ])
     const admitted = admitMcpResourceTools(conn, cfg, taken, (name) =>
       agnes.ctx.log.warn('MCP resource tool name conflicts with a registered tool', { id: cfg.id, name }),
     )
@@ -572,7 +572,8 @@ export async function registerRemoteToolsStrict(
         description: `MCP server ${cfg.id} (${definitions.length} tools${resourceNote})`,
       }),
     )
-    for (const definition of [...definitions, ...resourceTools]) disposers.push(agnes.registerTool(definition))
+    for (const definition of [...definitions, ...resourceTools])
+      disposers.push(agnes.registerTool(definition))
     // `tool_search` discovers only tools omitted from the default disclosure. Eager MCP tools
     // are already offered directly in every request and must not be duplicated in that index.
     if (cfg.defer) opts.onCatalog?.(catalog)

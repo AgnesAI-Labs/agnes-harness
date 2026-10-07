@@ -1,6 +1,6 @@
-import type { LoopSelection } from '@agnes/protocol'
 import type {
   EventEnvelope,
+  LoopSelection,
   McpStatus,
   RpcError,
   RuntimeStaleFrame,

@@ -1,6 +1,5 @@
-import type { LoopSelection } from '@agnes/protocol'
 import type { Duplex } from 'node:stream'
-import type { EventEnvelope, McpStatus, RuntimeTargetArtifact } from '@agnes/protocol'
+import type { EventEnvelope, LoopSelection, McpStatus, RuntimeTargetArtifact } from '@agnes/protocol'
 import type { PreviewUpdate } from '../registry.js'
 import type {
   RequestFrame,

@@ -12,7 +12,10 @@ const {
 } = require('@modelcontextprotocol/sdk/types.js')
 
 function createFixtureServer() {
-  const server = new Server({ name: 'mcp-fixture', version: '1' }, { capabilities: { tools: {}, resources: {} } })
+  const server = new Server(
+    { name: 'mcp-fixture', version: '1' },
+    { capabilities: { tools: {}, resources: {} } },
+  )
   server.setRequestHandler(ListToolsRequestSchema, async () => ({
     tools: [
       {
@@ -51,7 +54,8 @@ function createFixtureServer() {
         )
       })
     }
-    if (uri === 'memo://readme') return { contents: [{ uri, mimeType: 'text/plain', text: 'fixture readme' }] }
+    if (uri === 'memo://readme')
+      return { contents: [{ uri, mimeType: 'text/plain', text: 'fixture readme' }] }
     const item = /^memo:\/\/item\/(.+)$/.exec(uri)
     if (item) return { contents: [{ uri, mimeType: 'text/plain', text: `item ${item[1]}` }] }
     throw new Error(`unknown resource ${uri}`)
