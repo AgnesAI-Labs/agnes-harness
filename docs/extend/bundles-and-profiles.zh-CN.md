@@ -57,7 +57,7 @@ agh config dump --profile local-dev --preset research
 - `PUT /admin/api/bundles`：`{revision, bundles}`，需要 `packages.activate` 和可写上下文。
 - `GET /admin/api/composition`：默认 preset；`POST` 接受 `{preset}`，需要 `packages.read`。
 
-过期 revision 拒绝写入。有活动组合会话时 dump 标明 `status: "live"`，否则为 `"desired"`。`validation: "static"` 仍描述待启动树：离线查看不能证明可执行注册有效。活动记录只在 worker 的进程身份仍匹配时显示；身份查询不可用时省略活动状态，不阻止会话运行。Host 校验真实 loop、adapter、compaction、persistence 和 sandbox 目录；未知 id 或依赖压缩却未启用引擎会报错。
+过期 revision 拒绝写入。有活动会话时 dump 标明 `status: "live"`，否则为 `"desired"`。`validation: "static"` 仍描述待启动树：离线查看不能证明可执行注册有效。活动记录只在 worker 的进程身份仍匹配时显示；身份查询不可用时省略活动状态，不阻止会话运行。Host 校验真实 loop、adapter、compaction、persistence 和 sandbox 目录；未知 id 或依赖压缩却未启用引擎会报错。
 
 ## 生命周期边界
 

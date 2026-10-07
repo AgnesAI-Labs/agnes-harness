@@ -3,8 +3,8 @@ import { linkSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } 
 import { readdir, readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { defaultProcessIdentity } from '../adapters/process-identity-default.js'
-import type { ResolvedProfile } from './types.js'
 import { checkCompositionPatch, type ResolvedComposition } from './composition.js'
+import type { ResolvedProfile } from './types.js'
 
 export type CompositionBinding = Readonly<{
   sessionKey: string

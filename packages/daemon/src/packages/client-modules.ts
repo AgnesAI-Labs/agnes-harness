@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from 'node:crypto'
-import { CompositionSessionStore, compositionModuleAllowed, type CompositionPatch } from '@agnes/host'
 import { mkdir, readdir, readFile, realpath, rename, rm, stat, writeFile } from 'node:fs/promises'
 import { dirname, extname, join, posix, relative, resolve, sep } from 'node:path'
+import { type CompositionPatch, CompositionSessionStore, compositionModuleAllowed } from '@agnes/host'
 import {
   CLIENT_MAX_FILE_BYTES,
   CLIENT_MAX_TOTAL_BYTES,

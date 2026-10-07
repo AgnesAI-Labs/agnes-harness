@@ -182,6 +182,11 @@ import {
   type ResolvedComposition,
   resolveComposition,
 } from './profile/composition.js'
+import {
+  compositionSkillOwners,
+  compositionSkills,
+  compositionTools,
+} from './profile/composition-visibility.js'
 import { withAssemblyIsolation } from './profile/isolation.js'
 import type { ResolvedProfile } from './profile/types.js'
 import {
@@ -219,7 +224,6 @@ import {
   type HostRuntimeTargetResources,
 } from './runtime-target-resource-bootstrap.js'
 import { SandboxReadinessManager } from './sandbox-readiness-manager.js'
-import { compositionSkills, compositionTools, compositionSkillOwners } from './profile/composition-visibility.js'
 import {
   applyTelemetryConsent,
   createSessionHookPort,
@@ -801,7 +805,9 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
     const runtimeMutationGate = new RuntimeMutationGate()
     const publicationDispatch = new PublicationDispatch(publicationGate, hotPolicy)
     let kernel!: Kernel
-    const skillOwners = compositionSkillOwners(deps.runtimePluginCatalogue ?? deps.runtimePluginSnapshots ?? [])
+    const skillOwners = compositionSkillOwners(
+      deps.runtimePluginCatalogue ?? deps.runtimePluginSnapshots ?? [],
+    )
     let preloadSkills = compositionSkills(deps.skillResources, profile.composition ?? {}, skillOwners)
     let activeSkillResources = preloadSkills
     // Shared workers discover workspace Skills lazily inside a session invocation. Their global

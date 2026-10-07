@@ -1,21 +1,23 @@
-import type { Host, HostOptions } from '../host.js'
-import type { ResolvedProfile } from './types.js'
+import { dirname } from 'node:path'
 import { RuntimeGenerationSnapshotStore } from '@agnes/package-manager'
 import type { RuntimeTarget } from '@agnes/plugin-runtime/host'
-import { createRuntimeGenerationHost } from '../runtime-generation-host.js'
-import { buildCompleteRuntimeTarget } from '../runtime-target-builder.js'
-import { pluginSnapshotIdentity } from '../runtime-plugin-catalogue.js'
-import { resolvePreset } from '../presets/resolve.js'
-import { sessionKey } from '../session.js'
-import { compositionPresets } from './composition-presets.js'
 import { readAdminLoopDefault } from '../assemble/loop-selection.js'
-import { profileForComposition, resolveComposition, type ResolvedComposition } from './composition.js'
-import { compositionSkills, compositionSkillOwners } from './composition-visibility.js'
+import { createConfigurationService } from '../configuration.js'
+import type { Host, HostOptions } from '../host.js'
+import { resolvePreset } from '../presets/resolve.js'
+import { createRuntimeGenerationHost } from '../runtime-generation-host.js'
+import { pluginSnapshotIdentity } from '../runtime-plugin-catalogue.js'
+import { buildCompleteRuntimeTarget } from '../runtime-target-builder.js'
+import { sessionKey } from '../session.js'
+import { profileForComposition, type ResolvedComposition, resolveComposition } from './composition.js'
+import { compositionPresets } from './composition-presets.js'
 import {
+  type CompositionBinding,
   CompositionSessionStore,
   createLiveCompositionWriter,
-  type CompositionBinding,
 } from './composition-state.js'
+import { compositionSkillOwners, compositionSkills } from './composition-visibility.js'
+import type { ResolvedProfile } from './types.js'
 
 type Factory = (profile: ResolvedProfile, options: HostOptions) => Promise<Host>
 type Container = { host: Host; tree: ResolvedComposition }
@@ -27,6 +29,11 @@ export async function createCompositionHost(
   factory: Factory,
 ): Promise<Host> {
   const store = new CompositionSessionStore(options.profileDir)
+  const configuration = createConfigurationService({
+    home: options.homeDir ?? dirname(dirname(options.profileDir)),
+    profile: profile.name,
+    profileDir: options.profileDir,
+  })
   const generations = new RuntimeGenerationSnapshotStore(options.profileDir)
   const containers = new Map<string, Container>()
   const opening = new Map<string, Promise<Container>>()
@@ -237,8 +244,7 @@ export async function createCompositionHost(
         let binding = store.read(key)
         if (!binding) {
           const parent = input.parent ? store.read(input.parent.key) : undefined
-          const loop =
-            input.loop ?? (parent ? undefined : await readAdminLoopDefault(options.profileDir, profile.name))
+          const loop = input.loop ?? (parent ? undefined : await readAdminLoopDefault(configuration))
           const tree =
             parent?.tree ??
             resolveComposition(profile, {

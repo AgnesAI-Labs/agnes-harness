@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto'
 import { mcpLocalToolPrefix, skillResourceIdAt } from '@agnes/base'
-import type { RuntimePluginSnapshot } from '@agnes/package-manager'
 import type { ToolRegistry } from '@agnes/core'
+import type { RuntimePluginSnapshot } from '@agnes/package-manager'
 import type { SkillRuntimeInput } from '../resources/skills.js'
 import type { CompositionPatch } from './composition.js'
 import { compositionAllowsTool } from './composition.js'

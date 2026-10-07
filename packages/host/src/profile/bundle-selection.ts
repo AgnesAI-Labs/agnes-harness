@@ -8,8 +8,8 @@ import { withConfigurationLock } from '../configuration-lock.js'
 import { mergeValue } from '../presets/merge.js'
 import type { PresetDoc } from '../presets/types.js'
 import { compositionDump, expandBundles, resolveComposition } from './composition.js'
-import type { ResolvedProfile } from './types.js'
 import { readLiveCompositionSessions } from './composition-state.js'
+import type { ResolvedProfile } from './types.js'
 
 export type BundleSelection = Readonly<{ revision: number; bundles: string[] }>
 export function isBundleSelection(value: unknown): value is BundleSelection {

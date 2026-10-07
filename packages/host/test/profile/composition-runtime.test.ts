@@ -2,9 +2,8 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { expect, it, vi } from 'vitest'
 import { normalizePluginExport } from '@agnes/plugin-runtime/host'
-import { createTestHost } from '../../testkit/index.js'
+import { expect, it, vi } from 'vitest'
 import { CompositionSessionStore, readLiveCompositionSessions } from '../../src/profile/composition-state.js'
 import {
   compositionModuleAllowed,
@@ -12,6 +11,7 @@ import {
   compositionSurfaceAllowed,
 } from '../../src/profile/composition-visibility.js'
 import type { SkillRuntimeInput } from '../../src/resources/skills.js'
+import { createTestHost } from '../../testkit/index.js'
 
 vi.mock('../../src/adapters/process-identity-default.js', () => ({
   defaultProcessIdentity: async () => ({ state: 'alive', startId: 'composition-test-worker' }),

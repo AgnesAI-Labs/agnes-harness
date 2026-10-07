@@ -1,9 +1,9 @@
-import type { HostOptions } from '../host.js'
-import type { ResolvedProfile } from './types.js'
-import type { PresetDoc } from '../presets/types.js'
 import { loadRuntimePackage } from '../assemble/packages.js'
-import { mergeValue } from '../presets/merge.js'
 import { HostError } from '../errors.js'
+import type { HostOptions } from '../host.js'
+import { mergeValue } from '../presets/merge.js'
+import type { PresetDoc } from '../presets/types.js'
+import type { ResolvedProfile } from './types.js'
 
 /** Read authorized package exports before choosing providers. No plugin is mounted by this pass. */
 export async function compositionPresets(

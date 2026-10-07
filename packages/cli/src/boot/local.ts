@@ -14,10 +14,9 @@ import {
 } from '@agnes/daemon/local'
 import {
   type ConfigurationService,
-  compositionSurfaceAllowed,
-  resolveComposition,
-  compositionPreset,
   composeProductionRequestMedia,
+  compositionPreset,
+  compositionSurfaceAllowed,
   createConfigurationService,
   createHost,
   createJitiPackageLoader,
@@ -37,6 +36,7 @@ import {
   packageDirs,
   type ResolvedProfile,
   readLock,
+  resolveComposition,
   resolveProfile,
   resolveWorkspaceDirectory,
   type SqliteStorage,

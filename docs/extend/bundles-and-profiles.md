@@ -81,7 +81,7 @@ In the plugin admin page, the bundle selector lists installed trusted bundle ids
 - `GET /admin/api/composition`: default preset dump.
 - `POST /admin/api/composition`: `{preset}` dump; requires `packages.read`.
 
-These endpoints use the existing exact-origin/Host checks. A stale revision refuses the write. Dumps say `status: "live"` when active composed sessions are present, otherwise `"desired"`. `validation: "static"` still qualifies the desired tree: offline inspection does not prove executable registrations or enumerate registrations created by entry modules. Live records are accepted only while their worker's process identity matches. If process identity cannot be established, the worker omits live inspection without preventing sessions from running. Host validates real loop, adapter, compaction, persistence and sandbox catalogs before accepting composed startup; missing ids and a loop requiring disabled compaction are errors.
+These endpoints use the existing exact-origin/Host checks. A stale revision refuses the write. Dumps say `status: "live"` when active sessions are present, otherwise `"desired"`. `validation: "static"` still qualifies the desired tree: offline inspection does not prove executable registrations or enumerate registrations created by entry modules. Live records are accepted only while their worker's process identity matches. If process identity cannot be established, the worker omits live inspection without preventing sessions from running. Host validates real loop, adapter, compaction, persistence and sandbox catalogs before accepting composed startup; missing ids and a loop requiring disabled compaction are errors.
 
 ## Host lifecycle boundary
 

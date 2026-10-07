@@ -1,8 +1,8 @@
 import type { Host } from '../host.js'
-import type { ResolvedProfile } from './types.js'
 import { resolvePreset } from '../presets/resolve.js'
 import { resolveComposition } from './composition.js'
 import { createLiveCompositionWriter, type LiveCompositionSession } from './composition-state.js'
+import type { ResolvedProfile } from './types.js'
 
 /** Keep legacy Hosts' behavior unchanged while exposing the same safe live inspection surface. */
 export async function trackHostComposition(

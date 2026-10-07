@@ -3,12 +3,11 @@ import { mkdir, rename, rm, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import {
-  compositionPreset,
-  resolveComposition,
-  compositionSurfaceAllowed,
   ActivationInProgressError,
   type ConfigurationService,
   composeSecrets,
+  compositionPreset,
+  compositionSurfaceAllowed,
   createExtensionActivationBarrier,
   createFileAudit,
   createPlatform,
@@ -25,6 +24,7 @@ import {
   type ProcessIdentity,
   type ResolvedPreset,
   type ResolvedProfile,
+  resolveComposition,
   resolveWorkspaceDirectory,
   sessionsDbPath,
 } from '@agnes/host'
