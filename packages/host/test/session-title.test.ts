@@ -552,14 +552,24 @@ it('waits through approval and generates once after the continued logical turn c
 }, 30_000)
 
 it('times out a non-cooperative provider without changing the completed turn', async () => {
-  const f = await fixture({ waitTitle: new Promise<void>(() => undefined) })
+  let release!: () => void
+  const f = await fixture({
+    waitTitle: new Promise<void>((resolve) => {
+      release = resolve
+    }),
+  })
   vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
-  await run(f.session)
-  await vi.waitFor(() => expect(f.calls).toHaveLength(2))
-  await vi.advanceTimersByTimeAsync(30_001)
-  await vi.waitFor(async () => expect(await titleRecord(f.session)).toMatchObject({ status: 'failed' }))
-  expect((await f.session.projectUI()).turns[0]?.status).toBe('completed')
-  expect(f.signals[1]?.aborted).toBe(true)
+  try {
+    await run(f.session)
+    await vi.waitFor(() => expect(f.calls).toHaveLength(2))
+    await vi.advanceTimersByTimeAsync(30_001)
+    await vi.waitFor(async () => expect(await titleRecord(f.session)).toMatchObject({ status: 'failed' }))
+    expect((await f.session.projectUI()).turns[0]?.status).toBe('completed')
+    expect(f.signals[1]?.aborted).toBe(true)
+  } finally {
+    // A cancelled call retains its provider lease until the uncooperative adapter actually exits.
+    release()
+  }
 })
 
 it('does not overwrite a title saved while the model was answering', async () => {
