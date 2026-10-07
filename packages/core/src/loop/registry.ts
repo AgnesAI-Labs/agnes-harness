@@ -1,6 +1,8 @@
 import type { LoopCatalogEntry, LoopFactory, LoopRegistryPort, LoopSelection } from '@agnes/extension-api'
-import { DEFAULT_LOOP } from '@agnes/extension-api'
 import { CoreError } from '../types.js'
+
+// Persisted pre-plugin sessions bind this historical identity without loading extension runtime code.
+export const LEGACY_LOOP: LoopSelection = Object.freeze({ id: 'agnes.default', version: '1.0.0' })
 
 export class LoopRegistry implements LoopRegistryPort {
   private readonly factories = new Map<string, { sourcePackage: string; factory: LoopFactory }>()
@@ -14,7 +16,7 @@ export class LoopRegistry implements LoopRegistryPort {
       if (this.factories.get(key) === record) this.factories.delete(key)
     }
   }
-  resolve(selection: LoopSelection = DEFAULT_LOOP): LoopFactory {
+  resolve(selection: LoopSelection = LEGACY_LOOP): LoopFactory {
     const record = this.factories.get(loopKey(selection))
     if (!record)
       throw new CoreError(

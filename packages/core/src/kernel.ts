@@ -31,9 +31,8 @@ import { InvariantRegistry } from './invariants/registry.js'
 import { forkPaths } from './log/fork-seed.js'
 import type { Timers } from './log/session-log.js'
 import type { StorageAdapter } from './log/storage.js'
-import { DEFAULT_LOOP } from '@agnes/extension-api'
 import { LoopEventRegistry } from './loop/events.js'
-import { LoopRegistry, loopKey } from './loop/registry.js'
+import { LEGACY_LOOP, LoopRegistry, loopKey } from './loop/registry.js'
 import { ProjectionRegistry } from './project/named.js'
 import { openTracked } from './reduce/tracker.js'
 import { HookRegistry } from './registry/hooks.js'
@@ -420,7 +419,7 @@ export class Kernel {
       (typeof so.defaultLoop === 'function' ? await so.defaultLoop() : so.defaultLoop) ??
       preset.loop ??
       this.o.loop ??
-      DEFAULT_LOOP
+      LEGACY_LOOP
     if (so.parent) {
       const selection = await requestedLoop()
       this.loops.resolve(selection)
@@ -488,7 +487,7 @@ export class Kernel {
     let loopFactory: LoopFactory
     try {
       const selection = tracker.state.session
-        ? (tracker.state.session.loop ?? DEFAULT_LOOP)
+        ? (tracker.state.session.loop ?? LEGACY_LOOP)
         : await requestedLoop()
       loopFactory = this.loops.resolve(selection)
     } catch (error) {

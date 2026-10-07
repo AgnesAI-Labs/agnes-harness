@@ -1,5 +1,3 @@
-import { loopShouldStop } from '@agnes/extension-api'
-import { publicOutcome } from '../loop/outcome.js'
 import type {
   HookPayloadMap,
   HookReturnMap,
@@ -66,8 +64,9 @@ import { scanAll, scanPages } from '../log/scan-pages.js'
 import type { SessionLogImpl, Timers } from '../log/session-log.js'
 import { SCAN_PAGE_MAX, type ScanQuery } from '../log/storage.js'
 import { runDeferred } from '../execution/turn/deferred.js'
-import { DEFAULT_LOOP } from '@agnes/extension-api'
 import { LoopEventRegistry, loopEventContext } from '../loop/events.js'
+import { publicOutcome, shouldStopLoop } from '../loop/outcome.js'
+import { LEGACY_LOOP } from '../loop/registry.js'
 import { LoopChildren } from '../loop/children.js'
 import { createLoopContext, disposeLoopContext } from '../loop/ports.js'
 import type {
@@ -766,7 +765,7 @@ export class SessionImpl {
   /** Idempotent: a reopened ledger already carries its session/start and must not gain a second. */
   async start(): Promise<void> {
     if (this.state.session) {
-      const pinned = this.state.session.loop ?? DEFAULT_LOOP
+      const pinned = this.state.session.loop ?? LEGACY_LOOP
       if (pinned.id !== this.loop.id || pinned.version !== this.loop.version)
         throw new Error('Session loop does not match its persisted identity')
       if (!this.initialModelSettingsRestored)
@@ -1735,7 +1734,7 @@ export class SessionImpl {
         } finally {
           this.d.quiet?.leave(this.d.quietGroup ?? this.key)
         }
-        if (loopShouldStop(out, opts.until) && out.outcome !== 'idle')
+        if (shouldStopLoop(out, opts.until) && out.outcome !== 'idle')
           return {
             reason: out.reason ?? 'completed',
             lastSeq: this.lastSeq,
