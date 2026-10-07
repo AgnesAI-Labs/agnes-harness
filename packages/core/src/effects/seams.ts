@@ -138,6 +138,11 @@ export interface SeamWorkspace {
   readonly shellCommand?: (command: string) => string[]
   readonly execBackend: SandboxExecBackend
   readonly enforcement: Enforcement
+  /**
+   * Startup-selected sandbox provider. Absent or `local` keeps the host OS
+   * confine. Any other id skips that confine and is copied onto the exec binding.
+   */
+  readonly providerId?: string
   readonly exec: (
     argv: string[],
     opts: {
@@ -147,7 +152,7 @@ export interface SeamWorkspace {
       timeoutMs?: number
       signal?: AbortSignal
       maxOutputBytes?: number
-      sandbox: Readonly<{ policyDigest: string; backend: SandboxExecBackend }>
+      sandbox: Readonly<{ policyDigest: string; backend: SandboxExecBackend; provider?: string }>
     },
   ) => Promise<{ code: number; stdout: string; stderr: string; truncated: boolean; timedOut?: boolean }>
   readonly binding: () => Readonly<{ policyDigest: string | null }>

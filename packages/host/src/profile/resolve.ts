@@ -2,6 +2,7 @@ import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { SEAM_NAMES, type SeamName } from '@agnes/core'
 import { type ApprovalMode, type ApprovalProfile, validateCommandHooksPolicy } from '@agnes/protocol'
+import { readSandboxStartupConfig } from '../adapters/sandbox-providers.js'
 import { HostError, type Layer } from '../errors.js'
 import { cacheDir as defaultCacheDir, dataDir as defaultDataDir } from '../paths.js'
 import { canonicalJson, sha256hex } from './canonical.js'
@@ -496,6 +497,7 @@ function finalize(draft: Draft, inputs: ProfileInputs, env: ResolveEnv): Resolve
       Object.keys(m.compaction).some((key) => key !== 'engine'))
   )
     throw new HostError('E_PROFILE_FRAGMENT_KEY', 'compaction.engine must be a nonempty registered engine id')
+  const sandbox = readSandboxStartupConfig(m.sandbox)
   const draftProfile: Omit<ResolvedProfile, 'hash'> = {
     name: m.name,
     schemaVersion: m.schemaVersion ?? 1,
@@ -542,6 +544,7 @@ function finalize(draft: Draft, inputs: ProfileInputs, env: ResolveEnv): Resolve
     ...(m.persistence && m.persistence.provider !== 'sqlite'
       ? { persistence: { provider: m.persistence.provider } }
       : {}),
+    ...(sandbox === undefined ? {} : { sandbox }),
     runtimes: [],
   }
   const hash = `sha256-${sha256hex(canonicalJson(hashInput(draftProfile)))}`

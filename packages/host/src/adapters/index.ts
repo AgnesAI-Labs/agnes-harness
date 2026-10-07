@@ -17,6 +17,7 @@ import {
   type ExecAdapter,
   type ExecGateState,
 } from './exec.js'
+import { createSandboxDispatchExec, type SandboxProviderSlot } from './sandbox-providers.js'
 import { createRemoteExec } from './exec-remote.js'
 import { createFs, type FencedFs, type FsBinding, type HostFs } from './fs.js'
 import type { FsIo } from './fs-io.js'
@@ -178,6 +179,11 @@ export async function openAdapters(
     workspaceIo?: FsIo
     modules?: ReadonlyMap<string, PackageModule>
     signal?: AbortSignal
+    /**
+     * When set, session exec consults the provider selected into this slot.
+     * The local id keeps the host spawner. Probes stay on that spawner.
+     */
+    sandboxDispatch?: SandboxProviderSlot
     /** Skill directories the workspace fence may read; ignored in remote mode. */
     skillReadRoots?: () => readonly string[]
     /** The installation's own state: readable but never writable by the file tools under full access. */
@@ -378,15 +384,21 @@ export async function openAdapters(
     // instead of this one. Handing the sandbox seam the raw transport to call directly would put
     // every one of those checks out of the path; the seam reaches this function through
     // `toSeamAdapters`, exactly like every other seam.
-    const innerExec = transport ? createRemoteExec(transport) : exec
-    const policyExec = createPolicyExec(innerExec, {
+    // Remote mode still swaps only the runner. A dispatch slot wraps the local
+    // spawner so a later startup selection can replace it without moving probes.
+    const sessionExec = transport
+      ? createRemoteExec(transport)
+      : opts.sandboxDispatch
+        ? createSandboxDispatchExec(exec, opts.sandboxDispatch)
+        : exec
+    const policyExec = createPolicyExec(sessionExec, {
       boundDigest: () => holder.bound,
       state: () => gate,
       authorizeCwd: (cwd) => fs.resolveInside(cwd),
     })
     const sessionWorkspaces = createSessionWorkspaceAdapterFactory({
       platform,
-      exec: innerExec,
+      exec: sessionExec,
       ...(transport && remotePool ? { transport, remotePool } : {}),
       ...(transport || !opts.skillReadRoots ? {} : { skillReadRoots: opts.skillReadRoots }),
       ...(transport || !opts.fullAccessReadOnlyRoots
@@ -413,7 +425,7 @@ export async function openAdapters(
       execGate: () => gate,
       // The factory's init-window spawner runs wherever this deployment runs: probing the local
       // machine to decide a remote deployment's posture would measure the wrong host.
-      createProbeExec: () => createProbeExec(innerExec),
+      createProbeExec: () => createProbeExec(transport ? sessionExec : exec),
       policyExec,
       bindFsPolicy(policy) {
         const refuse = (reason: string): never => {

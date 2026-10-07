@@ -67,6 +67,20 @@ describe('Host-bound sandbox seam', () => {
     expect(seam.enforcement()).toEqual({ level: 'none', scope: [] })
   })
 
+  it('skips host confinement when a startup provider is selected', async () => {
+    const factory = await sandboxSeam(fakeSeamInit())
+    const ws = workspace({ providerId: 'docker' })
+    const seam = await factory.forWorkspace(ws.value)
+    await seam.exec(['/bin/echo', 'hi'], { cwd: '/work/proj' })
+    expect(ws.confine).not.toHaveBeenCalled()
+    expect(ws.exec).toHaveBeenCalledWith(['/bin/echo', 'hi'], {
+      cwd: '/work/proj',
+      sandbox: { policyDigest: ws.value.policy.digest, backend: 'l1', provider: 'docker' },
+    })
+    await expect(seam.confine(['/bin/echo'])).rejects.toMatchObject({ code: 'SANDBOX_UNAVAILABLE' })
+    expect(seam.enforcement()).toEqual({ level: 'partial', scope: ['process'] })
+  })
+
   it('rejects a Host workspace whose root and policy disagree before readiness', async () => {
     const factory = await sandboxSeam(fakeSeamInit())
     const ws = workspace({ root: '/other' })

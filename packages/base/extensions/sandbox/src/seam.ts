@@ -24,7 +24,8 @@ function assertWorkspace(workspace: SeamWorkspace): void {
     (workspace.execBackend !== 'none' &&
       workspace.execBackend !== 'l1' &&
       workspace.execBackend !== 'remote') ||
-    (workspace.shell !== 'posix' && workspace.shell !== 'powershell')
+    (workspace.shell !== 'posix' && workspace.shell !== 'powershell') ||
+    (workspace.providerId !== undefined && !/^[a-z][a-z0-9-]{0,63}$/.test(workspace.providerId))
   )
     throw fault('E_SANDBOX_WORKSPACE', 'Host supplied an invalid bound workspace')
 }
@@ -34,10 +35,24 @@ async function bindWorkspace(workspace: SeamWorkspace): Promise<SandboxSeam> {
   const backend = await workspace.readiness.ready(workspace.signal)
   const policy = workspace.policy
   const forWorkspace = (next: SeamWorkspace): Promise<SandboxSeam> => bindWorkspace(next)
+  const providerId = workspace.providerId
+  const external = providerId !== undefined && providerId !== 'local'
   const bound: SandboxSeam = {
     forWorkspace,
     async exec(cmd, opts) {
       const raw = expandShell(cmd, workspace.shell, workspace.shellCommand)
+      // The selected provider owns the process. Wrapping the argv in the host
+      // OS sandbox and then handing that argv to the provider would fake both.
+      if (external && providerId !== undefined) {
+        return workspace.exec([...raw], {
+          ...opts,
+          sandbox: {
+            policyDigest: policy.digest,
+            backend: workspace.execBackend,
+            provider: providerId,
+          },
+        })
+      }
       const argv = await backend.confine({ argv: raw, cwd: opts.cwd })
       return workspace.exec([...argv], {
         ...opts,
@@ -45,11 +60,17 @@ async function bindWorkspace(workspace: SeamWorkspace): Promise<SandboxSeam> {
       })
     },
     async confine(argv) {
+      if (external)
+        throw fault(
+          'SANDBOX_UNAVAILABLE',
+          'the selected sandbox provider does not rewrite host argv',
+        )
       return [...(await backend.confine({ argv, cwd: workspace.root }))]
     },
     fsPolicy: () => policy,
     enforcement(): Enforcement {
       if (workspace.binding().policyDigest !== policy.digest) return { level: 'none', scope: [] }
+      if (external) return { level: 'partial', scope: ['process'] }
       return {
         level: workspace.enforcement.level,
         scope: [...workspace.enforcement.scope],

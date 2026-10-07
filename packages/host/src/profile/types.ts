@@ -141,6 +141,8 @@ export type RuntimeProfileManifest = {
   extensionIsolation?: ExtensionIsolationPolicy
   /** Session store id. Only the user profile may set it. The running process keeps the store it opened. */
   persistence?: { provider: string }
+  /** Startup sandbox provider. Omitted means the local host sandbox. Restart required. */
+  sandbox?: { provider?: string }
 }
 export type ProfileFragment = {
   packages?: PackageRef[]
@@ -242,6 +244,8 @@ export type ResolvedProfile = Readonly<{
   extensionIsolation?: ExtensionIsolationPolicy
   /** Present only when the selected provider is not the built-in `sqlite` id. Changing it is restart-required. */
   persistence?: { provider: string }
+  /** Present only when the profile names a provider. The default local id is applied at startup. */
+  sandbox?: Readonly<{ provider: string }>
   runtimes: ('python' | 'typescript')[]
   hash: string
 }>

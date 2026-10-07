@@ -18,7 +18,12 @@ export type ExecResult = {
  * host's own bound state; a request that names a policy the host is not enforcing, or a backend
  * the seam did not declare, is refused.
  */
-export type SandboxExecBinding = { policyDigest: string; backend: 'none' | 'l1' | 'remote' }
+export type SandboxExecBinding = {
+  policyDigest: string
+  backend: 'none' | 'l1' | 'remote'
+  /** Set when a startup-selected provider, other than the local host sandbox, owns the process. */
+  provider?: string
+}
 
 /** The process-isolation posture the sandbox seam declared at init. Host-owned once declared. */
 export type ExecGateState = { backend: 'none' | 'l1' | 'remote'; onUnavailable: 'deny' | 'allow' }
@@ -245,7 +250,10 @@ export function createPolicyExec(
     // Only 'none' means "there is no backend". A remote posture has one - it is simply not this
     // machine, so the preset's unconfined-execution allowance has nothing to say about it. A dead
     // connection surfaces as an error from the remote runner, never as a fallback to local exec.
-    if (state.backend === 'none' && state.onUnavailable !== 'allow')
+    // An external provider is the confinement. A missing OS backend must not
+    // hide that, and it must not be rewritten into a local unconfined spawn.
+    const externalProvider = request.provider !== undefined && request.provider !== 'local'
+    if (state.backend === 'none' && state.onUnavailable !== 'allow' && !externalProvider)
       throw unavailable('no sandbox backend is available and the preset does not allow unconfined execution')
     return inner.run(argv, { ...opts, cwd })
   }

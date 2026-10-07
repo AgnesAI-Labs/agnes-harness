@@ -35,6 +35,13 @@ import {
   sandboxHostServices,
   toSeamAdapters,
 } from './adapters/index.js'
+import { createLocalSandboxProvider } from './adapters/sandbox-local.js'
+import {
+  bindStartupSandboxProvider,
+  installSandboxProviders,
+  LOCAL_SANDBOX_PROVIDER_ID,
+  type SandboxProviderSlot,
+} from './adapters/sandbox-providers.js'
 import { createPlatform } from './adapters/platform.js'
 import { powerShellCommand } from './adapters/powershell-command.js'
 import { createPublicFetch } from './adapters/public-fetch/index.js'
@@ -493,6 +500,7 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
     // host-integrity hard denies), which is what trusted seam factories run against. The sandbox
     // seam's full policy replaces it after step 5, in one binding, before anything else is built.
     const backend = deps.platform ? { platform: deps.platform } : {}
+    const sandboxProviderSlot: SandboxProviderSlot = {}
     // Filled once the Skill generation exists; the fence asks through it on every read.
     let skillReadRoots: () => readonly string[] = () => []
     const adapters = await openAdapters(profile, {
@@ -511,6 +519,7 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
       ...(deps.windowsNodeExecutable !== undefined
         ? { windowsNodeExecutable: deps.windowsNodeExecutable }
         : {}),
+      sandboxDispatch: sandboxProviderSlot,
       ...backend,
     })
     rollback.push('adapters', () => adapters.close())
@@ -707,6 +716,12 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
             throw new HostError('E_SANDBOX_WORKSPACE', 'sandbox posture was not activated', {
               detail: { reason: 'workspace-posture-inactive' },
             })
+          const providerId = await bindStartupSandboxProvider(
+            sandboxProviderSlot,
+            profile,
+            runtime.root,
+            adapters.transport !== undefined,
+          )
           const powerShell = adapters.powerShell
           const shellCommand = powerShell
             ? (command: string): string[] => powerShellCommand(powerShell, command)
@@ -720,6 +735,7 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
             ...(shellCommand ? { shellCommand } : {}),
             execBackend: posture.execBackend,
             enforcement: posture.enforcement,
+            ...(providerId === LOCAL_SANDBOX_PROVIDER_ID ? {} : { providerId }),
             exec: fence.exec,
             binding: fence.binding,
           })
@@ -917,6 +933,9 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
             installModelAdapters(root, origins)
             installLoops(root, origins)
             installCompactionEngines(root, origins)
+            const sandboxProviders = installSandboxProviders(root, origins)
+            sandboxProviders.register(createLocalSandboxProvider(adapters.exec, adapters.platform.os))
+            sandboxProviderSlot.registry = sandboxProviders
           },
           ...(deps.skillContribution ? { skillContribution: deps.skillContribution } : {}),
           afterApply: () => {
