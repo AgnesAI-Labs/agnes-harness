@@ -92,6 +92,7 @@ export interface Host {
   readonly providerFingerprint: string | null
   /** Read-only descriptions from the currently assembled adapter registry. */
   modelAdapterCatalog: Assembled['modelAdapterCatalog']
+  readonly providers: Assembled['providers']
   readonly runtimes: Assembled['runtimes']
   /** Read-only product status; mutation/session capabilities remain private to Host assembly. */
   readonly lockedPackageMutations: Pick<Assembled['lockedPackageMutations'], 'status'>
@@ -264,6 +265,7 @@ async function createHostInstance(profile: ResolvedProfile, opts: HostOptions): 
       return a.providerFingerprint
     },
     modelAdapterCatalog: () => a.modelAdapterCatalog(),
+    providers: Object.freeze({ catalog: () => a.providers.catalog() }),
     runtimes: a.runtimes,
     lockedPackageMutations: Object.freeze({ status: () => a.lockedPackageMutations.status() }),
     computerUse: computerUse

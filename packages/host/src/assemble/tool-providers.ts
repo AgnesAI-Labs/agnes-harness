@@ -1,5 +1,6 @@
 import { type Context, Service } from '@agnes/cordis'
-import { LoopEventRegistry, ToolPolicyRegistry, ToolRuntimeRegistry, defaultToolPolicy } from '@agnes/core'
+import { LoopEventRegistry, defaultToolRuntimeProvider, defaultToolPolicy } from '@agnes/core'
+import { defineProviderKind } from '@agnes/extension-api'
 import type {
   LoopEventRegistryPort,
   LoopEventName,
@@ -15,6 +16,7 @@ import type {
 import type { RowOriginLookup } from '@agnes/plugin-runtime/host'
 import { normalizePluginExport } from '@agnes/plugin-runtime/host'
 import type { PackageModule } from './packages.js'
+import { installProviderRegistry, providerSource, type ProviderRegistry } from './provider-registry.js'
 
 declare module '@agnes/cordis' {
   interface Context {
@@ -24,30 +26,28 @@ declare module '@agnes/cordis' {
   }
 }
 
-function sourceFor(ctx: Context, origins: RowOriginLookup | undefined, claimed: string): string {
-  for (let fiber = ctx.fiber; fiber !== fiber.parent.fiber; fiber = fiber.parent.fiber) {
-    const origin = origins?.lookup(fiber)
-    if (origin) {
-      // Host-built static claims use the sentinel package identity `builtin`.
-      if (origin.trustTier === 'builtin' && origin.packageId === 'builtin') return claimed
-      if (origin.packageId !== claimed)
-        throw new Error('Tool provider source package does not match its plugin row')
-      return origin.packageId
-    }
-  }
-  return claimed
-}
-
 export class ToolRuntimesService extends Service implements ToolRuntimeRegistryPort {
-  private readonly registry = new ToolRuntimeRegistry()
+  private readonly registry: ProviderRegistry<ToolRuntimeProvider>
   constructor(
     ctx: Context,
     private readonly origins?: RowOriginLookup,
   ) {
     super(ctx, 'toolRuntimes')
+    this.registry = installProviderRegistry(
+      ctx,
+      defineProviderKind<ToolRuntimeProvider>({
+        kind: 'tool-runtime',
+        validate(provider) {
+          if (typeof provider.create !== 'function') throw new Error('Invalid tool runtime provider')
+        },
+        capabilities: () => ['single', 'batch', 'scheduling', 'cancel'],
+      }),
+      (owner, source, provider) => owner.toolRuntimes.register(source, provider),
+    )
+    this.registry.register('@agnes/core', defaultToolRuntimeProvider, ctx)
   }
   register(sourcePackage: string, provider: ToolRuntimeProvider) {
-    const source = sourceFor(this.ctx, this.origins, sourcePackage)
+    const source = providerSource(this.ctx, this.origins, sourcePackage, true)
     const lifetime = new AbortController()
     const wrapped: ToolRuntimeProvider = {
       ...provider,
@@ -68,35 +68,47 @@ export class ToolRuntimesService extends Service implements ToolRuntimeRegistryP
         }
       },
     }
-    return this.ctx.effect(() => {
-      const dispose = this.registry.register(source, wrapped)
-      return () => {
-        lifetime.abort()
-        dispose()
-      }
+    return this.registry.register(source, wrapped, this.ctx, () => {
+      lifetime.abort()
     })
   }
   resolve(id: string) {
     return this.registry.resolve(id)
   }
   catalog() {
-    return this.registry.catalog()
+    return Object.freeze(
+      this.registry
+        .catalog()
+        .map(({ id, version, sourcePackage }) => Object.freeze({ id, version, sourcePackage })),
+    )
   }
 }
 
 export class ToolPoliciesService extends Service implements ToolPolicyRegistryPort {
-  private readonly registry = new ToolPolicyRegistry(false)
+  private readonly registry: ProviderRegistry<ToolPolicy>
   constructor(
     ctx: Context,
     private readonly origins?: RowOriginLookup,
   ) {
     super(ctx, 'toolPolicies')
+    this.registry = installProviderRegistry(
+      ctx,
+      defineProviderKind<ToolPolicy>({
+        kind: 'tool-policy',
+        validate(policy) {
+          if (typeof policy.decide !== 'function') throw new Error('Invalid tool policy')
+        },
+        capabilities: () => ['allow', 'ask', 'deny'],
+      }),
+      (owner, source, provider) => owner.toolPolicies.register(source, provider),
+    )
   }
   register(sourcePackage: string, policy: ToolPolicy) {
-    const source = sourceFor(this.ctx, this.origins, sourcePackage)
+    const source = providerSource(this.ctx, this.origins, sourcePackage, true)
     const lifetime = new AbortController()
-    return this.ctx.effect(() => {
-      const dispose = this.registry.register(source, {
+    return this.registry.register(
+      source,
+      {
         ...policy,
         async decide(input, signal) {
           lifetime.signal.throwIfAborted()
@@ -104,18 +116,22 @@ export class ToolPoliciesService extends Service implements ToolPolicyRegistryPo
           lifetime.signal.throwIfAborted()
           return result
         },
-      })
-      return () => {
+      },
+      this.ctx,
+      () => {
         lifetime.abort()
-        dispose()
-      }
-    })
+      },
+    )
   }
   resolve(id: string) {
     return this.registry.resolve(id)
   }
   catalog() {
-    return this.registry.catalog()
+    return Object.freeze(
+      this.registry
+        .catalog()
+        .map(({ id, version, sourcePackage }) => Object.freeze({ id, version, sourcePackage })),
+    )
   }
 }
 

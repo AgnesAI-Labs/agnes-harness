@@ -10,7 +10,28 @@ import { createTestHost } from '../../testkit/index.js'
 
 it('assembles the bundled default policy row before opening a real Host session', async () => {
   const dataDir = mkdtempSync(join(tmpdir(), 'agnes-tool-policy-'))
-  const { host } = await createTestHost({ dataDir, script: [], disableSessionTitle: true })
+  const { host } = await createTestHost({
+    dataDir,
+    script: [],
+    disableSessionTitle: true,
+    profileInputs: {
+      user: {
+        name: 'local-dev',
+        packages: [
+          {
+            id: '@agnes/code',
+            source: 'builtin',
+            config: {
+              loop: { provider: 'agnes.default' },
+              'tool-runtime': { provider: 'default' },
+              'tool-policy': { provider: 'default' },
+              compaction: { provider: 'default' },
+            },
+          },
+        ],
+      },
+    },
+  })
   try {
     expect(host.kernel.toolPolicies.catalog()).toContainEqual({
       id: 'default',
@@ -19,6 +40,25 @@ it('assembles the bundled default policy row before opening a real Host session'
     })
     const session = await host.createSession({ key: 'tool-policy', cwd: dataDir })
     expect(session.toolPolicy().id).toBe('default')
+    expect(session.loop).toEqual({ id: 'agnes.default', version: '1.0.0' })
+    const catalog = host.providers.catalog()
+    expect(new Set(catalog.map((entry) => entry.kind))).toEqual(
+      new Set([
+        'loop',
+        'model-adapter',
+        'compaction',
+        'persistence',
+        'sandbox',
+        'tool-runtime',
+        'tool-policy',
+      ]),
+    )
+    expect(catalog).toContainEqual(
+      expect.objectContaining({ kind: 'persistence', id: 'sqlite', restartRequired: true, active: true }),
+    )
+    expect(catalog).toContainEqual(
+      expect.objectContaining({ kind: 'tool-policy', id: 'default', active: true }),
+    )
   } finally {
     await host.close()
     rmSync(dataDir, { recursive: true, force: true })
@@ -30,7 +70,7 @@ it('registers the Base default and custom policies through plugin fibers and fai
   installToolProviders(root)
   const builtin = root.plugin(toolPolicyPlugin)
   const custom = root.plugin((ctx) => {
-    ctx.toolPolicies.register('@agnes-example/read-only-policy', policy)
+    ctx.providers.register('tool-policy', '@agnes-example/read-only-policy', policy)
   })
   await expect.poll(() => root.toolPolicies.catalog().length).toBe(2)
   expect(root.toolPolicies.catalog()).toContainEqual({

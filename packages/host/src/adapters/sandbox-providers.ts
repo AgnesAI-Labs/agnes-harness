@@ -1,5 +1,6 @@
 import { type Context, Service } from '@agnes/cordis'
 import {
+  defineProviderKind,
   LOCAL_SANDBOX_PROVIDER_ID,
   type SandboxCapabilities,
   type SandboxPlatform,
@@ -10,9 +11,14 @@ import {
   type SandboxProviderRegistration,
   sandboxUnavailable,
 } from '@agnes/extension-api'
-import type { RowOrigin, RowOriginLookup } from '@agnes/plugin-runtime/host'
+import type { RowOriginLookup } from '@agnes/plugin-runtime/host'
 import { HostError } from '../errors.js'
 import type { ExecAdapter } from './exec.js'
+import {
+  installProviderRegistry,
+  providerSource,
+  type ProviderRegistry,
+} from '../assemble/provider-registry.js'
 
 export { LOCAL_SANDBOX_PROVIDER_ID }
 
@@ -26,6 +32,8 @@ const PROVIDER_ID = /^[a-z][a-z0-9-]{0,63}$/
 const PLATFORMS = new Set<SandboxPlatform>(['darwin', 'linux', 'win32'])
 
 type Registration = {
+  id: string
+  version: string
   provider: SandboxProvider
   entry: SandboxProviderCatalogEntry
   active: boolean
@@ -51,7 +59,11 @@ function freezeCapabilities(capabilities: SandboxCapabilities): SandboxCapabilit
 }
 
 function validCapabilities(capabilities: SandboxCapabilities | undefined): boolean {
-  if (!capabilities || typeof capabilities.network !== 'boolean' || typeof capabilities.available !== 'boolean')
+  if (
+    !capabilities ||
+    typeof capabilities.network !== 'boolean' ||
+    typeof capabilities.available !== 'boolean'
+  )
     return false
   if (!Array.isArray(capabilities.platform) || !Array.isArray(capabilities.fsWrite)) return false
   if (capabilities.platform.some((platform) => !PLATFORMS.has(platform))) return false
@@ -60,7 +72,8 @@ function validCapabilities(capabilities: SandboxCapabilities | undefined): boole
 
 /** Per-Cordis-root catalog. The selected id is fixed until the process starts again. */
 export class SandboxProviderRegistry extends Service implements SandboxProviderRegistration {
-  private readonly registrations = new Map<string, Registration>()
+  private readonly registrations: ProviderRegistry<SandboxProvider>
+  private readonly records = new WeakMap<SandboxProvider, Registration>()
   private selection: { id: string; instance: SandboxProviderInstance } | undefined
 
   constructor(
@@ -68,42 +81,57 @@ export class SandboxProviderRegistry extends Service implements SandboxProviderR
     private readonly origins?: RowOriginLookup,
   ) {
     super(ctx, 'sandboxProviders')
+    this.registrations = installProviderRegistry(
+      ctx,
+      defineProviderKind<SandboxProvider>({
+        kind: 'sandbox',
+        restartRequired: true,
+        validate(provider) {
+          if (
+            !PROVIDER_ID.test(provider.id) ||
+            !provider.version ||
+            typeof provider.create !== 'function' ||
+            !validCapabilities(provider.capabilities)
+          )
+            throw new HostError('E_API_RANGE', 'invalid sandbox provider registration')
+        },
+        capabilities: (provider) => [
+          ...(provider.capabilities.network ? ['network'] : []),
+          ...provider.capabilities.fsWrite.map((scope) => `fsWrite:${scope.path}`),
+          ...provider.capabilities.platform.map((platform) => `platform:${platform}`),
+        ],
+      }),
+      (owner, source, provider) => owner.sandboxProviders.register(provider, source),
+    )
   }
 
-  register(provider: SandboxProvider): () => Promise<void> {
-    if (
-      !PROVIDER_ID.test(provider.id) ||
-      !provider.version ||
-      typeof provider.create !== 'function' ||
-      !validCapabilities(provider.capabilities)
-    )
-      throw new HostError('E_API_RANGE', 'invalid sandbox provider registration')
-    if (this.registrations.has(provider.id))
-      throw new HostError('E_API_RANGE', `duplicate sandbox provider: ${provider.id}`)
-    let origin: Readonly<RowOrigin> | undefined
-    for (let fiber = this.ctx.fiber; fiber !== fiber.parent.fiber; fiber = fiber.parent.fiber) {
-      origin = this.origins?.lookup(fiber)
-      if (origin) break
-    }
-    if (this.origins && !origin && this.ctx !== this.ctx.root)
-      throw new HostError('E_EXT_LOAD', 'sandbox provider requires a verified plugin row')
+  register(provider: SandboxProvider, sourcePackage?: string): () => Promise<void> {
+    this.registrations.definition.validate(provider)
     const record: Registration = {
+      id: provider.id,
+      version: provider.version,
       provider,
       entry: Object.freeze({
         id: provider.id,
         version: provider.version,
-        sourcePackage: origin?.packageId ?? '@agnes/host',
+        sourcePackage: providerSource(
+          this.ctx,
+          this.origins,
+          sourcePackage ?? '@agnes/host',
+          sourcePackage !== undefined,
+        ),
         capabilities: freezeCapabilities(provider.capabilities),
         restartRequired: true,
       }),
       active: true,
       instances: new Set(),
     }
-    return this.ctx.effect(() => {
-      this.registrations.set(record.entry.id, record)
-      return async () => {
+    const unregister = this.registrations.register(
+      record.entry.sourcePackage,
+      provider,
+      this.ctx,
+      async () => {
         record.active = false
-        this.registrations.delete(record.entry.id)
         const results = await Promise.allSettled([...record.instances].map((dispose) => dispose()))
         await provider.cleanup?.()
         const failures = results.filter((result) => result.status === 'rejected')
@@ -112,13 +140,18 @@ export class SandboxProviderRegistry extends Service implements SandboxProviderR
             failures.map((result) => result.reason),
             'sandbox provider cleanup failed',
           )
-      }
-    }, `sandboxProviders.register(${provider.id})`)
+      },
+    )
+    this.records.set(provider, record)
+    return unregister
   }
 
   catalog(): readonly SandboxProviderCatalogEntry[] {
     return Object.freeze(
-      [...this.registrations.values()].map((record) => record.entry).sort((a, b) => a.id.localeCompare(b.id)),
+      this.registrations
+        .catalog()
+        .map((record) => this.records.get(this.registrations.resolve(record.id))!.entry)
+        .sort((a, b) => a.id.localeCompare(b.id)),
     )
   }
 
@@ -144,11 +177,7 @@ export class SandboxProviderRegistry extends Service implements SandboxProviderR
         )
       return this.selection.instance
     }
-    const record = this.registrations.get(id)
-    if (!record?.active)
-      throw new HostError('E_DEP_MISSING', `sandbox provider is not registered: ${id}`, {
-        detail: { reason: 'provider-missing', id },
-      })
+    const record = this.records.get(this.registrations.resolve(id))!
     const probed = (await record.provider.probe?.()) ?? record.provider.capabilities
     if (!validCapabilities(probed))
       throw new HostError('E_API_RANGE', `sandbox provider returned invalid capabilities: ${id}`)
@@ -179,6 +208,7 @@ export class SandboxProviderRegistry extends Service implements SandboxProviderR
     }
     record.instances.add(dispose)
     this.selection = { id, instance }
+    this.registrations.select('process', id)
     return instance
   }
 }

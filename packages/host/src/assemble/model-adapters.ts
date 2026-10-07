@@ -1,5 +1,6 @@
 import { modelAdaptersPlugin, WireAdapter } from '@agnes/ai'
 import { type Context, Service } from '@agnes/cordis'
+import { defineProviderKind } from '@agnes/extension-api'
 import type {
   ModelAdapter,
   ModelAdapterCatalogEntry,
@@ -8,10 +9,11 @@ import type {
   ModelAdapterRegistration,
 } from '@agnes/extension-api'
 import { scriptedAdapter } from '@agnes/model-adapters'
-import type { RowOrigin, RowOriginLookup } from '@agnes/plugin-runtime/host'
+import type { RowOriginLookup } from '@agnes/plugin-runtime/host'
 import { normalizePluginExport } from '@agnes/plugin-runtime/host'
 import { HostError } from '../errors.js'
 import type { PackageModule } from './packages.js'
+import { installProviderRegistry, providerSource, type ProviderRegistry } from './provider-registry.js'
 
 declare module '@agnes/cordis' {
   interface Context {
@@ -20,6 +22,8 @@ declare module '@agnes/cordis' {
 }
 
 type Registration = {
+  id: string
+  version: string
   adapter: ModelAdapter
   entry: ModelAdapterCatalogEntry
   active: boolean
@@ -84,56 +88,67 @@ class CommunityWireAdapter extends WireAdapter {
 
 /** Per-Cordis-root catalog; registrations and instances follow the owning plugin fiber. */
 export class ModelAdapterRegistry extends Service implements ModelAdapterRegistration {
-  private readonly registrations = new Map<string, Registration>()
+  private readonly registrations: ProviderRegistry<ModelAdapter>
+  private readonly records = new WeakMap<ModelAdapter, Registration>()
 
   constructor(
     ctx: Context,
     private readonly origins?: RowOriginLookup,
   ) {
     super(ctx, 'modelAdapters')
+    this.registrations = installProviderRegistry(
+      ctx,
+      defineProviderKind<ModelAdapter>({
+        kind: 'model-adapter',
+        validate(adapter) {
+          if (
+            !adapter.id ||
+            !adapter.api ||
+            !adapter.version ||
+            typeof adapter.create !== 'function' ||
+            !adapter.capabilities ||
+            ['imageInput', 'tools', 'streaming'].some(
+              (key) => typeof adapter.capabilities[key as keyof typeof adapter.capabilities] !== 'boolean',
+            )
+          )
+            throw new HostError('E_API_RANGE', 'invalid model adapter registration')
+        },
+        capabilities: (record) =>
+          Object.entries(record.capabilities)
+            .filter(([, enabled]) => enabled)
+            .map(([name]) => name),
+      }),
+      (owner, source, provider) => owner.modelAdapters.register(provider, source),
+    )
   }
 
-  register(adapter: ModelAdapter): () => Promise<void> {
-    if (
-      !adapter.id ||
-      !adapter.api ||
-      !adapter.version ||
-      typeof adapter.create !== 'function' ||
-      !adapter.capabilities ||
-      ['imageInput', 'tools', 'streaming'].some(
-        (key) => typeof adapter.capabilities[key as keyof typeof adapter.capabilities] !== 'boolean',
-      )
-    )
-      throw new HostError('E_API_RANGE', 'invalid model adapter registration')
-    if (this.registrations.has(adapter.id))
-      throw new HostError('E_API_RANGE', `duplicate model adapter: ${adapter.id}`)
-    let origin: Readonly<RowOrigin> | undefined
-    for (let fiber = this.ctx.fiber; fiber !== fiber.parent.fiber; fiber = fiber.parent.fiber) {
-      origin = this.origins?.lookup(fiber)
-      if (origin) break
-    }
-    if (this.origins && !origin && this.ctx !== this.ctx.root)
-      throw new HostError('E_EXT_LOAD', 'model adapter requires a verified plugin row')
+  register(adapter: ModelAdapter, sourcePackage?: string): () => Promise<void> {
+    this.registrations.definition.validate(adapter)
     const record: Registration = {
+      id: adapter.id,
+      version: adapter.version,
       adapter,
       entry: Object.freeze({
         id: adapter.id,
         api: adapter.api,
         version: adapter.version,
-        sourcePackage:
-          origin?.trustTier === 'builtin' && origin.rowId === 'model-adapters:pi'
-            ? '@agnes/ai'
-            : (origin?.packageId ?? '@agnes/ai'),
+        sourcePackage: providerSource(
+          this.ctx,
+          this.origins,
+          sourcePackage ?? '@agnes/ai',
+          sourcePackage !== undefined,
+        ),
         capabilities: Object.freeze({ ...adapter.capabilities }),
       }),
       active: true,
       instances: new Set(),
     }
-    return this.ctx.effect(() => {
-      this.registrations.set(record.entry.id, record)
-      return async () => {
+    const unregister = this.registrations.register(
+      record.entry.sourcePackage,
+      adapter,
+      this.ctx,
+      async () => {
         record.active = false
-        this.registrations.delete(record.entry.id)
         const results = await Promise.allSettled([...record.instances].map((dispose) => dispose()))
         await adapter.cleanup?.()
         const failures = results.filter((result) => result.status === 'rejected')
@@ -142,13 +157,18 @@ export class ModelAdapterRegistry extends Service implements ModelAdapterRegistr
             failures.map((result) => result.reason),
             'adapter cleanup failed',
           )
-      }
-    }, `modelAdapters.register(${adapter.id})`)
+      },
+    )
+    this.records.set(adapter, record)
+    return unregister
   }
 
   catalog(): readonly ModelAdapterCatalogEntry[] {
     return Object.freeze(
-      [...this.registrations.values()].map((r) => r.entry).sort((a, b) => a.id.localeCompare(b.id)),
+      this.registrations
+        .catalog()
+        .map((r) => this.records.get(this.registrations.resolve(r.id))!.entry)
+        .sort((a, b) => a.id.localeCompare(b.id)),
     )
   }
 
@@ -160,11 +180,7 @@ export class ModelAdapterRegistry extends Service implements ModelAdapterRegistr
     adapter: WireAdapter
     dispose(): Promise<void>
   }> {
-    const record = this.registrations.get(id)
-    if (!record?.active)
-      throw new HostError('E_DEP_MISSING', `model adapter is not registered: ${id}`, {
-        detail: { reason: 'adapter-missing', id },
-      })
+    const record = this.records.get(this.registrations.select(`adapter:${id}`, id))!
     // Only Host's reviewed API-key/OAuth factories supply a prepared builtin instance.
     const instance =
       builtin && record.entry.sourcePackage === '@agnes/ai' ? builtin() : await record.adapter.create(config)

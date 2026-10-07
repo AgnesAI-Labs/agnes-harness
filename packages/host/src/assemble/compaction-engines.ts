@@ -1,14 +1,16 @@
 import { CompactionRunner } from '@agnes/core'
 import { type Context, Service } from '@agnes/cordis'
+import { defineProviderKind } from '@agnes/extension-api'
 import type {
   CompactionEngine,
   CompactionEngineCatalogEntry,
   CompactionEngineInstance,
   CompactionEngineRegistration,
 } from '@agnes/extension-api'
-import { normalizePluginExport, type RowOrigin, type RowOriginLookup } from '@agnes/plugin-runtime/host'
+import { normalizePluginExport, type RowOriginLookup } from '@agnes/plugin-runtime/host'
 import { HostError } from '../errors.js'
 import type { PackageModule } from './packages.js'
+import { installProviderRegistry, providerSource, type ProviderRegistry } from './provider-registry.js'
 
 declare module '@agnes/cordis' {
   interface Context {
@@ -17,8 +19,9 @@ declare module '@agnes/cordis' {
 }
 
 export class CompactionEngineRegistry extends Service implements CompactionEngineRegistration {
-  private readonly records = new Map<
-    string,
+  private readonly registry: ProviderRegistry<CompactionEngine>
+  private readonly records = new WeakMap<
+    CompactionEngine,
     {
       engine: CompactionEngine
       entry: CompactionEngineCatalogEntry
@@ -31,59 +34,63 @@ export class CompactionEngineRegistry extends Service implements CompactionEngin
     private readonly origins?: RowOriginLookup,
   ) {
     super(ctx, 'compactionEngines')
+    this.registry = installProviderRegistry(
+      ctx,
+      defineProviderKind<CompactionEngine>({
+        kind: 'compaction',
+        restartRequired: true,
+        validate(engine) {
+          if (
+            typeof engine?.id !== 'string' ||
+            !engine.id.trim() ||
+            typeof engine.version !== 'string' ||
+            !engine.version.trim() ||
+            typeof engine.create !== 'function'
+          )
+            throw new HostError('E_API_RANGE', 'invalid compaction engine registration')
+        },
+        capabilities: () => ['budget', 'summarize'],
+      }),
+      (owner, source, provider) => owner.compactionEngines.register(provider, source),
+    )
   }
 
-  register(engine: CompactionEngine): () => void {
-    if (
-      typeof engine?.id !== 'string' ||
-      !engine.id.trim() ||
-      typeof engine.version !== 'string' ||
-      !engine.version.trim() ||
-      typeof engine.create !== 'function'
-    )
-      throw new HostError('E_API_RANGE', 'invalid compaction engine registration')
-    if (this.records.has(engine.id))
-      throw new HostError('E_API_RANGE', `duplicate compaction engine: ${engine.id}`)
-    let origin: Readonly<RowOrigin> | undefined
-    for (let fiber = this.ctx.fiber; fiber !== fiber.parent.fiber; fiber = fiber.parent.fiber) {
-      origin = this.origins?.lookup(fiber)
-      if (origin) break
-    }
-    if (this.origins && !origin && this.ctx !== this.ctx.root)
-      throw new HostError('E_EXT_LOAD', 'compaction engine requires a verified plugin row')
+  register(engine: CompactionEngine, sourcePackage?: string): () => void {
+    this.registry.definition.validate(engine)
     const record = {
+      id: engine.id,
+      version: engine.version,
       engine,
       entry: Object.freeze({
         id: engine.id,
         version: engine.version,
-        sourcePackage:
-          origin?.trustTier === 'builtin' && origin.rowId === 'compaction-engine:default'
-            ? '@agnes/base'
-            : (origin?.packageId ?? '@agnes/base'),
+        sourcePackage: providerSource(
+          this.ctx,
+          this.origins,
+          sourcePackage ?? '@agnes/base',
+          sourcePackage !== undefined,
+        ),
       }),
       lifetime: new AbortController(),
     }
-    return this.ctx.effect(() => {
-      this.records.set(engine.id, record)
-      return () => {
-        record.lifetime.abort()
-        this.records.delete(engine.id)
-      }
-    }, `compactionEngines.register(${engine.id})`)
+    const unregister = this.registry.register(record.entry.sourcePackage, engine, this.ctx, () => {
+      record.lifetime.abort()
+    })
+    this.records.set(engine, record)
+    return unregister
   }
 
   catalog(): readonly CompactionEngineCatalogEntry[] {
     return Object.freeze(
-      [...this.records.values()].map((record) => record.entry).sort((a, b) => a.id.localeCompare(b.id)),
+      this.registry
+        .catalog()
+        .map((record) => this.records.get(this.registry.resolve(record.id))!.entry)
+        .sort((a, b) => a.id.localeCompare(b.id)),
     )
   }
 
   create(id: string): CompactionEngineInstance {
-    const record = this.records.get(id)
-    if (!record)
-      throw new HostError('E_DEP_MISSING', `compaction engine is not registered: ${id}`, {
-        detail: { reason: 'compaction-engine-missing', id },
-      })
+    const record = this.records.get(this.registry.select('host', id))!
     const instance = record.engine.create()
     if (!instance || typeof instance.shouldCompact !== 'function' || typeof instance.compact !== 'function')
       throw new HostError('E_API_RANGE', `invalid compaction engine instance: ${id}`)

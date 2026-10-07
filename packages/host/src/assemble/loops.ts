@@ -1,8 +1,13 @@
 import { type Context, Service } from '@agnes/cordis'
-import { LoopRegistry } from '@agnes/core'
-import type { LoopFactory, LoopRegistryPort, LoopSelection } from '@agnes/extension-api'
-import type { RowOrigin, RowOriginLookup } from '@agnes/plugin-runtime/host'
-import { HostError } from '../errors.js'
+import { CoreError, defaultLoopFactory } from '@agnes/core'
+import {
+  defineProviderKind,
+  type LoopFactory,
+  type LoopRegistryPort,
+  type LoopSelection,
+} from '@agnes/extension-api'
+import type { RowOriginLookup } from '@agnes/plugin-runtime/host'
+import { installProviderRegistry, providerSource, type ProviderRegistry } from './provider-registry.js'
 
 declare module '@agnes/cordis' {
   interface Context {
@@ -12,33 +17,58 @@ declare module '@agnes/cordis' {
 
 /** Each plugin tree owns its catalog; registration follows the verified package fiber. */
 export class LoopsService extends Service implements LoopRegistryPort {
-  private readonly registry = new LoopRegistry()
+  private readonly registry: ProviderRegistry<LoopFactory>
   constructor(
     ctx: Context,
     private readonly origins?: RowOriginLookup,
   ) {
     super(ctx, 'loops')
+    this.registry = installProviderRegistry(
+      ctx,
+      defineProviderKind<LoopFactory>({
+        kind: 'loop',
+        versioned: true,
+        validate(factory) {
+          if (
+            !Array.isArray(factory.capabilities) ||
+            typeof factory.create !== 'function' ||
+            typeof factory.resume !== 'function' ||
+            !factory.codec
+          )
+            throw new Error('Invalid loop factory')
+        },
+        capabilities: (factory) => factory.capabilities,
+      }),
+      (owner, source, provider) => owner.loops.register(source, provider),
+    )
+    this.registry.register('@agnes/core', defaultLoopFactory, ctx)
   }
   register(sourcePackage: string, factory: LoopFactory): () => void {
-    let origin: Readonly<RowOrigin> | undefined
-    for (let fiber = this.ctx.fiber; fiber !== fiber.parent.fiber; fiber = fiber.parent.fiber) {
-      origin = this.origins?.lookup(fiber)
-      if (origin) break
-    }
-    if (this.origins && !origin && this.ctx !== this.ctx.root)
-      throw new HostError('E_EXT_LOAD', 'loop requires a verified plugin row')
-    if (origin && origin.packageId !== sourcePackage)
-      throw new HostError('E_EXT_LOAD', 'loop source package does not match its plugin row')
-    return this.ctx.effect(
-      () => this.registry.register(origin?.packageId ?? sourcePackage, factory),
-      `loops.register(${factory.id}@${factory.version})`,
+    return this.registry.register(
+      providerSource(this.ctx, this.origins, sourcePackage, true),
+      factory,
+      this.ctx,
     )
   }
   resolve(selection: LoopSelection) {
-    return this.registry.resolve(selection)
+    try {
+      return this.registry.resolve({ provider: selection.id, version: selection.version })
+    } catch (error) {
+      throw new CoreError(
+        'E_LOOP_MISSING',
+        `Loop ${selection.id}@${selection.version} is not installed; install and enable that id and version before opening the session`,
+        { loop: selection },
+      )
+    }
   }
   catalog() {
-    return this.registry.catalog()
+    return Object.freeze(
+      this.registry
+        .catalog()
+        .map(({ id, version, sourcePackage, capabilities }) =>
+          Object.freeze({ id, version, sourcePackage, capabilities }),
+        ),
+    )
   }
 }
 

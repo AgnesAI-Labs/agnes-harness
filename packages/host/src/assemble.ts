@@ -76,6 +76,16 @@ import {
 import { modelRuntime } from './assemble/model-runtime.js'
 import { installLoops } from './assemble/loops.js'
 import { installToolProviders, withBuiltinToolPolicies } from './assemble/tool-providers.js'
+import { DEFAULT_LOOP } from '@agnes/core'
+import { installProviders } from './assemble/provider-registry.js'
+import {
+  applyProviderSelections,
+  applyProviderPreset,
+  readProviderSelections,
+  providerConfigurationScopes,
+  PROVIDER_KINDS,
+} from './assemble/provider-selection.js'
+import { persistenceProviderRegistry } from './adapters/storage-provider.js'
 import { readAdminLoopDefault } from './assemble/loop-selection.js'
 import {
   compositionAllowsTool,
@@ -297,6 +307,7 @@ export type Assembled = {
   routes: RouteTable | undefined
   /** Read-only metadata for installed model adapter factories. */
   modelAdapterCatalog(): ReturnType<typeof modelAdapterCatalog>
+  providers: import('@agnes/extension-api').ProvidersCatalogPort
   sessionLoopDefault?(): Promise<import('@agnes/protocol').LoopSelection | undefined>
   compactionEngineCatalog(): ReturnType<typeof compactionEngineCatalog>
   compositionForPreset(name?: string, session?: CompositionPatch): ResolvedComposition
@@ -407,6 +418,8 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
       })
     })
   deps.signal?.throwIfAborted()
+  const providerSelections = readProviderSelections(profile)
+  profile = applyProviderSelections(profile, providerSelections)
   profile = withAssemblyIsolation(profile, deps.extensionIsolation)
   const { dataDir, workspaceRoot } = deps
   const rollback = new Rollback()
@@ -556,7 +569,12 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
     // was nothing better than profile.packages order: two packages providing a preset or a runtime
     // of the same name silently produced whichever the profile happened to list second.
     const profileConsent = readProfileTelemetryConsent(deps.profileDir)
-    const presets = collectPresets(modules, profileConsent, profile)
+    const presets = Object.fromEntries(
+      Object.entries(collectPresets(modules, profileConsent, profile)).map(([name, doc]) => [
+        name,
+        applyProviderPreset(doc, providerSelections),
+      ]),
+    )
     const defaultPreset = validatePresetCatalog(profile, presets)
     done('seams')
 
@@ -944,6 +962,12 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
           thirdPartyExtras: builtSeams.thirdPartyExtras,
           requiredRowIds: REQUIRED_SEAM_ROW_IDS,
           rootServices: (root, origins) => {
+            const providers = installProviders(root)
+            providers.configurationSource((entry) =>
+              providerConfigurationScopes(entry, profile, defaultPreset.view),
+            )
+            const persistence = persistenceProviderRegistry(adapters.storage)
+            if (persistence) providers.add(persistence)
             rowExtensions.installRoot(root, origins)
             rowServices.installRoot(root, origins)
             installModelAdapters(root, origins)
@@ -1629,6 +1653,9 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
       buildEcosystemContext(owner, extensionId)
     done('provider')
 
+    // Validate explicit kind selections before fitting operation instances.
+    for (const kind of PROVIDER_KINDS)
+      if (providerSelections[kind]) pluginTree.root.providers.select(kind, providerSelections[kind]!)
     // 6 provider - route table first, environment second, credentials third.
     let routes: RouteTable | undefined
     try {
@@ -1674,6 +1701,7 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
     }
     const models = modelRuntime({ provider, contractForModel })
     const applyModelProfile = async (next: ResolvedProfile): Promise<void> => {
+      next = applyProviderSelections(next)
       const nextRoutes = next.provider.routes?.length
         ? materializeRoutes(defaultPreset.view, next)
         : undefined
@@ -1762,23 +1790,27 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
       profile.composition?.compaction === null
         ? undefined
         : assembleCompaction(pluginTree.root.compactionEngines, profile.compaction)
-    // Package config is already a JSON extension point in resolved profiles.
-    const configuredLoops = profile.packages
-      .filter((pkg) => pkg.enabled !== false)
-      .flatMap((pkg) => (pkg.config?.loop === undefined ? [] : [pkg.config.loop]))
-    if (configuredLoops.length > 1)
-      throw new HostError('E_PRESET_UNSUPPORTED', 'select at most one profile package config.loop')
-    const configuredLoop = configuredLoops[0]
-    if (
-      configuredLoop !== undefined &&
-      (!configuredLoop ||
-        typeof configuredLoop !== 'object' ||
-        Array.isArray(configuredLoop) ||
-        typeof configuredLoop.id !== 'string' ||
-        typeof configuredLoop.version !== 'string')
+    const selectedLoop = providerSelections.loop
+    const loopFactory = selectedLoop
+      ? pluginTree.root.loops.resolve({
+          id: selectedLoop.provider,
+          version: selectedLoop.version ?? pluginTree.root.providers.select('loop', selectedLoop).version,
+        })
+      : undefined
+    const loop = loopFactory ? { id: loopFactory.id, version: loopFactory.version } : undefined
+    if (loop) profile = { ...profile, loop }
+    pluginTree.root.providers.select(
+      'loop',
+      loop
+        ? { provider: loop.id, version: loop.version }
+        : { provider: DEFAULT_LOOP.id, version: DEFAULT_LOOP.version },
     )
-      throw new HostError('E_PRESET_UNSUPPORTED', 'package config.loop requires id and version')
-    const loop = profile.loop ?? (configuredLoop as { id: string; version: string } | undefined)
+    pluginTree.root.providers.select('tool-runtime', view.tools.runtime ?? 'default', 'preset')
+    if (
+      view.approval.policy ||
+      pluginTree.root.toolPolicies.catalog().some((entry) => entry.id === 'default')
+    )
+      pluginTree.root.providers.select('tool-policy', view.approval.policy ?? 'default', 'preset')
     kernel = Kernel.create({
       storage: adapters.storage,
       ...(loop ? { loop } : {}),
@@ -2509,6 +2541,7 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
       get preconfiguredRoutes() {
         return preconfiguredRoutes
       },
+      providers: { catalog: () => pluginTree.root.providers.catalog() },
       modelAdapterCatalog: () => modelAdapterCatalog(pluginTree.root),
       sessionLoopDefault: () => readAdminLoopDefault(deps.profileDir, profile.name),
       compactionEngineCatalog: () => compactionEngineCatalog(pluginTree.root),
