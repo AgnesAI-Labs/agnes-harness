@@ -716,3 +716,27 @@ it('gives auth.build an isolated snapshot of the completed handshake fields', as
     await client.close()
   }
 })
+
+it('carries a validated loop on createSession and session.new metadata', async () => {
+  const f = fakeEndpoint({
+    initialize: () => ({ protocolVersion: 1, agentCapabilities: {} }),
+    'session/new': () => ({ sessionId: 'loop-session' }),
+  })
+  const c = createClient({
+    transport: { kind: 'inproc', endpoint: f.endpoint },
+    journal: memoryJournal(),
+    authProviders: providers,
+  })
+  const loop = { id: 'example.dag', version: '1.0.0' }
+  try {
+    await c.createSession({ cwd: '/w', loop })
+    await c.session.new({ cwd: '/w', loop })
+    expect(f.calls.filter((call) => call.method === 'session/new').map((call) => call.params)).toEqual([
+      { cwd: '/w', mcpServers: [], _meta: { [META_KEY]: { loop } } },
+      { cwd: '/w', mcpServers: [], _meta: { [META_KEY]: { loop } } },
+    ])
+    await expect(c.createSession({ cwd: '/w', loop: { id: '', version: '1' } })).rejects.toThrow('nonempty')
+  } finally {
+    await c.close()
+  }
+})

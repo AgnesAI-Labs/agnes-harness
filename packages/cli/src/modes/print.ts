@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto'
 import type { EffectIntent, EffectSettled, EventEnvelope, ToolCall, TurnEndReason } from '@agnes/protocol'
 import type { Session } from '@agnes/sdk'
 import { CommandError, exitCodeForReason, SIGNAL_EXIT_CODES, type SignalName, UsageError } from '../errors.js'
@@ -97,7 +98,13 @@ async function openSession(booted: Booted, p: ParsedArgs, cwd: string): Promise<
   const resume = await sessionToOpen(booted, p, cwd)
   if (resume !== undefined) return booted.client.session.load(resume, { cwd })
   await booted.client.workspace.add(cwd)
-  return booted.client.session.new({ cwd, ...(p.preset ? { preset: p.preset } : {}) })
+  return booted.client.session.new({
+    cwd,
+    ...(p.preset ? { preset: p.preset } : {}),
+    ...(p.loop
+      ? { loop: p.loop, sessionKey: `agnes:local:${booted.profileName}:cli:loop:${randomUUID()}` }
+      : {}),
+  })
 }
 
 /** Resolves to true if `p` settled within `ms`, false if the deadline came first. */

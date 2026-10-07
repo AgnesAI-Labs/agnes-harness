@@ -48,6 +48,7 @@ export async function runTui(
             cwd: io.cwd,
             sessionKey: freshTuiSessionKey(booted.profileName),
             ...(p.preset ? { preset: p.preset } : {}),
+            ...(p.loop ? { loop: p.loop } : {}),
           })
     // A fresh session takes the last model and full-permission choice, unless -m names a model.
     // Resume keeps the historical session's own model and does not read the preference file.

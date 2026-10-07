@@ -23,6 +23,8 @@ import {
   type ConfigTestResult,
   type Credential,
   type Cursor,
+  type LoopSelection,
+  parseLoopSelection,
   META_KEY,
   METHODS,
   type MethodName,
@@ -363,17 +365,26 @@ export class Client {
       this.call('_agnes/v1/clientModules.callEffect', input),
   }
 
+  createSession(options: {
+    cwd: string
+    preset?: string
+    sessionKey?: string
+    loop?: LoopSelection
+  }): Promise<Session> {
+    return this.session.new(options)
+  }
+
   readonly session = {
     new: async (o: {
       cwd: string
       preset?: string
       sessionKey?: string
-      loop?: { id: string; version: string }
+      loop?: LoopSelection
     }): Promise<Session> => {
       const meta: Record<string, unknown> = {}
+      if (o.loop) meta.loop = parseLoopSelection(o.loop)
       if (o.preset) meta.preset = o.preset
       if (o.sessionKey) meta.sessionKey = o.sessionKey
-      if (o.loop) meta.loop = o.loop
       const r = await this.call<{ sessionId: string }>('session/new', {
         cwd: o.cwd,
         mcpServers: [],

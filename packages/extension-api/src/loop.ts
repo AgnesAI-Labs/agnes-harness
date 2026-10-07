@@ -69,11 +69,12 @@ export interface LoopContext {
   readonly tools: {
     /** Execution goes through the session's approval and tool policy path. */
     execute(call: LoopToolCall, signal: AbortSignal): Promise<ToolResult>
+    /** Independent calls may overlap; results preserve input order and policy still controls concurrency. */
     batch(calls: readonly LoopToolCall[], signal: AbortSignal): Promise<readonly ToolResult[]>
   }
   readonly input: {
     /** Claims the next input and opens its observable turn, or returns null. */
-    accept(): Promise<{ content: readonly ContentBlock[] } | null>
+    accept(): Promise<{ content: readonly ContentBlock[]; id?: string } | null>
     pending(): boolean
   }
   readonly events: {

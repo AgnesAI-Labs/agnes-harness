@@ -453,6 +453,7 @@ function finalize(draft: Draft, inputs: ProfileInputs, env: ResolveEnv): Resolve
   const draftProfile: Omit<ResolvedProfile, 'hash'> = {
     name: m.name,
     schemaVersion: m.schemaVersion ?? 1,
+    ...(m.loop ? { loop: structuredClone(m.loop) } : {}),
     chain: draft.chain,
     packages,
     seams,

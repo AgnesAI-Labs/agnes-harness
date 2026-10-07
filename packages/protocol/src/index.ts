@@ -475,3 +475,4 @@ export {
   validateUserAttachments,
 } from './validate.js'
 export * from './worker-generation.js'
+export * from './loop-selection.js'

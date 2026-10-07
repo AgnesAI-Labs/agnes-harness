@@ -277,3 +277,60 @@ describe('loop plugins', () => {
     await k.close()
   })
 })
+
+it('overlaps independent safe tools in a custom batch and preserves requested result order', async () => {
+  const loops = new LoopRegistry()
+  let release!: () => void
+  const bothStarted = new Promise<void>((resolve) => {
+    release = resolve
+  })
+  let started = 0
+  const batchLoop: LoopFactory = {
+    ...echo,
+    id: 'test.parallel',
+    create(ctx) {
+      return {
+        cancel() {},
+        dispose() {},
+        checkpoint: () => codec.encode('ready'),
+        async step(signal) {
+          if (!(await ctx.input.accept())) return { phase: 'idle' }
+          const results = await ctx.tools.batch(
+            [
+              { name: 'left', args: {} },
+              { name: 'right', args: {} },
+            ],
+            signal,
+          )
+          await ctx.events.emit('x/parallel/results', { results: results.map((result) => result.content) })
+          await ctx.events.finish('completed')
+          return { phase: 'done', reason: 'completed' }
+        },
+      }
+    },
+  }
+  loops.register('@test/parallel', batchLoop)
+  const k = kernel(new MemoryStorage(), loops)
+  for (const name of ['left', 'right']) {
+    const tool = readTool(async () => {
+      if (++started === 2) release()
+      await bothStarted
+      return { content: [{ type: 'text', text: name }] }
+    }) as unknown as import('@agnes/extension-api').ToolDef
+    k.tools.add({ ...tool, name }, { source: 'test', trust: 'builtin' })
+  }
+
+  try {
+    const session = await k.session('parallel', { ...options, loop: batchLoop })
+    await session.enqueue('next-turn', { content: [{ type: 'text', text: 'parallel' }], actor })
+    expect(await session.run({ until: 'turn-end', signal: new AbortController().signal })).toMatchObject({
+      reason: 'completed',
+    })
+    expect((await session.scan({ type: 'x/parallel/results', limit: 1 }))[0]?.data).toEqual({
+      results: [[{ type: 'text', text: 'left' }], [{ type: 'text', text: 'right' }]],
+    })
+  } finally {
+    release()
+    await k.close()
+  }
+})

@@ -61,6 +61,8 @@ import {
   withBuiltinModelAdapters,
 } from './assemble/model-adapters.js'
 import { modelRuntime } from './assemble/model-runtime.js'
+import { installLoops } from './assemble/loops.js'
+import { readAdminLoopDefault } from './assemble/loop-selection.js'
 import { buildOrdinaryRows } from './assemble/ordinary-rows.js'
 import type {
   LoadedRuntimePackage,
@@ -273,6 +275,7 @@ export type Assembled = {
   routes: RouteTable | undefined
   /** Read-only metadata for installed model adapter factories. */
   modelAdapterCatalog(): ReturnType<typeof modelAdapterCatalog>
+  sessionLoopDefault?(): Promise<import('@agnes/protocol').LoopSelection | undefined>
   /** Reviewed bundled API-key routes fitted at assembly, eligible for runtime model switching. */
   preconfiguredRoutes: readonly string[]
   presets: Record<string, PresetDoc>
@@ -905,6 +908,7 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
             rowExtensions.installRoot(root, origins)
             rowServices.installRoot(root, origins)
             installModelAdapters(root, origins)
+            installLoops(root, origins)
           },
           ...(deps.skillContribution ? { skillContribution: deps.skillContribution } : {}),
           afterApply: () => {
@@ -1595,7 +1599,12 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
     const swept = sweepAwsDestination(env, profile)
     say('provider.env_swept', { removed: swept.removed, set: Object.keys(swept.set) })
     const factory = deps.providerFactory ? { providerFactory: deps.providerFactory } : {}
-    let { provider, contractStore, preconfiguredRoutes, dispose: disposeProvider } = routes
+    let {
+      provider,
+      contractStore,
+      preconfiguredRoutes,
+      dispose: disposeProvider,
+    } = routes
       ? await buildProvider(profile, routes, {
           secrets,
           clock,
@@ -1721,10 +1730,15 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
         typeof configuredLoop.version !== 'string')
     )
       throw new HostError('E_PRESET_UNSUPPORTED', 'package config.loop requires id and version')
-    const loop = configuredLoop as { id: string; version: string } | undefined
+    const loop = profile.loop ?? (configuredLoop as { id: string; version: string } | undefined)
     kernel = Kernel.create({
       storage: adapters.storage,
       ...(loop ? { loop } : {}),
+      loops: {
+        register: (source, factory) => pluginTree.root.loops.register(source, factory),
+        resolve: (selection) => pluginTree.root.loops.resolve(selection),
+        catalog: () => pluginTree.root.loops.catalog(),
+      },
       seams,
       provider: models.provider,
       withModelSnapshot: (operation) => models.run(operation),
@@ -1785,7 +1799,6 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
       // `children` is omitted on purpose: core's default factory refuses with a message saying
       // subagents are assembled later, which is more informative than a host-side stub.
     })
-    pluginTree.root.provide('loops', kernel.loops)
     rollback.push('kernel', () => kernel.close())
     privacyTrajectory = createTrajectoryLifecycle(
       {
@@ -2396,6 +2409,7 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
         return preconfiguredRoutes
       },
       modelAdapterCatalog: () => modelAdapterCatalog(pluginTree.root),
+      sessionLoopDefault: () => readAdminLoopDefault(deps.profileDir, profile.name),
       applyModelProfile,
       presets,
       runtimes,

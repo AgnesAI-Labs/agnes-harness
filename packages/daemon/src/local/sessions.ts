@@ -1,3 +1,4 @@
+import type { LoopSelection } from '@agnes/protocol'
 import { randomUUID } from 'node:crypto'
 import { type Host, type HostSession, loadSessionTitle, type WorkspaceBinding } from '@agnes/host'
 import { type EventEnvelope, rpcError } from '@agnes/protocol'
@@ -54,6 +55,7 @@ export class SessionRegistry implements Registry<SessionEntry> {
     {
       cwd: string
       preset: string | null
+      loop: string | null
       binding: WorkspaceBinding | undefined
       promise: Promise<SessionEntry>
     }
@@ -77,6 +79,7 @@ export class SessionRegistry implements Registry<SessionEntry> {
     cwd: string
     binding?: WorkspaceBindingEnvelope
     preset?: string
+    loop?: LoopSelection
     credential?: unknown
   }): Promise<SessionEntry> {
     const accepted = this.acceptBinding(o.binding, o.key)
@@ -84,6 +87,7 @@ export class SessionRegistry implements Registry<SessionEntry> {
       ...(o.key ? { key: o.key } : {}),
       cwd: o.cwd,
       ...(o.preset ? { preset: o.preset } : {}),
+      ...(o.loop ? { loop: o.loop } : {}),
       ...(o.credential === undefined ? {} : { credential: o.credential }),
       ...(accepted ? { key: accepted.sessionKey, binding: accepted } : {}),
     }
@@ -93,6 +97,9 @@ export class SessionRegistry implements Registry<SessionEntry> {
         if (
           existing.session.d.cwd !== request.cwd ||
           (request.preset !== undefined && existing.session.preset.name !== request.preset) ||
+          (request.loop !== undefined &&
+            (existing.session.loop.id !== request.loop.id ||
+              existing.session.loop.version !== request.loop.version)) ||
           !sameBinding(this.bindings.get(request.key), request.binding)
         )
           throw rpcError('SEMANTIC_REJECTED', { code: 'ID_CONFLICT', sessionId: request.key })
@@ -103,6 +110,7 @@ export class SessionRegistry implements Registry<SessionEntry> {
         if (
           pending.cwd !== request.cwd ||
           pending.preset !== (request.preset ?? null) ||
+          pending.loop !== (request.loop ? JSON.stringify(request.loop) : null) ||
           !sameBinding(pending.binding, request.binding)
         )
           throw rpcError('SEMANTIC_REJECTED', { code: 'ID_CONFLICT', sessionId: request.key })
@@ -112,6 +120,7 @@ export class SessionRegistry implements Registry<SessionEntry> {
       this.opening.set(request.key, {
         cwd: request.cwd,
         preset: request.preset ?? null,
+        loop: request.loop ? JSON.stringify(request.loop) : null,
         binding: request.binding,
         promise,
       })
@@ -129,6 +138,7 @@ export class SessionRegistry implements Registry<SessionEntry> {
     cwd: string
     binding?: WorkspaceBinding
     preset?: string
+    loop?: LoopSelection
     credential?: unknown
   }): Promise<SessionEntry> {
     const session = await this.host.createSession(o)

@@ -1,4 +1,4 @@
-import { SLOT_NAMES } from '@agnes/protocol'
+import { parseLoopSpecifier, SLOT_NAMES } from '@agnes/protocol'
 import { UsageError } from './errors.js'
 import type { Command, ModelSel, ParsedArgs } from './types.js'
 
@@ -123,6 +123,16 @@ export function parseArgs(argv: string[]): ParsedArgs {
       p.positional.push(...argv.slice(i + 1))
       break
     }
+    if (a === '--loop') {
+      const value = argv[++i]
+      try {
+        if (value === undefined) throw new Error()
+        p.loop = parseLoopSpecifier(value)
+      } catch {
+        throw new UsageError('--loop expects id@version')
+      }
+      continue
+    }
     if (a === '--model') {
       i += 1
       p.model = parseModel(argv[i])
@@ -164,6 +174,8 @@ export function parseArgs(argv: string[]): ParsedArgs {
   // Both printing modes select the one-shot form. Only acp does not, because it is a third form
   // rather than a way of printing, and resolveMode reads it as such.
   if (p.mode === 'json' || p.mode === 'text') p.print = true
+  if (p.loop && (p.continue || p.resume !== undefined || p.command === 'resume'))
+    throw new UsageError('--loop selects a new session; resumed sessions keep their pinned loop')
   if (p.continue && p.resume !== undefined)
     throw new UsageError('--continue and --resume are mutually exclusive')
   if (p.dataDir !== undefined && !(p.command === 'computer-use' && p.positional[0] === 'rescue'))
@@ -200,7 +212,7 @@ export function resolveMode(
 export function usage(): string {
   return [
     'agh [prompt] [--profile <p>] [--preset <n>] [--cwd <dir>] [--continue | --resume <id>]',
-    '      [--connect <t>] [--model <slot>=<route>/<model>]',
+    '      [--connect <t>] [--model <slot>=<route>/<model>] [--loop <id>@<version>]',
     'agh -p [prompt] [--mode text|json] [--park] [--meta] [--ephemeral|--standalone]',
     'agh --mode acp [--profile <p> | --connect <t>] [--ephemeral]      agh acp ... (alias)',
     'agh resume <id> [-p [prompt]]',

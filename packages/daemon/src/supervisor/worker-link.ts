@@ -1,3 +1,4 @@
+import type { LoopSelection } from '@agnes/protocol'
 import type { Duplex } from 'node:stream'
 import type { EventEnvelope, McpStatus, RuntimeTargetArtifact } from '@agnes/protocol'
 import type { PreviewUpdate } from '../registry.js'
@@ -27,6 +28,7 @@ export class WorkerSessionChannel {
     open: Readonly<{
       binding: WorkspaceBindingFrame
       preset?: string
+      loop?: LoopSelection
       resume?: boolean
       parent?: { key: string; boundarySeq: number }
     }>,
@@ -326,6 +328,7 @@ export class WorkerLink {
     params: Readonly<{
       binding: WorkspaceBindingFrame
       preset?: string
+      loop?: LoopSelection
       resume?: boolean
       parent?: { key: string; boundarySeq: number }
     }>,
@@ -395,6 +398,7 @@ export class WorkerLink {
     open: Readonly<{
       binding: WorkspaceBindingFrame
       preset?: string
+      loop?: LoopSelection
       resume?: boolean
       parent?: { key: string; boundarySeq: number }
     }>,

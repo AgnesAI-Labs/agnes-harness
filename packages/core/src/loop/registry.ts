@@ -1,4 +1,5 @@
 import type { LoopCatalogEntry, LoopFactory, LoopRegistryPort, LoopSelection } from '@agnes/extension-api'
+import { CoreError } from '../types.js'
 import { DEFAULT_LOOP, defaultLoopFactory } from './default-driver.js'
 
 export class LoopRegistry implements LoopRegistryPort {
@@ -19,8 +20,10 @@ export class LoopRegistry implements LoopRegistryPort {
   resolve(selection: LoopSelection = DEFAULT_LOOP): LoopFactory {
     const record = this.factories.get(loopKey(selection))
     if (!record)
-      throw new Error(
-        `Loop ${loopKey(selection)} is not installed; install the session's pinned loop before resuming`,
+      throw new CoreError(
+        'E_LOOP_MISSING',
+        `Loop ${loopKey(selection)} is not installed; install that id and version before opening the session`,
+        { loop: { id: selection.id, version: selection.version } },
       )
     return record.factory
   }

@@ -1,5 +1,5 @@
 import type { Host, Prompter, WorkspaceBinding } from '@agnes/host'
-import type { SlotName } from '@agnes/protocol'
+import type { LoopSelection, SlotName } from '@agnes/protocol'
 import type { JsonRpcMessage, NodeClient } from '@agnes/sdk'
 
 export type ModelSel = { slot: SlotName; route: string; model: string }
@@ -45,6 +45,7 @@ export type ParsedArgs = {
   version: boolean
   profile?: string
   preset?: string
+  loop?: LoopSelection
   cwd?: string
   /** Explicit Computer Use rescue store; bypasses profile/package resolution. */
   dataDir?: string

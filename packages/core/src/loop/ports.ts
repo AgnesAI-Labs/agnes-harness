@@ -104,8 +104,7 @@ export async function createLoopContext(s: SessionImpl): Promise<LoopContext> {
       if (!settled) await s.d.log.append([effect.settle(signal.aborted ? 'aborted' : 'error')])
     }
   }
-  async function execute(call: LoopToolCall, signal: AbortSignal) {
-    signal = AbortSignal.any([signal, s.ac.signal])
+  async function prepareTools(signal: AbortSignal): Promise<void> {
     signal.throwIfAborted()
     await ensureStep()
     const op = requireOp()
@@ -113,22 +112,30 @@ export async function createLoopContext(s: SessionImpl): Promise<LoopContext> {
       const assistantSeq = op.latestAssistantSeq ?? op.meta.triggerSeq
       await s.transition([], withPhase(op, { kind: 'tools', batch: { assistantSeq, calls: [] } }))
     }
-    let parked: import('../types.js').EventInput | undefined
+  }
+  async function closeParked(events: import('../types.js').EventInput[]) {
+    const step = s.state.openStep.get(s.lane)
+    await s.endTurn('parked', {
+      events: [...events, ...(step ? [s.ev('step/end', { turn: step.turn, step: step.step })] : [])],
+    })
+  }
+  function invoke(call: LoopToolCall, signal: AbortSignal, parked: import('../types.js').EventInput[]) {
+    return s.invokeTool(call.name, call.args, {
+      signal,
+      depth: 0,
+      onPark: (event) => {
+        parked.push(event)
+      },
+    })
+  }
+  async function execute(call: LoopToolCall, signal: AbortSignal) {
+    signal = AbortSignal.any([signal, s.ac.signal])
+    await prepareTools(signal)
+    const parked: import('../types.js').EventInput[] = []
     try {
-      return await s.invokeTool(call.name, call.args, {
-        signal,
-        depth: 0,
-        onPark: (event) => {
-          parked = event
-        },
-      })
+      return await invoke(call, signal, parked)
     } catch (error) {
-      if (parked) {
-        const step = s.state.openStep.get(s.lane)
-        await s.endTurn('parked', {
-          events: [parked, ...(step ? [s.ev('step/end', { turn: step.turn, step: step.step })] : [])],
-        })
-      }
+      if (parked.length) await closeParked(parked)
       throw error
     }
   }
@@ -146,10 +153,20 @@ export async function createLoopContext(s: SessionImpl): Promise<LoopContext> {
     tools: {
       execute,
       async batch(calls, signal) {
-        // Each tool's own scheduler enforces its concurrency policy; preserve requested order.
-        const results = []
-        for (const call of calls) results.push(await execute(call, signal))
-        return results
+        if (!calls.length) return []
+        signal = AbortSignal.any([signal, s.ac.signal])
+        // Open one step before launching siblings; nested execution still enforces tool policy.
+        await prepareTools(signal)
+        const parked: import('../types.js').EventInput[] = []
+        const settled = await Promise.allSettled(calls.map((call) => invoke(call, signal, parked)))
+        // Drain every sibling before closing the turn or surfacing a failure.
+        if (parked.length) await closeParked(parked)
+        const failed = settled.find((result) => result.status === 'rejected')
+        if (failed?.status === 'rejected') throw failed.reason
+        return settled.map((result) => {
+          if (result.status === 'rejected') throw result.reason
+          return result.value
+        })
       },
     },
     input: {
@@ -161,7 +178,7 @@ export async function createLoopContext(s: SessionImpl): Promise<LoopContext> {
         const op = requireOp()
         const [row] = await s.d.log.scan({ fromSeq: op.meta.triggerSeq, toSeq: op.meta.triggerSeq, limit: 1 })
         if (!row) throw new Error('Accepted input is missing from the session ledger')
-        return { content: (row.data as { content: ContentBlock[] }).content }
+        return { id: String(op.meta.triggerSeq), content: (row.data as { content: ContentBlock[] }).content }
       },
       pending: () => ((s.latest('inbox') as Inbox | undefined)?.items.length ?? 0) > 0,
     },

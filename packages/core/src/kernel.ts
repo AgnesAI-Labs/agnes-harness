@@ -24,7 +24,7 @@ import { forkPaths } from './log/fork-seed.js'
 import type { Timers } from './log/session-log.js'
 import type { StorageAdapter } from './log/storage.js'
 import { DEFAULT_LOOP } from './loop/default-driver.js'
-import { LoopRegistry } from './loop/registry.js'
+import { LoopRegistry, loopKey } from './loop/registry.js'
 import { ProjectionRegistry } from './project/named.js'
 import { openTracked } from './reduce/tracker.js'
 import { HookRegistry } from './registry/hooks.js'
@@ -144,6 +144,8 @@ export type KernelOptions = {
 export type { RuntimePromptPreload } from './runtime/current.js'
 export type SessionOptions = {
   loop?: LoopSelection
+  /** Host defaults affect new sessions only; reopening uses the ledger identity. */
+  defaultLoop?: LoopSelection | (() => Promise<LoopSelection | undefined>)
   actor: Actor
   preset?: PresetView
   resolvedProfileHash: string | null
@@ -356,7 +358,7 @@ export class Kernel {
         cwd: so.cwd,
         preset: preset.name,
         writerRunId: so.writerRunId,
-        ...(so.loop ? { loop: JSON.stringify(so.loop) } : {}),
+        ...(so.loop ? { loop: loopKey(so.loop) } : {}),
         parentKey: so.parent?.key,
         parentBoundary: so.parent?.boundarySeq,
       }
@@ -368,7 +370,7 @@ export class Kernel {
         cwd: existing.d.cwd,
         preset: existing.preset.name,
         writerRunId: existing.writerRunId,
-        ...(so.loop ? { loop: JSON.stringify(existing.loop) } : {}),
+        ...(so.loop ? { loop: loopKey(existing.loop) } : {}),
         parentKey: existing.d.log.parent?.key,
         parentBoundary: existing.d.log.parent?.boundarySeq,
       }
@@ -392,8 +394,15 @@ export class Kernel {
     const fsOps = so.workspaceRuntime?.fs ?? this.o.fsOps
     await assertFsEnforces(fsOps, fitted.sandbox.fsPolicy())
     let forked: Awaited<ReturnType<SessionImpl['d']['log']['forkInto']>> | undefined
+    const requestedLoop = async () =>
+      so.loop ??
+      (typeof so.defaultLoop === 'function' ? await so.defaultLoop() : so.defaultLoop) ??
+      preset.loop ??
+      this.o.loop ??
+      DEFAULT_LOOP
     if (so.parent) {
-      this.loops.resolve(so.loop ?? preset.loop ?? this.o.loop ?? DEFAULT_LOOP)
+      const selection = await requestedLoop()
+      this.loops.resolve(selection)
       const parent = this.sessions.get(so.parent.key)
       if (!parent)
         throw new CoreError('E_DEPTH_EXCEEDED', `parent session ${so.parent.key} is not open`, {
@@ -406,7 +415,7 @@ export class Kernel {
         resolvedProfileHash: so.resolvedProfileHash,
         writerRunId: so.writerRunId,
         lane,
-        loop: so.loop ?? preset.loop ?? this.o.loop ?? DEFAULT_LOOP,
+        loop: selection,
         modelSelections: Object.entries(preset.model.id).flatMap(([slot, model]) => {
           const route = preset.model.route[slot]
           return model && route
@@ -459,7 +468,7 @@ export class Kernel {
     try {
       const selection = tracker.state.session
         ? (tracker.state.session.loop ?? DEFAULT_LOOP)
-        : (so.loop ?? preset.loop ?? this.o.loop ?? DEFAULT_LOOP)
+        : await requestedLoop()
       loopFactory = this.loops.resolve(selection)
     } catch (error) {
       await log.close()

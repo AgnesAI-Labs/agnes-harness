@@ -1,3 +1,4 @@
+import type { LoopSelection } from '@agnes/protocol'
 import { randomBytes, randomUUID } from 'node:crypto'
 import { mkdir, rename, rm, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
@@ -280,7 +281,7 @@ class RemoteEntryView implements SessionEntry {
 export class SupervisorRegistry implements Registry<SessionEntry> {
   private readonly opening = new Map<
     string,
-    { cwd: string; preset: string | null; promise: Promise<SessionEntry> }
+    { cwd: string; preset: string | null; loop: string | null; promise: Promise<SessionEntry> }
   >()
 
   constructor(
@@ -292,18 +293,28 @@ export class SupervisorRegistry implements Registry<SessionEntry> {
     cwd: string
     binding?: WorkspaceBindingEnvelope
     preset?: string
+    loop?: LoopSelection
     credential?: unknown
     resume?: boolean
   }): Promise<SessionEntry> {
     if (o.key) {
       const pending = this.opening.get(o.key)
       if (pending) {
-        if (pending.cwd !== o.cwd || pending.preset !== (o.preset ?? null))
+        if (
+          pending.cwd !== o.cwd ||
+          pending.preset !== (o.preset ?? null) ||
+          pending.loop !== (o.loop ? JSON.stringify(o.loop) : null)
+        )
           throw rpcError('SEMANTIC_REJECTED', { code: 'ID_CONFLICT', sessionId: o.key })
         return pending.promise
       }
       const promise = this.openFresh(o)
-      this.opening.set(o.key, { cwd: o.cwd, preset: o.preset ?? null, promise })
+      this.opening.set(o.key, {
+        cwd: o.cwd,
+        preset: o.preset ?? null,
+        loop: o.loop ? JSON.stringify(o.loop) : null,
+        promise,
+      })
       try {
         return await promise
       } finally {
@@ -318,6 +329,7 @@ export class SupervisorRegistry implements Registry<SessionEntry> {
     cwd: string
     binding?: WorkspaceBindingEnvelope
     preset?: string
+    loop?: LoopSelection
     credential?: unknown
     resume?: boolean
   }): Promise<SessionEntry> {

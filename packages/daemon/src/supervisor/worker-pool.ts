@@ -1,3 +1,4 @@
+import type { LoopSelection } from '@agnes/protocol'
 import { type ChildProcess, spawn as nodeSpawn } from 'node:child_process'
 import { randomBytes } from 'node:crypto'
 import type { Duplex, Writable } from 'node:stream'
@@ -45,6 +46,7 @@ type SessionWorkerAcquireOptions = Readonly<{
   cwd?: string
   binding?: WorkspaceBindingEnvelope
   preset?: string
+  loop?: LoopSelection
   parent?: { key: string; boundarySeq: number }
 }>
 
@@ -229,6 +231,7 @@ export class WorkerPool {
       {
         binding: opts.binding,
         ...(opts.preset ? { preset: opts.preset } : {}),
+        ...(opts.loop ? { loop: opts.loop } : {}),
         ...(opts.resume ? { resume: true } : {}),
         ...(opts.parent ? { parent: opts.parent } : {}),
       },

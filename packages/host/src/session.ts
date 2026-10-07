@@ -9,7 +9,7 @@ import {
   type SessionWorkspaceLifecycle,
   type WorkspaceInvocationPort,
 } from '@agnes/core'
-import type { Actor, SessionStart } from '@agnes/protocol'
+import type { Actor, LoopSelection, SessionStart } from '@agnes/protocol'
 import type { FencedFs } from './adapters/fs.js'
 import { materializeRoutes, pinPresetRoutes } from './assemble/routes.js'
 import type { Assembled } from './assemble.js'
@@ -30,6 +30,7 @@ import { assertWorkspaceBinding, type WorkspaceBinding } from './workspace-autho
 export type SessionRecovery = Awaited<ReturnType<HostSession['resume']>>
 
 export type CreateSessionOptions = {
+  loop?: LoopSelection
   key?: string
   preset?: string
   /** Transitional local entry. Authenticated worker opens supply `binding` and cannot override it. */
@@ -373,6 +374,8 @@ export async function createSession(
   // 5 open: core takes the writer lease and writes session/start. `writerRunId` is required and
   // nothing upstream mints it, so it is minted here when the caller did not bring one.
   const session = await a.kernel.session(key, {
+    ...(opts.loop ? { loop: opts.loop } : {}),
+    defaultLoop: async () => (await a.sessionLoopDefault?.()) ?? profile.loop,
     actor,
     preset: view,
     resolvedProfileHash: profile.hash,

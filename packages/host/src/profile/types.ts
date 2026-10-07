@@ -5,6 +5,7 @@ import type {
   ExtensionIsolationPolicy,
   ExtensionIsolationRequest,
   JsonValue,
+  LoopSelection,
   ReconcilePolicy,
   RouteDecl,
 } from '@agnes/protocol'
@@ -120,6 +121,7 @@ export type ResolvedComputerUseProfile = {
 export type RuntimeProfileManifest = {
   name: string
   schemaVersion?: number
+  loop?: LoopSelection
   extends?: string
   packages?: PackageRef[]
   seams?: Partial<Record<SeamName, string>>
@@ -210,6 +212,7 @@ export type ResolvedPackage = {
 export type ResolvedProfile = Readonly<{
   name: string
   schemaVersion: number
+  loop?: LoopSelection
   chain: string[]
   packages: ResolvedPackage[]
   seams: Record<SeamName, string>

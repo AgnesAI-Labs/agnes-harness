@@ -1,3 +1,4 @@
+import type { LoopSelection } from '@agnes/protocol'
 import { randomUUID } from 'node:crypto'
 import { type EventEnvelope, rpcError } from '@agnes/protocol'
 import type { Disposer } from '../local/tail.js'
@@ -15,6 +16,7 @@ type RemoteOpen = Readonly<{
   cwd: string
   binding: WorkspaceBindingEnvelope
   preset?: string
+  loop?: LoopSelection
   credential?: unknown
   parent?: string
   forkAt?: number
@@ -236,6 +238,7 @@ export class WorkerRegistry implements Registry<RemoteEntry> {
     cwd: string
     binding?: WorkspaceBindingEnvelope
     preset?: string
+    loop?: LoopSelection
     credential?: unknown
     parent?: string
     forkAt?: number
@@ -276,6 +279,7 @@ export class WorkerRegistry implements Registry<RemoteEntry> {
       cwd: o.cwd,
       binding: o.binding,
       ...(o.preset ? { preset: o.preset } : {}),
+      ...(o.loop ? { loop: o.loop } : {}),
       ...(o.parent && o.forkAt !== undefined ? { parent: { key: o.parent, boundarySeq: o.forkAt } } : {}),
     })
     if (!isCurrent()) {

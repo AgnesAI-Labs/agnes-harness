@@ -372,3 +372,18 @@ describe('usage', () => {
       expect(text, flag).toContain(flag)
   })
 })
+
+it('selects a versioned loop, including a scoped id, and refuses missing versions or resume overrides', () => {
+  expect(parseArgs(['-p', 'hello', '--loop', '@example/dag@1.0.0']).loop).toEqual({
+    id: '@example/dag',
+    version: '1.0.0',
+  })
+  for (const argv of [
+    ['--loop'],
+    ['--loop', 'dag'],
+    ['--loop', 'dag@'],
+    ['--continue', '--loop', 'dag@1'],
+    ['resume', 'id', '--loop', 'dag@1'],
+  ])
+    expect(() => parseArgs(argv)).toThrow(UsageError)
+})

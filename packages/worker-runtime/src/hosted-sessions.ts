@@ -1,5 +1,5 @@
 import type { Host, HostSession, WorkspaceBinding } from '@agnes/host'
-import type { WorkerGeneration } from '@agnes/protocol'
+import { rpcError, type WorkerGeneration } from '@agnes/protocol'
 import { handleCommand, type WorkerResourceSlot } from './commands.js'
 import {
   type EventFrame,
@@ -138,12 +138,22 @@ export class HostedSessions {
       return this.describe(hosted.session)
     }
     const opening = this.options.channel.run(frame.sessionKey, async () => {
-      const session = await this.options.host.createSession({
-        key: frame.sessionKey,
-        binding,
-        ...(frame.params.preset ? { preset: frame.params.preset } : {}),
-        ...(parent ? { parent } : {}),
-      })
+      const session = await this.options.host
+        .createSession({
+          key: frame.sessionKey,
+          binding,
+          ...(frame.params.preset ? { preset: frame.params.preset } : {}),
+          ...(frame.params.loop ? { loop: frame.params.loop } : {}),
+          ...(parent ? { parent } : {}),
+        })
+        .catch((error: unknown) => {
+          if ((error as { code?: string })?.code === 'E_LOOP_MISSING')
+            throw rpcError('SEMANTIC_REJECTED', {
+              code: 'LOOP_MISSING',
+              reason: 'selected loop is not installed; install its pinned id and version',
+            })
+          throw error
+        })
       const hosted = this.adopt(frame.sessionKey, session)
       return hosted
     })

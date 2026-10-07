@@ -11,6 +11,7 @@ import {
   fromAcpPrompt,
   type HarnessMeta,
   type Inbox,
+  parseLoopSelection,
   type RpcError,
   rpcError,
   setHarnessMeta,
@@ -349,6 +350,11 @@ export function disposeFeeds(feeds: Map<string, Feed>): void {
  */
 export function throwSessionOpenRpcError(error: unknown): never {
   const e = error as { code?: unknown; reason?: unknown; detail?: { reason?: unknown } } | null
+  if (e?.code === 'E_LOOP_MISSING')
+    throw rpcError('SEMANTIC_REJECTED', {
+      code: 'LOOP_MISSING',
+      reason: 'selected loop is not installed; install its pinned id and version',
+    })
   // A ledger holding a row type this build no longer knows was written by an older build; it fails
   // closed, and the caller is told so rather than handed an internal error.
   if (e?.code === 'E_UNKNOWN_EVENT') throw legacyLedgerRpcError()
@@ -487,6 +493,12 @@ export function registerAcp(
         reason: 'remote session actor authority unavailable',
       })
     const h = pocket(params)
+    let loop: ReturnType<typeof parseLoopSelection> | undefined
+    try {
+      loop = h.loop === undefined ? undefined : parseLoopSelection(h.loop)
+    } catch {
+      throw rpcError('SEMANTIC_REJECTED', { reason: 'loop requires { id, version }' })
+    }
     const preset = typeof h.preset === 'string' ? h.preset : undefined
     if (preset && !cx.host.profile.presets.allowed.includes(preset))
       throw rpcError('PRESET_SWITCH_REJECTED', { reason: 'not in presets.allowed', preset })
@@ -533,6 +545,7 @@ export function registerAcp(
         cwd: binding.canonicalRoot,
         binding,
         ...(preset ? { preset } : {}),
+        ...(loop ? { loop } : {}),
         key: requestedKey,
         ...(c.conn.credential === undefined ? {} : { credential: c.conn.credential }),
       })

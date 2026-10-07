@@ -1,3 +1,4 @@
+import type { LoopSelection } from '@agnes/protocol'
 import type {
   EventEnvelope,
   McpStatus,
@@ -176,6 +177,7 @@ export type SessionOpenFrame = {
   params: {
     binding: WorkspaceBindingFrame
     preset?: string
+    loop?: LoopSelection
     resume?: boolean
     parent?: { key: string; boundarySeq: number }
   }
