@@ -41,8 +41,15 @@ export const AGNES_BASE_PLUGIN_DECLARATIONS = Object.freeze(
       { export: 'verifierPlugin', id: 'seam:verifier', runtime: 'in-process', default: true },
       { export: 'repairPlugin', id: 'seam:repair', runtime: 'in-process', default: true },
       { export: 'harnessPlugin', id: 'seam:harness', runtime: 'in-process', default: true },
+      {
+        export: 'defaultLoopPlugin',
+        id: 'loop:agnes.default',
+        inject: ['loops'],
+        runtime: 'in-process',
+        default: true,
+      },
     ] satisfies readonly Readonly<AgnesPluginManifestEntry>[]
-  ).map((entry) => Object.freeze(entry)),
+  ).map((entry) => Object.freeze({ ...entry, apiRange: '^1.4.0' })),
 )
 
 export function readPackagedBuiltinExports(

@@ -65,11 +65,22 @@ describe('packaged host wiring', () => {
     )
   })
 
-  it('discovers the default tool policy and all eight base seam plugins in a packaged worker', async () => {
+  it('discovers the default loop, tool policy and all eight base seam plugins in a packaged worker', async () => {
     const module = readPackagedBuiltinExports('@agnes/base', 'worker.mjs', await import('@agnes/base'))
 
     expect(module.plugins?.map(({ declaration }) => declaration)).toEqual(AGNES_BASE_PLUGIN_DECLARATIONS)
-    expect(module.plugins).toHaveLength(9)
+    expect(module.plugins?.map(({ declaration }) => declaration.id)).toEqual([
+      'tool-policy:default',
+      'seam:approval',
+      'seam:principals',
+      'seam:artifacts',
+      'seam:checkpoint',
+      'seam:ledger',
+      'seam:verifier',
+      'seam:repair',
+      'seam:harness',
+      'loop:agnes.default',
+    ])
     expect(module.plugins?.every(({ entry }) => typeof entry.prepared === 'object')).toBe(true)
   })
 
