@@ -169,7 +169,7 @@ export function renderGoalCard(
   renderRegion(
     host,
     <GoalCard
-      key={`${timeline?.sessionId ?? 'draft'}:${slot?.goal?.id ?? 'new'}:${slot?.goal?.revision ?? 0}`}
+      key={`${timeline?.sessionId ?? 'draft'}:${slot?.goal?.id ?? 'new'}`}
       goal={slot?.goal}
       error={slot?.level === 'warn' && !slot.goal?.reason ? slot.text : undefined}
       disabled={disabled}

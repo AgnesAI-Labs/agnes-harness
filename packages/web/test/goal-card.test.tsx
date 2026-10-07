@@ -60,6 +60,21 @@ it('shows a localized durable goal and forwards human controls through slash inp
   expect(host.querySelector('textarea')?.value).toBe('Ship a patch')
   flushSync(() => (host.querySelector('[data-testid=goal-resume]') as HTMLButtonElement).click())
   expect(onCommand).toHaveBeenCalledWith('/goal resume')
+  renderGoalCard(
+    host,
+    {
+      ...live,
+      slots: live.slots.map((fill) => ({
+        ...fill,
+        payload: { ...fill.payload, goal: { ...goal, revision: 2, phase: 'active', rounds: 3 } },
+      })),
+    },
+    false,
+    onCommand,
+  )
+  expect(host.querySelector('[data-testid=goal-toggle]')?.getAttribute('aria-expanded')).toBe('true')
+  flushSync(() => (host.querySelector('[data-testid=goal-pause]') as HTMLButtonElement).click())
+  expect(onCommand).toHaveBeenCalledWith('/goal pause')
   flushSync(() => (host.querySelector('[data-testid=goal-clear]') as HTMLButtonElement).click())
   expect(onCommand).toHaveBeenCalledWith('/goal clear')
   renderGoalCard(host, live, true, onCommand)
