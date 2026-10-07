@@ -10,9 +10,11 @@
       "packages/plugin-runtime/src/runtime-target.ts": 2
     },
     "c2_runtime_target": {
-      "packages/host/src/assemble.ts": 4,
+      "packages/host/src/assemble.ts": 5,
       "packages/host/src/assembly-deps.ts": 1,
-      "packages/host/src/host.ts": 2,
+      "packages/host/src/host.ts": 3,
+      "packages/host/src/profile/composition-runtime.ts": 5,
+      "packages/host/src/runtime-generation-host.ts": 4,
       "packages/host/src/runtime-hot-policy.ts": 3,
       "packages/host/src/runtime-plugin-catalogue.ts": 3,
       "packages/host/src/runtime-target-assembler.ts": 7,
@@ -22,11 +24,12 @@
       "packages/host/src/runtime-target-report.ts": 2,
       "packages/host/src/runtime-target-resources.ts": 7,
       "packages/host/src/runtime-target-static-authority.ts": 2,
+      "packages/package-manager/src/runtime-snapshots-generations.ts": 2,
       "packages/plugin-runtime/src/host/index.ts": 1,
       "packages/plugin-runtime/src/runtime-target.ts": 8,
       "packages/worker-runtime/src/runtime-target-artifact.ts": 2,
       "packages/worker-runtime/src/runtime-target-probe.ts": 2,
-      "packages/worker-runtime/src/runtime-target-slot.ts": 2
+      "packages/worker-runtime/src/runtime-target-slot.ts": 3
     },
     "c2_runtime_stale_frame": {
       "packages/daemon/src/supervisor/worker-link.ts": 1,

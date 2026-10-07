@@ -170,7 +170,7 @@ export async function runWebCommand(
             log: () => undefined,
           }
           const args = parseArgs(['config', 'dump', ...(parsed.profile ? ['--profile', parsed.profile] : [])])
-          let profile
+          let profile: Awaited<ReturnType<typeof resolveDoctorProfile>>
           try {
             profile = await resolveDoctorProfile(deps, args)
           } catch (error) {

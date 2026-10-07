@@ -125,15 +125,6 @@
       "consumers": ["packages/cli"]
     },
     {
-      "name": "esbuild",
-      "version": "0.28.2",
-      "license": "MIT",
-      "source": "https://github.com/evanw/esbuild",
-      "purpose": "SDK browser checks, the Web client bundle and the isolated hooks-runner bundle.",
-      "rationale": "Provides one fast bundler for browser compatibility and deterministic self-contained runtime artifacts.",
-      "consumers": ["packages/base", "packages/cli", "packages/sdk", "packages/web"]
-    },
-    {
       "name": "react-dom",
       "version": "18.3.1",
       "license": "MIT",

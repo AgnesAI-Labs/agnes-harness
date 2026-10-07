@@ -200,6 +200,7 @@ export type {
 } from '../gen/ts/model.js'
 export type {
   ClientModuleEffectCallParams,
+  ClientModuleListParams,
   ClientModuleListResult,
   ClientModuleReadParams,
   ClientModuleReadResult,
@@ -266,6 +267,8 @@ export type {
   Capability,
   CommandHookGrant,
   CommandHooksPolicy,
+  CompositionPatch,
+  CompositionSource,
   ComputerUseAppIdentity,
   ComputerUseCapturePolicy,
   ComputerUseProfile,

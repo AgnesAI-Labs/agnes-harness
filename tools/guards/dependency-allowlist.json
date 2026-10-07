@@ -2,7 +2,7 @@
   "@agnes/cosmokit": [],
   "@agnes/cordis": ["@agnes/cosmokit"],
   "@agnes/cordis-loader": ["@agnes/cordis"],
-  "@agnes/plugin-runtime": ["@agnes/cordis", "@agnes/cordis-loader"],
+  "@agnes/plugin-runtime": ["@agnes/cordis", "@agnes/cordis-loader", "@agnes/extension-api"],
   "@agnes/web-slots": [],
   "@agnes/web-ui": ["@agnes/protocol", "@agnes/protocol-validation"],
   "@agnes/web-client": ["@agnes/cordis", "@agnes/web-slots"],
@@ -74,7 +74,8 @@
     "@agnes/plugin-runtime",
     "@agnes/resource-control-runtime",
     "@agnes/sandbox-remote",
-    "@agnes/system-node"
+    "@agnes/system-node",
+    "@agnes/model-adapters"
   ],
   "@agnes/sdk": [
     "@agnes/protocol",
@@ -135,5 +136,6 @@
     "@agnes/plugin-runtime",
     "@agnes/system-node"
   ],
-  "@agnes/system-node": []
+  "@agnes/system-node": [],
+  "@agnes/model-adapters": ["@agnes/ai", "@agnes/extension-api", "@agnes/plugin-runtime", "@agnes/protocol"]
 }

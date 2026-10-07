@@ -1,5 +1,4 @@
 import { createHash } from 'node:crypto'
-import { mcpLocalToolPrefix, skillResourceIdAt } from '@agnes/base'
 import type { ToolRegistry } from '@agnes/core'
 import type { RuntimePluginSnapshot } from '@agnes/package-manager'
 import type { SkillRuntimeInput } from '../resources/skills.js'
@@ -8,7 +7,18 @@ import { compositionAllowsTool } from './composition.js'
 
 /** A read facade; registration and leases stay owned by the generation's original registry. */
 export function compositionTools(tools: ToolRegistry, selection: CompositionPatch): ToolRegistry {
-  const mcpPrefixes = selection.mcp?.map((id) => mcpLocalToolPrefix(id.replace(/^mcp\//, '')))
+  // Decode the registered MCP name contract without loading its concrete provider package.
+  const mcpPrefixes = selection.mcp?.map((id) => {
+    const serverId = id.replace(/^mcp\//, '')
+    const slug =
+      serverId
+        .toLocaleLowerCase()
+        .replace(/[^a-z0-9]+/g, '_')
+        .replace(/^_+|_+$/g, '')
+        .slice(0, 40) || 'server'
+    const hash = createHash('sha256').update(serverId, 'utf8').digest('hex').slice(0, 8)
+    return ['mcp', slug, hash, ''].join('_')
+  })
   const allowed = (name: string): boolean => {
     const registered = tools.resolve(name)
     return (
@@ -89,10 +99,12 @@ export function compositionSkillOwners(
   for (const source of sources)
     for (const contribution of source.snapshot.contributions) {
       if (contribution.kind !== 'skill') continue
-      const id = skillResourceIdAt(
-        { scope: 'package', rootKey: 'package', priority: 50, path: '' },
-        source.snapshot.packageId + '\0' + contribution.id + '\0' + contribution.path,
-      )
+      // Package resource identity is the persisted scope/root/location digest contract.
+      const location = source.snapshot.packageId + '\0' + contribution.id + '\0' + contribution.path
+      const digest = createHash('sha256')
+        .update('package\0package\0' + location)
+        .digest('hex')
+      const id = ['skill', 'package', 'package', digest].join('/')
       owners.set(id, source.snapshot.packageId)
     }
   return owners

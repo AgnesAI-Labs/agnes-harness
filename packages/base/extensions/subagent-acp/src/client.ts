@@ -32,7 +32,7 @@ export class AcpChildProcess {
     const env: NodeJS.ProcessEnv = {}
     if (process.env.PATH) env.PATH = process.env.PATH
     if (process.env.HOME) env.HOME = process.env.HOME
-    if (process.platform === 'win32' && process.env.USERPROFILE) env.USERPROFILE = process.env.USERPROFILE
+    if (process.env.USERPROFILE) env.USERPROFILE = process.env.USERPROFILE
     for (const [key, value] of Object.entries(command.env ?? {})) env[key] = value
     this.proc = spawn(command.command, [...(command.args ?? [])], {
       cwd: command.cwd,

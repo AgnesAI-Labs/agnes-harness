@@ -41,6 +41,7 @@ mintPortalIdentity
 parseMessage
 portalIdentityAuth
 randomId
+runHeadless
 signSourceAuth
 snapshotPending
 sourceAuthCanonical

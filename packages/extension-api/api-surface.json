@@ -11,6 +11,8 @@
     "ExtensionError",
     "HOOK_EVENTS",
     "HOOK_TABLE",
+    "LOCAL_SANDBOX_PROVIDER_ID",
+    "LOOP_EVENTS",
     "MAX_APPROVAL_SCOPES",
     "MAX_OUTPUT_MAX_BYTES",
     "MIN_OUTPUT_MAX_BYTES",
@@ -37,6 +39,7 @@
     "checkToolMeta",
     "defineExtension",
     "definePersistenceProvider",
+    "defineProviderKind",
     "defineTool",
     "extEventType",
     "isExtensionError",
@@ -46,7 +49,10 @@
     "parseSemver",
     "persistenceRegisterKey",
     "registerLoopPlugin",
+    "registerToolPolicyPlugin",
+    "registerToolRuntimePlugin",
     "resolveToolCallPolicy",
+    "sandboxUnavailable",
     "satisfiesApiRange",
     "unavailableProjections"
   ]

@@ -50,7 +50,7 @@ export function persistenceContract(name: string, create: () => PersistenceContr
     ).toEqual([1, 2])
     await first.close()
     const second = await factory.open()
-    expect((await second.scan('k', { toSeq: 2 })).map((row) => row.seq)).toEqual([1, 2])
+    expect((await second.scan('k', { toSeq: 2, limit: 2 })).map((row) => row.seq)).toEqual([1, 2])
     await second.close()
   })
 

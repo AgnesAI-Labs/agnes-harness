@@ -35,7 +35,17 @@ const INTERNAL_ROOT_SYMBOLS =
 function packageShape(pkg: Package): PackageShape {
   const dependencies = {
     ...(pkg.json.dependencies as Record<string, string> | undefined),
-    ...(pkg.json.peerDependencies as Record<string, string> | undefined),
+    ...Object.fromEntries(
+      Object.entries((pkg.json.peerDependencies as Record<string, string> | undefined) ?? {}).filter(
+        ([name]) =>
+          !(
+            pkg.name === RUNTIME &&
+            name === HOST &&
+            (pkg.json.peerDependenciesMeta as Record<string, { optional?: boolean }> | undefined)?.[name]
+              ?.optional
+          ),
+      ),
+    ),
   }
   const exports = pkg.json.exports as Record<string, string> | string | undefined
   return {
@@ -122,7 +132,7 @@ export function auditStageGraph(packages: PackageShape[], imports: ImportSite[])
   const allowedFoundationDependencies: Record<string, Set<string>> = {
     [CORDIS]: new Set(['@agnes/cosmokit']),
     [LOADER]: new Set([CORDIS, '@agnes/cosmokit']),
-    [RUNTIME]: new Set([CORDIS, LOADER, '@agnes/cosmokit']),
+    [RUNTIME]: new Set([CORDIS, LOADER, '@agnes/cosmokit', '@agnes/extension-api']),
   }
   for (const [name, allowed] of Object.entries(allowedFoundationDependencies)) {
     const pkg = byName.get(name)
@@ -193,7 +203,7 @@ export function auditStageGraph(packages: PackageShape[], imports: ImportSite[])
   const runtime = byName.get(RUNTIME)
   if (runtime) {
     const keys = Object.keys(runtime.exports).sort()
-    if (keys.some((key) => !['.', './host', './testkit'].includes(key))) {
+    if (keys.some((key) => !['.', './host', './testkit', './provided-externals'].includes(key))) {
       errors.push(`plugin-runtime exports unexpected subpaths: ${keys.join(', ')}`)
     }
     for (const [key, target] of Object.entries(runtime.exports)) {
@@ -213,7 +223,7 @@ export function auditStageGraph(packages: PackageShape[], imports: ImportSite[])
 }
 
 describe('Agnes on Cordis stage dependency guard', () => {
-  it('accepts the pre-C1 graph without being vacuous', () => {
+  it('accepts the plugin author graph without being vacuous', () => {
     const packages = listPackages(root)
     expect(auditStageGraph(packages.map(packageShape), productionImports(packages))).toEqual([])
     expect(foundationPhaseErrors(packages)).toEqual([])

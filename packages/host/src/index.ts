@@ -399,6 +399,8 @@ export * from './presets/index.js'
 export * from './profile/bundle-selection.js'
 export { canonicalJson, sha256hex } from './profile/canonical.js'
 export * from './profile/composition.js'
+export * from './profile/composition-state.js'
+export * from './profile/composition-visibility.js'
 export { DEFAULT_COMPUTER_USE } from './profile/computer-use.js'
 export {
   type ConfigurationProfileInputsOptions,
@@ -458,5 +460,3 @@ export {
   type WorkspaceBinding,
 } from './workspace-authority.js'
 export * from './workspace-policy.js'
-export * from './profile/composition-state.js'
-export * from './profile/composition-visibility.js'

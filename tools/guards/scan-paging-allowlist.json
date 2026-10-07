@@ -1,1 +1,12 @@
-[]
+[
+  {
+    "file": "packages/extension-api/testkit/persistence-contract.ts",
+    "call": "scan('k', {})",
+    "reason": "Negative provider contract case: an unbounded query must refuse with E_SCAN_UNBOUNDED."
+  },
+  {
+    "file": "packages/extension-api/testkit/persistence-contract.ts",
+    "call": "scan('k', { toSeq: events.length })",
+    "reason": "Negative provider contract case: a bounded full read above the page cap must refuse with E_SCAN_TRUNCATED."
+  }
+]

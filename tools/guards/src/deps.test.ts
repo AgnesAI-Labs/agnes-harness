@@ -21,6 +21,15 @@ describe('dependency allowlist (dependencies point one way, downward)', () => {
         // the fix is to scan the import statements in source, not to start checking devDependencies
         // here.
       }
+      if (pkg.name === '@agnes/plugin-runtime') {
+        expect(pkg.json.dependencies).not.toHaveProperty('@agnes/host')
+        expect(
+          (pkg.json.peerDependenciesMeta as Record<string, { optional?: boolean }> | undefined)?.[
+            '@agnes/host'
+          ]?.optional,
+        ).toBe(true)
+        delete deps['@agnes/host']
+      }
       const agnesDeps = Object.keys(deps).filter((d) => d.startsWith('@agnes/'))
       const allowed = allow[pkg.name]
       expect(allowed, `${pkg.name} missing from dependency-allowlist.json`).toBeDefined()
@@ -88,6 +97,7 @@ const LAYER: Record<string, number> = {
   '@agnes/extension-api': 1,
   '@agnes/core': 2,
   '@agnes/ai': 3,
+  '@agnes/model-adapters': 4,
   // A seam-only package (RA16): implements SandboxSeam against a transport handed to it by the
   // host adapter layer, without depending on host or base. Same layer as ai/sdk - one above core,
   // the only thing it depends on.
@@ -113,7 +123,7 @@ const LAYER: Record<string, number> = {
 // are asserted separately rather than going through it.
 const EXACT_ONLY: Record<string, string[]> = {
   '@agnes/cordis-loader': ['@agnes/cordis'],
-  '@agnes/plugin-runtime': ['@agnes/cordis', '@agnes/cordis-loader'],
+  '@agnes/plugin-runtime': ['@agnes/cordis', '@agnes/cordis-loader', '@agnes/extension-api'],
   '@agnes/sdk': [
     '@agnes/protocol',
     '@agnes/resource-control-client-node',

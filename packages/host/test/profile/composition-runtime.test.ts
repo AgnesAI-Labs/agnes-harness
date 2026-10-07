@@ -2,13 +2,20 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { mcpLocalToolPrefix, skillResourceIdAt } from '@agnes/base'
+import { ToolRegistry } from '@agnes/core'
+import { defineTool } from '@agnes/extension-api'
+import type { RuntimePluginSnapshot } from '@agnes/package-manager'
 import { normalizePluginExport } from '@agnes/plugin-runtime/host'
+import { Type } from '@sinclair/typebox'
 import { expect, it, vi } from 'vitest'
 import { CompositionSessionStore, readLiveCompositionSessions } from '../../src/profile/composition-state.js'
 import {
   compositionModuleAllowed,
+  compositionSkillOwners,
   compositionSkills,
   compositionSurfaceAllowed,
+  compositionTools,
 } from '../../src/profile/composition-visibility.js'
 import type { SkillRuntimeInput } from '../../src/resources/skills.js'
 import { createTestHost } from '../../testkit/index.js'
@@ -134,6 +141,31 @@ it('restricts Skill reads and optional panels to the selected resources and slot
     code: 'UNAUTHORIZED',
   })
   expect(skills.readRoots?.()).toEqual([])
+  const location = ['acme/skills', 'refund', 'skills/refund'].join('\0')
+  const resourceId = skillResourceIdAt(
+    { scope: 'package', rootKey: 'package', priority: 50, path: '' },
+    location,
+  )
+  const owners = compositionSkillOwners([
+    {
+      snapshot: {
+        packageId: 'acme/skills',
+        contributions: [{ kind: 'skill', id: 'refund', path: 'skills/refund' }],
+      },
+    } as unknown as RuntimePluginSnapshot,
+  ])
+  expect([...owners]).toEqual([[resourceId, 'acme/skills']])
+  const packageSkills = {
+    ...input,
+    list: () => [{ resourceId, name: 'refund' }],
+  } as unknown as SkillRuntimeInput
+  const denied = compositionSkills(
+    packageSkills,
+    { packages: [{ id: 'acme/skills', source: 'builtin:acme/skills', enabled: false }] },
+    owners,
+  )!
+  expect(denied.list()).toEqual([])
+  expect(denied.read(resourceId, { sessionKey: 'fixture' })).toEqual({ ok: false, code: 'UNAUTHORIZED' })
   expect(
     compositionModuleAllowed({ shell: { slots: ['sidebar'] } }, { id: 'panel', slots: ['sidebar'] }),
   ).toBe(true)
@@ -147,4 +179,39 @@ it('restricts Skill reads and optional panels to the selected resources and slot
   expect(compositionModuleAllowed({ surfaces: [] }, { id: 'panel' })).toBe(false)
   expect(compositionSurfaceAllowed(undefined, 'web')).toBe(true)
   expect(compositionSurfaceAllowed({ surfaces: [] }, 'acp')).toBe(false)
+})
+
+it('filters registered MCP identities without confusing slug collisions or long server ids', () => {
+  const registry = new ToolRegistry()
+  const ids = ['a.b', 'a_b', 'My.Server--2', '...', 'long-'.repeat(30)]
+  for (const id of ids)
+    registry.add(
+      defineTool({
+        name: mcpLocalToolPrefix(id) + 'read',
+        description: 'Read the selected server',
+        parameters: Type.Object({}),
+        meta: {
+          isReadOnly: true,
+          isDestructive: false,
+          isConcurrencySafe: true,
+          isOpenWorld: false,
+          replay: 'safe',
+          requiresApproval: 'never',
+          costHint: {},
+          deferLoading: false,
+        },
+        execute: async () => ({ content: [] }),
+      }),
+      { source: 'fixture', trust: 'builtin' },
+    )
+  for (const id of ids) {
+    const tools = compositionTools(registry, { mcp: ['mcp/' + id] })
+    const name = mcpLocalToolPrefix(id) + 'read'
+    expect(tools.list().map((tool) => tool.name)).toEqual([name])
+    expect(tools.size).toBe(1)
+    expect(tools.resolve(name)).toBeDefined()
+    expect(tools.snapshot(0).defs.map((tool) => tool.name)).toEqual([name])
+    expect(tools.resolve(mcpLocalToolPrefix(ids.find((other) => other !== id)!) + 'read')).toBeUndefined()
+  }
+  expect(registry.size).toBe(ids.length)
 })

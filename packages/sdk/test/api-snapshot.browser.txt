@@ -34,6 +34,7 @@ memoryJournal
 parseMessage
 portalIdentityAuth
 randomId
+runHeadless
 snapshotPending
 textFor
 toContentBlocks

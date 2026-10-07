@@ -18,8 +18,8 @@ export const SOURCE_FORMATS: Readonly<
 > = Object.freeze({
   local: { prefix: 'local:', example: 'local:workspace/my-plugin' },
   npm: { prefix: 'npm:', example: 'npm:scope/package@1.2.3' },
-  file: { prefix: 'file:', example: '/home/me/my-plugin.tgz' },
-  path: { prefix: 'path:', example: '/home/me/my-plugin' },
+  file: { prefix: 'file:', example: '/path/to/my-plugin.tgz' },
+  path: { prefix: 'path:', example: '/path/to/my-plugin' },
   url: { prefix: 'url:', example: 'https://example.com/my-plugin.zip' },
   workspace: {
     prefix: 'workspace:extensions/',

@@ -44,6 +44,7 @@ describe('host boundaries', () => {
             '@agnes/cordis',
             '@agnes/core',
             '@agnes/ai',
+            '@agnes/model-adapters',
             '@agnes/package-manager',
             '@agnes/plugin-runtime',
             '@agnes/resource-control-runtime',

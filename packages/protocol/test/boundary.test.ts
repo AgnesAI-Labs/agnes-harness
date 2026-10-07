@@ -59,6 +59,13 @@ describe('protocol src boundary', () => {
     expect(Object.keys(mod).sort()).toEqual(
       [
         'AGNES_ERRORS',
+        'isAdminLoop',
+        'isAdminModelAdapter',
+        'isSessionDefaults',
+        'isSessionDefaultsSnapshot',
+        'parseLoopSelection',
+        'parseLoopSpecifier',
+        'pluginFailureHelp',
         'decodeAttachmentData',
         'USER_MESSAGE_ATTACHMENT_LIMITS',
         'validateUserAttachments',

@@ -6,9 +6,15 @@
       "version": "0.28.2",
       "license": "MIT",
       "source": "https://github.com/evanw/esbuild",
-      "purpose": "Bundle third-party JavaScript dependencies into shareable plugin archives.",
+      "purpose": "Bundle shareable plugins, SDK browser checks, Web clients and isolated hooks runners.",
       "rationale": "Reuse the repository bundler so the receiving machine needs no plugin dependency installation.",
-      "consumers": ["packages/package-manager"]
+      "consumers": [
+        "packages/base",
+        "packages/cli",
+        "packages/package-manager",
+        "packages/sdk",
+        "packages/web"
+      ]
     },
     {
       "name": "@ant-design/x-markdown",
