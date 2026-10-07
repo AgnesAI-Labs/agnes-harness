@@ -433,7 +433,10 @@
         "api": { "type": "string", "maxLength": 64 },
         "baseUrl": { "type": "string", "maxLength": 2048 },
         "credentialRef": { "type": "string", "pattern": "^secret://[A-Za-z0-9_./-]+$" },
-        "keyless": { "type": "boolean", "description": "Explicit opt-in to inference without a bound credential." },
+        "keyless": {
+          "type": "boolean",
+          "description": "Explicit opt-in to inference without a bound credential."
+        },
         "compat": { "$ref": "#/$defs/JsonValue" },
         "displayName": { "type": "string", "maxLength": 128 },
         "models": { "type": "array", "items": { "$ref": "#/$defs/ModelRecord" } }
