@@ -47,6 +47,8 @@ export interface ConversationMessagesProps {
   renderSlot?: (node: Extract<UINode, { kind: 'slot' }>) => ReactNode
   /** The upper Web layer owns DSH registration, claims, and fallback visibility. */
   renderNode?: (node: UINode, native: ReactNode) => ReactNode
+  /** Host-owned interactive cards and deliverables can stay outside collapsed process history. */
+  keepNodeVisible?: (node: UINode) => boolean
 }
 
 type ConversationMessageContextValue = {
@@ -507,6 +509,7 @@ export function ConversationToolCard({
         <button
           type="button"
           className="tool-detail"
+          data-testid="tool-detail-toggle"
           aria-expanded={expanded}
           onClick={() => {
             const next = !expanded
@@ -522,7 +525,7 @@ export function ConversationToolCard({
       </div>
       <div className="tool-detail-body">
         <div className="tool-detail-inner">
-          <div ref={detailHost} className="tool-detail-text">
+          <div ref={detailHost} className="tool-detail-text" data-testid="tool-detail-text">
             {detail}
           </div>
         </div>
@@ -754,6 +757,8 @@ function Turn({
   })
   const users = members.filter((node) => node.kind === 'user')
   const others = members.filter((node) => node.kind !== 'user')
+  const attention = (node: UINode) =>
+    (node.kind === 'approval' && node.state === 'pending') || props.keepNodeVisible?.(node) === true
   const pendingApproval = others.some((node) => node.kind === 'approval' && node.state === 'pending')
   const awaitingToolApproval = others.some(
     (node) => node.kind === 'tool' && node.status === 'awaiting_approval',
@@ -793,14 +798,10 @@ function Turn({
   const finalThinking = finalNode?.kind === 'assistant' ? finalNode.thinking?.trim() : undefined
   const processCount =
     others.filter(
-      (node) =>
-        node.id !== turn.finalAssistantId &&
-        !isEmptyStreamingAssistant(node) &&
-        !(node.kind === 'approval' && node.state === 'pending'),
+      (node) => node.id !== turn.finalAssistantId && !isEmptyStreamingAssistant(node) && !attention(node),
     ).length + (finalThinking ? 1 : 0)
   const ordered = [...others].sort((a, b) => {
-    const rank = (node: UINode) =>
-      node.id === turn.finalAssistantId ? 2 : node.kind === 'approval' && node.state === 'pending' ? 1 : 0
+    const rank = (node: UINode) => (node.id === turn.finalAssistantId ? 2 : attention(node) ? 1 : 0)
     return rank(a) - rank(b)
   })
   const settled = !processActive && Boolean(turn.finalAssistantId)
@@ -836,7 +837,7 @@ function Turn({
             setProcessOpen(open)
           }}
         >
-          <summary>
+          <summary data-testid="turn-process-toggle">
             <span className="process-row">
               <span className="process-label" data-agnes-dynamic="turn-process">
                 {statusText}
@@ -875,12 +876,12 @@ function Turn({
         <div className="turn-node-flow">
           {ordered.map((node) => {
             const final = node.id === turn.finalAssistantId
-            const attention = node.kind === 'approval' && node.state === 'pending'
+            const needsAttention = attention(node)
             return (
               <div
                 key={node.id}
-                className={final ? 'turn-final' : attention ? 'turn-attention' : 'turn-process-body'}
-                hidden={isEmptyStreamingAssistant(node) || (!final && !attention && !processOpen)}
+                className={final ? 'turn-final' : needsAttention ? 'turn-attention' : 'turn-process-body'}
+                hidden={isEmptyStreamingAssistant(node) || (!final && !needsAttention && !processOpen)}
               >
                 <Message
                   node={node}

@@ -464,3 +464,105 @@ it('keeps each React action footer through replay and history prepend, then reti
   expect(host.querySelector('[data-turn-id="turn:2"]')).toBeNull()
   expect(host.querySelector('[data-turn-id="turn:1"] footer.turn-footer')).not.toBe(firstFooter)
 })
+
+it('keeps questions, deliverables, jobs and children visible when settled process history collapses', async () => {
+  const cardNodes: UINode[] = [
+    user,
+    tool('completed'),
+    {
+      ...tool('completed'),
+      id: 'question',
+      name: 'ask_user_question',
+      slots: [
+        {
+          slot: 'tool.card.inline',
+          extId: 'interaction',
+          payload: {
+            title: 'Question',
+            question: { id: 'q', questions: [{ id: 'choice', question: 'Pick', options: ['A'] }] },
+          },
+        },
+      ],
+    },
+    {
+      ...tool('completed'),
+      id: 'files',
+      name: 'present',
+      slots: [
+        {
+          slot: 'tool.card.inline',
+          extId: 'present',
+          payload: {
+            title: 'Files',
+            deliverables: [{ name: 'report.txt', lane: 'main', ref: { sha256: 'a'.repeat(64), size: 6 } }],
+          },
+        },
+      ],
+    },
+    { ...tool('completed'), id: 'jobs', name: 'job_output', resultPreview: 'job-a: running' },
+    { ...tool('completed'), id: 'children', name: 'subagent_list', resultPreview: 'child-a completed' },
+    {
+      kind: 'approval',
+      id: 'approval',
+      seq: 3,
+      state: 'pending',
+      summary: 'Approve plan',
+      risk: 'always',
+      options: ['allow_once', 'reject_once'],
+    },
+    { kind: 'assistant', id: 'final', seq: 4, text: 'Review the report' },
+  ]
+  const turn: UITurn = {
+    id: 'turn:cards',
+    turn: 1,
+    startSeq: 1,
+    startedAt: '2026-10-01T00:00:00Z',
+    endedAt: '2026-10-01T00:00:01Z',
+    status: 'completed',
+    nodeIds: cardNodes.map((node) => node.id),
+    finalAssistantId: 'final',
+    inherited: false,
+    forkable: false,
+    usage: {
+      totals: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, reasoning: 0 },
+      reasoningComplete: true,
+      billingComplete: true,
+      calls: [],
+    },
+  }
+  const store = createConversationProjectionStore({ sessionId: 'session', nodes: cardNodes, turns: [turn] })
+  function CardsHarness() {
+    const runtime = useConversationRuntime(store)
+    return createElement(
+      AssistantRuntimeProvider,
+      { runtime },
+      createElement(WebConversationMessages, {
+        registry,
+        nodes: cardNodes,
+        turns: [turn],
+        locale: zhLocaleService(),
+      }),
+    )
+  }
+  await act(async () => root.render(createElement(CardsHarness)))
+  expect(host.querySelector<HTMLDetailsElement>('.turn-process')?.open).toBe(false)
+  expect(item('tool')?.parentElement?.hidden).toBe(true)
+  for (const id of ['question', 'files', 'jobs', 'children', 'approval']) {
+    expect(item(id)?.parentElement?.className).toBe('turn-attention')
+    expect(item(id)?.parentElement?.hidden).toBe(false)
+  }
+  for (const id of [
+    'question-card',
+    'question-submit',
+    'deliverable-card',
+    'background-job-card',
+    'child-agent-card',
+  ])
+    expect(host.querySelector(`[data-testid="${id}"]`)).not.toBeNull()
+  expect(host.querySelector('[data-testid="question-submit"]')?.textContent).toBe('提交答案')
+  expect(host.querySelector('[data-testid="deliverable-card"]')?.getAttribute('aria-label')).toBe(
+    '交付物: report.txt',
+  )
+  await act(async () => host.querySelector<HTMLElement>('[data-testid="turn-process-toggle"]')?.click())
+  expect(item('question')?.parentElement?.hidden).toBe(false)
+})

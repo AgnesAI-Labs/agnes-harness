@@ -28,6 +28,7 @@ describe('rendered approval region', () => {
     const selected: string[] = []
     handle?.render({
       key: 'live:tool-1',
+      kind: 'plan',
       title: '需要你的确认',
       summary: '读取工作区文件',
       impact: '请核对工具及参数后决定是否继续。',
@@ -40,6 +41,9 @@ describe('rendered approval region', () => {
     })
     await vi.waitFor(() => {
       expect(approval?.hidden).toBe(false)
+      expect(approval?.querySelector('[data-testid="plan-approval-card"]')).toBeTruthy()
+      expect(approval?.querySelectorAll('[data-testid="approval-action"]')).toHaveLength(2)
+      expect(approval?.querySelector('[data-testid="approval-preview"]')?.textContent).toContain('README.md')
       expect(
         approval?.querySelector('[data-slot="ui:approval"] [data-agnes-region-unit="approval"]'),
       ).toBeTruthy()

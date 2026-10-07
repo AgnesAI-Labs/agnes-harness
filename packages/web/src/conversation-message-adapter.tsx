@@ -17,6 +17,7 @@ import {
 } from '@agnes/web-ui/assistant-ui'
 import { type ReactNode, useSyncExternalStore } from 'react'
 import type { ClaimResolver } from './client-modules/boot.js'
+import { conversationToolCardKind, keepConversationCardVisible } from './conversation-card-layout.js'
 import { DefaultToolCards } from './default-tool-cards.js'
 import { toolIconReact } from './tool-icon.js'
 
@@ -160,6 +161,7 @@ export function WebConversationMessages({
     }
   }
   const props: ConversationMessagesProps = {
+    keepNodeVisible: keepConversationCardVisible,
     t: (key, vars) => locale?.t(key, vars) ?? key,
     ...(turns ? { turns } : {}),
     ...(visibleNodeIds ? { visibleNodeIds } : {}),
@@ -184,10 +186,17 @@ export function WebConversationMessages({
       />
     ),
     renderTool: (node) => (
-      <>
+      <div
+        className="conversation-tool-surface"
+        data-testid={
+          conversationToolCardKind(node) ? `${conversationToolCardKind(node)}-card` : 'conversation-tool-card'
+        }
+        data-tool-name={node.name}
+      >
         <DefaultToolCards
           node={node}
           answered={answered}
+          {...(locale ? { t: (key: string) => locale.t(key) } : {})}
           {...(session ? { session } : {})}
           {...(resources ? { resources } : {})}
         />
@@ -197,7 +206,7 @@ export function WebConversationMessages({
           icon={toolIconReact(node.name)}
           t={(key, vars) => locale?.t(key, vars) ?? key}
         />
-      </>
+      </div>
     ),
     renderSlot: (node) => (
       <SlotLeaf

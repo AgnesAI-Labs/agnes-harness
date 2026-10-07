@@ -22,7 +22,7 @@ export type ApprovalCard = {
 const isRecord = (v: unknown): v is Record<string, unknown> =>
   typeof v === 'object' && v !== null && !Array.isArray(v)
 
-function toolOf(toolCall: Record<string, unknown>): string | undefined {
+export function approvalToolName(toolCall: Record<string, unknown>): string | undefined {
   const meta = toolCall._meta
   const harness = isRecord(meta) ? meta['ai.agnes.harness'] : undefined
   const tool = isRecord(harness) ? harness.tool : undefined
@@ -57,7 +57,7 @@ function impactOf(tool: string | undefined, kind: unknown, input: unknown, t: Tr
 }
 
 export function liveApprovalCard(toolCall: Record<string, unknown>, t: Translate): ApprovalCard {
-  const tool = toolOf(toolCall)
+  const tool = approvalToolName(toolCall)
   const input = toolCall.rawInput
   const impact = impactOf(tool, toolCall.kind, input, t)
   const sessionLabel = tool ? t('app.approval.session.all', { tool }) : t('app.approval.session.tool')

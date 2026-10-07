@@ -29,7 +29,7 @@ import { sessionLoopSelection } from './admin/plugins/session-loop.js'
 import { createPendingCoordinator } from './admin-pane-coordinator.js'
 import { bindAppearance, bindSkinGroup } from './appearance.js'
 import type { ApprovalAction } from './approval.js'
-import { liveApprovalCard } from './approval-card.js'
+import { approvalToolName, liveApprovalCard } from './approval-card.js'
 import { installBrowserLogCapture } from './browser-log.js'
 import { type ClaimResolver, startClientModules } from './client-modules/boot.js'
 import { startPluginHotReload } from './client-modules/hot-reload.js'
@@ -58,6 +58,7 @@ import {
 import type { ModelPickerOption } from './model-picker.js'
 import { renderWorkspaceOptions } from './navigation.js'
 import { type PermissionMode, permissionLabel, yoloEnabled } from './permission-picker.js'
+import { PlanModeRequestError, submitPlanCommand } from './plan-mode.js'
 import {
   canSubmitComposer,
   composerActionPresentation,
@@ -98,7 +99,6 @@ import {
   type WebView,
   webView,
 } from './view.js'
-import { PlanModeRequestError, submitPlanCommand } from './plan-mode.js'
 import { requestWorkspacePicker, workspacePickerAvailable } from './workspace-picker.js'
 
 installBrowserLogCapture()
@@ -1098,8 +1098,15 @@ function renderApproval(): void {
         async () => void (await client.approval.decide(ticket, verdict, { kind: 'local' })),
       )
   }
+  const planApproval = liveApproval
+    ? approvalToolName(liveApproval.request.toolCall) === 'exit_plan_mode'
+    : projection?.nodes.some(
+        (node) =>
+          node.kind === 'tool' && node.name === 'exit_plan_mode' && node.status === 'awaiting_approval',
+      )
   approvalRuntime.render({
     key,
+    ...(planApproval ? { kind: 'plan' as const } : {}),
     title: t('app.approval.title'),
     summary,
     impact,

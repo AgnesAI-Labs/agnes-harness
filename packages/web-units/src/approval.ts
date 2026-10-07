@@ -25,6 +25,8 @@ export interface ApprovalView {
   preview?: string
   actions: readonly ApprovalAction[]
   disabled: boolean
+  /** Presentation marker for plan approval; the supplied actions remain authoritative. */
+  kind?: 'plan'
 }
 
 export interface ApprovalHandle {
@@ -82,7 +84,13 @@ export const Approval = forwardRef<ApprovalHandle, ApprovalProps>(function Appro
     view
       ? createElement(
           'div',
-          { key: view.key, 'data-approval-key': view.key },
+          {
+            key: view.key,
+            'data-approval-key': view.key,
+            'data-testid': view.kind === 'plan' ? 'plan-approval-card' : 'approval-card',
+            role: 'region',
+            'aria-label': view.title,
+          },
           createElement('h2', null, view.title),
           createElement('p', null, view.summary),
           createElement('p', { className: 'approval-impact' }, view.impact),
@@ -93,7 +101,13 @@ export const Approval = forwardRef<ApprovalHandle, ApprovalProps>(function Appro
           // Focusable so a keyboard user can scroll arguments that are longer than the card.
           ...(view.preview === undefined
             ? []
-            : [createElement('pre', { key: 'preview', tabIndex: 0 }, view.preview)]),
+            : [
+                createElement(
+                  'pre',
+                  { key: 'preview', tabIndex: 0, 'data-testid': 'approval-preview' },
+                  view.preview,
+                ),
+              ]),
           createElement(
             'div',
             { className: 'approval-actions' },
@@ -104,6 +118,7 @@ export const Approval = forwardRef<ApprovalHandle, ApprovalProps>(function Appro
                   key: action.id,
                   type: 'button',
                   'data-approval-action': action.id,
+                  'data-testid': 'approval-action',
                   disabled: view.disabled,
                   onClick: action.onSelect,
                   ref: (button: HTMLButtonElement | null) => {

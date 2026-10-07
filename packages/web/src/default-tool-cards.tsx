@@ -3,6 +3,11 @@ import type { ToolCardInlinePayload } from '@agnes/protocol/gen/slots'
 import type { ClientResourceService, SessionService } from '@agnes/web-client'
 import { Button } from '@agnes/web-ui'
 import { useEffect, useState } from 'react'
+import { toolCardsLocaleCatalog } from './locales/tool-cards.js'
+
+type Text = (key: string) => string
+const englishDictionary: Record<string, string> = toolCardsLocaleCatalog.en
+const english: Text = (key) => englishDictionary[key] ?? key
 
 type Question = NonNullable<ToolCardInlinePayload['question']>
 type Deliverable = NonNullable<ToolCardInlinePayload['deliverables']>[number]
@@ -11,7 +16,9 @@ function QuestionCard({
   question,
   session,
   answered,
+  t,
 }: {
+  t: Text
   question: Question
   session?: SessionService | undefined
   answered: boolean
@@ -34,28 +41,37 @@ function QuestionCard({
     setAnswers((previous) => ({ ...previous, [id]: value }))
   return (
     <form
-      aria-label="Answer questions"
+      className="conversation-native-card question-card"
+      data-testid="question-card"
+      data-question-id={question.id}
+      aria-label={t('cards.question.title')}
       onSubmit={(event) => {
         event.preventDefault()
         if (!session || sending || answered) return
         if (!valid) {
-          setError('Choose an answer for every question.')
+          setError('cards.question.invalid')
           return
         }
         setSending(true)
         setError(undefined)
         void session.commands
           .prompt([{ type: 'text', text: encoded }])
-          .catch(() => setError('Answer could not be submitted. Try again.'))
+          .catch(() => setError('cards.question.failed'))
           .finally(() => setSending(false))
       }}
     >
       {question.questions.map((q) => (
-        <fieldset key={q.id} disabled={answered || sending}>
+        <fieldset
+          key={q.id}
+          data-testid="question-field"
+          data-question-id={q.id}
+          disabled={answered || sending}
+        >
           <legend>{q.question}</legend>
           {q.options?.map((option) => (
             <label key={option}>
               <input
+                data-testid="question-option"
                 type={q.multiple ? 'checkbox' : 'radio'}
                 name={q.id}
                 value={option}
@@ -82,9 +98,10 @@ function QuestionCard({
           ))}
           {(!q.options || q.allowFreeText) && (
             <label>
-              Free text
+              {t('cards.question.freeText')}
               <textarea
-                aria-label={`${q.question}: free text`}
+                data-testid="question-free-text"
+                aria-label={`${q.question}: ${t('cards.question.freeText')}`}
                 maxLength={8192}
                 value={freeText[q.id] ?? ''}
                 onChange={(e) => setFreeText((previous) => ({ ...previous, [q.id]: e.target.value }))}
@@ -93,10 +110,20 @@ function QuestionCard({
           )}
         </fieldset>
       ))}
-      <Button htmlType="submit" disabled={!session || answered || sending || !valid}>
-        {answered ? 'Answered' : sending ? 'Submitting…' : 'Submit answer'}
+      <Button
+        data-testid="question-submit"
+        htmlType="submit"
+        disabled={!session || answered || sending || !valid}
+      >
+        {t(
+          answered
+            ? 'cards.question.answered'
+            : sending
+              ? 'cards.question.submitting'
+              : 'cards.question.submit',
+        )}
       </Button>
-      {error && <p role="alert">{error}</p>}
+      {error && <p role="alert">{t(error)}</p>}
     </form>
   )
 }
@@ -104,7 +131,9 @@ function QuestionCard({
 function DeliverableCard({
   file,
   resources,
+  t,
 }: {
+  t: Text
   file: Deliverable
   resources?: ClientResourceService | undefined
 }) {
@@ -129,7 +158,7 @@ function DeliverableCard({
           else r.release()
         })
         .catch(() => {
-          if (active) setError('File is unavailable')
+          if (active) setError('cards.file.unavailable')
         })
     return () => {
       active = false
@@ -137,21 +166,26 @@ function DeliverableCard({
     }
   }, [resources, lane, sha256, size, mime])
   return (
-    <article aria-label={`Deliverable: ${file.name}`}>
+    <article
+      className="conversation-native-card deliverable-card"
+      data-testid="deliverable-card"
+      data-artifact-sha256={sha256}
+      aria-label={`${t('cards.file.title')}: ${file.name}`}
+    >
       <strong>{file.name}</strong>
       {file.description && <p>{file.description}</p>}
       {resource ? (
         <p>
-          <a href={resource.url} target="_blank" rel="noopener noreferrer">
-            Open
+          <a data-testid="deliverable-open" href={resource.url} target="_blank" rel="noopener noreferrer">
+            {t('cards.file.open')}
           </a>
           {' · '}
-          <a href={resource.url} download={file.name}>
-            Download
+          <a data-testid="deliverable-download" href={resource.url} download={file.name}>
+            {t('cards.file.download')}
           </a>
         </p>
       ) : (
-        <p role={error ? 'alert' : 'status'}>{error ?? 'Loading file…'}</p>
+        <p role={error ? 'alert' : 'status'}>{t(error ?? 'cards.file.loading')}</p>
       )}
     </article>
   )
@@ -163,7 +197,9 @@ export function DefaultToolCards({
   session,
   resources,
   answered,
+  t = english,
 }: {
+  t?: Text
   node: Extract<UINode, { kind: 'tool' }>
   session?: SessionService | undefined
   resources?: ClientResourceService | undefined
@@ -179,6 +215,7 @@ export function DefaultToolCards({
             <QuestionCard
               key={`question:${payload.question.id}`}
               question={payload.question}
+              t={t}
               {...(session ? { session } : {})}
               answered={answered.has(payload.question.id)}
             />
@@ -188,6 +225,7 @@ export function DefaultToolCards({
             <DeliverableCard
               key={`${fill.extId}:${file.ref.sha256}:${file.name}`}
               file={file}
+              t={t}
               {...(resources ? { resources } : {})}
             />
           ))
