@@ -6,8 +6,9 @@ import type {
   CompactionPlan,
   HookPayloadMap,
 } from '@agnes/extension-api'
-import type { CompactionPort } from './session.js'
 import { CoreError } from '../types.js'
+import type { CompactionPort } from './session.js'
+
 type BeforeCompactPayload = HookPayloadMap['before_compact']
 type CompactPayload = HookPayloadMap['compact']
 

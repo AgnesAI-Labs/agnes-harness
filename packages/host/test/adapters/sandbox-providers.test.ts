@@ -2,11 +2,7 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { Context } from '@agnes/cordis'
-import {
-  LOCAL_SANDBOX_PROVIDER_ID,
-  type SandboxProvider,
-  sandboxUnavailable,
-} from '@agnes/extension-api'
+import { LOCAL_SANDBOX_PROVIDER_ID, type SandboxProvider, sandboxUnavailable } from '@agnes/extension-api'
 import { afterAll, describe, expect, it } from 'vitest'
 import { createExec, createPolicyExec } from '../../src/adapters/exec.js'
 import { createLocalSandboxProvider } from '../../src/adapters/sandbox-local.js'
@@ -72,7 +68,9 @@ describe('sandbox providers', () => {
     registry.register(box('box'))
     expect(registry.catalog().map((entry) => entry.id)).toEqual(['box', LOCAL_SANDBOX_PROVIDER_ID])
     expect(registry.catalog().every((entry) => entry.restartRequired)).toBe(true)
-    expect(registry.catalog().find((entry) => entry.id === LOCAL_SANDBOX_PROVIDER_ID)?.capabilities).toMatchObject({
+    expect(
+      registry.catalog().find((entry) => entry.id === LOCAL_SANDBOX_PROVIDER_ID)?.capabilities,
+    ).toMatchObject({
       network: false,
       fsWrite: [],
       available: true,
@@ -86,7 +84,9 @@ describe('sandbox providers', () => {
 
   it('runs a local command and stops it when the signal aborts', async () => {
     const exec = createExec({ detached: false })
-    const instance = await createLocalSandboxProvider(exec, process.platform, { ownProcesses: true }).create({})
+    const instance = await createLocalSandboxProvider(exec, process.platform, { ownProcesses: true }).create(
+      {},
+    )
     const ok = await instance.exec({
       argv: [process.execPath, '-e', 'process.stdout.write("ok")'],
       cwd,
@@ -118,10 +118,12 @@ describe('sandbox providers', () => {
     await expect(
       bindStartupSandboxProvider({}, { sandbox: { provider: 'docker' } }, cwd, false),
     ).rejects.toThrow(/not registered/)
-    await expect(bindStartupSandboxProvider({}, undefined, cwd, false)).resolves.toBe(LOCAL_SANDBOX_PROVIDER_ID)
-    await expect(bindStartupSandboxProvider({}, { sandbox: { provider: 'docker' } }, cwd, true)).rejects.toThrow(
-      /remote workspace/,
+    await expect(bindStartupSandboxProvider({}, undefined, cwd, false)).resolves.toBe(
+      LOCAL_SANDBOX_PROVIDER_ID,
     )
+    await expect(
+      bindStartupSandboxProvider({}, { sandbox: { provider: 'docker' } }, cwd, true),
+    ).rejects.toThrow(/remote workspace/)
   })
 
   it('does not fall back to the local spawner when the selected provider is unavailable', async () => {
@@ -161,9 +163,9 @@ describe('sandbox providers', () => {
       state: () => ({ backend: 'none', onUnavailable: 'deny' }),
       authorizeCwd: async (path) => path,
     })
-    await expect(
-      run(['echo'], { cwd, sandbox: { policyDigest: digest, backend: 'none' } }),
-    ).rejects.toThrow(/SANDBOX_UNAVAILABLE/)
+    await expect(run(['echo'], { cwd, sandbox: { policyDigest: digest, backend: 'none' } })).rejects.toThrow(
+      /SANDBOX_UNAVAILABLE/,
+    )
     await run(['echo'], { cwd, sandbox: { policyDigest: digest, backend: 'none', provider: 'box' } })
     expect(calls).toEqual([['echo']])
   })

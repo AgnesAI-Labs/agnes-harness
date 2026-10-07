@@ -1,11 +1,11 @@
 import { existsSync, readFileSync } from 'node:fs'
 import { basename, dirname, join } from 'node:path'
-import * as protocol from '@agnes/protocol'
 import {
   checkProvidedExternals,
   missingPluginModule,
   PluginModuleError,
 } from '@agnes/plugin-runtime/provided-externals'
+import * as protocol from '@agnes/protocol'
 import { createJiti } from 'jiti'
 import { HostError } from '../errors.js'
 import { localPluginVirtualModules } from '../local-plugin-loader.js'

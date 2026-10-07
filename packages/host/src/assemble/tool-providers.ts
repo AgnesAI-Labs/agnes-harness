@@ -1,22 +1,22 @@
 import { type Context, Service } from '@agnes/cordis'
-import { LoopEventRegistry, defaultToolRuntimeProvider, defaultToolPolicy } from '@agnes/core'
-import { defineProviderKind } from '@agnes/extension-api'
+import { defaultToolPolicy, defaultToolRuntimeProvider, LoopEventRegistry } from '@agnes/core'
 import type {
-  LoopEventRegistryPort,
-  LoopEventName,
-  LoopEventHandler,
-  LoopEventPayloadMap,
-  LoopEventReturnMap,
   LoopEventContext,
+  LoopEventHandler,
+  LoopEventName,
+  LoopEventPayloadMap,
+  LoopEventRegistryPort,
+  LoopEventReturnMap,
   ToolPolicy,
   ToolPolicyRegistryPort,
   ToolRuntimeProvider,
   ToolRuntimeRegistryPort,
 } from '@agnes/extension-api'
+import { defineProviderKind } from '@agnes/extension-api'
 import type { RowOriginLookup } from '@agnes/plugin-runtime/host'
 import { normalizePluginExport } from '@agnes/plugin-runtime/host'
 import type { PackageModule } from './packages.js'
-import { installProviderRegistry, providerSource, type ProviderRegistry } from './provider-registry.js'
+import { installProviderRegistry, type ProviderRegistry, providerSource } from './provider-registry.js'
 
 declare module '@agnes/cordis' {
   interface Context {

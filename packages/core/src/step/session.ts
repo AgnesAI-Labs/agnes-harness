@@ -1,23 +1,21 @@
 import type {
   HookPayloadMap,
-  ToolRuntime,
-  ToolRuntimeProvider,
-  ToolRuntimeRegistryPort,
-  ToolPolicyRegistryPort,
-  LoopEventRegistryPort,
   HookReturnMap,
   Logger,
   LoopContext,
   LoopDriver,
+  LoopEventRegistryPort,
   LoopFactory,
   LoopSelection,
   LoopStepOutcome,
   ToolContext,
   ToolMeta,
+  ToolPolicyRegistryPort,
   ToolResult,
+  ToolRuntime,
+  ToolRuntimeProvider,
+  ToolRuntimeRegistryPort,
 } from '@agnes/extension-api'
-import { ToolPolicyRegistry, ToolRuntimeRegistry } from '../effects/tool-providers.js'
-import { LoopEventRegistry, loopEventContext } from '../loop/events.js'
 import type {
   Actor,
   ApprovalMode,
@@ -57,6 +55,7 @@ import {
   type HostDispatchObservation,
   type HostToolDispatchPort,
 } from '../effects/tool-dispatch.js'
+import { ToolPolicyRegistry, ToolRuntimeRegistry } from '../effects/tool-providers.js'
 import type { SeamRuntime } from '../effects/wrap.js'
 import type { InvariantRegistry } from '../invariants/registry.js'
 // A type-only import, erased at compile time, so it is not a runtime cycle back to the kernel.
@@ -66,6 +65,7 @@ import type { SessionLogImpl, Timers } from '../log/session-log.js'
 import { SCAN_PAGE_MAX, type ScanQuery } from '../log/storage.js'
 import { runDeferred } from '../loop/default/deferred.js'
 import { bindDefaultLoopPorts, defaultLoopFactory } from '../loop/default-driver.js'
+import { LoopEventRegistry, loopEventContext } from '../loop/events.js'
 import { createLoopContext, disposeLoopContext } from '../loop/ports.js'
 import type {
   AuxiliaryVisionAssemblyInput,

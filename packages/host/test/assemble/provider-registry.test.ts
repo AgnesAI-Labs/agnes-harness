@@ -1,22 +1,22 @@
 import { Context } from '@agnes/cordis'
 import { defineProviderKind } from '@agnes/extension-api'
 import { expect, it } from 'vitest'
+import { installSandboxProviders } from '../../src/adapters/sandbox-providers.js'
+import { createPersistenceProviderRegistry } from '../../src/adapters/storage-provider.js'
+import { installCompactionEngines } from '../../src/assemble/compaction-engines.js'
+import { installLoops } from '../../src/assemble/loops.js'
+import { installModelAdapters } from '../../src/assemble/model-adapters.js'
 import {
-  ProviderRegistry,
   installProviderRegistry,
+  ProviderRegistry,
   providerSource,
 } from '../../src/assemble/provider-registry.js'
 import {
+  applyProviderPreset,
   readProviderSelection,
   readProviderSelections,
-  applyProviderPreset,
 } from '../../src/assemble/provider-selection.js'
-import { installLoops } from '../../src/assemble/loops.js'
 import { installToolProviders } from '../../src/assemble/tool-providers.js'
-import { installModelAdapters } from '../../src/assemble/model-adapters.js'
-import { installCompactionEngines } from '../../src/assemble/compaction-engines.js'
-import { installSandboxProviders } from '../../src/adapters/sandbox-providers.js'
-import { createPersistenceProviderRegistry } from '../../src/adapters/storage-provider.js'
 
 const kind = defineProviderKind<{ id: string; version: string; ready: boolean }>({
   kind: 'test',

@@ -4,6 +4,7 @@ import { dirname, join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import {
   type CurrentSessionRuntime,
+  DEFAULT_LOOP,
   type Enforcement,
   type HookPort,
   hasChildControl,
@@ -18,7 +19,7 @@ import {
   type SeamName,
 } from '@agnes/core'
 import { API_VERSION, type ExtensionManifest, type LeaseView } from '@agnes/extension-api'
-import { readPluginCapabilities, type RuntimePluginSnapshot } from '@agnes/package-manager'
+import { type RuntimePluginSnapshot, readPluginCapabilities } from '@agnes/package-manager'
 import {
   createMutableSeamImplementations,
   type EntryRow,
@@ -35,30 +36,27 @@ import {
   sandboxHostServices,
   toSeamAdapters,
 } from './adapters/index.js'
+import { createPlatform } from './adapters/platform.js'
+import { powerShellCommand } from './adapters/powershell-command.js'
+import { createPublicFetch } from './adapters/public-fetch/index.js'
 import { createLocalSandboxProvider } from './adapters/sandbox-local.js'
 import {
   bindStartupSandboxProvider,
   installSandboxProviders,
   LOCAL_SANDBOX_PROVIDER_ID,
-  sandboxProviderCatalog,
   type SandboxProviderSlot,
+  sandboxProviderCatalog,
 } from './adapters/sandbox-providers.js'
-import { createPlatform } from './adapters/platform.js'
-import { powerShellCommand } from './adapters/powershell-command.js'
-import { createPublicFetch } from './adapters/public-fetch/index.js'
 import { composeSecrets, createSecretsEnv, createSecretsFile } from './adapters/secrets.js'
 import type { SessionWorkspaceFence } from './adapters/session-workspace.js'
+import { persistenceProviderRegistry } from './adapters/storage-provider.js'
 import { type ApprovalGrantManagement, createApprovalGrantControlPlane } from './approval-grants.js'
+import { childAgentCatalog, installChildAgents, withBuiltinChildAgents } from './assemble/child-agents.js'
 import { assembleCompaction } from './assemble/compaction.js'
 import {
-  childAgentCatalog,
-  installChildAgents,
-  withBuiltinChildAgents,
-} from './assemble/child-agents.js'
-import {
+  compactionEngineCatalog,
   installCompactionEngines,
   withBuiltinCompactionEngines,
-  compactionEngineCatalog,
 } from './assemble/compaction-engines.js'
 import { bindModelContracts } from './assemble/contracts.js'
 import {
@@ -73,33 +71,14 @@ import {
 } from './assemble/ext-rows.js'
 import { bindExtensionInvocations } from './assemble/extension-ports.js'
 import { isolationInventory } from './assemble/isolation-inventory.js'
+import { readAdminLoopDefault } from './assemble/loop-selection.js'
+import { installLoops } from './assemble/loops.js'
 import {
   installModelAdapters,
   modelAdapterCatalog,
   withBuiltinModelAdapters,
 } from './assemble/model-adapters.js'
 import { modelRuntime } from './assemble/model-runtime.js'
-import { installLoops } from './assemble/loops.js'
-import { installToolProviders, withBuiltinToolPolicies } from './assemble/tool-providers.js'
-import { DEFAULT_LOOP } from '@agnes/core'
-import { installProviders } from './assemble/provider-registry.js'
-import {
-  applyProviderSelections,
-  applyProviderPreset,
-  readProviderSelections,
-  providerConfigurationScopes,
-  PROVIDER_KINDS,
-} from './assemble/provider-selection.js'
-import { persistenceProviderRegistry } from './adapters/storage-provider.js'
-import { readAdminLoopDefault } from './assemble/loop-selection.js'
-import {
-  compositionAllowsTool,
-  assertCompositionCompatible,
-  resolveComposition,
-  type CompositionPatch,
-  type ResolvedComposition,
-} from './profile/composition.js'
-import { mergeValue } from './presets/merge.js'
 import { buildOrdinaryRows } from './assemble/ordinary-rows.js'
 import type {
   LoadedRuntimePackage,
@@ -113,14 +92,22 @@ import type {
 import { loadRuntimePackage } from './assemble/packages.js'
 import { buildPresetRows } from './assemble/preset-rows.js'
 import { buildProvider, readCreditsPerUsd, unresolvedProviderAssembly } from './assemble/provider.js'
+import { installProviders } from './assemble/provider-registry.js'
+import {
+  applyProviderPreset,
+  applyProviderSelections,
+  PROVIDER_KINDS,
+  providerConfigurationScopes,
+  readProviderSelections,
+} from './assemble/provider-selection.js'
 import { materializeRoutes, pinPresetRoutes, sweepAwsDestination, verifyRoutes } from './assemble/routes.js'
 import { buildSeamRows, REQUIRED_SEAM_ROW_IDS } from './assemble/seam-rows.js'
 import { initStaticSeams } from './assemble/seams.js'
 import type { HostBuiltinRowClaim, HostPluginTreeBase } from './assemble/seams-cordis.js'
 import { SKILL_ROW_ID, skillRowRevision, withSkillRow } from './assemble/skill-row.js'
+import { installToolProviders, withBuiltinToolPolicies } from './assemble/tool-providers.js'
 import { trustedHookCommands } from './assemble/trusted-hooks.js'
 import type { AssembleDeps } from './assembly-deps.js'
-import { createConfigurationService } from './configuration.js'
 import fixedComputerUseDriverLock from './computer-use/computer-use-driver-lock.json' with { type: 'json' }
 import {
   evaluateFixedComputerUsePlatformAdmission,
@@ -163,6 +150,7 @@ import {
   type ComputerUseArtifactGcRuntime,
   createComputerUseArtifactGcRuntime,
 } from './computer-use-artifact-gc.js'
+import { createConfigurationService } from './configuration.js'
 import { HostError, type HostErrorCode } from './errors.js'
 import { createExtensionActivationBarrier } from './ext-host/activation-barrier.js'
 import { type BuiltinRowHandle, createBuiltinRowHost } from './ext-host/builtin-row-host.js'
@@ -183,9 +171,17 @@ import { ServiceRegistry } from './ext-host/services.js'
 import { ExtensionSessions } from './ext-host/session-bindings.js'
 import { Rollback } from './lifecycle.js'
 import { ownStateRoots } from './paths.js'
+import { mergeValue } from './presets/merge.js'
 import { resolvePreset } from './presets/resolve.js'
 import type { PresetDoc } from './presets/types.js'
 import { createPrivateArtifactStore } from './private-artifact-store.js'
+import {
+  assertCompositionCompatible,
+  type CompositionPatch,
+  compositionAllowsTool,
+  type ResolvedComposition,
+  resolveComposition,
+} from './profile/composition.js'
 import { withAssemblyIsolation } from './profile/isolation.js'
 import type { ResolvedProfile } from './profile/types.js'
 import {
@@ -936,7 +932,12 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
         const description = pluginCatalogue.describe(packageId, snapshotId)
         const source = pluginCatalogue.get(packageId, snapshotId)
         const declaredCapabilities = source ? readPluginCapabilities(source.snapshot.directory) : undefined
-        return description && { ...description, ...(declaredCapabilities === undefined ? {} : { declaredCapabilities }) }
+        return (
+          description && {
+            ...description,
+            ...(declaredCapabilities === undefined ? {} : { declaredCapabilities }),
+          }
+        )
       },
     })
     const rowServices = createRowServiceHost((packageId, snapshotId) =>

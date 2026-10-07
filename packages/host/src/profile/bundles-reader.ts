@@ -1,7 +1,7 @@
 import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { defaultVerifyIntegrity, packageDir, type Lockfile } from '@agnes/package-manager'
-import { parsePackageBundles, type BundleCatalog } from './composition.js'
+import { defaultVerifyIntegrity, type Lockfile, packageDir } from '@agnes/package-manager'
+import { type BundleCatalog, parsePackageBundles } from './composition.js'
 
 /** Read only enabled, trusted package data; never import a bundle's executable entry. */
 export function readInstalledBundles(lock: Lockfile, dataDir: string, profile: string): BundleCatalog {

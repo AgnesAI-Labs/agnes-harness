@@ -1,8 +1,8 @@
+import type { ToolDef } from '@agnes/extension-api'
 import type { PluginTestRegistration } from '@agnes/plugin-runtime/testkit'
 import { createExtensionOrder } from '../src/ext-host/extension-status-book.js'
 import type { KernelPorts } from '../src/ext-host/ports.js'
 import { createRowExtensionHost } from '../src/ext-host/row-extension-host.js'
-import type { ToolDef } from '@agnes/extension-api'
 
 /** The production row-registration bridge with in-memory downstream ports and no native storage. */
 export function createPluginTestRegistration(): PluginTestRegistration {

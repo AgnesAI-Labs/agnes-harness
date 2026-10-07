@@ -8,13 +8,13 @@ import {
   RuntimeGenerationSnapshotStore,
   type RuntimePluginSnapshot,
 } from '@agnes/package-manager'
+import { defineAgnesPlugin } from '@agnes/plugin-runtime'
+import { createPluginRow } from '@agnes/plugin-runtime/host'
 import {
   createSkillCandidateRegistry,
   restoreSkillGeneration,
   type SkillGenerationSnapshot,
 } from '@agnes/resource-control-runtime'
-import { defineAgnesPlugin } from '@agnes/plugin-runtime'
-import { createPluginRow } from '@agnes/plugin-runtime/host'
 import { expect, it } from 'vitest'
 import { captureGenerationResources, createGenerationSkills } from '../src/runtime-generation-resources.js'
 import { buildCompleteRuntimeTarget } from '../src/runtime-target-builder.js'

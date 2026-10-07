@@ -1,6 +1,5 @@
 import { modelAdaptersPlugin, WireAdapter } from '@agnes/ai'
 import { type Context, Service } from '@agnes/cordis'
-import { defineProviderKind } from '@agnes/extension-api'
 import type {
   ModelAdapter,
   ModelAdapterCatalogEntry,
@@ -8,12 +7,13 @@ import type {
   ModelAdapterInstance,
   ModelAdapterRegistration,
 } from '@agnes/extension-api'
+import { defineProviderKind } from '@agnes/extension-api'
 import { scriptedAdapter } from '@agnes/model-adapters'
 import type { RowOriginLookup } from '@agnes/plugin-runtime/host'
 import { normalizePluginExport } from '@agnes/plugin-runtime/host'
 import { HostError } from '../errors.js'
 import type { PackageModule } from './packages.js'
-import { installProviderRegistry, providerSource, type ProviderRegistry } from './provider-registry.js'
+import { installProviderRegistry, type ProviderRegistry, providerSource } from './provider-registry.js'
 
 declare module '@agnes/cordis' {
   interface Context {

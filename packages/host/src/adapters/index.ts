@@ -17,7 +17,6 @@ import {
   type ExecAdapter,
   type ExecGateState,
 } from './exec.js'
-import { createSandboxDispatchExec, type SandboxProviderSlot } from './sandbox-providers.js'
 import { createRemoteExec } from './exec-remote.js'
 import { createFs, type FencedFs, type FsBinding, type HostFs } from './fs.js'
 import type { FsIo } from './fs-io.js'
@@ -27,13 +26,14 @@ import { createPlatform, type PlatformBackend, type SandboxBackendReport } from 
 import { type PowerShellDescriptor, resolveConfiguredPowerShell } from './powershell.js'
 import { powerShellCommand, powerShellDescription } from './powershell-command.js'
 import type { RemoteTransport } from './remote-transport.js'
+import { createSandboxDispatchExec, type SandboxProviderSlot } from './sandbox-providers.js'
 import { composeSecrets, createSecretsEnv, createSecretsFile, type SecretResolver } from './secrets.js'
 import {
   createSessionWorkspaceAdapterFactory,
   type SessionWorkspaceAdapterFactory,
 } from './session-workspace.js'
-import { type SqliteStorage, type TableStore } from './storage-sqlite.js'
 import { openConfiguredPersistence } from './storage-provider.js'
+import { type SqliteStorage, type TableStore } from './storage-sqlite.js'
 
 // The deadline is carried by the signal rather than by a field grafted onto the request, so one
 // prompter serves both a timeout and an explicit cancellation.

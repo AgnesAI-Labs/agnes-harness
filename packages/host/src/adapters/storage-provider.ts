@@ -1,9 +1,9 @@
 import { join } from 'node:path'
 import { CoreError, type CoreErrorCode } from '@agnes/core'
 import {
-  defineProviderKind,
   DEFAULT_PERSISTENCE_PROVIDER_ID,
   definePersistenceProvider,
+  defineProviderKind,
   PERSISTENCE_EFFECT,
   type PersistenceCommit,
   type PersistenceLeaseClaim,
@@ -11,8 +11,8 @@ import {
   type PersistenceScanQuery,
   type PersistenceSessionStore,
 } from '@agnes/extension-api'
-import { HostError } from '../errors.js'
 import { ProviderRegistry } from '../assemble/provider-registry.js'
+import { HostError } from '../errors.js'
 import { createSqliteStorage, type SqliteStorage } from './storage-sqlite.js'
 
 const PROVIDER_ID = /^[a-z][a-z0-9._-]{0,63}$/

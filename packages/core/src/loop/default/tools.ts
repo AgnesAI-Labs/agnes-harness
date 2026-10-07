@@ -1,4 +1,3 @@
-import { dispatchLoopEvent } from '../events.js'
 import type { ToolResult } from '@agnes/extension-api'
 import type { Actor, ExecutionDomain, JsonValue, ResolvedToolCallPolicy } from '@agnes/protocol'
 import { hasChildControl, transitionChildState } from '../../child/store.js'
@@ -35,6 +34,7 @@ import type { ChainStep, SessionImpl, StepOutcome } from '../../step/session.js'
 import { summarizeCall } from '../../step/summarize-call.js'
 import { stepVerifyInput, toolVerifyInput } from '../../step/verify-input.js'
 import { CoreError, type EventInput, type Seq } from '../../types.js'
+import { dispatchLoopEvent } from '../events.js'
 import { resolveModel } from './inference.js'
 import { approvalContinuation } from './parked.js'
 

@@ -91,7 +91,10 @@ describe('persistence provider', () => {
     const profile = await resolveProfile({ builtin: 'local-dev', lock }, env)
     await expect(
       openAdapters(profile, { dataDir: dir, workspaceRoot: dir, persistence: { provider: 'missing' } }),
-    ).rejects.toMatchObject({ code: 'E_DEP_MISSING', detail: { provider: 'missing', effect: 'restart-required' } })
+    ).rejects.toMatchObject({
+      code: 'E_DEP_MISSING',
+      detail: { provider: 'missing', effect: 'restart-required' },
+    })
     expect(existsSync(join(dir, 'sessions.db'))).toBe(false)
   })
 
@@ -223,9 +226,10 @@ describe('persistence provider', () => {
       state: { effect: 'restart-required' },
       open: () => emptyStore(),
     })
-    expect(readNamedExports('example.jsonl', 'index.js', { persistenceProvider: provider }).persistenceProvider?.id).toBe(
-      'jsonl',
-    )
+    expect(
+      readNamedExports('example.jsonl', 'index.js', { persistenceProvider: provider }).persistenceProvider
+        ?.id,
+    ).toBe('jsonl')
     expect(() =>
       readNamedExports('example.sqlite', 'index.js', { persistenceProvider: { ...provider, id: 'sqlite' } }),
     ).toThrow(/sqlite/)

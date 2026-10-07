@@ -1,5 +1,5 @@
-import { resetChildAgentAllowlists } from '@agnes/core'
 import { Context } from '@agnes/cordis'
+import { resetChildAgentAllowlists } from '@agnes/core'
 import type { ChildAgentCapabilities, ChildAgentProvider, ChildAgentResult } from '@agnes/extension-api'
 import { expect, it } from 'vitest'
 import { installChildAgents } from '../../src/assemble/child-agents.js'

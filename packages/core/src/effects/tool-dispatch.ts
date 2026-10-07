@@ -1,5 +1,5 @@
 import type { ToolContext, ToolResult, ToolRuntime } from '@agnes/extension-api'
-import { inspectJsonData, type ExecutionDomain } from '@agnes/protocol'
+import { type ExecutionDomain, inspectJsonData } from '@agnes/protocol'
 import { canonicalJson } from '../request/hash.js'
 import { CoreError } from '../types.js'
 import type { ExecuteAttempt } from './execute-permits.js'

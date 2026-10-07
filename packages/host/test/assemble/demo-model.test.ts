@@ -1,16 +1,16 @@
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { fakeRequest } from '@agnes/ai/testkit'
 import { Context } from '@agnes/cordis'
 import { presetDefaults } from '@agnes/core'
-import { fakeRequest } from '@agnes/ai/testkit'
 import { expect, it } from 'vitest'
+import { builtinModelAdaptersPlugin, installModelAdapters } from '../../src/assemble/model-adapters.js'
 import { buildProvider } from '../../src/assemble/provider.js'
-import { installModelAdapters, builtinModelAdaptersPlugin } from '../../src/assemble/model-adapters.js'
 import { materializeRoutes } from '../../src/assemble/routes.js'
 import { loadTemplate } from '../../src/profile/templates.js'
-import { createTestHost } from '../../testkit/index.js'
 import type { ResolvedProfile } from '../../src/profile/types.js'
+import { createTestHost } from '../../testkit/index.js'
 
 it('runs the fresh local-dev demo through registry and provider without credentials, across repeated turns', async () => {
   const profile = loadTemplate('local-dev') as ResolvedProfile

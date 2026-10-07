@@ -12,13 +12,13 @@ import {
   sandboxUnavailable,
 } from '@agnes/extension-api'
 import type { RowOriginLookup } from '@agnes/plugin-runtime/host'
-import { HostError } from '../errors.js'
-import type { ExecAdapter } from './exec.js'
 import {
   installProviderRegistry,
-  providerSource,
   type ProviderRegistry,
+  providerSource,
 } from '../assemble/provider-registry.js'
+import { HostError } from '../errors.js'
+import type { ExecAdapter } from './exec.js'
 
 export { LOCAL_SANDBOX_PROVIDER_ID }
 

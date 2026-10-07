@@ -11,8 +11,8 @@ import {
   type PluginExtensionAPI,
   type ToolDef,
 } from '@agnes/extension-api'
+import { inspectJsonData, isHookEvent, type PluginCapabilities } from '@agnes/protocol'
 import { observePluginCapabilities } from '../plugin-capability-observer.js'
-import { type PluginCapabilities, inspectJsonData, isHookEvent } from '@agnes/protocol'
 import type { Lease } from './lease.js'
 import type { KernelPorts, RegMeta } from './ports.js'
 import { projectionReader } from './projection-reader.js'

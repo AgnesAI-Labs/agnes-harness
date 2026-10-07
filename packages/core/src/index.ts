@@ -4,7 +4,31 @@
 
 export type { Provider } from '@agnes/protocol'
 export { WORKSPACE_SECRET_DIRS } from '@agnes/protocol'
+export {
+  applyChildAgentConfig,
+  assertChildAgentAllowed,
+  childAgentAllowlist,
+  normalizeChildAgentAllowlist,
+  resetChildAgentAllowlists,
+  setChildAgentAllowlist,
+} from './child/allowlist.js'
 export { capToMicrocredits, chargeToMicrocredits, conservativeModelCredits } from './child/credits.js'
+export type { ExternalChildControls } from './child/directory.js'
+export {
+  externalChild,
+  externalChildren,
+  trackExternalChild,
+  updateExternalChild,
+} from './child/directory.js'
+export { createChildEventQueue } from './child/events.js'
+export { runLoopChild } from './child/loop-port.js'
+export type { InProcessChildBackend, ResidentStart, ResidentTurn } from './child/provider.js'
+export {
+  IN_PROCESS_CHILD_CAPABILITIES,
+  IN_PROCESS_CHILD_PROVIDER_ID,
+  inProcessChildAgentProvider,
+} from './child/provider.js'
+export { bindChildFactory, childBackend, unbindChildFactory } from './child/sessions.js'
 export type { ChildControlStore } from './child/store.js'
 export { hasChildControl, recoverCreatingChildAttempts } from './child/store.js'
 export type {
@@ -25,30 +49,6 @@ export type {
   TreeUsage,
 } from './child/types.js'
 export { canTransitionChildState, isTerminalChildState } from './child/types.js'
-export {
-  applyChildAgentConfig,
-  assertChildAgentAllowed,
-  childAgentAllowlist,
-  normalizeChildAgentAllowlist,
-  resetChildAgentAllowlists,
-  setChildAgentAllowlist,
-} from './child/allowlist.js'
-export {
-  externalChild,
-  externalChildren,
-  trackExternalChild,
-  updateExternalChild,
-} from './child/directory.js'
-export type { ExternalChildControls } from './child/directory.js'
-export { runLoopChild } from './child/loop-port.js'
-export {
-  IN_PROCESS_CHILD_CAPABILITIES,
-  IN_PROCESS_CHILD_PROVIDER_ID,
-  inProcessChildAgentProvider,
-} from './child/provider.js'
-export type { InProcessChildBackend, ResidentStart, ResidentTurn } from './child/provider.js'
-export { bindChildFactory, childBackend, unbindChildFactory } from './child/sessions.js'
-export { createChildEventQueue } from './child/events.js'
 export {
   assertFsEnforces,
   assertNotDenied,
@@ -84,6 +84,8 @@ export type {
   HostToolDispatchInput,
   HostToolDispatchPort,
 } from './effects/tool-dispatch.js'
+export { defaultToolPolicy, ToolPolicyRegistry, ToolRuntimeRegistry } from './effects/tool-providers.js'
+export { defaultToolRuntimeProvider } from './effects/tool-runtime.js'
 export type { SeamFailure } from './effects/wrap.js'
 export { SeamRuntime, withTimeout } from './effects/wrap.js'
 export { HookBlockedError } from './hooks/block.js'
@@ -128,6 +130,7 @@ export type {
 } from './log/storage.js'
 export { registerKey, SCAN_PAGE_MAX, scanTruncated } from './log/storage.js'
 export { DEFAULT_LOOP, defaultLoopFactory } from './loop/default-driver.js'
+export { LoopEventRegistry } from './loop/events.js'
 export { type LoopPluginContext, LoopRegistry, loopKey, registerLoopPlugin } from './loop/registry.js'
 export {
   AUXILIARY_VISION_MAX_EDGE,
@@ -302,7 +305,3 @@ export type {
   WorkspacePublicationDispatch,
 } from './workspace/runtime.js'
 export { createWorkspaceInvocationPort } from './workspace/runtime.js'
-
-export { ToolPolicyRegistry, ToolRuntimeRegistry, defaultToolPolicy } from './effects/tool-providers.js'
-export { defaultToolRuntimeProvider } from './effects/tool-runtime.js'
-export { LoopEventRegistry } from './loop/events.js'

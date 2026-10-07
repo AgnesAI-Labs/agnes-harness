@@ -1,14 +1,14 @@
 import type {
   CompactionInput,
-  CompactionOutput,
   CompactionModelPort,
+  CompactionOutput,
   HookPayloadMap,
   HookReturnMap,
 } from '@agnes/extension-api'
 import type { Billing, InferenceEvent, ThinkingLevel } from '@agnes/protocol'
 import { settleTreeSpend } from '../../child/runtime-budget.js'
-import { scanAll } from '../../log/scan-pages.js'
 import { HookBlockedError } from '../../hooks/block.js'
+import { scanAll } from '../../log/scan-pages.js'
 import type { SurfaceNode } from '../../project/surface.js'
 import { pairClosed, validateReplace } from '../../project/surface.js'
 import type { CostLedger, TokenCounts } from '../../reduce/shapes.js'
@@ -47,6 +47,7 @@ export type BeforeCompactPayload = HookPayloadMap['before_compact']
 export type CompactPayload = HookPayloadMap['compact']
 
 import { CompactionRunner } from '../../step/compaction-runner.js'
+
 export { CompactionRunner } from '../../step/compaction-runner.js'
 
 const SUMMARY_NO_TOOLS_PREAMBLE =

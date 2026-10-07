@@ -1,3 +1,4 @@
+import { type Context, Service } from '@agnes/cordis'
 import {
   assertChildAgentAllowed,
   childAgentAllowlist,
@@ -5,8 +6,6 @@ import {
   IN_PROCESS_CHILD_PROVIDER_ID,
   setChildAgentAllowlist,
 } from '@agnes/core'
-import { type Context, Service } from '@agnes/cordis'
-import { defineProviderKind } from '@agnes/extension-api'
 import type {
   ProviderSelection,
   ChildAgentAllowlist,
@@ -17,10 +16,11 @@ import type {
   ChildAgentService,
   ChildAgentStartOptions,
 } from '@agnes/extension-api'
+import { defineProviderKind } from '@agnes/extension-api'
 import { normalizePluginExport, type RowOriginLookup } from '@agnes/plugin-runtime/host'
 import { HostError } from '../errors.js'
 import type { PackageModule } from './packages.js'
-import { installProviderRegistry, providerSource, type ProviderRegistry } from './provider-registry.js'
+import { installProviderRegistry, type ProviderRegistry, providerSource } from './provider-registry.js'
 
 declare module '@agnes/cordis' {
   interface Context {

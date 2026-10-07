@@ -1,4 +1,3 @@
-import { beforeLoopModelRequest, loopEventContext } from '../events.js'
 import type { InferenceEvent, JsonValue, ModelRecord, RequestBody as WireBody } from '@agnes/protocol'
 import { conservativeSerializedTokens } from '../../child/credits.js'
 import {
@@ -65,6 +64,7 @@ import { runCoreReplacement, runSlot } from '../../step/reentry.js'
 import type { OpContext, SessionImpl, StepOutcome } from '../../step/session.js'
 import { toolArgumentError } from '../../step/tool-args.js'
 import { CoreError, type Event, type EventInput, type Seq } from '../../types.js'
+import { beforeLoopModelRequest, loopEventContext } from '../events.js'
 import { contextBudgetError } from './gate.js'
 
 /** Truncation reasons already reported per session in this process: one diagnostic row each. */

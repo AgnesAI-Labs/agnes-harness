@@ -1,12 +1,12 @@
+import { DEFAULT_LOOP, IN_PROCESS_CHILD_PROVIDER_ID, type PresetView } from '@agnes/core'
 import {
   LOCAL_SANDBOX_PROVIDER_ID,
-  type ProviderSelection,
   type ProviderCatalogEntry,
+  type ProviderSelection,
 } from '@agnes/extension-api'
-import { DEFAULT_LOOP, IN_PROCESS_CHILD_PROVIDER_ID, type PresetView } from '@agnes/core'
 import { HostError } from '../errors.js'
-import type { ResolvedProfile } from '../profile/types.js'
 import type { PresetDoc } from '../presets/types.js'
+import type { ResolvedProfile } from '../profile/types.js'
 
 export const PROVIDER_KINDS = [
   'loop',

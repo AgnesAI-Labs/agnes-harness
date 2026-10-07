@@ -3,9 +3,9 @@ import type {
   ProviderCatalogEntry,
   ProviderIdentity,
   ProviderKind,
+  ProviderRegistrationPort,
   ProviderSelection,
   ProvidersCatalogPort,
-  ProviderRegistrationPort,
 } from '@agnes/extension-api'
 import type { RowOriginLookup } from '@agnes/plugin-runtime/host'
 import { HostError } from '../errors.js'

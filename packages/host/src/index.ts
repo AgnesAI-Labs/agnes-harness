@@ -62,6 +62,7 @@ export {
   parseSecretRef,
   type SecretResolver,
 } from './adapters/secrets.js'
+export { openConfiguredPersistence, sqlitePersistenceProvider } from './adapters/storage-provider.js'
 export {
   createSqliteStorage,
   type SqliteStorage,
@@ -69,7 +70,6 @@ export {
   type TableHandle,
   type TableStore,
 } from './adapters/storage-sqlite.js'
-export { openConfiguredPersistence, sqlitePersistenceProvider } from './adapters/storage-provider.js'
 export { createAdminSessionSelection, type HostAdminSessionCatalog } from './admin-session-selection.js'
 export {
   type ApprovalGrantBinding,
@@ -82,10 +82,25 @@ export {
   createLocalArtifactReadStore,
   type LocalArtifactReadStore,
 } from './artifact-read-store.js'
+export { ChildAgentRegistry, childAgentCatalog } from './assemble/child-agents.js'
+export { CompactionEngineRegistry, compactionEngineCatalog } from './assemble/compaction-engines.js'
 // MCP-ROWS stage 2b step 3 prep: worker-runtime needs this to build the rows `Assembled['extensionRows']`
 // takes (`prepare({..., dynamic})`) without reaching into Host's internal assemble/ directory.
 export type { DynamicExtension } from './assemble/ext-rows.js'
+export { ModelAdapterRegistry, modelAdapterCatalog } from './assemble/model-adapters.js'
 export * from './assemble/packages.js'
+export {
+  installProviderRegistry,
+  installProviders,
+  ProviderRegistry,
+  ProvidersService,
+} from './assemble/provider-registry.js'
+export {
+  applyProviderSelections,
+  PROVIDER_KINDS,
+  readProviderSelection,
+  readProviderSelections,
+} from './assemble/provider-selection.js'
 export * from './assemble/routes.js'
 export type { HostPluginTreeBase } from './assemble/seams-cordis.js'
 export { ASSEMBLY_STEPS, type AssembleDeps, type Assembled, type AssemblyStep, assemble } from './assemble.js'
@@ -380,7 +395,9 @@ export {
   ownStateRoots,
 } from './paths.js'
 export * from './presets/index.js'
+export * from './profile/bundle-selection.js'
 export { canonicalJson, sha256hex } from './profile/canonical.js'
+export * from './profile/composition.js'
 export { DEFAULT_COMPUTER_USE } from './profile/computer-use.js'
 export {
   type ConfigurationProfileInputsOptions,
@@ -414,6 +431,8 @@ export type { PluginManageBridge, PluginManageInvocation } from './resources/plu
 export { createSkillInstaller, type SkillInstallAuthority } from './resources/skill-install.js'
 export { validInstallPathPolicy } from './resources/skill-install-files.js'
 export type { SkillInstallBridge, SkillInstallInvocation } from './resources/skill-install-port.js'
+export type { PluginGenerationStatus } from './runtime-generation-host.js'
+export { buildCompleteRuntimeTarget } from './runtime-target-builder.js'
 export * from './runtime-target-publisher.js'
 export * from './runtime-target-report.js'
 export * from './sandbox-readiness-manager.js'
@@ -438,25 +457,3 @@ export {
   type WorkspaceBinding,
 } from './workspace-authority.js'
 export * from './workspace-policy.js'
-
-export { modelAdapterCatalog, ModelAdapterRegistry } from './assemble/model-adapters.js'
-
-export { compactionEngineCatalog, CompactionEngineRegistry } from './assemble/compaction-engines.js'
-export { childAgentCatalog, ChildAgentRegistry } from './assemble/child-agents.js'
-export type { PluginGenerationStatus } from './runtime-generation-host.js'
-export { buildCompleteRuntimeTarget } from './runtime-target-builder.js'
-export * from './profile/composition.js'
-export * from './profile/bundle-selection.js'
-
-export {
-  ProviderRegistry,
-  ProvidersService,
-  installProviders,
-  installProviderRegistry,
-} from './assemble/provider-registry.js'
-export {
-  readProviderSelection,
-  readProviderSelections,
-  applyProviderSelections,
-  PROVIDER_KINDS,
-} from './assemble/provider-selection.js'

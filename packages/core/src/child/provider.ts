@@ -53,7 +53,8 @@ function requireCapability(ok: boolean, message: string): void {
  * Pass `resolve` only from tests; production uses the session binding.
  */
 export function inProcessChildAgentProvider(
-  resolve: (sessionKey: string) => InProcessChildBackend | undefined = (sessionKey) => childBackend(sessionKey),
+  resolve: (sessionKey: string) => InProcessChildBackend | undefined = (sessionKey) =>
+    childBackend(sessionKey),
 ): ChildAgentProvider {
   const capabilities = IN_PROCESS_CHILD_CAPABILITIES
   return {
@@ -68,7 +69,10 @@ export function inProcessChildAgentProvider(
         providerId: IN_PROCESS_CHILD_PROVIDER_ID,
         ...(options.model ? { model: options.model } : {}),
       })
-      requireCapability(!options.fork || capabilities.inheritsParentContext, 'provider cannot inherit parent context')
+      requireCapability(
+        !options.fork || capabilities.inheritsParentContext,
+        'provider cannot inherit parent context',
+      )
       requireCapability(!options.model || capabilities.modelSelection, 'provider cannot select a child model')
       requireCapability(
         options.isolation !== 'worktree' || capabilities.worktree,

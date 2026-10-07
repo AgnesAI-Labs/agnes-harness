@@ -1,8 +1,8 @@
 import { SLOT_NAMES, validatePreset } from '@agnes/protocol'
 import { DEPRECATED_ACTION } from '../command-policy.js'
 import { HostError } from '../errors.js'
-import type { PresetDoc } from './types.js'
 import { checkCompositionPatch } from '../profile/composition.js'
+import type { PresetDoc } from './types.js'
 
 const map = (x: unknown): x is Record<string, unknown> => !!x && typeof x === 'object' && !Array.isArray(x)
 const fail = (name: string, path: string): never => {

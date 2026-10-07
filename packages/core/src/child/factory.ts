@@ -1,8 +1,6 @@
 import type { ChildAgentListing, ChildAgentResult, ChildAgentStatus } from '@agnes/extension-api'
 import type { Provider } from '@agnes/protocol'
 import type { ChildHandle, ChildrenFactory, ChildStatus } from '../effects/tool-context.js'
-import type { ResidentStart, ResidentTurn } from './provider.js'
-import { bindChildFactory } from './sessions.js'
 import type { Kernel } from '../kernel.js'
 import { sha256Hex } from '../request/hash.js'
 import type { SessionImpl } from '../step/session.js'
@@ -10,6 +8,8 @@ import { CoreError } from '../types.js'
 import type { ChildWorkspaceLifecycle } from '../workspace/runtime.js'
 import { admitBudgetMode, admitGeneration } from './admission.js'
 import { capToMicrocredits } from './credits.js'
+import type { ResidentStart, ResidentTurn } from './provider.js'
+import { bindChildFactory } from './sessions.js'
 import { requireChildControl } from './store.js'
 import { type ChildKind, type ChildTaskRecord, isTerminalChildState } from './types.js'
 
@@ -621,7 +621,11 @@ export class KernelChildren implements ChildrenFactory {
         if (!continuation && input !== undefined && sha256Hex(input) !== record.inputHash)
           throw new CoreError('E_CHILD_CONFLICT', 'run input does not match persisted create input')
         const live = await store.lookupByKey(record.childKey)
-        if (live && live.state !== 'running' && !(await store.casState(record.childKey, live.stateRevision, 'running')))
+        if (
+          live &&
+          live.state !== 'running' &&
+          !(await store.casState(record.childKey, live.stateRevision, 'running'))
+        )
           throw new CoreError('E_UNSUPPORTED', `child ${record.childKey} cannot start from ${live.state}`)
         state = 'running'
         const turnAbort = new AbortController()
@@ -648,9 +652,9 @@ export class KernelChildren implements ChildrenFactory {
             this.continued.add(record.childKey)
             residentHold = true
             const parked = await store.lookupByKey(record.childKey)
-            if (parked?.state === 'running') await store.casState(record.childKey, parked.stateRevision, 'ready')
-            const status: ChildAgentStatus =
-              result.reason === 'completed' ? 'idle' : 'interrupted'
+            if (parked?.state === 'running')
+              await store.casState(record.childKey, parked.stateRevision, 'ready')
+            const status: ChildAgentStatus = result.reason === 'completed' ? 'idle' : 'interrupted'
             this.noteTurn(record.childKey, text, status)
             queueMicrotask(() => this.pump(record.childKey))
             return { text, lastSeq: child.lastSeq }

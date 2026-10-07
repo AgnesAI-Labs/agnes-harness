@@ -51,13 +51,24 @@ export function assertChildAgentAllowed(
 ): void {
   const allowlist = childAgentAllowlist(sessionKey)
   if (!allowlist) return
-  if (request.providerId !== undefined && allowlist.providers && !allowlist.providers.includes(request.providerId))
-    throw new CoreError('E_UNSUPPORTED', `child provider ${request.providerId} is not allowed for this session`, {
-      providerId: request.providerId,
-    })
+  if (
+    request.providerId !== undefined &&
+    allowlist.providers &&
+    !allowlist.providers.includes(request.providerId)
+  )
+    throw new CoreError(
+      'E_UNSUPPORTED',
+      `child provider ${request.providerId} is not allowed for this session`,
+      {
+        providerId: request.providerId,
+      },
+    )
   if (allowlist.models) {
     if (!request.model)
-      throw new CoreError('E_MODEL_UNKNOWN', 'child model must be named when a session model allowlist is set')
+      throw new CoreError(
+        'E_MODEL_UNKNOWN',
+        'child model must be named when a session model allowlist is set',
+      )
     if (!allowlist.models.includes(request.model))
       throw new CoreError('E_MODEL_UNKNOWN', `child model ${request.model} is not allowed for this session`, {
         model: request.model,

@@ -1,11 +1,11 @@
 import { createHash } from 'node:crypto'
 import { resolve as resolvePath } from 'node:path'
 import {
+  developmentPluginRows,
   type PluginGenerationSnapshot,
   RuntimeGenerationSnapshotStore,
-  readDevelopmentPlugin,
-  developmentPluginRows,
   type RuntimePluginSnapshot,
+  readDevelopmentPlugin,
 } from '@agnes/package-manager'
 import {
   decodeRuntimeTargetArtifact,
@@ -18,13 +18,13 @@ import { createExtensionActivationBarrier } from './ext-host/activation-barrier.
 import type { Host, HostOptions } from './host.js'
 import type { ResolvedProfile } from './profile/types.js'
 import type { SkillRuntimeInput } from './resources/skills.js'
-import { RuntimePluginCatalogue } from './runtime-plugin-catalogue.js'
-import { buildCompleteRuntimeTarget } from './runtime-target-builder.js'
 import {
   captureGenerationResources,
   createGenerationSkills,
   restoreGenerationRows,
 } from './runtime-generation-resources.js'
+import { RuntimePluginCatalogue } from './runtime-plugin-catalogue.js'
+import { buildCompleteRuntimeTarget } from './runtime-target-builder.js'
 import { sessionKey } from './session.js'
 
 export type PluginGenerationStatus = Readonly<{

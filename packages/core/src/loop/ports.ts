@@ -1,5 +1,5 @@
 import type { LoopCheckpoint, LoopContext, LoopToolCall } from '@agnes/extension-api'
-import { validateAgainst, type ContentBlock, type InferenceEvent, type RequestBody } from '@agnes/protocol'
+import { type ContentBlock, type InferenceEvent, type RequestBody, validateAgainst } from '@agnes/protocol'
 import { RequestBody as WireRequest } from '@agnes/protocol/gen/model'
 import { runLoopChild } from '../child/loop-port.js'
 import { scanPages } from '../log/scan-pages.js'

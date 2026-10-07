@@ -1,6 +1,4 @@
 import type { SeamName } from '@agnes/core'
-import type { BundleCatalog, CompositionPatch, CompositionSource } from './composition.js'
-import type { PresetDoc } from '../presets/types.js'
 import type {
   ApprovalProfile,
   CommandHooksPolicy,
@@ -11,6 +9,8 @@ import type {
   ReconcilePolicy,
   RouteDecl,
 } from '@agnes/protocol'
+import type { PresetDoc } from '../presets/types.js'
+import type { BundleCatalog, CompositionPatch, CompositionSource } from './composition.js'
 
 /** `^[a-z][a-z0-9.-]{0,63}$` in the profile schema; kept as a string alias here. */
 export type Capability = string

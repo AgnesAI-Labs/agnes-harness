@@ -4,10 +4,10 @@ import { AGH_DIR } from '@agnes/protocol'
 import { parse as parseYaml } from 'yaml'
 import { lockState } from '../packages/lock-state.js'
 import { lockPath, readLock } from '../packages/lockfile.js'
-import { mergeIsolation } from './isolation.js'
-import { readInstalledBundles } from './bundles-reader.js'
-import { readBundleSelection } from './bundle-selection.js'
 import { dataDir as defaultDataDir } from '../paths.js'
+import { readBundleSelection } from './bundle-selection.js'
+import { readInstalledBundles } from './bundles-reader.js'
+import { mergeIsolation } from './isolation.js'
 import type { LockState, ProfileInputs, RuntimeProfileManifest } from './types.js'
 
 /**

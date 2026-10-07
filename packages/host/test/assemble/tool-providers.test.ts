@@ -1,11 +1,11 @@
-import { Context } from '@agnes/cordis'
-import { toolPolicyPlugin } from '@agnes/base'
-import { expect, it } from 'vitest'
-import { installToolProviders } from '../../src/assemble/tool-providers.js'
-import { policy } from '../../../../examples/policies/read-only/index.mjs'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { toolPolicyPlugin } from '@agnes/base'
+import { Context } from '@agnes/cordis'
+import { expect, it } from 'vitest'
+import { policy } from '../../../../examples/policies/read-only/index.mjs'
+import { installToolProviders } from '../../src/assemble/tool-providers.js'
 import { createTestHost } from '../../testkit/index.js'
 
 it('assembles the bundled default policy row before opening a real Host session', async () => {

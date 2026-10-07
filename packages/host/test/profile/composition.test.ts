@@ -1,9 +1,12 @@
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { validatePreset, validateProfileManifest, validateResolvedProfile } from '@agnes/protocol'
 import { afterEach, expect, it } from 'vitest'
+import { createCompositionAdmin, readBundleSelection } from '../../src/profile/bundle-selection.js'
 import {
   assertCompositionCompatible,
+  type CompositionCatalog,
   checkCompositionPatch,
   compositionAllowsTool,
   compositionDump,
@@ -12,11 +15,8 @@ import {
   profileForComposition,
   resolveComposition,
   validateComposition,
-  type CompositionCatalog,
 } from '../../src/profile/composition.js'
-import { createCompositionAdmin, readBundleSelection } from '../../src/profile/bundle-selection.js'
 import { resolveProfile } from '../../src/profile/resolve.js'
-import { validateProfileManifest, validateResolvedProfile, validatePreset } from '@agnes/protocol'
 
 const env = {
   platform: { os: 'linux' as const, arch: 'x64', capabilities: {} },

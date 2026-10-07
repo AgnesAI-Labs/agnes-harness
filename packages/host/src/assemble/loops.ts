@@ -7,7 +7,7 @@ import {
   type LoopSelection,
 } from '@agnes/extension-api'
 import type { RowOriginLookup } from '@agnes/plugin-runtime/host'
-import { installProviderRegistry, providerSource, type ProviderRegistry } from './provider-registry.js'
+import { installProviderRegistry, type ProviderRegistry, providerSource } from './provider-registry.js'
 
 declare module '@agnes/cordis' {
   interface Context {

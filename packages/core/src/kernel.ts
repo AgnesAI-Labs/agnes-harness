@@ -1,17 +1,15 @@
 import type {
   HookContext,
-  ToolPolicyRegistryPort,
-  ToolRuntimeRegistryPort,
-  LoopEventRegistryPort,
   Logger,
+  LoopEventRegistryPort,
   LoopFactory,
   LoopRegistryPort,
   LoopSelection,
   PlatformFacts,
+  ToolPolicyRegistryPort,
+  ToolRuntimeRegistryPort,
 } from '@agnes/extension-api'
 import type { Actor, ApprovalMode, Provider, SessionStart } from '@agnes/protocol'
-import { ToolPolicyRegistry, ToolRuntimeRegistry } from './effects/tool-providers.js'
-import { LoopEventRegistry } from './loop/events.js'
 import { KernelChildren } from './child/factory.js'
 import { hasChildControl } from './child/store.js'
 import { isActiveChildState } from './child/types.js'
@@ -20,6 +18,7 @@ import { platformFacts } from './effects/platform-facts.js'
 import { SEAM_NAMES, type SeamImplementations } from './effects/seams.js'
 import type { ChildrenFactory, FsOps, ToolContextDeps } from './effects/tool-context.js'
 import type { HostToolDispatchPort } from './effects/tool-dispatch.js'
+import { ToolPolicyRegistry, ToolRuntimeRegistry } from './effects/tool-providers.js'
 import { SeamRuntime } from './effects/wrap.js'
 import { type DispatchContext, HookEngine } from './hooks/engine.js'
 import { defaultIds } from './ids.js'
@@ -29,6 +28,7 @@ import { forkPaths } from './log/fork-seed.js'
 import type { Timers } from './log/session-log.js'
 import type { StorageAdapter } from './log/storage.js'
 import { DEFAULT_LOOP } from './loop/default-driver.js'
+import { LoopEventRegistry } from './loop/events.js'
 import { LoopRegistry, loopKey } from './loop/registry.js'
 import { ProjectionRegistry } from './project/named.js'
 import { openTracked } from './reduce/tracker.js'

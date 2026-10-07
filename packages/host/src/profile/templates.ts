@@ -76,9 +76,13 @@ export function checkTemplateShape(doc: unknown, name: string): asserts doc is R
   if (m.schemaVersion !== 1) bad('schemaVersion must be 1')
   const sandbox = m.sandbox as { provider?: unknown } | undefined
   if (sandbox !== undefined) {
-    if (typeof sandbox !== 'object' || sandbox === null || Array.isArray(sandbox)) bad('sandbox must be a mapping')
+    if (typeof sandbox !== 'object' || sandbox === null || Array.isArray(sandbox))
+      bad('sandbox must be a mapping')
     if (Object.keys(sandbox).some((key) => key !== 'provider')) bad('sandbox only accepts provider')
-    if (sandbox.provider !== undefined && (typeof sandbox.provider !== 'string' || !/^[a-z][a-z0-9-]{0,63}$/.test(sandbox.provider)))
+    if (
+      sandbox.provider !== undefined &&
+      (typeof sandbox.provider !== 'string' || !/^[a-z][a-z0-9-]{0,63}$/.test(sandbox.provider))
+    )
       bad('sandbox.provider must be a provider id')
   }
   const seams = m.seams as Record<string, unknown> | undefined

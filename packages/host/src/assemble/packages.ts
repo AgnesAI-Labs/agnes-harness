@@ -15,8 +15,8 @@ import {
   type WorkspaceHookSandbox,
 } from '@agnes/core'
 import {
-  definePersistenceProvider,
   type CompactionEngine,
+  definePersistenceProvider,
   type ExtensionAPI,
   type ExtensionFactory,
   type ExtensionManifest,

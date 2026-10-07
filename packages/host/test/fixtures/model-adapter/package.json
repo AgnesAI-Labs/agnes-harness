@@ -3,10 +3,18 @@
   "version": "1.2.3",
   "type": "module",
   "exports": "./index.ts",
-  "peerDependencies": { "@agnes/extension-api": "*" },
+  "peerDependencies": {
+    "@agnes/extension-api": "*"
+  },
   "agnes": {
     "plugins": [
-      { "id": "model-adapter:community-fake", "export": "plugin", "inject": ["modelAdapters"] }
+      {
+        "id": "model-adapter:community-fake",
+        "export": "plugin",
+        "inject": [
+          "modelAdapters"
+        ]
+      }
     ]
   }
 }
