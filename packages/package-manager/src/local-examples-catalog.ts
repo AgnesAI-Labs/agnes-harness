@@ -1,4 +1,4 @@
-import { lstatSync, readFileSync, realpathSync } from 'node:fs'
+import { existsSync, lstatSync, readFileSync, realpathSync } from 'node:fs'
 import { isAbsolute, join, relative, sep } from 'node:path'
 import type { PackageCatalogDescriptor } from '@agnes/protocol'
 import { validatePackageAdminData } from '@agnes/protocol'
@@ -21,6 +21,20 @@ const FAMILIES = [
   { family: 'dsh-model-picker-a', releases: ['v1', 'v2'], includeBroken: true },
   { family: 'dsh-model-picker-b', releases: ['v1', 'v2'], includeBroken: true },
   { family: 'dsh-tool-view', releases: ['v1', 'v2'], includeBroken: true },
+] as const
+const FDE_EXAMPLES = [
+  'code-review',
+  'compliance-audit',
+  'contract-review',
+  'crm-assistant',
+  'data-report',
+  'device-inspection',
+  'finance-reconcile',
+  'knowledge-qa',
+  'meeting-actions',
+  'ops-runbook',
+  'recruiting-screen',
+  'support-triage',
 ] as const
 const FLAT_PLUGIN_EXAMPLES = ['hot-tool-plugin', 'hook-context-note', 'hook-runner-takeover'] as const
 
@@ -132,6 +146,9 @@ export async function createLocalExamplesCatalog(
         family.releases.map((release) =>
           descriptor(workspace, `examples/packages/${family.family}/${release}`, signal),
         ),
+      ),
+      ...FDE_EXAMPLES.filter((name) => existsSync(join(workspace, 'examples', 'fde', name))).map((name) =>
+        descriptor(workspace, `examples/fde/${name}`, signal),
       ),
       ...FLAT_PLUGIN_EXAMPLES.map((name) => descriptor(workspace, `examples/packages/${name}`, signal)),
       ...(options.includeTestOnlyBroken

@@ -187,7 +187,7 @@ describe('local example catalog', () => {
     const result = await catalog.read({ offline: true })
 
     expect(result.sources).toEqual([{ sourceId: 'local-examples', status: 'cached' }])
-    expect(result.entries).toHaveLength(24)
+    expect(result.entries).toHaveLength(36)
     expect(result.entries.map(({ id, version }) => `${id}@${version}`).sort()).toEqual([
       '@agnes-examples/client-multi-panel@1.0.0',
       '@agnes-examples/client-multi-panel@2.0.0',
@@ -211,9 +211,24 @@ describe('local example catalog', () => {
       '@agnes-examples/skin-example@1.0.0',
       '@agnes-examples/skins-builtin@1.0.0',
       '@agnes-examples/skins-builtin@1.1.0',
+      '@agnes-fde/code-review@1.1.0',
+      '@agnes-fde/compliance-audit@1.1.0',
+      '@agnes-fde/contract-review@1.1.0',
+      '@agnes-fde/crm-assistant@1.1.0',
+      '@agnes-fde/data-report@1.1.0',
+      '@agnes-fde/device-inspection@1.1.0',
+      '@agnes-fde/finance-reconcile@1.1.0',
+      '@agnes-fde/knowledge-qa@1.1.0',
+      '@agnes-fde/meeting-actions@1.1.0',
+      '@agnes-fde/ops-runbook@1.1.0',
+      '@agnes-fde/recruiting-screen@1.1.0',
+      '@agnes-fde/support-triage@1.1.0',
       'acme/dashboard@1.0.0',
       'acme/dashboard@2.0.0',
     ])
+    const fde = result.entries.filter((entry) => entry.id.startsWith('@agnes-fde/'))
+    expect(fde).toHaveLength(12)
+    expect(fde.every((entry) => entry.kinds?.includes('bundle'))).toBe(true)
     for (const entry of result.entries) {
       const directory = fileURLToPath(
         new URL(`../../../${entry.source.ref.slice('file:./'.length)}`, import.meta.url),
