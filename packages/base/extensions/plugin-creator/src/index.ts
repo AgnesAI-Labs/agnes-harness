@@ -44,7 +44,7 @@ async function readdir(dir) {
   return [...entries.values()];
 }
 ${creatorAssets.scaffoldSource}
-const dir = await scaffold(process.argv[2], process.argv[3], process.argv[4]);
+const dir = await scaffold(process.argv[2], process.argv[3], process.argv[4], { local: true });
 const file = path.join(dir, "package.json"), pkg = JSON.parse(fs.readFileSync(file, "utf8"));
 pkg.exports = "./src/index.ts";
 pkg.agnes.capabilities = { ...(process.argv[2] === "tool-with-panel" ? { ui: true } : {}), ...(process.argv[2] === "loop" ? { model: true } : {}) };

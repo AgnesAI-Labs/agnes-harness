@@ -23,6 +23,14 @@ Developer preview (pre-alpha) · [Source build](#run-from-source) · [Apache-2.0
 
 </div>
 
+From a cloned checkout with Node.js 24.10+ and pnpm 10.34.5, start locally with these three commands. [Environment setup](docs/guide/install.md).
+
+```sh
+pnpm install --frozen-lockfile
+pnpm --filter @agnes/cli build:local
+node packages/cli/dist/local/agnes.mjs serve
+```
+
 <p align="center">
   <img src="docs/assets/readme/trailer.webp" alt="Animated introduction: the brain (LLM), the cerebellum (Jev), the memory (Harness) and the body (MHS, connecting devices through MCP) come together as Agnes Harness, one execution foundation for enterprise FDE delivery and physical-world MHS integration" width="100%" />
 </p>

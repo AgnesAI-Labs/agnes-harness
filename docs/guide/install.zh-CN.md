@@ -10,7 +10,7 @@
 
 <a id="npx"></a>
 
-## 一行启动（发布候选）
+## 一行启动（首次 npm 发布之后）
 
 | 选择 | 取值 |
 | --- | --- |
@@ -20,7 +20,7 @@
 | Node.js | `>=24.10` |
 | 平台 | macOS arm64 与 x64、Linux arm64 与 x64、Windows x64 |
 
-`agh web` 和 `agh start` 会启动 daemon、worker 和 Web 工作台。包发布之后，干净的机器可以运行：
+`agh web` 和 `agh start` 会启动 daemon、worker 和 Web 工作台。**仅供首次 npm 发布之后使用：**下面的注册表命令当前不可用。届时干净的机器可以运行：
 
 ```sh
 npx @agnes/harness web

@@ -12,7 +12,7 @@ Source builds remain the way to install from this repository. A release-candidat
 
 <a id="npx"></a>
 
-## One-line start (release candidate)
+## One-line start (after the first npm release)
 
 | Choice | Value |
 | --- | --- |
@@ -22,7 +22,7 @@ Source builds remain the way to install from this repository. A release-candidat
 | Node.js | `>=24.10` |
 | Platforms | macOS arm64 and x64, Linux arm64 and x64, Windows x64 |
 
-`agh web` and `agh start` start the daemon, worker, and Web workbench. After the package is published, a clean machine can run:
+`agh web` and `agh start` start the daemon, worker, and Web workbench. **After the first npm release only:** the following registry command is unavailable today. A clean machine will then be able to run:
 
 ```sh
 npx @agnes/harness web

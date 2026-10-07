@@ -23,7 +23,40 @@ export async function scaffold(template, name, destination = name?.split('/').at
     throw new TypeError('Name is too long for a tool identifier (57 characters maximum)')
   const target = resolve(destination)
   await mkdir(target)
-  const replacements = { __PACKAGE_NAME__: name, __TOOL_NAME__: toolName, __SKILL_NAME__: skillName }
+  const setupGuide = `${
+    options.local
+      ? `## Zero-build local development
+
+This package exports source TypeScript. Put it in the daemon workspace's \`.agnes/plugins/${leaf}\` or \`$AGH_HOME/plugins/${leaf}\`. Start AGH once from that workspace; an already running daemon discovers the folder and watches edits automatically. No npm install, compilation or SDK links are needed to run it.
+
+For an immediate reload, use \`agh dev .agnes/plugins/${leaf}\` or \`agh plugins reload ${name}\`. Open a new session after activation; existing sessions keep their generation. Ordinary plugin edits do not require a daemon restart.`
+      : `## Build for distribution
+
+This package exports \`dist/index.js\`. Build it with the source-preview SDK links below, then run \`agh plugins add /absolute/path/to/${leaf} --yes\` to review, install, trust and enable it. For zero-build development, scaffold with \`--local\` into the daemon workspace's \`.agnes/plugins\` folder instead.`
+  }
+
+## Optional compilation and author tests
+
+The preview Agnes SDK packages are not on npm. Use an installed source checkout to supply types and testkit modules through their public package names; do not run npm install to fetch them. Replace both absolute paths below. From the checkout:
+
+\`\`\`sh
+AGH_SOURCE=/absolute/path/to/agnes-harness
+AGH_PLUGIN=/absolute/path/to/${leaf}
+cd "$AGH_SOURCE"
+nice -n 10 pnpm exec tsc -b packages/plugin-runtime packages/protocol packages/resource-control-runtime
+node templates/link-local.mjs "$AGH_PLUGIN"
+npm --prefix "$AGH_PLUGIN" run build
+npm --prefix "$AGH_PLUGIN" test
+\`\`\`
+
+The linker is safe to repeat and uses the checkout's dependencies and built declarations. Edit \`agnes.kinds\` and \`agnes.capabilities\` when you add functionality or side effects. See the [extension quickstart](https://github.com/AgnesAI-Labs/agnes-harness/blob/feat/agh-plugin-core/docs/extend/quickstart.md).
+`
+  const replacements = {
+    __PACKAGE_NAME__: name,
+    __TOOL_NAME__: toolName,
+    __SKILL_NAME__: skillName,
+    __SETUP_GUIDE__: setupGuide,
+  }
   const replace = (text) => {
     for (const [token, value] of Object.entries(replacements)) text = text.replaceAll(token, value)
     return text
@@ -68,7 +101,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
       if (extra.length) throw new TypeError('Too many arguments')
       const target = await scaffold(template, name, destination, { local })
       console.log(
-        `Created ${name} in ${target}\nNext: ${local ? 'start/restart AGH from this workspace, then open a new session (no build needed)' : 'see docs/extend/quickstart.md for preview SDK links and optional build/tests'}`,
+        `Created ${name} in ${target}\nNext: ${local ? 'AGH watches this folder when it is in a local plugin root; start AGH once if needed, then open a new session (no build or restart needed). For an immediate reload use agh dev <folder> or agh plugins reload <id>' : 'see README.md for preview SDK links, compilation and author tests'}`,
       )
     } catch (error) {
       console.error(error.message)

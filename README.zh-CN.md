@@ -23,6 +23,14 @@
 
 </div>
 
+准备好 Node.js 24.10+ 与 pnpm 10.34.5 后，在已克隆的仓库运行这三条命令。[环境准备](docs/guide/install.zh-CN.md)。
+
+```sh
+pnpm install --frozen-lockfile
+pnpm --filter @agnes/cli build:local
+node packages/cli/dist/local/agnes.mjs serve
+```
+
 <p align="center">
   <img src="docs/assets/readme/trailer.zh-CN.webp" alt="动画介绍：大脑（LLM）、小脑（Jev）、记忆（Harness）与身体（MHS，经 MCP 连接设备）合为 Agnes Harness，一套执行底座支撑企业 FDE 交付与物理世界的 MHS 接入" width="100%" />
 </p>

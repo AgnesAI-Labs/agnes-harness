@@ -17,6 +17,8 @@ node templates/create-agh-plugin.mjs tool hello-tool .agnes/plugins/hello-tool -
 
 The package exports `./src/index.ts`. AGH transpiles it with jiti and provides the public author SDK imports, including TypeBox. You can also place it in `$AGH_HOME/plugins/hello-tool`; use the same configured home in every terminal. Local folders opt into trusted execution, so put only code you intend to run there.
 
+The tool starter declares `agnes.kinds: ["tool"]` and `agnes.capabilities: {}` so inspection can show its type and requested capability scope without executing it. Update these declarations when adding functionality or side effects; the panel starter declares UI access and the loop starter declares model access.
+
 ## 2. Start AGH and open a new session
 
 ```sh
@@ -31,7 +33,7 @@ Leave the daemon running. In another terminal with the same workspace, profile a
 AGNES_PROFILE=local-dev agh -p 'hi'
 ```
 
-A fresh local-dev profile selects route `demo`, model `demo-model`. Replies are labeled as demo. The adapter returns a fixed teaching reply through the real session loop. Check `/admin/plugins` for hello-tool and the new session’s tool catalog for `plugin_hello_tool`. To exercise tool selection, configure a scripted route with tool-call replies or a real model; the optional author test below invokes the tool without a model.
+A fresh local-dev profile selects route `demo`, model `demo-model`. Replies are labeled as demo. The adapter returns a fixed teaching reply through the real session loop. Check `/admin/plugins` or `agh package status` for hello-tool activation. The starter registers `plugin_hello_tool`; backend activation alone does not demonstrate a model tool call. To exercise tool selection, configure a scripted route with tool-call replies or a real model; the optional author test below invokes the tool without a model.
 
 In Web, create a new session using **Demo (local scripted reply, no API key)** and submit `hi`. This is a teaching model: configure a real model for reasoning and automatic tool selection. Existing explicit model configuration takes precedence.
 
@@ -39,14 +41,21 @@ In Web, create a new session using **Demo (local scripted reply, no API key)** a
 
 Edit `src/index.ts`. Keep `ctx.signal.throwIfAborted()` and pass its signal into asynchronous work. Use `toolError('message')` for expected business refusal, and release clients/subscriptions through `ctx.effect()`.
 
-Check `/admin/plugins` for activation errors. Local discovery watches changes, but the daemon currently marks edits `restart-required` until generation reload is connected. Start/restart the daemon after placing or editing the folder, then create a new session. Running sessions keep their pinned plugin generation. See [local plugins](local-plugins.md) for these lifecycle limits.
+The running daemon discovers new local folders and watches edits. Ordinary plugin changes activate a new generation without restart. Check `/admin/plugins` for activation errors, or request an immediate reload:
+
+```sh
+agh dev .agnes/plugins/hello-tool --profile local-dev
+agh plugins reload hello-tool --profile local-dev
+```
+
+After activation, create a new session in Web to use it. Existing sessions, including the CLI session reused in the same workspace, keep their pinned generation. Storage, sandbox and other process backends still require restart. See [hot reload](hot-reload.md) and [local plugins](local-plugins.md).
 
 ## 4. Optional compilation and tests
 
-To compile a starter or run its author tests, build the preview SDK declarations once from the checkout:
+To compile a starter or run its author tests, build the preview SDK declarations once from the checkout, then link them locally. The preview Agnes SDK packages are not on npm; no registry install is needed:
 
 ```sh
-nice -n 10 pnpm exec tsc -b packages/plugin-runtime packages/protocol
+nice -n 10 pnpm exec tsc -b packages/plugin-runtime packages/protocol packages/resource-control-runtime
 node templates/link-local.mjs .agnes/plugins/hello-tool
 npm --prefix .agnes/plugins/hello-tool run build
 npm --prefix .agnes/plugins/hello-tool test

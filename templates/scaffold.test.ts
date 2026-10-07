@@ -16,11 +16,29 @@ describe('plugin scaffolder', () => {
         expect(manifest.name).toBe('@acme/hello.world')
         expect(manifest.scripts).toHaveProperty('build')
         expect(manifest.scripts).toHaveProperty('test')
+        expect(manifest.agnes.kinds).toEqual(
+          {
+            tool: ['tool'],
+            'tool-with-panel': ['tool', 'ui'],
+            'mcp-skills': ['skills'],
+            'model-adapter': ['model-adapter'],
+            loop: ['loop'],
+          }[kind],
+        )
+        expect(manifest.agnes.capabilities).toEqual(
+          kind === 'tool-with-panel' ? { ui: true } : kind === 'loop' ? { model: true } : {},
+        )
         expect(Object.values(manifest.dependencies)).not.toContain('workspace:*')
         const local = await scaffold(kind, 'local-plugin', join(temp, `local-${kind}`), { local: true })
         const localManifest = JSON.parse(await readFile(join(local, 'package.json'), 'utf8'))
         expect(localManifest.exports).toBe('./src/index.ts')
         expect(localManifest.agnes.hostProvidedExternals).toHaveProperty('@agnes/plugin-runtime')
+        const readme = await readFile(join(local, 'README.md'), 'utf8')
+        expect(readme).toContain('No npm install, compilation or SDK links are needed to run it.')
+        expect(readme).toContain('agh dev .agnes/plugins/local-plugin')
+        expect(readme).toContain('agh plugins reload local-plugin')
+        expect(readme).toContain('node templates/link-local.mjs "$AGH_PLUGIN"')
+        expect(readme).not.toMatch(/__[A-Z_]+__|npm install\n|start\/restart/)
         expect(await readFile(join(target, 'src/index.ts'), 'utf8')).not.toMatch(
           /__PACKAGE_NAME__|__TOOL_NAME__|__SKILL_NAME__|\.\.\/.*packages\//,
         )

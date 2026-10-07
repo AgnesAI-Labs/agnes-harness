@@ -17,6 +17,8 @@ node templates/create-agh-plugin.mjs tool hello-tool .agnes/plugins/hello-tool -
 
 包入口是 `./src/index.ts`。AGH 用 jiti 按需转译，并提供公共作者 SDK 和 TypeBox。也可以放到 `$AGH_HOME/plugins/hello-tool`，每个终端使用同一个配置 home。本地目录意味着选择信任并执行其中代码，只放你愿意运行的插件。
 
+工具模板声明 `agnes.kinds: ["tool"]` 与 `agnes.capabilities: {}`，预览无需执行代码即可展示类型与请求的能力范围。新增功能或副作用时请更新这些声明；面板模板声明 UI 能力，Loop 模板声明模型能力。
+
 ## 2. 启动并打开新会话
 
 ```sh
@@ -31,7 +33,7 @@ AGNES_PROFILE=local-dev agh web
 AGNES_PROFILE=local-dev agh -p 'hi'
 ```
 
-全新 local-dev 默认选择 route `demo`、model `demo-model`，回复明确标记为 Demo。它通过真实会话循环返回固定教学回复。在 `/admin/plugins` 检查 hello-tool，并在新会话的工具目录查看 `plugin_hello_tool`。要演示选工具，可配置含工具调用回复的 scripted route 或真实模型；下方可选作者测试能免模型调用工具。
+全新 local-dev 默认选择 route `demo`、model `demo-model`，回复明确标记为 Demo。它通过真实会话循环返回固定教学回复。在 `/admin/plugins` 或 `agh package status` 检查 hello-tool 的启用状态。模板注册的工具名是 `plugin_hello_tool`；后端启用本身不代表模型已调用工具。要演示选工具，可配置含工具调用回复的 scripted route 或真实模型；下方可选作者测试能免模型调用工具。
 
 Web 中新建会话，选择 **Demo (local scripted reply, no API key)**，提交 `hi`。这是教学模型；推理和自动选工具需要配置真实模型。已有显式模型配置优先。
 
@@ -39,14 +41,21 @@ Web 中新建会话，选择 **Demo (local scripted reply, no API key)**，提�
 
 修改 `src/index.ts`。保留 `ctx.signal.throwIfAborted()`，异步操作传入 signal。预期业务拒绝用 `toolError('message')`；客户端和订阅通过 `ctx.effect()` 释放。
 
-在 `/admin/plugins` 检查启用错误。本地发现会监听修改，但当前 daemon 在代际重载接通前标记为 `restart-required`。放入或修改插件后启动／重启 daemon，再创建新会话；运行中的会话保持原代际。详见[本地插件](local-plugins.zh-CN.md)。
+运行中的 daemon 会发现新本地目录并监听修改；普通插件改动无需重启，会激活新代际。在 `/admin/plugins` 检查启用错误，也可立即请求重载：
+
+```sh
+agh dev .agnes/plugins/hello-tool --profile local-dev
+agh plugins reload hello-tool --profile local-dev
+```
+
+激活后在 Web 创建新会话使用它。已有会话（包括同一工作区中复用的 CLI 会话）仍保持原代际。存储、沙箱等进程后端仍需重启。详见[热重载](hot-reload.zh-CN.md)与[本地插件](local-plugins.zh-CN.md)。
 
 ## 4. 可选的构建和测试
 
-需要编译或运行作者测试时，在仓库内构建一次预览 SDK 声明：
+需要编译或运行作者测试时，在仓库内构建一次预览 SDK 声明，再本地链接。预览 Agnes SDK 尚未发布到 npm，无需从注册表安装：
 
 ```sh
-nice -n 10 pnpm exec tsc -b packages/plugin-runtime packages/protocol
+nice -n 10 pnpm exec tsc -b packages/plugin-runtime packages/protocol packages/resource-control-runtime
 node templates/link-local.mjs .agnes/plugins/hello-tool
 npm --prefix .agnes/plugins/hello-tool run build
 npm --prefix .agnes/plugins/hello-tool test
