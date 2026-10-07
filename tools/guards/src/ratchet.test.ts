@@ -1119,7 +1119,9 @@ const INITIAL_CEILING: Record<string, number> = {
   // countLines: 28463 -> 29399; exact measured cap, no exclusions or spare allocation.
   // 2026-10-07 gap-fill review: Recoverable loop ports, governed code cells, durable workflow recovery, goals and provider child-control errors.
   // countLines: 29399 -> 30048; exact cap, no exclusions or spare allocation.
-  'packages/core/src': 30048,
+  // 2026-10-08 freeze-close review: Await async loop construction, propagate session cancellation and drain initialization before storage closes.
+  // countLines: 30048 -> 30103 (+55); exact measured cap, no exclusions or spare allocation.
+  'packages/core/src': 30103,
   // 2026-09-15: DeepSeek V4 Pro/Flash ship a known-thinking-corrections table (new file) so the
   // product corrects pi-ai's verified-wrong reasoning_effort data out of the box, instead of
   // requiring every deployment to hand-edit thinkingEfforts once they notice. Measured 3347.
@@ -1139,7 +1141,9 @@ const INITIAL_CEILING: Record<string, number> = {
   // 2026-10-07 integration review: Durable retry journals, delay classification and model adapter
   // registration.
   // countLines: 3992 -> 4115; exact measured cap, no exclusions or spare allocation.
-  'packages/ai/src': 4115,
+  // 2026-10-08 freeze-close review: Use public model-adapter factories with live credentials and export credential-free provider route configs.
+  // countLines: 4115 -> 4137 (+22); exact measured cap, no exclusions or spare allocation.
+  'packages/ai/src': 4137,
   // 2026-09-09: raised from 500, which was exactly the measured count and so forbade every
   // further line. Two repairs were blocked by it and are landing with this raise: the provider
   // factory taking log + pricing (without which every delivered assembly denominates ledger
@@ -1365,7 +1369,9 @@ const INITIAL_CEILING: Record<string, number> = {
   // countLines: 5999 -> 6460; exact measured cap, no exclusions or spare allocation.
   // 2026-10-07 gap-fill review: Live context, persistence-suite selection and child-engine configuration wiring.
   // countLines: 6460 -> 6577; exact cap, no exclusions or spare allocation.
-  'packages/host/src/assemble': 6577,
+  // 2026-10-08 freeze-close review: Unify provider errors, own late loop/child results and transfer accepted process-store ownership.
+  // countLines: 6577 -> 6603 (+26); exact measured cap, no exclusions or spare allocation.
+  'packages/host/src/assemble': 6603,
   // P1: generated-schema validators and duplicate projection-name refusal; measured exact cap.
   // F1 adds Surface JSON/identity validation and lock snapshot validation.
   // PM4 adds strict management DTO validation and method permission/identity contracts; exact total.
@@ -1581,7 +1587,9 @@ const INITIAL_CEILING: Record<string, number> = {
   // countLines: 1770 -> 2327; exact measured cap, no exclusions or spare allocation.
   // 2026-10-07 gap-fill review: Recoverable loop ports, full persistence-suite contracts and child-engine settings.
   // countLines: 2327 -> 2438; exact cap, no exclusions or spare allocation.
-  'packages/extension-api/src': 2438, // SKILL-INSTALL-CORE: optional request port and bounded DTO, no admin grant.
+  // 2026-10-08 freeze-close review: Expose cooperative construction signals, adapter credential ports and shared default compaction/policy helpers.
+  // countLines: 2438 -> 2505 (+67); exact measured cap, no exclusions or spare allocation.
+  'packages/extension-api/src': 2505, // SKILL-INSTALL-CORE: optional request port and bounded DTO, no admin grant.
   // Optional author fixture entry; no production runtime code belongs here.
   // B1-A: measured 229 lines on the shared tree; public transport contract, config and wiring/testkit.
   // B1 review repair: exact measured 246; startup cancellation / cwd contract coverage.
@@ -2821,7 +2829,9 @@ const INITIAL_CEILING: Record<string, number> = {
   // countLines: 43753 -> 45075; exact measured cap, no exclusions or spare allocation.
   // 2026-10-07 gap-fill review: Immutable non-SQL persistence ports, live context/search, interactive jobs and child-engine configuration.
   // countLines: 45075 -> 46355; exact cap, no exclusions or spare allocation.
-  'packages/host/src': 46355,
+  // 2026-10-08 freeze-close review: Integrate provider lifecycle cancellation, public adapter construction and process-store lease-safe teardown.
+  // countLines: 46355 -> 46484 (+129); exact measured cap, no exclusions or spare allocation.
+  'packages/host/src': 46484,
   // 2026-10-07 gap-fill review: Preserve governed bridge errors through service invocation.
   // countLines: 247 -> 254; exact cap, no exclusions or spare allocation.
   'packages/host/src/ext-host/service-invocation': 254,
@@ -3007,7 +3017,9 @@ const INITIAL_CEILING: Record<string, number> = {
   // countLines: 5612 -> 6061; exact measured cap, no exclusions or spare allocation.
   // 2026-10-07 gap-fill review: Full non-SQL Host persistence handles, persistence-suite adapters and persistent PTY execution.
   // countLines: 6061 -> 6781; exact cap, no exclusions or spare allocation.
-  'packages/host/src/adapters': 6781,
+  // 2026-10-08 freeze-close review: Track sandbox/store operations, reject aborted construction and retain process stores through registry teardown.
+  // countLines: 6781 -> 6884 (+103); exact measured cap, no exclusions or spare allocation.
+  'packages/host/src/adapters': 6884,
 
   // C1b Task 5 persists child creation attempts and deferred recovery; exact total, no spare.
   // Task 17 review: sqlite_master scan + table-name refuse. Re-measured: 674, exact.
