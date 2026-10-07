@@ -179,6 +179,30 @@
             "maxLength": 512,
             "pattern": "^[^\\s\\u0000-\\u001f\\u007f]+$"
           }
+        },
+        "surfaces": {
+          "type": "array",
+          "maxItems": 3,
+          "uniqueItems": true,
+          "items": { "enum": ["web", "acp", "http"] }
+        },
+        "shell": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "modules": {
+              "type": "array",
+              "maxItems": 256,
+              "uniqueItems": true,
+              "items": { "type": "string", "minLength": 1, "maxLength": 512 }
+            },
+            "slots": {
+              "type": "array",
+              "maxItems": 256,
+              "uniqueItems": true,
+              "items": { "type": "string", "minLength": 1, "maxLength": 512 }
+            }
+          }
         }
       }
     },

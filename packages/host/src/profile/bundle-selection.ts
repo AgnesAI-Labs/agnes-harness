@@ -9,6 +9,7 @@ import { mergeValue } from '../presets/merge.js'
 import type { PresetDoc } from '../presets/types.js'
 import { compositionDump, expandBundles, resolveComposition } from './composition.js'
 import type { ResolvedProfile } from './types.js'
+import { readLiveCompositionSessions } from './composition-state.js'
 
 export type BundleSelection = Readonly<{ revision: number; bundles: string[] }>
 export function isBundleSelection(value: unknown): value is BundleSelection {
@@ -91,7 +92,13 @@ export function createCompositionAdmin(options: {
       const tree = resolveComposition(profile, {
         preset: compositionPreset(profile, preset ?? profile.presets.default),
       })
-      return { status: 'desired' as const, validation: 'static' as const, ...compositionDump(tree) }
+      const sessions = await readLiveCompositionSessions(options.profileDir)
+      return {
+        status: sessions.length ? ('live' as const) : ('desired' as const),
+        validation: 'static' as const,
+        ...compositionDump(tree),
+        sessions,
+      }
     },
     async saveBundles(input: BundleSelection) {
       if (!isBundleSelection(input)) throw new ConfigurationError('CONFIG_INVALID_INPUT')

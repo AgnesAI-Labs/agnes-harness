@@ -152,6 +152,8 @@ export async function buildProvider(
   }
   try {
     const catalog = modelAdapters.catalog()
+    const selectedApis = profile.composition?.modelAdapters
+    const allowsApi = (api: string) => !selectedApis?.length || selectedApis.includes(api)
     for (const id of profile.provider.adapters)
       if (!catalog.some((entry) => entry.id === id || entry.sourcePackage === id))
         throw new HostError('E_DEP_MISSING', `model adapter or package is not registered: ${id}`, {
@@ -218,6 +220,7 @@ export async function buildProvider(
         .routes()
         .every(
           (route) =>
+            allowsApi(route.api) &&
             !claimed.has(route.route) &&
             (profile.provider.catalog === undefined ||
               profile.provider.catalog.include.includes(route.route)),

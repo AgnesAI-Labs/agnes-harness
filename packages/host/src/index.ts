@@ -457,3 +457,5 @@ export {
   type WorkspaceBinding,
 } from './workspace-authority.js'
 export * from './workspace-policy.js'
+export * from './profile/composition-state.js'
+export * from './profile/composition-visibility.js'

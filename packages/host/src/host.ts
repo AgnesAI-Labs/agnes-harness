@@ -23,6 +23,9 @@ import { closeHost } from './lifecycle.js'
 import { type ResolvedPreset, resolvePreset } from './presets/resolve.js'
 import type { PresetDoc } from './presets/types.js'
 import { assertCompositionCompatible } from './profile/composition.js'
+import { createCompositionHost } from './profile/composition-runtime.js'
+import type { LiveCompositionSession } from './profile/composition-state.js'
+import { trackHostComposition } from './profile/composition-tracking.js'
 import { withAssemblyIsolation } from './profile/isolation.js'
 import type { ResolvedProfile } from './profile/types.js'
 import type { SkillRuntimeInput } from './resources/skills.js'
@@ -64,6 +67,7 @@ export type HostOptions = Omit<AssembleDeps, 'audit' | 'loader'> & {
 }
 
 export interface Host {
+  compositionSessions?(): readonly LiveCompositionSession[]
   pluginGenerationStatus?(): PluginGenerationStatus
   sessionGeneration?(sessionKey: string): string | undefined
   releaseSessionGeneration?(sessionKey: string): Promise<void>
@@ -154,7 +158,23 @@ export interface Host {
 }
 
 export async function createHost(profile: ResolvedProfile, opts: HostOptions): Promise<Host> {
-  return createRuntimeGenerationHost(profile, opts, createHostInstance)
+  if (profile.composition || profile.bundlePresets)
+    return createCompositionHost(profile, opts, createHostInstance)
+  const host = await createRuntimeGenerationHost(profile, opts, createHostInstance)
+  if (
+    Object.values(host.presets).some(
+      (preset) => preset.composition || (Array.isArray(preset.bundles) && preset.bundles.length),
+    )
+  ) {
+    await host.close()
+    return createCompositionHost(profile, opts, createHostInstance)
+  }
+  try {
+    return await trackHostComposition(host, profile, opts.profileDir)
+  } catch (error) {
+    await host.close()
+    throw error
+  }
 }
 
 async function createHostInstance(profile: ResolvedProfile, opts: HostOptions): Promise<Host> {
@@ -525,6 +545,8 @@ async function createHostInstance(profile: ResolvedProfile, opts: HostOptions): 
           detail: { sessionKey, reason: 'session-not-open' },
         })
       const resolved = validatePresetSwitch(profile, a, name)
+      if (profile.composition)
+        assertCompositionCompatible(a.compositionForPreset(), a.compositionForPreset(name))
       return session.setPreset(resolved.view)
     },
     extensions: () => a.extensionStatus(),
@@ -555,7 +577,11 @@ async function createHostInstance(profile: ResolvedProfile, opts: HostOptions): 
         return a.extensionRows.apply(rows)
       },
     },
-    validatePresetSwitch: (name) => validatePresetSwitch(profile, a, name),
+    validatePresetSwitch: (name) => {
+      if (profile.composition)
+        assertCompositionCompatible(a.compositionForPreset(), a.compositionForPreset(name))
+      return validatePresetSwitch(profile, a, name)
+    },
     validateModelSwitch: (sel) => validateModelSwitch(profile, a, sel),
     close() {
       if (closePromise) return closePromise

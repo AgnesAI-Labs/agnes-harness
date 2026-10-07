@@ -219,6 +219,7 @@ import {
   type HostRuntimeTargetResources,
 } from './runtime-target-resource-bootstrap.js'
 import { SandboxReadinessManager } from './sandbox-readiness-manager.js'
+import { compositionSkills, compositionTools, compositionSkillOwners } from './profile/composition-visibility.js'
 import {
   applyTelemetryConsent,
   createSessionHookPort,
@@ -800,8 +801,9 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
     const runtimeMutationGate = new RuntimeMutationGate()
     const publicationDispatch = new PublicationDispatch(publicationGate, hotPolicy)
     let kernel!: Kernel
-    let preloadSkills = deps.skillResources
-    let activeSkillResources = deps.skillResources
+    const skillOwners = compositionSkillOwners(deps.runtimePluginCatalogue ?? deps.runtimePluginSnapshots ?? [])
+    let preloadSkills = compositionSkills(deps.skillResources, profile.composition ?? {}, skillOwners)
+    let activeSkillResources = preloadSkills
     // Shared workers discover workspace Skills lazily inside a session invocation. Their global
     // list() can stay empty while the workspace catalogue changes, so an unchanged row must still
     // read the newly bootstrapped source on the next turn.
@@ -841,13 +843,16 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
         runtimeRegistryRevision ??
         runtimeTargetPublisher.current().value.current?.runtimeRegistryRevision ??
         'unspecified'
-      return publishedSessionRuntime({
+      const runtime = publishedSessionRuntime({
         runtimeRegistryRevision: revision,
         cache: generationViews,
         hooks: session?.hooks ?? noopHooks,
         ...(kernel ? { seed: { tools: kernel.tools, resources: kernel.resources } } : {}),
         ...(runtimePromptPreloader ? { runtimePromptPreloader } : {}),
       })
+      return profile.composition
+        ? { ...runtime, tools: compositionTools(runtime.tools, profile.composition) }
+        : runtime
     }
     const builtSeams = buildSeamRows({
       profile,
@@ -1960,7 +1965,6 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
         },
       })
     if (profile.composition) {
-      for (const name of profile.presets.allowed) compositionForPreset(name)
       assertCompositionCompatible(compositionForPreset(), compositionForPreset(profile.presets.default))
       const stopPolicy = kernel.hooks.on(
         'tool_call',
@@ -1968,7 +1972,8 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
           const session = kernel.sessions.get(context.session.key)
           if (!session) return { allow: false, reason: 'Composition session is unavailable.' }
           const tree = compositionForPreset(session.preset.name)
-          return compositionAllowsTool(tree.selection, payload.name, payload.meta.isReadOnly === true)
+          return compositionTools(kernel.tools, tree.selection).resolve(payload.name) &&
+            compositionAllowsTool(tree.selection, payload.name, payload.meta.isReadOnly === true)
             ? { allow: true }
             : { allow: false, reason: 'Tool denied by the selected composition policy.' }
         },
@@ -2000,7 +2005,7 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
     const extPorts = bindExtensionInvocations(
       {
         services,
-        tools: kernel.tools,
+        tools: profile.composition ? compositionTools(kernel.tools, profile.composition) : kernel.tools,
         hooks: kernel.hooks,
         slots: kernel.slots,
         resources: kernel.resources,
@@ -2459,6 +2464,7 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
     let skillRefreshTail: Promise<void> = Promise.resolve()
     let skillRetry = 0
     const refreshSkillRow = (fresh: SkillRuntimeInput | undefined): Promise<void> => {
+      fresh = compositionSkills(fresh, profile.composition ?? {}, skillOwners)
       const task = skillRefreshTail.then(async () => {
         const previous = extensionRows.current().find((row) => row.id === SKILL_ROW_ID)
         if (!previous) throw new HostError('E_EXT_LOAD', 'builtin Skills row is unavailable')

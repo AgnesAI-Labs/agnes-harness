@@ -1,3 +1,4 @@
+import { DEFAULT_LOOP } from '@agnes/core'
 import type {
   CompactionEngineCatalogEntry,
   LoopCatalogEntry,
@@ -29,6 +30,9 @@ export type CompositionPatch = {
   mcp?: string[]
   skills?: string[]
   uiModules?: string[]
+  /** Omitted preserves deployment defaults; [] is headless. */
+  surfaces?: ('web' | 'acp' | 'http')[]
+  shell?: { modules?: string[]; slots?: string[] }
 }
 export type BundleDocument = {
   extends?: string[]
@@ -81,6 +85,8 @@ const fields = new Set([
   'mcp',
   'skills',
   'uiModules',
+  'surfaces',
+  'shell',
 ])
 
 /** Validate static data before it can influence package loading or runtime selection. */
@@ -91,6 +97,19 @@ export function checkCompositionPatch(value: unknown): CompositionPatch {
   if (!map(value) || Object.keys(value).some((key) => !fields.has(key))) fail('invalid patch fields')
   for (const field of ['modelAdapters', 'tools', 'mcp', 'skills', 'uiModules'])
     if (value[field] !== undefined && !list(value[field])) fail(`invalid ${field}`)
+  if (
+    value.surfaces !== undefined &&
+    (!list(value.surfaces) || value.surfaces.some((id: string) => !['web', 'acp', 'http'].includes(id)))
+  )
+    fail('invalid surfaces')
+  if (
+    value.shell !== undefined &&
+    (!map(value.shell) ||
+      Object.keys(value.shell).some((key) => !['modules', 'slots'].includes(key)) ||
+      (value.shell.modules !== undefined && !list(value.shell.modules)) ||
+      (value.shell.slots !== undefined && !list(value.shell.slots)))
+  )
+    fail('invalid shell')
   if (
     value.loop !== undefined &&
     (!map(value.loop) ||
@@ -316,7 +335,7 @@ export function resolveComposition(
   const preset = options.preset?.name ?? profile.presets.default
   if (!profile.presets.allowed.includes(preset)) fail(`preset ${preset} is not allowed`)
   let selection: CompositionPatch = {
-    loop: profile.loop ?? { id: 'default', version: '1.0.0' },
+    loop: profile.loop ?? DEFAULT_LOOP,
     compaction:
       profile.compaction ??
       (options.catalog && !options.catalog.compactionEngines.some((entry) => entry.id === 'default')
@@ -371,8 +390,6 @@ export function resolveComposition(
       ...pkg,
       enabled: profile.packages.find((item) => item.id === pkg.id)!.enabled && pkg.enabled !== false,
     })) ?? []
-  for (const id of [...(selection.mcp ?? []), ...(selection.skills ?? [])])
-    if (!profile.packages.some((pkg) => pkg.id === id && pkg.enabled)) fail(`inactive package ${id}`)
   const rows = (options.rows ?? []).map((row) => ({
     ...row,
     ...selection.plugins?.[row.id],
@@ -436,6 +453,16 @@ export function profileForComposition(profile: ResolvedProfile, tree: ResolvedCo
     ...(patch.persistence ? { persistence: patch.persistence } : {}),
     ...(patch.sandbox ? { sandbox: patch.sandbox } : {}),
     presets: { ...profile.presets, default: tree.preset },
+    ...(patch.modelAdapters?.length
+      ? {
+          provider: {
+            ...profile.provider,
+            routes: (profile.provider.routes ?? []).filter((route) =>
+              patch.modelAdapters!.includes(route.api),
+            ),
+          },
+        }
+      : {}),
     packages: profile.packages.map((pkg) => {
       const requested = overrides.get(pkg.id)
       return {
@@ -497,6 +524,11 @@ export function assertCompositionCompatible(base: ResolvedComposition, next: Res
     'mcp',
     'skills',
     'uiModules',
+    'surfaces',
+    'shell',
+    'loop',
+    'tools',
+    'toolPolicy',
   ] as const) {
     if (canonicalJson(base.selection[key] ?? null) !== canonicalJson(next.selection[key] ?? null))
       fail(
