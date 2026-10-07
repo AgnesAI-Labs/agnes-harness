@@ -39,8 +39,8 @@ async function state(ctx: ToolContext): Promise<State> {
 }
 
 const result = (run: Run) => ({
-  content: [{ type: 'text' as const, text: JSON.stringify(run) }],
-  structured: run,
+  content: [{ type: 'text' as const, text: JSON.stringify({ ...run, runId: run.id }) }],
+  structured: { ...run, runId: run.id },
   isError: run.status !== 'completed',
 })
 

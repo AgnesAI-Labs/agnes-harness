@@ -85,7 +85,7 @@ it.each(['completed', 'idle'] as const)(
     expect(run.status).toBe('completed')
     expect(run.stages[0]?.members.map((m) => m.childKey)).toEqual(['child-1', 'child-2'])
     const again = await f.tools.get('workflow')!.execute({ runId: run.id }, f.ctx)
-    expect(again.structured).toEqual(run)
+    expect(again.structured).toEqual({ ...run, runId: run.id })
     expect(f.tasks).toHaveLength(3)
   },
 )
