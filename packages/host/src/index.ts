@@ -439,3 +439,5 @@ export {
 export * from './workspace-policy.js'
 
 export { modelAdapterCatalog, ModelAdapterRegistry } from './assemble/model-adapters.js'
+
+export { compactionEngineCatalog, CompactionEngineRegistry } from './assemble/compaction-engines.js'
