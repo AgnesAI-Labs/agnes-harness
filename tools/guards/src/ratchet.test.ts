@@ -464,9 +464,9 @@ const INITIAL_CEILING: Record<string, number> = {
   // which lands on top of the diagnostics wiring above. Re-measured with countLines(): 1827, exact.
   // 2026-10-04 image attachments: app.ts submits ContentBlock content while keeping the title locale.
   // Measured: 2148, exact, no spare.
-  // 2026-10-07 reviewed growth: new-session loop selection and persistent default provider controls.
-  // countLines: 2183 -> 2308 (+125); exact cap, no exclusions or spare allocation.
-  'packages/web/src/app': 2308,
+  // 2026-10-07 reviewed growth: new-session loop selection, persistent provider defaults and asynchronous workspace confirmation.
+  // countLines: 2183 -> 2311 (+128); exact cap, no exclusions or spare allocation.
+  'packages/web/src/app': 2311,
   // 2026-09-22 UI plugin management: inject the embedded pane's client runtime reconciler.
   // 2026-09-25 UI refactor: permission options now render through the React region contract.
   // Re-measured with countLines(): 215, exact, no spare.
@@ -1293,9 +1293,9 @@ const INITIAL_CEILING: Record<string, number> = {
   // The Kernel receives the spawned-child turn admission. Measured 4193, exact, no spare (+1).
   // A returning package must not be served a cached generation bound to revoked leases (+7), and the
   // full-access read-only roots reach the fence from the assembly (+7). Measured 4207, exact.
-  // 2026-10-07 reviewed growth: provider registries, adapter factories, pinned generations, creator rows, headless wiring and provider diagnostics.
-  // countLines: 4207 -> 5979 (+1772); exact cap, no exclusions or spare allocation.
-  'packages/host/src/assemble': 5979,
+  // 2026-10-07 reviewed growth: provider registries, adapter factories, pinned generations, creator rows, headless wiring, provider diagnostics and model deployment compatibility.
+  // countLines: 4207 -> 5982 (+1775); exact cap, no exclusions or spare allocation.
+  'packages/host/src/assemble': 5982,
   // P1: generated-schema validators and duplicate projection-name refusal; measured exact cap.
   // F1 adds Surface JSON/identity validation and lock snapshot validation.
   // PM4 adds strict management DTO validation and method permission/identity contracts; exact total.
@@ -1936,9 +1936,9 @@ const INITIAL_CEILING: Record<string, number> = {
   // An approval request carries the tool's ACP kind and name. Measured 26542 (+6), exact cap.
   // Approval reasons: the prompter router answers with a reason (+18). Measured 26758 (combined tree), exact cap.
   // 2026-10-06: bound image transport byte totals and split oversized worker scan ranges; 26818, exact.
-  // 2026-10-07 reviewed growth: provider/admin catalogs, composition surfaces, session tool ownership, durable generations and fresh-local demo admission.
-  // countLines: 26847 -> 27567 (+720); exact cap, no exclusions or spare allocation.
-  'packages/daemon/src': 27567,
+  // 2026-10-07 reviewed growth: provider/admin catalogs, composition surfaces, session tool ownership, durable generations, fresh-local demo admission and Host facade inspection.
+  // countLines: 26847 -> 27570 (+723); exact cap, no exclusions or spare allocation.
+  'packages/daemon/src': 27570,
   'packages/daemon/src/packages/admin-session': 46,
   // 2026-09-14: whole-branch review fix wave (Finding 1) adds the two missing
   // 'pins/inspect'/'pins/release' entries to the ACTIONS BFF route allowlist, which had been left
@@ -2194,9 +2194,9 @@ const INITIAL_CEILING: Record<string, number> = {
   // Approval reasons: the approval card label reads the decision reason (+22). Measured 16081 (combined tree), exact cap.
   // 2026-10-05 the merge keeps both sides' additions, so neither number holds. Re-measured on the
   // merged tree: 16861, exact, no spare.
-  // 2026-10-07 reviewed growth: loop/model selection, plugin state administration and session defaults.
-  // countLines: 16908 -> 17963 (+1055); exact cap, no exclusions or spare allocation.
-  'packages/web/src': 17963,
+  // 2026-10-07 reviewed growth: loop/model selection, plugin state administration, session defaults and workspace confirmation.
+  // countLines: 16908 -> 17966 (+1058); exact cap, no exclusions or spare allocation.
+  'packages/web/src': 17966,
   // 2026-09-17 web-client-modules frontend track (rebased onto L0/permission-picker main): re-measured exact value below.
   // 2026-09-14: Task 7 orphaned-pin-cleanup adds the orphan-pins section to PluginAdminPage — the
   // #orphanPins/#orphanPinsList/#orphanPinsStatus/#orphanPinsReleaseAll element bindings, the
@@ -2686,9 +2686,9 @@ const INITIAL_CEILING: Record<string, number> = {
   // read-only under full file access: the fence guard, the roots helper and their wiring (+40).
   // Measured 38359, exact.
   // Approval reasons: the Prompter type may answer with a reason (+2). Measured 38398 (combined tree), exact cap.
-  // 2026-10-07 reviewed growth: provider composition, pinned generations, local loading, absent capability ports and fresh-local demo admission.
-  // countLines: 38398 -> 43598 (+5200); exact cap, no exclusions or spare allocation.
-  'packages/host/src': 43598,
+  // 2026-10-07 reviewed growth: provider composition, pinned generations, local loading, absent capability ports and fresh-local demo admission, facade ownership and shutdown refusal.
+  // countLines: 38398 -> 43645 (+5247); exact cap, no exclusions or spare allocation.
+  'packages/host/src': 43645,
   'packages/host/src/ext-host/service-invocation': 247,
   // T5.2's permission projector is kept independently bounded so later extension-host work cannot
   // hide in the package-wide increment. Measured source: 86 lines.
@@ -2744,9 +2744,9 @@ const INITIAL_CEILING: Record<string, number> = {
   // 2026-09-20 appAccess and signed application identity policy. Measured 1116; exact cap.
   // 2026-09-21 AGH namespace rename (.agnes -> .agh): +1 counted line: inputs.ts imports AGH_DIR for <cwd>/.agh/profile.local.yaml.
   // Re-measured with this guard's countLines(): 1185, exact cap, no spare.
-  // 2026-10-07 reviewed growth: bundle resolution, session composition persistence, provider-independent visibility and opt-in fresh-local demo admission.
-  // countLines: 1187 -> 2787 (+1600); exact cap, no exclusions or spare allocation.
-  'packages/host/src/profile': 2787,
+  // 2026-10-07 reviewed growth: bundle resolution, session composition persistence, provider-independent visibility and opt-in fresh-local demo admission, facade ownership and shutdown refusal.
+  // countLines: 1187 -> 2794 (+1607); exact cap, no exclusions or spare allocation.
+  'packages/host/src/profile': 2794,
   // 2026-09-09: raised from 1100. 1071 of it was spent and the 29 left could not cover the deny-list
   // repair with anything to spare; the repair measures 1075. The remaining 100 are platform-win32
   // reaching parity with platform-posix - today its probe() asserts a fixed table where posix
