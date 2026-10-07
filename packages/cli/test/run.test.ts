@@ -6,6 +6,7 @@ import { runHeadless } from '@agnes/sdk'
 import { afterEach, expect, it, vi } from 'vitest'
 import { parseArgs } from '../src/args.js'
 import { applyHeadlessBundle, loadHeadlessBundle } from '../src/boot/headless.js'
+import { commandHelp } from '../src/command-help.js'
 import { parseRunArgs, runCommand } from '../src/commands/run.js'
 import type { Booted } from '../src/types.js'
 
@@ -16,6 +17,11 @@ afterEach(async () => {
   await Promise.all(dirs.splice(0).map((dir) => rm(dir, { recursive: true, force: true })))
 })
 it('owns the run grammar including stdin and refuses incomplete, duplicate and incompatible options', () => {
+  expect(commandHelp('run')).toContain('--bundle')
+  expect(commandHelp('run')).not.toContain('agh doctor')
+  expect(parseArgs(['--new', '-p', 'hi']).newSession).toBe(true)
+  expect(parseArgs(['tools', '--session', 's']).key).toBe('s')
+  expect(() => parseArgs(['--new', '--continue'])).toThrow('--new')
   expect(parseArgs(['run', '--bundle', 'pkg#demo', '--input', '-', '--json']).rest).toContain('-')
   expect(parseRunArgs(['--bundle', 'pkg#demo', '--input', '-', '--json'])).toMatchObject({
     input: '-',

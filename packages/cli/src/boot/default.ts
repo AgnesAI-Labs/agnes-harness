@@ -1,3 +1,5 @@
+import { daemonStatus, resolveDaemonScope } from '@agnes/daemon'
+import { BootError } from '../errors.js'
 import type { Booted, ParsedArgs } from '../types.js'
 import { type EnsureLocalBackendOptions, ensureLocalBackend } from './backend.js'
 import { bootConnect, bootLocalConnect, type ConnectBootDeps } from './connect.js'
@@ -22,6 +24,18 @@ export async function bootDefault(
   options: DefaultBootOptions = {},
 ): Promise<Booted> {
   if (p.connect !== undefined) return bootConnect(p, deps)
+  if (p.standalone && !p.ephemeral && !options.useEmbedded) {
+    const scope = await resolveDaemonScope({
+      env: deps.env,
+      cwd: p.cwd ?? deps.cwd,
+      home: deps.home,
+      ...(p.profile ? { profile: p.profile } : {}),
+    })
+    if ((await daemonStatus(scope.dataDir)).running)
+      throw new BootError(
+        'A daemon is already running for this home/profile. Omit --standalone to connect, or use --ephemeral for an isolated run.',
+      )
+  }
   if (options.useEmbedded || p.standalone || p.ephemeral || p.mode === 'acp' || p.command === 'acp')
     return bootLocal(p, deps)
 

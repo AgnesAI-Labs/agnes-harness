@@ -735,6 +735,16 @@ export async function main(argv: string[], io: MainIO, boot: Partial<LocalBootDe
       })
       return ExitCode.OK
     }
+    if (p.command === 'tools') {
+      const { toolsCommand } = await import('./commands/tools.js')
+      const booted = await bootDefault(p, deps, { useEmbedded: Object.keys(boot).length > 0 })
+      try {
+        io.stdout.write((await toolsCommand(booted, p, p.cwd ?? deps.cwd)) + '\n')
+        return ExitCode.OK
+      } finally {
+        await booted.close().catch(() => undefined)
+      }
+    }
     if (p.command === 'profile') {
       const { profileInspect, profileList, profileTrust } = await import('./commands/profile.js')
       const [sub, arg] = p.positional
@@ -890,7 +900,9 @@ export async function main(argv: string[], io: MainIO, boot: Partial<LocalBootDe
       e instanceof CommandError ||
       e instanceof ResourceUsageError
     ) {
-      io.stderr.write(`${e.message.replace(/[\r\n]+/g, ' ')}; run agh ${p.command ?? ''} --help for usage\n`)
+      io.stderr.write(
+        `${e.message.replace(/[\r\n]+/g, ' ')}; run agh${p.command ? ` ${p.command}` : ''} --help for usage\n`,
+      )
       return e instanceof ResourceUsageError ? ExitCode.USAGE : e.code
     }
     // The stack alone is not an answer: a JSON-RPC failure stringifies to its name and number, and
@@ -899,7 +911,7 @@ export async function main(argv: string[], io: MainIO, boot: Partial<LocalBootDe
     const detail = [data?.code, data?.message].filter((x) => typeof x === 'string').join(': ')
     const reason = `agnes: ${(e as Error).message}${detail ? ` ${detail}` : ''}`.replace(/[\r\n]+/g, ' ')
     io.stderr.write(
-      `${reason}; run agh ${p.command ?? ''} --help for usage or agh doctor for configuration\n`,
+      `${reason}; run agh${p.command ? ` ${p.command}` : ''} --help for usage or agh doctor for configuration\n`,
     )
     return ExitCode.ERROR
   } finally {

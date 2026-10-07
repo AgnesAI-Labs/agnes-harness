@@ -101,8 +101,9 @@ async function openSession(booted: Booted, p: ParsedArgs, cwd: string): Promise<
   return booted.client.session.new({
     cwd,
     ...(p.preset ? { preset: p.preset } : {}),
-    ...(p.loop
-      ? { loop: p.loop, sessionKey: `agnes:local:${booted.profileName}:cli:loop:${randomUUID()}` }
+    ...(p.loop ? { loop: p.loop } : {}),
+    ...(p.loop || p.newSession
+      ? { sessionKey: `agnes:local:${booted.profileName}:cli:${p.loop ? 'loop' : 'session'}:${randomUUID()}` }
       : {}),
   })
 }
@@ -186,6 +187,7 @@ export async function runPrint(booted: Booted, p: ParsedArgs, io: PrintIO): Prom
 
   try {
     const session = await openSession(booted, p, io.cwd)
+    io.stderr.write(`Session: ${session.id}\n`)
     // Before attach/prompt, not after: setModel takes effect for the next request onward, so it has
     // to land before the one prompt this invocation is about to send, not race it.
     if (p.model) await session.setModel(p.model)

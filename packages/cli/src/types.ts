@@ -11,6 +11,7 @@ export type SessionAdmissionPort = {
 }
 export type Command =
   | 'run'
+  | 'tools'
   | 'resume'
   | 'sessions'
   | 'export'
@@ -54,6 +55,7 @@ export type ParsedArgs = {
   cwd?: string
   /** Explicit Computer Use rescue store; bypasses profile/package resolution. */
   dataDir?: string
+  newSession?: boolean
   continue: boolean
   resume?: string
   connect?: string

@@ -4,7 +4,7 @@ English | [简体中文](quickstart.zh-CN.md)
 
 [Author kit](README.md) · [Local plugins](local-plugins.md) · [Testing guide](testing.md)
 
-Use Node.js 24.10 or later and an AGH source installation following [installation](../guide/install.md). The shortest path uses a local TypeScript plugin and the built-in keyless **Demo (local scripted reply)** model. No plugin build, SDK links or API key is needed.
+Use Node.js 24.10 or later and an AGH source installation following [installation](../guide/install.md). The shortest path uses a local TypeScript plugin and the built-in keyless **Demo (local tool-aware, no API key)** model. No plugin build, SDK links or API key is needed.
 
 ## 1. Create directly in the plugins folder
 
@@ -30,12 +30,15 @@ For a source checkout without an `agh` command, use `node packages/cli/dist/loca
 Leave the daemon running. In another terminal with the same workspace, profile and home:
 
 ```sh
-AGNES_PROFILE=local-dev agh -p 'hi'
+AGNES_PROFILE=local-dev agh tools
+AGNES_PROFILE=local-dev agh --new -p 'call plugin_hello_tool'
 ```
 
-A fresh local-dev profile selects route `demo`, model `demo-model`. Replies are labeled as demo. The adapter returns a fixed teaching reply through the real session loop. Check `/admin/plugins` or `agh package status` for hello-tool activation. The starter registers `plugin_hello_tool`; backend activation alone does not demonstrate a model tool call. To exercise tool selection, configure a scripted route with tool-call replies or a real model; the optional author test below invokes the tool without a model.
+A fresh local-dev profile selects route `demo`, model `demo-model`. The labeled, deterministic adapter calls a named available tool with schema-derived example arguments, then reports its real result. You can provide explicit arguments, for example `call plugin_hello_tool {"message":"hello"}`. Unsupported schemas produce a helpful refusal. Check `/admin/plugins` or `agh package status` for hello-tool activation. Configure a real model for reasoning.
 
-In Web, create a new session using **Demo (local scripted reply, no API key)** and submit `hi`. This is a teaching model: configure a real model for reasoning and automatic tool selection. Existing explicit model configuration takes precedence.
+`--new` creates a fresh session using the latest published plugins; print mode reports its session key on stderr. Ordinary `agh -p` keeps workspace-session reuse. Inspect a pinned session with `agh tools --session <key>` (add `--json` for schemas and origins). SDK callers use `await session.tools()`; local admin callers use `GET /admin/api/tools/<encoded-session-key>`.
+
+In Web, create a new session using **Demo (local tool-aware, no API key)** and submit `call plugin_hello_tool`. Existing explicit model configuration takes precedence. Asking the demo to create a plugin uses the available `plugin_helper_guide` and `plugin_helper_create` tools; review their prepared files and approve installation separately. If only the bundled creator is available, it reads `plugin_creator_guide` and scaffolds a canned tool through `plugin_scaffold`, then stops for review.
 
 ## 3. Edit and try again
 
@@ -48,7 +51,7 @@ agh dev .agnes/plugins/hello-tool --profile local-dev
 agh plugins reload hello-tool --profile local-dev
 ```
 
-After activation, create a new session in Web to use it. Existing sessions, including the CLI session reused in the same workspace, keep their pinned generation. Storage, sandbox and other process backends still require restart. See [hot reload](hot-reload.md) and [local plugins](local-plugins.md).
+After activation, create a new session in Web or use `agh --new -p` to use it. Client panels publish updated assets with that generation. Existing sessions, including the CLI session reused in the same workspace, keep their pinned generation. Storage, sandbox and other process backends still require restart. See [hot reload](hot-reload.md) and [local plugins](local-plugins.md).
 
 ## 4. Optional compilation and tests
 

@@ -9,7 +9,9 @@ import * as host from '@agnes/host'
 import type { Client } from '@agnes/sdk'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { LaunchResources } from '../launch/resources.js'
+import { parseArgs } from '../src/args.js'
 import { ensureLocalBackend, type SpawnDaemonInput } from '../src/boot/backend.js'
+import { bootDefault } from '../src/boot/default.js'
 import { BootError } from '../src/errors.js'
 
 const TEST_RESOURCES = {
@@ -609,4 +611,20 @@ describe('ensureLocalBackend', () => {
     await expect(ensureLocalBackend({ readinessTimeoutMs: 0 })).rejects.toBeInstanceOf(BootError)
     expect(vi.mocked(daemon.resolveDaemonScope)).not.toHaveBeenCalled()
   })
+})
+
+it('refuses standalone before opening storage when the profile daemon is running', async () => {
+  vi.mocked(daemon.resolveDaemonScope).mockResolvedValue(scope)
+  vi.mocked(daemon.daemonStatus).mockResolvedValue({ running: true } as Awaited<
+    ReturnType<typeof daemon.daemonStatus>
+  >)
+  await expect(
+    bootDefault(parseArgs(['--standalone', '-p', 'hi']), {
+      home: scope.home,
+      cwd: scope.workspace,
+      env: {},
+      agnesVersion: '0.0.0',
+      log: () => {},
+    }),
+  ).rejects.toThrow('Omit --standalone to connect')
 })

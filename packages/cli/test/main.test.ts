@@ -220,6 +220,8 @@ describe('main', () => {
       'ext',
       'plugins',
       'dev',
+      'run',
+      'tools',
       'package',
       'install',
       'doctor',
@@ -659,4 +661,14 @@ describe('main', () => {
   it('reports the version off the manifest rather than a literal', () => {
     expect(agnesVersion()).toBe('0.0.0')
   })
+})
+
+it('lists the fresh session tool catalog through SDK and owner-checked daemon RPC', async () => {
+  const h = harness(scratch())
+  expect(await main(['tools', '--json'], h.io, h.boot)).toBe(0)
+  const catalog = JSON.parse(h.out())
+  expect(catalog.sessionId).toMatch(/^agnes:local:local-dev:cli:tools:/)
+  expect(catalog.tools).toEqual(expect.any(Array))
+  expect(catalog.resources).toEqual(expect.any(Array))
+  expect(catalog.tools.some((tool: { name: string }) => tool.name === 'computer_use')).toBe(false)
 })

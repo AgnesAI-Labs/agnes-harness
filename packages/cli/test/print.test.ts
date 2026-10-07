@@ -38,7 +38,7 @@ function io(o: { stderrTTY?: boolean; stdin?: string } = {}) {
 }
 
 describe('runPrint in text mode', () => {
-  it('prints the last assistant text and exits 0, with nothing on stderr', async () => {
+  it('prints the last assistant text and identifies the session on stderr', async () => {
     const o = io()
     const code = await runPrint(
       await booted(scriptedEndpoint({ reply: 'answer 42' })),
@@ -47,7 +47,7 @@ describe('runPrint in text mode', () => {
     )
     expect(code).toBe(0)
     expect(o.out()).toBe('answer 42\n')
-    expect(o.err()).toBe('')
+    expect(o.err()).toBe(`Session: ${FAKE_SESSION_ID}\n`)
   })
 
   it('joins a multi-word prompt rather than sending only the first word', async () => {
@@ -87,7 +87,7 @@ describe('runPrint in text mode', () => {
     const code = await runPrint(await booted(ep), parseArgs(['-p', 'rm tmp']), o)
     expect(code).toBe(3)
     expect(o.out()).toBe(`parked ticket=tk-123 session=${FAKE_SESSION_ID}\n`)
-    expect(o.err()).toBe('agnes: turn ended: parked (exit 3)\n')
+    expect(o.err()).toBe(`Session: ${FAKE_SESSION_ID}\nagnes: turn ended: parked (exit 3)\n`)
   })
 
   // The whole table, under both arrival orders. The second one matters more than it looks: with the
@@ -113,7 +113,7 @@ describe('runPrint in text mode', () => {
       const ep = scriptedEndpoint({ reason, rowsAfterReply })
       const got = await runPrint(await booted(ep), parseArgs(['-p', 'q']), o)
       expect(got).toBe(code)
-      expect(o.err()).toBe(`agnes: turn ended: ${reason} (exit ${code})\n`)
+      expect(o.err()).toBe(`Session: ${FAKE_SESSION_ID}\nagnes: turn ended: ${reason} (exit ${code})\n`)
     })
 
     it('a completed turn exits 0 and prints no reason word', async () => {
@@ -121,7 +121,7 @@ describe('runPrint in text mode', () => {
       const ep = scriptedEndpoint({ reason: 'completed', reply: 'done', rowsAfterReply })
       expect(await runPrint(await booted(ep), parseArgs(['-p', 'q']), o)).toBe(0)
       expect(o.out()).toBe('done\n')
-      expect(o.err()).toBe('')
+      expect(o.err()).toBe(`Session: ${FAKE_SESSION_ID}\n`)
     })
 
     it('a parked turn exits 3 with its ticket', async () => {
@@ -153,7 +153,7 @@ describe('runPrint in text mode', () => {
     const o = io()
     const t0 = performance.now()
     expect(await runPrint(await booted(ep), parseArgs(['-p', 'q']), o)).toBe(1)
-    expect(o.err()).toBe('agnes: turn ended: error (exit 1)\n')
+    expect(o.err()).toBe(`Session: ${FAKE_SESSION_ID}\nagnes: turn ended: error (exit 1)\n`)
     // And it comes back at once. daemon raises TURN_ERROR *instead of* a turn outcome, so no
     // turn/end is coming and waiting the full drain out would be a second of silence before the
     // same exit code -- on the one path where the caller already knows something went wrong.
@@ -171,7 +171,9 @@ describe('runPrint in text mode', () => {
         turnEndError: { code: 'TRANSPORT', message: 'status=400\u001b[2J' },
       })
       expect(await runPrint(await booted(ep), parseArgs(['-p', 'q']), o)).toBe(1)
-      expect(o.err()).toBe('agnes: turn ended: error (exit 1): TRANSPORT status=400 [2J\n')
+      expect(o.err()).toBe(
+        `Session: ${FAKE_SESSION_ID}\nagnes: turn ended: error (exit 1): TRANSPORT status=400 [2J\n`,
+      )
     },
   )
 
@@ -188,7 +190,7 @@ describe('runPrint in text mode', () => {
     })
     const o = io()
     expect(await runPrint(await booted(ep), parseArgs(['-p', 'q']), o)).toBe(1)
-    expect(o.err()).toBe('agnes: turn ended: error (exit 1): AUTH status=401\n')
+    expect(o.err()).toBe(`Session: ${FAKE_SESSION_ID}\nagnes: turn ended: error (exit 1): AUTH status=401\n`)
   })
 
   it('an rpc error that is not a turn outcome is not dressed up as one', async () => {
@@ -230,7 +232,7 @@ describe('runPrint in text mode', () => {
   it('emits no progress lines when the turn calls no tools', async () => {
     const quiet = io({ stderrTTY: false })
     await runPrint(await booted(scriptedEndpoint()), parseArgs(['-p', 'q']), quiet)
-    expect(quiet.err()).toBe('')
+    expect(quiet.err()).toBe(`Session: ${FAKE_SESSION_ID}\n`)
   })
 
   it('reports each tool call and its outcome to stderr, on a TTY or not', async () => {
@@ -238,11 +240,11 @@ describe('runPrint in text mode', () => {
 
     const nonTty = io({ stderrTTY: false })
     await runPrint(await booted(scriptedEndpoint({ toolCall })), parseArgs(['-p', 'q']), nonTty)
-    expect(nonTty.err()).toBe('- tool read\n- tool read · ok · 124ms\n')
+    expect(nonTty.err()).toBe(`Session: ${FAKE_SESSION_ID}\n- tool read\n- tool read · ok · 124ms\n`)
 
     const tty = io({ stderrTTY: true })
     await runPrint(await booted(scriptedEndpoint({ toolCall })), parseArgs(['-p', 'q']), tty)
-    expect(tty.err()).toBe('- tool read\n- tool read · ok · 124ms\n')
+    expect(tty.err()).toBe(`Session: ${FAKE_SESSION_ID}\n- tool read\n- tool read · ok · 124ms\n`)
   })
 
   it('omits the tool call marker entirely in --mode json, start and end alike', async () => {
@@ -253,7 +255,7 @@ describe('runPrint in text mode', () => {
       parseArgs(['-p', 'q', '--mode', 'json']),
       nonTty,
     )
-    expect(nonTty.err()).toBe('')
+    expect(nonTty.err()).toBe(`Session: ${FAKE_SESSION_ID}\n`)
   })
 
   // Each refusal names the flag the user typed and what is missing. `--park` and `--preset --resume`
@@ -369,7 +371,7 @@ describe('runPrint in json mode', () => {
     expect(o.out().endsWith('\n')).toBe(true)
     // The reason already rides in the line; repeating it on stderr would corrupt a caller that reads
     // both streams into one.
-    expect(o.err()).toBe('')
+    expect(o.err()).toBe(`Session: ${FAKE_SESSION_ID}\n`)
   })
 
   it('carries the ticket in the line when the turn parked', async () => {
@@ -448,4 +450,17 @@ describe('result line helpers', () => {
     expect(lastAssistantText([])).toBe('')
     expect(lastAssistantText([message(1, [])])).toBe('')
   })
+})
+
+it('--new chooses an explicit fresh session without changing stdout', async () => {
+  const endpoint = scriptedEndpoint({ reply: 'fresh' })
+  const output = io()
+  await runPrint(await booted(endpoint), parseArgs(['--new', '-p', 'hello']), output)
+  expect(endpoint.calls.find((call) => call.method === 'session/new')?.params).toMatchObject({
+    _meta: {
+      'ai.agnes.harness': { sessionKey: expect.stringMatching(/^agnes:local:local-dev:cli:session:/) },
+    },
+  })
+  expect(output.out()).toBe('fresh\n')
+  expect(output.err()).toBe(`Session: ${FAKE_SESSION_ID}\n`)
 })

@@ -6,6 +6,7 @@ export type { Command, ModelSel, ParsedArgs } from './types.js'
 
 const COMMANDS = new Set<string>([
   'run',
+  'tools',
   'resume',
   'sessions',
   'export',
@@ -65,6 +66,7 @@ const VALUE_FLAGS: Record<string, keyof ParsedArgs> = Object.assign(Object.creat
   '--out': 'out',
   '--from': 'from',
   '--key': 'key',
+  '--session': 'key',
 })
 
 const BOOL_FLAGS: Record<string, keyof ParsedArgs> = Object.assign(Object.create(null), {
@@ -75,6 +77,7 @@ const BOOL_FLAGS: Record<string, keyof ParsedArgs> = Object.assign(Object.create
   '--meta': 'meta',
   '--ephemeral': 'ephemeral',
   '--standalone': 'standalone',
+  '--new': 'newSession',
   '--json': 'json',
   '--repair': 'repair',
   '--upgrade': 'upgrade',
@@ -202,6 +205,10 @@ export function parseArgs(argv: string[]): ParsedArgs {
   if (p.mode === 'json' || p.mode === 'text') p.print = true
   if (p.loop && (p.continue || p.resume !== undefined || p.command === 'resume'))
     throw new UsageError('--loop selects a new session; resumed sessions keep their pinned loop')
+  if (p.newSession && (p.continue || p.resume !== undefined || p.command === 'resume'))
+    throw new UsageError('--new cannot be combined with --continue or --resume')
+  if (p.key !== undefined && p.command !== 'tools' && argv.includes('--session'))
+    throw new UsageError('--session is supported only by tools')
   if (p.continue && p.resume !== undefined)
     throw new UsageError('--continue and --resume are mutually exclusive')
   if (p.dataDir !== undefined && !(p.command === 'computer-use' && p.positional[0] === 'rescue'))
@@ -237,12 +244,13 @@ export function resolveMode(
 
 export function usage(): string {
   return [
-    'agh [prompt] [--profile <p>] [--preset <n>] [--cwd <dir>] [--continue | --resume <id>]',
+    'agh [prompt] [--profile <p>] [--preset <n>] [--cwd <dir>] [--new | --continue | --resume <id>]',
     '      [--connect <t>] [--model <slot>=<route>/<model>] [--loop <id>@<version>]',
     'agh -p [prompt] [--mode text|json] [--park] [--meta] [--ephemeral|--standalone]',
     'agh --mode acp [--profile <p> | --connect <t>] [--ephemeral]      agh acp ... (alias)',
     'agh run --bundle <package#id|path> --input <file|-> --json [--batch]',
     'agh resume <id> [-p [prompt]]',
+    'agh tools [--session <key>] [--json]',
     'agh sessions [list [--cwd <dir>] | show <id>]',
     'agh export <id> [--format agnes|sharegpt|claude-code] [--html] [--raw] [-o|--out <file>]',
     'agh import <file> [--from claude-code|codex|pi|auto] [--key <sessionKey>]',

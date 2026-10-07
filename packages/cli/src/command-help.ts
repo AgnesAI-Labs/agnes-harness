@@ -1,10 +1,15 @@
 import { usage } from './args.js'
+import { RUN_USAGE } from './commands/run.js'
 import type { Command } from './types.js'
 
 /** Help is rendered before boot, including forwarded command grammars. */
 export function commandHelp(command?: Command): string {
   const common = 'Use --yes to confirm reviewed mutations without a TTY. Help never starts the backend.'
   switch (command) {
+    case 'run':
+      return RUN_USAGE
+    case 'tools':
+      return 'Usage: agh tools [--session <key>] [--json] [--cwd <dir>] [--profile <name>]\nList tools, MCP and skills visible to a fresh session or the selected session.'
     case 'serve':
     case 'web':
     case 'start':
