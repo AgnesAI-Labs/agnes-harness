@@ -1,6 +1,7 @@
 import { existsSync, mkdirSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { CoreError } from '@agnes/core'
 import { definePersistenceProvider, type PersistenceSessionStore } from '@agnes/extension-api'
 import {
   persistenceContract,
@@ -335,6 +336,26 @@ it('runs the default accounting, refine and MCP domains on metadata without SQL'
   })
   try {
     expect(bundle.storage.sqlite).toBeUndefined()
+    await expect(
+      bundle.storage.cancelCreatingChild({
+        childKey: 'missing',
+        creationId: 'missing',
+        attemptId: 'missing',
+        expectedRevision: 1,
+        reason: 'open_failed',
+        cancelledAt: 0,
+      }),
+    ).rejects.toBeInstanceOf(CoreError)
+    await expect(
+      bundle.storage.settleOrigin({
+        permitId: 'missing',
+        originSessionKey: 'missing',
+        originCostSeq: 1,
+        actualMicro: 1n,
+        complete: true,
+        creditSource: 'gateway',
+      }),
+    ).rejects.toBeInstanceOf(CoreError)
     const init = fakeSeamInit({ dataDir: dir, workspaceRoot: dir })
     init.adapters = toSeamAdapters(bundle, { owner: '@agnes/base' })
     const ledger = await seams.ledger(init)

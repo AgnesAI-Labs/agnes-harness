@@ -51,6 +51,7 @@ const STORAGE_CODES = new Set<string>([
   'E_CLOSED',
   'E_STORAGE_FAULT',
   'E_CAS',
+  'E_BUDGET',
   'E_SCAN_UNBOUNDED',
   'E_SCAN_TRUNCATED',
   'E_FORMAT',
@@ -210,6 +211,21 @@ function bridge(
       ? { clearWriterLease: childControl.clearWriterLease.bind(childControl) }
       : {}),
   }
+  // Core recovery recognizes typed CAS/budget errors, independent of the provider's error class.
+  for (const [key, operation] of Object.entries(children))
+    Object.defineProperty(children, key, {
+      enumerable: true,
+      value: (...args: unknown[]) => {
+        if (key === 'childControlFormat' || key === 'assertWritableFormat') {
+          try {
+            return Reflect.apply(operation, childControl, args)
+          } catch (error) {
+            throw asCore(error)
+          }
+        }
+        return call(async () => Reflect.apply(operation, childControl, args))
+      },
+    })
   const discardNewSession = store.discardNewSession?.bind(store)
   const ledger = {
     capabilities: provider.capabilities,
