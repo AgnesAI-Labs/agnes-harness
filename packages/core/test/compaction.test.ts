@@ -94,6 +94,53 @@ function runner(onCompact: (p: HookPayloadMap['compact']) => Promise<void> = asy
 }
 
 describe('production compaction phase', () => {
+  it.each(['elision', 'summary', 'invalid'] as const)(
+    'runs an independent engine (%s) through validated Core replacements and usage',
+    async (mode) => {
+      const { session, log, provider } = await history()
+      // This port uses the conservative serialized-wire bound, including envelope overhead.
+      provider.models = () => [model('answer-model', 'primary'), model('summary-model', 'compaction', 10000)]
+      session.compaction = new CompactionRunner({
+        engine: {
+          shouldCompact: () => false,
+          async compact(input, ports) {
+            const nodes = input.conversation
+            expect(nodes.some((node) => node.turn === 1)).toBe(true)
+            const range = [nodes[0]!.seq, nodes.at(mode === 'invalid' ? -1 : -2)!.seq] as const
+            const text =
+              mode === 'summary'
+                ? await ports.model.summarize({
+                    range,
+                    system: 'Summarize safely.',
+                    instruction: 'Summarize history.',
+                    maxTokens: 77,
+                  })
+                : 'S'
+            return { kind: 'replacement', range, text, mode: mode === 'summary' ? 'summary' : 'elision' }
+          },
+        },
+        onCompact: async () => undefined,
+      })
+      await session.requestCompaction({ actor, admissionId: 'independent-engine' })
+      expect(await session.runCompaction()).toEqual({ phase: 'checkpoint' })
+      const replacements = (await log.scan({ fromSeq: 1, limit: 500 })).filter((row) => row.surfaceOp)
+      expect(
+        replacements,
+        JSON.stringify(await log.scan({ type: 'x/core/compaction-failed', limit: 5 })),
+      ).toHaveLength(mode === 'invalid' ? 0 : 1)
+      expect(provider.requests).toHaveLength(mode === 'summary' ? 3 : 2)
+      const costs = await log.scan({ type: 'cost/ledger', limit: 100 })
+      expect(costs.filter((row) => (row.data as { purpose?: string }).purpose === 'compaction')).toHaveLength(
+        mode === 'summary' ? 1 : 0,
+      )
+      if (mode === 'invalid') {
+        expect((await log.scan({ type: 'x/core/compaction-failed', limit: 5 }))[0]?.data).toMatchObject({
+          reason: expect.stringContaining('compaction must retain a conversation suffix'),
+        })
+      }
+    },
+  )
+
   it.each([384000, 2048])(
     'summarizes a reduced session budget using the model capacity and output cap (%i)',
     async (maxTokens) => {

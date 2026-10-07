@@ -15,6 +15,7 @@ import {
   type WorkspaceHookSandbox,
 } from '@agnes/core'
 import type {
+  CompactionEngine,
   ExtensionAPI,
   ExtensionFactory,
   ExtensionManifest,
@@ -201,8 +202,9 @@ export type PackageModule = {
   runtimes?: Partial<Record<RuntimeLanguage, RuntimeFactory>>
   ecosystem?: Record<string, (ctx: SeamInitContext) => ExtensionFactory>
   isolatedEcosystem?: Record<string, IsolatedEcosystemFactory>
-  /** Trusted default policy; dynamic alternatives register `before_compact` instead. */
+  /** Base planner retained for before_compact compatibility and legacy in-memory package loaders. */
   buildCompactionPlan?: BuildCompactionPlan
+  createDefaultCompactionEngine?: (plan: BuildCompactionPlan) => CompactionEngine
   /** Release-embedded manifests. Only a loader owned by the executable can populate these. */
   embeddedExtensions?: readonly ExtensionManifest[]
   extensionEntry?: string
@@ -363,6 +365,13 @@ export function readNamedExports(
         detail: { id, reason: 'not-a-function' },
       })
     out.sandboxWorkspaceProbe = mod.sandboxWorkspaceProbe as SandboxWorkspaceProbeFactory
+  }
+  if (mod.createDefaultCompactionEngine !== undefined) {
+    if (typeof mod.createDefaultCompactionEngine !== 'function')
+      throw new HostError('E_EXT_LOAD', 'createDefaultCompactionEngine must be a function')
+    out.createDefaultCompactionEngine = mod.createDefaultCompactionEngine as NonNullable<
+      PackageModule['createDefaultCompactionEngine']
+    >
   }
   if (mod.buildCompactionPlan !== undefined) {
     if (typeof mod.buildCompactionPlan !== 'function')

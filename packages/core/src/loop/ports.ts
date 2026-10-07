@@ -2,6 +2,7 @@ import type { LoopCheckpoint, LoopContext, LoopToolCall } from '@agnes/extension
 import type { ContentBlock, InferenceEvent, RequestBody } from '@agnes/protocol'
 import { scanPages } from '../log/scan-pages.js'
 import type { Inbox } from '../reduce/shapes.js'
+import { runCompaction } from '../step/compaction.js'
 import { withPhase } from '../step/op-state.js'
 import type { SessionImpl } from '../step/session.js'
 
@@ -235,7 +236,7 @@ export async function createLoopContext(s: SessionImpl): Promise<LoopContext> {
                   [],
                   withPhase(op, { kind: 'compaction', reason: 'requested', resumeAfter: op.phase }),
                 )
-              return s.runCompaction()
+              return runCompaction(s, signal)
             },
           },
         }

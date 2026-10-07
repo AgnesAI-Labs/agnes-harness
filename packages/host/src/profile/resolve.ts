@@ -450,6 +450,16 @@ function finalize(draft: Draft, inputs: ProfileInputs, env: ResolveEnv): Resolve
     throw new HostError('E_SEAM_MISSING', 'provider.package is required', {
       detail: { seam: 'provider' },
     })
+  if (
+    m.compaction !== undefined &&
+    (!m.compaction ||
+      typeof m.compaction !== 'object' ||
+      Array.isArray(m.compaction) ||
+      typeof m.compaction.engine !== 'string' ||
+      !m.compaction.engine.trim() ||
+      Object.keys(m.compaction).some((key) => key !== 'engine'))
+  )
+    throw new HostError('E_PROFILE_FRAGMENT_KEY', 'compaction.engine must be a nonempty registered engine id')
   const draftProfile: Omit<ResolvedProfile, 'hash'> = {
     name: m.name,
     schemaVersion: m.schemaVersion ?? 1,
@@ -492,6 +502,7 @@ function finalize(draft: Draft, inputs: ProfileInputs, env: ResolveEnv): Resolve
     computerUse: resolveComputerUse(m.computerUse, undefined, 'user'),
     ...(m.extensionIsolation ? { extensionIsolation: m.extensionIsolation } : {}),
     ...(m.commandHooks ? { commandHooks: structuredClone(m.commandHooks) } : {}),
+    ...(m.compaction ? { compaction: { engine: m.compaction.engine } } : {}),
     runtimes: [],
   }
   const hash = `sha256-${sha256hex(canonicalJson(hashInput(draftProfile)))}`

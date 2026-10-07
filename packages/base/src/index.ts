@@ -269,3 +269,5 @@ export const presets: Record<string, PresetDoc> = {
     'base',
   ),
 }
+
+export { createDefaultCompactionEngine } from '../extensions/compaction/src/engine.js'

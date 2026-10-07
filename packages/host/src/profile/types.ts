@@ -136,6 +136,7 @@ export type RuntimeProfileManifest = {
   reconcile?: ReconcilePolicy
   approvals?: ApprovalProfile
   computerUse?: ComputerUseProfile
+  compaction?: { engine: string }
   commandHooks?: CommandHooksPolicy
   extensionIsolation?: ExtensionIsolationPolicy
 }
@@ -234,6 +235,7 @@ export type ResolvedProfile = Readonly<{
   reconcile: ReconcilePolicy
   approvals: ApprovalProfile
   computerUse: ResolvedComputerUseProfile
+  compaction?: { engine: string }
   commandHooks?: CommandHooksPolicy
   extensionIsolation?: ExtensionIsolationPolicy
   runtimes: ('python' | 'typescript')[]

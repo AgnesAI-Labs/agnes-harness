@@ -23,3 +23,17 @@ export * from './workspace-hooks.js'
 export * from './loop.js'
 export * from './model-adapter.js'
 export * from './loop-plugin.js'
+
+export type {
+  CompactionBudget,
+  CompactionNode,
+  CompactionInput,
+  CompactionReplacement,
+  CompactionOutput,
+  CompactionModelPort,
+  CompactionEngineInstance,
+  CompactionEngine,
+  CompactionEngineCatalogEntry,
+  CompactionEngineRegistration,
+  CompactionEnginePluginContext,
+} from './compaction-engine.js'

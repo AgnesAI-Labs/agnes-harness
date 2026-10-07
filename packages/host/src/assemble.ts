@@ -42,6 +42,11 @@ import { composeSecrets, createSecretsEnv, createSecretsFile } from './adapters/
 import type { SessionWorkspaceFence } from './adapters/session-workspace.js'
 import { type ApprovalGrantManagement, createApprovalGrantControlPlane } from './approval-grants.js'
 import { assembleCompaction } from './assemble/compaction.js'
+import {
+  installCompactionEngines,
+  withBuiltinCompactionEngines,
+  compactionEngineCatalog,
+} from './assemble/compaction-engines.js'
 import { bindModelContracts } from './assemble/contracts.js'
 import {
   buildExtensionRow,
@@ -276,6 +281,7 @@ export type Assembled = {
   /** Read-only metadata for installed model adapter factories. */
   modelAdapterCatalog(): ReturnType<typeof modelAdapterCatalog>
   sessionLoopDefault?(): Promise<import('@agnes/protocol').LoopSelection | undefined>
+  compactionEngineCatalog(): ReturnType<typeof compactionEngineCatalog>
   /** Reviewed bundled API-key routes fitted at assembly, eligible for runtime model switching. */
   preconfiguredRoutes: readonly string[]
   presets: Record<string, PresetDoc>
@@ -789,7 +795,7 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
     for (const [id, loaded] of runtimePackages) ordinaryModules.set(id, loaded.module)
     const builtOrdinary = buildOrdinaryRows(
       profile,
-      withBuiltinModelAdapters(ordinaryModules),
+      withBuiltinCompactionEngines(withBuiltinModelAdapters(ordinaryModules)),
       deps.ordinaryPluginLayers,
     )
     // `activeBuiltinClaims` is a `let` because ext: rows can only be built much further down, after
@@ -909,6 +915,7 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
             rowServices.installRoot(root, origins)
             installModelAdapters(root, origins)
             installLoops(root, origins)
+            installCompactionEngines(root, origins)
           },
           ...(deps.skillContribution ? { skillContribution: deps.skillContribution } : {}),
           afterApply: () => {
@@ -1713,7 +1720,7 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
     // 8 kernel - the repository's single Kernel.create call site
     let extensionLeaseFor: ((source: string) => LeaseView | undefined) | undefined
     const extensionSessions = new ExtensionSessions<HookPort>()
-    const compaction = assembleCompaction(modules.get('@agnes/base')?.buildCompactionPlan)
+    const compaction = assembleCompaction(pluginTree.root.compactionEngines, profile.compaction)
     // Package config is already a JSON extension point in resolved profiles.
     const configuredLoops = profile.packages
       .filter((pkg) => pkg.enabled !== false)
@@ -2410,6 +2417,7 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
       },
       modelAdapterCatalog: () => modelAdapterCatalog(pluginTree.root),
       sessionLoopDefault: () => readAdminLoopDefault(deps.profileDir, profile.name),
+      compactionEngineCatalog: () => compactionEngineCatalog(pluginTree.root),
       applyModelProfile,
       presets,
       runtimes,

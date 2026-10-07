@@ -1,6 +1,13 @@
-import type { HookPayloadMap, HookReturnMap } from '@agnes/extension-api'
+import type {
+  CompactionInput,
+  CompactionOutput,
+  CompactionModelPort,
+  HookPayloadMap,
+  HookReturnMap,
+} from '@agnes/extension-api'
 import type { Billing, InferenceEvent, ThinkingLevel } from '@agnes/protocol'
 import { settleTreeSpend } from '../../child/runtime-budget.js'
+import { scanAll } from '../../log/scan-pages.js'
 import { HookBlockedError } from '../../hooks/block.js'
 import type { SurfaceNode } from '../../project/surface.js'
 import { pairClosed, validateReplace } from '../../project/surface.js'
@@ -14,7 +21,7 @@ import { quoteBudget } from '../../step/calibrate.js'
 import { elideSpan } from '../../step/compaction-elide.js'
 import { resolvedModelRecord } from '../../step/model-tools.js'
 import { type OpStateObj, type OpStatePhase, withPhase } from '../../step/op-state.js'
-import type { CompactionPort, SessionImpl, StepOutcome } from '../../step/session.js'
+import type { SessionImpl, StepOutcome } from '../../step/session.js'
 import { CoreError, type EventInput, type Seq } from '../../types.js'
 import {
   compactionSettingsFor,
@@ -39,18 +46,9 @@ export type CompactionPlan = Exclude<HookReturnMap['before_compact'], null>
 export type BeforeCompactPayload = HookPayloadMap['before_compact']
 export type CompactPayload = HookPayloadMap['compact']
 
-type RunnerOptions = {
-  plan(
-    payload: BeforeCompactPayload,
-    config: Readonly<{ keepRecentTokens: number }>,
-  ): Promise<CompactionPlan | null>
-  onCompact(payload: CompactPayload): Promise<void>
-}
+import { CompactionRunner } from '../../step/compaction-runner.js'
+export { CompactionRunner } from '../../step/compaction-runner.js'
 
-const HYSTERESIS_MARGIN_FRACTION = 0.5
-// The longest a route that failed outright is spared another threshold compaction, in turns.
-const MAX_SUSPENDED_TURNS = 8
-const CACHE_WARM_RATIO = 0.5
 const SUMMARY_NO_TOOLS_PREAMBLE =
   'Summarize the conversation only. Do not call any tool, emit a tool invocation, or delegate work. Return only the requested summary text.'
 type Prefix = Pick<MintedRequestBody, 'sections' | 'tools' | 'model' | 'samplingParams'>
@@ -60,76 +58,6 @@ type SummarySegment = {
   wide: boolean
   quote?: { node: SurfaceNode; text: string }
   quoteEstimate?: string
-}
-
-function isCacheWarm(cache?: { cacheRead: number; input: number }): boolean {
-  if (!cache) return false
-  const total = cache.cacheRead + cache.input
-  return total > 0 && cache.cacheRead / total >= CACHE_WARM_RATIO
-}
-
-/** The policy half is injected; this class owns only threshold and overflow mechanism decisions. */
-export class CompactionRunner implements CompactionPort {
-  readonly runnable = true
-  // Session-lifetime, not durable: the worst a process restart costs is losing one deferral (the
-  // very next over-threshold check compacts immediately instead of waiting), never the reverse. A
-  // durable flag would need a ledger row of its own for a one-shot grace period that is cheap to
-  // simply redo if a restart happens to land inside it.
-  private deferredOnce = false
-  // Not durable, for the same reason: consecutive transient summary failures of threshold
-  // compactions within one turn. A restart forgets them, which costs at most one more retry.
-  transientFailures = 0
-  transientTurn: number | undefined
-  // Not durable either: consecutive threshold compactions whose route could not work at all (bad
-  // credentials, exhausted quota, a misconfigured model), and the last turn that is spared another
-  // attempt. A restart forgets both, which costs one more failing request, never a missed overflow
-  // compaction, which is never held back.
-  unavailableFailures = 0
-  suspendedThrough = 0
-
-  constructor(readonly options: RunnerOptions) {}
-
-  /** Whether threshold compaction is held back this turn after the route failed outright. */
-  suspended(turn: number): boolean {
-    return turn <= this.suspendedThrough
-  }
-
-  /** Spares the next 1, 2, 4, 8, 8, ... turns another attempt, so a broken route is retried ever more rarely. */
-  suspend(turn: number): void {
-    this.unavailableFailures++
-    this.suspendedThrough = turn + Math.min(2 ** (this.unavailableFailures - 1), MAX_SUSPENDED_TURNS)
-  }
-
-  shouldCompact(p: {
-    contextTokens: number
-    contextWindow: number
-    reserveTokens: number
-    cache?: { cacheRead: number; input: number }
-  }): boolean {
-    if (!Number.isFinite(p.reserveTokens) || p.reserveTokens < 0)
-      throw new CoreError('E_ENVELOPE', 'compaction reserveTokens must be nonnegative')
-    const over = p.contextTokens - (p.contextWindow - p.reserveTokens)
-    if (over <= 0) {
-      this.deferredOnce = false
-      return false
-    }
-    // "Marginal" is scaled to the preset's own declared safety margin rather than an absolute
-    // token count, so a preset with a small reserve does not get a proportionally huge grace band
-    // and one with a large reserve does not get a proportionally tiny one.
-    const marginal = over <= p.reserveTokens * HYSTERESIS_MARGIN_FRACTION
-    if (marginal && isCacheWarm(p.cache) && !this.deferredOnce) {
-      // One more request gets to spend the warm cache it is about to lose; the next
-      // over-threshold check, whichever turn it falls in, compacts regardless of warmth.
-      this.deferredOnce = true
-      return false
-    }
-    this.deferredOnce = false
-    return true
-  }
-
-  onOverflow(): 'compaction' {
-    return 'compaction'
-  }
 }
 
 /**
@@ -391,6 +319,7 @@ async function summarize(
   prefix: Prefix,
   // Only the length-cutoff retry overrides the configured thinking level.
   thinkingOverride?: ThinkingLevel,
+  signal = s.ac.signal,
 ): Promise<SummaryResult> {
   const { wire } = summaryRequest(s, plan, segment, calls, target, prefix, thinkingOverride)
   const inputTokens = summaryInputTokens(wire)
@@ -417,7 +346,7 @@ async function summarize(
   }
   try {
     for await (const event of s.d.provider.infer(wire, {
-      signal: s.ac.signal,
+      signal,
       toolNames: segment.wide ? prefix.tools.map((tool) => tool.name) : [],
     })) {
       if (event.type === 'text_delta') text += event.delta
@@ -441,7 +370,7 @@ async function summarize(
     const code = typeof raw === 'string' && /^[A-Z0-9_]{1,32}$/.test(raw) ? raw : undefined
     fail(classify(code, true), code ? `summary provider error ${code}` : 'summary transport failed')
   }
-  if (s.ac.signal.aborted) failure = 'cancelled'
+  if (signal.aborted) failure = 'cancelled'
   else if (text.length === 0) fail('permanent', 'summary was empty')
   const tokens = usage?.tokens ?? {
     input: 0,
@@ -508,12 +437,13 @@ async function summarizeWithRetry(
   calls: readonly ToolCallForSummary[],
   target: { route: string; model: string },
   prefix: Prefix,
+  signal = s.ac.signal,
 ): Promise<SummaryResult> {
-  const first = await summarize(s, plan, segment, calls, target, prefix)
+  const first = await summarize(s, plan, segment, calls, target, prefix, undefined, signal)
   if (first.cause !== 'summary stopped at the max_tokens cap') return first
   const configured = s.preset.model.thinking.compaction
   if (configured !== undefined && LOW_OR_BELOW_THINKING.has(configured)) return first
-  const retry = await summarize(s, plan, segment, calls, target, prefix, 'low')
+  const retry = await summarize(s, plan, segment, calls, target, prefix, 'low', signal)
   return mergeSummaryResults(first, retry)
 }
 
@@ -719,8 +649,104 @@ async function elide(
   return commitReplace(s, a, events, events.length - 2)
 }
 
+/** Convert an independent replacement into the existing validated transaction vocabulary. */
+function rangePlan(range: readonly [number, number], surface: readonly SurfaceNode[]): CompactionPlan {
+  const end = surface.findIndex((node) => node.seq === range[1])
+  const kept = surface[end + 1]
+  if (end < 0 || !kept) throw new CoreError('E_SURFACE_RANGE', 'compaction must retain a conversation suffix')
+  return {
+    summarizeRange: [range[0], range[1]],
+    keepFromSeq: kept.seq,
+    prompts: { system: '', history: '' },
+    maxTokens: 1,
+    details: { readFiles: [], modifiedFiles: [] },
+  }
+}
+
+/** Model access for independent engines shares safe derivation, tree budget and durable spend. */
+function engineModel(
+  s: SessionImpl,
+  surface: readonly SurfaceNode[],
+  calls: readonly ToolCallForSummary[],
+  prefix: Prefix,
+  signal: AbortSignal,
+): CompactionModelPort {
+  return {
+    async summarize(request, requestSignal) {
+      const callSignal = requestSignal ? AbortSignal.any([signal, requestSignal]) : signal
+      callSignal.throwIfAborted()
+      const plan = {
+        ...rangePlan(request.range, surface),
+        prompts: { system: request.system, history: request.instruction },
+        maxTokens: request.maxTokens,
+      }
+      const replace = summaryRange(plan, surface)
+      const target = resolveModel(s, 'compaction')
+      const record = s.d.provider
+        .models()
+        .find((record) => record.route === target.route && record.id === target.model)
+      if (record?.maxTokens && record.maxTokens > 0)
+        plan.maxTokens = Math.min(plan.maxTokens, record.maxTokens)
+      const selectedCalls = calls.filter((call) => replace.seqs.includes(call.assistantSeq))
+      const segment: SummarySegment = { nodes: replace.nodes, instruction: request.instruction, wide: false }
+      const { wire } = summaryRequest(s, plan, segment, selectedCalls, target, prefix)
+      if (
+        summaryInputTokens(wire) + plan.maxTokens >
+        contextWindowFor(s, target.route, target.model, 'compaction')
+      )
+        throw new CoreError('E_ENVELOPE', 'engine summary request exceeds the compaction model window')
+      const effect = s.effects.start({ kind: 'compaction', replay: 'never', slot: 'compaction' })
+      const current = s.op() as OpStateObj
+      if (current.phase.kind !== 'compaction')
+        throw new CoreError('E_RELATION', 'engine model call outside compaction')
+      await s.transition(
+        [effect.intent],
+        withPhase(current, {
+          ...current.phase,
+          effectIds: [...(current.phase.effectIds ?? []), effect.effectId],
+        }),
+      )
+      let settled = false
+      try {
+        const result = await summarizeWithRetry(s, plan, segment, selectedCalls, target, prefix, callSignal)
+        const spend: CostLedger = {
+          purpose: 'compaction',
+          effectId: effect.effectId,
+          model: target.model,
+          tokens: result.tokens,
+          creditSource: result.creditSource,
+          ...(result.credits === undefined ? {} : { credits: result.credits }),
+          ...(result.billing ? { billing: result.billing } : {}),
+          ...(callSignal.aborted ? { interrupted: true } : {}),
+        }
+        const op = s.op() as OpStateObj
+        const recorded = await s.d.runtime.ledgerRecord({
+          ...spend,
+          sessionKey: s.key,
+          lane: s.lane,
+          turn: op.meta.turn,
+          step: op.step,
+        })
+        if (!recorded && s.turn) s.turn.ledgerFailed = true
+        await s.d.log.append([
+          s.ev('cost/ledger', spend),
+          effect.settle(callSignal.aborted ? 'aborted' : result.failed ? 'error' : 'ok'),
+        ])
+        settled = true
+        callSignal.throwIfAborted()
+        if (!recorded) throw new CoreError('E_ENVELOPE', 'engine summary usage could not be recorded')
+        if (result.failed) throw new CoreError('E_ENVELOPE', result.cause ?? 'engine summary request failed')
+        return result.text
+      } finally {
+        if (!settled) await s.d.log.append([effect.settle(callSignal.aborted ? 'aborted' : 'error')])
+      }
+    },
+  }
+}
+
 /** Executes one compaction attempt and writes at most one replace. */
-export async function runCompaction(s: SessionImpl): Promise<StepOutcome> {
+export async function runCompaction(s: SessionImpl, signal = s.ac.signal): Promise<StepOutcome> {
+  signal = AbortSignal.any([signal, s.ac.signal])
   const op = s.op()
   if (op?.phase.kind !== 'compaction') return { phase: 'checkpoint' }
   if (!s.compaction.runnable || !(s.compaction instanceof CompactionRunner))
@@ -795,14 +821,74 @@ export async function runCompaction(s: SessionImpl): Promise<StepOutcome> {
     const selected = s.hooks.beforeCompact
       ? await s.hooks.beforeCompact(payload)
       : ({ kind: 'unhandled' } as const)
-    plan =
+    const starts = await scanAll((query) => s.d.log.scan(query), {
+      type: 'turn/start',
+      lane: s.lane,
+      toSeq: s.lastSeq,
+    })
+    const boundaries = starts.map((event) => ({
+      seq: surface.some((node) => node.seq === event.seq - 1 && node.kind === 'user')
+        ? event.seq - 1
+        : event.seq,
+      turn: (event.data as { turn: number }).turn,
+    }))
+    const input: CompactionInput = {
+      conversation: surface.map((node) => ({
+        seq: node.seq,
+        kind: node.kind,
+        turn:
+          node.kind === 'summary' ? 0 : (boundaries.findLast((start) => start.seq <= node.seq)?.turn ?? 0),
+        pinned: node.pinned,
+        tokensEstimate: nodeTokens(node, argsTokens),
+        data: structuredClone(node.event.data),
+      })),
+      system: fixedInstructions.system,
+      budget: { contextTokens: tokensBefore, contextWindow, reserveTokens, keepRecentTokens },
+      beforeCompact: payload,
+    }
+    const output: CompactionOutput | null =
       selected.kind === 'handled'
-        ? selected.plan
-        : await s.compaction.options.plan(payload, {
-            keepRecentTokens,
+        ? selected.plan && { kind: 'plan', plan: selected.plan }
+        : await s.compaction.compact(input, {
+            signal,
+            model: engineModel(s, surface, calls, currentPrefix, signal),
           })
+    signal.throwIfAborted()
+    if (output?.kind === 'replacement') {
+      if (
+        typeof output.text !== 'string' ||
+        !output.text.trim() ||
+        !['summary', 'elision'].includes(output.mode)
+      )
+        throw new CoreError('E_ENVELOPE', 'engine replacement must contain text and a valid mode')
+      const replacementPlan = rangePlan(output.range, surface)
+      const replacement = summaryRange(replacementPlan, surface)
+      const attempt: Attempt = {
+        phase,
+        plan: replacementPlan,
+        replace: replacement,
+        calls,
+        argsTokens,
+        tokensBefore,
+      }
+      if (estimateTokens(output.text) >= spanTokens(attempt))
+        throw new CoreError('E_ENVELOPE', 'engine replacement is not smaller than the replaced context')
+      const events = [
+        beginEvent(s, attempt, {}, { mode: output.mode === 'elision' ? 'elided' : 'summary' }),
+        replaceEvent(s, attempt, output.text, output.mode === 'elision' ? 'system' : 'model'),
+        s.ev(
+          'x/core/compaction-end',
+          { tokensAfter: tokensAfter(attempt, output.text) },
+          { ignorable: true },
+        ),
+      ]
+      return commitReplace(s, attempt, events, 1)
+    }
+    if (output && output.kind !== 'plan')
+      throw new CoreError('E_ENVELOPE', 'invalid compaction engine output')
+    plan = output?.plan ?? null
   } catch (error) {
-    return leaveWithoutEffect(s, op, error instanceof Error ? error.message : String(error))
+    return leaveWithoutEffect(s, s.op() as OpStateObj, error instanceof Error ? error.message : String(error))
   }
   if (!plan) {
     const cache = lastCacheHint(s)
@@ -837,7 +923,7 @@ export async function runCompaction(s: SessionImpl): Promise<StepOutcome> {
   try {
     replace = summaryRange(plan, surface)
   } catch (error) {
-    return leaveWithoutEffect(s, op, error instanceof Error ? error.message : String(error))
+    return leaveWithoutEffect(s, s.op() as OpStateObj, error instanceof Error ? error.message : String(error))
   }
   const selectedPlan = plan
   const segmentCalls = calls.filter(
@@ -978,7 +1064,7 @@ export async function runCompaction(s: SessionImpl): Promise<StepOutcome> {
 
   const selected = plan
   const results = await Promise.all(
-    segments.map((segment) => summarizeWithRetry(s, selected, segment, calls, target, prefix)),
+    segments.map((segment) => summarizeWithRetry(s, selected, segment, calls, target, prefix, signal)),
   )
   const tokens = results.reduce((sum, result) => addTokens(sum, result.tokens), zeroTokens())
   const credits = results.reduce<number | undefined>(
@@ -1005,7 +1091,7 @@ export async function runCompaction(s: SessionImpl): Promise<StepOutcome> {
     creditSource,
     model: target.model,
     ...(billing ? { billing } : {}),
-    ...(s.ac.signal.aborted ? { interrupted: true } : {}),
+    ...(signal.aborted ? { interrupted: true } : {}),
   }
   const record = await s.d.runtime.ledgerRecord({
     ...spend,
@@ -1020,7 +1106,7 @@ export async function runCompaction(s: SessionImpl): Promise<StepOutcome> {
   const failure = FAILURE_ORDER.find((kind) => results.some((result) => result.failure === kind))
   if (failure) {
     const cause = (results.find((result) => result.failure === failure) ?? results[0])?.cause
-    const message = s.ac.signal.aborted
+    const message = signal.aborted
       ? 'compaction cancelled'
       : `summary request failed${cause ? `: ${cause}` : ''}`
     if (elides(s, phase, failure, contextWindow, reserveTokens))
@@ -1042,7 +1128,7 @@ export async function runCompaction(s: SessionImpl): Promise<StepOutcome> {
             message: `${message}; the context window is nearly full, so the turn stopped. Fix the compaction model or its credentials, or raise or reset the context budget.`,
           }
         : undefined
-    return settleFailed(s, phase, call, s.ac.signal.aborted ? 'aborted' : 'error', message, stop)
+    return settleFailed(s, phase, call, signal.aborted ? 'aborted' : 'error', message, stop)
   }
 
   const [mainResult, prefixResult] = results
