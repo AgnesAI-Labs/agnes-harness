@@ -6,6 +6,7 @@ import { readSandboxStartupConfig } from '../adapters/sandbox-providers.js'
 import { HostError, type Layer } from '../errors.js'
 import { cacheDir as defaultCacheDir, dataDir as defaultDataDir } from '../paths.js'
 import { canonicalJson, sha256hex } from './canonical.js'
+import { prepareProfileComposition } from './composition.js'
 import { DEFAULT_COMPUTER_USE, mergeComputerUse, resolveComputerUse } from './computer-use.js'
 import { isolationOnlyLayer, mergeIsolation } from './isolation.js'
 import { assertNoReservedRouteName, BUILTIN_PACKAGES, loadTemplate } from './templates.js'
@@ -335,6 +336,29 @@ export async function resolveProfile(inputs: ProfileInputs, env: ResolveEnv): Pr
       chain: [...draft.chain, l.label],
     }
   }
+  if (
+    draft.manifest.bundles !== undefined ||
+    draft.manifest.composition !== undefined ||
+    inputs.adminBundles?.length ||
+    Object.keys(inputs.bundleCatalog ?? {}).length
+  ) {
+    const prepared = prepareProfileComposition(
+      draft.manifest,
+      inputs.bundleCatalog ?? {},
+      inputs.adminBundles,
+    )
+    draft.manifest = prepared.manifest
+    const resolved = finalize(draft, inputs, env)
+    const { hash: _hash, ...rest } = resolved
+    const enriched = {
+      ...rest,
+      compositionSources: prepared.sources,
+      bundleCatalog: inputs.bundleCatalog ?? {},
+      bundlePresets: prepared.presets,
+      ...(inputs.adminBundles ? { adminBundles: inputs.adminBundles } : {}),
+    }
+    return deepFreeze({ ...enriched, hash: `sha256-${sha256hex(canonicalJson(enriched))}` })
+  }
   return finalize(draft, inputs, env)
 }
 
@@ -502,6 +526,10 @@ function finalize(draft: Draft, inputs: ProfileInputs, env: ResolveEnv): Resolve
     name: m.name,
     schemaVersion: m.schemaVersion ?? 1,
     ...(m.loop ? { loop: structuredClone(m.loop) } : {}),
+    ...(m.bundles ? { bundles: m.bundles } : {}),
+    ...(m.composition ? { composition: m.composition } : {}),
+    ...(m.persistence ? { persistence: m.persistence } : {}),
+    ...(m.sandbox ? { sandbox: m.sandbox } : {}),
     chain: draft.chain,
     packages,
     seams,

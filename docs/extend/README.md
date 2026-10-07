@@ -63,3 +63,4 @@ external author path. `--author-only` skips the harness build for a light check.
 ## Local authoring
 
 Drop a source plugin into the [local plugins folder](local-plugins.md), or [build a plugin by asking the agent](agent-built-plugins.md). Both paths use the same package states and immutable source snapshots.
+[Bundles and profiles](bundles-and-profiles.md) describes reusable profile patches, presets and configuration provenance.

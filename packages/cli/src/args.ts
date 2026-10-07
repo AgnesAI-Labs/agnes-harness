@@ -236,6 +236,7 @@ export function usage(): string {
     'agh mcp list|get|add|update|remove|test|enable|disable|status|reconnect|tools ...',
     'agh consent DISABLED|LOCAL|ANON|FULL',
     'agh stats deviation [--json]        agh config [--connect <t>]        agh conformance gateway [--json]',
+    'agh config dump [--profile <name>] [--preset <name>]  Explain the desired plugin composition',
     'agh web [--port <n>] [--home <dir>] [--profile <p>] [--cwd <dir>]   agh start (same stack)',
     'agh daemon start|stop|status [...]  agh ext <...>  agh mcp serve [...]  agh serve model-api [...]',
     'agh --version | --help',

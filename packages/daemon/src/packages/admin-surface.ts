@@ -65,6 +65,11 @@ export type AdminSurfaceOptions = {
   surfaceLinks?: () => Promise<readonly AdminSurfaceLink[]>
   /** Real host catalogs plus configuration storage. Missing means selection is unavailable. */
   sessionSelection?: AdminSessionSelection
+  composition?: {
+    bundles(): Promise<unknown>
+    dump(preset?: string): Promise<unknown>
+    saveBundles(input: { revision: number; bundles: string[] }): Promise<unknown>
+  }
   clock?: () => number
 }
 
@@ -167,6 +172,69 @@ export function createAdminSurface(options: AdminSurfaceOptions) {
       }
       if (selectionRoute) {
         const route = url.pathname.slice('/admin/api/'.length)
+        if (route === 'bundles' || route === 'composition') {
+          const write = route === 'bundles' && request.method === 'PUT'
+          if (!write && request.method !== 'GET' && !(route === 'composition' && request.method === 'POST')) {
+            error(response, 404, 'E_ADMIN_ROUTE', 'The admin operation does not exist.')
+            return true
+          }
+          if (!configuredPermissions.includes(write ? 'packages.activate' : 'packages.read')) {
+            error(response, 403, 'E_ADMIN_FORBIDDEN', 'You do not have permission to perform this action.')
+            return true
+          }
+          if (write && readOnly) {
+            error(response, 409, 'E_ADMIN_READ_ONLY', 'The admin surface is in read-only recovery mode.')
+            return true
+          }
+          if (!options.composition) {
+            error(response, 503, 'E_ADMIN_CATALOG_UNAVAILABLE', 'Composition is unavailable.')
+            return true
+          }
+          try {
+            let result: unknown
+            if (write) {
+              const input = await readBody(request)
+              if (
+                !record(input) ||
+                Object.keys(input).length !== 2 ||
+                !Number.isSafeInteger(input.revision) ||
+                Number(input.revision) < 0 ||
+                !Array.isArray(input.bundles) ||
+                input.bundles.length > 64 ||
+                !input.bundles.every((id) => typeof id === 'string' && id.length <= 512)
+              )
+                throw new Error('request')
+              result = await options.composition.saveBundles(input as { revision: number; bundles: string[] })
+            } else if (route === 'composition') {
+              let preset: string | undefined
+              if (request.method === 'POST') {
+                const input = await readBody(request)
+                if (
+                  !record(input) ||
+                  Object.keys(input).length !== 1 ||
+                  typeof input.preset !== 'string' ||
+                  !/^[a-z][a-z0-9-]{0,63}$/.test(input.preset)
+                )
+                  throw new Error('request')
+                preset = input.preset
+              }
+              result = await options.composition.dump(preset)
+            } else result = await options.composition.bundles()
+            reply(response, 200, result)
+          } catch (cause) {
+            const code = (cause as { code?: string }).code
+            const conflict = code === 'CONFIG_REVISION_CONFLICT'
+            error(
+              response,
+              conflict ? 409 : 400,
+              conflict ? code : 'E_ADMIN_COMPOSITION',
+              conflict
+                ? 'Configuration changed; reload and try again.'
+                : 'Composition could not be resolved. Check the selected bundles and preset.',
+            )
+          }
+          return true
+        }
         const write = route === 'defaults' && request.method === 'PUT'
         if (
           !write &&

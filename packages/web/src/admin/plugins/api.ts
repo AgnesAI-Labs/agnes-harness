@@ -169,7 +169,26 @@ export class PluginAdminApi {
     return body
   }
 
-  async #selection(path: string, input?: SessionDefaultsSnapshot): Promise<unknown> {
+  async bundles(): Promise<BundleSnapshot> {
+    const body = await this.#selection('bundles')
+    if (!isBundleSnapshot(body)) throw invalidSelection()
+    return body
+  }
+
+  async saveBundles(input: { revision: number; bundles: string[] }): Promise<void> {
+    const body = await this.#selection('bundles', input)
+    if (!body || typeof body !== 'object' || !('effect' in body) || body.effect !== 'restart-required')
+      throw invalidSelection()
+  }
+
+  async composition(): Promise<unknown> {
+    return this.#selection('composition')
+  }
+
+  async #selection(
+    path: string,
+    input?: SessionDefaultsSnapshot | { revision: number; bundles: string[] },
+  ): Promise<unknown> {
     const fetcher = this.#fetch
     const response = await fetcher(`/admin/api/${path}`, {
       method: input ? 'PUT' : 'GET',
@@ -433,4 +452,33 @@ function invalidSelection(): AdminApiError {
     code: 'ADMIN_RESPONSE_INVALID',
     message: 'The backend returned data that cannot be verified.',
   })
+}
+
+export type BundleSnapshot = {
+  revision: number
+  bundles: string[]
+  effect: 'restart-required'
+  catalog: { id: string; sourcePackage: string }[]
+}
+function isBundleSnapshot(value: unknown): value is BundleSnapshot {
+  if (!value || typeof value !== 'object') return false
+  const data = value as BundleSnapshot
+  return (
+    Number.isSafeInteger(data.revision) &&
+    data.revision >= 0 &&
+    data.effect === 'restart-required' &&
+    Array.isArray(data.bundles) &&
+    data.bundles.length <= 64 &&
+    data.bundles.every((id) => typeof id === 'string' && id.length <= 512) &&
+    Array.isArray(data.catalog) &&
+    data.catalog.length <= 4096 &&
+    data.catalog.every(
+      (entry) =>
+        !!entry &&
+        typeof entry.id === 'string' &&
+        entry.id.length <= 512 &&
+        typeof entry.sourcePackage === 'string' &&
+        entry.sourcePackage.length <= 256,
+    )
+  )
 }

@@ -52,6 +52,7 @@ import {
   type PluginKind,
   pluginFailureMessage,
   SessionDefaultsPanel,
+  BundlesPanel,
 } from './control-panel.js'
 import { PLUGIN_ADMIN_LOCALE_NAMESPACE, pluginAdminLocaleCatalog } from './locales/admin.js'
 import { SOURCE_FORMATS, sourceFromForm, sourceProblem } from './source-form.js'
@@ -1090,6 +1091,7 @@ class PluginAdminPage {
       this.#listHost,
       <UiLocaleProvider source={this.#locale}>
         <SessionDefaultsPanel api={this.#api} canSave={this.canEffect('packages.activate')} t={this.#t} />
+        <BundlesPanel api={this.#api} canSave={this.canEffect('packages.activate')} t={this.#t} />
         <KindFilter
           value={this.#kind}
           t={this.#t}

@@ -559,7 +559,7 @@
       "properties": {
         "kinds": {
           "type": "array",
-          "items": { "enum": ["tool", "loop", "model-adapter", "mcp", "skills", "ui"] },
+          "items": { "enum": ["tool", "loop", "model-adapter", "mcp", "skills", "ui", "bundle"] },
           "uniqueItems": true,
           "maxItems": 6
         },
@@ -798,7 +798,7 @@
       "properties": {
         "kinds": {
           "type": "array",
-          "items": { "enum": ["tool", "loop", "model-adapter", "mcp", "skills", "ui"] },
+          "items": { "enum": ["tool", "loop", "model-adapter", "mcp", "skills", "ui", "bundle"] },
           "uniqueItems": true,
           "maxItems": 6
         },
@@ -902,7 +902,7 @@
       "properties": {
         "kinds": {
           "type": "array",
-          "items": { "enum": ["tool", "loop", "model-adapter", "mcp", "skills", "ui"] },
+          "items": { "enum": ["tool", "loop", "model-adapter", "mcp", "skills", "ui", "bundle"] },
           "uniqueItems": true,
           "maxItems": 6
         },

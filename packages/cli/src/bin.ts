@@ -461,6 +461,12 @@ export async function main(argv: string[], io: MainIO, boot: Partial<LocalBootDe
       return ExitCode.OK
     }
     if (p.command === 'config') {
+      if (p.positional[0] === 'dump') {
+        const { configDumpCommand } = await import('./commands/config-dump.js')
+        io.stdout.write(`${await configDumpCommand(p, deps)}\n`)
+        return ExitCode.OK
+      }
+      if (p.positional.length) throw new UsageError('unknown config command')
       const booted = await bootDefault(p, deps, { useEmbedded: Object.keys(boot).length > 0 })
       try {
         const snapshot = await readConfigurationSnapshot(booted)

@@ -5,6 +5,16 @@ export const PLUGIN_ADMIN_LOCALE_NAMESPACE = '@agnes/web/plugin-admin'
 
 export const pluginAdminLocaleCatalog: LocaleCatalog = {
   en: {
+    'kind.bundle': 'Bundle',
+    'bundles.title': 'Bundles and profiles',
+    'bundles.description':
+      'Choose bundles in override order. Save, then restart the host to apply this composition.',
+    'bundles.save': 'Save bundles',
+    'bundles.saved': 'Bundle selection saved. Restart required.',
+    'bundles.failed': 'Bundles were not saved. Reload and check your selection.',
+    'bundles.unavailable': 'Bundle composition is unavailable.',
+    'bundles.explain': 'Explain desired composition',
+    'bundles.missing': 'Unavailable bundle',
     'failure.missing-export': 'Plugin export is missing.',
     'failure.api-range': 'Plugin API range is incompatible.',
     'failure.missing-inject': 'A required plugin service is missing.',
@@ -173,6 +183,15 @@ export const pluginAdminLocaleCatalog: LocaleCatalog = {
     'source.validation.prefix': 'This source reference must start with “{prefix}”, for example {example}.',
   },
   'zh-CN': {
+    'kind.bundle': '组合包',
+    'bundles.title': '组合包与配置',
+    'bundles.description': '按覆盖顺序选择组合包。保存后重启 Host 以应用此配置。',
+    'bundles.save': '保存组合包',
+    'bundles.saved': '组合包选择已保存，需要重启。',
+    'bundles.failed': '未保存组合包。请重新加载并检查选择。',
+    'bundles.unavailable': '组合包配置不可用。',
+    'bundles.explain': '查看待启动配置',
+    'bundles.missing': '不可用的组合包',
     'failure.missing-export': '缺少插件导出。',
     'failure.api-range': '插件 API 版本范围不兼容。',
     'failure.missing-inject': '缺少插件必需的服务注入。',

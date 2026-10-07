@@ -1,7 +1,12 @@
 import { createServer } from 'node:http'
 import type { AdminSessionSelection, PackageAdminPermission } from '@agnes/protocol'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { ACTIONS, type AdminSurfaceAction, createAdminSurface } from '../src/packages/admin-surface.js'
+import {
+  ACTIONS,
+  type AdminSurfaceAction,
+  type AdminSurfaceOptions,
+  createAdminSurface,
+} from '../src/packages/admin-surface.js'
 
 const closers: Array<() => Promise<void>> = []
 afterEach(async () => {
@@ -18,6 +23,7 @@ async function server(
   selectionOptions: {
     sessionSelection?: AdminSessionSelection
     permissions?: readonly PackageAdminPermission[]
+    composition?: AdminSurfaceOptions['composition']
   } = {},
 ) {
   let now = Date.now()
@@ -299,4 +305,39 @@ it('refuses absent or malformed catalogs and redacts failures and revision confl
     { id: 'x', version: '1', sourcePackage: 'pkg', capabilities: [], secret: 'bad' } as never,
   ]
   expect((await s.selectionRequest('loops')).status).toBe(502)
+})
+
+it('exposes composition and gates bundle selection behind activation and recovery checks', async () => {
+  const composition = {
+    bundles: async () => ({
+      revision: 0,
+      bundles: [],
+      catalog: [{ id: 'acme/research#base' }],
+      effect: 'restart-required',
+    }),
+    dump: async (preset?: string) => ({
+      preset: preset ?? 'standard',
+      status: 'desired',
+      sources: { loop: { layer: 'profile', name: 'local-dev' } },
+    }),
+    saveBundles: async (input: { revision: number; bundles: string[] }) => ({
+      ...input,
+      revision: input.revision + 1,
+      effect: 'restart-required',
+    }),
+  }
+  const app = await server(undefined, undefined, { composition })
+  expect(
+    await (await app.selectionRequest('composition', 'POST', { preset: 'research' })).json(),
+  ).toMatchObject({ preset: 'research', status: 'desired' })
+  expect((await app.selectionRequest('bundles', 'PUT', { revision: 0, bundles: [] })).status).toBe(409)
+  await app.request('context')
+  expect(
+    await (
+      await app.selectionRequest('bundles', 'PUT', { revision: 0, bundles: ['acme/research#base'] })
+    ).json(),
+  ).toMatchObject({ revision: 1, effect: 'restart-required' })
+  expect((await app.selectionRequest('composition', 'POST', { preset: '../escape' })).status).toBe(400)
+  const denied = await server(undefined, undefined, { composition, permissions: ['packages.read'] })
+  expect((await denied.selectionRequest('bundles', 'PUT', { revision: 0, bundles: [] })).status).toBe(403)
 })

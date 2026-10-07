@@ -23,6 +23,7 @@ import { closeHost } from './lifecycle.js'
 import { type ResolvedPreset, resolvePreset } from './presets/resolve.js'
 import type { PresetDoc } from './presets/types.js'
 import { withAssemblyIsolation } from './profile/isolation.js'
+import { assertCompositionCompatible } from './profile/composition.js'
 import type { ResolvedProfile } from './profile/types.js'
 import type { SkillRuntimeInput } from './resources/skills.js'
 import { createRuntimeGenerationHost, type PluginGenerationStatus } from './runtime-generation-host.js'
@@ -293,6 +294,16 @@ async function createHostInstance(profile: ResolvedProfile, opts: HostOptions): 
       })
       pendingSessionOpens.add(opening)
       try {
+        if (profile.composition) {
+          const name = o.preset ?? profile.presets.default
+          const adminLoop = await a.sessionLoopDefault?.()
+          const selection = a.compositionForPreset(
+            name,
+            o.loop ? { loop: o.loop } : adminLoop ? { loop: adminLoop } : undefined,
+          )
+          assertCompositionCompatible(a.compositionForPreset(profile.presets.default), selection)
+          if (selection.selection.loop) o = { ...o, loop: selection.selection.loop }
+        }
         // A caller-supplied fitted seam may customize behavior, but it cannot replace workspace
         // authority. Every root session still gets a Host-minted binding and invocation owner.
         if (!o.binding && !o.parent) {

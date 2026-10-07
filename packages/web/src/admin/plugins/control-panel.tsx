@@ -10,7 +10,7 @@ import { useEffect, useState } from 'react'
 import type { PluginRuntimeState } from '../../client-modules/runtime-status.js'
 import type { PluginAdminApi } from './api.js'
 
-export const PLUGIN_KINDS = ['tool', 'loop', 'model-adapter', 'mcp', 'skills', 'ui'] as const
+export const PLUGIN_KINDS = ['tool', 'loop', 'model-adapter', 'mcp', 'skills', 'ui', 'bundle'] as const
 export type PluginKind = (typeof PLUGIN_KINDS)[number]
 type Text = (key: string) => string
 type Plugin = PackageInstalledDescriptor | PackageCatalogDescriptor
@@ -282,4 +282,122 @@ export function pluginFailureMessage(message: string, t: Text): string {
     'Runtime activation failed.': 'failure.activation',
   }
   return keys[message] ? t(keys[message]) : message
+}
+
+export function BundlesPanel({
+  api,
+  canSave,
+  t,
+}: {
+  api: PluginAdminApi | undefined
+  canSave: boolean
+  t: Text
+}) {
+  const [snapshot, setSnapshot] = useState<Awaited<ReturnType<PluginAdminApi['bundles']>>>()
+  const [selected, setSelected] = useState<string[]>([])
+  const [busy, setBusy] = useState(false)
+  const [message, setMessage] = useState('')
+  const [dump, setDump] = useState('')
+  const [reload, setReload] = useState(0)
+  // biome-ignore lint/correctness/useExhaustiveDependencies: reload explicitly rereads desired bundle selection.
+  useEffect(() => {
+    let current = true
+    setSnapshot(undefined)
+    setDump('')
+    if (!api) return
+    setBusy(true)
+    api
+      .bundles()
+      .then((value) => {
+        if (current) {
+          setSnapshot(value)
+          setSelected(value.bundles)
+        }
+      })
+      .catch(() => {
+        if (current) setMessage('bundles.unavailable')
+      })
+      .finally(() => {
+        if (current) setBusy(false)
+      })
+    return () => {
+      current = false
+    }
+  }, [api, reload])
+  async function save() {
+    if (!api || !snapshot || busy || !canSave) return
+    setBusy(true)
+    try {
+      await api.saveBundles({ revision: snapshot.revision, bundles: selected })
+      setMessage('bundles.saved')
+      setReload((value) => value + 1)
+    } catch {
+      setMessage('bundles.failed')
+    } finally {
+      setBusy(false)
+    }
+  }
+  async function explain() {
+    if (!api || busy) return
+    setBusy(true)
+    try {
+      setDump(JSON.stringify(await api.composition(), null, 2))
+    } catch {
+      setMessage('bundles.unavailable')
+    } finally {
+      setBusy(false)
+    }
+  }
+  return (
+    <section aria-label={t('bundles.title')} style={{ marginBlock: '1rem' }}>
+      <h2>{t('bundles.title')}</h2>
+      <p>{t('bundles.description')}</p>
+      {message && <p role="status">{t(message)}</p>}
+      {snapshot && (
+        <form
+          onSubmit={(event) => {
+            event.preventDefault()
+            void save()
+          }}
+        >
+          {snapshot.catalog.map(({ id }) => (
+            <label key={id} style={{ display: 'block' }}>
+              <input
+                type="checkbox"
+                checked={selected.includes(id)}
+                disabled={busy || !canSave}
+                onChange={(event) =>
+                  setSelected((prior) =>
+                    event.target.checked ? [...prior, id] : prior.filter((entry) => entry !== id),
+                  )
+                }
+              />{' '}
+              {id}
+            </label>
+          ))}
+          {selected
+            .filter((id) => !snapshot.catalog.some((entry) => entry.id === id))
+            .map((id) => (
+              <p key={id}>
+                {t('bundles.missing')}: {id}
+              </p>
+            ))}
+          <Button htmlType="submit" disabled={busy || !canSave}>
+            {t('bundles.save')}
+          </Button>
+        </form>
+      )}
+      <Button disabled={!api || busy} onClick={() => setReload((value) => value + 1)}>
+        {t('defaults.reload')}
+      </Button>
+      <Button disabled={!api || busy} onClick={() => void explain()}>
+        {t('bundles.explain')}
+      </Button>
+      {dump && (
+        <pre tabIndex={0} style={{ maxHeight: '24rem', overflow: 'auto' }}>
+          {dump}
+        </pre>
+      )}
+    </section>
+  )
 }

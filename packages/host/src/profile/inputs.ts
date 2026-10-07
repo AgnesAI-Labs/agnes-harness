@@ -5,6 +5,9 @@ import { parse as parseYaml } from 'yaml'
 import { lockState } from '../packages/lock-state.js'
 import { lockPath, readLock } from '../packages/lockfile.js'
 import { mergeIsolation } from './isolation.js'
+import { readInstalledBundles } from './bundles-reader.js'
+import { readBundleSelection } from './bundle-selection.js'
+import { dataDir as defaultDataDir } from '../paths.js'
 import type { LockState, ProfileInputs, RuntimeProfileManifest } from './types.js'
 
 /**
@@ -88,15 +91,29 @@ export async function readConfigurationProfileInputs(
 
   // A supplied lock is a test seam and wins over the profile's lockfile. If no lockfile exists,
   // leave the lock key absent so the resolver sees the same empty-lock fallback as CLI boot.
+  const installedLock =
+    options.lock === undefined && existsSync(lockPath(profileDir))
+      ? readLock(profileDir, { profile, agnesVersion: options.agnesVersion })
+      : undefined
   const projected =
     options.lock === undefined && existsSync(lockPath(profileDir))
-      ? lockState(readLock(profileDir, { profile, agnesVersion: options.agnesVersion }), { profileDir })
+      ? lockState(installedLock!, { profileDir })
       : undefined
   const lock = options.lock ?? projected?.lock
   const userLayer = mergeConfiguration(profile, user, options.configuration)
+  const configuredDataDir = userLayer?.dataDir ?? defaultDataDir(options.home)
+  const dataDir =
+    configuredDataDir === '~'
+      ? options.home
+      : configuredDataDir.startsWith('~/')
+        ? join(options.home, configuredDataDir.slice(2))
+        : configuredDataDir
+  const bundleCatalog = installedLock ? readInstalledBundles(installedLock, dataDir, profile) : undefined
 
   return {
     builtin: profile,
+    adminBundles: readBundleSelection(profileDir).bundles,
+    ...(bundleCatalog ? { bundleCatalog } : {}),
     ...(userLayer === undefined ? {} : { user: userLayer }),
     ...(local === undefined ? {} : { local }),
     ...(lock === undefined ? {} : { lock }),

@@ -33,6 +33,8 @@ import { createClient, memoryJournal } from '@agnes/sdk'
 import type { PluginRebuiltEvent } from '@agnes/web/server'
 import { localPipeFactories } from '../src/boot/pipe-factory.js'
 import type { LocalBackend } from './backend.js'
+import { compositionAdminFor } from '../src/commands/config-dump.js'
+import { parseArgs } from '../src/args.js'
 
 const CLIENT_SERVICE_PATH = '/api/client-modules/service'
 const CLIENT_EFFECT_PATH = '/api/client-modules/effect'
@@ -161,6 +163,13 @@ export function localPackageAdmin(
     }
   }
   const surface = createAdminSurface({
+    composition: compositionAdminFor(parseArgs(['config', 'dump', '--profile', backend.scope.profile]), {
+      home: backend.scope.home,
+      cwd: process.cwd(),
+      env: process.env,
+      agnesVersion: '0.0.0',
+      log: () => undefined,
+    }),
     sessionSelection: sessionSelection ?? {
       loops: async () => {
         await initialize()

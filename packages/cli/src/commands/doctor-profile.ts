@@ -58,6 +58,7 @@ export async function doctorPlatform(d: BootDeps): Promise<Section> {
 export async function resolveDoctorProfile(
   d: BootDeps & { lock?: LockState; configuration?: ConfigurationService },
   p: ParsedArgs,
+  compositionInputs: { adminBundles?: readonly string[] } = {},
 ): Promise<ResolvedProfile> {
   const cwd = p.cwd ?? d.cwd
   const name = profileNameFrom(p, d.env)
@@ -74,16 +75,19 @@ export async function resolveDoctorProfile(
   })
   const platform = createPlatform()
   await platform.probe({ root: cwd })
-  return resolveProfile(inputs, {
-    platform: platform.snapshot(),
-    agnesVersion: d.agnesVersion,
-    now: new Date().toISOString(),
-    // Without this, an unset dataDir/cacheDir would expand against the raw OS home instead of
-    // d.home (AGH_HOME), which for a plain `agnes doctor` run are the same directory anyway --
-    // but not for a custom AGH_HOME or an `--ephemeral` run, where it would resolve a profile
-    // that assembleLocalHost never would, and could put a probe's own writes in the real home.
-    homeDir: d.home,
-  })
+  return resolveProfile(
+    { ...inputs, ...compositionInputs },
+    {
+      platform: platform.snapshot(),
+      agnesVersion: d.agnesVersion,
+      now: new Date().toISOString(),
+      // Without this, an unset dataDir/cacheDir would expand against the raw OS home instead of
+      // d.home (AGH_HOME), which for a plain `agnes doctor` run are the same directory anyway --
+      // but not for a custom AGH_HOME or an `--ephemeral` run, where it would resolve a profile
+      // that assembleLocalHost never would, and could put a probe's own writes in the real home.
+      homeDir: d.home,
+    },
+  )
 }
 
 export async function doctorProfile(d: BootDeps & { lock?: LockState }, p: ParsedArgs): Promise<Section> {

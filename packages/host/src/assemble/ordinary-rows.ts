@@ -61,9 +61,9 @@ export function buildOrdinaryRows(
       }
       owners.set(declaration.id, packageId)
 
-      let enabled = declaration.default
+      let enabled = resolved.enabled && declaration.default
       let config = declaration.config
-      for (const layer of [layers.deployment, layers.user, layers.workspace]) {
+      for (const layer of [layers.deployment, profile.composition?.plugins, layers.user, layers.workspace]) {
         const override = layer?.[declaration.id]
         if (!override) continue
         if (override.enabled !== undefined) enabled = override.enabled
@@ -77,6 +77,7 @@ export function buildOrdinaryRows(
           { detail: { package: packageId, row: declaration.id, reason: 'snapshot-unavailable' } },
         )
       }
+      enabled = resolved.enabled && enabled
       const snapshotDigest = plugin.snapshotDigest ?? resolved.integrity
       const snapshotId = plugin.candidate?.snapshotId ?? resolved.integrity
       const row = createPluginRow({
@@ -105,6 +106,9 @@ export function buildOrdinaryRows(
     }
   }
 
+  for (const id of Object.keys(profile.composition?.plugins ?? {}))
+    if (!owners.has(id))
+      throw new HostError('E_EXT_LOAD', `composition selects unknown ordinary plugin row: ${id}`)
   return Object.freeze({
     rows: Object.freeze(rows),
     builtinClaims: Object.freeze(builtinClaims),

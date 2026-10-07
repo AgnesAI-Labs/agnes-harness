@@ -1,4 +1,6 @@
 import type { SeamName } from '@agnes/core'
+import type { BundleCatalog, CompositionPatch, CompositionSource } from './composition.js'
+import type { PresetDoc } from '../presets/types.js'
 import type {
   ApprovalProfile,
   CommandHooksPolicy,
@@ -119,6 +121,8 @@ export type ResolvedComputerUseProfile = {
 }
 
 export type RuntimeProfileManifest = {
+  bundles?: string[]
+  composition?: CompositionPatch
   name: string
   schemaVersion?: number
   loop?: LoopSelection
@@ -175,6 +179,8 @@ export type LockState = {
 }
 
 export type ProfileInputs = {
+  adminBundles?: readonly string[]
+  bundleCatalog?: BundleCatalog
   builtin: string
   user?: RuntimeProfileManifest
   workspaceOverlay?: ProfileFragment
@@ -215,6 +221,12 @@ export type ResolvedPackage = {
   provides?: SeamName[]
 }
 export type ResolvedProfile = Readonly<{
+  adminBundles?: readonly string[]
+  bundles?: string[]
+  composition?: CompositionPatch
+  compositionSources?: Readonly<Record<string, CompositionSource>>
+  bundleCatalog?: BundleCatalog
+  bundlePresets?: Record<string, PresetDoc>
   name: string
   schemaVersion: number
   loop?: LoopSelection

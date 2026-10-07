@@ -143,15 +143,34 @@ export function inspectStaged(input: {
     Array.isArray(agnes) ||
     Object.keys(agnes).some(
       (k) =>
-        !['extensions', 'contributions', 'plugins', 'surfaces', 'clientDescriptors', 'kinds'].includes(k),
+        ![
+          'extensions',
+          'contributions',
+          'plugins',
+          'surfaces',
+          'clientDescriptors',
+          'kinds',
+          'bundles',
+        ].includes(k),
     )
   )
     invalid('agnes-metadata')
   const metadata = agnes as Record<string, unknown>
+  const bundles = metadata.bundles
+  if (
+    bundles !== undefined &&
+    (!bundles ||
+      typeof bundles !== 'object' ||
+      Array.isArray(bundles) ||
+      Object.keys(bundles).length === 0 ||
+      Object.keys(bundles).length > 64)
+  )
+    invalid('bundles')
   let kinds: ReturnType<typeof parseAgnesPluginKinds>
   let plugins: ReturnType<typeof parseAgnesPluginEntries>
   try {
     kinds = parseAgnesPluginKinds(metadata.kinds)
+    if (bundles !== undefined && !kinds?.includes('bundle')) invalid('bundles-kind')
     plugins = parseAgnesPluginEntries(String(pkg.name), metadata.plugins)
   } catch (error) {
     if (isReservedPluginRowIdError(error))
@@ -250,11 +269,12 @@ export function inspectStaged(input: {
   if (new Set(contributions.map((c) => `${c.kind}:${c.id}`)).size !== contributions.length)
     invalid('duplicate-contribution')
   if (
-    (contributions.length === 0 && plugins.length === 0) ||
+    (contributions.length === 0 && plugins.length === 0 && bundles === undefined) ||
     ((pkg.main !== undefined || pkg.exports !== undefined) &&
       metadata.extensions === undefined &&
       metadata.contributions === undefined &&
-      metadata.plugins === undefined)
+      metadata.plugins === undefined &&
+      bundles === undefined)
   )
     blockers.push({ code: 'unknown-contribution', references: ['static-declaration-required'] })
   for (const c of contributions) {

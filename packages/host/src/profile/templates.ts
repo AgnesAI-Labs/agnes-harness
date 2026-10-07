@@ -41,6 +41,12 @@ const TOP_LEVEL_KEYS = new Set([
   'computerUse',
   'extensionIsolation',
   'sandbox',
+  'loop',
+  'compaction',
+  'persistence',
+  'bundles',
+  'composition',
+  'commandHooks',
 ])
 
 export function assertNoReservedRouteName(routes: RouteDecl[] | undefined, layer: Layer): void {

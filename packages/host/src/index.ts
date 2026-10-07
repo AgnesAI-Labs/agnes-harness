@@ -444,3 +444,5 @@ export { modelAdapterCatalog, ModelAdapterRegistry } from './assemble/model-adap
 export { compactionEngineCatalog, CompactionEngineRegistry } from './assemble/compaction-engines.js'
 export type { PluginGenerationStatus } from './runtime-generation-host.js'
 export { buildCompleteRuntimeTarget } from './runtime-target-builder.js'
+export * from './profile/composition.js'
+export * from './profile/bundle-selection.js'

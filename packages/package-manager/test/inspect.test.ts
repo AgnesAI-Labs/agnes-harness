@@ -429,3 +429,19 @@ it('projects declared package kinds through preview and verified installed inven
   const inventory = await instance.inventory(profile)
   expect(inventory.packages.find((item) => item.id === 'acme/pkg-a')?.kinds).toEqual(['loop', 'ui'])
 })
+
+it('installs a static bundle package and exposes its kind without executing an entry', async () => {
+  pkg({
+    exports: undefined,
+    agnes: { kinds: ['bundle'], bundles: { base: { profile: { toolPolicy: { readOnly: true } } } } },
+  })
+  writeFileSync(join(sourceDir, 'index.ts'), "throw new Error('bundle code must not run')")
+  const instance = manager()
+  const preview = await instance.inspect(profile, source)
+  expect(preview.kinds).toEqual(['bundle'])
+  expect(preview.blockers).toEqual([])
+  await instance.install(profile, source, { expectedIntegrity: preview.integrity })
+  expect(
+    (await instance.inventory(profile)).packages.find((item) => item.id === 'acme/pkg-a')?.kinds,
+  ).toEqual(['bundle'])
+})

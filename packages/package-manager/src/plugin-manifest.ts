@@ -157,7 +157,7 @@ export function parseAgnesPluginEntries(
 }
 
 /** Optional package-level agnes.kinds declaration; absence does not imply a kind. */
-export const AGNES_PLUGIN_KINDS = ['tool', 'loop', 'model-adapter', 'mcp', 'skills', 'ui'] as const
+export const AGNES_PLUGIN_KINDS = ['tool', 'loop', 'model-adapter', 'mcp', 'skills', 'ui', 'bundle'] as const
 export type AgnesPluginKind = (typeof AGNES_PLUGIN_KINDS)[number]
 export function parseAgnesPluginKinds(value: unknown): readonly AgnesPluginKind[] | undefined {
   if (value === undefined) return undefined

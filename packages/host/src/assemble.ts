@@ -76,6 +76,13 @@ import { modelRuntime } from './assemble/model-runtime.js'
 import { installLoops } from './assemble/loops.js'
 import { installToolProviders, withBuiltinToolPolicies } from './assemble/tool-providers.js'
 import { readAdminLoopDefault } from './assemble/loop-selection.js'
+import {
+  compositionAllowsTool,
+  resolveComposition,
+  type CompositionPatch,
+  type ResolvedComposition,
+} from './profile/composition.js'
+import { mergeValue } from './presets/merge.js'
 import { buildOrdinaryRows } from './assemble/ordinary-rows.js'
 import type {
   LoadedRuntimePackage,
@@ -290,6 +297,7 @@ export type Assembled = {
   modelAdapterCatalog(): ReturnType<typeof modelAdapterCatalog>
   sessionLoopDefault?(): Promise<import('@agnes/protocol').LoopSelection | undefined>
   compactionEngineCatalog(): ReturnType<typeof compactionEngineCatalog>
+  compositionForPreset(name: string, session?: CompositionPatch): ResolvedComposition
   /** Reviewed bundled API-key routes fitted at assembly, eligible for runtime model switching. */
   preconfiguredRoutes: readonly string[]
   presets: Record<string, PresetDoc>
@@ -362,12 +370,15 @@ const dup = (id: string, k: string, n: string): never => {
 function collectPresets(
   modules: ReadonlyMap<string, PackageModule>,
   profileConsent: ReturnType<typeof readProfileTelemetryConsent>,
+  profile: ResolvedProfile,
 ): Record<string, PresetDoc> {
   const presets: Record<string, PresetDoc> = {}
   for (const module of modules.values())
     for (const [name, document] of Object.entries(module.presets ?? {}))
       presets[name] =
         name in presets ? dup(module.id, 'preset', name) : applyTelemetryConsent(document, profileConsent)
+  for (const [name, doc] of Object.entries(profile.bundlePresets ?? {}))
+    presets[name] = applyTelemetryConsent(mergeValue(presets[name], doc) as PresetDoc, profileConsent)
   return presets
 }
 
@@ -543,7 +554,7 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
     // was nothing better than profile.packages order: two packages providing a preset or a runtime
     // of the same name silently produced whichever the profile happened to list second.
     const profileConsent = readProfileTelemetryConsent(deps.profileDir)
-    const presets = collectPresets(modules, profileConsent)
+    const presets = collectPresets(modules, profileConsent, profile)
     const defaultPreset = validatePresetCatalog(profile, presets)
     done('seams')
 
@@ -1743,7 +1754,10 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
     // 8 kernel - the repository's single Kernel.create call site
     let extensionLeaseFor: ((source: string) => LeaseView | undefined) | undefined
     const extensionSessions = new ExtensionSessions<HookPort>()
-    const compaction = assembleCompaction(pluginTree.root.compactionEngines, profile.compaction)
+    const compaction =
+      profile.composition?.compaction === null
+        ? undefined
+        : assembleCompaction(pluginTree.root.compactionEngines, profile.compaction)
     // Package config is already a JSON extension point in resolved profiles.
     const configuredLoops = profile.packages
       .filter((pkg) => pkg.enabled !== false)
@@ -1844,6 +1858,32 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
       // subagents are assembled later, which is more informative than a host-side stub.
     })
     rollback.push('kernel', () => kernel.close())
+    const compositionForPreset = (name: string, session?: CompositionPatch): ResolvedComposition =>
+      resolveComposition(profile, {
+        preset: resolvePreset(name, presets, { limits: profile.limits }).doc,
+        ...(session ? { session } : {}),
+        catalog: {
+          loops: kernel.loops.catalog(),
+          modelAdapters: modelAdapterCatalog(pluginTree.root),
+          compactionEngines: compactionEngineCatalog(pluginTree.root),
+        },
+      })
+    if (profile.composition) {
+      for (const name of profile.presets.allowed) compositionForPreset(name)
+      const stopPolicy = kernel.hooks.on(
+        'tool_call',
+        (payload, context) => {
+          const session = kernel.sessions.get(context.session.key)
+          if (!session) return { allow: false, reason: 'Composition session is unavailable.' }
+          const tree = compositionForPreset(session.preset.name)
+          return compositionAllowsTool(tree.selection, payload.name, payload.meta.isReadOnly === true)
+            ? { allow: true }
+            : { allow: false, reason: 'Tool denied by the selected composition policy.' }
+        },
+        { source: 'agnes/composition', trust: 'builtin', hookRank: 0 },
+      )
+      rollback.push('composition-policy', stopPolicy)
+    }
     privacyTrajectory = createTrajectoryLifecycle(
       {
         ...deps,
@@ -2455,6 +2495,7 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
       modelAdapterCatalog: () => modelAdapterCatalog(pluginTree.root),
       sessionLoopDefault: () => readAdminLoopDefault(deps.profileDir, profile.name),
       compactionEngineCatalog: () => compactionEngineCatalog(pluginTree.root),
+      compositionForPreset,
       applyModelProfile,
       presets,
       runtimes,

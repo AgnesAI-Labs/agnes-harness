@@ -2,6 +2,7 @@ import { SLOT_NAMES, validatePreset } from '@agnes/protocol'
 import { DEPRECATED_ACTION } from '../command-policy.js'
 import { HostError } from '../errors.js'
 import type { PresetDoc } from './types.js'
+import { checkCompositionPatch } from '../profile/composition.js'
 
 const map = (x: unknown): x is Record<string, unknown> => !!x && typeof x === 'object' && !Array.isArray(x)
 const fail = (name: string, path: string): never => {
@@ -25,6 +26,15 @@ export function validatedPresetViewInput(doc: PresetDoc): PresetDoc {
   if (map(doc.recovery) && doc.recovery.unknown_child === 'park')
     canonical.recovery = { ...doc.recovery, unknown_child: 'human' }
   const projection: PresetDoc = { ...canonical }
+  if (canonical.composition !== undefined) checkCompositionPatch(canonical.composition)
+  if (
+    canonical.bundles !== undefined &&
+    (!Array.isArray(canonical.bundles) ||
+      !canonical.bundles.every((id) => typeof id === 'string' && id.length > 0))
+  )
+    fail(doc.name, 'bundles')
+  delete projection.composition
+  delete projection.bundles
   // The one-version approval alias still reaches session validation unchanged so it is audited.
   if (map(canonical.approval) && Array.isArray(canonical.approval.command_policy))
     projection.approval = {
