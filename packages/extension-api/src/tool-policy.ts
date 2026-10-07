@@ -18,6 +18,9 @@ export type ToolPolicyDecision = { effect: 'allow' | 'ask' | 'deny'; reason: str
 export interface ToolPolicy {
   id: string
   version: string
+  /** Instance-owned resources, drained before registration cleanup. */
+  dispose?(): void | Promise<void>
+  cleanup?(): void | Promise<void>
   decide(input: ToolPolicyInput, signal: AbortSignal): ToolPolicyDecision | Promise<ToolPolicyDecision>
 }
 
@@ -28,14 +31,14 @@ export interface ToolPolicyCatalogEntry {
 }
 
 export interface ToolPolicyRegistryPort {
-  register(sourcePackage: string, policy: ToolPolicy): () => void
+  register(sourcePackage: string, policy: ToolPolicy): () => Promise<void>
   resolve(id: string): ToolPolicy
   catalog(): readonly ToolPolicyCatalogEntry[]
 }
 
 export interface ToolPolicyPluginContext {
   toolPolicies: ToolPolicyRegistryPort
-  effect(callback: () => () => void): unknown
+  effect(callback: () => () => Promise<void>): unknown
 }
 export function registerToolPolicyPlugin(
   ctx: ToolPolicyPluginContext,

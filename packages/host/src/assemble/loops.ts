@@ -43,7 +43,7 @@ export class LoopsService extends Service implements LoopRegistryPort {
     )
     this.registry.register('@agnes/core', defaultLoopFactory, ctx)
   }
-  register(sourcePackage: string, factory: LoopFactory): () => void {
+  register(sourcePackage: string, factory: LoopFactory): () => Promise<void> {
     return this.registry.register(
       providerSource(this.ctx, this.origins, sourcePackage, true),
       factory,

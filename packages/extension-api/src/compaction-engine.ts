@@ -50,6 +50,7 @@ export interface CompactionModelPort {
 }
 
 export interface CompactionEngineInstance {
+  dispose?(): void | Promise<void>
   shouldCompact(budget: CompactionBudget): boolean
   compact(
     input: CompactionInput,
@@ -61,7 +62,8 @@ export interface CompactionEngineInstance {
 export interface CompactionEngine {
   readonly id: string
   readonly version: string
-  create(): CompactionEngineInstance
+  create(signal?: AbortSignal): CompactionEngineInstance | Promise<CompactionEngineInstance>
+  cleanup?(): void | Promise<void>
 }
 
 export type CompactionEngineCatalogEntry = Readonly<{
@@ -71,7 +73,7 @@ export type CompactionEngineCatalogEntry = Readonly<{
 }>
 
 export interface CompactionEngineRegistration {
-  register(engine: CompactionEngine): () => void
+  register(engine: CompactionEngine): () => Promise<void>
   catalog(): readonly CompactionEngineCatalogEntry[]
 }
 

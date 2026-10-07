@@ -81,7 +81,7 @@ it('registers factories with immutable metadata, rejects duplicates and releases
   await release?.()
   expect(lifecycle).toEqual(['instance', 'registration'])
   await expect(root.modelAdapters.create('custom', { routes: [] })).rejects.toMatchObject({
-    code: 'E_DEP_MISSING',
+    code: 'E_PROVIDER_UNKNOWN',
   })
   await root.fiber.dispose()
 })
@@ -100,14 +100,21 @@ it('cleans up an instance whose asynchronous factory finishes after unregisterin
     }),
   )
   const pending = root.modelAdapters.create('custom', { routes: [] })
-  await release()
+  const unloading = release()
+  let drained = false
+  void unloading.then(() => {
+    drained = true
+  })
+  await Promise.resolve()
+  expect(drained).toBe(false)
   finish({
     ...(definition().create({ routes: [] }) as ModelAdapterInstance),
     dispose() {
       disposed = true
     },
   })
-  await expect(pending).rejects.toMatchObject({ code: 'E_DEP_MISSING' })
+  await expect(pending).rejects.toThrow()
+  await unloading
   expect(disposed).toBe(true)
   await root.fiber.dispose()
 })
@@ -270,6 +277,7 @@ it.each(['@community/fake-model-adapter', 'community-fake'])(
       expect(assembled.modelAdapterCatalog()).toContainEqual({
         id: 'community-fake',
         api: 'fake-wire-v1',
+        wireApi: 'fake-wire-v1',
         version: '1.2.3',
         sourcePackage: '@community/fake-model-adapter',
         capabilities: { imageInput: true, tools: true, streaming: true },

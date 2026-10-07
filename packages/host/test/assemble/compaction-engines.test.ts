@@ -20,9 +20,9 @@ it('selects registered engines, rejects missing/duplicate ids, and unloads with 
   await expect.poll(() => registry.catalog().length).toBe(1)
   expect(Object.isFrozen(registry.catalog()[0])).toBe(true)
   expect(() => registry.register(engine())).toThrow('duplicate compaction engine')
-  const runner = assembleCompaction(registry)!
+  const runner = (await assembleCompaction(registry))!
   expect(runner.shouldCompact({ contextTokens: 0, contextWindow: 100, reserveTokens: 20 })).toBe(true)
-  expect(() => assembleCompaction(registry, { engine: 'missing' })).toThrow(
+  await expect(assembleCompaction(registry, { engine: 'missing' })).rejects.toThrow(
     'compaction engine is not registered: missing',
   )
   await plugin.dispose()
@@ -30,7 +30,7 @@ it('selects registered engines, rejects missing/duplicate ids, and unloads with 
   expect(() => runner.shouldCompact({ contextTokens: 0, contextWindow: 100, reserveTokens: 20 })).toThrow(
     'unloaded',
   )
-  expect(assembleCompaction(registry)).toBeUndefined()
+  expect(await assembleCompaction(registry)).toBeUndefined()
   await root.fiber.dispose()
 })
 
@@ -51,4 +51,49 @@ it('retains profile selection in its immutable result and hash and refuses inval
   await expect(
     resolveProfile({ builtin: 'local-dev', user: { name: 'test', compaction: { engine: '' } } }, env),
   ).rejects.toThrow('compaction.engine')
+})
+
+it('drains late creates before instance disposal and reports both disposal and cleanup failures', async () => {
+  const root = new Context()
+  const registry = installCompactionEngines(root)
+  let finish!: (value: ReturnType<NonNullable<CompactionEngine['create']>>) => void
+  const order: string[] = []
+  const unregister = registry.register({
+    ...engine('late'),
+    create: () =>
+      new Promise((resolve) => {
+        finish = resolve
+      }),
+    cleanup() {
+      order.push('cleanup')
+      throw new Error('cleanup failure')
+    },
+  })
+  const creating = registry.create('late')
+  void creating.catch(() => {})
+  await Promise.resolve()
+  const unloading = unregister()
+  void unloading.catch(() => {})
+  expect(unregister()).toBe(unloading)
+  await Promise.resolve()
+  expect(order).toEqual([])
+  finish({
+    shouldCompact: () => true,
+    compact: async () => null,
+    dispose() {
+      order.push('dispose')
+      throw new Error('dispose failure')
+    },
+  })
+  await expect(creating).rejects.toMatchObject({
+    errors: [expect.objectContaining({ message: 'dispose failure' })],
+  })
+  await expect(unloading).rejects.toMatchObject({
+    errors: [
+      expect.objectContaining({ errors: [expect.objectContaining({ message: 'dispose failure' })] }),
+      expect.objectContaining({ message: 'cleanup failure' }),
+    ],
+  })
+  expect(order).toEqual(['dispose', 'cleanup'])
+  await root.fiber.dispose()
 })

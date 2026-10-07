@@ -92,8 +92,11 @@ describe('persistence provider', () => {
     await expect(
       openAdapters(profile, { dataDir: dir, workspaceRoot: dir, persistence: { provider: 'missing' } }),
     ).rejects.toMatchObject({
-      code: 'E_DEP_MISSING',
-      detail: { provider: 'missing', effect: 'restart-required' },
+      code: 'E_PROVIDER_UNKNOWN',
+      kind: 'persistence',
+      provider: 'missing',
+      operation: 'resolve',
+      retryable: false,
     })
     expect(existsSync(join(dir, 'sessions.db'))).toBe(false)
   })
@@ -102,7 +105,7 @@ describe('persistence provider', () => {
     const seen: string[] = []
     const provider = definePersistenceProvider({
       id: 'fake',
-      version: '1',
+      version: '1.0.0',
       state: { effect: 'restart-required' },
       open() {
         const store = emptyStore()
@@ -159,7 +162,7 @@ describe('persistence provider', () => {
     const profile = await resolveProfile({ builtin: 'local-dev', lock }, env)
     const builtin = definePersistenceProvider({
       id: 'sqlite',
-      version: '1',
+      version: '1.0.0',
       state: { effect: 'restart-required' },
       open: () => emptyStore(),
     })
@@ -173,7 +176,7 @@ describe('persistence provider', () => {
         persistenceProviders: [
           {
             id: 'mem',
-            version: '1',
+            version: '1.0.0',
             state: { effect: 'hot' },
             open: () => emptyStore(),
           } as unknown as typeof builtin,
@@ -222,7 +225,7 @@ describe('persistence provider', () => {
   it('copies a package persistenceProvider export', () => {
     const provider = definePersistenceProvider({
       id: 'jsonl',
-      version: '1',
+      version: '1.0.0',
       state: { effect: 'restart-required' },
       open: () => emptyStore(),
     })

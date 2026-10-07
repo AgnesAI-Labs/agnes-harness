@@ -32,7 +32,7 @@ const STORAGE_CODES = new Set<string>([
  */
 export const sqlitePersistenceProvider = definePersistenceProvider({
   id: DEFAULT_PERSISTENCE_PROVIDER_ID,
-  version: '1',
+  version: '1.0.0',
   state: { effect: PERSISTENCE_EFFECT },
   open(options) {
     return createSqliteStorage({

@@ -43,3 +43,44 @@ export class ExtensionError extends Error {
 export function isExtensionError(e: unknown): e is ExtensionError {
   return e instanceof ExtensionError
 }
+
+/** Provider failures are independent of the closed extension-call error set. */
+export const PROVIDER_ERROR_CODES = Object.freeze([
+  'E_PROVIDER_DUPLICATE',
+  'E_PROVIDER_UNKNOWN',
+  'E_PROVIDER_INVALID',
+  'E_PROVIDER_INCOMPATIBLE',
+  'E_PROVIDER_UNAVAILABLE',
+] as const)
+export type ProviderErrorCode = (typeof PROVIDER_ERROR_CODES)[number]
+export interface ProviderErrorOptions {
+  kind: string
+  provider?: string | undefined
+  operation: string
+  retryable?: boolean
+  hint?: string
+  cause?: unknown
+}
+export class ProviderError extends Error {
+  override readonly name = 'ProviderError'
+  readonly kind: string
+  readonly provider: string | undefined
+  readonly operation: string
+  readonly retryable: boolean
+  readonly hint: string | undefined
+  constructor(
+    readonly code: ProviderErrorCode,
+    message: string,
+    options: ProviderErrorOptions,
+  ) {
+    super(`${code}: ${message}`, options.cause === undefined ? undefined : { cause: options.cause })
+    this.kind = options.kind
+    this.provider = options.provider
+    this.operation = options.operation
+    this.retryable = options.retryable ?? false
+    this.hint = options.hint
+  }
+}
+export function isProviderError(error: unknown): error is ProviderError {
+  return error instanceof ProviderError
+}

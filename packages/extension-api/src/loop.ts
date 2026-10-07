@@ -186,7 +186,7 @@ export interface LoopCatalogEntry extends LoopSelection {
 
 /** The Cordis `loops` service. Registration returns an owner cleanup callback. */
 export interface LoopRegistryPort {
-  register(sourcePackage: string, factory: LoopFactory): () => void
+  register(sourcePackage: string, factory: LoopFactory): () => Promise<void>
   resolve(selection: LoopSelection): LoopFactory
   catalog(): readonly LoopCatalogEntry[]
 }

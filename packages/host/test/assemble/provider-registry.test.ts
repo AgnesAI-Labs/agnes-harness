@@ -1,5 +1,5 @@
 import { Context } from '@agnes/cordis'
-import { defineProviderKind } from '@agnes/extension-api'
+import { defineProviderKind, ProviderError } from '@agnes/extension-api'
 import { expect, it } from 'vitest'
 import { installSandboxProviders } from '../../src/adapters/sandbox-providers.js'
 import { createPersistenceProviderRegistry } from '../../src/adapters/storage-provider.js'
@@ -31,27 +31,32 @@ it('owns registrations by fiber, refuses duplicates and exposes immutable select
   const registry = installProviderRegistry(root, kind)
   let released = false
   const plugin = root.plugin((ctx) => {
-    ctx.providers.register(kind, '@test/provider', { id: 'one', version: '1', ready: true })
+    ctx.providers.register(kind, '@test/provider', { id: 'one', version: '1.0.0', ready: true })
     ctx.effect(() => () => {
       released = true
     })
   })
   await expect.poll(() => registry.catalog().length).toBe(1)
-  expect(() => registry.register('@test/duplicate', { id: 'one', version: '2', ready: true })).toThrow(
+  expect(() => registry.register('@test/duplicate', { id: 'one', version: '2.0.0', ready: true })).toThrow(
     'duplicate',
   )
-  expect(() => registry.register('@test/invalid', { id: 'bad', version: '1', ready: false })).toThrow(
+  expect(() => registry.register('@test/invalid', { id: 'bad', version: '1.0.0', ready: false })).toThrow(
     'not ready',
   )
+  expect(() => registry.register('@test/provider', { id: 'invalid', version: '1', ready: true })).toThrow(
+    ProviderError,
+  )
+  expect(() => root.providers.resolve(defineProviderKind({ ...kind }), 'one')).toThrow('does not match')
   root.providers.select('test', { provider: 'one' }, 'profile')
   const [entry] = root.providers.catalog()
   expect(entry).toEqual({
     kind: 'test',
     id: 'one',
-    version: '1',
+    version: '1.0.0',
     sourcePackage: '@test/provider',
     capabilities: ['compute'],
     restartRequired: false,
+    scope: 'generation',
     active: true,
     selectedFor: ['profile'],
   })
@@ -65,15 +70,15 @@ it('owns registrations by fiber, refuses duplicates and exposes immutable select
 
 it('requires an explicit version when ambiguous and refuses version mismatches without fallback', async () => {
   const registry = new ProviderRegistry(defineProviderKind({ ...kind, versioned: true }))
-  registry.register('@test/provider', { id: 'one', version: '1', ready: true })
-  expect(registry.resolve('one').version).toBe('1')
-  registry.register('@test/provider', { id: 'one', version: '2', ready: true })
+  registry.register('@test/provider', { id: 'one', version: '1.0.0', ready: true })
+  expect(registry.resolve('one').version).toBe('1.0.0')
+  registry.register('@test/provider', { id: 'one', version: '2.0.0', ready: true })
   expect(() => registry.resolve('one')).toThrow('set test.version')
-  expect(registry.resolve({ provider: 'one', version: '2' }).version).toBe('2')
-  expect(() => registry.resolve({ provider: 'one', version: '3' })).toThrow('change test.provider')
+  expect(registry.resolve({ provider: 'one', version: '2.0.0' }).version).toBe('2.0.0')
+  expect(() => registry.resolve({ provider: 'one', version: '3.0.0' })).toThrow('change test.provider')
   await registry.dispose()
   expect(registry.catalog()).toEqual([])
-  expect(() => registry.register('@test/provider', { id: 'new', version: '1', ready: true })).toThrow(
+  expect(() => registry.register('@test/provider', { id: 'new', version: '1.0.0', ready: true })).toThrow(
     'disposed',
   )
 })
@@ -108,20 +113,20 @@ it('combines named registries and retains their public catalog shapes and restar
 })
 
 it('normalizes canonical selections and aliases, preserves profile precedence and rejects conflicting config', () => {
-  expect(readProviderSelection('loop', { id: 'echo', version: '1' })).toEqual({
+  expect(readProviderSelection('loop', { id: 'echo', version: '1.0.0' })).toEqual({
     provider: 'echo',
-    version: '1',
+    version: '1.0.0',
   })
   expect(readProviderSelection('compaction', { engine: 'short' })).toEqual({ provider: 'short' })
   expect(() => readProviderSelection('loop', { provider: 'one', id: 'two' })).toThrow('requires')
   const profile = {
-    loop: { id: 'pinned', version: '1' },
+    loop: { id: 'pinned', version: '1.0.0' },
     packages: [
       { enabled: true, config: { loop: { provider: 'echo' }, 'tool-policy': { provider: 'read-only' } } },
     ],
   } as never
   const selections = readProviderSelections(profile)
-  expect(selections.loop).toEqual({ provider: 'pinned', version: '1' })
+  expect(selections.loop).toEqual({ provider: 'pinned', version: '1.0.0' })
   expect(
     readProviderSelections({
       composition: { compaction: null },

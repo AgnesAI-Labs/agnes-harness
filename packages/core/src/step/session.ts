@@ -717,7 +717,7 @@ export class SessionImpl {
       (entry) => entry.provider === provider && entry.maxParallel === maxParallel,
     )
     if (!instance) {
-      instance = { provider, maxParallel, runtime: provider.create({ maxParallel }) }
+      instance = { provider, maxParallel, runtime: await provider.create({ maxParallel }) }
       this.runtimeInstances.push(instance)
     }
     // Keep previous instances until close: an in-flight batch may still own one after a preset switch.

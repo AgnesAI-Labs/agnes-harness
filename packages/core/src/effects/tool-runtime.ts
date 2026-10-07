@@ -13,7 +13,7 @@ const skipped = () => ({
 })
 
 /** Existing safe-run/exclusive-barrier scheduling, now usable by every loop. */
-export const defaultToolRuntimeProvider: ToolRuntimeProvider = {
+export const defaultToolRuntimeProvider = {
   id: 'default',
   version: '1.0.0',
   create(options: ToolSchedulingPolicy): ToolRuntime {
@@ -77,4 +77,4 @@ export const defaultToolRuntimeProvider: ToolRuntimeProvider = {
       },
     }
   },
-}
+} satisfies ToolRuntimeProvider

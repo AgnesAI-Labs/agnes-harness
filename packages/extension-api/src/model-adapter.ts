@@ -58,19 +58,30 @@ export type ModelAdapterCapabilities = Readonly<{
 }>
 
 /** Register through an ordinary Cordis plugin that injects modelAdapters. */
-export interface ModelAdapter {
+export interface ModelAdapterDefinition {
   readonly id: string
   readonly version: string
-  readonly api: string
   readonly capabilities: ModelAdapterCapabilities
-  create(config: ModelAdapterConfig): ModelAdapterInstance | Promise<ModelAdapterInstance>
+  create(
+    config: ModelAdapterConfig,
+    signal?: AbortSignal,
+  ): ModelAdapterInstance | Promise<ModelAdapterInstance>
   /** Registration-owned resources; instances have their own dispose hook. */
   cleanup?(): void | Promise<void>
 }
 
+/** At least one wire format name is required; Host refuses conflicting aliases. */
+export type ModelAdapter = ModelAdapterDefinition &
+  (
+    | { readonly wireApi: string /** @deprecated Use wireApi. */; readonly api?: string }
+    | { readonly wireApi?: string /** @deprecated Use wireApi. */; readonly api: string }
+  )
+
 export type ModelAdapterCatalogEntry = Readonly<{
   id: string
   version: string
+  wireApi: string
+  /** @deprecated Use wireApi. */
   api: string
   sourcePackage: string
   capabilities: ModelAdapterCapabilities

@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto'
 import { resolve as resolvePath } from 'node:path'
+import { providerRestartRequired } from '@agnes/extension-api'
 import {
   developmentPluginRows,
   type PluginGenerationSnapshot,
@@ -365,6 +366,11 @@ export async function createRuntimeGenerationHost(
     queue = next.catch(() => undefined)
     return next
   }
+  const requiresRestart = (host: Host, id: string): boolean =>
+    basePackages.has(id) ||
+    host.providers
+      .catalog()
+      .some((entry) => entry.sourcePackage === id && providerRestartRequired(entry.scope))
   const status = (): PluginGenerationStatus => {
     const errors = new Map(failures)
     const counts = new Map<string, number>()
@@ -406,7 +412,7 @@ export async function createRuntimeGenerationHost(
           state:
             error || previous?.state === 'failed'
               ? 'failed'
-              : basePackages.has(packageId)
+              : requiresRestart(live.get(id)?.host ?? initial, packageId)
                 ? 'restart-required'
                 : active.has(packageId)
                   ? 'active'
@@ -522,7 +528,7 @@ export async function createRuntimeGenerationHost(
       }
     const sources = await sourcesFor(target)
     for (const previous of head.snapshot.sources)
-      if (basePackages.has(previous.snapshot.packageId)) {
+      if (requiresRestart(head.host, previous.snapshot.packageId)) {
         const next = sources.find((item) => item.snapshot.packageId === previous.snapshot.packageId)
         if (
           previous.snapshot.integrity !== next?.snapshot.integrity ||
@@ -632,8 +638,8 @@ export async function createRuntimeGenerationHost(
       enqueue(async () => {
         const head = await ensureCurrent()
         const pkg = profile.packages.find((pkg) => pkg.id === id)
-        if (pkg?.trust === 'builtin' || basePackages.has(id))
-          throw new Error(`E_GENERATION_RESTART_REQUIRED: ${id} is a base backend or bundled package`)
+        if (requiresRestart(head.host, id))
+          throw new Error(`E_GENERATION_RESTART_REQUIRED: ${id} owns a workspace/process provider or backend`)
         const available = (await options.runtimePluginSources?.()) ?? options.runtimePluginSnapshots ?? []
         const path =
           directory ??

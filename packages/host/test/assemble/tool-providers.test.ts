@@ -97,10 +97,10 @@ it('registers the Base default and custom policies through plugin fibers and fai
   const selected = root.toolPolicies.resolve('read-only')
   expect(Object.isFrozen(root.toolPolicies.catalog()[0])).toBe(true)
   await custom.dispose()
-  expect(() => root.toolPolicies.resolve('read-only')).toThrow('not installed')
+  expect(() => root.toolPolicies.resolve('read-only')).toThrow('not registered')
   await expect(selected.decide({} as never, new AbortController().signal)).rejects.toThrow()
   await builtin.dispose()
-  expect(() => root.toolPolicies.resolve('default')).toThrow('not installed')
+  expect(() => root.toolPolicies.resolve('default')).toThrow('not registered')
   await root.fiber.dispose()
 })
 

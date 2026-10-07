@@ -7,13 +7,13 @@ export class LoopRegistry implements LoopRegistryPort {
   constructor() {
     this.register('@agnes/core', defaultLoopFactory)
   }
-  register(sourcePackage: string, factory: LoopFactory): () => void {
+  register(sourcePackage: string, factory: LoopFactory): () => Promise<void> {
     const key = loopKey(factory)
     if (!factory.id || !factory.version || this.factories.has(key))
       throw new Error(`Loop ${key} is invalid or already registered`)
     const record = { sourcePackage, factory }
     this.factories.set(key, record)
-    return () => {
+    return async () => {
       if (this.factories.get(key) === record) this.factories.delete(key)
     }
   }

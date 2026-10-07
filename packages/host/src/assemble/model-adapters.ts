@@ -7,12 +7,12 @@ import type {
   ModelAdapterInstance,
   ModelAdapterRegistration,
 } from '@agnes/extension-api'
-import { defineProviderKind } from '@agnes/extension-api'
+import { defineProviderKind, ProviderError } from '@agnes/extension-api'
 import { scriptedAdapter } from '@agnes/model-adapters'
 import type { RowOriginLookup } from '@agnes/plugin-runtime/host'
 import { normalizePluginExport } from '@agnes/plugin-runtime/host'
-import { HostError } from '../errors.js'
 import type { PackageModule } from './packages.js'
+import { ProviderLifetime } from './provider-lifetime.js'
 import { installProviderRegistry, type ProviderRegistry, providerSource } from './provider-registry.js'
 
 declare module '@agnes/cordis' {
@@ -26,46 +26,66 @@ type Registration = {
   version: string
   adapter: ModelAdapter
   entry: ModelAdapterCatalogEntry
-  active: boolean
-  instances: Set<() => Promise<void>>
+  lifetime: ProviderLifetime
 }
 
 /** Community adapters receive the existing facade's credential and wire path. */
 class CommunityWireAdapter extends WireAdapter {
   readonly id: string
+  complete?: NonNullable<ModelAdapterInstance['complete']>
   constructor(
     private readonly instance: ModelAdapterInstance,
-    private readonly lifecycle: AbortSignal,
+    private readonly lifecycle: ProviderLifetime,
+    private readonly registration: AbortSignal,
   ) {
     super()
     this.id = instance.id
+    const complete = instance.complete?.bind(instance)
+    if (complete)
+      this.complete = (route, request, options) => {
+        this.assertActive()
+        return lifecycle.run(
+          (signal) => complete(route, request, { ...options, signal }),
+          AbortSignal.any([options.signal, registration]),
+        )
+      }
     const count = instance.count?.bind(instance)
     if (count)
       this.count = (route, request, options) => {
         this.assertActive()
-        return count(route, request, { signal: AbortSignal.any([options.signal, lifecycle]) })
+        return lifecycle.run(
+          (signal) => count(route, request, { signal }),
+          AbortSignal.any([options.signal, registration]),
+        )
       }
     const refresh = instance.refresh?.bind(instance)
     if (refresh)
       this.refresh = (route, signal) => {
         this.assertActive()
-        return refresh(route, AbortSignal.any([signal, lifecycle]))
+        return lifecycle.run((joined) => refresh(route, joined), AbortSignal.any([signal, registration]))
       }
     const probe = instance.probe?.bind(instance)
     if (probe)
       this.probe = (route, signal) => {
         this.assertActive()
-        return probe(route, AbortSignal.any([signal, lifecycle]))
+        return lifecycle.run((joined) => probe(route, joined), AbortSignal.any([signal, registration]))
       }
   }
   routes() {
+    this.assertActive()
     return this.instance.routes()
   }
   models(route: string) {
+    this.assertActive()
     return this.instance.models(route)
   }
   private assertActive(): void {
-    if (this.lifecycle.aborted) throw new HostError('E_DEP_MISSING', 'model adapter instance is disposed')
+    if (this.lifecycle.signal.aborted || this.registration.aborted)
+      throw new ProviderError('E_PROVIDER_UNAVAILABLE', 'model adapter instance is disposed', {
+        kind: 'model-adapter',
+        provider: this.id,
+        operation: 'invoke',
+      })
   }
   stream(
     route: string,
@@ -73,15 +93,42 @@ class CommunityWireAdapter extends WireAdapter {
     options: Parameters<ModelAdapterInstance['stream']>[2],
   ) {
     this.assertActive()
-    return this.instance.stream(route, request, {
-      ...options,
-      signal: AbortSignal.any([options.signal, this.lifecycle]),
-    })
+    const instance = this.instance,
+      lifecycle = this.lifecycle
+    const signal = AbortSignal.any([options.signal, lifecycle.signal, this.registration])
+    return {
+      [Symbol.asyncIterator]() {
+        lifecycle.assertActive()
+        signal.throwIfAborted()
+        const iterator = instance.stream(route, request, { ...options, signal })[Symbol.asyncIterator]()
+        const close = lifecycle.own(async () => {
+          await iterator.return?.()
+        })
+        return {
+          next: () =>
+            lifecycle.run(async () => {
+              const result = await iterator.next()
+              if (result.done) await close()
+              return result
+            }, signal),
+          return: async () => {
+            await close()
+            return { done: true as const, value: undefined }
+          },
+        }
+      },
+    }
   }
+
   override bindCredential(route: string, value: string | undefined): void {
+    this.assertActive()
     super.bindCredential(route, value)
     if (!this.instance.bindCredential)
-      throw new HostError('E_API_RANGE', 'credentialed model adapter must implement bindCredential')
+      throw new ProviderError(
+        'E_PROVIDER_INVALID',
+        'credentialed model adapter must implement bindCredential',
+        { kind: 'model-adapter', provider: this.id, operation: 'bindCredential' },
+      )
     this.instance.bindCredential(route, this.credentialFor(route))
   }
 }
@@ -89,7 +136,7 @@ class CommunityWireAdapter extends WireAdapter {
 /** Per-Cordis-root catalog; registrations and instances follow the owning plugin fiber. */
 export class ModelAdapterRegistry extends Service implements ModelAdapterRegistration {
   private readonly registrations: ProviderRegistry<ModelAdapter>
-  private readonly records = new WeakMap<ModelAdapter, Registration>()
+  private readonly records = new Map<string, Registration>()
 
   constructor(
     ctx: Context,
@@ -103,7 +150,9 @@ export class ModelAdapterRegistry extends Service implements ModelAdapterRegistr
         validate(adapter) {
           if (
             !adapter.id ||
-            !adapter.api ||
+            typeof (adapter.wireApi ?? adapter.api) !== 'string' ||
+            !(adapter.wireApi ?? adapter.api)?.trim() ||
+            (adapter.wireApi !== undefined && adapter.api !== undefined && adapter.wireApi !== adapter.api) ||
             !adapter.version ||
             typeof adapter.create !== 'function' ||
             !adapter.capabilities ||
@@ -111,7 +160,7 @@ export class ModelAdapterRegistry extends Service implements ModelAdapterRegistr
               (key) => typeof adapter.capabilities[key as keyof typeof adapter.capabilities] !== 'boolean',
             )
           )
-            throw new HostError('E_API_RANGE', 'invalid model adapter registration')
+            throw new Error('invalid model adapter registration')
         },
         capabilities: (record) =>
           Object.entries(record.capabilities)
@@ -123,14 +172,14 @@ export class ModelAdapterRegistry extends Service implements ModelAdapterRegistr
   }
 
   register(adapter: ModelAdapter, sourcePackage?: string): () => Promise<void> {
-    this.registrations.definition.validate(adapter)
     const record: Registration = {
       id: adapter.id,
       version: adapter.version,
       adapter,
       entry: Object.freeze({
         id: adapter.id,
-        api: adapter.api,
+        wireApi: adapter.wireApi ?? adapter.api!,
+        api: adapter.wireApi ?? adapter.api!,
         version: adapter.version,
         sourcePackage: providerSource(
           this.ctx,
@@ -140,26 +189,39 @@ export class ModelAdapterRegistry extends Service implements ModelAdapterRegistr
         ),
         capabilities: Object.freeze({ ...adapter.capabilities }),
       }),
-      active: true,
-      instances: new Set(),
+      lifetime: new ProviderLifetime('model-adapter', adapter.id),
     }
+    this.registrations.validate(record.entry.sourcePackage, adapter)
     const unregister = this.registrations.register(
       record.entry.sourcePackage,
-      adapter,
-      this.ctx,
-      async () => {
-        record.active = false
-        const results = await Promise.allSettled([...record.instances].map((dispose) => dispose()))
-        await adapter.cleanup?.()
-        const failures = results.filter((result) => result.status === 'rejected')
-        if (failures.length)
-          throw new AggregateError(
-            failures.map((result) => result.reason),
-            'adapter cleanup failed',
-          )
+      {
+        ...adapter,
+        create: async (config, signal) => {
+          const managed = await this.createOwned(record, config, undefined, signal)
+          const wire = managed.adapter
+          return {
+            id: wire.id,
+            routes: () => wire.routes(),
+            models: (route) => wire.models(route),
+            stream: (route, request, options) => wire.stream(route, request, options),
+            bindCredential: (route, value) => wire.bindCredential(route, value),
+            ...(wire.complete ? { complete: wire.complete.bind(wire) } : {}),
+            ...(wire.count ? { count: wire.count.bind(wire) } : {}),
+            ...(wire.refresh ? { refresh: wire.refresh.bind(wire) } : {}),
+            ...(wire.probe ? { probe: wire.probe.bind(wire) } : {}),
+            dispose: managed.dispose,
+          }
+        },
       },
+      this.ctx,
+      () =>
+        record.lifetime
+          .close(() => adapter.cleanup?.())
+          .finally(() => {
+            if (this.records.get(adapter.id) === record) this.records.delete(adapter.id)
+          }),
     )
-    this.records.set(adapter, record)
+    this.records.set(adapter.id, record)
     return unregister
   }
 
@@ -167,7 +229,7 @@ export class ModelAdapterRegistry extends Service implements ModelAdapterRegistr
     return Object.freeze(
       this.registrations
         .catalog()
-        .map((r) => this.records.get(this.registrations.resolve(r.id))!.entry)
+        .map((r) => this.records.get(r.id)!.entry)
         .sort((a, b) => a.id.localeCompare(b.id)),
     )
   }
@@ -180,41 +242,45 @@ export class ModelAdapterRegistry extends Service implements ModelAdapterRegistr
     adapter: WireAdapter
     dispose(): Promise<void>
   }> {
-    const record = this.records.get(this.registrations.resolve(id))!
-    // Only Host's reviewed API-key/OAuth factories supply a prepared builtin instance.
-    const instance =
-      builtin && record.entry.sourcePackage === '@agnes/ai' ? builtin() : await record.adapter.create(config)
-    const lifecycle = new AbortController()
-    let disposal: Promise<void> | undefined
-    const dispose = () => {
-      lifecycle.abort()
-      disposal ??= Promise.resolve()
-        .then(() => instance?.dispose?.())
-        .then(() => undefined)
-      record.instances.delete(dispose)
-      if (!record.instances.size) this.registrations.clearSelection(`adapter:${id}`)
-      return disposal
-    }
-    if (!record.active) {
-      await dispose()
-      throw new HostError('E_DEP_MISSING', `model adapter was unloaded: ${id}`)
-    }
-    record.instances.add(dispose)
-    if (
-      !instance ||
-      typeof instance.id !== 'string' ||
-      ['routes', 'models', 'stream'].some(
-        (key) => typeof instance[key as 'routes' | 'models' | 'stream'] !== 'function',
-      )
-    ) {
-      await dispose()
-      throw new HostError('E_API_RANGE', `model adapter returned an invalid wire adapter: ${id}`)
-    }
-    this.registrations.select(`adapter:${id}`, id)
-    return {
-      adapter: new CommunityWireAdapter(instance, lifecycle.signal),
-      dispose,
-    }
+    const record = this.records.get(this.registrations.resolve(id).id)!
+    return this.createOwned(record, config, builtin)
+  }
+  private createOwned(
+    record: Registration,
+    config: ModelAdapterConfig,
+    builtin?: () => ModelAdapterInstance,
+    creationSignal?: AbortSignal,
+  ): Promise<{ adapter: CommunityWireAdapter; dispose(): Promise<void> }> {
+    const id = record.id
+    return record.lifetime.run(async (signal) => {
+      // Reviewed builtins retain their credential-aware factory compatibility path.
+      const instance =
+        builtin && record.entry.sourcePackage === '@agnes/ai'
+          ? builtin()
+          : await record.adapter.create(config, signal)
+      const lifecycle = new ProviderLifetime('model-adapter', id)
+      const dispose = record.lifetime.own(() => lifecycle.close(() => instance?.dispose?.()))
+      if (signal.aborted) {
+        await dispose()
+        signal.throwIfAborted()
+      }
+      if (
+        !instance ||
+        typeof instance.id !== 'string' ||
+        ['routes', 'models', 'stream'].some(
+          (key) => typeof instance[key as 'routes' | 'models' | 'stream'] !== 'function',
+        )
+      ) {
+        await dispose()
+        throw new ProviderError(
+          'E_PROVIDER_INVALID',
+          `model adapter returned an invalid wire adapter: ${id}`,
+          { kind: 'model-adapter', provider: id, operation: 'create' },
+        )
+      }
+      this.registrations.select(`adapter:${id}`, id)
+      return { adapter: new CommunityWireAdapter(instance, lifecycle, record.lifetime.signal), dispose }
+    }, creationSignal)
   }
 }
 

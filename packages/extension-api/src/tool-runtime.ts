@@ -33,7 +33,8 @@ export interface ToolRuntime {
 export interface ToolRuntimeProvider {
   id: string
   version: string
-  create(options: ToolSchedulingPolicy): ToolRuntime
+  create(options: ToolSchedulingPolicy, signal?: AbortSignal): ToolRuntime | Promise<ToolRuntime>
+  cleanup?(): void | Promise<void>
 }
 
 export interface ToolRuntimeCatalogEntry {
@@ -43,14 +44,14 @@ export interface ToolRuntimeCatalogEntry {
 }
 
 export interface ToolRuntimeRegistryPort {
-  register(sourcePackage: string, provider: ToolRuntimeProvider): () => void
+  register(sourcePackage: string, provider: ToolRuntimeProvider): () => Promise<void>
   resolve(id: string): ToolRuntimeProvider
   catalog(): readonly ToolRuntimeCatalogEntry[]
 }
 
 export interface ToolRuntimePluginContext {
   toolRuntimes: ToolRuntimeRegistryPort
-  effect(callback: () => () => void): unknown
+  effect(callback: () => () => Promise<void>): unknown
 }
 export function registerToolRuntimePlugin(
   ctx: ToolRuntimePluginContext,

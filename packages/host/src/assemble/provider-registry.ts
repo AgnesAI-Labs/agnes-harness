@@ -1,5 +1,6 @@
 import { type Context, Service } from '@agnes/cordis'
 import type {
+  KindMap,
   ProviderCatalogEntry,
   ProviderIdentity,
   ProviderKind,
@@ -7,6 +8,7 @@ import type {
   ProviderSelection,
   ProvidersCatalogPort,
 } from '@agnes/extension-api'
+import { ProviderError, parseSemver } from '@agnes/extension-api'
 import type { RowOriginLookup } from '@agnes/plugin-runtime/host'
 import { HostError } from '../errors.js'
 
@@ -46,6 +48,7 @@ export class ProviderRegistry<T extends ProviderIdentity> {
     }
   >()
   private readonly selections = new Map<string, ProviderSelection>()
+  private readonly retiring = new Set<Promise<void>>()
   private disposed = false
   constructor(readonly definition: ProviderKind<T>) {}
   private get label(): string {
@@ -65,22 +68,10 @@ export class ProviderRegistry<T extends ProviderIdentity> {
     owner?: Context,
     cleanup?: () => void | Promise<void>,
   ): () => Promise<void> {
-    if (this.disposed) throw new HostError('E_HOST_CLOSED', `${this.label} registry is disposed`)
-    if (
-      typeof provider?.id !== 'string' ||
-      !provider.id.trim() ||
-      typeof provider.version !== 'string' ||
-      !provider.version.trim() ||
-      typeof sourcePackage !== 'string' ||
-      !sourcePackage.trim()
-    )
-      throw new HostError('E_API_RANGE', `invalid ${this.label} registration`)
-    this.definition.validate(provider)
-    const capabilities = this.definition.capabilities?.(provider) ?? []
-    if (!Array.isArray(capabilities) || capabilities.some((capability) => typeof capability !== 'string'))
-      throw new HostError('E_API_RANGE', `invalid ${this.label} capabilities`)
+    const capabilities = this.validate(sourcePackage, provider)
     const key = this.key(provider)
-    if (this.entries.has(key)) throw new HostError('E_API_RANGE', `duplicate ${this.label}: ${key}`)
+    if (this.entries.has(key))
+      throw this.error('E_PROVIDER_DUPLICATE', `duplicate ${this.label}: ${key}`, 'register', provider.id)
     const record: {
       provider: T
       entry: Omit<ProviderCatalogEntry, 'active' | 'selectedFor'>
@@ -94,6 +85,7 @@ export class ProviderRegistry<T extends ProviderIdentity> {
         sourcePackage,
         capabilities: Object.freeze([...capabilities]),
         restartRequired: this.definition.restartRequired,
+        scope: this.definition.scope,
       }),
     }
     const mount = () => {
@@ -103,20 +95,75 @@ export class ProviderRegistry<T extends ProviderIdentity> {
         if (disposal) return disposal
         if (this.entries.get(key) !== record) return Promise.resolve()
         this.entries.delete(key)
-        try {
-          disposal = Promise.resolve(cleanup?.())
-        } catch (error) {
-          disposal = Promise.reject(error)
-        }
+        for (const [scope, selected] of this.selections)
+          if (selected.provider === provider.id && selected.version === provider.version)
+            this.selections.delete(scope)
+        // Publish the Promise before invoking user cleanup, including reentrant unregister.
+        disposal = Promise.resolve().then(() => cleanup?.())
+        this.retiring.add(disposal)
+        void disposal.then(
+          () => this.retiring.delete(disposal!),
+          () => this.retiring.delete(disposal!),
+        )
         return disposal
       }
       return record.dispose
     }
-    return owner ? owner.effect(mount, `providers.register(${this.definition.kind}:${key})`) : mount()
+    if (!owner) return mount()
+    owner.effect(mount, `providers.register(${this.definition.kind}:${key})`)
+    // Cordis' effect callback is one-shot; the public disposer retains its drain Promise.
+    return record.dispose!
   }
-  async dispose(): Promise<void> {
+  validate(sourcePackage: string, provider: T): readonly string[] {
+    if (this.disposed)
+      throw this.error(
+        'E_PROVIDER_UNAVAILABLE',
+        `${this.label} registry is disposed`,
+        'register',
+        provider?.id,
+      )
+    if (
+      typeof provider?.id !== 'string' ||
+      !provider.id.trim() ||
+      typeof provider.version !== 'string' ||
+      !parseSemver(provider.version) ||
+      typeof sourcePackage !== 'string' ||
+      !sourcePackage.trim()
+    )
+      throw this.error(
+        'E_PROVIDER_INVALID',
+        `invalid ${this.label} registration: id, semver version and source package are required`,
+        'register',
+        provider?.id,
+      )
+    let capabilities: readonly string[]
+    try {
+      this.definition.validate(provider)
+      capabilities = this.definition.capabilities?.(provider) ?? []
+    } catch (cause) {
+      throw this.error(
+        'E_PROVIDER_INVALID',
+        `invalid ${this.label}: ${cause instanceof Error ? cause.message : 'validation failed'}`,
+        'register',
+        provider.id,
+        cause,
+      )
+    }
+    if (!Array.isArray(capabilities) || capabilities.some((capability) => typeof capability !== 'string'))
+      throw this.error('E_PROVIDER_INVALID', `invalid ${this.label} capabilities`, 'register', provider.id)
+    return capabilities
+  }
+  private disposal?: Promise<void>
+  dispose(): Promise<void> {
+    this.disposal ??= this.drain()
+    return this.disposal
+  }
+  private async drain(): Promise<void> {
     this.disposed = true
-    const results = await Promise.allSettled([...this.entries.values()].map((record) => record.dispose?.()))
+    const results = await Promise.allSettled([
+      ...this.retiring,
+      ...[...this.entries.values()].map((record) => record.dispose?.()),
+    ])
     this.selections.clear()
     const failed = results.filter((result) => result.status === 'rejected')
     if (failed.length)
@@ -131,29 +178,41 @@ export class ProviderRegistry<T extends ProviderIdentity> {
       const matches = [...this.entries.values()].filter(({ provider }) => provider.id === wanted.provider)
       if (matches.length === 1) return matches[0]!.provider
       if (matches.length > 1)
-        throw new HostError(
-          'E_DEP_MISSING',
+        throw this.error(
+          'E_PROVIDER_INCOMPATIBLE',
           `${this.label} ${wanted.provider} has multiple versions; set ${this.definition.kind}.version`,
+          'resolve',
+          wanted.provider,
         )
     }
     const found = this.entries.get(this.key(wanted))
     if (found && (wanted.version === undefined || wanted.version === found.provider.version))
       return found.provider
-    throw new HostError(
-      'E_DEP_MISSING',
+    throw this.error(
+      this.values().some((provider) => provider.id === wanted.provider)
+        ? 'E_PROVIDER_INCOMPATIBLE'
+        : 'E_PROVIDER_UNKNOWN',
       `${this.label} is not registered: ${wanted.provider}${wanted.version ? `@${wanted.version}` : ''}; install and enable its package, or change ${this.definition.kind}.provider`,
-      {
-        detail: {
-          kind: this.definition.kind,
-          id: wanted.provider,
-          provider: wanted.provider,
-          ...(this.definition.restartRequired ? { effect: 'restart-required' } : {}),
-          ...(wanted.version ? { version: wanted.version } : {}),
-          hint: 'Install and enable the provider package, or choose an installed provider.',
-        },
-      },
+      'resolve',
+      wanted.provider,
     )
   }
+  private error(
+    code: ConstructorParameters<typeof ProviderError>[0],
+    message: string,
+    operation: string,
+    provider?: string,
+    cause?: unknown,
+  ): ProviderError {
+    return new ProviderError(code, message, {
+      kind: this.definition.kind,
+      provider,
+      operation,
+      cause,
+      hint: 'Install and enable the provider package, or choose an installed compatible provider.',
+    })
+  }
+
   select(scope: string, selection: string | ProviderSelection): T {
     const provider = this.resolve(selection)
     this.selections.set(scope, { provider: provider.id, version: provider.version })
@@ -191,7 +250,7 @@ export class ProvidersService extends Service implements ProvidersCatalogPort, P
   private readonly kinds = new Map<string, ProviderRegistry<ProviderIdentity>>()
   private readonly registrars = new Map<
     string,
-    (owner: Context, source: string, provider: ProviderIdentity) => () => void | Promise<void>
+    (owner: Context, source: string, provider: ProviderIdentity) => () => Promise<void>
   >()
   private configuration?: (entry: ProviderCatalogEntry) => readonly string[]
   constructor(ctx: Context) {
@@ -200,46 +259,73 @@ export class ProvidersService extends Service implements ProvidersCatalogPort, P
   add<T extends ProviderIdentity>(
     registry: ProviderRegistry<T>,
     owner = this.ctx,
-    register?: (owner: Context, source: string, provider: T) => () => void | Promise<void>,
+    register?: (owner: Context, source: string, provider: T) => () => Promise<void>,
   ): void {
     if (this.kinds.has(registry.definition.kind))
-      throw new HostError('E_API_RANGE', `duplicate provider kind: ${registry.definition.kind}`)
+      throw new ProviderError(
+        'E_PROVIDER_DUPLICATE',
+        `duplicate provider kind: ${registry.definition.kind}`,
+        { kind: registry.definition.kind, operation: 'add' },
+      )
     const shared = registry as unknown as ProviderRegistry<ProviderIdentity>
     owner.effect(() => {
       this.kinds.set(registry.definition.kind, shared)
       this.registrars.set(registry.definition.kind, (ctx, source, provider) =>
         register ? register(ctx, source, provider as T) : shared.register(source, provider, ctx),
       )
-      return () => {
+      return async () => {
         if (this.kinds.get(registry.definition.kind) === shared) {
           this.kinds.delete(registry.definition.kind)
           this.registrars.delete(registry.definition.kind)
         }
+        await registry.dispose()
       }
     })
   }
+  register<K extends keyof KindMap>(
+    kind: K,
+    sourcePackage: string,
+    provider: KindMap[NoInfer<K>],
+  ): () => Promise<void>
   register<T extends ProviderIdentity>(
-    kind: string | ProviderKind<T>,
+    kind: ProviderKind<T>,
     sourcePackage: string,
     provider: T,
-  ): () => void | Promise<void> {
-    const name = typeof kind === 'string' ? kind : kind.kind
-    const register = this.registrars.get(name)
-    if (!register)
-      throw new HostError(
-        'E_DEP_MISSING',
-        `provider kind ${name} is not registered; enable its service plugin`,
-      )
+  ): () => Promise<void>
+  register(
+    kind: string | { readonly kind: string },
+    sourcePackage: string,
+    provider: ProviderIdentity,
+  ): () => Promise<void> {
+    const registry = this.lookup(kind, 'register')
+    registry.validate(sourcePackage, provider)
+    const register = this.registrars.get(registry.definition.kind)!
     return register(this.ctx, sourcePackage, provider)
   }
-  resolve<T extends ProviderIdentity>(kind: ProviderKind<T>, selection: string | ProviderSelection): T {
-    const registry = this.kinds.get(kind.kind)
+  resolve<K extends keyof KindMap>(kind: K, selection: string | ProviderSelection): KindMap[K]
+  resolve<T extends ProviderIdentity>(kind: ProviderKind<T>, selection: string | ProviderSelection): T
+  resolve(kind: string | { readonly kind: string }, selection: string | ProviderSelection): ProviderIdentity {
+    return this.lookup(kind, 'resolve').resolve(selection)
+  }
+  private lookup(
+    kind: string | { readonly kind: string },
+    operation: string,
+  ): ProviderRegistry<ProviderIdentity> {
+    const name = typeof kind === 'string' ? kind : kind.kind
+    const registry = this.kinds.get(name)
     if (!registry)
-      throw new HostError(
-        'E_DEP_MISSING',
-        `provider kind ${kind.kind} is not registered; enable its service plugin`,
+      throw new ProviderError(
+        'E_PROVIDER_UNKNOWN',
+        `provider kind ${name} is not registered; enable its service plugin`,
+        { kind: name, operation },
       )
-    return registry.resolve(selection) as T
+    if (typeof kind !== 'string' && kind !== registry.definition)
+      throw new ProviderError(
+        'E_PROVIDER_INVALID',
+        `provider token for ${name} does not match the installed kind`,
+        { kind: name, operation },
+      )
+    return registry
   }
   catalog(): readonly ProviderCatalogEntry[] {
     return Object.freeze(
@@ -262,12 +348,7 @@ export class ProvidersService extends Service implements ProvidersCatalogPort, P
     this.configuration = read
   }
   select(kind: string, selection: string | ProviderSelection, scope = 'profile'): ProviderIdentity {
-    const registry = this.kinds.get(kind)
-    if (!registry)
-      throw new HostError(
-        'E_DEP_MISSING',
-        `provider kind ${kind} is not registered; enable its service plugin`,
-      )
+    const registry = this.lookup(kind, 'select')
     return registry.select(scope, selection)
   }
 }
@@ -278,7 +359,7 @@ export function installProviders(root: Context): ProvidersService {
 export function installProviderRegistry<T extends ProviderIdentity>(
   ctx: Context,
   definition: ProviderKind<T>,
-  register?: (owner: Context, source: string, provider: T) => () => void | Promise<void>,
+  register?: (owner: Context, source: string, provider: T) => () => Promise<void>,
 ): ProviderRegistry<T> {
   const registry = new ProviderRegistry(definition)
   installProviders(ctx.root).add(registry, ctx, register)

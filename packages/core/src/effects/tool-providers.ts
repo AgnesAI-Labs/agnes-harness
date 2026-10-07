@@ -38,12 +38,12 @@ export const defaultToolPolicy: ToolPolicy = {
 /** Small registries shared by Cordis services and directly embedded Kernels. */
 class Providers<T extends { id: string; version: string }> {
   private readonly entries = new Map<string, { provider: T; sourcePackage: string }>()
-  register(sourcePackage: string, provider: T): () => void {
+  register(sourcePackage: string, provider: T): () => Promise<void> {
     if (!provider.id?.trim() || !provider.version?.trim() || this.entries.has(provider.id))
       throw new Error(`Provider ${provider.id} is invalid or already registered`)
     const entry = { provider, sourcePackage }
     this.entries.set(provider.id, entry)
-    return () => {
+    return async () => {
       if (this.entries.get(provider.id) === entry) this.entries.delete(provider.id)
     }
   }

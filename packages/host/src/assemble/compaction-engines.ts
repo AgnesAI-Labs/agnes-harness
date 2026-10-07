@@ -6,10 +6,10 @@ import type {
   CompactionEngineInstance,
   CompactionEngineRegistration,
 } from '@agnes/extension-api'
-import { defineProviderKind } from '@agnes/extension-api'
+import { defineProviderKind, ProviderError } from '@agnes/extension-api'
 import { normalizePluginExport, type RowOriginLookup } from '@agnes/plugin-runtime/host'
-import { HostError } from '../errors.js'
 import type { PackageModule } from './packages.js'
+import { ProviderLifetime } from './provider-lifetime.js'
 import { installProviderRegistry, type ProviderRegistry, providerSource } from './provider-registry.js'
 
 declare module '@agnes/cordis' {
@@ -25,7 +25,7 @@ export class CompactionEngineRegistry extends Service implements CompactionEngin
     {
       engine: CompactionEngine
       entry: CompactionEngineCatalogEntry
-      lifetime: AbortController
+      lifetime: ProviderLifetime
     }
   >()
 
@@ -38,7 +38,6 @@ export class CompactionEngineRegistry extends Service implements CompactionEngin
       ctx,
       defineProviderKind<CompactionEngine>({
         kind: 'compaction',
-        restartRequired: true,
         validate(engine) {
           if (
             typeof engine?.id !== 'string' ||
@@ -47,7 +46,7 @@ export class CompactionEngineRegistry extends Service implements CompactionEngin
             !engine.version.trim() ||
             typeof engine.create !== 'function'
           )
-            throw new HostError('E_API_RANGE', 'invalid compaction engine registration')
+            throw new Error('invalid compaction engine registration')
         },
         capabilities: () => ['budget', 'summarize'],
       }),
@@ -55,8 +54,7 @@ export class CompactionEngineRegistry extends Service implements CompactionEngin
     )
   }
 
-  register(engine: CompactionEngine, sourcePackage?: string): () => void {
-    this.registry.definition.validate(engine)
+  register(engine: CompactionEngine, sourcePackage?: string): () => Promise<void> {
     const record = {
       id: engine.id,
       version: engine.version,
@@ -71,12 +69,14 @@ export class CompactionEngineRegistry extends Service implements CompactionEngin
           sourcePackage !== undefined,
         ),
       }),
-      lifetime: new AbortController(),
+      lifetime: new ProviderLifetime('compaction', engine.id),
     }
-    const unregister = this.registry.register(record.entry.sourcePackage, engine, this.ctx, () => {
-      record.lifetime.abort()
-    })
-    this.records.set(engine, record)
+    this.registry.validate(record.entry.sourcePackage, engine)
+    const wrapped: CompactionEngine = { ...engine, create: (signal) => this.createOwned(record, signal) }
+    const unregister = this.registry.register(record.entry.sourcePackage, wrapped, this.ctx, () =>
+      record.lifetime.close(() => engine.cleanup?.()),
+    )
+    this.records.set(wrapped, record)
     return unregister
   }
 
@@ -89,34 +89,57 @@ export class CompactionEngineRegistry extends Service implements CompactionEngin
     )
   }
 
-  create(id: string): CompactionEngineInstance {
+  async create(id: string): Promise<CompactionEngineInstance> {
     const record = this.records.get(this.registry.select('host', id))!
-    const instance = record.engine.create()
-    if (!instance || typeof instance.shouldCompact !== 'function' || typeof instance.compact !== 'function')
-      throw new HostError('E_API_RANGE', `invalid compaction engine instance: ${id}`)
-    const active = () => {
-      if (record.lifetime.signal.aborted)
-        throw new HostError('E_DEP_MISSING', `compaction engine was unloaded: ${id}`)
-    }
-    return {
-      shouldCompact(budget) {
-        active()
-        return instance.shouldCompact(budget)
-      },
-      async compact(input, ports) {
-        active()
-        const signal = AbortSignal.any([ports.signal, record.lifetime.signal])
-        const output = await instance.compact(input, {
-          signal,
-          model: {
-            summarize: (request, callSignal) =>
-              ports.model.summarize(request, callSignal ? AbortSignal.any([signal, callSignal]) : signal),
-          },
+    return this.createOwned(record)
+  }
+  private createOwned(
+    record: { engine: CompactionEngine; lifetime: ProviderLifetime },
+    signal?: AbortSignal,
+  ): Promise<CompactionEngineInstance> {
+    const id = record.engine.id
+    return record.lifetime.run(async (creationSignal) => {
+      const engine = await record.engine.create(creationSignal)
+      const instance = new ProviderLifetime('compaction', id)
+      const dispose = record.lifetime.own(() => instance.close(() => engine?.dispose?.()))
+      if (creationSignal.aborted) {
+        await dispose()
+        creationSignal.throwIfAborted()
+      }
+      if (!engine || typeof engine.shouldCompact !== 'function' || typeof engine.compact !== 'function') {
+        await dispose()
+        throw new ProviderError('E_PROVIDER_INVALID', `invalid compaction engine instance: ${id}`, {
+          kind: 'compaction',
+          provider: id,
+          operation: 'create',
         })
-        signal.throwIfAborted()
-        return output
-      },
-    }
+      }
+      return {
+        shouldCompact(budget) {
+          record.lifetime.assertActive()
+          instance.assertActive()
+          return engine.shouldCompact(budget)
+        },
+        compact(input, ports) {
+          record.lifetime.assertActive()
+          return instance.run(
+            (signal) =>
+              engine.compact(input, {
+                signal,
+                model: {
+                  summarize: (request, callSignal) =>
+                    ports.model.summarize(
+                      request,
+                      callSignal ? AbortSignal.any([signal, callSignal]) : signal,
+                    ),
+                },
+              }),
+            AbortSignal.any([ports.signal, record.lifetime.signal]),
+          )
+        },
+        dispose,
+      }
+    }, signal)
   }
 }
 

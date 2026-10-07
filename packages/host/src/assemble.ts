@@ -1855,7 +1855,7 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
     const compaction =
       profile.composition?.compaction === null
         ? undefined
-        : assembleCompaction(pluginTree.root.compactionEngines, profile.compaction)
+        : await assembleCompaction(pluginTree.root.compactionEngines, profile.compaction)
     const selectedLoop = providerSelections.loop
     const loopFactory = selectedLoop
       ? pluginTree.root.loops.resolve({

@@ -1,3 +1,5 @@
+import { parseSemver } from './api-range.js'
+
 /**
  * Session persistence provider.
  *
@@ -188,8 +190,8 @@ export function definePersistenceProvider<T extends PersistenceProvider>(provide
     throw new Error('persistence provider must be an object')
   if (typeof provider.id !== 'string' || !PROVIDER_ID.test(provider.id))
     throw new Error('persistence provider id must match ^[a-z][a-z0-9._-]{0,63}$')
-  if (typeof provider.version !== 'string' || provider.version.length === 0 || provider.version.length > 64)
-    throw new Error('persistence provider version must be a non-empty string')
+  if (typeof provider.version !== 'string' || !parseSemver(provider.version))
+    throw new Error('persistence provider version must be semver')
   if (provider.state?.effect !== PERSISTENCE_EFFECT)
     throw new Error('persistence provider changes are restart-required')
   if (typeof provider.open !== 'function') throw new Error('persistence provider open must be a function')

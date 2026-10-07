@@ -12,10 +12,11 @@ import type {
   ToolRuntimeProvider,
   ToolRuntimeRegistryPort,
 } from '@agnes/extension-api'
-import { defineProviderKind } from '@agnes/extension-api'
+import { defineProviderKind, ProviderError } from '@agnes/extension-api'
 import type { RowOriginLookup } from '@agnes/plugin-runtime/host'
 import { normalizePluginExport } from '@agnes/plugin-runtime/host'
 import type { PackageModule } from './packages.js'
+import { ProviderLifetime } from './provider-lifetime.js'
 import { installProviderRegistry, type ProviderRegistry, providerSource } from './provider-registry.js'
 
 declare module '@agnes/cordis' {
@@ -44,34 +45,63 @@ export class ToolRuntimesService extends Service implements ToolRuntimeRegistryP
       }),
       (owner, source, provider) => owner.toolRuntimes.register(source, provider),
     )
-    this.registry.register('@agnes/core', defaultToolRuntimeProvider, ctx)
+    this.register('@agnes/core', defaultToolRuntimeProvider)
   }
   register(sourcePackage: string, provider: ToolRuntimeProvider) {
     const source = providerSource(this.ctx, this.origins, sourcePackage, true)
-    const lifetime = new AbortController()
+    this.registry.validate(source, provider)
+    const owner = new ProviderLifetime('tool-runtime', provider.id)
     const wrapped: ToolRuntimeProvider = {
       ...provider,
-      create: (options) => {
-        if (lifetime.signal.aborted) throw new Error('Tool runtime provider was unloaded')
-        const runtime = provider.create(options)
-        return {
-          execute: (call, execution, signal) => {
-            lifetime.signal.throwIfAborted()
-            return runtime.execute(call, execution, AbortSignal.any([signal, lifetime.signal]))
-          },
-          batch: (calls, execution, signal) => {
-            lifetime.signal.throwIfAborted()
-            return runtime.batch(calls, execution, AbortSignal.any([signal, lifetime.signal]))
-          },
-          cancel: () => runtime.cancel(),
-          dispose: () => runtime.dispose(),
-        }
-      },
+      create: (options, signal) =>
+        owner.run(async (creationSignal) => {
+          const runtime = await provider.create(options, creationSignal)
+          const instance = new ProviderLifetime('tool-runtime', provider.id)
+          const dispose = owner.own(() =>
+            instance.close(
+              () => runtime?.dispose?.(),
+              () => runtime?.cancel?.(),
+            ),
+          )
+          if (creationSignal.aborted) {
+            await dispose()
+            creationSignal.throwIfAborted()
+          }
+          if (
+            !runtime ||
+            ['execute', 'batch', 'cancel', 'dispose'].some(
+              (key) => typeof runtime[key as keyof typeof runtime] !== 'function',
+            )
+          ) {
+            await dispose()
+            throw new ProviderError('E_PROVIDER_INVALID', 'Invalid tool runtime instance', {
+              kind: 'tool-runtime',
+              provider: provider.id,
+              operation: 'create',
+            })
+          }
+          return {
+            execute: (call, execution, callSignal) =>
+              instance.run(
+                (joined) => runtime.execute(call, execution, joined),
+                AbortSignal.any([callSignal, owner.signal]),
+              ),
+            batch: (calls, execution, callSignal) =>
+              instance.run(
+                (joined) => runtime.batch(calls, execution, joined),
+                AbortSignal.any([callSignal, owner.signal]),
+              ),
+            cancel: async () => {
+              await runtime.cancel()
+              await instance.drain()
+            },
+            dispose,
+          }
+        }, signal),
     }
-    return this.registry.register(source, wrapped, this.ctx, () => {
-      lifetime.abort()
-    })
+    return this.registry.register(source, wrapped, this.ctx, () => owner.close(() => provider.cleanup?.()))
   }
+
   resolve(id: string) {
     return this.registry.resolve(id)
   }
@@ -105,24 +135,21 @@ export class ToolPoliciesService extends Service implements ToolPolicyRegistryPo
   }
   register(sourcePackage: string, policy: ToolPolicy) {
     const source = providerSource(this.ctx, this.origins, sourcePackage, true)
-    const lifetime = new AbortController()
+    this.registry.validate(source, policy)
+    const lifetime = new ProviderLifetime('tool-policy', policy.id)
+    lifetime.own(() => policy.dispose?.())
     return this.registry.register(
       source,
       {
         ...policy,
-        async decide(input, signal) {
-          lifetime.signal.throwIfAborted()
-          const result = await policy.decide(input, AbortSignal.any([signal, lifetime.signal]))
-          lifetime.signal.throwIfAborted()
-          return result
-        },
+        decide: async (input, signal) => lifetime.run((joined) => policy.decide(input, joined), signal),
+        dispose: () => lifetime.close(() => policy.cleanup?.()),
       },
       this.ctx,
-      () => {
-        lifetime.abort()
-      },
+      () => lifetime.close(() => policy.cleanup?.()),
     )
   }
+
   resolve(id: string) {
     return this.registry.resolve(id)
   }
