@@ -1102,7 +1102,11 @@ class PluginAdminPage {
       <UiLocaleProvider source={this.#locale}>
         <SessionDefaultsPanel api={this.#api} canSave={this.canEffect('packages.activate')} t={this.#t} />
         <BundlesPanel api={this.#api} canSave={this.canEffect('packages.activate')} t={this.#t} />
-        <GenerationDrainSummary status={this.#state.generations} installed={this.#state.installed} t={this.#t} />
+        <GenerationDrainSummary
+          status={this.#state.generations}
+          installed={this.#state.installed}
+          t={this.#t}
+        />
         <KindFilter
           value={this.#kind}
           t={this.#t}

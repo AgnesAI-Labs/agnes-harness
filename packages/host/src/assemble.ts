@@ -521,6 +521,14 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
     for (const [name, pkg] of Object.entries(profile.seams))
       if (name !== 'platform' && !modules.has(pkg))
         refuse('E_DEP_MISSING', `seam ${name} names ${pkg}, not enabled`, { seam: name, package: pkg })
+    deps.onGenerationBasePackages?.(
+      [...modules]
+        .filter(
+          ([, module]) =>
+            module.persistenceProvider && module.persistenceProvider.id === profile.persistence?.provider,
+        )
+        .map(([id]) => id),
+    )
     done('adapters')
 
     // 3 adapters - the fs fence opens on the bootstrap policy (workspace allow plus the
@@ -811,7 +819,11 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
       agnesHome: dirname(dataDir),
       dataDir,
     }
-    skillReadRoots = () => safeSkillReadRoots(preloadSkills?.readRoots?.() ?? [], { ...skillReadContext, generationRoot: join(deps.profileDir, '.runtime-generations') })
+    skillReadRoots = () =>
+      safeSkillReadRoots(preloadSkills?.readRoots?.() ?? [], {
+        ...skillReadContext,
+        generationRoot: join(deps.profileDir, '.runtime-generations'),
+      })
     const runtimePromptPreloader = deps.skillResources
       ? createSkillPromptPreloader(() => preloadSkills, workspaceInvocationFor, publicationDispatch)
       : undefined

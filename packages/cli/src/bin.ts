@@ -688,7 +688,9 @@ export async function main(argv: string[], io: MainIO, boot: Partial<LocalBootDe
       const booted = await bootDefault(p, deps, { useEmbedded: Object.keys(boot).length > 0 })
       try {
         const { runPluginDevelopmentCommand } = await import('./commands/plugins.js')
-        await runPluginDevelopmentCommand({ ...p, profile: booted.profileName }, booted.client, (text) => io.stdout.write(text))
+        await runPluginDevelopmentCommand({ ...p, profile: booted.profileName }, booted.client, (text) =>
+          io.stdout.write(text),
+        )
         return ExitCode.OK
       } finally {
         await booted.close().catch(() => undefined)

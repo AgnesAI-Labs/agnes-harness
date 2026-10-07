@@ -1,6 +1,11 @@
 import { PackageError, type PackageManager } from '@agnes/package-manager'
 import { decodeRuntimeTargetArtifact, type RuntimeTargetArtifact } from '@agnes/plugin-runtime/host'
-import type { PluginGenerationStatus, PackageAdminError, RuntimePinDescriptor, RuntimePinReleaseResult } from '@agnes/protocol'
+import type {
+  PluginGenerationStatus,
+  PackageAdminError,
+  RuntimePinDescriptor,
+  RuntimePinReleaseResult,
+} from '@agnes/protocol'
 import { ownsRow } from './composite-desired.js'
 import { idle, type SettleOptions, settle } from './composite-target-settle.js'
 import {

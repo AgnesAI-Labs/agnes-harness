@@ -14,6 +14,11 @@ export function deferPackageActivation(
   current: () => PackageActivationAdapter | undefined,
 ): PackageActivationAdapter {
   return {
+    async generations(profileName) {
+      const read = current()?.generations
+      if (!read) throw new Error('E_PACKAGE_STATE: generation status unavailable')
+      return read(profileName)
+    },
     async actual(profileName, packageId) {
       return current()?.actual(profileName, packageId) ?? { actual: 'unavailable' }
     },

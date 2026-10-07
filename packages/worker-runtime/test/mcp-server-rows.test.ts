@@ -2,6 +2,7 @@ import { mcpLocalToolPrefix } from '@agnes/base'
 import { MemTable } from '@agnes/base/testkit'
 import type { McpServerDefinitionInput } from '@agnes/protocol'
 import { describe, expect, it, vi } from 'vitest'
+import { generationExtensionRestorer } from '../src/runtime-generation-restore.js'
 import { type McpServerSnapshotEntry, mcpServerRowsFromDefinitions } from '../src/mcp-server-rows.js'
 
 function stdioEntry(
@@ -155,4 +156,21 @@ describe('mcpServerRowsFromDefinitions', () => {
     const connected = opener.connect.mock.calls.map(([definition]) => definition.serverId).sort()
     expect(connected).toEqual(['gh', 'linear'])
   })
+})
+
+it('reconstructs a cold generation MCP factory from SecretRefs and refuses unknown factory kinds', async () => {
+  const entry = stdioEntry('pinned', 'original-revision')
+  const row = mcpServerRowsFromDefinitions([entry], fakeOpener).rows[0]!
+  const restore = generationExtensionRestorer({
+    env: {},
+    createSecrets: () => {
+      throw new Error('SecretRefs must be resolved only when connecting')
+    },
+  } as unknown as Parameters<typeof generationExtensionRestorer>[0])
+  const rebuilt = await restore(structuredClone(row.generation!))
+  expect(rebuilt.spec).toEqual(row.spec)
+  expect(rebuilt.generation).toEqual(row.generation)
+  expect(JSON.stringify(rebuilt.generation)).toContain('secret://mcp/pinned-token')
+  expect(() => restore({ kind: 'unknown', data: {} })).toThrow('E_GENERATION_FACTORY_KIND')
+  expect(() => restore({ kind: 'mcp-server', data: {} })).toThrow('E_GENERATION_MCP_DEFINITION')
 })

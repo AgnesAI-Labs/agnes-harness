@@ -47,3 +47,6 @@ Host 必须提供对应注册服务，循环或适配器插件才能加载。安
 
 将源码放入[本地插件目录](local-plugins.zh-CN.md)，或[让 Agent 创建插件](agent-built-plugins.zh-CN.md)。两条路径复用包状态和不可变源码快照。
 [组合包与配置](bundles-and-profiles.zh-CN.md)介绍可复用的配置补丁、preset 和选择来源。
+
+[热重载开发指南](hot-reload.zh-CN.md)说明手动重载、会话固定与重启要求。
+

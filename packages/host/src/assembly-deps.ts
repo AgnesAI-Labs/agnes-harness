@@ -58,8 +58,13 @@ export type AssembleDeps = HostPaths &
     runtimePluginSources?: () => Promise<readonly Readonly<RuntimePluginSnapshot>[]>
     /** Host-private durable generation binding, also reached by Core-created children. */
     onGenerationSessionBinding?: (sessionKey: string) => void
+    onGenerationBasePackages?: (packageIds: readonly string[]) => void
     developmentPluginDirectories?: ReadonlyMap<string, string>
-    restoreGenerationExtension?: (input: NonNullable<import('./assemble/ext-rows.js').DynamicExtension['generation']>) => Promise<import('./assemble/ext-rows.js').DynamicExtension> | import('./assemble/ext-rows.js').DynamicExtension
+    restoreGenerationExtension?: (
+      input: NonNullable<import('./assemble/ext-rows.js').DynamicExtension['generation']>,
+    ) =>
+      | Promise<import('./assemble/ext-rows.js').DynamicExtension>
+      | import('./assemble/ext-rows.js').DynamicExtension
     /** How long one row may take to mount before the delivery is failed. Defaults to 30 seconds. */
     ordinaryStartTimeoutMs?: number
     /** Packages whose legacy extensions are restored by the worker activation pipeline. */

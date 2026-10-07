@@ -461,7 +461,12 @@ export const PACKAGE_ADMIN_METHODS = Object.freeze({
     'packages.trust',
   ),
   '_agnes/v1/plugins.tree.get': contract(P.PackageListParams, P.PluginTreeView, 'read', 'packages.read'),
-  '_agnes/v1/plugins.generations': contract(P.PackageListParams, P.PluginGenerationStatus, 'read', 'packages.read'),
+  '_agnes/v1/plugins.generations': contract(
+    P.PackageListParams,
+    P.PluginGenerationStatus,
+    'read',
+    'packages.read',
+  ),
   '_agnes/v1/plugins.tree.list': contract(P.PackageListParams, P.PluginTreeView, 'read', 'packages.read'),
   '_agnes/v1/plugins.tree.apply': contract(
     P.PluginTreeApplyParams,

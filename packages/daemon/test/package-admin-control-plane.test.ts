@@ -337,6 +337,22 @@ it('installs an actual local package, returns a durable idempotent receipt, and 
   expect(await admin.call('_agnes/v1/packages.list', { profile }, authority)).toMatchObject({
     packages: [expect.objectContaining({ id: 'acme/pkg-a', actual: 'unavailable' })],
   })
+  const generations = {
+    generations: [],
+    plugins: [{ id: 'acme/pkg-a', state: 'draining' as const, boundSessions: 2, drainingSessions: 2 }],
+  }
+  const status = service({
+    activation: {
+      actual: async () => 'unavailable',
+      reconcile: async () => ({ actual: 'unavailable' }),
+      generations: async () => generations,
+    },
+  })
+  expect(await status.call('_agnes/v1/plugins.generations', { profile }, authority)).toEqual(generations)
+  expect(await status.call('_agnes/v1/packages.list', { profile }, authority)).toMatchObject({
+    generations,
+    packages: [expect.objectContaining({ draining: true, boundSessions: 2, drainingSessions: 2 })],
+  })
 })
 
 it('refreshes the client-module roster after every successful package lifecycle transition', async () => {
@@ -1880,4 +1896,53 @@ it('fails the whole read closed when an installed file was swapped after install
       authority,
     ),
   ).rejects.toMatchObject({ data: { reason: 'E_PACKAGE_INTEGRITY' } })
+})
+
+it('refreshes discovery source bytes before an explicit local reload activation', async () => {
+  const home = join(root, 'plugins'),
+    workspace = join(root, 'workspace-plugins')
+  mkdirSync(home)
+  cpSync(join(root, 'candidate'), join(home, 'example'), { recursive: true })
+  const local = createPackageManager({
+    dataDir: root,
+    cwd: root,
+    agnesVersion: '0.1.0',
+    localPlugins: { home, workspace },
+    references: async () => [],
+    now: () => now,
+  })
+  await local.refreshLocalPlugins(profileDir)
+  const previous = (await local.inventory(profileDir)).packages[0]!
+  writeFileSync(join(home, 'example', 'revision.txt'), 'edited bytes')
+  const admin = service({
+    manager: local,
+    activation: {
+      actual: async () => {
+        const row = (await local.inventory(profileDir)).packages[0]!
+        return { actual: 'running', actualIntegrity: row.entry.integrity }
+      },
+      reconcile: async () => {
+        const row = (await local.inventory(profileDir)).packages[0]!
+        return { actual: 'running', actualIntegrity: row.entry.integrity }
+      },
+    },
+  })
+  const receipt = (await admin.call(
+    '_agnes/v1/packages.enable',
+    {
+      profile,
+      id: previous.id,
+      clientId,
+      commandId: 'local-reload',
+    },
+    authority,
+  )) as { operationId: string }
+  expect(await operation(admin, profile, receipt.operationId)).toMatchObject({
+    state: 'completed',
+    installed: { actual: 'running' },
+  })
+  const next = (await local.inventory(profileDir)).packages[0]!
+  expect(next.entry.integrity).not.toBe(previous.entry.integrity)
+  expect(next.enabled).toBe(true)
+  expect(next.trusted).toBe(true)
 })

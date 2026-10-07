@@ -6,6 +6,7 @@ import { afterEach, expect, it, vi } from 'vitest'
 import { PluginAdminApi } from '../src/admin/plugins/api.js'
 import {
   KindFilter,
+  GenerationDrainSummary,
   PluginBadges,
   pluginStates,
   SessionDefaultsPanel,
@@ -53,6 +54,22 @@ it('shows declared kinds and observable states without guessing draining or rest
       error: { code: 'CLIENT_MODULE_IMPORT_FAILED', message: 'load failure' },
     }).map((state) => state.key),
   ).toContain('failed')
+  const draining = await mount(
+    createElement(PluginBadges, { item: { ...item, draining: true, drainingSessions: 3 }, t }),
+  )
+  expect(draining.textContent).toContain('Draining (3)')
+  const removed = await mount(
+    createElement(GenerationDrainSummary, {
+      installed: [],
+      status: {
+        generations: [],
+        plugins: [{ id: item.id, state: 'draining', boundSessions: 3, drainingSessions: 3 }],
+      },
+      t,
+    }),
+  )
+  expect(removed.textContent).toContain(item.id)
+  expect(removed.textContent).toContain('Draining (3)')
   const filter = await mount(createElement(KindFilter, { value: '', onChange: vi.fn(), t }))
   expect(filter.querySelector('[role="combobox"]')?.getAttribute('aria-label')).toBe('Filter by kind')
   expect(sessionLoopSelection({})).toBeUndefined()

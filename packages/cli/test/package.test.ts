@@ -1,7 +1,8 @@
 import type { PackageOperationGetParams } from '@agnes/protocol'
 import type { NodeClient } from '@agnes/sdk'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { parseArgs } from '../src/args.js'
+import { runPluginDevelopmentCommand } from '../src/commands/plugins.js'
 import { runPackageCommand } from '../src/commands/package.js'
 
 const profile = 'local-dev'
@@ -139,4 +140,78 @@ describe('package command', () => {
     expect(fixture.installs()).toBe(0)
     expect(written.join('')).toContain('Installation cancelled.')
   })
+})
+
+it.each([
+  ['plugins', 'reload', 'example'],
+  ['dev', './plugin'],
+])('reloads the inspected local revision for %s through atomic package activation', async (...args) => {
+  const local = { type: 'file' as const, ref: 'file:./plugin' }
+  const installed = {
+    ...operation('install', true).installed!,
+    source: local,
+    trusted: true,
+    desired: 'enabled',
+    actual: 'running',
+    actualIntegrity: integrity,
+  }
+  const next = {
+    ...preview,
+    source: local,
+    integrity: `sha256-${'b'.repeat(64)}`,
+    capabilityHash: 'c'.repeat(64),
+  }
+  const update = vi.fn(async (_params: unknown) => ({ operationId: 'update', profile }))
+  const rpc = {
+    clientId: async () => 'cli-client',
+    packages: {
+      list: async () => ({ packages: [installed] }),
+      inspect: async () => ({ operationId: 'inspect', profile }),
+      update,
+      operation: {
+        get: async ({ operationId }: PackageOperationGetParams) =>
+          operationId === 'inspect'
+            ? { ...operation('inspect'), preview: next }
+            : { ...operation('install'), operation: 'update' },
+      },
+    },
+  } as unknown as NodeClient
+  const output: string[] = []
+  await runPluginDevelopmentCommand(parseArgs(args), rpc, (text) => output.push(text))
+  expect(update.mock.calls[0]?.[0]).toMatchObject({
+    id: 'example',
+    source: local,
+    expectedIntegrity: next.integrity,
+    activation: {
+      expectedInstalledIntegrity: integrity,
+      expectedActiveIntegrity: integrity,
+      trust: { integrity: next.integrity, capabilityHash: next.capabilityHash },
+    },
+  })
+  expect(output.join('')).toContain('existing sessions keep their generation')
+  installed.desired = 'installed-disabled'
+  await expect(
+    runPluginDevelopmentCommand(parseArgs(['plugins', 'reload', 'example']), rpc, () => {}),
+  ).rejects.toThrow('E_PLUGIN_RELOAD_DISABLED')
+})
+
+it('routes discovery-owned local reload through the existing activation effect', async () => {
+  const enable = vi.fn(async (_params: unknown) => ({ operationId: 'enable', profile }))
+  const installed = {
+    ...operation('install', true).installed!,
+    source: { type: 'local', ref: 'local:workspace/example' },
+    trusted: true,
+    desired: 'enabled',
+    actual: 'running',
+  }
+  const rpc = {
+    clientId: async () => 'cli-client',
+    packages: {
+      list: async () => ({ packages: [installed] }),
+      enable,
+      operation: { get: async () => ({ ...operation('install'), operation: 'enable', installed }) },
+    },
+  } as unknown as NodeClient
+  await runPluginDevelopmentCommand(parseArgs(['plugins', 'reload', 'example']), rpc, () => {})
+  expect(enable.mock.calls[0]?.[0]).toMatchObject({ profile, id: 'example', clientId: 'cli-client' })
 })

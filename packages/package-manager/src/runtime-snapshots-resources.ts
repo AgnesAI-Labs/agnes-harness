@@ -25,11 +25,18 @@ export function writeGenerationResources(directory: string, input: RuntimeGenera
   return digest(text)
 }
 
-export function readGenerationResources(directory: string, expectedDigest: string): RuntimeGenerationResourceSnapshot {
+export function readGenerationResources(
+  directory: string,
+  expectedDigest: string,
+): RuntimeGenerationResourceSnapshot {
   try {
     const text = readFileSync(join(directory, 'resources.json'), 'utf8')
     if (digest(text) !== expectedDigest) throw new Error('digest')
-    const record = JSON.parse(text) as { version: number; data: JsonValue; trees: { path: string; integrity: string }[] }
+    const record = JSON.parse(text) as {
+      version: number
+      data: JsonValue
+      trees: { path: string; integrity: string }[]
+    }
     if (record.version !== 1 || !Array.isArray(record.trees)) throw new Error('record')
     const directories = record.trees.map((tree, index) => {
       if (tree.path !== String(index)) throw new Error('path')

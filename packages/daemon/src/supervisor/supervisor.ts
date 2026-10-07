@@ -1397,11 +1397,20 @@ export async function startSupervisor(o: StartSupervisorOptions): Promise<{
             ...(pinCoordinator ? { releaseRetiring: pinCoordinator.releaseRetiring } : {}),
             generationStatus: async () => {
               const worker = await pool.acquireSharedWorker()
-              return await worker.command('pluginGenerations.status', {}, { timeoutMs: o.config.limits.workerStartupMs }) as import('@agnes/protocol').PluginGenerationStatus
+              return (await worker.command(
+                'pluginGenerations.status',
+                {},
+                { timeoutMs: o.config.limits.workerStartupMs },
+              )) as import('@agnes/protocol').PluginGenerationStatus
             },
             collectGenerations: async () => {
               const worker = pool.businessWorker()
-              if (worker) await worker.link.command('pluginGenerations.collect', {}, { timeoutMs: o.config.limits.workerStartupMs })
+              if (worker)
+                await worker.link.command(
+                  'pluginGenerations.collect',
+                  {},
+                  { timeoutMs: o.config.limits.workerStartupMs },
+                )
             },
             workerGeneration: () => pool.businessWorker()?.generation,
             desiredFor: async ({ packageId, operation }) => {
@@ -1452,6 +1461,23 @@ export async function startSupervisor(o: StartSupervisorOptions): Promise<{
         )
       if (compositeActivation) o.packageRuntime.bindActivation?.(compositeActivation)
       if (o.packageRuntime.manager.localPluginRoots) {
+        if (compositeActivation)
+          o.packageRuntime.manager.bindLocalPluginReload({
+            async reloadPlugin(id) {
+              const inventory = await o.packageRuntime!.manager.inventory(packageProfileDirectory)
+              const plugin = inventory.packages.find((pkg) => pkg.id === id)
+              if (!plugin || plugin.localFailure)
+                throw new Error('E_PLUGIN_RELOAD_METADATA: local plugin is unavailable')
+              const result = await compositeActivation.reconcile({
+                profile: o.profile.name,
+                packageId: id,
+                operationId: `local-reload:${id}`,
+                operation: plugin.enabled ? 'update' : 'disable',
+                signal: new AbortController().signal,
+              })
+              if (result.error) throw new Error(result.error.code)
+            },
+          })
         const watcher = o.packageRuntime.manager.watchLocalPlugins(packageProfileDirectory)
         localPluginWatcher = watcher
         startupCleanup.push(() => watcher.close())

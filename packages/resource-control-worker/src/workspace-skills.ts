@@ -17,11 +17,16 @@ export function workspaceSkills(
     return call?.active && call.sessionKey === sessionKey ? call.runtime : undefined
   }
   return Object.freeze({
-    ...(shared.generationSnapshot ? { generationSnapshot: () => {
-      const runtime = current()
-      if (!runtime?.generationSnapshot) throw new Error('E_GENERATION_SKILLS_WORKSPACE: workspace view cannot be serialized')
-      return runtime.generationSnapshot()
-    } } : {}),
+    ...(shared.generationSnapshot
+      ? {
+          generationSnapshot: () => {
+            const runtime = current()
+            if (!runtime?.generationSnapshot)
+              throw new Error('E_GENERATION_SKILLS_WORKSPACE: workspace view cannot be serialized')
+            return runtime.generationSnapshot()
+          },
+        }
+      : {}),
     list: () => current()?.list() ?? [],
     // User-level roots are global, and the fence asks outside any workspace scope.
     readRoots: () => shared.readRoots?.() ?? [],

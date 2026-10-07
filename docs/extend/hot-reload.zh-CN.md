@@ -1,0 +1,52 @@
+# 用热重载开发插件
+
+[English](hot-reload.md) | 简体中文
+
+[作者指南](README.zh-CN.md) · [本地插件](local-plugins.zh-CN.md) · [包管理](../guide/packages.zh-CN.md)
+
+对 daemon 启动工作区下的包目录，在 `package.json` 声明源码入口后运行：
+
+```sh
+agh dev ./my-plugin --profile local-dev
+# 修改源码后：
+agh plugins reload my-plugin --profile local-dev
+# 或重载所有已启用的本地/file 包：
+agh plugins reload --profile local-dev
+```
+
+`dev` 检查包，必要时安装，然后信任已检查的版本并启用它。这表示你明确授权执行该本地包。file 来源仍相对于 daemon 启动工作区；CLI 也接受该工作区内的绝对路径。请在同一工作区启动 daemon 和执行命令。身份冲突与检查阻断仍会报错。file 包需要 `package.json`；只有 `plugin.ts` / `plugin.js` 的目录请放到[本地插件目录](local-plugins.zh-CN.md)。
+
+自动重载使用现有的 `<AGNES_HOME>/plugins/<name>` 或 `<workspace>/.agnes/plugins/<name>` watcher。它复制修改后的源码，并调用 daemon 的 generation 发布适配器；手动命令也支持这些自动发现的包。删除源目录会停止未来绑定。重载保留禁用选择；启用禁用包请使用 `dev` 或管理页启用操作。
+
+## 会话如何变化
+
+成功激活会发布不可变 generation，包含启用包版本、可执行源码、客户端 bundle 和私有资源视图。新会话使用新 generation；已有会话保持工具、loop/adapter 选择、MCP 定义、Skills 视图和前端 bundle URL，休眠、冷恢复以及 daemon/worker 重启后也一样。修改源码无需修改版本号。
+
+浏览器按会话获取客户端模块，使用 `/plugins/generations/<generationId>/…` URL；切换到新会话时加载匹配 bundle。重载不会替换运行中会话的 UI，也不在下一轮自动切换其代码。
+
+只要还有持久会话引用，旧 generation 就保留。关闭或休眠不会释放 pin。禁用/卸载停止新绑定，仅回收无引用 generation。管理页显示“排干中 (N)”，也显示已从安装清单移除但仍有绑定的包。`boundSessions` 是所有绑定数，`drainingSessions` 是当前 generation 之外的绑定数。目前没有公开的会话删除命令；后端删除入口必须在实际删除会话后释放 pin。
+
+## 哪些需要重启
+
+persistence/storage provider、sandbox 及其他进程基础后端仍标记 `restart-required`，不能被包重载替换。恢复检查部署兼容性与会话已持久化的 loop id/version。快照缺失、资源归档被修改或部署不兼容会产生明确的 `E_GENERATION_*` 错误，不会替换为当前代码。
+
+MCP generation 保存定义、revision 与 SecretRef；冷恢复重建 factory，连接时才解析密钥。部署 transport 策略继续生效。Skills 内容、已索引文件和目录会被私有复制；会话首次打开时固定 workspace 视图。密钥缺失或 transport 策略拒绝仍可能导致连接失败。
+
+自定义动态 extension 可提供声明式 `generation` 元数据和 Host `restoreGenerationExtension` 回调。自定义 Skills 可提供 `generationSnapshot()`。没有可恢复输入时允许当前进程运行，但冷恢复报 `E_GENERATION_FACTORY_UNAVAILABLE` 或 `E_GENERATION_SKILLS_UNRESTORABLE`。自定义授权不能被序列化。
+
+## 嵌入与状态查询
+
+```ts
+const result = await host.reloadPlugin?.('my-plugin', '/absolute/source/folder')
+// { generationId, changed }；后续可省略目录。
+// 也可配置 HostOptions.developmentPluginDirectories 后调用 reloadPlugin(id)。
+const status = host.pluginGenerationStatus?.()
+// currentGenerationId, generations[{ id, state, boundSessions, packages }],
+// plugins[{ id, state, boundSessions, drainingSessions }]
+```
+
+`reloadPlugin(id, directory?)` 检查受信的开发包并发布完整目标，包括 client rows；调用者负责授权目录。保留配置与禁用 row；相同源码返回 `changed: false`，失败重载保留原 head。
+
+生产 daemon 通过持久化包/目标协调路径发布。嵌入者将 PackageManager 的 `bindLocalPluginReload({ async reloadPlugin(id) { … } })` 绑定到自己的发布入口；已完成源快照准备时可等待 `host.reloadPlugin(id)`。恢复当前 head 时也要持久化 desired state，不能只保存会话 pin。
+
+Node 管理客户端可调用 `client.packages.generations({ profile })`；只读 RPC 为 `_agnes/v1/plugins.generations`，本地 BFF 路由为 `POST /admin/plugins/api/generations`，均要求 `packages.read`。`packages.list` 也可返回 generation 状态和包计数。状态错误仅公开稳定错误码；不会返回源码、Skills 正文或已解析密钥。

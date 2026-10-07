@@ -642,7 +642,6 @@ export function createPackageManager(options: ManagerOptions): PackageManager {
         reload: {
           async reloadPlugin(id) {
             const owner = reload ?? localReload
-            // TODO: bind W7 Host.reloadPlugin in the daemon composition when feat/agh-hot-reload lands.
             if (!owner) return
             await owner.reloadPlugin(id)
             localPending.delete(id)

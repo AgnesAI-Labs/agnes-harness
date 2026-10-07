@@ -365,6 +365,10 @@ export function createAdminSurface(options: AdminSurfaceOptions) {
           error(response, 409, 'E_ADMIN_READ_ONLY', 'The admin surface is in read-only recovery mode.')
           return true
         }
+        if (!configuredPermissions.includes(PACKAGE_ADMIN_METHODS[method].administration.permission)) {
+          error(response, 403, 'E_ADMIN_PERMISSION', 'The admin permission does not allow this operation.')
+          return true
+        }
         const result = await options.invoke(name, body)
         if (!validatePackageAdminCall(method, 'result', result).ok) {
           error(response, 502, 'E_ADMIN_RESPONSE', 'The backend response could not be confirmed.')

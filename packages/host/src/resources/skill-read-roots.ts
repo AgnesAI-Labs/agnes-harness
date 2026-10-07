@@ -51,9 +51,16 @@ export function safeSkillReadRoots(roots: readonly string[], context: SkillReadR
     if (context.generationRoot) {
       const base = segments(canonical(context.generationRoot))
       const suffix = segs.slice(base.length)
-      if (within(segs, base) && /^[a-f0-9-]{36}$/.test(suffix[0] ?? '') &&
+      if (
+        within(segs, base) &&
+        /^[a-f0-9-]{36}$/.test(suffix[0] ?? '') &&
         ((suffix.length === 3 && suffix[1] === 'resources' && /^\d+$/.test(suffix[2] ?? '')) ||
-         (suffix.length === 4 && suffix[1] === 'session-resources' && /^[a-f0-9]{64}$/.test(suffix[2] ?? '') && /^\d+$/.test(suffix[3] ?? '')))) return true
+          (suffix.length === 4 &&
+            suffix[1] === 'session-resources' &&
+            /^[a-f0-9]{64}$/.test(suffix[2] ?? '') &&
+            /^\d+$/.test(suffix[3] ?? '')))
+      )
+        return true
     }
     if (segs.length < 2 || within(home, segs)) return false
     if (within(segs, data) || within(data, segs)) return false

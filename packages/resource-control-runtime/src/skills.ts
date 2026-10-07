@@ -65,7 +65,7 @@ export type SkillFileRead =
   | Readonly<{
       ok: false
       code: 'DISABLED' | 'UNTRUSTED_REVISION' | 'TRUST_REJECTED' | 'SHADOWED' | 'NOT_FOUND' | 'UNAUTHORIZED'
-  }>
+    }>
 export type SkillGenerationSnapshot = Readonly<{
   version: 1
   listed: readonly SkillActual[]
@@ -75,7 +75,13 @@ export type SkillGenerationSnapshot = Readonly<{
     body?: string
     directory?: string
     invocation?: SkillInvocation
-    files: readonly Readonly<{ relativePath: string; sha256: string; kind: 'text' | 'binary'; mime: string; bytes: readonly number[] }>[]
+    files: readonly Readonly<{
+      relativePath: string
+      sha256: string
+      kind: 'text' | 'binary'
+      mime: string
+      bytes: readonly number[]
+    }>[]
   }>[]
 }>
 
@@ -83,21 +89,37 @@ export type SkillGenerationSnapshot = Readonly<{
 export function restoreSkillGeneration(snapshot: SkillGenerationSnapshot): SkillRuntimeInput {
   if (snapshot.version !== 1 || !Array.isArray(snapshot.listed) || !Array.isArray(snapshot.entries))
     throw new Error('E_GENERATION_SKILLS_INTEGRITY: invalid Skills snapshot')
-  const entries = new Map<string, SkillGenerationSnapshot['entries'][number]>(snapshot.entries.map((entry) => [entry.resourceId, entry]))
+  const entries = new Map<string, SkillGenerationSnapshot['entries'][number]>(
+    snapshot.entries.map((entry) => [entry.resourceId, entry]),
+  )
   const read = (resourceId: string) => {
     const entry = entries.get(resourceId)
-    const denied = denyRead(entry, undefined, resourceId, { sessionKey: '' }) ?? blockInvocation(entry?.invocation)
+    const denied =
+      denyRead(entry, undefined, resourceId, { sessionKey: '' }) ?? blockInvocation(entry?.invocation)
     return { entry, denied }
   }
   return Object.freeze({
     generationSnapshot: () => snapshot,
     list: () => snapshot.listed,
     invocation: (resourceId) => entries.get(resourceId)?.invocation,
-    readRoots: () => snapshot.entries.filter((entry) => entry.actual.actual === 'ready' && entry.directory && entry.actual.sourceIdentity.scope === 'user').map((entry) => entry.directory as string),
+    readRoots: () =>
+      snapshot.entries
+        .filter(
+          (entry) =>
+            entry.actual.actual === 'ready' &&
+            entry.directory &&
+            entry.actual.sourceIdentity.scope === 'user',
+        )
+        .map((entry) => entry.directory as string),
     read(resourceId) {
       const { entry, denied } = read(resourceId)
       if (denied || !entry) return denied ?? { ok: false, code: 'NOT_FOUND' }
-      return { ok: true, content: (entry.directory ? baseDirectoryNote(entry.directory) : '') + (entry.body ?? ''), revision: entry.actual.revision, ...(entry.directory ? { directory: entry.directory } : {}) }
+      return {
+        ok: true,
+        content: (entry.directory ? baseDirectoryNote(entry.directory) : '') + (entry.body ?? ''),
+        revision: entry.actual.revision,
+        ...(entry.directory ? { directory: entry.directory } : {}),
+      }
     },
     readFile(resourceId, expectedRevision, path) {
       const { entry, denied } = read(resourceId)
@@ -106,7 +128,9 @@ export function restoreSkillGeneration(snapshot: SkillGenerationSnapshot): Skill
       const file = entry.files.find((item) => item.relativePath === path)
       if (!file) return { ok: false, code: 'NOT_FOUND' }
       const bytes = Uint8Array.from(file.bytes)
-      return file.kind === 'binary' ? { ok: true, bytes, mime: file.mime, binary: true } : { ok: true, content: new TextDecoder('utf-8', { fatal: true }).decode(bytes), mime: file.mime }
+      return file.kind === 'binary'
+        ? { ok: true, bytes, mime: file.mime, binary: true }
+        : { ok: true, content: new TextDecoder('utf-8', { fatal: true }).decode(bytes), mime: file.mime }
     },
   } satisfies SkillRuntimeInput)
 }
@@ -346,9 +370,7 @@ const actual = (state: RegistryState): readonly SkillActual[] =>
       .sort((a, b) => a.name.localeCompare(b.name) || a.resourceId.localeCompare(b.resourceId)),
   )
 
-function blockInvocation(
-  flags: SkillInvocation | undefined,
-): Extract<SkillRead, { ok: false }> | undefined {
+function blockInvocation(flags: SkillInvocation | undefined): Extract<SkillRead, { ok: false }> | undefined {
   if (!flags) return undefined
   if (flags.disabled || (!flags.modelInvocable && !flags.userInvocable))
     return Object.freeze({ ok: false, code: 'DISABLED' as const })
@@ -419,7 +441,8 @@ const baseDirectoryNote = (directory: string) =>
 function liveSnapshot(current: () => RegistryState, canRead: Options['canRead']): SkillRuntimeInput {
   return Object.freeze({
     generationSnapshot() {
-      if (canRead) throw new Error('E_GENERATION_SKILLS_AUTHORIZATION: custom authorization cannot be serialized')
+      if (canRead)
+        throw new Error('E_GENERATION_SKILLS_AUTHORIZATION: custom authorization cannot be serialized')
       const indexed = indexState(current())
       return {
         version: 1 as const,

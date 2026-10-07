@@ -13,6 +13,23 @@ describe('safeSkillReadRoots', () => {
       join(home, '.agnes', 'skills', 'x'),
       '/opt/skills/lint',
     ]
+    const generationRoot = join(context.dataDir, '.runtime-generations')
+    const snapshot = join(generationRoot, '12345678-1234-1234-1234-123456789abc')
+    expect(
+      safeSkillReadRoots(
+        [
+          join(snapshot, 'resources', '0'),
+          join(snapshot, 'session-resources', 'a'.repeat(64), '1'),
+          join(snapshot, 'resources'),
+          join(snapshot, 'secrets'),
+          generationRoot,
+        ],
+        { ...context, generationRoot },
+      ),
+    ).toEqual([
+      resolve(join(snapshot, 'resources', '0')),
+      resolve(join(snapshot, 'session-resources', 'a'.repeat(64), '1')),
+    ])
     // Roots come back absolute in the platform's spelling (a drive letter on Windows).
     expect(safeSkillReadRoots(keep, context)).toEqual(keep.map((root) => resolve(root)))
   })

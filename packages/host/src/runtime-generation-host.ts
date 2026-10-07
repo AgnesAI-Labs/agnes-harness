@@ -19,7 +19,11 @@ import type { ResolvedProfile } from './profile/types.js'
 import type { SkillRuntimeInput } from './resources/skills.js'
 import { RuntimePluginCatalogue } from './runtime-plugin-catalogue.js'
 import { buildCompleteRuntimeTarget } from './runtime-target-builder.js'
-import { captureGenerationResources, createGenerationSkills, restoreGenerationRows } from './runtime-generation-resources.js'
+import {
+  captureGenerationResources,
+  createGenerationSkills,
+  restoreGenerationRows,
+} from './runtime-generation-resources.js'
 import { sessionKey } from './session.js'
 
 export type PluginGenerationStatus = Readonly<{
@@ -62,6 +66,7 @@ export async function createRuntimeGenerationHost(
   const resourceSkills = new Map<string, ReturnType<typeof createGenerationSkills>>()
   const developmentSources = new Map<string, RuntimePluginSnapshot>()
   const developmentDirectories = new Map(options.developmentPluginDirectories)
+  const basePackages = new Set<string>()
   const failures = new Map<string, string>()
   const failedSnapshots = new Map<string, PluginGenerationSnapshot>()
   let initialBinding: ((key: string) => void) | undefined
@@ -69,27 +74,31 @@ export async function createRuntimeGenerationHost(
   const initial = await factory(profile, {
     ...options,
     ...(options.skillResources ? { skillResources: initialSkills.input } : {}),
+    onGenerationBasePackages: (ids) => {
+      for (const id of ids) basePackages.add(id)
+      options.onGenerationBasePackages?.(ids)
+    },
     onGenerationSessionBinding: (key) => initialBinding?.(key),
   })
   let current: LiveGeneration | undefined
   let closed = false
   let queue: Promise<unknown> = Promise.resolve()
   let closing: Promise<void> | undefined
-  const basePackages = new Set(
-    [
-      profile.seams.sandbox,
-      profile.seams.platform,
-      ...profile.packages
-        .filter((pkg) => Object.values(profile.adapters).includes(pkg.id))
-        .map((pkg) => pkg.id),
-    ].filter((id): id is string => typeof id === 'string'),
-  )
+  for (const id of [
+    profile.seams.sandbox,
+    profile.seams.platform,
+    ...profile.packages
+      .filter((pkg) => Object.values(profile.adapters).includes(pkg.id))
+      .map((pkg) => pkg.id),
+  ].filter((id): id is string => typeof id === 'string'))
+    basePackages.add(id)
   // Model/loop selections are checked by their generation's registries on open. Process backends
   // and deployment routes must remain compatible when reopening a durable snapshot.
   const compatibility = createHash('sha256')
     .update(
       JSON.stringify({
         adapters: profile.adapters,
+        persistence: profile.persistence,
         sandbox: profile.seams.sandbox,
         platform: profile.seams.platform,
         provider: profile.provider,
@@ -107,20 +116,42 @@ export async function createRuntimeGenerationHost(
       options.runtimePluginSnapshots ??
       options.runtimePluginCatalogue ??
       []
-    const catalogue = new Map([...sources, ...developmentSources.values()].map((source) => [`${source.snapshot.packageId}@${source.snapshot.snapshotId}`, source]))
+    const catalogue = new Map(
+      [...sources, ...developmentSources.values()].map((source) => [
+        `${source.snapshot.packageId}@${source.snapshot.snapshotId}`,
+        source,
+      ]),
+    )
     return new RuntimePluginCatalogue([...catalogue.values()]).select(target)
   }
   const bindGeneration = (key: string, id: string): void => {
     if (store.pin(key, id).generationId !== id)
       throw new Error('E_GENERATION_BINDING_CONFLICT: session was bound by another worker')
   }
-  const snapshotTarget = (target: RuntimeTarget, sources: readonly RuntimePluginSnapshot[], skills: SkillRuntimeInput | undefined) =>
-    store.create(target, sources, compatibility, [
-      ...profile.packages
-        .filter((pkg) => pkg.trust === 'builtin' && pkg.enabled !== false)
-        .map((pkg) => ({ id: pkg.id, version: pkg.version })),
-      ...sources.map((source) => ({ id: source.snapshot.packageId, version: source.snapshot.version })),
-    ], captureGenerationResources(skills, preparedRows.values()))
+  const snapshotTarget = (
+    target: RuntimeTarget,
+    sources: readonly RuntimePluginSnapshot[],
+    skills: SkillRuntimeInput | undefined,
+  ) =>
+    store.create(
+      target,
+      sources,
+      compatibility,
+      [
+        ...profile.packages
+          .filter((pkg) => pkg.trust === 'builtin' && pkg.enabled !== false)
+          .map((pkg) => ({ id: pkg.id, version: pkg.version })),
+        ...sources.map((source) => ({ id: source.snapshot.packageId, version: source.snapshot.version })),
+      ],
+      captureGenerationResources(
+        skills,
+        [...preparedRows.values()].filter((row) =>
+          target.tree.rows.some(
+            (targetRow) => !targetRow.disabled && targetRow.id === `ext:${row.extensionId}`,
+          ),
+        ),
+      ),
+    )
   const ensureCurrent = async (): Promise<LiveGeneration> => {
     if (current) return current
     const target = initial.runtimeTargetSnapshot?.()
@@ -150,7 +181,8 @@ export async function createRuntimeGenerationHost(
     if (snapshot.resources) generationSkills.seal(snapshot.resources, skillsByGeneration.has(snapshot.id))
     const pinnedSkillRow = target.tree.rows.find((row) => row.id === SKILL_ROW_ID)
     if (
-      !snapshot.resources && !skillsByGeneration.has(snapshot.id) &&
+      !snapshot.resources &&
+      !skillsByGeneration.has(snapshot.id) &&
       pinnedSkillRow &&
       pinnedSkillRow.entryRevision !== skillRowRevision(skills)
     )
@@ -189,10 +221,16 @@ export async function createRuntimeGenerationHost(
       },
     )
     try {
-      const savedRows = snapshot.resources ? await restoreGenerationRows(snapshot.resources, options, rowsByGeneration.get(snapshot.id)) : [...(rowsByGeneration.get(snapshot.id) ?? preparedRows).values()]
-      for (const input of savedRows)
-        host.extensionRows.prepare(input)
-      if (pinnedSkillRow) host.extensionRows.prepare({ extensionId: 'agnes/skills', entryRevision: pinnedSkillRow.entryRevision, ...(hasSkills ? { skillResources: generationSkills.input } : {}) })
+      const savedRows = snapshot.resources
+        ? await restoreGenerationRows(snapshot.resources, options, rowsByGeneration.get(snapshot.id))
+        : [...(rowsByGeneration.get(snapshot.id) ?? preparedRows).values()]
+      for (const input of savedRows) host.extensionRows.prepare(input)
+      if (pinnedSkillRow)
+        host.extensionRows.prepare({
+          extensionId: 'agnes/skills',
+          entryRevision: pinnedSkillRow.entryRevision,
+          ...(hasSkills ? { skillResources: generationSkills.input } : {}),
+        })
       await host.applyRuntimeTarget(decodeRuntimeTargetArtifact(snapshot.artifact))
     } catch (error) {
       await host.close().catch(() => undefined)
@@ -281,30 +319,57 @@ export async function createRuntimeGenerationHost(
         const error = failed?.error?.message ?? errors.get(id)
         plugins.set(packageId, {
           id: packageId,
-          state: basePackages.has(packageId)
-            ? 'restart-required'
-            : active.has(packageId) && !(id === current?.snapshot.id && error)
-              ? 'active'
-              : error
-                ? 'failed'
-                : 'draining',
+          state:
+            error || previous?.state === 'failed'
+              ? 'failed'
+              : basePackages.has(packageId)
+                ? 'restart-required'
+                : active.has(packageId)
+                  ? 'active'
+                  : 'draining',
           boundSessions: (previous?.boundSessions ?? 0) + boundSessions,
-          drainingSessions: (previous?.drainingSessions ?? 0) + (id === current?.snapshot.id ? 0 : boundSessions),
+          drainingSessions:
+            (previous?.drainingSessions ?? 0) + (id === current?.snapshot.id ? 0 : boundSessions),
           ...(error ? { error } : {}),
         })
       }
     }
     for (const id of basePackages)
       if (!plugins.has(id))
-        plugins.set(id, { id, state: 'restart-required', boundSessions: store.sessions().length, drainingSessions: 0 })
+        plugins.set(id, {
+          id,
+          state: 'restart-required',
+          boundSessions: store.sessions().length,
+          drainingSessions: 0,
+        })
     for (const [id, error] of errors) {
       if (snapshots.has(id)) continue
       generations.push({ id, state: 'failed', boundSessions: counts.get(id) ?? 0, packages: [], error })
     }
     return Object.freeze({
       ...(current ? { currentGenerationId: current.snapshot.id } : {}),
-      generations: Object.freeze(generations.map((item) => ({ ...item, ...(item.error ? { error: item.error.match(/E_[A-Z0-9_]+/)?.[0] ?? 'Plugin generation failed; inspect local logs.' } : {}) }))),
-      plugins: Object.freeze([...plugins.values()].map((item) => ({ ...item, ...(item.error ? { error: item.error.match(/E_[A-Z0-9_]+/)?.[0] ?? 'Plugin generation failed; inspect local logs.' } : {}) }))),
+      generations: Object.freeze(
+        generations.map((item) => ({
+          ...item,
+          ...(item.error
+            ? {
+                error:
+                  item.error.match(/E_[A-Z0-9_]+/)?.[0] ?? 'Plugin generation failed; inspect local logs.',
+              }
+            : {}),
+        })),
+      ),
+      plugins: Object.freeze(
+        [...plugins.values()].map((item) => ({
+          ...item,
+          ...(item.error
+            ? {
+                error:
+                  item.error.match(/E_[A-Z0-9_]+/)?.[0] ?? 'Plugin generation failed; inspect local logs.',
+              }
+            : {}),
+        })),
+      ),
     })
   }
   // Keep the public Kernel coordination view valid for sessions hosted in any generation.
@@ -378,32 +443,54 @@ export async function createRuntimeGenerationHost(
     pluginGenerationStatus: status,
     sessionGeneration: (key) => store.session(key)?.generationId,
     collectPluginGenerations: () => enqueue(collect),
-    reloadPlugin: (id, directory) => enqueue(async () => {
-      const head = await ensureCurrent()
-      const pkg = profile.packages.find((pkg) => pkg.id === id)
-      if (pkg?.trust === 'builtin' || basePackages.has(id))
-        throw new Error(`E_GENERATION_RESTART_REQUIRED: ${id} is a base backend or bundled package`)
-      const available = (await options.runtimePluginSources?.()) ?? options.runtimePluginSnapshots ?? []
-      const path = directory ?? developmentDirectories.get(id) ?? (pkg?.source.startsWith('file:') ? pkg.source.slice(5) : undefined) ?? available.find((source) => source.snapshot.packageId === id)?.snapshot.directory ?? options.packageDirs?.get(id)
-      if (!path) throw new Error(`E_PLUGIN_RELOAD_SOURCE_MISSING: register a local directory for ${id}`)
-      const source = readDevelopmentPlugin(path, profile.name)
-      if (source.snapshot.packageId !== id) throw new Error('E_PLUGIN_RELOAD_IDENTITY: local package name differs from the requested id')
-      const target = decodeRuntimeTargetArtifact(head.snapshot.artifact)
-      const oldRows = [...target.tree.rows, ...Object.values(target.resource.rows).flatMap((row) => row ? [row] : [])]
-      const owned = (plugin: string) => plugin.startsWith(`${id}@`) || plugin.startsWith(`builtin:${id}/`)
-      const sourcesBefore = new Map(developmentSources)
-      developmentSources.set(`${id}@${source.snapshot.snapshotId}`, source)
-      try {
-        await publishTarget(buildCompleteRuntimeTarget({ rows: [...oldRows.filter((row) => !owned(row.plugin)), ...developmentPluginRows(source, oldRows)], resources: target.resource.resources }).target)
-        developmentDirectories.set(id, path)
-        const next = await ensureCurrent()
-        return { generationId: next.snapshot.id, changed: next.snapshot.id !== head.snapshot.id }
-      } catch (error) {
-        developmentSources.clear()
-        for (const [key, value] of sourcesBefore) developmentSources.set(key, value)
-        throw error
-      }
-    }),
+    reloadPlugin: (id, directory) =>
+      enqueue(async () => {
+        const head = await ensureCurrent()
+        const pkg = profile.packages.find((pkg) => pkg.id === id)
+        if (pkg?.trust === 'builtin' || basePackages.has(id))
+          throw new Error(`E_GENERATION_RESTART_REQUIRED: ${id} is a base backend or bundled package`)
+        const available = (await options.runtimePluginSources?.()) ?? options.runtimePluginSnapshots ?? []
+        const path =
+          directory ??
+          developmentDirectories.get(id) ??
+          (pkg?.source.startsWith('file:') ? pkg.source.slice(5) : undefined) ??
+          available.find((source) => source.snapshot.packageId === id)?.snapshot.directory ??
+          options.packageDirs?.get(id)
+        if (!path) throw new Error(`E_PLUGIN_RELOAD_SOURCE_MISSING: register a local directory for ${id}`)
+        const source = readDevelopmentPlugin(path, profile.name)
+        if (source.snapshot.packageId !== id)
+          throw new Error('E_PLUGIN_RELOAD_IDENTITY: local package name differs from the requested id')
+        const target = decodeRuntimeTargetArtifact(head.snapshot.artifact)
+        const oldRows = [
+          ...new Map(
+            [
+              ...target.tree.rows,
+              ...Object.values(target.resource.rows).flatMap((row) => (row ? [row] : [])),
+            ].map((row) => [row.id, row]),
+          ).values(),
+        ]
+        const owned = (plugin: string) => plugin.startsWith(`${id}@`) || plugin.startsWith(`builtin:${id}/`)
+        const sourcesBefore = new Map(developmentSources)
+        developmentSources.set(`${id}@${source.snapshot.snapshotId}`, source)
+        try {
+          await publishTarget(
+            buildCompleteRuntimeTarget({
+              rows: [
+                ...oldRows.filter((row) => !owned(row.plugin)),
+                ...developmentPluginRows(source, oldRows),
+              ],
+              resources: target.resource.resources,
+            }).target,
+          )
+          developmentDirectories.set(id, path)
+          const next = await ensureCurrent()
+          return { generationId: next.snapshot.id, changed: next.snapshot.id !== head.snapshot.id }
+        } catch (error) {
+          developmentSources.clear()
+          for (const [key, value] of sourcesBefore) developmentSources.set(key, value)
+          throw error
+        }
+      }),
     releaseSessionGeneration: (key) =>
       enqueue(async () => {
         if (owner(key).kernel.get(key))
@@ -490,7 +577,13 @@ export async function createRuntimeGenerationHost(
         const rows = [
           ...target.tree.rows.filter((old) => old.id !== SKILL_ROW_ID),
           row,
-          ...Object.values(target.resource.rows).flatMap((resource) => (resource ? [resource] : [])),
+          ...Object.values(target.resource.rows).flatMap((resource) =>
+            resource &&
+            resource.id !== SKILL_ROW_ID &&
+            !target.tree.rows.some((row) => row.id === resource.id)
+              ? [resource]
+              : [],
+          ),
         ]
         try {
           await publishTarget(

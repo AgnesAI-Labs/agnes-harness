@@ -524,9 +524,11 @@ class Service implements PackageAdminService {
         return await this.catalogGet(data as { profile: string; id: string; version?: string })
       if (method === '_agnes/v1/plugins.generations') {
         await this.options.profileDirectory(data.profile as string)
-        if (!this.options.activation?.generations) throw new Error('E_PACKAGE_STATE: generation status unavailable')
+        if (!this.options.activation?.generations)
+          throw new Error('E_PACKAGE_STATE: generation status unavailable')
         const status = await this.options.activation.generations(data.profile as string)
-        if (!validatePackageAdminCall(method, 'result', status).ok) throw new Error('E_PACKAGE_STATE: invalid generation status')
+        if (!validatePackageAdminCall(method, 'result', status).ok)
+          throw new Error('E_PACKAGE_STATE: invalid generation status')
         return status
       }
       if (method === '_agnes/v1/packages.list') return await this.list(data as { profile: string })
@@ -697,7 +699,10 @@ class Service implements PackageAdminService {
     const directory = await this.options.profileDirectory(params.profile)
     const inventory = await this.options.manager.inventory(directory)
     const generations = await this.readGenerations(params.profile)
-    return { packages: await this.projectInventory(params.profile, inventory, generations), ...(generations ? { generations } : {}) }
+    return {
+      packages: await this.projectInventory(params.profile, inventory, generations),
+      ...(generations ? { generations } : {}),
+    }
   }
 
   /**
@@ -1094,6 +1099,20 @@ class Service implements PackageAdminService {
       if (!record || packageOperationTerminal(record.operation.state)) return
       const pending = record
       if (pending.cancelRequested || controller.signal.aborted) return await this.cancelled(operationId)
+      // Explicit local reload re-reads source even when enable is already applied. Recovery still
+      // uses the same durable command; a completed command never reaches this scan again.
+      if (
+        pending.request.kind === 'enable' &&
+        pending.request.params.expectedInstalledIntegrity === undefined
+      ) {
+        const id = pending.request.params.id
+        const before = (await this.options.manager.inventory(directory)).packages.find((pkg) => pkg.id === id)
+        if (before?.entry.source.type === 'local') {
+          await this.options.manager.refreshLocalPlugins(directory)
+          const next = (await this.options.manager.inventory(directory)).packages.find((pkg) => pkg.id === id)
+          if (!next || next.localFailure) throw new Error('E_PACKAGE_STATE: local source cannot reload')
+        }
+      }
       const applied = await this.applied(pending, directory)
       if (applied === 'yes') {
         const reconciliation = await this.reconcile(pending, controller.signal)
@@ -1539,8 +1558,12 @@ class Service implements PackageAdminService {
   private async readGenerations(profile: string): Promise<PluginGenerationStatus | undefined> {
     try {
       const result = await this.options.activation?.generations?.(profile)
-      return result && validatePackageAdminCall('_agnes/v1/plugins.generations', 'result', result).ok ? result : undefined
-    } catch { return undefined }
+      return result && validatePackageAdminCall('_agnes/v1/plugins.generations', 'result', result).ok
+        ? result
+        : undefined
+    } catch {
+      return undefined
+    }
   }
 
   private async projectInventory(
@@ -1562,11 +1585,14 @@ class Service implements PackageAdminService {
       const plugin = generations?.plugins.find((item) => item.id === row.id)
       entries.push({
         ...projectPackage(row, observation),
-        ...(plugin ? {
-          boundSessions: plugin.boundSessions, drainingSessions: plugin.drainingSessions,
-          draining: plugin.drainingSessions > 0,
-          ...(plugin.state === 'restart-required' ? { actual: 'restart-required' as const } : {}),
-        } : {}),
+        ...(plugin
+          ? {
+              boundSessions: plugin.boundSessions,
+              drainingSessions: plugin.drainingSessions,
+              draining: plugin.drainingSessions > 0,
+              ...(plugin.state === 'restart-required' ? { actual: 'restart-required' as const } : {}),
+            }
+          : {}),
       })
     }
     return entries

@@ -55,19 +55,32 @@ export function PluginBadges({
   )
 }
 /** Removed packages have no inventory row, but their session pins still drain. */
-export function GenerationDrainSummary({ status, installed, t }: {
+export function GenerationDrainSummary({
+  status,
+  installed,
+  t,
+}: {
   status: PluginGenerationStatus | undefined
   installed: readonly PackageInstalledDescriptor[]
   t: Text
 }) {
-  const removed = status?.plugins.filter((plugin) =>
-    plugin.drainingSessions > 0 && !installed.some((item) => item.id === plugin.id)) ?? []
+  const removed =
+    status?.plugins.filter(
+      (plugin) => plugin.drainingSessions > 0 && !installed.some((item) => item.id === plugin.id),
+    ) ?? []
   if (!removed.length) return null
-  return <div aria-label={t('state.draining')}>
-    {removed.map((plugin) => <p key={plugin.id}>
-      {plugin.id} <Badge tone="warn">{t('state.draining')} ({plugin.drainingSessions})</Badge>
-    </p>)}
-  </div>
+  return (
+    <div aria-label={t('state.draining')}>
+      {removed.map((plugin) => (
+        <p key={plugin.id}>
+          {plugin.id}{' '}
+          <Badge tone="warn">
+            {t('state.draining')} ({plugin.drainingSessions})
+          </Badge>
+        </p>
+      ))}
+    </div>
+  )
 }
 
 export function KindFilter({

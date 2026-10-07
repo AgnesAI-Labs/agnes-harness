@@ -122,6 +122,22 @@ describe('local package admin surface trust boundary', () => {
     expect((await s.request('surfaces')).status).toBe(502)
   })
 
+  it('exposes validated generation counts through the read-only admin route', async () => {
+    const status = {
+      generations: [],
+      plugins: [{ id: 'example', state: 'draining', boundSessions: 2, drainingSessions: 2 }],
+    }
+    const s = await server(
+      vi.fn(async () => status),
+      undefined,
+      { permissions: ['packages.read'] },
+    )
+    expect(await (await s.request('generations', { profile: 'local-dev' })).json()).toEqual(status)
+    expect((await s.request('generations', { profile: 'local-dev', sessionId: 'spoofed' })).status).toBe(400)
+    const denied = await server(undefined, undefined, { permissions: [] })
+    expect((await denied.request('generations', { profile: 'local-dev' })).status).toBe(403)
+  })
+
   it('rejects cross-site writes, scope spoofing and raw method forwarding before SDK dispatch', async () => {
     const s = await server()
     await s.login()
@@ -222,6 +238,7 @@ describe('local package admin surface trust boundary', () => {
   it('keeps the BFF route allowlist in lockstep with the Web admin API client route map', () => {
     const expectedPaths = [
       'catalog/list',
+      'generations',
       'catalog/get',
       'list',
       'inspect',
