@@ -460,6 +460,7 @@ export { type PluginFailureHelp, pluginFailureHelp } from './plugin-failure-help
 export { validateProjectionCapability, validateProjectionReadResult } from './projections.js'
 export * from './provider.js'
 export * from './resource-control.js'
+export * from './runtime-admin.js'
 export * from './runtime-target-artifact.js'
 export * from './sequence.js'
 export { validateExtensionCall, validateExtensionCallError, validateServiceCapability } from './services.js'

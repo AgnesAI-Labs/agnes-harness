@@ -45,16 +45,15 @@ import {
 } from '@agnes/web-ui'
 import type { ReactNode } from 'react'
 import type { PluginRuntimeState } from '../../client-modules/runtime-status.js'
+import { SettingsHub, type SettingsPage } from '../../settings/hub.js'
 import { AdminApiError, PluginAdminApi } from './api.js'
 import { CapabilityReview, FailureHelp } from './capability-review.js'
 import {
-  BundlesPanel,
   GenerationDrainSummary,
   KindFilter,
   PluginBadges,
   type PluginKind,
   pluginFailureMessage,
-  SessionDefaultsPanel,
 } from './control-panel.js'
 import { PLUGIN_ADMIN_LOCALE_NAMESPACE, pluginAdminLocaleCatalog } from './locales/admin.js'
 import { SOURCE_FORMATS, sourceFromForm, sourceProblem } from './source-form.js'
@@ -107,7 +106,7 @@ const pluginAdminCatalogs = {
 } as const
 
 const SOURCE_TYPE_OPTIONS = Object.keys(SOURCE_FORMATS)
-  .filter((type) => type !== 'local' && type !== 'path')
+  .filter((type) => type !== 'local')
   .map((type) => ({
     value: type,
     label: type,
@@ -291,6 +290,17 @@ class PluginAdminPage {
   readonly #search = element('plugin-search', 'input')
   readonly #layout = element('plugin-layout', 'div')
   readonly #listHost = element('plugin-list', 'section')
+  readonly #onSettingsPage = (page: SettingsPage): void => {
+    const toolbar = this.#listHost
+      .closest('.admin-main, .admin-pane-body')
+      ?.querySelector<HTMLElement>('.plugin-toolbar')
+    if (toolbar) toolbar.hidden = page !== 'plugins'
+  }
+  readonly #reviewExample = (item: PackageCatalogDescriptor): void => {
+    this.#tab = 'discover'
+    this.selectItem(item)
+  }
+  readonly #refreshSettings = (): Promise<void> => this.refresh()
   readonly #detail = element('plugin-detail', 'dialog')
   readonly #sourceDialog = element('source-dialog', 'dialog')
   readonly #confirmDialog = element('plugin-confirm', 'dialog')
@@ -1100,44 +1110,57 @@ class PluginAdminPage {
     renderRegion(
       this.#listHost,
       <UiLocaleProvider source={this.#locale}>
-        <SessionDefaultsPanel api={this.#api} canSave={this.canEffect('packages.activate')} t={this.#t} />
-        <BundlesPanel api={this.#api} canSave={this.canEffect('packages.activate')} t={this.#t} />
-        <GenerationDrainSummary
-          status={this.#state.generations}
+        <SettingsHub
+          api={this.#api}
+          canSave={this.canEffect('packages.activate')}
+          pluginText={this.#t}
           installed={this.#state.installed}
-          t={this.#t}
-        />
-        <KindFilter
-          value={this.#kind}
-          t={this.#t}
-          onChange={(value) => {
-            this.#kind = value
-            this.render()
-          }}
-        />
-        <PluginList
-          formatFailure={(message) => pluginFailureMessage(message, this.#t)}
-          metadataOf={(item) => <PluginBadges item={item} runtime={this.runtimeState(item.id)} t={this.#t} />}
-          tab={this.#tab}
-          rows={(this.#tab === 'installed' ? this.filteredInstalled() : this.#state.catalog).filter(
-            (item) => !this.#kind || item.kinds?.includes(this.#kind),
-          )}
-          loading={loading}
-          inventoryAuthoritative={this.#state.inventoryAuthoritative}
-          query={this.#query}
-          nextCursor={this.#state.nextCursor}
-          surfaceLinksOf={(packageId) => this.surfaceLinks(packageId)}
-          runtimeOf={(packageId) => asRuntimeView(this.runtimeState(packageId))}
-          primaryActionOf={(item) => this.primaryAction(item)}
-          switchDisabledOf={(installed) =>
-            !this.canEffect('packages.activate') ||
-            (!installed.trusted && (!this.can('packages.trust') || !installed.capabilityHash)) ||
-            this.packageBusy(installed.id)
-          }
-          onOpen={(item) => this.selectItem(item)}
-          onToggleDesired={(item, next) => void (next ? this.confirmEnable(item) : this.confirmDisable(item))}
-          onLoadMore={() => void this.loadCatalog(this.#state.nextCursor ?? undefined)}
-        />
+          generations={this.#state.generations}
+          onPage={this.#onSettingsPage}
+          onReview={this.#reviewExample}
+          onRefresh={this.#refreshSettings}
+        >
+          <GenerationDrainSummary
+            status={this.#state.generations}
+            installed={this.#state.installed}
+            t={this.#t}
+          />
+          <KindFilter
+            value={this.#kind}
+            t={this.#t}
+            onChange={(value) => {
+              this.#kind = value
+              this.render()
+            }}
+          />
+          <PluginList
+            formatFailure={(message) => pluginFailureMessage(message, this.#t)}
+            metadataOf={(item) => (
+              <PluginBadges item={item} runtime={this.runtimeState(item.id)} t={this.#t} />
+            )}
+            tab={this.#tab}
+            rows={(this.#tab === 'installed' ? this.filteredInstalled() : this.#state.catalog).filter(
+              (item) => !this.#kind || item.kinds?.includes(this.#kind),
+            )}
+            loading={loading}
+            inventoryAuthoritative={this.#state.inventoryAuthoritative}
+            query={this.#query}
+            nextCursor={this.#state.nextCursor}
+            surfaceLinksOf={(packageId) => this.surfaceLinks(packageId)}
+            runtimeOf={(packageId) => asRuntimeView(this.runtimeState(packageId))}
+            primaryActionOf={(item) => this.primaryAction(item)}
+            switchDisabledOf={(installed) =>
+              !this.canEffect('packages.activate') ||
+              (!installed.trusted && (!this.can('packages.trust') || !installed.capabilityHash)) ||
+              this.packageBusy(installed.id)
+            }
+            onOpen={(item) => this.selectItem(item)}
+            onToggleDesired={(item, next) =>
+              void (next ? this.confirmEnable(item) : this.confirmDisable(item))
+            }
+            onLoadMore={() => void this.loadCatalog(this.#state.nextCursor ?? undefined)}
+          />
+        </SettingsHub>
       </UiLocaleProvider>,
     )
     this.#layout.dataset.detail = String(this.hasDetail())

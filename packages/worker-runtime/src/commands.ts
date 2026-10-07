@@ -674,7 +674,31 @@ export async function handleServiceCommand(
     case 'session.catalog': {
       if (!host) throw new Error('session catalog requires an assembled Host')
       const models = host.provider.models()
+      const publication =
+        'compositionPublicationStatus' in host && typeof host.compositionPublicationStatus === 'function'
+          ? (host.compositionPublicationStatus() as
+              | import('@agnes/protocol').RuntimePublicationReport
+              | undefined)
+          : undefined
       return {
+        ...(publication
+          ? {
+              publication: {
+                operation: publication.operation,
+                ok: publication.ok,
+                recovery: publication.recovery,
+                containers: publication.containers.map(({ compositionHash, status }) => ({
+                  compositionHash,
+                  status,
+                })),
+              },
+            }
+          : {}),
+        providers: host.providers.catalog(),
+        presets: host.profile.presets.allowed.map((id) => ({
+          id,
+          isDefault: id === host.profile.presets.default,
+        })),
         loops: host.kernel.loops.catalog(),
         modelAdapters: host.modelAdapterCatalog().map((entry) => ({
           ...entry,

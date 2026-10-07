@@ -10,6 +10,8 @@ import {
   type PackageAdminContext,
   type PackageAdminMethodName,
   type PackageAdminPermission,
+  RuntimeAdminSnapshot,
+  validateAgainst,
   validatePackageAdminCall,
   validatePackageAdminData,
 } from '@agnes/protocol'
@@ -68,6 +70,10 @@ export type AdminSurfaceOptions = {
   sessionSelection?: AdminSessionSelection
   /** Owner-checked SDK catalog for a durable session key. */
   sessionTools?: (sessionId: string) => Promise<import('@agnes/protocol').SessionToolsResult>
+  runtimeAdmin?: {
+    snapshot(): Promise<import('@agnes/protocol').RuntimeAdminSnapshot>
+    reloadLocal(): Promise<void>
+  }
   composition?: {
     bundles(): Promise<unknown>
     dump(preset?: string): Promise<unknown>
@@ -175,6 +181,48 @@ export function createAdminSurface(options: AdminSurfaceOptions) {
       }
       if (selectionRoute) {
         const route = url.pathname.slice('/admin/api/'.length)
+        if (route === 'runtime' || route === 'reload-local') {
+          const write = route === 'reload-local'
+          if (request.method !== (write ? 'POST' : 'GET')) {
+            error(response, 404, 'E_ADMIN_ROUTE', 'The admin operation does not exist.')
+            return true
+          }
+          if (!configuredPermissions.includes(write ? 'packages.activate' : 'packages.read')) {
+            error(response, 403, 'E_ADMIN_FORBIDDEN', 'You do not have permission to perform this action.')
+            return true
+          }
+          if (write && readOnly) {
+            error(response, 409, 'E_ADMIN_READ_ONLY', 'The admin surface is in read-only recovery mode.')
+            return true
+          }
+          if (!options.runtimeAdmin) {
+            error(response, 503, 'E_ADMIN_CATALOG_UNAVAILABLE', 'Runtime administration is unavailable.')
+            return true
+          }
+          try {
+            if (write) {
+              const body = await readBody(request)
+              if (!record(body) || Object.keys(body).length !== 0) {
+                error(response, 400, 'E_ADMIN_REQUEST', 'The admin parameters are not valid.')
+                return true
+              }
+              await options.runtimeAdmin.reloadLocal()
+              reply(response, 200, {})
+            } else {
+              const snapshot = await options.runtimeAdmin.snapshot()
+              if (!validateAgainst(RuntimeAdminSnapshot, snapshot).ok) throw new Error('invalid snapshot')
+              reply(response, 200, snapshot)
+            }
+          } catch {
+            error(
+              response,
+              502,
+              'E_ADMIN_RUNTIME',
+              'Runtime status could not be confirmed. Reload and inspect plugin states.',
+            )
+          }
+          return true
+        }
         if (route.startsWith('tools/') && request.method === 'GET') {
           if (!configuredPermissions.includes('packages.read')) {
             error(response, 403, 'E_ADMIN_FORBIDDEN', 'You do not have permission to perform this action.')

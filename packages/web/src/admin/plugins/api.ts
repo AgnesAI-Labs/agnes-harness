@@ -21,6 +21,8 @@ import {
   isAdminModelAdapter,
   isSessionDefaultsSnapshot,
   type PackageAdminMethodName,
+  RuntimeAdminSnapshot,
+  validateAgainst,
   validatePackageAdminCall,
   validatePackageAdminData,
 } from '@agnes/protocol'
@@ -187,17 +189,34 @@ export class PluginAdminApi {
       throw invalidSelection()
   }
 
-  async composition(): Promise<unknown> {
-    return this.#selection('composition')
+  async composition(preset?: string): Promise<unknown> {
+    return this.#selection('composition', preset ? { preset } : undefined)
+  }
+
+  async runtime(): Promise<import('@agnes/protocol').RuntimeAdminSnapshot> {
+    const body = await this.#selection('runtime')
+    if (!validateAgainst(RuntimeAdminSnapshot, body).ok) throw invalidSelection()
+    return body as import('@agnes/protocol').RuntimeAdminSnapshot
+  }
+
+  async reloadLocal(): Promise<void> {
+    const fetcher = this.#fetch
+    const response = await fetcher('/admin/api/reload-local', {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json' },
+      body: '{}',
+    })
+    if (!response.ok) throw new AdminApiError(safeError(await json(response)))
   }
 
   async #selection(
     path: string,
-    input?: SessionDefaultsSnapshot | { revision: number; bundles: string[] },
+    input?: SessionDefaultsSnapshot | { revision: number; bundles: string[] } | { preset: string },
   ): Promise<unknown> {
     const fetcher = this.#fetch
     const response = await fetcher(`/admin/api/${path}`, {
-      method: input ? 'PUT' : 'GET',
+      method: input ? (path === 'composition' ? 'POST' : 'PUT') : 'GET',
       credentials: 'same-origin',
       headers: { Accept: 'application/json', ...(input ? { 'Content-Type': 'application/json' } : {}) },
       ...(input ? { body: JSON.stringify(input) } : {}),

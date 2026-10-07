@@ -8,6 +8,7 @@ import {
   type AdminLoop,
   type AdminModelAdapter,
   type AdminSessionSelection,
+  type RuntimeAdminSnapshot,
   rpcError,
   type SessionDefaultsSnapshot,
 } from '@agnes/protocol'
@@ -51,6 +52,10 @@ export function registerSessionSelection(
   endpoint: LocalEndpoint,
   provider: AdminSessionSelection | undefined,
   authority: PackageAdminAuthorityResolver,
+  runtime?: {
+    snapshot(): Promise<RuntimeAdminSnapshot>
+    reloadLocal(): Promise<void>
+  },
 ): void {
   const invoke = async <T>(
     context: Parameters<PackageAdminAuthorityResolver>[0],
@@ -86,4 +91,19 @@ export function registerSessionSelection(
   endpoint.register('_agnes/v1/sessionSelection.defaults.save', (params, ctx) =>
     invoke(ctx, true, (s) => s.saveDefaults(params as SessionDefaultsSnapshot)),
   )
+  const runtimeCall = async (ctx: Parameters<PackageAdminAuthorityResolver>[0], write: boolean) => {
+    const grant = authority(ctx)
+    if (
+      !grant ||
+      grant.methods !== undefined ||
+      !grant.permissions.includes(write ? 'packages.activate' : 'packages.read')
+    )
+      throw rpcError('CAPABILITY_DENIED')
+    if (!runtime) throw rpcError('CAPABILITY_DENIED', { reason: 'runtime administration unavailable' })
+    if (!write) return runtime.snapshot()
+    await runtime.reloadLocal()
+    return {}
+  }
+  endpoint.register('_agnes/v1/sessionSelection.runtime', (_params, ctx) => runtimeCall(ctx, false))
+  endpoint.register('_agnes/v1/sessionSelection.reloadLocal', (_params, ctx) => runtimeCall(ctx, true))
 }

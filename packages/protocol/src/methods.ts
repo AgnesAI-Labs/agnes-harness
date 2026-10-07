@@ -13,6 +13,7 @@ import {
   type ResourceControlMethodName,
   validateResourceControlCall,
 } from './resource-control.js'
+import { RuntimeAdminEmpty, RuntimeAdminSnapshot } from './runtime-admin.js'
 import { validateExtensionCall } from './services.js'
 import { SessionToolsParams, SessionToolsResult } from './session-tools.js'
 import { type ValidationResult, validateAgainst } from './validate.js'
@@ -48,6 +49,8 @@ export type MethodName =
   | '_agnes/v1/extension.ack'
   | '_agnes/v1/extension.call'
   | '_agnes/v1/sessionSelection.loops'
+  | '_agnes/v1/sessionSelection.runtime'
+  | '_agnes/v1/sessionSelection.reloadLocal'
   | '_agnes/v1/sessionSelection.modelAdapters'
   | '_agnes/v1/sessionSelection.defaults.get'
   | '_agnes/v1/sessionSelection.defaults.save'
@@ -123,6 +126,8 @@ export const METHODS: Record<MethodName, MethodSpec> = {
   '_agnes/v1/extension.ack': clientRequest(A.ExtensionAckParams, A.Empty),
   '_agnes/v1/extension.call': clientRequest(A.ExtensionCallParams, A.ExtensionCallResult),
   '_agnes/v1/sessionSelection.loops': clientRequest(A.ConfigEmptyParams, A.SessionLoopCatalogResult),
+  '_agnes/v1/sessionSelection.runtime': clientRequest(RuntimeAdminEmpty, RuntimeAdminSnapshot),
+  '_agnes/v1/sessionSelection.reloadLocal': clientRequest(RuntimeAdminEmpty, RuntimeAdminEmpty),
   '_agnes/v1/sessionSelection.modelAdapters': clientRequest(
     A.ConfigEmptyParams,
     A.SessionAdapterCatalogResult,

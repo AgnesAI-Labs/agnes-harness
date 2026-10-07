@@ -25,6 +25,7 @@ async function server(
     permissions?: readonly PackageAdminPermission[]
     composition?: NonNullable<AdminSurfaceOptions['composition']>
     sessionTools?: NonNullable<AdminSurfaceOptions['sessionTools']>
+    runtimeAdmin?: NonNullable<AdminSurfaceOptions['runtimeAdmin']>
   } = {},
 ) {
   let now = Date.now()
@@ -378,4 +379,43 @@ it('exposes composition and gates bundle selection behind activation and recover
   expect((await app.selectionRequest('composition', 'POST', { preset: '../escape' })).status).toBe(400)
   const denied = await server(undefined, undefined, { composition, permissions: ['packages.read'] })
   expect((await denied.selectionRequest('bundles', 'PUT', { revision: 0, bundles: [] })).status).toBe(403)
+})
+
+it('serves runtime descriptions, gates rescan and rejects secret-bearing catalog data', async () => {
+  const snapshot = {
+    providers: [
+      {
+        kind: 'sandbox',
+        id: 'local',
+        version: '1.0.0',
+        sourcePackage: '@agnes/host',
+        capabilities: ['workspace'],
+        restartRequired: true,
+        active: true,
+        selectedFor: ['profile'],
+      },
+    ],
+    presets: [{ id: 'read-only', isDefault: true }],
+    localPluginFolders: { home: '/synthetic/plugins', workspace: '/synthetic/.agh/plugins' },
+  }
+  const runtimeAdmin = { snapshot: vi.fn(async () => snapshot), reloadLocal: vi.fn(async () => {}) }
+  const s = await server(undefined, undefined, { runtimeAdmin })
+  expect((await s.selectionRequest('reload-local', 'POST', {})).status).toBe(409)
+  await s.request('context')
+  expect(await (await s.selectionRequest('runtime')).json()).toEqual(snapshot)
+  expect((await s.selectionRequest('reload-local', 'POST', { path: '/forged' })).status).toBe(400)
+  expect(
+    (await s.selectionRequest('reload-local', 'POST', {}, { Origin: 'https://foreign.example' })).status,
+  ).toBe(403)
+  expect((await s.selectionRequest('reload-local', 'POST', {})).status).toBe(200)
+  expect(runtimeAdmin.reloadLocal).toHaveBeenCalledTimes(1)
+  const denied = await server(undefined, undefined, { runtimeAdmin, permissions: ['packages.read'] })
+  await denied.request('context')
+  expect((await denied.selectionRequest('reload-local', 'POST', {})).status).toBe(403)
+  runtimeAdmin.snapshot.mockResolvedValueOnce({ ...snapshot, secret: 'private' } as typeof snapshot)
+  const invalid = await s.selectionRequest('runtime')
+  expect(invalid.status).toBe(502)
+  expect(await invalid.text()).not.toContain('private')
+  runtimeAdmin.reloadLocal.mockRejectedValueOnce(new Error('private path secret'))
+  expect(await (await s.selectionRequest('reload-local', 'POST', {})).text()).not.toContain('private')
 })

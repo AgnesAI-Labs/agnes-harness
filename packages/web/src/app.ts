@@ -24,6 +24,7 @@ import {
   type Session,
 } from '@agnes/sdk/browser'
 import { bindDismissibleDialog } from '@agnes/web-admin-frame'
+import { createCatalogTranslator } from '@agnes/web-ui'
 import { sessionLoopSelection } from './admin/plugins/session-loop.js'
 import { createPendingCoordinator } from './admin-pane-coordinator.js'
 import { bindAppearance, bindSkinGroup } from './appearance.js'
@@ -74,6 +75,8 @@ import { bootstrapProbe, createReconnectController, type ReconnectPhase } from '
 import { createSessionActions, forkTitle } from './session-actions.js'
 import { bindWebSession, loadWebSession } from './session-binding.js'
 import { createTitleRefresh, sessionTitle } from './session-title.js'
+import { loadRuntimeCatalog } from './settings/api.js'
+import { settingsCatalog } from './settings/locales.js'
 import { createSettingsController } from './settings.js'
 import {
   cacheSkinEntry,
@@ -424,6 +427,16 @@ let draftModelSettingsEdited = false
 let draftModelExplicit = false
 let draftLoop: LoopSelection | undefined
 let draftLoopEdited = false
+let draftPreset: string | undefined
+let runtimeCatalog: import('@agnes/protocol').RuntimeAdminSnapshot | undefined
+const startupRequest = new URLSearchParams(location.search)
+const requestedPreset = startupRequest.get('preset') ?? undefined
+const requestedPrompt = startupRequest.get('prompt') ?? undefined
+const settingsText = (key: string): string =>
+  createCatalogTranslator(
+    settingsCatalog,
+    clientModules.locale.getSnapshot() === 'zh-CN' ? 'zh-CN' : 'en',
+  )(key)
 let newSessionCatalog: NewSessionCatalog | undefined
 let loopCatalogError = false
 let loopCatalogPending = false
@@ -432,6 +445,11 @@ async function refreshSessionCatalog(): Promise<void> {
   renderControls()
   try {
     newSessionCatalog = await loadNewSessionCatalog()
+    try {
+      runtimeCatalog = await loadRuntimeCatalog()
+    } catch {
+      runtimeCatalog = undefined
+    }
     loopCatalogError = false
     if (draftingNew && !draftLoopEdited) draftLoop = newSessionCatalog.defaults.loop
   } catch {
@@ -813,6 +831,8 @@ function renderControls(): void {
     },
   }
   if (draftingNew && !draftLoopAvailable()) composerView.send.disabled = true
+  if (draftingNew && permissionMode === 'view' && draftPreset !== 'read-only')
+    composerView.send.disabled = true
   if (draftingNew && loopCatalogPending) composerView.send.disabled = true
   updateLoopPicker({
     visible: draftingNew,
@@ -827,6 +847,17 @@ function renderControls(): void {
       if (!draftingNew || sending || sessionPending) return
       draftLoop = loop
       draftLoopEdited = true
+      renderControls()
+    },
+    ...(runtimeCatalog ? { presets: runtimeCatalog.presets } : {}),
+    preset: draftPreset,
+    presetLabel: settingsText('presets'),
+    onPreset(preset) {
+      draftPreset = preset
+      if (preset === 'read-only') permissionMode = 'view'
+      else if (preset === 'workspace-write') permissionMode = 'workspace'
+      else if (preset === 'full-access') permissionMode = 'full'
+      rememberWebComposer({ permission: permissionMode })
       renderControls()
     },
   })
@@ -1222,7 +1253,9 @@ async function open(
       return
     }
     clientModules.session.setSession(loaded.id)
-    if (!options.created) permissionMode = 'workspace'
+    if (!options.created)
+      permissionMode =
+        sessionRows.find((row) => row.sessionId === id)?.preset === 'read-only' ? 'view' : 'workspace'
     const metadata = sessionRows.find((row) => row.sessionId === id) as
       | (PageSessionMeta['items'][number] & { cwd?: string })
       | undefined
@@ -1504,9 +1537,12 @@ async function beginNewDraft(showWorkspacePicker = true, workspace?: WorkspaceEn
   draftModelExplicit = false
   draftLoopEdited = false
   draftLoop = newSessionCatalog?.defaults.loop
+  draftPreset = undefined
   pendingSessionKey = crypto.randomUUID()
   knownSessionModel = inherited.model ? modelDefaults(inherited.model) : undefined
   permissionMode = inherited.permission
+  if (permissionMode === 'view' && runtimeCatalog?.presets.some((preset) => preset.id === 'read-only'))
+    draftPreset = 'read-only'
   permissionRefreshPending = false
   initialPermissionPending = undefined
   initialModelPending = undefined
@@ -1622,7 +1658,11 @@ async function refreshModels(): Promise<ModelPickerOption[]> {
         : next.model
           ? modelDefaults(next.model)
           : undefined
-      permissionMode = next.permission
+      if (!draftPreset) {
+        permissionMode = next.permission
+        if (permissionMode === 'view' && runtimeCatalog?.presets.some((preset) => preset.id === 'read-only'))
+          draftPreset = 'read-only'
+      }
     }
     renderControls()
   }
@@ -1630,7 +1670,11 @@ async function refreshModels(): Promise<ModelPickerOption[]> {
 }
 async function selectPermission(mode: PermissionMode): Promise<boolean> {
   if (!connected || sessionPending || permissionChangePending || permissionRefreshPending) return false
+  const preset = ({ view: 'read-only', workspace: 'workspace-write', full: 'full-access' } as const)[mode]
+  const usePreset = runtimeCatalog?.presets.some((entry) => entry.id === preset) === true
+  if (mode === 'view' && !usePreset) throw new Error(settingsText('notAllowed'))
   if (!current && draftingNew) {
+    if (usePreset) draftPreset = preset
     permissionMode = mode
     rememberWebComposer({ permission: mode })
     notice.textContent = t('app.permission.draftNotice', { mode: permissionLabel(mode) })
@@ -1646,6 +1690,7 @@ async function selectPermission(mode: PermissionMode): Promise<boolean> {
   permissionChangePending = true
   renderControls()
   try {
+    if (usePreset) await session.setPreset(preset)
     const applied = await session.setYolo(requestedYolo)
     if (
       current !== session ||
@@ -2107,6 +2152,7 @@ function submitComposer(): void {
     permissionRefreshPending ||
     (session && sessionYoloEnabled === undefined) ||
     (!session && (!draftingNew || !selectedWorkspace?.available)) ||
+    (!session && permissionMode === 'view' && draftPreset !== 'read-only') ||
     !canSubmitComposer({ connected, hasSession: true, sending, stopping, loading: sessionPending })
   )
     return
@@ -2159,6 +2205,7 @@ function submitComposer(): void {
         cwd: workspace?.path ?? '',
         sessionKey: key,
         ...(draftLoop ? { loop: draftLoop } : {}),
+        ...(draftPreset ? { preset: draftPreset } : {}),
       })
       try {
         await open(created.id, {
@@ -2402,6 +2449,24 @@ run(async () => {
   }
   const page = await list()
   const selected = new URL(location.href).searchParams.get('session')
+  if (startupRequest.get('new') === '1') {
+    await beginNewDraft(configured)
+    if (requestedPreset) {
+      if (!runtimeCatalog?.presets.some((entry) => entry.id === requestedPreset))
+        throw new Error(settingsText('notAllowed'))
+      draftPreset = requestedPreset
+      if (requestedPreset === 'read-only') permissionMode = 'view'
+      else if (requestedPreset === 'workspace-write') permissionMode = 'workspace'
+      else if (requestedPreset === 'full-access') permissionMode = 'full'
+    }
+    if (requestedPrompt) composerRuntime.setDraft(requestedPrompt)
+    renderControls()
+    return
+  }
+  if (startupRequest.get('settings') === 'model') {
+    settingsRegion.open('model')
+    await settings.open()
+  }
   if (selected) {
     const candidates = page.items.some((item) => item.sessionId === selected)
       ? page

@@ -75,6 +75,7 @@ import {
   validateMethod,
   validateRequestMedia,
 } from '../src/index.js'
+import { RuntimeAdminEmpty, RuntimeAdminSnapshot } from '../src/runtime-admin.js'
 import { SessionToolsParams, SessionToolsResult } from '../src/session-tools.js'
 
 type Json = Record<string, unknown>
@@ -159,6 +160,8 @@ const addFormats = nodeRequire('ajv-formats') as (ajv: InstanceType<typeof Ajv20
 const ajv = new AjvCtor({ strict: false, allowUnionTypes: true })
 addFormats(ajv)
 const SESSION_TOOLS_ID = 'https://agnes.dev/session-tools'
+const RUNTIME_ADMIN_ID = 'https://agnes.dev/runtime-admin'
+ajv.addSchema({ $id: RUNTIME_ADMIN_ID, $defs: { RuntimeAdminEmpty, RuntimeAdminSnapshot } })
 ajv.addSchema({ $id: SESSION_TOOLS_ID, $defs: { SessionToolsParams, SessionToolsResult } })
 // Reference validator uses URL parsing as required by the owned custom format's contract.
 ajv.addFormat('agnes-git-source', (ref: string) => {
@@ -5403,6 +5406,7 @@ const SELF_OWNED_DOCS: Array<[string, Json, string, Record<string, Sample>]> = [
 ]
 
 const DEFS_BY_FILE: Record<string, Record<string, TSchema>> = {
+  [RUNTIME_ADMIN_ID]: { RuntimeAdminEmpty, RuntimeAdminSnapshot },
   [SESSION_TOOLS_ID]: { SessionToolsParams, SessionToolsResult },
   'https://agnes.ai/schema/worker.json': WorkerDefs,
   'https://agnes.ai/schema/resource-control.json': {
@@ -5669,6 +5673,16 @@ describe('McpServerDescriptor: authorizationStatus field (mcp-oauth-authorizatio
 type MethodDefRef = { fileId: string; params: string; result?: string }
 
 const METHOD_DEF: Record<MethodName, MethodDefRef> = {
+  '_agnes/v1/sessionSelection.runtime': {
+    fileId: RUNTIME_ADMIN_ID,
+    params: 'RuntimeAdminEmpty',
+    result: 'RuntimeAdminSnapshot',
+  },
+  '_agnes/v1/sessionSelection.reloadLocal': {
+    fileId: RUNTIME_ADMIN_ID,
+    params: 'RuntimeAdminEmpty',
+    result: 'RuntimeAdminEmpty',
+  },
   '_agnes/v1/session.tools': {
     fileId: SESSION_TOOLS_ID,
     params: 'SessionToolsParams',
@@ -6148,6 +6162,16 @@ const METHOD_DEF: Record<MethodName, MethodDefRef> = {
 }
 
 const METHOD_PARAMS_SAMPLE: Record<MethodName, Sample> = {
+  '_agnes/v1/sessionSelection.runtime': {
+    valid: {},
+    invalid: [{ profile: 'other' }],
+    note: 'runtime catalog has no caller scope',
+  },
+  '_agnes/v1/sessionSelection.reloadLocal': {
+    valid: {},
+    invalid: [{ path: '/other' }],
+    note: 'rescan uses configured roots',
+  },
   '_agnes/v1/session.tools': {
     valid: { sessionId: 's' },
     invalid: [{}, { sessionId: '' }, { sessionId: 's', extra: true }],
@@ -6312,6 +6336,23 @@ const METHOD_PARAMS_SAMPLE: Record<MethodName, Sample> = {
 }
 
 const METHOD_RESULT_SAMPLE: Partial<Record<MethodName, Sample>> = {
+  '_agnes/v1/sessionSelection.runtime': {
+    valid: {
+      providers: [],
+      presets: [],
+      localPluginFolders: { home: '/synthetic/plugins', workspace: '/synthetic/.agh/plugins' },
+    },
+    invalid: [
+      { providers: [] },
+      { providers: [], presets: [], localPluginFolders: { home: '/x', workspace: '/x', secret: 'private' } },
+    ],
+    note: 'description-only runtime status',
+  },
+  '_agnes/v1/sessionSelection.reloadLocal': {
+    valid: {},
+    invalid: [{ error: 'private' }],
+    note: 'rescan receipt contains no secrets',
+  },
   '_agnes/v1/sessionSelection.loops': AGNES_SAMPLES.SessionLoopCatalogResult as Sample,
   '_agnes/v1/sessionSelection.modelAdapters': AGNES_SAMPLES.SessionAdapterCatalogResult as Sample,
   '_agnes/v1/sessionSelection.defaults.get': AGNES_SAMPLES.SessionDefaultsState as Sample,

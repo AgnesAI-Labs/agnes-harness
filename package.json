@@ -7,6 +7,7 @@
     "node": ">=24.10"
   },
   "scripts": {
+    "test:web-smoke": "node tools/e2e-web/run.mjs",
     "release:npx-smoke": "tsx tools/release/npx-smoke.ts",
     "release:external-examples": "tsx tools/release/external-examples.ts",
     "dev": "pnpm --filter @agnes/cli dev:web serve",

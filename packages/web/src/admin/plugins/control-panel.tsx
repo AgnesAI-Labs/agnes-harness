@@ -7,9 +7,10 @@ import type {
   SessionDefaultsSnapshot,
 } from '@agnes/protocol'
 import { pluginFailureHelp } from '@agnes/protocol'
-import { Badge, Button, Field, Select, type StateTone } from '@agnes/web-ui'
+import { Badge, Button, Field, Select, type StateTone, useUiText } from '@agnes/web-ui'
 import { useEffect, useState } from 'react'
 import type { PluginRuntimeState } from '../../client-modules/runtime-status.js'
+import { SETTINGS_NAMESPACE, settingsCatalog } from '../../settings/locales.js'
 import type { PluginAdminApi } from './api.js'
 
 export const PLUGIN_KINDS = ['tool', 'loop', 'model-adapter', 'mcp', 'skills', 'ui', 'bundle'] as const
@@ -322,22 +323,40 @@ export function BundlesPanel({
   api,
   canSave,
   t,
+  presets = [],
 }: {
   api: PluginAdminApi | undefined
   canSave: boolean
   t: Text
+  presets?: readonly { id: string }[]
 }) {
+  const { t: settingsText } = useUiText(SETTINGS_NAMESPACE, settingsCatalog)
   const [snapshot, setSnapshot] = useState<Awaited<ReturnType<PluginAdminApi['bundles']>>>()
   const [selected, setSelected] = useState<string[]>([])
   const [busy, setBusy] = useState(false)
   const [message, setMessage] = useState('')
   const [dump, setDump] = useState('')
+  const [dumpPreset, setDumpPreset] = useState<string>()
+  const [origins, setOrigins] = useState<{ choice: string; layer: string; name: string }[]>([])
   const [reload, setReload] = useState(0)
+  function moveBundle(index: number, offset: number) {
+    setSelected((prior) => {
+      const next = [...prior]
+      const item = next[index],
+        neighbor = next[index + offset]
+      if (item === undefined || neighbor === undefined) return prior
+      next[index] = neighbor
+      next[index + offset] = item
+      return next
+    })
+  }
   // biome-ignore lint/correctness/useExhaustiveDependencies: reload explicitly rereads desired bundle selection.
   useEffect(() => {
     let current = true
     setSnapshot(undefined)
     setDump('')
+    setOrigins([])
+    setMessage('')
     if (!api) return
     setBusy(true)
     api
@@ -375,7 +394,27 @@ export function BundlesPanel({
     if (!api || busy) return
     setBusy(true)
     try {
-      setDump(JSON.stringify(await api.composition(), null, 2))
+      const value = await api.composition(dumpPreset)
+      setDump(JSON.stringify(value, null, 2))
+      if (
+        value &&
+        typeof value === 'object' &&
+        'sources' in value &&
+        value.sources &&
+        typeof value.sources === 'object'
+      )
+        setOrigins(
+          Object.entries(value.sources).flatMap(([choice, source]) =>
+            source &&
+            typeof source === 'object' &&
+            'layer' in source &&
+            typeof source.layer === 'string' &&
+            'name' in source &&
+            typeof source.name === 'string'
+              ? [{ choice, layer: source.layer, name: source.name }]
+              : [],
+          ),
+        )
     } catch {
       setMessage('bundles.unavailable')
     } finally {
@@ -394,7 +433,28 @@ export function BundlesPanel({
             void save()
           }}
         >
-          {snapshot.catalog.map(({ id }) => (
+          <ol data-testid="bundle-order">
+            {selected.map((id, index) => (
+              <li key={id}>
+                {id}{' '}
+                <Button
+                  aria-label={`${t('bundles.up')} ${id}`}
+                  disabled={index === 0 || busy || !canSave}
+                  onClick={() => moveBundle(index, -1)}
+                >
+                  {t('bundles.up')}
+                </Button>{' '}
+                <Button
+                  aria-label={`${t('bundles.down')} ${id}`}
+                  disabled={index === selected.length - 1 || busy || !canSave}
+                  onClick={() => moveBundle(index, 1)}
+                >
+                  {t('bundles.down')}
+                </Button>
+              </li>
+            ))}
+          </ol>
+          {snapshot.catalog.map(({ id, sourcePackage }) => (
             <label key={id} style={{ display: 'block' }}>
               <input
                 type="checkbox"
@@ -408,6 +468,8 @@ export function BundlesPanel({
               />{' '}
               {selected.includes(id) ? String(selected.indexOf(id) + 1) + '. ' : ''}
               {id}
+              {' · '}
+              {sourcePackage}
             </label>
           ))}
           {selected
@@ -433,14 +495,48 @@ export function BundlesPanel({
       <Button disabled={!api || busy} onClick={() => setReload((value) => value + 1)}>
         {t('defaults.reload')}
       </Button>
-      <Button disabled={!api || busy} onClick={() => void explain()}>
+      <Field label={settingsText('presets')}>
+        <Select<string>
+          aria-label={settingsText('presets')}
+          data-testid="config-dump-preset"
+          value={dumpPreset ?? ''}
+          onChange={(value) => setDumpPreset(value || undefined)}
+          options={[
+            { value: '', label: t('defaults.configured') },
+            ...presets.map(({ id }) => ({ value: id, label: id })),
+          ]}
+        />
+      </Field>
+      <Button data-testid="config-dump" disabled={!api || busy} onClick={() => void explain()}>
         {t('bundles.explain')}
       </Button>
       {dump && (
-        // biome-ignore lint/a11y/noNoninteractiveTabindex: focus enables keyboard scrolling of the resolved configuration dump.
-        <pre tabIndex={0} style={{ maxHeight: '24rem', overflow: 'auto' }}>
-          {dump}
-        </pre>
+        <>
+          <p>{settingsText('dumpHelp')}</p>
+          <table data-testid="config-choice-sources">
+            <caption>{settingsText('origin')}</caption>
+            <thead>
+              <tr>
+                <th scope="col">{settingsText('choice')}</th>
+                <th scope="col">{settingsText('layer')}</th>
+                <th scope="col">{settingsText('source')}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {origins.map((origin) => (
+                <tr key={origin.choice}>
+                  <th scope="row">{origin.choice}</th>
+                  <td>{origin.layer}</td>
+                  <td>{origin.name}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          {/* biome-ignore lint/a11y/noNoninteractiveTabindex: focus enables keyboard scrolling of the dump. */}
+          <pre tabIndex={0} style={{ maxHeight: '24rem', overflow: 'auto' }}>
+            {dump}
+          </pre>
+        </>
       )}
     </section>
   )

@@ -13,6 +13,7 @@ import {
 } from '../src/admin/plugins/control-panel.js'
 import { pluginAdminLocaleCatalog } from '../src/admin/plugins/locales/admin.js'
 import { sessionLoopSelection } from '../src/admin/plugins/session-loop.js'
+import { SETTINGS_PAGES, SettingsHub } from '../src/settings/hub.js'
 
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 const t = (key: string) => pluginAdminLocaleCatalog.en[key] ?? key
@@ -147,4 +148,65 @@ it('keeps unavailable catalog errors visible and read-only saves disabled', asyn
     host.querySelector('button')?.click()
   })
   expect(host.querySelector<HTMLButtonElement>('button[type="submit"]')?.disabled).toBe(true)
+})
+
+it('navigates runtime capabilities and never offers a disallowed security preset', async () => {
+  const snapshot = {
+    providers: [
+      {
+        kind: 'loop',
+        id: 'custom',
+        version: '1.0.0',
+        sourcePackage: '@acme/loop',
+        capabilities: ['resume'],
+        restartRequired: false,
+        active: true,
+        selectedFor: ['default'],
+        scope: 'session',
+      },
+    ],
+    presets: [{ id: 'standard', isDefault: true }],
+    localPluginFolders: { home: '/synthetic/plugins', workspace: '/synthetic/.agh/plugins' },
+  }
+  const api = new PluginAdminApi(
+    { profile: 'local-dev', clientId: 'admin', permissions: ['packages.read'], readOnly: true },
+    vi.fn<typeof fetch>(async (url) => {
+      if (String(url).endsWith('/runtime')) return Response.json(snapshot)
+      if (String(url).endsWith('/loops')) return Response.json({ loops: [], revision: 0, defaults: {} })
+      if (String(url).endsWith('/model-adapters')) return Response.json({ modelAdapters: [] })
+      if (String(url).endsWith('/bundles'))
+        return Response.json({ revision: 0, bundles: [], catalog: [], effect: 'restart-required' })
+      return Response.json({ items: [], nextCursor: null })
+    }),
+  )
+  const host = await mount(
+    createElement(SettingsHub, {
+      api,
+      canSave: false,
+      pluginText: t,
+      installed: [],
+      generations: undefined,
+      onPage() {},
+      onRefresh: async () => {},
+      onReview() {},
+    }),
+  )
+  for (const page of SETTINGS_PAGES) {
+    await act(async () =>
+      host.querySelector<HTMLButtonElement>(`[data-testid="settings-nav-${page}"]`)?.click(),
+    )
+    expect(host.querySelector(`[data-testid="settings-page-${page}"]`)).not.toBeNull()
+    expect(host.querySelector(`[data-testid="settings-nav-${page}"]`)?.getAttribute('aria-current')).toBe(
+      'page',
+    )
+    if (page === 'providers') {
+      expect(host.textContent).toContain('@acme/loop')
+      expect(host.querySelectorAll('[data-testid^="providers-"]')).toHaveLength(8)
+    }
+    if (page === 'security') {
+      expect(host.querySelectorAll('[data-testid^="security-"]')).toHaveLength(3)
+      expect(host.querySelector('a[href*="preset=read-only"]')).toBeNull()
+      expect(host.textContent).toContain('Not allowed by this profile')
+    }
+  }
 })

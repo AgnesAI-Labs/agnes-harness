@@ -870,7 +870,7 @@ export async function startSupervisor(o: StartSupervisorOptions): Promise<{
     processIdentity: o.processIdentity ?? defaultProcessIdentity,
   })
   let stopJwksCache: (() => Promise<void>) | undefined
-  let localPluginWatcher: { close(): Promise<void> } | undefined
+  let localPluginWatcher: { refresh(): Promise<void>; close(): Promise<void> } | undefined
   let skillWatcher: SkillWatcher | undefined
   let sharedKeeper: SharedWorkerKeeper | undefined
   let workerPool: WorkerPool | undefined
@@ -1933,6 +1933,29 @@ export async function startSupervisor(o: StartSupervisorOptions): Promise<{
         transport === 'unix'
           ? (effectivePackageAdmin?.unixAuthority ?? localPackageAdminAuthority())
           : (effectivePackageAdmin?.webAuthority ?? denyPackageAdminAuthority),
+        {
+          async snapshot() {
+            const link = await pool.acquireSharedWorker()
+            const catalog = (await link.command('session.catalog', {}, { timeoutMs: 31_000 })) as Pick<
+              import('@agnes/protocol').RuntimeAdminSnapshot,
+              'providers' | 'presets' | 'publication'
+            >
+            const localPluginFolders = o.packageRuntime?.manager.localPluginRoots
+            if (!localPluginFolders)
+              throw rpcError('CAPABILITY_DENIED', { reason: 'local plugin roots unavailable' })
+            return {
+              providers: catalog.providers,
+              presets: catalog.presets,
+              localPluginFolders,
+              ...(catalog.publication ? { publication: catalog.publication } : {}),
+            }
+          },
+          async reloadLocal() {
+            if (!localPluginWatcher)
+              throw rpcError('CAPABILITY_DENIED', { reason: 'local plugin watcher unavailable' })
+            await localPluginWatcher.refresh()
+          },
+        },
       )
       registerResourceControl(
         ep,

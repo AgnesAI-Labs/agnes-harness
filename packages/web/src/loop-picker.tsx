@@ -57,6 +57,10 @@ export interface LoopPickerView {
   inherited: string
   unavailable: string
   onSelect(loop: LoopSelection | undefined): void
+  presets?: readonly { id: string; isDefault: boolean }[]
+  preset?: string | undefined
+  presetLabel?: string
+  onPreset?(preset: string | undefined): void
 }
 let view: LoopPickerView = {
   visible: false,
@@ -87,6 +91,20 @@ export function LoopPicker() {
   const stale = !!state.selected && !state.loops.some((entry) => loopIdentity(entry) === selected)
   return (
     <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.375rem' }}>
+      {state.presets && (
+        <Select<string>
+          aria-label={state.presetLabel}
+          data-testid="new-session-preset"
+          disabled={state.disabled}
+          value={state.preset ?? ''}
+          style={{ minWidth: 150, maxWidth: 240 }}
+          options={[
+            { value: '', label: state.inherited },
+            ...state.presets.map(({ id }) => ({ value: id, label: id })),
+          ]}
+          onChange={(preset) => state.onPreset?.(preset || undefined)}
+        />
+      )}
       <Select<string>
         aria-label={state.label}
         aria-invalid={stale || !!state.error}

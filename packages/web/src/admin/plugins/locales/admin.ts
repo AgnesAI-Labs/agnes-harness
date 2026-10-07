@@ -5,6 +5,8 @@ export const PLUGIN_ADMIN_LOCALE_NAMESPACE = '@agnes/web/plugin-admin'
 
 export const pluginAdminLocaleCatalog: LocaleCatalog = {
   en: {
+    'bundles.up': 'Move up',
+    'bundles.down': 'Move down',
     'kind.bundle': 'Bundle',
     'bundles.title': 'Bundles and profiles',
     'bundles.description':
@@ -201,6 +203,8 @@ export const pluginAdminLocaleCatalog: LocaleCatalog = {
     'source.validation.prefix': 'This source reference must start with “{prefix}”, for example {example}.',
   },
   'zh-CN': {
+    'bundles.up': '上移',
+    'bundles.down': '下移',
     'kind.bundle': '组合包',
     'bundles.title': '组合包与配置',
     'bundles.description': '按覆盖顺序选择组合包。保存后重启 Host 以应用此配置。',

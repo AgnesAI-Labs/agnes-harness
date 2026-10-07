@@ -6553,3 +6553,15 @@ body.admin-page {
   opacity: 0.5;
   cursor: not-allowed;
 }
+
+/* Runtime settings keep all existing theme and skin tokens. */
+.runtime-settings nav { display: flex; flex-wrap: wrap; gap: .5rem; margin-block: 1rem; }
+.runtime-settings h2 { margin-block: 1rem; }
+.runtime-card { border: 1px solid var(--agnes-line-primary); background: var(--agnes-bg-surface); border-radius: var(--radius-card); padding: 1rem; margin-block: .75rem; overflow-wrap: anywhere; }
+.runtime-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 18rem), 1fr)); gap: .75rem; }
+.runtime-settings dd { margin: .25rem 0 .75rem; overflow-wrap: anywhere; }
+.runtime-settings details { margin-block: 1rem; }
+.runtime-settings summary { cursor: pointer; padding-block: .5rem; }
+.runtime-settings table { width: 100%; text-align: start; border-collapse: collapse; }
+.runtime-settings td, .runtime-settings th { padding: .5rem; border-bottom: 1px solid var(--agnes-line-primary); overflow-wrap: anywhere; }
+.runtime-resources { width: 100%; min-height: 36rem; border: 1px solid var(--agnes-line-primary); border-radius: var(--radius-card); margin-block: 1rem; }

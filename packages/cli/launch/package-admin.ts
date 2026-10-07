@@ -165,6 +165,19 @@ export function localPackageAdmin(
     }
   }
   const surface = createAdminSurface({
+    runtimeAdmin: {
+      async snapshot() {
+        await initialize()
+        return client.call<import('@agnes/protocol').RuntimeAdminSnapshot>(
+          '_agnes/v1/sessionSelection.runtime',
+          {},
+        )
+      },
+      async reloadLocal() {
+        await initialize()
+        await client.call('_agnes/v1/sessionSelection.reloadLocal', {})
+      },
+    },
     composition: compositionAdminFor(parseArgs(['config', 'dump', '--profile', backend.scope.profile]), {
       home: backend.scope.home,
       cwd: process.cwd(),
