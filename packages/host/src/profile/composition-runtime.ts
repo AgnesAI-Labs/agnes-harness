@@ -19,6 +19,7 @@ import {
   createLiveCompositionWriter,
 } from './composition-state.js'
 import { compositionSkillOwners, compositionSkills } from './composition-visibility.js'
+import { modelProfileDeployment } from './model-compatibility.js'
 import type { ResolvedProfile } from './types.js'
 
 type Factory = (profile: ResolvedProfile, options: HostOptions) => Promise<Host>
@@ -413,6 +414,13 @@ export async function createCompositionHost(
     },
     applyModelProfile: (next) =>
       enqueue(async () => {
+        const deployment = modelProfileDeployment(next)
+        if (
+          ![profile, modelProfile, ...[...containers.values()].map(({ host }) => host.profile)].some(
+            (current) => modelProfileDeployment(current) === deployment,
+          )
+        )
+          throw new HostError('E_SEAM_IMMUTABLE', 'non-model configuration requires restart')
         modelProfile = next
         return broadcast('models', (container) =>
           container.host.applyModelProfile(

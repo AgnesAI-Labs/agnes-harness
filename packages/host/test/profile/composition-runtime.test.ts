@@ -118,6 +118,9 @@ it('runs preset compositions side by side, filters tools and retains the generat
     const first = route?.models?.[0]
     if (!route || !first) throw new Error('fixture route missing')
     route.models = [...(route.models ?? []), { ...first, id: 'live-model', name: 'live-model' }]
+    await expect(host.applyModelProfile({ ...next, dataDir: join(root, 'other-backend') })).rejects.toThrow(
+      'non-model configuration requires restart',
+    )
     refuseWriter = true
     const partial = await host.applyModelProfile(next)
     expect(partial).toMatchObject({
