@@ -432,6 +432,7 @@
         "route": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]{0,63}$" },
         "api": { "type": "string", "maxLength": 64 },
         "baseUrl": { "type": "string", "maxLength": 2048 },
+        "keyless": { "type": "boolean" },
         "credentialRef": { "type": "string", "pattern": "^secret://[A-Za-z0-9_./-]+$" },
         "compat": { "$ref": "#/$defs/JsonValue" },
         "displayName": { "type": "string", "maxLength": 128 },

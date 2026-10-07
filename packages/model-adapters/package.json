@@ -14,7 +14,8 @@
     "@agnes/ai": "workspace:*",
     "@agnes/extension-api": "workspace:*",
     "@agnes/plugin-runtime": "workspace:*",
-    "@agnes/protocol": "workspace:*"
+    "@agnes/protocol": "workspace:*",
+    "@sinclair/typebox": "0.34.33"
   },
   "agnes": {
     "plugins": [

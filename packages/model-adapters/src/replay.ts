@@ -6,6 +6,7 @@ import type {
 } from '@agnes/extension-api'
 import { defineModelAdapter } from '@agnes/plugin-runtime'
 import type { RequestBody } from '@agnes/protocol'
+import { demoReply } from './demo.js'
 import { absoluteFile, compat, object, readBoundedFile, readModelResponses, validateReply } from './trace.js'
 
 function canonical(value: unknown): string {
@@ -36,6 +37,7 @@ function instance(
   replies: Map<string, Reply[]>,
   strict: Map<string, boolean>,
   repeatLast = new Set<string>(),
+  demoRoutes = new Set<string>(),
 ): ModelAdapterInstance {
   const cursors = new Map<string, number>()
   const busy = new Set<string>()
@@ -69,7 +71,9 @@ function instance(
       }
       const index = cursors.get(key) ?? 0
       const rows = replies.get(route)
-      const reply = rows?.[index] ?? (repeatLast.has(route) ? rows?.at(-1) : undefined)
+      const reply = demoRoutes.has(route)
+        ? { events: demoReply(request) }
+        : (rows?.[index] ?? (repeatLast.has(route) ? rows?.at(-1) : undefined))
       if (!reply) {
         yield {
           type: 'error',
@@ -146,8 +150,17 @@ export const scriptedAdapter = defineModelAdapter({
   async create(config: ModelAdapterConfig): Promise<ModelAdapterInstance> {
     const replies = new Map<string, Reply[]>()
     const repeatLast = new Set<string>()
+    const demoRoutes = new Set<string>()
     for (const route of config.routes) {
       const options = compat(route.compat)
+      if (options.demo !== undefined && typeof options.demo !== 'boolean')
+        throw new Error('scripted demo must be boolean')
+      if (options.demo === true) {
+        if (options.file !== undefined || options.replies !== undefined)
+          throw new Error('scripted demo cannot be combined with file or replies')
+        demoRoutes.add(route.route)
+        continue
+      }
       if (options.replies !== undefined && options.file !== undefined)
         throw new Error('scripted route must use either inline replies or file')
       if (options.repeatLast !== undefined && typeof options.repeatLast !== 'boolean')
@@ -169,6 +182,6 @@ export const scriptedAdapter = defineModelAdapter({
         document.replies.map((reply) => ({ events: validateReply(reply) })),
       )
     }
-    return instance('scripted', config, replies, new Map(), repeatLast)
+    return instance('scripted', config, replies, new Map(), repeatLast, demoRoutes)
   },
 })

@@ -3403,8 +3403,14 @@ const MODEL_SAMPLES: Record<string, Sample> = {
     note: 'hand-written; the seven branches are discriminated by type, and every branch is closed',
   },
   RouteDecl: {
-    valid: { route: 'agnes-gateway', api: 'openai-completions', baseUrl: 'https://gw.invalid' },
+    valid: {
+      route: 'agnes-gateway',
+      api: 'openai-completions',
+      baseUrl: 'https://gw.invalid',
+      keyless: true,
+    },
     invalid: [
+      { route: 'r', api: 'a', baseUrl: 'b', keyless: 'true' },
       { route: 'agnes-gateway', api: 'openai-completions' }, // missing required baseUrl
       { route: 'Agnes-Gateway', api: 'a', baseUrl: 'b' }, // pattern: lowercase slug only
       { route: '-leading', api: 'a', baseUrl: 'b' }, // pattern: must start alphanumeric

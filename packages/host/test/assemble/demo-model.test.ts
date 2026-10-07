@@ -11,6 +11,7 @@ import { materializeRoutes } from '../../src/assemble/routes.js'
 import { loadTemplate } from '../../src/profile/templates.js'
 import type { ResolvedProfile } from '../../src/profile/types.js'
 import { createTestHost } from '../../testkit/index.js'
+import { fixtureTool } from '../fixtures/tool.js'
 
 it('runs the fresh local-dev demo through registry and provider without credentials, across repeated turns', async () => {
   const profile = loadTemplate('local-dev') as ResolvedProfile
@@ -53,12 +54,24 @@ it('runs the fresh local-dev demo through registry and provider without credenti
     })
     try {
       const session = await host.createSession({ key: 'demo-session', cwd: dataDir })
-      await session.enqueue('next-turn', { content: [{ type: 'text', text: 'hi' }], actor: session.d.actor })
+      session.currentTools().add(
+        {
+          ...fixtureTool('student_echo'),
+          execute: async () => ({ content: [{ type: 'text', text: 'actual student result' }] }),
+        },
+        { source: 'student/echo', trust: 'trusted' },
+      )
+      await session.enqueue('next-turn', {
+        content: [{ type: 'text', text: 'call student_echo' }],
+        actor: session.d.actor,
+      })
       expect(await session.run({ until: 'turn-end', signal: new AbortController().signal })).toMatchObject({
         reason: 'completed',
       })
-      const replies = await session.scan({ type: 'assistant/message', limit: 1 })
+      const replies = await session.scan({ type: 'assistant/message', order: 'desc', limit: 1 })
       expect(JSON.stringify(replies[0]?.data)).toContain('[Demo model')
+      expect(JSON.stringify(replies[0]?.data)).toContain('actual student result')
+      expect(await session.scan({ type: 'tool/result', limit: 1 })).toHaveLength(1)
     } finally {
       await host.close()
       await rm(dataDir, { recursive: true, force: true })

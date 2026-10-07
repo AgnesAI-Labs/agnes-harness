@@ -474,6 +474,9 @@ importers:
       '@agnes/protocol':
         specifier: workspace:*
         version: link:../protocol
+      '@sinclair/typebox':
+        specifier: 0.34.33
+        version: 0.34.33
 
   packages/package-manager:
     dependencies:

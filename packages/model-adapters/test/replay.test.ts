@@ -149,3 +149,178 @@ it('refuses interrupted recordings and never overwrites a response file', async 
   await expect(readModelResponses(path)).rejects.toThrow('incomplete')
   await expect(recordModelResponses(source, path)).rejects.toThrow()
 })
+
+it('derives demo tool arguments, refuses invalid examples and summarizes actual results', async () => {
+  const adapter = await scriptedAdapter.create({
+    routes: [{ ...config('').routes[0]!, compat: { demo: true } }],
+  })
+  const body: RequestBody = {
+    ...request,
+    messages: [{ role: 'user', content: [{ type: 'text', text: 'call lesson_echo' }] }],
+    tools: [
+      {
+        name: 'lesson_echo',
+        description: 'Echo',
+        parameters: {
+          type: 'object',
+          required: ['text', 'count'],
+          properties: { text: { type: 'string' }, count: { type: 'integer', minimum: 2 } },
+          additionalProperties: false,
+        },
+      },
+    ],
+  }
+  const events = await collect(adapter, body)
+  expect(events).toContainEqual(
+    expect.objectContaining({
+      type: 'toolcall_end',
+      call: expect.objectContaining({ name: 'lesson_echo', args: { text: 'call lesson_echo', count: 2 } }),
+    }),
+  )
+  const answered = await collect(adapter, {
+    ...body,
+    messages: [
+      ...body.messages,
+      {
+        role: 'tool_result',
+        toolUseId: 'demo-a',
+        isError: false,
+        content: [{ type: 'text', text: 'real result 123' }],
+      },
+    ],
+  })
+  expect(answered).toContainEqual(
+    expect.objectContaining({ type: 'text_delta', delta: expect.stringContaining('real result 123') }),
+  )
+  expect(answered.at(-1)).toEqual({ type: 'done', reason: 'stop' })
+  const invalid = await collect(adapter, {
+    ...body,
+    tools: [
+      {
+        ...body.tools[0]!,
+        parameters: {
+          type: 'object',
+          required: ['x'],
+          properties: { x: { type: 'string', pattern: '^unproducible$' } },
+        },
+      },
+    ],
+  })
+  expect(invalid.some((event) => event.type === 'toolcall_end')).toBe(false)
+  expect(invalid).toContainEqual(
+    expect.objectContaining({
+      type: 'text_delta',
+      delta: expect.stringContaining('Cannot derive valid arguments'),
+    }),
+  )
+  const constrainedEnum = await collect(adapter, {
+    ...body,
+    tools: [
+      {
+        ...body.tools[0]!,
+        parameters: {
+          type: 'object',
+          required: ['x'],
+          properties: { x: { type: 'string', enum: ['bad'], pattern: '^good$' } },
+        },
+      },
+    ],
+  })
+  expect(constrainedEnum.some((event) => event.type === 'toolcall_end')).toBe(false)
+  const guideTool = {
+    name: 'plugin_helper_guide',
+    description: '',
+    parameters: { type: 'object', required: ['kind'], properties: { kind: { enum: ['tool'] } } },
+  }
+  const createTool = {
+    name: 'plugin_helper_create',
+    description: '',
+    parameters: { type: 'object', required: ['files'], properties: { files: { type: 'array' } } },
+  }
+  const plan = {
+    ...body,
+    tools: [guideTool, createTool],
+    messages: [{ role: 'user' as const, content: [{ type: 'text' as const, text: 'create a plugin' }] }],
+  }
+  expect(await collect(adapter, plan)).toContainEqual(
+    expect.objectContaining({
+      type: 'toolcall_end',
+      call: expect.objectContaining({ name: 'plugin_helper_guide' }),
+    }),
+  )
+  expect(
+    await collect(adapter, {
+      ...plan,
+      messages: [
+        ...plan.messages,
+        {
+          role: 'tool_result',
+          toolUseId: 'guide',
+          isError: false,
+          content: [
+            { type: 'text', text: JSON.stringify({ files: [{ path: 'index.mjs', content: 'demo' }] }) },
+          ],
+        },
+      ],
+    }),
+  ).toContainEqual(
+    expect.objectContaining({
+      type: 'toolcall_end',
+      call: expect.objectContaining({
+        name: 'plugin_helper_create',
+        args: { files: [{ path: 'index.mjs', content: 'demo' }] },
+      }),
+    }),
+  )
+  const creatorPlan = {
+    ...plan,
+    tools: [
+      {
+        name: 'plugin_creator_guide',
+        description: '',
+        parameters: { type: 'object', additionalProperties: false },
+      },
+      {
+        name: 'plugin_scaffold',
+        description: '',
+        parameters: {
+          type: 'object',
+          required: ['template', 'name', 'directory'],
+          properties: {
+            template: { enum: ['tool'] },
+            name: { type: 'string' },
+            directory: { type: 'string' },
+          },
+        },
+      },
+    ],
+  }
+  expect(await collect(adapter, creatorPlan)).toContainEqual(
+    expect.objectContaining({
+      type: 'toolcall_end',
+      call: expect.objectContaining({ name: 'plugin_creator_guide', args: {} }),
+    }),
+  )
+  expect(
+    await collect(adapter, {
+      ...creatorPlan,
+      messages: [
+        ...creatorPlan.messages,
+        {
+          role: 'tool_result',
+          toolUseId: 'guide',
+          isError: false,
+          content: [{ type: 'text', text: 'Use the bundled templates.' }],
+        },
+      ],
+    }),
+  ).toContainEqual(
+    expect.objectContaining({
+      type: 'toolcall_end',
+      call: expect.objectContaining({
+        name: 'plugin_scaffold',
+        args: expect.objectContaining({ template: 'tool', name: 'demo-hello-tool' }),
+      }),
+    }),
+  )
+})
