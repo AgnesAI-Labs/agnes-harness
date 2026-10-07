@@ -114,8 +114,22 @@ acpChildAgentsPlugin({
 
 ## Codex、Claude Code 与通用引擎
 
-这三个提供者默认关闭。配置档只有在 `enabled: true` 且命令位于允许名单时才会挂载它们，它们不在默认插件列表里。设置里的「子代理引擎」编辑同一份文档，并保存在本次浏览器会话。`childEnginePlugins(settings)` 挂载已启用的引擎。
+`@agnes/base` 声明三行普通插件，每一行都是 `default: false`、`apiRange: "^1.4.0"`、`inject: ["childAgents"]`、`runtime: "in-process"`：
 
-`codex` 用 `codex exec --json`（或你放行的命令）跑一轮。`claude-code` 用 Claude Code 的 `stream-json` 打印模式跑一轮。两者把助手文本流进子代理列表和子代理卡片，`interrupt` 会停掉进程。它们不接受父会话的模型、预算、工具过滤、fork 或工作树。CLI 自己的配置仍然有效。子进程只收到 `PATH`、`HOME`、`USERPROFILE` 和你传入的 `env`。
+| 行 | 导出 |
+| --- | --- |
+| `child-agent:codex` | `codexChildAgentsPlugin` |
+| `child-agent:claude-code` | `claudeCodeChildAgentsPlugin` |
+| `child-agent:sdk` | `sdkChildAgentsPlugin` |
+
+插件行解析器拒绝 `capabilities` 字段，所以这三行不带该字段。如实能力写在提供者对象上：Codex、Claude Code 和 SDK 模式都是单轮（`continuable: false`，`interrupt: true`，其余子代理标志为 false）。SDK 协议选 `acp` 时注册现有的可继续 `acp` 提供者，并保留该提供者的标志。各扩展清单声明的 hooks、slots、events、resources、network 都是空的。包本身不加包级 `agnes.capabilities`。测试里仍可用 `childEnginePlugins(settings)` 做显式进程内挂载。
+
+设置里的「子代理引擎」通过宿主配置服务读写配置档的 `configuration.json`。守护进程方法是 `_agnes/v1/config.childEngines.get` 和 `_agnes/v1/config.childEngines.save`。网页调用 `GET` 与 `PUT /admin/api/child-engines`。保存的文档包含 `enabled`、`command`、`args`、`allow`，SDK 行另有 `protocol`。文档不保存 `env`。已启用的命令必须非空，并且与允许名单中的某一项完全一致。加载时如果 `childEngines` 字段损坏，会丢掉该字段，账号和会话默认值仍然可以打开。
+
+保存时，如果当前期望运行时制品、pin coordinator、运行时探针和 `@agnes/base` 的包完整性都存在，就把这三行内置插件替换进该制品。返回效果是 `new-sessions`：新会话使用头部这一代，已经打开的会话留在它们启动时的那一代。打开会话的子代理继承该会话的代。无法发布，或当前没有期望制品时，文件仍然保存，效果是 `restart-required`。进程启动会把同一份文件读进普通插件层，因此即使期望制品没有收到覆盖，重启后也会与文件一致。启用一行会改变运行时代码修订。
+
+`codex` 用 `codex exec --json`（或你放行的命令）跑一轮。`claude-code` 用 Claude Code 的 `stream-json` 打印模式跑一轮。`interrupt` 会停掉进程。它们不接受父会话的模型、预算、工具过滤、fork 或工作树。CLI 自己的配置仍然有效。子进程只收到 `PATH`、`HOME` 和 `USERPROFILE`。
 
 `sdk` 使用固定的换行协议 `agnes.child-engine`：`initialize`、`run`、`text` 通知和 `cancel`。它是单轮的。协议选 `acp` 时改为注册可继续的 `acp` 提供者，并使用同一份命令允许名单。不要把它和另一个 `acp` 提供者同时挂载。这个引擎不说 DeepSeek SDK 的线路协议。
+
+提供者的 `events()` 和 `updateExternalChild` 只更新进程内的子代理列表。项目界面只在 `tool/result` 事件到达时写入子代理卡片的 `resultPreview`。`subagent_spawn` 返回开始通知。`subagent_collect` 返回最终文本。卡片在这些工具结果落地时更新。没有 `tool/progress` 事件，也没有把子代理提供者事件推到网页的 websocket，所以进程还在跑的时候卡片不会显示文本。
