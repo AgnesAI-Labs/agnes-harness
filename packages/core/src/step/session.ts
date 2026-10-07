@@ -16,7 +16,6 @@ import type {
   ToolRuntimeProvider,
   ToolRuntimeRegistryPort,
 } from '@agnes/extension-api'
-import { DEFAULT_LOOP, loopShouldStop } from '@agnes/extension-api'
 import type {
   Actor,
   ApprovalMode,
