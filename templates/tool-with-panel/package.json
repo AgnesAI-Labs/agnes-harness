@@ -43,6 +43,11 @@
         "rowId": "ext:__PACKAGE_NAME__/main",
         "path": "./client/agnes.client.json"
       }
-    ]
+    ],
+    "hostProvidedExternals": {
+      "@agnes/plugin-runtime": "0.0.0",
+      "@agnes/extension-api": "1.4.0",
+      "@sinclair/typebox": "0.34.33"
+    }
   }
 }

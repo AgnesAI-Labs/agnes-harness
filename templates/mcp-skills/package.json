@@ -37,6 +37,12 @@
           "skills"
         ]
       }
-    ]
+    ],
+    "hostProvidedExternals": {
+      "@agnes/plugin-runtime": "0.0.0",
+      "@agnes/extension-api": "1.4.0",
+      "@agnes/resource-control-runtime": "0.0.0",
+      "@agnes/protocol": "0.0.0"
+    }
   }
 }

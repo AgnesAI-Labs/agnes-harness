@@ -2,50 +2,76 @@
 
 [English](quickstart.md) | 简体中文
 
-[作者工具包](README.zh-CN.md) · [测试指南](testing.zh-CN.md)
+[作者工具包](README.zh-CN.md) · [本地插件](local-plugins.zh-CN.md) · [测试指南](testing.zh-CN.md)
 
-先写一个返回消息的工具。需要 Node.js 24.10 或更新版本，以及按[安装指南](../guide/install.zh-CN.md)准备的源码仓。作者测试不需要模型账号、原生构建或网络服务。
+需要 Node.js 24.10 或更新版本，并按[安装指南](../guide/install.zh-CN.md)准备 AGH 源码运行环境。最短路径使用本地 TypeScript 插件和内置免密钥 **Demo（本地脚本回复）**模型，不需要构建插件、连接 SDK 或配置 API key。
 
-## 1. 准备预览 SDK
+## 1. 直接创建到插件目录
 
-在 AGH 仓库安装一次依赖，构建 SDK 声明：
+在将要启动 daemon 的工作区执行。源码预览的脚手架命令从 AGH 仓库运行：
 
 ```sh
-pnpm install --frozen-lockfile
+mkdir -p .agnes/plugins
+node templates/create-agh-plugin.mjs tool hello-tool .agnes/plugins/hello-tool --local
+```
+
+包入口是 `./src/index.ts`。AGH 用 jiti 按需转译，并提供公共作者 SDK 和 TypeBox。也可以放到 `$AGH_HOME/plugins/hello-tool`，每个终端使用同一个配置 home。本地目录意味着选择信任并执行其中代码，只放你愿意运行的插件。
+
+## 2. 启动并打开新会话
+
+```sh
+AGNES_PROFILE=local-dev agh web
+```
+
+源码环境尚无 `agh` 命令时，按安装指南完成一次运行时构建，用 `node packages/cli/dist/local/agnes.mjs` 替代它。
+
+保持 daemon 运行，在另一个使用相同工作区、profile 和 home 的终端执行：
+
+```sh
+AGNES_PROFILE=local-dev agh -p 'hi'
+```
+
+全新 local-dev 默认选择 route `demo`、model `demo-model`，回复明确标记为 Demo。它通过真实会话循环返回固定教学回复。在 `/admin/plugins` 检查 hello-tool，并在新会话的工具目录查看 `plugin_hello_tool`。要演示选工具，可配置含工具调用回复的 scripted route 或真实模型；下方可选作者测试能免模型调用工具。
+
+Web 中新建会话，选择 **Demo (local scripted reply, no API key)**，提交 `hi`。这是教学模型；推理和自动选工具需要配置真实模型。已有显式模型配置优先。
+
+## 3. 修改并重试
+
+修改 `src/index.ts`。保留 `ctx.signal.throwIfAborted()`，异步操作传入 signal。预期业务拒绝用 `toolError('message')`；客户端和订阅通过 `ctx.effect()` 释放。
+
+在 `/admin/plugins` 检查启用错误。本地发现会监听修改，但当前 daemon 在代际重载接通前标记为 `restart-required`。放入或修改插件后启动／重启 daemon，再创建新会话；运行中的会话保持原代际。详见[本地插件](local-plugins.zh-CN.md)。
+
+## 4. 可选的构建和测试
+
+需要编译或运行作者测试时，在仓库内构建一次预览 SDK 声明：
+
+```sh
 nice -n 10 pnpm exec tsc -b packages/plugin-runtime packages/protocol
+node templates/link-local.mjs .agnes/plugins/hello-tool
+npm --prefix .agnes/plugins/hello-tool run build
+npm --prefix .agnes/plugins/hello-tool test
 ```
 
-当前预览的 AGH 包尚未发布到 npm。下面使用本地 SDK 连接；匹配版本正式发布后，在生成目录内执行 `npm install`，替代本地连接步骤。
+linker 可重复执行。model-adapter 模板使用公共合同测试数据，不再要求构建 `@agnes/ai`。需要安装编译包时，不带 `--local` 创建、构建后按[插件管理](../guide/packages.zh-CN.md)安装。侧栏选 `tool-with-panel`，独立循环选 `loop`。
 
-## 2. 创建独立包
+## Host 提供的依赖
 
-仍在 AGH 仓库执行：
+模板在 `package.json` 声明 SDK 需求：
 
-```sh
-node templates/create-agh-plugin.mjs tool hello-tool ../hello-tool
-node templates/link-local.mjs ../hello-tool
-npm --prefix ../hello-tool run build
-npm --prefix ../hello-tool test
+```json
+{
+  "agnes": {
+    "hostProvidedExternals": {
+      "@agnes/plugin-runtime": "0.0.0",
+      "@agnes/extension-api": "^1.4.0",
+      "@sinclair/typebox": "~0.34.0"
+    }
+  }
+}
 ```
 
-脚手架拒绝已有目标目录，接受 `@acme/hello-tool` 等带 scope 的包名。它只复制源码，不运行安装脚本。预览连接器要求新建包目录，提供已构建声明与源码运行时链接，不修改导入路径。
+该字段可选，按精确的公共模块名声明兼容版本。范围语法同扩展 `apiRange`：精确版本、`*`、`^`、`~`、空格连接的比较条件和 `x` 通配；不支持范围并集或预发布版本。AGH 在执行模块前校验。
 
-预期一个测试通过：真实 Host 注册、调用 `plugin_hello_tool`、非法输入与取消拒绝、卸载移除工具。生成包位于 workspace 外，不含 `workspace:` 依赖或仓库相对导入。
+Host 提供 `@agnes/plugin-runtime` 作者导出、`@agnes/extension-api`、`@agnes/protocol`、`@agnes/cordis`、`@sinclair/typebox` 及其 `/value`、`/compiler` 子路径，不提供 Host 内部或 testkit。安装快照、本地插件与隔离扩展 runner 共用这些公共命名空间。
 
-## 3. 修改业务逻辑
-
-打开生成包的 `src/index.ts`。`parameters` 把 `message` 推导为字符串，`result` 要求成功的 `structured` 与结果 schema 匹配。替换 echo 逻辑，保留简明的模型可见 `content`。
-
-用 `toolError('message')` 表达预期业务拒绝；意外故障直接抛出。调用 `ctx.signal.throwIfAborted()`，并把 `ctx.signal` 传入异步操作。长期客户端或订阅绑定 `ctx.effect()`，每次调用的资源在 `finally` 释放。
-
-模板默认只读、闭世界且可安全重放。增加文件写入、远程调用等副作用时应修改这些声明。编辑后重新构建并运行包内测试。
-
-## 4. 在 AGH 运行
-
-按[插件管理](../guide/packages.zh-CN.md)安装构建目录，检查信任信息并启用 `main`。在配置模型的新会话中请求：
-
-> 调用 plugin_hello_tool，message 为 hello。
-
-工具记录应包含 `{"message":"hello"}`。检查记录确认真实调用；相同文本回复本身不能证明模型使用了插件。
-
-需要侧栏时选择 `tool-with-panel`，其他入口见[插件类型](README.zh-CN.md)。其描述文件声明 `ui:sidebar`，标签通过独立浏览器生命周期渲染。
+其他依赖由作者打包，或放入包自身声明的依赖树。本地发现不安装依赖，源码快照省略 `node_modules`，所以复制插件前执行 npm install 不足以分发它。缺模块错误指出依赖并建议打包／安装；版本错误提示调整 SDK 范围或升级 AGH。

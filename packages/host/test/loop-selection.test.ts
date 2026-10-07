@@ -7,6 +7,8 @@ import { hashDirectory, type RuntimePluginSnapshot } from '@agnes/package-manage
 import { afterEach, expect, it } from 'vitest'
 import * as dagModule from '../../../examples/loops/dag-loop/index.mjs'
 import { readAdminLoopDefault } from '../src/assemble/loop-selection.js'
+import { scaffold } from '../../../templates/create-agh-plugin.mjs'
+import { createLoader } from '../src/ext-host/loader.js'
 import { createTestHost } from '../testkit/index.js'
 
 const dirs: string[] = []
@@ -15,14 +17,17 @@ afterEach(() => {
 })
 const dag = { id: 'example.dag', version: '1.0.0' }
 
-async function fixture(profileLoop = true) {
+async function fixture(profileLoop = true, template = false) {
   const dataDir = mkdtempSync(join(tmpdir(), 'agnes-loops-'))
   dirs.push(dataDir)
   const directory = join(dataDir, 'snapshot')
-  cpSync(fileURLToPath(new URL('../../../examples/loops/dag-loop', import.meta.url)), directory, {
-    recursive: true,
-    filter: (path) => !path.includes('/node_modules'),
-  })
+  const loopSelection = template ? { id: 'tiny-loop', version: '0.1.0' } : dag
+  if (template) await scaffold('loop', 'tiny-loop', directory, { local: true })
+  else
+    cpSync(fileURLToPath(new URL('../../../examples/loops/dag-loop', import.meta.url)), directory, {
+      recursive: true,
+      filter: (path) => !path.includes('/node_modules'),
+    })
   const manifest = JSON.parse(
     await import('node:fs/promises').then((fs) => fs.readFile(join(directory, 'package.json'), 'utf8')),
   )
@@ -30,8 +35,8 @@ async function fixture(profileLoop = true) {
   writeFileSync(join(directory, 'package.json'), JSON.stringify(manifest))
   const source: RuntimePluginSnapshot = {
     snapshot: {
-      packageId: '@agnes-example/dag-loop',
-      version: '1.0.0',
+      packageId: template ? 'tiny-loop' : '@agnes-example/dag-loop',
+      version: loopSelection.version,
       snapshotId: `sha256-${'1'.repeat(64)}`,
       integrity: `sha256-${'2'.repeat(64)}`,
       treeIntegrity: hashDirectory(directory, { exclude: [] }),
@@ -46,7 +51,14 @@ async function fixture(profileLoop = true) {
   const { host, profile } = await createTestHost({
     dataDir,
     packageDirs: { [source.snapshot.packageId]: directory },
-    script: [],
+    script: template
+      ? [
+          [
+            { type: 'text_delta', delta: 'Demo reply' },
+            { type: 'done', reason: 'stop' },
+          ],
+        ]
+      : [],
     disableSessionTitle: true,
     lock: {
       packages: Object.fromEntries(
@@ -65,18 +77,20 @@ async function fixture(profileLoop = true) {
       user: {
         name: 'local-dev',
         packages: [{ id: source.snapshot.packageId, source: `file:${directory}` }],
-        ...(profileLoop ? { loop: dag } : {}),
+        ...(profileLoop ? { loop: loopSelection } : {}),
       },
     },
     runtimePluginSnapshots: [source],
     runtimePluginCatalogue: [source],
     runtimePluginSources: async () => [source],
-    extensionLoader: {
-      import: async (file) => {
-        expect(file.endsWith('/snapshot/index.mjs')).toBe(true)
-        return dagModule
-      },
-    },
+    extensionLoader: template
+      ? createLoader({ cacheDir: join(dataDir, 'cache'), hostRoot: dataDir, agnesVersion: '0.0.0' })
+      : {
+          import: async (file) => {
+            expect(file.endsWith('/snapshot/index.mjs')).toBe(true)
+            return dagModule
+          },
+        },
   })
   const profileDir = join(dataDir, 'profiles', 'local-dev')
   const defaults = (loop: typeof dag) => {
@@ -159,6 +173,28 @@ it('uses the built-in loop without a default and refuses an invalid persisted de
     })
     // Explicit selection wins even when the saved default is not installed.
     expect((await f.host.createSession({ key: 'override', cwd: f.dataDir, loop: dag })).loop).toEqual(dag)
+  } finally {
+    await f.host.close()
+  }
+})
+
+it('activates the zero-build loop template from an installed snapshot without SDK dependencies', async () => {
+  const f = await fixture(true, true)
+  try {
+    // Host exposes this same kernel catalog to the admin loops API.
+    expect(f.host.kernel.loops.catalog()).toContainEqual({
+      id: 'tiny-loop',
+      version: '0.1.0',
+      sourcePackage: 'tiny-loop',
+      capabilities: ['model'],
+    })
+    const session = await f.host.createSession({ key: 'template-loop', cwd: f.dataDir })
+    expect(session.loop).toEqual({ id: 'tiny-loop', version: '0.1.0' })
+    await session.enqueue('next-turn', { content: [{ type: 'text', text: 'hi' }], actor: session.d.actor })
+    const result = await session.run({ until: 'turn-end', signal: new AbortController().signal })
+    expect(result.reason, JSON.stringify(result)).toBe('completed')
+    const reply = await session.scan({ type: 'assistant/message', limit: 1 })
+    expect(reply[0]?.data).toMatchObject({ content: [{ type: 'text', text: 'Demo reply' }] })
   } finally {
     await f.host.close()
   }

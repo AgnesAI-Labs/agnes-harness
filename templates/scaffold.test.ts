@@ -17,6 +17,10 @@ describe('plugin scaffolder', () => {
         expect(manifest.scripts).toHaveProperty('build')
         expect(manifest.scripts).toHaveProperty('test')
         expect(Object.values(manifest.dependencies)).not.toContain('workspace:*')
+        const local = await scaffold(kind, 'local-plugin', join(temp, `local-${kind}`), { local: true })
+        const localManifest = JSON.parse(await readFile(join(local, 'package.json'), 'utf8'))
+        expect(localManifest.exports).toBe('./src/index.ts')
+        expect(localManifest.agnes.hostProvidedExternals).toHaveProperty('@agnes/plugin-runtime')
         expect(await readFile(join(target, 'src/index.ts'), 'utf8')).not.toMatch(
           /__PACKAGE_NAME__|__TOOL_NAME__|__SKILL_NAME__|\.\.\/.*packages\//,
         )
@@ -46,34 +50,39 @@ describe('plugin scaffolder', () => {
     }
   })
 
-  it('builds and runs a tool template outside the workspace through package exports', async () => {
-    const temp = await mkdtemp(join(tmpdir(), 'agh-template-build-'))
-    try {
-      const target = await scaffold('tool', '@acme/hello', join(temp, 'plugin'))
-      await linkLocal(target)
-      const run = (script: string) => {
-        try {
-          return execFileSync('npm', ['run', script], {
-            cwd: target,
-            encoding: 'utf8',
-            timeout: 20000,
-            stdio: 'pipe',
-            env: {
-              ...process.env,
-              PATH: process.env.PATH?.split(delimiter)
-                .filter((entry) => !entry.includes('node_modules/.bin'))
-                .join(delimiter),
-            },
-          })
-        } catch (error) {
-          const output = error as { stdout?: string; stderr?: string }
-          throw new Error(`${output.stdout ?? ''}\n${output.stderr ?? ''}`, { cause: error })
+  it.each(['tool', 'loop', 'model-adapter'])(
+    'builds and runs a %s template outside the workspace through package exports',
+    async (kind) => {
+      const temp = await mkdtemp(join(tmpdir(), 'agh-template-build-'))
+      try {
+        const target = await scaffold(kind, '@acme/hello', join(temp, 'plugin'))
+        await linkLocal(target)
+        await linkLocal(target) // repeating a partial/completed link is supported
+        const run = (script: string) => {
+          try {
+            return execFileSync('npm', ['run', script], {
+              cwd: target,
+              encoding: 'utf8',
+              timeout: 20000,
+              stdio: 'pipe',
+              env: {
+                ...process.env,
+                PATH: process.env.PATH?.split(delimiter)
+                  .filter((entry) => !entry.includes('node_modules/.bin'))
+                  .join(delimiter),
+              },
+            })
+          } catch (error) {
+            const output = error as { stdout?: string; stderr?: string }
+            throw new Error(`${output.stdout ?? ''}\n${output.stderr ?? ''}`, { cause: error })
+          }
         }
+        expect(run('build')).toContain('tsc')
+        expect(run('test')).toContain('pass 1')
+      } finally {
+        await rm(temp, { recursive: true, force: true })
       }
-      expect(run('build')).toContain('tsc')
-      expect(run('test')).toContain('pass 1')
-    } finally {
-      await rm(temp, { recursive: true, force: true })
-    }
-  }, 45000)
+    },
+    45000,
+  )
 })

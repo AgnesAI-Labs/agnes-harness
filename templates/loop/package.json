@@ -35,6 +35,10 @@
           "loops"
         ]
       }
-    ]
+    ],
+    "hostProvidedExternals": {
+      "@agnes/plugin-runtime": "0.0.0",
+      "@agnes/extension-api": "1.4.0"
+    }
   }
 }

@@ -25,8 +25,7 @@
   "devDependencies": {
     "typescript": "7.0.2",
     "@types/node": "26.4.1",
-    "tsx": "4.23.13",
-    "@agnes/ai": "0.0.0"
+    "tsx": "4.23.13"
   },
   "agnes": {
     "plugins": [
@@ -37,6 +36,11 @@
           "modelAdapters"
         ]
       }
-    ]
+    ],
+    "hostProvidedExternals": {
+      "@agnes/plugin-runtime": "0.0.0",
+      "@agnes/extension-api": "1.4.0",
+      "@agnes/protocol": "0.0.0"
+    }
   }
 }

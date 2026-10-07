@@ -20,7 +20,7 @@ function driver(ctx: LoopContext, saved?: LoopCheckpoint): LoopDriver {
     async step(signal) {
       const active = AbortSignal.any([signal, lifetime.signal])
       active.throwIfAborted()
-      if (state.done) return { phase: 'done', reason: 'completed' }
+      if (state.done) return { phase: 'terminal', reason: 'completed' }
       const input = await ctx.input.accept()
       if (!input) return { phase: 'idle', reason: 'parked' }
       const messages = [{ role: 'user' as const, content: [...input.content] }]
@@ -42,15 +42,15 @@ function driver(ctx: LoopContext, saved?: LoopCheckpoint): LoopDriver {
       const failure = reply.find((event) => event.type === 'error')
       if (failure?.type === 'error') throw new Error(failure.message)
       active.throwIfAborted()
-      const text = reply
-        .filter((event) => event.type === 'text_delta')
-        .map((event) => event.delta)
-        .join('')
-      await ctx.events.emit('reply', { text })
+      const text = reply.flatMap((event) => (event.type === 'text_delta' ? [event.delta] : [])).join('')
+      await ctx.events.emit('assistant/message', {
+        content: [{ type: 'text', text }],
+        stopReason: 'end_turn',
+      })
       state = { done: true }
       await ctx.checkpoints.write(codec.encode(state))
       await ctx.events.finish('completed')
-      return { phase: 'done', reason: 'completed' }
+      return { phase: 'terminal', reason: 'completed' }
     },
     cancel() {
       lifetime.abort()

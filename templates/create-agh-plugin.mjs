@@ -7,7 +7,7 @@ export const templateNames = ['tool', 'tool-with-panel', 'mcp-skills', 'model-ad
 const root = dirname(fileURLToPath(import.meta.url))
 
 /** Copy sources without installing dependencies or overwriting an existing destination. */
-export async function scaffold(template, name, destination = name?.split('/').at(-1)) {
+export async function scaffold(template, name, destination = name?.split('/').at(-1), options = {}) {
   if (!templateNames.includes(template)) throw new TypeError(`Unknown template: ${template}`)
   if (
     typeof name !== 'string' ||
@@ -42,6 +42,13 @@ export async function scaffold(template, name, destination = name?.split('/').at
   }
   try {
     await copy(join(root, template), target)
+    if (options.local) {
+      const file = join(target, 'package.json')
+      const metadata = JSON.parse(await readFile(file, 'utf8'))
+      metadata.exports = './src/index.ts'
+      metadata.files = ['src', ...metadata.files.filter((name) => name !== 'dist')]
+      await writeFile(file, JSON.stringify(metadata, null, 2) + '\n')
+    }
   } catch (error) {
     await rm(target, { recursive: true, force: true })
     throw error
@@ -50,17 +57,18 @@ export async function scaffold(template, name, destination = name?.split('/').at
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
-  const [template, name, destination, ...extra] = process.argv.slice(2)
+  const local = process.argv.includes('--local')
+  const [template, name, destination, ...extra] = process.argv.slice(2).filter((arg) => arg !== '--local')
   if (template === '--help' || !template) {
     console.log(
-      `Usage: node ${basename(process.argv[1])} <template> <name> [directory]\nTemplates: ${templateNames.join(', ')}`,
+      `Usage: node ${basename(process.argv[1])} <template> <name> [directory] [--local]\nTemplates: ${templateNames.join(', ')}`,
     )
   } else {
     try {
       if (extra.length) throw new TypeError('Too many arguments')
-      const target = await scaffold(template, name, destination)
+      const target = await scaffold(template, name, destination, { local })
       console.log(
-        `Created ${name} in ${target}\nNext: cd ${JSON.stringify(target)} && npm install && npm run build && npm test`,
+        `Created ${name} in ${target}\nNext: ${local ? 'start/restart AGH from this workspace, then open a new session (no build needed)' : 'see docs/extend/quickstart.md for preview SDK links and optional build/tests'}`,
       )
     } catch (error) {
       console.error(error.message)
