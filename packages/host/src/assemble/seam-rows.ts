@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto'
 import {
   createPluginRow,
   DYNAMIC_SEAM_NAMES,
@@ -13,6 +14,7 @@ import {
 } from '@agnes/plugin-runtime/host'
 import { HostError } from '../errors.js'
 import type { PresetDoc } from '../presets/types.js'
+import { modelProfileDeployment } from '../profile/model-compatibility.js'
 import type { ResolvedProfile } from '../profile/types.js'
 import type { PackageModule, SeamInitContext } from './packages.js'
 import type { HostBuiltinRowClaim } from './seams-cordis.js'
@@ -49,6 +51,8 @@ export function buildSeamRows(
   >()
   const claims: HostBuiltinRowClaim[] = []
   const thirdPartyClaims: HostThirdPartyRowClaim[] = []
+  // Model configuration is hot-swappable; it must not invalidate private seam claims on cold resume.
+  const deployment = createHash('sha256').update(modelProfileDeployment(input.profile)).digest('hex')
   const rows = DYNAMIC_SEAM_NAMES.map((name) => {
     const id = `seam:${name}`
     const packageId = input.profile.seams[name]
@@ -79,7 +83,7 @@ export function buildSeamRows(
       })
     }
 
-    const revision = `host-seam-extras:v1:${input.profile.hash}:${name}`
+    const revision = `host-seam-extras:v1:${deployment}:${name}`
     const values = Object.freeze({
       [HOST_SEAM_INIT]: () => input.contextFor(packageId, name),
     })

@@ -95,17 +95,17 @@ export async function createRuntimeGenerationHost(
       .map((pkg) => pkg.id),
   ].filter((id): id is string => typeof id === 'string'))
     basePackages.add(id)
-  // Model/loop selections are checked by their generation's registries on open. Process backends
-  // and deployment routes must remain compatible when reopening a durable snapshot.
+  // Model routes and credential stores may change through applyModelProfile. They are not
+  // deployment identity; generation registries still validate loop/adapter selections on open.
+  const { secrets: _secrets, ...fixedAdapters } = profile.adapters
   const compatibility = createHash('sha256')
     .update(
       JSON.stringify({
-        adapters: profile.adapters,
+        adapters: fixedAdapters,
         persistence: profile.persistence,
         sandbox: profile.seams.sandbox,
         sandboxProvider: profile.sandbox,
         platform: profile.seams.platform,
-        provider: profile.provider,
         composition: profile.composition,
         bundlePresets: profile.bundlePresets,
         agnesVersion: options.agnesVersion,

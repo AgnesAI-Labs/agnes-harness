@@ -27,6 +27,7 @@ import { createCompositionHost } from './profile/composition-runtime.js'
 import type { LiveCompositionSession } from './profile/composition-state.js'
 import { trackHostComposition } from './profile/composition-tracking.js'
 import { withAssemblyIsolation } from './profile/isolation.js'
+import { modelProfileDeployment } from './profile/model-compatibility.js'
 import type { ResolvedProfile } from './profile/types.js'
 import type { SkillRuntimeInput } from './resources/skills.js'
 import { createRuntimeGenerationHost, type PluginGenerationStatus } from './runtime-generation-host.js'
@@ -259,19 +260,7 @@ async function createHostInstance(profile: ResolvedProfile, opts: HostOptions): 
       const operation = modelApplication.then(async () => {
         if (closed) throw new HostError('E_HOST_CLOSED', 'host is closed')
         next = withAssemblyIsolation(next, opts.extensionIsolation)
-        const fixed = (value: ResolvedProfile) => {
-          const {
-            provider: _provider,
-            hash: _hash,
-            chain: _chain,
-            packages: _packages,
-            adapters,
-            ...rest
-          } = value
-          const { secrets: _secrets, ...fixedAdapters } = adapters
-          return JSON.stringify({ ...rest, adapters: fixedAdapters })
-        }
-        if (fixed(next) !== fixed(profile))
+        if (modelProfileDeployment(next) !== modelProfileDeployment(profile))
           throw new HostError('E_SEAM_IMMUTABLE', 'non-model configuration requires restart')
         await a.applyModelProfile(next)
         profile = next
