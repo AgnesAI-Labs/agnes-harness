@@ -559,6 +559,12 @@ it('keeps questions, deliverables, jobs and children visible when settled proces
     'child-agent-card',
   ])
     expect(host.querySelector(`[data-testid="${id}"]`)).not.toBeNull()
+  expect(host.querySelector('[data-testid="child-engine-output"]')?.textContent).toContain(
+    'child-a completed',
+  )
+  expect(host.querySelector('[data-testid="child-engine-output"]')?.getAttribute('aria-label')).toBe(
+    '子代理引擎输出',
+  )
   expect(host.querySelector('[data-testid="question-submit"]')?.textContent).toBe('提交答案')
   expect(host.querySelector('[data-testid="deliverable-card"]')?.getAttribute('aria-label')).toBe(
     '交付物: report.txt',

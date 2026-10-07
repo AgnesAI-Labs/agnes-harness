@@ -8,6 +8,7 @@ import { Button, useUiText } from '@agnes/web-ui'
 import { type ReactNode, useEffect, useState } from 'react'
 import type { PluginAdminApi } from '../admin/plugins/api.js'
 import { BundlesPanel, SessionDefaultsPanel } from '../admin/plugins/control-panel.js'
+import { ChildEnginesPanel } from './child-engines.js'
 import { ContextPanel } from './context.js'
 import { ExamplesPanel } from './examples.js'
 import { HistorySearchPanel } from './history.js'
@@ -28,6 +29,7 @@ export const SETTINGS_PAGES = [
   'plugins',
   'providers',
   'search',
+  'engines',
   'models',
   'bundles',
   'security',
@@ -143,6 +145,7 @@ export function SettingsHub({
         )}
         {page === 'providers' && snapshot && <ProvidersPanel snapshot={snapshot} t={t} />}
         {page === 'search' && <SearchPanel t={t} canSave={canSave} />}
+        {page === 'engines' && <ChildEnginesPanel canSave={canSave} t={t} />}
         {page === 'models' && (
           <>
             <p>{t('modelsHelp')}</p>

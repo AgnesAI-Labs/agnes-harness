@@ -200,6 +200,17 @@ export function WebConversationMessages({
           {...(session ? { session } : {})}
           {...(resources ? { resources } : {})}
         />
+        {conversationToolCardKind(node) === 'child-agent' && node.resultPreview && (
+          <div
+            role="log"
+            data-testid="child-engine-output"
+            aria-live="polite"
+            aria-relevant="additions"
+            aria-label={locale?.t('cards.child.output') ?? 'cards.child.output'}
+          >
+            {node.resultPreview}
+          </div>
+        )}
         <ConversationToolCard
           key={node.id}
           node={node}

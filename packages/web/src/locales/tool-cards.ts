@@ -25,6 +25,7 @@ export const toolCardsLocaleCatalog = {
     'cards.file.title': 'Deliverable',
     'cards.file.open': 'Open',
     'cards.file.download': 'Download',
+    'cards.child.output': 'Child engine output',
   },
   'zh-CN': {
     'cards.workflow.title': '工作流运行',
@@ -50,5 +51,6 @@ export const toolCardsLocaleCatalog = {
     'cards.file.title': '交付物',
     'cards.file.open': '打开',
     'cards.file.download': '下载',
+    'cards.child.output': '子代理引擎输出',
   },
 } satisfies LocaleCatalog
