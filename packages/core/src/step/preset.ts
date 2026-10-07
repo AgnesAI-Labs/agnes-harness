@@ -119,7 +119,8 @@ export function readPreset(raw: Record<string, unknown>, name: string): PresetVi
   const d = presetDefaults()
   return {
     name,
-    ...(get(raw, 'loop') === undefined
+    // Shipped presets use loop for hygiene knobs; only an explicit id selects a loop provider.
+    ...(get(raw, 'loop.id') === undefined
       ? {}
       : {
           loop: pick<import('@agnes/extension-api').LoopSelection>(raw, 'loop', {

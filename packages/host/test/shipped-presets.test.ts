@@ -2,6 +2,7 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { presets as basePresets } from '@agnes/base'
+import { DEFAULT_LOOP } from '@agnes/core'
 import { presets as codePresets, PRESET_NAMES } from '@agnes/code'
 import { afterEach, describe, expect, it } from 'vitest'
 import type { PresetDoc } from '../src/presets/types.js'
@@ -77,11 +78,21 @@ describe('the shipped presets, loaded from disk', () => {
 
   it('the default recipe carries a turn end to end', async () => {
     const dataDir = tmp()
-    const t = await hostFor(dataDir, 'standard')
+    let t = await hostFor(dataDir, 'standard')
     try {
       const r = await runOnce(t.host, { prompt: 'hello', cwd: dataDir })
       expect(r.reason).toBe('completed')
       expect(r.finalText).toContain('opened on standard')
+      const session = [...t.host.kernel.sessions.values()][0]!
+      expect(session.loop).toEqual(DEFAULT_LOOP)
+      const key = session.key
+      await t.host.close()
+      t = await hostFor(dataDir, 'standard')
+      const resumed = await t.host.createSession({ key, cwd: dataDir })
+      expect(resumed.loop).toEqual(DEFAULT_LOOP)
+      expect((await resumed.scan({ type: 'session/start', limit: 1 }))[0]?.data).toMatchObject({
+        loop: DEFAULT_LOOP,
+      })
     } finally {
       await t.host.close()
     }
