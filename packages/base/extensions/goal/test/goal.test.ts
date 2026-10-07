@@ -140,7 +140,11 @@ describe('ledger goal state', () => {
 
 it('blocks exhausted budgets and unavailable continuation through the public hooks', async () => {
   let state = input(goalProjection.init(), '/goal --budget 2 Finish')
-  const hooks: { before_step?: HookHandler<'before_step'>; turn_stopping?: HookHandler<'turn_stopping'> } = {}
+  const hooks: {
+    before_step?: HookHandler<'before_step'>
+    turn_stopping?: HookHandler<'turn_stopping'>
+    session_start?: HookHandler<'session_start'>
+  } = {}
   const noop = () => () => undefined
   const api = {
     ctx: { signal: new AbortController().signal },
@@ -187,4 +191,8 @@ it('blocks exhausted budgets and unavailable continuation through the public hoo
     phase: 'blocked',
     reason: 'Automatic continuation unavailable on this host',
   })
+  state = input(state, '/goal resume')
+  if (!hooks.session_start) throw new Error('missing session start hook')
+  await hooks.session_start({ reason: 'resume', preset: 'test', cwd: '/fixture' }, ctx)
+  expect(state.goal?.phase).toBe('paused')
 })

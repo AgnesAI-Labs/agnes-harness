@@ -69,6 +69,16 @@ it.each([undefined, { ok: true }])(
 it('restores nested caller context and rejects appends outside any invocation', async () => {
   const { a, b, scope } = await setup()
   expect(() => scope.append(type, {}, meta)).toThrow('no active session')
+  expect(() => scope.assertActive(meta.source)).toThrow('no active session')
+  await scope.run(
+    a,
+    a.ac.signal,
+    () => {
+      expect(() => scope.assertActive(meta.source)).not.toThrow()
+      expect(() => scope.assertActive('fixture/other')).toThrow('no active session')
+    },
+    meta.source,
+  )
   await scope.run(a, a.ac.signal, async () => {
     await scope.run(b, b.ac.signal, () => scope.append(type, { nested: true }, meta))
     await scope.append(type, { nested: false }, meta)
@@ -87,10 +97,16 @@ it('rejects cancelled and late callbacks even when their async context still exi
   const barrier = new Promise<void>((resolve) => {
     release = resolve
   })
-  const pending = scope.run(a, controller.signal, async () => {
-    await barrier
-    expect(() => scope.append(type, {}, meta)).toThrow('no active session')
-  })
+  const pending = scope.run(
+    a,
+    controller.signal,
+    async () => {
+      await barrier
+      expect(() => scope.append(type, {}, meta)).toThrow('no active session')
+      expect(() => scope.assertActive(meta.source)).toThrow('no active session')
+    },
+    meta.source,
+  )
   controller.abort()
   release()
   await pending
@@ -99,15 +115,21 @@ it('rejects cancelled and late callbacks even when their async context still exi
     late = () => {
       try {
         expect(() => scope.append(type, {}, meta)).toThrow('no active session')
+        expect(() => scope.assertActive(meta.source)).toThrow('no active session')
         resolve()
       } catch (error) {
         reject(error)
       }
     }
   })
-  await scope.run(a, a.ac.signal, async () => {
-    setTimeout(() => late?.(), 0)
-  })
+  await scope.run(
+    a,
+    a.ac.signal,
+    async () => {
+      setTimeout(() => late?.(), 0)
+    },
+    meta.source,
+  )
   await lateResult
   expect(await a.scan({ type, toSeq: a.lastSeq })).toEqual([])
 })
