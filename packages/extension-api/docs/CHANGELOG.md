@@ -4,6 +4,13 @@ API additions require a minor version; removals or semantic changes require a ma
 
 ## Unreleased
 
+`definePersistenceProvider` publishes a session persistence provider. The store methods are the ones Core's
+log storage and the host package tables already use: `open`, `commit`, `renew`, `release`, `scan`,
+`registers`, `tables`, and `close`. `DEFAULT_PERSISTENCE_PROVIDER_ID` is `sqlite`. `PERSISTENCE_SCAN_PAGE_MAX`
+is 500, the same page cap as a log scan. `PERSISTENCE_EFFECT` is `restart-required`: selecting another id
+applies on the next process start. `persistenceRegisterKey` and `isPersistenceTombstone` spell register cells
+the same way Core does. `API_VERSION` stays 1.4.0.
+
 `ToolContext` gains the optional read-only `defaultTimeoutMs`: the preset-wide default for a tool call
 (`tools.timeout_ms`), next to `timeoutMs`, which is this call's own limit. A tool that lets a caller ask for
 more time uses the default when asked for nothing and caps a request at `timeoutMs`; the `shell` tool does.

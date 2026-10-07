@@ -22,6 +22,7 @@ describe('author API consistency', () => {
       'NEGATIVE_ACTIONS',
       'TRANSPORT_CONTRACT_CASES',
       'defineFixture',
+      'persistenceContract',
       'projectionFixture',
       'serviceFixture',
     ])

@@ -57,3 +57,4 @@ export {
   type TransportContractCase,
   type TransportFixture,
 } from './transport-contract.js'
+export { persistenceContract, type PersistenceContractFactory } from './persistence-contract.js'

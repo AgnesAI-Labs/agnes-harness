@@ -37,3 +37,4 @@ export type {
   CompactionEngineRegistration,
   CompactionEnginePluginContext,
 } from './compaction-engine.js'
+export * from './persistence.js'
