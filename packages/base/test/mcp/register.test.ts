@@ -7,7 +7,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { MAX_READ_BYTES, readTool } from '../../extensions/tools-core/src/tools/read.js'
 import { grepTool } from '../../extensions/tools-search/src/tools/grep.js'
 import { connectMcp, MAX_MCP_REDIRECTS, type McpSdkDeps } from '../../src/mcp/connect.js'
-import { mcpLocalToolPrefix } from '../../src/mcp/naming.js'
+import { mcpLegacyToolName, mcpPublicToolName } from '../../src/mcp/naming.js'
 import {
   inspectRemoteCatalog,
   MAX_MCP_REMOTE_CONTENT_BLOCKS,
@@ -137,10 +137,28 @@ function hostileMessageError() {
 }
 
 const stdio = { id: 'gh', transport: 'stdio' as const, cmd: ['gh-mcp'], defer: true }
-// The prefix is `mcp_gh_<hash8('gh')>_`, not the old plain `mcp_gh_` -- computed via the shared
-// function rather than hardcoded, so this file does not itself become a second place a collision
-// fix could silently miss (design 2026-09-23-mcp-tool-name-collision-design.md §0.4).
-const GH_PREFIX = mcpLocalToolPrefix('gh')
+
+/** Public names in catalog order, then legacy aliases that differ. Mirrors the registrar. */
+function admittedNames(serverId: string, remoteNames: readonly string[]): string[] {
+  const reserved = new Set<string>()
+  const names: string[] = []
+  const aliases: string[] = []
+  for (const remote of remoteNames) {
+    const name = mcpPublicToolName(serverId, remote, reserved)
+    reserved.add(name)
+    names.push(name)
+    try {
+      const legacy = mcpLegacyToolName(serverId, remote)
+      if (legacy !== name && !reserved.has(legacy)) {
+        reserved.add(legacy)
+        aliases.push(legacy)
+      }
+    } catch {
+      // A legacy name that cannot be formed is omitted, matching registration.
+    }
+  }
+  return [...names, ...aliases]
+}
 
 describe('registerRemoteToolsStrict', () => {
   const connection = (): McpConnection => ({
@@ -185,9 +203,13 @@ describe('registerRemoteToolsStrict', () => {
     await registerRemoteToolsStrict(dotServer.api, oneToolConn('a.b'), { ...stdio, id: 'a.b' })
     await registerRemoteToolsStrict(underscoreServer.api, oneToolConn('a_b'), { ...stdio, id: 'a_b' })
 
-    expect(dotServer.tools).toHaveLength(1)
-    expect(underscoreServer.tools).toHaveLength(1)
+    expect(dotServer.tools.map((tool) => tool.name)).toEqual(admittedNames('a.b', ['read']))
+    expect(underscoreServer.tools.map((tool) => tool.name)).toEqual(admittedNames('a_b', ['read']))
     expect(dotServer.tools[0]?.name).not.toBe(underscoreServer.tools[0]?.name)
+    const shared = dotServer.tools.map((tool) => tool.name).filter((name) =>
+      underscoreServer.tools.some((tool) => tool.name === name),
+    )
+    expect(shared).toEqual([])
   })
 
   it('does not reject a long server id that used to leave no room for any remote tool name', async () => {
@@ -198,17 +220,14 @@ describe('registerRemoteToolsStrict', () => {
     const longId = `server-${'x'.repeat(80)}`
     const { api, tools } = fakeApi()
     await registerRemoteToolsStrict(api, { ...connection(), id: longId }, { ...stdio, id: longId })
-    expect(tools.map((tool) => tool.name)).toEqual([
-      `${mcpLocalToolPrefix(longId)}list_prs`,
-      `${mcpLocalToolPrefix(longId)}merge`,
-    ])
+    expect(tools.map((tool) => tool.name)).toEqual(admittedNames(longId, ['list_prs', 'merge']))
   })
 
   it('registers prefixed tools, hint-derived metadata, and one server resource', async () => {
     const { api, resources, tools } = fakeApi()
     await registerRemoteToolsStrict(api, connection(), stdio)
 
-    expect(tools.map((tool) => tool.name)).toEqual([`${GH_PREFIX}list_prs`, `${GH_PREFIX}merge`])
+    expect(tools.map((tool) => tool.name)).toEqual(admittedNames('gh', ['list_prs', 'merge']))
     expect(tools.every((tool) => checkToolDef(tool, { prefix: 'mcp_' }).ok)).toBe(true)
     expect(tools[0]?.meta).toMatchObject({
       deferLoading: true,
@@ -759,11 +778,25 @@ describe('registerRemoteToolsStrict', () => {
     expect(result).toMatchObject({ content: [{ text: expect.stringContaining('[REDACTED]') }] })
   })
 
-  it('rejects a malformed or colliding remote catalog before partial registration', async () => {
+  it('hashes a rewritten remote name so a-b and a_b are both admitted', async () => {
     const { api, resources, tools } = fakeApi()
     const conn = connection()
     conn.listTools = async () => [
       { name: 'a-b', description: '', inputSchema: { type: 'object' } },
+      { name: 'a_b', description: '', inputSchema: { type: 'object' } },
+    ]
+    await registerRemoteToolsStrict(api, conn, stdio)
+    const names = tools.map((tool) => tool.name)
+    expect(names).toEqual(admittedNames('gh', ['a-b', 'a_b']))
+    expect(new Set(names).size).toBe(names.length)
+    expect(resources).toHaveLength(1)
+  })
+
+  it('rejects an identical raw name before partial registration', async () => {
+    const { api, resources, tools } = fakeApi()
+    const conn = connection()
+    conn.listTools = async () => [
+      { name: 'a_b', description: '', inputSchema: { type: 'object' } },
       { name: 'a_b', description: '', inputSchema: { type: 'object' } },
     ]
     await expect(registerRemoteToolsStrict(api, conn, stdio)).rejects.toThrow('collision')
@@ -775,7 +808,10 @@ describe('registerRemoteToolsStrict', () => {
     const { api } = fakeApi()
     const close = vi.fn(async () => undefined)
     const conn = { ...connection(), close }
-    const claimedNames = new Set([`${GH_PREFIX}list_prs`])
+    const stable = mcpPublicToolName('gh', 'list_prs')
+    const hashed = mcpPublicToolName('gh', 'list_prs', new Set([stable]))
+    const alt = mcpPublicToolName('gh', 'list_prs', new Set([stable, hashed]))
+    const claimedNames = new Set([stable, hashed, alt])
     await expect(
       registerRemoteToolsStrict(api, conn, stdio, { claimedNames, ownsConnection: false }),
     ).rejects.toThrow('duplicate MCP tool name')
@@ -869,7 +905,8 @@ describe('registerRemoteToolsStrict', () => {
     dispose()
     dispose()
     await Promise.resolve()
-    expect(disposed).toEqual([`tool:${GH_PREFIX}merge`, `tool:${GH_PREFIX}list_prs`, 'resource:gh'])
+    const names = admittedNames('gh', ['list_prs', 'merge'])
+    expect(disposed).toEqual([...names].reverse().map((name) => `tool:${name}`).concat('resource:gh'))
     expect(close).toHaveBeenCalledTimes(1)
   })
   it('enforces an allow policy before registration and strict catalog health checks', async () => {
@@ -878,7 +915,7 @@ describe('registerRemoteToolsStrict', () => {
     expect((await inspectRemoteCatalog(conn, cfg)).tools).toHaveLength(1)
     const state = fakeApi()
     await registerRemoteToolsStrict(state.api, conn, cfg)
-    expect(state.tools.map((tool) => tool.name)).toEqual([`${GH_PREFIX}list_prs`])
+    expect(state.tools.map((tool) => tool.name)).toEqual(admittedNames('gh', ['list_prs']))
   })
 })
 

@@ -87,7 +87,9 @@
       "./extensions/computer-use",
       "./extensions/interaction",
       "./extensions/deliverables",
-      "./extensions/jobs"
+      "./extensions/jobs",
+      "./extensions/plan-mode",
+      "./extensions/mcp-resources"
     ]
   },
   "scripts": {

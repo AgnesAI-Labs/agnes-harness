@@ -13,7 +13,9 @@ import {
 import interactionExtension from '../extensions/interaction/src/index.js'
 import { createJobsExtension } from '../extensions/jobs/src/index.js'
 import { shellJobsFor } from '../extensions/jobs/src/registry.js'
+import mcpResourcesExtension from '../extensions/mcp-resources/src/index.js'
 import { mcpSearchExtension } from '../extensions/mcp-search/src/index.js'
+import planModeExtension from '../extensions/plan-mode/src/index.js'
 import { mcpCatalogHubFor } from '../extensions/mcp-server/src/catalog-hub.js'
 import pluginCreatorExtension from '../extensions/plugin-creator/src/index.js'
 import { createPrivacyExtension, sessionEgressAuthority } from '../extensions/privacy/src/index.js'
@@ -199,6 +201,8 @@ export const ecosystem = {
   'agnes/refine': (init: SeamInitContext): ExtensionFactory => createEcosystemExtensions(init).refine(),
   'agnes/subagent': (init: SeamInitContext): ExtensionFactory => createEcosystemExtensions(init).subagent(),
   'agnes/skills': (init: SeamInitContext): ExtensionFactory => createEcosystemExtensions(init).skills(),
+  'agnes/plan-mode': (): ExtensionFactory => planModeExtension,
+  'agnes/mcp-resources': (): ExtensionFactory => mcpResourcesExtension,
   'agnes/computer-use': (init: SeamInitContext): ExtensionFactory => {
     if (!init.computerUseBackendProvider)
       throw new Error('computer-use extension requires the Host-owned backend provider')

@@ -1,14 +1,26 @@
 import { defaultToolPolicy } from '@agnes/core'
-import { registerToolPolicyPlugin, type ToolPolicyPluginContext } from '@agnes/extension-api'
+import { registerToolPolicyPlugin, type ToolPolicy, type ToolPolicyPluginContext } from '@agnes/extension-api'
+import { decidePlanMode } from '../../plan-mode/src/policy.js'
 import { sandboxToolPolicies } from '../../sandbox/src/tool-policies.js'
 
-/** Same risk/taint/full-access decisions as the existing approval extension. Human prompts,
- * command-table rules and durable tickets continue through its approval seam. */
-export const toolPolicy = defaultToolPolicy
+/** Plan mode sits in front of every shipped policy, including full-access. The fallback still owns
+ * risk, taint, and preset denial. Human prompts and durable tickets stay on the approval seam. */
+function withPlanMode(policy: ToolPolicy): ToolPolicy {
+  return {
+    id: policy.id,
+    version: policy.version,
+    decide(input, signal) {
+      return decidePlanMode(input, signal, policy)
+    },
+  }
+}
+
+export const toolPolicy = withPlanMode(defaultToolPolicy)
 export const toolPolicyPlugin = {
   inject: ['toolPolicies'],
   apply(ctx: ToolPolicyPluginContext) {
     registerToolPolicyPlugin(ctx, '@agnes/base', toolPolicy)
-    for (const policy of sandboxToolPolicies) registerToolPolicyPlugin(ctx, '@agnes/base', policy)
+    for (const policy of sandboxToolPolicies)
+      registerToolPolicyPlugin(ctx, '@agnes/base', withPlanMode(policy))
   },
 }

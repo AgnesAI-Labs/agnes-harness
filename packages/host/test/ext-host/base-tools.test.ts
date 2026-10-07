@@ -286,6 +286,8 @@ describe('a host assembled from a profile naming @agnes/base', () => {
         'agnes/plugin-creator',
         'agnes/mcp-search',
         'agnes/skills',
+        'agnes/plan-mode',
+        'agnes/mcp-resources',
       ])
       const byId = (id: string) => status.find((entry) => entry.id === id)
       const skills = byId('agnes/skills')
@@ -594,7 +596,7 @@ describe('a host assembled from a profile naming @agnes/base', () => {
         version: '0.1.0',
         apiRange: '^1.0',
         entry: './index.mjs',
-        capabilities: { tools: { prefix: mcpLocalToolPrefix('gh') }, resources: ['mcp' as const] },
+        capabilities: { tools: { prefix: 'mcp_' }, resources: ['mcp' as const] },
       },
       factory: (ctx: Parameters<typeof mcpCatalogHubFor>[0]) =>
         mcpServerExtension(
@@ -687,7 +689,7 @@ describe('a host assembled from a profile naming @agnes/base', () => {
           version: '0.1.0',
           apiRange: '^1.0',
           entry: './index.mjs',
-          capabilities: { tools: { prefix: mcpLocalToolPrefix(serverId) }, resources: ['mcp' as const] },
+          capabilities: { tools: { prefix: 'mcp_' }, resources: ['mcp' as const] },
         },
         // deps.connect is omitted -- mcpServerExtension defaults it to the real connectMcp(), so
         // this is a real stdio subprocess, not a hand-rolled McpConnection.
@@ -807,9 +809,11 @@ describe('a host assembled from a profile naming @agnes/base', () => {
       packageDirs: { '@agnes/base': baseDir },
     })
     // The skills extension is loaded but inert until a daemon worker supplies a private runtime
-    // snapshot. An empty resource-control view must not alter the legacy Host tool surface.
-    // Twenty-one runtime tools plus the four registered plugin-creator tools.
-    expect(host.kernel.tools.size).toBe(25)
+    // snapshot, and this host does not load code-mode. Count: tools-core 5, tools-search 3,
+    // tools-web 2, interaction 1, deliverables 1, jobs 3, compaction 1, refine 1, subagent 8,
+    // mcp-search 2, computer-use 1, plugin-creator 4, exit_plan_mode, and the three stable MCP
+    // resource tools.
+    expect(host.kernel.tools.size).toBe(36)
     for (const name of [
       'subagent_list',
       'subagent_send_message',

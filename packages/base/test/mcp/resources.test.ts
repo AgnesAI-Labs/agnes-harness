@@ -3,6 +3,7 @@ import { createRequire } from 'node:module'
 import { checkToolDef, type ExtensionAPI, type ToolDef } from '@agnes/extension-api'
 import { afterEach, describe, expect, it } from 'vitest'
 import { connectMcp } from '../../src/mcp/connect.js'
+import { mcpPublicToolName } from '../../src/mcp/naming.js'
 import { type McpConnection, registerRemoteToolsStrict } from '../../src/mcp/register.js'
 import {
   MCP_RESOURCE_LIST_SUFFIX,
@@ -97,7 +98,10 @@ describe('MCP resource tools', () => {
   it('adds no resource tools unless the server advertises resources', async () => {
     const { api, tools } = apiOf()
     await registerRemoteToolsStrict(api, connection({ supportsResources: false }), cfg)
-    expect(tools.map((tool) => tool.name)).toEqual([expect.stringMatching(/_echo$/)])
+    expect(tools.map((tool) => tool.name)).toEqual([
+      mcpPublicToolName('docs', 'echo'),
+      expect.stringMatching(/_echo$/),
+    ])
   })
 
   it('registers list, template, and read tools and omits only a conflicting name', async () => {
@@ -116,7 +120,12 @@ describe('MCP resource tools', () => {
       }),
       cfg,
     )
-    expect(tools.map((tool) => tool.name)).toEqual([names.list, names.templates, names.read])
+    expect(tools.map((tool) => tool.name)).toEqual([
+      mcpPublicToolName('docs', 'res_list'),
+      names.templates,
+      names.read,
+      names.list,
+    ])
     expect(tools.find((tool) => tool.name === names.list)?.description).toBe('remote owns this name')
     expect(warn.calls).toEqual(['MCP resource tool name conflicts with a registered tool'])
     expect(resources[0]?.description).toContain('2 resource tools')

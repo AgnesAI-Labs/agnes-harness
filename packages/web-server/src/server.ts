@@ -2,10 +2,13 @@ import { createHash, randomBytes } from 'node:crypto'
 import { readFile, stat } from 'node:fs/promises'
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http'
 import { extname, isAbsolute, join, posix } from 'node:path'
+import { applyPlanCommand } from './plan-mode.js'
 import { VENDOR_ENTRY_NAMES } from './vendor-assets.js'
 
 export const DEFAULT_WEB_PORT = 4177
 export const WORKSPACE_PICKER_PATH = '/api/workspace-picker'
+export const PLAN_MODE_PATH = '/api/plan-mode'
+const PLAN_MODE_BODY_LIMIT = 64 * 1024
 const HOST = '127.0.0.1'
 const FILES = new Set([
   'index.html',
@@ -252,6 +255,30 @@ function fileName(requestUrl: string): string {
   return file
 }
 
+function readLimitedBody(request: IncomingMessage, limit: number): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const chunks: Buffer[] = []
+    let size = 0
+    const fail = (): void => {
+      request.removeAllListeners('data')
+      reject(new Error('invalid body'))
+    }
+    request.on('data', (chunk: Buffer) => {
+      size += chunk.length
+      if (size > limit) {
+        fail()
+        return
+      }
+      chunks.push(chunk)
+    })
+    request.on('end', () => {
+      if (size !== limit) fail()
+      else resolve(Buffer.concat(chunks).toString('utf8'))
+    })
+    request.on('error', fail)
+  })
+}
+
 function json(response: ServerResponse, status: number, body: unknown): void {
   response.writeHead(status, {
     'Content-Type': 'application/json; charset=utf-8',
@@ -465,6 +492,66 @@ export async function createWebServer(options: WebServerOptions): Promise<WebSer
           if (activePicker === controller) activePicker = undefined
           pickerPending = false
         }
+        return
+      }
+      if (requestUrl.pathname === PLAN_MODE_PATH) {
+        const site = request.headers['sec-fetch-site']
+        if (
+          requestUrl.origin !== expectedOrigin.origin ||
+          request.url !== PLAN_MODE_PATH ||
+          requestUrl.search !== '' ||
+          (site !== undefined && site !== 'same-origin' && site !== 'none') ||
+          (request.headers.origin !== undefined && request.headers.origin !== expectedOrigin.origin)
+        ) {
+          json(response, 403, { error: { code: 'ORIGIN_REJECTED' } })
+          return
+        }
+        if (request.method !== 'POST') {
+          response.writeHead(405, { Allow: 'POST' }).end()
+          return
+        }
+        if (request.headers.origin !== expectedOrigin.origin) {
+          json(response, 403, { error: { code: 'ORIGIN_REJECTED' } })
+          return
+        }
+        const contentType = request.headers['content-type']
+        if (
+          request.headers['transfer-encoding'] !== undefined ||
+          typeof contentType !== 'string' ||
+          !contentType.startsWith('application/json')
+        ) {
+          json(response, 400, { error: { code: 'INVALID_REQUEST' } })
+          return
+        }
+        const length = Number(request.headers['content-length'] ?? '')
+        if (!Number.isInteger(length) || length < 2 || length > PLAN_MODE_BODY_LIMIT) {
+          json(response, 400, { error: { code: 'INVALID_REQUEST' } })
+          return
+        }
+        let raw: string
+        try {
+          raw = await readLimitedBody(request, length)
+        } catch {
+          if (!response.writableEnded) json(response, 400, { error: { code: 'INVALID_REQUEST' } })
+          return
+        }
+        let parsed: { cwd?: unknown; line?: unknown }
+        try {
+          parsed = JSON.parse(raw) as { cwd?: unknown; line?: unknown }
+        } catch {
+          json(response, 400, { error: { code: 'INVALID_REQUEST' } })
+          return
+        }
+        if (typeof parsed.cwd !== 'string' || typeof parsed.line !== 'string') {
+          json(response, 400, { error: { code: 'INVALID_REQUEST' } })
+          return
+        }
+        const result = applyPlanCommand(parsed.cwd, parsed.line)
+        if (!result.ok) {
+          json(response, 400, { error: { code: result.code } })
+          return
+        }
+        json(response, 200, { active: result.active, text: result.text })
         return
       }
       if (request.url === '/__agnes/dev/reload.js') {

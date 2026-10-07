@@ -3,8 +3,8 @@ import {
   type ConnectionStatusEvent,
   type McpServerConfig,
   type McpServerOpener,
+  MCP_COMPAT_PREFIX,
   mcpCatalogHubFor,
-  mcpLocalToolPrefix,
   mcpServerConfigFromDefinition,
   mcpServerExtension,
 } from '@agnes/base'
@@ -135,17 +135,12 @@ export function mcpServerRowsFromDefinitions(
           version: '0.1.0',
           apiRange: '^1.0',
           entry: './index.mjs',
-          // Exactly what this one server uses (register.ts): tools under its own
-          // `mcpLocalToolPrefix(serverId)` prefix, one `mcp` resource, and the artifact store --
-          // the output guard spills an oversized result (and stores image blocks) through
-          // `ctx.artifacts.put`, which the ext host refuses to a row that did not declare it. The
-          // remote server never sees `ctx`; only this first-party extension code calls it. The ext
-          // host refuses anything undeclared. Calling the same shared function `localName()` calls
-          // (rather than re-deriving the prefix here) is what keeps this declaration and the actual registered
-          // names from drifting apart -- see naming.ts's doc comment (design
-          // 2026-09-23-mcp-tool-name-collision-design.md §0.4).
+          // During the compatibility period the grant is `mcp_`, which admits both the stable
+          // `mcp__<server>__<tool>` name and the legacy `mcp_<slug>_<hash>_` alias. It is wider
+          // than one server's hashed prefix; the registrar still emits only this server's names.
+          // Stable resource tools live on `agnes/mcp-resources` because they do not start with `mcp_`.
           capabilities: Object.freeze({
-            tools: Object.freeze({ prefix: mcpLocalToolPrefix(definition.serverId) }),
+            tools: Object.freeze({ prefix: MCP_COMPAT_PREFIX }),
             resources: ['mcp' as const],
             artifacts: true as const,
           }),

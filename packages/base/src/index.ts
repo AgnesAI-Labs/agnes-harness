@@ -193,7 +193,13 @@ export {
   type ToolIndexReader,
   type ToolIndexRow,
 } from './mcp/index-table.js'
-export { mcpLocalToolPrefix } from './mcp/naming.js'
+export {
+  MCP_COMPAT_PREFIX,
+  mcpLegacyToolName,
+  mcpLocalToolPrefix,
+  mcpPublicToolName,
+  mcpStablePrefix,
+} from './mcp/naming.js'
 export {
   inspectRemoteCatalog,
   type McpConnection,
@@ -205,11 +211,15 @@ export {
   validateRemoteCatalog,
 } from './mcp/register.js'
 export {
+  bindMcpResourceServer,
+  LIST_MCP_RESOURCES,
+  LIST_MCP_RESOURCE_TEMPLATES,
   MCP_RESOURCE_LIST_SUFFIX,
   MCP_RESOURCE_READ_SUFFIX,
   MCP_RESOURCE_TEMPLATES_SUFFIX,
   type McpResourceToolSuffix,
   mcpResourceToolName,
+  READ_MCP_RESOURCE,
 } from './mcp/resources.js'
 
 export type {
@@ -273,7 +283,11 @@ export const presets: Record<string, PresetDoc> = {
   ),
 }
 
-export { createDefaultCompactionEngine } from '../extensions/compaction/src/engine.js'
+export {
+  createDefaultCompactionEngine,
+  resolveCompactionQualityConfig,
+} from '../extensions/compaction/src/engine.js'
+export type { CompactionQualityConfig } from '../extensions/compaction/src/engine.js'
 export { sandboxToolPolicies } from '../extensions/sandbox/src/tool-policies.js'
 export {
   ACP_CHILD_CAPABILITIES,

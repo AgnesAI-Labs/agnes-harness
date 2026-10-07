@@ -98,6 +98,7 @@ import {
   type WebView,
   webView,
 } from './view.js'
+import { PlanModeRequestError, submitPlanCommand } from './plan-mode.js'
 import { requestWorkspacePicker, workspacePickerAvailable } from './workspace-picker.js'
 
 installBrowserLogCapture()
@@ -2162,9 +2163,31 @@ function imageSubmissionFrameBytes(sessionId: string, content: ContentBlock[], f
     }),
   ).byteLength
 }
+function isPlanCommand(input: string): boolean {
+  return /^\/plan(?:\s|$)/.test(input)
+}
 function submitComposer(): void {
   const originalDraft = composerRuntime.getDraft()
   const input = originalDraft.trim()
+  if (isPlanCommand(input)) {
+    const cwd = selectedWorkspace?.path
+    if (!cwd) {
+      showError(new Error(t('app.plan.noWorkspace')))
+      return
+    }
+    composerRuntime.setDraft('')
+    sessionStorage.removeItem(composerDraftKey)
+    composerRuntime.resize()
+    void submitPlanCommand(cwd, input)
+      .then((result) => {
+        notice.textContent = result.text
+        notice.dataset.kind = ''
+      })
+      .catch((error: unknown) => {
+        showError(error instanceof PlanModeRequestError ? new Error(t('app.plan.failed')) : error)
+      })
+    return
+  }
   const attachments = composerRuntime.getAttachmentBlocks()
   const images = attachments.filter((block) => block.type === 'image')
   let session = current

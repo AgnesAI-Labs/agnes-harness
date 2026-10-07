@@ -14,6 +14,7 @@ export const EXTENDED_KEYS = [
   'commands.doctor',
   'commands.rewind',
   'commands.compact',
+  'commands.plan',
   'commands.preset',
   'commands.theme',
   'commands.model',
@@ -152,6 +153,7 @@ const DICT: Record<Locale, Record<ExtendedKey, string>> = {
     'commands.doctor': 'Show the read-only Computer Use diagnostics',
     'commands.rewind': 'Fork a new session from the given sequence number',
     'commands.compact': 'Compact the context manually with the current strategy',
+    'commands.plan': 'Turn plan mode on or off, or set the planning instruction',
     'commands.preset': 'Switch the preset',
     'commands.theme': 'Switch this TUI to light, dark or mono theme',
     'commands.model':
@@ -278,6 +280,7 @@ const DICT: Record<Locale, Record<ExtendedKey, string>> = {
     'commands.doctor': '查看 Computer Use 的只读诊断状态',
     'commands.rewind': '从指定序号分叉出新会话',
     'commands.compact': '通过当前压缩策略手动压缩上下文',
+    'commands.plan': '开启或关闭计划模式，或设置计划说明',
     'commands.preset': '切换预设',
     'commands.theme': '切换当前 TUI 的明亮、深色或无色主题',
     'commands.model': '列出可用模型并选择，或直接切换指定槽位（可选带上 thinking 档）',

@@ -1,0 +1,17 @@
+{
+  "id": "agnes/mcp-resources",
+  "version": "0.1.0",
+  "apiRange": "^1.0",
+  "entry": "./src/index.ts",
+  "capabilities": {
+    "tools": {
+      "prefix": "",
+      "names": ["list_mcp_resources", "list_mcp_resource_templates", "read_mcp_resource"]
+    },
+    "hooks": [],
+    "slots": [],
+    "events": false,
+    "resources": [],
+    "network": []
+  }
+}

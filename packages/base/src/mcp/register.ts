@@ -21,8 +21,8 @@ import {
 import { MAX_READ_BYTES } from '../../extensions/tools-core/src/tools/read.js'
 import { remoteInputSchema } from '../mcp-json-schema.js'
 import { type McpServerConfig, mcpErrorText, redactMcpSecrets } from './config.js'
-import { mcpLocalToolPrefix } from './naming.js'
-import { admitMcpResourceTools } from './resources.js'
+import { mcpLegacyToolName, mcpPublicToolName } from './naming.js'
+import { admitMcpResourceTools, bindMcpResourceServer } from './resources.js'
 
 export type McpRemoteTool = {
   name: string
@@ -105,11 +105,10 @@ export type McpConnection = {
 const redactSecrets = redactMcpSecrets
 const errorText = mcpErrorText
 
-function localName(serverId: string, remoteName: string): string {
-  const remote = remoteName.replace(/[^A-Za-z0-9_]/g, '_')
-  const prefix = mcpLocalToolPrefix(serverId)
-  if (!remote || prefix.length >= 64) throw new Error(`invalid remote tool name: ${remoteName}`)
-  return `${prefix}${remote.slice(0, 64 - prefix.length)}`
+function allocatePublicName(serverId: string, remoteName: string, taken: ReadonlySet<string>): string {
+  const name = mcpPublicToolName(serverId, remoteName, taken)
+  if (!name || taken.has(name)) throw new Error(`remote tool name collision: ${name || remoteName}`)
+  return name
 }
 
 function positiveLimit(value: number, name: string): number {
@@ -297,14 +296,14 @@ function remoteDefinition(
   conn: McpConnection,
   cfg: McpServerConfig,
   remote: McpRemoteTool,
-  mediaLimits?: McpMediaLimits,
+  mediaLimits: McpMediaLimits | undefined,
+  name: string,
 ): ToolDef {
   // Hints never override contradictory destructive metadata. Missing write hints stay
   // conservative; idempotency describes replay, not permission to act unattended.
   const destructive = remote.annotations?.destructiveHint ?? remote.annotations?.readOnlyHint !== true
   const readOnly = remote.annotations?.readOnlyHint === true && !destructive
   const idempotent = remote.annotations?.idempotentHint === true
-  const name = localName(cfg.id, remote.name)
   return defineTool({
     name,
     description: redactSecrets(remote.description || remote.name, cfg),
@@ -435,7 +434,7 @@ function mcpToolProblem(
   if (typeof tool?.name !== 'string' || !tool.name || typeof tool.description !== 'string') return 'malformed'
   if (tool.name.length > 128) return 'invalid-name'
   try {
-    localName(cfg.id, tool.name)
+    mcpLegacyToolName(cfg.id, tool.name)
   } catch {
     return 'invalid-name'
   }
@@ -443,7 +442,7 @@ function mcpToolProblem(
   if (!inspected.ok) return inspected.reason.startsWith('size ') ? 'schema-too-large' : 'invalid-schema'
   let definition: ToolDef
   try {
-    definition = remoteDefinition(conn, cfg, tool)
+    definition = remoteDefinition(conn, cfg, tool, undefined, mcpPublicToolName(cfg.id, tool.name))
   } catch {
     return 'invalid-schema'
   }
@@ -479,7 +478,8 @@ export function validateRemoteCatalog(
     allowed === undefined
       ? remote
       : remote.filter((tool) => typeof tool?.name === 'string' && allowed.has(tool.name))
-  const names = new Set<string>()
+  const seenRaw = new Set<string>()
+  const taken = new Set<string>()
   const tools: McpRemoteTool[] = []
   const skipped: McpSkippedTool[] = []
   for (const tool of accepted) {
@@ -489,9 +489,9 @@ export function validateRemoteCatalog(
       skipped.push(typeof name === 'string' && name && name.length <= 128 ? { code, name } : { code })
       continue
     }
-    const local = localName(cfg.id, tool.name)
-    if (names.has(local)) throw new Error(`remote tool name collision: ${local}`)
-    names.add(local)
+    if (seenRaw.has(tool.name)) throw new Error(`remote tool name collision: ${tool.name}`)
+    seenRaw.add(tool.name)
+    taken.add(allocatePublicName(cfg.id, tool.name, taken))
     tools.push(tool)
   }
   return Object.freeze({ tools: Object.freeze(tools), skipped: Object.freeze(skipped) })
@@ -546,17 +546,43 @@ export async function registerRemoteToolsStrict(
         : validateRemoteCatalog(conn, cfg, opts.catalog)
     opts.onRemoteCatalog?.(remote, skipped)
     const mediaLimits = resolveMediaLimits(opts.mediaLimits)
-    const definitions = remote.map((tool) => remoteDefinition(conn, cfg, tool, mediaLimits))
-    const duplicate = definitions.find((definition) => opts.claimedNames?.has(definition.name))
-    if (duplicate) throw new Error(`duplicate MCP tool name: ${duplicate.name}`)
-    const taken = new Set<string>([
-      ...definitions.map((definition) => definition.name),
-      ...(opts.claimedNames ?? []),
-    ])
-    const admitted = admitMcpResourceTools(conn, cfg, taken, (name) =>
+    const external = opts.claimedNames ?? new Set<string>()
+    const reserved = new Set<string>(external)
+    const allocated: { tool: McpRemoteTool; name: string; legacy?: string }[] = []
+    for (const tool of remote) {
+      const stable = mcpPublicToolName(cfg.id, tool.name)
+      const name = mcpPublicToolName(cfg.id, tool.name, reserved)
+      if (!name || reserved.has(name)) {
+        throw new Error(
+          external.has(stable) || external.has(name)
+            ? `duplicate MCP tool name: ${name || tool.name}`
+            : `remote tool name collision: ${name || tool.name}`,
+        )
+      }
+      reserved.add(name)
+      let legacy: string | undefined
+      try {
+        const candidate = mcpLegacyToolName(cfg.id, tool.name)
+        if (candidate !== name && !reserved.has(candidate)) {
+          legacy = candidate
+          reserved.add(candidate)
+        }
+      } catch {
+        legacy = undefined
+      }
+      allocated.push(legacy === undefined ? { tool, name } : { tool, name, legacy })
+    }
+    const definitions = allocated.map((row) => remoteDefinition(conn, cfg, row.tool, mediaLimits, row.name))
+    const admitted = admitMcpResourceTools(conn, cfg, reserved, (name) =>
       agnes.ctx.log.warn('MCP resource tool name conflicts with a registered tool', { id: cfg.id, name }),
     )
     const resourceTools = admitted.tools
+    const aliases: ToolDef[] = []
+    for (const [index, row] of allocated.entries()) {
+      const source = definitions[index]
+      if (!row.legacy || !source) continue
+      aliases.push({ ...source, name: row.legacy })
+    }
     const catalog = [...definitions, ...resourceTools].map((definition) => ({
       name: definition.name,
       description: definition.description,
@@ -576,12 +602,15 @@ export async function registerRemoteToolsStrict(
         description: `MCP server ${cfg.id} (${definitions.length} tools${resourceNote})`,
       }),
     )
-    for (const definition of [...definitions, ...resourceTools])
+    disposers.push(bindMcpResourceServer(cfg.id, conn, cfg))
+    for (const definition of [...definitions, ...resourceTools, ...aliases])
       disposers.push(agnes.registerTool(definition))
     // `tool_search` discovers only tools omitted from the default disclosure. Eager MCP tools
     // are already offered directly in every request and must not be duplicated in that index.
+    // Compatibility aliases share execute with the stable name and stay out of this index.
     if (cfg.defer) opts.onCatalog?.(catalog)
-    for (const definition of [...definitions, ...resourceTools]) opts.claimedNames?.add(definition.name)
+    for (const definition of [...definitions, ...resourceTools, ...aliases])
+      opts.claimedNames?.add(definition.name)
   } catch (error) {
     for (const dispose of disposers.reverse()) dispose()
     if (opts.ownsConnection !== false) await conn.close().catch(() => undefined)

@@ -1,4 +1,4 @@
-import { mcpLocalToolPrefix } from '@agnes/base'
+import { MCP_COMPAT_PREFIX, mcpLegacyToolName, mcpPublicToolName } from '@agnes/base'
 import { MemTable } from '@agnes/base/testkit'
 import type { McpServerDefinitionInput } from '@agnes/protocol'
 import * as workerResources from '@agnes/resource-control-worker'
@@ -60,12 +60,11 @@ describe('mcpServerRowsFromDefinitions', () => {
 
   it('declares exactly what its one server uses: its own tool prefix, the mcp resource kind, and the artifact store for spilled output', () => {
     const { rows } = mcpServerRowsFromDefinitions([stdioEntry('gh'), stdioEntry('my.server-2')], fakeOpener)
-    // The prefix is register.ts's tool naming for that server id -- both call the same
-    // mcpLocalToolPrefix() (design 2026-09-23-mcp-tool-name-collision-design.md §0.4), so the ext
-    // host lets this row register its own server's tools and nothing else.
+    // The row grant is the compatibility prefix. Stable names and legacy aliases both start with
+    // it. The registrar still emits only this server's own names.
     expect(rows.map((row) => row.manifest.capabilities)).toEqual([
-      { tools: { prefix: mcpLocalToolPrefix('gh') }, resources: ['mcp'], artifacts: true },
-      { tools: { prefix: mcpLocalToolPrefix('my.server-2') }, resources: ['mcp'], artifacts: true },
+      { tools: { prefix: MCP_COMPAT_PREFIX }, resources: ['mcp'], artifacts: true },
+      { tools: { prefix: MCP_COMPAT_PREFIX }, resources: ['mcp'], artifacts: true },
     ])
   })
 
@@ -236,7 +235,10 @@ it('reconstructs a cold generation MCP factory from SecretRefs and refuses unkno
     expect(activated).toBe(false)
     release()
     const dispose = await activation
-    expect([...tools]).toEqual([`${mcpLocalToolPrefix('pinned')}ping`])
+    expect([...tools]).toEqual([
+      mcpPublicToolName('pinned', 'ping'),
+      mcpLegacyToolName('pinned', 'ping'),
+    ])
     await dispose?.()
     expect(tools.size).toBe(0)
     expect(closed).toBe(true)

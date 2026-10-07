@@ -10,6 +10,7 @@ import type { Session } from '@agnes/sdk'
 import type { TuiApp } from './app.js'
 import { inheritFreshSession, writeComposerMemoryFile } from './composer-memory.js'
 import { type ExtendedKey, tt } from './locale-extended.js'
+import { applyPlanCommand } from './plan-mode.js'
 import type { ResourceCommandKind } from './resource-controller.js'
 import { freshTuiSessionKey } from './session-key.js'
 import type { TuiThemeName } from './theme.js'
@@ -35,6 +36,7 @@ export const SLASH_COMMANDS: readonly SlashCommand[] = [
   { name: '/doctor', args: 'computer-use', descriptionKey: 'commands.doctor' },
   { name: '/rewind', args: '<seq>', descriptionKey: 'commands.rewind' },
   { name: '/compact', args: '[instructions]', descriptionKey: 'commands.compact' },
+  { name: '/plan', args: '[on|off|instruction]', descriptionKey: 'commands.plan' },
   { name: '/preset', args: '<name>', descriptionKey: 'commands.preset' },
   { name: '/theme', args: '[light|dark|mono]', descriptionKey: 'commands.theme' },
   {
@@ -304,6 +306,8 @@ export async function runSlash(app: TuiApp, line: string): Promise<SlashResult> 
       // the honest real path, and it will surface exactly that error against a real daemon.
       return { switchSession: await c.session.fork(s.id, at) }
     }
+    case '/plan':
+      return applyPlanCommand(app.cwd, line.trim())
     case '/compact': {
       const instructions = args.join(' ').trim()
       const outcome = await s.compactDetailed(instructions || undefined)

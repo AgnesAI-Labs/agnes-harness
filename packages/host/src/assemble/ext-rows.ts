@@ -37,6 +37,8 @@ export const EXT_ROW_EXTENSION_IDS: ReadonlySet<string> = new Set([
   'agnes/plugin-creator',
   'agnes/mcp-search',
   'agnes/skills',
+  'agnes/plan-mode',
+  'agnes/mcp-resources',
 ])
 
 /**
@@ -95,6 +97,8 @@ export const MIGRATED_EXTENSION_IDS: ReadonlySet<string> = new Set([
   'agnes/hooks-runner',
   'agnes/mcp-search',
   'agnes/skills',
+  'agnes/plan-mode',
+  'agnes/mcp-resources',
 ])
 
 export type ExtRowLoadResult = Readonly<{

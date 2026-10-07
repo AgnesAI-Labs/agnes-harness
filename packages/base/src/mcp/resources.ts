@@ -263,3 +263,92 @@ export function admitMcpResourceTools(
   )
   return Object.freeze({ tools, conflicts })
 }
+
+/** Stable resource tools. One registration serves every connected server through a `server` argument. */
+export const LIST_MCP_RESOURCES = 'list_mcp_resources'
+export const LIST_MCP_RESOURCE_TEMPLATES = 'list_mcp_resource_templates'
+export const READ_MCP_RESOURCE = 'read_mcp_resource'
+
+type BoundMcpResourceServer = { conn: McpConnection; cfg: McpServerConfig }
+const boundServers = new Map<string, BoundMcpResourceServer>()
+
+/** Remember one live connection so the shared resource tools can address it. */
+export function bindMcpResourceServer(id: string, conn: McpConnection, cfg: McpServerConfig): () => void {
+  const entry: BoundMcpResourceServer = { conn, cfg }
+  boundServers.set(id, entry)
+  return () => {
+    if (boundServers.get(id) === entry) boundServers.delete(id)
+  }
+}
+
+function lookupServer(server: unknown): BoundMcpResourceServer | ToolResult {
+  if (typeof server !== 'string' || server.length === 0 || server.length > 256)
+    return { content: [{ type: 'text', text: 'MCP resource tool requires a server id' }], isError: true }
+  const entry = boundServers.get(server)
+  if (!entry)
+    return {
+      content: [{ type: 'text', text: `mcp server ${server} is not connected` }],
+      isError: true,
+    }
+  return entry
+}
+
+function isToolResult(value: BoundMcpResourceServer | ToolResult): value is ToolResult {
+  return 'content' in value
+}
+
+/** Execute one shared resource tool against the server named in `args.server`. */
+export async function runSharedMcpResource(
+  kind: 'list' | 'templates' | 'read',
+  args: { server?: string; cursor?: string; uri?: string },
+  ctx: ToolCtx,
+): Promise<ToolResult> {
+  const entry = lookupServer(args.server)
+  if (isToolResult(entry)) return entry
+  const { conn, cfg } = entry
+  if (conn.supportsResources !== true)
+    return {
+      content: [{ type: 'text', text: `mcp server ${cfg.id} does not advertise resources` }],
+      isError: true,
+    }
+  try {
+    if (kind === 'list') {
+      const page = await conn.listResources?.({ ...cursorOf(args.cursor), signal: ctx.signal })
+      if (!page || !Array.isArray(page.resources)) throw new TypeError('MCP resource page is invalid')
+      if (page.resources.length > MAX_MCP_RESOURCE_PAGE)
+        throw new TypeError('MCP resource page exceeds Host limit')
+      return await present(
+        ctx,
+        cfg,
+        pageNote(
+          'resources',
+          page.resources.map((item) => readRemoteResource(item)),
+          page.nextCursor,
+        ),
+      )
+    }
+    if (kind === 'templates') {
+      const page = await conn.listResourceTemplates?.({ ...cursorOf(args.cursor), signal: ctx.signal })
+      if (!page || !Array.isArray(page.resourceTemplates))
+        throw new TypeError('MCP resource template page is invalid')
+      if (page.resourceTemplates.length > MAX_MCP_RESOURCE_PAGE)
+        throw new TypeError('MCP resource template page exceeds Host limit')
+      return await present(
+        ctx,
+        cfg,
+        pageNote(
+          'resourceTemplates',
+          page.resourceTemplates.map((item) => readRemoteResourceTemplate(item)),
+          page.nextCursor,
+        ),
+      )
+    }
+    const page = await conn.readResource?.(args.uri ?? '', { signal: ctx.signal })
+    if (!page || !Array.isArray(page.contents)) throw new TypeError('MCP resource read is invalid')
+    if (page.contents.length === 0 || page.contents.length > MAX_MCP_RESOURCE_CONTENTS)
+      throw new TypeError('MCP resource content count exceeds Host limit')
+    return await present(ctx, cfg, contentText(page.contents.map((item) => readRemoteResourceContent(item))))
+  } catch (error) {
+    return failure(cfg, error)
+  }
+}

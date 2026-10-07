@@ -1,7 +1,7 @@
 import type { ExtensionAPI, ResourceEntry, ToolDef } from '@agnes/extension-api'
 import { describe, expect, it, vi } from 'vitest'
 import type { McpServerConfig } from '../../../src/mcp/config.js'
-import { mcpLocalToolPrefix } from '../../../src/mcp/naming.js'
+import { mcpLegacyToolName, mcpLocalToolPrefix, mcpPublicToolName } from '../../../src/mcp/naming.js'
 import type { McpConnection, RemoteToolIndexRow } from '../../../src/mcp/register.js'
 import type { McpCatalogHub } from '../src/catalog-hub.js'
 import { mcpServerExtension } from '../src/extension.js'
@@ -95,6 +95,32 @@ function fakeCatalogHub(): McpCatalogHub & {
 const cfg: McpServerConfig = { id: 'gh', transport: 'stdio', cmd: ['gh-mcp'], defer: true }
 const GH_PREFIX = mcpLocalToolPrefix('gh')
 
+function registeredNames(serverId: string, remoteNames: readonly string[]): string[] {
+  const reserved = new Set<string>()
+  const names: string[] = []
+  const aliases: string[] = []
+  for (const remote of remoteNames) {
+    const name = mcpPublicToolName(serverId, remote, reserved)
+    reserved.add(name)
+    names.push(name)
+    const legacy = mcpLegacyToolName(serverId, remote)
+    if (legacy !== name && !reserved.has(legacy)) {
+      reserved.add(legacy)
+      aliases.push(legacy)
+    }
+  }
+  return [...names, ...aliases]
+}
+
+function catalogNames(serverId: string, remoteNames: readonly string[]): string[] {
+  const reserved = new Set<string>()
+  return remoteNames.map((remote) => {
+    const name = mcpPublicToolName(serverId, remote, reserved)
+    reserved.add(name)
+    return name
+  })
+}
+
 describe('mcpServerExtension', () => {
   it('returns the disposer synchronously, without waiting for the connection to land (the row must not block application)', () => {
     const { api } = fakeApi()
@@ -120,15 +146,12 @@ describe('mcpServerExtension', () => {
     factory(api)
 
     await vi.waitFor(() =>
-      expect(tools.map((tool) => tool.name)).toEqual([`${GH_PREFIX}ping`, `${GH_PREFIX}pong`]),
+      expect(tools.map((tool) => tool.name)).toEqual(registeredNames('gh', ['ping', 'pong'])),
     )
     expect(resources.map((resource) => resource.id)).toEqual(['gh'])
     expect(catalogHub.upserts).toHaveLength(1)
     expect(catalogHub.upserts[0]?.serverId).toBe('gh')
-    expect(catalogHub.upserts[0]?.rows.map((row) => row.name)).toEqual([
-      `${GH_PREFIX}ping`,
-      `${GH_PREFIX}pong`,
-    ])
+    expect(catalogHub.upserts[0]?.rows.map((row) => row.name)).toEqual(catalogNames('gh', ['ping', 'pong']))
   })
 
   it('a non-deferred server never contributes rows to the catalog hub (eager tools are already disclosed directly)', async () => {
@@ -141,7 +164,7 @@ describe('mcpServerExtension', () => {
 
     factory(api)
 
-    await vi.waitFor(() => expect(tools).toHaveLength(1))
+    await vi.waitFor(() => expect(tools).toHaveLength(2))
     expect(catalogHub.upserts).toEqual([])
   })
 
@@ -152,7 +175,7 @@ describe('mcpServerExtension', () => {
     const catalogHub = fakeCatalogHub()
     const factory = mcpServerExtension(cfg, { catalogHub, connect })
     const dispose = factory(api) as () => void
-    await vi.waitFor(() => expect(tools).toHaveLength(1))
+    await vi.waitFor(() => expect(tools).toHaveLength(2))
     void resources
 
     dispose()
@@ -182,7 +205,7 @@ describe('mcpServerExtension', () => {
       catalogHub,
       connect: async () => conn,
     })(api) as () => Promise<void>
-    await vi.waitFor(() => expect(tools).toHaveLength(1))
+    await vi.waitFor(() => expect(tools).toHaveLength(2))
     const pending = dispose()
     expect(pending).toBeInstanceOf(Promise)
     expect(dispose()).toBe(pending)
@@ -207,7 +230,7 @@ describe('mcpServerExtension', () => {
     const catalogHub = fakeCatalogHub()
     const factory = mcpServerExtension(cfg, { catalogHub, connect })
     factory(api)
-    await vi.waitFor(() => expect(tools).toHaveLength(1))
+    await vi.waitFor(() => expect(tools).toHaveLength(2))
 
     conn.fireToolsChanged()
 
@@ -301,7 +324,7 @@ describe('mcpServerExtension', () => {
         catalogHub,
         connect: vi.fn(async () => fakeConnection('gh')),
       })(api) as () => void
-      await vi.waitFor(() => expect(tools).toHaveLength(1))
+      await vi.waitFor(() => expect(tools).toHaveLength(2))
       return dispose
     }
     const first = await mount()
@@ -331,7 +354,7 @@ describe('mcpServerExtension', () => {
     expect(okReady).toBeDefined()
     expect(await okReady).toEqual({})
     // Settling means the tools are already there, not merely that the socket opened.
-    expect(ok.tools.map((tool) => tool.name)).toEqual([`${GH_PREFIX}ping`])
+    expect(ok.tools.map((tool) => tool.name)).toEqual(registeredNames('gh', ['ping']))
 
     const failed = fakeApi()
     let failedReady: Promise<{ error?: unknown }> | undefined
@@ -405,13 +428,14 @@ describe('mcpServerExtension: name collisions among a partly skipped catalog', (
     return { events, tools: state.tools }
   }
 
-  it('fails the server when two admitted tools map to one local name', async () => {
+  it('admits two remote names that sanitize to one spelling, hashing the rewritten one', async () => {
     const { events, tools } = await run([
       { name: 'a-b', description: 'first', inputSchema: { type: 'object' } },
       { name: 'a_b', description: 'second', inputSchema: { type: 'object' } },
     ])
-    expect(events[1]).toMatchObject({ state: 'unavailable' })
-    expect(tools).toEqual([])
+    expect(events[1]).toMatchObject({ state: 'ready', toolCount: 2 })
+    expect(tools.map((tool) => tool.name)).toEqual(registeredNames('gh', ['a-b', 'a_b']))
+    expect(tools).toHaveLength(3)
   })
 
   it('does not count a skipped tool as a collision with an admitted one', async () => {
@@ -425,6 +449,6 @@ describe('mcpServerExtension: name collisions among a partly skipped catalog', (
       skippedToolCount: 1,
       skippedTools: [{ code: 'description-too-long', name: 'a-b' }],
     })
-    expect(tools.map((tool) => tool.name)).toEqual([`${mcpLocalToolPrefix('gh')}a_b`])
+    expect(tools.map((tool) => tool.name)).toEqual(registeredNames('gh', ['a_b']))
   })
 })

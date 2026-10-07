@@ -65,6 +65,25 @@ const SUPPLIED: Record<string, string[]> = {
     'hook:compact',
     'hook:approval_request',
   ],
+  'agnes/interaction': [
+    'tool:ask_user_question',
+    'hook:tool_call',
+    'hook:before_step',
+    'slot:tool.card.inline',
+    'projection:agnes/interaction/questions',
+  ],
+  'agnes/deliverables': [
+    'tool:present',
+    'slot:tool.card.inline',
+    'projection:agnes/deliverables/presented',
+  ],
+  'agnes/jobs': ['tool:job_list', 'tool:job_output', 'tool:job_kill', 'hook:shutdown'],
+  'agnes/plan-mode': ['tool:exit_plan_mode', 'hook:context', 'hook:approval_request'],
+  'agnes/mcp-resources': [
+    'tool:list_mcp_resources',
+    'tool:list_mcp_resource_templates',
+    'tool:read_mcp_resource',
+  ],
 }
 
 const listed = (h: { host: { extensions(): { id: string; loaded: boolean }[] } }, id: string) =>
@@ -87,6 +106,9 @@ describe('the builtin extensions that moved to the shared row host', () => {
       'agnes/tools-core',
       'agnes/tools-search',
       'agnes/tools-web',
+      'agnes/interaction',
+      'agnes/deliverables',
+      'agnes/jobs',
       'agnes/compaction',
       'agnes/refine',
       'agnes/subagent',
@@ -97,6 +119,8 @@ describe('the builtin extensions that moved to the shared row host', () => {
       'agnes/plugin-creator',
       'agnes/mcp-search',
       'agnes/skills',
+      'agnes/plan-mode',
+      'agnes/mcp-resources',
     ])
     for (const [id, registrations] of Object.entries(SUPPLIED)) {
       expect(listed(h, id)?.loaded, id).toBe(true)

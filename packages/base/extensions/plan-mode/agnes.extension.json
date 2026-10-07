@@ -1,0 +1,14 @@
+{
+  "id": "agnes/plan-mode",
+  "version": "0.1.0",
+  "apiRange": "^1.0",
+  "entry": "./src/index.ts",
+  "capabilities": {
+    "tools": { "prefix": "", "names": ["exit_plan_mode"] },
+    "hooks": ["context", "approval_request"],
+    "slots": [],
+    "events": false,
+    "resources": [],
+    "network": []
+  }
+}
