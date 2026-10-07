@@ -6,6 +6,7 @@ import { createRequire, isBuiltin } from 'node:module'
 import { tmpdir } from 'node:os'
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
+import { SyntaxKind } from 'typescript/unstable/ast'
 import { createScanner } from 'typescript/unstable/ast/scanner'
 import { AGH_DIR } from '../../packages/protocol/src/index.js'
 import { packNpxPackage } from './pack-npx.js'
@@ -95,7 +96,20 @@ export async function validateExample(directory: string): Promise<void> {
         string = kindOf("'module'"),
         template = kindOf('`module`')
       const tokens: { kind: number; text: string; value: string }[] = []
+      const templateBraces: number[] = []
       for (let kind = scanner.scan(); kind !== eof; kind = scanner.scan()) {
+        if (kind === SyntaxKind.OpenBraceToken && templateBraces.length)
+          templateBraces[templateBraces.length - 1]!++
+        if (kind === SyntaxKind.CloseBraceToken && templateBraces.length) {
+          if (templateBraces.at(-1) === 0) kind = scanner.reScanTemplateToken(false)
+          else templateBraces[templateBraces.length - 1]!--
+        }
+        if (kind === SyntaxKind.TemplateHead) templateBraces.push(0)
+        if (kind === SyntaxKind.TemplateTail) templateBraces.pop()
+        // The lexical scanner requires template continuation rescanning. Unsupported
+        // syntax must fail boundedly instead of accumulating zero-length tokens forever.
+        if (scanner.getTokenEnd() <= scanner.getTokenStart())
+          throw new Error(`Source scanner made no progress in ${file}`)
         tokens.push({ kind, text: scanner.getTokenText(), value: scanner.getTokenValue() })
       }
       for (let i = 0; i < tokens.length; i++) {
@@ -302,7 +316,7 @@ async function packAuthors(root: string, env: NodeJS.ProcessEnv): Promise<string
 }
 
 export async function externalExamples(
-  options: { authorOnly?: boolean; keep?: boolean } = {},
+  options: { authorOnly?: boolean; keep?: boolean; examples?: readonly string[] } = {},
 ): Promise<void> {
   const root = await mkdtemp(join(await realpath(tmpdir()), 'agh-external-examples-'))
   if (inside(repo, root)) throw new Error('Examples must run outside the repository')
@@ -316,11 +330,17 @@ export async function externalExamples(
       tarballs.push(await pack(stage, root, environment(home)))
     }
     const examplesRoot = join(repo, 'examples/community')
-    for (const entry of await readdir(examplesRoot, { withFileTypes: true })) {
-      if (!entry.isDirectory()) continue
-      const source = join(examplesRoot, entry.name)
+    const sources = options.examples?.length
+      ? options.examples.map((path) => resolve(repo, path))
+      : (await readdir(examplesRoot, { withFileTypes: true }))
+          .filter((entry) => entry.isDirectory())
+          .map((entry) => join(examplesRoot, entry.name))
+    for (const source of sources) {
+      if (!inside(join(repo, 'examples'), await realpath(source)))
+        throw new Error('External example must be inside examples/')
+      const name = relative(join(repo, 'examples'), source).split(sep).join('-')
       await validateExample(source)
-      const directory = join(root, 'examples', entry.name)
+      const directory = join(root, 'examples', name)
       await cp(source, directory, {
         recursive: true,
         filter: (path) =>
@@ -328,14 +348,14 @@ export async function externalExamples(
           !path.endsWith('.tsbuildinfo') &&
           !path.endsWith('package-lock.json'),
       })
-      const exampleHome = join(root, 'homes', entry.name)
+      const exampleHome = join(root, 'homes', name)
       await mkdir(exampleHome, { recursive: true })
       const env = environment(exampleHome)
       run('npm', ['install', '--ignore-scripts', '--no-audit', '--no-fund', ...tarballs], directory, env)
       for (const name of ['@agnes/extension-api', '@agnes/plugin-runtime']) {
         const installed = await realpath(join(directory, 'node_modules', name))
         if (!inside(directory, installed))
-          throw new Error(`Workspace dependency leaked into ${entry.name}: ${installed}`)
+          throw new Error(`Workspace dependency leaked into ${name}: ${installed}`)
       }
       run('npm', ['run', 'build'], directory, env)
       run('npm', ['test'], directory, env)
@@ -347,7 +367,7 @@ export async function externalExamples(
           env,
         )
       console.log(
-        `PASS ${entry.name}: external install, build, own tests${options.authorOnly ? ' (harness packing skipped)' : ''}`,
+        `PASS ${name}: external install, build, own tests${options.authorOnly ? ' (harness packing skipped)' : ''}`,
       )
     }
   } finally {
@@ -358,7 +378,15 @@ export async function externalExamples(
 
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
   const args = process.argv.slice(2)
-  if (args.some((arg) => !['--author-only', '--keep'].includes(arg)))
-    throw new Error('Usage: external-examples.ts [--author-only] [--keep]')
-  await externalExamples({ authorOnly: args.includes('--author-only'), keep: args.includes('--keep') })
+  const examples: string[] = []
+  for (let i = 0; i < args.length; i++) {
+    if (args[i] === '--example' && args[i + 1] && !args[i + 1]!.startsWith('--')) examples.push(args[++i]!)
+    else if (!['--author-only', '--keep'].includes(args[i]!))
+      throw new Error('Usage: external-examples.ts [--author-only] [--keep] [--example examples/PATH]')
+  }
+  await externalExamples({
+    authorOnly: args.includes('--author-only'),
+    keep: args.includes('--keep'),
+    examples,
+  })
 }
