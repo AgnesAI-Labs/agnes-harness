@@ -122,6 +122,12 @@ it('normalizes canonical selections and aliases, preserves profile precedence an
   } as never
   const selections = readProviderSelections(profile)
   expect(selections.loop).toEqual({ provider: 'pinned', version: '1' })
+  expect(
+    readProviderSelections({
+      composition: { compaction: null },
+      packages: [{ enabled: true, config: { compaction: { provider: 'default' } } }],
+    } as never).compaction,
+  ).toBeUndefined()
   expect(applyProviderPreset({ name: 'standard', approval: { timeout_ms: 10 } }, selections)).toMatchObject({
     approval: { policy: 'read-only', timeout_ms: 10 },
   })

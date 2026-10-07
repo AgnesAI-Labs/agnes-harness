@@ -447,5 +447,15 @@ export { buildCompleteRuntimeTarget } from './runtime-target-builder.js'
 export * from './profile/composition.js'
 export * from './profile/bundle-selection.js'
 
-export { ProviderRegistry, ProvidersService, installProviders, installProviderRegistry } from './assemble/provider-registry.js'
-export { readProviderSelection, readProviderSelections, applyProviderSelections, PROVIDER_KINDS } from './assemble/provider-selection.js'
+export {
+  ProviderRegistry,
+  ProvidersService,
+  installProviders,
+  installProviderRegistry,
+} from './assemble/provider-registry.js'
+export {
+  readProviderSelection,
+  readProviderSelections,
+  applyProviderSelections,
+  PROVIDER_KINDS,
+} from './assemble/provider-selection.js'
