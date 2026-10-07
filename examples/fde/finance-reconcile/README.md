@@ -31,11 +31,11 @@ agh serve
 
 Run `npm pack` here to distribute a tarball and install it with `agh plugins add ./NAME.tgz`. Runtime, fixtures, Skill and any panel travel together, without workspace or sibling-example imports.
 
-Headless CLI deliberately refuses approval: the draft/export is produced, then the action stops without a receipt. Complete approval in Web. Own tests inject approval and denial with no customer effects.
+The draft is presented before the official question parks the workflow. Unattended runs stop for a question or unavailable tool permission. Answer in Web/TUI, then grant the action permission if requested; cancellation records no action receipt.
 
 Web: open the serve URL, use **Admin → Plugins → Bundles**, select `@agnes-fde/finance-reconcile#finance-reconcile`, save and restart Host as requested. Start a new session with preset `finance-reconcile` and Demo model; paste `fixtures/prompt.txt`. Existing sessions keep their pinned loop. Inspect evidence and the trace.
 
-This one-turn workflow uses fixed synthetic input: the prompt starts it, and fixture files define the business data. Built-in Demo does not reason. Tools produce the substantive fixture result; quick tests use scripted model replies. A real model adds draft commentary that never overrides citations, amounts, findings or approvals.
+This workflow uses fixed synthetic input: the prompt starts it, and fixture files define the business data. Built-in Demo does not reason. Tools produce the substantive fixture result; quick tests use scripted model replies. A real model adds draft commentary that never overrides citations, amounts, findings or approvals.
 
 ## Real model
 
@@ -49,9 +49,19 @@ The loop calls Core’s public `prepareRequest()`; Core resolves the session’s
 
 ## Adapt for a customer
 
-Replace fixtures with authorized ledger connectors. Agree on keys, signs, currencies and tolerances with the customer accountant. Use a real CSV parser for quoted fields and validated precision for other currencies. Resolve ambiguous matches and account mappings before posting. An approved idempotent connector must verify the ledger receipt; model prose never determines amounts. TODO: official ask_user_question can collect edited account mappings when available; current confirmation uses backend tool policy.
+Replace fixtures with authorized ledger connectors. Agree on keys, signs, currencies and tolerances with the customer accountant. Use a real CSV parser for quoted fields and validated precision for other currencies. Resolve ambiguous matches and account mappings before posting. An approved idempotent connector must verify the ledger receipt; model prose never determines amounts.
 
 Backend plugins are trusted in-process code; declarations support review rather than arbitrary-code isolation. A denied tool or failed model stops the workflow. Pending checkpoints refuse automatic replay: inspect evidence before starting another run. Simulation receipts are not durable customer ledgers.
+
+## Official tools and outputs
+
+The installed standard preset supplies [official tools](../../../docs/reference/default-tools.md). This bundle registers business connectors and formatters only. Before its action, `ask_user_question` presents Proceed/Cancel and parks with a persisted question ID. Only a validated ordinary user answer continues it; invalid answers keep it parked. This business choice does not grant tool permission.
+
+Official `write` creates reports in `fde-output/finance-reconcile/<run-hash>/`; `present` copies them into session artifacts for the standard Open/Download card. Drafts are presented before questions; completed runs also present the final result. The policy allows report writes only at this bounded path, and the official observation/stale-write guard remains active. All other source writes remain denied in evidence-only workflows. Output paths are relative to the session workspace, and the manifest declares their read/write scope.
+
+Loop version **2.0.0** uses checkpoint codec **2** for pending questions. Start a new session after upgrading; codec 1 checkpoints are refused rather than replayed. Model selection now comes from the preset primary route. Quick tests script the official tool ports, model and artifact receipts; they do not exercise real question projections, downloads, web providers or background process confinement.
+
+TODO: adopt official Plan mode after Stream E2 merges; the example keeps its fixed staged/DAG workflow meanwhile.
 
 ## Quick test
 

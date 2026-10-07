@@ -1,17 +1,5 @@
 {
   "extends": ["@agnes-fde/data-report#data-report"],
-  "profile": {
-    "plugins": {
-      "ext:@agnes-fde/data-report/main": {
-        "config": {
-          "target": {
-            "route": "customer",
-            "model": "customer-model"
-          }
-        }
-      }
-    }
-  },
   "presets": {
     "data-report": {
       "name": "data-report",

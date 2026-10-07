@@ -6,7 +6,7 @@ A delivery lead converts a rollout transcript into accountable follow-up and rev
 
 **Workflow:** Transcript → summary, decisions, owners/dates → markdown export and panel → approval → simulated send.
 
-The synthetic transcript uses explicit SUMMARY, DECISION and ACTION tags. Morgan/2026-10-09 and Casey/2026-10-12 retain source line numbers. Export returns filename, mediaType and markdown without writing files. The public tool-result panel displays evidence and downloads a complete export when it fits the preview. Truncated previews offer no download; use the full JSONL result for larger exports. Sending always requires approval and returns externalDelivery: false.
+The synthetic transcript uses explicit SUMMARY, DECISION and ACTION tags. Morgan/2026-10-09 and Casey/2026-10-12 retain source line numbers. A business formatter prepares markdown; official `write` and `present` create the file and artifact download card. The meeting panel renders action evidence. Official `ask_user_question` waits for the send choice, and backend permission still controls the simulated sender (externalDelivery: false).
 
 ## What ships
 
@@ -31,11 +31,11 @@ agh serve
 
 Run `npm pack` here to distribute a tarball and install it with `agh plugins add ./NAME.tgz`. Runtime, fixtures, Skill and any panel travel together, without workspace or sibling-example imports.
 
-Headless CLI deliberately refuses approval: the draft/export is produced, then the action stops without a receipt. Complete approval in Web. Own tests inject approval and denial with no customer effects.
+The draft is presented before the official question parks the workflow. Unattended runs stop for a question or unavailable tool permission. Answer in Web/TUI, then grant the action permission if requested; cancellation records no action receipt.
 
 Web: open the serve URL, use **Admin → Plugins → Bundles**, select `@agnes-fde/meeting-actions#meeting-actions`, save and restart Host as requested. Start a new session with preset `meeting-actions` and Demo model; paste `fixtures/prompt.txt`. Existing sessions keep their pinned loop. Inspect evidence and the trace in the meeting panel.
 
-This one-turn workflow uses fixed synthetic input: the prompt starts it, and fixture files define the business data. Built-in Demo does not reason. Tools produce the substantive fixture result; quick tests use scripted model replies. A real model adds draft commentary that never overrides citations, amounts, findings or approvals.
+This workflow uses fixed synthetic input: the prompt starts it, and fixture files define the business data. Built-in Demo does not reason. Tools produce the substantive fixture result; quick tests use scripted model replies. A real model adds draft commentary that never overrides citations, amounts, findings or approvals.
 
 ## Real model
 
@@ -49,9 +49,19 @@ The loop calls Core’s public `prepareRequest()`; Core resolves the session’s
 
 ## Adapt for a customer
 
-Replace tagged extraction with a customer transcript parser or validated structured model output. Missing owners/dates need follow-up. Add calendar/timezone rules and stable action IDs. Replace the fixture recipient and sender with an idempotent connector that verifies delivery receipts. Keep approval in the backend and the panel a renderer. TODO: adopt official present for exports and ask_user_question for editable questions when available; this revision uses a small export tool and tool-policy approval.
+Replace tagged extraction with a customer transcript parser or validated structured model output. Missing owners/dates need follow-up. Add calendar/timezone rules and stable action IDs. Replace the fixture recipient and sender with an idempotent connector that verifies delivery receipts. Keep approval in the backend and the panel a renderer.
 
 Backend plugins are trusted in-process code; declarations support review rather than arbitrary-code isolation. A denied tool or failed model stops the workflow. Pending checkpoints refuse automatic replay: inspect evidence before starting another run. Simulation receipts are not durable customer ledgers.
+
+## Official tools and outputs
+
+The installed standard preset supplies [official tools](../../../docs/reference/default-tools.md). This bundle registers business connectors and formatters only. Before its action, `ask_user_question` presents Proceed/Cancel and parks with a persisted question ID. Only a validated ordinary user answer continues it; invalid answers keep it parked. This business choice does not grant tool permission.
+
+Official `write` creates reports in `fde-output/meeting-actions/<run-hash>/`; `present` copies them into session artifacts for the standard Open/Download card. Drafts are presented before questions; completed runs also present the final result. The policy allows report writes only at this bounded path, and the official observation/stale-write guard remains active. All other source writes remain denied in evidence-only workflows. Output paths are relative to the session workspace, and the manifest declares their read/write scope.
+
+Loop version **2.0.0** uses checkpoint codec **2** for pending questions. Start a new session after upgrading; codec 1 checkpoints are refused rather than replayed. Model selection now comes from the preset primary route. Quick tests script the official tool ports, model and artifact receipts; they do not exercise real question projections, downloads, web providers or background process confinement.
+
+TODO: adopt official Plan mode after Stream E2 merges; the example keeps its fixed staged/DAG workflow meanwhile.
 
 ## Quick test
 

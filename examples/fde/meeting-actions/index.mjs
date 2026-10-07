@@ -40,9 +40,9 @@ export const tools = [
       return { summary, decisions, actions }
     },
   ),
-  // TODO: use official present when available; this local tool exports a markdown payload.
+  // Business formatting only; official write/present publish the generated document.
   tool(
-    'fde_meeting_export',
+    'fde_meeting_format',
     'Export a markdown payload; no filesystem write or external message.',
     notes,
     (data) => ({
@@ -59,7 +59,7 @@ export const tools = [
           .join('\n'),
     }),
   ),
-  // TODO: prefer official ask_user_question for structured edits when it lands; policy owns send approval.
+  // Official ask_user_question collects the choice; tool policy still authorizes sending.
   tool(
     'fde_meeting_send',
     'After human approval, simulate sending the exported notes to the fixture team.',
@@ -94,6 +94,7 @@ const stages = [
   },
   {
     name: 'confirm-send',
+    confirm: () => 'Send the reviewed meeting notes to the synthetic fixture team?',
     async run(ctx, state, signal) {
       return value(
         await ctx.tools.execute(

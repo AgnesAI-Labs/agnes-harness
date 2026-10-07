@@ -1,6 +1,6 @@
 {
   "name": "@agnes-fde/ops-runbook",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "type": "module",
   "license": "Apache-2.0",
   "engines": {
@@ -19,12 +19,13 @@
   ],
   "scripts": {
     "build": "node --check index.mjs && node --check runtime.mjs",
-    "test": "node --test test/*.test.mjs"
+    "test": "vitest run test/workflow.test.mjs --maxWorkers=1"
   },
   "dependencies": {
     "@agnes/extension-api": "1.4.0",
     "@agnes/plugin-runtime": "0.0.0",
-    "@sinclair/typebox": "0.34.33"
+    "@sinclair/typebox": "0.34.33",
+    "@agnes/protocol": "0.0.0"
   },
   "agnes": {
     "kinds": [
@@ -38,7 +39,11 @@
       "filesystem": {
         "read": [
           "fixtures/*",
-          "skills/playbook/SKILL.md"
+          "skills/playbook/SKILL.md",
+          "fde-output/ops-runbook/**"
+        ],
+        "write": [
+          "fde-output/ops-runbook/**"
         ]
       },
       "exec": [
@@ -63,7 +68,7 @@
         "profile": {
           "loop": {
             "id": "fde.ops-runbook",
-            "version": "1.0.0"
+            "version": "2.0.0"
           },
           "skills": [
             "ops-runbook"
@@ -78,6 +83,14 @@
             "extends": "standard",
             "approval": {
               "policy": "fde.ops-runbook"
+            },
+            "model": {
+              "route": {
+                "primary": {
+                  "route": "demo",
+                  "model": "demo-model"
+                }
+              }
             }
           }
         }
@@ -86,6 +99,7 @@
   },
   "devDependencies": {
     "@agnes/host": "0.0.0",
-    "@agnes/resource-control-runtime": "0.0.0"
+    "@agnes/resource-control-runtime": "0.0.0",
+    "vitest": "5.0.0"
   }
 }

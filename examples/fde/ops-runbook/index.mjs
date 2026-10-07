@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs'
 import { Type } from '@sinclair/typebox'
-import { makeBundle, modelText, readMeta, tool, value, writeMeta } from './runtime.mjs'
+import { checked, makeBundle, modelText, readMeta, text, tool, value, writeMeta } from './runtime.mjs'
 
 const runbook = JSON.parse(readFileSync(new URL('./fixtures/runbook.json', import.meta.url)))
 export const tools = [
@@ -9,16 +9,6 @@ export const tools = [
     'Read a synthetic runbook; commands are fixed by the author.',
     Type.Object({}),
     () => ({ steps: runbook }),
-  ),
-  tool(
-    'fde_ops_check',
-    'Run a fixed read-only diagnostic through the selected Host execution/sandbox provider.',
-    Type.Object({}),
-    async (_, ctx) => {
-      const output = await ctx.exec(['node', '-e', 'process.stdout.write("synthetic-service: degraded")'])
-      if (output.code !== 0) throw new Error('Diagnostic failed')
-      return { status: output.stdout, sandbox: ctx.sandbox.enforcement() }
-    },
   ),
   tool(
     'fde_ops_restart',
@@ -57,15 +47,53 @@ const stages = [
   {
     name: 'diagnose',
     async run(ctx, _state, signal) {
-      return { diagnostic: value(await ctx.tools.execute({ name: tools[1].name, args: {} }, signal)) }
+      const output = checked(
+        await ctx.tools.execute(
+          {
+            name: 'shell',
+            args: {
+              command: 'node -e \'process.stdout.write("synthetic-service: degraded")\'',
+              background: true,
+              timeoutMs: 1000,
+            },
+          },
+          signal,
+        ),
+      )
+      if (typeof output.details?.jobId !== 'string') throw new Error('No session-owned diagnostic job')
+      return { diagnosticJob: output.details.jobId }
+    },
+  },
+  {
+    name: 'wait-for-diagnostic',
+    async run(ctx, state, signal) {
+      for (let attempt = 0; attempt < 10; attempt++) {
+        const output = checked(
+          await ctx.tools.execute(
+            { name: 'job_output', args: { jobId: state.data.diagnosticJob, waitMs: 1000 } },
+            signal,
+          ),
+        )
+        if (output.details?.status === 'running') continue
+        if (output.details?.status !== 'completed' || output.details.code !== 0 || output.details.truncated)
+          throw new Error('Diagnostic job failed or evidence is incomplete')
+        return { diagnostic: { status: text(output), jobId: state.data.diagnosticJob } }
+      }
+      throw new Error(
+        'Diagnostic still running; inspect job_list/job_output or stop the owned job with job_kill',
+      )
     },
   },
   {
     name: 'restart',
+    confirm: () => 'Execute the fixed synthetic restart step after reviewing the diagnostic?',
     async run(ctx, state, signal) {
       return {
         action: value(
-          await ctx.tools.execute({ name: tools[2].name, args: { step: state.data.steps[1].id } }, signal),
+          await ctx.tools.execute(
+            { name: 'fde_ops_restart', args: { step: state.data.steps[1].id } },
+            signal,
+          ),
         ),
       }
     },
@@ -75,7 +103,7 @@ const stages = [
     async run(ctx, state, signal) {
       const verification = value(
         await ctx.tools.execute(
-          { name: tools[3].name, args: { receipt: state.data.action.receipt } },
+          { name: 'fde_ops_verify', args: { receipt: state.data.action.receipt } },
           signal,
         ),
       )
@@ -83,7 +111,6 @@ const stages = [
         verification,
         commentary: await modelText(
           ctx,
-          state.target,
           'Explain this synthetic runbook result and its verification scope.',
           state.data,
           signal,

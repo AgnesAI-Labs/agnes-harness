@@ -67,7 +67,6 @@ const stages = [
       )
       const commentary = await modelText(
         ctx,
-        state.target,
         'Explain the contract risk report using only the cited clauses. This is a review draft for a qualified reviewer.',
         report,
         signal,

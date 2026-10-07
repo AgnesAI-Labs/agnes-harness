@@ -9,7 +9,7 @@ A forward-deployed engineer ships a workflow, connectors, a reviewed policy and 
 | [Support triage](support-triage/README.md) | Ticket lookup → classification → draft → human approval → simulated send receipt. | Human approval before action |
 | [Contract review](contract-review/README.md) | Split clauses → parallel review nodes → aggregate markdown report → model commentary. | Read-only policy |
 | [Data report](data-report/README.md) | Read CSV → compute totals and margin → markdown/HTML with SVG charts → model commentary. | Read-only policy |
-| [Operations runbook](ops-runbook/README.md) | Read runbook → diagnostic argv → approved synthetic restart → verify receipt. | Human approval before action |
+| [Operations runbook](ops-runbook/README.md) | Read runbook → official background diagnostic job → question → authorized synthetic restart → verify receipt. | Business choice and tool permission |
 | [CRM assistant](crm-assistant/README.md) | Local MCP lookup → Skills renewal playbook → note draft → approval → idempotent simulated note. | Human approval before action |
 | [Device inspection](device-inspection/README.md) | Read status → detect anomaly → human confirmation → constrained action → receipt and state verification. | Human approval before action |
 | [Knowledge QA](knowledge-qa/README.md) | Local documents → retrieved quotes → cited answer or refusal → model commentary. | No source means refusal; read-only retrieval |
@@ -23,11 +23,13 @@ A forward-deployed engineer ships a workflow, connectors, a reviewed policy and 
 
 Build `agh` from the [installation guide](../../docs/guide/install.md). Open an example README, run `agh plugins add .` inside that directory, then select its installed bundle through `agh run --bundle PACKAGE#NAME` or Web’s **Admin → Plugins → Bundles** panel. Each README gives the preset, prompt, model target and expected result. Web bundle changes need a Host restart and a new session.
 
-The keyless Demo route is supplied by a fresh local-dev profile. Tool evidence and support/CRM drafts are fixtures; Demo does not perform real reasoning. An existing deployment needs that route or a configured real model, and each example includes `real-model.bundle.json` to show its model configuration. The newer knowledge, meeting, code, finance, recruiting and audit loops use Core-prepared requests and the session primary model.
+The keyless Demo route is supplied by a fresh local-dev profile. Tool evidence and support/CRM drafts are fixtures; Demo does not perform real reasoning. An existing deployment needs that route or a configured real model. Every example uses Core-prepared requests and the session primary model; `real-model.bundle.json` configures the preset primary route.
 
-Headless runs deliberately refuse approval requests. Sending, CRM notes, runbook restarts, device actions, adjusting entries and recruiting follow-up reach the approval boundary in CLI; finish them in Web. The own tests exercise both approval and denial without real customer effects. Read-only bundles finish headlessly. All substantive fixture outputs are deterministic; real-model commentary remains a review draft.
+Sending, CRM notes, runbook restarts, device actions, adjusting entries and recruiting follow-up present a draft and call official `ask_user_question`. A persisted Proceed/Cancel question parks the workflow; a validated user answer resumes it. Tool authorization remains separate, and unavailable permissions still refuse actions. Use Web/TUI for the business choice. Evidence-only bundles complete headlessly, allowing generated output writes while denying source mutation. Demo outputs remain deterministic; real-model commentary is a review draft.
 
-The second group extends delivery to local knowledge, meetings, engineering review, finance, recruiting and policy evidence. Interaction/presentation tools are not provided by this source revision; small local export/decision tools carry TODOs for official `present` and `ask_user_question` adoption. Fixed DAGs and local evidence retrieval need no interactive plan or Internet search.
+All twelve bundles use official `write` and `present` for bounded report files and standard artifact Open/Download cards. The meeting panel renders action evidence without a custom download path. Knowledge QA optionally uses `web_search` for an explicitly configured public query; private questions/documents remain local. Operations use official `shell` background jobs and `job_output`; operators can inspect/stop owned jobs with `job_list`/`job_kill`. See [official default tools](../../docs/reference/default-tools.md) for deployment capabilities and limits. Existing profiles must admit the question/deliverable projection capability.
+
+Loop version 2.0.0/checkpoint codec 2 stores pending questions; use a new session after upgrading. Old checkpoints fail closed. TODO: adopt official Plan mode when Stream E2 merges; fixed stages/DAGs remain in place.
 
 ## From example to customer
 
@@ -49,6 +51,6 @@ node --import tsx tools/release/external-examples.ts --author-only \
   --example examples/fde/compliance-audit
 ```
 
-Repeat `--example` to include any of the twelve bundles. `--author-only` skips packaging the full CLI; it verifies author contracts and example workflows, not a browser or complete distribution. The CRM/device quick tests include short actual stdio MCP processes and use the `.e2e.test.mjs` filename. Runbook tests inject a fake execution port and do not prove OS confinement. Each directory’s `npm run build` and `npm test` also work independently when the matching author tarballs are installed.
+Repeat `--example` to include any of the twelve bundles. `--author-only` skips packaging the full CLI; it verifies author contracts and example workflows, not a browser or complete distribution. Quick tests use scripted official tool ports, model replies and artifact receipts; they cover pending/invalid/cancelled answers and retained tool-permission denial. The CRM/device tests include short actual stdio MCP processes and use `.e2e.test.mjs`. Runbook job ports and its restart executor are fixtures, so they do not prove OS confinement or real background cleanup. Each directory’s `npm run build` and `npm test` work independently with matching author tarballs. Vitest is a test-only dependency required by the public conformance testkit.
 
 No real-model quality, customer API, physical device or cross-platform acceptance is implied by these fixtures.

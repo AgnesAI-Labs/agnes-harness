@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { test } from 'node:test'
+import { test } from 'vitest'
 import { driveLoop } from '@agnes/plugin-runtime/testkit'
 import { factory, main, policy } from '../index.mjs'
 import { runWorkflow } from './harness.mjs'
@@ -8,6 +8,9 @@ const context = {}
 test('contract-review completes through the public loop and tool ports', async () => {
   const run = await runWorkflow(main, { context })
   assert.equal(run.finished[0], 'completed')
+  assert.ok(run.checkpoint.state.data.deliverables.some((file) => file.ref.size > 0))
+  assert.ok(run.calls.some((call) => call.name === 'present'))
+
   assert.ok(run.skills.includes('contract-review'))
   const data = run.checkpoint.state.data
   assert.deepEqual(data.report.highRisk, ['C-2', 'C-3'])

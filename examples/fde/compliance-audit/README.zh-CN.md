@@ -53,6 +53,16 @@ loop 调用 Core 的公开 `prepareRequest()`；Core 解析会话主模型、契
 
 后台插件运行在受信进程内，能力声明用于审核，不隔离任意代码。工具拒绝或模型失败会停止流程。pending checkpoint 不自动重放：再次运行前核对依据。模拟回执不是客户系统的持久账本。
 
+## 官方工具与输出
+
+已安装的 standard 预设提供[官方工具](../../../docs/reference/default-tools.zh-CN.md)，本 bundle 只注册业务连接器和格式器。bundle 策略继续拒绝修改业务源数据。
+
+官方 `write` 在 `fde-output/compliance-audit/<run-hash>/` 生成报告，`present` 复制为会话制品，使用标准打开/下载卡。问题前先交付草稿，完成后交付最终结果。策略仅允许此受限路径的报告写入，官方已读/过期版本保护继续生效；只读依据流程仍拒绝其他源数据写入。输出相对于会话工作区，manifest 声明了相应读写范围。
+
+Loop **2.0.0** 使用 checkpoint codec **2** 保存待答问题。升级后新建会话，旧 codec 1 会被拒绝，不会自动重放。模型选择来自预设 primary 路由。快速测试使用官方工具端口、模型和制品回执的脚本夹具，不验证真实问题投影、下载、搜索服务或后台进程隔离。
+
+TODO：Stream E2 合并后采用官方 Plan mode；当前保留固定阶段或 DAG 流程。
+
 ## 快速测试
 
 将本源码版本的匹配作者包 tarball 安装到目录后：

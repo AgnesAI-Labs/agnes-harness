@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto'
 import { Type } from '@sinclair/typebox'
 import { fixtureConnector } from './mcp-client.mjs'
-import { makeBundle, modelText, tool, value, writeMeta } from './runtime.mjs'
+import { isDemo, makeBundle, modelText, tool, value, writeMeta } from './runtime.mjs'
 
 function createTools(connector) {
   return [
@@ -38,21 +38,21 @@ const stages = [
     async run(ctx, state, signal) {
       const suggestion = await modelText(
         ctx,
-        state.target,
         'Apply the renewal playbook: cite account health and open tickets, propose an owner follow-up, do not invent discounts. Return only the CRM note.',
         state.data.account,
         signal,
       )
       return {
-        note:
-          state.target.route === 'demo'
-            ? 'Renewal at risk: 3 open tickets. Account team should coordinate support follow-up before renewal.'
-            : suggestion,
+        note: (await isDemo(ctx))
+          ? 'Renewal at risk: 3 open tickets. Account team should coordinate support follow-up before renewal.'
+          : suggestion,
       }
     },
   },
   {
     name: 'approved-note',
+    confirm: (state) =>
+      `Record the reviewed renewal note for ${state.data.account.id}? Review the complete note deliverable before proceeding.`,
     async run(ctx, state, signal) {
       return {
         receipt: value(

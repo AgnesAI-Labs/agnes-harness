@@ -41,7 +41,7 @@ export const tools = [
       }
     },
   ),
-  // TODO: use official ask_user_question for editable human decisions when available.
+  // Official ask_user_question confirms the human-review next step, never a hiring decision.
   tool(
     'fde_recruiting_decision',
     'After human confirmation, record a simulated request for consistent skill follow-up; no hiring or rejection.',
@@ -101,6 +101,8 @@ const stages = [
   },
   {
     name: 'human-decision',
+    confirm: () =>
+      'Confirm consistent human skill-review follow-up for all candidates? This does not hire or reject anyone.',
     async run(ctx, state, signal) {
       return value(
         await ctx.tools.execute(

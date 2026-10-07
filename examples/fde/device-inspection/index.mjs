@@ -49,7 +49,6 @@ const stages = [
         anomaly: state.data.status.temperatureC > state.data.status.limitC,
         assessment: await modelText(
           ctx,
-          state.target,
           'Describe the temperature anomaly using the supplied limit; do not propose unlisted actions.',
           state.data.status,
           signal,
@@ -59,6 +58,8 @@ const stages = [
   },
   {
     name: 'human-confirmation-and-action',
+    confirm: (state) =>
+      state.data.anomaly ? 'Request bounded cooling to 25 C in dry_run mode, then verify the receipt?' : null,
     async run(ctx, state, signal) {
       if (!state.data.anomaly) return { action: null }
       return {

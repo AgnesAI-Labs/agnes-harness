@@ -107,7 +107,6 @@ const stages = [
         report,
         commentary: await modelText(
           ctx,
-          state.target,
           'Explain the computed figures. Do not change totals or invent causes.',
           state.data.analysis,
           signal,

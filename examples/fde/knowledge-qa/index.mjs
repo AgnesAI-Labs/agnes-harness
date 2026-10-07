@@ -1,6 +1,6 @@
 import { readFileSync, readdirSync } from 'node:fs'
 import { Type } from '@sinclair/typebox'
-import { makeBundle, modelText, tool, value } from './runtime.mjs'
+import { makeBundle, modelText, text, tool, value } from './runtime.mjs'
 
 const folder = new URL('./fixtures/docs/', import.meta.url)
 const terms = (text) => [...new Set(text.toLowerCase().match(/[a-z]{3,}/g) ?? [])]
@@ -50,7 +50,16 @@ const stages = [
   {
     name: 'retrieve',
     async run(ctx, state, signal) {
+      let publicResearch = null
+      if (state.settings.publicQuery) {
+        const output = await ctx.tools.execute(
+          { name: 'web_search', args: { queries: [state.settings.publicQuery] } },
+          signal,
+        )
+        publicResearch = { available: !output.isError, text: text(output) }
+      }
       return {
+        publicResearch,
         sources: sourceList(
           value(
             await ctx.tools.execute(
@@ -109,6 +118,12 @@ export const { main, factory, createFactory, policy } = makeBundle({
     const retrieverTool = settings.retrieverTool ?? 'fde_knowledge_retrieve'
     if (typeof retrieverTool !== 'string' || !/^[a-zA-Z0-9_.-]+$/.test(retrieverTool))
       throw new Error('workflow.retrieverTool must be a registered tool name')
-    return { retrieverTool }
+    const publicQuery = settings.publicQuery ?? null
+    if (
+      publicQuery !== null &&
+      (typeof publicQuery !== 'string' || !publicQuery.trim() || publicQuery.length > 2048)
+    )
+      throw new Error('workflow.publicQuery must be an explicit public search query')
+    return { retrieverTool, publicQuery }
   },
 })

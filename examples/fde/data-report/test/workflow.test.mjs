@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { test } from 'node:test'
+import { test } from 'vitest'
 import { driveLoop } from '@agnes/plugin-runtime/testkit'
 import { factory, main, parseCsv, policy } from '../index.mjs'
 import { runWorkflow } from './harness.mjs'
@@ -8,11 +8,16 @@ const context = {}
 test('data-report completes through the public loop and tool ports', async () => {
   const run = await runWorkflow(main, { context })
   assert.equal(run.finished[0], 'completed')
+  assert.ok(run.checkpoint.state.data.deliverables.some((file) => file.ref.size > 0))
+  assert.ok(run.calls.some((call) => call.name === 'present'))
+
   assert.ok(run.skills.includes('data-report'))
   const data = run.checkpoint.state.data
   assert.equal(data.analysis.revenue, 45000)
   assert.equal(data.analysis.profit, 18000)
   assert.match(data.report.html, /<svg/)
+  assert.ok(Object.values(run.files).includes(data.report.html))
+  assert.ok(data.deliverables.some((file) => file.ref.mime === 'text/html'))
   assert.throws(() => parseCsv('month,revenue,cost\n2026-01,NaN,1'), /Invalid CSV/)
   assert.throws(() => parseCsv('month,revenue,cost\n"2026-01",1,1'), /unquoted/)
 })
@@ -31,4 +36,21 @@ test('refusal and cancellation preserve workflow boundaries', async () => {
   const stopped = new AbortController()
   stopped.abort()
   assert.throws(() => policy.decide({ policy: { isReadOnly: true } }, stopped.signal))
+  for (const [name, path, effect] of [
+    ['write', `fde-output/data-report/${'a'.repeat(64)}/0-report.md`, 'allow'],
+    ['write', 'fixtures/sales.csv', 'deny'],
+    ['write', `fde-output/data-report/${'a'.repeat(64)}/../sales.csv`, 'deny'],
+    ['edit', `fde-output/data-report/${'a'.repeat(64)}/0-report.md`, 'deny'],
+  ]) {
+    assert.equal(
+      policy.decide(
+        {
+          policy: { isReadOnly: false, isDestructive: true },
+          call: { name, args: { path } },
+        },
+        new AbortController().signal,
+      ).effect,
+      effect,
+    )
+  }
 })

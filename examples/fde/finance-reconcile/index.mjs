@@ -99,7 +99,7 @@ export const tools = [
       }
     },
   ),
-  // TODO: official ask_user_question can collect edited account mappings; policy owns posting approval.
+  // Official ask_user_question collects the business choice; policy separately owns posting permission.
   tool(
     'fde_finance_approve',
     'Approve simulated balanced adjusting entries against a review suspense account; never post to a real ledger.',
@@ -152,6 +152,8 @@ const stages = [
   },
   {
     name: 'confirm-adjustments',
+    confirm: (state) =>
+      `Approve these simulated USD-cent adjusting entries without posting? ${JSON.stringify(state.data.report.proposals)}`,
     async run(ctx, state, signal) {
       return value(
         await ctx.tools.execute(

@@ -7,6 +7,10 @@ import { runWorkflow } from './harness.mjs'
 test('exact cents reconciliation flags unmatched evidence and approves balanced simulation entries', async () => {
   const run = await runWorkflow(main)
   assert.equal(run.finished[0], 'completed')
+  assert.ok(run.checkpoint.state.data.deliverables.some((file) => file.ref.size > 0))
+  assert.ok(run.calls.some((call) => call.name === 'present'))
+  assert.ok(run.calls.some((call) => call.name === 'ask_user_question'))
+
   assert.ok(run.skills.includes('finance-reconcile'))
   const { report, receipt } = run.checkpoint.state.data
   assert.deepEqual(report.matched, ['TX-1'])

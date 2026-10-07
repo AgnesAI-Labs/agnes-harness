@@ -6,3 +6,5 @@ description: Review clauses independently and aggregate a risk draft.
 # contract-review
 
 Split clauses. Review independent clauses in parallel using the customer rubric, preserving clause identifiers and quotes. Flag unlimited liability and unilateral changes. Aggregate evidence before summarizing. Never change or sign a contract. A qualified customer reviewer resolves legal applicability. Customer adaptation: replace the rubric and input extraction, include jurisdiction and reviewer criteria in configuration.
+
+Use official present for generated deliverables under fde-output/contract-review/. Keep business evidence read-only; permit only bounded report output writes. TODO: adopt official Plan mode when Stream E2 is available.

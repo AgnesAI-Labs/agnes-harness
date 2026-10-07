@@ -30,27 +30,37 @@ agh serve
 
 For a portable package, run `npm pack` here and install the resulting tarball with `agh plugins add ./NAME.tgz`. Runtime, fixtures, playbook and any panel/MCP server travel together. No workspace imports or sibling examples are required.
 
-Headless agh run rejects permission requests and stops before the write. This is the expected unattended result. Complete the workflow in Web to approve or deny the exact action.
+An unattended run stops at the pending official question, or at a tool-permission request. Complete the business choice in the Web/TUI question card; an action still needs backend permission.
 
-For Web, open the serve URL, then **Admin → Plugins → Bundles**. Select `@agnes-fde/support-triage#support-triage`, save and restart Host as requested. Start a new session with preset `support-triage` and Demo model; paste `fixtures/prompt.txt`. Existing sessions retain their pinned loop. Review the approval card; denial stops without a receipt.
+For Web, open the serve URL, then **Admin → Plugins → Bundles**. Select `@agnes-fde/support-triage#support-triage`, save and restart Host as requested. Start a new session with preset `support-triage` and Demo model; paste `fixtures/prompt.txt`. Existing sessions retain their pinned loop. Review the deliverable and official question card; cancellation or permission denial stops without a receipt.
 
-This is a one-turn fixture workflow with fixed identifiers. The built-in Demo route makes no live inference; tools produce deterministic evidence and support/CRM drafts are scripted. Quick tests use scripted model replies. With a real model, tool evidence remains the same and model prose becomes live inference.
+This is a fixture workflow that parks for a human answer with fixed identifiers. The built-in Demo route makes no live inference; tools produce deterministic evidence and support/CRM drafts are scripted. Quick tests use scripted model replies. With a real model, tool evidence remains the same and model prose becomes live inference.
 
 ## Use a real model
 
-Configure a real route/model in AGH, then edit both the plugin target and preset primary route in [real-model.bundle.json](real-model.bundle.json) to that same pair:
+Configure a real route/model in AGH, then edit the preset primary route in [real-model.bundle.json](real-model.bundle.json) to the configured pair:
 
 ```sh
 agh run --bundle ./real-model.bundle.json --preset support-triage --input fixtures/prompt.txt --json
 ```
 
-The loop uses explicit `target`; client model selection alone does not change it. For Web, apply equivalent target config to this plugin row in the user profile composition and choose that real model for a new session. Keep keys outside this bundle.
+The loop uses Core’s public `prepareRequest()`; the session primary model supplies the route, contracts and hashes. For Web, configure the equivalent preset primary route and choose that real model for a new session. Keep keys outside this bundle.
 
 ## Adapt for a customer
 
 Replace the helpdesk connectors, escalation categories, SLA and templates. Keep the exact draft in approval arguments and verify delivery receipts.
 
 Keep facts and approval in the backend. Ordinary plugins are trusted in-process code; declarations are review metadata, not process isolation. Denied tools, model errors and interrupted pending stages stop this example. Reconcile a pending checkpoint before starting a new run; it never automatically repeats an uncertain effect.
+
+## Official tools and outputs
+
+The installed standard preset supplies [official tools](../../../docs/reference/default-tools.md). This bundle registers business connectors and formatters only. Before its action, `ask_user_question` presents Proceed/Cancel and parks with a persisted question ID. Only a validated ordinary user answer continues it; invalid answers keep it parked. This business choice does not grant tool permission.
+
+Official `write` creates reports in `fde-output/support-triage/<run-hash>/`; `present` copies them into session artifacts for the standard Open/Download card. Drafts are presented before questions; completed runs also present the final result. The policy allows report writes only at this bounded path, and the official observation/stale-write guard remains active. All other source writes remain denied in evidence-only workflows. Output paths are relative to the session workspace, and the manifest declares their read/write scope.
+
+Loop version **2.0.0** uses checkpoint codec **2** for pending questions. Start a new session after upgrading; codec 1 checkpoints are refused rather than replayed. Model selection now comes from the preset primary route. Quick tests script the official tool ports, model and artifact receipts; they do not exercise real question projections, downloads, web providers or background process confinement.
+
+TODO: adopt official Plan mode after Stream E2 merges; the example keeps its fixed staged/DAG workflow meanwhile.
 
 ## Quick test
 

@@ -9,7 +9,7 @@ FDE 工程师将流程、连接器、审核策略与手册一起交付。下面�
 | [客服分诊](support-triage/README.zh-CN.md) | 读取工单 → 分类 → 草稿 → 人工审批 → 模拟发送回执。 | 动作前人工确认 |
 | [合同评审](contract-review/README.zh-CN.md) | 拆分条款 → 并行评审节点 → 汇总 Markdown 报告 → 模型解读。 | 只读策略 |
 | [数据报告](data-report/README.zh-CN.md) | 读取 CSV → 计算合计与利润率 → 含 SVG 图表的 Markdown/HTML → 模型解读。 | 只读策略 |
-| [运维手册](ops-runbook/README.zh-CN.md) | 读取手册 → 诊断 argv → 批准模拟重启 → 核对回执。 | 动作前人工确认 |
+| [运维手册](ops-runbook/README.zh-CN.md) | 读取手册 → 官方后台诊断作业 → 问题卡 → 授权模拟重启 → 核对回执。 | 业务选择与工具权限 |
 | [CRM 助手](crm-assistant/README.zh-CN.md) | 本地 MCP 查询 → Skills 续约手册 → 草拟备注 → 审批 → 幂等模拟备注。 | 动作前人工确认 |
 | [设备巡检](device-inspection/README.zh-CN.md) | 读取状态 → 检测异常 → 人工确认 → 受约束动作 → 回执与状态验证。 | 动作前人工确认 |
 | [知识问答](knowledge-qa/README.zh-CN.md) | 本地文档 → 来源摘录 → 带引用回答或拒答 → 模型解读。 | 无来源则拒答；只读检索 |
@@ -23,11 +23,13 @@ FDE 工程师将流程、连接器、审核策略与手册一起交付。下面�
 
 按[安装指南](../../docs/guide/install.zh-CN.md)构建 `agh`。打开对应 README，在目录中执行 `agh plugins add .`，通过 `agh run --bundle PACKAGE#NAME` 或 Web **Admin → Plugins → Bundles** 面板选择已安装 bundle。每份 README 提供预设、提示、模型目标与预期结果。Web bundle 变更需要重启 Host 并新建会话。
 
-全新 local-dev 配置提供无密钥 Demo 路由。工具依据和客服/CRM 草稿来自夹具，Demo 不进行真实推理。已有部署须保留该路由或配置真实模型。每个示例的 `real-model.bundle.json` 展示模型配置。知识、会议、代码、财务、招聘与审计 loop 使用 Core 准备的请求和会话主模型。
+全新 local-dev 配置提供无密钥 Demo 路由。工具依据和客服/CRM 草稿来自夹具，Demo 不进行真实推理。已有部署须保留该路由或配置真实模型。所有示例使用 Core 准备的请求和会话主模型，`real-model.bundle.json` 配置预设 primary 路由。
 
-无交互运行会拒绝审批请求。发送、CRM 备注、运维重启、设备动作、调整分录与招聘后续评审在 CLI 中到达审批边界，在 Web 完成确认。示例测试覆盖批准与拒绝，不产生真实客户副作用。只读 bundle 可无交互完成。完整夹具成果均为确定性结果，真实模型解读保留为审核草稿。
+发送、CRM 备注、运维重启、设备动作、调整分录与招聘后续评审先交付草稿，再调用官方 `ask_user_question`。持久保存的 Proceed/Cancel 问题暂停流程，经校验的用户答案恢复执行。工具授权仍独立控制，不可用的权限会拒绝动作；业务选择可在 Web/TUI 完成。依据流程可无交互完成，仅允许生成输出，拒绝源数据修改。Demo 成果仍为确定性结果，真实模型解读保留为审核草稿。
 
-第二组覆盖本地知识、会议、工程评审、财务、招聘与政策依据。本源码版本尚未提供交互/展示工具，轻量本地导出与决定工具标记了采用官方 `present`、`ask_user_question` 的 TODO。固定 DAG 与本地依据检索无需交互计划或互联网搜索。
+十二个 bundle 均使用官方 `write`、`present` 生成受限路径报告和标准制品打开/下载卡。会议面板只渲染行动依据，不再自建下载路径。知识问答可按显式公开查询使用 `web_search`，私有问题与文档保持本地。运维使用官方 `shell` 后台作业与 `job_output`，操作者可用 `job_list`、`job_kill` 检查或停止所属作业。部署能力与限制见[官方默认工具](../../docs/reference/default-tools.zh-CN.md)，已有配置须允许问题/交付工具的投影能力。
+
+Loop 2.0.0/checkpoint codec 2 保存待答问题，升级后新建会话；旧 checkpoint 会被拒绝。TODO：Stream E2 合并后采用官方 Plan mode，当前保留固定阶段与 DAG。
 
 ## 从示例到客户
 
@@ -49,6 +51,6 @@ node --import tsx tools/release/external-examples.ts --author-only \
   --example examples/fde/compliance-audit
 ```
 
-重复 `--example` 可加入十二个示例中的任意一个。`--author-only` 跳过完整 CLI 打包，只验证作者契约与示例流程，不代表浏览器或完整分发验收。CRM/设备快速测试启动短小的真实 stdio MCP 进程，文件名使用 `.e2e.test.mjs`。运维测试注入模拟执行端口，不证明操作系统隔离。安装匹配作者 tarball 后，各目录也可独立执行 `npm run build` 与 `npm test`。
+重复 `--example` 可加入十二个示例中的任意一个。`--author-only` 跳过完整 CLI 打包，验证作者契约与示例流程，不代表浏览器或完整分发验收。快速测试使用官方工具端口、模型和制品回执的脚本夹具，覆盖等待、无效或取消答案，以及保留的工具权限拒绝。CRM/设备测试启动短小的真实 stdio MCP 进程，使用 `.e2e.test.mjs`。运维作业端口与重启执行器均为夹具，不证明操作系统隔离或真实后台清理。安装匹配作者 tarball 后可独立执行各目录的 `npm run build`、`npm test`。公开 conformance testkit 所需 Vitest 仅为测试依赖。
 
 夹具验证不代表真实模型质量、客户 API、物理设备或跨平台验收。

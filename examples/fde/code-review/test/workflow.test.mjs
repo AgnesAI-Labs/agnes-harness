@@ -8,6 +8,9 @@ import { runWorkflow } from './harness.mjs'
 test('review DAG joins independent checks with exact added-line evidence', async () => {
   const run = await runWorkflow(main)
   assert.equal(run.finished[0], 'completed')
+  assert.ok(run.checkpoint.state.data.deliverables.some((file) => file.ref.size > 0))
+  assert.ok(run.calls.some((call) => call.name === 'present'))
+
   assert.ok(run.skills.includes('code-review'))
   const report = run.checkpoint.state.data.report
   assert.equal(report.status, 'needs-review')

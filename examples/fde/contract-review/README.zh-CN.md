@@ -6,7 +6,7 @@
 
 **流程：** 拆分条款 → 并行评审节点 → 汇总 Markdown 报告 → 模型解读。
 
-固定 DAG 使用 LoopContext.tools.batch 并行评审，再进入汇总节点。策略拒绝写入，包括全访问会话；演示规则输出供具备资质的评审人员检查的草稿。
+固定 DAG 使用 LoopContext.tools.batch 并行评审，再进入汇总节点。策略拒绝业务源数据写入，包括全访问会话；演示规则输出供具备资质的评审人员检查的草稿。
 
 ## 包含组件
 
@@ -38,19 +38,29 @@ Web：打开 serve 地址，进入 **Admin → Plugins → Bundles**，选择 `@
 
 ## 真实模型
 
-先在 AGH 配置真实路由和模型，再将 [real-model.bundle.json](real-model.bundle.json) 中插件 target 与预设 primary 路由改成同一组标识：
+先在 AGH 配置真实路由和模型，再将 [real-model.bundle.json](real-model.bundle.json) 中预设 primary 路由改为已配置的标识：
 
 ```sh
 agh run --bundle ./real-model.bundle.json --preset contract-review --input fixtures/prompt.txt --json
 ```
 
-loop 使用显式 `target`，仅在客户端选择模型不会改变它。Web 中在用户 profile composition 为该插件行设置等价 target，并为新会话选择对应模型。密钥不要放进示例包。
+loop 使用 Core 的公开 `prepareRequest()`，由会话主模型提供路由、契约与哈希。Web 中配置等价预设 primary 路由，并为新会话选择对应模型。密钥不要放进示例包。
 
 ## 客户适配
 
 按客户条款与法域替换提取器和风险规则，保留条款标识与依据。通过作者工具包加入只读检索。
 
 事实与审批留在后台。普通插件在受信进程内运行，声明用于审核，不提供进程隔离。拒绝工具、模型错误与中断的 pending 阶段都会停止。pending checkpoint 须先对账再新建任务，不自动重放结果未知的副作用。
+
+## 官方工具与输出
+
+已安装的 standard 预设提供[官方工具](../../../docs/reference/default-tools.zh-CN.md)，本 bundle 只注册业务连接器和格式器。bundle 策略继续拒绝修改业务源数据。
+
+官方 `write` 在 `fde-output/contract-review/<run-hash>/` 生成报告，`present` 复制为会话制品，使用标准打开/下载卡。问题前先交付草稿，完成后交付最终结果。策略仅允许此受限路径的报告写入，官方已读/过期版本保护继续生效；只读依据流程仍拒绝其他源数据写入。输出相对于会话工作区，manifest 声明了相应读写范围。
+
+Loop **2.0.0** 使用 checkpoint codec **2** 保存待答问题。升级后新建会话，旧 codec 1 会被拒绝，不会自动重放。模型选择来自预设 primary 路由。快速测试使用官方工具端口、模型和制品回执的脚本夹具，不验证真实问题投影、下载、搜索服务或后台进程隔离。
+
+TODO：Stream E2 合并后采用官方 Plan mode；当前保留固定阶段或 DAG 流程。
 
 ## 快速测试
 

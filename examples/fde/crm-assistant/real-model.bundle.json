@@ -1,17 +1,5 @@
 {
   "extends": ["@agnes-fde/crm-assistant#crm-assistant"],
-  "profile": {
-    "plugins": {
-      "ext:@agnes-fde/crm-assistant/main": {
-        "config": {
-          "target": {
-            "route": "customer",
-            "model": "customer-model"
-          }
-        }
-      }
-    }
-  },
   "presets": {
     "crm-assistant": {
       "name": "crm-assistant",

@@ -1,6 +1,6 @@
 {
   "name": "@agnes-fde/device-inspection",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "type": "module",
   "license": "Apache-2.0",
   "engines": {
@@ -20,13 +20,14 @@
   ],
   "scripts": {
     "build": "node --check index.mjs && node --check runtime.mjs",
-    "test": "node --test test/*.test.mjs"
+    "test": "vitest run test/workflow.e2e.test.mjs --maxWorkers=1"
   },
   "dependencies": {
     "@agnes/extension-api": "1.4.0",
     "@agnes/plugin-runtime": "0.0.0",
     "@sinclair/typebox": "0.34.33",
-    "@modelcontextprotocol/sdk": "1.25.2"
+    "@modelcontextprotocol/sdk": "1.25.2",
+    "@agnes/protocol": "0.0.0"
   },
   "agnes": {
     "kinds": [
@@ -41,7 +42,11 @@
       "filesystem": {
         "read": [
           "fixtures/*",
-          "skills/playbook/SKILL.md"
+          "skills/playbook/SKILL.md",
+          "fde-output/device-inspection/**"
+        ],
+        "write": [
+          "fde-output/device-inspection/**"
         ]
       },
       "device": true,
@@ -67,7 +72,7 @@
         "profile": {
           "loop": {
             "id": "fde.device-inspection",
-            "version": "1.0.0"
+            "version": "2.0.0"
           },
           "skills": [
             "device-inspection"
@@ -79,6 +84,14 @@
             "extends": "standard",
             "approval": {
               "policy": "fde.device-inspection"
+            },
+            "model": {
+              "route": {
+                "primary": {
+                  "route": "demo",
+                  "model": "demo-model"
+                }
+              }
             }
           }
         }
@@ -87,6 +100,7 @@
   },
   "devDependencies": {
     "@agnes/host": "0.0.0",
-    "@agnes/resource-control-runtime": "0.0.0"
+    "@agnes/resource-control-runtime": "0.0.0",
+    "vitest": "5.0.0"
   }
 }

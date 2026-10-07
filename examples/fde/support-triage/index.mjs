@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs'
 import { Type } from '@sinclair/typebox'
-import { makeBundle, modelText, tool, value, writeMeta } from './runtime.mjs'
+import { isDemo, makeBundle, modelText, tool, value, writeMeta } from './runtime.mjs'
 
 const tickets = JSON.parse(readFileSync(new URL('./fixtures/tickets.json', import.meta.url)))
 const object = (fields) => Type.Object(fields, { additionalProperties: false })
@@ -53,21 +53,21 @@ const stages = [
     async run(ctx, state, signal) {
       const suggestion = await modelText(
         ctx,
-        state.target,
         'Draft a concise support reply. State the escalation, do not promise refunds or invent a fix. Return only the reply.',
         state.data,
         signal,
       )
       return {
-        draft:
-          state.target.route === 'demo'
-            ? 'We received your outage report and escalated it to incident response. We will share the next verified update.'
-            : suggestion,
+        draft: (await isDemo(ctx))
+          ? 'We received your outage report and escalated it to incident response. We will share the next verified update.'
+          : suggestion,
       }
     },
   },
   {
     name: 'approve-and-send',
+    confirm: (state) =>
+      `Send the reviewed reply for ${state.data.ticket.id}? Review the complete draft deliverable before proceeding.`,
     async run(ctx, state, signal) {
       return {
         receipt: value(

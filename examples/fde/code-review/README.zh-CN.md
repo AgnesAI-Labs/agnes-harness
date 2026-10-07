@@ -12,7 +12,7 @@ fixtures/repo 包含合成变更前源码，change.patch 是标准统一格式 g
 
 - Loop：`fde.code-review`，支持带版本 checkpoint 与取消；每个独立 tarball 包含 `runtime.mjs`。
 - Tools：夹具连接器和转换，由 `main` 通过公开作者工具包注册。
-- Policy：`fde.code-review`，拒绝写入，包括全访问会话。
+- Policy：`fde.code-review`，拒绝业务源数据写入，包括全访问会话。
 - Skills：随包 `skills/playbook/SKILL.md` 注册并加入模型请求。
 - Bundle：`agnes.kinds` 声明 `bundle`，`agnes.bundles.code-review` 组合 loop、Skill 和预设。
 
@@ -52,6 +52,16 @@ loop 调用 Core 的公开 `prepareRequest()`；Core 解析会话主模型、契
 用授权仓库读取器替换夹具加载，保留 base/head 版本与准确文件行号依据。将语言检查作为独立 DAG 节点，再汇总结构化发现。客户检查若需进程执行，应选择沙箱。修改和合并由维护者负责，补丁内容不能改变流程策略。
 
 后台插件运行在受信进程内，能力声明用于审核，不隔离任意代码。工具拒绝或模型失败会停止流程。pending checkpoint 不自动重放：再次运行前核对依据。模拟回执不是客户系统的持久账本。
+
+## 官方工具与输出
+
+已安装的 standard 预设提供[官方工具](../../../docs/reference/default-tools.zh-CN.md)，本 bundle 只注册业务连接器和格式器。bundle 策略继续拒绝修改业务源数据。
+
+官方 `write` 在 `fde-output/code-review/<run-hash>/` 生成报告，`present` 复制为会话制品，使用标准打开/下载卡。问题前先交付草稿，完成后交付最终结果。策略仅允许此受限路径的报告写入，官方已读/过期版本保护继续生效；只读依据流程仍拒绝其他源数据写入。输出相对于会话工作区，manifest 声明了相应读写范围。
+
+Loop **2.0.0** 使用 checkpoint codec **2** 保存待答问题。升级后新建会话，旧 codec 1 会被拒绝，不会自动重放。模型选择来自预设 primary 路由。快速测试使用官方工具端口、模型和制品回执的脚本夹具，不验证真实问题投影、下载、搜索服务或后台进程隔离。
+
+TODO：Stream E2 合并后采用官方 Plan mode；当前保留固定阶段或 DAG 流程。
 
 ## 快速测试
 

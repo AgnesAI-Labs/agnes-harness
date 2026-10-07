@@ -1,6 +1,6 @@
 {
   "name": "@agnes-fde/recruiting-screen",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "type": "module",
   "license": "Apache-2.0",
   "engines": {
@@ -24,7 +24,8 @@
   "dependencies": {
     "@agnes/extension-api": "1.4.0",
     "@agnes/plugin-runtime": "0.0.0",
-    "@sinclair/typebox": "0.34.33"
+    "@sinclair/typebox": "0.34.33",
+    "@agnes/protocol": "0.0.0"
   },
   "agnes": {
     "kinds": [
@@ -38,7 +39,11 @@
       "filesystem": {
         "read": [
           "fixtures/**",
-          "skills/playbook/SKILL.md"
+          "skills/playbook/SKILL.md",
+          "fde-output/recruiting-screen/**"
+        ],
+        "write": [
+          "fde-output/recruiting-screen/**"
         ]
       }
     },
@@ -60,7 +65,7 @@
         "profile": {
           "loop": {
             "id": "fde.recruiting-screen",
-            "version": "1.0.0"
+            "version": "2.0.0"
           },
           "skills": [
             "recruiting-screen"
