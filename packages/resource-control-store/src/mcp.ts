@@ -505,38 +505,9 @@ export class McpResourceStore {
     if (!statuses.every((value) => validateResourceControlData('McpStatus', value).ok))
       throw new Error('invalid worker MCP observation')
     for (const value of statuses) await this.observe(profile, value.serverId, value)
-    await this.journal.txn(profile, (journal) => ({
-      next: {
-        ...journal,
-        operations: journal.operations.map((entry) =>
-          terminal.has(entry.operation.state) ||
-          // An operation this store is driving settles itself: its drive records the result and
-          // only then does the connection it asked for exist. A worker observation of the same
-          // server can arrive earlier (an idle worker reports `disabled` before an enable has
-          // started the process), so closing it here would drop the result or skip the work.
-          this.active.has(entry.operation.operationId) ||
-          // A test says nothing about the connection, and may be driven by another process whose
-          // `active` set this store cannot see (the resource worker runs it for a SecretRef).
-          entry.operation.kind === '_agnes/v1/mcp.servers.test' ||
-          !statuses.some(
-            (value) =>
-              entry.operation.target === `mcp/${value.serverId}` &&
-              (value.connectionState === 'ready' || value.connectionState === 'disabled'),
-          )
-            ? entry
-            : {
-                ...entry,
-                operation: {
-                  ...entry.operation,
-                  state: 'succeeded' as const,
-                  updatedAt: new Date().toISOString(),
-                  progress: 100,
-                },
-              },
-        ),
-      },
-      result: undefined,
-    }))
+    // Observations identify a server, not the operation or snapshot that produced them. An old
+    // ready/disabled event must not acknowledge queued work (or another process's running work).
+    // Only the driver commits an operation's result after its lifecycle effect and publication.
   }
   private async one<T>(params: Record<string, unknown>, map: (row: McpRow) => T): Promise<T> {
     return this.journal.read(params.profile as string, (j) => {
