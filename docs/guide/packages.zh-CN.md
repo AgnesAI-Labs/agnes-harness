@@ -6,6 +6,85 @@
 
 本页带你走完一个插件从检查、安装到更新和卸载的过程。先使用仓库自带的文本统计插件，跑通后再换成自己的包。
 
+## 分享与安装
+
+安装插件无需手抄信任哈希：
+
+```sh
+agh plugins add /home/me/downloads/hello-tool.tgz
+agh plugins add ../hello-tool
+agh plugins add https://example.com/team/hello-tool.git
+agh plugins add https://example.com/hello-tool.zip
+```
+
+命令显示来源、内容摘要、能力哈希、能力范围、警告与阻断项。确认 `plugins add` 后安装、信任并启用核对过的确切版本。已明确授权的脚本可用 `--yes`；未确认的非交互调用会取消。旧的 `agh install` 仍保持未信任、停用。`agh plugins trust <id>` 自动读取已安装版本的哈希供确认，`agh plugins enable <id>` 启用前再次展示能力。
+
+管理页的“从来源安装”支持本地路径、Git URL 和归档 HTTPS 地址。本地路径指向 daemon 所在机器。`file:` 接受绝对路径、daemon 工作区外的文件夹、相对文件夹、`.tgz`/`.tar.gz`/`.tar` 与 ZIP。显式的相对 `file:` 仍从 daemon 工作区解析；CLI 裸路径从 CLI 当前目录解析。来源不能是符号链接。归档可直接包含包，或用单个目录包住它；越界路径、链接、特殊文件与过大的归档会被拒绝。HTTPS 下载不跟随重定向、不接受 URL 凭据。
+
+Git URL 可省略提交，或用 `#` 指定分支/标签。检查时固定提交，安装时校验预览内容摘要。Git 仓库必须包含可安装的插件入口与运行产物；获取过程不执行安装脚本。
+
+分享时连同第三方 JavaScript 依赖一起打包：
+
+```sh
+# 作者先安装依赖；exports 指向 dist/ 时先构建。
+agh plugins pack /home/me/hello-tool ./hello-tool.tgz
+# 朋友的机器：
+agh plugins add ./hello-tool.tgz
+```
+
+`pack` 校验静态清单，打包后端和声明的前端入口，保留第三方法律注释及许可证/NOTICE，输出 `package/` 格式 tarball。Host SDK 由 AGH 提供，不重复打入包。朋友无需作者的 `node_modules`、源码目录或能力哈希。支持静态 JavaScript/TypeScript 导入；原生插件与读取未声明动态文件的依赖需要作者准备可分发产物。打包不执行插件代码、测试或安装脚本；输出文件不能已存在或位于来源目录内。
+
+## 能力声明
+
+在 `package.json` 中声明请求范围。本地插件、代理生成的插件和普通安装包使用同一份声明：
+
+```json
+{
+  "agnes": {
+    "plugins": [{ "export": "main" }],
+    "capabilities": {
+      "network": ["api.example.com", "*.example.org"],
+      "filesystem": { "read": ["workspace/reports/*"], "write": ["workspace/output/*"] },
+      "exec": ["node"],
+      "secrets": ["weather-api-key"],
+      "credentials": ["example-account"],
+      "model": true,
+      "childAgents": true,
+      "ui": true
+    }
+  }
+}
+```
+
+只写名称与范围，不写秘密值。字符串列表支持 `*`；文件范围可用绝对路径、相对路径或以工具 cwd 为根的 `workspace/` 路径。布尔值声明模型、子代理或 UI。空对象表示没有请求；省略字段的旧插件显示“未声明”。修改声明会改变信任哈希，需要重新审核。
+
+管理员可在 profile 的 `agnes-lock.json` 旁创建 `plugin-capabilities.json`：
+
+```json
+{
+  "allow": ["network:*.example.com", "filesystem.read:workspace/*", "model", "ui"],
+  "deny": ["exec:*", "secrets:*", "credentials:*"]
+}
+```
+
+策略词汇为 `network:<host>`、`filesystem.read:<scope>`、`filesystem.write:<scope>`、`exec:<command>`、`secrets:<name>`、`credentials:<name>`、`model`、`childAgents`、`ui`。省略 allow 表示除 deny 外均允许；空 allow 表示全部拒绝。deny 优先，宽泛请求不能绕过更窄的拒绝规则。错误策略拒绝操作。检查、安装、信任与启用读取同一策略；后续收紧策略会阻止不符合要求的包进入新激活，不删除其数据。
+
+这是社区信任模型：能力声明用于审核受信任代码，不构成隔离沙箱。Host 在工具 exec/沙箱启动、网络 fetch、文件访问边界记录未声明使用，不记录命令参数、目标或秘密值。现有沙箱与网络授权仍决定是否执行。直接使用 Node API、插件初始化和注入服务内部的调用不在该观察范围内。
+
+## 排障
+
+失败状态携带简短修复建议和文档链接。管理页详情提供“修复指南”，CLI 失败也显示建议。
+
+| 失败 | 修复 |
+| --- | --- |
+| 缺少导出 | 导出 `agnes.plugins` 指定的函数，核对 `package.json.exports`。 |
+| API 范围不兼容 | 安装兼容版本，或更新 Host。 |
+| 缺少 inject | 安装并启用必需服务的提供者。 |
+| Schema 错误 | 按 schema 修正清单或配置。 |
+| 能力被策略拒绝 | 核对声明及 allow/deny；经授权修改后重试。 |
+| 前端加载失败 | 重新构建前端，核对声明路径，再刷新页面。 |
+| 激活失败 | 查看入口与激活日志，修复包后重试。 |
+
 ## 开箱可用的助手插件
 
 AGH 默认提供四个官方助手插件。新建本地配置，以及已有配置首次升级到支持默认助手的版本时，会自动安装、信任并启用尚未安装的助手，无需联网下载：

@@ -8,6 +8,85 @@ English | [简体中文](packages.zh-CN.md)
 
 Follow a plugin from inspection and installation through updates and removal. Start with the repository's text-statistics plugin, then apply the same process to your own package.
 
+## Sharing
+
+Install a plugin without copying trust hashes:
+
+```sh
+agh plugins add /home/me/downloads/hello-tool.tgz
+agh plugins add ../hello-tool
+agh plugins add https://example.com/team/hello-tool.git
+agh plugins add https://example.com/hello-tool.zip
+```
+
+The command displays the source, integrity, capability hash, requested capabilities, warnings and blockers. Confirming `plugins add` installs, trusts and enables that exact reviewed version. Use `--yes` for an explicitly authorized script; otherwise a noninteractive invocation cancels. Legacy `agh install` continues to install disabled and untrusted. `agh plugins trust <id>` reviews the installed declaration and retrieves the hash automatically; `agh plugins enable <id>` displays it again before enabling.
+
+In **Settings → Plugin management → Install from source**, choose **Local path**, **Git URL**, or **Archive HTTPS URL**. Local paths name files on the daemon's machine. `file:` accepts absolute paths, folders outside the daemon workspace, relative folders, `.tgz`/`.tar.gz`/`.tar`, and ZIP files. Explicit relative `file:` references still resolve against the daemon workspace; bare CLI paths resolve against the CLI's cwd. Sources cannot be symlinks. Archives can contain a package at their root or inside one enclosing directory; traversal paths, links, special entries and oversized archives are refused. HTTPS archive downloads do not follow redirects or accept credentials.
+
+Git URLs may omit the commit or name a branch/tag after `#`. Inspection pins the resolved commit in the preview; installation checks the reviewed content digest. A Git repository must contain an installable plugin entry and its runtime artifacts. Acquisition runs no package lifecycle scripts.
+
+To share a plugin with its third-party JavaScript dependencies:
+
+```sh
+# Install the author's dependencies and build the plugin first, if its exports point into dist/.
+agh plugins pack /home/me/hello-tool ./hello-tool.tgz
+# On your friend's machine:
+agh plugins add ./hello-tool.tgz
+```
+
+`pack` validates the static manifest, bundles the backend entry and declared frontend entries, preserves third-party legal comments and license/notice files, then emits a `package/` tarball. Host SDK imports stay external and are supplied by AGH. The friend does not need the author's `node_modules`, source checkout or capability hash. Static JavaScript/TypeScript imports are supported; native addons and dependencies that load undeclared dynamic files need an author-provided distributable. Packing runs no plugin code, tests or install scripts and refuses an existing output file or output inside the source folder.
+
+## Capabilities
+
+Declare requested access in `package.json`. The same declaration appears for installed packages, local plugins, and plugins scaffolded by the agent:
+
+```json
+{
+  "agnes": {
+    "plugins": [{ "export": "main" }],
+    "capabilities": {
+      "network": ["api.example.com", "*.example.org"],
+      "filesystem": { "read": ["workspace/reports/*"], "write": ["workspace/output/*"] },
+      "exec": ["node"],
+      "secrets": ["weather-api-key"],
+      "credentials": ["example-account"],
+      "model": true,
+      "childAgents": true,
+      "ui": true
+    }
+  }
+}
+```
+
+List names/scopes, never secret values. String lists support `*` globs. Filesystem scopes can be absolute, relative, or `workspace/` paths rooted at the tool cwd. Booleans request model access, child agents or UI. An empty object requests no capabilities; an omitted declaration is shown as undeclared for compatibility. Changes to a declaration change the trust hash and require review.
+
+Administrators can create `plugin-capabilities.json` beside the profile's `agnes-lock.json`:
+
+```json
+{
+  "allow": ["network:*.example.com", "filesystem.read:workspace/*", "model", "ui"],
+  "deny": ["exec:*", "secrets:*", "credentials:*"]
+}
+```
+
+The policy vocabulary is `network:<host>`, `filesystem.read:<scope>`, `filesystem.write:<scope>`, `exec:<command>`, `secrets:<name>`, `credentials:<name>`, `model`, `childAgents`, and `ui`. Omit `allow` to allow all declared requests except deny rules; `allow: []` allows none. Deny wins. A wildcard request cannot hide a narrower denied scope. Malformed policy fails closed. Inspection, installation, trust and enable read this policy; changing it blocks disallowed installed packages from new activation without deleting their data.
+
+This is the community trust model. Declarations help review trusted code; they are not a security sandbox. Host-observed tool exec/sandbox launches, network fetches and filesystem access report undeclared use in plugin logs, without recording command arguments, targets or credential values. Existing sandbox and egress authorization still decide whether an operation runs. Direct Node APIs, plugin initialization and injected service implementations are outside this observation boundary.
+
+## Troubleshooting
+
+Failed plugin states carry a short fix hint and a documentation link. In plugin details, use the **Fix guide** link; CLI failures also print the hint.
+
+| Failure | Fix |
+| --- | --- |
+| Missing export | Export the function named by `agnes.plugins`; verify `package.json.exports`. |
+| API range mismatch | Use a compatible plugin version or update the Host. |
+| Missing inject | Install and enable the required service provider. |
+| Schema error | Correct the manifest/configuration to match its schema. |
+| Capability blocked | Review the declaration and administrator allow/deny policy; retry after an authorized change. |
+| Frontend load failure | Rebuild declared assets, check their paths, then reload the page. |
+| Activation failure | Check entry points and activation logs, repair the package, then retry. |
+
 <a id="开箱可用的助手插件"></a>
 
 ## Built-in helper plugins
