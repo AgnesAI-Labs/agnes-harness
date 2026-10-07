@@ -1,0 +1,20 @@
+{
+  "extends": ["@agnes-fde/meeting-actions#meeting-actions"],
+  "presets": {
+    "meeting-actions": {
+      "name": "meeting-actions",
+      "extends": "standard",
+      "approval": {
+        "policy": "fde.meeting-actions"
+      },
+      "model": {
+        "route": {
+          "primary": {
+            "route": "customer",
+            "model": "customer-model"
+          }
+        }
+      }
+    }
+  }
+}

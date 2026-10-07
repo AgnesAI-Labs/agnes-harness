@@ -1,0 +1,8 @@
+{
+  "role": "Customer integration engineer",
+  "criteria": [
+    { "skill": "api-integration", "weight": 4 },
+    { "skill": "incident-analysis", "weight": 3 },
+    { "skill": "technical-writing", "weight": 3 }
+  ]
+}

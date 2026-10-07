@@ -1,0 +1,20 @@
+{
+  "extends": ["@agnes-fde/code-review#code-review"],
+  "presets": {
+    "code-review": {
+      "name": "code-review",
+      "extends": "standard",
+      "approval": {
+        "policy": "fde.code-review"
+      },
+      "model": {
+        "route": {
+          "primary": {
+            "route": "customer",
+            "model": "customer-model"
+          }
+        }
+      }
+    }
+  }
+}

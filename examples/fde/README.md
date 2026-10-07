@@ -12,14 +12,22 @@ A forward-deployed engineer ships a workflow, connectors, a reviewed policy and 
 | [Operations runbook](ops-runbook/README.md) | Read runbook → diagnostic argv → approved synthetic restart → verify receipt. | Human approval before action |
 | [CRM assistant](crm-assistant/README.md) | Local MCP lookup → Skills renewal playbook → note draft → approval → idempotent simulated note. | Human approval before action |
 | [Device inspection](device-inspection/README.md) | Read status → detect anomaly → human confirmation → constrained action → receipt and state verification. | Human approval before action |
+| [Knowledge QA](knowledge-qa/README.md) | Local documents → retrieved quotes → cited answer or refusal → model commentary. | No source means refusal; read-only retrieval |
+| [Meeting actions](meeting-actions/README.md) | Transcript → summary, decisions, owners/dates → markdown and panel → simulated send. | Human approval before sending |
+| [Code review](code-review/README.md) | Git diff fixture → parallel lint-ish/risk checks → joined review report. | Read-only DAG |
+| [Finance reconciliation](finance-reconcile/README.md) | Bank/book CSV → exact-cent mismatches → adjusting-entry drafts. | Human approval; unresolved evidence stays open |
+| [Recruiting screen](recruiting-screen/README.md) | Minimized resumes → rubric evidence and unknowns → human follow-up. | Human decision; job-skill evidence only |
+| [Compliance audit](compliance-audit/README.md) | Checklist → evidence checks → findings with severity and source links. | Read-only; missing evidence stays a gap |
 
 ## Start a delivery
 
 Build `agh` from the [installation guide](../../docs/guide/install.md). Open an example README, run `agh plugins add .` inside that directory, then select its installed bundle through `agh run --bundle PACKAGE#NAME` or Web’s **Admin → Plugins → Bundles** panel. Each README gives the preset, prompt, model target and expected result. Web bundle changes need a Host restart and a new session.
 
-The keyless Demo route is supplied by a fresh local-dev profile. Tool evidence and support/CRM drafts are fixtures; Demo does not perform real reasoning. An existing deployment needs that route or a configured real model, and each example includes `real-model.bundle.json` to show explicit loop target configuration.
+The keyless Demo route is supplied by a fresh local-dev profile. Tool evidence and support/CRM drafts are fixtures; Demo does not perform real reasoning. An existing deployment needs that route or a configured real model, and each example includes `real-model.bundle.json` to show its model configuration. The newer knowledge, meeting, code, finance, recruiting and audit loops use Core-prepared requests and the session primary model.
 
-Headless runs deliberately refuse approval requests. Support sending, CRM notes, runbook restarts and device actions reach the approval boundary in CLI; finish them in Web. The own tests exercise both approval and denial without real customer effects. Contract review and data reporting finish headlessly.
+Headless runs deliberately refuse approval requests. Sending, CRM notes, runbook restarts, device actions, adjusting entries and recruiting follow-up reach the approval boundary in CLI; finish them in Web. The own tests exercise both approval and denial without real customer effects. Read-only bundles finish headlessly. All substantive fixture outputs are deterministic; real-model commentary remains a review draft.
+
+The second group extends delivery to local knowledge, meetings, engineering review, finance, recruiting and policy evidence. Interaction/presentation tools are not provided by this source revision; small local export/decision tools carry TODOs for official `present` and `ask_user_question` adoption. Fixed DAGs and local evidence retrieval need no interactive plan or Internet search.
 
 ## From example to customer
 
@@ -33,10 +41,14 @@ Use the pinned Node/pnpm versions in the repository. The external harness builds
 
 ```sh
 node --import tsx tools/release/external-examples.ts --author-only \
-  --example examples/fde/contract-review \
-  --example examples/fde/data-report
+  --example examples/fde/knowledge-qa \
+  --example examples/fde/meeting-actions \
+  --example examples/fde/code-review \
+  --example examples/fde/finance-reconcile \
+  --example examples/fde/recruiting-screen \
+  --example examples/fde/compliance-audit
 ```
 
-Repeat `--example` to include any of the six bundles. `--author-only` skips packaging the full CLI; it verifies author contracts and example workflows, not a browser or complete distribution. The CRM/device quick tests include short actual stdio MCP processes and use the `.e2e.test.mjs` filename. Runbook tests inject a fake execution port and do not prove OS confinement. Each directory’s `npm run build` and `npm test` also work independently when the matching author tarballs are installed.
+Repeat `--example` to include any of the twelve bundles. `--author-only` skips packaging the full CLI; it verifies author contracts and example workflows, not a browser or complete distribution. The CRM/device quick tests include short actual stdio MCP processes and use the `.e2e.test.mjs` filename. Runbook tests inject a fake execution port and do not prove OS confinement. Each directory’s `npm run build` and `npm test` also work independently when the matching author tarballs are installed.
 
 No real-model quality, customer API, physical device or cross-platform acceptance is implied by these fixtures.

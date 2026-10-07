@@ -1,0 +1,20 @@
+{
+  "extends": ["@agnes-fde/compliance-audit#compliance-audit"],
+  "presets": {
+    "compliance-audit": {
+      "name": "compliance-audit",
+      "extends": "standard",
+      "approval": {
+        "policy": "fde.compliance-audit"
+      },
+      "model": {
+        "route": {
+          "primary": {
+            "route": "customer",
+            "model": "customer-model"
+          }
+        }
+      }
+    }
+  }
+}

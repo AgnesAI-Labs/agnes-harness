@@ -1,0 +1,6 @@
+Meeting: Synthetic onboarding rollout, 2026-10-07
+SUMMARY: The pilot onboarding flow is ready for a limited customer cohort.
+SUMMARY: Support documentation needs a final check before launch.
+DECISION: Release to the pilot cohort only after the documentation review.
+ACTION: Morgan | 2026-10-09 | Review onboarding documentation
+ACTION: Casey | 2026-10-12 | Enable the pilot cohort after review

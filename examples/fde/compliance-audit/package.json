@@ -1,0 +1,96 @@
+{
+  "name": "@agnes-fde/compliance-audit",
+  "version": "1.0.0",
+  "type": "module",
+  "license": "Apache-2.0",
+  "engines": {
+    "node": ">=24.10"
+  },
+  "exports": "./index.mjs",
+  "files": [
+    "*.mjs",
+    "fixtures",
+    "skills",
+    "client",
+    "README.md",
+    "README.zh-CN.md",
+    "LICENSE",
+    "real-model.bundle.json"
+  ],
+  "scripts": {
+    "build": "node --check index.mjs && node --check runtime.mjs",
+    "test": "node --test test/*.test.mjs"
+  },
+  "dependencies": {
+    "@agnes/extension-api": "1.4.0",
+    "@agnes/plugin-runtime": "0.0.0",
+    "@sinclair/typebox": "0.34.33"
+  },
+  "agnes": {
+    "kinds": [
+      "bundle",
+      "loop",
+      "tool",
+      "skills"
+    ],
+    "capabilities": {
+      "model": true,
+      "filesystem": {
+        "read": [
+          "fixtures/**",
+          "skills/playbook/SKILL.md"
+        ]
+      }
+    },
+    "plugins": [
+      {
+        "export": "main",
+        "id": "ext:@agnes-fde/compliance-audit/main",
+        "inject": [
+          "extension",
+          "loops",
+          "toolPolicies",
+          "skills"
+        ],
+        "apiRange": "^1.4.0"
+      }
+    ],
+    "bundles": {
+      "compliance-audit": {
+        "profile": {
+          "loop": {
+            "id": "fde.compliance-audit",
+            "version": "1.0.0"
+          },
+          "skills": [
+            "compliance-audit"
+          ],
+          "toolPolicy": {
+            "readOnly": true
+          }
+        },
+        "presets": {
+          "compliance-audit": {
+            "name": "compliance-audit",
+            "extends": "standard",
+            "approval": {
+              "policy": "fde.compliance-audit"
+            },
+            "model": {
+              "route": {
+                "primary": {
+                  "route": "demo",
+                  "model": "demo-model"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "devDependencies": {
+    "@agnes/host": "0.0.0",
+    "@agnes/resource-control-runtime": "0.0.0"
+  }
+}

@@ -1,0 +1,10 @@
+{
+  "client": {
+    "entry": "./index.js",
+    "styles": [],
+    "slots": ["tool.call.toolview"],
+    "publicConfig": { "label": "Meeting actions" },
+    "services": [],
+    "projections": []
+  }
+}

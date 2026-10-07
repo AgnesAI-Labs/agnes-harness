@@ -1,0 +1,23 @@
+[
+  {
+    "id": "CTRL-1",
+    "requirement": "Access review is recorded",
+    "evidence": "access-review.md",
+    "requiredPhrase": "Review completed",
+    "severity": "high"
+  },
+  {
+    "id": "CTRL-2",
+    "requirement": "Restore drill has verified recovery",
+    "evidence": "restore-drill.md",
+    "requiredPhrase": "Recovery verified",
+    "severity": "medium"
+  },
+  {
+    "id": "CTRL-3",
+    "requirement": "Retention owner approves the schedule",
+    "evidence": "retention-approval.md",
+    "requiredPhrase": "Owner approved",
+    "severity": "high"
+  }
+]

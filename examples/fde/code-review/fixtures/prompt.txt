@@ -1,0 +1,1 @@
+Review the fixture git diff using parallel lint-ish checks and risk scan, then join a read-only report.

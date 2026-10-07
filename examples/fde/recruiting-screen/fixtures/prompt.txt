@@ -1,0 +1,1 @@
+Assess explicit resume evidence against the job rubric, show unknowns and bias-safety notes, and request human confirmation of the follow-up step.

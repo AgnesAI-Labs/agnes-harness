@@ -1,0 +1,4 @@
+id,date,amount,currency,description
+TX-1,2026-10-01,100.00,USD,Invoice 1
+TX-2,2026-10-02,500.00,USD,Invoice 2
+TX-3,2026-10-03,75.25,USD,Invoice 3

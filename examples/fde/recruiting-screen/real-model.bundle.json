@@ -1,0 +1,20 @@
+{
+  "extends": ["@agnes-fde/recruiting-screen#recruiting-screen"],
+  "presets": {
+    "recruiting-screen": {
+      "name": "recruiting-screen",
+      "extends": "standard",
+      "approval": {
+        "policy": "fde.recruiting-screen"
+      },
+      "model": {
+        "route": {
+          "primary": {
+            "route": "customer",
+            "model": "customer-model"
+          }
+        }
+      }
+    }
+  }
+}

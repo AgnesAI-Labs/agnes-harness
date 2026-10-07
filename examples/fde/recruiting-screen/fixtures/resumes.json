@@ -1,0 +1,26 @@
+[
+  {
+    "id": "CAND-1",
+    "name": "Synthetic Alex",
+    "age": 29,
+    "gender": "fixture-A",
+    "school": "Example College",
+    "evidence": [
+      { "skill": "api-integration", "quote": "Built a typed CRM API connector with retries." },
+      { "skill": "technical-writing", "quote": "Authored the customer integration guide." }
+    ]
+  },
+  {
+    "id": "CAND-2",
+    "name": "Synthetic Sam",
+    "age": 51,
+    "gender": "fixture-B",
+    "school": "Example Institute",
+    "evidence": [
+      {
+        "skill": "incident-analysis",
+        "quote": "Led a synthetic outage investigation and wrote the timeline."
+      }
+    ]
+  }
+]

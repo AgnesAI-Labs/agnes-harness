@@ -1,0 +1,93 @@
+{
+  "name": "@agnes-fde/finance-reconcile",
+  "version": "1.0.0",
+  "type": "module",
+  "license": "Apache-2.0",
+  "engines": {
+    "node": ">=24.10"
+  },
+  "exports": "./index.mjs",
+  "files": [
+    "*.mjs",
+    "fixtures",
+    "skills",
+    "client",
+    "README.md",
+    "README.zh-CN.md",
+    "LICENSE",
+    "real-model.bundle.json"
+  ],
+  "scripts": {
+    "build": "node --check index.mjs && node --check runtime.mjs",
+    "test": "node --test test/*.test.mjs"
+  },
+  "dependencies": {
+    "@agnes/extension-api": "1.4.0",
+    "@agnes/plugin-runtime": "0.0.0",
+    "@sinclair/typebox": "0.34.33"
+  },
+  "agnes": {
+    "kinds": [
+      "bundle",
+      "loop",
+      "tool",
+      "skills"
+    ],
+    "capabilities": {
+      "model": true,
+      "filesystem": {
+        "read": [
+          "fixtures/**",
+          "skills/playbook/SKILL.md"
+        ]
+      }
+    },
+    "plugins": [
+      {
+        "export": "main",
+        "id": "ext:@agnes-fde/finance-reconcile/main",
+        "inject": [
+          "extension",
+          "loops",
+          "toolPolicies",
+          "skills"
+        ],
+        "apiRange": "^1.4.0"
+      }
+    ],
+    "bundles": {
+      "finance-reconcile": {
+        "profile": {
+          "loop": {
+            "id": "fde.finance-reconcile",
+            "version": "1.0.0"
+          },
+          "skills": [
+            "finance-reconcile"
+          ]
+        },
+        "presets": {
+          "finance-reconcile": {
+            "name": "finance-reconcile",
+            "extends": "standard",
+            "approval": {
+              "policy": "fde.finance-reconcile"
+            },
+            "model": {
+              "route": {
+                "primary": {
+                  "route": "demo",
+                  "model": "demo-model"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "devDependencies": {
+    "@agnes/host": "0.0.0",
+    "@agnes/resource-control-runtime": "0.0.0"
+  }
+}
