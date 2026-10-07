@@ -1,4 +1,3 @@
-import { defaultLoops } from '@agnes/core/testkit'
 import { appendFileSync, copyFileSync, existsSync, mkdtempSync, rmSync, statSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -7,6 +6,7 @@ import { DatabaseSync } from 'node:sqlite'
 import { defaultIds, type IdMinter, Kernel, openTracked, presetDefaults, type SessionImpl } from '@agnes/core'
 import {
   actor,
+  defaultLoops,
   fakeProvider,
   fakeSeams,
   fencedFs,

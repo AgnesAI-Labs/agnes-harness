@@ -72,11 +72,7 @@ const SUPPLIED: Record<string, string[]> = {
     'slot:tool.card.inline',
     'projection:agnes/interaction/questions',
   ],
-  'agnes/deliverables': [
-    'tool:present',
-    'slot:tool.card.inline',
-    'projection:agnes/deliverables/presented',
-  ],
+  'agnes/deliverables': ['tool:present', 'slot:tool.card.inline', 'projection:agnes/deliverables/presented'],
   'agnes/jobs': ['tool:job_list', 'tool:job_output', 'tool:job_kill', 'hook:shutdown'],
   'agnes/plan-mode': ['tool:exit_plan_mode', 'hook:context', 'hook:approval_request'],
   'agnes/mcp-resources': [

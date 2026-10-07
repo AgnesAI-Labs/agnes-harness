@@ -3,7 +3,12 @@ import { describe, expect, it } from 'vitest'
 import { createDefaultCompactionEngine } from '../src/engine.js'
 import { prepareCompaction } from '../src/prepare.js'
 
-function node(seq: number, kind: CompactionNode['kind'], tokensEstimate: number, data: CompactionNode['data']): CompactionNode {
+function node(
+  seq: number,
+  kind: CompactionNode['kind'],
+  tokensEstimate: number,
+  data: CompactionNode['data'],
+): CompactionNode {
   return { seq, kind, turn: seq, pinned: false, tokensEstimate, data }
 }
 

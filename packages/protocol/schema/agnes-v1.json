@@ -5,8 +5,12 @@
   "$defs": {
     "PluginPublicationReport": { "$ref": "package-admin.json#/$defs/PluginPublicationReport" },
     "PluginPublicationStatusResult": { "$ref": "package-admin.json#/$defs/PluginPublicationStatusResult" },
-    "SessionGenerationMigrationParams": { "$ref": "package-admin.json#/$defs/SessionGenerationMigrationParams" },
-    "SessionGenerationMigrationResult": { "$ref": "package-admin.json#/$defs/SessionGenerationMigrationResult" },
+    "SessionGenerationMigrationParams": {
+      "$ref": "package-admin.json#/$defs/SessionGenerationMigrationParams"
+    },
+    "SessionGenerationMigrationResult": {
+      "$ref": "package-admin.json#/$defs/SessionGenerationMigrationResult"
+    },
     "ExtensionCallParams": {
       "$ref": "extension-service.json#/$defs/ExtensionCallParams"
     },

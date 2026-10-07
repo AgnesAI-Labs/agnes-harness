@@ -1,4 +1,3 @@
-import { defaultLoops } from '../testkit/loops.js'
 import type { ToolDef } from '@agnes/extension-api'
 import { type InferenceEvent, type ModelRecord, validateEvent } from '@agnes/protocol'
 import { describe, expect, it } from 'vitest'
@@ -27,6 +26,7 @@ import { toProviderRequest } from '../src/request/to-provider.js'
 import { applyBeforeRequestPatches } from '../src/request/transforms.js'
 import { presetDefaults } from '../src/step/preset.js'
 import { CoreError, type Event } from '../src/types.js'
+import { defaultLoops } from '../testkit/loops.js'
 import { fakeProvider, sent, usage } from './helpers/fake-provider.js'
 import { fakeSeams } from './helpers/fake-seams.js'
 import { noTimers, testFsOps } from './helpers/open-session.js'
@@ -96,7 +96,8 @@ async function terminalOutcome(
     }),
   })
   const preset = presetDefaults()
-  const kernel = Kernel.create({ loops: defaultLoops(),
+  const kernel = Kernel.create({
+    loops: defaultLoops(),
     storage: new MemoryStorage(),
     seams: fakeSeams(),
     provider,

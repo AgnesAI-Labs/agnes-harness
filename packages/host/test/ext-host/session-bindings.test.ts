@@ -1,7 +1,14 @@
-import { defaultLoops } from '@agnes/core/testkit'
 import { realpathSync } from 'node:fs'
 import { Kernel, noopHooks, presetDefaults, type SessionImpl } from '@agnes/core'
-import { actor, fakeProvider, fakeSeams, MemoryStorage, noTimers, testFsPolicy } from '@agnes/core/testkit'
+import {
+  actor,
+  defaultLoops,
+  fakeProvider,
+  fakeSeams,
+  MemoryStorage,
+  noTimers,
+  testFsPolicy,
+} from '@agnes/core/testkit'
 import { afterEach, expect, it } from 'vitest'
 import { createFs } from '../../src/adapters/fs.js'
 import { ExtensionSessions } from '../../src/ext-host/session-bindings.js'

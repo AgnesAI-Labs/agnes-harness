@@ -206,9 +206,9 @@ describe('registerRemoteToolsStrict', () => {
     expect(dotServer.tools.map((tool) => tool.name)).toEqual(admittedNames('a.b', ['read']))
     expect(underscoreServer.tools.map((tool) => tool.name)).toEqual(admittedNames('a_b', ['read']))
     expect(dotServer.tools[0]?.name).not.toBe(underscoreServer.tools[0]?.name)
-    const shared = dotServer.tools.map((tool) => tool.name).filter((name) =>
-      underscoreServer.tools.some((tool) => tool.name === name),
-    )
+    const shared = dotServer.tools
+      .map((tool) => tool.name)
+      .filter((name) => underscoreServer.tools.some((tool) => tool.name === name))
     expect(shared).toEqual([])
   })
 
@@ -906,7 +906,12 @@ describe('registerRemoteToolsStrict', () => {
     dispose()
     await Promise.resolve()
     const names = admittedNames('gh', ['list_prs', 'merge'])
-    expect(disposed).toEqual([...names].reverse().map((name) => `tool:${name}`).concat('resource:gh'))
+    expect(disposed).toEqual(
+      [...names]
+        .reverse()
+        .map((name) => `tool:${name}`)
+        .concat('resource:gh'),
+    )
     expect(close).toHaveBeenCalledTimes(1)
   })
   it('enforces an allow policy before registration and strict catalog health checks', async () => {

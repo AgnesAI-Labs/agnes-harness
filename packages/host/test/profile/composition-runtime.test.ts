@@ -103,8 +103,18 @@ it('runs preset compositions side by side, filters tools and retains the generat
     expect(validateAgainst(RuntimeSecurityStatus, security).ok).toBe(true)
     expect(security?.workspaces).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ sessionId: reader.key, path: realpathSync(root), preset: 'reader', provider: 'local' }),
-        expect.objectContaining({ sessionId: writer.key, path: realpathSync(root), preset: 'writer', provider: 'local' }),
+        expect.objectContaining({
+          sessionId: reader.key,
+          path: realpathSync(root),
+          preset: 'reader',
+          provider: 'local',
+        }),
+        expect.objectContaining({
+          sessionId: writer.key,
+          path: realpathSync(root),
+          preset: 'writer',
+          provider: 'local',
+        }),
       ]),
     )
     expect(JSON.stringify(security)).not.toContain('confine')

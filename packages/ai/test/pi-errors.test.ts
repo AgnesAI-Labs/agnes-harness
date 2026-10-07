@@ -2,9 +2,9 @@ import type { AssistantMessage } from '@earendil-works/pi-ai'
 import { describe, expect, it, vi } from 'vitest'
 import { classifyPiError } from '../src/adapters/pi/errors.js'
 import { PiAdapter } from '../src/adapters/pi/index.js'
-import { memoryRetryLedger } from '../src/retry.js'
 import { AMBIENT_CREDENTIAL_APIS } from '../src/adapters/pi/wire.js'
 import type { WireEvent } from '../src/index.js'
+import { memoryRetryLedger } from '../src/retry.js'
 import { fakeModel, fakeRequest } from '../testkit/index.js'
 
 type StreamImpl = NonNullable<ConstructorParameters<typeof PiAdapter>[0]['streamImpl']>

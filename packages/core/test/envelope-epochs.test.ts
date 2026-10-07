@@ -1,10 +1,10 @@
-import { defaultLoops } from '../testkit/loops.js'
 import type { RequestBody } from '@agnes/protocol'
 import { describe, expect, it } from 'vitest'
 import { Kernel } from '../src/kernel.js'
 import { MemoryStorage } from '../src/log/memory-storage.js'
 import { type EnvelopeEpochs, nonceFor, recordHeader } from '../src/request/envelope-epochs.js'
 import { presetDefaults } from '../src/step/preset.js'
+import { defaultLoops } from '../testkit/loops.js'
 import { fakeProvider, textTurn } from './helpers/fake-provider.js'
 import { fakeSeams } from './helpers/fake-seams.js'
 import { actor, noTimers, testFsOps } from './helpers/open-session.js'
@@ -82,7 +82,8 @@ describe('ledger envelope epochs', () => {
       textTurn('second parent answer'),
       textTurn('child answer'),
     ])
-    const kernel = Kernel.create({ loops: defaultLoops(),
+    const kernel = Kernel.create({
+      loops: defaultLoops(),
       storage: new MemoryStorage(),
       seams: fakeSeams(),
       provider,

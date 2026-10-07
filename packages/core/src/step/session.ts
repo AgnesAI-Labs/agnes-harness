@@ -57,18 +57,18 @@ import {
 } from '../effects/tool-dispatch.js'
 import { ToolPolicyRegistry, ToolRuntimeRegistry } from '../effects/tool-providers.js'
 import type { SeamRuntime } from '../effects/wrap.js'
+import { runDeferred } from '../execution/turn/deferred.js'
 import type { InvariantRegistry } from '../invariants/registry.js'
 // A type-only import, erased at compile time, so it is not a runtime cycle back to the kernel.
 import type { CoreDiagName } from '../kernel.js'
 import { scanAll, scanPages } from '../log/scan-pages.js'
 import type { SessionLogImpl, Timers } from '../log/session-log.js'
 import { SCAN_PAGE_MAX, type ScanQuery } from '../log/storage.js'
-import { runDeferred } from '../execution/turn/deferred.js'
+import { LoopChildren } from '../loop/children.js'
 import { LoopEventRegistry, loopEventContext } from '../loop/events.js'
 import { publicOutcome, shouldStopLoop } from '../loop/outcome.js'
-import { LEGACY_LOOP } from '../loop/registry.js'
-import { LoopChildren } from '../loop/children.js'
 import { createLoopContext, disposeLoopContext } from '../loop/ports.js'
+import { LEGACY_LOOP } from '../loop/registry.js'
 import type {
   AuxiliaryVisionAssemblyInput,
   AuxiliaryVisionProductionAdmission,
@@ -1564,9 +1564,14 @@ export class SessionImpl {
   beginLoopOperation(): () => void {
     if (this.closing) throw new CoreError('E_CLOSED', 'session closed')
     let done!: () => void
-    const work = new Promise<void>((resolve) => { done = resolve })
+    const work = new Promise<void>((resolve) => {
+      done = resolve
+    })
     this.activeWork.add(work)
-    return () => { this.activeWork.delete(work); done() }
+    return () => {
+      this.activeWork.delete(work)
+      done()
+    }
   }
 
   private active<T>(fn: () => Promise<T>, afterResume = true): Promise<T> {
@@ -1663,8 +1668,7 @@ export class SessionImpl {
     // counter, so long tasks and large tool batches do not consume this livelock allowance.
     const maxEdges = 64
     let edges = 0
-    const progress = () =>
-      this.lastSeq
+    const progress = () => this.lastSeq
     let cursor = progress()
     try {
       for (;;) {
@@ -2280,7 +2284,11 @@ export class SessionImpl {
     this.closePromise = Promise.resolve().then(async () => {
       const failures: unknown[] = []
       const attempt = async (fn: () => unknown | Promise<unknown>) => {
-        try { await fn() } catch (error) { failures.push(error) }
+        try {
+          await fn()
+        } catch (error) {
+          failures.push(error)
+        }
       }
       await attempt(() => this.loopDriver?.cancel())
       await Promise.all(this.runtimeInstances.map((instance) => attempt(() => instance.runtime.cancel())))

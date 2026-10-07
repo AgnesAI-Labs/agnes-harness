@@ -60,11 +60,7 @@ export function mcpStablePrefix(serverId: string): string {
  * contract and is not already taken. A hash is added only when sanitizing changed the id, the
  * clean spelling does not fit, or `taken` already holds it.
  */
-export function mcpPublicToolName(
-  serverId: string,
-  remoteName: string,
-  taken?: ReadonlySet<string>,
-): string {
+export function mcpPublicToolName(serverId: string, remoteName: string, taken?: ReadonlySet<string>): string {
   const prefix = mcpStablePrefix(serverId)
   const tool = ident(remoteName)
   const stable = `${prefix}${tool.text}`

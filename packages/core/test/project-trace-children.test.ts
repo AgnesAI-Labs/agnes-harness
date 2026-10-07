@@ -1,4 +1,3 @@
-import { defaultLoops } from '../testkit/loops.js'
 import type { ModelRecord, UISpan, UITurn, UITurnUsage } from '@agnes/protocol'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Kernel } from '../src/kernel.js'
@@ -7,6 +6,7 @@ import { attachChildTraces } from '../src/project/trace.js'
 import { projectUI } from '../src/project/ui.js'
 import { presetDefaults } from '../src/step/preset.js'
 import type { Event, EventInput } from '../src/types.js'
+import { defaultLoops } from '../testkit/loops.js'
 import { fakeProvider, textTurn } from './helpers/fake-provider.js'
 import { fakeSeams } from './helpers/fake-seams.js'
 import { actor, noTimers, testFsOps } from './helpers/open-session.js'
@@ -256,7 +256,8 @@ describe('SessionImpl.projectUI nests child traces via bounded storage.scan', ()
   it('scans the child from boundarySeq+1 with a limit and nests its generation under the matching subagent', async () => {
     const storage = new MemoryStorage()
     const scan = vi.spyOn(storage, 'scan')
-    const k = Kernel.create({ loops: defaultLoops(),
+    const k = Kernel.create({
+      loops: defaultLoops(),
       storage,
       seams: fakeSeams(),
       provider: Object.assign(fakeProvider([textTurn('child says hi')]), { models: () => [catalogue()] }),

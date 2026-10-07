@@ -195,7 +195,10 @@ async function evaluateBudgetPreflight(s: SessionImpl): Promise<'ok' | { reason:
   return 'ok'
 }
 
-export async function builtinBudgetPreflight(s: SessionImpl, mandatoryOnly = false): Promise<'ok' | { reason: TurnEndReason }> {
+export async function builtinBudgetPreflight(
+  s: SessionImpl,
+  mandatoryOnly = false,
+): Promise<'ok' | { reason: TurnEndReason }> {
   const op = s.op()
   if (!op) throw new CoreError('E_RELATION', 'Budget admission requires an accepted input')
   if (mandatoryOnly && s.turnBudgetCap() === null) {
@@ -208,10 +211,10 @@ export async function builtinBudgetPreflight(s: SessionImpl, mandatoryOnly = fal
   const previous = s.turn?.budgetAdmission
   const step = admittedStep(s)
   const cap = s.turnBudgetCap()
-  if (previous?.step === step && previous.cap === cap && previous.creditsUsed === s.state.creditsUsed) return 'ok'
+  if (previous?.step === step && previous.cap === cap && previous.creditsUsed === s.state.creditsUsed)
+    return 'ok'
   const result = await evaluateBudgetPreflight(s)
-  if (result === 'ok' && s.turn)
-    s.turn.budgetAdmission = { step, cap, creditsUsed: s.state.creditsUsed }
+  if (result === 'ok' && s.turn) s.turn.budgetAdmission = { step, cap, creditsUsed: s.state.creditsUsed }
   return result
 }
 

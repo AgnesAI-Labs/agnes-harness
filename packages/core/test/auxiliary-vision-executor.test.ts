@@ -1,4 +1,3 @@
-import { defaultLoops } from '../testkit/loops.js'
 import { deflateSync } from 'node:zlib'
 import type { ModelRecord } from '@agnes/protocol'
 import { describe, expect, it, vi } from 'vitest'
@@ -18,6 +17,7 @@ import type { SurfaceNode } from '../src/project/surface.js'
 import { canonicalJson, sha256Hex } from '../src/request/hash.js'
 import { presetDefaults } from '../src/step/preset.js'
 import type { Event, Seq } from '../src/types.js'
+import { defaultLoops } from '../testkit/loops.js'
 import { fakeProvider } from './helpers/fake-provider.js'
 import { fakeSeams } from './helpers/fake-seams.js'
 import { actor, noTimers, testFsOps } from './helpers/open-session.js'
@@ -45,7 +45,8 @@ function setup(treeBudgetCredits: number | null = 10) {
   const storage = new MemoryStorage()
   const provider = fakeProvider([])
   Object.assign(provider, { models: () => [model()] })
-  const kernel = Kernel.create({ loops: defaultLoops(),
+  const kernel = Kernel.create({
+    loops: defaultLoops(),
     storage,
     seams: fakeSeams(),
     provider,

@@ -235,10 +235,7 @@ it('reconstructs a cold generation MCP factory from SecretRefs and refuses unkno
     expect(activated).toBe(false)
     release()
     const dispose = await activation
-    expect([...tools]).toEqual([
-      mcpPublicToolName('pinned', 'ping'),
-      mcpLegacyToolName('pinned', 'ping'),
-    ])
+    expect([...tools]).toEqual([mcpPublicToolName('pinned', 'ping'), mcpLegacyToolName('pinned', 'ping')])
     await dispose?.()
     expect(tools.size).toBe(0)
     expect(closed).toBe(true)

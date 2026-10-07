@@ -1,5 +1,3 @@
-import { builtinBudgetPreflight } from './gate.js'
-import { loopRequestSurface } from '../../loop/request-surface.js'
 import type { InferenceEvent, JsonValue, ModelRecord, RequestBody as WireBody } from '@agnes/protocol'
 import { conservativeSerializedTokens } from '../../child/credits.js'
 import {
@@ -13,6 +11,8 @@ import { effectOutcome } from '../../effects/effect.js'
 import { withTimeout } from '../../effects/wrap.js'
 import type { RuntimePromptPreload } from '../../kernel.js'
 import { scanAll } from '../../log/scan-pages.js'
+import { beforeLoopModelRequest, loopEventContext } from '../../loop/events.js'
+import { loopRequestSurface } from '../../loop/request-surface.js'
 import {
   auxiliaryVisionAvailableForSession,
   runAuxiliaryVisionAssembly,
@@ -41,10 +41,10 @@ import { mergeContributions } from '../../request/contribute.js'
 import {
   type DeriveInput,
   type DeriveOutput,
-  remintAfterBeforeRequest,
   deriveRequest,
   headerEquals,
   type RequestHeaderData,
+  remintAfterBeforeRequest,
   remintRequestWithMaxTokens,
 } from '../../request/derive.js'
 import { canonicalJson, sha256Hex } from '../../request/hash.js'
@@ -68,8 +68,7 @@ import { runCoreReplacement, runSlot } from '../../step/reentry.js'
 import type { OpContext, SessionImpl, StepOutcome } from '../../step/session.js'
 import { toolArgumentError } from '../../step/tool-args.js'
 import { CoreError, type Event, type EventInput, type Seq } from '../../types.js'
-import { beforeLoopModelRequest, loopEventContext } from '../../loop/events.js'
-import { contextBudgetError } from './gate.js'
+import { builtinBudgetPreflight, contextBudgetError } from './gate.js'
 
 /** Truncation reasons already reported per session in this process: one diagnostic row each. */
 const reportedMediaWindows = new WeakMap<SessionImpl, Set<RequestMediaScanTruncation['reason']>>()
@@ -468,8 +467,12 @@ export async function prepareInferenceRequest(
   const computerUseAllowed = supportsComputerUse(modelInput)
   // Freeze the selected model's contract before asynchronous contribution hooks can run.
   const contract = Object.freeze({ ...(s.d.contractForModel?.(target) ?? s.d.contract) })
-  const coreTools = toolNamesForModel(options.tools ? [...options.tools] : discloseTools(s), computerUseAllowed)
-  if (coreTools.some((name) => !t.snapshot.byName.has(name))) throw new CoreError('E_ENVELOPE', 'Request names a tool outside the frozen turn catalog')
+  const coreTools = toolNamesForModel(
+    options.tools ? [...options.tools] : discloseTools(s),
+    computerUseAllowed,
+  )
+  if (coreTools.some((name) => !t.snapshot.byName.has(name)))
+    throw new CoreError('E_ENVELOPE', 'Request names a tool outside the frozen turn catalog')
   const ctx: OpContext = {
     session: s,
     preset: s.preset,
@@ -492,7 +495,8 @@ export async function prepareInferenceRequest(
     ctx,
     op.meta.triggerSeq,
   )
-  if (options.system !== undefined) merged.sections.push({ id: 'loop:system', order: 1000, source: 'loop', text: options.system })
+  if (options.system !== undefined)
+    merged.sections.push({ id: 'loop:system', order: 1000, source: 'loop', text: options.system })
   const surface = options.messages ? loopRequestSurface(s, options.messages) : s.surface()
   let requestMedia: LedgerPreparedRequestMedia | undefined
   let auxiliaryVision: ReturnType<typeof prepareAuxiliaryVisionDerivedText> | undefined
@@ -650,7 +654,8 @@ export async function prepareInferenceRequest(
   if (options.sampling) {
     const { maxTokens, ...samplingParams } = options.sampling
     const reminted = remintAfterBeforeRequest(out.request, out.media, {
-      ...out.request, samplingParams: { ...out.request.samplingParams, ...samplingParams },
+      ...out.request,
+      samplingParams: { ...out.request.samplingParams, ...samplingParams },
       ...(maxTokens === undefined ? {} : { maxTokens }),
     })
     out = { ...out, request: reminted.request, header: { ...out.header, derived_hash: reminted.derivedHash } }
@@ -661,8 +666,13 @@ export async function prepareInferenceRequest(
 
 /** Shared request admission, including image bounds, tree reservations and overage disposition. */
 export async function admitInferenceRequest(
-  s: SessionImpl, initial: DeriveOutput, projectPreparedWire = false,
-): Promise<{ output: DeriveOutput; wire: WireBody; calibration: Awaited<ReturnType<typeof countCalibration>> } | StepOutcome> {
+  s: SessionImpl,
+  initial: DeriveOutput,
+  projectPreparedWire = false,
+): Promise<
+  | { output: DeriveOutput; wire: WireBody; calibration: Awaited<ReturnType<typeof countCalibration>> }
+  | StepOutcome
+> {
   let out: DeriveOutput = initial
   const slot = out.request.model.slot
   const target = { route: out.request.model.route, model: out.request.model.model }
@@ -674,7 +684,7 @@ export async function admitInferenceRequest(
   }
   const estimate = projectPreparedWire
     ? estimateTokens(canonicalJson({ system: wire.system, messages: wire.messages, tools: wire.tools }))
-    : (s.latest('budget.state') as BudgetState | undefined)?.lastPreflight?.tokens ?? 0
+    : ((s.latest('budget.state') as BudgetState | undefined)?.lastPreflight?.tokens ?? 0)
   // A custom loop can replace messages, prompts or model slots after step admission. Recheck
   // its complete prepared wire so a tiny inbox prompt cannot authorize a large private request.
   const cap = s.turnBudgetCap()
@@ -685,7 +695,10 @@ export async function admitInferenceRequest(
         await s.endTurn('budget')
         return { phase: 'terminal', reason: 'budget' }
       }
-      const quote = await quoteBudget(s, `prepared request estimated ${projected.credits} credits > cap ${cap}`)
+      const quote = await quoteBudget(
+        s,
+        `prepared request estimated ${projected.credits} credits > cap ${cap}`,
+      )
       if (quote !== 'ok') return { phase: 'terminal', reason: quote.reason }
     }
   }
@@ -852,9 +865,13 @@ export async function runInference(s: SessionImpl): Promise<StepOutcome> {
   if ('phase' in preparedOutput) return preparedOutput
   let out: DeriveOutput = preparedOutput
   const ctx: OpContext = {
-    session: s, preset: s.preset, state: op,
-    snapshot: toolsForModel(t.snapshot, s.computerUseAllowed(target)), signal: s.ac.signal,
-    disclosed: out.request.tools.map((tool) => tool.name), model: { slot, ...target },
+    session: s,
+    preset: s.preset,
+    state: op,
+    snapshot: toolsForModel(t.snapshot, s.computerUseAllowed(target)),
+    signal: s.ac.signal,
+    disclosed: out.request.tools.map((tool) => tool.name),
+    model: { slot, ...target },
   }
   const mintedPrefix = {
     sections: out.request.sections,

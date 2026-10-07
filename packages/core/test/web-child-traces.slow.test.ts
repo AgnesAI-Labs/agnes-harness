@@ -1,4 +1,3 @@
-import { defaultLoops } from '../testkit/loops.js'
 import type { Provider, UISpan, UITurn } from '@agnes/protocol'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Kernel } from '../src/kernel.js'
@@ -7,6 +6,7 @@ import { subagentOwners } from '../src/project/trace.js'
 import { type CoreUIProjectionUpdate, markIncomplete } from '../src/project/ui.js'
 import type { SessionImpl } from '../src/step/session.js'
 import type { Seq } from '../src/types.js'
+import { defaultLoops } from '../testkit/loops.js'
 import {
   answerThenHang,
   cancel,
@@ -27,7 +27,11 @@ const setup = (provider: Provider) => setupWith(provider, (options) => Kernel.cr
 /** Same, with room for many children of one parent. */
 const setupWide = (provider: Provider) =>
   setupWith(provider, (options) =>
-    Kernel.create({ loops: defaultLoops(), ...options, preset: { ...options.preset, maxFanOut: 64 } as typeof options.preset }),
+    Kernel.create({
+      loops: defaultLoops(),
+      ...options,
+      preset: { ...options.preset, maxFanOut: 64 } as typeof options.preset,
+    }),
   )
 
 afterEach(async () => {

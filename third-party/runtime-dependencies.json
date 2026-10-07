@@ -256,9 +256,7 @@
       "source": "https://github.com/microsoft/vscode-ripgrep",
       "purpose": "Bundled ripgrep executable for official file search tools. Platform packages include ripgrep and its third-party licenses.",
       "rationale": "Use a pinned search engine without requiring a system rg installation.",
-      "consumers": [
-        "packages/base"
-      ]
+      "consumers": ["packages/base"]
     }
   ]
 }

@@ -469,6 +469,7 @@ export * from './runtime-admin.js'
 export * from './runtime-target-artifact.js'
 export * from './sequence.js'
 export { validateExtensionCall, validateExtensionCallError, validateServiceCapability } from './services.js'
+export { parseSessionBundles } from './session-composition.js'
 export * from './session-tools.js'
 export * from './slots.js'
 export * from './surfaces.js'
@@ -489,5 +490,3 @@ export {
   validateUserAttachments,
 } from './validate.js'
 export * from './worker-generation.js'
-
-export { parseSessionBundles } from './session-composition.js'

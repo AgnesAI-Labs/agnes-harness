@@ -1,4 +1,3 @@
-import { defaultLoops } from '../testkit/loops.js'
 import type { ModelRecord } from '@agnes/protocol'
 import { describe, expect, it, vi } from 'vitest'
 import { CHILD_CONTROL_FORMAT } from '../src/child/types.js'
@@ -6,6 +5,7 @@ import { Kernel } from '../src/kernel.js'
 import { MemoryStorage } from '../src/log/memory-storage.js'
 import { presetDefaults } from '../src/step/preset.js'
 import { CoreError } from '../src/types.js'
+import { defaultLoops } from '../testkit/loops.js'
 import { fakeProvider, textTurn } from './helpers/fake-provider.js'
 
 const catalogue = (): ModelRecord => ({
@@ -38,7 +38,8 @@ function kernel(
   over: Partial<Parameters<typeof Kernel.create>[0]> & { treeBudgetCredits?: number | null } = {},
 ) {
   const { treeBudgetCredits = 100, ...rest } = over
-  return Kernel.create({ loops: defaultLoops(),
+  return Kernel.create({
+    loops: defaultLoops(),
     storage: new MemoryStorage(),
     seams: fakeSeams(),
     provider: Object.assign(fakeProvider([textTurn('child says hi'), textTurn('second')]), {

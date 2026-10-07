@@ -1,4 +1,3 @@
-import { defaultLoops } from '../testkit/loops.js'
 import type { ToolRuntimeCall, ToolRuntimeExecution } from '@agnes/extension-api'
 import { describe, expect, it } from 'vitest'
 import { policy } from '../../../examples/policies/read-only/index.mjs'
@@ -8,6 +7,7 @@ import { Kernel } from '../src/kernel.js'
 import { MemoryStorage } from '../src/log/memory-storage.js'
 import { LoopEventRegistry } from '../src/loop/events.js'
 import { presetDefaults } from '../src/step/preset.js'
+import { defaultLoops } from '../testkit/loops.js'
 import { fakeProvider, textTurn, toolTurn } from './helpers/fake-provider.js'
 import { fakeSeams } from './helpers/fake-seams.js'
 import {
@@ -171,7 +171,8 @@ describe('tool providers', () => {
     preset.tools.runtime = 'tagged'
     preset.tools.maxParallel = 2
     const provider = fakeProvider([toolTurn('shell', {}), toolTurn('read', {}), textTurn('done')])
-    const k = Kernel.create({ loops: defaultLoops(),
+    const k = Kernel.create({
+      loops: defaultLoops(),
       storage: new MemoryStorage(),
       seams: fakeSeams(),
       provider,

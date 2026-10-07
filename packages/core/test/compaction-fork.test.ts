@@ -1,10 +1,10 @@
-import { defaultLoops } from '../testkit/loops.js'
 import type { ModelRecord } from '@agnes/protocol'
 import { expect, it } from 'vitest'
 import { Kernel } from '../src/kernel.js'
 import { MemoryStorage } from '../src/log/memory-storage.js'
 import { CompactionRunner } from '../src/step/compaction.js'
 import { presetDefaults } from '../src/step/preset.js'
+import { defaultLoops } from '../testkit/loops.js'
 import { fakeProvider, textTurn, toolTurn } from './helpers/fake-provider.js'
 import { fakeSeams } from './helpers/fake-seams.js'
 import { actor, noTimers, readTool, testFsOps } from './helpers/open-session.js'
@@ -47,7 +47,8 @@ it('compacts a fork child over the tool results it inherited from its parent', a
   ])
   Object.assign(provider, { models: () => [model()] })
   const storage = new MemoryStorage()
-  const k = Kernel.create({ loops: defaultLoops(),
+  const k = Kernel.create({
+    loops: defaultLoops(),
     storage,
     seams: fakeSeams(),
     provider,

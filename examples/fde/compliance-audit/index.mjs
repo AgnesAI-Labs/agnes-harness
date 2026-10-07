@@ -1,4 +1,4 @@
-import { readFileSync, existsSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { Type } from '@sinclair/typebox'
 import { makeBundle, modelText, tool, value } from './runtime.mjs'
 

@@ -1,4 +1,4 @@
-import type { LoopCheckpoint, LoopContext, LoopToolCall, LoopRequest } from '@agnes/extension-api'
+import type { LoopCheckpoint, LoopContext, LoopRequest, LoopToolCall } from '@agnes/extension-api'
 import { expect, it } from 'vitest'
 import { codec, createDagLoop } from './index.mjs'
 
@@ -16,12 +16,29 @@ function ports() {
   const ctx: LoopContext = {
     sessionKey: 'dag',
     lane: 'main',
-    prepareRequest: async (options = {}) => ({ ...options } as LoopRequest),
-    turn: { view: async () => null, continuation: () => null, cancelled: () => false, checkpoint: async () => ({ outcome: 'running' }), finishCancelled: async () => ({ outcome: 'turn-ended', reason: 'aborted' }), finishFailure: async () => ({ outcome: 'turn-ended', reason: 'error' }) },
+    prepareRequest: async (options = {}) => ({ ...options }) as LoopRequest,
+    turn: {
+      view: async () => null,
+      continuation: () => null,
+      cancelled: () => false,
+      checkpoint: async () => ({ outcome: 'running' }),
+      finishCancelled: async () => ({ outcome: 'turn-ended', reason: 'aborted' }),
+      finishFailure: async () => ({ outcome: 'turn-ended', reason: 'error' }),
+    },
     effects: { status: async (id) => ({ status: 'may-have-sent', invocationId: id, checkpoint }) },
     input: {
       accept: async () => ctx.input.claim('next-turn'),
-      claim: async () => (finished ? null : { id: '1', turnId: 1, actor: { id: 'test', org: 'test', role: 'owner', deptPath: [], attrs: {} }, trust: 'trusted', kind: 'prompt', content: [{ type: 'text', text: 'do the DAG' }] }),
+      claim: async () =>
+        finished
+          ? null
+          : {
+              id: '1',
+              turnId: 1,
+              actor: { id: 'test', org: 'test', role: 'owner', deptPath: [], attrs: {} },
+              trust: 'trusted',
+              kind: 'prompt',
+              content: [{ type: 'text', text: 'do the DAG' }],
+            },
       resumeParked: async () => false,
       pending: () => !finished,
     },
@@ -62,7 +79,12 @@ function ports() {
         finished = true
       },
     },
-    wait: { park: async () => {}, wake() {}, poll: async () => ({ outcome: 'running' }), delay: async () => {} },
+    wait: {
+      park: async () => {},
+      wake() {},
+      poll: async () => ({ outcome: 'running' }),
+      delay: async () => {},
+    },
   }
   return { ctx, batches, events, requests, checkpoint: () => checkpoint! }
 }
@@ -110,7 +132,10 @@ it('refuses cycles, unsupported codecs and uncertain effects before resumed work
   const p = ports()
   const checkpoint = factory.create(p.ctx).checkpoint()
   expect(() => codec.decode({ ...checkpoint, codecVersion: 2 })).toThrow('version 2')
-  const resumed = factory.resume(p.ctx, { ...checkpoint, state: { ...(checkpoint.state as object), stage: 'tools', inFlight: ['a'] } })
+  const resumed = factory.resume(p.ctx, {
+    ...checkpoint,
+    state: { ...(checkpoint.state as object), stage: 'tools', inFlight: ['a'] },
+  })
   await expect(resumed.step(signal)).rejects.toThrow('outcome is uncertain')
   expect(p.batches).toEqual([])
 })

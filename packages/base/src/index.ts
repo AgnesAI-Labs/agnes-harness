@@ -212,8 +212,8 @@ export {
 } from './mcp/register.js'
 export {
   bindMcpResourceServer,
-  LIST_MCP_RESOURCES,
   LIST_MCP_RESOURCE_TEMPLATES,
+  LIST_MCP_RESOURCES,
   MCP_RESOURCE_LIST_SUFFIX,
   MCP_RESOURCE_READ_SUFFIX,
   MCP_RESOURCE_TEMPLATES_SUFFIX,
@@ -283,11 +283,11 @@ export const presets: Record<string, PresetDoc> = {
   ),
 }
 
+export type { CompactionQualityConfig } from '../extensions/compaction/src/engine.js'
 export {
   createDefaultCompactionEngine,
   resolveCompactionQualityConfig,
 } from '../extensions/compaction/src/engine.js'
-export type { CompactionQualityConfig } from '../extensions/compaction/src/engine.js'
 export { sandboxToolPolicies } from '../extensions/sandbox/src/tool-policies.js'
 export {
   ACP_CHILD_CAPABILITIES,

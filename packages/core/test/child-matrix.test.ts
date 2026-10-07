@@ -1,4 +1,3 @@
-import { defaultLoops } from '../testkit/loops.js'
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import type { ModelRecord } from '@agnes/protocol'
@@ -11,6 +10,7 @@ import { mintFrom } from '../src/request/mint.js'
 import { toProviderRequest } from '../src/request/to-provider.js'
 import { presetDefaults } from '../src/step/preset.js'
 import { CoreError } from '../src/types.js'
+import { defaultLoops } from '../testkit/loops.js'
 import { fakeProvider, sent, textTurn, toolTurn } from './helpers/fake-provider.js'
 import { fakeSeams } from './helpers/fake-seams.js'
 import { actor, noTimers, shellTool, testFsOps, testWorkspaceInvocation } from './helpers/open-session.js'
@@ -41,7 +41,8 @@ const model = (): ModelRecord => ({
 function kernel(over: Partial<Parameters<typeof Kernel.create>[0]> = {}) {
   const provider = fakeProvider([textTurn('root'), textTurn('child')])
   Object.assign(provider, { models: () => [model()] })
-  return Kernel.create({ loops: defaultLoops(),
+  return Kernel.create({
+    loops: defaultLoops(),
     storage: new MemoryStorage(),
     seams: fakeSeams(),
     provider,

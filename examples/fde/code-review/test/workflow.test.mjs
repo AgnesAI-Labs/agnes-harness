@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
-import { test } from 'vitest'
 import { driveLoop } from '@agnes/plugin-runtime/testkit'
+import { test } from 'vitest'
 import { factory, main, policy, tools } from '../index.mjs'
 import { value } from '../runtime.mjs'
 import { runWorkflow } from './harness.mjs'

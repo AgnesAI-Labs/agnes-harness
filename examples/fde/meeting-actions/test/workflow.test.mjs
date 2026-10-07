@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
-import { test } from 'vitest'
 import { answerPrefix } from '@agnes/protocol'
+import { test } from 'vitest'
 import { main } from '../index.mjs'
 import { runWorkflow } from './harness.mjs'
 

@@ -1,4 +1,3 @@
-import { defaultLoops } from '../testkit/loops.js'
 import type { InferenceEvent, ModelRecord, Provider, RequestBody } from '@agnes/protocol'
 import { describe, expect, it, vi } from 'vitest'
 import { Kernel } from '../src/kernel.js'
@@ -14,6 +13,7 @@ import { prepareRequestMediaFromSurface } from '../src/orchestrator/request-medi
 import { sha256Hex } from '../src/request/hash.js'
 import { presetDefaults } from '../src/step/preset.js'
 import type { Event } from '../src/types.js'
+import { defaultLoops } from '../testkit/loops.js'
 import { fakeProvider, sent, sentFor, usage } from './helpers/fake-provider.js'
 import { fakeSeams } from './helpers/fake-seams.js'
 import { actor, noTimers, testFsOps } from './helpers/open-session.js'
@@ -135,7 +135,8 @@ function setup(
 ) {
   const storage = new MemoryStorage()
   const preset = presetDefaults()
-  const kernel = Kernel.create({ loops: defaultLoops(),
+  const kernel = Kernel.create({
+    loops: defaultLoops(),
     storage,
     seams: fakeSeams(),
     provider,

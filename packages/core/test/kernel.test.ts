@@ -1,4 +1,3 @@
-import { defaultLoops } from '../testkit/loops.js'
 import type { ToolDef } from '@agnes/extension-api'
 import type { ModelRecord } from '@agnes/protocol'
 import { describe, expect, it, vi } from 'vitest'
@@ -17,6 +16,7 @@ import { noopHooks } from '../src/step/session.js'
 import { CoreError } from '../src/types.js'
 import type { WorkspaceInvocationPort } from '../src/workspace/runtime.js'
 import { testFsPolicy } from '../testkit/fenced-fs.js'
+import { defaultLoops } from '../testkit/loops.js'
 import { fakeProvider, textTurn, toolTurn } from './helpers/fake-provider.js'
 import { fakeSeams } from './helpers/fake-seams.js'
 import { opHistory } from './helpers/op-history.js'
@@ -38,7 +38,8 @@ const logger = {
   error: () => undefined,
 }
 const base = (over: Partial<Parameters<typeof Kernel.create>[0]> = {}) =>
-  Kernel.create({ loops: defaultLoops(),
+  Kernel.create({
+    loops: defaultLoops(),
     storage: new MemoryStorage(),
     seams: fakeSeams(),
     provider: fakeProvider([]),

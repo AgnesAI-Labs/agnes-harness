@@ -2,7 +2,7 @@ import { stdin, stdout } from 'node:process'
 import { createInterface } from 'node:readline'
 
 const rl = createInterface({ input: stdin })
-let sessionId = 'child-session'
+const sessionId = 'child-session'
 let workspace = false
 let cancelled = false
 let wait = null

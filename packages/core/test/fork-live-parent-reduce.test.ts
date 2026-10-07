@@ -1,4 +1,3 @@
-import { defaultLoops } from '../testkit/loops.js'
 import type { ModelRecord } from '@agnes/protocol'
 import { expect, it, vi } from 'vitest'
 import { Kernel } from '../src/kernel.js'
@@ -7,6 +6,7 @@ import type { StorageAdapter } from '../src/log/storage.js'
 import { presetDefaults } from '../src/step/preset.js'
 import type { SessionImpl } from '../src/step/session.js'
 import type { IdMinter, Seq } from '../src/types.js'
+import { defaultLoops } from '../testkit/loops.js'
 import { type FakeProvider, fakeProvider, textTurn, toolTurn } from './helpers/fake-provider.js'
 import { fakeSeams } from './helpers/fake-seams.js'
 import { actor, noTimers, readTool, testFsOps } from './helpers/open-session.js'
@@ -57,7 +57,8 @@ function createChild(from: SessionImpl, kind: 'fork' | 'spawn', opts: CreateOpts
 
 function kernel(storage: StorageAdapter, provider: FakeProvider) {
   Object.assign(provider, { models: () => [model()] })
-  const k = Kernel.create({ loops: defaultLoops(),
+  const k = Kernel.create({
+    loops: defaultLoops(),
     storage,
     seams: fakeSeams(),
     provider,

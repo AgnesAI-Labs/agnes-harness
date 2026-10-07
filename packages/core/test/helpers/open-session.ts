@@ -1,5 +1,5 @@
-import { defaultLoopFactory } from '@agnes/loop-default'
 import type { ToolContext } from '@agnes/extension-api'
+import { defaultLoopFactory } from '@agnes/loop-default'
 import type { Provider } from '@agnes/protocol'
 import { Type } from '@sinclair/typebox'
 import type { FsPolicy } from '../../src/effects/fs-guard.js'

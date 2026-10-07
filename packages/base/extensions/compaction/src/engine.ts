@@ -1,14 +1,10 @@
 import { CompactionRunner } from '@agnes/core'
 import type { CompactionEngine, CompactionPlan, HookPayloadMap } from '@agnes/extension-api'
 import { buildCompactionPlan } from './plan.js'
-import {
-  type CompactionQualityConfig,
-  prepareCompaction,
-  resolveCompactionQualityConfig,
-} from './prepare.js'
+import { type CompactionQualityConfig, prepareCompaction, resolveCompactionQualityConfig } from './prepare.js'
 
-export { resolveCompactionQualityConfig } from './prepare.js'
 export type { CompactionQualityConfig } from './prepare.js'
+export { resolveCompactionQualityConfig } from './prepare.js'
 
 /**
  * Preserve the package-owned planner and Core's existing threshold/overflow policy.

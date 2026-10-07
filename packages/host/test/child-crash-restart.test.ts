@@ -1,11 +1,18 @@
-import { defaultLoops } from '@agnes/core/testkit'
 import { spawn } from 'node:child_process'
 import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { Kernel, presetDefaults } from '@agnes/core'
-import { fakeProvider, fakeSeams, fencedFs, noTimers, testFsPolicy, textTurn } from '@agnes/core/testkit'
+import {
+  defaultLoops,
+  fakeProvider,
+  fakeSeams,
+  fencedFs,
+  noTimers,
+  testFsPolicy,
+  textTurn,
+} from '@agnes/core/testkit'
 import { afterEach, describe, expect, it } from 'vitest'
 import { createSqliteStorage } from '../src/adapters/storage-sqlite.js'
 
@@ -76,7 +83,7 @@ describe('child crash restart against sqlite', () => {
         ],
       })
       const k = Kernel.create({
-    loops: defaultLoops(),
+        loops: defaultLoops(),
         storage,
         seams: fakeSeams(),
         provider,

@@ -1,4 +1,3 @@
-import { defaultLoops } from '../testkit/loops.js'
 import { describe, expect, it, vi } from 'vitest'
 import {
   dispatchTool,
@@ -8,6 +7,7 @@ import {
 import { Kernel } from '../src/kernel.js'
 import { MemoryStorage } from '../src/log/memory-storage.js'
 import { presetDefaults } from '../src/step/preset.js'
+import { defaultLoops } from '../testkit/loops.js'
 import { fakeProvider } from './helpers/fake-provider.js'
 import { fakeSeams } from './helpers/fake-seams.js'
 import { actor, noTimers, openSession, testFsOps } from './helpers/open-session.js'
@@ -176,7 +176,8 @@ describe('session dispatch plumbing', () => {
     const hostToolDispatch: HostToolDispatchPort = {
       dispatch: async () => ({ phase: 'not_sent', error: new Error('unused') }),
     }
-    const kernel = Kernel.create({ loops: defaultLoops(),
+    const kernel = Kernel.create({
+      loops: defaultLoops(),
       storage: new MemoryStorage(),
       seams: fakeSeams(),
       provider: fakeProvider([]),

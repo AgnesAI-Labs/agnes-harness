@@ -131,7 +131,8 @@ export const appLocaleCatalog: LocaleCatalog = {
     'app.approval.impact.read': 'Will read{target}. Check the request before deciding.',
     'app.approval.impact.readContent': 'Will read the content. Check the request before deciding.',
     'app.approval.impact.default': 'Check the tool and its arguments before deciding whether to continue.',
-    'app.approval.impact.plan': 'Will leave plan mode after you approve this plan. Check the plan before deciding.',
+    'app.approval.impact.plan':
+      'Will leave plan mode after you approve this plan. Check the plan before deciding.',
     'app.plan.noWorkspace': 'Choose a workspace before turning plan mode on.',
     'app.plan.failed': 'Plan mode could not be updated.',
     'app.approval.session.all': 'Allow all {tool} calls in this session',

@@ -329,9 +329,7 @@ export class SessionWorkspaceRuntimeTable implements ChildWorkspaceRuntimePort {
   }
 
   /** Admin-only observation; failure to read posture never changes invocation authorization. */
-  securityStatus(
-    sessionKey: string,
-  ):
+  securityStatus(sessionKey: string):
     | Readonly<{
         root: string
         policyDigest: string

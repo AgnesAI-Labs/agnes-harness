@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest'
-import { mcpLegacyToolName, mcpLocalToolPrefix, mcpPublicToolName, mcpStablePrefix } from '../../src/mcp/naming.js'
+import {
+  mcpLegacyToolName,
+  mcpLocalToolPrefix,
+  mcpPublicToolName,
+  mcpStablePrefix,
+} from '../../src/mcp/naming.js'
 
 const TOOL_NAME = /^[A-Za-z_][A-Za-z0-9_]{0,63}$/
 

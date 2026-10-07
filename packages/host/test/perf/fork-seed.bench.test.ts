@@ -1,4 +1,3 @@
-import { defaultLoops } from '@agnes/core/testkit'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -6,6 +5,7 @@ import { monitorEventLoopDelay, performance } from 'node:perf_hooks'
 import { type IdMinter, Kernel, presetDefaults, type Seq, type SessionImpl } from '@agnes/core'
 import {
   actor,
+  defaultLoops,
   fakeProvider,
   fakeSeams,
   fencedFs,

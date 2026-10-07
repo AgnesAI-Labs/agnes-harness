@@ -11,6 +11,7 @@ import type {
   ToolPolicyRegistryPort,
   ToolRuntimeRegistryPort,
 } from '@agnes/extension-api'
+import { DEFAULT_LOOP } from '@agnes/extension-api'
 import type { Actor, ApprovalMode, Provider, SessionStart } from '@agnes/protocol'
 import { KernelChildren } from './child/factory.js'
 import { bindChildFactory } from './child/sessions.js'

@@ -347,8 +347,11 @@ export function buildToolContext(
       ...(d.children.sendMessage
         ? {
             sendMessage: (childKey: string, text: string, signal?: AbortSignal) =>
-              d.children.sendMessage?.(childKey, text, signal ? AbortSignal.any([call.signal, signal]) : call.signal) ??
-              Promise.reject(new CoreError('E_UNSUPPORTED', 'child messages are not available')),
+              d.children.sendMessage?.(
+                childKey,
+                text,
+                signal ? AbortSignal.any([call.signal, signal]) : call.signal,
+              ) ?? Promise.reject(new CoreError('E_UNSUPPORTED', 'child messages are not available')),
           }
         : {}),
       ...(d.children.interrupt

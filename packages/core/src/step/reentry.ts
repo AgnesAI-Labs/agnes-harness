@@ -85,7 +85,9 @@ export async function invokeTool(
         },
         { origin: 'model' },
       ),
-      ...(o.invocationId ? [s.ev('x/core/loop-effect', { invocationId: o.invocationId, toolUseId }, { ignorable: true })] : []),
+      ...(o.invocationId
+        ? [s.ev('x/core/loop-effect', { invocationId: o.invocationId, toolUseId }, { ignorable: true })]
+        : []),
     ],
     (cur, argsSeq) => {
       if (cur?.phase.kind !== 'tools')

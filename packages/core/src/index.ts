@@ -2,6 +2,7 @@
 // re-exported here so a caller assembling a session against core does not have to reach past core
 // for the single interface its step machine calls every step.
 
+export { DEFAULT_LOOP } from '@agnes/extension-api'
 export type { Provider } from '@agnes/protocol'
 export { WORKSPACE_SECRET_DIRS } from '@agnes/protocol'
 export {
@@ -129,7 +130,6 @@ export type {
   StorageAdapter,
 } from './log/storage.js'
 export { registerKey, SCAN_PAGE_MAX, scanTruncated } from './log/storage.js'
-export { DEFAULT_LOOP } from '@agnes/extension-api'
 export { LoopEventRegistry } from './loop/events.js'
 export { type LoopPluginContext, LoopRegistry, loopKey, registerLoopPlugin } from './loop/registry.js'
 export {

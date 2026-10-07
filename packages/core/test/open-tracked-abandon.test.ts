@@ -1,4 +1,3 @@
-import { defaultLoops } from '../testkit/loops.js'
 import type { InferenceEvent, Provider } from '@agnes/protocol'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { defaultIds } from '../src/ids.js'
@@ -8,6 +7,7 @@ import { SessionLogImpl, type Timers } from '../src/log/session-log.js'
 import { openTracked } from '../src/reduce/tracker.js'
 import { presetDefaults } from '../src/step/preset.js'
 import type { Event, EventInput } from '../src/types.js'
+import { defaultLoops } from '../testkit/loops.js'
 import { fakeProvider, sentFor, textTurn } from './helpers/fake-provider.js'
 import { fakeSeams } from './helpers/fake-seams.js'
 import { actor, noTimers, openSession, testFsOps } from './helpers/open-session.js'
@@ -152,7 +152,8 @@ describe('an open that fails after taking the lease', () => {
 
   it('gives a forked writer back when its open fails after replay', async () => {
     const memory = new MemoryStorage()
-    const k = Kernel.create({ loops: defaultLoops(),
+    const k = Kernel.create({
+      loops: defaultLoops(),
       storage: memory,
       seams: fakeSeams(),
       provider: fakeProvider([textTurn('hi')]),
@@ -190,7 +191,8 @@ describe('an open that fails after taking the lease', () => {
   it('leaves a forked writer to the kernel, which closes it exactly once', async () => {
     const memory = new MemoryStorage()
     const { storage, broken } = breakable(memory)
-    const k = Kernel.create({ loops: defaultLoops(),
+    const k = Kernel.create({
+      loops: defaultLoops(),
       storage,
       seams: fakeSeams(),
       provider: fakeProvider([textTurn('hi')]),

@@ -1,10 +1,10 @@
-import { defaultLoops } from '../testkit/loops.js'
 import type { ModelRecord } from '@agnes/protocol'
 import { describe, expect, it } from 'vitest'
 import { Kernel } from '../src/kernel.js'
 import { MemoryStorage } from '../src/log/memory-storage.js'
 import { presetDefaults } from '../src/step/preset.js'
 import type { QuietGate } from '../src/step/session.js'
+import { defaultLoops } from '../testkit/loops.js'
 import { fakeProvider, textTurn } from './helpers/fake-provider.js'
 import { fakeSeams } from './helpers/fake-seams.js'
 import { actor, noTimers, openSession, testFsOps } from './helpers/open-session.js'
@@ -49,7 +49,8 @@ describe('Core quiet gate', () => {
         trace.push({ kind, key, stepping })
       },
     }
-    const kernel = Kernel.create({ loops: defaultLoops(),
+    const kernel = Kernel.create({
+      loops: defaultLoops(),
       storage: new MemoryStorage(),
       seams: fakeSeams(),
       provider: Object.assign(fakeProvider([textTurn('child says hi')]), { models: () => [catalogue()] }),

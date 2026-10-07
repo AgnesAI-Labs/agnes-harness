@@ -1,4 +1,3 @@
-import { defaultLoops } from '@agnes/core/testkit'
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -7,6 +6,7 @@ import { fakeModel, ScriptedProvider } from '@agnes/ai/testkit'
 import { subagentCollectTool, subagentForkTool, subagentSpawnTool } from '@agnes/base'
 import { createWorkspaceInvocationPort, Kernel, presetDefaults } from '@agnes/core'
 import {
+  defaultLoops,
   fakeProvider,
   fakeSeams,
   fencedFs,

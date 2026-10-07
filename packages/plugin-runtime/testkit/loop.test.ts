@@ -43,7 +43,10 @@ describe('loop author driver', () => {
       return {
         async step(signal) {
           if (state) return { outcome: 'turn-ended', phase: 'done', reason: 'completed' }
-          const reply = await ctx.model.complete(await ctx.prepareRequest({ system: 'test', tools: [], messages: [] }), signal)
+          const reply = await ctx.model.complete(
+            await ctx.prepareRequest({ system: 'test', tools: [], messages: [] }),
+            signal,
+          )
           for (const event of reply)
             if (event.type === 'toolcall_end') {
               const result = await ctx.tools.execute({ name: event.call.name, args: event.call.args }, signal)

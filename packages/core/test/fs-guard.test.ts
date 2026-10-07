@@ -1,4 +1,3 @@
-import { defaultLoops } from '../testkit/loops.js'
 import { describe, expect, it } from 'vitest'
 import {
   assertFsEnforces,
@@ -15,6 +14,7 @@ import { MemoryStorage } from '../src/log/memory-storage.js'
 import { presetDefaults } from '../src/step/preset.js'
 import { CoreError } from '../src/types.js'
 import { fencedFs, testFsPolicy } from '../testkit/fenced-fs.js'
+import { defaultLoops } from '../testkit/loops.js'
 import { fakeProvider } from './helpers/fake-provider.js'
 import { fakeSeams } from './helpers/fake-seams.js'
 import { actor, noTimers } from './helpers/open-session.js'
@@ -274,7 +274,8 @@ describe('assertFsEnforces', () => {
 
 describe('no session opens against a file system that enforces no policy', () => {
   const kernel = (fsOps: FsOps) =>
-    Kernel.create({ loops: defaultLoops(),
+    Kernel.create({
+      loops: defaultLoops(),
       storage: new MemoryStorage(),
       seams: fakeSeams(),
       provider: fakeProvider([]),

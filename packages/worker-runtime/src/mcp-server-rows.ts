@@ -1,9 +1,9 @@
 import { createHash } from 'node:crypto'
 import {
   type ConnectionStatusEvent,
+  MCP_COMPAT_PREFIX,
   type McpServerConfig,
   type McpServerOpener,
-  MCP_COMPAT_PREFIX,
   mcpCatalogHubFor,
   mcpServerConfigFromDefinition,
   mcpServerExtension,

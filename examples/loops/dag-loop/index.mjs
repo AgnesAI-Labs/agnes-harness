@@ -53,7 +53,15 @@ export const codec = loopCheckpointCodec(1, (value) => {
 })
 
 async function complete(ctx, state, system, content, signal) {
-  const events = await ctx.model.complete(await ctx.prepareRequest({ system, messages: [{ role: 'user', content }], tools: [], invocationId: 'dag:' + state.inputId + ':' + state.stage }), signal)
+  const events = await ctx.model.complete(
+    await ctx.prepareRequest({
+      system,
+      messages: [{ role: 'user', content }],
+      tools: [],
+      invocationId: 'dag:' + state.inputId + ':' + state.stage,
+    }),
+    signal,
+  )
   if (events.some((event) => event.type === 'error')) throw new Error('DAG model request failed')
   return events
     .filter((event) => event.type === 'text_delta')
@@ -104,7 +112,8 @@ export function createDagLoop(config = {}) {
       },
       async step(signal) {
         if (disposed) throw new Error('DAG driver is disposed')
-        if (cancelled || signal.aborted) return { outcome: 'turn-ended', phase: 'cancelled', reason: 'aborted' }
+        if (cancelled || signal.aborted)
+          return { outcome: 'turn-ended', phase: 'cancelled', reason: 'aborted' }
         // accept() rehydrates a recovered turn as well as claiming a fresh input.
         const input = await ctx.input.claim('next-turn')
         if (!input) return { outcome: 'idle', phase: 'idle' }
@@ -142,10 +151,16 @@ export function createDagLoop(config = {}) {
               throw new Error('DAG tool outcome is uncertain; reconcile invocation ' + receipt.invocationId)
             if (receipt.status === 'responded') {
               if (Array.isArray(receipt.result)) throw new Error('DAG expected a tool receipt')
-              state.results[id] = { content: receipt.result.content, isError: receipt.result.isError ?? false }
+              state.results[id] = {
+                content: receipt.result.content,
+                isError: receipt.result.isError ?? false,
+              }
             }
           }
-          if (state.inFlight.length) { state.inFlight = []; await save() }
+          if (state.inFlight.length) {
+            state.inFlight = []
+            await save()
+          }
 
           const ready = state.nodes.filter(
             (node) =>
