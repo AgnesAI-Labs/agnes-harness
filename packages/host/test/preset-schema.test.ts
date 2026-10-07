@@ -69,6 +69,7 @@ describe('shipped presets through host assembly and session creation', () => {
         })
         expect(session.preset.name).toBe(name)
         const resolved = resolvePreset(name, docs).view
+        expect(session.toolPolicy().id).toBe(resolved.approval.policy ?? 'default')
         expect(session.preset.compaction).toEqual(resolved.compaction)
         expect(session.preset.budget).toEqual(resolved.budget)
       } finally {

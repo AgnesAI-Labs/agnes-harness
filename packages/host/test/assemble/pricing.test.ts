@@ -96,6 +96,7 @@ const profileFor = (limits?: Record<string, number>) =>
       lock: { packages: lockPkgs },
       user: {
         name: 'local-dev',
+        presets: { default: 'standard', allowed: ['standard'] },
         provider: { package: '@agnes/ai', adapters: ['@agnes/ai'], routes: [ROUTE] },
         ...(limits ? { limits } : {}),
       },

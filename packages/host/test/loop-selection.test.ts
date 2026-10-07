@@ -190,7 +190,7 @@ it('loads an installed manifest plugin before Kernel construction, selects profi
     const explicitSession = await f.host.createSession({ key: 'explicit-loop', cwd: f.dataDir, loop: dag })
     expect(explicitSession.loop).toEqual(dag)
     await profileSession.close()
-    f.defaults({ id: '', version: '1' }) // Existing ledger identity bypasses changed defaults.
+    f.defaults({ id: 'missing', version: '1' }) // Existing ledger identity bypasses changed defaults.
     const resumed = await f.host.createSession({
       key: 'profile-loop',
       cwd: f.dataDir,
@@ -212,7 +212,7 @@ it('uses the built-in loop without a default and refuses an invalid persisted de
     expect((await f.host.createSession({ key: 'builtin', cwd: f.dataDir })).loop).toEqual(DEFAULT_LOOP)
     f.defaults({ id: '', version: '1' })
     await expect(f.host.createSession({ key: 'invalid-default', cwd: f.dataDir })).rejects.toMatchObject({
-      code: 'E_PRESET_UNSUPPORTED',
+      code: 'CONFIG_INVALID_STATE',
     })
     expect(
       await readAdminLoopDefault(

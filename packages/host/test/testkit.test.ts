@@ -30,7 +30,7 @@ describe('testkit', () => {
     expect(host.extensions()).toEqual([])
     await host.close()
   })
-  it('loads the default template and enforces its allowed presets on real session creation', async () => {
+  it('loads the default template with an explicit synthetic standard recipe and enforces its allowed list', async () => {
     const dataDir = tmp()
     const { host, profile } = await createTestHost({
       dataDir,
@@ -40,8 +40,8 @@ describe('testkit', () => {
     try {
       expect(profile.chain).toEqual(['builtin:local-dev', 'user:local-dev'])
       expect(profile.presets).toEqual({
-        default: 'workspace-write',
-        allowed: ['standard', 'read-only', 'workspace-write', 'full-access', 'minimal'],
+        default: 'standard',
+        allowed: ['standard'],
       })
       expect(await runOnce(host, { prompt: 'hi', cwd: dataDir })).toMatchObject({
         reason: 'completed',

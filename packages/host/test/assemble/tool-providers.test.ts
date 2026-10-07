@@ -81,9 +81,12 @@ it('registers the Base default and custom policies through plugin fibers and fai
   installToolProviders(root)
   const builtin = root.plugin(toolPolicyPlugin)
   const custom = root.plugin((ctx) => {
-    ctx.providers.register('tool-policy', '@agnes-example/read-only-policy', policy)
+    ctx.providers.register('tool-policy', '@agnes-example/read-only-policy', {
+      ...policy,
+      id: 'custom-read-only',
+    })
   })
-  await expect.poll(() => root.toolPolicies.catalog().length).toBe(2)
+  await expect.poll(() => root.toolPolicies.catalog().length).toBe(4)
   expect(root.toolPolicies.catalog()).toContainEqual({
     id: 'default',
     version: '1.0.0',
@@ -94,10 +97,10 @@ it('registers the Base default and custom policies through plugin fibers and fai
     version: '1.0.0',
     sourcePackage: '@agnes/core',
   })
-  const selected = root.toolPolicies.resolve('read-only')
+  const selected = root.toolPolicies.resolve('custom-read-only')
   expect(Object.isFrozen(root.toolPolicies.catalog()[0])).toBe(true)
   await custom.dispose()
-  expect(() => root.toolPolicies.resolve('read-only')).toThrow('not registered')
+  expect(() => root.toolPolicies.resolve('custom-read-only')).toThrow('not registered')
   await expect(selected.decide({} as never, new AbortController().signal)).rejects.toThrow()
   await builtin.dispose()
   expect(() => root.toolPolicies.resolve('default')).toThrow('not registered')

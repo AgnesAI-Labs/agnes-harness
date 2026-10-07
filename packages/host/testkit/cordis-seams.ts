@@ -1,3 +1,4 @@
+import { defaultLoopPlugin, toolPolicyPlugin } from '@agnes/base'
 import { type Context, defineAgnesPlugin } from '@agnes/plugin-runtime'
 import { DYNAMIC_SEAM_NAMES, normalizePluginExport } from '@agnes/plugin-runtime/host'
 import type { PackageModule } from '../src/assemble/packages.js'
@@ -67,6 +68,25 @@ function testSeamPlugin(name: (typeof DYNAMIC_SEAM_NAMES)[number], factory: (ctx
 /** Give mutable legacy seam fixtures the same ordinary-row shape as real package exports. */
 export function attachTestSeamPlugins(module: PackageModule): PackageModule {
   const ordinary = (module.plugins ?? []).filter(({ declaration }) => !declaration.id.startsWith('seam:'))
+  // Synthetic Base modules must declare the same loop and permission policies as shipped Base.
+  if (module.id === '@agnes/base')
+    for (const [id, exportName, service, plugin] of [
+      ['loop:agnes.default', 'defaultLoopPlugin', 'loops', defaultLoopPlugin],
+      ['tool-policy:default', 'toolPolicyPlugin', 'toolPolicies', toolPolicyPlugin],
+    ] as const) {
+      if (ordinary.some((row) => row.declaration.id === id)) continue
+      ordinary.push({
+        declaration: {
+          id,
+          export: exportName,
+          apiRange: '^1.4.0',
+          default: true,
+          inject: [service],
+          runtime: 'in-process',
+        },
+        entry: normalizePluginExport(plugin),
+      })
+    }
   Object.defineProperty(module, 'plugins', {
     configurable: true,
     enumerable: true,

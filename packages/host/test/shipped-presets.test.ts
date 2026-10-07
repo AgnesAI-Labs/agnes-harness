@@ -105,7 +105,7 @@ describe('the shipped presets, loaded from disk', () => {
   // not open a session when the platform cannot provide it: an unattended run has no operator to
   // notice that the isolation it assumed is missing. The recipe declaring the key is one claim; the
   // host acting on it is the other, and only this one is evidence.
-  it('refuses to open claw on a platform that cannot provide L1, and opens standard on the same one', async () => {
+  it('refuses to open claw on a platform that cannot provide L1, and opens explicit full-access on the same one', async () => {
     const dataDir = tmp()
     const t = await hostFor(dataDir, 'claw', { 'sandbox.l1': 'unavailable' })
     try {
@@ -113,9 +113,13 @@ describe('the shipped presets, loaded from disk', () => {
         code: 'E_PRESET_UNSUPPORTED',
         detail: { capability: 'sandbox.l1' },
       })
-      // The same platform, a recipe that does not require L1: it opens. Without this the case would
+      await expect(t.host.createSession({ cwd: dataDir, preset: 'standard' })).rejects.toMatchObject({
+        code: 'E_PRESET_UNSUPPORTED',
+        detail: { capability: 'sandbox.l1' },
+      })
+      // The same platform, an explicit L0 recipe: it opens. Without this the case would
       // also pass if the host refused every session on that platform.
-      const s = await t.host.createSession({ cwd: dataDir, preset: 'standard' })
+      const s = await t.host.createSession({ cwd: dataDir, preset: 'full-access' })
       expect(s.key).toBeDefined()
     } finally {
       await t.host.close()

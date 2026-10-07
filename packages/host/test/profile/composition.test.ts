@@ -128,7 +128,10 @@ it('enforces readonly, allow/deny and explicit tool sets for every invocation', 
 
 it('compiles a separate preset Host and refuses changes to a running provider tree', async () => {
   const profile = await resolveProfile(
-    { builtin: 'local-dev', user: { name: 'local-dev', presets: { allowed: ['standard', 'research'] } } },
+    {
+      builtin: 'local-dev',
+      user: { name: 'local-dev', presets: { default: 'standard', allowed: ['standard', 'research'] } },
+    },
     env,
   )
   const baseline = resolveComposition(profile)

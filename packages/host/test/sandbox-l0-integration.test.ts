@@ -244,6 +244,8 @@ async function assembleWithSandbox(opts: {
     },
     user: {
       name: 'local-dev',
+      // This suite deliberately exercises L0 through its synthetic standard recipe.
+      presets: { default: 'standard', allowed: ['standard'] },
       ...(commandHooks ? { commandHooks } : {}),
       provider: { package: '@agnes/ai', adapters: ['@agnes/ai'], routes: [ROUTE] },
     },

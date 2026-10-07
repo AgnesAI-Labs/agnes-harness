@@ -127,6 +127,7 @@ const profileFor = (over: Record<string, unknown> = {}) =>
       lock: { packages: lockPkgs },
       user: {
         name: 'local-dev',
+        presets: { default: 'standard', allowed: ['standard'] },
         provider: { package: '@agnes/ai', adapters: ['@agnes/ai'], routes: [ROUTE] },
         ...over,
       },
@@ -171,7 +172,7 @@ describe('assemble', () => {
         name: vendor,
         version: '1.0.0',
         exports: './index.js',
-        agnes: { plugins: [{ export: 'ordinary', id: 'ext:acme/late-trust' }] },
+        agnes: { plugins: [{ export: 'ordinary', apiRange: '^1.4.0', id: 'ext:acme/late-trust' }] },
       })}\n`,
     )
     writeFileSync(join(snapshotDir, 'index.js'), 'export const snapshotMarker = true\n')
@@ -193,6 +194,7 @@ describe('assemble', () => {
           lock: { packages: { ...lockPkgs, ...packages } },
           user: {
             name: 'local-dev',
+            presets: { default: 'standard', allowed: ['standard'] },
             provider: { package: '@agnes/ai', adapters: ['@agnes/ai'], routes: [ROUTE] },
             packages: extra,
           },
@@ -248,7 +250,7 @@ describe('assemble', () => {
         name: vendor,
         version: '1.0.0',
         exports: './index.js',
-        agnes: { plugins: [{ export: 'ordinary', id: 'ext:acme/close-race' }] },
+        agnes: { plugins: [{ export: 'ordinary', apiRange: '^1.4.0', id: 'ext:acme/close-race' }] },
       })}\n`,
     )
     writeFileSync(join(snapshotDir, 'index.js'), 'export const snapshotMarker = true\n')
@@ -271,7 +273,7 @@ describe('assemble', () => {
         name: vendor,
         version: '1.0.0',
         exports: './index.js',
-        agnes: { plugins: [{ export: 'boot', id: 'ext:acme/close-race-boot' }] },
+        agnes: { plugins: [{ export: 'boot', apiRange: '^1.4.0', id: 'ext:acme/close-race-boot' }] },
       }),
     )
     writeFileSync(join(bootDir, 'index.js'), 'export const boot = () => {}\n')
@@ -298,6 +300,7 @@ describe('assemble', () => {
         },
         user: {
           name: 'local-dev',
+          presets: { default: 'standard', allowed: ['standard'] },
           provider: { package: '@agnes/ai', adapters: ['@agnes/ai'], routes: [ROUTE] },
           packages: [{ id: vendor, source: 'test' }],
         },
@@ -630,6 +633,7 @@ describe('assemble', () => {
         },
         user: {
           name: 'local-dev',
+          presets: { default: 'standard', allowed: ['standard'] },
           provider: { package: '@agnes/ai', adapters: ['@agnes/ai'], routes: [ROUTE] },
           seams: { approval: vendor },
           packages: [{ id: vendor, source: 'test' }],
@@ -676,7 +680,7 @@ describe('assemble', () => {
         name: vendor,
         version: '1.0.0',
         exports: './index.js',
-        agnes: { plugins: [{ export: 'approvalPlugin', id: 'seam:approval' }] },
+        agnes: { plugins: [{ export: 'approvalPlugin', apiRange: '^1.4.0', id: 'seam:approval' }] },
       })}\n`,
     )
     writeFileSync(join(directory, 'index.js'), 'export const marker = true\n')
@@ -733,6 +737,7 @@ describe('assemble', () => {
         },
         user: {
           name: 'local-dev',
+          presets: { default: 'standard', allowed: ['standard'] },
           provider: { package: '@agnes/ai', adapters: ['@agnes/ai'], routes: [ROUTE] },
           seams: { approval: vendor },
           packages: [{ id: vendor, source: 'test' }],
@@ -809,6 +814,7 @@ describe('assemble', () => {
         },
         user: {
           name: 'local-dev',
+          presets: { default: 'standard', allowed: ['standard'] },
           provider: { package: '@agnes/ai', adapters: ['@agnes/ai'], routes: [ROUTE] },
           packages: [{ id: vendor, source: 'test' }],
         },
@@ -840,6 +846,7 @@ describe('assemble', () => {
           plugins: [
             {
               export: 'greeting',
+              apiRange: '^1.4.0',
               id: 'ext:acme/greeting',
               config: { message: 'bundle' },
             },
@@ -919,6 +926,7 @@ describe('assemble', () => {
         },
         user: {
           name: 'local-dev',
+          presets: { default: 'standard', allowed: ['standard'] },
           provider: { package: '@agnes/ai', adapters: ['@agnes/ai'], routes: [ROUTE] },
           packages: [{ id: vendor, source: 'test' }],
         },
@@ -1030,7 +1038,7 @@ describe('assemble', () => {
         name: vendor,
         version: '1.0.0',
         exports: './index.js',
-        agnes: { plugins: [{ export: 'ordinary', id: 'ext:acme/default-owner' }] },
+        agnes: { plugins: [{ export: 'ordinary', apiRange: '^1.4.0', id: 'ext:acme/default-owner' }] },
       })}\n`,
     )
     writeFileSync(join(directory, 'index.js'), 'export const marker = true\n')
@@ -1126,7 +1134,7 @@ describe('assemble', () => {
         name: vendor,
         version: '1.0.0',
         exports: './index.js',
-        agnes: { plugins: [{ export: 'ordinary' }] },
+        agnes: { plugins: [{ export: 'ordinary', apiRange: '^1.4.0' }] },
       })}\n`,
     )
     writeFileSync(join(directory, 'index.js'), 'export const marker = true\n')
@@ -1713,6 +1721,7 @@ describe('assemble', () => {
         },
         user: {
           name: 'local-dev',
+          presets: { default: 'standard', allowed: ['standard'] },
           packages: [{ id, source: 'trusted' }],
           provider: { package: '@agnes/ai', adapters: ['@agnes/ai'], routes: [ROUTE] },
         },

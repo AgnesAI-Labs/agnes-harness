@@ -188,6 +188,7 @@ async function fixture(selected: string, missingCredential = false) {
       },
       user: {
         name: 'local-dev',
+        presets: { default: 'standard', allowed: ['standard'] },
         adapters: { secrets: { kind: 'file', path: secretPath } },
         packages: [{ id: source.snapshot.packageId, source: `file:${directory}` }],
         provider: {
