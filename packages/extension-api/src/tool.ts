@@ -1,4 +1,5 @@
 import type { Action, Actor, Decision, JobSpec, JobStatus, JsonValue, Target } from '@agnes/protocol'
+import type { ChildAgentListing } from './child-agent.js'
 import type { Static, TSchema } from '@sinclair/typebox'
 import type {
   ArtifactRef,
@@ -246,6 +247,9 @@ export interface ToolContext {
     collect(childKey: string, opts?: { wait?: boolean }): Promise<ChildStatus>
     cancel(childKey: string): Promise<ChildStatus>
     resume(childKey: string): Promise<{ childKey: string }>
+    list?(): Promise<readonly ChildAgentListing[]>
+    sendMessage?(childKey: string, text: string, signal?: AbortSignal): Promise<{ messageId: string }>
+    interrupt?(childKey: string): Promise<{ accepted: boolean }>
   }
   readonly plan: { set(items: PlanItem[]): Promise<Seq> }
   requestCompaction(instructions?: string): void

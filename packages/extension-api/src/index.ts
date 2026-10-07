@@ -43,3 +43,4 @@ export type {
 } from './compaction-engine.js'
 export * from './persistence.js'
 export * from './sandbox-provider.js'
+export * from './child-agent.js'

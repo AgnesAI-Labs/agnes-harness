@@ -26,6 +26,30 @@ export type {
 } from './child/types.js'
 export { canTransitionChildState, isTerminalChildState } from './child/types.js'
 export {
+  applyChildAgentConfig,
+  assertChildAgentAllowed,
+  childAgentAllowlist,
+  normalizeChildAgentAllowlist,
+  resetChildAgentAllowlists,
+  setChildAgentAllowlist,
+} from './child/allowlist.js'
+export {
+  externalChild,
+  externalChildren,
+  trackExternalChild,
+  updateExternalChild,
+} from './child/directory.js'
+export type { ExternalChildControls } from './child/directory.js'
+export { runLoopChild } from './child/loop-port.js'
+export {
+  IN_PROCESS_CHILD_CAPABILITIES,
+  IN_PROCESS_CHILD_PROVIDER_ID,
+  inProcessChildAgentProvider,
+} from './child/provider.js'
+export type { InProcessChildBackend, ResidentStart, ResidentTurn } from './child/provider.js'
+export { bindChildFactory, childBackend, unbindChildFactory } from './child/sessions.js'
+export { createChildEventQueue } from './child/events.js'
+export {
   assertFsEnforces,
   assertNotDenied,
   decideFsPath,

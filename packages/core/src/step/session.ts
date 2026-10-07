@@ -43,6 +43,7 @@ import {
   UI_PROJECTION_DEFAULT_MAX_BYTES,
   validateActor,
 } from '@agnes/protocol'
+import { unbindChildFactory } from '../child/sessions.js'
 import { hasChildControl } from '../child/store.js'
 import { isPending, normalizeApproval } from '../effects/approval-answer.js'
 import { EffectRuntime } from '../effects/effect.js'
@@ -2196,6 +2197,7 @@ export class SessionImpl {
   close(): Promise<void> {
     if (this.closePromise) return this.closePromise
     this.closing = true
+    unbindChildFactory(this.key)
     this.executePermits.close()
     this.ac.abort()
     this.closePromise = Promise.resolve().then(async () => {

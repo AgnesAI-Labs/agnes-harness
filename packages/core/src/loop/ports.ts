@@ -1,6 +1,7 @@
 import type { LoopCheckpoint, LoopContext, LoopToolCall } from '@agnes/extension-api'
 import { validateAgainst, type ContentBlock, type InferenceEvent, type RequestBody } from '@agnes/protocol'
 import { RequestBody as WireRequest } from '@agnes/protocol/gen/model'
+import { runLoopChild } from '../child/loop-port.js'
 import { scanPages } from '../log/scan-pages.js'
 import type { Inbox } from '../reduce/shapes.js'
 import { runCompaction } from '../step/compaction.js'
@@ -266,6 +267,9 @@ export async function createLoopContext(s: SessionImpl): Promise<LoopContext> {
           signal.addEventListener('abort', done, { once: true })
         })
       },
+    },
+    children: {
+      run: (input, signal) => runLoopChild(s, input, signal),
     },
     ...(s.compaction.runnable
       ? {

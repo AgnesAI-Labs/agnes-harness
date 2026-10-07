@@ -1,5 +1,6 @@
 import type {
   ArtifactRef,
+  ChildAgentListing,
   ExecResult,
   FetchInit,
   FsEntry,
@@ -50,6 +51,9 @@ export type ChildrenFactory = {
   inspect?(childKey: string): Promise<ChildStatus | null>
   resume?(childKey: string): Promise<ChildHandle>
   cancel?(childKey: string): Promise<void>
+  list?(): Promise<readonly ChildAgentListing[]>
+  sendMessage?(childKey: string, text: string, signal: AbortSignal): Promise<{ messageId: string }>
+  interrupt?(childKey: string): Promise<{ accepted: boolean }>
 }
 
 /**
@@ -329,6 +333,20 @@ export function buildToolContext(
           ...(snap.text !== undefined ? { text: snap.text } : {}),
         }
       },
+      ...(d.children.list ? { list: () => d.children.list?.() ?? Promise.resolve([]) } : {}),
+      ...(d.children.sendMessage
+        ? {
+            sendMessage: (childKey: string, text: string, signal: AbortSignal) =>
+              d.children.sendMessage?.(childKey, text, signal) ??
+              Promise.reject(new CoreError('E_UNSUPPORTED', 'child messages are not available')),
+          }
+        : {}),
+      ...(d.children.interrupt
+        ? {
+            interrupt: (childKey: string) =>
+              d.children.interrupt?.(childKey) ?? Promise.resolve({ accepted: false }),
+          }
+        : {}),
     },
     plan: { set: (items) => d.appendPlan(items as unknown as PlanItem[]) },
     requestCompaction: (instructions) => d.requestCompaction(instructions),

@@ -1,5 +1,8 @@
+import type { ChildAgentListing, ChildAgentResult, ChildAgentStatus } from '@agnes/extension-api'
 import type { Provider } from '@agnes/protocol'
 import type { ChildHandle, ChildrenFactory, ChildStatus } from '../effects/tool-context.js'
+import type { ResidentStart, ResidentTurn } from './provider.js'
+import { bindChildFactory } from './sessions.js'
 import type { Kernel } from '../kernel.js'
 import { sha256Hex } from '../request/hash.js'
 import type { SessionImpl } from '../step/session.js'
@@ -23,6 +26,8 @@ type CreateOpts = Parameters<ChildrenFactory['create']>[0] & {
   input?: string
   parentEffectId?: string
   start?: boolean
+  /** Keep the child after each turn so a later message can continue it. */
+  resident?: boolean
 }
 
 export class KernelChildren implements ChildrenFactory {
@@ -30,6 +35,18 @@ export class KernelChildren implements ChildrenFactory {
   private readonly opening = new Map<string, Promise<ChildHandle>>()
   /** Each attached handle's run without Host admission, for callers already inside one. */
   private readonly direct = new WeakMap<ChildHandle, ChildHandle['run']>()
+  private boundKey: string | undefined
+  private readonly residents = new Map<
+    string,
+    { child: SessionImpl; idle: () => boolean; run: ChildHandle['run'] }
+  >()
+  private readonly turnSignals = new Map<string, AbortController>()
+  private readonly continued = new Set<string>()
+  private readonly turnListeners = new Map<string, Set<(event: ResidentTurn) => void>>()
+  private readonly completions = new Map<
+    string,
+    { promise: Promise<ChildAgentResult>; resolve: (value: ChildAgentResult) => void }
+  >()
 
   constructor(
     private readonly kernel: Kernel,
@@ -42,6 +59,7 @@ export class KernelChildren implements ChildrenFactory {
 
   async createWithKind(kind: ChildKind, opts: CreateOpts): Promise<ChildHandle> {
     const parent = this.parent()
+    this.bindSession(parent.key)
     if (opts.parent !== parent.key)
       throw new CoreError('E_DEPTH_EXCEEDED', 'child factory parent mismatch', {
         expected: parent.key,
@@ -169,8 +187,52 @@ export class KernelChildren implements ChildrenFactory {
 
   private async dropLocalChild(childKey: string, child: SessionImpl): Promise<void> {
     this.handles.delete(childKey)
+    this.residents.delete(childKey)
+    this.continued.delete(childKey)
+    this.turnSignals.delete(childKey)
+    this.turnListeners.delete(childKey)
+    this.completions.delete(childKey)
     if (this.kernel.sessions.get(childKey) === child) this.kernel.sessions.delete(childKey)
     await child.close().catch(() => undefined)
+  }
+
+  private bindSession(sessionKey: string): void {
+    if (this.boundKey === sessionKey) return
+    this.boundKey = sessionKey
+    bindChildFactory(sessionKey, this)
+  }
+
+  private completionOf(childKey: string): Promise<ChildAgentResult> {
+    let entry = this.completions.get(childKey)
+    if (!entry) {
+      let resolve: (value: ChildAgentResult) => void = () => undefined
+      const promise = new Promise<ChildAgentResult>((settle) => {
+        resolve = settle
+      })
+      entry = { promise, resolve }
+      this.completions.set(childKey, entry)
+    }
+    return entry.promise
+  }
+
+  private finishChild(childKey: string, result: ChildAgentResult): void {
+    this.completionOf(childKey)
+    this.completions.get(childKey)?.resolve(result)
+    this.noteTurn(childKey, result.text, result.status)
+  }
+
+  private noteTurn(childKey: string, text: string, status: ChildAgentStatus): void {
+    for (const listener of this.turnListeners.get(childKey) ?? []) listener({ text, status })
+  }
+
+  private pump(childKey: string): void {
+    const resident = this.residents.get(childKey)
+    if (!resident?.idle()) return
+    const inbox = resident.child.latest('inbox') as { items?: unknown[] } | undefined
+    if (!inbox?.items?.length) return
+    void resident.run('').finally(() => {
+      if (this.residents.get(childKey)?.idle()) this.pump(childKey)
+    })
   }
 
   private open(
@@ -555,12 +617,16 @@ export class KernelChildren implements ChildrenFactory {
         if (durable && (isTerminalChildState(durable.state) || durable.state === 'cancelling'))
           throw new CoreError('E_UNSUPPORTED', `child ${record.childKey} is ${durable.state}`)
         if (state !== 'ready') throw new CoreError('E_LANE_BUSY', `child ${record.childKey} already started`)
-        if (input !== undefined && sha256Hex(input) !== record.inputHash)
+        const continuation = opts.resident === true && this.continued.has(record.childKey)
+        if (!continuation && input !== undefined && sha256Hex(input) !== record.inputHash)
           throw new CoreError('E_CHILD_CONFLICT', 'run input does not match persisted create input')
         const live = await store.lookupByKey(record.childKey)
-        if (live && !(await store.casState(record.childKey, live.stateRevision, 'running')))
+        if (live && live.state !== 'running' && !(await store.casState(record.childKey, live.stateRevision, 'running')))
           throw new CoreError('E_UNSUPPORTED', `child ${record.childKey} cannot start from ${live.state}`)
         state = 'running'
+        const turnAbort = new AbortController()
+        this.turnSignals.set(record.childKey, turnAbort)
+        let residentHold = false
         try {
           const inbox = child.latest('inbox') as { items?: unknown[] } | undefined
           if (!inbox?.items?.length) {
@@ -571,22 +637,55 @@ export class KernelChildren implements ChildrenFactory {
           }
           const result = await child.run({
             until: 'turn-end',
-            signal: new AbortController().signal,
+            signal: turnAbort.signal,
           })
+          const text = await lastText()
+          if (
+            opts.resident &&
+            (result.reason === 'completed' || result.reason === 'aborted' || result.reason === 'interrupted')
+          ) {
+            state = 'ready'
+            this.continued.add(record.childKey)
+            residentHold = true
+            const parked = await store.lookupByKey(record.childKey)
+            if (parked?.state === 'running') await store.casState(record.childKey, parked.stateRevision, 'ready')
+            const status: ChildAgentStatus =
+              result.reason === 'completed' ? 'idle' : 'interrupted'
+            this.noteTurn(record.childKey, text, status)
+            queueMicrotask(() => this.pump(record.childKey))
+            return { text, lastSeq: child.lastSeq }
+          }
           if (result.reason !== 'completed') {
             state = result.reason === 'aborted' || result.reason === 'interrupted' ? 'cancelled' : 'error'
             throw new CoreError('E_RELATION', `child turn ended ${result.reason}`)
           }
           state = 'done'
-          return { text: await lastText(), lastSeq: child.lastSeq }
+          return { text, lastSeq: child.lastSeq }
         } catch (error) {
+          if (opts.resident && turnAbort.signal.aborted && state === 'running') {
+            state = 'ready'
+            this.continued.add(record.childKey)
+            residentHold = true
+            const text = await lastText().catch(() => '')
+            const parked = await store.lookupByKey(record.childKey)
+            if (parked?.state === 'running')
+              await store.casState(record.childKey, parked.stateRevision, 'ready').catch(() => false)
+            this.noteTurn(record.childKey, text, 'interrupted')
+            queueMicrotask(() => this.pump(record.childKey))
+            return { text, lastSeq: child.lastSeq }
+          }
           if (state === 'running') state = child.ac.signal.aborted ? 'cancelled' : 'error'
           throw error
         } finally {
+          this.turnSignals.delete(record.childKey)
           cachedText = await lastText().catch(() => cachedText)
           cachedSeq = child.lastSeq
-          await emitEnd(state === 'done' ? 'completed' : state === 'cancelled' ? 'cancelled' : 'failed')
-          await this.dropLocalChild(record.childKey, child)
+          if (!residentHold) {
+            const outcome = state === 'done' ? 'completed' : state === 'cancelled' ? 'cancelled' : 'failed'
+            await emitEnd(outcome)
+            this.finishChild(record.childKey, { status: outcome, text: cachedText })
+            await this.dropLocalChild(record.childKey, child)
+          }
         }
       },
       status: async (): Promise<ChildStatus> => {
@@ -630,11 +729,127 @@ export class KernelChildren implements ChildrenFactory {
     }
     const run = handle.run
     this.direct.set(handle, run)
+    if (opts.resident) {
+      this.residents.set(record.childKey, {
+        child,
+        idle: () => state === 'ready',
+        run,
+      })
+    }
     if (kind === 'spawn') handle.run = (input) => this.detached(() => run(input))
     await parent.hooks
       .subagentStart?.({ childKey: record.childKey, kind, budget: opts.budget ?? null })
       .catch(() => undefined)
     return handle
+  }
+
+  async startResident(input: ResidentStart): Promise<{ id: string }> {
+    const parent = this.parent()
+    const child = await this.createWithKind('spawn', {
+      parent: parent.key,
+      cwd: input.cwd,
+      input: input.task,
+      resident: true,
+      start: false,
+      ...(input.model === undefined ? {} : { model: input.model }),
+      ...(input.isolation === undefined ? {} : { isolation: input.isolation }),
+      ...(input.budget === undefined ? {} : { budget: input.budget }),
+    })
+    void child.run(input.task).catch((error: unknown) => {
+      this.finishChild(child.key, {
+        status: 'failed',
+        text: error instanceof Error ? error.message : String(error),
+      })
+    })
+    return { id: child.key }
+  }
+
+  async startFork(input: ResidentStart): Promise<{ id: string; text: string }> {
+    const parent = this.parent()
+    const child = await this.createWithKind('fork', {
+      parent: parent.key,
+      cwd: input.cwd,
+      input: input.task,
+      ...(input.model === undefined ? {} : { model: input.model }),
+      ...(input.budget === undefined ? {} : { budget: input.budget }),
+    })
+    try {
+      const result = await child.run(input.task)
+      return { id: child.key, text: result.text }
+    } finally {
+      await child.close().catch(() => undefined)
+    }
+  }
+
+  async list(): Promise<readonly ChildAgentListing[]> {
+    const parent = this.parent()
+    this.bindSession(parent.key)
+    const store = requireChildControl(parent.d.log.storage)
+    const rows = await store.listByParent(parent.key)
+    return rows.map((row) => {
+      const resident = this.residents.get(row.childKey)
+      const status: ChildAgentStatus = resident?.idle()
+        ? 'idle'
+        : row.state === 'completed'
+          ? 'completed'
+          : row.state === 'failed'
+            ? 'failed'
+            : row.state === 'cancelled'
+              ? 'cancelled'
+              : row.state === 'ready' || row.state === 'creating'
+                ? 'starting'
+                : 'running'
+      return {
+        id: row.childKey,
+        providerId: 'in-process',
+        status,
+        continuable: resident !== undefined,
+      }
+    })
+  }
+
+  async sendMessage(childKey: string, text: string, signal: AbortSignal): Promise<{ messageId: string }> {
+    signal.throwIfAborted()
+    if (!text) throw new CoreError('E_ENVELOPE', 'message must not be empty')
+    const resident = this.residents.get(childKey)
+    if (!resident) return this.missingContinuable(childKey)
+    const messageId = this.kernel.ids.ulid()
+    await resident.child.enqueue('next-turn', {
+      content: [{ type: 'text', text }],
+      actor: resident.child.d.actor,
+    })
+    this.pump(childKey)
+    return { messageId }
+  }
+
+  async interrupt(childKey: string): Promise<{ accepted: boolean }> {
+    if (!this.residents.has(childKey)) return this.missingContinuable(childKey)
+    const controller = this.turnSignals.get(childKey)
+    if (!controller) return { accepted: false }
+    controller.abort()
+    return { accepted: true }
+  }
+
+  private async missingContinuable(childKey: string): Promise<never> {
+    const parent = this.parent()
+    const record = await requireChildControl(parent.d.log.storage).lookupByKey(childKey)
+    if (record && this.owns(record, parent.key))
+      throw new CoreError('E_UNSUPPORTED', `child ${childKey} is not continuable`, { childKey })
+    throw new CoreError('E_CHILD_NOT_FOUND', `unknown child ${childKey}`, { childKey })
+  }
+
+  onTurn(childKey: string, listener: (event: ResidentTurn) => void): () => void {
+    let listeners = this.turnListeners.get(childKey)
+    if (!listeners) {
+      listeners = new Set()
+      this.turnListeners.set(childKey, listeners)
+    }
+    listeners.add(listener)
+    return () => listeners?.delete(listener)
+  }
+
+  completion(childKey: string): Promise<ChildAgentResult> {
+    return this.completionOf(childKey)
   }
 
   private resolveModel(parent: SessionImpl, selector: string): { route: string; model: string } | undefined {
