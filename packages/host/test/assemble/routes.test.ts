@@ -91,6 +91,15 @@ describe('materializeRoutes', () => {
       },
     }
     expect(materializeRoutes(preset, withDemo)).toEqual(materializeRoutes(preset, p))
+    expect(
+      materializeRoutes(preset, {
+        ...withDemo,
+        provider: { ...withDemo.provider, routes: withDemo.provider.routes.slice(0, 1) },
+      }),
+    ).toEqual({
+      primary: { route: 'demo', model: 'demo-model' },
+      fast: { route: 'demo', model: 'demo-model' },
+    })
     expect(materializeRoutes(withRoute({ route: { primary: 'demo' } }), withDemo).primary.model).toBe(
       'demo-model',
     )

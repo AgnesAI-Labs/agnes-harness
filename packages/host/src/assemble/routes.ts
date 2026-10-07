@@ -48,7 +48,11 @@ export function materializeRoutes(preset: PresetView, profile: ResolvedProfile):
       bad('pin-without-route', `model.id.${slot} pins a slot with no route`, { slot, preset: named })
   for (const [slot, name] of Object.entries(preset.model.route)) {
     if (!SLOTS.has(slot)) bad('unknown-slot', `${slot} is not a protocol SlotName`, { slot, preset: named })
-    const decl = name === SENTINEL ? declared[0] : byName.get(name)
+    // The built-in demo is a fallback; configured routes keep their declaration order.
+    const decl =
+      name === SENTINEL
+        ? (declared.find((route) => route.route !== 'demo' || route.api !== 'scripted') ?? declared[0])
+        : byName.get(name)
     if (!decl)
       bad('unknown-route', `the profile declares no route ${name}`, { slot, route: name, preset: named })
     // Ruling C-26: `preset.model.id` is validated by nothing and core hands a pin straight to the
