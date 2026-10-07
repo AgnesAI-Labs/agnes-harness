@@ -16,6 +16,10 @@
         {
           "path": "packages/code/src/extensions/code-mode/index.ts",
           "marker": "this runtime supports stateless cells only"
+        },
+        {
+          "path": "packages/code/src/runtime/process.ts",
+          "marker": "Python raw_io:false is not implemented"
         }
       ]
     },
