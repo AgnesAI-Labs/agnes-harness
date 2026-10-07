@@ -103,6 +103,9 @@ async function buildSea(name, entry, destination) {
     plugins: [bundleJitiTransform],
     define: {
       AGNES_VERSION: JSON.stringify(String(version)),
+      AGNES_BUNDLED_RIPGREP_PATH: JSON.stringify(
+        `./ripgrep/${process.platform === 'win32' ? 'rg.exe' : 'rg'}`,
+      ),
       AGNES_PACKAGED_BUILTINS: 'true',
       AGNES_COMPOSED_WORKER: 'true',
       AGNES_BASE_PRESET_TEXT: JSON.stringify(
@@ -171,7 +174,7 @@ execFileSync(
   },
 )
 const local = join(root, 'dist', 'local')
-for (const name of ['daemon.mjs', 'worker.mjs', 'web', 'THIRD-PARTY-NOTICES', 'bundled-plugins'])
+for (const name of ['daemon.mjs', 'worker.mjs', 'web', 'THIRD-PARTY-NOTICES', 'bundled-plugins', 'ripgrep'])
   cpSync(join(local, name), join(out, name), { recursive: true })
 if (existsSync(join(local, 'native'))) cpSync(join(local, 'native'), join(out, 'native'), { recursive: true })
 cpSync(

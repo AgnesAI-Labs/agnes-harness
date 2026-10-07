@@ -1,6 +1,6 @@
 import { type Bytes, defineTool, type ToolResult } from '@agnes/extension-api'
 import { withFileLock } from '../guards/mutation-queue.js'
-import { ABSENT, observe, observedVersion, versionOf } from '../guards/observed.js'
+import { ABSENT, observe, observedVersion, UNKNOWN_VERSION, versionOf } from '../guards/observed.js'
 import { looksTruncated } from '../guards/truncation.js'
 import { normalizeWorkspacePath } from '../paths.js'
 import { MAX_READ_BYTES } from './read.js'
@@ -12,7 +12,7 @@ const enc = new TextEncoder()
 export const writeTool = defineTool({
   name: 'write',
   description:
-    'Create or overwrite a file with the given content. For large generated files, first write a small valid scaffold with unique section markers, then fill the sections with multiple edit calls. Aim for at most 8 KiB of generated content per call to avoid model output truncation; do not generate a whole large file in one call. Overwriting an existing file is destructive, and content that looks like a partial copy of what is already there is refused rather than written.',
+    'Create or overwrite a file with the given content. For large generated files, first write a small valid scaffold with unique section markers, then fill the sections with multiple edit calls. Aim for at most 8 KiB of generated content per call to avoid model output truncation; do not generate a whole large file in one call. Read an existing file in this session before overwriting it. Overwriting an existing file is destructive, and content that looks like a partial copy of what is already there is refused rather than written.',
   parameters: WriteParams,
   meta: {
     isReadOnly: false,
@@ -47,14 +47,19 @@ export const writeTool = defineTool({
           }
         existed = false
       }
-      // Only a file this session has looked at can be stale; one it has not is left to the guard
-      // below, as it always was. The comparison is made inside the lock, against the bytes that are
-      // about to be replaced, so no writer in this process can slip in between check and write.
       const seen = observedVersion(ctx.session.key, abs)
+      if (existed && seen === undefined)
+        return {
+          content: [
+            { type: 'text', text: `write refused: read ${args.path} in this session before overwriting it` },
+          ],
+          isError: true,
+          details: { code: 'FS_NOT_OBSERVED', path: args.path },
+        }
       if (seen !== undefined) {
         const now = existed ? await versionOf(ctx, args.path, oldBytes, MAX_READ_BYTES) : ABSENT
         // No version to name (the file system could not say) is not a change.
-        if (now !== undefined && now !== seen)
+        if (seen !== UNKNOWN_VERSION && now !== undefined && now !== seen)
           return {
             content: [
               {
@@ -90,7 +95,11 @@ export const writeTool = defineTool({
         }
       }
       // What was just written is what this session now knows of the file.
-      observe(ctx.session.key, abs, await versionOf(ctx, args.path, enc.encode(args.content), MAX_READ_BYTES))
+      observe(
+        ctx.session.key,
+        abs,
+        (await versionOf(ctx, args.path, enc.encode(args.content), MAX_READ_BYTES)) ?? UNKNOWN_VERSION,
+      )
       return {
         content: [
           {

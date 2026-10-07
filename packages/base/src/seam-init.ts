@@ -145,6 +145,7 @@ export type SeamProfileView = {
 }
 
 export type SeamInitContext = {
+  searchProvider?: import('@agnes/extension-api').SearchProvider
   /** Deployment grants, supplied only to the exact bundled hooks-runner factory. */
   trustedHookCommands?: Readonly<{
     allowsUnconfined(source: 'data' | 'workspace', configDigest: string): boolean

@@ -27,7 +27,7 @@ Generated from schema/hooks.json by tools/gen-docs.ts. Do not edit by hand.
 |---|---|---|
 | `session_start` | `reason`, `preset`, `cwd`, `parent?` | `void` |
 | `resources_discover` | `actor`, `cwd`, `registered` | `resources?`, `additionalContext?` |
-| `before_step` | `turn`, `step`, `depth`, `budget` | `block?`, `reason?` |
+| `before_step` | `turn`, `step`, `depth`, `budget` | `block?`, `park?`, `reason?` |
 | `context` | `sections`, `surfaceDigest` | `sections?`, `additionalContext?` |
 | `before_request` | `request`, `slot`, `model`, `attempt` | `patch?` |
 | `request_error` | `code`, `message`, `attempt`, `retryable` | `void` |

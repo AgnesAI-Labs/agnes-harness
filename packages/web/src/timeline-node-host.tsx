@@ -190,6 +190,7 @@ export const TimelineNodeHost = forwardRef<TranscriptHandle, TimelineNodeHostPro
       <div id="transcript-content" ref={content}>
         <AssistantRuntimeProvider runtime={runtime}>
           <WebConversationMessages
+            nodes={projection.nodes}
             registry={registry}
             {...(markdownRenderer ? { markdownRenderer } : {})}
             {...(projection.turns ? { turns: projection.turns } : {})}

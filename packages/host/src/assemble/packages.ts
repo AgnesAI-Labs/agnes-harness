@@ -62,6 +62,7 @@ type BoundSkillRuntimeInput = SkillRuntimeInput & Required<Pick<SkillRuntimeInpu
 export type SkillRuntimeDiscovery = Readonly<Pick<BoundSkillRuntimeInput, 'list' | 'runInWorkspace'>>
 
 export type SeamInitContext = {
+  searchProvider?: import('@agnes/extension-api').SearchProvider
   /** Deployment grants, supplied only to the exact bundled hooks-runner factory. */
   trustedHookCommands?: Readonly<{
     allowsUnconfined(source: 'data' | 'workspace', configDigest: string): boolean

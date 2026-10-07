@@ -516,6 +516,13 @@ export class Kernel {
       tracker,
       surface,
       ui,
+      slotFills: () => {
+        const deadline = Date.now() + 1000
+        return this.slots.snapshot(
+          { key, lane, workspaceRoot: so.cwd },
+          { remainingMs: () => deadline - Date.now() },
+        )
+      },
       lane,
       runtime,
       provider: this.o.provider,

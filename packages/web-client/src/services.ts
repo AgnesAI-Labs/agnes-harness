@@ -1,6 +1,7 @@
 /** 宿主服务与插件身份类型（WC6）。实现由宿主在启动时实例化并包装宿主既有状态（WC8），本包只定义合同。 */
 import { type Context, Service } from '@agnes/cordis'
 import type { ArtifactReadResult, ArtifactRef } from '@agnes/protocol'
+import { downloadArtifact } from './artifact-download.js'
 
 /** 当前页面已连接的 SDK 客户端；宿主提供同一实例（WC6）。
  *  用浏览器导出变体：插件跑在页面里，Node 专属面（packages/skills 等）不在页面上。 */
@@ -374,10 +375,31 @@ export class ClientResourceReclaimedError extends Error {
 }
 
 export class ClientResourceService extends Service {
+  private active = true
   private readonly objectUrls = new Set<string>()
 
   readonly images: ClientImageLoader = Object.freeze({
     load: (input) => this.loadImage(input),
+  })
+
+  readonly files = Object.freeze({
+    load: async (input: Readonly<{ laneId: string; artifact: ClientDocumentArtifact }>) => {
+      const sessionId = this.session.sessionId
+      if (!this.active || !sessionId) throw new Error('deliverable requires an active session')
+      const resource = await downloadArtifact(this.client, sessionId, input.laneId, input.artifact)
+      if (!this.active || this.session.sessionId !== sessionId) {
+        resource.release()
+        throw new Error('deliverable session changed')
+      }
+      this.objectUrls.add(resource.url)
+      return {
+        ...resource,
+        release: () => {
+          this.objectUrls.delete(resource.url)
+          resource.release()
+        },
+      }
+    },
   })
 
   readonly documents: ClientDocumentLoader = Object.freeze({
@@ -390,7 +412,10 @@ export class ClientResourceService extends Service {
     private readonly session: SessionService,
   ) {
     super(ctx, 'resources')
-    ctx.effect(() => this.releaseAll.bind(this))
+    ctx.effect(() => () => {
+      this.active = false
+      this.releaseAll()
+    })
   }
 
   private async loadImage(

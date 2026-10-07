@@ -84,7 +84,10 @@
       "./extensions/hooks-runner",
       "./extensions/privacy",
       "./extensions/skills",
-      "./extensions/computer-use"
+      "./extensions/computer-use",
+      "./extensions/interaction",
+      "./extensions/deliverables",
+      "./extensions/jobs"
     ]
   },
   "scripts": {
@@ -101,11 +104,12 @@
     "@agnes/core": "workspace:*",
     "@agnes/plugin-runtime": "workspace:*",
     "@agnes/protocol": "workspace:*",
-    "@joplin/turndown-plugin-gfm": "1.0.67",
     "@agnes/protocol-validation": "workspace:*",
     "@agnes/system-node": "workspace:*",
+    "@joplin/turndown-plugin-gfm": "1.0.67",
     "@modelcontextprotocol/sdk": "1.25.2",
     "@sinclair/typebox": "0.34.33",
+    "@vscode/ripgrep": "1.18.0",
     "ajv": "8.20.0",
     "ajv-formats": "3.0.1",
     "isomorphic-git": "1.41.9",

@@ -14,6 +14,7 @@ import { renderMarkdown } from './markdown.js'
 import { PackageController } from './package-controller.js'
 import { PermissionModal } from './permission-modal.js'
 import { TuiProjection, type TuiProjectionWindow } from './projection.js'
+import { answerQuestion, pendingQuestion, type QuestionPrompt } from './question-prompt.js'
 import { Renderer } from './renderer.js'
 import type { ResourceCommandKind, TuiResourceController } from './resource-controller.js'
 import { type ActionItem, collectSlots } from './slots.js'
@@ -128,6 +129,7 @@ export function formatTuiErrorNotice(error?: unknown): string {
 }
 
 export class TuiApp {
+  private questionPrompt: QuestionPrompt | undefined
   private readonly modal: PermissionModal
   private offPermission: (() => void) | undefined
   // Registered once in `start()` against whichever client the initial session belongs to. A
@@ -679,6 +681,11 @@ export class TuiApp {
   }
 
   private apply(value: UITimeline, options: { opening?: boolean; window?: TuiProjectionWindow } = {}): void {
+    this.questionPrompt = pendingQuestion(value.nodes)
+    if (this.questionPrompt)
+      this.statusBar.setNotice(
+        `Question: ${escapeControl(this.questionPrompt.questions.map((q) => q.question).join('; '))} — reply with option number(s), labels or free text; multiple questions use JSON.`,
+      )
     const tools = value.nodes.filter((node) => node.kind === 'tool')
     const ids = new Set(tools.map((node) => node.id))
     for (const id of this.toolCards.keys()) if (!ids.has(id)) this.toolCards.delete(id)
@@ -952,7 +959,9 @@ export class TuiApp {
     if (!text.trim()) return
     if (text.startsWith('/')) throw new Error('Command unavailable')
     this.statusBar.setNotice(undefined)
-    const blocks = attachmentsFrom(text)
+    const blocks = this.questionPrompt
+      ? [{ type: 'text' as const, text: answerQuestion(this.questionPrompt, text) }]
+      : attachmentsFrom(text)
     if (this.busy) {
       // The daemon's followUp endpoint durably enqueues input, but this TUI has no background
       // turn runner to wake that queue after the current turn ends. Keep the draft locally and

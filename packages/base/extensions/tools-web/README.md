@@ -15,3 +15,7 @@ Model output uses the tool output guard (preset `tools.output_max_bytes`, defaul
 The feature does not change ordinary extension `net.fetch`, model endpoints, MCP transports, or shell networking. It is a checked tool channel, not an OS-level network sandbox. Existing sessions/processes need their usual reload/restart before new bundled code is available.
 
 Parts of the address policy and HTML-depth guard are adapted from DeepSeek Harness; the source retains the MIT notice, also available in `DEEPSEEK-LICENSE.txt`.
+
+## web_search
+
+`web_search` accepts one to four `queries`. The Host supplies a vendor-neutral `SearchProvider` through `createHost` dependencies; credentials and provider transport stay with the deployment. With no configured provider/key it returns `WEB_SEARCH_UNAVAILABLE`. Errors do not include provider credentials. Results use the same output guard and readable artifact spills as fetch. See [default tools](../../../../docs/reference/default-tools.md) for the public provider signature.

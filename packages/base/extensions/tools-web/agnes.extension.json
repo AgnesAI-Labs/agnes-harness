@@ -4,7 +4,7 @@
   "apiRange": "^1.1",
   "entry": "./src/index.ts",
   "capabilities": {
-    "tools": { "prefix": "", "names": ["web_fetch"] },
+    "tools": { "prefix": "", "names": ["web_fetch", "web_search"] },
     "network": [],
     "network.publicRead": true,
     "artifacts": true

@@ -125,10 +125,11 @@ function mediaRoots(event: EventEnvelope): readonly Readonly<{ sha256: string; m
   }
   if (event.type !== 'tool/result') return undefined
   const data = event.data as { content?: unknown; isError?: unknown }
+  const deliverableResult = event.origin === 'tool:present' && event.trust === 'trusted'
   const imageResult =
     (['tool:computer_use', 'tool:document_read'].includes(event.origin) && event.trust === 'untrusted') ||
     (event.origin === 'tool:read' && event.trust === 'trusted')
-  if (!imageResult || data.isError !== false) return undefined
+  if ((!imageResult && !deliverableResult) || data.isError !== false) return undefined
   if (!Array.isArray(data.content)) return undefined
   const roots = new Map<string, Readonly<{ sha256: string; mime: string }>>()
   for (const value of data.content) {
@@ -136,7 +137,12 @@ function mediaRoots(event: EventEnvelope): readonly Readonly<{ sha256: string; m
     const block = value as Record<string, unknown>
     if (block.type !== 'resource_link') continue
     const match = typeof block.uri === 'string' ? ARTIFACT_URI.exec(block.uri) : null
-    if (!match || (block.mimeType !== 'image/png' && block.mimeType !== 'image/jpeg')) continue
+    if (
+      !match ||
+      typeof block.mimeType !== 'string' ||
+      (!deliverableResult && block.mimeType !== 'image/png' && block.mimeType !== 'image/jpeg')
+    )
+      continue
     const sha256 = match[1] as string
     roots.set(`${sha256}:${block.mimeType}`, Object.freeze({ sha256, mime: block.mimeType }))
     if (roots.size > MAX_ROOTS_PER_HEADER) throw unavailable()

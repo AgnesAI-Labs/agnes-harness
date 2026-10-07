@@ -1,0 +1,22 @@
+{
+  "id": "agnes/deliverables",
+  "version": "0.1.0",
+  "apiRange": "^1.4",
+  "entry": "./src/index.ts",
+  "capabilities": {
+    "tools": {
+      "prefix": "",
+      "names": ["present"]
+    },
+    "events": true,
+    "artifacts": true,
+    "slots": ["tool.card.inline"],
+    "projections": [
+      {
+        "name": "presented",
+        "inputEventTypes": ["x/agnes/deliverables/presented"],
+        "maxStateBytes": 262144
+      }
+    ]
+  }
+}

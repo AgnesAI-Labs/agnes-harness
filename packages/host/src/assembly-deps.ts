@@ -36,6 +36,7 @@ export type AssembleDeps = HostPaths &
     currentRuntime?: KernelOptions['currentRuntime']
     /** Host-private builtin row identities to fit before a restored generation starts. */
     generationBuiltinRows?: readonly Readonly<EntryRow>[]
+    searchProvider?: import('@agnes/extension-api').SearchProvider
     publicFetch?: KernelOptions['publicFetch']
     seamTimeoutMs?: number
     platform?: PlatformBackend

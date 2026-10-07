@@ -1045,7 +1045,10 @@ export async function startSupervisor(o: StartSupervisorOptions): Promise<{
               artifactAuthority: new PersistentArtifactReadAuthorityIndex(o.artifactAuthorityTable),
               sessionOwnership,
               limits: {
-                maxArtifactBytes: o.profile.computerUse?.capture.maxBytesPerImage ?? 4 * 1024 * 1024,
+                maxArtifactBytes: Math.max(
+                  32 * 1024 * 1024,
+                  o.profile.computerUse?.capture.maxBytesPerImage ?? 0,
+                ),
                 maxResponseBytes: o.profile.computerUse?.capture.maxBytesPerImage ?? 4 * 1024 * 1024,
               },
               operationTimeoutMs: 10_000,

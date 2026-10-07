@@ -1,0 +1,11 @@
+{
+  "id": "agnes/jobs",
+  "version": "0.1.0",
+  "apiRange": "^1.4",
+  "entry": "./src/index.ts",
+  "capabilities": {
+    "tools": { "prefix": "", "names": ["job_list", "job_output", "job_kill"] },
+    "hooks": ["shutdown"],
+    "artifacts": true
+  }
+}
