@@ -25,11 +25,14 @@ import type {
   PackageUntrustParams,
   PackageUpdateParams,
   PluginGenerationStatus,
+  PluginPublicationStatusResult,
   PluginTreeApplyParams,
   PluginTreeApplyResult,
   PluginTreeRollbackParams,
   PluginTreeRollbackResult,
   PluginTreeView,
+  SessionGenerationMigrationParams,
+  SessionGenerationMigrationResult,
 } from '@agnes/protocol'
 export type PackageAdminRpc = Readonly<{
   call<T>(method: string, params: unknown): Promise<T>
@@ -48,6 +51,8 @@ export type PackageAdminClient = Readonly<{
     list(params: PackageCatalogListParams): Promise<PackageCatalogPage>
     get(params: PackageCatalogGetParams): Promise<PackageCatalogDescriptor>
   }>
+  publicationStatus(params: PackageListParams): Promise<PluginPublicationStatusResult>
+  migrateSession(params: SessionGenerationMigrationParams): Promise<SessionGenerationMigrationResult>
   generations(params: PackageListParams): Promise<PluginGenerationStatus>
   list(params: PackageListParams): Promise<PackageListResult>
   inspect(params: PackageInspectParams): Promise<PackageOperationReceipt>
@@ -109,6 +114,10 @@ export function createPackageAdminClient(client: PackageAdminRpc): PackageAdminC
       get: (params: PackageCatalogGetParams): Promise<PackageCatalogDescriptor> =>
         client.call('_agnes/v1/packages.catalog.get', params),
     }),
+    publicationStatus: (params: PackageListParams): Promise<PluginPublicationStatusResult> =>
+      client.call('_agnes/v1/plugins.publicationStatus', params),
+    migrateSession: (params: SessionGenerationMigrationParams): Promise<SessionGenerationMigrationResult> =>
+      client.call('_agnes/v1/sessions.migrate', params),
     generations: (params: PackageListParams): Promise<PluginGenerationStatus> =>
       client.call('_agnes/v1/plugins.generations', params),
     list: (params: PackageListParams): Promise<PackageListResult> =>

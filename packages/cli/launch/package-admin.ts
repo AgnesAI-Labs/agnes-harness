@@ -23,6 +23,7 @@ import type {
   PackageUpdateParams,
   PluginTreeApplyParams,
   PluginTreeRollbackParams,
+  SessionGenerationMigrationParams,
 } from '@agnes/protocol'
 import { validatePackageAdminCall } from '@agnes/protocol'
 import type {
@@ -122,6 +123,10 @@ export function localPackageAdmin(
         return client.packages.catalog.list(params as PackageCatalogListParams)
       case 'catalog/get':
         return client.packages.catalog.get(params as PackageCatalogGetParams)
+      case 'publication-status':
+        return client.packages.publicationStatus(params as PackageListParams)
+      case 'sessions/migrate':
+        return client.packages.migrateSession(params as SessionGenerationMigrationParams)
       case 'generations':
         return client.packages.generations(params as PackageListParams)
       case 'list':

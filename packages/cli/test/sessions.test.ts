@@ -1,6 +1,7 @@
 import { createClient } from '@agnes/sdk'
 import { afterEach, describe, expect, it } from 'vitest'
 import { parseArgs } from '../src/args.js'
+import { runPluginDevelopmentCommand } from '../src/commands/plugins.js'
 import { sessionsCommand } from '../src/commands/sessions.js'
 import { FakeEndpoint } from './fake-endpoint.js'
 
@@ -115,4 +116,73 @@ describe('sessions command', () => {
   it('list with nothing to show still succeeds', async () => {
     expect(await run(['sessions', 'list'], [])).toEqual({ exit: 0, out: 'no sessions\n', err: '' })
   })
+})
+
+it('routes migration and publication status through the Node SDK with the selected profile', async () => {
+  const endpoint = new FakeEndpoint()
+  const migration = {
+    previousGenerationId: '11111111-1111-4111-8111-111111111111',
+    generationId: '22222222-2222-4222-8222-222222222222',
+    changed: true,
+  }
+  const status = {
+    publication: {
+      operation: 'models',
+      ok: false,
+      recovery: 'retry-same-input',
+      containers: [
+        { compositionHash: 'reader', status: 'applied' },
+        { compositionHash: 'writer', status: 'failed' },
+      ],
+    },
+  }
+  let received: unknown
+  endpoint
+    .on('initialize', () => ({ protocolVersion: 1, agentCapabilities: {} }))
+    .on('_agnes/v1/sessions.migrate', (params) => {
+      received = params
+      return migration
+    })
+    .on('_agnes/v1/plugins.publicationStatus', (params) => {
+      received = params
+      return status
+    })
+  const client = createClient({ transport: { kind: 'inproc', endpoint } })
+  clients.push(client)
+  let out = ''
+  await sessionsCommand(
+    parseArgs(['sessions', 'migrate', 'closed', '--profile', 'review', '--json']),
+    client,
+    {
+      stdout: {
+        write: (text: string) => {
+          out += text
+        },
+      } as never,
+      stderr: { write: () => true } as never,
+    },
+  )
+  expect(JSON.parse(out)).toEqual(migration)
+  expect(received).toMatchObject({
+    profile: 'review',
+    sessionId: 'closed',
+    commandId: expect.any(String),
+    clientId: await client.clientId(),
+  })
+  out = ''
+  await runPluginDevelopmentCommand(
+    parseArgs(['plugins', 'publication-status', '--profile', 'review', '--json']),
+    client,
+    (text) => {
+      out += text
+    },
+  )
+  expect(received).toEqual({ profile: 'review' })
+  expect(JSON.parse(out)).toEqual(status)
+  await expect(sessionsCommand(parseArgs(['sessions', 'migrate']), client, {} as never)).rejects.toThrow(
+    'expects <key>',
+  )
+  await expect(
+    runPluginDevelopmentCommand(parseArgs(['plugins', 'publication-status', 'extra']), client, () => {}),
+  ).rejects.toThrow('takes no arguments')
 })

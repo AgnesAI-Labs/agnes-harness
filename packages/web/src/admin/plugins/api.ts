@@ -11,10 +11,12 @@ import type {
   PackagePinsReleaseResult,
   PackageSource,
   PluginGenerationStatus,
+  PluginPublicationStatusResult,
   PluginTreeApplyResult,
   PluginTreeRollbackResult,
   PluginTreeView,
   SessionDefaultsSnapshot,
+  SessionGenerationMigrationResult,
 } from '@agnes/protocol'
 import {
   isAdminLoop,
@@ -36,6 +38,8 @@ const METHOD_BY_PATH = {
   'catalog/get': '_agnes/v1/packages.catalog.get',
   list: '_agnes/v1/packages.list',
   generations: '_agnes/v1/plugins.generations',
+  'publication-status': '_agnes/v1/plugins.publicationStatus',
+  'sessions/migrate': '_agnes/v1/sessions.migrate',
   inspect: '_agnes/v1/packages.inspect',
   install: '_agnes/v1/packages.install',
   trust: '_agnes/v1/packages.trust',
@@ -131,6 +135,16 @@ export class PluginAdminApi {
         message: 'The admin context is invalid; reopen the page.',
       })
     return body
+  }
+
+  async publicationStatus(): Promise<PluginPublicationStatusResult> {
+    return this.#post('publication-status', { profile: this.#context.profile })
+  }
+
+  async migrateSession(sessionId: string): Promise<SessionGenerationMigrationResult> {
+    return this.#effect<{ sessionId: string }, SessionGenerationMigrationResult>('sessions/migrate', {
+      sessionId,
+    })
   }
 
   async generations(): Promise<PluginGenerationStatus> {

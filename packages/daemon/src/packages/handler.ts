@@ -91,6 +91,13 @@ export type PackageActivationObservation = Readonly<{
 export type PackageActivationAdapter = Readonly<{
   /** Whether nothing of the package runs or is about to. Absent means the adapter cannot tell. */
   generations?(profile: string): Promise<PluginGenerationStatus>
+  publicationStatus?(profile: string): Promise<import('@agnes/protocol').PluginPublicationStatusResult>
+  /** Coordinator checks authenticated ownership and excludes admission before changing the pin. */
+  migrateSession?(
+    profile: string,
+    sessionId: string,
+    principalId: string,
+  ): Promise<import('@agnes/protocol').SessionGenerationMigrationResult>
   stopped?(profile: string, packageId: string): Promise<boolean>
   actual(
     profile: string,
@@ -522,6 +529,64 @@ class Service implements PackageAdminService {
         )
       if (method === '_agnes/v1/packages.catalog.get')
         return await this.catalogGet(data as { profile: string; id: string; version?: string })
+      if (method === '_agnes/v1/plugins.publicationStatus') {
+        await this.options.profileDirectory(data.profile as string)
+        if (!this.options.activation?.publicationStatus)
+          throw new Error('E_PACKAGE_STATE: publication status unavailable')
+        const result = await this.options.activation.publicationStatus(data.profile as string)
+        // Exceptions from plugin code can include private configuration; only expose a safe projection.
+        const projected = {
+          publication: result.publication && {
+            operation: result.publication.operation,
+            ok: result.publication.ok,
+            recovery: result.publication.recovery,
+            containers: result.publication.containers.map((row) => ({
+              compositionHash: row.compositionHash,
+              status: row.status,
+              ...(row.error ? { error: 'Publication failed; retry the same input.' } : {}),
+            })),
+          },
+        }
+        if (!validatePackageAdminCall(method, 'result', projected).ok)
+          throw new Error('E_PACKAGE_STATE: invalid publication status')
+        return projected
+      }
+      if (method === '_agnes/v1/sessions.migrate') {
+        const params = data as import('@agnes/protocol').SessionGenerationMigrationParams
+        this.requireBoundClient(method, params, granted)
+        await this.options.profileDirectory(params.profile)
+        if (!this.options.activation?.migrateSession)
+          throw new Error('E_PACKAGE_STATE: session migration unavailable')
+        try {
+          const result = await this.options.activation.migrateSession(
+            params.profile,
+            params.sessionId,
+            granted.principalId,
+          )
+          if (!validatePackageAdminCall(method, 'result', result).ok)
+            throw new Error('E_PACKAGE_STATE: invalid session migration')
+          return result
+        } catch (error) {
+          const message =
+            error && typeof error === 'object' && 'message' in error && typeof error.message === 'string'
+              ? error.message
+              : ''
+          const reason = message.match(/E_GENERATION_[A-Z_]+|E_COMPOSITION_BINDING_MISSING/)?.[0]
+          if (
+            reason &&
+            [
+              'E_GENERATION_SESSION_OPEN',
+              'E_GENERATION_PIN_MISSING',
+              'E_GENERATION_SNAPSHOT_MISSING',
+              'E_GENERATION_INCOMPATIBLE',
+              'E_GENERATION_LOOP_INCOMPATIBLE',
+              'E_COMPOSITION_BINDING_MISSING',
+            ].includes(reason)
+          )
+            throw rpcError('SEMANTIC_REJECTED', { reason })
+          throw error
+        }
+      }
       if (method === '_agnes/v1/plugins.generations') {
         await this.options.profileDirectory(data.profile as string)
         if (!this.options.activation?.generations)

@@ -25,6 +25,8 @@ export const ACTIONS = {
   'catalog/get': '_agnes/v1/packages.catalog.get',
   list: '_agnes/v1/packages.list',
   generations: '_agnes/v1/plugins.generations',
+  'publication-status': '_agnes/v1/plugins.publicationStatus',
+  'sessions/migrate': '_agnes/v1/sessions.migrate',
   inspect: '_agnes/v1/packages.inspect',
   install: '_agnes/v1/packages.install',
   trust: '_agnes/v1/packages.trust',
@@ -421,14 +423,15 @@ export function createAdminSurface(options: AdminSurfaceOptions) {
         }
         return true
       }
-      if (request.method !== 'POST' || !Object.hasOwn(ACTIONS, action)) {
+      const statusGet = action === 'publication-status' && request.method === 'GET'
+      if ((!statusGet && request.method !== 'POST') || !Object.hasOwn(ACTIONS, action)) {
         error(response, 404, 'E_ADMIN_ROUTE', 'The admin operation does not exist.')
         return true
       }
       const name = action as AdminSurfaceAction
       const method = ACTIONS[name]
       try {
-        const body = await readBody(request)
+        const body = statusGet ? { profile: options.profile } : await readBody(request)
         if (!record(body) || !validatePackageAdminCall(method, 'params', body).ok) {
           error(response, 400, 'E_ADMIN_REQUEST', 'The admin parameters are not valid.')
           return true
@@ -451,7 +454,34 @@ export function createAdminSurface(options: AdminSurfaceOptions) {
           return true
         }
         reply(response, 200, result)
-      } catch {
+      } catch (cause) {
+        const reason = record(cause) && record(cause.data) ? cause.data.reason : undefined
+        if (name === 'sessions/migrate' && reason === 'session owner unavailable') {
+          error(response, 403, 'E_ADMIN_PERMISSION', 'The session is unavailable to this administrator.')
+          return true
+        }
+        if (
+          name === 'sessions/migrate' &&
+          typeof reason === 'string' &&
+          [
+            'E_GENERATION_SESSION_OPEN',
+            'E_GENERATION_PIN_MISSING',
+            'E_GENERATION_SNAPSHOT_MISSING',
+            'E_GENERATION_INCOMPATIBLE',
+            'E_GENERATION_LOOP_INCOMPATIBLE',
+            'E_COMPOSITION_BINDING_MISSING',
+          ].includes(reason)
+        ) {
+          error(
+            response,
+            409,
+            reason,
+            reason === 'E_GENERATION_SESSION_OPEN'
+              ? 'Close the session before migrating its plugins.'
+              : 'The pinned generation cannot migrate to the current plugins; check snapshot and loop compatibility.',
+          )
+          return true
+        }
         // Only validated DTOs may contain backend detail. Exceptions can contain local paths or secrets.
         error(
           response,

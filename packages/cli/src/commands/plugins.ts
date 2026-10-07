@@ -1,4 +1,5 @@
 import { isAbsolute, relative, resolve, sep } from 'node:path'
+import { escapeControl } from '@agnes/cli-tui'
 import type { PackageInstalledDescriptor } from '@agnes/protocol'
 import type { NodeClient } from '@agnes/sdk'
 import { UsageError } from '../errors.js'
@@ -17,6 +18,22 @@ export async function runPluginDevelopmentCommand(
   write: (text: string) => void,
 ): Promise<void> {
   const profile = p.profile ?? 'local-dev'
+  if (p.command === 'plugins' && p.positional[0] === 'publication-status') {
+    if (p.positional.length !== 1) throw new UsageError('plugins publication-status takes no arguments')
+    const result = await client.packages.publicationStatus({ profile })
+    if (p.json) write(`${JSON.stringify(result)}\n`)
+    else if (!result.publication)
+      write('No composition publication has been recorded in the current worker.\n')
+    else {
+      const report = result.publication
+      write(`${report.operation}: ${report.ok ? 'applied' : 'partial publication; retry the same input'}\n`)
+      for (const row of report.containers)
+        write(
+          `${escapeControl(row.compositionHash)}\t${row.status}${row.error ? `\t${escapeControl(row.error)}` : ''}\n`,
+        )
+    }
+    return
+  }
   const dev = p.command === 'dev'
   if (dev ? p.positional.length !== 1 : p.positional[0] !== 'reload' || p.positional.length > 2)
     throw new UsageError('usage: agh dev <plugin-folder> | agh plugins reload [id]')

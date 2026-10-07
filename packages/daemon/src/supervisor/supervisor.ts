@@ -1421,6 +1421,24 @@ export async function startSupervisor(o: StartSupervisorOptions): Promise<{
                 { timeoutMs: o.config.limits.workerStartupMs },
               )) as import('@agnes/protocol').PluginGenerationStatus
             },
+            publicationStatus: async () => {
+              const worker = await pool.acquireSharedWorker()
+              return (await worker.command(
+                'pluginGenerations.publicationStatus',
+                {},
+                { timeoutMs: o.config.limits.workerStartupMs },
+              )) as import('@agnes/protocol').PluginPublicationStatusResult
+            },
+            migrateSession: async (_profile, sessionId, principalId) => {
+              return registry.migrateGeneration(sessionId, principalId, sessionOwnership, async () => {
+                const worker = await pool.acquireSharedWorker()
+                // Retain the admission fence until the worker replies or exits. A command timeout
+                // must not reopen admission while a durable pin write may still be running.
+                return (await worker.command('pluginGenerations.migrate', {
+                  sessionId,
+                })) as import('@agnes/protocol').SessionGenerationMigrationResult
+              })
+            },
             collectGenerations: async () => {
               const worker = pool.businessWorker()
               if (worker)

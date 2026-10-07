@@ -307,6 +307,11 @@ const AGNES_DEFS: Record<string, TSchema> = {
   SkinReadParams: AgnesGen.SkinReadParams,
   ClientModuleReadParams: AgnesGen.ClientModuleReadParams,
   PluginGenerationStatus: AgnesGen.PluginGenerationStatus,
+  PluginPublicationReport: AgnesGen.PluginPublicationReport,
+  PluginPublicationStatusResult: AgnesGen.PluginPublicationStatusResult,
+  SessionGenerationMigrationParams: AgnesGen.SessionGenerationMigrationParams,
+  SessionGenerationMigrationResult: AgnesGen.SessionGenerationMigrationResult,
+
   PackageListResult: AgnesGen.PackageListResult,
   PackageOperation: AgnesGen.PackageOperation,
   PackageOperationCancelParams: AgnesGen.PackageOperationCancelParams,
@@ -5079,6 +5084,13 @@ const PackageAdminSamples: Record<string, Sample> = Object.fromEntries(
   ]),
 )
 AGNES_SAMPLES.PluginGenerationStatus = PackageAdminSamples.PluginGenerationStatus as Sample
+AGNES_SAMPLES.PluginPublicationReport = PackageAdminSamples.PluginPublicationReport as Sample
+AGNES_SAMPLES.PluginPublicationStatusResult = PackageAdminSamples.PluginPublicationStatusResult as Sample
+AGNES_SAMPLES.SessionGenerationMigrationParams =
+  PackageAdminSamples.SessionGenerationMigrationParams as Sample
+AGNES_SAMPLES.SessionGenerationMigrationResult =
+  PackageAdminSamples.SessionGenerationMigrationResult as Sample
+
 AGNES_SAMPLES.PackageActivationTrust = PackageAdminSamples.PackageActivationTrust as Sample
 AGNES_SAMPLES.PackageActivationRequest = PackageAdminSamples.PackageActivationRequest as Sample
 AGNES_SAMPLES.PackageRollbackTarget = PackageAdminSamples.PackageRollbackTarget as Sample
@@ -5507,6 +5519,11 @@ const DEFS_BY_FILE: Record<string, Record<string, TSchema>> = {
     PackageCatalogPage: PackageAdminGen.PackageCatalogPage,
     PluginGenerationStatus: PackageAdminGen.PluginGenerationStatus,
     PackageListResult: PackageAdminGen.PackageListResult,
+    PluginPublicationReport: PackageAdminGen.PluginPublicationReport,
+    PluginPublicationStatusResult: PackageAdminGen.PluginPublicationStatusResult,
+    SessionGenerationMigrationParams: PackageAdminGen.SessionGenerationMigrationParams,
+    SessionGenerationMigrationResult: PackageAdminGen.SessionGenerationMigrationResult,
+
     PackageCatalogListParams: PackageAdminGen.PackageCatalogListParams,
     PackageCatalogGetParams: PackageAdminGen.PackageCatalogGetParams,
     PackageListParams: PackageAdminGen.PackageListParams,
@@ -5832,6 +5849,16 @@ const METHOD_DEF: Record<MethodName, MethodDefRef> = {
     fileId: 'https://agnes.ai/schema/package-admin.json',
     params: 'PackageCatalogGetParams',
     result: 'PackageCatalogDescriptor',
+  },
+  '_agnes/v1/plugins.publicationStatus': {
+    fileId: 'https://agnes.ai/schema/package-admin.json',
+    params: 'PackageListParams',
+    result: 'PluginPublicationStatusResult',
+  },
+  '_agnes/v1/sessions.migrate': {
+    fileId: 'https://agnes.ai/schema/package-admin.json',
+    params: 'SessionGenerationMigrationParams',
+    result: 'SessionGenerationMigrationResult',
   },
   '_agnes/v1/plugins.generations': {
     fileId: 'https://agnes.ai/schema/package-admin.json',
@@ -6206,6 +6233,8 @@ const METHOD_PARAMS_SAMPLE: Record<MethodName, Sample> = {
   '_agnes/v1/mcp.servers.oauth.status.set': ResourceControlSamples.McpOAuthStatusSetParams,
   '_agnes/v1/packages.catalog.list': PackageAdminSamples.PackageCatalogListParams as Sample,
   '_agnes/v1/packages.catalog.get': PackageAdminSamples.PackageCatalogGetParams as Sample,
+  '_agnes/v1/plugins.publicationStatus': PackageAdminSamples.PackageListParams as Sample,
+  '_agnes/v1/sessions.migrate': PackageAdminSamples.SessionGenerationMigrationParams as Sample,
   '_agnes/v1/plugins.generations': PackageAdminSamples.PackageListParams as Sample,
   '_agnes/v1/packages.list': PackageAdminSamples.PackageListParams as Sample,
   '_agnes/v1/skins.list': PackageAdminSamples.PackageListParams as Sample,
@@ -6399,6 +6428,8 @@ const METHOD_RESULT_SAMPLE: Partial<Record<MethodName, Sample>> = {
   '_agnes/v1/mcp.servers.oauth.status.set': ResourceControlSamples.McpOAuthStatusResult,
   '_agnes/v1/packages.catalog.list': PackageAdminSamples.PackageCatalogPage as Sample,
   '_agnes/v1/packages.catalog.get': PackageAdminSamples.PackageCatalogDescriptor as Sample,
+  '_agnes/v1/plugins.publicationStatus': PackageAdminSamples.PluginPublicationStatusResult as Sample,
+  '_agnes/v1/sessions.migrate': PackageAdminSamples.SessionGenerationMigrationResult as Sample,
   '_agnes/v1/plugins.generations': {
     valid: { generations: [], plugins: [] },
     invalid: [{ generations: [], plugins: [], unknown: true }],

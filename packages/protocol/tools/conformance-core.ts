@@ -137,6 +137,14 @@ const CONFIG_VALIDATORS: Record<string, (x: unknown) => ValidationResult<unknown
   PackageCatalogPage: (x) => validatePackageAdminData('PackageCatalogPage' satisfies PackageAdminDataName, x),
   PluginGenerationStatus: (x) =>
     validatePackageAdminData('PluginGenerationStatus' satisfies PackageAdminDataName, x),
+  PluginPublicationReport: (x) =>
+    validatePackageAdminData('PluginPublicationReport' satisfies PackageAdminDataName, x),
+  PluginPublicationStatusResult: (x) =>
+    validatePackageAdminData('PluginPublicationStatusResult' satisfies PackageAdminDataName, x),
+  SessionGenerationMigrationParams: (x) =>
+    validatePackageAdminData('SessionGenerationMigrationParams' satisfies PackageAdminDataName, x),
+  SessionGenerationMigrationResult: (x) =>
+    validatePackageAdminData('SessionGenerationMigrationResult' satisfies PackageAdminDataName, x),
   PackageListResult: (x) => validatePackageAdminData('PackageListResult' satisfies PackageAdminDataName, x),
   PackageCatalogListParams: (x) =>
     validatePackageAdminData('PackageCatalogListParams' satisfies PackageAdminDataName, x),

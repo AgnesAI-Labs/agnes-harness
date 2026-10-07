@@ -12,6 +12,10 @@ export const UISpan = Type.Recursive((This) => Type.Object({ "id": Type.String({
 export type UISpan = Static<typeof UISpan>
 
 export const AgnesV1 = Type.Module({
+  "PluginPublicationReport": Type.Object({ "operation": Type.Union([Type.Literal('runtime-target'), Type.Literal('skills'), Type.Literal('models'), Type.Literal('extension-rows')]), "ok": Type.Boolean(), "recovery": Type.Literal('retry-same-input'), "containers": Type.Array(Type.Object({ "compositionHash": Type.String({ minLength: 1, maxLength: 256 }), "status": Type.Union([Type.Literal('applied'), Type.Literal('failed')]), "error": Type.Optional(Type.String({ maxLength: 512 })) }, { additionalProperties: false }), { maxItems: 4096 }) }, { additionalProperties: false }),
+  "PluginPublicationStatusResult": Type.Object({ "publication": Type.Union([Type.Ref('PluginPublicationReport'), Type.Null()]) }, { additionalProperties: false }),
+  "SessionGenerationMigrationParams": Type.Object({ "profile": Type.String({ minLength: 1, maxLength: 64, pattern: "^[a-z][a-z0-9.-]{0,63}$" }), "clientId": Type.String({ minLength: 1, maxLength: 128, pattern: "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$" }), "commandId": Type.String({ minLength: 1, maxLength: 128, pattern: "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$" }), "sessionId": Type.String({ minLength: 1, maxLength: 512 }) }, { additionalProperties: false }),
+  "SessionGenerationMigrationResult": Type.Object({ "previousGenerationId": Type.String({ pattern: "^[a-f0-9-]{36}$" }), "generationId": Type.String({ pattern: "^[a-f0-9-]{36}$" }), "changed": Type.Boolean() }, { additionalProperties: false }),
   "ExtensionCallParams": Type.Object({ "sessionId": Type.String({ minLength: 1, maxLength: 512 }), "extension": Type.String({ pattern: "^[a-z0-9-]+/[a-z0-9-]+$" }), "service": Type.String({ maxLength: 128, pattern: "^[a-z][a-z0-9]*(\\.[a-z][a-z0-9]*)*$" }), "input": Type.Record(Type.String(), JsonValue), "commandId": Type.Optional(Type.String({ minLength: 1, maxLength: 128 })) }, { additionalProperties: false }),
   "ExtensionCallResult": Type.Object({ "output": JsonValue }, { additionalProperties: false }),
   "ExtensionAckParams": Type.Object({ "extension": Type.String({ pattern: "^[a-z0-9-]+/[a-z0-9-]+$" }), "service": Type.String({ maxLength: 128, pattern: "^[a-z][a-z0-9]*(\\.[a-z][a-z0-9]*)*$" }), "commandId": Type.String({ minLength: 1, maxLength: 128 }) }, { additionalProperties: false }),
@@ -220,6 +224,14 @@ export const AgnesV1 = Type.Module({
   "TokenCounts": Type.Object({ "input": Type.Integer({ minimum: 0 }), "output": Type.Integer({ minimum: 0 }), "cacheRead": Type.Integer({ minimum: 0 }), "cacheWrite": Type.Integer({ minimum: 0 }), "reasoning": Type.Optional(Type.Integer({ minimum: 0 })) }, { additionalProperties: false }),
 })
 
+export const PluginPublicationReport = AgnesV1.Import('PluginPublicationReport')
+export type PluginPublicationReport = Static<typeof PluginPublicationReport>
+export const PluginPublicationStatusResult = AgnesV1.Import('PluginPublicationStatusResult')
+export type PluginPublicationStatusResult = Static<typeof PluginPublicationStatusResult>
+export const SessionGenerationMigrationParams = AgnesV1.Import('SessionGenerationMigrationParams')
+export type SessionGenerationMigrationParams = Static<typeof SessionGenerationMigrationParams>
+export const SessionGenerationMigrationResult = AgnesV1.Import('SessionGenerationMigrationResult')
+export type SessionGenerationMigrationResult = Static<typeof SessionGenerationMigrationResult>
 export const ExtensionCallParams = AgnesV1.Import('ExtensionCallParams')
 export type ExtensionCallParams = Static<typeof ExtensionCallParams>
 export const ExtensionCallResult = AgnesV1.Import('ExtensionCallResult')

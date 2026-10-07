@@ -19,6 +19,16 @@ export function deferPackageActivation(
       if (!read) throw new Error('E_PACKAGE_STATE: generation status unavailable')
       return read(profileName)
     },
+    async publicationStatus(profileName) {
+      const adapter = current()
+      if (!adapter?.publicationStatus) throw new Error('E_PACKAGE_STATE: publication status unavailable')
+      return adapter.publicationStatus(profileName)
+    },
+    async migrateSession(profileName, sessionId, principalId) {
+      const adapter = current()
+      if (!adapter?.migrateSession) throw new Error('E_PACKAGE_STATE: session migration unavailable')
+      return adapter.migrateSession(profileName, sessionId, principalId)
+    },
     async actual(profileName, packageId) {
       return current()?.actual(profileName, packageId) ?? { actual: 'unavailable' }
     },

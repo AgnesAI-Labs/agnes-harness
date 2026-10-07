@@ -39,6 +39,8 @@ export type SessionMethod =
 export type WorkerMethod =
   | 'ping'
   | 'pluginGenerations.status'
+  | 'pluginGenerations.publicationStatus'
+  | 'pluginGenerations.migrate'
   | 'pluginGenerations.collect'
   | 'configuration.apply'
   | 'session.catalog'

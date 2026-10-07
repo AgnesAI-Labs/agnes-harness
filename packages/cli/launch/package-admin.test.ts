@@ -14,6 +14,8 @@ const mocks = vi.hoisted(() => {
   const pinsInspect = vi.fn(async () => ({ orphans: [] }))
   const pinsRelease = vi.fn(async () => ({ results: [] }))
   const trustWorkspace = vi.fn(async () => ({ hash: `sha256-${'f'.repeat(64)}` }))
+  const publicationStatus = vi.fn(async () => ({ publication: null }))
+  const migrateSession = vi.fn(async () => ({ changed: true }))
   const treeGet = vi.fn(async () => ({ desired: null }))
   const treeList = vi.fn(async () => ({ desired: null }))
   const clientModuleCallService = vi.fn(async () => ({ output: { ok: true } }))
@@ -47,6 +49,8 @@ const mocks = vi.hoisted(() => {
     pinsRelease,
     trustWorkspace,
     treeGet,
+    publicationStatus,
+    migrateSession,
     treeList,
     clientModuleCallService,
     clientModuleCallEffect,
@@ -73,6 +77,8 @@ vi.mock('@agnes/sdk', () => ({
       operation: { get: vi.fn(), cancel: vi.fn() },
       pins: { inspect: mocks.pinsInspect, release: mocks.pinsRelease },
       trustWorkspace: mocks.trustWorkspace,
+      publicationStatus: mocks.publicationStatus,
+      migrateSession: mocks.migrateSession,
       tree: { get: mocks.treeGet, list: mocks.treeList, apply: vi.fn(), rollback: vi.fn() },
     },
     sessionSelection: mocks.sessionSelection,
@@ -122,6 +128,18 @@ it('advertises exactly the frozen hot-update features and forwards catalog reads
   expect(mocks.treeList).toHaveBeenCalledWith({ profile: 'local-dev' })
   await options?.invoke('tree/get', { profile: 'local-dev' })
   expect(mocks.treeGet).toHaveBeenCalledWith({ profile: 'local-dev' })
+  await expect(options?.invoke('publication-status', { profile: 'local-dev' })).resolves.toEqual({
+    publication: null,
+  })
+  const migration = {
+    profile: 'local-dev',
+    clientId: 'admin-web',
+    commandId: 'migration',
+    sessionId: 'closed',
+  }
+  await options?.invoke('sessions/migrate', migration)
+  expect(mocks.migrateSession).toHaveBeenCalledWith(migration)
+
   await expect(options?.surfaceLinks()).resolves.toEqual([
     { packageId: 'agnes/demo-surface', surfaceId: 'demo', mount: '/demo' },
   ])

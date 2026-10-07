@@ -461,6 +461,18 @@ export const PACKAGE_ADMIN_METHODS = Object.freeze({
     'packages.trust',
   ),
   '_agnes/v1/plugins.tree.get': contract(P.PackageListParams, P.PluginTreeView, 'read', 'packages.read'),
+  '_agnes/v1/plugins.publicationStatus': contract(
+    P.PackageListParams,
+    P.PluginPublicationStatusResult,
+    'read',
+    'packages.read',
+  ),
+  '_agnes/v1/sessions.migrate': contract(
+    P.SessionGenerationMigrationParams,
+    P.SessionGenerationMigrationResult,
+    'effect',
+    'packages.activate',
+  ),
   '_agnes/v1/plugins.generations': contract(
     P.PackageListParams,
     P.PluginGenerationStatus,
@@ -525,6 +537,10 @@ export type PackageAdminDataName =
   | 'PackageOperation'
   | 'PackageCatalogPage'
   | 'PluginGenerationStatus'
+  | 'PluginPublicationReport'
+  | 'PluginPublicationStatusResult'
+  | 'SessionGenerationMigrationParams'
+  | 'SessionGenerationMigrationResult'
   | 'PackageListResult'
   | 'PackageCatalogListParams'
   | 'PackageCatalogGetParams'
@@ -578,6 +594,10 @@ const DATA_SCHEMAS: Record<PackageAdminDataName, TSchema> = {
   PackageOperation: P.PackageOperation,
   PackageCatalogPage: P.PackageCatalogPage,
   PluginGenerationStatus: P.PluginGenerationStatus,
+  PluginPublicationReport: P.PluginPublicationReport,
+  PluginPublicationStatusResult: P.PluginPublicationStatusResult,
+  SessionGenerationMigrationParams: P.SessionGenerationMigrationParams,
+  SessionGenerationMigrationResult: P.SessionGenerationMigrationResult,
   PackageListResult: P.PackageListResult,
   PackageCatalogListParams: P.PackageCatalogListParams,
   PackageCatalogGetParams: P.PackageCatalogGetParams,

@@ -1,7 +1,8 @@
 import { escapeControl } from '@agnes/cli-tui'
 import type { PageSessionMeta } from '@agnes/protocol'
-import type { Client } from '@agnes/sdk'
+import type { NodeClient } from '@agnes/sdk'
 import { ExitCode, UsageError } from '../errors.js'
+import { newPackageCommandId } from '../tui/package-admin.js'
 import type { ParsedArgs } from '../types.js'
 
 type SessionsIO = {
@@ -40,9 +41,25 @@ function details(item: PageSessionMeta['items'][number]): string {
  * Lists the daemon-owned session index. The command intentionally uses the SDK session.list
  * surface even for `show`: the CLI does not read sessions.db or reconstruct a second history view.
  */
-export async function sessionsCommand(p: ParsedArgs, client: Client, io: SessionsIO): Promise<number> {
+export async function sessionsCommand(p: ParsedArgs, client: NodeClient, io: SessionsIO): Promise<number> {
   const action = p.positional[0] ?? 'list'
-  if (action !== 'list' && action !== 'show') throw new UsageError('sessions expects list or show')
+  if (action === 'migrate') {
+    const sessionId = p.positional[1]
+    if (!sessionId || p.positional.length !== 2) throw new UsageError('sessions migrate expects <key>')
+    const result = await client.packages.migrateSession({
+      profile: p.profile ?? 'local-dev',
+      clientId: await client.clientId(),
+      commandId: newPackageCommandId('migrate'),
+      sessionId,
+    })
+    io.stdout.write(
+      p.json
+        ? `${JSON.stringify(result)}\n`
+        : `${escapeControl(sessionId)}: ${result.changed ? 'migrated to' : 'already bound to'} current plugins (${result.generationId})\n`,
+    )
+    return ExitCode.OK
+  }
+  if (action !== 'list' && action !== 'show') throw new UsageError('sessions expects list, show or migrate')
 
   const id = action === 'show' ? p.positional[1] : undefined
   if (action === 'show' && (!id || p.positional.length > 2))

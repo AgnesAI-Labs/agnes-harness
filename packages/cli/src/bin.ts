@@ -651,7 +651,10 @@ export async function main(argv: string[], io: MainIO, boot: Partial<LocalBootDe
       const booted = await bootDefault(p, deps, { useEmbedded: Object.keys(boot).length > 0 })
       try {
         const { sessionsCommand } = await import('./commands/sessions.js')
-        return await sessionsCommand(p, booted.client, { stdout: io.stdout, stderr: io.stderr })
+        return await sessionsCommand({ ...p, profile: booted.profileName }, booted.client, {
+          stdout: io.stdout,
+          stderr: io.stderr,
+        })
       } finally {
         await booted.close().catch(() => undefined)
       }
@@ -663,7 +666,7 @@ export async function main(argv: string[], io: MainIO, boot: Partial<LocalBootDe
       return 0
     }
     if (
-      (p.command === 'plugins' && p.positional[0] !== 'reload') ||
+      (p.command === 'plugins' && !['reload', 'publication-status'].includes(p.positional[0] ?? '')) ||
       p.command === 'package' ||
       p.command === 'install'
     ) {

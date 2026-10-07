@@ -341,14 +341,59 @@ it('installs an actual local package, returns a durable idempotent receipt, and 
     generations: [],
     plugins: [{ id: 'acme/pkg-a', state: 'draining' as const, boundSessions: 2, drainingSessions: 2 }],
   }
+  const publication = {
+    operation: 'models' as const,
+    ok: false,
+    recovery: 'retry-same-input' as const,
+    containers: [
+      { compositionHash: 'reader', status: 'applied' as const },
+      { compositionHash: 'writer', status: 'failed' as const, error: '/private/credential-secret' },
+    ],
+  }
+  const migration = {
+    previousGenerationId: '11111111-1111-4111-8111-111111111111',
+    generationId: '22222222-2222-4222-8222-222222222222',
+    changed: true,
+  }
+  const migrate = vi.fn(async (_profile: string, key: string, principalId: string) => {
+    if (principalId !== authority.principalId) throw Object.assign(new Error('denied'), { code: -32003 })
+    if (key === 'open') throw { code: 'E_COMMAND', message: 'E_GENERATION_SESSION_OPEN: private details' }
+    return migration
+  })
   const status = service({
     activation: {
       actual: async () => 'unavailable',
       reconcile: async () => ({ actual: 'unavailable' }),
       generations: async () => generations,
+      publicationStatus: async () => ({ publication }),
+      migrateSession: migrate,
     },
   })
   expect(await status.call('_agnes/v1/plugins.generations', { profile }, authority)).toEqual(generations)
+  expect(await status.call('_agnes/v1/plugins.publicationStatus', { profile }, authority)).toEqual({
+    publication: {
+      ...publication,
+      containers: [
+        publication.containers[0],
+        { compositionHash: 'writer', status: 'failed', error: 'Publication failed; retry the same input.' },
+      ],
+    },
+  })
+  const params = { profile, clientId, commandId: 'migrate-1', sessionId: 'closed' }
+  await expect(status.call('_agnes/v1/sessions.migrate', params, authority)).resolves.toEqual(migration)
+  await expect(
+    status.call('_agnes/v1/sessions.migrate', params, { ...authority, permissions: ['packages.read'] }),
+  ).rejects.toMatchObject({ data: { method: '_agnes/v1/sessions.migrate' } })
+  await expect(
+    status.call('_agnes/v1/sessions.migrate', { ...params, clientId: 'spoof' }, authority),
+  ).rejects.toMatchObject({
+    data: { reason: 'package command client does not match authenticated connection' },
+  })
+  await expect(
+    status.call('_agnes/v1/sessions.migrate', { ...params, sessionId: 'open' }, authority),
+  ).rejects.toMatchObject({ data: { reason: 'E_GENERATION_SESSION_OPEN' } })
+  expect(migrate).toHaveBeenCalledWith(profile, 'closed', authority.principalId)
+
   expect(await status.call('_agnes/v1/packages.list', { profile }, authority)).toMatchObject({
     generations,
     packages: [expect.objectContaining({ draining: true, boundSessions: 2, drainingSessions: 2 })],

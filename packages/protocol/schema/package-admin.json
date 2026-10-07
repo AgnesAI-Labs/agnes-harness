@@ -3,6 +3,137 @@
   "$id": "https://agnes.ai/schema/package-admin.json",
   "title": "Package Admin contracts",
   "$defs": {
+    "PluginPublicationReport": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "operation",
+        "ok",
+        "recovery",
+        "containers"
+      ],
+      "properties": {
+        "operation": {
+          "enum": [
+            "runtime-target",
+            "skills",
+            "models",
+            "extension-rows"
+          ]
+        },
+        "ok": {
+          "type": "boolean"
+        },
+        "recovery": {
+          "const": "retry-same-input"
+        },
+        "containers": {
+          "type": "array",
+          "maxItems": 4096,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "compositionHash",
+              "status"
+            ],
+            "properties": {
+              "compositionHash": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 256
+              },
+              "status": {
+                "enum": [
+                  "applied",
+                  "failed"
+                ]
+              },
+              "error": {
+                "type": "string",
+                "maxLength": 512
+              }
+            }
+          }
+        }
+      }
+    },
+    "PluginPublicationStatusResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "publication"
+      ],
+      "properties": {
+        "publication": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/PluginPublicationReport"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "SessionGenerationMigrationParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "profile",
+        "clientId",
+        "commandId",
+        "sessionId"
+      ],
+      "properties": {
+        "profile": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[a-z][a-z0-9.-]{0,63}$"
+        },
+        "clientId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$"
+        },
+        "commandId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$"
+        },
+        "sessionId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        }
+      }
+    },
+    "SessionGenerationMigrationResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "previousGenerationId",
+        "generationId",
+        "changed"
+      ],
+      "properties": {
+        "previousGenerationId": {
+          "type": "string",
+          "pattern": "^[a-f0-9-]{36}$"
+        },
+        "generationId": {
+          "type": "string",
+          "pattern": "^[a-f0-9-]{36}$"
+        },
+        "changed": {
+          "type": "boolean"
+        }
+      }
+    },
     "SkinListResult": {
       "description": "Selectable skins derived from the enabled, trusted package inventory.",
       "type": "object",

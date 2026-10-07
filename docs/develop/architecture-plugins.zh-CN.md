@@ -106,7 +106,11 @@ composition 发布采用逐容器收敛。`applyRuntimeTarget` 与 `extensionRow
 
 代码快照按持久会话 pin 留存，包含闲置历史。关闭、休眠不会使 pin 过期，也不会按时间自动升级。特权会话协调器关闭会话并排除并发准入后，可调用 `Host.migrateSessionGeneration(sessionKey)`，将该会话迁移到原 composition 的当前 generation；账本、loop id/version 与 composition binding 保留。两个快照必须存在且兼容，目标须解析相同 loop。打开中的会话、缺失快照或不兼容部署在修改 pin 前被拒绝。迁移幂等，返回 `{ previousGenerationId, generationId, changed }`。
 
-最后一个 pin 迁出，或删除会话后调用 `releaseSessionGeneration`，会触发旧容器释放与快照清理。其他存活 worker 所属归档保守保留，直到所属 worker 清理或退出。迁移显式改变插件实现，不承诺迁移插件自行定义的状态/checkpoint schema。管理 CLI 可包装此协调器端口；没有自动迁移或模型工具。
+最后一个 pin 迁出，或删除会话后调用 `releaseSessionGeneration`，会触发旧容器释放与快照清理。其他存活 worker 所属归档保守保留，直到所属 worker 清理或退出。迁移显式改变插件实现，不承诺迁移插件自行定义的状态/checkpoint schema。关闭历史会话后，可运行 `agh sessions migrate <key> [--profile <name>] [--json]`。daemon 核验认证会话归属与 `packages.activate`，并在 worker 回应或退出前阻止该 key 的并发准入。打开中或恢复中的会话被拒绝，不中断当前轮。没有自动迁移或模型工具。
+
+Node SDK 提供 `client.packages.migrateSession({ profile, clientId, commandId, sessionId })`，对应 `_agnes/v1/sessions.migrate`。每次请求解析兼容的当前 generation；传输失败后应显式检查或重试，持久 pin 可能已经写入。发布状态通过 `client.packages.publicationStatus({ profile })` / `_agnes/v1/plugins.publicationStatus`，或 `agh plugins publication-status [--profile <name>] [--json]` 查询，返回 `{ publication: report | null }`。null 表示当前 worker 尚无 composition 发布记录，重启后也可能如此。报告保留逐容器 applied/failed 和 retry-same-input 恢复方式，插件异常正文替换为安全失败提示。
+
+同源 admin BFF 提供只读 `GET /admin/plugins/api/publication-status`（launcher 固定 profile，不接受查询参数）与等价的带作用域 POST；要求 `packages.read`，只读恢复模式下仍可访问。`POST /admin/plugins/api/sessions/migrate` 接受上述迁移 DTO，要求 activation 权限，只读模式拒绝写入。Web 端提供 `PluginAdminApi.publicationStatus()` 与 `migrateSession(sessionId)`，launcher 不向浏览器公开 Node 凭据。迁移拒绝以安全的 409 code 返回，例如 `E_GENERATION_SESSION_OPEN`；缺失或不兼容 pin 保持不变。
 
 重启作用域区分后端变更与代码发布：storage、sandbox、platform 及部署 adapter 变更需要 worker/进程重启，恢复仍要求兼容部署。新 generation 为新会话重建其注册表/runner，旧会话保留代码。Host 拒绝在线替换的内置实现仍需重启。provider 目录描述 kind/实例生命周期要求，generation 状态描述当前部署实际支持的发布范围。
 

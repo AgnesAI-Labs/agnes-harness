@@ -52,6 +52,8 @@ export type CompositeTargetActivationOptions = Readonly<{
   collectPins?(): Promise<void>
   collectGenerations?(): Promise<void>
   generationStatus?(profile: string): Promise<PluginGenerationStatus>
+  publicationStatus?: PackageActivationAdapter['publicationStatus']
+  migrateSession?: PackageActivationAdapter['migrateSession']
   revokePackage?(packageId: string): Promise<void>
   releaseRetiring?(packageId: string): Promise<void>
   deliver?(artifact: RuntimeTargetArtifact): Promise<void>
@@ -227,6 +229,8 @@ export function createCompositeTargetActivation(
 ): PackageActivationAdapter {
   return Object.freeze({
     ...(options.generationStatus ? { generations: options.generationStatus } : {}),
+    ...(options.publicationStatus ? { publicationStatus: options.publicationStatus } : {}),
+    ...(options.migrateSession ? { migrateSession: options.migrateSession } : {}),
     async prepareRemoval(_profile, packageId) {
       if (!packageStopped(options.store, options.workerGeneration?.(), packageId))
         throw new Error('E_PACKAGE_STATE: package is still running')

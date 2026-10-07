@@ -364,3 +364,40 @@ it('validates catalogs and sends defaults through fixed same-origin GET/PUT rout
     details: { code: 'CONFIG_REVISION_CONFLICT' },
   })
 })
+
+it('reads publication reports and migrates a session through the scoped BFF contracts', async () => {
+  const report = {
+    publication: {
+      operation: 'models',
+      ok: false,
+      recovery: 'retry-same-input',
+      containers: [
+        { compositionHash: 'reader', status: 'applied' },
+        { compositionHash: 'writer', status: 'failed' },
+      ],
+    },
+  }
+  const migration = {
+    previousGenerationId: '11111111-1111-4111-8111-111111111111',
+    generationId: '22222222-2222-4222-8222-222222222222',
+    changed: true,
+  }
+  const fetcher = vi
+    .fn<typeof fetch>()
+    .mockResolvedValueOnce(Response.json(report))
+    .mockResolvedValueOnce(Response.json(migration))
+    .mockResolvedValueOnce(Response.json({ publication: { ok: true } }))
+  const api = new PluginAdminApi({ ...context, permissions: ['packages.read', 'packages.activate'] }, fetcher)
+  await expect(api.publicationStatus()).resolves.toEqual(report)
+  await expect(api.migrateSession('closed')).resolves.toEqual(migration)
+  expect(fetcher.mock.calls[0]?.[0]).toBe('/admin/plugins/api/publication-status')
+  expect(JSON.parse(String(fetcher.mock.calls[0]?.[1]?.body))).toEqual({ profile: 'local-dev' })
+  expect(fetcher.mock.calls[1]?.[0]).toBe('/admin/plugins/api/sessions/migrate')
+  expect(JSON.parse(String(fetcher.mock.calls[1]?.[1]?.body))).toMatchObject({
+    profile: 'local-dev',
+    clientId: 'web-client',
+    commandId: expect.any(String),
+    sessionId: 'closed',
+  })
+  await expect(api.publicationStatus()).rejects.toMatchObject({ details: { code: 'ADMIN_RESPONSE_INVALID' } })
+})

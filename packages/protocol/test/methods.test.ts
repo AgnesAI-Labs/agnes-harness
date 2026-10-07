@@ -147,6 +147,7 @@ describe('methods (I1 set)', () => {
       '_agnes/v1/participant.leave',
       '_agnes/v1/participant.list',
       '_agnes/v1/plugins.generations',
+      '_agnes/v1/plugins.publicationStatus',
       '_agnes/v1/plugins.tree.apply',
       '_agnes/v1/plugins.tree.get',
       '_agnes/v1/plugins.tree.list',
@@ -182,6 +183,7 @@ describe('methods (I1 set)', () => {
       '_agnes/v1/sessionSelection.modelAdapters',
       '_agnes/v1/sessionSelection.reloadLocal',
       '_agnes/v1/sessionSelection.runtime',
+      '_agnes/v1/sessions.migrate',
       '_agnes/v1/skills.priority.set',
       '_agnes/v1/skills.refresh',
       '_agnes/v1/skills.remove',
@@ -203,7 +205,7 @@ describe('methods (I1 set)', () => {
       'session/set_mode',
       'session/update',
     ])
-    expect(Object.keys(METHODS)).toHaveLength(124)
+    expect(Object.keys(METHODS)).toHaveLength(126)
     expect(METHODS['session/cancel']).toMatchObject({ kind: 'notification', direction: 'c2s' })
     expect(METHODS['session/request_permission']).toMatchObject({ kind: 'request', direction: 's2c' })
   })

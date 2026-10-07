@@ -1020,3 +1020,45 @@ describe('Registry<T> extraction (local/sessions.ts SessionRegistry, supervisor/
     expect(registry).toBe(wr)
   })
 })
+
+it('fences generation migration by authenticated ownership and releases admission after failure', async () => {
+  const registry = new WorkerRegistry({} as WorkerPool)
+  const ownership = { resolve: () => ({ active: true as const, principalId: 'owner' }) }
+  await expect(
+    registry.migrateGeneration('closed', 'other', ownership, async () => 'changed'),
+  ).rejects.toMatchObject({ data: { reason: 'session owner unavailable' } })
+  await expect(
+    registry.migrateGeneration(
+      'closed',
+      'owner',
+      {
+        resolve: () => {
+          throw new Error('corrupt')
+        },
+      },
+      async () => 'changed',
+    ),
+  ).rejects.toMatchObject({ data: { reason: 'session owner unavailable' } })
+  let fail: ((error: Error) => void) | undefined
+  const migrating = registry.migrateGeneration(
+    'closed',
+    'owner',
+    ownership,
+    () =>
+      new Promise<string>((_resolve, reject) => {
+        fail = reject
+      }),
+  )
+  await expect(open(registry, { key: 'closed', cwd: '/workspace' })).rejects.toThrow(
+    'E_GENERATION_SESSION_OPEN',
+  )
+  await expect(
+    registry.migrateGeneration('closed', 'owner', ownership, async () => 'changed'),
+  ).rejects.toThrow('E_GENERATION_SESSION_OPEN')
+  if (!fail) throw new Error('migration fixture did not start')
+  fail(new Error('E_GENERATION_INCOMPATIBLE'))
+  await expect(migrating).rejects.toThrow('E_GENERATION_INCOMPATIBLE')
+  await expect(
+    registry.migrateGeneration('closed', 'owner', ownership, async () => 'migrated'),
+  ).resolves.toBe('migrated')
+})

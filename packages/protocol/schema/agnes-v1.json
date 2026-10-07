@@ -3,6 +3,10 @@
   "$id": "https://agnes.ai/schema/agnes-v1.json",
   "title": "_agnes/v1",
   "$defs": {
+    "PluginPublicationReport": { "$ref": "package-admin.json#/$defs/PluginPublicationReport" },
+    "PluginPublicationStatusResult": { "$ref": "package-admin.json#/$defs/PluginPublicationStatusResult" },
+    "SessionGenerationMigrationParams": { "$ref": "package-admin.json#/$defs/SessionGenerationMigrationParams" },
+    "SessionGenerationMigrationResult": { "$ref": "package-admin.json#/$defs/SessionGenerationMigrationResult" },
     "ExtensionCallParams": {
       "$ref": "extension-service.json#/$defs/ExtensionCallParams"
     },

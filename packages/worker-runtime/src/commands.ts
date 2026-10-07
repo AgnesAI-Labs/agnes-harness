@@ -703,6 +703,14 @@ export async function handleServiceCommand(
         })),
       }
     }
+    case 'pluginGenerations.publicationStatus':
+      if (!host) throw new Error('Publication status requires an assembled Host')
+      return { publication: host.compositionPublicationStatus?.() ?? null }
+    case 'pluginGenerations.migrate':
+      if (!host?.migrateSessionGeneration) throw new Error('Session generation migration is unavailable')
+      if (typeof p.sessionId !== 'string' || !p.sessionId || p.sessionId.length > 512)
+        throw new TypeError('invalid session key')
+      return host.migrateSessionGeneration(p.sessionId)
     case 'pluginGenerations.collect':
       if (!host?.collectPluginGenerations) throw new Error('Plugin generation collection is unavailable')
       await host.collectPluginGenerations()

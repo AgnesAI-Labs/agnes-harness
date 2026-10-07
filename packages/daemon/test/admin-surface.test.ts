@@ -158,6 +158,23 @@ describe('local package admin surface trust boundary', () => {
     expect((await s.request('generations', { profile: 'local-dev', sessionId: 'spoofed' })).status).toBe(400)
     const denied = await server(undefined, undefined, { permissions: [] })
     expect((await denied.request('generations', { profile: 'local-dev' })).status).toBe(403)
+    const publication = {
+      publication: {
+        operation: 'models',
+        ok: false,
+        recovery: 'retry-same-input',
+        containers: [
+          { compositionHash: 'reader', status: 'applied' },
+          { compositionHash: 'writer', status: 'failed' },
+        ],
+      },
+    }
+    s.invoke.mockResolvedValue(publication)
+    expect(await (await s.request('publication-status')).json()).toEqual(publication)
+    expect((await s.request('publication-status', { profile: 'other' })).status).toBe(403)
+    expect((await denied.request('publication-status')).status).toBe(403)
+    s.invoke.mockResolvedValue({ publication: { ...publication.publication, recovery: 'rollback' } })
+    expect((await s.request('publication-status')).status).toBe(502)
   })
 
   it('rejects cross-site writes, scope spoofing and raw method forwarding before SDK dispatch', async () => {
@@ -261,6 +278,8 @@ describe('local package admin surface trust boundary', () => {
     const expectedPaths = [
       'catalog/list',
       'generations',
+      'publication-status',
+      'sessions/migrate',
       'catalog/get',
       'list',
       'inspect',
@@ -418,4 +437,38 @@ it('serves runtime descriptions, gates rescan and rejects secret-bearing catalog
   expect(await invalid.text()).not.toContain('private')
   runtimeAdmin.reloadLocal.mockRejectedValueOnce(new Error('private path secret'))
   expect(await (await s.selectionRequest('reload-local', 'POST', {})).text()).not.toContain('private')
+})
+
+it('gates migration through admin activation permission and reports a safe refusal', async () => {
+  const migration = {
+    previousGenerationId: '11111111-1111-4111-8111-111111111111',
+    generationId: '22222222-2222-4222-8222-222222222222',
+    changed: true,
+  }
+  const s = await server()
+  await s.request('context')
+  const params = {
+    profile: 'local-dev',
+    clientId: 'admin-web',
+    commandId: 'migration-1',
+    sessionId: 'closed',
+  }
+  s.invoke.mockResolvedValue(migration)
+  expect(await (await s.request('sessions/migrate', params)).json()).toEqual(migration)
+  s.invoke.mockRejectedValue(
+    Object.assign(new Error('/private/config'), { data: { reason: 'E_GENERATION_SESSION_OPEN' } }),
+  )
+  const refused = await s.request('sessions/migrate', params)
+  expect(refused.status).toBe(409)
+  expect(await refused.json()).toEqual({
+    error: { code: 'E_GENERATION_SESSION_OPEN', message: 'Close the session before migrating its plugins.' },
+  })
+  s.invoke.mockRejectedValue(
+    Object.assign(new Error('denied'), { data: { reason: 'session owner unavailable' } }),
+  )
+  expect((await s.request('sessions/migrate', params)).status).toBe(403)
+  const denied = await server(undefined, undefined, { permissions: ['packages.read'] })
+  await denied.request('context')
+  expect((await denied.request('sessions/migrate', params)).status).toBe(403)
+  expect((await s.request('sessions/migrate', { ...params, principalId: 'spoof' })).status).toBe(400)
 })

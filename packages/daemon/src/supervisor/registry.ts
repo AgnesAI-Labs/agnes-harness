@@ -3,6 +3,7 @@ import type { LoopSelection } from '@agnes/protocol'
 import { type EventEnvelope, rpcError } from '@agnes/protocol'
 import type { Disposer } from '../local/tail.js'
 import type { PreviewSnapshotEntry, PreviewUpdate, Registry } from '../registry.js'
+import type { SessionPrincipalOwnership } from '../storage/session-ownership.js'
 import { assertWorkspaceBindingEnvelope, type WorkspaceBindingEnvelope } from '../storage/workspaces.js'
 import { RemoteSession } from './remote-session.js'
 import type { WorkerPool } from './worker-pool.js'
@@ -93,6 +94,37 @@ export class WorkerRegistry implements Registry<RemoteEntry> {
   >()
   /** Fences a worker that began opening against a snapshot that has since been superseded. */
   private resourceEpoch = 0
+  private readonly generationMigrations = new Set<string>()
+
+  /** Refuse live/opening sessions and fence all admissions for this key until pin migration settles. */
+  async migrateGeneration<T>(
+    key: string,
+    principalId: string,
+    ownership: Pick<SessionPrincipalOwnership, 'resolve'>,
+    migrate: () => Promise<T>,
+  ): Promise<T> {
+    let owner: ReturnType<SessionPrincipalOwnership['resolve']>
+    try {
+      owner = ownership.resolve(key)
+    } catch {
+      /* fail closed below */
+    }
+    if (owner?.principalId !== principalId)
+      throw rpcError('CAPABILITY_DENIED', { reason: 'session owner unavailable' })
+    if (
+      this.closingAll ||
+      this.entries.has(key) ||
+      this.opening.has(key) ||
+      this.generationMigrations.has(key)
+    )
+      throw new Error('E_GENERATION_SESSION_OPEN: close the session before migration')
+    this.generationMigrations.add(key)
+    try {
+      return await migrate()
+    } finally {
+      this.generationMigrations.delete(key)
+    }
+  }
 
   constructor(
     private readonly pool: WorkerPool,
@@ -245,6 +277,8 @@ export class WorkerRegistry implements Registry<RemoteEntry> {
     resume?: boolean
   }): Promise<RemoteEntry> {
     if (this.closingAll) throw new Error('worker registry is shutting down')
+    if (o.key && this.generationMigrations.has(o.key))
+      throw new Error('E_GENERATION_SESSION_OPEN: session migration is in progress')
     assertWorkspaceBindingEnvelope(o.binding)
     const authorized: RemoteOpen = { ...o, binding: o.binding }
     const key = o.key ?? `agnes:local:default:daemon:dm:${Math.random().toString(36).slice(2)}`
