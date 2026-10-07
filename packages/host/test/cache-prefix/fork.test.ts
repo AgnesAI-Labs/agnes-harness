@@ -69,7 +69,9 @@ describe('delegated child wire prefixes', () => {
         calls++
         if (calls <= precedingReads) return { toolCall: { name: 'read', args: { path: 'probe.txt' } } }
         if (calls === precedingReads + 1)
-          return { toolCall: { name: 'subagent_fork', args: { question: 'child task' } } }
+          return {
+            toolCall: { name: 'subagent_fork', args: { question: 'child task', isolation: 'shared' } },
+          }
         return { text: calls === precedingReads + 2 ? 'child answer' : 'parent answer' }
       })
       try {
@@ -96,10 +98,13 @@ describe('delegated child wire prefixes', () => {
         try {
           const session = await parentSession(host, dataDir)
           await prompt(session, 'Delegate after reading if needed')
-          expect(capture.requests).toHaveLength(precedingReads + 3)
+          await expect.poll(() => capture.requests.length).toBe(precedingReads + 3)
+          await expect.poll(async () => (await session.d.children.list?.())?.[0]?.status).toBe('idle')
           const first = capture.requests[0]
           const beforeFork = capture.requests[precedingReads]
-          const child = capture.requests[precedingReads + 1]
+          const child = capture.requests
+            .slice(precedingReads + 1)
+            .find((request) => !request.raw.includes('started prefix-parent/'))
           if (!first || !beforeFork || !child) throw new Error('missing fork request')
           expectExtends(first, child)
           const triggerPart = renderedParts(beforeFork).find(
@@ -167,7 +172,7 @@ describe('delegated child wire prefixes', () => {
     const parentProvider = fakeProvider(
       [
         textTurn('first answer'),
-        toolTurn('subagent_fork', { question: 'child task' }),
+        toolTurn('subagent_fork', { question: 'child task', isolation: 'shared' }),
         textTurn('parent answer'),
       ],
       '2',
@@ -189,6 +194,8 @@ describe('delegated child wire prefixes', () => {
         const session = await parentSession(host, dataDir)
         await prompt(session, 'historical untrusted marker', true)
         await prompt(session, 'trigger untrusted marker', true)
+        await expect.poll(() => childProvider.requests.length).toBe(1)
+        await expect.poll(async () => (await session.d.children.list?.())?.[0]?.status).toBe('idle')
         const parent = parentProvider.requests[1]
         const child = childProvider.requests[0]
         if (!parent || !child) throw new Error('missing parent or child request')
@@ -303,15 +310,15 @@ describe('delegated child wire prefixes', () => {
         // A session keeps the context window it was given, so the child's own window shrinks along with
         // what the provider advertises. The smallest one the budget check accepts still has to hold the
         // fixed instructions and tools, so the prompt that crosses the threshold is long instead.
-        primaryWindow = 4096
+        primaryWindow = 8192
         child.preset = {
           ...child.preset,
           model: {
             ...child.preset.model,
-            contextWindow: { ...child.preset.model.contextWindow, primary: 4096 },
+            contextWindow: { ...child.preset.model.contextWindow, primary: 8192 },
           },
         }
-        await prompt(child, `child threshold ${'c'.repeat(20_000)}`)
+        await prompt(child, `child threshold ${'c'.repeat(40_000)}`)
 
         expect(plans).toContainEqual({ reason: 'threshold', previousSummarySeq: inherited.seq })
         const summaryRequest = requests.findLast(

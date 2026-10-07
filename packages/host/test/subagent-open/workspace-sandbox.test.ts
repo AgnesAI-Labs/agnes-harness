@@ -126,24 +126,35 @@ async function childRecord(dataDir: string, childKey: string) {
   }
 }
 
+function collectStarted(req: RequestBody): InferenceEvent[] {
+  const childKey = JSON.stringify(req.messages).match(/started (subagent-parent\/[A-Z0-9]+)/)?.[1]
+  if (!childKey) throw new Error('missing started child key')
+  return toolCall('subagent_collect', { childKey, wait: true })
+}
+
 describe('subagents in a workspace-bound Host session', () => {
-  it('runs subagent_fork to completion and returns the child text to the parent', async () => {
+  it('collects a forked child turn and leaves it ready for follow-ups', async () => {
     const provider = new RoutedProvider(
-      [toolCall('subagent_fork', { question: 'summarise the workspace' }), text('parent done')],
+      [
+        toolCall('subagent_fork', { question: 'summarise the workspace', isolation: 'shared' }),
+        collectStarted,
+        text('parent done'),
+      ],
       [text('child answer')],
     )
     const { host, session, dataDir } = await workspaceHost(provider)
     try {
       const out = await prompt(session, 'delegate')
       expect(out.reason).toBe('completed')
-      const [fork] = await toolResults(session)
+      const [fork, collect] = await toolResults(session)
       expect(fork?.isError).not.toBe(true)
-      expect(textOf(fork)).toBe('child answer')
+      expect(collect?.isError).not.toBe(true)
+      expect(textOf(collect)).toBe('child answer')
       const childKey = provider.childKeys[0]
       expect(childKey?.startsWith(`${PARENT}/`)).toBe(true)
       expect(await childRecord(dataDir, childKey as string)).toMatchObject({
         creationPhase: 'committed',
-        state: 'completed',
+        state: 'ready',
       })
     } finally {
       await host.close()
@@ -156,7 +167,7 @@ describe('subagents in a workspace-bound Host session', () => {
       [
         toolCall('subagent_spawn', { task: 'count the files', isolation: 'shared' }),
         (req) => {
-          const spawned = JSON.stringify(req.messages).match(/spawned (subagent-parent\/[A-Z0-9]+)/)
+          const spawned = JSON.stringify(req.messages).match(/started (subagent-parent\/[A-Z0-9]+)/)
           childKey = spawned?.[1] ?? ''
           return toolCall('subagent_collect', { childKey, wait: true })
         },
@@ -175,7 +186,7 @@ describe('subagents in a workspace-bound Host session', () => {
       expect(textOf(collect)).toBe('three files')
       expect(await childRecord(dataDir, childKey)).toMatchObject({
         creationPhase: 'committed',
-        state: 'completed',
+        state: 'ready',
       })
     } finally {
       await host.close()
@@ -188,7 +199,7 @@ describe('subagents in a workspace-bound Host session', () => {
       [
         toolCall('subagent_spawn', { task: 'work in a worktree', isolation: 'worktree' }),
         (req) => {
-          const spawned = JSON.stringify(req.messages).match(/spawned (subagent-parent\/[A-Z0-9]+)/)
+          const spawned = JSON.stringify(req.messages).match(/started (subagent-parent\/[A-Z0-9]+)/)
           childKey = spawned?.[1] ?? ''
           return toolCall('subagent_collect', { childKey, wait: true })
         },
@@ -211,7 +222,7 @@ describe('subagents in a workspace-bound Host session', () => {
       expect(textOf(spawn)).not.toMatch(/worktree skipped/)
       expect(textOf(collect)).toBe('child answered')
       const record = await childRecord(dataDir, childKey)
-      expect(record).toMatchObject({ isolation: 'worktree', creationPhase: 'committed', state: 'completed' })
+      expect(record).toMatchObject({ isolation: 'worktree', creationPhase: 'committed', state: 'ready' })
       expect(record?.cwd.startsWith(join(root, '.worktrees', 'agnes-'))).toBe(true)
     } finally {
       await host.close()
@@ -241,7 +252,7 @@ describe('subagents in a workspace-bound Host session', () => {
       expect(switchedWith).toBeUndefined()
       release()
       await activation
-      expect(switchedWith).toBe('completed')
+      expect(switchedWith).toBe('ready')
     } finally {
       release()
       await host.close()
@@ -263,7 +274,7 @@ describe('subagents in a workspace-bound Host session', () => {
           return toolCall('subagent_spawn', { task: 'queued work', isolation: 'shared' })
         },
         (req) => {
-          childKey = JSON.stringify(req.messages).match(/spawned (subagent-parent\/[A-Z0-9]+)/)?.[1] ?? ''
+          childKey = JSON.stringify(req.messages).match(/started (subagent-parent\/[A-Z0-9]+)/)?.[1] ?? ''
           return text('parent done')
         },
       ],
@@ -275,7 +286,7 @@ describe('subagents in a workspace-bound Host session', () => {
       expect((await prompt(opened.session, 'spawn during a switch')).reason).toBe('completed')
       await activation
       expect(childAtSwitch).toEqual({ requests: 0 })
-      await expect.poll(async () => (await childRecord(opened.dataDir, childKey))?.state).toBe('completed')
+      await expect.poll(async () => (await childRecord(opened.dataDir, childKey))?.state).toBe('ready')
     } finally {
       await host.close()
     }
@@ -289,7 +300,8 @@ describe('subagents in a workspace-bound Host session', () => {
     const provider = new RoutedProvider(
       [
         toolCall('write', { path: escapePath, content: 'parent' }),
-        toolCall('subagent_fork', { question: 'write two files' }),
+        toolCall('subagent_fork', { question: 'write two files', isolation: 'shared' }),
+        collectStarted,
         text('parent done'),
       ],
       [
@@ -312,9 +324,10 @@ describe('subagents in a workspace-bound Host session', () => {
     try {
       await session.setYolo(fullAccess, session.d.actor)
       expect((await prompt(session, 'delegate writes')).reason).toBe('completed')
-      const [parentWrite, fork] = await toolResults(session)
+      const [parentWrite, fork, collect] = await toolResults(session)
       expect(fork?.isError).not.toBe(true)
-      expect(textOf(fork)).toBe('child done')
+      expect(collect?.isError).not.toBe(true)
+      expect(textOf(collect)).toBe('child done')
 
       const child = provider.childKeys[0] as string
       const childRows = await session.d.log.storage.scan(child, { type: 'tool/result', limit: 10 })
