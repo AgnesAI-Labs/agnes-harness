@@ -24,6 +24,12 @@ node packages/cli/dist/local/agnes.mjs -p --continue "Continue"
 
 `--continue` and `--resume` are mutually exclusive. Use an explicit ID when precision matters to avoid resuming an unintended recent session. Check working directory, model, and permissions separately for new and resumed sessions. Switching a Web workspace does not transfer existing sessions to a different daemon.
 
+<a id="搜索历史"></a>
+
+## Search history
+
+Settings → History searches session titles and message text, filters by an exact workspace path, and pages the results. The index is a separate SQLite file rebuilt from the ledger. It does not modify the ledger. The read-only tools `session_search`, `session_event_search`, `session_trace`, `session_event_trace`, and `session_event_read` stay inside the caller's workspace and recorded owner.
+
 <a id="导出与导入"></a>
 
 ## Export and import

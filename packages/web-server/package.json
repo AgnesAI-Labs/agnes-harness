@@ -11,6 +11,7 @@
   },
   "license": "Apache-2.0",
   "dependencies": {
-    "@agnes/protocol": "workspace:*"
+    "@agnes/protocol": "workspace:*",
+    "@agnes/history-index": "workspace:*"
   }
 }

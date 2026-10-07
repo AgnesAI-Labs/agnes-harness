@@ -137,9 +137,9 @@ const HARNESS_DIR_LITERAL_EXEMPTIONS: readonly HarnessDirLiteralExemption[] = []
 // Rule A's own exemption list, kept separate from Rule B's rather than merged into one shape: the two
 // rules match different things (a call shape vs. a string literal) and a merged type would need an
 // optional-or-union field to tell them apart, which is more confusing than two small parallel lists.
-// Exactly one entry. It is not an architectural boundary at all -- it is the precise DRY gap PATH-01's own report named and chose not to migrate,
-// re-verified here rather than taken on faith, with an attempted fix that ran into a wall this task
-// cannot move. See the entry's `reason` for the full account.
+// Two reviewed entries. The history-search route cannot import host's dataDir() across the layer
+// boundary. The daemon line is the DRY gap PATH-01 named and chose not to migrate, re-verified
+// here rather than taken on faith. See each entry's `reason`.
 type JoinDataCacheExemption = {
   readonly path: string
   readonly line: string
@@ -147,6 +147,15 @@ type JoinDataCacheExemption = {
 }
 
 const JOIN_DATA_CACHE_EXEMPTIONS: readonly JoinDataCacheExemption[] = [
+  {
+    path: 'packages/web-server/src/history-route.ts',
+    line: "return join(home, 'data')",
+    reason:
+      'web-server is layer 1 and cannot import dataDir() from @agnes/host (layer 7). The history ' +
+      'search route still has to find the ledger directory when the launcher cannot pass historyDataDir. ' +
+      "This one join matches packages/host/src/paths.ts dataDir: the home root plus 'data'. The harness " +
+      'directory name comes from AGH_DIR, not a second literal.',
+  },
   {
     path: 'packages/daemon/src/supervisor/scope.ts',
     line: "expandHome(inputs.user?.cacheDir ?? join(home, 'cache'), input.osHome),",
@@ -302,8 +311,8 @@ describe('the Agnes home directory layout is reconstructed in exactly one place'
     }
   })
 
-  it('exactly the one known JOIN_DATA_CACHE_EXEMPTIONS entry, no more, no fewer', () => {
-    expect(JOIN_DATA_CACHE_EXEMPTIONS.length).toBe(1)
+  it('exactly the two reviewed JOIN_DATA_CACHE_EXEMPTIONS entries, no more, no fewer', () => {
+    expect(JOIN_DATA_CACHE_EXEMPTIONS.length).toBe(2)
   })
 })
 

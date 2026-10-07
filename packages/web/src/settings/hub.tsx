@@ -9,6 +9,7 @@ import { type ReactNode, useEffect, useState } from 'react'
 import type { PluginAdminApi } from '../admin/plugins/api.js'
 import { BundlesPanel, SessionDefaultsPanel } from '../admin/plugins/control-panel.js'
 import { ExamplesPanel } from './examples.js'
+import { HistorySearchPanel } from './history.js'
 import { SETTINGS_NAMESPACE, settingsCatalog } from './locales.js'
 import {
   GenerationsPanel,
@@ -30,6 +31,7 @@ export const SETTINGS_PAGES = [
   'security',
   'resources',
   'examples',
+  'history',
 ] as const
 export type SettingsPage = (typeof SETTINGS_PAGES)[number]
 function initialPage(): SettingsPage {
@@ -166,6 +168,7 @@ export function SettingsHub({
             onBundles={() => setPage('bundles')}
           />
         )}
+        {page === 'history' && <HistorySearchPanel t={t} />}
       </section>
     </div>
   )

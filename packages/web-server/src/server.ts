@@ -2,6 +2,7 @@ import { createHash, randomBytes } from 'node:crypto'
 import { readFile, stat } from 'node:fs/promises'
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http'
 import { extname, isAbsolute, join, posix } from 'node:path'
+import { HISTORY_SEARCH_PATH, handleHistorySearch } from './history-route.js'
 import { applyPlanCommand } from './plan-mode.js'
 import { VENDOR_ENTRY_NAMES } from './vendor-assets.js'
 
@@ -148,6 +149,11 @@ export type WebServerOptions = {
    * before this option existed.
    */
   mountProxy?: (request: IncomingMessage, response: ServerResponse) => boolean
+  /**
+   * Ledger directory for same-origin history search. When omitted, the route uses the standard
+   * home data directory. A profile with a custom dataDir must pass this; the route does not guess.
+   */
+  historyDataDir?: string
 }
 
 export type WorkspacePickerResult =
@@ -422,6 +428,18 @@ export async function createWebServer(options: WebServerOptions): Promise<WebSer
         return
       }
       const requestUrl = new URL(request.url ?? '/', expectedOrigin)
+      if (requestUrl.pathname === HISTORY_SEARCH_PATH) {
+        const result = handleHistorySearch({
+          method: request.method,
+          search: requestUrl.search,
+          origin: typeof request.headers.origin === 'string' ? request.headers.origin : undefined,
+          site: request.headers['sec-fetch-site'],
+          expectedOrigin: expectedOrigin.origin,
+          ...(options.historyDataDir === undefined ? {} : { dataDir: options.historyDataDir }),
+        })
+        json(response, result.status, result.body)
+        return
+      }
       if (requestUrl.pathname === WORKSPACE_PICKER_PATH) {
         const site = request.headers['sec-fetch-site']
         if (

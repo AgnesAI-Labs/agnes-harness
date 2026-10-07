@@ -12,7 +12,7 @@
   "@agnes/protocol-validation": [],
   "@agnes/error-sanitization": [],
   "@agnes/package-isolation": ["@agnes/system-node"],
-  "@agnes/web-server": ["@agnes/protocol"],
+  "@agnes/web-server": ["@agnes/protocol", "@agnes/history-index"],
   "@agnes/web-admin-frame": [],
   "@agnes/package-admin-client-node": ["@agnes/protocol"],
   "@agnes/resource-control-runtime": ["@agnes/cordis", "@agnes/protocol"],

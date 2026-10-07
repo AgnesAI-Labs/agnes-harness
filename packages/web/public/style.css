@@ -6675,3 +6675,23 @@ body.admin-page {
   padding: 0;
   accent-color: var(--agnes-brand-primary);
 }
+.history-search {
+  display: grid;
+  gap: 0.5rem;
+  max-width: 40rem;
+}
+.history-search input {
+  width: 100%;
+}
+.history-search ul {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+.history-search li {
+  display: grid;
+  gap: 0.25rem;
+  padding-block: 0.5rem;
+  border-block-end: 1px solid var(--agnes-line-primary);
+  overflow-wrap: anywhere;
+}

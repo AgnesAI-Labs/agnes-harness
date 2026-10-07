@@ -20,6 +20,10 @@ node packages/cli/dist/local/agnes.mjs -p --continue "继续"
 
 `--continue` 与 `--resume` 互斥。需要精确控制时使用明确 ID，避免恢复到不期望的最近会话。新建会话和恢复会话的工作目录、模型、权限需要分别核对；切换 Web 工作区不会把已有会话的所有权转移给另一个后台。
 
+## 搜索历史
+
+设置中的「历史」可以搜索会话标题和消息文本，按工作区路径精确过滤，并分页查看结果。索引是根据账本重建的独立 SQLite 文件，不会修改账本。只读工具 `session_search`、`session_event_search`、`session_trace`、`session_event_trace` 和 `session_event_read` 只查看调用者所在工作区及其已记录的所有者。
+
 ## 导出与导入
 
 ```sh
