@@ -7,7 +7,11 @@ import type {
   RequestBody,
 } from '@agnes/protocol'
 import type { AssistantMessage } from '@agnes/protocol/gen/session-v1'
-import type { ChildAgentSessionService } from './child-agent.js'
+import type {
+  ChildAgentHandle,
+  ChildAgentSessionService,
+  ChildAgentSessionStartOptions,
+} from './child-agent.js'
 import type { LoopEventPort } from './loop-events.js'
 import type { ToolResult } from './tool.js'
 
@@ -79,6 +83,34 @@ export interface LoopRequestOptions {
   sampling?: RequestBody['sampling']
   invocationId?: string
 }
+/** Advisory estimates of the prepared wire; never a send permit or a token upper bound. */
+export interface LoopRequestEstimate {
+  inputTokens: number | null
+  source: 'estimate' | 'unknown'
+  projectedCredits: number | null
+  contextWindow: number
+  reserveTokens: number
+  remainingTokens: number | null
+  shouldCompact: boolean | null
+}
+export type LoopChildStartStatus =
+  | { status: 'not-sent'; invocationId: string }
+  | { status: 'may-have-sent'; invocationId: string }
+  | { status: 'responded'; invocationId: string; childId: string; providerId: string }
+export interface LoopChildrenPort extends ChildAgentSessionService {
+  start(
+    task: string,
+    options?: ChildAgentSessionStartOptions & { invocationId?: string },
+  ): Promise<ChildAgentHandle>
+  status(invocationId: string): Promise<LoopChildStartStatus>
+  /** Reconnect only the original start. Unsupported/absent adoption refuses replay. */
+  adopt(invocationId: string, signal: AbortSignal): Promise<ChildAgentHandle>
+}
+export interface LoopJobStatus {
+  jobId: string
+  status: 'queued' | 'running' | 'done' | 'failed' | 'cancelled'
+  result?: ToolResult
+}
 export interface LoopInput {
   id: string
   turnId: number
@@ -146,6 +178,8 @@ export interface LoopContext {
   readonly sessionKey: string
   readonly lane: string
   prepareRequest(options?: LoopRequestOptions): Promise<LoopRequest>
+  /** Uses this turn's prepared request without dispatch, admission or budget reservation. */
+  estimateRequest(request: LoopRequest): Promise<LoopRequestEstimate>
   readonly turn: {
     view(): Promise<LoopTurnView | null>
     /** Close the current execution step before compaction. Does not run a scheduler edge. */
@@ -199,12 +233,22 @@ export interface LoopContext {
   readonly wait: {
     /** Wait for input, wake or cancellation without busy polling. */
     park(signal: AbortSignal): Promise<void>
-    wake(): void
+    /** Coalescing, lane-local wake. Await to guarantee durability before shutdown.
+     * One park coalesces wakes committed before consumption; cancellation consumes none.
+     * Save the next checkpoint to acknowledge delivery across restart; otherwise it is redelivered.
+     */
+    wake(): Promise<void>
     poll(signal: AbortSignal): Promise<LoopStepOutcome>
     delay(ms: number, signal: AbortSignal): Promise<void>
   }
   readonly compaction?: { run(signal: AbortSignal): Promise<LoopStepOutcome> }
-  readonly children?: ChildAgentSessionService
+  readonly jobs: {
+    /** The original tool invocation must own a durable deferred-job marker. */
+    status(invocationId: string): Promise<LoopJobStatus>
+    /** Poll and atomically publish the original tool result; never run a scheduler edge. */
+    join(invocationId: string, signal: AbortSignal): Promise<ToolResult>
+  }
+  readonly children?: LoopChildrenPort
 }
 
 export interface LoopDriver {

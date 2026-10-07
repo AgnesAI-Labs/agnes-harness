@@ -30,6 +30,7 @@ type CreateOpts = Parameters<ChildrenFactory['create']>[0] & {
   start?: boolean
   /** Keep the child after each turn so a later message can continue it. */
   resident?: boolean
+  recovering?: boolean
 }
 
 export class KernelChildren implements ChildrenFactory {
@@ -594,7 +595,7 @@ export class KernelChildren implements ChildrenFactory {
     })
     const inbox = child.latest('inbox') as { items?: unknown[] } | undefined
     const body = opts.input ?? record.inputText
-    if (body && !inbox?.items?.length) {
+    if (!opts.recovering && body && !inbox?.items?.length) {
       await child.enqueue('next-turn', {
         content: [{ type: 'text', text: body }],
         actor: child.d.actor,
@@ -602,7 +603,7 @@ export class KernelChildren implements ChildrenFactory {
     }
 
     let state: 'ready' | 'running' | 'done' | 'error' | 'cancelled' =
-      record.state === 'running' ? 'running' : 'ready'
+      record.state === 'running' && !opts.recovering ? 'running' : 'ready'
     let ended = false
     let cachedText = ''
     let cachedSeq = 0
@@ -673,12 +674,13 @@ export class KernelChildren implements ChildrenFactory {
         let residentHold = false
         try {
           const inbox = child.latest('inbox') as { items?: unknown[] } | undefined
-          if (!inbox?.items?.length) {
+          if (!inbox?.items?.length && !child.op()) {
             await child.enqueue('next-turn', {
               content: [{ type: 'text', text: input ?? '' }],
               actor: child.d.actor,
             })
           }
+          if (opts.recovering && child.op()) await child.resume()
           const result = await child.run({
             until: 'turn-end',
             signal: turnAbort.signal,
@@ -789,7 +791,7 @@ export class KernelChildren implements ChildrenFactory {
     if (opts.resident) {
       this.residents.set(record.childKey, {
         child,
-        idle: () => state === 'ready',
+        idle: () => state === 'ready' && this.continued.has(record.childKey),
         run,
       })
     }
@@ -808,6 +810,7 @@ export class KernelChildren implements ChildrenFactory {
       input: input.task,
       resident: true,
       start: false,
+      ...(input.invocationId ? { parentEffectId: 'loop-child-' + sha256Hex(input.invocationId) } : {}),
       ...(input.model === undefined ? {} : { model: input.model }),
       ...(input.isolation === undefined ? {} : { isolation: input.isolation }),
       ...(input.budget === undefined ? {} : { budget: input.budget }),
@@ -832,6 +835,44 @@ export class KernelChildren implements ChildrenFactory {
     return { id: child.key }
   }
 
+  /** Locate the durable creation fence; opening an existing child never mints a new identity. */
+  async adoptResident(input: ResidentStart & { invocationId: string }): Promise<{ id: string }> {
+    const parent = this.parent()
+    const store = requireChildControl(parent.d.log.storage)
+    const prefix = parent.key + ':' + parent.lane + ':loop-child-' + sha256Hex(input.invocationId) + ':'
+    const record = (await store.listByParent(parent.key)).find((row) => row.creationId.startsWith(prefix))
+    if (!record || !this.owns(record, parent.key) || record.inputHash !== sha256Hex(input.task))
+      throw new CoreError('E_CHILD_NOT_FOUND', 'Child invocation has no durable creation identity')
+    if (isTerminalChildState(record.state) || record.state === 'cancelling')
+      throw new CoreError('E_UNSUPPORTED', 'Child invocation has already terminated')
+    if (this.handles.has(record.childKey)) return { id: record.childKey }
+    const opts: CreateOpts = {
+      parent: parent.key,
+      cwd: record.cwd,
+      input: record.inputText,
+      resident: true,
+      recovering: true,
+      ...(input.model === undefined ? {} : { model: input.model }),
+      ...(input.budget === undefined ? {} : { budget: input.budget }),
+      ...(input.toolFilter ? { toolFilter: input.toolFilter } : {}),
+    }
+    const model = input.model === undefined ? undefined : this.resolveModel(parent, input.model)
+    if (input.model !== undefined && !model)
+      throw new CoreError('E_UNSUPPORTED', 'Child model is unavailable')
+    const needsInitialTurn = record.creationPhase !== 'committed'
+    const handle = await this.open(record.kind, parent, record, opts, model)
+    const resident = this.residents.get(record.childKey)!
+    const inbox = resident.child.latest('inbox') as { items?: unknown[] } | undefined
+    if (resident.child.op() || inbox?.items?.length || needsInitialTurn) {
+      void handle.run(record.inputText).catch((error: unknown) => {
+        this.finishChild(record.childKey, { status: 'failed', text: String(error) })
+      })
+    } else {
+      this.continued.add(record.childKey)
+    }
+    return { id: record.childKey }
+  }
+
   async startFork(input: ResidentStart): Promise<{ id: string; text: string }> {
     const parent = this.parent()
     const child = await this.createWithKind('fork', {
@@ -854,26 +895,30 @@ export class KernelChildren implements ChildrenFactory {
     this.bindSession(parent.key)
     const store = requireChildControl(parent.d.log.storage)
     const rows = await store.listByParent(parent.key)
-    return rows.map((row) => {
-      const resident = this.residents.get(row.childKey)
-      const status: ChildAgentStatus = resident?.idle()
-        ? 'idle'
-        : row.state === 'completed'
-          ? 'completed'
-          : row.state === 'failed'
-            ? 'failed'
-            : row.state === 'cancelled'
-              ? 'cancelled'
-              : row.state === 'ready' || row.state === 'creating'
-                ? 'starting'
-                : 'running'
-      return {
-        id: row.childKey,
-        providerId: 'in-process',
-        status,
-        continuable: resident !== undefined,
-      }
-    })
+    return Promise.all(
+      rows.map(async (row) => {
+        const resident = this.residents.get(row.childKey)
+        const status: ChildAgentStatus = resident?.idle()
+          ? 'idle'
+          : row.state === 'completed'
+            ? 'completed'
+            : row.state === 'failed'
+              ? 'failed'
+              : row.state === 'cancelled'
+                ? 'cancelled'
+                : row.state === 'ready' || row.state === 'creating'
+                  ? 'starting'
+                  : 'running'
+        const text = (await this.inspect(row.childKey))?.text
+        return {
+          id: row.childKey,
+          providerId: 'in-process',
+          status,
+          continuable: resident !== undefined,
+          ...(text ? { text } : {}),
+        }
+      }),
+    )
   }
 
   async sendMessage(childKey: string, text: string, signal: AbortSignal): Promise<{ messageId: string }> {

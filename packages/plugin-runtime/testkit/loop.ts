@@ -81,6 +81,18 @@ export async function driveLoop(factory: LoopFactory, options: LoopTestOptions =
         derivedHash: createHash('sha256').update(JSON.stringify(body)).digest('hex'),
       }) as LoopRequest
     },
+    async estimateRequest() {
+      return {
+        inputTokens: null,
+        source: 'unknown',
+        projectedCredits: null,
+        contextWindow: options.turnView?.model.capabilities?.contextWindow ?? 128000,
+        reserveTokens: 0,
+        remainingTokens: null,
+        shouldCompact: null,
+      }
+    },
+    jobs: { status: unavailable, join: unavailable },
     turn: {
       view: async () => options.turnView ?? null,
       endStep: async () => {},
@@ -153,7 +165,7 @@ export async function driveLoop(factory: LoopFactory, options: LoopTestOptions =
           signal.addEventListener('abort', () => resolve(), { once: true })
         })
       },
-      wake() {},
+      async wake() {},
     },
   }
   signal.throwIfAborted()

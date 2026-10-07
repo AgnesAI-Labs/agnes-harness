@@ -3,7 +3,7 @@ import { loopCheckpointCodec, registerLoopPlugin } from '@agnes/extension-api'
 const SOURCE = '@agnes-example/react-loop'
 const ID = 'example.react'
 const VERSION = '1.0.0'
-const stages = ['input', 'wait', 'child', 'model', 'publish', 'tools', 'parked', 'done']
+const stages = ['input', 'wait', 'child', 'model', 'publish', 'tools', 'jobs', 'parked', 'done']
 const initial = () => ({
   stage: 'input',
   turnId: null,
@@ -11,6 +11,7 @@ const initial = () => ({
   calls: [],
   response: null,
   childStarted: false,
+  jobs: [],
   compacted: false,
   endReason: null,
   endError: null,
@@ -41,7 +42,12 @@ export const codec = loopCheckpointCodec(1, (value) => {
       call.args === undefined
     )
       throw new Error('Invalid ReAct tool call')
-  return value
+  if (
+    value.jobs !== undefined &&
+    (!Array.isArray(value.jobs) || value.jobs.some((id) => typeof id !== 'string'))
+  )
+    throw new Error('Invalid ReAct jobs')
+  return { ...value, jobs: value.jobs ?? [] }
 })
 
 /** A scheduler owned by the plugin. No default continuation/checkpoint/respond/drain edges. */
@@ -131,14 +137,19 @@ export function createReactLoop(config = {}) {
           }
           if (state.stage === 'child') {
             if (!ctx.children) throw new Error('Host has no child-agent service')
-            // Child creation has no invocation receipt. Refuse replay after a crash in this window.
-            if (state.childStarted) throw new Error('Child creation requires reconciliation after restart')
-            state.childStarted = true
+            const id = `react:${state.turnId}:child`
+            const receipt = await ctx.children.status(id)
+            if (state.childStarted && receipt.status === 'not-sent')
+              throw new Error('Legacy child creation requires reconciliation after restart')
             await save()
-            const handle = await ctx.children.start(config.childTask, {
-              signal,
-              ...(view.budget.perRequestCap === null ? {} : { budget: view.budget.perRequestCap }),
-            })
+            const handle =
+              receipt.status === 'not-sent'
+                ? await ctx.children.start(config.childTask, {
+                    invocationId: id,
+                    signal,
+                    ...(view.budget.perRequestCap === null ? {} : { budget: view.budget.perRequestCap }),
+                  })
+                : await ctx.children.adopt(id, signal)
             try {
               // Continuable providers remain idle after a turn; result() waits for lifecycle end.
               const answer = async () => {
@@ -195,6 +206,8 @@ export function createReactLoop(config = {}) {
             } else {
               // Omitted messages preserve Core's media handling, trust envelopes and compacted surface.
               const request = await ctx.prepareRequest({ invocationId: id })
+              const estimate = await ctx.estimateRequest(request)
+              await ctx.events.emit('x/react/estimate', { ...estimate })
               for await (const event of ctx.model.stream(request, signal)) response.push(event)
             }
             if (response.some((event) => event.type === 'error'))
@@ -251,6 +264,29 @@ export function createReactLoop(config = {}) {
               if (receipt.status === 'not-sent') pending.push(call)
             }
             await ctx.tools.batch(pending, signal)
+            state.jobs = []
+            for (const call of state.calls) {
+              try {
+                await ctx.jobs.status(call.invocationId)
+                state.jobs.push(call.invocationId)
+              } catch (error) {
+                if (error?.code !== 'E_RELATION') throw error
+              }
+            }
+            if (state.jobs.length) {
+              state.stage = 'jobs'
+              await save()
+              return running()
+            }
+            state.calls = []
+            state.round++
+            state.stage = 'model'
+            await save()
+            return running()
+          }
+          if (state.stage === 'jobs') {
+            for (const id of state.jobs) await ctx.jobs.join(id, signal)
+            state.jobs = []
             state.calls = []
             state.round++
             state.stage = 'model'

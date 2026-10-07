@@ -39,6 +39,8 @@ export type ChildAgentStartOptions = Readonly<{
   signal: AbortSignal
   /** Parent session that owns the child. */
   sessionKey: string
+  /** Stable parent-scoped creation identity supplied by Core. */
+  invocationId?: string
   cwd?: string
   model?: string
   isolation?: 'worktree' | 'shared'
@@ -83,6 +85,11 @@ export type ChildAgentSessionStartOptions = Omit<
  */
 export interface ChildAgentSessionService {
   start(task: string, options?: ChildAgentSessionStartOptions): Promise<ChildAgentHandle>
+  /** Optional provider recovery. Must reconnect this invocation without creating another child. */
+  adoptStart?(
+    task: string,
+    options: ChildAgentSessionStartOptions & { invocationId: string },
+  ): Promise<ChildAgentHandle>
   list(): Promise<readonly ChildAgentListing[]>
   sendMessage(id: string, text: string, signal?: AbortSignal): Promise<{ messageId: string }>
   interrupt(id: string): Promise<{ accepted: boolean }>
@@ -111,6 +118,8 @@ export interface ChildAgentProvider {
   readonly version: string
   readonly capabilities: ChildAgentCapabilities
   start(task: string, options: ChildAgentStartOptions): Promise<ChildAgentHandle>
+  /** Reconnect an existing parent-scoped invocation; refuse when its identity is absent. */
+  adopt?(task: string, options: ChildAgentStartOptions & { invocationId: string }): Promise<ChildAgentHandle>
   /** Direct children this provider still tracks for one parent session. */
   list?(sessionKey: string): Promise<readonly ChildAgentListing[]>
 }
@@ -161,6 +170,11 @@ export interface ChildAgentService extends ChildAgentRegistration {
     providerId: string | undefined,
     task: string,
     options: ChildAgentStartOptions,
+  ): Promise<ChildAgentHandle>
+  adopt?(
+    providerId: string | undefined,
+    task: string,
+    options: ChildAgentStartOptions & { invocationId: string },
   ): Promise<ChildAgentHandle>
   list(sessionKey: string): Promise<readonly ChildAgentListing[]>
 }

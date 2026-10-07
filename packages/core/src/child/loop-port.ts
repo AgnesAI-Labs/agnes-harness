@@ -41,44 +41,8 @@ export function bindChildAgentSession(
     return handle
   }
   const facade: ChildAgentSessionService = {
-    async start(task, options = {}) {
-      signal.throwIfAborted()
-      const budget =
-        options.budget === undefined
-          ? owner.budget
-          : owner.budget === undefined
-            ? options.budget
-            : Math.min(owner.budget, options.budget)
-      if (budget !== undefined && (!Number.isFinite(budget) || budget <= 0))
-        throw new Error('child budget must be positive and finite')
-      const toolFilter = narrowChildToolFilter(owner.toolFilter, options.toolFilter)
-      const pending = service
-        .start(options.providerId, task, {
-          ...(options.model === undefined ? {} : { model: options.model }),
-          ...(options.isolation === undefined ? {} : { isolation: options.isolation }),
-          ...(options.fork === undefined ? {} : { fork: options.fork }),
-          sessionKey: owner.sessionKey,
-          cwd: owner.cwd,
-          ...(owner.generation === undefined ? {} : { generation: owner.generation }),
-          signal: options.signal ? AbortSignal.any([signal, options.signal]) : signal,
-          ...(budget === undefined ? {} : { budget }),
-          ...(toolFilter === undefined ? {} : { toolFilter }),
-        })
-        .then(async (handle) => {
-          if (signal.aborted) {
-            await handle.dispose()
-            signal.throwIfAborted()
-          }
-          handles.set(handle.id, handle)
-          return handle
-        })
-      starting.add(pending)
-      try {
-        return await pending
-      } finally {
-        starting.delete(pending)
-      }
-    },
+    start: (task, options = {}) => start(task, options, false),
+    adoptStart: (task, options) => start(task, options, true),
     list: async () => (await service.list(owner.sessionKey)).filter((child) => handles.has(child.id)),
     sendMessage: (id, text, other) =>
       owned(id).sendMessage(text, other ? AbortSignal.any([signal, other]) : signal),
@@ -101,6 +65,54 @@ export function bindChildAgentSession(
       })()
       return disposal
     },
+  }
+  async function start(
+    task: string,
+    options: import('@agnes/extension-api').ChildAgentSessionStartOptions,
+    recovering: boolean,
+  ) {
+    signal.throwIfAborted()
+    const budget =
+      options.budget === undefined
+        ? owner.budget
+        : owner.budget === undefined
+          ? options.budget
+          : Math.min(owner.budget, options.budget)
+    if (budget !== undefined && (!Number.isFinite(budget) || budget <= 0))
+      throw new Error('child budget must be positive and finite')
+    const toolFilter = narrowChildToolFilter(owner.toolFilter, options.toolFilter)
+    const boundOptions = {
+      ...(options.invocationId === undefined ? {} : { invocationId: options.invocationId }),
+      ...(options.model === undefined ? {} : { model: options.model }),
+      ...(options.isolation === undefined ? {} : { isolation: options.isolation }),
+      ...(options.fork === undefined ? {} : { fork: options.fork }),
+      sessionKey: owner.sessionKey,
+      cwd: owner.cwd,
+      ...(owner.generation === undefined ? {} : { generation: owner.generation }),
+      signal: options.signal ? AbortSignal.any([signal, options.signal]) : signal,
+      ...(budget === undefined ? {} : { budget }),
+      ...(toolFilter === undefined ? {} : { toolFilter }),
+    }
+    if (recovering && (!service.adopt || !options.invocationId))
+      throw new Error('child provider does not support invocation adoption')
+    const pending = (
+      recovering
+        ? service.adopt!(options.providerId, task, { ...boundOptions, invocationId: options.invocationId! })
+        : service.start(options.providerId, task, boundOptions)
+    ).then(async (handle) => {
+      if (signal.aborted) {
+        await handle.dispose()
+        signal.throwIfAborted()
+      }
+      handles.set(handle.id, handle)
+      return handle
+    })
+    starting.add(pending)
+    try {
+      return await pending
+    } finally {
+      starting.delete(pending)
+    }
   }
   const onAbort = () => {
     void facade.dispose().catch(() => undefined)

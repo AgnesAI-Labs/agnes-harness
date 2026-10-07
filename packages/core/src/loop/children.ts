@@ -1,4 +1,4 @@
-import type { ChildAgentParentScope, ChildAgentSessionService } from '@agnes/extension-api'
+import type { ChildAgentHandle, ChildAgentParentScope, ChildAgentSessionService } from '@agnes/extension-api'
 import { MICROCREDITS_PER_CREDIT } from '../child/credits.js'
 import { hasChildControl } from '../child/store.js'
 import type { SessionImpl } from '../step/session.js'
@@ -37,16 +37,7 @@ export class LoopChildren {
         this.owned(async () => {
           const budget = await remainingBudget(s)
           this.lifetime.signal.throwIfAborted()
-          if (!this.bound) {
-            const parent: ChildAgentParentScope = {
-              sessionKey: s.key,
-              cwd: s.d.cwd,
-              signal: this.lifetime.signal,
-              ...(s.preset.treeBudgetCredits === null ? {} : { budget: s.preset.treeBudgetCredits }),
-              ...(s.d.loopChildToolFilter ? { toolFilter: s.d.loopChildToolFilter } : {}),
-            }
-            this.bound = s.d.loopChildren ?? s.d.bindLoopChildren?.(parent)
-          }
+          this.bind()
           const service = this.required()
           const cap =
             options.budget === undefined
@@ -59,18 +50,17 @@ export class LoopChildren {
             signal: options.signal ? AbortSignal.any([s.ac.signal, options.signal]) : s.ac.signal,
             ...(cap === undefined ? {} : { budget: cap }),
           })
-          // Preserve Core cancellation/admission for authors who use the returned handle directly.
-          return Object.freeze({
-            id: handle.id,
-            providerId: handle.providerId,
-            capabilities: handle.capabilities,
-            sendMessage: (text: string, signal: AbortSignal) =>
-              this.port.sendMessage(handle.id, text, signal),
-            interrupt: () => this.port.interrupt(handle.id),
-            result: () => this.port.result(handle.id),
-            events: () => this.port.events(handle.id),
-            dispose: () => this.port.dispose(handle.id),
+          return this.wrap(handle)
+        }),
+      adoptStart: (task, options) =>
+        this.owned(async () => {
+          this.bind()
+          if (!this.required().adoptStart) throw new CoreError('E_UNSUPPORTED', 'Child provider cannot adopt')
+          const handle = await this.required().adoptStart!(task, {
+            ...options,
+            signal: options.signal ? AbortSignal.any([s.ac.signal, options.signal]) : s.ac.signal,
           })
+          return this.wrap(handle)
         }),
       list: () => this.owned(async () => (this.bound ? this.bound.list() : [])),
       sendMessage: (id, text, signal) =>
@@ -86,6 +76,31 @@ export class LoopChildren {
       events: (id) => this.required().events(id),
       dispose: (id) => (id === undefined ? this.close() : this.required().dispose(id)),
     } satisfies ChildAgentSessionService)
+  }
+  /** Returned handles retain Core ownership, admission and cancellation on every operation. */
+  private wrap(handle: ChildAgentHandle): ChildAgentHandle {
+    return Object.freeze({
+      id: handle.id,
+      providerId: handle.providerId,
+      capabilities: handle.capabilities,
+      sendMessage: (text: string, signal: AbortSignal) => this.port.sendMessage(handle.id, text, signal),
+      interrupt: () => this.port.interrupt(handle.id),
+      result: () => this.port.result(handle.id),
+      events: () => this.port.events(handle.id),
+      dispose: () => this.port.dispose(handle.id),
+    })
+  }
+  private bind(): void {
+    if (this.bound) return
+    const s = this.s
+    const parent: ChildAgentParentScope = {
+      sessionKey: s.key,
+      cwd: s.d.cwd,
+      signal: this.lifetime.signal,
+      ...(s.preset.treeBudgetCredits === null ? {} : { budget: s.preset.treeBudgetCredits }),
+      ...(s.d.loopChildToolFilter ? { toolFilter: s.d.loopChildToolFilter } : {}),
+    }
+    this.bound = s.d.loopChildren ?? s.d.bindLoopChildren?.(parent)
   }
   private required(): ChildAgentSessionService {
     if (!this.bound) throw new CoreError('E_RELATION', 'No child is owned by this loop session')

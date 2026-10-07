@@ -28,6 +28,7 @@ export const IN_PROCESS_CHILD_CAPABILITIES: ChildAgentCapabilities = Object.free
 
 export type ResidentStart = {
   task: string
+  invocationId?: string
   cwd: string
   model?: string
   isolation?: 'worktree' | 'shared'
@@ -41,6 +42,7 @@ export type ResidentTurn = { text: string; status: ChildAgentStatus }
 /** The session-scoped backend today's in-process children already are. */
 export interface InProcessChildBackend {
   startResident(input: ResidentStart): Promise<{ id: string }>
+  adoptResident?(input: ResidentStart & { invocationId: string }): Promise<{ id: string }>
   startFork(input: ResidentStart): Promise<{ id: string; text: string }>
   sendMessage(id: string, text: string, signal: AbortSignal): Promise<{ messageId: string }>
   interrupt(id: string): Promise<{ accepted: boolean }>
@@ -63,91 +65,109 @@ export function inProcessChildAgentProvider(
     childBackend(sessionKey),
 ): ChildAgentProvider {
   const capabilities = IN_PROCESS_CHILD_CAPABILITIES
+  const connect = async (
+    task: string,
+    options: ChildAgentStartOptions,
+    recovering: boolean,
+  ): Promise<ChildAgentHandle> => {
+    if (!task) throw new Error('child task must not be empty')
+    options.signal.throwIfAborted()
+    assertChildAgentAllowed(options.sessionKey, {
+      providerId: IN_PROCESS_CHILD_PROVIDER_ID,
+      ...(options.model ? { model: options.model } : {}),
+    })
+    requireCapability(
+      !options.fork || capabilities.inheritsParentContext,
+      'provider cannot inherit parent context',
+    )
+    requireCapability(!options.model || capabilities.modelSelection, 'provider cannot select a child model')
+    requireCapability(
+      options.isolation !== 'worktree' || capabilities.worktree,
+      'provider cannot isolate a child worktree',
+    )
+    const backend = resolve(options.sessionKey)
+    if (!backend) throw new Error(`in-process child agents are not bound for session ${options.sessionKey}`)
+    const cwd = options.cwd
+    if (!cwd) throw new Error('in-process child start requires a working directory')
+    const input: ResidentStart = {
+      task,
+      ...(options.invocationId ? { invocationId: options.invocationId } : {}),
+      cwd,
+      ...(options.model ? { model: options.model } : {}),
+      ...(options.isolation ? { isolation: options.isolation } : {}),
+      ...(options.budget !== undefined ? { budget: options.budget } : {}),
+      ...(options.fork ? { fork: true } : {}),
+      ...(options.toolFilter ? { toolFilter: options.toolFilter } : {}),
+    }
+    const queue = createChildEventQueue()
+    const publish = (event: ChildAgentEvent) => queue.push(event)
+    if (recovering && (!backend.adoptResident || !options.invocationId))
+      throw new Error('in-process backend cannot adopt this invocation')
+    const started = recovering
+      ? await backend.adoptResident!({ ...input, invocationId: options.invocationId! })
+      : await backend.startResident(input)
+    publish({ type: 'status', status: 'running' })
+    let observedTurn = false
+    const stop = backend.onTurn(started.id, (event) => {
+      observedTurn = true
+      if (event.text) publish({ type: 'text', text: event.text })
+      publish({ type: 'status', status: event.status })
+      if (event.status === 'completed' || event.status === 'failed' || event.status === 'cancelled')
+        queue.settle({
+          status: event.status,
+          text: event.text,
+        })
+    })
+    if (recovering) {
+      const snapshot = (await backend.list()).find((child) => child.id === started.id)
+      if (!observedTurn && snapshot?.text) publish({ type: 'text', text: snapshot.text })
+      if (!observedTurn && snapshot) publish({ type: 'status', status: snapshot.status })
+    }
+    void backend.completion(started.id).then(
+      (value) => {
+        stop()
+        queue.settle(value)
+      },
+      (error: unknown) => {
+        stop()
+        queue.fail(error)
+      },
+    )
+    let disposal: Promise<void> | undefined
+    const dispose = () => {
+      disposal ??= (async () => {
+        options.signal.removeEventListener('abort', onAbort)
+        stop()
+        await backend.cancel(started.id)
+        queue.settle({ status: 'cancelled', text: '' })
+      })()
+      return disposal
+    }
+    const onAbort = () => {
+      void dispose().catch((error) => queue.fail(error))
+    }
+    options.signal.addEventListener('abort', onAbort, { once: true })
+    if (options.signal.aborted) {
+      await dispose()
+      options.signal.throwIfAborted()
+    }
+    return {
+      id: started.id,
+      providerId: IN_PROCESS_CHILD_PROVIDER_ID,
+      capabilities,
+      events: () => queue.events(),
+      sendMessage: (text, signal) => backend.sendMessage(started.id, text, signal),
+      interrupt: () => backend.interrupt(started.id),
+      result: () => queue.result,
+      dispose,
+    }
+  }
   return {
     id: IN_PROCESS_CHILD_PROVIDER_ID,
     version: '1.0.0',
     capabilities,
     list: async (sessionKey) => (await resolve(sessionKey)?.list()) ?? [],
-    async start(task, options: ChildAgentStartOptions): Promise<ChildAgentHandle> {
-      if (!task) throw new Error('child task must not be empty')
-      options.signal.throwIfAborted()
-      assertChildAgentAllowed(options.sessionKey, {
-        providerId: IN_PROCESS_CHILD_PROVIDER_ID,
-        ...(options.model ? { model: options.model } : {}),
-      })
-      requireCapability(
-        !options.fork || capabilities.inheritsParentContext,
-        'provider cannot inherit parent context',
-      )
-      requireCapability(!options.model || capabilities.modelSelection, 'provider cannot select a child model')
-      requireCapability(
-        options.isolation !== 'worktree' || capabilities.worktree,
-        'provider cannot isolate a child worktree',
-      )
-      const backend = resolve(options.sessionKey)
-      if (!backend) throw new Error(`in-process child agents are not bound for session ${options.sessionKey}`)
-      const cwd = options.cwd
-      if (!cwd) throw new Error('in-process child start requires a working directory')
-      const input: ResidentStart = {
-        task,
-        cwd,
-        ...(options.model ? { model: options.model } : {}),
-        ...(options.isolation ? { isolation: options.isolation } : {}),
-        ...(options.budget !== undefined ? { budget: options.budget } : {}),
-        ...(options.fork ? { fork: true } : {}),
-        ...(options.toolFilter ? { toolFilter: options.toolFilter } : {}),
-      }
-      const queue = createChildEventQueue()
-      const publish = (event: ChildAgentEvent) => queue.push(event)
-      const started = await backend.startResident(input)
-      publish({ type: 'status', status: 'running' })
-      const stop = backend.onTurn(started.id, (event) => {
-        if (event.text) publish({ type: 'text', text: event.text })
-        publish({ type: 'status', status: event.status })
-        if (event.status === 'completed' || event.status === 'failed' || event.status === 'cancelled')
-          queue.settle({
-            status: event.status,
-            text: event.text,
-          })
-      })
-      void backend.completion(started.id).then(
-        (value) => {
-          stop()
-          queue.settle(value)
-        },
-        (error: unknown) => {
-          stop()
-          queue.fail(error)
-        },
-      )
-      let disposal: Promise<void> | undefined
-      const dispose = () => {
-        disposal ??= (async () => {
-          options.signal.removeEventListener('abort', onAbort)
-          stop()
-          await backend.cancel(started.id)
-          queue.settle({ status: 'cancelled', text: '' })
-        })()
-        return disposal
-      }
-      const onAbort = () => {
-        void dispose().catch((error) => queue.fail(error))
-      }
-      options.signal.addEventListener('abort', onAbort, { once: true })
-      if (options.signal.aborted) {
-        await dispose()
-        options.signal.throwIfAborted()
-      }
-      return {
-        id: started.id,
-        providerId: IN_PROCESS_CHILD_PROVIDER_ID,
-        capabilities,
-        events: () => queue.events(),
-        sendMessage: (text, signal) => backend.sendMessage(started.id, text, signal),
-        interrupt: () => backend.interrupt(started.id),
-        result: () => queue.result,
-        dispose,
-      }
-    },
+    start: (task, options) => connect(task, options, false),
+    adopt: (task, options) => connect(task, options, true),
   }
 }

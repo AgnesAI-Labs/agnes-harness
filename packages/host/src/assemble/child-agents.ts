@@ -153,10 +153,27 @@ export class ChildAgentRegistry extends Service implements ChildAgentService {
     return bindChildAgentSession(this, parent)
   }
 
-  async start(
+  adopt(
+    providerId: string | undefined,
+    task: string,
+    options: ChildAgentStartOptions & { invocationId: string },
+  ): Promise<ChildAgentHandle> {
+    return this.startOrAdopt(providerId, task, options, true)
+  }
+
+  start(
     providerId: string | undefined,
     task: string,
     options: ChildAgentStartOptions,
+  ): Promise<ChildAgentHandle> {
+    return this.startOrAdopt(providerId, task, options, false)
+  }
+
+  private async startOrAdopt(
+    providerId: string | undefined,
+    task: string,
+    options: ChildAgentStartOptions,
+    recovering: boolean,
   ): Promise<ChildAgentHandle> {
     const provider = this.registry.resolve(providerId ?? this.selection ?? IN_PROCESS_CHILD_PROVIDER_ID)
     providerId = provider.id
@@ -171,13 +188,21 @@ export class ChildAgentRegistry extends Service implements ChildAgentService {
       ...(options.model ? { model: options.model } : {}),
     })
     refuseMissingCapability(record.provider, options)
+    if (recovering && (!provider.adopt || !options.invocationId))
+      throw new HostError('E_API_RANGE', 'child provider cannot adopt this invocation')
     const startSignal = AbortSignal.any([options.signal, record.lifetime.signal])
     const starting = Promise.resolve()
       .then(() =>
-        record.provider.start(task, {
-          ...options,
-          signal: startSignal,
-        }),
+        recovering
+          ? record.provider.adopt!(task, {
+              ...options,
+              invocationId: options.invocationId!,
+              signal: startSignal,
+            })
+          : record.provider.start(task, {
+              ...options,
+              signal: startSignal,
+            }),
       )
       .then(
         async (raw) => {

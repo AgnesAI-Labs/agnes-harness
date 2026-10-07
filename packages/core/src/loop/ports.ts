@@ -22,10 +22,14 @@ import { admitInferenceRequest, prepareInferenceRequest } from '../step/inferenc
 import { withPhase } from '../step/op-state.js'
 import type { SessionImpl } from '../step/session.js'
 import { CoreError } from '../types.js'
+import { loopChildStarts } from './child-starts.js'
+import { estimateLoopRequest } from './estimates.js'
 import { dispatchLoopEvent } from './events.js'
 import { LoopInvocations } from './invocations.js'
+import { loopJobs } from './jobs.js'
 import { publicOutcome } from './outcome.js'
 import { freezeView, loopTurnView } from './turn-view.js'
+import { loopWait } from './wait.js'
 
 const cleanup = new WeakMap<LoopContext, () => void>()
 export function disposeLoopContext(ctx: LoopContext): void {
@@ -59,14 +63,7 @@ export async function createLoopContext(s: SessionImpl, restoreCheckpoint = fals
       checkpoint = data.checkpoint
     }
   }
-  const waiters = new Set<() => void>()
-  const wake = () => {
-    for (const resolve of waiters) resolve()
-  }
-  const stopObserving = s.onAppended((events) => {
-    if (events.some((event) => ['inbox', 'approval/decided', 'artifact/job'].includes(event.type))) wake()
-  })
-  const stopFault = s.d.log.onFault(wake)
+  const waiting = await loopWait(s, restoreCheckpoint)
 
   function requireOp() {
     const op = s.op()
@@ -386,6 +383,18 @@ export async function createLoopContext(s: SessionImpl, restoreCheckpoint = fals
     sessionKey: s.key,
     lane: s.lane,
     prepareRequest,
+    async estimateRequest(request) {
+      const done = s.beginLoopOperation()
+      try {
+        const binding = prepared.get(request)
+        if (!binding || binding.turnId !== requireOp().meta.turn)
+          throw new CoreError('E_REQUEST_FROZEN', 'Estimate requires a request prepared by this turn')
+        return await estimateLoopRequest(s, request)
+      } finally {
+        done()
+      }
+    },
+    jobs: loopJobs(s, invocations),
     effects: { status: (id) => invocations.status(id) },
     turn: {
       view: () => loopTurnView(s),
@@ -610,7 +619,7 @@ export async function createLoopContext(s: SessionImpl, restoreCheckpoint = fals
       },
     },
     wait: {
-      wake,
+      wake: waiting.wake,
       async delay(ms, signal) {
         signal.throwIfAborted()
         await s.sleep(ms)
@@ -620,22 +629,9 @@ export async function createLoopContext(s: SessionImpl, restoreCheckpoint = fals
         signal.throwIfAborted()
         return publicOutcome(await s.runDeferred())
       },
-      park(signal) {
-        signal = AbortSignal.any([signal, s.ac.signal])
-        if (signal.aborted || ((s.latest('inbox') as Inbox | undefined)?.items.length ?? 0) > 0)
-          return Promise.resolve()
-        return new Promise<void>((resolve) => {
-          const done = () => {
-            waiters.delete(done)
-            signal.removeEventListener('abort', done)
-            resolve()
-          }
-          waiters.add(done)
-          signal.addEventListener('abort', done, { once: true })
-        })
-      },
+      park: waiting.park,
     },
-    ...(children ? { children } : {}),
+    ...(children ? { children: loopChildStarts(s, children) } : {}),
     compaction: {
       run: async (signal: AbortSignal) => {
         signal.throwIfAborted()
@@ -652,9 +648,7 @@ export async function createLoopContext(s: SessionImpl, restoreCheckpoint = fals
     },
   }
   cleanup.set(ctx, () => {
-    wake()
-    stopObserving()
-    stopFault()
+    waiting.dispose()
   })
   return ctx
 }

@@ -106,7 +106,8 @@ export async function deferredResultProvenance(
     callSeq?: Seq
   },
 ): Promise<{ trust: 'trusted' | 'untrusted'; callSeq?: Seq }> {
-  const fromSeq = s.state.openStep.get(s.lane)?.startSeq ?? 1
+  // Independent loops may join after the original step; the durable marker still owns provenance.
+  const fromSeq = Math.min(s.state.openStep.get(s.lane)?.startSeq ?? 1, pending.callSeq ?? Infinity)
   const toSeq = s.lastSeq
   let markerCallSeq: Seq | undefined
   const pages = scanPages((q) => s.d.log.scan(q), {

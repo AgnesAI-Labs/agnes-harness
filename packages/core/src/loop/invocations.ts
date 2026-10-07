@@ -24,6 +24,7 @@ export class LoopInvocations {
     const rows = await scanAll((query) => this.s.d.log.scan(query), {
       type: EVENT,
       lane: this.s.lane,
+      fromSeq: (this.s.d.log.parent?.boundarySeq ?? 0) + 1,
       toSeq: this.s.lastSeq,
     })
     return rows
@@ -46,6 +47,7 @@ export class LoopInvocations {
     const links = await scanAll((query) => this.s.d.log.scan(query), {
       type: 'x/core/loop-effect',
       lane: this.s.lane,
+      fromSeq: (this.s.d.log.parent?.boundarySeq ?? 0) + 1,
       toSeq: this.s.lastSeq,
     })
     const link = links
@@ -56,6 +58,7 @@ export class LoopInvocations {
       const results = await scanAll((query) => this.s.d.log.scan(query), {
         type: 'tool/result',
         lane: this.s.lane,
+        fromSeq: (this.s.d.log.parent?.boundarySeq ?? 0) + 1,
         toSeq: this.s.lastSeq,
       })
       const result = results
@@ -76,6 +79,21 @@ export class LoopInvocations {
           }
       }
     }
+    if (toolUseId) {
+      const markers = await scanAll((q) => this.s.d.log.scan(q), {
+        type: 'x/core/deferred-job',
+        lane: this.s.lane,
+        fromSeq: (this.s.d.log.parent?.boundarySeq ?? 0) + 1,
+        toSeq: this.s.lastSeq,
+      })
+      const marker = markers.find((event) => (event.data as { toolUseId: string }).toolUseId === toolUseId)
+      if (marker?.origin === 'system' && marker.trust === 'trusted') {
+        const jobId = (marker.data as { jobId: string }).jobId
+        const result = { content: [], deferred: { jobId } }
+        return { status: 'responded', invocationId: id, checkpoint: row.checkpoint, result }
+      }
+    }
+
     return { status: 'may-have-sent', invocationId: id, checkpoint: row.checkpoint }
   }
   async toolUseId(id: string): Promise<string | undefined> {
@@ -83,6 +101,7 @@ export class LoopInvocations {
     const links = await scanAll((query) => this.s.d.log.scan(query), {
       type: 'x/core/loop-effect',
       lane: this.s.lane,
+      fromSeq: (this.s.d.log.parent?.boundarySeq ?? 0) + 1,
       toSeq: this.s.lastSeq,
     })
     return (
@@ -111,6 +130,7 @@ export class LoopInvocations {
     const requests = await scanAll((query) => this.s.d.log.scan(query), {
       type: 'approval/asked',
       lane: this.s.lane,
+      fromSeq: (this.s.d.log.parent?.boundarySeq ?? 0) + 1,
       toSeq: this.s.lastSeq,
     })
     return requests.some((row) => {
