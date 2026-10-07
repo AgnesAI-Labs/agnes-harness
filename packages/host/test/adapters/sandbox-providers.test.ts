@@ -117,6 +117,11 @@ describe('sandbox providers', () => {
 
   it('runs a local command and stops it when the signal aborts', async () => {
     const exec = createExec({ detached: false })
+    const preaborted = new AbortController()
+    preaborted.abort(new Error('Stopped before create'))
+    expect(() => createLocalSandboxProvider(exec, process.platform).create({}, preaborted.signal)).toThrow(
+      'Stopped before create',
+    )
     const instance = await createLocalSandboxProvider(exec, process.platform, { ownProcesses: true }).create(
       {},
     )

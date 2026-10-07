@@ -19,9 +19,8 @@ import type {
   ChildAgentStartOptions,
   ProviderSelection,
 } from '@agnes/extension-api'
-import { defineProviderKind } from '@agnes/extension-api'
+import { defineProviderKind, ProviderError } from '@agnes/extension-api'
 import { normalizePluginExport, type RowOriginLookup } from '@agnes/plugin-runtime/host'
-import { HostError } from '../errors.js'
 import type { PackageModule } from './packages.js'
 import { installProviderRegistry, type ProviderRegistry, providerSource } from './provider-registry.js'
 
@@ -76,7 +75,7 @@ export class ChildAgentRegistry extends Service implements ChildAgentService {
                 provider.capabilities[flag] !== undefined && typeof provider.capabilities[flag] !== 'boolean',
             )
           )
-            throw new HostError('E_API_RANGE', 'invalid child agent registration')
+            throw new TypeError('invalid child agent registration')
         },
         capabilities: (provider) =>
           ([...CAPABILITIES, 'budget', 'toolFilter'] as const).filter((flag) => provider.capabilities[flag]),
@@ -86,7 +85,7 @@ export class ChildAgentRegistry extends Service implements ChildAgentService {
   }
 
   register(provider: ChildAgentProvider, sourcePackage?: string): () => Promise<void> {
-    this.registry.definition.validate(provider)
+    this.registry.validate(sourcePackage ?? '@agnes/base', provider)
     const record = {
       provider,
       entry: Object.freeze({
@@ -179,9 +178,13 @@ export class ChildAgentRegistry extends Service implements ChildAgentService {
     providerId = provider.id
     const record = this.records.get(provider)!
     if (record.lifetime.signal.aborted)
-      throw new HostError('E_DEP_MISSING', `child agent provider was unloaded: ${providerId}`)
+      throw childProviderError(provider, 'E_PROVIDER_UNAVAILABLE', 'child agent provider was unloaded')
     if (!options?.signal || !options.sessionKey)
-      throw new HostError('E_API_RANGE', 'child agent start requires a session and a signal')
+      throw childProviderError(
+        provider,
+        'E_PROVIDER_INVALID',
+        'child agent start requires a session and a signal',
+      )
     options.signal.throwIfAborted()
     assertChildAgentAllowed(options.sessionKey, {
       providerId,
@@ -189,11 +192,16 @@ export class ChildAgentRegistry extends Service implements ChildAgentService {
     })
     refuseMissingCapability(record.provider, options)
     if (recovering && (!provider.adopt || !options.invocationId))
-      throw new HostError('E_API_RANGE', 'child provider cannot adopt this invocation')
+      throw childProviderError(
+        provider,
+        'E_PROVIDER_INCOMPATIBLE',
+        'child provider cannot adopt this invocation',
+      )
     const startSignal = AbortSignal.any([options.signal, record.lifetime.signal])
     const starting = Promise.resolve()
-      .then(() =>
-        recovering
+      .then(() => {
+        startSignal.throwIfAborted()
+        return recovering
           ? record.provider.adopt!(task, {
               ...options,
               invocationId: options.invocationId!,
@@ -202,12 +210,14 @@ export class ChildAgentRegistry extends Service implements ChildAgentService {
           : record.provider.start(task, {
               ...options,
               signal: startSignal,
-            }),
-      )
+            })
+      })
       .then(
         async (raw) => {
-          if (!raw || typeof raw.dispose !== 'function' || typeof raw.sendMessage !== 'function')
-            throw new HostError('E_API_RANGE', 'invalid child agent handle')
+          if (!raw || typeof raw.dispose !== 'function' || typeof raw.sendMessage !== 'function') {
+            if (typeof raw?.dispose === 'function') await raw.dispose()
+            throw childProviderError(provider, 'E_PROVIDER_INVALID', 'invalid child agent handle')
+          }
           let disposal: Promise<void> | undefined
           const handle: ChildAgentHandle = {
             id: raw.id,
@@ -248,7 +258,7 @@ export class ChildAgentRegistry extends Service implements ChildAgentService {
     }
     if (!handle) {
       options.signal.throwIfAborted()
-      throw new HostError('E_DEP_MISSING', `child agent provider was unloaded: ${providerId}`)
+      throw childProviderError(provider, 'E_PROVIDER_UNAVAILABLE', 'child agent provider was unloaded')
     }
     this.registry.select(scope, providerId)
     return handle
@@ -271,27 +281,43 @@ export class ChildAgentRegistry extends Service implements ChildAgentService {
   }
 }
 
+function childProviderError(
+  provider: ChildAgentProvider,
+  code: 'E_PROVIDER_INVALID' | 'E_PROVIDER_INCOMPATIBLE' | 'E_PROVIDER_UNAVAILABLE',
+  message: string,
+): ProviderError {
+  return new ProviderError(code, message, { kind: 'child-agent', provider: provider.id, operation: 'start' })
+}
+
 function refuseMissingCapability(provider: ChildAgentProvider, options: ChildAgentStartOptions): void {
   if (options.budget !== undefined && !provider.capabilities.budget)
-    throw new HostError(
-      'E_CAPABILITY_UNDECLARED',
+    throw childProviderError(
+      provider,
+      'E_PROVIDER_INCOMPATIBLE',
       `child provider ${provider.id} cannot enforce a child budget`,
     )
   if (options.toolFilter !== undefined && !provider.capabilities.toolFilter)
-    throw new HostError('E_CAPABILITY_UNDECLARED', `child provider ${provider.id} cannot filter child tools`)
+    throw childProviderError(
+      provider,
+      'E_PROVIDER_INCOMPATIBLE',
+      `child provider ${provider.id} cannot filter child tools`,
+    )
   if (options.fork && !provider.capabilities.inheritsParentContext)
-    throw new HostError(
-      'E_CAPABILITY_UNDECLARED',
+    throw childProviderError(
+      provider,
+      'E_PROVIDER_INCOMPATIBLE',
       `child provider ${provider.id} cannot inherit parent context`,
     )
   if (options.model && !provider.capabilities.modelSelection)
-    throw new HostError(
-      'E_CAPABILITY_UNDECLARED',
+    throw childProviderError(
+      provider,
+      'E_PROVIDER_INCOMPATIBLE',
       `child provider ${provider.id} cannot select a child model`,
     )
   if (options.isolation === 'worktree' && !provider.capabilities.worktree)
-    throw new HostError(
-      'E_CAPABILITY_UNDECLARED',
+    throw childProviderError(
+      provider,
+      'E_PROVIDER_INCOMPATIBLE',
       `child provider ${provider.id} cannot isolate a child worktree`,
     )
 }

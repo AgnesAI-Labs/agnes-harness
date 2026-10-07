@@ -67,7 +67,7 @@ it('registers providers, refuses missing capabilities, and disposes handles on u
   expect(() => registry.register(provider('demo', limited).api)).toThrow('duplicate child-agent provider')
   await expect(
     registry.start('demo', 'task', { signal: signal(), sessionKey: 's', cwd: '/tmp', fork: true }),
-  ).rejects.toThrow('cannot inherit parent context')
+  ).rejects.toMatchObject({ code: 'E_PROVIDER_INCOMPATIBLE', kind: 'child-agent', provider: 'demo' })
   expect(demo.state.starts).toBe(0)
   const handle = await registry.start('demo', 'task', { signal: signal(), sessionKey: 's', cwd: '/tmp' })
   expect(handle.id).toBe('demo-1')

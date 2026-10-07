@@ -1,5 +1,9 @@
-import { defaultToolPolicy } from '@agnes/core'
-import { registerToolPolicyPlugin, type ToolPolicy, type ToolPolicyPluginContext } from '@agnes/extension-api'
+import {
+  defaultToolPolicy,
+  registerToolPolicyPlugin,
+  type ToolPolicy,
+  type ToolPolicyPluginContext,
+} from '@agnes/extension-api'
 import { decidePlanMode } from '../../plan-mode/src/policy.js'
 import { sandboxToolPolicies } from '../../sandbox/src/tool-policies.js'
 

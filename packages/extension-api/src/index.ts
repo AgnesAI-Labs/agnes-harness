@@ -18,6 +18,7 @@ export type {
   CompactionOutput,
   CompactionReplacement,
 } from './compaction-engine.js'
+export { createCompactionThreshold } from './compaction-engine.js'
 export * from './errors.js'
 export * from './extension.js'
 export { HOOK_TABLE } from './generated/hook-table.js'

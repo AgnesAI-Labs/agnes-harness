@@ -47,3 +47,32 @@ export function registerToolPolicyPlugin(
 ): void {
   ctx.effect(() => ctx.toolPolicies.register(sourcePackage, policy))
 }
+
+/** Experimental default risk decision; authorization and durable approval stay in the host. */
+export const defaultToolPolicy: ToolPolicy = {
+  id: 'default',
+  version: '1.0.0',
+  decide(input, signal) {
+    signal.throwIfAborted()
+    const management = [
+      'subagent_fork',
+      'subagent_spawn',
+      'subagent_collect',
+      'subagent_cancel',
+      'subagent_list',
+      'subagent_send_message',
+      'subagent_interrupt',
+    ].includes(input.call.name)
+    const ask =
+      !management &&
+      !input.fullAccess &&
+      input.approvalMode !== 'off' &&
+      (input.policy.requiresApproval === 'always' ||
+        (input.policy.requiresApproval === 'destructive' && input.policy.isDestructive) ||
+        (input.tainted && !input.policy.isReadOnly))
+    return {
+      effect: ask ? 'ask' : 'allow',
+      reason: ask ? 'Tool risk requires approval' : 'Default tool policy',
+    }
+  },
+}

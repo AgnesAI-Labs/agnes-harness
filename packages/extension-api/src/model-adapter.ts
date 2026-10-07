@@ -46,7 +46,21 @@ export interface ModelAdapterInstance {
   dispose?(): void | Promise<void>
 }
 
+export type ModelAdapterCredential = {
+  apiKey?: string
+  headers?: Record<string, string | null>
+  baseUrl?: string
+}
+
 export type ModelAdapterConfig = Readonly<{
+  /** Instance identity and provider identity, independent of the wire-format registration id. */
+  id?: string
+  providerId?: string
+  /** Live host-owned credentials. Secrets never belong in catalog metadata or checkpoints. */
+  credentials?: {
+    resolve(route: string, signal: AbortSignal): Promise<string | ModelAdapterCredential>
+    recoverRejected?(route: string, rejected: ModelAdapterCredential, signal: AbortSignal): Promise<boolean>
+  }
   /** Route.api selects the registration id; Route.compat carries adapter-specific options. */
   routes: readonly (RouteDecl & { models: ModelRecord[]; keyless?: boolean })[]
 }>

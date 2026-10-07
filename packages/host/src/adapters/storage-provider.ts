@@ -17,6 +17,7 @@ import {
   type PersistenceProvider,
   type PersistenceScanQuery,
   type PersistenceSessionStore,
+  ProviderError,
 } from '@agnes/extension-api'
 import { ProviderLifetime } from '../assemble/provider-lifetime.js'
 import { retainProcessStore } from './storage-live.js'
@@ -25,7 +26,6 @@ import { sqlitePersistenceProvider } from './storage-sqlite-provider.js'
 export { sqlitePersistenceProvider } from './storage-sqlite-provider.js'
 
 import { ProviderRegistry } from '../assemble/provider-registry.js'
-import { HostError } from '../errors.js'
 import type { CrashReclaimStore, TableStore } from './storage-sqlite.js'
 
 export interface HostPersistence extends StorageAdapter, ChildControlStore {
@@ -149,10 +149,15 @@ function requireCapabilities(
   )
     missing.push('sqlite')
   if (missing.length)
-    throw new HostError(
-      'E_SEAM_INIT',
+    throw new ProviderError(
+      'E_PROVIDER_INCOMPATIBLE',
       `persistence provider ${provider.id} is missing required capabilities: ${missing.join(', ')}`,
-      { detail: { provider: provider.id, missing, effect: PERSISTENCE_EFFECT } },
+      {
+        kind: 'persistence',
+        provider: provider.id,
+        operation: 'open',
+        hint: `Required capabilities: ${missing.join(', ')}`,
+      },
     )
 }
 
@@ -234,7 +239,11 @@ function bridge(
     crashReclaim: store.reclaim,
     tables: (owner: string) => {
       if (!store.sqlite)
-        throw new HostError('E_SEAM_INIT', `persistence provider ${provider.id} does not support SQL tables`)
+        throw new ProviderError(
+          'E_PROVIDER_INCOMPATIBLE',
+          `persistence provider ${provider.id} does not support SQL tables`,
+          { kind: 'persistence', provider: provider.id, operation: 'tables' },
+        )
       return store.sqlite.tables(owner)
     },
     open: (key: string, claim: { writerRunId: string; ttlMs: number }) => call(() => store.open(key, claim)),
@@ -264,8 +273,11 @@ function accept(provider: PersistenceProvider, source: string): PersistenceProvi
   try {
     return definePersistenceProvider(provider)
   } catch (error) {
-    throw new HostError('E_SEAM_INIT', error instanceof Error ? error.message : String(error), {
-      detail: { provider: source, effect: PERSISTENCE_EFFECT },
+    throw new ProviderError('E_PROVIDER_INVALID', error instanceof Error ? error.message : String(error), {
+      kind: 'persistence',
+      provider: provider.id ?? source,
+      operation: 'register',
+      cause: error,
     })
   }
 }
@@ -278,20 +290,32 @@ class PersistenceProviderRegistry extends ProviderRegistry<PersistenceProvider> 
     owner?: Context,
     cleanup?: () => void | Promise<void>,
   ): () => Promise<void> {
-    // Startup stores belong to openAdapters, which outlives ordinary plugin generations.
-    if (!owner) return super.register(source, provider, owner, cleanup)
     this.validate(source, provider)
     const lifetime = new ProviderLifetime('persistence', provider.id)
     const wrapped: PersistenceProvider = {
       ...provider,
       open: (options) =>
         lifetime.run(async (signal) => {
-          const store = await provider.open(options)
+          const store = await provider.open({ ...options, signal })
           const instance = new ProviderLifetime('persistence', provider.id)
-          const close = lifetime.own(() => instance.close(() => store.close()))
-          if (signal.aborted) {
+          const close = lifetime.own(() =>
+            instance.close(() => {
+              if (typeof store?.close === 'function') return store.close()
+            }),
+          )
+          const valid =
+            store &&
+            ['open', 'commit', 'renew', 'release', 'scan', 'registers', 'close'].every(
+              (key) => typeof store[key as keyof PersistenceSessionStore] === 'function',
+            )
+          if (!valid || signal.aborted) {
             await close()
             signal.throwIfAborted()
+            throw new ProviderError('E_PROVIDER_INVALID', 'Persistence provider returned an invalid store', {
+              kind: 'persistence',
+              provider: provider.id,
+              operation: 'open',
+            })
           }
           const asynchronous = new Set<PropertyKey>([
             'open',
@@ -319,7 +343,7 @@ class PersistenceProviderRegistry extends ProviderRegistry<PersistenceProvider> 
               }
             },
           })
-        }),
+        }, options.signal),
     }
     return super.register(source, wrapped, owner, () => lifetime.close(cleanup))
   }
@@ -350,8 +374,10 @@ export function createPersistenceProviderRegistry(
   const add = (provider: PersistenceProvider, source: string): void => {
     const checked = accept(provider, source)
     if (checked.id === DEFAULT_PERSISTENCE_PROVIDER_ID)
-      throw new HostError('E_SEAM_INIT', 'the sqlite persistence provider is built in', {
-        detail: { provider: checked.id, effect: PERSISTENCE_EFFECT },
+      throw new ProviderError('E_PROVIDER_DUPLICATE', 'the sqlite persistence provider is built in', {
+        kind: 'persistence',
+        provider: checked.id,
+        operation: 'register',
       })
     registry.register(source, checked)
   }
@@ -365,26 +391,41 @@ export function createPersistenceProviderRegistry(
 /** Opens the provider selected at process start. The built-in id is `sqlite`. */
 export async function openConfiguredPersistence(args: {
   dataDir: string
+  signal?: AbortSignal
   providerId?: string
   modules?: ReadonlyMap<string, { persistenceProvider?: PersistenceProvider }>
   providers?: readonly PersistenceProvider[]
 }): Promise<HostPersistence> {
+  args.signal?.throwIfAborted()
   const providerId = args.providerId ?? DEFAULT_PERSISTENCE_PROVIDER_ID
   if (!PROVIDER_ID.test(providerId))
-    throw new HostError('E_SEAM_INIT', 'persistence.provider id is invalid', {
-      detail: { provider: providerId, effect: PERSISTENCE_EFFECT },
+    throw new ProviderError('E_PROVIDER_INVALID', 'persistence.provider id is invalid', {
+      kind: 'persistence',
+      provider: providerId,
+      operation: 'select',
     })
   const registry = createPersistenceProviderRegistry(args.modules, args.providers)
   const provider = registry.select('process', providerId)
   const storage = await retainProcessStore(args.dataDir, provider, async () => {
-    const store = await provider.open({ dataDir: args.dataDir })
+    const store = await provider.open({
+      dataDir: args.dataDir,
+      ...(args.signal ? { signal: args.signal } : {}),
+    })
     try {
       return bridge(store, provider)
     } catch (error) {
-      await store.close().catch(() => {})
+      try {
+        await store.close()
+      } catch (cleanupError) {
+        throw new AggregateError([error, cleanupError], 'Persistence creation cleanup failed')
+      }
       throw error
     }
   })
+  if (args.signal?.aborted) {
+    await storage.close()
+    args.signal.throwIfAborted()
+  }
   catalogs.set(storage, registry)
   return storage
 }

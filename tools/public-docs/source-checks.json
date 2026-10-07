@@ -246,5 +246,20 @@
       "'integrity'"
     ],
     "excludes": ["as SqliteStorage"]
+  },
+  {
+    "path": "packages/base/extensions/compaction/src/engine.ts",
+    "includes": ["createCompactionThreshold", "from '@agnes/extension-api'"],
+    "excludes": ["from '@agnes/core'"]
+  },
+  {
+    "path": "packages/base/extensions/approval-policy/src/tool-policy.ts",
+    "includes": ["defaultToolPolicy", "from '@agnes/extension-api'"],
+    "excludes": ["from '@agnes/core'"]
+  },
+  {
+    "path": "packages/host/src/assemble/model-adapters.ts",
+    "includes": ["await record.adapter.create(config, signal)"],
+    "excludes": ["builtin()", "builtin?:"]
   }
 ]

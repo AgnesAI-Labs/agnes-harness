@@ -4,7 +4,7 @@
 
 [插件架构](architecture-plugins.zh-CN.md) · [作者指南](../extend/README.zh-CN.md) · [版本规则](../maintainers/versioning.zh-CN.md)
 
-本文是首个**产品 v0.1** 标签的公开合同清单与就绪评估，描述源码版本 `cbb0eefa99e0218e5c6fac6e87ab50c9a7f71eae`；文档修改不改变运行行为。Extension API 保持 **1.4.0**。本候选不代表已发行，也不代表 provider 可以无条件冻结：下文未关闭项仍需验收。
+本文是首个**产品 v0.1** 标签的公开合同清单与就绪评估，描述本分支候选，包括构造生命周期加固与默认 provider 特例移除。此前仅文档清单对应源码 `cbb0eefa99e0218e5c6fac6e87ab50c9a7f71eae`。Extension API 保持 **1.4.0**。本候选不代表已发行，也不代表 provider 可以无条件冻结：下文未关闭项仍需验收。
 
 ## 稳定性与兼容政策
 
@@ -56,7 +56,7 @@ stable 工具上下文包含 `tools.invoke/list`、`artifacts.put/get/submitJob/
 
 ## Loop 操作与恢复
 
-`LoopFactory` 包含 `id`、`version`、`capabilities`、`codec`、可选 `checkpointMode: 'driver' | 'ledger'`，以及**同步** `create(ctx)` / `resume(ctx, checkpoint)`。Driver 实现 `step(signal)`、`cancel()`、`dispose()`、`checkpoint()`。创建没有独立 abort signal：I/O 应在带 signal 的操作中完成，不应启动未受管异步构造。旧账本解析为 `agnes.default@1.0.0`；缺失精确 pin 或不支持 codec 时拒绝执行。无版本选择必须唯一解析到一个 Loop 版本。
+`LoopFactory` 包含 `id`、`version`、`capabilities`、`codec`、可选 `checkpointMode: 'driver' | 'ledger'`，以及同步或异步 `create(ctx, signal?)` / `resume(ctx, checkpoint, signal?)`。Driver 实现 `step(signal)`、`cancel()`、`dispose()`、`checkpoint()`。Core/Host 等待构造并传入协作式 signal；现有单参数同步 factory 仍兼容，调用者须 await 结果。Kernel 关闭时停止创建新会话，排空在途会话创建后才关闭 storage。旧账本解析为 `agnes.default@1.0.0`；缺失精确 pin 或不支持 codec 时拒绝执行。无版本选择必须唯一解析到一个 Loop 版本。
 
 高层可恢复操作包括 `turn.continuation/checkpoint/finishCancelled/finishFailure`、`model.respond`、`tools.drain`、`compaction.run`、`wait.poll`。Driver 选择下一条边；这些操作维护 Core 所有的账本 continuation。`@agnes/loop-default` 使用同一组公开端口，采用 `checkpointMode: 'ledger'`；无状态 codec 接受历史 version-1 checkpoint，不暴露私有程序计数器形状。
 
@@ -66,7 +66,7 @@ stable 工具上下文包含 `tools.invoke/list`、`artifacts.put/get/submitJob/
 
 Core 经公开效果路径实施 step/credit 准入、principal 授权、审批绑定与媒体/请求校验。Batch 按输入顺序返回；仅声明 concurrency-safe 的调用可在 runtime 策略下重叠。低层模型响应不会自动成为 assistant 历史行：用 `events.assistant(message, checkpoint)` 原子保存两者。`events.emit(type, data)` 仍是宽泛账本 append 端口，保持 experimental，不能替代请求派生或授权。
 
-恢复应使用显式、稳定的 `invocationId`。状态为 `not-sent`、`may-have-sent`、`responded`（也可能是错误结果）。同一身份用于不同操作被拒绝；已有响应可以无 redispatch 返回。外部 dispatch 前写入不确定性 fence。`checkpoints.write(checkpoint, {invocationIds})` 记录关联，不是外部效果的原子提交。工具响应已提交、Loop 回执未写时崩溃，可恢复原响应；模型没有耐久完整回执时崩溃，仍是不确定。没有外部效果 exactly-once 或受管网络 send fence 保证。
+恢复应使用显式、稳定的 `invocationId`。状态为 `not-sent`、`may-have-sent`、`responded`（也可能是错误结果）。同一身份用于不同操作被拒绝；已有响应可以无 redispatch 返回。外部 dispatch 前写入不确定性 fence。`checkpoints.write(checkpoint, {invocationIds})` 记录关联，不是外部效果的原子提交。工具响应已提交、Loop 回执未写时崩溃，可恢复原响应；模型没有耐久完整回执时崩溃，仍是不确定。没有外部效果 exactly-once 或受管网络 send fence 保证。 **稳定 invocation 身份、三态 effect status 与 checkpoint association 已被接受为 v0.1 足够合同，整体 reconciliation 仍标为 experimental。** 更强的跨 provider 对账或原子外部效果事务不是 v0.1 要求。
 
 Child start status/adopt 只重连原父级创建。不支持 adoption 或原身份缺失时拒绝用旧身份重新 start。Job status/join 要求原始耐久 deferred-job marker；join 原子发布该工具结果，不推进 scheduler edge。取消 join 不会取消外部 job。`await wait.wake()` 提交 lane-local、可合并唤醒；取消不消费，checkpoint 确认防止重启后再次投递。`wait.delay` 是协作式延迟，不是耐久 timer schedule。
 
@@ -81,21 +81,32 @@ Dispatch 按操作/attempt 触发，不保证跨重试或崩溃全局一次。�
 | Kind | 必需操作、拒绝与清理规则 |
 | --- | --- |
 | `loop` | 上述 factory/driver/codec 与公开端口；恢复前验证持久化精确身份与 codec |
-| `model-adapter` | `create(config, signal?)` 可 await；实例必需 `routes/models/stream`，可选 `complete/bindCredential/count/refresh/probe/dispose`；注册 `cleanup` 独立。带凭据的社区 adapter 必须实现 `bindCredential`，在路由边界调用。Stream options 包含 signal/session key/tool names/timeouts、可选 `retry: false`/`reportSent`；adapter 不签发 Core sent stamp。AI 包装并验证终结事件；成功 Core stream 需匹配 sent 与 done 记录。Count 可以 unavailable。内置凭据 supplier 仍有专用构造兼容路径。 |
+| `model-adapter` | `create(config, signal?)` 可 await；实例必需 `routes/models/stream`，可选 `complete/bindCredential/count/refresh/probe/dispose`；注册 `cleanup` 独立。带凭据的社区 adapter 必须实现 `bindCredential`，在路由边界调用。Stream options 包含 signal/session key/tool names/timeouts、可选 `retry: false`/`reportSent`；adapter 不签发 Core sent stamp。AI 包装并验证终结事件；成功 Core stream 需匹配 sent 与 done 记录。Count 可以 unavailable。官方 API-key/订阅 adapter 使用相同公共 factory。Config 可带 `id/providerId` 与实时 `credentials.resolve/recoverRejected`，返回字符串或 `ModelAdapterCredential {apiKey?, headers?, baseUrl?}`；null header 移除继承 header。凭据在请求时解析，OAuth 拒绝可触发一次失效/刷新。`bindCredential` 保留 API-key 路由绑定。凭据端口不能进入 catalog/checkpoint。 |
 | `compaction` | 可异步 `create(signal?)`；实例 `shouldCompact`、`compact(input, {signal, model})`，返回 null、plan 或 replacement。输入含可见对话、pinned nodes、system context、预算；`model.summarize` 为 pair-closed range 安全派生请求并记 usage。Core 验证 replacement/range 后修改 surface，不授予任意账本写权限。实例 `dispose`、注册 `cleanup` 可 await。 |
 | `tool-runtime` | 可异步 `create({maxParallel}, signal?)`；`execute/batch` 仅通过 `execution.dispatch` 调度。Call `id` 是 Core runtime 身份，与作者恢复 `invocationId` 不同。不安全/未知调用独占；安全调用遵守并行上限；batch 保留输入顺序；cancel/dispose 排空已开始调用；注册 `cleanup` 可 await。 |
 | `tool-policy` | `decide(input, signal)` 返回 `allow/ask/deny` 与 reason；拒绝/失败不能扩大 principal 权限、preset 策略或 sandbox 约束。Policy `dispose` 先于注册 `cleanup`，两者可 await。权限声明与 provider 功能能力是不同概念。 |
-| `persistence` | 可异步 `open({dataDir, clock?})`，随后 `open/commit/renew/release/scan/registers/close`。Commit 检查 writer lease/CAS，原子分配 seq、物化 registers/integrity 与可选 op state。Scan 必须有界：页上限 500；超大完整读取拒绝，不静默截断。Metadata transaction 是同步原子 callback，不接受 Promise。独立端口为 metadata/child-control/reclaim/integrity、可选 SQLite dialect/tables/schema。完整 Host 要求 ledger/metadata/child-control/reclaim/integrity 及 `createChild`；SQL 可选，缺失时表调用被拒绝。Provider 必须保证 reopen 耐久性、正确 lease/reclaim；不提供操作 abort signal 或跨 store 迁移。 |
-| `sandbox` | 可异步 `create({workspaceRoot?, options?})`，可选实测 `probe`；实例 `exec/capabilities/dispose`、可选 `openProcess`。Host 每调用传 workspace/digest、read/write allow/deny、network mode/hosts、required enforcement，deny 优先。Local 与第三方都使用选定实例；缺 policy/能力/平台/enforcement 时 spawn 前拒绝；结果报告真实 enforcement。Backend id 启动期固定，实例按 workspace/options 复用。构造没有 abort signal。Process `close` 杀进程树并等待退出；PTY/JSON bridge 须明确声明支持。 |
+| `persistence` | 可异步 `open({dataDir, clock?, signal?})`，随后 `open/commit/renew/release/scan/registers/close`。Commit 检查 writer lease/CAS，原子分配 seq、物化 registers/integrity 与可选 op state。Scan 必须有界：页上限 500；超大完整读取拒绝，不静默截断。Metadata transaction 是同步原子 callback，不接受 Promise。独立端口为 metadata/child-control/reclaim/integrity、可选 SQLite dialect/tables/schema。完整 Host 要求 ledger/metadata/child-control/reclaim/integrity 及 `createChild`；SQL 可选，缺失时表调用被拒绝。Provider 必须保证 reopen 耐久性、正确 lease/reclaim；构造带协作式 signal；SQLite 与 JSONL 在同步打开前检查。Store 操作及同步文件系统/SQL 无中途取消，卸载须等待完成后 close。不提供跨 store 迁移。 |
+| `sandbox` | 可异步 `create({workspaceRoot?, options?}, signal?)`，可选实测 `probe`；实例 `exec/capabilities/dispose`、可选 `openProcess`。Host 每调用传 workspace/digest、read/write allow/deny、network mode/hosts、required enforcement，deny 优先。Local 与第三方都使用选定实例；缺 policy/能力/平台/enforcement 时 spawn 前拒绝；结果报告真实 enforcement。Backend id 启动期固定，实例按 workspace/options 复用。Host 将 owner/caller signal 传给 probe/create。同一工作区/options 共享构造；后续等待者取消不会取消现有共享实例。Process `close` 杀进程树并等待退出；PTY/JSON bridge 须明确声明支持。 |
 | `child-agent` | `start(task, options)`、可选 `adopt/list`；handle 的 `events/sendMessage/interrupt/result/dispose`。Follow-up 回执表示已接收，不是已回答。父级 facade 固定 session/cwd/generation，实施 provider/model allowlists、tool deny/allow、credit ceiling；子级 options 只能收窄。空 allowlist 全拒绝；不支持能力则拒绝。父 abort 请求取消；facade/unregister 排空 creating children 与 handles，保留清理失败并幂等。默认 `in-process`，可选 ACP 默认不加载；旧 subagent 操作保留显式 in-process 路径。 |
 
-Provider 创建、实例与调用归注册 owner：先停止准入，再在支持时 abort，join 已准入工作，dispose 实例，最后清理注册资源；释放依赖前 await unregister。Session close 请求取消，生产者排空后才关闭 hooks、ledger、workspace lease；保留/聚合清理失败。取消是协作请求：provider 不结束可能使卸载持续等待。Persistence/sandbox 构造与同步 Loop factory 不满足统一的带 signal 异步构造合同。
+Provider 创建、实例与调用归注册 owner：先停止准入，再在支持时 abort，join 已准入工作，dispose 实例，最后清理注册资源；释放依赖前 await unregister。Session close 请求取消，生产者排空后才关闭 hooks、ledger、workspace lease；保留/聚合清理失败。取消是协作请求：provider 不结束可能使卸载持续等待。Loop/sandbox/persistence 构造均可异步并接收 signal。Host 在接受结果前拥有资源：取消后迟到或无效结果须 dispose，factory 失败不发布实例，unregister 等待构造完成后 cleanup。进程 persistence 按数据目录/provider 身份共享，首个打开者拥有构造 signal；此构造取消使所有等待者失败并允许重试。后续获取者取消只释放自身引用。不可中断 store I/O 会排空，不会被丢弃。
 
 ## 注册、选择与重启 scope
 
 `ctx.providers.register(kind, sourcePackage, provider)` / `resolve(kind, selection)` 经 `KindMap` 推断内置类型；自定义 kind 必须使用服务安装的精确 `defineProviderKind<T>()` token。同名但不同身份 token 被拒绝。经验证的 plugin owner 决定来源身份，冲突声明拒绝。不可变目录含 kind/id/version/source/capabilities/scope/restartRequired/active/selectedFor，不含 factory/凭据。Active 表示配置选中，不表示活动会话数。具名 service facade 继续存在。
 
-`ProviderError` codes 为 `E_PROVIDER_DUPLICATE`、`E_PROVIDER_UNKNOWN`、`E_PROVIDER_INVALID`、`E_PROVIDER_INCOMPATIBLE`、`E_PROVIDER_UNAVAILABLE`；字段含 `kind`、可选 `provider`、`operation`、`retryable`（默认 false）、可选 `hint` 与原始 `cause`。按 code 分支，不匹配文本。Host/package/Core facade 仍可能转换失败：如 Loop resolution 为 `E_LOOP_MISSING`、包准入为 `E_API_RANGE`、sandbox 校验仍有 Host errors；统一 provider 错误规范仍未关闭。
+`ProviderError` codes 为 `E_PROVIDER_DUPLICATE/E_PROVIDER_UNKNOWN/E_PROVIDER_INVALID/E_PROVIDER_INCOMPATIBLE/E_PROVIDER_UNAVAILABLE`，字段为 `kind`、可选 `provider`、`operation`、默认 false 的 `retryable`、可选 `hint` 和原始 `cause`。应按 code 分支，不依赖文本。八种具名 Host facade 与独立 Core Loop/tool registry 对注册、解析、选择、能力不兼容和无效构造结果统一使用这些码；provider 自己抛出的操作错误和 AbortSignal reason 保持原样，不自动包装为准入错误。
+
+已有消费边界保留兼容码：
+
+| 边界 | 保留的 code / 含义 |
+| --- | --- |
+| Core/Host 打开会话缺少精确 Loop | `E_LOOP_MISSING`；直接 `loops.resolve` 为 `E_PROVIDER_UNKNOWN` |
+| Sandbox 执行/已释放进程实例/enforcement 拒绝 | `SANDBOX_UNAVAILABLE`；registry 选择/构造使用 ProviderError |
+| Persistence 账本/lease/CAS/恢复及已关闭本地 Host store handle | `E_WRITER_LEASE/E_CLOSED/E_STORAGE_FAULT/E_CAS/E_BUDGET/E_SCAN_UNBOUNDED/E_SCAN_TRUNCATED/E_FORMAT`，bridge 保留 CoreError 识别 |
+| Profile/package 准入、已验证来源声明与 principal 授权 | 相应配置/安全边界保留 `E_PROFILE_FRAGMENT_KEY/E_API_RANGE/E_DEP_MISSING/E_EXT_LOAD/E_AUTH`；不是 provider registry 错误别名 |
+
+v0.1 不指定这些兼容码的删除日期。Provider errors 保持 experimental；本次收尾不重命名配置或授权失败。
 
 Canonical provider config 位于启用包的 `config`：`<kind>: {provider, version?}`。现有根 `loop: {id, version}`、`compaction: {engine}`、`persistence/sandbox: {provider}`、模型 `provider.adapters`、preset `tools.runtime`、`approval.policy` 继续支持。显式顶层选择覆盖包 config；冲突包选择、缺身份/版本、Loop 版本歧义拒绝，不 fallback。Composition patch 有下文单独的类型字段；包 canonical blocks 不等于任意新增 root keys。其他当前 provider kind 即使版本不同也拒绝重复 id。
 
@@ -160,11 +171,11 @@ Bundle 父先于子、每次解析只应用一次；循环/未知 id 拒绝；�
 
 `@agnes/plugin-runtime` 导出 `defineProvider`、`defineLoop`、`defineModelAdapter`、`defineToolRuntime`、`defineToolPolicy`、`defineCompactionEngine`、`defineSandboxProvider`、`definePersistenceProvider`、`defineChildAgentProvider` 及 tool/plugin helpers。早期定义校验保留类型推断；Host 仍重新执行准入。
 
-`@agnes/extension-api/testkit` 导出 `defineFixture`、`serviceFixture`、`projectionFixture`、`NEGATIVE_ACTIONS`、`TRANSPORT_CONTRACT_CASES`、`runProviderConformance` 与八个具名 runner：`loop/modelAdapter/compaction/persistence/sandbox/toolRuntime/toolPolicy/childAgentConformance`。Probe 必须从隔离真实 Host 捕获注册入口，打开真实 service/session 路径，报告 operation ready/cancel/drain；loop/persistence 必需 cold resume。Persistence 显式报告不支持取消。这些 runner 不自动验证全部 crash/upgrade/platform 路径。
+`@agnes/extension-api/testkit` 导出 `defineFixture`、`serviceFixture`、`projectionFixture`、`NEGATIVE_ACTIONS`、`TRANSPORT_CONTRACT_CASES`、`runProviderConformance` 与八个具名 runner：`loop/modelAdapter/compaction/persistence/sandbox/toolRuntime/toolPolicy/childAgentConformance`。Probe 必须从隔离真实 Host 捕获注册入口，打开真实 service/session 路径，报告 operation ready/cancel/drain；loop/persistence 必需 cold resume。Persistence store-I/O probe 显式报告不支持取消；构造取消另由 Host 生命周期回归覆盖。这些 runner 不自动验证全部 crash/upgrade/platform 路径。
 
 `@agnes/extension-api/testkit/persistence-contract` 独立导出 Vitest suites：`persistenceContract`、`persistenceHostContract`、`persistenceSqliteContract`，使用隔离目录 factory。General testkit 不需导入 Vitest。`@agnes/plugin-runtime/testkit` 重导出 provider runners，并提供 `driveLoop`、`scriptedModel`、`runModelAdapter`、`createPluginTestHost`、`createVerifiedTestRoot`。`driveLoop` 共用 stop rule，可接真实 context；默认 fake context 明确拒绝受控 ledger 操作，不能证明 budget/授权/cold durability/drain 等价。
 
-该版本直接运行时出口比较得到 **61 个根出口**，与 `api-surface.json` 精确一致；API 常量、包版本、changelog heading 均为 `1.4.0`。General testkit 的 14 个运行时出口与上述列表一致。快照保持不变。下表覆盖全部根运行时出口，前述源码清单覆盖相应公开类型。
+该版本直接运行时出口比较得到 **63 个根出口**，与 `api-surface.json` 精确一致；API 常量、包版本、changelog heading 均为 `1.4.0`。General testkit 的 14 个运行时出口与上述列表一致。快照新增 experimental 公共默认算法 `createCompactionThreshold` 与 `defaultToolPolicy`，Core/Base 共用；此未发行候选不升版本。下表覆盖全部根运行时出口，前述源码清单覆盖相应公开类型。
 
 | 运行时出口组 | 名称 |
 | --- | --- |
@@ -174,6 +185,7 @@ Bundle 父先于子、每次解析只应用一次；循环/未知 id 拒绝；�
 | 工具校验/策略 | `defineTool`, `checkToolDef`, `checkToolMeta`, `checkResolvedToolCallPolicy`, `resolveToolCallPolicy`, `TOOL_META_KEYS`, `RESOLVED_TOOL_CALL_POLICY_KEYS`, `TOOL_NAME_PATTERN`, `TOOL_POLICY_VERSION_PATTERN`, `APPROVAL_SCOPE_PATTERN`, `MAX_APPROVAL_SCOPES`, `TOOL_DESCRIPTION_MAX_LENGTH`, `TOOL_PARAMETERS_MAX_BYTES`, `TOOL_PARAMETERS_MAX_DEPTH`, `DEFAULT_OUTPUT_MAX_BYTES`, `MIN_OUTPUT_MAX_BYTES`, `MAX_OUTPUT_MAX_BYTES` |
 | 服务/投影/资源 | `checkServiceDef`, `unavailableProjections`, `RESOURCE_KINDS` |
 | Loop/provider 注册 | `DEFAULT_LOOP`, `LOOP_EVENTS`, `loopCheckpointCodec`, `loopShouldStop`, `registerLoopPlugin`, `registerToolRuntimePlugin`, `registerToolPolicyPlugin`, `defineProviderKind`, `PROVIDER_LIFECYCLE_SCOPES`, `providerRestartRequired` |
+| 公共默认算法 | `createCompactionThreshold`、`defaultToolPolicy`（experimental，不依赖 Core） |
 | 持久化/sandbox | `DEFAULT_PERSISTENCE_PROVIDER_ID`, `PERSISTENCE_EFFECT`, `PERSISTENCE_SCAN_PAGE_MAX`, `definePersistenceProvider`, `persistenceRegisterKey`, `isPersistenceTombstone`, `LOCAL_SANDBOX_PROVIDER_ID`, `sandboxUnavailable` |
 
 以下公开暴露仍需审阅，本次保留而不删除：
@@ -192,28 +204,28 @@ Bundle 父先于子、每次解析只应用一次；循环/未知 id 拒绝；�
 | # | 要求 | 状态 | 当前证据与剩余义务 |
 | --- | --- | --- | --- |
 | 1 | 独立身份、静态准入、canonical/旧配置选择与拒绝 | done | [Manifest parser](../../packages/package-manager/src/plugin-manifest.ts)、[range parser](../../packages/extension-api/src/api-range.ts)、[provider selection](../../packages/host/src/assemble/provider-selection.ts)、[Loop selection tests](../../packages/host/test/loop-selection.test.ts)；已说明 embedding-only 省略 |
-| 2 | 类型化注册、owner、等待卸载、不可变目录与错误 | partial | [KindMap/token](../../packages/extension-api/src/provider-kind.ts)、[registry](../../packages/host/src/assemble/provider-registry.ts)、[测试](../../packages/host/test/assemble/provider-registry.test.ts)；共享错误已独立，但具名/Host/package/Core 路径仍转换或使用历史错误 |
+| 2 | 类型化注册、owner、等待卸载、不可变目录与错误 | done | [KindMap/token](../../packages/extension-api/src/provider-kind.ts)、[registry](../../packages/host/src/assemble/provider-registry.ts)、[测试](../../packages/host/test/assemble/provider-registry.test.ts)；具名 registry 错误已统一；前文明确列出消费边界兼容码 |
 | 3 | 可用高低层 Loop views/input/preparation/typed output | done | [公开端口](../../packages/extension-api/src/loop.ts)、[装配端口](../../packages/core/src/loop/ports.ts)、[独立 ReAct tests](../../packages/core/test/react-loop.test.ts)、[Loop tests](../../packages/core/test/loop-plugin.test.ts)；可读请求 stamps 与宽泛 emit 保留为 experimental 暴露 |
 | 4 | 显式 outcome、run/finish/reentry/park/wake 与事件规则 | done | [Stop rule](../../packages/extension-api/src/loop.ts)、[waterfall](../../packages/core/src/loop/events.ts)、[耐久 wake](../../packages/core/src/loop/wait.ts)、[testkit 共用 stop rule](../../packages/plugin-runtime/testkit/loop.ts)；上述按操作通知规则不含 crash exactly-once |
-| 5 | 可恢复效果身份/checkpoint 与所有 Loop 的 budget/auth/media 边界 | partial | [Invocation receipts](../../packages/core/src/loop/invocations.ts)、[assistant/checkpoint commits](../../packages/core/src/loop/ports.ts)、[crash/budget/wake/child/job cases](../../packages/core/test/react-loop.test.ts)；有关联与不确定重放拒绝，仍无通用原子 checkpoint/外部效果提交或跨 provider 对账 |
-| 6 | 所有构造/实例/调用归属、取消/排空、scope/重启 | partial | [Provider lifetime](../../packages/host/src/assemble/provider-lifetime.ts)、[session close](../../packages/core/src/step/session.ts)、[owned conformance](../../packages/host/test/assemble/provider-owned-conformance.test.ts)；Loop 同步构造，sandbox/persistence 构造无 abort signal，persistence I/O 不支持取消 |
+| 5 | 可恢复效果身份/checkpoint 与所有 Loop 的 budget/auth/media 边界 | done | [Invocation receipts](../../packages/core/src/loop/invocations.ts)、[assistant/checkpoint commits](../../packages/core/src/loop/ports.ts)、[crash/budget/wake/child/job cases](../../packages/core/test/react-loop.test.ts)；身份/status/association 保守合同已接受为 v0.1 experimental；外部 exactly-once 排除在保证外 |
+| 6 | 所有构造/实例/调用归属、取消/排空、scope/重启 | partial | [Provider lifetime](../../packages/host/src/assemble/provider-lifetime.ts)、[session close](../../packages/core/src/step/session.ts)、[owned conformance](../../packages/host/test/assemble/provider-owned-conformance.test.ts)；带 signal 异步构造已共用 owner/drain；[迟到结果回归](../../packages/host/test/assemble/provider-registry.test.ts)、[Kernel 构造关闭](../../packages/core/test/loop-plugin.test.ts)覆盖取消、卸载、无效/失败构造。真实 provider 挂起/进程关闭资格与不可取消 store I/O 仍需验收 |
 | 7 | Code pins/live resources、共享/撤权、模型广播、cold retention、迁移/发布 | done | [Generation runtime](../../packages/host/src/runtime-generation-host.ts)、[live Skill tests](../../packages/host/test/runtime-generation-host.test.ts)、[pool](../../packages/worker-runtime/src/mcp-connection-pool.ts)、[composition publication](../../packages/host/src/profile/composition-runtime.ts)、[测试](../../packages/host/test/profile/composition-runtime.test.ts)；明确独立收敛与重试，不宣称原子回滚 |
-| 8 | 完整八种操作边界 | partial | 前述八种源码合同；[persistence bridge](../../packages/host/src/adapters/storage-provider.ts)要求五个非 SQL 能力并保留可选 SQL；[sandbox binding](../../packages/host/src/adapters/sandbox-providers.ts)传每调用策略。内置 adapter 构造仍特殊，后端 durability/enforcement 资格与功能专属 conformance 仍未关闭 |
-| 9 | 默认包使用作者端口、八种真实 Host suites、等价与发行验收 | partial | [Default Loop](../../packages/loop-default/src/index.ts)仅导入 extension API，无特权 driver WeakMap；[公开 conformance](../../packages/extension-api/testkit/provider-conformance.ts)、[Host suites](../../packages/host/test/assemble/provider-conformance.test.ts)、[owned suites](../../packages/host/test/assemble/provider-owned-conformance.test.ts)。默认[压缩](../../packages/base/extensions/compaction/src/engine.ts)/[policy](../../packages/base/extensions/approval-policy/src/tool-policy.ts)仍导入 Core 算法；scripted testkit 不等于完整生产语义，本次未执行全量验收 |
+| 8 | 完整八种操作边界 | partial | 前述八种源码合同；[persistence bridge](../../packages/host/src/adapters/storage-provider.ts)要求五个非 SQL 能力并保留可选 SQL；[sandbox binding](../../packages/host/src/adapters/sandbox-providers.ts)传每调用策略。官方 adapter 已走公开 create/credential 端口；后端 durability/enforcement 资格与功能专属 conformance 仍未关闭 |
+| 9 | 默认包使用作者端口、八种真实 Host suites、等价与发行验收 | partial | [Default Loop](../../packages/loop-default/src/index.ts)仅导入 extension API，无特权 driver WeakMap；[公开 conformance](../../packages/extension-api/testkit/provider-conformance.ts)、[Host suites](../../packages/host/test/assemble/provider-conformance.test.ts)、[owned suites](../../packages/host/test/assemble/provider-owned-conformance.test.ts)。默认[压缩](../../packages/base/extensions/compaction/src/engine.ts)/[policy](../../packages/base/extensions/approval-policy/src/tool-policy.ts)仅使用公开合同/算法；scripted testkit 不等于完整生产语义，全量验收仍是发行门槛 |
 
 ### 剩余未关闭项
 
-1. 在承诺 provider errors 普遍稳定前，统一或明确规范具名 facade/Host/package 的错误转换（第 2 项）。
-2. 决定已记录的保守 receipt/association 模型是否足够支撑 v0.1，或新增更强的公开 checkpoint/effect reconciliation；外部 exactly-once 不在当前保证中（第 5 项）。
-3. 解决统一可取消异步构造要求与现有 Loop/sandbox/persistence 签名差异；验证真实 provider 的挂起、清理失败、进程关闭（第 6 项）。
-4. 移除或正式保留内置 model 构造特例、默认压缩/policy 对 Core 算法的依赖；验证非 SQL 完整 Host 耐久性/崩溃恢复与真实 sandbox enforcement，不只使用 fake/memory adapter（第 8–9 项）。
-5. 执行最终真实 Host/default 对 independent Loop 验收：拒绝、cancel/drain、冷重启、双 generation、MCP/Skills/model live 更新、publication failure/retry。存在 conformance 与源码测试不证明该候选已通过（第 9 项）。
-6. 发布产品冻结前批准发行包/平台矩阵、类型/签名兼容基线、双语迁移说明及干净环境仓外产物安装；运行时快照检查不能单独关闭该门（第 9 项）。
+本候选已关闭：具名 provider 错误统一并明确消费边界兼容码；Loop/sandbox/persistence 可取消异步构造与迟到清理；官方 adapter create/credential 等价；默认 compaction/policy 不依赖 Core。Receipt/association 模型已接受为 v0.1 experimental。
+
+1. 对各部署后端验收不结束的真实 provider 工作、cleanup 失败与进程关闭。取消仍为协作式，不可中断 store I/O 必须排空（第 6 项）。
+2. 验收非 SQL 完整 Host 耐久性/崩溃恢复、真实 sandbox enforcement，以及 fake/memory 之外的功能专属 conformance（第 8–9 项）。
+3. 执行最终真实 Host/default 对 independent Loop 验收：拒绝、cancel/drain、冷重启、双 generation、MCP/Skills/model live 更新、publication failure/retry。定向回归/conformance 不等于完整发行验收（第 9 项）。
+4. 发布前批准发行包/平台矩阵、类型/签名兼容基线、双语迁移说明及干净环境仓外产物安装；运行时快照不能单独关闭该门（第 9 项）。
 
 ## 已知限制与验证范围
 
-已记录的本地开发为 macOS/Node 24；本次文档任务使用 Node **24.20.0**、pnpm **10.34.5**。Linux/Windows 需独立 native build、sandbox/process/restart/installation 验收。Seatbelt/bubblewrap/Windows 能力报告须在部署环境实测，provider 声明不证明 enforcement。远程工作区不能选择另一个本地 sandbox provider。不承诺搬迁运行中 process、已打开 file/store，或隔离任意同进程插件。
+已记录的本地开发为 macOS/Node 24；本次收尾使用 Node **24.20.0**、pnpm **10.34.5**。Linux/Windows 需独立 native build、sandbox/process/restart/installation 验收。Seatbelt/bubblewrap/Windows 能力报告须在部署环境实测，provider 声明不证明 enforcement。远程工作区不能选择另一个本地 sandbox provider。不承诺搬迁运行中 process、已打开 file/store，或隔离任意同进程插件。
 
-Persistence 已将可选 SQL 与必需 Host 能力分开。[JSONL 示例](../../examples/persistence/README.md)实现完整 Host 端口，并有[合同测试](../../examples/persistence/test/contract.test.ts)与[进程恢复案例](../../examples/persistence/test/recovery.e2e.test.ts)，本次未执行。其内存 journal index 面向小型本地部署，无压缩/日志整理，也未验收网络文件系统/Windows 耐久性。本任务不证明完整生产 non-SQL backend 已具备资格。Strict managed model egress、credential provenance、send-fence 保证不属于本冻结。MCP prompts/resource-image mapping/session OAuth、可配 Skill roots/slash 兼容仍遵循 [MCP/Skills 支持矩阵](../guide/mcp-skills-support.zh-CN.md)。通用端口与示例不证明外部 engine、SSH/PTY、设备或 workflow 产品支持。MHS/设备集成仍未验证。
+Persistence 已将可选 SQL 与必需 Host 能力分开。[JSONL 示例](../../examples/persistence/README.md)实现完整 Host 端口，并有[合同测试](../../examples/persistence/test/contract.test.ts)与[进程恢复案例](../../examples/persistence/test/recovery.e2e.test.ts)；定向检查未执行 heavy 进程恢复案例。其内存 journal index 面向小型本地部署，无压缩/日志整理，也未验收网络文件系统/Windows 耐久性。本任务不证明完整生产 non-SQL backend 已具备资格。Strict managed model egress、credential provenance、send-fence 保证不属于本冻结。MCP prompts/resource-image mapping/session OAuth、可配 Skill roots/slash 兼容仍遵循 [MCP/Skills 支持矩阵](../guide/mcp-skills-support.zh-CN.md)。通用端口与示例不证明外部 engine、SSH/PTY、设备或 workflow 产品支持。MHS/设备集成仍未验证。
 
-源码仍为 developer preview。本次文档任务**未验证**包发布、公共 registry 启动、发行产物第三方依赖解析、真实远程模型凭据、完整 daemon/browser 验收、平台隔离、heavy crash/restart suites。现有源码测试仅证明预期覆盖。本改动执行文档验证、定向 lint、直接运行时快照比较；最终发行 owner 必须记录该候选 revision 的更广泛实测结果。本次不升版本、不创建 tag、不发布包。
+源码仍为 developer preview。本次收尾**未完成资格验证**包发布、公共 registry 启动、发行产物第三方依赖解析、真实远程模型凭据、完整 daemon/browser 验收、平台隔离、heavy crash/restart suites。现有源码测试仅证明预期覆盖。交付报告记录包 typecheck、定向生命周期/默认算法/凭据测试、必需 related tests、guards、文档验证与定向 lint；最终发行 owner 必须记录该候选 revision 的更广泛实测结果。本次不升版本、不创建 tag、不发布包。

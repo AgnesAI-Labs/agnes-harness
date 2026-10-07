@@ -80,3 +80,30 @@ export interface CompactionEngineRegistration {
 export type CompactionEnginePluginContext = {
   compactionEngines: CompactionEngineRegistration
 }
+
+/** Experimental default threshold: at most one marginal warm-cache deferral per instance.
+ * Session-local state; restart can forget one grace period, never suppress overflow compaction. */
+export function createCompactionThreshold(
+  invalid: (message: string) => Error = (message) =>
+    Object.assign(new Error(message), { code: 'E_ENVELOPE' }),
+): (budget: CompactionBudget) => boolean {
+  let deferredOnce = false
+  return (budget) => {
+    if (!Number.isFinite(budget.reserveTokens) || budget.reserveTokens < 0)
+      throw invalid('compaction reserveTokens must be nonnegative')
+    const over = budget.contextTokens - (budget.contextWindow - budget.reserveTokens)
+    if (over <= 0) {
+      deferredOnce = false
+      return false
+    }
+    const cache = budget.cache
+    const total = cache ? cache.cacheRead + cache.input : 0
+    const warm = !!cache && total > 0 && cache.cacheRead / total >= 0.5
+    if (over <= budget.reserveTokens * 0.5 && warm && !deferredOnce) {
+      deferredOnce = true
+      return false
+    }
+    deferredOnce = false
+    return true
+  }
+}

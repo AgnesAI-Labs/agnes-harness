@@ -4,43 +4,28 @@ import type {
   ToolRuntimeProvider,
   ToolRuntimeRegistryPort,
 } from '@agnes/extension-api'
+import { defaultToolPolicy, ProviderError } from '@agnes/extension-api'
 import { defaultToolRuntimeProvider } from './tool-runtime.js'
 
-/** Also used by standalone Kernels; Base registers the same default through its plugin row. */
-export const defaultToolPolicy: ToolPolicy = {
-  id: 'default',
-  version: '1.0.0',
-  decide(input, signal) {
-    signal.throwIfAborted()
-    const management = [
-      'subagent_fork',
-      'subagent_spawn',
-      'subagent_collect',
-      'subagent_cancel',
-      'subagent_list',
-      'subagent_send_message',
-      'subagent_interrupt',
-    ].includes(input.call.name)
-    const ask =
-      !management &&
-      !input.fullAccess &&
-      input.approvalMode !== 'off' &&
-      (input.policy.requiresApproval === 'always' ||
-        (input.policy.requiresApproval === 'destructive' && input.policy.isDestructive) ||
-        (input.tainted && !input.policy.isReadOnly))
-    return {
-      effect: ask ? 'ask' : 'allow',
-      reason: ask ? 'Tool risk requires approval' : 'Default tool policy',
-    }
-  },
-}
+export { defaultToolPolicy } from '@agnes/extension-api'
 
 /** Small registries shared by Cordis services and directly embedded Kernels. */
 class Providers<T extends { id: string; version: string }> {
+  constructor(private readonly kind: 'tool-runtime' | 'tool-policy') {}
   private readonly entries = new Map<string, { provider: T; sourcePackage: string }>()
   register(sourcePackage: string, provider: T): () => Promise<void> {
-    if (!provider.id?.trim() || !provider.version?.trim() || this.entries.has(provider.id))
-      throw new Error(`Provider ${provider.id} is invalid or already registered`)
+    if (!provider.id?.trim() || !provider.version?.trim())
+      throw new ProviderError('E_PROVIDER_INVALID', `Provider ${provider.id} is invalid`, {
+        kind: this.kind,
+        provider: provider.id,
+        operation: 'register',
+      })
+    if (this.entries.has(provider.id))
+      throw new ProviderError('E_PROVIDER_DUPLICATE', `Provider ${provider.id} is already registered`, {
+        kind: this.kind,
+        provider: provider.id,
+        operation: 'register',
+      })
     const entry = { provider, sourcePackage }
     this.entries.set(provider.id, entry)
     return async () => {
@@ -49,7 +34,12 @@ class Providers<T extends { id: string; version: string }> {
   }
   resolve(id: string): T {
     const entry = this.entries.get(id)
-    if (!entry) throw new Error(`Tool provider ${id} is not installed`)
+    if (!entry)
+      throw new ProviderError('E_PROVIDER_UNKNOWN', `Tool provider ${id} is not installed`, {
+        kind: this.kind,
+        provider: id,
+        operation: 'resolve',
+      })
     return entry.provider
   }
   catalog() {
@@ -66,13 +56,13 @@ class Providers<T extends { id: string; version: string }> {
 }
 export class ToolRuntimeRegistry extends Providers<ToolRuntimeProvider> implements ToolRuntimeRegistryPort {
   constructor(withDefault = true) {
-    super()
+    super('tool-runtime')
     if (withDefault) this.register('@agnes/core', defaultToolRuntimeProvider)
   }
 }
 export class ToolPolicyRegistry extends Providers<ToolPolicy> implements ToolPolicyRegistryPort {
   constructor(withDefault = true) {
-    super()
+    super('tool-policy')
     if (withDefault) this.register('@agnes/base', defaultToolPolicy)
   }
 }

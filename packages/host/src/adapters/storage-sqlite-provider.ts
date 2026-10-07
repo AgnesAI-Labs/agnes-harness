@@ -26,6 +26,7 @@ export const sqlitePersistenceProvider: PersistenceProvider = definePersistenceP
     sqlite: true,
   },
   open(options) {
+    options.signal?.throwIfAborted()
     const storage = createSqliteStorage({
       file: join(options.dataDir, 'sessions.db'),
       tablesDir: join(options.dataDir, 'tables'),

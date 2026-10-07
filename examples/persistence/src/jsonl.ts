@@ -19,6 +19,7 @@ type Row = {
   integrity: { mode: 'anchor' | 'chain'; previousDigest: string | null; digest: string } | null
 }
 export function openJsonlStore(options: PersistenceOpenOptions): PersistenceSessionStore {
+  options.signal?.throwIfAborted()
   const db = new Journal(options.dataDir)
   const clock = options.clock ?? Date.now
   const session = (key: string): Session | undefined => db.get(identity('session', key))

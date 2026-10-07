@@ -4,6 +4,21 @@ API additions require a minor version; removals or semantic changes require a ma
 
 ## Unreleased
 
+Loop factories now accept an optional construction signal and return a driver or Promise; callers
+must await create/resume. Sandbox create accepts an optional signal, and persistence open options
+accept `signal`. Existing synchronous factories remain valid. Host drains constructors, disposes
+late cancelled/invalid results and preserves cleanup failures. Store I/O remains noncancellable.
+
+Model adapter config adds optional instance/provider identity and a live credential resolve/rejection
+port (`ModelAdapterCredential`). Official API-key/OAuth adapters use the public create path; no
+builtin factory bypass remains. Experimental `createCompactionThreshold` and `defaultToolPolicy`
+share the existing algorithms without importing Core. Named provider admission/resolution errors use
+ProviderError; session `E_LOOP_MISSING`, sandbox execution `SANDBOX_UNAVAILABLE` and ledger recovery
+codes remain consumer compatibility boundaries. See the bilingual v0.1 contract inventory.
+These are unpublished preview changes; API_VERSION/package versions remain 1.4.0 until release
+versioning is decided. This entry does not authorize publication under an unchanged released version.
+
+
 `HookReturnMap.before_step` gains optional `park?: boolean`: a pending interaction ends the turn as
 parked before another inference request. Blocking still takes precedence when both directives are set.
 `SearchProvider.search(queries, { signal, timeoutMs }): Promise<SearchResult[]>` is an additive

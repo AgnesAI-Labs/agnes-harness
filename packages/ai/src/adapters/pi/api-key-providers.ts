@@ -6,6 +6,7 @@ import {
   type Provider as PiProvider,
 } from '@earendil-works/pi-ai'
 import { isUsableCredential } from '../../credentials.js'
+import type { ManualRoute } from './index.js'
 import { PiAdapter, type PiStream } from './index.js'
 import { KNOWN_THINKING_CORRECTIONS } from './known-thinking-corrections.js'
 
@@ -286,11 +287,11 @@ function checkedModelIds(ids: readonly string[] | undefined): ReadonlySet<string
   return selected
 }
 
-async function createAdapter(spec: ProviderSpec, options: ApiKeyAdapterOptions = {}): Promise<PiAdapter> {
+async function providerRoutes(spec: ProviderSpec, modelIds?: readonly string[]): Promise<ManualRoute[]> {
   const provider = await spec.load()
   if (provider.id !== spec.sourceProviderId || provider.baseUrl !== spec.baseUrl)
     throw new ApiKeyProviderError('PROVIDER_CONTRACT')
-  const selected = checkedModelIds(options.modelIds)
+  const selected = checkedModelIds(modelIds)
   const models = provider
     .getModels()
     .filter(
@@ -302,17 +303,21 @@ async function createAdapter(spec: ProviderSpec, options: ApiKeyAdapterOptions =
     )
     .map((model) => modelRecord(spec, model))
   if (models.length === 0) throw new ApiKeyProviderError('NO_MODELS')
+  return [
+    {
+      route: spec.id,
+      api: spec.api,
+      baseUrl: spec.baseUrl,
+      credentialRef: `secret://${spec.id}/default`,
+      models,
+    },
+  ]
+}
+
+async function createAdapter(spec: ProviderSpec, options: ApiKeyAdapterOptions = {}): Promise<PiAdapter> {
   return new PiAdapter({
     id: spec.id,
-    manualRoutes: [
-      {
-        route: spec.id,
-        api: spec.api,
-        baseUrl: spec.baseUrl,
-        credentialRef: `secret://${spec.id}/default`,
-        models,
-      },
-    ],
+    manualRoutes: await providerRoutes(spec, options.modelIds),
     ...(options.streamImpl ? { streamImpl: options.streamImpl } : {}),
     ...(options.maxRetries === undefined ? {} : { maxRetries: options.maxRetries }),
     ...(options.sleep ? { sleep: options.sleep } : {}),
@@ -358,6 +363,13 @@ export async function createApiKeyProviderAdapters(
     API_KEY_PROVIDER_REGISTRY.map((entry) => entry.createAdapter(options.adapters?.[entry.id])),
   )
   return Object.freeze(adapters)
+}
+
+/** Catalogue-only input for the public model-adapter factory; no adapter or credentials are created. */
+export async function createApiKeyProviderConfigs(): Promise<
+  readonly { id: string; routes: ManualRoute[] }[]
+> {
+  return Promise.all(specs.map(async (spec) => ({ id: spec.id, routes: await providerRoutes(spec) })))
 }
 
 const byId = new Map(API_KEY_PROVIDER_REGISTRY.map((entry) => [entry.id, entry]))

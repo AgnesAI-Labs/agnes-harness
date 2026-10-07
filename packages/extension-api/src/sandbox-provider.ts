@@ -106,7 +106,10 @@ export interface SandboxProvider {
   readonly capabilities: SandboxCapabilities
   /** Measure the host again. Do not turn a failed probe into a working flag. */
   probe?(signal?: AbortSignal): Promise<SandboxCapabilities> | SandboxCapabilities
-  create(config: SandboxProviderConfig): SandboxProviderInstance | Promise<SandboxProviderInstance>
+  create(
+    config: SandboxProviderConfig,
+    signal?: AbortSignal,
+  ): SandboxProviderInstance | Promise<SandboxProviderInstance>
   cleanup?(): void | Promise<void>
 }
 

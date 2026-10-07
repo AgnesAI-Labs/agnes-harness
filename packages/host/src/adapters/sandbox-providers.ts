@@ -2,6 +2,7 @@ import { type Context, Service } from '@agnes/cordis'
 import {
   defineProviderKind,
   LOCAL_SANDBOX_PROVIDER_ID,
+  ProviderError,
   type SandboxCapabilities,
   type SandboxPlatform,
   type SandboxProvider,
@@ -12,6 +13,7 @@ import {
   sandboxUnavailable,
 } from '@agnes/extension-api'
 import type { RowOriginLookup } from '@agnes/plugin-runtime/host'
+import { ProviderLifetime } from '../assemble/provider-lifetime.js'
 import {
   installProviderRegistry,
   type ProviderRegistry,
@@ -36,8 +38,7 @@ type Registration = {
   version: string
   provider: SandboxProvider
   entry: SandboxProviderCatalogEntry
-  active: boolean
-  instances: Set<() => Promise<void>>
+  lifetime: ProviderLifetime
 }
 
 export type SandboxProviderSlot = {
@@ -114,7 +115,7 @@ export class SandboxProviderRegistry extends Service implements SandboxProviderR
             typeof provider.create !== 'function' ||
             !validCapabilities(provider.capabilities)
           )
-            throw new HostError('E_API_RANGE', 'invalid sandbox provider registration')
+            throw new TypeError('invalid sandbox provider registration')
         },
         capabilities: (provider) => [
           ...(provider.capabilities.network ? ['network'] : []),
@@ -127,7 +128,7 @@ export class SandboxProviderRegistry extends Service implements SandboxProviderR
   }
 
   register(provider: SandboxProvider, sourcePackage?: string): () => Promise<void> {
-    this.registrations.definition.validate(provider)
+    this.registrations.validate(sourcePackage ?? '@agnes/host', provider)
     const record: Registration = {
       id: provider.id,
       version: provider.version,
@@ -144,32 +145,22 @@ export class SandboxProviderRegistry extends Service implements SandboxProviderR
         capabilities: freezeCapabilities(provider.capabilities),
         restartRequired: true,
       }),
-      active: true,
-      instances: new Set(),
+      lifetime: new ProviderLifetime('sandbox', provider.id),
     }
-    const unregister = this.registrations.register(
-      record.entry.sourcePackage,
-      provider,
-      this.ctx,
-      async () => {
-        record.active = false
-        // Drain constructors as well as active instances before provider-owned cleanup.
-        await Promise.allSettled(
-          [...this.workspaceInstances.entries()]
-            .filter(([key]) => JSON.parse(key)[0] === record.id)
-            .map(([, pending]) => pending),
-        )
-        const results = await Promise.allSettled([...record.instances].map((dispose) => dispose()))
-        await provider.cleanup?.()
-        const failures = results.filter((result) => result.status === 'rejected')
-        if (failures.length)
-          throw new AggregateError(
-            failures.map((result) => result.reason),
-            'sandbox provider cleanup failed',
-          )
-      },
+    const wrapped: SandboxProvider = {
+      ...provider,
+      probe: (signal) =>
+        record.lifetime.run((joined) => provider.probe?.(joined) ?? provider.capabilities, signal),
+      create: (config, signal) =>
+        record.lifetime.run(
+          async (joined) => this.ownInstance(record, await provider.create(config, joined), joined),
+          signal,
+        ),
+    }
+    const unregister = this.registrations.register(record.entry.sourcePackage, wrapped, this.ctx, () =>
+      record.lifetime.close(() => provider.cleanup?.()),
     )
-    this.records.set(provider, record)
+    this.records.set(wrapped, record)
     return unregister
   }
 
@@ -191,17 +182,29 @@ export class SandboxProviderRegistry extends Service implements SandboxProviderR
    * Different workspaces or options create independent instances of that id.
    * A different id is refused until the process restarts.
    */
-  async select(id: string, config: SandboxProviderConfig = {}): Promise<SandboxProviderInstance> {
+  async select(
+    id: string,
+    config: SandboxProviderConfig = {},
+    signal?: AbortSignal,
+  ): Promise<SandboxProviderInstance> {
+    signal?.throwIfAborted()
     if (!PROVIDER_ID.test(id))
-      throw new HostError('E_PROFILE_FRAGMENT_KEY', 'sandbox.provider must be a provider id', {
-        detail: { field: 'sandbox.provider', id },
+      throw new ProviderError('E_PROVIDER_INVALID', 'sandbox.provider must be a provider id', {
+        kind: 'sandbox',
+        provider: id,
+        operation: 'select',
       })
     if (this.selectedId) {
       if (this.selectedId !== id)
-        throw new HostError(
-          'E_DEP_MISSING',
+        throw new ProviderError(
+          'E_PROVIDER_INCOMPATIBLE',
           `sandbox provider ${this.selectedId} is already selected; choosing ${id} requires a restart`,
-          { detail: { reason: 'restart-required', selected: this.selectedId, id } },
+          {
+            kind: 'sandbox',
+            provider: id,
+            operation: 'select',
+            hint: 'Restart the process to change providers',
+          },
         )
     }
     this.registrations.resolve(id)
@@ -212,8 +215,12 @@ export class SandboxProviderRegistry extends Service implements SandboxProviderR
       Object.entries(config.options ?? {}).sort(([a], [b]) => a.localeCompare(b)),
     ])
     const existing = this.workspaceInstances.get(key)
-    if (existing) return existing
-    const pending = this.createInstance(id, config)
+    if (existing) {
+      const instance = await existing
+      signal?.throwIfAborted()
+      return instance
+    }
+    const pending = this.createInstance(id, config, signal)
     this.workspaceInstances.set(key, pending)
     try {
       return await pending
@@ -223,67 +230,100 @@ export class SandboxProviderRegistry extends Service implements SandboxProviderR
     }
   }
 
-  private async createInstance(id: string, config: SandboxProviderConfig): Promise<SandboxProviderInstance> {
-    const record = this.records.get(this.registrations.resolve(id))!
+  private async createInstance(
+    id: string,
+    config: SandboxProviderConfig,
+    signal?: AbortSignal,
+  ): Promise<SandboxProviderInstance> {
+    const provider = this.registrations.resolve(id)
+    const record = this.records.get(provider)!
     this.registrations.select('process', id)
-    const probed = (await record.provider.probe?.()) ?? record.provider.capabilities
+    const probed = (await provider.probe?.(signal)) ?? provider.capabilities
     if (!validCapabilities(probed))
-      throw new HostError('E_API_RANGE', `sandbox provider returned invalid capabilities: ${id}`)
+      throw new ProviderError('E_PROVIDER_INVALID', `sandbox provider returned invalid capabilities: ${id}`, {
+        kind: 'sandbox',
+        provider: id,
+        operation: 'probe',
+      })
     record.entry = Object.freeze({
       ...record.entry,
       capabilities: freezeCapabilities(probed),
     })
-    const instance = await record.provider.create(config)
-    if (
-      !instance ||
-      instance.id !== id ||
-      typeof instance.exec !== 'function' ||
-      typeof instance.dispose !== 'function' ||
-      !validCapabilities(instance.capabilities)
-    )
-      throw new HostError('E_API_RANGE', `sandbox provider returned an invalid instance: ${id}`)
+    const instance = await provider.create(config, signal)
+    this.selection = { id, instance }
+    return instance
+  }
+
+  private async ownInstance(
+    record: Registration,
+    instance: SandboxProviderInstance,
+    signal: AbortSignal,
+  ): Promise<SandboxProviderInstance> {
+    const id = record.id
+    const valid =
+      instance &&
+      instance.id === id &&
+      typeof instance.exec === 'function' &&
+      typeof instance.dispose === 'function' &&
+      validCapabilities(instance.capabilities)
+    const lifetime = new ProviderLifetime('sandbox', id)
     const opened = new Set<import('@agnes/extension-api').SandboxProcess>()
     const opening = new Set<Promise<import('@agnes/extension-api').SandboxProcess>>()
-    let disposal: Promise<void> | undefined
-    const dispose = () => {
-      disposal ??= Promise.resolve()
-        .then(async () => {
+    const dispose = record.lifetime.own(() =>
+      lifetime.close(
+        () => {
+          if (typeof instance?.dispose === 'function') return instance.dispose()
+        },
+        async () => {
           await Promise.allSettled([...opening])
-          const closing = await Promise.allSettled([...opened].map((handle) => handle.close()))
-          await instance.dispose()
-          const failures = closing.filter((result) => result.status === 'rejected')
-          if (failures.length)
-            throw new AggregateError(
-              failures.map((result) => result.reason),
-              'interactive provider cleanup failed',
-            )
-        })
-        .then(() => undefined)
-        .finally(() => record.instances.delete(dispose))
-      return disposal
-    }
-    if (!record.active) {
+          const results = await Promise.allSettled([...opened].map((handle) => handle.close()))
+          const errors = results
+            .filter((result) => result.status === 'rejected')
+            .map((result) => result.reason)
+          if (errors.length) throw new AggregateError(errors, 'interactive provider cleanup failed')
+        },
+      ),
+    )
+    if (!valid || signal.aborted) {
       await dispose()
-      throw new HostError('E_DEP_MISSING', `sandbox provider was unloaded: ${id}`)
+      signal.throwIfAborted()
+      throw new ProviderError('E_PROVIDER_INVALID', `sandbox provider returned an invalid instance: ${id}`, {
+        kind: 'sandbox',
+        provider: id,
+        operation: 'create',
+      })
     }
-    record.instances.add(dispose)
     const bound = Object.freeze({
       id: instance.id,
       capabilities: freezeCapabilities(instance.capabilities),
-      exec: (request: Parameters<SandboxProviderInstance['exec']>[0]) => {
-        if (disposal || !record.active)
-          return Promise.reject(sandboxUnavailable('the workspace sandbox instance is disposed'))
-        return instance.exec(request)
+      exec: async (request: Parameters<SandboxProviderInstance['exec']>[0]) => {
+        if (record.lifetime.signal.aborted || lifetime.signal.aborted)
+          throw sandboxUnavailable('the workspace sandbox instance is disposed')
+        const joined = AbortSignal.any([
+          request.signal ?? lifetime.signal,
+          lifetime.signal,
+          record.lifetime.signal,
+        ])
+        return lifetime.track(Promise.resolve().then(() => instance.exec({ ...request, signal: joined })))
       },
       ...(instance.openProcess
         ? {
-            openProcess: (request: Parameters<NonNullable<SandboxProviderInstance['openProcess']>>[0]) => {
-              if (disposal || !record.active)
-                return Promise.reject(sandboxUnavailable('the workspace sandbox instance is disposed'))
-              const pending = instance.openProcess!(request).then(async (handle) => {
-                if (disposal || !record.active) {
+            openProcess: async (
+              request: Parameters<NonNullable<SandboxProviderInstance['openProcess']>>[0],
+            ) => {
+              if (record.lifetime.signal.aborted || lifetime.signal.aborted)
+                throw sandboxUnavailable('the workspace sandbox instance is disposed')
+              const joined = AbortSignal.any([
+                request.signal ?? lifetime.signal,
+                lifetime.signal,
+                record.lifetime.signal,
+              ])
+              const pending = instance.openProcess!({ ...request, signal: joined }).then(async (handle) => {
+                if (joined.aborted) {
                   await handle.close()
-                  throw sandboxUnavailable('provider was disposed during interactive launch')
+                  if (record.lifetime.signal.aborted || lifetime.signal.aborted)
+                    throw sandboxUnavailable('provider was disposed during interactive launch')
+                  joined.throwIfAborted()
                 }
                 opened.add(handle)
                 void handle.exited.then(() => opened.delete(handle))
@@ -300,8 +340,6 @@ export class SandboxProviderRegistry extends Service implements SandboxProviderR
         : {}),
       dispose,
     })
-    this.selection = { id, instance: bound }
-    this.registrations.select('process', id)
     return bound
   }
 }
@@ -371,22 +409,26 @@ export async function bindStartupSandboxProvider(
 ): Promise<string> {
   const id = sandboxProviderIdFrom(config)
   if (remote && id !== LOCAL_SANDBOX_PROVIDER_ID)
-    throw new HostError('E_DEP_MISSING', 'a remote workspace cannot select another sandbox provider', {
-      detail: { reason: 'remote-provider', id },
-    })
+    throw new ProviderError(
+      'E_PROVIDER_INCOMPATIBLE',
+      'a remote workspace cannot select another sandbox provider',
+      { kind: 'sandbox', provider: id, operation: 'select' },
+    )
   if (!slot.registry) {
     if (id !== LOCAL_SANDBOX_PROVIDER_ID)
-      throw new HostError('E_DEP_MISSING', `sandbox provider is not registered: ${id}`, {
-        detail: { reason: 'provider-missing', id },
+      throw new ProviderError('E_PROVIDER_UNKNOWN', `sandbox provider is not registered: ${id}`, {
+        kind: 'sandbox',
+        provider: id,
+        operation: 'select',
       })
     return LOCAL_SANDBOX_PROVIDER_ID
   }
   if (slot.selected) {
     if (slot.selected.id !== id)
-      throw new HostError(
-        'E_DEP_MISSING',
+      throw new ProviderError(
+        'E_PROVIDER_INCOMPATIBLE',
         `sandbox provider ${slot.selected.id} is already selected; choosing ${id} requires a restart`,
-        { detail: { reason: 'restart-required', selected: slot.selected.id, id } },
+        { kind: 'sandbox', provider: id, operation: 'select' },
       )
   }
   const instance = await slot.registry.select(id, {

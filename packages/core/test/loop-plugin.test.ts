@@ -63,7 +63,7 @@ const echo: LoopFactory = {
   version: '1.0.0',
   capabilities: ['model', 'tools'],
   codec,
-  create: echoDriver,
+  create: (ctx) => echoDriver(ctx),
   resume: (ctx, checkpoint) => echoDriver(ctx, codec.decode(checkpoint)),
 }
 const options = {
@@ -166,6 +166,55 @@ describe('loop plugins', () => {
     } finally {
       await k.close()
     }
+  })
+
+  it('aborts and drains a late loop constructor before closing Kernel storage', async () => {
+    const loops = defaultLoops()
+    let finish!: (driver: LoopDriver) => void
+    let ready!: () => void
+    const admitted = new Promise<void>((resolve) => {
+      ready = resolve
+    })
+    let signal!: AbortSignal
+    let disposed = false
+    loops.register('@test/async', {
+      ...echo,
+      id: 'test.async',
+      create(_ctx, joined) {
+        signal = joined!
+        ready()
+        return new Promise<LoopDriver>((resolve) => {
+          finish = resolve
+        })
+      },
+    })
+    const storage = new MemoryStorage()
+    const closed = vi.spyOn(storage, 'close')
+    const k = kernel(storage, loops)
+    const creating = k.session('constructing', {
+      ...options,
+      loop: { id: 'test.async', version: echo.version },
+    })
+    const rejected = expect(creating).rejects.toThrow()
+    await admitted
+    const closing = k.close()
+    expect(signal.aborted).toBe(true)
+    expect(closed).not.toHaveBeenCalled()
+    finish({
+      async step() {
+        throw new Error('Must not step')
+      },
+      checkpoint: () => codec.encode('ready'),
+      cancel() {},
+      dispose() {
+        disposed = true
+      },
+    })
+    await rejected
+    await closing
+    expect(disposed).toBe(true)
+    expect(closed).toHaveBeenCalledOnce()
+    await expect(k.session('after-close', options)).rejects.toMatchObject({ code: 'E_CLOSED' })
   })
   it('registers through a plugin lifecycle and exposes an immutable catalog', () => {
     const loops = defaultLoops()

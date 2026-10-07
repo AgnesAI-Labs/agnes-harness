@@ -206,6 +206,8 @@ export interface PersistenceSessionStore extends PersistenceLedgerPort, Partial<
 }
 
 export interface PersistenceOpenOptions {
+  /** Cooperative construction cancellation; synchronous I/O cannot be interrupted mid-call. */
+  signal?: AbortSignal
   /** Directory the provider may use for its files. */
   dataDir: string
   clock?: () => number

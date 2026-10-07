@@ -292,6 +292,7 @@ export async function openAdapters(
     const persistenceProviderId = opts.persistence?.provider ?? profile.persistence?.provider
     const openedStorage = await openConfiguredPersistence({
       dataDir: opts.dataDir,
+      ...(opts.signal ? { signal: opts.signal } : {}),
       ...(persistenceProviderId !== undefined ? { providerId: persistenceProviderId } : {}),
       ...(opts.modules ? { modules: opts.modules } : {}),
       ...(opts.persistenceProviders ? { providers: opts.persistenceProviders } : {}),

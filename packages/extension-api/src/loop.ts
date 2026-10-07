@@ -263,8 +263,8 @@ export interface LoopFactory extends LoopSelection {
   /** Ledger-backed drivers recover through public continuation ports; driver is the default. */
   readonly checkpointMode?: 'driver' | 'ledger'
   readonly codec: LoopCheckpointCodec
-  create(ctx: LoopContext): LoopDriver
-  resume(ctx: LoopContext, checkpoint: LoopCheckpoint): LoopDriver
+  create(ctx: LoopContext, signal?: AbortSignal): LoopDriver | Promise<LoopDriver>
+  resume(ctx: LoopContext, checkpoint: LoopCheckpoint, signal?: AbortSignal): LoopDriver | Promise<LoopDriver>
 }
 
 export interface LoopCatalogEntry extends LoopSelection {

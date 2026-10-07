@@ -16,6 +16,7 @@ import type {
   ToolRuntimeProvider,
   ToolRuntimeRegistryPort,
 } from '@agnes/extension-api'
+import { ProviderError } from '@agnes/extension-api'
 import type {
   Actor,
   ApprovalMode,
@@ -374,6 +375,7 @@ export type SessionDeps = {
   provider: Provider
   loopFactory: LoopFactory
   loopResume?: boolean
+  loopCreationSignal?: AbortSignal
   withModelSnapshot?: <T>(operation: () => Promise<T>) => Promise<T>
   /**
    * Trusted host boundary for a conservative total-input-token bound when a wire request contains
@@ -752,19 +754,52 @@ export class SessionImpl {
 
   private async initializeLoop(resumed = false): Promise<void> {
     if (this.loopDriver) return
-    this.toolPolicy()
-    await this.toolRuntime()
-    const factory = this.d.loopFactory
-    const ctx = await createLoopContext(this, resumed)
-    this.loopContext = ctx
-    const checkpoint =
-      ctx.checkpoints.read() ??
-      (resumed && factory.checkpointMode === 'ledger' ? factory.codec.encode(null) : null)
-    if (resumed && !checkpoint) throw new Error('Pinned loop checkpoint is missing')
-    if (checkpoint) factory.codec.decode(checkpoint)
-    this.loopDriver = resumed && checkpoint ? factory.resume(ctx, checkpoint) : factory.create(ctx)
-    if (!resumed && factory.checkpointMode !== 'ledger')
-      await ctx.checkpoints.write(this.loopDriver.checkpoint())
+    const done = this.beginLoopOperation()
+    try {
+      this.toolPolicy()
+      await this.toolRuntime()
+      const factory = this.d.loopFactory
+      const ctx = await createLoopContext(this, resumed)
+      this.loopContext = ctx
+      const checkpoint =
+        ctx.checkpoints.read() ??
+        (resumed && factory.checkpointMode === 'ledger' ? factory.codec.encode(null) : null)
+      if (resumed && !checkpoint) throw new Error('Pinned loop checkpoint is missing')
+      if (checkpoint) factory.codec.decode(checkpoint)
+      const signal = this.d.loopCreationSignal
+        ? AbortSignal.any([this.ac.signal, this.d.loopCreationSignal])
+        : this.ac.signal
+      signal.throwIfAborted()
+      const driver = await (resumed && checkpoint
+        ? factory.resume(ctx, checkpoint, signal)
+        : factory.create(ctx, signal))
+      if (
+        !driver ||
+        ['step', 'cancel', 'dispose', 'checkpoint'].some(
+          (key) => typeof driver[key as keyof LoopDriver] !== 'function',
+        )
+      ) {
+        if (typeof driver?.dispose === 'function') await driver.dispose()
+        throw new ProviderError('E_PROVIDER_INVALID', 'Loop factory returned an invalid driver', {
+          kind: 'loop',
+          provider: factory.id,
+          operation: resumed ? 'resume' : 'create',
+        })
+      }
+      if (signal.aborted) {
+        try {
+          await driver.cancel()
+        } finally {
+          await driver.dispose()
+        }
+        signal.throwIfAborted()
+      }
+      this.loopDriver = driver
+      if (!resumed && factory.checkpointMode !== 'ledger')
+        await ctx.checkpoints.write(this.loopDriver.checkpoint())
+    } finally {
+      done()
+    }
   }
 
   /** Idempotent: a reopened ledger already carries its session/start and must not gain a second. */

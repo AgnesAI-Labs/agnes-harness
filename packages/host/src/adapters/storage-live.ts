@@ -1,7 +1,6 @@
 import { mkdirSync, realpathSync } from 'node:fs'
 import { CoreError } from '@agnes/core'
-import type { PersistenceProvider } from '@agnes/extension-api'
-import { HostError } from '../errors.js'
+import { type PersistenceProvider, ProviderError } from '@agnes/extension-api'
 import type { HostPersistence } from './storage-provider.js'
 import type { TableHandle } from './storage-sqlite.js'
 
@@ -32,7 +31,12 @@ export async function retainProcessStore(
   }
   const entry = await pending
   if (entry.identity !== identity)
-    throw new HostError('E_SEAM_INIT', 'persistence changes require a process restart')
+    throw new ProviderError('E_PROVIDER_INCOMPATIBLE', 'persistence changes require a process restart', {
+      kind: 'persistence',
+      provider: provider.id,
+      operation: 'open',
+      hint: 'Restart the process to change persistence providers',
+    })
   if (entry.closing) {
     await entry.closing
     return retainProcessStore(dataDir, provider, open)

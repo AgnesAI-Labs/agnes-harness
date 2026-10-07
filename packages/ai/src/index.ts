@@ -17,6 +17,7 @@ export {
   API_KEY_PROVIDER_REGISTRY,
   ApiKeyProviderError,
   createApiKeyProviderAdapters,
+  createApiKeyProviderConfigs,
   getApiKeyProvider,
 } from './adapters/pi/api-key-providers.js'
 export type {

@@ -35,7 +35,8 @@ export function createLocalSandboxProvider(
     id: LOCAL_SANDBOX_PROVIDER_ID,
     version: '0.0.0',
     capabilities,
-    create(config) {
+    create(config, signal) {
+      signal?.throwIfAborted()
       let disposed = false
       const controllers = new Set<AbortController>()
       const processes = new Set<import('@agnes/extension-api').SandboxProcess>()

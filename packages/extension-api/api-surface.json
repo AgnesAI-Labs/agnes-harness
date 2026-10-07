@@ -41,6 +41,8 @@
     "checkServiceDef",
     "checkToolDef",
     "checkToolMeta",
+    "createCompactionThreshold",
+    "defaultToolPolicy",
     "defineExtension",
     "definePersistenceProvider",
     "defineProviderKind",

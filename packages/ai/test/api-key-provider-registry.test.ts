@@ -1,3 +1,4 @@
+import type { ModelAdapter } from '@agnes/extension-api'
 import { validateModelRecord } from '@agnes/protocol'
 import type {
   Api,
@@ -13,10 +14,12 @@ import {
   API_KEY_CREDENTIAL_REFS,
   API_KEY_PROVIDER_REGISTRY,
   createApiKeyProviderAdapters,
+  createApiKeyProviderConfigs,
   createProvider,
   getApiKeyProvider,
   NullContractStore,
 } from '../src/index.js'
+import { modelAdaptersPlugin } from '../src/model-adapters.js'
 import { fakeRequest } from '../testkit/index.js'
 
 const expected = [
@@ -74,6 +77,62 @@ describe('API-key provider registry', () => {
     expect(API_KEY_PROVIDER_REGISTRY.every((entry) => entry.availability === 'available')).toBe(true)
   })
 
+  it.each(['api-key', 'oauth'] as const)(
+    'constructs official %s adapters through the public factory and credential path',
+    async (mode) => {
+      const definitions: ModelAdapter[] = []
+      modelAdaptersPlugin.apply({ modelAdapters: { register: (adapter) => definitions.push(adapter) } })
+      const configs = await createApiKeyProviderConfigs()
+      const legacy = await createApiKeyProviderAdapters()
+      expect(configs.map((config) => ({ id: config.id, routes: config.routes }))).toEqual(
+        legacy.map((adapter) => ({
+          id: adapter.id,
+          routes: adapter.routes().map((route) => ({ ...route, models: adapter.models(route.route) })),
+        })),
+      )
+      const config = configs.find((entry) => entry.id === 'deepseek')!
+      const definition = definitions.find((entry) => entry.id === config.routes[0]?.api)!
+      let resolveCalls = 0
+      const credentials =
+        mode === 'oauth'
+          ? {
+              async resolve(_route: string, signal: AbortSignal) {
+                signal.throwIfAborted()
+                resolveCalls++
+                return { apiKey: 'synthetic-live-auth' }
+              },
+            }
+          : undefined
+      const adapter = await definition.create({ ...config, ...(credentials ? { credentials } : {}) })
+      expect(adapter.id).toBe('deepseek')
+      if (mode === 'api-key') adapter.bindCredential?.('deepseek', 'synthetic-live-auth')
+      const auth: (string | null)[] = []
+      const fetch = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
+        auth.push(new Request(input, init).headers.get('authorization'))
+        return new Response(
+          'data: {"choices":[{"index":0,"delta":{"content":"ok"},"finish_reason":"stop"}]}\n\ndata: [DONE]\n\n',
+          { headers: { 'content-type': 'text/event-stream' } },
+        )
+      })
+      try {
+        for (let request = 0; request < 2; request++) {
+          const events = await collect(
+            adapter.stream(
+              'deepseek',
+              fakeRequest({ route: 'deepseek', model: 'deepseek-v4-pro' }),
+              streamOptions(),
+            ),
+          )
+          expect(events.at(-1)).toMatchObject({ type: 'done', reason: 'stop' })
+        }
+        expect(auth).toEqual(['Bearer synthetic-live-auth', 'Bearer synthetic-live-auth'])
+        expect(resolveCalls).toBe(mode === 'oauth' ? 2 : 0)
+      } finally {
+        fetch.mockRestore()
+        await adapter.dispose?.()
+      }
+    },
+  )
   it('pre-registers all twelve providers without keys, then fails closed with AUTH only on selection', async () => {
     const adapters = await createApiKeyProviderAdapters({
       adapters: {

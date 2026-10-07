@@ -69,7 +69,7 @@ describe('loop author driver', () => {
       version: '1.0.0',
       capabilities: ['model', 'tools'],
       codec,
-      create,
+      create: (ctx) => create(ctx),
       resume: (ctx: LoopContext, checkpoint: ReturnType<typeof codec.encode>) =>
         create(ctx, codec.decode(checkpoint)),
     })
@@ -146,5 +146,46 @@ describe('loop author driver', () => {
     await expect(driveLoop(aborting, { signal: ac.signal })).rejects.toThrow('Stopped')
     expect(cancelled).toBe(true)
     expect(disposed).toBe(true)
+  })
+  it('drains a late asynchronous constructor after cancellation without taking a step', async () => {
+    const ac = new AbortController()
+    let finish!: (driver: LoopDriver) => void
+    let constructionSignal: AbortSignal | undefined
+    let disposed = 0
+    let cancelled = 0
+    const pending = driveLoop(
+      defineLoop({
+        id: 'late',
+        version: '1.0.0',
+        capabilities: [],
+        codec,
+        create(_ctx, signal) {
+          constructionSignal = signal
+          return new Promise<LoopDriver>((resolve) => {
+            finish = resolve
+          })
+        },
+        resume() {
+          throw new Error('Not used')
+        },
+      }),
+      { signal: ac.signal },
+    )
+    ac.abort(new Error('Construction stopped'))
+    expect(constructionSignal?.aborted).toBe(true)
+    finish({
+      step: async () => {
+        throw new Error('Must not step')
+      },
+      cancel: () => {
+        cancelled++
+      },
+      dispose: () => {
+        disposed++
+      },
+      checkpoint: () => codec.encode(0),
+    })
+    await expect(pending).rejects.toThrow('Construction stopped')
+    expect([cancelled, disposed]).toEqual([1, 1])
   })
 })

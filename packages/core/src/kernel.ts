@@ -11,6 +11,7 @@ import type {
   ToolPolicyRegistryPort,
   ToolRuntimeRegistryPort,
 } from '@agnes/extension-api'
+import { ProviderError } from '@agnes/extension-api'
 import type { Actor, ApprovalMode, Provider, SessionStart } from '@agnes/protocol'
 import { KernelChildren } from './child/factory.js'
 import { bindChildFactory } from './child/sessions.js'
@@ -353,7 +354,22 @@ export class Kernel {
     ]
   }
 
-  async session(key: SessionKey, so: SessionOptions): Promise<SessionImpl> {
+  private readonly construction = new AbortController()
+  private readonly creating = new Set<Promise<SessionImpl>>()
+  private closing?: Promise<void>
+
+  session(key: SessionKey, so: SessionOptions): Promise<SessionImpl> {
+    if (this.construction.signal.aborted) return Promise.reject(new CoreError('E_CLOSED', 'kernel closed'))
+    const creating = this.openSession(key, so)
+    this.creating.add(creating)
+    void creating.then(
+      () => this.creating.delete(creating),
+      () => this.creating.delete(creating),
+    )
+    return creating
+  }
+
+  private async openSession(key: SessionKey, so: SessionOptions): Promise<SessionImpl> {
     const preset = so.preset ?? this.o.preset
     const lane = so.lane ?? 'main'
     let existing = this.sessions.get(key)
@@ -489,7 +505,14 @@ export class Kernel {
       const selection = tracker.state.session
         ? (tracker.state.session.loop ?? LEGACY_LOOP)
         : await requestedLoop()
-      loopFactory = this.loops.resolve(selection)
+      try {
+        loopFactory = this.loops.resolve(selection)
+      } catch (error) {
+        // Session opening retains its published missing-loop code; registry callers receive ProviderError.
+        if (error instanceof ProviderError && error.code === 'E_PROVIDER_UNKNOWN')
+          throw new CoreError('E_LOOP_MISSING', error.message, { loop: selection })
+        throw error
+      }
     } catch (error) {
       await log.close()
       throw error
@@ -530,6 +553,7 @@ export class Kernel {
       runtime,
       provider: this.o.provider,
       loopFactory,
+      loopCreationSignal: this.construction.signal,
       ...(this.o.loopChildren ? { bindLoopChildren: this.o.loopChildren } : {}),
       ...(so.toolFilter ? { loopChildToolFilter: so.toolFilter } : {}),
       toolRuntimes: this.toolRuntimes,
@@ -613,8 +637,10 @@ export class Kernel {
       }
       const reason = forked ? 'new' : session.state.session ? 'resume' : 'new'
       await session.start()
+      this.construction.signal.throwIfAborted()
       if (!(so.skipSessionStartHooks && reason === 'new'))
         await session.hooks.sessionStart?.({ reason, preset: session.preset.name, cwd: so.cwd })
+      this.construction.signal.throwIfAborted()
     } catch (error) {
       if (factoryPort) this.factoryHooks.delete(factoryPort)
       try {
@@ -634,7 +660,16 @@ export class Kernel {
    * held by a session whose log refused to close is a lease nobody can take back, and the first
    * failure taking the rest of the shutdown with it is how that happens.
    */
-  async close(): Promise<void> {
+  close(): Promise<void> {
+    if (!this.closing) {
+      this.construction.abort()
+      this.closing = this.closeOwned()
+    }
+    return this.closing
+  }
+
+  private async closeOwned(): Promise<void> {
+    await Promise.allSettled([...this.creating])
     const failures: unknown[] = []
     for (const s of this.sessions.values()) {
       const storage = s.d.log.storage

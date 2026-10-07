@@ -231,10 +231,22 @@ describe('persistence provider', () => {
           persistence: { provider: provider.id },
           persistenceProviders: [provider],
         }),
-      ).rejects.toMatchObject({ code: 'E_SEAM_INIT', detail: { provider: 'incomplete' } })
+      ).rejects.toMatchObject({
+        code: 'E_PROVIDER_INCOMPATIBLE',
+        kind: 'persistence',
+        provider: 'incomplete',
+      })
       expect(closed).toBe(true)
     },
   )
+
+  it('does not open SQLite storage for a pre-aborted construction signal', async () => {
+    const ac = new AbortController()
+    ac.abort(new Error('Stopped before open'))
+    expect(() => sqlitePersistenceProvider.open({ dataDir: tempDir(), signal: ac.signal })).toThrow(
+      'Stopped before open',
+    )
+  })
 
   it('refuses a provider that replaces sqlite or omits restart-required', async () => {
     const dir = tempDir()
@@ -248,7 +260,7 @@ describe('persistence provider', () => {
     })
     await expect(
       openAdapters(profile, { dataDir: dir, workspaceRoot: dir, persistenceProviders: [builtin] }),
-    ).rejects.toMatchObject({ code: 'E_SEAM_INIT' })
+    ).rejects.toMatchObject({ code: 'E_PROVIDER_DUPLICATE', kind: 'persistence' })
     await expect(
       openAdapters(profile, {
         dataDir: dir,
@@ -262,7 +274,7 @@ describe('persistence provider', () => {
           } as unknown as typeof builtin,
         ],
       }),
-    ).rejects.toMatchObject({ code: 'E_SEAM_INIT' })
+    ).rejects.toMatchObject({ code: 'E_PROVIDER_INVALID', kind: 'persistence' })
   })
 
   it('reads persistence.provider from the user profile and omits the sqlite default', async () => {

@@ -169,13 +169,17 @@ export async function driveLoop(factory: LoopFactory, options: LoopTestOptions =
     },
   }
   signal.throwIfAborted()
-  const driver = options.checkpoint ? factory.resume(ctx, options.checkpoint) : factory.create(ctx)
+  const driver = await (options.checkpoint
+    ? factory.resume(ctx, options.checkpoint, signal)
+    : factory.create(ctx, signal))
   let cancellation: Promise<void> | undefined
   const abort = () => {
     cancellation = Promise.resolve().then(() => driver.cancel())
   }
   signal.addEventListener('abort', abort, { once: true })
   try {
+    if (signal.aborted) abort()
+    signal.throwIfAborted()
     for (let i = 0; i < maxSteps; i++) {
       signal.throwIfAborted()
       const outcome = await driver.step(signal)

@@ -197,7 +197,7 @@ export class ModelAdapterRegistry extends Service implements ModelAdapterRegistr
       {
         ...adapter,
         create: async (config, signal) => {
-          const managed = await this.createOwned(record, config, undefined, signal)
+          const managed = await this.createOwned(record, config, signal)
           const wire = managed.adapter
           return {
             id: wire.id,
@@ -237,27 +237,22 @@ export class ModelAdapterRegistry extends Service implements ModelAdapterRegistr
   async create(
     id: string,
     config: ModelAdapterConfig,
-    builtin?: () => ModelAdapterInstance,
+    creationSignal?: AbortSignal,
   ): Promise<{
     adapter: WireAdapter
     dispose(): Promise<void>
   }> {
     const record = this.records.get(this.registrations.resolve(id).id)!
-    return this.createOwned(record, config, builtin)
+    return this.createOwned(record, config, creationSignal)
   }
   private createOwned(
     record: Registration,
     config: ModelAdapterConfig,
-    builtin?: () => ModelAdapterInstance,
     creationSignal?: AbortSignal,
   ): Promise<{ adapter: CommunityWireAdapter; dispose(): Promise<void> }> {
     const id = record.id
     return record.lifetime.run(async (signal) => {
-      // Reviewed builtins retain their credential-aware factory compatibility path.
-      const instance =
-        builtin && record.entry.sourcePackage === '@agnes/ai'
-          ? builtin()
-          : await record.adapter.create(config, signal)
+      const instance = await record.adapter.create(config, signal)
       const lifecycle = new ProviderLifetime('model-adapter', id)
       const dispose = record.lifetime.own(() => lifecycle.close(() => instance?.dispose?.()))
       if (signal.aborted) {

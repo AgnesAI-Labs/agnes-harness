@@ -15,6 +15,8 @@ entry (the legacy `{ id, version }` spelling remains accepted). An assembled `Pr
 session choice overrides the preset. Existing sessions keep their persisted identity. Legacy sessions use
 `agnes.default@1.0.0`. A missing pinned loop is an error.
 
+Factories may return a driver or Promise and receive an optional construction signal.
+Always await create/resume; cancellation is cooperative and owners drain late results.
 The driver implements `step(signal)`, `cancel()`, `dispose()` and `checkpoint()`.
 Each step returns an explicit `running`, `idle`, `turn-ended` or `parked` outcome;
 `phase` is display metadata. `LoopContext` provides high-level recoverable operations

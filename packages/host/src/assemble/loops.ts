@@ -1,11 +1,11 @@
 import { type Context, Service } from '@agnes/cordis'
-import { CoreError } from '@agnes/core'
 import {
   defineProviderKind,
   type LoopDriver,
   type LoopFactory,
   type LoopRegistryPort,
   type LoopSelection,
+  ProviderError,
 } from '@agnes/extension-api'
 import type { RowOriginLookup } from '@agnes/plugin-runtime/host'
 import { ProviderLifetime } from './provider-lifetime.js'
@@ -47,18 +47,34 @@ export class LoopsService extends Service implements LoopRegistryPort {
   register(sourcePackage: string, factory: LoopFactory): () => Promise<void> {
     const lifetime = new ProviderLifetime('loop', factory.id)
     const drivers = new Set<LoopDriver>()
-    const own = (driver: LoopDriver): LoopDriver => {
+    const own = async (driver: LoopDriver, signal: AbortSignal): Promise<LoopDriver> => {
+      const valid =
+        driver &&
+        ['step', 'cancel', 'dispose', 'checkpoint'].every(
+          (key) => typeof driver[key as keyof LoopDriver] === 'function',
+        )
       const instance = new ProviderLifetime('loop', factory.id)
-      drivers.add(driver)
+      if (valid) drivers.add(driver)
       const dispose = lifetime.own(() =>
         instance.close(
           async () => {
-            await driver.dispose()
+            if (typeof driver?.dispose === 'function') await driver.dispose()
             drivers.delete(driver)
           },
-          () => driver.cancel(),
+          () => {
+            if (typeof driver?.cancel === 'function') return driver.cancel()
+          },
         ),
       )
+      if (!valid || signal.aborted) {
+        await dispose()
+        signal.throwIfAborted()
+        throw new ProviderError('E_PROVIDER_INVALID', 'Loop factory returned an invalid driver', {
+          kind: 'loop',
+          provider: factory.id,
+          operation: 'create',
+        })
+      }
       return {
         step(signal) {
           lifetime.assertActive()
@@ -75,14 +91,10 @@ export class LoopsService extends Service implements LoopRegistryPort {
       providerSource(this.ctx, this.origins, sourcePackage, true),
       {
         ...factory,
-        create(ctx) {
-          lifetime.assertActive()
-          return own(factory.create(ctx))
-        },
-        resume(ctx, checkpoint) {
-          lifetime.assertActive()
-          return own(factory.resume(ctx, checkpoint))
-        },
+        create: (ctx, signal) =>
+          lifetime.run(async (joined) => own(await factory.create(ctx, joined), joined), signal),
+        resume: (ctx, checkpoint, signal) =>
+          lifetime.run(async (joined) => own(await factory.resume(ctx, checkpoint, joined), joined), signal),
       },
       this.ctx,
       () =>
@@ -98,16 +110,9 @@ export class LoopsService extends Service implements LoopRegistryPort {
     )
   }
   resolve(selection: LoopSelection) {
-    try {
-      return this.registry.resolve({ provider: selection.id, version: selection.version })
-    } catch (error) {
-      throw new CoreError(
-        'E_LOOP_MISSING',
-        `Loop ${selection.id}@${selection.version} is not installed; install and enable that id and version before opening the session`,
-        { loop: selection },
-      )
-    }
+    return this.registry.resolve({ provider: selection.id, version: selection.version })
   }
+
   catalog() {
     return Object.freeze(
       this.registry

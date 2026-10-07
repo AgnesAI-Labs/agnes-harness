@@ -2,19 +2,18 @@ import { basename, dirname } from 'node:path'
 import type { ContractStore, ManualRoute, Registry } from '@agnes/ai'
 import {
   API_KEY_CREDENTIAL_REFS,
-  createApiKeyProviderAdapters,
+  createApiKeyProviderConfigs,
   createProvider,
   getSubscriptionProvider,
   loadContractStore,
   NullContractStore,
   PARSER_VERSION,
-  PiAdapter,
   subscriptionAuth,
 } from '@agnes/ai'
 import { Context } from '@agnes/cordis'
 // Provider is protocol-owned and reaches this file through core's re-export.
 import type { Provider } from '@agnes/core'
-import type { Logger } from '@agnes/extension-api'
+import type { Logger, ModelAdapterConfig } from '@agnes/extension-api'
 import type { RouteTable } from '@agnes/protocol'
 import { subscriptionCredentials } from '../adapters/codex-credentials.js'
 import { createCredentialStore, isSubscriptionCredential } from '../adapters/credential-store.js'
@@ -187,7 +186,7 @@ export async function buildProvider(
         oauthRoutes.push(route)
     }
     const oauthNames = new Set(oauthRoutes.map((route) => route.route))
-    const oauthAdapters = oauthRoutes.map((route) => {
+    const oauthConfigs: ModelAdapterConfig[] = oauthRoutes.map((route) => {
       const providerId = route.credentialRef?.split('/')[2] ?? ''
       const entry = getSubscriptionProvider(providerId)
       const path = profile.adapters.secrets.path
@@ -207,31 +206,30 @@ export async function buildProvider(
         entry.id,
         subscriptionCredentials(dirname(path), route.credentialRef as string, entry.id),
       )
-      return new PiAdapter({
+      return {
         id: `oauth-${route.route}`,
         providerId: entry.id,
-        manualRoutes: [route],
-        resolveCredential: (_route, signal) => auth.resolve(signal),
-        recoverRejectedAuth: (_route, rejected, signal) => auth.recoverRejected(rejected, signal),
-      })
+        routes: [route],
+        credentials: {
+          resolve: (_route, signal) => auth.resolve(signal),
+          recoverRejected: (_route, rejected, signal) => auth.recoverRejected(rejected, signal),
+        },
+      }
     })
-    const apiKeyAdapters = (await createApiKeyProviderAdapters()).filter((adapter) =>
-      adapter
-        .routes()
-        .every(
-          (route) =>
-            allowsApi(route.api) &&
-            !claimed.has(route.route) &&
-            (profile.provider.catalog === undefined ||
-              profile.provider.catalog.include.includes(route.route)),
-        ),
+    const apiKeyConfigs = (await createApiKeyProviderConfigs()).filter((config) =>
+      config.routes.every(
+        (route) =>
+          allowsApi(route.api) &&
+          !claimed.has(route.route) &&
+          (profile.provider.catalog === undefined || profile.provider.catalog.include.includes(route.route)),
+      ),
     )
     // Do not make a custom route optional just because it reused an API-key credential spelling.
     // `optionalCredentialRefs` is calculated from the adapters actually installed above, not from
     // the broader built-in set.
     const optionalCredentialRefs = new Set(
       [...API_KEY_CREDENTIAL_REFS].filter((ref) =>
-        apiKeyAdapters.some((adapter) => adapter.routes().some((route) => route.credentialRef === ref)),
+        apiKeyConfigs.some((config) => config.routes.some((route) => route.credentialRef === ref)),
       ),
     )
     for (const route of oauthRoutes) optionalCredentialRefs.add(route.credentialRef as string)
@@ -255,10 +253,10 @@ export async function buildProvider(
         })
       instances.push(await modelAdapters.create(id, { routes: selectedRoutes }))
     }
-    for (const adapter of [...apiKeyAdapters, ...oauthAdapters]) {
-      const id = adapter.routes()[0]?.api
+    for (const config of [...apiKeyConfigs, ...oauthConfigs]) {
+      const id = config.routes[0]?.api
       if (!id) throw new HostError('E_API_RANGE', 'builtin adapter declares no API')
-      instances.push(await modelAdapters.create(id, { routes: [] }, () => adapter))
+      instances.push(await modelAdapters.create(id, config))
     }
     const provider = createProvider({
       adapters: instances.map((instance) => instance.adapter),
@@ -277,7 +275,7 @@ export async function buildProvider(
       contractStore: built.contractStore,
       dispose,
       preconfiguredRoutes: Object.freeze(
-        apiKeyAdapters.flatMap((adapter) => adapter.routes().map((route) => route.route)),
+        apiKeyConfigs.flatMap((config) => config.routes.map((route) => route.route)),
       ),
     }
   } catch (error) {

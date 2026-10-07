@@ -1,6 +1,13 @@
 import { defaultLoopPlugin } from '@agnes/base'
 import { Context } from '@agnes/cordis'
-import { defineProviderKind, ProviderError } from '@agnes/extension-api'
+import {
+  defineProviderKind,
+  type LoopContext,
+  type LoopDriver,
+  loopCheckpointCodec,
+  type PersistenceSessionStore,
+  ProviderError,
+} from '@agnes/extension-api'
 import { expect, it } from 'vitest'
 import { installSandboxProviders } from '../../src/adapters/sandbox-providers.js'
 import { createPersistenceProviderRegistry } from '../../src/adapters/storage-provider.js'
@@ -112,7 +119,9 @@ it('combines named registries and retains their public catalog shapes and restar
   })
   await plugin
   await loopPlugin.dispose()
-  expect(() => root.loops.resolve({ id: 'agnes.default', version: '1.0.0' })).toThrow('not installed')
+  expect(() => root.loops.resolve({ id: 'agnes.default', version: '1.0.0' })).toThrow(
+    expect.objectContaining({ code: 'E_PROVIDER_UNKNOWN', kind: 'loop' }),
+  )
   const providers = root.providers
   await root.fiber.dispose()
   expect(providers.catalog()).toEqual([])
@@ -151,3 +160,117 @@ it('normalizes canonical selections and aliases, preserves profile precedence an
     } as never),
   ).toThrow('at most one')
 })
+
+it.each(['loop', 'sandbox', 'persistence'] as const)(
+  '%s owns asynchronous construction, cancelled late results and invalid-result cleanup',
+  async (kind) => {
+    for (const exit of ['abort', 'unload', 'invalid', 'reject', 'cleanup-failure'] as const) {
+      const root = new Context()
+      installLoops(root)
+      const sandbox = installSandboxProviders(root)
+      root.providers.add(createPersistenceProviderRegistry(undefined, undefined))
+      const ac = new AbortController()
+      let finish!: (value: unknown) => void
+      let fail!: (reason: Error) => void
+      let ready!: () => void
+      const admitted = new Promise<void>((resolve) => {
+        ready = resolve
+      })
+      let signal!: AbortSignal
+      let disposed = 0
+      let cleaned = 0
+      const construct = (joined?: AbortSignal) => {
+        if (!joined) throw new Error('Missing construction signal')
+        signal = joined
+        ready()
+        return new Promise<unknown>((resolve, reject) => {
+          finish = resolve
+          fail = reject
+        })
+      }
+      let unregister: () => Promise<void>
+      let open: () => Promise<unknown>
+      const id = 'construction'
+      const close = () => {
+        disposed++
+        if (exit === 'cleanup-failure') throw new Error('Cleanup failed')
+      }
+      let instance: unknown
+      if (kind === 'loop') {
+        const codec = loopCheckpointCodec(1, (value) => value)
+        unregister = root.loops.register('@test/provider', {
+          id,
+          version: '1.0.0',
+          capabilities: [],
+          codec,
+          create: (_ctx, joined) => construct(joined) as Promise<LoopDriver>,
+          resume: (_ctx, _checkpoint, joined) => construct(joined) as Promise<LoopDriver>,
+        })
+        open = async () => {
+          const factory = root.loops.resolve({ id, version: '1.0.0' })
+          return exit === 'unload'
+            ? factory.resume({} as LoopContext, codec.encode(null), ac.signal)
+            : factory.create({} as LoopContext, ac.signal)
+        }
+        instance = {
+          step: async () => ({ outcome: 'idle' }),
+          checkpoint: () => codec.encode(null),
+          cancel() {},
+          dispose: close,
+        }
+      } else if (kind === 'sandbox') {
+        const capabilities = { network: false, fsWrite: [], platform: ['linux' as const], available: true }
+        unregister = sandbox.register({
+          id,
+          version: '1.0.0',
+          capabilities,
+          create: (_config, joined) =>
+            construct(joined) as Promise<import('@agnes/extension-api').SandboxProviderInstance>,
+          cleanup() {
+            expect(disposed).toBe(exit === 'reject' ? 0 : 1)
+            cleaned++
+          },
+        })
+        open = () => sandbox.select(id, {}, ac.signal)
+        instance = { id, capabilities, exec: async () => ({}), dispose: close }
+      } else {
+        unregister = root.providers.register('persistence', '@test/provider', {
+          id,
+          version: '1.0.0',
+          state: { effect: 'restart-required' },
+          capabilities: { ledger: true },
+          open: (options) => construct(options.signal) as Promise<PersistenceSessionStore>,
+        })
+        open = async () =>
+          root.providers.resolve('persistence', id).open({ dataDir: '/unused', signal: ac.signal })
+        instance = { open() {}, commit() {}, renew() {}, release() {}, scan() {}, registers() {}, close }
+      }
+      const creating = Promise.resolve().then(open)
+      const outcome = expect(creating).rejects.toThrow(exit === 'reject' ? 'Factory failed' : undefined)
+      await admitted
+      let drained = false
+      const unloading =
+        exit === 'unload'
+          ? unregister().then(() => {
+              drained = true
+            })
+          : undefined
+      if (exit === 'abort' || exit === 'cleanup-failure') ac.abort(new Error('Construction cancelled'))
+      await Promise.resolve()
+      if (exit === 'abort' || exit === 'unload') expect(signal.aborted).toBe(true)
+      expect(drained).toBe(false)
+      if (exit === 'reject') fail(new Error('Factory failed'))
+      else if (exit === 'invalid') {
+        finish(kind === 'persistence' ? { close } : { dispose: close })
+      } else finish(instance)
+      await outcome
+      if (unloading) await unloading
+      else if (exit === 'cleanup-failure')
+        await expect(unregister()).rejects.toThrow('provider cleanup failed')
+      else await unregister()
+      expect(disposed).toBe(exit === 'reject' ? 0 : 1)
+      if (kind === 'sandbox') expect(cleaned).toBe(1)
+      await root.fiber.dispose()
+    }
+  },
+)
