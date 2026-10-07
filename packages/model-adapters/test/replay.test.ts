@@ -182,6 +182,23 @@ it('derives demo tool arguments, refuses invalid examples and summarizes actual 
       call: expect.objectContaining({ name: 'lesson_echo', args: { text: 'call lesson_echo', count: 2 } }),
     }),
   )
+  expect(
+    await collect(adapter, {
+      ...body,
+      tools: [{ ...body.tools[0]!, name: 'other_tool' }, ...body.tools],
+      messages: [
+        {
+          role: 'user',
+          content: [{ type: 'text', text: 'call lesson_echo {"text":"other_tool","count":3}' }],
+        },
+      ],
+    }),
+  ).toContainEqual(
+    expect.objectContaining({
+      type: 'toolcall_end',
+      call: expect.objectContaining({ name: 'lesson_echo', args: { text: 'other_tool', count: 3 } }),
+    }),
+  )
   const answered = await collect(adapter, {
     ...body,
     messages: [

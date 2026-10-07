@@ -212,10 +212,13 @@ export function demoReply(request: RequestBody): ModelAdapterEvent[] {
     }
   }
   if (!selected && !results.length) {
-    selected = request.tools.find((tool) => {
-      const name = tool.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-      return new RegExp('(^|[^A-Za-z0-9_])' + name + '($|[^A-Za-z0-9_])').test(prompt)
-    })
+    const command = /\bcall\s+([A-Za-z0-9_]+)/.exec(prompt)
+    selected = command
+      ? find(command[1]!)
+      : request.tools.find((tool) => {
+          const name = tool.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+          return new RegExp('(^|[^A-Za-z0-9_])' + name + '($|[^A-Za-z0-9_])').test(prompt)
+        })
   }
   if (selected) {
     try {
