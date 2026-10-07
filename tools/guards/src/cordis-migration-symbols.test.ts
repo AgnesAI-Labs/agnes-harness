@@ -104,6 +104,7 @@ function namedArities(source: string, name: string): number[] {
     let brackets = 0
     let commas = 0
     let hasValue = false
+    let trailingComma = false
     let quote = ''
     for (let index = open + 1; index < source.length; index++) {
       const char = source[index] ?? ''
@@ -123,6 +124,8 @@ function namedArities(source: string, name: string): number[] {
         index = close < 0 ? source.length : close + 1
         continue
       }
+      if (parens === 1 && braces === 0 && brackets === 0 && !/\s/.test(char) && char !== ')')
+        trailingComma = char === ','
       if (char === '"' || char === "'" || char === '`') {
         quote = char
         hasValue = true
@@ -132,7 +135,7 @@ function namedArities(source: string, name: string): number[] {
       else if (char === ')') {
         parens--
         if (!parens) {
-          arities.push(hasValue ? commas + 1 : 0)
+          arities.push(hasValue ? commas + (trailingComma ? 0 : 1) : 0)
           break
         }
       } else if (char === '{') braces++
@@ -211,6 +214,12 @@ describe('Cordis runtime architecture guards', () => {
       runtimeContractErrors('bad.ts', 'interface Host { applyRuntimeTarget(tree: T, resource: R): void }'),
     ).toEqual(['bad.ts: applyRuntimeTarget must have exactly one parameter or argument'])
     expect(runtimeContractErrors('good.ts', 'host.applyRuntimeTarget(target)')).toEqual([])
+    expect(
+      runtimeContractErrors('good.ts', 'host.applyRuntimeTarget(build({ rows: [] }), /* trailing */)'),
+    ).toEqual([])
+    expect(runtimeContractErrors('bad.ts', 'host.applyRuntimeTarget(tree, resource,)')).toEqual([
+      'bad.ts: applyRuntimeTarget must have exactly one parameter or argument',
+    ])
   })
 
   it('keeps the prepared installer API in its two internal owner files', () => {

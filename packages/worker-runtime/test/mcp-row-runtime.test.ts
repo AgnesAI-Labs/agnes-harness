@@ -194,16 +194,14 @@ describe('createMcpRowRuntime against a real Host', () => {
     await vi.waitFor(() => expect(connects.sort()).toEqual(['alpha', 'beta']))
     const old = await host.createSession({ key: 'old-code', cwd: hostDir })
     await host.extensionRows.apply(
-      host.extensionRows
-        .current()
-        .map((row) =>
-          row.id === 'ext:agnes/tools-web'
-            ? host.extensionRows.prepare({
-                extensionId: 'agnes/tools-web',
-                entryRevision: 'next-code-version',
-              })
-            : row,
-        ),
+      host.extensionRows.current().map((row) =>
+        row.id === 'ext:agnes/tools-web'
+          ? host.extensionRows.prepare({
+              extensionId: 'agnes/tools-web',
+              entryRevision: 'next-code-version',
+            })
+          : row,
+      ),
     )
     const fresh = await host.createSession({ key: 'new-code', cwd: hostDir })
     expect(fresh.pluginGenerationId).not.toBe(old.pluginGenerationId)
