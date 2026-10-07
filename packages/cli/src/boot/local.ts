@@ -14,6 +14,9 @@ import {
 } from '@agnes/daemon/local'
 import {
   type ConfigurationService,
+  compositionSurfaceAllowed,
+  resolveComposition,
+  compositionPreset,
   composeProductionRequestMedia,
   createConfigurationService,
   createHost,
@@ -253,6 +256,15 @@ export async function bootLocal(p: ParsedArgs, deps: LocalBootDeps): Promise<Boo
   }
 
   const bridge = createPrompterBridge()
+  if (
+    (p.mode === 'acp' || p.command === 'acp') &&
+    !compositionSurfaceAllowed(
+      resolveComposition(profile, { preset: compositionPreset(profile, p.preset ?? profile.presets.default) })
+        .selection,
+      'acp',
+    )
+  )
+    throw new BootError('ACP is disabled by the selected composition')
   let ownershipStorage: SqliteStorage | undefined
   let sessionOwnership: SessionPrincipalOwnershipIndex
   let workspaces: WorkspaceCatalog

@@ -16,6 +16,7 @@ export type EnsureLocalBackendOptions = {
   webOrigin: string
   webPort: number
   resources: LaunchResources
+  exposeWeb?: boolean
 }
 
 /**
@@ -35,8 +36,12 @@ export function ensureLocalBackend(options: EnsureLocalBackendOptions): Promise<
     allowPackageRecovery: true,
     // Local Web startup may need more than the CLI's 30-second daemon readiness default.
     readinessTimeoutMs: 120_000,
-    webOrigin: options.webOrigin,
-    localWeb: { addr: '127.0.0.1:0', origin: options.webOrigin },
+    ...(options.exposeWeb === false
+      ? {}
+      : {
+          webOrigin: options.webOrigin,
+          localWeb: { addr: '127.0.0.1:0', origin: options.webOrigin },
+        }),
     resources: options.resources,
   })
 }

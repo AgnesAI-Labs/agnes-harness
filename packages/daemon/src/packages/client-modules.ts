@@ -1,4 +1,5 @@
 import { createHash, randomUUID } from 'node:crypto'
+import { CompositionSessionStore, compositionModuleAllowed, type CompositionPatch } from '@agnes/host'
 import { mkdir, readdir, readFile, realpath, rename, rm, stat, writeFile } from 'node:fs/promises'
 import { dirname, extname, join, posix, relative, resolve, sep } from 'node:path'
 import {
@@ -105,6 +106,7 @@ export type ClientModulesChanged = Readonly<{
 }>
 
 export type ClientModuleRegistryOptions = Readonly<{
+  composition?: (profile: string) => CompositionPatch | undefined
   /** A profile's daemon-owned snapshot directory. It must not be the mutable install tree. */
   snapshotDirectory: (profile: string, profileDirectory: string) => string
   clock?: () => Date
@@ -901,6 +903,23 @@ function rosterRevision(
 }
 
 export function createClientModuleRegistry(options: ClientModuleRegistryOptions): ClientModuleRegistry {
+  const filterRoster = (roster: ClientModuleListResult, selection: CompositionPatch | undefined) => {
+    if (!selection || (!selection.surfaces && !selection.shell && !selection.uiModules?.length)) return roster
+    const rows =
+      roster.rows?.filter((row) =>
+        compositionModuleAllowed(selection, {
+          id: row.rowId,
+          aliases: [row.moduleName, row.packageId ?? ''],
+          slots: row.slots ?? [],
+        }),
+      ) ?? []
+    const modules = roster.modules.filter((module) => rows.some((row) => row.entryUrl === module.entryUrl))
+    const statuses = roster.statuses.filter((status) =>
+      rows.some((row) => row.packageId === status.packageId),
+    )
+    const selected = { ...roster, rows, modules, statuses }
+    return { ...selected, revision: rosterRevision(selected) }
+  }
   const generationRegistries = new Map<string, ClientModuleRegistry>()
   const pruneGenerationAssets = async (input: Parameters<ClientModuleRegistry['list']>[0]) => {
     const referenced = new Set(
@@ -945,6 +964,7 @@ export function createClientModuleRegistry(options: ClientModuleRegistryOptions)
         snapshotDirectory: (profile, directory) =>
           join(options.snapshotDirectory(profile, directory), 'generations', id),
         runtimeArtifacts: () => ({ desired: snapshot.artifact, lastGood: snapshot.artifact }),
+        composition: () => undefined,
         changed: () => undefined,
       })
       generationRegistries.set(`${input.profile}:${id}`, registry)
@@ -1424,10 +1444,17 @@ export function createClientModuleRegistry(options: ClientModuleRegistryOptions)
       await pruneGenerationAssets(input)
       if (input.sessionId) {
         const pin = new RuntimeGenerationSnapshotStore(input.profileDirectory).session(input.sessionId)
-        if (pin) return generationRoster(input, pin.generationId)
+        if (pin) {
+          const roster = await generationRoster(input, pin.generationId)
+          const selection = new CompositionSessionStore(input.profileDirectory).read(input.sessionId)?.tree
+            .selection
+          return filterRoster(roster, selection)
+        }
       }
       inputs.set(input.profile, input)
-      return serialize(input.profile, () => reconcile(input, true)).catch((error: unknown) => {
+      return serialize(input.profile, async () =>
+        filterRoster(await reconcile(input, true), options.composition?.(input.profile)),
+      ).catch((error: unknown) => {
         emitResourceFailure(input)
         throw error
       })

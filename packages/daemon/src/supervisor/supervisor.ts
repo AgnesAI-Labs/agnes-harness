@@ -3,6 +3,9 @@ import { mkdir, rename, rm, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import {
+  compositionPreset,
+  resolveComposition,
+  compositionSurfaceAllowed,
   ActivationInProgressError,
   type ConfigurationService,
   composeSecrets,
@@ -840,6 +843,22 @@ export async function startSupervisor(o: StartSupervisorOptions): Promise<{
   activationBarrier: ExtensionActivationBarrier
   ws?: { url: string; token: string }
 }> {
+  const composition = o.profile.composition
+    ? resolveComposition(o.profile, {
+        preset: compositionPreset(o.profile, o.profile.presets.default),
+      }).selection
+    : undefined
+  if (composition?.surfaces !== undefined) {
+    const { localWeb, ws, ...config } = o.config
+    o = {
+      ...o,
+      config: {
+        ...config,
+        ...(localWeb && compositionSurfaceAllowed(composition, 'web') ? { localWeb } : {}),
+        ...(ws && compositionSurfaceAllowed(composition, 'http') ? { ws } : {}),
+      },
+    }
+  }
   prepareDaemonSocketPaths(o.config)
   if (o.config.ws && o.config.localWeb) throw new Error('choose local Web or remote WSS')
   const clock = o.clock ?? (() => Date.now())
@@ -1316,6 +1335,9 @@ export async function startSupervisor(o: StartSupervisorOptions): Promise<{
       // path is wired separately into `closeSockets` in the shutdown ladder further down.
       startupCleanup.push(() => surfaceController?.stop())
       await coordinateSurfacesOnBoot({
+        ...(composition?.surfaces === undefined
+          ? {}
+          : { enabled: compositionSurfaceAllowed(composition, 'http') }),
         profileDir: o.profileDir,
         inventory: surfaceInventory,
         controller: surfaceController,
@@ -1517,6 +1539,7 @@ export async function startSupervisor(o: StartSupervisorOptions): Promise<{
             return await clientEffectCall(input, authority)
           },
           clientModules: createClientModuleRegistry({
+            composition: () => composition,
             snapshotDirectory: (profile) => join(o.config.dataDir, 'daemon', 'client-modules', profile),
             runtimeArtifacts: () => runtimeArtifactsFromStore(runtimeStore),
           }),
@@ -2455,6 +2478,12 @@ export async function runAgnesd(args: RunAgnesdArgs = {}, deps: RunAgnesdDeps = 
         return await packageClientEffectCall(input, authority)
       },
       clientModules: createClientModuleRegistry({
+        composition: () =>
+          profile.composition
+            ? resolveComposition(profile, {
+                preset: compositionPreset(profile, profile.presets.default),
+              }).selection
+            : undefined,
         snapshotDirectory: (profileName) => join(scope.daemonDir, 'client-modules', profileName),
         runtimeArtifacts: () => runtimeArtifactsFromStore(packagePluginTree),
       }),

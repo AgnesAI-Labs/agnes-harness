@@ -31,6 +31,8 @@ export function resolveSurfaceDeployment(deps: {
  * child process that dies with every daemon stop, so boot coordination cannot be skipped after the
  * first start. */
 export async function coordinateSurfacesOnBoot(deps: {
+  /** Explicit composition ceiling for package HTTP surfaces; omission preserves defaults. */
+  enabled?: boolean
   profileDir: string
   inventory: InstalledInventory
   controller: SurfaceController
@@ -38,6 +40,7 @@ export async function coordinateSurfacesOnBoot(deps: {
   surfaceApiVersion: string
   signal: AbortSignal
 }): Promise<ResolvedDeployment | undefined> {
+  if (deps.enabled === false) return undefined
   // C1 (final review, Critical): `resolveDeployment` and `controller.start` can both fail for reasons
   // entirely outside the daemon's control -- a bad artifact, a health-probe timeout, a `harnessRange`
   // mismatch, or a package removed from the inventory while a deploy still references it. None of

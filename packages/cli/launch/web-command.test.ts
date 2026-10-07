@@ -39,6 +39,33 @@ const resources = {
 }
 
 describe('Web command launch contract', () => {
+  it('starts a headless composition without requesting or creating a Web listener', async () => {
+    const signals = new EventEmitter()
+    const createServer = vi.fn()
+    const closeClient = vi.fn(async () => undefined)
+    const ensureBackend = vi.fn(async (options: EnsureLocalBackendOptions) => {
+      expect(options.exposeWeb).toBe(false)
+      return {
+        scope: {} as LocalBackend['scope'],
+        discovery: {} as LocalBackend['discovery'],
+        socketPath: unreachableSocket,
+        closeClient,
+        close: async () => undefined,
+      } as LocalBackend
+    })
+    await runWebCommand([], {
+      resources,
+      signals,
+      composition: { surfaces: [] },
+      ensureBackend,
+      createServer,
+      write() {
+        queueMicrotask(() => signals.emit('SIGTERM'))
+      },
+    })
+    expect(createServer).not.toHaveBeenCalled()
+    expect(closeClient).toHaveBeenCalled()
+  })
   beforeEach(() => {
     mountCloseCalls = 0
   })

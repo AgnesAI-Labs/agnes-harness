@@ -1,4 +1,14 @@
 import type { IncomingMessage, ServerResponse } from 'node:http'
+import {
+  agnesHome,
+  HostError,
+  compositionSurfaceAllowed,
+  compositionPreset,
+  resolveComposition,
+  type CompositionPatch,
+} from '@agnes/host'
+import { resolveDoctorProfile } from '../src/commands/doctor-profile.js'
+import { parseArgs } from '../src/args.js'
 import { createWebServer, DEFAULT_WEB_PORT, type WebServer } from '@agnes/web/server'
 import { ensureLocalBackend, type LocalBackend } from './backend.js'
 import { localOAuthAdmin } from './oauth-admin.js'
@@ -18,6 +28,8 @@ export type WebCommandIO = {
   createServer?: typeof createWebServer
   ensureBackend?: typeof ensureLocalBackend
   signals?: NodeJS.EventEmitter
+  /** Embedding/test seam; production resolves the same profile as daemon boot. */
+  composition?: CompositionPatch
 }
 
 export type WebCommandOptions = {
@@ -145,6 +157,32 @@ export async function runWebCommand(
   const resources = io.resources ?? resolveLaunchResources()
   const ensure = io.ensureBackend ?? ensureLocalBackend
   const makeServer = io.createServer ?? createWebServer
+  const env = io.env ?? process.env
+  const composition =
+    io.composition ??
+    (!io.ensureBackend
+      ? await (async () => {
+          const deps = {
+            env,
+            home: parsed.home ?? agnesHome(env),
+            cwd,
+            agnesVersion: '0.0.0',
+            log: () => undefined,
+          }
+          const args = parseArgs(['config', 'dump', ...(parsed.profile ? ['--profile', parsed.profile] : [])])
+          let profile
+          try {
+            profile = await resolveDoctorProfile(deps, args)
+          } catch (error) {
+            // Match the launcher's existing package-lock recovery path; malformed profiles still refuse.
+            if (!(error instanceof HostError && error.code === 'E_LOCK_MISMATCH')) throw error
+            profile = await resolveDoctorProfile({ ...deps, lock: { packages: {} } }, args)
+          }
+          return resolveComposition(profile, { preset: compositionPreset(profile, profile.presets.default) })
+            .selection
+        })()
+      : undefined)
+  const exposeWeb = compositionSurfaceAllowed(composition, 'web')
   let backend: LocalBackend | undefined
   let web: WebServer | undefined
   let admin: ReturnType<typeof localPackageAdmin> | undefined
@@ -162,7 +200,15 @@ export async function runWebCommand(
       webOrigin: origin,
       webPort: port,
       resources,
+      ...(exposeWeb ? {} : { exposeWeb: false }),
     })
+    if (!exposeWeb) {
+      ;(io.write ?? ((text: string) => process.stdout.write(text)))(
+        'Daemon ready; Web UI disabled by composition.\n',
+      )
+      await waitForSignal(io.signals ?? process)
+      return
+    }
     if (!backend.web)
       throw new Error('local daemon Web credential is unavailable; stop/restart the local daemon')
     const adminHandler = localPackageAdmin(backend, origin)
