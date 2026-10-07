@@ -100,6 +100,11 @@ it('keeps legacy hashes, rejects malformed declarations/policies and covers wild
   )
   expect(capabilityHash({ ...base, declaredCapabilities: { model: true } })).not.toBe(capabilityHash(base))
   expect(() => parsePluginCapabilities({ exec: true })).toThrow('schema')
+  expect(parsePluginCapabilities({ device: true })).toEqual({ device: true })
+  expect(() => parsePluginCapabilities({ device: 'pump' })).toThrow('schema')
+  expect(capabilityHash({ ...base, declaredCapabilities: { device: true } })).not.toBe(capabilityHash(base))
+  expect(capabilityPolicyBlockers({ device: true }, { deny: ['device'] })).toHaveLength(1)
+  expect(capabilityPolicyBlockers({ device: true }, { allow: ['device'] })).toEqual([])
   expect(capabilityPolicyBlockers({ network: ['*'] }, { deny: ['network:private.example'] })).toHaveLength(1)
   expect(
     capabilityPolicyBlockers({ filesystem: { write: ['workspace/*'] } }, { allow: ['filesystem.read:*'] }),

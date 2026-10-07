@@ -28,7 +28,7 @@ export type McpRemoteTool = {
   name: string
   description: string
   inputSchema: Record<string, unknown>
-  annotations?: { readOnlyHint?: boolean }
+  annotations?: { readOnlyHint?: boolean; destructiveHint?: boolean; idempotentHint?: boolean }
 }
 export type McpRemoteResource = Readonly<{
   uri: string
@@ -299,7 +299,11 @@ function remoteDefinition(
   remote: McpRemoteTool,
   mediaLimits?: McpMediaLimits,
 ): ToolDef {
-  const readOnly = remote.annotations?.readOnlyHint === true
+  // Hints never override contradictory destructive metadata. Missing write hints stay
+  // conservative; idempotency describes replay, not permission to act unattended.
+  const destructive = remote.annotations?.destructiveHint ?? remote.annotations?.readOnlyHint !== true
+  const readOnly = remote.annotations?.readOnlyHint === true && !destructive
+  const idempotent = remote.annotations?.idempotentHint === true
   const name = localName(cfg.id, remote.name)
   return defineTool({
     name,
@@ -307,13 +311,13 @@ function remoteDefinition(
     parameters: remoteInputSchema(remote.inputSchema),
     meta: {
       isReadOnly: readOnly,
-      isDestructive: !readOnly,
+      isDestructive: destructive,
       isConcurrencySafe: false,
       isOpenWorld: true,
-      replay: readOnly ? 'safe' : 'never',
+      replay: readOnly ? 'safe' : idempotent ? 'idempotent' : 'never',
       costHint: {},
       deferLoading: cfg.defer,
-      requiresApproval: undefined,
+      requiresApproval: destructive || (!readOnly && !idempotent) ? 'always' : undefined,
     },
     async execute(args, ctx): Promise<ToolResult> {
       let result: Awaited<ReturnType<McpConnection['callTool']>>

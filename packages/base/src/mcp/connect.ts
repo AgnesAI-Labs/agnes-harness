@@ -30,7 +30,13 @@ type SdkTool = {
   name: string
   description?: string | undefined
   inputSchema: Record<string, unknown>
-  annotations?: { readOnlyHint?: boolean | undefined } | undefined
+  annotations?:
+    | {
+        readOnlyHint?: boolean | undefined
+        destructiveHint?: boolean | undefined
+        idempotentHint?: boolean | undefined
+      }
+    | undefined
 }
 type SdkTransport = CloseObservableTransport
 type SdkResource = { uri: string; name: string; description?: string; mimeType?: string }
@@ -507,9 +513,21 @@ export async function connectMcp(
             name: tool.name,
             description: tool.description ?? '',
             inputSchema: tool.inputSchema,
-            ...(typeof tool.annotations?.readOnlyHint === 'boolean'
-              ? { annotations: { readOnlyHint: tool.annotations.readOnlyHint } }
-              : {}),
+            ...(tool.annotations === undefined
+              ? {}
+              : {
+                  annotations: {
+                    ...(typeof tool.annotations.readOnlyHint === 'boolean'
+                      ? { readOnlyHint: tool.annotations.readOnlyHint }
+                      : {}),
+                    ...(typeof tool.annotations.destructiveHint === 'boolean'
+                      ? { destructiveHint: tool.annotations.destructiveHint }
+                      : {}),
+                    ...(typeof tool.annotations.idempotentHint === 'boolean'
+                      ? { idempotentHint: tool.annotations.idempotentHint }
+                      : {}),
+                  },
+                }),
           })
         if (tools.length > MAX_MCP_CATALOG_TOOLS) throw new Error('MCP tool catalog exceeds Host limit')
         if (page.nextCursor === undefined) return tools

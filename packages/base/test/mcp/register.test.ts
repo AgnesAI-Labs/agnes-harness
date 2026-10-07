@@ -221,9 +221,31 @@ describe('registerRemoteToolsStrict', () => {
       isDestructive: true,
       isReadOnly: false,
       replay: 'never',
-      requiresApproval: undefined,
+      requiresApproval: 'always',
     })
     expect(resources).toEqual([{ id: 'gh', kind: 'mcp', name: 'gh', description: 'MCP server gh (2 tools)' }])
+    for (const [annotations, expected] of [
+      [
+        { readOnlyHint: true, destructiveHint: true, idempotentHint: true },
+        { isReadOnly: false, isDestructive: true, replay: 'idempotent', requiresApproval: 'always' },
+      ],
+      [
+        { readOnlyHint: false, destructiveHint: false, idempotentHint: false },
+        { isReadOnly: false, isDestructive: false, replay: 'never', requiresApproval: 'always' },
+      ],
+      [
+        { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
+        { isReadOnly: false, isDestructive: false, replay: 'idempotent', requiresApproval: undefined },
+      ],
+    ] as const) {
+      const fixture = fakeApi()
+      await registerRemoteToolsStrict(fixture.api, connection(), stdio, {
+        catalog: [
+          { name: 'annotated', description: 'Device action', inputSchema: { type: 'object' }, annotations },
+        ],
+      })
+      expect(fixture.tools[0]?.meta).toMatchObject(expected)
+    }
   })
 
   it('forwards calls and converts images into artifact-backed author content', async () => {
@@ -912,7 +934,7 @@ describe('connectMcp', () => {
             name: 'echo',
             description: 'echo text',
             inputSchema: { type: 'object' as const },
-            annotations: { readOnlyHint: true },
+            annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true },
           },
         ],
       })),
@@ -935,6 +957,12 @@ describe('connectMcp', () => {
     expect(sdkClient.setElicitationHandler).toHaveBeenCalledOnce()
     expect(sdkClient.setElicitationHandler.mock.calls[0]?.[0]()).toEqual({ action: 'decline' })
     expect(conn.id).toBe('gh')
+    expect((await conn.listTools())[0]?.annotations).toEqual({
+      readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: true,
+    })
+    await conn.close()
   })
 
   it('forwards the SDK tools/list_changed notification to onToolsChanged listeners, and stops after close', async () => {

@@ -2591,6 +2591,9 @@
         "model": {
           "type": "boolean"
         },
+        "device": {
+          "type": "boolean"
+        },
         "childAgents": {
           "type": "boolean"
         },

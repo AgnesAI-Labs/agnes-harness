@@ -31,7 +31,7 @@ export function capabilityAtoms(value: PluginCapabilities | undefined): string[]
     ...(['read', 'write'] as const).flatMap((key) =>
       (value.filesystem?.[key] ?? []).map((scope) => `filesystem.${key}:${scope}`),
     ),
-    ...(['model', 'childAgents', 'ui'] as const).filter((key) => value[key] === true),
+    ...(['model', 'childAgents', 'ui', 'device'] as const).filter((key) => value[key] === true),
   ].sort()
 }
 
