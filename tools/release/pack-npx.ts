@@ -9,7 +9,7 @@ import { PUBLIC_PACKAGE_VERSION, publishableManifest } from './npx-package.js'
 const repo = join(dirname(fileURLToPath(import.meta.url)), '../..')
 
 export async function packNpxPackage(stage: string): Promise<{ stage: string; triple: string }> {
-  const triple = `${process.platform}-${process.arch}`
+  const triple = `${process.platform}-${process.arch}` // guards-allow-platform: select the native triple produced by this release machine
   const dist = join(stage, 'dist')
   await mkdir(stage, { recursive: true })
   execFileSync(

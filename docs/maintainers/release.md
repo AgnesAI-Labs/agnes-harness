@@ -36,4 +36,6 @@ The [release-readiness guard](../../tools/guards/src/release-readiness.test.ts) 
 
 - [ ] `packages.private` — Select public packages, assign non-placeholder versions, and remove `private` only from those packages. Tooling packages remain private to package registries.
 
+Run `pnpm release:npx-smoke` to pack a tarball, install it offline outside the checkout, and check version, help and Web health. Run `pnpm release:external-examples --keep` to verify external author examples against packed public APIs. Both TypeScript entrypoints use the pinned tsx runner.
+
 Passing checks establishes only their executed scope. Validate real models, external MCP, platforms, devices, and installers in their own environments.

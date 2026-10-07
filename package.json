@@ -7,6 +7,8 @@
     "node": ">=24.10"
   },
   "scripts": {
+    "release:npx-smoke": "tsx tools/release/npx-smoke.ts",
+    "release:external-examples": "tsx tools/release/external-examples.ts",
     "dev": "pnpm --filter @agnes/cli dev:web serve",
     "test": "vitest run --project fast --maxWorkers=1",
     "test:heavy": "vitest run --project heavy --maxWorkers=1",

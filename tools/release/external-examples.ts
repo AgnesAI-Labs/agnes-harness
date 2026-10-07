@@ -1,4 +1,4 @@
-#!/usr/bin/env node
+#!/usr/bin/env -S node --import tsx
 import { execFileSync } from 'node:child_process'
 import { existsSync } from 'node:fs'
 import { copyFile, cp, mkdir, mkdtemp, readdir, readFile, realpath, rm, writeFile } from 'node:fs/promises'
@@ -7,6 +7,7 @@ import { tmpdir } from 'node:os'
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { createScanner } from 'typescript/unstable/ast/scanner'
+import { AGH_DIR } from '../../packages/protocol/src/index.js'
 import { packNpxPackage } from './pack-npx.js'
 
 const repo = resolve(dirname(fileURLToPath(import.meta.url)), '../..')
@@ -132,7 +133,7 @@ function environment(home: string): NodeJS.ProcessEnv {
       .join(sep === '/' ? ':' : ';'),
     HOME: home,
     USERPROFILE: home,
-    AGH_HOME: join(home, '.agh'),
+    AGH_HOME: join(home, AGH_DIR),
     TMPDIR: tmpdir(),
     SystemRoot: process.env.SystemRoot,
     LANG: 'en_US.UTF-8',

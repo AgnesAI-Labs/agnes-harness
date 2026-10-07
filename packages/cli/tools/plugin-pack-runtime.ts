@@ -5,8 +5,14 @@ import { dirname, join } from 'node:path'
 /** esbuild's JS launcher and platform binary must remain together; its API cannot be bundled. */
 export async function copyPluginPackRuntime(outputDirectory: string): Promise<void> {
   const require = createRequire(import.meta.url)
-  for (const name of ['esbuild', `@esbuild/${process.platform}-${process.arch}`]) {
-    const source = dirname(require.resolve(name + '/package.json'))
+  const esbuildManifest = require.resolve('esbuild/package.json')
+  // pnpm installs the optional binary beside esbuild, not beside the CLI workspace symlink.
+  const esbuildRequire = createRequire(esbuildManifest)
+  const binary = `@esbuild/${process.platform}-${process.arch}` // guards-allow-platform: esbuild binary for this release platform
+  for (const name of ['esbuild', binary]) {
+    const source = dirname(
+      name === 'esbuild' ? esbuildManifest : esbuildRequire.resolve(name + '/package.json'),
+    )
     const destination = join(outputDirectory, 'node_modules', name)
     await mkdir(dirname(destination), { recursive: true })
     await cp(source, destination, { recursive: true, dereference: true })

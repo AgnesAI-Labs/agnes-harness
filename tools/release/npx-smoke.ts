@@ -1,4 +1,4 @@
-#!/usr/bin/env node
+#!/usr/bin/env -S node --import tsx
 // Packs @agnes/harness, installs the tarball outside the repo, and checks agh web.
 import { execFileSync, spawn } from 'node:child_process'
 import { existsSync } from 'node:fs'
@@ -22,7 +22,7 @@ const cache = join(root, 'npm-cache')
 let web: ReturnType<typeof spawn> | undefined
 let webLog = ''
 let succeeded = false
-const agh = join(install, 'node_modules', '.bin', process.platform === 'win32' ? 'agh.cmd' : 'agh')
+const agh = join(install, 'node_modules', '.bin', process.platform === 'win32' ? 'agh.cmd' : 'agh') // guards-allow-platform: npm executable suffix for the smoke platform
 
 const env = {
   PATH: process.env.PATH ?? '',
