@@ -87,7 +87,7 @@ describe('createDefaultCompactionEngine', () => {
       planned = true
       return { summarizeRange: [1, 1] } as CompactionPlan
     })
-    const instance = engine.create()
+    const instance = await engine.create()
     expect(instance.shouldCompact({ contextTokens: 10, contextWindow: 100, reserveTokens: 1 })).toBe(false)
     expect(instance.shouldCompact({ contextTokens: 1000, contextWindow: 100, reserveTokens: 10 })).toBe(true)
     const output = await instance.compact(input([node(1, 'user', 10, { content: 'only' })], 100), {
