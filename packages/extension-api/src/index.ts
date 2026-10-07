@@ -19,3 +19,5 @@ export * from './slots.js'
 export * from './tool.js'
 export * from './version.js'
 export * from './workspace-hooks.js'
+
+export * from './loop.js'
