@@ -1,5 +1,10 @@
-import type { LoopCheckpoint, LoopContext, LoopDriver, LoopFactory } from '@agnes/extension-api'
-import { loopCheckpointCodec } from '@agnes/extension-api'
+import type {
+  LoopCheckpoint,
+  LoopCheckpointCodec,
+  LoopContext,
+  LoopDriver,
+  LoopFactory,
+} from '@agnes/extension-api'
 import { validateOpState } from '@agnes/protocol'
 import type { Inbox } from '../reduce/shapes.js'
 import { claimFrom, inboxEvent } from '../step/inbox.js'
@@ -35,10 +40,16 @@ const portsFor = new WeakMap<LoopContext, DefaultLoopPorts>()
 export function bindDefaultLoopPorts(ctx: LoopContext, ports: DefaultLoopPorts): void {
   portsFor.set(ctx, ports)
 }
-const codec = loopCheckpointCodec(1, (state) => {
-  if (!validateOpState(state).ok) throw new Error('Invalid default loop checkpoint')
-  return state
-})
+const codec: LoopCheckpointCodec = {
+  version: 1,
+  encode: (state) => ({ codecVersion: 1, state: structuredClone(state) }),
+  decode(checkpoint) {
+    if (checkpoint.codecVersion !== 1)
+      throw new Error(`Loop checkpoint codec version ${checkpoint.codecVersion} is unsupported; expected 1`)
+    if (!validateOpState(checkpoint.state).ok) throw new Error('Invalid default loop checkpoint')
+    return structuredClone(checkpoint.state)
+  },
+}
 
 class DefaultLoopDriver implements LoopDriver {
   constructor(private readonly ports: DefaultLoopPorts) {}

@@ -8,7 +8,6 @@ import type {
   LoopEventRegistryPort,
   LoopEventReturnMap,
 } from '@agnes/extension-api'
-import { LOOP_EVENTS } from '@agnes/extension-api'
 import { isToolResult } from '../effects/tool-dispatch.js'
 import { withTimeout } from '../effects/wrap.js'
 import { authorHookReturn } from '../hooks/returns.js'
@@ -16,10 +15,18 @@ import type { DeriveOutput } from '../request/derive.js'
 import { applyBeforeRequestPatches } from '../request/transforms.js'
 import type { SessionImpl } from '../step/session.js'
 
+const EVENTS: Record<LoopEventName, true> = {
+  before_model_request: true,
+  after_model_response: true,
+  before_tool_call: true,
+  after_tool_result: true,
+  turn_end: true,
+}
+
 export class LoopEventRegistry implements LoopEventRegistryPort {
   private readonly handlers = new Map<LoopEventName, Set<unknown>>()
   on<E extends LoopEventName>(event: E, handler: LoopEventHandler<E>): () => void {
-    if (!LOOP_EVENTS.includes(event) || typeof handler !== 'function')
+    if (!Object.hasOwn(EVENTS, event) || typeof handler !== 'function')
       throw new Error('Invalid loop event listener')
     let entries = this.handlers.get(event)
     if (!entries) {
