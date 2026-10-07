@@ -48,6 +48,12 @@ importers:
         specifier: workspace:*
         version: link:../../../packages/cordis
 
+  examples/persistence:
+    dependencies:
+      '@agnes/extension-api':
+        specifier: workspace:*
+        version: link:../../packages/extension-api
+
   packages/ai:
     dependencies:
       '@agnes/protocol':

@@ -1,0 +1,17 @@
+{
+  "name": "@agnes-examples/persistence-jsonl",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc -b"
+  },
+  "dependencies": {
+    "@agnes/extension-api": "workspace:*"
+  },
+  "license": "Apache-2.0"
+}
