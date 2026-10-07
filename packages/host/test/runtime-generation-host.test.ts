@@ -39,7 +39,7 @@ it('keeps old plugin leases across update, close and cold resume, and drains on 
         name: 'acme/generation',
         version,
         main: './index.js',
-        agnes: { plugins: [{ export: 'main', inject: ['extension'] }] },
+        agnes: { plugins: [{ export: 'main', apiRange: '^1.4.0', inject: ['extension'] }] },
       }),
     )
     writeFileSync(join(directory, 'index.js'), version)
