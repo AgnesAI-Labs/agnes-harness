@@ -41,6 +41,7 @@ export async function invokeTool(
     signal?: AbortSignal
     depth: number
     parentEffectId?: string
+    invocationId?: string
     nestedLease?: NestedToolLease
     onPark?: (event: EventInput) => void
     onAttachmentRead?: () => void
@@ -84,6 +85,7 @@ export async function invokeTool(
         },
         { origin: 'model' },
       ),
+      ...(o.invocationId ? [s.ev('x/core/loop-effect', { invocationId: o.invocationId, toolUseId }, { ignorable: true })] : []),
     ],
     (cur, argsSeq) => {
       if (cur?.phase.kind !== 'tools')

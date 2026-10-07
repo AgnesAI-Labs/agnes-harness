@@ -41,6 +41,41 @@ export class LoopInvocations {
         checkpoint: row.checkpoint,
         result: structuredClone(row.result),
       }
+    // A process can die after Core committed a tool response but before the driver's receipt.
+    // Associate the public id with that call in its original transaction, then recover the result.
+    const links = await scanAll((query) => this.s.d.log.scan(query), {
+      type: 'x/core/loop-effect',
+      lane: this.s.lane,
+      toSeq: this.s.lastSeq,
+    })
+    const link = links
+      .reverse()
+      .find((event) => (event.data as { invocationId?: string }).invocationId === id)
+    const toolUseId = (link?.data as { toolUseId?: string } | undefined)?.toolUseId
+    if (toolUseId) {
+      const results = await scanAll((query) => this.s.d.log.scan(query), {
+        type: 'tool/result',
+        lane: this.s.lane,
+        toSeq: this.s.lastSeq,
+      })
+      const result = results
+        .reverse()
+        .find((event) => (event.data as { toolUseId?: string }).toolUseId === toolUseId)
+      if (result) {
+        const data = result.data as { content: ToolResult['content']; isError?: boolean; code?: string }
+        // A recovery placeholder is uncertainty, not a real response from the external tool.
+        if (data.code !== 'TOOL_OUTCOME_UNKNOWN')
+          return {
+            status: 'responded',
+            invocationId: id,
+            checkpoint: row.checkpoint,
+            result: structuredClone({
+              content: data.content,
+              ...(data.isError === undefined ? {} : { isError: data.isError }),
+            }),
+          }
+      }
+    }
     return { status: 'may-have-sent', invocationId: id, checkpoint: row.checkpoint }
   }
   async claim(id: string, input: unknown): Promise<ToolResult | readonly InferenceEvent[] | undefined> {
@@ -51,13 +86,14 @@ export class LoopInvocations {
       if (previous) {
         if (previous.fingerprint !== fingerprint)
           throw new CoreError('E_RELATION', 'invocationId was reused for a different operation')
-        if (previous.status !== 'responded' || previous.result === undefined)
+        const recovered = await this.status(id)
+        if (recovered.status !== 'responded')
           throw new CoreError(
             'E_RELATION',
             'Invocation may have been sent; reconcile its effect before replay',
             { invocationId: id },
           )
-        cached = structuredClone(previous.result)
+        cached = structuredClone(recovered.result)
         return
       }
       await this.s.d.log.append([

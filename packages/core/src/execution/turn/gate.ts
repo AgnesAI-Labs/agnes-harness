@@ -159,9 +159,13 @@ export function contextBudgetError(
  * "stop", because running out of steps, running out of credit and waiting on a human are three
  * different endings and the ledger has to say which one happened.
  */
+function admittedStep(s: SessionImpl): number {
+  return s.state.openStep.get(s.lane)?.step ?? (s.op()?.step ?? 0) + 1
+}
+
 async function evaluateBudgetPreflight(s: SessionImpl): Promise<'ok' | { reason: TurnEndReason }> {
   const op = s.op() as OpStateObj
-  if (s.preset.budget.maxSteps !== null && op.step + 1 > s.preset.budget.maxSteps) {
+  if (s.preset.budget.maxSteps !== null && admittedStep(s) > s.preset.budget.maxSteps) {
     await s.endTurn('max_steps')
     return { reason: 'max_steps' }
   }
@@ -195,14 +199,14 @@ export async function builtinBudgetPreflight(s: SessionImpl, mandatoryOnly = fal
   const op = s.op()
   if (!op) throw new CoreError('E_RELATION', 'Budget admission requires an accepted input')
   if (mandatoryOnly && s.turnBudgetCap() === null) {
-    if (s.preset.budget.maxSteps !== null && op.step + 1 > s.preset.budget.maxSteps) {
+    if (s.preset.budget.maxSteps !== null && admittedStep(s) > s.preset.budget.maxSteps) {
       await s.endTurn('max_steps')
       return { reason: 'max_steps' }
     }
     return 'ok'
   }
   const previous = s.turn?.budgetAdmission
-  const step = op.step + 1
+  const step = admittedStep(s)
   const cap = s.turnBudgetCap()
   if (previous?.step === step && previous.cap === cap && previous.creditsUsed === s.state.creditsUsed) return 'ok'
   const result = await evaluateBudgetPreflight(s)

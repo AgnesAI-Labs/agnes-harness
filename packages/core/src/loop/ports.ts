@@ -72,7 +72,7 @@ export async function createLoopContext(s: SessionImpl, restoreCheckpoint = fals
     return op
   }
   let lastPortEdge: number | null = null
-  async function ensureStep(newModel = false): Promise<void> {
+  async function ensureStep(newModel = false, open = true): Promise<void> {
     const op = requireOp()
     if (s.closingOrClosed) throw new CoreError('E_CLOSED', 'session closed')
     if (op.control.status === 'cancel_requested')
@@ -88,6 +88,7 @@ export async function createLoopContext(s: SessionImpl, restoreCheckpoint = fals
         throw new CoreError('E_BUDGET', 'Loop operation refused by budget admission', {
           reason: admission.reason,
         })
+      if (!open) return
       const current = requireOp()
       await s.transition([s.ev('step/start', { turn: current.meta.turn, step: current.step + 1 })], {
         ...current,
@@ -134,15 +135,16 @@ export async function createLoopContext(s: SessionImpl, restoreCheckpoint = fals
         for (const event of result) yield event
         return
       }
-      await ensureStep(true)
-      const admitted = await admitInferenceRequest(s, binding.output)
+      await ensureStep(true, false)
+      const admitted = await admitInferenceRequest(s, binding.output, true)
       if ('phase' in admitted)
         throw new CoreError('E_BUDGET', 'Request admission stopped the turn', { reason: admitted.reason })
       if (admitted.calibration.event && !admitted.calibration.deny)
         await s.d.log.append([admitted.calibration.event])
+      await ensureStep(true)
       await invocations.claim(binding.invocationId, request)
       const events: InferenceEvent[] = []
-      for await (const event of streamWire(admitted.wire, admitted.output, signal)) {
+      for await (const event of streamWire(admitted.wire, admitted.output, signal, binding.invocationId)) {
         events.push(event)
         yield event
       }
@@ -156,9 +158,15 @@ export async function createLoopContext(s: SessionImpl, restoreCheckpoint = fals
     request: RequestBody,
     output: DeriveOutput,
     signal: AbortSignal,
+    invocationId: string,
   ): AsyncIterable<InferenceEvent> {
     const effect = s.effects.start({ kind: 'inference', replay: 'never', slot: request.slot })
-    const pre = [...output.notes, s.ev('request/header', output.header), effect.intent]
+    const pre = [
+      s.ev('x/core/loop-effect', { invocationId, effectId: effect.effectId }, { ignorable: true }),
+      ...output.notes,
+      s.ev('request/header', output.header),
+      effect.intent,
+    ]
     const op = requireOp()
     const seqs = await s.transition(
       pre,
@@ -176,6 +184,7 @@ export async function createLoopContext(s: SessionImpl, restoreCheckpoint = fals
     let sent = false
     let settled = false
     let failed = false
+    let completed = false
     let stopReason = 'end_turn'
     const content: Array<{ type: 'text' | 'thinking'; text: string }> = []
     try {
@@ -201,6 +210,7 @@ export async function createLoopContext(s: SessionImpl, restoreCheckpoint = fals
         } else if (!sent && event.type !== 'error')
           throw new CoreError('E_ENVELOPE', 'Provider response is missing a sent stamp')
         if (event.type === 'error') failed = true
+        if (event.type === 'done') completed = true
         if (event.type === 'done')
           stopReason =
             event.reason === 'length' ? 'max_tokens' : event.reason === 'toolUse' ? 'tool_use' : 'end_turn'
@@ -238,6 +248,8 @@ export async function createLoopContext(s: SessionImpl, restoreCheckpoint = fals
         }
         yield event
       }
+      if (!failed && !signal.aborted && (!sent || !completed))
+        throw new CoreError('E_ENVELOPE', 'Provider response ended without sent/done events')
       if (!failed && !signal.aborted)
         await dispatchLoopEvent(s, 'after_model_response', { content, stopReason }, signal)
       await s.d.log.append([effect.settle(signal.aborted ? 'aborted' : failed ? 'error' : 'ok')])
@@ -264,6 +276,7 @@ export async function createLoopContext(s: SessionImpl, restoreCheckpoint = fals
   function invoke(call: LoopToolCall, signal: AbortSignal, parked: import('../types.js').EventInput[]) {
     return s.invokeTool(call.name, call.args, {
       signal,
+      ...(call.invocationId ? { invocationId: call.invocationId } : {}),
       depth: 0,
       onPark: (event) => {
         parked.push(event)
@@ -285,9 +298,16 @@ export async function createLoopContext(s: SessionImpl, restoreCheckpoint = fals
     const done = s.beginLoopOperation()
     try {
       const id = call.invocationId ?? s.d.ids.effectId()
+      const input = { name: call.name, args: call.args }
+      if ((await invocations.status(id)).status !== 'not-sent') {
+        const result = await invocations.claim(id, input)
+        if (!result || Array.isArray(result))
+          throw new CoreError('E_RELATION', 'Invocation result is not a tool response')
+        return result as import('@agnes/extension-api').ToolResult
+      }
       // Admission precedes the durable uncertainty fence.
       await prepareTools(AbortSignal.any([signal, s.ac.signal]))
-      return await invocations.run(id, { name: call.name, args: call.args }, () => executeOwned(call, signal))
+      return await invocations.run(id, input, () => executeOwned({ ...call, invocationId: id }, signal))
     } finally {
       done()
     }
@@ -422,10 +442,9 @@ export async function createLoopContext(s: SessionImpl, restoreCheckpoint = fals
             {
               dispatch: async (input, callSignal) => {
                 try {
-                  return await invocations.run(
-                    calls[Number(input.id)]?.invocationId ?? s.d.ids.effectId(),
-                    { name: input.name, args: input.args },
-                    () => invoke(input, callSignal, parked),
+                  const id = calls[Number(input.id)]?.invocationId ?? s.d.ids.effectId()
+                  return await invocations.run(id, { name: input.name, args: input.args }, () =>
+                    invoke({ ...input, invocationId: id }, callSignal, parked),
                   )
                 } catch (error) {
                   if (!failed) failure = error

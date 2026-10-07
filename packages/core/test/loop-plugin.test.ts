@@ -5,7 +5,7 @@ import {
   type LoopFactory,
   loopCheckpointCodec,
 } from '@agnes/extension-api'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { ToolRuntimeRegistry } from '../src/effects/tool-providers.js'
 import { defaultIds } from '../src/ids.js'
 import { Kernel } from '../src/kernel.js'
@@ -483,14 +483,33 @@ it.each(['turn-end', 'idle'] as const)(
 
 it.each([
   ['max_steps', 0, null, 'deny'],
+  ['completed', 1, null, 'deny'],
   ['budget', null, 0, 'deny'],
   ['budget', null, 0, 'quote'],
 ] as const)(
   'enforces %s admission for both default and independent loops',
   async (reason, maxSteps, cap, disposition) => {
-    for (const loop of [DEFAULT_LOOP, echo]) {
+    const modelOnly: LoopFactory = {
+      ...echo,
+      id: 'test.one-model',
+      create(ctx) {
+        return {
+          checkpoint: () => codec.encode('ready'),
+          cancel() {},
+          dispose() {},
+          async step(signal) {
+            await ctx.input.claim('next-turn')
+            await ctx.model.complete(await ctx.prepareRequest({ tools: [] }), signal)
+            await ctx.events.finish('completed')
+            return { outcome: 'turn-ended', reason: 'completed' }
+          },
+        }
+      },
+    }
+    for (const loop of [DEFAULT_LOOP, reason === 'completed' ? modelOnly : echo]) {
       const loops = defaultLoops()
       loops.register('@test/echo', echo)
+      loops.register('@test/model-only', modelOnly)
       const preset = presetDefaults()
       preset.budget = { ...preset.budget, maxSteps, perRequestCap: cap, onExceed: disposition }
       const seams = fakeSeams({
@@ -509,8 +528,14 @@ it.each([
         expect((await session.run({ until: 'turn-end', signal: new AbortController().signal })).reason).toBe(
           reason,
         )
-        expect((k.o.provider as ReturnType<typeof fakeProvider>).requests).toEqual([])
-        expect(await session.scan({ type: 'effect/intent', limit: 20 })).toEqual([])
+        const sent = (k.o.provider as ReturnType<typeof fakeProvider>).requests
+        if (reason === 'completed') {
+          expect(sent).toHaveLength(1)
+          expect(await session.scan({ type: 'step/start', limit: 20 })).toHaveLength(1)
+        } else {
+          expect(sent).toEqual([])
+          expect(await session.scan({ type: 'effect/intent', limit: 20 })).toEqual([])
+        }
         expect(await session.scan({ type: 'tool/result', limit: 20 })).toEqual([])
       } finally {
         await k.close()
@@ -542,6 +567,11 @@ it('exposes trusted input claims, frozen tool schemas and post-compaction histor
           expect(Object.isFrozen(view?.tools[0]?.parameters)).toBe(true)
           expect(view?.model).toMatchObject({ id: 'm', capabilities: { input: ['text', 'image'] } })
           expect(view?.budget.stepsUsed).toBe(0)
+          const request = await ctx.prepareRequest({ tools: [] })
+          await expect(
+            ctx.model.complete(structuredClone(request), new AbortController().signal),
+          ).rejects.toMatchObject({ code: 'E_REQUEST_FROZEN' })
+          expect(await ctx.effects.status('never-sent')).toMatchObject({ status: 'not-sent' })
           await ctx.events.finish('completed')
           return { outcome: 'turn-ended', phase: 'custom', reason: 'completed' }
         },
@@ -568,61 +598,148 @@ it('exposes trusted input claims, frozen tool schemas and post-compaction histor
   }
 })
 
-it('replays only durable responses for stable tool invocation ids and associates checkpoints', async () => {
-  const loops = defaultLoops()
-  let executions = 0
-  const effectLoop: LoopFactory = {
-    ...echo,
-    id: 'test.receipts',
-    create(ctx) {
-      return {
-        checkpoint: () => codec.encode('ready'),
-        cancel() {},
-        dispose() {},
-        async step(signal) {
-          await ctx.input.claim('next-turn')
-          const id = 'stable-read'
-          const before = await ctx.effects.status(id)
-          const call = { invocationId: id, name: 'read', args: {} }
-          const a = await ctx.tools.execute(call, signal)
-          expect(await ctx.tools.execute(call, signal)).toEqual(a)
-          expect(await ctx.effects.status(id)).toMatchObject({ status: 'responded', result: a })
-          if (before.status === 'not-sent') expect(executions).toBe(1)
-          await ctx.checkpoints.write(codec.encode('done'), { invocationIds: [id] })
-          await ctx.events.finish('completed')
-          return { outcome: 'turn-ended', reason: 'completed' }
-        },
-      }
-    },
-    resume(ctx, saved) {
-      codec.decode(saved)
-      return this.create(ctx)
-    },
-  }
-  loops.register('@test/receipts', effectLoop)
-  const k = kernel(new MemoryStorage(), loops)
-  k.tools.add(
-    readTool(async () => {
-      executions++
-      return { content: [{ type: 'text', text: 'receipt' }] }
-    }),
-    { source: 'test', trust: 'builtin' },
-  )
-  try {
-    let session = await k.session('receipts', { ...options, loop: effectLoop })
-    for (let i = 0; i < 2; i++) {
-      await session.enqueue('next-turn', { content: [{ type: 'text', text: 'read' }], actor })
-      expect((await session.run({ until: 'turn-end', signal: new AbortController().signal })).reason).toBe(
-        'completed',
-      )
-      await session.close()
-      session = await k.session('receipts', options)
+it.each(['none', 'after-result', 'before-call'] as const)(
+  'recovers stable invocation receipts after %s interruption and associates checkpoints',
+  async (interruption) => {
+    const loops = defaultLoops()
+    let executions = 0
+    const effectLoop: LoopFactory = {
+      ...echo,
+      id: 'test.receipts',
+      create(ctx) {
+        return {
+          checkpoint: () => codec.encode('ready'),
+          cancel() {},
+          dispose() {},
+          async step(signal) {
+            await ctx.input.claim('next-turn')
+            const id = 'stable-read'
+            const before = await ctx.effects.status(id)
+            const call = { invocationId: id, name: 'read', args: {} }
+            const a = await ctx.tools.execute(call, signal)
+            expect(await ctx.tools.execute(call, signal)).toEqual(a)
+            expect(await ctx.effects.status(id)).toMatchObject({ status: 'responded', result: a })
+            if (before.status === 'not-sent') expect(executions).toBe(1)
+            await ctx.checkpoints.write(codec.encode('done'), { invocationIds: [id] })
+            await ctx.events.finish('completed')
+            return { outcome: 'turn-ended', reason: 'completed' }
+          },
+        }
+      },
+      resume(ctx, saved) {
+        codec.decode(saved)
+        return this.create(ctx)
+      },
     }
-    expect(executions).toBe(1)
-    expect(
-      (await session.scan({ type: 'x/core/loop-checkpoint', order: 'desc', limit: 1 }))[0]?.data,
-    ).toMatchObject({ invocationIds: ['stable-read'] })
-  } finally {
-    await k.close()
-  }
-})
+    loops.register('@test/receipts', effectLoop)
+    const k = kernel(new MemoryStorage(), loops)
+    k.tools.add(
+      readTool(async () => {
+        executions++
+        return { content: [{ type: 'text', text: 'receipt' }] }
+      }),
+      { source: 'test', trust: 'builtin' },
+    )
+    try {
+      let session = await k.session('receipts', { ...options, loop: effectLoop })
+      if (interruption !== 'none') {
+        const append = session.d.log.append.bind(session.d.log)
+        let interrupted = false
+        vi.spyOn(session.d.log, 'append').mockImplementation((events, options) => {
+          const atBoundary = events.some((event) =>
+            interruption === 'after-result'
+              ? event.type === 'x/core/loop-invocation' &&
+                (event.data as { status?: string }).status === 'responded'
+              : event.type === 'tool/call',
+          )
+          if (!interrupted && atBoundary) {
+            interrupted = true
+            return Promise.reject(new Error('synthetic receipt interruption'))
+          }
+          return append(events, options)
+        })
+        await session.enqueue('next-turn', { content: [{ type: 'text', text: 'interrupt' }], actor })
+        expect((await session.run({ until: 'turn-end', signal: new AbortController().signal })).reason).toBe(
+          'error',
+        )
+        await session.close()
+        session = await k.session('receipts', options)
+      }
+      if (interruption === 'before-call') {
+        await session.enqueue('next-turn', { content: [{ type: 'text', text: 'uncertain' }], actor })
+        const result = await session.run({ until: 'turn-end', signal: new AbortController().signal })
+        expect(result).toMatchObject({
+          reason: 'error',
+          error: { message: expect.stringContaining('may have been sent') },
+        })
+        expect(executions).toBe(0)
+        return
+      }
+      for (let i = 0; i < 2; i++) {
+        await session.enqueue('next-turn', { content: [{ type: 'text', text: 'read' }], actor })
+        expect((await session.run({ until: 'turn-end', signal: new AbortController().signal })).reason).toBe(
+          'completed',
+        )
+        await session.close()
+        session = await k.session('receipts', options)
+      }
+      expect(executions).toBe(1)
+      expect(
+        (await session.scan({ type: 'x/core/loop-checkpoint', order: 'desc', limit: 1 }))[0]?.data,
+      ).toMatchObject({ invocationIds: ['stable-read'] })
+    } finally {
+      await k.close()
+    }
+  },
+)
+
+it.each(['deny', 'quote'] as const)(
+  'admits the prepared custom request against its actual content with %s disposition',
+  async (onExceed) => {
+    const loops = defaultLoops()
+    const large: LoopFactory = {
+      ...echo,
+      id: 'test.large-wire',
+      create(ctx) {
+        return {
+          checkpoint: () => codec.encode('ready'),
+          cancel() {},
+          dispose() {},
+          async step(signal) {
+            await ctx.input.claim('next-turn')
+            const request = await ctx.prepareRequest({ tools: [], system: 'a'.repeat(4000) })
+            await ctx.model.complete(request, signal)
+            throw new Error('oversized request was sent')
+          },
+        }
+      },
+    }
+    loops.register('@test/large-wire', large)
+    const preset = presetDefaults()
+    preset.budget = { ...preset.budget, perRequestCap: 100, onExceed }
+    const seams = fakeSeams({
+      ledger: {
+        projected: async ({ tokensEstimate }) => ({ credits: tokensEstimate, creditSource: 'estimated' }),
+      },
+      approval: { ask: async () => 'rejected' },
+    })
+    const k = kernel(new MemoryStorage(), loops, { preset, seams })
+    try {
+      const session = await k.session('large-wire', {
+        ...options,
+        loop: large,
+        workspaceInvocation: testWorkspaceInvocation(testFsOps(), seams),
+      })
+      await session.enqueue('next-turn', { content: [{ type: 'text', text: 'tiny' }], actor })
+      const outcome = await session.run({ until: 'turn-end', signal: new AbortController().signal })
+      expect(outcome.reason, JSON.stringify(outcome)).toBe('budget')
+      expect((k.o.provider as ReturnType<typeof fakeProvider>).requests).toEqual([])
+      expect(await session.scan({ type: 'effect/intent', limit: 20 })).toEqual([])
+      expect(await session.scan({ type: 'approval/asked', limit: 20 })).toHaveLength(
+        onExceed === 'quote' ? 1 : 0,
+      )
+    } finally {
+      await k.close()
+    }
+  },
+)

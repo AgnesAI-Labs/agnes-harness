@@ -1807,6 +1807,7 @@ export class SessionImpl {
       signal?: AbortSignal
       depth: number
       parentEffectId?: string
+      invocationId?: string
       nestedLease?: NestedToolLease
       onPark?: (event: EventInput) => void
       onAttachmentRead?: () => void

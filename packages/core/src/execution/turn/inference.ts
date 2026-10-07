@@ -661,7 +661,7 @@ export async function prepareInferenceRequest(
 
 /** Shared request admission, including image bounds, tree reservations and overage disposition. */
 export async function admitInferenceRequest(
-  s: SessionImpl, initial: DeriveOutput,
+  s: SessionImpl, initial: DeriveOutput, projectPreparedWire = false,
 ): Promise<{ output: DeriveOutput; wire: WireBody; calibration: Awaited<ReturnType<typeof countCalibration>> } | StepOutcome> {
   let out: DeriveOutput = initial
   const slot = out.request.model.slot
@@ -672,7 +672,23 @@ export async function admitInferenceRequest(
     await s.endTurn('budget', { error: contextError })
     return { phase: 'terminal', reason: 'budget' }
   }
-  const estimate = (s.latest('budget.state') as BudgetState | undefined)?.lastPreflight?.tokens ?? 0
+  const estimate = projectPreparedWire
+    ? estimateTokens(canonicalJson({ system: wire.system, messages: wire.messages, tools: wire.tools }))
+    : (s.latest('budget.state') as BudgetState | undefined)?.lastPreflight?.tokens ?? 0
+  // A custom loop can replace messages, prompts or model slots after step admission. Recheck
+  // its complete prepared wire so a tiny inbox prompt cannot authorize a large private request.
+  const cap = s.turnBudgetCap()
+  if (projectPreparedWire && cap !== null) {
+    const projected = await s.d.runtime.ledgerProjected({ tokensEstimate: estimate, model: target.model })
+    if (projected.credits > cap) {
+      if (s.preset.budget.onExceed === 'deny') {
+        await s.endTurn('budget')
+        return { phase: 'terminal', reason: 'budget' }
+      }
+      const quote = await quoteBudget(s, `prepared request estimated ${projected.credits} credits > cap ${cap}`)
+      if (quote !== 'ok') return { phase: 'terminal', reason: quote.reason }
+    }
+  }
   let earlyCount: ProviderCountAttempt | undefined
   const imageCount = wireImageCount(wire)
   let imageInputTokens: number | undefined
