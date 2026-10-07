@@ -54,6 +54,12 @@ importers:
         specifier: workspace:*
         version: link:../../packages/extension-api
 
+  examples/sandbox/docker:
+    dependencies:
+      '@agnes/extension-api':
+        specifier: workspace:*
+        version: link:../../../packages/extension-api
+
   packages/ai:
     dependencies:
       '@agnes/protocol':
