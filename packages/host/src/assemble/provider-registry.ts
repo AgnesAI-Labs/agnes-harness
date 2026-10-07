@@ -48,6 +48,13 @@ export class ProviderRegistry<T extends ProviderIdentity> {
   private readonly selections = new Map<string, ProviderSelection>()
   private disposed = false
   constructor(readonly definition: ProviderKind<T>) {}
+  private get label(): string {
+    return this.definition.kind === 'model-adapter'
+      ? 'model adapter'
+      : this.definition.kind === 'compaction'
+        ? 'compaction engine'
+        : `${this.definition.kind} provider`
+  }
   private key(value: ProviderIdentity | ProviderSelection): string {
     const id = 'provider' in value ? value.provider : value.id
     return this.definition.versioned ? `${id}@${value.version}` : id
@@ -58,8 +65,7 @@ export class ProviderRegistry<T extends ProviderIdentity> {
     owner?: Context,
     cleanup?: () => void | Promise<void>,
   ): () => Promise<void> {
-    if (this.disposed)
-      throw new HostError('E_HOST_CLOSED', `${this.definition.kind} provider registry is disposed`)
+    if (this.disposed) throw new HostError('E_HOST_CLOSED', `${this.label} registry is disposed`)
     if (
       typeof provider?.id !== 'string' ||
       !provider.id.trim() ||
@@ -68,14 +74,13 @@ export class ProviderRegistry<T extends ProviderIdentity> {
       typeof sourcePackage !== 'string' ||
       !sourcePackage.trim()
     )
-      throw new HostError('E_API_RANGE', `invalid ${this.definition.kind} provider registration`)
+      throw new HostError('E_API_RANGE', `invalid ${this.label} registration`)
     this.definition.validate(provider)
     const capabilities = this.definition.capabilities?.(provider) ?? []
     if (!Array.isArray(capabilities) || capabilities.some((capability) => typeof capability !== 'string'))
-      throw new HostError('E_API_RANGE', `invalid ${this.definition.kind} provider capabilities`)
+      throw new HostError('E_API_RANGE', `invalid ${this.label} capabilities`)
     const key = this.key(provider)
-    if (this.entries.has(key))
-      throw new HostError('E_API_RANGE', `duplicate ${this.definition.kind} provider: ${key}`)
+    if (this.entries.has(key)) throw new HostError('E_API_RANGE', `duplicate ${this.label}: ${key}`)
     const record: {
       provider: T
       entry: Omit<ProviderCatalogEntry, 'active' | 'selectedFor'>
@@ -128,7 +133,7 @@ export class ProviderRegistry<T extends ProviderIdentity> {
       if (matches.length > 1)
         throw new HostError(
           'E_DEP_MISSING',
-          `${this.definition.kind} provider ${wanted.provider} has multiple versions; set ${this.definition.kind}.version`,
+          `${this.label} ${wanted.provider} has multiple versions; set ${this.definition.kind}.version`,
         )
     }
     const found = this.entries.get(this.key(wanted))
@@ -136,11 +141,13 @@ export class ProviderRegistry<T extends ProviderIdentity> {
       return found.provider
     throw new HostError(
       'E_DEP_MISSING',
-      `${this.definition.kind} provider ${wanted.provider}${wanted.version ? `@${wanted.version}` : ''} is not installed or not registered; install and enable its package, or change ${this.definition.kind}.provider`,
+      `${this.label} is not registered: ${wanted.provider}${wanted.version ? `@${wanted.version}` : ''}; install and enable its package, or change ${this.definition.kind}.provider`,
       {
         detail: {
           kind: this.definition.kind,
           id: wanted.provider,
+          provider: wanted.provider,
+          ...(this.definition.restartRequired ? { effect: 'restart-required' } : {}),
           ...(wanted.version ? { version: wanted.version } : {}),
           hint: 'Install and enable the provider package, or choose an installed provider.',
         },
