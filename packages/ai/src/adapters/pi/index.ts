@@ -11,6 +11,12 @@ import type {
 import { type AdapterStreamOptions, WireAdapter, type WireEvent } from '../../adapter.js'
 import { AiSetupError } from '../../errors.js'
 import { sha256Hex } from '../../hash.js'
+import {
+  fileRetryLedger,
+  nextRetryDelay,
+  RETRY_ATTEMPT_STALE_MS,
+  type RetryAttemptLedger,
+} from '../../retry.js'
 import { providerPayloadImageError } from './input-limits.js'
 import { probeInference } from './probe.js'
 import { probeModelsEndpoint } from './probe-models.js'
@@ -148,7 +154,7 @@ export type PiStream = (
   options?: ProviderStreamOptions,
 ) => AsyncIterable<AssistantMessageEvent>
 
-const RETRY_BASE_MS = 500
+const DEFAULT_MAX_RETRIES = 5
 
 /** The declared record, in the shape the wire library reads it. */
 export function toPiModel(
@@ -216,6 +222,7 @@ export class PiAdapter extends WireAdapter {
   private readonly manual: Map<string, ManualRoute>
   private readonly maxRetries: number
   private readonly sleep: (ms: number, signal: AbortSignal) => Promise<void>
+  private readonly ledger: RetryAttemptLedger
 
   constructor(cfg: {
     id?: string
@@ -230,8 +237,10 @@ export class PiAdapter extends WireAdapter {
      * auth again and retries once.
      */
     recoverRejectedAuth?: (route: string, rejected: ModelAuth, signal: AbortSignal) => Promise<boolean>
+    /** Retries after the first request. Classified transient failures default to 5. */
     maxRetries?: number
     sleep?: (ms: number, signal: AbortSignal) => Promise<void>
+    ledger?: RetryAttemptLedger
   }) {
     super()
     this.id = cfg.id ?? 'pi'
@@ -241,7 +250,8 @@ export class PiAdapter extends WireAdapter {
     this.recoverRejectedAuth = cfg.recoverRejectedAuth
     for (const r of cfg.manualRoutes) requireAbsoluteHttpUrl(r)
     this.manual = new Map(cfg.manualRoutes.map((r) => [r.route, r]))
-    this.maxRetries = cfg.maxRetries ?? 2
+    this.maxRetries = cfg.maxRetries ?? DEFAULT_MAX_RETRIES
+    this.ledger = cfg.ledger ?? fileRetryLedger()
     this.sleep =
       cfg.sleep ??
       ((ms, signal) =>
@@ -462,8 +472,12 @@ export class PiAdapter extends WireAdapter {
     // One listener for the whole run. Racing a freshly built promise per event would register a
     // listener per event, which on a long answer is a leak that grows with the answer.
     const stopped = abortPromise(inner.signal)
+    const ledgerKey = `${opts.sessionKey}\0${route}\0${req.model}`
+    const pending = this.ledger.read(ledgerKey)
+    const pendingFresh = pending !== undefined && Date.now() - pending.updatedAt < RETRY_ATTEMPT_STALE_MS
+    if (pending && !pendingFresh) this.ledger.clear(ledgerKey)
     try {
-      let attempt = 0
+      let attempt = pending !== undefined && pendingFresh ? pending.count : 0
       let authRecoveryAttempted = false
       for (;;) {
         // Per attempt, not shared: two streams in flight in one process must not draw tool-call
@@ -600,7 +614,7 @@ export class PiAdapter extends WireAdapter {
                 attempt < this.maxRetries &&
                 !inner.signal.aborted
               ) {
-                retryAfter = w.retryAfterMs ?? RETRY_BASE_MS * 2 ** attempt
+                retryAfter = w.retryAfterMs ?? nextRetryDelay(attempt + 1)
                 break
               }
               emitted = true
@@ -648,7 +662,9 @@ export class PiAdapter extends WireAdapter {
             }
           return
         }
+        const classifiedRetry = retryAfter > 0
         attempt++
+        if (classifiedRetry) this.ledger.commit(ledgerKey, attempt)
         await this.sleep(retryAfter, inner.signal)
         if (!inner.signal.aborted) {
           // The event that caused a retry is suppressed, so it is not a first response from the
@@ -663,6 +679,7 @@ export class PiAdapter extends WireAdapter {
       clearTimeout(total)
       if (first) clearTimeout(first)
       opts.signal.removeEventListener('abort', onAbort)
+      this.ledger.clear(ledgerKey)
     }
   }
 }

@@ -69,6 +69,17 @@ export { AiSetupError } from './errors.js'
 export type { EscalationSignals } from './escalation.js'
 export { Escalation } from './escalation.js'
 export { guardSequence, normalizeError, RETRYABLE, retryHint } from './guard.js'
+export {
+  classifyModelFailure,
+  fileRetryLedger,
+  memoryRetryLedger,
+  nextRetryDelay,
+  RETRY_ATTEMPT_STALE_MS,
+  type ClassifiedModelFailure,
+  type ModelFailureClass,
+  type RetryAttemptLedger,
+  type RetryAttemptRecord,
+} from './retry.js'
 export { modelAdaptersPlugin } from './model-adapters.js'
 export type { InferenceDeps } from './provider.js'
 export { createProvider, runInference } from './provider.js'

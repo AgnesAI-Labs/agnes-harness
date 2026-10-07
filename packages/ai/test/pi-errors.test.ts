@@ -2,6 +2,7 @@ import type { AssistantMessage } from '@earendil-works/pi-ai'
 import { describe, expect, it, vi } from 'vitest'
 import { classifyPiError } from '../src/adapters/pi/errors.js'
 import { PiAdapter } from '../src/adapters/pi/index.js'
+import { memoryRetryLedger } from '../src/retry.js'
 import { AMBIENT_CREDENTIAL_APIS } from '../src/adapters/pi/wire.js'
 import type { WireEvent } from '../src/index.js'
 import { fakeModel, fakeRequest } from '../testkit/index.js'
@@ -199,10 +200,10 @@ describe('timeouts and cancellation', () => {
     ])
   })
 
-  // The default nobody walks. maxRetries defaults to 2, so one retryable failure becomes three
-  // requests and three charges for anyone who does not pass the option. Every other case in this
+  // The default nobody walks. maxRetries defaults to 5 extra attempts, so one retryable failure
+  // becomes six requests for anyone who does not pass the option. Every other case in this
   // package passes it explicitly, so the number a real assembly gets was proved by nothing.
-  it('the default retry budget is 2, so a retryable failure is attempted three times', async () => {
+  it('the default retry budget is 5, so a retryable failure is attempted six times', async () => {
     let attempts = 0
     const flaky: StreamImpl = () => {
       attempts++
@@ -210,10 +211,15 @@ describe('timeouts and cancellation', () => {
         yield { type: 'error', reason: 'error', error: msg('503 Service Unavailable') } as never
       })()
     }
-    const a = new PiAdapter({ manualRoutes: [route], streamImpl: flaky, sleep: async () => {} })
+    const a = new PiAdapter({
+      manualRoutes: [route],
+      streamImpl: flaky,
+      sleep: async () => {},
+      ledger: memoryRetryLedger(),
+    })
     a.bindCredential('gw', 'k')
     await drain(a, { timeoutMs: slow })
-    expect(attempts).toBe(3)
+    expect(attempts).toBe(6)
   })
 })
 

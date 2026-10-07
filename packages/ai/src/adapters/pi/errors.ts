@@ -16,6 +16,7 @@ const TABLE: Array<[RegExp, AiErrorCode, boolean]> = [
   [/\b429\b|rate limit/i, 'RATE_LIMIT', true],
   [/\b402\b|insufficient (credit|quota|balance)|quota exceeded/i, 'QUOTA', false],
   [/timed? ?out|ETIMEDOUT|deadline/i, 'TIMEOUT', true],
+  [/overloaded|at capacity/i, 'TRANSPORT', true],
   [/\b404\b.*model|model .*not (found|exist)|unknown model/i, 'NO_MODEL', false],
   [/unexpected token|invalid json|malformed|parse error/i, 'FORMAT', false],
   [/\b5\d{2}\b|ECONN|EAI_AGAIN|socket hang up/i, 'TRANSPORT', true],
