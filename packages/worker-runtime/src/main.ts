@@ -40,6 +40,7 @@ import {
   REQUEST_MEDIA_ARTIFACT_RECLAIMED,
   type ResolvedProfile,
   readLock,
+  resolveFileSecretsDirectory,
 } from '@agnes/host'
 import { createPackageManager } from '@agnes/package-manager'
 import { LocalGate, type RuntimeConvergenceReport } from '@agnes/plugin-runtime/host'
@@ -274,9 +275,14 @@ export async function runWorker(
     createSecrets: (resourceProfile) => {
       const environment = createSecretsEnv()
       if (resourceProfile.adapters.secrets.kind === 'env') return environment
+      const explicitHome = env.AGH_HOME?.trim() || env.AGNES_HOME?.trim() || undefined
       return composeSecrets(
         createSecretsFile({
-          dir: resourceProfile.adapters.secrets.path ?? join(resourceProfile.dataDir, 'secrets'),
+          dir: resolveFileSecretsDirectory({
+            path: resourceProfile.adapters.secrets.path,
+            dataDir: resourceProfile.dataDir,
+            ...(explicitHome ? { home: explicitHome } : {}),
+          }),
         }),
         environment,
       )
@@ -397,6 +403,14 @@ export async function runWorker(
           ),
         }
       : {}
+  if (profile.adapters?.secrets?.kind === 'file') {
+    const explicitHome = env.AGH_HOME?.trim() || env.AGNES_HOME?.trim() || undefined
+    resolveFileSecretsDirectory({
+      path: profile.adapters.secrets.path,
+      dataDir: profile.dataDir,
+      ...(explicitHome ? { home: explicitHome } : {}),
+    })
+  }
   const hostCandidate: Promise<WorkerHostLike | undefined> = resourceLifecycleWorker
     ? Promise.resolve(undefined)
     : deps.buildHost

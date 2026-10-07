@@ -1,7 +1,13 @@
 import { chmod, link, mkdir, mkdtemp, readFile, rm, symlink, unlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { createPlatform, isHostError, readConfigurationProfileInputs, resolveProfile } from '@agnes/host'
+import {
+  createPlatform,
+  fileSecretsDir,
+  isHostError,
+  readConfigurationProfileInputs,
+  resolveProfile,
+} from '@agnes/host'
 import { hasPrivateDaclSync } from '@agnes/system-node'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
@@ -14,6 +20,7 @@ import {
   readDaemonDiscovery,
   readDaemonWebCredential,
   removeDaemonDiscovery,
+  resolveDaemonProfile,
   resolveDaemonScope,
   runDaemonControl,
 } from '../src/index.js'
@@ -111,6 +118,20 @@ describe('shared daemon scope', () => {
     })
     expect(recovered.profileDir).toBe(join(await canonicalPath(home), 'profiles', 'local-dev'))
     expect(await readFile(lock, 'utf8')).toBe('{ corrupt-lock')
+  })
+
+  it('pins a fresh file store to the home secrets directory and keeps an explicit path', async () => {
+    const home = await root('agnes-secrets-pin-')
+    const workspace = await root('agnes-secrets-pin-work-')
+    const localScope = await resolveDaemonScope({ home, workspace, profile: 'local-dev' })
+    const local = await resolveDaemonProfile(localScope)
+    expect(local.profile.adapters.secrets).toEqual({
+      kind: 'file',
+      path: fileSecretsDir(localScope.home),
+    })
+    const enterpriseScope = await resolveDaemonScope({ home, workspace, profile: 'enterprise' })
+    const enterprise = await resolveDaemonProfile(enterpriseScope)
+    expect(enterprise.profile.adapters.secrets).toEqual({ kind: 'file', path: '/etc/agnes/secrets' })
   })
 
   // The actual bug this pair of packages used to have: daemon's own default (home/data) and Host's

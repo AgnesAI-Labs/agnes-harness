@@ -42,7 +42,7 @@ const searchProvider: SearchProvider = {
 // 在已有 createHost(profile, dependencies) 参数中加入 searchProvider。
 ```
 
-提供方负责凭据、传输和厂商选择。工具不接收密钥，也不选择厂商。设置中的网页搜索可配置 Brave、Tavily、Exa、Perplexity 或自建 SearXNG。端点、结果上限、超时和速率限制保存在配置档数据目录。工具调用和设置页测试共用该目录中的同一速率窗口。API 密钥只写入 `secret://search/<provider>`。没有就绪的默认提供方时，工具返回 `WEB_SEARCH_UNAVAILABLE`。部署方传入的 `SearchProvider` 会替换该注册表。规范化摘要包含 Citations 列表。提供方失败返回通用错误，不在日志中泄露凭据。
+提供方负责凭据、传输和厂商选择。工具不接收密钥，也不选择厂商。设置中的网页搜索可配置 Brave、Tavily、Exa、Perplexity 或自建 SearXNG。端点、结果上限、超时和速率限制保存在配置档数据目录。工具调用和设置页测试共用该目录中的同一速率窗口。API 密钥只写入 `secret://search/<provider>`，位于主目录的 secrets（`<home>/secrets`）。配置档未指定其他路径时，文件适配器也读取该目录。原先落在 `<dataDir>/secrets` 的存储会迁移过去。没有就绪的默认提供方时，工具返回 `WEB_SEARCH_UNAVAILABLE`。部署方传入的 `SearchProvider` 会替换该注册表。规范化摘要包含 Citations 列表。提供方失败返回通用错误，不在日志中泄露凭据。
 
 持久 shell：为 `shell` 设置 `persistent:true`，可选择 `shell:"bash"|"zsh"|"pwsh"`。返回命令的 `jobId` 与解释器的 `sessionId`，后续调用保留 cwd、环境变量和解释器变量。可传 `sessionId` 选择现有解释器；忙碌时拒绝另一条命令，终止命令会关闭解释器。交互式 stdin 请使用 PTY。
 

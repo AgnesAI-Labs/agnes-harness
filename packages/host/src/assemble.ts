@@ -32,6 +32,7 @@ import {
 } from '@agnes/plugin-runtime/host'
 import type { ComputerUseDoctorParams, RouteTable } from '@agnes/protocol'
 import { privateArtifactDeleteAvailable } from '@agnes/system-node'
+import { resolveFileSecretsDirectory } from './adapters/file-secrets-dir.js'
 import type { AdapterBundle } from './adapters/index.js'
 import {
   createNetFetch,
@@ -1805,7 +1806,12 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
       const nextSecrets =
         next.adapters.secrets.kind === 'file'
           ? composeSecrets(
-              createSecretsFile({ dir: next.adapters.secrets.path ?? join(next.dataDir, 'secrets') }),
+              createSecretsFile({
+                dir: resolveFileSecretsDirectory({
+                  path: next.adapters.secrets.path,
+                  dataDir: next.dataDir,
+                }),
+              }),
               createSecretsEnv(),
             )
           : next.adapters.secrets.kind === 'env'

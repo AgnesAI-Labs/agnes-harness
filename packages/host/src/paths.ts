@@ -65,6 +65,14 @@ export function dataDir(home: string): string {
   return join(home, 'data')
 }
 
+/**
+ * API keys and the default file-secrets adapter. This is the directory
+ * `createCredentialStore({ root: home })` writes, beside `data/`, never inside it.
+ */
+export function fileSecretsDir(home: string): string {
+  return join(home, 'secrets')
+}
+
 /** Downloaded and compiled artifacts (the jiti loader cache, etc.): also always a subdirectory. */
 export function cacheDir(home: string): string {
   return join(home, 'cache')
@@ -108,7 +116,7 @@ export function ownStateRoots(paths: {
   if (basename(dirname(paths.profileDir)) === 'profiles') homes.add(dirname(dirname(paths.profileDir)))
   if (basename(paths.dataDir) === 'data') homes.add(dirname(paths.dataDir))
   const roots = [paths.profileDir]
-  for (const home of homes) roots.push(join(home, 'secrets'), join(home, 'auth'), join(home, 'profiles'))
+  for (const home of homes) roots.push(fileSecretsDir(home), join(home, 'auth'), join(home, 'profiles'))
   if (paths.secretsDir !== undefined) roots.push(paths.secretsDir)
   return [...new Set(roots)]
 }

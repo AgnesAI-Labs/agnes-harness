@@ -58,6 +58,7 @@ import {
   normalizeModelSettings,
   supportsModelSettings,
 } from './configuration-models.js'
+import { fileSecretsDir } from './paths.js'
 import type { RuntimeProfileManifest } from './profile/types.js'
 
 type ConfigurationProvider = ApiKeyProviderRegistryEntry | SubscriptionProviderEntry
@@ -1258,7 +1259,7 @@ export function createConfigurationService(
       }),
     async profileInput() {
       const state = await loadState()
-      const secrets = { kind: 'file' as const, path: join(home, 'secrets') }
+      const secrets = { kind: 'file' as const, path: fileSecretsDir(home) }
       // An unconfigured service must preserve an existing YAML credential adapter.
       if (!state || state.inheritProvider) return {}
       const enabled = state.accounts.filter((row) => row.enabled)

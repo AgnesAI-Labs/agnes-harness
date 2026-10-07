@@ -7,6 +7,7 @@ import {
   agnesHome,
   cacheDir,
   dataDir,
+  fileSecretsDir,
   hasLegacySessionsDb,
   inDataDir,
   legacySessionsDbPath,
@@ -21,6 +22,14 @@ const scratch = (): string => {
 }
 afterEach(() => {
   for (const dir of roots.splice(0)) rmSync(dir, { recursive: true, force: true })
+})
+
+describe('fileSecretsDir', () => {
+  it('sits beside data, in the directory the credential store writes', () => {
+    const home = '/srv/agh'
+    expect(fileSecretsDir(home)).toBe(join(home, 'secrets'))
+    expect(fileSecretsDir(home)).not.toBe(join(dataDir(home), 'secrets'))
+  })
 })
 
 describe('agnesHome', () => {

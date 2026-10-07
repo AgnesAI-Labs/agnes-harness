@@ -18,6 +18,7 @@ import {
   type ExecGateState,
 } from './exec.js'
 import { createRemoteExec } from './exec-remote.js'
+import { resolveFileSecretsDirectory } from './file-secrets-dir.js'
 import { createFs, type FencedFs, type FsBinding, type HostFs } from './fs.js'
 import type { FsIo } from './fs-io.js'
 import { localFsIo, localRealpathSync } from './fs-io-local.js'
@@ -207,7 +208,11 @@ export async function openAdapters(
       case 'file':
         secrets = composeSecrets(
           createSecretsFile({
-            dir: profile.adapters.secrets.path ?? opts.secretsDir ?? join(opts.dataDir, 'secrets'),
+            dir: resolveFileSecretsDirectory({
+              path: profile.adapters.secrets.path,
+              override: opts.secretsDir,
+              dataDir: opts.dataDir,
+            }),
           }),
           createSecretsEnv(),
         )

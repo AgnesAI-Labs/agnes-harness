@@ -9,6 +9,7 @@ import {
   createPlatform,
   dataDir as defaultDataDir,
   expandHome,
+  fileSecretsDir,
   HostError,
   type ResolvedProfile,
   readConfigurationProfileInputs,
@@ -166,15 +167,30 @@ async function profileForScope(
     dataDir,
     cacheDir,
   }
-  const resolved = await resolveProfile(
-    { ...inputs, user },
-    {
-      platform: createPlatform().snapshot(),
-      agnesVersion: input.agnesVersion,
-      now: input.now,
-      homeDir: input.osHome,
-    },
-  )
+  const resolveEnv = {
+    platform: createPlatform().snapshot(),
+    agnesVersion: input.agnesVersion,
+    now: input.now,
+    homeDir: input.osHome,
+  }
+  let resolved = await resolveProfile({ ...inputs, user }, resolveEnv)
+  // Pin only after resolution, so a path that lives on the builtin template (enterprise) is kept.
+  // A fresh local-dev profile has kind file and no path; that is the credential-store directory.
+  if (resolved.adapters.secrets.kind === 'file' && resolved.adapters.secrets.path === undefined) {
+    resolved = await resolveProfile(
+      {
+        ...inputs,
+        user: {
+          ...user,
+          adapters: {
+            ...(user.adapters ?? {}),
+            secrets: { kind: 'file', path: fileSecretsDir(home) },
+          },
+        },
+      },
+      resolveEnv,
+    )
+  }
   return { profile: resolved, home, workspace, configuration }
 }
 

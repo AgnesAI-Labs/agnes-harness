@@ -1,8 +1,19 @@
-import { chmodSync, closeSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import {
+  chmodSync,
+  closeSync,
+  existsSync,
+  lstatSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createPrivateDirectorySync, createPrivateFileSync } from '@agnes/system-node'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { resolveFileSecretsDirectory } from '../../src/adapters/file-secrets-dir.js'
 import {
   composeSecrets,
   createSecretsEnv,
@@ -227,5 +238,67 @@ describe('secrets', () => {
     const c = composeSecrets(counting, counting)
     expect(() => c.resolve('not-a-ref')).toThrow(/E_SECRET_UNRESOLVED/)
     expect(asked).toBe(0)
+  })
+})
+
+function secretFile(dir: string, value: string): void {
+  mkdirSync(join(dir, 'search'), { recursive: true, mode: 0o700 })
+  writeFileSync(
+    join(dir, 'search', 'brave'),
+    `${JSON.stringify({ version: 1, kind: 'api-key', provider: 'search', value })}\n`,
+    { mode: 0o600 },
+  )
+}
+
+describe('file secrets directory', () => {
+  const roots: string[] = []
+  afterEach(() => {
+    for (const dir of roots.splice(0)) rmSync(dir, { recursive: true, force: true })
+  })
+
+  it('moves a store left under data/secrets to the home secrets directory', () => {
+    const home = mkdtempSync(join(tmpdir(), 'agnes-secrets-home-'))
+    roots.push(home)
+    const dataDir = join(home, 'data')
+    secretFile(join(dataDir, 'secrets'), 'migrated-search-key')
+    expect(resolveFileSecretsDirectory({ dataDir })).toBe(join(home, 'secrets'))
+    expect(createSecretsFile({ dir: join(home, 'secrets') }).resolve('secret://search/brave')).toBe(
+      'migrated-search-key',
+    )
+    expect(existsSync(join(dataDir, 'secrets'))).toBe(false)
+    if (process.platform !== 'win32') expect(lstatSync(join(home, 'secrets')).mode & 0o777).toBe(0o700)
+  })
+
+  it('keeps a key already in the home store when the old directory also has one', () => {
+    const home = mkdtempSync(join(tmpdir(), 'agnes-secrets-home-'))
+    roots.push(home)
+    const dataDir = join(home, 'data')
+    secretFile(join(home, 'secrets'), 'canonical-key')
+    secretFile(join(dataDir, 'secrets'), 'misplaced-key')
+    resolveFileSecretsDirectory({ dataDir, home })
+    expect(readFileSync(join(home, 'secrets', 'search', 'brave'), 'utf8')).toContain('canonical-key')
+    expect(readFileSync(join(dataDir, 'secrets', 'search', 'brave'), 'utf8')).toContain('misplaced-key')
+  })
+
+  it('does not create the home store when the old directory is absent', () => {
+    const root = mkdtempSync(join(tmpdir(), 'agnes-secrets-home-'))
+    roots.push(root)
+    const home = join(root, 'missing-home')
+    const dataDir = join(root, 'custom-data')
+    expect(resolveFileSecretsDirectory({ dataDir, home })).toBe(join(home, 'secrets'))
+    expect(existsSync(home)).toBe(false)
+  })
+
+  it('leaves an explicitly pinned directory and an unconventional data directory alone', () => {
+    const home = mkdtempSync(join(tmpdir(), 'agnes-secrets-home-'))
+    roots.push(home)
+    const dataDir = join(home, 'custom-data')
+    const pinned = join(home, 'pinned-secrets')
+    secretFile(join(dataDir, 'secrets'), 'stay-put')
+    expect(resolveFileSecretsDirectory({ dataDir, path: pinned })).toBe(pinned)
+    expect(existsSync(join(pinned, 'search', 'brave'))).toBe(false)
+    expect(readFileSync(join(dataDir, 'secrets', 'search', 'brave'), 'utf8')).toContain('stay-put')
+    expect(resolveFileSecretsDirectory({ dataDir })).toBe(join(dataDir, 'secrets'))
+    expect(readFileSync(join(dataDir, 'secrets', 'search', 'brave'), 'utf8')).toContain('stay-put')
   })
 })

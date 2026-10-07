@@ -35,6 +35,7 @@ export {
   spawnDetachedProcess,
 } from './adapters/detached-process.js'
 export { createExec, type ExecAdapter, type ExecResult } from './adapters/exec.js'
+export { resolveFileSecretsDirectory } from './adapters/file-secrets-dir.js'
 export { createFs, type HostFs } from './adapters/fs.js'
 export {
   type AdapterBundle,
@@ -396,6 +397,7 @@ export {
   agnesHome,
   cacheDir,
   dataDir,
+  fileSecretsDir,
   hasLegacySessionsDb,
   inDataDir,
   legacySessionsDbPath,

@@ -1,7 +1,7 @@
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { createSearchAdmin } from '@agnes/base/search'
 import { type AdminSurfaceAction, createAdminSurface } from '@agnes/daemon/packages'
-import { agnesHome, createCredentialStore } from '@agnes/host'
+import { agnesHome, createCredentialStore, resolveFileSecretsDirectory } from '@agnes/host'
 import type {
   AdminSessionSelection,
   ClientModuleEffectCallParams,
@@ -172,6 +172,11 @@ export function localPackageAdmin(
         return client.packages.tree.rollback(params as PluginTreeRollbackParams)
     }
   }
+  // The settings process and the session worker share `<home>/secrets`. Move a store that the
+  // old data-directory fallback left behind before either side reads it. A fixture scope with no
+  // data directory has nothing to move.
+  if (backend.scope.dataDir)
+    resolveFileSecretsDirectory({ dataDir: backend.scope.dataDir, home: backend.scope.home })
   const credentials = createCredentialStore({ root: backend.scope.home })
   const searchAdmin = createSearchAdmin({
     dataDir: backend.scope.dataDir,

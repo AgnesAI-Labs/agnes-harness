@@ -12,6 +12,7 @@ import {
   windowsReadPrivateFileSync,
   windowsReadPrivateTextSync,
 } from '@agnes/system-node'
+import { fileSecretsDir } from '../paths.js'
 import type { PlatformBackend } from './platform.js'
 
 export type CredentialKind = 'api-key' | 'oauth'
@@ -120,7 +121,7 @@ export function resolveCredentialFile(root: string, ref: string, kind: Credentia
   const { provider, name } = parseCredentialRef(ref)
   const anchoredRoot = resolve(root)
   return kind === 'api-key'
-    ? join(anchoredRoot, 'secrets', provider, name)
+    ? join(fileSecretsDir(anchoredRoot), provider, name)
     : join(anchoredRoot, 'auth', provider, `${name}.json`)
 }
 
@@ -237,10 +238,10 @@ async function ensureCredentialDirectories(
 ): Promise<void> {
   const anchoredRoot = resolve(root)
   await createDirectory(anchoredRoot, ref, enforcement)
-  for (const base of ['auth', 'secrets', 'locks'])
-    await createDirectory(join(anchoredRoot, base), ref, enforcement)
+  await createDirectory(fileSecretsDir(anchoredRoot), ref, enforcement)
+  for (const base of ['auth', 'locks']) await createDirectory(join(anchoredRoot, base), ref, enforcement)
   await createDirectory(
-    join(anchoredRoot, kind === 'api-key' ? 'secrets' : 'auth', provider),
+    kind === 'api-key' ? join(fileSecretsDir(anchoredRoot), provider) : join(anchoredRoot, 'auth', provider),
     ref,
     enforcement,
   )
@@ -256,8 +257,8 @@ async function checkCredentialParents(
   const anchoredRoot = resolve(root)
   for (const path of [
     anchoredRoot,
-    join(anchoredRoot, kind === 'api-key' ? 'secrets' : 'auth'),
-    join(anchoredRoot, kind === 'api-key' ? 'secrets' : 'auth', provider),
+    kind === 'api-key' ? fileSecretsDir(anchoredRoot) : join(anchoredRoot, 'auth'),
+    kind === 'api-key' ? join(fileSecretsDir(anchoredRoot), provider) : join(anchoredRoot, 'auth', provider),
   ])
     if (!(await checkDirectory(path, ref, enforcement))) return false
   return true

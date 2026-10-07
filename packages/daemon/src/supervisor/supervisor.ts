@@ -25,6 +25,7 @@ import {
   type ResolvedPreset,
   type ResolvedProfile,
   resolveComposition,
+  resolveFileSecretsDirectory,
   resolveWorkspaceDirectory,
   sessionsDbPath,
 } from '@agnes/host'
@@ -854,6 +855,7 @@ export async function startSupervisor(o: StartSupervisorOptions): Promise<{
   ws?: { url: string; token: string }
 }> {
   prepareDaemonSocketPaths(o.config)
+  if (o.profile.adapters?.secrets?.kind === 'file') secretsDirectory(o.profile, o.config)
   const composition = o.profile.composition
     ? resolveComposition(o.profile, {
         preset: compositionPreset(o.profile, o.profile.presets.default),
@@ -2332,12 +2334,14 @@ export type RunAgnesdDeps = {
 /** `runAgnesd` accepts a partial argument object so embedded launchers can rely on scope defaults. */
 export type RunAgnesdArgs = Partial<Args>
 
-/** Where a `kind: 'file'` secrets adapter reads/writes its store. A profile that pins an explicit
- * path always wins; otherwise the store lives under `<dataDir>/secrets`. Shared by `runAgnesd` and
- * `startSupervisor` so both daemon-launch paths agree on the same directory without a second,
- * possibly-diverging copy of this fallback rule. */
+/** Where a `kind: 'file'` secrets adapter reads. A profile path wins. Otherwise the directory is
+ * the credential store's `<home>/secrets`, and a store left under `<dataDir>/secrets` is moved there. */
 function secretsDirectory(profile: ResolvedProfile, config: DaemonConfig): string {
-  return profile.adapters.secrets.path ?? join(config.dataDir, 'secrets')
+  return resolveFileSecretsDirectory({
+    path: profile.adapters.secrets.path,
+    dataDir: config.dataDir,
+    ...(config.home !== undefined ? { home: config.home } : {}),
+  })
 }
 
 export async function runAgnesd(args: RunAgnesdArgs = {}, deps: RunAgnesdDeps = {}): Promise<void> {
