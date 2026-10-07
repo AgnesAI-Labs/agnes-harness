@@ -32,6 +32,12 @@ importers:
         specifier: 5.0.0
         version: 5.0.0(@types/node@26.4.1)(happy-dom@20.14.3)(vite@8.2.2(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0(patch_hash=77f93f7110d63c7b4551ac2eab9c87a64c2ba97de0b71047e25171d3fac05fd2))(tsx@4.23.13)(yaml@2.9.0))
 
+  examples/loops/dag-loop:
+    dependencies:
+      '@agnes/extension-api':
+        specifier: '*'
+        version: link:../../../packages/extension-api
+
   examples/packages/cordis-greeting:
     dependencies:
       '@agnes/plugin-runtime':
