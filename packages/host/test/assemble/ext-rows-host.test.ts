@@ -67,7 +67,8 @@ describe('ext: rows on the tree', () => {
   })
 
   it('a target that omits the row unmounts the extension and drops its tools', async () => {
-    const h = await createTestHost({ dataDir: scratch(), packageDirs })
+    const dataDir = scratch()
+    const h = await createTestHost({ dataDir, packageDirs })
     const report = await h.host.extensionRows.apply([])
     expect(report.ok).toBe(true)
     expect(report.rows.find((r) => r.id === 'ext:agnes/tools-core')).toBeUndefined()
@@ -76,7 +77,16 @@ describe('ext: rows on the tree', () => {
     expect(audits(h, 'extension.revoked', 'agnes/tools-core')).toHaveLength(1)
     expect(audits(h, 'extension.revoke_failed', 'agnes/tools-core')).toHaveLength(0)
     for (const name of TOOLS_CORE) expect(toolNames(h)).not.toContain(name)
+    const session = await h.host.createSession({ cwd: dataDir, key: 'without-builtin-tools' })
+    expect(session.currentTools().resolve('read')).toBeUndefined()
     await h.host.close()
+    const cold = await createTestHost({ dataDir, packageDirs })
+    try {
+      const resumed = await cold.host.createSession({ cwd: dataDir, key: session.key })
+      expect(resumed.currentTools().resolve('read')).toBeUndefined()
+    } finally {
+      await cold.host.close()
+    }
   })
 
   it('a new entryRevision hot-swaps in place and the tools survive the cutover', async () => {

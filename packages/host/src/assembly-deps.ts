@@ -1,7 +1,7 @@
 import type { KernelOptions, Provider } from '@agnes/core'
 import type { Logger } from '@agnes/extension-api'
 import type { RuntimePluginSnapshot } from '@agnes/package-manager'
-import type { HostPluginImporterFactory, PackageSnapshotVerifier } from '@agnes/plugin-runtime/host'
+import type { EntryRow, HostPluginImporterFactory, PackageSnapshotVerifier } from '@agnes/plugin-runtime/host'
 import type { SkillCordisService } from '@agnes/resource-control-runtime'
 import type { PlatformBackend, Prompter } from './adapters/index.js'
 import type { OrdinaryPluginLayers } from './assemble/ordinary-rows.js'
@@ -34,6 +34,8 @@ export type AssembleDeps = HostPaths &
     netFetch?: KernelOptions['netFetch']
     /** Host-owned lookup of the currently published runtime for already-open Core sessions. */
     currentRuntime?: KernelOptions['currentRuntime']
+    /** Host-private builtin row identities to fit before a restored generation starts. */
+    generationExtensionRows?: readonly Readonly<EntryRow>[]
     publicFetch?: KernelOptions['publicFetch']
     seamTimeoutMs?: number
     platform?: PlatformBackend

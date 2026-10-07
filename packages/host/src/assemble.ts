@@ -2441,14 +2441,22 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
         })
     }
     hostExtensionRows = Object.freeze([
-      ...extRowIds.map((extensionId) =>
-        prepareExtensionRow({
+      ...extRowIds.map((extensionId) => {
+        const pinned = deps.generationExtensionRows?.find((row) => row.id === `ext:${extensionId}`)
+        return prepareExtensionRow({
           extensionId,
           ...(extensionId === 'agnes/skills'
             ? { entryRevision: skillRowRevision(deps.skillResources), skillResources: deps.skillResources }
             : {}),
-        }),
-      ),
+          ...(pinned
+            ? {
+                entryRevision: pinned.entryRevision,
+                ...(pinned.config === undefined ? {} : { config: pinned.config }),
+                ...(pinned.disabled === undefined ? {} : { disabled: pinned.disabled }),
+              }
+            : {}),
+        })
+      }),
     ])
     if (hostExtensionRows.length) await applyExtensionRows(hostExtensionRows)
     const extensionRows = Object.freeze({

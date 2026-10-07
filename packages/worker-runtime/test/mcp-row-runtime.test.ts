@@ -441,6 +441,7 @@ describe('createMcpRowRuntime first connection attempts (design §3.8, D120)', (
     await runtime.apply([entry('alpha')])
     // No waitFor: apply itself waited for the connection and the tool registration.
     expect(tool(host, `${ALPHA_PREFIX}ping`)).toBeDefined()
+    const pinned = await host.createSession({ cwd: hostDir, key: 'mcp-remount-pinned' })
     remount = true
     const target = host.runtimeTargetSnapshot?.()
     if (!target) throw new Error('the MCP row did not publish a runtime target')
@@ -457,6 +458,7 @@ describe('createMcpRowRuntime first connection attempts (design §3.8, D120)', (
     release()
     await expect(ready).resolves.toMatchObject({ connectionState: 'ready', toolCount: 1 })
     expect(runtime.tools('alpha', 'r1')?.items.map((item) => item.name)).toEqual(['ping'])
+    await pinned.close()
   })
 
   it('a server that never answers holds apply only up to the cap', async () => {

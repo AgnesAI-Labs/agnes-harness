@@ -23,11 +23,13 @@ type ResourceData = {
     entryRevision?: string
     generation?: NonNullable<NonNullable<PreparedRow['dynamic']>['generation']>
   }[]
+  extensionRowIds?: string[]
 }
 
 export function captureGenerationResources(
   skills: SkillRuntimeInput | undefined,
   rows: Iterable<PreparedRow>,
+  extensionRowIds?: readonly string[],
 ): RuntimeGenerationResourceInput {
   const directories: string[] = []
   let view: SkillGenerationSnapshot | undefined, unavailable: string | undefined
@@ -53,6 +55,7 @@ export function captureGenerationResources(
     scoped: !!skills?.scopeWorkspace,
     ...(view ? { skills: view } : {}),
     ...(unavailable ? { unavailable } : {}),
+    ...(extensionRowIds ? { extensionRowIds: [...extensionRowIds] } : {}),
     rows: [...rows]
       .filter((row) => row.dynamic)
       .map((row) => ({
@@ -68,6 +71,12 @@ function resourceData(snapshot: RuntimeGenerationResourceSnapshot): ResourceData
   const data = snapshot.data as unknown as ResourceData
   if (!data || data.version !== 1 || !Array.isArray(data.rows) || typeof data.scoped !== 'boolean')
     throw new Error('E_GENERATION_RESOURCE_INTEGRITY: invalid private resource metadata')
+  if (
+    data.extensionRowIds !== undefined &&
+    (!Array.isArray(data.extensionRowIds) ||
+      data.extensionRowIds.some((id) => typeof id !== 'string' || !id.startsWith('ext:')))
+  )
+    throw new Error('E_GENERATION_RESOURCE_INTEGRITY: invalid extension row selection')
   return data
 }
 

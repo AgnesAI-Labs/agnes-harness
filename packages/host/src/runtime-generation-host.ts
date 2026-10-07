@@ -27,6 +27,7 @@ import {
 } from './runtime-generation-resources.js'
 import { RuntimePluginCatalogue } from './runtime-plugin-catalogue.js'
 import { buildCompleteRuntimeTarget } from './runtime-target-builder.js'
+import { runtimeRegistryRevisionForTarget } from './runtime-target-publisher.js'
 import { sessionKey } from './session.js'
 
 export type PluginGenerationStatus = Readonly<{
@@ -49,6 +50,13 @@ export type PluginGenerationStatus = Readonly<{
 
 type LiveGeneration = { snapshot: PluginGenerationSnapshot; host: Host }
 type Factory = (profile: ResolvedProfile, options: HostOptions) => Promise<Host>
+const targetRows = (target: RuntimeTarget) => [
+  ...new Map(
+    [...target.tree.rows, ...Object.values(target.resource.rows).flatMap((row) => (row ? [row] : []))].map(
+      (row) => [row.id, row],
+    ),
+  ).values(),
+]
 
 /**
  * Generation-local containers keep Cordis row identities, extension leases, loop registries and
@@ -67,6 +75,7 @@ export async function createRuntimeGenerationHost(
   const rowsByGeneration = new Map<string, typeof preparedRows>()
   const skillsByGeneration = new Map<string, SkillRuntimeInput | undefined>()
   const resourceSkills = new Map<string, ReturnType<typeof createGenerationSkills>>()
+  const bindings = new Map<Host, { id: string }>()
   const developmentSources = new Map<string, RuntimePluginSnapshot>()
   const developmentDirectories = new Map(options.developmentPluginDirectories)
   const basePackages = new Set<string>()
@@ -138,6 +147,7 @@ export async function createRuntimeGenerationHost(
     target: RuntimeTarget,
     sources: readonly RuntimePluginSnapshot[],
     skills: SkillRuntimeInput | undefined,
+    extensionRows?: readonly ReturnType<Host['extensionRows']['prepare']>[],
   ) =>
     store.create(
       target,
@@ -152,10 +162,11 @@ export async function createRuntimeGenerationHost(
       captureGenerationResources(
         skills,
         [...preparedRows.values()].filter((row) =>
-          target.tree.rows.some(
+          targetRows(target).some(
             (targetRow) => !targetRow.disabled && targetRow.id === `ext:${row.extensionId}`,
           ),
         ),
+        (extensionRows ?? (current?.host ?? initial).extensionRows.current()).map((row) => row.id),
       ),
     )
   const ensureCurrent = async (): Promise<LiveGeneration> => {
@@ -169,9 +180,9 @@ export async function createRuntimeGenerationHost(
     live.set(snapshot.id, current)
     skillsByGeneration.set(snapshot.id, options.skillResources)
     rowsByGeneration.set(snapshot.id, new Map(preparedRows))
-    initialBinding = (key) => {
-      bindGeneration(key, snapshot.id)
-    }
+    const binding = { id: snapshot.id }
+    bindings.set(initial, binding)
+    initialBinding = (key) => bindGeneration(key, binding.id)
     return current
   }
   const build = async (snapshot: PluginGenerationSnapshot): Promise<LiveGeneration> => {
@@ -185,7 +196,7 @@ export async function createRuntimeGenerationHost(
     const target = decodeRuntimeTargetArtifact(snapshot.artifact)
     const generationSkills = createGenerationSkills(skills, store)
     if (snapshot.resources) generationSkills.seal(snapshot.resources, skillsByGeneration.has(snapshot.id))
-    const pinnedSkillRow = target.tree.rows.find((row) => row.id === SKILL_ROW_ID)
+    const pinnedSkillRow = targetRows(target).find((row) => row.id === SKILL_ROW_ID)
     if (
       !snapshot.resources &&
       !skillsByGeneration.has(snapshot.id) &&
@@ -212,10 +223,12 @@ export async function createRuntimeGenerationHost(
       packageDirs.set(source.snapshot.packageId, source.snapshot.directory)
     }
     const { skillResources: _skills, ...generationOptions } = options
+    const binding = { id: snapshot.id }
     const host = await factory(
       { ...profile, packages },
       {
         ...generationOptions,
+        generationExtensionRows: targetRows(target).filter((row) => row.plugin.startsWith('builtin:')),
         onGenerationBasePackages: (ids) => {
           for (const id of ids) basePackages.add(id)
           options.onGenerationBasePackages?.(ids)
@@ -226,7 +239,7 @@ export async function createRuntimeGenerationHost(
         runtimePluginSources: async () => snapshot.sources,
         activationBarrier: createExtensionActivationBarrier(),
         onGenerationSessionBinding: (key) => {
-          bindGeneration(key, snapshot.id)
+          bindGeneration(key, binding.id)
         },
       },
     )
@@ -234,19 +247,44 @@ export async function createRuntimeGenerationHost(
       const savedRows = snapshot.resources
         ? await restoreGenerationRows(snapshot.resources, options, rowsByGeneration.get(snapshot.id))
         : [...(rowsByGeneration.get(snapshot.id) ?? preparedRows).values()]
-      for (const input of savedRows) host.extensionRows.prepare(input)
+      const restored = new Map(savedRows.map((input) => [input.extensionId, input]))
+      for (const input of rowsByGeneration.get(snapshot.id)?.values() ?? [])
+        restored.set(input.extensionId, input)
+      const builtins = host.extensionRows.current()
+      for (const row of targetRows(target)) {
+        if (!builtins.some((boot) => boot.id === row.id && boot.plugin === row.plugin)) continue
+        const id = row.id.slice('ext:'.length)
+        if (!restored.has(id))
+          restored.set(id, {
+            extensionId: id,
+            entryRevision: row.entryRevision,
+            ...(row.config === undefined ? {} : { config: row.config }),
+            ...(row.disabled === undefined ? {} : { disabled: row.disabled }),
+          })
+      }
+      const claims = new Map(builtins.map((row) => [row.id, row]))
+      for (const input of restored.values()) {
+        const row = host.extensionRows.prepare(input)
+        claims.set(row.id, row)
+      }
       if (pinnedSkillRow)
-        host.extensionRows.prepare({
-          extensionId: 'agnes/skills',
-          entryRevision: pinnedSkillRow.entryRevision,
-          ...(hasSkills ? { skillResources: generationSkills.input } : {}),
-        })
+        claims.set(
+          SKILL_ROW_ID,
+          host.extensionRows.prepare({
+            extensionId: 'agnes/skills',
+            entryRevision: pinnedSkillRow.entryRevision,
+            ...(hasSkills ? { skillResources: generationSkills.input } : {}),
+          }),
+        )
+      const rowIds = (snapshot.resources?.data as { extensionRowIds?: string[] } | undefined)?.extensionRowIds
+      if (rowIds) await host.extensionRows.apply(rowIds.flatMap((id) => claims.get(id) ?? []))
       await host.applyRuntimeTarget(decodeRuntimeTargetArtifact(snapshot.artifact))
     } catch (error) {
       await host.close().catch(() => undefined)
       throw error
     }
     const generation = { snapshot, host }
+    bindings.set(host, binding)
     resourceSkills.set(snapshot.id, generationSkills)
     live.set(snapshot.id, generation)
     return generation
@@ -276,7 +314,10 @@ export async function createRuntimeGenerationHost(
     const retired = new Set<string>()
     for (const [id, generation] of live) {
       if (id === current?.snapshot.id || referenced.has(id)) continue
-      await generation.host.close()
+      if (![...live].some(([otherId, other]) => otherId !== id && other.host === generation.host)) {
+        await generation.host.close()
+        bindings.delete(generation.host)
+      }
       live.delete(id)
       skillsByGeneration.delete(id)
       rowsByGeneration.delete(id)
@@ -405,7 +446,11 @@ export async function createRuntimeGenerationHost(
       return typeof value === 'function' ? value.bind(target) : value
     },
   })
-  const publishTarget = async (target: RuntimeTarget, skills?: { input: SkillRuntimeInput | undefined }) => {
+  const publishTarget = async (
+    target: RuntimeTarget,
+    skills?: { input: SkillRuntimeInput | undefined },
+    extensionRows?: readonly ReturnType<Host['extensionRows']['prepare']>[],
+  ) => {
     const head = await ensureCurrent()
     if (head.snapshot.artifact.digest === encodeRuntimeTargetArtifact(target).digest)
       return head.host.ordinaryConvergence()
@@ -430,11 +475,31 @@ export async function createRuntimeGenerationHost(
           throw new Error(`E_GENERATION_RESTART_REQUIRED: ${previous.snapshot.packageId} requires restart`)
       }
     const skillInput = skills ? skills.input : skillsByGeneration.get(head.snapshot.id)
-    const snapshot = snapshotTarget(target, sources, skillInput)
+    const snapshot = snapshotTarget(target, sources, skillInput, extensionRows)
     skillsByGeneration.set(snapshot.id, skills ? skills.input : skillsByGeneration.get(head.snapshot.id))
     rowsByGeneration.set(snapshot.id, new Map(preparedRows))
     try {
-      current = await build(snapshot)
+      const bound = store.sessions().some((pin) => live.get(pin.generationId)?.host === head.host)
+      const neutral = runtimeRegistryRevisionForTarget(oldTarget) === runtimeRegistryRevisionForTarget(target)
+      // Unbound containers can use the existing row transaction: unrelated rows and MCP
+      // connections stay live. A registry change forks only when durable sessions need the old view.
+      if (!bound || neutral) {
+        let generationSkills = resourceSkills.get(head.snapshot.id)
+        if (skills) {
+          generationSkills = createGenerationSkills(skillInput, store)
+          if (snapshot.resources) generationSkills.seal(snapshot.resources, true)
+          await head.host.refreshSkillRow(generationSkills.input)
+        }
+        if (extensionRows) await head.host.extensionRows.apply(extensionRows)
+        else await head.host.applyRuntimeTarget(target)
+        current = { snapshot, host: head.host }
+        live.set(snapshot.id, current)
+        const binding = bindings.get(head.host)
+        if (binding) binding.id = snapshot.id
+        if (generationSkills) resourceSkills.set(snapshot.id, generationSkills)
+      } else {
+        current = await build(snapshot)
+      }
     } catch (error) {
       failures.set(snapshot.id, error instanceof Error ? error.message : String(error))
       const { resources: _resources, sources: _sources, ...diagnostic } = snapshot
@@ -645,24 +710,16 @@ export async function createRuntimeGenerationHost(
     callService: (params, ...rest) => owner(params.sessionId).callService(params, ...rest),
     inspectService: (params, ...rest) => owner(params.sessionId).inspectService(params, ...rest),
     extensionRows: {
-      current: () => {
-        if (!current) return initial.extensionRows.current()
-        const owned = new Set([
-          ...initial.extensionRows.current().map((row) => row.id),
-          ...[...preparedRows.keys()].map((id) => `ext:${id}`),
-        ])
-        return decodeRuntimeTargetArtifact(current.snapshot.artifact).tree.rows.filter((row) =>
-          owned.has(row.id),
-        )
-      },
+      current: () => (current?.host ?? initial).extensionRows.current(),
       prepare: (input) => {
+        if (closed) throw new HostError('E_HOST_CLOSED', 'host is closed')
         preparedRows.set(input.extensionId, input)
         return (current?.host ?? initial).extensionRows.prepare(input)
       },
       apply: (rows) =>
         enqueue(async () => {
           const head = await ensureCurrent()
-          return publishTarget(
+          const report = await publishTarget(
             buildCompleteRuntimeTarget(
               composeExtensionRowTarget({
                 live: decodeRuntimeTargetArtifact(head.snapshot.artifact),
@@ -671,7 +728,12 @@ export async function createRuntimeGenerationHost(
                 extraOwnedRowIds: new Set([...preparedRows.keys()].map((id) => `ext:${id}`)),
               }),
             ).target,
+            undefined,
+            rows,
           )
+          const wanted = new Set(rows.map((row) => row.id))
+          for (const id of preparedRows.keys()) if (!wanted.has(`ext:${id}`)) preparedRows.delete(id)
+          return report
         }),
     },
     close: () => {
