@@ -370,11 +370,15 @@ describe('skill discovery', () => {
     expect(scan.ok && scan.candidates[0]?.files?.length).toBe(32)
   })
 
-  it('discovers single-file Skills, ignores plain markdown, and lets a directory win a same-name file', async () => {
+  it('accepts bare flat Skills, rejects invalid metadata, and lets a directory win a same-name file', async () => {
     const scan = await discoverSkillRoot(
       fs({
         '/work/.agh/skills/solo.md': '---\nname: solo\ndescription: one file\n---\nsolo body',
         '/work/.agh/skills/README.md': '# About these skills',
+        '/work/.agh/skills/plain.md': '\n  Plain instructions\nKeep this body.',
+        '/work/.agh/skills/empty.md': '\n  \n',
+        '/work/.agh/skills/broken.md': '---\nname: broken\ndescription: [\n---\nbody',
+        '/work/.agh/skills/directory-plain/SKILL.md': '# Directory still needs metadata',
         '/work/.agh/skills/review/SKILL.md': '---\nname: review\ndescription: directory\n---\nbody',
         '/work/.agh/skills/review.md': '---\nname: review\ndescription: file\n---\nbody',
       }),
@@ -382,11 +386,21 @@ describe('skill discovery', () => {
     )
     expect(scan.ok).toBe(true)
     if (!scan.ok) return
-    expect(scan.candidates.map((item) => [item.name, item.description])).toEqual([
-      ['review', 'directory'],
-      ['solo', 'one file'],
+    expect(Object.fromEntries(scan.candidates.map((item) => [item.name, item.description]))).toEqual({
+      README: 'About these skills',
+      plain: 'Plain instructions',
+      review: 'directory',
+      solo: 'one file',
+    })
+    expect(scan.skipped?.map((entry) => entry.code)).toEqual([
+      'invalid-frontmatter',
+      'invalid-frontmatter',
+      'invalid-frontmatter',
     ])
-    expect(scan.skipped).toBeUndefined()
+    expect(scan.candidates.find((item) => item.name === 'plain')).toMatchObject({
+      body: '\n  Plain instructions\nKeep this body.',
+      invocation: { modelInvocable: true, userInvocable: true, disabled: false },
+    })
     // A single file has no directory of its own; naming its parent would expose the whole root.
     expect(scan.candidates.find((item) => item.name === 'solo')?.directory).toBeUndefined()
     expect(scan.candidates.find((item) => item.name === 'review')?.directory).toBe(

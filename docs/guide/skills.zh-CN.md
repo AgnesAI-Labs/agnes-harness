@@ -54,6 +54,8 @@ node /path/to/agnes-harness/packages/cli/dist/local/agnes.mjs skills list
 
 刷新失败可能留下 stale/最近已知内容，不把 stale 当作本次扫描成功。内容修改会保留现有决定并更新绑定修订。
 
+磁盘上的扁平文件无需 YAML frontmatter。例如 `$AGH_HOME/skills/review-notes.md` 内容为 `# Review project notes` 时，名称取文件名 `review-notes`，描述取首个非空标题或文本行（最多 1024 字符），完整 Markdown 保留为正文。空文件与无效的显式 frontmatter 会被拒绝；目录 `SKILL.md` 与打包的 Skill 贡献仍需带 `name`、`description` 的 frontmatter。
+
 技能根里可以是目录 `<name>/SKILL.md`，也可以是扁平的 `<name>.md`。两者同名时目录胜出。不支持自定义根目录。`SKILL.md` 可以设置 `disable-model-invocation`、`user-invocable` 和 `disable`；省略这些字段时模型与用户两侧都允许。daemon 会监视目录中的说明与相对资源文件；`skills refresh --yes` 可立即重扫。细节与不支持的情况见 [MCP 与 Skills 支持范围](mcp-skills-support.zh-CN.md)。
 
 ## 调整同名候选优先级

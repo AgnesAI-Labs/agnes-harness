@@ -169,6 +169,7 @@ type CandidateOutcome =
   | Readonly<{ ok: false; code: SkillRootFailure }>
 
 function candidateFromDocument(input: {
+  flatName?: string
   source: string
   scope: SkillScope
   rootKey: SkillRootKey
@@ -178,7 +179,7 @@ function candidateFromDocument(input: {
 }): CandidateOutcome {
   if (Buffer.byteLength(input.source, 'utf8') > MAX_SKILL_FILE_BYTES)
     return { ok: false, code: 'skill-file-unreadable' }
-  const parsed = parseSkillDocument(input.source)
+  const parsed = parseSkillDocument(input.source, input.flatName)
   if (!parsed) return { ok: false, code: 'invalid-frontmatter' }
   if (Buffer.byteLength(parsed.body, 'utf8') > MAX_SKILL_BODY_BYTES)
     return { ok: false, code: 'skill-body-too-large' }
@@ -284,7 +285,6 @@ async function readRootEntry(
     return { kind: 'skip', code: 'skill-file-unreadable' }
   }
   if (Buffer.byteLength(source, 'utf8') !== stat.size) return { kind: 'skip', code: 'skill-file-unreadable' }
-  if (!skillDir && !source.startsWith('---')) return { kind: 'ignore' }
   return {
     kind: 'read',
     source,
@@ -349,6 +349,7 @@ export async function discoverSkillRoot(fs: SkillFs, root: SkillRoot): Promise<S
       }
       const outcome = candidateFromDocument({
         source: read.source,
+        ...(read.skillDir === undefined ? { flatName: entry.name.slice(0, -3) } : {}),
         scope: root.scope,
         rootKey: root.rootKey,
         canonicalLocation: location,

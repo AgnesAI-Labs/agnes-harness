@@ -30,7 +30,7 @@
 | 行为 | 会话路径 |
 | --- | --- |
 | 目录技能（`<name>/SKILL.md`） | 支持 |
-| 扁平文件（技能根目录下的 `<name>.md`） | 支持。同名目录优先于扁平文件；更早出现的目录优先于更晚的目录 |
+| 扁平文件（技能根目录下的 `<name>.md`） | 支持省略 frontmatter：名称取文件名，描述取首个非空标题或文本行；空文件或无效的显式 frontmatter 会被拒绝。同名目录优先于扁平文件；更早出现的目录优先于更晚的目录 |
 | 固定根目录 | 支持：工作区 `.agh/skills`、`AGH_HOME/skills`，以及显式设置 `AGNES_SKILLS_IMPORT_USER=1` 后的操作系统用户主目录下 `.agents/skills`、`.claude/skills`、`.codex/skills`。工作区的 `.agents/skills` 与 `.claude/skills` 随工作区根一起扫描 |
 | 自定义技能根 | 不支持。没有额外根目录的配置项 |
 | 相对资源路径 | 支持，位于该技能目录内。可通过 `skill_read_file`，或对 `skill_read` 给出的目录使用普通文件工具。路径必须留在该目录内 |

@@ -75,11 +75,30 @@ function canonical(value: unknown): string {
   throw new TypeError('frontmatter is not static')
 }
 
-/** Parse only a plain, bounded YAML frontmatter block. Candidate bodies are never interpreted. */
+/** Parse bounded YAML, or synthesize metadata for an explicitly named flat disk Skill. */
 export function parseSkillDocument(
   source: string,
+  flatName?: string,
 ): Readonly<{ frontmatter: SkillFrontmatter; body: string }> | undefined {
-  if (!source.startsWith('---\n') && !source.startsWith('---\r\n')) return undefined
+  if (!source.startsWith('---\n') && !source.startsWith('---\r\n')) {
+    if (flatName === undefined) return undefined
+    const name = flatName.trim()
+    const description = source
+      .split(/\r?\n/)
+      .map((line) =>
+        line
+          .trim()
+          .replace(/^#{1,6}(?:\s+|$)/, '')
+          .trim(),
+      )
+      .find(Boolean)
+      ?.slice(0, MAX_DESCRIPTION_LENGTH)
+    if (!name || !description) return undefined
+    const parsed = parseSkillDocument(
+      `---\nname: ${JSON.stringify(name)}\ndescription: ${JSON.stringify(description)}\n---\n`,
+    )
+    return parsed ? Object.freeze({ frontmatter: parsed.frontmatter, body: source }) : undefined
+  }
   const closing = /^---\r?\n([\s\S]{0,16384}?)^---[ \t]*\r?\n/m.exec(source)
   if (
     !closing?.[1] ||

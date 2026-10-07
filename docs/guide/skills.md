@@ -60,6 +60,8 @@ Names are grouped after trimming whitespace and ignoring case. Candidates not ma
 
 A failed refresh may leave stale or last-known content. Stale data is not evidence of a successful scan. Edits retain existing decisions and update the bound revision.
 
+A flat disk file needs no YAML frontmatter. For example, `$AGH_HOME/skills/review-notes.md` containing `# Review project notes` is named `review-notes`, with its description taken from the first nonempty heading or line (up to 1024 characters). Its entire Markdown remains the body. Empty files and malformed explicit frontmatter are rejected. Directory `SKILL.md` and packaged Skill contributions still require `name` and `description` frontmatter.
+
 A skill root may contain a directory `<name>/SKILL.md` or a flat `<name>.md`. The directory wins when both exist. Custom roots are not supported. `SKILL.md` may set `disable-model-invocation`, `user-invocable`, and `disable`; omitted flags permit both model and user use. The daemon watches directories and relative resource files; `skills refresh --yes` requests an immediate rescan. Details and the unsupported cases are in [MCP and Skills support](mcp-skills-support.md).
 
 <a id="调整同名候选优先级"></a>
