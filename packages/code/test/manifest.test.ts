@@ -109,7 +109,7 @@ describe('code-mode extension entry', () => {
     expect(registeredTools.map((tool) => tool.name)).toEqual(['run_code'])
     expect(checkToolDef(registeredTools[0])).toEqual({ ok: true })
     await expect(registeredTools[0]?.execute({ code: 'print(1)' }, {} as never)).rejects.toThrow(
-      'E_PRESET_UNSUPPORTED: code runtime lifecycle is not wired yet',
+      /signal|aborted/,
     )
     expect(registeredHooks).toEqual(['session_start'])
     // Let the handler's microtask (the awaited events.append call) settle.

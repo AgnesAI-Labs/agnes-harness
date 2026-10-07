@@ -4,6 +4,7 @@ import type { ClientResourceService, SessionService } from '@agnes/web-client'
 import { Button } from '@agnes/web-ui'
 import { useEffect, useState } from 'react'
 import { toolCardsLocaleCatalog } from './locales/tool-cards.js'
+import { WorkflowRunCard } from './workflow-run-card.js'
 
 type Text = (key: string) => string
 const englishDictionary: Record<string, string> = toolCardsLocaleCatalog.en
@@ -210,6 +211,8 @@ export function DefaultToolCards({
       {node.slots?.map((fill) => {
         if (fill.slot !== 'tool.card.inline') return null
         const payload = fill.payload as ToolCardInlinePayload
+        if (fill.extId === 'agnes/workflow' && payload.table)
+          return <WorkflowRunCard key={fill.extId} payload={payload} t={t} />
         if (payload.question)
           return (
             <QuestionCard

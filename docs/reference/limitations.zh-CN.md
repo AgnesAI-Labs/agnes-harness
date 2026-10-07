@@ -23,7 +23,7 @@
 | Skills | 当前源码已实现永久删除与同名优先级覆盖。删除不可恢复/不可取消，失败可能部分删除并保留标记；package/runtime 不可单独删文件，runtime 不接受优先级覆盖 |
 | Hooks / 扩展迁移 | `registerHook` 已开放 16 类事件；旧第三方 `agnes.extensions` 后端入口已收敛到 `agnes.plugins`。内置兼容路径不等于第三方可继续使用旧格式 |
 | 模型 | 提供方目录与合同决定能力；文档自动演示使用本地模型夹具，外部模型效果和工具选择能力需另行验证 |
-| Python | 生产 Python runtime 与 Python thin SDK 仍非本文可用路径 |
+| 程序化工具 | 本地 macOS/Linux 支持 PTC，Windows 和远程执行不支持。独立 CPython 为实验功能，见[代码工作流](../guide/code-workflows.zh-CN.md) |
 | Desktop/系统集成 | 不包含桌面客户端、系统登录启动注册、自动更新 |
 | 行业/企业 | 业务接口、身份、数据与部署政策需要按[FDE 场景](../guide/why-agh.zh-CN.md)分别集成和验收 |
 | MHS/物理设备 | AGH 的[MHS 接入文档与示例即将开放](../guide/mhs.zh-CN.md)；暂无已验证的通用 MHS 适配器、设备兼容列表或设备端到端示例 |

@@ -50,6 +50,7 @@ export type SandboxProviderSlot = {
 function freezeCapabilities(capabilities: SandboxCapabilities): SandboxCapabilities {
   return Object.freeze({
     network: capabilities.network,
+    ...(capabilities.programmatic === undefined ? {} : { programmatic: capabilities.programmatic }),
     fsWrite: Object.freeze(capabilities.fsWrite.map((scope) => Object.freeze({ path: scope.path }))),
     platform: Object.freeze([...capabilities.platform]),
     available: capabilities.available,
@@ -71,7 +72,8 @@ function validCapabilities(capabilities: SandboxCapabilities | undefined): boole
   if (
     !capabilities ||
     typeof capabilities.network !== 'boolean' ||
-    typeof capabilities.available !== 'boolean'
+    typeof capabilities.available !== 'boolean' ||
+    (capabilities.programmatic !== undefined && typeof capabilities.programmatic !== 'boolean')
   )
     return false
   const enforcement = capabilities.enforcement
@@ -394,6 +396,8 @@ export function createSandboxDispatchExec(local: ExecAdapter, slot: SandboxProvi
         (offered?.level !== 'full' || required.scope.some((scope) => !offered.scope.includes(scope)))
       )
         throw sandboxUnavailable('the provider cannot supply the required enforcement')
+      if (opts.bridge && selected.capabilities.programmatic !== true)
+        throw sandboxUnavailable('the selected provider does not support programmatic transport')
       const result = await selected.exec({
         argv,
         cwd: opts.cwd,
@@ -401,6 +405,7 @@ export function createSandboxDispatchExec(local: ExecAdapter, slot: SandboxProvi
         ...(opts.sandbox?.enforcement ? { enforcement: opts.sandbox.enforcement } : {}),
         ...(opts.env === undefined ? {} : { env: opts.env }),
         ...(opts.stdin === undefined ? {} : { stdin: opts.stdin }),
+        ...(opts.bridge ? { bridge: opts.bridge } : {}),
         ...(opts.signal === undefined ? {} : { signal: opts.signal }),
         limits: {
           ...(opts.timeoutMs === undefined ? {} : { timeoutMs: opts.timeoutMs }),

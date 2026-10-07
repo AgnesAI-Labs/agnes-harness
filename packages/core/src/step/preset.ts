@@ -41,6 +41,7 @@ export type PresetView = {
     onUnavailable: 'deny' | 'park'
     pendingTtlMs: number
   }
+  codeRuntime?: import('@agnes/extension-api').ToolContext['codeRuntime']
   sandbox: { onUnavailable: 'deny' | 'allow' }
   tools: {
     runtime?: string
@@ -119,6 +120,17 @@ export function readPreset(raw: Record<string, unknown>, name: string): PresetVi
   const d = presetDefaults()
   return {
     name,
+    ...(get(raw, 'code_runtime.language') === undefined
+      ? {}
+      : {
+          codeRuntime: {
+            state: pick(raw, 'code_runtime.state', 'stateless' as const),
+            language: pick(raw, 'code_runtime.language', 'typescript' as const),
+            wallMs: pick(raw, 'code_runtime.cell_timeout_ms', 120000),
+            maxOutputChars: pick(raw, 'code_runtime.max_output_chars', 65536),
+            maxParallelSubCalls: pick(raw, 'code_runtime.max_parallel_sub_calls', 4),
+          },
+        }),
     // Shipped presets use loop for hygiene knobs; only an explicit id selects a loop provider.
     ...(get(raw, 'loop.id') === undefined
       ? {}

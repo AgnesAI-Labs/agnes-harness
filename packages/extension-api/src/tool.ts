@@ -146,6 +146,9 @@ export interface CodeRuntime {
   start(opts: {
     cwd: string
     env: Record<string, string>
+    /** Managed provider-bound executor; required by process PTC backends. */
+    exec?: ToolContext['exec']
+    toolNames?: readonly string[]
     confine: (argv: string[]) => Promise<string[]>
     signal?: AbortSignal
   }): Promise<void>
@@ -198,7 +201,15 @@ export interface ToolContext {
   readonly cwd: string
   exec(
     cmd: string[],
-    opts?: { cwd?: string; env?: Record<string, string>; stdin?: string; timeoutMs?: number },
+    opts?: {
+      cwd?: string
+      env?: Record<string, string>
+      stdin?: string
+      timeoutMs?: number
+      signal?: AbortSignal
+      maxOutputBytes?: number
+      bridge?: (frame: unknown) => Promise<unknown>
+    },
   ): Promise<ExecResult>
   readonly fs: {
     read(path: string, opts?: { offset?: number; limit?: number }): Promise<Bytes>
@@ -221,6 +232,13 @@ export interface ToolContext {
   readonly tools: {
     invoke(name: string, args: JsonValue, opts?: { signal?: AbortSignal }): Promise<ToolResult>
     list(): ToolDef[]
+  }
+  readonly codeRuntime?: {
+    state: 'persistent' | 'stateless'
+    language: 'python' | 'typescript'
+    wallMs: number
+    maxOutputChars: number
+    maxParallelSubCalls: number
   }
   readonly runtime?: CodeRuntime
   readonly artifacts: {

@@ -192,6 +192,7 @@ describe('tool types', () => {
       | 'platform'
       | 'authorize'
       | 'tools'
+      | 'codeRuntime'
       | 'runtime'
       | 'artifacts'
       | 'subagent'

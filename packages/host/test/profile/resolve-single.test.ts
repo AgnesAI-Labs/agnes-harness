@@ -54,7 +54,7 @@ describe('resolveProfile (single layer)', () => {
     expect(p.seams.platform).toBe('@agnes/host')
     expect(p.presets).toEqual({
       default: 'workspace-write',
-      allowed: ['standard', 'read-only', 'workspace-write', 'full-access', 'minimal'],
+      allowed: ['standard', 'read-only', 'workspace-write', 'full-access', 'minimal', 'ptc'],
     })
     expect(p.hash).toMatch(/^sha256-[0-9a-f]{64}$/)
     expect(Object.isFrozen(p)).toBe(true)

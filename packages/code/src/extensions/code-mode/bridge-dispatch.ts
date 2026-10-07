@@ -34,6 +34,8 @@ export function bridgeDispatch(ctx: ToolContext, request: BridgeRequest): () => 
   switch (request.method) {
     case 'bridge.tools.invoke': {
       const { name, args } = request.params
+      if (name === 'run_code')
+        throw Object.assign(new Error('recursive code calls are unavailable'), { bridgeCode: 1003 })
       return async () => {
         const result = await ctx.tools.invoke(name, args, { signal: ctx.signal })
         if (result.isError) throw new Error('tool execution failed')

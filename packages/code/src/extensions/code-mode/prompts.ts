@@ -7,6 +7,7 @@ import {
   renderTools,
 } from './environment.js'
 import { createSdkRenderer } from './sdk/memo.js'
+import { renderTypeScript } from './sdk/render-typescript.js'
 
 /**
  * The slice of the assembly's dependency bundle this operation reads, declared structurally. The
@@ -106,7 +107,14 @@ export function createPromptOperation(deps: PromptDeps): Operation {
       if (ctx.disclosed.includes('run_code'))
         sections.push(section('code-doctrine', loadPrompt('code-doctrine')))
       if (ctx.preset.disclosure !== 'standard' && ctx.disclosed.includes('run_code'))
-        sections.push(section('tools:sdk', sdk.render(ctx.snapshot)))
+        sections.push(
+          section(
+            'tools:sdk',
+            ctx.preset.codeRuntime?.language === 'typescript'
+              ? renderTypeScript(ctx.snapshot.defs)
+              : sdk.render(ctx.snapshot),
+          ),
+        )
       if (declared?.includes('channel-style'))
         sections.push(section('channel-style', loadPrompt('channel-style')))
       return {

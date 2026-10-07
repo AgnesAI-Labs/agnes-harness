@@ -3,9 +3,12 @@ import type { ToolCardInlinePayload } from '@agnes/protocol/gen/slots'
 
 type ToolNode = Extract<UINode, { kind: 'tool' }>
 /** Identifies existing presentation surfaces; does not infer job or child lifecycle state. */
-export function conversationToolCardKind(node: ToolNode): 'background-job' | 'child-agent' | undefined {
+export function conversationToolCardKind(
+  node: ToolNode,
+): 'background-job' | 'child-agent' | 'workflow-run' | undefined {
   if (['job_list', 'job_output', 'job_kill'].includes(node.name)) return 'background-job'
   if (node.name === 'shell' && node.resultPreview?.startsWith('background job ')) return 'background-job'
+  if (node.name === 'workflow' || node.name === 'workflow_status') return 'workflow-run'
   if (node.name.startsWith('subagent_')) return 'child-agent'
   return undefined
 }
@@ -16,7 +19,11 @@ export function keepConversationCardVisible(node: UINode): boolean {
     node.slots?.some((fill) => {
       if (fill.slot !== 'tool.card.inline') return false
       const payload = fill.payload as ToolCardInlinePayload
-      return !!payload.question || !!payload.deliverables?.length
+      return (
+        (fill.extId === 'agnes/workflow' && !!payload.table) ||
+        !!payload.question ||
+        !!payload.deliverables?.length
+      )
     }) ?? false
   )
 }

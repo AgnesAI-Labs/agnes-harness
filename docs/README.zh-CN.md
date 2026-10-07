@@ -26,6 +26,7 @@
 | [CLI 与 TUI](guide/cli.zh-CN.md) | 运行终端任务、使用交互会话、处理审批 |
 | [官方默认工具](reference/default-tools.zh-CN.md) | 搜索、问答、交付文件、管理后台任务及修改已读取文件 |
 | [Web 工作台](guide/web.zh-CN.md) | 创建任务、查看历史、管理模型与扩展 |
+| [程序化工具与工作流](guide/code-workflows.zh-CN.md) | TypeScript cell 与持久并行子任务工作流 |
 | [会话与恢复](guide/sessions.zh-CN.md) | 继续任务、导出记录、处理中断 |
 | [插件生命周期](guide/packages.zh-CN.md) | 安装、信任、启用、更新与移除插件 |
 | [无界面运行与回放](guide/headless.zh-CN.md) | JSONL 事件、固定模型回复比较和批量输入 |

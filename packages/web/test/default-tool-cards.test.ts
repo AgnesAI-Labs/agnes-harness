@@ -85,3 +85,45 @@ it('submits multiple choices with free text and exposes authorized deliverable o
   }
   expect(release).toHaveBeenCalled()
 })
+
+it('expands workflow stages and links each member to its child session', () => {
+  const el = document.createElement('div')
+  document.body.append(el)
+  const root = createRoot(el)
+  const node = {
+    kind: 'tool',
+    name: 'workflow',
+    slots: [
+      {
+        extId: 'agnes/workflow',
+        slot: 'tool.card.inline',
+        payload: {
+          title: 'Research · completed',
+          table: {
+            columns: ['Stage', 'Member', 'Status', 'Child session'],
+            rows: [
+              ['Research', 'Analyst', 'completed', 'child:one'],
+              ['Write', 'Writer', 'pending', ''],
+            ],
+          },
+        },
+      },
+    ],
+  } as unknown as Extract<UINode, { kind: 'tool' }>
+  try {
+    flushSync(() => root.render(createElement(DefaultToolCards, { node, answered: new Set<string>() })))
+    expect(el.querySelector('[data-testid="workflow-run-card"]')?.getAttribute('aria-label')).toBe(
+      'Workflow run',
+    )
+    const stage = el.querySelector<HTMLDetailsElement>('[data-testid="workflow-stage"]')!
+    stage.querySelector('summary')!.click()
+    expect(stage.open).toBe(true)
+    expect(el.querySelector('[data-testid="workflow-child-session"]')?.getAttribute('href')).toBe(
+      '?session=child%3Aone',
+    )
+    expect(el.querySelectorAll('[data-testid="workflow-member"]')).toHaveLength(2)
+  } finally {
+    flushSync(() => root.unmount())
+    el.remove()
+  }
+})

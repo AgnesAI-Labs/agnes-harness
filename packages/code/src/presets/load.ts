@@ -25,6 +25,7 @@ export const PRESET_NAMES = [
   'minimal-rl',
   'standard-windows',
   'minimal',
+  'ptc',
 ] as const
 export type PresetName = (typeof PRESET_NAMES)[number]
 

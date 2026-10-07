@@ -25,7 +25,7 @@ Use this page to decide whether AGH fits your trial or integration. It distingui
 | Skills | Permanent deletion and same-name priority overrides are implemented. Deletion has no undo/cancellation and can partially fail with persistent markers. Package/runtime files cannot be deleted individually; runtime priority overrides are refused |
 | Hooks / extension migration | `registerHook` exposes 16 event categories. Third-party backend entries have moved from `agnes.extensions` to `agnes.plugins`. Built-in compatibility does not authorize legacy third-party entry formats |
 | Models | Provider catalogs and contracts determine capabilities. Automated documentation demos use local model fixtures; external-model quality and tool selection need separate verification |
-| Python | Production Python runtime and the Python thin SDK are not usable paths described by these guides |
+| Programmatic tools | Local macOS/Linux PTC is supported; Windows and remote execution are unavailable. Stateless CPython is experimental; see [code workflows](../guide/code-workflows.md) |
 | Desktop / system integration | No desktop client, system-login startup registration, or automatic updates |
 | Domain / enterprise | Business APIs, identity, data, and deployment policies need scenario-specific integration and acceptance; see [FDE](../guide/why-agh.md) |
 | MHS / devices | [AGH MHS guides and examples are coming soon](../guide/mhs.md). No verified general-purpose MHS adapter, compatibility list, or end-to-end device example |

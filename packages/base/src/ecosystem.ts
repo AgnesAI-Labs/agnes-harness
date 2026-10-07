@@ -29,6 +29,7 @@ import { createToolsCoreExtension } from '../extensions/tools-core/src/index.js'
 import toolsSearchExtension from '../extensions/tools-search/src/index.js'
 import { createToolsWebExtension } from '../extensions/tools-web/src/index.js'
 import { createOfficialSearchProvider } from '../extensions/tools-web/src/search/index.js'
+import workflowExtension from '../extensions/workflow/src/index.js'
 import type { SeamInitContext } from './seam-init.js'
 
 /** Replaced with the reviewed generated asset by the CLI SEA build. */
@@ -193,6 +194,7 @@ function defineSubagentExtension(init: SeamInitContext): ExtensionFactory {
 
 /** Trusted factories keyed by the manifest id the host is about to admit. */
 export const ecosystem = {
+  'agnes/workflow': (): ExtensionFactory => workflowExtension,
   'agnes/interaction': (): ExtensionFactory => interactionExtension,
   'agnes/deliverables': (): ExtensionFactory => deliverablesExtension,
   'agnes/plugin-creator': (): ExtensionFactory => pluginCreatorExtension,

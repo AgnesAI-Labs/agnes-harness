@@ -149,6 +149,7 @@ export interface SeamWorkspace {
       cwd: string
       env?: Record<string, string>
       stdin?: string
+      bridge?: (frame: unknown) => Promise<unknown>
       timeoutMs?: number
       signal?: AbortSignal
       maxOutputBytes?: number
@@ -173,6 +174,7 @@ export interface SandboxSeam {
       cwd: string
       env?: Record<string, string>
       stdin?: string
+      bridge?: (frame: unknown) => Promise<unknown>
       timeoutMs?: number
       signal?: AbortSignal
       maxOutputBytes?: number

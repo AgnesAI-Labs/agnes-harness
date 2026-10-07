@@ -17,7 +17,7 @@ capability ID; it also rejects stale source markers and drift between this table
 | Capability ID | Feature | Status | Blocker / current boundary | Evolution | Source evidence |
 |---|---|---|---|---|---|
 | `runtime.python.execution` | Python code runtime | stub | Spike thresholds exist, but there is no Python kernel, raw I/O bridge, snapshot, or restore backend. | Requires a validated runtime backend | `packages/runtime-python/src/index.ts` |
-| `code.runtime.lifecycle` | Code-mode runtime lifecycle | stub | The extension surface exists, but no runtime lifecycle is connected to it. | After `runtime.python.execution` | `packages/code/src/extensions/code-mode/index.ts` |
+| `code.runtime.lifecycle` | Code-mode runtime lifecycle | wired | Provider-managed fresh Node/TypeScript and experimental CPython cells use governed tool bindings. Persistent kernels are refused. | Windows and remote bridge support remain unavailable | `packages/code/src/extensions/code-mode/index.ts` |
 | `ai.models.catalogue-probe` | Provider model-catalogue probe | partial | Common OpenAI/Anthropic reachability works; protocol-specific catalogues and some auth variants refuse. | Provider-specific implementation | `packages/ai/src/adapters/pi/probe-models.ts`<br>`packages/ai/src/adapters/pi/probe.ts` |
 | `approval.ticket-store` | Parked approval tickets | stub | The approval policy has no durable ticket store. | Requires durable storage | `packages/base/extensions/approval-policy/src/tickets.ts` |
 | `artifacts.background-jobs` | Artifact background jobs | stub | Local artifact reads/writes exist, but asynchronous artifact jobs do not. | Requires job execution | `packages/base/extensions/artifacts-local/src/jobs.ts` |

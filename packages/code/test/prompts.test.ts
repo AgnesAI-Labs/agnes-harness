@@ -117,14 +117,15 @@ const PROMPT_TEXT: Record<string, string> = {
     '- Put file contents and long output behind an artifact reference rather than pasting them.',
   ].join('\n'),
   'code-doctrine': [
-    'You act by writing code. One `run_code` call is one program, not one command.',
+    'You act by writing code. One run_code call is one program in a fresh managed process.',
     '',
-    '- Variables, imports, and helper functions persist across cells in this kernel. Build on what you already defined.',
-    '- `%%bash` must be the first line of a cell to run shell. Each `%%bash` cell is a throw-away subshell: `cd`, `export`, and shell variables do not carry to later cells. Python state does.',
-    '- Assign large reads and searches to named variables and print only a summary. Never dump a whole file or a whole search result into the transcript.',
-    '- Do not poll with `time.sleep` or a shell `sleep`. Start long work, record its handle, end the turn, and collect the result next turn.',
-    "- Do not install dependencies into this kernel to make an external project import or run. Use that project's own environment through `%%bash`.",
-    '- Every `await tools.<name>(...)` call goes back through the harness: approval, sandbox, and accounting all apply, and each call can raise `agnes.BridgeError`. Catch it and adapt rather than letting the whole cell die.',
+    '- Use top-level await and return. TypeScript is the official PTC language; CPython is experimental when configured.',
+    '- Variables and imports do not persist across cells. Store durable outputs as files or artifacts through harness tools.',
+    '- Call harness tools with await tools.<name>({ ...arguments }). Tool parameter declarations appear in the SDK section.',
+    '- Every nested tool call uses the harness approval, budget, validation and sandbox path. Await all calls; at most four may run concurrently.',
+    '- Assign large results to variables and print summaries. Do not dump whole files into the transcript.',
+    '- Use tools.shell for commands. Shell permissions and network restrictions still apply.',
+    '- Use tools.workflow for sequential stages with parallel child members, and retain its runId to resume an interrupted run.',
   ].join('\n'),
   'coding-doctrine': [
     'When working with code or repository files:',
@@ -179,15 +180,16 @@ describe('prompt text', () => {
       expect(readFileSync(new URL(f, promptsDir), 'utf8'), f).not.toMatch(/[　-鿿＀-￯]/)
   })
 
-  it('code-doctrine carries every discipline of writing code against a live kernel', () => {
+  it('code-doctrine describes fresh cells and governed tool calls', () => {
     const t = loadPrompt('code-doctrine')
     for (const needle of [
-      'persist across cells',
-      '`%%bash` must be the first line',
-      'print only a summary',
-      'Do not poll with `time.sleep`',
-      'Do not install dependencies into this kernel',
-      'end the turn, and collect the result next turn',
+      'fresh managed process',
+      'do not persist across cells',
+      'top-level await and return',
+      'approval, budget, validation and sandbox',
+      'Await all calls',
+      'tools.shell',
+      'runId',
     ])
       expect(t, needle).toContain(needle)
   })

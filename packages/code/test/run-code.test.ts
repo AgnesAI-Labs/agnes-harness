@@ -42,7 +42,7 @@ describe('run_code tool definition', () => {
     const tool = createRunCodeTool(deps(runtime()))
     expect(checkToolDef(tool)).toEqual({ ok: true })
     expect(tool.name).toBe('run_code')
-    expect(tool.description).toContain('persistent kernel')
+    expect(tool.description).toContain('fresh managed process')
     expect(Object.keys((tool.parameters as { properties: object }).properties)).toEqual([
       'code',
       'description',
@@ -56,7 +56,7 @@ describe('run_code tool definition', () => {
       replay: 'never',
       costHint: undefined,
       deferLoading: false,
-      requiresApproval: undefined,
+      requiresApproval: 'always',
     })
   })
 
@@ -71,7 +71,7 @@ describe('run_code tool definition', () => {
     const request = vi.mocked(rt.run).mock.calls[0]?.[0]
     expect(request).toMatchObject({
       program: 'print(1)',
-      signal: ctx.signal,
+      signal: expect.any(AbortSignal),
       limits: { wallMs: 600000, maxOutputChars: 65536 },
     })
     await expect(request?.bindings({ marker: 1 })).resolves.toEqual({ marker: 1 })

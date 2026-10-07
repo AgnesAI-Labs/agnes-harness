@@ -350,6 +350,7 @@ describe('standard.yaml', () => {
       'minimal-rl',
       'standard-windows',
       'minimal',
+      'ptc',
     ])
     expect(presets.standard).toEqual(doc)
     expect(Object.keys(presets)).toEqual([...PRESET_NAMES])

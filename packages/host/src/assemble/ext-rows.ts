@@ -39,6 +39,7 @@ export const EXT_ROW_EXTENSION_IDS: ReadonlySet<string> = new Set([
   'agnes/skills',
   'agnes/plan-mode',
   'agnes/mcp-resources',
+  'agnes/workflow',
 ])
 
 /**
@@ -99,6 +100,7 @@ export const MIGRATED_EXTENSION_IDS: ReadonlySet<string> = new Set([
   'agnes/skills',
   'agnes/plan-mode',
   'agnes/mcp-resources',
+  'agnes/workflow',
 ])
 
 export type ExtRowLoadResult = Readonly<{

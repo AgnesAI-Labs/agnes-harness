@@ -15,7 +15,7 @@ export type { BridgeHandler } from '../../runtime/index.js'
 
 export const RunCodeParams = Type.Object(
   {
-    code: Type.String({ description: 'The program to run in this cell.' }),
+    code: Type.String({ maxLength: 262144, description: 'The program to run in this cell.' }),
     description: Type.Optional(
       Type.String({ maxLength: 512, description: 'One line describing what this cell does.' }),
     ),
@@ -24,6 +24,7 @@ export const RunCodeParams = Type.Object(
 )
 export type RunCodeArgs = Static<typeof RunCodeParams>
 export type RunCodeDeps = {
+  language?: CodeRuntime['language']
   acquire(ctx: ToolContext): Promise<CodeRuntime>
   bridge(ctx: ToolContext): BridgeHandler
   limits(ctx: ToolContext): RunLimits
@@ -40,7 +41,7 @@ function cellText(result: Awaited<ReturnType<CodeRuntime['run']>>): string {
 export function createRunCodeTool(deps: RunCodeDeps): ToolDef<typeof RunCodeParams> {
   return defineTool({
     name: 'run_code',
-    description: runCodeDescription('python'),
+    description: runCodeDescription(deps.language ?? 'python'),
     parameters: RunCodeParams,
     meta: {
       isReadOnly: false,
@@ -50,17 +51,25 @@ export function createRunCodeTool(deps: RunCodeDeps): ToolDef<typeof RunCodePara
       replay: 'never',
       costHint: undefined,
       deferLoading: false,
-      requiresApproval: undefined,
+      requiresApproval: 'always',
     },
     async execute(args, ctx): Promise<ToolResult> {
-      const runtime = await deps.acquire(ctx)
+      const controller = new AbortController()
+      const scoped = { ...ctx, signal: AbortSignal.any([ctx.signal, controller.signal]) }
+      const runtime = await deps.acquire(scoped)
       const limits = deps.limits(ctx)
-      const result = await runtime.run({
-        program: args.code,
-        bindings: deps.bridge(ctx),
-        signal: ctx.signal,
-        limits: { wallMs: limits.wallMs, maxOutputChars: limits.maxOutputChars },
-      })
+      let result: Awaited<ReturnType<CodeRuntime['run']>>
+      try {
+        result = await runtime.run({
+          program: args.code,
+          bindings: deps.bridge(scoped),
+          signal: scoped.signal,
+          limits: { wallMs: limits.wallMs, maxOutputChars: limits.maxOutputChars },
+        })
+      } finally {
+        controller.abort()
+        await runtime.shutdown?.()
+      }
       const guarded = guardOutput(cellText(result), limits.maxOutputChars)
       let artifact: string | undefined
       if (guarded.full !== undefined) {
@@ -81,7 +90,7 @@ export function createRunCodeTool(deps: RunCodeDeps): ToolDef<typeof RunCodePara
           ...(artifact ? { artifact } : {}),
           ...(result.error ? { error: result.error } : {}),
         },
-        isError: result.status === 'error',
+        isError: result.status !== 'ok',
       }
     },
   })

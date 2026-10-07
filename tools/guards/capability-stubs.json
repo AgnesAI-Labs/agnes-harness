@@ -15,7 +15,7 @@
       "evidence": [
         {
           "path": "packages/code/src/extensions/code-mode/index.ts",
-          "marker": "code runtime lifecycle is not wired yet"
+          "marker": "this runtime supports stateless cells only"
         }
       ]
     },

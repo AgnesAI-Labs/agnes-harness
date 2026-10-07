@@ -25,6 +25,7 @@ export function createLocalSandboxProvider(
   const platform = platformOf(os)
   const capabilities: SandboxCapabilities = Object.freeze({
     network: true,
+    programmatic: os !== 'win32',
     fsWrite: Object.freeze([]),
     platform,
     available: platform.length > 0,
@@ -42,6 +43,8 @@ export function createLocalSandboxProvider(
         id: LOCAL_SANDBOX_PROVIDER_ID,
         capabilities,
         async exec(request) {
+          if (request.bridge && !capabilities.programmatic)
+            throw sandboxUnavailable('programmatic transport is unavailable on this platform')
           if (disposed) throw sandboxUnavailable('the workspace sandbox instance is disposed')
           request.signal?.throwIfAborted()
           if (!capabilities.available)
@@ -67,6 +70,7 @@ export function createLocalSandboxProvider(
             cwd: request.cwd,
             ...(request.env === undefined ? {} : { env: { ...request.env } }),
             ...(request.stdin === undefined ? {} : { stdin: request.stdin }),
+            ...(request.bridge ? { bridge: request.bridge } : {}),
             signal: request.signal ? AbortSignal.any([request.signal, controller.signal]) : controller.signal,
             ...(request.limits?.timeoutMs === undefined ? {} : { timeoutMs: request.limits.timeoutMs }),
             ...(request.limits?.maxOutputBytes === undefined

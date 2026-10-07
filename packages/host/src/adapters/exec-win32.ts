@@ -14,6 +14,8 @@ export function createWindowsExec(options: {
   const live = new Set<{ cancel(): void; done: Promise<ExecResult> }>()
   return {
     run(argv, opts) {
+      if (opts.bridge)
+        return Promise.reject(new Error('SANDBOX_UNAVAILABLE: Windows programmatic transport is unavailable'))
       if (!argv[0]) return Promise.reject(new Error('exec: empty argv'))
       if (opts.signal?.aborted)
         return Promise.reject(

@@ -8,13 +8,22 @@ import { copyBridgeData, parseBridgeRequest } from './bridge-frame.js'
 export { hasBridgeCode, toBridgeError } from './bridge-errors.js'
 export { BRIDGE_METHODS, type BridgeMethod } from './bridge-frame.js'
 
-export function createBridge(ctx: ToolContext, opts: { maxBytes?: number } = {}): BridgeHandler {
+export function createBridge(
+  ctx: ToolContext,
+  opts: { maxBytes?: number; maxParallel?: number; maxCalls?: number; toolsOnly?: boolean } = {},
+): BridgeHandler {
+  let active = 0
+  let calls = 0
   return async (frame) => {
     const parsed = parseBridgeRequest(frame, opts)
     if (!parsed.ok) return parsed.response
     const { id } = parsed.request
     const fail = (error: ReturnType<typeof toBridgeError>): BridgeResponse => ({ jsonrpc: '2.0', id, error })
+    if (opts.toolsOnly && parsed.request.method !== 'bridge.tools.invoke') return fail(bridgeError(-32601))
     if (ctx.signal.aborted) return fail(bridgeError(-32800))
+    if (++calls > (opts.maxCalls ?? 256)) return fail(bridgeError(1001))
+    if (active >= (opts.maxParallel ?? 4)) return fail(bridgeError(1001))
+    active++
     let abort: () => void = () => {}
     try {
       const dispatch = bridgeDispatch(ctx, parsed.request)
@@ -41,6 +50,7 @@ export function createBridge(ctx: ToolContext, opts: { maxBytes?: number } = {})
     } catch (error) {
       return fail(toBridgeError(error))
     } finally {
+      active--
       ctx.signal.removeEventListener('abort', abort)
     }
   }

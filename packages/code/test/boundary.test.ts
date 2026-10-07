@@ -138,6 +138,7 @@ describe('code package boundary', () => {
       'runCodeDescription',
       'runtimeDoctor',
       'runtimeSnapshotFacts',
+      'runtimes',
       'sectionOrder',
       'snapshotKey',
       'stripFrontmatter',
@@ -188,6 +189,9 @@ describe('code package boundary', () => {
   // The root may reach production diagnostics, but not a scripted backend or testkit.
   it('reaches only production diagnostics from the root module', () => {
     const indexSrc = readFileSync(new URL('../src/index.ts', import.meta.url), 'utf8')
-    expect(indexSrc.match(/from ['"]\.\/runtime\/[^'"]+['"]/g)).toEqual(["from './runtime/doctor.js'"])
+    expect(indexSrc.match(/from ['"]\.\/runtime\/[^'"]+['"]/g)).toEqual([
+      "from './runtime/doctor.js'",
+      "from './runtime/process.js'",
+    ])
   })
 })

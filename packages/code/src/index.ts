@@ -92,3 +92,11 @@ export {
   type SkipReason,
 } from './extensions/code-mode/sdk/render-python.js'
 export { type DoctorCheck, type DoctorSection, runtimeDoctor } from './runtime/doctor.js'
+
+import { processRuntime } from './runtime/process.js'
+
+/** Host capability table; execution requires an invocation-bound provider executor. */
+export const runtimes = {
+  typescript: async () => processRuntime(undefined, 'typescript'),
+  python: async () => processRuntime(undefined, 'python'),
+}

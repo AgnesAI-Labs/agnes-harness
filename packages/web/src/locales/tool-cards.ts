@@ -2,6 +2,15 @@ import type { LocaleCatalog } from '@agnes/web-client'
 
 export const toolCardsLocaleCatalog = {
   en: {
+    'cards.workflow.title': 'Workflow run',
+    'cards.workflow.open': 'Open child session',
+    'cards.workflow.pending': 'Pending',
+    'cards.workflow.starting': 'Starting',
+    'cards.workflow.running': 'Running',
+    'cards.workflow.completed': 'Completed',
+    'cards.workflow.failed': 'Failed',
+    'cards.workflow.cancelled': 'Cancelled',
+
     'cards.question.title': 'Answer questions',
     'cards.question.invalid': 'Choose an answer for every question.',
     'cards.question.failed': 'Answer could not be submitted. Try again.',
@@ -16,6 +25,15 @@ export const toolCardsLocaleCatalog = {
     'cards.file.download': 'Download',
   },
   'zh-CN': {
+    'cards.workflow.title': '工作流运行',
+    'cards.workflow.open': '打开子会话',
+    'cards.workflow.pending': '待运行',
+    'cards.workflow.starting': '正在创建',
+    'cards.workflow.running': '运行中',
+    'cards.workflow.completed': '已完成',
+    'cards.workflow.failed': '失败',
+    'cards.workflow.cancelled': '已取消',
+
     'cards.question.title': '回答问题',
     'cards.question.invalid': '请回答每个问题。',
     'cards.question.failed': '答案提交失败，请重试。',

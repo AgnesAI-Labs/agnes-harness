@@ -16,6 +16,8 @@ export type SandboxFsWriteScope = Readonly<{
 export type SandboxCapabilities = Readonly<{
   /** True only when a call can ask for network access and receive it. */
   network: boolean
+  /** Supports bounded JSON request/reply on an owned process pipe. */
+  programmatic?: boolean
   /** Write roots this provider enforces. Empty means writes are not confined. */
   fsWrite: readonly SandboxFsWriteScope[]
   platform: readonly SandboxPlatform[]
@@ -48,6 +50,8 @@ export type SandboxExecRequest = Readonly<{
   cwd: string
   env?: Readonly<Record<string, string>>
   stdin?: string
+  /** Optional bounded JSON transport; unsupported providers must refuse before spawning. */
+  bridge?: (frame: unknown) => Promise<unknown>
   limits?: SandboxExecLimits
   signal?: AbortSignal
   /** Required on the Host path; direct unbound calls must refuse. */

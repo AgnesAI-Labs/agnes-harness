@@ -153,6 +153,7 @@ export function buildToolContext(
       ...(d.readAttachment ? { readAttachment: d.readAttachment } : {}),
     },
     projections: unavailableProjections,
+    ...(d.preset.codeRuntime ? { codeRuntime: d.preset.codeRuntime } : {}),
     actor: d.actor,
     cwd: d.cwd,
     exec: (cmd, opts): Promise<ExecResult> => {
@@ -164,8 +165,10 @@ export function buildToolContext(
         cwd: opts?.cwd ?? d.cwd,
         ...(opts?.env ? { env: opts.env } : {}),
         ...(opts?.stdin !== undefined ? { stdin: opts.stdin } : {}),
+        ...(opts?.bridge ? { bridge: opts.bridge } : {}),
         timeoutMs: opts?.timeoutMs ?? call.timeoutMs,
-        signal: call.signal,
+        signal: opts?.signal ? AbortSignal.any([call.signal, opts.signal]) : call.signal,
+        ...(opts?.maxOutputBytes !== undefined ? { maxOutputBytes: opts.maxOutputBytes } : {}),
       })
     },
     fs: {

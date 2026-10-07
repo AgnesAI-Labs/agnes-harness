@@ -90,7 +90,8 @@
       "./extensions/deliverables",
       "./extensions/jobs",
       "./extensions/plan-mode",
-      "./extensions/mcp-resources"
+      "./extensions/mcp-resources",
+      "./extensions/workflow"
     ]
   },
   "scripts": {

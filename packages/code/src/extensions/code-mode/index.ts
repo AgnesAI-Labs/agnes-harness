@@ -1,4 +1,5 @@
 import { type Disposer, defineExtension, type ExtensionAPI } from '@agnes/extension-api'
+import { processRuntime } from '../../runtime/process.js'
 import { createBridge } from './bridge.js'
 import { createRunCodeTool } from './run-code.js'
 
@@ -13,22 +14,29 @@ export const CODE_MODE_EXT_ID = 'agnes/code-mode' as const
 export const CODE_MODE_EVENTS = ['snapshot', 'kernel', 'sdk-skipped'] as const
 export type CodeModeEvent = (typeof CODE_MODE_EVENTS)[number]
 
-/**
- * code-mode's extension entry point (code spec §6.1). `agnes.extensions` in this package's
- * package.json points host's loader at this file via the manifest's `entry`.
- *
- * Registers `run_code` with a lifecycle dependency that refuses execution until wired.
- * The disclosure Operation lives outside this extension entirely — it reaches host through this
- * package's root `operations` named export, not through `registerTool`/`registerHook`.
- *
- * The `session_start` hook records that no Python kernel exists at the start of a session.
- */
-const unwired = (): never => {
-  throw new Error('E_PRESET_UNSUPPORTED: code runtime lifecycle is not wired yet')
-}
-const runCode = createRunCodeTool({ acquire: unwired, bridge: createBridge, limits: unwired })
-
+/** The extension delegates execution and all nested tool authority to public invocation ports. */
 export default defineExtension((agnes: ExtensionAPI) => {
+  const language = 'typescript' as const
+  const runCode = createRunCodeTool({
+    language,
+    acquire: async (ctx) => {
+      if (ctx.codeRuntime?.state === 'persistent')
+        throw new Error('E_PRESET_UNSUPPORTED: this runtime supports stateless cells only')
+      return processRuntime(ctx, ctx.codeRuntime?.language ?? language)
+    },
+    bridge: (ctx) =>
+      createBridge(ctx, {
+        maxParallel: ctx.codeRuntime?.maxParallelSubCalls ?? 4,
+        maxCalls: 256,
+        toolsOnly: true,
+      }),
+    limits: (ctx) => ({
+      language: ctx.codeRuntime?.language ?? language,
+      wallMs: Math.min(ctx.codeRuntime?.wallMs ?? ctx.timeoutMs, ctx.timeoutMs),
+      maxOutputChars: ctx.codeRuntime?.maxOutputChars ?? ctx.outputMaxBytes,
+      maxParallelSubCalls: ctx.codeRuntime?.maxParallelSubCalls ?? 4,
+    }),
+  })
   const disposers: Disposer[] = [
     agnes.registerTool(runCode),
     agnes.registerHook('session_start', async () => {

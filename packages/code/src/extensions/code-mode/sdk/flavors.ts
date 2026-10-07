@@ -1,13 +1,13 @@
 export type RunCodeFlavor = Readonly<{ language: string; description: string }>
 
 /** Descriptions are not capability declarations. A runtime and renderer must also exist before
- * the host may offer a language; TypeScript remains a planned backend. */
+ * the host may offer a language; the process provider must support the bridge. */
 export const RUN_CODE_FLAVORS: Readonly<Record<'python' | 'typescript', RunCodeFlavor>> = Object.freeze({
   python: Object.freeze({
     language: 'python',
     description:
-      'Run a Python cell in the persistent kernel. Call harness tools via `await tools.<name>(...)`. ' +
-      'Assign large results to variables and print summaries. `%%bash` on the first line runs a throw-away shell.',
+      'Run a Python cell in a fresh managed process. Call harness tools via `await tools.<name>(...)`. ' +
+      'Assign large results to variables and print summaries. Use tools.shell for commands.',
   }),
   typescript: Object.freeze({
     language: 'typescript',

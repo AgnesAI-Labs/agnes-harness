@@ -1,0 +1,26 @@
+{
+  "id": "agnes/workflow",
+  "version": "0.1.0",
+  "apiRange": "^1.4",
+  "entry": "./src/index.ts",
+  "capabilities": {
+    "tools": {
+      "prefix": "",
+      "names": ["workflow", "workflow_status"]
+    },
+    "hooks": [],
+    "slots": ["tool.card.inline"],
+    "projections": [
+      {
+        "name": "runs",
+        "inputEventTypes": ["x/agnes/workflow/run", "x/agnes/workflow/view"],
+        "maxStateBytes": 262144
+      }
+    ],
+    "events": true,
+    "resources": [],
+    "network": [],
+    "tools.invoke": true,
+    "subagent": true
+  }
+}

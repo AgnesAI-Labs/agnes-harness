@@ -1,5 +1,6 @@
 import { type ChildProcess, spawn } from 'node:child_process'
 import type { SandboxEnforcement, SandboxExecutionPolicy } from '@agnes/extension-api'
+import { attachProcessBridge } from './exec-bridge.js'
 import { createExecOutput } from './exec-output.js'
 import { createWindowsExec } from './exec-win32.js'
 import type { PowerShellDescriptor } from './powershell.js'
@@ -42,6 +43,7 @@ export type ExecAdapter = {
       cwd: string
       env?: Record<string, string>
       stdin?: string
+      bridge?: (frame: unknown) => Promise<unknown>
       timeoutMs?: number
       signal?: AbortSignal
       maxOutputBytes?: number
@@ -158,9 +160,10 @@ export function createExec(
           env: { ...base, ...(o.env ?? {}) },
           detached: opts.detached ?? true,
           windowsHide: true,
-          stdio: ['pipe', 'pipe', 'pipe'],
+          stdio: o.bridge ? ['pipe', 'pipe', 'pipe', 'pipe'] : ['pipe', 'pipe', 'pipe'],
         })
         live.add(child)
+        const closeBridge = o.bridge ? attachProcessBridge(child, o.bridge, () => killGroup(child)) : () => {}
         // First cause wins: `timedOut` means the deadline cut the command short before any cancel did.
         let timedOut = false
         let cancelled = false
@@ -183,12 +186,14 @@ export function createExec(
         }
         o.signal?.addEventListener('abort', onAbort, { once: true })
         child.on('error', (e) => {
+          closeBridge()
           clearTimeout(timer)
           o.signal?.removeEventListener('abort', onAbort)
           live.delete(child)
           reject(e)
         })
         child.on('close', (code, signal) => {
+          closeBridge()
           clearTimeout(timer)
           o.signal?.removeEventListener('abort', onAbort)
           live.delete(child)
