@@ -19,7 +19,7 @@
   ],
   "scripts": {
     "build": "node --check index.mjs && node --check runtime.mjs",
-    "test": "node --test test/*.test.mjs"
+    "test": "vitest run test/workflow.test.mjs --maxWorkers=1"
   },
   "dependencies": {
     "@agnes/extension-api": "1.4.0",
@@ -91,6 +91,7 @@
   },
   "devDependencies": {
     "@agnes/host": "0.0.0",
-    "@agnes/resource-control-runtime": "0.0.0"
+    "@agnes/resource-control-runtime": "0.0.0",
+    "vitest": "5.0.0"
   }
 }

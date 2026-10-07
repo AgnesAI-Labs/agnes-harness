@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict'
-import { test } from 'node:test'
+import { test } from 'vitest'
 import { driveLoop } from '@agnes/plugin-runtime/testkit'
-import { factory, main, policy } from '../index.mjs'
+import { factory, main, policy, tools } from '../index.mjs'
+import { value } from '../runtime.mjs'
 import { runWorkflow } from './harness.mjs'
 
 test('review DAG joins independent checks with exact added-line evidence', async () => {
@@ -18,6 +19,15 @@ test('review DAG joins independent checks with exact added-line evidence', async
     ],
   )
   assert.match(report.markdown, /return eval\(input\)/)
+  const removed = value(
+    await tools[2].execute(
+      {
+        diff: '--- a/a.js\n+++ b/a.js\n@@ -1 +1 @@\n-return eval(input)\n+return JSON.parse(input)\n',
+      },
+      { signal: new AbortController().signal },
+    ),
+  )
+  assert.deepEqual(removed.findings, [])
 })
 test('read-only review refuses writes and honors cancellation', async () => {
   const signal = new AbortController().signal

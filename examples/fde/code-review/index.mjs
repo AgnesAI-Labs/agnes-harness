@@ -10,7 +10,8 @@ const finding = Type.Object({
   line: Type.Integer(),
   evidence: Type.String(),
 })
-const added = () => {
+const patch = Type.Object({ diff: Type.String({ minLength: 1 }) })
+const added = (diff) => {
   let file = '',
     line = 0
   const lines = []
@@ -38,8 +39,8 @@ export const tools = [
       head: 'synthetic-after',
     }),
   ),
-  tool('fde_review_lint', 'Run lightweight added-line checks; no code execution.', Type.Object({}), () => ({
-    findings: added()
+  tool('fde_review_lint', 'Run lightweight added-line checks; no code execution.', patch, ({ diff }) => ({
+    findings: added(diff)
       .filter((item) => /console\.log\(/.test(item.evidence))
       .map((item) => ({
         ...item,
@@ -50,9 +51,9 @@ export const tools = [
   tool(
     'fde_review_risk',
     'Scan added lines for the fixture risk patterns; no code execution.',
-    Type.Object({}),
-    () => ({
-      findings: added()
+    patch,
+    ({ diff }) => ({
+      findings: added(diff)
         .filter((item) => /eval\s*\(/.test(item.evidence))
         .map((item) => ({
           ...item,
@@ -90,10 +91,10 @@ const stages = [
   },
   {
     name: 'parallel-checks',
-    async run(ctx, _state, signal) {
+    async run(ctx, state, signal) {
       const nodes = (
         await ctx.tools.batch(
-          [1, 2].map((index) => ({ name: tools[index].name, args: {} })),
+          [1, 2].map((index) => ({ name: tools[index].name, args: { diff: state.data.diff } })),
           signal,
         )
       ).map(value)
