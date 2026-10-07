@@ -152,6 +152,9 @@ export class ProviderRegistry<T extends ProviderIdentity> {
     this.selections.set(scope, { provider: provider.id, version: provider.version })
     return provider
   }
+  clearSelection(scope: string): void {
+    this.selections.delete(scope)
+  }
   catalog(): readonly ProviderCatalogEntry[] {
     return Object.freeze(
       [...this.entries.values()]

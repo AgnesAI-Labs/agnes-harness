@@ -180,7 +180,7 @@ export class ModelAdapterRegistry extends Service implements ModelAdapterRegistr
     adapter: WireAdapter
     dispose(): Promise<void>
   }> {
-    const record = this.records.get(this.registrations.select(`adapter:${id}`, id))!
+    const record = this.records.get(this.registrations.resolve(id))!
     // Only Host's reviewed API-key/OAuth factories supply a prepared builtin instance.
     const instance =
       builtin && record.entry.sourcePackage === '@agnes/ai' ? builtin() : await record.adapter.create(config)
@@ -192,6 +192,7 @@ export class ModelAdapterRegistry extends Service implements ModelAdapterRegistr
         .then(() => instance?.dispose?.())
         .then(() => undefined)
       record.instances.delete(dispose)
+      if (!record.instances.size) this.registrations.clearSelection(`adapter:${id}`)
       return disposal
     }
     if (!record.active) {
@@ -209,6 +210,7 @@ export class ModelAdapterRegistry extends Service implements ModelAdapterRegistr
       await dispose()
       throw new HostError('E_API_RANGE', `model adapter returned an invalid wire adapter: ${id}`)
     }
+    this.registrations.select(`adapter:${id}`, id)
     return {
       adapter: new CommunityWireAdapter(instance, lifecycle.signal),
       dispose,

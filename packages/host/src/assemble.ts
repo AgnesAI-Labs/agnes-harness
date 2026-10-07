@@ -1799,11 +1799,11 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
       : undefined
     const loop = loopFactory ? { id: loopFactory.id, version: loopFactory.version } : undefined
     if (loop) profile = { ...profile, loop }
+    const effectiveLoop = loop ?? view.loop ?? DEFAULT_LOOP
     pluginTree.root.providers.select(
       'loop',
-      loop
-        ? { provider: loop.id, version: loop.version }
-        : { provider: DEFAULT_LOOP.id, version: DEFAULT_LOOP.version },
+      { provider: effectiveLoop.id, version: effectiveLoop.version },
+      loop ? 'profile' : 'preset',
     )
     pluginTree.root.providers.select('tool-runtime', view.tools.runtime ?? 'default', 'preset')
     if (
