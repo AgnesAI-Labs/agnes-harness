@@ -19,10 +19,12 @@ import {
   SecurityPanel,
   sessionStartUrl,
 } from './runtime-panels.js'
+import { SearchPanel } from './search.js'
 
 export const SETTINGS_PAGES = [
   'plugins',
   'providers',
+  'search',
   'models',
   'bundles',
   'security',
@@ -133,6 +135,7 @@ export function SettingsHub({
           </>
         )}
         {page === 'providers' && snapshot && <ProvidersPanel snapshot={snapshot} t={t} />}
+        {page === 'search' && <SearchPanel t={t} canSave={canSave} />}
         {page === 'models' && (
           <>
             <p>{t('modelsHelp')}</p>

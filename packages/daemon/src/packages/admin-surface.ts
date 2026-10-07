@@ -76,6 +76,10 @@ export type AdminSurfaceOptions = {
     snapshot(): Promise<import('@agnes/protocol').RuntimeAdminSnapshot>
     reloadLocal(): Promise<void>
   }
+  /** Official web-search settings. The handler returns JSON and never includes credential values. */
+  searchAdmin?: {
+    handle(method: string, path: string, body: unknown): Promise<{ status: number; body: unknown }>
+  }
   composition?: {
     bundles(): Promise<unknown>
     dump(preset?: string): Promise<unknown>
@@ -311,6 +315,44 @@ export function createAdminSurface(options: AdminSurfaceOptions) {
                 ? 'Configuration changed; reload and try again.'
                 : 'Composition could not be resolved. Check the selected bundles and preset.',
             )
+          }
+          return true
+        }
+        if (route === 'search' || route === 'search/test') {
+          const method = request.method ?? 'GET'
+          const allowed = route === 'search' ? method === 'GET' || method === 'PUT' : method === 'POST'
+          if (!allowed) {
+            error(response, 404, 'E_ADMIN_ROUTE', 'The admin operation does not exist.')
+            return true
+          }
+          const write = method !== 'GET'
+          if (!configuredPermissions.includes(write ? 'packages.activate' : 'packages.read')) {
+            error(response, 403, 'E_ADMIN_FORBIDDEN', 'You do not have permission to perform this action.')
+            return true
+          }
+          if (write && readOnly) {
+            error(response, 409, 'E_ADMIN_READ_ONLY', 'The admin surface is in read-only recovery mode.')
+            return true
+          }
+          if (!options.searchAdmin) {
+            error(response, 503, 'E_ADMIN_SEARCH_UNAVAILABLE', 'Search settings are unavailable.')
+            return true
+          }
+          let body: unknown
+          if (write) {
+            try {
+              body = await readBody(request)
+            } catch {
+              error(response, 400, 'E_ADMIN_REQUEST', 'The admin parameters are not valid.')
+              return true
+            }
+          }
+          try {
+            const result = await options.searchAdmin.handle(method, route, body)
+            if (result.status < 200 || result.status > 599) throw new Error('status')
+            reply(response, result.status, result.body)
+          } catch {
+            error(response, 502, 'E_ADMIN_SEARCH', 'Search settings could not be confirmed.')
           }
           return true
         }

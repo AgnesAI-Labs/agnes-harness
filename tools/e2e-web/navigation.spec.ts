@@ -14,10 +14,20 @@ for (const locale of ['en', 'zh-CN']) {
     await page.addInitScript((value) => localStorage.setItem('agnes-locale', value), locale)
     await page.goto('/admin/plugins')
     await expect(page.getByTestId('settings-navigation')).toBeVisible()
-    for (const id of ['plugins', 'providers', 'models', 'bundles', 'security', 'resources', 'examples']) {
+    for (const id of [
+      'plugins',
+      'providers',
+      'search',
+      'models',
+      'bundles',
+      'security',
+      'resources',
+      'examples',
+    ]) {
       await page.getByTestId(`settings-nav-${id}`).click()
       await expect(page.getByTestId(`settings-page-${id}`)).toBeVisible()
       await expect(page.getByTestId(`settings-nav-${id}`)).toHaveAttribute('aria-current', 'page')
+      if (id === 'search') await expect(page.getByTestId('search-providers')).toBeVisible()
     }
     await page.getByTestId('settings-nav-providers').click()
     await expect(page.getByTestId('providers-loop')).toBeVisible()

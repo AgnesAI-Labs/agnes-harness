@@ -25,6 +25,7 @@ import { effectiveSessionPreset, permissionForSessionPreset } from '../src/setti
 const t = (key: string) => pluginAdminLocaleCatalog.en[key] ?? key
 const roots: Root[] = []
 afterEach(async () => {
+  vi.unstubAllGlobals()
   for (const root of roots.splice(0)) await act(async () => root.unmount())
   document.body.replaceChildren()
 })
@@ -166,6 +167,12 @@ it('keeps unavailable catalog errors visible and read-only saves disabled', asyn
 })
 
 it('navigates runtime capabilities and never offers a disallowed security preset', async () => {
+  vi.stubGlobal(
+    'fetch',
+    vi.fn<typeof fetch>(async () =>
+      Response.json({ version: 1, configured: false, invalid: false, defaultProvider: null, providers: [] }),
+    ),
+  )
   const snapshot = {
     providers: [
       {

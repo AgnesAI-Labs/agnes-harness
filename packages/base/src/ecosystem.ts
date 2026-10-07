@@ -28,6 +28,7 @@ import { gitWorktrees, type WorktreeEntry } from '../extensions/subagent/src/wor
 import { createToolsCoreExtension } from '../extensions/tools-core/src/index.js'
 import toolsSearchExtension from '../extensions/tools-search/src/index.js'
 import { createToolsWebExtension } from '../extensions/tools-web/src/index.js'
+import { createOfficialSearchProvider } from '../extensions/tools-web/src/search/index.js'
 import type { SeamInitContext } from './seam-init.js'
 
 /** Replaced with the reviewed generated asset by the CLI SEA build. */
@@ -167,6 +168,20 @@ function sqliteWorktreePersist(dataDir: string): {
   }
 }
 
+function officialSearchProvider(init: SeamInitContext) {
+  return createOfficialSearchProvider({
+    dataDir: init.profile.dataDir,
+    resolveSecret(ref) {
+      try {
+        const value = init.secrets(ref)
+        return value.length > 0 ? value : undefined
+      } catch {
+        return undefined
+      }
+    },
+  })
+}
+
 function defineSubagentExtension(init: SeamInitContext): ExtensionFactory {
   const limits = readSubagentLimits(init.profile.preset)
   return (agnes) =>
@@ -186,7 +201,7 @@ export const ecosystem = {
   'agnes/jobs': (init: SeamInitContext): ExtensionFactory => createJobsExtension(shellJobsFor(init.signal)),
   'agnes/tools-search': (): ExtensionFactory => toolsSearchExtension,
   'agnes/tools-web': (init: SeamInitContext): ExtensionFactory =>
-    createToolsWebExtension(init.searchProvider),
+    createToolsWebExtension(init.searchProvider ?? officialSearchProvider(init)),
   'agnes/compaction': (): ExtensionFactory => compactionExtension,
   'agnes/privacy': (init: SeamInitContext): ExtensionFactory => privacyFactory(init),
   // Cross-server deferred-tool search plus the ready-Skill listing (design §3.9, D123). Host hands it

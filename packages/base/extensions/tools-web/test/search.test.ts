@@ -47,4 +47,31 @@ describe('web_search', () => {
     controller.abort()
     expect(JSON.stringify(await cancelled)).toContain('web_search cancelled')
   })
+  it('renders normalized citations and a stable unavailable code when the registry has no provider', async () => {
+    const cited = await createWebSearchTool({
+      async search() {
+        return [
+          {
+            query: 'a',
+            title: 'Answer',
+            url: 'https://example.com/a',
+            snippet: 'A fact.\n\nCitations:\n- https://example.com/a',
+          },
+        ]
+      },
+    }).execute({ queries: ['a'] }, fakeToolContext())
+    expect(cited.content).toEqual([
+      expect.objectContaining({
+        type: 'text',
+        text: expect.stringContaining('Citations:\n- https://example.com/a'),
+      }),
+    ])
+    const unavailable = await createWebSearchTool({
+      async search() {
+        throw Object.assign(new Error('missing'), { code: 'SEARCH_NOT_CONFIGURED' })
+      },
+    }).execute({ queries: ['a'] }, fakeToolContext())
+    expect(unavailable.details).toEqual({ code: 'WEB_SEARCH_UNAVAILABLE' })
+    expect(JSON.stringify(unavailable)).not.toContain('missing')
+  })
 })

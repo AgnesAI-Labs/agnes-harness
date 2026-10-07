@@ -55,22 +55,39 @@ export function createWebSearchTool(provider?: SearchProvider) {
         signal.throwIfAborted()
         const text = results.map((r) => `[${r.query}] ${r.title}\n${r.url}\n${r.snippet}`).join('\n\n')
         return guardedResult(ctx, text || 'no search results')
-      } catch {
+      } catch (error) {
         ctx.log.warn('search provider failed')
-        return {
-          content: [
-            {
-              type: 'text' as const,
-              text: ctx.signal.aborted
-                ? 'web_search cancelled'
-                : 'WEB_SEARCH_FAILED: host search provider failed; try again or use web_fetch with a URL',
-            },
-          ],
-          isError: true,
-        }
+        return searchFailure(error, ctx.signal.aborted)
       }
     },
   })
+}
+
+const SEARCH_FAILURES: Readonly<Record<string, string>> = {
+  SEARCH_NOT_CONFIGURED:
+    'WEB_SEARCH_UNAVAILABLE: no search provider/key is configured on this host. Supply a URL for web_fetch or configure host search.',
+  SEARCH_RATE_LIMITED: 'WEB_SEARCH_RATE_LIMITED: the search provider rate limit was reached. Retry later.',
+  SEARCH_TIMEOUT: 'WEB_SEARCH_TIMEOUT: the search provider timed out.',
+}
+
+function searchFailure(error: unknown, cancelled: boolean) {
+  const code =
+    typeof error === 'object' && error !== null && 'code' in error && typeof error.code === 'string'
+      ? error.code
+      : undefined
+  const text = cancelled
+    ? 'web_search cancelled'
+    : code === 'SEARCH_NOT_CONFIGURED'
+      ? SEARCH_FAILURES.SEARCH_NOT_CONFIGURED
+      : (code !== undefined && SEARCH_FAILURES[code]) ||
+        'WEB_SEARCH_FAILED: host search provider failed; try again or use web_fetch with a URL'
+  return {
+    content: [{ type: 'text' as const, text: text ?? '' }],
+    isError: true,
+    ...(code && !cancelled
+      ? { details: { code: code === 'SEARCH_NOT_CONFIGURED' ? 'WEB_SEARCH_UNAVAILABLE' : code } }
+      : {}),
+  }
 }
 
 export const webSearchTool = createWebSearchTool()

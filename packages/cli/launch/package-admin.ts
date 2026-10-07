@@ -1,5 +1,7 @@
 import type { IncomingMessage, ServerResponse } from 'node:http'
+import { createSearchAdmin } from '@agnes/base/search'
 import { type AdminSurfaceAction, createAdminSurface } from '@agnes/daemon/packages'
+import { createCredentialStore } from '@agnes/host'
 import type {
   AdminSessionSelection,
   ClientModuleEffectCallParams,
@@ -169,7 +171,24 @@ export function localPackageAdmin(
         return client.packages.tree.rollback(params as PluginTreeRollbackParams)
     }
   }
+  const credentials = createCredentialStore({ root: backend.scope.home })
+  const searchAdmin = createSearchAdmin({
+    dataDir: backend.scope.dataDir,
+    credentials: {
+      async read(ref) {
+        const stored = await credentials.read(ref)
+        return stored?.kind === 'api-key' ? stored.value : undefined
+      },
+      write(ref, value) {
+        return credentials.putApiKey(ref, value)
+      },
+      remove(ref) {
+        return credentials.remove(ref)
+      },
+    },
+  })
   const surface = createAdminSurface({
+    searchAdmin,
     runtimeAdmin: {
       async snapshot() {
         await initialize()

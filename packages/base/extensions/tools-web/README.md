@@ -18,4 +18,6 @@ Parts of the address policy and HTML-depth guard are adapted from DeepSeek Harne
 
 ## web_search
 
-`web_search` accepts one to four `queries`. The Host supplies a vendor-neutral `SearchProvider` through `createHost` dependencies; credentials and provider transport stay with the deployment. With no configured provider/key it returns `WEB_SEARCH_UNAVAILABLE`. Errors do not include provider credentials. Results use the same output guard and readable artifact spills as fetch. See [default tools](../../../../docs/reference/default-tools.md) for the public provider signature.
+`web_search` accepts one to four `queries`. The tool contract is unchanged: it returns titles, URLs and snippets, and `WEB_SEARCH_UNAVAILABLE` when no provider is ready. A deployment can still inject its own `SearchProvider` through `createHost`. Otherwise the official registry reads `search/providers.json` under the profile data directory.
+
+Settings → Web search configures Brave, Tavily, Exa, Perplexity or a self-hosted SearXNG origin, result limit, timeout and request rate. API keys are written only through the credential store at `secret://search/<provider>`. The configuration file rejects key material. Each result snippet includes a `Citations` list. Provider failures stay generic and do not log credentials. See [default tools](../../../../docs/reference/default-tools.md).
