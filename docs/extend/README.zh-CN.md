@@ -13,6 +13,7 @@
 | MCP 与 Skills | [mcp-skills](../../templates/mcp-skills/) | MCP 定义与通过 Skills 服务注册的包内 Skill |
 | 模型适配器 | [model-adapter](../../templates/model-adapter/) | 通过 `modelAdapters` 注册的结构化适配器 |
 | 循环 | [loop](../../templates/loop/) | 独立单轮驱动、checkpoint codec 与 `loops` 注册 |
+| 压缩引擎 | [sliding-window](../../examples/compaction/sliding-window/) | 通过 `compactionEngines` 替换上下文；参阅[压缩引擎](compaction-engines.zh-CN.md) |
 
 工具为已有循环增加操作。循环通过 [LoopContext](../../packages/extension-api/src/loop.ts) 端口负责调度与状态。适配器把线协议转换为[模型适配器合同](../../packages/extension-api/src/model-adapter.ts)的事件。前端面板有独立浏览器生命周期，通过客户端描述文件声明插槽。
 

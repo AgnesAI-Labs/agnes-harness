@@ -13,6 +13,7 @@ Choose the smallest starter that owns your behavior. All five [templates](../../
 | MCP and Skills | [mcp-skills](../../templates/mcp-skills/) | MCP definition and a packaged Skill registered through the Skills service |
 | Model adapter | [model-adapter](../../templates/model-adapter/) | Structural adapter registered through `modelAdapters` |
 | Loop | [loop](../../templates/loop/) | Independent one-turn driver, checkpoint codec and `loops` registration |
+| Compaction engine | [sliding-window](../../examples/compaction/sliding-window/) | Context replacement through `compactionEngines`; see [Compaction engines](compaction-engines.md) |
 
 Tools add operations to an existing loop. Loops own scheduling and state through [LoopContext](../../packages/extension-api/src/loop.ts) ports. Adapters translate wire protocols into the [model-adapter contract](../../packages/extension-api/src/model-adapter.ts). Panels have a separate browser lifecycle and declare slots through client descriptors.
 
