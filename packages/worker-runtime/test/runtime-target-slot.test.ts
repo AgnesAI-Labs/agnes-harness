@@ -1,3 +1,7 @@
+import { mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { createTestHost } from '@agnes/host/testkit'
 import {
   buildRuntimeTarget,
   decodeRuntimeTargetArtifact,
@@ -34,6 +38,42 @@ function deferred<T = void>() {
 }
 
 describe('runtime target latest-wins slot', () => {
+  it('starts without prior generations and keeps captured Host ports live after bootstrap retirement', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'agnes-cold-generation-'))
+    const { host } = await createTestHost({ dataDir: root, script: [], disableSessionTitle: true })
+    try {
+      expect(host.pluginGenerationStatus?.().generations).toEqual([
+        expect.objectContaining({ state: 'active', boundSessions: 0 }),
+      ])
+      // main.ts captures these ports once, before any session binds the bootstrap generation.
+      const readTarget = host.runtimeTargetSnapshot!.bind(host)
+      const convergence = host.ordinaryConvergence.bind(host)
+      const slot = createRuntimeTargetSlot({
+        applyRuntimeTarget: host.applyRuntimeTarget.bind(host),
+        runtimeTargetSnapshot: readTarget,
+      })
+      const boot = readTarget()
+      const desired = encodeRuntimeTargetArtifact(
+        buildRuntimeTarget({
+          rows: boot.tree.rows,
+          resources: boot.resource.resources,
+          resourceRevision: 'e'.repeat(64),
+          compositeRevision: 'e'.repeat(64),
+        }),
+      )
+      await expect(slot.offer(frame(desired))).resolves.toMatchObject({ status: 'applied', changed: true })
+      expect(encodeRuntimeTargetArtifact(readTarget()).digest).toBe(desired.digest)
+      expect(convergence()).toEqual(host.ordinaryConvergence())
+      await expect(slot.offer(frame(desired))).resolves.toMatchObject({ status: 'applied', changed: false })
+      const session = await host.createSession({ key: 'first-session', cwd: root })
+      expect(session.pluginGenerationId).toBe(host.pluginGenerationStatus?.().currentGenerationId)
+      await session.close()
+    } finally {
+      await host.close()
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
   it('serializes Host apply and retains only the latest complete target while one is in flight', async () => {
     const first = deferred<string>()
     const calls: RuntimeTarget[] = []

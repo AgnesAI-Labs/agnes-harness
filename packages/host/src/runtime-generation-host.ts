@@ -693,7 +693,14 @@ export async function createRuntimeGenerationHost(
       if (property in overrides) return Reflect.get(overrides, property)
       const target = current?.host ?? initial,
         value = Reflect.get(target, property, target)
-      return typeof value === 'function' ? value.bind(target) : value
+      // Process ports are captured before the first binding. An unreferenced bootstrap Host may
+      // retire on the first resource publication; retained callbacks must follow the current Host.
+      return typeof value === 'function'
+        ? (...args: unknown[]) => {
+            const target = current?.host ?? initial
+            return Reflect.apply(Reflect.get(target, property, target), target, args)
+          }
+        : value
     },
   })
 }
