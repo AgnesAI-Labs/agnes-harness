@@ -13,3 +13,5 @@ Each new session gets its own response cursor. One trace must contain one model 
 These are real adapters, usable in profile package rows and registry catalogs. `defineModelAdapter` is consumed from the public plugin runtime. Host profile composition owns route/model selection.
 
 `localOpenAIAdapter` delegates inference to pi-ai; `discoverLocalModels({ baseUrl, credential?, signal? })` reads local `/v1/models`. See [local model configuration](../../docs/guide/local-model.md) and [headless JSONL schema](../../docs/guide/headless.md).
+
+Inline scripted routes may use `compat.replies` instead of `compat.file`. Explicit `compat.repeatLast: true` repeats the last reply after exhaustion, for a keyless teaching/demo route; the default still refuses exhaustion. File and inline replies are mutually exclusive.

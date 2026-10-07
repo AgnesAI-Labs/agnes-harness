@@ -35,6 +35,7 @@ function instance(
   config: ModelAdapterConfig,
   replies: Map<string, Reply[]>,
   strict: Map<string, boolean>,
+  repeatLast = new Set<string>(),
 ): ModelAdapterInstance {
   const cursors = new Map<string, number>()
   const busy = new Set<string>()
@@ -67,7 +68,8 @@ function instance(
         return
       }
       const index = cursors.get(key) ?? 0
-      const reply = replies.get(route)?.[index]
+      const rows = replies.get(route)
+      const reply = rows?.[index] ?? (repeatLast.has(route) ? rows?.at(-1) : undefined)
       if (!reply) {
         yield {
           type: 'error',
@@ -143,8 +145,18 @@ export const scriptedAdapter = defineModelAdapter({
   capabilities,
   async create(config: ModelAdapterConfig): Promise<ModelAdapterInstance> {
     const replies = new Map<string, Reply[]>()
+    const repeatLast = new Set<string>()
     for (const route of config.routes) {
-      const document: unknown = JSON.parse(await readBoundedFile(absoluteFile(compat(route.compat).file)))
+      const options = compat(route.compat)
+      if (options.replies !== undefined && options.file !== undefined)
+        throw new Error('scripted route must use either inline replies or file')
+      if (options.repeatLast !== undefined && typeof options.repeatLast !== 'boolean')
+        throw new Error('scripted repeatLast must be boolean')
+      if (options.repeatLast === true) repeatLast.add(route.route)
+      const document: unknown =
+        options.replies === undefined
+          ? JSON.parse(await readBoundedFile(absoluteFile(options.file)))
+          : { schemaVersion: 1, replies: options.replies }
       if (
         !object(document) ||
         document.schemaVersion !== 1 ||
@@ -157,6 +169,6 @@ export const scriptedAdapter = defineModelAdapter({
         document.replies.map((reply) => ({ events: validateReply(reply) })),
       )
     }
-    return instance('scripted', config, replies, new Map())
+    return instance('scripted', config, replies, new Map(), repeatLast)
   },
 })

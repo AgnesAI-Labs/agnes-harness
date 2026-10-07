@@ -103,6 +103,20 @@ it('scripted files work outside testkit and validate terminal events and cancell
     ],
   ]
   await writeFile(path, JSON.stringify({ schemaVersion: 1, replies }))
+  const inlineConfig = {
+    routes: [{ ...config(path).routes[0]!, compat: { replies, repeatLast: true } }],
+  }
+  const inline = await scriptedAdapter.create(inlineConfig)
+  expect(await collect(inline)).toEqual(replies[0])
+  expect(await collect(inline)).toEqual(replies[0])
+  await expect(
+    scriptedAdapter.create({ routes: [{ ...inlineConfig.routes[0]!, compat: { file: path, replies } }] }),
+  ).rejects.toThrow('either')
+  await expect(
+    scriptedAdapter.create({
+      routes: [{ ...inlineConfig.routes[0]!, compat: { replies, repeatLast: 'yes' } }],
+    }),
+  ).rejects.toThrow('boolean')
   const scripted = await scriptedAdapter.create(config(path))
   expect(await collect(scripted)).toEqual(replies[0])
   expect(await collect(scripted)).toEqual([

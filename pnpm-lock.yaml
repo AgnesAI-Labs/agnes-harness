@@ -384,6 +384,9 @@ importers:
 
   packages/host:
     dependencies:
+      '@agnes/model-adapters':
+        specifier: workspace:*
+        version: link:../model-adapters
       '@agnes/ai':
         specifier: workspace:*
         version: link:../ai

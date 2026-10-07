@@ -6,7 +6,6 @@ import {
   createProvider,
   getSubscriptionProvider,
   loadContractStore,
-  modelAdaptersPlugin,
   NullContractStore,
   PARSER_VERSION,
   PiAdapter,
@@ -21,7 +20,11 @@ import { subscriptionCredentials } from '../adapters/codex-credentials.js'
 import { createCredentialStore, isSubscriptionCredential } from '../adapters/credential-store.js'
 import { HostError } from '../errors.js'
 import type { ResolvedProfile } from '../profile/types.js'
-import { installModelAdapters, type ModelAdapterRegistry } from './model-adapters.js'
+import {
+  builtinModelAdaptersPlugin,
+  installModelAdapters,
+  type ModelAdapterRegistry,
+} from './model-adapters.js'
 import { verifyRoutes } from './routes.js'
 
 /**
@@ -131,7 +134,7 @@ export async function buildProvider(
     }
   const ownedRoot = deps.modelAdapters ? undefined : new Context()
   const modelAdapters = deps.modelAdapters ?? installModelAdapters(ownedRoot as Context)
-  if (ownedRoot) modelAdaptersPlugin.apply(ownedRoot)
+  if (ownedRoot) builtinModelAdaptersPlugin.apply(ownedRoot)
   const instances: Array<{ adapter: import('@agnes/ai').WireAdapter; dispose(): Promise<void> }> = []
   let disposal: Promise<void> | undefined
   const dispose = () => {

@@ -7,6 +7,7 @@ import type {
   ModelAdapterInstance,
   ModelAdapterRegistration,
 } from '@agnes/extension-api'
+import { scriptedAdapter } from '@agnes/model-adapters'
 import type { RowOrigin, RowOriginLookup } from '@agnes/plugin-runtime/host'
 import { normalizePluginExport } from '@agnes/plugin-runtime/host'
 import { HostError } from '../errors.js'
@@ -199,6 +200,14 @@ export class ModelAdapterRegistry extends Service implements ModelAdapterRegistr
   }
 }
 
+export const builtinModelAdaptersPlugin = {
+  inject: ['modelAdapters'],
+  apply(ctx: { modelAdapters: ModelAdapterRegistration }) {
+    modelAdaptersPlugin.apply(ctx)
+    ctx.modelAdapters.register(scriptedAdapter)
+  },
+}
+
 /** Builtins use exactly the same registration contract as community plugin rows. */
 export function installModelAdapters(root: Context, origins?: RowOriginLookup): ModelAdapterRegistry {
   return new ModelAdapterRegistry(root, origins)
@@ -209,13 +218,12 @@ export function withBuiltinModelAdapters(
   modules: ReadonlyMap<string, PackageModule>,
 ): ReadonlyMap<string, PackageModule> {
   const builtin = modules.get('@agnes/ai')
-  if (!builtin || builtin.plugins?.some((plugin) => plugin.declaration.id === 'model-adapters:pi'))
-    return modules
+  if (!builtin) return modules
   const result = new Map(modules)
   result.set('@agnes/ai', {
     ...builtin,
     plugins: [
-      ...(builtin.plugins ?? []),
+      ...(builtin.plugins ?? []).filter((plugin) => plugin.declaration.id !== 'model-adapters:pi'),
       {
         declaration: {
           id: 'model-adapters:pi',
@@ -225,7 +233,9 @@ export function withBuiltinModelAdapters(
           provide: [],
           runtime: 'in-process',
         },
-        entry: normalizePluginExport(modelAdaptersPlugin),
+        entry: normalizePluginExport(
+          modules.has('@agnes/model-adapters') ? modelAdaptersPlugin : builtinModelAdaptersPlugin,
+        ),
       },
     ],
   })

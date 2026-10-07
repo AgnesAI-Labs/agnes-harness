@@ -74,6 +74,26 @@ describe('materializeRoutes', () => {
       },
     ])
     const preset = withRoute({ route: { primary: 'default', fast: 'default' } })
+    const withDemo = {
+      ...p,
+      name: 'local-dev',
+      provider: {
+        ...p.provider,
+        routes: [
+          {
+            route: 'demo',
+            api: 'scripted',
+            baseUrl: 'https://demo.invalid',
+            models: [model('demo-model', 'demo')],
+          },
+          ...p.provider.routes!,
+        ],
+      },
+    }
+    expect(materializeRoutes(preset, withDemo)).toEqual(materializeRoutes(preset, p))
+    expect(materializeRoutes(withRoute({ route: { primary: 'demo' } }), withDemo).primary.model).toBe(
+      'demo-model',
+    )
     expect(materializeRoutes(preset, p)).toEqual({
       primary: { route: 'gw', model: 'm-main' },
       fast: { route: 'gw', model: 'm-fast' },

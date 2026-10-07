@@ -13,3 +13,5 @@
 这些 adapter 可用于 profile 的 package row 和 registry catalog，使用公开的 `defineModelAdapter`。路由和模型选择由 Host profile composition 管理。
 
 `localOpenAIAdapter` 将推理交给 pi-ai；`discoverLocalModels({ baseUrl, credential?, signal? })` 读取本地 `/v1/models`。见[本地模型配置](../../docs/guide/local-model.zh-CN.md)和[headless JSONL schema](../../docs/guide/headless.zh-CN.md)。
+
+脚本路由可用 `compat.replies` 内联回复，替代 `compat.file`。显式 `compat.repeatLast: true` 在耗尽后重复最后一条回复，适用于免密钥教学／演示；默认仍拒绝耗尽。文件与内联回复不可同时指定。

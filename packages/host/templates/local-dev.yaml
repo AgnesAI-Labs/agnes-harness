@@ -17,7 +17,33 @@ seams:
   harness: "@agnes/base"
 provider:
   package: "@agnes/ai"
-  adapters: ["@agnes/ai"]
+  adapters: ["@agnes/ai", "scripted"]
+  # Keyless teaching route; replace it with a real model for reasoning and automatic tool use.
+  routes:
+    - route: demo
+      api: scripted
+      baseUrl: "https://demo.invalid"
+      keyless: true
+      compat:
+        repeatLast: true
+        replies:
+          - - { type: text_delta, delta: "[Demo model — local scripted reply] Hello! This session needs no API key. Configure a real model for reasoning and automatic tool selection." }
+            - { type: usage, tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }, creditSource: estimated }
+            - { type: done, reason: stop }
+      models:
+        - id: demo-model
+          name: "Demo (local scripted reply, no API key)"
+          route: demo
+          api: scripted
+          baseUrl: "https://demo.invalid"
+          reasoning: false
+          input: [text]
+          cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }
+          contextWindow: 128000
+          maxTokens: 8192
+          toolCallFormats: [native]
+          thinkingReplay: native
+          contract_id: null
 adapters:
   storage: sqlite
   fs: local
