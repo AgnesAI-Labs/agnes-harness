@@ -1,6 +1,8 @@
 import type {
   ArtifactRef,
   ChildAgentListing,
+  ChildAgentModel,
+  ChildAgentToolFilter,
   ExecResult,
   FetchInit,
   FsEntry,
@@ -20,7 +22,7 @@ import type { CheckpointWorkspaceContext, WorkspaceHookSandbox } from '../worksp
 import { assertNotDenied } from './fs-guard.js'
 import type { SeamRuntime } from './wrap.js'
 
-export type ChildStatus = { state: 'running' | 'done' | 'error'; lastSeq: Seq; text?: string }
+export type ChildStatus = { state: 'running' | 'done' | 'error'; lastSeq: Seq; text?: string; idle?: boolean }
 export type ChildHandle = {
   key: string
   worktree?: string
@@ -41,6 +43,8 @@ export type ChildrenFactory = {
     input?: string
     parentEffectId?: string
     start?: boolean
+    resident?: boolean
+    toolFilter?: ChildAgentToolFilter
   }): Promise<ChildHandle>
   /** Optional richer entry used by the built-in factory without changing third-party create args. */
   createWithKind?(
@@ -52,6 +56,7 @@ export type ChildrenFactory = {
   resume?(childKey: string): Promise<ChildHandle>
   cancel?(childKey: string): Promise<void>
   list?(): Promise<readonly ChildAgentListing[]>
+  models?(): readonly ChildAgentModel[]
   sendMessage?(childKey: string, text: string, signal: AbortSignal): Promise<{ messageId: string }>
   interrupt?(childKey: string): Promise<{ accepted: boolean }>
 }
@@ -270,9 +275,11 @@ export function buildToolContext(
           ...(opts?.budget !== undefined ? { budget: opts.budget } : {}),
           ...(opts?.isolation !== undefined ? { isolation: opts.isolation } : {}),
           ...(opts?.start === false ? { start: false as const } : {}),
+          ...(opts?.resident ? { resident: true } : {}),
+          ...(opts?.toolFilter ? { toolFilter: opts.toolFilter } : {}),
         }
         const child = d.children.createWithKind
-          ? await d.children.createWithKind('spawn', childOpts)
+          ? await d.children.createWithKind(opts?.fork ? 'fork' : 'spawn', childOpts)
           : await d.children.create(childOpts)
         if (opts?.start !== false) void child.run(task).catch(() => undefined)
         return { childKey: child.key, ...(child.worktree ? { worktree: child.worktree } : {}) }
@@ -289,11 +296,13 @@ export function buildToolContext(
             const status = await child.status()
             return {
               childKey: child.key,
-              status: (status.state === 'done'
-                ? 'completed'
-                : status.state === 'error'
-                  ? 'failed'
-                  : 'running') as 'running' | 'completed' | 'failed' | 'cancelled',
+              status: (status.idle
+                ? 'idle'
+                : status.state === 'done'
+                  ? 'completed'
+                  : status.state === 'error'
+                    ? 'failed'
+                    : 'running') as 'running' | 'idle' | 'completed' | 'failed' | 'cancelled',
               ...(status.text !== undefined ? { text: status.text } : {}),
             }
           }
@@ -334,10 +343,11 @@ export function buildToolContext(
         }
       },
       ...(d.children.list ? { list: () => d.children.list?.() ?? Promise.resolve([]) } : {}),
+      ...(d.children.models ? { models: async () => d.children.models?.() ?? [] } : {}),
       ...(d.children.sendMessage
         ? {
-            sendMessage: (childKey: string, text: string, signal: AbortSignal) =>
-              d.children.sendMessage?.(childKey, text, signal) ??
+            sendMessage: (childKey: string, text: string, signal?: AbortSignal) =>
+              d.children.sendMessage?.(childKey, text, signal ? AbortSignal.any([call.signal, signal]) : call.signal) ??
               Promise.reject(new CoreError('E_UNSUPPORTED', 'child messages are not available')),
           }
         : {}),

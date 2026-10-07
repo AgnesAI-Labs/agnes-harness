@@ -7,10 +7,12 @@ import type { SessionImpl } from '../step/session.js'
 import { CoreError } from '../types.js'
 import type { ChildWorkspaceLifecycle } from '../workspace/runtime.js'
 import { admitBudgetMode, admitGeneration } from './admission.js'
+import { childAgentAllowlist, setChildAgentAllowlist } from './allowlist.js'
 import { capToMicrocredits } from './credits.js'
 import type { ResidentStart, ResidentTurn } from './provider.js'
-import { bindChildFactory } from './sessions.js'
+import { bindChildFactory, childBackend } from './sessions.js'
 import { requireChildControl } from './store.js'
+import { childSessionToolFilter, narrowChildToolFilter } from './tool-filter.js'
 import { type ChildKind, type ChildTaskRecord, isTerminalChildState } from './types.js'
 
 /**
@@ -32,6 +34,9 @@ type CreateOpts = Parameters<ChildrenFactory['create']>[0] & {
 
 export class KernelChildren implements ChildrenFactory {
   private readonly handles = new Map<string, ChildHandle>()
+  private readonly runningTasks = new Map<string, Promise<unknown>>()
+  private readonly residentTasks = new Map<string, Promise<unknown>>()
+  private readonly cleanups = new Map<string, Promise<void>>()
   private readonly opening = new Map<string, Promise<ChildHandle>>()
   /** Each attached handle's run without Host admission, for callers already inside one. */
   private readonly direct = new WeakMap<ChildHandle, ChildHandle['run']>()
@@ -87,7 +92,7 @@ export class KernelChildren implements ChildrenFactory {
     if (reused) {
       const cached = this.handles.get(reused.childKey)
       if (cached) return cached
-      if (kind === 'spawn' && opts.start === false && reused.creationPhase === 'deferred')
+      if (opts.start === false && reused.creationPhase === 'deferred')
         return this.defer(kind, parent, reused, opts)
       return this.open(kind, parent, reused, opts)
     }
@@ -99,7 +104,7 @@ export class KernelChildren implements ChildrenFactory {
         throw new CoreError('E_CHILD_CONFLICT', 'creationId reused with different input', { creationId })
       const cached = this.handles.get(existing.childKey)
       if (cached) return cached
-      if (kind === 'spawn' && opts.start === false && existing.creationPhase === 'deferred')
+      if (opts.start === false && existing.creationPhase === 'deferred')
         return this.defer(kind, parent, existing, opts)
       return this.open(kind, parent, existing, opts)
     }
@@ -158,7 +163,7 @@ export class KernelChildren implements ChildrenFactory {
       generationDepth: admitted.childDepth,
     }
     const record = (await store.lookupByKey(created.record.childKey)) ?? created.record
-    if (kind === 'spawn' && opts.start === false) {
+    if (opts.start === false) {
       let deferred = record
       if (record.creationPhase === 'creating') {
         await store.deferCreatingChild({
@@ -186,20 +191,28 @@ export class KernelChildren implements ChildrenFactory {
   }
 
   private async dropLocalChild(childKey: string, child: SessionImpl): Promise<void> {
+    setChildAgentAllowlist(childKey, undefined)
     this.handles.delete(childKey)
     this.residents.delete(childKey)
     this.continued.delete(childKey)
     this.turnSignals.delete(childKey)
     this.turnListeners.delete(childKey)
-    this.completions.delete(childKey)
     if (this.kernel.sessions.get(childKey) === child) this.kernel.sessions.delete(childKey)
-    await child.close().catch(() => undefined)
+    const cleanup = child.close()
+    this.cleanups.set(childKey, cleanup)
+    await cleanup
   }
 
   private bindSession(sessionKey: string): void {
     if (this.boundKey === sessionKey) return
     this.boundKey = sessionKey
     bindChildFactory(sessionKey, this)
+  }
+
+  models(): readonly { id: string; route: string; selector: string }[] {
+    return this.parent()
+      .d.provider.models()
+      .map((model) => ({ id: model.id, route: model.route, selector: `${model.route}/${model.id}` }))
   }
 
   private completionOf(childKey: string): Promise<ChildAgentResult> {
@@ -230,9 +243,12 @@ export class KernelChildren implements ChildrenFactory {
     if (!resident?.idle()) return
     const inbox = resident.child.latest('inbox') as { items?: unknown[] } | undefined
     if (!inbox?.items?.length) return
-    void resident.run('').finally(() => {
-      if (this.residents.get(childKey)?.idle()) this.pump(childKey)
-    })
+    void resident
+      .run('')
+      .finally(() => {
+        if (this.residents.get(childKey)?.idle()) this.pump(childKey)
+      })
+      .catch(() => undefined)
   }
 
   private open(
@@ -293,6 +309,8 @@ export class KernelChildren implements ChildrenFactory {
     let handle: ChildHandle | undefined
     let workspace: ChildWorkspaceLifecycle | undefined
     try {
+      if (isTerminalChildState(attempt.state) || attempt.state === 'cancelling')
+        throw new CoreError('E_UNSUPPORTED', `child ${attempt.childKey} is ${attempt.state}`)
       workspace = await parent.d.childWorkspaceRuntime?.reserve(parent.key, attempt.childKey)
       handle = await this.attach(kind, parent, attempt, opts, modelTarget, delegation, workspace)
       if (workspace && !workspace.commit())
@@ -387,17 +405,32 @@ export class KernelChildren implements ChildrenFactory {
   private async cancelTree(store: ReturnType<typeof requireChildControl>, childKey: string): Promise<void> {
     const record = await store.lookupByKey(childKey)
     if (!record) return
-    if (record.state === 'completed' || record.state === 'failed' || record.state === 'cancelled') return
-    this.kernel.get(childKey)?.ac.abort()
+    // Capture descendants' owner before abort can close and unbind the parent session.
+    const descendants = childBackend(childKey)
+    const children = await store.listByParent(childKey)
     const handle = this.handles.get(childKey)
-    if (handle?.cancel) await handle.cancel()
-    else if (this.kernel.get(childKey)) {
-      const live = await store.lookupByKey(childKey)
-      if (live) await store.casState(childKey, live.stateRevision, 'cancelling')
-    } else {
-      await store.casState(childKey, record.stateRevision, 'cancelling')
+    this.kernel.get(childKey)?.ac.abort()
+    const results = await Promise.allSettled(
+      children.map((kid) =>
+        descendants ? descendants.cancel(kid.childKey) : this.cancelTree(store, kid.childKey),
+      ),
+    )
+    try {
+      if (handle?.cancel) await handle.cancel()
+      else {
+        const live = await store.lookupByKey(childKey)
+        if (live && !isTerminalChildState(live.state))
+          await store.casState(childKey, live.stateRevision, 'cancelling')
+      }
+    } catch (error) {
+      results.push({ status: 'rejected', reason: error })
     }
-    for (const kid of await store.listByParent(childKey)) await this.cancelTree(store, kid.childKey)
+    const failures = results.filter((result) => result.status === 'rejected')
+    if (failures.length)
+      throw new AggregateError(
+        failures.map((result) => result.reason),
+        'Child subtree cleanup failed',
+      )
   }
 
   async resume(childKey: string): Promise<ChildHandle> {
@@ -424,6 +457,10 @@ export class KernelChildren implements ChildrenFactory {
     if (!record || !this.owns(record, parent.key))
       throw new CoreError('E_CHILD_NOT_FOUND', `unknown child ${childKey}`, { childKey })
     await this.cancelTree(store, childKey)
+    // A cancelled turn may reject its run promise; joining it still completes cancellation.
+    await Promise.allSettled([this.residentTasks.get(childKey), this.runningTasks.get(childKey)])
+    await this.cleanups.get(childKey)
+    this.finishChild(childKey, { status: 'cancelled', text: '' })
   }
 
   inspect = async (childKey: string): Promise<ChildStatus | null> => {
@@ -525,7 +562,10 @@ export class KernelChildren implements ChildrenFactory {
     }
     const store = requireChildControl(parent.d.log.storage)
     const cwd = (await store.lookupByKey(record.childKey))?.cwd ?? record.cwd ?? opts.cwd
+    setChildAgentAllowlist(record.childKey, childAgentAllowlist(parent.key))
+    const filter = narrowChildToolFilter(childSessionToolFilter(parent), opts.toolFilter)
     const child = await this.kernel.session(record.childKey, {
+      ...(filter ? { toolFilter: filter } : {}),
       actor: parent.d.actor,
       resolvedProfileHash: parent.d.resolvedProfileHash,
       preset: childPreset,
@@ -646,6 +686,7 @@ export class KernelChildren implements ChildrenFactory {
           const text = await lastText()
           if (
             opts.resident &&
+            !child.ac.signal.aborted &&
             (result.reason === 'completed' || result.reason === 'aborted' || result.reason === 'interrupted')
           ) {
             state = 'ready'
@@ -698,6 +739,7 @@ export class KernelChildren implements ChildrenFactory {
         return {
           state: state === 'error' || state === 'cancelled' ? 'error' : state === 'done' ? 'done' : 'running',
           lastSeq: terminal ? cachedSeq : child.lastSeq,
+          ...(opts.resident && state === 'ready' ? { idle: true } : {}),
           ...(text ? { text } : {}),
         }
       },
@@ -731,7 +773,18 @@ export class KernelChildren implements ChildrenFactory {
         if (idle) await this.dropLocalChild(record.childKey, child)
       },
     }
-    const run = handle.run
+    const originalRun = handle.run
+    const run: ChildHandle['run'] = (input) => {
+      const task = originalRun(input)
+      this.runningTasks.set(record.childKey, task)
+      void task
+        .finally(() => {
+          if (this.runningTasks.get(record.childKey) === task) this.runningTasks.delete(record.childKey)
+        })
+        .catch(() => undefined)
+      return task
+    }
+    handle.run = run
     this.direct.set(handle, run)
     if (opts.resident) {
       this.residents.set(record.childKey, {
@@ -740,7 +793,7 @@ export class KernelChildren implements ChildrenFactory {
         run,
       })
     }
-    if (kind === 'spawn') handle.run = (input) => this.detached(() => run(input))
+    if (kind === 'spawn' || opts.resident) handle.run = (input) => this.detached(() => run(input))
     await parent.hooks
       .subagentStart?.({ childKey: record.childKey, kind, budget: opts.budget ?? null })
       .catch(() => undefined)
@@ -749,7 +802,7 @@ export class KernelChildren implements ChildrenFactory {
 
   async startResident(input: ResidentStart): Promise<{ id: string }> {
     const parent = this.parent()
-    const child = await this.createWithKind('spawn', {
+    const child = await this.createWithKind(input.fork ? 'fork' : 'spawn', {
       parent: parent.key,
       cwd: input.cwd,
       input: input.task,
@@ -758,13 +811,24 @@ export class KernelChildren implements ChildrenFactory {
       ...(input.model === undefined ? {} : { model: input.model }),
       ...(input.isolation === undefined ? {} : { isolation: input.isolation }),
       ...(input.budget === undefined ? {} : { budget: input.budget }),
+      ...(input.toolFilter ? { toolFilter: input.toolFilter } : {}),
     })
-    void child.run(input.task).catch((error: unknown) => {
+    const task = child.run(input.task).catch(async (error: unknown) => {
+      // Cancellation can race deferred open: run may refuse before entering its finally.
+      const opened = this.kernel.get(child.key)
+      if (opened) await this.dropLocalChild(child.key, opened)
+      const record = await requireChildControl(parent.d.log.storage).lookupByKey(child.key)
       this.finishChild(child.key, {
-        status: 'failed',
+        status: record?.state === 'cancelled' || record?.state === 'cancelling' ? 'cancelled' : 'failed',
         text: error instanceof Error ? error.message : String(error),
       })
     })
+    this.residentTasks.set(child.key, task)
+    void task
+      .finally(() => {
+        if (this.residentTasks.get(child.key) === task) this.residentTasks.delete(child.key)
+      })
+      .catch(() => undefined)
     return { id: child.key }
   }
 

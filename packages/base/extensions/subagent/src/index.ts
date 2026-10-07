@@ -1,11 +1,12 @@
 import { applyChildAgentConfig } from '@agnes/core'
 import { type Disposer, defineExtension } from '@agnes/extension-api'
 import {
+  listSubagentModelsTool,
   resetSubagentRuntime,
   type SubagentDeps,
   subagentCancelTool,
   subagentCollectTool,
-  subagentForkTool,
+  subagentForkToolWithDeps,
   subagentInterruptTool,
   subagentListTool,
   subagentSendMessageTool,
@@ -23,13 +24,14 @@ export function createSubagentExtension(deps: SubagentDeps) {
   return defineExtension((agnes) => {
     if (deps.allowlist) applyChildAgentConfig(deps.allowlist)
     const disposers: Disposer[] = [
-      agnes.registerTool(subagentForkTool),
+      agnes.registerTool(subagentForkToolWithDeps(deps)),
       agnes.registerTool(subagentSpawnTool(deps)),
       agnes.registerTool(subagentCollectTool(deps)),
       agnes.registerTool(subagentCancelTool(deps)),
       agnes.registerTool(subagentListTool),
       agnes.registerTool(subagentSendMessageTool),
       agnes.registerTool(subagentInterruptTool),
+      agnes.registerTool(listSubagentModelsTool),
     ]
     return () => {
       for (let index = disposers.length - 1; index >= 0; index -= 1) disposers[index]?.()

@@ -1,6 +1,6 @@
 import type { Action, Actor, Decision, JobSpec, JobStatus, JsonValue, Target } from '@agnes/protocol'
 import type { Static, TSchema } from '@sinclair/typebox'
-import type { ChildAgentListing } from './child-agent.js'
+import type { ChildAgentListing, ChildAgentModel, ChildAgentToolFilter } from './child-agent.js'
 import type {
   ArtifactRef,
   Bytes,
@@ -129,7 +129,7 @@ export type PlanItem = {
 }
 export type ChildStatus = {
   childKey: string
-  status: 'running' | 'completed' | 'failed' | 'cancelled'
+  status: 'running' | 'idle' | 'interrupted' | 'completed' | 'failed' | 'cancelled'
   text?: string
   credits?: number
   waitTimedOut?: boolean
@@ -242,12 +242,18 @@ export interface ToolContext {
         budget?: number
         cwd?: string
         start?: boolean
+        /** Background child inherits parent context when true. */
+        fork?: boolean
+        /** Keep the child after its turn for follow-ups. */
+        resident?: boolean
+        toolFilter?: ChildAgentToolFilter
       },
     ): Promise<{ childKey: string; worktree?: string }>
     collect(childKey: string, opts?: { wait?: boolean }): Promise<ChildStatus>
     cancel(childKey: string): Promise<ChildStatus>
     resume(childKey: string): Promise<{ childKey: string }>
     list?(): Promise<readonly ChildAgentListing[]>
+    models?(): Promise<readonly ChildAgentModel[]>
     sendMessage?(childKey: string, text: string, signal?: AbortSignal): Promise<{ messageId: string }>
     interrupt?(childKey: string): Promise<{ accepted: boolean }>
   }

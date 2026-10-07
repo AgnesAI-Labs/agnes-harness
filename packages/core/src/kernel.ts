@@ -11,7 +11,9 @@ import type {
 } from '@agnes/extension-api'
 import type { Actor, ApprovalMode, Provider, SessionStart } from '@agnes/protocol'
 import { KernelChildren } from './child/factory.js'
+import { bindChildFactory } from './child/sessions.js'
 import { hasChildControl } from './child/store.js'
+import { bindChildSessionToolFilter, ChildToolRegistry } from './child/tool-filter.js'
 import { isActiveChildState } from './child/types.js'
 import { assertFsEnforces } from './effects/fs-guard.js'
 import { platformFacts } from './effects/platform-facts.js'
@@ -151,6 +153,7 @@ export type KernelOptions = {
 }
 export type { RuntimePromptPreload } from './runtime/current.js'
 export type SessionOptions = {
+  toolFilter?: import('@agnes/extension-api').ChildAgentToolFilter
   loop?: LoopSelection
   /** Host defaults affect new sessions only; reopening uses the ledger identity. */
   defaultLoop?: LoopSelection | (() => Promise<LoopSelection | undefined>)
@@ -507,6 +510,7 @@ export class Kernel {
     ) as Partial<{ [K in CoreOpName]: ReplacementOperation<K> | undefined }>
     let session!: SessionImpl
     const children = this.o.children ?? new KernelChildren(this, () => session)
+    const toolFilter = so.toolFilter
     session = new SessionImpl({
       log,
       tracker,
@@ -521,9 +525,22 @@ export class Kernel {
       loopEvents: this.loopEvents,
       loopResume: !forked && Boolean(tracker.state.session),
       ...(this.o.withModelSnapshot ? { withModelSnapshot: this.o.withModelSnapshot } : {}),
-      registry: this.tools,
+      registry: so.toolFilter ? new ChildToolRegistry(this.tools, so.toolFilter) : this.tools,
       resources: this.resources,
-      ...(this.o.currentRuntime ? { currentRuntime: this.o.currentRuntime } : {}),
+      ...(this.o.currentRuntime
+        ? {
+            currentRuntime: so.toolFilter
+              ? {
+                  current: (key: string) => {
+                    const current = this.o.currentRuntime?.current(key)
+                    return current && toolFilter
+                      ? { ...current, tools: new ChildToolRegistry(current.tools, toolFilter) }
+                      : undefined
+                  },
+                }
+              : this.o.currentRuntime,
+          }
+        : {}),
       ...(this.o.sessionOverlay ? { sessionOverlay: this.o.sessionOverlay } : {}),
       operations: this.o.operations ?? [],
       preset,
@@ -558,6 +575,8 @@ export class Kernel {
       ...(this.o.quiet ? { quietGroup } : {}),
       agnesVersion: this.o.agnesVersion ?? '0.0.0',
     })
+    if (so.toolFilter) bindChildSessionToolFilter(session, so.toolFilter)
+    if (children instanceof KernelChildren) bindChildFactory(session.key, children)
     const sessionHooks = this.createHookEngine(logger, preset)
     let factoryPort: HookPort | undefined
     try {

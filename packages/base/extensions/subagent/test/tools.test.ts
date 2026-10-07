@@ -6,9 +6,11 @@ import { createSubagentExtension } from '../src/index.js'
 import type { SubagentDeps } from '../src/tools.js'
 import {
   createSubagentRuntime,
+  listSubagentModelsTool,
   subagentCancelTool,
   subagentCollectTool,
   subagentForkTool,
+  subagentForkToolWithDeps,
   subagentInterruptTool,
   subagentListTool,
   subagentSendMessageTool,
@@ -123,19 +125,20 @@ function deps(
 }
 
 describe('subagent tool definitions', () => {
-  it('publishes three complete definitions with the intended replay metadata', () => {
+  it('publishes complete definitions with the intended replay metadata', () => {
     const d = deps()
     const tools = [
-      subagentForkTool,
+      subagentForkToolWithDeps(d),
       subagentSpawnTool(d),
       subagentCollectTool(d),
       subagentCancelTool(d),
       subagentListTool,
       subagentSendMessageTool,
       subagentInterruptTool,
+      listSubagentModelsTool,
     ]
 
-    for (const tool of tools) expect(checkToolDef(tool, { prefix: 'subagent_' })).toEqual({ ok: true })
+    for (const tool of tools) expect(checkToolDef(tool)).toEqual({ ok: true })
     expect(tools.map((tool) => [tool.name, tool.meta.replay, tool.meta.isConcurrencySafe])).toEqual([
       ['subagent_fork', 'never', true],
       ['subagent_spawn', 'never', true],
@@ -144,12 +147,13 @@ describe('subagent tool definitions', () => {
       ['subagent_list', 'safe', true],
       ['subagent_send_message', 'never', true],
       ['subagent_interrupt', 'never', true],
+      ['list_subagent_models', 'safe', true],
     ])
     expect(tools[0]?.meta).toMatchObject({ isReadOnly: false, isOpenWorld: true, replay: 'never' })
     expect(tools[2]?.meta).toMatchObject({ isReadOnly: false, isDestructive: true })
   })
 
-  it('the explicit extension factory registers and disposes all three tools', () => {
+  it('the explicit extension factory registers and disposes all child tools', () => {
     const names: string[] = []
     const disposed: string[] = []
     const factory = createSubagentExtension(deps())
@@ -168,10 +172,12 @@ describe('subagent tool definitions', () => {
       'subagent_list',
       'subagent_send_message',
       'subagent_interrupt',
+      'list_subagent_models',
     ])
     expect(dispose).toBeTypeOf('function')
     ;(dispose as () => void)()
     expect(disposed).toEqual([
+      'list_subagent_models',
       'subagent_interrupt',
       'subagent_send_message',
       'subagent_list',
@@ -184,13 +190,34 @@ describe('subagent tool definitions', () => {
 })
 
 describe('subagent_fork', () => {
-  it('returns the answer and preserves an optional model choice', async () => {
+  it('starts an inherited background child with the same limits and options as spawn', async () => {
     const { calls, ctx } = context()
-
-    await expect(subagentForkTool.execute({ question: 'review this', model: 'fast' }, ctx)).resolves.toEqual({
-      content: [{ type: 'text', text: 'answer:review this' }],
-    })
-    expect(calls.fork).toEqual([['review this', { model: 'fast' }]])
+    const result = await subagentForkToolWithDeps(deps({ isolation: 'shared' })).execute(
+      {
+        question: 'review this',
+        model: 'fast',
+        budget: 2,
+        toolFilter: { deny: ['shell'] },
+      },
+      ctx,
+    )
+    expect(result.details).toEqual({ childKey: 'child-1', isolation: 'shared' })
+    expect(calls.spawn).toEqual([
+      [
+        'review this',
+        {
+          model: 'fast',
+          budget: 2,
+          isolation: 'shared',
+          resident: true,
+          fork: true,
+          toolFilter: {
+            deny: ['schedule_create', 'schedule_delete', 'schedule_list', 'schedule_update', 'shell'],
+          },
+        },
+      ],
+    ])
+    expect(calls.fork).toEqual([])
   })
 })
 
@@ -212,6 +239,8 @@ describe('subagent_spawn', () => {
           model: 'm',
           budget: 7,
           isolation: 'worktree',
+          resident: true,
+          toolFilter: { deny: ['schedule_create', 'schedule_delete', 'schedule_list', 'schedule_update'] },
           start: false,
         },
       ],
@@ -232,13 +261,35 @@ describe('subagent_spawn', () => {
 
     await subagentSpawnTool(d).execute({ task: 'shared', isolation: 'shared' }, first.ctx)
     expect(wt.calls.create).toEqual([])
-    expect(first.calls.spawn).toEqual([['shared', { isolation: 'shared' }]])
+    expect(first.calls.spawn).toEqual([
+      [
+        'shared',
+        {
+          isolation: 'shared',
+          resident: true,
+          toolFilter: { deny: ['schedule_create', 'schedule_delete', 'schedule_list', 'schedule_update'] },
+        },
+      ],
+    ])
 
     const second = context({ spawn: async () => ({ childKey: 'fallback-child' }) })
     const result = await subagentSpawnTool(d).execute({ task: 'fallback' }, second.ctx)
-    expect(second.calls.spawn).toEqual([['fallback', { isolation: 'worktree', start: false }]])
-    expect(result.content[0]).toMatchObject({ text: expect.stringContaining('worktree skipped: not-git') })
-    expect(result.details).toMatchObject({ isolation: 'shared', worktreeSkipped: 'not-git' })
+    expect(second.calls.spawn).toEqual([
+      [
+        'fallback',
+        {
+          isolation: 'worktree',
+          resident: true,
+          toolFilter: { deny: ['schedule_create', 'schedule_delete', 'schedule_list', 'schedule_update'] },
+          start: false,
+        },
+      ],
+    ])
+    expect(result.isError).toBe(true)
+    expect(result.content[0]).toMatchObject({
+      text: expect.stringContaining('worktree creation failed: not-git'),
+    })
+    expect(second.calls.resume).toEqual([])
   })
 
   it('enforces depth before worktree or child creation', async () => {
@@ -374,6 +425,24 @@ describe('subagent_collect', () => {
 
 describe('child allowlist and continuable controls', () => {
   const sessionKey = 'agnes:t:a:cli:dm:x'
+
+  it('lists only child models allowed for this parent', async () => {
+    const { ctx } = context()
+    ctx.subagent.models = async () => [
+      { id: 'fast', route: 'default', selector: 'default/fast' },
+      { id: 'slow', route: 'default', selector: 'default/slow' },
+    ]
+    setChildAgentAllowlist(sessionKey, { models: ['default/fast'], providers: ['in-process'] })
+    try {
+      expect((await listSubagentModelsTool.execute({}, ctx)).details).toEqual({
+        models: [{ id: 'fast', route: 'default', selector: 'default/fast' }],
+      })
+      setChildAgentAllowlist(sessionKey, { providers: [] })
+      expect((await listSubagentModelsTool.execute({}, ctx)).details).toEqual({ models: [] })
+    } finally {
+      resetChildAgentAllowlists()
+    }
+  })
 
   it('refuses a fork the session model allowlist does not name', async () => {
     setChildAgentAllowlist(sessionKey, { models: ['other'] })

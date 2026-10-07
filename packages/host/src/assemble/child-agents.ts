@@ -1,6 +1,7 @@
 import { type Context, Service } from '@agnes/cordis'
 import {
   assertChildAgentAllowed,
+  bindChildAgentSession,
   childAgentAllowlist,
   IN_PROCESS_CHILD_PROVIDER_ID,
   inProcessChildAgentProvider,
@@ -11,8 +12,10 @@ import type {
   ChildAgentCatalogEntry,
   ChildAgentHandle,
   ChildAgentListing,
+  ChildAgentParentScope,
   ChildAgentProvider,
   ChildAgentService,
+  ChildAgentSessionService,
   ChildAgentStartOptions,
   ProviderSelection,
 } from '@agnes/extension-api'
@@ -45,6 +48,7 @@ export class ChildAgentRegistry extends Service implements ChildAgentService {
       entry: ChildAgentCatalogEntry
       lifetime: AbortController
       handles: Set<ChildAgentHandle>
+      starting: Set<Promise<unknown>>
     }
   >()
 
@@ -66,11 +70,16 @@ export class ChildAgentRegistry extends Service implements ChildAgentService {
             !provider.version.trim() ||
             typeof provider.start !== 'function' ||
             !provider.capabilities ||
-            CAPABILITIES.some((flag) => typeof provider.capabilities[flag] !== 'boolean')
+            CAPABILITIES.some((flag) => typeof provider.capabilities[flag] !== 'boolean') ||
+            (['budget', 'toolFilter'] as const).some(
+              (flag) =>
+                provider.capabilities[flag] !== undefined && typeof provider.capabilities[flag] !== 'boolean',
+            )
           )
             throw new HostError('E_API_RANGE', 'invalid child agent registration')
         },
-        capabilities: (provider) => CAPABILITIES.filter((flag) => provider.capabilities[flag]),
+        capabilities: (provider) =>
+          ([...CAPABILITIES, 'budget', 'toolFilter'] as const).filter((flag) => provider.capabilities[flag]),
       }),
       (owner, source, provider) => owner.childAgents.register(provider, source),
     )
@@ -93,16 +102,34 @@ export class ChildAgentRegistry extends Service implements ChildAgentService {
       }),
       lifetime: new AbortController(),
       handles: new Set<ChildAgentHandle>(),
+      starting: new Set<Promise<unknown>>(),
     }
-    const unregister = this.registry.register(record.entry.sourcePackage, provider, this.ctx, () => {
+    const unregister = this.registry.register(record.entry.sourcePackage, provider, this.ctx, async () => {
       record.lifetime.abort()
       this.registry.clearSelection(`child:${provider.id}`)
+      const starts = await Promise.allSettled([...record.starting])
       const handles = [...record.handles]
       record.handles.clear()
-      for (const handle of handles) void Promise.resolve(handle.dispose()).catch(() => undefined)
+      const disposed = await Promise.allSettled(handles.map((handle) => handle.dispose()))
+      const failures = [...starts, ...disposed].filter((result) => result.status === 'rejected')
+      if (failures.length)
+        throw new AggregateError(
+          failures.map((result) => result.reason),
+          'Child provider cleanup failed',
+        )
     })
     this.records.set(provider, record)
-    return unregister
+    let disposal: Promise<void> | undefined
+    return () => {
+      if (!disposal) {
+        try {
+          disposal = Promise.resolve(unregister())
+        } catch (error) {
+          disposal = Promise.reject(error)
+        }
+      }
+      return disposal
+    }
   }
 
   catalog(): readonly ChildAgentCatalogEntry[] {
@@ -120,6 +147,10 @@ export class ChildAgentRegistry extends Service implements ChildAgentService {
 
   allowlist(sessionKey: string): ChildAgentAllowlist | undefined {
     return childAgentAllowlist(sessionKey)
+  }
+
+  forSession(parent: ChildAgentParentScope): ChildAgentSessionService {
+    return bindChildAgentSession(this, parent)
   }
 
   async start(
@@ -140,34 +171,62 @@ export class ChildAgentRegistry extends Service implements ChildAgentService {
       ...(options.model ? { model: options.model } : {}),
     })
     refuseMissingCapability(record.provider, options)
-    const handle = await record.provider.start(task, {
-      ...options,
-      signal: AbortSignal.any([options.signal, record.lifetime.signal]),
-    })
-    if (!handle || typeof handle.dispose !== 'function' || typeof handle.sendMessage !== 'function')
-      throw new HostError('E_API_RANGE', `invalid child agent handle: ${providerId}`)
-    if (record.lifetime.signal.aborted) {
-      await handle.dispose()
+    const startSignal = AbortSignal.any([options.signal, record.lifetime.signal])
+    const starting = Promise.resolve()
+      .then(() =>
+        record.provider.start(task, {
+          ...options,
+          signal: startSignal,
+        }),
+      )
+      .then(
+        async (raw) => {
+          if (!raw || typeof raw.dispose !== 'function' || typeof raw.sendMessage !== 'function')
+            throw new HostError('E_API_RANGE', 'invalid child agent handle')
+          let disposal: Promise<void> | undefined
+          const handle: ChildAgentHandle = {
+            id: raw.id,
+            providerId: raw.providerId,
+            capabilities: raw.capabilities,
+            events: () => raw.events(),
+            sendMessage: (text, signal) => raw.sendMessage(text, signal),
+            interrupt: () => raw.interrupt(),
+            result: () => raw.result(),
+            dispose: () => {
+              disposal ??= Promise.resolve().then(async () => {
+                await raw.dispose()
+                record.handles.delete(handle)
+                if (!record.handles.size) this.registry.clearSelection(scope)
+              })
+              return disposal
+            },
+          }
+          if (startSignal.aborted) {
+            await handle.dispose()
+            return undefined
+          }
+          record.handles.add(handle)
+          return handle
+        },
+        (error: unknown) => {
+          if (startSignal.aborted && error === startSignal.reason) return undefined
+          throw error
+        },
+      )
+    const scope = `child:${providerId}`
+    record.starting.add(starting)
+    let handle: ChildAgentHandle | undefined
+    try {
+      handle = await starting
+    } finally {
+      record.starting.delete(starting)
+    }
+    if (!handle) {
+      options.signal.throwIfAborted()
       throw new HostError('E_DEP_MISSING', `child agent provider was unloaded: ${providerId}`)
     }
-    record.handles.add(handle)
-    const scope = `child:${providerId}`
     this.registry.select(scope, providerId)
-    const registry = this.registry
-    return {
-      id: handle.id,
-      providerId: handle.providerId,
-      capabilities: handle.capabilities,
-      events: () => handle.events(),
-      sendMessage: (text, signal) => handle.sendMessage(text, signal),
-      interrupt: () => handle.interrupt(),
-      result: () => handle.result(),
-      async dispose() {
-        record.handles.delete(handle)
-        if (!record.handles.size) registry.clearSelection(scope)
-        await handle.dispose()
-      },
-    }
+    return handle
   }
 
   async list(sessionKey: string): Promise<readonly ChildAgentListing[]> {
@@ -188,6 +247,13 @@ export class ChildAgentRegistry extends Service implements ChildAgentService {
 }
 
 function refuseMissingCapability(provider: ChildAgentProvider, options: ChildAgentStartOptions): void {
+  if (options.budget !== undefined && !provider.capabilities.budget)
+    throw new HostError(
+      'E_CAPABILITY_UNDECLARED',
+      `child provider ${provider.id} cannot enforce a child budget`,
+    )
+  if (options.toolFilter !== undefined && !provider.capabilities.toolFilter)
+    throw new HostError('E_CAPABILITY_UNDECLARED', `child provider ${provider.id} cannot filter child tools`)
   if (options.fork && !provider.capabilities.inheritsParentContext)
     throw new HostError(
       'E_CAPABILITY_UNDECLARED',

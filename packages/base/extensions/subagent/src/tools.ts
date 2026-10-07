@@ -1,6 +1,7 @@
 import {
   assertChildAgentAllowed,
   CoreError,
+  childAgentAllowlist,
   externalChild,
   externalChildren,
   IN_PROCESS_CHILD_PROVIDER_ID,
@@ -8,6 +9,7 @@ import {
 import {
   type ChildAgentAllowlistConfig,
   type ChildAgentListing,
+  type ChildAgentToolFilter,
   defineTool,
   type ToolContext,
   type ToolDef,
@@ -48,6 +50,11 @@ export type SubagentDeps = {
    * An empty list refuses that kind. This is extension config, not a preset field.
    */
   allowlist?: ChildAgentAllowlistConfig
+  toolFilter?: ChildAgentToolFilter
+}
+
+const DEFAULT_CHILD_TOOL_FILTER: ChildAgentToolFilter = {
+  deny: ['schedule_create', 'schedule_delete', 'schedule_list', 'schedule_update'],
 }
 
 const implicitRuntimes = new WeakMap<SubagentDeps, SubagentRuntime>()
@@ -142,13 +149,24 @@ const forkParameters = Type.Object(
   {
     question: Type.String({ minLength: 1 }),
     model: Type.Optional(Type.String({ minLength: 1 })),
+    isolation: Type.Optional(Type.Union([Type.Literal('worktree'), Type.Literal('shared')])),
+    budget: Type.Optional(Type.Integer({ minimum: 1 })),
+    toolFilter: Type.Optional(
+      Type.Object(
+        {
+          allow: Type.Optional(Type.Array(Type.String({ minLength: 1 }))),
+          deny: Type.Optional(Type.Array(Type.String({ minLength: 1 }))),
+        },
+        { additionalProperties: false },
+      ),
+    ),
   },
   { additionalProperties: false },
 )
 
 const forkDefinition: ToolDef<typeof forkParameters> = {
   name: 'subagent_fork',
-  description: 'Synchronously run a child session with a full tool loop and return its final text.',
+  description: 'Start a background child inheriting parent context; collect its answer and send follow-ups.',
   parameters: forkParameters,
   meta: {
     isReadOnly: false,
@@ -164,13 +182,31 @@ const forkDefinition: ToolDef<typeof forkParameters> = {
     if (args.question.length === 0) return fail('question must not be empty')
     const refused = allowChild(ctx, args.model)
     if (refused) return refused
-    const options = args.model === undefined ? undefined : { model: args.model }
-    const text = await ctx.subagent.fork(args.question, options)
-    return { content: [{ type: 'text', text }] }
+    return subagentSpawnTool(standaloneForkDeps, true).execute({ ...args, task: args.question }, ctx)
   },
 }
 
+// Preserve the standalone tool's shared-cwd default. Official assembly supplies resolved
+// isolation and worktree preparation through subagentForkToolWithDeps.
+const standaloneForkDeps: SubagentDeps = {
+  limits: { maxDepth: 1, maxFanOut: 4, isolation: 'shared' },
+  worktrees: {
+    async create() {
+      throw new Error('worktree isolation requires the assembled subagent extension')
+    },
+    async finish() {
+      throw new Error('standalone fork owns no worktrees')
+    },
+  },
+}
 export const subagentForkTool = defineTool(forkDefinition)
+
+export function subagentForkToolWithDeps(deps: SubagentDeps): ToolDef<typeof forkParameters> {
+  return defineTool({
+    ...forkDefinition,
+    execute: (args, ctx) => subagentSpawnTool(deps, true).execute({ ...args, task: args.question }, ctx),
+  })
+}
 
 const spawnParameters = Type.Object(
   {
@@ -178,15 +214,24 @@ const spawnParameters = Type.Object(
     model: Type.Optional(Type.String({ minLength: 1 })),
     isolation: Type.Optional(Type.Union([Type.Literal('worktree'), Type.Literal('shared')])),
     budget: Type.Optional(Type.Integer({ minimum: 1 })),
+    toolFilter: Type.Optional(
+      Type.Object(
+        {
+          allow: Type.Optional(Type.Array(Type.String({ minLength: 1 }))),
+          deny: Type.Optional(Type.Array(Type.String({ minLength: 1 }))),
+        },
+        { additionalProperties: false },
+      ),
+    ),
   },
   { additionalProperties: false },
 )
 
-export function subagentSpawnTool(deps: SubagentDeps): ToolDef<typeof spawnParameters> {
+export function subagentSpawnTool(deps: SubagentDeps, fork = false): ToolDef<typeof spawnParameters> {
   assertDeps(deps)
   const definition: ToolDef<typeof spawnParameters> = {
     name: 'subagent_spawn',
-    description: 'Start an independent child task and return a handle for subagent_collect.',
+    description: 'Start a background continuable child; collect its answer and send follow-ups.',
     parameters: spawnParameters,
     meta: {
       isReadOnly: false,
@@ -231,20 +276,30 @@ export function subagentSpawnTool(deps: SubagentDeps): ToolDef<typeof spawnParam
       // Persist identity first (design 10.1), then prepare a worktree, then start the child.
       state.pending += 1
       let worktree: string | undefined
-      let skipped: string | undefined
+      let childKey: string | undefined
       try {
         const requested = args.isolation ?? deps.limits.isolation
+        if (requested === 'worktree' && !deps.worktrees.bind)
+          return fail('worktree isolation requires a manager that binds the child working directory')
         const options = {
           ...(args.model === undefined ? {} : { model: args.model }),
           ...(args.budget === undefined ? {} : { budget: args.budget }),
           isolation: requested,
+          resident: true,
+          ...(fork ? { fork: true } : {}),
+          toolFilter: narrowFilter(narrowFilter(DEFAULT_CHILD_TOOL_FILTER, deps.toolFilter), args.toolFilter),
           ...(requested === 'worktree' ? { start: false as const } : {}),
         }
         const spawned = await ctx.subagent.spawn(args.task, options)
+        childKey = spawned.childKey
         if (requested === 'worktree') {
           const created = await deps.worktrees.create(ctx)
-          if ('skipped' in created) skipped = created.skipped
-          else {
+          if ('skipped' in created) {
+            await ctx.subagent.cancel(spawned.childKey)
+            return fail(
+              `worktree creation failed: ${created.skipped}; request isolation: shared explicitly to share cwd`,
+            )
+          } else {
             worktree = created.path
             await deps.worktrees.bind?.(spawned.childKey, created.path)
           }
@@ -252,6 +307,7 @@ export function subagentSpawnTool(deps: SubagentDeps): ToolDef<typeof spawnParam
         }
 
         if (spawned.childKey.length === 0 || state.children.has(spawned.childKey)) {
+          await ctx.subagent.cancel(spawned.childKey)
           await rollbackWorktree(deps, ctx, worktree)
           return fail('subagent backend returned an invalid or duplicate child key')
         }
@@ -262,9 +318,19 @@ export function subagentSpawnTool(deps: SubagentDeps): ToolDef<typeof spawnParam
           isolation: worktree ? 'worktree' : 'shared',
         }
         if (worktree) details.worktree = worktree
-        if (skipped) details.worktreeSkipped = skipped
-        const note = skipped ? ` (worktree skipped: ${skipped}; sharing cwd)` : ''
-        return { content: [{ type: 'text', text: `spawned ${spawned.childKey}${note}` }], details }
+        return {
+          content: [
+            {
+              type: 'text',
+              text: `started ${spawned.childKey}; use subagent_collect and subagent_send_message`,
+            },
+          ],
+          details,
+        }
+      } catch (error) {
+        if (childKey) await ctx.subagent.cancel(childKey)
+        await rollbackWorktree(deps, ctx, worktree)
+        throw error
       } finally {
         state.pending -= 1
         prune(runtime, sessionKey, state)
@@ -273,6 +339,48 @@ export function subagentSpawnTool(deps: SubagentDeps): ToolDef<typeof spawnParam
   }
   return defineTool(definition)
 }
+
+function narrowFilter(parent?: ChildAgentToolFilter, child?: ChildAgentToolFilter): ChildAgentToolFilter {
+  const allow =
+    parent?.allow === undefined
+      ? child?.allow
+      : child?.allow === undefined
+        ? parent.allow
+        : parent.allow.filter((name) => child.allow?.includes(name))
+  return {
+    ...(allow === undefined ? {} : { allow }),
+    deny: [...new Set([...(parent?.deny ?? []), ...(child?.deny ?? [])])],
+  }
+}
+
+export const listSubagentModelsTool = defineTool({
+  name: 'list_subagent_models',
+  description: 'List models this parent may select for in-process children.',
+  parameters: Type.Object({}, { additionalProperties: false }),
+  meta: {
+    isReadOnly: true,
+    isDestructive: false,
+    isConcurrencySafe: true,
+    isOpenWorld: false,
+    replay: 'safe',
+    requiresApproval: 'never',
+    costHint: undefined,
+    deferLoading: false,
+  },
+  async execute(_args, ctx) {
+    const allow = childAgentAllowlist(ctx.session.key)
+    const models =
+      allow?.providers && !allow.providers.includes(IN_PROCESS_CHILD_PROVIDER_ID)
+        ? []
+        : ((await ctx.subagent.models?.()) ?? []).filter(
+            (model) =>
+              allow?.models === undefined ||
+              allow.models.includes(model.selector) ||
+              allow.models.includes(model.id),
+          )
+    return { content: [{ type: 'text', text: JSON.stringify(models) }], details: { models } }
+  },
+})
 
 const collectParameters = Type.Object(
   {

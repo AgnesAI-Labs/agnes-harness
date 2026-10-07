@@ -7,6 +7,7 @@ import type {
   ChildAgentResult,
   ChildAgentStartOptions,
   ChildAgentStatus,
+  ChildAgentToolFilter,
 } from '@agnes/extension-api'
 import { assertChildAgentAllowed } from './allowlist.js'
 import { createChildEventQueue } from './events.js'
@@ -19,7 +20,10 @@ export const IN_PROCESS_CHILD_CAPABILITIES: ChildAgentCapabilities = Object.free
   interrupt: true,
   modelSelection: true,
   inheritsParentContext: true,
-  worktree: true,
+  // Git worktree preparation belongs to the official tool's deferred-start path.
+  worktree: false,
+  budget: true,
+  toolFilter: true,
 })
 
 export type ResidentStart = {
@@ -28,6 +32,8 @@ export type ResidentStart = {
   model?: string
   isolation?: 'worktree' | 'shared'
   budget?: number
+  fork?: boolean
+  toolFilter?: ChildAgentToolFilter
 }
 
 export type ResidentTurn = { text: string; status: ChildAgentStatus }
@@ -88,17 +94,11 @@ export function inProcessChildAgentProvider(
         ...(options.model ? { model: options.model } : {}),
         ...(options.isolation ? { isolation: options.isolation } : {}),
         ...(options.budget !== undefined ? { budget: options.budget } : {}),
+        ...(options.fork ? { fork: true } : {}),
+        ...(options.toolFilter ? { toolFilter: options.toolFilter } : {}),
       }
       const queue = createChildEventQueue()
       const publish = (event: ChildAgentEvent) => queue.push(event)
-      if (options.fork) {
-        publish({ type: 'status', status: 'running' })
-        const forked = await backend.startFork(input)
-        publish({ type: 'text', text: forked.text })
-        publish({ type: 'status', status: 'completed' })
-        queue.settle({ status: 'completed', text: forked.text })
-        return settledHandle(forked.id, capabilities, queue, async () => undefined)
-      }
       const started = await backend.startResident(input)
       publish({ type: 'status', status: 'running' })
       const stop = backend.onTurn(started.id, (event) => {
@@ -120,6 +120,24 @@ export function inProcessChildAgentProvider(
           queue.fail(error)
         },
       )
+      let disposal: Promise<void> | undefined
+      const dispose = () => {
+        disposal ??= (async () => {
+          options.signal.removeEventListener('abort', onAbort)
+          stop()
+          await backend.cancel(started.id)
+          queue.settle({ status: 'cancelled', text: '' })
+        })()
+        return disposal
+      }
+      const onAbort = () => {
+        void dispose().catch((error) => queue.fail(error))
+      }
+      options.signal.addEventListener('abort', onAbort, { once: true })
+      if (options.signal.aborted) {
+        await dispose()
+        options.signal.throwIfAborted()
+      }
       return {
         id: started.id,
         providerId: IN_PROCESS_CHILD_PROVIDER_ID,
@@ -128,30 +146,8 @@ export function inProcessChildAgentProvider(
         sendMessage: (text, signal) => backend.sendMessage(started.id, text, signal),
         interrupt: () => backend.interrupt(started.id),
         result: () => queue.result,
-        async dispose() {
-          stop()
-          await backend.cancel(started.id)
-          queue.settle({ status: 'cancelled', text: '' })
-        },
+        dispose,
       }
     },
-  }
-}
-
-function settledHandle(
-  id: string,
-  capabilities: ChildAgentCapabilities,
-  queue: ReturnType<typeof createChildEventQueue>,
-  dispose: () => Promise<void>,
-): ChildAgentHandle {
-  return {
-    id,
-    providerId: IN_PROCESS_CHILD_PROVIDER_ID,
-    capabilities,
-    events: () => queue.events(),
-    sendMessage: () => Promise.reject(new Error('forked child is not continuable')),
-    interrupt: () => Promise.resolve({ accepted: false }),
-    result: () => queue.result,
-    dispose,
   }
 }

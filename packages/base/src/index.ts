@@ -132,8 +132,10 @@ export {
 // extensions this package ships is declared once, in the `agnes.extensions` field of its
 // package.json, which is what the host reads off disk; it is deliberately not restated here.
 export {
+  listSubagentModelsTool,
   subagentCollectTool,
   subagentForkTool,
+  subagentForkToolWithDeps,
   subagentSpawnTool,
 } from '../extensions/subagent/src/index.js'
 export { SHELL_SENTINEL, TOOLS_CORE } from '../extensions/tools-core/src/index.js'

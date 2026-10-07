@@ -21,7 +21,7 @@ export {
   updateExternalChild,
 } from './child/directory.js'
 export { createChildEventQueue } from './child/events.js'
-export { runLoopChild } from './child/loop-port.js'
+export { bindChildAgentSession, runLoopChild } from './child/loop-port.js'
 export type { InProcessChildBackend, ResidentStart, ResidentTurn } from './child/provider.js'
 export {
   IN_PROCESS_CHILD_CAPABILITIES,

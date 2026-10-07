@@ -10,14 +10,16 @@ A child agent provider starts work on behalf of a parent session and returns a h
 
 Implement [ChildAgentProvider](../../packages/extension-api/src/child-agent.ts) through public package exports. `start(task, options)` returns a [ChildAgentHandle](../../packages/extension-api/src/child-agent.ts).
 
-`options` carries the parent `sessionKey`, an `AbortSignal`, and optional `cwd`, `model`, `isolation`, `budget`, and `fork`. `sendMessage` resolves when the message is accepted, not when the child answers. `interrupt` stops the current turn and leaves a continuable child open. `result` settles when the child reaches a terminal state. `dispose` releases the child.
+`options` carries the parent `sessionKey`, an `AbortSignal`, and optional `cwd`, `model`, `isolation`, `budget`, `fork`, `toolFilter`, and `generation`. `sendMessage` resolves when the message is accepted, not when the child answers. `interrupt` stops the current turn and leaves a continuable child open. `result` settles when the child reaches a terminal state. `dispose` releases the child.
 
-Capabilities are `continuable`, `interrupt`, `modelSelection`, `inheritsParentContext`, and `worktree`. A `false` flag is refused at start. Do not accept an option and ignore it.
+Capabilities are `continuable`, `interrupt`, `modelSelection`, `inheritsParentContext`, and `worktree`, plus optional `budget` and `toolFilter` flags. An omitted optional flag means unsupported. A `false` flag is refused at start. Do not accept an option and ignore it.
 
-| Provider | continuable | interrupt | modelSelection | inheritsParentContext | worktree |
-| --- | --- | --- | --- | --- | --- |
-| `in-process` | yes | yes | yes | yes | yes |
-| `acp` | yes | yes | no | no | no |
+| Provider | continuable | interrupt | modelSelection | inheritsParentContext | worktree | budget | toolFilter |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| `in-process` | yes | yes | yes | yes | no | yes | yes |
+| `acp` | yes | yes | no | no | no | no | no |
+
+The direct in-process provider refuses worktree isolation because it does not prepare git worktrees. The official fork/spawn tools prepare a worktree before resuming their deferred child; creation failure cancels that child and returns an error. Request `isolation: shared` explicitly to share the working directory.
 
 ## Register a provider
 
@@ -41,7 +43,7 @@ The same provider can be registered through the shared entry point:
 ctx.providers.register('child-agent', '@example/agents', provider)
 ```
 
-Declare `main` and the same injection in `package.json`'s `agnes.plugins`. Duplicate ids are refused. Unloading the plugin removes the catalog entry and disposes handles started through the service. `catalog()` exposes id, version, source package, and capabilities. `ctx.providers.catalog()` lists the same provider with the capability names that are true. Host also exposes `Assembled.childAgentCatalog()`.
+Declare `main` and the same injection in `package.json`'s `agnes.plugins`. Duplicate ids are refused. Unloading the plugin removes the catalog entry and aborts and joins starts, then awaits disposal of handles started through the service. The unregister function returns an idempotent Promise and propagates cleanup failures. `catalog()` exposes id, version, source package, and capabilities. `ctx.providers.catalog()` lists the same provider with the capability names that are true. Host also exposes `Assembled.childAgentCatalog()`.
 
 The in-process provider is installed with the `@agnes/base` package. Its plugin row id is `child-agent:in-process` and its provider id is `in-process`.
 
@@ -64,9 +66,9 @@ Extension config has the same shape under `allow`, plus `sessions` for individua
 
 These tools keep their current names:
 
-- `subagent_fork` runs one inherited turn and returns its text.
-- `subagent_spawn` starts a detached child for `subagent_collect`.
-- `subagent_collect` reads a spawned child. It remains the one-shot observer.
+- `subagent_fork` starts a background child seeded from parent history and returns its key.
+- `subagent_spawn` starts a background child and returns its key. Both fork and spawn stay open for follow-ups.
+- `subagent_collect` reads the current result; an idle child can accept another message.
 - `subagent_cancel` stops a spawned child and its subtree.
 
 Continuable children also accept:
@@ -75,11 +77,15 @@ Continuable children also accept:
 - `subagent_send_message` delivers a follow-up. It resolves when the message is accepted.
 - `subagent_interrupt` stops the current turn and leaves the child open.
 
-`subagent_collect` can still report a continuable child as running after its turn has parked. Use `subagent_list` for idle, running, and continuable.
+`subagent_collect` reports `idle` when a continuable turn parks. `list_subagent_models` lists model selectors available to this parent, filtered by its allowlist. Fork and spawn accept `toolFilter: { allow?, deny? }` with exact tool names. Deny takes precedence, and filters apply to both disclosure and execution, including late registrations and descendants. The official tools deny the four `schedule_*` management tools by default.
 
-## Custom loops
+## Parent-bound facade
 
-`LoopContext.children` is optional. When the session has the in-process factory, `children.run(input, signal)` runs one in-process fork. `input` is a non-empty string or `{ task, model? }`. The result is `{ text, childKey, providerId: 'in-process' }`. The same allowlist applies. Aborting the signal cancels that child. This port does not start the ACP provider; call `childAgents.start('acp', task, options)` for an external agent.
+Host/Core binds `childAgents.forSession(parent)` once and passes the resulting `ChildAgentSessionService` to the loop. It exposes `start(task, options?)`, `list()`, `sendMessage(id, text, signal?)`, `interrupt(id)`, `result(id)`, `events(id)`, and `dispose(id?)`. Omitting the provider id uses the configured default.
+
+The parent scope carries `sessionKey`, `signal`, `cwd`, and optional code `generation`, remaining `budget`, and `toolFilter`. Start options cannot replace parent identity or generation; a child budget or tool allowlist can only narrow inherited constraints. Starts check the live session model/provider allowlist. A facade refuses controls for handles it does not own. Parent abort requests cancellation. The caller must await `dispose()` to join starts and cleanup and observe failures. Handle `result()` is terminal completion, not the answer to each continuable turn; use events or listings for turn status.
+
+The legacy `runLoopChild` Core export remains a synchronous in-process compatibility helper. It does not select an external provider.
 
 ## ACP children
 

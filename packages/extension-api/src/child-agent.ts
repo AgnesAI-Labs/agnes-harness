@@ -56,6 +56,8 @@ export type ChildAgentToolFilter = Readonly<{
   deny?: readonly string[]
 }>
 
+export type ChildAgentModel = Readonly<{ id: string; route: string; selector: string }>
+
 /** Host/Core-owned facts. A loop cannot substitute another parent or code generation. */
 export type ChildAgentParentScope = Readonly<{
   sessionKey: string

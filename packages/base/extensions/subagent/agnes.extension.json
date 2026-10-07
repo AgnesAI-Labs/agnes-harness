@@ -5,7 +5,7 @@
   "entry": "./src/index.ts",
   "capabilities": {
     "tools": {
-      "prefix": "subagent_",
+      "prefix": "",
       "names": [
         "subagent_fork",
         "subagent_spawn",
@@ -13,7 +13,8 @@
         "subagent_cancel",
         "subagent_list",
         "subagent_send_message",
-        "subagent_interrupt"
+        "subagent_interrupt",
+        "list_subagent_models"
       ]
     },
     "hooks": [],

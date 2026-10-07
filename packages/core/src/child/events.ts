@@ -19,6 +19,9 @@ export function createChildEventQueue(): {
     resolveResult = resolve
     rejectResult = reject
   })
+  // Background failures remain observable through result(), without an unhandled rejection
+  // when a parent observes the event stream instead of waiting for terminal completion.
+  void result.catch(() => undefined)
   const wake = () => {
     for (const waiter of waiters.splice(0)) waiter()
   }

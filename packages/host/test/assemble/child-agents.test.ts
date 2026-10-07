@@ -1,6 +1,11 @@
 import { Context } from '@agnes/cordis'
 import { resetChildAgentAllowlists } from '@agnes/core'
-import type { ChildAgentCapabilities, ChildAgentProvider, ChildAgentResult } from '@agnes/extension-api'
+import type {
+  ChildAgentCapabilities,
+  ChildAgentProvider,
+  ChildAgentResult,
+  ChildAgentStartOptions,
+} from '@agnes/extension-api'
 import { expect, it } from 'vitest'
 import { installChildAgents } from '../../src/assemble/child-agents.js'
 import { readProviderSelections } from '../../src/assemble/provider-selection.js'
@@ -135,4 +140,84 @@ it('applies a session model allowlist before the provider starts', async () => {
     resetChildAgentAllowlists()
     await root.fiber.dispose()
   }
+})
+
+it('binds parent constraints and refuses handles belonging to another parent scope', async () => {
+  const root = new Context()
+  const registry = installChildAgents(root, undefined, { provider: 'demo' })
+  const demo = provider('demo', { ...limited, budget: true, toolFilter: true })
+  let received: ChildAgentStartOptions | undefined
+  const start = demo.api.start
+  demo.api.start = async (task, options) => {
+    received = options
+    return start(task, options)
+  }
+  const unregister = registry.register(demo.api)
+  const scope = registry.forSession({
+    sessionKey: 'parent',
+    cwd: '/tmp',
+    signal: signal(),
+    generation: 'g1',
+    budget: 2,
+    toolFilter: { allow: ['read', 'shell'], deny: ['shell'] },
+  })
+  const other = registry.forSession({ sessionKey: 'other', cwd: '/tmp', signal: signal() })
+  const handle = await scope.start('work', {
+    budget: 10,
+    toolFilter: { allow: ['read', 'write'] },
+    sessionKey: 'forged',
+    generation: 'g2',
+  } as never)
+  expect(received).toMatchObject({
+    sessionKey: 'parent',
+    cwd: '/tmp',
+    generation: 'g1',
+    budget: 2,
+    toolFilter: { allow: ['read'], deny: ['shell'] },
+  })
+  expect(() => other.events(handle.id)).toThrow('not owned')
+  await expect(scope.sendMessage(handle.id, 'next')).resolves.toEqual({ messageId: 'm' })
+  await scope.dispose()
+  await expect(scope.start('closed')).rejects.toThrow()
+  await other.dispose()
+  await unregister()
+  expect(demo.state.disposed).toEqual(['work'])
+  await root.fiber.dispose()
+})
+
+it('joins starting children on unregister and preserves a late handle disposal failure', async () => {
+  const root = new Context()
+  const registry = installChildAgents(root)
+  const demo = provider('demo', limited)
+  let release!: () => void
+  const gate = new Promise<void>((resolve) => {
+    release = resolve
+  })
+  const start = demo.api.start
+  demo.api.start = async (task, options) => {
+    await gate
+    const handle = await start(task, options)
+    return {
+      ...handle,
+      dispose: async () => {
+        throw new Error('late dispose failed')
+      },
+    }
+  }
+  const unregister = registry.register(demo.api)
+  const started = registry.start('demo', 'work', { sessionKey: 's', signal: signal() })
+  const refused = expect(started).rejects.toThrow('late dispose failed')
+  let joined = false
+  const cleanup = unregister().finally(() => {
+    joined = true
+  })
+  const failed = expect(cleanup).rejects.toThrow('Child provider cleanup failed')
+  await Promise.resolve()
+  expect(joined).toBe(false)
+  expect(registry.catalog()).toEqual([])
+  release()
+  await refused
+  await failed
+  await expect(unregister()).rejects.toThrow('Child provider cleanup failed')
+  await root.fiber.dispose()
 })

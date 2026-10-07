@@ -10,14 +10,16 @@
 
 通过公开包出口实现 [ChildAgentProvider](../../packages/extension-api/src/child-agent.ts)。`start(task, options)` 返回 [ChildAgentHandle](../../packages/extension-api/src/child-agent.ts)。
 
-`options` 带父会话 `sessionKey`、`AbortSignal`，以及可选的 `cwd`、`model`、`isolation`、`budget` 和 `fork`。`sendMessage` 在消息被接受时完成，不等子代理回答。`interrupt` 停止当前回合，可继续的子代理仍然开着。`result` 在子代理进入终态时完成。`dispose` 释放子代理。
+`options` 带父会话 `sessionKey`、`AbortSignal`，以及可选的 `cwd`、`model`、`isolation`、`budget`、`fork`、`toolFilter` 和 `generation`。`sendMessage` 在消息被接受时完成，不等子代理回答。`interrupt` 停止当前回合，可继续的子代理仍然开着。`result` 在子代理进入终态时完成。`dispose` 释放子代理。
 
-能力是 `continuable`、`interrupt`、`modelSelection`、`inheritsParentContext` 和 `worktree`。`false` 的能力在 start 时被拒绝。不要收下选项再悄悄忽略。
+能力是 `continuable`、`interrupt`、`modelSelection`、`inheritsParentContext` 和 `worktree`，另有可选的 `budget`、`toolFilter`；省略可选标志表示不支持。`false` 的能力在 start 时被拒绝。不要收下选项再悄悄忽略。
 
-| 提供者 | continuable | interrupt | modelSelection | inheritsParentContext | worktree |
-| --- | --- | --- | --- | --- | --- |
-| `in-process` | 是 | 是 | 是 | 是 | 是 |
-| `acp` | 是 | 是 | 否 | 否 | 否 |
+| 提供者 | continuable | interrupt | modelSelection | inheritsParentContext | worktree | budget | toolFilter |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| `in-process` | 是 | 是 | 是 | 是 | 否 | 是 | 是 |
+| `acp` | 是 | 是 | 否 | 否 | 否 | 否 | 否 |
+
+直接调用进程内提供者会拒绝 worktree 隔离，因为它不创建 git worktree。官方 fork/spawn 工具先准备 worktree，再恢复延迟启动的子代理；创建失败会取消子代理并返回错误。明确请求 `isolation: shared` 才共享工作目录。
 
 ## 注册提供者
 
@@ -41,7 +43,7 @@ export const main = defineAgnesPlugin({
 ctx.providers.register('child-agent', '@example/agents', provider)
 ```
 
-在 `package.json` 的 `agnes.plugins` 里声明 `main` 和相同的注入。重复 id 会被拒绝。卸载插件会移除目录项，并释放通过该服务启动的句柄。`catalog()` 提供 id、版本、来源包和能力。`ctx.providers.catalog()` 列出同一提供者，能力名只包含值为 true 的项。Host 也提供 `Assembled.childAgentCatalog()`。
+在 `package.json` 的 `agnes.plugins` 里声明 `main` 和相同的注入。重复 id 会被拒绝。卸载插件会移除目录项，先中止并等待启动任务，再等待通过该服务启动的句柄释放。注销函数返回幂等 Promise，并传播清理失败。`catalog()` 提供 id、版本、来源包和能力。`ctx.providers.catalog()` 列出同一提供者，能力名只包含值为 true 的项。Host 也提供 `Assembled.childAgentCatalog()`。
 
 `in-process` 随 `@agnes/base` 安装。插件行 id 是 `child-agent:in-process`，提供者 id 是 `in-process`。
 
@@ -64,9 +66,9 @@ ctx.childAgents.setSessionAllowlist(sessionKey, {
 
 这些工具保持原名：
 
-- `subagent_fork` 跑一轮继承父上下文的回合并返回文本。
-- `subagent_spawn` 启动一个分离的子任务，交给 `subagent_collect`。
-- `subagent_collect` 读取已启动的子任务，仍然是一次性观察器。
+- `subagent_fork` 在后台启动继承父历史的子代理并返回 key。
+- `subagent_spawn` 在后台启动子代理并返回 key。fork 和 spawn 都保留子代理以接受后续消息。
+- `subagent_collect` 读取当前结果；空闲子代理可以继续接受消息。
 - `subagent_cancel` 停止已启动的子任务及其子树。
 
 可继续的子代理还可以：
@@ -75,11 +77,15 @@ ctx.childAgents.setSessionAllowlist(sessionKey, {
 - `subagent_send_message` 送出后续消息，在消息被接受时返回。
 - `subagent_interrupt` 停止当前回合，子代理保持打开。
 
-可继续的子代理在回合停住之后，`subagent_collect` 仍可能把它报成 running。空闲、运行中和是否可继续，看 `subagent_list`。
+`subagent_collect` 在可继续回合停住后报告 `idle`。`list_subagent_models` 列出父会话允许选择的模型。fork/spawn 接受 `toolFilter: { allow?, deny? }`，按工具名精确匹配，deny 优先；披露、执行、后续注册和后代都受限制。官方工具默认拒绝四个 `schedule_*` 管理工具。
 
-## 自定义循环
+## 父会话外观
 
-`LoopContext.children` 是可选端口。会话有进程内工厂时，`children.run(input, signal)` 跑一轮进程内 fork。`input` 是非空字符串或 `{ task, model? }`。结果是 `{ text, childKey, providerId: 'in-process' }`。同一份允许名单适用。中止 signal 会取消这个子代理。这个端口不启动 ACP 提供者；外部代理调用 `childAgents.start('acp', task, options)`。
+Host/Core 调用一次 `childAgents.forSession(parent)`，把返回的 `ChildAgentSessionService` 交给循环。它提供 `start(task, options?)`、`list()`、`sendMessage(id, text, signal?)`、`interrupt(id)`、`result(id)`、`events(id)` 和 `dispose(id?)`。省略提供者 id 时使用配置的默认提供者。
+
+父作用域包含 `sessionKey`、`signal`、`cwd`，以及可选的代码 `generation`、剩余 `budget` 和 `toolFilter`。启动选项不能替换父身份或代码代际；子预算和工具名单只能收紧继承约束。每次启动检查当前模型/提供者允许名单。外观拒绝控制不归自己所有的句柄。父 signal 中止会请求取消；调用方必须等待 `dispose()`，才能确认启动和清理已结束，并观察失败。`result()` 是终态结果，不是每一轮回答；轮次状态通过事件和列表观察。
+
+Core 的旧 `runLoopChild` 出口保留为同步进程内兼容函数，不选择外部提供者。
 
 ## ACP 子代理
 
