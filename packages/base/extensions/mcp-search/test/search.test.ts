@@ -190,6 +190,25 @@ describe('tool_search / tool_describe', () => {
     expect(index.get('skill/user/teacher')).toBeUndefined()
   })
 
+  it('omits a user-only skill from tool_search', async () => {
+    const search = toolSearchTool(populated(), {
+      runInWorkspace,
+      list: () => [
+        {
+          resourceId: 'skill/user/people',
+          name: 'people-only',
+          description: 'Teach Chinese.',
+          revision: 'c'.repeat(64),
+          sourceIdentity: { scope: 'user', rootKey: 'user-agnes', sourceId: 'people' },
+          actual: 'ready',
+        },
+      ],
+      invocation: () => ({ modelInvocable: false, userInvocable: true, disabled: false }),
+    })
+    const result = await search.execute({ query: 'my skills' }, fakeToolContext())
+    expect((result.content[0] as { text: string }).text).not.toContain('people-only')
+  })
+
   it('fails closed before Skill discovery when the workspace invocation is missing', async () => {
     const list = vi.fn(() => [])
     const search = toolSearchTool(new MemFts(), { list } as never)

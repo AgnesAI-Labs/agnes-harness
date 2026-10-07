@@ -17,7 +17,11 @@ import {
   skillRoots,
   workspaceSkillKey,
 } from '../../extensions/skills/src/discover.js'
-import { MAX_DESCRIPTION_LENGTH, MAX_NAME_LENGTH } from '../../extensions/skills/src/frontmatter.js'
+import {
+  MAX_DESCRIPTION_LENGTH,
+  MAX_NAME_LENGTH,
+  parseSkillFrontmatter,
+} from '../../extensions/skills/src/frontmatter.js'
 
 const bytes = new TextEncoder()
 const workspaceRoot = (path: string, workspace = '/work'): SkillRoot => ({
@@ -433,5 +437,49 @@ describe('frontmatter bounds agree with the protocol schema', () => {
     expect(MAX_DESCRIPTION_LENGTH).toBe(descriptor.description.maxLength)
     expect(descriptor.name.maxLength).toBe(128)
     expect(MAX_NAME_LENGTH).toBe(descriptor.name.maxLength)
+  })
+
+  it('reads invocation flags, drops an invalid flag, and refreshes when content changes', async () => {
+    const skill = (flags: string, body: string, guide: string) => ({
+      '/work/.agh/skills/review/SKILL.md': `---\nname: review\ndescription: useful\n${flags}---\n${body}`,
+      '/work/.agh/skills/review/references/guide.md': guide,
+      '/work/.agh/skills/broken/SKILL.md':
+        '---\nname: broken\ndescription: useful\ndisable-model-invocation: maybe\n---\nbody',
+    })
+    const first = await discoverSkillRoot(
+      fs(skill('disable-model-invocation: true\n', 'body one', 'guide one')),
+      workspaceRoot('/work/.agh/skills'),
+    )
+    expect(first.ok).toBe(true)
+    if (!first.ok) return
+    expect(first.candidates.map((item) => item.name)).toEqual(['review'])
+    expect(first.candidates[0]?.invocation).toEqual({
+      modelInvocable: false,
+      userInvocable: true,
+      disabled: false,
+    })
+    expect(first.candidates[0]?.files?.map((file) => file.relativePath)).toEqual(['references/guide.md'])
+    expect(first.skipped?.map((entry) => entry.code)).toEqual(['invalid-frontmatter'])
+    const revision = first.candidates[0]?.revision
+    const second = await discoverSkillRoot(
+      fs(skill('disable-model-invocation: true\n', 'body two', 'guide two')),
+      workspaceRoot('/work/.agh/skills'),
+    )
+    expect(second.ok && second.candidates[0]?.body).toBe('body two')
+    expect(second.ok && second.candidates[0]?.revision).not.toBe(revision)
+
+    const permitted = parseSkillFrontmatter('---\nname: review\ndescription: useful\n---\nbody')
+    const userOnly = parseSkillFrontmatter(
+      '---\nname: review\ndescription: useful\nuser-invocable: false\n---\nbody',
+    )
+    const disabled = parseSkillFrontmatter(
+      '---\nname: review\ndescription: useful\ndisable: true\nuser-invocable: "yes"\n---\nstill disabled',
+    )
+    const bodyOnly = parseSkillFrontmatter('---\nname: review\ndescription: useful\n---\nother body')
+    expect(permitted?.invocation).toEqual({ modelInvocable: true, userInvocable: true, disabled: false })
+    expect(userOnly?.invocation).toEqual({ modelInvocable: true, userInvocable: false, disabled: false })
+    expect(disabled?.invocation).toEqual({ modelInvocable: false, userInvocable: false, disabled: true })
+    expect(permitted?.capabilityHash).toBe(bodyOnly?.capabilityHash)
+    expect(userOnly?.capabilityHash).not.toBe(permitted?.capabilityHash)
   })
 })

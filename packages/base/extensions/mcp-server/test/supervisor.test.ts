@@ -16,12 +16,16 @@ function deferred<T = void>(): {
   return { promise, resolve, reject }
 }
 
-/** A fake `McpConnection` whose `onClose`/`onToolsChanged` listeners the test fires directly. */
-function fakeConnection(
-  id: string,
-): McpConnection & { fireClose(): void; fireToolsChanged(): void; closed: boolean } {
+/** A fake `McpConnection` whose close and list-changed listeners the test fires directly. */
+function fakeConnection(id: string): McpConnection & {
+  fireClose(): void
+  fireToolsChanged(): void
+  fireResourcesChanged(): void
+  closed: boolean
+} {
   const closeListeners = new Set<() => void>()
   const toolsChangedListeners = new Set<() => void>()
+  const resourcesChangedListeners = new Set<() => void>()
   const conn = {
     id,
     closed: false,
@@ -42,11 +46,18 @@ function fakeConnection(
       toolsChangedListeners.add(listener)
       return () => toolsChangedListeners.delete(listener)
     },
+    onResourcesChanged(listener: () => void) {
+      resourcesChangedListeners.add(listener)
+      return () => resourcesChangedListeners.delete(listener)
+    },
     fireClose() {
       for (const listener of [...closeListeners]) listener()
     },
     fireToolsChanged() {
       for (const listener of [...toolsChangedListeners]) listener()
+    },
+    fireResourcesChanged() {
+      for (const listener of [...resourcesChangedListeners]) listener()
     },
   }
   return conn
@@ -175,6 +186,18 @@ describe('superviseConnection', () => {
     expect(disposeFirst.mock.invocationCallOrder[0]).toBeLessThan(sync.mock.invocationCallOrder[1] ?? 0)
     await handle.dispose()
     expect(disposeSecond).toHaveBeenCalledOnce()
+  })
+
+  it('re-syncs on resources/list_changed without reconnecting', async () => {
+    const conn = fakeConnection('a')
+    const connect = vi.fn(async () => conn)
+    const sync = vi.fn(async () => vi.fn())
+    const handle = superviseConnection({ connect, sync, sleep: instantSleep() })
+    await handle.ready
+    conn.fireResourcesChanged()
+    await vi.waitFor(() => expect(sync).toHaveBeenCalledTimes(2))
+    expect(connect).toHaveBeenCalledOnce()
+    await handle.dispose()
   })
 
   it('re-syncs and reconnects against a registry that refuses a name still registered', async () => {
