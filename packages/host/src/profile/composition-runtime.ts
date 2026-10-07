@@ -68,13 +68,13 @@ export async function createCompositionHost(
           ? row.plugin.slice('builtin:'.length, row.plugin.lastIndexOf('/'))
           : undefined)
       const override = tree.selection.plugins?.[row.id]
-      return {
+      return Object.freeze({
         ...row,
         ...(override?.config === undefined ? {} : { config: override.config }),
         disabled:
           (override?.enabled === undefined ? row.disabled : !override.enabled) ||
           (!!packageId && packages.get(packageId) === false),
-      }
+      })
     })
   }
   const project = (target: RuntimeTarget, tree: ResolvedComposition): RuntimeTarget => {

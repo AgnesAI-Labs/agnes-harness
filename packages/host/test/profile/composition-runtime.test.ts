@@ -133,6 +133,13 @@ it('runs preset compositions side by side, filters tools and retains the generat
     expect(host.kernel.get(reader.key)).toBe(reader)
     expect(host.kernel.get(writer.key)).toBe(writer)
     expect(host.compositionSessions?.()).toHaveLength(2)
+    const rows = await host.extensionRows.apply(host.extensionRows.current())
+    expect(rows).toMatchObject({ ok: true })
+    expect(host.compositionPublicationStatus?.()).toMatchObject({
+      operation: 'extension-rows',
+      ok: true,
+      containers: [{ status: 'applied' }, { status: 'applied' }],
+    })
     expect(
       host.compositionSessions?.().find((session) => session.sessionKey === writer.key)?.providers.compaction,
     ).toEqual({ engine: 'fixture' })
