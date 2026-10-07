@@ -111,7 +111,9 @@ describe('verifier pause continuation', () => {
       const h = await setup()
       await h.session.resumeApproval('review', verdict, approver)
       expect(await h.session.step()).toEqual(
-        verdict === 'rejected' ? { phase: 'terminal', reason: 'blocked' } : { phase: 'checkpoint' },
+        verdict === 'rejected'
+          ? { outcome: 'turn-ended', phase: 'terminal', reason: 'blocked' }
+          : { outcome: 'running', phase: 'checkpoint' },
       )
       await h.session.close()
       const provider = fakeProvider([textTurn('reviewed')])

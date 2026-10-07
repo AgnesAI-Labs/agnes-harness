@@ -1,4 +1,3 @@
-import { defaultLoops } from '../testkit/loops.js'
 import { execFileSync } from 'node:child_process'
 import { existsSync, mkdirSync, mkdtempSync, realpathSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -11,6 +10,7 @@ import { Kernel } from '../src/kernel.js'
 import { MemoryStorage } from '../src/log/memory-storage.js'
 import { presetDefaults } from '../src/step/preset.js'
 import type { SessionDeps } from '../src/step/session.js'
+import { defaultLoops } from '../testkit/loops.js'
 import { fakeProvider, sent, sentFor, textTurn, toolTurn, usage } from './helpers/fake-provider.js'
 import { fakeSeams } from './helpers/fake-seams.js'
 import { actor, noTimers, testFsOps, testWorkspaceInvocation } from './helpers/open-session.js'
@@ -50,7 +50,8 @@ function kernel(
   over: Partial<Parameters<typeof Kernel.create>[0]> = {},
   provider = Object.assign(fakeProvider([textTurn('ok')]), { models: () => [catalogue()] }),
 ) {
-  return Kernel.create({ loops: defaultLoops(),
+  return Kernel.create({
+    loops: defaultLoops(),
     storage: new MemoryStorage(),
     seams: fakeSeams(),
     provider,
@@ -393,8 +394,10 @@ describe('independent-review V1–V7', () => {
     const grand = await childSession.d.children.create({ parent: child.key, cwd: '/w', input: 'grand' })
     void grand.run('grand').catch(() => undefined)
     await expect.poll(() => entered, { timeout: 5_000 }).toBe(true)
+    const grandSignal = required(k.get(grand.key), 'grandchild session').ac.signal
     await parent.d.children.cancel?.(child.key)
-    expect(k.get(grand.key)?.ac.signal.aborted).toBe(true)
+    expect(grandSignal.aborted).toBe(true)
+    expect(k.get(grand.key)).toBeUndefined()
     await new Promise((resolve) => setTimeout(resolve, 20))
     expect((await requireChildControl(storage).lookupByKey(grand.key))?.state).toBe('cancelled')
     await k.close()

@@ -93,12 +93,13 @@ describe('interrupted output is recorded while the process is alive', () => {
     const interrupted = rows.filter((row) => row.data.state === 'interrupted')
     expect(interrupted).toHaveLength(1)
     expect(interruptedText(rows)).toBe('partial answer')
-    // The close wrote what was said, not how the effect ended: settling it is the next process's job.
+    // Graceful close drains the stream and settles its aborted effect before releasing the writer.
     const effectId = interrupted[0]?.data.effectId
     const settled = (await second.log.scan({ type: 'effect/settled', limit: 50 })).filter(
       (row) => (row.data as { effectId?: string }).effectId === effectId,
     )
-    expect(settled).toHaveLength(0)
+    expect(settled).toHaveLength(1)
+    expect(settled[0]?.data).toMatchObject({ outcome: 'aborted' })
   })
 })
 
@@ -144,8 +145,9 @@ describe('a close after the stream has ended keeps the text', () => {
     await first.session.step()
     const inference = first.session.step().catch(() => undefined)
     await reached.shut
-    await first.session.close()
+    const closing = first.session.close()
     recording.open()
+    await closing
     await inference
 
     const { rows } = await reopened(storage)
@@ -296,12 +298,19 @@ describe('the ledger keeps counts, not streamed text', () => {
       { type: 'text_delta', delta: 'first try' },
       { type: 'error', reason: 'error', code: 'TRANSPORT', message: 'reset', retryable: true },
     ]
+    let now = 1_757_203_200_000
     const { session, log } = await openSession({
       provider: fakeProvider([flaky, textTurn('second')]),
       preset,
-      // A moving clock and timers that fire at once, so the retry's wait ends without real time.
-      clock: () => Date.now(),
-      timers: immediateTimers,
+      // Advance logical time with each immediate timer so retry backoff cannot spin on wall time.
+      clock: () => now,
+      timers: {
+        ...immediateTimers,
+        setTimeout(fn, ms) {
+          now += ms
+          return immediateTimers.setTimeout(fn)
+        },
+      },
     })
     await session.enqueue('next-turn', { content: [{ type: 'text', text: 'go' }], actor })
     expect((await session.run({ until: 'turn-end', signal: new AbortController().signal })).reason).toBe(
