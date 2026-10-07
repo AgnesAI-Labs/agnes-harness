@@ -827,7 +827,7 @@ describe('production supervisor storage', () => {
       }
       expect(restartFailure).toMatchObject({
         state: 'failed',
-        lastSafeError: { code: 'MCP_RECONCILE_FAILED' },
+        lastSafeError: { code: 'MCP_CONNECT_FAILED' },
       })
       await expect(
         missing.call(restartCallId++, '_agnes/v1/mcp.servers.get', {
