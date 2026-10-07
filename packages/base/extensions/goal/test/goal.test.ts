@@ -195,4 +195,7 @@ it('blocks exhausted budgets and unavailable continuation through the public hoo
   if (!hooks.session_start) throw new Error('missing session start hook')
   await hooks.session_start({ reason: 'resume', preset: 'test', cwd: '/fixture' }, ctx)
   expect(state.goal?.phase).toBe('paused')
+  state = input(state, '/goal resume')
+  await hooks.session_start({ reason: 'fork', preset: 'test', cwd: '/fixture', parent: 'parent' }, ctx)
+  expect(state.goal?.phase).toBe('paused')
 })

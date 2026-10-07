@@ -68,7 +68,7 @@ export default defineExtension((agnes) => {
   )
   disposers.push(
     agnes.registerHook('session_start', async (payload, ctx) => {
-      if (payload.reason === 'resume' && (await read(ctx)).goal?.phase === 'active')
+      if (payload.reason !== 'new' && (await read(ctx)).goal?.phase === 'active')
         await agnes.events.append('paused', {})
     }),
   )

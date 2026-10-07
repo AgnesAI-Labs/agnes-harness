@@ -18,7 +18,7 @@ Use the Web goal card or these commands in Web/CLI:
 
 The model has goal_get {} and goal_update {status:"complete"|"blocked", reason:"..."}. It cannot create, edit, pause, resume, clear, or raise limits. Status updates require an active goal and a nonempty reason; retrying an identical accepted update is idempotent.
 
-Automatic rounds enter the ordinary next-turn inbox with an owner-bound identity. Pending input wins atomic admission. Reservations bind each round to its goal revision; stale rounds stop before inference. Human pause/complete/clear take effect when they enter the inbox, even just after the final checkpoint. Completion, blockers, cancellation, errors, exhausted limits, and budgets stop continuation. Restoring an active goal pauses automatic work until human resume.
+Automatic rounds enter the ordinary next-turn inbox with an owner-bound identity. Pending input wins atomic admission. Reservations bind each round to its goal revision; stale rounds stop before inference. Human pause/complete/clear take effect when they enter the inbox, even just after the final checkpoint. Completion, blockers, cancellation, errors, exhausted limits, and budgets stop continuation. Restoring or forking an active goal pauses automatic work until human resume.
 
 Credit spend is checked between steps and turns, so an in-flight response can exceed the goal credit limit. Existing per-request model budget admission remains active. Unknown credit usage with a configured goal budget blocks continuation. An older host without the optional turn_stopping input port reports continuation as unavailable.
 
