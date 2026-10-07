@@ -92,7 +92,7 @@ beforeEach(() => vi.clearAllMocks())
 
 it('advertises exactly the frozen hot-update features and forwards catalog reads to the daemon SDK', async () => {
   const backend = {
-    scope: { profile: 'local-dev', scopeID: 'scope-1' },
+    scope: { home: '/tmp/agnes-launch-fixture', profile: 'local-dev', scopeID: 'scope-1' },
     socketPath: '/tmp/agnes-test.sock',
     web: {
       url: 'ws://127.0.0.1:5000',
@@ -133,7 +133,7 @@ it('advertises exactly the frozen hot-update features and forwards catalog reads
 
 it('forwards pins/inspect and pins/release through invoke to the SDK client', async () => {
   const backend = {
-    scope: { profile: 'local-dev', scopeID: 'scope-1' },
+    scope: { home: '/tmp/agnes-launch-fixture', profile: 'local-dev', scopeID: 'scope-1' },
     socketPath: '/tmp/agnes-test.sock',
     web: {
       url: 'ws://127.0.0.1:5000',
@@ -166,7 +166,7 @@ it('forwards pins/inspect and pins/release through invoke to the SDK client', as
 
 it('forwards trust-workspace through invoke to the SDK client', async () => {
   const backend = {
-    scope: { profile: 'local-dev', scopeID: 'scope-1' },
+    scope: { home: '/tmp/agnes-launch-fixture', profile: 'local-dev', scopeID: 'scope-1' },
     socketPath: '/tmp/agnes-test.sock',
     web: {
       url: 'ws://127.0.0.1:5000',
@@ -201,7 +201,7 @@ it('relays only a same-origin typed browser service request and strips page-supp
     if (!address || typeof address === 'string') throw new Error('missing test listener address')
     const origin = `http://127.0.0.1:${address.port}`
     const backend = {
-      scope: { profile: 'local-dev', scopeID: 'scope-1' },
+      scope: { home: '/tmp/agnes-launch-fixture', profile: 'local-dev', scopeID: 'scope-1' },
       socketPath: '/tmp/agnes-test.sock',
       web: { url: 'ws://127.0.0.1:5000', origin, token: 'legacy-ignored' },
     } as LocalBackend
@@ -253,7 +253,7 @@ it('relays effect commands only through the separate same-origin route', async (
     if (!address || typeof address === 'string') throw new Error('missing test listener address')
     const origin = `http://127.0.0.1:${address.port}`
     const backend = {
-      scope: { profile: 'local-dev', scopeID: 'scope-1' },
+      scope: { home: '/tmp/agnes-launch-fixture', profile: 'local-dev', scopeID: 'scope-1' },
       socketPath: '/tmp/agnes-test.sock',
       web: { url: 'ws://127.0.0.1:5000', origin, token: webToken },
     } as LocalBackend
@@ -291,7 +291,7 @@ it('relays effect commands only through the separate same-origin route', async (
 
 it('fits production catalog/defaults relays without an injected provider', async () => {
   const backend = {
-    scope: { profile: 'local-dev', scopeID: 'scope-1' },
+    scope: { home: '/tmp/agnes-launch-fixture', profile: 'local-dev', scopeID: 'scope-1' },
     socketPath: '/tmp/test.sock',
     web: { origin: 'http://127.0.0.1:4180' },
   } as LocalBackend

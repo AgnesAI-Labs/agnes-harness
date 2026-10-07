@@ -52,6 +52,7 @@ vi.mock('../src/boot/default.js', async (importOriginal) => {
             pins: { inspect: record('packages.pins.inspect', { orphans: [] }) },
           },
           resources: { list: record('resources.list', { items: [] }) },
+          workspace: { add: async () => ({ workspace: { workspaceId: 'a'.repeat(64) } }) },
           mcp: { servers: { list: record('mcp.servers.list', { items: [] }) } },
         },
         profileName,

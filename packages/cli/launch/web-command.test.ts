@@ -104,7 +104,11 @@ describe('Web command launch contract', () => {
     const ensureBackend = async (options: EnsureLocalBackendOptions): Promise<LocalBackend> => {
       received = options
       return {
-        scope: { profile: 'local-dev', scopeID: 'test-scope' } as LocalBackend['scope'],
+        scope: {
+          home: '/tmp/agnes-launch-fixture',
+          profile: 'local-dev',
+          scopeID: 'test-scope',
+        } as LocalBackend['scope'],
         discovery: {} as LocalBackend['discovery'],
         socketPath: '\\\\.\\pipe\\agnes-web-command-fixture',
         web: {
@@ -178,7 +182,7 @@ describe('Web command launch contract', () => {
     let resolveAsset: ((pathname: string) => Promise<Uint8Array | null>) | undefined
     const ensureBackend = async (): Promise<LocalBackend> =>
       ({
-        scope: { profile: 'local-dev', scopeID: 'test-scope' },
+        scope: { home: '/tmp/agnes-launch-fixture', profile: 'local-dev', scopeID: 'test-scope' },
         discovery: {},
         // No listener here: the launcher's private connection cannot be established.
         socketPath: unreachableSocket,
@@ -213,7 +217,7 @@ describe('Web command launch contract', () => {
     let resolveAsset: ((pathname: string) => Promise<Uint8Array | null>) | undefined
     const ensureBackend = async (): Promise<LocalBackend> =>
       ({
-        scope: { profile: 'local-dev', scopeID: 'test-scope' },
+        scope: { home: '/tmp/agnes-launch-fixture', profile: 'local-dev', scopeID: 'test-scope' },
         discovery: {},
         // No listener here: the launcher's private connection cannot be established.
         socketPath: unreachableSocket,
@@ -247,7 +251,7 @@ describe('Web command launch contract', () => {
     const signals = new EventEmitter()
     const ensureBackend = async (): Promise<LocalBackend> =>
       ({
-        scope: { profile: 'local-dev', scopeID: 'test-scope' },
+        scope: { home: '/tmp/agnes-launch-fixture', profile: 'local-dev', scopeID: 'test-scope' },
         discovery: {},
         socketPath: unreachableSocket,
         web: {
@@ -277,7 +281,7 @@ describe('Web command launch contract', () => {
     let handleAdmin: ((request: IncomingMessage, response: ServerResponse) => Promise<boolean>) | undefined
     const ensureBackend = async (): Promise<LocalBackend> =>
       ({
-        scope: { profile: 'local-dev', scopeID: 'test-scope' },
+        scope: { home: '/tmp/agnes-launch-fixture', profile: 'local-dev', scopeID: 'test-scope' },
         discovery: {},
         socketPath: unreachableSocket,
         web: {

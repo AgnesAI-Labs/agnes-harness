@@ -26,7 +26,12 @@ it.each(['automatic CLI', 'manual CLI', 'package Web', 'resource Web'])(
   '%s refreshes only its captured scope and fails closed when discovery changes path',
   async (caller) => {
     const path = '\\\\.\\pipe\\verified-caller'
-    const scope = { scopeID: 'chosen', profile: 'chosen', dataDir: '/custom-data' } as DaemonScope
+    const scope = {
+      home: '/custom-home',
+      scopeID: 'chosen',
+      profile: 'chosen',
+      dataDir: '/custom-data',
+    } as DaemonScope
     const owner = { pid: 123, processStartId: 'win32:123:456' }
     const discovery = { socketPath: path, owner } as NonNullable<
       Awaited<ReturnType<typeof readDaemonDiscovery>>

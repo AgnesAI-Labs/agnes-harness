@@ -527,7 +527,7 @@ describe('main', () => {
       },
     })
     expect(code).toBe(2)
-    expect(h.err()).toBe('host: assembly exploded\n')
+    expect(h.err()).toBe('host: assembly exploded; run agh --help for usage\n')
   })
 
   // Proven by making the configured home unusable: a run that read it would fail, so a run that

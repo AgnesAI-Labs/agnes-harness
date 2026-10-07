@@ -778,6 +778,10 @@ export async function main(argv: string[], io: MainIO, boot: Partial<LocalBootDe
     if (mode !== 'print' && mode !== 'tui' && mode !== 'acp')
       throw new UsageError(`agh ${mode} is not available in this build; use -p`)
     const booted: Booted = await bootDefault(p, deps, { useEmbedded: Object.keys(boot).length > 0 })
+    let leave!: (code: number) => void
+    const exited = new Promise<number>((resolve) => {
+      leave = resolve
+    })
     try {
       // The config wizard is deliberately after boot: it uses the same authenticated SDK endpoint as
       // Web and never opens Host credential stores itself. A daemon without the optional config
@@ -830,7 +834,11 @@ export async function main(argv: string[], io: MainIO, boot: Partial<LocalBootDe
         },
         {
           graceMs: GRACE_MS,
-          exit: io.exit ?? hardExit,
+          exit: (code) => {
+            // A forced exit must also settle the embedding contract and release its temporary home.
+            leave(code)
+            ;(io.exit ?? hardExit)(code)
+          },
           log,
           onSignal: (s) => {
             signal = s
@@ -876,13 +884,13 @@ export async function main(argv: string[], io: MainIO, boot: Partial<LocalBootDe
         // Assigned before the first await, so a signal arriving in the same tick already has something
         // to wait for rather than closing on an empty promise.
         settled = run
-        return await run
+        return await Promise.race([run, exited])
       } finally {
         off()
         ladderInstalled = false
       }
     } finally {
-      await booted.close().catch(() => undefined)
+      await Promise.race([booted.close().catch(() => undefined), exited])
     }
   } catch (e) {
     const safeFailure =
