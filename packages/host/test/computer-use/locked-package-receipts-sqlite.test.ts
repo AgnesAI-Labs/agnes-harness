@@ -3,13 +3,18 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { LockedPackageOperationReceipt, LockedPackageOperationReceiptPort } from '@agnes/base'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { sqlitePersistenceProvider } from '../../src/adapters/storage-provider.js'
 import {
   createSqliteStorage,
   type SqliteStorage,
   type TableHandle,
   type TableStore,
 } from '../../src/adapters/storage-sqlite.js'
-import { createSqliteLockedPackageOperationReceiptPort } from '../../src/computer-use/locked-package-receipts-sqlite.js'
+import {
+  createMetadataLockedPackageOperationReceiptPort,
+  createSqliteLockedPackageOperationReceiptPort,
+  migrateLockedPackageReceipts,
+} from '../../src/computer-use/locked-package-receipts-sqlite.js'
 
 const OWNER = '@agnes/host/locked-package-operation-receipts'
 const roots: string[] = []
@@ -83,6 +88,19 @@ describe('Host locked-package durable operation receipts', () => {
       committed,
     )
     await storage.close()
+    const migrated = await sqlitePersistenceProvider.open({ dataDir: root })
+    try {
+      if (!migrated.sqlite || !migrated.metadata) throw new Error('migration ports missing')
+      migrateLockedPackageReceipts(migrated.sqlite, migrated.metadata)
+      const metadataReceipts = createMetadataLockedPackageOperationReceiptPort(migrated.metadata)
+      expect(await metadataReceipts.read('operation-a')).toEqual(committed)
+      const ns = migrated.metadata.namespace(OWNER, 'receipts')
+      ns.delete('receipt:operation-a')
+      migrateLockedPackageReceipts(migrated.sqlite, migrated.metadata)
+      expect(await metadataReceipts.read('operation-a')).toBeNull()
+    } finally {
+      await migrated.close()
+    }
   })
 
   it('makes prepare idempotent but fails closed on conflicting operationId reuse', async () => {
@@ -304,4 +322,39 @@ describe('Host locked-package durable operation receipts', () => {
       expect(readFileSync(join(root, 'tables', file)).includes(Buffer.from(secret))).toBe(false)
     }
   })
+})
+
+it('persists and fences non-SQL receipts, and refuses malformed metadata', async () => {
+  const { persistenceProvider } = await import(
+    new URL('../../../../examples/persistence/src/index.ts', import.meta.url).href
+  )
+  const { createMetadataLockedPackageOperationReceiptPort } = await import(
+    '../../src/computer-use/locked-package-receipts-sqlite.js'
+  )
+  const root = temp()
+  const first = await persistenceProvider.open({ dataDir: root })
+  const receipts = createMetadataLockedPackageOperationReceiptPort(first.metadata)
+  const receipt = await receipts.prepare(prepared())
+  expect(await receipts.prepare(prepared())).toEqual(receipt)
+  await expect(receipts.prepare({ ...prepared(), afterStateSha256: hash('9') })).rejects.toThrow(
+    'E_LOCKED_PACKAGE_RECEIPT_CONFLICT',
+  )
+  await expect(receipts.commit({ operationId: receipt.operationId, fencing: 'wrong-fence' })).rejects.toThrow(
+    'E_LOCKED_PACKAGE_RECEIPT_FENCE',
+  )
+  await first.close()
+  const second = await persistenceProvider.open({ dataDir: root })
+  try {
+    const restored = createMetadataLockedPackageOperationReceiptPort(second.metadata)
+    expect(await restored.read(receipt.operationId)).toEqual(receipt)
+    expect(await restored.commit({ operationId: receipt.operationId, fencing: receipt.fencing })).toEqual({
+      ...receipt,
+      phase: 'committed',
+    })
+    const ns = second.metadata.namespace(OWNER, 'receipts')
+    ns.set('receipt:corrupt', {})
+    await expect(restored.read(receipt.operationId)).rejects.toThrow('E_LOCKED_PACKAGE_RECEIPT_CORRUPT')
+  } finally {
+    await second.close()
+  }
 })

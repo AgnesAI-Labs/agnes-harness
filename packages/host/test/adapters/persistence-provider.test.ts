@@ -4,6 +4,7 @@ import { join } from 'node:path'
 import { definePersistenceProvider, type PersistenceSessionStore } from '@agnes/extension-api'
 import {
   persistenceContract,
+  persistenceHostContract,
   persistenceSqliteContract,
 } from '@agnes/extension-api/testkit/persistence-contract'
 import { afterAll, describe, expect, it } from 'vitest'
@@ -61,6 +62,10 @@ describe('persistence provider', () => {
     const dir = tempDir()
     return { open: () => sqlitePersistenceProvider.open({ dataDir: dir }) }
   })
+  persistenceHostContract('sqlite', () => {
+    const dir = tempDir()
+    return { open: () => sqlitePersistenceProvider.open({ dataDir: dir }) }
+  })
   persistenceSqliteContract('sqlite', () => {
     const dir = tempDir()
     return { open: () => sqlitePersistenceProvider.open({ dataDir: dir }) }
@@ -68,6 +73,18 @@ describe('persistence provider', () => {
 
   it('keeps the default adapter bundle on sqlite', async () => {
     const dir = tempDir()
+    const legacy = await sqlitePersistenceProvider.open({ dataDir: dir })
+    if (!legacy.sqlite) throw new Error('SQLite port missing')
+    const table = legacy.sqlite.tables('owner').table('persistence_kv')
+    table.exec(
+      'CREATE TABLE persistence_kv (namespace TEXT NOT NULL, key TEXT NOT NULL, value TEXT NOT NULL, PRIMARY KEY (namespace, key))',
+    )
+    table.run('INSERT INTO persistence_kv VALUES (?, ?, ?)', [
+      'config',
+      'legacy',
+      JSON.stringify({ enabled: true }),
+    ])
+    await legacy.close()
     const profile = await resolveProfile({ builtin: 'local-dev', lock }, env)
     const bundle = await openAdapters(profile, { dataDir: dir, workspaceRoot: dir })
     try {
@@ -80,11 +97,21 @@ describe('persistence provider', () => {
         integrity: true,
         sqlite: true,
       })
-      expect(bundle.storage.sqlite.dialect).toBe('sqlite')
+      expect(bundle.storage.sqlite?.dialect).toBe('sqlite')
       expect(existsSync(join(dir, 'sessions.db'))).toBe(true)
       expect('file' in bundle.storage).toBe(false)
+      const metadata = bundle.storage.metadata.namespace('owner', 'config')
+      expect(metadata.get('legacy')).toEqual({ enabled: true })
+      metadata.delete('legacy')
+      expect(bundle.storage.metadata.namespace('owner', 'config').get('legacy')).toBeUndefined()
     } finally {
       await bundle.close()
+    }
+    const reopened = await openAdapters(profile, { dataDir: dir, workspaceRoot: dir })
+    try {
+      expect(reopened.storage.metadata.namespace('owner', 'config').get('legacy')).toBeUndefined()
+    } finally {
+      await reopened.close()
     }
   })
 
@@ -147,6 +174,21 @@ describe('persistence provider', () => {
       ).toThrow('rollback')
       expect(kv.get('enabled')).toBe(true)
       expect(bundle.storage.metadata.namespace('other', 'config').get('enabled')).toBeUndefined()
+      const second = await openAdapters(profile, {
+        dataDir: dir,
+        workspaceRoot: dir,
+        persistence: { provider: 'custom' },
+        persistenceProviders: [provider],
+      })
+      await bundle.close()
+      try {
+        expect(() => kv.get('enabled')).toThrow(/closed/)
+        await expect(bundle.storage.registers('k')).rejects.toMatchObject({ code: 'E_CLOSED' })
+        expect(second.storage.metadata.namespace('owner', 'config').get('enabled')).toBe(true)
+        expect(await second.storage.registers('k')).toEqual([])
+      } finally {
+        await second.close()
+      }
       expect(existsSync(join(dir, 'sessions.db'))).toBe(false)
     } finally {
       await bundle.close()
@@ -154,7 +196,7 @@ describe('persistence provider', () => {
   })
 
   it.each(['metadata', 'sqlite', 'childControl', 'reclaim', 'scanIntegrity'] as const)(
-    'refuses a selected provider missing %s before publishing the store and closes it',
+    'refuses a selected provider missing declared %s before publishing the store and closes it',
     async (port) => {
       let closed = false
       const provider = definePersistenceProvider({
@@ -274,4 +316,75 @@ describe('persistence provider', () => {
       /persistenceProvider/,
     )
   })
+})
+
+it('runs the default accounting, refine and MCP domains on metadata without SQL', async () => {
+  const { persistenceProvider } = await import(
+    new URL('../../../../examples/persistence/src/index.ts', import.meta.url).href
+  )
+  const { seams, mcpCatalogHubFor } = await import('@agnes/base')
+  const { fakeSeamInit } = await import('@agnes/base/testkit')
+  const { toSeamAdapters } = await import('../../src/adapters/index.js')
+  const dir = tempDir()
+  const profile = await resolveProfile({ builtin: 'local-dev', lock }, env)
+  const bundle = await openAdapters(profile, {
+    dataDir: dir,
+    workspaceRoot: dir,
+    persistence: { provider: 'jsonl' },
+    persistenceProviders: [persistenceProvider],
+  })
+  try {
+    expect(bundle.storage.sqlite).toBeUndefined()
+    const init = fakeSeamInit({ dataDir: dir, workspaceRoot: dir })
+    init.adapters = toSeamAdapters(bundle, { owner: '@agnes/base' })
+    const ledger = await seams.ledger(init)
+    const cost = {
+      sessionKey: 's',
+      lane: 'main',
+      turn: 1,
+      step: 1,
+      purpose: 'inference' as const,
+      effectId: 'effect',
+      model: 'm',
+      tokens: { input: 1000, output: 100, cacheRead: 0, cacheWrite: 0 },
+      credits: 11,
+      creditSource: 'gateway' as const,
+    }
+    await ledger.record(cost)
+    await ledger.record(cost)
+    expect(await ledger.projected({ model: 'm', tokensEstimate: 500 })).toEqual({
+      credits: 5,
+      creditSource: 'estimated',
+    })
+    const harness = await seams.harness(init)
+    expect(
+      await harness.propose({
+        proposalId: 'proposal',
+        trigger: 'auto',
+        edits: [{ op: 'delete', kind: 'memory', id: 'old' }],
+        baseline: [],
+        rationale: 'test',
+        evidenceSeqs: [],
+      }),
+    ).toBe('queued')
+    const hub = mcpCatalogHubFor(init)
+    hub.upsert('server', [{ name: 'lookup', description: '查找订单', schema: '{}' }])
+    expect(hub.search('查找', 10)).toEqual([{ name: 'lookup', score: 1 }])
+    hub.remove('server')
+    expect(hub.get('lookup')).toBeUndefined()
+    expect(() => init.adapters.storage.table('unsupported')).toThrow(/does not support SQL/)
+    expect(existsSync(join(dir, 'sessions.db'))).toBe(false)
+  } finally {
+    await bundle.close()
+  }
+  const reopened = await persistenceProvider.open({ dataDir: dir })
+  try {
+    const values = reopened.metadata.namespace('@agnes/base', 'usage_ledger').entries()
+    expect(values).toHaveLength(1)
+    expect(reopened.metadata.namespace('@agnes/base', 'refine_queue').get('row:proposal')).toMatchObject({
+      status: 'queued',
+    })
+  } finally {
+    await reopened.close()
+  }
 })

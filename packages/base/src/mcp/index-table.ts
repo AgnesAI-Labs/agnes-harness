@@ -1,3 +1,4 @@
+import type { PersistenceMetadataNamespace } from '@agnes/extension-api'
 import type { TableHandle } from '../seam-init.js'
 
 export type ToolIndexRow = { name: string; description: string; schema: string }
@@ -103,3 +104,34 @@ export class SqliteToolIndex implements ToolIndex {
 }
 
 export const scoreToolIndexRows = scoreRows
+
+/** Small catalogs use the same portable substring ranking on every persistence provider. */
+export class MetadataToolIndex implements ToolIndex {
+  readonly mode = 'portable'
+  constructor(private readonly ns: PersistenceMetadataNamespace) {}
+  clear(): void {
+    this.ns.transaction(() => {
+      for (const { key } of this.ns.entries()) this.ns.delete(key)
+    })
+  }
+  upsert(rows: ToolIndexRow[]): void {
+    this.ns.transaction(() => {
+      for (const row of rows) this.ns.set(row.name, row)
+    })
+  }
+  delete(names: readonly string[]): void {
+    this.ns.transaction(() => {
+      for (const name of names) this.ns.delete(name)
+    })
+  }
+  get(name: string): ToolIndexRow | undefined {
+    return this.ns.get(name) as ToolIndexRow | undefined
+  }
+  search(query: string, limit: number): ToolIndexHit[] {
+    return scoreRows(
+      this.ns.entries().map(({ value }) => value as ToolIndexRow),
+      query,
+      limit,
+    )
+  }
+}

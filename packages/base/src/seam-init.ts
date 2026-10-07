@@ -6,7 +6,7 @@ import type {
   SandboxSeam,
   Verdict,
 } from '@agnes/core'
-import type { FsEntry, FsStat, Logger, SessionRef } from '@agnes/extension-api'
+import type { FsEntry, FsStat, Logger, PersistenceMetadataNamespace, SessionRef } from '@agnes/extension-api'
 import type { ComputerUseBackendProvider } from '../extensions/computer-use/src/backend.js'
 import type { ComputerUseToolOptions } from '../extensions/computer-use/src/tool.js'
 import type { EgressGate } from '../extensions/privacy/src/index.js'
@@ -129,7 +129,12 @@ export type SeamAdaptersView = {
   dataFs: HostFs
   exec: HostExec
   platform: PlatformSeam
-  storage: { table(name: string): TableHandle }
+  storage: {
+    table(name: string): TableHandle
+    /** Owner-scoped metadata. Optional only for legacy seam embedders. */
+    namespace?(name: string): PersistenceMetadataNamespace
+    sql?: { table(name: string): TableHandle }
+  }
   prompter?: Prompter
 }
 

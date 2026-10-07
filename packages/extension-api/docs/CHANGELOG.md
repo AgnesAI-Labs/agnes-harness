@@ -13,11 +13,17 @@ valid, and clients submit answers through ordinary user messages using the share
 
 
 `definePersistenceProvider` publishes a session persistence provider. The store methods are the ones Core's
-log storage and the host package tables already use: `open`, `commit`, `renew`, `release`, `scan`,
-`registers`, `tables`, and `close`. `DEFAULT_PERSISTENCE_PROVIDER_ID` is `sqlite`. `PERSISTENCE_SCAN_PAGE_MAX`
+log storage uses: `open`, `commit`, `renew`, `release`, `scan`,
+`registers` and `close`. Optional SQL tables are exposed only under `store.sqlite`. `DEFAULT_PERSISTENCE_PROVIDER_ID` is `sqlite`. `PERSISTENCE_SCAN_PAGE_MAX`
 is 500, the same page cap as a log scan. `PERSISTENCE_EFFECT` is `restart-required`: selecting another id
 applies on the next process start. `persistenceRegisterKey` and `isPersistenceTombstone` spell register cells
 the same way Core does. `API_VERSION` stays 1.4.0.
+
+A full Host now requires ledger, metadata, child-control, reclaim and integrity, with SQLite optional.
+Package seam storage gains owner-bound `namespace(name): PersistenceMetadataNamespace`; the legacy
+SQL table surface refuses explicitly when unsupported. The Vitest testkit adds
+`persistenceHostContract(name, create)` for durable metadata, integrity/op-state, child CAS, exact
+budgets and reclaim. Store port signatures remain compatible. JSONL is a complete example provider.
 
 `ToolContext` gains the optional read-only `defaultTimeoutMs`: the preset-wide default for a tool call
 (`tools.timeout_ms`), next to `timeoutMs`, which is this call's own limit. A tool that lets a caller ask for

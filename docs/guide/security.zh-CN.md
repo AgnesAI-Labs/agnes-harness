@@ -80,8 +80,8 @@ Provider 密钥经配置服务存入凭据后端；公开配置只保留 `secret
 
 恢复未知副作用前先核对目标系统，再决定重试。后台数据库恢复并不能撤销已发出的邮件、网络写入或物理设备动作。
 
-持久化合同分别声明账本、metadata/KV、耐久子任务控制、reclaim 和 integrity 能力。同步 SQL 仅通过可选 `sqlite` 端口（`dialect: sqlite`）提供；审批授权的 schema 检查也是 SQLite 专用操作。官方 SQLite 注册这些公开端口，Host 与其他提供者一样消费该合同。当前 Host 仍有依赖 SQL 的包 seam，启动时要求上述完整能力；缺失时明确列出缺失项并拒绝。JSONL 示例仅演示账本，不是完整替代。切换提供者需要重启，不自动迁移已有数据。
+持久化合同分别声明账本、metadata/KV、耐久子任务控制、reclaim 和 integrity。完整 Host 要求这五项能力，接受完整非 SQL 提供器，包括 [JSONL 示例](../../examples/persistence/)。同步 SQL 通过可选 `sqlite` 端口（`dialect: sqlite`）提供，依赖 SQL 的第三方扩展须选择支持它的后端。默认包域及 Host 授权/回执存储使用所有者隔离的 metadata。切换需要重启，不自动迁移文件，参见[提供器合同与导出/导入迁移](../extend/persistence.zh-CN.md)。
 
-作者需要声明 `capabilities: { ledger: true, ... }`，将 SQL 移到 `store.sqlite.tables(owner)`，并显式提供 `metadata`、`childControl`、`reclaim` 和 `scanIntegrity`。旧的通用 `store.tables` 与伪造的 SQLite 诊断字段已移除；已有 SQLite 文件及审批授权 schema 格式保持兼容。
+作者声明 `capabilities: { ledger: true, ... }`，并显式提供 `metadata`、`childControl`、`reclaim` 和 `scanIntegrity`。SQLite 账本和子任务文件保持兼容。旧授权及回执 schema 先严格校验，再复制到 metadata；撤权先持久化后通知。旧 SQL 表保留用于回退核验，新 metadata 更新不反写旧表。
 
 实现依据：[默认 profile](../../packages/host/templates/local-dev.yaml)、[普通行 API](../../packages/host/src/ext-host/row-extension-api.ts)、[MCP 参数策略](../../packages/resource-control-cli/src/resources.ts)、[Web server](../../packages/web-server/src/server.ts)。

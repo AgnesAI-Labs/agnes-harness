@@ -536,8 +536,19 @@ describe('Host approval grant store', () => {
 
   it('wires the Host store into the approval seam and preserves grants across Host reopen', async () => {
     const dataDir = temp()
+    const legacy = createSqliteStorage({
+      file: join(dataDir, 'sessions.db'),
+      tablesDir: join(dataDir, 'tables'),
+    })
+    const oldApproval = createApprovalGrantControlPlane(legacy.tables('@agnes/host/approval-grants')).bind(
+      fakeSeams().approval,
+    )
+    if (!oldApproval.putGrant) throw new Error('activation port missing')
+    await oldApproval.putGrant(grant)
+    await legacy.close()
     const first = await createTestHost({ dataDir, disableSessionTitle: true })
     try {
+      expect(first.host.approvalGrants.list(query)).toEqual([grant])
       const approval = (
         first.host.kernel as unknown as {
           o: { seams: { approval: { putGrant(value: ApprovalGrant): Promise<void> } } }
@@ -558,8 +569,50 @@ describe('Host approval grant store', () => {
       ).o.seams.approval
       await expect(approval.listGrants(query)).resolves.toEqual([grant])
       expect(second.host.approvalGrants.list(query)).toEqual([grant])
+      second.host.approvalGrants.revoke(query, grant.grantId, '2026-10-07T00:00:00Z')
     } finally {
       await second.host.close()
     }
+    const third = await createTestHost({ dataDir, disableSessionTitle: true })
+    try {
+      expect(third.host.approvalGrants.list(query)).toEqual([])
+    } finally {
+      await third.host.close()
+    }
   })
+})
+
+it('persists metadata grants and revocation with exact bindings and malformed-row refusal', async () => {
+  const { persistenceProvider } = await import(
+    new URL('../../../examples/persistence/src/index.ts', import.meta.url).href
+  )
+  const root = temp()
+  const first = await persistenceProvider.open({ dataDir: root })
+  const ns = first.metadata.namespace('@agnes/host/approval-grants', 'grants')
+  const control = createApprovalGrantControlPlane(ns)
+  const fitted = control.bind(fakeSeams().approval)
+  if (!fitted.putGrant) throw new Error('activation port missing')
+  await fitted.putGrant(grant)
+  await fitted.putGrant(grant)
+  expect(control.management.list(query)).toEqual([grant])
+  expect(control.management.list({ ...query, actorOrg: 'other' })).toEqual([])
+  expect(
+    control.management.revoke({ ...query, actorOrg: 'other' }, grant.grantId, '2026-10-07T00:00:00Z'),
+  ).toBeNull()
+  const notified: string[] = []
+  control.management.onRevoked((row) => notified.push(row.grantId))
+  control.management.revoke(query, grant.grantId, '2026-10-07T00:00:00Z')
+  control.management.revoke(query, grant.grantId, '2026-10-07T01:00:00Z')
+  expect(notified).toEqual([grant.grantId])
+  await first.close()
+  const second = await persistenceProvider.open({ dataDir: root })
+  try {
+    const durable = second.metadata.namespace('@agnes/host/approval-grants', 'grants')
+    expect(createApprovalGrantStore(durable).list(query)).toEqual([])
+    expect(durable.get(`grant:${grant.grantId}`)).toMatchObject({ revokedAt: '2026-10-07T00:00:00Z' })
+    durable.set('grant:corrupt', { ...grant, grantId: 'other' })
+    expect(() => createApprovalGrantStore(durable).list(query)).toThrow(/invalid metadata grant identity/)
+  } finally {
+    await second.close()
+  }
 })

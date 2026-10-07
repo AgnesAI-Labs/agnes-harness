@@ -51,6 +51,8 @@ export const settingsCatalog: LocaleCatalog = {
     lifecycle: 'Lifecycle scope',
     providerHelp:
       'Selections come from the profile, bundle or preset. Active means selected in that scope; running sessions keep their pinned generation.',
+    persistenceHelp:
+      'Persistence can use SQLite or a complete non-SQL provider. Select it in the profile and restart. Existing files stay with their provider; export and import sessions to move history.',
     generation: 'Code generations',
     bound: 'Bound sessions',
     currentGeneration: 'Current generation',
@@ -267,6 +269,8 @@ export const settingsCatalog: LocaleCatalog = {
     restart: '需要重启',
     scopes: '选择作用域',
     lifecycle: '生命周期作用域',
+    persistenceHelp:
+      '持久化支持 SQLite 或完整的非 SQL 提供器。在配置中选择后重启生效。原文件仍归原提供器；迁移历史请导出并导入会话。',
     providerHelp:
       '选择来自配置档、组合包或预设。已选择表示在对应作用域生效；现有会话继续使用固定的代码代际。',
     generation: '代码代际',

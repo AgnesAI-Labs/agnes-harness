@@ -1,4 +1,5 @@
 import type { HarnessSeam } from '@agnes/core'
+import { packageStorage } from '../../../src/package-metadata.js'
 import type { SeamFactory } from '../../../src/seam-init.js'
 import { KINDS, RefineQueue } from './queue.js'
 
@@ -10,7 +11,12 @@ import { KINDS, RefineQueue } from './queue.js'
  */
 export const refineHarness: SeamFactory<HarnessSeam> = async (ctx) => {
   const max = (ctx.profile.preset.harness as { queue_max?: number } | undefined)?.queue_max ?? 20
-  const q = new RefineQueue(ctx.adapters.storage.table('refine_queue'))
+  const q = new RefineQueue(
+    packageStorage(ctx.adapters.storage, 'refine_queue', {
+      select: 'SELECT * FROM refine_queue',
+      key: (r) => String(r.proposal_id),
+    }),
+  )
   return createRefineHarness(q, max)
 }
 

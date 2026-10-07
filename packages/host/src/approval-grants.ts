@@ -1,5 +1,6 @@
 import type { ApprovalGrantQuery, ApprovalSeam } from '@agnes/core'
 import type {
+  PersistenceMetadataNamespace,
   PersistenceSqliteTableHandle as TableHandle,
   PersistenceSqliteTableStore as TableStore,
 } from '@agnes/extension-api'
@@ -52,7 +53,7 @@ export interface ApprovalGrantStore {
 }
 
 export interface ApprovalGrantManagement extends ApprovalGrantStore {
-  /** In-process invalidation fan-out. Durable readers still re-check SQLite on every authorization. */
+  /** In-process invalidation fan-out. Durable readers still re-check durable storage on every authorization. */
   onRevoked(listener: (grant: ApprovalGrant) => void): () => void
 }
 
@@ -302,7 +303,7 @@ function initialize(table: TableHandle): void {
   })
 }
 
-function createApprovalGrantRuntimeStore(tables: TableStore): ApprovalGrantRuntimeStore {
+function createSqlApprovalGrantRuntimeStore(tables: TableStore): ApprovalGrantRuntimeStore {
   let opened: TableHandle | undefined
   const table = (): TableHandle => {
     if (!opened) {
@@ -397,14 +398,101 @@ function createApprovalGrantRuntimeStore(tables: TableStore): ApprovalGrantRunti
   }
 }
 
+type GrantStorage = TableStore | PersistenceMetadataNamespace
+
+function createApprovalGrantRuntimeStore(storage: GrantStorage): ApprovalGrantRuntimeStore {
+  if ('table' in storage) return createSqlApprovalGrantRuntimeStore(storage)
+  const ns = storage
+  const initialize = (): void => {
+    const version = ns.get('version')
+    if (version !== undefined && version !== STORE_VERSION)
+      throw new Error('E_APPROVAL_GRANT_SCHEMA_VERSION: incompatible metadata version')
+    for (const { key, value } of ns.entries()) {
+      if (key === 'version') continue
+      const grant = checked(value)
+      if (key !== `grant:${grant.grantId}`)
+        throw new Error('E_APPROVAL_GRANT_MIGRATION_REQUIRED: invalid metadata grant identity')
+    }
+    if (version === undefined) ns.set('version', STORE_VERSION)
+  }
+  const transaction = <T>(fn: () => T): T =>
+    ns.transaction(() => {
+      initialize()
+      return fn()
+    })
+  const read = (id: string): ApprovalGrant | undefined => {
+    const value = ns.get(`grant:${id}`)
+    return value === undefined ? undefined : checked(value)
+  }
+  const revoke = (id: string, at: string, query?: ApprovalGrantBinding) =>
+    transaction(() => {
+      const grant = read(id)
+      if (!grant || (query && !matches(grant, query))) return { grant: null, changed: false }
+      if (grant.revokedAt !== undefined) return { grant, changed: false }
+      const revoked = { ...grant, revokedAt: at }
+      ns.set(`grant:${id}`, revoked)
+      return { grant: revoked, changed: true }
+    })
+  return {
+    list(input) {
+      const query = binding(input)
+      return transaction(() =>
+        ns
+          .entries()
+          .filter(({ key }) => key.startsWith('grant:'))
+          .map(({ value }) => checked(value))
+          .filter((grant) => grant.revokedAt === undefined && matches(grant, query))
+          .sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.grantId.localeCompare(b.grantId)),
+      )
+    },
+    put(input) {
+      const grant = checked(input)
+      if (grant.revokedAt !== undefined)
+        throw new TypeError('cannot insert an already revoked approval grant')
+      transaction(() => {
+        const prior = read(grant.grantId)
+        if (prior && !sameGrant(prior, grant)) throw new Error('approval grant id collision')
+        if (!prior) ns.set(`grant:${grant.grantId}`, grant)
+      })
+    },
+    revokeBound(input, grantId, revokedAt) {
+      return revoke(text(grantId, 'grantId', 128), instant(revokedAt, 'revokedAt'), binding(input))
+    },
+    revoke(input, grantId, revokedAt) {
+      return revoke(text(grantId, 'grantId', 128), instant(revokedAt, 'revokedAt'), binding(input)).grant
+    },
+    revokeByIdWithState(grantId, revokedAt) {
+      return revoke(text(grantId, 'grantId', 128), instant(revokedAt, 'revokedAt'))
+    },
+    revokeById(grantId, revokedAt) {
+      return revoke(text(grantId, 'grantId', 128), instant(revokedAt, 'revokedAt')).grant
+    },
+  }
+}
+
+/** Copy only after the legacy schema and every grant row pass the existing fail-closed gate. */
+export function migrateApprovalGrants(tables: TableStore, ns: PersistenceMetadataNamespace): void {
+  if (ns.get('version') !== undefined) return
+  const table = tables.table('approval_grants')
+  initialize(table)
+  ns.transaction(() => {
+    if (ns.get('version') !== undefined) return
+    for (const row of table.all<GrantRow>('SELECT * FROM approval_grants')) {
+      const grant = fromRow(row)
+      ns.set(`grant:${grant.grantId}`, grant)
+    }
+    ns.set('version', STORE_VERSION)
+  })
+}
+
 /** Opens only the fully-bound management surface; activation and id-only revoke stay in Host/Core. */
-export function createApprovalGrantStore(tables: TableStore): ApprovalGrantStore {
+export function createApprovalGrantStore(tables: GrantStorage): ApprovalGrantStore {
   const backend = createApprovalGrantRuntimeStore(tables)
   return Object.freeze({ list: backend.list, revoke: backend.revoke })
 }
 
 export function createApprovalGrantControlPlane(
-  tables: TableStore,
+  tables: GrantStorage,
   bindTicket?: (grantId: string) => void,
 ): ApprovalGrantControlPlane {
   const store = createApprovalGrantRuntimeStore(tables)
@@ -452,7 +540,7 @@ export function createApprovalGrantControlPlane(
               ruleVersion: 'missing',
               reasons: ['guardian unavailable'],
             }),
-      // Permanent grants are not cached today: every authorization reads SQLite. This listener
+      // Permanent grants are not cached today: every authorization reads durable storage. This listener
       // remains the explicit active-session/cache invalidation port so a future cache cannot make
       // revocation eventually consistent by accident.
       listGrants: async (query) => store.list(query),
@@ -480,6 +568,6 @@ export function createApprovalGrantControlPlane(
 }
 
 /** Compatibility helper for callers that need only the fitted Core seam. */
-export function bindApprovalGrantStore(seam: ApprovalSeam, tables: TableStore): ApprovalSeam {
+export function bindApprovalGrantStore(seam: ApprovalSeam, tables: GrantStorage): ApprovalSeam {
   return createApprovalGrantControlPlane(tables).bind(seam)
 }

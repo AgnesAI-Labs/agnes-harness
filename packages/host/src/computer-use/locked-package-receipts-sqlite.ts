@@ -544,3 +544,103 @@ export function createSqliteLockedPackageOperationReceiptPort(
     },
   })
 }
+
+/** Provider-independent receipt port with the same validation and fencing as the SQL port. */
+export function createMetadataLockedPackageOperationReceiptPort(
+  metadata: import('@agnes/extension-api').PersistenceMetadataPort,
+): HostLockedPackageOperationReceiptPort {
+  const ns = metadata.namespace(OWNER, 'receipts')
+  const attestMetadata = (): void => {
+    const version = ns.get('version')
+    if (version !== undefined && version !== STORE_VERSION) fail('SCHEMA')
+    const fences = new Set<string>()
+    for (const { key, value } of ns.entries()) {
+      if (key === 'version') continue
+      const receipt = parseRow(value as ReceiptRow)
+      if (!receipt || key !== `receipt:${receipt.operationId}` || fences.has(receipt.fencing)) fail('CORRUPT')
+      fences.add(receipt.fencing)
+    }
+    if (version === undefined) ns.set('version', STORE_VERSION)
+  }
+  const read = (id: string): HostLockedPackageOperationReceipt | null => {
+    const row = ns.get(`receipt:${id}`)
+    return row === undefined ? null : parseRow(row as ReceiptRow)
+  }
+  sanitized('INITIALIZE', () => ns.transaction(attestMetadata))
+  return Object.freeze({
+    async read(rawId) {
+      const id = token(rawId)
+      return sanitized('READ', () =>
+        ns.transaction(() => {
+          attestMetadata()
+          return read(id)
+        }),
+      )
+    },
+    async prepare(raw) {
+      const receipt = proposal(raw)
+      return sanitized('PREPARE', () =>
+        ns.transaction(() => {
+          attestMetadata()
+          const prior = read(receipt.operationId)
+          if (prior) {
+            if (prior.phase !== 'prepared' || !sameProposal(prior, receipt)) fail('CONFLICT')
+            return prior
+          }
+          if (ns.entries().length - 1 >= MAX_RECEIPTS) fail('LIMIT')
+          const row: ReceiptRow = {
+            operation_id: receipt.operationId,
+            kind: receipt.kind,
+            phase: 'prepared',
+            fencing: randomUUID(),
+            store_binding_sha256: receipt.storeBindingSha256,
+            request_sha256: receipt.requestSha256,
+            before_state_sha256: receipt.beforeStateSha256,
+            after_state_sha256: receipt.afterStateSha256,
+            result_json: JSON.stringify(receipt.result),
+          }
+          const prepared = parseRow(row)
+          if (!prepared) fail('WRITE')
+          ns.set(`receipt:${receipt.operationId}`, row)
+          return prepared
+        }),
+      )
+    },
+    async commit(raw) {
+      const input = operation(raw)
+      return sanitized('COMMIT', () =>
+        ns.transaction(() => {
+          attestMetadata()
+          const prior = read(input.operationId)
+          if (!prior || prior.fencing !== input.fencing) fail('FENCE')
+          if (prior.phase === 'committed') return prior
+          const row = ns.get(`receipt:${input.operationId}`) as ReceiptRow
+          ns.set(`receipt:${input.operationId}`, { ...row, phase: 'committed' })
+          const committed = read(input.operationId)
+          if (!committed || !sameReceipt(prior, committed, 'committed')) fail('WRITE')
+          return committed
+        }),
+      )
+    },
+  })
+}
+
+/** Validate the legacy store before copying receipts; a failed copy never marks migration complete. */
+export function migrateLockedPackageReceipts(
+  storage: Pick<HostPersistence, 'tables'>,
+  metadata: import('@agnes/extension-api').PersistenceMetadataPort,
+): void {
+  const ns = metadata.namespace(OWNER, 'receipts')
+  if (ns.get('version') !== undefined) return
+  const table = sanitized('OPEN', () => captureSql(storage))
+  sanitized('INITIALIZE', () => initialize(table))
+  ns.transaction(() => {
+    if (ns.get('version') !== undefined) return
+    for (const row of table.all<ReceiptRow>('SELECT * FROM locked_package_receipts')) {
+      const receipt = parseRow(row)
+      if (!receipt) fail('CORRUPT')
+      ns.set(`receipt:${receipt.operationId}`, row)
+    }
+    ns.set('version', STORE_VERSION)
+  })
+}

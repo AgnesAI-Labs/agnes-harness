@@ -3,7 +3,7 @@ import { mkdirSync } from 'node:fs'
 import { isAbsolute, join, posix, resolve } from 'node:path'
 import type { ApprovalAnswer, ApprovalRequest, FsPolicy, FsRule, Verdict } from '@agnes/core'
 import { validateFsPolicy } from '@agnes/core'
-import type { PersistenceProvider } from '@agnes/extension-api'
+import type { PersistenceMetadataNamespace, PersistenceProvider } from '@agnes/extension-api'
 import { WORKSPACE_SECRET_DIRS } from '@agnes/protocol'
 import { RemoteWorkspacePool } from '@agnes/sandbox-remote'
 import type { PackageModule } from '../assemble/packages.js'
@@ -89,7 +89,10 @@ export type SeamAdapters = {
   dataFs: HostFs
   exec: ExecAdapter['run']
   platform: PlatformBackend
-  storage: TableStore
+  storage: TableStore & {
+    namespace(name: string): PersistenceMetadataNamespace
+    readonly sql?: TableStore
+  }
   prompter?: Prompter
 }
 
@@ -524,7 +527,11 @@ export function toSeamAdapters(b: AdapterBundle, opts: { owner: string; prompter
     // own and, for the sandbox factory's init window alone, the revocable probe.
     exec: b.policyExec,
     platform: b.platform,
-    storage: lazyPackageTables(b.storage, opts.owner),
+    storage: {
+      ...lazyPackageTables(b.storage, opts.owner),
+      namespace: (name) => b.storage.metadata.namespace(opts.owner, name),
+      ...(b.storage.sqlite ? { sql: lazyPackageTables(b.storage, opts.owner) } : {}),
+    },
     ...(opts.prompter ? { prompter: opts.prompter } : {}),
   }
 }

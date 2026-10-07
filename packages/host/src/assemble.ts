@@ -56,7 +56,11 @@ import {
 import { composeSecrets, createSecretsEnv, createSecretsFile } from './adapters/secrets.js'
 import type { SessionWorkspaceFence } from './adapters/session-workspace.js'
 import { persistenceProviderRegistry } from './adapters/storage-provider.js'
-import { type ApprovalGrantManagement, createApprovalGrantControlPlane } from './approval-grants.js'
+import {
+  type ApprovalGrantManagement,
+  createApprovalGrantControlPlane,
+  migrateApprovalGrants,
+} from './approval-grants.js'
 import { childAgentCatalog, installChildAgents, withBuiltinChildAgents } from './assemble/child-agents.js'
 import { assembleCompaction } from './assemble/compaction.js'
 import {
@@ -1258,7 +1262,12 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
     const packageSeams = mutablePackageSeams.seams
     replacePublishedSeamRoot = mutablePackageSeams.replaceRoot
     const approvalGrantControl = createApprovalGrantControlPlane(
-      lazyPackageTables(adapters.storage, '@agnes/host/approval-grants'),
+      (() => {
+        const ns = adapters.storage.metadata.namespace('@agnes/host/approval-grants', 'grants')
+        if (adapters.storage.sqlite)
+          migrateApprovalGrants(lazyPackageTables(adapters.storage, '@agnes/host/approval-grants'), ns)
+        return ns
+      })(),
       (grantId) => {
         bindApprovalTicket(hotPolicy, grantId)
       },

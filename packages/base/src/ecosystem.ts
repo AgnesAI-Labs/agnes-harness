@@ -35,6 +35,7 @@ import toolsSearchExtension from '../extensions/tools-search/src/index.js'
 import { createToolsWebExtension } from '../extensions/tools-web/src/index.js'
 import { createOfficialSearchProvider } from '../extensions/tools-web/src/search/index.js'
 import workflowExtension from '../extensions/workflow/src/index.js'
+import { packageStorage } from './package-metadata.js'
 import type { SeamInitContext } from './seam-init.js'
 
 /** Replaced with the reviewed generated asset by the CLI SEA build. */
@@ -105,7 +106,12 @@ export function createEcosystemExtensions(init: SeamInitContext): {
         ...(deps.http === undefined ? {} : { http: deps.http }),
       }),
     refine: () => {
-      const queue = new RefineQueue(init.adapters.storage.table('refine_queue'))
+      const queue = new RefineQueue(
+        packageStorage(init.adapters.storage, 'refine_queue', {
+          select: 'SELECT * FROM refine_queue',
+          key: (r) => String(r.proposal_id),
+        }),
+      )
       const rawMax = (init.profile.preset.harness as { queue_max?: unknown } | undefined)?.queue_max ?? 20
       if (!Number.isSafeInteger(rawMax) || (rawMax as number) < 0)
         throw new Error('harness.queue_max must be a non-negative safe integer')

@@ -19,6 +19,7 @@ import {
   type PersistenceSessionStore,
 } from '@agnes/extension-api'
 import { ProviderLifetime } from '../assemble/provider-lifetime.js'
+import { retainProcessStore } from './storage-live.js'
 import { sqlitePersistenceProvider } from './storage-sqlite-provider.js'
 
 export { sqlitePersistenceProvider } from './storage-sqlite-provider.js'
@@ -29,17 +30,16 @@ import type { CrashReclaimStore, TableStore } from './storage-sqlite.js'
 
 export interface HostPersistence extends StorageAdapter, ChildControlStore {
   readonly capabilities: import('@agnes/extension-api').PersistenceCapabilities
-  readonly sqlite: import('@agnes/extension-api').PersistenceSqlitePort
+  readonly sqlite?: import('@agnes/extension-api').PersistenceSqlitePort
   readonly metadata: import('@agnes/extension-api').PersistenceMetadataPort
   readonly crashReclaim: CrashReclaimStore
   tables(owner: string): TableStore
 }
 
-/** The current Host's SQL-backed seams and durable recovery/children require these ports. */
+/** Full Host requirements; SQL is an independent, optional extension capability. */
 export const HOST_PERSISTENCE_REQUIREMENTS: readonly PersistenceCapability[] = [
   'ledger',
   'metadata',
-  'sqlite',
   'child-control',
   'reclaim',
   'integrity',
@@ -79,7 +79,6 @@ function requireCapabilities(
   store: PersistenceSessionStore,
 ): asserts store is PersistenceSessionStore & {
   metadata: NonNullable<PersistenceSessionStore['metadata']>
-  sqlite: NonNullable<PersistenceSessionStore['sqlite']>
   childControl: ChildControlStore
   reclaim: CrashReclaimStore
   scanIntegrity: NonNullable<PersistenceSessionStore['scanIntegrity']>
@@ -143,6 +142,11 @@ function requireCapabilities(
     }
     return true
   })
+  if (
+    provider.capabilities.sqlite &&
+    (store.sqlite?.dialect !== 'sqlite' || typeof store.sqlite.tables !== 'function')
+  )
+    missing.push('sqlite')
   if (missing.length)
     throw new HostError(
       'E_SEAM_INIT',
@@ -209,10 +213,14 @@ function bridge(
   const discardNewSession = store.discardNewSession?.bind(store)
   const ledger = {
     capabilities: provider.capabilities,
-    sqlite: store.sqlite,
+    ...(store.sqlite ? { sqlite: store.sqlite } : {}),
     metadata: store.metadata,
     crashReclaim: store.reclaim,
-    tables: (owner: string) => store.sqlite.tables(owner),
+    tables: (owner: string) => {
+      if (!store.sqlite)
+        throw new HostError('E_SEAM_INIT', `persistence provider ${provider.id} does not support SQL tables`)
+      return store.sqlite.tables(owner)
+    },
     open: (key: string, claim: { writerRunId: string; ttlMs: number }) => call(() => store.open(key, claim)),
     commit: (key: string, tx: Parameters<StorageAdapter['commit']>[1]) => call(() => store.commit(key, tx)),
     renew: (key: string, runId: string, claim?: PersistenceLeaseClaim) =>
@@ -352,14 +360,15 @@ export async function openConfiguredPersistence(args: {
     })
   const registry = createPersistenceProviderRegistry(args.modules, args.providers)
   const provider = registry.select('process', providerId)
-  const store = await provider.open({ dataDir: args.dataDir })
-  let storage: HostPersistence
-  try {
-    storage = bridge(store, provider)
-  } catch (error) {
-    await store.close().catch(() => {})
-    throw error
-  }
+  const storage = await retainProcessStore(args.dataDir, provider, async () => {
+    const store = await provider.open({ dataDir: args.dataDir })
+    try {
+      return bridge(store, provider)
+    } catch (error) {
+      await store.close().catch(() => {})
+      throw error
+    }
+  })
   catalogs.set(storage, registry)
   return storage
 }

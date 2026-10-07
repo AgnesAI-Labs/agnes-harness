@@ -17,6 +17,7 @@ Choose the smallest starter that owns your behavior. All five [templates](../../
 | Loop | [loop](../../templates/loop/) | Independent one-turn driver, checkpoint codec and `loops` registration |
 | Compaction engine | [sliding-window](../../examples/compaction/sliding-window/) | Context replacement through `compactionEngines`; see [Compaction engines](compaction-engines.md) |
 | Child agent | [ACP child](../../examples/child-agents/acp/) | Continuable children through `childAgents`; see [Child agent providers](child-agents.md) |
+| Persistence | [JSONL](../../examples/persistence/) | Full Host persistence without SQL; see [Persistence providers](persistence.md) |
 
 Tools add operations to an existing loop. Loops own scheduling and state through [LoopContext](../../packages/extension-api/src/loop.ts) ports. Adapters translate wire protocols into the [model-adapter contract](../../packages/extension-api/src/model-adapter.ts). Panels have a separate browser lifecycle and declare slots through client descriptors.
 

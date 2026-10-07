@@ -150,6 +150,8 @@ export type TestHostOptions = {
   platformCaps?: Record<string, CapabilityLevel['level']>
   platform?: PlatformBackend
   seams?: Parameters<typeof fakeSeams>[0]
+  /** Real factories for seams whose adapter integration the fixture exercises. */
+  seamFactories?: Partial<NonNullable<PackageModule['seams']>>
   /**
    * The model this host runs on. A function is handed the resolved profile and the pair host
    * resolved for the model layer - its logger and the deployment's credit rate - which is the only
@@ -290,7 +292,7 @@ export async function createTestHost(o: TestHostOptions): Promise<TestHost> {
       degraded: false,
       confine: ({ argv }) => argv,
     }),
-    seams: Object.fromEntries(SEAM_KEYS.map((n) => [n, async () => seamsImpl[n]])),
+    seams: { ...Object.fromEntries(SEAM_KEYS.map((n) => [n, async () => seamsImpl[n]])), ...o.seamFactories },
     operations: BASE_OPERATIONS,
     presets: {
       base:

@@ -1,10 +1,11 @@
 import {
+  MetadataToolIndex,
   SqliteToolIndex,
   type ToolIndex,
   type ToolIndexHit,
   type ToolIndexRow,
 } from '../../../src/mcp/index-table.js'
-import type { TableHandle } from '../../../src/seam-init.js'
+import type { SeamAdaptersView } from '../../../src/seam-init.js'
 
 /**
  * Host-private handle over the shared cross-server tool index (stage 2b, D110′). Created once at
@@ -113,7 +114,7 @@ export function createMcpCatalogHub(index: ToolIndex): McpCatalogHub {
 /** Just what `mcpCatalogHubFor` reads from a `SeamInitContext`. */
 export type McpCatalogHubContext = Readonly<{
   signal: AbortSignal
-  adapters: Readonly<{ storage: Readonly<{ table(name: string): TableHandle }> }>
+  adapters: Readonly<{ storage: SeamAdaptersView['storage'] }>
 }>
 
 /** One hub per Host, keyed by that Host's abort signal. */
@@ -137,13 +138,17 @@ const hubsByHost = new WeakMap<AbortSignal, McpCatalogHub>()
  * - `ctx.adapters.storage` is owner-scoped, and the first call binds the hub to its caller's scope.
  *   Every consumer must therefore be owned by `@agnes/base` (mcp-search is; step 3's MCP rows must
  *   use `spec.package: '@agnes/base'`), or the hub would land in whichever package asked first.
- * - The backing table is the `tool_index` table agnes/mcp-client used to write, so no data migration
- *   is needed. The first call clears it, and nothing else writes that table any more.
+ * - The metadata namespace (or a legacy SQL table) is `tool_index`; catalog data is rebuilt.
+ *   The first call clears it, and nothing else writes that table any more.
  */
 export function mcpCatalogHubFor(ctx: McpCatalogHubContext): McpCatalogHub {
   const existing = hubsByHost.get(ctx.signal)
   if (existing) return existing
-  const hub = createMcpCatalogHub(new SqliteToolIndex(ctx.adapters.storage.table('tool_index')))
+  const hub = createMcpCatalogHub(
+    ctx.adapters.storage.namespace
+      ? new MetadataToolIndex(ctx.adapters.storage.namespace('tool_index'))
+      : new SqliteToolIndex(ctx.adapters.storage.table('tool_index')),
+  )
   // The index table outlives the process; a killed Host's rows are stale. Cleared once per Host.
   hub.clear()
   hubsByHost.set(ctx.signal, hub)

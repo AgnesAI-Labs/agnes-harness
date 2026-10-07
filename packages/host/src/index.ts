@@ -209,6 +209,7 @@ export {
   type HostLockedPackageSignatureVerifier,
 } from './computer-use/locked-package-mutation-runtime.js'
 export {
+  createMetadataLockedPackageOperationReceiptPort,
   createSqliteLockedPackageOperationReceiptPort,
   type HostLockedPackageActivationRecord,
   type HostLockedPackageMutationKind,

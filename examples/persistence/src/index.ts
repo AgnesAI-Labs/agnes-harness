@@ -7,7 +7,7 @@ export { openJsonlStore } from './jsonl.js'
 export const persistenceProvider: PersistenceProvider = definePersistenceProvider({
   id: 'jsonl',
   version: '1.0.0',
-  capabilities: { ledger: true, integrity: true },
+  capabilities: { ledger: true, metadata: true, childControl: true, reclaim: true, integrity: true },
   state: { effect: PERSISTENCE_EFFECT },
   open: openJsonlStore,
 })

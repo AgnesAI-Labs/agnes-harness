@@ -30,6 +30,7 @@ export function ProvidersPanel({
       {kinds.map((kind) => (
         <section key={kind} aria-label={kind} data-testid={`providers-${kind}`} className="runtime-card">
           <h3>{kind}</h3>
+          {kind === 'persistence' && <p data-testid="persistence-provider-help">{t('persistenceHelp')}</p>}
           {!snapshot.providers.some((entry) => entry.kind === kind) && <p>{t('empty')}</p>}
           {snapshot.providers
             .filter((entry) => entry.kind === kind)

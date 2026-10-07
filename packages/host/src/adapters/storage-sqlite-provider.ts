@@ -55,15 +55,38 @@ function sqliteMetadata(
 ): import('@agnes/extension-api').PersistenceMetadataPort {
   return {
     namespace(owner, name) {
-      const table = tables(owner).table('persistence_kv')
+      const table = tables(`metadata:${owner}`).table('persistence_kv')
+      const namespaceKey = JSON.stringify(name)
       table.exec(
         'CREATE TABLE IF NOT EXISTS persistence_kv (namespace TEXT NOT NULL, key TEXT NOT NULL, value TEXT NOT NULL, PRIMARY KEY (namespace, key))',
       )
+      table.exec('CREATE TABLE IF NOT EXISTS persistence_kv_migrations (namespace TEXT PRIMARY KEY)')
+      table.transaction(() => {
+        if (table.get('SELECT namespace FROM persistence_kv_migrations WHERE namespace = ?', [namespaceKey]))
+          return
+        // Older versions kept KV beside the owner's SQL tables. Copy once, including deletions.
+        const legacy = tables(owner).table('persistence_kv')
+        if (
+          !name.includes('\u0000') &&
+          legacy.get("SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?", ['persistence_kv'])
+        ) {
+          for (const row of legacy.all<{ key: string; value: string }>(
+            'SELECT key, value FROM persistence_kv WHERE namespace = ?',
+            [name],
+          ))
+            table.run('INSERT OR IGNORE INTO persistence_kv (namespace, key, value) VALUES (?, ?, ?)', [
+              namespaceKey,
+              JSON.stringify(row.key),
+              row.value,
+            ])
+        }
+        table.run('INSERT INTO persistence_kv_migrations (namespace) VALUES (?)', [namespaceKey])
+      })
       return {
         get(key) {
           const row = table.get<{ value: string }>(
             'SELECT value FROM persistence_kv WHERE namespace = ? AND key = ?',
-            [name, key],
+            [namespaceKey, JSON.stringify(key)],
           )
           return row ? JSON.parse(row.value) : undefined
         },
@@ -72,19 +95,22 @@ function sqliteMetadata(
           if (json === undefined) throw new TypeError('metadata value must be JSON serializable')
           table.run(
             'INSERT INTO persistence_kv (namespace, key, value) VALUES (?, ?, ?) ON CONFLICT(namespace, key) DO UPDATE SET value = excluded.value',
-            [name, key, json],
+            [namespaceKey, JSON.stringify(key), json],
           )
         },
         delete(key) {
-          table.run('DELETE FROM persistence_kv WHERE namespace = ? AND key = ?', [name, key])
+          table.run('DELETE FROM persistence_kv WHERE namespace = ? AND key = ?', [
+            namespaceKey,
+            JSON.stringify(key),
+          ])
         },
         entries() {
           return table
             .all<{ key: string; value: string }>(
               'SELECT key, value FROM persistence_kv WHERE namespace = ? ORDER BY key',
-              [name],
+              [namespaceKey],
             )
-            .map((row) => ({ key: row.key, value: JSON.parse(row.value) }))
+            .map((row) => ({ key: JSON.parse(row.key) as string, value: JSON.parse(row.value) }))
         },
         transaction(fn) {
           return table.transaction(() => {

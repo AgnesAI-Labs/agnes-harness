@@ -10,6 +10,7 @@ import { refineOperation } from '../extensions/refine/src/operation.js'
 import { RefineQueue } from '../extensions/refine/src/queue.js'
 import { refineHarness } from '../extensions/refine/src/seam.js'
 import { sandboxSeam } from '../extensions/sandbox/src/seam.js'
+import { packageStorage } from './package-metadata.js'
 import type { SeamInitContext } from './seam-init.js'
 
 /** Replaced with the reviewed package asset by the CLI SEA build. */
@@ -260,7 +261,12 @@ export const seams = {
 export const operations = {
   refine: (deps: Pick<SeamInitContext, 'adapters' | 'profile'>) =>
     refineOperation({
-      queue: new RefineQueue(deps.adapters.storage.table('refine_queue')),
+      queue: new RefineQueue(
+        packageStorage(deps.adapters.storage, 'refine_queue', {
+          select: 'SELECT * FROM refine_queue',
+          key: (r) => String(r.proposal_id),
+        }),
+      ),
       preset: deps.profile.preset,
     }),
 } as const

@@ -4,7 +4,7 @@ import type { ChildControlStore } from './child-control.js'
 /**
  * Session persistence provider.
  *
- * The methods are the ones Core's log storage and the host package-table store already share:
+ * The ledger methods are the ones Core consumes:
  * append (`commit`), paged `scan`, and the single-writer lease (`open` / `renew` / `release`). Field names match those internal contracts. A provider does not migrate another
  * provider's files. Selecting a different id applies on the next process start.
  */
@@ -132,6 +132,7 @@ export interface PersistenceSqlitePort {
   tables(owner: string): PersistenceSqliteTableStore
 }
 
+/** Owner-scoped JSON values. Returned values are detached from durable state. */
 export interface PersistenceMetadataNamespace {
   get(key: string): unknown | undefined
   set(key: string, value: unknown): void
@@ -145,7 +146,7 @@ export interface PersistenceMetadataPort {
   namespace(owner: string, name: string): PersistenceMetadataNamespace
 }
 
-/** Compare-and-claim expired writer leases and inspect the open operation atomically. */
+/** Compare expired leases atomically. Keep the lease for an open op; clear it otherwise. */
 export interface PersistenceReclaimPort {
   listExpired(now: number): { sessionKey: string; runId: string; until: number; generation: number }[]
   claimForReclaim(

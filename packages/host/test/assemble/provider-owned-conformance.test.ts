@@ -1,6 +1,7 @@
-import { mkdirSync, mkdtempSync, rmSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { seams as defaultSeams } from '@agnes/base'
 import type { Context } from '@agnes/cordis'
 import {
   type ChildAgentResult,
@@ -9,6 +10,7 @@ import {
   type LoopDriver,
   type LoopFactory,
   loopCheckpointCodec,
+  type PersistenceProvider,
   type PersistenceSessionStore,
 } from '@agnes/extension-api'
 import {
@@ -336,111 +338,123 @@ it('verifies loop cancellation, unload drain and checkpoint cold resume through 
   }
 })
 
-it('verifies persistence admission, non-cancellable read drain and cold resume through real Hosts', async () => {
-  const dataDir = mkdtempSync(join(tmpdir(), 'agnes-persistence-conformance-'))
-  const { host, context } = await fixture(dataDir)
-  const storageDir = join(dataDir, 'probe-store')
-  const resumeDir = join(dataDir, 'resume-host')
-  mkdirSync(storageDir)
-  mkdirSync(resumeDir)
-  let ready = deferred()
-  const release = deferred()
-  let storeClosed = false
-  let readFinished = false
-  const provider: KindMap['persistence'] = {
-    ...sqlitePersistenceProvider,
-    id: 'conformance-store',
-    async open(options) {
-      const store = await sqlitePersistenceProvider.open(options)
-      if (options.dataDir !== storageDir) return store
-      return {
-        ...store,
-        async scan(key, query) {
-          ready.resolve()
-          await release.promise
-          const result = await store.scan(key, query)
-          readFinished = true
-          return result
-        },
-        async close() {
-          expect(readFinished).toBe(true)
-          await store.close()
-          storeClosed = true
-        },
-      } as PersistenceSessionStore
-    },
-  }
-  try {
-    expect(
-      await persistenceConformance({
-        providers: context.providers,
-        sourcePackage: '@agnes/code',
-        provider,
-        async open(selected) {
-          const store = await selected.open({ dataDir: storageDir })
-          await store.open('probe', { writerRunId: 'probe', ttlMs: 60_000 })
-          return {
-            cancellation: 'unsupported',
-            start() {
-              ready = deferred()
-              return { ready: ready.promise, result: store.scan('probe', { limit: 1 }) }
-            },
-            async unloadStarted() {
-              // A read without a signal must finish before the store can close.
-              await Promise.resolve()
-              expect(storeClosed).toBe(false)
-              release.resolve()
-            },
-            async coldResume() {
-              const boot = () =>
-                createTestHost({
-                  dataDir: resumeDir,
-                  disableSessionTitle: true,
-                  script: [
-                    [
-                      { type: 'text_delta', delta: 'durable reply' },
-                      { type: 'done', reason: 'stop' },
+const jsonlModule = await import(
+  new URL('../../../../examples/persistence/src/index.ts', import.meta.url).href
+)
+const jsonlProvider: PersistenceProvider = jsonlModule.persistenceProvider
+
+it.each([sqlitePersistenceProvider, jsonlProvider])(
+  'verifies $id persistence admission, read drain and cold resume through real Hosts',
+  async (backend) => {
+    const dataDir = mkdtempSync(join(tmpdir(), 'agnes-persistence-conformance-'))
+    const { host, context } = await fixture(dataDir)
+    const storageDir = join(dataDir, 'probe-store')
+    const resumeDir = join(dataDir, 'resume-host')
+    mkdirSync(storageDir)
+    mkdirSync(resumeDir)
+    let ready = deferred()
+    const release = deferred()
+    let storeClosed = false
+    let readFinished = false
+    const provider: KindMap['persistence'] = {
+      ...backend,
+      id: 'conformance-store',
+      async open(options) {
+        const store = await backend.open(options)
+        if (options.dataDir !== storageDir) return store
+        return {
+          ...store,
+          async scan(key, query) {
+            ready.resolve()
+            await release.promise
+            const result = await store.scan(key, query)
+            readFinished = true
+            return result
+          },
+          async close() {
+            expect(readFinished).toBe(true)
+            await store.close()
+            storeClosed = true
+          },
+        } as PersistenceSessionStore
+      },
+    }
+    try {
+      expect(
+        await persistenceConformance({
+          providers: context.providers,
+          sourcePackage: '@agnes/code',
+          provider,
+          async open(selected) {
+            const store = await selected.open({ dataDir: storageDir })
+            await store.open('probe', { writerRunId: 'probe', ttlMs: 60_000 })
+            return {
+              cancellation: 'unsupported',
+              start() {
+                ready = deferred()
+                return { ready: ready.promise, result: store.scan('probe', { limit: 1 }) }
+              },
+              async unloadStarted() {
+                // A read without a signal must finish before the store can close.
+                await Promise.resolve()
+                expect(storeClosed).toBe(false)
+                release.resolve()
+              },
+              async coldResume() {
+                const boot = () =>
+                  createTestHost({
+                    dataDir: resumeDir,
+                    seamFactories: { ledger: defaultSeams.ledger, harness: defaultSeams.harness },
+                    disableSessionTitle: true,
+                    script: [
+                      [
+                        { type: 'text_delta', delta: 'durable reply' },
+                        { type: 'done', reason: 'stop' },
+                      ],
                     ],
-                  ],
-                  profileInputs: { user: { name: 'local-dev', persistence: { provider: provider.id } } },
-                  packages: { '@agnes/code': { persistenceProvider: selected } },
-                })
-              const first = await boot()
-              try {
-                const session = await first.host.createSession({ key: 'durable', cwd: resumeDir })
-                await session.enqueue('next-turn', {
-                  content: [{ type: 'text', text: 'durable input' }],
-                  actor: session.d.actor,
-                })
-                expect(
-                  await session.run({ until: 'turn-end', signal: new AbortController().signal }),
-                ).toMatchObject({ reason: 'completed' })
-              } finally {
-                await first.host.close()
-              }
-              const second = await boot()
-              try {
-                const session = await second.host.createSession({ key: 'durable', cwd: resumeDir })
-                expect((await session.scan({ type: 'assistant/message', limit: 1 }))[0]?.data).toMatchObject({
-                  content: [{ type: 'text', text: 'durable reply' }],
-                })
-                expect(second.host.providers.catalog()).toContainEqual(
-                  expect.objectContaining({ kind: 'persistence', id: provider.id, active: true }),
-                )
-              } finally {
-                await second.host.close()
-              }
-            },
-            close: () => store.close(),
-          }
-        },
-      }),
-    ).toEqual(['admission', 'catalog', 'cancel-unsupported', 'cold-resume', 'unload'])
-    expect(readFinished).toBe(true)
-    expect(storeClosed).toBe(true)
-  } finally {
-    release.resolve()
-    await host.close()
-    rmSync(dataDir, { recursive: true, force: true })
-  }
-})
+                    profileInputs: { user: { name: 'local-dev', persistence: { provider: provider.id } } },
+                    packages: { '@agnes/code': { persistenceProvider: selected } },
+                  })
+                const first = await boot()
+                try {
+                  const session = await first.host.createSession({ key: 'durable', cwd: resumeDir })
+                  await session.enqueue('next-turn', {
+                    content: [{ type: 'text', text: 'durable input' }],
+                    actor: session.d.actor,
+                  })
+                  expect(
+                    await session.run({ until: 'turn-end', signal: new AbortController().signal }),
+                  ).toMatchObject({ reason: 'completed' })
+                } finally {
+                  await first.host.close()
+                }
+                const second = await boot()
+                try {
+                  const session = await second.host.createSession({ key: 'durable', cwd: resumeDir })
+                  expect(
+                    (await session.scan({ type: 'assistant/message', limit: 1 }))[0]?.data,
+                  ).toMatchObject({
+                    content: [{ type: 'text', text: 'durable reply' }],
+                  })
+                  if (backend.id === 'jsonl') expect(existsSync(join(resumeDir, 'sessions.db'))).toBe(false)
+                  expect(second.host.providers.catalog()).toContainEqual(
+                    expect.objectContaining({ kind: 'persistence', id: provider.id, active: true }),
+                  )
+                } finally {
+                  await second.host.close()
+                }
+              },
+              close: () => store.close(),
+            }
+          },
+        }),
+      ).toEqual(['admission', 'catalog', 'cancel-unsupported', 'cold-resume', 'unload'])
+      expect(readFinished).toBe(true)
+      expect(storeClosed).toBe(true)
+    } finally {
+      release.resolve()
+      await host.close()
+      rmSync(dataDir, { recursive: true, force: true })
+    }
+  },
+)
