@@ -7,7 +7,8 @@ export function publicPluginFailureReason(reason: string): string {
   if (/missing[-_ ]?inject|inject.*(?:missing|unavailable)|missing.*(?:service|dependency)/i.test(reason))
     return 'A required plugin service is missing.'
   if (/schema|invalid.*config|config.*invalid/i.test(reason)) return 'Plugin configuration schema is invalid.'
-  if (/capability.*block|blocked.*capability/i.test(reason)) return 'Plugin capability policy blocked activation.'
+  if (/capability.*block|blocked.*capability/i.test(reason))
+    return 'Plugin capability policy blocked activation.'
   if (/frontend.*(?:load|fail)|client module.*(?:load|fail)/i.test(reason))
     return 'Plugin frontend could not be loaded.'
   return 'Runtime activation failed.'

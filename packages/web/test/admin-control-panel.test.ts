@@ -5,8 +5,8 @@ import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, expect, it, vi } from 'vitest'
 import { PluginAdminApi } from '../src/admin/plugins/api.js'
 import {
-  KindFilter,
   GenerationDrainSummary,
+  KindFilter,
   PluginBadges,
   pluginStates,
   SessionDefaultsPanel,

@@ -1,5 +1,6 @@
 import { expect, it } from 'vitest'
 import { discoverLocalModels, localOpenAIAdapter } from '../src/index.js'
+
 it('discovers local ids without Authorization, normalizes /v1, and refuses redirects and invalid catalogs', async () => {
   let seen: { url: string; init?: RequestInit } | undefined
   const request: typeof fetch = async (url, init) => {

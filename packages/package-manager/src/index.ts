@@ -22,7 +22,9 @@ export * from './lock-state.js'
 export * from './lockfile.js'
 export * from './manager.js'
 export * from './package-plugin-loader.js'
+export * from './plugin-capabilities.js'
 export * from './plugin-manifest.js'
+export * from './plugin-pack.js'
 export * from './plugin-state.js'
 export * from './ports.js'
 export type {
@@ -33,13 +35,14 @@ export type {
   RuntimeSnapshotPinRequest,
   RuntimeSnapshotSelector,
 } from './runtime-snapshots.js'
+export * from './runtime-snapshots-development.js'
+export * from './runtime-snapshots-generations.js'
+export type {
+  RuntimeGenerationResourceInput,
+  RuntimeGenerationResourceSnapshot,
+} from './runtime-snapshots-resources.js'
 export * from './skin-assets.js'
 export * from './sources.js'
 export type { PackageCommitPoint, RuntimeSnapshotCommitPoint } from './store.js'
 export * from './trust-gate.js'
 export * from './workspace.js'
-export * from './runtime-snapshots-generations.js'
-export * from './plugin-capabilities.js'
-export * from './plugin-pack.js'
-export type { RuntimeGenerationResourceInput, RuntimeGenerationResourceSnapshot } from './runtime-snapshots-resources.js'
-export * from './runtime-snapshots-development.js'

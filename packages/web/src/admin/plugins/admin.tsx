@@ -1,4 +1,3 @@
-import { CapabilityReview, FailureHelp } from './capability-review.js'
 import type {
   PackageCatalogDescriptor,
   PackageInstalledDescriptor,
@@ -47,14 +46,15 @@ import {
 import type { ReactNode } from 'react'
 import type { PluginRuntimeState } from '../../client-modules/runtime-status.js'
 import { AdminApiError, PluginAdminApi } from './api.js'
+import { CapabilityReview, FailureHelp } from './capability-review.js'
 import {
+  BundlesPanel,
+  GenerationDrainSummary,
   KindFilter,
   PluginBadges,
-  GenerationDrainSummary,
   type PluginKind,
   pluginFailureMessage,
   SessionDefaultsPanel,
-  BundlesPanel,
 } from './control-panel.js'
 import { PLUGIN_ADMIN_LOCALE_NAMESPACE, pluginAdminLocaleCatalog } from './locales/admin.js'
 import { SOURCE_FORMATS, sourceFromForm, sourceProblem } from './source-form.js'

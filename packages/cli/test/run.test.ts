@@ -4,10 +4,11 @@ import { join } from 'node:path'
 import { PassThrough, Readable, Writable } from 'node:stream'
 import { runHeadless } from '@agnes/sdk'
 import { afterEach, expect, it, vi } from 'vitest'
-import { applyHeadlessBundle, loadHeadlessBundle } from '../src/boot/headless.js'
 import { parseArgs } from '../src/args.js'
+import { applyHeadlessBundle, loadHeadlessBundle } from '../src/boot/headless.js'
 import { parseRunArgs, runCommand } from '../src/commands/run.js'
 import type { Booted } from '../src/types.js'
+
 vi.mock('@agnes/sdk', () => ({ runHeadless: vi.fn() }))
 const dirs: string[] = []
 afterEach(async () => {

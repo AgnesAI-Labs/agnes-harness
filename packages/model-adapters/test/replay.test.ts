@@ -9,6 +9,7 @@ import type {
 import type { RequestBody } from '@agnes/protocol'
 import { afterEach, expect, it } from 'vitest'
 import { readModelResponses, recordModelResponses, replayAdapter, scriptedAdapter } from '../src/index.js'
+
 const dirs: string[] = []
 afterEach(async () => {
   await Promise.all(dirs.splice(0).map((dir) => rm(dir, { recursive: true, force: true })))

@@ -10,8 +10,8 @@ import { type BuildOptions, type BuildResult, build, type Plugin } from 'esbuild
 import { collectThirdPartyNotices } from '../../../tools/third-party-notices.mjs'
 import { beginRuntimeDirectory } from '../../base/tools/runtime-directory.js'
 import { buildConversationCss } from '../../web-ui/tools/build-conversation-css.js'
-import { copyPluginPackRuntime } from './plugin-pack-runtime.js'
 import { prepareDocumentReader } from './document-reader.js'
+import { copyPluginPackRuntime } from './plugin-pack-runtime.js'
 import { copySystemRuntime, withBuiltSystemRuntime } from './windows-runtime.js'
 
 const cliRoot = join(dirname(fileURLToPath(import.meta.url)), '..')

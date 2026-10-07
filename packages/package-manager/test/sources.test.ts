@@ -60,7 +60,8 @@ describe('parseSource', () => {
       'workspace:other/x',
     ])
       expect(() => parseSource(source), source).toThrow()
-    for (const ref of ['file:/tmp/x', 'file:../x', 'file:.']) expect(parseSource(ref)).toEqual({ type: 'file', ref })
+    for (const ref of ['file:/tmp/x', 'file:../x', 'file:.'])
+      expect(parseSource(ref)).toEqual({ type: 'file', ref })
     expect(parseSource('git:https://example.com/x.git#main')).toMatchObject({ type: 'git' })
     expect(parseSource('git:https://example.com/x.git')).toMatchObject({ type: 'git' })
     expect(() => parseSource('market:kiwi/x@1.0.0')).toThrow(/E_PACKAGE_SOURCE/)

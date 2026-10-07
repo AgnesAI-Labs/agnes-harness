@@ -11,8 +11,8 @@ import type {
   PackageOperationReceipt,
   PackagePreview,
   PackageSource,
-  PluginTreeView,
   PluginGenerationStatus,
+  PluginTreeView,
 } from '@agnes/protocol'
 import type { PluginRuntimeState } from '../../client-modules/runtime-status.js'
 
@@ -90,6 +90,6 @@ export type {
   PackageListResult,
   PackageOperationReceipt,
   PackageSource,
-  PluginTreeView,
   PluginGenerationStatus,
+  PluginTreeView,
 }

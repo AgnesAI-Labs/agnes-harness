@@ -1,7 +1,7 @@
-import { PiAdapter, type ManualRoute } from '@agnes/ai'
+import { type ManualRoute, PiAdapter } from '@agnes/ai'
 import type { ModelAdapterConfig, ModelAdapterInstance } from '@agnes/extension-api'
 import { defineModelAdapter } from '@agnes/plugin-runtime'
-import { validateModelRecord, type ModelRecord } from '@agnes/protocol'
+import { type ModelRecord, validateModelRecord } from '@agnes/protocol'
 import { absoluteFile, compat, object, recordModelResponses } from './trace.js'
 
 function endpoint(baseUrl: string): URL {

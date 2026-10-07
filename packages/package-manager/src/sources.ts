@@ -13,10 +13,10 @@ import {
 } from 'node:fs'
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { runIsolatedCommand } from '@agnes/package-isolation'
-import { extractPluginArchive } from './plugin-archives.js'
 import { bundledPluginSourceRoot } from './bundled-plugin-source.js'
 import { copyPackageTreeSync } from './copy-tree.js'
 import { PackageError } from './errors.js'
+import { extractPluginArchive } from './plugin-archives.js'
 import { checkCancelled } from './ports.js'
 import { claimFetch, readyStage } from './staging.js'
 

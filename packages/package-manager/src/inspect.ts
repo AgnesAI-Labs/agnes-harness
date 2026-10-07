@@ -15,16 +15,16 @@ import { PackageError } from './errors.js'
 import { canonical, capabilityHash, freezeData, readStaticJson, snapshotHash } from './integrity.js'
 import type { LockEntry } from './lockfile.js'
 import {
+  capabilityAtoms,
+  capabilityPolicyBlockers,
+  type PluginCapabilityPolicy,
+  parsePluginCapabilities,
+} from './plugin-capabilities.js'
+import {
   isReservedPluginRowIdError,
   parseAgnesPluginEntries,
   parseAgnesPluginKinds,
 } from './plugin-manifest.js'
-import {
-  capabilityAtoms,
-  capabilityPolicyBlockers,
-  parsePluginCapabilities,
-  type PluginCapabilityPolicy,
-} from './plugin-capabilities.js'
 import { checkCancelled } from './ports.js'
 import { resolveSkins } from './skin-assets.js'
 import { type FetchedSource, hashDirectory, type PackageSource } from './sources.js'

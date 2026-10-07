@@ -106,6 +106,7 @@ export * from './errors.js'
 // Emitter only: `Disposer` is the same `() => void` in both modules, and re-exporting
 // it twice would make the name ambiguous on the package surface.
 export { Emitter } from './events.js'
+export * from './headless.js'
 export { jcs } from './jcs.js'
 export * from './journal.js'
 export { localStorageJournal, type StorageLike } from './journal-local-storage.js'
@@ -118,5 +119,3 @@ export * from './transport/jsonl.js'
 export * from './transport/types.js'
 export { type WebSocketLike, type WsOptions, wsTransport } from './transport/ws.js'
 export * from './ui-projection-sync.js'
-
-export * from './headless.js'

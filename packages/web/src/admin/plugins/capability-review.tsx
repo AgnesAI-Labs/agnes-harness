@@ -1,4 +1,4 @@
-import { pluginFailureHelp, type PluginCapabilities } from '@agnes/protocol'
+import { type PluginCapabilities, pluginFailureHelp } from '@agnes/protocol'
 
 type Text = (key: string) => string
 

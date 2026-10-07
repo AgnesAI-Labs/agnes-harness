@@ -84,6 +84,7 @@ export * from './errors.js'
 // it twice would make the name ambiguous on the package surface.
 export { Emitter } from './events.js'
 export * from './extensions.node.js'
+export * from './headless.js'
 export * from './identity.node.js'
 export { jcs } from './jcs.js'
 export * from './journal.js'
@@ -107,5 +108,3 @@ export { unixTransport } from './transport/unix.node.js'
 export type { WebSocketLike, WsOptions } from './transport/ws.js'
 export { wsTransport } from './transport/ws.node.js'
 export * from './ui-projection-sync.js'
-
-export * from './headless.js'

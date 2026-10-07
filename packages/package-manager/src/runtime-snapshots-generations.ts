@@ -18,13 +18,13 @@ import {
 } from '@agnes/plugin-runtime/host'
 import { copyPackageTreeSync } from './copy-tree.js'
 import type { RuntimePluginSnapshot } from './package-plugin-loader.js'
-import { hashDirectory } from './sources.js'
 import {
-  readGenerationResources,
-  writeGenerationResources,
   type RuntimeGenerationResourceInput,
   type RuntimeGenerationResourceSnapshot,
+  readGenerationResources,
+  writeGenerationResources,
 } from './runtime-snapshots-resources.js'
+import { hashDirectory } from './sources.js'
 
 export type PluginGenerationSnapshot = Readonly<{
   version?: 1 | 2

@@ -6,7 +6,6 @@ import { type PackagePreview, validatePackageAdminData } from '@agnes/protocol'
 import type { PackageAuditSink } from './audit.js'
 import { copyPackageTreeSync } from './copy-tree.js'
 import { PackageError } from './errors.js'
-import { readPluginCapabilityPolicy } from './plugin-capabilities.js'
 import { inspectStaged } from './inspect.js'
 import { canonical, capabilityHash, freezeData } from './integrity.js'
 import { type InstalledInventory, type InstalledPackage, readInventory } from './inventory.js'
@@ -31,6 +30,7 @@ import { type LocalPluginReload, type LocalPluginWatcher, watchLocalPlugins } fr
 import { type LockEntry, type Lockfile, readLock, withLock, writeLock } from './lockfile.js'
 import { readManifestIn } from './manifest.js'
 import { type RuntimePluginSnapshot, runtimePluginSnapshotsFromPins } from './package-plugin-loader.js'
+import { readPluginCapabilityPolicy } from './plugin-capabilities.js'
 import { checkCancelled, type OperationOptions, type PackageSourceAdapter, progress } from './ports.js'
 import {
   collectRuntimeSnapshotsStore,

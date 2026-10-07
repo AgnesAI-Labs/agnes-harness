@@ -31,10 +31,10 @@ import type {
 } from '@agnes/protocol/gen/package-admin'
 import { createClient, memoryJournal } from '@agnes/sdk'
 import type { PluginRebuiltEvent } from '@agnes/web/server'
-import { localPipeFactories } from '../src/boot/pipe-factory.js'
-import type { LocalBackend } from './backend.js'
-import { compositionAdminFor } from '../src/commands/config-dump.js'
 import { parseArgs } from '../src/args.js'
+import { localPipeFactories } from '../src/boot/pipe-factory.js'
+import { compositionAdminFor } from '../src/commands/config-dump.js'
+import type { LocalBackend } from './backend.js'
 
 const CLIENT_SERVICE_PATH = '/api/client-modules/service'
 const CLIENT_EFFECT_PATH = '/api/client-modules/effect'

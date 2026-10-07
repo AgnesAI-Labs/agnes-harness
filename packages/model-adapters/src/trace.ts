@@ -1,7 +1,7 @@
 import { open } from 'node:fs/promises'
 import { isAbsolute } from 'node:path'
 import type { ModelAdapterEvent, ModelAdapterInstance, ModelAdapterStreamOptions } from '@agnes/extension-api'
-import { validateAgainst, type RequestBody } from '@agnes/protocol'
+import { type RequestBody, validateAgainst } from '@agnes/protocol'
 import { InferenceEvent as EventSchema, RequestBody as RequestSchema } from '@agnes/protocol/gen/model'
 
 /** One complete wire invocation. No credential or request headers are recorded. */

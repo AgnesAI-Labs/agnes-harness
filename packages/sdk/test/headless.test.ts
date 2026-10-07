@@ -1,10 +1,11 @@
-import { META_KEY, type JsonValue } from '@agnes/protocol'
+import { type JsonValue, META_KEY } from '@agnes/protocol'
 import { expect, it } from 'vitest'
 import { localAuth } from '../src/auth.js'
 import { createClient } from '../src/client.js'
-import { runHeadless, type HeadlessRecord } from '../src/headless.js'
+import { type HeadlessRecord, runHeadless } from '../src/headless.js'
 import { memoryJournal } from '../src/journal.js'
 import { fakeEndpoint, type Handler } from './helpers/fake-endpoint.js'
+
 const event = (seq: number, type: string, data: JsonValue) => ({
   jsonrpc: '2.0' as const,
   method: '_agnes/v1/session.event',
