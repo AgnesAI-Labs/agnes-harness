@@ -13,6 +13,7 @@ import {
   type WorkerResourceBootstrapInput,
 } from '@agnes/resource-control-worker'
 import { connectSupervisor } from './supervisor-connection.js'
+import { generationExtensionRestorer } from './runtime-generation-restore.js'
 
 export { scanSkills } from '@agnes/resource-control-worker'
 
@@ -91,6 +92,7 @@ export type WorkerHostSkillResources = Readonly<{
   runtimePluginSnapshots?: NonNullable<HostOptions['runtimePluginSnapshots']>
   runtimePluginCatalogue?: NonNullable<HostOptions['runtimePluginCatalogue']>
   runtimePluginSources?: NonNullable<HostOptions['runtimePluginSources']>
+  restoreGenerationExtension?: NonNullable<HostOptions['restoreGenerationExtension']>
   managedExtensionPackageIds?: NonNullable<HostOptions['managedExtensionPackageIds']>
   /** Trusted daemon-to-worker authority for narrowly scoped surface service calls. */
   serviceAuthority?: NonNullable<HostOptions['serviceAuthority']>
@@ -396,6 +398,7 @@ export async function runWorker(
     ? Promise.resolve(undefined)
     : deps.buildHost
       ? deps.buildHost(profile, prompter, {
+          restoreGenerationExtension: generationExtensionRestorer(workerResourcesInput),
           skillInstall,
           mcpManage,
           pluginManage,
@@ -419,6 +422,7 @@ export async function runWorker(
                 }
               : createLoader({ cacheDir: profile.cacheDir, hostRoot, agnesVersion: '0.0.0' }))
           return createHost(profile, {
+            restoreGenerationExtension: generationExtensionRestorer(workerResourcesInput),
             dataDir: profile.dataDir,
             profileDir,
             workspaceRoot: cwd,

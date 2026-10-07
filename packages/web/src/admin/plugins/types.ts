@@ -12,6 +12,7 @@ import type {
   PackagePreview,
   PackageSource,
   PluginTreeView,
+  PluginGenerationStatus,
 } from '@agnes/protocol'
 import type { PluginRuntimeState } from '../../client-modules/runtime-status.js'
 
@@ -49,6 +50,7 @@ export type AdminError = Readonly<{
 
 export type AdminPageState = {
   context?: AdminContext | undefined
+  generations?: PluginGenerationStatus | undefined
   installed: readonly PackageInstalledDescriptor[]
   surfaceLinks: readonly AdminSurfaceLink[]
   catalog: readonly PackageCatalogDescriptor[]
@@ -89,4 +91,5 @@ export type {
   PackageOperationReceipt,
   PackageSource,
   PluginTreeView,
+  PluginGenerationStatus,
 }

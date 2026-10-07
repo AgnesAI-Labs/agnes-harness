@@ -77,6 +77,7 @@ const TARGETS: Array<{
           'PackageOperationReceipt',
           'PackageOperation',
           'PackageCatalogPage',
+          'PluginGenerationStatus',
           'PackageListResult',
           'PackageCatalogListParams',
           'PackageCatalogGetParams',

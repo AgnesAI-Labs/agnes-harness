@@ -6,6 +6,7 @@ export type SkillReadRootContext = Readonly<{
   /** The installation's own home: tables, secrets and profile live here, Skills under `skills/`. */
   agnesHome: string
   dataDir: string
+  generationRoot?: string
 }>
 
 const segments = (path: string): string[] =>
@@ -47,6 +48,13 @@ export function safeSkillReadRoots(roots: readonly string[], context: SkillReadR
   // Each root is judged, and handed on, in the spelling the fence will compare it in.
   return roots.map(canonical).filter((root) => {
     const segs = segments(root)
+    if (context.generationRoot) {
+      const base = segments(canonical(context.generationRoot))
+      const suffix = segs.slice(base.length)
+      if (within(segs, base) && /^[a-f0-9-]{36}$/.test(suffix[0] ?? '') &&
+        ((suffix.length === 3 && suffix[1] === 'resources' && /^\d+$/.test(suffix[2] ?? '')) ||
+         (suffix.length === 4 && suffix[1] === 'session-resources' && /^[a-f0-9]{64}$/.test(suffix[2] ?? '') && /^\d+$/.test(suffix[3] ?? '')))) return true
+    }
     if (segs.length < 2 || within(home, segs)) return false
     if (within(segs, data) || within(data, segs)) return false
     if (within(agnesHome, segs)) return false

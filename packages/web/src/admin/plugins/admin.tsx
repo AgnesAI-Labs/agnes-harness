@@ -50,6 +50,7 @@ import { AdminApiError, PluginAdminApi } from './api.js'
 import {
   KindFilter,
   PluginBadges,
+  GenerationDrainSummary,
   type PluginKind,
   pluginFailureMessage,
   SessionDefaultsPanel,
@@ -401,6 +402,7 @@ class PluginAdminPage {
         ...this.#state,
         context,
         installed: list.packages,
+        generations: list.generations,
         surfaceLinks,
         tree,
         inventoryAuthoritative: true,
@@ -1100,6 +1102,7 @@ class PluginAdminPage {
       <UiLocaleProvider source={this.#locale}>
         <SessionDefaultsPanel api={this.#api} canSave={this.canEffect('packages.activate')} t={this.#t} />
         <BundlesPanel api={this.#api} canSave={this.canEffect('packages.activate')} t={this.#t} />
+        <GenerationDrainSummary status={this.#state.generations} installed={this.#state.installed} t={this.#t} />
         <KindFilter
           value={this.#kind}
           t={this.#t}

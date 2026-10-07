@@ -9,6 +9,7 @@ import type {
   PackageInstallParams,
   PackageListParams,
   PackageListResult,
+  PluginGenerationStatus,
   PackageOperation,
   PackageOperationCancelParams,
   PackageOperationGetParams,
@@ -47,6 +48,7 @@ export type PackageAdminClient = Readonly<{
     list(params: PackageCatalogListParams): Promise<PackageCatalogPage>
     get(params: PackageCatalogGetParams): Promise<PackageCatalogDescriptor>
   }>
+  generations(params: PackageListParams): Promise<PluginGenerationStatus>
   list(params: PackageListParams): Promise<PackageListResult>
   inspect(params: PackageInspectParams): Promise<PackageOperationReceipt>
   install(params: PackageInstallParams): Promise<PackageOperationReceipt>
@@ -107,6 +109,8 @@ export function createPackageAdminClient(client: PackageAdminRpc): PackageAdminC
       get: (params: PackageCatalogGetParams): Promise<PackageCatalogDescriptor> =>
         client.call('_agnes/v1/packages.catalog.get', params),
     }),
+    generations: (params: PackageListParams): Promise<PluginGenerationStatus> =>
+      client.call('_agnes/v1/plugins.generations', params),
     list: (params: PackageListParams): Promise<PackageListResult> =>
       client.call('_agnes/v1/packages.list', params),
     inspect: (params: PackageInspectParams): Promise<PackageOperationReceipt> =>

@@ -22,6 +22,7 @@ export const ACTIONS = {
   'catalog/list': '_agnes/v1/packages.catalog.list',
   'catalog/get': '_agnes/v1/packages.catalog.get',
   list: '_agnes/v1/packages.list',
+  generations: '_agnes/v1/plugins.generations',
   inspect: '_agnes/v1/packages.inspect',
   install: '_agnes/v1/packages.install',
   trust: '_agnes/v1/packages.trust',

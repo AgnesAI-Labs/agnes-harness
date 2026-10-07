@@ -4214,6 +4214,9 @@
     "ClientModuleReadParams": {
       "$ref": "package-admin.json#/$defs/ClientModuleReadParams"
     },
+    "PluginGenerationStatus": {
+      "$ref": "package-admin.json#/$defs/PluginGenerationStatus"
+    },
     "PackageListResult": {
       "$ref": "package-admin.json#/$defs/PackageListResult"
     },

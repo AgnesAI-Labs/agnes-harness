@@ -19,6 +19,7 @@ import {
 import { copyPackageTreeSync } from './copy-tree.js'
 import type { RuntimePluginSnapshot } from './package-plugin-loader.js'
 import { hashDirectory } from './sources.js'
+import { readGenerationResources, writeGenerationResources, type RuntimeGenerationResourceInput, type RuntimeGenerationResourceSnapshot } from './runtime-snapshots-resources.js'
 
 export type PluginGenerationSnapshot = Readonly<{
   id: string
@@ -26,11 +27,14 @@ export type PluginGenerationSnapshot = Readonly<{
   sources: readonly RuntimePluginSnapshot[]
   packages: readonly Readonly<{ id: string; version: string }>[]
   compatibility: string
+  resourcesDigest?: string
+  resources?: RuntimeGenerationResourceSnapshot
 }>
 export type SessionGenerationPin = Readonly<{
   sessionKey: string
   generationId: string
   loop?: Readonly<{ id: string; version: string }>
+  resourcesDigest?: string
 }>
 
 /** Durable session pins and immutable package copies, independent of mutable installation state. */
@@ -54,6 +58,7 @@ export class RuntimeGenerationSnapshotStore {
       id: source.snapshot.packageId,
       version: source.snapshot.version,
     })),
+    resources?: RuntimeGenerationResourceInput,
   ): PluginGenerationSnapshot {
     const id = randomUUID(),
       directory = this.directory(id)
@@ -67,14 +72,17 @@ export class RuntimeGenerationSnapshotStore {
           throw new Error('E_GENERATION_INTEGRITY: package snapshot changed')
         return { ...source, snapshot: { ...source.snapshot, directory: String(index) } }
       })
+      const resourcesDigest = resources ? writeGenerationResources(join(directory, 'resources'), resources) : undefined
       writeFileSync(
         join(directory, 'generation.json'),
         JSON.stringify({
           id,
+          ownerPid: process.pid,
           artifact: encodeRuntimeTargetArtifact(target),
           sources: copied,
           packages,
           compatibility,
+          ...(resourcesDigest ? { resourcesDigest } : {}),
         }),
         { mode: 0o600, flag: 'wx', flush: true },
       )
@@ -115,6 +123,7 @@ export class RuntimeGenerationSnapshotStore {
     })
     return Object.freeze({
       ...record,
+      ...(record.resourcesDigest ? { resources: readGenerationResources(join(directory, 'resources'), record.resourcesDigest) } : {}),
       sources: Object.freeze(sources),
       packages: Object.freeze(record.packages.map((pkg) => Object.freeze(pkg))),
     })
@@ -177,6 +186,32 @@ export class RuntimeGenerationSnapshotStore {
     renameSync(temporary, path)
   }
 
+  sessionResources(key: string): RuntimeGenerationResourceSnapshot | undefined {
+    const pin = this.session(key)
+    if (!pin?.resourcesDigest) return undefined
+    return readGenerationResources(join(this.directory(pin.generationId), 'session-resources', createHash('sha256').update(key).digest('hex')), pin.resourcesDigest)
+  }
+
+  pinSessionResources(key: string, resources: RuntimeGenerationResourceInput): RuntimeGenerationResourceSnapshot {
+    const existing = this.sessionResources(key)
+    if (existing) return existing
+    const pin = this.session(key)
+    if (!pin) throw new Error('E_GENERATION_PIN_MISSING: session is not bound')
+    const directory = join(this.directory(pin.generationId), 'session-resources', createHash('sha256').update(key).digest('hex'))
+    const temporary = `${directory}.${randomUUID()}.tmp`
+    try {
+      const resourcesDigest = writeGenerationResources(temporary, resources)
+      rmSync(directory, { recursive: true, force: true })
+      renameSync(temporary, directory)
+      const path = this.pinPath(key), record = `${path}.${randomUUID()}.tmp`
+      writeFileSync(record, JSON.stringify({ ...pin, resourcesDigest }), { mode: 0o600, flag: 'wx', flush: true })
+      renameSync(record, path)
+      return this.sessionResources(key) as RuntimeGenerationResourceSnapshot
+    } finally {
+      rmSync(temporary, { recursive: true, force: true })
+    }
+  }
+
   /** Call only after the session has been deleted, never on close or hibernation. */
   releaseSession(sessionKey: string): void {
     rmSync(this.pinPath(sessionKey), { force: true })
@@ -188,8 +223,15 @@ export class RuntimeGenerationSnapshotStore {
       removed: string[] = []
     for (const id of readdirSync(this.root)) {
       // Another workspace worker may still be accepting sessions on its own snapshot.
-      if (!this.#created.has(id) && !retired.has(id)) continue
       if (!/^[a-f0-9-]{36}$/.test(id) || keep.has(id) || referenced.has(id)) continue
+      if (!this.#created.has(id) && !retired.has(id)) {
+        let ownerPid: unknown
+        try { ownerPid = JSON.parse(readFileSync(join(this.directory(id), 'generation.json'), 'utf8')).ownerPid } catch { continue }
+        if (typeof ownerPid !== 'number' || !Number.isSafeInteger(ownerPid) || ownerPid <= 0) continue
+        try { process.kill(ownerPid, 0); continue } catch (error) {
+          if ((error as NodeJS.ErrnoException).code !== 'ESRCH') continue
+        }
+      }
       rmSync(this.directory(id), { recursive: true, force: true })
       removed.push(id)
       this.#created.delete(id)

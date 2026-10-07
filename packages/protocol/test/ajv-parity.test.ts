@@ -296,6 +296,7 @@ const AGNES_DEFS: Record<string, TSchema> = {
   PackageListParams: AgnesGen.PackageListParams,
   SkinReadParams: AgnesGen.SkinReadParams,
   ClientModuleReadParams: AgnesGen.ClientModuleReadParams,
+  PluginGenerationStatus: AgnesGen.PluginGenerationStatus,
   PackageListResult: AgnesGen.PackageListResult,
   PackageOperation: AgnesGen.PackageOperation,
   PackageOperationCancelParams: AgnesGen.PackageOperationCancelParams,
@@ -5047,6 +5048,7 @@ const PackageAdminSamples: Record<string, Sample> = Object.fromEntries(
     },
   ]),
 )
+AGNES_SAMPLES.PluginGenerationStatus = PackageAdminSamples.PluginGenerationStatus as Sample
 AGNES_SAMPLES.PackageActivationTrust = PackageAdminSamples.PackageActivationTrust as Sample
 AGNES_SAMPLES.PackageActivationRequest = PackageAdminSamples.PackageActivationRequest as Sample
 AGNES_SAMPLES.PackageRollbackTarget = PackageAdminSamples.PackageRollbackTarget as Sample
@@ -5469,6 +5471,7 @@ const DEFS_BY_FILE: Record<string, Record<string, TSchema>> = {
     PackageOperationReceipt: PackageAdminGen.PackageOperationReceipt,
     PackageOperation: PackageAdminGen.PackageOperation,
     PackageCatalogPage: PackageAdminGen.PackageCatalogPage,
+    PluginGenerationStatus: PackageAdminGen.PluginGenerationStatus,
     PackageListResult: PackageAdminGen.PackageListResult,
     PackageCatalogListParams: PackageAdminGen.PackageCatalogListParams,
     PackageCatalogGetParams: PackageAdminGen.PackageCatalogGetParams,
@@ -5781,6 +5784,7 @@ const METHOD_DEF: Record<MethodName, MethodDefRef> = {
     params: 'PackageCatalogGetParams',
     result: 'PackageCatalogDescriptor',
   },
+  '_agnes/v1/plugins.generations': { fileId: 'https://agnes.ai/schema/package-admin.json', params: 'PackageListParams', result: 'PluginGenerationStatus' },
   '_agnes/v1/packages.list': {
     fileId: 'https://agnes.ai/schema/package-admin.json',
     params: 'PackageListParams',
@@ -6134,6 +6138,7 @@ const METHOD_PARAMS_SAMPLE: Record<MethodName, Sample> = {
   '_agnes/v1/mcp.servers.oauth.status.set': ResourceControlSamples.McpOAuthStatusSetParams,
   '_agnes/v1/packages.catalog.list': PackageAdminSamples.PackageCatalogListParams as Sample,
   '_agnes/v1/packages.catalog.get': PackageAdminSamples.PackageCatalogGetParams as Sample,
+  '_agnes/v1/plugins.generations': PackageAdminSamples.PackageListParams as Sample,
   '_agnes/v1/packages.list': PackageAdminSamples.PackageListParams as Sample,
   '_agnes/v1/skins.list': PackageAdminSamples.PackageListParams as Sample,
   '_agnes/v1/skins.read': PackageAdminSamples.SkinReadParams as Sample,
@@ -6296,6 +6301,7 @@ const METHOD_RESULT_SAMPLE: Partial<Record<MethodName, Sample>> = {
   '_agnes/v1/mcp.servers.oauth.status.set': ResourceControlSamples.McpOAuthStatusResult,
   '_agnes/v1/packages.catalog.list': PackageAdminSamples.PackageCatalogPage as Sample,
   '_agnes/v1/packages.catalog.get': PackageAdminSamples.PackageCatalogDescriptor as Sample,
+  '_agnes/v1/plugins.generations': { valid: { generations: [], plugins: [] }, invalid: [{ generations: [], plugins: [], unknown: true }], note: 'Generation status rejects extra fields' },
   '_agnes/v1/packages.list': PackageAdminSamples.PackageListResult as Sample,
   '_agnes/v1/skins.list': PackageAdminSamples.SkinListResult as Sample,
   '_agnes/v1/skins.read': PackageAdminSamples.SkinReadResult as Sample,

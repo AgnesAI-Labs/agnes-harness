@@ -224,6 +224,7 @@ export type {
   PackageInstallParams,
   PackageListParams,
   PackageListResult,
+  PluginGenerationStatus,
   PackageOperation,
   PackageOperationCancelParams,
   PackageOperationGetParams,

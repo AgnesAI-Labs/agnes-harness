@@ -1,6 +1,6 @@
 import { PackageError, type PackageManager } from '@agnes/package-manager'
 import { decodeRuntimeTargetArtifact, type RuntimeTargetArtifact } from '@agnes/plugin-runtime/host'
-import type { PackageAdminError, RuntimePinDescriptor, RuntimePinReleaseResult } from '@agnes/protocol'
+import type { PluginGenerationStatus, PackageAdminError, RuntimePinDescriptor, RuntimePinReleaseResult } from '@agnes/protocol'
 import { ownsRow } from './composite-desired.js'
 import { idle, type SettleOptions, settle } from './composite-target-settle.js'
 import {
@@ -45,6 +45,8 @@ export type CompositeTargetActivationOptions = Readonly<{
     probe: (artifact: RuntimeTargetArtifact) => Promise<void>,
   ): Promise<void>
   collectPins?(): Promise<void>
+  collectGenerations?(): Promise<void>
+  generationStatus?(profile: string): Promise<PluginGenerationStatus>
   revokePackage?(packageId: string): Promise<void>
   releaseRetiring?(packageId: string): Promise<void>
   deliver?(artifact: RuntimeTargetArtifact): Promise<void>
@@ -219,6 +221,7 @@ export function createCompositeTargetActivation(
   options: CompositeTargetActivationOptions,
 ): PackageActivationAdapter {
   return Object.freeze({
+    ...(options.generationStatus ? { generations: options.generationStatus } : {}),
     async prepareRemoval(_profile, packageId) {
       if (!packageStopped(options.store, options.workerGeneration?.(), packageId))
         throw new Error('E_PACKAGE_STATE: package is still running')
@@ -238,6 +241,7 @@ export function createCompositeTargetActivation(
       }
       await options.releaseRetiring?.(packageId)
       await options.collectPins?.()
+      await options.collectGenerations?.()
     },
     async actual(_profile, packageId) {
       return observation(options, packageId)

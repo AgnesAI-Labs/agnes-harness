@@ -1,0 +1,70 @@
+import { resolve } from 'node:path'
+import type { PackageInstalledDescriptor } from '@agnes/protocol'
+import type { NodeClient } from '@agnes/sdk'
+import { UsageError } from '../errors.js'
+import { inspectPackage, installPreview, newPackageCommandId, waitForPackageOperation } from '../tui/package-admin.js'
+import type { ParsedArgs } from '../types.js'
+
+/** Local development explicitly approves the inspected revision; reload preserves disabled state. */
+export async function runPluginDevelopmentCommand(
+  p: ParsedArgs,
+  client: NodeClient,
+  write: (text: string) => void,
+): Promise<void> {
+  const profile = p.profile ?? 'local-dev'
+  const dev = p.command === 'dev'
+  if (dev ? p.positional.length !== 1 : p.positional[0] !== 'reload' || p.positional.length > 2)
+    throw new UsageError('usage: agh dev <plugin-folder> | agh plugins reload [id]')
+  const installed = (await client.packages.list({ profile })).packages
+  let selected: { directory: string; previous?: PackageInstalledDescriptor }[]
+  if (dev) selected = [{ directory: resolve(p.positional[0] as string) }]
+  else {
+    const id = p.positional[1]
+    const rows = installed.filter((row) => id ? row.id === id : row.source.type === 'file' && row.desired === 'enabled')
+    if (id && !rows.length) throw new Error('E_PLUGIN_RELOAD_SOURCE_MISSING: plugin is not installed')
+    selected = rows.map((previous) => {
+      if (previous.source.type !== 'file') throw new Error('E_PLUGIN_RELOAD_SOURCE_MISSING: reload requires a local file source')
+      if (!previous.trusted || previous.desired !== 'enabled')
+        throw new Error('E_PLUGIN_RELOAD_DISABLED: activate the local folder with agh dev first')
+      return { directory: previous.source.ref, previous }
+    })
+  }
+  for (const entry of selected) {
+    const source = { type: 'file' as const, ref: dev ? `file:${entry.directory}` : entry.directory }
+    const preview = await inspectPackage(client, profile, source)
+    if (!preview.capabilityHash) throw new Error('E_PLUGIN_RELOAD_METADATA: package has no capability hash')
+    if (preview.blockers.length) throw new Error('E_PLUGIN_RELOAD_BLOCKED: local package failed inspection')
+    let previous = entry.previous ?? installed.find((row) => row.id === preview.id)
+    if (previous?.actual === 'restart-required')
+      throw new Error('E_GENERATION_RESTART_REQUIRED: this plugin requires a restart')
+    const base = { profile, clientId: await client.clientId(), id: preview.id }
+    if (!previous) {
+      const result = await installPreview(client, profile, preview)
+      previous = result.installed
+      if (!previous) throw new Error('E_PLUGIN_RELOAD_INSTALL: installation returned no package')
+    }
+    if (previous.integrity !== preview.integrity) {
+      await waitForPackageOperation(client, await client.packages.update({
+        ...base, commandId: newPackageCommandId('reload'), source: preview.source,
+        expectedIntegrity: preview.integrity,
+        activation: {
+          expectedInstalledIntegrity: previous.integrity,
+          expectedActiveIntegrity: previous.actual === 'running' ? previous.actualIntegrity ?? previous.integrity : null,
+          trust: { integrity: preview.integrity, capabilityHash: preview.capabilityHash },
+        },
+      }))
+    } else {
+      if (!previous.trusted)
+        await waitForPackageOperation(client, await client.packages.trust({
+          ...base, commandId: newPackageCommandId('dev-trust'), expectedIntegrity: preview.integrity,
+          capabilityHash: preview.capabilityHash,
+        }))
+      if (previous.desired !== 'enabled')
+        await waitForPackageOperation(client, await client.packages.enable({
+          ...base, commandId: newPackageCommandId('dev-enable'), expectedInstalledIntegrity: preview.integrity,
+        }))
+    }
+    write(`${preview.id}@${preview.version} ready for new sessions; existing sessions keep their generation.\n`)
+  }
+  if (!selected.length) write('No enabled local plugins to reload.\n')
+}

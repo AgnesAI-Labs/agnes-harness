@@ -484,3 +484,6 @@
 {"id":"pt-013-PluginTreeGetParams","target":"config","name":"PluginTreeGetParams","kind":"invalid","payload":{"profile":"test","unknown":true}}
 {"id":"pt-014-PluginTreeListParams","target":"config","name":"PluginTreeListParams","kind":"valid","payload":{"profile":"test"}}
 {"id":"pt-015-PluginTreeListParams","target":"config","name":"PluginTreeListParams","kind":"invalid","payload":{"profile":"test","unknown":true}}
+
+{"id":"generation-status-valid","target":"config","name":"PluginGenerationStatus","kind":"valid","payload":{"generations":[],"plugins":[]}}
+{"id":"generation-status-invalid","target":"config","name":"PluginGenerationStatus","kind":"invalid","payload":{"generations":[],"plugins":[],"unknown":true}}

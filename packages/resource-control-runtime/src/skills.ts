@@ -65,8 +65,54 @@ export type SkillFileRead =
   | Readonly<{
       ok: false
       code: 'DISABLED' | 'UNTRUSTED_REVISION' | 'TRUST_REJECTED' | 'SHADOWED' | 'NOT_FOUND' | 'UNAUTHORIZED'
-    }>
+  }>
+export type SkillGenerationSnapshot = Readonly<{
+  version: 1
+  listed: readonly SkillActual[]
+  entries: readonly Readonly<{
+    resourceId: string
+    actual: SkillActual
+    body?: string
+    directory?: string
+    invocation?: SkillInvocation
+    files: readonly Readonly<{ relativePath: string; sha256: string; kind: 'text' | 'binary'; mime: string; bytes: readonly number[] }>[]
+  }>[]
+}>
+
+/** Restores a frozen private view; Host still supplies the authenticated workspace boundary. */
+export function restoreSkillGeneration(snapshot: SkillGenerationSnapshot): SkillRuntimeInput {
+  if (snapshot.version !== 1 || !Array.isArray(snapshot.listed) || !Array.isArray(snapshot.entries))
+    throw new Error('E_GENERATION_SKILLS_INTEGRITY: invalid Skills snapshot')
+  const entries = new Map<string, SkillGenerationSnapshot['entries'][number]>(snapshot.entries.map((entry) => [entry.resourceId, entry]))
+  const read = (resourceId: string) => {
+    const entry = entries.get(resourceId)
+    const denied = denyRead(entry, undefined, resourceId, { sessionKey: '' }) ?? blockInvocation(entry?.invocation)
+    return { entry, denied }
+  }
+  return Object.freeze({
+    generationSnapshot: () => snapshot,
+    list: () => snapshot.listed,
+    invocation: (resourceId) => entries.get(resourceId)?.invocation,
+    readRoots: () => snapshot.entries.filter((entry) => entry.actual.actual === 'ready' && entry.directory && entry.actual.sourceIdentity.scope === 'user').map((entry) => entry.directory as string),
+    read(resourceId) {
+      const { entry, denied } = read(resourceId)
+      if (denied || !entry) return denied ?? { ok: false, code: 'NOT_FOUND' }
+      return { ok: true, content: (entry.directory ? baseDirectoryNote(entry.directory) : '') + (entry.body ?? ''), revision: entry.actual.revision, ...(entry.directory ? { directory: entry.directory } : {}) }
+    },
+    readFile(resourceId, expectedRevision, path) {
+      const { entry, denied } = read(resourceId)
+      if (denied || !entry) return denied ?? { ok: false, code: 'NOT_FOUND' }
+      if (entry.actual.revision !== expectedRevision) return { ok: false, code: 'UNTRUSTED_REVISION' }
+      const file = entry.files.find((item) => item.relativePath === path)
+      if (!file) return { ok: false, code: 'NOT_FOUND' }
+      const bytes = Uint8Array.from(file.bytes)
+      return file.kind === 'binary' ? { ok: true, bytes, mime: file.mime, binary: true } : { ok: true, content: new TextDecoder('utf-8', { fatal: true }).decode(bytes), mime: file.mime }
+    },
+  } satisfies SkillRuntimeInput)
+}
 export type SkillRuntimeInput = Readonly<{
+  /** Private, serializable view for session generations. Never returned by resource admin RPC. */
+  generationSnapshot?(): SkillGenerationSnapshot
   list(): readonly SkillActual[]
   read(resourceId: string, session: { sessionKey: string }): SkillRead
   readFile(
@@ -372,6 +418,19 @@ const baseDirectoryNote = (directory: string) =>
 /** Each list/read/readFile call re-reads the registry. A snapshot taken earlier still sees later writes. */
 function liveSnapshot(current: () => RegistryState, canRead: Options['canRead']): SkillRuntimeInput {
   return Object.freeze({
+    generationSnapshot() {
+      if (canRead) throw new Error('E_GENERATION_SKILLS_AUTHORIZATION: custom authorization cannot be serialized')
+      const indexed = indexState(current())
+      return {
+        version: 1 as const,
+        listed: indexed.listed,
+        entries: [...indexed.byId].map(([resourceId, entry]) => ({
+          resourceId,
+          ...entry,
+          files: (entry.files ?? []).map((file) => ({ ...file, bytes: [...file.bytes] })),
+        })),
+      }
+    },
     list: () => indexState(current()).listed,
     invocation(resourceId) {
       return indexState(current()).byId.get(resourceId)?.invocation

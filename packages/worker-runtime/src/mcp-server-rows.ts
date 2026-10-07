@@ -118,6 +118,7 @@ export function mcpServerRowsFromDefinitions(
     const cfg = mcpServerConfigFromDefinition(definition)
     rows.push(
       Object.freeze({
+        generation: { kind: 'mcp-server', data: entry as unknown as import('@agnes/protocol').JsonValue },
         spec: Object.freeze({
           id: extensionId,
           package: '@agnes/base',

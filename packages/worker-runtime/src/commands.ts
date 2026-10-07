@@ -678,6 +678,10 @@ export async function handleServiceCommand(
         })),
       }
     }
+    case 'pluginGenerations.collect':
+      if (!host?.collectPluginGenerations) throw new Error('Plugin generation collection is unavailable')
+      await host.collectPluginGenerations()
+      return {}
     case 'pluginGenerations.status':
       if (!host?.pluginGenerationStatus) throw new Error('Plugin generation status is unavailable')
       return host.pluginGenerationStatus()

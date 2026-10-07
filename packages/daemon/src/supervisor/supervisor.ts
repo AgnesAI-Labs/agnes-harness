@@ -1395,6 +1395,14 @@ export async function startSupervisor(o: StartSupervisorOptions): Promise<{
             ...(pinCoordinator ? { collectPins: pinCoordinator.collect } : {}),
             ...(pinCoordinator ? { revokePackage: pinCoordinator.revokePackage } : {}),
             ...(pinCoordinator ? { releaseRetiring: pinCoordinator.releaseRetiring } : {}),
+            generationStatus: async () => {
+              const worker = await pool.acquireSharedWorker()
+              return await worker.command('pluginGenerations.status', {}, { timeoutMs: o.config.limits.workerStartupMs }) as import('@agnes/protocol').PluginGenerationStatus
+            },
+            collectGenerations: async () => {
+              const worker = pool.businessWorker()
+              if (worker) await worker.link.command('pluginGenerations.collect', {}, { timeoutMs: o.config.limits.workerStartupMs })
+            },
             workerGeneration: () => pool.businessWorker()?.generation,
             desiredFor: async ({ packageId, operation }) => {
               latestInventory = await packageRuntime.manager.inventory(packageProfileDirectory)

@@ -811,7 +811,7 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
       agnesHome: dirname(dataDir),
       dataDir,
     }
-    skillReadRoots = () => safeSkillReadRoots(preloadSkills?.readRoots?.() ?? [], skillReadContext)
+    skillReadRoots = () => safeSkillReadRoots(preloadSkills?.readRoots?.() ?? [], { ...skillReadContext, generationRoot: join(deps.profileDir, '.runtime-generations') })
     const runtimePromptPreloader = deps.skillResources
       ? createSkillPromptPreloader(() => preloadSkills, workspaceInvocationFor, publicationDispatch)
       : undefined

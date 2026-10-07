@@ -21,6 +21,8 @@ export type Command =
   | 'plugins'
   | 'package'
   | 'packages'
+  | 'plugins'
+  | 'dev'
   | 'install'
   | 'resources'
   | 'skills'

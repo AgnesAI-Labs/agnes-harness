@@ -5,6 +5,7 @@ import type {
   PackageCatalogDescriptor,
   PackageCatalogPage,
   PackageListResult,
+  PluginGenerationStatus,
   PackageOperation,
   PackageOperationReceipt,
   PackagePinsInspectResult,
@@ -32,6 +33,7 @@ const METHOD_BY_PATH = {
   'catalog/list': '_agnes/v1/packages.catalog.list',
   'catalog/get': '_agnes/v1/packages.catalog.get',
   list: '_agnes/v1/packages.list',
+  generations: '_agnes/v1/plugins.generations',
   inspect: '_agnes/v1/packages.inspect',
   install: '_agnes/v1/packages.install',
   trust: '_agnes/v1/packages.trust',
@@ -127,6 +129,10 @@ export class PluginAdminApi {
         message: 'The admin context is invalid; reopen the page.',
       })
     return body
+  }
+
+  async generations(): Promise<PluginGenerationStatus> {
+    return this.#post('generations', { profile: this.#context.profile })
   }
 
   async list(): Promise<PackageListResult> {

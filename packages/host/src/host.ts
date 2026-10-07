@@ -67,6 +67,8 @@ export interface Host {
   pluginGenerationStatus?(): PluginGenerationStatus
   sessionGeneration?(sessionKey: string): string | undefined
   releaseSessionGeneration?(sessionKey: string): Promise<void>
+  reloadPlugin?(id: string, directory?: string): Promise<{ generationId: string; changed: boolean }>
+  collectPluginGenerations?(): Promise<void>
   /** Host-private immutable target projection for generation assembly. */
   runtimeTargetSnapshot?(): RuntimeTarget
   /** Privileged coordination port. It is not reachable from ExtensionAPI or any wire request. */

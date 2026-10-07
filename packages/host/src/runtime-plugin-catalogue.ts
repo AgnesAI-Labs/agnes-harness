@@ -9,8 +9,8 @@ export function pluginSnapshotIdentity(
   plugin: string,
 ): Readonly<{ packageId: string; snapshotId: string }> | undefined {
   if (plugin.startsWith('builtin:')) return undefined
-  const slash = plugin.lastIndexOf('/')
-  const at = slash > 0 ? plugin.lastIndexOf('@', slash) : -1
+  const at = plugin.lastIndexOf('@')
+  const slash = plugin.indexOf('/', at + 1)
   if (at <= 0 || slash <= at + 1 || slash === plugin.length - 1) {
     throw new Error(`E_RUNTIME_TARGET_PLUGIN: invalid snapshot plugin identity ${plugin}`)
   }

@@ -32,6 +32,8 @@ import {
   type PackageAdminMethodName,
   type PackageCatalogDescriptor,
   type PackageInstalledDescriptor,
+  type PackageListResult,
+  type PluginGenerationStatus,
   type PackageOperation,
   type PackageOperationReceipt,
   type PackagePreview,
@@ -88,6 +90,7 @@ export type PackageActivationObservation = Readonly<{
  */
 export type PackageActivationAdapter = Readonly<{
   /** Whether nothing of the package runs or is about to. Absent means the adapter cannot tell. */
+  generations?(profile: string): Promise<PluginGenerationStatus>
   stopped?(profile: string, packageId: string): Promise<boolean>
   actual(
     profile: string,
@@ -519,6 +522,13 @@ class Service implements PackageAdminService {
         )
       if (method === '_agnes/v1/packages.catalog.get')
         return await this.catalogGet(data as { profile: string; id: string; version?: string })
+      if (method === '_agnes/v1/plugins.generations') {
+        await this.options.profileDirectory(data.profile as string)
+        if (!this.options.activation?.generations) throw new Error('E_PACKAGE_STATE: generation status unavailable')
+        const status = await this.options.activation.generations(data.profile as string)
+        if (!validatePackageAdminCall(method, 'result', status).ok) throw new Error('E_PACKAGE_STATE: invalid generation status')
+        return status
+      }
       if (method === '_agnes/v1/packages.list') return await this.list(data as { profile: string })
       if (method === '_agnes/v1/plugins.tree.get')
         return this.pluginTreeView(data as { profile: string }, true)
@@ -683,10 +693,11 @@ class Service implements PackageAdminService {
     return item
   }
 
-  private async list(params: { profile: string }): Promise<{ packages: PackageInstalledDescriptor[] }> {
+  private async list(params: { profile: string }): Promise<PackageListResult> {
     const directory = await this.options.profileDirectory(params.profile)
     const inventory = await this.options.manager.inventory(directory)
-    return { packages: await this.projectInventory(params.profile, inventory) }
+    const generations = await this.readGenerations(params.profile)
+    return { packages: await this.projectInventory(params.profile, inventory, generations), ...(generations ? { generations } : {}) }
   }
 
   /**
@@ -1525,9 +1536,17 @@ class Service implements PackageAdminService {
     await this.refreshClientModules(record.operation.profile, directory, reason, packageId)
   }
 
+  private async readGenerations(profile: string): Promise<PluginGenerationStatus | undefined> {
+    try {
+      const result = await this.options.activation?.generations?.(profile)
+      return result && validatePackageAdminCall('_agnes/v1/plugins.generations', 'result', result).ok ? result : undefined
+    } catch { return undefined }
+  }
+
   private async projectInventory(
     profile: string,
     inventory: InstalledInventory,
+    generations?: PluginGenerationStatus,
   ): Promise<PackageInstalledDescriptor[]> {
     const entries: PackageInstalledDescriptor[] = []
     for (const row of inventory.packages) {
@@ -1540,7 +1559,15 @@ class Service implements PackageAdminService {
           // No adapter result is less misleading than a guessed running state.
         }
       }
-      entries.push(projectPackage(row, observation))
+      const plugin = generations?.plugins.find((item) => item.id === row.id)
+      entries.push({
+        ...projectPackage(row, observation),
+        ...(plugin ? {
+          boundSessions: plugin.boundSessions, drainingSessions: plugin.drainingSessions,
+          draining: plugin.drainingSessions > 0,
+          ...(plugin.state === 'restart-required' ? { actual: 'restart-required' as const } : {}),
+        } : {}),
+      })
     }
     return entries
   }

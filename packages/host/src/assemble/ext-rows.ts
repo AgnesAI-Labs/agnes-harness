@@ -69,6 +69,8 @@ export type DynamicExtension = Readonly<{
   spec: ExtensionSpec
   manifest: ExtensionManifest
   factory: (ctx: SeamInitContext) => ExtensionFactory | undefined | Promise<ExtensionFactory | undefined>
+  /** Declarative private input from which a worker can recreate this factory after restart. */
+  generation?: Readonly<{ kind: string; data: import('@agnes/protocol').JsonValue }>
 }>
 
 /** Builtin extensions whose `ext:` row supplies them through the shared row host. */

@@ -844,6 +844,8 @@
           "maxItems": 6
         },
         "draining": { "type": "boolean" },
+        "boundSessions": { "type": "integer", "minimum": 0 },
+        "drainingSessions": { "type": "integer", "minimum": 0 },
         "id": {
           "type": "string",
           "minLength": 1,
@@ -1181,10 +1183,122 @@
       },
       "required": ["items", "nextCursor"]
     },
+    "PluginGenerationStatus": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "currentGenerationId": {
+          "type": "string",
+          "pattern": "^[a-f0-9-]{36}$"
+        },
+        "generations": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "id": {
+                "type": "string",
+                "pattern": "^[a-f0-9-]{36}$"
+              },
+              "state": {
+                "enum": [
+                  "active",
+                  "draining",
+                  "failed"
+                ]
+              },
+              "boundSessions": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "packages": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 256
+                    },
+                    "version": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 64
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "version"
+                  ]
+                }
+              },
+              "error": {
+                "type": "string",
+                "maxLength": 512
+              }
+            },
+            "required": [
+              "id",
+              "state",
+              "boundSessions",
+              "packages"
+            ]
+          }
+        },
+        "plugins": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "id": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 256
+              },
+              "state": {
+                "enum": [
+                  "active",
+                  "draining",
+                  "restart-required",
+                  "failed"
+                ]
+              },
+              "boundSessions": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "drainingSessions": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "error": {
+                "type": "string",
+                "maxLength": 512
+              }
+            },
+            "required": [
+              "id",
+              "state",
+              "boundSessions",
+              "drainingSessions"
+            ]
+          }
+        }
+      },
+      "required": [
+        "generations",
+        "plugins"
+      ]
+    },
     "PackageListResult": {
       "type": "object",
       "additionalProperties": false,
       "properties": {
+        "generations": { "$ref": "#/$defs/PluginGenerationStatus" },
         "packages": {
           "type": "array",
           "items": {
