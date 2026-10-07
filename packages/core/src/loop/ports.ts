@@ -378,6 +378,7 @@ export async function createLoopContext(s: SessionImpl, restoreCheckpoint = fals
       done()
     }
   }
+  const children = s.loopChildrenPort()
   const ctx: LoopContext = {
     sessionKey: s.key,
     lane: s.lane,
@@ -529,8 +530,7 @@ export async function createLoopContext(s: SessionImpl, restoreCheckpoint = fals
         })
       },
     },
-    // TODO: Stream F/Host binds the parent-scoped ChildAgentSessionService here.
-    ...(s.d.loopChildren ? { children: s.d.loopChildren } : {}),
+    ...(children ? { children } : {}),
     compaction: {
       run: async (signal: AbortSignal) => {
         signal.throwIfAborted()

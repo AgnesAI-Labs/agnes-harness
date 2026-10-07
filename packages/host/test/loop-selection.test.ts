@@ -2,7 +2,18 @@ import { cpSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { DEFAULT_LOOP } from '@agnes/core'
+import { DEFAULT_LOOP, resetChildAgentAllowlists } from '@agnes/core'
+import {
+  type ChildAgentPluginContext,
+  type ChildAgentProvider,
+  type ChildAgentService,
+  type ChildAgentStartOptions,
+  type LoopContext,
+  type LoopFactory,
+  type LoopPluginContext,
+  loopCheckpointCodec,
+  registerLoopPlugin,
+} from '@agnes/extension-api'
 import { hashDirectory, type RuntimePluginSnapshot } from '@agnes/package-manager'
 import { afterEach, expect, it } from 'vitest'
 import * as dagModule from '../../../examples/loops/dag-loop/index.mjs'
@@ -18,12 +29,38 @@ afterEach(() => {
 })
 const dag = { id: 'example.dag', version: '1.0.0' }
 
-async function fixture(profileLoop = true, template = false) {
+async function fixture(profileLoop = true, template = false, childModule?: Record<string, unknown>) {
   const dataDir = mkdtempSync(join(tmpdir(), 'agnes-loops-'))
   dirs.push(dataDir)
   const directory = join(dataDir, 'snapshot')
-  const loopSelection = template ? { id: 'tiny-loop', version: '0.1.0' } : dag
-  if (template) await scaffold('loop', 'tiny-loop', directory, { local: true })
+  const loopSelection = childModule
+    ? { id: 'test.children', version: '1.0.0' }
+    : template
+      ? { id: 'tiny-loop', version: '0.1.0' }
+      : dag
+  if (childModule) {
+    mkdirSync(directory)
+    writeFileSync(join(directory, 'index.mjs'), 'export const main = {}')
+    writeFileSync(
+      join(directory, 'package.json'),
+      JSON.stringify({
+        name: 'acme/child-loop',
+        version: '1.0.0',
+        main: './index.mjs',
+        agnes: {
+          plugins: [
+            {
+              export: 'main',
+              id: 'loop:children',
+              apiRange: '^1.4.0',
+              inject: ['loops', 'childAgents'],
+              runtime: 'in-process',
+            },
+          ],
+        },
+      }),
+    )
+  } else if (template) await scaffold('loop', 'tiny-loop', directory, { local: true })
   else
     cpSync(fileURLToPath(new URL('../../../examples/loops/dag-loop', import.meta.url)), directory, {
       recursive: true,
@@ -36,7 +73,7 @@ async function fixture(profileLoop = true, template = false) {
   writeFileSync(join(directory, 'package.json'), JSON.stringify(manifest))
   const source: RuntimePluginSnapshot = {
     snapshot: {
-      packageId: template ? 'tiny-loop' : '@agnes-example/dag-loop',
+      packageId: childModule ? 'acme/child-loop' : template ? 'tiny-loop' : '@agnes-example/dag-loop',
       version: loopSelection.version,
       snapshotId: `sha256-${'1'.repeat(64)}`,
       integrity: `sha256-${'2'.repeat(64)}`,
@@ -61,6 +98,7 @@ async function fixture(profileLoop = true, template = false) {
         ]
       : [],
     disableSessionTitle: true,
+    ...(childModule ? { treeBudgetCredits: 2 } : {}),
     lock: {
       packages: Object.fromEntries(
         ['@agnes/ai', '@agnes/base', '@agnes/code', source.snapshot.packageId].map((id) => [
@@ -77,7 +115,13 @@ async function fixture(profileLoop = true, template = false) {
     profileInputs: {
       user: {
         name: 'local-dev',
-        packages: [{ id: source.snapshot.packageId, source: `file:${directory}` }],
+        packages: [
+          {
+            id: source.snapshot.packageId,
+            source: `file:${directory}`,
+            ...(childModule ? { config: { 'child-agent': { provider: 'public-fixture' } } } : {}),
+          },
+        ],
         ...(profileLoop ? { loop: loopSelection } : {}),
       },
     },
@@ -89,7 +133,7 @@ async function fixture(profileLoop = true, template = false) {
       : {
           import: async (file) => {
             expect(file.endsWith('/snapshot/index.mjs')).toBe(true)
-            return dagModule
+            return childModule ?? dagModule
           },
         },
   })
@@ -212,5 +256,205 @@ it('activates the zero-build loop template from an installed snapshot without SD
     expect(reply[0]?.data).toMatchObject({ content: [{ type: 'text', text: 'Demo reply' }] })
   } finally {
     await f.host.close()
+  }
+})
+
+it('binds a third-party loop to configured, parent-owned continuable children with budget and generation inheritance', async () => {
+  let registry: ChildAgentService | undefined
+  const contexts = new Map<string, LoopContext>()
+  const received: ChildAgentStartOptions[] = []
+  const children = new Map<string, { parent: string; messages: string[]; interrupted: boolean }>()
+  const disposed: string[] = []
+  let releaseStart!: () => void
+  const gate = new Promise<void>((resolve) => {
+    releaseStart = resolve
+  })
+  let markStarting!: () => void
+  const starting = new Promise<void>((resolve) => {
+    markStarting = resolve
+  })
+  const provider: ChildAgentProvider = {
+    id: 'public-fixture',
+    version: '1.0.0',
+    capabilities: {
+      continuable: true,
+      interrupt: true,
+      modelSelection: true,
+      inheritsParentContext: true,
+      worktree: false,
+      budget: true,
+      toolFilter: true,
+    },
+    async start(task, options) {
+      received.push(options)
+      if (task === 'late child') {
+        markStarting()
+        await gate
+      }
+      const id = 'child-' + received.length
+      const child = { parent: options.sessionKey, messages: [task], interrupted: false }
+      children.set(id, child)
+      return {
+        id,
+        providerId: 'public-fixture',
+        capabilities: this.capabilities,
+        sendMessage: async (text) => {
+          child.messages.push(text)
+          return { messageId: id + '-next' }
+        },
+        interrupt: async () => {
+          child.interrupted = true
+          return { accepted: true }
+        },
+        result: async () => ({ status: 'interrupted', text: child.messages.join('|') }),
+        async *events() {
+          yield { type: 'status', status: 'interrupted' }
+        },
+        async dispose() {
+          disposed.push(id)
+          await contexts.get(child.parent)?.events.emit('x/child/disposed', { id })
+          children.delete(id)
+        },
+      }
+    },
+    async list(parent) {
+      return [...children]
+        .filter(([, child]) => child.parent === parent)
+        .map(([id, child]) => ({
+          id,
+          providerId: 'public-fixture',
+          status: child.interrupted ? 'interrupted' : 'idle',
+          continuable: true,
+        }))
+    },
+  }
+  const codec = loopCheckpointCodec(1, (state) => {
+    if (state !== null) throw new Error('Unsupported child loop checkpoint')
+    return null
+  })
+  const loop: LoopFactory = {
+    id: 'test.children',
+    version: '1.0.0',
+    capabilities: ['children'],
+    codec,
+    create(ctx) {
+      contexts.set(ctx.sessionKey, ctx)
+      return {
+        checkpoint: () => codec.encode(null),
+        cancel() {},
+        dispose() {},
+        async step(signal) {
+          if (!(await ctx.input.claim('next-turn'))) return { outcome: 'idle' }
+          const port = ctx.children
+          if (!port) throw new Error('Missing public child port')
+          try {
+            await port.start('denied', { model: 'blocked' })
+          } catch (error) {
+            await ctx.events.emit('x/child/refused', { message: String(error) })
+          }
+          const handle = await port.start('start', {
+            model: 'fast',
+            budget: 99,
+            signal,
+            sessionKey: 'forged-parent',
+            generation: 'forged-generation',
+          } as never)
+          await handle.sendMessage('continue', signal)
+          await handle.interrupt()
+          const result = await port.result(handle.id)
+          const events = []
+          for await (const event of port.events(handle.id)) events.push(event)
+          await ctx.events.emit('x/child/result', { id: handle.id, result, events })
+          await ctx.events.finish('completed')
+          return { outcome: 'turn-ended', reason: 'completed' }
+        },
+      }
+    },
+    resume(ctx, checkpoint) {
+      codec.decode(checkpoint)
+      return this.create(ctx)
+    },
+  }
+  const f = await fixture(true, false, {
+    main: {
+      inject: ['loops', 'childAgents'],
+      apply(ctx: LoopPluginContext & ChildAgentPluginContext) {
+        registry = ctx.childAgents
+        registerLoopPlugin(ctx, 'acme/child-loop', loop)
+        ctx.childAgents.register(provider)
+        for (const key of ['loop-parent', 'other-parent'])
+          ctx.childAgents.setSessionAllowlist(key, { providers: ['public-fixture'], models: ['fast'] })
+      },
+    },
+  })
+  try {
+    const parent = await f.host.createSession({ key: 'loop-parent', cwd: f.dataDir })
+    const other = await f.host.createSession({ key: 'other-parent', cwd: f.dataDir })
+    for (const session of [parent, other]) {
+      await session.enqueue('next-turn', {
+        content: [{ type: 'text', text: 'children' }],
+        actor: session.d.actor,
+        budget: 1,
+      })
+      expect(await session.run({ until: 'turn-end', signal: new AbortController().signal })).toMatchObject({
+        reason: 'completed',
+      })
+      expect((await session.scan({ type: 'x/child/refused', limit: 1 }))[0]?.data).toMatchObject({
+        message: expect.stringContaining('E_MODEL_UNKNOWN'),
+      })
+    }
+    expect(received).toHaveLength(2)
+    expect(received[0]).toMatchObject({
+      sessionKey: parent.key,
+      cwd: parent.d.cwd,
+      generation: f.host.sessionGeneration?.(parent.key),
+      model: 'fast',
+      budget: 1,
+    })
+    expect(received[0]?.generation).toBeTruthy()
+    expect(received[1]).toMatchObject({
+      sessionKey: other.key,
+      generation: f.host.sessionGeneration?.(other.key),
+    })
+    expect(children.get('child-1')).toMatchObject({ messages: ['start', 'continue'], interrupted: true })
+    expect((await parent.scan({ type: 'x/child/result', limit: 1 }))[0]?.data).toMatchObject({
+      id: 'child-1',
+      result: { status: 'interrupted', text: 'start|continue' },
+      events: [{ type: 'status', status: 'interrupted' }],
+    })
+    const own = contexts.get(parent.key)?.children
+    const foreign = contexts.get(other.key)?.children
+    expect(await own?.list()).toEqual([expect.objectContaining({ id: 'child-1' })])
+    await expect(foreign?.sendMessage('child-1', 'intrude')).rejects.toThrow('not owned')
+    registry?.setSessionAllowlist(parent.key, { providers: [] })
+    await expect(own?.start('allowlist changed', { model: 'fast' })).rejects.toThrow('E_UNSUPPORTED')
+    expect(received).toHaveLength(2)
+    const closing = parent.close()
+    await Promise.all([closing, parent.close()])
+    expect(disposed).toEqual(['child-1'])
+    expect(
+      (await f.host.kernel.o.storage.scan(parent.key, { type: 'x/child/disposed', limit: 10 })).map(
+        (row) => row.data,
+      ),
+    ).toEqual([{ id: 'child-1' }])
+    await expect(own?.start('after close', { model: 'fast' })).rejects.toMatchObject({ code: 'E_CLOSED' })
+    expect(await foreign?.list()).toEqual([expect.objectContaining({ id: 'child-2' })])
+    const pending = foreign?.start('late child', { model: 'fast' })
+    const refused = expect(pending).rejects.toThrow()
+    await starting
+    let joined = false
+    const otherClose = other.close().then(() => {
+      joined = true
+    })
+    await expect.poll(() => received[2]?.signal.aborted).toBe(true)
+    expect(joined).toBe(false)
+    releaseStart()
+    await refused
+    await otherClose
+    expect(disposed.sort()).toEqual(['child-1', 'child-2', 'child-3'])
+  } finally {
+    releaseStart()
+    await f.host.close()
+    resetChildAgentAllowlists()
   }
 })

@@ -1,4 +1,6 @@
 import type {
+  ChildAgentParentScope,
+  ChildAgentSessionService,
   HookContext,
   Logger,
   LoopEventRegistryPort,
@@ -93,6 +95,8 @@ export const CORE_DIAG_NAMES = [
 export type CoreDiagName = (typeof CORE_DIAG_NAMES)[number]
 
 export type KernelOptions = {
+  /** Host binds public child providers to Core-minted parent facts. */
+  loopChildren?: (parent: ChildAgentParentScope) => ChildAgentSessionService
   toolRuntimes?: ToolRuntimeRegistryPort
   toolPolicies?: ToolPolicyRegistryPort
   loopEvents?: LoopEventRegistryPort
@@ -527,6 +531,8 @@ export class Kernel {
       runtime,
       provider: this.o.provider,
       loopFactory,
+      ...(this.o.loopChildren ? { bindLoopChildren: this.o.loopChildren } : {}),
+      ...(so.toolFilter ? { loopChildToolFilter: so.toolFilter } : {}),
       toolRuntimes: this.toolRuntimes,
       toolPolicies: this.toolPolicies,
       loopEvents: this.loopEvents,

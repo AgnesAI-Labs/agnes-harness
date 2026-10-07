@@ -59,6 +59,8 @@ export type AssembleDeps = HostPaths &
     runtimePluginCatalogue?: readonly Readonly<RuntimePluginSnapshot>[]
     /** Installed snapshots re-read before each target is applied, so a package trusted after boot can load. */
     runtimePluginSources?: () => Promise<readonly Readonly<RuntimePluginSnapshot>[]>
+    /** Host-private immutable code generation inherited by loop-created children. */
+    sessionGeneration?: (sessionKey: string) => string | undefined
     /** Host-private durable generation binding, also reached by Core-created children. */
     onGenerationSessionBinding?: (sessionKey: string) => void
     onGenerationBasePackages?: (packageIds: readonly string[]) => void

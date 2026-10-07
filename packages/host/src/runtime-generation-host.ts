@@ -109,6 +109,7 @@ export async function createRuntimeGenerationHost(
       options.onGenerationBasePackages?.(ids)
     },
     onGenerationSessionBinding: (key) => initialBinding?.(key),
+    sessionGeneration: (key) => store.session(key)?.generationId ?? options.sessionGeneration?.(key),
   })
   let current: LiveGeneration | undefined
   let closed = false
@@ -253,6 +254,7 @@ export async function createRuntimeGenerationHost(
         runtimePluginSnapshots: snapshot.sources,
         runtimePluginSources: async () => snapshot.sources,
         activationBarrier: createExtensionActivationBarrier(),
+        sessionGeneration: (key) => store.session(key)?.generationId ?? binding.id,
         onGenerationSessionBinding: (key) => {
           bindGeneration(key, binding.id, host)
         },

@@ -1894,6 +1894,13 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
     )
       pluginTree.root.providers.select('tool-policy', view.approval.policy ?? 'default', 'preset')
     kernel = Kernel.create({
+      loopChildren: (parent) => {
+        const generation = deps.sessionGeneration?.(parent.sessionKey)
+        return pluginTree.root.childAgents.forSession({
+          ...parent,
+          ...(generation === undefined ? {} : { generation }),
+        })
+      },
       storage: adapters.storage,
       ...(loop ? { loop } : {}),
       loops: {

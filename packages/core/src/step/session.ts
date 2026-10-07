@@ -68,6 +68,7 @@ import { SCAN_PAGE_MAX, type ScanQuery } from '../log/storage.js'
 import { runDeferred } from '../execution/turn/deferred.js'
 import { DEFAULT_LOOP } from '@agnes/extension-api'
 import { LoopEventRegistry, loopEventContext } from '../loop/events.js'
+import { LoopChildren } from '../loop/children.js'
 import { createLoopContext, disposeLoopContext } from '../loop/ports.js'
 import type {
   AuxiliaryVisionAssemblyInput,
@@ -350,6 +351,10 @@ export type TurnEndReason =
 export type TurnOutcome = { reason: TurnEndReason; lastSeq: Seq; error?: { code: string; message: string } }
 
 export type SessionDeps = {
+  bindLoopChildren?: (
+    parent: import('@agnes/extension-api').ChildAgentParentScope,
+  ) => import('@agnes/extension-api').ChildAgentSessionService
+  loopChildToolFilter?: import('@agnes/extension-api').ChildAgentToolFilter
   loopChildren?: import('@agnes/extension-api').ChildAgentSessionService
   toolRuntimes?: ToolRuntimeRegistryPort
   toolPolicies?: ToolPolicyRegistryPort
@@ -513,6 +518,7 @@ export class SessionImpl {
   loopEdge = 0
   private loopDriver!: LoopDriver
   private loopContext?: LoopContext
+  private loopChildren?: LoopChildren
   private fallbackHooks: HookPort
   private readonly fallbackResources: ResourceRegistry
   compaction: CompactionPort
@@ -730,6 +736,12 @@ export class SessionImpl {
   }
   toolPolicy() {
     return this.toolPolicies.resolve(this.preset.approval.policy ?? 'default')
+  }
+
+  loopChildrenPort(): import('@agnes/extension-api').ChildAgentSessionService | undefined {
+    if (!this.d.bindLoopChildren && !this.d.loopChildren) return undefined
+    this.loopChildren ??= new LoopChildren(this)
+    return this.loopChildren.port
   }
 
   private initialModelSettingsRestored = false
@@ -2265,6 +2277,7 @@ export class SessionImpl {
     unbindChildFactory(this.key)
     this.executePermits.close()
     this.ac.abort()
+    this.loopChildren?.cancel()
     this.closePromise = Promise.resolve().then(async () => {
       const failures: unknown[] = []
       const attempt = async (fn: () => unknown | Promise<unknown>) => {
@@ -2272,6 +2285,7 @@ export class SessionImpl {
       }
       await attempt(() => this.loopDriver?.cancel())
       await Promise.all(this.runtimeInstances.map((instance) => attempt(() => instance.runtime.cancel())))
+      await attempt(() => this.loopChildren?.close())
       // Keep hooks, log and lease alive while producers settle effects and final checkpoints.
       await Promise.allSettled([...this.activeWork])
       await attempt(() => this.loopDriver?.dispose())
