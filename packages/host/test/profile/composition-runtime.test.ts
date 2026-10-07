@@ -1,4 +1,4 @@
-import { mkdtempSync, realpathSync, rmSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -6,8 +6,8 @@ import { ScriptedProvider } from '@agnes/ai/testkit'
 import { mcpLocalToolPrefix, skillResourceIdAt } from '@agnes/base'
 import { ToolRegistry } from '@agnes/core'
 import { defineTool } from '@agnes/extension-api'
-import type { RuntimePluginSnapshot } from '@agnes/package-manager'
-import { normalizePluginExport } from '@agnes/plugin-runtime/host'
+import { hashDirectory, type RuntimePluginSnapshot } from '@agnes/package-manager'
+import { createPluginRow, normalizePluginExport } from '@agnes/plugin-runtime/host'
 import { RuntimeSecurityStatus, validateAgainst } from '@agnes/protocol'
 import { Type } from '@sinclair/typebox'
 import { expect, it, vi } from 'vitest'
@@ -22,6 +22,7 @@ import {
   compositionTools,
 } from '../../src/profile/composition-visibility.js'
 import type { SkillRuntimeInput } from '../../src/resources/skills.js'
+import { buildCompleteRuntimeTarget } from '../../src/runtime-target-builder.js'
 import { createTestHost } from '../../testkit/index.js'
 
 vi.mock('../../src/adapters/process-identity-default.js', () => ({
@@ -353,6 +354,142 @@ it('retains a legacy session deployment when bundles are configured after its fi
     await resumed.close()
     await host.releaseSessionGeneration?.(resumed.key)
     expect(new CompositionSessionStore(join(root, 'profiles', 'local-dev')).read(resumed.key)).toBeUndefined()
+  } finally {
+    await host?.close()
+    rmSync(root, { recursive: true, force: true })
+  }
+})
+
+it('opens a new composition from the published code after retiring a boot snapshot', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'agnes-composition-update-'))
+  let host: Awaited<ReturnType<typeof createTestHost>>['host'] | undefined
+  const id = 'acme/composition-code'
+  const source = (version: string): RuntimePluginSnapshot => {
+    const directory = join(root, version)
+    mkdirSync(directory)
+    writeFileSync(join(directory, 'index.mjs'), version)
+    writeFileSync(
+      join(directory, 'package.json'),
+      JSON.stringify({
+        name: id,
+        version,
+        exports: './index.mjs',
+        agnes: {
+          plugins: [
+            { apiRange: '^1.4.0', export: 'main', id: 'ext:composition-code', inject: ['extension'] },
+          ],
+        },
+      }),
+    )
+    const integrity = hashDirectory(directory, { exclude: [] })
+    return {
+      snapshot: {
+        profile: 'local-dev',
+        packageId: id,
+        version,
+        snapshotId: integrity,
+        integrity,
+        treeIntegrity: integrity,
+        capabilityHash: 'a'.repeat(64),
+        directory,
+        contributions: [],
+      },
+      generation: 1,
+      trusted: true,
+    }
+  }
+  const one = source('1.0.0'),
+    two = source('2.0.0')
+  let available = [one, two]
+  try {
+    host = (
+      await createTestHost({
+        dataDir: root,
+        script: [],
+        allowed: ['standard', 'observer'],
+        presets: {
+          observer: { name: 'observer', extends: 'standard', composition: { tools: ['code_version'] } },
+        },
+        profileInputs: {
+          user: { name: 'local-dev', composition: {}, packages: [{ id, source: 'fixture' }] },
+        },
+        lock: {
+          packages: Object.fromEntries([
+            ...['@agnes/ai', '@agnes/base', '@agnes/code'].map((id) => [
+              id,
+              { version: '0.1.0', integrity: 'sha512-fixture', trust: 'builtin', enabled: true },
+            ]),
+            [
+              id,
+              {
+                version: one.snapshot.version,
+                integrity: one.snapshot.integrity,
+                trust: 'trusted',
+                enabled: true,
+              },
+            ],
+          ]),
+        },
+        packageDirs: { [id]: one.snapshot.directory },
+        runtimePluginSnapshots: [one],
+        runtimePluginSources: async () => available,
+        extensionLoader: {
+          async import(file) {
+            const version = readFileSync(file, 'utf8')
+            return {
+              main: {
+                inject: ['extension'],
+                apply(ctx: import('@agnes/cordis').Context) {
+                  ctx.extension().registerTool({
+                    name: 'code_version',
+                    description: version,
+                    parameters: Type.Object({}),
+                    meta: {
+                      isReadOnly: true,
+                      isDestructive: false,
+                      isConcurrencySafe: true,
+                      isOpenWorld: false,
+                      replay: 'safe',
+                      costHint: {},
+                      deferLoading: false,
+                      requiresApproval: 'never',
+                    },
+                    async execute() {
+                      return { content: [{ type: 'text', text: version }] }
+                    },
+                  })
+                },
+              },
+            }
+          },
+        },
+      })
+    ).host
+    const old = await host.createSession({ key: 'old-code', cwd: root })
+    const base = host.runtimeTargetSnapshot?.()
+    if (!base) throw new Error('missing published target')
+    await host.applyRuntimeTarget(
+      buildCompleteRuntimeTarget({
+        rows: [
+          createPluginRow({
+            id: 'ext:composition-code',
+            plugin: `${id}@${two.snapshot.snapshotId}/main`,
+            snapshotDigest: two.snapshot.integrity,
+            exportName: 'main',
+            entryRevision: two.snapshot.integrity,
+            extrasRevision: 'none',
+            mountRevision: 'host-ordinary-row:v1',
+            inject: ['extension'],
+          }),
+        ],
+        resources: base.resource.resources,
+      }).target,
+    )
+    available = [two]
+    rmSync(one.snapshot.directory, { recursive: true, force: true })
+    const current = await host.createSession({ key: 'new-composition', preset: 'observer', cwd: root })
+    expect(current.currentTools().resolve('code_version')?.description).toBe('2.0.0')
+    expect(old.currentTools().resolve('code_version')?.description).toBe('1.0.0')
   } finally {
     await host?.close()
     rmSync(root, { recursive: true, force: true })

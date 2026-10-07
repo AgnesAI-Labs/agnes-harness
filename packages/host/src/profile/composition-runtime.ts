@@ -8,7 +8,7 @@ import type { Host, HostOptions } from '../host.js'
 import { assertHostPublication, createHostFacade, type HostPublicationReport } from '../host-facade.js'
 import { resolvePreset } from '../presets/resolve.js'
 import { createRuntimeGenerationHost } from '../runtime-generation-host.js'
-import { pluginSnapshotIdentity } from '../runtime-plugin-catalogue.js'
+import { pluginSnapshotIdentity, RuntimePluginCatalogue } from '../runtime-plugin-catalogue.js'
 import { buildCompleteRuntimeTarget } from '../runtime-target-builder.js'
 import { sessionKey } from '../session.js'
 import { profileForComposition, type ResolvedComposition, resolveComposition } from './composition.js'
@@ -94,8 +94,36 @@ export async function createCompositionHost(
     const started = (async () => {
       const pinned = generations.session(binding.sessionKey)
       const skills = compositionSkills(currentSkills, binding.tree.selection, skillOwners)
+      // A newly opened composition must not import boot-time pins retired by a later update.
+      // Existing sessions bootstrap from their own durable code snapshot instead.
+      const sources = pinned
+        ? generations.read(pinned.generationId).sources
+        : latestTarget
+          ? new RuntimePluginCatalogue(
+              (await options.runtimePluginSources?.()) ??
+                options.runtimePluginCatalogue ??
+                options.runtimePluginSnapshots ??
+                [],
+            ).select(project(latestTarget, binding.tree))
+          : options.runtimePluginSnapshots
       const deployment = {
         ...binding.profile,
+        ...(sources
+          ? {
+              packages: [
+                ...binding.profile.packages.filter((pkg) => pkg.trust === 'builtin'),
+                ...sources.map(({ snapshot }) => ({
+                  ...binding.profile.packages.find((pkg) => pkg.id === snapshot.packageId),
+                  id: snapshot.packageId,
+                  version: snapshot.version,
+                  integrity: snapshot.integrity,
+                  source: 'runtime-snapshot',
+                  trust: 'trusted' as const,
+                  enabled: true,
+                })),
+              ],
+            }
+          : {}),
         provider: modelProfile.provider,
         adapters: { ...binding.profile.adapters, secrets: modelProfile.adapters.secrets },
       }
@@ -103,6 +131,7 @@ export async function createCompositionHost(
         binding.legacy ? deployment : profileForComposition(deployment, binding.tree),
         {
           ...options,
+          ...(sources ? { runtimePluginSnapshots: sources } : {}),
           ...(skills ? { skillResources: skills } : {}),
         },
         (generationProfile, generationOptions) =>
