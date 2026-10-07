@@ -15,6 +15,7 @@ import {
   readConfigurationProfileInputs,
   resolveProfile,
 } from '@agnes/host'
+import { createPackageManager } from '@agnes/package-manager'
 
 /** Inputs shared by every local daemon consumer (start, status, stop and clients). */
 export type DaemonScopeOptions = {
@@ -161,8 +162,28 @@ async function profileForScope(
     expandHome(inputs.user?.cacheDir ?? join(home, 'cache'), input.osHome),
     workspace,
   )
+  // Admin-enabled code must be present before Host assembly: a selected bundle may own the
+  // initial loop. The worker resolves these exact lock identities from immutable snapshots.
+  // Explicit package declarations (including disabled ones) still win over inventory defaults.
+  const declared = new Set(inputs.user?.packages?.map((pkg) => pkg.id))
+  const snapshots =
+    !input.ignorePackageLock && inputs.lock
+      ? await createPackageManager({ dataDir, agnesVersion: input.agnesVersion }).runtimePluginSnapshots(
+          join(home, 'profiles', profile),
+        )
+      : []
+  const installed = Object.entries(inputs.lock?.packages ?? {})
+    .filter(
+      ([id, pkg]) =>
+        pkg.enabled &&
+        pkg.trust !== 'builtin' &&
+        !declared.has(id) &&
+        snapshots.some(({ snapshot }) => snapshot.packageId === id && snapshot.integrity === pkg.integrity),
+    )
+    .map(([id, pkg]) => ({ id, source: 'installed', version: pkg.version }))
   const user = {
     ...(inputs.user ?? {}),
+    packages: [...(inputs.user?.packages ?? []), ...installed],
     name: profile,
     dataDir,
     cacheDir,

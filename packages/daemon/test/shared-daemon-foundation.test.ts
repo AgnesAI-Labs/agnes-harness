@@ -8,6 +8,13 @@ import {
   readConfigurationProfileInputs,
   resolveProfile,
 } from '@agnes/host'
+import {
+  activeRuntimePinId,
+  createPackageManager,
+  emptyLock,
+  parseSource,
+  writeLock,
+} from '@agnes/package-manager'
 import { hasPrivateDaclSync } from '@agnes/system-node'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
@@ -132,6 +139,97 @@ describe('shared daemon scope', () => {
     const enterpriseScope = await resolveDaemonScope({ home, workspace, profile: 'enterprise' })
     const enterprise = await resolveDaemonProfile(enterpriseScope)
     expect(enterprise.profile.adapters.secrets).toEqual({ kind: 'file', path: '/etc/agnes/secrets' })
+  })
+
+  it('boots with trusted admin-enabled code while respecting disabled and untrusted packages', async () => {
+    const home = await root('agnes-admin-code-')
+    const workspace = await root('agnes-admin-code-work-')
+    const scope = await resolveDaemonScope({ home, workspace, profile: 'local-dev' })
+    const initial = (await resolveDaemonProfile(scope)).profile
+    await mkdir(scope.profileDir, { recursive: true })
+    const now = '2026-10-08T00:00:00.000Z'
+    writeLock(scope.profileDir, {
+      ...emptyLock('local-dev', '0.0.0'),
+      resolvedProfileHash: initial.hash,
+      seams: initial.seams,
+      packages: Object.fromEntries(
+        ['disabled', 'untrusted', 'explicit'].map((name) => [
+          `@example/${name}`,
+          {
+            version: '1.2.3',
+            source: { type: 'npm', ref: `@example/${name}@1.2.3` },
+            integrity: `sha256-${'a'.repeat(64)}`,
+            trust: 'trusted',
+            license: 'MIT',
+            state: {
+              installed: now,
+              trusted: name === 'untrusted' ? null : now,
+              enabled: name !== 'disabled',
+            },
+            releasedAt: now,
+            dependencies: {},
+            previous: null,
+          },
+        ]),
+      ),
+    })
+    const sourceDir = join(workspace, 'enabled')
+    await mkdir(sourceDir)
+    await writeFile(
+      join(sourceDir, 'package.json'),
+      JSON.stringify({
+        name: '@example/enabled',
+        version: '1.2.3',
+        license: 'MIT',
+        exports: './index.mjs',
+        agnes: { plugins: [{ apiRange: '^1.4.0', export: 'main', id: 'ext:example/enabled' }] },
+      }),
+    )
+    await writeFile(join(sourceDir, 'index.mjs'), 'export const main = { apply() {} }')
+    const manager = createPackageManager({ dataDir: scope.dataDir, cwd: workspace, agnesVersion: '0.0.0' })
+    const source = parseSource(`file:${sourceDir}`)
+    const preview = await manager.inspect(scope.profileDir, source)
+    await manager.install(scope.profileDir, source, { expectedIntegrity: preview.integrity })
+    const installed = (await manager.inventory(scope.profileDir)).packages.find(
+      (pkg) => pkg.id === '@example/enabled',
+    )
+    if (!installed?.entry.treeIntegrity) throw new Error('missing installed snapshot')
+    await manager.trust(scope.profileDir, installed.id, {
+      integrity: installed.entry.integrity,
+      capabilityHash: installed.capabilityHash,
+    })
+    await manager.setEnabled(scope.profileDir, installed.id, true)
+    // Enabled inventory alone must not become executable before target publication has pinned it.
+    expect((await resolveDaemonProfile(scope)).profile.packages.some((pkg) => pkg.id === installed.id)).toBe(
+      false,
+    )
+    const pinId = activeRuntimePinId({ packageId: installed.id, integrity: installed.entry.integrity })
+    await manager.pinRuntimeSnapshot(scope.profileDir, {
+      pinId,
+      operationId: pinId,
+      packageId: installed.id,
+      purpose: 'active',
+      selector: {
+        kind: 'installed',
+        expectedIntegrity: installed.entry.integrity,
+        expectedTreeIntegrity: installed.entry.treeIntegrity,
+      },
+    })
+    await writeFile(
+      join(scope.profileDir, 'profile.yaml'),
+      'packages:\n  - id: "@example/explicit"\n    source: installed\n    enabled: false\n',
+    )
+    const resolved = (await resolveDaemonProfile(scope)).profile
+    expect(resolved.packages.filter((pkg) => pkg.id.startsWith('@example/'))).toEqual([
+      expect.objectContaining({
+        id: '@example/enabled',
+        version: '1.2.3',
+        integrity: installed.entry.integrity,
+        enabled: true,
+      }),
+      expect.objectContaining({ id: '@example/explicit', enabled: false }),
+    ])
+    expect((await resolveDaemonScope({ home, workspace, profile: 'local-dev' })).scopeID).toBe(scope.scopeID)
   })
 
   // The actual bug this pair of packages used to have: daemon's own default (home/data) and Host's
