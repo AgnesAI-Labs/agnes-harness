@@ -177,7 +177,7 @@ export function GenerationsPanel({
         )}
         {message && <p role={message === 'migrationFailed' ? 'alert' : 'status'}>{t(message)}</p>}
         {result && (
-          <p>
+          <p data-testid="session-migration-result">
             <code>{result.previous}</code> → <code>{result.current}</code>
           </p>
         )}

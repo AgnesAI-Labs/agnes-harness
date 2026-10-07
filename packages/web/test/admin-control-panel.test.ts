@@ -1,5 +1,5 @@
 /** @vitest-environment happy-dom */
-import type { PackageInstalledDescriptor } from '@agnes/protocol'
+import type { PackageInstalledDescriptor, RuntimeAdminSnapshot } from '@agnes/protocol'
 import { act, createElement } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, expect, it, vi } from 'vitest'
@@ -16,8 +16,10 @@ import { sessionLoopSelection } from '../src/admin/plugins/session-loop.js'
 import { LoopPicker, updateLoopPicker } from '../src/loop-picker.js'
 import { SETTINGS_PAGES, SettingsHub } from '../src/settings/hub.js'
 import { settingsCatalog } from '../src/settings/locales.js'
-import { SecurityStatusPanel } from '../src/settings/security-status.js'
 import { GenerationsPanel, PublicationPanel } from '../src/settings/runtime-panels.js'
+
+import { SecurityStatusPanel } from '../src/settings/security-status.js'
+import { effectiveSessionPreset, permissionForSessionPreset } from '../src/settings/session-choice.js'
 
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 const t = (key: string) => pluginAdminLocaleCatalog.en[key] ?? key
@@ -305,6 +307,7 @@ it('places ordered bundle and preset choices beside the loop only for a new sess
       unavailable: 'Unavailable',
       presets: [{ id: 'read-only', isDefault: true }],
       presetLabel: 'Preset',
+      inheritedPreset: 'read-only',
       bundles,
       selectedBundles: ['acme#report', 'acme#support'],
       bundlesLabel: 'Bundles',
@@ -315,6 +318,9 @@ it('places ordered bundle and preset choices beside the loop only for a new sess
   )
   const host = await mount(createElement(LoopPicker))
   expect(host.querySelectorAll('[role="combobox"]')).toHaveLength(3)
+  expect(host.querySelector('[data-testid="new-session-preset"]')?.textContent).toContain(
+    'Inherit · read-only',
+  )
   expect(host.querySelector('[data-testid="new-session-bundles"]')?.textContent).toContain('acme#report')
   await act(async () =>
     updateLoopPicker({
@@ -328,6 +334,39 @@ it('places ordered bundle and preset choices beside the loop only for a new sess
     }),
   )
   expect(host.querySelector('[data-testid="new-session-bundles"]')).toBeNull()
+})
+
+it('inherits the admin preset before the profile default and renders its permission policy', () => {
+  const runtime: RuntimeAdminSnapshot = {
+    providers: [],
+    presets: [
+      { id: 'standard', isDefault: true },
+      { id: 'read-only', isDefault: false },
+    ],
+    localPluginFolders: { home: '/synthetic/plugins', workspace: '/synthetic/.agh/plugins' },
+    security: {
+      platform: { os: 'linux', l1: { level: 'full', scope: ['file'] } },
+      presetPolicies: [
+        {
+          id: 'review',
+          level: 'L1',
+          required: true,
+          onUnavailable: 'deny',
+          approvalPolicy: 'read-only',
+          networkMode: 'deny',
+        },
+      ],
+      workspaces: [],
+    },
+  }
+  expect(effectiveSessionPreset(undefined, { preset: 'read-only' }, runtime)).toBe('read-only')
+  expect(effectiveSessionPreset('full-access', { preset: 'read-only' }, runtime)).toBe('full-access')
+  expect(effectiveSessionPreset(undefined, {}, runtime)).toBe('standard')
+  expect(permissionForSessionPreset('read-only', runtime)).toBe('view')
+  expect(permissionForSessionPreset('review', runtime)).toBe('view')
+  expect(permissionForSessionPreset('workspace-write', runtime)).toBe('workspace')
+  expect(permissionForSessionPreset('full-access', runtime)).toBe('full')
+  expect(permissionForSessionPreset('unknown', runtime)).toBeUndefined()
 })
 
 it('distinguishes requested permissions from measured workspace enforcement', async () => {

@@ -2,7 +2,7 @@
 
 [English](ui-coverage.md) | 简体中文
 
-本清单覆盖集成基线 `c897fe4b` 的插件架构、共享工作台以及本次设置实现。区分界面入口、后台支持与浏览器验收，产品仍为开发者预览。参阅[架构](architecture.zh-CN.md)、[提供器架构](architecture-plugins.zh-CN.md)、[源码地图](source-map.zh-CN.md)与 [Web 指南](../guide/web.zh-CN.md)。
+本清单覆盖集成基线 `656a2270` 的插件架构、共享工作台以及本次设置实现。区分界面入口、后台支持与浏览器验收，产品仍为开发者预览。参阅[架构](architecture.zh-CN.md)、[提供器架构](architecture-plugins.zh-CN.md)、[源码地图](source-map.zh-CN.md)与 [Web 指南](../guide/web.zh-CN.md)。
 
 从工作台设置中的**插件**或 `/admin/plugins` 进入。运行时导航包含**插件**、**提供器**、**Agent Loop 与模型**、**组合包与预设**、**安全**、**MCP 与技能**、**示例**。独立页和内嵌页共用渲染器；模型账户与资源管理继续复用现有控制器。
 
@@ -26,7 +26,7 @@
 | 每个新会话的预设 | 组合包与预设：放行预设与开始会话；输入栏增加会话预设选择器 | 仅展示 Host 放行项；启用组合包并完成后台组装后可选择其预设。 |
 | 每个新会话独立组合包 | 输入栏在 Loop 旁选择组合包（按选择顺序）和预设；组合包页面也可直接创建带包选择的新任务 | `session.new({bundles})` 在部署、预设、管理层之后应用会话组合包，显式 Loop 优先；后台验证并固定组合，恢复不重新解释当前默认值。 |
 | 配置导出与来源解释 | 组合包与预设：选择预设、解释期望组合、配置项/层级/来源表、安全 JSON 与实时会话绑定 | 明确区分静态期望配置与实时会话；不暴露秘密或任意配置快照。 |
-| 权限预设：只读/工作区写入/完全访问 | 安全：Host 可用性、开始会话；输入栏在可用时请求真实后台预设 | 未提供只读预设时拒绝选择，不仅抑制审批。未提供新命名预设的配置档继续兼容原工作区/完全访问审批模式。权限执行归后台所有。 |
+| 权限预设：只读/工作区写入/完全访问 | 安全：Host 可用性、开始会话；管理默认值可选权限预设；新会话先继承管理默认值，再回退配置档默认值，输入栏显示实际继承项 | 未提供只读预设时拒绝选择，不仅抑制审批。未提供新命名预设的配置档继续兼容原工作区/完全访问审批模式。权限执行归后台所有。 |
 | 沙箱选择与状态 | 安全：平台最近的 L1 探测、权限预设要求，以及各打开会话的规范工作区路径、提供器、就绪状态、实测隔离与策略摘要 | `Host.securityStatus()` 仅读取已有探测/绑定事实；刷新不执行探测命令。关闭或未测量状态不会被显示为已隔离。 |
 | MCP 创建/安装、编辑、启停、状态、认证、工具与移除 | MCP 与技能内嵌原管理页并提供独立链接；工作台资源设置保留所选工作区 | 实时定义下轮生效，按会话组合过滤；工作区范围操作继续使用原资源页。 |
 | 技能目录、安装/复制、信任、启停、刷新、移除、扫描根诊断 | MCP 与技能及工作台的原技能管理 | 实时资源行为归后台所有，与固定插件代码区分。 |
@@ -34,8 +34,8 @@
 | 共享会话、持久历史、流式输出、附件、取消、追加/排队输入 | 原对话工作台与工作区选择器 | 本设置变更保留。 |
 | 审批、Trace、恢复、诊断、会话搜索/归档/分叉/导出 | 原工作台操作、Trace 与诊断 | 后台维护授权、效果回执及会话事实。 |
 | 前端插件面板、公开槽位、皮肤、主题/语言、Computer Use 管理 | 原客户端模块对账、设置与工作台区域 | 保留 `@agnes/web-ui` 原语、token、CSP 与皮肤钩子。 |
-| ask_user_question 卡片 | 预留现有对话时间线/工具结果区域 | 由对话实现负责，本变更不新增卡片。 |
-| 交付物卡片 | 预留现有对话时间线/工具结果区域 | 由对话实现负责，本变更不新增卡片。 |
+| ask_user_question 卡片 | E1 已在工具结果前渲染问题表单，保留原时间线与公开槽位 | 原卡片与对话适配器测试通过；真实会话及中文文案仍需最终验收。本变更不修改卡片。 |
+| 交付物卡片 | E1 已在同一工具区域渲染经授权的打开/下载链接 | 原卡片与对话适配器测试通过；真实文件交付仍需最终验收。本变更不修改卡片。 |
 | 后台任务卡片 | 预留现有对话时间线/工具结果区域 | 由对话实现负责，本变更不新增卡片。 |
 | 计划模式卡片 | 预留现有对话时间线与输入栏状态区域 | 由对话实现负责，本变更不新增卡片。 |
 | 子智能体卡片 | 预留现有对话时间线/工具结果区域，元数据见提供器 | 由对话实现负责，本变更不新增卡片。 |
@@ -63,7 +63,7 @@ pnpm test:web-smoke --list
 
 使用已安装/缓存的 Playwright 与缓存 Chromium，不下载浏览器。`AGH_PLAYWRIGHT_PACKAGE` 可指定包目录，`AGH_CHROMIUM_PATH` 可指定现有 Chromium 可执行文件。结果默认放临时目录，可用 `AGH_WEB_TEST_OUTPUT` 覆盖。变更验收使用隔离、合成的 home/server。
 
-`tools/e2e-web/navigation.spec.ts` 覆盖英/中文七个页面、八类提供器、本地插件按钮、创建入口及未捕获页面错误。稳定标识包括 `settings-nav-*`、`settings-page-*`、`providers-*`、`security-*`、`plugin-generations`、`composition-publication`、`migration-session-key`、`migrate-session`、`confirm-session-migration`、`local-plugins`、`reload-local-plugins`、`new-session-preset`、`bundle-order`、`config-dump`、`config-choice-sources`，同时保留可访问名称。
+`tools/e2e-web/navigation.spec.ts` 覆盖英/中文七个页面、八类提供器、本地插件按钮、创建入口、安全状态及 375px 无页面横向溢出。设置 `AGH_MIGRATION_SESSION` 可对隔离 home 的空闲会话执行输入→确认→迁移结果检查；未设置则跳过该变更用例。检查未捕获页面错误。稳定标识包括 `settings-nav-*`、`settings-page-*`、`providers-*`、`security-*`、`plugin-generations`、`composition-publication`、`migration-session-key`、`migrate-session`、`confirm-session-migration`、`session-migration-result`、`sandbox-security-status`、`sandbox-status-unavailable`、`permission-preset-status`、`workspace-sandbox-status`、`local-plugins`、`reload-local-plugins`、`new-session-preset`、`new-session-bundles`、`bundle-order`、`config-dump`、`config-choice-sources`，同时保留可访问名称。
 
 完整验收仍须在集成运行时完成：插件安装/信任/启停/更新/回滚、默认值与会话选择、组合/预设来源、真实沙箱拒绝路径、MCP/技能变更、所有对话卡片及 FDE 组合包会话轮次。导航 smoke 不单独证明可用于真实交付。
 
@@ -72,3 +72,5 @@ pnpm test:web-smoke --list
 创建会话 SDK 新增 `bundles?: readonly string[]`，通过 ACP 的 `ai.agnes.harness` 元数据传递已存在的组合包 ID。限 64 个唯一标识，未知包由 Host 拒绝；不传包配置或安装来源。目录新增可选 `bundles: {id,sourcePackage}[]`。
 
 安全状态通过现有运行时管理目录的可选 `security: RuntimeSecurityStatus` 提供，聚合组合容器和代码代际。包含最近平台探测、已放行预设的规范沙箱/审批/网络要求及工作区隔离快照；不暴露 seam、工厂、执行权限或配置/凭据。
+
+当前验证：集成基线上的相关包 `tsc -b`、安全/组合/会话选择与协议 AJV 一致性测试通过；缓存 Chromium 的英/中文导航、375px 安全布局及确认迁移共 3 个用例通过。浏览器测试使用构建后的真实 Web UI 与合成管理响应，不证明生产守护进程的迁移或沙箱执行。E1 问题/交付物卡片与对话适配器的直接测试通过；后台任务、计划、子智能体的完整卡片仍按所属 stream 交付后验收。

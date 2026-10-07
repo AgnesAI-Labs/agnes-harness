@@ -77,6 +77,7 @@ import { bindWebSession, loadWebSession } from './session-binding.js'
 import { createTitleRefresh, sessionTitle } from './session-title.js'
 import { loadRuntimeCatalog } from './settings/api.js'
 import { settingsCatalog } from './settings/locales.js'
+import { effectiveSessionPreset, permissionForSessionPreset } from './settings/session-choice.js'
 import { createSettingsController } from './settings.js'
 import {
   cacheSkinEntry,
@@ -442,6 +443,12 @@ const settingsText = (key: string): string =>
 let newSessionCatalog: NewSessionCatalog | undefined
 let loopCatalogError = false
 let loopCatalogPending = false
+function selectedDraftPreset(): string | undefined {
+  return effectiveSessionPreset(draftPreset, newSessionCatalog?.defaults, runtimeCatalog)
+}
+function syncDraftPermission(): void {
+  permissionMode = permissionForSessionPreset(selectedDraftPreset(), runtimeCatalog) ?? permissionMode
+}
 async function refreshSessionCatalog(): Promise<void> {
   loopCatalogPending = !newSessionCatalog
   renderControls()
@@ -454,6 +461,7 @@ async function refreshSessionCatalog(): Promise<void> {
     }
     loopCatalogError = false
     if (draftingNew && !draftLoopEdited) draftLoop = newSessionCatalog.defaults.loop
+    if (draftingNew) syncDraftPermission()
   } catch {
     loopCatalogError = true
   } finally {
@@ -833,7 +841,11 @@ function renderControls(): void {
     },
   }
   if (draftingNew && !draftLoopAvailable()) composerView.send.disabled = true
-  if (draftingNew && permissionMode === 'view' && draftPreset !== 'read-only')
+  if (
+    draftingNew &&
+    permissionMode === 'view' &&
+    permissionForSessionPreset(selectedDraftPreset(), runtimeCatalog) !== 'view'
+  )
     composerView.send.disabled = true
   if (draftingNew && loopCatalogPending) composerView.send.disabled = true
   if (draftingNew && draftBundles.some((id) => !runtimeCatalog?.bundles?.some((bundle) => bundle.id === id)))
@@ -863,12 +875,11 @@ function renderControls(): void {
       renderControls()
     },
     preset: draftPreset,
+    inheritedPreset: effectiveSessionPreset(undefined, newSessionCatalog?.defaults, runtimeCatalog),
     presetLabel: settingsText('presets'),
     onPreset(preset) {
       draftPreset = preset
-      if (preset === 'read-only') permissionMode = 'view'
-      else if (preset === 'workspace-write') permissionMode = 'workspace'
-      else if (preset === 'full-access') permissionMode = 'full'
+      syncDraftPermission()
       rememberWebComposer({ permission: permissionMode })
       renderControls()
     },
@@ -1554,8 +1565,7 @@ async function beginNewDraft(showWorkspacePicker = true, workspace?: WorkspaceEn
   pendingSessionKey = crypto.randomUUID()
   knownSessionModel = inherited.model ? modelDefaults(inherited.model) : undefined
   permissionMode = inherited.permission
-  if (permissionMode === 'view' && runtimeCatalog?.presets.some((preset) => preset.id === 'read-only'))
-    draftPreset = 'read-only'
+  syncDraftPermission()
   permissionRefreshPending = false
   initialPermissionPending = undefined
   initialModelPending = undefined
@@ -1672,9 +1682,7 @@ async function refreshModels(): Promise<ModelPickerOption[]> {
           ? modelDefaults(next.model)
           : undefined
       if (!draftPreset) {
-        permissionMode = next.permission
-        if (permissionMode === 'view' && runtimeCatalog?.presets.some((preset) => preset.id === 'read-only'))
-          draftPreset = 'read-only'
+        permissionMode = permissionForSessionPreset(selectedDraftPreset(), runtimeCatalog) ?? next.permission
       }
     }
     renderControls()
@@ -2169,7 +2177,9 @@ function submitComposer(): void {
     permissionRefreshPending ||
     (session && sessionYoloEnabled === undefined) ||
     (!session && (!draftingNew || !selectedWorkspace?.available)) ||
-    (!session && permissionMode === 'view' && draftPreset !== 'read-only') ||
+    (!session &&
+      permissionMode === 'view' &&
+      permissionForSessionPreset(selectedDraftPreset(), runtimeCatalog) !== 'view') ||
     !canSubmitComposer({ connected, hasSession: true, sending, stopping, loading: sessionPending })
   )
     return
@@ -2475,13 +2485,14 @@ run(async () => {
       if (!runtimeCatalog?.presets.some((entry) => entry.id === requestedPreset))
         throw new Error(settingsText('notAllowed'))
       draftPreset = requestedPreset
-      if (requestedPreset === 'read-only') permissionMode = 'view'
-      else if (requestedPreset === 'workspace-write') permissionMode = 'workspace'
-      else if (requestedPreset === 'full-access') permissionMode = 'full'
+      syncDraftPermission()
     }
     if (requestedBundles.length) {
-      if (new Set(requestedBundles).size !== requestedBundles.length || requestedBundles.length > 64 ||
-        requestedBundles.some((id) => !runtimeCatalog?.bundles?.some((bundle) => bundle.id === id)))
+      if (
+        new Set(requestedBundles).size !== requestedBundles.length ||
+        requestedBundles.length > 64 ||
+        requestedBundles.some((id) => !runtimeCatalog?.bundles?.some((bundle) => bundle.id === id))
+      )
         throw new Error(settingsText('bundleUnavailable'))
       draftBundles = requestedBundles
     }

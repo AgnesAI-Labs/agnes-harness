@@ -59,6 +59,7 @@ export interface LoopPickerView {
   onSelect(loop: LoopSelection | undefined): void
   presets?: readonly { id: string; isDefault: boolean }[]
   preset?: string | undefined
+  inheritedPreset?: string | undefined
   presetLabel?: string
   bundles?: readonly { id: string; sourcePackage: string }[]
   selectedBundles?: readonly string[]
@@ -94,7 +95,15 @@ export function LoopPicker() {
   const selected = state.selected ? loopIdentity(state.selected) : ''
   const stale = !!state.selected && !state.loops.some((entry) => loopIdentity(entry) === selected)
   return (
-    <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.375rem' }}>
+    <span
+      style={{
+        display: 'inline-flex',
+        flexWrap: 'wrap',
+        alignItems: 'center',
+        gap: '0.375rem',
+        maxWidth: '100%',
+      }}
+    >
       {state.bundles && state.bundles.length > 0 && (
         <Select<string[]>
           mode="multiple"
@@ -120,7 +129,12 @@ export function LoopPicker() {
           value={state.preset ?? ''}
           style={{ minWidth: 150, maxWidth: 240 }}
           options={[
-            { value: '', label: state.inherited },
+            {
+              value: '',
+              label: state.inheritedPreset
+                ? `${state.inherited} · ${state.inheritedPreset}`
+                : state.inherited,
+            },
             ...state.presets.map(({ id }) => ({ value: id, label: id })),
           ]}
           onChange={(preset) => state.onPreset?.(preset || undefined)}

@@ -6567,3 +6567,5 @@ body.admin-page {
 .runtime-resources { width: 100%; min-height: 36rem; border: 1px solid var(--agnes-line-primary); border-radius: var(--radius-card); margin-block: 1rem; }
 
 .runtime-table-scroll { overflow-x: auto; }
+.runtime-table-scroll table { min-width: 48rem; }
+.runtime-table-scroll th { white-space: nowrap; }

@@ -22,7 +22,12 @@ export function SecurityStatusPanel({ status, t }: { status: RuntimeSecurityStat
       {status.platform.l1.reason && <p>{status.platform.l1.reason}</p>}
       <p>{t('probeHelp')}</p>
       <h3>{t('permissionRequirements')}</h3>
-      <div className="runtime-table-scroll">
+      <section
+        className="runtime-table-scroll"
+        aria-label={t('permissionRequirements')}
+        // biome-ignore lint/a11y/noNoninteractiveTabindex: keyboard users need to scroll the wide permission table.
+        tabIndex={0}
+      >
         <table data-testid="permission-preset-status">
           <thead>
             <tr>
@@ -49,7 +54,7 @@ export function SecurityStatusPanel({ status, t }: { status: RuntimeSecurityStat
             ))}
           </tbody>
         </table>
-      </div>
+      </section>
       <h3>{t('workspacePosture')}</h3>
       {!status.workspaces.length ? (
         <p>{t('noWorkspacePosture')}</p>
