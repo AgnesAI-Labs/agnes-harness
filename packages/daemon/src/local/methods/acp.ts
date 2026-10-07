@@ -512,11 +512,11 @@ export function registerAcp(
     const requestedKey =
       typeof h.sessionKey === 'string'
         ? h.sessionKey
-        : canonicalSessionKey(
+        : `${canonicalSessionKey(
             cx.host.profile,
             await cx.resolveNewSessionActor(c.conn.credential, 'session'),
             workspace.path,
-          )
+          )}${loop ? `:loop:${randomUUID()}` : ''}`
     const hasSessionFact =
       cx.registry.get(requestedKey) !== undefined ||
       cx.workspaces.sessionPath(requestedKey) !== undefined ||
