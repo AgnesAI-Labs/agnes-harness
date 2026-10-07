@@ -195,7 +195,7 @@ it(
       })
       // The Web session list shows the platform's default preset for a session the CLI created.
       expect((await web.session.list({})).items.find((item) => item.sessionId === session.id)?.preset).toBe(
-        createPlatform().snapshot().os === 'win32' ? 'standard-windows' : 'standard',
+        'workspace-write',
       )
       const same = await web.session.load(session.id, { cwd: work })
       expect(JSON.stringify(await same.projectUI(undefined, { surface: 'web' }))).toContain(

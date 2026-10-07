@@ -38,7 +38,7 @@ describe('Computer Use Hermes attribution packaging', () => {
     }
 
     expect(seaBuild).toContain(
-      "['daemon.mjs', 'worker.mjs', 'web', 'THIRD-PARTY-NOTICES', 'bundled-plugins']",
+      "['daemon.mjs', 'worker.mjs', 'web', 'THIRD-PARTY-NOTICES', 'bundled-plugins', 'ripgrep']",
     )
     expect(packageJson.files).toContain('dist/local/THIRD-PARTY-NOTICES/computer-use-hermes.txt')
     expect(packageJson.files).toContain('dist/sea/THIRD-PARTY-NOTICES/computer-use-hermes.txt')

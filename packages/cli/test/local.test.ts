@@ -10,7 +10,7 @@ import { bootLocal, hostRootFrom } from '../src/boot/local.js'
 import { BootError, UsageError } from '../src/errors.js'
 import { testDeps, writeScratchProfile } from './boot-host.js'
 
-/** Minimal presets for both platform defaults, before assembly reaches the seam step. */
+/** Minimal fixtures for every admitted product preset, before assembly reaches the seam step. */
 const PRESETS = {
   base: {
     name: 'base',
@@ -25,6 +25,10 @@ const PRESETS = {
     model: { route: { primary: 'default' } },
   },
   'standard-windows': { name: 'standard-windows', extends: 'standard' },
+  'read-only': { name: 'read-only', extends: 'standard' },
+  'workspace-write': { name: 'workspace-write', extends: 'standard' },
+  'full-access': { name: 'full-access', extends: 'standard' },
+  minimal: { name: 'minimal', extends: 'standard' },
 }
 
 const tmp: string[] = []

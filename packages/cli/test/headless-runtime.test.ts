@@ -4,7 +4,11 @@ import { join } from 'node:path'
 import { createClientModuleRegistry } from '@agnes/daemon/packages'
 import { buildCompleteRuntimeTarget } from '@agnes/host'
 import { createTestHost } from '@agnes/host/testkit'
-import { createPackageManager, RuntimeGenerationSnapshotStore } from '@agnes/package-manager'
+import {
+  createPackageManager,
+  localPluginRoots,
+  RuntimeGenerationSnapshotStore,
+} from '@agnes/package-manager'
 import { expect, it, vi } from 'vitest'
 import { parseArgs } from '../src/args.js'
 import { bootHeadless } from '../src/boot/headless.js'
@@ -54,8 +58,9 @@ vi.mock('@agnes/host', async (original) => ({
 it('loads zero-build loops and panels into isolated headless sessions and publishes reloaded panel assets', async () => {
   const root = await mkdtemp(join(tmpdir(), 'agh-headless-runtime-'))
   const home = join(root, 'home')
-  const panel = join(root, '.agnes/plugins/student-panel')
-  const loop = join(root, '.agnes/plugins/student-loop')
+  const plugins = localPluginRoots(home, root).workspace
+  const panel = join(plugins, 'student-panel')
+  const loop = join(plugins, 'student-loop')
   await mkdir(join(panel, 'client'), { recursive: true })
   await mkdir(loop, { recursive: true })
   for (const [template, directory, name] of [

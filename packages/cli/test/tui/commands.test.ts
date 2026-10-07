@@ -110,8 +110,8 @@ async function unstartedApp(
 }
 
 describe('SLASH_COMMANDS (cli 稿 §9.3 and PM7)', () => {
-  it('names the thirteen session commands plus package controls', () => {
-    expect(SLASH_COMMANDS).toHaveLength(24)
+  it('names the session commands, plan mode and package controls', () => {
+    expect(SLASH_COMMANDS).toHaveLength(25)
     expect(SLASH_COMMANDS.map((c) => c.name)).toEqual([
       '/help',
       '/quit',
@@ -124,6 +124,7 @@ describe('SLASH_COMMANDS (cli 稿 §9.3 and PM7)', () => {
       '/doctor',
       '/rewind',
       '/compact',
+      '/plan',
       '/preset',
       '/theme',
       '/model',
@@ -144,6 +145,7 @@ describe('SLASH_COMMANDS (cli 稿 §9.3 and PM7)', () => {
     expect(slashCommand('/resume')?.args).toBe('[id]')
     expect(slashCommand('/rewind')?.args).toBe('<seq>')
     expect(slashCommand('/compact')?.args).toBe('[instructions]')
+    expect(slashCommand('/plan')?.args).toBe('[on|off|instruction]')
     expect(slashCommand('/preset')?.args).toBe('<name>')
     expect(slashCommand('/theme')?.args).toBe('[light|dark|mono]')
     expect(slashCommand('/model')?.args).toBe('[<slot> <route>/<model> [<thinking>]]')

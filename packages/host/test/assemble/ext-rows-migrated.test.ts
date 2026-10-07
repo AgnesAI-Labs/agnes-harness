@@ -27,9 +27,9 @@ const say = (text: string): InferenceEvent[] => [{ type: 'text_delta', delta: te
 
 /** Every builtin id that a default test host supplies through its own ext: row, with its registrations. */
 const SUPPLIED: Record<string, string[]> = {
-  'agnes/tools-core': ['tool:read', 'tool:write', 'tool:edit', 'tool:shell', 'tool:todo'],
+  'agnes/tools-core': ['tool:read', 'tool:write', 'tool:edit', 'tool:shell', 'tool:todo', 'hook:shutdown'],
   'agnes/tools-search': ['tool:grep', 'tool:find', 'tool:ls'],
-  'agnes/tools-web': ['tool:web_fetch'],
+  'agnes/tools-web': ['tool:web_fetch', 'tool:web_search'],
   'agnes/compaction': ['tool:compact'],
   'agnes/refine': ['tool:harness_propose', 'hook:compact'],
   'agnes/subagent': [
@@ -40,6 +40,7 @@ const SUPPLIED: Record<string, string[]> = {
     'tool:subagent_list',
     'tool:subagent_send_message',
     'tool:subagent_interrupt',
+    'tool:list_subagent_models',
   ],
   'agnes/code-mode': ['tool:run_code', 'hook:session_start'],
   'agnes/privacy': ['hook:session_start', 'hook:shutdown'],

@@ -35,7 +35,7 @@ const callFork = (model: string): InferenceEvent[] => [
     call: {
       toolUseId: '',
       name: 'subagent_fork',
-      args: { question: 'answer independently', model },
+      args: { question: 'answer independently', model, isolation: 'shared' },
       ordinal: 0,
     },
     via: 'native',
@@ -453,6 +453,9 @@ describe('a host assembled from a profile naming @agnes/base', () => {
         createHash('sha256').update('A synthetic report').digest('hex'),
       )
       const ui = await session.projectUI(undefined, { surface: 'web' })
+      const update = await session.projectUIPatch(0, undefined, { surface: 'web' })
+      expect(update.kind).toBe('patch')
+      expect(JSON.stringify(update)).toContain('deliverables')
       expect(JSON.stringify(ui)).toContain('deliverables')
       expect(JSON.stringify(ui)).toContain('report.txt')
       await prompt('Present missing file')
@@ -580,7 +583,9 @@ describe('a host assembled from a profile naming @agnes/base', () => {
     })
     // An MCP server is a Host row of its own (stage 2b, D102/D107'): mount one the way the session
     // worker does, with a connection that offers one eager (non-deferred) tool.
-    const extensionId = 'agnes/mcp-gh-0000abcd'
+    // The mcp-* identity is owned by resource generations; this fake connection uses a test row.
+    const extensionId = 'agnes/test-eager-mcp'
+    let ready: Promise<{ error?: unknown }> | undefined
     const dynamic = {
       spec: {
         id: extensionId,
@@ -603,6 +608,9 @@ describe('a host assembled from a profile naming @agnes/base', () => {
           { id: 'gh', transport: 'stdio', cmd: ['x'], defer: false },
           {
             catalogHub: mcpCatalogHubFor(ctx),
+            onFirstAttempt: (attempt) => {
+              ready = attempt
+            },
             connect: async () => ({
               id: 'gh',
               async listTools() {
@@ -627,7 +635,9 @@ describe('a host assembled from a profile naming @agnes/base', () => {
       ...host.extensionRows.current(),
       host.extensionRows.prepare({ extensionId, dynamic }),
     ])
-    await vi.waitFor(() => expect(host.kernel.tools.resolve(`${mcpLocalToolPrefix('gh')}echo`)).toBeDefined())
+    expect(host.extensions().find((entry) => entry.id === extensionId)).toMatchObject({ loaded: true })
+    expect(await ready).toEqual({})
+    expect(host.kernel.tools.resolve(`${mcpLocalToolPrefix('gh')}echo`)).toBeDefined()
     try {
       const session = await host.createSession({ cwd: dataDir })
       await session.enqueue('next-turn', {
@@ -1090,7 +1100,7 @@ describe('a host assembled from a profile naming @agnes/base', () => {
     const dataDir = scratch()
     const provider = new ScriptedProvider({
       models: [fakeModel({ route: 'gw', id: 'm1' })],
-      scripts: [callFork('m1'), say('child answer'), say('parent answer')],
+      scripts: [callFork('m1'), say('fork is running'), say('fork is running')],
     })
     const { host } = await createTestHost({
       dataDir,
@@ -1121,9 +1131,22 @@ describe('a host assembled from a profile naming @agnes/base', () => {
       const result = (await session.scan({ type: 'tool/result', limit: 5 }))[0]?.data as
         | { isError?: boolean; content?: Array<{ type?: string; text?: string }> }
         | undefined
-      expect(result?.content?.[0]?.text).toBe('child answer')
+      const started = result?.content?.[0]?.text?.match(
+        /^started (.+); use subagent_collect and subagent_send_message$/,
+      )
+      expect(started).not.toBeNull()
+      const childKey = started?.[1]
+      if (!childKey) throw new Error('fork did not return a child identity')
+      const child = host.kernel.get(childKey)
+      expect(child).toBeDefined()
+      await vi.waitFor(async () => {
+        const answers = await child?.scan({ type: 'assistant/message', limit: 5 })
+        expect(JSON.stringify(answers)).toContain('fork is running')
+      })
       expect(result).toMatchObject({ isError: false })
-      expect(provider.calls[1]).toMatchObject({ route: 'gw', model: 'm1' })
+      expect(child?.preset.model.id.primary).toBe('m1')
+      for (const request of provider.calls.slice(1))
+        expect(request).toMatchObject({ route: 'gw', model: 'm1' })
     } finally {
       await host.close()
     }
@@ -1169,7 +1192,12 @@ describe('a host assembled from a profile naming @agnes/base', () => {
       expect(host.extensions().find((status) => status.id === 'agnes/hooks-runner')).toMatchObject({
         loaded: true,
       })
-      expect(host.kernel.hooks.snapshot().entries('tool_call')).toHaveLength(1)
+      expect(
+        host.kernel.hooks
+          .snapshot()
+          .entries('tool_call')
+          .map((entry) => entry.meta.source),
+      ).toEqual(['agnes/interaction', 'agnes/hooks-runner'])
       const session = await host.createSession({ cwd: dataDir })
       const payload = {
         toolUseId: 'tool-1',
