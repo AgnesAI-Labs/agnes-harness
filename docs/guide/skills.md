@@ -61,6 +61,8 @@ Names are grouped after trimming whitespace and ignoring case. Candidates not ma
 
 A failed refresh may leave stale or last-known content. Stale data is not evidence of a successful scan. Disk changes require revision and trust review again.
 
+A skill root may contain a directory `<name>/SKILL.md` or a flat `<name>.md`. The directory wins when both exist. Custom roots are not supported. `SKILL.md` may set `disable-model-invocation`, `user-invocable`, and `disable`; omitted flags permit both model and user use. There is no directory watcher: the next refresh reads changed instructions and relative resource files. Details and the unsupported cases are in [MCP and Skills support](mcp-skills-support.md).
+
 <a id="调整同名候选优先级"></a>
 
 ## Change same-name candidate priority

@@ -17,7 +17,7 @@ Run tasks through CLI and Web, connect business capabilities with plugins, captu
 | Your goal | Recommended path | What you will achieve |
 | --- | --- | --- |
 | **Try AGH** | [Install](guide/install.md) → [First run](guide/quickstart.md) → [Continue a session](guide/sessions.md) | Run a task and find its record in both Web and CLI |
-| **Give agents business capabilities** | [Backend plugins](develop/backend.md) · [MCP](guide/mcp.md) · [Skills](guide/skills.md) | Connect tools, external services, or your team's methods |
+| **Give agents business capabilities** | [Backend plugins](develop/backend.md) · [MCP](guide/mcp.md) · [Skills](guide/skills.md) · [Support](guide/mcp-skills-support.md) | Connect tools, external services, or your team's methods |
 | **Build a business workbench** | [Frontend panels](develop/frontend.md) → [Full-stack integration](develop/fullstack.md) | Add an interface and read results from a backend service |
 | **Explore and extend the runtime** | [Architecture](develop/architecture.md) → [Source map](develop/source-map.md) → [API](reference/api.md) | Understand requests, extensions, and persistent state |
 

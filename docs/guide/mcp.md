@@ -10,7 +10,7 @@ Connect an existing MCP tool service to AGH's task flow. This guide covers addin
 
 Definitions, security approval, desired enablement, and actual connection state remain separate in the control plane. In Web, users review the definition and choose Enable once; AGH completes the approval check before enabling. Inspect the catalog, then verify a real tool call.
 
-**Current implementation:** Session MCP services run as individual Host rows. OAuth bindings are still skipped on this session path; see [runtime behavior and versions](#runtime-behavior-and-versions). See [verification](../maintainers/verification.md) for versioned results.
+**Current implementation:** Session MCP services run as individual Host rows. OAuth bindings are still skipped on this session path; see [runtime behavior and versions](#runtime-behavior-and-versions). Supported and unsupported MCP and Skill behavior, including resources, prompt templates, and OAuth, is listed in [MCP and Skills support](mcp-skills-support.md). See [verification](../maintainers/verification.md) for versioned results.
 
 <a id="在会话中接入"></a>
 

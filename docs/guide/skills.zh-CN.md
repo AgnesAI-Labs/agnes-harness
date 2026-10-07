@@ -55,6 +55,8 @@ node packages/cli/dist/local/agnes.mjs resources enable SKILL_RESOURCE_ID --expe
 
 刷新失败可能留下 stale/最近已知内容，不把 stale 当作本次扫描成功。磁盘内容改变需要重新核对 revision 与信任。
 
+技能根里可以是目录 `<name>/SKILL.md`，也可以是扁平的 `<name>.md`。两者同名时目录胜出。不支持自定义根目录。`SKILL.md` 可以设置 `disable-model-invocation`、`user-invocable` 和 `disable`；省略这些字段时模型与用户两侧都允许。没有目录监视器：下一次刷新会读取变更后的说明和相对资源文件。细节与不支持的情况见 [MCP 与 Skills 支持范围](mcp-skills-support.zh-CN.md)。
+
 ## 调整同名候选优先级
 
 1. 在 Web 设置 → Skills，选对应工作区并打开 Skill 详情，查看来源、当前 winner、被覆盖候选和有效优先级。
