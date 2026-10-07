@@ -1,7 +1,7 @@
 import { defineTool } from '@agnes/extension-api'
 import { Type } from '@sinclair/typebox'
 import type { ToolIndexReader } from '../../../src/mcp/index-table.js'
-import type { SkillRuntimeDiscovery } from '../../skills/src/runtime.js'
+import { modelVisibleSkill, type SkillRuntimeDiscovery } from '../../skills/src/runtime.js'
 
 const READ_ONLY = {
   isReadOnly: true,
@@ -61,7 +61,7 @@ function matchingSkills(runtime: SkillRuntimeDiscovery | undefined, query: strin
     .list()
     // `ready` is the narrow runtime projection of enabled + trusted + winner. The body remains
     // inside skill_read; this discovery bridge receives only the existing safe descriptor.
-    .filter((skill) => skill.actual === 'ready')
+    .filter((skill) => skill.actual === 'ready' && modelVisibleSkill(runtime, skill.resourceId))
   return ready
     .map((skill) => {
       const name = normalized(skill.name)

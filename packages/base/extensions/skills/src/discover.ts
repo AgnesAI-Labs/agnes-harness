@@ -7,7 +7,14 @@ import {
   type SkillResolution,
 } from '@agnes/protocol'
 import { collectSkillFiles, type SkillFile, type SkillFileKind, skillRevision } from './assets.js'
-import { normalizeSkillName, parseSkillDocument, skillSha256 } from './frontmatter.js'
+import {
+  type SkillInvocation,
+  normalizeSkillName,
+  parseSkillDocument,
+  skillSha256,
+} from './frontmatter.js'
+
+export type { SkillInvocation }
 
 export type { SkillFile, SkillFileKind }
 
@@ -110,6 +117,7 @@ export type SkillCandidate = Readonly<{
   files?: readonly SkillFile[]
   /** Host-private absolute base directory, told to the model so it can read files and run scripts. */
   directory?: string
+  invocation: SkillInvocation
 }>
 /**
  * Why a whole root scan was rejected. The code names a reason only — never a path, a directory name or
@@ -213,6 +221,7 @@ function candidateFromDocument(input: {
       sourceIdentity,
       priority: input.priority,
       body: parsed.body,
+      invocation: parsed.frontmatter.invocation,
       ...(input.scope === 'workspace' && input.workspaceKey ? { workspaceId: input.workspaceKey } : {}),
     }),
   }

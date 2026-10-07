@@ -5,6 +5,7 @@ export default skillsExtension({} as Parameters<typeof skillsExtension>[0])
 
 export * from './discover.js'
 export {
+  modelVisibleSkill,
   type SkillRuntimeActual,
   type SkillRuntimeDiscovery,
   type SkillRuntimeInput,

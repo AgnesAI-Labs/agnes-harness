@@ -112,6 +112,7 @@ export {
   discoverSkillRoot,
   locateSkillEntry,
   type SkillCandidate as DiscoveredSkillCandidate,
+  type SkillInvocation,
   type SkillFile,
   type SkillFileKind,
   type SkillFs,

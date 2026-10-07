@@ -9,6 +9,12 @@ import type {
 import type { ResourceActivationBarrier, ResourceActivationPermit } from './activation.js'
 
 export type SkillSourceIdentity = ProtocolSkillSourceIdentity
+/** In-process document flags. They are not part of the protocol SkillDescriptor. */
+export type SkillInvocation = Readonly<{
+  modelInvocable: boolean
+  userInvocable: boolean
+  disabled: boolean
+}>
 /** Candidate bodies are Host-private and must never be returned by status or protocol methods. */
 export type SkillCandidate = Readonly<{
   resourceId: string
@@ -29,6 +35,8 @@ export type SkillCandidate = Readonly<{
   }>[]
   /** Host-private absolute base directory. Never projected into descriptors. */
   directory?: string
+  /** Absent when the candidate was recorded before invocation flags existed. */
+  invocation?: SkillInvocation
 }>
 export type SkillDesiredInput = Readonly<{ resourceId: string; state: DesiredState }>
 export type SkillTrustInput = Readonly<{
@@ -74,6 +82,8 @@ export type SkillRuntimeInput = Readonly<{
   readRoots?(): readonly string[]
   /** Host attaches the per-session workspace invocation boundary before exposing this snapshot. */
   runInWorkspace?<T>(sessionKey: string, invoke: () => Promise<T>): Promise<T>
+  /** Document flags. An undefined result keeps the skill on every surface its actual state allows. */
+  invocation?(resourceId: string): SkillInvocation | undefined
   /** Host-private: enter only with a root obtained from an acquired workspace invocation. */
   scopeWorkspace?<T>(root: string, sessionKey: string, invoke: () => Promise<T>): Promise<T>
 }>
@@ -290,6 +300,15 @@ const actual = (state: RegistryState): readonly SkillActual[] =>
       .sort((a, b) => a.name.localeCompare(b.name) || a.resourceId.localeCompare(b.resourceId)),
   )
 
+function blockInvocation(
+  flags: SkillInvocation | undefined,
+): Extract<SkillRead, { ok: false }> | undefined {
+  if (!flags) return undefined
+  if (flags.disabled || (!flags.modelInvocable && !flags.userInvocable))
+    return Object.freeze({ ok: false, code: 'DISABLED' as const })
+  return undefined
+}
+
 function denyRead(
   found: { actual: SkillActual } | undefined,
   canRead: Options['canRead'],
@@ -320,6 +339,7 @@ function indexState(state: RegistryState) {
       body?: string
       files?: SkillCandidate['files']
       directory?: string
+      invocation?: SkillInvocation
     }
   >()
   for (const group of groups(state))
@@ -328,6 +348,7 @@ function indexState(state: RegistryState) {
       if (descriptor)
         byId.set(candidate.resourceId, {
           actual: descriptor,
+          ...(candidate.invocation ? { invocation: candidate.invocation } : {}),
           ...(descriptor.actual === 'ready'
             ? {
                 body: candidate.body,
@@ -352,6 +373,9 @@ const baseDirectoryNote = (directory: string) =>
 function liveSnapshot(current: () => RegistryState, canRead: Options['canRead']): SkillRuntimeInput {
   return Object.freeze({
     list: () => indexState(current()).listed,
+    invocation(resourceId) {
+      return indexState(current()).byId.get(resourceId)?.invocation
+    },
     readRoots() {
       const roots = new Set<string>()
       for (const entry of indexState(current()).byId.values())
@@ -362,6 +386,8 @@ function liveSnapshot(current: () => RegistryState, canRead: Options['canRead'])
       const found = indexState(current()).byId.get(resourceId)
       const denied = denyRead(found, canRead, resourceId, session)
       if (denied || !found) return denied ?? Object.freeze({ ok: false, code: 'NOT_FOUND' as const })
+      const blocked = blockInvocation(found.invocation)
+      if (blocked) return blocked
       const body = found.body ?? ''
       return Object.freeze({
         ok: true,
@@ -376,6 +402,8 @@ function liveSnapshot(current: () => RegistryState, canRead: Options['canRead'])
         return Object.freeze({ ok: false, code: 'UNTRUSTED_REVISION' as const })
       const denied = denyRead(found, canRead, resourceId, session)
       if (denied) return denied
+      const blocked = blockInvocation(found?.invocation)
+      if (blocked) return blocked
       const file = found?.files?.find((item) => item.relativePath === relativePath)
       if (!file) return Object.freeze({ ok: false, code: 'NOT_FOUND' as const })
       if (file.kind === 'binary')

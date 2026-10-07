@@ -10,6 +10,7 @@ import {
 import { Type } from '@sinclair/typebox'
 import type { SeamInitContext } from '../../../src/seam-init.js'
 import { isSkillRelativePath } from './assets.js'
+import type { SkillInvocation } from './frontmatter.js'
 import { pageText } from './page.js'
 
 type SkillContextReturn = { sections?: Array<{ id: string; order: number; content: string }> }
@@ -47,9 +48,26 @@ export type SkillRuntimeInput = Readonly<{
   ): SkillFileReadResult
   /** Host-owned session lease boundary. Every session-scoped discovery/read must enter it. */
   runInWorkspace<T>(sessionKey: string, invoke: () => Promise<T>): Promise<T>
+  /**
+   * Document flags for one skill. An omitted function, or an undefined result, leaves every ready
+   * skill visible. That keeps runtimes recorded before invocation flags existed unchanged.
+   */
+  invocation?(resourceId: string): SkillInvocation | undefined
 }>
 /** Safe discovery view for other bundled extensions; it deliberately has no Skill-body read port. */
-export type SkillRuntimeDiscovery = Readonly<Pick<SkillRuntimeInput, 'list' | 'runInWorkspace'>>
+export type SkillRuntimeDiscovery = Readonly<
+  Pick<SkillRuntimeInput, 'list' | 'runInWorkspace' | 'invocation'>
+>
+
+/** Ready skills stay visible when flags were not recorded. A disabled or model-hidden skill does not. */
+export function modelVisibleSkill(
+  runtime: { invocation?(resourceId: string): SkillInvocation | undefined },
+  resourceId: string,
+): boolean {
+  const flags = runtime.invocation?.(resourceId)
+  if (flags === undefined) return true
+  return flags.modelInvocable && !flags.disabled
+}
 
 const encoder = new TextEncoder()
 /** Protocol ceiling for PromptSection.text. The catalog uses that limit and does not add a second one. */
@@ -73,7 +91,7 @@ const meta = {
 }
 
 function active(runtime: SkillRuntimeInput): readonly SkillRuntimeActual[] {
-  return runtime.list().filter((skill) => skill.actual === 'ready')
+  return runtime.list().filter((skill) => skill.actual === 'ready' && modelVisibleSkill(runtime, skill.resourceId))
 }
 
 type CatalogRow = Readonly<{ name: string; resourceId: string; description: string }>
@@ -261,7 +279,7 @@ function fileTool(runtime: SkillRuntimeInput): ToolDef {
     meta,
     async execute(args, ctx) {
       return inWorkspace(runtime, ctx.session.key, async () => {
-        if (!isSkillRelativePath(args.relativePath))
+        if (!isSkillRelativePath(args.relativePath) || !modelVisibleSkill(runtime, args.resourceId))
           return {
             content: [{ type: 'text', text: 'Skill file is unavailable: NOT_FOUND' }],
             isError: true,
