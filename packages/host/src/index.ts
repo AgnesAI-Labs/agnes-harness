@@ -69,6 +69,7 @@ export {
   type TableHandle,
   type TableStore,
 } from './adapters/storage-sqlite.js'
+export { openConfiguredPersistence, sqlitePersistenceProvider } from './adapters/storage-provider.js'
 export { createAdminSessionSelection, type HostAdminSessionCatalog } from './admin-session-selection.js'
 export {
   type ApprovalGrantBinding,

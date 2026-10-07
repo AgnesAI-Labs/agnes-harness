@@ -250,6 +250,23 @@ export function hashInput(p: Omit<ResolvedProfile, 'hash'>): unknown {
   return p
 }
 
+const PERSISTENCE_PROVIDER_ID = /^[a-z][a-z0-9._-]{0,63}$/
+
+function assertPersistence(value: unknown, layer: Layer): { provider: string } {
+  if (value === null || typeof value !== 'object' || Array.isArray(value))
+    throw new HostError('E_PROFILE_FRAGMENT_KEY', 'persistence must be an object', {
+      source: { layer },
+      detail: { field: 'persistence' },
+    })
+  const provider = (value as { provider?: unknown }).provider
+  if (typeof provider !== 'string' || !PERSISTENCE_PROVIDER_ID.test(provider))
+    throw new HostError('E_PROFILE_FRAGMENT_KEY', 'persistence.provider id is invalid', {
+      source: { layer },
+      detail: { field: 'persistence.provider' },
+    })
+  return { provider }
+}
+
 export async function resolveProfile(inputs: ProfileInputs, env: ResolveEnv): Promise<ResolvedProfile> {
   // env is the caller's declaration of the running installation. Later layers read platform and now
   // off it; here it is checked rather than ignored, because a caller that forgot to fill it in would
@@ -258,6 +275,17 @@ export async function resolveProfile(inputs: ProfileInputs, env: ResolveEnv): Pr
     throw new HostError('E_DEP_MISSING', 'resolveProfile needs env.agnesVersion', {
       detail: { field: 'env.agnesVersion' },
     })
+  for (const [layer, manifest] of [
+    ['workspace', inputs.workspaceOverlay],
+    ['local', inputs.local],
+    ['flags', inputs.flags],
+    ['managed', inputs.managed],
+  ] as const)
+    if (manifest && Object.hasOwn(manifest, 'persistence'))
+      throw new HostError('E_PROFILE_FRAGMENT_KEY', 'persistence.provider is selected by the user profile', {
+        source: { layer },
+        detail: { field: 'persistence.provider', effect: 'restart-required' },
+      })
   const layers = collectLayers(inputs)
   if (
     env.platform.os === 'win32' &&
@@ -289,6 +317,14 @@ export async function resolveProfile(inputs: ProfileInputs, env: ResolveEnv): Pr
     }
     if (Object.hasOwn(l.manifest, 'reconcile'))
       resolveReconcilePolicy((l.manifest as { reconcile?: unknown }).reconcile, l.layer)
+    if (Object.hasOwn(l.manifest, 'persistence')) {
+      if (l.layer !== 'user')
+        throw new HostError('E_PROFILE_FRAGMENT_KEY', 'persistence.provider is selected by the user profile', {
+          source: { layer: l.layer },
+          detail: { field: 'persistence.provider', effect: 'restart-required' },
+        })
+      l.manifest = { ...l.manifest, persistence: assertPersistence(l.manifest.persistence, l.layer) }
+    }
   }
   const first = layers[0] as LayerInput
   let draft: Draft = { manifest: first.manifest as RuntimeProfileManifest, chain: [first.label] }
@@ -503,6 +539,9 @@ function finalize(draft: Draft, inputs: ProfileInputs, env: ResolveEnv): Resolve
     ...(m.extensionIsolation ? { extensionIsolation: m.extensionIsolation } : {}),
     ...(m.commandHooks ? { commandHooks: structuredClone(m.commandHooks) } : {}),
     ...(m.compaction ? { compaction: { engine: m.compaction.engine } } : {}),
+    ...(m.persistence && m.persistence.provider !== 'sqlite'
+      ? { persistence: { provider: m.persistence.provider } }
+      : {}),
     runtimes: [],
   }
   const hash = `sha256-${sha256hex(canonicalJson(hashInput(draftProfile)))}`

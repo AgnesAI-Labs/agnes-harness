@@ -14,13 +14,15 @@ import {
   type SeamName,
   type WorkspaceHookSandbox,
 } from '@agnes/core'
-import type {
-  CompactionEngine,
-  ExtensionAPI,
-  ExtensionFactory,
-  ExtensionManifest,
-  HookInvocationSnapshot,
-  Logger,
+import {
+  definePersistenceProvider,
+  type CompactionEngine,
+  type ExtensionAPI,
+  type ExtensionFactory,
+  type ExtensionManifest,
+  type HookInvocationSnapshot,
+  type Logger,
+  type PersistenceProvider,
 } from '@agnes/extension-api'
 import {
   type AgnesPluginManifestEntry,
@@ -205,6 +207,8 @@ export type PackageModule = {
   /** Base planner retained for before_compact compatibility and legacy in-memory package loaders. */
   buildCompactionPlan?: BuildCompactionPlan
   createDefaultCompactionEngine?: (plan: BuildCompactionPlan) => CompactionEngine
+  /** Session store published by this package. Host reads it when adapters open, not from `apply()`. */
+  persistenceProvider?: PersistenceProvider
   /** Release-embedded manifests. Only a loader owned by the executable can populate these. */
   embeddedExtensions?: readonly ExtensionManifest[]
   extensionEntry?: string
@@ -379,6 +383,25 @@ export function readNamedExports(
         detail: { id, reason: 'not-a-function' },
       })
     out.buildCompactionPlan = mod.buildCompactionPlan as BuildCompactionPlan
+  }
+  if (mod.persistenceProvider !== undefined) {
+    let provider: PersistenceProvider
+    try {
+      provider = definePersistenceProvider(mod.persistenceProvider as PersistenceProvider)
+    } catch (error) {
+      throw new HostError('E_EXT_LOAD', `${id}: persistenceProvider export is invalid`, {
+        detail: {
+          id,
+          reason: 'persistence-provider',
+          message: error instanceof Error ? error.message : String(error),
+        },
+      })
+    }
+    if (provider.id === 'sqlite')
+      throw new HostError('E_SEAM_INIT', `${id}: the sqlite persistence provider is built in`, {
+        detail: { id, provider: provider.id, effect: 'restart-required' },
+      })
+    out.persistenceProvider = provider
   }
   return out
 }

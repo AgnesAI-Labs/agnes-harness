@@ -3,6 +3,7 @@ import { mkdirSync } from 'node:fs'
 import { isAbsolute, join, posix, resolve } from 'node:path'
 import type { ApprovalAnswer, ApprovalRequest, FsPolicy, FsRule, Verdict } from '@agnes/core'
 import { validateFsPolicy } from '@agnes/core'
+import type { PersistenceProvider } from '@agnes/extension-api'
 import { WORKSPACE_SECRET_DIRS } from '@agnes/protocol'
 import { RemoteWorkspacePool } from '@agnes/sandbox-remote'
 import type { PackageModule } from '../assemble/packages.js'
@@ -30,7 +31,8 @@ import {
   createSessionWorkspaceAdapterFactory,
   type SessionWorkspaceAdapterFactory,
 } from './session-workspace.js'
-import { createSqliteStorage, type SqliteStorage, type TableStore } from './storage-sqlite.js'
+import { type SqliteStorage, type TableStore } from './storage-sqlite.js'
+import { openConfiguredPersistence } from './storage-provider.js'
 
 // The deadline is carried by the signal rather than by a field grafted onto the request, so one
 // prompter serves both a timeout and an explicit cancellation.
@@ -180,6 +182,10 @@ export async function openAdapters(
     skillReadRoots?: () => readonly string[]
     /** The installation's own state: readable but never writable by the file tools under full access. */
     fullAccessReadOnlyRoots?: () => readonly string[]
+    /** Selects the session store. Omitted means the built-in `sqlite` provider. A change applies on the next start. */
+    persistence?: { provider?: string }
+    /** Providers already loaded, in addition to package exports named `persistenceProvider`. */
+    persistenceProviders?: readonly PersistenceProvider[]
   },
 ): Promise<AdapterBundle> {
   assertSessionTreeStorePath(opts.dataDir)
@@ -269,9 +275,12 @@ export async function openAdapters(
         : {}),
       ...(powerShell ? { windowsPowerShell: powerShell } : {}),
     })
-    const openedStorage = createSqliteStorage({
-      file: join(opts.dataDir, 'sessions.db'),
-      tablesDir: join(opts.dataDir, 'tables'),
+    const persistenceProviderId = opts.persistence?.provider ?? profile.persistence?.provider
+    const openedStorage = await openConfiguredPersistence({
+      dataDir: opts.dataDir,
+      ...(persistenceProviderId !== undefined ? { providerId: persistenceProviderId } : {}),
+      ...(opts.modules ? { modules: opts.modules } : {}),
+      ...(opts.persistenceProviders ? { providers: opts.persistenceProviders } : {}),
     })
     storage = openedStorage
     // Under a remote deployment the workspace is a volume on another machine, so the case semantics
@@ -475,6 +484,8 @@ export async function openAdapters(
     throw e
   }
 }
+
+export { openConfiguredPersistence, sqlitePersistenceProvider } from './storage-provider.js'
 
 export function lazyPackageTables(storage: SqliteStorage, owner: string): TableStore {
   let opened: TableStore | undefined

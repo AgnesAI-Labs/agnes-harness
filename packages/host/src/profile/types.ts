@@ -139,6 +139,8 @@ export type RuntimeProfileManifest = {
   compaction?: { engine: string }
   commandHooks?: CommandHooksPolicy
   extensionIsolation?: ExtensionIsolationPolicy
+  /** Session store id. Only the user profile may set it. The running process keeps the store it opened. */
+  persistence?: { provider: string }
 }
 export type ProfileFragment = {
   packages?: PackageRef[]
@@ -238,6 +240,8 @@ export type ResolvedProfile = Readonly<{
   compaction?: { engine: string }
   commandHooks?: CommandHooksPolicy
   extensionIsolation?: ExtensionIsolationPolicy
+  /** Present only when the selected provider is not the built-in `sqlite` id. Changing it is restart-required. */
+  persistence?: { provider: string }
   runtimes: ('python' | 'typescript')[]
   hash: string
 }>
