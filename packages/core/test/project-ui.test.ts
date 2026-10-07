@@ -953,12 +953,22 @@ it('fills only supported surface triggers after real results, never pending tool
   const opening = await session.projectUIOpening({ surface: 'tui', maxNodes: 1 })
   expect(opening.timeline.nodes).toHaveLength(1)
   expect(opening.timeline.slots?.map((fill) => fill.payload)).toEqual([{ text: 'status', level: 'info' }])
+  const webOpening = await session.projectUIOpening({ surface: 'web', maxNodes: 1 })
+  expect(webOpening.timeline.slots?.map((fill) => fill.payload)).toEqual([{ text: 'status', level: 'info' }])
   const page = await session.projectUIHistory(opening.timeline.upto, opening.startIndex, {
     surface: 'tui',
     limit: 100,
   })
   expect(kind(page.nodes, 'tool')[0]?.slots?.map((fill) => fill.payload)).toEqual([{ title: 'card' }])
   fullView.mockRestore()
+  session.d.slotFills = () => async () => []
+  for (const surface of ['tui', 'channel'] as const)
+    expect((await session.projectUIOpening({ surface })).timeline).not.toHaveProperty('slots')
+  expect((await session.projectUIOpening({ surface: 'web' })).timeline.slots).toEqual([])
+  const cleared = await session.projectUIPatch(session.lastSeq, undefined, { surface: 'web' })
+  expect(cleared.kind).toBe('patch')
+  if (cleared.kind !== 'patch') throw new Error('expected a live slots patch')
+  expect(cleared.patch.slots).toEqual([])
   calls.length = 0
   const timeline = await session.projectUI(undefined, { surface: 'tui', fills })
   expect(calls).toEqual(['tool_result', 'turn_end', 'tick'])

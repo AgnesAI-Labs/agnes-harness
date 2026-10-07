@@ -24,8 +24,8 @@ export async function fillLiveSlots(
       result.push(structuredClone(fill))
       bytes += size
     }
-    return result
+    return result.length || opts.surface === 'web' ? result : undefined
   } catch {
-    return []
+    return opts.surface === 'web' ? [] : undefined
   }
 }
