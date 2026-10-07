@@ -23,6 +23,7 @@ describe('repo', () => {
       '@agnes/error-sanitization',
       '@agnes/extension-api',
       '@agnes/guards',
+      '@agnes/history-index',
       '@agnes/host',
       '@agnes/loop-default',
       '@agnes/mcp-transport-health',

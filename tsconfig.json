@@ -141,6 +141,9 @@
     },
     {
       "path": "packages/loop-default"
+    },
+    {
+      "path": "packages/history-index"
     }
   ]
 }

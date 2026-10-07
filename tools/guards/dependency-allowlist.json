@@ -47,6 +47,7 @@
     "@agnes/resource-control-worker"
   ],
   "@agnes/resource-control-cli": ["@agnes/daemon", "@agnes/protocol", "@agnes/sdk"],
+  "@agnes/history-index": [],
   "@agnes/extension-api": ["@agnes/protocol"],
   "@agnes/core": ["@agnes/protocol", "@agnes/protocol-validation", "@agnes/extension-api"],
   "@agnes/ai": ["@agnes/protocol", "@agnes/core"],

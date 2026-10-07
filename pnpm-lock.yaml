@@ -398,6 +398,8 @@ importers:
         specifier: 0.34.33
         version: 0.34.33
 
+  packages/history-index: {}
+
   packages/host:
     dependencies:
       '@agnes/ai':
