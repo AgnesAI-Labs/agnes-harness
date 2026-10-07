@@ -23,6 +23,7 @@ import type { HostConvergenceReport, HostPublicationReport } from './host-facade
 import { closeHost } from './lifecycle.js'
 import { type ResolvedPreset, resolvePreset } from './presets/resolve.js'
 import type { PresetDoc } from './presets/types.js'
+import { adminSecurityStatus } from './admin-security-status.js'
 import { assertCompositionCompatible } from './profile/composition.js'
 import { createCompositionHost } from './profile/composition-runtime.js'
 import type { LiveCompositionSession } from './profile/composition-state.js'
@@ -70,6 +71,8 @@ export type HostOptions = Omit<AssembleDeps, 'audit' | 'loader'> & {
 }
 
 export interface Host {
+  /** Description-only admin port; reads measured facts without probing or execution. */
+  securityStatus?(): import('@agnes/protocol').RuntimeSecurityStatus
   compositionSessions?(): readonly LiveCompositionSession[]
   pluginGenerationStatus?(): PluginGenerationStatus
   sessionGeneration?(sessionKey: string): string | undefined
@@ -303,6 +306,14 @@ async function createHostInstance(profile: ResolvedProfile, opts: HostOptions): 
           operationCancel: (operationId) => computerUse.operationCancel(operationId),
         })
       : undefined,
+    securityStatus: () =>
+      adminSecurityStatus(
+        profile,
+        a.adapters.platform,
+        a.presets,
+        a.kernel.sessions.values(),
+        workspaceRuntimes,
+      ),
     presets: a.presets,
     resolveActor: (credential, surface) => a.seams.principals.resolve(credential, surface),
     acceptWorkspaceBinding: (envelope, expectedSessionKey) =>

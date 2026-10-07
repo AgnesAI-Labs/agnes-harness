@@ -636,6 +636,14 @@ export async function createRuntimeGenerationHost(
   const overrides: Partial<Host> = {
     kernel,
     pluginGenerationStatus: status,
+    securityStatus: () => {
+      const head = (current?.host ?? initial).securityStatus?.()
+      if (!head) throw new Error('Security status is unavailable')
+      return {
+        ...head,
+        workspaces: [...live.values()].flatMap(({ host }) => host.securityStatus?.().workspaces ?? []),
+      }
+    },
     sessionGeneration: (key) => store.session(key)?.generationId,
     collectPluginGenerations: () => enqueue(collect),
     reloadPlugin: (id, directory) =>

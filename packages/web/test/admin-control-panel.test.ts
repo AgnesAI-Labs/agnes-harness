@@ -16,6 +16,7 @@ import { sessionLoopSelection } from '../src/admin/plugins/session-loop.js'
 import { LoopPicker, updateLoopPicker } from '../src/loop-picker.js'
 import { SETTINGS_PAGES, SettingsHub } from '../src/settings/hub.js'
 import { settingsCatalog } from '../src/settings/locales.js'
+import { SecurityStatusPanel } from '../src/settings/security-status.js'
 import { GenerationsPanel, PublicationPanel } from '../src/settings/runtime-panels.js'
 
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true
@@ -231,9 +232,8 @@ it('reports publication failures and requires an explicit eligible migration wit
     permissions: ['packages.read'] as const,
     readOnly: true,
   }
-  const older = new PluginAdminApi(context, vi.fn())
   const unsupported = await mount(
-    createElement(GenerationsPanel, { api: older, status: undefined, canSave: true, t: text }),
+    createElement(GenerationsPanel, { api: undefined, status: undefined, canSave: true, t: text }),
   )
   expect(unsupported.querySelector<HTMLButtonElement>('[data-testid="migrate-session"]')?.disabled).toBe(true)
   expect(unsupported.textContent).toContain(text('migrationUnavailable'))
@@ -328,4 +328,63 @@ it('places ordered bundle and preset choices beside the loop only for a new sess
     }),
   )
   expect(host.querySelector('[data-testid="new-session-bundles"]')).toBeNull()
+})
+
+it('distinguishes requested permissions from measured workspace enforcement', async () => {
+  const text = (key: string) => settingsCatalog.en[key] ?? key
+  const missing = await mount(createElement(SecurityStatusPanel, { status: undefined, t: text }))
+  expect(missing.textContent).toContain(text('securityUnavailable'))
+  const host = await mount(
+    createElement(SecurityStatusPanel, {
+      status: {
+        platform: { os: 'linux', l1: { level: 'unavailable', scope: [], reason: 'Not probed' } },
+        presetPolicies: [
+          {
+            id: 'read-only',
+            level: 'L1',
+            required: true,
+            onUnavailable: 'deny',
+            approvalPolicy: 'read-only',
+            networkMode: 'deny',
+          },
+          {
+            id: 'full-access',
+            level: 'L0',
+            required: false,
+            onUnavailable: 'allow',
+            approvalPolicy: 'full-access',
+            networkMode: 'unrestricted',
+          },
+        ],
+        workspaces: [
+          {
+            sessionId: 'session-a',
+            path: '/synthetic',
+            preset: 'read-only',
+            provider: 'local',
+            state: 'ready',
+            enforcement: { level: 'partial', scope: ['file'] },
+            policyDigest: 'bound-digest',
+          },
+          {
+            sessionId: 'session-b',
+            path: '/synthetic',
+            preset: 'full-access',
+            provider: 'local',
+            state: 'unavailable',
+          },
+        ],
+      },
+      t: text,
+    }),
+  )
+  expect(host.querySelector('[data-testid="permission-preset-status"]')?.textContent).toContain(
+    text('network.unrestricted'),
+  )
+  const rows = host.querySelectorAll('[data-testid="workspace-sandbox-status"]')
+  expect(rows).toHaveLength(2)
+  expect(rows[0]?.textContent).toContain(text('enforcement.partial'))
+  expect(rows[0]?.textContent).toContain('bound-digest')
+  expect(rows[1]?.textContent).toContain(text('unmeasured'))
+  expect(rows[1]?.textContent).not.toContain(text('enforcement.full'))
 })

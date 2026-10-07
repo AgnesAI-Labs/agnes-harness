@@ -279,6 +279,14 @@ export async function createCompositionHost(
     runtimeTargetSnapshot: () => latestTarget ?? initial.host.runtimeTargetSnapshot!(),
     ordinaryConvergence: () => convergence(),
     compositionSessions: live,
+    securityStatus: () => {
+      const initialStatus = initial.host.securityStatus?.()
+      if (!initialStatus) throw new Error('Security status is unavailable')
+      return {
+        ...initialStatus,
+        workspaces: [...containers.values()].flatMap(({ host }) => host.securityStatus?.().workspaces ?? []),
+      }
+    },
     compositionPublicationStatus: () => lastPublication,
     createSession: (input) =>
       enqueue(async () => {

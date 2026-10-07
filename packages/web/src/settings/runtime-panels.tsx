@@ -2,6 +2,7 @@ import type { PluginGenerationStatus, RuntimeAdminSnapshot } from '@agnes/protoc
 import { Badge, Button, Field } from '@agnes/web-ui'
 import { useState } from 'react'
 import type { PluginAdminApi } from '../admin/plugins/api.js'
+import { SecurityStatusPanel } from './security-status.js'
 
 export const PROVIDER_KINDS = [
   'loop',
@@ -60,10 +61,6 @@ export function ProvidersPanel({
     </>
   )
 }
-type MigrationPort = { migrateSession(sessionId: string): Promise<unknown> }
-function supportsMigration(api: PluginAdminApi | undefined): api is PluginAdminApi & MigrationPort {
-  return !!api && 'migrateSession' in api && typeof api.migrateSession === 'function'
-}
 export function GenerationsPanel({
   status,
   api,
@@ -82,26 +79,14 @@ export function GenerationsPanel({
   const [busy, setBusy] = useState(false)
   const [message, setMessage] = useState('')
   const [result, setResult] = useState<{ previous: string; current: string }>()
-  const supported = supportsMigration(api)
+  const supported = !!api
   async function migrate() {
-    if (!supportsMigration(api) || !canSave || busy || !sessionId.trim()) return
+    if (!api || !canSave || busy || !sessionId.trim()) return
     setBusy(true)
     setMessage('')
     setResult(undefined)
     try {
-      // Consume W7's validated admin client when fitted; older clients fail closed.
       const value = await api.migrateSession(sessionId.trim())
-      if (
-        !value ||
-        typeof value !== 'object' ||
-        !('previousGenerationId' in value) ||
-        typeof value.previousGenerationId !== 'string' ||
-        !('generationId' in value) ||
-        typeof value.generationId !== 'string' ||
-        !('changed' in value) ||
-        typeof value.changed !== 'boolean'
-      )
-        throw new Error('Invalid migration result')
       setResult({ previous: value.previousGenerationId, current: value.generationId })
       setMessage(value.changed ? 'migrated' : 'alreadyCurrent')
       setConfirming(false)
@@ -331,6 +316,7 @@ export function SecurityPanel({ snapshot, t }: { snapshot: RuntimeAdminSnapshot;
           </article>
         ))}
       </div>
+      <SecurityStatusPanel status={snapshot.security} t={t} />
       <h3>{t('sandbox')}</h3>
       <ProvidersPanel snapshot={snapshot} kinds={['sandbox']} t={t} />
     </>

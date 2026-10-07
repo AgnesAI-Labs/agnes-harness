@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync } from 'node:fs'
+import { mkdtempSync, realpathSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -8,6 +8,7 @@ import { ToolRegistry } from '@agnes/core'
 import { defineTool } from '@agnes/extension-api'
 import type { RuntimePluginSnapshot } from '@agnes/package-manager'
 import { normalizePluginExport } from '@agnes/plugin-runtime/host'
+import { RuntimeSecurityStatus, validateAgainst } from '@agnes/protocol'
 import { Type } from '@sinclair/typebox'
 import { expect, it, vi } from 'vitest'
 import { assertHostPublication } from '../../src/host-facade.js'
@@ -98,6 +99,15 @@ it('runs preset compositions side by side, filters tools and retains the generat
     host = (await createTestHost(options)).host
     const reader = await host.createSession({ key: 'reader-session', preset: 'reader', cwd: root })
     const writer = await host.createSession({ key: 'writer-session', preset: 'writer', cwd: root })
+    const security = host.securityStatus?.()
+    expect(validateAgainst(RuntimeSecurityStatus, security).ok).toBe(true)
+    expect(security?.workspaces).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ sessionId: reader.key, path: realpathSync(root), preset: 'reader', provider: 'local' }),
+        expect.objectContaining({ sessionId: writer.key, path: realpathSync(root), preset: 'writer', provider: 'local' }),
+      ]),
+    )
+    expect(JSON.stringify(security)).not.toContain('confine')
     expect(reader.pluginGenerationId).toBeTruthy()
     expect(writer.pluginGenerationId).not.toBe(reader.pluginGenerationId)
     expect(reader.currentTools().resolve('read')).toBeDefined()

@@ -1973,7 +1973,7 @@ export async function startSupervisor(o: StartSupervisorOptions): Promise<{
             const link = await pool.acquireSharedWorker()
             const catalog = (await link.command('session.catalog', {}, { timeoutMs: 31_000 })) as Pick<
               import('@agnes/protocol').RuntimeAdminSnapshot,
-              'providers' | 'presets' | 'publication' | 'bundles'
+              'providers' | 'presets' | 'publication' | 'bundles' | 'security'
             >
             const localPluginFolders = o.packageRuntime?.manager.localPluginRoots
             if (!localPluginFolders)
@@ -1982,6 +1982,7 @@ export async function startSupervisor(o: StartSupervisorOptions): Promise<{
               providers: catalog.providers,
               presets: catalog.presets,
               ...(catalog.bundles ? { bundles: catalog.bundles } : {}),
+              ...(catalog.security ? { security: catalog.security } : {}),
               localPluginFolders,
               ...(catalog.publication ? { publication: catalog.publication } : {}),
             }

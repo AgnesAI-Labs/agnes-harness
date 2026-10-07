@@ -328,6 +328,38 @@ export class SessionWorkspaceRuntimeTable implements ChildWorkspaceRuntimePort {
     return undefined
   }
 
+  /** Admin-only observation; failure to read posture never changes invocation authorization. */
+  securityStatus(
+    sessionKey: string,
+  ):
+    | Readonly<{
+        root: string
+        policyDigest: string
+        state: 'ready' | 'closing'
+        enforcement?: ReturnType<SandboxSeam['enforcement']>
+      }>
+    | undefined {
+    const status = this.peek(sessionKey)
+    if (!status) return undefined
+    if (status.state !== 'ready') return status
+    try {
+      const enforcement = this.entries.get(sessionKey)?.runtime.seam?.enforcement()
+      return {
+        ...status,
+        ...(enforcement
+          ? {
+              enforcement: {
+                level: enforcement.level,
+                scope: [...enforcement.scope],
+              },
+            }
+          : {}),
+      }
+    } catch {
+      return status
+    }
+  }
+
   invocation(sessionKey: string): WorkspaceInvocationPort {
     const existing = this.invocationPorts.get(sessionKey)
     if (existing) return existing

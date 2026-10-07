@@ -24,6 +24,66 @@ export const RuntimePublicationReport = Type.Object(
   { additionalProperties: false },
 )
 export type RuntimePublicationReport = Static<typeof RuntimePublicationReport>
+const enforcement = Type.Object(
+  {
+    level: Type.Union([Type.Literal('none'), Type.Literal('partial'), Type.Literal('full')]),
+    scope: strings,
+  },
+  { additionalProperties: false },
+)
+export const RuntimeSecurityStatus = Type.Object(
+  {
+    platform: Type.Object(
+      {
+        os: text,
+        l1: Type.Object(
+          {
+            level: Type.Union([Type.Literal('full'), Type.Literal('partial'), Type.Literal('unavailable')]),
+            scope: strings,
+            reason: Type.Optional(text),
+          },
+          { additionalProperties: false },
+        ),
+      },
+      { additionalProperties: false },
+    ),
+    presetPolicies: Type.Array(
+      Type.Object(
+        {
+          id: text,
+          level: Type.Union([Type.Literal('L0'), Type.Literal('L1')]),
+          required: Type.Boolean(),
+          onUnavailable: Type.Union([Type.Literal('deny'), Type.Literal('allow')]),
+          approvalPolicy: text,
+          networkMode: Type.Union([
+            Type.Literal('deny'),
+            Type.Literal('allow-list'),
+            Type.Literal('unrestricted'),
+          ]),
+        },
+        { additionalProperties: false },
+      ),
+      { maxItems: 256 },
+    ),
+    workspaces: Type.Array(
+      Type.Object(
+        {
+          sessionId: text,
+          path: text,
+          preset: text,
+          provider: text,
+          state: Type.Union([Type.Literal('ready'), Type.Literal('closing'), Type.Literal('unavailable')]),
+          policyDigest: Type.Optional(text),
+          enforcement: Type.Optional(enforcement),
+        },
+        { additionalProperties: false },
+      ),
+      { maxItems: 4096 },
+    ),
+  },
+  { additionalProperties: false },
+)
+export type RuntimeSecurityStatus = Static<typeof RuntimeSecurityStatus>
 /** Description-only catalog. No factories, preset config, credentials or source bytes. */
 export const RuntimeAdminSnapshot = Type.Object(
   {
@@ -62,6 +122,7 @@ export const RuntimeAdminSnapshot = Type.Object(
     ),
     localPluginFolders: Type.Object({ home: text, workspace: text }, { additionalProperties: false }),
     publication: Type.Optional(RuntimePublicationReport),
+    security: Type.Optional(RuntimeSecurityStatus),
   },
   { additionalProperties: false },
 )

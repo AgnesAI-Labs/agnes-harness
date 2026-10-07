@@ -6565,3 +6565,5 @@ body.admin-page {
 .runtime-settings table { width: 100%; text-align: start; border-collapse: collapse; }
 .runtime-settings td, .runtime-settings th { padding: .5rem; border-bottom: 1px solid var(--agnes-line-primary); overflow-wrap: anywhere; }
 .runtime-resources { width: 100%; min-height: 36rem; border: 1px solid var(--agnes-line-primary); border-radius: var(--radius-card); margin-block: 1rem; }
+
+.runtime-table-scroll { overflow-x: auto; }

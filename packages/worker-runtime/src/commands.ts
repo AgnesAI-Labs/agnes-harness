@@ -689,6 +689,7 @@ export async function handleServiceCommand(
               },
             }
           : {}),
+        ...(host.securityStatus ? { security: host.securityStatus() } : {}),
         providers: host.providers.catalog(),
         bundles: Object.values(host.profile.bundleCatalog ?? {}).map(({ id, sourcePackage }) => ({
           id,
