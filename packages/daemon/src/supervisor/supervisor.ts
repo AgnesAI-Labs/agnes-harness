@@ -31,6 +31,7 @@ import {
   createPackageManager,
   isRuntimePackageEligible,
   type LocalExamplesCatalog,
+  localPluginRoots,
   PackageError,
   type PackageManager,
   snapshotPolicy,
@@ -854,6 +855,7 @@ export async function startSupervisor(o: StartSupervisorOptions): Promise<{
     processIdentity: o.processIdentity ?? defaultProcessIdentity,
   })
   let stopJwksCache: (() => Promise<void>) | undefined
+  let localPluginWatcher: { close(): Promise<void> } | undefined
   let skillWatcher: SkillWatcher | undefined
   let sharedKeeper: SharedWorkerKeeper | undefined
   let workerPool: WorkerPool | undefined
@@ -1272,6 +1274,8 @@ export async function startSupervisor(o: StartSupervisorOptions): Promise<{
               createSecretsEnv(),
             )
           : createSecretsEnv()
+      if (o.packageRuntime.manager.localPluginRoots)
+        await o.packageRuntime.manager.refreshLocalPlugins(packageProfileDirectory)
       const surfaceInventory = await o.packageRuntime.manager.inventory(packageProfileDirectory)
       const pinCoordinator = runtimeStore
         ? createRuntimePinCoordinator({
@@ -1288,6 +1292,25 @@ export async function startSupervisor(o: StartSupervisorOptions): Promise<{
           previous: runtimeStore.desired(),
           publish: (target) => pinCoordinator.publish(target, runtimeTargetProbe),
         })
+      // Bootstrap local sources through the existing pinned generation publication path.
+      if (runtimeStore && pinCoordinator && runtimeTargetProbe) {
+        for (const pkg of surfaceInventory.packages) {
+          if (pkg.entry.source.type !== 'local' || pkg.localFailure || pkg.blockers.length) continue
+          const previous = runtimeStore.desired()
+          const target = rebuildDesiredFromInventory({
+            previous,
+            inventory: surfaceInventory,
+            packageId: pkg.id,
+            operation: pkg.enabled ? 'enable' : 'disable',
+          })
+          if (!target || target.digest === previous?.digest) continue
+          try {
+            await pinCoordinator.publish(target, runtimeTargetProbe)
+          } catch {
+            o.packageRuntime.manager.reportLocalPluginFailure(packageProfileDirectory, pkg.id)
+          }
+        }
+      }
       surfaceController = createSurfaceController({
         artifacts: createSurfaceArtifactResolver(surfaceInventory),
         secrets: createSurfaceSecretResolver((ref) => surfaceSecretBackend.resolve(ref)),
@@ -1420,6 +1443,11 @@ export async function startSupervisor(o: StartSupervisorOptions): Promise<{
           createCompositeReferenceFacts(runtimeStore, () => pool.businessWorker()?.generation),
         )
       if (compositeActivation) o.packageRuntime.bindActivation?.(compositeActivation)
+      if (o.packageRuntime.manager.localPluginRoots) {
+        const watcher = o.packageRuntime.manager.watchLocalPlugins(packageProfileDirectory)
+        localPluginWatcher = watcher
+        startupCleanup.push(() => watcher.close())
+      }
       if (compositePins) o.packageRuntime.bindRuntimePins?.(compositePins)
       if (runtimeStore)
         o.packageRuntime.bindPluginTree?.(
@@ -1978,6 +2006,7 @@ export async function startSupervisor(o: StartSupervisorOptions): Promise<{
           sharedKeeper?.close()
           const results = await Promise.allSettled([
             ...(watcher ? [Promise.resolve().then(() => watcher.close())] : []),
+            ...(localPluginWatcher ? [localPluginWatcher.close()] : []),
             Promise.resolve().then(() => stopClaimsGc?.()),
             Promise.resolve().then(() => scheduler?.stopIntake()),
             ...[...conns].map(({ ep }) => Promise.resolve().then(() => ep.stopIntake())),
@@ -2304,6 +2333,7 @@ export async function runAgnesd(args: RunAgnesdArgs = {}, deps: RunAgnesdDeps = 
     dataDir: scope.dataDir,
     agnesVersion: '0.0.0',
     cwd: scope.workspace,
+    localPlugins: localPluginRoots(scope.home, scope.workspace),
     sourceAdapters: [pluginProposalSourceAdapter(join(scope.dataDir, 'resource-control'))],
     references: createPackageReferences((input) => {
       if (!runtimeReferenceReader)

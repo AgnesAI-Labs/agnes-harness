@@ -14,6 +14,7 @@ export function sourceFromForm(type: string, ref: string): PackageSource | undef
 export const SOURCE_FORMATS: Readonly<
   Record<PackageSource['type'], Readonly<{ prefix: string; example: string }>>
 > = Object.freeze({
+  local: { prefix: 'local:', example: 'local:workspace/my-plugin' },
   npm: { prefix: 'npm:', example: 'npm:scope/package@1.2.3' },
   file: {
     prefix: 'file:./',

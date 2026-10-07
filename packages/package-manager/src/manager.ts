@@ -7,8 +7,8 @@ import type { PackageAuditSink } from './audit.js'
 import { copyPackageTreeSync } from './copy-tree.js'
 import { PackageError } from './errors.js'
 import { inspectStaged } from './inspect.js'
-import { canonical } from './integrity.js'
-import { type InstalledInventory, readInventory } from './inventory.js'
+import { canonical, capabilityHash, freezeData } from './integrity.js'
+import { type InstalledInventory, type InstalledPackage, readInventory } from './inventory.js'
 import {
   assertNoReferences,
   assertNoRuntimePins,
@@ -20,6 +20,13 @@ import {
   type TrustDecision,
   trustPackageEntry,
 } from './lifecycle.js'
+import {
+  discoverLocalPlugins,
+  LOCAL_PLUGIN_FAILURE,
+  type LocalPluginRoots,
+  stageLocalPlugin,
+} from './local-source.js'
+import { type LocalPluginReload, type LocalPluginWatcher, watchLocalPlugins } from './local-watcher.js'
 import { type LockEntry, type Lockfile, readLock, withLock, writeLock } from './lockfile.js'
 import { readManifestIn } from './manifest.js'
 import { type RuntimePluginSnapshot, runtimePluginSnapshotsFromPins } from './package-plugin-loader.js'
@@ -67,6 +74,13 @@ export type PackageStatus = {
 }
 
 export interface PackageManager {
+  readonly localPluginRoots: LocalPluginRoots | undefined
+  bindLocalPluginReload(reload: LocalPluginReload): void
+  reportLocalPluginFailure(profileDir: string, id: string): void
+
+  refreshLocalPlugins(profileDir: string): Promise<readonly string[]>
+  watchLocalPlugins(profileDir: string, reload?: LocalPluginReload): LocalPluginWatcher
+
   inspect(profileDir: string, source: PackageSource, opts?: OperationOptions): Promise<PackagePreview>
   install(
     profileDir: string,
@@ -126,6 +140,8 @@ export interface PackageManager {
 }
 
 export type ManagerOptions = {
+  localPlugins?: LocalPluginRoots
+
   dataDir: string
   agnesVersion: string
   now?: () => string
@@ -431,7 +447,191 @@ export function createPackageManager(options: ManagerOptions): PackageManager {
       }
     commitPackage(storeFor(profileDir), lock, id, entry, operation, stage)
   }
+  let localReload: LocalPluginReload | undefined
+  const localFailures = new Map<
+    string,
+    { id: string; source: { type: 'local'; ref: string }; activation?: boolean }
+  >()
+  const localPending = new Set<string>()
+  const scanLocal = (profileDir: string): string[] => {
+    if (!options.localPlugins) return []
+    let lock = load(profileDir)
+    writable(lock)
+    const changed: string[] = [],
+      seen = new Set<string>(),
+      ids = new Set<string>()
+    for (const candidate of discoverLocalPlugins(options.localPlugins)) {
+      lock = load(profileDir)
+      seen.add(candidate.source.ref)
+      const stage = stageFor(profileDir)
+      let id = candidate.name
+      try {
+        const prepared = stageLocalPlugin(candidate, stage)
+        const pkg = readPackageJson(stage)
+        id = pkg.name
+        if (ids.has(id)) throw new Error('duplicate local package identity')
+        ids.add(id)
+        if (
+          Object.entries(lock.packages).some(
+            ([other, entry]) => other !== id && entry.source.ref === candidate.source.ref,
+          )
+        )
+          throw new Error('local package identity changed; remove its previous installation first')
+        const current = lock.packages[id]
+        if (current && current.source.ref !== candidate.source.ref)
+          throw new Error('package identity collision')
+        const checked = inspectStaged({
+          dir: stage,
+          source: candidate.source,
+          fetched: {
+            dir: stage,
+            version: pkg.version,
+            integrity: prepared.integrity,
+            license: pkg.license,
+            dependencies: pkg.dependencies,
+          },
+          ceiling: ceiling(lock),
+        })
+        if (checked.preview.blockers.length) throw new Error('blocked local package')
+        if (current?.integrity === prepared.integrity) {
+          if (!localFailures.get(candidate.source.ref)?.activation) localFailures.delete(candidate.source.ref)
+          continue
+        }
+        localFailures.delete(candidate.source.ref)
+        const entry = entryFrom(
+          candidate.source,
+          { dir: stage, version: pkg.version, integrity: prepared.integrity, dependencies: pkg.dependencies },
+          pkg,
+          undefined,
+          stamp(),
+          current,
+        )
+        entry.treeIntegrity = checked.treeIntegrity
+        entry.contributions = checked.preview.contributions
+        entry.state = {
+          installed: current?.state.installed ?? stamp(),
+          trusted: current && current.state.trusted === null ? null : stamp(),
+          enabled: current?.state.enabled ?? true,
+        }
+        if (entry.state.trusted !== null)
+          entry.trustDecision = {
+            integrity: entry.integrity,
+            capabilityHash: capabilityHash(entry),
+            decidedAt: stamp(),
+          }
+        if (current) entry.previous = previousSnapshot(current)
+        readyStage(stage)
+        commitPackage(storeFor(profileDir), lock, id, entry, current ? 'update' : 'install', stage)
+        localPending.add(id)
+        changed.push(id)
+      } catch {
+        const installedId = Object.entries(lock.packages).find(
+          ([, entry]) => entry.source.ref === candidate.source.ref,
+        )?.[0]
+        localFailures.set(candidate.source.ref, {
+          id: installedId ?? `local-${candidate.source.ref.slice(6).replace('/', '-')}`,
+          source: candidate.source,
+        })
+      } finally {
+        clearStage(stage)
+      }
+    }
+    lock = load(profileDir)
+    for (const [id, entry] of Object.entries(lock.packages)) {
+      lock = load(profileDir)
+      if (entry.source.type !== 'local' || seen.has(entry.source.ref) || !entry.state.enabled) continue
+      commitPackage(
+        storeFor(profileDir),
+        lock,
+        id,
+        { ...entry, state: { ...entry.state, enabled: false } },
+        'disable',
+      )
+      changed.push(id)
+      localPending.add(id)
+    }
+    for (const ref of localFailures.keys()) if (!seen.has(ref)) localFailures.delete(ref)
+    return changed
+  }
+  const projectLocal = (inventory: InstalledInventory): InstalledInventory => {
+    if (!options.localPlugins) return inventory
+    const rows: InstalledPackage[] = [...inventory.packages]
+    for (const failure of localFailures.values()) {
+      const index = rows.findIndex((row) => row.entry.source.ref === failure.source.ref)
+      const existing = rows[index]
+      const entry: LockEntry = existing?.entry ?? {
+        source: failure.source,
+        version: '0.0.0',
+        integrity: `sha256-${'0'.repeat(64)}`,
+        trust: 'trusted',
+        license: 'UNLICENSED',
+        dependencies: {},
+        previous: null,
+        state: { installed: new Date(0).toISOString(), trusted: null, enabled: false },
+      }
+      const row: InstalledPackage = {
+        ...(existing ?? {
+          id: failure.id,
+          entry,
+          directory: null,
+          capabilityHash: capabilityHash(entry),
+          trusted: false,
+          enabled: false,
+          contributions: [],
+          blockers: [],
+          verifiedRollbackTarget: null,
+        }),
+        localFailure: LOCAL_PLUGIN_FAILURE,
+      }
+      // Retain the prior valid snapshot for pinned sessions when the editable source is broken.
+      if (existing) rows[index] = row
+      else rows.push(row)
+    }
+    const packages = rows.map((row) =>
+      row.entry.source.type === 'local' && localPending.has(row.id)
+        ? { ...row, localReloadRequired: true }
+        : row,
+    )
+    return freezeData({ ...inventory, packages })
+  }
   const manager: PackageManager = {
+    localPluginRoots: options.localPlugins,
+    bindLocalPluginReload(reload) {
+      localReload = reload
+    },
+    reportLocalPluginFailure(profileDir, id) {
+      const entry = load(profileDir).packages[id]
+      if (entry?.source.type === 'local')
+        localFailures.set(entry.source.ref, {
+          id,
+          source: { type: 'local', ref: entry.source.ref },
+          activation: true,
+        })
+    },
+    async refreshLocalPlugins(profileDir) {
+      return locked(profileDir, async () => scanLocal(profileDir))
+    },
+    watchLocalPlugins(profileDir, reload) {
+      if (!options.localPlugins) throw new Error('Local plugins roots are not configured')
+      return watchLocalPlugins({
+        roots: options.localPlugins,
+        scan: () => manager.refreshLocalPlugins(profileDir),
+        reload: {
+          async reloadPlugin(id) {
+            const owner = reload ?? localReload
+            // TODO: bind W7 Host.reloadPlugin in the daemon composition when feat/agh-hot-reload lands.
+            if (!owner) return
+            await owner.reloadPlugin(id)
+            localPending.delete(id)
+          },
+        },
+        onError(id) {
+          if (!id) return
+          manager.reportLocalPluginFailure(profileDir, id)
+        },
+      })
+    },
+
     async recover(profileDir) {
       if (!existsSync(profileDir)) return
       await locked(profileDir, async () => {})
@@ -439,7 +639,7 @@ export function createPackageManager(options: ManagerOptions): PackageManager {
     async inventory(profileDir) {
       const read = () => {
         const lock = load(profileDir)
-        return readInventory(lock, { ...storeFor(profileDir), ceiling: ceiling(lock) })
+        return projectLocal(readInventory(lock, { ...storeFor(profileDir), ceiling: ceiling(lock) }))
       }
       if (!existsSync(profileDir)) return read()
       return locked(profileDir, async () => read())

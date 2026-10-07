@@ -274,10 +274,18 @@ function projectPackage(
     trusted: row.trusted,
     ...(row.kinds === undefined ? {} : { kinds: [...row.kinds] }),
     desired: row.enabled ? 'enabled' : 'installed-disabled',
-    actual: observation.actual,
+    actual: row.localFailure
+      ? 'failed'
+      : row.localReloadRequired && observation.actualIntegrity !== row.entry.integrity
+        ? 'restart-required'
+        : observation.actual,
     ...(observation.actualVersion === undefined ? {} : { actualVersion: observation.actualVersion }),
     ...(observation.actualIntegrity === undefined ? {} : { actualIntegrity: observation.actualIntegrity }),
-    ...(observation.actualReason === undefined ? {} : { actualReason: observation.actualReason }),
+    ...(row.localFailure
+      ? { actualReason: row.localFailure }
+      : observation.actualReason === undefined
+        ? {}
+        : { actualReason: observation.actualReason }),
     ...(observation.cleanupPending === undefined ? {} : { cleanupPending: observation.cleanupPending }),
     ...(observation.draining === undefined ? {} : { draining: observation.draining }),
     rollbackTarget: row.verifiedRollbackTarget

@@ -105,6 +105,25 @@
           "additionalProperties": false,
           "properties": {
             "type": {
+              "const": "local"
+            },
+            "ref": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 1024,
+              "pattern": "^local:(home|workspace)/[a-z0-9][a-z0-9._-]*$"
+            }
+          },
+          "required": [
+            "type",
+            "ref"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "type": {
               "const": "npm"
             },
             "ref": {

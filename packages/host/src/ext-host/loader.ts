@@ -5,6 +5,7 @@ import * as typebox from '@sinclair/typebox'
 import * as typeboxValue from '@sinclair/typebox/value'
 import { createJiti } from 'jiti'
 import { HostError } from '../errors.js'
+import { localPluginVirtualModules } from '../local-plugin-loader.js'
 import { resolveEntry } from './manifest.js'
 
 export function runtimeForm(): 'sea' | 'bundled' | 'source' {
@@ -28,6 +29,7 @@ export function createLoader(opts: { cacheDir: string; hostRoot: string; agnesVe
     fsCache: join(opts.cacheDir, 'jiti', opts.agnesVersion),
     virtualModules: {
       '@agnes/extension-api': extensionApi,
+      ...localPluginVirtualModules,
       '@agnes/protocol': protocol,
       '@sinclair/typebox': typebox,
       '@sinclair/typebox/value': typeboxValue,

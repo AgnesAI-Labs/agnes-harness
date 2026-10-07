@@ -19,7 +19,7 @@ import { checkCancelled } from './ports.js'
 import { claimFetch, readyStage } from './staging.js'
 
 export type PackageSource = {
-  type: 'npm' | 'git' | 'file' | 'workspace' | 'market'
+  type: 'npm' | 'git' | 'file' | 'workspace' | 'market' | 'local'
   ref: string
 }
 export type ExecFn = (
@@ -61,6 +61,11 @@ function safeRelative(value: string, prefix: './' | 'extensions/'): boolean {
 export function parseSource(spec: string): PackageSource {
   if (typeof spec !== 'string' || spec.length === 0 || spec.length > MAX_REF)
     throw sourceError('invalid package source', 'invalid-ref')
+  if (spec.startsWith('local:')) {
+    if (!/^local:(home|workspace)\/[a-z0-9][a-z0-9._-]*$/.test(spec))
+      throw sourceError('invalid local plugin source', 'invalid-local-ref')
+    return { type: 'local', ref: spec }
+  }
   if (spec.startsWith('npm:')) {
     const match = NPM_SOURCE.exec(spec)
     if (!match?.[2] || match[2].length > 64)
@@ -419,6 +424,8 @@ export async function fetchSource(
   // Never trust a hand-built PackageSource that bypassed parseSource.
   const checked = parseSource(src.ref)
   if (checked.type !== src.type) throw sourceError('package source type differs from its ref', 'source-type')
+  if (src.type === 'local')
+    throw sourceError('Local plugins are discovered from configured roots', 'local-discovery-only')
   const target = resolve(into)
   ensureEmptyDestination(target)
   const parent = dirname(target)
@@ -550,6 +557,8 @@ export async function fetchSource(
         integrity = hashDirectory(payload)
         break
       }
+      case 'local':
+        throw sourceError('Local plugins are discovery-only', 'local-discovery-only')
       case 'market':
         throw new PackageError('E_DEP_MISSING', 'market sources are v0.x', {
           detail: { reason: 'market v0.x' },

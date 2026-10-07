@@ -12,6 +12,8 @@ import { verifyWorkspace } from './workspace.js'
 
 export type InstalledPackage = Readonly<{
   id: string
+  localFailure?: string
+  localReloadRequired?: boolean
   entry: LockEntry
   directory: string | null
   capabilityHash: string
@@ -254,7 +256,7 @@ export function readInventory(
  */
 export function stableInventoryRows(packages: readonly InstalledPackage[]): readonly (Omit<
   InstalledPackage,
-  'directory' | 'verifiedRollbackTarget'
+  'directory' | 'verifiedRollbackTarget' | 'localFailure' | 'localReloadRequired'
 > & {
   verifiedRollbackTarget: Readonly<{
     version: string
@@ -263,13 +265,23 @@ export function stableInventoryRows(packages: readonly InstalledPackage[]): read
     treeIntegrity: string
   }> | null
 })[] {
-  return packages.map(({ directory: _directory, verifiedRollbackTarget: rollback, ...p }) => ({
-    ...p,
-    verifiedRollbackTarget: rollback && {
-      version: rollback.version,
-      integrity: rollback.integrity,
-      capabilityHash: rollback.capabilityHash,
-      treeIntegrity: rollback.treeIntegrity,
-    },
-  }))
+  return packages
+    .filter((p) => !(p.entry.source.type === 'local' && p.directory === null))
+    .map(
+      ({
+        directory: _directory,
+        verifiedRollbackTarget: rollback,
+        localFailure: _failure,
+        localReloadRequired: _pending,
+        ...p
+      }) => ({
+        ...p,
+        verifiedRollbackTarget: rollback && {
+          version: rollback.version,
+          integrity: rollback.integrity,
+          capabilityHash: rollback.capabilityHash,
+          treeIntegrity: rollback.treeIntegrity,
+        },
+      }),
+    )
 }

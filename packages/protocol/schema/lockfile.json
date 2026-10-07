@@ -129,7 +129,7 @@
                       "required": ["type", "ref"],
                       "properties": {
                         "type": {
-                          "enum": ["npm", "market", "git", "file", "workspace"]
+                          "enum": ["npm", "market", "git", "file", "workspace", "local"]
                         },
                         "ref": {
                           "type": "string",
@@ -262,7 +262,7 @@
               "required": ["type", "ref"],
               "properties": {
                 "type": {
-                  "enum": ["git", "workspace", "file"]
+                  "enum": ["git", "workspace", "file", "local"]
                 },
                 "ref": {
                   "type": "string",
@@ -360,7 +360,7 @@
                       "required": ["type", "ref"],
                       "properties": {
                         "type": {
-                          "enum": ["npm", "market", "git", "file", "workspace"]
+                          "enum": ["npm", "market", "git", "file", "workspace", "local"]
                         },
                         "ref": {
                           "type": "string",
