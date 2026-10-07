@@ -60,6 +60,19 @@ describe('Task20 document validators', () => {
       }).ok,
     ).toBe(true)
   })
+  it('accepts an explicit boolean keyless route without supplying a default', () => {
+    const route = { route: 'local', api: 'local-openai', baseUrl: 'http://127.0.0.1:8000/v1' }
+    const profile = (keyless: unknown) => ({
+      name: 'local-dev',
+      provider: { package: '@agnes/ai', routes: [{ ...route, keyless }] },
+    })
+    for (const keyless of [true, false]) expect(P.validateProfileManifest(profile(keyless)).ok).toBe(true)
+    for (const keyless of ['true', 1, null])
+      expect(P.validateProfileManifest(profile(keyless)).ok).toBe(false)
+    const omitted = { name: 'local-dev', provider: { package: '@agnes/ai', routes: [route] } }
+    expect(P.validateProfileManifest(omitted).ok).toBe(true)
+    expect(route).not.toHaveProperty('keyless')
+  })
   it('preserves empty prefix authority and an explicit empty names allowlist', () => {
     const manifest = { id: 'fixture/ext', version: '0.1.0', apiRange: '^1.0.0', entry: './index.ts' }
     const broad = { ...manifest, capabilities: { tools: { prefix: '' } } }
