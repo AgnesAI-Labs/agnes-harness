@@ -4,6 +4,8 @@ English | [简体中文](README.zh-CN.md)
 
 [Documentation](../README.md) · [Five-minute quickstart](quickstart.md) · [Testing](testing.md)
 
+[Tool runtime and policies](tool-runtime.md) · [Loop events](loop-events.md)
+
 Choose the smallest starter that owns your behavior. All five [templates](../../templates/) are independent packages with build/test scripts and imports through public package exports. This SDK is a source preview; the quickstart includes local SDK links until public packages are distributed.
 
 | Kind | Starter | Contribution |

@@ -4,6 +4,8 @@
 
 [文档](../README.zh-CN.md) · [五分钟入门](quickstart.zh-CN.md) · [测试指南](testing.zh-CN.md)
 
+[工具运行时与权限策略](tool-runtime.zh-CN.md) · [循环事件](loop-events.zh-CN.md)
+
 选择负责目标行为的最小模板。五个[模板](../../templates/)都是独立包，提供构建与测试脚本，只通过公开包出口导入。SDK 目前仍为源码预览；入门指南提供正式包发布前的本地 SDK 连接方式。
 
 | 类型 | 模板 | 提供的能力 |
