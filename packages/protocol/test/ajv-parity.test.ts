@@ -160,11 +160,15 @@ addFormats(ajv)
 // Reference validator uses URL parsing as required by the owned custom format's contract.
 ajv.addFormat('agnes-git-source', (ref: string) => {
   if (!ref.startsWith('git:')) return false
-  const split = ref.lastIndexOf('#')
-  if (split < 4 || !/^[a-f0-9]{40}$/.test(ref.slice(split + 1))) return false
   try {
-    const url = new URL(ref.slice(4, split))
-    return url.protocol === 'https:' && !url.username && !url.password && !url.search && !url.hash
+    const url = new URL(ref.slice(4))
+    return (
+      url.protocol === 'https:' &&
+      !url.username &&
+      !url.password &&
+      !url.search &&
+      (!url.hash || /^#[A-Za-z0-9._/-]+$/.test(url.hash))
+    )
   } catch {
     return false
   }
@@ -4408,12 +4412,18 @@ describe('preset consumer spellings: positive fixture parity', () => {
   })
 })
 const PRESET_DEFS: Record<string, TSchema> = {
+  CompositionPatch: PresetGen.CompositionPatch,
   PresetDoc: PresetGen.PresetDoc,
   RouteTable: PresetGen.RouteTable,
   RouteTarget: PresetGen.RouteTarget,
   HookEvent: PresetGen.HookEvent,
 }
 const PRESET_SAMPLES: Record<string, Sample> = {
+  CompositionPatch: {
+    valid: { loop: { id: 'default', version: '1.0.0' }, tools: ['read'], toolPolicy: { readOnly: true } },
+    invalid: [{ unknown: true }, { loop: { id: 'default' } }, { tools: ['read', 'read'] }],
+    note: 'Preset composition selects closed plugin identities and unique tool names',
+  },
   PresetDoc: {
     valid: byId(presetFixtures, 'preset-full'),
     invalid: presetFixtures.filter((r) => r.kind === 'invalid').map((r) => r.payload),
@@ -4446,6 +4456,12 @@ function helperSample(name: string, invalid: unknown[]): Sample {
   }
 }
 const PROFILE_SAMPLES: Record<string, Sample> = {
+  CompositionPatch: PRESET_SAMPLES.CompositionPatch as Sample,
+  CompositionSource: {
+    valid: { layer: 'profile', name: 'local-dev' },
+    invalid: [{ layer: 'unknown', name: 'local-dev' }, { layer: 'profile' }],
+    note: 'Composition provenance is a closed source identity',
+  },
   ApprovalMode: {
     valid: 'manual',
     invalid: ['automatic', '', null],
@@ -4698,6 +4714,8 @@ const JOBS_SAMPLES: Record<string, Sample> = {
   JobStatus: configSample('JobStatus'),
 }
 const ProfileDefs: Record<string, TSchema> = {
+  CompositionPatch: ProfileGen.CompositionPatch,
+  CompositionSource: ProfileGen.CompositionSource,
   ApprovalMode: ProfileGen.ApprovalMode,
   ApprovalProfile: ProfileGen.ApprovalProfile,
   CommandHookGrant: ProfileGen.CommandHookGrant,
@@ -5458,6 +5476,8 @@ const DEFS_BY_FILE: Record<string, Record<string, TSchema>> = {
     PackageRollbackTarget: PackageAdminGen.PackageRollbackTarget,
     PackageAdminContext: PackageAdminGen.PackageAdminContext,
     PackageSource: PackageAdminGen.PackageSource,
+    PluginCapabilities: PackageAdminGen.PluginCapabilities,
+    ClientModuleListParams: PackageAdminGen.ClientModuleListParams,
     PackageContributionSummary: PackageAdminGen.PackageContributionSummary,
     PackageCapabilityDiff: PackageAdminGen.PackageCapabilityDiff,
     PackageBlocker: PackageAdminGen.PackageBlocker,
@@ -5806,7 +5826,7 @@ const METHOD_DEF: Record<MethodName, MethodDefRef> = {
   },
   '_agnes/v1/clientModules.list': {
     fileId: 'https://agnes.ai/schema/package-admin.json',
-    params: 'PackageListParams',
+    params: 'ClientModuleListParams',
     result: 'ClientModuleListResult',
   },
   '_agnes/v1/clientModules.read': {
@@ -6146,7 +6166,7 @@ const METHOD_PARAMS_SAMPLE: Record<MethodName, Sample> = {
   '_agnes/v1/packages.list': PackageAdminSamples.PackageListParams as Sample,
   '_agnes/v1/skins.list': PackageAdminSamples.PackageListParams as Sample,
   '_agnes/v1/skins.read': PackageAdminSamples.SkinReadParams as Sample,
-  '_agnes/v1/clientModules.list': PackageAdminSamples.PackageListParams as Sample,
+  '_agnes/v1/clientModules.list': PackageAdminSamples.ClientModuleListParams as Sample,
   '_agnes/v1/clientModules.read': PackageAdminSamples.ClientModuleReadParams as Sample,
   '_agnes/v1/clientModules.callService': PackageAdminSamples.ClientModuleServiceCallParams as Sample,
   '_agnes/v1/clientModules.callEffect': PackageAdminSamples.ClientModuleEffectCallParams as Sample,
@@ -6272,6 +6292,10 @@ const METHOD_PARAMS_SAMPLE: Record<MethodName, Sample> = {
 }
 
 const METHOD_RESULT_SAMPLE: Partial<Record<MethodName, Sample>> = {
+  '_agnes/v1/sessionSelection.loops': AGNES_SAMPLES.SessionLoopCatalogResult as Sample,
+  '_agnes/v1/sessionSelection.modelAdapters': AGNES_SAMPLES.SessionAdapterCatalogResult as Sample,
+  '_agnes/v1/sessionSelection.defaults.get': AGNES_SAMPLES.SessionDefaultsState as Sample,
+  '_agnes/v1/sessionSelection.defaults.save': AGNES_SAMPLES.SessionDefaultsState as Sample,
   '_agnes/v1/session.rename': AGNES_SAMPLES.SessionPreferences as Sample,
   '_agnes/v1/session.archive': AGNES_SAMPLES.SessionPreferences as Sample,
   '_agnes/v1/diagnostics.collect': AGNES_SAMPLES.DiagnosticsCollectResult as Sample,

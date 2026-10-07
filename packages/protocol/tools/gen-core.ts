@@ -25,7 +25,7 @@ const IMPORT_FORMAT_REGISTRY = "import { FormatRegistry } from '@sinclair/typebo
 const FORMAT_CHECKERS: Record<string, string> = {
   // Matches PackageManager's existing URL parser, including IPv6 and normalized numeric ports.
   'agnes-git-source':
-    "(value) => { const raw = value.slice(4); const hashAt = raw.lastIndexOf('#'); const commit = raw.slice(hashAt + 1); try { const url = new URL(raw.slice(0, hashAt)); return value.startsWith('git:') && hashAt > 0 && /^[a-f0-9]{40}$/.test(commit) && url.protocol === 'https:' && url.username === '' && url.password === '' && url.search === '' && url.hash === ''; } catch { return false; } }",
+    "(value) => { try { const url = new URL(value.slice(4)); return value.startsWith('git:') && url.protocol === 'https:' && url.username === '' && url.password === '' && url.search === '' && (!url.hash || /^#[A-Za-z0-9._/-]+$/.test(url.hash)); } catch { return false; } }",
   // Calendar-aware RFC3339 check. Unconditional local hour/minute bounds precede leap seconds;
   // installed ajv-formats full mode omits them on its leap-second path. Keep the prior wire
   // shape: T/t separator and Z/z or sign-HH:MM offsets; reference-library differences are pinned.

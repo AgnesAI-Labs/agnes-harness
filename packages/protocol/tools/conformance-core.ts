@@ -114,6 +114,8 @@ const CONFIG_VALIDATORS: Record<string, (x: unknown) => ValidationResult<unknown
   PackageAdminContext: (x) =>
     validatePackageAdminData('PackageAdminContext' satisfies PackageAdminDataName, x),
   PackageSource: (x) => validatePackageAdminData('PackageSource' satisfies PackageAdminDataName, x),
+  PluginCapabilities: (x) => validatePackageAdminData('PluginCapabilities' satisfies PackageAdminDataName, x),
+  ClientModuleListParams: (x) => validateMethod('_agnes/v1/clientModules.list', 'params', x),
   PackageContributionSummary: (x) =>
     validatePackageAdminData('PackageContributionSummary' satisfies PackageAdminDataName, x),
   PackageCapabilityDiff: (x) =>

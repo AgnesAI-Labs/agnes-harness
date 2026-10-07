@@ -30,8 +30,9 @@ describe('PM4 management contracts', () => {
     // method-side params row and the actor-rejection row (S14b); 390 -> 403 adds the client-module
     // roster/read DTOs and their method-side params rows (P1a); 455 -> 457 adds row-level
     // negatives proving config/credential fields are refused, plus standalone row fixtures for
-    // the generated-schema parity table.
-    expect(result.total).toBe(486)
+    // the generated-schema parity table. The current set also includes generation status and
+    // capability/source authoring boundaries.
+    expect(result.total).toBe(503)
     expect(result.skipped).toBe(0)
   })
   it('requires explicit classification, permission and command identity for every management method', () => {
@@ -43,7 +44,7 @@ describe('PM4 management contracts', () => {
       .filter((name) => /^_agnes\/v1\/(?:packages|skins|clientModules|plugins)\./.test(name))
       .sort()
     expect(names).toEqual(Object.keys(PACKAGE_ADMIN_METHODS).sort())
-    expect(names).toHaveLength(27)
+    expect(names).toHaveLength(28) // Includes the read-only plugins.generations method.
     for (const name of names as PackageAdminMethodName[]) {
       const method = METHODS[name],
         policy = method.administration

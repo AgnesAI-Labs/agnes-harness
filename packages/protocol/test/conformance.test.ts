@@ -43,7 +43,8 @@ const COUNTS = {
   sequences: 4,
   workerRuntimeTarget: 8,
 } as const
-const ALL_FIXTURE_COUNT = 1395
+// Includes five generation status fixtures and twelve capability/source authoring fixtures.
+const ALL_FIXTURE_COUNT = 1412
 
 describe('conformance fixtures', () => {
   it('all checked-in fixtures across the complete fixture tree pass', () => {
