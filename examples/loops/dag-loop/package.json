@@ -11,7 +11,7 @@
   "agnes": {
     "plugins": [
       {
-        "id": "loop:dag",
+        "id": "ext:example-dag",
         "export": "plugin",
         "apiRange": "^1.4.0",
         "default": true,

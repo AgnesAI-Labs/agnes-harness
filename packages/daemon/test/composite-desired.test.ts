@@ -1,6 +1,7 @@
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import type { InstalledInventory, InstalledPackage } from '@agnes/package-manager'
 import {
   buildRuntimeTarget,
@@ -118,6 +119,24 @@ describe('rebuildDesiredFromInventory', () => {
     })
     expect(next).toBeDefined()
     expect(next?.digest).not.toBe(previous('ext:acme/echo').digest)
+    const dag = rebuildDesiredFromInventory({
+      previous: undefined,
+      inventory: inventory([
+        installed({
+          id: '@agnes-example/dag-loop',
+          directory: fileURLToPath(new URL('../../../examples/loops/dag-loop', import.meta.url)),
+        }),
+      ]),
+      packageId: '@agnes-example/dag-loop',
+      operation: 'enable',
+    })
+    expect(decodeRuntimeTargetArtifact(dag!).tree.rows).toContainEqual(
+      expect.objectContaining({
+        plugin: expect.stringContaining('@agnes-example/dag-loop@'),
+        inject: ['loops'],
+        disabled: false,
+      }),
+    )
   })
 
   it('does not create a browser row for a skin-only descriptor', () => {

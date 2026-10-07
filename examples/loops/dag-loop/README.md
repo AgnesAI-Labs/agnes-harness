@@ -1,6 +1,6 @@
 # DAG Agent Loop
 
-This standalone package uses only `@agnes/extension-api`. Install it with `agh package add ./examples/loops/dag-loop`, trust and enable the package, then configure its `loop:dag` plugin row. Select `example.dag@1.0.0` with `agh -p "run the plan" --loop example.dag@1.0.0`, SDK `client.createSession({ cwd, loop: { id: 'example.dag', version: '1.0.0' } })`, or a profile/admin default.
+This standalone package uses only `@agnes/extension-api`. Install it with `agh package add ./examples/loops/dag-loop`, trust and enable the package, then configure its `ext:example-dag` plugin row. Select `example.dag@1.0.0` with `agh -p "run the plan" --loop example.dag@1.0.0`, SDK `client.createSession({ cwd, loop: { id: 'example.dag', version: '1.0.0' } })`, or a profile/admin default.
 
 A static plugin config needs no model and emits `x/dag/result`:
 
