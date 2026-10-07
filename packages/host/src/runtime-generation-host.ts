@@ -512,6 +512,7 @@ export async function createRuntimeGenerationHost(
       JSON.stringify(head.host.extensionRows.current().filter((row) => !liveResourceRow(row))) !==
         JSON.stringify(extensionRows.filter((row) => !liveResourceRow(row)))
     if (
+      !skills &&
       !extensionCodeChanged &&
       encodeRuntimeTargetArtifact(
         head.host.runtimeTargetSnapshot?.() ?? decodeRuntimeTargetArtifact(head.snapshot.artifact),
@@ -835,7 +836,13 @@ export async function createRuntimeGenerationHost(
         const head = await ensureCurrent(),
           target = head.host.runtimeTargetSnapshot?.() ?? decodeRuntimeTargetArtifact(head.snapshot.artifact)
         const revision = skillRowRevision(fresh)
-        if (target.tree.rows.find((row) => row.id === SKILL_ROW_ID)?.entryRevision === revision) return
+        // A shared worker lists no workspace Skills outside an invocation. Equal catalogues
+        // cannot prove its newly supplied scoped source is unchanged.
+        if (
+          target.tree.rows.find((row) => row.id === SKILL_ROW_ID)?.entryRevision === revision &&
+          !fresh?.scopeWorkspace
+        )
+          return
         const row = head.host.extensionRows.prepare({
           extensionId: 'agnes/skills',
           entryRevision: revision,

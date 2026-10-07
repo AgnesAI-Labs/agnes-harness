@@ -15,16 +15,30 @@ const baseDir = fileURLToPath(new URL('../../base', import.meta.url))
 const roots: string[] = []
 // Explicit preload now adds one durable tail note. It does not alter the disclosed tool schema:
 // discovery and read tools remain available for the loaded and generic turns alike.
-// Pagination changes both read-tool schemas; pin the merged, model-visible tool set.
-// The write description also includes the incremental-generation guidance shipped with the tools.
-const EXPECTED_SKILL_TOOL_SCHEMA_HASH = '1f38d67cc65637ee005dcc05a2c2c7fa25a1eefa03431da132655c898da82a80'
+// Pin the complete model-visible schema, including official interaction, delivery, jobs,
+// MCP resources, plugin authoring and child-model discovery tools.
+const EXPECTED_SKILL_TOOL_SCHEMA_HASH = 'f07b2edd0b99188bdc59cf4bb91e205cce96323093aae3ee6ba318449c6d3166'
 const expectedToolNames = [
+  'ask_user_question',
   'compact',
   'edit',
+  'exit_plan_mode',
   'find',
   'grep',
+  'job_kill',
+  'job_list',
+  'job_output',
+  'list_mcp_resource_templates',
+  'list_mcp_resources',
+  'list_subagent_models',
   'ls',
+  'plugin_creator_guide',
+  'plugin_install_local',
+  'plugin_scaffold',
+  'plugin_test',
+  'present',
   'read',
+  'read_mcp_resource',
   'shell',
   'skill_read',
   'skill_read_file',
@@ -39,6 +53,7 @@ const expectedToolNames = [
   'tool_describe',
   'tool_search',
   'web_fetch',
+  'web_search',
   'write',
 ]
 
