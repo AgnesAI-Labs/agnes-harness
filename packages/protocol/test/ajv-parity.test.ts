@@ -75,6 +75,7 @@ import {
   validateMethod,
   validateRequestMedia,
 } from '../src/index.js'
+import { SessionToolsParams, SessionToolsResult } from '../src/session-tools.js'
 
 type Json = Record<string, unknown>
 type FixtureRow = { id: string; payload: unknown }
@@ -157,6 +158,8 @@ const addFormats = nodeRequire('ajv-formats') as (ajv: InstanceType<typeof Ajv20
 
 const ajv = new AjvCtor({ strict: false, allowUnionTypes: true })
 addFormats(ajv)
+const SESSION_TOOLS_ID = 'https://agnes.dev/session-tools'
+ajv.addSchema({ $id: SESSION_TOOLS_ID, $defs: { SessionToolsParams, SessionToolsResult } })
 // Reference validator uses URL parsing as required by the owned custom format's contract.
 ajv.addFormat('agnes-git-source', (ref: string) => {
   if (!ref.startsWith('git:')) return false
@@ -5400,6 +5403,7 @@ const SELF_OWNED_DOCS: Array<[string, Json, string, Record<string, Sample>]> = [
 ]
 
 const DEFS_BY_FILE: Record<string, Record<string, TSchema>> = {
+  [SESSION_TOOLS_ID]: { SessionToolsParams, SessionToolsResult },
   'https://agnes.ai/schema/worker.json': WorkerDefs,
   'https://agnes.ai/schema/resource-control.json': {
     ActualState: ResourceControlGen.ActualState,
@@ -5665,6 +5669,11 @@ describe('McpServerDescriptor: authorizationStatus field (mcp-oauth-authorizatio
 type MethodDefRef = { fileId: string; params: string; result?: string }
 
 const METHOD_DEF: Record<MethodName, MethodDefRef> = {
+  '_agnes/v1/session.tools': {
+    fileId: SESSION_TOOLS_ID,
+    params: 'SessionToolsParams',
+    result: 'SessionToolsResult',
+  },
   '_agnes/v1/sessionSelection.loops': {
     fileId: AGNES_ID,
     params: 'ConfigEmptyParams',
@@ -6139,6 +6148,11 @@ const METHOD_DEF: Record<MethodName, MethodDefRef> = {
 }
 
 const METHOD_PARAMS_SAMPLE: Record<MethodName, Sample> = {
+  '_agnes/v1/session.tools': {
+    valid: { sessionId: 's' },
+    invalid: [{}, { sessionId: '' }, { sessionId: 's', extra: true }],
+    note: 'session catalog parameters',
+  },
   '_agnes/v1/sessionSelection.loops': AGNES_SAMPLES.ConfigEmptyParams as Sample,
   '_agnes/v1/sessionSelection.modelAdapters': AGNES_SAMPLES.ConfigEmptyParams as Sample,
   '_agnes/v1/sessionSelection.defaults.get': AGNES_SAMPLES.ConfigEmptyParams as Sample,
@@ -6302,6 +6316,15 @@ const METHOD_RESULT_SAMPLE: Partial<Record<MethodName, Sample>> = {
   '_agnes/v1/sessionSelection.modelAdapters': AGNES_SAMPLES.SessionAdapterCatalogResult as Sample,
   '_agnes/v1/sessionSelection.defaults.get': AGNES_SAMPLES.SessionDefaultsState as Sample,
   '_agnes/v1/sessionSelection.defaults.save': AGNES_SAMPLES.SessionDefaultsState as Sample,
+  '_agnes/v1/session.tools': {
+    valid: { sessionId: 's', tools: [], resources: [] },
+    invalid: [
+      { sessionId: 's', tools: [] },
+      { sessionId: 's', tools: [{ name: 'x' }], resources: [] },
+    ],
+    note: 'session catalog result',
+  },
+
   '_agnes/v1/session.rename': AGNES_SAMPLES.SessionPreferences as Sample,
   '_agnes/v1/session.archive': AGNES_SAMPLES.SessionPreferences as Sample,
   '_agnes/v1/diagnostics.collect': AGNES_SAMPLES.DiagnosticsCollectResult as Sample,

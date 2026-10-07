@@ -197,6 +197,9 @@ export class RemoteSession {
     }
   }
 
+  toolCatalog(): Promise<import('@agnes/protocol').SessionToolsResult> {
+    return this.link.command('toolCatalog', {}) as Promise<import('@agnes/protocol').SessionToolsResult>
+  }
   readToolDetailPage(input: ToolDetailRead): Promise<ToolDetailReadResult> {
     return this.link.command('readToolDetail', input) as Promise<ToolDetailReadResult>
   }

@@ -73,11 +73,17 @@ describe('authenticated session ownership RPC guard', () => {
           params: { sessionId, cwd: h.dataDir, mcpServers: [] },
         }),
       ).resolves.toMatchObject({ result: {} })
+      await expect(
+        reconnect.handle({ jsonrpc: '2.0', id: 5, method: '_agnes/v1/session.tools', params: { sessionId } }),
+      ).resolves.toMatchObject({
+        result: { sessionId, tools: expect.any(Array), resources: expect.any(Array) },
+      })
       for (const request of [
         { method: 'session/load', params: { sessionId, cwd: h.dataDir, mcpServers: [] } },
         { method: 'session/prompt', params: { sessionId, prompt: [] } },
         { method: '_agnes/v1/session.setYolo', params: { sessionId, enabled: true } },
         { method: '_agnes/v1/session.attach', params: { sessionId } },
+        { method: '_agnes/v1/session.tools', params: { sessionId } },
         { method: '_agnes/v1/session.fork', params: { sessionId, at: 1 } },
       ])
         await expect(stranger.handle({ jsonrpc: '2.0', id: 4, ...request })).resolves.toMatchObject({

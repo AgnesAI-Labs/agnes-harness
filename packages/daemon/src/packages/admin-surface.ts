@@ -66,6 +66,8 @@ export type AdminSurfaceOptions = {
   surfaceLinks?: () => Promise<readonly AdminSurfaceLink[]>
   /** Real host catalogs plus configuration storage. Missing means selection is unavailable. */
   sessionSelection?: AdminSessionSelection
+  /** Owner-checked SDK catalog for a durable session key. */
+  sessionTools?: (sessionId: string) => Promise<import('@agnes/protocol').SessionToolsResult>
   composition?: {
     bundles(): Promise<unknown>
     dump(preset?: string): Promise<unknown>
@@ -173,6 +175,32 @@ export function createAdminSurface(options: AdminSurfaceOptions) {
       }
       if (selectionRoute) {
         const route = url.pathname.slice('/admin/api/'.length)
+        if (route.startsWith('tools/') && request.method === 'GET') {
+          if (!configuredPermissions.includes('packages.read')) {
+            error(response, 403, 'E_ADMIN_FORBIDDEN', 'You do not have permission to perform this action.')
+            return true
+          }
+          let sessionId: string
+          try {
+            sessionId = decodeURIComponent(route.slice('tools/'.length))
+          } catch {
+            sessionId = ''
+          }
+          if (!sessionId || sessionId.length > 1024) {
+            error(response, 400, 'E_ADMIN_REQUEST', 'A valid session key is required.')
+            return true
+          }
+          if (!options.sessionTools) {
+            error(response, 503, 'E_ADMIN_CATALOG_UNAVAILABLE', 'Session tool catalog is unavailable.')
+            return true
+          }
+          try {
+            reply(response, 200, await options.sessionTools(sessionId))
+          } catch {
+            error(response, 404, 'E_ADMIN_SESSION', 'Session is unavailable to this client.')
+          }
+          return true
+        }
         if (route === 'bundles' || route === 'composition') {
           const write = route === 'bundles' && request.method === 'PUT'
           if (!write && request.method !== 'GET' && !(route === 'composition' && request.method === 'POST')) {

@@ -14,6 +14,7 @@ import {
   validateResourceControlCall,
 } from './resource-control.js'
 import { validateExtensionCall } from './services.js'
+import { SessionToolsParams, SessionToolsResult } from './session-tools.js'
 import { type ValidationResult, validateAgainst } from './validate.js'
 
 export type MethodSpec = {
@@ -79,6 +80,7 @@ export type MethodName =
   | '_agnes/v1/session.projectUIPatch'
   | '_agnes/v1/session.projectUIOpening'
   | '_agnes/v1/session.projectUIHistory'
+  | '_agnes/v1/session.tools'
   | '_agnes/v1/session.readToolDetail'
   | '_agnes/v1/session.followUp'
   | '_agnes/v1/session.fork'
@@ -220,6 +222,7 @@ export const METHODS: Record<MethodName, MethodSpec> = {
     params: A.SessionProjectUIHistoryParams,
     result: A.UIHistoryPage,
   },
+  '_agnes/v1/session.tools': clientRequest(SessionToolsParams, SessionToolsResult),
   '_agnes/v1/session.readToolDetail': clientRequest(
     A.SessionReadToolDetailParams,
     A.SessionReadToolDetailResult,

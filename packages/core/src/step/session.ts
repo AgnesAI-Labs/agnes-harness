@@ -260,6 +260,8 @@ export type OpContext = {
  * it is assembled above core, and a session with no extensions runs against `noopHooks`.
  */
 export type HookPort = {
+  /** Resources already authorized by this session's discovery lifecycle. */
+  resources?(): ReadonlyArray<import('@agnes/extension-api').ResourceEntry>
   sessionStart?(p: { reason: 'new' | 'resume'; preset: string; cwd: string }): Promise<void>
   shutdown?(): Promise<void>
   resetTurn?(): void
@@ -615,6 +617,28 @@ export class SessionImpl {
   /** Current tool registry used only when taking a new lookup/snapshot. */
   currentTools(): ToolRegistry {
     return this.d.currentRuntime?.current(this.key)?.tools ?? this.d.registry
+  }
+
+  /** Read-only catalog from the same model filtering and authorized discovery as this session. */
+  toolCatalog(): import('@agnes/protocol').SessionToolsResult {
+    const context = this.operationContext()
+    return {
+      sessionId: this.key,
+      tools: context.snapshot.defs.map((tool) => ({
+        name: tool.name,
+        description: tool.description,
+        parameters: structuredClone(tool.parameters),
+        source: context.snapshot.byName.get(tool.name)?.source.source ?? '',
+        deferred: tool.meta.deferLoading === true,
+        readOnly: tool.meta.isReadOnly,
+      })),
+      resources: (this.hooks.resources?.() ?? []).map(({ id, kind, name, description }) => ({
+        id,
+        kind,
+        name,
+        description,
+      })),
+    }
   }
 
   /** Current resource registry used by lifecycle discovery and Host adapters. */

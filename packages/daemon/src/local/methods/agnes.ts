@@ -426,6 +426,7 @@ const FAMILIES: Array<Family & { when?: (cx: AgnesContext) => boolean }> = [
       'session.projectUIPatch',
       'session.projectUIOpening',
       'session.projectUIHistory',
+      'session.tools',
       'session.readToolDetail',
       'session.list',
       'session.rename',
@@ -968,6 +969,11 @@ export function registerAgnes(
       nodes = nodes.slice(1)
       startIndex += 1
     }
+  })
+  ep.register('_agnes/v1/session.tools', async (params, c) => {
+    const { sessionId } = params as { sessionId: string }
+    requireOwner('session.tools', sessionId, c)
+    return cx.registry.require(sessionId).session.toolCatalog()
   })
   ep.register('_agnes/v1/session.readToolDetail', async (params, c) => {
     const p = params as SessionReadToolDetailParams

@@ -565,6 +565,11 @@ export class Session {
     return result
   }
 
+  /** Tools and authorized resources visible in this session's pinned runtime. */
+  tools(): Promise<import('@agnes/protocol').SessionToolsResult> {
+    return this.client.call('_agnes/v1/session.tools', { sessionId: this.id })
+  }
+
   /** Reads one durable tool call and its optional result without changing the live attach cursor. */
   async readToolDetail(
     callSeq: number,

@@ -172,6 +172,10 @@ export function localPackageAdmin(
       agnesVersion: '0.0.0',
       log: () => undefined,
     }),
+    sessionTools: async (sessionId) => {
+      await initialize()
+      return (await client.session.load(sessionId)).tools()
+    },
     sessionSelection: sessionSelection ?? {
       loops: async () => {
         await initialize()

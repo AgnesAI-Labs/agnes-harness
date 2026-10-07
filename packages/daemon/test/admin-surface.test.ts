@@ -24,6 +24,7 @@ async function server(
     sessionSelection?: AdminSessionSelection
     permissions?: readonly PackageAdminPermission[]
     composition?: NonNullable<AdminSurfaceOptions['composition']>
+    sessionTools?: NonNullable<AdminSurfaceOptions['sessionTools']>
   } = {},
 ) {
   let now = Date.now()
@@ -81,6 +82,26 @@ async function server(
 }
 
 describe('local package admin surface trust boundary', () => {
+  it('returns a session tool catalog only through the authorized exact-origin BFF', async () => {
+    const catalog = { sessionId: 'student:session', tools: [], resources: [] }
+    const s = await server(undefined, undefined, {
+      sessionTools: async (key) => {
+        if (key !== catalog.sessionId) throw new Error('unavailable')
+        return catalog
+      },
+    })
+    await expect((await s.selectionRequest('tools/student%3Asession')).json()).resolves.toEqual(catalog)
+    expect((await s.selectionRequest('tools/unknown')).status).toBe(404)
+    expect(
+      (
+        await s.selectionRequest('tools/student%3Asession', 'GET', undefined, {
+          Origin: 'http://evil.invalid',
+        })
+      ).status,
+    ).toBe(403)
+    const denied = await server(undefined, undefined, { permissions: [], sessionTools: async () => catalog })
+    expect((await denied.selectionRequest('tools/student%3Asession')).status).toBe(403)
+  })
   it('rejects an admin context that cannot pass the public strict DTO', () => {
     expect(() =>
       createAdminSurface({

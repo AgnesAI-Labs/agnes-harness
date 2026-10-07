@@ -325,6 +325,8 @@ export async function handleCommand(
         throw rpcError('INTERNAL_ERROR', { code: 'SCAN_PAGE_TOO_LARGE' })
       return rows
     }
+    case 'toolCatalog':
+      return session.toolCatalog()
     case 'readToolDetail':
       return readToolDetailPage(session, {
         callSeq: Number(p.callSeq),
