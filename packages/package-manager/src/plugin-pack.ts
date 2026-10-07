@@ -42,6 +42,33 @@ export async function packPlugin(folder: string, output?: string): Promise<strin
     const tree = join(work, 'package')
     await fetchSource({ type: 'file', ref: 'file:' + source }, tree, { cwd: source })
     const manifest = readStaticJson(join(tree, 'package.json'))
+    const agnes = manifest.agnes as
+      | {
+          clientDescriptors?: { path: string }[]
+          hostProvidedExternals?: Record<string, string>
+        }
+      | undefined
+    const declaredExternals = agnes?.hostProvidedExternals
+    if (
+      declaredExternals !== undefined &&
+      (!declaredExternals ||
+        typeof declaredExternals !== 'object' ||
+        Array.isArray(declaredExternals) ||
+        Object.keys(declaredExternals).length > 128 ||
+        Object.entries(declaredExternals).some(
+          ([name, range]) =>
+            !/^(@[a-z0-9._-]+\/)?[a-z0-9._-]+(?:\/[a-z0-9._-]+)*$/.test(name) ||
+            typeof range !== 'string' ||
+            !range ||
+            range.length > 64,
+        ))
+    )
+      throw new PackageError(
+        'E_EXT_LOAD',
+        'Host external declaration schema is invalid. See docs/guide/packages.md#sharing',
+      )
+    // W13 owns availability/version checks and Host namespace loading. Use its author declaration.
+    const externals = declaredExternals === undefined ? ['@agnes/*'] : Object.keys(declaredExternals)
     const exports = manifest.exports
     const targetEntry =
       entryTarget(
@@ -75,7 +102,7 @@ export async function packPlugin(folder: string, output?: string): Promise<strin
       platform: 'node',
       format: 'esm',
       target: 'node24',
-      external: ['@agnes/*', 'node:*'],
+      external: [...externals, 'node:*'],
       metafile: true,
       legalComments: 'eof',
       logLevel: 'silent',
@@ -100,7 +127,6 @@ export async function packPlugin(folder: string, output?: string): Promise<strin
         'Dependency uses dynamic require; use static imports before sharing. See docs/guide/packages.md#sharing',
       )
     const inputs = { ...bundled.metafile?.inputs }
-    const agnes = manifest.agnes as { clientDescriptors?: { path: string }[] } | undefined
     for (const descriptor of agnes?.clientDescriptors ?? []) {
       const descriptorFile = containedEntry(source, descriptor.path, 'file', 'package.json')
       const client = readStaticJson(descriptorFile).client as { entry?: string } | undefined
@@ -114,7 +140,7 @@ export async function packPlugin(folder: string, output?: string): Promise<strin
         platform: 'browser',
         format: 'esm',
         target: 'es2022',
-        external: ['@agnes/*'],
+        external: externals,
         metafile: true,
         legalComments: 'eof',
         logLevel: 'silent',

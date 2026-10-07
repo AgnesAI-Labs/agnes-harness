@@ -159,6 +159,7 @@ export function inspectStaged(input: {
           'kinds',
           'bundles',
           'capabilities',
+          'hostProvidedExternals',
         ].includes(k),
     )
   )

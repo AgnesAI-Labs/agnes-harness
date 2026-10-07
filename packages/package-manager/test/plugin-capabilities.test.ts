@@ -28,6 +28,7 @@ function fixture() {
       license: 'MIT',
       exports: './index.mjs',
       agnes: {
+        hostProvidedExternals: { '@agnes/plugin-runtime': '0.0.0' },
         plugins: [{ export: 'main' }],
         capabilities: { network: ['api.example.com'], exec: ['node'] },
       },

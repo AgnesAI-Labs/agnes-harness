@@ -34,7 +34,7 @@ agh plugins pack /home/me/hello-tool ./hello-tool.tgz
 agh plugins add ./hello-tool.tgz
 ```
 
-`pack` validates the static manifest, bundles the backend entry and declared frontend entries, preserves third-party legal comments and license/notice files, then emits a `package/` tarball. Host SDK imports stay external and are supplied by AGH. The friend does not need the author's `node_modules`, source checkout or capability hash. Static JavaScript/TypeScript imports are supported; native addons and dependencies that load undeclared dynamic files need an author-provided distributable. Packing runs no plugin code, tests or install scripts and refuses an existing output file or output inside the source folder.
+`pack` validates the static manifest, bundles the backend entry and declared frontend entries, preserves third-party legal comments and license/notice files, then emits a `package/` tarball. Host SDK imports declared in `agnes.hostProvidedExternals` stay external and are supplied by AGH; older packages retain their Agnes SDK external imports. The friend does not need the author's `node_modules`, source checkout or capability hash. Static JavaScript/TypeScript imports are supported; native addons and dependencies that load undeclared dynamic files need an author-provided distributable. Packing runs no plugin code, tests or install scripts and refuses an existing output file or output inside the source folder.
 
 ## Capabilities
 

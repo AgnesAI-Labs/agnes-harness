@@ -32,7 +32,7 @@ agh plugins pack /home/me/hello-tool ./hello-tool.tgz
 agh plugins add ./hello-tool.tgz
 ```
 
-`pack` 校验静态清单，打包后端和声明的前端入口，保留第三方法律注释及许可证/NOTICE，输出 `package/` 格式 tarball。Host SDK 由 AGH 提供，不重复打入包。朋友无需作者的 `node_modules`、源码目录或能力哈希。支持静态 JavaScript/TypeScript 导入；原生插件与读取未声明动态文件的依赖需要作者准备可分发产物。打包不执行插件代码、测试或安装脚本；输出文件不能已存在或位于来源目录内。
+`pack` 校验静态清单，打包后端和声明的前端入口，保留第三方法律注释及许可证/NOTICE，输出 `package/` 格式 tarball。`agnes.hostProvidedExternals` 声明的 Host SDK 由 AGH 提供，不重复打入包；旧包保留 Agnes SDK 外部导入。朋友无需作者的 `node_modules`、源码目录或能力哈希。支持静态 JavaScript/TypeScript 导入；原生插件与读取未声明动态文件的依赖需要作者准备可分发产物。打包不执行插件代码、测试或安装脚本；输出文件不能已存在或位于来源目录内。
 
 ## 能力声明
 
