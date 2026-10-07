@@ -275,7 +275,7 @@ export async function buildLocalWeb(webOut: string): Promise<void> {
   await collectThirdPartyNotices(webRoot, webOut, metafiles)
 }
 
-async function buildLocal(out: string, nativeOutput?: string): Promise<void> {
+async function buildLocal(out: string, nativeOutput?: string, versionOverride?: string): Promise<void> {
   const webOut = join(out, 'web')
   await mkdir(join(out, 'native'), { recursive: true })
   await copyComputerUseNotice(out)
@@ -283,7 +283,7 @@ async function buildLocal(out: string, nativeOutput?: string): Promise<void> {
   const packageJson = JSON.parse(await readFile(join(cliRoot, 'package.json'), 'utf8')) as {
     version?: unknown
   }
-  const version = typeof packageJson.version === 'string' ? packageJson.version : '0.0.0'
+  const version = versionOverride ?? (typeof packageJson.version === 'string' ? packageJson.version : '0.0.0')
   const defines = await runtimeDefines(version)
 
   // This is the normal package executable. SEA keeps its own build path and embedded-manifest
@@ -308,14 +308,40 @@ async function buildLocal(out: string, nativeOutput?: string): Promise<void> {
   await buildLocalWeb(webOut)
 }
 
-if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  const args = process.argv.slice(2)
-  if (args.length && (args.length !== 2 || args[0] !== '--output-dir' || !isAbsolute(args[1] ?? '')))
+function parseBuildArgs(args: readonly string[]): { out?: string; version?: string } {
+  let out: string | undefined
+  let version: string | undefined
+  for (let index = 0; index < args.length; index += 1) {
+    const arg = args[index]
+    if (arg === '--output-dir') {
+      const value = args[index + 1]
+      if (value === undefined || !isAbsolute(value))
+        throw new Error('Expected --output-dir with an absolute directory')
+      out = value
+      index += 1
+      continue
+    }
+    if (arg === '--version') {
+      const value = args[index + 1]
+      if (value === undefined || !/^[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?$/.test(value))
+        throw new Error('Expected --version with a SemVer version')
+      version = value
+      index += 1
+      continue
+    }
     throw new Error('Expected --output-dir with an absolute directory')
-  const out = args[1] ?? join(cliRoot, 'dist', 'local')
+  }
+  return { ...(out === undefined ? {} : { out }), ...(version === undefined ? {} : { version }) }
+}
+
+if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  const parsed = parseBuildArgs(process.argv.slice(2))
+  const out = parsed.out ?? join(cliRoot, 'dist', 'local')
   const transaction = await beginRuntimeDirectory(out)
   try {
-    await withBuiltSystemRuntime(repoPackages, (native) => buildLocal(transaction.staging, native))
+    await withBuiltSystemRuntime(repoPackages, (native) =>
+      buildLocal(transaction.staging, native, parsed.version),
+    )
     await transaction.commit()
     process.stdout.write(`built local launch output at ${out}\n`)
   } finally {

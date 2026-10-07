@@ -1,22 +1,94 @@
-#!/bin/sh
-# Terminal command for this harness. `agh` with a TTY starts the TUI.
-# Resolves symlinks so a PATH entry can point here from outside the repo.
-set -eu
-source=$0
-while [ -L "$source" ]; do
-  dir=$(CDPATH= cd -- "$(dirname "$source")" && pwd)
-  target=$(readlink "$source")
-  case $target in
-    /*) source=$target ;;
-    *) source=$dir/$target ;;
-  esac
-done
-script_dir=$(CDPATH= cd -- "$(dirname "$source")" && pwd)
-repo=$(CDPATH= cd -- "$script_dir/../../.." && pwd)
-built=$repo/packages/cli/dist/local/agnes.mjs
-if [ ! -f "$built" ]; then
-  printf '%s\n' "agh: missing $built" >&2
-  printf '%s\n' "agh: build it with: pnpm --filter @agnes/cli build:local" >&2
-  exit 1
-fi
-exec node "$built" "$@"
+#!/usr/bin/env node
+// Launcher for the repo build and for the published @agnes/harness package.
+// Resolves symlinks so a PATH shim can point here from outside the package.
+import { spawn } from 'node:child_process'
+import { chmodSync, copyFileSync, existsSync, mkdirSync, realpathSync, symlinkSync } from 'node:fs'
+import { dirname, join, relative } from 'node:path'
+import { fileURLToPath } from 'node:url'
+
+const here = dirname(realpathSync(fileURLToPath(import.meta.url)))
+const packageRoot = dirname(here)
+
+const [nodeMajor, nodeMinor] = process.versions.node.split('.').map((part) => Number(part))
+if (nodeMajor < 24 || (nodeMajor === 24 && nodeMinor < 10))
+  fail(`Node.js >=24.10 is required (current ${process.versions.node})`)
+
+const entry = [join(packageRoot, 'dist', 'agnes.mjs'), join(packageRoot, 'dist', 'local', 'agnes.mjs')].find(
+  (candidate) => existsSync(candidate),
+)
+if (!entry) fail('missing bundled entry\nagh: build it with: pnpm --filter @agnes/cli build:local')
+
+ensurePackagedNatives(dirname(entry))
+
+const child = spawn(process.execPath, [entry, ...process.argv.slice(2)], { stdio: 'inherit' })
+for (const signal of ['SIGINT', 'SIGTERM', 'SIGHUP']) {
+  process.on(signal, () => {
+    if (child.exitCode === null && !child.killed) child.kill(signal)
+  })
+}
+child.on('exit', (code, signal) => {
+  if (signal) process.exit(1)
+  process.exit(code === null ? 1 : code)
+})
+
+function fail(message) {
+  process.stderr.write(`agh: ${message}\n`)
+  process.exit(1)
+}
+
+// npm pack omits every directory named node_modules. The published tree keeps the native
+// addon under dist/vendor and dist/prebuilds/<platform>-<arch>, then this link restores the
+// specifier the bundled runtime already requires.
+function ensurePackagedNatives(root) {
+  const prebuilds = join(root, 'prebuilds')
+  if (!existsSync(prebuilds)) return
+  const triple = `${process.platform}-${process.arch}`
+  const packed = join(prebuilds, triple)
+  if (!existsSync(packed))
+    fail(`no native prebuild for ${triple}. This package was built for another platform.`)
+  const native = join(packed, 'agnes-system.node')
+  if (existsSync(native)) {
+    placeFile(native, join(root, 'vendor', '@agnes', 'system-node', 'dist', 'native', 'agnes-system.node'))
+  }
+  for (const name of ['macos-process-identity', 'macos-live-app-identity']) {
+    const source = join(packed, name)
+    if (!existsSync(source)) continue
+    placeFile(source, join(root, 'native', name), 0o755)
+  }
+  for (const name of ['process-broker.mjs', 'windows-command.mjs']) {
+    const source = join(packed, 'runtime', name)
+    if (!existsSync(source)) continue
+    placeFile(source, join(root, 'vendor', '@agnes', 'system-node', 'runtime', name))
+  }
+  linkSystemPackage(root)
+}
+
+function placeFile(source, target, mode) {
+  mkdirSync(dirname(target), { recursive: true })
+  try {
+    copyFileSync(source, target)
+    if (mode !== undefined) chmodSync(target, mode)
+  } catch (error) {
+    const code = error && error.code
+    if ((code === 'EBUSY' || code === 'EPERM' || code === 'EACCES') && existsSync(target)) return
+    throw error
+  }
+}
+
+function linkSystemPackage(root) {
+  const vendorPackage = join(root, 'vendor', '@agnes', 'system-node')
+  if (!existsSync(vendorPackage)) return
+  const link = join(root, 'node_modules', '@agnes', 'system-node')
+  if (existsSync(link)) return
+  mkdirSync(dirname(link), { recursive: true })
+  try {
+    symlinkSync(relative(dirname(link), vendorPackage), link, 'dir')
+  } catch (error) {
+    if (error && error.code === 'EEXIST') return
+    if (process.platform === 'win32' && error && error.code === 'EPERM') {
+      symlinkSync(vendorPackage, link, 'junction')
+      return
+    }
+    throw error
+  }
+}
