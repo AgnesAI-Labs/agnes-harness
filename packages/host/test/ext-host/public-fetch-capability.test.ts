@@ -36,5 +36,31 @@ describe('independent public retrieval grant', () => {
       net: { fetch: vi.fn() },
     } as unknown as ToolContext)
     expect(() => projected.net.fetchPublic?.('https://example.com')).toThrow('unavailable')
+    expect(projected.subagent.list).toBeUndefined()
+  })
+  it('preserves child controls only behind the declared subagent capability', async () => {
+    const child = { id: 'child', providerId: 'in-process', status: 'idle', continuable: true }
+    const ctx = {
+      ...raw(),
+      subagent: {
+        list: async () => [child],
+        models: async () => [],
+        sendMessage: async (key: string, text: string) => ({ messageId: `${key}:${text}` }),
+        interrupt: async () => ({ accepted: true }),
+      },
+    } as unknown as ToolContext
+    const denied = capabilityToolContext(manifest(), ctx)
+    for (const operation of [
+      () => denied.subagent.list?.(),
+      () => denied.subagent.models?.(),
+      () => denied.subagent.sendMessage?.('child', 'next'),
+      () => denied.subagent.interrupt?.('child'),
+    ])
+      expect(operation).toThrow('E_CAPABILITY_UNDECLARED')
+    const allowed = capabilityToolContext({ ...manifest(), capabilities: { subagent: true } }, ctx)
+    expect(await allowed.subagent.list?.()).toEqual([child])
+    expect(await allowed.subagent.models?.()).toEqual([])
+    expect(await allowed.subagent.sendMessage?.('child', 'next')).toEqual({ messageId: 'child:next' })
+    expect(await allowed.subagent.interrupt?.('child')).toEqual({ accepted: true })
   })
 })

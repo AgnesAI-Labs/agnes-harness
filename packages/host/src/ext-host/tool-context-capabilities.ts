@@ -96,6 +96,38 @@ export function capabilityToolContext(manifest: ExtensionManifest, context: Tool
         if (caps.subagent !== true) refuse(id, 'subagent')
         return context.subagent.resume(childKey)
       },
+      ...(context.subagent?.list
+        ? {
+            list: () => {
+              if (caps.subagent !== true) refuse(id, 'subagent')
+              return context.subagent.list!()
+            },
+          }
+        : {}),
+      ...(context.subagent?.models
+        ? {
+            models: () => {
+              if (caps.subagent !== true) refuse(id, 'subagent')
+              return context.subagent.models!()
+            },
+          }
+        : {}),
+      ...(context.subagent?.sendMessage
+        ? {
+            sendMessage: (childKey: string, text: string, signal?: AbortSignal) => {
+              if (caps.subagent !== true) refuse(id, 'subagent')
+              return context.subagent.sendMessage!(childKey, text, signal)
+            },
+          }
+        : {}),
+      ...(context.subagent?.interrupt
+        ? {
+            interrupt: (childKey: string) => {
+              if (caps.subagent !== true) refuse(id, 'subagent')
+              return context.subagent.interrupt!(childKey)
+            },
+          }
+        : {}),
     }),
   }
   return Object.freeze(projected)
