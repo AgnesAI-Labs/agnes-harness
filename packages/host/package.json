@@ -8,7 +8,8 @@
   },
   "exports": {
     ".": "./src/index.ts",
-    "./testkit": "./testkit/index.ts"
+    "./testkit": "./testkit/index.ts",
+    "./testkit/plugin-registration": "./testkit/plugin-registration.ts"
   },
   "scripts": {
     "test": "vitest run",

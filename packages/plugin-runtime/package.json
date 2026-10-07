@@ -13,10 +13,22 @@
     "typecheck": "tsc -b"
   },
   "dependencies": {
+    "@agnes/extension-api": "workspace:*",
     "@agnes/cordis": "workspace:*",
     "@agnes/cordis-loader": "workspace:*",
     "@sinclair/typebox": "0.34.33",
     "@standard-schema/spec": "1.1.0"
+  },
+  "peerDependencies": {
+    "@agnes/host": "*"
+  },
+  "peerDependenciesMeta": {
+    "@agnes/host": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@agnes/host": "workspace:*"
   },
   "license": "Apache-2.0"
 }

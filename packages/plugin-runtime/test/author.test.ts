@@ -13,6 +13,13 @@ describe('plugin author API', () => {
   })
 
   it('keeps the runtime root surface author-only', async () => {
-    expect(Object.keys(await import('../src/index.js')).sort()).toEqual(['defineAgnesPlugin'])
+    expect(Object.keys(await import('../src/index.js')).sort()).toEqual([
+      'defineAgnesPlugin',
+      'defineLoop',
+      'defineModelAdapter',
+      'defineTool',
+      'toolCancelled',
+      'toolError',
+    ])
   })
 })
