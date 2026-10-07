@@ -10,6 +10,10 @@ export type ChildAgentCapabilities = Readonly<{
   inheritsParentContext: boolean
   /** Can place the child in its own git worktree. */
   worktree: boolean
+  /** Enforces a requested child credit ceiling. Omitted means unsupported. */
+  budget?: boolean
+  /** Filters both tool disclosure and execution by exact tool name. */
+  toolFilter?: boolean
 }>
 
 export type ChildAgentStatus =
@@ -39,9 +43,52 @@ export type ChildAgentStartOptions = Readonly<{
   model?: string
   isolation?: 'worktree' | 'shared'
   budget?: number
-  /** Run one inherited turn. Requires `inheritsParentContext`. */
+  /** Seed from parent history, retaining the child for follow-ups. */
   fork?: boolean
+  toolFilter?: ChildAgentToolFilter
+  /** Opaque parent code generation, inherited unchanged; not model configuration. */
+  generation?: string
 }>
+
+/** Exact names, with deny taking precedence. An empty allow list permits no tools. */
+export type ChildAgentToolFilter = Readonly<{
+  allow?: readonly string[]
+  deny?: readonly string[]
+}>
+
+/** Host/Core-owned facts. A loop cannot substitute another parent or code generation. */
+export type ChildAgentParentScope = Readonly<{
+  sessionKey: string
+  signal: AbortSignal
+  cwd: string
+  generation?: string
+  /** Remaining parent credit ceiling; a requested child ceiling may only narrow it. */
+  budget?: number
+  toolFilter?: ChildAgentToolFilter
+}>
+
+export type ChildAgentSessionStartOptions = Omit<
+  ChildAgentStartOptions,
+  'sessionKey' | 'cwd' | 'generation' | 'signal'
+> & { signal?: AbortSignal; providerId?: string }
+
+/**
+ * Parent-bound facade for LoopContext.children. Default provider selection and current
+ * session allowlists apply to every start. Handles are owned by this facade only.
+ * Parent abort requests cancellation; dispose joins starts and handle cleanup, is
+ * idempotent, and rejects with cleanup failures. Children inherit the parent's code
+ * generation, credit ceiling and tool filter; start options can only narrow constraints.
+ */
+export interface ChildAgentSessionService {
+  start(task: string, options?: ChildAgentSessionStartOptions): Promise<ChildAgentHandle>
+  list(): Promise<readonly ChildAgentListing[]>
+  sendMessage(id: string, text: string, signal?: AbortSignal): Promise<{ messageId: string }>
+  interrupt(id: string): Promise<{ accepted: boolean }>
+  result(id: string): Promise<ChildAgentResult>
+  events(id: string): AsyncIterable<ChildAgentEvent>
+  /** Omit id to drain the entire parent scope. */
+  dispose(id?: string): Promise<void>
+}
 
 /** One running child. `result` settles when the child reaches a terminal state. */
 export interface ChildAgentHandle {
@@ -98,11 +145,13 @@ export type ChildAgentAllowlistConfig = Readonly<{
 
 export interface ChildAgentRegistration {
   /** Duplicate ids are refused. The disposer belongs to the calling plugin fiber. */
-  register(provider: ChildAgentProvider): () => void | Promise<void>
+  register(provider: ChildAgentProvider): () => Promise<void>
   catalog(): readonly ChildAgentCatalogEntry[]
 }
 
 export interface ChildAgentService extends ChildAgentRegistration {
+  /** Bind once for a parent session; the caller owns and must await facade disposal. */
+  forSession(parent: ChildAgentParentScope): ChildAgentSessionService
   setSessionAllowlist(sessionKey: string, allowlist: ChildAgentAllowlist | undefined): void
   allowlist(sessionKey: string): ChildAgentAllowlist | undefined
   /** Undefined selects the configured child-agent provider; explicit ids are unchanged. */
