@@ -158,7 +158,8 @@ export async function continueParked(s: SessionImpl): Promise<'opened' | 'waitin
     }
     const assistant = (
       await s.d.log.scan({
-        fromSeq: step.seq,
+        // Low-level drivers may schedule the model and tools in separate execution steps.
+        fromSeq: turnStart.seq,
         toSeq: call.seq,
         lane: s.lane,
         type: 'assistant/message',

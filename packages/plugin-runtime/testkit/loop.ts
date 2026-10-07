@@ -83,6 +83,7 @@ export async function driveLoop(factory: LoopFactory, options: LoopTestOptions =
     },
     turn: {
       view: async () => options.turnView ?? null,
+      endStep: async () => {},
       continuation: () => null,
       cancelled: () => signal.aborted,
       checkpoint: unavailable,
@@ -93,6 +94,7 @@ export async function driveLoop(factory: LoopFactory, options: LoopTestOptions =
     model: { ...scripted.model, respond: unavailable },
     tools: {
       drain: unavailable,
+      resume: unavailable,
       async execute(call, signal) {
         const id = call.invocationId ?? 'tool-' + statuses.size
         const previous = statuses.get(id)
@@ -120,6 +122,10 @@ export async function driveLoop(factory: LoopFactory, options: LoopTestOptions =
       pending: () => inputs.length > 0,
     },
     events: {
+      async assistant(message, saved) {
+        events.push({ type: 'assistant/message', data: structuredClone(message) })
+        checkpoint = structuredClone(saved)
+      },
       emit: async (type, data) => {
         events.push({ type, data: structuredClone(data) })
       },

@@ -8,8 +8,10 @@ import type {
 } from '@agnes/extension-api'
 import type { ContentBlock, InferenceEvent, RequestBody } from '@agnes/protocol'
 import { releaseTreeReservation, settleTreeSpend } from '../child/runtime-budget.js'
-import { continueParked } from '../execution/turn/parked.js'
+import { approvalContinuation, continueParked } from '../execution/turn/parked.js'
+import { approveAndExecute } from '../execution/turn/tools.js'
 import type { Inbox } from '../reduce/shapes.js'
+import { hasCompleteToolPolicyEnvelope } from '../registry/tool-policy.js'
 import type { DeriveOutput } from '../request/derive.js'
 import { toProviderRequest } from '../request/to-provider.js'
 import { runCompaction } from '../step/compaction.js'
@@ -98,6 +100,7 @@ export async function createLoopContext(s: SessionImpl, restoreCheckpoint = fals
   }
   const prepared = new WeakMap<LoopRequest, { output: DeriveOutput; turnId: number; invocationId: string }>()
   const invocations = new LoopInvocations(s, () => checkpoint)
+  const resumingTools = new Set<string>()
   async function prepareRequest(options: LoopRequestOptions = {}): Promise<LoopRequest> {
     const done = s.beginLoopOperation()
     try {
@@ -386,6 +389,18 @@ export async function createLoopContext(s: SessionImpl, restoreCheckpoint = fals
     effects: { status: (id) => invocations.status(id) },
     turn: {
       view: () => loopTurnView(s),
+      async endStep() {
+        const done = s.beginLoopOperation()
+        try {
+          const op = requireOp()
+          if (s.pendingEffects().length)
+            throw new CoreError('E_RELATION', 'Cannot close a step with active effects')
+          const step = s.state.openStep.get(s.lane)
+          if (step) await s.transition([s.ev('step/end', { turn: step.turn, step: step.step })], op)
+        } finally {
+          done()
+        }
+      },
       cancelled: () => s.op()?.control.status === 'cancel_requested',
       continuation() {
         const kind = s.op()?.phase.kind
@@ -423,6 +438,59 @@ export async function createLoopContext(s: SessionImpl, restoreCheckpoint = fals
     tools: {
       drain: (signal) => controlled(signal, async () => publicOutcome(await s.runToolsPhase())),
       execute,
+      async resume(id, signal) {
+        if (resumingTools.has(id))
+          throw new CoreError('E_RELATION', 'Approval invocation is already resuming')
+        const done = s.beginLoopOperation()
+        resumingTools.add(id)
+        try {
+          signal = AbortSignal.any([signal, s.ac.signal])
+          signal.throwIfAborted()
+          const status = await invocations.status(id)
+          if (status.status === 'responded' && !Array.isArray(status.result))
+            return status.result as import('@agnes/extension-api').ToolResult
+          const toolUseId = await invocations.toolUseId(id)
+          const continuation = await approvalContinuation(s)
+          const op = s.op()
+          const call =
+            op?.phase.kind === 'tools'
+              ? op.phase.batch.calls.find((call) => call.toolUseId === toolUseId)
+              : undefined
+          if (
+            !call ||
+            call.status !== 'planned' ||
+            !hasCompleteToolPolicyEnvelope(call) ||
+            continuation?.toolUseId !== toolUseId
+          ) {
+            if (toolUseId && (await invocations.awaitingApproval(toolUseId)))
+              throw new CoreError('E_LANE_BUSY', 'Invocation awaits its own approval continuation', {
+                invocationId: id,
+              })
+            throw new CoreError(
+              'E_RELATION',
+              'Invocation has no opened approval continuation; reconcile uncertain effects',
+              { invocationId: id },
+            )
+          }
+          const [row] = await s.d.log.scan({ fromSeq: call.argsSeq, toSeq: call.argsSeq, limit: 1 })
+          if (!row || row.type !== 'tool/call')
+            throw new CoreError('E_RELATION', 'Approval call arguments are missing')
+          const outcome = await approveAndExecute(
+            s,
+            { ...call, args: (row.data as { args: unknown }).args },
+            { depth: call.depth ?? 0, signal },
+          )
+          if (outcome.park) {
+            await closeParked([outcome.park])
+            throw Object.assign(new Error('PARKED'), { code: 'PARKED' })
+          }
+          await invocations.settleTool(id, outcome.result)
+          return outcome.result
+        } finally {
+          resumingTools.delete(id)
+          done()
+        }
+      },
       async batch(calls, signal) {
         const done = s.beginLoopOperation()
         try {
@@ -473,6 +541,43 @@ export async function createLoopContext(s: SessionImpl, restoreCheckpoint = fals
     },
     events: {
       dispatch: (event, payload, signal) => dispatchLoopEvent(s, event, payload, signal),
+      async assistant(message, saved) {
+        const done = s.beginLoopOperation()
+        try {
+          const next = s.d.loopFactory.codec.encode(s.d.loopFactory.codec.decode(saved))
+          const op = requireOp()
+          if (s.pendingEffects().length)
+            throw new CoreError('E_RELATION', 'Assistant commit requires settled effects')
+          await s.transition(
+            [
+              s.ev(
+                'assistant/message',
+                {
+                  content: message.content,
+                  stopReason: message.stopReason,
+                  ...(s.turn?.lastHeaderSeq ? { requestSeq: s.turn.lastHeaderSeq } : {}),
+                },
+                { origin: 'model' },
+              ),
+              s.ev(CHECKPOINT_EVENT, { loop: s.loop, checkpoint: next }, { ignorable: true }),
+            ],
+            (cur, seq) => {
+              if (!cur) throw new CoreError('E_RELATION', 'Assistant commit lost its turn')
+              return {
+                ...withPhase(cur, {
+                  kind: 'checkpoint',
+                  continuation: 'need_assistant',
+                  triggerSeq: op.meta.triggerSeq,
+                }),
+                latestAssistantSeq: seq,
+              }
+            },
+          )
+          checkpoint = next
+        } finally {
+          done()
+        }
+      },
       async emit(type, data) {
         await s.d.log.append([s.ev(type, data, type.startsWith('x/') ? { ignorable: true } : {})])
       },

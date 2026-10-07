@@ -78,6 +78,51 @@ export class LoopInvocations {
     }
     return { status: 'may-have-sent', invocationId: id, checkpoint: row.checkpoint }
   }
+  async toolUseId(id: string): Promise<string | undefined> {
+    await this.record(id)
+    const links = await scanAll((query) => this.s.d.log.scan(query), {
+      type: 'x/core/loop-effect',
+      lane: this.s.lane,
+      toSeq: this.s.lastSeq,
+    })
+    return (
+      links.reverse().find((row) => (row.data as { invocationId?: string }).invocationId === id)?.data as
+        | { toolUseId?: string }
+        | undefined
+    )?.toolUseId
+  }
+  async settleTool(id: string, result: ToolResult): Promise<void> {
+    const previous = await this.record(id)
+    if (!previous) throw new CoreError('E_RELATION', 'Approval invocation is missing')
+    await this.s.d.log.append([
+      this.s.ev(
+        EVENT,
+        {
+          ...previous,
+          status: 'responded',
+          checkpoint: this.checkpoint(),
+          result,
+        },
+        { ignorable: true },
+      ),
+    ])
+  }
+  async awaitingApproval(toolUseId: string): Promise<boolean> {
+    const requests = await scanAll((query) => this.s.d.log.scan(query), {
+      type: 'approval/asked',
+      lane: this.s.lane,
+      toSeq: this.s.lastSeq,
+    })
+    return requests.some((row) => {
+      const asked = row.data as { kind: string; toolUseId?: string; requestId: string; pending?: unknown }
+      return (
+        asked.kind === 'tool' &&
+        asked.toolUseId === toolUseId &&
+        asked.pending !== undefined &&
+        !this.s.state.resumedRequests.has(asked.requestId)
+      )
+    })
+  }
   async claim(id: string, input: unknown): Promise<ToolResult | readonly InferenceEvent[] | undefined> {
     const fingerprint = sha256Hex(canonicalJson(input))
     let cached: ToolResult | readonly InferenceEvent[] | undefined

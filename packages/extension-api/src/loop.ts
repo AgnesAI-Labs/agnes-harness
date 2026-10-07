@@ -6,6 +6,7 @@ import type {
   ModelRecord,
   RequestBody,
 } from '@agnes/protocol'
+import type { AssistantMessage } from '@agnes/protocol/gen/session-v1'
 import type { ChildAgentSessionService } from './child-agent.js'
 import type { LoopEventPort } from './loop-events.js'
 import type { ToolResult } from './tool.js'
@@ -147,6 +148,8 @@ export interface LoopContext {
   prepareRequest(options?: LoopRequestOptions): Promise<LoopRequest>
   readonly turn: {
     view(): Promise<LoopTurnView | null>
+    /** Close the current execution step before compaction. Does not run a scheduler edge. */
+    endStep(): Promise<void>
     continuation(): LoopContinuation | null
     cancelled(): boolean
     checkpoint(signal: AbortSignal): Promise<LoopStepOutcome>
@@ -166,8 +169,15 @@ export interface LoopContext {
     drain(signal: AbortSignal): Promise<LoopStepOutcome>
     /** Execution goes through the session's approval and tool policy path. */
     execute(call: LoopToolCall, signal: AbortSignal): Promise<ToolResult>
-    /** Independent calls may overlap; results preserve input order and policy still controls concurrency. */
+    /** Independent calls may overlap; results preserve input order and policy controls concurrency.
+     * A pending approval throws code=PARKED after siblings drain and the turn closes.
+     */
     batch(calls: readonly LoopToolCall[], signal: AbortSignal): Promise<readonly ToolResult[]>
+    /** Resume only the original approval-bound call after input.resumeParked() opens it.
+     * A rejected approval returns its durable refusal; an uncertain external effect is refused.
+     * E_LANE_BUSY means this call still awaits its own approval continuation.
+     */
+    resume(invocationId: string, signal: AbortSignal): Promise<ToolResult>
   }
   readonly input: {
     /** Claims the next input and opens its observable turn, or returns null. */
@@ -178,6 +188,8 @@ export interface LoopContext {
   }
   readonly events: LoopEventPort & {
     emit(type: string, data: JsonValue): Promise<void>
+    /** Persist an assistant message and the driver's next checkpoint in one ledger transaction. */
+    assistant(message: Omit<AssistantMessage, 'requestSeq'>, checkpoint: LoopCheckpoint): Promise<void>
     finish(reason: LoopEndReason, error?: { code: string; message: string }): Promise<void>
   }
   readonly checkpoints: {
