@@ -1730,7 +1730,10 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
       verifyRoutes(routes, provider.registry)
       providerFingerprint = provider.registry.fingerprint()
     }
-    const models = modelRuntime({ provider, contractForModel })
+    const models = modelRuntime({ provider, contractForModel, dispose: disposeProvider }, (error) => {
+      say('provider.dispose_failed', { message: error instanceof Error ? error.message : String(error) })
+    })
+    disposeProvider = () => models.dispose()
     const applyModelProfile = async (next: ResolvedProfile): Promise<void> => {
       next = applyProviderSelections(next)
       const nextRoutes = next.provider.routes?.length
@@ -1756,14 +1759,21 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
             ...factory,
           })
         : unresolvedProviderAssembly()
-      if (built.provider.registry && nextRoutes) verifyRoutes(nextRoutes, built.provider.registry)
-      const nextContracts = bindModelContracts(
-        built.provider.registry?.models() ?? built.provider.models(),
-        built.contractStore,
-      )
-      // No await after candidate validation: all readers move to the same verified catalogue.
-      rollback.push('model-adapters-update', built.dispose)
-      models.publish({ provider: built.provider, contractForModel: nextContracts })
+      let nextContracts: typeof contractForModel
+      try {
+        if (built.provider.registry && nextRoutes) verifyRoutes(nextRoutes, built.provider.registry)
+        nextContracts = bindModelContracts(
+          built.provider.registry?.models() ?? built.provider.models(),
+          built.contractStore,
+        )
+      } catch (error) {
+        await built.dispose().catch((cleanupError) => {
+          say('provider.dispose_failed', { message: String(cleanupError) })
+        })
+        throw error
+      }
+      // Publish atomically; old requests keep their image until counting/inference finishes.
+      models.publish({ provider: built.provider, contractForModel: nextContracts, dispose: built.dispose })
       provider = built.provider
       preconfiguredRoutes = built.preconfiguredRoutes
       routes = nextRoutes
