@@ -153,10 +153,9 @@ export async function createRuntimeGenerationHost(
       options.runtimePluginCatalogue ??
       []
     const catalogue = new Map(
-      [...sources, ...developmentSources.values()].map((source) => [
-        `${source.snapshot.packageId}@${source.snapshot.snapshotId}`,
-        source,
-      ]),
+      [...(options.runtimePluginSnapshots ?? []), ...sources, ...developmentSources.values()].map(
+        (source) => [`${source.snapshot.packageId}@${source.snapshot.snapshotId}`, source],
+      ),
     )
     return new RuntimePluginCatalogue([...catalogue.values()]).select(target)
   }

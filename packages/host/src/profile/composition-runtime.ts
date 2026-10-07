@@ -117,7 +117,7 @@ export async function createCompositionHost(
         ...(sources
           ? {
               packages: [
-                ...binding.profile.packages.filter((pkg) => pkg.trust === 'builtin'),
+                ...binding.profile.packages.filter((pkg) => pkg.trust === 'builtin' || !pkg.enabled),
                 ...sources.map(({ snapshot }) => ({
                   ...binding.profile.packages.find((pkg) => pkg.id === snapshot.packageId),
                   id: snapshot.packageId,
@@ -137,7 +137,15 @@ export async function createCompositionHost(
         binding.legacy ? deployment : profileForComposition(deployment, binding.tree),
         {
           ...options,
-          ...(sources ? { runtimePluginSnapshots: sources } : {}),
+          ...(sources
+            ? {
+                runtimePluginSnapshots: sources,
+                packageDirs: new Map([
+                  ...(options.packageDirs ?? []),
+                  ...sources.map(({ snapshot }) => [snapshot.packageId, snapshot.directory] as const),
+                ]),
+              }
+            : {}),
           ...(skills ? { skillResources: skills } : {}),
         },
         (generationProfile, generationOptions) =>

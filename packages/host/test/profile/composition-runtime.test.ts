@@ -419,69 +419,68 @@ it('opens a new composition from the published code after retiring a boot snapsh
     two = source('2.0.0')
   let available = [one, two]
   try {
-    host = (
-      await createTestHost({
-        dataDir: root,
-        script: [],
-        allowed: ['standard', 'observer'],
-        presets: {
-          observer: { name: 'observer', extends: 'standard', composition: { tools: ['code_version'] } },
-        },
-        profileInputs: {
-          user: { name: 'local-dev', composition: {}, packages: [{ id, source: 'fixture' }] },
-        },
-        lock: {
-          packages: Object.fromEntries([
-            ...['@agnes/ai', '@agnes/base', '@agnes/code'].map((id) => [
-              id,
-              { version: '0.1.0', integrity: 'sha512-fixture', trust: 'builtin', enabled: true },
-            ]),
-            [
-              id,
-              {
-                version: one.snapshot.version,
-                integrity: one.snapshot.integrity,
-                trust: 'trusted',
-                enabled: true,
-              },
-            ],
+    const options: Parameters<typeof createTestHost>[0] = {
+      dataDir: root,
+      script: [],
+      allowed: ['standard', 'observer'],
+      presets: {
+        observer: { name: 'observer', extends: 'standard', composition: { tools: ['code_version'] } },
+      },
+      profileInputs: {
+        user: { name: 'local-dev', composition: {}, packages: [{ id, source: 'fixture' }] },
+      },
+      lock: {
+        packages: Object.fromEntries([
+          ...['@agnes/ai', '@agnes/base', '@agnes/code'].map((id) => [
+            id,
+            { version: '0.1.0', integrity: 'sha512-fixture', trust: 'builtin', enabled: true },
           ]),
-        },
-        packageDirs: { [id]: one.snapshot.directory },
-        runtimePluginSnapshots: [one],
-        runtimePluginSources: async () => available,
-        extensionLoader: {
-          async import(file) {
-            const version = readFileSync(file, 'utf8')
-            return {
-              main: {
-                inject: ['extension'],
-                apply(ctx: import('@agnes/cordis').Context) {
-                  ctx.extension().registerTool({
-                    name: 'code_version',
-                    description: version,
-                    parameters: Type.Object({}),
-                    meta: {
-                      isReadOnly: true,
-                      isDestructive: false,
-                      isConcurrencySafe: true,
-                      isOpenWorld: false,
-                      replay: 'safe',
-                      costHint: {},
-                      deferLoading: false,
-                      requiresApproval: 'never',
-                    },
-                    async execute() {
-                      return { content: [{ type: 'text', text: version }] }
-                    },
-                  })
-                },
+          [
+            id,
+            {
+              version: one.snapshot.version,
+              integrity: one.snapshot.integrity,
+              trust: 'trusted',
+              enabled: true,
+            },
+          ],
+        ]),
+      },
+      packageDirs: { [id]: one.snapshot.directory },
+      runtimePluginSnapshots: [one],
+      runtimePluginSources: async () => available,
+      extensionLoader: {
+        async import(file) {
+          const version = readFileSync(file, 'utf8')
+          return {
+            main: {
+              inject: ['extension'],
+              apply(ctx: import('@agnes/cordis').Context) {
+                ctx.extension().registerTool({
+                  name: 'code_version',
+                  description: version,
+                  parameters: Type.Object({}),
+                  meta: {
+                    isReadOnly: true,
+                    isDestructive: false,
+                    isConcurrencySafe: true,
+                    isOpenWorld: false,
+                    replay: 'safe',
+                    costHint: {},
+                    deferLoading: false,
+                    requiresApproval: 'never',
+                  },
+                  async execute() {
+                    return { content: [{ type: 'text', text: version }] }
+                  },
+                })
               },
-            }
-          },
+            },
+          }
         },
-      })
-    ).host
+      },
+    }
+    host = (await createTestHost(options)).host
     const old = await host.createSession({ key: 'old-code', cwd: root })
     const base = host.runtimeTargetSnapshot?.()
     if (!base) throw new Error('missing published target')
@@ -507,6 +506,34 @@ it('opens a new composition from the published code after retiring a boot snapsh
     const current = await host.createSession({ key: 'new-composition', preset: 'observer', cwd: root })
     expect(current.currentTools().resolve('code_version')?.description).toBe('2.0.0')
     expect(old.currentTools().resolve('code_version')?.description).toBe('1.0.0')
+    const pin = old.pluginGenerationId
+    await old.close()
+    await current.close()
+    await host.close()
+    host = (
+      await createTestHost({
+        ...options,
+        profileInputs: {
+          user: { name: 'local-dev', composition: {}, packages: [{ id, source: 'fixture', enabled: false }] },
+        },
+        lock: {
+          packages: {
+            ...options.lock?.packages,
+            [id]: {
+              version: two.snapshot.version,
+              integrity: two.snapshot.integrity,
+              trust: 'trusted',
+              enabled: false,
+            },
+          },
+        },
+        packageDirs: {},
+        runtimePluginSnapshots: [],
+      })
+    ).host
+    const reopened = await host.createSession({ key: old.key, cwd: root })
+    expect(reopened.pluginGenerationId).toBe(pin)
+    expect(reopened.currentTools().resolve('code_version')?.description).toBe('1.0.0')
   } finally {
     await host?.close()
     rmSync(root, { recursive: true, force: true })
