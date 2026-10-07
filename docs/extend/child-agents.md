@@ -18,6 +18,9 @@ Capabilities are `continuable`, `interrupt`, `modelSelection`, `inheritsParentCo
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | `in-process` | yes | yes | yes | yes | no | yes | yes |
 | `acp` | yes | yes | no | no | no | no | no |
+| `codex` | no | yes | no | no | no | no | no |
+| `claude-code` | no | yes | no | no | no | no | no |
+| `sdk` | no | yes | no | no | no | no | no |
 
 The direct in-process provider refuses worktree isolation because it does not prepare git worktrees. The official fork/spawn tools prepare a worktree before resuming their deferred child; creation failure cancels that child and returns an error. Request `isolation: shared` explicitly to share the working directory.
 
@@ -108,3 +111,11 @@ The provider speaks newline-delimited JSON-RPC: `initialize`, `session/new`, `se
 `result` settles when the process exits or the handle is disposed. A completed turn leaves the child idle so a later `sendMessage` can prompt it again.
 
 In-process events carry turn status and the turn's text. They are not a token stream. `subagent_list` does not include cached text for in-process children. The ACP listing includes text received so far.
+
+## Codex, Claude Code, and the generic engine
+
+These providers are optional and disabled until a profile mounts them with `enabled: true` and a command allowlist. They are not in the default plugin list. Settings → Child engines edits the same document and keeps it in the browser session. `childEnginePlugins(settings)` mounts each enabled engine.
+
+`codex` runs `codex exec --json` (or the command you allow) for one turn. `claude-code` runs Claude Code `stream-json` print mode for one turn. Both stream assistant text into the child listing and the child card, and `interrupt` stops the process. They do not accept a parent model, budget, tool filter, fork, or worktree. Native CLI configuration remains authoritative. The child receives `PATH`, `HOME`, `USERPROFILE`, and the `env` you pass.
+
+`sdk` speaks the pinned newline protocol `agnes.child-engine`: `initialize`, `run`, `text` notifications, and `cancel`. It is one shot. Choosing protocol `acp` registers the continuable `acp` provider instead, with the same command allowlist. Do not mount that row beside another `acp` provider. This engine does not speak the DeepSeek SDK wire.

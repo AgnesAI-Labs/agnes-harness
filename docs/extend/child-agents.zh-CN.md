@@ -18,6 +18,9 @@
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | `in-process` | 是 | 是 | 是 | 是 | 否 | 是 | 是 |
 | `acp` | 是 | 是 | 否 | 否 | 否 | 否 | 否 |
+| `codex` | 否 | 是 | 否 | 否 | 否 | 否 | 否 |
+| `claude-code` | 否 | 是 | 否 | 否 | 否 | 否 | 否 |
+| `sdk` | 否 | 是 | 否 | 否 | 否 | 否 | 否 |
 
 直接调用进程内提供者会拒绝 worktree 隔离，因为它不创建 git worktree。官方 fork/spawn 工具先准备 worktree，再恢复延迟启动的子代理；创建失败会取消子代理并返回错误。明确请求 `isolation: shared` 才共享工作目录。
 
@@ -108,3 +111,11 @@ acpChildAgentsPlugin({
 `result` 在进程退出或句柄被 dispose 时完成。一个回合结束只让子代理进入空闲，之后的 `sendMessage` 可以再发一轮 prompt。
 
 进程内事件是回合状态和该回合的文本，不是 token 流。`subagent_list` 不带进程内子代理的缓存文本。ACP 列表带上已经收到的文本。
+
+## Codex、Claude Code 与通用引擎
+
+这三个提供者默认关闭。配置档只有在 `enabled: true` 且命令位于允许名单时才会挂载它们，它们不在默认插件列表里。设置里的「子代理引擎」编辑同一份文档，并保存在本次浏览器会话。`childEnginePlugins(settings)` 挂载已启用的引擎。
+
+`codex` 用 `codex exec --json`（或你放行的命令）跑一轮。`claude-code` 用 Claude Code 的 `stream-json` 打印模式跑一轮。两者把助手文本流进子代理列表和子代理卡片，`interrupt` 会停掉进程。它们不接受父会话的模型、预算、工具过滤、fork 或工作树。CLI 自己的配置仍然有效。子进程只收到 `PATH`、`HOME`、`USERPROFILE` 和你传入的 `env`。
+
+`sdk` 使用固定的换行协议 `agnes.child-engine`：`initialize`、`run`、`text` 通知和 `cancel`。它是单轮的。协议选 `acp` 时改为注册可继续的 `acp` 提供者，并使用同一份命令允许名单。不要把它和另一个 `acp` 提供者同时挂载。这个引擎不说 DeepSeek SDK 的线路协议。
