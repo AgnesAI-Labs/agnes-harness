@@ -4,6 +4,7 @@ import { join } from 'node:path'
 import { PassThrough, Readable, Writable } from 'node:stream'
 import { runHeadless } from '@agnes/sdk'
 import { afterEach, expect, it, vi } from 'vitest'
+import { applyHeadlessBundle, loadHeadlessBundle } from '../src/boot/headless.js'
 import { parseArgs } from '../src/args.js'
 import { parseRunArgs, runCommand } from '../src/commands/run.js'
 import type { Booted } from '../src/types.js'
@@ -64,4 +65,19 @@ it('runs folder inputs in stable order, streams each result and returns the firs
   expect(vi.mocked(runHeadless).mock.calls.map((call) => call[1].input)).toEqual(['first', 'second'])
   expect(output.map((line) => JSON.parse(line).input)).toEqual([join(dir, 'a.txt'), join(dir, 'b.txt')])
   expect(close).toHaveBeenCalled()
+})
+
+it('loads Host bundle documents and applies a transient selection without mutating stored inputs', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'agh-bundle-'))
+  dirs.push(dir)
+  await writeFile(join(dir, 'bundle.json'), JSON.stringify({ profile: { toolPolicy: { readOnly: true } } }))
+  const bundle = await loadHeadlessBundle('./bundle.json', dir)
+  const original = { builtin: 'local-dev', adminBundles: ['installed#previous'] }
+  const next = applyHeadlessBundle(original, bundle)
+  expect(next.adminBundles).toEqual(['headless#run'])
+  expect(next.bundleCatalog?.['headless#run']?.document.profile?.toolPolicy).toEqual({ readOnly: true })
+  expect(original.adminBundles).toEqual(['installed#previous'])
+  expect(() => applyHeadlessBundle(original, { id: 'missing#bundle', catalog: {} })).toThrow()
+  await writeFile(join(dir, 'bundle.json'), JSON.stringify({ profile: { nonexistentCapability: true } }))
+  await expect(loadHeadlessBundle('./bundle.json', dir)).rejects.toThrow()
 })

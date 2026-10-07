@@ -1,25 +1,10 @@
 import { open } from 'node:fs/promises'
 import { isAbsolute, resolve } from 'node:path'
-import * as host from '@agnes/host'
-import type { ProfileInputs } from '@agnes/host'
+import { expandBundles, parsePackageBundles, type BundleCatalog, type ProfileInputs } from '@agnes/host'
 import type { HeadlessRunBoot } from '../commands/run.js'
-import { BootError, UsageError } from '../errors.js'
+import { UsageError } from '../errors.js'
 import { bootLocal, type LocalBootDeps } from './local.js'
 
-// Consume Host composition exports through a narrow version boundary. Older Hosts fail closed;
-// clients do not resolve, merge or validate plugin trees themselves.
-type BundleCatalog = Readonly<Record<string, { id: string; sourcePackage: string; document: unknown }>>
-type BundleInputs = ProfileInputs & { bundleCatalog?: BundleCatalog }
-type CompositionPort = {
-  parsePackageBundles(packageId: string, bundles: unknown): BundleCatalog
-  expandBundles(ids: readonly string[], catalog: BundleCatalog): readonly unknown[]
-}
-function compositionHost(): CompositionPort {
-  const port = host as unknown as Partial<CompositionPort>
-  if (typeof port.parsePackageBundles !== 'function' || typeof port.expandBundles !== 'function')
-    throw new BootError('headless --bundle requires a Host with bundle composition support')
-  return port as CompositionPort
-}
 async function readBundle(path: string): Promise<unknown> {
   const file = await open(path, 'r')
   try {
@@ -39,27 +24,38 @@ async function readBundle(path: string): Promise<unknown> {
     await file.close()
   }
 }
+/** Read static bundle data using Host's public format; executable package loading stays in Host. */
+export async function loadHeadlessBundle(
+  specifier: string,
+  cwd: string,
+): Promise<{ id: string; catalog: BundleCatalog }> {
+  const isId =
+    !isAbsolute(specifier) &&
+    !specifier.startsWith('.') &&
+    /^[^\s\x00-\x1f]+#[a-z][a-z0-9-]{0,63}$/.test(specifier)
+  if (isId) return { id: specifier, catalog: {} }
+  const document = await readBundle(resolve(cwd, specifier))
+  return { id: 'headless#run', catalog: parsePackageBundles('headless', { run: document }) }
+}
+export function applyHeadlessBundle(
+  inputs: ProfileInputs,
+  bundle: { id: string; catalog: BundleCatalog },
+): ProfileInputs {
+  const bundleCatalog = { ...inputs.bundleCatalog, ...bundle.catalog }
+  expandBundles([bundle.id], bundleCatalog)
+  return { ...inputs, bundleCatalog, adminBundles: [bundle.id] }
+}
 /** Apply a transient bundle through Host profile inputs; never write desired admin defaults. */
 export async function bootHeadless(input: HeadlessRunBoot, deps: LocalBootDeps) {
-  const composition = compositionHost()
-  const isId =
-    !isAbsolute(input.bundle) &&
-    !input.bundle.startsWith('.') &&
-    /^[^\s\x00-\x1f]+#[a-z][a-z0-9-]{0,63}$/.test(input.bundle)
-  const document = isId ? undefined : await readBundle(resolve(deps.cwd, input.bundle))
-  const additions = isId ? {} : composition.parsePackageBundles('headless', { run: document })
-  const bundle = isId ? input.bundle : 'headless#run'
+  const bundle = await loadHeadlessBundle(input.bundle, deps.cwd)
   return bootLocal(input.args, {
     ...deps,
     signal: input.signal,
     // This form is deliberately embedded: no launcher, web listener or shared daemon mutation.
-    transformProfileInputs: async (original) => {
-      const inputs = (
-        deps.transformProfileInputs ? await deps.transformProfileInputs(original) : original
-      ) as BundleInputs
-      const bundleCatalog = { ...inputs.bundleCatalog, ...additions }
-      composition.expandBundles([bundle], bundleCatalog)
-      return { ...inputs, bundleCatalog, adminBundles: [bundle] } as ProfileInputs
-    },
+    transformProfileInputs: async (original) =>
+      applyHeadlessBundle(
+        deps.transformProfileInputs ? await deps.transformProfileInputs(original) : original,
+        bundle,
+      ),
   })
 }

@@ -76,7 +76,7 @@ const recording = await recordModelResponses(instance, '/absolute/responses.json
 
 本地兼容路由也可配置 `compat.recordFile`，见[本地模型](local-model.zh-CN.md)。文件以独占方式创建，权限为 0600，不覆盖已有文件。JSONL 行含 schemaVersion: 1、sessionKey、调用 index、request、原始 adapter events、complete。提示词和模型内容可能敏感；不录制 adapter 凭证或鉴权 header。中断调用记录 complete: false，回放会拒绝。读取上限 64 MiB。
 
-模型路由选择 `api: replay`，配置 `compat: { file: /absolute/responses.jsonl }`，保留模型容量和工具声明。默认 `match: strict` 比较 kind、slot、system、messages、tools、sampling，忽略 route/model ID、session ID、派生 hash。显式 `match: sequence` 将相同回复用于修改后的 loop/compaction 提示词；这是固定回复条件下的策略比较，不表示真实模型会对新上下文给出相同回复。耗尽、不匹配、并发调用返回不可重试模型错误，不回退到真实模型，不模拟原始延迟。
+模型路由选择 `api: replay`，配置 `compat: { file: /absolute/responses.jsonl }`，保留模型容量和工具声明。默认 `match: strict` 比较 kind、slot、system、messages、tools、sampling，忽略 route/model ID、session ID、派生 hash。显式 `match: sequence` 将相同回复用于修改后的 loop/compaction 提示词；这是固定回复条件下的策略比较，不表示真实模型会对新上下文给出相同回复。耗尽、不匹配、并发调用返回不可重试模型错误，不回退到真实模型，不模拟原始延迟。回放复现模型回复；工具和其他 effect 仍按正常后端策略执行。比较完整会话时，需要受控 workspace 和这些 effect 的 fixture。
 
 一份 transcript 只含一个模型路由。每个新会话从第零条回复开始；文件含多个会话时设置 compat.recordedSession。同一路由的辅助调用也占用调用顺序；其他路由需要独立录制。
 
