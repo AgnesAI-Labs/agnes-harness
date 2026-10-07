@@ -43,6 +43,13 @@ const SUPPLIED: Record<string, string[]> = {
   ],
   'agnes/code-mode': ['tool:run_code', 'hook:session_start'],
   'agnes/privacy': ['hook:session_start', 'hook:shutdown'],
+  'agnes/plugin-creator': [
+    'tool:plugin_creator_guide',
+    'tool:plugin_scaffold',
+    'tool:plugin_test',
+    'tool:plugin_install_local',
+    'hook:context',
+  ],
   'agnes/mcp-search': ['tool:tool_search', 'tool:tool_describe'],
   'agnes/hooks-runner': [
     'hook:session_start',
@@ -87,6 +94,7 @@ describe('the builtin extensions that moved to the shared row host', () => {
       'agnes/code-mode',
       'agnes/hooks-runner',
       'agnes/privacy',
+      'agnes/plugin-creator',
       'agnes/mcp-search',
       'agnes/skills',
     ])

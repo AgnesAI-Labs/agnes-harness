@@ -539,7 +539,7 @@ describe('built CLI managed MCP lifecycle', () => {
           true,
         )
         expect(enableNeverTrusted.code, enableNeverTrusted.output).not.toBe(0)
-        expect(enableNeverTrusted.output).toContain('MCP_RECONCILE_FAILED')
+        expect(enableNeverTrusted.output).toContain('MCP_UNTRUSTED_REVISION: trust is untrusted')
         await chat('neverTrusted', 'ok', 'ABSENT')
         expect(await calls()).toHaveLength(count)
         // A failed enable still records the requested desired state. Return it to disabled and
