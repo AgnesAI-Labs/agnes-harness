@@ -27,12 +27,12 @@ export async function scaffold(template, name, destination = name?.split('/').at
     options.local
       ? `## Zero-build local development
 
-This package exports source TypeScript. Put it in the daemon workspace's \`.agnes/plugins/${leaf}\` or \`$AGH_HOME/plugins/${leaf}\`. Start AGH once from that workspace; an already running daemon discovers the folder and watches edits automatically. No npm install, compilation or SDK links are needed to run it.
+This package exports source TypeScript. Put it in the daemon workspace's \`.agh/plugins/${leaf}\` or \`$AGH_HOME/plugins/${leaf}\`. Start AGH once from that workspace; an already running daemon discovers the folder and watches edits automatically. No npm install, compilation or SDK links are needed to run it.
 
-For an immediate reload, use \`agh dev .agnes/plugins/${leaf}\` or \`agh plugins reload ${name}\`. Open a new session after activation; existing sessions keep their generation. Ordinary plugin edits do not require a daemon restart.`
+For an immediate reload, use \`agh dev .agh/plugins/${leaf}\` or \`agh plugins reload ${name}\`. Open a new session after activation; existing sessions keep their generation. Ordinary plugin edits do not require a daemon restart.`
       : `## Build for distribution
 
-This package exports \`dist/index.js\`. Build it with the source-preview SDK links below, then run \`agh plugins add /absolute/path/to/${leaf} --yes\` to review, install, trust and enable it. For zero-build development, scaffold with \`--local\` into the daemon workspace's \`.agnes/plugins\` folder instead.`
+This package exports \`dist/index.js\`. Build it with the source-preview SDK links below, then run \`agh plugins add /absolute/path/to/${leaf} --yes\` to review, install, trust and enable it. For zero-build development, scaffold with \`--local\` into the daemon workspace's \`.agh/plugins\` folder instead.`
   }
 
 ## Optional compilation and author tests
@@ -40,8 +40,8 @@ This package exports \`dist/index.js\`. Build it with the source-preview SDK lin
 The preview Agnes SDK packages are not on npm. Use an installed source checkout to supply types and testkit modules through their public package names; do not run npm install to fetch them. Replace both absolute paths below. From the checkout:
 
 \`\`\`sh
-AGH_SOURCE=/absolute/path/to/agnes-harness
-AGH_PLUGIN=/absolute/path/to/${leaf}
+AGH_SOURCE="/absolute/path/to/agnes-harness"
+AGH_PLUGIN="/absolute/path/to/${leaf}"
 cd "$AGH_SOURCE"
 nice -n 10 pnpm exec tsc -b packages/plugin-runtime packages/protocol packages/resource-control-runtime
 node templates/link-local.mjs "$AGH_PLUGIN"

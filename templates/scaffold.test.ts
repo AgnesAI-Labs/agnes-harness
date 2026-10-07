@@ -35,7 +35,7 @@ describe('plugin scaffolder', () => {
         expect(localManifest.agnes.hostProvidedExternals).toHaveProperty('@agnes/plugin-runtime')
         const readme = await readFile(join(local, 'README.md'), 'utf8')
         expect(readme).toContain('No npm install, compilation or SDK links are needed to run it.')
-        expect(readme).toContain('agh dev .agnes/plugins/local-plugin')
+        expect(readme).toContain('agh dev .agh/plugins/local-plugin')
         expect(readme).toContain('agh plugins reload local-plugin')
         expect(readme).toContain('node templates/link-local.mjs "$AGH_PLUGIN"')
         expect(readme).not.toMatch(/__[A-Z_]+__|npm install\n|start\/restart/)
