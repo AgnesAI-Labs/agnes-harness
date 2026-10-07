@@ -25,6 +25,7 @@ afterEach(() => {
 it('shows a localized durable goal and forwards human controls through slash input', () => {
   setLocaleTranslator((key) => webLocaleCatalog['zh-CN']?.[key] ?? key)
   const timeline = {
+    sessionId: 'session-a',
     nodes: [
       {
         kind: 'slot',
@@ -63,4 +64,20 @@ it('shows a localized durable goal and forwards human controls through slash inp
   expect(onCommand).toHaveBeenCalledWith('/goal clear')
   renderGoalCard(host, live, true, onCommand)
   expect((host.querySelector('[data-testid=goal-resume]') as HTMLButtonElement).disabled).toBe(true)
+  renderGoalCard(
+    host,
+    {
+      ...live,
+      sessionId: 'session-b',
+      slots: live.slots.map((fill) => ({
+        ...fill,
+        payload: { ...fill.payload, goal: { ...goal, objective: 'Ship a second patch' } },
+      })),
+    },
+    false,
+    onCommand,
+  )
+  const toggle = host.querySelector('[data-testid=goal-toggle]') as HTMLButtonElement
+  if (toggle.getAttribute('aria-expanded') === 'false') flushSync(() => toggle.click())
+  expect(host.querySelector('textarea')?.value).toBe('Ship a second patch')
 })
