@@ -63,10 +63,16 @@ async function fixture(text = 'production artifact bytes') {
 
 describe('local production artifact read store', () => {
   it('reads the exact Base content-addressed layout and returns an independent copy', async () => {
-    const item = await fixture()
-    const store = createLocalArtifactReadStore({ dataDir: item.dataDir, maxArtifactBytes: 1024 })
+    const item = await fixture('x'.repeat(4 * 1024 * 1024 + 1))
+    const store = createLocalArtifactReadStore({ dataDir: item.dataDir, maxArtifactBytes: 32 * 1024 * 1024 })
     const read = await store.get(item.ref, new AbortController().signal)
     expect(read).toEqual(item.bytes)
+    await expect(
+      createLocalArtifactReadStore({
+        dataDir: item.dataDir,
+        maxArtifactBytes: item.bytes.length - 1,
+      }).get(item.ref, new AbortController().signal),
+    ).rejects.toThrow('artifact bytes unavailable')
     read[0] = 0
     expect(await store.get(item.ref, new AbortController().signal)).toEqual(item.bytes)
   })
@@ -138,7 +144,7 @@ describe('local production artifact read store', () => {
       expect(() => createLocalArtifactReadStore(input)).toThrow('artifact bytes unavailable')
   })
 
-  it('refuses artifact identities above the RPC frame ceiling before opening bytes', async () => {
+  it('refuses artifact identities above the local read hard cap before opening bytes', async () => {
     const item = await fixture()
     const store = createLocalArtifactReadStore({
       dataDir: item.dataDir,

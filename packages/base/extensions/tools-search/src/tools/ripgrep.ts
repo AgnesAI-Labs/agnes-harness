@@ -1,6 +1,7 @@
 import { basename, relative, resolve } from 'node:path'
 import { defineTool, type ToolContext, type ToolResult } from '@agnes/extension-api'
 import { guardedResult, refBlock, spillLocator } from '../../../tools-core/src/guards/output.js'
+import { MAX_ARTIFACT_READ_BYTES } from '../../../tools-core/src/tools/read.js'
 import { FindParams, GrepParams } from '../../../tools-core/src/tools/schemas.js'
 import { grepTool as artifactGrep } from './grep.js'
 import { ripgrepPath } from './rg-path.js'
@@ -54,10 +55,13 @@ async function result(
   notes: string[],
 ): Promise<ToolResult> {
   const full = [...lines, ...notes].join('\n') || 'no matches'
+  const bytes = new TextEncoder().encode(full)
+  if (bytes.length > MAX_ARTIFACT_READ_BYTES)
+    return toolError('search output exceeds the 32 MiB artifact limit; narrow the search')
   if (lines.length <= limit) return guardedResult(ctx, full)
   // Always spill on the caller's row limit, even if the byte guard would allow all rows.
   try {
-    const ref = await ctx.artifacts.put(new TextEncoder().encode(full), { mime: 'text/plain' })
+    const ref = await ctx.artifacts.put(bytes, { mime: 'text/plain' })
     const preview = [
       ...lines.slice(0, limit),
       `[limit ${limit} reached; full output stored at ${spillLocator(ref)}; use read with that path and offset/limit]`,

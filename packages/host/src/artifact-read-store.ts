@@ -9,8 +9,9 @@ import { readComputerUseTombstone } from './computer-use-marker.js'
 
 const HASH = /^[0-9a-f]{64}$/u
 const MIME = /^[a-z0-9][a-z0-9!#$&^_.+-]{0,63}\/[a-z0-9][a-z0-9!#$&^_.+-]{0,127}$/u
-/** Internal media reads may be larger than the public 1 MiB JSON-RPC response envelope. */
-export const LOCAL_ARTIFACT_READ_MAX_BYTES = 4 * 1024 * 1024
+/** Hard cap for configured local reads, including deliverables and tool-output spills.
+ * Public response envelopes and Computer Use image limits remain independently bounded. */
+export const LOCAL_ARTIFACT_READ_MAX_BYTES = 32 * 1024 * 1024
 
 export type LocalArtifactReadStore = Readonly<{
   get(ref: ArtifactRef, signal: AbortSignal): Promise<Uint8Array>

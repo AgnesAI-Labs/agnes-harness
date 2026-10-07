@@ -46,6 +46,27 @@ describe('bundled ripgrep', () => {
       const found = await ripgrepFindTool.execute({ pattern: '**/*.txt' }, ctx)
       expect(JSON.stringify(found)).toContain('a.txt')
       expect(JSON.stringify(found)).not.toContain('private.txt')
+
+      // A backend can hand back an oversized listing even when individual matches are bounded.
+      // Both the row spill and the ordinary output-guard path must refuse unreadable artifacts.
+      const stored = [...ctx.calls.artifacts]
+      ctx.exec = async () => ({
+        code: 0,
+        stdout: `${'a'.repeat(17 * 1024 * 1024)}\0${'b'.repeat(17 * 1024 * 1024)}\0`,
+        stderr: '',
+        truncated: false,
+      })
+      ctx.fs.stat = async () => ({ kind: 'file', size: 0, mtimeMs: 0 })
+      for (const limit of [1, 1000]) {
+        const oversized = await ripgrepFindTool.execute({ pattern: '*', limit }, ctx)
+        expect(oversized).toMatchObject({
+          isError: true,
+          content: [
+            { type: 'text', text: 'search output exceeds the 32 MiB artifact limit; narrow the search' },
+          ],
+        })
+        expect(ctx.calls.artifacts).toEqual(stored)
+      }
     } finally {
       await rm(cwd, { recursive: true, force: true })
     }
