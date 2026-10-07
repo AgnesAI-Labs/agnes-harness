@@ -385,7 +385,8 @@ export function createLocalEndpoint(
     resolveNewSessionActor: host.resolveActor.bind(host),
     sessionCredentialAuthority: true,
     sessionOwnership,
-    hasSessionFact: (sessionId: string) => host.kernel.get(sessionId) !== undefined,
+    hasSessionFact: (sessionId: string) =>
+      host.kernel.get(sessionId) !== undefined || host.sessionGeneration?.(sessionId) !== undefined,
   }
   const preferences = new SessionPreferencesStore()
   const lister = withSessionPreferences(opts.lister ?? new RegistryLister(registry), preferences)

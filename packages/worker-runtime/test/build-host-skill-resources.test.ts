@@ -168,6 +168,7 @@ it('still calls buildHost when bootstrap produced no Skill resources', async () 
     ),
   ).rejects.toThrow('stop-after-empty')
   expect(received).toEqual({
+    restoreGenerationExtension: expect.any(Function),
     skillInstall: expect.any(Function),
     requestMedia: expect.any(Object),
     runtimePluginSources: expect.any(Function),

@@ -2,6 +2,7 @@ import { mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { basename, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { fakeModel } from '@agnes/ai/testkit'
 import {
   canonicalJson,
   DEFAULT_COMPUTER_USE,
@@ -51,7 +52,27 @@ it('a truncated scan in the worker reaches the daemon with its range, and paging
   const key = 'agnes:local:default:daemon:dm:scan-ipc'
   try {
     // Seed the ledger before any worker owns it.
-    const seeded = await createTestHost({ dataDir: dir, script: [] })
+    const seeded = await createTestHost({
+      dataDir: dir,
+      script: [],
+      profileInputs: {
+        user: {
+          name: 'local-dev',
+          provider: {
+            package: '@agnes/ai',
+            adapters: ['@agnes/ai'],
+            routes: [
+              {
+                route: 'faux',
+                api: 'faux',
+                baseUrl: 'https://invalid.test',
+                models: [fakeModel({ route: 'faux', id: 'faux-1' })],
+              },
+            ],
+          },
+        },
+      },
+    })
     const session = await seeded.host.createSession({ key, cwd: dir })
     const notes = Array.from({ length: 1_232 }, (_, n) =>
       session.ev('x/agnes/scan-test/note', { n }, { ignorable: true }),

@@ -61,6 +61,7 @@ export function createSessionAdmissionPort(input: {
   host: {
     acceptWorkspaceBinding: Host['acceptWorkspaceBinding']
     kernel: Pick<Host['kernel'], 'get'>
+    sessionGeneration?: Host['sessionGeneration']
   }
   principalId: string
 }): SessionAdmissionPort {
@@ -69,7 +70,8 @@ export function createSessionAdmissionPort(input: {
       const directory = await input.workspaces.validate(cwd)
       const hasSessionFact =
         input.workspaces.sessionPath(sessionKey) !== undefined ||
-        input.host.kernel.get(sessionKey) !== undefined
+        input.host.kernel.get(sessionKey) !== undefined ||
+        input.host.sessionGeneration?.(sessionKey) !== undefined
       const { envelope, reservedNew } = await reserveOwnedSession({
         ownership: input.ownership,
         workspaces: input.workspaces,
