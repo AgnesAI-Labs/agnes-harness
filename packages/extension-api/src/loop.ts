@@ -1,5 +1,6 @@
 import type { ContentBlock, InferenceEvent, JsonValue, RequestBody } from '@agnes/protocol'
 import type { ToolResult } from './tool.js'
+import type { LoopEventPort } from './loop-events.js'
 
 /** A session pins this identity; reopening never substitutes a different loop. */
 export interface LoopSelection {
@@ -77,7 +78,7 @@ export interface LoopContext {
     accept(): Promise<{ content: readonly ContentBlock[]; id?: string } | null>
     pending(): boolean
   }
-  readonly events: {
+  readonly events: LoopEventPort & {
     emit(type: string, data: JsonValue): Promise<void>
     finish(reason: LoopEndReason, error?: { code: string; message: string }): Promise<void>
   }
