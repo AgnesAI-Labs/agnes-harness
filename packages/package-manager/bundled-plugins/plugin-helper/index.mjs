@@ -77,6 +77,7 @@ export const pluginHelper = {
           agnes: {
             plugins: [
               {
+                apiRange: '^1.4.0',
                 id: 'ext:my-agh-plugin/main',
                 export: 'main',
                 inject: [kind === 'tool' ? 'extension' : 'skills'],

@@ -2,7 +2,11 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, expect, it, vi } from 'vitest'
-import { BUNDLED_SKILL_HELPER_REF, bundledPluginSourceRoot } from '../src/bundled-plugin-source.js'
+import {
+  BUNDLED_HELPERS,
+  BUNDLED_SKILL_HELPER_REF,
+  bundledPluginSourceRoot,
+} from '../src/bundled-plugin-source.js'
 import { emptyLock, readLock, writeLock } from '../src/lockfile.js'
 import { createPackageManager } from '../src/manager.js'
 import { fetchSource, hashDirectory, parseSource } from '../src/sources.js'
@@ -36,39 +40,42 @@ it('uses runtime payload instead of workspace impostor and never runs network co
   expect(bundledPluginSourceRoot('file:./ordinary')).toBeUndefined()
   expect(existsSync(join(into, 'src', 'sources.mjs'))).toBe(true)
 })
-it('inspects and installs offline without automatic trust or activation', async () => {
-  const root = fixture(),
-    profile = join(root, 'profiles', 'local-dev')
-  mkdirSync(profile, { recursive: true })
-  writeLock(profile, {
-    ...emptyLock('local-dev', '0.1.0'),
-    resolvedProfileHash: `sha256-${'0'.repeat(64)}`,
-    seams: Object.fromEntries(
-      [
-        'approval',
-        'checkpoint',
-        'ledger',
-        'sandbox',
-        'verifier',
-        'repair',
-        'artifacts',
-        'principals',
-        'platform',
-        'harness',
-      ].map((name) => [name, '@agnes/base']),
-    ),
-    policySnapshot: { capabilityCeiling: ['tools'], workspacePackages: 'require-project-trust' },
-  })
-  const exec = vi.fn(async () => {
-    throw new Error('Network forbidden')
-  })
-  const manager = createPackageManager({ dataDir: root, cwd: root, agnesVersion: '0.1.0', exec })
-  const preview = await manager.inspect(profile, parseSource(BUNDLED_SKILL_HELPER_REF))
-  expect(preview).toMatchObject({ id: '@agnes/skill-helper', blockers: [] })
-  const installed = await manager.add(profile, BUNDLED_SKILL_HELPER_REF)
-  expect(installed.state).toMatchObject({ trusted: null, enabled: false })
-  expect(
-    readLock(profile, { profile: 'local-dev', agnesVersion: '0.1.0' }).packages['@agnes/skill-helper'],
-  ).toBeDefined()
-  expect(exec).not.toHaveBeenCalled()
-})
+it.each(BUNDLED_HELPERS)(
+  'inspects and installs $id offline without automatic trust or activation',
+  async (helper) => {
+    const root = fixture(),
+      profile = join(root, 'profiles', 'local-dev')
+    mkdirSync(profile, { recursive: true })
+    writeLock(profile, {
+      ...emptyLock('local-dev', '0.1.0'),
+      resolvedProfileHash: `sha256-${'0'.repeat(64)}`,
+      seams: Object.fromEntries(
+        [
+          'approval',
+          'checkpoint',
+          'ledger',
+          'sandbox',
+          'verifier',
+          'repair',
+          'artifacts',
+          'principals',
+          'platform',
+          'harness',
+        ].map((name) => [name, '@agnes/base']),
+      ),
+      policySnapshot: { capabilityCeiling: ['tools'], workspacePackages: 'require-project-trust' },
+    })
+    const exec = vi.fn(async () => {
+      throw new Error('Network forbidden')
+    })
+    const manager = createPackageManager({ dataDir: root, cwd: root, agnesVersion: '0.1.0', exec })
+    const preview = await manager.inspect(profile, parseSource(helper.ref))
+    expect(preview).toMatchObject({ id: helper.id, blockers: [] })
+    const installed = await manager.add(profile, helper.ref)
+    expect(installed.state).toMatchObject({ trusted: null, enabled: false })
+    expect(
+      readLock(profile, { profile: 'local-dev', agnesVersion: '0.1.0' }).packages[helper.id],
+    ).toBeDefined()
+    expect(exec).not.toHaveBeenCalled()
+  },
+)

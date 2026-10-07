@@ -27,7 +27,9 @@ const files = [
       type: 'module',
       exports: './index.mjs',
       license: 'Apache-2.0',
-      agnes: { plugins: [{ id: 'ext:test-plugin/main', export: 'main', inject: ['extension'] }] },
+      agnes: {
+        plugins: [{ apiRange: '^1.4.0', id: 'ext:test-plugin/main', export: 'main', inject: ['extension'] }],
+      },
     }),
   },
   { path: 'index.mjs', content: source },
@@ -232,6 +234,13 @@ it('rejects aliases, file-directory conflicts, bounds and lifecycle/dependency d
     expect(() =>
       checkedPluginFiles([{ path: 'package.json', content: JSON.stringify(pkg) }, files[1]]),
     ).toThrow()
+  }
+  for (const apiRange of [undefined, '', '^99.0.0']) {
+    const pkg = JSON.parse(files[0].content)
+    pkg.agnes.plugins[0].apiRange = apiRange
+    expect(() =>
+      checkedPluginFiles([{ path: 'package.json', content: JSON.stringify(pkg) }, files[1]]),
+    ).toThrow('PLUGIN_FILES_INVALID')
   }
   expect(() =>
     checkedPluginFiles([
