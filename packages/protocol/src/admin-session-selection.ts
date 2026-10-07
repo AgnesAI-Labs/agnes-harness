@@ -13,7 +13,7 @@ export type AdminModelAdapter = Readonly<{
   sourcePackage: string
   capabilities: Readonly<{ imageInput: boolean; tools: boolean; streaming: boolean }>
   label?: string
-  models: readonly Readonly<{ id: string; label?: string }>[]
+  models: readonly Readonly<{ id: string; label?: string; route?: string }>[]
 }>
 export type SessionDefaults = Readonly<{
   loop?: Readonly<{ id: string; version: string }>
@@ -103,8 +103,9 @@ export function isAdminModelAdapter(value: unknown): value is AdminModelAdapter 
   return value.models.every(
     (model) =>
       record(model) &&
-      keys(model, ['id', 'label']) &&
+      keys(model, ['id', 'label', 'route']) &&
       text(model.id) &&
-      (model.label === undefined || text(model.label)),
+      (model.label === undefined || text(model.label)) &&
+      (model.route === undefined || text(model.route)),
   )
 }

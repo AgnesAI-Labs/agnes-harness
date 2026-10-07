@@ -665,6 +665,19 @@ export async function handleServiceCommand(
   switch (cmd.method) {
     case 'ping':
       return { ok: true }
+    case 'session.catalog': {
+      if (!host) throw new Error('session catalog requires an assembled Host')
+      const models = host.provider.models()
+      return {
+        loops: host.kernel.loops.catalog(),
+        modelAdapters: host.modelAdapterCatalog().map((entry) => ({
+          ...entry,
+          models: models
+            .filter((model) => model.api === entry.id)
+            .map((model) => ({ id: model.id, route: model.route })),
+        })),
+      }
+    }
     case 'abortService':
       aborts.get(String(p.callId))?.abort()
       return {}

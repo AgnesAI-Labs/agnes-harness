@@ -1,0 +1,89 @@
+import {
+  type ConfigurationService,
+  createAdminSessionSelection,
+  type Host,
+  type SessionDefaultsConfigurationService,
+} from '@agnes/host'
+import {
+  type AdminLoop,
+  type AdminModelAdapter,
+  type AdminSessionSelection,
+  rpcError,
+  type SessionDefaultsSnapshot,
+} from '@agnes/protocol'
+import type { PackageAdminAuthorityResolver } from '../../packages/permissions.js'
+import type { LocalEndpoint } from '../endpoint.js'
+
+type Catalog = { loops: readonly AdminLoop[]; modelAdapters: readonly AdminModelAdapter[] }
+
+/** The supervisor queries its real Host-bearing shared worker, never a profile-only approximation. */
+export function sessionSelectionProvider(
+  configuration: ConfigurationService | undefined,
+  catalog: () => Promise<Catalog>,
+): AdminSessionSelection | undefined {
+  if (!configuration || !('sessionDefaults' in configuration) || !('saveSessionDefaults' in configuration))
+    return undefined
+  return createAdminSessionSelection(
+    {
+      loops: async () => (await catalog()).loops,
+      modelAdapters: async () => (await catalog()).modelAdapters,
+      models: async (adapter) => (adapter as AdminModelAdapter).models,
+    },
+    configuration as ConfigurationService & SessionDefaultsConfigurationService,
+  )
+}
+
+export async function hostSessionCatalog(host: Host): Promise<Catalog> {
+  const models = host.provider.models()
+  return {
+    loops: host.kernel.loops.catalog(),
+    modelAdapters: host.modelAdapterCatalog().map((entry) => ({
+      ...entry,
+      models: models
+        .filter((model) => model.api === entry.id)
+        .map((model) => ({ id: model.id, route: model.route })),
+    })),
+  }
+}
+
+/** Reuse server-established package admin grants; a roster-only browser grant never permits defaults. */
+export function registerSessionSelection(
+  endpoint: LocalEndpoint,
+  provider: AdminSessionSelection | undefined,
+  authority: PackageAdminAuthorityResolver,
+): void {
+  const invoke = async <T>(
+    context: Parameters<PackageAdminAuthorityResolver>[0],
+    write: boolean,
+    action: (service: AdminSessionSelection) => Promise<T>,
+  ): Promise<T> => {
+    const grant = authority(context)
+    if (
+      !grant ||
+      grant.methods !== undefined ||
+      !grant.permissions.includes(write ? 'packages.activate' : 'packages.read')
+    )
+      throw rpcError('CAPABILITY_DENIED', { reason: 'session selection requires package administration' })
+    if (!provider) throw rpcError('CAPABILITY_DENIED', { reason: 'configuration unavailable' })
+    try {
+      return await action(provider)
+    } catch (error) {
+      const code = error && typeof error === 'object' && 'code' in error ? error.code : undefined
+      throw rpcError('SEMANTIC_REJECTED', {
+        reason: typeof code === 'string' && /^CONFIG_[A-Z_]{1,48}$/.test(code) ? code : 'CONFIG_FAILED',
+      })
+    }
+  }
+  endpoint.register('_agnes/v1/sessionSelection.loops', (_params, ctx) =>
+    invoke(ctx, false, async (s) => ({ loops: await s.loops() })),
+  )
+  endpoint.register('_agnes/v1/sessionSelection.modelAdapters', (_params, ctx) =>
+    invoke(ctx, false, async (s) => ({ modelAdapters: await s.modelAdapters() })),
+  )
+  endpoint.register('_agnes/v1/sessionSelection.defaults.get', (_params, ctx) =>
+    invoke(ctx, false, (s) => s.getDefaults()),
+  )
+  endpoint.register('_agnes/v1/sessionSelection.defaults.save', (params, ctx) =>
+    invoke(ctx, true, (s) => s.saveDefaults(params as SessionDefaultsSnapshot)),
+  )
+}

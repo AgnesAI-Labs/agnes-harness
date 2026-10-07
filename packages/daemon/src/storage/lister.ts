@@ -113,7 +113,11 @@ export class StorageLister implements SessionLister {
       'SELECT data FROM events WHERE session_key = ? AND type = ? ORDER BY seq LIMIT 1',
       [r.session_key, 'session/start'],
     )
-    const preset = start ? ((JSON.parse(start.data) as { preset?: string | null }).preset ?? null) : null
+    const opener = start
+      ? (JSON.parse(start.data) as { preset?: string | null; loop?: { id: string; version: string } })
+      : undefined
+    const preset = opener?.preset ?? null
+    const loop = opener?.loop
     const generation =
       this.claims.get<ClaimRow>('SELECT generation FROM writer_claims WHERE session_key = ?', [r.session_key])
         ?.generation ?? 0
@@ -135,6 +139,7 @@ export class StorageLister implements SessionLister {
       lastSeq: r.last_seq,
       generation,
       preset,
+      ...(loop ? { loop } : {}),
       ...(title ? { title } : {}),
       ...(cwd !== undefined ? { cwd } : {}),
     }

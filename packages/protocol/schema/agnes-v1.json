@@ -124,6 +124,28 @@
         "sessionKey": {
           "type": "string",
           "maxLength": 512
+        },
+        "loop": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "id",
+            "version"
+          ],
+          "properties": {
+            "id": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256,
+              "pattern": "^[^\\u0000-\\u001f\\u007f]+$"
+            },
+            "version": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256,
+              "pattern": "^[^\\u0000-\\u001f\\u007f]+$"
+            }
+          }
         }
       }
     },
@@ -3466,6 +3488,28 @@
       "additionalProperties": false,
       "required": ["sessionId", "createdAt", "lastSeq", "generation", "preset"],
       "properties": {
+        "loop": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "id",
+            "version"
+          ],
+          "properties": {
+            "id": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256,
+              "pattern": "^[^\\u0000-\\u001f\\u007f]+$"
+            },
+            "version": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256,
+              "pattern": "^[^\\u0000-\\u001f\\u007f]+$"
+            }
+          }
+        },
         "sessionId": {
           "type": "string"
         },
@@ -4525,6 +4569,245 @@
         "expectedRevision": {
           "type": "integer",
           "minimum": 0
+        }
+      }
+    },
+    "SessionLoopCatalogResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "loops"
+      ],
+      "properties": {
+        "loops": {
+          "type": "array",
+          "maxItems": 4096,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "id",
+              "version",
+              "sourcePackage",
+              "capabilities"
+            ],
+            "properties": {
+              "id": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 256,
+                "pattern": "^[^\\u0000-\\u001f\\u007f]+$"
+              },
+              "version": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 256,
+                "pattern": "^[^\\u0000-\\u001f\\u007f]+$"
+              },
+              "sourcePackage": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 256,
+                "pattern": "^[^\\u0000-\\u001f\\u007f]+$"
+              },
+              "capabilities": {
+                "type": "array",
+                "maxItems": 128,
+                "items": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 256,
+                  "pattern": "^[^\\u0000-\\u001f\\u007f]+$"
+                }
+              },
+              "label": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 256,
+                "pattern": "^[^\\u0000-\\u001f\\u007f]+$"
+              }
+            }
+          }
+        }
+      }
+    },
+    "SessionAdapterCatalogResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "modelAdapters"
+      ],
+      "properties": {
+        "modelAdapters": {
+          "type": "array",
+          "maxItems": 4096,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "id",
+              "version",
+              "api",
+              "sourcePackage",
+              "capabilities",
+              "models"
+            ],
+            "properties": {
+              "id": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 256,
+                "pattern": "^[^\\u0000-\\u001f\\u007f]+$"
+              },
+              "version": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 256,
+                "pattern": "^[^\\u0000-\\u001f\\u007f]+$"
+              },
+              "api": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 256,
+                "pattern": "^[^\\u0000-\\u001f\\u007f]+$"
+              },
+              "sourcePackage": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 256,
+                "pattern": "^[^\\u0000-\\u001f\\u007f]+$"
+              },
+              "capabilities": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "imageInput",
+                  "tools",
+                  "streaming"
+                ],
+                "properties": {
+                  "imageInput": {
+                    "type": "boolean"
+                  },
+                  "tools": {
+                    "type": "boolean"
+                  },
+                  "streaming": {
+                    "type": "boolean"
+                  }
+                }
+              },
+              "label": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 256,
+                "pattern": "^[^\\u0000-\\u001f\\u007f]+$"
+              },
+              "models": {
+                "type": "array",
+                "maxItems": 4096,
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "id"
+                  ],
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 256,
+                      "pattern": "^[^\\u0000-\\u001f\\u007f]+$"
+                    },
+                    "label": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 256,
+                      "pattern": "^[^\\u0000-\\u001f\\u007f]+$"
+                    },
+                    "route": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 256
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "SessionDefaultsState": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "revision",
+        "defaults"
+      ],
+      "properties": {
+        "revision": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "defaults": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [],
+          "properties": {
+            "loop": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "id",
+                "version"
+              ],
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 256,
+                  "pattern": "^[^\\u0000-\\u001f\\u007f]+$"
+                },
+                "version": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 256,
+                  "pattern": "^[^\\u0000-\\u001f\\u007f]+$"
+                }
+              }
+            },
+            "modelAdapter": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "id",
+                "version",
+                "model"
+              ],
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 256,
+                  "pattern": "^[^\\u0000-\\u001f\\u007f]+$"
+                },
+                "version": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 256,
+                  "pattern": "^[^\\u0000-\\u001f\\u007f]+$"
+                },
+                "model": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 256,
+                  "pattern": "^[^\\u0000-\\u001f\\u007f]+$"
+                }
+              }
+            }
+          }
         }
       }
     }

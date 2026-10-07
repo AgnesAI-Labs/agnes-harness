@@ -50,6 +50,11 @@ import { registerConfiguration } from './methods/config.js'
 import { registerDiagnostics } from './methods/diagnostics.js'
 import { registerExtensions } from './methods/extensions.js'
 import { registerSessionPreferences } from './methods/session-preferences.js'
+import {
+  hostSessionCatalog,
+  registerSessionSelection,
+  sessionSelectionProvider,
+} from './methods/session-selection.js'
 import { registerWorkspaces } from './methods/workspaces.js'
 import {
   type ClaimStore,
@@ -468,7 +473,13 @@ export function createLocalEndpoint(
         : cx.auth.config.localWeb === true
           ? localWebSkinReadAuthority
           : denyPackageAdminAuthority
-    registerPackageAdmin(ep, opts.packageAdmin.service, opts.packageAdmin.authority ?? defaultAuthority)
+    const authority = opts.packageAdmin.authority ?? defaultAuthority
+    registerPackageAdmin(ep, opts.packageAdmin.service, authority)
+    registerSessionSelection(
+      ep,
+      sessionSelectionProvider(opts.configuration, () => hostSessionCatalog(host)),
+      authority,
+    )
   }
   if (opts.resources) {
     const defaultAuthority =

@@ -83,6 +83,8 @@ export interface Host {
   /** ERRATA B19: cli reads it for `agnes models` and for --probe. */
   readonly provider: Assembled['provider']
   readonly providerFingerprint: string | null
+  /** Read-only descriptions from the currently assembled adapter registry. */
+  modelAdapterCatalog: Assembled['modelAdapterCatalog']
   readonly runtimes: Assembled['runtimes']
   /** Read-only product status; mutation/session capabilities remain private to Host assembly. */
   readonly lockedPackageMutations: Pick<Assembled['lockedPackageMutations'], 'status'>
@@ -247,6 +249,7 @@ export async function createHost(profile: ResolvedProfile, opts: HostOptions): P
     get providerFingerprint() {
       return a.providerFingerprint
     },
+    modelAdapterCatalog: () => a.modelAdapterCatalog(),
     runtimes: a.runtimes,
     lockedPackageMutations: Object.freeze({ status: () => a.lockedPackageMutations.status() }),
     computerUse: computerUse

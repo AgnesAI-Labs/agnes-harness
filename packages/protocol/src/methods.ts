@@ -46,6 +46,10 @@ export type MethodName =
   | ResourceControlMethodName
   | '_agnes/v1/extension.ack'
   | '_agnes/v1/extension.call'
+  | '_agnes/v1/sessionSelection.loops'
+  | '_agnes/v1/sessionSelection.modelAdapters'
+  | '_agnes/v1/sessionSelection.defaults.get'
+  | '_agnes/v1/sessionSelection.defaults.save'
   | '_agnes/v1/config.get'
   | '_agnes/v1/config.oauth'
   | '_agnes/v1/config.providers'
@@ -116,6 +120,13 @@ export const METHODS: Record<MethodName, MethodSpec> = {
   ...RESOURCE_CONTROL_METHODS,
   '_agnes/v1/extension.ack': clientRequest(A.ExtensionAckParams, A.Empty),
   '_agnes/v1/extension.call': clientRequest(A.ExtensionCallParams, A.ExtensionCallResult),
+  '_agnes/v1/sessionSelection.loops': clientRequest(A.ConfigEmptyParams, A.SessionLoopCatalogResult),
+  '_agnes/v1/sessionSelection.modelAdapters': clientRequest(
+    A.ConfigEmptyParams,
+    A.SessionAdapterCatalogResult,
+  ),
+  '_agnes/v1/sessionSelection.defaults.get': clientRequest(A.ConfigEmptyParams, A.SessionDefaultsState),
+  '_agnes/v1/sessionSelection.defaults.save': clientRequest(A.SessionDefaultsState, A.SessionDefaultsState),
   '_agnes/v1/config.get': clientRequest(A.ConfigEmptyParams, A.ConfigSnapshot),
   '_agnes/v1/config.oauth': clientRequest(A.ConfigOAuthInput, A.ConfigOAuthResult),
   '_agnes/v1/config.providers': clientRequest(A.ConfigEmptyParams, A.ConfigProvidersResult),

@@ -88,6 +88,7 @@ import { registerConfiguration } from '../local/methods/config.js'
 import { registerDiagnostics } from '../local/methods/diagnostics.js'
 import { executeJournaledEffect, registerExtensions } from '../local/methods/extensions.js'
 import { registerSessionPreferences } from '../local/methods/session-preferences.js'
+import { registerSessionSelection, sessionSelectionProvider } from '../local/methods/session-selection.js'
 import { registerSurfaces } from '../local/methods/surfaces.js'
 import { registerWorkspaces } from '../local/methods/workspaces.js'
 import { NoticeSink } from '../local/notice.js'
@@ -1557,6 +1558,13 @@ export async function startSupervisor(o: StartSupervisorOptions): Promise<{
           },
         })
       : undefined
+    const sessionSelection = sessionSelectionProvider(o.configuration, async () => {
+      const link = await pool.acquireSharedWorker()
+      return (await link.command('session.catalog', {}, { timeoutMs: 31_000 })) as {
+        loops: import('@agnes/protocol').AdminLoop[]
+        modelAdapters: import('@agnes/protocol').AdminModelAdapter[]
+      }
+    })
     const preferences = new SessionPreferencesStore(jobTables?.table('session_preferences'))
     const rawLister =
       o.ports?.lister ??
@@ -1826,6 +1834,13 @@ export async function startSupervisor(o: StartSupervisorOptions): Promise<{
               ? (effectivePackageAdmin.webAuthority ?? localWebSkinReadAuthority)
               : (effectivePackageAdmin.webAuthority ?? denyPackageAdminAuthority),
         )
+      registerSessionSelection(
+        ep,
+        sessionSelection,
+        transport === 'unix'
+          ? (effectivePackageAdmin?.unixAuthority ?? localPackageAdminAuthority())
+          : (effectivePackageAdmin?.webAuthority ?? denyPackageAdminAuthority),
+      )
       registerResourceControl(
         ep,
         resourceControl.service,

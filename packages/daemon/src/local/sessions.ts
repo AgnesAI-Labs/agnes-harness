@@ -358,6 +358,7 @@ export class RegistryLister implements SessionLister {
           lastSeq: e.session.lastSeq,
           generation: e.generation,
           preset: e.session.preset.name,
+          loop: e.session.loop,
           cwd: e.session.d.cwd,
         }
       })

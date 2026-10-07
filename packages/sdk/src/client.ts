@@ -2,6 +2,8 @@
 // Everything above it (sessions, jobs, approvals) is built out of `call` / `notify`,
 // so schema checking and the lazy handshake happen in exactly one place.
 import {
+  type AdminLoop,
+  type AdminModelAdapter,
   type ApisListResult,
   type ApprovalGrantListResult,
   type ApprovalGrantRecord,
@@ -28,6 +30,7 @@ import {
   type PageSessionMeta,
   projectClientModuleRows,
   rpcError,
+  type SessionDefaultsSnapshot,
   type SessionListParams,
   type SessionPreferences,
   type SkinListResult,
@@ -260,6 +263,23 @@ export class Client {
     this.emitter.emit('connectionStateChanged', next)
   }
 
+  /** Deployment catalogs/defaults; writes require the private package-admin authority. */
+  readonly sessionSelection = {
+    loops: async (): Promise<readonly AdminLoop[]> =>
+      (await this.call<{ loops: AdminLoop[] }>('_agnes/v1/sessionSelection.loops', {})).loops,
+    modelAdapters: async (): Promise<readonly AdminModelAdapter[]> =>
+      (
+        await this.call<{ modelAdapters: AdminModelAdapter[] }>(
+          '_agnes/v1/sessionSelection.modelAdapters',
+          {},
+        )
+      ).modelAdapters,
+    getDefaults: (): Promise<SessionDefaultsSnapshot> =>
+      this.call('_agnes/v1/sessionSelection.defaults.get', {}),
+    saveDefaults: (input: SessionDefaultsSnapshot): Promise<SessionDefaultsSnapshot> =>
+      this.call('_agnes/v1/sessionSelection.defaults.save', input),
+  }
+
   /** Shared deployment configuration. Secrets are submitted only, never returned or journaled. */
   readonly config = {
     oauth: (input: ConfigOAuthInput): Promise<ConfigOAuthResult> =>
@@ -344,10 +364,16 @@ export class Client {
   }
 
   readonly session = {
-    new: async (o: { cwd: string; preset?: string; sessionKey?: string }): Promise<Session> => {
+    new: async (o: {
+      cwd: string
+      preset?: string
+      sessionKey?: string
+      loop?: { id: string; version: string }
+    }): Promise<Session> => {
       const meta: Record<string, unknown> = {}
       if (o.preset) meta.preset = o.preset
       if (o.sessionKey) meta.sessionKey = o.sessionKey
+      if (o.loop) meta.loop = o.loop
       const r = await this.call<{ sessionId: string }>('session/new', {
         cwd: o.cwd,
         mcpServers: [],

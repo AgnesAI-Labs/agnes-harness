@@ -161,7 +161,31 @@ export function localPackageAdmin(
     }
   }
   const surface = createAdminSurface({
-    ...(sessionSelection ? { sessionSelection } : {}),
+    sessionSelection: sessionSelection ?? {
+      loops: async () => {
+        await initialize()
+        return client.sessionSelection.loops()
+      },
+      modelAdapters: async () => {
+        await initialize()
+        return client.sessionSelection.modelAdapters()
+      },
+      getDefaults: async () => {
+        await initialize()
+        return client.sessionSelection.getDefaults()
+      },
+      saveDefaults: async (input) => {
+        await initialize()
+        try {
+          return await client.sessionSelection.saveDefaults(input)
+        } catch (error) {
+          const reason = (error as { data?: { reason?: unknown } }).data?.reason
+          if (typeof reason === 'string' && /^CONFIG_[A-Z_]{1,48}$/.test(reason))
+            throw Object.assign(new Error(reason), { code: reason })
+          throw error
+        }
+      },
+    },
     origin,
     profile: backend.scope.profile,
     clientId,

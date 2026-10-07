@@ -29,7 +29,16 @@ const mocks = vi.hoisted(() => {
       },
     ],
   }))
+  const sessionSelection = {
+    loops: vi.fn(async () => [
+      { id: 'default', version: '1.0.0', sourcePackage: '@agnes/core', capabilities: [] },
+    ]),
+    modelAdapters: vi.fn(async () => []),
+    getDefaults: vi.fn(async () => ({ revision: 0, defaults: {} })),
+    saveDefaults: vi.fn(async (input: unknown) => input),
+  }
   return {
+    sessionSelection,
     catalogList,
     close,
     surfaceClose,
@@ -66,6 +75,7 @@ vi.mock('@agnes/sdk', () => ({
       trustWorkspace: mocks.trustWorkspace,
       tree: { get: mocks.treeGet, list: mocks.treeList, apply: vi.fn(), rollback: vi.fn() },
     },
+    sessionSelection: mocks.sessionSelection,
     surfaces: { mounts: mocks.surfaceMounts },
     clientModules: {
       callService: mocks.clientModuleCallService,
@@ -276,5 +286,30 @@ it('relays effect commands only through the separate same-origin route', async (
     await admin.close()
   } finally {
     await new Promise<void>((resolve, reject) => server.close((error) => (error ? reject(error) : resolve())))
+  }
+})
+
+it('fits production catalog/defaults relays without an injected provider', async () => {
+  const backend = {
+    scope: { profile: 'local-dev', scopeID: 'scope-1' },
+    socketPath: '/tmp/test.sock',
+    web: { origin: 'http://127.0.0.1:4180' },
+  } as LocalBackend
+  const admin = localPackageAdmin(backend, backend.web?.origin ?? '')
+  const provider = mocks.createAdminSurface.mock.calls[0]?.[0]
+    ?.sessionSelection as import('@agnes/protocol').AdminSessionSelection
+  try {
+    expect(await provider.loops()).toEqual(await mocks.sessionSelection.loops())
+    expect(await provider.modelAdapters()).toEqual([])
+    expect(await provider.getDefaults()).toEqual({ revision: 0, defaults: {} })
+    const update = { revision: 0, defaults: { loop: { id: 'default', version: '1.0.0' } } }
+    expect(await provider.saveDefaults(update)).toEqual(update)
+    expect(mocks.sessionSelection.saveDefaults).toHaveBeenCalledWith(update)
+    mocks.sessionSelection.saveDefaults.mockRejectedValueOnce({
+      data: { reason: 'CONFIG_REVISION_CONFLICT' },
+    })
+    await expect(provider.saveDefaults(update)).rejects.toMatchObject({ code: 'CONFIG_REVISION_CONFLICT' })
+  } finally {
+    await admin.close()
   }
 })

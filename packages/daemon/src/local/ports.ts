@@ -60,6 +60,7 @@ export type SessionMetaRow = {
   lastSeq: number
   generation: number
   preset: string | null
+  loop?: { id: string; version: string }
   title?: string
   titleSource?: 'user'
   archived?: boolean

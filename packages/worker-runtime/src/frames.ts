@@ -37,6 +37,7 @@ export type SessionMethod =
 export type WorkerMethod =
   | 'ping'
   | 'configuration.apply'
+  | 'session.catalog'
   | 'inspectService'
   | 'callService'
   | 'abortService'

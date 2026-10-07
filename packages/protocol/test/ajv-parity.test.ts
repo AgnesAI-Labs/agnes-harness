@@ -278,6 +278,9 @@ const SESSION_DEFS: Record<string, TSchema> = {
 }
 
 const AGNES_DEFS: Record<string, TSchema> = {
+  SessionLoopCatalogResult: AgnesGen.SessionLoopCatalogResult,
+  SessionAdapterCatalogResult: AgnesGen.SessionAdapterCatalogResult,
+  SessionDefaultsState: AgnesGen.SessionDefaultsState,
   PackageActivationTrust: AgnesGen.PackageActivationTrust,
   PackageActivationRequest: AgnesGen.PackageActivationRequest,
   PackageRollbackTarget: AgnesGen.PackageRollbackTarget,
@@ -1663,6 +1666,24 @@ const harnessMetaOk: Json = {
 }
 
 const AGNES_SAMPLES: Record<string, Sample> = {
+  SessionLoopCatalogResult: {
+    note: 'Only public loop descriptions cross the wire',
+    valid: { loops: [] },
+    invalid: [{ loops: [{ id: 'x' }] }, { loops: [], factory: 'private' }],
+  },
+  SessionAdapterCatalogResult: {
+    note: 'Only public adapter descriptions cross the wire',
+    valid: { modelAdapters: [] },
+    invalid: [{ modelAdapters: [{ id: 'x' }] }, { modelAdapters: [], secret: 'private' }],
+  },
+  SessionDefaultsState: {
+    note: 'Defaults use closed identities and revision CAS',
+    valid: { revision: 0, defaults: {} },
+    invalid: [
+      { revision: -1, defaults: {} },
+      { revision: 0, defaults: { loop: { id: 'x' } } },
+    ],
+  },
   ConfigOAuthInput: {
     note: 'OAuth input',
     valid: { action: 'poll', operationId: 'a' },
@@ -5615,6 +5636,26 @@ describe('McpServerDescriptor: authorizationStatus field (mcp-oauth-authorizatio
 type MethodDefRef = { fileId: string; params: string; result?: string }
 
 const METHOD_DEF: Record<MethodName, MethodDefRef> = {
+  '_agnes/v1/sessionSelection.loops': {
+    fileId: AGNES_ID,
+    params: 'ConfigEmptyParams',
+    result: 'SessionLoopCatalogResult',
+  },
+  '_agnes/v1/sessionSelection.modelAdapters': {
+    fileId: AGNES_ID,
+    params: 'ConfigEmptyParams',
+    result: 'SessionAdapterCatalogResult',
+  },
+  '_agnes/v1/sessionSelection.defaults.get': {
+    fileId: AGNES_ID,
+    params: 'ConfigEmptyParams',
+    result: 'SessionDefaultsState',
+  },
+  '_agnes/v1/sessionSelection.defaults.save': {
+    fileId: AGNES_ID,
+    params: 'SessionDefaultsState',
+    result: 'SessionDefaultsState',
+  },
   '_agnes/v1/resources.list': {
     fileId: 'https://agnes.ai/schema/resource-control.json',
     params: 'ResourceListParams',
@@ -6064,6 +6105,10 @@ const METHOD_DEF: Record<MethodName, MethodDefRef> = {
 }
 
 const METHOD_PARAMS_SAMPLE: Record<MethodName, Sample> = {
+  '_agnes/v1/sessionSelection.loops': AGNES_SAMPLES.ConfigEmptyParams as Sample,
+  '_agnes/v1/sessionSelection.modelAdapters': AGNES_SAMPLES.ConfigEmptyParams as Sample,
+  '_agnes/v1/sessionSelection.defaults.get': AGNES_SAMPLES.ConfigEmptyParams as Sample,
+  '_agnes/v1/sessionSelection.defaults.save': AGNES_SAMPLES.SessionDefaultsState as Sample,
   '_agnes/v1/resources.list': ResourceControlSamples.ResourceListParams,
   '_agnes/v1/resources.get': ResourceControlSamples.ResourceGetParams,
   '_agnes/v1/resources.desired.set': ResourceControlSamples.ResourceDesiredSetParams,
