@@ -58,6 +58,7 @@ describe('model adapter authoring', () => {
       create(config) {
         return {
           ...adapter.create(config),
+          // biome-ignore lint/correctness/useYield: exercise an adapter failure before any event is yielded.
           async *stream(): AsyncIterable<never> {
             throw new Error('Wire failure')
           },

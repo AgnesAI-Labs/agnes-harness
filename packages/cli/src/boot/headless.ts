@@ -1,6 +1,6 @@
 import { open } from 'node:fs/promises'
 import { isAbsolute, resolve } from 'node:path'
-import { expandBundles, parsePackageBundles, type BundleCatalog, type ProfileInputs } from '@agnes/host'
+import { type BundleCatalog, expandBundles, type ProfileInputs, parsePackageBundles } from '@agnes/host'
 import type { HeadlessRunBoot } from '../commands/run.js'
 import { UsageError } from '../errors.js'
 import { bootLocal, type LocalBootDeps } from './local.js'
@@ -32,6 +32,7 @@ export async function loadHeadlessBundle(
   const isId =
     !isAbsolute(specifier) &&
     !specifier.startsWith('.') &&
+    // biome-ignore lint/suspicious/noControlCharactersInRegex: reject control bytes at the identifier or path boundary.
     /^[^\s\x00-\x1f]+#[a-z][a-z0-9-]{0,63}$/.test(specifier)
   if (isId) return { id: specifier, catalog: {} }
   const document = await readBundle(resolve(cwd, specifier))

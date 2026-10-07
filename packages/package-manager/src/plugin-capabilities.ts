@@ -11,6 +11,7 @@ export function parsePluginCapabilities(value: unknown): PluginCapabilities | un
   const checked = validatePackageAdminData('PluginCapabilities', value)
   if (
     !checked.ok ||
+    // biome-ignore lint/suspicious/noControlCharactersInRegex: reject control bytes at the identifier or path boundary.
     capabilityAtoms(value as PluginCapabilities).some((atom) => /[\u0000-\u001f]/.test(atom))
   )
     throw new PackageError(
@@ -47,6 +48,7 @@ export function readPluginCapabilityPolicy(profileDir: string): PluginCapability
           data[key].length > 512 ||
           data[key].some(
             (item: unknown) =>
+              // biome-ignore lint/suspicious/noControlCharactersInRegex: reject control bytes at the identifier or path boundary.
               typeof item !== 'string' || !item || item.length > 1024 || /[\u0000-\u001f]/.test(item),
           )),
     )

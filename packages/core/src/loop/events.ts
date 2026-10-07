@@ -1,20 +1,20 @@
 import type {
+  HookPayloadMap,
+  HookReturnMap,
   LoopEventContext,
   LoopEventHandler,
   LoopEventName,
   LoopEventPayloadMap,
-  LoopEventReturnMap,
   LoopEventRegistryPort,
-  HookPayloadMap,
-  HookReturnMap,
+  LoopEventReturnMap,
 } from '@agnes/extension-api'
 import { LOOP_EVENTS } from '@agnes/extension-api'
+import { isToolResult } from '../effects/tool-dispatch.js'
+import { withTimeout } from '../effects/wrap.js'
+import { authorHookReturn } from '../hooks/returns.js'
 import type { DeriveOutput } from '../request/derive.js'
 import { applyBeforeRequestPatches } from '../request/transforms.js'
 import type { SessionImpl } from '../step/session.js'
-import { authorHookReturn } from '../hooks/returns.js'
-import { withTimeout } from '../effects/wrap.js'
-import { isToolResult } from '../effects/tool-dispatch.js'
 
 export class LoopEventRegistry implements LoopEventRegistryPort {
   private readonly handlers = new Map<LoopEventName, Set<unknown>>()
@@ -22,7 +22,10 @@ export class LoopEventRegistry implements LoopEventRegistryPort {
     if (!LOOP_EVENTS.includes(event) || typeof handler !== 'function')
       throw new Error('Invalid loop event listener')
     let entries = this.handlers.get(event)
-    if (!entries) this.handlers.set(event, (entries = new Set()))
+    if (!entries) {
+      entries = new Set()
+      this.handlers.set(event, entries)
+    }
     entries.add(handler)
     return () => {
       entries.delete(handler)

@@ -30,6 +30,7 @@ function ports() {
       },
     },
     model: {
+      // biome-ignore lint/correctness/useYield: assert that this fixture never starts model streaming.
       stream: async function* () {
         throw new Error('use complete')
       },

@@ -1,4 +1,4 @@
-import { mkdirSync, readFileSync, readdirSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { inflateRawSync } from 'node:zlib'
 import { PackageError } from './errors.js'
@@ -16,6 +16,7 @@ function safePath(value: string): string {
   if (
     !path ||
     path.startsWith('/') ||
+    // biome-ignore lint/suspicious/noControlCharactersInRegex: reject control bytes at the identifier or path boundary.
     /[\\:\u0000-\u001f]/.test(path) ||
     path.split('/').some((part) => !part || part === '.' || part === '..')
   )

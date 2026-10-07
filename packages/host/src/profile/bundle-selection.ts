@@ -1,14 +1,14 @@
 import { randomUUID } from 'node:crypto'
-import { constants, closeSync, fstatSync, openSync, readFileSync } from 'node:fs'
+import { closeSync, constants, fstatSync, openSync, readFileSync } from 'node:fs'
 import { mkdir, open, unlink } from 'node:fs/promises'
 import { join } from 'node:path'
 import { renameWriteThrough } from '@agnes/system-node'
 import { ConfigurationError } from '../configuration.js'
 import { withConfigurationLock } from '../configuration-lock.js'
+import { mergeValue } from '../presets/merge.js'
+import type { PresetDoc } from '../presets/types.js'
 import { compositionDump, expandBundles, resolveComposition } from './composition.js'
 import type { ResolvedProfile } from './types.js'
-import type { PresetDoc } from '../presets/types.js'
-import { mergeValue } from '../presets/merge.js'
 
 export type BundleSelection = Readonly<{ revision: number; bundles: string[] }>
 export function isBundleSelection(value: unknown): value is BundleSelection {
@@ -22,6 +22,7 @@ export function isBundleSelection(value: unknown): value is BundleSelection {
     item.bundles.length <= 64 &&
     new Set(item.bundles).size === item.bundles.length &&
     item.bundles.every(
+      // biome-ignore lint/suspicious/noControlCharactersInRegex: reject control bytes at the identifier or path boundary.
       (id) => typeof id === 'string' && id.length <= 512 && /^[^\s\x00-\x1f]+#[a-z][a-z0-9-]{0,63}$/.test(id),
     )
   )

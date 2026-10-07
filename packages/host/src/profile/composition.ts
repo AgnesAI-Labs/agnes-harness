@@ -1,16 +1,16 @@
 import type {
+  CompactionEngineCatalogEntry,
   LoopCatalogEntry,
   ModelAdapterCatalogEntry,
-  CompactionEngineCatalogEntry,
 } from '@agnes/extension-api'
 import { DEFAULT_PERSISTENCE_PROVIDER_ID, LOCAL_SANDBOX_PROVIDER_ID } from '@agnes/extension-api'
 import type { JsonValue, LoopSelection } from '@agnes/protocol'
 import { inspectJsonData } from '@agnes/protocol'
-import type { PresetDoc } from '../presets/types.js'
 import { HostError } from '../errors.js'
+import { mergeValue } from '../presets/merge.js'
+import type { PresetDoc } from '../presets/types.js'
 import { canonicalJson, sha256hex } from './canonical.js'
 import type { PackageRef, ResolvedProfile, RuntimeProfileManifest } from './types.js'
-import { mergeValue } from '../presets/merge.js'
 
 export type CompositionSource = Readonly<{
   layer: 'default' | 'profile' | 'preset' | 'admin' | 'session'
@@ -60,6 +60,7 @@ export type ResolvedComposition = Readonly<{
 const map = (value: unknown): value is Record<string, unknown> =>
   !!value && typeof value === 'object' && !Array.isArray(value)
 const text = (value: unknown): value is string =>
+  // biome-ignore lint/suspicious/noControlCharactersInRegex: reject control bytes at the identifier or path boundary.
   typeof value === 'string' && !!value.trim() && value.length <= 512 && !/[\x00-\x1f\x7f]/.test(value)
 function fail(message: string): never {
   throw new HostError('E_PRESET_UNSUPPORTED', `composition: ${message}`)

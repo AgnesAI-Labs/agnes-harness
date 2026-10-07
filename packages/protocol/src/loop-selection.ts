@@ -12,10 +12,12 @@ export function parseLoopSelection(value: unknown): LoopSelection {
     typeof id !== 'string' ||
     !id.trim() ||
     id.length > 256 ||
+    // biome-ignore lint/suspicious/noControlCharactersInRegex: reject control bytes at the identifier or path boundary.
     /[\s\x00-\x1f\x7f]/.test(id) ||
     typeof version !== 'string' ||
     !version.trim() ||
     version.length > 64 ||
+    // biome-ignore lint/suspicious/noControlCharactersInRegex: reject control bytes at the identifier or path boundary.
     /[\s\x00-\x1f\x7f]/.test(version)
   )
     throw new TypeError('loop requires a nonempty id and version without whitespace')

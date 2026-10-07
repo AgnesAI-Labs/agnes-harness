@@ -1,4 +1,3 @@
-import { pluginFailureHelp } from '@agnes/protocol'
 import type {
   AdminLoop,
   AdminModelAdapter,
@@ -7,6 +6,7 @@ import type {
   PluginGenerationStatus,
   SessionDefaultsSnapshot,
 } from '@agnes/protocol'
+import { pluginFailureHelp } from '@agnes/protocol'
 import { Badge, Button, Field, Select, type StateTone } from '@agnes/web-ui'
 import { useEffect, useState } from 'react'
 import type { PluginRuntimeState } from '../../client-modules/runtime-status.js'
@@ -70,7 +70,7 @@ export function GenerationDrainSummary({
     ) ?? []
   if (!removed.length) return null
   return (
-    <div aria-label={t('state.draining')}>
+    <div role="group" aria-label={t('state.draining')}>
       {removed.map((plugin) => (
         <p key={plugin.id}>
           {plugin.id}{' '}
@@ -437,6 +437,7 @@ export function BundlesPanel({
         {t('bundles.explain')}
       </Button>
       {dump && (
+        // biome-ignore lint/a11y/noNoninteractiveTabindex: focus enables keyboard scrolling of the resolved configuration dump.
         <pre tabIndex={0} style={{ maxHeight: '24rem', overflow: 'auto' }}>
           {dump}
         </pre>
