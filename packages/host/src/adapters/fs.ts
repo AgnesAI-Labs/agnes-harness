@@ -23,7 +23,7 @@ export type HostFs = {
  * is the identity the host pinned when it bound the seam's policy; it is how a caller verifies
  * the fence is still the policy the seam declared.
  */
-export type FsBinding = { policy: FsPolicy; caseSensitive: boolean }
+export type FsBinding = { policy: FsPolicy; caseSensitive: boolean; readOnly?: boolean; fullAccess?: boolean }
 
 /** The fenced handle: HostFs plus what session assembly and the sandbox seam ask the fence directly. */
 export type FencedFs = HostFs & {
@@ -136,7 +136,8 @@ export function createFs(
     p: string,
     mode: 'read' | 'write' | 'remove' = 'read',
   ): Promise<{ real: string; abs: string }> {
-    const { policy, caseSensitive } = binding()
+    const { policy, caseSensitive, readOnly } = binding()
+    if (readOnly && mode !== 'read') refuse(p, 'workspace is read-only')
     usable(p)
     const abs = isAbsolute(p) ? p : resolve(policy.workspaceRoot, p)
     const real = await canonicalize(io, abs, p)
@@ -149,7 +150,11 @@ export function createFs(
           ? 'is outside every allow rule; 请选择“完全权限”或将目标所在目录设为工作区。'
           : 'is denied by policy',
       )
-    if (mode !== 'read' && fullAccessReadOnlyRoots && sessionHasFullFileAccess(fs)) {
+    if (
+      mode !== 'read' &&
+      fullAccessReadOnlyRoots &&
+      (sessionHasFullFileAccess(fs) || binding().fullAccess)
+    ) {
       // Each root is canonicalized the way the path was, so a symlink on either side and the
       // volume's own spelling cannot make two names for one directory compare apart. A root that
       // cannot be canonicalized is compared as spelled: failing open here would drop the guard.

@@ -39,7 +39,10 @@ export async function sandboxWorkspaceProbe(
     onUnavailable: input.onUnavailable,
   })
   if (availability.action === 'refuse-init')
-    throw fault('E_SANDBOX_WORKSPACE', `no sandbox backend is available: ${availability.reason}`)
+    throw fault(
+      'E_SANDBOX_WORKSPACE',
+      'L1 sandbox unavailable: Seatbelt (macOS) or bubblewrap (Linux) did not pass the execution probe. Install/enable the OS backend, or explicitly select full-access to run without OS confinement.',
+    )
   const degraded = availability.action === 'allow-unconfined'
   if (degraded) requireClosedNetwork(input.options.networkAllow)
   const denyOperations = availability.action === 'deny-operation'

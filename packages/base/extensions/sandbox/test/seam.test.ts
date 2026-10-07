@@ -3,6 +3,7 @@ import { testFsPolicy } from '@agnes/core/testkit'
 import { describe, expect, it, vi } from 'vitest'
 import { fakeSeamInit } from '../../../testkit/seam-init.js'
 import { sandboxSeam } from '../src/seam.js'
+import { sandboxToolPolicies } from '../src/tool-policies.js'
 
 function workspace(overrides: Partial<SeamWorkspace> = {}) {
   const policy = testFsPolicy('/work/proj')
@@ -23,6 +24,18 @@ function workspace(overrides: Partial<SeamWorkspace> = {}) {
   }
   return { value, ready, confine, exec, setBound: (digest: string | null) => (bound = digest) }
 }
+
+const executionPolicy = (value: SeamWorkspace) => ({
+  workspaceRoot: value.root,
+  digest: value.policy.digest,
+  fsRead: { allow: ['/'], deny: ['/work/proj/.git', '/work/proj/.agh/secrets', '/work/proj/.agnes/secrets'] },
+  fsWrite: {
+    allow: ['/work/proj'],
+    deny: ['/work/proj/.git', '/work/proj/.agh/secrets', '/work/proj/.agnes/secrets'],
+  },
+  network: { mode: 'deny', hosts: [] },
+  requiredEnforcement: value.enforcement,
+})
 
 describe('Host-bound sandbox seam', () => {
   it('keeps the package seam inert until Host supplies a workspace', async () => {
@@ -54,7 +67,12 @@ describe('Host-bound sandbox seam', () => {
     expect(ws.exec).toHaveBeenCalledWith(['sandbox', 'sh', '-c', 'printf hi'], {
       cwd: '/work/proj/subdir',
       stdin: 'input',
-      sandbox: { policyDigest: ws.value.policy.digest, backend: 'l1' },
+      sandbox: {
+        policyDigest: ws.value.policy.digest,
+        backend: 'l1',
+        policy: executionPolicy(ws.value),
+        enforcement: ws.value.enforcement,
+      },
     })
   })
 
@@ -75,10 +93,45 @@ describe('Host-bound sandbox seam', () => {
     expect(ws.confine).not.toHaveBeenCalled()
     expect(ws.exec).toHaveBeenCalledWith(['/bin/echo', 'hi'], {
       cwd: '/work/proj',
-      sandbox: { policyDigest: ws.value.policy.digest, backend: 'l1', provider: 'docker' },
+      sandbox: {
+        policyDigest: ws.value.policy.digest,
+        backend: 'l1',
+        provider: 'docker',
+        policy: executionPolicy(ws.value),
+      },
     })
     await expect(seam.confine(['/bin/echo'])).rejects.toMatchObject({ code: 'SANDBOX_UNAVAILABLE' })
-    expect(seam.enforcement()).toEqual({ level: 'partial', scope: ['process'] })
+    expect(seam.enforcement()).toEqual({ level: 'full', scope: ['file', 'network', 'process'] })
+  })
+
+  it('pairs read-only and full-access with public tool policies independently of session approval mode', async () => {
+    const input: import('@agnes/extension-api').ToolPolicyInput = {
+      sessionKey: 's',
+      cwd: '/work',
+      actor: { id: 'u', org: 'local', role: 'owner', deptPath: [], attrs: {} },
+      call: { id: 'c', name: 'shell', args: {} },
+      policy: {
+        isReadOnly: false,
+        isDestructive: true,
+        replay: 'never',
+        requiresApproval: 'destructive',
+        approvalScopes: [],
+      },
+      tainted: false,
+      fullAccess: true,
+      approvalMode: 'off',
+    }
+    const readOnly = sandboxToolPolicies.find((policy) => policy.id === 'read-only')
+    const fullAccess = sandboxToolPolicies.find((policy) => policy.id === 'full-access')
+    if (!readOnly || !fullAccess) throw new Error('permission policies are missing')
+    expect(await readOnly.decide(input, new AbortController().signal)).toMatchObject({ effect: 'deny' })
+    expect(
+      await readOnly.decide(
+        { ...input, policy: { ...input.policy, isReadOnly: true, isDestructive: false } },
+        new AbortController().signal,
+      ),
+    ).toMatchObject({ effect: 'allow' })
+    expect(await fullAccess.decide(input, new AbortController().signal)).toMatchObject({ effect: 'allow' })
   })
 
   it('rejects a Host workspace whose root and policy disagree before readiness', async () => {

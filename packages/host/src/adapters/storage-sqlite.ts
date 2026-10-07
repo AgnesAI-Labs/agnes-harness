@@ -18,6 +18,7 @@ import {
   type StorageAdapter,
   scanTruncated,
 } from '@agnes/core'
+import type { PersistenceSqliteSchemaObject } from '@agnes/extension-api'
 import { assertSessionTreeTableName } from '../session-tree-schema.js'
 import { sqliteChildControl } from './child-control-sqlite.js'
 import { DDL } from './ddl.js'
@@ -38,6 +39,7 @@ export type TableHandle = {
   all<T = Record<string, unknown>>(sql: string, params?: readonly unknown[]): T[]
   get<T = Record<string, unknown>>(sql: string, params?: readonly unknown[]): T | undefined
   transaction<T>(fn: () => T): T
+  schema(): readonly PersistenceSqliteSchemaObject[]
 }
 export type TableStore = { table(name: string): TableHandle }
 export type CrashReclaimClaim = {
@@ -701,6 +703,10 @@ function openSqliteStorage(db: DatabaseSync, opts: Parameters<typeof createSqlit
           if (!TABLE_NAME.test(name)) throw new Error(`table name must match ${TABLE_NAME}: ${name}`)
           return {
             name,
+            schema: () =>
+              conn
+                .prepare('SELECT type, name, tbl_name AS "table", sql FROM sqlite_master ORDER BY type, name')
+                .all() as unknown as PersistenceSqliteSchemaObject[],
             exec: (sql) => {
               assertOwnedSql(sql)
               conn.exec(sql)

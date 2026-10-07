@@ -11,6 +11,7 @@ export type WorkspacePathSemantics = Readonly<{
 
 export type SandboxStaticConfig = Readonly<{
   level: 'L0' | 'L1'
+  access?: 'read-only' | 'workspace-write' | 'full-access'
   required: boolean
   onUnavailable: 'deny' | 'allow'
   extraPaths: readonly string[]
@@ -52,10 +53,18 @@ function stringList(value: unknown, field: string): readonly string[] {
 
 /** The single normalized static sandbox plan consumed by policy compilation and readiness identity. */
 export function normalizeSandboxStaticConfig(preset: Readonly<Record<string, unknown>>): SandboxStaticConfig {
+  const approval = preset.approval as { policy?: string } | undefined
+  const access =
+    approval?.policy === 'read-only'
+      ? 'read-only'
+      : approval?.policy === 'full-access'
+        ? 'full-access'
+        : 'workspace-write'
   const raw = preset.sandbox
   if (raw === undefined)
     return Object.freeze({
       level: 'L0',
+      access,
       required: false,
       onUnavailable: 'deny',
       extraPaths: Object.freeze([]),
@@ -76,6 +85,7 @@ export function normalizeSandboxStaticConfig(preset: Readonly<Record<string, unk
     throw fault('sandbox.on_unavailable is not deny or allow')
   return Object.freeze({
     level,
+    access,
     required,
     onUnavailable,
     extraPaths: stringList(input.extra_paths, 'extra_paths'),
@@ -91,6 +101,7 @@ export function sandboxStaticConfigHash(config: SandboxStaticConfig): string {
         'agnes.sandbox-static-config',
         1,
         config.level,
+        config.access ?? 'workspace-write',
         config.required,
         config.onUnavailable,
         [...config.extraPaths],
@@ -240,7 +251,11 @@ export async function compileWorkspacePolicy(
     semantics: Object.freeze({ ...input.semantics }),
     backendOptions: Object.freeze({
       cwd: workspaceRoot,
-      allowPaths: Object.freeze(rules.filter((rule) => rule.effect === 'allow').map((rule) => rule.path)),
+      allowPaths: Object.freeze(
+        input.staticConfig.access === 'read-only'
+          ? []
+          : rules.filter((rule) => rule.effect === 'allow').map((rule) => rule.path),
+      ),
       denyPaths: Object.freeze(rules.filter((rule) => rule.effect === 'deny').map((rule) => rule.path)),
       networkAllow,
     }),

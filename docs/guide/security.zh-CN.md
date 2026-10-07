@@ -26,9 +26,9 @@ Web 审批卡先显示路径、命令等定位字段，超长的内容会注明�
 
 未获批准的调用会说明原因，会话记录和模型都能看到：用户拒绝、无人在期限内答复、没有客户端可询问、等待期间任务被停止、被命令策略拦截，或委派的子代理请求了其固定范围之外的操作。没有人可询问的调用记为“无法审批”而不是“已拒绝”，且不会执行。
 
-`approvals.mode` 接受 `manual`、`smart`、`off`。Web「完全权限」和 TUI `/yolo` 会跳过当前会话余下审批，并允许文件工具读写所选工作区之外的文件。工作区仍是相对路径的默认目录。明确的安全禁令、受保护的密钥路径、操作系统权限和命令沙箱约束仍然生效。不建议把跳过审批写入新手示例或自动化默认配置。
+`approvals.mode` 接受 `manual`、`smart`、`off`。Web「完全权限」和 TUI `/yolo` 会跳过当前会话余下审批，并允许文件工具读写所选工作区之外的文件。工作区仍是相对路径的默认目录。只读预设仍拒绝修改。明确的安全禁令、受保护的密钥路径、操作系统权限和命令沙箱约束仍然生效。不建议把跳过审批写入新手示例或自动化默认配置。
 
-完全权限下，Agnes 主目录自身的状态——`secrets/`、`auth/`、`profiles/`——文件工具仍可读取，但不可写入：`write`、`edit` 等修改文件的操作会被拒绝并提示 `denied by policy`，因此会话无法改写 `profile.yaml`（例如写入 `approvals.mode: off`）并把改动带到之后的会话。所选工作区本身包含这些目录时同样拒绝。已知限制：完全权限并不限制 `shell` 工具的文件访问，命令仍可修改这些文件；堵住这一点需要操作系统沙箱，不在这项保护的范围内。
+完全权限下，Agnes 主目录自身的状态——`secrets/`、`auth/`、`profiles/`——文件工具仍可读取，但不可写入：`write`、`edit` 等修改文件的操作会被拒绝并提示 `denied by policy`，因此会话无法改写 `profile.yaml`（例如写入 `approvals.mode: off`）并把改动带到之后的会话。所选工作区本身包含这些目录时同样拒绝。命令访问范围独立遵循所选预设：`workspace-write` 下，shell 写入仍受 OS 沙箱允许目录约束；显式选择 `full-access` 后，shell 没有 OS 隔离，可以修改进程有权访问的文件，包括 Agnes 主目录。
 
 Web「工作区内修改」将文件访问限制在所选工作区内，执行命令仍遵循审批策略。访问工作区外路径时会拒绝操作，并提示切换「完全权限」或将目标目录选为工作区，不额外弹出审批。
 
@@ -38,7 +38,25 @@ Web「工作区内修改」将文件访问限制在所选工作区内，执行�
 
 ## 平台与进程
 
-默认命令执行要求可用的沙箱；Linux 使用 bubblewrap，macOS 使用 Seatbelt。不可用且策略要求拒绝时返回 `SANDBOX_UNAVAILABLE`。宿主启动成功不代表所有工具可执行。Windows 的部分安全能力仍有外部验证与实现边界，见[限制](../reference/limitations.zh-CN.md)。Profile 可以在启动时选择另一个沙箱提供者，见[沙箱提供者](sandbox-providers.zh-CN.md)。当前进程会保持这个选择，直到再次启动。
+`standard` 配方与默认 `workspace-write` 预设要求 L1 OS 隔离：Linux 使用 bubblewrap，macOS 使用 Seatbelt。Host 在发布会话运行时前，针对工作区策略实际运行受隔离的子进程探测。缺少程序、禁用 namespace、Seatbelt 策略被拒绝时，初始化以 `E_SANDBOX_WORKSPACE` 拒绝，并说明所需后端；后续执行拒绝返回 `SANDBOX_UNAVAILABLE`。未创建会话的 Host 启动成功不证明沙箱可用。Windows 尚无已验证的 L1 后端，默认同样拒绝；见[限制](../reference/limitations.zh-CN.md)。
+
+可在管理页的会话默认预设、创建会话时用 CLI `--preset <name>` 选择。存量会话变更沙箱权限须新建会话，`/preset` 会明确拒绝该类切换。可选项由 profile 的 `presets.allowed` 决定；本地与企业模板默认使用 `workspace-write`，`standard` 保留兼容名称。
+
+| 预设 | 命令沙箱 | 审批与文件行为 |
+| --- | --- | --- |
+| `read-only` | 实测 L1；没有可写目录；禁止命令联网 | 仅披露读取工具；即使启用 `/yolo` 或关闭审批，也拒绝非读取效果及文件写入 |
+| `workspace-write`（默认） | 实测 L1；允许工作区和显式额外目录写入；禁止命令联网 | 工作区编辑沿用审批规则；shell 和其他风险调用仍需审批 |
+| `full-access` | 显式 L0；不做 OS 命令隔离 | 普通工具策略放行；文件工具可访问工作区外；主体授权拒绝及保护路径仍生效 |
+
+明确接受无 L1 执行时，显式使用 `agh --preset full-access`，或保存：
+
+```yaml
+presets:
+  default: full-access
+  allowed: [standard, read-only, workspace-write, full-access]
+```
+
+若要保留审批，可在自定义配方明确覆盖 `sandbox: { level: L0, required: false, on_unavailable: allow }`；命令将不受 OS 隔离。仅修改 `on_unavailable` 不会覆盖 `required: true`。Web「完全权限」和 `/yolo` 不会取消所选预设的 OS 沙箱。当前 L1 后端拒绝非空命令网络主机白名单；`web_fetch` 使用独立的公网访问策略。Profile 可以在启动时选择另一个沙箱提供者，见[沙箱提供者](sandbox-providers.zh-CN.md)。当前进程会保持这个选择，直到再次启动。
 
 本地 Web 的安全边界是回环监听及精确 Origin/Host 校验，不是互联网用户认证。不要直接把它暴露到公网。手动 `--connect` 必须明确指定目标；Windows 命名管道还核对所属进程与发现记录。
 
@@ -59,5 +77,9 @@ Provider 密钥经配置服务存入凭据后端；公开配置只保留 `secret
 工作区 `.agh/secrets` 与旧 `.agnes/secrets` 均受文件工具/沙箱防护。不要把 AGH 的 home 指到其他产品的数据目录；旧 `AGNES_HOME` 是兼容项，没有自动迁移。
 
 恢复未知副作用前先核对目标系统，再决定重试。后台数据库恢复并不能撤销已发出的邮件、网络写入或物理设备动作。
+
+持久化合同分别声明账本、metadata/KV、耐久子任务控制、reclaim 和 integrity 能力。同步 SQL 仅通过可选 `sqlite` 端口（`dialect: sqlite`）提供；审批授权的 schema 检查也是 SQLite 专用操作。官方 SQLite 注册这些公开端口，Host 与其他提供者一样消费该合同。当前 Host 仍有依赖 SQL 的包 seam，启动时要求上述完整能力；缺失时明确列出缺失项并拒绝。JSONL 示例仅演示账本，不是完整替代。切换提供者需要重启，不自动迁移已有数据。
+
+作者需要声明 `capabilities: { ledger: true, ... }`，将 SQL 移到 `store.sqlite.tables(owner)`，并显式提供 `metadata`、`childControl`、`reclaim` 和 `scanIntegrity`。旧的通用 `store.tables` 与伪造的 SQLite 诊断字段已移除；已有 SQLite 文件及审批授权 schema 格式保持兼容。
 
 实现依据：[默认 profile](../../packages/host/templates/local-dev.yaml)、[普通行 API](../../packages/host/src/ext-host/row-extension-api.ts)、[MCP 参数策略](../../packages/resource-control-cli/src/resources.ts)、[Web server](../../packages/web-server/src/server.ts)。

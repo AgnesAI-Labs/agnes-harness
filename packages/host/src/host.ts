@@ -48,6 +48,7 @@ import {
   type WorkspaceBinding,
   WorkspaceBindingAuthority,
 } from './workspace-authority.js'
+import { normalizeSandboxStaticConfig, sandboxStaticConfigHash } from './workspace-policy.js'
 
 // core does not export a type named `Session`; it exports SessionImpl and SessionLogImpl. Taking the
 // return type instead of pinning a name means a rename over there is not a break over here.
@@ -407,6 +408,22 @@ async function createHostInstance(profile: ResolvedProfile, opts: HostOptions): 
           const openWorkspaceRuntime = opts.openWorkspaceRuntime ?? a.openWorkspaceRuntime
           const binding = o.binding as WorkspaceBinding
           const inheritedPreset = o.parent ? a.kernel.get(o.parent.key)?.preset.name : undefined
+          if (!o.parent) {
+            const [selection] = await a.adapters.storage.scan(binding.sessionKey, {
+              type: ['session/start', 'x/core/preset-switch'],
+              order: 'desc',
+              limit: 1,
+            })
+            if (selection) {
+              const data = selection.data as { preset?: unknown; to?: unknown } | null
+              const persisted = selection.type === 'session/start' ? data?.preset : data?.to
+              if (typeof persisted !== 'string')
+                throw new HostError('E_PRESET_UNSUPPORTED', 'persisted sandbox preset is malformed')
+              if (!profile.presets.allowed.includes(persisted))
+                throw new HostError('E_PRESET_UNSUPPORTED', 'persisted sandbox preset is no longer allowed')
+              o = { ...o, preset: persisted }
+            }
+          }
           const runtimePreset = resolvePreset(
             inheritedPreset ?? o.preset ?? profile.presets.default,
             a.presets,
@@ -417,9 +434,9 @@ async function createHostInstance(profile: ResolvedProfile, opts: HostOptions): 
           )
           workspace = Object.freeze({
             runtime,
-            lifecycle: workspaceRuntimes.lifecycle(o.binding.sessionKey),
+            lifecycle: workspaceRuntimes.lifecycle(binding.sessionKey),
             children: workspaceRuntimes,
-            invocation: workspaceRuntimes.invocation(o.binding.sessionKey),
+            invocation: workspaceRuntimes.invocation(binding.sessionKey),
           })
         } else if (o.parent) {
           const childKey = o.key
@@ -544,6 +561,18 @@ async function createHostInstance(profile: ResolvedProfile, opts: HostOptions): 
           detail: { sessionKey, reason: 'session-not-open' },
         })
       const resolved = validatePresetSwitch(profile, a, name)
+      const current = resolvePreset(session.preset.name, a.presets, a.sessionPresetLimits())
+      if (
+        sandboxStaticConfigHash(normalizeSandboxStaticConfig(current.doc)) !==
+        sandboxStaticConfigHash(normalizeSandboxStaticConfig(resolved.doc))
+      )
+        throw new HostError(
+          'E_PRESET_UNSUPPORTED',
+          'changing sandbox permissions requires a new session; select the preset with --preset or in admin session defaults',
+          {
+            detail: { reason: 'workspace-sandbox-change', source: name },
+          },
+        )
       if (profile.composition)
         assertCompositionCompatible(a.compositionForPreset(), a.compositionForPreset(name))
       return session.setPreset(resolved.view)

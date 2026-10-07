@@ -234,6 +234,7 @@ export function createSessionWorkspaceAdapterFactory(
         handle.kind === 'local' ? input.fullAccessReadOnlyRoots : undefined,
       )
       const exec = createPolicyExec(input.exec, {
+        policy: () => holder.policy,
         boundDigest: () => bound?.digest ?? null,
         state: () => gate,
         authorizeCwd: (cwd) => fs.resolveInside(cwd),
@@ -265,6 +266,8 @@ export function createSessionWorkspaceAdapterFactory(
         activateGate(next) {
           if (closed) throw fault('workspace fence closed')
           gate = Object.freeze({ ...next })
+          holder.readOnly = next.access === 'read-only'
+          holder.fullAccess = next.access === 'full-access'
         },
         binding: () => Object.freeze({ policyDigest: bound?.digest ?? null }),
         policyDigest: () => bound?.digest ?? null,

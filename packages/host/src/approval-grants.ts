@@ -1,6 +1,9 @@
 import type { ApprovalGrantQuery, ApprovalSeam } from '@agnes/core'
+import type {
+  PersistenceSqliteTableHandle as TableHandle,
+  PersistenceSqliteTableStore as TableStore,
+} from '@agnes/extension-api'
 import { type ApprovalGrant, isDateTime } from '@agnes/protocol'
-import type { TableHandle, TableStore } from './adapters/storage-sqlite.js'
 
 const PROFILE_HASH = /^sha256-[a-f0-9]{64}$/
 const STORE_VERSION = 1
@@ -37,13 +40,6 @@ type GrantRow = {
   policy_version: string
   created_at: string
   revoked_at: string | null
-}
-
-type SchemaRow = {
-  type: unknown
-  name: unknown
-  tbl_name: unknown
-  sql: unknown
 }
 
 export type ApprovalGrantBinding = ApprovalGrantQuery
@@ -182,11 +178,7 @@ const matches = (grant: ApprovalGrant, query: ApprovalGrantBinding): boolean =>
   grant.policyVersion === query.policyVersion
 
 function tableExists(table: TableHandle, name: string): boolean {
-  return (
-    table.get<{ name: string }>("SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?", [
-      name,
-    ]) !== undefined
-  )
+  return table.schema().some((row) => row.type === 'table' && row.name === name)
 }
 
 function normalizedDdl(value: string): string {
@@ -198,13 +190,7 @@ function normalizedDdl(value: string): string {
 }
 
 function schemaSql(table: TableHandle, type: 'table' | 'index', name: string): string | undefined {
-  // TableHandle deliberately refuses PRAGMA and pragma_* so package code cannot recover its backing
-  // path or mutate SQLite internals. The Host-owned grant schema therefore compares sqlite_master's
-  // normalized canonical DDL instead; semantically equivalent but unreviewed DDL fails closed.
-  const row = table.get<{ sql: unknown }>('SELECT sql FROM sqlite_master WHERE type = ? AND name = ?', [
-    type,
-    name,
-  ])
+  const row = table.schema().find((row) => row.type === type && row.name === name)
   return typeof row?.sql === 'string' ? row.sql : undefined
 }
 
@@ -236,7 +222,7 @@ function requireSchemaInventory(
       ddl: BINDING_INDEX_DDL,
     })
 
-  const rows = table.all<SchemaRow>('SELECT type, name, tbl_name, sql FROM sqlite_master ORDER BY type, name')
+  const rows = table.schema()
   if (rows.length !== allowed.size)
     throw new Error(
       `E_APPROVAL_GRANT_MIGRATION_REQUIRED: unexpected approval grant schema objects: ${rows
@@ -250,7 +236,7 @@ function requireSchemaInventory(
     if (
       !wanted ||
       row.type !== wanted.type ||
-      row.tbl_name !== wanted.table ||
+      row.table !== wanted.table ||
       (wanted.ddl === null
         ? row.sql !== null
         : typeof row.sql !== 'string' || normalizedDdl(row.sql) !== normalizedDdl(wanted.ddl))
@@ -320,8 +306,9 @@ function createApprovalGrantRuntimeStore(tables: TableStore): ApprovalGrantRunti
   let opened: TableHandle | undefined
   const table = (): TableHandle => {
     if (!opened) {
-      opened = tables.table('approval_grants')
-      initialize(opened)
+      const candidate = tables.table('approval_grants')
+      initialize(candidate)
+      opened = candidate
     }
     return opened
   }

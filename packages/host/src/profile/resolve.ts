@@ -298,7 +298,10 @@ export async function resolveProfile(inputs: ProfileInputs, env: ResolveEnv): Pr
     if (local)
       local.manifest = {
         ...local.manifest,
-        presets: { default: 'standard-windows', allowed: ['standard-windows'] },
+        presets: {
+          default: 'workspace-write',
+          allowed: ['standard', 'standard-windows', 'read-only', 'workspace-write', 'full-access'],
+        },
       }
   }
   for (const l of layers) {

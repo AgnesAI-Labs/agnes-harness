@@ -1,3 +1,5 @@
+import type { SandboxEnforcement } from './common.js'
+
 /** Operating systems a provider can actually run on. */
 export type SandboxPlatform = 'darwin' | 'linux' | 'win32'
 
@@ -20,11 +22,24 @@ export type SandboxCapabilities = Readonly<{
   /** False when the provider cannot run commands. Exec must refuse. */
   available: boolean
   unavailableReason?: string
+  /** Enforcement the provider can guarantee for requested policies; absent means unproven. */
+  enforcement?: SandboxEnforcement
 }>
 
 export type SandboxExecLimits = Readonly<{
   timeoutMs?: number
   maxOutputBytes?: number
+}>
+
+/** Host-authorized process policy for this call. Denies override allowed roots. */
+export type SandboxExecutionPolicy = Readonly<{
+  workspaceRoot: string
+  digest: string
+  fsRead: Readonly<{ allow: readonly string[]; deny: readonly string[] }>
+  fsWrite: Readonly<{ allow: readonly string[]; deny: readonly string[] }>
+  network: Readonly<{ mode: 'deny' | 'allow' | 'hosts'; hosts: readonly string[] }>
+  /** Minimum enforcement; a provider must refuse before execution when it cannot supply it. */
+  requiredEnforcement: SandboxEnforcement
 }>
 
 /** One command. The provider spawns it and owns the process. */
@@ -35,6 +50,10 @@ export type SandboxExecRequest = Readonly<{
   stdin?: string
   limits?: SandboxExecLimits
   signal?: AbortSignal
+  /** Required on the Host path; direct unbound calls must refuse. */
+  policy?: SandboxExecutionPolicy
+  /** Enforcement already applied by the Host OS compiler, when present. */
+  enforcement?: SandboxEnforcement
   /**
    * Write roots for this call. A provider that cannot enforce a non-empty
    * scope must refuse. It must not run the command and claim the scope held.
@@ -51,6 +70,8 @@ export type SandboxExecResult = Readonly<{
   truncated: boolean
   timedOut: boolean
   signal?: string
+  /** Actual confinement, never inferred from a provider id. */
+  enforcement: SandboxEnforcement
 }>
 
 export interface SandboxProviderInstance {
@@ -71,7 +92,7 @@ export type SandboxProviderConfig = Readonly<{
 /**
  * A replaceable sandbox backend. Register it through a plugin that injects
  * `sandboxProviders`. The host picks one id at startup. Changing the id needs
- * a process restart. Running processes stay where they started.
+ * a process restart. Instances are workspace/configuration scoped; running processes stay where they started.
  */
 export interface SandboxProvider {
   readonly id: string

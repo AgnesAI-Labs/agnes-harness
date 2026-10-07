@@ -20,10 +20,8 @@ import {
   type PersistenceRegisterRow,
   type PersistenceScanQuery,
   type PersistenceSessionStore,
-  type PersistenceTableStore,
   persistenceRegisterKey,
 } from '@agnes/extension-api'
-import { createOwnerTables } from './tables.js'
 
 type StoredEvent = PersistenceEventRecord & { seq: number }
 type Integrity = { mode: 'anchor' | 'chain'; previousDigest: string | null; digest: string }
@@ -53,7 +51,7 @@ function copyInto<K, V>(target: Map<K, V>, source: Map<K, V>): void {
  * Append-only `events.jsonl` plus `state.json` for sessions, leases, and op cells. A failed state
  * write truncates the log back to the size it had before that commit. A torn last line is skipped
  * on the next open; a bad line before that is `E_STORAGE_FAULT`. Leases survive `close`, as they do
- * in SQLite. Package tables stay in the process.
+ * in SQLite. This ledger-only example does not supply Host metadata, SQLite, child-control or reclaim ports.
  */
 export function openJsonlStore(options: PersistenceOpenOptions): PersistenceSessionStore {
   const clock = options.clock ?? Date.now
@@ -65,7 +63,6 @@ export function openJsonlStore(options: PersistenceOpenOptions): PersistenceSess
   const events = new Map<string, StoredEvent[]>()
   const integrity = new Map<string, Map<number, Integrity>>()
   const ops = new Map<string, Map<string, OpCell>>()
-  const tables = new Map<string, PersistenceTableStore>()
   let closed = false
 
   for (const line of loadLog(eventsPath)) {
@@ -251,15 +248,6 @@ export function openJsonlStore(options: PersistenceOpenOptions): PersistenceSess
     async registers(key) {
       guard()
       return fold(key, events, ops)
-    },
-    tables(owner) {
-      guard()
-      let store = tables.get(owner)
-      if (!store) {
-        store = createOwnerTables()
-        tables.set(owner, store)
-      }
-      return store
     },
     async createChild(parentKey, boundarySeq, childKey) {
       guard()

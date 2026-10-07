@@ -76,6 +76,7 @@ export function probeDocker(signal?: AbortSignal): Promise<SandboxCapabilities> 
               fsWrite: Object.freeze([]),
               platform: hostPlatform(),
               available: true,
+              enforcement: { level: 'partial' as const, scope: ['network', 'process'] as const },
             })
           : missing('docker CLI is not available'),
       )
@@ -161,6 +162,7 @@ export function createDockerSandboxProvider(probe: DockerProbe = probeDocker): S
             fsWrite: Object.freeze(workspace === undefined ? [] : [Object.freeze({ path: workspace })]),
             platform: hostPlatform(),
             available: true,
+            enforcement: { level: 'partial' as const, scope: ['network', 'process'] as const },
           })
         : probed
       const live = new Set<Live>()
@@ -206,6 +208,17 @@ function runContainer(
   live: Set<Live>,
   kill: (entry: Live) => void,
 ): Promise<SandboxExecResult> {
+  if (request.policy) {
+    const required = request.policy.requiredEnforcement
+    if (required.level === 'full' || required.scope.includes('file'))
+      return Promise.reject(sandboxUnavailable('this demo does not enforce the full Host file policy'))
+    if (request.policy.network.mode === 'hosts')
+      return Promise.reject(sandboxUnavailable('this demo cannot enforce a network host allowlist'))
+    if (request.policy.network.mode === 'deny' && request.network)
+      return Promise.reject(sandboxUnavailable('network was not authorized'))
+    if (request.policy.fsRead.deny.length || request.policy.fsWrite.deny.length)
+      return Promise.reject(sandboxUnavailable('this demo cannot enforce Host path deny rules'))
+  }
   if (request.argv.length === 0 || request.argv.some((arg) => typeof arg !== 'string' || arg.includes('\0')))
     return Promise.reject(sandboxUnavailable('empty argv'))
   if (request.network && !capabilities.network)
@@ -276,6 +289,7 @@ function runContainer(
         stderr: stderr.text,
         truncated: stdout.truncated || stderr.truncated,
         timedOut,
+        enforcement: { level: 'partial' as const, scope: ['network', 'process'] as const },
         ...(ended === undefined || ended === null ? {} : { signal: ended }),
       })
     })

@@ -15,7 +15,16 @@ declare const AGNES_CODE_MINIMAL_SHA256: string | undefined
  * Adding a recipe means adding its name here and shipping `presets/<name>.yaml`; the two are checked
  * against each other, so a name without a file fails rather than resolving to nothing.
  */
-export const PRESET_NAMES = ['standard', 'claw', 'channel', 'minimal-rl', 'standard-windows'] as const
+export const PRESET_NAMES = [
+  'standard',
+  'read-only',
+  'workspace-write',
+  'full-access',
+  'claw',
+  'channel',
+  'minimal-rl',
+  'standard-windows',
+] as const
 export type PresetName = (typeof PRESET_NAMES)[number]
 
 function isPresetName(name: string): name is PresetName {

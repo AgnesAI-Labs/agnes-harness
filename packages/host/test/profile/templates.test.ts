@@ -14,7 +14,7 @@ describe('templates', () => {
     expect(TEMPLATE_NAMES).toEqual(['local-dev', 'enterprise'])
     for (const n of TEMPLATE_NAMES) expect(loadTemplate(n).name).toBe(n)
   })
-  it('local-dev names all ten seams, lists the provider package, and defaults to standard', () => {
+  it('local-dev names all ten seams, lists the provider package, and defaults to workspace-write', () => {
     const t = loadTemplate('local-dev')
     expect(Object.keys(t.seams ?? {}).sort()).toEqual([
       'approval',
@@ -29,7 +29,10 @@ describe('templates', () => {
       'verifier',
     ])
     expect(t.packages?.map((p) => p.id)).toEqual(['@agnes/ai', '@agnes/base', '@agnes/code'])
-    expect(t.presets).toEqual({ default: 'standard', allowed: ['standard'] })
+    expect(t.presets).toEqual({
+      default: 'workspace-write',
+      allowed: ['standard', 'read-only', 'workspace-write', 'full-access'],
+    })
     expect(t.computerUse).toMatchObject({ enabled: true, appAccess: 'all' })
   })
   it('enterprise routes principals at the governance package and demands a sandbox', () => {

@@ -325,7 +325,8 @@ export async function createTestHost(o: TestHostOptions): Promise<TestHost> {
       lock: o.lock ?? { packages },
       user: {
         name: template,
-        ...(o.allowed ? { presets: { allowed: o.allowed } } : {}),
+        // This synthetic package provides only standard; product templates list more recipes.
+        presets: { default: 'standard', allowed: o.allowed ?? ['standard'] },
         provider: { package: '@agnes/ai', adapters: ['@agnes/ai'], routes: [ROUTE] },
         ...(o.limits ? { limits: o.limits } : {}),
         ...o.profileInputs?.user,

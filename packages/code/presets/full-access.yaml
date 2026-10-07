@@ -1,0 +1,6 @@
+# Explicit opt-in: ordinary tool approvals and OS command confinement are disabled.
+# Principal authorization and hard secret/integrity denials remain authoritative.
+name: full-access
+extends: standard
+approval: { policy: full-access, command_policy: [] }
+sandbox: { level: L0, required: false, on_unavailable: allow }

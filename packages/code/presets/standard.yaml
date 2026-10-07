@@ -18,9 +18,8 @@ model:
   prompt_sections: [persona, environment, coding-doctrine]
 disclosure: standard
 tools: { core: [read, write, edit, shell, grep, find, ls, todo, web_fetch, web_search, ask_user_question, present, job_output, job_list, job_kill] }
-# L0: file tools still stay in the workspace; shell is not wrapped in sandbox-exec.
-# on_unavailable must be allow — L0 has no OS backend, and deny would refuse every exec.
-sandbox: { level: L0, required: false, on_unavailable: allow }
+# OS confinement must pass a real workspace probe before a session can execute.
+sandbox: { level: L1, required: true, on_unavailable: deny }
 mcp: { defer: true }
 # No cumulative step ceiling: completion, cancellation and failure end a normal task.
 budget: { per_request_cap: 4000, max_steps: null }

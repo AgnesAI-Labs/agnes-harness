@@ -124,7 +124,8 @@ describe('openAdapters', () => {
       workspaceRoot: dir,
       secretsDir: join(dir, 'secrets'),
     })
-    expect(b.storage.file).toBe(join(dir, 'sessions.db'))
+    expect(b.storage.sqlite.dialect).toBe('sqlite')
+    expect(b.storage.capabilities.ledger).toBe(true)
     expect(b.platform.capability('exec.kill-tree').reason).not.toBe('not probed')
     expect(b.secrets.kind).toBe('composite')
     const seams = toSeamAdapters(b, { owner: '@agnes/base' })

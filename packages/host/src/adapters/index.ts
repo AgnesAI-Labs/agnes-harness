@@ -32,8 +32,8 @@ import {
   createSessionWorkspaceAdapterFactory,
   type SessionWorkspaceAdapterFactory,
 } from './session-workspace.js'
-import { openConfiguredPersistence } from './storage-provider.js'
-import { type SqliteStorage, type TableStore } from './storage-sqlite.js'
+import { type HostPersistence, openConfiguredPersistence } from './storage-provider.js'
+import type { TableStore } from './storage-sqlite.js'
 
 // The deadline is carried by the signal rather than by a field grafted onto the request, so one
 // prompter serves both a timeout and an explicit cancellation.
@@ -41,7 +41,7 @@ export type Prompter = {
   ask(req: ApprovalRequest, opts: { signal: AbortSignal }): Promise<Verdict | ApprovalAnswer>
 }
 export type AdapterBundle = {
-  storage: SqliteStorage
+  storage: HostPersistence
   fs: FencedFs
   dataFs: FencedFs
   exec: ExecAdapter
@@ -200,7 +200,7 @@ export async function openAdapters(
   await platform.probe({ root: opts.workspaceRoot })
   let transport: RemoteTransport | undefined
   let remotePool: RemoteWorkspacePool | undefined
-  let storage: SqliteStorage | undefined
+  let storage: HostPersistence | undefined
   try {
     let secrets: SecretResolver
     switch (profile.adapters.secrets.kind) {
@@ -392,6 +392,7 @@ export async function openAdapters(
         ? createSandboxDispatchExec(exec, opts.sandboxDispatch)
         : exec
     const policyExec = createPolicyExec(sessionExec, {
+      policy: () => holder.current.policy,
       boundDigest: () => holder.bound,
       state: () => gate,
       authorizeCwd: (cwd) => fs.resolveInside(cwd),
@@ -499,7 +500,7 @@ export async function openAdapters(
 
 export { openConfiguredPersistence, sqlitePersistenceProvider } from './storage-provider.js'
 
-export function lazyPackageTables(storage: SqliteStorage, owner: string): TableStore {
+export function lazyPackageTables(storage: HostPersistence, owner: string): TableStore {
   let opened: TableStore | undefined
   return {
     table(name) {

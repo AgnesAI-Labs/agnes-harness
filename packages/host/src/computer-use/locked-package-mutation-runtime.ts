@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto'
 import { lstat, realpath } from 'node:fs/promises'
 import { isAbsolute, resolve } from 'node:path'
 import { isProxy } from 'node:util/types'
-import type { SqliteStorage } from '../adapters/storage-sqlite.js'
+import type { HostPersistence } from '../adapters/storage-provider.js'
 import {
   createSqliteLockedPackageOperationReceiptPort,
   type HostLockedPackageActivationRecord,
@@ -439,7 +439,9 @@ function unavailableReceipts(): HostLockedPackageOperationReceiptPort {
   })
 }
 
-function openLockedPackageReceipts(storage: SqliteStorage): HostLockedPackageOperationReceiptPort {
+function openLockedPackageReceipts(
+  storage: Pick<HostPersistence, 'tables'>,
+): HostLockedPackageOperationReceiptPort {
   try {
     return createSqliteLockedPackageOperationReceiptPort(storage)
   } catch (error) {
@@ -450,7 +452,7 @@ function openLockedPackageReceipts(storage: SqliteStorage): HostLockedPackageOpe
 }
 
 export async function createHostLockedPackageMutationRuntime(
-  storage: SqliteStorage,
+  storage: Pick<HostPersistence, 'tables'>,
   options?: HostLockedPackageMutationOptions,
 ): Promise<HostLockedPackageMutationRuntime> {
   const receipts = openLockedPackageReceipts(storage)

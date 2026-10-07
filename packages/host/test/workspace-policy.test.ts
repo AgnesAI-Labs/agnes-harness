@@ -58,6 +58,28 @@ describe('Host workspace policy compiler', () => {
     expect(Object.isFrozen(plan.policy.rules)).toBe(true)
   })
 
+  it('binds permission presets to write roots and distinct readiness identities', async () => {
+    const readOnly = await compile('/work', {
+      approval: { policy: 'read-only' },
+      sandbox: { level: 'L1', required: true },
+    })
+    const writable = await compile('/work', {
+      approval: { policy: 'default' },
+      sandbox: { level: 'L1', required: true },
+    })
+    const full = await compile('/work', {
+      approval: { policy: 'full-access' },
+      sandbox: { level: 'L0', on_unavailable: 'allow' },
+    })
+    expect(readOnly.backendOptions.allowPaths).toEqual([])
+    expect(writable.backendOptions.allowPaths).toContain('/work')
+    expect(full.policy.rules.some((rule) => rule.effect === 'allow' && rule.path === '/')).toBe(false)
+    expect(full.backendOptions.denyPaths).toContain('/work/.git')
+    expect(new Set([readOnly.staticConfigHash, writable.staticConfigHash, full.staticConfigHash]).size).toBe(
+      3,
+    )
+  })
+
   it('refuses a canonical root whose identity changes during live canonicalization', async () => {
     await expect(
       compileWorkspacePolicy({

@@ -1,4 +1,5 @@
 import type { Enforcement, SandboxSeam, SeamWorkspace } from '@agnes/core'
+import type { SandboxExecutionPolicy } from '@agnes/extension-api'
 import { expandShell } from '../../../src/sandbox-shell.js'
 import type { SeamFactory } from '../../../src/seam-init.js'
 
@@ -37,6 +38,22 @@ async function bindWorkspace(workspace: SeamWorkspace): Promise<SandboxSeam> {
   const forWorkspace = (next: SeamWorkspace): Promise<SandboxSeam> => bindWorkspace(next)
   const providerId = workspace.providerId
   const external = providerId !== undefined && providerId !== 'local'
+  const deny = Object.freeze(policy.rules.filter((rule) => rule.effect === 'deny').map((rule) => rule.path))
+  // The Host supplies the authoritative write domain after binding the selected preset.
+  const executionPolicy: SandboxExecutionPolicy = Object.freeze({
+    workspaceRoot: workspace.root,
+    digest: policy.digest,
+    fsRead: Object.freeze({ allow: Object.freeze(['/']), deny }),
+    fsWrite: Object.freeze({
+      allow: Object.freeze(policy.rules.filter((rule) => rule.effect === 'allow').map((rule) => rule.path)),
+      deny,
+    }),
+    network: Object.freeze({
+      mode: policy.networkAllow.length ? ('hosts' as const) : ('deny' as const),
+      hosts: policy.networkAllow,
+    }),
+    requiredEnforcement: workspace.enforcement,
+  })
   const bound: SandboxSeam = {
     forWorkspace,
     async exec(cmd, opts) {
@@ -50,13 +67,19 @@ async function bindWorkspace(workspace: SeamWorkspace): Promise<SandboxSeam> {
             policyDigest: policy.digest,
             backend: workspace.execBackend,
             provider: providerId,
+            policy: executionPolicy,
           },
         })
       }
       const argv = await backend.confine({ argv: raw, cwd: opts.cwd })
       return workspace.exec([...argv], {
         ...opts,
-        sandbox: { policyDigest: policy.digest, backend: workspace.execBackend },
+        sandbox: {
+          policyDigest: policy.digest,
+          backend: workspace.execBackend,
+          policy: executionPolicy,
+          enforcement: workspace.execBackend === 'l1' ? workspace.enforcement : { level: 'none', scope: [] },
+        },
       })
     },
     async confine(argv) {
@@ -67,7 +90,7 @@ async function bindWorkspace(workspace: SeamWorkspace): Promise<SandboxSeam> {
     fsPolicy: () => policy,
     enforcement(): Enforcement {
       if (workspace.binding().policyDigest !== policy.digest) return { level: 'none', scope: [] }
-      if (external) return { level: 'partial', scope: ['process'] }
+      if (external) return workspace.enforcement
       return {
         level: workspace.enforcement.level,
         scope: [...workspace.enforcement.scope],

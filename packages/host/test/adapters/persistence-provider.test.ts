@@ -1,8 +1,8 @@
-import { existsSync, mkdtempSync, rmSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { definePersistenceProvider, type PersistenceSessionStore } from '@agnes/extension-api'
-import { persistenceContract } from '@agnes/extension-api/testkit'
+import { persistenceContract, persistenceSqliteContract } from '@agnes/extension-api/testkit'
 import { afterAll, describe, expect, it } from 'vitest'
 import { openAdapters, sqlitePersistenceProvider } from '../../src/adapters/index.js'
 import { readNamedExports } from '../../src/assemble/packages.js'
@@ -49,26 +49,16 @@ function emptyStore(): PersistenceSessionStore {
     async registers() {
       return []
     },
-    tables() {
-      return {
-        table: (name) => ({
-          name,
-          exec() {},
-          run() {
-            return { changes: 0 }
-          },
-          all: () => [],
-          get: () => undefined,
-          transaction: (fn) => fn(),
-        }),
-      }
-    },
     async close() {},
   }
 }
 
 describe('persistence provider', () => {
   persistenceContract('sqlite', () => {
+    const dir = tempDir()
+    return { open: () => sqlitePersistenceProvider.open({ dataDir: dir }) }
+  })
+  persistenceSqliteContract('sqlite', () => {
     const dir = tempDir()
     return { open: () => sqlitePersistenceProvider.open({ dataDir: dir }) }
   })
@@ -79,8 +69,17 @@ describe('persistence provider', () => {
     const bundle = await openAdapters(profile, { dataDir: dir, workspaceRoot: dir })
     try {
       expect(profile.persistence).toBeUndefined()
-      expect(bundle.storage.journalMode()).toBe('wal')
-      expect(bundle.storage.file).toBe(join(dir, 'sessions.db'))
+      expect(bundle.storage.capabilities).toMatchObject({
+        ledger: true,
+        metadata: true,
+        childControl: true,
+        reclaim: true,
+        integrity: true,
+        sqlite: true,
+      })
+      expect(bundle.storage.sqlite.dialect).toBe('sqlite')
+      expect(existsSync(join(dir, 'sessions.db'))).toBe(true)
+      expect('file' in bundle.storage).toBe(false)
     } finally {
       await bundle.close()
     }
@@ -101,25 +100,23 @@ describe('persistence provider', () => {
     expect(existsSync(join(dir, 'sessions.db'))).toBe(false)
   })
 
-  it('uses a configured provider and does not open sessions.db', async () => {
+  it('uses a configured provider through the same public ports without opening the default store', async () => {
     const seen: string[] = []
     const provider = definePersistenceProvider({
-      id: 'fake',
+      id: 'custom',
       version: '1.0.0',
       state: { effect: 'restart-required' },
-      open() {
-        const store = emptyStore()
+      capabilities: sqlitePersistenceProvider.capabilities,
+      async open(options) {
+        mkdirSync(join(options.dataDir, 'custom'), { recursive: true })
+        const store = await sqlitePersistenceProvider.open({ dataDir: join(options.dataDir, 'custom') })
         return {
           ...store,
-          async commit() {
-            seen.push('commit')
-            return { firstSeq: 1, seqs: [1] }
-          },
-          async scan() {
+          async scan(key, query) {
             seen.push('scan')
-            return []
+            return store.scan(key, query)
           },
-        }
+        } satisfies PersistenceSessionStore
       },
     })
     const dir = tempDir()
@@ -127,35 +124,67 @@ describe('persistence provider', () => {
     const bundle = await openAdapters(profile, {
       dataDir: dir,
       workspaceRoot: dir,
-      persistence: { provider: 'fake' },
+      persistence: { provider: 'custom' },
       persistenceProviders: [provider],
     })
     try {
-      expect(bundle.storage.journalMode()).toBe('provider')
-      expect(bundle.storage.file).toBe(join(dir, 'persistence-fake'))
-      await bundle.storage.commit('k', {
-        events: [
-          {
-            ts: '2026-09-07T00:00:00.000Z',
-            id: '01',
-            type: 'user/message',
-            lane: 'main',
-            v: 1,
-            actor: { id: 'u', org: 'local', role: 'owner', deptPath: [], attrs: {} },
-            origin: 'principal',
-            trust: 'trusted',
-            data: {},
-          },
-        ],
-        expectedWriterRunId: 'r',
-      })
-      await bundle.storage.scan('k', { limit: 1 })
-      expect(seen).toEqual(['commit', 'scan'])
+      await bundle.storage.open('k', { writerRunId: 'r', ttlMs: 60_000 })
+      expect(await bundle.storage.scan('k', { limit: 1 })).toEqual([])
+      expect(seen).toEqual(['scan'])
+      expect(bundle.storage.childControlFormat()).toBeGreaterThan(0)
+      expect(bundle.storage.crashReclaim.listExpired(Date.now())).toEqual([])
+      const kv = bundle.storage.metadata.namespace('owner', 'config')
+      kv.set('enabled', true)
+      expect(kv.get('enabled')).toBe(true)
+      expect(() =>
+        kv.transaction(() => {
+          kv.set('enabled', false)
+          throw new Error('rollback')
+        }),
+      ).toThrow('rollback')
+      expect(kv.get('enabled')).toBe(true)
+      expect(bundle.storage.metadata.namespace('other', 'config').get('enabled')).toBeUndefined()
       expect(existsSync(join(dir, 'sessions.db'))).toBe(false)
     } finally {
       await bundle.close()
     }
   })
+
+  it.each(['metadata', 'sqlite', 'childControl', 'reclaim', 'scanIntegrity'] as const)(
+    'refuses a selected provider missing %s before publishing the store and closes it',
+    async (port) => {
+      let closed = false
+      const provider = definePersistenceProvider({
+        id: 'incomplete',
+        version: '1.0.0',
+        state: { effect: 'restart-required' },
+        capabilities: sqlitePersistenceProvider.capabilities,
+        async open(options) {
+          const store = await sqlitePersistenceProvider.open(options)
+          const partial = {
+            ...store,
+            close: async () => {
+              closed = true
+              await store.close()
+            },
+          }
+          delete partial[port]
+          return partial
+        },
+      })
+      const dir = tempDir()
+      const profile = await resolveProfile({ builtin: 'local-dev', lock }, env)
+      await expect(
+        openAdapters(profile, {
+          dataDir: dir,
+          workspaceRoot: dir,
+          persistence: { provider: provider.id },
+          persistenceProviders: [provider],
+        }),
+      ).rejects.toMatchObject({ code: 'E_SEAM_INIT', detail: { provider: 'incomplete' } })
+      expect(closed).toBe(true)
+    },
+  )
 
   it('refuses a provider that replaces sqlite or omits restart-required', async () => {
     const dir = tempDir()
@@ -163,6 +192,7 @@ describe('persistence provider', () => {
     const builtin = definePersistenceProvider({
       id: 'sqlite',
       version: '1.0.0',
+      capabilities: { ledger: true },
       state: { effect: 'restart-required' },
       open: () => emptyStore(),
     })
@@ -226,6 +256,7 @@ describe('persistence provider', () => {
     const provider = definePersistenceProvider({
       id: 'jsonl',
       version: '1.0.0',
+      capabilities: { ledger: true },
       state: { effect: 'restart-required' },
       open: () => emptyStore(),
     })

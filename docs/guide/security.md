@@ -32,9 +32,9 @@ The Web approval card shows locating fields such as the path or command first an
 
 A call that is not approved says why, both in the session record and to the model: the user rejected it, no one answered in time, no client was connected to ask, the task was stopped while waiting, the command policy blocked it, or a delegated sub-agent asked for something outside its fixed scope. A call that nobody could be asked about is recorded as unavailable, not as rejected, and is not run.
 
-`approvals.mode` accepts `manual`, `smart`, and `off`. Web **Full permissions** (`完全权限`) and TUI `/yolo` skip remaining approvals in the current session and allow file tools to read and write outside the selected workspace. The workspace remains the default directory for relative paths. Explicit security denials, protected secret paths, operating-system permissions, and command sandbox constraints still apply. Do not make skipped approvals a beginner example or automation default.
+`approvals.mode` accepts `manual`, `smart`, and `off`. Web **Full permissions** (`完全权限`) and TUI `/yolo` skip remaining approvals in the current session and allow file tools to read and write outside the selected workspace. The workspace remains the default directory for relative paths. The read-only preset continues to refuse changes. Explicit security denials, protected secret paths, operating-system permissions, and command sandbox constraints still apply. Do not make skipped approvals a beginner example or automation default.
 
-Under Full permissions the Agnes home's own state — `secrets/`, `auth/` and `profiles/` — stays readable to the file tools but is not writable: `write`, `edit` and the other file-changing operations are refused with `denied by policy`, so a session cannot rewrite `profile.yaml` (for example to set `approvals.mode: off`) and carry that into later sessions. The same refusal applies when the selected workspace itself contains that state. Known limitation: Full permissions do not restrict the `shell` tool's file access, so a command can still modify these files. Closing that gap needs an operating-system sandbox and is not covered by this protection.
+Under Full permissions the Agnes home's own state — `secrets/`, `auth/` and `profiles/` — stays readable to the file tools but is not writable: `write`, `edit` and the other file-changing operations are refused with `denied by policy`, so a session cannot rewrite `profile.yaml` (for example to set `approvals.mode: off`) and carry that into later sessions. The same refusal applies when the selected workspace itself contains that state. Command access follows the selected preset independently: under `workspace-write`, shell writes remain inside the OS sandbox's allowed roots. Under the explicit `full-access` preset, shell has no OS confinement and can modify files accessible to the process, including the Agnes home.
 
 Web **Workspace edits** (`工作区内修改`) limits file access to the selected workspace; command execution still follows the approval policy. A path outside that workspace is refused with guidance to switch to Full permissions or select its directory as the workspace, without opening an additional approval request.
 
@@ -46,7 +46,25 @@ A request to edit files is not permission for arbitrary plugin execution. Plugin
 
 ## Platforms and processes
 
-Default command execution requires an available sandbox: bubblewrap on Linux and Seatbelt on macOS. If unavailable and policy requires refusal, execution returns `SANDBOX_UNAVAILABLE`. Successful Host startup does not prove every tool can execute. Some Windows security capabilities remain subject to implementation and external verification limits; see [limitations](../reference/limitations.md). A profile can select another sandbox provider at startup; see [Sandbox providers](sandbox-providers.md). The running process keeps that choice until it starts again.
+The `standard` recipe and the default `workspace-write` preset require L1 OS confinement: bubblewrap on Linux or Seatbelt on macOS. The Host executes a confined child-process probe for each workspace policy before publishing its session runtime. A missing binary, disabled namespaces, or a rejected Seatbelt profile refuses session initialization with `E_SANDBOX_WORKSPACE` and a message identifying the required backend. Later execution refusal returns `SANDBOX_UNAVAILABLE`. Host startup without a session is not proof of sandbox availability. Windows has no proven L1 backend yet and also fails closed; see [limitations](../reference/limitations.md).
+
+Choose a permission preset in the admin session-default selector, CLI `--preset <name>` when creating a session. Changing sandbox permissions in a live session requires a new session; `/preset` refuses that change. The profile's `presets.allowed` controls available choices. The local and enterprise templates select `workspace-write` by default; `standard` remains its compatible recipe name.
+
+| Preset | Command sandbox | Approval and file behavior |
+| --- | --- | --- |
+| `read-only` | Probed L1; no writable roots; command network denied | Read tools only; non-read effects are denied even under `/yolo` or `approvals.mode: off`; file writes are refused |
+| `workspace-write` (default) | Probed L1; workspace and explicitly allowed write roots; command network denied | Workspace edits use the existing approval rules; shell and other risky calls still ask |
+| `full-access` | Explicit L0; no OS command confinement | Ordinary tool approval policy allows calls; file tools can reach outside the workspace; principal denials and protected paths still apply |
+
+To run deliberately on a machine without L1, select `full-access` explicitly, for example `agh --preset full-access`. A profile can persist that choice:
+
+```yaml
+presets:
+  default: full-access
+  allowed: [standard, read-only, workspace-write, full-access]
+```
+
+A custom recipe can retain approvals while explicitly overriding `sandbox: { level: L0, required: false, on_unavailable: allow }`. This is unconfined command execution. Changing only `on_unavailable` does not override `required: true`. Web Full permissions and `/yolo` do not disable the selected preset's OS sandbox. L1 backends currently reject non-empty command-network host allowlists; `web_fetch` uses its separate public-network policy. A profile can select another sandbox provider at startup; see [Sandbox providers](sandbox-providers.md). The running process keeps that choice until it starts again.
 
 Local Web relies on loopback binding and exact Origin/Host checks, rather than internet user authentication. Do not expose it directly to the public internet. A manual `--connect` must identify the target explicitly. Windows named pipes also check process ownership against discovery records.
 
@@ -71,5 +89,9 @@ The configuration service stores provider keys in a credential backend. Public c
 File tools and sandbox policies protect workspace `.agh/secrets` and legacy `.agnes/secrets`. Do not point AGH's home at another product's data directory. Legacy `AGNES_HOME` is a compatibility option with no automatic migration.
 
 Check the target system before retrying an operation with unknown side effects. Recovering a backend database cannot recall an email, undo a network write, or reverse a physical device action.
+
+The persistence contract separates the ledger, metadata/KV, durable child-control, reclaim and integrity capabilities. Synchronous SQL is available only through the optional `sqlite` port (`dialect: sqlite`); approval-grant schema inspection is SQLite-specific. The official SQLite provider registers these ports and the Host consumes the same contract as other providers. The current Host still has SQL-backed package seams and requires all these capabilities at startup. A provider that lacks one is refused with the missing-capability list; the JSONL example is therefore a ledger demonstration, not a complete replacement. Changing providers requires restart and does not migrate existing data.
+
+Provider authors must now declare `capabilities: { ledger: true, ... }`, place SQL under `store.sqlite.tables(owner)`, and expose `metadata`, `childControl`, `reclaim` and `scanIntegrity` explicitly. The former generic `store.tables` path and fabricated SQLite diagnostics are removed. Existing SQLite files and grant schemas retain their format.
 
 Implementation: [default profile](../../packages/host/templates/local-dev.yaml), [ordinary row API](../../packages/host/src/ext-host/row-extension-api.ts), [MCP argument policy](../../packages/resource-control-cli/src/resources.ts), [Web server](../../packages/web-server/src/server.ts).

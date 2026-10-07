@@ -50,6 +50,7 @@ import {
   LOCAL_SANDBOX_PROVIDER_ID,
   type SandboxProviderSlot,
   sandboxProviderCatalog,
+  sandboxProviderIdFrom,
 } from './adapters/sandbox-providers.js'
 import { composeSecrets, createSecretsEnv, createSecretsFile } from './adapters/secrets.js'
 import type { SessionWorkspaceFence } from './adapters/session-workspace.js'
@@ -678,6 +679,36 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
             })
           },
         })
+      const providerId = sandboxProviderIdFrom(profile)
+      if (providerId !== LOCAL_SANDBOX_PROVIDER_ID) {
+        await bindStartupSandboxProvider(sandboxProviderSlot, profile, plan.policy.workspaceRoot, false)
+        const selected = sandboxProviderSlot.selected
+        if (!selected) throw new HostError('E_SANDBOX_WORKSPACE', 'sandbox provider instance is unavailable')
+        const capabilities = selected.capabilities
+        const enforcement = capabilities.enforcement ?? { level: 'none' as const, scope: [] }
+        const full =
+          enforcement.level === 'full' &&
+          ['file', 'network', 'process'].every((scope) =>
+            enforcement.scope.includes(scope as 'file' | 'network' | 'process'),
+          )
+        if (
+          !capabilities.available ||
+          (!full &&
+            (plan.staticConfig.required ||
+              (plan.staticConfig.level === 'L1' && plan.staticConfig.onUnavailable === 'deny')))
+        )
+          throw new HostError(
+            'E_SANDBOX_WORKSPACE',
+            `sandbox provider ${providerId} cannot enforce the required L1 policy`,
+          )
+        return Object.freeze({
+          execBackend: full && plan.staticConfig.level === 'L1' ? ('l1' as const) : ('none' as const),
+          enforcement,
+          confine: async () => {
+            throw new HostError('E_SANDBOX_WORKSPACE', 'external provider cannot rewrite host argv')
+          },
+        })
+      }
       if (!workspaceProbe)
         throw new HostError('E_SANDBOX_WORKSPACE', 'sandbox workspace probe is unavailable', {
           detail: { reason: 'workspace-probe-missing' },
@@ -762,6 +793,7 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
               fence?.activateGate({
                 backend: raw.execBackend,
                 onUnavailable: raw.execBackend === 'remote' ? 'deny' : plan.staticConfig.onUnavailable,
+                access: plan.staticConfig.access ?? 'workspace-write',
               })
             },
           ),

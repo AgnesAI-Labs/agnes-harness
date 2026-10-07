@@ -1,4 +1,5 @@
 import { type ChildProcess, spawn } from 'node:child_process'
+import type { SandboxEnforcement, SandboxExecutionPolicy } from '@agnes/extension-api'
 import { createExecOutput } from './exec-output.js'
 import { createWindowsExec } from './exec-win32.js'
 import type { PowerShellDescriptor } from './powershell.js'
@@ -23,10 +24,16 @@ export type SandboxExecBinding = {
   backend: 'none' | 'l1' | 'remote'
   /** Set when a startup-selected provider, other than the local host sandbox, owns the process. */
   provider?: string
+  policy?: SandboxExecutionPolicy
+  enforcement?: SandboxEnforcement
 }
 
 /** The process-isolation posture the sandbox seam declared at init. Host-owned once declared. */
-export type ExecGateState = { backend: 'none' | 'l1' | 'remote'; onUnavailable: 'deny' | 'allow' }
+export type ExecGateState = {
+  backend: 'none' | 'l1' | 'remote'
+  onUnavailable: 'deny' | 'allow'
+  access?: 'read-only' | 'workspace-write' | 'full-access'
+}
 
 export type ExecAdapter = {
   run(
@@ -226,6 +233,7 @@ export function createPolicyExec(
   inner: ExecAdapter,
   gate: {
     /** The digest of the policy currently bound to the host FsOps, or null before binding. */
+    policy?(): import('@agnes/core').FsPolicy
     boundDigest(): string | null
     /** The posture the sandbox seam declared; defaults to the closed one before it does. */
     state(): ExecGateState
@@ -255,7 +263,37 @@ export function createPolicyExec(
     const externalProvider = request.provider !== undefined && request.provider !== 'local'
     if (state.backend === 'none' && state.onUnavailable !== 'allow' && !externalProvider)
       throw unavailable('no sandbox backend is available and the preset does not allow unconfined execution')
-    return inner.run(argv, { ...opts, cwd })
+    const policy = gate.policy?.()
+    if (!policy) return inner.run(argv, { ...opts, cwd })
+    const denied = Object.freeze(
+      policy.rules.filter((rule) => rule.effect === 'deny').map((rule) => rule.path),
+    )
+    const callPolicy: SandboxExecutionPolicy = Object.freeze({
+      workspaceRoot: policy.workspaceRoot,
+      digest: policy.digest,
+      // OS runtimes need system libraries; secret/integrity denies still apply.
+      fsRead: Object.freeze({ allow: Object.freeze(['/']), deny: denied }),
+      fsWrite: Object.freeze({
+        allow: Object.freeze(
+          state.access === 'read-only'
+            ? []
+            : state.access === 'full-access'
+              ? ['/']
+              : policy.rules.filter((rule) => rule.effect === 'allow').map((rule) => rule.path),
+        ),
+        deny: denied,
+      }),
+      network: Object.freeze({
+        mode: state.access === 'full-access' ? 'allow' : policy.networkAllow.length ? 'hosts' : 'deny',
+        hosts: Object.freeze([...policy.networkAllow]),
+      }),
+      requiredEnforcement: Object.freeze(
+        state.backend === 'l1'
+          ? { level: 'full', scope: Object.freeze(['file', 'network', 'process'] as const) }
+          : { level: 'none', scope: Object.freeze([]) },
+      ),
+    })
+    return inner.run(argv, { ...opts, cwd, sandbox: { ...request, policy: callPolicy } })
   }
 }
 

@@ -1,7 +1,8 @@
 import { randomUUID } from 'node:crypto'
 import { basename } from 'node:path'
 import { isProxy } from 'node:util/types'
-import type { SqliteStorage, TableHandle, TableStore } from '../adapters/storage-sqlite.js'
+import type { HostPersistence } from '../adapters/storage-provider.js'
+import type { TableHandle, TableStore } from '../adapters/storage-sqlite.js'
 
 const OWNER = '@agnes/host/locked-package-operation-receipts'
 const STORE_VERSION = 1
@@ -126,7 +127,7 @@ function ownMethod<T extends object, K extends keyof T>(value: T, name: K): T[K]
   return Reflect.apply(Function.prototype.bind, descriptor.value, [value]) as T[K]
 }
 
-function captureSql(storage: Pick<SqliteStorage, 'tables'>): ReceiptSql {
+function captureSql(storage: Pick<HostPersistence, 'tables'>): ReceiptSql {
   const tables = Reflect.apply(ownMethod(storage, 'tables'), storage, [OWNER]) as TableStore
   const table = Reflect.apply(ownMethod(tables, 'table'), tables, [
     'locked_package_operation_receipts',
@@ -461,7 +462,7 @@ function initialize(table: ReceiptSql): void {
  * package's tables. This port changes no driver-admission state and does not install packages.
  */
 export function createSqliteLockedPackageOperationReceiptPort(
-  storage: Pick<SqliteStorage, 'tables'>,
+  storage: Pick<HostPersistence, 'tables'>,
 ): HostLockedPackageOperationReceiptPort {
   const table = sanitized('OPEN', () => captureSql(storage))
   sanitized('INITIALIZE', () => initialize(table))

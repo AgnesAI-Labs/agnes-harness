@@ -1,8 +1,16 @@
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { sandboxWorkspaceProbe, toolPolicyPlugin } from '@agnes/base'
+import { loadPreset } from '@agnes/code'
 import { Context } from '@agnes/cordis'
-import { LOCAL_SANDBOX_PROVIDER_ID, type SandboxProvider, sandboxUnavailable } from '@agnes/extension-api'
+import {
+  LOCAL_SANDBOX_PROVIDER_ID,
+  type SandboxExecutionPolicy,
+  type SandboxProvider,
+  sandboxUnavailable,
+} from '@agnes/extension-api'
+import { normalizePluginExport } from '@agnes/plugin-runtime/host'
 import { afterAll, describe, expect, it } from 'vitest'
 import { createExec, createPolicyExec } from '../../src/adapters/exec.js'
 import { createLocalSandboxProvider } from '../../src/adapters/sandbox-local.js'
@@ -13,11 +21,23 @@ import {
   readSandboxStartupConfig,
   type SandboxProviderSlot,
 } from '../../src/adapters/sandbox-providers.js'
+import { createTestHost } from '../../testkit/index.js'
 
 const cwd = mkdtempSync(join(tmpdir(), 'agnes-sandbox-provider-'))
 const nodeEnv = process.env.ELECTRON_RUN_AS_NODE
   ? { ELECTRON_RUN_AS_NODE: process.env.ELECTRON_RUN_AS_NODE }
   : {}
+
+const policy: SandboxExecutionPolicy = {
+  workspaceRoot: cwd,
+  digest: 'a'.repeat(64),
+  fsRead: { allow: ['/'], deny: [join(cwd, '.git')] },
+  fsWrite: { allow: [cwd, join(cwd, 'extra')], deny: [join(cwd, '.git')] },
+  network: { mode: 'deny', hosts: [] },
+  requiredEnforcement: { level: 'none', scope: [] },
+}
+const enforcement = { level: 'none' as const, scope: [] }
+const binding = { policyDigest: policy.digest, backend: 'none' as const, policy, enforcement }
 
 afterAll(() => rmSync(cwd, { recursive: true, force: true }))
 
@@ -47,6 +67,7 @@ function box(id: string, available = true): SandboxProvider {
         stderr: '',
         truncated: false,
         timedOut: false,
+        enforcement,
       }),
       dispose() {},
     }),
@@ -56,7 +77,13 @@ function box(id: string, available = true): SandboxProvider {
 describe('sandbox providers', () => {
   it('reads sandbox.provider and rejects unknown keys', () => {
     expect(readSandboxStartupConfig(undefined)).toBeUndefined()
-    expect(readSandboxStartupConfig({ provider: 'docker' })).toEqual({ provider: 'docker' })
+    expect(readSandboxStartupConfig({ provider: 'docker', options: { image: 'alpine' } })).toEqual({
+      provider: 'docker',
+      options: { image: 'alpine' },
+    })
+    expect(() => readSandboxStartupConfig({ provider: 'docker', options: { image: 42 } })).toThrow(
+      /mapping of strings/,
+    )
     expect(() => readSandboxStartupConfig({ image: 'alpine' })).toThrow(/sandbox\.image/)
     expect(() => readSandboxStartupConfig({ provider: 'Docker' })).toThrow(/provider id/)
   })
@@ -71,13 +98,17 @@ describe('sandbox providers', () => {
     expect(
       registry.catalog().find((entry) => entry.id === LOCAL_SANDBOX_PROVIDER_ID)?.capabilities,
     ).toMatchObject({
-      network: false,
+      network: true,
       fsWrite: [],
       available: true,
     })
     expect(() => registry.register(box('box'))).toThrow(/duplicate sandbox provider/)
     const selected = await registry.select(LOCAL_SANDBOX_PROVIDER_ID, { workspaceRoot: cwd })
     expect(selected.id).toBe(LOCAL_SANDBOX_PROVIDER_ID)
+    expect(await registry.select(LOCAL_SANDBOX_PROVIDER_ID, { workspaceRoot: cwd })).toBe(selected)
+    expect(await registry.select(LOCAL_SANDBOX_PROVIDER_ID, { workspaceRoot: join(cwd, 'other') })).not.toBe(
+      selected,
+    )
     await expect(registry.select('box')).rejects.toThrow(/requires a restart/)
     await expect(registry.select('missing')).rejects.toThrow(/requires a restart/)
   })
@@ -90,6 +121,8 @@ describe('sandbox providers', () => {
     const ok = await instance.exec({
       argv: [process.execPath, '-e', 'process.stdout.write("ok")'],
       cwd,
+      policy,
+      enforcement,
       env: nodeEnv,
     })
     expect(ok).toMatchObject({ code: 0, stdout: 'ok', timedOut: false })
@@ -97,6 +130,8 @@ describe('sandbox providers', () => {
       instance.exec({
         argv: [process.execPath, '-e', 'process.stdout.write("no")'],
         cwd,
+        policy,
+        enforcement,
         network: true,
       }),
     ).rejects.toMatchObject({ code: 'SANDBOX_UNAVAILABLE' })
@@ -104,6 +139,8 @@ describe('sandbox providers', () => {
     const pending = instance.exec({
       argv: [process.execPath, '-e', 'setInterval(() => {}, 1000)'],
       cwd,
+      policy,
+      enforcement,
       env: nodeEnv,
       signal: signal.signal,
       limits: { timeoutMs: 10_000 },
@@ -146,6 +183,180 @@ describe('sandbox providers', () => {
     await expect(dispatch.run(['echo', 'hi'], { cwd })).rejects.toMatchObject({ code: 'SANDBOX_UNAVAILABLE' })
     expect(localRan).toBe(false)
     expect(sandboxUnavailable('missing').code).toBe('SANDBOX_UNAVAILABLE')
+  })
+
+  it('forwards authorized roots, network policy, options and enforcement through every provider entry', async () => {
+    const root = new Context()
+    const registry = installSandboxProviders(root)
+    const seen: unknown[] = []
+    const provider = box('box')
+    registry.register({
+      ...provider,
+      create(config) {
+        seen.push(config)
+        return {
+          ...(provider.create(config) as import('@agnes/extension-api').SandboxProviderInstance),
+          async exec(request) {
+            seen.push(request)
+            return { code: 0, stdout: 'provider', stderr: '', truncated: false, timedOut: false, enforcement }
+          },
+        }
+      },
+    })
+    const slot: SandboxProviderSlot = { registry }
+    await bindStartupSandboxProvider(
+      slot,
+      { sandbox: { provider: 'box', options: { image: 'test' } } },
+      cwd,
+      false,
+    )
+    const dispatch = createSandboxDispatchExec(
+      {
+        run: async () => {
+          throw new Error('local bypass')
+        },
+        killAll: async () => {},
+      },
+      slot,
+    )
+    await expect(dispatch.run(['echo', 'ok'], { cwd, sandbox: binding })).resolves.toMatchObject({
+      stdout: 'provider',
+    })
+    expect(seen[0]).toEqual({ workspaceRoot: cwd, options: { image: 'test' } })
+    expect(seen[1]).toMatchObject({
+      policy,
+      fsWrite: policy.fsWrite.allow.map((path) => ({ path })),
+      network: false,
+    })
+    const openNetwork = { ...policy, network: { mode: 'hosts' as const, hosts: ['example.test'] } }
+    await dispatch.run(['echo', 'net'], { cwd, sandbox: { ...binding, policy: openNetwork } })
+    expect(seen[2]).toMatchObject({ policy: openNetwork, network: true })
+    await expect(
+      dispatch.run(['echo'], {
+        cwd,
+        sandbox: {
+          ...binding,
+          policy: {
+            ...policy,
+            requiredEnforcement: { level: 'full', scope: ['file', 'network', 'process'] },
+          },
+        },
+      }),
+    ).rejects.toThrow(/required enforcement/)
+    const aborted = new AbortController()
+    aborted.abort(new Error('cancelled'))
+    await expect(dispatch.run(['echo'], { cwd, signal: aborted.signal, sandbox: binding })).rejects.toThrow(
+      'cancelled',
+    )
+    expect(seen.slice(1).map((request) => (request as { argv: string[] }).argv)).toEqual([
+      ['echo', 'ok'],
+      ['echo', 'net'],
+    ])
+  })
+
+  it('dispatches local execution through the registered public instance', async () => {
+    const calls: unknown[] = []
+    const provider = createLocalSandboxProvider(
+      {
+        run: async (argv, options) => {
+          calls.push({ argv, options })
+          return { code: 0, stdout: 'local-provider', stderr: '', truncated: false, timedOut: false }
+        },
+        killAll: async () => {},
+      },
+      process.platform,
+    )
+    const instance = await provider.create({ workspaceRoot: cwd })
+    const dispatch = createSandboxDispatchExec(
+      {
+        run: async () => {
+          throw new Error('bypass')
+        },
+        killAll: async () => {},
+      },
+      { selected: instance },
+    )
+    await expect(dispatch.run(['echo', 'ok'], { cwd, sandbox: binding })).resolves.toMatchObject({
+      stdout: 'local-provider',
+    })
+    expect(calls).toHaveLength(1)
+    await expect(instance.exec({ argv: ['echo'], cwd })).rejects.toThrow(/bound execution policy/)
+    const peerRoot = join(cwd, 'peer')
+    const peer = await provider.create({ workspaceRoot: peerRoot })
+    await instance.dispose()
+    await expect(instance.exec({ argv: ['echo'], cwd, policy, enforcement })).rejects.toThrow(/disposed/)
+    await expect(
+      peer.exec({
+        argv: ['echo'],
+        cwd: peerRoot,
+        policy: { ...policy, workspaceRoot: peerRoot },
+        enforcement,
+      }),
+    ).resolves.toMatchObject({ stdout: 'local-provider' })
+    await peer.dispose()
+  })
+
+  it('refuses an unavailable required sandbox at the real Host workspace boundary and permits the explicit override', async () => {
+    const dataDir = mkdtempSync(join(cwd, 'host-'))
+    const selected = ['standard', 'read-only', 'workspace-write', 'full-access']
+    const testHost = await createTestHost({
+      dataDir,
+      disableSessionTitle: true,
+      profileInputs: {
+        user: { name: 'local-dev', presets: { default: 'workspace-write', allowed: selected } },
+      },
+      presets: Object.fromEntries(selected.map((name) => [name, loadPreset(name)])),
+      packages: {
+        '@agnes/base': {
+          sandboxWorkspaceProbe: (input) =>
+            sandboxWorkspaceProbe({
+              ...input,
+              probeExec: async () => ({
+                code: 127,
+                stdout: '',
+                stderr: 'missing',
+                truncated: false,
+                timedOut: false,
+              }),
+            }),
+          plugins: [
+            {
+              declaration: {
+                id: 'tool-policy:default',
+                export: 'toolPolicyPlugin',
+                apiRange: '^1.4.0',
+                default: true,
+                inject: ['toolPolicies'],
+                provide: [],
+                runtime: 'in-process',
+              },
+              entry: normalizePluginExport(toolPolicyPlugin),
+            },
+          ],
+        },
+      },
+    })
+    try {
+      await expect(testHost.host.createSession({ cwd: dataDir })).rejects.toThrow(/L1 sandbox unavailable/)
+      await expect(testHost.host.createSession({ cwd: dataDir, preset: 'read-only' })).rejects.toThrow(
+        /L1 sandbox unavailable/,
+      )
+      const full = await testHost.host.createSession({ cwd: dataDir, preset: 'full-access' })
+      expect(full.yolo).toBe(true)
+      await expect(testHost.host.setSessionPreset(full.key, 'workspace-write')).rejects.toMatchObject({
+        code: 'E_PRESET_UNSUPPORTED',
+        detail: { reason: 'workspace-sandbox-change' },
+      })
+      await full.setYolo(false, full.d.actor)
+      const key = full.key
+      await full.close()
+      const reopened = await testHost.host.createSession({ key, cwd: dataDir })
+      expect(reopened.preset.name).toBe('full-access')
+      expect(reopened.yolo).toBe(false)
+      await reopened.close()
+    } finally {
+      await testHost.host.close()
+    }
   })
 
   it('keeps the policy gate closed for the local backend and open for an external provider', async () => {

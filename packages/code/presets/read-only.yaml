@@ -1,0 +1,7 @@
+# Read tools only; the policy also rejects changes through deferred or third-party tools.
+name: read-only
+extends: standard
+tools: { core: [read, grep, find, ls, web_fetch] }
+approval: { policy: read-only, command_policy: [] }
+sandbox: { level: L1, required: true, on_unavailable: deny }
+subagent: { isolation: shared }

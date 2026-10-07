@@ -152,7 +152,13 @@ export interface SeamWorkspace {
       timeoutMs?: number
       signal?: AbortSignal
       maxOutputBytes?: number
-      sandbox: Readonly<{ policyDigest: string; backend: SandboxExecBackend; provider?: string }>
+      sandbox: Readonly<{
+        policyDigest: string
+        backend: SandboxExecBackend
+        provider?: string
+        policy?: import('@agnes/extension-api').SandboxExecutionPolicy
+        enforcement?: import('@agnes/extension-api').SandboxEnforcement
+      }>
     },
   ) => Promise<{ code: number; stdout: string; stderr: string; truncated: boolean; timedOut?: boolean }>
   readonly binding: () => Readonly<{ policyDigest: string | null }>

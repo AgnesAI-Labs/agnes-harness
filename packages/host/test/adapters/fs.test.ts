@@ -49,6 +49,22 @@ describe('fs adapter', () => {
     expect(st.size).toBe(9)
     expect(typeof st.mtimeMs).toBe('number')
   })
+  it('keeps a read-only workspace immutable even when the session skips approvals', async () => {
+    writeFileSync(join(root, 'existing.txt'), 'keep')
+    const f = createFs(() => ({ ...bindingFor(root), readOnly: true }))
+    await withSessionFileAccess(
+      f,
+      () => true,
+      async () => {
+        expect(new TextDecoder().decode(await f.read('existing.txt'))).toBe('keep')
+        await expect(f.write('existing.txt', new TextEncoder().encode('changed'))).rejects.toMatchObject({
+          code: 'E_FS_DENIED',
+        })
+        await expect(f.mkdir('new')).rejects.toMatchObject({ code: 'E_FS_DENIED' })
+      },
+    )
+    expect(readFileSync(join(root, 'existing.txt'), 'utf8')).toBe('keep')
+  })
   it('reads the whole file when no window is asked for', async () => {
     const f = fs()
     await f.write('a.txt', new TextEncoder().encode('l1\nl2\nl3\n'))

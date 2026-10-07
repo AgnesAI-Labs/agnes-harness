@@ -101,6 +101,7 @@ async function profileWithRoutes(routes: RouteDecl[]): Promise<ResolvedProfile> 
       },
       user: {
         name: 'local-dev',
+        presets: { default: 'standard', allowed: ['standard'] },
         provider: { package: '@agnes/ai', adapters: ['@agnes/ai'], routes },
       },
     },

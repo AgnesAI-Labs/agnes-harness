@@ -32,7 +32,7 @@ function event(
 }
 
 /**
- * Append, paged scan, the single-writer lease, register cells, and package tables.
+ * Append, paged scan, the single-writer lease and register cells. SQLite checks are a separate optional suite.
  * Run once per provider. `create` must point every `open` at the same empty directory.
  */
 export function persistenceContract(name: string, create: () => PersistenceContractFactory): void {
@@ -123,10 +123,15 @@ export function persistenceContract(name: string, create: () => PersistenceContr
     expect((await store.registers('k')).map((row) => row.key)).toEqual([`skill${NUL}b`])
     await store.close()
   })
+}
 
+/** Optional SQLite capability checks; ledger-only providers must not run this suite. */
+export function persistenceSqliteContract(name: string, create: () => PersistenceContractFactory): void {
   it(`${name}: inserts and reads a package table, and refuses a NUL in text`, async () => {
     const store = await create().open()
-    const tables = store.tables('example.owner')
+    expect(store.sqlite?.dialect).toBe('sqlite')
+    if (!store.sqlite) throw new Error('SQLite capability is missing')
+    const tables = store.sqlite.tables('example.owner')
     const table = tables.table('notes')
     table.exec('create table notes (k text, v integer)')
     expect(table.run('insert into notes (k, v) values (?, ?)', ['a', 1])).toEqual({ changes: 1 })

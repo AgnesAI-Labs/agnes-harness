@@ -274,6 +274,7 @@ export const presets: Record<string, PresetDoc> = {
 }
 
 export { createDefaultCompactionEngine } from '../extensions/compaction/src/engine.js'
+export { sandboxToolPolicies } from '../extensions/sandbox/src/tool-policies.js'
 export {
   ACP_CHILD_CAPABILITIES,
   ACP_CHILD_PROVIDER_ID,

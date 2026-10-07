@@ -80,6 +80,7 @@ export function attachTestSeamPlugins(module: PackageModule): PackageModule {
             Object.freeze({
               declaration: Object.freeze({
                 export: `${name}Plugin`,
+                apiRange: '^1.4.0',
                 id: `seam:${name}`,
                 runtime: 'in-process' as const,
                 default: true,

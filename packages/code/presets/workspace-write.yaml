@@ -1,0 +1,5 @@
+# Default product permission preset: workspace writes, closed command network, shell approvals.
+name: workspace-write
+extends: standard
+approval: { policy: default }
+sandbox: { level: L1, required: true, on_unavailable: deny }

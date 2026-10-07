@@ -205,7 +205,7 @@ describe('standard.yaml', () => {
       core: ['read', 'write', 'edit', 'shell', 'grep', 'find', 'ls', 'todo', 'web_fetch'],
     })
     expect(doc.mcp).toEqual({ defer: true })
-    expect(doc.sandbox).toEqual({ level: 'L0', required: false, on_unavailable: 'allow' })
+    expect(doc.sandbox).toEqual({ level: 'L1', required: true, on_unavailable: 'deny' })
     // Spend ceiling for one request. Widening it costs money silently; nothing else asserts it.
     expect(doc.budget).toEqual({ per_request_cap: 4000, max_steps: null })
     // `isolation: worktree` is what keeps a subagent's writes off the operator's checkout. `none`
@@ -218,6 +218,22 @@ describe('standard.yaml', () => {
   // The seam between this file and the prompt order table: a typo in `prompt_sections` names a
   // section nobody registered, and assembly would silently drop it. Neither task owns this check,
   // so it lives here, next to the list it validates.
+  it('ships permission presets with paired sandbox and approval policies', () => {
+    expect(loadPreset('workspace-write')).toMatchObject({
+      extends: 'standard',
+      approval: { policy: 'default' },
+      sandbox: { level: 'L1', required: true, on_unavailable: 'deny' },
+    })
+    expect(loadPreset('read-only')).toMatchObject({
+      approval: { policy: 'read-only' },
+      sandbox: { level: 'L1', required: true, on_unavailable: 'deny' },
+    })
+    expect(loadPreset('full-access')).toMatchObject({
+      approval: { policy: 'full-access' },
+      sandbox: { level: 'L0', required: false, on_unavailable: 'allow' },
+    })
+  })
+
   it('names only registered prompt sections, each supplied by a package that exists', () => {
     const registered = new Set(PROMPT_SECTIONS.map((s) => s.id))
     // Every recipe that names sections, not only this one: a typo names a section nobody registered
@@ -308,7 +324,16 @@ describe('standard.yaml', () => {
   })
 
   it('is reachable through the named export the host reads', () => {
-    expect(PRESET_NAMES).toEqual(['standard', 'claw', 'channel', 'minimal-rl', 'standard-windows'])
+    expect(PRESET_NAMES).toEqual([
+      'standard',
+      'read-only',
+      'workspace-write',
+      'full-access',
+      'claw',
+      'channel',
+      'minimal-rl',
+      'standard-windows',
+    ])
     expect(presets.standard).toEqual(doc)
     expect(Object.keys(presets)).toEqual([...PRESET_NAMES])
   })

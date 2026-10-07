@@ -22,6 +22,7 @@ describe('jsonl persistence provider', () => {
     expect(persistenceProvider).toMatchObject({
       id: 'jsonl',
       version: '1.0.0',
+      capabilities: { ledger: true, integrity: true },
       state: { effect: 'restart-required' },
     })
   })

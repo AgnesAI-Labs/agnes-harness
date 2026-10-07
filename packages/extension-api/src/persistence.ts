@@ -1,11 +1,11 @@
+import type { ChildControlStore } from '@agnes/core'
 import { parseSemver } from './api-range.js'
 
 /**
  * Session persistence provider.
  *
  * The methods are the ones Core's log storage and the host package-table store already share:
- * append (`commit`), paged `scan`, the single-writer lease (`open` / `renew` / `release`), and
- * `tables`. Field names match those internal contracts. A provider does not migrate another
+ * append (`commit`), paged `scan`, and the single-writer lease (`open` / `renew` / `release`). Field names match those internal contracts. A provider does not migrate another
  * provider's files. Selecting a different id applies on the next process start.
  */
 
@@ -108,34 +108,100 @@ export interface PersistenceIntegrityRow {
 }
 
 /** The host package-table handle: one owner's statements, not a second connection to the ledger. */
-export interface PersistenceTableHandle {
+export interface PersistenceSqliteTableHandle {
   name: string
   exec(sql: string): void
   run(sql: string, params?: readonly unknown[]): { changes: number }
   all<T = Record<string, unknown>>(sql: string, params?: readonly unknown[]): T[]
   get<T = Record<string, unknown>>(sql: string, params?: readonly unknown[]): T | undefined
   transaction<T>(fn: () => T): T
+  /** SQLite-specific schema inventory, confined to this owner's file. */
+  schema(): readonly PersistenceSqliteSchemaObject[]
 }
 
-export interface PersistenceTableStore {
-  table(name: string): PersistenceTableHandle
+export interface PersistenceSqliteSchemaObject {
+  type: string
+  name: string
+  table: string
+  sql: string | null
 }
 
-export interface PersistenceSessionStore {
+/** Optional synchronous SQLite port. Never imply SQL support from a ledger or KV capability. */
+export interface PersistenceSqlitePort {
+  readonly dialect: 'sqlite'
+  tables(owner: string): PersistenceSqliteTableStore
+}
+
+export interface PersistenceMetadataNamespace {
+  get(key: string): unknown | undefined
+  set(key: string, value: unknown): void
+  delete(key: string): void
+  entries(): readonly Readonly<{ key: string; value: unknown }>[]
+  /** Synchronous atomic transaction; callbacks must not return a Promise. */
+  transaction<T>(fn: () => T): T
+}
+
+export interface PersistenceMetadataPort {
+  namespace(owner: string, name: string): PersistenceMetadataNamespace
+}
+
+/** Compare-and-claim expired writer leases and inspect the open operation atomically. */
+export interface PersistenceReclaimPort {
+  listExpired(now: number): { sessionKey: string; runId: string; until: number; generation: number }[]
+  claimForReclaim(
+    sessionKey: string,
+    runId: string,
+    until: number,
+    now: number,
+  ): { opState: { seq: number; data: unknown } | undefined; seq: number } | null
+}
+
+export type PersistenceChildControlPort = ChildControlStore
+export type PersistenceCapability =
+  | 'ledger'
+  | 'metadata'
+  | 'child-control'
+  | 'reclaim'
+  | 'integrity'
+  | 'sqlite'
+export interface PersistenceCapabilities {
+  readonly ledger: true
+  readonly metadata?: boolean
+  readonly childControl?: boolean
+  readonly reclaim?: boolean
+  readonly integrity?: boolean
+  readonly sqlite?: boolean
+}
+
+export interface PersistenceSqliteTableStore {
+  table(name: string): PersistenceSqliteTableHandle
+}
+
+export interface PersistenceLedgerPort {
   open(key: string, claim: { writerRunId: string; ttlMs: number }): Promise<PersistenceOpenResult>
   commit(key: string, tx: PersistenceCommit): Promise<PersistenceCommitReceipt>
   renew(key: string, writerRunId: string, claim?: PersistenceLeaseClaim): Promise<void>
   release(key: string, writerRunId: string): Promise<void>
   scan(key: string, query: PersistenceScanQuery): Promise<PersistenceEventRecord[]>
   registers(key: string): Promise<PersistenceRegisterRow[]>
-  tables(owner: string): PersistenceTableStore
   close(): Promise<void>
-  scanIntegrity?(
+  createChild?(parentKey: string, boundarySeq: number, childKey: string): Promise<void>
+  discardNewSession?(key: string, expectedWriterRunId: string, claim?: PersistenceLeaseClaim): Promise<void>
+}
+
+export interface PersistenceIntegrityPort {
+  scanIntegrity(
     key: string,
     query: { fromSeq: number; toSeq: number; limit: number },
   ): Promise<PersistenceIntegrityRow[]>
-  createChild?(parentKey: string, boundarySeq: number, childKey: string): Promise<void>
-  discardNewSession?(key: string, expectedWriterRunId: string, claim?: PersistenceLeaseClaim): Promise<void>
+}
+
+export interface PersistenceSessionStore extends PersistenceLedgerPort, Partial<PersistenceIntegrityPort> {
+  /** Independent optional capabilities; absent ports are unsupported, never no-op fallbacks. */
+  readonly metadata?: PersistenceMetadataPort
+  readonly childControl?: PersistenceChildControlPort
+  readonly reclaim?: PersistenceReclaimPort
+  readonly sqlite?: PersistenceSqlitePort
 }
 
 export interface PersistenceOpenOptions {
@@ -148,6 +214,7 @@ export interface PersistenceProvider {
   readonly id: string
   readonly version: string
   readonly state: PersistenceProviderState
+  readonly capabilities: PersistenceCapabilities
   open(options: PersistenceOpenOptions): PersistenceSessionStore | Promise<PersistenceSessionStore>
 }
 
@@ -155,6 +222,7 @@ export interface PersistenceCatalogEntry {
   readonly id: string
   readonly version: string
   readonly state: PersistenceProviderState
+  readonly capabilities: PersistenceCapabilities
 }
 
 /**
@@ -194,6 +262,13 @@ export function definePersistenceProvider<T extends PersistenceProvider>(provide
     throw new Error('persistence provider version must be semver')
   if (provider.state?.effect !== PERSISTENCE_EFFECT)
     throw new Error('persistence provider changes are restart-required')
+  if (
+    provider.capabilities &&
+    Object.values(provider.capabilities).some((value) => typeof value !== 'boolean')
+  )
+    throw new Error('persistence capabilities must be booleans')
+  if (provider.capabilities?.ledger !== true)
+    throw new Error('persistence provider must declare ledger capability')
   if (typeof provider.open !== 'function') throw new Error('persistence provider open must be a function')
   return provider
 }

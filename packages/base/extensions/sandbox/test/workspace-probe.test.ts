@@ -57,6 +57,7 @@ describe('sandboxWorkspaceProbe', () => {
   it('refuses a required workspace when no backend probe succeeds', async () => {
     await expect(sandboxWorkspaceProbe(input({ level: 'L1', required: true }))).rejects.toMatchObject({
       code: 'E_SANDBOX_WORKSPACE',
+      message: expect.stringContaining('explicitly select full-access'),
     })
   })
 })
