@@ -178,7 +178,7 @@ export async function createLoopContext(s: SessionImpl, restoreCheckpoint = fals
             effectId: effect.effectId,
             slot: request.slot,
           }
-          const [costSeq] = await s.d.log.append([
+          const { seqs: [costSeq] } = await s.d.log.append([
             s.ev('cost/ledger', {
               ...usage,
               purpose: 'inference',
