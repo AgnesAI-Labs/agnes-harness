@@ -23,11 +23,11 @@
         "export": "modelAdaptersPlugin",
         "inject": [
           "modelAdapters"
-        ],
-        "kinds": [
-          "model-adapter"
         ]
       }
+    ],
+    "kinds": [
+      "model-adapter"
     ]
   },
   "license": "Apache-2.0"
