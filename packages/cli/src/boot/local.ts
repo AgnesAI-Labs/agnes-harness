@@ -15,6 +15,7 @@ import {
 } from '@agnes/daemon/local'
 import {
   type ConfigurationService,
+  cacheDir,
   composeProductionRequestMedia,
   compositionPreset,
   compositionSurfaceAllowed,
@@ -26,6 +27,7 @@ import {
   createPlatform,
   createSqliteStorage,
   DEFAULT_COMPUTER_USE,
+  dataDir,
   type ExtensionIsolationOptions,
   type Host,
   HostError,
@@ -329,8 +331,8 @@ export async function bootLocal(p: ParsedArgs, deps: LocalBootDeps): Promise<Boo
     const isolated = JSON.parse(
       JSON.stringify({
         ...body,
-        dataDir: join(directory, 'data'),
-        cacheDir: join(directory, 'cache'),
+        dataDir: dataDir(directory),
+        cacheDir: cacheDir(directory),
       }),
     ) as Omit<ResolvedProfile, 'hash'>
     profile = { ...isolated, hash: 'sha256-' + createHash('sha256').update(jcs(isolated)).digest('hex') }

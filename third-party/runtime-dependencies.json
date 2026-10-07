@@ -118,6 +118,7 @@
         "packages/core",
         "packages/extension-api",
         "packages/host",
+        "packages/model-adapters",
         "packages/plugin-runtime",
         "packages/protocol",
         "packages/protocol-validation",

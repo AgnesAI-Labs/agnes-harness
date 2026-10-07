@@ -73,6 +73,8 @@ describe('protocol src boundary', () => {
         'toAcpPrompt',
         'SESSION_TITLE_EVENT',
         'SessionTitleRecord',
+        'SessionToolsParams',
+        'SessionToolsResult',
         'readSessionTitle',
         'minimumContextBudget',
         'modelImageInputError',

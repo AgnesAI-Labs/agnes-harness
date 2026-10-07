@@ -111,7 +111,7 @@ it('shows an example for the selected source type instead of the npm one', async
   // 组件层用原生 select（旧 select-picker 的触发器/listbox DOM 已随迁移移除）。
   setNativeValue(sourceType(), 'file')
   expect(sourceType().value).toBe('file')
-  expect(placeholder()).toBe('/home/me/my-plugin.tgz')
+  expect(placeholder()).toBe('/path/to/my-plugin.tgz')
 
   setNativeValue(sourceType(), 'workspace')
   expect(placeholder()).toMatch(/^workspace:extensions\//)
@@ -125,11 +125,11 @@ it('sends a well-formed source and closes the dialog once the check has been acc
   await mount(fetcher)
   openSourceDialog()
 
-  submit('file', '/home/me/my-plugin.tgz')
+  submit('file', '/path/to/my-plugin.tgz')
 
   await vi.waitFor(() => expect(inspectCalls(fetcher)).toHaveLength(1))
   const sent = JSON.parse(String(inspectCalls(fetcher)[0]?.[1]?.body)) as { source: unknown }
-  expect(sent.source).toEqual({ type: 'file', ref: 'file:/home/me/my-plugin.tgz' })
+  expect(sent.source).toEqual({ type: 'file', ref: 'file:/path/to/my-plugin.tgz' })
   await vi.waitFor(() => expect(sourceDialog().open).toBe(false))
 })
 
