@@ -1,4 +1,3 @@
-import type { HostSession } from '@agnes/host'
 import type { UISpan, UITimeline, UITurn } from '@agnes/protocol'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { openTestHost } from './host.js'
@@ -32,13 +31,6 @@ const truncations = (turns: readonly UITurn[]) =>
  */
 async function bigWebSession() {
   const h = await openTestHost()
-  const createSession = h.host.createSession.bind(h.host)
-  let opened: HostSession | undefined
-  vi.spyOn(h.host, 'createSession').mockImplementation(async (opts) => {
-    const created = await createSession(opts)
-    opened ??= created
-    return created
-  })
   const ep = h.endpoint({ clock: () => Date.now(), pollMs: 5 })
   await ep.handle(init)
   const created = (await ep.handle({
@@ -47,7 +39,7 @@ async function bigWebSession() {
     method: 'session/new',
     params: { cwd: h.dataDir, mcpServers: [] },
   })) as { result: { sessionId: string } }
-  const parent = opened
+  const parent = h.host.kernel.get(created.result.sessionId)
   if (!parent) throw new Error('session was not captured')
   const create = parent.d.children.createWithKind
   if (!create) throw new Error('the child factory must create by kind')
@@ -156,13 +148,6 @@ describe('web projections of a session with a huge child trace', () => {
 describe('web patches of a session with many children', () => {
   it('turn an oversized re-send into a resync instead of a large patch', async () => {
     const h = await openTestHost()
-    const createSession = h.host.createSession.bind(h.host)
-    let opened: HostSession | undefined
-    vi.spyOn(h.host, 'createSession').mockImplementation(async (opts) => {
-      const created = await createSession(opts)
-      opened ??= created
-      return created
-    })
     const ep = h.endpoint({ clock: () => Date.now(), pollMs: 5 })
     await ep.handle(init)
     const created = (await ep.handle({
@@ -172,7 +157,7 @@ describe('web patches of a session with many children', () => {
       params: { cwd: h.dataDir, mcpServers: [] },
     })) as { result: { sessionId: string } }
     const sessionId = created.result.sessionId
-    const parent = opened
+    const parent = h.host.kernel.get(created.result.sessionId)
     if (!parent) throw new Error('session was not captured')
     const create = parent.d.children.createWithKind
     if (!create) throw new Error('the child factory must create by kind')

@@ -131,7 +131,10 @@ describe('tree budget on the live inference path', () => {
   })
 
   it('shares reserveTreeBudget with compaction', () => {
-    const src = readFileSync(fileURLToPath(new URL('../src/step/compaction.ts', import.meta.url)), 'utf8')
+    const src = readFileSync(
+      fileURLToPath(new URL('../src/loop/default/compaction.ts', import.meta.url)),
+      'utf8',
+    )
     expect(src.includes('reserveTreeBudget(')).toBe(true)
   })
 

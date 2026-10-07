@@ -2,6 +2,7 @@
 // inside test/ so a consumer imports them by package path instead of by a relative path into this
 // package's test tree.
 export { MemoryStorage } from '../src/log/memory-storage.js'
+export { deferredResultProvenance } from '../src/loop/default/deferred.js'
 export {
   type FakeProvider,
   fakeProvider,

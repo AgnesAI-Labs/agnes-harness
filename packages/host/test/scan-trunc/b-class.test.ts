@@ -1,9 +1,7 @@
 import { applyRefine, rollbackRefine } from '@agnes/core'
-import { actor, fakeProvider, textTurn, toolTurn } from '@agnes/core/testkit'
+import { actor, deferredResultProvenance, fakeProvider, textTurn, toolTurn } from '@agnes/core/testkit'
 import { describe, expect, it } from 'vitest'
 import { ledgerDir, longPreset, openOn, readRegistry } from './fixture.js'
-
-type Provenance = { trust: 'trusted' | 'untrusted'; callSeq?: number }
 
 /**
  * A finished turn with one real, trusted `read` call, followed by deferred-job markers written the
@@ -36,9 +34,10 @@ async function withMarkers(
       (n) => marker(`other-${n}`),
     )
     for (let i = 0; i < rows.length; i += 100) await session.append(rows.slice(i, i + 100) as never)
-    const check = (session as unknown as { deferredResultProvenance(p: object): Promise<Provenance> })
-      .deferredResultProvenance
-    return { result: await check.call(session, { jobId: 'job-1', toolUseId }), callSeq: call?.seq }
+    return {
+      result: await deferredResultProvenance(session, { jobId: 'job-1', toolUseId }),
+      callSeq: call?.seq,
+    }
   } finally {
     await storage.close()
     ledger.remove()

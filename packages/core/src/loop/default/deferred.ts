@@ -98,7 +98,7 @@ export async function runDeferred(s: SessionImpl): Promise<StepOutcome> {
  * therefore comes only from the exact durable tool/call row. Old or repaired ledgers remain
  * readable, but an absent field, broken hash, or missing row can never upgrade external output.
  */
-async function deferredResultProvenance(
+export async function deferredResultProvenance(
   s: SessionImpl,
   pending: {
     jobId: string

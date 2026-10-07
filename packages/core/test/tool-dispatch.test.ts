@@ -218,16 +218,30 @@ describe('session dispatch plumbing', () => {
     const started = { effectId: 'effect-1', startSeq: 1 as never }
 
     await expect(
-      session.executeTool('computer', {}, {} as never, started, async () => result, {
-        executionDomain: 'host-computer-use',
-        attempt: 1,
-      }),
+      session.executeTool(
+        'computer',
+        {},
+        { signal: new AbortController().signal, session: { toolUseId: 'computer-1' } } as never,
+        started,
+        async () => result,
+        {
+          executionDomain: 'host-computer-use',
+          attempt: 1,
+        },
+      ),
     ).resolves.toMatchObject({ phase: 'not_sent' })
     await expect(
-      session.executeTool('computer', {}, {} as never, started, async () => result, {
-        executionDomain: 'host-computer-use',
-        attempt: 2,
-      }),
+      session.executeTool(
+        'computer',
+        {},
+        { signal: new AbortController().signal, session: { toolUseId: 'computer-1' } } as never,
+        started,
+        async () => result,
+        {
+          executionDomain: 'host-computer-use',
+          attempt: 2,
+        },
+      ),
     ).resolves.toEqual({ phase: 'responded', result })
     expect(attempts).toEqual([1, 2])
     await session.close()
@@ -248,7 +262,7 @@ describe('session dispatch plumbing', () => {
       session.executeTool(
         'computer',
         {},
-        {} as never,
+        { signal: new AbortController().signal, session: { toolUseId: 'computer-restored' } } as never,
         { effectId: 'effect-restored', startSeq: 7 as never },
         async () => result,
         { executionDomain: 'host-computer-use', attempt: 2 },
