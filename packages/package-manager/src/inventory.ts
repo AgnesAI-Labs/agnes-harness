@@ -1,6 +1,7 @@
-import { existsSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import type { PackageBlocker, PackageContributionSummary } from '@agnes/protocol'
+import { parseAgnesPluginKinds, type AgnesPluginKind } from './plugin-manifest.js'
 import { PackageError } from './errors.js'
 import { inspectStaged } from './inspect.js'
 import { canonical, capabilityHash, freezeData, snapshotHash } from './integrity.js'
@@ -16,6 +17,7 @@ export type InstalledPackage = Readonly<{
   capabilityHash: string
   trusted: boolean
   enabled: boolean
+  kinds?: readonly AgnesPluginKind[]
   contributions: readonly PackageContributionSummary[]
   blockers: readonly PackageBlocker[]
   verifiedRollbackTarget: Readonly<{
@@ -210,6 +212,9 @@ export function readInventory(
       throw new PackageError('E_WORKSPACE_UNTRUSTED', 'installed trust snapshot differs from lock', {
         detail: { id },
       })
+    const kinds = directory !== null && entry.treeIntegrity !== undefined
+      ? parseAgnesPluginKinds(JSON.parse(readFileSync(resolve(directory, 'package.json'), 'utf8')).agnes?.kinds)
+      : undefined
     packages.push({
       id,
       entry,
@@ -217,6 +222,7 @@ export function readInventory(
       capabilityHash: hash,
       trusted,
       enabled: entry.state.enabled,
+      ...(kinds === undefined ? {} : { kinds }),
       contributions: entry.contributions ?? [],
       blockers,
       verifiedRollbackTarget: verifiedRollbackTarget(id, entry, {

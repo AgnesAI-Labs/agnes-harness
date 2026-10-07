@@ -14,7 +14,7 @@ import { containedEntry } from './entry-path.js'
 import { PackageError } from './errors.js'
 import { canonical, capabilityHash, freezeData, readStaticJson, snapshotHash } from './integrity.js'
 import type { LockEntry } from './lockfile.js'
-import { isReservedPluginRowIdError, parseAgnesPluginEntries } from './plugin-manifest.js'
+import { isReservedPluginRowIdError, parseAgnesPluginEntries, parseAgnesPluginKinds } from './plugin-manifest.js'
 import { checkCancelled } from './ports.js'
 import { resolveSkins } from './skin-assets.js'
 import { type FetchedSource, hashDirectory, type PackageSource } from './sources.js'
@@ -138,13 +138,15 @@ export function inspectStaged(input: {
     typeof agnes !== 'object' ||
     Array.isArray(agnes) ||
     Object.keys(agnes).some(
-      (k) => !['extensions', 'contributions', 'plugins', 'surfaces', 'clientDescriptors'].includes(k),
+      (k) => !['extensions', 'contributions', 'plugins', 'surfaces', 'clientDescriptors', 'kinds'].includes(k),
     )
   )
     invalid('agnes-metadata')
   const metadata = agnes as Record<string, unknown>
+  let kinds: ReturnType<typeof parseAgnesPluginKinds>
   let plugins: ReturnType<typeof parseAgnesPluginEntries>
   try {
+    kinds = parseAgnesPluginKinds(metadata.kinds)
     plugins = parseAgnesPluginEntries(String(pkg.name), metadata.plugins)
   } catch (error) {
     if (isReservedPluginRowIdError(error))
@@ -290,6 +292,7 @@ export function inspectStaged(input: {
       ...(fetched.releasedAt ? { releasedAt: fetched.releasedAt } : {}),
     },
     contributions,
+    ...(kinds === undefined ? {} : { kinds }),
     dependencies,
     capabilityDiff,
     capabilityHash: capabilityHash({ contributions, dependencies: fetched.dependencies }),

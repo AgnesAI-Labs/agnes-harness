@@ -1,6 +1,10 @@
 import { createHash } from 'node:crypto'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import {
+  type AdminSessionSelection,
+  isAdminLoop,
+  isAdminModelAdapter,
+  isSessionDefaultsSnapshot,
   PACKAGE_ADMIN_METHODS,
   PACKAGE_ADMIN_PERMISSIONS,
   type PackageAdminContext,
@@ -59,6 +63,8 @@ export type AdminSurfaceOptions = {
   invoke(action: AdminSurfaceAction, params: unknown): Promise<unknown>
   /** Live, routable Surface links. The launcher strips loopback endpoint details before returning. */
   surfaceLinks?: () => Promise<readonly AdminSurfaceLink[]>
+  /** Real host catalogs plus configuration storage. Missing means selection is unavailable. */
+  sessionSelection?: AdminSessionSelection
   clock?: () => number
 }
 
@@ -139,7 +145,8 @@ export function createAdminSurface(options: AdminSurfaceOptions) {
     close: () => undefined,
     async handle(request: IncomingMessage, response: ServerResponse): Promise<boolean> {
       const url = new URL(request.url ?? '/', options.origin)
-      if (!url.pathname.startsWith(PREFIX)) return false
+      const selectionRoute = url.pathname.startsWith('/admin/api/')
+      if (!url.pathname.startsWith(PREFIX) && !selectionRoute) return false
       response.setHeader('Cache-Control', 'no-store')
       response.setHeader('Content-Security-Policy', "default-src 'none'; frame-ancestors 'none'")
       response.setHeader('X-Content-Type-Options', 'nosniff')
@@ -151,11 +158,67 @@ export function createAdminSurface(options: AdminSurfaceOptions) {
         request.headers.host !== origin.host ||
         (site !== undefined && site !== 'same-origin' && site !== 'none') ||
         (request.headers.origin !== undefined && request.headers.origin !== options.origin) ||
-        (request.method === 'POST' && request.headers.origin !== options.origin) ||
+        (['POST', 'PUT'].includes(request.method ?? '') && request.headers.origin !== options.origin) ||
         url.origin !== options.origin ||
         url.search
       ) {
         error(response, 403, 'E_ADMIN_ORIGIN', 'The admin request origin is not valid.')
+        return true
+      }
+      if (selectionRoute) {
+        const route = url.pathname.slice('/admin/api/'.length)
+        const write = route === 'defaults' && request.method === 'PUT'
+        if (!write && !(request.method === 'GET' && ['loops', 'model-adapters', 'defaults'].includes(route))) {
+          error(response, 404, 'E_ADMIN_ROUTE', 'The admin operation does not exist.')
+          return true
+        }
+        if (!configuredPermissions.includes(write ? 'packages.activate' : 'packages.read')) {
+          error(response, 403, 'E_ADMIN_FORBIDDEN', 'You do not have permission to perform this action.')
+          return true
+        }
+        if (write && readOnly) {
+          error(response, 409, 'E_ADMIN_READ_ONLY', 'The admin surface is in read-only recovery mode.')
+          return true
+        }
+        const provider = options.sessionSelection
+        if (!provider) {
+          error(response, 503, 'E_ADMIN_CATALOG_UNAVAILABLE', 'Session selection catalogs are unavailable.')
+          return true
+        }
+        try {
+          let result: unknown
+          if (write) {
+            let body: unknown
+            try { body = await readBody(request) } catch { body = undefined }
+            if (!isSessionDefaultsSnapshot(body)) {
+              error(response, 400, 'E_ADMIN_REQUEST', 'The admin parameters are not valid.')
+              return true
+            }
+            result = await provider.saveDefaults(body)
+          } else if (route === 'loops') {
+            const [loops, defaults] = await Promise.all([provider.loops(), provider.getDefaults()])
+            if (loops.length > 4096 || !loops.every(isAdminLoop) || !isSessionDefaultsSnapshot(defaults))
+              throw new Error('invalid catalog')
+            reply(response, 200, { loops, ...defaults })
+            return true
+          } else if (route === 'model-adapters') {
+            const modelAdapters = await provider.modelAdapters()
+            if (modelAdapters.length > 4096 || !modelAdapters.every(isAdminModelAdapter))
+              throw new Error('invalid catalog')
+            reply(response, 200, { modelAdapters })
+            return true
+          } else result = await provider.getDefaults()
+          if (!isSessionDefaultsSnapshot(result)) throw new Error('invalid defaults')
+          reply(response, 200, result)
+        } catch (cause) {
+          const code = record(cause) ? cause.code : undefined
+          const conflict = code === 'CONFIG_REVISION_CONFLICT'
+          const invalid = code === 'CONFIG_INVALID_INPUT' || code === 'CONFIG_MODEL_UNAVAILABLE'
+          error(response, conflict ? 409 : invalid ? 400 : 502,
+            conflict ? 'CONFIG_REVISION_CONFLICT' : invalid ? 'E_ADMIN_SELECTION' : 'E_ADMIN_BACKEND',
+            conflict ? 'Configuration changed; reload and try again.' :
+              invalid ? 'The selected loop, adapter or model is unavailable.' : 'The backend response could not be confirmed.')
+        }
         return true
       }
       const action = url.pathname.slice(PREFIX.length)

@@ -538,6 +538,12 @@
       "type": "object",
       "additionalProperties": false,
       "properties": {
+        "kinds": {
+          "type": "array",
+          "items": { "enum": ["tool", "loop", "model-adapter", "mcp", "skills", "ui"] },
+          "uniqueItems": true,
+          "maxItems": 6
+        },
         "id": {
           "type": "string",
           "minLength": 1,
@@ -771,6 +777,13 @@
       "type": "object",
       "additionalProperties": false,
       "properties": {
+        "kinds": {
+          "type": "array",
+          "items": { "enum": ["tool", "loop", "model-adapter", "mcp", "skills", "ui"] },
+          "uniqueItems": true,
+          "maxItems": 6
+        },
+        "draining": { "type": "boolean" },
         "id": {
           "type": "string",
           "minLength": 1,
@@ -868,6 +881,12 @@
       "type": "object",
       "additionalProperties": false,
       "properties": {
+        "kinds": {
+          "type": "array",
+          "items": { "enum": ["tool", "loop", "model-adapter", "mcp", "skills", "ui"] },
+          "uniqueItems": true,
+          "maxItems": 6
+        },
         "id": {
           "type": "string",
           "minLength": 1,

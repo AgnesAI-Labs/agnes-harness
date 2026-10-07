@@ -34,7 +34,7 @@ import type {
   ModelRecord,
   ModelSettings,
 } from '@agnes/protocol'
-import { minimumContextBudget } from '@agnes/protocol'
+import { isSessionDefaults, isSessionDefaultsSnapshot, type SessionDefaults, type SessionDefaultsSnapshot, minimumContextBudget } from '@agnes/protocol'
 import { renameWriteThrough, windowsEnsurePrivateDirectorySync } from '@agnes/system-node'
 import { subscriptionCredentials } from './adapters/codex-credentials.js'
 import {
@@ -114,6 +114,8 @@ export interface ConfigurationService {
   test(input: ConfigTestInput): Promise<ConfigTestResult>
   save(input: ConfigSaveInput): Promise<ConfigSnapshot>
   account(input: ConfigAccountInput): Promise<ConfigSnapshot>
+  sessionDefaults(): Promise<SessionDefaultsSnapshot>
+  saveSessionDefaults(input: SessionDefaultsSnapshot): Promise<SessionDefaultsSnapshot>
   profileInput(): Promise<Partial<RuntimeProfileManifest>>
 }
 
@@ -155,6 +157,7 @@ type StoredConfiguration = {
   revision: number
   accounts: StoredAccount[]
   defaultAccountId: string | null
+  sessionDefaults?: SessionDefaults
 }
 const ACCOUNT = /^[a-z0-9][a-z0-9-]{0,47}$/
 function accountId(value: unknown): string {
@@ -413,7 +416,8 @@ function decodeState(value: unknown, profile: string): StoredConfiguration | und
   if (legacy) return migrate(legacy)
   if (
     !isRecord(value) ||
-    !exactKeys(value, ['version', 'profile', 'revision', 'accounts', 'defaultAccountId']) ||
+    !exactKeys(value, ['version', 'profile', 'revision', 'accounts', 'defaultAccountId', ...(value.sessionDefaults === undefined ? [] : ['sessionDefaults'])]) ||
+    (value.sessionDefaults !== undefined && !isSessionDefaults(value.sessionDefaults)) ||
     value.version !== 2 ||
     value.profile !== profile ||
     !Number.isSafeInteger(value.revision) ||
@@ -519,6 +523,7 @@ function decodeState(value: unknown, profile: string): StoredConfiguration | und
     revision: value.revision as number,
     accounts,
     defaultAccountId: value.defaultAccountId as string | null,
+    ...(value.sessionDefaults === undefined ? {} : { sessionDefaults: value.sessionDefaults as SessionDefaults }),
   }
 }
 
@@ -594,7 +599,7 @@ export function createConfigurationService(options: ConfigurationServiceOptions)
   const credentialStore = createCredentialStore({ root: home })
   let loading: Promise<StoredConfiguration | undefined> | undefined
   const catalogueCache = new Map<string, Promise<StaticCatalogue>>()
-  let saveTail: Promise<ConfigSnapshot> = Promise.resolve({
+  let saveTail: Promise<unknown> = Promise.resolve({
     profile,
     revision: 0,
     configured: false,
@@ -1018,6 +1023,7 @@ export function createConfigurationService(options: ConfigurationServiceOptions)
       revision: nextRevision,
       accounts,
       defaultAccountId,
+      ...(current?.sessionDefaults === undefined ? {} : { sessionDefaults: current.sessionDefaults }),
     }
     await persistState(next)
     return snapshot(next)
@@ -1062,7 +1068,7 @@ export function createConfigurationService(options: ConfigurationServiceOptions)
     await persistState(next)
     return snapshot(next)
   }
-  const serialized = (action: () => Promise<ConfigSnapshot>): Promise<ConfigSnapshot> => {
+  const serialized = <T>(action: () => Promise<T>): Promise<T> => {
     const run = saveTail.then(
       () => withLock(action),
       () => withLock(action),
@@ -1178,6 +1184,7 @@ export function createConfigurationService(options: ConfigurationServiceOptions)
             revision,
             accounts: [...(current?.accounts ?? []).filter((a) => a.accountId !== input.accountId), row],
             defaultAccountId: current?.defaultAccountId ?? (row.enabled ? row.accountId : null),
+            ...(current?.sessionDefaults === undefined ? {} : { sessionDefaults: current.sessionDefaults }),
           }
           await persistState(next)
           return snapshot(next)
@@ -1197,6 +1204,21 @@ export function createConfigurationService(options: ConfigurationServiceOptions)
     test,
     save: (input) => serialized(() => saveInternal(input)),
     account: (input) => serialized(() => changeAccount(input)),
+    async sessionDefaults() {
+      const state = await loadState()
+      return { revision: state?.revision ?? 0, defaults: structuredClone(state?.sessionDefaults ?? {}) }
+    },
+    saveSessionDefaults: (input) => serialized(async () => {
+      if (!isSessionDefaultsSnapshot(input)) throw new ConfigurationError('CONFIG_INVALID_INPUT')
+      const current = await loadState()
+      if (input.revision !== (current?.revision ?? 0)) throw new ConfigurationError('CONFIG_REVISION_CONFLICT')
+      const next: StoredConfiguration = {
+        version: 2, profile, accounts: [], defaultAccountId: null, ...current,
+        revision: input.revision + 1, sessionDefaults: structuredClone(input.defaults),
+      }
+      await persistState(next)
+      return { revision: next.revision, defaults: structuredClone(next.sessionDefaults ?? {}) }
+    }),
     async profileInput() {
       const state = await loadState()
       const secrets = { kind: 'file' as const, path: join(home, 'secrets') }

@@ -75,6 +75,8 @@ export type PackageActivationObservation = Readonly<{
   actualIntegrity?: string
   actualReason?: string
   cleanupPending?: boolean
+  /** True only when the host reports sessions still bound to an older generation. */
+  draining?: boolean
 }>
 
 /**
@@ -255,6 +257,7 @@ function normalizeObservation(
     ...(value.actualIntegrity === undefined ? {} : { actualIntegrity: value.actualIntegrity }),
     ...(reason === undefined ? {} : { actualReason: reason }),
     ...(value.cleanupPending === undefined ? {} : { cleanupPending: value.cleanupPending }),
+    ...(value.draining === undefined ? {} : { draining: value.draining }),
   }
 }
 
@@ -268,12 +271,14 @@ function projectPackage(
     source: projectSource(row.entry.source),
     integrity: row.entry.integrity,
     trusted: row.trusted,
+    ...(row.kinds === undefined ? {} : { kinds: [...row.kinds] }),
     desired: row.enabled ? 'enabled' : 'installed-disabled',
     actual: observation.actual,
     ...(observation.actualVersion === undefined ? {} : { actualVersion: observation.actualVersion }),
     ...(observation.actualIntegrity === undefined ? {} : { actualIntegrity: observation.actualIntegrity }),
     ...(observation.actualReason === undefined ? {} : { actualReason: observation.actualReason }),
     ...(observation.cleanupPending === undefined ? {} : { cleanupPending: observation.cleanupPending }),
+    ...(observation.draining === undefined ? {} : { draining: observation.draining }),
     rollbackTarget: row.verifiedRollbackTarget
       ? {
           version: row.verifiedRollbackTarget.version,
