@@ -145,6 +145,8 @@ describe('Task 5 production workspace acceptance', () => {
     const path = join(outside, 'state.txt')
     writeFileSync(path, 'before')
     const calls: Array<{ name: string; args: Record<string, JsonValue> }> = [
+      { name: 'write', args: { path, content: 'unobserved' } },
+      { name: 'read', args: { path } },
       { name: 'write', args: { path, content: 'after' } },
       { name: 'read', args: { path } },
       { name: 'edit', args: { path, edits: [{ oldText: 'after', newText: 'edited' }] } },
@@ -165,6 +167,23 @@ describe('Task 5 production workspace acceptance', () => {
     const { host } = await createTestHost({
       dataDir,
       script,
+      // The search tools consume ripgrep output; the deterministic executor reflects the real
+      // file here instead of fakeSeams' argv echo, which is not a file listing.
+      seams: {
+        sandbox: {
+          exec: async (argv) => ({
+            code: 0,
+            stdout: argv.includes('--files')
+              ? `${path}\0`
+              : `${JSON.stringify({
+                  type: 'match',
+                  data: { path: { text: path }, lines: { text: readFileSync(path, 'utf8') }, line_number: 1 },
+                })}\n`,
+            stderr: '',
+            truncated: false,
+          }),
+        },
+      },
       packageDirs: { '@agnes/base': fileURLToPath(new URL('../../base', import.meta.url)) },
       packages: { '@agnes/base': { seams: { checkpoint: baseSeams.checkpoint } } },
       disableSessionTitle: true,
@@ -228,12 +247,16 @@ describe('Task 5 production workspace acceptance', () => {
       const saved = await invocation.run((view) => view.checkpointContext().snapshot([path], 'external'))
       const allowed = await results(session)
       expect(allowed).toHaveLength(calls.length)
+      expect(allowed[0]?.isError).toBe(true)
+      expect(allowed[0]?.content?.[0]?.text).toContain('before overwriting it')
       for (const [index, result] of allowed.entries())
-        expect(result.isError, JSON.stringify({ tool: calls[index]?.name, result })).not.toBe(true)
+        if (index > 0)
+          expect(result.isError, JSON.stringify({ tool: calls[index]?.name, result })).not.toBe(true)
       const output = (index: number) => allowed[index]?.content?.map((part) => part.text ?? '').join('')
-      expect(output(1)).toContain('after')
-      for (const index of [3, 4, 5]) expect(output(index)).toContain('state.txt')
-      expect(output(5)).toContain('edited')
+      expect(output(1)).toContain('before')
+      expect(output(3)).toContain('after')
+      for (const index of [5, 6, 7]) expect(output(index)).toContain('state.txt')
+      expect(output(7)).toContain('edited')
       expect(readFileSync(path, 'utf8')).toBe('edited')
 
       await session.setYolo(false, session.d.actor)

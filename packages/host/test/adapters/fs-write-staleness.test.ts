@@ -63,7 +63,10 @@ describe('write staleness on the real file system adapter', () => {
     const ctx = session()
     await run('read', { path: 'f.txt' }, ctx)
     const other = session()
-    await run('edit', { path: 'f.txt', edits: [{ oldText: 'two', newText: 'TWO' }] }, other)
+    expect((await run('read', { path: 'f.txt' }, other)).isError).toBeUndefined()
+    expect(
+      (await run('edit', { path: 'f.txt', edits: [{ oldText: 'two', newText: 'TWO' }] }, other)).isError,
+    ).toBeUndefined()
     const refused = await run('write', { path: 'f.txt', content: 'one\ntwo\nTHREE\n' }, ctx)
     expect(refused.isError).toBe(true)
     expect(text(refused)).toContain('write refused (stale read)')

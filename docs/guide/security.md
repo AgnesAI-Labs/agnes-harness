@@ -56,6 +56,8 @@ Choose a permission preset in the admin session-default selector, CLI `--preset 
 | `workspace-write` (default) | Probed L1; workspace and explicitly allowed write roots; command network denied | Workspace edits use the existing approval rules; shell and other risky calls still ask |
 | `full-access` | Explicit L0; no OS command confinement | Ordinary tool approval policy allows calls; file tools can reach outside the workspace; principal denials and protected paths still apply |
 
+Even under `full-access`, `edit` and overwriting an existing file with `write` require that the file was observed in the same session, through a read or a successful creation. `write` also refuses a stale read when another writer has changed the file; read it again before overwriting. Creating a new file does not require a prior read.
+
 To run deliberately on a machine without L1, select `full-access` explicitly, for example `agh --preset full-access`. A profile can persist that choice:
 
 ```yaml
