@@ -39,7 +39,7 @@ export type ServiceInvocationDeps = {
   signal: AbortSignal
   context(
     entry: ServiceRegistration,
-    identity: Pick<ServiceContext, 'actor' | 'source' | 'requestId' | 'signal' | 'timeoutMs'>,
+    identity: Pick<ServiceContext, 'actor' | 'source' | 'requestId' | 'signal' | 'timeoutMs' | 'session'>,
     alive: () => void,
     workspace: WorkspaceInvocationView,
   ): ServiceContext
@@ -157,7 +157,14 @@ export function serviceInvoker(deps: ServiceInvocationDeps) {
       } else if (mode.admission) throw fail('CAPABILITY_DENIED')
       const context = deps.context(
         entry,
-        { actor, source: sourceId, requestId, signal: combined, timeoutMs: cap.timeoutMs },
+        {
+          actor,
+          source: sourceId,
+          requestId,
+          signal: combined,
+          timeoutMs: cap.timeoutMs,
+          session: { key: params.sessionId, lane: 'main', workspaceRoot: workspace.root, turn: 0, step: 0 },
+        },
         alive,
         workspace,
       )

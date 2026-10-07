@@ -877,6 +877,19 @@ class Service implements PackageAdminService {
   private async clientModulesCallService(
     params: ClientModuleServiceCallParams,
   ): Promise<ExtensionCallResult> {
+    // This built-in panel uses declared Base services. The worker still checks the pinned
+    // session's extension registration, grant, principal and query/effect kind on every call.
+    if (params.rowId === 'web:builtin:agnes/jobs' && params.service === 'jobs.read') {
+      if (!this.options.clientServiceCall) throw rpcError('CAPABILITY_DENIED')
+      const result = await this.options.clientServiceCall({
+        ...params,
+        packageId: '@agnes/base',
+        extension: 'agnes/jobs-web',
+      })
+      if (!validatePackageAdminCall('_agnes/v1/clientModules.callService', 'result', result).ok)
+        throw rpcError('INTERNAL_ERROR')
+      return result
+    }
     const directory = await this.options.profileDirectory(params.profile)
     const inventory = await this.options.manager.inventory(directory)
     const roster = await this.clientModules.list({
@@ -915,6 +928,16 @@ class Service implements PackageAdminService {
     params: ClientModuleEffectCallParams,
     authority: PackageAdminAuthority,
   ): Promise<ExtensionCallResult> {
+    if (params.rowId === 'web:builtin:agnes/jobs' && params.service === 'jobs.control') {
+      if (!this.options.clientEffectCall) throw rpcError('CAPABILITY_DENIED')
+      const result = await this.options.clientEffectCall(
+        { ...params, packageId: '@agnes/base', extension: 'agnes/jobs-web' },
+        authority,
+      )
+      if (!validatePackageAdminCall('_agnes/v1/clientModules.callEffect', 'result', result).ok)
+        throw rpcError('INTERNAL_ERROR')
+      return result
+    }
     const directory = await this.options.profileDirectory(params.profile)
     const inventory = await this.options.manager.inventory(directory)
     const roster = await this.clientModules.list({

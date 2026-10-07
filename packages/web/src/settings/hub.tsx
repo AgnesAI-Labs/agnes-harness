@@ -10,6 +10,7 @@ import type { PluginAdminApi } from '../admin/plugins/api.js'
 import { BundlesPanel, SessionDefaultsPanel } from '../admin/plugins/control-panel.js'
 import { ExamplesPanel } from './examples.js'
 import { HistorySearchPanel } from './history.js'
+import { JobsPanel } from './jobs-panel.js'
 import { SETTINGS_NAMESPACE, settingsCatalog } from './locales.js'
 import {
   GenerationsPanel,
@@ -32,6 +33,8 @@ export const SETTINGS_PAGES = [
   'resources',
   'examples',
   'history',
+  'terminal',
+  'jobs',
 ] as const
 export type SettingsPage = (typeof SETTINGS_PAGES)[number]
 function initialPage(): SettingsPage {
@@ -159,6 +162,7 @@ export function SettingsHub({
             <iframe className="runtime-resources" title={t('resources')} src="/admin/resources" />
           </>
         )}
+        {(page === 'terminal' || page === 'jobs') && <JobsPanel key={page} terminal={page === 'terminal'} />}
         {page === 'examples' && (
           <ExamplesPanel
             api={api}

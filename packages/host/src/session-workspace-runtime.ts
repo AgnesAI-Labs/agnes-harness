@@ -432,6 +432,12 @@ export class SessionWorkspaceRuntimeTable implements ChildWorkspaceRuntimePort {
         return Promise.resolve(hooks.snapshot())
       },
       hookSandbox: {
+        ...(sandbox.openProcess
+          ? {
+              openProcess: (request: Parameters<NonNullable<typeof sandbox.openProcess>>[0]) =>
+                withAccess(() => sandbox.openProcess!(request)),
+            }
+          : {}),
         enforcement: () => sandbox.enforcement(),
         exec: (argv, opts) => withAccess(() => sandbox.exec(argv, opts)),
       },

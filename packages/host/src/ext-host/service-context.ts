@@ -1,4 +1,10 @@
-import { platformView, type SeamImplementations } from '@agnes/core'
+import {
+  childBackend,
+  externalChild,
+  externalChildren,
+  platformView,
+  type SeamImplementations,
+} from '@agnes/core'
 import type { Logger, ServiceContext } from '@agnes/extension-api'
 import { type Decision, inspectJsonData, validateAgainst } from '@agnes/protocol'
 import { Action, Decision as DecisionSchema, Target } from '@agnes/protocol/gen/authz'
@@ -31,7 +37,55 @@ export function serviceContext(deps: {
       ...identity,
       actor: Object.freeze(identity.actor),
       cwd: workspace.root,
-      // Facts at call time, probe live; services never get sandbox (spec 2026-09-15 §5.1).
+      ...(identity.session
+        ? {
+            childJobs: Object.freeze({
+              list: async () => {
+                alive()
+                const backend = childBackend(identity.session!.key)
+                const rows = (await backend?.list()) ?? []
+                const local = await Promise.all(
+                  rows.map(async (row) => {
+                    const snapshot = await backend?.inspect(row.id)
+                    return { ...row, ...(snapshot?.text !== undefined ? { text: snapshot.text } : {}) }
+                  }),
+                )
+                return [...local, ...externalChildren(identity.session!.key).map((child) => child.listing)]
+              },
+              ...(entry.capability.kind === 'effect'
+                ? {
+                    cancel: async (id: string) => {
+                      alive()
+                      const external = externalChild(identity.session!.key, id)
+                      if (external) {
+                        if (!external.cancel) throw new Error('child cancellation is unavailable')
+                        await external.cancel()
+                      } else {
+                        const backend = childBackend(identity.session!.key)
+                        if (!backend) throw new Error('child backend is unavailable')
+                        await backend.cancel(id)
+                      }
+                    },
+                  }
+                : {}),
+            }),
+          }
+        : {}),
+      ...(entry.capability.kind === 'effect' && workspace.hookSandbox().openProcess
+        ? {
+            sandbox: Object.freeze({
+              openProcess: (
+                request: Parameters<
+                  NonNullable<import('@agnes/extension-api').ToolContext['sandbox']['openProcess']>
+                >[0],
+              ) => {
+                alive()
+                return workspace.hookSandbox().openProcess!(request)
+              },
+            }),
+          }
+        : {}),
+      // Facts at call time. Queries have no process or child cancellation opening.
       platform: platformView(deps.seams.platform),
       log: Object.freeze({
         debug: deps.log.debug.bind(deps.log),

@@ -1,6 +1,7 @@
 import { defineExtension, defineTool } from '@agnes/extension-api'
 import { Type } from '@sinclair/typebox'
 import { guardedResult } from '../../tools-core/src/guards/output.js'
+import { createPtyTools } from './pty-tools.js'
 import { type ShellJobs, standaloneShellJobs } from './registry.js'
 
 export function createJobTools(jobs: ShellJobs) {
@@ -17,10 +18,12 @@ export function createJobTools(jobs: ShellJobs) {
   return [
     defineTool({
       name: 'job_list',
-      description: "List this session and lane's background shell jobs, including completed jobs.",
+      description:
+        "List this session and lane's background shell jobs, PTYs, persistent shells and child agents, including completed jobs.",
       parameters: Type.Object({}, { additionalProperties: false }),
       meta,
       async execute(_args, ctx) {
+        await jobs.syncChildren(ctx)
         return guardedResult(ctx, JSON.stringify(jobs.list(ctx).map(({ stdout, stderr, ...view }) => view)))
       },
     }),
@@ -35,6 +38,7 @@ export function createJobTools(jobs: ShellJobs) {
       meta,
       async execute(args, ctx) {
         try {
+          await jobs.syncChildren(ctx)
           const job = await jobs.wait(ctx, args.jobId, Math.min(args.waitMs ?? 0, ctx.timeoutMs))
           return {
             ...(await guardedResult(
@@ -55,6 +59,7 @@ export function createJobTools(jobs: ShellJobs) {
       meta: { ...meta, isReadOnly: false, isDestructive: true, replay: 'idempotent' as const },
       async execute(args, ctx) {
         try {
+          await jobs.syncChildren(ctx)
           const job = await jobs.kill(ctx, args.jobId)
           return { content: [{ type: 'text', text: `${job.id}: ${job.status}` }] }
         } catch (e) {
@@ -66,10 +71,32 @@ export function createJobTools(jobs: ShellJobs) {
 }
 export function createJobsExtension(jobs: ShellJobs) {
   return defineExtension((agnes) => {
-    const disposers = createJobTools(jobs).map((tool) => agnes.registerTool(tool))
+    const disposers = [...createJobTools(jobs), ...createPtyTools(jobs)].map((tool) =>
+      agnes.registerTool(tool),
+    )
+    const notified = new Map<string, Set<string>>()
+    disposers.push(
+      agnes.registerHook('context', async (_payload, ctx) => {
+        const key = ctx.session.key + '\0' + ctx.session.lane
+        const seen = notified.get(key) ?? new Set<string>()
+        const completed = jobs
+          .completions({ session: { ...ctx.session, toolUseId: '', depth: 0, generationDepth: 0 } })
+          .filter((job) => !seen.has(job.id))
+        for (const job of completed) seen.add(job.id)
+        notified.set(key, seen)
+        return completed.length
+          ? {
+              additionalContext:
+                'Jobs completed: ' +
+                completed.map((job) => job.id + ': ' + job.status + ' (exit ' + job.code + ')').join(', '),
+            }
+          : {}
+      }),
+    )
     disposers.push(
       agnes.registerHook('shutdown', async (_payload, ctx) => {
         await jobs.closeSession(ctx.session.key, ctx.session.lane)
+        notified.delete(ctx.session.key + '\0' + ctx.session.lane)
       }),
     )
     return async () => {

@@ -92,3 +92,11 @@ Computer Use 显示驱动状态、系统权限、诊断与维护进度。切换�
 工具结果以受约束预览/详情呈现，不是任意 HTML。不要推定每种产物都支持上传、下载、重命名，或每条消息都有编辑/重新生成；界面只暴露当前后端支持的动作。真实浏览器全链路的验证范围见[验证记录](../maintainers/verification.zh-CN.md)。
 
 实现依据：[Web 入口](../../packages/web/src/serve-entry.ts)、[应用](../../packages/web/src/app.ts)、[服务与来源校验](../../packages/web-server/src/server.ts)、[会话操作](../../packages/web/src/session-actions.ts)。
+
+## 终端与作业
+
+打开运行时设置 → 终端或作业，输入会话标识，选择 Bash、Zsh 或 PowerShell 并打开终端。聚焦输出区后即可输入、粘贴、使用方向键或 Ctrl+C。刷新会重新连接同一 PTY；关闭会终止终端及其进程。Shell 选择仅用于新建终端。文本终端支持光标移动和清行，不模拟图形终端扩展。
+
+作业面板显示 shell 命令、持久解释器、PTY 和子代理，支持读取输出、终止和完成通知。所有操作遵守所属会话的沙箱预设。本地 PTY 支持 macOS/Linux；未安装的 shell 或不支持交互执行的提供方会明确报错。
+
+`agnes/jobs-web` 扩展需要配置 capability ceiling 的 `services`。新模板已包含；旧配置可显式添加。未添加时 shell/作业工具继续可用，Web 控制不可用。作业可跨页面刷新和轮次保留，Host 重启后不会恢复。

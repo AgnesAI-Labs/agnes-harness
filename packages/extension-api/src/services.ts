@@ -5,7 +5,17 @@ import type { ToolContext } from './tool.js'
 
 export type { ServiceCapability } from '@agnes/protocol'
 export type ServiceKind = ServiceCapability['kind']
+export interface SessionChildJobs {
+  list(): Promise<readonly import('./child-agent.js').ChildAgentListing[]>
+  /** Query services receive no cancellation opening. */
+  cancel?(id: string): Promise<void>
+}
 export interface ServiceContext {
+  readonly childJobs?: SessionChildJobs
+  /** Host-bound identity, never caller input. Older Hosts may omit it. */
+  readonly session?: import('./common.js').SessionRef
+  /** Present only on authorized, journaled effect services. Queries cannot start processes. */
+  readonly sandbox?: Pick<ToolContext['sandbox'], 'openProcess'>
   readonly actor: Actor
   readonly source: string
   readonly requestId: string

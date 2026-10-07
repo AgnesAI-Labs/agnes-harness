@@ -82,6 +82,8 @@ export interface SandboxProviderInstance {
   readonly id: string
   readonly capabilities: SandboxCapabilities
   exec(request: SandboxExecRequest): Promise<SandboxExecResult>
+  /** Optional streaming pipe/PTY entry. Missing means unsupported, never an unconfined fallback. */
+  openProcess?: import('./process.js').OpenProcess
   /** Stop every process this instance started. */
   dispose(): void | Promise<void>
 }

@@ -56,6 +56,31 @@ async function bindWorkspace(workspace: SeamWorkspace): Promise<SandboxSeam> {
   })
   const bound: SandboxSeam = {
     forWorkspace,
+    async openProcess(request) {
+      if (!workspace.openProcess)
+        throw fault('SANDBOX_UNAVAILABLE', 'interactive process backend is unavailable')
+      const cwd = request.cwd ?? workspace.root
+      const raw = expandShell([...request.argv], workspace.shell, workspace.shellCommand)
+      const argv = external ? raw : [...(await backend.confine({ argv: raw, cwd }))]
+      return workspace.openProcess(argv, {
+        cwd,
+        ...(request.signal ? { signal: request.signal } : {}),
+        ...(request.env ? { env: { ...request.env } } : {}),
+        ...(request.pty ? { pty: request.pty } : {}),
+        sandbox: {
+          policyDigest: policy.digest,
+          backend: workspace.execBackend,
+          ...(external && providerId ? { provider: providerId } : {}),
+          policy: executionPolicy,
+          ...(external
+            ? {}
+            : {
+                enforcement:
+                  workspace.execBackend === 'l1' ? workspace.enforcement : { level: 'none', scope: [] },
+              }),
+        },
+      })
+    },
     async exec(cmd, opts) {
       const raw = expandShell(cmd, workspace.shell, workspace.shellCommand)
       // The selected provider owns the process. Wrapping the argv in the host

@@ -102,3 +102,11 @@ The built-in right-side document preview supports text, code, Markdown, filtered
 Tool results use constrained previews and detail views. They cannot render arbitrary HTML. Do not assume every artifact supports upload, download, or rename, or that every message supports editing and regeneration. The interface exposes actions supported by the current backend. See [verification](../maintainers/verification.md) for the scope of real browser testing.
 
 Implementation: [Web entry](../../packages/web/src/serve-entry.ts), [application](../../packages/web/src/app.ts), [server and origin checks](../../packages/web-server/src/server.ts), [session actions](../../packages/web/src/session-actions.ts).
+
+## Terminal and jobs
+
+Open Runtime settings → Terminal or Jobs and enter the session key. Choose Bash, Zsh or PowerShell, then Open terminal. Focus its output to type, paste, use arrow keys or Ctrl+C. Refresh reconnects to the same live PTY; Close kills the terminal and its processes. Shell selection applies when opening a new terminal. The text terminal supports cursor movement and line clearing; it does not emulate graphical terminal extensions.
+
+Jobs shows shell commands, persistent interpreters, PTYs and child agents. Select Output to read retained output or Kill to stop a running job. Completion notices appear below the list. All operations use that session's preset and ownership. Native PTY currently supports macOS/Linux; unavailable shells/providers report an error.
+
+The `agnes/jobs-web` extension requires `services` in the profile capability ceiling. New templates include it. Existing profiles can add it explicitly; omitting it keeps the shell/job tools available while Web controls remain unavailable. Live jobs survive page refresh and turn completion, but not a Host restart.

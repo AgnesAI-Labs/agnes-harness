@@ -11,7 +11,7 @@ import { existsSync, mkdirSync } from 'node:fs'
 import { dirname, isAbsolute, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-if (process.platform !== 'darwin') {
+if (process.platform !== 'darwin' && process.platform !== 'linux') {
   process.exit(0)
 }
 
@@ -24,12 +24,17 @@ if (args.length && (args.length !== 2 || args[0] !== '--output-dir' || !isAbsolu
 const outputDir = args[1] ? resolve(args[1]) : defaultOutputDir
 mkdirSync(outputDir, { recursive: true })
 const builds = [
-  ['macos-process-identity.c', 'macos-process-identity', []],
-  [
-    'macos-live-app-identity.c',
-    'macos-live-app-identity',
-    ['-framework', 'Security', '-framework', 'CoreFoundation'],
-  ],
+  ['pty-relay.c', 'pty-relay', process.platform === 'linux' ? ['-lutil'] : []],
+  ...(process.platform === 'darwin'
+    ? [
+        ['macos-process-identity.c', 'macos-process-identity', []],
+        [
+          'macos-live-app-identity.c',
+          'macos-live-app-identity',
+          ['-framework', 'Security', '-framework', 'CoreFoundation'],
+        ],
+      ]
+    : []),
 ]
 for (const [sourceName, outputName, libraries] of builds) {
   const source = join(nativeDir, sourceName)

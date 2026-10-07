@@ -183,6 +183,9 @@ describe('sandbox providers', () => {
     expect(id).toBe('box')
     const dispatch = createSandboxDispatchExec(wrapped, slot)
     await expect(dispatch.run(['echo', 'hi'], { cwd })).rejects.toMatchObject({ code: 'SANDBOX_UNAVAILABLE' })
+    await expect(
+      dispatch.openProcess!(['bash'], { cwd, sandbox: binding, pty: { columns: 80, rows: 24 } }),
+    ).rejects.toMatchObject({ code: 'SANDBOX_UNAVAILABLE' })
     expect(localRan).toBe(false)
     expect(sandboxUnavailable('missing').code).toBe('SANDBOX_UNAVAILABLE')
   })
@@ -191,13 +194,33 @@ describe('sandbox providers', () => {
     const root = new Context()
     const registry = installSandboxProviders(root)
     const seen: unknown[] = []
+    let resolveExit!: (exit: { code: number }) => void
+    const exited = new Promise<{ code: number }>((resolve) => {
+      resolveExit = resolve
+    })
     const provider = box('box')
     registry.register({
       ...provider,
+      capabilities: { ...provider.capabilities, enforcement },
       create(config) {
         seen.push(config)
         return {
           ...(provider.create(config) as import('@agnes/extension-api').SandboxProviderInstance),
+          capabilities: { ...provider.capabilities, enforcement },
+          async openProcess(request) {
+            seen.push(request)
+            return {
+              enforcement,
+              exited,
+              onOutput: () => () => {},
+              write: async () => {},
+              resize: async () => {},
+              signal: async () => {},
+              close: async () => {
+                resolveExit({ code: 137 })
+              },
+            }
+          },
           async exec(request) {
             seen.push(request)
             return { code: 0, stdout: 'provider', stderr: '', truncated: false, timedOut: false, enforcement }
@@ -254,6 +277,15 @@ describe('sandbox providers', () => {
       ['echo', 'ok'],
       ['echo', 'net'],
     ])
+    const handle = await dispatch.openProcess!(['bash', '-i'], {
+      cwd,
+      sandbox: binding,
+      pty: { columns: 91, rows: 31 },
+    })
+    expect(seen[3]).toMatchObject({ policy, enforcement, pty: { columns: 91, rows: 31 } })
+    await slot.selected!.dispose()
+    expect(await handle.exited).toEqual({ code: 137 })
+    await expect(dispatch.openProcess!(['bash'], { cwd, sandbox: binding })).rejects.toThrow(/disposed/)
   })
 
   it('dispatches local execution through the registered public instance', async () => {

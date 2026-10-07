@@ -1,11 +1,12 @@
-import { type ChildProcess, spawn } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
 import { resolve as resolvePath } from 'node:path'
-import { StringDecoder } from 'node:string_decoder'
-import type { ToolContext } from '@agnes/extension-api'
+import type { ProcessOutput, SandboxProcess, SessionChildJobs, ToolContext } from '@agnes/extension-api'
+import { legacyProcess } from './legacy-process.js'
+import { PersistentShell, type ShellName, shellArgv } from './persistent-shell.js'
 
 export interface ShellJobView {
   id: string
+  kind: 'shell' | 'shell-session' | 'pty' | 'child'
   command: string
   cwd: string
   status: 'running' | 'completed' | 'failed' | 'killed'
@@ -13,49 +14,82 @@ export interface ShellJobView {
   stdout: string
   stderr: string
   truncated: boolean
+  shell?: ShellName
+  sessionId?: string
 }
+export type ProcessJobContext = Pick<ToolContext, 'session' | 'cwd' | 'signal' | 'fs'> & {
+  sandbox: Pick<ToolContext['sandbox'], 'openProcess'> | ToolContext['sandbox']
+}
+export type JobOwner = Pick<ToolContext, 'session'>
 interface Job {
   view: ShellJobView
-  child: ChildProcess
+  capturedBytes: number
   done: Promise<ShellJobView>
-  settled: boolean
+  finish(code: number | null): void
+  stop(): Promise<void>
 }
-const MAX_JOBS = 128
-const MAX_OUTPUT = 4 * 1024 * 1024
-const owner = (ctx: ToolContext) => `${ctx.session.key}\0${ctx.session.lane}`
+const MAX_JOBS = 128,
+  MAX_OUTPUT = 4 * 1024 * 1024
+const owner = (ctx: JobOwner) => `${ctx.session.key}\0${ctx.session.lane}`
+const copy = (job: Job) => ({ ...job.view })
 
-/** Process-owned jobs survive tool/turn completion, never Host restart. Only confined argv launches. */
+/** One owner-scoped registry for every executable kind. Handles live until session/provider shutdown. */
 export class ShellJobs {
   private readonly sessions = new Map<string, Map<string, Job>>()
-  async start(command: string, cwd: string, ctx: ToolContext): Promise<ShellJobView> {
-    const windows = process.platform === 'win32' // guards-allow-platform: POSIX process-group availability
-    if (windows) throw new Error('background jobs require a process-group backend; unavailable on Windows')
-    ctx.signal.throwIfAborted()
-    cwd = resolvePath(ctx.cwd, cwd)
-    // A custom cwd needs its own policy check; confinement is tied to this invocation's workspace.
-    if (cwd !== ctx.cwd && (await ctx.fs.stat(cwd)).kind !== 'dir')
-      throw new Error('job cwd must be a readable directory')
-    // confine accepts executable argv; shell sentinel expansion belongs only to ctx.exec.
-    const argv = await ctx.sandbox.confine(['sh', '-c', command])
-    ctx.signal.throwIfAborted()
-    if (!argv.length) throw new Error('host did not resolve the confined shell')
+  private readonly processes = new Map<string, SandboxProcess>()
+  private readonly shells = new Map<string, PersistentShell>()
+  private readonly calls = new Map<string, string>()
+  private readonly notifications = new Map<string, ShellJobView[]>()
+  private readonly closing = new Set<string>()
+  private readonly starting = new Map<string, Set<Promise<SandboxProcess>>>()
+  private disposed = false
+  private disposal: Promise<void> | undefined
+
+  private table(ctx: JobOwner): Map<string, Job> {
     const key = owner(ctx)
+    if (this.disposed || this.closing.has(key)) throw new Error('session jobs are closing')
     let jobs = this.sessions.get(key)
     if (!jobs) {
       jobs = new Map()
       this.sessions.set(key, jobs)
     }
-    const prior = jobs.get(ctx.session.toolUseId)
-    if (prior) return { ...prior.view }
+    return jobs
+  }
+  private add(ctx: JobOwner, view: ShellJobView, stop: () => Promise<void>): Job {
+    const jobs = this.table(ctx)
     if (jobs.size >= MAX_JOBS) {
-      const oldest = [...jobs].find(([, j]) => j.settled)
-      if (!oldest) throw new Error('session job limit reached; kill a running job first')
-      jobs.delete(oldest[0])
+      const old = [...jobs].find(([, job]) => job.view.status !== 'running')
+      if (!old) throw new Error('session job limit reached; close a running job first')
+      jobs.delete(old[0])
+      for (const [call, id] of this.calls) if (id === old[0]) this.calls.delete(call)
     }
-    const id = randomUUID()
-    const view: ShellJobView = {
-      id,
-      command,
+    let resolve!: (view: ShellJobView) => void
+    const job: Job = {
+      view,
+      stop,
+      capturedBytes: 0,
+      done: new Promise((r) => {
+        resolve = r
+      }),
+      finish: (code) => {
+        if (view.status !== 'running' && view.status !== 'killed') return
+        if (view.code !== null) return
+        view.code = code ?? -1
+        if (view.status !== 'killed') view.status = code === 0 ? 'completed' : 'failed'
+        const queue = this.notifications.get(owner(ctx)) ?? []
+        queue.push({ ...view, stdout: '', stderr: '' })
+        this.notifications.set(owner(ctx), queue.slice(-128))
+        resolve(copy(job))
+      },
+    }
+    jobs.set(view.id, job)
+    return job
+  }
+  private view(kind: ShellJobView['kind'], command: string, cwd: string): ShellJobView {
+    return {
+      id: randomUUID(),
+      kind,
+      command: command.slice(0, 2048),
       cwd,
       status: 'running',
       code: null,
@@ -63,106 +97,334 @@ export class ShellJobs {
       stderr: '',
       truncated: false,
     }
-    const child = spawn(argv[0] as string, argv.slice(1), {
-      cwd,
-      detached: true,
-      stdio: ['ignore', 'pipe', 'pipe'],
-    })
-    let resolve!: (v: ShellJobView) => void
-    const done = new Promise<ShellJobView>((r) => {
-      resolve = r
-    })
-    const job: Job = { view, child, done, settled: false }
-    jobs.set(ctx.session.toolUseId, job)
-    let captured = 0
-    const decoders = { stdout: new StringDecoder('utf8'), stderr: new StringDecoder('utf8') }
-    const collect = (field: 'stdout' | 'stderr', bytes: Buffer) => {
-      const available = Math.max(0, MAX_OUTPUT - captured)
-      view[field] += decoders[field].write(bytes.subarray(0, available))
-      captured += Math.min(available, bytes.length)
-      if (bytes.length > available) view.truncated = true
-    }
-    child.stdout?.on('data', (b) => collect('stdout', b))
-    child.stderr?.on('data', (b) => collect('stderr', b))
-    const finish = (code: number | null) => {
-      if (job.settled) return
-      job.settled = true
-      view.stdout += decoders.stdout.end()
-      view.stderr += decoders.stderr.end()
-      view.code = code
-      if (view.status !== 'killed') view.status = code === 0 ? 'completed' : 'failed'
-      resolve({ ...view })
-    }
-    child.once('error', (error) => {
-      view.stderr += error.message
-      finish(null)
-    })
-    child.once('close', finish)
-    // Wait for actual launch. A spawn error is never advertised as a running job.
-    await new Promise<void>((resolve, reject) => {
-      child.once('spawn', resolve)
-      child.once('error', reject)
-    })
-    if (ctx.signal.aborted) {
-      this.killJob(job)
-      ctx.signal.throwIfAborted()
-    }
-    return { ...view }
   }
-  list(ctx: ToolContext): ShellJobView[] {
-    return [...(this.sessions.get(owner(ctx))?.values() ?? [])].map((j) => ({ ...j.view }))
+  private append(job: Job, chunk: ProcessOutput) {
+    const available = Math.max(0, MAX_OUTPUT - job.capturedBytes)
+    const bytes = Buffer.from(chunk.text)
+    let end = Math.min(available, bytes.length)
+    // Do not expose half of a UTF-8 character at the byte limit.
+    if (end < bytes.length) while (end > 0 && (bytes[end]! & 0xc0) === 0x80) end--
+    job.capturedBytes += end
+    job.view[chunk.stream] += bytes.subarray(0, end).toString('utf8')
+    if (end < bytes.length) job.view.truncated = true
   }
-  private get(ctx: ToolContext, id: string): Job {
-    const job = [...(this.sessions.get(owner(ctx))?.values() ?? [])].find((j) => j.view.id === id)
+  private get(ctx: JobOwner, id: string): Job {
+    const job = this.sessions.get(owner(ctx))?.get(id)
     if (!job) throw new Error('JOB_NOT_FOUND: job is not owned by this session/lane')
     return job
   }
-  async wait(ctx: ToolContext, id: string, ms: number): Promise<ShellJobView> {
+  private async open(
+    ctx: ProcessJobContext,
+    argv: string[],
+    cwd: string,
+    pty?: { columns: number; rows: number },
+  ): Promise<SandboxProcess> {
+    ctx.signal.throwIfAborted()
+    cwd = resolvePath(ctx.cwd, cwd)
+    this.table(ctx)
+    if (cwd !== ctx.cwd && (await ctx.fs.stat(cwd)).kind !== 'dir')
+      throw new Error('job cwd must be readable')
+    const opening = ctx.sandbox.openProcess
+      ? ctx.sandbox.openProcess({ argv, cwd, signal: ctx.signal, ...(pty ? { pty } : {}) })
+      : pty || !('confine' in ctx.sandbox)
+        ? undefined
+        : legacyProcess({ signal: ctx.signal, sandbox: ctx.sandbox }, argv, cwd)
+    if (!opening) throw new Error('SANDBOX_UNAVAILABLE: this Host has no PTY process port')
+    const starts = this.starting.get(owner(ctx)) ?? new Set<Promise<SandboxProcess>>()
+    this.starting.set(owner(ctx), starts)
+    const pending = opening.then(async (handle) => {
+      if (ctx.signal.aborted || this.disposed || this.closing.has(owner(ctx))) {
+        await handle.close()
+        ctx.signal.throwIfAborted()
+        throw new Error('session jobs closed during launch')
+      }
+      return handle
+    })
+    starts.add(pending)
+    let handle: SandboxProcess
+    try {
+      handle = await pending
+    } finally {
+      starts.delete(pending)
+    }
+    if (!handle) throw new Error('SANDBOX_UNAVAILABLE: this Host has no PTY process port')
+    if (ctx.signal.aborted || this.disposed || this.closing.has(owner(ctx))) {
+      await handle.close()
+      ctx.signal.throwIfAborted()
+      throw new Error('session jobs closed during launch')
+    }
+    return handle
+  }
+  async start(command: string, cwd: string, ctx: ToolContext): Promise<ShellJobView> {
+    const call = `${owner(ctx)}\0${ctx.session.toolUseId}`
+    const prior = this.calls.get(call)
+    if (prior) return copy(this.get(ctx, prior))
+    const argv =
+      ctx.platform.shell === 'powershell'
+        ? ['pwsh', '-NoLogo', '-NoProfile', '-Command', command]
+        : ['sh', '-c', command]
+    const handle = await this.open(ctx, argv, cwd)
+    let job: Job
+    try {
+      job = this.add(ctx, this.view('shell', command, cwd), () => handle.close())
+    } catch (error) {
+      await handle.close()
+      throw error
+    }
+    this.calls.set(call, job.view.id)
+    const off = handle.onOutput((chunk) => this.append(job, chunk))
+    void handle.exited.then(({ code }) => {
+      off()
+      job.finish(code)
+    })
+    return copy(job)
+  }
+  async openTerminal(
+    ctx: ProcessJobContext,
+    shell: ShellName,
+    cwd = ctx.cwd,
+    dimensions = { columns: 100, rows: 30 },
+    pty = true,
+  ): Promise<ShellJobView> {
+    const handle = await this.open(ctx, shellArgv(shell, pty), cwd, pty ? dimensions : undefined)
+    let job: Job
+    try {
+      job = this.add(ctx, { ...this.view(pty ? 'pty' : 'shell-session', shell, cwd), shell }, () =>
+        handle.close(),
+      )
+    } catch (error) {
+      await handle.close()
+      throw error
+    }
+    this.processes.set(job.view.id, handle)
+    const off = handle.onOutput((chunk) => this.append(job, chunk))
+    void handle.exited.then(({ code }) => {
+      off()
+      job.finish(code)
+      this.processes.delete(job.view.id)
+      this.shells.delete(job.view.id)
+    })
+    if (!pty) this.shells.set(job.view.id, new PersistentShell(handle, shell))
+    return copy(job)
+  }
+  async startPersistent(
+    command: string,
+    cwd: string | undefined,
+    ctx: ToolContext,
+    shell: ShellName = ctx.platform.shell === 'powershell' ? 'pwsh' : 'bash',
+    sessionId?: string,
+  ): Promise<ShellJobView> {
+    const call = `${owner(ctx)}\0${ctx.session.toolUseId}`
+    const prior = this.calls.get(call)
+    if (prior) return copy(this.get(ctx, prior))
+    let session = sessionId
+      ? this.get(ctx, sessionId)
+      : [...this.table(ctx).values()].find(
+          (job) =>
+            job.view.kind === 'shell-session' && job.view.shell === shell && job.view.status === 'running',
+        )
+    if (!session)
+      session = this.get(ctx, (await this.openTerminal(ctx, shell, cwd ?? ctx.cwd, undefined, false)).id)
+    const transport = this.shells.get(session.view.id)
+    if (!transport || session.view.status !== 'running')
+      throw new Error('shell session is closed or is not a persistent shell')
+    if (transport.busy) throw new Error('SHELL_BUSY: wait for the running command before sending another')
+    const job = this.add(
+      ctx,
+      { ...this.view('shell', command, session.view.cwd), shell, sessionId: session.view.id },
+      async () => {
+        await this.kill(ctx, session!.view.id)
+      },
+    )
+    this.calls.set(call, job.view.id)
+    void transport
+      .run(command, cwd, (chunk) => this.append(job, chunk))
+      .then(
+        ({ code, cwd: next }) => {
+          if (next) {
+            session!.view.cwd = next
+            job.view.cwd = next
+          }
+          job.finish(code)
+        },
+        (error: unknown) => {
+          this.append(job, { stream: 'stderr', text: String(error) })
+          job.finish(null)
+        },
+      )
+    return copy(job)
+  }
+  list(ctx: JobOwner): ShellJobView[] {
+    return [...(this.sessions.get(owner(ctx))?.values() ?? [])].map(copy)
+  }
+  completions(ctx: JobOwner): ShellJobView[] {
+    return [...(this.notifications.get(owner(ctx)) ?? [])]
+  }
+  async syncChildren(
+    ctx: JobOwner & Pick<ToolContext, 'cwd'> & { subagent?: ToolContext['subagent'] },
+    port?: SessionChildJobs,
+  ): Promise<void> {
+    const controls =
+      port ??
+      (ctx.subagent?.list
+        ? {
+            list: () => ctx.subagent!.list!(),
+            cancel: async (id: string) => {
+              await ctx.subagent!.cancel(id)
+            },
+          }
+        : undefined)
+    if (!controls) return
+    for (const child of await controls.list()) {
+      const jobs = this.table(ctx),
+        id = `child:${child.id}`
+      let job = jobs.get(id)
+      if (!job)
+        job = this.add(ctx, { ...this.view('child', child.providerId, ctx.cwd), id }, async () => {
+          if (!controls.cancel) throw new Error('child cancellation needs an effect service')
+          await controls.cancel(child.id)
+        })
+      if (controls.cancel) job.stop = () => controls.cancel!(child.id)
+      job.view.stdout = child.text?.slice(-MAX_OUTPUT) ?? job.view.stdout
+      if (['completed', 'failed', 'cancelled'].includes(child.status)) {
+        if (child.status === 'cancelled') job.view.status = 'killed'
+        job.finish(child.status === 'completed' ? 0 : -1)
+      }
+    }
+  }
+  async wait(
+    ctx: JobOwner & Pick<ToolContext, 'signal'> & Partial<Pick<ToolContext, 'cwd' | 'subagent'>>,
+    id: string,
+    ms: number,
+  ): Promise<ShellJobView> {
+    ctx.signal.throwIfAborted()
     const job = this.get(ctx, id)
-    if (job.settled || ms <= 0) return { ...job.view }
+    if (job.view.status !== 'running' || ms <= 0) return copy(job)
+    if (job.view.kind === 'child' && ctx.cwd && ctx.subagent) {
+      const deadline = Date.now() + ms
+      do {
+        await this.syncChildren({ session: ctx.session, cwd: ctx.cwd, subagent: ctx.subagent })
+        if (job.view.status !== 'running') return copy(job)
+        await this.wait(
+          { session: ctx.session, signal: ctx.signal },
+          id,
+          Math.min(50, Math.max(0, deadline - Date.now())),
+        )
+      } while (Date.now() < deadline)
+      return copy(job)
+    }
     return new Promise((resolve, reject) => {
-      const finish = (v: ShellJobView) => {
+      const cleanup = () => {
         clearTimeout(timer)
         ctx.signal.removeEventListener('abort', abort)
-        resolve(v)
+      }
+      const finish = () => {
+        cleanup()
+        resolve(copy(job))
       }
       const abort = () => {
-        clearTimeout(timer)
-        ctx.signal.removeEventListener('abort', abort)
+        cleanup()
         reject(ctx.signal.reason ?? new Error('cancelled'))
       }
-      const timer = setTimeout(() => finish({ ...job.view }), ms)
+      const timer = setTimeout(finish, ms)
       ctx.signal.addEventListener('abort', abort, { once: true })
       if (ctx.signal.aborted) abort()
       void job.done.then(finish)
     })
   }
-  private killJob(job: Job): void {
-    if (job.settled) return
-    job.view.status = 'killed'
-    if (job.child.pid) {
+  async kill(ctx: JobOwner, id: string): Promise<ShellJobView> {
+    const job = this.get(ctx, id)
+    if (job.view.status === 'running') {
+      job.view.status = 'killed'
       try {
-        process.kill(-job.child.pid, 'SIGKILL')
+        await job.stop()
+        job.finish(-1)
       } catch (error) {
-        if ((error as NodeJS.ErrnoException).code !== 'ESRCH') throw error
+        job.view.status = 'running'
+        throw error
       }
     }
+    return copy(job)
   }
-  async kill(ctx: ToolContext, id: string): Promise<ShellJobView> {
-    const j = this.get(ctx, id)
-    this.killJob(j)
-    return j.done
+  async send(ctx: JobOwner, id: string, text: string): Promise<void> {
+    const job = this.get(ctx, id)
+    if (job.view.kind !== 'pty' || job.view.status !== 'running') throw new Error('job is not a running PTY')
+    if (Buffer.byteLength(text) > 65536) throw new Error('terminal input exceeds 64KiB')
+    await this.processes.get(id)!.write(text)
+  }
+  async resize(ctx: JobOwner, id: string, columns: number, rows: number): Promise<void> {
+    this.get(ctx, id)
+    const process = this.processes.get(id)
+    if (!process) throw new Error('PTY is closed')
+    await process.resize(columns, rows)
+  }
+  async signal(ctx: JobOwner, id: string, signal: 'SIGINT' | 'SIGTERM' | 'SIGHUP'): Promise<void> {
+    this.get(ctx, id)
+    const process = this.processes.get(id)
+    if (!process) throw new Error('process is closed')
+    await process.signal(signal)
   }
   async closeSession(key: string, lane?: string): Promise<void> {
     for (const [ownerKey, jobs] of this.sessions) {
       if (lane === undefined ? !ownerKey.startsWith(`${key}\0`) : ownerKey !== `${key}\0${lane}`) continue
-      for (const job of jobs.values()) this.killJob(job)
-      await Promise.all([...jobs.values()].map((j) => j.done))
+      this.closing.add(ownerKey)
+      await Promise.allSettled([...(this.starting.get(ownerKey) ?? [])])
+      const failures = await Promise.allSettled(
+        [...jobs.values()]
+          .filter((job) => job.view.status === 'running' && job.view.kind !== 'child')
+          .map(async (job) => {
+            job.view.status = 'killed'
+            try {
+              await job.stop()
+              job.finish(-1)
+            } catch (error) {
+              job.view.status = 'running'
+              throw error
+            }
+          }),
+      )
+      if (failures.some((result) => result.status === 'rejected'))
+        throw new AggregateError(
+          failures.filter((result) => result.status === 'rejected').map((result) => result.reason),
+          'job shutdown failed',
+        )
       this.sessions.delete(ownerKey)
+      this.notifications.delete(ownerKey)
+      this.starting.delete(ownerKey)
+      for (const call of this.calls.keys()) if (call.startsWith(`${ownerKey}\0`)) this.calls.delete(call)
+      this.closing.delete(ownerKey)
     }
   }
-  async dispose(): Promise<void> {
-    for (const key of this.sessions.keys()) await this.closeSession(key.split('\0')[0] as string)
+  async closeTerminals(): Promise<void> {
+    await Promise.all(
+      [...this.sessions.values()].flatMap((jobs) =>
+        [...jobs.values()]
+          .filter((job) => job.view.kind === 'pty' && job.view.status === 'running')
+          .map(async (job) => {
+            job.view.status = 'killed'
+            try {
+              await job.stop()
+              job.finish(-1)
+            } catch (error) {
+              job.view.status = 'running'
+              throw error
+            }
+          }),
+      ),
+    )
+  }
+  dispose(): Promise<void> {
+    this.disposal ??= (async () => {
+      this.disposed = true
+      await Promise.resolve()
+      try {
+        for (const key of this.sessions.keys()) await this.closeSession(key.split('\0')[0]!)
+      } finally {
+        this.disposed = false
+        this.disposal = undefined
+      }
+    })()
+    return this.disposal
   }
 }
 const registries = new WeakMap<AbortSignal, ShellJobs>()
@@ -175,12 +437,11 @@ export function shellJobsFor(signal: AbortSignal): ShellJobs {
     signal.addEventListener(
       'abort',
       () => {
-        void registry.dispose()
+        void registry.dispose().catch(() => undefined)
       },
       { once: true },
     )
   }
   return jobs
 }
-
 export const standaloneShellJobs = new ShellJobs()

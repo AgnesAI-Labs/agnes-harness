@@ -1,9 +1,12 @@
 import { describe, expectTypeOf, it } from 'vitest'
-import type { PlatformView, ServiceContext } from '../src/index.js'
+import type { PlatformView, ServiceContext, ToolContext } from '../src/index.js'
 
 describe('service context surface', () => {
-  it('pins the exact key set: no sandbox, no seam objects, platform view present (spec §5.1 / §6.1)', () => {
+  it('pins the exact key set: optional effect process port, no seam objects, platform view present (spec §5.1 / §6.1)', () => {
     expectTypeOf<keyof ServiceContext>().toEqualTypeOf<
+      | 'childJobs'
+      | 'session'
+      | 'sandbox'
       | 'actor'
       | 'source'
       | 'requestId'
@@ -19,6 +22,8 @@ describe('service context surface', () => {
       | 'platform'
     >()
     expectTypeOf<ServiceContext['platform']>().toEqualTypeOf<PlatformView>()
-    expectTypeOf<ServiceContext>().not.toHaveProperty('sandbox')
+    expectTypeOf<ServiceContext['sandbox']>().toEqualTypeOf<
+      Pick<ToolContext['sandbox'], 'openProcess'> | undefined
+    >()
   })
 })

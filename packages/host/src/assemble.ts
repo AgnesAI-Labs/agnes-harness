@@ -824,6 +824,7 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
             enforcement: posture.enforcement,
             ...(providerId === LOCAL_SANDBOX_PROVIDER_ID ? {} : { providerId }),
             exec: fence.exec,
+            openProcess: fence.openProcess,
             binding: fence.binding,
           })
         },

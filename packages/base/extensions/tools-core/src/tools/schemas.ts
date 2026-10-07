@@ -21,6 +21,9 @@ export const ShellParams = Type.Object(
     cwd: Type.Optional(Path),
     background: Type.Optional(Type.Boolean()),
     timeoutToBackground: Type.Optional(Type.Boolean()),
+    persistent: Type.Optional(Type.Boolean()),
+    shell: Type.Optional(Type.Union([Type.Literal('bash'), Type.Literal('zsh'), Type.Literal('pwsh')])),
+    sessionId: Type.Optional(Type.String({ minLength: 1 })),
   },
   { additionalProperties: false },
 )

@@ -4,8 +4,22 @@
   "apiRange": "^1.4",
   "entry": "./src/index.ts",
   "capabilities": {
-    "tools": { "prefix": "", "names": ["job_list", "job_output", "job_kill"] },
-    "hooks": ["shutdown"],
+    "tools": {
+      "prefix": "",
+      "names": [
+        "job_list",
+        "job_output",
+        "job_kill",
+        "pty_open",
+        "pty_read",
+        "pty_send",
+        "pty_signal",
+        "pty_resize",
+        "pty_list",
+        "pty_close"
+      ]
+    },
+    "hooks": ["shutdown", "context"],
     "artifacts": true
   }
 }

@@ -170,3 +170,32 @@ it('builds platform fresh inside the per-call context builder, not once when ser
   expect(first.platform.shell).not.toBe(second.platform.shell)
   expect(first.platform).not.toBe(second.platform)
 })
+
+it('binds process launch and child cancellation only to journaled effects and Host session identity', async () => {
+  const { build, entry, identity, alive, workspace } = fixture()
+  const openProcess = async () => {
+    throw new Error('process backend reached')
+  }
+  const boundWorkspace = {
+    ...workspace,
+    hookSandbox: () => ({
+      enforcement: () => ({ level: 'none' as const, scope: [] }),
+      exec: async () => ({ code: 0, stdout: '', stderr: '', truncated: false }),
+      openProcess,
+    }),
+  }
+  const session = { key: 'session-bound-by-host', lane: 'main', workspaceRoot: workspace.root }
+  const query = build(entry, { ...identity, session }, alive, boundWorkspace)
+  expect(query.session?.key).toBe(session.key)
+  expect(query.sandbox).toBeUndefined()
+  expect(query.childJobs?.cancel).toBeUndefined()
+  const effect = build(
+    { ...entry, capability: { ...entry.capability, kind: 'effect' } },
+    { ...identity, session },
+    alive,
+    boundWorkspace,
+  )
+  await expect(effect.sandbox!.openProcess!({ argv: ['bash'], cwd: workspace.root })).rejects.toThrow(
+    'process backend reached',
+  )
+})

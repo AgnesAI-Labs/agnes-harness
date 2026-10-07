@@ -1,0 +1,122 @@
+{
+  "id": "agnes/jobs-web",
+  "version": "0.1.0",
+  "apiRange": "^1.4",
+  "entry": "./index.ts",
+  "capabilities": {
+    "services": [
+      {
+        "name": "jobs.read",
+        "kind": "query",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "jobId": {
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          "additionalProperties": false
+        },
+        "outputSchema": {
+          "type": "object",
+          "additionalProperties": true
+        },
+        "timeoutMs": 10000,
+        "maxResultBytes": 1048576
+      },
+      {
+        "name": "jobs.control",
+        "kind": "effect",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "operation": {
+              "anyOf": [
+                {
+                  "const": "open",
+                  "type": "string"
+                },
+                {
+                  "const": "send",
+                  "type": "string"
+                },
+                {
+                  "const": "resize",
+                  "type": "string"
+                },
+                {
+                  "const": "signal",
+                  "type": "string"
+                },
+                {
+                  "const": "kill",
+                  "type": "string"
+                }
+              ]
+            },
+            "jobId": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "shell": {
+              "anyOf": [
+                {
+                  "const": "bash",
+                  "type": "string"
+                },
+                {
+                  "const": "zsh",
+                  "type": "string"
+                },
+                {
+                  "const": "pwsh",
+                  "type": "string"
+                }
+              ]
+            },
+            "text": {
+              "maxLength": 65536,
+              "type": "string"
+            },
+            "columns": {
+              "minimum": 1,
+              "maximum": 1000,
+              "type": "integer"
+            },
+            "rows": {
+              "minimum": 1,
+              "maximum": 1000,
+              "type": "integer"
+            },
+            "signal": {
+              "anyOf": [
+                {
+                  "const": "SIGINT",
+                  "type": "string"
+                },
+                {
+                  "const": "SIGTERM",
+                  "type": "string"
+                },
+                {
+                  "const": "SIGHUP",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "required": ["operation"],
+          "additionalProperties": false
+        },
+        "outputSchema": {
+          "type": "object",
+          "additionalProperties": true
+        },
+        "timeoutMs": 10000,
+        "maxResultBytes": 1048576
+      }
+    ],
+    "hooks": ["shutdown"]
+  }
+}

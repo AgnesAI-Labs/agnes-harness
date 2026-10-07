@@ -19,7 +19,7 @@ export function createShellTool(jobs?: ShellJobs) {
   return defineTool({
     name: 'shell',
     description:
-      'Run a command line in the session shell (the runtime context tells you which shell dialect is active). Output is captured; long output is stored as an artifact. timeoutMs sets how long the call may run: without it a default applies, a longer value is granted up to a maximum the deployment sets, and a larger request is capped there. background starts a session-owned job; reaching the foreground timeout continues the same process in the background unless timeoutToBackground is false. Use job_output, job_list and job_kill to monitor or stop jobs.',
+      'Run a command line in the session shell (the runtime context tells you which shell dialect is active). Output is captured; long output is stored as an artifact. timeoutMs sets how long the call may run: without it a default applies, a longer value is granted up to a maximum the deployment sets, and a larger request is capped there. background starts a session-owned job; reaching the foreground timeout continues the same process in the background unless timeoutToBackground is false. Use job_output, job_list and job_kill to monitor or stop jobs. Set persistent to preserve cwd/env/variables across calls; choose bash, zsh or pwsh. sessionId selects an existing persistent shell. A busy shell refuses another command until the previous job finishes. Killing a persistent command closes its shell.',
     parameters: ShellParams,
     meta: {
       isReadOnly: false,
@@ -32,7 +32,7 @@ export function createShellTool(jobs?: ShellJobs) {
       requiresApproval: undefined,
     },
     async execute(args, ctx): Promise<ToolResult> {
-      if (jobs && ctx.platform.shell === 'posix') {
+      if (jobs && (ctx.platform.shell === 'posix' || ctx.sandbox.openProcess)) {
         const result = await runShellJob(jobs, args, ctx)
         const details = result.details
         const unavailable =
@@ -40,7 +40,7 @@ export function createShellTool(jobs?: ShellJobs) {
           typeof details === 'object' &&
           !Array.isArray(details) &&
           details.code === 'SHELL_JOB_BACKEND_UNAVAILABLE'
-        if (args.background || !unavailable) return result
+        if (args.background || args.persistent || args.sessionId || !unavailable) return result
       }
       const cwd = args.cwd ?? ctx.cwd
       if (args.background)

@@ -242,10 +242,22 @@ export class SandboxProviderRegistry extends Service implements SandboxProviderR
       !validCapabilities(instance.capabilities)
     )
       throw new HostError('E_API_RANGE', `sandbox provider returned an invalid instance: ${id}`)
+    const opened = new Set<import('@agnes/extension-api').SandboxProcess>()
+    const opening = new Set<Promise<import('@agnes/extension-api').SandboxProcess>>()
     let disposal: Promise<void> | undefined
     const dispose = () => {
       disposal ??= Promise.resolve()
-        .then(() => instance.dispose())
+        .then(async () => {
+          await Promise.allSettled([...opening])
+          const closing = await Promise.allSettled([...opened].map((handle) => handle.close()))
+          await instance.dispose()
+          const failures = closing.filter((result) => result.status === 'rejected')
+          if (failures.length)
+            throw new AggregateError(
+              failures.map((result) => result.reason),
+              'interactive provider cleanup failed',
+            )
+        })
         .then(() => undefined)
         .finally(() => record.instances.delete(dispose))
       return disposal
@@ -263,6 +275,29 @@ export class SandboxProviderRegistry extends Service implements SandboxProviderR
           return Promise.reject(sandboxUnavailable('the workspace sandbox instance is disposed'))
         return instance.exec(request)
       },
+      ...(instance.openProcess
+        ? {
+            openProcess: (request: Parameters<NonNullable<SandboxProviderInstance['openProcess']>>[0]) => {
+              if (disposal || !record.active)
+                return Promise.reject(sandboxUnavailable('the workspace sandbox instance is disposed'))
+              const pending = instance.openProcess!(request).then(async (handle) => {
+                if (disposal || !record.active) {
+                  await handle.close()
+                  throw sandboxUnavailable('provider was disposed during interactive launch')
+                }
+                opened.add(handle)
+                void handle.exited.then(() => opened.delete(handle))
+                return handle
+              })
+              opening.add(pending)
+              void pending.then(
+                () => opening.delete(pending),
+                () => opening.delete(pending),
+              )
+              return pending
+            },
+          }
+        : {}),
       dispose,
     })
     this.selection = { id, instance: bound }
@@ -370,6 +405,48 @@ export async function bindStartupSandboxProvider(
  */
 export function createSandboxDispatchExec(local: ExecAdapter, slot: SandboxProviderSlot): ExecAdapter {
   return {
+    async openProcess(argv, opts) {
+      const policy = opts.sandbox?.policy
+      let selected = slot.selected
+      if (!selected || !policy)
+        throw sandboxUnavailable('interactive execution requires a bound provider policy')
+      if (slot.registry)
+        selected = await slot.registry.select(selected.id, {
+          workspaceRoot: policy.workspaceRoot,
+          ...(slot.options ? { options: slot.options } : {}),
+        })
+      if (!selected.capabilities.available || !selected.openProcess)
+        throw sandboxUnavailable('the selected provider does not support interactive execution')
+      if (opts.sandbox?.provider && opts.sandbox.provider !== selected.id)
+        throw sandboxUnavailable('interactive provider binding differs')
+      const actual =
+        selected.id === LOCAL_SANDBOX_PROVIDER_ID
+          ? opts.sandbox?.enforcement
+          : selected.capabilities.enforcement
+      if (
+        !actual ||
+        (policy.requiredEnforcement.level === 'full' && actual.level !== 'full') ||
+        policy.requiredEnforcement.scope.some((scope) => !actual.scope.includes(scope))
+      )
+        throw sandboxUnavailable('interactive provider cannot enforce this policy')
+      const handle = await selected.openProcess({
+        argv,
+        cwd: opts.cwd,
+        policy,
+        enforcement: actual,
+        ...(opts.env ? { env: opts.env } : {}),
+        ...(opts.pty ? { pty: opts.pty } : {}),
+        ...(opts.signal ? { signal: opts.signal } : {}),
+      })
+      if (
+        (policy.requiredEnforcement.level === 'full' && handle.enforcement.level !== 'full') ||
+        policy.requiredEnforcement.scope.some((scope) => !handle.enforcement.scope.includes(scope))
+      ) {
+        await handle.close()
+        throw sandboxUnavailable('interactive provider did not supply required enforcement')
+      }
+      return handle
+    },
     async run(argv, opts) {
       let selected = slot.selected
       if (!selected) throw sandboxUnavailable('no sandbox provider is bound to this workspace')

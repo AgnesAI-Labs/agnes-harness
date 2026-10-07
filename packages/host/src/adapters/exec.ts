@@ -1,9 +1,15 @@
 import { type ChildProcess, spawn } from 'node:child_process'
-import type { SandboxEnforcement, SandboxExecutionPolicy } from '@agnes/extension-api'
+import type {
+  SandboxEnforcement,
+  SandboxExecutionPolicy,
+  SandboxProcess,
+  SandboxProcessRequest,
+} from '@agnes/extension-api'
 import { attachProcessBridge } from './exec-bridge.js'
 import { createExecOutput } from './exec-output.js'
 import { createWindowsExec } from './exec-win32.js'
 import type { PowerShellDescriptor } from './powershell.js'
+import { openLocalProcess } from './process.js'
 
 export type ExecResult = {
   code: number
@@ -37,6 +43,10 @@ export type ExecGateState = {
 }
 
 export type ExecAdapter = {
+  openProcess?: (
+    argv: string[],
+    opts: Parameters<ExecAdapter['run']>[1] & { pty?: NonNullable<SandboxProcessRequest['pty']> },
+  ) => Promise<SandboxProcess>
   run(
     argv: string[],
     opts: {
@@ -111,14 +121,29 @@ export function createExec(
   } = {},
 ): ExecAdapter {
   const live = new Set<ChildProcess>()
+  const interactive = new Set<SandboxProcess>()
   const base = opts.baseEnv ?? baseEnvironment()
-  if (opts.windowsNodeExecutable)
-    return createWindowsExec({
+  if (opts.windowsNodeExecutable) {
+    const windows = createWindowsExec({
       nodeExecutable: opts.windowsNodeExecutable,
       baseEnv: base,
       defaultTimeoutMs: opts.defaultTimeoutMs ?? DEFAULT_TIMEOUT_MS,
       ...(opts.windowsPowerShell ? { powerShell: opts.windowsPowerShell } : {}),
     })
+    return {
+      ...windows,
+      openProcess: async (argv, options) => {
+        const handle = await openLocalProcess({ ...options, argv })
+        interactive.add(handle)
+        void handle.exited.then(() => interactive.delete(handle))
+        return handle
+      },
+      killAll: async () => {
+        await Promise.all([...interactive].map((handle) => handle.close()))
+        await windows.killAll()
+      },
+    }
+  }
 
   // One kill, by one route. `opts.killTree?.(pid) ?? process.kill(-pid, 'SIGKILL')` reads as "try
   // the injected one, else the group kill", but killTree returns void, so `undefined ?? x` always
@@ -140,6 +165,12 @@ export function createExec(
   }
 
   return {
+    async openProcess(argv, options) {
+      const handle = await openLocalProcess({ ...options, argv })
+      interactive.add(handle)
+      void handle.exited.then(() => interactive.delete(handle))
+      return handle
+    },
     run(argv, o) {
       return new Promise<ExecResult>((resolve, reject) => {
         const [cmd, ...args] = argv
@@ -217,6 +248,7 @@ export function createExec(
       })
     },
     async killAll() {
+      await Promise.all([...interactive].map((handle) => handle.close()))
       for (const c of live) killGroup(c)
       live.clear()
     },
@@ -234,8 +266,11 @@ const unavailable = (why: string): Error =>
  * carries does not match what is bound, the answer is deny: an assembly that has not finished
  * wiring the sandbox is not one processes get to start in.
  */
-export function createPolicyExec(
-  inner: ExecAdapter,
+export function createPolicyOperation<T>(
+  invoke: (
+    argv: string[],
+    opts: Parameters<ExecAdapter['run']>[1] & { pty?: NonNullable<SandboxProcessRequest['pty']> },
+  ) => Promise<T>,
   gate: {
     /** The digest of the policy currently bound to the host FsOps, or null before binding. */
     policy?(): import('@agnes/core').FsPolicy
@@ -245,7 +280,10 @@ export function createPolicyExec(
     /** Canonicalizes a cwd against the live filesystem and applies the bound file policy; rejects E_FS_DENIED. */
     authorizeCwd(cwd: string): Promise<string>
   },
-): ExecAdapter['run'] {
+): (
+  argv: string[],
+  opts: Parameters<ExecAdapter['run']>[1] & { pty?: NonNullable<SandboxProcessRequest['pty']> },
+) => Promise<T> {
   return async (argv, opts) => {
     const bound = gate.boundDigest()
     const request = opts.sandbox
@@ -269,7 +307,7 @@ export function createPolicyExec(
     if (state.backend === 'none' && state.onUnavailable !== 'allow' && !externalProvider)
       throw unavailable('no sandbox backend is available and the preset does not allow unconfined execution')
     const policy = gate.policy?.()
-    if (!policy) return inner.run(argv, { ...opts, cwd })
+    if (!policy) return invoke(argv, { ...opts, cwd })
     const denied = Object.freeze(
       policy.rules.filter((rule) => rule.effect === 'deny').map((rule) => rule.path),
     )
@@ -298,8 +336,24 @@ export function createPolicyExec(
           : { level: 'none', scope: Object.freeze([]) },
       ),
     })
-    return inner.run(argv, { ...opts, cwd, sandbox: { ...request, policy: callPolicy } })
+    return invoke(argv, { ...opts, cwd, sandbox: { ...request, policy: callPolicy } })
   }
+}
+
+export function createPolicyExec(
+  inner: ExecAdapter,
+  gate: Parameters<typeof createPolicyOperation>[1],
+): ExecAdapter['run'] {
+  return createPolicyOperation(inner.run.bind(inner), gate)
+}
+export function createPolicyOpenProcess(
+  inner: ExecAdapter,
+  gate: Parameters<typeof createPolicyOperation>[1],
+): NonNullable<ExecAdapter['openProcess']> {
+  return createPolicyOperation((argv, options) => {
+    if (!inner.openProcess) throw unavailable('the selected backend cannot open interactive processes')
+    return inner.openProcess(argv, options)
+  }, gate)
 }
 
 /**

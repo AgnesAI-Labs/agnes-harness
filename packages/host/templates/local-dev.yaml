@@ -44,5 +44,5 @@ computerUse:
   retention: { maxRecentPerSession: 100, ttlMs: 86400000, gcIntervalMs: 3600000, maxExtendedTtlMs: 604800000, globalMaxBytes: 1073741824 }
 presets: { default: workspace-write, allowed: [standard, read-only, workspace-write, full-access, minimal, ptc] }
 policy:
-  capabilityCeiling: ["tools", "hooks", "slots", "projections", "events", "resources", "ui", "network", "network.publicRead", "tools.invoke", "artifacts", "subagent"]
+  capabilityCeiling: ["services", "tools", "hooks", "slots", "projections", "events", "resources", "ui", "network", "network.publicRead", "tools.invoke", "artifacts", "subagent"]
   workspacePackages: require-project-trust

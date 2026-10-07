@@ -15,6 +15,7 @@ import type {
 } from '@agnes/extension-api'
 import { unavailableProjections } from '@agnes/extension-api'
 import type { Actor } from '@agnes/protocol'
+import { externalChild, externalChildren } from '../child/directory.js'
 import type { ArtifactJob, PlanItem } from '../reduce/shapes.js'
 import type { PresetView } from '../step/preset.js'
 import { CoreError, type Seq } from '../types.js'
@@ -202,6 +203,7 @@ export function buildToolContext(
         : {}),
     },
     sandbox: {
+      ...(d.workspace?.sandbox.openProcess ? { openProcess: d.workspace.sandbox.openProcess } : {}),
       confine: async (argv) => {
         if (!d.workspace)
           throw new CoreError('E_WORKSPACE_CLOSED', 'sandbox is unavailable outside a workspace invocation')
@@ -294,6 +296,13 @@ export function buildToolContext(
       },
       collect: async (childKey, opts) => {
         const snapshot = async () => {
+          const external = externalChild(d.sessionKey, childKey)
+          if (external)
+            return {
+              childKey,
+              status: external.listing.status === 'starting' ? ('running' as const) : external.listing.status,
+              ...(external.listing.text !== undefined ? { text: external.listing.text } : {}),
+            }
           const child = d.children.get?.(childKey)
           if (child) {
             const status = await child.status()
@@ -331,6 +340,12 @@ export function buildToolContext(
         return { ...(await snapshot()), waitTimedOut: true }
       },
       cancel: async (childKey) => {
+        const external = externalChild(d.sessionKey, childKey)
+        if (external) {
+          if (!external.cancel) throw new CoreError('E_UNSUPPORTED', 'external child cannot be cancelled')
+          await external.cancel()
+          return { childKey, status: 'cancelled' as const }
+        }
         if (d.children.cancel) await d.children.cancel(childKey)
         else {
           const handle = d.children.get?.(childKey)
@@ -345,7 +360,10 @@ export function buildToolContext(
           ...(snap.text !== undefined ? { text: snap.text } : {}),
         }
       },
-      ...(d.children.list ? { list: () => d.children.list?.() ?? Promise.resolve([]) } : {}),
+      list: async () => [
+        ...((await d.children.list?.()) ?? []),
+        ...externalChildren(d.sessionKey).map((child) => child.listing),
+      ],
       ...(d.children.models ? { models: async () => d.children.models?.() ?? [] } : {}),
       ...(d.children.sendMessage
         ? {

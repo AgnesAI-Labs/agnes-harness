@@ -223,10 +223,24 @@ export interface ToolContext {
     fetchPublic?(url: string, options?: { responseType: 'zip' }): Promise<PublicFetchResult>
   }
   // A tool that spawns its own process passes the launch argv through here first and spawns
-  // what comes back. confine is the only sandbox opening a tool may act through; enforcement is a
-  // read-only answer to "am I confined right now" (spec 2026-09-15 D4). The host wires both to
-  // whichever sandbox implementation the deployment assembled. fsPolicy stays host-internal.
-  readonly sandbox: { confine(argv: string[]): Promise<string[]>; enforcement(): SandboxEnforcement }
+  // what comes back. confine returns wrapped argv; openProcess returns session-owned handles.
+  // enforcement is a read-only answer to "am I confined right now". The Host binds these ports
+  // to the selected sandbox implementation. fsPolicy stays Host-internal.
+  readonly sandbox: {
+    confine(argv: string[]): Promise<string[]>
+    enforcement(): SandboxEnforcement
+    /** Host supplies policy and confinement; callers cannot choose them. */
+    openProcess?: (
+      request: Readonly<{
+        argv: readonly string[]
+        /** Cancellation while opening; returning a handle detaches its lifetime from this call. */
+        signal?: AbortSignal
+        cwd?: string
+        env?: Readonly<Record<string, string>>
+        pty?: Readonly<{ columns: number; rows: number }>
+      }>,
+    ) => Promise<import('./process.js').SandboxProcess>
+  }
   // Read-only platform facts plus the capability probe. No manifest gate: facts, not effects.
   readonly platform: PlatformView
   authorize(action: Action, target: Target): Promise<Decision>

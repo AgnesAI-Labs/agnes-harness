@@ -300,14 +300,18 @@ async function buildLocal(out: string, nativeOutput?: string, versionOverride?: 
     : join(repoPackages, 'daemon', 'src', 'worker', 'main.ts')
   await bundle(workerSource, join(out, 'worker.mjs'), defines)
   await copySystemRuntime(repoPackages, out, nativeOutput)
-  if (isDarwin()) {
+  const linux = process.platform === 'linux' // guards-allow-platform: native PTY build target
+  if (isDarwin() || linux) {
     execFileSync(
       process.execPath,
       [join(repoPackages, 'host', 'scripts', 'build-native.mjs'), '--output-dir', join(out, 'native')],
       { stdio: 'inherit' },
     )
-    await chmod(join(out, 'native', 'macos-process-identity'), 0o755)
-    await chmod(join(out, 'native', 'macos-live-app-identity'), 0o755)
+    await chmod(join(out, 'native', 'pty-relay'), 0o755)
+    if (isDarwin()) {
+      await chmod(join(out, 'native', 'macos-process-identity'), 0o755)
+      await chmod(join(out, 'native', 'macos-live-app-identity'), 0o755)
+    }
   }
 
   await buildLocalWeb(webOut)

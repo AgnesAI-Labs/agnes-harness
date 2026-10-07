@@ -10,12 +10,18 @@ export async function runShellJob(
     background?: boolean
     timeoutMs?: number
     timeoutToBackground?: boolean
+    persistent?: boolean
+    shell?: import('./persistent-shell.js').ShellName
+    sessionId?: string
   },
   ctx: ToolContext,
 ): Promise<ToolResult> {
   let id: string | undefined
   try {
-    const started = await jobs.start(args.command, args.cwd ?? ctx.cwd, ctx)
+    const started =
+      args.persistent || args.sessionId
+        ? await jobs.startPersistent(args.command, args.cwd, ctx, args.shell, args.sessionId)
+        : await jobs.start(args.command, args.cwd ?? ctx.cwd, ctx)
     id = started.id
     const requested = args.timeoutMs
     const waitMs = Math.min(
@@ -45,7 +51,11 @@ export async function runShellJob(
             text: `background job ${id} started${args.background ? '' : ` (foreground wait reached ${waitMs}ms; the same process continues)`}; use job_output, job_list or job_kill`,
           },
         ],
-        details: { jobId: id, status: 'running' },
+        details: {
+          jobId: id,
+          status: 'running',
+          ...(started.sessionId ? { sessionId: started.sessionId } : {}),
+        },
       }
     }
     return {
@@ -54,7 +64,12 @@ export async function runShellJob(
         `${job.stdout}${job.stderr ? `\n[stderr]\n${job.stderr}` : ''}\n[exit ${job.code}]${job.truncated ? ' [capture limit reached]' : ''}`,
       )),
       ...(job.code === 0 ? {} : { isError: true }),
-      details: { jobId: id, status: job.status, code: job.code },
+      details: {
+        jobId: id,
+        status: job.status,
+        code: job.code,
+        ...(job.sessionId ? { sessionId: job.sessionId } : {}),
+      },
     }
   } catch (e) {
     if (id && ctx.signal.aborted) await jobs.kill(ctx, id)

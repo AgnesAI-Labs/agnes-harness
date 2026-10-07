@@ -1164,6 +1164,46 @@ describe('client module immutable snapshots', () => {
       expect.objectContaining({ packageId: row.id, extension: row.id, commandId: 'effect-1' }),
       expect.objectContaining({ principalId: 'test', clientId: 'test' }),
     )
+    await expect(
+      service.call(
+        '_agnes/v1/clientModules.callService',
+        {
+          profile: 'local-dev',
+          rowId: 'web:builtin:agnes/jobs',
+          sessionId: 'session-a',
+          service: 'jobs.read',
+          input: {},
+        },
+        authority,
+      ),
+    ).resolves.toMatchObject({ output: { extension: 'agnes/jobs-web', sessionId: 'session-a' } })
+    await expect(
+      service.call(
+        '_agnes/v1/clientModules.callEffect',
+        {
+          profile: 'local-dev',
+          rowId: 'web:builtin:agnes/jobs',
+          sessionId: 'session-a',
+          service: 'jobs.control',
+          commandId: 'terminal-close',
+          input: { operation: 'kill', jobId: 'pty-a' },
+        },
+        { ...authority, permissions: ['packages.read', 'extensions.execute'] },
+      ),
+    ).resolves.toMatchObject({ output: { extension: 'agnes/jobs-web', commandId: 'terminal-close' } })
+    await expect(
+      service.call(
+        '_agnes/v1/clientModules.callService',
+        {
+          profile: 'local-dev',
+          rowId: 'web:builtin:agnes/jobs',
+          sessionId: 'session-a',
+          service: 'jobs.control',
+          input: {},
+        },
+        authority,
+      ),
+    ).rejects.toMatchObject({ code: -32006 })
     currentInventory = inventory(
       installed({
         directory: files.packageDirectory,
@@ -1199,7 +1239,7 @@ describe('client module immutable snapshots', () => {
         { ...authority, permissions: ['packages.read', 'extensions.execute'] },
       ),
     ).rejects.toMatchObject({ message: 'CAPABILITY_DENIED' })
-    expect(effectDispatch).toHaveBeenCalledTimes(1)
+    expect(effectDispatch).toHaveBeenCalledTimes(2)
     service.closeClientModules()
   })
 

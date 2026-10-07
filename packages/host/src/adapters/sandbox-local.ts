@@ -38,10 +38,43 @@ export function createLocalSandboxProvider(
     create(config) {
       let disposed = false
       const controllers = new Set<AbortController>()
+      const processes = new Set<import('@agnes/extension-api').SandboxProcess>()
       const pending = new Set<Promise<Awaited<ReturnType<ExecAdapter['run']>>>>()
       return {
         id: LOCAL_SANDBOX_PROVIDER_ID,
         capabilities,
+        async openProcess(request) {
+          if (disposed || !exec.openProcess)
+            throw sandboxUnavailable('local interactive execution is unavailable')
+          request.signal?.throwIfAborted()
+          if (
+            !request.policy ||
+            !request.enforcement ||
+            (config.workspaceRoot && config.workspaceRoot !== request.policy.workspaceRoot)
+          )
+            throw sandboxUnavailable('interactive execution requires a bound policy')
+          const required = request.policy.requiredEnforcement,
+            actual = request.enforcement
+          if (
+            (required.level === 'full' && actual.level !== 'full') ||
+            required.scope.some((scope) => !actual.scope.includes(scope))
+          )
+            throw sandboxUnavailable('interactive execution cannot enforce this policy')
+          const handle = await exec.openProcess([...request.argv], {
+            cwd: request.cwd,
+            ...(request.env ? { env: { ...request.env } } : {}),
+            ...(request.pty ? { pty: request.pty } : {}),
+            ...(request.signal ? { signal: request.signal } : {}),
+          })
+          const bound = { ...handle, enforcement: actual }
+          processes.add(bound)
+          void bound.exited.then(() => processes.delete(bound))
+          if (disposed) {
+            await bound.close()
+            throw sandboxUnavailable('workspace sandbox was disposed during launch')
+          }
+          return bound
+        },
         async exec(request) {
           if (request.bridge && !capabilities.programmatic)
             throw sandboxUnavailable('programmatic transport is unavailable on this platform')
@@ -99,6 +132,7 @@ export function createLocalSandboxProvider(
           disposed = true
           for (const controller of controllers) controller.abort(new Error('workspace sandbox disposed'))
           await Promise.allSettled([...pending])
+          await Promise.all([...processes].map((handle) => handle.close()))
           if (options.ownProcesses) await exec.killAll()
         },
       }

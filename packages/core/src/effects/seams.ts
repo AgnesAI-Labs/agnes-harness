@@ -162,10 +162,17 @@ export interface SeamWorkspace {
       }>
     },
   ) => Promise<{ code: number; stdout: string; stderr: string; truncated: boolean; timedOut?: boolean }>
+  readonly openProcess?: (
+    argv: string[],
+    opts: Parameters<SeamWorkspace['exec']>[1] & {
+      pty?: NonNullable<import('@agnes/extension-api').SandboxProcessRequest['pty']>
+    },
+  ) => Promise<import('@agnes/extension-api').SandboxProcess>
   readonly binding: () => Readonly<{ policyDigest: string | null }>
 }
 
 export interface SandboxSeam {
+  openProcess?: NonNullable<import('@agnes/extension-api').ToolContext['sandbox']['openProcess']>
   /** Fit this package-level seam factory to one Host-authorized workspace. */
   forWorkspace(workspace: SeamWorkspace): Promise<SandboxSeam>
   exec(

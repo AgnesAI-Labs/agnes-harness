@@ -6695,3 +6695,16 @@ body.admin-page {
   border-block-end: 1px solid var(--agnes-line-primary);
   overflow-wrap: anywhere;
 }
+
+.session-terminal {
+  min-height: 20rem;
+  max-height: 32rem;
+  overflow: auto;
+  white-space: pre;
+  font-family: var(--font-mono);
+  background: var(--agnes-bg-code);
+  color: var(--agnes-text-primary);
+}
+.session-terminal:focus-visible {
+  outline: 2px solid var(--agnes-input-border-focus);
+}

@@ -59,3 +59,45 @@ describe.skipIf(process.platform === 'win32')('session shell jobs', () => {
     expect(jobs.list(ctx)).toEqual([])
   })
 })
+
+describe.skipIf(process.platform === 'win32')('persistent shells', () => {
+  it.each(['bash', 'zsh'] as const)(
+    'retains cwd, env and variables in %s; serializes jobs and kills busy commands',
+    async (shell) => {
+      const jobs = new ShellJobs()
+      const ctx = context('persistent-' + shell)
+      ctx.sandbox.confine = async (argv) => argv
+      const command = createShellTool(jobs)
+      let call = 0
+      const run = async (text: string, extra = {}) => {
+        Object.assign(ctx.session, { toolUseId: 'persistent-call-' + call++ })
+        return command.execute({ command: text, persistent: true, shell, ...extra }, ctx)
+      }
+      try {
+        const first = await run('cd /; export AGH_TEST_VALUE=kept; agh_local=local; printf first')
+        expect(first.isError).toBeUndefined()
+        const sessionId = (first.details as { sessionId: string }).sessionId
+        const next = await run('printf "%s/%s/%s" "$PWD" "$AGH_TEST_VALUE" "$agh_local"')
+        expect(JSON.stringify(next)).toContain('//kept/local')
+        expect((next.details as { sessionId: string }).sessionId).toBe(sessionId)
+        const invalidCwd = await run('printf should-not-run', { cwd: '/unreadable' })
+        expect(invalidCwd.isError).toBe(true)
+        const busy = await run('printf ready; sleep 30', { timeoutMs: 10 })
+        expect(busy.isError).toBeUndefined()
+        expect((await run('printf too-early')).isError).toBe(true)
+        const jobId = (busy.details as { jobId: string }).jobId
+        expect((await jobs.kill(ctx, jobId)).status).toBe('killed')
+        expect(jobs.list(ctx).find((job) => job.id === sessionId)?.status).toBe('killed')
+        expect(jobs.completions(ctx).some((job) => job.id === jobId)).toBe(true)
+        expect((await run('echo fresh')).isError).toBeUndefined()
+        await jobs.dispose()
+        const reloaded = await run('printf "%s" "${AGH_TEST_VALUE-unset}"')
+        expect(reloaded.isError).toBeUndefined()
+        expect(JSON.stringify(reloaded)).toContain('unset')
+        await expect(jobs.wait(context('foreign'), sessionId, 0)).rejects.toThrow('JOB_NOT_FOUND')
+      } finally {
+        await jobs.dispose()
+      }
+    },
+  )
+})

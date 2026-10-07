@@ -21,7 +21,7 @@ export interface OpaqueSandboxConfine {
  * raw handler and isolated HTTP/event capabilities) to this invocation without exposing the scope.
  */
 export type WorkspaceHookSandbox = Readonly<
-  Pick<SandboxSeam, 'exec' | 'enforcement'> & {
+  Pick<SandboxSeam, 'exec' | 'enforcement' | 'openProcess'> & {
     track?<T>(start: (signal: AbortSignal) => T | PromiseLike<T>): Promise<T>
   }
 >
@@ -286,6 +286,19 @@ function invocationView(source: WorkspaceInvocationSource, scope: InvocationScop
     list: () => scope.track(() => source.checkpoint.list()),
   })
   const hookSandbox: WorkspaceHookSandbox = Object.freeze({
+    ...(source.hookSandbox.openProcess
+      ? {
+          openProcess: (request: Parameters<NonNullable<SandboxSeam['openProcess']>>[0]) =>
+            scope.track(async (scopeSignal) => {
+              const linked = linkedSignal(scopeSignal, request.signal)
+              try {
+                return await source.hookSandbox.openProcess!({ ...request, signal: linked.signal })
+              } finally {
+                linked.close()
+              }
+            }),
+        }
+      : {}),
     track: <T>(start: (signal: AbortSignal) => T | PromiseLike<T>) => scope.track(start),
     enforcement: () => {
       scope.assertOpen()

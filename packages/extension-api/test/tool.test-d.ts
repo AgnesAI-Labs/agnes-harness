@@ -159,7 +159,7 @@ describe('tool types', () => {
     // 拍板 Q1（2026-09-08）：沙箱经 confine 暴露；拍板 D4（2026-09-15）：再加只读 enforcement，此外没有别的沙箱开口。
     // 拍板 Q2：ctx 上没有 harness 成员
     expectTypeOf<ToolContext['sandbox']['confine']>().toExtend<(argv: string[]) => Promise<string[]>>()
-    expectTypeOf<keyof ToolContext['sandbox']>().toEqualTypeOf<'confine' | 'enforcement'>()
+    expectTypeOf<keyof ToolContext['sandbox']>().toEqualTypeOf<'confine' | 'enforcement' | 'openProcess'>()
     expectTypeOf<ToolContext>().not.toHaveProperty('harness')
     expectTypeOf<ToolResult['content'][number]>().toExtend<{ type: 'text' | 'image' | 'ref' }>()
   })

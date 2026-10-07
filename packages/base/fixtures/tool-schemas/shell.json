@@ -20,6 +20,29 @@
     },
     "timeoutToBackground": {
       "type": "boolean"
+    },
+    "persistent": {
+      "type": "boolean"
+    },
+    "shell": {
+      "anyOf": [
+        {
+          "const": "bash",
+          "type": "string"
+        },
+        {
+          "const": "zsh",
+          "type": "string"
+        },
+        {
+          "const": "pwsh",
+          "type": "string"
+        }
+      ]
+    },
+    "sessionId": {
+      "minLength": 1,
+      "type": "string"
     }
   },
   "required": [

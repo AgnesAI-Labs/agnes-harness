@@ -8,7 +8,7 @@ import type { RemoteWorkspacePool } from '@agnes/sandbox-remote'
 import type { WorkspaceRuntimeFence, WorkspaceRuntimeHandle } from '../session-workspace-runtime.js'
 import { assertWorkspaceBinding, type WorkspaceBinding } from '../workspace-authority.js'
 import type { WorkspacePathSemantics } from '../workspace-policy.js'
-import { createPolicyExec, type ExecAdapter, type ExecGateState } from './exec.js'
+import { createPolicyExec, createPolicyOpenProcess, type ExecAdapter, type ExecGateState } from './exec.js'
 import { createFs, type FencedFs, type FsBinding } from './fs.js'
 import type { FsIo } from './fs-io.js'
 import { localFsIo } from './fs-io-local.js'
@@ -32,6 +32,7 @@ export type SessionWorkspaceFence = WorkspaceRuntimeFence &
     semantics: WorkspacePathSemantics
     fs: FencedFs
     exec: ExecAdapter['run']
+    openProcess: NonNullable<ExecAdapter['openProcess']>
     activateGate(state: ExecGateState): void
     binding(): Readonly<{ policyDigest: string | null }>
   }>
@@ -233,12 +234,14 @@ export function createSessionWorkspaceAdapterFactory(
         handle.kind === 'local' ? input.skillReadRoots : undefined,
         handle.kind === 'local' ? input.fullAccessReadOnlyRoots : undefined,
       )
-      const exec = createPolicyExec(input.exec, {
+      const execGate = {
         policy: () => holder.policy,
         boundDigest: () => bound?.digest ?? null,
         state: () => gate,
-        authorizeCwd: (cwd) => fs.resolveInside(cwd),
-      })
+        authorizeCwd: (cwd: string) => fs.resolveInside(cwd),
+      }
+      const exec = createPolicyExec(input.exec, execGate)
+      const openProcess = createPolicyOpenProcess(input.exec, execGate)
       return Object.freeze({
         root: handle.root,
         fs,
@@ -263,6 +266,7 @@ export function createSessionWorkspaceAdapterFactory(
           holder.policy = policy
         },
         exec,
+        openProcess,
         activateGate(next) {
           if (closed) throw fault('workspace fence closed')
           gate = Object.freeze({ ...next })

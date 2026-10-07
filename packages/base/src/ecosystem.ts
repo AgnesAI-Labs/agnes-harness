@@ -11,6 +11,7 @@ import {
   hooksRunnerExtension,
 } from '../extensions/hooks-runner/src/index.js'
 import interactionExtension from '../extensions/interaction/src/index.js'
+import { createJobsWebExtension } from '../extensions/jobs/jobs-web/index.js'
 import { createJobsExtension } from '../extensions/jobs/src/index.js'
 import { shellJobsFor } from '../extensions/jobs/src/registry.js'
 import mcpResourcesExtension from '../extensions/mcp-resources/src/index.js'
@@ -201,6 +202,8 @@ export const ecosystem = {
   'agnes/plugin-creator': (): ExtensionFactory => pluginCreatorExtension,
   'agnes/tools-core': (init: SeamInitContext): ExtensionFactory =>
     createToolsCoreExtension(shellJobsFor(init.signal)),
+  'agnes/jobs-web': (init: SeamInitContext): ExtensionFactory =>
+    createJobsWebExtension(shellJobsFor(init.signal)),
   'agnes/jobs': (init: SeamInitContext): ExtensionFactory => createJobsExtension(shellJobsFor(init.signal)),
   'agnes/tools-search': (): ExtensionFactory => toolsSearchExtension,
   'agnes/tools-web': (init: SeamInitContext): ExtensionFactory =>
