@@ -42,3 +42,4 @@ imports, imports escaping the example, symlinks, and workspace/file dependencies
 | --- | --- |
 | [tool-panel](tool-panel/) | Configured deterministic tool, schemas, result panel, errors and cleanup |
 | [mcp-skills](mcp-skills/) | Local stdio MCP tools/resources and a runtime Skill referencing a bundled asset |
+| [dag-loop-adapter](dag-loop-adapter/) | Checkpointed DAG scheduling, deterministic model adapter and matching Loop/model selection |

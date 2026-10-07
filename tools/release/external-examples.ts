@@ -43,7 +43,7 @@ export async function validateExample(directory: string): Promise<void> {
   const packages = await manifests()
   async function check(specifier: string, file: string) {
     if (specifier.startsWith('.')) {
-      if (!inside(directory, resolve(dirname(file), specifier))) throw new Error(`Workspace-relative import in ${file}: ${specifier}`)
+      if (specifier.split('/').includes('node_modules') || !inside(directory, resolve(dirname(file), specifier))) throw new Error(`Workspace-relative or private import in ${file}: ${specifier}`)
       return
     }
     if (isAbsolute(specifier) || specifier.startsWith('file:')) throw new Error(`Absolute import in ${file}: ${specifier}`)
@@ -126,8 +126,9 @@ function run(command: string, args: string[], cwd: string, env?: NodeJS.ProcessE
 
 async function pack(directory: string, output: string, env: NodeJS.ProcessEnv): Promise<string> {
   const json = execFileSync('npm', ['pack', '--json', '--ignore-scripts', '--pack-destination', output], { cwd: directory, env, encoding: 'utf8', timeout: 30_000 })
-  const [{ filename }] = JSON.parse(json) as { filename: string }[]
-  return join(output, filename!)
+  const entry = (JSON.parse(json) as { filename?: string }[])[0]
+  if (!entry?.filename) throw new Error(`npm pack did not return a tarball for ${directory}`)
+  return join(output, entry.filename)
 }
 
 async function notices(source: string, target: string): Promise<void> {

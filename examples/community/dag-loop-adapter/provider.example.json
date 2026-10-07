@@ -1,0 +1,38 @@
+{
+  "provider": {
+    "adapters": [
+      "community-dag"
+    ],
+    "routes": [
+      {
+        "route": "community-dag",
+        "api": "community-dag",
+        "baseUrl": "https://unused.invalid",
+        "models": [
+          {
+            "id": "dag-demo",
+            "name": "Deterministic DAG demo",
+            "api": "community-dag",
+            "route": "community-dag",
+            "baseUrl": "https://unused.invalid",
+            "reasoning": false,
+            "input": [
+              "text"
+            ],
+            "cost": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0
+            },
+            "contextWindow": 8192,
+            "maxTokens": 1024,
+            "toolCallFormats": [],
+            "thinkingReplay": "drop",
+            "contract_id": null
+          }
+        ]
+      }
+    ]
+  }
+}

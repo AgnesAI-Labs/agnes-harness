@@ -48,7 +48,10 @@ build and run their own small tests after installing preview tarballs outside
 the repository, with an isolated HOME and no workspace links. Start with
 [tool-panel](../../examples/community/tool-panel/) for schemas, configuration and
 a tool-result client slot, or [mcp-skills](../../examples/community/mcp-skills/)
-for a local stdio MCP server, resources and a packaged Skill. Their READMEs cover
+for a local stdio MCP server, resources and a packaged Skill.
+[dag-loop-adapter](../../examples/community/dag-loop-adapter/) combines a
+checkpointed DAG driver with a deterministic model adapter and documents the
+matching new-session Loop/model selection. Their READMEs cover
 installation, activation, new-session checks and cleanup.
 
 Run `node --import tsx tools/release/external-examples.ts --keep` from a checkout

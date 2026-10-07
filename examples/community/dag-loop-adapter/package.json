@@ -1,0 +1,60 @@
+{
+  "name": "@community/dag-loop-adapter",
+  "version": "0.1.0",
+  "type": "module",
+  "license": "Apache-2.0",
+  "engines": {
+    "node": ">=24.10"
+  },
+  "exports": "./dist/index.js",
+  "files": [
+    "dist",
+    "dag",
+    "provider.example.json"
+  ],
+  "scripts": {
+    "build": "tsc -b",
+    "test": "node --test test/*.test.mjs"
+  },
+  "dependencies": {
+    "@agnes/plugin-runtime": "0.0.0",
+    "@agnes/extension-api": "1.4.0",
+    "@agnes/protocol": "0.0.0",
+    "@sinclair/typebox": "0.34.33"
+  },
+  "devDependencies": {
+    "typescript": "7.0.2",
+    "@types/node": "26.4.1",
+    "@agnes/host": "0.0.0"
+  },
+  "agnes": {
+    "kinds": [
+      "tool",
+      "loop",
+      "model-adapter"
+    ],
+    "plugins": [
+      {
+        "export": "toolPlugin",
+        "id": "ext:@community/dag-loop-adapter/tools",
+        "inject": [
+          "extension"
+        ]
+      },
+      {
+        "export": "adapterPlugin",
+        "id": "ext:@community/dag-loop-adapter/adapter",
+        "inject": [
+          "modelAdapters"
+        ]
+      },
+      {
+        "export": "loopPlugin",
+        "id": "ext:@community/dag-loop-adapter/loop",
+        "inject": [
+          "loops"
+        ]
+      }
+    ]
+  }
+}
