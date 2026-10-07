@@ -329,6 +329,7 @@ describe('a host assembled from a profile naming @agnes/base', () => {
       expect(namesFrom('agnes/compaction')).toEqual(['compact'])
       expect(namesFrom('agnes/refine')).toEqual(['harness_propose'])
       expect(namesFrom('agnes/subagent')).toEqual([
+        'list_subagent_models',
         'subagent_cancel',
         'subagent_collect',
         'subagent_fork',
