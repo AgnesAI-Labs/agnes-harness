@@ -2,12 +2,11 @@ import { type Context, Service } from '@agnes/cordis'
 import {
   assertChildAgentAllowed,
   childAgentAllowlist,
-  inProcessChildAgentProvider,
   IN_PROCESS_CHILD_PROVIDER_ID,
+  inProcessChildAgentProvider,
   setChildAgentAllowlist,
 } from '@agnes/core'
 import type {
-  ProviderSelection,
   ChildAgentAllowlist,
   ChildAgentCatalogEntry,
   ChildAgentHandle,
@@ -15,6 +14,7 @@ import type {
   ChildAgentProvider,
   ChildAgentService,
   ChildAgentStartOptions,
+  ProviderSelection,
 } from '@agnes/extension-api'
 import { defineProviderKind } from '@agnes/extension-api'
 import { normalizePluginExport, type RowOriginLookup } from '@agnes/plugin-runtime/host'
@@ -172,9 +172,7 @@ export class ChildAgentRegistry extends Service implements ChildAgentService {
 
   async list(sessionKey: string): Promise<readonly ChildAgentListing[]> {
     const lists = await Promise.all(
-      this.registry
-        .values()
-        .map((provider) => provider.list?.(sessionKey) ?? Promise.resolve([])),
+      this.registry.values().map((provider) => provider.list?.(sessionKey) ?? Promise.resolve([])),
     )
     const seen = new Set<string>()
     const children: ChildAgentListing[] = []
