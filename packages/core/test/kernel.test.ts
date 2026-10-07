@@ -1,3 +1,4 @@
+import { defaultLoops } from '../testkit/loops.js'
 import type { ToolDef } from '@agnes/extension-api'
 import type { ModelRecord } from '@agnes/protocol'
 import { describe, expect, it, vi } from 'vitest'
@@ -37,7 +38,7 @@ const logger = {
   error: () => undefined,
 }
 const base = (over: Partial<Parameters<typeof Kernel.create>[0]> = {}) =>
-  Kernel.create({
+  Kernel.create({ loops: defaultLoops(),
     storage: new MemoryStorage(),
     seams: fakeSeams(),
     provider: fakeProvider([]),

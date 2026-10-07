@@ -1,3 +1,4 @@
+import { defaultLoops } from '../testkit/loops.js'
 import { describe, expect, it, vi } from 'vitest'
 import {
   dispatchTool,
@@ -175,7 +176,7 @@ describe('session dispatch plumbing', () => {
     const hostToolDispatch: HostToolDispatchPort = {
       dispatch: async () => ({ phase: 'not_sent', error: new Error('unused') }),
     }
-    const kernel = Kernel.create({
+    const kernel = Kernel.create({ loops: defaultLoops(),
       storage: new MemoryStorage(),
       seams: fakeSeams(),
       provider: fakeProvider([]),

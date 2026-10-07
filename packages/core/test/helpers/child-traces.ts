@@ -1,3 +1,4 @@
+import { defaultLoops } from '../../testkit/loops.js'
 import type { InferenceEvent, ModelRecord, Provider, UISpan, UITurn } from '@agnes/protocol'
 import { vi } from 'vitest'
 import type { Kernel } from '../../src/kernel.js'
@@ -89,6 +90,7 @@ type KernelOptions = Parameters<typeof Kernel.create>[0]
 export async function setupWith(provider: Provider, create: (options: KernelOptions) => Kernel) {
   const storage = new MemoryStorage()
   const k = create({
+    loops: defaultLoops(),
     storage,
     seams: fakeSeams(),
     provider,

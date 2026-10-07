@@ -2,7 +2,7 @@
 // inside test/ so a consumer imports them by package path instead of by a relative path into this
 // package's test tree.
 export { MemoryStorage } from '../src/log/memory-storage.js'
-export { deferredResultProvenance } from '../src/loop/default/deferred.js'
+export { deferredResultProvenance } from '../src/execution/turn/deferred.js'
 export {
   type FakeProvider,
   fakeProvider,
@@ -36,3 +36,5 @@ export {
   withMintedIdsInOrder,
 } from './record-transitions.js'
 export { goldenLedger, toolHeavyLedger } from './tool-heavy-ledger.js'
+
+export { defaultLoops } from './loops.js'

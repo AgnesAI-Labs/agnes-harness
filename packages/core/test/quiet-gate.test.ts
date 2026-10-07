@@ -1,3 +1,4 @@
+import { defaultLoops } from '../testkit/loops.js'
 import type { ModelRecord } from '@agnes/protocol'
 import { describe, expect, it } from 'vitest'
 import { Kernel } from '../src/kernel.js'
@@ -48,7 +49,7 @@ describe('Core quiet gate', () => {
         trace.push({ kind, key, stepping })
       },
     }
-    const kernel = Kernel.create({
+    const kernel = Kernel.create({ loops: defaultLoops(),
       storage: new MemoryStorage(),
       seams: fakeSeams(),
       provider: Object.assign(fakeProvider([textTurn('child says hi')]), { models: () => [catalogue()] }),

@@ -1,5 +1,5 @@
-import { applyBeforeRequestPatches } from '../src/request/transforms.js'
 import {
+  DEFAULT_LOOP,
   type LoopContext,
   type LoopDriver,
   type LoopFactory,
@@ -10,12 +10,13 @@ import { ToolRuntimeRegistry } from '../src/effects/tool-providers.js'
 import { defaultIds } from '../src/ids.js'
 import { Kernel } from '../src/kernel.js'
 import { MemoryStorage } from '../src/log/memory-storage.js'
-import { DEFAULT_LOOP } from '../src/loop/default-driver.js'
 import { LoopEventRegistry } from '../src/loop/events.js'
-import { LoopRegistry, registerLoopPlugin } from '../src/loop/registry.js'
+import { registerLoopPlugin } from '../src/loop/registry.js'
 import { openTracked } from '../src/reduce/tracker.js'
+import { applyBeforeRequestPatches } from '../src/request/transforms.js'
 import { presetDefaults } from '../src/step/preset.js'
 import { noopHooks } from '../src/step/session.js'
+import { defaultLoops } from '../testkit/loops.js'
 import { fakeProvider, textTurn } from './helpers/fake-provider.js'
 import { fakeSeams } from './helpers/fake-seams.js'
 import { actor, noTimers, readTool, testFsOps, testWorkspaceInvocation } from './helpers/open-session.js'
@@ -36,7 +37,10 @@ function echoDriver(ctx: LoopContext, initial: 'ready' | 'done' = 'ready'): Loop
       if (!input) return { outcome: 'idle', phase: 'idle' }
       const result = await ctx.tools.execute({ name: 'read', args: {} }, signal)
       const batch = await ctx.tools.batch([{ name: 'read', args: {} }], signal)
-      const request = await ctx.prepareRequest({ tools: [], messages: [{ role: 'user', content: [...input.content] }] })
+      const request = await ctx.prepareRequest({
+        tools: [],
+        messages: [{ role: 'user', content: [...input.content] }],
+      })
       const response = await ctx.model.complete(request, signal)
       const text = response.flatMap((event) => (event.type === 'text_delta' ? [event.delta] : [])).join('')
       await ctx.events.emit('assistant/message', {
@@ -86,7 +90,7 @@ const model = {
 }
 function kernel(
   storage = new MemoryStorage(),
-  loops = new LoopRegistry(),
+  loops = defaultLoops(),
   extra: Partial<import('../src/kernel.js').KernelOptions> = {},
 ) {
   const provider = fakeProvider([textTurn('independent answer')])
@@ -108,7 +112,7 @@ function kernel(
 
 describe('loop plugins', () => {
   it('uses an independent runtime and the same request/tool event waterfall from custom-loop ports', async () => {
-    const loops = new LoopRegistry()
+    const loops = defaultLoops()
     loops.register('@test/echo', echo)
     const toolRuntimes = new ToolRuntimeRegistry(false)
     toolRuntimes.register('@test/serial', {
@@ -142,7 +146,11 @@ describe('loop plugins', () => {
     const k = kernel(new MemoryStorage(), loops, { toolRuntimes, loopEvents, preset })
     k.tools.add(readTool(), { source: 'test', trust: 'builtin' })
     const session = await k.session('independent-runtime', { ...options, loop: echo })
-    session.hooks = { ...noopHooks, beforeRequest: async (output) => applyBeforeRequestPatches(output, [{ ext: 'test', patch: { maxTokens: 12 } }]) }
+    session.hooks = {
+      ...noopHooks,
+      beforeRequest: async (output) =>
+        applyBeforeRequestPatches(output, [{ ext: 'test', patch: { maxTokens: 12 } }]),
+    }
     try {
       await session.enqueue('next-turn', { content: [{ type: 'text', text: 'run' }], actor })
       expect((await session.run({ until: 'turn-end', signal: new AbortController().signal })).reason).toBe(
@@ -160,7 +168,7 @@ describe('loop plugins', () => {
     }
   })
   it('registers through a plugin lifecycle and exposes an immutable catalog', () => {
-    const loops = new LoopRegistry()
+    const loops = defaultLoops()
     const cleanups: Array<() => void> = []
     registerLoopPlugin({ loops, effect: (callback) => cleanups.push(callback()) }, '@test/echo', echo)
     expect(loops.resolve(echo)).toBe(echo)
@@ -177,7 +185,7 @@ describe('loop plugins', () => {
 
   it('selects an independent tool-first driver, preserves multimodal input, usage and pinned resume', async () => {
     const storage = new MemoryStorage()
-    const loops = new LoopRegistry()
+    const loops = defaultLoops()
     loops.register('@test/echo', echo)
     const k = kernel(storage, loops)
     k.tools.add(readTool(), { source: 'test', trust: 'builtin' })
@@ -247,7 +255,7 @@ describe('loop plugins', () => {
       },
     ])
     await tracked.log.close()
-    const loops = new LoopRegistry()
+    const loops = defaultLoops()
     loops.register('@test/echo', echo)
     const k = kernel(storage, loops)
     expect((await k.session('legacy', { ...options, loop: echo })).loop).toEqual(DEFAULT_LOOP)
@@ -293,7 +301,7 @@ describe('loop plugins', () => {
           }
         },
       }
-      const loops = new LoopRegistry()
+      const loops = defaultLoops()
       loops.register('@test/wait', waiting)
       const k = kernel(new MemoryStorage(), loops)
       const session = await k.session('wait', { ...options, loop: waiting })
@@ -310,7 +318,7 @@ describe('loop plugins', () => {
   )
 
   it('selects a profile loop and refuses checkpoint codec mismatch before resumed work', async () => {
-    const loops = new LoopRegistry()
+    const loops = defaultLoops()
     loops.register('@test/echo', echo)
     const k = kernel(new MemoryStorage(), loops)
     const session = await k.session('codec', { ...options, preset: { ...presetDefaults(), loop: echo } })
@@ -333,7 +341,7 @@ describe('loop plugins', () => {
 })
 
 it('overlaps independent safe tools in a custom batch and preserves requested result order', async () => {
-  const loops = new LoopRegistry()
+  const loops = defaultLoops()
   let release!: () => void
   const bothStarted = new Promise<void>((resolve) => {
     release = resolve
@@ -390,9 +398,11 @@ it('overlaps independent safe tools in a custom batch and preserves requested re
 })
 
 it('drains a cancelled step and driver final writes before closing the log, once', async () => {
-  const loops = new LoopRegistry()
+  const loops = defaultLoops()
   let started!: () => void
-  const active = new Promise<void>((resolve) => { started = resolve })
+  const active = new Promise<void>((resolve) => {
+    started = resolve
+  })
   let disposed = 0
   const closingLoop: LoopFactory = {
     ...echo,
@@ -435,70 +445,92 @@ it('drains a cancelled step and driver final writes before closing the log, once
   await k.close()
 })
 
-it.each(['turn-end', 'idle'] as const)('uses explicit custom outcomes with two inputs until %s', async (until) => {
-  const loops = new LoopRegistry()
-  const custom: LoopFactory = {
-    ...echo, id: 'test.outcomes',
-    create(ctx) {
-      return {
-        checkpoint: () => codec.encode('ready'), cancel() {}, dispose() {},
-        async step() {
-          const input = await ctx.input.accept()
-          if (!input) return { outcome: 'idle', phase: 'arbitrary' }
-          await ctx.events.emit('x/outcome/input', { id: input.id ?? '' })
-          await ctx.events.finish('completed')
-          return { outcome: 'turn-ended', phase: 'arbitrary', reason: 'completed' }
-        },
-      }
-    },
-  }
-  loops.register('@test/outcomes', custom)
-  const k = kernel(new MemoryStorage(), loops)
-  try {
-    const session = await k.session('outcomes', { ...options, loop: custom })
-    for (const text of ['first', 'second'])
-      await session.enqueue('next-turn', { content: [{ type: 'text', text }], actor })
-    expect((await session.run({ until, signal: new AbortController().signal })).reason).toBe('completed')
-    expect(await session.scan({ type: 'turn/end', limit: 10 })).toHaveLength(until === 'idle' ? 2 : 1)
-  } finally { await k.close() }
-})
+it.each(['turn-end', 'idle'] as const)(
+  'uses explicit custom outcomes with two inputs until %s',
+  async (until) => {
+    const loops = defaultLoops()
+    const custom: LoopFactory = {
+      ...echo,
+      id: 'test.outcomes',
+      create(ctx) {
+        return {
+          checkpoint: () => codec.encode('ready'),
+          cancel() {},
+          dispose() {},
+          async step() {
+            const input = await ctx.input.accept()
+            if (!input) return { outcome: 'idle', phase: 'arbitrary' }
+            await ctx.events.emit('x/outcome/input', { id: input.id ?? '' })
+            await ctx.events.finish('completed')
+            return { outcome: 'turn-ended', phase: 'arbitrary', reason: 'completed' }
+          },
+        }
+      },
+    }
+    loops.register('@test/outcomes', custom)
+    const k = kernel(new MemoryStorage(), loops)
+    try {
+      const session = await k.session('outcomes', { ...options, loop: custom })
+      for (const text of ['first', 'second'])
+        await session.enqueue('next-turn', { content: [{ type: 'text', text }], actor })
+      expect((await session.run({ until, signal: new AbortController().signal })).reason).toBe('completed')
+      expect(await session.scan({ type: 'turn/end', limit: 10 })).toHaveLength(until === 'idle' ? 2 : 1)
+    } finally {
+      await k.close()
+    }
+  },
+)
 
 it.each([
   ['max_steps', 0, null, 'deny'],
   ['budget', null, 0, 'deny'],
   ['budget', null, 0, 'quote'],
-] as const)('enforces %s admission for both default and independent loops', async (reason, maxSteps, cap, disposition) => {
-  for (const loop of [DEFAULT_LOOP, echo]) {
-    const loops = new LoopRegistry()
-    loops.register('@test/echo', echo)
-    const preset = presetDefaults()
-    preset.budget = { ...preset.budget, maxSteps, perRequestCap: cap, onExceed: disposition }
-    const seams = fakeSeams({
-      ledger: { projected: async () => ({ credits: 1, creditSource: 'estimated' }) },
-      approval: { ask: async () => ({ verdict: 'rejected', reason: 'user_rejected' }) },
-    })
-    const k = kernel(new MemoryStorage(), loops, { preset, seams })
-    k.tools.add(readTool(), { source: 'test', trust: 'builtin' })
-    try {
-      const session = await k.session('admission', { ...options, loop, workspaceInvocation: testWorkspaceInvocation(testFsOps(), seams) })
-      await session.enqueue('next-turn', { content: [{ type: 'text', text: 'run' }], actor })
-      expect((await session.run({ until: 'turn-end', signal: new AbortController().signal })).reason).toBe(reason)
-      expect((k.o.provider as ReturnType<typeof fakeProvider>).requests).toEqual([])
-      expect(await session.scan({ type: 'effect/intent', limit: 20 })).toEqual([])
-      expect(await session.scan({ type: 'tool/result', limit: 20 })).toEqual([])
-    } finally { await k.close() }
-  }
-})
+] as const)(
+  'enforces %s admission for both default and independent loops',
+  async (reason, maxSteps, cap, disposition) => {
+    for (const loop of [DEFAULT_LOOP, echo]) {
+      const loops = defaultLoops()
+      loops.register('@test/echo', echo)
+      const preset = presetDefaults()
+      preset.budget = { ...preset.budget, maxSteps, perRequestCap: cap, onExceed: disposition }
+      const seams = fakeSeams({
+        ledger: { projected: async () => ({ credits: 1, creditSource: 'estimated' }) },
+        approval: { ask: async () => ({ verdict: 'rejected', reason: 'user_rejected' }) },
+      })
+      const k = kernel(new MemoryStorage(), loops, { preset, seams })
+      k.tools.add(readTool(), { source: 'test', trust: 'builtin' })
+      try {
+        const session = await k.session('admission', {
+          ...options,
+          loop,
+          workspaceInvocation: testWorkspaceInvocation(testFsOps(), seams),
+        })
+        await session.enqueue('next-turn', { content: [{ type: 'text', text: 'run' }], actor })
+        expect((await session.run({ until: 'turn-end', signal: new AbortController().signal })).reason).toBe(
+          reason,
+        )
+        expect((k.o.provider as ReturnType<typeof fakeProvider>).requests).toEqual([])
+        expect(await session.scan({ type: 'effect/intent', limit: 20 })).toEqual([])
+        expect(await session.scan({ type: 'tool/result', limit: 20 })).toEqual([])
+      } finally {
+        await k.close()
+      }
+    }
+  },
+)
 
 it('exposes trusted input claims, frozen tool schemas and post-compaction history without private state', async () => {
-  const loops = new LoopRegistry()
+  const loops = defaultLoops()
   let captured: LoopContext | undefined
   const viewLoop: LoopFactory = {
-    ...echo, id: 'test.view',
+    ...echo,
+    id: 'test.view',
     create(ctx) {
       captured = ctx
       return {
-        checkpoint: () => codec.encode('ready'), cancel() {}, dispose() {},
+        checkpoint: () => codec.encode('ready'),
+        cancel() {},
+        dispose() {},
         async step() {
           const first = await ctx.input.claim('next-turn')
           expect(await ctx.input.claim('next-turn')).toEqual(first)
@@ -522,20 +554,31 @@ it('exposes trusted input claims, frozen tool schemas and post-compaction histor
   try {
     const session = await k.session('view', { ...options, loop: viewLoop })
     await session.enqueue('next-turn', { content: [{ type: 'text', text: 'first' }], actor })
-    await session.enqueue('next-step', { content: [{ type: 'text', text: 'steer' }], actor, trust: 'untrusted' })
-    expect((await session.run({ until: 'turn-end', signal: new AbortController().signal })).reason).toBe('completed')
+    await session.enqueue('next-step', {
+      content: [{ type: 'text', text: 'steer' }],
+      actor,
+      trust: 'untrusted',
+    })
+    expect((await session.run({ until: 'turn-end', signal: new AbortController().signal })).reason).toBe(
+      'completed',
+    )
     expect(await captured?.turn.view()).toBeNull()
-  } finally { await k.close() }
+  } finally {
+    await k.close()
+  }
 })
 
 it('replays only durable responses for stable tool invocation ids and associates checkpoints', async () => {
-  const loops = new LoopRegistry()
+  const loops = defaultLoops()
   let executions = 0
   const effectLoop: LoopFactory = {
-    ...echo, id: 'test.receipts',
+    ...echo,
+    id: 'test.receipts',
     create(ctx) {
       return {
-        checkpoint: () => codec.encode('ready'), cancel() {}, dispose() {},
+        checkpoint: () => codec.encode('ready'),
+        cancel() {},
+        dispose() {},
         async step(signal) {
           await ctx.input.claim('next-turn')
           const id = 'stable-read'
@@ -551,23 +594,35 @@ it('replays only durable responses for stable tool invocation ids and associates
         },
       }
     },
-    resume(ctx, saved) { codec.decode(saved); return this.create(ctx) },
+    resume(ctx, saved) {
+      codec.decode(saved)
+      return this.create(ctx)
+    },
   }
   loops.register('@test/receipts', effectLoop)
   const k = kernel(new MemoryStorage(), loops)
-  k.tools.add(readTool(async () => {
-    executions++
-    return { content: [{ type: 'text', text: 'receipt' }] }
-  }), { source: 'test', trust: 'builtin' })
+  k.tools.add(
+    readTool(async () => {
+      executions++
+      return { content: [{ type: 'text', text: 'receipt' }] }
+    }),
+    { source: 'test', trust: 'builtin' },
+  )
   try {
     let session = await k.session('receipts', { ...options, loop: effectLoop })
     for (let i = 0; i < 2; i++) {
       await session.enqueue('next-turn', { content: [{ type: 'text', text: 'read' }], actor })
-      expect((await session.run({ until: 'turn-end', signal: new AbortController().signal })).reason).toBe('completed')
+      expect((await session.run({ until: 'turn-end', signal: new AbortController().signal })).reason).toBe(
+        'completed',
+      )
       await session.close()
       session = await k.session('receipts', options)
     }
     expect(executions).toBe(1)
-    expect((await session.scan({ type: 'x/core/loop-checkpoint', order: 'desc', limit: 1 }))[0]?.data).toMatchObject({ invocationIds: ['stable-read'] })
-  } finally { await k.close() }
+    expect(
+      (await session.scan({ type: 'x/core/loop-checkpoint', order: 'desc', limit: 1 }))[0]?.data,
+    ).toMatchObject({ invocationIds: ['stable-read'] })
+  } finally {
+    await k.close()
+  }
 })

@@ -17,7 +17,7 @@ function ports() {
     sessionKey: 'dag',
     lane: 'main',
     prepareRequest: async (options = {}) => ({ ...options } as LoopRequest),
-    turn: { view: async () => null, continuation: () => null, checkpoint: async () => ({ outcome: 'running' }), finishCancelled: async () => ({ outcome: 'turn-ended', reason: 'aborted' }), finishFailure: async () => ({ outcome: 'turn-ended', reason: 'error' }) },
+    turn: { view: async () => null, continuation: () => null, cancelled: () => false, checkpoint: async () => ({ outcome: 'running' }), finishCancelled: async () => ({ outcome: 'turn-ended', reason: 'aborted' }), finishFailure: async () => ({ outcome: 'turn-ended', reason: 'error' }) },
     effects: { status: async (id) => ({ status: 'may-have-sent', invocationId: id, checkpoint }) },
     input: {
       accept: async () => ctx.input.claim('next-turn'),

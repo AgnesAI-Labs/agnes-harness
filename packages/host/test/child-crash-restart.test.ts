@@ -1,3 +1,4 @@
+import { defaultLoops } from '@agnes/core/testkit'
 import { spawn } from 'node:child_process'
 import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -75,6 +76,7 @@ describe('child crash restart against sqlite', () => {
         ],
       })
       const k = Kernel.create({
+    loops: defaultLoops(),
         storage,
         seams: fakeSeams(),
         provider,

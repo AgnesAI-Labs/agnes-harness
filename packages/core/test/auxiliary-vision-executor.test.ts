@@ -1,3 +1,4 @@
+import { defaultLoops } from '../testkit/loops.js'
 import { deflateSync } from 'node:zlib'
 import type { ModelRecord } from '@agnes/protocol'
 import { describe, expect, it, vi } from 'vitest'
@@ -44,7 +45,7 @@ function setup(treeBudgetCredits: number | null = 10) {
   const storage = new MemoryStorage()
   const provider = fakeProvider([])
   Object.assign(provider, { models: () => [model()] })
-  const kernel = Kernel.create({
+  const kernel = Kernel.create({ loops: defaultLoops(),
     storage,
     seams: fakeSeams(),
     provider,

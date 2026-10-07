@@ -1,3 +1,4 @@
+import { defaultLoopFactory } from '@agnes/loop-default'
 import type { ToolContext } from '@agnes/extension-api'
 import type { Provider } from '@agnes/protocol'
 import { Type } from '@sinclair/typebox'
@@ -185,6 +186,7 @@ export async function openSession(
   const { fsOps: _fsOps, ...sessionOver } = over
   const registry = over.registry ?? new ToolRegistry()
   const session = new SessionImpl({
+    loopFactory: defaultLoopFactory,
     log,
     tracker,
     surface,

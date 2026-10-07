@@ -65,8 +65,8 @@ import type { CoreDiagName } from '../kernel.js'
 import { scanAll, scanPages } from '../log/scan-pages.js'
 import type { SessionLogImpl, Timers } from '../log/session-log.js'
 import { SCAN_PAGE_MAX, type ScanQuery } from '../log/storage.js'
-import { runDeferred } from '../loop/default/deferred.js'
-import { bindDefaultLoopPorts, defaultLoopFactory } from '../loop/default-driver.js'
+import { runDeferred } from '../execution/turn/deferred.js'
+import { DEFAULT_LOOP } from '@agnes/extension-api'
 import { LoopEventRegistry, loopEventContext } from '../loop/events.js'
 import { createLoopContext, disposeLoopContext } from '../loop/ports.js'
 import type {
@@ -118,7 +118,7 @@ import { runCompaction } from './compaction.js'
 import { type AbortResult, abortSession, closeTurn, finishAborted } from './control.js'
 import { sysEvent } from './events.js'
 import { appendExtensionEvent, prepareExtensionEvent } from './ext-events.js'
-import { checkpointRoutine, contextWindowFor } from './gate.js'
+import { contextWindowFor } from './gate.js'
 import {
   budgetOverrideEvent,
   claimFrom,
@@ -133,7 +133,6 @@ import {
 import { discloseTools, resolveModel, runInference } from './inference.js'
 import { resolvedModelInput, supportsComputerUse, toolNamesForModel, toolsForModel } from './model-tools.js'
 import { newOpState, type OpStateObj, opMark, withPhase } from './op-state.js'
-import { continueParked } from './parked.js'
 import type { PresetView } from './preset.js'
 import { type PreviewDelta, PreviewHub, type PreviewSnapshot } from './preview.js'
 import { type CoreOpName, invokeTool, runCoreReplacement, setModel, setPreset } from './reentry.js'
@@ -358,7 +357,7 @@ export type SessionDeps = {
   lane: string
   runtime: SeamRuntime
   provider: Provider
-  loopFactory?: LoopFactory
+  loopFactory: LoopFactory
   loopResume?: boolean
   withModelSnapshot?: <T>(operation: () => Promise<T>) => Promise<T>
   /**
@@ -598,8 +597,8 @@ export class SessionImpl {
     this.toolRuntimes = deps.toolRuntimes ?? new ToolRuntimeRegistry()
     this.toolPolicies = deps.toolPolicies ?? new ToolPolicyRegistry()
     this.loop = Object.freeze({
-      id: (deps.loopFactory ?? defaultLoopFactory).id,
-      version: (deps.loopFactory ?? defaultLoopFactory).version,
+      id: deps.loopFactory.id,
+      version: deps.loopFactory.version,
     })
     this.fallbackHooks = deps.hooks ?? noopHooks
     this.fallbackResources = deps.resources ?? new ResourceRegistry()
@@ -733,28 +732,23 @@ export class SessionImpl {
     if (this.loopDriver) return
     this.toolPolicy()
     await this.toolRuntime()
-    const factory = this.d.loopFactory ?? defaultLoopFactory
-    const ctx = await createLoopContext(this, resumed && factory !== defaultLoopFactory)
+    const factory = this.d.loopFactory
+    const ctx = await createLoopContext(this, resumed)
     this.loopContext = ctx
-    bindDefaultLoopPorts(ctx, {
-      session: this,
-      continueParked: () => continueParked(this),
-      finishAborted: () => finishAborted(this),
-      checkpoint: () => checkpointRoutine(this),
-    })
     const checkpoint =
       ctx.checkpoints.read() ??
-      (resumed && factory === defaultLoopFactory ? factory.codec.encode(this.op()) : null)
+      (resumed && factory.checkpointMode === 'ledger' ? factory.codec.encode(null) : null)
     if (resumed && !checkpoint) throw new Error('Pinned loop checkpoint is missing')
     if (checkpoint) factory.codec.decode(checkpoint)
     this.loopDriver = resumed && checkpoint ? factory.resume(ctx, checkpoint) : factory.create(ctx)
-    if (!resumed && factory !== defaultLoopFactory) await ctx.checkpoints.write(this.loopDriver.checkpoint())
+    if (!resumed && factory.checkpointMode !== 'ledger')
+      await ctx.checkpoints.write(this.loopDriver.checkpoint())
   }
 
   /** Idempotent: a reopened ledger already carries its session/start and must not gain a second. */
   async start(): Promise<void> {
     if (this.state.session) {
-      const pinned = this.state.session.loop ?? defaultLoopFactory
+      const pinned = this.state.session.loop ?? DEFAULT_LOOP
       if (pinned.id !== this.loop.id || pinned.version !== this.loop.version)
         throw new Error('Session loop does not match its persisted identity')
       if (!this.initialModelSettingsRestored)
@@ -1561,10 +1555,10 @@ export class SessionImpl {
   private active<T>(fn: () => Promise<T>, afterResume = true): Promise<T> {
     if (this.closing) return Promise.reject(new CoreError('E_CLOSED', 'session closed'))
     this.activeOps++
-    const work = Promise.resolve().then(async () => {
+    const work = (async () => {
       while (afterResume && this.resuming) await this.resuming
       return fn()
-    })
+    })()
     this.activeWork.add(work)
     return work.finally(() => {
       this.activeWork.delete(work)
@@ -1584,6 +1578,7 @@ export class SessionImpl {
   private async stepWithModelSnapshot(): Promise<LoopStepOutcome> {
     const op = this.op()
     if (op?.control.status === 'cancel_requested') return publicOutcome(await finishAborted(this))
+    if (op && !this.turn) await this.rehydrateTurn(op)
     this.loopEdge++
     return this.loopDriver.step(this.ac.signal)
   }
@@ -1735,7 +1730,7 @@ export class SessionImpl {
         // Reconciliation gets the boundary before a deferred poll or retry backoff can put this run
         // to sleep. The Host decides whether this point means immediate, step, or turn policy.
         await this.d.quiet?.yieldPoint('step', this.d.quietGroup ?? this.key)
-        if (out.phase === 'deferred' && op?.phase.kind === 'deferred') {
+        if (out.outcome === 'running' && op?.phase.kind === 'deferred') {
           // A queued/running external job is expected waiting, not an in-process phase livelock.
           // Do not spend the edge guard while the configured delay is pacing real polls; the run's
           // AbortSignal remains the bound for a job that never completes.
@@ -2251,6 +2246,7 @@ export class SessionImpl {
   close(): Promise<void> {
     if (this.closePromise) return this.closePromise
     this.closing = true
+    const draining = this.activeWork.size > 0
     unbindChildFactory(this.key)
     this.executePermits.close()
     this.ac.abort()
@@ -2266,7 +2262,8 @@ export class SessionImpl {
       await attempt(() => this.loopDriver?.dispose())
       await Promise.all(this.runtimeInstances.map((instance) => attempt(() => instance.runtime.dispose())))
       if (this.loopContext) disposeLoopContext(this.loopContext)
-      if (this.op()) await attempt(() => finishAborted(this))
+      // An inactive ledger continuation remains resumable after releasing its writer.
+      if (draining && this.op()) await attempt(() => finishAborted(this))
       await attempt(() => this.hooks.shutdown?.())
       await attempt(() => this.d.log.close())
       await this.d.workspaceLease?.close().catch((error: unknown) => failures.push(error))

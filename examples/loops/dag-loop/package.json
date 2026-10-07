@@ -17,7 +17,8 @@
         "default": true,
         "inject": [
           "loops"
-        ]
+        ],
+        "apiRange": "^1.4.0"
       }
     ]
   }

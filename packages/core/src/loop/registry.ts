@@ -1,12 +1,9 @@
 import type { LoopCatalogEntry, LoopFactory, LoopRegistryPort, LoopSelection } from '@agnes/extension-api'
+import { DEFAULT_LOOP } from '@agnes/extension-api'
 import { CoreError } from '../types.js'
-import { DEFAULT_LOOP, defaultLoopFactory } from './default-driver.js'
 
 export class LoopRegistry implements LoopRegistryPort {
   private readonly factories = new Map<string, { sourcePackage: string; factory: LoopFactory }>()
-  constructor() {
-    this.register('@agnes/core', defaultLoopFactory)
-  }
   register(sourcePackage: string, factory: LoopFactory): () => Promise<void> {
     const key = loopKey(factory)
     if (!factory.id || !factory.version || this.factories.has(key))

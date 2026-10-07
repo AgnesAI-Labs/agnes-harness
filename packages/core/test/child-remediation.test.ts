@@ -1,3 +1,4 @@
+import { defaultLoops } from '../testkit/loops.js'
 import { execFileSync } from 'node:child_process'
 import { existsSync, mkdirSync, mkdtempSync, realpathSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -49,7 +50,7 @@ function kernel(
   over: Partial<Parameters<typeof Kernel.create>[0]> = {},
   provider = Object.assign(fakeProvider([textTurn('ok')]), { models: () => [catalogue()] }),
 ) {
-  return Kernel.create({
+  return Kernel.create({ loops: defaultLoops(),
     storage: new MemoryStorage(),
     seams: fakeSeams(),
     provider,

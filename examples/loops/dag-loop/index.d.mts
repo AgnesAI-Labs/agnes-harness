@@ -7,7 +7,6 @@ export interface DagNode {
 }
 export interface DagConfig {
   plan?: DagNode[]
-  target?: { route: string; model: string }
 }
 export const codec: LoopCheckpointCodec
 export function createDagLoop(config?: DagConfig): LoopFactory

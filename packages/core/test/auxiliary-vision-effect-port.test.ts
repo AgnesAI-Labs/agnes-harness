@@ -1,3 +1,4 @@
+import { defaultLoops } from '../testkit/loops.js'
 import { describe, expect, it, vi } from 'vitest'
 import { Kernel } from '../src/kernel.js'
 import { MemoryStorage } from '../src/log/memory-storage.js'
@@ -16,7 +17,7 @@ const sessionOpts = { actor, resolvedProfileHash: 'h1', cwd: '/w', writerRunId: 
 
 async function setup(key: string) {
   const storage = new MemoryStorage()
-  const kernel = Kernel.create({
+  const kernel = Kernel.create({ loops: defaultLoops(),
     storage,
     seams: fakeSeams(),
     provider: fakeProvider([]),

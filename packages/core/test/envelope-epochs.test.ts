@@ -1,3 +1,4 @@
+import { defaultLoops } from '../testkit/loops.js'
 import type { RequestBody } from '@agnes/protocol'
 import { describe, expect, it } from 'vitest'
 import { Kernel } from '../src/kernel.js'
@@ -81,7 +82,7 @@ describe('ledger envelope epochs', () => {
       textTurn('second parent answer'),
       textTurn('child answer'),
     ])
-    const kernel = Kernel.create({
+    const kernel = Kernel.create({ loops: defaultLoops(),
       storage: new MemoryStorage(),
       seams: fakeSeams(),
       provider,

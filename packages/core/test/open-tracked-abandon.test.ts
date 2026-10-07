@@ -1,3 +1,4 @@
+import { defaultLoops } from '../testkit/loops.js'
 import type { InferenceEvent, Provider } from '@agnes/protocol'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { defaultIds } from '../src/ids.js'
@@ -151,7 +152,7 @@ describe('an open that fails after taking the lease', () => {
 
   it('gives a forked writer back when its open fails after replay', async () => {
     const memory = new MemoryStorage()
-    const k = Kernel.create({
+    const k = Kernel.create({ loops: defaultLoops(),
       storage: memory,
       seams: fakeSeams(),
       provider: fakeProvider([textTurn('hi')]),
@@ -189,7 +190,7 @@ describe('an open that fails after taking the lease', () => {
   it('leaves a forked writer to the kernel, which closes it exactly once', async () => {
     const memory = new MemoryStorage()
     const { storage, broken } = breakable(memory)
-    const k = Kernel.create({
+    const k = Kernel.create({ loops: defaultLoops(),
       storage,
       seams: fakeSeams(),
       provider: fakeProvider([textTurn('hi')]),

@@ -362,7 +362,8 @@ describe('the run loop bounds', () => {
     )
     // A phase edge that reports where it went without writing where it went, which is the shape the
     // bound exists for. Stubbing it is the only way to hold one still long enough to observe.
-    ;(session as unknown as { step: () => Promise<{ phase: string }> }).step = async () => ({
+    ;(session as unknown as { step: () => Promise<{ outcome: 'running'; phase: string }> }).step = async () => ({
+      outcome: 'running',
       phase: 'tools',
     })
     const out = await session.run({ until: 'turn-end', signal: new AbortController().signal })

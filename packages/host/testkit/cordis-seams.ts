@@ -66,25 +66,29 @@ function testSeamPlugin(name: (typeof DYNAMIC_SEAM_NAMES)[number], factory: (ctx
 
 /** Give mutable legacy seam fixtures the same ordinary-row shape as real package exports. */
 export function attachTestSeamPlugins(module: PackageModule): PackageModule {
+  const ordinary = (module.plugins ?? []).filter(({ declaration }) => !declaration.id.startsWith('seam:'))
   Object.defineProperty(module, 'plugins', {
     configurable: true,
     enumerable: true,
     get() {
-      return DYNAMIC_SEAM_NAMES.flatMap((name) => {
-        const factory = module.seams?.[name]
-        if (!factory) return []
-        return [
-          Object.freeze({
-            declaration: Object.freeze({
-              export: `${name}Plugin`,
-              id: `seam:${name}`,
-              runtime: 'in-process' as const,
-              default: true,
+      return [
+        ...ordinary,
+        ...DYNAMIC_SEAM_NAMES.flatMap((name) => {
+          const factory = module.seams?.[name]
+          if (!factory) return []
+          return [
+            Object.freeze({
+              declaration: Object.freeze({
+                export: `${name}Plugin`,
+                id: `seam:${name}`,
+                runtime: 'in-process' as const,
+                default: true,
+              }),
+              entry: normalizePluginExport(testSeamPlugin(name, factory as never)),
             }),
-            entry: normalizePluginExport(testSeamPlugin(name, factory as never)),
-          }),
-        ]
-      })
+          ]
+        }),
+      ]
     },
   })
   return module

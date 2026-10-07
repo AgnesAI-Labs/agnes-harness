@@ -1,3 +1,4 @@
+import { defaultLoops } from '../testkit/loops.js'
 import type { HookPayloadMap } from '@agnes/extension-api'
 import type { ModelRecord, RequestBody } from '@agnes/protocol'
 import { expect, it } from 'vitest'
@@ -87,7 +88,7 @@ it('updates a summary inherited from the parent and preserves historical envelop
   preset.compaction.reserveTokens = 1_000
   preset.compaction.keepRecentTokens = 0
   preset.model.id.compaction = 'summary-model'
-  const kernel = Kernel.create({
+  const kernel = Kernel.create({ loops: defaultLoops(),
     storage: new MemoryStorage(),
     seams: fakeSeams(),
     provider,
@@ -179,7 +180,7 @@ it('routes an unconfigured child compaction slot to the child model target', asy
   preset.model.id.primary = 'parent-id'
   expect(preset.model.route.compaction).toBeUndefined()
   expect(preset.model.id.compaction).toBeUndefined()
-  const kernel = Kernel.create({
+  const kernel = Kernel.create({ loops: defaultLoops(),
     storage: new MemoryStorage(),
     seams: fakeSeams(),
     provider,

@@ -1,3 +1,4 @@
+import { defaultLoops } from '../testkit/loops.js'
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import type { ModelRecord } from '@agnes/protocol'
@@ -40,7 +41,7 @@ const model = (): ModelRecord => ({
 function kernel(over: Partial<Parameters<typeof Kernel.create>[0]> = {}) {
   const provider = fakeProvider([textTurn('root'), textTurn('child')])
   Object.assign(provider, { models: () => [model()] })
-  return Kernel.create({
+  return Kernel.create({ loops: defaultLoops(),
     storage: new MemoryStorage(),
     seams: fakeSeams(),
     provider,
@@ -132,7 +133,7 @@ describe('tree budget on the live inference path', () => {
 
   it('shares reserveTreeBudget with compaction', () => {
     const src = readFileSync(
-      fileURLToPath(new URL('../src/loop/default/compaction.ts', import.meta.url)),
+      fileURLToPath(new URL('../src/execution/turn/compaction.ts', import.meta.url)),
       'utf8',
     )
     expect(src.includes('reserveTreeBudget(')).toBe(true)

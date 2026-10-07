@@ -78,6 +78,9 @@ importers:
       '@agnes/core':
         specifier: workspace:*
         version: link:../core
+      '@agnes/loop-default':
+        specifier: workspace:*
+        version: link:../loop-default
       '@agnes/plugin-runtime':
         specifier: workspace:*
         version: link:../plugin-runtime
@@ -303,6 +306,10 @@ importers:
       '@sinclair/typebox':
         specifier: 0.34.33
         version: 0.34.33
+    devDependencies:
+      '@agnes/loop-default':
+        specifier: workspace:*
+        version: link:../loop-default
 
   packages/cosmokit: {}
 
@@ -384,9 +391,6 @@ importers:
 
   packages/host:
     dependencies:
-      '@agnes/model-adapters':
-        specifier: workspace:*
-        version: link:../model-adapters
       '@agnes/ai':
         specifier: workspace:*
         version: link:../ai
@@ -399,6 +403,9 @@ importers:
       '@agnes/extension-api':
         specifier: workspace:*
         version: link:../extension-api
+      '@agnes/model-adapters':
+        specifier: workspace:*
+        version: link:../model-adapters
       '@agnes/package-manager':
         specifier: workspace:*
         version: link:../package-manager
@@ -446,19 +453,13 @@ importers:
         specifier: workspace:*
         version: link:../code
 
+  packages/loop-default:
+    dependencies:
+      '@agnes/extension-api':
+        specifier: workspace:*
+        version: link:../extension-api
+
   packages/mcp-transport-health: {}
-
-  packages/package-admin-client-node:
-    dependencies:
-      '@agnes/protocol':
-        specifier: workspace:*
-        version: link:../protocol
-
-  packages/package-isolation:
-    dependencies:
-      '@agnes/system-node':
-        specifier: workspace:*
-        version: link:../system-node
 
   packages/model-adapters:
     dependencies:
@@ -477,6 +478,18 @@ importers:
       '@sinclair/typebox':
         specifier: 0.34.33
         version: 0.34.33
+
+  packages/package-admin-client-node:
+    dependencies:
+      '@agnes/protocol':
+        specifier: workspace:*
+        version: link:../protocol
+
+  packages/package-isolation:
+    dependencies:
+      '@agnes/system-node':
+        specifier: workspace:*
+        version: link:../system-node
 
   packages/package-manager:
     dependencies:

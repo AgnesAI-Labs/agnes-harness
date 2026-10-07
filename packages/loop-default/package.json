@@ -1,0 +1,27 @@
+{
+  "name": "@agnes/loop-default",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "agnes": {
+    "plugins": [
+      {
+        "export": "defaultLoopPlugin",
+        "id": "loop:agnes.default",
+        "inject": [
+          "loops"
+        ],
+        "runtime": "in-process",
+        "default": true,
+        "apiRange": "^1.4.0"
+      }
+    ]
+  },
+  "dependencies": {
+    "@agnes/extension-api": "workspace:*"
+  },
+  "license": "Apache-2.0"
+}

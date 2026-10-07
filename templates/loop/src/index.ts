@@ -1,4 +1,3 @@
-import { createHash } from 'node:crypto'
 import {
   type LoopCheckpoint,
   type LoopContext,
@@ -20,25 +19,17 @@ function driver(ctx: LoopContext, saved?: LoopCheckpoint): LoopDriver {
     async step(signal) {
       const active = AbortSignal.any([signal, lifetime.signal])
       active.throwIfAborted()
-      if (state.done) return { phase: 'terminal', reason: 'completed' }
+      if (state.done) return { outcome: 'turn-ended', phase: 'terminal', reason: 'completed' }
       const input = await ctx.input.accept()
-      if (!input) return { phase: 'idle', reason: 'parked' }
+      if (!input) return { outcome: 'idle', phase: 'idle' }
       const messages = [{ role: 'user' as const, content: [...input.content] }]
-      const reply = await ctx.model.complete(
-        {
-          kind: 'inference',
-          sessionKey: ctx.sessionKey,
-          slot: 'primary',
-          route: 'demo',
-          model: 'demo-model',
-          contractId: null,
-          derivedHash: createHash('sha256').update(JSON.stringify(messages)).digest('hex'),
-          system: 'Answer the user briefly.',
-          messages,
-          tools: [],
-        },
-        active,
-      )
+      const request = await ctx.prepareRequest({
+        system: 'Answer the user briefly.',
+        messages,
+        tools: [],
+        invocationId: 'answer:' + input.id,
+      })
+      const reply = await ctx.model.complete(request, active)
       const failure = reply.find((event) => event.type === 'error')
       if (failure?.type === 'error') throw new Error(failure.message)
       active.throwIfAborted()
@@ -50,7 +41,7 @@ function driver(ctx: LoopContext, saved?: LoopCheckpoint): LoopDriver {
       state = { done: true }
       await ctx.checkpoints.write(codec.encode(state))
       await ctx.events.finish('completed')
-      return { phase: 'terminal', reason: 'completed' }
+      return { outcome: 'turn-ended', phase: 'terminal', reason: 'completed' }
     },
     cancel() {
       lifetime.abort()

@@ -1,3 +1,4 @@
+import { defaultLoops } from '../testkit/loops.js'
 import type { InferenceEvent, ModelRecord, Provider, RequestBody } from '@agnes/protocol'
 import { describe, expect, it, vi } from 'vitest'
 import { Kernel } from '../src/kernel.js'
@@ -134,7 +135,7 @@ function setup(
 ) {
   const storage = new MemoryStorage()
   const preset = presetDefaults()
-  const kernel = Kernel.create({
+  const kernel = Kernel.create({ loops: defaultLoops(),
     storage,
     seams: fakeSeams(),
     provider,

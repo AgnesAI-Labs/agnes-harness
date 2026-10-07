@@ -34,7 +34,7 @@ import type { ChainStep, SessionImpl, StepOutcome } from '../../step/session.js'
 import { summarizeCall } from '../../step/summarize-call.js'
 import { stepVerifyInput, toolVerifyInput } from '../../step/verify-input.js'
 import { CoreError, type EventInput, type Seq } from '../../types.js'
-import { dispatchLoopEvent } from '../events.js'
+import { dispatchLoopEvent } from '../../loop/events.js'
 import { resolveModel } from './inference.js'
 import { approvalContinuation } from './parked.js'
 

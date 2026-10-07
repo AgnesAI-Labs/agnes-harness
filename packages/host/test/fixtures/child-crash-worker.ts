@@ -1,3 +1,4 @@
+import { defaultLoops } from '@agnes/core/testkit'
 import { writeFileSync } from 'node:fs'
 import { Kernel, presetDefaults } from '@agnes/core'
 import { fakeProvider, fakeSeams, fencedFs, noTimers, testFsPolicy, textTurn } from '@agnes/core/testkit'
@@ -35,6 +36,7 @@ Object.assign(provider, {
 })
 const storage = createSqliteStorage({ file: dbFile })
 const k = Kernel.create({
+    loops: defaultLoops(),
   storage,
   seams: fakeSeams(),
   provider,

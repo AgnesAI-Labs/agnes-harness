@@ -60,6 +60,16 @@
         "export": "harnessPlugin",
         "apiRange": "^1.4.0",
         "id": "seam:harness"
+      },
+      {
+        "export": "defaultLoopPlugin",
+        "id": "loop:agnes.default",
+        "inject": [
+          "loops"
+        ],
+        "runtime": "in-process",
+        "default": true,
+        "apiRange": "^1.4.0"
       }
     ],
     "extensions": [
@@ -101,7 +111,8 @@
     "isomorphic-git": "1.41.9",
     "jiti": "2.7.0",
     "turndown": "7.2.4",
-    "yaml": "2.9.0"
+    "yaml": "2.9.0",
+    "@agnes/loop-default": "workspace:*"
   },
   "devDependencies": {
     "@agnes/extension-api": "workspace:*",

@@ -1,3 +1,4 @@
+import { defaultLoops } from '../testkit/loops.js'
 import type { ToolRuntimeCall, ToolRuntimeExecution } from '@agnes/extension-api'
 import { describe, expect, it } from 'vitest'
 import { policy } from '../../../examples/policies/read-only/index.mjs'
@@ -170,7 +171,7 @@ describe('tool providers', () => {
     preset.tools.runtime = 'tagged'
     preset.tools.maxParallel = 2
     const provider = fakeProvider([toolTurn('shell', {}), toolTurn('read', {}), textTurn('done')])
-    const k = Kernel.create({
+    const k = Kernel.create({ loops: defaultLoops(),
       storage: new MemoryStorage(),
       seams: fakeSeams(),
       provider,

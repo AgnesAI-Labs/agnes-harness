@@ -1,3 +1,4 @@
+import { defaultLoops } from '@agnes/core/testkit'
 import { realpathSync } from 'node:fs'
 import { Kernel, noopHooks, presetDefaults, type SessionImpl } from '@agnes/core'
 import { actor, fakeProvider, fakeSeams, MemoryStorage, noTimers, testFsPolicy } from '@agnes/core/testkit'
@@ -11,6 +12,7 @@ afterEach(async () => {
 })
 function kernel(hooksFactory: NonNullable<Parameters<typeof Kernel.create>[0]['hooksFactory']>) {
   const k = Kernel.create({
+    loops: defaultLoops(),
     storage: new MemoryStorage(),
     seams: fakeSeams(),
     provider: fakeProvider([]),

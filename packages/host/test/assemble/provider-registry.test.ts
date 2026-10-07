@@ -1,3 +1,4 @@
+import { defaultLoopPlugin } from '@agnes/base'
 import { Context } from '@agnes/cordis'
 import { defineProviderKind, ProviderError } from '@agnes/extension-api'
 import { expect, it } from 'vitest'
@@ -86,6 +87,9 @@ it('requires an explicit version when ambiguous and refuses version mismatches w
 it('combines named registries and retains their public catalog shapes and restart markers', async () => {
   const root = new Context()
   installLoops(root)
+  expect(root.loops.catalog()).toEqual([])
+  const loopPlugin = root.plugin(defaultLoopPlugin)
+  await loopPlugin
   installToolProviders(root)
   installModelAdapters(root)
   installCompactionEngines(root)
@@ -107,6 +111,8 @@ it('combines named registries and retains their public catalog shapes and restar
     expect(() => providerSource(ctx, origins, '@test/wrong', true)).toThrow('does not match')
   })
   await plugin
+  await loopPlugin.dispose()
+  expect(() => root.loops.resolve({ id: 'agnes.default', version: '1.0.0' })).toThrow('not installed')
   const providers = root.providers
   await root.fiber.dispose()
   expect(providers.catalog()).toEqual([])

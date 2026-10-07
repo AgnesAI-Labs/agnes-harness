@@ -18,5 +18,8 @@
     "@agnes/extension-api": "workspace:*",
     "@sinclair/typebox": "0.34.33"
   },
-  "license": "Apache-2.0"
+  "license": "Apache-2.0",
+  "devDependencies": {
+    "@agnes/loop-default": "workspace:*"
+  }
 }

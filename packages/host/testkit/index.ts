@@ -6,6 +6,7 @@ import {
   isolatedEcosystem as BASE_ISOLATED_ECOSYSTEM,
   operations as BASE_OPERATIONS,
   buildCompactionPlan,
+  defaultLoopPlugin,
 } from '@agnes/base'
 import type {
   ApprovalAnswer,
@@ -18,6 +19,7 @@ import type {
 } from '@agnes/core'
 import { type Event, prepareIntegrity, scanAll, verifyLedger } from '@agnes/core'
 import { fakeSeams, testFsPolicy } from '@agnes/core/testkit'
+import { normalizePluginExport } from '@agnes/plugin-runtime/host'
 import type { ModelRecord, RouteDecl } from '@agnes/protocol'
 import { localRealpathSync } from '../src/adapters/fs-io-local.js'
 import type { CapabilityLevel, PlatformBackend } from '../src/adapters/platform.js'
@@ -267,6 +269,20 @@ export async function createTestHost(o: TestHostOptions): Promise<TestHost> {
     seamsImpl.harness = { ...seamsImpl.harness, close: o.onSeamClose } as SeamImplementations['harness']
   const base: PackageModule = {
     id: '@agnes/base',
+    plugins: [
+      {
+        declaration: {
+          export: 'defaultLoopPlugin',
+          id: 'loop:agnes.default',
+          apiRange: '^1.4.0',
+          default: true,
+          inject: ['loops'],
+          provide: [],
+          runtime: 'in-process',
+        },
+        entry: normalizePluginExport(defaultLoopPlugin),
+      },
+    ],
     sandboxWorkspaceProbe: async () => ({
       name: 'bwrap',
       execBackend: 'l1',

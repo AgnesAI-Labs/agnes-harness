@@ -1,9 +1,18 @@
+import type {
+  Actor,
+  ContentBlock,
+  InferenceEvent,
+  JsonValue,
+  ModelRecord,
+  RequestBody,
+} from '@agnes/protocol'
 import type { ChildAgentSessionService } from './child-agent.js'
-import type { Actor, ContentBlock, InferenceEvent, JsonValue, ModelRecord, RequestBody } from '@agnes/protocol'
 import type { LoopEventPort } from './loop-events.js'
 import type { ToolResult } from './tool.js'
 
 /** A session pins this identity; reopening never substitutes a different loop. */
+export const DEFAULT_LOOP = Object.freeze({ id: 'agnes.default', version: '1.0.0' })
+
 export interface LoopSelection {
   id: string
   version: string
@@ -56,7 +65,6 @@ export interface LoopStepOutcome {
   reason?: LoopEndReason
 }
 
-
 /** Core resolves route, contracts, media and hashes. A prepared request is session/turn bound. */
 declare const preparedLoopRequest: unique symbol
 export type LoopRequest = Readonly<RequestBody> & { readonly [preparedLoopRequest]: true }
@@ -89,15 +97,36 @@ export interface LoopTurnView {
     data: JsonValue
   }[]
   readonly tools: readonly RequestBody['tools'][number][]
-  readonly model: { slot: string; id: string; capabilities: Pick<ModelRecord, 'input' | 'reasoning' | 'toolCallFormats' | 'contextWindow' | 'maxTokens'> | null }
-  readonly prompt: { sections: readonly { id: string; order: number; source: string; text: string }[]; runtime: Readonly<Record<string, unknown>> }
-  readonly budget: { maxSteps: number | null; stepsUsed: number; creditsUsed: number; perRequestCap: number | null; onExceed: 'quote' | 'deny' }
+  readonly model: {
+    slot: string
+    id: string
+    capabilities: Pick<
+      ModelRecord,
+      'input' | 'reasoning' | 'toolCallFormats' | 'contextWindow' | 'maxTokens'
+    > | null
+  }
+  readonly prompt: {
+    sections: readonly { id: string; order: number; source: string; text: string }[]
+    runtime: Readonly<Record<string, unknown>>
+  }
+  readonly budget: {
+    maxSteps: number | null
+    stepsUsed: number
+    creditsUsed: number
+    perRequestCap: number | null
+    onExceed: 'quote' | 'deny'
+  }
 }
 /** Durable dispatch uncertainty; responded is not a promise of successful execution. */
 export type LoopEffectStatus =
   | { status: 'not-sent'; invocationId: string }
   | { status: 'may-have-sent'; invocationId: string; checkpoint: LoopCheckpoint | null }
-  | { status: 'responded'; invocationId: string; checkpoint: LoopCheckpoint | null; result: ToolResult | readonly InferenceEvent[] }
+  | {
+      status: 'responded'
+      invocationId: string
+      checkpoint: LoopCheckpoint | null
+      result: ToolResult | readonly InferenceEvent[]
+    }
 
 /**
  * Controlled ledger operations shared by all drivers. Core binds approvals, media and recovery;
@@ -119,6 +148,7 @@ export interface LoopContext {
   readonly turn: {
     view(): Promise<LoopTurnView | null>
     continuation(): LoopContinuation | null
+    cancelled(): boolean
     checkpoint(signal: AbortSignal): Promise<LoopStepOutcome>
     finishCancelled(): Promise<LoopStepOutcome>
     finishFailure(): Promise<LoopStepOutcome>
@@ -174,6 +204,8 @@ export interface LoopDriver {
 
 export interface LoopFactory extends LoopSelection {
   readonly capabilities: readonly string[]
+  /** Ledger-backed drivers recover through public continuation ports; driver is the default. */
+  readonly checkpointMode?: 'driver' | 'ledger'
   readonly codec: LoopCheckpointCodec
   create(ctx: LoopContext): LoopDriver
   resume(ctx: LoopContext, checkpoint: LoopCheckpoint): LoopDriver
@@ -194,10 +226,14 @@ export interface LoopRegistryPort {
 /** Shared production/testkit stop rule. Completed turns may continue only for until=idle. */
 export function loopShouldStop(result: LoopStepOutcome, until: 'turn-end' | 'idle'): boolean {
   switch (result.outcome) {
-    case 'running': return false
+    case 'running':
+      return false
     case 'idle':
-    case 'parked': return true
-    case 'turn-ended': return until === 'turn-end' || (result.reason ?? 'completed') !== 'completed'
-    default: throw new Error('Invalid loop step outcome')
+    case 'parked':
+      return true
+    case 'turn-ended':
+      return until === 'turn-end' || (result.reason ?? 'completed') !== 'completed'
+    default:
+      throw new Error('Invalid loop step outcome')
   }
 }

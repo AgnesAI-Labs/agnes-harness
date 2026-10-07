@@ -501,7 +501,7 @@ describe('resume', () => {
       },
     }
     await opened.session.abort(actor)
-    expect(await opened.session.step()).toEqual({ outcome: 'running', phase: 'terminal', reason: 'aborted' })
+    expect(await opened.session.step()).toEqual({ outcome: 'turn-ended', phase: 'terminal', reason: 'aborted' })
     expect(resultHooks).toBe(0)
     expect((await opened.log.scan({ type: 'tool/result', order: 'desc', limit: 1 }))[0]?.data).toMatchObject({
       code: 'CANCELLED',

@@ -129,7 +129,7 @@ export type {
   StorageAdapter,
 } from './log/storage.js'
 export { registerKey, SCAN_PAGE_MAX, scanTruncated } from './log/storage.js'
-export { DEFAULT_LOOP, defaultLoopFactory } from './loop/default-driver.js'
+export { DEFAULT_LOOP } from '@agnes/extension-api'
 export { LoopEventRegistry } from './loop/events.js'
 export { type LoopPluginContext, LoopRegistry, loopKey, registerLoopPlugin } from './loop/registry.js'
 export {

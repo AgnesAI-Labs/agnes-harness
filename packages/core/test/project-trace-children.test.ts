@@ -1,3 +1,4 @@
+import { defaultLoops } from '../testkit/loops.js'
 import type { ModelRecord, UISpan, UITurn, UITurnUsage } from '@agnes/protocol'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Kernel } from '../src/kernel.js'
@@ -255,7 +256,7 @@ describe('SessionImpl.projectUI nests child traces via bounded storage.scan', ()
   it('scans the child from boundarySeq+1 with a limit and nests its generation under the matching subagent', async () => {
     const storage = new MemoryStorage()
     const scan = vi.spyOn(storage, 'scan')
-    const k = Kernel.create({
+    const k = Kernel.create({ loops: defaultLoops(),
       storage,
       seams: fakeSeams(),
       provider: Object.assign(fakeProvider([textTurn('child says hi')]), { models: () => [catalogue()] }),

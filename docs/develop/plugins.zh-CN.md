@@ -141,8 +141,18 @@ Host 普通树与 Web 页面分别创建 Context。`web:` 是平台合成的客�
 
 ## 编写 Agent Loop
 
-Agent Loop 负责调度与自身检查点状态。通过 `@agnes/extension-api` 导出 `LoopFactory`（`id`、`version`、`capabilities`、版本化 `codec`、`create(ctx)`、`resume(ctx, checkpoint)`），驱动实现 `step(signal)`、`cancel()`、`dispose()` 与 `checkpoint()`。在插件 apply 中调用 `registerLoopPlugin(ctx, '包名', factory)`；`agnes.plugins` 的对应入口声明 `inject: ["loops"]`。Host 在加载插件前安装 Cordis 服务，插件卸载时移除注册。`kernel.loops.catalog()` 返回已安装循环的身份、能力和可信来源包。
+Agent Loop 负责调度与自身检查点状态。通过 `@agnes/extension-api` 导出 `LoopFactory`（`id`、`version`、`capabilities`、版本化 `codec`、`create(ctx)`、`resume(ctx, checkpoint)`），驱动实现 `step(signal)`、`cancel()`、`dispose()` 与 `checkpoint()`。在插件 apply 中调用 `registerLoopPlugin(ctx, '包名', factory)`；`agnes.plugins` 的入口声明 `inject: ["loops"]`。注册归插件 fiber 所有，卸载时移除；`kernel.loops.catalog()` 返回身份、能力与可信来源包。
 
-上下文提供多模态模型请求、经过 Host 审批的单次/批量工具执行、输入、事件、检查点存储和等待/唤醒；压缩与子会话端口可选。`ctx.input.accept()` 打开或恢复当前轮次，返回可选的稳定输入 `id`；保存检查点后通过 `ctx.events.finish(reason)` 结束轮次。批量结果保持输入顺序，是否并行仍由工具策略决定。恢复前必须校验 codec 版本，执行过程遵守取消信号。
+每一步显式返回 `outcome: 'running' | 'idle' | 'turn-ended' | 'parked'`；`phase` 仅用于展示。`until: 'turn-end'` 在首个轮次结束时停止；`until: 'idle'` 在正常完成后继续处理输入，直到无输入、挂起或其他结束原因。生产 runner 与 `driveLoop` testkit 采用相同规则。返回结束结果前先调用 `ctx.events.finish(reason)`。
 
-新会话选择优先级为显式参数、管理端默认值、profile 顶层 `loop: { id, version }`、内置 `agnes.default@1.0.0`。SDK 使用 `client.createSession({ cwd, loop })` 或 `client.session.new({ cwd, loop })`，CLI 使用 `agh -p "提示词" --loop example.dag@1.0.0`。会话开始记录固定循环身份；旧会话映射到内置循环。循环缺失时明确失败，不会在恢复时替换为默认循环。参见[独立 DAG 示例](../../examples/loops/dag-loop/README.md)：模型规划或静态计划、并行工具波次、依赖汇合及带不确定性检查的恢复均只依赖公共接口。
+`ctx.input.claim('next-turn')` 打开或恢复轮次；轮次结束前重复调用返回当前输入。`claim('next-step')` 消费本轮 steer。输入含稳定 `id`、`turnId`、`kind`、`trust`、`actor` 与内容。`ctx.turn.view()` 返回独立且深度冻结的视图：压缩后的可见历史、本轮工具目录与 JSON schema、有效模型及能力、system/runtime 提示词与预算。执行仍受策略和审批约束。
+
+通过 `await ctx.prepareRequest({ system, messages, tools, sampling, invocationId })` 准备请求，再交给 `ctx.model.stream(request, signal)` 或 `complete(request, signal)`。省略 messages 时使用可见历史；tools 指定冻结目录中的精确工具名。Core 负责 route、contract、哈希派生、媒体校验和本轮身份绑定；作者不填写 `contractId`、`derivedHash` 或 `route`。所有循环的模型/工具端口都经过 Core 的最大步数、请求上限及 quote/deny 准入。批量结果保持输入顺序，策略决定可并行的调用。
+
+为请求和工具调用分配稳定 `invocationId`。`ctx.effects.status(id)` 返回 `not-sent`、`may-have-sent` 或含持久响应的 `responded`。通过 `ctx.checkpoints.write(driver.checkpoint(), { invocationIds })` 关联检查点与副作用。重开可复用持久响应；不确定的调用拒绝自动重放。responded 不代表工具成功，也不保证进程外副作用恰好执行一次。
+
+受控的 `turn.checkpoint`、`model.respond`、`tools.drain`、压缩与延迟等待端口维护 Core 的账本和恢复不变量。调度器通过 `ctx.turn.continuation()` 选择下一条边，无须接触私有程序计数器。`@agnes/loop-default` 只使用公共上下文，由 Base 发行包的普通插件行注册。`checkpointMode: 'ledger'` 使用 Core 恢复并接受没有驱动检查点的历史会话。有状态驱动默认使用 `'driver'` 模式，恢复前校验 codec 版本。可选 `ctx.children` 是绑定父会话的 `ChildAgentSessionService`，提供 start/list/message/interrupt/result/events/dispose。
+
+遵守取消信号，dispose 必须幂等。会话关闭先停止准入，再取消并等待活跃驱动/工具工作，允许最终写入，然后关闭 hooks、账本与工作区租约。释放非活跃的账本续点会保留其恢复能力。
+
+新会话选择优先级为显式参数、管理端默认值、profile 顶层 `loop: { id, version }`、`agnes.default@1.0.0`。SDK 使用 `client.createSession({ cwd, loop })` 或 `client.session.new({ cwd, loop })`，CLI 使用 `agh -p "提示词" --loop example.dag@1.0.0`。开始记录固定循环身份；默认值变更仅影响新会话。旧会话映射到默认身份，缺失时明确失败，不会替换循环。参见[独立 DAG 示例](../../examples/loops/dag-loop/README.md)：模型规划、并行波次、依赖汇合与恢复均只依赖公共端口。

@@ -1,10 +1,9 @@
-import type { LoopCheckpoint, LoopEffectStatus } from '@agnes/extension-api'
+import type { LoopCheckpoint, LoopEffectStatus, ToolResult } from '@agnes/extension-api'
 import type { InferenceEvent } from '@agnes/protocol'
-import type { ToolResult } from '@agnes/extension-api'
 import { scanAll } from '../log/scan-pages.js'
 import { canonicalJson, sha256Hex } from '../request/hash.js'
-import { CoreError } from '../types.js'
 import type { SessionImpl } from '../step/session.js'
+import { CoreError } from '../types.js'
 
 const EVENT = 'x/core/loop-invocation'
 type Record = {
@@ -15,17 +14,33 @@ type Record = {
   result?: ToolResult | readonly InferenceEvent[]
 }
 export class LoopInvocations {
-  constructor(private readonly s: SessionImpl, private readonly checkpoint: () => LoopCheckpoint | null) {}
+  constructor(
+    private readonly s: SessionImpl,
+    private readonly checkpoint: () => LoopCheckpoint | null,
+  ) {}
   private async record(id: string): Promise<Record | undefined> {
-    if (!id || id.length > 256) throw new CoreError('E_ENVELOPE', 'invocationId must contain 1 to 256 characters')
-    const rows = await scanAll((query) => this.s.d.log.scan(query), { type: EVENT, lane: this.s.lane, toSeq: this.s.lastSeq })
-    return rows.map((row) => row.data as unknown as Record).reverse().find((row) => row.invocationId === id)
+    if (!id || id.length > 256)
+      throw new CoreError('E_ENVELOPE', 'invocationId must contain 1 to 256 characters')
+    const rows = await scanAll((query) => this.s.d.log.scan(query), {
+      type: EVENT,
+      lane: this.s.lane,
+      toSeq: this.s.lastSeq,
+    })
+    return rows
+      .map((row) => row.data as unknown as Record)
+      .reverse()
+      .find((row) => row.invocationId === id)
   }
   async status(id: string): Promise<LoopEffectStatus> {
     const row = await this.record(id)
     if (!row) return { status: 'not-sent', invocationId: id }
     if (row.status === 'responded' && row.result !== undefined)
-      return { status: 'responded', invocationId: id, checkpoint: row.checkpoint, result: structuredClone(row.result) }
+      return {
+        status: 'responded',
+        invocationId: id,
+        checkpoint: row.checkpoint,
+        result: structuredClone(row.result),
+      }
     return { status: 'may-have-sent', invocationId: id, checkpoint: row.checkpoint }
   }
   async claim(id: string, input: unknown): Promise<ToolResult | readonly InferenceEvent[] | undefined> {
@@ -34,25 +49,52 @@ export class LoopInvocations {
     await this.s.locked(async () => {
       const previous = await this.record(id)
       if (previous) {
-        if (previous.fingerprint !== fingerprint) throw new CoreError('E_RELATION', 'invocationId was reused for a different operation')
+        if (previous.fingerprint !== fingerprint)
+          throw new CoreError('E_RELATION', 'invocationId was reused for a different operation')
         if (previous.status !== 'responded' || previous.result === undefined)
-          throw new CoreError('E_RELATION', 'Invocation may have been sent; reconcile its effect before replay', { invocationId: id })
+          throw new CoreError(
+            'E_RELATION',
+            'Invocation may have been sent; reconcile its effect before replay',
+            { invocationId: id },
+          )
         cached = structuredClone(previous.result)
         return
       }
-      await this.s.d.log.append([this.s.ev(EVENT, {
-        invocationId: id, fingerprint, status: 'may-have-sent', checkpoint: this.checkpoint(),
-      }, { ignorable: true })])
+      await this.s.d.log.append([
+        this.s.ev(
+          EVENT,
+          {
+            invocationId: id,
+            fingerprint,
+            status: 'may-have-sent',
+            checkpoint: this.checkpoint(),
+          },
+          { ignorable: true },
+        ),
+      ])
     })
     return cached
   }
   async settle(id: string, input: unknown, result: ToolResult | readonly InferenceEvent[]): Promise<void> {
-    await this.s.d.log.append([this.s.ev(EVENT, {
-      invocationId: id, fingerprint: sha256Hex(canonicalJson(input)), status: 'responded',
-      checkpoint: this.checkpoint(), result,
-    }, { ignorable: true })])
+    await this.s.d.log.append([
+      this.s.ev(
+        EVENT,
+        {
+          invocationId: id,
+          fingerprint: sha256Hex(canonicalJson(input)),
+          status: 'responded',
+          checkpoint: this.checkpoint(),
+          result,
+        },
+        { ignorable: true },
+      ),
+    ])
   }
-  async run<T extends ToolResult | readonly InferenceEvent[]>(id: string, input: unknown, invoke: () => Promise<T>): Promise<T> {
+  async run<T extends ToolResult | readonly InferenceEvent[]>(
+    id: string,
+    input: unknown,
+    invoke: () => Promise<T>,
+  ): Promise<T> {
     const cached = await this.claim(id, input)
     if (cached !== undefined) return cached as T
     const result = await invoke()

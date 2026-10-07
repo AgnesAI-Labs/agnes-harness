@@ -138,6 +138,9 @@
     },
     {
       "path": "packages/model-adapters"
+    },
+    {
+      "path": "packages/loop-default"
     }
   ]
 }

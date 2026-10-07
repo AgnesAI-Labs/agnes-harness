@@ -1,3 +1,4 @@
+import { defaultLoops } from '../testkit/loops.js'
 import type { ModelRecord } from '@agnes/protocol'
 import { expect, it } from 'vitest'
 import { Kernel } from '../src/kernel.js'
@@ -46,7 +47,7 @@ it('compacts a fork child over the tool results it inherited from its parent', a
   ])
   Object.assign(provider, { models: () => [model()] })
   const storage = new MemoryStorage()
-  const k = Kernel.create({
+  const k = Kernel.create({ loops: defaultLoops(),
     storage,
     seams: fakeSeams(),
     provider,

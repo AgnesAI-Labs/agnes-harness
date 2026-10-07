@@ -1,3 +1,4 @@
+import { defaultLoops } from '../testkit/loops.js'
 import type { ToolDef } from '@agnes/extension-api'
 import { type InferenceEvent, type ModelRecord, validateEvent } from '@agnes/protocol'
 import { describe, expect, it } from 'vitest'
@@ -95,7 +96,7 @@ async function terminalOutcome(
     }),
   })
   const preset = presetDefaults()
-  const kernel = Kernel.create({
+  const kernel = Kernel.create({ loops: defaultLoops(),
     storage: new MemoryStorage(),
     seams: fakeSeams(),
     provider,

@@ -1,5 +1,5 @@
 import { type Context, Service } from '@agnes/cordis'
-import { CoreError, defaultLoopFactory } from '@agnes/core'
+import { CoreError } from '@agnes/core'
 import {
   defineProviderKind,
   type LoopFactory,
@@ -41,7 +41,6 @@ export class LoopsService extends Service implements LoopRegistryPort {
       }),
       (owner, source, provider) => owner.loops.register(source, provider),
     )
-    this.registry.register('@agnes/core', defaultLoopFactory, ctx)
   }
   register(sourcePackage: string, factory: LoopFactory): () => Promise<void> {
     return this.registry.register(

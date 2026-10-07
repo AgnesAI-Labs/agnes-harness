@@ -1,3 +1,4 @@
+import { defaultLoops } from '../testkit/loops.js'
 import type { ModelRecord } from '@agnes/protocol'
 import { describe, expect, it, vi } from 'vitest'
 import {
@@ -39,7 +40,7 @@ const model = (): ModelRecord => ({
 function setup(storage = new MemoryStorage(), treeBudgetCredits: number | null = 10) {
   const provider = fakeProvider([])
   Object.assign(provider, { models: () => [model()] })
-  const kernel = Kernel.create({
+  const kernel = Kernel.create({ loops: defaultLoops(),
     storage,
     seams: fakeSeams(),
     provider,

@@ -1,3 +1,4 @@
+import { defaultLoops } from '../testkit/loops.js'
 import type { ModelRecord } from '@agnes/protocol'
 import { describe, expect, it } from 'vitest'
 import { requireChildControl } from '../src/child/store.js'
@@ -60,7 +61,7 @@ function bound(): SandboxSeam {
 }
 
 function kernel(storage: MemoryStorage, maxFanOut = 4, hooks?: HookPort) {
-  return Kernel.create({
+  return Kernel.create({ loops: defaultLoops(),
     ...(hooks ? { hooks } : {}),
     storage,
     seams: fakeSeams({ sandbox: unbound }),

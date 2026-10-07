@@ -1,3 +1,4 @@
+import { defaultLoops } from '../testkit/loops.js'
 import type { ModelRecord } from '@agnes/protocol'
 import { describe, expect, it } from 'vitest'
 import { Kernel } from '../src/kernel.js'
@@ -59,7 +60,7 @@ function createChild(from: SessionImpl, kind: 'fork' | 'spawn', opts: CreateOpts
 
 function kernel(storage: StorageAdapter, provider: FakeProvider, warnings: unknown[] = [], ids = fixedIds()) {
   Object.assign(provider, { models: () => [model()] })
-  const k = Kernel.create({
+  const k = Kernel.create({ loops: defaultLoops(),
     storage,
     seams: fakeSeams(),
     provider,

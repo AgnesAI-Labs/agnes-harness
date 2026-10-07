@@ -1,3 +1,4 @@
+import { defaultLoops } from '@agnes/core/testkit'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -64,6 +65,7 @@ const quiet = { debug: () => undefined, info: () => undefined, warn: () => undef
 function kernel(storage: ReturnType<typeof createSqliteStorage>) {
   const provider = Object.assign(fakeProvider([textTurn('x')]), { models: () => [model()] })
   return Kernel.create({
+    loops: defaultLoops(),
     storage,
     seams: fakeSeams(),
     provider,

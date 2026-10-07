@@ -281,3 +281,13 @@ export {
   acpChildAgentProvider,
   acpChildAgentsPlugin,
 } from '../extensions/subagent-acp/src/index.js'
+
+import { type LoopPluginContext, registerLoopPlugin } from '@agnes/extension-api'
+import { defaultLoopFactory } from '@agnes/loop-default'
+/** The distribution bundle owns this ordinary row; the implementation lives in loop-default. */
+export const defaultLoopPlugin = {
+  inject: ['loops'],
+  apply(ctx: LoopPluginContext) {
+    registerLoopPlugin(ctx, '@agnes/base', defaultLoopFactory)
+  },
+}

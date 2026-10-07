@@ -622,7 +622,7 @@ describe('resume matrix (core Task 39)', () => {
     await session.resume()
     await session.abort()
 
-    expect(await session.step()).toEqual({ outcome: 'running', phase: 'terminal', reason: 'aborted' })
+    expect(await session.step()).toEqual({ outcome: 'turn-ended', phase: 'terminal', reason: 'aborted' })
     expect((await log.scan({ type: 'tool/result', order: 'desc', limit: 1 }))[0]?.data).toMatchObject({
       code: 'TOOL_OUTCOME_UNKNOWN',
       isError: true,

@@ -1,8 +1,8 @@
 import type { RequestBody } from '@agnes/protocol'
 import type { SurfaceNode } from '../project/surface.js'
 import { validateUserMessageImages } from '../request/user-message-images.js'
-import { CoreError } from '../types.js'
 import type { SessionImpl } from '../step/session.js'
+import { CoreError } from '../types.js'
 
 /** Custom history still enters Core derivation, validation and untrusted envelopes. */
 export function loopRequestSurface(s: SessionImpl, messages: RequestBody['messages']): SurfaceNode[] {
@@ -20,7 +20,9 @@ export function loopRequestSurface(s: SessionImpl, messages: RequestBody['messag
       pinned: false,
       event: {
         ...s.ev(tool ? 'tool/result' : message.role + '/message', data, { trust: 'untrusted' }),
-        seq: -(messages.length - i), ts: new Date(s.d.clock()).toISOString(), id: 'loop-message-' + i,
+        seq: -(messages.length - i),
+        ts: new Date(s.d.clock()).toISOString(),
+        id: 'loop-message-' + i,
       },
     }
   })

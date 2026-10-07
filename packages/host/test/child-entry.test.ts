@@ -1,3 +1,4 @@
+import { defaultLoops } from '@agnes/core/testkit'
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -117,6 +118,7 @@ function kernel(
 ) {
   Object.assign(provider, { models: () => [model()] })
   return Kernel.create({
+    loops: defaultLoops(),
     storage,
     seams: fakeSeams(),
     provider,

@@ -1,3 +1,4 @@
+import { defaultLoops } from '../testkit/loops.js'
 import { describe, expect, it } from 'vitest'
 import {
   assertFsEnforces,
@@ -273,7 +274,7 @@ describe('assertFsEnforces', () => {
 
 describe('no session opens against a file system that enforces no policy', () => {
   const kernel = (fsOps: FsOps) =>
-    Kernel.create({
+    Kernel.create({ loops: defaultLoops(),
       storage: new MemoryStorage(),
       seams: fakeSeams(),
       provider: fakeProvider([]),
