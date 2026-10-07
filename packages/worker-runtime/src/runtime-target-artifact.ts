@@ -20,9 +20,9 @@ function immutableArtifact(value: RuntimeTargetArtifact): HostRuntimeTargetArtif
 }
 
 /**
- * Worker-side adapter for Task 8's sole live delivery shape. It validates the closed wire envelope,
+ * Worker-side adapter for the live delivery shape. It validates the closed wire envelope,
  * verifies the exact canonical bytes through plugin-runtime's one codec, and snapshots the artifact
- * so a caller cannot mutate the value that Task 9's latest-wins slot will retain.
+ * so a caller cannot mutate the value that the latest-wins slot will retain.
  */
 export function adaptRuntimeStaleFrame(value: unknown): VerifiedRuntimeTargetDelivery {
   const checked = validateRuntimeStaleFrame(value)

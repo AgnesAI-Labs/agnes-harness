@@ -11,7 +11,7 @@ import { mountMatches } from './types.js'
 /** The narrow slice of a mount-table row `createMountProxy` actually reads: a loopback host/port and
  * the mount prefix it was matched against. M3 (final review, Minor): this used to be
  * `{ endpoint: SurfaceEndpoint; mount: string }`, which forced every caller -- including
- * `packages/cli/launch/surface-mounts.ts`, whose Task-15 RPC row only ever carries
+ * `packages/cli/launch/surface-mounts.ts`, whose mount-proxy RPC row only ever carries
  * `{mount, host, port}` -- to fabricate a `healthPath` field purely to satisfy the wider type. Narrow
  * to what is used instead of widening the caller. */
 export type MountProxyMatch = Readonly<{ mount: string; host: string; port: number }>

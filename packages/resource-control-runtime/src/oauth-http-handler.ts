@@ -15,36 +15,17 @@ import { claimOAuthNonce, openOAuthState, sealOAuthState } from './oauth-state.j
 
 /**
  * The daemon HTTP callback endpoints for the OAuth 2.1 authorization_code flow (`/oauth/:serverId/start`
- * and `/oauth/:serverId/callback`). This module is generic OAuth-over-HTTP plumbing built on top of Task 2's signed state
- * orchestrator (`oauth-state.ts`) and Task 3's client registration chain / provider adapter
+ * and `/oauth/:serverId/callback`). This module builds on the signed state
+ * orchestrator (`oauth-state.ts`) and client registration chain / provider adapter
  * (`oauth-client.ts`) - like both of those, it knows nothing about *how* the caller looks up an MCP
  * server's URL or persists authorization status; those are injected (`resolveServer` /
  * `onAuthorizationStatus`) so this handler can be unit-tested against a fake and reused by whichever
  * process actually owns that state (see the two type doc comments below for exactly why).
  *
- * ## Two deliberate deviations from the task brief's literal `createOAuthHttpHandler` sketch
- *
- * The brief's "Produces" line sketches `createOAuthHttpHandler(opts: {secret, credentialStore,
- * baseUrl})`. That signature is not implementable as written - starting an authorization flow
- * requires knowing the target MCP server's URL (and its optional static `client_id`), and neither
- * of those is derivable from `secret`/`credentialStore`/`baseUrl` alone. This module therefore adds
- * two more fields to the options type: `resolveServer` (required - there is no way to build an
- * authorization URL without it) and `onAuthorizationStatus` (optional - the brief's step 4 asks the
- * callback to update `McpServerDescriptor.authorizationStatus`, but that field lives in the daemon's
- * `resource-control-store` journal, a single-writer, read-modify-write JSON file this handler's
- * actual caller - `agnes serve`'s launcher process, a *different* process from the daemon that owns
- * that journal - cannot safely write to directly without racing the daemon's own writer. Reaching it
- * safely needs a daemon-local RPC method - at the time Task 4 wrote this module, that method did not
- * exist yet (the plan's own preflight scan assigns `packages/daemon/src/local/methods/`... in
- * practice `_agnes/v1/mcp.servers.oauth.status.set`, see resource-control-contracts/src/
- * resource-control.ts, a different location than that preflight guess found - to Task 5, not Task
- * 4). Task 5 has since added it and wired `packages/cli/launch/oauth-admin.ts`'s
- * `onAuthorizationStatus` to call it; this option stays optional here regardless, because this
- * module still cannot assume every caller has (or wants) a daemon connection to report through -
- * keeping the hook optional and injected is what let this module be built, tested and merged one
- * task before its one real consumer existed, and is not made mandatory now just because a consumer
- * finally showed up. See the Task 4 report for the original reasoning and the Task 5 report for how
- * the gap was closed.)
+ * `resolveServer` supplies the target URL and optional static client ID. Authorization status
+ * belongs to the daemon's single-writer resource-control journal; the launcher must report through
+ * `_agnes/v1/mcp.servers.oauth.status.set` rather than write that journal from another process.
+ * The injected `onAuthorizationStatus` hook stays optional for callers without a daemon connection.
  */
 
 /** What this handler needs to know about one managed MCP server to start an authorization flow.
@@ -67,8 +48,7 @@ export type OAuthAuthorizationStatus = 'authorized' | 'needs-reconnect' | 'error
 
 /** `beginAuthorization`'s outcome, transport-agnostic (no HTTP status code baked in - `handleStart`
  * maps this to a redirect-or-error HTTP response; `startAuthorization` below maps it to plain JSON
- * instead). Mirrors the daemon's `mcp.servers.oauth.start`-shaped intent from the mcp-oauth-
- * authorization plan's Task 5 brief (`{authorizeUrl} | {pendingClientId: true}`), plus the failure
+ * instead). Includes authorization URLs, pending client IDs, and the failure
  * cases `handleStart`'s HTTP responses already distinguish (404/502/502) so a JSON caller can tell
  * them apart the same way an HTTP caller reading the status code could. */
 export type OAuthStartResult =
@@ -147,7 +127,7 @@ type PendingRegistration = Readonly<{
 }>
 
 /**
- * Exported (Task 6's addition; originally private to this module) so `mcp-oauth-credentials.ts`'s
+ * Exported so `mcp-oauth-credentials.ts`'s
  * worker-side lazy-refresh resolver reads and writes the exact same credential-store ref this
  * handler's callback route uses to persist the initial token exchange - the two must agree on the
  * ref format byte-for-byte or a refresh would silently write to (or read from) a different file than
@@ -158,7 +138,7 @@ export function credentialRefFor(serverId: string): string {
 }
 
 /**
- * Exported (Task 6's addition; originally private to this module) so `mcp-oauth-credentials.ts`'s
+ * Exported so `mcp-oauth-credentials.ts`'s
  * `refreshAuthorization` call gets the identical timeout + `redirect: 'error'` guard as every other
  * SDK network call in this OAuth flow, instead of risking a second, independently-written (and
  * possibly subtly different) copy of this security-reviewed wrapper - see the SHARP EDGE comment at
@@ -222,7 +202,7 @@ function safeReturnTo(returnTo: string | undefined, baseUrl: URL): URL {
  * `/callback` deliberately gets none of this: it is reached via a real top-level cross-origin
  * navigation *from the authorization server back to us* (a 302 the user's browser follows after
  * consenting), which this exact same check would incorrectly reject as cross-site. Its own
- * protection - the signed, replay-protected `state` parameter (Task 2) - is what actually
+ * protection - the signed, replay-protected `state` parameter - is what actually
  * authenticates that request; adding a same-origin check there would break the real flow, not
  * secure it further.
  *
@@ -273,8 +253,7 @@ function redirect(response: ServerResponse, target: URL): void {
  * capability: `startAuthorization`, a plain async function carrying the exact same "resolve ->
  * discover -> register client -> PKCE -> sign state -> build authorize URL" logic `GET /start` uses
  * (see `beginAuthorization` below), returned as data instead of a redirect. It exists for the
- * mcp-oauth-authorization plan's Task 5 (`mcp.servers.oauth.start`) - see that task's report for why
- * it is exposed this way rather than as a genuine daemon-dispatched `_agnes/v1/...` RPC method: the
+ * browser-facing authorization start operation. This stays in the HTTP process because the
  * `state` this closure signs is only ever verifiable by *this exact instance's* `/callback` (it is
  * sealed with `opts.secret` and cross-referenced against this closure's own in-memory
  * `pendingRegistrations`, both process-lifetime-scoped by design - see oauth-state.ts and the
@@ -311,12 +290,10 @@ export function createOAuthHttpHandler(opts: CreateOAuthHttpHandlerOptions): OAu
   // signature has no `fetchFn` option at all, because it never fetches anything (pure PKCE generation
   // + URL construction) - omitting it there is correct, not a second instance of this bug.
   //
-  // Task 6 addition: `mcp-oauth-credentials.ts` (worker-side lazy token refresh - a separate process
+  // `mcp-oauth-credentials.ts` (worker-side lazy token refresh - a separate process
   // from this handler) makes its own independent `resolveAuthorizationServerUrl`/
   // `tryDiscoverAuthorizationServerMetadata`/`refreshAuthorization` calls and needs this exact same
-  // discipline extended to that call site - flagged as a known future risk by this file's own Task 4
-  // fix-round-2 review ("whichever later task builds token-refresh will need the identical fetchFn
-  // discipline extended to that call site"). It does not reuse this closure's `fetchImpl` value
+  // discipline extended to that call site. It does not reuse this closure's `fetchImpl` value
   // (different process, no shared memory) - it builds its own via the `withTimeout` export above,
   // the same function, not a parallel reimplementation.
   const fetchImpl = withTimeout(opts.fetchImpl, requestTimeoutMs)

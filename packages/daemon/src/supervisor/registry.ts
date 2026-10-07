@@ -506,9 +506,9 @@ export class WorkerRegistry implements Registry<RemoteEntry> {
    * forgotten synchronously so a same-history `session/load` creates a worker from the durable
    * replacement snapshot. Busy sessions are marked and retire only at their terminal turn boundary.
    *
-   * A general capability, unchanged by resource-live-reload Task 7: it still retires *every* live
-   * session, unconditionally. Task 7 only narrowed its caller (supervisor.ts's
-   * `wireResourceSnapshotNotifications`), which now prefers the lightweight in-place
+   * A general capability: it still retires *every* live
+   * session, unconditionally. Its caller, supervisor.ts's
+   * `wireResourceSnapshotNotifications`, prefers the lightweight in-place
    * `resource.stale` notice (@agnes/resource-control-runtime's `notifyLiveSessionWorkers`) and calls
    * this method's narrower sibling, `retireSessions()`, only for sessions whose notice failed to
    * deliver -- see that method's doc comment.
@@ -520,7 +520,7 @@ export class WorkerRegistry implements Registry<RemoteEntry> {
   /**
    * Narrower sibling of `retireForResourceSnapshot()`: retires only the sessions named in `keys`,
    * leaving every other live session on its current (already-delivered) resource snapshot untouched.
-   * Added for resource-live-reload Task 7 as the fallback path for sessions whose lightweight
+   * Fallback path for sessions whose lightweight
    * `resource.stale` notice (@agnes/resource-control-runtime's `notifyLiveSessionWorkers`) failed to
    * deliver -- a session that *did* receive the notice needs no process kill/respawn at all.
    *

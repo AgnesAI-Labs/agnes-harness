@@ -1,5 +1,5 @@
 // Node-only: HMAC signing needs `node:crypto`, so this module (unlike jcs.ts) never reaches the
-// browser build (see index.browser.ts and Task 22's browser-imports scan).
+// browser build (see index.browser.ts).
 import { createHash, createHmac, randomBytes } from 'node:crypto'
 import { type Auth, META_KEY } from '@agnes/protocol'
 import { type AuthOption, type AuthProvider, jwtAuth, localAuth, portalIdentityAuth } from './auth.js'

@@ -76,7 +76,7 @@ class LatestRuntimeTargetSlot<Result> implements RuntimeTargetSlot<Result> {
   offer(frame: unknown): Promise<RuntimeTargetSlotOutcome<Result>> {
     let delivery: VerifiedRuntimeTargetDelivery
     try {
-      // The Task 8 adapter validates the envelope and owns immutable artifact/target snapshots
+      // The delivery adapter validates the envelope and owns immutable artifact/target snapshots
       // before this method returns control to the caller.
       delivery = adaptRuntimeStaleFrame(frame)
     } catch (error) {

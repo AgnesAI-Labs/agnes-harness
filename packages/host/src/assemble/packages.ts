@@ -534,7 +534,7 @@ function builtinDir(require: ReturnType<typeof createRequire>, id: string): stri
 }
 
 /**
- * The directory every enabled package is imported from (Task 24 Step 8): builtins resolve to the
+ * The directory every enabled package is imported from: builtins resolve to the
  * copy shipped with this installation, workspace entries resolve under the lock's workspace path,
  * and everything else lands in the per-profile packages cache. Locations only -- which packages may
  * run is decided by profile.packages, not by this map.
@@ -553,7 +553,7 @@ export function packageDirs(
       continue
     }
     // Unreachable today: lockState refuses any lock carrying a workspace section (fail-closed), so
-    // no boot path can hand packageDirs one. Kept per the plan sketch, against Task 17 landing.
+    // no boot path can hand packageDirs one.
     if (entry?.source.type === 'workspace' && opts.lock.workspace)
       out.set(
         p.id,

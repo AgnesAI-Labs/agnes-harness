@@ -1,5 +1,5 @@
 // `@agnes/extension-api` 的作者面版本号（规格 §19，独立 semver）。清单 `apiRange` 与它比对，
-// 不合判 `E_API_RANGE`。03 Task 9 会把这个常量挪进 `version.ts` 并由本文件转出；在那之前它住这里。
+// 不合判 `E_API_RANGE`。
 
 export * from './api-range.js'
 

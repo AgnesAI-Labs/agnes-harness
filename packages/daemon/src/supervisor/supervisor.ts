@@ -212,7 +212,7 @@ import { listenWebSocket } from './ws.js'
  * Bridges `WorkerRegistry` (`Registry<RemoteEntry>`) onto the concrete `Registry<SessionEntry>`
  * shape `registerAcp`/`registerAgnes` are typed against (`LocalContext.registry`).
  *
- * `registry.test.ts` (daemon Task 17) spells out exactly why this is not a free assignment: a
+ * `registry.test.ts` spells out exactly why this is not a free assignment: a
  * `RemoteEntry` carries no `backlog` / `backlogTruncated` / `tailError` / `listenerErrors` (fields
  * `SessionRegistry`'s own tail bookkeeping uses internally - grepping `local/methods/acp.ts` and
  * `local/methods/agnes.ts` shows neither file ever reads them off an entry it was handed), and its
@@ -735,7 +735,7 @@ export type StartSupervisorOptions = {
 // `surfaceApiVersion` producer outside the deploy-policy consumers themselves, and the package
 // `agnesVersion: '0.0.0'` used elsewhere for PackageManager construction would NOT satisfy the
 // example deploy manifest's `harnessRange: "^0.1"` -- `^0.1` excludes `0.0.0`). These match the
-// values every existing Surface fixture (Task 2/3/6's own tests, the removed demo-surface example)
+// values every existing Surface fixture (including the removed demo-surface example)
 // already assumes; promoting them to a real release-version source is out of this task's scope.
 const DAEMON_HARNESS_VERSION = '0.1.0'
 const DAEMON_SURFACE_API_VERSION = '1.0.0'
@@ -768,7 +768,7 @@ export function deliverWorkerEvent(
  * Wires the daemon's one hook for "a resource-control mutation durably committed"
  * (`ResourceControlStore.setSuccessfulSnapshotHandler`, called only after a successful effect's
  * latest worker snapshot and terminal operation commit - resource-control-store/src/control-store.ts)
- * to the resource-live-reload plan's lightweight in-place notice, with a narrow heavyweight fallback:
+ * to a lightweight in-place notice, with a narrow heavyweight fallback:
  *  - `notifyLiveSessionWorkers` (@agnes/resource-control-runtime): tells every still-alive
  *    session/service worker (excluding the resource-lifecycle worker itself - see
  *    WorkerPool.activationLinks()) to refresh its own MCP/Skills snapshot before its next turn,
@@ -782,19 +782,17 @@ export function deliverWorkerEvent(
  *    retiring somebody, is what decouples "a snapshot changed" from "some session needs replacing".
  *  - `registry.retireSessions(failedKeys, 'resource-notify-failed')`: called only for those failed
  *    keys, as the fallback for a session the lightweight notice could not reach. A session whose
- *    notice delivered successfully is left alone - Task 7's investigation (task-7-report.md) found
- *    that unconditionally retiring it too (the pre-existing `registry.retireForResourceSnapshot()`,
- *    2026-09-14, predates this plan) provides no coverage the lightweight path lacks and only pays an
+ *    notice delivered successfully is left alone: unconditionally retiring it too provides no
+ *    coverage the lightweight path lacks and only pays an
  *    unnecessary process kill/respawn + MCP reconnect cost. `retireForResourceSnapshot()` itself is
  *    unchanged and still available as a general "retire every live session" capability; this handler
  *    simply no longer calls it.
  *
- * This is where resource-control-runtime's manager-level `apply`/`activate` callbacks were originally
- * meant to send this notice (per the plan's own spec and Task 5's brief) - they cannot: `apply` runs
+ * Resource-control-runtime's manager-level `apply`/`activate` callbacks cannot send this notice: `apply` runs
  * inside whichever worker process is bootstrapping (packages/resource-control-worker/src/
  * runtime-bootstrap.ts), including the resource-lifecycle worker itself, with no in-memory reference
  * to this daemon's WorkerPool. This function is the real "a resource actually changed" chokepoint that
- * *does* have one - see task-5-report.md for the full investigation.
+ * *does* have one.
  *
  * Exported standalone (not inlined into `startSupervisor`) so this wiring is directly testable without
  * booting a full supervisor - see daemon/test/resource-snapshot-notify.test.ts.
@@ -823,10 +821,8 @@ export function wireResourceSnapshotNotifications(o: {
 
 /**
  * Assembles and runs one `agnesd` supervisor process: main-instance lock, worker pool, client and
- * worker unix sockets, per-connection RPC wiring, idle-worker reclaim. Mirrors daemon 稿 §14's
- * startup sequence (main lock → workers listener → client listener → per-connection wiring → idle
- * timer → ready), grounded against the real Task 13-17/29/30 files rather than this plan file's own
- * (stale) sample code - see this task's report for the itemized deviations.
+ * worker unix sockets, per-connection RPC wiring, idle-worker reclaim. Startup takes the main lock,
+ * opens worker and client listeners, wires connections, starts the idle timer, then reports ready.
  */
 export async function startSupervisor(o: StartSupervisorOptions): Promise<{
   failed?: Promise<Error>
@@ -2087,7 +2083,7 @@ export async function startSupervisor(o: StartSupervisorOptions): Promise<{
             Promise.resolve().then(() => workersServer.close()),
             // A Surface is a separate OS child process fed by the mount-proxy HTTP forwarder that
             // whichever process owns the browser-facing `createWebServer` listener builds from the
-            // Task-15 RPC path (`packages/cli/launch/surface-mounts.ts`'s `fetchSurfaceMountProxy`,
+            // mount-proxy RPC path (`packages/cli/launch/surface-mounts.ts`'s `fetchSurfaceMountProxy`,
             // reading `_agnes/v1/surfaces.mounts` -- see `local/methods/surfaces.ts`), never from this
             // file's own `server` (the daemon's private RPC socket) -- not by the worker pool, so it
             // has nothing to drain during closeWorkers. By the time closeSockets runs, stopAccepting

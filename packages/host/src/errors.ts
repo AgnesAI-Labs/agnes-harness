@@ -1,7 +1,7 @@
 /**
  * The closed set of refusals this package raises. Nineteen come from the specification and the host
  * design; `E_PRESET_UNRESOLVED` and `E_HOST_CLOSED` were added when the two call sites that needed
- * them turned out to have no code of their own. `E_MODEL_UNSUPPORTED` (Task 27a) is the third: the
+ * them turned out to have no code of their own. `E_MODEL_UNSUPPORTED` is the third: the
  * runtime model-switch gate's own policy refusal, distinct from core's structural E_MODEL_UNKNOWN.
  * `E_HOME_INVALID` is the fourth, for paths.ts's AGH_HOME validation.
  */

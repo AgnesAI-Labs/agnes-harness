@@ -24,7 +24,7 @@ const OPTION_VERDICT: Record<ApprovalOption, Verdict> = {
 }
 
 /**
- * The *persisted projection* of an approval node -- distinct from `PermissionModal` (Task 18), a
+ * The *persisted projection* of an approval node -- distinct from `PermissionModal`, a
  * live, connection-scoped dialog answered in place off `session.onPermissionRequest` while the
  * request is in flight. This card renders whatever `session.projectUI()` currently reports for the
  * node, so it survives detach/reattach and shows up in session history long after the modal that

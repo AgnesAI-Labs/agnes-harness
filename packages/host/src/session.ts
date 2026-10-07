@@ -66,8 +66,8 @@ type HardRequirements = {
 }
 
 /**
- * Everything about a preset that a session open - or a later runtime switch, Task 27a's
- * `validatePresetSwitch` - has to hold against the actual assembly: is it in `presets.allowed`, can
+ * A session open or runtime switch through `validatePresetSwitch` checks the preset against
+ * the actual assembly: is it in `presets.allowed`, can
  * this deployment provide the sandbox/runtime it hard-requires, does its routing resolve against the
  * routes this host actually built. A deprecated `command_policy` rule is reported to `audit` and
  * does not refuse; the other checks throw `E_PRESET_UNSUPPORTED`/`E_PRESET_UNRESOLVED`.
@@ -101,11 +101,11 @@ export function checkPresetHardRequirements(
       reason: l1.reason,
     })
   // A code preset wants a persistent runtime plus a two-way bridge back into the harness; the remote
-  // transport (Task 6's `adapters.transport`, present exactly when this deployment is remote) carries
+  // transport (`adapters.transport`, present exactly when this deployment is remote) carries
   // one-shot exec and file copies and nothing else, and the runtime contract also routes its startup
   // argv through confine(), which the remote sandbox seam unconditionally refuses. Say so plainly
   // rather than letting it fail later as "no runtime package provides it" - a package does provide
-  // it, this deployment just cannot host it. Checked against the direct `transport` flag Task 6 put
+  // it, this deployment just cannot host it. Checked against the direct `transport` flag
   // on `AdapterBundle`, not by pattern-matching the `sandbox.l1` capability's human-readable `reason`
   // string: a diagnostic string must never become a program-control-flow dependency.
   if (doc.code_runtime?.language !== undefined && a.adapters.transport !== undefined)

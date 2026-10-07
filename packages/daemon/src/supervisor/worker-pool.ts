@@ -29,9 +29,7 @@ import { WorkerLink, type WorkerSessionChannel } from './worker-link.js'
 
 /**
  * The narrow shape this pool needs from daemon's notice sink. The real `NoticeSink` is
- * `local/notice.ts`, daemon Task 12 ([I6]) - not built yet at the time this file was written.
- * Once it lands it satisfies this structurally (it is at minimum an `emit(kind, info)` method), so
- * nothing here needs to change; this is a standalone local type, not an import of a missing module.
+ * `local/notice.ts` and satisfies this structurally through its `emit(kind, info)` method.
  */
 export type NoticeEmitter = {
   // The protocol's closed kind set, not `string`: a kind outside it is refused at the wire by

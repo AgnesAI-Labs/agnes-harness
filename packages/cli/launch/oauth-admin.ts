@@ -6,7 +6,7 @@ import { localPipeFactories } from '../src/boot/pipe-factory.js'
 import type { LocalBackend } from './backend.js'
 
 /**
- * Wires Task 4's `createOAuthHttpHandler` (packages/resource-control-runtime/src/oauth-http-handler.ts)
+ * Wires `createOAuthHttpHandler` (packages/resource-control-runtime/src/oauth-http-handler.ts)
  * into this launcher process, the same way `localPackageAdmin`/`localResourceAdmin` wire their own
  * BFFs: a private Unix-socket SDK client is the sole authority for reading the daemon's managed MCP
  * server definitions (`_agnes/v1/mcp.servers.get`, already existing - not a new RPC method), never
@@ -25,11 +25,8 @@ import type { LocalBackend } from './backend.js'
  *
  * `onAuthorizationStatus` (persisting `McpServerDescriptor.authorizationStatus`, the daemon's
  * single-writer `resource-control-store` journal) is wired here to `client.mcp.servers.oauth.
- * statusSet` - the daemon-local RPC method the mcp-oauth-authorization plan's Task 5 added for
- * exactly this purpose, reached over the same private Unix-socket `client` this file already uses
- * for `resolveServer`'s `mcp.servers.get` reads. Task 4 deliberately left this hook unconnected
- * because that RPC method did not exist yet (see oauth-http-handler.ts's module header and the
- * Task 4 report); this is that gap being closed, not a new design.
+ * statusSet`, reached over the same private Unix-socket `client` this file uses
+ * for `resolveServer`'s `mcp.servers.get` reads.
  */
 export function localOAuthAdmin(backend: LocalBackend, baseUrl: URL) {
   if (!backend.web) throw new Error('local Web credential is unavailable')

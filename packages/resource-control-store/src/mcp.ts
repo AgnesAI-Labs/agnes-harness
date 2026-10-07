@@ -237,7 +237,7 @@ function descriptor(row: McpRow): McpServerDescriptor {
 /** Shared projection for both the mcp.servers.oauth.status read and the .status.set write's own
  * result (the write returns the value it just committed, so a caller can trust its own response
  * instead of always issuing a second read): reuses McpStatus.lastSafeError verbatim rather than
- * inventing a parallel OAuth-specific error field, per the Task 5 brief's explicit instruction (this
+ * inventing a parallel OAuth-specific error field (this
  * one connection-level failure record is what a subsequent, credential-driven connection attempt
  * would populate; it is not this file's job to distinguish "why did OAuth itself fail" from "why did
  * the resulting connection fail" beyond what McpStatus already records - see oauth-http-handler.ts's

@@ -252,8 +252,8 @@ export const RESOURCE_CONTROL_METHODS = Object.freeze({
     'read',
     'mcp.read',
   ),
-  // Durable write, closing the gap the mcp-oauth-authorization plan's Task 4 deliberately left open
-  // (oauth-http-handler.ts's `onAuthorizationStatus` hook): the daemon HTTP callback endpoint runs
+  // Durable write backing oauth-http-handler.ts's `onAuthorizationStatus` hook: the HTTP callback
+  // endpoint runs
   // in a different process than the daemon that owns this journal, so it cannot write
   // authorizationStatus directly - it calls this method over the same private Unix-socket transport
   // every other mcp.servers.* method already uses. 'mcp.manage' (not a new permission) because this

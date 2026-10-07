@@ -67,7 +67,7 @@ export async function packPlugin(folder: string, output?: string): Promise<strin
         'E_EXT_LOAD',
         'Host external declaration schema is invalid. See docs/guide/packages.md#sharing',
       )
-    // W13 owns availability/version checks and Host namespace loading. Use its author declaration.
+    // Host checks availability and versions and loads namespaces from the author declaration.
     const externals = declaredExternals === undefined ? ['@agnes/*'] : Object.keys(declaredExternals)
     const exports = manifest.exports
     const targetEntry =

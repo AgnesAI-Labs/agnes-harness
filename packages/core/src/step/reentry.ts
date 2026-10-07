@@ -369,7 +369,7 @@ export function replacementEffects(s: SessionImpl, name: string, effects: EventI
  * Replaces the session's active preset view in memory and records the switch as an ignorable audit
  * row — not a new register, and not folded into `op.state`: the switch takes effect immediately for
  * whatever calls `deriveRequest` next, and a process that restarts has to replay this row itself
- * (host's job, not core's — see Task 32a's note on why cross-process recovery is out of scope here).
+ * (host's job; cross-process recovery is outside core's scope).
  *
  * Serialized through `s.locked()`, the same lock `enqueue`/`transition`/`appendExtensionEvent` already
  * share: without it, two concurrent switches (or a switch racing `setModel`) would each read the old

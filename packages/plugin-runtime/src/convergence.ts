@@ -26,7 +26,7 @@ export type RuntimeConvergenceReport = Readonly<{
   rows: readonly RuntimeConvergenceRow[]
 }>
 
-/** Task 7's ordinary plugin tree. Resource generations are introduced separately in Task 8. */
+/** Ordinary plugin tree snapshot, independent of resource generations. */
 export type TreeSnapshot = Readonly<{
   hash: string
   rows: readonly Readonly<PluginRow>[]

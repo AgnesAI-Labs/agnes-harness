@@ -200,8 +200,7 @@ export async function runWebCommand(
       // `handleAdmin` is already a fallback chain (package admin, then resource admin); the OAuth
       // callback endpoints join the same chain as a third link rather than server.ts gaining a
       // dedicated `oauthHandler` field, since server.ts's own contract only ever calls one
-      // `handleAdmin` hook and nothing about that contract is OAuth-specific here - see the Task 4
-      // report for why this reads cleaner than threading a second, parallel hook through server.ts.
+      // `handleAdmin` hook and nothing about that contract is OAuth-specific here.
       handleAdmin: async (request, response) =>
         // The generic admin router claims unknown `/api/*` requests. Check the fixed browser
         // service BFF first so its POST endpoint cannot be turned into an admin 405.

@@ -518,7 +518,7 @@ const FAMILIES: Array<Family & { when?: (cx: AgnesContext) => boolean }> = [
 
 /**
  * The closed set of structural refusals a preset or model switch can raise, collapsed to one wire
- * error: `E_PRESET_UNSUPPORTED`/`E_PRESET_UNRESOLVED` are host's `validatePresetSwitch` (Task 27a,
+ * error: `E_PRESET_UNSUPPORTED`/`E_PRESET_UNRESOLVED` are host's `validatePresetSwitch` (
  * `packages/host/src/session-switch.ts`), `E_MODEL_UNSUPPORTED` is host's `validateModelSwitch`'s own
  * policy refusal (the pair exists and the provider publishes it, but it is outside this deployment's
  * assembled route table), and `E_MODEL_UNKNOWN` is core's own structural double-check
@@ -752,7 +752,7 @@ export function registerAgnes(
       }
     }
     const candidates = indexed ? [indexed] : cx.registry.keys()
-    // An index miss retains Task 11's compatibility fallback over open sessions. Refuse ambiguity
+    // An index miss retains the compatibility fallback over open sessions. Refuse ambiguity
     // rather than choosing whichever registry key happens to enumerate first.
     for (const sessionId of candidates) {
       try {

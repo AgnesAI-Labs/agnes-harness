@@ -24,7 +24,7 @@ export function createWin32Platform(): PlatformBackend {
       capabilities: Object.fromEntries(CAPABILITY_IDS.map((id) => [id, caps[id].level])),
     }),
     recordSandboxBackend() {
-      // Task 15 has no Windows process-creation primitive. Never let a report turn argv identity
+      // This backend has no Windows process-creation primitive. Never let a report turn argv identity
       // into a restricted-token claim; HostExec must implement and prove that boundary first.
       caps['sandbox.l1'] = {
         level: 'unavailable',

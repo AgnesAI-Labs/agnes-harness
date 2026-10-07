@@ -3,11 +3,8 @@ import { defineTool } from '@agnes/extension-api'
 import { type Static, Type } from '@sinclair/typebox'
 
 // Every entry this tool proposes is stamped with this fixed provenance. `source` is a required
-// HarnessEntry field (core/src/reduce/shapes.ts:53) that neither the plan's Step 1 test sample (an
-// `as never` cast) nor its Step 7 Entry schema accounted for - a real, unresolved gap between the
-// plan and the shipped core type. DESIGN CALL (flagged in this task's report for whoever implements
-// Task 19, the future consumer of real HarnessEntry values off this queue): `source` is stamped
-// here by execute(), not accepted as tool input. A model proposing a change to its own prompts/
+// HarnessEntry field stamped here by execute(), not accepted as tool input.
+// A model proposing a change to its own prompts/
 // memory/skills/subagents has no legitimate claim to make about that entry's *provenance* - letting
 // the caller supply an arbitrary `source` string would let a proposal assert a provenance it did
 // not have. Substantive justification (which events motivated the proposal) is a separate thing the
@@ -42,11 +39,8 @@ export const ProposeParams = Type.Object(
     ]),
     rationale: Type.String({ maxLength: 2048 }),
     rollbackOf: Type.Optional(Type.Integer({ minimum: 1 })),
-    // RefineProposal.evidenceSeqs (seams.ts:145) is required, and Task 19's gateT0 rejects an empty
-    // one as `no_evidence`. The plan's own Step 7 schema omitted this field (and `baseline`)
-    // entirely, which its `seam.propose(args as never)` cast would have silently let through as
-    // `undefined` - a `.length` read away from crashing the first real proposal that reached
-    // gateT0. Required and non-empty here, rather than defaulted: an ungrounded self-modification
+    // RefineProposal.evidenceSeqs (seams.ts:145) is required, and gateT0 rejects an empty
+    // one as `no_evidence`. Required and non-empty here, rather than defaulted: an ungrounded self-modification
     // proposal is exactly what evidence-citing exists to prevent, so there is no safe default.
     evidenceSeqs: Type.Array(Type.Integer({ minimum: 1 }), { minItems: 1, maxItems: 50 }),
     // Also required on RefineProposal, but - unlike evidenceSeqs - an add-only proposal has no

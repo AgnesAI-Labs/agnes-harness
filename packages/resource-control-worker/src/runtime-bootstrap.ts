@@ -65,7 +65,7 @@ export type WorkerResourceBootstrapInput = Readonly<{
   createBarrier(): ResourceActivationBarrier
   createSecrets(profile: ResourceProfile): ResolvedSecrets
   /**
-   * Mirrors `createSecrets` above, for `secretBinding.kind === 'oauth'` (Task 6, spec §1.6/§3.2).
+   * Mirrors `createSecrets` above, for `secretBinding.kind === 'oauth'` (spec §1.6/§3.2).
    * Optional and lazily invoked for the same reason `createSecrets`'s result is lazily memoized
    * below: a resource generation with no oauth-bound MCP servers must not require one configured.
    * Omitted (or a generation with no oauth-bound server), oauth-bound servers simply have no
@@ -211,8 +211,8 @@ export async function bootstrapWorkerResources(
       }),
     inspectCatalog: inspectRemoteCatalog,
     // Deliberately still a no-op, not the cross-worker notifier this docstring's function name might
-    // suggest (@agnes/resource-control-runtime's `notifyLiveSessionWorkers`, resource-live-reload
-    // Task 5). This function (bootstrapWorkerResources) always runs inside a spawned worker child
+    // suggest (@agnes/resource-control-runtime's `notifyLiveSessionWorkers`). This function
+    // (bootstrapWorkerResources) always runs inside a spawned worker child
     // process (packages/daemon/src/supervisor/worker-pool.ts spawns `worker/main.js` via
     // node:child_process `spawn`, for every worker kind including `resourceControl` ones) - it has no
     // in-memory reference to the daemon's WorkerPool and cannot get one, since a live object reference

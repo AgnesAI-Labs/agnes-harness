@@ -870,7 +870,7 @@ export class SessionImpl {
   }
 
   /**
-   * Not `private`: Task 32a's `setModel` lives in `reentry.ts` as a standalone function (the same
+   * Not `private`: `setModel` lives in `reentry.ts` as a standalone function (the same
    * shape `setPreset` already takes), not as a method on this class, so it needs this lock from
    * outside the class body. Still excluded from `index.ts`'s public export surface.
    */

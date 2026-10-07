@@ -559,7 +559,7 @@ export class DingtalkAdapter implements ChannelAdapter {
       })
     }
     if (this.closed) {
-      // Task 19's fake-gateway conformance sends before connect. Preserve that narrow test seam,
+      // Fake-gateway conformance sends before connect. Preserve that narrow test seam,
       // while an explicitly disconnected production adapter remains terminal.
       if (!this.everConnected) return this.dispatchOutbound(chatId, operation)
       return Promise.reject(new ChannelError('E_CONNECT_FAILED', 'DingTalk adapter is disconnected'))

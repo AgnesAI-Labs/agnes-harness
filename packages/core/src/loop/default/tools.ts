@@ -93,7 +93,7 @@ type RuntimeToolResult = ToolResult & { deferred?: unknown }
 type DeferredMarker = { present: false } | { present: true; jobId: string | null }
 
 /**
- * Task 39's runtime marker is read structurally until extension-api publishes it on ToolResult.
+ * The runtime marker is read structurally until extension-api publishes it on ToolResult.
  * Invalid markers remain distinguishable from an absent one, so a malformed job cannot fall back
  * to an ordinary successful tool/result and disappear from recovery.
  */
@@ -1518,7 +1518,7 @@ export async function runToolsPhase(s: SessionImpl): Promise<StepOutcome> {
     s.ac.signal,
   )
   // The marker is durable rather than held only in TurnMemory: a kill after the tool returned but
-  // before this batch edge is exactly a Task 39 resume cut, and must still know which call to poll.
+  // before this batch edge is exactly a deferred-tool resume cut, and must still know which call to poll.
   const deferredRows = await scanAll((q) => s.d.log.scan(q), {
     fromSeq: batch.assistantSeq + 1,
     toSeq: s.lastSeq,

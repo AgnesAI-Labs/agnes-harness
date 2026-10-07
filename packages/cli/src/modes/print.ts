@@ -272,7 +272,7 @@ export async function runPrint(booted: Booted, p: ParsedArgs, io: PrintIO): Prom
     const ticket = reason === 'parked' ? findParkedTicket(events) : undefined
     const text = lastAssistantText(events)
     if (p.mode === 'json') {
-      // I1 writes the result line and nothing else; the per-event JSONL stream is Task 9.
+      // JSON mode writes only the result line; stream mode emits per-event JSONL.
       io.stdout.write(
         cliResultLine({
           sessionId: session.id,

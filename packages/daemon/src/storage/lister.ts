@@ -180,7 +180,7 @@ export class TicketIndex implements TicketPort {
     )?.version
     if ((version ?? 0) < 1)
       this.t.transaction(() => {
-        // Task 22 shipped a three-column table before this component had a schema marker. A direct
+        // Legacy installations have a three-column table without a schema marker. A direct
         // column projection is allowed by Host's owner SQL fence (PRAGMA is intentionally not), and
         // runs only for that unversioned migration. Fresh four-column tables take the success path.
         try {

@@ -17,13 +17,12 @@ import { validateManagedHttpUrl } from './mcp.js'
  * OAuth 2.1 client registration chain (Client ID Metadata Documents / Dynamic Client Registration
  * / static client_id) plus an `OAuthClientProvider` adapter for the SDK's `auth()` orchestrator.
  * Generic OAuth plumbing: knows about the MCP authorization spec, nothing about this daemon's
- * HTTP callback routes, secret storage format or worker process boundaries - those are Task 4/5's
- * job to wire on top of this module.
+ * HTTP callback routes, secret storage format or worker process boundaries, which callers wire
+ * on top of this module.
  *
  * ## Client ID Metadata Documents (CIMD) - what this module actually implements and why
  *
- * This is the one piece of Task 3 that required reading the authoritative source rather than
- * inferring it from this codebase, per
+ * The client metadata behavior follows
  * https://modelcontextprotocol.io/specification/2025-11-25/basic/authorization (fetched and read
  * in full while implementing this file - not paraphrased from memory). The load-bearing facts:
  *
@@ -55,9 +54,9 @@ import { validateManagedHttpUrl } from './mcp.js'
  * document at that address - nothing in this repository hosts one yet (no such HTTPS endpoint
  * exists in this plan's scope). `clientMetadataUrl` is therefore accepted as an option here (so
  * the chain and its priority are real and tested against a real fixture authorization server) but
- * is not yet wired to any caller; until a later task publishes an actual Agnes client metadata
+ * is not yet wired to any caller; until Agnes publishes a client metadata
  * document at a stable URL, no real caller will supply this option and the CIMD branch will not
- * fire in production. This is recorded as a known, deliberate gap - see the Task 3 report.
+ * fire in production. This remains a known integration gap.
  *
  * ## Registration priority: pre-registered -> CIMD -> DCR -> "ask the user"
  *
@@ -148,7 +147,7 @@ export async function registerOAuthClient(
  * with no PRM support falls back to the legacy MCP 2025-03-26 behavior: the MCP server's own
  * origin acts as the authorization server. This mirrors the SDK's own `authInternal()` fallback.
  *
- * Exported (Task 4's addition; originally private to this module) so `oauth-http-handler.ts`'s
+ * Exported so `oauth-http-handler.ts`'s
  * `/start` route can resolve the same authorization server URL and metadata it needs for
  * `startAuthorization()` without re-deriving this PRM/RFC 8414 fallback dance a second, independent
  * time - the same "reuse the canonicalizer, don't reimplement it" reasoning documented at the top
@@ -161,8 +160,7 @@ export async function resolveAuthorizationServerUrl(serverUrl: URL, fetchImpl?: 
     const first = resourceMetadata.authorization_servers?.[0]
     if (first) {
       const candidate = new URL(first)
-      // SSRF guard (found by independent security review of Task 4, fixed here since this is the
-      // one place the value is produced): `first` is attacker/compromised-resource-server-controlled
+      // SSRF guard: `first` is attacker/compromised-resource-server-controlled
       // content straight out of this PRM response body, not something `serverUrl` itself being
       // validated at MCP definition registration time (resource-control-runtime/src/mcp.ts's
       // `validateManagedTransport`) ever covered - a resource server naming an arbitrary internal
@@ -237,8 +235,8 @@ function buildDcrClientMetadata(redirectUri: string): OAuthClientMetadata {
 /**
  * The long-lived credential this module persists through caller-supplied callbacks (never through
  * `credential-store.ts` directly - `createAgnesOAuthClientProvider` takes plain `read`/`write`
- * functions so it can be unit-tested with an in-memory fake, per the Task 3 brief's hard
- * requirement). Deliberately camelCase and decoupled from `packages/host`'s own `OAuthCredential`
+ * functions so it can be unit-tested with an in-memory fake). Deliberately camelCase and decoupled
+ * from `packages/host`'s own `OAuthCredential`
  * shape (which has a *required* `refreshToken`): a real authorization server is not guaranteed to
  * issue a refresh token (RFC 6749 makes it optional), and forcing that field to be required here
  * would make this module either fabricate one or throw on a legitimate response. Reconciling this
@@ -290,7 +288,7 @@ export interface AgnesOAuthClientProvider extends OAuthClientProvider {
  * expecting interaction.
  *
  * `state()` is intentionally left unimplemented (it is optional on `OAuthClientProvider`): signing
- * and verifying the `state` parameter is Task 2's `sealOAuthState`/`openOAuthState`, which need a
+ * and verifying the `state` parameter is `sealOAuthState`/`openOAuthState`, which need a
  * signing secret, a nonce and a `serverId` this provider is never given (by design - it has no
  * business holding a signing secret). Whoever drives the actual authorization_code flow supplies
  * `state` at a layer above this provider, not through it.
@@ -298,7 +296,7 @@ export interface AgnesOAuthClientProvider extends OAuthClientProvider {
  * `codeVerifier()`/`saveCodeVerifier()` are backed by a private in-memory field, valid only for
  * this provider instance's lifetime. That is sufficient for a single request/response cycle within
  * one daemon process; a flow that must survive a process boundary already carries `codeVerifier`
- * through the signed `OAuthStatePayload` round-trip (Task 2's `OAuthStatePayload.codeVerifier`)
+ * through the signed `OAuthStatePayload` round-trip (`OAuthStatePayload.codeVerifier`)
  * instead, and the caller re-seeds it via `saveCodeVerifier()` before resuming.
  */
 export function createAgnesOAuthClientProvider(

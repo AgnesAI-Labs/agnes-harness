@@ -21,7 +21,7 @@ import type {
  * A4 cards use create, deliver and PUT-update endpoints plus the documented open-space models.
  * A5 message-file download returns an HTTPS URL which can be fetched without authentication.
  * A6 legacy department/user endpoints accept an access token in the query string.
- * Task 24 must verify every assumption against a real enterprise before this list is marked verified.
+ * Verify every assumption against a real enterprise before this list is marked verified.
  */
 
 const API = 'https://api.dingtalk.com'

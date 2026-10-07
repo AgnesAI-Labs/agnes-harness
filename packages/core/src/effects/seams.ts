@@ -129,7 +129,7 @@ export type SandboxExecBackend = 'none' | 'l1' | 'remote'
  */
 export interface SeamWorkspace {
   readonly root: string
-  /** Task 6 invocation owner. Legacy fitting fields remain during the Host/Base migration only. */
+  /** Workspace invocation owner. Legacy fitting fields remain during the Host/Base migration only. */
   readonly invocation?: WorkspaceInvocationPort
   readonly policy: FsPolicy
   readonly readiness: SandboxReadinessCapability

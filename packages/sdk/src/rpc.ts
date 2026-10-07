@@ -44,7 +44,7 @@ export class RpcConnection {
   private transport: Transport | null = null
   private open = false
   // Terminal, and deliberately separate from `open`: a transport that dropped can be
-  // brought back (Task 15), a connection the owner closed cannot. Without this latch a
+  // brought back, a connection the owner closed cannot. Without this latch a
   // request after close() walks straight back into doConnect() and builds a second
   // transport - which for stdio means respawning a child the owner believed was killed.
   private closed = false
@@ -56,7 +56,7 @@ export class RpcConnection {
   // and keeps pouring messages into the same connection. Sharing one promise is what makes
   // connect idempotent.
   private connecting: Promise<void> | null = null
-  // Monotonic, and never reset - not even across a reconnect (Task 15): a late response
+  // Monotonic, and never reset - not even across a reconnect: a late response
   // carries the old connection's id, and a reset would let it collide with a request of the
   // same number on the new one.
   private nextId = 1

@@ -41,7 +41,7 @@ export type PackageReadinessInput = Readonly<{
 }>
 
 /**
- * Task 16 actual classes:
+ * Package readiness classes:
  * - mixed: qualified report plus this package's ext rows active and Surface running revision match
  * - surface-only: desired already probed/published and driver running revision matches; no worker wait
  * - client-only: current desired snapshot matches client roster; late notices cannot mark ready

@@ -1,4 +1,4 @@
-// Crash-continuation orchestration over the two Task 19 primitives: scan `writer_claims` for
+// Crash-continuation orchestration over the lease primitives: scan `writer_claims` for
 // deadlines that have already passed, and for each one decide from the `registers` table's
 // `op.state` cell whether there was an open turn when the writer died. This module owns no SQL
 // beyond the one `registers` read below - `listExpired`/`releaseClaim` (lease.ts) already own the
@@ -28,18 +28,16 @@ export function tableReclaimStore(claims: TableHandle, registers: TableHandle): 
 
 /**
  * The narrow shape this module needs from daemon's notice sink. The real `NoticeSink` is
- * `local/notice.ts` (daemon Task 12, [I6]) - not built at the time this file was written. Once it
- * lands it satisfies this structurally (at minimum an `emit(kind, info)` method), so nothing here
- * needs to change. Kept as its own local type rather than imported from worker-pool.ts's
+ * `local/notice.ts` and satisfies this structurally through its `emit(kind, info)` method.
+ * Kept as its own local type rather than imported from worker-pool.ts's
  * `NoticeEmitter` (same shape, same reasoning) so lease/ does not pick up a dependency on
  * supervisor/ just to name a notice sink.
  */
 export type ReclaimNotices = { emit(kind: string, info?: { sessionId?: string; detail?: unknown }): void }
 
 /**
- * What `session.resume()` reports. This is core's real `step/resume.ts` shape as of the commit this
- * package's Task 19 landed against (`{state, phase?, actions}` - no `turn`/`step`/`pending` fields),
- * rather than the retired `{turn, step, phase, pending}` shape. `packages/daemon` does not depend on `@agnes/core` (see package.json), so this is a
+ * What `session.resume()` reports: core's `step/resume.ts` shape, with state, phase and actions.
+ * `packages/daemon` does not depend on `@agnes/core` (see package.json), so this is a
  * structural copy by convention, the same way lease.ts copies `writer_claims`'s row shape instead of
  * importing it.
  */

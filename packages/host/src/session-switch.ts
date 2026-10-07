@@ -8,7 +8,7 @@ import type { ResolvedProfile } from './profile/types.js'
 import { checkPresetHardRequirements } from './session.js'
 
 /**
- * core's `setPreset`/`setModel` (Task 32/32a) only check structure: does the preset exist, is the
+ * core's `setPreset`/`setModel` only check structure: does the preset exist, is the
  * route/model pair in the provider's sealed catalogue. Neither knows the profile, the capability
  * ceiling, or which routes this deployment's assembly actually materialized - so a daemon routing a
  * runtime switch through core directly would let a session land on a preset or a route the operator

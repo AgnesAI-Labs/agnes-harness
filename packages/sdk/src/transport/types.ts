@@ -44,7 +44,7 @@ export interface Transport {
   close(): Promise<void>
 }
 
-// A factory rather than a built transport: reconnect (Task 15) has to be able to build
+// A factory rather than a built transport: reconnect has to be able to build
 // another one, and the handlers must be bound before the transport starts producing
 // messages - there is no window in which one exists but nobody is subscribed.
 export type TransportFactory = (handlers: TransportHandlers) => Promise<Transport>

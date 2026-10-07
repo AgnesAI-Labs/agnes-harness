@@ -145,9 +145,8 @@ function fsRule(effect: FsRule['effect'], path: string, source: FsRuleSource, ha
  * does, for two reasons: first, this package receives no filesystem-capable service in
  * `ctx.sandboxHost` beyond the transport itself (RA15 - the adapter layer opens the channel and
  * derives the remote `FsIo`, this package only gets policy inputs), and second, exactly which
- * remote directory backs `workspaceRoot` is Task 8's session-lifecycle mechanism ("在远端建一个属
- * 于本 session 的目录"), which has not landed as of this task. Where the true remote root comes
- * from is called out in the spec itself as an open boundary for Stage B to resolve; this compiler
+ * remote directory backs `workspaceRoot` belongs to the session lifecycle, which supplies a
+ * session-owned directory on the remote host. This compiler
  * only guarantees the document it emits is well-formed and internally consistent for whatever
  * already-canonical remote root it is handed.
  *

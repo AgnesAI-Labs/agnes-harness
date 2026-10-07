@@ -343,7 +343,7 @@ export type Assembled = {
     invocation?: import('@agnes/core').WorkspaceInvocationPort,
   ): Promise<SessionWorkspaceRuntime>
   /**
-   * Task 3 (resource-live-reload): cleanly unload and reload one already-loaded bundled ecosystem
+   * Cleanly unload and reload one already-loaded bundled ecosystem
    * extension (`agnes/skills`) with a fresh resource snapshot, without
    * restarting the worker process. A thin `revoke()`+`load()` wrapper - it does not touch
    * PackageManager's own IH0-IH10 hot-update path.
@@ -1612,7 +1612,7 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
       adapters.platform.os === 'win32'
         ? trustedHookCommands(profile.commandHooks, workspaceRoot, adapters.platform.fs())
         : undefined
-    // Factored out so a reload (Task 3, resource-live-reload) can build the same shape of context
+    // Factored out so a reload can build the same shape of context
     // against a caller-supplied fresh resource snapshot instead of the boot-time `deps` one, without
     // duplicating the owner/extensionId gating below. `resources` defaults to `deps` itself, so
     // ordinary boot-time callers (`ecosystemContext` below) are unaffected byte for byte.
@@ -2094,7 +2094,7 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
     })
     extensionLeaseFor = (source) =>
       managed.leaseFor(source) ?? rowExtensions.leaseFor(source) ?? builtinRows.leaseFor(source)
-    // Factored out (Task 3, resource-live-reload) so a reload can build its own selector against a
+    // Factored out so a reload can build its own selector against a
     // `contextFor` bound to fresh resources instead of boot-time `deps`, reusing every other option
     // unchanged rather than restating this literal a second time.
     const makeFactorySelector = (contextFor: (owner: string, extensionId: string) => SeamInitContext) =>

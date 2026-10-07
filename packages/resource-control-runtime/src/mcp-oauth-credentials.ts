@@ -5,9 +5,9 @@ import { resolveAuthorizationServerUrl, tryDiscoverAuthorizationServerMetadata }
 import { credentialRefFor, withTimeout } from './oauth-http-handler.js'
 
 /**
- * The real, worker-side implementation of `mcp.ts`'s `McpOAuthCredentialResolver` - Task 6's
- * companion to Task 4's `oauth-http-handler.ts` (the daemon-side HTTP callback endpoints) and built
- * on the same Task 3 `oauth-client.ts` generic discovery layer. Split into its own file rather than
+ * The implementation of `mcp.ts`'s `McpOAuthCredentialResolver` - the worker-side
+ * companion to `oauth-http-handler.ts` (the daemon-side HTTP callback endpoints) and built
+ * on the same `oauth-client.ts` generic discovery layer. Split into its own file rather than
  * folded into `mcp.ts` (which only declares the abstract `Options.oauthCredentials` shape and the
  * lazy-refresh *decision* logic) or into `oauth-client.ts` (deliberately MCP-agnostic, per that
  * file's own header) because importing `oauth-client.ts` from `mcp.ts` directly would be circular -
@@ -16,7 +16,7 @@ import { credentialRefFor, withTimeout } from './oauth-http-handler.js'
  *
  * Reads the stored
  * `OAuthCredential` (structurally, not by importing `@agnes/host` - see `McpOAuthCredentialStore`'s
- * doc comment), and on `refresh()`, re-runs the same PRM/RFC 8414 discovery Task 4's `/start` route
+ * doc comment), and on `refresh()`, re-runs the same PRM/RFC 8414 discovery the handler's `/start` route
  * uses before calling the SDK's `refreshAuthorization`. Every network call this makes goes through
  * `oauth-http-handler.ts`'s exported `withTimeout` - the exact same timeout + `redirect: 'error'`
  * guard every other SDK call in this OAuth flow uses (see that file's "SHARP EDGE" checklist

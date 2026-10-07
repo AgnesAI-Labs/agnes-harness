@@ -74,10 +74,7 @@ export async function fetchSurfaceMountLookup(
     try {
       await client.initialize()
       const next = await client.surfaces.mounts()
-      // M3 (final review, Minor): the Task-15 RPC row only ever carries {mount, host, port}; it used
-      // to be padded with a fabricated `healthPath: ''` purely to satisfy createMountProxy's lookup()
-      // return type, which has since been narrowed (mount-proxy.ts's `MountProxyMatch`) to exactly
-      // this shape, so the padding is gone.
+      // The mount RPC returns {mount, host, port}, matching the proxy's narrow MountProxyMatch.
       if (!stopped) mounts = next.mounts.filter((row) => !isReservedMount(row.mount))
     } finally {
       await client.close().catch(() => undefined)
