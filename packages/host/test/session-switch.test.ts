@@ -3,7 +3,9 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createProvider, type WireEvent } from '@agnes/ai'
 import { FakeAdapter, ScriptedProvider } from '@agnes/ai/testkit'
+import { defaultLoopPlugin } from '@agnes/base'
 import { fakeSeams, testFsPolicy } from '@agnes/core/testkit'
+import { normalizePluginExport } from '@agnes/plugin-runtime/host'
 import type { ModelRecord, RouteDecl } from '@agnes/protocol'
 import { afterEach, describe, expect, it } from 'vitest'
 import { MemoryPackageLoader, type PackageModule } from '../src/assemble/packages.js'
@@ -72,6 +74,20 @@ function mods(
   const modules: Record<string, PackageModule> = {
     '@agnes/base': {
       id: '@agnes/base',
+      plugins: [
+        {
+          declaration: {
+            id: 'loop:agnes.default',
+            export: 'defaultLoopPlugin',
+            apiRange: '^1.4.0',
+            default: true,
+            inject: ['loops'],
+            provide: [],
+            runtime: 'in-process',
+          },
+          entry: normalizePluginExport(defaultLoopPlugin),
+        },
+      ],
       seams: Object.fromEntries(SEAM_KEYS.map((n) => [n, async () => seams[n]])),
       operations: {},
       presets: { base: { name: 'base' } },

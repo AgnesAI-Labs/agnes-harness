@@ -1,7 +1,7 @@
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { sandboxWorkspaceProbe, toolPolicyPlugin } from '@agnes/base'
+import { defaultLoopPlugin, sandboxWorkspaceProbe, toolPolicyPlugin } from '@agnes/base'
 import { loadPreset } from '@agnes/code'
 import { Context } from '@agnes/cordis'
 import {
@@ -322,6 +322,18 @@ describe('sandbox providers', () => {
               }),
             }),
           plugins: [
+            {
+              declaration: {
+                id: 'loop:agnes.default',
+                export: 'defaultLoopPlugin',
+                apiRange: '^1.4.0',
+                default: true,
+                inject: ['loops'],
+                provide: [],
+                runtime: 'in-process',
+              },
+              entry: normalizePluginExport(defaultLoopPlugin),
+            },
             {
               declaration: {
                 id: 'tool-policy:default',
