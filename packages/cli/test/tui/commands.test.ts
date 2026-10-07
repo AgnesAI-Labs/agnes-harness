@@ -294,8 +294,8 @@ describe('runSlash', () => {
       await expect(runSlash(controlled, '/install cancel')).resolves.toMatchObject({
         text: 'Installation cancelled.',
       })
-      await expect(runSlash(controlled, '/install https://untrusted.example/package')).rejects.toThrow(
-        /package source/,
+      await expect(runSlash(controlled, '/install http://untrusted.example/package')).rejects.toThrow(
+        /Use a git HTTPS URL, folder\/archive path, or npm:package@version/,
       )
       expect(ep.calls.filter((call) => call.method === '_agnes/v1/submit')).toEqual([])
     } finally {
@@ -942,7 +942,7 @@ describe('app.ts wiring: key routing through the editor reaches the real command
         expect((await screenOf(term, 100, 20)).join('\n')).toContain('Installation cancelled.'),
       )
 
-      term.feed('/install https://untrusted.example/package')
+      term.feed('/install http://untrusted.example/package')
       term.feed('\r')
       await vi.waitFor(async () =>
         expect((await screenOf(term, 100, 20)).join('\n')).toContain('Request failed'),

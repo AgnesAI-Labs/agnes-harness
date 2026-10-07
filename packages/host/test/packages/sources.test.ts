@@ -46,22 +46,25 @@ describe('parseSource', () => {
     'npm:@agnes/base@1.2.3-01',
     'git:http://example.com/x.git#0123456789012345678901234567890123456789',
     'git:https://user:password@example.com/x.git#0123456789012345678901234567890123456789',
-    'git:https://example.com/x.git#main',
+    'git:https://example.com/x.git#bad?ref',
     'git:https://example.com/x.git?token=x#0123456789012345678901234567890123456789',
-  ])('refuses an unpinned or unsafe network source: %s', (source) => {
+  ])('refuses a non-exact npm version or unsafe network source: %s', (source) => {
     expect(() => parseSource(source)).toThrow()
   })
 
-  it('accepts contained local forms and refuses traversal spellings', () => {
+  it('accepts explicit file paths while workspace paths remain contained', () => {
     expect(parseSource('file:./vendor/x')).toEqual({ type: 'file', ref: 'file:./vendor/x' })
+    for (const ref of ['file:/tmp/x', 'file:../x', 'file:.', 'file:./a/../x', 'file:./a//x'])
+      expect(parseSource(ref)).toEqual({ type: 'file', ref })
+    for (const ref of ['git:https://example.com/x.git', 'git:https://example.com/x.git#main'])
+      expect(parseSource(ref)).toEqual({ type: 'git', ref })
     expect(parseSource('workspace:extensions/sales')).toEqual({
       type: 'workspace',
       ref: 'workspace:extensions/sales',
     })
     for (const source of [
-      'file:/tmp/x',
-      'file:../x',
-      'file:.',
+      'file:',
+      'file:./bad\0path',
       'file:.\\x',
       'workspace:/extensions/x',
       'workspace:extensions/../x',

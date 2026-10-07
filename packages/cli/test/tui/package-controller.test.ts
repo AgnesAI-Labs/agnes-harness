@@ -24,7 +24,9 @@ describe('TUI package controller', () => {
 
   it('clears pending state when an invalid source fails before a chat prompt can be submitted', async () => {
     const controller = new PackageController({} as NodeClient, () => 'local-dev')
-    await expect(controller.install('https://untrusted.example/package')).rejects.toThrow(/package source/)
+    await expect(controller.install('http://untrusted.example/package')).rejects.toThrow(
+      /Use a git HTTPS URL, folder\/archive path, or npm:package@version/,
+    )
     await expect(controller.install('confirm')).resolves.toBe('No installation is awaiting confirmation.')
   })
 

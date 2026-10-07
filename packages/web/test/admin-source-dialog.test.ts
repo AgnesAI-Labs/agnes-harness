@@ -89,15 +89,15 @@ afterEach(() => {
   document.documentElement.replaceChildren()
 })
 
-it('keeps the dialog open and says what is wrong when a file source lacks its file: prefix', async () => {
+it('keeps the dialog open and says what is wrong when a workspace source lacks its prefix', async () => {
   const fetcher = backend(() => Response.json({ operationId: 'never', profile: 'local-dev' }))
   await mount(fetcher)
   openSourceDialog()
   expect(sourceDialog().open).toBe(true)
 
-  submit('file', './examples/packages/hot-service/v1')
+  submit('workspace', 'extensions/my-extension')
 
-  await vi.waitFor(() => expect(sourceError().textContent).toContain('file:./'))
+  await vi.waitFor(() => expect(sourceError().textContent).toContain('workspace:extensions/'))
   // Nothing was sent and nothing closed: the user is still looking at what they typed.
   expect(inspectCalls(fetcher)).toHaveLength(0)
   expect(sourceDialog().open).toBe(true)
@@ -111,7 +111,7 @@ it('shows an example for the selected source type instead of the npm one', async
   // 组件层用原生 select（旧 select-picker 的触发器/listbox DOM 已随迁移移除）。
   setNativeValue(sourceType(), 'file')
   expect(sourceType().value).toBe('file')
-  expect(placeholder()).toMatch(/^file:\.\//)
+  expect(placeholder()).toBe('/home/me/my-plugin.tgz')
 
   setNativeValue(sourceType(), 'workspace')
   expect(placeholder()).toMatch(/^workspace:extensions\//)
@@ -125,11 +125,11 @@ it('sends a well-formed source and closes the dialog once the check has been acc
   await mount(fetcher)
   openSourceDialog()
 
-  submit('file', 'file:./examples/packages/hot-service/v1')
+  submit('file', '/home/me/my-plugin.tgz')
 
   await vi.waitFor(() => expect(inspectCalls(fetcher)).toHaveLength(1))
   const sent = JSON.parse(String(inspectCalls(fetcher)[0]?.[1]?.body)) as { source: unknown }
-  expect(sent.source).toEqual({ type: 'file', ref: 'file:./examples/packages/hot-service/v1' })
+  expect(sent.source).toEqual({ type: 'file', ref: 'file:/home/me/my-plugin.tgz' })
   await vi.waitFor(() => expect(sourceDialog().open).toBe(false))
 })
 
