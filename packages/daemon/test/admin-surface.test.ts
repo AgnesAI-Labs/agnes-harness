@@ -23,7 +23,7 @@ async function server(
   selectionOptions: {
     sessionSelection?: AdminSessionSelection
     permissions?: readonly PackageAdminPermission[]
-    composition?: AdminSurfaceOptions['composition']
+    composition?: NonNullable<AdminSurfaceOptions['composition']>
   } = {},
 ) {
   let now = Date.now()

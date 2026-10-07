@@ -16,6 +16,7 @@ import {
 } from '../../src/profile/composition.js'
 import { createCompositionAdmin, readBundleSelection } from '../../src/profile/bundle-selection.js'
 import { resolveProfile } from '../../src/profile/resolve.js'
+import { validateProfileManifest, validateResolvedProfile, validatePreset } from '@agnes/protocol'
 
 const env = {
   platform: { os: 'linux' as const, arch: 'x64', capabilities: {} },
@@ -38,6 +39,8 @@ const catalog = parsePackageBundles('acme/research', {
 })
 const runtime: CompositionCatalog = {
   loops: [{ id: 'example.dag', version: '1.0.0', sourcePackage: 'acme/loop', capabilities: ['compaction'] }],
+  persistenceProviders: [{ id: 'sqlite' }],
+  sandboxProviders: [{ id: 'local' }],
   modelAdapters: [],
   compactionEngines: [{ id: 'sliding-window', version: '1.0.0', sourcePackage: 'acme/engine' }],
   tools: ['lookup', 'remove'],
@@ -59,7 +62,7 @@ it('resolves inherited bundles, preset/admin/session precedence and safe dumps',
   expect(profile.bundlePresets?.research?.name).toBe('research')
   expect(profile.presets.allowed).toContain('research')
   const tree = resolveComposition(profile, {
-    preset: profile.bundlePresets!.research,
+    preset: profile.bundlePresets!.research!,
     catalog: runtime,
     admin: { composition: { toolPolicy: { deny: [] } } },
     session: { toolPolicy: { allow: ['lookup'] } },
@@ -67,14 +70,14 @@ it('resolves inherited bundles, preset/admin/session precedence and safe dumps',
   })
   expect(tree.selection.toolPolicy).toEqual({ readOnly: true, allow: ['lookup'], deny: [] })
   expect(tree.sources['loop']).toEqual({ layer: 'profile', name: 'acme/research#research' })
-  expect(tree.sources['tools'].layer).toBe('preset')
-  expect(tree.sources['toolPolicy.deny'].layer).toBe('admin')
-  expect(tree.sources['toolPolicy.allow'].layer).toBe('session')
-  expect(tree.sources['plugins.tool:lookup.config'].name).toBe('acme/research#base')
+  expect(tree.sources['tools']!.layer).toBe('preset')
+  expect(tree.sources['toolPolicy.deny']!.layer).toBe('admin')
+  expect(tree.sources['toolPolicy.allow']!.layer).toBe('session')
+  expect(tree.sources['plugins.tool:lookup.config']!.name).toBe('acme/research#base')
   expect(JSON.stringify(compositionDump(tree))).not.toContain('synthetic-secret')
   expect(tree.hash).toBe(
     resolveComposition(profile, {
-      preset: profile.bundlePresets!.research,
+      preset: profile.bundlePresets!.research!,
       catalog: runtime,
       admin: { composition: { toolPolicy: { deny: [] } } },
       session: { toolPolicy: { allow: ['lookup'] } },
@@ -124,7 +127,10 @@ it('enforces readonly, allow/deny and explicit tool sets for every invocation', 
 })
 
 it('compiles a separate preset Host and refuses changes to a running provider tree', async () => {
-  const profile = await resolveProfile({ builtin: 'local-dev' }, env)
+  const profile = await resolveProfile(
+    { builtin: 'local-dev', user: { name: 'local-dev', presets: { allowed: ['standard', 'research'] } } },
+    env,
+  )
   const baseline = resolveComposition(profile)
   const next = resolveComposition(profile, {
     preset: { name: 'research', composition: { compaction: { engine: 'sliding-window' } } },
@@ -134,6 +140,16 @@ it('compiles a separate preset Host and refuses changes to a running provider tr
   expect(compiled.compaction?.engine).toBe('sliding-window')
   expect(compiled.presets.default).toBe('research')
   expect(compiled.hash).not.toBe(profile.hash)
+  expect(validateResolvedProfile(compiled).ok).toBe(true)
+  expect(
+    validateProfileManifest({
+      name: 'local-dev',
+      bundles: ['acme/research#research'],
+      composition: next.selection,
+    }).ok,
+  ).toBe(true)
+  expect(validatePreset({ name: 'research', composition: { toolPolicy: { readOnly: true } } }).ok).toBe(true)
+  expect(() => resolveComposition(profile, { preset: { name: 'unknown' } })).toThrow('not allowed')
 })
 
 it('saves admin bundles with optimistic concurrency and reloads desired origins', async () => {
@@ -156,7 +172,7 @@ it('saves admin bundles with optimistic concurrency and reloads desired origins'
   expect((await admin.saveBundles({ revision: 0, bundles: ['acme/research#research'] })).effect).toBe(
     'restart-required',
   )
-  expect((await admin.dump()).sources.loop.layer).toBe('admin')
+  expect((await admin.dump()).sources.loop!.layer).toBe('admin')
   await expect(admin.saveBundles({ revision: 0, bundles: [] })).rejects.toMatchObject({
     code: 'CONFIG_REVISION_CONFLICT',
   })

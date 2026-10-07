@@ -321,10 +321,14 @@ export async function resolveProfile(inputs: ProfileInputs, env: ResolveEnv): Pr
       resolveReconcilePolicy((l.manifest as { reconcile?: unknown }).reconcile, l.layer)
     if (Object.hasOwn(l.manifest, 'persistence')) {
       if (l.layer !== 'user')
-        throw new HostError('E_PROFILE_FRAGMENT_KEY', 'persistence.provider is selected by the user profile', {
-          source: { layer: l.layer },
-          detail: { field: 'persistence.provider', effect: 'restart-required' },
-        })
+        throw new HostError(
+          'E_PROFILE_FRAGMENT_KEY',
+          'persistence.provider is selected by the user profile',
+          {
+            source: { layer: l.layer },
+            detail: { field: 'persistence.provider', effect: 'restart-required' },
+          },
+        )
       l.manifest = { ...l.manifest, persistence: assertPersistence(l.manifest.persistence, l.layer) }
     }
   }
@@ -528,8 +532,6 @@ function finalize(draft: Draft, inputs: ProfileInputs, env: ResolveEnv): Resolve
     ...(m.loop ? { loop: structuredClone(m.loop) } : {}),
     ...(m.bundles ? { bundles: m.bundles } : {}),
     ...(m.composition ? { composition: m.composition } : {}),
-    ...(m.persistence ? { persistence: m.persistence } : {}),
-    ...(m.sandbox ? { sandbox: m.sandbox } : {}),
     chain: draft.chain,
     packages,
     seams,

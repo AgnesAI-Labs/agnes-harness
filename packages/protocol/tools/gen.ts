@@ -220,6 +220,8 @@ const TARGETS: Array<{
     out: 'gen/ts/preset.ts',
     module: 'PresetSchema',
     imports: [
+      { from: 'schema/session-v1.json', defs: ['JsonValue'] },
+      { from: 'schema/profile.json', defs: ['CompositionPatch', 'PackageRef'] },
       { from: 'schema/model.json', defs: ['RouteTable', 'RouteTarget', 'ThinkingLevel'] },
       { from: 'schema/hooks.json', defs: ['HookEvent'] },
     ],

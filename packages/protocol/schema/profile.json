@@ -3,6 +3,219 @@
   "$id": "https://agnes.ai/schema/profile.json",
   "title": "Profile shapes (\u89c4\u683c \u00a718.2)",
   "$defs": {
+    "CompositionPatch": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "loop": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "id",
+            "version"
+          ],
+          "properties": {
+            "id": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256,
+              "pattern": "^[^\\s\\u0000-\\u001f\\u007f]+$"
+            },
+            "version": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64,
+              "pattern": "^[^\\s\\u0000-\\u001f\\u007f]+$"
+            }
+          }
+        },
+        "modelAdapters": {
+          "type": "array",
+          "maxItems": 256,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512,
+            "pattern": "^[^\\s\\u0000-\\u001f\\u007f]+$"
+          }
+        },
+        "compaction": {
+          "anyOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "engine": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 512,
+                  "pattern": "^[^\\s\\u0000-\\u001f\\u007f]+$"
+                }
+              },
+              "required": [
+                "engine"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "persistence": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "provider": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 512,
+              "pattern": "^[^\\s\\u0000-\\u001f\\u007f]+$"
+            }
+          },
+          "required": [
+            "provider"
+          ]
+        },
+        "sandbox": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "provider": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 512,
+              "pattern": "^[^\\s\\u0000-\\u001f\\u007f]+$"
+            }
+          },
+          "required": [
+            "provider"
+          ]
+        },
+        "packages": {
+          "type": "array",
+          "maxItems": 256,
+          "items": {
+            "$ref": "#/$defs/PackageRef"
+          }
+        },
+        "plugins": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "enabled": {
+                "type": "boolean"
+              },
+              "config": {
+                "$ref": "#/$defs/JsonValue"
+              }
+            }
+          }
+        },
+        "toolPolicy": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "readOnly": {
+              "type": "boolean"
+            },
+            "allow": {
+              "type": "array",
+              "maxItems": 256,
+              "uniqueItems": true,
+              "items": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 512,
+                "pattern": "^[^\\s\\u0000-\\u001f\\u007f]+$"
+              }
+            },
+            "deny": {
+              "type": "array",
+              "maxItems": 256,
+              "uniqueItems": true,
+              "items": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 512,
+                "pattern": "^[^\\s\\u0000-\\u001f\\u007f]+$"
+              }
+            }
+          }
+        },
+        "tools": {
+          "type": "array",
+          "maxItems": 256,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512,
+            "pattern": "^[^\\s\\u0000-\\u001f\\u007f]+$"
+          }
+        },
+        "mcp": {
+          "type": "array",
+          "maxItems": 256,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512,
+            "pattern": "^[^\\s\\u0000-\\u001f\\u007f]+$"
+          }
+        },
+        "skills": {
+          "type": "array",
+          "maxItems": 256,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512,
+            "pattern": "^[^\\s\\u0000-\\u001f\\u007f]+$"
+          }
+        },
+        "uiModules": {
+          "type": "array",
+          "maxItems": 256,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512,
+            "pattern": "^[^\\s\\u0000-\\u001f\\u007f]+$"
+          }
+        }
+      }
+    },
+    "CompositionSource": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "layer": {
+          "enum": [
+            "default",
+            "profile",
+            "preset",
+            "admin",
+            "session"
+          ]
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512,
+          "pattern": "^[^\\s\\u0000-\\u001f\\u007f]+$"
+        }
+      },
+      "required": [
+        "layer",
+        "name"
+      ]
+    },
     "Capability": {
       "type": "string",
       "pattern": "^[a-z][A-Za-z0-9.-]{0,63}$"
@@ -465,6 +678,65 @@
       "additionalProperties": false,
       "required": ["name"],
       "properties": {
+        "bundles": {
+          "type": "array",
+          "maxItems": 256,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512,
+            "pattern": "^[^\\s\\u0000-\\u001f\\u007f]+$"
+          }
+        },
+        "composition": {
+          "$ref": "#/$defs/CompositionPatch"
+        },
+        "compaction": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "engine": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 512,
+              "pattern": "^[^\\s\\u0000-\\u001f\\u007f]+$"
+            }
+          },
+          "required": [
+            "engine"
+          ]
+        },
+        "persistence": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "provider": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 512,
+              "pattern": "^[^\\s\\u0000-\\u001f\\u007f]+$"
+            }
+          },
+          "required": [
+            "provider"
+          ]
+        },
+        "sandbox": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "provider": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 512,
+              "pattern": "^[^\\s\\u0000-\\u001f\\u007f]+$"
+            }
+          },
+          "required": [
+            "provider"
+          ]
+        },
         "loop": {
           "type": "object",
           "additionalProperties": false,
@@ -784,6 +1056,94 @@
         "reconcile"
       ],
       "properties": {
+        "bundles": {
+          "type": "array",
+          "maxItems": 256,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512,
+            "pattern": "^[^\\s\\u0000-\\u001f\\u007f]+$"
+          }
+        },
+        "composition": {
+          "$ref": "#/$defs/CompositionPatch"
+        },
+        "compaction": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "engine": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 512,
+              "pattern": "^[^\\s\\u0000-\\u001f\\u007f]+$"
+            }
+          },
+          "required": [
+            "engine"
+          ]
+        },
+        "persistence": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "provider": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 512,
+              "pattern": "^[^\\s\\u0000-\\u001f\\u007f]+$"
+            }
+          },
+          "required": [
+            "provider"
+          ]
+        },
+        "sandbox": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "provider": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 512,
+              "pattern": "^[^\\s\\u0000-\\u001f\\u007f]+$"
+            }
+          },
+          "required": [
+            "provider"
+          ]
+        },
+        "adminBundles": {
+          "type": "array",
+          "maxItems": 256,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512,
+            "pattern": "^[^\\s\\u0000-\\u001f\\u007f]+$"
+          }
+        },
+        "compositionSources": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/CompositionSource"
+          }
+        },
+        "bundleCatalog": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          }
+        },
+        "bundlePresets": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          }
+        },
         "loop": {
           "type": "object",
           "additionalProperties": false,

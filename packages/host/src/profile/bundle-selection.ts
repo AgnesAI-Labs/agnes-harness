@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import { constants, existsSync, readFileSync } from 'node:fs'
+import { constants, closeSync, fstatSync, openSync, readFileSync } from 'node:fs'
 import { mkdir, open, unlink } from 'node:fs/promises'
 import { join } from 'node:path'
 import { renameWriteThrough } from '@agnes/system-node'
@@ -28,9 +28,21 @@ export function isBundleSelection(value: unknown): value is BundleSelection {
 }
 export function readBundleSelection(profileDir: string): BundleSelection {
   const file = join(profileDir, 'bundle-selection.json')
-  if (!existsSync(file)) return { revision: 0, bundles: [] }
-  const bytes = readFileSync(file)
-  if (bytes.length > 65_536) throw new ConfigurationError('CONFIG_INVALID_STATE')
+  let fd: number
+  try {
+    fd = openSync(file, constants.O_RDONLY | constants.O_NOFOLLOW)
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return { revision: 0, bundles: [] }
+    throw new ConfigurationError('CONFIG_INVALID_STATE')
+  }
+  let bytes: Buffer
+  try {
+    const stat = fstatSync(fd)
+    if (!stat.isFile() || stat.size > 65_536) throw new ConfigurationError('CONFIG_INVALID_STATE')
+    bytes = readFileSync(fd)
+  } finally {
+    closeSync(fd)
+  }
   let value: unknown
   try {
     value = JSON.parse(bytes.toString('utf8'))

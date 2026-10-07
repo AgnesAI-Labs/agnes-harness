@@ -372,6 +372,7 @@ export function BundlesPanel({
                   )
                 }
               />{' '}
+              {selected.includes(id) ? String(selected.indexOf(id) + 1) + '. ' : ''}
               {id}
             </label>
           ))}
@@ -379,7 +380,15 @@ export function BundlesPanel({
             .filter((id) => !snapshot.catalog.some((entry) => entry.id === id))
             .map((id) => (
               <p key={id}>
-                {t('bundles.missing')}: {id}
+                <label>
+                  <input
+                    type="checkbox"
+                    checked
+                    disabled={busy || !canSave}
+                    onChange={() => setSelected((prior) => prior.filter((entry) => entry !== id))}
+                  />{' '}
+                  {t('bundles.missing')}: {id}
+                </label>
               </p>
             ))}
           <Button htmlType="submit" disabled={busy || !canSave}>

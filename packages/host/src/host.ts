@@ -301,7 +301,7 @@ async function createHostInstance(profile: ResolvedProfile, opts: HostOptions): 
             name,
             o.loop ? { loop: o.loop } : adminLoop ? { loop: adminLoop } : undefined,
           )
-          assertCompositionCompatible(a.compositionForPreset(profile.presets.default), selection)
+          assertCompositionCompatible(a.compositionForPreset(), selection)
           if (selection.selection.loop) o = { ...o, loop: selection.selection.loop }
         }
         // A caller-supplied fitted seam may customize behavior, but it cannot replace workspace

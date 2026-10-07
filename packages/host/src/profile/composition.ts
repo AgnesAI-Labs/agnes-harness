@@ -3,6 +3,7 @@ import type {
   ModelAdapterCatalogEntry,
   CompactionEngineCatalogEntry,
 } from '@agnes/extension-api'
+import { DEFAULT_PERSISTENCE_PROVIDER_ID, LOCAL_SANDBOX_PROVIDER_ID } from '@agnes/extension-api'
 import type { JsonValue, LoopSelection } from '@agnes/protocol'
 import { inspectJsonData } from '@agnes/protocol'
 import type { PresetDoc } from '../presets/types.js'
@@ -196,6 +197,7 @@ export function expandBundles(ids: readonly string[], catalog: BundleCatalog): r
     visiting = new Set<string>(),
     applied = new Set<string>()
   const visit = (id: string) => {
+    if (visiting.size >= 64) fail('bundle inheritance exceeds 64 levels')
     if (visiting.has(id)) fail(`bundle inheritance cycle at ${id}`)
     if (applied.has(id)) return
     const entry = catalog[id]
@@ -266,7 +268,7 @@ export function prepareProfileComposition(
   patch = mergeComposition(patch, direct)
   applySource(sources, direct, { layer: 'profile', name: manifest.name })
   for (const key of ['loop', 'compaction', 'persistence', 'sandbox'] as const) {
-    if (manifest[key] !== undefined) {
+    if (manifest[key] !== undefined && (key !== 'sandbox' || manifest.sandbox?.provider !== undefined)) {
       patch = mergeComposition(patch, { [key]: manifest[key] })
       sources[key] = { layer: 'profile', name: manifest.name }
     }
@@ -311,6 +313,7 @@ export function resolveComposition(
   } = {},
 ): ResolvedComposition {
   const preset = options.preset?.name ?? profile.presets.default
+  if (!profile.presets.allowed.includes(preset)) fail(`preset ${preset} is not allowed`)
   let selection: CompositionPatch = {
     loop: profile.loop ?? { id: 'default', version: '1.0.0' },
     compaction:
@@ -318,8 +321,8 @@ export function resolveComposition(
       (options.catalog && !options.catalog.compactionEngines.some((entry) => entry.id === 'default')
         ? null
         : { engine: 'default' }),
-    ...(profile.persistence ? { persistence: profile.persistence } : {}),
-    ...(profile.sandbox ? { sandbox: profile.sandbox } : {}),
+    persistence: profile.persistence ?? { provider: DEFAULT_PERSISTENCE_PROVIDER_ID },
+    sandbox: profile.sandbox ?? { provider: LOCAL_SANDBOX_PROVIDER_ID },
     packages: profile.packages.map(({ id, source, version, enabled }) => ({ id, source, version, enabled })),
     modelAdapters: [],
     toolPolicy: {},
@@ -362,6 +365,11 @@ export function resolveComposition(
   if (options.session) apply(options.session, { layer: 'session', name: 'request' })
   const packageIds = new Set(profile.packages.map((pkg) => pkg.id))
   for (const pkg of selection.packages ?? []) if (!packageIds.has(pkg.id)) fail(`unknown package ${pkg.id}`)
+  selection.packages =
+    selection.packages?.map((pkg) => ({
+      ...pkg,
+      enabled: profile.packages.find((item) => item.id === pkg.id)!.enabled && pkg.enabled !== false,
+    })) ?? []
   for (const id of [...(selection.mcp ?? []), ...(selection.skills ?? [])])
     if (!profile.packages.some((pkg) => pkg.id === id && pkg.enabled)) fail(`inactive package ${id}`)
   const rows = (options.rows ?? []).map((row) => ({
@@ -374,7 +382,7 @@ export function resolveComposition(
       if (!rows.some((row) => row.id === id)) fail(`unknown plugin row ${id}`)
   if (options.catalog) validateComposition(selection, options.catalog)
   const tree = { profile: profile.name, preset, bundles: [...new Set(bundles)], selection, sources, rows }
-  return Object.freeze({ ...tree, hash: `sha256-${sha256hex(canonicalJson(tree))}` })
+  return freezeTree({ ...tree, hash: `sha256-${sha256hex(canonicalJson(tree))}` })
 }
 
 export function validateComposition(selection: CompositionPatch, catalog: CompositionCatalog): void {
@@ -427,14 +435,23 @@ export function profileForComposition(profile: ResolvedProfile, tree: ResolvedCo
     ...(patch.persistence ? { persistence: patch.persistence } : {}),
     ...(patch.sandbox ? { sandbox: patch.sandbox } : {}),
     presets: { ...profile.presets, default: tree.preset },
-    packages: profile.packages.map((pkg) => ({
-      ...pkg,
-      enabled: pkg.enabled && overrides.get(pkg.id)?.enabled !== false,
-    })),
+    packages: profile.packages.map((pkg) => {
+      const requested = overrides.get(pkg.id)
+      return {
+        ...pkg,
+        ...(requested?.config ? { config: requested.config } : {}),
+        enabled: pkg.enabled && requested?.enabled !== false,
+      }
+    }),
     composition: patch,
     compositionSources: tree.sources,
   }
-  return Object.freeze({ ...next, hash: `sha256-${sha256hex(canonicalJson(next))}` })
+  return freezeTree({ ...next, hash: `sha256-${sha256hex(canonicalJson(next))}` })
+}
+
+function freezeTree<T>(value: T): T {
+  if (value && typeof value === 'object') for (const child of Object.values(value)) freezeTree(child)
+  return Object.freeze(value)
 }
 
 /** Config dumps contain choices and row metadata, never arbitrary plugin config or route secrets. */
@@ -443,6 +460,10 @@ export function compositionDump(tree: ResolvedComposition) {
   return {
     ...tree,
     selection,
+    pluginOverrides: Object.entries(tree.selection.plugins ?? {}).map(([id, row]) => ({
+      id,
+      ...(row.enabled === undefined ? {} : { enabled: row.enabled }),
+    })),
     packages: tree.selection.packages?.map(({ id, enabled }) => ({ id, enabled: enabled !== false })),
     rows: tree.rows.map(({ config: _config, ...row }) => row),
   }

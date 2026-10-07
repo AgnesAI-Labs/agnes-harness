@@ -51,7 +51,7 @@ The compiler applies bundle parents before children, once per resolution; cycles
 | `loop` | Exact `{id, version}` selection |
 | `modelAdapters` | Required registration ids; activate/deactivate registrations with package or plugin rows |
 | `compaction` | `{engine}` selection; `null` disables compaction |
-| `persistence`, `sandbox` | `{provider}` selection; requires the corresponding Host provider contract/catalog |
+| `persistence`, `sandbox` | `{provider}` selection; uses the Host provider catalog; defaults are `sqlite` and `local` |
 | `packages` | Package references merged by id; lock/trust and capability ceilings still apply |
 | `plugins` | Ordinary row ids mapped to `{enabled, config}`; row config replaces as a whole |
 | `toolPolicy` | `readOnly`, exact-name `allow` and `deny` lists; deny wins |
@@ -78,7 +78,7 @@ In the plugin admin page, the bundle selector lists installed trusted bundle ids
 - `GET /admin/api/composition`: default preset dump.
 - `POST /admin/api/composition`: `{preset}` dump; requires `packages.read`.
 
-These endpoints use the existing exact-origin/Host checks. A stale revision refuses the write. Dumps say `status: "desired"` and `validation: "static"`: offline inspection does not prove executable registrations or enumerate registrations created by entry modules. Host validates real loop, adapter and compaction catalogs before accepting composed startup; missing ids and a loop requiring disabled compaction are errors.
+These endpoints use the existing exact-origin/Host checks. A stale revision refuses the write. Dumps say `status: "desired"` and `validation: "static"`: offline inspection does not prove executable registrations or enumerate registrations created by entry modules. Host validates real loop, adapter, compaction, persistence and sandbox catalogs before accepting composed startup; missing ids and a loop requiring disabled compaction are errors.
 
 ## Host lifecycle boundary
 

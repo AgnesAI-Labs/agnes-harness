@@ -4,6 +4,7 @@
   "title": "PresetDoc",
   "$ref": "#/$defs/PresetDoc",
   "$defs": {
+    "CompositionPatch": { "$ref": "profile.json#/$defs/CompositionPatch" },
     "RouteTable": {
       "$ref": "model.json#/$defs/RouteTable"
     },
@@ -12,6 +13,20 @@
       "additionalProperties": false,
       "required": ["name"],
       "properties": {
+        "bundles": {
+          "type": "array",
+          "maxItems": 256,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512,
+            "pattern": "^[^\\s\\u0000-\\u001f\\u007f]+$"
+          }
+        },
+        "composition": {
+          "$ref": "#/$defs/CompositionPatch"
+        },
         "name": {
           "type": "string",
           "pattern": "^[a-z][a-z0-9-]{0,63}$"

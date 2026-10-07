@@ -28,7 +28,7 @@ Host 只读取已启用、已信任且完整性校验通过的已安装包。包
 | `loop` | 精确的 `{id, version}` |
 | `modelAdapters` | 必需的注册 id；通过包或插件行控制注册启用 |
 | `compaction` | `{engine}`；`null` 关闭压缩 |
-| `persistence`、`sandbox` | `{provider}`，需要对应 Host 合约和目录 |
+| `persistence`、`sandbox` | `{provider}`，使用对应 Host 目录；默认为 `sqlite` 和 `local` |
 | `packages` | 按 id 合并包引用；仍受 lock、信任和能力上限约束 |
 | `plugins` | 普通插件行 id 对应 `{enabled, config}`；config 整体替换 |
 | `toolPolicy` | `readOnly`、精确名称的 `allow` 和 `deny`；deny 优先 |
@@ -54,7 +54,7 @@ agh config dump --profile local-dev --preset research
 - `PUT /admin/api/bundles`：`{revision, bundles}`，需要 `packages.activate` 和可写上下文。
 - `GET /admin/api/composition`：默认 preset；`POST` 接受 `{preset}`，需要 `packages.read`。
 
-过期 revision 拒绝写入。dump 标明 `status: "desired"` 和 `validation: "static"`；离线查看不能证明可执行注册有效，也不枚举入口动态创建的注册。Host 在接受组合启动前校验真实 loop、adapter 和 compaction 目录；未知 id 或依赖压缩却未启用引擎会报错。
+过期 revision 拒绝写入。dump 标明 `status: "desired"` 和 `validation: "static"`；离线查看不能证明可执行注册有效，也不枚举入口动态创建的注册。Host 在接受组合启动前校验真实 loop、adapter、compaction、persistence 和 sandbox 目录；未知 id 或依赖压缩却未启用引擎会报错。
 
 ## 生命周期边界
 

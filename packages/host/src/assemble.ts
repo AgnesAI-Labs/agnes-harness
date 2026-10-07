@@ -40,6 +40,7 @@ import {
   bindStartupSandboxProvider,
   installSandboxProviders,
   LOCAL_SANDBOX_PROVIDER_ID,
+  sandboxProviderCatalog,
   type SandboxProviderSlot,
 } from './adapters/sandbox-providers.js'
 import { createPlatform } from './adapters/platform.js'
@@ -78,6 +79,7 @@ import { installToolProviders, withBuiltinToolPolicies } from './assemble/tool-p
 import { readAdminLoopDefault } from './assemble/loop-selection.js'
 import {
   compositionAllowsTool,
+  assertCompositionCompatible,
   resolveComposition,
   type CompositionPatch,
   type ResolvedComposition,
@@ -297,7 +299,7 @@ export type Assembled = {
   modelAdapterCatalog(): ReturnType<typeof modelAdapterCatalog>
   sessionLoopDefault?(): Promise<import('@agnes/protocol').LoopSelection | undefined>
   compactionEngineCatalog(): ReturnType<typeof compactionEngineCatalog>
-  compositionForPreset(name: string, session?: CompositionPatch): ResolvedComposition
+  compositionForPreset(name?: string, session?: CompositionPatch): ResolvedComposition
   /** Reviewed bundled API-key routes fitted at assembly, eligible for runtime model switching. */
   preconfiguredRoutes: readonly string[]
   presets: Record<string, PresetDoc>
@@ -822,11 +824,13 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
     const builtPresets = buildPresetRows(presets)
     const ordinaryModules = new Map(modules)
     for (const [id, loaded] of runtimePackages) ordinaryModules.set(id, loaded.module)
-    const builtOrdinary = buildOrdinaryRows(
-      profile,
-      withBuiltinToolPolicies(withBuiltinCompactionEngines(withBuiltinModelAdapters(ordinaryModules))),
-      deps.ordinaryPluginLayers,
+    const compositionModules = withBuiltinToolPolicies(withBuiltinCompactionEngines(withBuiltinModelAdapters(ordinaryModules)))
+    const compositionOwners = new Map(
+      [...compositionModules.values()].flatMap((module) =>
+        (module.plugins ?? []).map((plugin) => [plugin.declaration.id, module.id] as const),
+      ),
     )
+    const builtOrdinary = buildOrdinaryRows(profile, compositionModules, deps.ordinaryPluginLayers)
     // `activeBuiltinClaims` is a `let` because ext: rows can only be built much further down, after
     // the managed ext host and the bundled-extension finder exist. `staticClaims` below is already a
     // thunk, so reassigning here is picked up by the publisher.
@@ -1858,18 +1862,31 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
       // subagents are assembled later, which is more informative than a host-side stub.
     })
     rollback.push('kernel', () => kernel.close())
-    const compositionForPreset = (name: string, session?: CompositionPatch): ResolvedComposition =>
+    const compositionForPreset = (name?: string, session?: CompositionPatch): ResolvedComposition =>
       resolveComposition(profile, {
-        preset: resolvePreset(name, presets, { limits: profile.limits }).doc,
+        ...(name ? { preset: resolvePreset(name, presets, { limits: profile.limits }).doc } : {}),
         ...(session ? { session } : {}),
+        rows: builtOrdinary.rows.map((row) => ({
+          id: row.id,
+          packageId: compositionOwners.get(row.id)!,
+          enabled: !row.disabled,
+        })),
         catalog: {
           loops: kernel.loops.catalog(),
           modelAdapters: modelAdapterCatalog(pluginTree.root),
           compactionEngines: compactionEngineCatalog(pluginTree.root),
+          sandboxProviders: sandboxProviderCatalog(pluginTree.root),
+          persistenceProviders: [
+            { id: 'sqlite' },
+            ...[...modules.values()].flatMap((module) =>
+              module.persistenceProvider ? [{ id: module.persistenceProvider.id }] : [],
+            ),
+          ],
         },
       })
     if (profile.composition) {
       for (const name of profile.presets.allowed) compositionForPreset(name)
+      assertCompositionCompatible(compositionForPreset(), compositionForPreset(profile.presets.default))
       const stopPolicy = kernel.hooks.on(
         'tool_call',
         (payload, context) => {
