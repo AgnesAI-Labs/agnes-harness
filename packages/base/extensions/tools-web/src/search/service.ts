@@ -14,6 +14,7 @@ import {
   toSearchResults,
 } from './contract.js'
 import type { FetchLike } from './http.js'
+import { takeRateWindow } from './rate-window.js'
 import { readSearchConfig, writeSearchConfig } from './store.js'
 
 export type SearchCredentialPort = {
@@ -40,19 +41,10 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 function createRuntime(options: SearchRuntimeOptions): Runtime {
-  const windows = new Map<SearchProviderId, number[]>()
   return {
     ...options,
     take(id, limit, count) {
-      const now = options.now?.() ?? Date.now()
-      const window = (windows.get(id) ?? []).filter((at) => now - at < 60_000)
-      if (window.length + count > limit) {
-        windows.set(id, window)
-        return false
-      }
-      for (let index = 0; index < count; index += 1) window.push(now)
-      windows.set(id, window)
-      return true
+      return takeRateWindow(options.dataDir, id, limit, count, options.now?.() ?? Date.now())
     },
   }
 }

@@ -48,7 +48,7 @@ const searchProvider: SearchProvider = {
 // Add searchProvider to the existing createHost(profile, dependencies) options.
 ```
 
-The provider owns credentials, transport and vendor selection. The tool receives no key and chooses no vendor. Settings → Web search configures Brave, Tavily, Exa, Perplexity or self-hosted SearXNG. Endpoints, result limits, timeouts and rate limits are stored in the profile data directory. API keys are stored only at `secret://search/<provider>`. With no ready default provider the tool returns `WEB_SEARCH_UNAVAILABLE`. A deployment-supplied `SearchProvider` replaces that registry. Normalized snippets include a Citations list. Provider failures return a generic error without logging credentials.
+The provider owns credentials, transport and vendor selection. The tool receives no key and chooses no vendor. Settings → Web search configures Brave, Tavily, Exa, Perplexity or self-hosted SearXNG. Endpoints, result limits, timeouts and rate limits are stored in the profile data directory. Tool calls and the settings test share one rate window there. API keys are stored only at `secret://search/<provider>`. With no ready default provider the tool returns `WEB_SEARCH_UNAVAILABLE`. A deployment-supplied `SearchProvider` replaces that registry. Normalized snippets include a Citations list. Provider failures return a generic error without logging credentials.
 
 ## Persistent goal tools
 

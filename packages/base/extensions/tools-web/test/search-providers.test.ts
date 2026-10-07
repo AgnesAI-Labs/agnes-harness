@@ -229,4 +229,50 @@ describe('official search providers', () => {
     const unavailable = await createWebSearchTool(missing).execute({ queries: ['a'] }, fakeToolContext())
     expect(unavailable.details).toEqual({ code: 'WEB_SEARCH_UNAVAILABLE' })
   })
+
+  it('shares one rate window between admin tests and tool calls', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'agh-search-shared-'))
+    const store = credentials()
+    const { fetchImpl } = jsonFetch({ results: [] })
+    const saved = {
+      defaultProvider: 'searxng' as const,
+      provider: {
+        id: 'searxng' as const,
+        enabled: true,
+        endpoint: 'http://127.0.0.1:8080',
+        maxResults: 1,
+        timeoutMs: 1000,
+        ratePerMinute: 1,
+      },
+    }
+    const admin = createSearchAdmin({ dataDir: dir, credentials: store, fetchImpl, now: () => 5_000 })
+    await admin.handle('PUT', 'search', saved)
+    const tested = await admin.handle('POST', 'search/test', { provider: 'searxng', query: 'one' })
+    expect(tested.body).toMatchObject({ ok: true, provider: 'searxng' })
+    const provider = createOfficialSearchProvider({
+      dataDir: dir,
+      fetchImpl,
+      now: () => 5_000,
+      resolveSecret: () => undefined,
+    })
+    const limited = await createWebSearchTool(provider).execute({ queries: ['two'] }, fakeToolContext())
+    expect(limited.details).toEqual({ code: 'SEARCH_RATE_LIMITED' })
+    const laterAdmin = createSearchAdmin({
+      dataDir: dir,
+      credentials: store,
+      fetchImpl,
+      now: () => 90_000,
+    })
+    const again = await laterAdmin.handle('POST', 'search/test', { provider: 'searxng', query: 'three' })
+    expect(again.body).toMatchObject({ ok: true, provider: 'searxng' })
+    const laterTool = await createWebSearchTool(
+      createOfficialSearchProvider({
+        dataDir: dir,
+        fetchImpl,
+        now: () => 90_000,
+        resolveSecret: () => undefined,
+      }),
+    ).execute({ queries: ['four'] }, fakeToolContext())
+    expect(laterTool.details).toEqual({ code: 'SEARCH_RATE_LIMITED' })
+  })
 })
