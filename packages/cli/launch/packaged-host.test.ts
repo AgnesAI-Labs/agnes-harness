@@ -65,11 +65,11 @@ describe('packaged host wiring', () => {
     )
   })
 
-  it('discovers all eight base seam plugins in a packaged worker', async () => {
+  it('discovers the default tool policy and all eight base seam plugins in a packaged worker', async () => {
     const module = readPackagedBuiltinExports('@agnes/base', 'worker.mjs', await import('@agnes/base'))
 
     expect(module.plugins?.map(({ declaration }) => declaration)).toEqual(AGNES_BASE_PLUGIN_DECLARATIONS)
-    expect(module.plugins).toHaveLength(8)
+    expect(module.plugins).toHaveLength(9)
     expect(module.plugins?.every(({ entry }) => typeof entry.prepared === 'object')).toBe(true)
   })
 

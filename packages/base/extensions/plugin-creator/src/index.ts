@@ -1,6 +1,6 @@
 import { defineExtension, defineTool, type ToolContext } from '@agnes/extension-api'
 import { Type } from '@sinclair/typebox'
-import { creatorAssets } from './assets.js'
+import { creatorAssets } from './generated/assets.js'
 import { scriptedToolTest } from './scripted-test.js'
 
 const meta = {

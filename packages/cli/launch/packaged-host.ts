@@ -26,6 +26,13 @@ declare const AGNES_CODE_EXTENSION_MANIFESTS: NonNullable<PackageModule['embedde
 export const AGNES_BASE_PLUGIN_DECLARATIONS = Object.freeze(
   (
     [
+      {
+        export: 'toolPolicyPlugin',
+        id: 'tool-policy:default',
+        inject: ['toolPolicies'],
+        runtime: 'in-process',
+        default: true,
+      },
       { export: 'approvalPlugin', id: 'seam:approval', runtime: 'in-process', default: true },
       { export: 'principalsPlugin', id: 'seam:principals', runtime: 'in-process', default: true },
       { export: 'artifactsPlugin', id: 'seam:artifacts', runtime: 'in-process', default: true },
