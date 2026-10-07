@@ -131,6 +131,13 @@ it('adds the demo only for an opted-in fresh local-dev boot, preserving explicit
       ).user?.provider,
     ).toEqual(configured)
     await mkdir(join(home, 'profiles', 'local-dev'), { recursive: true })
+    await writeFile(
+      join(home, 'profiles', 'local-dev', 'bundle-selection.json'),
+      JSON.stringify({ revision: 1, bundles: ['@agnes-fde/support-triage#support-triage'] }),
+    )
+    expect(
+      (await readConfigurationProfileInputs({ ...options, demoFallback: true })).user?.provider,
+    ).toEqual(demoProvider())
     await writeFile(join(home, 'profiles', 'local-dev', 'profile.yaml'), 'name: local-dev\n')
     expect(
       (await readConfigurationProfileInputs({ ...options, demoFallback: true })).user?.provider,

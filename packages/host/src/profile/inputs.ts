@@ -115,8 +115,7 @@ export async function readConfigurationProfileInputs(
     !local?.bundles?.length &&
     !userLayer?.provider &&
     !userLayer?.composition &&
-    !userLayer?.bundles?.length &&
-    !adminBundles?.length
+    !userLayer?.bundles?.length
   )
     userLayer = { ...userLayer, name: profile, provider: demoProvider() }
   const configuredDataDir = userLayer?.dataDir ?? defaultDataDir(options.home)
