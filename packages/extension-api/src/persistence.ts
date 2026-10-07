@@ -1,5 +1,5 @@
-import type { ChildControlStore } from '@agnes/core'
 import { parseSemver } from './api-range.js'
+import type { ChildControlStore } from './child-control.js'
 
 /**
  * Session persistence provider.

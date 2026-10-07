@@ -1,70 +1,10 @@
+import type { ChildControlStore } from '@agnes/extension-api'
 import { CoreError, type SessionKey } from '../types.js'
-import type {
-  BeginChildAttemptInput,
-  BudgetScopeRecord,
-  CancelCreatingChildInput,
-  CancelledChildFact,
-  ChildCreationCasInput,
-  ChildTaskRecord,
-  CreateDelegatedChildInput,
-  CreateDelegatedChildResult,
-  DeferCreatingChildInput,
-  DeferredChildFact,
-  PlannedWorkspace,
-  ReleaseRequest,
-  ReserveRequest,
-  ReserveResult,
-  SettleRequest,
-  TreeUsage,
-} from './types.js'
-import { CHILD_CONTROL_FORMAT } from './types.js'
 
-export interface ChildControlStore {
-  childControlFormat(): number
-  assertWritableFormat(): void
-  createDelegatedChild(input: CreateDelegatedChildInput): Promise<CreateDelegatedChildResult>
-  lookupByKey(childKey: SessionKey): Promise<ChildTaskRecord | null>
-  lookupByCreationId(creationId: string): Promise<ChildTaskRecord | null>
-  listByParent(parentKey: SessionKey): Promise<ChildTaskRecord[]>
-  listByRoot(rootTaskId: string): Promise<ChildTaskRecord[]>
-  listCreatingChildAttempts(): Promise<ChildTaskRecord[]>
-  beginChildAttempt(input: BeginChildAttemptInput): Promise<ChildTaskRecord | null>
-  deferCreatingChild(input: DeferCreatingChildInput): Promise<DeferredChildFact>
-  commitCreatingChild(input: ChildCreationCasInput): Promise<boolean>
-  /**
-   * Cancels the creation attempt and, in the same write, moves a child still in `creating` out of
-   * the active set: `failed` for an open that failed, `cancelled` otherwise. It never ran.
-   */
-  cancelCreatingChild(input: CancelCreatingChildInput): Promise<CancelledChildFact>
-  casState(childKey: SessionKey, expectedRevision: number, next: ChildTaskRecord['state']): Promise<boolean>
-  nextOrdinal(parentKey: SessionKey, effectId: string): Promise<number>
-  existsSession(key: SessionKey): Promise<boolean>
-  ensureRootScope(rootTaskId: string, capMicro: bigint): Promise<BudgetScopeRecord>
-  scopeForChild(childKey: SessionKey): Promise<BudgetScopeRecord | null>
-  reserve(req: ReserveRequest): Promise<ReserveResult>
-  settleOrigin(req: SettleRequest): Promise<void>
-  releaseReservation(request: string | ReleaseRequest): Promise<void>
-  projectTree(rootTaskId: string): Promise<TreeUsage | null>
-  workspace(workspaceId: string): Promise<PlannedWorkspace | null>
-  updateWorkspace?(
-    workspaceId: string,
-    patch: Partial<Pick<PlannedWorkspace, 'phase' | 'path' | 'root' | 'branch'>>,
-  ): Promise<void>
-  lookupWorkspaceByPath?(path: string): Promise<PlannedWorkspace | null>
-  bumpWriterGeneration?(key: SessionKey): Promise<number>
-  takeoverReservation?(
-    permitId: string,
-    expectedWriterGeneration: number,
-  ): Promise<import('./types.js').ReservationRecord>
-  writerGeneration?(key: SessionKey): Promise<number>
-  peekReservation?(permitId: string): Promise<import('./types.js').ReservationRecord | null>
-  lookupReservationByIdentity?(
-    rootTaskId: string,
-    effectId: string,
-    requestHash: string,
-  ): Promise<import('./types.js').ReservationRecord | null>
-  clearWriterLease?(key: SessionKey): Promise<void>
-}
+export type { ChildControlStore } from '@agnes/extension-api'
+
+import type { CancelledChildFact, ChildTaskRecord } from './types.js'
+import { CHILD_CONTROL_FORMAT } from './types.js'
 
 /** Cancels only stale creating attempts that have neither a durable deferred marker nor a live
  * factory owner. Each cancellation is an exact CAS, so a late recovery scan cannot cancel a newer

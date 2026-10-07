@@ -28,3 +28,14 @@ and must validate it before resuming. `loopCheckpointCodec(version, parse)` clon
 state and rejects mismatched versions; `parse` validates the loop-specific state.
 Persist progress through `ctx.checkpoints.write(driver.checkpoint())` at a safe
 boundary. A codec upgrade needs an explicit migration rather than silent reset.
+
+## Persistence contracts
+
+Persistence providers use `ChildControlStore` and its child identity, budget and
+workspace records from this package. Core re-exports the same types for existing
+consumers; the durable data format and store methods are unchanged.
+
+The general `@agnes/extension-api/testkit` and
+`@agnes/plugin-runtime/testkit` entries work with Node's test runner.
+Vitest persistence suites are available separately from
+`@agnes/extension-api/testkit/persistence-contract`.

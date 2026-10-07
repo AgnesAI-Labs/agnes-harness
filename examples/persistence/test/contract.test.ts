@@ -1,7 +1,7 @@
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { persistenceContract } from '@agnes/extension-api/testkit'
+import { persistenceContract } from '@agnes/extension-api/testkit/persistence-contract'
 import { afterAll, describe, expect, it } from 'vitest'
 import { persistenceProvider } from '../src/index.js'
 

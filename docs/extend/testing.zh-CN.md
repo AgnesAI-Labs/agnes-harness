@@ -57,3 +57,5 @@ console.log(result.events, result.checkpoint)
 行为变化时优先扩展最近的测试。按需覆盖正常输入、schema 错误、业务拒绝、取消、清理与恢复。面板测试检查描述文件、插槽和渲染行为；浏览器挂载需另验。MCP 包测试检查资产与 Skill 注册；真实服务器连通性需另验。
 
 作者测试通过只证明确定性依赖下的合同，不证明真实提供方、浏览器、MCP 服务器或操作系统隔离兼容。
+
+可选的 Vitest 持久化合约测试从 `@agnes/extension-api/testkit/persistence-contract` 单独导出。通用 testkit 可在 Node 测试运行器中导入，无需 Vitest。

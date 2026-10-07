@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs'
 import * as testkit from '@agnes/extension-api/testkit'
+import * as persistenceTestkit from '@agnes/extension-api/testkit/persistence-contract'
 import { describe, expect, it } from 'vitest'
 import * as api from '../src/index.js'
 import { releaseProblems } from '../tools/release-check-core.js'
@@ -21,10 +22,22 @@ describe('author API consistency', () => {
     expect(Object.keys(testkit).sort()).toEqual([
       'NEGATIVE_ACTIONS',
       'TRANSPORT_CONTRACT_CASES',
+      'childAgentConformance',
+      'compactionConformance',
       'defineFixture',
-      'persistenceContract',
+      'loopConformance',
+      'modelAdapterConformance',
+      'persistenceConformance',
       'projectionFixture',
+      'runProviderConformance',
+      'sandboxConformance',
       'serviceFixture',
+      'toolPolicyConformance',
+      'toolRuntimeConformance',
+    ])
+    expect(Object.keys(persistenceTestkit).sort()).toEqual([
+      'persistenceContract',
+      'persistenceSqliteContract',
     ])
     expect(releaseProblems(input)).toEqual([])
   })

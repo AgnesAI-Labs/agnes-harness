@@ -2,7 +2,10 @@ import { existsSync, mkdirSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { definePersistenceProvider, type PersistenceSessionStore } from '@agnes/extension-api'
-import { persistenceContract, persistenceSqliteContract } from '@agnes/extension-api/testkit'
+import {
+  persistenceContract,
+  persistenceSqliteContract,
+} from '@agnes/extension-api/testkit/persistence-contract'
 import { afterAll, describe, expect, it } from 'vitest'
 import { openAdapters, sqlitePersistenceProvider } from '../../src/adapters/index.js'
 import { readNamedExports } from '../../src/assemble/packages.js'

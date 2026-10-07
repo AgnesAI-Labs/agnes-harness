@@ -3,6 +3,7 @@
 
 export * from './api-range.js'
 export * from './child-agent.js'
+export type * from './child-control.js'
 export * from './common.js'
 export type {
   CompactionBudget,

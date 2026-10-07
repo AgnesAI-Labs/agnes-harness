@@ -70,3 +70,5 @@ The [Host conformance test](../../packages/host/test/assemble/provider-conforman
 Persistence store operations have no `AbortSignal` parameter. A persistence probe may declare `cancellation: 'unsupported'`; the suite reports `cancel-unsupported` rather than claiming cancellation was verified. Its admitted calls must still drain on unload. Use `unloadStarted()` to release a controlled non-cancellable call after unregister starts, and assert that the store remains open until that call finishes. Other kinds must pass the cancellation check. A loop probe can use public `Session.step()` to observe the admitted driver call, then `Session.run()` in its cold-resume probe to verify the resumed turn and persisted checkpoint.
 
 These suites check the lifecycle contract; use provider-specific observable assertions in cold-resume probes and separate generation tests for publication or upgrades.
+
+The optional Vitest persistence suites are exported separately from `@agnes/extension-api/testkit/persistence-contract`. The general testkit can be imported by Node's test runner without Vitest.
