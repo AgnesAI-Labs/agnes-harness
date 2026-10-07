@@ -492,6 +492,48 @@ describe('PiAdapter', () => {
     expect(events[5]).toEqual({ type: 'done', reason: 'toolUse' })
   })
 
+  it('reports the raw argument text of each finished call by ordinal, whatever pi made of it', async () => {
+    const msg = assistant({ stopReason: 'toolUse' })
+    const end = (contentIndex: number, id: string): AssistantMessageEvent => ({
+      type: 'toolcall_end',
+      contentIndex,
+      toolCall: { type: 'toolCall', id, name: 'read', arguments: {} },
+      partial: msg,
+    })
+    const delta = (contentIndex: number, text: string): AssistantMessageEvent => ({
+      type: 'toolcall_delta',
+      contentIndex,
+      delta: text,
+      partial: msg,
+    })
+    // Blocks interleave and end together, as one wire does; a call that streamed nothing reports ''.
+    const { impl } = fakeStream([
+      [
+        delta(1, '{bad'),
+        delta(2, '{"a"'),
+        delta(1, ' json'),
+        delta(2, ':1}'),
+        end(1, 'c1'),
+        end(2, 'c2'),
+        end(3, 'c3'),
+        { type: 'done', reason: 'toolUse', message: msg },
+      ],
+    ])
+    const reported: Array<[number, string]> = []
+    const a = bound({ manualRoutes: [route], streamImpl: impl })
+    await collect(
+      a.stream('gw', fakeRequest({ route: 'gw', model: 'flash' }), {
+        ...opts(),
+        reportToolArguments: (ordinal, raw) => reported.push([ordinal, raw]),
+      }),
+    )
+    expect(reported).toEqual([
+      [0, '{bad json'],
+      [1, '{"a":1}'],
+      [2, ''],
+    ])
+  })
+
   it('maps each stop reason pi reports and carries reasoning tokens when it reports them', async () => {
     const reasons = ['stop', 'length', 'toolUse', 'deferred'] as const
     for (const reason of reasons) {

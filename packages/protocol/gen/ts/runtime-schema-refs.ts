@@ -317,6 +317,11 @@ export const RuntimeSchemaRefs = freeze({
     "revision": 2,
     "digest": "8d87f0504c43c8427f71ca13100c7d5f03f557b9cdd6750a25a7020cd435229b"
   },
+  "ServiceCommandRecord": {
+    "typeId": "agh.runtime/service-command@1",
+    "revision": 2,
+    "digest": "b0b8a4b0b2bff688272eb999b0b80b722ad85ce4e6f46cfab67fca4a2cc7e54d"
+  },
   "InteractionRecord": {
     "typeId": "agh.interaction/interaction-record@1",
     "revision": 3,

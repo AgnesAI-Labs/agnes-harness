@@ -467,3 +467,102 @@ export function registerSupervisorContract(
       },
     })
 }
+
+type RestrictedDraft = {
+  runKey: string
+  admission: Omit<W.RunAdmission, 'fingerprint' | 'packagePinReceipt'>
+  stateAuthorityRef: W.StateAuthorityRef
+  grantRef: string
+}
+type RestrictedRow = { draft: RestrictedDraft; fingerprint: string; state: W.AdmissionProbe }
+const grant = <T>(value: T): Outcome<T> => ({ ok: true, value })
+const deny = (code: W.RuntimeError['code'], detailCode: string): Outcome<never> => ({
+  ok: false,
+  error: {
+    code,
+    detailCode,
+    message: 'Restricted admission peer refused',
+    retryAdvice: { kind: 'never' },
+    diagnosticId: 'restricted-admission',
+  },
+})
+
+/** A semantic mirror of the Host coordinator, restricted and in memory: the same draft replays, a second ticket
+ * under one runKey conflicts, a cancel that arrives first writes the tombstone and a later createRun reports
+ * cancelled, a cancel after createRun reports created. It is not the coordinator and never stands in for it. */
+export function createRestrictedSupervisorAdmission() {
+  const tickets = new Map<string, RestrictedRow>()
+  const keys = new Map<string, string>()
+  const log: string[] = []
+  const hold = { next: false }
+  const recalled = (row: RestrictedRow) => ({
+    admission: {
+      ...row.draft.admission,
+      fingerprint: row.fingerprint,
+      packagePinReceipt: {},
+    } as unknown as W.RunAdmission,
+    stateAuthorityRef: row.draft.stateAuthorityRef,
+    runKey: row.draft.runKey,
+    grantRef: row.draft.grantRef,
+  })
+  const port = {
+    async recall(ticketId: string) {
+      log.push('recall')
+      const row = tickets.get(ticketId)
+      return grant(row ? recalled(row) : null)
+    },
+    async recallByRun(runId: string) {
+      for (const row of tickets.values()) if (row.draft.admission.runId === runId) return grant(recalled(row))
+      return grant(null)
+    },
+    async coordinate(draft: RestrictedDraft) {
+      log.push(`coordinate:${draft.admission.admittedAt}`)
+      const id = draft.admission.ticketId
+      const prior = tickets.get(id)
+      const created = (): W.AdmissionProbe => ({
+        state: 'created',
+        runId: draft.admission.runId,
+        commit: {} as never,
+      })
+      if (prior) {
+        if (
+          canonicalJsonDigest(prior.draft as unknown as W.JsonValue) !==
+          canonicalJsonDigest(draft as unknown as W.JsonValue)
+        )
+          return deny('conflict', 'admission_ticket_conflict')
+        if (prior.state.state === 'absent') prior.state = created()
+        return grant(prior.state)
+      }
+      if (keys.has(draft.runKey)) return deny('conflict', 'admission_ticket_conflict')
+      keys.set(draft.runKey, id)
+      // A held create models a lost createRun answer: the ticket exists, State never saw the run.
+      const state: W.AdmissionProbe = hold.next ? { state: 'absent' } : created()
+      hold.next = false
+      tickets.set(id, { draft, fingerprint: canonicalJsonDigest(draft as unknown as W.JsonValue), state })
+      return grant(state)
+    },
+    async cancel(ticketId: string, fingerprint: string) {
+      log.push('cancelAdmission')
+      const row = tickets.get(ticketId)
+      if (!row || row.fingerprint !== fingerprint) return deny('conflict', 'admission_ticket_conflict')
+      if (row.state.state === 'absent') row.state = { state: 'cancelled', tombstoneId: `tomb-${ticketId}` }
+      return grant(row.state)
+    },
+  }
+  return {
+    port,
+    tickets,
+    log,
+    hold,
+    runRefOf(key: string): W.RunRef | null {
+      for (const row of tickets.values())
+        if (row.draft.runKey === key)
+          return {
+            runId: row.draft.admission.runId,
+            session: { sessionId: row.draft.admission.sessionId, authority: row.draft.stateAuthorityRef },
+          }
+      return null
+    },
+    created: () => [...tickets.values()].filter((row) => row.state.state === 'created').length,
+  }
+}

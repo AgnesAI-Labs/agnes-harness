@@ -40007,6 +40007,7 @@
     "TimerRecordValue": "agh.runtime/timer-record@1",
     "ResolutionRecordValue": "agh.runtime/resolution-record@1",
     "ReconciliationCheckValue": "agh.runtime/reconciliation-check@1",
+    "ServiceCommandRecord": "agh.runtime/service-command@1",
     "InteractionRecord": "agh.interaction/interaction-record@1",
     "InboxRecord": "agh.runtime/inbox-record@1",
     "ApprovalTaintAckRecordValue": "agh.runtime/approval-taint-ack-record@1",
@@ -42487,12 +42488,27 @@
       "httpStatus": 403,
       "retryAdviceKinds": ["never"]
     },
+    "model_egress_api": {
+      "code": "incompatible",
+      "httpStatus": 409,
+      "retryAdviceKinds": ["never"]
+    },
+    "model_egress_connect": {
+      "code": "retryable",
+      "httpStatus": 503,
+      "retryAdviceKinds": ["retry_same_action"]
+    },
     "model_egress_credential": {
       "code": "denied",
       "httpStatus": 403,
       "retryAdviceKinds": ["never"]
     },
     "model_egress_dns": {
+      "code": "denied",
+      "httpStatus": 403,
+      "retryAdviceKinds": ["never"]
+    },
+    "model_egress_fence": {
       "code": "denied",
       "httpStatus": 403,
       "retryAdviceKinds": ["never"]
@@ -42520,6 +42536,11 @@
     "model_egress_owner": {
       "code": "denied",
       "httpStatus": 403,
+      "retryAdviceKinds": ["never"]
+    },
+    "model_egress_proxy": {
+      "code": "incompatible",
+      "httpStatus": 409,
       "retryAdviceKinds": ["never"]
     },
     "model_egress_redirect": {
@@ -42736,6 +42757,16 @@
       "code": "denied",
       "httpStatus": 403,
       "retryAdviceKinds": ["never"]
+    },
+    "model_tool_call_arguments": {
+      "code": "unknown_effect",
+      "httpStatus": 503,
+      "retryAdviceKinds": ["reconcile"]
+    },
+    "model_tool_call_id": {
+      "code": "unknown_effect",
+      "httpStatus": 503,
+      "retryAdviceKinds": ["reconcile"]
     },
     "model_usage_attribution": {
       "code": "denied",

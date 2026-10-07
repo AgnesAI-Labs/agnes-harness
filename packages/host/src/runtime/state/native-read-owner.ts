@@ -1,11 +1,13 @@
 import { randomUUID } from 'node:crypto'
 import {
+  type ActionRecordValue,
   type SchemaRef,
   type SignalRecordValue,
   type SnapshotRef,
   type StateScanRequest,
   validateRuntime,
 } from '@agnes/protocol/runtime'
+import { proveAttempt } from './attempt-proof.js'
 import { canonicalJson } from './canonical-json.js'
 import {
   DEFAULT_READABLE,
@@ -23,9 +25,10 @@ import {
   runRecordId,
   sameJson,
   signalRecordId,
+  visibilityRecordId,
   waitRecordId,
 } from './records.js'
-import { refuse } from './refusal.js'
+import { integrity, refuse } from './refusal.js'
 import {
   captureNativeStateReadPort,
   type NativeStateRecordFact,
@@ -193,7 +196,7 @@ export function createNativeStateReadOwner(
         refuseRead()
       runs.set(parsed.value.runId, parsed.value.bindingId)
     }
-    const actions = new Map<string, string>()
+    const actions = new Map<string, ActionRecordValue>()
     for (const fact of facts) {
       if (!sameJson(fact.schema, ACTION_SCHEMA)) continue
       const parsed = validateRuntime('ActionRecordValue', fact.value)
@@ -203,7 +206,7 @@ export function createNativeStateReadOwner(
         fact.recordId !== actionRecordId(parsed.value.actionId)
       )
         refuseRead()
-      actions.set(parsed.value.actionId, parsed.value.runId)
+      actions.set(parsed.value.actionId, parsed.value)
     }
     if (
       window.kind !== 'session' &&
@@ -237,10 +240,12 @@ export function createNativeStateReadOwner(
         rel = { runId: action.value.runId, actionId: action.value.actionId, target: null, kind }
       } else if (kind === 'attempt') {
         const attempt = validateRuntime('AttemptRecordValue', fact.value)
-        const runId = attempt.ok ? actions.get(attempt.value.actionId) : undefined
-        if (!attempt.ok || runId === undefined || fact.recordId !== attemptRecordId(attempt.value.attemptId))
-          refuseRead()
-        rel = { runId, actionId: attempt.value.actionId, target: null, kind }
+        const named = attempt.ok ? actions.get(attempt.value.actionId) : undefined
+        if (!attempt.ok || fact.recordId !== attemptRecordId(attempt.value.attemptId)) refuseRead()
+        // An attempt whose action is not in the verified history is not State's own record.
+        if (named === undefined) integrity('an attempt record names no action in this session')
+        proveAttempt(attempt.value, named, runs.get(named.runId) ?? '')
+        rel = { runId: named.runId, actionId: attempt.value.actionId, target: null, kind }
       } else if (kind === 'signal') {
         const signal = validateRuntime('SignalRecordValue', fact.value)
         if (
@@ -260,6 +265,14 @@ export function createNativeStateReadOwner(
         if (!wait.ok || !runs.has(wait.value.runId) || fact.recordId !== waitRecordId(wait.value.waitId))
           refuseRead()
         rel = { runId: wait.value.runId, actionId: wait.value.targetActionId, target: null, kind }
+      } else if (kind === 'visibility') {
+        const visibility = validateRuntime('ActionVisibilityValue', fact.value)
+        if (!visibility.ok || fact.recordId !== visibilityRecordId(visibility.value.sourceReceiptId))
+          refuseRead()
+        // A visibility record whose action is not in the verified history is not State's own record.
+        const named = actions.get(visibility.value.actionId)
+        if (named === undefined) integrity('a visibility record names no action in this session')
+        rel = { runId: named.runId, actionId: named.actionId, target: null, kind }
       } else if (kind === 'issuance') {
         const related = entry?.relate?.(fact.value)
         if (!related || !runs.has(related.runId)) refuseRead()

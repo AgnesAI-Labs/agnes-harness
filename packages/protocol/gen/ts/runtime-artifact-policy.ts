@@ -1557,6 +1557,20 @@ export const RuntimeErrorDetails = freeze({
       "never"
     ]
   },
+  "model_egress_api": {
+    "code": "incompatible",
+    "httpStatus": 409,
+    "retryAdviceKinds": [
+      "never"
+    ]
+  },
+  "model_egress_connect": {
+    "code": "retryable",
+    "httpStatus": 503,
+    "retryAdviceKinds": [
+      "retry_same_action"
+    ]
+  },
   "model_egress_credential": {
     "code": "denied",
     "httpStatus": 403,
@@ -1565,6 +1579,13 @@ export const RuntimeErrorDetails = freeze({
     ]
   },
   "model_egress_dns": {
+    "code": "denied",
+    "httpStatus": 403,
+    "retryAdviceKinds": [
+      "never"
+    ]
+  },
+  "model_egress_fence": {
     "code": "denied",
     "httpStatus": 403,
     "retryAdviceKinds": [
@@ -1602,6 +1623,13 @@ export const RuntimeErrorDetails = freeze({
   "model_egress_owner": {
     "code": "denied",
     "httpStatus": 403,
+    "retryAdviceKinds": [
+      "never"
+    ]
+  },
+  "model_egress_proxy": {
+    "code": "incompatible",
+    "httpStatus": 409,
     "retryAdviceKinds": [
       "never"
     ]
@@ -1905,6 +1933,20 @@ export const RuntimeErrorDetails = freeze({
     "httpStatus": 403,
     "retryAdviceKinds": [
       "never"
+    ]
+  },
+  "model_tool_call_arguments": {
+    "code": "unknown_effect",
+    "httpStatus": 503,
+    "retryAdviceKinds": [
+      "reconcile"
+    ]
+  },
+  "model_tool_call_id": {
+    "code": "unknown_effect",
+    "httpStatus": 503,
+    "retryAdviceKinds": [
+      "reconcile"
     ]
   },
   "model_usage_attribution": {

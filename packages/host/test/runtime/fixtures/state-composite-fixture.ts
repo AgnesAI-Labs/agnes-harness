@@ -25,10 +25,9 @@ export async function cleanup(): Promise<void> {
 
 export const CODEC = { namespace: 'agh.default/model-infer', codecVersion: '1' }
 
-export async function setup() {
-  const directory = mkdtempSync(join(tmpdir(), 'agnes-advance-provider-'))
-  directories.push(directory)
-  const input = admissionFixtureInput()
+type AdmissionInput = ReturnType<typeof admissionFixtureInput>
+
+function adjustProviders(input: AdmissionInput) {
   const release = input.fixture.previousRelease
   if (!release) throw Error('locked release missing')
   const parentProvider = release.bindings.find((row) => row.binding.contract === 'agh.model')
@@ -49,11 +48,42 @@ export async function setup() {
   parentProvider.descriptor.operations.push({ ...twice } as never)
   const { releaseSetId: _before, ...resealed } = release
   release.releaseSetId = fixtureHash(resealed)
+  return { parentProvider, leafProvider, toolProvider, infer, invoke, toolInvoke, queryOp, twice }
+}
+const preparedProviders = new WeakMap<object, ReturnType<typeof adjustProviders>>()
+
+/** Adjusts the admission fixture so the parent is a composite and the adapter and tools stay leaves. Idempotent. */
+export function prepareProviders(input: AdmissionInput) {
+  const known = preparedProviders.get(input)
+  if (known) return known
+  const adjusted = adjustProviders(input)
+  preparedProviders.set(input, adjusted)
+  return adjusted
+}
+
+/**
+ * With `native` the run lives in that fixture's joint State, which the caller built from
+ * `prepareProviders` and closes itself; otherwise the fixture opens and cleans up its own.
+ */
+export async function setup(
+  options: {
+    native?: { directory: string; input: AdmissionInput; fixture: Joint }
+    /** Also creates a second composite parent in the Loop step. */
+    secondParent?: boolean
+  } = {},
+) {
+  const directory = options.native?.directory ?? mkdtempSync(join(tmpdir(), 'agnes-advance-provider-'))
+  if (!options.native) directories.push(directory)
+  const input = options.native?.input ?? admissionFixtureInput()
+  const { parentProvider, leafProvider, toolProvider, infer, invoke, toolInvoke, queryOp, twice } =
+    prepareProviders(input)
   let failBeforeCommit = false
-  const joint = await openJointAdmission(directory, input, (point) => {
-    if (failBeforeCommit && point.endsWith(':before')) throw Error('injected failure before commit')
-  })
-  joints.push(joint)
+  const joint =
+    options.native?.fixture ??
+    (await openJointAdmission(directory, input, (point) => {
+      if (failBeforeCommit && point.endsWith(':before')) throw Error('injected failure before commit')
+    }))
+  if (!options.native) joints.push(joint)
   const created = await joint.coordinator.coordinate(joint.draft(), joint.context())
   if (!(created.ok && created.value.state === 'created'))
     throw Error(`run was not created ${JSON.stringify(created)}`)
@@ -87,6 +117,7 @@ export async function setup() {
     return { ...intent, intentFingerprint: fixtureHash(intent) } satisfies PreparedAction
   }
   const parentIntent = action('parent', parentProvider, 'infer', infer)
+  const secondParentIntent = action('second-parent', parentProvider, 'infer', infer)
   const leafParentIntent = action('leaf-parent', toolProvider, 'invoke', toolInvoke)
   const queryParentIntent = action('query-parent', parentProvider, queryOp.method, queryOp)
   const duplicateParentIntent = action('duplicate-parent', parentProvider, 'prepareRequest', twice)
@@ -118,13 +149,23 @@ export async function setup() {
     queryUsage: null,
   })
   /** An invocation that is prepared for a commit and not yet used by one. */
+  /** The revision an invocation for this target is based on: the provider revision once the parent has started. */
+  function baseOf(targetActionId: string | null, runRevision: number) {
+    if (targetActionId === null) return runRevision
+    const row = joint.db
+      .prepare(
+        "SELECT json_extract(b.value_json,'$.providerRevision') AS rev FROM runtime_record_heads h JOIN runtime_version_bodies b ON b.record_id=h.record_id AND b.record_revision=h.record_revision WHERE h.record_id=?",
+      )
+      .get(`provider:${targetActionId}`)
+    return row ? Number(row.rev) : runRevision
+  }
   async function prepared(targetActionId: string | null, runRevision: number) {
     const invocationId = `invocation-${++counter}`
     await joint.state.admitInvocation({
       requestId: `admit-${counter}`,
       runId,
       targetActionId,
-      baseRevision: runRevision,
+      baseRevision: baseOf(targetActionId, runRevision),
       bindingId: joint.binding.bindingId,
       writerEpoch,
       invocationId,
@@ -150,12 +191,19 @@ export async function setup() {
       expectedRevision: 0,
       continuation: continuation('loop'),
       consumeSignals: [],
-      actions: [parentIntent, leafParentIntent, queryParentIntent, duplicateParentIntent],
+      actions: [
+        parentIntent,
+        leafParentIntent,
+        queryParentIntent,
+        duplicateParentIntent,
+        ...(options.secondParent ? [secondParentIntent] : []),
+      ],
       next: { kind: 'continue' },
     },
   })
   const parentId = stableId('act', `${runId}\0parent`)
   const leafParentId = stableId('act', `${runId}\0leaf-parent`)
+  const secondParentId = stableId('act', `${runId}\0second-parent`)
   const queryParentId = stableId('act', `${runId}\0query-parent`)
   const duplicateParentId = stableId('act', `${runId}\0duplicate-parent`)
   const owner = joint.state as unknown as Owner
@@ -279,10 +327,12 @@ export async function setup() {
     joint,
     parentId,
     leafParentId,
+    secondParentId,
     queryParentId,
     duplicateParentId,
     leafParentIntent,
     prepared,
+    baseOf,
     start,
     advance,
     advanceRequest,

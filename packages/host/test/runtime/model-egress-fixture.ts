@@ -1,7 +1,9 @@
 import assert from 'node:assert/strict'
 import { spawn } from 'node:child_process'
 import { randomBytes } from 'node:crypto'
+import { readFileSync } from 'node:fs'
 import { createServer } from 'node:http'
+import { createServer as createHttpsServer } from 'node:https'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { createReferenceModelEgress } from '../../../../examples/runtime-reference/src/providers/model-egress.js'
@@ -53,6 +55,7 @@ export async function modelFixture(
   path = '/v1/chat/completions',
   consumer = CONSUMER,
   lifetime: Pick<SecretsOptions, 'handleMs'> = {},
+  transport = { scheme: 'http' as 'http' | 'https', host: 'localhost' },
 ) {
   const root = scratch(),
     auth = boundary()
@@ -65,7 +68,27 @@ export async function modelFixture(
   const arrival = new Promise<void>((resolve) => {
     arrived = resolve
   })
-  const server = createServer((incoming, response) => {
+  const stats = { connections: 0, bytes: 0 }
+  const server =
+    transport.scheme === 'https'
+      ? createHttpsServer({
+          key: readFileSync(
+            new URL('../../../../tools/test-fixtures/tls/localhost-key.pem', import.meta.url),
+          ),
+          cert: readFileSync(
+            new URL('../../../../tools/test-fixtures/tls/localhost-cert.pem', import.meta.url),
+          ),
+        })
+      : createServer()
+  server.on('connection', () => {
+    stats.connections++
+  })
+  server.on(transport.scheme === 'https' ? 'secureConnection' : 'connection', (socket) => {
+    socket.on('data', (bytes: Buffer) => {
+      stats.bytes += bytes.length
+    })
+  })
+  server.on('request', (incoming, response) => {
     let body = ''
     incoming.on('data', (chunk) => {
       body += String(chunk)
@@ -81,6 +104,7 @@ export async function modelFixture(
       })
       arrived()
       if (path === '/hang') return
+      if (path === '/disconnect') return void incoming.socket.destroy()
       if (path === '/redirect') {
         response.writeHead(307, { location: '/other' })
         response.end()
@@ -110,15 +134,19 @@ export async function modelFixture(
   )
   const target = {
     targetId: 'model-peer',
-    scheme: 'http' as const,
-    host: 'localhost',
+    scheme: transport.scheme,
+    host: transport.host,
     port: address.port,
     path,
   }
   let current = true,
     networkAllowed = true
   const endpoint = { endpointRef: 'model-endpoint', target, method: 'POST' as const }
-  const networkRule = rule(address.port, { targetId: target.targetId })
+  const networkRule = rule(address.port, {
+    targetId: target.targetId,
+    scheme: target.scheme,
+    host: target.host,
+  })
   const options = {
     installation: {
       binding: MODEL,
@@ -145,7 +173,7 @@ export async function modelFixture(
     ports.push(service)
     return service
   }
-  const url = `http://localhost:${address.port}${path}`
+  const url = `${target.scheme}://${target.host}:${address.port}${path}`
   const request = (destination = url, patch: RequestInit = {}) =>
     new Request(destination, {
       method: 'POST',
@@ -185,6 +213,7 @@ export async function modelFixture(
     url,
     arrival,
     observations,
+    stats,
     logs,
     request,
     port,

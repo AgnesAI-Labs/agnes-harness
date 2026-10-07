@@ -1,3 +1,4 @@
+// Measure merged main attachments and current State/Supervisor sources with exact ceilings.
 // Measure combined attachments and runtime shell sources with exact ceilings; no spare allocation.
 // Combined current integration sources are remeasured without spare allocation.
 // Re-measure merged image attachments, model menus and runtime clients with exact ceilings.
@@ -1150,7 +1151,9 @@ const INITIAL_CEILING: Record<string, number> = {
   // An unknown effect from the Model and Media providers carries reconcile advice naming the unresolved action (+18); exact cap, no spare.
   // Supervisor ports, wire helpers, session-control forwarding and provider shell (+555); exact cap, no spare.
   // The Supervisor measures a call's deadline against the deployment's trusted clock (+4); exact cap, no spare.
-  'packages/core/src': 40489,
+  // Supervisor admission and pre-run cancellation (+182); exact cap, no spare.
+  // Supervisor actionReceipt and inspect reads (+107); exact cap, no spare.
+  'packages/core/src': 40778,
   // Testkit-only reference Effects runner adds 202 measured lines; exact cap, no spare.
   // Independent Effects dispatch reference (+440); exact measurement below.
   'packages/core/testkit': 2437,
@@ -1173,7 +1176,9 @@ const INITIAL_CEILING: Record<string, number> = {
   // Model adapter answers a lost prepared call from the store instead of loading it (+8). Measured 5916, exact, no spare.
   // Model source check consumes verified media evidence (+57). Measured 5973, exact, no spare.
   // The model adapter's unknown-effect errors carry reconcile advice naming the unresolved action (+9); exact cap, no spare.
-  'packages/ai/src': 6100,
+  // The model adapter refuses a returned tool call whose arguments or id the next request cannot carry (+32); exact cap, no spare.
+  // A not-sent model refusal keeps a code its detail is registered under (+1); exact cap, no spare.
+  'packages/ai/src': 6133,
   // 2026-09-09: raised from 500, which was exactly the measured count and so forbade every
   // further line. Two repairs were blocked by it and are landing with this raise: the provider
   // factory taking log + pricing (without which every delivered assembly denominates ledger
@@ -1682,7 +1687,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // Media contract scenarios and in-memory fixture (+763); exact cap, no spare.
   // Supervisor descriptor and config helpers (+73); exact cap, no spare.
   // Supervisor public contract: six scenarios and the restricted peer fixture interface (+372); exact cap, no spare.
-  'packages/extension-api/testkit': 19071,
+  // Restricted admission peer for the Supervisor contract (+93); exact cap, no spare.
+  'packages/extension-api/testkit': 19164,
   // 2026-09-10: raised from 2500 by Task 15 (stream-disconnect reconnection). The new
   // reattach.ts (the Reconnector: backoff loop, OVERLOADED's retryAfterMs override) plus
   // Session.recover()/waitForQuiescence and Client's reconnect wiring (emit(), the
@@ -3011,7 +3017,12 @@ const INITIAL_CEILING: Record<string, number> = {
   // State marks an open leaf attempt unknown and resolves an unresolved action: mark_unknown, resolve_action and the resolution record (+225 on 86144); exact cap, no spare.
   // State finishes a draining run as failed or cancelled and hands unresolved effects over with their owners: finalize_run (+75 on 86369); exact cap, no spare.
   // State persists a receipt lookup before it runs and stores its result: beginReconciliation, completeReconciliation and the check record (+247 on 86444); exact cap, no spare.
-  'packages/host/src': 86691,
+  // Model sends are fenced after transport establishment. Measured 86779, exact, no spare.
+  // Issued secret handles are verified without being consumed. Measured 86864, exact, no spare.
+  // State accepts signals, fires due timers and records service commands: acceptInbox, fireTimer, acceptServiceCommand, readServiceCommand and their scan rules (+883 on 86864); exact cap, no spare.
+  // State read facade lists a run's actions and reads action visibility (+78 on 87747); exact cap, no spare.
+  // The State provider routes read opens and scans through an optional read service (+7 on 87825); exact cap, no spare.
+  'packages/host/src': 87832,
   'packages/host/src/ext-host/service-invocation': 247,
   // T5.2's permission projector is kept independently bounded so later extension-host work cannot
   // hide in the package-wide increment. Measured source: 86 lines.

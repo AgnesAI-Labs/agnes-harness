@@ -194,6 +194,29 @@ export function createReferenceSecrets(settings: ReferenceSecretsOptions) {
     }
     throw new Stop('secret_denied')
   }
+  async function voucher(
+    handle: unknown,
+    consumer: W.SecretConsumerBinding,
+    call: CallContext,
+    signal: AbortSignal,
+  ): Promise<{ presented: W.SecretHandle; current: Slot }> {
+    const presented = input('SecretHandle', handle)
+    const permit = await permission(presented.secretId, presented.audience, consumer.purpose, call, signal)
+    if (canonicalJsonDigest(permit.binding) !== canonicalJsonDigest(consumer))
+      throw new Stop('secret_consumer')
+    const cabinet = view()
+    const ticket = cabinet.tickets.find((item) => item.locator.handleId === presented.handleId)
+    const current = slot(cabinet, presented.secretId)
+    const mismatched =
+      ticket === undefined ||
+      canonicalJsonDigest(ticket.locator) !== canonicalJsonDigest(presented) ||
+      ticket.permit !== canonicalJsonDigest(permit) ||
+      ticket.sequence !== current.sequence ||
+      presented.version !== current.version ||
+      Date.parse(presented.expiresAt) <= clock()
+    if (mismatched) throw new Stop('secret_handle')
+    return { presented, current }
+  }
   async function wrap<T>(
     call: { signal: AbortSignal; deadline: string },
     operation: (signal: AbortSignal) => Promise<T>,
@@ -296,6 +319,17 @@ export function createReferenceSecrets(settings: ReferenceSecretsOptions) {
         })
       })
     },
+    verifyIssued(handle: unknown, consumer: W.SecretConsumerBinding, call: CallContext) {
+      return wrap(call, async (signal) => {
+        try {
+          await voucher(handle, consumer, call, signal)
+        } catch (reason) {
+          if (signal.aborted || (reason instanceof Stop && reason.code === 'cancelled'))
+            throw new Stop('secret_cancelled', 'cancelled')
+          throw new Stop('secret_handle')
+        }
+      })
+    },
     use(
       handle: unknown,
       consumer: W.SecretConsumerBinding,
@@ -303,25 +337,10 @@ export function createReferenceSecrets(settings: ReferenceSecretsOptions) {
       consume: (material: string, signal: AbortSignal) => Promise<void> | void,
     ) {
       return wrap(call, async (signal) => {
-        const ref = input('SecretHandle', handle)
-        const permit = await permission(ref.secretId, ref.audience, consumer.purpose, call, signal)
-        if (canonicalJsonDigest(permit.binding) !== canonicalJsonDigest(consumer))
-          throw new Stop('secret_consumer')
-        const state = view()
-        const ticket = state.tickets.find((item) => item.locator.handleId === ref.handleId)
-        const current = slot(state, ref.secretId)
-        if (
-          !ticket ||
-          canonicalJsonDigest(ticket.locator) !== canonicalJsonDigest(ref) ||
-          ticket.permit !== canonicalJsonDigest(permit) ||
-          ticket.sequence !== current.sequence ||
-          ref.version !== current.version ||
-          Date.parse(ref.expiresAt) <= clock()
-        )
-          throw new Stop('secret_handle')
+        const { presented, current } = await voucher(handle, consumer, call, signal)
         const value = settings.source.resolve(current.pointer)
-        await permission(ref.secretId, ref.audience, consumer.purpose, call, signal)
-        if (slot(view(), ref.secretId).sequence !== current.sequence) throw new Stop('secret_revoked')
+        await permission(presented.secretId, presented.audience, consumer.purpose, call, signal)
+        if (slot(view(), presented.secretId).sequence !== current.sequence) throw new Stop('secret_revoked')
         signal.throwIfAborted()
         await consume(value, signal)
       })

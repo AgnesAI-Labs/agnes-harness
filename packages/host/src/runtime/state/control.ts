@@ -8,6 +8,7 @@ import type {
   AdvanceProviderRequest,
   AdvanceRunRequest,
   BindingRef,
+  CallContext,
   ClaimOutboxRequest,
   ClaimOutboxResult,
   CloseInvocationRequest,
@@ -53,8 +54,15 @@ import type {
   ResolutionRecordValue,
   RunBinding,
   RunTermination,
+  ScopeRef,
+  ServiceCommandAdmission,
+  ServiceCommandRecord,
+  SignalDelivery,
+  SignalIntakeReceipt,
   StateStoreControlBeginReconciliationRequest,
   StateStoreControlCompleteReconciliationRequest,
+  StateStoreControlFireTimerRequest,
+  StateStoreControlReadServiceCommandRequest,
   TimerRecordValue,
   TrustedPolicyFacts,
   WaitRecordValue,
@@ -73,9 +81,11 @@ import {
   digestOf,
   dispatchRecordId,
   grantRecordId,
+  INBOX_SCHEMA,
   INTERACTION_SCHEMA,
   INVOCATION_SCHEMA,
   type IntegrityState,
+  inboxRecordId,
   invocationRecordId,
   MIN_READER,
   OUTBOX_SCHEMA,
@@ -103,10 +113,12 @@ import {
   runBindingRecordId,
   runQuotaRecordId,
   runRecordId,
+  SERVICE_COMMAND_SCHEMA,
   type SessionIdentityValue,
   SIGNAL_SCHEMA,
   type StoredRecord,
   sameJson,
+  serviceCommandRecordId,
   signalRecordId,
   stableId,
   TIMER_SCHEMA,
@@ -148,6 +160,8 @@ const QUOTA_MIRROR_MISSING = 'active quota reservation has no mirror'
 const RESULT_TYPE = 'agh.runtime/action-result@1'
 const STREAM_END_TYPE = 'agh.runtime/stream-end@1'
 const COMPLETED_SIGNAL_TYPE = 'agh.runtime/action-completed@1'
+const TIMER_SIGNAL_TYPE = 'agh.runtime/timer-fired@1'
+const SIGNAL_WAKE_TYPE = 'agh.runtime/signal-wake@1'
 const MAX_OUTBOX_CLAIM = 10_000
 const OUTBOX_DEAD_AFTER = 20
 const OUTBOX_BACKOFF_CAP_MS = 60_000
@@ -1301,6 +1315,23 @@ function anySessionId(ports: ControlPorts): string {
   return row.session_id
 }
 
+/**
+ * The revision an invocation is based on: the run for the run itself and for a composite parent that has no
+ * provider state yet, the provider revision for a started composite parent.
+ */
+function invocationBaseRevision(
+  ports: ControlPorts,
+  run: RunRecordValue,
+  targetActionId: string | null,
+): number {
+  if (targetActionId === null) return run.revision
+  const action = ports.loadHead(actionRecordId(targetActionId))
+  if (!action || storedValue<ActionValue>(action).runId !== run.runId)
+    refuse('conflict', 'invocation_target', 'invocation target is not an action of the run')
+  const provider = ports.loadHead(providerStateRecordId(targetActionId))
+  return provider ? storedValue<ProviderStateValue>(provider).providerRevision : run.revision
+}
+
 export async function admitInvocationTx(
   ports: ControlPorts,
   request: InvocationAdmission,
@@ -1319,15 +1350,16 @@ export async function admitInvocationTx(
   assertLiveEpoch(ports, loaded.value.sessionId, request.writerEpoch)
   if (request.bindingId !== loaded.value.bindingId)
     refuse('conflict', 'binding', 'binding does not match the run')
-  if (request.baseRevision !== loaded.value.revision)
-    refuse('conflict', 'revision', 'invocation base revision does not match the run')
+  if (request.baseRevision !== invocationBaseRevision(ports, loaded.value, request.targetActionId))
+    refuse('conflict', 'revision', 'invocation base revision does not match its target')
   if (ports.loadHead(invocationRecordId(request.invocationId)))
     refuse('conflict', 'invocation_exists', 'invocation already exists')
   const active = ports.get<{ invocation_id: string }>(
-    'SELECT invocation_id FROM runtime_active_invocation WHERE run_id = ?',
+    'SELECT invocation_id FROM runtime_active_invocation_target WHERE run_id = ? AND target_key = ?',
     request.runId,
+    signalTargetKey(request.targetActionId),
   )
-  if (active) refuse('conflict', 'invocation_state', 'an invocation is already active')
+  if (active) refuse('conflict', 'invocation_state', 'an invocation is already active for this target')
   const existing = loadQuota(ports, request.runId)
   const totalQueries = existing.value?.totalQueries ?? 0
   const reservedQueries = existing.value?.reservedQueries ?? 0
@@ -1414,8 +1446,9 @@ export async function admitInvocationTx(
   else creates.push(record(runQuotaRecordId(request.runId), RUN_QUOTA_SCHEMA, 1, loaded.owner, quota))
   ports.openQueryMeter(grantId, capacity)
   ports.run(
-    'INSERT INTO runtime_active_invocation (run_id, invocation_id) VALUES (?, ?)',
+    'INSERT INTO runtime_active_invocation_target (run_id, target_key, invocation_id) VALUES (?, ?, ?)',
     request.runId,
+    signalTargetKey(request.targetActionId),
     request.invocationId,
   )
   return rememberWrapped(
@@ -1498,11 +1531,16 @@ export async function closeInvocationTx(
   if (quota.reservedQueries < delta + unused) integrity('query reservation is larger than the run reserve')
   const stamp = at(ports)
   const active = ports.get<{ invocation_id: string }>(
-    'SELECT invocation_id FROM runtime_active_invocation WHERE run_id = ?',
+    'SELECT invocation_id FROM runtime_active_invocation_target WHERE run_id = ? AND target_key = ?',
     invocation.runId,
+    signalTargetKey(invocation.targetActionId),
   )
   if (!active || active.invocation_id !== invocation.invocationId) integrity(INVOCATION_INDEX_MISMATCH)
-  ports.run('DELETE FROM runtime_active_invocation WHERE run_id = ?', invocation.runId)
+  ports.run(
+    'DELETE FROM runtime_active_invocation_target WHERE run_id = ? AND target_key = ?',
+    invocation.runId,
+    signalTargetKey(invocation.targetActionId),
+  )
   const result: CloseInvocationResult = { invocationId: request.invocationId, state: resulting }
   return rememberWrapped(
     ports,
@@ -1604,6 +1642,8 @@ function assertGuard(ports: ControlPorts, guard: CommitGuard, mode: 'advance' | 
 }
 
 const RUN_STEP_STATES = ['admitted', 'runnable', 'waiting']
+/** A wait stays open until the run resumes: a signal or the timer can mark it ready first. */
+const OPEN_WAIT_STATES: readonly string[] = ['waiting', 'ready']
 const UNRESOLVED_ACTION_STATES = ['unknown', 'reconciling']
 
 type RunStep = {
@@ -1665,7 +1705,7 @@ function closeRunWait(
   if (typeof run.waitId !== 'string') integrity('waiting run has no wait record')
   const head = requireHead(ports, waitRecordId(run.waitId), 'wait_absent', 'wait record does not exist')
   const wait = storedValue<WaitRecordValue>(head)
-  if (wait.state !== 'waiting' || wait.runId !== run.runId)
+  if (!OPEN_WAIT_STATES.includes(wait.state) || wait.runId !== run.runId)
     refuse('conflict', 'wait_state', 'wait record is not waiting for this run')
   const closed: RecordUpdate[] = [
     updated(head, WAIT_SCHEMA, ownerOf(head), {
@@ -1826,6 +1866,8 @@ export async function advanceRunTx(
   const commitId = attestedCommitId(ports, request.commitId)
   assertTransition(request)
   const guarded = assertGuard(ports, request.guard, 'advance')
+  if (guarded.invocation.targetActionId !== null)
+    refuse('conflict', 'invocation_target', 'invocation does not target the run')
   const flushed = request.guard.queryUsage
     ? planQueryFlush(ports, guarded.invocation, request.guard.queryUsage)
     : undefined
@@ -3078,7 +3120,13 @@ type RunQuotaNote = { revision: number; refs: string[] | undefined }
 
 type SignalHeadNote = { revision: number; runId: string; targetKey: string; seq: number }
 
-type InvocationHeadNote = { revision: number; runId: string; invocationId: string; state: string }
+type InvocationHeadNote = {
+  revision: number
+  runId: string
+  targetActionId: string | null
+  invocationId: string
+  state: string
+}
 
 type AdmissionNote = {
   revision: number
@@ -3139,6 +3187,11 @@ export type ControlScan = {
   signalHeads: Map<string, SignalHeadNote>
   invocations: Map<string, InvocationHeadNote>
   runQuotas: Map<string, RunQuotaNote>
+  intakeInboxes: Map<string, { value: InboxRecord; owner: RecordOwner; commitId: string }>
+  intakeSignals: Map<string, { signal: Signal; owner: RecordOwner; commitId: string }>
+  intakeWakes: Map<string, { commitId: string; value: StoredOutbox }>
+  firedTimers: Map<string, { signalId: string; firedBy: string; recordCommit: string }>
+  serviceCommands: Map<string, { value: ServiceCommandRecord; commitId: string }>
 }
 
 export type ControlVersionNote = {
@@ -3155,7 +3208,7 @@ export type ControlEvidence = {
   requests(): { request_id: string; fingerprint: string; result_json: string }[]
   domainJson(): string | undefined
   signalSeqIndex(): { run_id: string; target_key: string; next_seq: unknown }[]
-  activeInvocations(): { run_id: string; invocation_id: string }[]
+  activeInvocations(): { run_id: string; target_key: string; invocation_id: string }[]
 }
 
 export function createControlScan(): ControlScan {
@@ -3189,6 +3242,11 @@ export function createControlScan(): ControlScan {
     signalHeads: new Map(),
     invocations: new Map(),
     runQuotas: new Map(),
+    intakeInboxes: new Map(),
+    intakeSignals: new Map(),
+    intakeWakes: new Map(),
+    firedTimers: new Map(),
+    serviceCommands: new Map(),
   }
 }
 
@@ -3222,6 +3280,8 @@ export function noteControlVersion(scan: ControlScan, version: ControlVersionNot
   const id = version.record_id
   if (id.startsWith('interaction:')) noteApprovalInteractionVersion(scan, version)
   else if (id.startsWith('approval-inbox-')) noteApprovalInboxVersion(scan, version)
+  else if (id.startsWith('inbox:')) noteIntakeInboxVersion(scan, version)
+  else if (id.startsWith('service-command:')) noteServiceCommandVersion(scan, version)
   else if (id.startsWith('action:')) noteActionVersion(scan, version)
   else if (id.startsWith('attempt:')) noteAttemptVersion(scan, version)
   else if (id.startsWith('dispatch:')) noteAdmissionVersion(scan, version)
@@ -3235,7 +3295,7 @@ export function noteControlVersion(scan: ControlScan, version: ControlVersionNot
   else if (id.startsWith('usage:')) noteUsageVersion(scan, version)
   else if (id.startsWith('provider:')) noteProviderStateVersion(version)
   else if (id.startsWith('wait:')) noteWaitVersion(version)
-  else if (id.startsWith('timer:')) noteTimerVersion(version)
+  else if (id.startsWith('timer:')) noteTimerVersion(scan, version)
   else if (id.startsWith('resolution:')) noteResolutionVersion(version)
   else if (id.startsWith('reconciliation:')) noteReconciliationVersion(version)
 }
@@ -3316,7 +3376,7 @@ function noteReconciliationVersion(version: ControlVersionNote): void {
     integrity('reconciliation check result does not match its state')
 }
 
-function noteTimerVersion(version: ControlVersionNote): void {
+function noteTimerVersion(scan: ControlScan, version: ControlVersionNote): void {
   const body = bodyRecord(version.value_json)
   const timerId = typeof body.timerId === 'string' ? body.timerId : ''
   if (timerId === '' || version.record_id !== timerRecordId(timerId))
@@ -3326,6 +3386,15 @@ function noteTimerVersion(version: ControlVersionNote): void {
     integrity('timer record is not in a known state')
   if ((body.state === 'fired') !== (body.firedByCommitId !== null))
     integrity('timer record fire commit does not match its state')
+  if (body.state === 'fired') {
+    if (typeof body.firedByCommitId !== 'string' || typeof body.signalId !== 'string')
+      integrity('fired timer has no fire commit or signal')
+    scan.firedTimers.set(timerId, {
+      signalId: body.signalId,
+      firedBy: body.firedByCommitId,
+      recordCommit: version.commit_id,
+    })
+  }
 }
 
 function noteActionVersion(scan: ControlScan, version: ControlVersionNote): void {
@@ -3445,6 +3514,7 @@ function noteInvocationVersion(scan: ControlScan, version: ControlVersionNote): 
   noteLatest(scan.invocations, version.record_id, {
     revision: version.record_revision,
     runId: typeof body.runId === 'string' ? body.runId : '',
+    targetActionId: typeof body.targetActionId === 'string' ? body.targetActionId : null,
     invocationId: typeof body.invocationId === 'string' ? body.invocationId : '',
     state: typeof body.state === 'string' ? body.state : '',
   })
@@ -3523,7 +3593,10 @@ function noteSignalVersion(scan: ControlScan, version: ControlVersionNote): void
   const body = bodyRecord(version.value_json)
   const signal = objectRecord(body.signal)
   if (version.record_revision === 1) {
-    const payload = inlineSourcePayload(signal?.payload)
+    const intakeSourced =
+      !sameJson(signal?.schema, INTERACTION_SCHEMA) &&
+      typeof objectRecord(signal?.causation)?.externalEventId === 'string'
+    const payload = intakeSourced ? {} : inlineSourcePayload(signal?.payload)
     if (sameJson(signal?.schema, INTERACTION_SCHEMA)) {
       const checked = validateRuntime('Signal', signal),
         interaction = validateRuntime('InteractionRecord', payload)
@@ -3536,6 +3609,15 @@ function noteSignalVersion(scan: ControlScan, version: ControlVersionNote): void
       )
         integrity('approval wake signal source is invalid')
       scan.approvalSignals.set(version.record_id, {
+        signal: checked.value,
+        owner: approvalVersionOwner(version),
+        commitId: version.commit_id,
+      })
+    } else if (intakeSourced) {
+      const checked = validateRuntime('Signal', signal)
+      if (!checked.ok || version.record_id !== signalRecordId(checked.value.signalId))
+        integrity('intake signal source record is invalid')
+      scan.intakeSignals.set(version.record_id, {
         signal: checked.value,
         owner: approvalVersionOwner(version),
         commitId: version.commit_id,
@@ -3571,6 +3653,10 @@ function noteOutboxVersion(scan: ControlScan, version: ControlVersionNote): void
   const body = bodyRecord(version.value_json)
   const eventId = typeof body.eventId === 'string' ? body.eventId : version.record_id.slice('outbox:'.length)
   scan.outboxes.set(eventId, version.commit_id)
+  if (body.typeId === SIGNAL_WAKE_TYPE) {
+    scan.intakeWakes.set(eventId, { commitId: version.commit_id, value: body as StoredOutbox })
+    return
+  }
   const payload = inlineSourcePayload(body.payload)
   const receiptId = typeof payload.receiptId === 'string' ? payload.receiptId : ''
   if (
@@ -3878,17 +3964,18 @@ function assertActiveInvocations(scan: ControlScan, evidence: ControlEvidence): 
   const expected = new Map<string, string>()
   for (const note of scan.invocations.values()) {
     if (note.state !== 'active') continue
-    if (note.runId === '' || note.invocationId === '' || expected.has(note.runId))
+    const key = `${note.runId}\0${signalTargetKey(note.targetActionId)}`
+    if (note.runId === '' || note.invocationId === '' || expected.has(key))
       integrity(INVOCATION_INDEX_MISMATCH)
-    expected.set(note.runId, note.invocationId)
+    expected.set(key, note.invocationId)
   }
   const rows = evidence.activeInvocations()
   if (rows.length !== expected.size) integrity(INVOCATION_INDEX_MISMATCH)
   const seen = new Set<string>()
   for (const row of rows) {
-    if (seen.has(row.run_id) || expected.get(row.run_id) !== row.invocation_id)
-      integrity(INVOCATION_INDEX_MISMATCH)
-    seen.add(row.run_id)
+    const key = `${row.run_id}\0${row.target_key}`
+    if (seen.has(key) || expected.get(key) !== row.invocation_id) integrity(INVOCATION_INDEX_MISMATCH)
+    seen.add(key)
   }
 }
 
@@ -3995,6 +4082,7 @@ export function finishControlScan(scan: ControlScan, evidence: ControlEvidence):
     }
   }
   assertPublication(scan)
+  assertIntake(scan)
   assertQuotaReservations(scan)
   assertSignalSeq(scan, evidence)
   assertActiveInvocations(scan, evidence)
@@ -4221,7 +4309,7 @@ export async function advanceProviderTx(
       'wait record does not exist',
     )
     const previous = storedValue<WaitRecordValue>(resumedWait)
-    if (previous.state !== 'waiting' || previous.targetActionId !== parent.actionId)
+    if (!OPEN_WAIT_STATES.includes(previous.state) || previous.targetActionId !== parent.actionId)
       refuse('conflict', 'wait_state', 'wait record is not waiting for this parent')
     updates.push(
       updated(resumedWait, WAIT_SCHEMA, ownerOf(resumedWait), {
@@ -4438,7 +4526,7 @@ async function beginDrainTx(
         'wait record does not exist',
       )
       const wait = storedValue<WaitRecordValue>(waitHead)
-      if (wait.state !== 'waiting' || wait.targetActionId !== parent.actionId)
+      if (!OPEN_WAIT_STATES.includes(wait.state) || wait.targetActionId !== parent.actionId)
         refuse('conflict', 'wait_state', 'wait record is not waiting for this parent')
       updates.push(
         updated(waitHead, WAIT_SCHEMA, ownerOf(waitHead), {
@@ -5298,4 +5386,805 @@ export async function completeReconciliationTx(
     fingerprint,
     done,
   )
+}
+
+// Signal intake, timers and service commands.
+
+/**
+ * What the selected source owner proves about one delivery. State enforces every field against the delivery and
+ * the target run; a delivery's own claims about who sent it are never enough.
+ */
+export type SignalSourceMapping = Readonly<{
+  mappingRef: string
+  sourceKind: SignalDelivery['sourceKind']
+  sourceAuthorityId: string
+  sourceAuthorizationRef: string
+  scope: ScopeRef
+  typeIds: readonly string[]
+}>
+
+/** The selected owner that authenticates deliveries. State installs nothing by default, so a delivery is refused. */
+export type SignalSource = Readonly<{
+  verify(delivery: SignalDelivery, context: CallContext): SignalSourceMapping | undefined
+}>
+
+/** The authenticated caller of a service command, taken from the call context and never from the request. */
+export type ServiceCaller = Readonly<{ principalRef: string; bindingId: string; scope: ScopeRef }>
+
+export function serviceCaller(context: CallContext): ServiceCaller {
+  return { principalRef: context.principalRef, bindingId: context.bindingId, scope: context.scope }
+}
+
+type IntakeKey = { sourceAuthorityId: string; eventId: string; consumerId: string }
+type RememberedIntake = { result: SignalIntakeReceipt; receipt?: StateCommitReceipt }
+
+function inboxIdOf(key: IntakeKey): string {
+  return stableId('inbox', canonicalJson(key))
+}
+
+function intakeSignalIdOf(key: IntakeKey): string {
+  return stableId('inbox-signal', canonicalJson(key))
+}
+
+function wakeEventIdOf(commitId: string, signalId: string): string {
+  return stableId('obx', `${commitId}\0wake\0${signalId}`)
+}
+
+function timerIntakeId(timerId: string): string {
+  return stableId('intake', `timer\0${timerId}`)
+}
+
+function timerFingerprint(timer: TimerRecordValue): string {
+  return digestOf({ timerId: timer.timerId, dueAt: timer.dueAt, waitId: timer.waitId })
+}
+
+function inlineValue(ref: DataRef): Record<string, unknown> {
+  if (ref.kind !== 'inline') integrity('inbox acknowledgement is not inline')
+  const body = objectRecord(ref.value)
+  if (!body) integrity('inbox acknowledgement is not an object')
+  return body
+}
+
+function nextInboxSeq(ports: ControlPorts, consumerId: string): number {
+  const row = ports.get<{ seq: unknown }>(
+    "SELECT MAX(json_extract(value_json,'$.inboxSeq')) AS seq FROM runtime_record_heads h JOIN runtime_version_bodies b USING(record_id,record_revision) WHERE schema_json=? AND json_extract(value_json,'$.consumerId')=?",
+    canonicalJson(INBOX_SCHEMA),
+    consumerId,
+  )
+  const current = row?.seq === null || row?.seq === undefined ? 0 : wholeNumber(row.seq)
+  if (current === undefined || current < 0) integrity('inbox sequence is invalid')
+  return current + 1
+}
+
+function replayIntake(
+  ports: ControlPorts,
+  sessionId: string,
+  method: string,
+  requestId: string,
+  fingerprint: string,
+): SignalIntakeReceipt | undefined {
+  const stored = ports.replayRequest<RememberedIntake>(method, requestId, fingerprint)
+  if (!stored) return undefined
+  if (stored.receipt) ports.assertReceipt(sessionId, stored.receipt, fingerprint)
+  return stored.result
+}
+
+/** A result that wrote no commit is still remembered, so a retry of the same request id sees the same answer. */
+function rememberUncommitted(
+  ports: ControlPorts,
+  method: string,
+  requestId: string,
+  fingerprint: string,
+  result: SignalIntakeReceipt,
+): void {
+  ports.noteWrite()
+  ports.rememberRequest(method, requestId, fingerprint, { result } satisfies RememberedIntake)
+}
+
+type IntakeSignal = {
+  intakeId: string
+  key: IntakeKey
+  fingerprint: string
+  signalId: string
+  typeId: string
+  schema: SchemaRef
+  source: BindingRef
+  payload: DataRef
+  causation: Signal['causation']
+  runId: string
+  targetActionId: string | null
+}
+
+/** The signal, its inbox record and the wake outbox event of one intake, in the same commit. */
+function planIntake(
+  ports: ControlPorts,
+  input: {
+    commitId: string
+    stamp: string
+    sessionId: string
+    owner: RecordOwner
+    run: RunRecordValue
+    signal: IntakeSignal
+  },
+): { creates: StoredRecord[]; sides: CommitSideEntry[]; seq: number } {
+  const { commitId, stamp, owner, run, signal: item } = input
+  const seq = nextSignalSeq(ports, run.runId, item.targetActionId)
+  recordAssignedSignalSeq(ports, run.runId, item.targetActionId, seq)
+  const signal: Signal = {
+    signalId: item.signalId,
+    runId: item.runId,
+    targetActionId: item.targetActionId,
+    seq,
+    typeId: item.typeId,
+    schema: item.schema,
+    source: item.source,
+    payload: item.payload,
+    createdAt: stamp,
+    causation: item.causation,
+  }
+  const inbox: InboxRecord = {
+    sourceAuthorityId: item.key.sourceAuthorityId,
+    eventId: item.key.eventId,
+    consumerId: item.key.consumerId,
+    fingerprint: item.fingerprint,
+    receivedAt: stamp,
+    appliedCommitId: commitId,
+    acknowledgement: dataRef({ intakeId: item.intakeId, signalIds: [item.signalId] }),
+    inboxSeq: nextInboxSeq(ports, item.key.consumerId),
+  }
+  const eventId = wakeEventIdOf(commitId, item.signalId)
+  const destination = stableId('obxdst', ports.authority.authorityId)
+  const wake = outboxValue(
+    ports,
+    commitId,
+    eventId,
+    destination,
+    SIGNAL_WAKE_TYPE,
+    {
+      signalId: item.signalId,
+      runId: item.runId,
+      targetActionId: item.targetActionId,
+      typeId: item.typeId,
+    },
+    stamp,
+  )
+  insertOutboxDelivery(ports, input.sessionId, eventId, destination, Date.parse(stamp))
+  return {
+    creates: [
+      record(signalRecordId(item.signalId), SIGNAL_SCHEMA, 1, owner, {
+        signal,
+        targetRevisionAtCreation: run.revision,
+        consumedByCommitId: null,
+      } satisfies SignalRecordValue),
+      record(inboxRecordId(inboxIdOf(item.key)), INBOX_SCHEMA, 1, owner, inbox),
+      record(outboxRecordId(eventId), OUTBOX_SCHEMA, 1, owner, wake),
+    ],
+    sides: [{ commitId, kind: 'outbox-created', eventId }],
+    seq,
+  }
+}
+
+/** The wait the target is parked on, if it is still open. */
+function openWaitFor(
+  ports: ControlPorts,
+  run: RunRecordValue,
+  targetActionId: string | null,
+): { head: StoredHead; value: WaitRecordValue } | undefined {
+  let waitId: string | null = null
+  if (targetActionId === null) waitId = typeof run.waitId === 'string' ? run.waitId : null
+  else {
+    const providerHead = ports.loadHead(providerStateRecordId(targetActionId))
+    if (providerHead) {
+      const provider = storedValue<ProviderStateValue>(providerHead)
+      waitId = provider.state === 'waiting' ? provider.waitId : null
+    }
+  }
+  if (waitId === null) return undefined
+  const head = ports.loadHead(waitRecordId(waitId))
+  if (!head) integrity('parked target has no wait record')
+  const value = storedValue<WaitRecordValue>(head)
+  if (value.runId !== run.runId || value.targetActionId !== targetActionId)
+    integrity('wait record does not belong to its target')
+  return { head, value }
+}
+
+function signalSatisfies(condition: WaitRecordValue['condition'], typeId: string, seq: number): boolean {
+  return condition.anyOf.some(
+    (clause) => clause.kind === 'signals' && clause.typeIds.includes(typeId) && seq > clause.afterSeq,
+  )
+}
+
+function assertDelivery(
+  delivery: SignalDelivery,
+  mapping: SignalSourceMapping,
+  run: ReturnType<typeof loadRun>,
+): void {
+  const { event } = delivery
+  if (
+    mapping.mappingRef !== delivery.mappingRef ||
+    mapping.sourceKind !== delivery.sourceKind ||
+    mapping.sourceAuthorityId !== delivery.sourceAuthority.authorityId ||
+    mapping.sourceAuthorizationRef !== delivery.sourceAuthorizationRef
+  )
+    refuse('denied', 'signal_source', 'delivery does not match its authorized source mapping')
+  if (!sameJson(mapping.scope, run.owner.scope) || !sameJson(event.scope, mapping.scope))
+    refuse('denied', 'signal_scope', 'delivery is outside the scope of its source mapping')
+  if (delivery.consumerId !== run.owner.ownerBinding.bindingId)
+    refuse('denied', 'signal_consumer', 'delivery consumer is not the owner of the target run')
+  if (event.eventId !== delivery.sourceEventId)
+    refuse('invalid_input', 'signal_event', 'delivery event id does not match its source event')
+  if (event.typeId !== event.schema.typeId || !sameJson(event.schema, event.payload.schema))
+    refuse('invalid_input', 'signal_schema', 'event type, schema and payload do not agree')
+  if (!mapping.typeIds.includes(event.typeId))
+    refuse('denied', 'signal_type', 'the source mapping does not allow this signal type')
+  if (
+    delivery.sourceKind !== 'timer' &&
+    (event.typeId === INTERACTION_SCHEMA.typeId ||
+      event.typeId === COMPLETED_SIGNAL_TYPE ||
+      event.typeId === TIMER_SIGNAL_TYPE)
+  )
+    refuse('denied', 'signal_type', 'this signal type is produced only by its own State path')
+}
+
+export async function acceptInboxTx(
+  ports: ControlPorts,
+  delivery: SignalDelivery,
+  mapping: SignalSourceMapping | undefined,
+): Promise<Committed<SignalIntakeReceipt>> {
+  const fingerprint = digestOf(delivery)
+  const run = loadRun(ports, delivery.target.runId)
+  const sessionId = run.value.sessionId
+  const verified = await ports.requireSession(sessionId)
+  const replayed = replayIntake(ports, sessionId, 'acceptInbox', delivery.intakeId, fingerprint)
+  if (replayed) return { result: replayed, sessionId }
+  if (!mapping) refuse('denied', 'signal_source', 'delivery source is not authorized')
+  assertDelivery(delivery, mapping, run)
+  const { event, target } = delivery
+  if (target.targetActionId !== null) {
+    const action = ports.loadHead(actionRecordId(target.targetActionId))
+    if (!action || storedValue<ActionValue>(action).runId !== target.runId)
+      refuse('invalid_input', 'signal_target', 'delivery target is not an action of the run')
+  }
+  if (delivery.sourceKind === 'timer') {
+    const timerHead = ports.loadHead(timerRecordId(delivery.sourceEventId))
+    if (!timerHead) refuse('invalid_input', 'timer_absent', 'timer does not exist')
+    const timer = storedValue<TimerRecordValue>(timerHead)
+    if (
+      !sameJson(delivery.sourceAuthority, ports.authority) ||
+      timer.runId !== target.runId ||
+      timer.targetActionId !== target.targetActionId ||
+      delivery.fingerprint !== timerFingerprint(timer)
+    )
+      refuse('invalid_input', 'timer_target', 'delivery does not describe this timer')
+    return fireTimerCore(ports, timerHead, {
+      method: 'acceptInbox',
+      requestId: delivery.intakeId,
+      fingerprint,
+      expectedRevision: undefined,
+    })
+  }
+  const key: IntakeKey = {
+    sourceAuthorityId: delivery.sourceAuthority.authorityId,
+    eventId: delivery.sourceEventId,
+    consumerId: delivery.consumerId,
+  }
+  const inboxHead = ports.loadHead(inboxRecordId(inboxIdOf(key)))
+  if (inboxHead) {
+    const inbox = storedValue<InboxRecord>(inboxHead)
+    const signalHead = requireHeadOrIntegrity(ports, signalRecordId(intakeSignalIdOf(key)))
+    const original = storedValue<SignalRecordValue>(signalHead).signal
+    const same =
+      inbox.fingerprint === delivery.fingerprint &&
+      original.runId === target.runId &&
+      original.targetActionId === target.targetActionId &&
+      original.typeId === event.typeId &&
+      sameJson(original.schema, event.schema) &&
+      sameJson(original.source, event.source) &&
+      sameJson(original.payload, event.payload)
+    const result: SignalIntakeReceipt = same
+      ? {
+          intakeId: String(inlineValue(inbox.acknowledgement).intakeId),
+          state: 'duplicate',
+          appliedCommitId: inbox.appliedCommitId,
+          signalIds: [original.signalId],
+        }
+      : {
+          intakeId: delivery.intakeId,
+          state: 'conflicting',
+          appliedCommitId: inbox.appliedCommitId,
+          signalIds: [],
+        }
+    rememberUncommitted(ports, 'acceptInbox', delivery.intakeId, fingerprint, result)
+    return { result, sessionId }
+  }
+  const commitId = attestedCommitId(ports, stableId('commit', `inbox\0${delivery.intakeId}`))
+  const stamp = at(ports)
+  const signalId = intakeSignalIdOf(key)
+  const planned = planIntake(ports, {
+    commitId,
+    stamp,
+    sessionId,
+    owner: run.owner,
+    run: run.value,
+    signal: {
+      intakeId: delivery.intakeId,
+      key,
+      fingerprint: delivery.fingerprint,
+      signalId,
+      typeId: event.typeId,
+      schema: event.schema,
+      source: event.source,
+      payload: event.payload,
+      causation: { externalEventId: delivery.sourceEventId },
+      runId: target.runId,
+      targetActionId: target.targetActionId,
+    },
+  })
+  const updates: RecordUpdate[] = []
+  const wait = openWaitFor(ports, run.value, target.targetActionId)
+  if (
+    wait &&
+    wait.value.state === 'waiting' &&
+    signalSatisfies(wait.value.condition, event.typeId, planned.seq)
+  )
+    updates.push(
+      updated(wait.head, WAIT_SCHEMA, ownerOf(wait.head), {
+        ...wait.value,
+        state: 'ready',
+        matchedSignalIds: [...wait.value.matchedSignalIds, signalId],
+      } satisfies WaitRecordValue),
+    )
+  const written = ports.writeCommit({
+    ...blankInput(
+      sessionId,
+      verified,
+      commitId,
+      stamp,
+      fingerprint,
+      run.value.runId,
+      run.value.writerEpoch,
+      run.value.revision,
+    ),
+    creates: planned.creates,
+    updates,
+    sides: planned.sides,
+  })
+  const result: SignalIntakeReceipt = {
+    intakeId: delivery.intakeId,
+    state: 'accepted',
+    appliedCommitId: commitId,
+    signalIds: [signalId],
+  }
+  ports.rememberRequest('acceptInbox', delivery.intakeId, fingerprint, {
+    result,
+    receipt: written.receipt,
+  } satisfies RememberedIntake)
+  return { result, sessionId, verified: written.verified }
+}
+
+function requireHeadOrIntegrity(ports: ControlPorts, recordId: string): StoredHead {
+  const head = ports.loadHead(recordId)
+  if (!head) integrity('inbox record has no matching signal')
+  return head
+}
+
+/**
+ * Fires one due timer: the timer, its signal, the inbox record, the wake event and the wait it belongs to change in
+ * one commit. The clock is the store's own, never the caller's.
+ */
+async function fireTimerCore(
+  ports: ControlPorts,
+  timerHead: StoredHead,
+  input: { method: string; requestId: string; fingerprint: string; expectedRevision: number | undefined },
+): Promise<Committed<SignalIntakeReceipt>> {
+  const timer = storedValue<TimerRecordValue>(timerHead)
+  const run = loadRun(ports, timer.runId)
+  const sessionId = run.value.sessionId
+  const verified = await ports.requireSession(sessionId)
+  const intakeId = timerIntakeId(timer.timerId)
+  if (timer.state === 'fired') {
+    if (timer.firedByCommitId === null) integrity('fired timer has no commit')
+    const result: SignalIntakeReceipt = {
+      intakeId,
+      state: 'duplicate',
+      appliedCommitId: timer.firedByCommitId,
+      signalIds: [timer.signalId],
+    }
+    rememberUncommitted(ports, input.method, input.requestId, input.fingerprint, result)
+    return { result, sessionId }
+  }
+  if (timer.state === 'cancelled')
+    refuse('conflict', 'timer_cancelled', 'timer was cancelled and produces no signal')
+  if (input.expectedRevision !== undefined && input.expectedRevision !== timerHead.record_revision)
+    refuse('conflict', 'revision', 'timer record revision does not match')
+  const due = Date.parse(timer.dueAt)
+  if (!Number.isFinite(due)) integrity('timer has no valid due time')
+  if (ports.now() < due) refuse('conflict', 'timer_not_due', 'timer is not due yet')
+  const waitHead = requireHead(ports, waitRecordId(timer.waitId), 'wait_absent', 'wait record does not exist')
+  const wait = storedValue<WaitRecordValue>(waitHead)
+  if (wait.runId !== timer.runId || wait.state === 'cancelled')
+    refuse('conflict', 'timer_wait', 'the wait of this timer is closed')
+  const commitId = attestedCommitId(ports, stableId('commit', `timer\0${timer.timerId}`))
+  const stamp = at(ports)
+  const key: IntakeKey = {
+    sourceAuthorityId: ports.authority.authorityId,
+    eventId: timer.timerId,
+    consumerId: run.owner.ownerBinding.bindingId,
+  }
+  const planned = planIntake(ports, {
+    commitId,
+    stamp,
+    sessionId,
+    owner: run.owner,
+    run: run.value,
+    signal: {
+      intakeId,
+      key,
+      fingerprint: timerFingerprint(timer),
+      signalId: timer.signalId,
+      typeId: TIMER_SIGNAL_TYPE,
+      schema: inlineSchema,
+      source: run.owner.ownerBinding,
+      payload: dataRef({ timerId: timer.timerId, waitId: timer.waitId, dueAt: timer.dueAt }),
+      causation: { externalEventId: timer.timerId },
+      runId: timer.runId,
+      targetActionId: timer.targetActionId,
+    },
+  })
+  const written = ports.writeCommit({
+    ...blankInput(
+      sessionId,
+      verified,
+      commitId,
+      stamp,
+      input.fingerprint,
+      run.value.runId,
+      run.value.writerEpoch,
+      run.value.revision,
+    ),
+    creates: planned.creates,
+    updates: [
+      updated(timerHead, TIMER_SCHEMA, ownerOf(timerHead), {
+        ...timer,
+        state: 'fired',
+        firedByCommitId: commitId,
+      } satisfies TimerRecordValue),
+      updated(waitHead, WAIT_SCHEMA, ownerOf(waitHead), {
+        ...wait,
+        state: 'ready',
+        deadlineSignalId: timer.signalId,
+      } satisfies WaitRecordValue),
+    ],
+    sides: planned.sides,
+  })
+  const result: SignalIntakeReceipt = {
+    intakeId,
+    state: 'accepted',
+    appliedCommitId: commitId,
+    signalIds: [timer.signalId],
+  }
+  ports.rememberRequest(input.method, input.requestId, input.fingerprint, {
+    result,
+    receipt: written.receipt,
+  } satisfies RememberedIntake)
+  return { result, sessionId, verified: written.verified }
+}
+
+export async function fireTimerTx(
+  ports: ControlPorts,
+  request: StateStoreControlFireTimerRequest,
+): Promise<Committed<SignalIntakeReceipt>> {
+  const fingerprint = digestOf(request)
+  const timerHead = requireHead(ports, timerRecordId(request.timerId), 'timer_absent', 'timer does not exist')
+  const timer = storedValue<TimerRecordValue>(timerHead)
+  const sessionId = loadRun(ports, timer.runId).value.sessionId
+  await ports.requireSession(sessionId)
+  const replayed = replayIntake(ports, sessionId, 'fireTimer', request.requestId, fingerprint)
+  if (replayed) return { result: replayed, sessionId }
+  return fireTimerCore(ports, timerHead, {
+    method: 'fireTimer',
+    requestId: request.requestId,
+    fingerprint,
+    expectedRevision: request.expectedRecordRevision,
+  })
+}
+
+function serviceCommandKey(
+  caller: ServiceCaller,
+  request: { commandId: string; sessionId: string; extensionId: string; serviceName: string },
+) {
+  return {
+    principalRef: caller.principalRef,
+    sourceRef: stableId(
+      'svc-source',
+      canonicalJson({ principalRef: caller.principalRef, bindingId: caller.bindingId, scope: caller.scope }),
+    ),
+    sessionId: request.sessionId,
+    extensionId: request.extensionId,
+    serviceName: request.serviceName,
+    commandId: request.commandId,
+  }
+}
+
+function serviceCommandOf(
+  ports: ControlPorts,
+  key: ReturnType<typeof serviceCommandKey>,
+): { head: StoredHead; value: ServiceCommandRecord } | undefined {
+  const head = ports.loadHead(serviceCommandRecordId(stableId('svc', canonicalJson(key))))
+  if (!head) return undefined
+  const value = storedValue<ServiceCommandRecord>(head)
+  if (
+    value.commandId !== key.commandId ||
+    value.principalRef !== key.principalRef ||
+    value.sourceRef !== key.sourceRef ||
+    value.sessionId !== key.sessionId ||
+    value.extensionId !== key.extensionId ||
+    value.serviceName !== key.serviceName
+  )
+    integrity('service command record does not match its key')
+  return { head, value }
+}
+
+export async function acceptServiceCommandTx(
+  ports: ControlPorts,
+  request: ServiceCommandAdmission,
+  caller: ServiceCaller,
+): Promise<Committed<ServiceCommandRecord>> {
+  const key = serviceCommandKey(caller, request)
+  const commandKey = stableId('svc', canonicalJson(key))
+  const fingerprint = digestOf(request)
+  const sessionId = request.sessionId
+  const verified = await ports.requireSession(sessionId)
+  const stored = ports.replayRequest<Remembered<ServiceCommandRecord>>(
+    'acceptServiceCommand',
+    commandKey,
+    fingerprint,
+  )
+  if (stored) {
+    ports.assertReceipt(sessionId, stored.receipt, fingerprint)
+    const current = serviceCommandOf(ports, key)
+    if (!current) integrity('accepted service command record is missing')
+    return { result: current.value, sessionId }
+  }
+  const { admission, operation, action } = request
+  if (
+    admission.sessionId !== sessionId ||
+    admission.bindingId !== request.bindingId ||
+    admission.releaseSetId !== request.releaseSetId ||
+    admission.conversation !== null
+  )
+    refuse('invalid_input', 'service_admission', 'admission does not match the service command')
+  const run = loadRun(ports, admission.runId)
+  if (
+    run.value.sessionId !== sessionId ||
+    run.value.admissionTicketId !== admission.ticketId ||
+    run.value.bindingId !== admission.bindingId ||
+    run.value.lane !== admission.lane ||
+    run.value.deadline !== admission.deadline ||
+    run.value.conversation !== null ||
+    !sameJson(run.value.input, admission.input)
+  )
+    refuse('conflict', 'service_run', 'the run does not match the admission of this command')
+  if (
+    run.value.state !== 'admitted' ||
+    run.value.revision !== 0 ||
+    runActions(ports, run.value.runId).length > 0
+  )
+    refuse('conflict', 'service_run', 'the run already carries work and cannot take a new command')
+  if (
+    !sameJson(action.target, operation.target) ||
+    action.method !== operation.method ||
+    !sameJson(action.input, operation.input)
+  )
+    refuse('invalid_input', 'service_action', 'the first action does not match the service operation')
+  const intentFingerprint = actionFingerprint(action)
+  const commitId = attestedCommitId(ports, stableId('commit', `service\0${commandKey}`))
+  const stamp = at(ports)
+  const actionId = stableId('act', `${run.value.runId}\0${action.key}`)
+  if (ports.loadHead(actionRecordId(actionId)))
+    refuse('conflict', 'service_run', 'the first action already exists')
+  const quota = loadQuota(ports, run.value.runId)
+  const value: ServiceCommandRecord = {
+    commandId: request.commandId,
+    fingerprint: request.requestDigest,
+    sessionId,
+    principalRef: key.principalRef,
+    sourceRef: key.sourceRef,
+    extensionId: request.extensionId,
+    serviceName: request.serviceName,
+    releaseSetId: request.releaseSetId,
+    bindingId: request.bindingId,
+    runId: run.value.runId,
+    actionId,
+    state: 'accepted',
+    resultRef: null,
+    error: null,
+    ownerRef: { kind: 'run', id: run.value.runId },
+  }
+  const actionValue: ActionValue = {
+    actionId,
+    runId: run.value.runId,
+    parentActionId: null,
+    key: action.key,
+    intent: action,
+    intentFingerprint,
+    state: 'prepared',
+    currentAttemptId: null,
+    providerStateId: null,
+    firstReceiptId: null,
+    resolvedReceiptId: null,
+    resolutionId: null,
+    ownerRef: { kind: 'run', id: run.value.runId },
+    createdByCommitId: commitId,
+    resultHookPlan: null,
+    taintSnapshot: taintOf(ports, run.value.runId),
+    authorizationTaintSnapshot: null,
+  }
+  const submitted: RunQuotaValue = {
+    runId: run.value.runId,
+    limitPolicyRef: LIMIT_POLICY,
+    totalTransitions: 0,
+    noProgressTransitions: 0,
+    lastProgressRef: null,
+    submittedActions: 0,
+    totalQueries: 0,
+    reservedQueries: 0,
+    invocationStarts: 0,
+    failedInvocations: 0,
+    activeQuotaReservationRefs: [],
+    ...quota.value,
+  }
+  const quotaNext: RunQuotaValue = {
+    ...submitted,
+    submittedActions: submitted.submittedActions + 1,
+    lastProgressRef: actionId,
+  }
+  const written = ports.writeCommit({
+    ...blankInput(
+      sessionId,
+      verified,
+      commitId,
+      stamp,
+      fingerprint,
+      run.value.runId,
+      run.value.writerEpoch,
+      run.value.revision,
+    ),
+    actionId,
+    actionIds: [{ key: action.key, actionId }],
+    creates: [
+      record(actionRecordId(actionId), ACTION_SCHEMA, 1, run.owner, actionValue),
+      record(serviceCommandRecordId(commandKey), SERVICE_COMMAND_SCHEMA, 1, run.owner, value),
+      // The run quota is created with the first invocation; a command's action can come before any.
+      ...(quota.head
+        ? []
+        : [record(runQuotaRecordId(run.value.runId), RUN_QUOTA_SCHEMA, 1, run.owner, quotaNext)]),
+    ],
+    updates: quota.head ? [updated(quota.head, RUN_QUOTA_SCHEMA, ownerOf(quota.head), quotaNext)] : [],
+    sides: [{ commitId, kind: 'action-created', actionId }],
+  })
+  ports.rememberRequest('acceptServiceCommand', commandKey, fingerprint, {
+    result: value,
+    receipt: written.receipt,
+  })
+  return { result: value, sessionId, verified: written.verified }
+}
+
+export async function readServiceCommandTx(
+  ports: ControlPorts,
+  request: StateStoreControlReadServiceCommandRequest,
+  caller: ServiceCaller,
+): Promise<Committed<ServiceCommandRecord | null>> {
+  const found = serviceCommandOf(ports, serviceCommandKey(caller, request))
+  if (!found) return { result: null, sessionId: request.sessionId }
+  await ports.requireSession(request.sessionId)
+  return { result: found.value, sessionId: request.sessionId }
+}
+
+function noteIntakeInboxVersion(scan: ControlScan, version: ControlVersionNote): void {
+  if (version.record_revision !== 1) integrity('inbox source was rewritten')
+  const checked = validateRuntime('InboxRecord', parseJson(version.value_json))
+  if (!checked.ok || checked.value.appliedCommitId !== version.commit_id)
+    integrity('inbox source commit differs')
+  const key: IntakeKey = {
+    sourceAuthorityId: checked.value.sourceAuthorityId,
+    eventId: checked.value.eventId,
+    consumerId: checked.value.consumerId,
+  }
+  if (version.record_id !== inboxRecordId(inboxIdOf(key))) integrity('inbox record id differs from its key')
+  scan.intakeInboxes.set(version.record_id, {
+    value: checked.value,
+    owner: approvalVersionOwner(version),
+    commitId: version.commit_id,
+  })
+}
+
+const SERVICE_COMMAND_STATES = ['accepted', 'running', 'settled', 'unknown']
+
+function noteServiceCommandVersion(scan: ControlScan, version: ControlVersionNote): void {
+  const checked = validateRuntime('ServiceCommandRecord', parseJson(version.value_json))
+  if (!checked.ok || !SERVICE_COMMAND_STATES.includes(checked.value.state))
+    integrity('service command record is invalid')
+  const value = checked.value
+  const key = {
+    principalRef: value.principalRef,
+    sourceRef: value.sourceRef,
+    sessionId: value.sessionId,
+    extensionId: value.extensionId,
+    serviceName: value.serviceName,
+    commandId: value.commandId,
+  }
+  if (version.record_id !== serviceCommandRecordId(stableId('svc', canonicalJson(key))))
+    integrity('service command record id differs from its key')
+  if (version.record_revision === 1) {
+    if (value.state !== 'accepted') integrity('service command was not created accepted')
+    scan.serviceCommands.set(version.record_id, { value, commitId: version.commit_id })
+  }
+}
+
+function assertIntake(scan: ControlScan): void {
+  const matchedSignals = new Set<string>()
+  const matchedWakes = new Set<string>()
+  for (const inbox of scan.intakeInboxes.values()) {
+    const key: IntakeKey = {
+      sourceAuthorityId: inbox.value.sourceAuthorityId,
+      eventId: inbox.value.eventId,
+      consumerId: inbox.value.consumerId,
+    }
+    const timer = scan.firedTimers.get(key.eventId)
+    const signalId = timer ? timer.signalId : intakeSignalIdOf(key)
+    const signalRecord = signalRecordId(signalId)
+    const source = scan.intakeSignals.get(signalRecord)
+    const ack = inlineSourcePayload(inbox.value.acknowledgement)
+    if (
+      !source ||
+      source.commitId !== inbox.commitId ||
+      !sameJson(source.owner, inbox.owner) ||
+      source.signal.causation.externalEventId !== key.eventId ||
+      source.owner.ownerBinding.bindingId !== key.consumerId ||
+      !sameJson(ack.signalIds, [signalId]) ||
+      matchedSignals.has(signalRecord)
+    )
+      integrity('inbox record has no matching original signal')
+    matchedSignals.add(signalRecord)
+    const eventId = wakeEventIdOf(inbox.commitId, signalId)
+    const wake = scan.intakeWakes.get(eventId)
+    const payload = wake ? inlineSourcePayload(wake.value.payload) : undefined
+    if (
+      !wake ||
+      !payload ||
+      wake.commitId !== inbox.commitId ||
+      wake.value.sourceCommitId !== inbox.commitId ||
+      wake.value.sourceAuthorityId !== source.owner.authority.authorityId ||
+      wake.value.destination !== stableId('obxdst', source.owner.authority.authorityId) ||
+      wake.value.fingerprint !== digestOf(payload) ||
+      payload.signalId !== signalId ||
+      payload.runId !== source.signal.runId ||
+      payload.typeId !== source.signal.typeId
+    )
+      integrity('inbox record has no matching wake event')
+    matchedWakes.add(eventId)
+  }
+  for (const recordId of scan.intakeSignals.keys()) {
+    if (!matchedSignals.has(recordId)) integrity('signal source has no inbox record')
+  }
+  for (const eventId of scan.intakeWakes.keys()) {
+    if (!matchedWakes.has(eventId)) integrity('wake event has no inbox record')
+  }
+  for (const [timerId, fired] of scan.firedTimers) {
+    const source = scan.intakeSignals.get(signalRecordId(fired.signalId))
+    if (
+      !source ||
+      fired.recordCommit !== fired.firedBy ||
+      source.commitId !== fired.firedBy ||
+      source.signal.typeId !== TIMER_SIGNAL_TYPE ||
+      source.signal.causation.externalEventId !== timerId
+    )
+      integrity('fired timer has no matching original signal')
+  }
+  for (const [recordId, command] of scan.serviceCommands) {
+    const created = scan.actions.get(command.value.actionId)
+    if (!created || created.commitId !== command.commitId)
+      integrity(`service command ${recordId} was not created with its first action`)
+  }
 }

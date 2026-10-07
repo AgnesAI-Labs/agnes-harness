@@ -1,6 +1,8 @@
 import type { HostRuntimeLoopInstallation, HostRuntimeLoopRun } from '@agnes/host'
+import { createLoopModelFixture } from '@agnes/host/testkit'
 import type * as W from '@agnes/protocol/runtime'
 import { canonicalJsonDigest, RuntimeSchemaRefs, validateRuntime } from '@agnes/protocol/runtime'
+import { standardToolDocument } from '../../../core/test/runtime/model-tools-fixture.js'
 import { openToolsFixture, toolsRef } from '../../../core/test/runtime/tools-fixture.js'
 import { createPureToolAuthorAdapter } from '../../../extension-api/src/runtime/tool-authoring.js'
 import { contextFixtureData } from '../../../extension-api/testkit/runtime/contracts/context.js'
@@ -32,7 +34,8 @@ const failed = (detailCode: string) => ({
   },
 })
 
-/** Restricted in-memory State/Model/Supervisor peers. No production identity, persistence or model proof. */
+/** Restricted State/Routing/Supervisor peers; credential-c04 installs real Model prepare/infer factories.
+ * No production identity, persistence or model result proof is supplied. */
 export async function loopOwnerFixture(
   mode = 'tools-source',
   observe: (event: Record<string, unknown>) => void = () => {},
@@ -45,11 +48,13 @@ export async function loopOwnerFixture(
     openLoopFixture(): Promise<
       LoopContractFixture & {
         bindings: Record<string, W.BindingRef>
+        source: { allowed: boolean }
         receipts: Map<string, W.ActionResultView>
       }
     >
   }
   const f = await module.openLoopFixture()
+  if (mode.startsWith('credential-c04')) required(f.bindings.model).providerId = 'agh.default/model'
   const t = await openToolsFixture(kind)
   const requests = new Map<string, W.ServiceOperation>()
   const probe = await f.factory.create(f.config, f.dependencies, f.factoryContext)
@@ -92,6 +97,33 @@ export async function loopOwnerFixture(
   const credentials = mode.startsWith('credential-') ? await loopCredentialsFixture(mode, observe) : undefined
   if (credentials) required(inputs.routing.allowedRoutes[0]).credentialBinding = credentials.consumer
   if (credentials && mode === 'credential-wire') inputs.credentialRef = credentials.wireHandle
+  const realModel = mode.startsWith('credential-c04')
+    ? await createLoopModelFixture({
+        route: required(inputs.routing.allowedRoutes[0]),
+        dependencies: f.dependencies,
+        context: { ...f.factoryContext, bindingId: required(f.bindings.model).bindingId },
+        current: (call) =>
+          f.source.allowed &&
+          !call.signal.aborted &&
+          call.bindingId === required(f.bindings.model).bindingId &&
+          (call.scope.kind === 'run' || call.scope.kind === 'action') &&
+          call.scope.runId === 'r' &&
+          call.scope.sessionId === 's',
+        credentials: { verifyIssued: required(credentials).verifyIssued },
+        tools: {
+          resolve: async ({ catalog }) =>
+            catalog.tools.length === 1 && catalog.tools[0]?.inputSchema.digest === t.author.input.ref.digest
+              ? ok([
+                  {
+                    name: required(catalog.tools[0]).name,
+                    description: t.author.description,
+                    document: standardToolDocument(),
+                  },
+                ])
+              : failed('tools_catalog_source_mismatch'),
+        },
+      })
+    : undefined
   const toolsBinding = required(f.bindings.tools)
   const loopBinding = required(f.bindings.loop)
   const contextBinding = required(f.bindings.context)
@@ -197,8 +229,25 @@ export async function loopOwnerFixture(
       permissions: [],
       query: (request, _context) => f.ports.query(request),
       async compute(request, _context) {
-        if (credentials && request.method === 'prepare' && mode === 'credential-c04')
-          return failed('loop_model_action_unavailable')
+        if (realModel && request.method === 'prepare') {
+          const ready = await realModel.provider.ready(_context)
+          if (!ready.ok) return ready
+          const reply = await required(realModel.provider.compute).call(realModel.provider, request, _context)
+          if (reply.ok && reply.value.kind === 'inline') {
+            const prepared = validateRuntime('ModelPrepareResult', reply.value.value)
+            if (!prepared.ok || prepared.value.preparedRef.kind !== 'inline')
+              return failed('model_prepare_invalid')
+            const handle = validateRuntime('PreparedModelHandle', prepared.value.preparedRef.value)
+            if (!handle.ok) return failed('model_prepare_invalid')
+            const entry = realModel.registry.get(handle.value.handleId)
+            observe({
+              method: 'model.prepare',
+              registered: !!entry,
+              toolNames: entry?.request.tools.map((tool) => tool.name),
+            })
+          }
+          return reply
+        }
         const result = await f.ports.compute(request)
         if (credentials && result.ok && result.value.kind === 'inline') {
           const payload = result.value.value as Record<string, W.JsonValue>
@@ -254,7 +303,8 @@ export async function loopOwnerFixture(
           ? { credentials: credentials.owner }
           : {}),
         ...(mode === 'state' ? {} : { state }),
-        ...(mode === 'model'
+        ...(realModel ? { model: required(realModel.provider.actions?.infer) } : {}),
+        ...(realModel || mode === 'model'
           ? {}
           : {
               model: {
@@ -351,7 +401,7 @@ export async function loopOwnerFixture(
                     try {
                       const ready = await child.ready(modelCall)
                       if (!ready.ok) return ready
-                      if (child.kind !== 'leaf') return failed('fixture_model_leaf_required')
+                      if (child.kind !== 'leaf') return failed('loop_supervisor_composite_unavailable')
                       const { signal: _signal, ...wire } = modelCall
                       const modelFrame = {
                         ...t.frame,
@@ -457,6 +507,7 @@ export async function loopOwnerFixture(
           observe({ method: 'run.close', live })
           await f.close()
           await t.dependencies.close()
+          await realModel?.provider.close('shutdown')
           await credentials?.close()
         },
       }

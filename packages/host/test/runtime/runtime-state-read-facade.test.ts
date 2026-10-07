@@ -1,5 +1,10 @@
 import { rmSync } from 'node:fs'
-import { type CommitGuard, canonicalJsonDigest, type PreparedAction } from '@agnes/protocol/runtime'
+import {
+  type CommitGuard,
+  canonicalJsonDigest,
+  type PreparedAction,
+  RuntimeSchemaRefs,
+} from '@agnes/protocol/runtime'
 import { describe, expect, it } from 'vitest'
 import { createStateQueryService, readGuardOf } from '../../src/runtime/state/query-service.js'
 import { DEFAULT_READABLE } from '../../src/runtime/state/read-scope.js'
@@ -117,13 +122,14 @@ async function world(options: { secondLoop?: boolean } = {}) {
     targetActionId: string | null,
     runRevision: number,
     readGuards: CommitGuard['readGuards'] = [],
+    baseRevision = runRevision,
   ) {
     const invocationId = `invocation-${++counter}`
     await state.admitInvocation({
       requestId: `admit-${counter}`,
       runId: FIXTURE_RUN,
       targetActionId,
-      baseRevision: runRevision,
+      baseRevision,
       bindingId,
       writerEpoch,
       invocationId,
@@ -234,7 +240,7 @@ async function world(options: { secondLoop?: boolean } = {}) {
       attemptId: 'attempt-p',
     },
   })
-  const parkInvocation = await prepared(parentId, 1)
+  const parkInvocation = await prepared(parentId, 1, [], 0)
   const parked = await state.advanceProvider({
     commitId: 'park-1',
     guard: guardFor(parkInvocation, 1),
@@ -589,6 +595,114 @@ describe.skipIf(typeof process.getuid !== 'function')('State read facade for the
     })
   })
 
+  it('reads the visibility record of a settled action receipt inside the window of its action', async () => {
+    await within(async (w) => {
+      expect(DEFAULT_READABLE.some((entry) => entry.kind === 'visibility')).toBe(true)
+      const before = await w.open()
+      expect(value(await w.reader.getActionVisibility(session(w), before, 'receipt-job'))).toBeNull()
+      const invocation = await w.prepared(null, 1)
+      await w.settle(w.jobId(0), w.jobs[0] as PreparedAction, invocation, 'job', 1)
+      const snapshot = await w.open()
+      const read = value(await w.reader.getActionVisibility(session(w), snapshot, 'receipt-job'))
+      expect(read?.stored.value).toMatchObject({
+        actionId: w.jobId(0),
+        sourceReceiptId: 'receipt-job',
+        state: 'ready',
+      })
+      expect(read?.stored.meta.recordId).toBe('visibility:receipt-job')
+      const generic = value(
+        await w.reader.get(
+          session(w),
+          snapshot,
+          'visibility:receipt-job',
+          RuntimeSchemaRefs.ActionVisibilityValue,
+        ),
+      )
+      expect(generic?.versionDigest).toBe(read?.versionDigest)
+      // The snapshot taken before the receipt still sees nothing.
+      expect(value(await w.reader.getActionVisibility(session(w), before, 'receipt-job'))).toBeNull()
+      const visibilityAs = async (caller: ReturnType<typeof run>) =>
+        value(await w.reader.getActionVisibility(caller, await w.open(caller), 'receipt-job'))
+      expect(await visibilityAs(run(w))).not.toBeNull()
+      expect(await visibilityAs(action(w, w.jobId(0)))).not.toBeNull()
+      expect(await visibilityAs(action(w, w.jobId(1)))).toBeNull()
+      expect(await visibilityAs(action(w, w.parentId))).toBeNull()
+    })
+  })
+
+  it('lists the actions of a run in every page and keeps other runs and sibling actions out', async () => {
+    await within(async (w) => {
+      const snapshot = await w.open()
+      const ids = (read: readonly { stored: { value: { actionId: string } } }[]) =>
+        read.map((row) => row.stored.value.actionId).sort()
+      const all = value(await w.reader.actions(session(w), snapshot, { runId: FIXTURE_RUN }))
+      expect(ids(all)).toEqual([w.jobId(0), w.jobId(1), w.jobId(2), w.parentId, w.childId].sort())
+      expect(all.every((row) => row.stored.meta.recordRevision >= 1)).toBe(true)
+      const top = value(
+        await w.reader.actions(session(w), snapshot, { runId: FIXTURE_RUN, parentActionId: null }),
+      )
+      expect(ids(top)).toEqual([w.jobId(0), w.jobId(1), w.jobId(2), w.parentId].sort())
+      const children = value(
+        await w.reader.actions(session(w), snapshot, { runId: FIXTURE_RUN, parentActionId: w.parentId }),
+      )
+      expect(ids(children)).toEqual([w.childId])
+      const waiting = value(
+        await w.reader.actions(session(w), snapshot, { runId: FIXTURE_RUN, states: ['pending' as never] }),
+      )
+      expect(waiting.every((row) => row.stored.value.state === ('pending' as never))).toBe(true)
+      expect(value(await w.reader.actions(session(w), snapshot, { runId: 'other-run' }))).toEqual([])
+      const asRun = run(w)
+      expect(ids(value(await w.reader.actions(asRun, await w.open(asRun), { runId: FIXTURE_RUN })))).toEqual(
+        ids(all),
+      )
+      const own = action(w, w.parentId)
+      expect(ids(value(await w.reader.actions(own, await w.open(own), { runId: FIXTURE_RUN })))).toEqual([
+        w.parentId,
+      ])
+      expect(await w.reader.actions(own, await w.open(own), { runId: 'another-run' })).toMatchObject({
+        ok: false,
+        error: { detailCode: 'state_scope' },
+      })
+      expect(await w.reader.actions(session(w), snapshot, { runId: 7 as never })).toMatchObject({
+        ok: false,
+        error: { detailCode: 'state_request' },
+      })
+    })
+  })
+
+  it('lists more actions than one scan page holds', async () => {
+    await within(async (w) => {
+      const rebuilt = (row: PreparedAction, key: string) => {
+        const { intentFingerprint: _drop, ...rest } = { ...row, key }
+        return { ...rest, intentFingerprint: fixtureHash(rest) } as PreparedAction
+      }
+      // State accepts 64 actions per step, so eight steps make 512 more than one 500-item page.
+      for (let step = 0; step < 8; step++) {
+        const revision = 1 + step
+        const invocation = await w.prepared(null, revision)
+        await w.state.advanceRun({
+          commitId: `bulk-${step}`,
+          guard: w.guardFor(invocation, revision),
+          transition: {
+            expectedRevision: revision,
+            continuation: w.continuation(`bulk-${step}`),
+            consumeSignals: [],
+            actions: Array.from({ length: 64 }, (_, index) =>
+              rebuilt(w.jobs[0] as PreparedAction, `bulk-${step}-${index}`),
+            ),
+            next: { kind: 'continue' },
+          },
+        })
+      }
+      const snapshot = await w.open()
+      const all = value(
+        await w.reader.actions(session(w), snapshot, { runId: FIXTURE_RUN, parentActionId: null }),
+      )
+      expect(all).toHaveLength(4 + 512)
+      expect(new Set(all.map((row) => row.stored.value.actionId)).size).toBe(4 + 512)
+    })
+  })
+
   it('writes nothing while it reads', async () => {
     await within(async (w) => {
       const snapshot = await w.open()
@@ -600,6 +714,8 @@ describe.skipIf(typeof process.getuid !== 'function')('State read facade for the
         'job-a',
       )
       await w.reader.getWait(session(w), snapshot, w.waitId)
+      await w.reader.getActionVisibility(session(w), snapshot, 'receipt-none')
+      await w.reader.actions(session(w), snapshot, { runId: FIXTURE_RUN })
       await w.reader.getLoopBinding(session(w), snapshot, FIXTURE_RUN)
       await w.reader.signals(
         session(w),

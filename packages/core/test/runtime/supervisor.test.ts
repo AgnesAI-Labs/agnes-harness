@@ -191,6 +191,22 @@ describe('lifecycle and serving table', () => {
       'incompatible/supervisor_port_unavailable',
     )
   })
+  it('refuses sessionParameters by name even when a read port is installed', async () => {
+    const read = { run: async () => ok(null) } as unknown as SupervisorDeployment['read']
+    const f = await open({ read })
+    const runRef = {
+      runId: 'run-1',
+      session: { sessionId: 'session-1', authority: { authorityId: 'a', tenantId: 't', authorityEpoch: 1 } },
+    }
+    expect(fail(await f.query(op('sessionParameters', { runRef }) as never, context()))).toBe(
+      'incompatible/supervisor_method_unsupported',
+    )
+    const health = await f.provider.health(context())
+    expect(health.ok && health.value.diagnosticIds.includes('supervisor-unavailable:sessionParameters')).toBe(
+      true,
+    )
+    expect(health.ok && health.value.diagnosticIds.includes('supervisor-unavailable:inspect')).toBe(false)
+  })
   it('refuses a wrong target, a wrong kind and a paged query', async () => {
     const f = await open()
     expect(

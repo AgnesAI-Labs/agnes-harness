@@ -40,12 +40,14 @@ async function stop(child: ChildProcess, exited: Promise<number | null>) {
 }
 
 // An entry skeleton, not full-path acceptance: the first real refusal remains visible.
-// Downstream C04, Supervisor, acceptInbox, modelContext sources and Loop cold State have no
-// production consumer on this entry. Never replace them with successful synthetic receipts.
+// A real projection provider is installed over a synthetic domain, without a C14 HTTP issuer.
+// Downstream Supervisor, acceptInbox, modelContext and Loop cold State still have no production
+// consumer on this entry. Never replace them with successful synthetic receipts.
 // Resolved: Loop credential restrictions no longer block the real Host model egress.
 // runtime-admission.e2e.test.ts proves C22-issued handles and HTTP in a real worker. Its
-// State/Routing/C04/Supervisor/identity peers remain restricted substitutes; this skeleton
-// still has no admission owner, C04 request source or production model success receipt.
+// State/Routing/Supervisor/identity peers remain restricted substitutes. Its credential-c04 row
+// now uses real C04 prepare/registry and stops at composite dispatch, with no model success receipt.
+// This CLI skeleton still has no client command-to-admission bridge.
 it.each(['absent', 'fixture'] as const)(
   'reaches runtime HTTP through real CLI/daemon/worker processes with %s bootstrap and keeps missing owners named',
   async (bootstrap) => {
@@ -109,7 +111,7 @@ it.each(['absent', 'fixture'] as const)(
         expect(observation.runtime).toEqual({ ok: true })
         expect(observation.selectedRead).toMatchObject({
           state: 'failed',
-          error: { code: 'incompatible', detailCode: 'projection_provider_installation_unavailable' },
+          error: { code: 'denied', detailCode: 'projection_context_issuer_unavailable' },
         })
         expect(observation.selectedCommand).toMatchObject({
           state: 'failed',
@@ -118,7 +120,7 @@ it.each(['absent', 'fixture'] as const)(
       }
       expect(observation.projection.body).toMatchObject({
         ok: false,
-        error: { code: 'incompatible', detailCode: 'projection_provider_installation_unavailable' },
+        error: { code: 'denied', detailCode: 'projection_context_issuer_unavailable' },
       })
       expect(observation.command.body).toMatchObject({
         ok: false,

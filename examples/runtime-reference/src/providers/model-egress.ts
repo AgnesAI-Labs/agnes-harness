@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto'
 import type { LookupAddress } from 'node:dns'
 import { request as http } from 'node:http'
 import { request as https } from 'node:https'
@@ -62,6 +63,8 @@ interface ReferenceModelOptions {
         ): Promise<Outcome<void>>
       }
     | undefined
+  /** Synchronous sole-send fence after TCP/TLS establishment, before request headers or body. */
+  readonly beforeWrite?: ((bodyDigest: string) => boolean) | undefined
   readonly maxRequestBytes?: number
   readonly maxResponseBytes?: number
 }
@@ -101,6 +104,7 @@ export function createReferenceModelEgress(
 ): {
   readonly fetch: typeof globalThis.fetch
   readonly resolveCredential: (route: string, signal: AbortSignal) => Promise<string>
+  fenced(): boolean
   close(): Promise<void>
 } {
   const installed = settings.installation,
@@ -136,7 +140,8 @@ export function createReferenceModelEgress(
   const stop = new AbortController()
   const pending = new Set<Promise<unknown>>()
   let disposal: Promise<void> | undefined,
-    dispatched = false
+    dispatched = false,
+    committed = false
   function unchanged() {
     return (
       [...captures].every(([key, value]) => settings[key as keyof ReferenceModelOptions] === value) &&
@@ -269,8 +274,8 @@ export function createReferenceModelEgress(
             problem instanceof ReferenceEgressError
               ? problem
               : new ReferenceEgressError(
-                  dispatched ? 'unknown_effect' : 'denied',
-                  dispatched ? 'model_egress_unknown' : 'model_egress_unavailable',
+                  committed ? 'unknown_effect' : 'denied',
+                  committed ? 'model_egress_unknown' : 'model_egress_unavailable',
                 )
           throw localError
         }
@@ -296,17 +301,17 @@ export function createReferenceModelEgress(
       .then(() => fn(merged))
       .catch((problem) => {
         if (problem instanceof ReferenceEgressError) {
-          if (dispatched && problem.code === 'cancelled') reject('model_egress_unknown', 'unknown_effect')
+          if (committed && problem.code === 'cancelled') reject('model_egress_unknown', 'unknown_effect')
           throw problem
         }
         if (merged.aborted)
           reject(
-            dispatched ? 'model_egress_unknown' : 'model_egress_cancelled',
-            dispatched ? 'unknown_effect' : 'cancelled',
+            committed ? 'model_egress_unknown' : 'model_egress_cancelled',
+            committed ? 'unknown_effect' : 'cancelled',
           )
         reject(
-          dispatched ? 'model_egress_unknown' : 'model_egress_unavailable',
-          dispatched ? 'unknown_effect' : 'denied',
+          committed ? 'model_egress_unknown' : 'model_egress_unavailable',
+          committed ? 'unknown_effect' : 'denied',
         )
       })
       .finally(() => {
@@ -370,7 +375,10 @@ export function createReferenceModelEgress(
         const answers = await abortable(
           policy.resolver(destination.host.replace(/^\[|\]$/g, ''), { all: true, order: 'verbatim' }),
           active,
-        )
+        ).catch(() => {
+          if (active.aborted) reject('model_egress_cancelled', 'cancelled')
+          reject('model_egress_connect', 'retryable')
+        })
         if (
           answers.length === 0 ||
           answers.some(
@@ -485,11 +493,46 @@ export function createReferenceModelEgress(
                 })
               },
             )
-            socket.on('error', () => fail(new ReferenceEgressError('unknown_effect', 'model_egress_unknown')))
-            socket.end(body)
+            socket.on('error', () =>
+              fail(
+                new ReferenceEgressError(
+                  committed ? 'unknown_effect' : final.aborted ? 'cancelled' : 'retryable',
+                  committed
+                    ? 'model_egress_unknown'
+                    : final.aborted
+                      ? 'model_egress_cancelled'
+                      : 'model_egress_connect',
+                ),
+              ),
+            )
+            // Do not call end/flushHeaders until this attempt has its own established connection.
+            socket.once('socket', (transport) => {
+              transport.once(destination.scheme === 'https' ? 'secureConnect' : 'connect', () => {
+                try {
+                  permit(final)
+                  const fingerprint = createHash('sha256').update(body).digest('hex')
+                  if (settings.beforeWrite && settings.beforeWrite(fingerprint) !== true)
+                    reject('model_egress_fence')
+                  committed = true
+                  socket.end(body)
+                } catch (problem) {
+                  transport.destroy()
+                  socket.destroy()
+                  fail(
+                    problem instanceof ReferenceEgressError
+                      ? problem
+                      : new ReferenceEgressError(
+                          committed ? 'unknown_effect' : 'denied',
+                          committed ? 'model_egress_unknown' : 'model_egress_fence',
+                        ),
+                  )
+                }
+              })
+            })
           })
         })
       })) satisfies typeof globalThis.fetch,
+    fenced: () => committed,
     close(): Promise<void> {
       if (!disposal) {
         stop.abort()

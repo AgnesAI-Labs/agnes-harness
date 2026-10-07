@@ -24,6 +24,7 @@ import type {
 import { validateRuntime } from '@agnes/protocol/runtime'
 import type { ApprovalPreparationInput, ApprovalResolutionInput } from '../state/approval.js'
 import { enterPhase, leavePhase, profiling } from '../state/profile.js'
+import type { StateQueryService } from '../state/query-service.js'
 import {
   matchesRuntimeStateDatabaseOptions,
   openRuntimeStateDatabase,
@@ -36,14 +37,11 @@ import {
 export const UNIMPLEMENTED_STATE_METHODS = [
   'abortMigration',
   'acceptBridgeChild',
-  'acceptInbox',
-  'acceptServiceCommand',
   'appendStream',
   'beginMigration',
   'cancelPreparedActionAdmission',
   'commitMigratedRun',
   'createChild',
-  'fireTimer',
   'importConversation',
   'probeBridgeChild',
   'probeConversationImport',
@@ -51,7 +49,6 @@ export const UNIMPLEMENTED_STATE_METHODS = [
   'probePreparedActionAdmission',
   'pruneRecordVersions',
   'publishActionResult',
-  'readServiceCommand',
   'registerStream',
 ] as const
 
@@ -74,6 +71,13 @@ export type StateWriterOptions = Readonly<{
 
 export type RuntimeStateStore = StateStoreControl & {
   close(): void
+  /**
+   * Host-private. The agh.state scan handler of the read service the assembler supplied; null when
+   * none was. The store never closes the service: the assembler closes it before this store.
+   */
+  readonly query: StateQueryService['query'] | null
+  /** Host-private. The typed record reader of the supplied read service; null when none was. */
+  readonly reader: StateQueryService['reader'] | null
   /**
    * Host-private. Returns the live writer claim this store holds for the session, or takes the lease
    * (a reclaim with a higher epoch when an earlier claim of this store ran out). While the claim is held
@@ -143,6 +147,7 @@ function validateProfiled<K extends 'DispatchAdmissionRequest' | 'ReceiptIntakeR
 export function createRuntimeStateStore(
   options: RuntimeStateDatabaseOptions,
   supplied?: RuntimeStateDatabase,
+  readService?: StateQueryService,
 ): RuntimeStateStore {
   if (supplied && !matchesRuntimeStateDatabaseOptions(supplied, options))
     throw new StateRefusal({
@@ -306,6 +311,8 @@ export function createRuntimeStateStore(
         return Promise.resolve(failure('invalid_input', 'schema', 'StateOpenRequest is not valid'))
       const rejected = rejectAuthority(result.value.authority)
       if (rejected) return Promise.resolve(rejected)
+      // Read snapshots come from the read service so that a scan accepts only what it minted.
+      if (readService && result.value.mode === 'read') return readService.open(result.value, context)
       return run(context, () => database.open(result.value))
     },
     lease: (request, context) => {
@@ -323,8 +330,18 @@ export function createRuntimeStateStore(
         database.createRun({ admission: result.value, scope: context.scope }, context),
       )
     },
-    acceptServiceCommand: (_request, context) => unavailable('acceptServiceCommand', context),
-    readServiceCommand: (_request, context) => unavailable('readServiceCommand', context),
+    acceptServiceCommand: (request, context) => {
+      const result = validateRuntime('ServiceCommandAdmission', request)
+      if (!result.ok)
+        return Promise.resolve(failure('invalid_input', 'schema', 'ServiceCommandAdmission is not valid'))
+      return run(context, () => database.acceptServiceCommand(result.value, context))
+    },
+    readServiceCommand: (request, context) => {
+      const result = validateRuntime('StateStoreControlReadServiceCommandRequest', request)
+      if (!result.ok)
+        return Promise.resolve(failure('invalid_input', 'schema', 'readServiceCommand input is not valid'))
+      return run(context, () => database.readServiceCommand(result.value, context))
+    },
     importConversation: (_request, context) => unavailable('importConversation', context),
     probeConversationImport: (_requestId, context) => unavailable('probeConversationImport', context),
     createChild: (_request, context) => unavailable('createChild', context),
@@ -361,7 +378,12 @@ export function createRuntimeStateStore(
         )
       return run(context, () => database.sessionControlStatus(parsed.value, context))
     },
-    fireTimer: (_request, context) => unavailable('fireTimer', context),
+    fireTimer: (request, context) => {
+      const result = validateRuntime('StateStoreControlFireTimerRequest', request)
+      if (!result.ok)
+        return Promise.resolve(failure('invalid_input', 'schema', 'fireTimer input is not valid'))
+      return run(context, () => database.fireTimer(result.value))
+    },
     registerStream: (_request, context) => unavailable('registerStream', context),
     appendStream: (_request, context) => unavailable('appendStream', context),
     beginReconciliation: (request, context) => {
@@ -458,7 +480,12 @@ export function createRuntimeStateStore(
         return Promise.resolve(failure('invalid_input', 'schema', 'ProbeActionResultRequest is not valid'))
       return run(context, () => database.probeActionResult(result.value))
     },
-    acceptInbox: (_delivery, context) => unavailable('acceptInbox', context),
+    acceptInbox: (delivery, context) => {
+      const result = validateRuntime('SignalDelivery', delivery)
+      if (!result.ok)
+        return Promise.resolve(failure('invalid_input', 'schema', 'SignalDelivery is not valid'))
+      return run(context, () => database.acceptInbox(result.value, context))
+    },
     claimOutbox: (request, context) => {
       const result = validateRuntime('ClaimOutboxRequest', request)
       if (!result.ok)
@@ -551,6 +578,8 @@ export function createRuntimeStateStore(
       database.close()
     },
     durability: () => database.durability(),
+    query: readService?.query ?? null,
+    reader: readService?.reader ?? null,
   }
   return store
 }

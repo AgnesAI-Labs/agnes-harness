@@ -227,6 +227,7 @@ export const STATE_OPEN_PROOF_SCHEMA = RuntimeSchemaRefs.StateWriteOpenProofValu
 export const STATE_LEASE_PROOF_SCHEMA = RuntimeSchemaRefs.StateLeaseProofValue
 export const INTERACTION_SCHEMA = RuntimeSchemaRefs.InteractionRecord
 export const INBOX_SCHEMA = RuntimeSchemaRefs.InboxRecord
+export const SERVICE_COMMAND_SCHEMA = RuntimeSchemaRefs.ServiceCommandRecord
 export const APPROVAL_TAINT_ACK_SCHEMA = RuntimeSchemaRefs.ApprovalTaintAckRecordValue
 export const AUTHORIZATION_PREPARATION_SCHEMA = RuntimeSchemaRefs.AuthorizationPreparation
 export const APPROVAL_RESPONSE_SOURCE_SCHEMA = RuntimeSchemaRefs.ApprovalRespondRequest
@@ -268,6 +269,7 @@ const SCHEMAS: Readonly<Record<string, SchemaRef>> = {
   [STATE_LEASE_PROOF_SCHEMA.typeId]: STATE_LEASE_PROOF_SCHEMA,
   [INTERACTION_SCHEMA.typeId]: INTERACTION_SCHEMA,
   [INBOX_SCHEMA.typeId]: INBOX_SCHEMA,
+  [SERVICE_COMMAND_SCHEMA.typeId]: SERVICE_COMMAND_SCHEMA,
   [APPROVAL_TAINT_ACK_SCHEMA.typeId]: APPROVAL_TAINT_ACK_SCHEMA,
   [AUTHORIZATION_PREPARATION_SCHEMA.typeId]: AUTHORIZATION_PREPARATION_SCHEMA,
   [APPROVAL_RESPONSE_SOURCE_SCHEMA.typeId]: APPROVAL_RESPONSE_SOURCE_SCHEMA,
@@ -367,6 +369,14 @@ export function resolutionRecordId(resolutionId: string): string {
 
 export function reconciliationCheckRecordId(checkId: string): string {
   return `reconciliation:${checkId}`
+}
+
+export function inboxRecordId(inboxId: string): string {
+  return `inbox:${inboxId}`
+}
+
+export function serviceCommandRecordId(commandKey: string): string {
+  return `service-command:${commandKey}`
 }
 
 export function stableId(prefix: string, material: string): string {

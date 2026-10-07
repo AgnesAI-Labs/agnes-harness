@@ -2,6 +2,7 @@ import type { ModelWireSource } from '@agnes/ai/runtime'
 import type * as W from '@agnes/protocol/runtime'
 import { canonicalJsonDigest, RuntimeMethodSchemaRefs, validateRuntime } from '@agnes/protocol/runtime'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { toolCallRefusal } from '../../../ai/src/runtime/model-adapter/tool-calls.js'
 import { modelTool } from '../../../core/src/runtime/loop/default-plan.js'
 import { TOOL_CALL_BODY_TYPE, TOOL_RESULT_BODY_TYPE } from '../../../core/src/runtime/model/wire-tools.js'
 import { entryOf, inlineRef, openModel } from '../../../core/test/runtime/model-deployment-fixture.js'
@@ -119,7 +120,13 @@ async function prepareRaw(
   }
 }
 
-type Scenario = { items: () => W.ContextItem[]; tools: Pair[]; reply?: Reply[] }
+type Scenario = {
+  items: () => W.ContextItem[]
+  tools: Pair[]
+  reply?: Reply[]
+  /** The adapter refuses what the peer returned, so there is no model output to read. */
+  refused?: true
+}
 const text = standardTool('text_statistics', 'Count the words of a text')
 const other = standardTool('other_tool', 'Another tool')
 const long = 'x'.repeat(64)
@@ -179,12 +186,25 @@ const SCENARIOS: Record<string, Scenario> = {
       result('a-b_C9', ['B!']),
     ],
     tools: [text],
-    reply: [{ id: 'y'.repeat(70), name: 'text_statistics', arguments: '{}' }],
+    reply: [{ id: 'y'.repeat(64), name: 'text_statistics', arguments: '{}' }],
+  },
+  longId: {
+    items: () => [user('q')],
+    tools: [text],
+    reply: [{ id: 'y'.repeat(65), name: 'text_statistics', arguments: '{}' }],
+    refused: true,
+  },
+  oddId: {
+    items: () => [user('q')],
+    tools: [text],
+    reply: [{ id: 'call.1', name: 'text_statistics', arguments: '{}' }],
+    refused: true,
   },
   malformed: {
     items: () => [user('q')],
     tools: [text],
     reply: [{ id: 'z1', name: 'text_statistics', arguments: '{bad json' }],
+    refused: true,
   },
   unknown: {
     items: () => [user('q')],
@@ -213,14 +233,15 @@ async function round(api: Api, scenario: Scenario) {
   const observed = f.observations[0]
   const value = effect.result?.kind === 'inline' ? (effect.result.value as Record<string, unknown>) : null
   const output = (value?.outputRef as { value: W.StandardToolOutput } | undefined)?.value
-  if (!output) throw new Error(`No model output: ${effect.outcome} ${effect.error?.detailCode}`)
+  if (!output && !scenario.refused)
+    throw new Error(`No model output: ${effect.outcome} ${effect.error?.detailCode}`)
   return {
     f,
     effect,
     peers: f.observations.length,
     raw: observed?.body ?? '',
     body: JSON.parse(observed?.body ?? 'null') as Record<string, Peek>,
-    output,
+    output: output as W.StandardToolOutput,
     finish: value?.finishReason as string | undefined,
     sourceTools: f.source.request.tools,
     definitions: scenario.tools.map((t) => t.definition),
@@ -528,15 +549,26 @@ describe.each(APIS)('tool-carrying request over the %s wire, observed on the loo
       expect((calls('unknown')[0] as { name: string }).name).toBe('not_in_catalog')
       expect(() => modelTool(r.output, r.definitions)).toThrow(refused('loop_tool_not_in_catalog'))
     })
-    it('PIN current behaviour: malformed argument JSON becomes empty args, and modelTool accepts the call', () => {
-      const r = at('malformed')
-      expect((calls('malformed')[0] as { args: unknown }).args).toEqual({})
-      expect(modelTool(r.output, r.definitions).input).toMatchObject({ value: {} })
+    const refusedBy = (name: string, detailCode: string) => {
+      const { effect, f } = at(name)
+      // The request went out and was answered, so the outcome stays the post-send unknown effect, named.
+      expect(f.observations).toHaveLength(1)
+      expect(effect.outcome).toBe('unknown_effect')
+      expect(effect.result).toBeUndefined()
+      expect(effect.error).toMatchObject({ code: 'unknown_effect', detailCode })
+    }
+    it('refuses malformed argument JSON by name instead of returning empty args', () => {
+      refusedBy('malformed', 'model_tool_call_arguments')
     })
-    it('PIN current behaviour: a 70 character call id is returned as is and modelTool accepts it', () => {
+    it('refuses a call id longer than the builder accepts in the next round history', () => {
+      refusedBy('longId', 'model_tool_call_id')
+    })
+    it('refuses a call id outside the builder alphabet', () => {
+      refusedBy('oddId', 'model_tool_call_id')
+    })
+    it('returns a 64 character call id, which the builder takes into the next round history', () => {
       const r = at('ids')
-      const id = 'y'.repeat(70)
-      expect((calls('ids')[0] as { toolUseId: string }).toolUseId).toBe(id)
+      expect((calls('ids')[0] as { toolUseId: string }).toolUseId).toBe('y'.repeat(64))
       expect(modelTool(r.output, r.definitions).definition.name).toBe('text_statistics')
     })
   })
@@ -629,6 +661,17 @@ describe.each(APIS)('cell 6: refusals by name from the real Model service, %s ro
   ])('refuses %s', async (_name, items, tools, expected) => {
     expect(await refusal(items(), tools())).toBe(expected)
   })
+
+  // The adapter keeps its own copy of the builder's id rule (it cannot import core); they must not drift apart.
+  it.each(['a', 'A-b_9', 'x'.repeat(64), 'x'.repeat(65), 'call.1', 'a b', 'é', 'a|b', '-'.repeat(64)])(
+    'refuses a call id in history exactly when the adapter refuses it as returned: %j',
+    async (id) => {
+      const items = [user('q'), call(id, 'text_statistics', doc('A')), result(id, ['r'])]
+      const builder = await refusal(items, [text])
+      const adapter = toolCallRefusal({ toolUseId: id, name: 'text_statistics', args: {}, ordinal: 0 }, '')
+      expect(adapter === 'model_tool_call_id').toBe(builder === 'model_wire_tool_id')
+    },
+  )
 
   it('refuses tool history when the request has no catalog at all', async () => {
     const items = [user('q'), call('c1', 'text_statistics', doc('A')), result('c1', ['r'])]
