@@ -14,6 +14,7 @@ it('validates exact catalog versions and model ids before persisting defaults', 
   }
   const provider = createAdminSessionSelection(
     {
+      presets: async () => ['read-only', 'workspace-write', 'full-access'],
       loops: async () => [loop],
       modelAdapters: async () => [adapter],
       models: async () => adapter.models,
@@ -23,6 +24,7 @@ it('validates exact catalog versions and model ids before persisting defaults', 
   const input = {
     revision: 0,
     defaults: {
+      preset: 'read-only',
       loop: { id: 'loop', version: '1.0.0' },
       modelAdapter: { id: 'adapter', version: '1.0.0', model: 'model' },
     },
@@ -30,7 +32,9 @@ it('validates exact catalog versions and model ids before persisting defaults', 
   expect(await provider.loops()).toEqual([loop])
   expect(await provider.getDefaults()).toEqual({ revision: 0, defaults: {} })
   expect(await provider.saveDefaults(input)).toEqual({ ...input, revision: 1 })
+  expect(await provider.presets?.()).toEqual(['read-only', 'workspace-write', 'full-access'])
   for (const defaults of [
+    { preset: 'absent' },
     { loop: { id: 'loop', version: '2.0.0' } },
     { loop: { id: 'absent', version: '1.0.0' } },
     { modelAdapter: { id: 'adapter', version: '1.0.0', model: 'absent' } },

@@ -353,7 +353,14 @@ export function createAdminSurface(options: AdminSurfaceOptions) {
             const [loops, defaults] = await Promise.all([provider.loops(), provider.getDefaults()])
             if (loops.length > 4096 || !loops.every(isAdminLoop) || !isSessionDefaultsSnapshot(defaults))
               throw new Error('invalid catalog')
-            reply(response, 200, { loops, ...defaults })
+            const presets = await provider.presets?.()
+            if (
+              presets &&
+              (presets.length > 4096 ||
+                !presets.every((preset) => isSessionDefaultsSnapshot({ revision: 0, defaults: { preset } })))
+            )
+              throw new Error('invalid preset catalog')
+            reply(response, 200, { loops, ...defaults, ...(presets ? { presets } : {}) })
             return true
           } else if (route === 'model-adapters') {
             const modelAdapters = await provider.modelAdapters()

@@ -21,6 +21,8 @@ import {
   readSandboxStartupConfig,
   type SandboxProviderSlot,
 } from '../../src/adapters/sandbox-providers.js'
+import { createAdminSessionSelection } from '../../src/admin-session-selection.js'
+import { createConfigurationService } from '../../src/configuration.js'
 import { createTestHost } from '../../testkit/index.js'
 
 const cwd = mkdtempSync(join(tmpdir(), 'agnes-sandbox-provider-'))
@@ -354,6 +356,31 @@ describe('sandbox providers', () => {
       expect(reopened.preset.name).toBe('full-access')
       expect(reopened.yolo).toBe(false)
       await reopened.close()
+      const configuration = createConfigurationService({
+        home: dataDir,
+        profile: 'local-dev',
+        profileDir: join(dataDir, 'profiles', 'local-dev'),
+      })
+      const admin = createAdminSessionSelection(
+        {
+          presets: async () => testHost.host.profile.presets.allowed,
+          loops: async () => testHost.host.kernel.loops.catalog(),
+          modelAdapters: async () => testHost.host.modelAdapterCatalog(),
+          models: async () => [],
+        },
+        configuration,
+      )
+      const saved = await admin.saveDefaults({ revision: 0, defaults: { preset: 'full-access' } })
+      const fromAdmin = await testHost.host.createSession({ key: 'admin-selected', cwd: dataDir })
+      expect(fromAdmin.preset.name).toBe('full-access')
+      await fromAdmin.close()
+      await admin.saveDefaults({ revision: saved.revision, defaults: { preset: 'read-only' } })
+      const retained = await testHost.host.createSession({ key: 'admin-selected', cwd: dataDir })
+      expect(retained.preset.name).toBe('full-access')
+      await retained.close()
+      await expect(testHost.host.createSession({ key: 'admin-new', cwd: dataDir })).rejects.toThrow(
+        /L1 sandbox unavailable/,
+      )
     } finally {
       await testHost.host.close()
     }

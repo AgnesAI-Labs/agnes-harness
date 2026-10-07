@@ -321,6 +321,7 @@ export type Assembled = {
   /** Read-only metadata for installed model adapter factories. */
   modelAdapterCatalog(): ReturnType<typeof modelAdapterCatalog>
   providers: import('@agnes/extension-api').ProvidersCatalogPort
+  sessionPresetDefault?(): Promise<string | undefined>
   sessionLoopDefault?(): Promise<import('@agnes/protocol').LoopSelection | undefined>
   compactionEngineCatalog(): ReturnType<typeof compactionEngineCatalog>
   /** Read-only metadata for installed child agent providers. */
@@ -2682,6 +2683,7 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
       },
       providers: { catalog: () => pluginTree.root.providers.catalog() },
       modelAdapterCatalog: () => modelAdapterCatalog(pluginTree.root),
+      sessionPresetDefault: async () => (await sessionConfiguration.sessionDefaults()).defaults.preset,
       sessionLoopDefault: () => readAdminLoopDefault(sessionConfiguration),
       compactionEngineCatalog: () => compactionEngineCatalog(pluginTree.root),
       childAgentCatalog: () => childAgentCatalog(pluginTree.root),

@@ -4578,6 +4578,16 @@
       "additionalProperties": false,
       "required": ["loops"],
       "properties": {
+        "presets": {
+          "type": "array",
+          "maxItems": 4096,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256,
+            "pattern": "^[^\\u0000-\\u001f\\u007f]+$"
+          }
+        },
         "loops": {
           "type": "array",
           "maxItems": 4096,
@@ -4738,6 +4748,12 @@
           "additionalProperties": false,
           "required": [],
           "properties": {
+            "preset": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256,
+              "pattern": "^[^\\u0000-\\u001f\\u007f]+$"
+            },
             "loop": {
               "type": "object",
               "additionalProperties": false,

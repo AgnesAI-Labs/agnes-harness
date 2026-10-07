@@ -25,6 +25,9 @@ it('serves host catalogs, persists exact defaults and refuses web/narrow writes'
   }
   const catalog = () =>
     hostSessionCatalog({
+      profile: {
+        presets: { default: 'workspace-write', allowed: ['read-only', 'workspace-write', 'full-access'] },
+      },
       kernel: { loops: { catalog: () => [loop] } },
       modelAdapterCatalog: () => [adapter],
       provider: { models: () => [{ id: 'model', route: 'account', api: 'openai-chat' }] },
@@ -62,13 +65,16 @@ it('serves host catalogs, persists exact defaults and refuses web/narrow writes'
     expect(rescanned).toBe(false)
     expect(await request(ep, 'reloadLocal')).toMatchObject({ result: {} })
     expect(rescanned).toBe(true)
-    expect(await request(ep, 'loops')).toMatchObject({ result: { loops: [loop] } })
+    expect(await request(ep, 'loops')).toMatchObject({
+      result: { loops: [loop], presets: ['read-only', 'workspace-write', 'full-access'] },
+    })
     expect(await request(ep, 'modelAdapters')).toMatchObject({
       result: { modelAdapters: [{ ...adapter, models: [{ id: 'model', route: 'account' }] }] },
     })
     const input = {
       revision: 0,
       defaults: {
+        preset: 'read-only',
         loop: { id: loop.id, version: loop.version },
         modelAdapter: { id: adapter.id, version: adapter.version, model: 'model' },
       },

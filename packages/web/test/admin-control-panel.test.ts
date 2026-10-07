@@ -96,12 +96,18 @@ it('loads catalog choices and saves their exact identities and revision', async 
   const snapshot = {
     revision: 4,
     defaults: {
+      preset: 'read-only',
       loop: { id: loop.id, version: loop.version },
       modelAdapter: { id: adapter.id, version: adapter.version, model: 'model' },
     },
   }
   const fetcher = vi.fn<typeof fetch>(async (url, init) => {
-    if (String(url).endsWith('/loops')) return Response.json({ loops: [loop], ...snapshot })
+    if (String(url).endsWith('/loops'))
+      return Response.json({
+        loops: [loop],
+        presets: ['read-only', 'workspace-write', 'full-access'],
+        ...snapshot,
+      })
     if (String(url).endsWith('/model-adapters')) return Response.json({ modelAdapters: [adapter] })
     expect(init?.method).toBe('PUT')
     return Response.json({ ...snapshot, revision: 5 })
@@ -117,7 +123,9 @@ it('loads catalog choices and saves their exact identities and revision', async 
   )
   const host = await mount(createElement(SessionDefaultsPanel, { api, canSave: true, t }))
   expect(host.textContent).toContain('Defaults for new sessions')
-  expect(host.querySelectorAll('[role="combobox"]')).toHaveLength(3)
+  expect(host.querySelectorAll('[role="combobox"]')).toHaveLength(4)
+  expect(host.querySelector('[aria-label="Permission preset"]')).not.toBeNull()
+  expect(host.textContent).toContain('read-only')
   await act(async () =>
     host.querySelector('form')?.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })),
   )

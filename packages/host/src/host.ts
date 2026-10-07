@@ -318,6 +318,16 @@ async function createHostInstance(profile: ResolvedProfile, opts: HostOptions): 
       })
       pendingSessionOpens.add(opening)
       try {
+        if (!o.parent && o.preset === undefined) {
+          const existingKey = o.key ?? o.binding?.sessionKey
+          const existing = existingKey
+            ? await a.adapters.storage.scan(existingKey, { type: 'session/start', order: 'desc', limit: 1 })
+            : []
+          if (!existing.length) {
+            const preset = await a.sessionPresetDefault?.()
+            if (preset !== undefined) o = { ...o, preset }
+          }
+        }
         if (profile.composition) {
           const name = o.preset ?? profile.presets.default
           const adminLoop = await a.sessionLoopDefault?.()

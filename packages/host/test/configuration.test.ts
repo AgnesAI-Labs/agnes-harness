@@ -547,6 +547,7 @@ it('persists session defaults in existing configuration with cross-instance revi
   const root = await home()
   const service = createConfigurationService({ home: root, profile: 'local-dev' })
   const defaults = {
+    preset: 'read-only',
     loop: { id: 'workflow', version: '1.0.0' },
     modelAdapter: { id: 'adapter', version: '2.0.0', model: 'model' },
   }

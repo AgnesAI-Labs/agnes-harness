@@ -4,6 +4,7 @@ import { isSessionDefaultsSnapshot } from '@agnes/protocol'
 import { ConfigurationError, type SessionDefaultsConfigurationService } from './configuration.js'
 
 export interface HostAdminSessionCatalog {
+  presets?(): Promise<readonly string[]>
   loops(): Promise<readonly LoopCatalogEntry[]>
   modelAdapters(): Promise<readonly ModelAdapterCatalogEntry[]>
   /** Models from configured runtime routes, never invented from adapter registration metadata. */
@@ -23,12 +24,15 @@ export function createAdminSessionSelection(
       })),
     )
   return {
+    ...(catalog.presets ? { presets: () => catalog.presets?.() ?? Promise.resolve([]) } : {}),
     loops: () => catalog.loops(),
     modelAdapters,
     getDefaults: () => configuration.sessionDefaults(),
     async saveDefaults(input) {
       if (!isSessionDefaultsSnapshot(input)) throw new ConfigurationError('CONFIG_INVALID_INPUT')
-      const { loop, modelAdapter } = input.defaults
+      const { preset, loop, modelAdapter } = input.defaults
+      if (preset && !(await catalog.presets?.())?.includes(preset))
+        throw new ConfigurationError('CONFIG_INVALID_INPUT')
       const [loops, adapters] = await Promise.all([catalog.loops(), modelAdapters()])
       if (loop && !loops.some((entry) => entry.id === loop.id && entry.version === loop.version))
         throw new ConfigurationError('CONFIG_INVALID_INPUT')

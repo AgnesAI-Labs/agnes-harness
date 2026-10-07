@@ -16,7 +16,11 @@ import {
 import type { PackageAdminAuthorityResolver } from '../../packages/permissions.js'
 import type { LocalEndpoint } from '../endpoint.js'
 
-type Catalog = { loops: readonly AdminLoop[]; modelAdapters: readonly AdminModelAdapter[] }
+type Catalog = {
+  presets?: readonly { id: string; isDefault: boolean }[]
+  loops: readonly AdminLoop[]
+  modelAdapters: readonly AdminModelAdapter[]
+}
 
 /** The supervisor queries its real Host-bearing shared worker, never a profile-only approximation. */
 export function sessionSelectionProvider(
@@ -27,6 +31,7 @@ export function sessionSelectionProvider(
     return undefined
   return createAdminSessionSelection(
     {
+      presets: async () => (await catalog()).presets?.map((entry) => entry.id) ?? [],
       loops: async () => (await catalog()).loops,
       modelAdapters: async () =>
         (await catalog()).modelAdapters.map((entry) => ({ ...entry, wireApi: entry.wireApi ?? entry.api })),
@@ -39,6 +44,10 @@ export function sessionSelectionProvider(
 export async function hostSessionCatalog(host: Host): Promise<Catalog> {
   const models = host.provider.models()
   return {
+    presets: host.profile.presets.allowed.map((id) => ({
+      id,
+      isDefault: id === host.profile.presets.default,
+    })),
     loops: host.kernel.loops.catalog(),
     modelAdapters: host.modelAdapterCatalog().map((entry) => ({
       ...entry,
@@ -82,7 +91,10 @@ export function registerSessionSelection(
     }
   }
   endpoint.register('_agnes/v1/sessionSelection.loops', (_params, ctx) =>
-    invoke(ctx, false, async (s) => ({ loops: await s.loops() })),
+    invoke(ctx, false, async (s) => ({
+      loops: await s.loops(),
+      ...(s.presets ? { presets: await s.presets() } : {}),
+    })),
   )
   endpoint.register('_agnes/v1/sessionSelection.modelAdapters', (_params, ctx) =>
     invoke(ctx, false, async (s) => ({ modelAdapters: await s.modelAdapters() })),

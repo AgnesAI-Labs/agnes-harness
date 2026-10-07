@@ -123,9 +123,11 @@ export function SessionDefaultsPanel({
 }) {
   const [catalog, setCatalog] = useState<{
     loops: readonly AdminLoop[]
+    presets: readonly string[]
     adapters: readonly AdminModelAdapter[]
     snapshot: SessionDefaultsSnapshot
   }>()
+  const [preset, setPreset] = useState('')
   const [loop, setLoop] = useState('')
   const [adapter, setAdapter] = useState('')
   const [model, setModel] = useState('')
@@ -147,7 +149,13 @@ export function SessionDefaultsPanel({
     Promise.all([api.loops(), api.modelAdapters()])
       .then(([loops, adapters]) => {
         if (!current) return
-        setCatalog({ loops: loops.loops, adapters: adapters.modelAdapters, snapshot: loops })
+        setCatalog({
+          presets: loops.presets ?? [],
+          loops: loops.loops,
+          adapters: adapters.modelAdapters,
+          snapshot: loops,
+        })
+        setPreset(loops.defaults.preset ?? '')
         setLoop(loops.defaults.loop ? identity(loops.defaults.loop) : '')
         setAdapter(loops.defaults.modelAdapter ? identity(loops.defaults.modelAdapter) : '')
         setModel(loops.defaults.modelAdapter?.model ?? '')
@@ -165,7 +173,9 @@ export function SessionDefaultsPanel({
   const selectedLoop = catalog?.loops.find((entry) => identity(entry) === loop)
   const selectedAdapter = catalog?.adapters.find((entry) => identity(entry) === adapter)
   const valid =
-    (!loop || !!selectedLoop) && (!adapter || !!selectedAdapter?.models.some((entry) => entry.id === model))
+    (!preset || !!catalog?.presets.includes(preset)) &&
+    (!loop || !!selectedLoop) &&
+    (!adapter || !!selectedAdapter?.models.some((entry) => entry.id === model))
   async function save() {
     if (!catalog || !api || !canSave || !valid || busy) return
     setBusy(true)
@@ -175,6 +185,7 @@ export function SessionDefaultsPanel({
       const snapshot = await api.saveDefaults({
         revision: catalog.snapshot.revision,
         defaults: {
+          ...(preset ? { preset } : {}),
           ...(selectedLoop ? { loop: { id: selectedLoop.id, version: selectedLoop.version } } : {}),
           ...(selectedAdapter
             ? { modelAdapter: { id: selectedAdapter.id, version: selectedAdapter.version, model } }
@@ -190,6 +201,7 @@ export function SessionDefaultsPanel({
     }
   }
   const stale =
+    (!!preset && !catalog?.presets.includes(preset)) ||
     (!!loop && !selectedLoop) ||
     (!!adapter && !selectedAdapter) ||
     (!!model && !selectedAdapter?.models.some((entry) => entry.id === model))
@@ -223,6 +235,29 @@ export function SessionDefaultsPanel({
             void save()
           }}
         >
+          {(catalog.presets.length > 0 || preset) && (
+            <Field label={t('defaults.preset')} style={{ display: 'grid', gap: '0.375rem' }}>
+              <Select<string>
+                aria-label={t('defaults.preset')}
+                value={preset}
+                disabled={busy || !canSave}
+                onChange={setPreset}
+                options={[
+                  { value: '', label: t('defaults.configured') },
+                  ...(preset && !catalog.presets.includes(preset)
+                    ? [
+                        {
+                          value: preset,
+                          label: `${preset} · ${t('defaults.unavailable-choice')}`,
+                          disabled: true,
+                        },
+                      ]
+                    : []),
+                  ...catalog.presets.map((value) => ({ value, label: value })),
+                ]}
+              />
+            </Field>
+          )}
           <Field label={t('defaults.loop')} style={{ display: 'grid', gap: '0.375rem' }}>
             <Select<string>
               aria-label={t('defaults.loop')}

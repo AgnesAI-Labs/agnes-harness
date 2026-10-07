@@ -155,7 +155,9 @@ export class PluginAdminApi {
     return this.#post('list', { profile: this.#context.profile })
   }
 
-  async loops(): Promise<SessionDefaultsSnapshot & { loops: readonly AdminLoop[] }> {
+  async loops(): Promise<
+    SessionDefaultsSnapshot & { loops: readonly AdminLoop[]; presets?: readonly string[] }
+  > {
     const body = await this.#selection('loops')
     if (
       !isSessionDefaultsSnapshot(pickDefaults(body)) ||
@@ -164,10 +166,14 @@ export class PluginAdminApi {
       !('loops' in body) ||
       !Array.isArray(body.loops) ||
       body.loops.length > 4096 ||
-      !body.loops.every(isAdminLoop)
+      !body.loops.every(isAdminLoop) ||
+      ('presets' in body &&
+        (!Array.isArray(body.presets) ||
+          body.presets.length > 4096 ||
+          !body.presets.every((preset) => isSessionDefaultsSnapshot({ revision: 0, defaults: { preset } }))))
     )
       throw invalidSelection()
-    return body as SessionDefaultsSnapshot & { loops: readonly AdminLoop[] }
+    return body as SessionDefaultsSnapshot & { loops: readonly AdminLoop[]; presets?: readonly string[] }
   }
 
   async modelAdapters(): Promise<{ modelAdapters: readonly AdminModelAdapter[] }> {

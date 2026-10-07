@@ -18,6 +18,7 @@ export type AdminModelAdapter = Readonly<{
   models: readonly Readonly<{ id: string; label?: string; route?: string }>[]
 }>
 export type SessionDefaults = Readonly<{
+  preset?: string
   loop?: Readonly<{ id: string; version: string }>
   modelAdapter?: Readonly<{ id: string; version: string; model: string }>
 }>
@@ -27,6 +28,7 @@ export type SessionDefaultsSnapshot = Readonly<{
 }>
 export type SessionDefaultsUpdate = SessionDefaultsSnapshot
 export interface AdminSessionCatalog {
+  presets?(): Promise<readonly string[]>
   loops(): Promise<readonly AdminLoop[]>
   modelAdapters(): Promise<readonly AdminModelAdapter[]>
 }
@@ -49,9 +51,10 @@ const keys = (value: Record<string, unknown>, allowed: readonly string[]) =>
   Object.keys(value).every((key) => allowed.includes(key))
 
 export function isSessionDefaults(value: unknown): value is SessionDefaults {
-  if (!record(value) || !keys(value, ['loop', 'modelAdapter'])) return false
-  const { loop, modelAdapter } = value
+  if (!record(value) || !keys(value, ['preset', 'loop', 'modelAdapter'])) return false
+  const { preset, loop, modelAdapter } = value
   return (
+    (preset === undefined || text(preset)) &&
     (loop === undefined ||
       (record(loop) && keys(loop, ['id', 'version']) && text(loop.id) && text(loop.version))) &&
     (modelAdapter === undefined ||

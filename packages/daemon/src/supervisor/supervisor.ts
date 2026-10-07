@@ -1688,6 +1688,7 @@ export async function startSupervisor(o: StartSupervisorOptions): Promise<{
     const sessionSelection = sessionSelectionProvider(o.configuration, async () => {
       const link = await pool.acquireSharedWorker()
       return (await link.command('session.catalog', {}, { timeoutMs: 31_000 })) as {
+        presets?: readonly { id: string; isDefault: boolean }[]
         loops: import('@agnes/protocol').AdminLoop[]
         modelAdapters: import('@agnes/protocol').AdminModelAdapter[]
       }
