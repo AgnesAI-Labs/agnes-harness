@@ -312,7 +312,7 @@ it('renders all real local releases and carries a selected catalog source throug
   })
   vi.stubGlobal('fetch', fetcher)
 
-  await mountAdmin()
+  const mounted = await mountAdmin()
   await vi.waitFor(() =>
     expect(document.querySelector('.plugin-empty')?.textContent).toContain('No packages are installed'),
   )
@@ -381,6 +381,14 @@ it('renders all real local releases and carries a selected catalog source throug
   document.querySelector<HTMLElement>('.plugin-row')?.click()
   await vi.waitFor(() => expect(document.getElementById('plugin-detail')?.hasAttribute('open')).toBe(true))
   expect(document.getElementById('plugin-detail')?.textContent).not.toContain('Revoke trust')
+  const update = [...document.querySelectorAll<HTMLButtonElement>('#plugin-detail button')].find(
+    (button) => button.textContent === 'Update from a new source',
+  )
+  expect(update).toBeDefined()
+  update?.click()
+  await mounted.reload()
+  expect((document.getElementById('source-dialog') as HTMLDialogElement).open).toBe(true)
+  expect((document.getElementById('plugin-detail') as HTMLDialogElement).open).toBe(false)
 })
 
 it('links a live Surface mount without treating the link as qualified actual', async () => {

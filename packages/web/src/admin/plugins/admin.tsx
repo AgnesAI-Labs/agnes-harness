@@ -1177,6 +1177,9 @@ class PluginAdminPage {
   /** React 键控行会复用 DOM：键盘焦点跟随 data-plugin-id 保留，无需手工恢复。 */
 
   renderDetail(): void {
+    // Source entry takes over the modal stack until it is submitted or dismissed. A retained
+    // detail selection must not reopen its dialog and close the form on every catalog refresh.
+    if (this.#sourceDialog.open) return
     const item =
       this.#tab === 'installed'
         ? this.#state.installed.find((candidate) => candidate.id === this.#state.selectedId)
