@@ -1,5 +1,7 @@
 # Programmatic tools and workflows
 
+English | [简体中文](code-workflows.zh-CN.md)
+
 Select the **ptc** preset when creating a local session. It inherits the
 workspace-write permission policy and exposes `run_code` to the model. The tool
 SDK supplies TypeScript parameter declarations for available tools.
@@ -43,7 +45,9 @@ ambiguous child before starting a new run. Cancellation cancels accepted
 children; a cancelled or failed run cannot be resumed.
 
 The Web run card groups members by stage. Expand a stage to see member status
-and open its child session. Cards show recorded state; use `workflow_status`
+and its child-session link. In-process children currently lack daemon session
+adoption and ownership registration, so opening these links through the daemon
+is pending that integration. Cards show recorded state; use `workflow_status`
 to refresh it. Older terminal runs may be evicted from the bounded projection;
 their events remain in the ledger.
 

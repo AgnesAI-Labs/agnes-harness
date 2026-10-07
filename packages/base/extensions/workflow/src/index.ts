@@ -230,10 +230,12 @@ export default defineExtension((agnes) => {
           : undefined
       return run
         ? {
-            title: run.name + ' · ' + run.status + ' · ' + run.id,
+            title: run.name,
             table: {
-              columns: ['Stage', 'Member', 'Status', 'Child session'],
-              rows: run.stages.flatMap((s) => s.members.map((m) => [s.name, m.name, m.status, m.childKey])),
+              columns: ['Stage', 'Member', 'Status', 'Child session', 'Run status', 'Run id'],
+              rows: run.stages.flatMap((s) =>
+                s.members.map((m) => [s.name, m.name, m.status, m.childKey, run.status, run.id]),
+              ),
             },
           }
         : null

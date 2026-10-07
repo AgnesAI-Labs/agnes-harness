@@ -11,6 +11,7 @@ it('maps the actual CoreError depth refusal without exposing operands', () => {
 })
 it.each([
   ['BUDGET_EXCEEDED', 1001],
+  ['E_BUDGET', 1001],
   ['APPROVAL_REJECTED', 1002],
   ['APPROVAL_UNAVAILABLE', 1002],
   ['DEPTH_EXCEEDED', 1003],

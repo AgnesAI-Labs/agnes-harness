@@ -22,6 +22,8 @@ export function WorkflowRunCard({
       aria-label={t('cards.workflow.title')}
     >
       <strong>{payload.title}</strong>
+      {payload.table?.rows[0]?.[4] && <p role="status">{t('cards.workflow.' + payload.table.rows[0][4])}</p>}
+      {payload.table?.rows[0]?.[5] && <code>{payload.table.rows[0][5]}</code>}
       {[...groups].map(([stage, members]) => (
         <details key={stage} data-testid="workflow-stage">
           <summary>

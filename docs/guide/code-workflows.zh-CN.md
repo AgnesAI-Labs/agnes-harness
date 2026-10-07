@@ -1,5 +1,7 @@
 # 程序化工具调用与工作流
 
+[English](code-workflows.md) | 简体中文
+
 创建本地会话时选择 **ptc** preset。它继承 workspace-write 权限策略，
 向模型展示 `run_code`，并提供工具参数的 TypeScript 类型声明。
 每个 cell 运行在所选 sandbox provider 管理的独立 Node 进程中，
@@ -35,7 +37,9 @@ return await tools.workflow({
 与保存身份之间，系统拒绝再次自动派发；先核对不确定的 child，再创建新运行。
 取消会取消已接受的 children；失败或取消的运行不可恢复。
 
-Web 运行卡按阶段分组。展开阶段可查看成员状态、跳转子会话。
+Web 运行卡按阶段分组。展开阶段可查看成员状态和子会话链接。
+进程内子会话尚未接入 daemon 会话登记和 ownership 注册，因此通过 daemon
+打开这些链接仍待完成该层集成。
 卡片展示记录下来的状态，可调用 workflow_status 刷新。
 有界 projection 可淘汰较早的终态运行，ledger 中的事件仍保留。
 

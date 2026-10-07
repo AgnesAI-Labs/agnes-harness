@@ -2,7 +2,7 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { presets as basePresets } from '@agnes/base'
-import { presets as codePresets, PRESET_NAMES } from '@agnes/code'
+import { presets as codePresets, PRESET_NAMES, runtimes } from '@agnes/code'
 import { DEFAULT_LOOP } from '@agnes/core'
 import { afterEach, describe, expect, it } from 'vitest'
 import type { PresetDoc } from '../src/presets/types.js'
@@ -49,7 +49,10 @@ const hostFor = async (
   createTestHost({
     dataDir,
     presets: codePresets as Record<string, PresetDoc>,
-    packages: { '@agnes/base': { presets: basePresets as Record<string, PresetDoc> } },
+    packages: {
+      '@agnes/base': { presets: basePresets as Record<string, PresetDoc> },
+      '@agnes/code': { runtimes },
+    },
     allowed: [...PRESET_NAMES],
     ...(platformCaps ? { platformCaps } : {}),
     script: [

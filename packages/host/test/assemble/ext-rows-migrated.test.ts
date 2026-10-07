@@ -81,6 +81,12 @@ const SUPPLIED: Record<string, string[]> = {
     'tool:list_mcp_resource_templates',
     'tool:read_mcp_resource',
   ],
+  'agnes/workflow': [
+    'tool:workflow',
+    'tool:workflow_status',
+    'slot:tool.card.inline',
+    'projection:agnes/workflow/runs',
+  ],
 }
 
 const listed = (h: { host: { extensions(): { id: string; loaded: boolean }[] } }, id: string) =>
@@ -118,6 +124,7 @@ describe('the builtin extensions that moved to the shared row host', () => {
       'agnes/skills',
       'agnes/plan-mode',
       'agnes/mcp-resources',
+      'agnes/workflow',
     ])
     for (const [id, registrations] of Object.entries(SUPPLIED)) {
       expect(listed(h, id)?.loaded, id).toBe(true)

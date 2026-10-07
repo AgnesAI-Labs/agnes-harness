@@ -98,12 +98,12 @@ it('expands workflow stages and links each member to its child session', () => {
         extId: 'agnes/workflow',
         slot: 'tool.card.inline',
         payload: {
-          title: 'Research · completed',
+          title: 'Research',
           table: {
-            columns: ['Stage', 'Member', 'Status', 'Child session'],
+            columns: ['Stage', 'Member', 'Status', 'Child session', 'Run status', 'Run id'],
             rows: [
-              ['Research', 'Analyst', 'completed', 'child:one'],
-              ['Write', 'Writer', 'pending', ''],
+              ['Research', 'Analyst', 'completed', 'child:one', 'interrupted', 'run-one'],
+              ['Write', 'Writer', 'pending', '', 'interrupted', 'run-one'],
             ],
           },
         },
@@ -122,6 +122,8 @@ it('expands workflow stages and links each member to its child session', () => {
       '?session=child%3Aone',
     )
     expect(el.querySelectorAll('[data-testid="workflow-member"]')).toHaveLength(2)
+    expect(el.querySelector('[role="status"]')?.textContent).toBe('Interrupted')
+    expect(el.querySelector('code')?.textContent).toBe('run-one')
   } finally {
     flushSync(() => root.unmount())
     el.remove()

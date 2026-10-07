@@ -13,6 +13,7 @@ const messages: Record<BridgeError['code'], string> = {
 const governed: Record<string, BridgeError['code']> = {
   E_DEPTH_EXCEEDED: 1003,
   BUDGET_EXCEEDED: 1001,
+  E_BUDGET: 1001,
   APPROVAL_REJECTED: 1002,
   APPROVAL_UNAVAILABLE: 1002,
   DEPTH_EXCEEDED: 1003,

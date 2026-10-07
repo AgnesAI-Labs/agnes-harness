@@ -72,7 +72,7 @@ async def main():
         serial += 1
         future = asyncio.get_running_loop().create_future()
         pending[serial] = future
-        frame = json.dumps({'jsonrpc': '2.0', 'id': serial, 'method': 'bridge.tools.invoke', 'params': {'name': name, 'args': args}}).encode() + b'\n'
+        frame = json.dumps({'jsonrpc': '2.0', 'id': serial, 'method': 'bridge.tools.invoke', 'params': {'name': name, 'args': args}}, allow_nan=False).encode() + b'\n'
         if len(frame) > 1048576: raise RuntimeError('bridge frame too large')
         writer.write(frame)
         await writer.drain()

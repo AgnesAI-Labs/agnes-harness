@@ -4,6 +4,7 @@ export const toolCardsLocaleCatalog = {
   en: {
     'cards.workflow.title': 'Workflow run',
     'cards.workflow.open': 'Open child session',
+    'cards.workflow.interrupted': 'Interrupted',
     'cards.workflow.pending': 'Pending',
     'cards.workflow.starting': 'Starting',
     'cards.workflow.running': 'Running',
@@ -27,6 +28,7 @@ export const toolCardsLocaleCatalog = {
   'zh-CN': {
     'cards.workflow.title': '工作流运行',
     'cards.workflow.open': '打开子会话',
+    'cards.workflow.interrupted': '已中断',
     'cards.workflow.pending': '待运行',
     'cards.workflow.starting': '正在创建',
     'cards.workflow.running': '运行中',

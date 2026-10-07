@@ -38,7 +38,12 @@ export function bridgeDispatch(ctx: ToolContext, request: BridgeRequest): () => 
         throw Object.assign(new Error('recursive code calls are unavailable'), { bridgeCode: 1003 })
       return async () => {
         const result = await ctx.tools.invoke(name, args, { signal: ctx.signal })
-        if (result.isError) throw new Error('tool execution failed')
+        if (result.isError) {
+          const details = result.details
+          const code =
+            details && typeof details === 'object' && !Array.isArray(details) ? details.code : undefined
+          throw Object.assign(new Error('tool execution failed'), typeof code === 'string' ? { code } : {})
+        }
         // details is UI-only; structured is the public machine-readable half when present.
         if (result.structured !== undefined) return result.structured
         return result.content

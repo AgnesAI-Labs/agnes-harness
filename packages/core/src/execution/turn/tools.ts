@@ -281,7 +281,7 @@ export async function refuse(
   message: string,
   decisionId = 'n/a',
 ): Promise<ToolResult> {
-  const result = errorResult(message)
+  const result = dispatchErrorResult(code, message)
   const callSeq = s.state.toolCalls.get(toolUseId)?.seq
   await s.transition(
     [

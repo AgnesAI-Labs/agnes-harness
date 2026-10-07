@@ -31,7 +31,7 @@ describe('templates', () => {
     expect(t.packages?.map((p) => p.id)).toEqual(['@agnes/ai', '@agnes/base', '@agnes/code'])
     expect(t.presets).toEqual({
       default: 'workspace-write',
-      allowed: ['standard', 'read-only', 'workspace-write', 'full-access', 'minimal'],
+      allowed: ['standard', 'read-only', 'workspace-write', 'full-access', 'minimal', 'ptc'],
     })
     expect(t.computerUse).toMatchObject({ enabled: true, appAccess: 'all' })
   })

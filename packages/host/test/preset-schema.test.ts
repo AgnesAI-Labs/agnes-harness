@@ -1,4 +1,5 @@
 import { readdirSync, readFileSync } from 'node:fs'
+import { runtimes } from '@agnes/code'
 import { validatePreset } from '@agnes/protocol'
 import { describe, expect, it } from 'vitest'
 import { parse } from 'yaml'
@@ -18,7 +19,7 @@ const docs = Object.fromEntries(
 )
 
 describe('delivered preset schema conformance', () => {
-  it('includes all ten delivered recipes and validates exact YAML and merged documents', () => {
+  it('includes all delivered recipes and validates exact YAML and merged documents', () => {
     expect(Object.keys(docs).sort()).toEqual([
       'base',
       'channel',
@@ -26,6 +27,7 @@ describe('delivered preset schema conformance', () => {
       'full-access',
       'minimal',
       'minimal-rl',
+      'ptc',
       'read-only',
       'standard',
       'standard-windows',
@@ -56,7 +58,7 @@ describe('shipped presets through host assembly and session creation', () => {
       const { host } = await createTestHost({
         dataDir,
         allowed: Object.keys(docs),
-        packages: { '@agnes/base': { presets: { base } }, '@agnes/code': { presets: product } },
+        packages: { '@agnes/base': { presets: { base } }, '@agnes/code': { presets: product, runtimes } },
       })
       try {
         const session = await host.createSession({
