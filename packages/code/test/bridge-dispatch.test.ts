@@ -123,6 +123,14 @@ it('never leaks UI-only details and turns tool failure into an error frame', asy
     id: 7,
     error: { code: -32603, message: 'internal bridge error' },
   })
+  ctx.tools.invoke = async () => ({
+    content: [],
+    isError: true,
+    structured: { id: 'run-1', status: 'interrupted' },
+  })
+  expect(await bridge(request('bridge.tools.invoke', { name: 'workflow', args: {} }))).toMatchObject({
+    result: { id: 'run-1', status: 'interrupted' },
+  })
 })
 it('falls back to public text when a tool has no structured result', async () => {
   const { bridge, ctx } = setup()

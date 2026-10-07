@@ -29,6 +29,7 @@ const PRESETS = {
   'workspace-write': { name: 'workspace-write', extends: 'standard' },
   'full-access': { name: 'full-access', extends: 'standard' },
   minimal: { name: 'minimal', extends: 'standard' },
+  ptc: { name: 'ptc', extends: 'workspace-write' },
 }
 
 const tmp: string[] = []

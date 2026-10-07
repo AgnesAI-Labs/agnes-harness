@@ -5,7 +5,9 @@ import { NODE_GUEST, PYTHON_GUEST } from './guest.js'
 export function processRuntime(
   initial: Pick<ToolContext, 'exec' | 'cwd' | 'signal' | 'tools'> | undefined,
   language: CodeRuntime['language'],
+  options: { rawIo?: boolean } = {},
 ): CodeRuntime {
+  let rawIo = options.rawIo ?? false
   let ctx: Pick<ToolContext, 'exec' | 'cwd' | 'signal'> | undefined = initial
   let names = () =>
     initial?.tools
@@ -30,6 +32,7 @@ export function processRuntime(
     async start(opts) {
       opts.signal?.throwIfAborted()
       if (!opts.exec) throw new Error('Managed sandbox executor is required')
+      rawIo = opts.rawIo ?? rawIo
       ctx = {
         exec: opts.exec,
         cwd: opts.cwd,
@@ -39,13 +42,17 @@ export function processRuntime(
     },
     async run(req) {
       if (!ctx) throw new Error('Code runtime is not started')
+      if (language === 'python' && !rawIo)
+        throw new Error('E_PRESET_UNSUPPORTED: Python raw_io:false is not implemented')
       if (stopped) throw new Error('code runtime is closed')
       const started = Date.now()
       const signal = AbortSignal.any([req.signal ?? ctx.signal, ctx.signal, controller.signal])
       if (signal.aborted) return { status: 'aborted', stdout: '', stderr: '', durationMs: 0, subcalls: 0 }
       let subcalls = 0
       const output = await ctx.exec(
-        language === 'typescript' ? ['node', '-e', NODE_GUEST] : ['python3', '-I', '-u', '-c', PYTHON_GUEST],
+        language === 'typescript'
+          ? ['node', ...(rawIo ? [] : ['--permission']), '-e', NODE_GUEST]
+          : ['python3', '-I', '-u', '-c', PYTHON_GUEST],
         {
           cwd: ctx.cwd,
           signal,

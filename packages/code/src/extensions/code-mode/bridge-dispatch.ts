@@ -42,7 +42,8 @@ export function bridgeDispatch(ctx: ToolContext, request: BridgeRequest): () => 
           const details = result.details
           const code =
             details && typeof details === 'object' && !Array.isArray(details) ? details.code : undefined
-          throw Object.assign(new Error('tool execution failed'), typeof code === 'string' ? { code } : {})
+          if (typeof code === 'string' || result.structured === undefined)
+            throw Object.assign(new Error('tool execution failed'), typeof code === 'string' ? { code } : {})
         }
         // details is UI-only; structured is the public machine-readable half when present.
         if (result.structured !== undefined) return result.structured

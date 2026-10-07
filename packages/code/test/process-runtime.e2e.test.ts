@@ -1,6 +1,6 @@
+import { sandboxWorkspaceProbe } from '@agnes/base'
 import type { ToolContext } from '@agnes/extension-api'
 import { expect, it } from 'vitest'
-import { seatbeltConfine } from '../../base/extensions/sandbox/src/backends.js'
 import { createExec } from '../../host/src/adapters/exec.js'
 import { createLocalSandboxProvider } from '../../host/src/adapters/sandbox-local.js'
 import { createBridge } from '../src/extensions/code-mode/bridge.js'
@@ -27,7 +27,7 @@ it.each(['typescript', 'python'] as const)(
   'runs fresh %s cells with concurrent JSON tool bindings',
   async (language) => {
     const { ctx, executor } = context()
-    const runtime = processRuntime(ctx, language)
+    const runtime = processRuntime(ctx, language, { rawIo: language === 'python' })
     const code =
       language === 'typescript'
         ? 'const values: unknown[] = await Promise.all([tools.echo({n: 1}), tools.echo({n: 2})]); return values;'
@@ -97,10 +97,17 @@ it('propagates governed budget and approval rejections into code', async () => {
 })
 
 it('refuses an unbound provider request before process execution', async () => {
-  const { executor } = context()
+  const { executor, ctx } = context()
   const provider = createLocalSandboxProvider(executor, 'darwin')
   const instance = await provider.create({})
   try {
+    await expect(
+      processRuntime(ctx, 'python').run({
+        program: 'return 1',
+        bindings: createBridge(ctx),
+        limits: { wallMs: 5000, maxOutputChars: 65536 },
+      }),
+    ).rejects.toThrow('Python raw_io:false')
     await expect(
       instance.exec({
         argv: ['node', '-e', 'process.exit(0)'],
@@ -122,18 +129,24 @@ it.runIf(process.platform === 'darwin').each(['read-only', 'workspace-write'] as
     const { join } = await import('node:path')
     const dir = realpathSync(mkdtempSync(join(tmpdir(), 'agnes-code-policy-')))
     const { ctx, executor } = context()
-    ctx.exec = (argv, opts) =>
-      executor.run(
-        seatbeltConfine(argv, {
+    try {
+      const backend = await sandboxWorkspaceProbe({
+        level: 'L1',
+        required: true,
+        onUnavailable: 'deny',
+        shell: 'posix',
+        options: {
           cwd: dir,
           allowPaths: access === 'workspace-write' ? [dir] : [],
           denyPaths: [],
           networkAllow: [],
-        }),
-        { ...opts, cwd: dir },
-      )
-    try {
-      const result = await processRuntime(ctx, 'typescript').run({
+        },
+        probeExec: executor.run,
+        log: { debug: () => {}, info: () => {}, warn: () => {}, error: () => {} },
+      })
+      ctx.exec = async (argv, opts) =>
+        executor.run([...(await backend.confine({ argv, cwd: dir }))], { ...opts, cwd: dir })
+      const result = await processRuntime(ctx, 'typescript', { rawIo: true }).run({
         program: `const fs = await import('node:fs'); let writable = true;
           try { fs.writeFileSync(${JSON.stringify(join(dir, 'output'))}, 'ok'); } catch { writable = false; }
           return { writable, echo: await tools.echo({ value: 1 }) };`,
@@ -152,7 +165,7 @@ it.runIf(process.platform === 'darwin').each(['read-only', 'workspace-write'] as
   },
 )
 
-it.each(['read', 'denied-shell'] as const)(
+it.each(['read', 'denied-shell', 'raw-io-denied'] as const)(
   'loads the official preset and drives %s through Host approvals and ledger',
   async (target) => {
     const { mkdtempSync, realpathSync, rmSync, writeFileSync } = await import('node:fs')
@@ -172,7 +185,9 @@ it.each(['read', 'denied-shell'] as const)(
           code:
             target === 'read'
               ? "return await tools.read({ path: 'input.txt' });"
-              : "try { return await tools.shell({ command: 'printf never' }); } catch (e) { return e.code; }",
+              : target === 'denied-shell'
+                ? "try { return await tools.shell({ command: 'printf never' }); } catch (e) { return e.code; }"
+                : "const fs = await import('node:fs'); const cp = await import('node:child_process'); const codes = []; try { fs.writeFileSync('bypass.txt', 'bad'); } catch (e) { codes.push(e.code); } try { cp.spawnSync('sh', ['-c', 'printf bad']); } catch (e) { codes.push(e.code); } return codes;",
         }),
         textTurn('done'),
       ],
@@ -212,9 +227,12 @@ it.each(['read', 'denied-shell'] as const)(
       expect(out.reason).toBe('completed')
       const results = await session.scan({ type: 'tool/result', toSeq: session.lastSeq })
       if (target === 'read') expect(JSON.stringify(results)).toContain('nested host read')
-      else {
+      else if (target === 'denied-shell') {
         expect(approvals).toContain('shell')
         expect(JSON.stringify(results)).toContain('1002')
+      } else {
+        expect(JSON.stringify(results)).toContain('ERR_ACCESS_DENIED')
+        expect(JSON.stringify(results).match(/ERR_ACCESS_DENIED/g)?.length).toBeGreaterThanOrEqual(2)
       }
       expect(approvals).toContain('run_code')
       expect(provider.requests[0]?.tools.map((t) => t.name)).toEqual(['run_code'])

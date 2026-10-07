@@ -126,6 +126,8 @@ export function readPreset(raw: Record<string, unknown>, name: string): PresetVi
           codeRuntime: {
             state: pick(raw, 'code_runtime.state', 'stateless' as const),
             language: pick(raw, 'code_runtime.language', 'typescript' as const),
+            isolation: pick(raw, 'code_runtime.isolation', 'process' as const),
+            rawIo: pick(raw, 'code_runtime.raw_io', false),
             wallMs: pick(raw, 'code_runtime.cell_timeout_ms', 120000),
             maxOutputChars: pick(raw, 'code_runtime.max_output_chars', 65536),
             maxParallelSubCalls: pick(raw, 'code_runtime.max_parallel_sub_calls', 4),

@@ -22,7 +22,11 @@ export default defineExtension((agnes: ExtensionAPI) => {
     acquire: async (ctx) => {
       if (ctx.codeRuntime?.state === 'persistent')
         throw new Error('E_PRESET_UNSUPPORTED: this runtime supports stateless cells only')
-      return processRuntime(ctx, ctx.codeRuntime?.language ?? language)
+      if (ctx.codeRuntime && ctx.codeRuntime.isolation !== 'process')
+        throw new Error('E_PRESET_UNSUPPORTED: this runtime requires process isolation')
+      return processRuntime(ctx, ctx.codeRuntime?.language ?? language, {
+        rawIo: ctx.codeRuntime?.rawIo ?? false,
+      })
     },
     bridge: (ctx) =>
       createBridge(ctx, {

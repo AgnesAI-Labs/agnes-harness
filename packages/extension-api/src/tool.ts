@@ -149,6 +149,7 @@ export interface CodeRuntime {
     /** Managed provider-bound executor; required by process PTC backends. */
     exec?: ToolContext['exec']
     toolNames?: readonly string[]
+    rawIo?: boolean
     confine: (argv: string[]) => Promise<string[]>
     signal?: AbortSignal
   }): Promise<void>
@@ -236,6 +237,8 @@ export interface ToolContext {
   readonly codeRuntime?: {
     state: 'persistent' | 'stateless'
     language: 'python' | 'typescript'
+    isolation: 'process' | 'worker-thread' | 'container'
+    rawIo: boolean
     wallMs: number
     maxOutputChars: number
     maxParallelSubCalls: number

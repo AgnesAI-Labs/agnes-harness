@@ -86,6 +86,7 @@ export function createRunCodeTool(deps: RunCodeDeps): ToolDef<typeof RunCodePara
           status: result.status,
           durationMs: result.durationMs,
           subcalls: result.subcalls,
+          ioEnforcement: ctx.codeRuntime?.rawIo ? 'cell-approval' : 'tool-bridge',
           truncated: guarded.truncated,
           ...(artifact ? { artifact } : {}),
           ...(result.error ? { error: result.error } : {}),

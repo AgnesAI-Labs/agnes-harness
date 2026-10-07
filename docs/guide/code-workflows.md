@@ -31,6 +31,12 @@ configured elapsed-time and output limits. Cancellation terminates the process
 and cancels outstanding bridge calls. Direct process operations remain confined
 by the current permission preset.
 
+The official preset sets `raw_io: false`. Node permission mode blocks direct
+filesystem access and child-process creation; use the approved tools instead.
+Custom presets may explicitly enable raw I/O with `code_runtime.raw_io: true`;
+these cells have cell-level approval and report `ioEnforcement: cell-approval`,
+while their process still uses the preset's OS sandbox.
+
 Stages execute sequentially, with at most four parallel members per stage.
 Children use the official `subagent_spawn` tool and inherit its depth, fan-out,
 budget and worktree rules. Each later stage receives the preceding stage's
@@ -56,5 +62,6 @@ declare `capabilities.programmatic: true` and implement the JSON request/reply
 pipe. Unsupported providers refuse execution. Windows and remote sandbox
 deployments currently do not support PTC. A custom preset may set
 `code_runtime.language: python` for experimental stateless CPython cells;
-Python 3 must be installed. Python supports top-level await/return and the same
+Python 3 must be installed, and `raw_io: true` is required; Python `raw_io: false`
+is refused until its I/O bridge is available. Python supports top-level await/return and the same
 tool bindings, without persistent kernel or snapshot/restore support.

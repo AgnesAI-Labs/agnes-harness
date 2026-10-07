@@ -27,6 +27,11 @@ return await tools.workflow({
 并受执行时间和输出限制。取消会终止进程并取消未完成的桥调用。
 代码中的直接进程操作也受当前权限 preset 的隔离限制。
 
+官方 preset 设置 `raw_io: false`，Node 权限模式禁止直接文件访问和创建子进程；
+这些操作需要使用受审批的工具。自定义 preset 可显式设置
+`code_runtime.raw_io: true`，此时按整个 cell 审批，结果标记为
+`ioEnforcement: cell-approval`，进程仍遵守 preset 的 OS 沙箱。
+
 工作流按顺序执行阶段，每阶段最多并行运行 4 个成员。
 子任务使用官方 subagent_spawn 工具，继承深度、扇出、预算和 worktree 策略。
 后续阶段收到上一阶段的有界结果；成员失败后停止工作流。
@@ -47,5 +52,6 @@ Web 运行卡按阶段分组。展开阶段可查看成员状态和子会话链�
 `capabilities.programmatic: true` 并实现 JSON 请求／响应管道。
 不支持的 provider 会拒绝执行。Windows 和远程 sandbox 当前不支持 PTC。
 自定义 preset 可设置 `code_runtime.language: python` 使用实验性的独立
-CPython cell，需要安装 Python 3。它支持顶层 await/return 和相同的工具桥，
+CPython cell，需要安装 Python 3 并设置 `raw_io: true`；Python 的
+`raw_io: false` 在 I/O 桥完成前会明确拒绝。它支持顶层 await/return 和相同的工具桥，
 不提供持久 kernel、snapshot 或 restore。
