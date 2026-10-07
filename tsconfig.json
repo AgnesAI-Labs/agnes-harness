@@ -135,6 +135,9 @@
     },
     {
       "path": "packages/sandbox-remote"
+    },
+    {
+      "path": "packages/model-adapters"
     }
   ]
 }

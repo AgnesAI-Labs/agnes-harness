@@ -1,0 +1,127 @@
+import type {
+  ModelAdapterConfig,
+  ModelAdapterEvent,
+  ModelAdapterInstance,
+  ModelAdapterStreamOptions,
+} from '@agnes/extension-api'
+import { defineModelAdapter } from '@agnes/plugin-runtime'
+import type { RequestBody } from '@agnes/protocol'
+import { absoluteFile, compat, object, readBoundedFile, readModelResponses, validateReply } from './trace.js'
+
+function canonical(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(canonical).join(',')}]`
+  if (object(value))
+    return `{${Object.keys(value)
+      .sort()
+      .map((key) => `${JSON.stringify(key)}:${canonical(value[key])}`)
+      .join(',')}}`
+  return JSON.stringify(value)
+}
+/** Ignore routing and ephemeral session/hash identities; retain model input and sampling. */
+export function replayRequestKey(request: RequestBody): string {
+  return canonical({
+    kind: request.kind,
+    slot: request.slot,
+    system: request.system,
+    messages: request.messages,
+    tools: request.tools,
+    sampling: request.sampling ?? null,
+  })
+}
+type Reply = { events: ModelAdapterEvent[]; key?: string }
+
+function instance(
+  id: string,
+  config: ModelAdapterConfig,
+  replies: Map<string, Reply[]>,
+  strict: Map<string, boolean>,
+): ModelAdapterInstance {
+  const cursors = new Map<string, number>()
+  const busy = new Set<string>()
+  let disposed = false
+  return {
+    id,
+    routes: () => config.routes.map(({ models: _models, keyless: _keyless, ...route }) => route),
+    models: (route) => config.routes.find((decl) => decl.route === route)?.models ?? [],
+    async *stream(route: string, request: RequestBody, options: ModelAdapterStreamOptions) {
+      options.signal.throwIfAborted()
+      if (disposed) throw new Error(`${id} adapter is disposed`)
+      const key = `${options.sessionKey}\0${route}`
+      if (busy.has(key)) throw new Error(`${id} refuses concurrent invocations in one session route`)
+      const index = cursors.get(key) ?? 0
+      const reply = replies.get(route)?.[index]
+      if (!reply) throw new Error(`${id} transcript exhausted at invocation ${index}`)
+      if (strict.get(route) && reply.key !== replayRequestKey(request))
+        throw new Error(`replay request mismatch at invocation ${index}`)
+      busy.add(key)
+      cursors.set(key, index + 1)
+      try {
+        for (const event of reply.events) {
+          options.signal.throwIfAborted()
+          yield structuredClone(event)
+        }
+      } finally {
+        busy.delete(key)
+      }
+    },
+    dispose() {
+      disposed = true
+      cursors.clear()
+    },
+  }
+}
+const capabilities = { imageInput: true, tools: true, streaming: true }
+export const replayAdapter = defineModelAdapter({
+  id: 'replay',
+  api: 'replay',
+  version: '1.0.0',
+  capabilities,
+  async create(config: ModelAdapterConfig): Promise<ModelAdapterInstance> {
+    const replies = new Map<string, Reply[]>()
+    const strict = new Map<string, boolean>()
+    for (const route of config.routes) {
+      const options = compat(route.compat)
+      if (options.match !== undefined && options.match !== 'strict' && options.match !== 'sequence')
+        throw new Error('replay match must be strict or sequence')
+      if (options.recordedSession !== undefined && typeof options.recordedSession !== 'string')
+        throw new Error('invalid recordedSession')
+      const rows = await readModelResponses(
+        absoluteFile(options.file),
+        options.recordedSession as string | undefined,
+      )
+      // One route per transcript keeps a route-local cursor unambiguous.
+      if (new Set(rows.map((row) => row.request.route)).size !== 1)
+        throw new Error('replay trace must contain one model route')
+      replies.set(
+        route.route,
+        rows.map((row) => ({ events: row.events, key: replayRequestKey(row.request) })),
+      )
+      strict.set(route.route, options.match !== 'sequence')
+    }
+    return instance('replay', config, replies, strict)
+  },
+})
+export const scriptedAdapter = defineModelAdapter({
+  id: 'scripted',
+  api: 'scripted',
+  version: '1.0.0',
+  capabilities,
+  async create(config: ModelAdapterConfig): Promise<ModelAdapterInstance> {
+    const replies = new Map<string, Reply[]>()
+    for (const route of config.routes) {
+      const document: unknown = JSON.parse(await readBoundedFile(absoluteFile(compat(route.compat).file)))
+      if (
+        !object(document) ||
+        document.schemaVersion !== 1 ||
+        !Array.isArray(document.replies) ||
+        !document.replies.length
+      )
+        throw new Error('invalid scripted replies document')
+      replies.set(
+        route.route,
+        document.replies.map((reply) => ({ events: validateReply(reply) })),
+      )
+    }
+    return instance('scripted', config, replies, new Map())
+  },
+})

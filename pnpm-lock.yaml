@@ -457,6 +457,21 @@ importers:
         specifier: workspace:*
         version: link:../system-node
 
+  packages/model-adapters:
+    dependencies:
+      '@agnes/ai':
+        specifier: workspace:*
+        version: link:../ai
+      '@agnes/extension-api':
+        specifier: workspace:*
+        version: link:../extension-api
+      '@agnes/plugin-runtime':
+        specifier: workspace:*
+        version: link:../plugin-runtime
+      '@agnes/protocol':
+        specifier: workspace:*
+        version: link:../protocol
+
   packages/package-manager:
     dependencies:
       '@agnes/error-sanitization':
