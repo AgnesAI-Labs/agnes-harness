@@ -107,6 +107,14 @@ persistence:
 
 协议里的 profile schema 还没有 `persistence`。Host 的 profile 类型和用户 `profile.yaml` 接受它。
 
+## 子代理提供者
+
+提供者启动子代理，并返回带事件、`sendMessage`、`interrupt` 和 `result` 的句柄。通过注入 `childAgents` 的 Cordis 插件注册。内置 id 是 `in-process`。`acp` 运行外部 ACP 进程，默认不加载。标成 false 的能力在 start 时被拒绝。作者说明见[子代理提供者](../extend/child-agents.zh-CN.md)。
+
+预设 schema 没有子代理允许名单。在 subagent 扩展上设置 `allow` 和 `sessions`，或调用 `childAgents.setSessionAllowlist`。省略名单表示不限制。空名单拒绝这一类。设置了模型名单时，调用方必须写出模型名。
+
+自定义循环通过可选的 `LoopContext.children.run` 端口跑一个进程内子代理。
+
 ## 不同 API 不可混用
 
 | 接口 | 可以做什么 | 边界 |

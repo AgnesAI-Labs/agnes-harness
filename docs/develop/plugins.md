@@ -119,6 +119,14 @@ A package publishes the named export `persistenceProvider`. [`@agnes-examples/pe
 
 The protocol profile schema does not list `persistence` yet. Host profile types and a user `profile.yaml` accept it.
 
+## Child agent providers
+
+A provider starts a child and returns a handle with events, `sendMessage`, `interrupt`, and `result`. Register it through a Cordis plugin that injects `childAgents`. The built-in id is `in-process`. `acp` runs an external ACP process and is not loaded by default. Capabilities that are false are refused at start. The author guide is [Child agent providers](../extend/child-agents.md).
+
+The preset schema has no child allowlist. Set `allow` and `sessions` on the subagent extension, or call `childAgents.setSessionAllowlist`. An omitted list is unrestricted. An empty list refuses that kind. A set model list requires the caller to name the model.
+
+Custom loops reach one in-process child through the optional `LoopContext.children.run` port.
+
 <a id="不同-api-不可混用"></a>
 
 ## Keep API boundaries distinct
