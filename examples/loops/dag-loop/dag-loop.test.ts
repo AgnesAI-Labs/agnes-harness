@@ -1,4 +1,4 @@
-import type { LoopCheckpoint, LoopContext, LoopToolCall } from '@agnes/extension-api'
+import type { LoopCheckpoint, LoopContext, LoopToolCall, LoopRequest } from '@agnes/extension-api'
 import { expect, it } from 'vitest'
 import { codec, createDagLoop } from './index.mjs'
 
@@ -16,11 +16,17 @@ function ports() {
   const ctx: LoopContext = {
     sessionKey: 'dag',
     lane: 'main',
+    prepareRequest: async (options = {}) => ({ ...options } as LoopRequest),
+    turn: { view: async () => null, continuation: () => null, checkpoint: async () => ({ outcome: 'running' }), finishCancelled: async () => ({ outcome: 'turn-ended', reason: 'aborted' }), finishFailure: async () => ({ outcome: 'turn-ended', reason: 'error' }) },
+    effects: { status: async (id) => ({ status: 'may-have-sent', invocationId: id, checkpoint }) },
     input: {
-      accept: async () => (finished ? null : { id: '1', content: [{ type: 'text', text: 'do the DAG' }] }),
+      accept: async () => ctx.input.claim('next-turn'),
+      claim: async () => (finished ? null : { id: '1', turnId: 1, actor: { id: 'test', org: 'test', role: 'owner', deptPath: [], attrs: {} }, trust: 'trusted', kind: 'prompt', content: [{ type: 'text', text: 'do the DAG' }] }),
+      resumeParked: async () => false,
       pending: () => !finished,
     },
     tools: {
+      drain: async () => ({ outcome: 'running' }),
       execute: async () => {
         throw new Error('DAG must use the batch port')
       },
@@ -30,6 +36,7 @@ function ports() {
       },
     },
     model: {
+      respond: async () => ({ outcome: 'running' }),
       // biome-ignore lint/correctness/useYield: assert that this fixture never starts model streaming.
       stream: async function* () {
         throw new Error('use complete')
@@ -55,7 +62,7 @@ function ports() {
         finished = true
       },
     },
-    wait: { park: async () => {}, wake() {} },
+    wait: { park: async () => {}, wake() {}, poll: async () => ({ outcome: 'running' }), delay: async () => {} },
   }
   return { ctx, batches, events, requests, checkpoint: () => checkpoint! }
 }
@@ -85,7 +92,7 @@ it('batches independent nodes, resumes their committed wave, joins outputs and f
 
 it('plans from the first model reply and summarizes only after the join', async () => {
   const p = ports()
-  const driver = createDagLoop({ target: { route: 'fake', model: 'm' } }).create(p.ctx)
+  const driver = createDagLoop().create(p.ctx)
   for (let i = 0; i < 10; i++) {
     if ((await driver.step(signal)).reason) break
   }
@@ -97,14 +104,13 @@ it('plans from the first model reply and summarizes only after the join', async 
   })
 })
 
-it('refuses cycles, unsupported codecs and unfinished effects before resumed work', () => {
+it('refuses cycles, unsupported codecs and uncertain effects before resumed work', async () => {
   expect(() => createDagLoop({ plan: [{ ...nodes[0]!, after: ['a'] }] })).toThrow('cycle')
   const factory = createDagLoop({ plan: nodes })
   const p = ports()
   const checkpoint = factory.create(p.ctx).checkpoint()
   expect(() => codec.decode({ ...checkpoint, codecVersion: 2 })).toThrow('version 2')
-  expect(() =>
-    factory.resume(p.ctx, { ...checkpoint, state: { ...(checkpoint.state as object), inFlight: ['a'] } }),
-  ).toThrow('unfinished tool calls')
+  const resumed = factory.resume(p.ctx, { ...checkpoint, state: { ...(checkpoint.state as object), stage: 'tools', inFlight: ['a'] } })
+  await expect(resumed.step(signal)).rejects.toThrow('outcome is uncertain')
   expect(p.batches).toEqual([])
 })

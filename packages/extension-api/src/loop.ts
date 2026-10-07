@@ -1,4 +1,5 @@
-import type { ContentBlock, InferenceEvent, JsonValue, RequestBody } from '@agnes/protocol'
+import type { ChildAgentSessionService } from './child-agent.js'
+import type { Actor, ContentBlock, InferenceEvent, JsonValue, ModelRecord, RequestBody } from '@agnes/protocol'
 import type { LoopEventPort } from './loop-events.js'
 import type { ToolResult } from './tool.js'
 
@@ -55,7 +56,58 @@ export interface LoopStepOutcome {
   reason?: LoopEndReason
 }
 
+
+/** Core resolves route, contracts, media and hashes. A prepared request is session/turn bound. */
+declare const preparedLoopRequest: unique symbol
+export type LoopRequest = Readonly<RequestBody> & { readonly [preparedLoopRequest]: true }
+export interface LoopRequestOptions {
+  slot?: RequestBody['slot']
+  system?: string
+  /** Omitted uses the visible post-compaction history. */
+  messages?: RequestBody['messages']
+  /** Exact names from the turn's frozen catalog; omitted uses current disclosure. */
+  tools?: readonly string[]
+  sampling?: RequestBody['sampling']
+  invocationId?: string
+}
+export interface LoopInput {
+  id: string
+  turnId: number
+  kind: 'prompt' | 'steer' | 'follow_up'
+  trust: 'trusted' | 'untrusted'
+  actor: Actor
+  content: readonly ContentBlock[]
+}
+export interface LoopTurnView {
+  readonly turnId: number
+  readonly step: number
+  readonly cancelled: boolean
+  readonly history: readonly {
+    seq: number
+    kind: 'user' | 'assistant' | 'tool_result' | 'summary'
+    trust: 'trusted' | 'untrusted'
+    data: JsonValue
+  }[]
+  readonly tools: readonly RequestBody['tools'][number][]
+  readonly model: { slot: string; id: string; capabilities: Pick<ModelRecord, 'input' | 'reasoning' | 'toolCallFormats' | 'contextWindow' | 'maxTokens'> | null }
+  readonly prompt: { sections: readonly { id: string; order: number; source: string; text: string }[]; runtime: Readonly<Record<string, unknown>> }
+  readonly budget: { maxSteps: number | null; stepsUsed: number; creditsUsed: number; perRequestCap: number | null; onExceed: 'quote' | 'deny' }
+}
+/** Durable dispatch uncertainty; responded is not a promise of successful execution. */
+export type LoopEffectStatus =
+  | { status: 'not-sent'; invocationId: string }
+  | { status: 'may-have-sent'; invocationId: string; checkpoint: LoopCheckpoint | null }
+  | { status: 'responded'; invocationId: string; checkpoint: LoopCheckpoint | null; result: ToolResult | readonly InferenceEvent[] }
+
+/**
+ * Controlled ledger operations shared by all drivers. Core binds approvals, media and recovery;
+ * these do not expose or accept its private program counter. The driver selects the next edge.
+ */
+export type LoopContinuation = 'checkpoint' | 'model' | 'tools' | 'compaction' | 'deferred' | 'failure'
+
 export interface LoopToolCall {
+  /** Stable across retries/reopen, unique within this session and lane. */
+  invocationId?: string
   name: string
   args: JsonValue
 }
@@ -63,12 +115,25 @@ export interface LoopToolCall {
 export interface LoopContext {
   readonly sessionKey: string
   readonly lane: string
+  prepareRequest(options?: LoopRequestOptions): Promise<LoopRequest>
+  readonly turn: {
+    view(): Promise<LoopTurnView | null>
+    continuation(): LoopContinuation | null
+    checkpoint(signal: AbortSignal): Promise<LoopStepOutcome>
+    finishCancelled(): Promise<LoopStepOutcome>
+    finishFailure(): Promise<LoopStepOutcome>
+  }
+  readonly effects: { status(invocationId: string): Promise<LoopEffectStatus> }
   readonly model: {
+    /** Assemble, infer and persist the assistant/tools edge with Core-owned stamps. */
+    respond(signal: AbortSignal): Promise<LoopStepOutcome>
     /** RequestBody accepts text, images and other protocol content blocks. */
-    stream(request: RequestBody, signal: AbortSignal): AsyncIterable<InferenceEvent>
-    complete(request: RequestBody, signal: AbortSignal): Promise<readonly InferenceEvent[]>
+    stream(request: LoopRequest, signal: AbortSignal): AsyncIterable<InferenceEvent>
+    complete(request: LoopRequest, signal: AbortSignal): Promise<readonly InferenceEvent[]>
   }
   readonly tools: {
+    /** Drain model-planned calls, preserving approval, cancellation and deferred-job invariants. */
+    drain(signal: AbortSignal): Promise<LoopStepOutcome>
     /** Execution goes through the session's approval and tool policy path. */
     execute(call: LoopToolCall, signal: AbortSignal): Promise<ToolResult>
     /** Independent calls may overlap; results preserve input order and policy still controls concurrency. */
@@ -76,7 +141,9 @@ export interface LoopContext {
   }
   readonly input: {
     /** Claims the next input and opens its observable turn, or returns null. */
-    accept(): Promise<{ content: readonly ContentBlock[]; id?: string } | null>
+    accept(): Promise<LoopInput | null>
+    claim(target: 'next-turn' | 'next-step'): Promise<LoopInput | null>
+    resumeParked(): Promise<'opened' | 'waiting' | 'blocked' | false>
     pending(): boolean
   }
   readonly events: LoopEventPort & {
@@ -85,15 +152,17 @@ export interface LoopContext {
   }
   readonly checkpoints: {
     read(): LoopCheckpoint | null
-    write(checkpoint: LoopCheckpoint): Promise<void>
+    write(checkpoint: LoopCheckpoint, association?: { invocationIds: readonly string[] }): Promise<void>
   }
   readonly wait: {
     /** Wait for input, wake or cancellation without busy polling. */
     park(signal: AbortSignal): Promise<void>
     wake(): void
+    poll(signal: AbortSignal): Promise<LoopStepOutcome>
+    delay(ms: number, signal: AbortSignal): Promise<void>
   }
   readonly compaction?: { run(signal: AbortSignal): Promise<LoopStepOutcome> }
-  readonly children?: { run(input: JsonValue, signal: AbortSignal): Promise<JsonValue> }
+  readonly children?: ChildAgentSessionService
 }
 
 export interface LoopDriver {

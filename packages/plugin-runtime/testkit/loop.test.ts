@@ -9,18 +9,6 @@ const codec = loopCheckpointCodec(1, (state) => {
   if (typeof state !== 'number') throw new TypeError('Expected numeric state')
   return state
 })
-const request = {
-  kind: 'inference' as const,
-  sessionKey: 'test',
-  slot: 'primary' as const,
-  route: 'demo',
-  model: 'demo',
-  contractId: null,
-  derivedHash: '0'.repeat(64),
-  system: 'test',
-  messages: [],
-  tools: [],
-}
 
 describe('loop author driver', () => {
   it('drives scripted model replies into a real Host-registered tool and resumes a checkpoint', async () => {
@@ -55,7 +43,7 @@ describe('loop author driver', () => {
       return {
         async step(signal) {
           if (state) return { outcome: 'turn-ended', phase: 'done', reason: 'completed' }
-          const reply = await ctx.model.complete(request, signal)
+          const reply = await ctx.model.complete(await ctx.prepareRequest({ system: 'test', tools: [], messages: [] }), signal)
           for (const event of reply)
             if (event.type === 'toolcall_end') {
               const result = await ctx.tools.execute({ name: event.call.name, args: event.call.args }, signal)

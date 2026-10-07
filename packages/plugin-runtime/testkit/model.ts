@@ -6,7 +6,7 @@ export type ModelReply = Awaited<ReturnType<LoopContext['model']['complete']>>
 export function scriptedModel(replies: readonly ModelReply[]) {
   const requests: Parameters<LoopContext['model']['stream']>[0][] = []
   let cursor = 0
-  const model: LoopContext['model'] = {
+  const model: Pick<LoopContext['model'], 'stream' | 'complete'> = {
     async *stream(request, signal) {
       signal.throwIfAborted()
       const reply = replies[cursor++]

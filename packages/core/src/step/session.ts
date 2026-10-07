@@ -347,6 +347,7 @@ export type TurnEndReason =
 export type TurnOutcome = { reason: TurnEndReason; lastSeq: Seq; error?: { code: string; message: string } }
 
 export type SessionDeps = {
+  loopChildren?: import('@agnes/extension-api').ChildAgentSessionService
   toolRuntimes?: ToolRuntimeRegistryPort
   toolPolicies?: ToolPolicyRegistryPort
   loopEvents?: LoopEventRegistryPort
@@ -453,6 +454,7 @@ export type QuietGate = {
 
 /** What one turn holds in memory. It is lost on a kill; everything durable is on the ledger. */
 export type TurnMemory = {
+  budgetAdmission?: { step: number; cap: number | null; creditsUsed: number }
   snapshot: RegistrySnapshot
   /** Context-hook output is frozen for identical assembly inputs within this turn. */
   prefix?: { key: string; sections: PromptSection[]; additionalContext: string }
@@ -503,6 +505,7 @@ function webTurns(owners: TraceOwners, traces: ReadonlyMap<string, ChildTrace | 
 export class SessionImpl {
   readonly d: SessionDeps
   readonly loop: LoopSelection
+  loopEdge = 0
   private loopDriver!: LoopDriver
   private loopContext?: LoopContext
   private fallbackHooks: HookPort
@@ -1546,6 +1549,15 @@ export class SessionImpl {
    * Counts one run/step/resume in progress for as long as `fn` runs. A run or step waits for a
    * resume in progress first, and counts while it waits, so no second resume can start before it.
    */
+  /** Public-port invocation ownership: close waits even when a driver forgets to await a call. */
+  beginLoopOperation(): () => void {
+    if (this.closing) throw new CoreError('E_CLOSED', 'session closed')
+    let done!: () => void
+    const work = new Promise<void>((resolve) => { done = resolve })
+    this.activeWork.add(work)
+    return () => { this.activeWork.delete(work); done() }
+  }
+
   private active<T>(fn: () => Promise<T>, afterResume = true): Promise<T> {
     if (this.closing) return Promise.reject(new CoreError('E_CLOSED', 'session closed'))
     this.activeOps++
@@ -1572,6 +1584,7 @@ export class SessionImpl {
   private async stepWithModelSnapshot(): Promise<LoopStepOutcome> {
     const op = this.op()
     if (op?.control.status === 'cancel_requested') return publicOutcome(await finishAborted(this))
+    this.loopEdge++
     return this.loopDriver.step(this.ac.signal)
   }
 
@@ -1668,6 +1681,11 @@ export class SessionImpl {
         try {
           out = await this.step()
         } catch (err) {
+          if (err instanceof CoreError && err.code === 'E_BUDGET' && !this.op()) {
+            const reason = err.detail?.reason
+            if (reason === 'budget' || reason === 'max_steps' || reason === 'parked' || reason === 'aborted')
+              return { reason, lastSeq: this.lastSeq }
+          }
           if (!this.op() && (err as { code?: string })?.code === 'PARKED')
             return { reason: 'parked', lastSeq: this.lastSeq }
           // `run()` promises an outcome. An exception out of a phase — an extension hook that throws
@@ -1759,7 +1777,7 @@ export class SessionImpl {
    * being noticed only once the delay is over — and a fitted `Timers` that never fires cannot hold
    * the loop past a cancellation.
    */
-  private sleep(ms: number): Promise<void> {
+  sleep(ms: number): Promise<void> {
     const timers = this.d.timers ?? DEFAULT_TIMERS
     return new Promise<void>((res) => {
       if (this.ac.signal.aborted) {

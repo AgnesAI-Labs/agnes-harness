@@ -159,7 +159,7 @@ export function contextBudgetError(
  * "stop", because running out of steps, running out of credit and waiting on a human are three
  * different endings and the ledger has to say which one happened.
  */
-async function builtinBudgetPreflight(s: SessionImpl): Promise<'ok' | { reason: TurnEndReason }> {
+async function evaluateBudgetPreflight(s: SessionImpl): Promise<'ok' | { reason: TurnEndReason }> {
   const op = s.op() as OpStateObj
   if (s.preset.budget.maxSteps !== null && op.step + 1 > s.preset.budget.maxSteps) {
     await s.endTurn('max_steps')
@@ -191,6 +191,26 @@ async function builtinBudgetPreflight(s: SessionImpl): Promise<'ok' | { reason: 
   return 'ok'
 }
 
+export async function builtinBudgetPreflight(s: SessionImpl, mandatoryOnly = false): Promise<'ok' | { reason: TurnEndReason }> {
+  const op = s.op()
+  if (!op) throw new CoreError('E_RELATION', 'Budget admission requires an accepted input')
+  if (mandatoryOnly && s.turnBudgetCap() === null) {
+    if (s.preset.budget.maxSteps !== null && op.step + 1 > s.preset.budget.maxSteps) {
+      await s.endTurn('max_steps')
+      return { reason: 'max_steps' }
+    }
+    return 'ok'
+  }
+  const previous = s.turn?.budgetAdmission
+  const step = op.step + 1
+  const cap = s.turnBudgetCap()
+  if (previous?.step === step && previous.cap === cap && previous.creditsUsed === s.state.creditsUsed) return 'ok'
+  const result = await evaluateBudgetPreflight(s)
+  if (result === 'ok' && s.turn)
+    s.turn.budgetAdmission = { step, cap, creditsUsed: s.state.creditsUsed }
+  return result
+}
+
 export { reserveTreeBudget } from '../../child/runtime-budget.js'
 
 export async function budgetPreflight(s: SessionImpl): Promise<'ok' | { reason: TurnEndReason }> {
@@ -219,7 +239,7 @@ export async function budgetPreflight(s: SessionImpl): Promise<'ok' | { reason: 
     if (!delegated) throw new CoreError('E_RELATION', 'Budget replacement forged a delegated result')
     return out.outcome
   }
-  if (out.action === 'allow') return 'ok'
+  if (out.action === 'allow') return builtinBudgetPreflight(s)
   if (!BUDGET_END_REASONS.has(out.reason))
     throw new CoreError('E_ENVELOPE', `Budget replacement returned invalid reason ${String(out.reason)}`)
   if (!delegated && s.op())

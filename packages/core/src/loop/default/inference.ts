@@ -1,3 +1,5 @@
+import { builtinBudgetPreflight } from './gate.js'
+import { loopRequestSurface } from '../request-surface.js'
 import type { InferenceEvent, JsonValue, ModelRecord, RequestBody as WireBody } from '@agnes/protocol'
 import { conservativeSerializedTokens } from '../../child/credits.js'
 import {
@@ -38,6 +40,8 @@ import type {
 import { mergeContributions } from '../../request/contribute.js'
 import {
   type DeriveInput,
+  type DeriveOutput,
+  remintAfterBeforeRequest,
   deriveRequest,
   headerEquals,
   type RequestHeaderData,
@@ -444,46 +448,16 @@ export async function surfaceToolCalls(s: SessionImpl): Promise<NonNullable<Deri
   return out
 }
 
-export async function runInference(s: SessionImpl): Promise<StepOutcome> {
+export async function prepareInferenceRequest(
+  s: SessionImpl,
+  options: import('@agnes/extension-api').LoopRequestOptions = {},
+): Promise<DeriveOutput | StepOutcome> {
   const op = s.op()
   const t = s.turn
-  if (!op || !t) return { phase: 'idle' }
-  if (
-    op.phase.kind === 'inference' &&
-    op.phase.gen.status === 'retry_wait' &&
-    s.d.clock() < Date.parse(op.phase.gen.notBefore)
-  )
-    return { phase: 'inference' }
-  // A turn whose usage could not be recorded does not get to spend more: the ledger seam is the
-  // only record that the spend happened, so an unrecordable spend is refused rather than made.
-  if (t.ledgerFailed) {
-    await s.endTurn('error', {
-      error: { code: 'LEDGER_FAILED', message: 'usage ledger unavailable; refusing inference' },
-    })
-    return { phase: 'terminal', reason: 'error' }
-  }
-  const codeTool = t.snapshot.byName.get('run_code')
-  if (s.preset.disclosure === 'code' && (!codeTool || codeTool.meta.deferLoading)) {
-    await s.endTurn('error', {
-      error: { code: 'CODE_RUNTIME_UNAVAILABLE', message: 'code disclosure requires a loaded run_code tool' },
-    })
-    return { phase: 'terminal', reason: 'error' }
-  }
-  const step = op.step + 1
-  const gate = await s.hooks.beforeStep({ turn: op.meta.turn, step, depth: 0 })
-  if (gate.block) {
-    // A fail-closed hook that the cancel cut off reports a block, but nobody blocked the turn: the
-    // user stopped it, and that is what the ledger and the client should say.
-    if (s.ac.signal.aborted) return finishAborted(s)
-    await s.endTurn('blocked', { error: { code: 'HOOK_BLOCKED', message: gate.reason ?? '' } })
-    return { phase: 'terminal', reason: 'blocked' }
-  }
+  if (!op || !t) throw new CoreError('E_RELATION', 'Request preparation requires an accepted input')
   const attempt = op.phase.kind === 'inference' ? op.phase.gen.attempt : 0
-  // Both computed before the contributions rather than after them, because an operation writing a
-  // prompt section about this request has to describe the request that is actually sent. Recomputing
-  // either one downstream would let the two answers drift, and the drift would read as a prompt that
-  // names a model the turn did not go to or a tool the model was never offered.
-  const slot = 'primary'
+  const step = op.step + 1
+  const slot = options.slot ?? 'primary'
   const target = resolveModel(s, slot)
   // Computer Use depends on the primary model seeing each returned screenshot itself. An
   // auxiliary image model cannot safely steer the primary model's next pointer/keyboard action,
@@ -494,7 +468,8 @@ export async function runInference(s: SessionImpl): Promise<StepOutcome> {
   const computerUseAllowed = supportsComputerUse(modelInput)
   // Freeze the selected model's contract before asynchronous contribution hooks can run.
   const contract = Object.freeze({ ...(s.d.contractForModel?.(target) ?? s.d.contract) })
-  const coreTools = toolNamesForModel(discloseTools(s), computerUseAllowed)
+  const coreTools = toolNamesForModel(options.tools ? [...options.tools] : discloseTools(s), computerUseAllowed)
+  if (coreTools.some((name) => !t.snapshot.byName.has(name))) throw new CoreError('E_ENVELOPE', 'Request names a tool outside the frozen turn catalog')
   const ctx: OpContext = {
     session: s,
     preset: s.preset,
@@ -517,7 +492,8 @@ export async function runInference(s: SessionImpl): Promise<StepOutcome> {
     ctx,
     op.meta.triggerSeq,
   )
-  const surface = s.surface()
+  if (options.system !== undefined) merged.sections.push({ id: 'loop:system', order: 1000, source: 'loop', text: options.system })
+  const surface = options.messages ? loopRequestSurface(s, options.messages) : s.surface()
   let requestMedia: LedgerPreparedRequestMedia | undefined
   let auxiliaryVision: ReturnType<typeof prepareAuxiliaryVisionDerivedText> | undefined
   const mediaRuntime = s.d.requestMedia
@@ -671,32 +647,25 @@ export async function runInference(s: SessionImpl): Promise<StepOutcome> {
     )
     out = { ...out, request, header: { ...out.header, derived_hash: derivedHash } }
   }
-  out = await beforeLoopModelRequest(s, out, slot, attempt)
-  const mintedPrefix = {
-    sections: out.request.sections,
-    tools: out.request.tools,
-    model: out.request.model,
-    ...(out.request.samplingParams ? { samplingParams: out.request.samplingParams } : {}),
+  if (options.sampling) {
+    const { maxTokens, ...samplingParams } = options.sampling
+    const reminted = remintAfterBeforeRequest(out.request, out.media, {
+      ...out.request, samplingParams: { ...out.request.samplingParams, ...samplingParams },
+      ...(maxTokens === undefined ? {} : { maxTokens }),
+    })
+    out = { ...out, request: reminted.request, header: { ...out.header, derived_hash: reminted.derivedHash } }
   }
-  // Cheap and unconditional: section text never leaves process memory (to-provider.ts flattens it
-  // away before the wire body exists), so this is the only point that can ever record what the
-  // request's system prefix was actually made of. Written every turn, not deduplicated against the
-  // previous one -- a `/context` reader always wants the latest snapshot, and the event itself is a
-  // few hundred bytes at most (order/source/token count only, no text).
-  await s.diag('context-breakdown', {
-    sections: out.request.sections.map(
-      (section): ContextSectionSummary => ({
-        id: section.id,
-        order: section.order,
-        source: section.source,
-        tokens: estimateTokens(section.text),
-      }),
-    ),
-  } satisfies ContextBreakdownDiag)
-  // Converted here rather than at the call to `infer`, because the recount below has to be given the
-  // body that will actually be sent: counting the derived shape would bill against a request the
-  // provider never sees. Tools, system, and messages are all on that wire; omitting any of them
-  // lets a legal request reserve below the bytes that actually ship.
+  out = await beforeLoopModelRequest(s, out, slot, attempt)
+  return out
+}
+
+/** Shared request admission, including image bounds, tree reservations and overage disposition. */
+export async function admitInferenceRequest(
+  s: SessionImpl, initial: DeriveOutput,
+): Promise<{ output: DeriveOutput; wire: WireBody; calibration: Awaited<ReturnType<typeof countCalibration>> } | StepOutcome> {
+  let out: DeriveOutput = initial
+  const slot = out.request.model.slot
+  const target = { route: out.request.model.route, model: out.request.model.model }
   let wire = toProviderRequest(out.request, { sessionKey: s.key, derivedHash: out.header.derived_hash })
   const contextError = contextBudgetError(s, slot, { system: wire.system, tools: wire.tools })
   if (contextError) {
@@ -778,7 +747,6 @@ export async function runInference(s: SessionImpl): Promise<StepOutcome> {
       }
     }
   }
-  const offered = new Set(wire.tools.map((tool) => tool.name))
   // The recount, before anything is announced and before anything is sent. A request the preset
   // wants counted is held to the cap here, where the request finally exists — refusing it after the
   // intent row would leave an effect nobody can settle, for a call that never happened.
@@ -812,6 +780,92 @@ export async function runInference(s: SessionImpl): Promise<StepOutcome> {
     await s.endTurn('aborted')
     return { phase: 'terminal', reason: 'aborted' }
   }
+  return { output: out, wire, calibration: cal }
+}
+
+export async function runInference(s: SessionImpl): Promise<StepOutcome> {
+  const op = s.op()
+  const t = s.turn
+  if (!op || !t) return { phase: 'idle' }
+  const admission = await builtinBudgetPreflight(s, true)
+  if (admission !== 'ok') return { phase: 'terminal', reason: admission.reason }
+
+  if (
+    op.phase.kind === 'inference' &&
+    op.phase.gen.status === 'retry_wait' &&
+    s.d.clock() < Date.parse(op.phase.gen.notBefore)
+  )
+    return { phase: 'inference' }
+  // A turn whose usage could not be recorded does not get to spend more: the ledger seam is the
+  // only record that the spend happened, so an unrecordable spend is refused rather than made.
+  if (t.ledgerFailed) {
+    await s.endTurn('error', {
+      error: { code: 'LEDGER_FAILED', message: 'usage ledger unavailable; refusing inference' },
+    })
+    return { phase: 'terminal', reason: 'error' }
+  }
+  const codeTool = t.snapshot.byName.get('run_code')
+  if (s.preset.disclosure === 'code' && (!codeTool || codeTool.meta.deferLoading)) {
+    await s.endTurn('error', {
+      error: { code: 'CODE_RUNTIME_UNAVAILABLE', message: 'code disclosure requires a loaded run_code tool' },
+    })
+    return { phase: 'terminal', reason: 'error' }
+  }
+  const step = op.step + 1
+  const gate = await s.hooks.beforeStep({ turn: op.meta.turn, step, depth: 0 })
+  if (gate.block) {
+    // A fail-closed hook that the cancel cut off reports a block, but nobody blocked the turn: the
+    // user stopped it, and that is what the ledger and the client should say.
+    if (s.ac.signal.aborted) return finishAborted(s)
+    await s.endTurn('blocked', { error: { code: 'HOOK_BLOCKED', message: gate.reason ?? '' } })
+    return { phase: 'terminal', reason: 'blocked' }
+  }
+  const attempt = op.phase.kind === 'inference' ? op.phase.gen.attempt : 0
+  // Both computed before the contributions rather than after them, because an operation writing a
+  // prompt section about this request has to describe the request that is actually sent. Recomputing
+  // either one downstream would let the two answers drift, and the drift would read as a prompt that
+  // names a model the turn did not go to or a tool the model was never offered.
+  const slot = 'primary'
+  const target = resolveModel(s, slot)
+  const preparedOutput = await prepareInferenceRequest(s)
+  if ('phase' in preparedOutput) return preparedOutput
+  let out: DeriveOutput = preparedOutput
+  const ctx: OpContext = {
+    session: s, preset: s.preset, state: op,
+    snapshot: toolsForModel(t.snapshot, s.computerUseAllowed(target)), signal: s.ac.signal,
+    disclosed: out.request.tools.map((tool) => tool.name), model: { slot, ...target },
+  }
+  const mintedPrefix = {
+    sections: out.request.sections,
+    tools: out.request.tools,
+    model: out.request.model,
+    ...(out.request.samplingParams ? { samplingParams: out.request.samplingParams } : {}),
+  }
+  // Cheap and unconditional: section text never leaves process memory (to-provider.ts flattens it
+  // away before the wire body exists), so this is the only point that can ever record what the
+  // request's system prefix was actually made of. Written every turn, not deduplicated against the
+  // previous one -- a `/context` reader always wants the latest snapshot, and the event itself is a
+  // few hundred bytes at most (order/source/token count only, no text).
+  await s.diag('context-breakdown', {
+    sections: out.request.sections.map(
+      (section): ContextSectionSummary => ({
+        id: section.id,
+        order: section.order,
+        source: section.source,
+        tokens: estimateTokens(section.text),
+      }),
+    ),
+  } satisfies ContextBreakdownDiag)
+  // Converted here rather than at the call to `infer`, because the recount below has to be given the
+  // body that will actually be sent: counting the derived shape would bill against a request the
+  // provider never sees. Tools, system, and messages are all on that wire; omitting any of them
+  // lets a legal request reserve below the bytes that actually ship.
+  const admitted = await admitInferenceRequest(s, out)
+  if ('phase' in admitted) return admitted
+  out = admitted.output
+  const wire = admitted.wire
+  const cal = admitted.calibration
+  const offered = new Set(wire.tools.map((tool) => tool.name))
   const { effect, header, effectIntentSeq, headerSeq } = await releaseTreeReservationOnError(s, async () => {
     const effect = s.effects.start({ kind: 'inference', replay: 'never', slot })
     const header: RequestHeaderData = out.header
@@ -928,7 +982,7 @@ export async function runInference(s: SessionImpl): Promise<StepOutcome> {
       rule,
       model: target.model,
       sampleHash,
-      parserVersion: contract.parser_version,
+      parserVersion: out.header.parser_version,
     })
   }
   const cancelFlushTimer = (): void => {
@@ -1039,7 +1093,7 @@ export async function runInference(s: SessionImpl): Promise<StepOutcome> {
     thinking,
   }))
   try {
-    const inferOptions = { signal: streamAbort.signal, toolNames: merged.tools }
+    const inferOptions = { signal: streamAbort.signal, toolNames: out.request.tools.map((tool) => tool.name) }
     const stream = s.d.segments?.Inference
       ? await runCoreReplacement(s, 'Inference', ctx, { request: wire, options: inferOptions }, async () =>
           s.d.provider.infer(wire, inferOptions),

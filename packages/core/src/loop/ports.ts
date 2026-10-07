@@ -1,13 +1,23 @@
+import { releaseTreeReservation, settleTreeSpend } from '../child/runtime-budget.js'
 import { publicOutcome } from './outcome.js'
-import type { LoopCheckpoint, LoopContext, LoopToolCall } from '@agnes/extension-api'
+import type { LoopCheckpoint, LoopContext, LoopToolCall, LoopInput, LoopRequest, LoopRequestOptions } from '@agnes/extension-api'
 import { type ContentBlock, type InferenceEvent, type RequestBody, validateAgainst } from '@agnes/protocol'
 import { RequestBody as WireRequest } from '@agnes/protocol/gen/model'
-import { runLoopChild } from '../child/loop-port.js'
+import { continueParked } from './default/parked.js'
+import { LoopInvocations } from './invocations.js'
+import { freezeView, loopTurnView } from './turn-view.js'
+import { admitInferenceRequest, prepareInferenceRequest } from '../step/inference.js'
+import { toProviderRequest } from '../request/to-provider.js'
+import type { DeriveOutput } from '../request/derive.js'
+import { finishAborted } from '../step/control.js'
+import { builtinBudgetPreflight, checkpointRoutine } from '../step/gate.js'
+import { claimFrom, inboxEvent } from '../step/inbox.js'
+import { CoreError } from '../types.js'
 import type { Inbox } from '../reduce/shapes.js'
 import { runCompaction } from '../step/compaction.js'
 import { withPhase } from '../step/op-state.js'
 import type { SessionImpl } from '../step/session.js'
-import { dispatchLoopEvent, modelRequestPayload } from './events.js'
+import { dispatchLoopEvent } from './events.js'
 
 const cleanup = new WeakMap<LoopContext, () => void>()
 export function disposeLoopContext(ctx: LoopContext): void {
@@ -55,38 +65,79 @@ export async function createLoopContext(s: SessionImpl, restoreCheckpoint = fals
     if (!op) throw new Error('Loop operation requires an accepted input')
     return op
   }
-  async function ensureStep(): Promise<void> {
-    const op = s.op()
-    if (!op) throw new Error('Loop operation requires an accepted input')
-    if (op.control.status === 'cancel_requested') throw new Error('Loop operation was cancelled')
+  let lastPortEdge: number | null = null
+  async function ensureStep(newModel = false): Promise<void> {
+    const op = requireOp()
+    if (s.closingOrClosed) throw new CoreError('E_CLOSED', 'session closed')
+    if (op.control.status === 'cancel_requested') throw new CoreError('E_CLOSED', 'Loop operation was cancelled')
     if (!s.turn) await s.rehydrateTurn(op)
-    if (!s.state.openStep.has(s.lane))
-      await s.transition([s.ev('step/start', { turn: op.meta.turn, step: op.step + 1 })], {
-        ...op,
-        step: op.step + 1,
+    const opened = s.state.openStep.get(s.lane)
+    if (opened && (newModel || lastPortEdge !== s.loopEdge))
+      await s.transition([s.ev('step/end', { turn: opened.turn, step: opened.step })], op)
+    lastPortEdge = s.loopEdge
+    if (!s.state.openStep.has(s.lane)) {
+      const admission = await builtinBudgetPreflight(s)
+      if (admission !== 'ok') throw new CoreError('E_BUDGET', 'Loop operation refused by budget admission', { reason: admission.reason })
+      const current = requireOp()
+      await s.transition([s.ev('step/start', { turn: current.meta.turn, step: current.step + 1 })], {
+        ...current, step: current.step + 1,
       })
-  }
-  async function* stream(request: RequestBody, signal: AbortSignal): AsyncIterable<InferenceEvent> {
-    signal = AbortSignal.any([signal, s.ac.signal])
-    signal.throwIfAborted()
-    await ensureStep()
-    const transformed = await dispatchLoopEvent(
-      s,
-      'before_model_request',
-      modelRequestPayload(request),
-      signal,
-    )
-    const patch = transformed.patch
-    if (patch) {
-      if (patch.metadata && Object.keys(patch.metadata).length)
-        throw new Error('Wire loop requests do not support metadata patches')
-      const sampling = { ...request.sampling, ...patch.samplingParams }
-      if (patch.maxTokens !== undefined) sampling.maxTokens = patch.maxTokens
-      request = { ...request, sampling }
-      if (!validateAgainst(WireRequest, request).ok) throw new Error('Invalid loop request sampling patch')
     }
+  }
+  const prepared = new WeakMap<LoopRequest, { output: DeriveOutput; turnId: number; invocationId: string }>()
+  const invocations = new LoopInvocations(s, () => checkpoint)
+  async function prepareRequest(options: LoopRequestOptions = {}): Promise<LoopRequest> {
+    const done = s.beginLoopOperation()
+    try {
+      const op = requireOp()
+      if (!s.turn) await s.rehydrateTurn(op)
+      const output = await prepareInferenceRequest(s, options)
+      if ('phase' in output) throw new CoreError('E_BUDGET', 'Request preparation stopped the turn', { reason: output.reason })
+      const request = freezeView(toProviderRequest(output.request, { sessionKey: s.key, derivedHash: output.header.derived_hash })) as LoopRequest
+      prepared.set(request, { output, turnId: op.meta.turn, invocationId: options.invocationId ?? s.d.ids.effectId() })
+      return request
+    } finally { done() }
+  }
+  async function* stream(request: LoopRequest, signal: AbortSignal): AsyncIterable<InferenceEvent> {
+    const done = s.beginLoopOperation()
+    try {
+      const binding = prepared.get(request)
+      if (!binding || binding.turnId !== requireOp().meta.turn)
+        throw new CoreError('E_REQUEST_FROZEN', 'Model request must be prepared by this turn')
+      signal = AbortSignal.any([signal, s.ac.signal])
+      signal.throwIfAborted()
+      const cached = await invocations.status(binding.invocationId)
+      if (cached.status !== 'not-sent') {
+        const result = await invocations.claim(binding.invocationId, request)
+        if (!Array.isArray(result)) throw new CoreError('E_RELATION', 'Invocation result is not a model response')
+        for (const event of result) yield event
+        return
+      }
+      await ensureStep(true)
+      const admitted = await admitInferenceRequest(s, binding.output)
+      if ('phase' in admitted) throw new CoreError('E_BUDGET', 'Request admission stopped the turn', { reason: admitted.reason })
+      if (admitted.calibration.event && !admitted.calibration.deny)
+        await s.d.log.append([admitted.calibration.event])
+      await invocations.claim(binding.invocationId, request)
+      const events: InferenceEvent[] = []
+      for await (const event of streamWire(admitted.wire, admitted.output, signal)) {
+        events.push(event)
+        yield event
+      }
+      await invocations.settle(binding.invocationId, request, events)
+    } finally { await releaseTreeReservation(s); done() }
+  }
+  async function* streamWire(request: RequestBody, output: DeriveOutput, signal: AbortSignal): AsyncIterable<InferenceEvent> {
     const effect = s.effects.start({ kind: 'inference', replay: 'never', slot: request.slot })
-    await s.d.log.append([effect.intent])
+    const pre = [...output.notes, s.ev('request/header', output.header), effect.intent]
+    const op = requireOp()
+    const seqs = await s.transition(pre, withPhase(op, {
+      kind: 'inference', gen: { status: 'effect_pending', attempt: 0, effectId: effect.effectId, slot: request.slot },
+    }))
+    const headerSeq = seqs[pre.length - 2]!
+    const intentSeq = seqs[pre.length - 1]!
+    if (s.turn) { s.turn.lastHeader = output.header; s.turn.lastHeaderSeq = headerSeq }
+    let sent = false
     let settled = false
     let failed = false
     let stopReason = 'end_turn'
@@ -96,6 +147,17 @@ export async function createLoopContext(s: SessionImpl, restoreCheckpoint = fals
         signal,
         toolNames: request.tools.map((tool) => tool.name),
       })) {
+        if (event.type === 'sent') {
+          if (sent || event.stamp.derived_hash !== request.derivedHash ||
+              event.stamp.contract_id !== output.header.contract_id ||
+              event.stamp.parser_version !== output.header.parser_version ||
+              event.stamp.tool_schema_hash !== output.header.tool_schema_hash ||
+              event.stamp.model.id !== request.model || event.stamp.model.route !== request.route)
+            throw new CoreError('E_ENVELOPE', 'Provider sent stamp does not match prepared request')
+          await s.d.log.append([s.ev('request/sent', event.stamp, { sourceEventSeqs: [headerSeq, intentSeq] })])
+          sent = true
+        } else if (!sent && event.type !== 'error')
+          throw new CoreError('E_ENVELOPE', 'Provider response is missing a sent stamp')
         if (event.type === 'error') failed = true
         if (event.type === 'done')
           stopReason =
@@ -116,7 +178,7 @@ export async function createLoopContext(s: SessionImpl, restoreCheckpoint = fals
             effectId: effect.effectId,
             slot: request.slot,
           }
-          await s.d.log.append([
+          const [costSeq] = await s.d.log.append([
             s.ev('cost/ledger', {
               ...usage,
               purpose: 'inference',
@@ -124,8 +186,11 @@ export async function createLoopContext(s: SessionImpl, restoreCheckpoint = fals
               effectId: effect.effectId,
             }),
           ])
-          if (!(await s.d.runtime.ledgerRecord(spend)))
+          await settleTreeSpend(s, usage.credits, costSeq!)
+          if (!(await s.d.runtime.ledgerRecord(spend))) {
+            if (s.turn) s.turn.ledgerFailed = true
             throw new Error('Loop model usage could not be recorded')
+          }
         }
         yield event
       }
@@ -161,7 +226,7 @@ export async function createLoopContext(s: SessionImpl, restoreCheckpoint = fals
       },
     })
   }
-  async function execute(call: LoopToolCall, signal: AbortSignal) {
+  async function executeOwned(call: LoopToolCall, signal: AbortSignal) {
     signal = AbortSignal.any([signal, s.ac.signal])
     await prepareTools(signal)
     const parked: import('../types.js').EventInput[] = []
@@ -172,10 +237,70 @@ export async function createLoopContext(s: SessionImpl, restoreCheckpoint = fals
       throw error
     }
   }
+  async function execute(call: LoopToolCall, signal: AbortSignal) {
+    const done = s.beginLoopOperation()
+    try {
+      const id = call.invocationId ?? s.d.ids.effectId()
+      // Admission precedes the durable uncertainty fence.
+      await prepareTools(AbortSignal.any([signal, s.ac.signal]))
+      return await invocations.run(id, { name: call.name, args: call.args }, () => executeOwned(call, signal))
+    } finally { done() }
+  }
+  async function claim(target: 'next-turn' | 'next-step'): Promise<LoopInput | null> {
+    if (s.closingOrClosed) throw new CoreError('E_CLOSED', 'session closed')
+    if (target === 'next-step') {
+      {
+        const op = requireOp()
+        const claimed = claimFrom(s.latest('inbox') as Inbox | undefined, target)
+        if (!claimed) return null
+        const { item, rest } = claimed
+        await s.transition([
+          inboxEvent(s.lane, s.d.actor, rest),
+          s.ev('user/message', { content: item.content, kind: item.kind ?? 'steer' }, {
+            origin: 'principal', trust: item.trust ?? 'trusted', actor: item.actor,
+          }),
+        ], op)
+        return { id: item.itemId, turnId: op.meta.turn, content: structuredClone(item.content),
+          kind: item.kind ?? 'steer', trust: item.trust ?? 'trusted', actor: structuredClone(item.actor) }
+      }
+    }
+    const current = s.op()
+    if (current) { if (!s.turn) await s.rehydrateTurn(current) }
+    else if (!(await s.acceptInput())) return null
+    const op = requireOp()
+    const [row] = await s.d.log.scan({ fromSeq: op.meta.triggerSeq, toSeq: op.meta.triggerSeq, limit: 1 })
+    if (!row) throw new Error('Accepted input is missing from the session ledger')
+    const data = row.data as { content?: ContentBlock[]; kind?: LoopInput['kind'] }
+    return { id: String(op.meta.triggerSeq), turnId: op.meta.turn, content: data.content ?? [],
+      kind: data.kind ?? 'prompt', trust: row.trust, actor: structuredClone(row.actor) }
+  }
+  async function controlled<T>(signal: AbortSignal, fn: () => Promise<T>): Promise<T> {
+    const done = s.beginLoopOperation()
+    try { signal.throwIfAborted(); return await fn() } finally { done() }
+  }
   const ctx: LoopContext = {
     sessionKey: s.key,
     lane: s.lane,
+    prepareRequest,
+    effects: { status: (id) => invocations.status(id) },
+    turn: {
+      view: () => loopTurnView(s),
+      continuation() {
+        const kind = s.op()?.phase.kind
+        return kind === undefined ? null : kind === 'inference' ? 'model' : kind === 'failure_drain' ? 'failure' : kind
+      },
+      checkpoint: async (signal) => { signal.throwIfAborted(); return publicOutcome(await checkpointRoutine(s)) },
+      finishCancelled: async () => publicOutcome(await finishAborted(s)),
+      async finishFailure() {
+        const op = requireOp()
+        if (op.phase.kind !== 'failure_drain') throw new CoreError('E_RELATION', 'No failed continuation to finish')
+        const reason = op.phase.error.code === 'ABORTED' ? 'aborted' : 'error'
+        await s.endTurn(reason, { error: op.phase.error })
+        return { outcome: 'turn-ended', phase: 'terminal', reason }
+      },
+    },
     model: {
+      respond: (signal) => controlled(signal, async () => publicOutcome(await s.runInference())),
       stream,
       async complete(request, signal) {
         const events: InferenceEvent[] = []
@@ -184,8 +309,11 @@ export async function createLoopContext(s: SessionImpl, restoreCheckpoint = fals
       },
     },
     tools: {
+      drain: (signal) => controlled(signal, async () => publicOutcome(await s.runToolsPhase())),
       execute,
       async batch(calls, signal) {
+        const done = s.beginLoopOperation()
+        try {
         if (!calls.length) return []
         signal = AbortSignal.any([signal, s.ac.signal])
         // Open one step before launching siblings; nested execution still enforces tool policy.
@@ -203,7 +331,7 @@ export async function createLoopContext(s: SessionImpl, restoreCheckpoint = fals
           {
             dispatch: async (input, callSignal) => {
               try {
-                return await invoke(input, callSignal, parked)
+                return await invocations.run(calls[Number(input.id)]?.invocationId ?? s.d.ids.effectId(), { name: input.name, args: input.args }, () => invoke(input, callSignal, parked))
               } catch (error) {
                 if (!failed) failure = error
                 failed = true
@@ -217,19 +345,13 @@ export async function createLoopContext(s: SessionImpl, restoreCheckpoint = fals
         if (parked.length) await closeParked(parked)
         if (failed) throw failure
         return results
+        } finally { done() }
       },
     },
     input: {
-      async accept() {
-        const current = s.op()
-        if (current) {
-          if (!s.turn) await s.rehydrateTurn(current)
-        } else if (!(await s.acceptInput())) return null
-        const op = requireOp()
-        const [row] = await s.d.log.scan({ fromSeq: op.meta.triggerSeq, toSeq: op.meta.triggerSeq, limit: 1 })
-        if (!row) throw new Error('Accepted input is missing from the session ledger')
-        return { id: String(op.meta.triggerSeq), content: (row.data as { content: ContentBlock[] }).content }
-      },
+      accept: () => claim('next-turn'),
+      claim,
+      resumeParked: () => continueParked(s),
       pending: () => ((s.latest('inbox') as Inbox | undefined)?.items.length ?? 0) > 0,
     },
     events: {
@@ -247,17 +369,24 @@ export async function createLoopContext(s: SessionImpl, restoreCheckpoint = fals
     },
     checkpoints: {
       read: () => checkpoint && structuredClone(checkpoint),
-      async write(value) {
+      async write(value, association) {
         s.d.loopFactory?.codec?.decode(value)
+        if (association) for (const id of association.invocationIds) await invocations.status(id)
         const next = structuredClone(value)
         await s.d.log.append([
-          s.ev(CHECKPOINT_EVENT, { loop: s.loop, checkpoint: next }, { ignorable: true }),
+          s.ev(CHECKPOINT_EVENT, { loop: s.loop, checkpoint: next, ...(association ? { invocationIds: [...association.invocationIds] } : {}) }, { ignorable: true }),
         ])
         checkpoint = next
       },
     },
     wait: {
       wake,
+      async delay(ms, signal) {
+        signal.throwIfAborted()
+        await s.sleep(ms)
+        signal.throwIfAborted()
+      },
+      async poll(signal) { signal.throwIfAborted(); return publicOutcome(await s.runDeferred()) },
       park(signal) {
         signal = AbortSignal.any([signal, s.ac.signal])
         if (signal.aborted || ((s.latest('inbox') as Inbox | undefined)?.items.length ?? 0) > 0)
@@ -273,9 +402,8 @@ export async function createLoopContext(s: SessionImpl, restoreCheckpoint = fals
         })
       },
     },
-    children: {
-      run: (input, signal) => runLoopChild(s, input, signal),
-    },
+    // TODO: Stream F/Host binds the parent-scoped ChildAgentSessionService here.
+    ...(s.d.loopChildren ? { children: s.d.loopChildren } : {}),
     ...(s.compaction.runnable
       ? {
           compaction: {

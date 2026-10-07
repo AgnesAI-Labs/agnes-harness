@@ -1,4 +1,3 @@
-import { createHash } from 'node:crypto'
 import { loopCheckpointCodec, registerLoopPlugin } from '@agnes/extension-api'
 
 const SOURCE = '@agnes-example/dag-loop'
@@ -53,23 +52,8 @@ export const codec = loopCheckpointCodec(1, (value) => {
   return value
 })
 
-function request(ctx, state, system, content) {
-  const body = {
-    kind: 'inference',
-    sessionKey: ctx.sessionKey,
-    slot: 'primary',
-    route: state.target.route,
-    model: state.target.model,
-    contractId: null,
-    system,
-    tools: [],
-    messages: [{ role: 'user', content }],
-  }
-  return { ...body, derivedHash: createHash('sha256').update(JSON.stringify(body)).digest('hex') }
-}
-
 async function complete(ctx, state, system, content, signal) {
-  const events = await ctx.model.complete(request(ctx, state, system, content), signal)
+  const events = await ctx.model.complete(await ctx.prepareRequest({ system, messages: [{ role: 'user', content }], tools: [], invocationId: 'dag:' + state.inputId + ':' + state.stage }), signal)
   if (events.some((event) => event.type === 'error')) throw new Error('DAG model request failed')
   return events
     .filter((event) => event.type === 'text_delta')
@@ -96,22 +80,11 @@ function argumentsFor(value, results, allowed) {
 /** @param {import('./index.mjs').DagConfig} config */
 export function createDagLoop(config = {}) {
   const staticPlan = config.plan === undefined ? null : plan(config.plan)
-  const target = config.target ?? null
-  if (
-    staticPlan === null &&
-    (!target ||
-      typeof target.route !== 'string' ||
-      !target.route ||
-      typeof target.model !== 'string' ||
-      !target.model)
-  )
-    throw new Error('Model-planned DAG requires target: { route, model }')
   const initial = () => ({
     stage: 'input',
     input: null,
     inputId: null,
     nodes: staticPlan,
-    target,
     static: staticPlan !== null,
     results: {},
     inFlight: [],
@@ -133,7 +106,7 @@ export function createDagLoop(config = {}) {
         if (disposed) throw new Error('DAG driver is disposed')
         if (cancelled || signal.aborted) return { outcome: 'turn-ended', phase: 'cancelled', reason: 'aborted' }
         // accept() rehydrates a recovered turn as well as claiming a fresh input.
-        const input = await ctx.input.accept()
+        const input = await ctx.input.claim('next-turn')
         if (!input) return { outcome: 'idle', phase: 'idle' }
         if (state.stage === 'done') {
           if (input.id && input.id === state.inputId) {
@@ -163,6 +136,17 @@ export function createDagLoop(config = {}) {
           return { outcome: 'running', phase: 'tools' }
         }
         if (state.stage === 'tools') {
+          for (const id of state.inFlight) {
+            const receipt = await ctx.effects.status('dag:' + state.inputId + ':tool:' + id)
+            if (receipt.status === 'may-have-sent')
+              throw new Error('DAG tool outcome is uncertain; reconcile invocation ' + receipt.invocationId)
+            if (receipt.status === 'responded') {
+              if (Array.isArray(receipt.result)) throw new Error('DAG expected a tool receipt')
+              state.results[id] = { content: receipt.result.content, isError: receipt.result.isError ?? false }
+            }
+          }
+          if (state.inFlight.length) { state.inFlight = []; await save() }
+
           const ready = state.nodes.filter(
             (node) =>
               !Object.hasOwn(state.results, node.id) &&
@@ -170,6 +154,7 @@ export function createDagLoop(config = {}) {
           )
           if (ready.length) {
             const calls = ready.map((node) => ({
+              invocationId: 'dag:' + state.inputId + ':tool:' + node.id,
               name: node.tool,
               args: argumentsFor(node.args, state.results, new Set(node.after)),
             }))
@@ -228,8 +213,6 @@ export function createDagLoop(config = {}) {
     create: (ctx) => driver(ctx),
     resume(ctx, checkpoint) {
       const state = codec.decode(checkpoint)
-      if (state.inFlight.length)
-        throw new Error('DAG checkpoint has unfinished tool calls; reconcile their receipts before resuming')
       return driver(ctx, state)
     },
   }
