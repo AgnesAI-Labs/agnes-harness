@@ -1,4 +1,18 @@
-import { defineTool, type ToolContext, type ToolDef, type ToolResult } from '@agnes/extension-api'
+import {
+  assertChildAgentAllowed,
+  CoreError,
+  externalChild,
+  externalChildren,
+  IN_PROCESS_CHILD_PROVIDER_ID,
+} from '@agnes/core'
+import {
+  type ChildAgentAllowlistConfig,
+  type ChildAgentListing,
+  defineTool,
+  type ToolContext,
+  type ToolDef,
+  type ToolResult,
+} from '@agnes/extension-api'
 import type { JsonValue } from '@agnes/protocol'
 import { Type } from '@sinclair/typebox'
 import type { WorktreeFinishResult, WorktreeManager } from './worktree.js'
@@ -29,6 +43,11 @@ export type SubagentDeps = {
   worktrees: WorktreeManager
   /** Supply one explicitly when multiple tool instances must share lifecycle accounting. */
   runtime?: SubagentRuntime
+  /**
+   * Session child models and providers. Omitted means unrestricted.
+   * An empty list refuses that kind. This is extension config, not a preset field.
+   */
+  allowlist?: ChildAgentAllowlistConfig
 }
 
 const implicitRuntimes = new WeakMap<SubagentDeps, SubagentRuntime>()
@@ -72,6 +91,29 @@ function active(state: SessionState): number {
 
 function fail(text: string): ToolResult {
   return { content: [{ type: 'text', text }], isError: true }
+}
+
+function allowChild(ctx: ToolContext, model?: string): ToolResult | undefined {
+  try {
+    assertChildAgentAllowed(ctx.session.key, {
+      providerId: IN_PROCESS_CHILD_PROVIDER_ID,
+      ...(model ? { model } : {}),
+    })
+    return undefined
+  } catch (error) {
+    return fail(error instanceof Error ? error.message : String(error))
+  }
+}
+
+function missedChild(error: unknown): boolean {
+  return (
+    error instanceof CoreError && (error.code === 'E_UNSUPPORTED' || error.code === 'E_CHILD_NOT_FOUND')
+  )
+}
+
+function controlFailure(error: unknown): ToolResult {
+  if (error instanceof CoreError) return fail(error.message)
+  throw error
 }
 
 function validLimit(value: number): boolean {
@@ -122,6 +164,8 @@ const forkDefinition: ToolDef<typeof forkParameters> = {
   },
   async execute(args, ctx) {
     if (args.question.length === 0) return fail('question must not be empty')
+    const refused = allowChild(ctx, args.model)
+    if (refused) return refused
     const options = args.model === undefined ? undefined : { model: args.model }
     const text = await ctx.subagent.fork(args.question, options)
     return { content: [{ type: 'text', text }] }
@@ -160,6 +204,8 @@ export function subagentSpawnTool(deps: SubagentDeps): ToolDef<typeof spawnParam
       if (args.task.length === 0) return fail('task must not be empty')
       if (args.budget !== undefined && (!Number.isSafeInteger(args.budget) || args.budget < 1))
         return fail('budget must be a positive integer')
+      const refused = allowChild(ctx, args.model)
+      if (refused) return refused
       if (ctx.session.generationDepth + 1 > deps.limits.maxDepth)
         return fail(`depth limit ${deps.limits.maxDepth} reached`)
 
@@ -316,3 +362,131 @@ export function subagentCancelTool(deps: SubagentDeps): ToolDef<typeof cancelPar
   }
   return defineTool(definition)
 }
+
+const childKeyParameters = Type.Object(
+  { childKey: Type.String({ minLength: 1 }) },
+  { additionalProperties: false },
+)
+
+const controlMeta = {
+  isReadOnly: false,
+  isDestructive: false,
+  isConcurrencySafe: true,
+  isOpenWorld: false,
+  replay: 'never' as const,
+  costHint: undefined,
+  deferLoading: false,
+  requiresApproval: 'never' as const,
+}
+
+function listedChildren(local: readonly ChildAgentListing[], external: readonly ChildAgentListing[]): ChildAgentListing[] {
+  const seen = new Set(local.map((child) => child.id))
+  return [...local, ...external.filter((child) => !seen.has(child.id))]
+}
+
+export const subagentListTool = defineTool({
+  name: 'subagent_list',
+  description: 'List child agents for this session. Continuable children accept subagent_send_message.',
+  parameters: Type.Object({}, { additionalProperties: false }),
+  meta: { ...controlMeta, isReadOnly: true, replay: 'safe' },
+  async execute(_args, ctx) {
+    const local = (await ctx.subagent.list?.()) ?? []
+    const external = externalChildren(ctx.session.key).map((child) => child.listing)
+    const children = listedChildren(local, external)
+    const text =
+      children.length === 0
+        ? 'no child agents'
+        : children
+            .map((child) => `${child.id} ${child.status}${child.continuable ? ' continuable' : ''}`)
+            .join('\n')
+    return {
+      content: [{ type: 'text', text }],
+      details: {
+        children: children.map((child) => ({
+          id: child.id,
+          providerId: child.providerId,
+          status: child.status,
+          continuable: child.continuable,
+          ...(child.text === undefined ? {} : { text: child.text }),
+        })),
+      },
+    }
+  },
+})
+
+const sendParameters = Type.Object(
+  {
+    childKey: Type.String({ minLength: 1 }),
+    text: Type.String({ minLength: 1 }),
+  },
+  { additionalProperties: false },
+)
+
+async function deliverMessage(ctx: ToolContext, childKey: string, text: string): Promise<{ messageId: string }> {
+  ctx.signal.throwIfAborted()
+  if (ctx.subagent.sendMessage) {
+    try {
+      return await ctx.subagent.sendMessage(childKey, text, ctx.signal)
+    } catch (error) {
+      if (!missedChild(error)) throw error
+    }
+  }
+  const external = externalChild(ctx.session.key, childKey)
+  if (!external) throw new CoreError('E_CHILD_NOT_FOUND', `unknown child ${childKey}`, { childKey })
+  if (!external.sendMessage)
+    throw new CoreError('E_UNSUPPORTED', `child ${childKey} is not continuable`, { childKey })
+  return external.sendMessage(text, ctx.signal)
+}
+
+export const subagentSendMessageTool = defineTool({
+  name: 'subagent_send_message',
+  description: 'Deliver a follow-up to a continuable child. Returns when the message is accepted.',
+  parameters: sendParameters,
+  meta: controlMeta,
+  async execute(args, ctx) {
+    if (args.childKey.length === 0) return fail('childKey must not be empty')
+    if (args.text.length === 0) return fail('text must not be empty')
+    try {
+      const sent = await deliverMessage(ctx, args.childKey, args.text)
+      return {
+        content: [{ type: 'text', text: `sent ${sent.messageId} to ${args.childKey}` }],
+        details: { childKey: args.childKey, messageId: sent.messageId },
+      }
+    } catch (error) {
+      return controlFailure(error)
+    }
+  },
+})
+
+async function interruptChild(ctx: ToolContext, childKey: string): Promise<{ accepted: boolean }> {
+  if (ctx.subagent.interrupt) {
+    try {
+      return await ctx.subagent.interrupt(childKey)
+    } catch (error) {
+      if (!missedChild(error)) throw error
+    }
+  }
+  const external = externalChild(ctx.session.key, childKey)
+  if (!external) throw new CoreError('E_CHILD_NOT_FOUND', `unknown child ${childKey}`, { childKey })
+  if (!external.interrupt) return { accepted: false }
+  return external.interrupt()
+}
+
+export const subagentInterruptTool = defineTool({
+  name: 'subagent_interrupt',
+  description: 'Stop the current turn of a continuable child and leave the child open.',
+  parameters: childKeyParameters,
+  meta: controlMeta,
+  async execute(args, ctx) {
+    if (args.childKey.length === 0) return fail('childKey must not be empty')
+    try {
+      const result = await interruptChild(ctx, args.childKey)
+      return {
+        content: [{ type: 'text', text: result.accepted ? `interrupted ${args.childKey}` : `idle ${args.childKey}` }],
+        details: { childKey: args.childKey, accepted: result.accepted },
+      }
+    } catch (error) {
+      return controlFailure(error)
+    }
+  },
+})

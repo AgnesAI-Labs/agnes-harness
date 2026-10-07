@@ -1,3 +1,4 @@
+import { CoreError, resetChildAgentAllowlists, setChildAgentAllowlist, trackExternalChild } from '@agnes/core'
 import { checkToolDef, type ToolContext, type ToolDef } from '@agnes/extension-api'
 import { describe, expect, it } from 'vitest'
 import { fakeToolContext } from '../../../testkit/tool-context.js'
@@ -8,6 +9,9 @@ import {
   subagentCancelTool,
   subagentCollectTool,
   subagentForkTool,
+  subagentInterruptTool,
+  subagentListTool,
+  subagentSendMessageTool,
   subagentSpawnTool,
 } from '../src/tools.js'
 import type { WorktreeCreateResult, WorktreeFinishResult, WorktreeManager } from '../src/worktree.js'
@@ -121,7 +125,15 @@ function deps(
 describe('subagent tool definitions', () => {
   it('publishes three complete definitions with the intended replay metadata', () => {
     const d = deps()
-    const tools = [subagentForkTool, subagentSpawnTool(d), subagentCollectTool(d), subagentCancelTool(d)]
+    const tools = [
+      subagentForkTool,
+      subagentSpawnTool(d),
+      subagentCollectTool(d),
+      subagentCancelTool(d),
+      subagentListTool,
+      subagentSendMessageTool,
+      subagentInterruptTool,
+    ]
 
     for (const tool of tools) expect(checkToolDef(tool, { prefix: 'subagent_' })).toEqual({ ok: true })
     expect(tools.map((tool) => [tool.name, tool.meta.replay, tool.meta.isConcurrencySafe])).toEqual([
@@ -129,6 +141,9 @@ describe('subagent tool definitions', () => {
       ['subagent_spawn', 'never', true],
       ['subagent_collect', 'safe', true],
       ['subagent_cancel', 'never', true],
+      ['subagent_list', 'safe', true],
+      ['subagent_send_message', 'never', true],
+      ['subagent_interrupt', 'never', true],
     ])
     expect(tools[0]?.meta).toMatchObject({ isReadOnly: false, isOpenWorld: true, replay: 'never' })
     expect(tools[2]?.meta).toMatchObject({ isReadOnly: false, isDestructive: true })
@@ -145,10 +160,26 @@ describe('subagent tool definitions', () => {
       },
     } as never)
 
-    expect(names).toEqual(['subagent_fork', 'subagent_spawn', 'subagent_collect', 'subagent_cancel'])
+    expect(names).toEqual([
+      'subagent_fork',
+      'subagent_spawn',
+      'subagent_collect',
+      'subagent_cancel',
+      'subagent_list',
+      'subagent_send_message',
+      'subagent_interrupt',
+    ])
     expect(dispose).toBeTypeOf('function')
     ;(dispose as () => void)()
-    expect(disposed).toEqual(['subagent_cancel', 'subagent_collect', 'subagent_spawn', 'subagent_fork'])
+    expect(disposed).toEqual([
+      'subagent_interrupt',
+      'subagent_send_message',
+      'subagent_list',
+      'subagent_cancel',
+      'subagent_collect',
+      'subagent_spawn',
+      'subagent_fork',
+    ])
   })
 })
 
@@ -338,5 +369,93 @@ describe('subagent_collect', () => {
     await subagentCollectTool(d).execute({ childKey: 'c1' }, c.ctx)
     expect(wt.calls.finish).toEqual([])
     expect((await subagentSpawnTool(d).execute({ task: 'two' }, c.ctx)).isError).toBeUndefined()
+  })
+})
+
+describe('child allowlist and continuable controls', () => {
+  const sessionKey = 'agnes:t:a:cli:dm:x'
+
+  it('refuses a fork the session model allowlist does not name', async () => {
+    setChildAgentAllowlist(sessionKey, { models: ['other'] })
+    try {
+      const { calls, ctx } = context()
+      const result = await subagentForkTool.execute({ question: 'review' }, ctx)
+      expect(result.isError).toBe(true)
+      expect(result.content[0]).toMatchObject({ text: expect.stringContaining('E_MODEL_UNKNOWN') })
+      expect(calls.fork).toEqual([])
+    } finally {
+      resetChildAgentAllowlists()
+    }
+  })
+
+  it('checks the provider allowlist before the depth limit', async () => {
+    setChildAgentAllowlist(sessionKey, { providers: [] })
+    try {
+      const { calls, ctx } = context()
+      const result = await subagentSpawnTool(deps({ maxDepth: 0 })).execute({ task: 'go' }, ctx)
+      expect(result.isError).toBe(true)
+      expect(result.content[0]).toMatchObject({ text: expect.stringContaining('E_UNSUPPORTED') })
+      expect(calls.spawn).toEqual([])
+    } finally {
+      resetChildAgentAllowlists()
+    }
+  })
+
+  it('lists in-process children and external children once', async () => {
+    const { ctx } = context()
+    ctx.subagent.list = async () => [
+      { id: 'local', providerId: 'in-process', status: 'idle', continuable: true },
+    ]
+    const untrack = trackExternalChild(sessionKey, {
+      listing: { id: 'local', providerId: 'acp', status: 'running', continuable: true },
+    })
+    const extra = trackExternalChild(sessionKey, {
+      listing: { id: 'ext', providerId: 'acp', status: 'idle', continuable: true, text: 'hi' },
+    })
+    try {
+      const result = await subagentListTool.execute({}, ctx)
+      expect(result.details).toMatchObject({
+        children: [
+          { id: 'local', providerId: 'in-process', continuable: true },
+          { id: 'ext', providerId: 'acp', text: 'hi' },
+        ],
+      })
+    } finally {
+      untrack()
+      extra()
+    }
+  })
+
+  it('sends and interrupts through the external directory when the session factory misses', async () => {
+    const { ctx } = context()
+    ctx.subagent.sendMessage = async () => {
+      throw new CoreError('E_CHILD_NOT_FOUND', 'missing')
+    }
+    ctx.subagent.interrupt = async () => {
+      throw new CoreError('E_UNSUPPORTED', 'not continuable')
+    }
+    let sent = ''
+    let interrupted = false
+    const untrack = trackExternalChild(sessionKey, {
+      listing: { id: 'ext', providerId: 'acp', status: 'running', continuable: true },
+      sendMessage: async (text) => {
+        sent = text
+        return { messageId: 'm1' }
+      },
+      interrupt: async () => {
+        interrupted = true
+        return { accepted: true }
+      },
+    })
+    try {
+      const message = await subagentSendMessageTool.execute({ childKey: 'ext', text: 'next' }, ctx)
+      const stop = await subagentInterruptTool.execute({ childKey: 'ext' }, ctx)
+      expect(sent).toBe('next')
+      expect(interrupted).toBe(true)
+      expect(message.details).toEqual({ childKey: 'ext', messageId: 'm1' })
+      expect(stop.details).toEqual({ childKey: 'ext', accepted: true })
+    } finally {
+      untrack()
+    }
   })
 })

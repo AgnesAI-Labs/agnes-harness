@@ -325,6 +325,9 @@ describe('a host assembled from a profile naming @agnes/base', () => {
         'subagent_cancel',
         'subagent_collect',
         'subagent_fork',
+        'subagent_interrupt',
+        'subagent_list',
+        'subagent_send_message',
         'subagent_spawn',
       ])
       expect(namesFrom('agnes/mcp-search')).toEqual(['tool_describe', 'tool_search'])

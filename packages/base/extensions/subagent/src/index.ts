@@ -1,3 +1,4 @@
+import { applyChildAgentConfig } from '@agnes/core'
 import { type Disposer, defineExtension } from '@agnes/extension-api'
 import {
   resetSubagentRuntime,
@@ -5,6 +6,9 @@ import {
   subagentCancelTool,
   subagentCollectTool,
   subagentForkTool,
+  subagentInterruptTool,
+  subagentListTool,
+  subagentSendMessageTool,
   subagentSpawnTool,
 } from './tools.js'
 
@@ -13,15 +17,19 @@ export * from './worktree.js'
 
 /**
  * Explicit assembly seam for a host that has resolved the session's subagent preset. Keeping the
- * limits in dependencies avoids a process-global default and lets all three tools share accounting.
+ * limits in dependencies avoids a process-global default and lets the subagent tools share accounting.
  */
 export function createSubagentExtension(deps: SubagentDeps) {
   return defineExtension((agnes) => {
+    if (deps.allowlist) applyChildAgentConfig(deps.allowlist)
     const disposers: Disposer[] = [
       agnes.registerTool(subagentForkTool),
       agnes.registerTool(subagentSpawnTool(deps)),
       agnes.registerTool(subagentCollectTool(deps)),
       agnes.registerTool(subagentCancelTool(deps)),
+      agnes.registerTool(subagentListTool),
+      agnes.registerTool(subagentSendMessageTool),
+      agnes.registerTool(subagentInterruptTool),
     ]
     return () => {
       for (let index = disposers.length - 1; index >= 0; index -= 1) disposers[index]?.()

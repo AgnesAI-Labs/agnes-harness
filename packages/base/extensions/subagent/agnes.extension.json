@@ -6,7 +6,15 @@
   "capabilities": {
     "tools": {
       "prefix": "subagent_",
-      "names": ["subagent_fork", "subagent_spawn", "subagent_collect", "subagent_cancel"]
+      "names": [
+        "subagent_fork",
+        "subagent_spawn",
+        "subagent_collect",
+        "subagent_cancel",
+        "subagent_list",
+        "subagent_send_message",
+        "subagent_interrupt"
+      ]
     },
     "hooks": [],
     "slots": [],

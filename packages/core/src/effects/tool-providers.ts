@@ -12,9 +12,15 @@ export const defaultToolPolicy: ToolPolicy = {
   version: '1.0.0',
   decide(input, signal) {
     signal.throwIfAborted()
-    const management = ['subagent_fork', 'subagent_spawn', 'subagent_collect', 'subagent_cancel'].includes(
-      input.call.name,
-    )
+    const management = [
+      'subagent_fork',
+      'subagent_spawn',
+      'subagent_collect',
+      'subagent_cancel',
+      'subagent_list',
+      'subagent_send_message',
+      'subagent_interrupt',
+    ].includes(input.call.name)
     const ask =
       !management &&
       !input.fullAccess &&
