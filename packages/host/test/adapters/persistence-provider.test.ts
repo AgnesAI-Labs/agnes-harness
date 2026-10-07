@@ -141,8 +141,12 @@ describe('persistence provider', () => {
       async open(options) {
         mkdirSync(join(options.dataDir, 'custom'), { recursive: true })
         const store = await sqlitePersistenceProvider.open({ dataDir: join(options.dataDir, 'custom') })
+        if (!store.metadata || !store.reclaim) throw new Error('fixture ports missing')
+        const metadata = store.metadata
         return {
           ...store,
+          metadata: { namespace: (owner, name) => Object.freeze(metadata.namespace(owner, name)) },
+          reclaim: Object.freeze(store.reclaim),
           async scan(key, query) {
             seen.push('scan')
             return store.scan(key, query)
@@ -164,7 +168,7 @@ describe('persistence provider', () => {
       expect(seen).toEqual(['scan'])
       expect(bundle.storage.childControlFormat()).toBeGreaterThan(0)
       expect(bundle.storage.crashReclaim.listExpired(Date.now())).toEqual([])
-      const kv = bundle.storage.metadata.namespace('owner', 'config')
+      const kv = Object.freeze(bundle.storage.metadata.namespace('owner', 'config'))
       kv.set('enabled', true)
       expect(kv.get('enabled')).toBe(true)
       expect(() =>

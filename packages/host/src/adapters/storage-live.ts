@@ -42,18 +42,19 @@ export async function retainProcessStore(
   const assertOpen = (): void => {
     if (closing) throw new CoreError('E_CLOSED', 'Host persistence handle is closed')
   }
-  const guarded = <T extends object>(port: T): T =>
-    new Proxy(port, {
-      get(target, key) {
-        const value: unknown = Reflect.get(target, key, target)
-        return typeof value === 'function'
-          ? (...args: unknown[]) => {
-              assertOpen()
-              return Reflect.apply(value, target, args)
-            }
-          : value
-      },
-    })
+  // Plain wrappers support frozen provider ports and keep locally closed handles fenced.
+  const guarded = <T extends object>(port: T, keys: readonly (keyof T)[]): T =>
+    Object.fromEntries(
+      keys.map((key) => [
+        key,
+        (...args: unknown[]) => {
+          assertOpen()
+          const value: unknown = Reflect.get(port, key, port)
+          if (typeof value !== 'function') throw new TypeError('invalid persistence port method')
+          return Reflect.apply(value, port, args)
+        },
+      ]),
+    ) as T
   const guardedTable = (table: TableHandle): TableHandle => ({
     name: table.name,
     exec(sql) {
@@ -88,10 +89,16 @@ export async function retainProcessStore(
     metadata: {
       namespace(owner: string, name: string) {
         assertOpen()
-        return guarded(storage.metadata.namespace(owner, name))
+        return guarded(storage.metadata.namespace(owner, name), [
+          'get',
+          'set',
+          'delete',
+          'entries',
+          'transaction',
+        ])
       },
     },
-    crashReclaim: guarded(storage.crashReclaim),
+    crashReclaim: guarded(storage.crashReclaim, ['listExpired', 'claimForReclaim']),
     ...(sqlite
       ? {
           sqlite: {
