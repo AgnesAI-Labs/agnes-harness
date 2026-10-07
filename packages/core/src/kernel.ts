@@ -553,7 +553,6 @@ export class Kernel {
       runtime,
       provider: this.o.provider,
       loopFactory,
-      loopCreationSignal: this.construction.signal,
       ...(this.o.loopChildren ? { bindLoopChildren: this.o.loopChildren } : {}),
       ...(so.toolFilter ? { loopChildToolFilter: so.toolFilter } : {}),
       toolRuntimes: this.toolRuntimes,
@@ -615,7 +614,12 @@ export class Kernel {
     if (children instanceof KernelChildren) bindChildFactory(session.key, children)
     const sessionHooks = this.createHookEngine(logger, preset)
     let factoryPort: HookPort | undefined
+    const cancelCreation = () => {
+      void session.close().catch(() => undefined)
+    }
+    this.construction.signal.addEventListener('abort', cancelCreation, { once: true })
     try {
+      this.construction.signal.throwIfAborted()
       if (this.o.hooksFactory) {
         const hooks = this.o.hooksFactory(session, sessionHooks)
         if (
@@ -649,6 +653,8 @@ export class Kernel {
         throw new AggregateError([error, cleanupError], 'session initialization and cleanup failed')
       }
       throw error
+    } finally {
+      this.construction.signal.removeEventListener('abort', cancelCreation)
     }
     this.sessions.set(key, session)
     if (registersRebuilt) await session.diag('registers-rebuilt', { sessionKey: key })

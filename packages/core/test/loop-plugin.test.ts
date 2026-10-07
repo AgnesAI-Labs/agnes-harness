@@ -4,6 +4,7 @@ import {
   type LoopDriver,
   type LoopFactory,
   loopCheckpointCodec,
+  type ToolRuntime,
 } from '@agnes/extension-api'
 import { describe, expect, it, vi } from 'vitest'
 import { ToolRuntimeRegistry } from '../src/effects/tool-providers.js'
@@ -168,54 +169,85 @@ describe('loop plugins', () => {
     }
   })
 
-  it('aborts and drains a late loop constructor before closing Kernel storage', async () => {
-    const loops = defaultLoops()
-    let finish!: (driver: LoopDriver) => void
-    let ready!: () => void
-    const admitted = new Promise<void>((resolve) => {
-      ready = resolve
-    })
-    let signal!: AbortSignal
-    let disposed = false
-    loops.register('@test/async', {
-      ...echo,
-      id: 'test.async',
-      create(_ctx, joined) {
-        signal = joined!
+  it.each(['loop', 'tool-runtime'] as const)(
+    'aborts and drains a late %s constructor before closing Kernel storage',
+    async (kind) => {
+      const loops = defaultLoops()
+      const toolRuntimes = new ToolRuntimeRegistry()
+      let finish!: (driver: LoopDriver | ToolRuntime) => void
+      let ready!: () => void
+      const admitted = new Promise<void>((resolve) => {
+        ready = resolve
+      })
+      let signal!: AbortSignal
+      let disposed = false
+      const construct = (joined?: AbortSignal) => {
+        if (!joined) throw new Error('Missing construction signal')
+        signal = joined
         ready()
-        return new Promise<LoopDriver>((resolve) => {
+        return new Promise<LoopDriver | ToolRuntime>((resolve) => {
           finish = resolve
         })
-      },
-    })
-    const storage = new MemoryStorage()
-    const closed = vi.spyOn(storage, 'close')
-    const k = kernel(storage, loops)
-    const creating = k.session('constructing', {
-      ...options,
-      loop: { id: 'test.async', version: echo.version },
-    })
-    const rejected = expect(creating).rejects.toThrow()
-    await admitted
-    const closing = k.close()
-    expect(signal.aborted).toBe(true)
-    expect(closed).not.toHaveBeenCalled()
-    finish({
-      async step() {
-        throw new Error('Must not step')
-      },
-      checkpoint: () => codec.encode('ready'),
-      cancel() {},
-      dispose() {
-        disposed = true
-      },
-    })
-    await rejected
-    await closing
-    expect(disposed).toBe(true)
-    expect(closed).toHaveBeenCalledOnce()
-    await expect(k.session('after-close', options)).rejects.toMatchObject({ code: 'E_CLOSED' })
-  })
+      }
+      if (kind === 'loop')
+        loops.register('@test/async', {
+          ...echo,
+          id: 'test.async',
+          create: (_ctx, joined) => construct(joined) as Promise<LoopDriver>,
+        })
+      else {
+        toolRuntimes.register('@test/async', {
+          id: 'test.async',
+          version: '1.0.0',
+          create: (_options, joined) => construct(joined) as Promise<ToolRuntime>,
+        })
+      }
+      const storage = new MemoryStorage()
+      const closed = vi.spyOn(storage, 'close')
+      const preset = presetDefaults()
+      if (kind === 'tool-runtime') preset.tools.runtime = 'test.async'
+      const k = kernel(storage, loops, { toolRuntimes, preset })
+      const creating = k.session('constructing', {
+        ...options,
+        ...(kind === 'loop' ? { loop: { id: 'test.async', version: echo.version } } : {}),
+      })
+      const rejected = expect(creating).rejects.toThrow()
+      await admitted
+      const closing = k.close()
+      expect(signal.aborted).toBe(true)
+      expect(closed).not.toHaveBeenCalled()
+      const resource = {
+        cancel() {},
+        dispose() {
+          disposed = true
+        },
+      }
+      finish(
+        kind === 'loop'
+          ? {
+              ...resource,
+              async step() {
+                throw new Error('Must not step')
+              },
+              checkpoint: () => codec.encode('ready'),
+            }
+          : {
+              ...resource,
+              async execute() {
+                throw new Error('Must not execute')
+              },
+              async batch() {
+                throw new Error('Must not execute')
+              },
+            },
+      )
+      await rejected
+      await closing
+      expect(disposed).toBe(true)
+      expect(closed).toHaveBeenCalledOnce()
+      await expect(k.session('after-close', options)).rejects.toMatchObject({ code: 'E_CLOSED' })
+    },
+  )
   it('registers through a plugin lifecycle and exposes an immutable catalog', () => {
     const loops = defaultLoops()
     const cleanups: Array<() => void> = []

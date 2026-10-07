@@ -375,7 +375,6 @@ export type SessionDeps = {
   provider: Provider
   loopFactory: LoopFactory
   loopResume?: boolean
-  loopCreationSignal?: AbortSignal
   withModelSnapshot?: <T>(operation: () => Promise<T>) => Promise<T>
   /**
    * Trusted host boundary for a conservative total-input-token bound when a wire request contains
@@ -734,8 +733,12 @@ export class SessionImpl {
       (entry) => entry.provider === provider && entry.maxParallel === maxParallel,
     )
     if (!instance) {
-      instance = { provider, maxParallel, runtime: await provider.create({ maxParallel }) }
+      instance = { provider, maxParallel, runtime: await provider.create({ maxParallel }, this.ac.signal) }
       this.runtimeInstances.push(instance)
+      if (this.ac.signal.aborted) {
+        await instance.runtime.cancel()
+        this.ac.signal.throwIfAborted()
+      }
     }
     // Keep previous instances until close: an in-flight batch may still own one after a preset switch.
     return instance.runtime
@@ -766,9 +769,7 @@ export class SessionImpl {
         (resumed && factory.checkpointMode === 'ledger' ? factory.codec.encode(null) : null)
       if (resumed && !checkpoint) throw new Error('Pinned loop checkpoint is missing')
       if (checkpoint) factory.codec.decode(checkpoint)
-      const signal = this.d.loopCreationSignal
-        ? AbortSignal.any([this.ac.signal, this.d.loopCreationSignal])
-        : this.ac.signal
+      const signal = this.ac.signal
       signal.throwIfAborted()
       const driver = await (resumed && checkpoint
         ? factory.resume(ctx, checkpoint, signal)
