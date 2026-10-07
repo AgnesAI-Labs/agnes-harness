@@ -103,28 +103,38 @@ it('resolves request credentials without shared binding races and refreshes on s
   expect(wire.seen[2]?.options?.apiKey).toBe('rotated-a')
 })
 
-it('invalidates and resolves OAuth once after an initial AUTH rejection', async () => {
-  const wire = fakeStream([
-    [err('401 Unauthorized')],
-    [{ type: 'done', reason: 'stop', message: assistant() }],
-  ])
-  const resolved = ['expired-access', 'fresh-access']
-  const rejected: string[] = []
-  const adapter = new PiAdapter({
-    manualRoutes: [route],
-    streamImpl: wire.impl,
-    resolveCredential: async () => ({ apiKey: resolved.shift() ?? 'unexpected' }),
-    recoverRejectedAuth: async (_route, auth) => {
-      rejected.push(auth.apiKey ?? '')
-      return true
-    },
-    sleep: async () => {},
-  })
-  const events = await collect(adapter.stream('gw', fakeRequest({ route: 'gw', model: 'flash' }), opts()))
-  expect(events.map((event) => event.type)).toEqual(['usage', 'done'])
-  expect(rejected).toEqual(['expired-access'])
-  expect(wire.seen.map((seen) => seen.options?.apiKey)).toEqual(['expired-access', 'fresh-access'])
-})
+it.each([true, false])(
+  'honors retry=%s for OAuth recovery after an initial AUTH rejection',
+  async (retry) => {
+    const wire = fakeStream([
+      [err('401 Unauthorized')],
+      [{ type: 'done', reason: 'stop', message: assistant() }],
+    ])
+    const resolved = ['expired-access', 'fresh-access']
+    const rejected: string[] = []
+    const adapter = new PiAdapter({
+      manualRoutes: [route],
+      streamImpl: wire.impl,
+      resolveCredential: async () => ({ apiKey: resolved.shift() ?? 'unexpected' }),
+      recoverRejectedAuth: async (_route, auth) => {
+        rejected.push(auth.apiKey ?? '')
+        return true
+      },
+      sleep: async () => {},
+    })
+    const events = await collect(
+      adapter.stream('gw', fakeRequest({ route: 'gw', model: 'flash' }), {
+        ...opts(),
+        ...(retry ? {} : { retry: false as const }),
+      }),
+    )
+    expect(events.map((event) => event.type)).toEqual(retry ? ['usage', 'done'] : ['error'])
+    expect(rejected).toEqual(retry ? ['expired-access'] : [])
+    expect(wire.seen.map((seen) => seen.options?.apiKey)).toEqual(
+      retry ? ['expired-access', 'fresh-access'] : ['expired-access'],
+    )
+  },
+)
 
 it('does not loop or recover AUTH after output', async () => {
   const twice = fakeStream([
@@ -592,7 +602,11 @@ describe('PiAdapter', () => {
     })
     const events = await collect(a.stream('gw', fakeRequest({ route: 'gw', model: 'flash' }), opts()))
     expect(seen).toHaveLength(3)
-    expect(waits).toEqual([500, 1000])
+    expect(waits).toHaveLength(2)
+    for (const [index, base] of [500, 1000].entries()) {
+      expect(waits[index]).toBeGreaterThanOrEqual(base * 0.9)
+      expect(waits[index]).toBeLessThanOrEqual(base * 1.1)
+    }
     expect(events).toHaveLength(1)
     expect(events[0]).toMatchObject({ type: 'error', code: 'TRANSPORT', retryable: true })
   })
@@ -603,6 +617,7 @@ describe('PiAdapter', () => {
       const { impl, seen } = fakeStream([[err(message)]])
       const waits: number[] = []
       const adapter = bound({
+        maxRetries: 2,
         manualRoutes: [route],
         streamImpl: impl,
         sleep: async (ms) => {

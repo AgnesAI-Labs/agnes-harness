@@ -583,6 +583,7 @@ export class PiAdapter extends WireAdapter {
               if (
                 w.type === 'error' &&
                 w.code === 'AUTH' &&
+                opts.retry !== false &&
                 !emitted &&
                 !authRecoveryAttempted &&
                 requestAuth &&
