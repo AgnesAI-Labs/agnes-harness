@@ -1,5 +1,7 @@
 # 模型 adapter
 
+[English](README.md) | 简体中文
+
 可选 adapter 通过 `modelAdaptersPlugin` 注册（`inject: ["modelAdapters"]`）。`scripted` 与 `replay` 不需要网络或凭证。
 
 - `scriptedAdapter.create(config)` 读取 `route.compat.file` 指定的绝对路径。文件格式：`{ "schemaVersion": 1, "replies": [[{ "type": "text_delta", "delta": "Hello" }, { "type": "usage", "tokens": { "input": 1, "output": 1, "cacheRead": 0, "cacheWrite": 0 }, "creditSource": "estimated" }, { "type": "done", "reason": "stop" }]] }`。
@@ -9,3 +11,5 @@
 每个新会话有独立回复游标。一份 transcript 只能包含一个模型路由；文件包含多个录制会话时，用 `compat.recordedSession` 指定来源。同一会话路由内的并发调用会被拒绝。回复必须以单个 `done` 或 `error` 结束；被取消的调用会消耗游标。不模拟原始耗时。保留 token 与工具调用事件。
 
 这些 adapter 可用于 profile 的 package row 和 registry catalog，使用公开的 `defineModelAdapter`。路由和模型选择由 Host profile composition 管理。
+
+`localOpenAIAdapter` 将推理交给 pi-ai；`discoverLocalModels({ baseUrl, credential?, signal? })` 读取本地 `/v1/models`。见[本地模型配置](../../docs/guide/local-model.zh-CN.md)和[headless JSONL schema](../../docs/guide/headless.zh-CN.md)。

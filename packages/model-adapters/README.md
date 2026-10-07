@@ -1,5 +1,7 @@
 # Model adapters
 
+English | [简体中文](README.zh-CN.md)
+
 Optional adapters registered through `modelAdaptersPlugin` (`inject: ["modelAdapters"]`). No network or credentials are needed for `scripted` and `replay`.
 
 - `scriptedAdapter.create(config)` reads an absolute `route.compat.file` containing `{ "schemaVersion": 1, "replies": [[{ "type": "text_delta", "delta": "Hello" }, { "type": "usage", "tokens": { "input": 1, "output": 1, "cacheRead": 0, "cacheWrite": 0 }, "creditSource": "estimated" }, { "type": "done", "reason": "stop" }]] }`.
@@ -9,3 +11,5 @@ Optional adapters registered through `modelAdaptersPlugin` (`inject: ["modelAdap
 Each new session gets its own response cursor. One trace must contain one model route; set `compat.recordedSession` when a file contains several recorded sessions. Concurrent invocations in one session route are refused. Replies must end in one `done` or `error`; aborted invocations consume their cursor. There is no timing simulation. Token and tool-call events are preserved.
 
 These are real adapters, usable in profile package rows and registry catalogs. `defineModelAdapter` is consumed from the public plugin runtime. Host profile composition owns route/model selection.
+
+`localOpenAIAdapter` delegates inference to pi-ai; `discoverLocalModels({ baseUrl, credential?, signal? })` reads local `/v1/models`. See [local model configuration](../../docs/guide/local-model.md) and [headless JSONL schema](../../docs/guide/headless.md).

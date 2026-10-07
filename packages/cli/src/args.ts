@@ -5,6 +5,7 @@ import type { Command, ModelSel, ParsedArgs } from './types.js'
 export type { Command, ModelSel, ParsedArgs } from './types.js'
 
 const COMMANDS = new Set<string>([
+  'run',
   'resume',
   'sessions',
   'export',
@@ -31,7 +32,17 @@ const COMMANDS = new Set<string>([
 ])
 
 /** These hand their tail on to another program or another grammar; we do not read it. */
-const FORWARDED = new Set<string>(['daemon', 'ext', 'mcp', 'resources', 'skills', 'serve', 'web', 'start'])
+const FORWARDED = new Set<string>([
+  'run',
+  'daemon',
+  'ext',
+  'mcp',
+  'resources',
+  'skills',
+  'serve',
+  'web',
+  'start',
+])
 
 // Both tables are null-prototype maps read through Object.hasOwn. A plain object literal read with
 // `in` answers true for toString, constructor, hasOwnProperty and __proto__, which would make an
@@ -215,6 +226,7 @@ export function usage(): string {
     '      [--connect <t>] [--model <slot>=<route>/<model>] [--loop <id>@<version>]',
     'agh -p [prompt] [--mode text|json] [--park] [--meta] [--ephemeral|--standalone]',
     'agh --mode acp [--profile <p> | --connect <t>] [--ephemeral]      agh acp ... (alias)',
+    'agh run --bundle <package#id|path> --input <file|-> --json [--batch]',
     'agh resume <id> [-p [prompt]]',
     'agh sessions [list [--cwd <dir>] | show <id>]',
     'agh export <id> [--format agnes|sharegpt|claude-code] [--html] [--raw] [-o|--out <file>]',

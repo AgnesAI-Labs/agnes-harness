@@ -29,6 +29,7 @@ import {
   type HostOptions,
   type LockState,
   type PackageLoader,
+  type ProfileInputs,
   type Prompter,
   packageDirs,
   type ResolvedProfile,
@@ -64,6 +65,8 @@ export function hostRootFrom(): string {
 export type LocalBootDeps = BootDeps & {
   /** Optional interactive onboarding gate. It runs before profile/Host assembly. */
   onboarding?: (input: { profile: string; home: string; cwd: string; signal?: AbortSignal }) => Promise<void>
+  /** Privileged one-shot CLI composition; Host still resolves and validates the resulting inputs. */
+  transformProfileInputs?: (inputs: ProfileInputs) => ProfileInputs | Promise<ProfileInputs>
   /**
    * Replaces the default package wiring (host's jiti loader over the directories `packageDirs`
    * resolves from the profile's lockfile). A test seam, like `createHostImpl`: a caller that
@@ -230,14 +233,17 @@ export async function bootLocal(p: ParsedArgs, deps: LocalBootDeps): Promise<Boo
       ...(deps.lock ? { lock: deps.lock } : {}),
       ...(configurationInput ? { configuration: configurationInput } : {}),
     })
-    profile = await resolveProfile(inputs, {
-      platform: createPlatform().snapshot(),
-      agnesVersion: deps.agnesVersion,
-      now: new Date().toISOString(),
-      // `--ephemeral` owns this home. Letting resolveProfile fall back to os.homedir() made the
-      // supposedly disposable run write its data/audit/cache beneath the real ~/.agh.
-      homeDir: deps.home,
-    })
+    profile = await resolveProfile(
+      deps.transformProfileInputs ? await deps.transformProfileInputs(inputs) : inputs,
+      {
+        platform: createPlatform().snapshot(),
+        agnesVersion: deps.agnesVersion,
+        now: new Date().toISOString(),
+        // `--ephemeral` owns this home. Letting resolveProfile fall back to os.homedir() made the
+        // supposedly disposable run write its data/audit/cache beneath the real ~/.agh.
+        homeDir: deps.home,
+      },
+    )
   } catch (e) {
     throw asBootError('profile', e)
   }

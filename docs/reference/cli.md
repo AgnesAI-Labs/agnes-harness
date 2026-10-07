@@ -16,6 +16,7 @@ Find commands by session execution, administration, or extensions. For an end-to
 
 | Syntax | Purpose / notes |
 | --- | --- |
+| `agh run --bundle ID_OR_PATH --input FILE_OR_DASH --json [--batch]` | Fresh headless sessions and versioned JSONL; see [headless runs](../guide/headless.md) |
 | `agh [prompt]` | TUI in a TTY; print outside a TTY |
 | `agh -p [prompt]` | One-shot task with piped input support |
 | `agh --mode text\|json` | Selects print automatically; ACP is separate |

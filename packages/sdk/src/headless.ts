@@ -87,8 +87,6 @@ export async function runHeadless(
     ...(options.preset ? { preset: options.preset } : {}),
     ...(options.loop ? { loop: options.loop } : {}),
   })
-  const emit = (record: Omit<HeadlessRecord, 'schemaVersion' | 'runId' | 'sessionId'>) =>
-    options.write({ ...record, schemaVersion: 1, runId, sessionId: session.id } as HeadlessRecord)
   // Explicitly deny permission requests: an unattended consumer cannot grant authority.
   const offPermission = session.onPermissionRequest(async () => ({ verdict: 'rejected' }))
   let iterator: AsyncIterator<LedgerEvent> | undefined
@@ -108,7 +106,7 @@ export async function runHeadless(
     await session.attach({ filter: { acpUpdates: false } })
     const watermark = session.lastServerSeq
     processedSeq = watermark
-    await emit({ type: 'start' })
+    await options.write({ schemaVersion: 1, runId, sessionId: session.id, type: 'start' })
     // Register synchronously before prompt: even a fast in-process turn must be observable.
     iterator = session.events()[Symbol.asyncIterator]()
     collecting = (async () => {
@@ -170,7 +168,7 @@ export async function runHeadless(
           }
         }
         processedSeq = Math.max(processedSeq, event.seq)
-        if (targetSeq !== undefined && processedSeq >= targetSeq) reached()
+        if (terminal !== undefined && targetSeq !== undefined && processedSeq >= targetSeq) reached()
       }
     })().catch(async (error: unknown) => {
       streamError = error
@@ -186,7 +184,7 @@ export async function runHeadless(
       promptError = error
     }
     targetSeq = result?.lastSeq ?? session.lastServerSeq
-    if (processedSeq < targetSeq) {
+    if (terminal === undefined || processedSeq < targetSeq) {
       let timer: ReturnType<typeof setTimeout> | undefined
       try {
         await Promise.race([
@@ -207,7 +205,7 @@ export async function runHeadless(
       sessionId: session.id,
       reason: terminal ?? result?.reason ?? 'failed',
       lastSeq: processedSeq,
-      eventsComplete: processedSeq >= targetSeq,
+      eventsComplete: terminal !== undefined && processedSeq >= targetSeq,
       ...(promptError !== undefined
         ? { error: promptError instanceof Error ? promptError.message : String(promptError) }
         : {}),

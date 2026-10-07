@@ -12,6 +12,7 @@
 
 | 语法 | 用途/注意 |
 | --- | --- |
+| `agh run --bundle ID_OR_PATH --input FILE_OR_DASH --json [--batch]` | 新会话无界面运行和版本化 JSONL，见[指南](../guide/headless.zh-CN.md) |
 | `agh [prompt]` | TTY 为 TUI；非 TTY 为 print |
 | `agh -p [prompt]` | 一次性任务，读取管道输入 |
 | `agh --mode text\|json` | 自动 print；ACP 为单独模式 |

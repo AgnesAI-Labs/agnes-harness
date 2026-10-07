@@ -33,6 +33,8 @@ Still choosing? Try the [three examples](guide/demo.md), then use the [extension
 | [Web workbench](guide/web.md) | Create tasks, inspect history, and manage models and extensions |
 | [Sessions and recovery](guide/sessions.md) | Continue tasks, export records, and handle interruptions |
 | [Plugin lifecycle](guide/packages.md) | Install, trust, enable, update, and remove plugins |
+| [Headless runs and replay](guide/headless.md) | Stream JSONL events, compare fixed model replies and run batches |
+| [Use a local model](guide/local-model.md) | Configure local OpenAI-compatible endpoints and discovery |
 | [Security and trust](guide/security.md) | Choose a working directory and understand authorization and execution boundaries |
 | [Sandbox providers](guide/sandbox-providers.md) | Select the process sandbox at startup and read declared capabilities |
 | [Troubleshooting](guide/troubleshooting.md) | Use error codes and runtime state to choose the next diagnostic step |

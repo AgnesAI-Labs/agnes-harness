@@ -10,6 +10,7 @@ export type SessionAdmissionPort = {
   activate(sessionKey: string, reservedNew: boolean): void
 }
 export type Command =
+  | 'run'
   | 'resume'
   | 'sessions'
   | 'export'

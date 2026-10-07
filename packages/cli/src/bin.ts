@@ -413,6 +413,18 @@ export async function main(argv: string[], io: MainIO, boot: Partial<LocalBootDe
     ...boot,
   }
   try {
+    if (p.command === 'run') {
+      const { runCommand } = await import('./commands/run.js')
+      const { bootHeadless } = await import('./boot/headless.js')
+      return await runCommand(p.rest, {
+        cwd: io.cwd,
+        stdin: io.stdin,
+        stdout: io.stdout,
+        ...(io.signals ? { signals: io.signals } : {}),
+        ...(io.exit ? { exit: io.exit } : {}),
+        boot: (input) => bootHeadless(input, deps),
+      })
+    }
     if (p.command === 'serve' || p.command === 'web' || p.command === 'start') {
       const { runWebCommand } = await import('../launch/web-command.js')
       await runWebCommand(p.rest, {
