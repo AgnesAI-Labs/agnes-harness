@@ -233,26 +233,21 @@ export async function runWorkflow(
           ...ctx.input,
           resumeParked: async () => (parkedCall ? 'opened' : 'waiting'),
         },
-        effects: {
-          status: async (id) =>
-            nativeReceipts.has(id)
-              ? { status: 'responded', invocationId: id, checkpoint: saved, result: nativeReceipts.get(id) }
-              : { status: 'may-have-sent', invocationId: id, checkpoint: saved },
-        },
         tools: {
           ...ctx.tools,
           execute: (call, signal) =>
             nativeReceipts.has(call.invocationId)
               ? Promise.resolve(nativeReceipts.get(call.invocationId))
               : ctx.tools.execute(call, signal),
-          drain: async (signal) => {
+          resume: async (invocationId, signal) => {
+            assert.equal(invocationId, parkedCall.invocationId)
             const result = await execute(parkedCall, signal, true)
-            // Match Core's durable receipt surface: transient details/structured are not retained.
+            // Also exercise a tool/result-only recovered receipt without transient UI details.
             nativeReceipts.set(parkedCall.invocationId, {
               content: result.content,
               ...(result.isError ? { isError: true } : {}),
             })
-            return { outcome: 'running', phase: 'checkpoint' }
+            return nativeReceipts.get(invocationId)
           },
         },
       })

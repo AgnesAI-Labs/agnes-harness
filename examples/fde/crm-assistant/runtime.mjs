@@ -245,15 +245,13 @@ export function makeBundle({ name, tools, stages, readOnly = false, validateSett
               return { outcome: 'parked', phase: 'tool-approval', reason: 'parked' }
             if (continuation === 'blocked')
               return { outcome: 'turn-ended', phase: 'approval-blocked', reason: 'blocked' }
-            const drained = await ctx.tools.drain(signal)
-            if (drained.outcome === 'parked') return drained
-            const receipt = await ctx.effects.status(state.approvalCall.invocationId)
-            if (receipt.status !== 'responded') {
-              await ctx.events.finish('blocked', {
-                code: 'FDE_OUTCOME_UNKNOWN',
-                message: 'No native tool receipt; inspect before starting another run.',
-              })
-              return { outcome: 'turn-ended', phase: 'unknown', reason: 'blocked' }
+            try {
+              await ctx.tools.resume(state.approvalCall.invocationId, signal)
+            } catch (error) {
+              signal.throwIfAborted()
+              if (error.code === 'PARKED' || error.code === 'E_LANE_BUSY')
+                return { outcome: 'parked', phase: 'tool-approval', reason: 'parked' }
+              throw error
             }
             // Re-enter only this exact call: Core returns its bound receipt, never dispatches it twice.
             state.approvalWaiting = false
