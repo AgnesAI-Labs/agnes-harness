@@ -40,9 +40,9 @@ const result = await driveLoop(loop, {
 console.log(result.events, result.checkpoint)
 ```
 
-`driveLoop` 创建或恢复真实驱动，记录模型请求与事件，并在完成或失败后释放。传入 `checkpoint` 验证恢复和不支持的 codec 版本。遇到结束原因或 `events.finish` 时停止；未完成循环超过 `maxSteps`（默认 20）则拒绝。脚本回复耗尽会报错。
+`driveLoop` 创建或恢复真实驱动，记录模型请求与事件，并在完成或失败后释放。传入 `checkpoint` 验证恢复和不支持的 codec 版本。它使用生产 `loopShouldStop` outcome 规则与 `until`（默认 `turn-end`）；`phase`、单独 reason 或单独 `events.finish` 不会停止驱动。未完成循环超过 `maxSteps`（默认 20）或脚本回复耗尽会报错。
 
-通过插件测试 Host 的 `invoke` 实现 `tools.execute`/`tools.batch`，验证工具调用。[循环测试](../../packages/plugin-runtime/testkit/loop.test.ts)展示脚本回复如何到达真实 Host 注册工具。缺少工具端口会拒绝执行。停车也明确拒绝：驱动验证有限调度，不模拟后台等待或完整会话恢复。
+通过插件测试 Host 的 `invoke` 实现 `tools.execute`，验证工具调用；默认 fake batch 委托逐个执行。[循环测试](../../packages/plugin-runtime/testkit/loop.test.ts)展示脚本回复如何到达真实 Host 注册工具。缺少工具端口会拒绝执行。`parked` outcome 停止调度；fake wait 在有队列输入或取消时返回，wake 不执行操作。耐久等待、审批、ledger 操作与恢复应传入真实 Core `context`，参见 [v0.1 合同清单](../develop/contracts-v0.1.zh-CN.md)。
 
 单独测试自己的调度器时可使用 `scriptedModel(replies)`，通过 `requests` 与 `remaining` 检查缺失或多余的模型交互。
 

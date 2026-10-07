@@ -40,9 +40,9 @@ const result = await driveLoop(loop, {
 console.log(result.events, result.checkpoint)
 ```
 
-`driveLoop` creates or resumes the actual driver, captures model requests/events and disposes it on completion or failure. Pass `checkpoint` to test resume and unsupported codec versions. It stops at an end reason or `events.finish`, and refuses unfinished loops after `maxSteps` (default 20). Exhausted model scripts fail.
+`driveLoop` creates or resumes the actual driver, captures model requests/events and disposes it on completion or failure. Pass `checkpoint` to test resume and unsupported codec versions. It uses the production `loopShouldStop` outcome rule with `until` (default `turn-end`); `phase`, reason alone and `events.finish` alone do not stop the driver. Unfinished loops exceeding `maxSteps` (default 20) and exhausted model scripts fail.
 
-Supply `tools.execute`/`tools.batch` through a plugin test host's `invoke` to exercise tools. The [loop test](../../packages/plugin-runtime/testkit/loop.test.ts) drives scripted model replies into a real Host-registered tool. Missing tool ports refuse execution. Parking is deliberately refused: this driver tests bounded scheduling, not background waits or full session recovery.
+Supply `tools.execute` through a plugin test host's `invoke` to exercise tools; the default fake batch delegates to individual executions. The [loop test](../../packages/plugin-runtime/testkit/loop.test.ts) drives scripted model replies into a real Host-registered tool. Missing tool ports refuse execution. A `parked` outcome stops scheduling; the fake wait returns for queued input or cancellation and its wake is a no-op. Supply a real Core `context` for durable waits, approvals, ledger operations and recovery; see the [v0.1 contract inventory](../develop/contracts-v0.1.md).
 
 `scriptedModel(replies)` is available separately for your scheduler. Its `requests` and `remaining` expose missing or extra model interactions.
 

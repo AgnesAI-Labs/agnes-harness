@@ -10,18 +10,20 @@ callback when the plugin unloads. A plugin can use
 automatically; declare an injection of `loops`. `catalog()` returns installed identities,
 capabilities and source packages for administration. New sessions select an exact
 identity through `Kernel.session(key, { ...options, loop: { id, version } })`.
-For a profile default, set `config.loop: { id, version }` on one enabled package
-entry. An assembled `PresetView.loop` overrides the Kernel default; an explicit
+For a profile default, set `config.loop: { provider, version }` on one enabled package
+entry (the legacy `{ id, version }` spelling remains accepted). An assembled `PresetView.loop` overrides the Kernel default; an explicit
 session choice overrides the preset. Existing sessions keep their persisted identity. Legacy sessions use
 `agnes.default@1.0.0`. A missing pinned loop is an error.
 
 The driver implements `step(signal)`, `cancel()`, `dispose()` and `checkpoint()`.
-Each step returns a phase name and optionally a terminal reason. It receives a
-small `LoopContext`: model streaming/completion with multimodal `RequestBody`,
-approved single/batch tool execution, input acceptance, event emission and turn
-completion, checkpoint storage, and park/wake. Compaction and children are
-optional ports. Core retains the Session facade and owns execution, approvals,
-ledger ordering and lifecycle; the driver chooses what to do next.
+Each step returns an explicit `running`, `idle`, `turn-ended` or `parked` outcome;
+`phase` is display metadata. `LoopContext` provides high-level recoverable operations
+and low-level turn views, request preparation/estimation, model streaming/completion,
+approved single/batch tool execution, effect receipts, typed events, child/job ports,
+checkpoints and durable park/wake. Core retains the Session facade and owns execution,
+approvals, ledger ordering and lifecycle; the driver chooses what to do next.
+See the bilingual [v0.1 contract inventory](../../docs/develop/contracts-v0.1.md)
+for stability labels, operation semantics, restart scopes and remaining freeze gates.
 
 Checkpoints contain JSON `state` and a `codecVersion`. The factory owns its codec
 and must validate it before resuming. `loopCheckpointCodec(version, parse)` clones

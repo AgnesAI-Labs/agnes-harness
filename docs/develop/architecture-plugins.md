@@ -2,7 +2,7 @@
 
 English | [简体中文](architecture-plugins.zh-CN.md)
 
-[Architecture](architecture.md) · [Source map](source-map.md) · [Author guide](../extend/README.md)
+[Architecture](architecture.md) · [Source map](source-map.md) · [Author guide](../extend/README.md) · [v0.1 contracts](contracts-v0.1.md)
 
 The kernel keeps session facts, ledger writes, effects, authorization and recovery. Replaceable algorithms use operation ports. Host loads packages into Cordis, owns their registrations and instances, and supplies the selected providers to Core. Ordinary backend plugins execute as trusted in-process code; this composition mechanism does not isolate arbitrary plugin code.
 

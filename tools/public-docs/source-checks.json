@@ -173,5 +173,78 @@
   {
     "path": "packages/extension-api/src/plugin-extension.ts",
     "includes": ["registerHook: ExtensionAPI['registerHook']", "registerTool: ExtensionAPI['registerTool']"]
+  },
+  {
+    "path": "packages/extension-api/src/loop.ts",
+    "includes": [
+      "outcome: 'running' | 'idle' | 'turn-ended' | 'parked'",
+      "estimateRequest(request: LoopRequest)",
+      "status(invocationId: string)",
+      "wake(): Promise<void>",
+      "association?: { invocationIds: readonly string[] }"
+    ]
+  },
+  {
+    "path": "packages/extension-api/src/provider-kind.ts",
+    "includes": ["export interface KindMap", "export type ProviderLifecycleScope", "): () => Promise<void>"]
+  },
+  {
+    "path": "packages/extension-api/src/model-adapter.ts",
+    "includes": ["readonly wireApi: string", "bindCredential?", "signal?: AbortSignal"]
+  },
+  {
+    "path": "packages/extension-api/src/persistence.ts",
+    "includes": [
+      "export interface PersistenceMetadataPort",
+      "export interface PersistenceReclaimPort",
+      "export interface PersistenceSqlitePort",
+      "export type PersistenceChildControlPort"
+    ]
+  },
+  {
+    "path": "packages/extension-api/src/sandbox-provider.ts",
+    "includes": [
+      "export type SandboxExecutionPolicy",
+      "requiredEnforcement: SandboxEnforcement",
+      "enforcement: SandboxEnforcement",
+      "options?: Readonly<Record<string, string>>"
+    ]
+  },
+  {
+    "path": "packages/extension-api/src/child-agent.ts",
+    "includes": [
+      "export interface ChildAgentSessionService",
+      "adoptStart?",
+      "toolFilter?: ChildAgentToolFilter"
+    ]
+  },
+  {
+    "path": "packages/extension-api/testkit/provider-conformance.ts",
+    "includes": [
+      "export async function runProviderConformance",
+      "kind === 'loop' || kind === 'persistence'",
+      "cancel-unsupported"
+    ]
+  },
+  {
+    "path": "packages/loop-default/src/index.ts",
+    "includes": ["from '@agnes/extension-api'", "checkpointMode: 'ledger'"],
+    "excludes": ["from '@agnes/core'", "WeakMap"]
+  },
+  {
+    "path": "packages/package-manager/src/plugin-manifest.ts",
+    "includes": ["ordinary plugin requires apiRange", "'bundle'"]
+  },
+  {
+    "path": "packages/host/src/adapters/storage-provider.ts",
+    "includes": [
+      "HOST_PERSISTENCE_REQUIREMENTS",
+      "'ledger'",
+      "'metadata'",
+      "'child-control'",
+      "'reclaim'",
+      "'integrity'"
+    ],
+    "excludes": ["as SqliteStorage"]
   }
 ]
