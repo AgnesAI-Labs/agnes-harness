@@ -13,11 +13,17 @@ The standard preset advertises these tools from official `defineTool` plugins. D
 | `job_list` | `{}` lists this session/lane's running and completed jobs. |
 | `job_output` | `{"jobId":"RETURNED_ID","waitMs":1000}` reads captured output/status, optionally waiting up to 60 seconds, capped by the tool deadline. Long output spills to a readable artifact. |
 | `job_kill` | `{"jobId":"RETURNED_ID"}` stops the owned job and its process group. |
+| `schedule_create` | Creates a reminder on the current session. Pass exactly one of `after_seconds`, `at`, `every_seconds`, `daily`, `weekly`, or `cron`. The prompt starts an idle session and resumes a session that is already running. |
+| `schedule_list` | Lists this session's active reminders, next runs, and recent deliveries. |
+| `schedule_update` | Changes a reminder owned by this session. `after_seconds` is create-only. A prompt or schedule change while a run is in flight returns `schedule_conflict`. |
+| `schedule_delete` | Archives a reminder. Unknown and already archived ids return `deleted: false`. A queued message is not retracted. |
 | `grep` / `find` | Use the pinned bundled ripgrep executable. Search skips dependencies, build directories, denied paths and symlinks. Outputs beyond the requested row limit spill to `artifact://…?size=…`; pass the complete locator to `read` with `offset`/`limit`. |
 
 Read an existing text file in the same session before using `write` or `edit` on it. A missing observation returns `FS_NOT_OBSERVED`; a successful mutation records the resulting version. New files can be created directly. Observations are bounded and process-local: restarting the Host or evicting an observation requires a fresh read. Binary, failed and artifact reads do not unlock workspace mutation. Existing stale-write and truncation checks remain active.
 
 Web questions use choice controls and free-text fields. The TUI displays a question prompt; a single question accepts a label or option number, and multiple choices accept comma-separated labels/numbers. For several questions, enter a JSON object mapping each id to its answer (arrays for multiple choice). Answers are validated and persisted as ordinary user-message ledger events. Invalid answers leave the question open. The agent continues when the deadline expires. Reloaded projections reconstruct pending questions and accepted answers from the ledger.
+
+Five-field cron follows Vixie. A day-of-month or day-of-week field is unrestricted when its text starts with `*`; when both are restricted, a date matches if either field matches. Weekday `7` is Sunday. With a time zone, a local time that does not exist is skipped, and a repeated local time fires once at the earlier instant. After downtime, a recurring reminder delivers only its latest missed occurrence. Deleting a reminder does not retract a message that is already queued. The search horizon is 366 days.
 
 Jobs survive turns but not Host restart. Session close kills and drains owned processes. Capture is bounded to 4 MiB per job; the registry retains 128 jobs per session/lane and evicts completed entries first. The selected sandbox provider owns execution; missing interactive support refuses before launch. Tool cancellation kills a foreground job; a successful background call leaves it running.
 
