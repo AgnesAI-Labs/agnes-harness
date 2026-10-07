@@ -7,16 +7,9 @@ import {
   type SkillResolution,
 } from '@agnes/protocol'
 import { collectSkillFiles, type SkillFile, type SkillFileKind, skillRevision } from './assets.js'
-import {
-  type SkillInvocation,
-  normalizeSkillName,
-  parseSkillDocument,
-  skillSha256,
-} from './frontmatter.js'
+import { normalizeSkillName, parseSkillDocument, type SkillInvocation, skillSha256 } from './frontmatter.js'
 
-export type { SkillInvocation }
-
-export type { SkillFile, SkillFileKind }
+export type { SkillFile, SkillFileKind, SkillInvocation }
 
 export type SkillScope = ProtocolSkillSourceIdentity['scope']
 export type SkillRootKey = ProtocolSkillRootKey
@@ -57,20 +50,12 @@ export function workspaceSkillKey(workspaceRoot: string): string {
   return skillSha256(workspaceRoot)
 }
 
-/**
- * Five roots, two different notions of "home". The `.agents`/`.claude`/`.codex` roots are other
- * tools' own conventions: they have no idea this package exists, so they must stay relative to the
- * real OS home no matter what this deployment has done with its own home directory. The one
- * Agnes-owned root among the five is the opposite: it has to track wherever the rest of the system's
- * state actually lives, which is not always the OS home. This package cannot import the resolver
- * that answers that question -- the package that owns it depends on this one, not the other way
- * around -- so the caller resolves it and hands the two homes in already split apart, rather than
- * this function guessing which of its four appended subdirectories the one parameter was for.
- */
+/** Agnes roots are always scanned; other tools' OS-home roots require explicit deployment opt-in. */
 export function skillRoots(paths: {
   workspaceRoot: string
   osHomeDir: string
   agnesHomeDir: string
+  importUserSkills?: boolean
 }): readonly SkillRoot[] {
   const listed = [
     { ...FIVE_SKILL_ROOTS[0], path: join(paths.workspaceRoot, AGH_DIR, 'skills') },
@@ -89,9 +74,7 @@ export function skillRoots(paths: {
   return Object.freeze([
     { ...workspaceRoot, workspaceKey: workspaceSkillKey(paths.workspaceRoot), dirs },
     listed[1] as SkillRoot,
-    listed[2] as SkillRoot,
-    listed[3] as SkillRoot,
-    listed[4] as SkillRoot,
+    ...(paths.importUserSkills === true ? (listed.slice(2) as SkillRoot[]) : []),
   ])
 }
 

@@ -194,6 +194,7 @@ export async function scanSkills(
   // OS-home-relative default the parameter always had. That default is only correct when AGH_HOME
   // is unset, which is the case it existed to cover before this parameter split in two.
   agnesHomeDir = join(osHomeDir, AGH_DIR),
+  importUserSkills = process.env.AGNES_SKILLS_IMPORT_USER === '1',
 ) {
   const fs = {
     async list(path: string) {
@@ -225,9 +226,12 @@ export async function scanSkills(
   const workspaceKey = cwd ? workspaceSkillKey(cwd) : undefined
   // A shared worker has no workspace of its own. Supplying no cwd deliberately omits the
   // workspace root instead of scanning whichever directory launched the worker process.
-  const roots = baseSkillRoots({ workspaceRoot: cwd ?? agnesHomeDir, osHomeDir, agnesHomeDir }).filter(
-    (root) => cwd !== undefined || root.rootKey !== 'workspace-agnes',
-  )
+  const roots = baseSkillRoots({
+    workspaceRoot: cwd ?? agnesHomeDir,
+    osHomeDir,
+    agnesHomeDir,
+    importUserSkills,
+  }).filter((root) => cwd !== undefined || root.rootKey !== 'workspace-agnes')
   const scans = await Promise.all(roots.map((root) => discoverSkillRoot(fs, root)))
   const filesystem: Array<{ rootKey: FilesystemSkillRoot; candidates: SkillCandidate[] }> = []
   const rootStatuses: Array<{

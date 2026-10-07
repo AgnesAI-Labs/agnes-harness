@@ -21,23 +21,22 @@ description: 只读整理项目说明中的不一致之处
 只提出修改建议，不写文件，不安装依赖。
 ```
 
-在 Web 为该项目创建会话，然后进入 Skills 管理，刷新对应工作区，核对来源和内容修订，再点击“启用”。Web 会先完成版本审核，不再单独显示信任动作。开关跟随你的启用请求：请求过启用它就保持打开，即使 Skill 没能加载起来，失败原因显示在同一行；关掉开关就是撤回请求。命令行仍可查看和管理底层状态：
+daemon 会监视 Skill 根目录，也会发现启动后新建的文件夹。已登记工作区与 `$AGH_HOME/skills` 中的新磁盘 Skill 自动信任并启用，只放入你信任的说明。修改内容后，已记录的信任/拒绝和启用/禁用决定保留并绑定到新修订；被拒绝或禁用的 Skill 不会因修改自动恢复。Skill 不授予执行权限。空闲会话在下一次请求看到更新，在途轮次保留原快照。
+
+在目标项目运行 CLI，会自动登记当前目录并打印 workspaceId。refresh 是可选的立即重扫，需要确认；无需手填工作区 ID：
 
 ```sh
-node packages/cli/dist/local/agnes.mjs resources list --kind skill
-node packages/cli/dist/local/agnes.mjs skills refresh --root-key workspace-agnes --workspace-id WORKSPACE_ID
-node packages/cli/dist/local/agnes.mjs resources get SKILL_RESOURCE_ID
-node packages/cli/dist/local/agnes.mjs skills trust SKILL_RESOURCE_ID REVISION trusted
-node packages/cli/dist/local/agnes.mjs resources enable SKILL_RESOURCE_ID --expected-revision REVISION
+node /path/to/agnes-harness/packages/cli/dist/local/agnes.mjs skills refresh --yes
+node /path/to/agnes-harness/packages/cli/dist/local/agnes.mjs skills list
 ```
 
-`WORKSPACE_ID` 是当前已登记工作区的 64 位十六进制标识，可从工作区/资源数据读取；不要把路径或另一个会话的 ID 填进去。对用户 home 的 Skill 可选择 `--root-key user-agnes`，无需把项目 Skill 移过去。读取最新资源数据后再作写入。
+请替换上面的构建路径；PATH 中已有 `agh` 时可直接使用。指定另一个已登记工作区时加 `--workspace-id WORKSPACE_ID`。`skills list` 打印资源 ID、修订、信任、期望与实际状态。仍可显式执行 `agh skills trust SKILL_RESOURCE_ID REVISION trusted --yes`；启用/禁用用 `agh resources enable|disable SKILL_RESOURCE_ID --expected-revision REVISION --yes`。非 TTY 写操作必须加 `--yes`，只代替确认，不绕过修订校验。
 
 确认 `trust=trusted`、`desired=enabled`、`actual=ready`、`winner`，再在该工作区会话明确说“使用 review-notes 整理项目说明”。当前 Host 对明确提名且唯一匹配的可用 Skill 有预加载路径；模糊描述不是确定性的激活语法。
 
 ## 来源与冲突
 
-磁盘来源包括工作区 `.agh/skills`、`AGH_HOME/skills`，以及操作系统用户目录下的 `.agents/skills`、`.claude/skills`、`.codex/skills`；包也可以贡献 Skill。`AGH_HOME` 不会重定位其他工具的用户目录。多工作区按会话自己的工作区读取，不以 worker 启动目录替代。
+默认磁盘来源是工作区 `.agh/skills`（也支持工作区 `.agents/skills`、`.claude/skills`）和 `$AGH_HOME/skills`；包也可以贡献 Skill。操作系统用户的 `~/.agents/skills`、`~/.claude/skills`、`~/.codex/skills` 默认不导入，包括全新或隔离的 AGH_HOME。只有启动 daemon 时显式设置部署配置 `AGNES_SKILLS_IMPORT_USER=1` 才导入；导入的用户技能同样自动信任，因此只对可信目录开启。`AGH_HOME` 不会重定位其他工具的用户目录。多工作区按会话自己的工作区读取，不以 worker 启动目录替代。
 
 默认优先级如下，数字越大越优先：
 
@@ -53,9 +52,9 @@ node packages/cli/dist/local/agnes.mjs resources enable SKILL_RESOURCE_ID --expe
 
 同名按去除首尾空白并忽略大小写分组；非删除候选先按有效优先级降序，同分按 `sourceId` 排序。`winner` 是解析结果，仍须通过自己的 trust/desired 检查才会 ready。高优先级项未信任、被拒绝或停用时，不会仅因不可用就自动选择低优先级项。
 
-刷新失败可能留下 stale/最近已知内容，不把 stale 当作本次扫描成功。磁盘内容改变需要重新核对 revision 与信任。
+刷新失败可能留下 stale/最近已知内容，不把 stale 当作本次扫描成功。内容修改会保留现有决定并更新绑定修订。
 
-技能根里可以是目录 `<name>/SKILL.md`，也可以是扁平的 `<name>.md`。两者同名时目录胜出。不支持自定义根目录。`SKILL.md` 可以设置 `disable-model-invocation`、`user-invocable` 和 `disable`；省略这些字段时模型与用户两侧都允许。没有目录监视器：下一次刷新会读取变更后的说明和相对资源文件。细节与不支持的情况见 [MCP 与 Skills 支持范围](mcp-skills-support.zh-CN.md)。
+技能根里可以是目录 `<name>/SKILL.md`，也可以是扁平的 `<name>.md`。两者同名时目录胜出。不支持自定义根目录。`SKILL.md` 可以设置 `disable-model-invocation`、`user-invocable` 和 `disable`；省略这些字段时模型与用户两侧都允许。daemon 会监视目录中的说明与相对资源文件；`skills refresh --yes` 可立即重扫。细节与不支持的情况见 [MCP 与 Skills 支持范围](mcp-skills-support.zh-CN.md)。
 
 ## 调整同名候选优先级
 

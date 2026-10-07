@@ -20,6 +20,49 @@
 
 本地 stdio 服务的确认仅授权该服务的具体配置启动。显式配置的部署 allowlist 始终有效；会话不能覆盖管理员的限制。更新定义或撤销信任后，原配置的本地启动批准失效，需要重新审核。
 
+## 可直接复制的本地 stdio 示例
+
+在源码仓库构建 CLI 后执行。此例只需 Node，不依赖网络包或 API key；使用全新的 AGH_HOME 和 local-dev profile。完成信任与启用后 daemon 会启动服务，无需另开进程。
+
+```sh
+export AGNES_PROFILE=local-dev
+export AGH_HOME="$(mktemp -d)"
+cat > "$AGH_HOME/hello-mcp.mjs" <<'JS'
+import { createInterface } from 'node:readline';
+const lines = createInterface({ input: process.stdin });
+lines.on('line', (line) => {
+  const request = JSON.parse(line);
+  if (request.id === undefined) return;
+  let result = {};
+  if (request.method === 'initialize') result = {
+    protocolVersion: request.params.protocolVersion,
+    capabilities: { tools: {} },
+    serverInfo: { name: 'hello-local', version: '1.0.0' },
+  };
+  if (request.method === 'tools/list') result = { tools: [{
+    name: 'hello', description: 'Return a local greeting',
+    inputSchema: { type: 'object', properties: {}, additionalProperties: false },
+  }] };
+  if (request.method === 'tools/call') result = {
+    content: [{ type: 'text', text: 'Hello from local MCP' }],
+  };
+  process.stdout.write(JSON.stringify({ jsonrpc: '2.0', id: request.id, result }) + '\n');
+});
+JS
+node packages/cli/dist/local/agnes.mjs mcp add hello-local --name hello-local --stdio node --arg "$AGH_HOME/hello-mcp.mjs" --yes
+MCP_REVISION=$(node packages/cli/dist/local/agnes.mjs mcp get hello-local | sed -n 's/.*revision=\([a-f0-9]*\).*/\1/p')
+node packages/cli/dist/local/agnes.mjs mcp trust hello-local --expected-revision "$MCP_REVISION" --yes
+MCP_REVISION=$(node packages/cli/dist/local/agnes.mjs mcp get hello-local | sed -n 's/.*revision=\([a-f0-9]*\).*/\1/p')
+node packages/cli/dist/local/agnes.mjs mcp enable hello-local --expected-revision "$MCP_REVISION" --yes
+node packages/cli/dist/local/agnes.mjs mcp status hello-local
+node packages/cli/dist/local/agnes.mjs mcp tools hello-local
+node packages/cli/dist/local/agnes.mjs mcp test hello-local --expected-revision "$MCP_REVISION" --yes
+```
+
+预期看到 `connection=ready`、`hello` 工具和 succeeded 测试。在已配置模型的会话中让代理调用 hello-local 的 hello。
+
+local-dev 默认允许 PATH 上的 stdio `node`、`npx`、`python`、`python3`，以及 loopback HTTP（`127.0.0.1`、`localhost`、`[::1]`）。这只是部署默认值，服务定义仍须审核并启用。启动 daemon 前设置 `AGNES_MCP_LOCAL_DEV_DEFAULTS=0` 可关闭两项默认值。`AGNES_MCP_STDIO_ALLOWLIST` 是逗号分隔的精确 executable 名称/路径列表（可为空），会替代默认列表；`AGNES_MCP_ALLOW_LOOPBACK_HTTP=0` 禁用 loopback HTTP，`1` 则显式允许。修改部署设置后重启 daemon。enterprise 与其他生产 profile 保持原有策略。非 TTY 写操作须加 `--yes`；`agh mcp --help` 不启动后台。enable/test 失败会显示具体、安全的状态原因。
+
 ## 配置并验证
 
 Web 设置的 MCP 页面可查看服务、连接与工具目录。需要手动配置 stdio、HTTP 或 SSE 服务时，可使用命令行；`MCP_URL` 应是你已审核并可访问的 MCP endpoint，不是普通网页或模型 Base URL：

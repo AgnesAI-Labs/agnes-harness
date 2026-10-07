@@ -30,7 +30,7 @@ it('reports skipped entries without leaking a path or directory name, and keeps 
   const workspace = join(root, 'workspace')
   await mkdir(workspace)
 
-  const scanned = await scanSkills(workspace, undefined, undefined, home, join(home, '.agh'))
+  const scanned = await scanSkills(workspace, undefined, undefined, home, join(home, '.agh'), true)
   const status = scanned.rootStatuses.find((entry) => entry.rootKey === 'user-agents')
   expect(status).toMatchObject({
     rootKey: 'user-agents',
@@ -57,7 +57,7 @@ it('still fails the whole root when the directory itself cannot be read', async 
   await writeFile(join(home, '.agents', 'skills'), 'not a directory')
   const workspace = join(root, 'workspace')
   await mkdir(workspace)
-  const scanned = await scanSkills(workspace, undefined, undefined, home, join(home, '.agh'))
+  const scanned = await scanSkills(workspace, undefined, undefined, home, join(home, '.agh'), true)
   expect(scanned.rootStatuses.find((entry) => entry.rootKey === 'user-agents')).toMatchObject({
     state: 'unavailable',
     diagnostic: { code: 'root-unreadable' },
@@ -75,7 +75,7 @@ it('leaves a healthy root without a diagnostic', async () => {
   const workspace = join(root, 'workspace')
   await mkdir(workspace)
 
-  const scanned = await scanSkills(workspace, undefined, undefined, home, join(home, '.agh'))
+  const scanned = await scanSkills(workspace, undefined, undefined, home, join(home, '.agh'), true)
   const status = scanned.rootStatuses.find((entry) => entry.rootKey === 'user-agents')
   expect(status).toMatchObject({ state: 'ready' })
   expect(status).not.toHaveProperty('diagnostic')

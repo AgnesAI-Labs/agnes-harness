@@ -296,7 +296,7 @@ const PACKAGE_SETTLED = new Set(['completed', 'failed', 'rolled-back'])
 
 /**
  * Starts the daemon's Skill watcher: the user roots immediately, the daemon's own workspace when it
- * was launched for one, every other workspace once a session binds to it, and package Skills after
+ * was launched for one, every other workspace once registered or bound, and package Skills after
  * each settled package operation (install, trust, enable and the rest all change that inventory).
  */
 export async function startSkillWatcher(o: {
@@ -309,7 +309,11 @@ export async function startSkillWatcher(o: {
   log?: Pick<Console, 'warn'>
 }): Promise<SkillWatcher> {
   const env = o.env ?? process.env
-  const homes = { osHomeDir: env.HOME ?? env.USERPROFILE ?? homedir(), agnesHomeDir: agnesHome(env) }
+  const homes = {
+    importUserSkills: env.AGNES_SKILLS_IMPORT_USER === '1',
+    osHomeDir: env.HOME ?? env.USERPROFILE ?? homedir(),
+    agnesHomeDir: agnesHome(env),
+  }
   const workspaceSkills = (workspaceRoot: string) =>
     (skillRoots({ workspaceRoot, ...homes })[0]?.dirs ?? []).map((dir) => dir.path)
   const watcher = createSkillWatcher({
@@ -320,6 +324,9 @@ export async function startSkillWatcher(o: {
     if (root.rootKey !== 'workspace-agnes')
       watcher.watchRoot({ rootKey: root.rootKey }, root.path, { followLinks: root.scope === 'user' })
   }
+  const stopRegistered = o.catalog.onRegistered((workspaceId, root) =>
+    watcher.watchWorkspace(workspaceId, workspaceSkills(root)),
+  )
   const stopBound = o.catalog.onBound((workspaceId, root) =>
     watcher.watchWorkspace(workspaceId, workspaceSkills(root)),
   )
@@ -348,6 +355,7 @@ export async function startSkillWatcher(o: {
     ...watcher,
     close: () => {
       stopBound()
+      stopRegistered()
       stopPackages?.()
       return watcher.close()
     },

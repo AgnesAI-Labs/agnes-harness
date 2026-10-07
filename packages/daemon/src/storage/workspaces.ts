@@ -251,6 +251,7 @@ export class SessionWorkspaceConflictError extends Error {
 /** Registered authority and durable history remain separate: history never creates an authority row. */
 export class WorkspaceCatalog {
   private readonly usedSessionKeys: Set<string>
+  private readonly registeredListeners = new Set<(workspaceId: string, root: string) => void>()
   private readonly boundListeners = new Set<(workspaceId: string, root: string) => void>()
 
   constructor(
@@ -272,6 +273,14 @@ export class WorkspaceCatalog {
     return this.bindings.get(sessionKey)?.canonicalRoot
   }
 
+  /** Observes explicit workspace registration so Skill discovery can watch it before a session exists. */
+  onRegistered(listener: (workspaceId: string, root: string) => void): () => void {
+    this.registeredListeners.add(listener)
+    return () => {
+      this.registeredListeners.delete(listener)
+    }
+  }
+
   /** Observes successful session bindings. A listener cannot veto or alter the binding. */
   onBound(listener: (workspaceId: string, root: string) => void): () => void {
     this.boundListeners.add(listener)
@@ -291,6 +300,11 @@ export class WorkspaceCatalog {
   async add(path: string): Promise<WorkspaceEntry> {
     const directory = await this.resolve(path)
     const row = this.store.put(directory, new Date(this.clock()).toISOString())
+    for (const listener of this.registeredListeners) {
+      try {
+        listener(row.workspaceId, row.path)
+      } catch {}
+    }
     return this.entry(row, this.sessionAggregate(), true)
   }
 

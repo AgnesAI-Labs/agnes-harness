@@ -233,6 +233,7 @@ export async function bootstrapWorkerResources(
     input.env.AGNES_RESOURCE_SKILL_LKG_DIR,
     input.env.HOME ?? input.env.USERPROFILE ?? homedir(),
     input.agnesHomeDir,
+    input.env.AGNES_SKILLS_IMPORT_USER === '1',
   )
   // A test/single-server candidate worker still needs its one server *staged* (createMcpResourceManager's
   // test()/tools() call verify(), which reads only from `staged`, populated by the manager's own
@@ -277,6 +278,7 @@ export async function bootstrapWorkerResources(
         cwd: input.cwd,
         osHomeDir: input.env.HOME ?? input.env.USERPROFILE ?? homedir(),
         agnesHomeDir: input.agnesHomeDir,
+        importUserSkills: input.env.AGNES_SKILLS_IMPORT_USER === '1',
       }),
     skillResources: input.cwd
       ? boot.skillResources
@@ -289,6 +291,7 @@ export async function bootstrapWorkerResources(
             input.env.AGNES_RESOURCE_SKILL_LKG_DIR,
             input.env.HOME ?? input.env.USERPROFILE ?? homedir(),
             input.agnesHomeDir,
+            input.env.AGNES_SKILLS_IMPORT_USER === '1',
           )
           for (const item of scan.roots) {
             if (item.rootKey === 'package') scoped.replacePackage(item.candidates)

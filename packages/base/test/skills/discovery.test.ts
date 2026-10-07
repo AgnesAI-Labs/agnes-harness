@@ -94,7 +94,9 @@ describe('skill discovery', () => {
     // assertion to mean anything -- neither is a substring or prefix of the other.
     const osHomeDir = '/srv/os-account'
     const agnesHomeDir = '/var/agnes-deployment/custom-home'
-    const roots = skillRoots({ workspaceRoot: '/work/project', osHomeDir, agnesHomeDir })
+    const input = { workspaceRoot: '/work/project', osHomeDir, agnesHomeDir }
+    expect(skillRoots(input).map((root) => root.rootKey)).toEqual(['workspace-agnes', 'user-agnes'])
+    const roots = skillRoots({ ...input, importUserSkills: true })
     expect(roots.map((root) => [root.rootKey, root.path])).toEqual([
       ['workspace-agnes', join('/work/project', '.agh', 'skills')],
       // The one Agnes-owned root follows the resolved Agnes home, not the OS home -- this is

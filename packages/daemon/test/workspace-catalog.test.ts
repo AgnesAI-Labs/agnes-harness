@@ -87,12 +87,21 @@ describe('WorkspaceCatalog', () => {
       () => 0,
     )
     const seen: Array<[string, string]> = []
+    const registrations: Array<[string, string]> = []
+    catalog.onRegistered(() => {
+      throw new Error('listener failure must not break registration')
+    })
+    const stopRegistered = catalog.onRegistered((id, root) => registrations.push([id, root]))
     catalog.onBound(() => {
       throw new Error('a failing listener must not break binding')
     })
     const stop = catalog.onBound((id, root) => seen.push([id, root]))
     await expect(catalog.authorizeAndBind('s1', '/repo/a')).rejects.toBeDefined()
     await catalog.add('/repo/a')
+    expect(registrations).toEqual([[workspaceId('/repo/a'), '/repo/a']])
+    stopRegistered()
+    await catalog.add('/repo/a')
+    expect(registrations).toHaveLength(1)
     await catalog.authorizeAndBind('s1', '/repo/a')
     await catalog.restoreBinding('s1')
     await expect(catalog.restoreBinding('missing')).rejects.toBeDefined()

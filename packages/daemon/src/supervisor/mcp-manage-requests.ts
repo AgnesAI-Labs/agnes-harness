@@ -71,7 +71,7 @@ export function createMcpManageRequests(options: {
 }) {
   const proposals = new Map<string, Proposal>()
   const pending = new Map<string, AbortController>()
-  const policy = deploymentMcpPolicy(process.env)
+  const policy = deploymentMcpPolicy(process.env, options.profile)
   const directory = join(options.directory, 'mcp-onboarding')
   const receiptPath = (id: string) => join(directory, `${id}.json`)
   const save = async (receipt: Receipt) => {

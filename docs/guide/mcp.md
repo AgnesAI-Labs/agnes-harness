@@ -24,6 +24,49 @@ The session helper currently supports credential-free stdio, HTTP, and SSE defin
 
 Confirmation for a local stdio service authorizes startup of that specific configuration. An explicit deployment allowlist remains binding; sessions cannot override administrator restrictions. Updating the definition or revoking trust invalidates the previous local startup approval and requires review again.
 
+## Try a local stdio server
+
+From the source repository after building the CLI, this example needs only Node and no network dependency or API key. It uses a fresh AGH_HOME and the local-dev profile. The daemon launches the server after trust and enable; do not start it separately.
+
+```sh
+export AGNES_PROFILE=local-dev
+export AGH_HOME="$(mktemp -d)"
+cat > "$AGH_HOME/hello-mcp.mjs" <<'JS'
+import { createInterface } from 'node:readline';
+const lines = createInterface({ input: process.stdin });
+lines.on('line', (line) => {
+  const request = JSON.parse(line);
+  if (request.id === undefined) return;
+  let result = {};
+  if (request.method === 'initialize') result = {
+    protocolVersion: request.params.protocolVersion,
+    capabilities: { tools: {} },
+    serverInfo: { name: 'hello-local', version: '1.0.0' },
+  };
+  if (request.method === 'tools/list') result = { tools: [{
+    name: 'hello', description: 'Return a local greeting',
+    inputSchema: { type: 'object', properties: {}, additionalProperties: false },
+  }] };
+  if (request.method === 'tools/call') result = {
+    content: [{ type: 'text', text: 'Hello from local MCP' }],
+  };
+  process.stdout.write(JSON.stringify({ jsonrpc: '2.0', id: request.id, result }) + '\n');
+});
+JS
+node packages/cli/dist/local/agnes.mjs mcp add hello-local --name hello-local --stdio node --arg "$AGH_HOME/hello-mcp.mjs" --yes
+MCP_REVISION=$(node packages/cli/dist/local/agnes.mjs mcp get hello-local | sed -n 's/.*revision=\([a-f0-9]*\).*/\1/p')
+node packages/cli/dist/local/agnes.mjs mcp trust hello-local --expected-revision "$MCP_REVISION" --yes
+MCP_REVISION=$(node packages/cli/dist/local/agnes.mjs mcp get hello-local | sed -n 's/.*revision=\([a-f0-9]*\).*/\1/p')
+node packages/cli/dist/local/agnes.mjs mcp enable hello-local --expected-revision "$MCP_REVISION" --yes
+node packages/cli/dist/local/agnes.mjs mcp status hello-local
+node packages/cli/dist/local/agnes.mjs mcp tools hello-local
+node packages/cli/dist/local/agnes.mjs mcp test hello-local --expected-revision "$MCP_REVISION" --yes
+```
+
+Expect `connection=ready`, a `hello` tool, and a succeeded test. In a configured session ask the agent to call `hello` on `hello-local`.
+
+Local-dev permits stdio `node`, `npx`, `python`, and `python3` on PATH, plus HTTP on loopback (`127.0.0.1`, `localhost`, `[::1]`) by default. These are deployment defaults, not trust grants: definitions still need review and enablement. Set `AGNES_MCP_LOCAL_DEV_DEFAULTS=0` before daemon startup to disable both defaults. `AGNES_MCP_STDIO_ALLOWLIST` (comma-separated exact executable names/paths, including an empty value) replaces the default executable list; `AGNES_MCP_ALLOW_LOOPBACK_HTTP=0` disables loopback HTTP (`1` explicitly enables it). Restart the daemon when changing deployment settings. Enterprise and other production profiles keep their existing policy. Non-TTY mutations require `--yes`; `agh mcp --help` is safe to run without starting the backend. Enable/test failures include the concrete safe status reason.
+
 <a id="配置并验证"></a>
 
 ## Configure and verify

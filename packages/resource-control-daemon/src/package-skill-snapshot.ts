@@ -66,13 +66,17 @@ export async function writePackageSkillInventory(
 }
 
 /** Deployment configuration only; API requests cannot influence this capability ceiling. */
-export function deploymentMcpPolicy(env: NodeJS.ProcessEnv): {
+export function deploymentMcpPolicy(
+  env: NodeJS.ProcessEnv,
+  profile = env.AGNES_PROFILE ?? 'local-dev',
+): {
   localStartApprovals: boolean
   allowedExecutables: string[]
   allowLoopbackHttp: boolean
   localDaemon: boolean
 } {
-  const allowedExecutables = (env.AGNES_MCP_STDIO_ALLOWLIST ?? '')
+  const localDev = profile === 'local-dev' && env.AGNES_MCP_LOCAL_DEV_DEFAULTS !== '0'
+  const allowedExecutables = (env.AGNES_MCP_STDIO_ALLOWLIST ?? (localDev ? 'node,npx,python,python3' : ''))
     .split(',')
     .filter(
       (value) =>
@@ -83,7 +87,9 @@ export function deploymentMcpPolicy(env: NodeJS.ProcessEnv): {
   return {
     localStartApprovals: env.AGNES_MCP_STDIO_ALLOWLIST === undefined,
     allowedExecutables: allowedExecutables.sort(),
-    allowLoopbackHttp: env.AGNES_MCP_ALLOW_LOOPBACK_HTTP === '1',
+    allowLoopbackHttp:
+      env.AGNES_MCP_ALLOW_LOOPBACK_HTTP === '1' ||
+      (localDev && env.AGNES_MCP_ALLOW_LOOPBACK_HTTP === undefined),
     localDaemon: true,
   }
 }

@@ -444,7 +444,12 @@ describe('createSkillWatcher on the real filesystem', () => {
       new MemorySessionWorkspaces(),
       async (path) => ({ path, name: 'ws' }),
     )
-    const watcher = await startSkillWatcher({ service, profile: 'p', catalog, env: { HOME: home } })
+    const watcher = await startSkillWatcher({
+      service,
+      profile: 'p',
+      catalog,
+      env: { HOME: home, AGNES_SKILLS_IMPORT_USER: '1' },
+    })
     await catalog.add(workspace)
     await catalog.authorizeAndBind('session', workspace)
     const workspaceId = createHash('sha256').update(workspace, 'utf8').digest('hex')
@@ -505,7 +510,7 @@ describe('createSkillWatcher on the real filesystem', () => {
       profile: 'p',
       catalog,
       packages,
-      env: { HOME: join(directory, 'home') },
+      env: { HOME: join(directory, 'home'), AGNES_SKILLS_IMPORT_USER: '1' },
     })
     const emit = (operation: string, state: string, profile = 'p') =>
       listener?.({ profile, operation, state })
@@ -568,7 +573,7 @@ describe('startSkillWatcher at daemon start', () => {
       profile: 'p',
       catalog,
       defaultWorkspaceRoot: workspace,
-      env: { HOME: join(directory, 'home') },
+      env: { HOME: join(directory, 'home'), AGNES_SKILLS_IMPORT_USER: '1' },
     })
     const workspaceId = createHash('sha256').update(workspace, 'utf8').digest('hex')
     await vi.waitFor(() => expect(seen).toEqual([{ workspaceId }]))

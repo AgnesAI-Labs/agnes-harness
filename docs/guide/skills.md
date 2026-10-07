@@ -25,17 +25,16 @@ Read the README and related documentation, then list conflicting statements and 
 Suggest changes only. Do not write files or install dependencies.
 ```
 
-Create a Web session for the project. In Skills management, refresh that workspace and check the source and content revision, then choose Enable. Web performs the version approval before enabling and does not show a separate trust action. The switch follows your enable request: it stays on once you have asked for it, even when the Skill fails to load, and the reason appears in the same row. Turning it off withdraws the request. You can also inspect and manage the underlying states from the CLI:
+The daemon watches Skill roots, including folders created after startup. New disk Skills in the registered workspace or `$AGH_HOME/skills` are automatically trusted and enabled. Put only instructions you trust there. Edits retain the recorded trust/rejection and enable/disable decision, bound to the new revision; a rejected or disabled Skill stays rejected or disabled. Skills never grant execution permissions. Changes become visible to idle sessions on the next request; an in-flight turn keeps its snapshot.
+
+From the target project, use the CLI to register the current directory and print its workspaceId. Refresh is an optional immediate rescan, with confirmation; no manual workspace ID is needed:
 
 ```sh
-node packages/cli/dist/local/agnes.mjs resources list --kind skill
-node packages/cli/dist/local/agnes.mjs skills refresh --root-key workspace-agnes --workspace-id WORKSPACE_ID
-node packages/cli/dist/local/agnes.mjs resources get SKILL_RESOURCE_ID
-node packages/cli/dist/local/agnes.mjs skills trust SKILL_RESOURCE_ID REVISION trusted
-node packages/cli/dist/local/agnes.mjs resources enable SKILL_RESOURCE_ID --expected-revision REVISION
+node /path/to/agnes-harness/packages/cli/dist/local/agnes.mjs skills refresh --yes
+node /path/to/agnes-harness/packages/cli/dist/local/agnes.mjs skills list
 ```
 
-`WORKSPACE_ID` is the registered workspace's 64-character hexadecimal identifier, available in workspace/resource data. Do not use a path or another session's ID. Use `--root-key user-agnes` for a Skill under your AGH home; there is no need to move a project Skill there. Read current resource data before writing.
+Use your actual built CLI path above, or `agh` when it is on PATH. To scope another registered workspace, pass `--workspace-id WORKSPACE_ID`. `skills list` prints resource IDs, revisions, trust, desired and actual state. Explicit trust changes remain available as `agh skills trust SKILL_RESOURCE_ID REVISION trusted --yes`; enable/disable uses `agh resources enable|disable SKILL_RESOURCE_ID --expected-revision REVISION --yes`. Without a TTY, mutations require `--yes`; it confirms the reviewed change without bypassing revision checks.
 
 Confirm `trust=trusted`, `desired=enabled`, `actual=ready`, and `winner`, then explicitly ask the workspace session to use `review-notes`. Host can preload an explicitly named, uniquely matched, available Skill. A vague description is not a deterministic activation syntax.
 
@@ -43,7 +42,7 @@ Confirm `trust=trusted`, `desired=enabled`, `actual=ready`, and `winner`, then e
 
 ## Sources and conflicts
 
-Disk sources include workspace `.agh/skills`, `AGH_HOME/skills`, and `.agents/skills`, `.claude/skills`, and `.codex/skills` under the operating-system user's home. Packages can also contribute Skills. `AGH_HOME` does not relocate other tools' user directories. Each session reads its own workspace rather than substituting the worker's startup directory.
+Default disk sources are workspace `.agh/skills` (also workspace `.agents/skills` and `.claude/skills`) and `$AGH_HOME/skills`; packages can also contribute Skills. Importing the OS user's `~/.agents/skills`, `~/.claude/skills`, and `~/.codex/skills` requires explicit deployment configuration `AGNES_SKILLS_IMPORT_USER=1` when starting the daemon. It is off by default, including for a fresh or isolated AGH_HOME. Imported user Skills use the same automatic trust policy; opt in only for trusted folders. `AGH_HOME` does not relocate those other tools' user directories. Each session reads its own workspace rather than substituting the worker's startup directory.
 
 Default priorities, with higher values taking precedence:
 
@@ -59,9 +58,9 @@ Default priorities, with higher values taking precedence:
 
 Names are grouped after trimming whitespace and ignoring case. Candidates not marked for deletion are ordered by effective priority descending, then by `sourceId` for ties. The resolved `winner` must still pass its own trust/desired checks to become ready. A higher-priority candidate that is untrusted, rejected, or disabled does not automatically yield to a lower-priority candidate merely because it is unavailable.
 
-A failed refresh may leave stale or last-known content. Stale data is not evidence of a successful scan. Disk changes require revision and trust review again.
+A failed refresh may leave stale or last-known content. Stale data is not evidence of a successful scan. Edits retain existing decisions and update the bound revision.
 
-A skill root may contain a directory `<name>/SKILL.md` or a flat `<name>.md`. The directory wins when both exist. Custom roots are not supported. `SKILL.md` may set `disable-model-invocation`, `user-invocable`, and `disable`; omitted flags permit both model and user use. There is no directory watcher: the next refresh reads changed instructions and relative resource files. Details and the unsupported cases are in [MCP and Skills support](mcp-skills-support.md).
+A skill root may contain a directory `<name>/SKILL.md` or a flat `<name>.md`. The directory wins when both exist. Custom roots are not supported. `SKILL.md` may set `disable-model-invocation`, `user-invocable`, and `disable`; omitted flags permit both model and user use. The daemon watches directories and relative resource files; `skills refresh --yes` requests an immediate rescan. Details and the unsupported cases are in [MCP and Skills support](mcp-skills-support.md).
 
 <a id="调整同名候选优先级"></a>
 

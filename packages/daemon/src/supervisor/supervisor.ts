@@ -1129,7 +1129,7 @@ export async function startSupervisor(o: StartSupervisorOptions): Promise<{
         ...(localResourceStore ? { snapshotPath: localResourceStore.snapshotPath(o.profile.name) } : {}),
         skillLkgDirectory: resourceSkillLkgDirectory,
         packageSkillSnapshotPath,
-        mcpPolicy: deploymentMcpPolicy(process.env),
+        mcpPolicy: deploymentMcpPolicy(process.env, o.profile.name),
       },
       clock,
       ...(o.workerExecPath ? { execPath: o.workerExecPath } : {}),
