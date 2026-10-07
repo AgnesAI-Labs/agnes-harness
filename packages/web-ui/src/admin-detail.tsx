@@ -1,5 +1,5 @@
 import type { PackageOperation } from '@agnes/protocol'
-import type { JSX } from 'react'
+import type { JSX, ReactNode } from 'react'
 import { ADMIN_LOCALE_NAMESPACE, operationLabel } from './admin-text.js'
 import { adminLocaleCatalog } from './locales/admin.js'
 import { ADMIN_DETAIL_LOCALE_NAMESPACE, adminDetailLocaleCatalog } from './locales/admin-detail.js'
@@ -50,6 +50,7 @@ export function DetailContent({
   intro,
   version,
   stateText,
+  metadata,
   facts,
   blockerSections,
   operations,
@@ -61,6 +62,7 @@ export function DetailContent({
   heading: string
   intro: string
   version: string | undefined
+  metadata?: ReactNode
   stateText: string | undefined
   facts: readonly (readonly [label: string, value: string])[]
   blockerSections: readonly { title: string; items: readonly string[] }[]
@@ -87,6 +89,7 @@ export function DetailContent({
           </button>
         </div>
         {version && <p className="plugin-detail-version">{version}</p>}
+        {metadata}
         {stateText && <p className="plugin-detail-state">{stateText}</p>}
         <p>{intro}</p>
       </div>

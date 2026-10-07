@@ -421,6 +421,7 @@ export type {
   RuntimeTargetIdentity,
   WorkerGeneration,
 } from '../gen/ts/worker.js'
+export * from './admin-session-selection.js'
 export * from './attachments.js'
 export * from './codec/permission.js'
 export * from './codec/stop-reason.js'
@@ -471,5 +472,3 @@ export {
   validateUserAttachments,
 } from './validate.js'
 export * from './worker-generation.js'
-
-export * from './admin-session-selection.js'

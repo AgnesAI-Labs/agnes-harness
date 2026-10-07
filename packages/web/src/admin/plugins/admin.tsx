@@ -46,6 +46,13 @@ import {
 import type { ReactNode } from 'react'
 import type { PluginRuntimeState } from '../../client-modules/runtime-status.js'
 import { AdminApiError, PluginAdminApi } from './api.js'
+import {
+  KindFilter,
+  PluginBadges,
+  type PluginKind,
+  pluginFailureMessage,
+  SessionDefaultsPanel,
+} from './control-panel.js'
 import { PLUGIN_ADMIN_LOCALE_NAMESPACE, pluginAdminLocaleCatalog } from './locales/admin.js'
 import { SOURCE_FORMATS, sourceFromForm, sourceProblem } from './source-form.js'
 import {
@@ -227,6 +234,7 @@ class PluginAdminPage {
     loading: true,
     connection: 'loading',
   }
+  #kind: PluginKind | '' = ''
   #api: PluginAdminApi | undefined
   #tab: 'installed' | 'discover' = 'installed'
   #query = ''
@@ -362,7 +370,8 @@ class PluginAdminPage {
       const context = await PluginAdminApi.context()
       if (generation !== this.#generation) return
       resolvedContext = context
-      this.#api = new PluginAdminApi(context)
+      if (JSON.stringify(this.#state.context) !== JSON.stringify(context) || !this.#api)
+        this.#api = new PluginAdminApi(context)
       // Context remains useful even when inventory cannot be read: its recovery flag must still
       // disable effects, while read-only catalog calls may remain available.
       this.#state = { ...this.#state, context }
@@ -1080,9 +1089,22 @@ class PluginAdminPage {
     renderRegion(
       this.#listHost,
       <UiLocaleProvider source={this.#locale}>
+        <SessionDefaultsPanel api={this.#api} canSave={this.canEffect('packages.activate')} t={this.#t} />
+        <KindFilter
+          value={this.#kind}
+          t={this.#t}
+          onChange={(value) => {
+            this.#kind = value
+            this.render()
+          }}
+        />
         <PluginList
+          formatFailure={(message) => pluginFailureMessage(message, this.#t)}
+          metadataOf={(item) => <PluginBadges item={item} runtime={this.runtimeState(item.id)} t={this.#t} />}
           tab={this.#tab}
-          rows={this.#tab === 'installed' ? this.filteredInstalled() : this.#state.catalog}
+          rows={(this.#tab === 'installed' ? this.filteredInstalled() : this.#state.catalog).filter(
+            (item) => !this.#kind || item.kinds?.includes(this.#kind),
+          )}
           loading={loading}
           inventoryAuthoritative={this.#state.inventoryAuthoritative}
           query={this.#query}
@@ -1183,7 +1205,7 @@ class PluginAdminPage {
       const runtime = this.runtimeState(item.id)
       const failureReason =
         runtime?.error?.message ?? (item.actual === 'running' ? undefined : item.actualReason)
-      if (failureReason) facts.push([this.#t('fact.failure'), failureReason])
+      if (failureReason) facts.push([this.#t('fact.failure'), pluginFailureMessage(failureReason, this.#t)])
       facts.push([
         this.#t('fact.cleanup'),
         item.cleanupPending ? this.#t('fact.cleanup-pending') : this.#t('fact.cleanup-none'),
@@ -1200,6 +1222,7 @@ class PluginAdminPage {
       <UiLocaleProvider source={this.#locale}>
         <DetailContent
           heading={item.id}
+          metadata={<PluginBadges item={item} runtime={this.runtimeState(item.id)} t={this.#t} />}
           intro=""
           version={this.#t('version', { version: item.version })}
           stateText={'trusted' in item ? undefined : this.#t('compatibility', { value: item.compatibility })}

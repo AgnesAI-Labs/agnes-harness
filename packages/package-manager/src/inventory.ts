@@ -1,11 +1,11 @@
-import { existsSync, readFileSync } from 'node:fs'
+import { existsSync } from 'node:fs'
 import { resolve } from 'node:path'
 import type { PackageBlocker, PackageContributionSummary } from '@agnes/protocol'
-import { parseAgnesPluginKinds, type AgnesPluginKind } from './plugin-manifest.js'
 import { PackageError } from './errors.js'
 import { inspectStaged } from './inspect.js'
 import { canonical, capabilityHash, freezeData, snapshotHash } from './integrity.js'
 import type { LockEntry, Lockfile } from './lockfile.js'
+import type { AgnesPluginKind } from './plugin-manifest.js'
 import { hashDirectory, packageDir, parseSource } from './sources.js'
 import { previousPackageDir } from './store.js'
 import { verifyWorkspace } from './workspace.js'
@@ -70,7 +70,7 @@ export function verifyPackageDirectory(
   entry: LockEntry,
   directory: string,
   ceiling: readonly string[],
-): { capabilityHash: string; blockers: readonly PackageBlocker[] } {
+): { capabilityHash: string; blockers: readonly PackageBlocker[]; kinds?: readonly AgnesPluginKind[] } {
   const hash = capabilityHash(entry)
   if (
     entry.contributions === undefined ||
@@ -112,7 +112,11 @@ export function verifyPackageDirectory(
     throw new PackageError('E_LOCK_MISMATCH', 'installed inventory metadata differs from lock', {
       detail: { id },
     })
-  return { capabilityHash: hash, blockers: checked.preview.blockers }
+  return {
+    capabilityHash: hash,
+    blockers: checked.preview.blockers,
+    ...(checked.preview.kinds === undefined ? {} : { kinds: checked.preview.kinds }),
+  }
 }
 function verifiedRollbackTarget(
   id: string,
@@ -183,6 +187,7 @@ export function readInventory(
     }
     const blockers: PackageBlocker[] = []
     let hash = capabilityHash(entry)
+    let kinds: readonly AgnesPluginKind[] | undefined
     if (entry.contributions === undefined || entry.treeIntegrity === undefined)
       blockers.push({ code: 'unknown-contribution', references: ['static-inventory-migration-required'] })
     else {
@@ -197,6 +202,7 @@ export function readInventory(
         options.ceiling ?? lock.policySnapshot.capabilityCeiling,
       )
       hash = verified.capabilityHash
+      kinds = verified.kinds
       blockers.push(
         ...verified.blockers.filter(
           (b) => !(entry.source.type === 'workspace' && b.references.includes('use-trust-workspace')),
@@ -212,9 +218,6 @@ export function readInventory(
       throw new PackageError('E_WORKSPACE_UNTRUSTED', 'installed trust snapshot differs from lock', {
         detail: { id },
       })
-    const kinds = directory !== null && entry.treeIntegrity !== undefined
-      ? parseAgnesPluginKinds(JSON.parse(readFileSync(resolve(directory, 'package.json'), 'utf8')).agnes?.kinds)
-      : undefined
     packages.push({
       id,
       entry,

@@ -1,4 +1,5 @@
 import { createServer } from 'node:http'
+import type { AdminSessionSelection, PackageAdminPermission } from '@agnes/protocol'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { ACTIONS, type AdminSurfaceAction, createAdminSurface } from '../src/packages/admin-surface.js'
 
@@ -14,6 +15,10 @@ async function server(
   surfaceLinks: () => Promise<readonly { packageId: string; surfaceId: string; mount: string }[]> = vi.fn(
     async () => [],
   ),
+  selectionOptions: {
+    sessionSelection?: AdminSessionSelection
+    permissions?: readonly PackageAdminPermission[]
+  } = {},
 ) {
   let now = Date.now()
   let handler: ReturnType<typeof createAdminSurface>
@@ -26,6 +31,7 @@ async function server(
   const origin = `http://127.0.0.1:${address.port}`
   const token = 'test-lifecycle-token-not-real-secret'
   handler = createAdminSurface({
+    ...selectionOptions,
     origin,
     token,
     profile: 'local-dev',
@@ -56,6 +62,12 @@ async function server(
     login,
     invoke,
     surfaceLinks,
+    selectionRequest: (route: string, method = 'GET', body?: unknown, headers: Record<string, string> = {}) =>
+      fetch(`${origin}/admin/api/${route}`, {
+        method,
+        headers: { Origin: origin, 'Content-Type': 'application/json', ...headers },
+        ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+      }),
     expire: () => {
       now += 3_600_001
     },
@@ -227,4 +239,58 @@ describe('local package admin surface trust boundary', () => {
     ]
     expect(Object.keys(ACTIONS).sort()).toEqual([...expectedPaths].sort())
   })
+})
+
+it('reads real selection catalogs and protects defaults with the existing admin boundary', async () => {
+  const loop = { id: 'default', version: '1.0.0', sourcePackage: '@acme/loop', capabilities: ['resume'] }
+  const adapter = { ...loop, id: 'adapter', models: [{ id: 'model' }] }
+  const snapshot = { revision: 4, defaults: { loop: { id: loop.id, version: loop.version } } }
+  const provider: AdminSessionSelection = {
+    loops: async () => [loop],
+    modelAdapters: async () => [adapter],
+    getDefaults: async () => snapshot,
+    saveDefaults: vi.fn(async (input) => ({ ...input, revision: input.revision + 1 })),
+  }
+  const s = await server(undefined, undefined, { sessionSelection: provider })
+  expect((await s.selectionRequest('defaults', 'PUT', snapshot)).status).toBe(409)
+  await s.request('context')
+  expect(await (await s.selectionRequest('loops')).json()).toEqual({ loops: [loop], ...snapshot })
+  expect(await (await s.selectionRequest('model-adapters')).json()).toEqual({ modelAdapters: [adapter] })
+  expect((await s.selectionRequest('defaults', 'PUT', { ...snapshot, actor: 'forged' })).status).toBe(400)
+  expect(
+    (await s.selectionRequest('defaults', 'PUT', snapshot, { Origin: 'https://foreign.example' })).status,
+  ).toBe(403)
+  expect(await (await s.selectionRequest('defaults', 'PUT', snapshot)).json()).toEqual({
+    ...snapshot,
+    revision: 5,
+  })
+  expect(provider.saveDefaults).toHaveBeenCalledExactlyOnceWith(snapshot)
+  const denied = await server(undefined, undefined, {
+    sessionSelection: provider,
+    permissions: ['packages.read'],
+  })
+  await denied.request('context')
+  expect((await denied.selectionRequest('defaults', 'PUT', snapshot)).status).toBe(403)
+})
+
+it('refuses absent or malformed catalogs and redacts failures and revision conflicts', async () => {
+  const absent = await server()
+  expect((await absent.selectionRequest('loops')).status).toBe(503)
+  const selection: AdminSessionSelection = {
+    loops: async () => [{ id: 'x', version: '1', sourcePackage: 'pkg', capabilities: [] }],
+    modelAdapters: async () => [],
+    getDefaults: async () => ({ revision: 1, defaults: {} }),
+    saveDefaults: vi.fn(async () => {
+      throw Object.assign(new Error('private-path secret'), { code: 'CONFIG_REVISION_CONFLICT' })
+    }),
+  }
+  const s = await server(undefined, undefined, { sessionSelection: selection })
+  await s.request('context')
+  const conflict = await s.selectionRequest('defaults', 'PUT', { revision: 0, defaults: {} })
+  expect(conflict.status).toBe(409)
+  expect(await conflict.text()).not.toContain('private-path')
+  selection.loops = async () => [
+    { id: 'x', version: '1', sourcePackage: 'pkg', capabilities: [], secret: 'bad' } as never,
+  ]
+  expect((await s.selectionRequest('loops')).status).toBe(502)
 })

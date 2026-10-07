@@ -1,5 +1,5 @@
 import type { PackageCatalogDescriptor, PackageInstalledDescriptor, PackageSource } from '@agnes/protocol'
-import type { JSX } from 'react'
+import type { JSX, ReactNode } from 'react'
 import { ADMIN_LOCALE_NAMESPACE, contributionText, type RuntimeStateView, sourceLabel } from './admin-text.js'
 import { adminLocaleCatalog } from './locales/admin.js'
 import { ADMIN_LIST_LOCALE_NAMESPACE, adminListLocaleCatalog } from './locales/admin-list.js'
@@ -220,6 +220,8 @@ export function PluginList({
   onOpen,
   onToggleDesired,
   onLoadMore,
+  metadataOf,
+  formatFailure,
 }: {
   tab: AdminTab
   rows: readonly (PackageInstalledDescriptor | PackageCatalogDescriptor)[]
@@ -234,6 +236,8 @@ export function PluginList({
   onOpen(item: PackageInstalledDescriptor | PackageCatalogDescriptor): void
   onToggleDesired(item: PackageInstalledDescriptor, next: boolean): void
   onLoadMore(): void
+  formatFailure?(message: string): string
+  metadataOf?(item: PackageInstalledDescriptor | PackageCatalogDescriptor): ReactNode
 }): JSX.Element {
   const { t } = useUiText(ADMIN_LIST_LOCALE_NAMESPACE, adminListLocaleCatalog)
   const { t: adminText } = useUiText(ADMIN_LOCALE_NAMESPACE, adminLocaleCatalog)
@@ -303,6 +307,7 @@ export function PluginList({
           >
             <div className="plugin-row-content">
               <h2>{item.id}</h2>
+              {metadataOf?.(item)}
               <p>{contributionText(item, adminText)}</p>
               <p className="plugin-source">
                 {item.version} · {sourceLabel(item.source as PackageSource, adminText)}
@@ -310,7 +315,9 @@ export function PluginList({
               {tab === 'installed' && (
                 <SurfaceLinks links={surfaceLinksOf(item.id)} packageId={item.id} t={t} />
               )}
-              {failureReason && <p className="resource-safe-error">{failureReason}</p>}
+              {failureReason && (
+                <p className="resource-safe-error">{formatFailure?.(failureReason) ?? failureReason}</p>
+              )}
             </div>
             {tab === 'discover' && <CatalogCompatibility item={item as PackageCatalogDescriptor} />}
             <RowControl

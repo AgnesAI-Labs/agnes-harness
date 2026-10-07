@@ -21,6 +21,7 @@ export * from './lockfile.js'
 export * from './manager.js'
 export * from './package-plugin-loader.js'
 export * from './plugin-manifest.js'
+export * from './plugin-state.js'
 export * from './ports.js'
 export type {
   RuntimePin,

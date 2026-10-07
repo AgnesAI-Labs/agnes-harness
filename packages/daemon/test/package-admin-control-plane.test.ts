@@ -1118,6 +1118,7 @@ it('keeps committed desired state and projects safe activation and unload-blocke
         actualIntegrity: installed.entry.integrity,
         actualReason: `raw runtime detail ${root}`,
         cleanupPending: true,
+        draining: true,
         error: { code: 'E_PACKAGE_STATE', safeMessage: `raw runtime detail ${root}`, blockers: [] },
       }),
     },
@@ -1140,6 +1141,7 @@ it('keeps committed desired state and projects safe activation and unload-blocke
       actualIntegrity: installed.entry.integrity,
       actualReason: 'Runtime activation failed.',
       cleanupPending: true,
+      draining: true,
     },
     error: { code: 'E_PACKAGE_STATE', safeMessage: 'The package operation cannot run in the current state.' },
   })

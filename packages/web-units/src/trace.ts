@@ -55,7 +55,12 @@ const STATUS_KEY: Record<string, TraceMessageKey> = {
 }
 
 /** What the host knows beyond the loaded snapshot: whether older records exist, and how to load them. */
-export type TraceMeta = { hasEarlier: boolean; loadEarlier?: () => void; sessionId?: string }
+export type TraceMeta = {
+  hasEarlier: boolean
+  loadEarlier?: () => void
+  sessionId?: string
+  loop?: { id: string; version: string }
+}
 
 export type TraceHandle = {
   render(nodes: readonly UINode[], turns?: readonly UITurn[], meta?: TraceMeta): void
@@ -1520,7 +1525,16 @@ export const Trace = forwardRef<TraceHandle, TraceProps>(function Trace(
     },
     createElement(
       'div',
-      { className: 'trace-toolbar', hidden: rows.length === 0 },
+      { className: 'trace-toolbar', hidden: rows.length === 0 && !meta?.loop },
+      ...(meta?.loop
+        ? [
+            createElement(
+              'span',
+              { className: 'trace-stat', key: 'session-loop' },
+              traceText('trace.sessionLoop', { id: meta.loop.id, version: meta.loop.version }),
+            ),
+          ]
+        : []),
       createElement(
         'div',
         { className: 'trace-stats' },

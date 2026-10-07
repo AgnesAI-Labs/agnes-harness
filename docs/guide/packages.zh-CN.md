@@ -34,6 +34,22 @@ AGH 默认提供四个官方助手插件。新建本地配置，以及已有配�
 
 安装成功后默认保持停用。AGH 仍会在内部记录审核通过的版本和能力范围，再进入激活流程。`desired` 表示期望启用状态，`actual` 表示实际运行状态；分别查看它们，才能区分“已提出请求”和“已经可用”。
 
+## 插件类型、状态与会话默认配置
+
+包可在 `package.json` 中声明可选的多值字段：
+
+```json
+{ "agnes": { "kinds": ["tool", "loop", "model-adapter", "mcp", "skills", "ui"] } }
+```
+
+只声明包实际提供的类型。管理列表和详情展示类型徽标，类型筛选匹配声明值。未声明字段的旧包仍显示在“全部类型”中。
+
+状态徽标分别报告已安装、期望启用、后台确认运行中、排干中、需要重启与失败。只有后台明确报告旧会话绑定时才显示排干中，待清理资源本身不能证明排干。前端失败与后端状态同时保留，支持时可重试界面加载。
+
+“新会话默认配置”读取后台目录，使用配置 revision 保存确切的 Loop/适配器版本及模型 ID。已有会话保留原绑定。已失效的选择须替换或清除，保存冲突时须重新加载目录。未接入会话目录 provider 的后台显示不可用提示，插件操作仍可使用。会话 Trace 只在会话 DTO 提供绑定时展示 Loop ID/版本。
+
+固定本地管理路由为 `GET /admin/api/loops`（Loop 目录和默认值/revision）、`GET /admin/api/model-adapters`、`GET /admin/api/defaults` 与 `PUT /admin/api/defaults`，保存参数为 `{ revision, defaults: { loop?, modelAdapter? } }`。Loop 选择包含 `id` 和 `version`，适配器选择还包含 `model`。写入需要插件激活权限和同源管理上下文。可信启动器提供 `AdminSessionSelection` provider，Host 可通过 `createAdminSessionSelection` 组合真实目录与现有配置存储。端点不导入插件工厂，也不接收凭据。
+
 ## 安装后端示例
 
 建议先按[安装指南](install.zh-CN.md)建立临时 AGH_HOME，从仓库根启动该实例。`file:` 相对路径由后台的工作区来源解析；复用不同 cwd 启动的 daemon 时应核对来源，最简单的是在隔离实例的启动目录操作。

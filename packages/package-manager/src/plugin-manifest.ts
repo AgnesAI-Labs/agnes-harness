@@ -161,8 +161,12 @@ export const AGNES_PLUGIN_KINDS = ['tool', 'loop', 'model-adapter', 'mcp', 'skil
 export type AgnesPluginKind = (typeof AGNES_PLUGIN_KINDS)[number]
 export function parseAgnesPluginKinds(value: unknown): readonly AgnesPluginKind[] | undefined {
   if (value === undefined) return undefined
-  if (!Array.isArray(value) || value.length > AGNES_PLUGIN_KINDS.length ||
-      value.some((kind) => !AGNES_PLUGIN_KINDS.includes(kind)) || new Set(value).size !== value.length)
+  if (
+    !Array.isArray(value) ||
+    value.length > AGNES_PLUGIN_KINDS.length ||
+    value.some((kind) => !AGNES_PLUGIN_KINDS.includes(kind)) ||
+    new Set(value).size !== value.length
+  )
     throw new TypeError('invalid agnes.kinds: expected unique supported plugin kinds')
   return Object.freeze([...value]) as readonly AgnesPluginKind[]
 }

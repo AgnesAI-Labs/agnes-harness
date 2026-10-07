@@ -137,6 +137,14 @@ it('tests a real provider catalogue, saves an atomic non-secret record, and expo
   }
   const reset = await service.save({ providerId: 'openai', model, defaultSettings: {}, expectedRevision: 2 })
   expect(reset.accounts?.[0]?.models[0]?.defaultSettings).toEqual({})
+  const beforeSelection = await service.get()
+  const selection = { loop: { id: 'workflow', version: '1.0.0' } }
+  const selected = await service.saveSessionDefaults({
+    revision: beforeSelection.revision,
+    defaults: selection,
+  })
+  await service.save({ providerId: 'openai', model, expectedRevision: selected.revision })
+  expect((await service.sessionDefaults()).defaults).toEqual(selection)
 })
 
 it('discovers, saves and reloads the current DeepSeek Flash id', async () => {
@@ -533,4 +541,29 @@ it('migrates v1 only on successful write, preserves its route and rejects compet
   })
   expect(JSON.parse(await readFile(file, 'utf8')).version).toBe(2)
   expect((await peer.profileInput()).provider?.routes?.some((r) => r.route === 'openai')).toBe(true)
+})
+
+it('persists session defaults in existing configuration with cross-instance revision checks', async () => {
+  const root = await home()
+  const service = createConfigurationService({ home: root, profile: 'local-dev' })
+  const defaults = {
+    loop: { id: 'workflow', version: '1.0.0' },
+    modelAdapter: { id: 'adapter', version: '2.0.0', model: 'model' },
+  }
+  expect(await service.sessionDefaults()).toEqual({ revision: 0, defaults: {} })
+  await expect(service.saveSessionDefaults({ revision: 0, defaults })).resolves.toEqual({
+    revision: 1,
+    defaults,
+  })
+  const reloaded = createConfigurationService({ home: root, profile: 'local-dev' })
+  expect(await reloaded.sessionDefaults()).toEqual({ revision: 1, defaults })
+  expect(await reloaded.profileInput()).toEqual({})
+  await expect(reloaded.saveSessionDefaults({ revision: 0, defaults: {} })).rejects.toMatchObject({
+    code: 'CONFIG_REVISION_CONFLICT',
+  })
+  await expect(
+    reloaded.saveSessionDefaults({ revision: 1, defaults: { loop: { id: '', version: '1' } } }),
+  ).rejects.toMatchObject({ code: 'CONFIG_INVALID_INPUT' })
+  await service.saveSessionDefaults({ revision: 1, defaults: {} })
+  expect(await reloaded.sessionDefaults()).toEqual({ revision: 2, defaults: {} })
 })

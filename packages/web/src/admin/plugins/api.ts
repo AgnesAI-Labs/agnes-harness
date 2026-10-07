@@ -1,4 +1,6 @@
 import type {
+  AdminLoop,
+  AdminModelAdapter,
   PackageActivationRequest,
   PackageCatalogDescriptor,
   PackageCatalogPage,
@@ -11,8 +13,12 @@ import type {
   PluginTreeApplyResult,
   PluginTreeRollbackResult,
   PluginTreeView,
+  SessionDefaultsSnapshot,
 } from '@agnes/protocol'
 import {
+  isAdminLoop,
+  isAdminModelAdapter,
+  isSessionDefaultsSnapshot,
   type PackageAdminMethodName,
   validatePackageAdminCall,
   validatePackageAdminData,
@@ -125,6 +131,55 @@ export class PluginAdminApi {
 
   async list(): Promise<PackageListResult> {
     return this.#post('list', { profile: this.#context.profile })
+  }
+
+  async loops(): Promise<SessionDefaultsSnapshot & { loops: readonly AdminLoop[] }> {
+    const body = await this.#selection('loops')
+    if (
+      !isSessionDefaultsSnapshot(pickDefaults(body)) ||
+      !body ||
+      typeof body !== 'object' ||
+      !('loops' in body) ||
+      !Array.isArray(body.loops) ||
+      body.loops.length > 4096 ||
+      !body.loops.every(isAdminLoop)
+    )
+      throw invalidSelection()
+    return body as SessionDefaultsSnapshot & { loops: readonly AdminLoop[] }
+  }
+
+  async modelAdapters(): Promise<{ modelAdapters: readonly AdminModelAdapter[] }> {
+    const body = await this.#selection('model-adapters')
+    if (
+      !body ||
+      typeof body !== 'object' ||
+      !('modelAdapters' in body) ||
+      !Array.isArray(body.modelAdapters) ||
+      body.modelAdapters.length > 4096 ||
+      !body.modelAdapters.every(isAdminModelAdapter)
+    )
+      throw invalidSelection()
+    return body as { modelAdapters: readonly AdminModelAdapter[] }
+  }
+
+  async saveDefaults(input: SessionDefaultsSnapshot): Promise<SessionDefaultsSnapshot> {
+    if (!isSessionDefaultsSnapshot(input)) throw invalidSelection()
+    const body = await this.#selection('defaults', input)
+    if (!isSessionDefaultsSnapshot(body)) throw invalidSelection()
+    return body
+  }
+
+  async #selection(path: string, input?: SessionDefaultsSnapshot): Promise<unknown> {
+    const fetcher = this.#fetch
+    const response = await fetcher(`/admin/api/${path}`, {
+      method: input ? 'PUT' : 'GET',
+      credentials: 'same-origin',
+      headers: { Accept: 'application/json', ...(input ? { 'Content-Type': 'application/json' } : {}) },
+      ...(input ? { body: JSON.stringify(input) } : {}),
+    })
+    const body = await json(response)
+    if (!response.ok) throw new AdminApiError(safeError(body))
+    return body
   }
 
   async treeGet(): Promise<PluginTreeView> {
@@ -366,4 +421,16 @@ function isSurfaceLinksResult(value: unknown): value is AdminSurfaceLinksResult 
       /^\/(?!_agnes(?:\/|$))[A-Za-z0-9_-]+(?:\/[A-Za-z0-9_-]+)*$/.test(surface.mount) &&
       surface.mount.length <= 256,
   )
+}
+
+function pickDefaults(value: unknown): unknown {
+  if (!value || typeof value !== 'object') return undefined
+  const { revision, defaults } = value as SessionDefaultsSnapshot
+  return { revision, defaults }
+}
+function invalidSelection(): AdminApiError {
+  return new AdminApiError({
+    code: 'ADMIN_RESPONSE_INVALID',
+    message: 'The backend returned data that cannot be verified.',
+  })
 }

@@ -93,7 +93,11 @@ function serviceReply(response: ServerResponse, status: number, value: unknown):
 }
 
 /** The local launcher's private Unix connection is the admin authority; it is never sent to Web. */
-export function localPackageAdmin(backend: LocalBackend, origin: string, sessionSelection?: AdminSessionSelection) {
+export function localPackageAdmin(
+  backend: LocalBackend,
+  origin: string,
+  sessionSelection?: AdminSessionSelection,
+) {
   if (!backend.web) throw new Error('local Web credential is unavailable')
   const clientId = `admin-web-${backend.scope.scopeID}`
   const client = createClient({

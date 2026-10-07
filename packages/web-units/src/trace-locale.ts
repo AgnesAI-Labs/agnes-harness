@@ -1,4 +1,5 @@
 const en = {
+  'trace.sessionLoop': 'Agent Loop: {id} · {version}',
   'trace.badge.user': 'User',
   'trace.badge.context': 'Context',
   'trace.badge.assistant': 'Assistant',
@@ -134,6 +135,7 @@ const en = {
 } as const
 
 const zh: Record<keyof typeof en, string> = {
+  'trace.sessionLoop': 'Agent Loop：{id} · {version}',
   'trace.badge.user': '用户',
   'trace.badge.context': '上下文',
   'trace.badge.assistant': '助手',

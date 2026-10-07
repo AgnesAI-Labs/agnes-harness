@@ -168,7 +168,10 @@ export function createAdminSurface(options: AdminSurfaceOptions) {
       if (selectionRoute) {
         const route = url.pathname.slice('/admin/api/'.length)
         const write = route === 'defaults' && request.method === 'PUT'
-        if (!write && !(request.method === 'GET' && ['loops', 'model-adapters', 'defaults'].includes(route))) {
+        if (
+          !write &&
+          !(request.method === 'GET' && ['loops', 'model-adapters', 'defaults'].includes(route))
+        ) {
           error(response, 404, 'E_ADMIN_ROUTE', 'The admin operation does not exist.')
           return true
         }
@@ -189,7 +192,11 @@ export function createAdminSurface(options: AdminSurfaceOptions) {
           let result: unknown
           if (write) {
             let body: unknown
-            try { body = await readBody(request) } catch { body = undefined }
+            try {
+              body = await readBody(request)
+            } catch {
+              body = undefined
+            }
             if (!isSessionDefaultsSnapshot(body)) {
               error(response, 400, 'E_ADMIN_REQUEST', 'The admin parameters are not valid.')
               return true
@@ -214,10 +221,16 @@ export function createAdminSurface(options: AdminSurfaceOptions) {
           const code = record(cause) ? cause.code : undefined
           const conflict = code === 'CONFIG_REVISION_CONFLICT'
           const invalid = code === 'CONFIG_INVALID_INPUT' || code === 'CONFIG_MODEL_UNAVAILABLE'
-          error(response, conflict ? 409 : invalid ? 400 : 502,
+          error(
+            response,
+            conflict ? 409 : invalid ? 400 : 502,
             conflict ? 'CONFIG_REVISION_CONFLICT' : invalid ? 'E_ADMIN_SELECTION' : 'E_ADMIN_BACKEND',
-            conflict ? 'Configuration changed; reload and try again.' :
-              invalid ? 'The selected loop, adapter or model is unavailable.' : 'The backend response could not be confirmed.')
+            conflict
+              ? 'Configuration changed; reload and try again.'
+              : invalid
+                ? 'The selected loop, adapter or model is unavailable.'
+                : 'The backend response could not be confirmed.',
+          )
         }
         return true
       }

@@ -212,6 +212,7 @@ it('rejects bundled legacy manifests even when the package does not declare plug
 })
 it.each([
   { agnes: { unknown: [] } },
+  { agnes: { kinds: ['invalid'], plugins: [{ export: 'main' }] } },
   { agnes: { contributions: [{ kind: 'mystery', id: 'acme/x' }] } },
   {
     agnes: {
@@ -417,4 +418,14 @@ it('rejects custom npm identity different from the exact source', async () => {
   await expect(
     manager({ sourceAdapters: [adapter] }).inspect(profile, parseSource('npm:other@1.0.0')),
   ).rejects.toMatchObject({ detail: { reason: 'source-identity' } })
+})
+
+it('projects declared package kinds through preview and verified installed inventory', async () => {
+  pkg({ agnes: { kinds: ['loop', 'ui'], plugins: [{ export: 'main' }] } })
+  const instance = manager()
+  const preview = await instance.inspect(profile, source)
+  expect(preview.kinds).toEqual(['loop', 'ui'])
+  await instance.install(profile, source, { expectedIntegrity: preview.integrity })
+  const inventory = await instance.inventory(profile)
+  expect(inventory.packages.find((item) => item.id === 'acme/pkg-a')?.kinds).toEqual(['loop', 'ui'])
 })

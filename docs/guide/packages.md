@@ -42,6 +42,22 @@ A successful ordinary installation starts disabled. Internally, AGH also records
 
 <a id="安装后端示例"></a>
 
+## Plugin kinds, states and session defaults
+
+Packages can declare an optional multi-value field in `package.json`:
+
+```json
+{ "agnes": { "kinds": ["tool", "loop", "model-adapter", "mcp", "skills", "ui"] } }
+```
+
+Declare only the kinds the package provides. The plugin admin list and detail show these badges; the kind filter matches declared kinds. Older packages without the field remain visible under “All kinds”.
+
+The state badges report separate facts: installed, desired enabled, host-confirmed active, draining, restart required, and failed. Draining appears only when the host explicitly reports older session bindings; pending cleanup alone does not imply draining. Frontend failures remain visible alongside backend state, with a retry action where supported.
+
+“Defaults for new sessions” reads host catalogs and saves exact loop/adapter versions and a model ID using a configuration revision. Existing sessions retain their bindings. Unavailable saved choices must be replaced or cleared; a conflicting save requires reloading the catalogs. Hosts without a session catalog provider show an unavailable message and keep plugin operations accessible. Session Trace displays the recorded loop ID/version only when supplied by the session DTO.
+
+The fixed local admin routes are `GET /admin/api/loops` (loops plus defaults/revision), `GET /admin/api/model-adapters`, `GET /admin/api/defaults`, and `PUT /admin/api/defaults` with `{ revision, defaults: { loop?, modelAdapter? } }`. Loop selections contain `id` and `version`; model adapter selections also contain `model`. Writes require plugin activation permission and the same-origin admin context. The trusted launcher supplies an `AdminSessionSelection` provider; Host can compose real catalogs and existing configuration storage with `createAdminSessionSelection`. This endpoint does not import plugin factories or accept credentials.
+
 ## Install the backend example
 
 Use the [installation guide](install.md) to create a temporary AGH_HOME and start the instance from the repository root. The daemon resolves relative `file:` paths against its workspace source. If reusing a daemon started from a different cwd, check that source; working from an isolated instance's startup directory is the simplest option.

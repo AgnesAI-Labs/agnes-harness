@@ -542,7 +542,11 @@ export async function createWebServer(options: WebServerOptions): Promise<WebSer
         return
       }
       const adminPath = request.url ?? ''
-      if (adminPath.startsWith('/admin/api/') || adminPath.startsWith('/admin/plugins/api/') || adminPath.startsWith('/admin/resources/api/')) {
+      if (
+        adminPath.startsWith('/admin/api/') ||
+        adminPath.startsWith('/admin/plugins/api/') ||
+        adminPath.startsWith('/admin/resources/api/')
+      ) {
         response.writeHead(503, {
           'Content-Type': 'application/json; charset=utf-8',
           'Cache-Control': 'no-store',

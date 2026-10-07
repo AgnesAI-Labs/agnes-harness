@@ -69,6 +69,7 @@ export {
   type TableHandle,
   type TableStore,
 } from './adapters/storage-sqlite.js'
+export { createAdminSessionSelection, type HostAdminSessionCatalog } from './admin-session-selection.js'
 export {
   type ApprovalGrantBinding,
   type ApprovalGrantManagement,
@@ -278,6 +279,7 @@ export {
   type ConfigurationService,
   type ConfigurationServiceOptions,
   createConfigurationService,
+  type SessionDefaultsConfigurationService,
 } from './configuration.js'
 export type { DeploymentPolicy, ResolvedDeployment } from './deploy/index.js'
 export { resolveDeployment } from './deploy/index.js'

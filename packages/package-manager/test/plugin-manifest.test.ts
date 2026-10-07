@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { parseAgnesPluginEntries } from '../src/plugin-manifest.js'
+import { parseAgnesPluginEntries, parseAgnesPluginKinds } from '../src/plugin-manifest.js'
 
 describe('package.json agnes.plugins', () => {
   it('normalizes the five-field author shape and freezes the result', () => {
@@ -130,4 +130,19 @@ describe('package.json agnes.plugins', () => {
       parseAgnesPluginEntries('@acme/example', [{ export: 'main', inject: ['clock', 'clock'] }]),
     ).toThrow(/duplicate/)
   })
+})
+
+it('accepts multiple declared package kinds, preserves absence and rejects unsupported or duplicate kinds', () => {
+  expect(parseAgnesPluginKinds(undefined)).toBeUndefined()
+  expect(parseAgnesPluginKinds(['tool', 'loop', 'model-adapter', 'mcp', 'skills', 'ui'])).toEqual([
+    'tool',
+    'loop',
+    'model-adapter',
+    'mcp',
+    'skills',
+    'ui',
+  ])
+  expect(Object.isFrozen(parseAgnesPluginKinds(['tool', 'ui']))).toBe(true)
+  for (const input of [null, 'tool', ['tool', 'tool'], ['unknown'], [1]])
+    expect(() => parseAgnesPluginKinds(input)).toThrow('agnes.kinds')
 })

@@ -100,6 +100,7 @@ function descriptor(
     integrity,
     license: preview.license,
     contributions: preview.contributions,
+    ...(preview.kinds === undefined ? {} : { kinds: preview.kinds }),
     compatibility: 'supported' as const,
   }
   const projected = { ...value, sourceId: SOURCE_ID, retrievedAt: new Date(0).toISOString() }

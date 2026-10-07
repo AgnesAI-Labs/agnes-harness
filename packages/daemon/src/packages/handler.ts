@@ -11,6 +11,7 @@ import {
   activeRuntimePinId,
   collectSkinRoster,
   parseSource,
+  publicPluginFailureReason,
   resolveSkinAsset,
   rewriteSkinAssetUrls,
   SKIN_MAX_ASSET_BYTES,
@@ -249,7 +250,7 @@ function normalizeObservation(
     value.actualReason === undefined
       ? undefined
       : value.actual === 'failed'
-        ? 'Runtime activation failed.'
+        ? publicPluginFailureReason(value.actualReason)
         : 'Runtime state detail is available.'
   return {
     actual: value.actual,
@@ -1559,6 +1560,7 @@ class Service implements PackageAdminService {
                 ...(reconciliation.cleanupPending === undefined
                   ? {}
                   : { cleanupPending: reconciliation.cleanupPending }),
+                ...(reconciliation.draining === undefined ? {} : { draining: reconciliation.draining }),
               },
             }
           : {}),

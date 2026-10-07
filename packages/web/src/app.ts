@@ -24,6 +24,7 @@ import {
   type Session,
 } from '@agnes/sdk/browser'
 import { bindDismissibleDialog } from '@agnes/web-admin-frame'
+import { sessionLoopSelection } from './admin/plugins/session-loop.js'
 import { createPendingCoordinator } from './admin-pane-coordinator.js'
 import { bindAppearance, bindSkinGroup } from './appearance.js'
 import type { ApprovalAction } from './approval.js'
@@ -999,9 +1000,18 @@ function renderApproval(): void {
   })
   if (stick) renderer.pinToBottom()
 }
-function transcriptMeta(): { hasEarlier: boolean; loadEarlier?: () => void; sessionId?: string } {
+function transcriptMeta(): {
+  hasEarlier: boolean
+  loadEarlier?: () => void
+  sessionId?: string
+  loop?: { id: string; version: string }
+} {
   const session = live
-  const identity = current ? { sessionId: current.id } : {}
+  const loop =
+    sessionLoopSelection(projection) ??
+    sessionLoopSelection(current) ??
+    sessionLoopSelection(sessionRows.find((row) => row.sessionId === current?.id))
+  const identity = current ? { sessionId: current.id, ...(loop ? { loop } : {}) } : {}
   if (!session?.hasEarlier()) return { hasEarlier: false, ...identity }
   return { hasEarlier: true, ...identity, loadEarlier: () => void session.loadEarlier().catch(showError) }
 }

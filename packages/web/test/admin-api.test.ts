@@ -312,3 +312,33 @@ it('treeList and treeApply use the plugins.tree BFF routes', async () => {
   ).resolves.toEqual({ desiredDigest: view.desiredDigest, pending: true })
   expect(String(fetcher.mock.calls[1]?.[0])).toBe('/admin/plugins/api/tree/apply')
 })
+
+it('validates catalogs and sends defaults through fixed same-origin GET/PUT routes', async () => {
+  const loop = { id: 'loop', version: '1.0.0', sourcePackage: '@acme/loop', capabilities: ['resume'] }
+  const snapshot = { revision: 1, defaults: { loop: { id: loop.id, version: loop.version } } }
+  const fetcher = vi
+    .fn<typeof fetch>()
+    .mockResolvedValueOnce(Response.json({ loops: [loop], ...snapshot }))
+    .mockResolvedValueOnce(Response.json({ modelAdapters: [{ ...loop, models: [{ id: 'model' }] }] }))
+    .mockResolvedValueOnce(Response.json({ ...snapshot, revision: 2 }))
+  const api = new PluginAdminApi(context, fetcher)
+  expect((await api.loops()).loops).toEqual([loop])
+  expect((await api.modelAdapters()).modelAdapters[0]?.models).toEqual([{ id: 'model' }])
+  await expect(api.saveDefaults(snapshot)).resolves.toEqual({ ...snapshot, revision: 2 })
+  expect(fetcher.mock.calls.map(([path, init]) => [path, init?.method, init?.credentials])).toEqual([
+    ['/admin/api/loops', 'GET', 'same-origin'],
+    ['/admin/api/model-adapters', 'GET', 'same-origin'],
+    ['/admin/api/defaults', 'PUT', 'same-origin'],
+  ])
+  expect(JSON.parse(String(fetcher.mock.calls[2]?.[1]?.body))).toEqual(snapshot)
+  fetcher.mockResolvedValueOnce(Response.json({ loops: [{ ...loop, token: 'secret' }], ...snapshot }))
+  await expect(api.loops()).rejects.toMatchObject({ details: { code: 'ADMIN_RESPONSE_INVALID' } })
+  fetcher.mockResolvedValueOnce(Response.json({ modelAdapters: [{ ...loop, models: [null] }] }))
+  await expect(api.modelAdapters()).rejects.toMatchObject({ details: { code: 'ADMIN_RESPONSE_INVALID' } })
+  fetcher.mockResolvedValueOnce(
+    Response.json({ error: { code: 'CONFIG_REVISION_CONFLICT', message: 'Reload.' } }, { status: 409 }),
+  )
+  await expect(api.saveDefaults(snapshot)).rejects.toMatchObject({
+    details: { code: 'CONFIG_REVISION_CONFLICT' },
+  })
+})
