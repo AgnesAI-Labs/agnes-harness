@@ -349,6 +349,7 @@ describe('standard.yaml', () => {
       'channel',
       'minimal-rl',
       'standard-windows',
+      'minimal',
     ])
     expect(presets.standard).toEqual(doc)
     expect(Object.keys(presets)).toEqual([...PRESET_NAMES])

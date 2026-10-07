@@ -16,8 +16,8 @@ describe('Windows builtin default preset selection', () => {
       default: expected,
       allowed:
         os === 'win32'
-          ? ['standard', 'standard-windows', 'read-only', 'workspace-write', 'full-access']
-          : ['standard', 'read-only', 'workspace-write', 'full-access'],
+          ? ['standard', 'standard-windows', 'read-only', 'workspace-write', 'full-access', 'minimal']
+          : ['standard', 'read-only', 'workspace-write', 'full-access', 'minimal'],
     })
   })
   it.each([
@@ -31,7 +31,7 @@ describe('Windows builtin default preset selection', () => {
     const profile = await resolveProfile(inputs, env('win32'))
     expect(profile.presets).toEqual({
       default: 'workspace-write',
-      allowed: ['standard', 'read-only', 'workspace-write', 'full-access'],
+      allowed: ['standard', 'read-only', 'workspace-write', 'full-access', 'minimal'],
       ...presets,
     })
     expect(inputs).toEqual(before)
@@ -47,7 +47,7 @@ describe('Windows builtin default preset selection', () => {
     )
     expect(profile.presets).toEqual({
       default: 'workspace-write',
-      allowed: ['standard', 'standard-windows', 'read-only', 'workspace-write', 'full-access'],
+      allowed: ['standard', 'standard-windows', 'read-only', 'workspace-write', 'full-access', 'minimal'],
     })
   })
   it('does not change enterprise defaults or waive workspace verification', async () => {

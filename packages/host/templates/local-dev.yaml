@@ -42,7 +42,7 @@ computerUse:
   appAllowlist: []
   capture: { allowFullDesktop: false, maxImageDimension: 1456, maxBytesPerImage: 4194304, maxImagesPerResult: 1, maxImagesPerMutationResult: 2, maxImagesPerModelRequest: 4, maxCapturesPerHour: 120 }
   retention: { maxRecentPerSession: 100, ttlMs: 86400000, gcIntervalMs: 3600000, maxExtendedTtlMs: 604800000, globalMaxBytes: 1073741824 }
-presets: { default: workspace-write, allowed: [standard, read-only, workspace-write, full-access] }
+presets: { default: workspace-write, allowed: [standard, read-only, workspace-write, full-access, minimal] }
 policy:
   capabilityCeiling: ["tools", "hooks", "slots", "projections", "events", "resources", "ui", "network", "network.publicRead", "tools.invoke", "artifacts", "subagent"]
   workspacePackages: require-project-trust

@@ -147,10 +147,10 @@ describe('preset matrix through the host resolver', () => {
 
 /**
  * A debt this file found and cannot pay. `claw` and `channel` ship, and no factory Profile template
- * can select either: packages/host/templates/ holds local-dev and enterprise, both of which say
- * `presets: { default: standard, allowed: [standard] }`, and host's profile resolver defaults to
- * the same list. Both recipes are therefore reachable only by a deployment that names them in its
- * own Profile.
+ * can select either. local-dev also allows `minimal`. Enterprise allows `standard` and the sandbox
+ * permission presets.
+ * Host's profile resolver still defaults to `[standard]`. Both recipes are therefore reachable only
+ * by a deployment that names them in its own Profile.
  *
  * Not fixed here: which templates ship is a product decision, and what an unattended template should
  * look like is not settled. The check is written so it fails the day a template does allow one -

@@ -18,14 +18,18 @@ const docs = Object.fromEntries(
 )
 
 describe('delivered preset schema conformance', () => {
-  it('includes all six delivered recipes and validates exact YAML and merged documents', () => {
+  it('includes all ten delivered recipes and validates exact YAML and merged documents', () => {
     expect(Object.keys(docs).sort()).toEqual([
       'base',
       'channel',
       'claw',
+      'full-access',
+      'minimal',
       'minimal-rl',
+      'read-only',
       'standard',
       'standard-windows',
+      'workspace-write',
     ])
     for (const [name, doc] of Object.entries(docs)) {
       const before = JSON.stringify(doc)

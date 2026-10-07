@@ -1,0 +1,22 @@
+# A small read-only recipe. It keeps the product model slots and discloses only read, grep, find,
+# and ls. Shell and edit stay on the frozen training baseline, not on this preset.
+name: minimal
+extends: base
+surfaces: [cli, sdk, acp, daemon]
+model:
+  contract_id: agnes-model-contract@v1
+  route:
+    primary: { route: default, model: default }
+    escalation: { route: default, model: default }
+    fast: { route: default, model: default }
+    compaction: { route: default, model: default }
+    verifier: { route: default, model: default }
+  prompt_sections: [persona, environment]
+disclosure: standard
+tools: { core: [read, grep, find, ls] }
+sandbox: { level: L0, required: false, on_unavailable: allow }
+mcp: { defer: true }
+budget: { per_request_cap: 4000, max_steps: null }
+subagent: { max_depth: 1, max_fan_out: 1, isolation: worktree }
+ext_ui: { input: prompt, unattended: decline }
+hooks: [session_start, tool_call, tool_result]

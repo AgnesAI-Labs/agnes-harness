@@ -52,7 +52,10 @@ describe('resolveProfile (single layer)', () => {
     expect(p.packages.map((x) => x.id)).toEqual(['@agnes/ai', '@agnes/base', '@agnes/code'])
     expect(p.seams.approval).toBe('@agnes/base')
     expect(p.seams.platform).toBe('@agnes/host')
-    expect(p.presets).toEqual({ default: 'standard', allowed: ['standard'] })
+    expect(p.presets).toEqual({
+      default: 'workspace-write',
+      allowed: ['standard', 'read-only', 'workspace-write', 'full-access', 'minimal'],
+    })
     expect(p.hash).toMatch(/^sha256-[0-9a-f]{64}$/)
     expect(Object.isFrozen(p)).toBe(true)
   })

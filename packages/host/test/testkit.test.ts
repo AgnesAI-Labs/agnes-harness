@@ -39,7 +39,10 @@ describe('testkit', () => {
     })
     try {
       expect(profile.chain).toEqual(['builtin:local-dev', 'user:local-dev'])
-      expect(profile.presets).toEqual({ default: 'standard', allowed: ['standard'] })
+      expect(profile.presets).toEqual({
+        default: 'workspace-write',
+        allowed: ['standard', 'read-only', 'workspace-write', 'full-access', 'minimal'],
+      })
       expect(await runOnce(host, { prompt: 'hi', cwd: dataDir })).toMatchObject({
         reason: 'completed',
         finalText: 'default-template',

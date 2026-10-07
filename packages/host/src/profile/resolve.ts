@@ -300,7 +300,7 @@ export async function resolveProfile(inputs: ProfileInputs, env: ResolveEnv): Pr
         ...local.manifest,
         presets: {
           default: 'workspace-write',
-          allowed: ['standard', 'standard-windows', 'read-only', 'workspace-write', 'full-access'],
+          allowed: ['standard', 'standard-windows', 'read-only', 'workspace-write', 'full-access', 'minimal'],
         },
       }
   }
