@@ -199,6 +199,29 @@ export class RuntimeGenerationSnapshotStore {
     renameSync(temporary, path)
   }
 
+  /** Coordinator-owned idle migration. Admission must be excluded while replacing this pin. */
+  migrateSession(
+    sessionKey: string,
+    expectedGenerationId: string,
+    generationId: string,
+  ): SessionGenerationPin {
+    const pin = this.session(sessionKey)
+    if (!pin || pin.generationId !== expectedGenerationId)
+      throw new Error('E_GENERATION_BINDING_CONFLICT: session pin changed before migration')
+    if (this.read(pin.generationId).compatibility !== this.read(generationId).compatibility)
+      throw new Error('E_GENERATION_INCOMPATIBLE: session migration needs a compatible deployment')
+    const next = { sessionKey, generationId, ...(pin.loop ? { loop: pin.loop } : {}) }
+    const path = this.pinPath(sessionKey),
+      temporary = `${path}.${randomUUID()}.tmp`
+    try {
+      writeFileSync(temporary, JSON.stringify(next), { mode: 0o600, flag: 'wx', flush: true })
+      renameSync(temporary, path)
+      return Object.freeze(next)
+    } finally {
+      rmSync(temporary, { force: true })
+    }
+  }
+
   sessionResources(key: string): RuntimeGenerationResourceSnapshot | undefined {
     const pin = this.session(key)
     if (!pin?.resourcesDigest) return undefined

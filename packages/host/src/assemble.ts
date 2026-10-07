@@ -165,6 +165,7 @@ import {
 import { ExtensionOwners } from './ext-host/extension-owners.js'
 import { createExtensionOrder, mergeExtensionStatus } from './ext-host/extension-status-book.js'
 import { createManagedExtHost, type ExtensionSpec, type ExtensionStatus } from './ext-host/index.js'
+import { leaseFor, ROW_BOUND_LEASE_TTL_MS } from './ext-host/lease.js'
 import { readAuthorManifest, readBundledExtensionDirs } from './ext-host/manifest.js'
 import { preflightEmbeddedExtension, preflightExtension } from './ext-host/preflight.js'
 import { createRowExtensionHost } from './ext-host/row-extension-host.js'
@@ -1851,6 +1852,18 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
 
     // 8 kernel - the repository's single Kernel.create call site
     let extensionLeaseFor: ((source: string) => LeaseView | undefined) | undefined
+    const compositionLease = profile.composition
+      ? leaseFor(
+          {
+            id: 'agnes/composition',
+            version: '0.1.0',
+            apiRange: '^1.0',
+            entry: './composition',
+            capabilities: { hooks: ['tool_call'] },
+          },
+          { ttlMs: ROW_BOUND_LEASE_TTL_MS, now: Date.now() },
+        )
+      : undefined
     const extensionSessions = new ExtensionSessions<HookPort>()
     const compaction =
       profile.composition?.compaction === null
@@ -1922,7 +1935,8 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
       logger: deps.log,
       clock,
       agnesVersion: deps.agnesVersion ?? '0.0.0',
-      hookLeaseFor: (source) => extensionLeaseFor?.(source),
+      hookLeaseFor: (source) =>
+        source === 'agnes/composition' ? compositionLease?.view() : extensionLeaseFor?.(source),
       retainSessionRefIdentity: (sessionRef) => extensionSessions.owns(sessionRef),
       ...(deps.requestMedia !== undefined ? { requestMedia: deps.requestMedia } : {}),
       ...(deps.requestMedia !== undefined
@@ -1990,14 +2004,17 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
           const session = kernel.sessions.get(context.session.key)
           if (!session) return { allow: false, reason: 'Composition session is unavailable.' }
           const tree = compositionForPreset(session.preset.name)
-          return compositionTools(kernel.tools, tree.selection).resolve(payload.name) &&
+          return compositionTools(session.currentTools(), tree.selection).resolve(payload.name) &&
             compositionAllowsTool(tree.selection, payload.name, payload.meta.isReadOnly === true)
             ? { allow: true }
             : { allow: false, reason: 'Tool denied by the selected composition policy.' }
         },
         { source: 'agnes/composition', trust: 'builtin', hookRank: 0 },
       )
-      rollback.push('composition-policy', stopPolicy)
+      rollback.push('composition-policy', () => {
+        stopPolicy()
+        compositionLease?.revoke('host closed')
+      })
     }
     privacyTrajectory = createTrajectoryLifecycle(
       {

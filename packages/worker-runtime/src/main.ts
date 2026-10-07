@@ -19,6 +19,7 @@ export { scanSkills } from '@agnes/resource-control-worker'
 
 import {
   agnesHome,
+  assertHostPublication,
   composeProductionRequestMedia,
   composeSecrets,
   createCredentialStore,
@@ -501,7 +502,12 @@ export async function runWorker(
       throw new Error('E_RUNTIME_TARGET_UNAVAILABLE: Host has no runtime target publisher')
     }
     return Object.freeze({
-      applyRuntimeTarget: candidate.applyRuntimeTarget.bind(candidate),
+      async applyRuntimeTarget(target) {
+        const report = await candidate.applyRuntimeTarget(target)
+        assertHostPublication(report.publication)
+        // Host-local per-composition diagnostics must not extend the closed wire report schema.
+        return { hash: report.hash, ok: report.ok, rows: report.rows }
+      },
       ...(candidate.runtimeTargetSnapshot
         ? { runtimeTargetSnapshot: candidate.runtimeTargetSnapshot.bind(candidate) }
         : {}),

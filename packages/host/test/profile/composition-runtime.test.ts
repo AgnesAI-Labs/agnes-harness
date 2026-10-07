@@ -2,6 +2,7 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { ScriptedProvider } from '@agnes/ai/testkit'
 import { mcpLocalToolPrefix, skillResourceIdAt } from '@agnes/base'
 import { ToolRegistry } from '@agnes/core'
 import { defineTool } from '@agnes/extension-api'
@@ -9,6 +10,7 @@ import type { RuntimePluginSnapshot } from '@agnes/package-manager'
 import { normalizePluginExport } from '@agnes/plugin-runtime/host'
 import { Type } from '@sinclair/typebox'
 import { expect, it, vi } from 'vitest'
+import { assertHostPublication } from '../../src/host-facade.js'
 import { CompositionSessionStore, readLiveCompositionSessions } from '../../src/profile/composition-state.js'
 import {
   compositionModuleAllowed,
@@ -26,10 +28,19 @@ vi.mock('../../src/adapters/process-identity-default.js', () => ({
 
 it('runs preset compositions side by side, filters tools and retains the generation on cold reopen', async () => {
   const root = mkdtempSync(join(tmpdir(), 'agnes-compositions-'))
+  let refuseWriter = false
   const options = {
     dataDir: root,
     script: [],
     disableSessionTitle: true,
+    provider: (profile: import('../../src/profile/types.js').ResolvedProfile) => {
+      if (refuseWriter && profile.compaction?.engine === 'fixture')
+        throw new Error('writer model candidate refused')
+      return new ScriptedProvider({
+        models: profile.provider.routes?.flatMap((route) => route.models ?? []) ?? [],
+        scripts: [],
+      })
+    },
     profileInputs: {
       user: {
         name: 'local-dev',
@@ -100,6 +111,31 @@ it('runs preset compositions side by side, filters tools and retains the generat
       host.compositionSessions?.().find((session) => session.sessionKey === writer.key)?.providers.compaction,
     ).toEqual({ engine: 'fixture' })
     await expect(host.setSessionPreset(reader.key, 'writer')).rejects.toThrow('separate Host generation')
+    const next = structuredClone(host.profile)
+    const route = next.provider.routes?.find((route) => route.route === 'gw')
+    const first = route?.models?.[0]
+    if (!route || !first) throw new Error('fixture route missing')
+    route.models = [...(route.models ?? []), { ...first, id: 'live-model', name: 'live-model' }]
+    refuseWriter = true
+    const partial = await host.applyModelProfile(next)
+    expect(partial).toMatchObject({
+      operation: 'models',
+      ok: false,
+      recovery: 'retry-same-input',
+      containers: [
+        { status: 'applied' },
+        { status: 'failed', error: expect.stringContaining('writer model candidate refused') },
+      ],
+    })
+    expect(() => assertHostPublication(partial)).toThrow('applied to 1/2 containers')
+    expect(host.compositionPublicationStatus?.()).toEqual(partial)
+    await reader.setModel({ slot: 'primary', route: route.route, model: 'live-model' })
+    await expect(
+      writer.setModel({ slot: 'primary', route: route.route, model: 'live-model' }),
+    ).rejects.toThrow('E_MODEL_UNKNOWN')
+    refuseWriter = false
+    expect(await host.applyModelProfile(next)).toMatchObject({ ok: true })
+    await writer.setModel({ slot: 'primary', route: route.route, model: 'live-model' })
     const profileDir = join(root, 'profiles', 'local-dev')
     // Use the same durable directory as createTestHost's production Host options.
     const bindings = new CompositionSessionStore(profileDir)

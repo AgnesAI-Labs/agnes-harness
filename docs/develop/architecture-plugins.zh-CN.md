@@ -93,8 +93,22 @@ loop 省略版本时必须恰好安装一个版本。显式版本必须匹配；
 
 ## 固定代码，动态资源
 
-会话持久化插件代码 generation：包、loop、provider 和工具实现跨休眠与重启保持固定。MCP 服务器定义与 Skills 是动态资源，仍按会话的 composition 过滤。资源新增、更新或删除在同一会话的下一轮生效；禁用 MCP 服务器后，所有会话的新一轮都不再看到它。同一 worker 中未修改的 MCP 服务器跨代码 generation 共享一条连接，每个使用方持有引用计数租约，最后一个 generation/会话引用释放时关闭连接。冷恢复解析固定的代码快照与当前资源，并在有超时上限的等待中完成首次 MCP 工具目录同步。
+会话持久化插件代码 generation：包、loop、provider 和工具实现跨休眠与重启保持固定。MCP 服务器定义与 Skills 是动态资源，仍按会话的 composition 过滤。资源新增、更新或删除在同一会话的下一轮生效；禁用 MCP 服务器后，所有会话的新一轮都不再看到它。同一 worker 与 opener/策略作用域内，按实际传输配置及已解析凭据边界，未修改的 MCP 服务器跨代码 generation 共享一条连接，每个使用方持有引用计数租约，最后一个 generation/会话引用释放时关闭连接。冷恢复解析固定的代码快照与当前资源，并在有超时上限的等待中完成首次 MCP 工具目录同步。
 
+
+模型路由、目录及凭据存储配置同样是实时配置：`Host.applyModelProfile` 广播到所有保留的代码容器，各容器的 adapter 注册表保持固定。冷恢复容器使用当前配置；非模型后端变更仍被拒绝。
+
+### 发布与恢复
+
+composition 发布采用逐容器收敛。`applyRuntimeTarget` 与 `extensionRows.apply` 的收敛结果带有 `publication`；composition Host 的 `refreshSkillRow`、`applyModelProfile` 返回 `HostPublicationReport`，普通 Host 保留 void 返回。报告包含操作、每个 `compositionHash` 的 `applied`/`failed` 结果及错误，以及 `recovery: 'retry-same-input'`。所有容器都会尝试发布，失败不会阻止后续容器。成功容器保留新状态，失败容器可能保留旧状态或部分收敛，新容器采用最新期望输入。重试同一完整输入使失败容器继续收敛。`compositionPublicationStatus()` 读取最后报告。调用方必须检查 `ok`；worker 的资源和配置命令通过 `assertHostPublication` 抛出携带完整报告的 `HostPublicationError`。失败不表示曾执行全局原子回滚。
+
+### 历史会话留存
+
+代码快照按持久会话 pin 留存，包含闲置历史。关闭、休眠不会使 pin 过期，也不会按时间自动升级。特权会话协调器关闭会话并排除并发准入后，可调用 `Host.migrateSessionGeneration(sessionKey)`，将该会话迁移到原 composition 的当前 generation；账本、loop id/version 与 composition binding 保留。两个快照必须存在且兼容，目标须解析相同 loop。打开中的会话、缺失快照或不兼容部署在修改 pin 前被拒绝。迁移幂等，返回 `{ previousGenerationId, generationId, changed }`。
+
+最后一个 pin 迁出，或删除会话后调用 `releaseSessionGeneration`，会触发旧容器释放与快照清理。其他存活 worker 所属归档保守保留，直到所属 worker 清理或退出。迁移显式改变插件实现，不承诺迁移插件自行定义的状态/checkpoint schema。管理 CLI 可包装此协调器端口；没有自动迁移或模型工具。
+
+重启作用域区分后端变更与代码发布：storage、sandbox、platform 及部署 adapter 变更需要 worker/进程重启，恢复仍要求兼容部署。新 generation 为新会话重建其注册表/runner，旧会话保留代码。Host 拒绝在线替换的内置实现仍需重启。provider 目录描述 kind/实例生命周期要求，generation 状态描述当前部署实际支持的发布范围。
 
 ## Provider 合同与迁移
 

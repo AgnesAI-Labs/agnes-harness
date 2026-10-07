@@ -1,5 +1,5 @@
 import type { ConnectionStatusEvent, McpServerOpener } from '@agnes/base'
-import type { Host } from '@agnes/host'
+import { assertHostPublication, type Host } from '@agnes/host'
 import {
   type McpStatus,
   type McpTool,
@@ -227,7 +227,11 @@ export function createMcpRowRuntime(
       const prepared = rows.map((dynamic) =>
         deps.host.extensionRows.prepare({ extensionId: dynamic.spec.id, dynamic }),
       )
-      await deps.host.extensionRows.apply([...others, ...prepared])
+      // A composition may apply only part of this desired set. Retain ownership of attempted ids
+      // too, so retry/replacement cannot mistake partially published MCP rows for unrelated code.
+      owned = new Set([...owned, ...prepared.map((row) => row.id)])
+      const report = await deps.host.extensionRows.apply([...others, ...prepared])
+      assertHostPublication(report.publication)
       const rowIds = Object.freeze(prepared.map((row) => row.id))
       owned = new Set(rowIds)
       await settledWithin(started, cap)

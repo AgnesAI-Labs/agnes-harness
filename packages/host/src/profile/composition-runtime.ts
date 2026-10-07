@@ -5,7 +5,7 @@ import { readAdminLoopDefault } from '../assemble/loop-selection.js'
 import { createConfigurationService } from '../configuration.js'
 import { HostError } from '../errors.js'
 import type { Host, HostOptions } from '../host.js'
-import { createHostFacade } from '../host-facade.js'
+import { assertHostPublication, createHostFacade, type HostPublicationReport } from '../host-facade.js'
 import { resolvePreset } from '../presets/resolve.js'
 import { createRuntimeGenerationHost } from '../runtime-generation-host.js'
 import { pluginSnapshotIdentity } from '../runtime-plugin-catalogue.js'
@@ -45,11 +45,14 @@ export async function createCompositionHost(
     options.runtimePluginCatalogue ?? options.runtimePluginSnapshots ?? [],
   )
   let currentSkills = options.skillResources
+  let modelProfile = profile
+  let lastPublication: HostPublicationReport | undefined
   const presets = await compositionPresets(profile, options)
   let closed = false
   let closing: Promise<void> | undefined
   let queue: Promise<unknown> = Promise.resolve()
   let latestTarget: RuntimeTarget | undefined
+  let latestRows: Parameters<Host['extensionRows']['apply']>[0] | undefined
   const writer = await createLiveCompositionWriter(options.profileDir)
   const projectRows = <T extends RuntimeTarget['tree']['rows'][number]>(
     rows: readonly T[],
@@ -89,18 +92,19 @@ export async function createCompositionHost(
     if (pending) return pending
     const started = (async () => {
       const pinned = generations.session(binding.sessionKey)
-      const sources = pinned ? generations.read(pinned.generationId).sources : undefined
-      const packageDirs = new Map(options.packageDirs)
-      for (const source of sources ?? [])
-        packageDirs.set(source.snapshot.packageId, source.snapshot.directory)
       const skills = compositionSkills(currentSkills, binding.tree.selection, skillOwners)
       const host = await createRuntimeGenerationHost(
-        binding.profile,
+        profileForComposition(
+          {
+            ...binding.profile,
+            provider: modelProfile.provider,
+            adapters: { ...binding.profile.adapters, secrets: modelProfile.adapters.secrets },
+          },
+          binding.tree,
+        ),
         {
           ...options,
-          packageDirs,
           ...(skills ? { skillResources: skills } : {}),
-          ...(sources ? { runtimePluginSnapshots: sources } : {}),
         },
         (generationProfile, generationOptions) =>
           factory(generationProfile, {
@@ -116,16 +120,24 @@ export async function createCompositionHost(
         const rows = new Map(host.extensionRows.current().map((row) => [row.id, row]))
         for (const input of prepared.values()) {
           // A restored composition keeps its code pin, but must seed current resource factories.
-          if (pinned && input.dynamic?.generation?.kind !== 'mcp-server') continue
           const dynamic =
-            pinned && input.dynamic?.generation && options.restoreGenerationExtension
+            pinned && input.dynamic?.generation?.kind === 'mcp-server' && options.restoreGenerationExtension
               ? await options.restoreGenerationExtension(input.dynamic.generation)
               : input.dynamic
           const row = host.extensionRows.prepare({ ...input, ...(dynamic ? { dynamic } : {}) })
           rows.set(row.id, row)
         }
-        if (latestTarget && !pinned) await host.applyRuntimeTarget(project(latestTarget, binding.tree))
-        else if (prepared.size) await host.extensionRows.apply(projectRows([...rows.values()], binding.tree))
+        if (latestTarget) {
+          const report = await host.applyRuntimeTarget(project(latestTarget, binding.tree))
+          assertHostPublication(report.publication)
+          if (!report.ok) throw new Error('E_COMPOSITION_PUBLICATION: new container did not converge')
+        }
+        const selectedRows = latestRows ?? (prepared.size ? [...rows.values()] : undefined)
+        if (selectedRows) {
+          const report = await host.extensionRows.apply(projectRows(selectedRows, binding.tree))
+          assertHostPublication(report.publication)
+          if (!report.ok) throw new Error('E_COMPOSITION_PUBLICATION: new container rows did not converge')
+        }
         const container = { host, tree: binding.tree }
         containers.set(binding.tree.hash, container)
         return container
@@ -208,7 +220,8 @@ export async function createCompositionHost(
     // acknowledge that input only when every composition has converged, retaining any row failure.
     return {
       hash: target?.tree.hash ?? reports[0]!.hash,
-      ok: reports.every((report) => report.ok),
+      ok: reports.every((report) => report.ok) && lastPublication?.ok !== false,
+      ...(lastPublication ? { publication: lastPublication } : {}),
       rows: [...rows.values()],
     }
   }
@@ -220,6 +233,29 @@ export async function createCompositionHost(
     })
     queue = next.catch(() => undefined)
     return next
+  }
+  const broadcast = async (
+    operation: HostPublicationReport['operation'],
+    apply: (container: Container) => Promise<unknown>,
+  ): Promise<HostPublicationReport> => {
+    const results: HostPublicationReport['containers'][number][] = []
+    for (const container of containers.values()) {
+      try {
+        const report = await apply(container)
+        if (report && typeof report === 'object' && 'ok' in report && report.ok === false)
+          throw new Error('Container did not converge; inspect ordinaryConvergence for row failures')
+        results.push({ compositionHash: container.tree.hash, status: 'applied' })
+      } catch (error) {
+        results.push({ compositionHash: container.tree.hash, status: 'failed', error: String(error) })
+      }
+    }
+    lastPublication = Object.freeze({
+      operation,
+      ok: results.every((result) => result.status === 'applied'),
+      recovery: 'retry-same-input',
+      containers: Object.freeze(results.map((result) => Object.freeze(result))),
+    })
+    return lastPublication
   }
   const sessions = new Proxy(initial.host.kernel.sessions, {
     get(_target, property) {
@@ -242,6 +278,7 @@ export async function createCompositionHost(
     runtimeTargetSnapshot: () => latestTarget ?? initial.host.runtimeTargetSnapshot!(),
     ordinaryConvergence: () => convergence(),
     compositionSessions: live,
+    compositionPublicationStatus: () => lastPublication,
     createSession: (input) =>
       enqueue(async () => {
         const key =
@@ -309,6 +346,20 @@ export async function createCompositionHost(
         sessionOwners.delete(key)
         publish()
       }),
+    migrateSessionGeneration: (key) =>
+      enqueue(async () => {
+        const binding = store.read(key)
+        if (!binding) throw new Error('E_COMPOSITION_BINDING_MISSING: session has no saved composition')
+        const container = await open(binding)
+        if (!container.host.migrateSessionGeneration) throw new Error('E_GENERATION_MIGRATION_UNAVAILABLE')
+        const result = await container.host.migrateSessionGeneration(key)
+        publish()
+        return result
+      }),
+    collectPluginGenerations: () =>
+      enqueue(async () => {
+        for (const { host } of containers.values()) await host.collectPluginGenerations?.()
+      }),
     pluginGenerationStatus: () => {
       const statuses = [...containers.values()].map(({ host }) => host.pluginGenerationStatus!())
       const all = new Map(
@@ -339,33 +390,42 @@ export async function createCompositionHost(
     inspectService: (params, ...args) => owner(params.sessionId).host.inspectService(params, ...args),
     applyRuntimeTarget: (target) =>
       enqueue(async () => {
-        for (const container of containers.values()) {
-          await container.host.applyRuntimeTarget(project(target, container.tree))
-        }
         latestTarget = target
+        latestRows = undefined
+        await broadcast('runtime-target', (container) =>
+          container.host.applyRuntimeTarget(project(target, container.tree)),
+        )
         return convergence(target)
       }),
     refreshSkillRow: (fresh) =>
       enqueue(async () => {
-        for (const container of containers.values())
-          await container.host.refreshSkillRow(
-            compositionSkills(fresh, container.tree.selection, skillOwners),
-          )
         currentSkills = fresh
+        return broadcast('skills', (container) =>
+          container.host.refreshSkillRow(compositionSkills(fresh, container.tree.selection, skillOwners)),
+        )
       }),
     reloadEcosystemExtension: async (id, input) => {
       if (id !== 'agnes/skills') return initial.host.reloadEcosystemExtension(id, input)
-      await overrides.refreshSkillRow!(input.skillResources)
+      assertHostPublication(await overrides.refreshSkillRow!(input.skillResources))
       const result = initial.host.extensions().find((entry) => entry.id === id)
       if (!result) throw new Error('E_COMPOSITION_SKILLS: Skills row has no status')
       return result
     },
     applyModelProfile: (next) =>
       enqueue(async () => {
-        for (const container of containers.values())
-          await container.host.applyModelProfile(
-            profileForComposition({ ...container.host.profile, provider: next.provider }, container.tree),
-          )
+        modelProfile = next
+        return broadcast('models', (container) =>
+          container.host.applyModelProfile(
+            profileForComposition(
+              {
+                ...container.host.profile,
+                provider: next.provider,
+                adapters: { ...container.host.profile.adapters, secrets: next.adapters.secrets },
+              },
+              container.tree,
+            ),
+          ),
+        )
       }),
     extensionRows: {
       ...initial.host.extensionRows,
@@ -380,8 +440,12 @@ export async function createCompositionHost(
       },
       apply: (rows) =>
         enqueue(async () => {
-          for (const container of containers.values())
-            await container.host.extensionRows.apply(projectRows(rows, container.tree))
+          latestRows = rows
+          const selected = new Set(rows.map((row) => row.id))
+          for (const id of prepared.keys()) if (!selected.has(`ext:${id}`)) prepared.delete(id)
+          await broadcast('extension-rows', (container) =>
+            container.host.extensionRows.apply(projectRows(rows, container.tree)),
+          )
           return convergence()
         }),
     },

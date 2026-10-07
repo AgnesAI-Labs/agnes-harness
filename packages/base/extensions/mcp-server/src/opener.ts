@@ -19,6 +19,17 @@ import type { McpConnection } from '../../../src/mcp/register.js'
  */
 export type McpServerOpener = Readonly<{
   connect(definition: McpServerDefinitionInput, signal: AbortSignal): Promise<McpConnection>
+  /** Resolve and authorize once. The opaque key represents the effective config/credential boundary;
+   * connect uses that same resolved config. Neither config nor credentials leave the opener. */
+  prepare?(
+    definition: McpServerDefinitionInput,
+    signal: AbortSignal,
+  ): Promise<
+    Readonly<{
+      key: string
+      connect(signal: AbortSignal): Promise<McpConnection>
+    }>
+  >
 }>
 
 /**

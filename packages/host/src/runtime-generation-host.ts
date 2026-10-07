@@ -19,6 +19,8 @@ import { HostError } from './errors.js'
 import { createExtensionActivationBarrier } from './ext-host/activation-barrier.js'
 import type { Host, HostOptions } from './host.js'
 import { createHostFacade } from './host-facade.js'
+import { readLiveCompositionSessions } from './profile/composition-state.js'
+import { modelProfileDeployment } from './profile/model-compatibility.js'
 import type { ResolvedProfile } from './profile/types.js'
 import type { SkillRuntimeInput } from './resources/skills.js'
 import {
@@ -690,6 +692,41 @@ export async function createRuntimeGenerationHost(
         store.releaseSession(key)
         await collect()
       }),
+    migrateSessionGeneration: (key) =>
+      enqueue(async () => {
+        if (
+          owner(key).kernel.get(key) ||
+          (await readLiveCompositionSessions(options.profileDir)).some(
+            (session) => session.sessionKey === key,
+          )
+        )
+          throw new Error('E_GENERATION_SESSION_OPEN: close the session before migration')
+        const pin = store.session(key)
+        if (!pin) throw new Error('E_GENERATION_PIN_MISSING: session is not bound')
+        const head = await ensureCurrent()
+        // Validate both immutable archives and the exact saved loop before changing durable facts.
+        if (store.read(pin.generationId).compatibility !== head.snapshot.compatibility)
+          throw new Error('E_GENERATION_INCOMPATIBLE: session migration needs a compatible deployment')
+        store.read(head.snapshot.id)
+        if (pin.loop) {
+          try {
+            head.host.kernel.loops.resolve(pin.loop)
+          } catch (cause) {
+            throw new Error('E_GENERATION_LOOP_INCOMPATIBLE: target cannot resolve the pinned loop', {
+              cause,
+            })
+          }
+        }
+        if (pin.generationId === head.snapshot.id)
+          return { previousGenerationId: pin.generationId, generationId: pin.generationId, changed: false }
+        store.migrateSession(key, pin.generationId, head.snapshot.id)
+        try {
+          await collect()
+        } catch (error) {
+          failures.set(pin.generationId, `E_GENERATION_DISPOSE: ${String(error)}`)
+        }
+        return { previousGenerationId: pin.generationId, generationId: head.snapshot.id, changed: true }
+      }),
     createSession: (input) =>
       enqueue(async () => {
         const head = await ensureCurrent()
@@ -752,18 +789,33 @@ export async function createRuntimeGenerationHost(
     applyModelProfile: (next) =>
       enqueue(async () => {
         const head = await ensureCurrent()
+        if (modelProfileDeployment(next) !== modelProfileDeployment(profile))
+          throw new HostError('E_SEAM_IMMUTABLE', 'non-model configuration requires restart')
         const previous = profile
-        await head.host.applyModelProfile(next)
-        profile = head.host.profile
+        const applied: { host: Host; profile: ResolvedProfile }[] = []
         try {
-          // Keep subsequent generation builds on the applied profile. Immutable backend changes
-          // are refused by the underlying Host; mutable routes retain their generation identity.
+          for (const host of new Set([...live.values()].map((generation) => generation.host))) {
+            const saved = host.profile
+            await host.applyModelProfile({
+              ...saved,
+              provider: next.provider,
+              adapters: { ...saved.adapters, secrets: next.adapters.secrets },
+              hash: next.hash,
+            })
+            applied.push({ host, profile: saved })
+          }
+          profile = { ...profile, provider: next.provider, adapters: next.adapters, hash: next.hash }
           await publishTarget(
             head.host.runtimeTargetSnapshot?.() ?? decodeRuntimeTargetArtifact(head.snapshot.artifact),
           )
         } catch (error) {
-          await head.host.applyModelProfile(previous)
+          const rollback = await Promise.allSettled(
+            applied.reverse().map(({ host, profile }) => host.applyModelProfile(profile)),
+          )
           profile = previous
+          const failures = rollback.flatMap((result) => (result.status === 'rejected' ? [result.reason] : []))
+          if (failures.length)
+            throw new AggregateError([error, ...failures], 'Model configuration rollback was incomplete')
           throw error
         }
       }),

@@ -175,7 +175,43 @@ it('keeps old plugin leases across update, close and cold resume, and drains on 
     expect(() => store.recordLoop('session-a', { id: 'missing-loop', version: '9.0.0' })).toThrow(
       'E_GENERATION_LOOP_INCOMPATIBLE',
     )
+    await expect(required(host.migrateSessionGeneration)('session-a')).rejects.toThrow(
+      'E_GENERATION_SESSION_OPEN',
+    )
+    const savedPin = store.session('session-a')
+    const oldFile = join(store.root, required(firstId), 'generation.json')
+    const oldBytes = readFileSync(oldFile, 'utf8')
     await resumed.close()
+    writeFileSync(oldFile, JSON.stringify({ ...JSON.parse(oldBytes), compatibility: 'different-deployment' }))
+    await expect(required(host.migrateSessionGeneration)('session-a')).rejects.toThrow(
+      'E_GENERATION_INCOMPATIBLE',
+    )
+    expect(store.session('session-a')).toEqual(savedPin)
+    writeFileSync(oldFile, oldBytes)
+    store.pin('idle-incompatible-loop', required(firstId))
+    store.recordLoop('idle-incompatible-loop', { id: 'missing-loop', version: '9.0.0' })
+    await expect(required(host.migrateSessionGeneration)('idle-incompatible-loop')).rejects.toThrow(
+      'E_GENERATION_LOOP_INCOMPATIBLE',
+    )
+    expect(store.session('idle-incompatible-loop')?.generationId).toBe(firstId)
+    await required(host.releaseSessionGeneration)('idle-incompatible-loop')
+    const migration = await required(host.migrateSessionGeneration)('session-a')
+    expect(migration).toEqual({
+      previousGenerationId: firstId,
+      generationId: host.pluginGenerationStatus?.().currentGenerationId,
+      changed: true,
+    })
+    expect(store.session('session-a')?.loop).toEqual(savedPin?.loop)
+    expect(store.session('session-a')?.generationId).toBe(migration.generationId)
+    expect(await required(host.migrateSessionGeneration)('session-a')).toEqual({
+      ...migration,
+      previousGenerationId: migration.generationId,
+      changed: false,
+    })
+    const migrated = await host.createSession({ key: 'session-a', cwd: root })
+    expect(migrated.pluginGenerationId).toBe(migration.generationId)
+    expect(migrated.currentTools().resolve('generation_value')).toBeUndefined()
+    await migrated.close()
     host.kernel.sessions.delete(resumed.key)
     await required(host.releaseSessionGeneration)('session-a')
     expect(store.session('session-a')).toBeUndefined()

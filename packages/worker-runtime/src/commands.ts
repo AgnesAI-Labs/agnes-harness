@@ -1,4 +1,4 @@
-import type { Host, HostSession, ResolvedProfile } from '@agnes/host'
+import { assertHostPublication, type Host, type HostSession, type ResolvedProfile } from '@agnes/host'
 import type { LocalGate } from '@agnes/plugin-runtime/host'
 import {
   type Actor,
@@ -508,7 +508,10 @@ async function refreshSkills(
 ): Promise<void> {
   // Existing test hosts still implement the older worker facade; production Host supplies the row
   // method. Both currently route to the same single Skills row, never to managed.loadEmbedded.
-  if (typeof host.refreshSkillRow === 'function') return host.refreshSkillRow(input)
+  if (typeof host.refreshSkillRow === 'function') {
+    assertHostPublication(await host.refreshSkillRow(input))
+    return
+  }
   const status = await host.reloadEcosystemExtension('agnes/skills', input ? { skillResources: input } : {})
   if (!status.loaded)
     throw new Error(`agnes/skills reload failed: ${status.error?.message ?? 'unknown error'}`)
@@ -661,7 +664,7 @@ export async function handleServiceCommand(
   if (cmd.method === 'configuration.apply') {
     if (!host || !cmd.params.profile || typeof cmd.params.profile !== 'object')
       throw new TypeError('invalid model configuration')
-    await host.applyModelProfile(cmd.params.profile as ResolvedProfile)
+    assertHostPublication(await host.applyModelProfile(cmd.params.profile as ResolvedProfile))
     return { profileHash: host.profile.hash }
   }
   const p = cmd.params

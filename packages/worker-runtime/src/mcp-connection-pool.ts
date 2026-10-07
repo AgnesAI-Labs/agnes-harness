@@ -1,4 +1,6 @@
+import { randomUUID } from 'node:crypto'
 import type { McpConnection, McpServerOpener } from '@agnes/base'
+import { jcs } from '@agnes/protocol'
 
 /** Pools within one worker's opener/policy scope; each row owns an independently releasable lease. */
 const pools = new WeakMap<McpServerOpener, Map<string, Entry>>()
@@ -11,6 +13,12 @@ export async function leaseMcpConnection(
   signal: AbortSignal,
 ): Promise<McpConnection> {
   if (signal.aborted) throw new DOMException('aborted', 'AbortError')
+  const prepared = await opener.prepare?.(definition, signal)
+  if (signal.aborted) throw new DOMException('aborted', 'AbortError')
+  // Unresolved credential-bearing custom openers cannot prove equivalence: refuse to share.
+  const boundary =
+    prepared?.key ?? (definition.secretBinding.kind === 'none' ? jcs(definition) : randomUUID())
+  key = jcs([key, boundary])
   let pool = pools.get(opener)
   if (!pool) {
     pool = new Map()
@@ -19,7 +27,13 @@ export async function leaseMcpConnection(
   let entry = pool.get(key)
   if (!entry) {
     const controller = new AbortController()
-    entry = { refs: 0, controller, connection: opener.connect(definition, controller.signal) }
+    entry = {
+      refs: 0,
+      controller,
+      connection: prepared
+        ? prepared.connect(controller.signal)
+        : opener.connect(definition, controller.signal),
+    }
     const created = entry
     pool.set(key, created)
     void created.connection.then(

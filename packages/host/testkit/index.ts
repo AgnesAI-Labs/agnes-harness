@@ -189,6 +189,7 @@ export type TestHostOptions = {
   runtimePluginSnapshots?: HostOptions['runtimePluginSnapshots']
   // Installed snapshots re-read before every target, the way a worker supplies them in production.
   runtimePluginSources?: HostOptions['runtimePluginSources']
+  restoreGenerationExtension?: HostOptions['restoreGenerationExtension']
   ordinaryStartTimeoutMs?: HostOptions['ordinaryStartTimeoutMs']
   extensionLoader?: HostOptions['extensionLoader']
   // Per-extension isolation policy and the services that stand in for the sandbox runtime.
@@ -376,6 +377,7 @@ export async function createTestHost(o: TestHostOptions): Promise<TestHost> {
     ...(o.mcpManage ? { mcpManage: o.mcpManage } : {}),
     ...(o.extensionIsolationServices ? { extensionIsolationServices: o.extensionIsolationServices } : {}),
     ...(o.skillResources ? { skillResources: o.skillResources } : {}),
+    ...(o.restoreGenerationExtension ? { restoreGenerationExtension: o.restoreGenerationExtension } : {}),
     ...(o.trajectoryFetch ? { trajectoryFetch: o.trajectoryFetch } : {}),
     ...(o.trajectoryResolver ? { trajectoryResolver: o.trajectoryResolver } : {}),
     ...(o.disableSessionTitle ? { disableSessionTitle: true } : {}),

@@ -61,6 +61,23 @@ it('publishes a new catalogue to existing sessions and keeps the old runtime aft
     const fresh = await host.createSession({ cwd: root, key: 'after-model-configuration' })
     await fresh.setModel({ slot: 'primary', route: route.route, model: 'hot-model' })
     const generationId = fresh.pluginGenerationId
+    const broadcast = structuredClone(next)
+    const liveRoute = broadcast.provider.routes?.find((row) => row.route === route.route)
+    if (!liveRoute) throw new Error('fixture live route missing')
+    liveRoute.baseUrl = 'https://live.example/v1'
+    liveRoute.models = [
+      ...(liveRoute.models ?? []),
+      { ...first, id: 'after-fork', name: 'after-fork', baseUrl: liveRoute.baseUrl },
+    ]
+    await host.applyModelProfile(broadcast)
+    await session.setModel({ slot: 'primary', route: route.route, model: 'after-fork' })
+    await fresh.setModel({ slot: 'primary', route: route.route, model: 'after-fork' })
+    expect(session.preset.model.id.primary).toBe('after-fork')
+    expect(session.d.provider.models().find((model) => model.id === 'after-fork')?.baseUrl).toBe(
+      'https://live.example/v1',
+    )
+    expect(fresh.pluginGenerationId).toBe(generationId)
+    expect(session.pluginGenerationId).not.toBe(generationId)
     expect(generationId).not.toBe(session.pluginGenerationId)
     await fresh.close()
     await host.close()
@@ -72,8 +89,8 @@ it('publishes a new catalogue to existing sessions and keeps the old runtime aft
         user: {
           name: next.name,
           provider: {
-            ...next.provider,
-            routes: (next.provider.routes ?? []).filter((row) => row.route !== 'demo'),
+            ...broadcast.provider,
+            routes: (broadcast.provider.routes ?? []).filter((row) => row.route !== 'demo'),
           },
           adapters: next.adapters,
         },
@@ -89,6 +106,12 @@ it('publishes a new catalogue to existing sessions and keeps the old runtime aft
       expect(resumed.pluginGenerationId).toBe(generationId)
       await resumed.setModel({ slot: 'primary', route: route.route, model: 'hot-model' })
       expect(resumed.preset.model.id.primary).toBe('hot-model')
+      const historical = await cold.host.createSession({ cwd: root, key: session.key })
+      expect(historical.pluginGenerationId).toBe(session.pluginGenerationId)
+      await historical.setModel({ slot: 'primary', route: route.route, model: 'after-fork' })
+      expect(historical.d.provider.models().find((model) => model.id === 'after-fork')?.baseUrl).toBe(
+        'https://live.example/v1',
+      )
     } finally {
       await cold.host.close()
     }

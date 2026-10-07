@@ -106,6 +106,43 @@ describe('createMcpServerOpener', () => {
     })
   })
 
+  it('prepares an opaque effective credential boundary and connects with that exact resolved config', async () => {
+    connectMcp.mockClear()
+    let credential = 'first-private-token'
+    const opener = createMcpServerOpener({
+      resolver: async () => credential,
+      baseEnv: {},
+      stdioPolicy: { allowedExecutables: [] },
+      httpPolicy: {},
+    })
+    const prepare = opener.prepare
+    if (!prepare) throw new Error('missing prepared MCP opener')
+    const signal = new AbortController().signal
+    const first = await prepare(httpDefinition, signal)
+    const same = await prepare(structuredClone(httpDefinition), signal)
+    expect(first.key).toBe(same.key)
+    credential = 'rotated-private-token'
+    const rotated = await prepare(httpDefinition, signal)
+    expect(rotated.key).not.toBe(first.key)
+    expect(rotated.key).not.toContain(credential)
+    const moved = await prepare(
+      {
+        ...httpDefinition,
+        transport: { kind: 'http', url: 'https://other.example/mcp' },
+      } as McpServerDefinitionInput,
+      signal,
+    )
+    expect(moved.key).not.toBe(rotated.key)
+    await first.connect(signal)
+    expect(connectMcp.mock.calls[0]?.[0]).toMatchObject({
+      headers: { authorization: 'Bearer first-private-token' },
+    })
+    await rotated.connect(signal)
+    expect(connectMcp.mock.calls[1]?.[0]).toMatchObject({
+      headers: { authorization: 'Bearer rotated-private-token' },
+    })
+  })
+
   it('rejects a disallowed stdio executable before ever resolving a credential or connecting', async () => {
     connectMcp.mockClear()
     const resolver = vi.fn(async () => 'tok')

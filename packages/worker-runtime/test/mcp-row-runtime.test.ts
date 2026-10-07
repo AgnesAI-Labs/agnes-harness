@@ -4,11 +4,13 @@ import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { ScriptedProvider } from '@agnes/ai/testkit'
 import { connectMcp, type McpConnection, type McpServerOpener, mcpLocalToolPrefix } from '@agnes/base'
-import type { Host } from '@agnes/host'
+import type { Host, HostSession, ResolvedProfile } from '@agnes/host'
 import { createTestHost } from '@agnes/host/testkit'
 import { buildRuntimeTarget } from '@agnes/plugin-runtime/host'
 import { type McpServerDefinitionInput, validateResourceControlData } from '@agnes/protocol'
+import { createSkillCandidateRegistry } from '@agnes/resource-control-runtime'
 import {
   createWorkerMcpServerOpener,
   syncManagedMcpExecutableAllowlist,
@@ -16,6 +18,7 @@ import {
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createMcpRowRuntime } from '../src/mcp-row-runtime.js'
 import type { McpServerSnapshotEntry } from '../src/mcp-server-rows.js'
+import { generationExtensionRestorer } from '../src/runtime-generation-restore.js'
 
 const baseDir = fileURLToPath(new URL('../../base', import.meta.url))
 // The prefix is register.ts's tool naming for that server id, computed via the shared function
@@ -225,6 +228,115 @@ describe('createMcpRowRuntime against a real Host', () => {
     expect(closes).toEqual(['alpha', 'alpha'])
     await host.close()
     expect(closes).toEqual(['alpha', 'alpha', 'beta'])
+  })
+
+  it('uses live composition-filtered MCP and Skills on old code next turns and cold resume', async () => {
+    const dataDir = await mkdtemp(join(tmpdir(), 'mcp-composition-live-'))
+    cleanup.push(() => rm(dataDir, { recursive: true, force: true }))
+    const { opener, connects, closes } = countingOpener()
+    const skills = (body: string) => {
+      const registry = createSkillCandidateRegistry({
+        barrier: { quiesce: async (_id, publish) => publish({}) },
+      })
+      for (const [name, digit] of [
+        ['visible', 'a'],
+        ['hidden', 'b'],
+      ] as const)
+        registry.registerRuntime({
+          resourceId: `skill/runtime/runtime/${digit.repeat(64)}`,
+          name,
+          description: name,
+          revision: (body === 'archived body' ? 'a' : 'b').repeat(64),
+          capabilityHash: 'c'.repeat(64),
+          sourceIdentity: { scope: 'runtime', rootKey: 'runtime', sourceId: digit.repeat(64) },
+          priority: 450,
+          body: `${name}: ${body}`,
+        })
+      return registry.snapshot()
+    }
+    const options = {
+      dataDir,
+      disableSessionTitle: true,
+      packageDirs: { '@agnes/base': baseDir },
+      profileInputs: {
+        user: { name: 'local-dev', composition: { mcp: ['mcp/alpha', 'mcp/gamma'], skills: ['visible'] } },
+      },
+      restoreGenerationExtension: generationExtensionRestorer({ env: {} } as never, opener),
+      provider: (profile: ResolvedProfile) =>
+        new ScriptedProvider({
+          models: profile.provider.routes?.flatMap((route) => route.models ?? []) ?? [],
+          scripts: [
+            (_req, n) =>
+              n % 2 === 0
+                ? [
+                    {
+                      type: 'toolcall_end',
+                      call: { toolUseId: '', name: 'skill_read', args: { name: 'visible' }, ordinal: 0 },
+                      via: 'native',
+                    },
+                    { type: 'done', reason: 'toolUse' },
+                  ]
+                : [
+                    { type: 'text_delta', delta: 'done' },
+                    { type: 'done', reason: 'stop' },
+                  ],
+          ],
+        }),
+    }
+    const test = await createTestHost({ ...options, skillResources: skills('archived body') })
+    let host = test.host
+    cleanup.push(() => host.close())
+    let runtime = createMcpRowRuntime({ host, opener })
+    await runtime.apply([entry('alpha'), entry('beta')])
+    const old = await host.createSession({ key: 'historical-live-resources', cwd: dataDir })
+    const pin = old.pluginGenerationId
+    const nextTurn = async (session: HostSession) => {
+      const from = session.lastSeq + 1
+      await session.enqueue('next-turn', {
+        content: [{ type: 'text', text: 'Read the visible Skill' }],
+        actor: session.d.actor,
+        kind: 'prompt',
+      })
+      expect(await session.run({ until: 'turn-end', signal: new AbortController().signal })).toMatchObject({
+        reason: 'completed',
+      })
+      const results = await session.scan({ fromSeq: from, toSeq: session.lastSeq, type: 'tool/result' })
+      const data = JSON.stringify(results)
+      expect(data).not.toContain('hidden:')
+      expect(session.currentTools().resolve(`${BETA_PREFIX}ping`)).toBeUndefined()
+      return data
+    }
+    expect(await nextTurn(old)).toContain('archived body')
+    await host.extensionRows.apply(
+      host.extensionRows
+        .current()
+        .map((row) =>
+          row.id === 'ext:agnes/tools-web'
+            ? host.extensionRows.prepare({ extensionId: 'agnes/tools-web', entryRevision: 'code-fork' })
+            : row,
+        ),
+    )
+    const fresh = await host.createSession({ key: 'current-live-resources', cwd: dataDir })
+    expect(fresh.pluginGenerationId).not.toBe(pin)
+    expect(connects.sort()).toEqual(['alpha', 'beta'])
+    expect(closes).toEqual([])
+    await runtime.apply([entry('gamma'), entry('beta')])
+    await host.refreshSkillRow(skills('current body'))
+    expect(await nextTurn(old)).toContain('current body')
+    expect(old.pluginGenerationId).toBe(pin)
+    expect(old.currentTools().resolve(`${ALPHA_PREFIX}ping`)).toBeUndefined()
+    expect(old.currentTools().resolve(`${mcpLocalToolPrefix('gamma')}ping`)).toBeDefined()
+    await host.close()
+    host = (await createTestHost({ ...options, skillResources: skills('cold current body') })).host
+    runtime = createMcpRowRuntime({ host, opener })
+    await runtime.apply([entry('gamma'), entry('beta')])
+    const resumed = await host.createSession({ key: old.key, cwd: dataDir })
+    expect(resumed.pluginGenerationId).toBe(pin)
+    const cold = await nextTurn(resumed)
+    expect(cold).toContain('cold current body')
+    expect(cold).not.toContain('archived body')
+    expect(resumed.currentTools().resolve(`${ALPHA_PREFIX}ping`)).toBeUndefined()
+    expect(resumed.currentTools().resolve(`${mcpLocalToolPrefix('gamma')}ping`)).toBeDefined()
   })
 
   it('reconnect() forces a server to remount on the next apply() even at the same revision, and only that one', async () => {

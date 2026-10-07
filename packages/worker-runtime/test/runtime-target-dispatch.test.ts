@@ -2,6 +2,7 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { Duplex } from 'node:stream'
+import type { HostConvergenceReport } from '@agnes/host'
 import {
   buildRuntimeTarget,
   createPluginRow,
@@ -129,35 +130,59 @@ describe('runWorker runtime.stale production dispatch', () => {
     ])
   })
 
-  it('keeps a failed digest retryable and does not route legacy kind/method frames into the target slot', async () => {
-    const failure = new Error('candidate rejected')
-    const applyRuntimeTarget = vi
-      .fn<(target: RuntimeTarget) => Promise<RuntimeConvergenceReport>>()
-      .mockRejectedValueOnce(failure)
-      .mockImplementation(async (target) => report(target))
-    const { link } = await fixture(applyRuntimeTarget)
-    const a = artifact('a')
+  it.each(['rejection', 'partial publication'] as const)(
+    'keeps a failed digest retryable after %s and ignores legacy target frames',
+    async (failureKind) => {
+      const failure = new Error('candidate rejected')
+      const applyRuntimeTarget = vi
+        .fn<(target: RuntimeTarget) => Promise<HostConvergenceReport>>()
+        .mockImplementationOnce(async (target) => {
+          if (failureKind === 'rejection') throw failure
+          return {
+            ...report(target),
+            ok: false,
+            publication: {
+              operation: 'runtime-target',
+              ok: false,
+              recovery: 'retry-same-input',
+              containers: [
+                { compositionHash: 'first', status: 'applied' },
+                { compositionHash: 'second', status: 'failed', error: 'candidate rejected' },
+              ],
+            },
+          }
+        })
+        .mockImplementation(async (target) => report(target))
+      const { link, written } = await fixture(applyRuntimeTarget)
+      const a = artifact('a')
 
-    link.push(
-      Buffer.from(
-        [
-          encodeFrame({ kind: 'runtime.stale', requestId: 'wrong-kind', artifact: a }),
-          encodeFrame({ kind: 'command', requestId: 'legacy', method: 'resource.stale', params: {} }),
-          encodeFrame(stale(a)),
-        ].join(''),
-      ),
-    )
+      link.push(
+        Buffer.from(
+          [
+            encodeFrame({ kind: 'runtime.stale', requestId: 'wrong-kind', artifact: a }),
+            encodeFrame({ kind: 'command', requestId: 'legacy', method: 'resource.stale', params: {} }),
+            encodeFrame(stale(a)),
+          ].join(''),
+        ),
+      )
 
-    await expect.poll(() => applyRuntimeTarget.mock.calls.length).toBe(1)
-    link.push(Buffer.from(encodeFrame(stale(a))))
-    await expect.poll(() => applyRuntimeTarget.mock.calls.length).toBe(2)
-    expect(applyRuntimeTarget).toHaveBeenNthCalledWith(
-      2,
-      expect.objectContaining({
-        resource: expect.objectContaining({ target: a.identity, resources: { mcp: [], skills: {} } }),
-      }),
-    )
-  })
+      await expect
+        .poll(() => written.some((frame) => JSON.stringify(frame).includes('runtime.apply_failed')))
+        .toBe(true)
+      expect(written.some((frame) => JSON.stringify(frame).includes('runtime.converged'))).toBe(false)
+      if (failureKind === 'partial publication')
+        expect(JSON.stringify(written)).toContain('applied to 1/2 containers')
+      expect(applyRuntimeTarget.mock.calls.length).toBe(1)
+      link.push(Buffer.from(encodeFrame(stale(a))))
+      await expect.poll(() => applyRuntimeTarget.mock.calls.length).toBe(2)
+      expect(applyRuntimeTarget).toHaveBeenNthCalledWith(
+        2,
+        expect.objectContaining({
+          resource: expect.objectContaining({ target: a.identity, resources: { mcp: [], skills: {} } }),
+        }),
+      )
+    },
+  )
 
   it.each(['bootstrap', 'lastGood'] as const)(
     'keeps session.open closed until the first applied target emits boot_ready from %s',

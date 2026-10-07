@@ -5,7 +5,7 @@ import {
   recoverCreatingChildAttempts,
   type WorkspaceInvocationPort,
 } from '@agnes/core'
-import type { RuntimeConvergenceReport, RuntimeTarget } from '@agnes/plugin-runtime/host'
+import type { RuntimeTarget } from '@agnes/plugin-runtime/host'
 import type { Actor, ExtensionCallParams, ExtensionCallResult, ThinkingLevel } from '@agnes/protocol'
 import { startApprovalExpiry } from './approval-expiry.js'
 import type { PackageLoader } from './assemble/packages.js'
@@ -19,6 +19,7 @@ import {
   type ServiceEffectAdmission,
   type ServiceInspection,
 } from './ext-host/service-invocation.js'
+import type { HostConvergenceReport, HostPublicationReport } from './host-facade.js'
 import { closeHost } from './lifecycle.js'
 import { type ResolvedPreset, resolvePreset } from './presets/resolve.js'
 import type { PresetDoc } from './presets/types.js'
@@ -72,6 +73,13 @@ export interface Host {
   pluginGenerationStatus?(): PluginGenerationStatus
   sessionGeneration?(sessionKey: string): string | undefined
   releaseSessionGeneration?(sessionKey: string): Promise<void>
+  /** Privileged coordinator only: the caller must exclude concurrent admission for this idle session. */
+  migrateSessionGeneration?(sessionKey: string): Promise<{
+    previousGenerationId: string
+    generationId: string
+    changed: boolean
+  }>
+  compositionPublicationStatus?(): HostPublicationReport | undefined
   reloadPlugin?(id: string, directory?: string): Promise<{ generationId: string; changed: boolean }>
   collectPluginGenerations?(): Promise<void>
   /** Host-private immutable target projection for generation assembly. */
@@ -91,7 +99,7 @@ export interface Host {
     credential: unknown,
     signal?: AbortSignal,
   ): Promise<ServiceInspection>
-  applyModelProfile(next: ResolvedProfile): Promise<void>
+  applyModelProfile(next: ResolvedProfile): Promise<void | HostPublicationReport>
   readonly profile: ResolvedProfile
   readonly kernel: Kernel
   /** ERRATA B19: cli reads it for `agnes models` and for --probe. */
@@ -129,13 +137,15 @@ export interface Host {
     freshInit: Readonly<{ skillResources?: SkillRuntimeInput }>,
   ): Promise<ExtensionStatus>
   /** Apply a fresh Skills resource view through its single builtin Cordis row. */
-  refreshSkillRow(fresh: SkillRuntimeInput | undefined): Promise<void>
+  refreshSkillRow(fresh: SkillRuntimeInput | undefined): Promise<void | HostPublicationReport>
   /** Latest worker-produced ordinary report, qualified by its exact desired tree hash. */
-  ordinaryConvergence(): RuntimeConvergenceReport
+  ordinaryConvergence(): HostConvergenceReport
   /** Publish one complete canonical target through the assembly's sole RuntimeState pointer. */
-  applyRuntimeTarget(target: RuntimeTarget): Promise<RuntimeConvergenceReport>
+  applyRuntimeTarget(target: RuntimeTarget): Promise<HostConvergenceReport>
   /** Drive the ext: rows on the tree. Stage 2 hands the same `apply` the daemon's composite rows. */
-  readonly extensionRows: Assembled['extensionRows']
+  readonly extensionRows: Omit<Assembled['extensionRows'], 'apply'> & {
+    apply(rows: Parameters<Assembled['extensionRows']['apply']>[0]): Promise<HostConvergenceReport>
+  }
   close(): Promise<void>
   /**
    * The gate a caller (daemon's `session.setPreset` RPC handler) must go through before ever calling

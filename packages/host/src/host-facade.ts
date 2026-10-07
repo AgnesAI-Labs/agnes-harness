@@ -1,3 +1,4 @@
+import type { RuntimeConvergenceReport } from '@agnes/plugin-runtime/host'
 import type { Host } from './host.js'
 
 const sources = new WeakMap<Host, () => Host>()
@@ -47,4 +48,33 @@ export function createHostFacade(base: Host, overrides: Partial<Host>, current =
   })
   sources.set(facade, current)
   return facade
+}
+
+/** Publication may converge independently across compositions; retry the same desired input. */
+export type HostPublicationReport = Readonly<{
+  operation: 'runtime-target' | 'skills' | 'models' | 'extension-rows'
+  ok: boolean
+  recovery: 'retry-same-input'
+  containers: readonly Readonly<{
+    compositionHash: string
+    status: 'applied' | 'failed'
+    error?: string
+  }>[]
+}>
+export type HostConvergenceReport = RuntimeConvergenceReport & { publication?: HostPublicationReport }
+
+export class HostPublicationError extends Error {
+  constructor(readonly report: HostPublicationReport) {
+    super(
+      `E_COMPOSITION_PUBLICATION: ${report.operation} applied to ${report.containers.filter((row) => row.status === 'applied').length}/${report.containers.length} containers; retry the same input; ${report.containers
+        .filter((row) => row.status === 'failed')
+        .map((row) => row.error)
+        .join('; ')}`,
+    )
+  }
+}
+
+/** Compatibility callers must preserve the partial-success report instead of acknowledging success. */
+export function assertHostPublication(report: HostPublicationReport | void): void {
+  if (report && !report.ok) throw new HostPublicationError(report)
 }

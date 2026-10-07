@@ -3,6 +3,7 @@ import { MemTable } from '@agnes/base/testkit'
 import type { McpServerDefinitionInput } from '@agnes/protocol'
 import * as workerResources from '@agnes/resource-control-worker'
 import { describe, expect, it, vi } from 'vitest'
+import { leaseMcpConnection } from '../src/mcp-connection-pool.js'
 import { type McpServerSnapshotEntry, mcpServerRowsFromDefinitions } from '../src/mcp-server-rows.js'
 import { generationExtensionRestorer } from '../src/runtime-generation-restore.js'
 
@@ -244,4 +245,48 @@ it('reconstructs a cold generation MCP factory from SecretRefs and refuses unkno
     await finish?.()
     opener.mockRestore()
   }
+})
+
+it('shares effective MCP boundaries across generations and releases independent leases after rotation', async () => {
+  let credential = 'first'
+  const closed: string[] = []
+  const opened: string[] = []
+  const opener = {
+    connect: async () => {
+      throw new Error('prepared connect required')
+    },
+    prepare: async () => {
+      const value = credential
+      return {
+        key: value,
+        connect: async () => {
+          opened.push(value)
+          return {
+            id: 'pooled',
+            listTools: async () => [],
+            callTool: async () => ({ content: [{ type: 'text' as const, text: value }] }),
+            close: async () => {
+              closed.push(value)
+            },
+          }
+        },
+      }
+    },
+  }
+  const definition = stdioEntry('pooled').definition
+  const signal = new AbortController().signal
+  const one = await leaseMcpConnection(opener, 'revision', definition, signal)
+  const two = await leaseMcpConnection(opener, 'revision', definition, signal)
+  credential = 'rotated'
+  const three = await leaseMcpConnection(opener, 'revision', definition, signal)
+  expect(opened).toEqual(['first', 'rotated'])
+  await one.close()
+  expect(closed).toEqual([])
+  expect(await two.callTool('ping', {}, { signal })).toMatchObject({ content: [{ text: 'first' }] })
+  expect(await three.callTool('ping', {}, { signal })).toMatchObject({ content: [{ text: 'rotated' }] })
+  await two.close()
+  expect(closed).toEqual(['first'])
+  await three.close()
+  await three.close()
+  expect(closed).toEqual(['first', 'rotated'])
 })
