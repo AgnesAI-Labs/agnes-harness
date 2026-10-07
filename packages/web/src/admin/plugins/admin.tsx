@@ -1179,7 +1179,7 @@ class PluginAdminPage {
   renderDetail(): void {
     // Source entry takes over the modal stack until it is submitted or dismissed. A retained
     // detail selection must not reopen its dialog and close the form on every catalog refresh.
-    if (this.#sourceDialog.open) return
+    if (this.#sourceDialog.open || this.#confirmDialog.open) return
     const item =
       this.#tab === 'installed'
         ? this.#state.installed.find((candidate) => candidate.id === this.#state.selectedId)

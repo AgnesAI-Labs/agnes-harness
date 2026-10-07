@@ -389,6 +389,16 @@ it('renders all real local releases and carries a selected catalog source throug
   await mounted.reload()
   expect((document.getElementById('source-dialog') as HTMLDialogElement).open).toBe(true)
   expect((document.getElementById('plugin-detail') as HTMLDialogElement).open).toBe(false)
+  document.getElementById('source-cancel')?.click()
+  await mounted.reload()
+  const uninstall = [...document.querySelectorAll<HTMLButtonElement>('#plugin-detail button')].find(
+    (button) => button.textContent === 'Uninstall plugin',
+  )
+  expect(uninstall).toBeDefined()
+  uninstall?.click()
+  await mounted.reload()
+  expect((document.getElementById('plugin-confirm') as HTMLDialogElement).open).toBe(true)
+  expect((document.getElementById('plugin-detail') as HTMLDialogElement).open).toBe(false)
 })
 
 it('links a live Surface mount without treating the link as qualified actual', async () => {
