@@ -509,6 +509,10 @@ export function registerAcp(
     } catch (error) {
       throwWorkspaceRpcError(error)
     }
+    // Default creation reuses the canonical workspace ledger. An explicit loop needs a fresh
+    // ledger because loop identity is immutable; otherwise reuse could silently select the old loop.
+    // Session IDs are opaque to storage and ownership. Supplying sessionKey still reuses that exact
+    // ledger, including an earlier suffixed ID, and later default creation keeps its canonical key.
     const requestedKey =
       typeof h.sessionKey === 'string'
         ? h.sessionKey

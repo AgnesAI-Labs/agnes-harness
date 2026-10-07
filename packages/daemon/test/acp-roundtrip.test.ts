@@ -136,6 +136,36 @@ describe('local endpoint: ACP round trip', () => {
     await h.close()
   })
 
+  it('reuses canonical workspace sessions and explicit keys while loop selections create fresh ledgers', async () => {
+    const h = await openTestHost()
+    const ep = h.endpoint()
+    try {
+      await ep.handle(init)
+      await addWorkspace(ep, h.dataDir)
+      const { id, version } = h.host.kernel.loops.catalog()[0]!
+      const create = async (meta: { loop?: { id: string; version: string }; sessionKey?: string } = {}) => {
+        const response = await ep.handle({
+          jsonrpc: '2.0',
+          id: 2,
+          method: 'session/new',
+          params: { cwd: h.dataDir, mcpServers: [], _meta: { 'ai.agnes.harness': meta } },
+        })
+        expect(response).toHaveProperty('result.sessionId')
+        return (response as { result: { sessionId: string } }).result.sessionId
+      }
+      const canonical = await create()
+      expect(await create()).toBe(canonical)
+      const selected = await create({ loop: { id, version } })
+      expect(selected).not.toBe(canonical)
+      expect(await create({ loop: { id, version } })).not.toBe(selected)
+      expect(await create({ sessionKey: selected, loop: { id, version } })).toBe(selected)
+      expect(await create()).toBe(canonical)
+    } finally {
+      await ep.close()
+      await h.close()
+    }
+  })
+
   it('refuses a preset that is not in presets.allowed', async () => {
     const h = await openTestHost()
     const ep = h.endpoint({ clock: () => Date.now(), pollMs: 5 })
