@@ -57,9 +57,10 @@ checkpointed DAG driver with a deterministic model adapter and documents the
 matching new-session Loop/model selection. Their READMEs cover
 installation, activation, new-session checks and cleanup.
 
-Run `node --import tsx tools/release/external-examples.ts --keep` from a checkout
+Run `pnpm release:external-examples --keep` from a checkout
 to pack the public author APIs, testkit dependencies and harness, then verify the
 external author path. `--author-only` skips the harness build for a light check.
+The package script uses the pinned tsx runner, as does `pnpm release:npx-smoke`.
 
 ## Local authoring
 

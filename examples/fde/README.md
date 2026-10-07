@@ -44,7 +44,7 @@ The small loop helper is included in each tarball so packages have no sibling im
 Use the pinned Node/pnpm versions in the repository. The external harness builds author tarballs once, copies selected examples outside the repository, installs real dependencies, checks declared imports, builds and runs each example’s own quick tests:
 
 ```sh
-node --import tsx tools/release/external-examples.ts --author-only \
+pnpm release:external-examples --author-only \
   --example examples/fde/knowledge-qa \
   --example examples/fde/meeting-actions \
   --example examples/fde/code-review \

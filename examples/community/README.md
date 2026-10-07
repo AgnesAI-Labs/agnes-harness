@@ -8,7 +8,7 @@ to npm yet.
 From an AGH checkout, produce artifacts and verify each package outside the repo:
 
 ```sh
-node --import tsx tools/release/external-examples.ts --keep
+pnpm release:external-examples --keep
 ```
 
 The script packs the author APIs, their runtime dependencies, the public Host

@@ -44,7 +44,7 @@ Loop 3.0.0/checkpoint codec 3 保存待答问题和单个原生审批的续跑�
 使用仓库固定的 Node/pnpm 版本。外部验证器构建作者 tarball，将指定示例复制到仓库外，安装真实依赖，检查公开导入并运行各自快速测试：
 
 ```sh
-node --import tsx tools/release/external-examples.ts --author-only \
+pnpm release:external-examples --author-only \
   --example examples/fde/knowledge-qa \
   --example examples/fde/meeting-actions \
   --example examples/fde/code-review \

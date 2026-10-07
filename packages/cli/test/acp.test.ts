@@ -1,4 +1,5 @@
 import { PassThrough } from 'node:stream'
+import { MAX_FRAME_BYTES } from '@agnes/protocol'
 import type { JsonRpcMessage } from '@agnes/sdk'
 import { describe, expect, it } from 'vitest'
 import { parseArgs } from '../src/args.js'
@@ -44,7 +45,9 @@ describe('JSONL ACP mode', () => {
     const split = splitLines()
     expect(split(Buffer.from('{"a":1}\n{"b"'))).toEqual(['{"a":1}'])
     expect(split(Buffer.from(':2}\r\n'))).toEqual(['{"b":2}'])
-    expect(() => splitLines()(Buffer.alloc(16 * 1024 * 1024 + 1, 0x61))).toThrow(FrameTooLarge)
+    const bounded = splitLines()
+    expect(bounded(Buffer.alloc(MAX_FRAME_BYTES, 0x61))).toEqual([])
+    expect(() => bounded(Buffer.from('a'))).toThrow(FrameTooLarge)
   })
 
   it('orders initialize, session/new, and prompt received in one chunk', async () => {
@@ -159,9 +162,10 @@ describe('JSONL ACP mode', () => {
       stdout: oversizedOut,
       stderr: new PassThrough(),
     })
-    oversizedIn.end(Buffer.alloc(16 * 1024 * 1024 + 1, 0x61))
+    oversizedIn.end(Buffer.alloc(MAX_FRAME_BYTES + 1, 0x61))
     await oversizedRun
     expect(JSON.parse(oversizedText.text()).error.code).toBe(-32600)
+    expect(oversized.calls).toEqual([])
     expect(oversized.closed).toBe(true)
   })
 
