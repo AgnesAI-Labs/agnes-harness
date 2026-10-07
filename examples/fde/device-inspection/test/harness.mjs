@@ -39,6 +39,7 @@ export async function runWorkflow(main, { approve = true, checkpoint, context = 
       return host.invoke(call.name, call.args, signal)
     }
     const result = await driveLoop(factory, {
+      until: 'idle',
       inputs: [{ content: [{ type: 'text', text: 'Run the synthetic workflow.' }] }],
       checkpoint,
       replies: [

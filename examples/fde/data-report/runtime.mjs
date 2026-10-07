@@ -126,6 +126,7 @@ export function makeBundle({ name, tools, stages, readOnly = false }) {
     function driver(ctx, state) {
       state = structuredClone(state)
       let closed = false
+      let ended = false
       return {
         checkpoint: () => codec.encode(state),
         cancel() {
@@ -136,10 +137,15 @@ export function makeBundle({ name, tools, stages, readOnly = false }) {
         },
         async step(signal) {
           signal.throwIfAborted()
-          if (closed) return { phase: 'cancelled', reason: 'aborted' }
+          if (closed) return { outcome: 'turn-ended', phase: 'cancelled', reason: 'aborted' }
+          if (ended) {
+            if (!ctx.input.pending()) return { outcome: 'idle', phase: 'idle' }
+            state = initial()
+            ended = false
+          }
           if (!state.input) {
             const input = await ctx.input.accept()
-            if (!input) return { phase: 'idle' }
+            if (!input) return { outcome: 'idle', phase: 'idle' }
             state.input = input.content
               .filter((b) => b.type === 'text')
               .map((b) => b.text)
@@ -152,11 +158,12 @@ export function makeBundle({ name, tools, stages, readOnly = false }) {
               code: 'FDE_OUTCOME_UNKNOWN',
               message: 'Inspect evidence before starting a new run; do not replay a pending stage.',
             })
-            return { phase: 'unknown', reason: 'blocked' }
+            return { outcome: 'turn-ended', phase: 'unknown', reason: 'blocked' }
           }
           if (state.index === stages.length) {
             await ctx.events.finish('completed')
-            return { phase: 'done', reason: 'completed' }
+            ended = true
+            return { outcome: 'turn-ended', phase: 'done', reason: 'completed' }
           }
           const stage = stages[state.index]
           // Record uncertainty before any model/tool effect. Resume never silently repeats a send.
@@ -172,11 +179,11 @@ export function makeBundle({ name, tools, stages, readOnly = false }) {
             await ctx.events.emit('assistant/message', {
               content: [{ type: 'text', text: `${stage.name}:\n${JSON.stringify(data, null, 2)}` }],
             })
-            return { phase: stage.name }
+            return { outcome: 'running', phase: stage.name }
           } catch (error) {
             signal.throwIfAborted()
             await ctx.events.finish('error', { code: 'FDE_STAGE_FAILED', message: error.message })
-            return { phase: 'failed', reason: 'error' }
+            return { outcome: 'turn-ended', phase: 'failed', reason: 'error' }
           }
         },
       }
