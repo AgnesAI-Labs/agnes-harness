@@ -113,7 +113,7 @@ function DshNodeLeaf({
   )
 }
 
-/** Independent Web harness for W3b; production transcript switching belongs to B-4. */
+/** Independent Web harness for transcript projection and interaction. */
 export function WebConversationMessages({
   registry,
   claim,

@@ -136,6 +136,8 @@ export type ConfigurationServiceOptions = {
   codexTest?: typeof testCodexCredential
   home: string
   profile: string
+  /** Trusted Host profile directory override; defaults to home/profiles/profile. */
+  profileDir?: string
   /** Injectable transport for focused tests; production uses the platform fetch implementation. */
   request?: typeof globalThis.fetch
 }
@@ -617,7 +619,8 @@ export function createConfigurationService(
   const home = resolve(options.home)
   if (!PROFILE.test(options.profile)) throw new ConfigurationError('CONFIG_INVALID_INPUT')
   const profile = options.profile
-  const profileDir = join(home, 'profiles', profile)
+  const profileDir =
+    options.profileDir === undefined ? join(home, 'profiles', profile) : resolve(options.profileDir)
   const configPath = join(profileDir, FILE)
   const lockPath = join(profileDir, LOCK_FILE)
   const legacyPath = join(profileDir, LEGACY_FILE)

@@ -7,6 +7,7 @@ import { hashDirectory, type RuntimePluginSnapshot } from '@agnes/package-manage
 import { afterEach, expect, it } from 'vitest'
 import * as dagModule from '../../../examples/loops/dag-loop/index.mjs'
 import { readAdminLoopDefault } from '../src/assemble/loop-selection.js'
+import { createConfigurationService } from '../src/configuration.js'
 import { scaffold } from '../../../templates/create-agh-plugin.mjs'
 import { createLoader } from '../src/ext-host/loader.js'
 import { createTestHost } from '../testkit/index.js'
@@ -136,7 +137,10 @@ it('loads an installed manifest plugin before Kernel construction, selects profi
     ).toMatchObject({ reason: 'completed' })
     expect(await profileSession.scan({ type: 'x/dag/result', limit: 1 })).toHaveLength(1)
     expect(await profileSession.scan({ type: 'effect/intent', limit: 1 })).toEqual([])
-    f.defaults(DEFAULT_LOOP)
+    await createConfigurationService({ home: f.dataDir, profile: 'local-dev' }).saveSessionDefaults({
+      revision: 0,
+      defaults: { loop: DEFAULT_LOOP },
+    })
     const adminSession = await f.host.createSession({ key: 'admin-loop', cwd: f.dataDir })
     expect(adminSession.loop).toEqual(DEFAULT_LOOP)
     const explicitSession = await f.host.createSession({ key: 'explicit-loop', cwd: f.dataDir, loop: dag })
@@ -166,7 +170,18 @@ it('uses the built-in loop without a default and refuses an invalid persisted de
     await expect(f.host.createSession({ key: 'invalid-default', cwd: f.dataDir })).rejects.toMatchObject({
       code: 'E_PRESET_UNSUPPORTED',
     })
-    expect(await readAdminLoopDefault(join(f.dataDir, 'absent'), 'local-dev')).toBeUndefined()
+    expect(
+      await readAdminLoopDefault(
+        createConfigurationService({ home: join(f.dataDir, 'absent'), profile: 'local-dev' }),
+      ),
+    ).toBeUndefined()
+    const customConfiguration = createConfigurationService({
+      home: f.dataDir,
+      profile: 'local-dev',
+      profileDir: join(f.dataDir, 'custom-profile'),
+    })
+    await customConfiguration.saveSessionDefaults({ revision: 0, defaults: { loop: dag } })
+    expect(await readAdminLoopDefault(customConfiguration)).toEqual(dag)
     f.defaults({ id: 'missing', version: '1' })
     await expect(f.host.createSession({ key: 'missing-default', cwd: f.dataDir })).rejects.toMatchObject({
       code: 'E_LOOP_MISSING',

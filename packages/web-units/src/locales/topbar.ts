@@ -1,6 +1,6 @@
 import type { LocaleCatalog } from './index.js'
 
-/** 顶栏连接状态与默认占位（W2）。经组件 props 注入 translate。 */
+/** 顶栏连接状态与默认占位。经组件 props 注入 translate。 */
 export const topbarLocaleCatalog: LocaleCatalog = {
   en: {
     'topbar.connection.connecting': 'Connecting to the backend',

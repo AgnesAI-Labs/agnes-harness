@@ -120,6 +120,7 @@ import type { HostBuiltinRowClaim, HostPluginTreeBase } from './assemble/seams-c
 import { SKILL_ROW_ID, skillRowRevision, withSkillRow } from './assemble/skill-row.js'
 import { trustedHookCommands } from './assemble/trusted-hooks.js'
 import type { AssembleDeps } from './assembly-deps.js'
+import { createConfigurationService } from './configuration.js'
 import fixedComputerUseDriverLock from './computer-use/computer-use-driver-lock.json' with { type: 'json' }
 import {
   evaluateFixedComputerUsePlatformAdmission,
@@ -2560,6 +2561,11 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
         log: deps.log,
       }),
     })
+    const sessionConfiguration = createConfigurationService({
+      home: deps.homeDir ?? dirname(dirname(deps.profileDir)),
+      profile: profile.name,
+      profileDir: deps.profileDir,
+    })
     return {
       activationBarrier,
       approvalGrants: approvalGrantControl.management,
@@ -2584,7 +2590,7 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
       },
       providers: { catalog: () => pluginTree.root.providers.catalog() },
       modelAdapterCatalog: () => modelAdapterCatalog(pluginTree.root),
-      sessionLoopDefault: () => readAdminLoopDefault(deps.profileDir, profile.name),
+      sessionLoopDefault: () => readAdminLoopDefault(sessionConfiguration),
       compactionEngineCatalog: () => compactionEngineCatalog(pluginTree.root),
       childAgentCatalog: () => childAgentCatalog(pluginTree.root),
       compositionForPreset,

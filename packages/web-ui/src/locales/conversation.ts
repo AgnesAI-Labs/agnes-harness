@@ -1,7 +1,7 @@
 import type { LocaleCatalog } from './index.js'
 
 /**
- * 对话区组件文案（W4）。key 与 web 包 timeline/turns 域同名同文——宿主注册两个命名空间，
+ * 对话区组件文案。key 与 web 包 timeline/turns 域同名同文——宿主注册两个命名空间，
  * 值一致；web-ui 自带一份以保证独立消费时也有完整目录。
  */
 export const conversationLocaleCatalog: LocaleCatalog = {

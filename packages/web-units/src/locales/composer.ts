@@ -1,6 +1,6 @@
 import type { LocaleCatalog } from './index.js'
 
-/** 组件内置可访问性文案（W1）。经 `ComposerDependencies.translate` 注入，命名空间 `@agnes/web-units`。 */
+/** 组件内置可访问性文案。经 `ComposerDependencies.translate` 注入，命名空间 `@agnes/web-units`。 */
 export const composerLocaleCatalog: LocaleCatalog = {
   en: {
     'composer.attachment.add': 'Add attachments',

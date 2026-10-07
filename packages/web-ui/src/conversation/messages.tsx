@@ -901,7 +901,7 @@ function Turn({
   )
 }
 
-/** Read-only DOM projection of W3a `metadata.custom.node`; source IDs own React identity. */
+/** Read-only DOM projection of `metadata.custom.node`; source IDs own React identity. */
 export function ConversationMessages(props: ConversationMessagesProps) {
   const messages = useThread((state) => state.messages)
   const targetsRef = useRef(new Map<string, ConversationMessageTarget>())

@@ -1,6 +1,6 @@
 import type { LocaleCatalog } from '@agnes/web-client'
 
-/** 时间线节点、回合投影与审批状态（W4）。渲染时取词；fingerprint 掺 locale 版本保证切换后全量刷新。 */
+/** 时间线节点、回合投影与审批状态。渲染时取词；fingerprint 掺 locale 版本保证切换后全量刷新。 */
 export const timelineLocaleCatalog: LocaleCatalog = {
   en: {
     'timeline.userLabel': 'You',

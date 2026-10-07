@@ -1,6 +1,6 @@
 import type { LocaleCatalog } from '@agnes/web-client'
 
-/** 侧栏导航、会话菜单与重命名/归档面板（W2/W3）。命令式渲染时取词。 */
+/** 侧栏导航、会话菜单与重命名/归档面板。命令式渲染时取词。 */
 export const sessionLocaleCatalog: LocaleCatalog = {
   en: {
     'nav.noWorkspaceTitle': 'History sessions without a workspace',

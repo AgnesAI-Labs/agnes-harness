@@ -1,6 +1,6 @@
 import type { LocaleCatalog } from '@agnes/web-client'
 
-/** index.html 静态壳（W6）：首帧经 theme-boot 静态回填，运行时切换经 LocaleService 回填。 */
+/** index.html 静态壳：首帧经 theme-boot 静态回填，运行时切换经 LocaleService 回填。 */
 export const indexShellLocaleCatalog: LocaleCatalog = {
   en: {
     'index-shell.skip': 'Skip to main content',
