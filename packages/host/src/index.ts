@@ -435,3 +435,5 @@ export {
   type WorkspaceBinding,
 } from './workspace-authority.js'
 export * from './workspace-policy.js'
+
+export { modelAdapterCatalog, ModelAdapterRegistry } from './assemble/model-adapters.js'

@@ -35,6 +35,8 @@ const APIS: Record<string, () => ProviderStreams> = {
   'pi-messages': piMessagesApi,
 }
 
+export const PI_ADAPTER_APIS: readonly string[] = Object.freeze(Object.keys(APIS))
+
 /**
  * One request, over the implementation for the api the route declared.
  *

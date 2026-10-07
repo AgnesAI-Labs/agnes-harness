@@ -18,5 +18,14 @@
   "devDependencies": {
     "@sinclair/typebox": "0.34.33"
   },
+  "agnes": {
+    "plugins": [
+      {
+        "id": "model-adapters:pi",
+        "export": "modelAdaptersPlugin",
+        "inject": ["modelAdapters"]
+      }
+    ]
+  },
   "license": "Apache-2.0"
 }

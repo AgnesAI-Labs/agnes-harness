@@ -55,6 +55,11 @@ import {
 } from './assemble/ext-rows.js'
 import { bindExtensionInvocations } from './assemble/extension-ports.js'
 import { isolationInventory } from './assemble/isolation-inventory.js'
+import {
+  installModelAdapters,
+  modelAdapterCatalog,
+  withBuiltinModelAdapters,
+} from './assemble/model-adapters.js'
 import { modelRuntime } from './assemble/model-runtime.js'
 import { buildOrdinaryRows } from './assemble/ordinary-rows.js'
 import type {
@@ -266,6 +271,8 @@ export type Assembled = {
   providerFingerprint: string | null
   applyModelProfile(next: ResolvedProfile): Promise<void>
   routes: RouteTable | undefined
+  /** Read-only metadata for installed model adapter factories. */
+  modelAdapterCatalog(): ReturnType<typeof modelAdapterCatalog>
   /** Reviewed bundled API-key routes fitted at assembly, eligible for runtime model switching. */
   preconfiguredRoutes: readonly string[]
   presets: Record<string, PresetDoc>
@@ -777,7 +784,11 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
     const builtPresets = buildPresetRows(presets)
     const ordinaryModules = new Map(modules)
     for (const [id, loaded] of runtimePackages) ordinaryModules.set(id, loaded.module)
-    const builtOrdinary = buildOrdinaryRows(profile, ordinaryModules, deps.ordinaryPluginLayers)
+    const builtOrdinary = buildOrdinaryRows(
+      profile,
+      withBuiltinModelAdapters(ordinaryModules),
+      deps.ordinaryPluginLayers,
+    )
     // `activeBuiltinClaims` is a `let` because ext: rows can only be built much further down, after
     // the managed ext host and the bundled-extension finder exist. `staticClaims` below is already a
     // thunk, so reassigning here is picked up by the publisher.
@@ -893,6 +904,7 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
           rootServices: (root, origins) => {
             rowExtensions.installRoot(root, origins)
             rowServices.installRoot(root, origins)
+            installModelAdapters(root, origins)
           },
           ...(deps.skillContribution ? { skillContribution: deps.skillContribution } : {}),
           afterApply: () => {
@@ -1583,15 +1595,17 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
     const swept = sweepAwsDestination(env, profile)
     say('provider.env_swept', { removed: swept.removed, set: Object.keys(swept.set) })
     const factory = deps.providerFactory ? { providerFactory: deps.providerFactory } : {}
-    let { provider, contractStore, preconfiguredRoutes } = routes
+    let { provider, contractStore, preconfiguredRoutes, dispose: disposeProvider } = routes
       ? await buildProvider(profile, routes, {
           secrets,
           clock,
           log: deps.log,
+          modelAdapters: pluginTree.root.modelAdapters,
           creditsSnapshot: () => businessLimit(hotPolicy, 'cost.credits_per_usd'),
           ...factory,
         })
       : unresolvedProviderAssembly()
+    rollback.push('model-adapters', () => disposeProvider())
     const contractForModel = bindModelContracts(
       provider.registry?.models() ?? (profile.provider.routes ?? []).flatMap((route) => route.models ?? []),
       contractStore,
@@ -1624,6 +1638,7 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
             secrets: (ref) => nextSecrets.resolve(ref),
             clock,
             log: deps.log,
+            modelAdapters: pluginTree.root.modelAdapters,
             creditsSnapshot: () => businessLimit(hotPolicy, 'cost.credits_per_usd'),
             ...factory,
           })
@@ -1634,6 +1649,7 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
         built.contractStore,
       )
       // No await after candidate validation: all readers move to the same verified catalogue.
+      rollback.push('model-adapters-update', built.dispose)
       models.publish({ provider: built.provider, contractForModel: nextContracts })
       provider = built.provider
       preconfiguredRoutes = built.preconfiguredRoutes
@@ -2360,6 +2376,7 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
       get preconfiguredRoutes() {
         return preconfiguredRoutes
       },
+      modelAdapterCatalog: () => modelAdapterCatalog(pluginTree.root),
       applyModelProfile,
       presets,
       runtimes,
