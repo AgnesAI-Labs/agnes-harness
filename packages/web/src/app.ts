@@ -110,6 +110,7 @@ const savedComposerDraft = sessionStorage.getItem(composerDraftKey)
 const notice = element('notice', 'p')
 const conversation = element('conversation-shell', 'div')
 const newSessionDialog = element('new-session', 'dialog')
+const newSessionError = element('new-session-error', 'p')
 const newSessionForm = element('new-session-form', 'form')
 const newSessionCwd = element('new-session-cwd', 'input')
 const newSessionCancel = button('new-session-cancel')
@@ -563,10 +564,10 @@ function showError(error: unknown): void {
     notice.textContent = message
     notice.dataset.kind = 'error'
   }
-  if (newSessionDialog.open) element('new-session-error', 'p').textContent = message
+  if (newSessionDialog.open) newSessionError.textContent = message
 }
 function run(op: () => Promise<void>): void {
-  element('new-session-error', 'p').textContent = ''
+  newSessionError.textContent = ''
   if (sessionRecovery) renderSessionRecovery()
   else {
     notice.textContent = ''
@@ -1449,7 +1450,7 @@ async function registerWorkspace(cwd: string): Promise<void> {
     composerRuntime.focus()
   } catch (error) {
     const failure = new Error(workspaceErrorNotice(error, t), { cause: error })
-    element('new-session-error', 'p').textContent = failure.message
+    newSessionError.textContent = failure.message
     throw failure
   } finally {
     newSessionCreating = false
@@ -1468,7 +1469,7 @@ async function pickWorkspace(): Promise<void> {
     if (!result) {
       workspacePickerReady = false
       workspaceManual.open = true
-      element('new-session-error', 'p').textContent = t('app.newSession.pickerFailed')
+      newSessionError.textContent = t('app.newSession.pickerFailed')
       return
     }
     if (result.status === 'cancelled') return
