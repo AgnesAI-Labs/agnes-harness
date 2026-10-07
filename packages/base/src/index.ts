@@ -296,6 +296,35 @@ export {
   acpChildAgentProvider,
   acpChildAgentsPlugin,
 } from '../extensions/subagent-acp/src/index.js'
+export {
+  CLAUDE_CODE_CHILD_CAPABILITIES,
+  CLAUDE_CODE_CHILD_PROVIDER_ID,
+  type ClaudeCodeChildEngineConfig,
+  claudeCodeChildAgentProvider,
+  claudeCodeChildAgentsPlugin,
+  DEFAULT_CLAUDE_CODE_CHILD_ENGINE,
+} from '../extensions/subagent-claude-code/src/index.js'
+export {
+  CODEX_CHILD_CAPABILITIES,
+  CODEX_CHILD_PROVIDER_ID,
+  type CodexChildEngineConfig,
+  codexChildAgentProvider,
+  codexChildAgentsPlugin,
+  DEFAULT_CODEX_CHILD_ENGINE,
+} from '../extensions/subagent-codex/src/index.js'
+export {
+  type ChildEngineSettings,
+  childEnginePlugins,
+  childEngineSettingsError,
+  DEFAULT_SDK_CHILD_ENGINE,
+  DISABLED_CHILD_ENGINES,
+  parseChildEngineSettings,
+  SDK_CHILD_CAPABILITIES,
+  SDK_CHILD_PROVIDER_ID,
+  type SdkChildEngineConfig,
+  sdkChildAgentProvider,
+  sdkChildAgentsPlugin,
+} from '../extensions/subagent-sdk/src/index.js'
 
 import { type LoopPluginContext, registerLoopPlugin } from '@agnes/extension-api'
 import { defaultLoopFactory } from '@agnes/loop-default'
