@@ -116,7 +116,11 @@ it('adds the demo only for an opted-in fresh local-dev boot, preserving explicit
       const inputs = await readConfigurationProfileInputs({ ...options, demoFallback: true, ...override })
       expect(inputs.user?.provider?.routes).toBeUndefined()
     }
-    const configured = { ...demoProvider(), routes: [{ ...demoProvider().routes![0]!, route: 'configured' }] }
+    const configured = {
+      package: '@agnes/ai',
+      adapters: ['scripted'],
+      routes: [{ route: 'configured', api: 'scripted', baseUrl: 'https://demo.invalid' }],
+    }
     expect(
       (
         await readConfigurationProfileInputs({

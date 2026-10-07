@@ -3,6 +3,7 @@ import { connect } from 'node:net'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { fakeModel } from '@agnes/ai/testkit'
 import { canonicalJson, DEFAULT_COMPUTER_USE, hashInput, type ResolvedProfile, sha256hex } from '@agnes/host'
 import { createTestHost } from '@agnes/host/testkit'
 import { createClient, memoryJournal, wsTransport } from '@agnes/sdk'
@@ -450,7 +451,28 @@ describe('agnesd supervisor: real end-to-end', () => {
       writeFileSync(profileFile, JSON.stringify(profile))
       const config = { ...buildConfigFor(dir), ws: { addr: '127.0.0.1:0', ...tls() } }
       const artifactSessionId = 'agnes:local:default:daemon:dm:artifact-status-e2e'
-      const seededHost = await createTestHost({ dataDir: dir, script: [] })
+      // A durable generation must be reopened under the same declared model configuration.
+      const seededHost = await createTestHost({
+        dataDir: dir,
+        script: [],
+        profileInputs: {
+          user: {
+            name: 'local-dev',
+            provider: {
+              package: '@agnes/ai',
+              adapters: ['@agnes/ai'],
+              routes: [
+                {
+                  route: 'faux',
+                  api: 'faux',
+                  baseUrl: 'https://invalid.test',
+                  models: [fakeModel({ route: 'faux', id: 'faux-1' })],
+                },
+              ],
+            },
+          },
+        },
+      })
       const seededSession = await seededHost.host.createSession({ key: artifactSessionId, cwd: dir })
       await seededSession.append([
         seededSession.ev(
