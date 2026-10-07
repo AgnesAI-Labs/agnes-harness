@@ -23,6 +23,7 @@ flowchart TD
   Compact --> Ports
   Runtime --> Ports
   Policy --> Ports
+  Children --> Ports
   Ports --> Core[Core: durable sessions, authorization, effects, recovery]
   Core --> Store
   Runtime --> Sandbox
@@ -64,9 +65,12 @@ packages:
       loop: { provider: 'example.research', version: '1.0.0' }
       tool-policy: { provider: 'read-only' }
       compaction: { provider: 'default' }
+      child-agent: { provider: 'in-process' }
 ```
 
 Existing top-level `loop: { id, version }`, `compaction: { engine }`, `persistence: { provider }`, `sandbox: { provider }`, model `provider.adapters`, and preset `tools.runtime` / `approval.policy` remain supported. Explicit top-level selections take precedence over package config. Multiple package selections for the same kind are refused. New root-profile keys are not introduced by this migration; canonical blocks use package config until the profile authoring layer exposes them directly.
+
+`child-agent: { provider, version? }` selects the default for `childAgents.start(undefined, task, options)`. An explicit provider id still selects that provider. Omitting configuration keeps `in-process`; a missing configured provider fails instead of falling back. Existing in-process subagent tools and `LoopContext.children` retain their explicit in-process path. Providers register through `ctx.providers.register('child-agent', sourcePackage, provider)` or the compatible `ctx.childAgents.register(provider)` facade; both feed the same catalogs and own the same cleanup.
 
 A versionless loop selection requires exactly one installed version. An explicit version must match; missing or ambiguous providers fail with an installation or configuration hint. Core still pins the resolved loop id and version in the session, and legacy sessions map to `agnes.default@1.0.0`. Resume does not silently switch to an installed alternative.
 
@@ -81,7 +85,7 @@ A versionless loop selection requires exactly one installed version. An explicit
 | `tool-policy` | `default`, Base approval policy | Selected per preset; principal authorization remains in Core. |
 | `persistence` | `sqlite`, Host | Process startup selection; restart required. Providers do not migrate another store's files. |
 | `sandbox` | `local`, Host | Startup selection, bound on first workspace; restart required to change it. |
-| `child-agent` | `in-process`, Base | Defined with `defineProviderKind`. Registrations reload with Cordis. `childAgents` is the typed facade. `acp` is optional and stays unloaded by default. |
+| `child-agent` | `in-process`, Base | Defined with `defineProviderKind`; `childAgents` remains the typed facade. Optional `acp` stays unloaded by default. Fiber unload aborts the provider lifetime and disposes its handles; capability checks and session allowlists still apply. |
 
 ## The plugin ladder
 

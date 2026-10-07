@@ -23,6 +23,7 @@ flowchart TD
   Compact --> Ports
   Runtime --> Ports
   Policy --> Ports
+  Children --> Ports
   Ports --> Core[Core：持久会话、授权、effect、恢复]
   Core --> Store
   Runtime --> Sandbox
@@ -64,9 +65,12 @@ packages:
       loop: { provider: 'example.research', version: '1.0.0' }
       tool-policy: { provider: 'read-only' }
       compaction: { provider: 'default' }
+      child-agent: { provider: 'in-process' }
 ```
 
 原有顶层 `loop: { id, version }`、`compaction: { engine }`、`persistence: { provider }`、`sandbox: { provider }`、模型 `provider.adapters`，以及 preset 的 `tools.runtime` / `approval.policy` 继续有效。显式顶层选择优先于包配置；同一类型由多个包选择时拒绝启动。本次迁移不添加新的根 profile 字段，统一配置先使用 package config，后续由 profile 作者层直接开放。
+
+`child-agent: { provider, version? }` 选择 `childAgents.start(undefined, task, options)` 使用的默认 provider；显式传入 id 仍选择指定 provider。未配置时保留 `in-process`，配置的 provider 缺失时拒绝而不回退。既有进程内 subagent 工具与 `LoopContext.children` 保留显式进程内路径。作者可使用 `ctx.providers.register('child-agent', sourcePackage, provider)` 或兼容的 `ctx.childAgents.register(provider)`，两者共享目录与资源清理。
 
 loop 省略版本时必须恰好安装一个版本。显式版本必须匹配；缺失或歧义都会返回安装或配置修复提示。Core 仍在会话中固定实际解析出的 loop id/version；旧会话映射到 `agnes.default@1.0.0`，恢复不会悄悄换成另一个已安装版本。
 
@@ -81,7 +85,7 @@ loop 省略版本时必须恰好安装一个版本。显式版本必须匹配；
 | `tool-policy` | Base approval policy 的 `default` | preset 选择；主体授权仍由 Core 决定。 |
 | `persistence` | Host 的 `sqlite` | 启动选择，变更需重启；不会迁移其他 provider 的文件。 |
 | `sandbox` | Host 的 `local` | 启动选择、首个 workspace 绑定，变更需重启。 |
-| `child-agent` | Base 的 `in-process` | 用 `defineProviderKind` 定义。注册随 Cordis 重载。`childAgents` 是类型化外观。`acp` 可选，默认不加载。 |
+| `child-agent` | Base 的 `in-process` | 用 `defineProviderKind` 定义，`childAgents` 保留类型化外观。可选 `acp` 默认不加载。fiber 卸载会中止 provider 生命周期并释放所属 handle；能力检查与会话 allowlist 继续有效。 |
 
 ## 插件阶梯
 
