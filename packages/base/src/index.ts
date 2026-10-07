@@ -272,3 +272,10 @@ export const presets: Record<string, PresetDoc> = {
 }
 
 export { createDefaultCompactionEngine } from '../extensions/compaction/src/engine.js'
+export {
+  ACP_CHILD_CAPABILITIES,
+  ACP_CHILD_PROVIDER_ID,
+  acpChildAgentProvider,
+  acpChildAgentsPlugin,
+  type AcpChildAgentOptions,
+} from '../extensions/subagent-acp/src/index.js'
