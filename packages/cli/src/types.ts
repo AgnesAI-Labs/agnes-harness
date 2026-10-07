@@ -30,6 +30,8 @@ export type Command =
   | 'ext'
   | 'mcp'
   | 'serve'
+  | 'web'
+  | 'start'
   | 'acp'
 
 export type ParsedArgs = {

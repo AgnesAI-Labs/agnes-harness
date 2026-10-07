@@ -413,7 +413,7 @@ export async function main(argv: string[], io: MainIO, boot: Partial<LocalBootDe
     ...boot,
   }
   try {
-    if (p.command === 'serve') {
+    if (p.command === 'serve' || p.command === 'web' || p.command === 'start') {
       const { runWebCommand } = await import('../launch/web-command.js')
       await runWebCommand(p.rest, {
         env: io.env,

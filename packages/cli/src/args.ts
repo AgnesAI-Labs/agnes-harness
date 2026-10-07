@@ -25,11 +25,13 @@ const COMMANDS = new Set<string>([
   'ext',
   'mcp',
   'serve',
+  'web',
+  'start',
   'acp',
 ])
 
-/** These four hand their tail on to another program or another grammar; we do not read it. */
-const FORWARDED = new Set<string>(['daemon', 'ext', 'mcp', 'resources', 'skills', 'serve'])
+/** These hand their tail on to another program or another grammar; we do not read it. */
+const FORWARDED = new Set<string>(['daemon', 'ext', 'mcp', 'resources', 'skills', 'serve', 'web', 'start'])
 
 // Both tables are null-prototype maps read through Object.hasOwn. A plain object literal read with
 // `in` answers true for toString, constructor, hasOwnProperty and __proto__, which would make an
@@ -222,6 +224,7 @@ export function usage(): string {
     'agh mcp list|get|add|update|remove|test|enable|disable|status|reconnect|tools ...',
     'agh consent DISABLED|LOCAL|ANON|FULL',
     'agh stats deviation [--json]        agh config [--connect <t>]        agh conformance gateway [--json]',
+    'agh web [--port <n>] [--home <dir>] [--profile <p>] [--cwd <dir>]   agh start (same stack)',
     'agh daemon start|stop|status [...]  agh ext <...>  agh mcp serve [...]  agh serve model-api [...]',
     'agh --version | --help',
   ].join('\n')

@@ -1,4 +1,5 @@
 import { EventEmitter } from 'node:events'
+import type { IncomingMessage, ServerResponse } from 'node:http'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { EnsureLocalBackendOptions, LocalBackend } from './backend.js'
 import { parseWebCommand, runWebCommand, type WebCommandIO } from './web-command.js'
@@ -243,4 +244,62 @@ describe('Web command launch contract', () => {
     })
     expect(mountCloseCalls).toBe(1)
   })
+
+  it('answers /healthz from the launch handler before any admin route', async () => {
+    const signals = new EventEmitter()
+    let handleAdmin: ((request: IncomingMessage, response: ServerResponse) => Promise<boolean>) | undefined
+    const ensureBackend = async (): Promise<LocalBackend> =>
+      ({
+        scope: { profile: 'local-dev', scopeID: 'test-scope' },
+        discovery: {},
+        socketPath: unreachableSocket,
+        web: {
+          url: 'ws://127.0.0.1:52000',
+          origin: 'http://127.0.0.1:4181',
+          token: 'test-token-with-enough-entropy',
+        },
+        closeClient: async () => undefined,
+        close: async () => undefined,
+      }) as unknown as LocalBackend
+    const createServer: NonNullable<WebCommandIO['createServer']> = async (options) => {
+      handleAdmin = options.handleAdmin
+      setTimeout(() => signals.emit('SIGTERM'), 0)
+      return { url: 'http://127.0.0.1:4181', close: async () => undefined }
+    }
+    await runWebCommand(['--port', '4181'], {
+      resources,
+      signals,
+      ensureBackend,
+      createServer,
+      write: () => undefined,
+    })
+    if (!handleAdmin) throw new Error('the launcher did not pass handleAdmin')
+    const get = await callHealth(handleAdmin, 'GET', '/healthz')
+    expect(get.handled).toBe(true)
+    expect(get.status).toBe(200)
+    expect(JSON.parse(get.body)).toEqual({ status: 'ok' })
+    const post = await callHealth(handleAdmin, 'POST', '/healthz')
+    expect(post.handled).toBe(true)
+    expect(post.status).toBe(405)
+    expect(post.body).toBe('')
+  })
 })
+
+async function callHealth(
+  handleAdmin: (request: IncomingMessage, response: ServerResponse) => Promise<boolean>,
+  method: string,
+  url: string,
+): Promise<{ handled: boolean; status: number; body: string }> {
+  let status = 0
+  let body = ''
+  const response = {
+    writeHead(code: number) {
+      status = code
+    },
+    end(chunk?: string) {
+      body = chunk ?? ''
+    },
+  }
+  const handled = await handleAdmin({ method, url } as IncomingMessage, response as unknown as ServerResponse)
+  return { handled, status, body }
+}

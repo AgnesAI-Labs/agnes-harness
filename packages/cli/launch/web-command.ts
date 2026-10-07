@@ -1,3 +1,4 @@
+import type { IncomingMessage, ServerResponse } from 'node:http'
 import { createWebServer, DEFAULT_WEB_PORT, type WebServer } from '@agnes/web/server'
 import { ensureLocalBackend, type LocalBackend } from './backend.js'
 import { localOAuthAdmin } from './oauth-admin.js'
@@ -85,6 +86,31 @@ export function parseWebCommand(
 
 function exactOrigin(port: number): string {
   return `http://127.0.0.1:${port}`
+}
+
+/** Loopback readiness for `agh web` / `agh start`. The listener exists only after the daemon is up. */
+export function handleLaunchHealth(request: IncomingMessage, response: ServerResponse): boolean {
+  let pathname = ''
+  try {
+    pathname = new URL(request.url ?? '/', 'http://127.0.0.1').pathname
+  } catch {
+    return false
+  }
+  if (pathname !== '/healthz') return false
+  if (request.method !== 'GET' && request.method !== 'HEAD') {
+    response.writeHead(405, { Allow: 'GET, HEAD', 'Cache-Control': 'no-store' })
+    response.end()
+    return true
+  }
+  const body = JSON.stringify({ status: 'ok' })
+  response.writeHead(200, {
+    'Content-Type': 'application/json; charset=utf-8',
+    'Content-Length': String(Buffer.byteLength(body)),
+    'Cache-Control': 'no-store',
+  })
+  if (request.method === 'HEAD') response.end()
+  else response.end(body)
+  return true
 }
 
 function waitForSignal(signals: NodeJS.EventEmitter): Promise<NodeJS.Signals> {
@@ -179,6 +205,7 @@ export async function runWebCommand(
       handleAdmin: async (request, response) =>
         // The generic admin router claims unknown `/api/*` requests. Check the fixed browser
         // service BFF first so its POST endpoint cannot be turned into an admin 405.
+        handleLaunchHealth(request, response) ||
         (await adminHandler.handleClientService(request, response)) ||
         (await adminHandler.handleClientEffect(request, response)) ||
         (await adminHandler.handle(request, response)) ||

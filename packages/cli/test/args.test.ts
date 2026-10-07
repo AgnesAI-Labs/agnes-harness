@@ -185,6 +185,14 @@ describe('parseArgs: subcommands', () => {
       ['serve', 'model-api', '--port', '8080'],
       ['model-api', '--port', '8080'],
     ],
+    [
+      ['web', '--port', '4180', '--home', '/tmp/agh-home'],
+      ['--port', '4180', '--home', '/tmp/agh-home'],
+    ],
+    [
+      ['start', '--port', '4180'],
+      ['--port', '4180'],
+    ],
     [['daemon'], []],
   ])('%j forwards everything after the command verbatim', (argv, rest) => {
     const p = parseArgs(argv as string[])
@@ -330,6 +338,8 @@ describe('usage', () => {
     'ext',
     'mcp serve',
     'serve model-api',
+    'agh web',
+    'agh start',
   ])('mentions %s', (c) => {
     expect(usage()).toContain(c)
   })
