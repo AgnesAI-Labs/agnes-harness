@@ -680,7 +680,9 @@ const INITIAL_CEILING: Record<string, number> = {
   // Profile has not yet been materialized. The final recovery retry admits only an explicit
   // E_LOCK_MISMATCH path and re-resolves with an empty package lock; this is exact compatibility
   // glue, not a second scope path or general profile-error bypass. Measured total: 214.
-  'packages/daemon/src/supervisor/scope': 214,
+  // 2026-10-07 reviewed growth: opt in to the demo route only during fresh local supervisor boot.
+  // countLines: 214 -> 215 (+1); exact cap, no exclusions or spare allocation.
+  'packages/daemon/src/supervisor/scope': 215,
   // 2026-09-26: bounded EBUSY retry preserves Windows discovery validation during concurrent boot.
   // Measured 436, exact.
   'packages/daemon/src/supervisor/discovery': 436,
@@ -1291,9 +1293,9 @@ const INITIAL_CEILING: Record<string, number> = {
   // The Kernel receives the spawned-child turn admission. Measured 4193, exact, no spare (+1).
   // A returning package must not be served a cached generation bound to revoked leases (+7), and the
   // full-access read-only roots reach the fence from the assembly (+7). Measured 4207, exact.
-  // 2026-10-07 reviewed growth: provider registries, adapter factories, pinned generations, creator rows and isolated headless wiring.
-  // countLines: 4207 -> 5976 (+1769); exact cap, no exclusions or spare allocation.
-  'packages/host/src/assemble': 5976,
+  // 2026-10-07 reviewed growth: provider registries, adapter factories, pinned generations, creator rows, headless wiring and provider diagnostics.
+  // countLines: 4207 -> 5979 (+1772); exact cap, no exclusions or spare allocation.
+  'packages/host/src/assemble': 5979,
   // P1: generated-schema validators and duplicate projection-name refusal; measured exact cap.
   // F1 adds Surface JSON/identity validation and lock snapshot validation.
   // PM4 adds strict management DTO validation and method permission/identity contracts; exact total.
@@ -1934,9 +1936,9 @@ const INITIAL_CEILING: Record<string, number> = {
   // An approval request carries the tool's ACP kind and name. Measured 26542 (+6), exact cap.
   // Approval reasons: the prompter router answers with a reason (+18). Measured 26758 (combined tree), exact cap.
   // 2026-10-06: bound image transport byte totals and split oversized worker scan ranges; 26818, exact.
-  // 2026-10-07 reviewed growth: provider/admin catalogs, composition surfaces, session tool ownership and durable generations.
-  // countLines: 26847 -> 27566 (+719); exact cap, no exclusions or spare allocation.
-  'packages/daemon/src': 27566,
+  // 2026-10-07 reviewed growth: provider/admin catalogs, composition surfaces, session tool ownership, durable generations and fresh-local demo admission.
+  // countLines: 26847 -> 27567 (+720); exact cap, no exclusions or spare allocation.
+  'packages/daemon/src': 27567,
   'packages/daemon/src/packages/admin-session': 46,
   // 2026-09-14: whole-branch review fix wave (Finding 1) adds the two missing
   // 'pins/inspect'/'pins/release' entries to the ACTIONS BFF route allowlist, which had been left
@@ -2684,9 +2686,9 @@ const INITIAL_CEILING: Record<string, number> = {
   // read-only under full file access: the fence guard, the roots helper and their wiring (+40).
   // Measured 38359, exact.
   // Approval reasons: the Prompter type may answer with a reason (+2). Measured 38398 (combined tree), exact cap.
-  // 2026-10-07 reviewed growth: provider composition, pinned generations, local loading and absent capability port preservation.
-  // countLines: 38398 -> 43538 (+5140); exact cap, no exclusions or spare allocation.
-  'packages/host/src': 43538,
+  // 2026-10-07 reviewed growth: provider composition, pinned generations, local loading, absent capability ports and fresh-local demo admission.
+  // countLines: 38398 -> 43598 (+5200); exact cap, no exclusions or spare allocation.
+  'packages/host/src': 43598,
   'packages/host/src/ext-host/service-invocation': 247,
   // T5.2's permission projector is kept independently bounded so later extension-host work cannot
   // hide in the package-wide increment. Measured source: 86 lines.
@@ -2742,9 +2744,9 @@ const INITIAL_CEILING: Record<string, number> = {
   // 2026-09-20 appAccess and signed application identity policy. Measured 1116; exact cap.
   // 2026-09-21 AGH namespace rename (.agnes -> .agh): +1 counted line: inputs.ts imports AGH_DIR for <cwd>/.agh/profile.local.yaml.
   // Re-measured with this guard's countLines(): 1185, exact cap, no spare.
-  // 2026-10-07 reviewed growth: bundle resolution, session composition persistence and provider-independent visibility.
-  // countLines: 1187 -> 2730 (+1543); exact cap, no exclusions or spare allocation.
-  'packages/host/src/profile': 2730,
+  // 2026-10-07 reviewed growth: bundle resolution, session composition persistence, provider-independent visibility and opt-in fresh-local demo admission.
+  // countLines: 1187 -> 2787 (+1600); exact cap, no exclusions or spare allocation.
+  'packages/host/src/profile': 2787,
   // 2026-09-09: raised from 1100. 1071 of it was spent and the 29 left could not cover the deny-list
   // repair with anything to spare; the repair measures 1075. The remaining 100 are platform-win32
   // reaching parity with platform-posix - today its probe() asserts a fixed table where posix
