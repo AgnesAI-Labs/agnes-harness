@@ -13,7 +13,7 @@ Follow a plugin from inspection and installation through updates and removal. St
 Install a plugin without copying trust hashes:
 
 ```sh
-agh plugins add /home/me/downloads/hello-tool.tgz
+agh plugins add /ABS/DOWNLOADS/hello-tool.tgz
 agh plugins add ../hello-tool
 agh plugins add https://example.com/team/hello-tool.git
 agh plugins add https://example.com/hello-tool.zip
@@ -29,7 +29,7 @@ To share a plugin with its third-party JavaScript dependencies:
 
 ```sh
 # Install the author's dependencies and build the plugin first, if its exports point into dist/.
-agh plugins pack /home/me/hello-tool ./hello-tool.tgz
+agh plugins pack /ABS/PLUGIN/hello-tool ./hello-tool.tgz
 # On your friend's machine:
 agh plugins add ./hello-tool.tgz
 ```

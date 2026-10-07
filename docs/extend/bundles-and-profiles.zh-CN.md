@@ -8,7 +8,7 @@ Profile 从插件装配应用；bundle 把可复用的 profile 补丁和 preset 
 
 ## 格式与选择
 
-在 `package.json` 声明 `agnes.kinds: ["bundle"]` 和 `agnes.bundles`。标识为 `<package-id>#<bundle-name>`，名称以小写字母开头，可包含小写字母、数字和连字符。每个文档接受 `extends`、`profile` 和 `presets`。参见 [research 示例](../../examples/bundles/research/README.md) 和[英文格式示例](bundles-and-profiles.md)。
+在 `package.json` 声明 `agnes.kinds: ["bundle"]` 和 `agnes.bundles`。标识为 `<package-id>#<bundle-name>`，名称以小写字母开头，可包含小写字母、数字和连字符。每个文档接受 `extends`、`profile` 和 `presets`。参见 [research 示例](../../examples/bundles/research/README.md)；英文格式示例可通过页首语言切换查看。
 
 在用户 profile 中选择：
 

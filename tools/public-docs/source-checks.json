@@ -61,7 +61,7 @@
   },
   {
     "path": "packages/cli/tools/build-local.ts",
-    "includes": ["!isAbsolute(args[1]", "Expected --output-dir with an absolute directory"]
+    "includes": ["!isAbsolute(value)", "Expected --output-dir with an absolute directory"]
   },
   {
     "path": "packages/web/src/app.ts",

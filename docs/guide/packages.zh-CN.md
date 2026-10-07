@@ -11,7 +11,7 @@
 安装插件无需手抄信任哈希：
 
 ```sh
-agh plugins add /home/me/downloads/hello-tool.tgz
+agh plugins add /ABS/DOWNLOADS/hello-tool.tgz
 agh plugins add ../hello-tool
 agh plugins add https://example.com/team/hello-tool.git
 agh plugins add https://example.com/hello-tool.zip
@@ -27,7 +27,7 @@ Git URL 可省略提交，或用 `#` 指定分支/标签。检查时固定提交
 
 ```sh
 # 作者先安装依赖；exports 指向 dist/ 时先构建。
-agh plugins pack /home/me/hello-tool ./hello-tool.tgz
+agh plugins pack /ABS/PLUGIN/hello-tool ./hello-tool.tgz
 # 朋友的机器：
 agh plugins add ./hello-tool.tgz
 ```
