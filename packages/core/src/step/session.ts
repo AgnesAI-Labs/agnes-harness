@@ -1,5 +1,10 @@
 import type {
   HookPayloadMap,
+  ToolRuntime,
+  ToolRuntimeProvider,
+  ToolRuntimeRegistryPort,
+  ToolPolicyRegistryPort,
+  LoopEventRegistryPort,
   HookReturnMap,
   Logger,
   LoopContext,
@@ -11,6 +16,8 @@ import type {
   ToolMeta,
   ToolResult,
 } from '@agnes/extension-api'
+import { ToolPolicyRegistry, ToolRuntimeRegistry } from '../effects/tool-providers.js'
+import { LoopEventRegistry, loopEventContext } from '../loop/events.js'
 import type {
   Actor,
   ApprovalMode,
@@ -275,6 +282,7 @@ export type HookPort = {
   }): Promise<{ action: 'stop' } | { action: 'continue'; note: string }>
   context(sections: PromptSection[]): Promise<{ sections: PromptSection[]; additionalContext: string }>
   beforeRequest(out: DeriveOutput, slot: string, attempt: number): Promise<DeriveOutput>
+  requestPatch?(payload: HookPayloadMap['before_request']): Promise<HookReturnMap['before_request']>
   beforeStep(p: { turn: number; step: number; depth: number }): Promise<{ block?: boolean; reason?: string }>
   toolResult?(p: HookPayloadMap['tool_result']): Promise<HookReturnMap['tool_result']>
   approvalRequest?(p: HookPayloadMap['approval_request']): Promise<HookReturnMap['approval_request']>
@@ -333,6 +341,9 @@ export type TurnEndReason =
 export type TurnOutcome = { reason: TurnEndReason; lastSeq: Seq; error?: { code: string; message: string } }
 
 export type SessionDeps = {
+  toolRuntimes?: ToolRuntimeRegistryPort
+  toolPolicies?: ToolPolicyRegistryPort
+  loopEvents?: LoopEventRegistryPort
   log: SessionLogImpl
   tracker: StateTracker
   surface: SurfaceCache
@@ -573,6 +584,9 @@ export class SessionImpl {
 
   constructor(deps: SessionDeps) {
     this.d = deps
+    this.loopEvents = deps.loopEvents ?? new LoopEventRegistry()
+    this.toolRuntimes = deps.toolRuntimes ?? new ToolRuntimeRegistry()
+    this.toolPolicies = deps.toolPolicies ?? new ToolPolicyRegistry()
     this.loop = Object.freeze({
       id: (deps.loopFactory ?? defaultLoopFactory).id,
       version: (deps.loopFactory ?? defaultLoopFactory).version,
@@ -655,10 +669,38 @@ export class SessionImpl {
     return this.d.tracker.state
   }
 
+  readonly loopEvents: LoopEventRegistryPort
+  private readonly toolRuntimes: ToolRuntimeRegistryPort
+  private readonly toolPolicies: ToolPolicyRegistryPort
+  private readonly runtimeInstances: Array<{
+    provider: ToolRuntimeProvider
+    maxParallel: number
+    runtime: ToolRuntime
+  }> = []
+
+  async toolRuntime(): Promise<ToolRuntime> {
+    const provider = this.toolRuntimes.resolve(this.preset.tools.runtime ?? 'default')
+    const maxParallel = this.preset.tools.maxParallel ?? 4
+    let instance = this.runtimeInstances.find(
+      (entry) => entry.provider === provider && entry.maxParallel === maxParallel,
+    )
+    if (!instance) {
+      instance = { provider, maxParallel, runtime: provider.create({ maxParallel }) }
+      this.runtimeInstances.push(instance)
+    }
+    // Keep previous instances until close: an in-flight batch may still own one after a preset switch.
+    return instance.runtime
+  }
+  toolPolicy() {
+    return this.toolPolicies.resolve(this.preset.approval.policy ?? 'default')
+  }
+
   private initialModelSettingsRestored = false
 
   private async initializeLoop(resumed = false): Promise<void> {
     if (this.loopDriver) return
+    this.toolPolicy()
+    await this.toolRuntime()
     const ctx = await createLoopContext(this)
     this.loopContext = ctx
     bindDefaultLoopPorts(ctx, {
@@ -940,6 +982,7 @@ export class SessionImpl {
       events?: EventInput[] | ((nextSeq: Seq) => EventInput[])
     } = {},
   ): Promise<Seq> {
+    const turnNumber = this.op()?.meta.turn ?? 0
     const last = extra.lastAssistantSeq ?? this.op()?.latestAssistantSeq ?? null
     const events = extra.events
     const end = this.ev('turn/end', {
@@ -953,6 +996,14 @@ export class SessionImpl {
     )
     this.turn = null
     this.turnEndError = extra.error
+    // Observer failure cannot undo a committed turn ending.
+    await this.loopEvents
+      .dispatch(
+        'turn_end',
+        { turn: turnNumber, reason },
+        loopEventContext(this, new AbortController().signal),
+      )
+      .catch((error) => this.d.logger.warn('turn_end observer failed', { message: String(error) }))
     return seqs[seqs.length - 1] as Seq
   }
 
@@ -1351,7 +1402,7 @@ export class SessionImpl {
     return normalizeApproval(raw) ?? { verdict: 'rejected' }
   }
 
-  executeTool(
+  async executeTool(
     name: string,
     args: unknown,
     context: ToolContext,
@@ -1363,6 +1414,7 @@ export class SessionImpl {
     // the sequence returned by the append that durably wrote effect/intent; authority itself stays
     // process-local and is consumed before either the built-in or a replacement is entered.
     this.assertToolDispatchAvailable(dispatch.executionDomain)
+    const runtime = await this.toolRuntime()
     const binding = { ...started, owner: this.executePermitOwner, attempt: dispatch.attempt }
     const permit = this.executePermits.issue(binding)
     this.executePermits.consume(permit, binding)
@@ -1372,6 +1424,8 @@ export class SessionImpl {
       context,
       executionDomain: dispatch.executionDomain,
       attempt: dispatch.attempt,
+      runtime,
+      concurrencySafe: this.turn?.snapshot.byName.get(name)?.meta.isConcurrencySafe === true,
       ...(this.d.hostToolDispatch ? { hostPort: this.d.hostToolDispatch } : {}),
       invoke: () => {
         if (!this.d.segments?.ToolExecution) return builtin()
@@ -1504,7 +1558,10 @@ export class SessionImpl {
    */
   abort(by: Actor = this.d.actor): Promise<AbortResult> {
     return abortSession(this, by).then(async (result) => {
-      await this.loopDriver?.cancel()
+      await Promise.all([
+        this.loopDriver?.cancel(),
+        ...this.runtimeInstances.map((instance) => instance.runtime.cancel()),
+      ])
       return result
     })
   }
@@ -2147,6 +2204,13 @@ export class SessionImpl {
         .then(() => this.loopDriver?.dispose())
         .catch((error: unknown) => failures.push(error))
       if (this.loopContext) disposeLoopContext(this.loopContext)
+      await Promise.all(
+        this.runtimeInstances.map((instance) =>
+          Promise.resolve()
+            .then(() => instance.runtime.dispose())
+            .catch((error: unknown) => failures.push(error)),
+        ),
+      )
       await this.hooks.shutdown?.().catch((error: unknown) => failures.push(error))
       await this.d.log.close().catch((error: unknown) => failures.push(error))
       await this.d.workspaceLease?.close().catch((error: unknown) => failures.push(error))

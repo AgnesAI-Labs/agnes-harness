@@ -35,13 +35,20 @@ export type PresetView = {
     maxSteps: number | null
   }
   approval: {
+    policy?: string
     onTimeout: 'rejected'
     timeoutMs: number
     onUnavailable: 'deny' | 'park'
     pendingTtlMs: number
   }
   sandbox: { onUnavailable: 'deny' | 'allow' }
-  tools: { timeoutMs: number; timeouts: Record<string, number>; outputMaxBytes: number }
+  tools: {
+    runtime?: string
+    maxParallel?: number
+    timeoutMs: number
+    timeouts: Record<string, number>
+    outputMaxBytes: number
+  }
   verifier: { timeoutMs: number; defaultTier: 0 | 1 | 2 }
   repair: { timeoutMs: number }
   completionGate: { minItems: number }
@@ -145,6 +152,9 @@ export function readPreset(raw: Record<string, unknown>, name: string): PresetVi
     },
     approval: {
       // Not readable from the document: see presetDefaults.
+      ...(get(raw, 'approval.policy') === undefined
+        ? {}
+        : { policy: pick<string>(raw, 'approval.policy', 'default') }),
       onTimeout: 'rejected',
       timeoutMs: pick(raw, 'approval.timeout_ms', d.approval.timeoutMs),
       onUnavailable: pick(raw, 'approval.on_unavailable', d.approval.onUnavailable),
@@ -152,6 +162,12 @@ export function readPreset(raw: Record<string, unknown>, name: string): PresetVi
     },
     sandbox: { onUnavailable: pick(raw, 'sandbox.on_unavailable', d.sandbox.onUnavailable) },
     tools: {
+      ...(get(raw, 'tools.runtime') === undefined
+        ? {}
+        : { runtime: pick<string>(raw, 'tools.runtime', 'default') }),
+      ...(get(raw, 'tools.max_parallel') === undefined
+        ? {}
+        : { maxParallel: pick<number>(raw, 'tools.max_parallel', 4) }),
       timeoutMs: pick(raw, 'tools.timeout_ms', d.tools.timeoutMs),
       timeouts: pick(raw, 'tools.timeouts', d.tools.timeouts),
       outputMaxBytes: pick(raw, 'tools.output_max_bytes', d.tools.outputMaxBytes),

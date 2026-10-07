@@ -15,6 +15,9 @@ import { openTracked } from '../src/reduce/tracker.js'
 import { presetDefaults } from '../src/step/preset.js'
 import { fakeProvider, textTurn } from './helpers/fake-provider.js'
 import { fakeSeams } from './helpers/fake-seams.js'
+import { ToolRuntimeRegistry } from '../src/effects/tool-providers.js'
+import { LoopEventRegistry } from '../src/loop/events.js'
+import { noopHooks } from '../src/step/session.js'
 import { actor, noTimers, readTool, testFsOps, testWorkspaceInvocation } from './helpers/open-session.js'
 
 const codec = loopCheckpointCodec(1, (state) => {
@@ -92,7 +95,11 @@ const model = {
   thinkingReplay: 'native' as const,
   contract_id: null,
 }
-function kernel(storage = new MemoryStorage(), loops = new LoopRegistry()) {
+function kernel(
+  storage = new MemoryStorage(),
+  loops = new LoopRegistry(),
+  extra: Partial<import('../src/kernel.js').KernelOptions> = {},
+) {
   const provider = fakeProvider([textTurn('independent answer')])
   provider.models = () => [model]
   return Kernel.create({
@@ -105,10 +112,63 @@ function kernel(storage = new MemoryStorage(), loops = new LoopRegistry()) {
     fsOps: testFsOps(),
     netFetch: async () => new Response(''),
     timers: noTimers,
+    ...extra,
   })
 }
 
 describe('loop plugins', () => {
+  it('uses an independent runtime and the same request/tool event waterfall from custom-loop ports', async () => {
+    const loops = new LoopRegistry()
+    loops.register('@test/echo', echo)
+    const toolRuntimes = new ToolRuntimeRegistry(false)
+    toolRuntimes.register('@test/serial', {
+      id: 'serial',
+      version: '1.0.0',
+      create: () => ({
+        async execute(call, port, signal) {
+          const result = await port.dispatch(call, signal)
+          return { ...result, content: [{ type: 'text', text: 'independent runtime' }] }
+        },
+        async batch(calls, port, signal) {
+          const results = []
+          for (const call of calls) results.push(await port.dispatch(call, signal))
+          return results
+        },
+        cancel() {},
+        dispose() {},
+      }),
+    })
+    const loopEvents = new LoopEventRegistry()
+    const responses: unknown[] = []
+    loopEvents.on('after_model_response', (payload) => {
+      responses.push(payload.content)
+    })
+    loopEvents.on('before_model_request', (payload) => {
+      expect(payload.request.maxTokens).toBe(12)
+      return { patch: { maxTokens: 14 } }
+    })
+    const preset = presetDefaults()
+    preset.tools.runtime = 'serial'
+    const k = kernel(new MemoryStorage(), loops, { toolRuntimes, loopEvents, preset })
+    k.tools.add(readTool(), { source: 'test', trust: 'builtin' })
+    const session = await k.session('independent-runtime', { ...options, loop: echo })
+    session.hooks = { ...noopHooks, requestPatch: async () => ({ patch: { maxTokens: 12 } }) }
+    try {
+      await session.enqueue('next-turn', { content: [{ type: 'text', text: 'run' }], actor })
+      expect((await session.run({ until: 'turn-end', signal: new AbortController().signal })).reason).toBe(
+        'completed',
+      )
+      const rows = await session.scan({ fromSeq: 1, limit: 200 })
+      expect(rows.filter((row) => row.type === 'tool/result').map((row) => row.data)).toEqual([
+        expect.objectContaining({ content: [{ type: 'text', text: 'independent runtime' }] }),
+        expect.objectContaining({ content: [{ type: 'text', text: 'independent runtime' }] }),
+      ])
+      expect(responses).toEqual([[{ type: 'text', text: 'independent answer' }]])
+      expect((k.o.provider as ReturnType<typeof fakeProvider>).requests[0]?.sampling?.maxTokens).toBe(14)
+    } finally {
+      await k.close()
+    }
+  })
   it('registers through a plugin lifecycle and exposes an immutable catalog', () => {
     const loops = new LoopRegistry()
     const cleanups: Array<() => void> = []

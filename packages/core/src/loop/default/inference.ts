@@ -1,3 +1,4 @@
+import { beforeLoopModelRequest, loopEventContext } from '../events.js'
 import type { InferenceEvent, JsonValue, ModelRecord, RequestBody as WireBody } from '@agnes/protocol'
 import { conservativeSerializedTokens } from '../../child/credits.js'
 import {
@@ -670,7 +671,7 @@ export async function runInference(s: SessionImpl): Promise<StepOutcome> {
     )
     out = { ...out, request, header: { ...out.header, derived_hash: derivedHash } }
   }
-  out = await s.hooks.beforeRequest(out, slot, attempt)
+  out = await beforeLoopModelRequest(s, out, slot, attempt)
   const mintedPrefix = {
     sections: out.request.sections,
     tools: out.request.tools,
@@ -1291,10 +1292,15 @@ export async function runInference(s: SessionImpl): Promise<StepOutcome> {
     // provider on the next request as part of the assistant turn, and a provider that rejects empty
     // text blocks refuses the whole request over a block core invented.
     const content = [
-      ...(thinking ? [{ type: 'thinking', text: thinking }] : []),
-      ...(text ? [{ type: 'text', text }] : []),
+      ...(thinking ? [{ type: 'thinking' as const, text: thinking }] : []),
+      ...(text ? [{ type: 'text' as const, text }] : []),
     ]
     const stopReason = truncated ? 'max_tokens' : calls.length ? 'tool_use' : 'end_turn'
+    await s.loopEvents.dispatch(
+      'after_model_response',
+      { content, stopReason },
+      loopEventContext(s, s.ac.signal),
+    )
     events.push(
       s.ev('assistant/message', { content, stopReason, requestSeq: s.lastSeq }, { origin: 'model' }),
     )

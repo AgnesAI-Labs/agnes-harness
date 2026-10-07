@@ -1,0 +1,12 @@
+{
+  "name": "@agnes-example/read-only-policy",
+  "version": "1.0.0",
+  "type": "module",
+  "license": "Apache-2.0",
+  "exports": "./index.mjs",
+  "types": "./index.d.mts",
+  "peerDependencies": { "@agnes/extension-api": "*" },
+  "agnes": {
+    "plugins": [{ "id": "policy:read-only", "export": "plugin", "default": true, "inject": ["toolPolicies"] }]
+  }
+}

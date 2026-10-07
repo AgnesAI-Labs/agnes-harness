@@ -74,6 +74,7 @@ import {
 } from './assemble/model-adapters.js'
 import { modelRuntime } from './assemble/model-runtime.js'
 import { installLoops } from './assemble/loops.js'
+import { installToolProviders, withBuiltinToolPolicies } from './assemble/tool-providers.js'
 import { readAdminLoopDefault } from './assemble/loop-selection.js'
 import { buildOrdinaryRows } from './assemble/ordinary-rows.js'
 import type {
@@ -812,7 +813,7 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
     for (const [id, loaded] of runtimePackages) ordinaryModules.set(id, loaded.module)
     const builtOrdinary = buildOrdinaryRows(
       profile,
-      withBuiltinCompactionEngines(withBuiltinModelAdapters(ordinaryModules)),
+      withBuiltinToolPolicies(withBuiltinCompactionEngines(withBuiltinModelAdapters(ordinaryModules))),
       deps.ordinaryPluginLayers,
     )
     // `activeBuiltinClaims` is a `let` because ext: rows can only be built much further down, after
@@ -932,6 +933,7 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
             rowServices.installRoot(root, origins)
             installModelAdapters(root, origins)
             installLoops(root, origins)
+            installToolProviders(root, origins)
             installCompactionEngines(root, origins)
             const sandboxProviders = installSandboxProviders(root, origins)
             sandboxProviders.register(createLocalSandboxProvider(adapters.exec, adapters.platform.os))
@@ -1766,6 +1768,20 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
         register: (source, factory) => pluginTree.root.loops.register(source, factory),
         resolve: (selection) => pluginTree.root.loops.resolve(selection),
         catalog: () => pluginTree.root.loops.catalog(),
+      },
+      toolRuntimes: {
+        register: (source, provider) => pluginTree.root.toolRuntimes.register(source, provider),
+        resolve: (id) => pluginTree.root.toolRuntimes.resolve(id),
+        catalog: () => pluginTree.root.toolRuntimes.catalog(),
+      },
+      toolPolicies: {
+        register: (source, policy) => pluginTree.root.toolPolicies.register(source, policy),
+        resolve: (id) => pluginTree.root.toolPolicies.resolve(id),
+        catalog: () => pluginTree.root.toolPolicies.catalog(),
+      },
+      loopEvents: {
+        on: (event, handler) => pluginTree.root.loopEvents.on(event, handler),
+        dispatch: (event, payload, context) => pluginTree.root.loopEvents.dispatch(event, payload, context),
       },
       seams,
       provider: models.provider,

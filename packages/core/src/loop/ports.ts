@@ -1,10 +1,12 @@
 import type { LoopCheckpoint, LoopContext, LoopToolCall } from '@agnes/extension-api'
-import type { ContentBlock, InferenceEvent, RequestBody } from '@agnes/protocol'
+import { validateAgainst, type ContentBlock, type InferenceEvent, type RequestBody } from '@agnes/protocol'
+import { RequestBody as WireRequest } from '@agnes/protocol/gen/model'
 import { scanPages } from '../log/scan-pages.js'
 import type { Inbox } from '../reduce/shapes.js'
 import { runCompaction } from '../step/compaction.js'
 import { withPhase } from '../step/op-state.js'
 import type { SessionImpl } from '../step/session.js'
+import { dispatchLoopEvent, modelRequestPayload } from './events.js'
 
 const cleanup = new WeakMap<LoopContext, () => void>()
 export function disposeLoopContext(ctx: LoopContext): void {
@@ -62,16 +64,38 @@ export async function createLoopContext(s: SessionImpl): Promise<LoopContext> {
     signal = AbortSignal.any([signal, s.ac.signal])
     signal.throwIfAborted()
     await ensureStep()
+    const transformed = await dispatchLoopEvent(
+      s,
+      'before_model_request',
+      modelRequestPayload(request),
+      signal,
+    )
+    const patch = transformed.patch
+    if (patch) {
+      if (patch.metadata && Object.keys(patch.metadata).length)
+        throw new Error('Wire loop requests do not support metadata patches')
+      const sampling = { ...request.sampling, ...patch.samplingParams }
+      if (patch.maxTokens !== undefined) sampling.maxTokens = patch.maxTokens
+      request = { ...request, sampling }
+      if (!validateAgainst(WireRequest, request).ok) throw new Error('Invalid loop request sampling patch')
+    }
     const effect = s.effects.start({ kind: 'inference', replay: 'never', slot: request.slot })
     await s.d.log.append([effect.intent])
     let settled = false
     let failed = false
+    let stopReason = 'end_turn'
+    const content: Array<{ type: 'text' | 'thinking'; text: string }> = []
     try {
       for await (const event of s.d.provider.infer(request, {
         signal,
         toolNames: request.tools.map((tool) => tool.name),
       })) {
         if (event.type === 'error') failed = true
+        if (event.type === 'done')
+          stopReason =
+            event.reason === 'length' ? 'max_tokens' : event.reason === 'toolUse' ? 'tool_use' : 'end_turn'
+        if (event.type === 'text_delta' || event.type === 'thinking_delta')
+          content.push({ type: event.type === 'text_delta' ? 'text' : 'thinking', text: event.delta })
         if (event.type === 'usage') {
           const op = requireOp()
           const { type: _type, ...usage } = event
@@ -99,6 +123,8 @@ export async function createLoopContext(s: SessionImpl): Promise<LoopContext> {
         }
         yield event
       }
+      if (!failed && !signal.aborted)
+        await dispatchLoopEvent(s, 'after_model_response', { content, stopReason }, signal)
       await s.d.log.append([effect.settle(signal.aborted ? 'aborted' : failed ? 'error' : 'ok')])
       settled = true
     } finally {
@@ -159,15 +185,32 @@ export async function createLoopContext(s: SessionImpl): Promise<LoopContext> {
         // Open one step before launching siblings; nested execution still enforces tool policy.
         await prepareTools(signal)
         const parked: import('../types.js').EventInput[] = []
-        const settled = await Promise.allSettled(calls.map((call) => invoke(call, signal, parked)))
+        const runtime = await s.toolRuntime()
+        let failed = false
+        let failure: unknown
+        const results = await runtime.batch(
+          structuredClone(calls).map((call, ordinal) => ({
+            ...call,
+            id: String(ordinal),
+            concurrencySafe: s.turn?.snapshot.byName.get(call.name)?.meta.isConcurrencySafe === true,
+          })),
+          {
+            dispatch: async (input, callSignal) => {
+              try {
+                return await invoke(input, callSignal, parked)
+              } catch (error) {
+                if (!failed) failure = error
+                failed = true
+                return { content: [{ type: 'text', text: 'Tool dispatch failed' }], isError: true }
+              }
+            },
+          },
+          signal,
+        )
         // Drain every sibling before closing the turn or surfacing a failure.
         if (parked.length) await closeParked(parked)
-        const failed = settled.find((result) => result.status === 'rejected')
-        if (failed?.status === 'rejected') throw failed.reason
-        return settled.map((result) => {
-          if (result.status === 'rejected') throw result.reason
-          return result.value
-        })
+        if (failed) throw failure
+        return results
       },
     },
     input: {
@@ -184,6 +227,7 @@ export async function createLoopContext(s: SessionImpl): Promise<LoopContext> {
       pending: () => ((s.latest('inbox') as Inbox | undefined)?.items.length ?? 0) > 0,
     },
     events: {
+      dispatch: (event, payload, signal) => dispatchLoopEvent(s, event, payload, signal),
       async emit(type, data) {
         await s.d.log.append([s.ev(type, data, type.startsWith('x/') ? { ignorable: true } : {})])
       },

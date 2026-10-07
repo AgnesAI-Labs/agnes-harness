@@ -1,5 +1,8 @@
 import type {
   HookContext,
+  ToolPolicyRegistryPort,
+  ToolRuntimeRegistryPort,
+  LoopEventRegistryPort,
   Logger,
   LoopFactory,
   LoopRegistryPort,
@@ -7,6 +10,8 @@ import type {
   PlatformFacts,
 } from '@agnes/extension-api'
 import type { Actor, ApprovalMode, Provider, SessionStart } from '@agnes/protocol'
+import { ToolPolicyRegistry, ToolRuntimeRegistry } from './effects/tool-providers.js'
+import { LoopEventRegistry } from './loop/events.js'
 import { KernelChildren } from './child/factory.js'
 import { hasChildControl } from './child/store.js'
 import { isActiveChildState } from './child/types.js'
@@ -86,6 +91,9 @@ export const CORE_DIAG_NAMES = [
 export type CoreDiagName = (typeof CORE_DIAG_NAMES)[number]
 
 export type KernelOptions = {
+  toolRuntimes?: ToolRuntimeRegistryPort
+  toolPolicies?: ToolPolicyRegistryPort
+  loopEvents?: LoopEventRegistryPort
   loops?: LoopRegistryPort
   loop?: LoopSelection
   storage: StorageAdapter
@@ -249,6 +257,9 @@ function lifecyclePort(session: SessionImpl, hooks: HookEngine, logger: Logger):
 
 /** The composition root: it fits the seams, opens ledgers, and hands back assembled sessions. */
 export class Kernel {
+  readonly toolRuntimes: ToolRuntimeRegistryPort
+  readonly toolPolicies: ToolPolicyRegistryPort
+  readonly loopEvents: LoopEventRegistryPort
   readonly loops: LoopRegistryPort
   readonly tools = new ToolRegistry()
   readonly sessions = new Map<SessionKey, SessionImpl>()
@@ -269,6 +280,9 @@ export class Kernel {
   private readonly factoryHooks = new WeakSet<HookPort>()
 
   private constructor(readonly o: KernelOptions) {
+    this.toolRuntimes = o.toolRuntimes ?? new ToolRuntimeRegistry()
+    this.toolPolicies = o.toolPolicies ?? new ToolPolicyRegistry()
+    this.loopEvents = o.loopEvents ?? new LoopEventRegistry()
     this.loops = o.loops ?? new LoopRegistry()
     this.clock = o.clock ?? (() => Date.now())
     this.ids = o.ids ?? defaultIds(this.clock)
@@ -502,6 +516,9 @@ export class Kernel {
       runtime,
       provider: this.o.provider,
       loopFactory,
+      toolRuntimes: this.toolRuntimes,
+      toolPolicies: this.toolPolicies,
+      loopEvents: this.loopEvents,
       loopResume: !forked && Boolean(tracker.state.session),
       ...(this.o.withModelSnapshot ? { withModelSnapshot: this.o.withModelSnapshot } : {}),
       registry: this.tools,

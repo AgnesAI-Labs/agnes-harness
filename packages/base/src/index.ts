@@ -74,6 +74,7 @@ export {
 } from '../extensions/artifacts-local/src/recent-metadata.js'
 export { buildCompactionPlan } from '../extensions/compaction/src/plan.js'
 export { toolDescribeTool, toolSearchTool } from '../extensions/mcp-search/src/search-tools.js'
+export { toolPolicy, toolPolicyPlugin } from '../extensions/approval-policy/src/tool-policy.js'
 export {
   type McpCatalogHub,
   type McpCatalogHubContext,

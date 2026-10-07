@@ -1,5 +1,6 @@
-import type { ToolContext, ToolResult } from '@agnes/extension-api'
-import type { ExecutionDomain } from '@agnes/protocol'
+import type { ToolContext, ToolResult, ToolRuntime } from '@agnes/extension-api'
+import { inspectJsonData, type ExecutionDomain } from '@agnes/protocol'
+import { canonicalJson } from '../request/hash.js'
 import { CoreError } from '../types.js'
 import type { ExecuteAttempt } from './execute-permits.js'
 
@@ -30,6 +31,8 @@ type DispatchInput = Omit<HostToolDispatchInput, 'invoke'> &
     executionDomain: ExecutionDomain
     invoke: () => Promise<ToolResult>
     hostPort?: HostToolDispatchPort
+    runtime?: ToolRuntime
+    concurrencySafe?: boolean
   }>
 
 const TOOL_RESULT_KEYS = new Set(['content', 'isError', 'details', 'terminate', 'structured', 'deferred'])
@@ -153,6 +156,45 @@ export function assertToolDispatchAvailable(
 
 /** Dispatches one already-authorized attempt and returns only Core-minted phase observations. */
 export async function dispatchTool(input: DispatchInput): Promise<HostDispatchObservation> {
+  if (input.runtime) {
+    const runtime = input.runtime
+    const parsed = inspectJsonData(input.args)
+    if (!parsed.ok) throw new CoreError('E_ENVELOPE', 'invalid runtime tool arguments')
+    const call = {
+      id: input.context.session.toolUseId,
+      name: input.name,
+      args: parsed.value,
+      concurrencySafe: input.concurrencySafe === true,
+    }
+    const expectedId = call.id,
+      expectedName = call.name,
+      expectedArgs = canonicalJson(call.args)
+    let dispatched = false
+    const originalInvoke = input.invoke
+    input = {
+      ...input,
+      invoke: () =>
+        runtime.execute(
+          structuredClone(call),
+          {
+            dispatch: async (next, signal) => {
+              signal.throwIfAborted()
+              if (dispatched)
+                throw new CoreError('E_EXECUTE_PERMIT', 'ToolRuntime dispatched an attempt more than once')
+              if (
+                next.id !== expectedId ||
+                next.name !== expectedName ||
+                canonicalJson(next.args) !== expectedArgs
+              )
+                throw new CoreError('E_EXECUTE_PERMIT', 'ToolRuntime changed an authorized call')
+              dispatched = true
+              return originalInvoke()
+            },
+          },
+          input.context.signal,
+        ),
+    }
+  }
   if (input.executionDomain === 'workspace') {
     try {
       const result = await input.invoke()

@@ -98,6 +98,8 @@
           "type": "object",
           "additionalProperties": false,
           "properties": {
+            "runtime": { "type": "string", "minLength": 1, "maxLength": 128 },
+            "max_parallel": { "type": "integer", "minimum": 1, "maximum": 64 },
             "core": {
               "type": "array",
               "items": {
@@ -296,6 +298,7 @@
           "type": "object",
           "additionalProperties": false,
           "properties": {
+            "policy": { "type": "string", "minLength": 1, "maxLength": 128 },
             "on_unavailable": {
               "enum": ["deny", "park"]
             },

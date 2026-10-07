@@ -1,3 +1,4 @@
+import { dispatchLoopEvent } from '../events.js'
 import type { ToolResult } from '@agnes/extension-api'
 import type { Actor, ExecutionDomain, JsonValue, ResolvedToolCallPolicy } from '@agnes/protocol'
 import { hasChildControl, transitionChildState } from '../../child/store.js'
@@ -5,7 +6,6 @@ import { approvalRefusal, isPending } from '../../effects/approval-answer.js'
 import { type EffectHandle, type EffectOutcome, effectOutcome } from '../../effects/effect.js'
 import type { ExecuteAttempt } from '../../effects/execute-permits.js'
 import type { NestedToolLease } from '../../effects/scheduler.js'
-import { scheduleBatch } from '../../effects/scheduler.js'
 import { buildToolContext, type FsOps, type ToolContextDeps } from '../../effects/tool-context.js'
 import type { HostDispatchObservation } from '../../effects/tool-dispatch.js'
 import { toLedgerContent } from '../../effects/tool-result.js'
@@ -67,7 +67,6 @@ export type CallOutcome = {
 }
 
 const errorResult = (text: string): ToolResult => ({ content: [{ type: 'text', text }], isError: true })
-const SUBAGENT_TOOLS = new Set(['subagent_fork', 'subagent_spawn', 'subagent_collect', 'subagent_cancel'])
 const unavailableFs = (): Promise<never> =>
   Promise.reject(
     new CoreError('E_WORKSPACE_CLOSED', 'filesystem is unavailable outside a workspace invocation'),
@@ -366,34 +365,56 @@ export async function approveAndExecute(
     // Read from the fold, not from the counter: the counter's copy is a transaction behind the row
     // that taints, so the first call after an untrusted result would be judged against a clean turn.
     const taint = op.taint || s.laneTaint()
-    const gate = await s.hooks.toolCall({
-      toolUseId: call.toolUseId,
-      name: call.name,
-      args: call.args,
-      meta,
-      actor: s.d.actor,
-      taint,
-      resolvedPolicy: policy,
-      executionDomain: call.executionDomain,
-      definitionFingerprint: call.definitionFingerprint,
-      policyHash: call.policyHash,
-    })
+    const gate = await dispatchLoopEvent(
+      s,
+      'before_tool_call',
+      {
+        toolUseId: call.toolUseId,
+        name: call.name,
+        args: call.args as JsonValue,
+        meta,
+        actor: s.d.actor,
+        taint,
+        resolvedPolicy: policy,
+        executionDomain: call.executionDomain,
+        definitionFingerprint: call.definitionFingerprint,
+        policyHash: call.policyHash,
+      },
+      o.signal ?? s.ac.signal,
+    )
     // A hook denial is not an approval question: nobody is asked, because the answer is already no.
     if (!gate.allow) return { result: await refuse(s, call.toolUseId, 'HOOK_DENIED', gate.reason) }
-    const stepId = `${op.meta.turn}/${op.step}`
     const risk = policy.requiresApproval
-    // A delegated child and its manager run unattended, so taint cannot force an ask nobody answers.
-    const isSubagentManagement = SUBAGENT_TOOLS.has(call.name)
-    let needsAsk =
-      !isSubagentManagement &&
-      (risk === 'always' || (risk === 'destructive' && policy.isDestructive) || (taint && !policy.isReadOnly))
+    const stepId = `${op.meta.turn}/${op.step}`
     const decision = await s.d.runtime.authorize(s.d.actor, 'execute', { kind: 'skill', id: call.name })
     decisionId = decision.decisionId
     if (decision.effect === 'deny')
       return { result: await refuse(s, call.toolUseId, 'AUTHZ_DENIED', decision.reason, decisionId) }
-    if (decision.effect === 'require_approval') needsAsk = true
     const approvalMode = s.d.approvalMode ?? 'manual'
-    if (s.yolo || approvalMode === 'off') needsAsk = false // never overrides the deny above
+    const permission = await s.toolPolicy().decide(
+      structuredClone({
+        sessionKey: s.key,
+        cwd: s.d.cwd,
+        actor: s.d.actor,
+        call: { id: call.toolUseId, name: call.name, args: call.args as JsonValue },
+        policy,
+        tainted: taint,
+        fullAccess: s.yolo,
+        approvalMode,
+      }),
+      o.signal ?? s.ac.signal,
+    )
+    if (
+      !permission ||
+      !['allow', 'ask', 'deny'].includes(permission.effect) ||
+      typeof permission.reason !== 'string'
+    )
+      throw new CoreError('E_ENVELOPE', 'invalid ToolPolicy decision')
+    if (permission.effect === 'deny')
+      return { result: await refuse(s, call.toolUseId, 'POLICY_DENIED', permission.reason, decisionId) }
+    const needsAsk =
+      permission.effect === 'ask' ||
+      (decision.effect === 'require_approval' && !s.yolo && approvalMode !== 'off')
     const scopes = approvalScopesForCall(call.name, policy.approvalScopes)
     const guardianFailed = (
       await scanAll((q) => s.d.log.scan(q), {
@@ -1255,15 +1276,18 @@ export async function approveAndExecute(
     // model, the same `accept`-callback waterfall `context`/`before_request` already use. Verified
     // above against the tool's real, unoverridden result — the hook gets the final say over what is
     // recorded and returned, not over what the verifier judged.
-    const hooked = s.hooks.toolResult
-      ? await s.hooks.toolResult({
-          toolUseId: call.toolUseId,
-          name: call.name,
-          args: call.args as JsonValue,
-          result,
-          enforcement: s.d.runtime.enforcement(),
-        })
-      : undefined
+    const hooked = await dispatchLoopEvent(
+      s,
+      'after_tool_result',
+      {
+        toolUseId: call.toolUseId,
+        name: call.name,
+        args: call.args as JsonValue,
+        result,
+        enforcement: s.d.runtime.enforcement(),
+      },
+      ac.signal,
+    )
     const finalResult = hooked?.result ?? result
     const marker = deferredMarker(finalResult)
     const knownJob = marker.present && marker.jobId ? s.latest('artifact/job', marker.jobId) : undefined
@@ -1392,12 +1416,22 @@ export async function runToolsPhase(s: SessionImpl): Promise<StepOutcome> {
   })
   const callsById = new Map(rows.map((e) => [(e.data as { toolUseId: string }).toolUseId, e]))
   const parks: EventInput[] = []
-  await scheduleBatch(
-    pending.map((c) => ({
-      ordinal: c.ordinal,
+  const runtime = await s.toolRuntime()
+  const runtimeCalls = [...pending]
+    .sort((a, b) => a.ordinal - b.ordinal)
+    .map((c) => ({
+      id: c.toolUseId,
+      name: c.name,
+      args: (callsById.get(c.toolUseId)?.data as { args?: JsonValue } | undefined)?.args ?? null,
       concurrencySafe: c.resolvedPolicy?.isConcurrencySafe === true,
-      run: async (): Promise<void> => {
-        if (parks.length) return
+    }))
+  await runtime.batch(
+    structuredClone(runtimeCalls),
+    {
+      dispatch: async (input, signal): Promise<ToolResult> => {
+        const c = pending.find((call) => call.toolUseId === input.id)
+        if (!c) throw new CoreError('E_RELATION', 'runtime dispatched an unknown call')
+        if (parks.length) return errorResult('parked')
         // The row the arguments live on is not in the scanned window, which means the counter and
         // the ledger disagree about this batch. There is no `tool/call` here to answer, so there is
         // no `tool/result` to write either: the call is dropped loudly rather than executed with
@@ -1406,7 +1440,7 @@ export async function runToolsPhase(s: SessionImpl): Promise<StepOutcome> {
         if (!ledgerRow) {
           await s.diag('invariant', { kind: 'tool-args-missing', toolUseId: c.toolUseId, name: c.name })
           await s.transition([], (cur) => updateCall(cur, c.toolUseId, { status: 'completed' }))
-          return
+          return errorResult('tool binding unavailable')
         }
         const ledgerCall = ledgerRow.data as Record<string, unknown>
         const bindingProblem =
@@ -1425,7 +1459,7 @@ export async function runToolsPhase(s: SessionImpl): Promise<StepOutcome> {
               { ignorable: true, sourceEventSeqs: [c.argsSeq] },
             ),
           )
-          return
+          return errorResult('tool binding unavailable')
         }
         if (!hasCompleteToolPolicyEnvelope(c))
           throw new CoreError('E_RELATION', 'validated tool policy binding became incomplete')
@@ -1455,6 +1489,7 @@ export async function runToolsPhase(s: SessionImpl): Promise<StepOutcome> {
                 policyHash: c.policyHash,
               },
               {
+                signal,
                 depth: c.depth ?? 0,
                 nestedLease,
                 // An approval continuation owns a new turn. Preserve the call's durable nesting depth,
@@ -1474,12 +1509,13 @@ export async function runToolsPhase(s: SessionImpl): Promise<StepOutcome> {
               },
             ),
           undefined,
-          s.ac.signal,
+          signal,
         )
         if (r.park) parks.push(r.park)
+        return r.result
       },
-    })),
-    { maxParallel: 4, signal: s.ac.signal, onSkipped: () => undefined },
+    },
+    s.ac.signal,
   )
   // The marker is durable rather than held only in TurnMemory: a kill after the tool returned but
   // before this batch edge is exactly a Task 39 resume cut, and must still know which call to poll.

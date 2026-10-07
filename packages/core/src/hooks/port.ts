@@ -290,6 +290,36 @@ export class SessionHookPort implements HookPort {
     await this.engine.dispatch('compact', () => p, this.inputs.context(), { snapshot: this.snapshot() })
   }
 
+  async requestPatch(payload: HookPayloadMap['before_request']): Promise<HookReturnMap['before_request']> {
+    let patch: NonNullable<HookReturnMap['before_request']['patch']> = {}
+    const outcome = await this.engine.dispatch(
+      'before_request',
+      () => ({
+        ...payload,
+        request: {
+          ...payload.request,
+          samplingParams: { ...payload.request.samplingParams, ...patch.samplingParams },
+          ...(patch.maxTokens === undefined ? {} : { maxTokens: patch.maxTokens }),
+        },
+      }),
+      this.inputs.context(),
+      {
+        snapshot: this.snapshot(),
+        accept: (value: HookReturnMap['before_request']) => {
+          if (value.patch)
+            patch = {
+              ...patch,
+              ...value.patch,
+              samplingParams: { ...patch.samplingParams, ...value.patch.samplingParams },
+              metadata: { ...patch.metadata, ...value.patch.metadata },
+            }
+        },
+      },
+    )
+    if (outcome.kind === 'rejected') rejected()
+    return Object.keys(patch).length ? { patch } : {}
+  }
+
   async beforeRequest(base: DeriveOutput, slot: string, attempt: number): Promise<DeriveOutput> {
     let current = base
     const outcome = await this.engine.dispatch(

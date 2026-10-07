@@ -278,3 +278,7 @@ export type {
   WorkspacePublicationDispatch,
 } from './workspace/runtime.js'
 export { createWorkspaceInvocationPort } from './workspace/runtime.js'
+
+export { ToolPolicyRegistry, ToolRuntimeRegistry, defaultToolPolicy } from './effects/tool-providers.js'
+export { defaultToolRuntimeProvider } from './effects/tool-runtime.js'
+export { LoopEventRegistry } from './loop/events.js'
