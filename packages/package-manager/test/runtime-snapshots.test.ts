@@ -29,7 +29,11 @@ function writeVersion(version: string, engine: string): void {
       license: 'MIT',
       dependencies: {},
       exports: './index.mjs',
-      agnes: { plugins: [{ export: 'runtime', id: 'ext:acme/runtime-snapshot', runtime: 'in-process' }] },
+      agnes: {
+        plugins: [
+          { apiRange: '^1.4.0', export: 'runtime', id: 'ext:acme/runtime-snapshot', runtime: 'in-process' },
+        ],
+      },
     }),
   )
   writeFileSync(

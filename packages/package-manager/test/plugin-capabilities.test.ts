@@ -29,7 +29,7 @@ function fixture() {
       exports: './index.mjs',
       agnes: {
         hostProvidedExternals: { '@agnes/plugin-runtime': '0.0.0' },
-        plugins: [{ export: 'main' }],
+        plugins: [{ apiRange: '^1.4.0', export: 'main' }],
         capabilities: { network: ['api.example.com'], exec: ['node'] },
       },
     }),
@@ -127,7 +127,11 @@ it('pins an unqualified git URL in the preview without executing the plugin', as
         const target = args[args.indexOf('-C') + 1]!
         writeFileSync(
           join(target, 'package.json'),
-          JSON.stringify({ name: 'git-tool', version: '1.0.0', agnes: { plugins: [{ export: 'main' }] } }),
+          JSON.stringify({
+            name: 'git-tool',
+            version: '1.0.0',
+            agnes: { plugins: [{ apiRange: '^1.4.0', export: 'main' }] },
+          }),
         )
       }
       return { stdout: '' }

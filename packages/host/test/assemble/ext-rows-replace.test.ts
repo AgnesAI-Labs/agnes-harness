@@ -34,7 +34,9 @@ function vendorSource(rowId: string): Readonly<RuntimePluginSnapshot> {
       version: '1.0.0',
       type: 'module',
       exports: './index.js',
-      agnes: { plugins: [{ export: 'replacement', id: rowId, provide: ['replacementMarker'] }] },
+      agnes: {
+        plugins: [{ apiRange: '^1.4.0', export: 'replacement', id: rowId, provide: ['replacementMarker'] }],
+      },
     })}\n`,
   )
   writeFileSync(

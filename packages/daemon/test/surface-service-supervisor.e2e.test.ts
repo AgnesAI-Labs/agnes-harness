@@ -155,7 +155,9 @@ it('runs a Surface effect through startSupervisor WebSocket and acknowledges it 
       version: '1.0.0',
       type: 'module',
       exports: './index.mjs',
-      agnes: { plugins: [{ id: serviceRowId, export: 'main', services: [capability.name] }] },
+      agnes: {
+        plugins: [{ apiRange: '^1.4.0', id: serviceRowId, export: 'main', services: [capability.name] }],
+      },
     }),
   )
   writeFileSync(
@@ -352,7 +354,9 @@ it('runs a Portal request through Surface routes, the SDK relay and client, WSS,
       version: '1.0.0',
       type: 'module',
       exports: './index.mjs',
-      agnes: { plugins: [{ id: serviceRowId, export: 'main', services: [capability.name] }] },
+      agnes: {
+        plugins: [{ apiRange: '^1.4.0', id: serviceRowId, export: 'main', services: [capability.name] }],
+      },
     }),
   )
   writeFileSync(

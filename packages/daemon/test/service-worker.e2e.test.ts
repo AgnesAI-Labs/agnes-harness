@@ -282,7 +282,14 @@ describe('S5 service worker boundary', () => {
         type: 'module',
         exports: './index.mjs',
         agnes: {
-          plugins: [{ id: serviceRowId, export: 'main', services: [capability.name, effectCapability.name] }],
+          plugins: [
+            {
+              apiRange: '^1.4.0',
+              id: serviceRowId,
+              export: 'main',
+              services: [capability.name, effectCapability.name],
+            },
+          ],
         },
       }),
     )
@@ -441,7 +448,9 @@ describe('S5 service worker boundary', () => {
         version: '1.0.0',
         type: 'module',
         exports: './index.mjs',
-        agnes: { plugins: [{ id: serviceRowId, export: 'main', services: [capability.name] }] },
+        agnes: {
+          plugins: [{ apiRange: '^1.4.0', id: serviceRowId, export: 'main', services: [capability.name] }],
+        },
       }),
     )
     writeFileSync(

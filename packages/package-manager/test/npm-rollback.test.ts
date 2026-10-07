@@ -50,7 +50,11 @@ it('installs actual npm archives, then rolls back offline using the pinned tree 
           version,
           license: 'MIT',
           exports: './extension/index.ts',
-          agnes: { plugins: [{ export: 'main', id: 'ext:acme/pkg-a/main', runtime: 'in-process' }] },
+          agnes: {
+            plugins: [
+              { apiRange: '^1.4.0', export: 'main', id: 'ext:acme/pkg-a/main', runtime: 'in-process' },
+            ],
+          },
           scripts: { postinstall: 'exit 99' },
         }),
       )

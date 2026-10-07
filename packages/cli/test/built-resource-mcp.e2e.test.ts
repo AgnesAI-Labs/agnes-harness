@@ -280,7 +280,12 @@ describe('built CLI managed MCP lifecycle', () => {
       daemonLog += String(chunk)
     })
     try {
-      await expect.poll(() => daemonLog.includes('agnesd listening'), { timeout: 15_000 }).toBe(true)
+      await expect
+        .poll(() => daemonLog.includes('agnesd listening'), { timeout: 15_000 })
+        .toBe(true)
+        .catch((error) => {
+          throw new Error(`daemon did not start: ${daemonLog}`, { cause: error })
+        })
       const added = await invoke(
         [
           'mcp',

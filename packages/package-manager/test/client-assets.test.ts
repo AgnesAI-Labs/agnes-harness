@@ -369,7 +369,7 @@ describe('client capability hash integration', () => {
         name: '@agnes-examples/client-hash',
         version: '1.0.0',
         agnes: {
-          plugins: [{ id: rowId, export: 'main', runtime: 'in-process' }],
+          plugins: [{ apiRange: '^1.4.0', id: rowId, export: 'main', runtime: 'in-process' }],
           ...(client ? { clientDescriptors: [{ rowId, path: './dist/agnes.client.json' }] } : {}),
         },
       }),

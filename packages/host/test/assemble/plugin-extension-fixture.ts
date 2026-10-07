@@ -60,7 +60,12 @@ export function pluginSourceWith(
       type: 'module',
       exports: './index.js',
       agnes: {
-        plugins: exports.map((e) => ({ export: e.exportName, id: e.rowId, inject: ['extension'] })),
+        plugins: exports.map((e) => ({
+          apiRange: '^1.4.0',
+          export: e.exportName,
+          id: e.rowId,
+          inject: ['extension'],
+        })),
       },
     })}\n`,
   )

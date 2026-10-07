@@ -33,7 +33,7 @@ it('shares a bundled third-party dependency into an isolated receiving folder', 
       type: 'module',
       exports: './index.js',
       dependencies: { yaml: '2.9.0' },
-      agnes: { plugins: [{ export: 'main' }], capabilities: {} },
+      agnes: { plugins: [{ apiRange: '^1.4.0', export: 'main' }], capabilities: {} },
     }),
   )
   writeFileSync(

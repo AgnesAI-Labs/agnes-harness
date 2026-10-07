@@ -46,7 +46,9 @@ function fixture(
       type: 'module',
       exports: './index.mjs',
       agnes: {
-        plugins: [{ export: 'panel', id: rowId, runtime: options.runtime ?? 'in-process' }],
+        plugins: [
+          { apiRange: '^1.4.0', export: 'panel', id: rowId, runtime: options.runtime ?? 'in-process' },
+        ],
         clientDescriptors: options.malformed
           ? {}
           : options.duplicate

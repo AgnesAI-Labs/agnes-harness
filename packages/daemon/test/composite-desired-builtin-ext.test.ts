@@ -53,7 +53,9 @@ describe('rebuildDesiredFromInventory ext: ids', () => {
   it('keeps a third-party row that replaces a builtin ext: id', () => {
     // The builtin extension rows are replaceable: a package that declares `ext:agnes/tools-core`
     // supplies that row instead of the Host's own.
-    const rows = rowsFor(thirdPartyPackage({ plugins: [{ export: 'x', id: 'ext:agnes/tools-core' }] }))
+    const rows = rowsFor(
+      thirdPartyPackage({ plugins: [{ apiRange: '^1.4.0', export: 'x', id: 'ext:agnes/tools-core' }] }),
+    )
     expect(rows.map((r) => r.id)).toEqual(['ext:agnes/tools-core'])
     expect(rows[0]?.plugin).toMatch(/^@acme\/widgets@.+\/x$/u)
   })
@@ -62,7 +64,7 @@ describe('rebuildDesiredFromInventory ext: ids', () => {
     // `ext:<pkg>/<export>` is the DEFAULT id of every agnes.plugins entry
     // (packages/package-manager/src/plugin-manifest.ts:72), so the gate must key on the `agnes/`
     // scope, never on the `ext:` prefix alone.
-    const rows = rowsFor(thirdPartyPackage({ plugins: [{ export: 'x' }] }))
+    const rows = rowsFor(thirdPartyPackage({ plugins: [{ apiRange: '^1.4.0', export: 'x' }] }))
     expect(rows.map((r) => r.id)).toEqual(['ext:@acme/widgets/x'])
   })
 })
@@ -74,7 +76,7 @@ describe('rebuildDesiredFromInventory service metadata', () => {
   it('builds the row with the provide and inject names the manifest declares', () => {
     const rows = rowsFor(
       thirdPartyPackage({
-        plugins: [{ export: 'x', provide: ['acmeStats'], inject: ['clock', 'acmeBase'] }],
+        plugins: [{ apiRange: '^1.4.0', export: 'x', provide: ['acmeStats'], inject: ['clock', 'acmeBase'] }],
       }),
     )
     expect(rows).toHaveLength(1)
@@ -83,14 +85,18 @@ describe('rebuildDesiredFromInventory service metadata', () => {
   })
 
   it('builds an empty-metadata row when the manifest declares nothing', () => {
-    const rows = rowsFor(thirdPartyPackage({ plugins: [{ export: 'x' }] }))
+    const rows = rowsFor(thirdPartyPackage({ plugins: [{ apiRange: '^1.4.0', export: 'x' }] }))
     expect(rows[0]?.provides).toEqual([])
     expect(rows[0]?.inject).toEqual([])
   })
 
   it('changes the row identity when a declared name changes, so a stale row cannot be reused', () => {
-    const before = rowsFor(thirdPartyPackage({ plugins: [{ export: 'x', provide: ['a'] }] }))[0]
-    const after = rowsFor(thirdPartyPackage({ plugins: [{ export: 'x', provide: ['b'] }] }))[0]
+    const before = rowsFor(
+      thirdPartyPackage({ plugins: [{ apiRange: '^1.4.0', export: 'x', provide: ['a'] }] }),
+    )[0]
+    const after = rowsFor(
+      thirdPartyPackage({ plugins: [{ apiRange: '^1.4.0', export: 'x', provide: ['b'] }] }),
+    )[0]
     expect(before?.mountIdentity).not.toEqual(after?.mountIdentity)
   })
 })
