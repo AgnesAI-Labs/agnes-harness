@@ -34,7 +34,7 @@ AGNES_PROFILE=local-dev agh tools
 AGNES_PROFILE=local-dev agh --new -p 'call plugin_hello_tool'
 ```
 
-A fresh local-dev profile selects route `demo`, model `demo-model`. The labeled, deterministic adapter calls a named available tool with schema-derived example arguments, then reports its real result. You can provide explicit arguments, for example `call plugin_hello_tool {"message":"hello"}`. Unsupported schemas produce a helpful refusal. Check `/admin/plugins` or `agh package status` for hello-tool activation. Configure a real model for reasoning.
+CLI and daemon boot select a teaching fallback only for a fresh local-dev installation without a saved profile or explicit provider configuration: route `demo`, model `demo-model`. The labeled, deterministic adapter calls a named available tool with schema-derived example arguments, then reports its real result. You can provide explicit arguments, for example `call plugin_hello_tool {"message":"hello"}`. Unsupported schemas produce a helpful refusal. Check `/admin/plugins` or `agh package status` for hello-tool activation. Configure a real model for reasoning.
 
 `--new` creates a fresh session using the latest published plugins; print mode reports its session key on stderr. Ordinary `agh -p` keeps workspace-session reuse. Inspect a pinned session with `agh tools --session <key>` (add `--json` for schemas and origins). SDK callers use `await session.tools()`; local admin callers use `GET /admin/api/tools/<encoded-session-key>`.
 

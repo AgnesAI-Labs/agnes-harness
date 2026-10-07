@@ -7,6 +7,7 @@ import { lockPath, readLock } from '../packages/lockfile.js'
 import { dataDir as defaultDataDir } from '../paths.js'
 import { readBundleSelection } from './bundle-selection.js'
 import { readInstalledBundles } from './bundles-reader.js'
+import { demoProvider } from './demo.js'
 import { mergeIsolation } from './isolation.js'
 import type { LockState, ProfileInputs, RuntimeProfileManifest } from './types.js'
 
@@ -24,6 +25,8 @@ export type ConfigurationProfileInputsOptions = {
   agnesVersion: string
   /** Test seam: an explicit lock wins over the profile's own agnes-lock.json. */
   lock?: LockState
+  /** Opt in to the teaching route for an unconfigured, fresh local-dev installation only. */
+  demoFallback?: boolean
   /** Host configuration overlay; it never contains a credential value. */
   configuration?: Partial<RuntimeProfileManifest>
 }
@@ -100,7 +103,22 @@ export async function readConfigurationProfileInputs(
       ? lockState(installedLock!, { profileDir })
       : undefined
   const lock = options.lock ?? projected?.lock
-  const userLayer = mergeConfiguration(profile, user, options.configuration)
+  const adminBundles = readBundleSelection(profileDir).bundles
+  let userLayer = mergeConfiguration(profile, user, options.configuration)
+  if (
+    options.demoFallback &&
+    profile === 'local-dev' &&
+    options.lock === undefined &&
+    !existsSync(join(profileDir, 'profile.yaml')) &&
+    !local?.provider &&
+    !local?.composition &&
+    !local?.bundles?.length &&
+    !userLayer?.provider &&
+    !userLayer?.composition &&
+    !userLayer?.bundles?.length &&
+    !adminBundles?.length
+  )
+    userLayer = { ...userLayer, name: profile, provider: demoProvider() }
   const configuredDataDir = userLayer?.dataDir ?? defaultDataDir(options.home)
   const dataDir =
     configuredDataDir === '~'
@@ -112,7 +130,7 @@ export async function readConfigurationProfileInputs(
 
   return {
     builtin: profile,
-    adminBundles: readBundleSelection(profileDir).bundles,
+    adminBundles,
     ...(bundleCatalog ? { bundleCatalog } : {}),
     ...(userLayer === undefined ? {} : { user: userLayer }),
     ...(local === undefined ? {} : { local }),

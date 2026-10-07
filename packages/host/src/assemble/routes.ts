@@ -38,11 +38,6 @@ export function materializeRoutes(preset: PresetView, profile: ResolvedProfile):
   const declared = profile.provider.routes ?? []
   const named = preset.name
   if (declared.length === 0) bad('no-routes', 'the profile declares no provider.routes', { preset: named })
-  // A teaching route supplies the first-run fallback; configured routes keep default precedence.
-  const defaultRoute =
-    profile.name === 'local-dev'
-      ? (declared.find((route) => route.route !== 'demo' || route.api !== 'scripted') ?? declared[0])
-      : declared[0]
   const byName = new Map(declared.map((r) => [r.route, r] as const))
   const out: Partial<Record<SlotName, RouteTarget>> = {}
   // A pin with no route beside it is the sentinel leak from the other direction: core reads
@@ -53,7 +48,7 @@ export function materializeRoutes(preset: PresetView, profile: ResolvedProfile):
       bad('pin-without-route', `model.id.${slot} pins a slot with no route`, { slot, preset: named })
   for (const [slot, name] of Object.entries(preset.model.route)) {
     if (!SLOTS.has(slot)) bad('unknown-slot', `${slot} is not a protocol SlotName`, { slot, preset: named })
-    const decl = name === SENTINEL ? defaultRoute : byName.get(name)
+    const decl = name === SENTINEL ? declared[0] : byName.get(name)
     if (!decl)
       bad('unknown-route', `the profile declares no route ${name}`, { slot, route: name, preset: named })
     // Ruling C-26: `preset.model.id` is validated by nothing and core hands a pin straight to the

@@ -34,7 +34,7 @@ AGNES_PROFILE=local-dev agh tools
 AGNES_PROFILE=local-dev agh --new -p 'call plugin_hello_tool'
 ```
 
-全新 local-dev 默认选择 route `demo`、model `demo-model`。它是确定性的免联网教学模型：点名可用工具后，按 schema 生成示例参数并调用，再展示真实结果。也可直接提交 `call plugin_hello_tool {"message":"hello"}`。无法构造合法参数时会提示修正；在 `/admin/plugins` 或 `agh package status` 检查 hello-tool 的启用状态；推理任务请配置真实模型。
+CLI 和 daemon 仅在没有已保存 profile 或显式 provider 配置的全新 local-dev 安装中选择教学回退 route `demo`、model `demo-model`。它是确定性的免联网教学模型：点名可用工具后，按 schema 生成示例参数并调用，再展示真实结果。也可直接提交 `call plugin_hello_tool {"message":"hello"}`。无法构造合法参数时会提示修正；在 `/admin/plugins` 或 `agh package status` 检查 hello-tool 的启用状态；推理任务请配置真实模型。
 
 `--new` 用最新插件代际创建新会话，print 模式在 stderr 显示会话 key。普通 `agh -p` 仍复用工作区会话。用 `agh tools --session <key>` 查看指定会话，加 `--json` 输出 schema 和来源。SDK 使用 `await session.tools()`；本地 admin API 使用 `GET /admin/api/tools/<编码后的会话 key>`。
 

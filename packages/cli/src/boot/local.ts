@@ -267,6 +267,7 @@ export async function bootLocal(p: ParsedArgs, deps: LocalBootDeps): Promise<Boo
         ...(p.model ? { model: p.model } : {}),
       },
       agnesVersion: deps.agnesVersion,
+      demoFallback: !deps.createHostImpl && !deps.lock,
       ...(deps.lock ? { lock: deps.lock } : {}),
       ...(configurationInput ? { configuration: configurationInput } : {}),
     }

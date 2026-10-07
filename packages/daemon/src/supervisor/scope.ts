@@ -142,6 +142,7 @@ async function profileForScope(
     cwd: workspace,
     profile,
     agnesVersion: input.agnesVersion,
+    demoFallback: true,
     configuration: await configuration.profileInput(),
     ...(input.ignorePackageLock ? { lock: { packages: {} } } : {}),
   })

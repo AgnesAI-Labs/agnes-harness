@@ -72,6 +72,7 @@ export async function readProfileInputs(o: {
   agnesVersion: string
   /** Test seam: an explicit lock wins over the profile's own agnes-lock.json. */
   lock?: LockState
+  demoFallback?: boolean
   /** Host configuration is the final client-owned overlay and never contains a credential value. */
   configuration?: Partial<RuntimeProfileManifest>
 }): Promise<ProfileInputs> {
@@ -82,6 +83,7 @@ export async function readProfileInputs(o: {
       cwd: o.cwd,
       profile,
       agnesVersion: o.agnesVersion,
+      ...(o.demoFallback ? { demoFallback: true } : {}),
       ...(o.lock ? { lock: o.lock } : {}),
       ...(o.configuration ? { configuration: o.configuration } : {}),
     })

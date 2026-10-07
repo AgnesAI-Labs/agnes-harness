@@ -17,29 +17,8 @@ seams:
   harness: "@agnes/base"
 provider:
   package: "@agnes/ai"
-  adapters: ["@agnes/ai", "scripted"]
-  # Keyless teaching route; names an offered tool, calls it with example arguments, then summarizes the result.
-  routes:
-    - route: demo
-      api: scripted
-      baseUrl: "https://demo.invalid"
-      keyless: true
-      compat:
-        demo: true
-      models:
-        - id: demo-model
-          name: "Demo (local tool-aware, no API key)"
-          route: demo
-          api: scripted
-          baseUrl: "https://demo.invalid"
-          reasoning: false
-          input: [text]
-          cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }
-          contextWindow: 128000
-          maxTokens: 8192
-          toolCallFormats: [native]
-          thinkingReplay: native
-          contract_id: null
+  adapters: ["@agnes/ai"]
+
 adapters:
   storage: sqlite
   fs: local

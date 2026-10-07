@@ -1,4 +1,4 @@
-import { mkdtemp, rm } from 'node:fs/promises'
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fakeRequest } from '@agnes/ai/testkit'
@@ -8,13 +8,15 @@ import { expect, it } from 'vitest'
 import { builtinModelAdaptersPlugin, installModelAdapters } from '../../src/assemble/model-adapters.js'
 import { buildProvider } from '../../src/assemble/provider.js'
 import { materializeRoutes } from '../../src/assemble/routes.js'
+import { demoProvider } from '../../src/profile/demo.js'
+import { readConfigurationProfileInputs } from '../../src/profile/inputs.js'
 import { loadTemplate } from '../../src/profile/templates.js'
 import type { ResolvedProfile } from '../../src/profile/types.js'
 import { createTestHost } from '../../testkit/index.js'
 import { fixtureTool } from '../fixtures/tool.js'
 
 it('runs the fresh local-dev demo through registry and provider without credentials, across repeated turns', async () => {
-  const profile = loadTemplate('local-dev') as ResolvedProfile
+  const profile = { ...loadTemplate('local-dev'), provider: demoProvider() } as ResolvedProfile
   const routes = materializeRoutes(presetDefaults(), profile)
   expect(routes.primary).toEqual({ route: 'demo', model: 'demo-model' })
   const root = new Context()
@@ -49,7 +51,7 @@ it('runs the fresh local-dev demo through registry and provider without credenti
       provider: built.provider,
       disableSessionTitle: true,
       profileInputs: {
-        user: { name: 'local-dev', provider: { package: '@agnes/ai', adapters: ['@agnes/ai', 'scripted'] } },
+        user: { name: 'local-dev', provider: demoProvider() },
       },
     })
     try {
@@ -94,5 +96,42 @@ it('runs the fresh local-dev demo through registry and provider without credenti
   } finally {
     await built.dispose()
     await root.fiber.dispose()
+  }
+})
+
+it('adds the demo only for an opted-in fresh local-dev boot, preserving explicit provider declarations', async () => {
+  const home = await mkdtemp(join(tmpdir(), 'agh-demo-profile-'))
+  const options = { home, cwd: home, profile: 'local-dev', agnesVersion: '0.0.0' }
+  try {
+    expect(loadTemplate('local-dev').provider?.routes).toBeUndefined()
+    expect((await readConfigurationProfileInputs(options)).user?.provider).toBeUndefined()
+    const fresh = await readConfigurationProfileInputs({ ...options, demoFallback: true })
+    expect(fresh.user?.provider).toEqual(demoProvider())
+    for (const override of [
+      { profile: 'enterprise' },
+      { lock: { packages: {} } },
+      { configuration: { composition: { loop: { id: 'custom', version: '1' } } } },
+      { configuration: { provider: { package: '@agnes/ai', adapters: ['custom'] } } },
+    ]) {
+      const inputs = await readConfigurationProfileInputs({ ...options, demoFallback: true, ...override })
+      expect(inputs.user?.provider?.routes).toBeUndefined()
+    }
+    const configured = { ...demoProvider(), routes: [{ ...demoProvider().routes![0]!, route: 'configured' }] }
+    expect(
+      (
+        await readConfigurationProfileInputs({
+          ...options,
+          demoFallback: true,
+          configuration: { provider: configured },
+        })
+      ).user?.provider,
+    ).toEqual(configured)
+    await mkdir(join(home, 'profiles', 'local-dev'), { recursive: true })
+    await writeFile(join(home, 'profiles', 'local-dev', 'profile.yaml'), 'name: local-dev\n')
+    expect(
+      (await readConfigurationProfileInputs({ ...options, demoFallback: true })).user?.provider,
+    ).toBeUndefined()
+  } finally {
+    await rm(home, { recursive: true, force: true })
   }
 })
