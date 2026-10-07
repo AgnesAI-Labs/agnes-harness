@@ -271,7 +271,7 @@ it('does not poison publication admission when an ordinary service call fails', 
   await expect(h.call(1)).resolves.toEqual({ output: { value: 1 } })
 })
 
-it('rejects a service after its Cordis row is removed', async () => {
+it('keeps a pinned service after removal and rejects it for a new session', async () => {
   const h = await fixture()
   await h.host.applyRuntimeTarget(
     buildRuntimeTarget({
@@ -281,7 +281,15 @@ it('rejects a service after its Cordis row is removed', async () => {
       compositeRevision: '0'.repeat(64),
     }),
   )
-  await expect(h.call(1)).rejects.toMatchObject({ data: { code: 'CAPABILITY_DENIED' } })
+  await expect(h.call(1)).resolves.toEqual({ output: { value: 1 } })
+  const next = await h.host.createSession({ cwd: h.root, key: 'service-after-removal' })
+  await expect(
+    h.host.callService(
+      { sessionId: next.key, extension: owner, service: 'fixture.echo', input: { value: 1 } },
+      'opaque',
+    ),
+  ).rejects.toMatchObject({ data: { code: 'CAPABILITY_DENIED' } })
+  await next.close()
 })
 
 it('holds activation cutover until a real service invocation finishes', async () => {

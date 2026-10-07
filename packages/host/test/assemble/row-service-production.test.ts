@@ -8,7 +8,7 @@ import { expect, it } from 'vitest'
 import { pluginRowSource } from '../../src/ext-host/row-extension-host.js'
 import { createTestHost } from '../../testkit/index.js'
 
-it('loads a third-party row query service and removes it when the row is disabled', async () => {
+it('keeps a pinned row query service and denies it to new sessions when disabled', async () => {
   const dataDir = await mkdtemp(join(tmpdir(), 'agnes-row-service-'))
   const packageDirectory = resolve(dataDir, 'panel')
   await cp(
@@ -84,7 +84,15 @@ it('loads a third-party row query service and removes it when the row is disable
           { sessionId: session.key, extension: owner, service: 'panel.version', input: {} },
           { kind: 'local' },
         ),
-      ).rejects.toThrow()
+      ).resolves.toEqual({ output: { version: '1.0.0' } })
+      const disabled = await host.createSession({ cwd: dataDir, key: 'row-service-disabled' })
+      await expect(
+        host.callService(
+          { sessionId: disabled.key, extension: owner, service: 'panel.version', input: {} },
+          { kind: 'local' },
+        ),
+      ).rejects.toMatchObject({ data: { code: 'CAPABILITY_DENIED' } })
+      await disabled.close()
       await host.applyRuntimeTarget(target(false))
       await expect(
         host.callService(

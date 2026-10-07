@@ -1,5 +1,6 @@
 import { realpathSync } from 'node:fs'
 import { fileURLToPath, pathToFileURL } from 'node:url'
+import { ScriptedProvider } from '@agnes/ai/testkit'
 import type { InferenceEvent } from '@agnes/protocol'
 import { describe, expect, it } from 'vitest'
 import { EXT_ROW_EXTENSION_IDS, MIGRATED_EXTENSION_IDS } from '../../src/assemble/ext-rows.js'
@@ -171,19 +172,21 @@ describe('the model reaches tools-search through the row it is supplied by', () 
     const { host } = await createTestHost({
       dataDir,
       packageDirs,
-      script: [
-        callTool('ls', { path: realpathSync.native(dataDir) }),
-        say('first'),
-        callTool('ls', {}),
-        say('second'),
-      ],
+      provider: new ScriptedProvider({
+        scripts: [
+          callTool('ls', { path: realpathSync.native(dataDir) }),
+          say('first'),
+          callTool('ls', {}),
+          say('second'),
+        ],
+      }),
       runtimePluginCatalogue: [source],
       extensionLoader: {
         import: async (file) => (await import(pathToFileURL(file).href)) as Record<string, unknown>,
       },
     })
     const turn = async (text: string) => {
-      const session = await host.createSession({ cwd: dataDir })
+      const session = await host.createSession({ cwd: dataDir, key: `facade-${text}` })
       await session.enqueue('next-turn', { actor: session.d.actor, content: [{ type: 'text', text }] })
       await session.run({ until: 'turn-end', signal: new AbortController().signal })
       const results = await session.scan({ type: 'tool/result', toSeq: session.lastSeq })

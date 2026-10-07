@@ -3,7 +3,7 @@ import type { HookEvent, HookReturnMap } from '@agnes/extension-api'
 import type { InferenceEvent } from '@agnes/protocol'
 import { describe, expect, it } from 'vitest'
 import { createTestHost } from '../../testkit/index.js'
-import { auditKinds, pluginRow, pluginSource, scratch, settle, targetOf } from './plugin-extension-fixture.js'
+import { auditKinds, pluginSource, scratch, settle } from './plugin-extension-fixture.js'
 
 const packageDirs = {
   '@agnes/base': fileURLToPath(new URL('../../../base', import.meta.url)),
@@ -17,10 +17,6 @@ function fakeIsolation(events: HookEvent[] = ['shutdown', 'before_step']) {
   const timeline: string[] = []
   let started = 0
   const failures: Array<{ pid: number; listener: (error: Error) => void }> = []
-  // Per-pid shutdown gates: absent by default (falls back to a fixed 30ms delay, as before). A test
-  // that needs deterministic control over exactly when a generation's shutdown dispatch resolves —
-  // to hold it open while a successor becomes live — arms one with `holdShutdown(pid)`.
-  const shutdownGates = new Map<number, { promise: Promise<void>; resolve: () => void }>()
   return {
     timeline,
     started: () => started,
@@ -29,14 +25,6 @@ function fakeIsolation(events: HookEvent[] = ['shutdown', 'before_step']) {
       const entry = pid === undefined ? failures.at(-1) : failures.find((f) => f.pid === pid)
       entry?.listener(error)
     },
-    holdShutdown: (pid: number) => {
-      let resolve!: () => void
-      const promise = new Promise<void>((r) => {
-        resolve = r
-      })
-      shutdownGates.set(pid, { promise, resolve })
-    },
-    releaseShutdown: (pid: number) => shutdownGates.get(pid)?.resolve(),
     services: {
       prepareRuntime: () => ({
         backend: 'seatbelt' as const,
@@ -60,11 +48,7 @@ function fakeIsolation(events: HookEvent[] = ['shutdown', 'before_step']) {
           },
           invoke: async <E extends HookEvent>(event: E) => {
             // A child takes time to answer; recorded on completion so an early close shows up.
-            if (event === 'shutdown') {
-              const gate = shutdownGates.get(pid)
-              if (gate) await gate.promise
-              else await new Promise((resolve) => setTimeout(resolve, 30))
-            }
+            if (event === 'shutdown') await new Promise((resolve) => setTimeout(resolve, 30))
             timeline.push(`invoke:${event}:${pid}`)
             return { block: false } as HookReturnMap[E]
           },
@@ -134,7 +118,7 @@ describe('hooks-runner as a row, isolated', () => {
     expect(fake.timeline.filter((entry) => entry === 'close:4001')).toHaveLength(1)
   })
 
-  it('replaces the child when the tree is rebuilt: an open session is told first, then the old one closes', async () => {
+  it('forks the child for new sessions and drains the pinned child after session deletion', async () => {
     const fake = fakeIsolation()
     const dataDir = scratch()
     const source = pluginSource(`agnes.registerTool(tool('unrelated_tool'))`, 'plugin', 'ext:acme/x')
@@ -160,7 +144,9 @@ describe('hooks-runner as a row, isolated', () => {
     expect(fake.started()).toBe(2)
     expect(status(h)).toMatchObject({ loaded: true, isolation: { pid: 4002 } })
     const closed = fake.timeline.filter((entry) => entry.startsWith('close:'))
-    expect(closed).toEqual(['close:4001'])
+    expect(closed).toEqual([])
+    await session.close()
+    await h.host.releaseSessionGeneration?.(session.key)
     const told = fake.timeline.indexOf('invoke:shutdown:4001')
     expect(told).toBeGreaterThan(-1)
     expect(told).toBeLessThan(fake.timeline.indexOf('close:4001'))
@@ -170,7 +156,6 @@ describe('hooks-runner as a row, isolated', () => {
         .entries('before_step')
         .filter((entry) => entry.meta.source === ID),
     ).toHaveLength(1)
-    await session.close()
     await h.host.close()
     expect(fake.timeline.filter((entry) => entry.startsWith('close:')).sort()).toEqual([
       'close:4001',
@@ -179,13 +164,11 @@ describe('hooks-runner as a row, isolated', () => {
     expect(auditKinds(h as never, 'extension.revoke_failed')).toEqual([])
   })
 
-  // Two runner generations plus a held shutdown: over a second on macOS, past 5 s on the Windows runner.
+  // Two runner generations can take over five seconds on the Windows runner.
   it('ignores a crash reported by an already-evicted generation and keeps the live successor', async () => {
-    // Regression: eviction does not wait for the incumbent's shutdown dispatch to finish (it just
-    // starts winding down in the background), so a stale generation's own crash listener stays armed
-    // after a successor is already live. Held here deterministically instead of racing a fixed delay.
+    // Replace an unbound row so it is actually evicted. The fake retains the old callback even
+    // after unsubscribe, allowing a late child failure to be delivered deterministically.
     const fake = fakeIsolation()
-    fake.holdShutdown(4001)
     const dataDir = scratch()
     const source = pluginSource(`agnes.registerTool(tool('unrelated_tool'))`, 'plugin', 'ext:acme/x')
     const h = await createTestHost({
@@ -200,13 +183,12 @@ describe('hooks-runner as a row, isolated', () => {
       extensionIsolationServices: fake.services,
     })
     expect(fake.started()).toBe(1)
-    const session = await h.host.createSession({ cwd: dataDir })
     await h.host.extensionRows.apply([
       h.host.extensionRows.prepare({ extensionId: ID, entryRevision: 'hooks-runner-row-r2' }),
     ])
+    const session = await h.host.createSession({ cwd: dataDir })
     await settle()
-    // Generation 2 (pid 4002) is live. Generation 1 (pid 4001) is evicted but stuck inside its own
-    // shutdown dispatch (held above), so its failure listener has not been torn down yet.
+    // Generation 2 (pid 4002) is live; a callback from evicted pid 4001 must not fail it.
     expect(fake.started()).toBe(2)
     expect(status(h)).toMatchObject({ loaded: true, isolation: { pid: 4002 } })
     fake.crash(new Error('stale child crashed'), 4001)
@@ -221,7 +203,6 @@ describe('hooks-runner as a row, isolated', () => {
     expect(
       auditKinds(h as never, 'extension.failed').filter((event) => event.detail?.id === ID),
     ).toHaveLength(0)
-    fake.releaseShutdown(4001)
     await session.close()
     await h.host.close()
     expect(fake.timeline.filter((entry) => entry.startsWith('close:')).sort()).toEqual([

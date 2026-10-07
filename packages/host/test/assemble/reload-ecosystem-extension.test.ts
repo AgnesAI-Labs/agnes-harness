@@ -160,21 +160,23 @@ describe('Host.reloadEcosystemExtension', () => {
     })
     try {
       const session = await host.createSession({ cwd: dataDir })
-      const searchTurn = async () => {
-        const from = session.lastSeq + 1
-        await session.enqueue('next-turn', {
+      const searchTurn = async (sessionToRun = session) => {
+        const from = sessionToRun.lastSeq + 1
+        await sessionToRun.enqueue('next-turn', {
           content: [{ type: 'text', text: 'Which Skills do I have?' }],
-          actor: session.d.actor,
+          actor: sessionToRun.d.actor,
           kind: 'prompt',
         })
         await expect(
-          session.run({ until: 'turn-end', signal: new AbortController().signal }),
+          sessionToRun.run({ until: 'turn-end', signal: new AbortController().signal }),
         ).resolves.toMatchObject({ reason: 'completed' })
-        const rows = await session.scan({ fromSeq: from, toSeq: session.lastSeq })
+        const rows = await sessionToRun.scan({ fromSeq: from, toSeq: sessionToRun.lastSeq })
         return JSON.stringify(rows.filter((row) => row.type === 'tool/result'))
       }
       const before = await searchTurn()
       expect(before).toContain('skill-a')
+      await session.close()
+      await host.releaseSessionGeneration?.(session.key)
 
       const mark = audit.events.length
       const status = await host.reloadEcosystemExtension('agnes/skills', {
@@ -182,7 +184,8 @@ describe('Host.reloadEcosystemExtension', () => {
       })
       expect(status).toMatchObject({ id: 'agnes/skills', loaded: true })
 
-      const after = await searchTurn()
+      const refreshed = await host.createSession({ cwd: dataDir, key: 'skills-refreshed' })
+      const after = await searchTurn(refreshed)
       expect(after).toContain('skill-e')
       expect(after).not.toContain('skill-a')
       // Only agnes/skills was reloaded; agnes/mcp-search kept running the whole time.
@@ -227,6 +230,8 @@ describe('Host.reloadEcosystemExtension', () => {
       const after = await host.createSession({ key: 'skills-after', cwd: dataDir })
       expect(await catalog(after)).not.toContain('skill-a')
       expect(await catalog(after)).toContain('skill-e')
+      expect(await catalog(before)).toContain('skill-a')
+      expect(await catalog(before)).not.toContain('skill-e')
     } finally {
       await host.close()
     }

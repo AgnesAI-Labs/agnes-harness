@@ -54,7 +54,7 @@ function source(): Readonly<RuntimePluginSnapshot> {
 }
 
 describe('client descriptor and backend row lifecycle', () => {
-  it('loads the row service without the legacy extension host and revokes it with its backend row', async () => {
+  it('keeps the old row service pinned and denies it to new sessions when disabled', async () => {
     const dataDir = await mkdtemp(join(tmpdir(), 'agnes-dynamic-client-extension-'))
     cleanup.push(dataDir)
     const host = await createTestHost({
@@ -147,7 +147,15 @@ describe('client descriptor and backend row lifecycle', () => {
           { sessionId: session.key, extension: owner, service: 'panel.version', input: {} },
           { kind: 'local' },
         ),
-      ).rejects.toThrow()
+      ).resolves.toEqual({ output: { version: '1.0.0' } })
+      const next = await host.host.createSession({ cwd: dataDir, key: 'dynamic-client-disabled' })
+      await expect(
+        host.host.callService(
+          { sessionId: next.key, extension: owner, service: 'panel.version', input: {} },
+          { kind: 'local' },
+        ),
+      ).rejects.toMatchObject({ data: { code: 'CAPABILITY_DENIED' } })
+      await next.close()
       await session.close()
     } finally {
       await host.host.close()

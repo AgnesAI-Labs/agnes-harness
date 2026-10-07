@@ -66,7 +66,7 @@ function resourceExtension(name: string, log: string[], options: { failOpen?: bo
 }
 
 describe('dynamic ext: rows (stage 2b, D107)', () => {
-  it('keeps late registration on the row and rejects it after unmount', async () => {
+  it('keeps late registration on a pinned row and rejects it after its generation drains', async () => {
     const dataDir = scratch()
     const provider = new ScriptedProvider({
       scripts: [
@@ -117,9 +117,14 @@ describe('dynamic ext: rows (stage 2b, D107)', () => {
       h.host.extensionRows.current().filter((row) => row.id !== `ext:${dynamic.extensionId}`),
     )
     expect(toolNames(h)).not.toContain('late_again')
-    expect(() => captured?.registerTool(fixtureTool('late_after'))).toThrow()
+    expect(session.currentTools().resolve('late_again')).toBeDefined()
+    const next = await h.host.createSession({ cwd: dataDir, key: 'dynamic-after-removal' })
+    expect(next.currentTools().resolve('late_again')).toBeUndefined()
+    await next.close()
     expect(provider.calls).toHaveLength(2)
     await session.close()
+    await h.host.releaseSessionGeneration?.(session.key)
+    expect(() => captured?.registerTool(fixtureTool('late_after'))).toThrow()
     await h.host.close()
   })
 

@@ -124,7 +124,7 @@ describe('a third-party row registers through ctx.extension()', () => {
     await h.host.close()
   })
 
-  it('runs its observe hooks for sessions, and says shutdown to open ones when the row goes', async () => {
+  it('keeps observe hooks on a pinned session until its generation is released', async () => {
     resetProbe()
     const h = await pluginHost(
       pluginSource(`
@@ -141,9 +141,11 @@ describe('a third-party row registers through ctx.extension()', () => {
 
     await h.host.applyRuntimeTarget(targetOf([]))
     await settle()
-    expect(probe().events).toEqual(['session_start', 'shutdown:revoke'])
+    expect(probe().events).toEqual(['session_start'])
     expect(h.host.kernel.registrations(SOURCE)).toEqual([])
     await session.close()
+    await h.host.releaseSessionGeneration?.(session.key)
+    expect(probe().events).toEqual(['session_start', 'shutdown:close'])
     await h.host.close()
   })
 
