@@ -125,6 +125,8 @@ A provider starts a child and returns a handle with events, `sendMessage`, `inte
 
 The preset schema has no child allowlist. Set `allow` and `sessions` on the subagent extension, or call `childAgents.setSessionAllowlist`. An omitted list is unrestricted. An empty list refuses that kind. A set model list requires the caller to name the model.
 
+Optional `ToolContext.subagent` controls (`list`, `models`, `sendMessage`, `interrupt`) are exposed only when the extension declares `subagent: true` and the Host provides them. Without that capability, `job_list` skips child syncing and still lists shell jobs; other subagent calls remain capability-gated.
+
 When fitted, `LoopContext.children` is the parent-bound `ChildAgentSessionService` facade; it uses the configured provider and exposes continuable child handles.
 
 <a id="不同-api-不可混用"></a>

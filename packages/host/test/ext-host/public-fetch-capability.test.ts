@@ -50,11 +50,14 @@ describe('independent public retrieval grant', () => {
       },
     } as unknown as ToolContext
     const denied = capabilityToolContext(manifest(), ctx)
+    for (const method of ['list', 'models', 'sendMessage', 'interrupt'] as const)
+      expect(denied.subagent[method]).toBeUndefined()
     for (const operation of [
-      () => denied.subagent.list?.(),
-      () => denied.subagent.models?.(),
-      () => denied.subagent.sendMessage?.('child', 'next'),
-      () => denied.subagent.interrupt?.('child'),
+      () => denied.subagent.fork('task'),
+      () => denied.subagent.spawn('task'),
+      () => denied.subagent.collect('child'),
+      () => denied.subagent.cancel('child'),
+      () => denied.subagent.resume('child'),
     ])
       expect(operation).toThrow('E_CAPABILITY_UNDECLARED')
     const allowed = capabilityToolContext({ ...manifest(), capabilities: { subagent: true } }, ctx)

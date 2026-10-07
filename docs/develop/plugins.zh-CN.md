@@ -113,6 +113,8 @@ persistence:
 
 预设 schema 没有子代理允许名单。在 subagent 扩展上设置 `allow` 和 `sessions`，或调用 `childAgents.setSessionAllowlist`。省略名单表示不限制。空名单拒绝这一类。设置了模型名单时，调用方必须写出模型名。
 
+`ToolContext.subagent` 的可选控制方法（`list`、`models`、`sendMessage`、`interrupt`）仅在扩展声明 `subagent: true` 且 Host 提供方法时暴露。没有该能力时，`job_list` 跳过子代理同步，仍可列出 shell jobs；其他子代理调用继续受能力检查约束。
+
 可选 `LoopContext.children` 使用绑定父会话的 `ChildAgentSessionService` facade，按配置选择 provider 并提供可继续对话的子代理。
 
 ## 不同 API 不可混用

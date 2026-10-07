@@ -96,7 +96,8 @@ export function capabilityToolContext(manifest: ExtensionManifest, context: Tool
         if (caps.subagent !== true) refuse(id, 'subagent')
         return context.subagent.resume(childKey)
       },
-      ...(context.subagent?.list
+      // Optional controls must advertise the extension’s grant, so callers can skip child syncing.
+      ...(caps.subagent === true && context.subagent?.list
         ? {
             list: () => {
               if (caps.subagent !== true) refuse(id, 'subagent')
@@ -104,7 +105,7 @@ export function capabilityToolContext(manifest: ExtensionManifest, context: Tool
             },
           }
         : {}),
-      ...(context.subagent?.models
+      ...(caps.subagent === true && context.subagent?.models
         ? {
             models: () => {
               if (caps.subagent !== true) refuse(id, 'subagent')
@@ -112,7 +113,7 @@ export function capabilityToolContext(manifest: ExtensionManifest, context: Tool
             },
           }
         : {}),
-      ...(context.subagent?.sendMessage
+      ...(caps.subagent === true && context.subagent?.sendMessage
         ? {
             sendMessage: (childKey: string, text: string, signal?: AbortSignal) => {
               if (caps.subagent !== true) refuse(id, 'subagent')
@@ -120,7 +121,7 @@ export function capabilityToolContext(manifest: ExtensionManifest, context: Tool
             },
           }
         : {}),
-      ...(context.subagent?.interrupt
+      ...(caps.subagent === true && context.subagent?.interrupt
         ? {
             interrupt: (childKey: string) => {
               if (caps.subagent !== true) refuse(id, 'subagent')
