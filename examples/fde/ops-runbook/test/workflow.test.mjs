@@ -18,6 +18,9 @@ const context = {
 test('ops-runbook completes through the public loop and tool ports', async () => {
   const run = await runWorkflow(main, { context })
   assert.equal(run.finished[0], 'completed')
+  const native = await runWorkflow(main, { context, parkTool: 'shell' })
+  assert.equal(native.finished[0], 'completed')
+  assert.equal(native.checkpoint.state.data.diagnosticJob, 'fixture-job')
   assert.ok(run.checkpoint.state.data.deliverables.some((file) => file.ref.size > 0))
   assert.ok(run.calls.some((call) => call.name === 'present'))
   assert.ok(run.calls.some((call) => call.name === 'ask_user_question'))

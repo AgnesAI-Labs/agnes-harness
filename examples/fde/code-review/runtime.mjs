@@ -110,9 +110,11 @@ export function makeBundle({ name, tools, stages, readOnly = false, validateSett
   const outputPath = new RegExp(`^fde-output/${name}/[a-f0-9]{64}/[0-9]+-report\\.(md|html)$`)
   const policy = {
     id: `fde.${name}`,
-    version: '2.0.0',
+    version: '3.0.0',
     decide(input, signal) {
       signal.throwIfAborted()
+      if (input.call?.name === 'exit_plan_mode')
+        return { effect: 'ask', reason: 'Approve the workflow plan through the official ticket' }
       if (input.call?.name === 'write' && outputPath.test(input.call.args?.path ?? ''))
         return {
           effect: 'allow',
@@ -127,7 +129,23 @@ export function makeBundle({ name, tools, stages, readOnly = false, validateSett
         : { effect: 'allow', reason: 'Read-only business evidence' }
     },
   }
+  const plan =
+    '# ' +
+    name +
+    ' workflow plan\n\n' +
+    stages.map((stage, i) => i + 1 + '. ' + stage.name).join('\n') +
+    '\n\nPresent generated reports. Keep source evidence read-only where configured. Business actions require a separate Proceed/Cancel answer and backend tool permission; unknown effects are never replayed.'
   const workflow = [
+    {
+      name: 'approve-plan',
+      approval: true,
+      async run(ctx, state, signal) {
+        const active = (await ctx.turn.view())?.prompt.sections.some((section) => section.id === 'plan-mode')
+        if (!active && !state.approvalCall) return { plan: { required: false } }
+        checked(await ctx.tools.execute({ name: 'exit_plan_mode', args: { plan } }, signal))
+        return { plan: { required: true, approved: true } }
+      },
+    },
     ...stages,
     {
       name: 'present-deliverables',
@@ -138,7 +156,7 @@ export function makeBundle({ name, tools, stages, readOnly = false, validateSett
   ]
   function createFactory(settings = {}) {
     settings = validateSettings(settings)
-    const codec = loopCheckpointCodec(2, (state) => {
+    const codec = loopCheckpointCodec(3, (state) => {
       if (
         !state ||
         state.workflow !== name ||
@@ -149,6 +167,14 @@ export function makeBundle({ name, tools, stages, readOnly = false, validateSett
         typeof state.data !== 'object' ||
         typeof state.input !== 'string' ||
         typeof state.pending !== 'boolean' ||
+        typeof state.approvalWaiting !== 'boolean' ||
+        (state.explanation !== null && typeof state.explanation !== 'string') ||
+        (state.approvalCall !== null &&
+          (typeof state.approvalCall?.invocationId !== 'string' ||
+            typeof state.approvalCall?.name !== 'string' ||
+            !state.approvalCall.args ||
+            typeof state.approvalCall.args !== 'object')) ||
+        (state.approvalWaiting && (!state.pending || !state.approvalCall)) ||
         !state.settings ||
         typeof state.settings !== 'object' ||
         !Number.isInteger(state.confirmed) ||
@@ -180,6 +206,9 @@ export function makeBundle({ name, tools, stages, readOnly = false, validateSett
       input: '',
       settings,
       pending: false,
+      approvalWaiting: false,
+      approvalCall: null,
+      explanation: null,
       waiting: null,
       confirmed: -1,
       outputKey: '',
@@ -209,6 +238,27 @@ export function makeBundle({ name, tools, stages, readOnly = false, validateSett
             if (!ctx.input.pending()) return { outcome: 'idle', phase: 'idle' }
             state = initial()
             ended = false
+          }
+          if (state.approvalWaiting) {
+            const continuation = await ctx.input.resumeParked()
+            if (continuation === 'waiting' || continuation === false)
+              return { outcome: 'parked', phase: 'tool-approval', reason: 'parked' }
+            if (continuation === 'blocked')
+              return { outcome: 'turn-ended', phase: 'approval-blocked', reason: 'blocked' }
+            const drained = await ctx.tools.drain(signal)
+            if (drained.outcome === 'parked') return drained
+            const receipt = await ctx.effects.status(state.approvalCall.invocationId)
+            if (receipt.status !== 'responded') {
+              await ctx.events.finish('blocked', {
+                code: 'FDE_OUTCOME_UNKNOWN',
+                message: 'No native tool receipt; inspect before starting another run.',
+              })
+              return { outcome: 'turn-ended', phase: 'unknown', reason: 'blocked' }
+            }
+            // Re-enter only this exact call: Core returns its bound receipt, never dispatches it twice.
+            state.approvalWaiting = false
+            state.pending = false
+            await save()
           }
           if (state.pending) {
             if (!(await ctx.input.accept()))
@@ -279,11 +329,53 @@ export function makeBundle({ name, tools, stages, readOnly = false, validateSett
               state.pending = false
               return await park()
             }
-            const data = await stage.run(ctx, state, signal)
+            const needsApproval = stage.approval || (question && state.confirmed === state.index)
+            const activePlan = (await ctx.turn.view())?.prompt.sections.some(
+              (section) => section.id === 'plan-mode',
+            )
+            if (
+              needsApproval &&
+              (stage.name !== 'approve-plan' || activePlan || state.approvalCall) &&
+              state.explanation === null
+            ) {
+              // A model response also supplies the original assistant edge for Core's ticket continuation.
+              state.explanation = await modelText(
+                ctx,
+                'Briefly explain the next fixed workflow step without changing it. Plan approval does not authorize later business actions.',
+                { stage: stage.name, plan },
+                signal,
+              )
+              await save()
+            }
+            const stageCtx = needsApproval
+              ? {
+                  ...ctx,
+                  tools: {
+                    ...ctx.tools,
+                    async execute(call, callSignal) {
+                      const invocationId =
+                        'fde:' +
+                        state.outputKey +
+                        ':' +
+                        state.index +
+                        ':' +
+                        createHash('sha256').update(JSON.stringify(call)).digest('hex')
+                      if (state.approvalCall && state.approvalCall.invocationId !== invocationId)
+                        throw new Error('Approval receipt does not match the original call')
+                      state.approvalCall = { ...call, invocationId }
+                      await save()
+                      return ctx.tools.execute(state.approvalCall, callSignal)
+                    },
+                  },
+                }
+              : ctx
+            const data = await stage.run(stageCtx, state, signal)
             signal.throwIfAborted()
             state.data = { ...state.data, ...data }
             state.index++
             state.pending = false
+            state.approvalCall = null
+            state.explanation = null
             await save()
             await ctx.events.emit('assistant/message', {
               content: [{ type: 'text', text: `${stage.name}:\n${JSON.stringify(data, null, 2)}` }],
@@ -291,6 +383,12 @@ export function makeBundle({ name, tools, stages, readOnly = false, validateSett
             return { outcome: 'running', phase: stage.name }
           } catch (error) {
             signal.throwIfAborted()
+            if (error.code === 'PARKED') {
+              // Core already closed the turn. Never try to finish it a second time.
+              state.approvalWaiting = state.approvalCall !== null
+              await save()
+              return { outcome: 'parked', phase: 'tool-approval', reason: 'parked' }
+            }
             await ctx.events.finish('error', { code: 'FDE_STAGE_FAILED', message: error.message })
             return { outcome: 'turn-ended', phase: 'failed', reason: 'error' }
           }
@@ -299,7 +397,7 @@ export function makeBundle({ name, tools, stages, readOnly = false, validateSett
     }
     return defineLoop({
       id: `fde.${name}`,
-      version: '2.0.0',
+      version: '3.0.0',
       capabilities: ['tools', 'model', 'checkpoint'],
       codec,
       create: (ctx) => driver(ctx, initial()),
@@ -314,7 +412,14 @@ export function makeBundle({ name, tools, stages, readOnly = false, validateSett
         ctx.effect(() => off)
       }
       registerLoopPlugin(ctx, source, createFactory(config.workflow))
-      registerToolPolicyPlugin(ctx, source, policy)
+      registerToolPolicyPlugin(ctx, source, {
+        ...policy,
+        async decide(input, signal) {
+          // Consume the shipped policy through its public registry, preserving /plan write/exec denial.
+          const base = await ctx.toolPolicies.resolve('default').decide(input, signal)
+          return base.effect === 'deny' ? base : policy.decide(input, signal)
+        },
+      })
       const off = ctx.skills.register({
         name,
         description: `Business playbook for ${name}`,

@@ -72,7 +72,7 @@
         "profile": {
           "loop": {
             "id": "fde.device-inspection",
-            "version": "2.0.0"
+            "version": "3.0.0"
           },
           "skills": [
             "device-inspection"

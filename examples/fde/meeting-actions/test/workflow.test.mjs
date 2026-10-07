@@ -26,6 +26,12 @@ test('meeting evidence exports owners/dates and a complete downloadable markdown
   assert.equal(data.receipt.externalDelivery, false)
 })
 test('refused send retains the export without a receipt and pending recovery never repeats it', async () => {
+  const native = await runWorkflow(main, { parkTool: 'fde_meeting_send' })
+  assert.equal(native.finished[0], 'completed')
+  assert.equal(native.checkpoint.state.data.receipt.externalDelivery, false)
+  const nativeDenied = await runWorkflow(main, { parkTool: 'fde_meeting_send', nativeApprove: false })
+  assert.equal(nativeDenied.finished[0], 'error')
+  assert.equal(nativeDenied.checkpoint.state.data.receipt, undefined)
   const waiting = await runWorkflow(main, { stopAtQuestion: true })
   assert.equal(waiting.steps.at(-1).outcome, 'parked')
   assert.equal(waiting.checkpoint.state.data.receipt, undefined)

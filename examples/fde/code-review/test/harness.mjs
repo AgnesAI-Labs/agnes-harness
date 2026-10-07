@@ -10,7 +10,7 @@ import { Value } from '@sinclair/typebox/value'
 import { readMeta, writeMeta } from '../runtime.mjs'
 
 /** Script official public tool-port results; no copies of official runtime implementations. */
-function officialFixtures({ searchUnavailable = false } = {}) {
+function officialFixtures({ searchUnavailable = false, planState } = {}) {
   const files = new Map(),
     observed = new Set(),
     calls = []
@@ -22,6 +22,15 @@ function officialFixtures({ searchUnavailable = false } = {}) {
     content: [{ type: 'text', text: data }],
     ...(details ? { details } : {}),
   })
+  add(
+    'exit_plan_mode',
+    object({ plan: Type.String({ minLength: 1, maxLength: 100000 }) }),
+    () => {
+      planState.active = false
+      return output('Plan approved. Plan mode is off; write and exec tools are available.')
+    },
+    { ...writeMeta, isDestructive: false, requiresApproval: 'never' },
+  )
   add(
     'ask_user_question',
     object({
@@ -119,12 +128,34 @@ export async function runWorkflow(
     answer = 'Proceed',
     stopAtQuestion = false,
     searchUnavailable = false,
+    planMode = false,
+    approvePlan = true,
+    parkTool = null,
+    stopAtApproval = false,
+    nativeApprove = true,
   } = {},
 ) {
+  const planState = { active: planMode }
   const loops = new Map(),
-    policies = new Map()
+    policies = new Map([
+      [
+        'default',
+        {
+          id: 'default',
+          decide(input) {
+            if (planState.active && input.call.name !== 'exit_plan_mode' && !input.policy.isReadOnly)
+              return { effect: 'deny', reason: 'Plan mode blocks writes and exec' }
+            return { effect: 'allow', reason: 'Scripted default policy' }
+          },
+        },
+      ],
+    ])
   const skills = createSkillCandidateRegistry({ barrier: { quiesce: async (_id, publish) => publish({}) } })
   const registry = (map) => ({
+    resolve(id) {
+      if (!map.has(id)) throw new Error('Missing public provider: ' + id)
+      return map.get(id)
+    },
     register(_source, provider) {
       map.set(provider.id, provider)
       return async () => {
@@ -146,22 +177,38 @@ export async function runWorkflow(
       },
     },
   })
-  const fixtures = officialFixtures({ searchUnavailable })
+  const fixtures = officialFixtures({ searchUnavailable, planState })
+  let parkedCall = null
+  const nativeReceipts = new Map()
   try {
     for (const definition of extraTools) host.tools.set(definition.name, definition)
     const factory = [...loops.values()][0],
-      policy = [...policies.values()][0]
-    const execute = async (call, signal) => {
+      policy = [...policies.values()].find((entry) => entry.id !== 'default')
+    const execute = async (call, signal, continuation = false) => {
       fixtures.calls.push(structuredClone(call))
       const definition = host.tools.get(call.name) ?? fixtures.definitions.get(call.name)
       if (!definition) throw new Error('Unregistered tool: ' + call.name)
       assert.ok(Value.Check(definition.parameters, call.args), 'Invalid public tool arguments: ' + call.name)
-      const decision = policy.decide({ policy: resolveToolCallPolicy(definition, call.args), call }, signal)
-      if (decision.effect === 'deny' || (decision.effect === 'ask' && !approve))
+      const decision = await policy.decide(
+        { policy: resolveToolCallPolicy(definition, call.args), call },
+        signal,
+      )
+      if (!continuation && call.name === parkTool) {
+        parkedCall = structuredClone(call)
+        throw Object.assign(new Error('PARKED'), { code: 'PARKED' })
+      }
+      const allowed = call.name === 'exit_plan_mode' ? approvePlan : approve
+      if (
+        decision.effect === 'deny' ||
+        (decision.effect === 'ask' && !allowed) ||
+        (continuation && !nativeApprove)
+      )
         return { content: [{ type: 'text', text: 'Human refused the business action' }], isError: true }
-      return host.tools.has(call.name)
-        ? host.invoke(call.name, call.args, signal)
-        : definition.execute(call.args)
+      const result = host.tools.has(call.name)
+        ? await host.invoke(call.name, call.args, signal)
+        : await definition.execute(call.args)
+      if (call.name === 'exit_plan_mode') turnView.prompt.sections = []
+      return result
     }
     const turnView = {
       turnId: 1,
@@ -170,32 +217,75 @@ export async function runWorkflow(
       history: [],
       tools: [],
       model: { slot: 'primary', id: 'demo-model', capabilities: null },
-      prompt: { sections: [], runtime: {} },
+      prompt: {
+        sections: planMode
+          ? [{ id: 'plan-mode', order: 160, source: '@agnes/base', text: 'Plan mode is active.' }]
+          : [],
+        runtime: {},
+      },
       budget: { maxSteps: null, stepsUsed: 0, creditsUsed: 0, perRequestCap: null, onExceed: 'deny' },
     }
     const requests = []
     const drive = async (saved, text) => {
-      const run = await driveLoop(factory, {
+      const decorate = (ctx) => ({
+        ...ctx,
+        input: {
+          ...ctx.input,
+          resumeParked: async () => (parkedCall ? 'opened' : 'waiting'),
+        },
+        effects: {
+          status: async (id) =>
+            nativeReceipts.has(id)
+              ? { status: 'responded', invocationId: id, checkpoint: saved, result: nativeReceipts.get(id) }
+              : { status: 'may-have-sent', invocationId: id, checkpoint: saved },
+        },
+        tools: {
+          ...ctx.tools,
+          execute: (call, signal) =>
+            nativeReceipts.has(call.invocationId)
+              ? Promise.resolve(nativeReceipts.get(call.invocationId))
+              : ctx.tools.execute(call, signal),
+          drain: async (signal) => {
+            const result = await execute(parkedCall, signal, true)
+            // Match Core's durable receipt surface: transient details/structured are not retained.
+            nativeReceipts.set(parkedCall.invocationId, {
+              content: result.content,
+              ...(result.isError ? { isError: true } : {}),
+            })
+            return { outcome: 'running', phase: 'checkpoint' }
+          },
+        },
+      })
+      const drivenFactory = parkTool
+        ? {
+            ...factory,
+            create: (ctx) => factory.create(decorate(ctx)),
+            resume: (ctx, checkpoint) => factory.resume(decorate(ctx), checkpoint),
+          }
+        : factory
+      const run = await driveLoop(drivenFactory, {
         until: 'idle',
         checkpoint: saved,
         turnView,
-        inputs: [{ content: [{ type: 'text', text }] }],
-        replies: replies ?? [
-          [
+        inputs: saved?.state.approvalWaiting ? [] : [{ content: [{ type: 'text', text }] }],
+        replies:
+          replies ??
+          Array.from({ length: 3 }, () => [
             { type: 'text_delta', delta: 'Reviewed fixture evidence.' },
             { type: 'done', reason: 'stop' },
-          ],
-        ],
+          ]),
         tools: { execute, batch: (calls, signal) => Promise.all(calls.map((call) => execute(call, signal))) },
       })
       requests.push(...run.requests)
       return run
     }
     let run = await drive(checkpoint, input)
+    if (!stopAtApproval && run.checkpoint.state.approvalWaiting) run = await drive(run.checkpoint, input)
     if (!stopAtQuestion && run.checkpoint.state.waiting) {
       const waiting = run.checkpoint.state.waiting
       run = await drive(run.checkpoint, answerPrefix(waiting.id) + JSON.stringify({ proceed: answer }))
     }
+    if (!stopAtApproval && run.checkpoint.state.approvalWaiting) run = await drive(run.checkpoint, input)
     return {
       ...run,
       requests,

@@ -6,10 +6,12 @@ import { runWorkflow } from './harness.mjs'
 
 const context = {}
 test('data-report completes through the public loop and tool ports', async () => {
-  const run = await runWorkflow(main, { context })
+  const run = await runWorkflow(main, { context, planMode: true })
   assert.equal(run.finished[0], 'completed')
   assert.ok(run.checkpoint.state.data.deliverables.some((file) => file.ref.size > 0))
   assert.ok(run.calls.some((call) => call.name === 'present'))
+  assert.equal(run.checkpoint.state.data.plan.approved, true)
+  assert.match(run.calls.find((call) => call.name === 'exit_plan_mode').args.plan, /analyze|analyse/)
 
   assert.ok(run.skills.includes('data-report'))
   const data = run.checkpoint.state.data
@@ -22,6 +24,26 @@ test('data-report completes through the public loop and tool ports', async () =>
   assert.throws(() => parseCsv('month,revenue,cost\n"2026-01",1,1'), /unquoted/)
 })
 test('refusal and cancellation preserve workflow boundaries', async () => {
+  const waiting = await runWorkflow(main, {
+    planMode: true,
+    parkTool: 'exit_plan_mode',
+    stopAtApproval: true,
+  })
+  assert.equal(waiting.steps.at(-1).outcome, 'parked')
+  assert.equal(waiting.checkpoint.state.approvalWaiting, true)
+  assert.equal(waiting.checkpoint.state.data.analysis, undefined)
+  assert.equal(Object.keys(waiting.files).length, 0)
+  const approved = await runWorkflow(main, { planMode: true, parkTool: 'exit_plan_mode' })
+  assert.equal(approved.finished[0], 'completed')
+  assert.equal(approved.checkpoint.state.data.plan.approved, true)
+  const refusedPlan = await runWorkflow(main, {
+    planMode: true,
+    parkTool: 'exit_plan_mode',
+    nativeApprove: false,
+  })
+  assert.equal(refusedPlan.finished[0], 'error')
+  assert.equal(refusedPlan.checkpoint.state.data.analysis, undefined)
+  assert.equal(Object.keys(refusedPlan.files).length, 0)
   const stop = new AbortController()
   stop.abort(new Error('Stopped'))
   await assert.rejects(driveLoop(factory, { signal: stop.signal }), /Stopped/)

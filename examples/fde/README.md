@@ -29,7 +29,9 @@ Sending, CRM notes, runbook restarts, device actions, adjusting entries and recr
 
 All twelve bundles use official `write` and `present` for bounded report files and standard artifact Open/Download cards. The meeting panel renders action evidence without a custom download path. Knowledge QA optionally uses `web_search` for an explicitly configured public query; private questions/documents remain local. Operations use official `shell` background jobs and `job_output`; operators can inspect/stop owned jobs with `job_list`/`job_kill`. See [official default tools](../../docs/reference/default-tools.md) for deployment capabilities and limits. Existing profiles must admit the question/deliverable projection capability.
 
-Loop version 2.0.0/checkpoint codec 2 stores pending questions; use a new session after upgrading. Old checkpoints fail closed. TODO: adopt official Plan mode when Stream E2 merges; fixed stages/DAGs remain in place.
+Loop version 3.0.0/checkpoint codec 3 stores pending questions and native single-call approval continuations; use a new session after upgrading. Old checkpoints fail closed.
+
+Enable official Plan mode with `/plan on` in Web/TUI **before submitting a fresh task**. The loop detects the public plan-mode prompt section and submits its fixed business steps with `exit_plan_mode`. The official approval card must be approved before connectors, reports or commands run. A denied plan stops the workflow; an inactive plan mode skips this gate. The example policy preserves the shipped default policy's plan-mode denials. Plan approval does not replace a later business question or tool permission. Native single-call tickets resume through public continuation ports and the original invocation receipt; an unknown receipt blocks replay.
 
 ## From example to customer
 

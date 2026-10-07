@@ -46,6 +46,7 @@ const stages = [
   },
   {
     name: 'diagnose',
+    approval: true,
     async run(ctx, _state, signal) {
       const output = checked(
         await ctx.tools.execute(
@@ -60,8 +61,10 @@ const stages = [
           signal,
         ),
       )
-      if (typeof output.details?.jobId !== 'string') throw new Error('No session-owned diagnostic job')
-      return { diagnosticJob: output.details.jobId }
+      // Core's recovered tool receipt contains canonical text, without transient UI details.
+      const jobId = output.details?.jobId ?? /^background job (\S+) started/.exec(text(output))?.[1]
+      if (typeof jobId !== 'string') throw new Error('No session-owned diagnostic job')
+      return { diagnosticJob: jobId }
     },
   },
   {
