@@ -204,6 +204,15 @@
         "resolvedProfileHash": { "type": ["string", "null"], "maxLength": 128 },
         "preset": { "type": ["string", "null"], "maxLength": 128 },
         "agnesVersion": { "type": "string", "maxLength": 64 },
+        "loop": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["id", "version"],
+          "properties": {
+            "id": { "type": "string", "minLength": 1, "maxLength": 256 },
+            "version": { "type": "string", "minLength": 1, "maxLength": 64 }
+          }
+        },
         "modelSettings": {
           "type": "array",
           "items": { "$ref": "#/$defs/SessionModelSelection" },

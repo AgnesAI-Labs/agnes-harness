@@ -514,6 +514,7 @@ export class SessionLogImpl {
       resolvedProfileHash: string | null
       writerRunId: string
       lane: string
+      loop?: { id: string; version: string }
       modelSelections?: Array<{
         slot: string
         route: string
@@ -611,6 +612,7 @@ export class SessionLogImpl {
           trust: 'trusted',
           data: {
             key: childKey,
+            ...(opener.loop ? { loop: { ...opener.loop } } : {}),
             parent: { key: this.o.key, boundarySeq },
             resolvedProfileHash: opener.resolvedProfileHash,
             preset: opener.preset,

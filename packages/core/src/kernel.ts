@@ -1,4 +1,11 @@
-import type { HookContext, Logger, PlatformFacts } from '@agnes/extension-api'
+import type {
+  HookContext,
+  Logger,
+  LoopFactory,
+  LoopRegistryPort,
+  LoopSelection,
+  PlatformFacts,
+} from '@agnes/extension-api'
 import type { Actor, ApprovalMode, Provider, SessionStart } from '@agnes/protocol'
 import { KernelChildren } from './child/factory.js'
 import { hasChildControl } from './child/store.js'
@@ -16,6 +23,8 @@ import { InvariantRegistry } from './invariants/registry.js'
 import { forkPaths } from './log/fork-seed.js'
 import type { Timers } from './log/session-log.js'
 import type { StorageAdapter } from './log/storage.js'
+import { DEFAULT_LOOP } from './loop/default-driver.js'
+import { LoopRegistry } from './loop/registry.js'
 import { ProjectionRegistry } from './project/named.js'
 import { openTracked } from './reduce/tracker.js'
 import { HookRegistry } from './registry/hooks.js'
@@ -77,6 +86,8 @@ export const CORE_DIAG_NAMES = [
 export type CoreDiagName = (typeof CORE_DIAG_NAMES)[number]
 
 export type KernelOptions = {
+  loops?: LoopRegistryPort
+  loop?: LoopSelection
   storage: StorageAdapter
   seams: SeamImplementations
   provider: Provider
@@ -132,6 +143,7 @@ export type KernelOptions = {
 }
 export type { RuntimePromptPreload } from './runtime/current.js'
 export type SessionOptions = {
+  loop?: LoopSelection
   actor: Actor
   preset?: PresetView
   resolvedProfileHash: string | null
@@ -235,6 +247,7 @@ function lifecyclePort(session: SessionImpl, hooks: HookEngine, logger: Logger):
 
 /** The composition root: it fits the seams, opens ledgers, and hands back assembled sessions. */
 export class Kernel {
+  readonly loops: LoopRegistryPort
   readonly tools = new ToolRegistry()
   readonly sessions = new Map<SessionKey, SessionImpl>()
   readonly clock: Clock
@@ -254,6 +267,7 @@ export class Kernel {
   private readonly factoryHooks = new WeakSet<HookPort>()
 
   private constructor(readonly o: KernelOptions) {
+    this.loops = o.loops ?? new LoopRegistry()
     this.clock = o.clock ?? (() => Date.now())
     this.ids = o.ids ?? defaultIds(this.clock)
     const logger = o.logger ?? NO_LOG
@@ -342,6 +356,7 @@ export class Kernel {
         cwd: so.cwd,
         preset: preset.name,
         writerRunId: so.writerRunId,
+        ...(so.loop ? { loop: JSON.stringify(so.loop) } : {}),
         parentKey: so.parent?.key,
         parentBoundary: so.parent?.boundarySeq,
       }
@@ -353,6 +368,7 @@ export class Kernel {
         cwd: existing.d.cwd,
         preset: existing.preset.name,
         writerRunId: existing.writerRunId,
+        ...(so.loop ? { loop: JSON.stringify(existing.loop) } : {}),
         parentKey: existing.d.log.parent?.key,
         parentBoundary: existing.d.log.parent?.boundarySeq,
       }
@@ -377,6 +393,7 @@ export class Kernel {
     await assertFsEnforces(fsOps, fitted.sandbox.fsPolicy())
     let forked: Awaited<ReturnType<SessionImpl['d']['log']['forkInto']>> | undefined
     if (so.parent) {
+      this.loops.resolve(so.loop ?? preset.loop ?? this.o.loop ?? DEFAULT_LOOP)
       const parent = this.sessions.get(so.parent.key)
       if (!parent)
         throw new CoreError('E_DEPTH_EXCEEDED', `parent session ${so.parent.key} is not open`, {
@@ -389,6 +406,7 @@ export class Kernel {
         resolvedProfileHash: so.resolvedProfileHash,
         writerRunId: so.writerRunId,
         lane,
+        loop: so.loop ?? preset.loop ?? this.o.loop ?? DEFAULT_LOOP,
         modelSelections: Object.entries(preset.model.id).flatMap(([slot, model]) => {
           const route = preset.model.route[slot]
           return model && route
@@ -437,6 +455,16 @@ export class Kernel {
       throw error
     }
     const { log, tracker, surface, ui, registersRebuilt } = tracked
+    let loopFactory: LoopFactory
+    try {
+      const selection = tracker.state.session
+        ? (tracker.state.session.loop ?? DEFAULT_LOOP)
+        : (so.loop ?? preset.loop ?? this.o.loop ?? DEFAULT_LOOP)
+      loopFactory = this.loops.resolve(selection)
+    } catch (error) {
+      await log.close()
+      throw error
+    }
     const workspaceInvocation = so.workspaceInvocation ?? so.workspaceRuntime?.invocation
     const workspaceIdentity = so.workspaceIdentity ?? so.workspaceRuntime?.identity
     const quietGroup = so.parent ? (this.sessions.get(so.parent.key)?.d.quietGroup ?? so.parent.key) : key
@@ -464,6 +492,8 @@ export class Kernel {
       lane,
       runtime,
       provider: this.o.provider,
+      loopFactory,
+      loopResume: !forked && Boolean(tracker.state.session),
       ...(this.o.withModelSnapshot ? { withModelSnapshot: this.o.withModelSnapshot } : {}),
       registry: this.tools,
       resources: this.resources,

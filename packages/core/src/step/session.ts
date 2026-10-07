@@ -2,6 +2,11 @@ import type {
   HookPayloadMap,
   HookReturnMap,
   Logger,
+  LoopContext,
+  LoopDriver,
+  LoopFactory,
+  LoopSelection,
+  LoopStepOutcome,
   ToolContext,
   ToolMeta,
   ToolResult,
@@ -44,7 +49,6 @@ import {
   type HostDispatchObservation,
   type HostToolDispatchPort,
 } from '../effects/tool-dispatch.js'
-import { artifactUri } from '../effects/tool-result.js'
 import type { SeamRuntime } from '../effects/wrap.js'
 import type { InvariantRegistry } from '../invariants/registry.js'
 // A type-only import, erased at compile time, so it is not a runtime cycle back to the kernel.
@@ -52,6 +56,9 @@ import type { CoreDiagName } from '../kernel.js'
 import { scanAll, scanPages } from '../log/scan-pages.js'
 import type { SessionLogImpl, Timers } from '../log/session-log.js'
 import { SCAN_PAGE_MAX, type ScanQuery } from '../log/storage.js'
+import { runDeferred } from '../loop/default/deferred.js'
+import { bindDefaultLoopPorts, defaultLoopFactory } from '../loop/default-driver.js'
+import { createLoopContext, disposeLoopContext } from '../loop/ports.js'
 import type {
   AuxiliaryVisionAssemblyInput,
   AuxiliaryVisionProductionAdmission,
@@ -78,15 +85,10 @@ import {
   type UIProjectionCell,
 } from '../project/ui.js'
 import { contextTokensAtCut, projectUsage } from '../project/usage.js'
-import type { ArtifactJob, Inbox, InboxItem } from '../reduce/shapes.js'
+import type { Inbox, InboxItem } from '../reduce/shapes.js'
 import { type EffectTree, effectTree } from '../reduce/state.js'
 import { currentOp, type StateTracker } from '../reduce/tracker.js'
 import { ResourceRegistry } from '../registry/resources.js'
-import {
-  hasAuthenticToolPolicyHash,
-  hasCompleteToolPolicyEnvelope,
-  hasTrustedToolCallProvenance,
-} from '../registry/tool-policy.js'
 import type { RegistrySnapshot, ToolRegistry, ToolSource } from '../registry/tools.js'
 import type { PromptSection } from '../request/contribute.js'
 import type { ContractRef, DeriveOutput, RequestHeaderData } from '../request/derive.js'
@@ -104,7 +106,6 @@ import { expireApprovals, resumeApproval } from './approval-callback.js'
 import { restoreSessionGrants } from './approval-grants.js'
 import { runCompaction } from './compaction.js'
 import { type AbortResult, abortSession, closeTurn, finishAborted } from './control.js'
-import { deferredEffectId } from './deferred.js'
 import { sysEvent } from './events.js'
 import { appendExtensionEvent, prepareExtensionEvent } from './ext-events.js'
 import { checkpointRoutine, contextWindowFor } from './gate.js'
@@ -128,7 +129,6 @@ import { type PreviewDelta, PreviewHub, type PreviewSnapshot } from './preview.j
 import { type CoreOpName, invokeTool, runCoreReplacement, setModel, setPreset } from './reentry.js'
 import { type ResumeMode, type ResumeReport, resumeSession } from './resume.js'
 import { runToolsPhase } from './tools.js'
-import { stepVerifyInput } from './verify-input.js'
 
 type OperationCommon = {
   name: string
@@ -320,18 +320,7 @@ export const noCompaction: CompactionPort = {
   onOverflow: () => 'failure',
 }
 
-export type StepOutcome = {
-  phase:
-    | 'idle'
-    | 'checkpoint'
-    | 'inference'
-    | 'tools'
-    | 'compaction'
-    | 'deferred'
-    | 'failure_drain'
-    | 'terminal'
-  reason?: TurnEndReason
-}
+export type StepOutcome = LoopStepOutcome
 export type TurnEndReason =
   | 'completed'
   | 'aborted'
@@ -351,6 +340,8 @@ export type SessionDeps = {
   lane: string
   runtime: SeamRuntime
   provider: Provider
+  loopFactory?: LoopFactory
+  loopResume?: boolean
   withModelSnapshot?: <T>(operation: () => Promise<T>) => Promise<T>
   /**
    * Trusted host boundary for a conservative total-input-token bound when a wire request contains
@@ -494,6 +485,9 @@ function webTurns(owners: TraceOwners, traces: ReadonlyMap<string, ChildTrace | 
 
 export class SessionImpl {
   readonly d: SessionDeps
+  readonly loop: LoopSelection
+  private loopDriver!: LoopDriver
+  private loopContext?: LoopContext
   private fallbackHooks: HookPort
   private readonly fallbackResources: ResourceRegistry
   compaction: CompactionPort
@@ -579,6 +573,10 @@ export class SessionImpl {
 
   constructor(deps: SessionDeps) {
     this.d = deps
+    this.loop = Object.freeze({
+      id: (deps.loopFactory ?? defaultLoopFactory).id,
+      version: (deps.loopFactory ?? defaultLoopFactory).version,
+    })
     this.fallbackHooks = deps.hooks ?? noopHooks
     this.fallbackResources = deps.resources ?? new ResourceRegistry()
     this.compaction = deps.compaction ?? noCompaction
@@ -659,12 +657,36 @@ export class SessionImpl {
 
   private initialModelSettingsRestored = false
 
+  private async initializeLoop(resumed = false): Promise<void> {
+    if (this.loopDriver) return
+    const ctx = await createLoopContext(this)
+    this.loopContext = ctx
+    bindDefaultLoopPorts(ctx, {
+      session: this,
+      continueParked: () => continueParked(this),
+      finishAborted: () => finishAborted(this),
+      checkpoint: () => checkpointRoutine(this),
+    })
+    const factory = this.d.loopFactory ?? defaultLoopFactory
+    const checkpoint =
+      ctx.checkpoints.read() ??
+      (resumed && factory === defaultLoopFactory ? factory.codec.encode(this.op()) : null)
+    if (resumed && !checkpoint) throw new Error('Pinned loop checkpoint is missing')
+    if (checkpoint) factory.codec.decode(checkpoint)
+    this.loopDriver = resumed && checkpoint ? factory.resume(ctx, checkpoint) : factory.create(ctx)
+    if (!resumed && factory !== defaultLoopFactory) await ctx.checkpoints.write(this.loopDriver.checkpoint())
+  }
+
   /** Idempotent: a reopened ledger already carries its session/start and must not gain a second. */
   async start(): Promise<void> {
     if (this.state.session) {
+      const pinned = this.state.session.loop ?? defaultLoopFactory
+      if (pinned.id !== this.loop.id || pinned.version !== this.loop.version)
+        throw new Error('Session loop does not match its persisted identity')
       if (!this.initialModelSettingsRestored)
         this.restoreInitialModelSettings(this.state.session.modelSettings)
       await this.restoreYolo()
+      await this.initializeLoop(this.d.loopResume ?? true)
       return
     }
     const modelSettings: NonNullable<SessionStart['modelSettings']> = []
@@ -700,6 +722,7 @@ export class SessionImpl {
         actor: this.d.actor,
         data: {
           key: this.key,
+          loop: { ...this.loop },
           resolvedProfileHash: this.d.resolvedProfileHash,
           preset: this.preset.name,
           agnesVersion: this.d.agnesVersion ?? '0.0.0',
@@ -709,6 +732,7 @@ export class SessionImpl {
       },
     ])
     this.restoreInitialModelSettings(modelSettings)
+    await this.initializeLoop()
   }
 
   private restoreInitialModelSettings(models: SessionStart['modelSettings']): void {
@@ -1460,66 +1484,8 @@ export class SessionImpl {
 
   private async stepWithModelSnapshot(): Promise<StepOutcome> {
     const op = this.op()
-    if (!op) {
-      const continued = await continueParked(this)
-      if (continued === 'opened') return { phase: this.op()?.phase.kind ?? 'checkpoint' }
-      if (continued === 'blocked') return { phase: 'terminal', reason: 'blocked' }
-      if (continued === 'waiting') return { phase: 'terminal', reason: 'parked' }
-      // A decided parked continuation is ledger work already owed by this session. It is checked
-      // before the queue so a newly enqueued prompt cannot open a different turn and starve it. An
-      // undecided ask still yields false above and retains the existing next-turn input policy.
-      if (await this.acceptInput()) return { phase: 'checkpoint' }
-      return { phase: 'idle' }
-    }
-    if (!this.turn) await this.rehydrateTurn(op)
-    // A cancellation is a decision already on the ledger, and every phase owes the same thing after
-    // it: answer whatever the cancel stopped, then end the turn. Handling it here rather than inside
-    // each phase means a cancel landing between two phases is not waited out by the phase it lands
-    // in front of, and no phase starts a model request or a tool once one has been recorded.
-    if (op.control.status === 'cancel_requested') return finishAborted(this)
-    switch (op.phase.kind) {
-      case 'checkpoint':
-        return checkpointRoutine(this)
-      case 'inference':
-        return this.runInference()
-      case 'tools':
-        return this.runToolsPhase()
-      case 'compaction':
-        return this.runCompaction()
-      case 'deferred':
-        return this.runDeferred()
-      default: {
-        // failure_drain: a queued steer is a chance for the operator to redirect rather than lose
-        // the turn, and only with nothing queued does the turn end on the error it drained on.
-        const claimed = claimFrom(this.latest('inbox') as Inbox | undefined, 'next-step')
-        if (claimed) {
-          await this.transition(
-            [
-              inboxEvent(this.lane, this.d.actor, claimed.rest),
-              this.ev(
-                'user/message',
-                { content: claimed.item.content, kind: claimed.item.kind ?? 'steer' },
-                {
-                  origin: 'principal',
-                  trust: claimed.item.trust ?? 'trusted',
-                  actor: claimed.item.actor,
-                },
-              ),
-            ],
-            withPhase(op, {
-              kind: 'checkpoint',
-              continuation: 'need_assistant',
-              triggerSeq: op.meta.triggerSeq,
-              skipInboxOnce: true,
-            }),
-          )
-          return { phase: 'checkpoint' }
-        }
-        const reason = op.phase.error.code === 'ABORTED' ? 'aborted' : 'error'
-        await this.endTurn(reason, { error: op.phase.error })
-        return { phase: 'terminal', reason }
-      }
-    }
+    if (op?.control.status === 'cancel_requested') return finishAborted(this)
+    return this.loopDriver.step(this.ac.signal)
   }
 
   /** Runs the configured compaction mechanism or records an unavailable-runner failure. */
@@ -1527,150 +1493,9 @@ export class SessionImpl {
     return runCompaction(this)
   }
 
-  /** Polls external artifact jobs without closing their owning step until every result is known. */
+  /** Polls external artifact jobs through the default loop operation. */
   async runDeferred(): Promise<StepOutcome> {
-    const op = this.op() as OpStateObj
-    if (op.phase.kind !== 'deferred') return { phase: 'checkpoint' }
-    const events: EventInput[] = []
-    const remaining: typeof op.phase.jobs = []
-    for (const pending of op.phase.jobs) {
-      const job = await this.d.runtime.artifactsPoll(pending.jobId)
-      if (job.status === 'queued' || job.status === 'running') {
-        remaining.push(pending)
-        continue
-      }
-      const jobEffect = this.state.pendingEffects.get(deferredEffectId(pending.jobId, pending.toolUseId))
-      if (jobEffect?.kind === 'job')
-        events.push(
-          this.ev('effect/settled', {
-            effectId: jobEffect.effectId,
-            outcome: job.status === 'done' && job.ref ? 'ok' : 'error',
-          }),
-        )
-      events.push(this.ev('artifact/job', job, { register: 'artifact/job' }))
-      const provenance = await this.deferredResultProvenance(pending)
-      const source = {
-        trust: provenance.trust,
-        ...(provenance.callSeq === undefined ? {} : { sourceEventSeqs: [provenance.callSeq] }),
-      }
-      const data =
-        job.status === 'done' && job.ref
-          ? {
-              toolUseId: pending.toolUseId,
-              content: [
-                {
-                  type: 'resource_link' as const,
-                  uri: artifactUri(job.ref),
-                  mimeType: job.ref.mime,
-                  name: 'artifact',
-                },
-              ],
-              isError: false,
-              enforcement: this.d.runtime.enforcement(),
-              authz: { decisionId: 'n/a' },
-            }
-          : {
-              toolUseId: pending.toolUseId,
-              content: [
-                {
-                  type: 'text' as const,
-                  text:
-                    (job as ArtifactJob).error ??
-                    (job.status === 'done' ? 'artifact job completed without a result' : job.status),
-                },
-              ],
-              isError: true,
-              code: 'JOB_FAILED',
-              enforcement: this.d.runtime.enforcement(),
-              authz: { decisionId: 'n/a' },
-            }
-      events.push(this.ev('tool/result', data, source))
-    }
-    if (remaining.length > 0) {
-      if (events.length > 0) await this.transition(events, withPhase(op, { ...op.phase, jobs: remaining }))
-      return { phase: 'deferred' }
-    }
-    const openStep = this.state.openStep.get(this.lane)
-    if (openStep) {
-      const verdict = await this.d.runtime.verify(
-        'step',
-        await stepVerifyInput(this, openStep.startSeq),
-        this.ac.signal,
-      )
-      events.push(
-        this.ev('verifier/signal', {
-          scope: 'step',
-          tier: this.preset.verifier.defaultTier,
-          verdict: verdict.verdict,
-          reasons: verdict.reasons,
-        }),
-        this.ev('step/end', { turn: openStep.turn, step: openStep.step }),
-      )
-    }
-    await this.transition(events, withPhase(op, op.phase.resumeAfter as OpStateObj['phase']))
-    return { phase: 'checkpoint' }
-  }
-
-  /**
-   * Deferred completion happens after the original ToolDef may have changed or disappeared. Trust
-   * therefore comes only from the exact durable tool/call row. Old or repaired ledgers remain
-   * readable, but an absent field, broken hash, or missing row can never upgrade external output.
-   */
-  private async deferredResultProvenance(pending: {
-    jobId: string
-    toolUseId: string
-    callSeq?: Seq
-  }): Promise<{ trust: 'trusted' | 'untrusted'; callSeq?: Seq }> {
-    const fromSeq = this.state.openStep.get(this.lane)?.startSeq ?? 1
-    const toSeq = this.lastSeq
-    let markerCallSeq: Seq | undefined
-    const pages = scanPages((q) => this.d.log.scan(q), {
-      fromSeq,
-      toSeq,
-      type: 'x/core/deferred-job',
-      lane: this.lane,
-    })
-    for await (const markers of pages) {
-      for (const marker of markers) {
-        const data = marker.data as { jobId?: unknown; toolUseId?: unknown } | null
-        if (data?.jobId !== pending.jobId || data.toolUseId !== pending.toolUseId) continue
-        const sourceSeq = marker.sourceEventSeqs?.[0]
-        if (
-          markerCallSeq !== undefined ||
-          marker.origin !== 'system' ||
-          marker.trust !== 'trusted' ||
-          marker.sourceEventSeqs?.length !== 1 ||
-          sourceSeq === undefined ||
-          sourceSeq < fromSeq ||
-          sourceSeq > toSeq
-        )
-          return { trust: 'untrusted' }
-        markerCallSeq = sourceSeq
-      }
-    }
-    if (markerCallSeq === undefined || (pending.callSeq !== undefined && pending.callSeq !== markerCallSeq))
-      return { trust: 'untrusted' }
-    const callSeq = markerCallSeq
-    const [call] = await this.d.log.scan({ fromSeq: callSeq, toSeq: callSeq, limit: 1 })
-    if (!hasTrustedToolCallProvenance(call) || call?.lane !== this.lane)
-      return { trust: 'untrusted', callSeq }
-    const policy = call.data as {
-      toolUseId?: unknown
-      resolvedPolicy?: ResolvedToolCallPolicy
-      policyHash?: string
-      definitionFingerprint?: string
-      executionDomain?: ExecutionDomain
-    }
-    if (
-      policy.toolUseId !== pending.toolUseId ||
-      !hasCompleteToolPolicyEnvelope(policy) ||
-      !hasAuthenticToolPolicyHash(policy)
-    )
-      return { trust: 'untrusted', callSeq }
-    return {
-      trust: policy.resolvedPolicy.isOpenWorld ? 'untrusted' : 'trusted',
-      callSeq,
-    }
+    return runDeferred(this)
   }
 
   /**
@@ -1678,7 +1503,10 @@ export class SessionImpl {
    * that a cancellation outlives the controller that delivered it.
    */
   abort(by: Actor = this.d.actor): Promise<AbortResult> {
-    return abortSession(this, by)
+    return abortSession(this, by).then(async (result) => {
+      await this.loopDriver?.cancel()
+      return result
+    })
   }
 
   run(opts: { until: 'turn-end' | 'idle'; signal: AbortSignal }): Promise<TurnOutcome> {
@@ -1714,10 +1542,14 @@ export class SessionImpl {
     // counter, so long tasks and large tool batches do not consume this livelock allowance.
     const maxEdges = 64
     let edges = 0
-    let cursor = this.opSeq()
+    const progress = () =>
+      this.loop.id === defaultLoopFactory.id && this.loop.version === defaultLoopFactory.version
+        ? this.opSeq()
+        : this.lastSeq
+    let cursor = progress()
     try {
       for (;;) {
-        const nextCursor = this.opSeq()
+        const nextCursor = progress()
         if (nextCursor !== cursor) edges = 0
         cursor = nextCursor
         if (++edges > maxEdges) {
@@ -1742,6 +1574,8 @@ export class SessionImpl {
         try {
           out = await this.step()
         } catch (err) {
+          if (!this.op() && (err as { code?: string })?.code === 'PARKED')
+            return { reason: 'parked', lastSeq: this.lastSeq }
           // `run()` promises an outcome. An exception out of a phase — an extension hook that throws
           // is the reachable case — would otherwise reject and leave the turn and its step open, a
           // state only a resume can clear. The turn ends on the ledger with the failure that ended
@@ -2309,6 +2143,10 @@ export class SessionImpl {
     this.ac.abort()
     this.closePromise = Promise.resolve().then(async () => {
       const failures: unknown[] = []
+      await Promise.resolve()
+        .then(() => this.loopDriver?.dispose())
+        .catch((error: unknown) => failures.push(error))
+      if (this.loopContext) disposeLoopContext(this.loopContext)
       await this.hooks.shutdown?.().catch((error: unknown) => failures.push(error))
       await this.d.log.close().catch((error: unknown) => failures.push(error))
       await this.d.workspaceLease?.close().catch((error: unknown) => failures.push(error))

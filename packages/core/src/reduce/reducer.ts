@@ -186,7 +186,7 @@ export function reduce(prev: LedgerState, raw: Event): LedgerState {
         s.toolCalls = ChunkedMap.empty()
         s.creditsUsed = 0
       }
-      s.session = start
+      s.session = { ...start, ...(start.loop ? { loop: { ...start.loop } } : {}) }
       break
     }
     case 'turn/start': {

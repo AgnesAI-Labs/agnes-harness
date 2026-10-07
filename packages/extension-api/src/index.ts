@@ -22,3 +22,4 @@ export * from './workspace-hooks.js'
 
 export * from './loop.js'
 export * from './model-adapter.js'
+export * from './loop-plugin.js'

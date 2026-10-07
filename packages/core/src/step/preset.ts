@@ -6,6 +6,7 @@ import type { ThinkingLevel } from '@agnes/protocol'
  * filled in, so no code downstream has to decide what a missing key means.
  */
 export type PresetView = {
+  loop?: import('@agnes/extension-api').LoopSelection
   name: string
   disclosure: 'standard' | 'hybrid' | 'code'
   model: {
@@ -111,6 +112,14 @@ export function readPreset(raw: Record<string, unknown>, name: string): PresetVi
   const d = presetDefaults()
   return {
     name,
+    ...(get(raw, 'loop') === undefined
+      ? {}
+      : {
+          loop: pick<import('@agnes/extension-api').LoopSelection>(raw, 'loop', {
+            id: 'agnes.default',
+            version: '1.0.0',
+          }),
+        }),
     disclosure: pick(raw, 'disclosure', d.disclosure),
     model: {
       ...(get(raw, 'model.prompt_sections') === undefined

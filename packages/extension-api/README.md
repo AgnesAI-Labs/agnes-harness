@@ -5,9 +5,14 @@
 A `LoopFactory` identifies a loop by `id` and `version`, declares `capabilities`,
 and creates or resumes a session-owned `LoopDriver`. Register it with the Cordis
 `loops` service using `register(sourcePackage, factory)`; dispose the returned
-callback when the plugin unloads. `catalog()` returns installed identities,
+callback when the plugin unloads. A plugin can use
+`registerLoopPlugin(ctx, sourcePackage, factory)` to attach that cleanup to Cordis
+automatically; declare an injection of `loops`. `catalog()` returns installed identities,
 capabilities and source packages for administration. New sessions select an exact
-identity; existing sessions keep their persisted identity. Legacy sessions use
+identity through `Kernel.session(key, { ...options, loop: { id, version } })`.
+For a profile default, set `config.loop: { id, version }` on one enabled package
+entry. An assembled `PresetView.loop` overrides the Kernel default; an explicit
+session choice overrides the preset. Existing sessions keep their persisted identity. Legacy sessions use
 `agnes.default@1.0.0`. A missing pinned loop is an error.
 
 The driver implements `step(signal)`, `cancel()`, `dispose()` and `checkpoint()`.

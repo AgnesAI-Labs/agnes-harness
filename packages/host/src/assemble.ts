@@ -1705,8 +1705,26 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
     let extensionLeaseFor: ((source: string) => LeaseView | undefined) | undefined
     const extensionSessions = new ExtensionSessions<HookPort>()
     const compaction = assembleCompaction(modules.get('@agnes/base')?.buildCompactionPlan)
+    // Package config is already a JSON extension point in resolved profiles.
+    const configuredLoops = profile.packages
+      .filter((pkg) => pkg.enabled !== false)
+      .flatMap((pkg) => (pkg.config?.loop === undefined ? [] : [pkg.config.loop]))
+    if (configuredLoops.length > 1)
+      throw new HostError('E_PRESET_UNSUPPORTED', 'select at most one profile package config.loop')
+    const configuredLoop = configuredLoops[0]
+    if (
+      configuredLoop !== undefined &&
+      (!configuredLoop ||
+        typeof configuredLoop !== 'object' ||
+        Array.isArray(configuredLoop) ||
+        typeof configuredLoop.id !== 'string' ||
+        typeof configuredLoop.version !== 'string')
+    )
+      throw new HostError('E_PRESET_UNSUPPORTED', 'package config.loop requires id and version')
+    const loop = configuredLoop as { id: string; version: string } | undefined
     kernel = Kernel.create({
       storage: adapters.storage,
+      ...(loop ? { loop } : {}),
       seams,
       provider: models.provider,
       withModelSnapshot: (operation) => models.run(operation),
@@ -1767,6 +1785,7 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
       // `children` is omitted on purpose: core's default factory refuses with a message saying
       // subagents are assembled later, which is more informative than a host-side stub.
     })
+    pluginTree.root.provide('loops', kernel.loops)
     rollback.push('kernel', () => kernel.close())
     privacyTrajectory = createTrajectoryLifecycle(
       {
