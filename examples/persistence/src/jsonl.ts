@@ -12,7 +12,6 @@ import { join } from 'node:path'
 import {
   isPersistenceTombstone,
   PERSISTENCE_SCAN_PAGE_MAX,
-  persistenceRegisterKey,
   type PersistenceEventRecord,
   type PersistenceIntegrityRow,
   type PersistenceLeaseClaim,
@@ -22,6 +21,7 @@ import {
   type PersistenceScanQuery,
   type PersistenceSessionStore,
   type PersistenceTableStore,
+  persistenceRegisterKey,
 } from '@agnes/extension-api'
 import { createOwnerTables } from './tables.js'
 
@@ -159,7 +159,8 @@ export function openJsonlStore(options: PersistenceOpenOptions): PersistenceSess
       const held = computeHold(leases.get(key), tx.expectedWriterRunId, tx.claim, clock(), lastSeqOf(key))
       if (tx.expectedRegisterSeq) {
         const current = fold(key, events, ops).find(
-          (row) => row.register === tx.expectedRegisterSeq?.register && row.key === tx.expectedRegisterSeq.key,
+          (row) =>
+            row.register === tx.expectedRegisterSeq?.register && row.key === tx.expectedRegisterSeq.key,
         )
         if ((current?.seq ?? null) !== tx.expectedRegisterSeq.seq) fail('E_CAS', 'register seq mismatch')
       }
@@ -167,7 +168,8 @@ export function openJsonlStore(options: PersistenceOpenOptions): PersistenceSess
       const seqs = tx.events.map(() => ++seq)
       if (
         tx.integrity &&
-        (tx.integrity.length !== tx.events.length || tx.integrity.some((entry, index) => entry.seq !== seqs[index]))
+        (tx.integrity.length !== tx.events.length ||
+          tx.integrity.some((entry, index) => entry.seq !== seqs[index]))
       )
         fail('E_STORAGE_FAULT', 'integrity metadata does not match assigned sequences')
       const lines: LogLine[] = tx.events.map((event, index) => {
@@ -191,7 +193,10 @@ export function openJsonlStore(options: PersistenceOpenOptions): PersistenceSess
         nextOps.set(key, cells)
       }
       persist(sessions, nextLeases, nextOps, lines)
-      events.set(key, [...(events.get(key) ?? []), ...lines.map((line) => ({ ...line.event, seq: line.seq }))])
+      events.set(key, [
+        ...(events.get(key) ?? []),
+        ...lines.map((line) => ({ ...line.event, seq: line.seq })),
+      ])
       for (const line of lines) {
         if (!line.integrity) continue
         const rows = integrity.get(key) ?? new Map<number, Integrity>()
@@ -206,7 +211,8 @@ export function openJsonlStore(options: PersistenceOpenOptions): PersistenceSess
       if (claim) next.set(key, computeHold(leases.get(key), runId, claim, clock(), lastSeqOf(key)))
       else {
         const lease = leases.get(key)
-        if (!lease || lease.runId !== runId || lease.until < clock()) fail('E_WRITER_LEASE', 'writer lease not held')
+        if (!lease || lease.runId !== runId || lease.until < clock())
+          fail('E_WRITER_LEASE', 'writer lease not held')
         next.set(key, { ...lease, until: clock() + lease.ttlMs })
       }
       persist(sessions, next, ops, [])
@@ -221,11 +227,13 @@ export function openJsonlStore(options: PersistenceOpenOptions): PersistenceSess
     },
     async scan(key, query) {
       guard()
-      if (query.toSeq === undefined && query.limit === undefined) fail('E_SCAN_UNBOUNDED', 'scan needs toSeq or limit')
+      if (query.toSeq === undefined && query.limit === undefined)
+        fail('E_SCAN_UNBOUNDED', 'scan needs toSeq or limit')
       if (query.limit !== undefined && (!Number.isSafeInteger(query.limit) || query.limit <= 0))
         fail('E_SCAN_UNBOUNDED', 'scan limit must be a positive integer')
       const rows = matching(key, query, sessions, events)
-      if (query.limit !== undefined && query.limit <= PERSISTENCE_SCAN_PAGE_MAX) return rows.slice(0, query.limit)
+      if (query.limit !== undefined && query.limit <= PERSISTENCE_SCAN_PAGE_MAX)
+        return rows.slice(0, query.limit)
       if (rows.length > PERSISTENCE_SCAN_PAGE_MAX)
         fail('E_SCAN_TRUNCATED', `scan matched more than ${PERSISTENCE_SCAN_PAGE_MAX} rows`)
       return rows
@@ -285,7 +293,10 @@ export function openJsonlStore(options: PersistenceOpenOptions): PersistenceSess
       nextLeases.delete(key)
       nextOps.delete(key)
       try {
-        writeFileSync(eventsPath, kept.length === 0 ? '' : `${kept.map((line) => JSON.stringify(line)).join('\n')}\n`)
+        writeFileSync(
+          eventsPath,
+          kept.length === 0 ? '' : `${kept.map((line) => JSON.stringify(line)).join('\n')}\n`,
+        )
         writeState(nextSessions, nextLeases, nextOps)
       } catch (error) {
         if (prior) writeFileSync(eventsPath, prior)
@@ -340,7 +351,9 @@ function fold(
     if (cell.data === null) cells.delete(id)
     else cells.set(id, { register: 'op.state', key: lane, seq: cell.seq, data: cell.data })
   }
-  return [...cells.values()].sort((left, right) => compare(left.register, right.register) || compare(left.key, right.key))
+  return [...cells.values()].sort(
+    (left, right) => compare(left.register, right.register) || compare(left.key, right.key),
+  )
 }
 
 function compare(left: string, right: string): number {
@@ -407,7 +420,8 @@ function readLine(line: string): LogLine | undefined {
   } catch {
     return undefined
   }
-  if (typeof value !== 'object' || value === null) fail('E_STORAGE_FAULT', 'persistence log line is unreadable')
+  if (typeof value !== 'object' || value === null)
+    fail('E_STORAGE_FAULT', 'persistence log line is unreadable')
   const lineValue = value as LogLine
   if (typeof lineValue.key !== 'string' || typeof lineValue.seq !== 'number' || lineValue.event === undefined)
     fail('E_STORAGE_FAULT', 'persistence log line is unreadable')

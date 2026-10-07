@@ -1,8 +1,6 @@
 {
   "provider": {
-    "adapters": [
-      "community-dag"
-    ],
+    "adapters": ["community-dag"],
     "routes": [
       {
         "route": "community-dag",
@@ -16,9 +14,7 @@
             "route": "community-dag",
             "baseUrl": "https://unused.invalid",
             "reasoning": false,
-            "input": [
-              "text"
-            ],
+            "input": ["text"],
             "cost": {
               "input": 0,
               "output": 0,

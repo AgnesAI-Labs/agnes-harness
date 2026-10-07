@@ -47,7 +47,12 @@ function bind(params: readonly unknown[]): unknown[] {
         throw new TypeError(`bind parameter ${index} contains NUL, unsafe for SQLite TEXT`)
       return value
     }
-    if (value === null || typeof value === 'number' || typeof value === 'bigint' || value instanceof Uint8Array)
+    if (
+      value === null ||
+      typeof value === 'number' ||
+      typeof value === 'bigint' ||
+      value instanceof Uint8Array
+    )
       return value
     throw new TypeError(`bind parameter ${index} is not a value SQLite can carry: ${typeof value}`)
   })
@@ -110,7 +115,8 @@ function applyInsert(tables: Map<string, Table>, sql: string, params: readonly u
   const placeholders = (parsed[3] as string).split(',').map((slot) => slot.trim())
   if (placeholders.some((slot) => slot !== '?') || placeholders.length !== params.length)
     throw new Error('jsonl tables: insert placeholders do not match the parameters')
-  if (columns.length !== params.length) throw new Error('jsonl tables: insert columns do not match the parameters')
+  if (columns.length !== params.length)
+    throw new Error('jsonl tables: insert columns do not match the parameters')
   const row: Row = {}
   columns.forEach((column, index) => {
     row[column] = params[index]

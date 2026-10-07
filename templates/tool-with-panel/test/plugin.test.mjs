@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { createPluginTestHost } from '@agnes/plugin-runtime/testkit'
-import { main, echo } from '../dist/index.js'
+import { echo, main } from '../dist/index.js'
 
 test('register, invoke, reject invalid inputs and unload', async () => {
   const host = await createPluginTestHost(main)

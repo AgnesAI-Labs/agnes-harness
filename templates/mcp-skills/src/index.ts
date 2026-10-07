@@ -1,5 +1,5 @@
 import { readFileSync } from 'node:fs'
-import { defineAgnesPlugin, type Context } from '@agnes/plugin-runtime'
+import { type Context, defineAgnesPlugin } from '@agnes/plugin-runtime'
 import type { McpServerDefinitionInput } from '@agnes/protocol'
 import '@agnes/resource-control-runtime'
 

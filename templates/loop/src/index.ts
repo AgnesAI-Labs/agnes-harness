@@ -1,11 +1,11 @@
 import { createHash } from 'node:crypto'
-import { defineAgnesPlugin, defineLoop, type LoopPluginContext as Context } from '@agnes/plugin-runtime'
 import {
-  loopCheckpointCodec,
-  type LoopContext,
   type LoopCheckpoint,
+  type LoopContext,
   type LoopDriver,
+  loopCheckpointCodec,
 } from '@agnes/extension-api'
+import { type LoopPluginContext as Context, defineAgnesPlugin, defineLoop } from '@agnes/plugin-runtime'
 
 const codec = loopCheckpointCodec(1, (state) => {
   if (!state || typeof state !== 'object' || Array.isArray(state) || typeof state.done !== 'boolean')

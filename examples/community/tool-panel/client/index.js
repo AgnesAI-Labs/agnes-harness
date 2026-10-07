@@ -10,10 +10,16 @@ export function apply(ctx, config) {
     { name: 'tool.call.toolview', key: 'plugin_tool_panel', id: 'echo-result' },
     function EchoResultPanel({ owner }) {
       const block = owner?.block
-      return createElement('section', { 'aria-label': config?.publicConfig?.label ?? 'Echo result' },
+      return createElement(
+        'section',
+        { 'aria-label': config?.publicConfig?.label ?? 'Echo result' },
         createElement('strong', null, 'Echo result'),
         createElement('p', { role: 'status' }, block?.status ?? 'planned'),
-        createElement('pre', { style: { whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' } }, resultText(block)),
+        createElement(
+          'pre',
+          { style: { whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' } },
+          resultText(block),
+        ),
       )
     },
   )

@@ -2,25 +2,51 @@
   "name": "@agnes-example/research-bundle",
   "version": "1.0.0",
   "license": "Apache-2.0",
-  "files": ["README.md"],
+  "files": [
+    "README.md"
+  ],
   "agnes": {
-    "kinds": ["bundle"],
+    "kinds": [
+      "bundle"
+    ],
     "bundles": {
       "base": {
-        "profile": { "toolPolicy": { "readOnly": true } }
+        "profile": {
+          "toolPolicy": {
+            "readOnly": true
+          }
+        }
       },
       "research": {
-        "extends": ["@agnes-example/research-bundle#base"],
+        "extends": [
+          "@agnes-example/research-bundle#base"
+        ],
         "profile": {
-          "loop": { "id": "example.dag", "version": "1.0.0" },
-          "compaction": { "engine": "sliding-window" },
+          "loop": {
+            "id": "example.dag",
+            "version": "1.0.0"
+          },
+          "compaction": {
+            "engine": "sliding-window"
+          },
           "packages": [
-            { "id": "@agnes-example/dag-loop", "source": "file:./examples/loops/dag-loop", "version": "1.0.0" },
-            { "id": "@agnes-example/compaction-sliding-window", "source": "file:./examples/compaction/sliding-window", "version": "0.1.0" }
+            {
+              "id": "@agnes-example/dag-loop",
+              "source": "file:./examples/loops/dag-loop",
+              "version": "1.0.0"
+            },
+            {
+              "id": "@agnes-example/compaction-sliding-window",
+              "source": "file:./examples/compaction/sliding-window",
+              "version": "0.1.0"
+            }
           ]
         },
         "presets": {
-          "research": { "name": "research", "extends": "standard" }
+          "research": {
+            "name": "research",
+            "extends": "standard"
+          }
         }
       }
     }

@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
-import { defineAgnesPlugin, type Context } from '@agnes/plugin-runtime'
+import { type Context, defineAgnesPlugin } from '@agnes/plugin-runtime'
 import type { McpServerDefinitionInput } from '@agnes/protocol'
 import type {} from '@agnes/resource-control-runtime'
 
@@ -8,7 +8,11 @@ import type {} from '@agnes/resource-control-runtime'
 export const mcpServer: McpServerDefinitionInput = {
   serverId: 'community-evidence',
   displayName: 'Community evidence',
-  transport: { kind: 'stdio', executable: process.execPath, args: [fileURLToPath(new URL('../mcp/server.mjs', import.meta.url))] },
+  transport: {
+    kind: 'stdio',
+    executable: process.execPath,
+    args: [fileURLToPath(new URL('../mcp/server.mjs', import.meta.url))],
+  },
   secretBinding: { kind: 'none' },
 }
 

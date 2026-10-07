@@ -84,9 +84,19 @@ export function probeDocker(signal?: AbortSignal): Promise<SandboxCapabilities> 
 }
 
 function assertPath(path: string): void {
-  if (typeof path !== 'string' || path.length === 0 || path.includes('\0') || path.includes(',') || path.includes('\n'))
+  if (
+    typeof path !== 'string' ||
+    path.length === 0 ||
+    path.includes('\0') ||
+    path.includes(',') ||
+    path.includes('\n')
+  )
     throw sandboxUnavailable('sandbox path is not a bindable absolute path')
-  if (process.platform === 'win32' ? !/^[A-Za-z]:[\\/]/.test(path) && !path.startsWith('\\\\') : !path.startsWith('/'))
+  if (
+    process.platform === 'win32'
+      ? !/^[A-Za-z]:[\\/]/.test(path) && !path.startsWith('\\\\')
+      : !path.startsWith('/')
+  )
     throw sandboxUnavailable('sandbox path is not absolute')
 }
 
@@ -99,7 +109,11 @@ function imageOf(config: SandboxProviderConfig): string {
 
 type Live = { child: ChildProcess; name: string }
 
-function capture(stream: NodeJS.ReadableStream | null, max: number, sink: { text: string; truncated: boolean }): void {
+function capture(
+  stream: NodeJS.ReadableStream | null,
+  max: number,
+  sink: { text: string; truncated: boolean },
+): void {
   stream?.on('data', (chunk: Buffer | string) => {
     const text = typeof chunk === 'string' ? chunk : chunk.toString('utf8')
     const room = max - sink.text.length
@@ -213,7 +227,11 @@ function runContainer(
   args.push(image, ...request.argv)
   return new Promise((resolve, reject) => {
     if (request.signal?.aborted) {
-      reject(request.signal.reason instanceof Error ? request.signal.reason : sandboxUnavailable('aborted before start'))
+      reject(
+        request.signal.reason instanceof Error
+          ? request.signal.reason
+          : sandboxUnavailable('aborted before start'),
+      )
       return
     }
     let child: ChildProcess

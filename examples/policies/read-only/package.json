@@ -5,8 +5,19 @@
   "license": "Apache-2.0",
   "exports": "./index.mjs",
   "types": "./index.d.mts",
-  "peerDependencies": { "@agnes/extension-api": "*" },
+  "peerDependencies": {
+    "@agnes/extension-api": "*"
+  },
   "agnes": {
-    "plugins": [{ "id": "policy:read-only", "export": "plugin", "default": true, "inject": ["toolPolicies"] }]
+    "plugins": [
+      {
+        "id": "policy:read-only",
+        "export": "plugin",
+        "default": true,
+        "inject": [
+          "toolPolicies"
+        ]
+      }
+    ]
   }
 }

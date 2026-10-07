@@ -1,5 +1,5 @@
 import type { CompactionEngine, CompactionEnginePluginContext, CompactionNode } from '@agnes/extension-api'
-import { defineAgnesPlugin, type Context } from '@agnes/plugin-runtime'
+import { type Context, defineAgnesPlugin } from '@agnes/plugin-runtime'
 
 /** A lossy, deterministic engine. All retained context and fixed system sections stay untouched. */
 export function slidingWindow(keepTurns = 4): CompactionEngine {

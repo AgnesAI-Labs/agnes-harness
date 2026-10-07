@@ -7,13 +7,18 @@ test('configured tool validates inputs, returns deterministic results and unregi
   const host = await createPluginTestHost(main, { config: { prefix: 'Hello: ' } })
   try {
     const name = 'plugin_tool_panel'
-    assert.deepEqual((await host.invoke(name, { message: '  Agnes  ' })).structured, { message: 'Hello: Agnes', characters: 5 })
+    assert.deepEqual((await host.invoke(name, { message: '  Agnes  ' })).structured, {
+      message: 'Hello: Agnes',
+      characters: 5,
+    })
     assert.equal((await host.invoke(name, { message: ' ' })).isError, true)
     await assert.rejects(host.invoke(name, { message: 1 }), /Invalid arguments/)
     const stop = new AbortController()
     stop.abort(new DOMException('Stopped', 'AbortError'))
     await assert.rejects(host.invoke(name, { message: 'Agnes' }, stop.signal), /Stopped/)
-  } finally { await host.dispose() }
+  } finally {
+    await host.dispose()
+  }
   assert.equal(host.tools.size, 0)
 })
 

@@ -2,9 +2,7 @@
   "client": {
     "entry": "./index.js",
     "styles": [],
-    "slots": [
-      "tool.call.toolview"
-    ],
+    "slots": ["tool.call.toolview"],
     "publicConfig": {
       "label": "Echo result"
     },

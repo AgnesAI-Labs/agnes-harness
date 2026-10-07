@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
+import { readFile } from 'node:fs/promises'
 import { test } from 'node:test'
 import { apply } from '../client/index.js'
-import { readFile } from 'node:fs/promises'
 
 test('panel matches its descriptor and renders public configuration', async () => {
   const descriptor = JSON.parse(

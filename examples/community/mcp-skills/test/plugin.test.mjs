@@ -23,11 +23,17 @@ test('enabled skill references its packaged MCP asset and unload removes it', as
   const fiber = root.plugin(main)
   try {
     await fiber.await()
-    const skill = registry.snapshot().list().find(value => value.name === 'mcp-skills')
+    const skill = registry
+      .snapshot()
+      .list()
+      .find((value) => value.name === 'mcp-skills')
     assert.ok(skill)
     const result = registry.read(skill.resourceId, { sessionKey: 'community-test' })
     assert.equal(result.ok, true)
     assert.match(result.content, /\]\(evidence:\/\/reference\)/)
-  } finally { await fiber.dispose(); await root.fiber.dispose() }
+  } finally {
+    await fiber.dispose()
+    await root.fiber.dispose()
+  }
   assert.equal(registry.snapshot().list().length, 0)
 })
