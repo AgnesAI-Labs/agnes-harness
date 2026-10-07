@@ -125,7 +125,7 @@ A provider starts a child and returns a handle with events, `sendMessage`, `inte
 
 The preset schema has no child allowlist. Set `allow` and `sessions` on the subagent extension, or call `childAgents.setSessionAllowlist`. An omitted list is unrestricted. An empty list refuses that kind. A set model list requires the caller to name the model.
 
-Custom loops reach one in-process child through the optional `LoopContext.children.run` port.
+When fitted, `LoopContext.children` is the parent-bound `ChildAgentSessionService` facade; it uses the configured provider and exposes continuable child handles.
 
 <a id="不同-api-不可混用"></a>
 

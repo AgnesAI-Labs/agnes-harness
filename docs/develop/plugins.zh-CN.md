@@ -113,7 +113,7 @@ persistence:
 
 预设 schema 没有子代理允许名单。在 subagent 扩展上设置 `allow` 和 `sessions`，或调用 `childAgents.setSessionAllowlist`。省略名单表示不限制。空名单拒绝这一类。设置了模型名单时，调用方必须写出模型名。
 
-自定义循环通过可选的 `LoopContext.children.run` 端口跑一个进程内子代理。
+可选 `LoopContext.children` 使用绑定父会话的 `ChildAgentSessionService` facade，按配置选择 provider 并提供可继续对话的子代理。
 
 ## 不同 API 不可混用
 
