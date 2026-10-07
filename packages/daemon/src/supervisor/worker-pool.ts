@@ -44,6 +44,7 @@ type SessionWorkerAcquireOptions = Readonly<{
   cwd?: string
   binding?: WorkspaceBindingEnvelope
   preset?: string
+  bundles?: readonly string[]
   loop?: LoopSelection
   parent?: { key: string; boundarySeq: number }
 }>
@@ -229,6 +230,7 @@ export class WorkerPool {
       {
         binding: opts.binding,
         ...(opts.preset ? { preset: opts.preset } : {}),
+        ...(opts.bundles !== undefined ? { bundles: opts.bundles } : {}),
         ...(opts.loop ? { loop: opts.loop } : {}),
         ...(opts.resume ? { resume: true } : {}),
         ...(opts.parent ? { parent: opts.parent } : {}),

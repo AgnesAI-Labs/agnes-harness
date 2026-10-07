@@ -51,6 +51,11 @@ export const RuntimeAdminSnapshot = Type.Object(
       ),
       { maxItems: 4096 },
     ),
+    bundles: Type.Optional(
+      Type.Array(Type.Object({ id: text, sourcePackage: text }, { additionalProperties: false }), {
+        maxItems: 4096,
+      }),
+    ),
     presets: Type.Array(
       Type.Object({ id: text, isDefault: Type.Boolean() }, { additionalProperties: false }),
       { maxItems: 256 },

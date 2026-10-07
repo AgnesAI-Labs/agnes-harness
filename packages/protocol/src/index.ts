@@ -489,3 +489,5 @@ export {
   validateUserAttachments,
 } from './validate.js'
 export * from './worker-generation.js'
+
+export { parseSessionBundles } from './session-composition.js'

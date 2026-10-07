@@ -284,10 +284,11 @@ export function LocalPluginsPanel({
     </details>
   )
 }
-export const sessionStartUrl = (preset?: string, prompt?: string) => {
+export const sessionStartUrl = (preset?: string, prompt?: string, bundles: readonly string[] = []) => {
   const query = new URLSearchParams({ new: '1' })
   if (preset) query.set('preset', preset)
   if (prompt) query.set('prompt', prompt)
+  for (const bundle of bundles) query.append('bundle', bundle)
   return `/?${query}`
 }
 export function PresetsPanel({ snapshot, t }: { snapshot: RuntimeAdminSnapshot; t: Text }) {
@@ -295,6 +296,13 @@ export function PresetsPanel({ snapshot, t }: { snapshot: RuntimeAdminSnapshot; 
     <section className="runtime-card" data-testid="session-presets">
       <h3>{t('presets')}</h3>
       <p>{t('presetHelp')}</p>
+      <p>{t('sessionBundleHelp')}</p>
+      {snapshot.bundles?.map((bundle) => (
+        <p key={bundle.id}>
+          <code>{bundle.id}</code> · {bundle.sourcePackage}{' '}
+          <Button href={sessionStartUrl(undefined, undefined, [bundle.id])}>{t('start')}</Button>
+        </p>
+      ))}
       {snapshot.presets.map((preset) => (
         <p key={preset.id}>
           <code>{preset.id}</code> {preset.isDefault && <Badge>{t('default')}</Badge>}{' '}

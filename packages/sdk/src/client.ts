@@ -30,6 +30,7 @@ import {
   type MethodSpec,
   type PageSessionMeta,
   parseLoopSelection,
+  parseSessionBundles,
   projectClientModuleRows,
   rpcError,
   type SessionDefaultsSnapshot,
@@ -371,6 +372,7 @@ export class Client {
   createSession(options: {
     cwd: string
     preset?: string
+    bundles?: readonly string[]
     sessionKey?: string
     loop?: LoopSelection
   }): Promise<Session> {
@@ -381,12 +383,14 @@ export class Client {
     new: async (o: {
       cwd: string
       preset?: string
+      bundles?: readonly string[]
       sessionKey?: string
       loop?: LoopSelection
     }): Promise<Session> => {
       const meta: Record<string, unknown> = {}
       if (o.loop) meta.loop = parseLoopSelection(o.loop)
       if (o.preset) meta.preset = o.preset
+      if (o.bundles !== undefined) meta.bundles = parseSessionBundles(o.bundles)
       if (o.sessionKey) meta.sessionKey = o.sessionKey
       const r = await this.call<{ sessionId: string }>('session/new', {
         cwd: o.cwd,

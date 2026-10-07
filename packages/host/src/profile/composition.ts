@@ -55,6 +55,7 @@ export type ResolvedComposition = Readonly<{
   profile: string
   preset: string
   bundles: readonly string[]
+  sessionBundles?: readonly string[]
   selection: CompositionPatch
   sources: Readonly<Record<string, CompositionSource>>
   rows: readonly CompositionRow[]
@@ -327,12 +328,14 @@ export function resolveComposition(
   options: {
     preset?: PresetDoc
     admin?: { bundles?: string[]; composition?: CompositionPatch }
+    sessionBundles?: readonly string[]
     session?: CompositionPatch
     rows?: readonly CompositionRow[]
     catalog?: CompositionCatalog
   } = {},
 ): ResolvedComposition {
   const preset = options.preset?.name ?? profile.presets.default
+  const sessionBundles = options.sessionBundles ?? profile.sessionComposition?.bundles
   if (!profile.presets.allowed.includes(preset)) fail(`preset ${preset} is not allowed`)
   let selection: CompositionPatch = {
     loop: profile.loop ?? DEFAULT_LOOP,
@@ -368,7 +371,7 @@ export function resolveComposition(
     selection = mergeComposition(selection, checkCompositionPatch(patch))
     applySource(sources, patch, source)
   }
-  const bundleLayer = (ids: readonly string[], layer: 'preset' | 'admin') => {
+  const bundleLayer = (ids: readonly string[], layer: 'preset' | 'admin' | 'session') => {
     for (const entry of expandBundles(ids, profile.bundleCatalog ?? {})) {
       apply(entry.document.profile ?? {}, { layer, name: entry.id })
       bundles.push(entry.id)
@@ -382,6 +385,12 @@ export function resolveComposition(
     apply(checkCompositionPatch(options.preset.composition), { layer: 'preset', name: preset })
   bundleLayer(options.admin?.bundles ?? profile.adminBundles ?? [], 'admin')
   if (options.admin?.composition) apply(options.admin.composition, { layer: 'admin', name: 'selection' })
+  if (sessionBundles !== undefined) {
+    if (!list(sessionBundles) || sessionBundles.length > 64) fail('invalid session bundles')
+    bundleLayer(sessionBundles, 'session')
+  }
+  if (profile.sessionComposition?.loop)
+    apply({ loop: profile.sessionComposition.loop }, { layer: 'session', name: 'request' })
   if (options.session) apply(options.session, { layer: 'session', name: 'request' })
   const packageIds = new Set(profile.packages.map((pkg) => pkg.id))
   for (const pkg of selection.packages ?? []) if (!packageIds.has(pkg.id)) fail(`unknown package ${pkg.id}`)
@@ -401,7 +410,15 @@ export function resolveComposition(
   if (selection.loop?.id === 'default' && selection.loop.version === DEFAULT_LOOP.version)
     selection.loop = { ...DEFAULT_LOOP }
   if (options.catalog) validateComposition(selection, options.catalog)
-  const tree = { profile: profile.name, preset, bundles: [...new Set(bundles)], selection, sources, rows }
+  const tree = {
+    profile: profile.name,
+    preset,
+    bundles: [...new Set(bundles)],
+    ...(sessionBundles === undefined ? {} : { sessionBundles: [...sessionBundles] }),
+    selection,
+    sources,
+    rows,
+  }
   return freezeTree({ ...tree, hash: `sha256-${sha256hex(canonicalJson(tree))}` })
 }
 
@@ -475,6 +492,16 @@ export function profileForComposition(profile: ResolvedProfile, tree: ResolvedCo
     }),
     composition: patch,
     compositionSources: tree.sources,
+    ...(tree.sessionBundles !== undefined || tree.sources.loop?.layer === 'session'
+      ? {
+          sessionComposition: {
+            ...(tree.sessionBundles === undefined ? {} : { bundles: [...tree.sessionBundles] }),
+            ...(tree.sources.loop?.layer === 'session' && tree.sources.loop.name === 'request' && patch.loop
+              ? { loop: patch.loop }
+              : {}),
+          },
+        }
+      : {}),
   }
   return freezeTree({ ...next, hash: `sha256-${sha256hex(canonicalJson(next))}` })
 }

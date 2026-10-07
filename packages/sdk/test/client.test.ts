@@ -717,7 +717,7 @@ it('gives auth.build an isolated snapshot of the completed handshake fields', as
   }
 })
 
-it('carries a validated loop on createSession and session.new metadata', async () => {
+it('carries validated loop, preset and ordered bundles on new-session metadata', async () => {
   const f = fakeEndpoint({
     initialize: () => ({ protocolVersion: 1, agentCapabilities: {} }),
     'session/new': () => ({ sessionId: 'loop-session' }),
@@ -730,12 +730,18 @@ it('carries a validated loop on createSession and session.new metadata', async (
   const loop = { id: 'example.dag', version: '1.0.0' }
   try {
     await c.createSession({ cwd: '/w', loop })
-    await c.session.new({ cwd: '/w', loop })
+    await c.session.new({ cwd: '/w', loop, preset: 'standard', bundles: ['acme#one', 'acme#two'] })
     expect(f.calls.filter((call) => call.method === 'session/new').map((call) => call.params)).toEqual([
       { cwd: '/w', mcpServers: [], _meta: { [META_KEY]: { loop } } },
-      { cwd: '/w', mcpServers: [], _meta: { [META_KEY]: { loop } } },
+      {
+        cwd: '/w',
+        mcpServers: [],
+        _meta: { [META_KEY]: { loop, preset: 'standard', bundles: ['acme#one', 'acme#two'] } },
+      },
     ])
     await expect(c.createSession({ cwd: '/w', loop: { id: '', version: '1' } })).rejects.toThrow('nonempty')
+    await expect(c.session.new({ cwd: '/w', bundles: ['same', 'same'] })).rejects.toThrow('unique')
+    await expect(c.session.new({ cwd: '/w', bundles: [''] })).rejects.toThrow('nonempty')
   } finally {
     await c.close()
   }

@@ -55,6 +55,7 @@ export class SessionRegistry implements Registry<SessionEntry> {
     {
       cwd: string
       preset: string | null
+      bundles: string | null
       loop: string | null
       binding: WorkspaceBinding | undefined
       promise: Promise<SessionEntry>
@@ -79,6 +80,7 @@ export class SessionRegistry implements Registry<SessionEntry> {
     cwd: string
     binding?: WorkspaceBindingEnvelope
     preset?: string
+    bundles?: readonly string[]
     loop?: LoopSelection
     credential?: unknown
   }): Promise<SessionEntry> {
@@ -87,6 +89,7 @@ export class SessionRegistry implements Registry<SessionEntry> {
       ...(o.key ? { key: o.key } : {}),
       cwd: o.cwd,
       ...(o.preset ? { preset: o.preset } : {}),
+      ...(o.bundles !== undefined ? { bundles: o.bundles } : {}),
       ...(o.loop ? { loop: o.loop } : {}),
       ...(o.credential === undefined ? {} : { credential: o.credential }),
       ...(accepted ? { key: accepted.sessionKey, binding: accepted } : {}),
@@ -103,6 +106,7 @@ export class SessionRegistry implements Registry<SessionEntry> {
           !sameBinding(this.bindings.get(request.key), request.binding)
         )
           throw rpcError('SEMANTIC_REJECTED', { code: 'ID_CONFLICT', sessionId: request.key })
+        if (request.bundles !== undefined) await this.host.createSession(request)
         return existing
       }
       const pending = this.opening.get(request.key)
@@ -110,6 +114,7 @@ export class SessionRegistry implements Registry<SessionEntry> {
         if (
           pending.cwd !== request.cwd ||
           pending.preset !== (request.preset ?? null) ||
+          pending.bundles !== (request.bundles === undefined ? null : JSON.stringify(request.bundles)) ||
           pending.loop !== (request.loop ? JSON.stringify(request.loop) : null) ||
           !sameBinding(pending.binding, request.binding)
         )
@@ -120,6 +125,7 @@ export class SessionRegistry implements Registry<SessionEntry> {
       this.opening.set(request.key, {
         cwd: request.cwd,
         preset: request.preset ?? null,
+        bundles: request.bundles === undefined ? null : JSON.stringify(request.bundles),
         loop: request.loop ? JSON.stringify(request.loop) : null,
         binding: request.binding,
         promise,
@@ -138,6 +144,7 @@ export class SessionRegistry implements Registry<SessionEntry> {
     cwd: string
     binding?: WorkspaceBinding
     preset?: string
+    bundles?: readonly string[]
     loop?: LoopSelection
     credential?: unknown
   }): Promise<SessionEntry> {

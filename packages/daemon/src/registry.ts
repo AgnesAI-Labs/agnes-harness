@@ -34,6 +34,7 @@ export interface Registry<Entry> {
     cwd: string
     binding?: WorkspaceBindingEnvelope
     preset?: string
+    bundles?: readonly string[]
     loop?: LoopSelection
     credential?: unknown
   }): Promise<Entry>

@@ -13,6 +13,7 @@ import {
 } from '../src/admin/plugins/control-panel.js'
 import { pluginAdminLocaleCatalog } from '../src/admin/plugins/locales/admin.js'
 import { sessionLoopSelection } from '../src/admin/plugins/session-loop.js'
+import { LoopPicker, updateLoopPicker } from '../src/loop-picker.js'
 import { SETTINGS_PAGES, SettingsHub } from '../src/settings/hub.js'
 import { settingsCatalog } from '../src/settings/locales.js'
 import { GenerationsPanel, PublicationPanel } from '../src/settings/runtime-panels.js'
@@ -279,4 +280,44 @@ it('reports publication failures and requires an explicit eligible migration wit
   expect(migrateSession).toHaveBeenLastCalledWith('session-key')
   expect(host.querySelector('[role="status"]')?.textContent).toBe(text('migrated'))
   expect(host.textContent).toContain('previous → current')
+})
+
+it('places ordered bundle and preset choices beside the loop only for a new session', async () => {
+  const bundles = [
+    { id: 'acme#support', sourcePackage: 'acme' },
+    { id: 'acme#report', sourcePackage: 'acme' },
+  ]
+  await act(async () =>
+    updateLoopPicker({
+      visible: true,
+      disabled: false,
+      loops: [],
+      label: 'Loop',
+      inherited: 'Inherit',
+      unavailable: 'Unavailable',
+      presets: [{ id: 'read-only', isDefault: true }],
+      presetLabel: 'Preset',
+      bundles,
+      selectedBundles: ['acme#report', 'acme#support'],
+      bundlesLabel: 'Bundles',
+      onSelect() {},
+      onPreset() {},
+      onBundles() {},
+    }),
+  )
+  const host = await mount(createElement(LoopPicker))
+  expect(host.querySelectorAll('[role="combobox"]')).toHaveLength(3)
+  expect(host.querySelector('[data-testid="new-session-bundles"]')?.textContent).toContain('acme#report')
+  await act(async () =>
+    updateLoopPicker({
+      visible: false,
+      disabled: true,
+      loops: [],
+      label: 'Loop',
+      inherited: 'Inherit',
+      unavailable: 'Unavailable',
+      onSelect() {},
+    }),
+  )
+  expect(host.querySelector('[data-testid="new-session-bundles"]')).toBeNull()
 })

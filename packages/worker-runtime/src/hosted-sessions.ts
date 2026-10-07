@@ -144,6 +144,7 @@ export class HostedSessions {
           key: frame.sessionKey,
           binding,
           ...(frame.params.preset ? { preset: frame.params.preset } : {}),
+          ...(frame.params.bundles !== undefined ? { bundles: frame.params.bundles } : {}),
           ...(frame.params.loop ? { loop: frame.params.loop } : {}),
           ...(parent ? { parent } : {}),
         })

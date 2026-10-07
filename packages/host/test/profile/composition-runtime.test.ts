@@ -11,6 +11,7 @@ import { normalizePluginExport } from '@agnes/plugin-runtime/host'
 import { Type } from '@sinclair/typebox'
 import { expect, it, vi } from 'vitest'
 import { assertHostPublication } from '../../src/host-facade.js'
+import { parsePackageBundles } from '../../src/profile/composition.js'
 import { CompositionSessionStore, readLiveCompositionSessions } from '../../src/profile/composition-state.js'
 import {
   compositionModuleAllowed,
@@ -42,6 +43,9 @@ it('runs preset compositions side by side, filters tools and retains the generat
       })
     },
     profileInputs: {
+      bundleCatalog: parsePackageBundles('@fixture/session', {
+        reader: { profile: { tools: ['read'] } },
+      }),
       user: {
         name: 'local-dev',
         composition: {},
@@ -112,7 +116,19 @@ it('runs preset compositions side by side, filters tools and retains the generat
       host.compositionSessions?.().find((session) => session.sessionKey === writer.key)?.providers.compaction,
     ).toEqual({ engine: 'fixture' })
     await expect(host.setSessionPreset(reader.key, 'writer')).rejects.toThrow('separate Host generation')
-    const observer = await host.createSession({ key: 'observer-session', preset: 'observer', cwd: root })
+    const observer = await host.createSession({
+      key: 'observer-session',
+      preset: 'observer',
+      cwd: root,
+      bundles: ['@fixture/session#reader'],
+    })
+    expect(observer.currentTools().resolve('write')).toBeUndefined()
+    await expect(host.createSession({ key: observer.key, cwd: root, bundles: [] })).rejects.toThrow(
+      'immutable',
+    )
+    await expect(
+      host.createSession({ key: 'missing-bundle', cwd: root, bundles: ['missing#bundle'] }),
+    ).rejects.toThrow('unknown bundle')
     const next = structuredClone(host.profile)
     const route = next.provider.routes?.find((route) => route.route === 'gw')
     const first = route?.models?.[0]
@@ -148,6 +164,11 @@ it('runs preset compositions side by side, filters tools and retains the generat
     // Use the same durable directory as createTestHost's production Host options.
     const bindings = new CompositionSessionStore(profileDir)
     expect(bindings.read(reader.key)?.tree.preset).toBe('reader')
+    expect(bindings.read(observer.key)?.tree.sessionBundles).toEqual(['@fixture/session#reader'])
+    expect(bindings.read(observer.key)?.tree.sources.tools).toEqual({
+      layer: 'session',
+      name: '@fixture/session#reader',
+    })
     expect(await readLiveCompositionSessions(profileDir)).toHaveLength(2)
     const generation = reader.pluginGenerationId
     await reader.close()
@@ -166,6 +187,9 @@ it('runs preset compositions side by side, filters tools and retains the generat
     expect(migrated.pluginGenerationId).toBe(migration?.generationId)
     expect(migrated.currentTools().resolve('write')).toBeUndefined()
     await migrated.close()
+    const bundledResume = await host.createSession({ key: observer.key, cwd: root })
+    expect(bundledResume.currentTools().resolve('write')).toBeUndefined()
+    await bundledResume.close()
     await host.releaseSessionGeneration?.(resumed.key)
     expect(bindings.read(resumed.key)).toBeUndefined()
   } finally {

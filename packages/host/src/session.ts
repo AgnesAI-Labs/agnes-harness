@@ -33,6 +33,7 @@ export type CreateSessionOptions = {
   loop?: LoopSelection
   key?: string
   preset?: string
+  bundles?: readonly string[]
   /** Transitional local entry. Authenticated worker opens supply `binding` and cannot override it. */
   cwd?: string
   binding?: WorkspaceBinding

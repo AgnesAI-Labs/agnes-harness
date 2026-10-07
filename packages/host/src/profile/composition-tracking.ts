@@ -54,6 +54,7 @@ export async function trackHostComposition(
   const overrides: Partial<Host> = {
     compositionSessions: live,
     async createSession(input) {
+      if (input.bundles?.length) resolveComposition(profile, { sessionBundles: input.bundles })
       const session = await host.createSession(input),
         close = session.close.bind(session)
       session.close = async () => {

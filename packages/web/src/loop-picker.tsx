@@ -60,6 +60,10 @@ export interface LoopPickerView {
   presets?: readonly { id: string; isDefault: boolean }[]
   preset?: string | undefined
   presetLabel?: string
+  bundles?: readonly { id: string; sourcePackage: string }[]
+  selectedBundles?: readonly string[]
+  bundlesLabel?: string
+  onBundles?(bundles: string[]): void
   onPreset?(preset: string | undefined): void
 }
 let view: LoopPickerView = {
@@ -91,6 +95,23 @@ export function LoopPicker() {
   const stale = !!state.selected && !state.loops.some((entry) => loopIdentity(entry) === selected)
   return (
     <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.375rem' }}>
+      {state.bundles && state.bundles.length > 0 && (
+        <Select<string[]>
+          mode="multiple"
+          aria-label={state.bundlesLabel}
+          data-testid="new-session-bundles"
+          disabled={state.disabled}
+          value={[...(state.selectedBundles ?? [])]}
+          placeholder={state.bundlesLabel}
+          style={{ minWidth: 190, maxWidth: 280 }}
+          options={state.bundles.map(({ id, sourcePackage }) => ({
+            value: id,
+            label: id,
+            title: sourcePackage,
+          }))}
+          onChange={(bundles) => state.onBundles?.(bundles)}
+        />
+      )}
       {state.presets && (
         <Select<string>
           aria-label={state.presetLabel}

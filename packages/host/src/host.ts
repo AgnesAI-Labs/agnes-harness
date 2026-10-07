@@ -169,7 +169,7 @@ export interface Host {
 }
 
 export async function createHost(profile: ResolvedProfile, opts: HostOptions): Promise<Host> {
-  if (profile.composition || profile.bundlePresets)
+  if (profile.composition || profile.bundlePresets || Object.keys(profile.bundleCatalog ?? {}).length > 0)
     return createCompositionHost(profile, opts, createHostInstance)
   const host = await createRuntimeGenerationHost(profile, opts, createHostInstance)
   if (

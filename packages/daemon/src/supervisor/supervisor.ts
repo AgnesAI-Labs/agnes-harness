@@ -285,7 +285,13 @@ class RemoteEntryView implements SessionEntry {
 export class SupervisorRegistry implements Registry<SessionEntry> {
   private readonly opening = new Map<
     string,
-    { cwd: string; preset: string | null; loop: string | null; promise: Promise<SessionEntry> }
+    {
+      cwd: string
+      preset: string | null
+      bundles: string | null
+      loop: string | null
+      promise: Promise<SessionEntry>
+    }
   >()
 
   constructor(
@@ -297,6 +303,7 @@ export class SupervisorRegistry implements Registry<SessionEntry> {
     cwd: string
     binding?: WorkspaceBindingEnvelope
     preset?: string
+    bundles?: readonly string[]
     loop?: LoopSelection
     credential?: unknown
     resume?: boolean
@@ -307,6 +314,7 @@ export class SupervisorRegistry implements Registry<SessionEntry> {
         if (
           pending.cwd !== o.cwd ||
           pending.preset !== (o.preset ?? null) ||
+          pending.bundles !== (o.bundles === undefined ? null : JSON.stringify(o.bundles)) ||
           pending.loop !== (o.loop ? JSON.stringify(o.loop) : null)
         )
           throw rpcError('SEMANTIC_REJECTED', { code: 'ID_CONFLICT', sessionId: o.key })
@@ -316,6 +324,7 @@ export class SupervisorRegistry implements Registry<SessionEntry> {
       this.opening.set(o.key, {
         cwd: o.cwd,
         preset: o.preset ?? null,
+        bundles: o.bundles === undefined ? null : JSON.stringify(o.bundles),
         loop: o.loop ? JSON.stringify(o.loop) : null,
         promise,
       })
@@ -333,6 +342,7 @@ export class SupervisorRegistry implements Registry<SessionEntry> {
     cwd: string
     binding?: WorkspaceBindingEnvelope
     preset?: string
+    bundles?: readonly string[]
     loop?: LoopSelection
     credential?: unknown
     resume?: boolean
@@ -1962,7 +1972,7 @@ export async function startSupervisor(o: StartSupervisorOptions): Promise<{
             const link = await pool.acquireSharedWorker()
             const catalog = (await link.command('session.catalog', {}, { timeoutMs: 31_000 })) as Pick<
               import('@agnes/protocol').RuntimeAdminSnapshot,
-              'providers' | 'presets' | 'publication'
+              'providers' | 'presets' | 'publication' | 'bundles'
             >
             const localPluginFolders = o.packageRuntime?.manager.localPluginRoots
             if (!localPluginFolders)
@@ -1970,6 +1980,7 @@ export async function startSupervisor(o: StartSupervisorOptions): Promise<{
             return {
               providers: catalog.providers,
               presets: catalog.presets,
+              ...(catalog.bundles ? { bundles: catalog.bundles } : {}),
               localPluginFolders,
               ...(catalog.publication ? { publication: catalog.publication } : {}),
             }

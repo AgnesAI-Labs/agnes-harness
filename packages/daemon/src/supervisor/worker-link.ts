@@ -27,6 +27,7 @@ export class WorkerSessionChannel {
     open: Readonly<{
       binding: WorkspaceBindingFrame
       preset?: string
+      bundles?: readonly string[]
       loop?: LoopSelection
       resume?: boolean
       parent?: { key: string; boundarySeq: number }
@@ -327,6 +328,7 @@ export class WorkerLink {
     params: Readonly<{
       binding: WorkspaceBindingFrame
       preset?: string
+      bundles?: readonly string[]
       loop?: LoopSelection
       resume?: boolean
       parent?: { key: string; boundarySeq: number }
@@ -397,6 +399,7 @@ export class WorkerLink {
     open: Readonly<{
       binding: WorkspaceBindingFrame
       preset?: string
+      bundles?: readonly string[]
       loop?: LoopSelection
       resume?: boolean
       parent?: { key: string; boundarySeq: number }

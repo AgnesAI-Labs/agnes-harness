@@ -17,6 +17,7 @@ type RemoteOpen = Readonly<{
   cwd: string
   binding: WorkspaceBindingEnvelope
   preset?: string
+  bundles?: readonly string[]
   loop?: LoopSelection
   credential?: unknown
   parent?: string
@@ -270,6 +271,7 @@ export class WorkerRegistry implements Registry<RemoteEntry> {
     cwd: string
     binding?: WorkspaceBindingEnvelope
     preset?: string
+    bundles?: readonly string[]
     loop?: LoopSelection
     credential?: unknown
     parent?: string
@@ -284,7 +286,11 @@ export class WorkerRegistry implements Registry<RemoteEntry> {
     const key = o.key ?? `agnes:local:default:daemon:dm:${Math.random().toString(36).slice(2)}`
     const epoch = this.sessionEpochs.get(key) ?? 0
     const existing = this.entries.get(key)
-    if (existing) return existing
+    if (existing) {
+      if (o.bundles !== undefined && JSON.stringify(o.bundles) !== JSON.stringify(existing.reopen.bundles))
+        throw rpcError('SEMANTIC_REJECTED', { code: 'ID_CONFLICT', sessionId: key })
+      return existing
+    }
     const pending = this.opening.get(key)
     if (pending?.epoch === epoch) return pending.promise
     const opening = this.openFresh(key, authorized, epoch)
@@ -313,6 +319,7 @@ export class WorkerRegistry implements Registry<RemoteEntry> {
       cwd: o.cwd,
       binding: o.binding,
       ...(o.preset ? { preset: o.preset } : {}),
+      ...(o.bundles !== undefined ? { bundles: o.bundles } : {}),
       ...(o.loop ? { loop: o.loop } : {}),
       ...(o.parent && o.forkAt !== undefined ? { parent: { key: o.parent, boundarySeq: o.forkAt } } : {}),
     })

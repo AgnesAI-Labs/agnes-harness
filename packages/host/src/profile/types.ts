@@ -221,6 +221,11 @@ export type ResolvedPackage = {
   provides?: SeamName[]
 }
 export type ResolvedProfile = Readonly<{
+  /** Host-compiled session overlays; never a deployment manifest input. */
+  sessionComposition?: Readonly<{
+    bundles?: readonly string[]
+    loop?: import('@agnes/protocol').LoopSelection
+  }>
   adminBundles?: readonly string[]
   bundles?: string[]
   composition?: CompositionPatch

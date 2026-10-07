@@ -60,6 +60,11 @@ export const settingsCatalog: LocaleCatalog = {
     creatorPrompt:
       'Help me build an Agnes Harness plugin for this workspace. Ask what capability I need, use the public plugin contracts and testkit, and explain how to install and verify it.',
     presets: 'Session presets',
+    sessionBundles: 'Session bundles (selection order)',
+    sessionBundleHelp:
+      'Bundles selected here apply to a new session after deployment and preset choices. The Loop picker takes precedence. Existing sessions keep their composition.',
+    bundleUnavailable:
+      'A selected session bundle is no longer available. Refresh and select an available bundle.',
     default: 'Default',
     presetHelp:
       'Choose a preset for each new session. Allowed choices come from the running Host; missing choices cannot be requested.',
@@ -147,6 +152,10 @@ export const settingsCatalog: LocaleCatalog = {
     creatorPrompt:
       '请帮我为当前工作区开发 Agnes Harness 插件。先询问需要的业务能力，使用公开插件合同和 testkit，并说明安装和验证方法。',
     presets: '会话预设',
+    sessionBundles: '会话组合包（按选择顺序）',
+    sessionBundleHelp:
+      '此处选择的组合包在部署与预设之后应用于新会话，Loop 选择优先。现有会话保留原组合配置。',
+    bundleUnavailable: '所选会话组合包已不可用。请刷新并选择可用组合包。',
     default: '默认',
     presetHelp: '可为每个新会话选择预设。可用项来自当前 Host；不能请求未放行的预设。',
     start: '开始会话',

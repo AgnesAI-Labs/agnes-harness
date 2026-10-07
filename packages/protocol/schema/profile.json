@@ -1117,6 +1117,42 @@
             "pattern": "^[^\\s\\u0000-\\u001f\\u007f]+$"
           }
         },
+        "sessionComposition": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "bundles": {
+              "type": "array",
+              "maxItems": 64,
+              "uniqueItems": true,
+              "items": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 512,
+                "pattern": "^[^\\s\\u0000-\\u001f\\u007f]+$"
+              }
+            },
+            "loop": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["id", "version"],
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 256,
+                  "pattern": "^[^\\s\\u0000-\\u001f\\u007f]+$"
+                },
+                "version": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 64,
+                  "pattern": "^[^\\s\\u0000-\\u001f\\u007f]+$"
+                }
+              }
+            }
+          }
+        },
         "compositionSources": {
           "type": "object",
           "additionalProperties": {

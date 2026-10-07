@@ -428,9 +428,11 @@ let draftModelExplicit = false
 let draftLoop: LoopSelection | undefined
 let draftLoopEdited = false
 let draftPreset: string | undefined
+let draftBundles: string[] = []
 let runtimeCatalog: import('@agnes/protocol').RuntimeAdminSnapshot | undefined
 const startupRequest = new URLSearchParams(location.search)
 const requestedPreset = startupRequest.get('preset') ?? undefined
+const requestedBundles = startupRequest.getAll('bundle')
 const requestedPrompt = startupRequest.get('prompt') ?? undefined
 const settingsText = (key: string): string =>
   createCatalogTranslator(
@@ -834,6 +836,8 @@ function renderControls(): void {
   if (draftingNew && permissionMode === 'view' && draftPreset !== 'read-only')
     composerView.send.disabled = true
   if (draftingNew && loopCatalogPending) composerView.send.disabled = true
+  if (draftingNew && draftBundles.some((id) => !runtimeCatalog?.bundles?.some((bundle) => bundle.id === id)))
+    composerView.send.disabled = true
   updateLoopPicker({
     visible: draftingNew,
     disabled: !connected || sending || sessionPending || loopCatalogPending,
@@ -850,6 +854,14 @@ function renderControls(): void {
       renderControls()
     },
     ...(runtimeCatalog ? { presets: runtimeCatalog.presets } : {}),
+    bundles: runtimeCatalog?.bundles ?? [],
+    selectedBundles: draftBundles,
+    bundlesLabel: settingsText('sessionBundles'),
+    onBundles(bundles) {
+      if (!draftingNew || sending || sessionPending) return
+      draftBundles = bundles
+      renderControls()
+    },
     preset: draftPreset,
     presetLabel: settingsText('presets'),
     onPreset(preset) {
@@ -1538,6 +1550,7 @@ async function beginNewDraft(showWorkspacePicker = true, workspace?: WorkspaceEn
   draftLoopEdited = false
   draftLoop = newSessionCatalog?.defaults.loop
   draftPreset = undefined
+  draftBundles = []
   pendingSessionKey = crypto.randomUUID()
   knownSessionModel = inherited.model ? modelDefaults(inherited.model) : undefined
   permissionMode = inherited.permission
@@ -2205,11 +2218,14 @@ function submitComposer(): void {
       const workspace = selectedWorkspace
       pendingSessionKey = key
       if (!draftLoopAvailable() || loopCatalogPending) throw new Error(t('composer.loop.unavailable'))
+      if (draftBundles.some((id) => !runtimeCatalog?.bundles?.some((bundle) => bundle.id === id)))
+        throw new Error(settingsText('bundleUnavailable'))
       const created = await client.session.new({
         cwd: workspace?.path ?? '',
         sessionKey: key,
         ...(draftLoop ? { loop: draftLoop } : {}),
         ...(draftPreset ? { preset: draftPreset } : {}),
+        ...(draftBundles.length ? { bundles: draftBundles } : {}),
       })
       try {
         await open(created.id, {
@@ -2462,6 +2478,12 @@ run(async () => {
       if (requestedPreset === 'read-only') permissionMode = 'view'
       else if (requestedPreset === 'workspace-write') permissionMode = 'workspace'
       else if (requestedPreset === 'full-access') permissionMode = 'full'
+    }
+    if (requestedBundles.length) {
+      if (new Set(requestedBundles).size !== requestedBundles.length || requestedBundles.length > 64 ||
+        requestedBundles.some((id) => !runtimeCatalog?.bundles?.some((bundle) => bundle.id === id)))
+        throw new Error(settingsText('bundleUnavailable'))
+      draftBundles = requestedBundles
     }
     if (requestedPrompt) composerRuntime.setDraft(requestedPrompt)
     renderControls()

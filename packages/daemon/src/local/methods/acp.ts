@@ -12,6 +12,7 @@ import {
   type HarnessMeta,
   type Inbox,
   parseLoopSelection,
+  parseSessionBundles,
   type RpcError,
   rpcError,
   setHarnessMeta,
@@ -499,6 +500,12 @@ export function registerAcp(
     } catch {
       throw rpcError('SEMANTIC_REJECTED', { reason: 'loop requires { id, version }' })
     }
+    let bundles: string[] | undefined
+    try {
+      bundles = h.bundles === undefined ? undefined : parseSessionBundles(h.bundles)
+    } catch {
+      throw rpcError('SEMANTIC_REJECTED', { reason: 'invalid session bundle selection' })
+    }
     const preset = typeof h.preset === 'string' ? h.preset : undefined
     if (preset && !cx.host.profile.presets.allowed.includes(preset))
       throw rpcError('PRESET_SWITCH_REJECTED', { reason: 'not in presets.allowed', preset })
@@ -520,7 +527,7 @@ export function registerAcp(
             cx.host.profile,
             await cx.resolveNewSessionActor(c.conn.credential, 'session'),
             workspace.path,
-          )}${loop ? `:loop:${randomUUID()}` : ''}`
+          )}${loop ? `:loop:${randomUUID()}` : bundles !== undefined ? `:composition:${randomUUID()}` : ''}`
     const hasSessionFact =
       cx.registry.get(requestedKey) !== undefined ||
       cx.workspaces.sessionPath(requestedKey) !== undefined ||
@@ -549,6 +556,7 @@ export function registerAcp(
         cwd: binding.canonicalRoot,
         binding,
         ...(preset ? { preset } : {}),
+        ...(bundles !== undefined ? { bundles } : {}),
         ...(loop ? { loop } : {}),
         key: requestedKey,
         ...(c.conn.credential === undefined ? {} : { credential: c.conn.credential }),

@@ -182,6 +182,7 @@ export type SessionOpenFrame = {
   params: {
     binding: WorkspaceBindingFrame
     preset?: string
+    bundles?: readonly string[]
     loop?: LoopSelection
     resume?: boolean
     parent?: { key: string; boundarySeq: number }

@@ -301,6 +301,7 @@ export async function createCompositionHost(
                 limits: profile.limits,
               }).doc,
               ...(loop ? { session: { loop } } : {}),
+              ...(input.bundles !== undefined ? { sessionBundles: input.bundles } : {}),
             })
           binding = store.pin({
             sessionKey: key,
@@ -308,6 +309,11 @@ export async function createCompositionHost(
             profile: parent?.profile ?? profileForComposition(profile, tree),
           })
         }
+        if (
+          input.bundles !== undefined &&
+          JSON.stringify(input.bundles) !== JSON.stringify(binding.tree.sessionBundles)
+        )
+          throw new HostError('E_PRESET_UNSUPPORTED', 'session bundle selection is immutable')
         try {
           const container = await open(binding)
           if (closed) throw new HostError('E_HOST_CLOSED', 'host is closed')
