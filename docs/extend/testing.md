@@ -1,0 +1,59 @@
+# Test a plugin without a paid model
+
+English | [简体中文](testing.zh-CN.md)
+
+[Author kit](README.md) · [Quickstart](quickstart.md)
+
+Generated packages use Node's test runner: run `npm run build`, then `npm test`. These helpers are exported from `@agnes/plugin-runtime/testkit`; tool registration tests also need matching `@agnes/host`.
+
+## Tools through real registration
+
+```js
+import { createPluginTestHost } from '@agnes/plugin-runtime/testkit'
+import { main } from './dist/index.js'
+
+const host = await createPluginTestHost(main)
+try {
+  console.log((await host.invoke('plugin_hello_tool', { message: 'hello' })).structured)
+} finally {
+  await host.dispose()
+}
+```
+
+This mounts a verified third-party row, invokes the production Host `ctx.extension()` registration bridge, validates arguments and calls the registered tool. Unloading releases the row, registrations and plugin effects. Duplicate registration and loading failures reject creation.
+
+I/O defaults to refusal. Supply `context` with explicit fake filesystem/network ports when needed. `invoke(name, args, signal)` supports cancellation; disposal aborts active call signals, which tools must cooperate with. These helpers do not implement session approvals, replay, ledger persistence or OS sandboxing. Hook registration can be checked, but hook dispatch is not simulated.
+
+## Scripted loop replies
+
+```js
+import { driveLoop } from '@agnes/plugin-runtime/testkit'
+import { loop } from './dist/index.js'
+
+const result = await driveLoop(loop, {
+  inputs: [{ content: [{ type: 'text', text: 'hello' }] }],
+  replies: [[
+    { type: 'text_delta', delta: 'Hello!' },
+    { type: 'done', reason: 'stop' },
+  ]],
+})
+console.log(result.events, result.checkpoint)
+```
+
+`driveLoop` creates or resumes the actual driver, captures model requests/events and disposes it on completion or failure. Pass `checkpoint` to test resume and unsupported codec versions. It stops at an end reason or `events.finish`, and refuses unfinished loops after `maxSteps` (default 20). Exhausted model scripts fail.
+
+Supply `tools.execute`/`tools.batch` through a plugin test host's `invoke` to exercise tools. The [loop test](../../packages/plugin-runtime/testkit/loop.test.ts) drives scripted model replies into a real Host-registered tool. Missing tool ports refuse execution. Parking is deliberately refused: this driver tests bounded scheduling, not background waits or full session recovery.
+
+`scriptedModel(replies)` is available separately for your scheduler. Its `requests` and `remaining` expose missing or extra model interactions.
+
+## Adapter instances
+
+`runModelAdapter(adapter, { config, route, request, signal })` creates an actual instance, captures stream events and route/model catalogs, and disposes it in `finally`. `mode: 'complete'` uses the optional complete method and refuses if absent. Registration-wide `cleanup` remains owned by the registration service, rather than running per request.
+
+The [adapter starter test](../../templates/model-adapter/test/adapter.test.mjs) uses `fakeModel`/`fakeRequest` from `@agnes/ai/testkit` without network I/O. Add provider-specific request/response fixtures when replacing its deterministic reply. Check cancellation, errors and disposal.
+
+## Verification scope
+
+Extend the nearest test when behavior changes. Cover valid input, schema errors, business refusal, cancellation, cleanup and resume as applicable. The panel test checks descriptor/slot/render behavior; browser mounting needs separate verification. MCP bundle tests check packaged assets and Skill registration; real server connectivity needs separate verification.
+
+Author test success establishes contracts with deterministic dependencies. It does not prove compatibility with real providers, browsers, MCP servers or OS sandboxes.

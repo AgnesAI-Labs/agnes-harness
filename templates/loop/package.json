@@ -1,0 +1,40 @@
+{
+  "name": "__PACKAGE_NAME__",
+  "version": "0.1.0",
+  "type": "module",
+  "license": "Apache-2.0",
+  "engines": {
+    "node": ">=24.10"
+  },
+  "exports": "./dist/index.js",
+  "files": [
+    "dist",
+    "client",
+    "skills",
+    "mcp.json"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "node --import tsx --test test/*.test.mjs"
+  },
+  "dependencies": {
+    "@agnes/plugin-runtime": "0.0.0",
+    "@agnes/extension-api": "1.4.0"
+  },
+  "devDependencies": {
+    "typescript": "7.0.2",
+    "@types/node": "26.4.1",
+    "tsx": "4.23.13"
+  },
+  "agnes": {
+    "plugins": [
+      {
+        "export": "main",
+        "id": "ext:__PACKAGE_NAME__/main",
+        "inject": [
+          "loops"
+        ]
+      }
+    ]
+  }
+}

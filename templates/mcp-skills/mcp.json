@@ -1,0 +1,11 @@
+{
+  "serverId": "__SKILL_NAME__",
+  "displayName": "__PACKAGE_NAME__",
+  "transport": {
+    "kind": "http",
+    "url": "http://127.0.0.1:3001/mcp"
+  },
+  "secretBinding": {
+    "kind": "none"
+  }
+}

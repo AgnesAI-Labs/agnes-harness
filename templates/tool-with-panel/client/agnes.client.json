@@ -1,0 +1,12 @@
+{
+  "client": {
+    "entry": "./index.js",
+    "styles": [],
+    "slots": ["ui:sidebar"],
+    "publicConfig": {
+      "label": "__PACKAGE_NAME__"
+    },
+    "services": [],
+    "projections": []
+  }
+}
