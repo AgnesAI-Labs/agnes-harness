@@ -6,7 +6,33 @@
 
 从源码构建后，你会得到一套包含 CLI、后台和 Web 工作台的本地运行目录。按本页准备环境、完成构建，再进入[首次运行](quickstart.zh-CN.md)。想先看预期结果，可以阅读[演示指南](demo.zh-CN.md)。
 
-当前分发方式为源码构建，尚无正式公共安装包。
+从本仓库安装仍使用源码构建。下面的 npm 包是发布候选，还没有发布到注册表。
+
+<a id="npx"></a>
+
+## 一行启动（发布候选）
+
+| 选择 | 取值 |
+| --- | --- |
+| 公共包名 | `@agnes/harness` |
+| 命令 | `agh` |
+| 版本方案 | `0.1.0-alpha.N`（当前候选为 `0.1.0-alpha.0`） |
+| Node.js | `>=24.10` |
+| 平台 | macOS arm64 与 x64、Linux arm64 与 x64、Windows x64 |
+
+`agh web` 和 `agh start` 会启动 daemon、worker 和 Web 工作台。包发布之后，干净的机器可以运行：
+
+```sh
+npx @agnes/harness web
+```
+
+在发布之前，不要对注册表执行这条命令。安装包带有打包平台的原生预编译文件（`dist/prebuilds/<platform>-<arch>/`），以及打好的 daemon、worker、Web 资源、内置插件、LICENSE 和 NOTICE，安装时没有 workspace 依赖。在源码目录中构建候选包：
+
+```sh
+pnpm --filter @agnes/cli pack:npx
+```
+
+命令会打印交给 `npm pack` 的目录。仓库里的工作区包名仍是 `@agnes/cli`。
 
 ## 获取源码
 
@@ -109,4 +135,4 @@ node (Join-Path $aghBuildOutput 'agnes.mjs') --help
 
 在原实例结束任务后，用原分发的入口显式 `daemon stop`，结束旧 Web 服务，再启动新分发。构建锁、失败暂存目录和 owner 记录属于恢复证据，不能用删除它们来掩盖构建或后台问题。没有自动安装、自动更新或开机启动承诺。
 
-实现依据：[工具链](../../package.json)、[本地构建](../../packages/cli/tools/build-local.ts)、[Windows headers](../../.github/scripts/prepare-windows-native.ps1)。
+实现依据：[工具链](../../package.json)、[本地构建](../../packages/cli/tools/build-local.ts)、[npx 包](../../tools/release/pack-npx.ts)、[Windows headers](../../.github/scripts/prepare-windows-native.ps1)。

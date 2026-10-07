@@ -8,7 +8,33 @@ English | [简体中文](install.zh-CN.md)
 
 A source build produces a local runtime directory containing the CLI, background services, and Web workbench. Prepare your environment, build the runtime, then follow the [quickstart](quickstart.md). For a preview of the expected results, see the [demo guide](demo.md).
 
-Source builds are the current distribution method. No official public installer is available yet.
+Source builds remain the way to install from this repository. A release-candidate npm package is described below. It is not published to the registry yet.
+
+<a id="npx"></a>
+
+## One-line start (release candidate)
+
+| Choice | Value |
+| --- | --- |
+| Public package | `@agnes/harness` |
+| Command | `agh` |
+| Version scheme | `0.1.0-alpha.N` (this candidate is `0.1.0-alpha.0`) |
+| Node.js | `>=24.10` |
+| Platforms | macOS arm64 and x64, Linux arm64 and x64, Windows x64 |
+
+`agh web` and `agh start` start the daemon, worker, and Web workbench. After the package is published, a clean machine can run:
+
+```sh
+npx @agnes/harness web
+```
+
+Do not run that command against the registry until the package is published. A packed tarball contains the native prebuild for the platform that built it (`dist/prebuilds/<platform>-<arch>/`), plus the bundled daemon, worker, Web assets, bundled plugins, LICENSE, and NOTICE. It has no workspace dependencies. Build the candidate from a source checkout with:
+
+```sh
+pnpm --filter @agnes/cli pack:npx
+```
+
+The command prints the directory to pass to `npm pack`. The workspace package name stays `@agnes/cli`.
 
 <a id="获取源码"></a>
 
@@ -121,4 +147,4 @@ The POSIX build flow has versioned runtime evidence. The PowerShell example has 
 
 After tasks finish in the old instance, run `daemon stop` through the old distribution, stop its Web service, and then launch the new distribution. Build locks, failed staging directories, and owner records are recovery evidence; deleting them is not a fix for build or daemon errors. Automatic installation, updates, and startup registration are not promised.
 
-Implementation: [toolchain](../../package.json), [local build](../../packages/cli/tools/build-local.ts), [Windows headers](../../.github/scripts/prepare-windows-native.ps1).
+Implementation: [toolchain](../../package.json), [local build](../../packages/cli/tools/build-local.ts), [npx package](../../tools/release/pack-npx.ts), [Windows headers](../../.github/scripts/prepare-windows-native.ps1).
