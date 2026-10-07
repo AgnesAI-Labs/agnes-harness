@@ -618,6 +618,7 @@ export function supervisorLister(
           // PageSessionMeta requires a string. `default` is the profile's unconfigured sentinel and
           // is used only when an old/incomplete projection has no recorded start preset.
           preset: state.preset ?? 'default',
+          ...(projected?.loop ? { loop: projected.loop } : {}),
           ...(projected?.title ? { title: projected.title } : {}),
           ...(cwd !== undefined ? { cwd } : {}),
         })

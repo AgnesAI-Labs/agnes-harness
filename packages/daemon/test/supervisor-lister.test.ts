@@ -15,7 +15,8 @@ const event = (seq: number, type: string, ts: string) =>
     ts,
     id: `id-${seq}`,
     type,
-    data: type === 'session/start' ? { preset: 'standard' } : {},
+    data:
+      type === 'session/start' ? { preset: 'standard', loop: { id: 'example.dag', version: '1.0.0' } } : {},
     actor: { id: 'local', org: 'local', role: 'owner', deptPath: [], attrs: {} },
     origin: 'system',
     trust: 'trusted',
@@ -52,6 +53,8 @@ describe('supervisorLister', () => {
     const page = await supervisorLister(idle, seeded()).list({ limit: 50 })
     expect(page.items.map((row) => row.sessionId)).toEqual(expected)
     expect(page.cursor).toBeUndefined()
+    expect(page.items[0]?.loop).toEqual({ id: 'example.dag', version: '1.0.0' })
+    expect(page.items.at(-1)?.loop).toBeUndefined()
   })
 
   it('pages through the recency order without repeating or skipping a row', async () => {

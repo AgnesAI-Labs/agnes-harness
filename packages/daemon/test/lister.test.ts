@@ -272,7 +272,11 @@ describe('SessionWorkspaceIndex', () => {
         ts: '2026-09-12T00:00:00.000Z',
         id: '01J6ZM2Q3R4S5T6V7W8X9Y0ZAB',
         type: 'session/start',
-        data: { preset: 'standard', resolvedProfileHash: 'sha256-profile' },
+        data: {
+          preset: 'standard',
+          resolvedProfileHash: 'sha256-profile',
+          loop: { id: 'example.dag', version: '1.0.0' },
+        },
         actor: { id: 'local', org: 'local', role: 'owner', deptPath: [], attrs: {} },
         origin: 'system',
         trust: 'trusted',
@@ -300,7 +304,11 @@ describe('SessionWorkspaceIndex', () => {
       generation: 1,
       preset: 'claw',
       profileHash: 'sha256-profile',
+      loop: { id: 'example.dag', version: '1.0.0' },
     })
+    expect(
+      new SessionWorkspaceIndex(tables.table('session_workspaces')).metadata('session-one')?.loop,
+    ).toEqual({ id: 'example.dag', version: '1.0.0' })
     await tables.close()
   })
 
@@ -413,7 +421,7 @@ describe('SessionWorkspaceIndex', () => {
     await tables.close()
   })
 
-  it('adds last_active_at to a table created before it existed without losing rows', async () => {
+  it('adds listing columns to an old table and restores the recorded loop without losing rows', async () => {
     const tables = sqliteTables()
     const table = tables.table('session_workspaces')
     table.exec(
@@ -429,6 +437,20 @@ describe('SessionWorkspaceIndex', () => {
     expect(index.metadata('old')?.lastActiveAt).toBeUndefined()
     index.observe('old', ledgerEvent(8, 'user/message', '2026-09-21T00:00:00.000Z'), 1)
     expect(new SessionWorkspaceIndex(table).metadata('old')?.lastActiveAt).toBe('2026-09-21T00:00:00.000Z')
+    await index.refresh('old', {
+      status: async () => ({ lastSeq: 8, preset: null }),
+      scan: async () => [
+        {
+          ...(ledgerEvent(1, 'session/start', '2026-09-01T00:00:00.000Z') as Record<string, unknown>),
+          data: { loop: { id: 'example.dag', version: '1.0.0' } },
+        },
+      ],
+    })
+    expect(new SessionWorkspaceIndex(table).metadata('old')).toMatchObject({
+      title: 'kept',
+      lastSeq: 8,
+      loop: { id: 'example.dag', version: '1.0.0' },
+    })
     await tables.close()
   })
 })

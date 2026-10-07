@@ -262,6 +262,7 @@ export interface SessionWorkspacePort {
 }
 
 export type SessionWorkspaceMeta = {
+  loop?: { id: string; version: string }
   title?: string
   /** `ts` of the latest `user/message`; absent until someone chats in the session. */
   lastActiveAt?: string
@@ -275,7 +276,15 @@ export type SessionWorkspaceMeta = {
 /** The narrow worker view needed to fill a workspace row after a late index bind. */
 export type SessionProjectionSource = {
   status(): Promise<{ lastSeq: number; preset: string | null }>
-  scan(q: { fromSeq: number; toSeq: number; limit?: number }): Promise<unknown[]>
+  scan(q: { fromSeq: number; toSeq: number; limit?: number; type?: string }): Promise<unknown[]>
+}
+
+function loopPin(value: unknown): SessionWorkspaceMeta['loop'] {
+  if (!value || typeof value !== 'object') return undefined
+  const pin = value as { id?: unknown; version?: unknown }
+  return typeof pin.id === 'string' && pin.id && typeof pin.version === 'string' && pin.version
+    ? { id: pin.id, version: pin.version }
+    : undefined
 }
 
 /** Adds one nullable projection column to an existing table by direct probe; PRAGMA is outside
@@ -318,6 +327,7 @@ export class SessionWorkspaceIndex implements SessionWorkspacePort {
     )
     ensureColumn(t, 'title', 'TEXT')
     ensureColumn(t, 'last_active_at', 'TEXT')
+    ensureColumn(t, 'loop_pin', 'TEXT')
     // The workspace table shipped before the listing projection. Migrate by direct column probes;
     // PRAGMA is intentionally outside Host's owner SQL allow-list. Each ALTER is idempotent under
     // the one-time probe because an old table has all of these columns missing.
@@ -370,12 +380,14 @@ export class SessionWorkspaceIndex implements SessionWorkspacePort {
   }
 
   metadata(sessionKey: string): SessionWorkspaceMeta | undefined {
-    const row = this.t.get<SessionWorkspaceMeta>(
-      'SELECT created_at AS createdAt, last_seq AS lastSeq, generation, preset, profile_hash AS profileHash, title, last_active_at AS lastActiveAt FROM session_workspaces WHERE session_key = ?',
+    const row = this.t.get<SessionWorkspaceMeta & { loopPin: string | null }>(
+      'SELECT created_at AS createdAt, last_seq AS lastSeq, generation, preset, profile_hash AS profileHash, title, last_active_at AS lastActiveAt, loop_pin AS loopPin FROM session_workspaces WHERE session_key = ?',
       [sessionKey],
     )
     if (!row) return undefined
+    const loop = row.loopPin ? loopPin(JSON.parse(row.loopPin)) : undefined
     return {
+      ...(loop ? { loop } : {}),
       createdAt: row.createdAt ?? '',
       lastSeq: row.lastSeq ?? 0,
       generation: row.generation ?? 0,
@@ -403,6 +415,10 @@ export class SessionWorkspaceIndex implements SessionWorkspacePort {
     }
     const data = event.data as { preset?: unknown; resolvedProfileHash?: unknown; to?: unknown } | null
     if (event.type === 'session/start') {
+      this.t.exec('UPDATE session_workspaces SET loop_pin = ? WHERE session_key = ?', [
+        JSON.stringify(loopPin((event.data as { loop?: unknown } | null)?.loop) ?? null),
+        sessionKey,
+      ])
       if (!createdAt) createdAt = event.ts
       preset = typeof data?.preset === 'string' ? data.preset : null
       profileHash = typeof data?.resolvedProfileHash === 'string' ? data.resolvedProfileHash : null
@@ -434,6 +450,24 @@ export class SessionWorkspaceIndex implements SessionWorkspacePort {
     let current = this.metadata(sessionKey)
     if (!current) return
     const status = await source.status()
+    // Existing indexes predate the pin column. Backfill once from the opener, including
+    // an explicit null for legacy sessions; never substitute the current Loop default.
+    if (
+      current.createdAt &&
+      this.t.get<{ pin: string | null }>(
+        'SELECT loop_pin AS pin FROM session_workspaces WHERE session_key = ?',
+        [sessionKey],
+      )?.pin === null
+    ) {
+      const rows = await source.scan({ fromSeq: 1, toSeq: status.lastSeq, type: 'session/start', limit: 1 })
+      const start = rows.find((row) => (row as EventEnvelope).type === 'session/start') as
+        | EventEnvelope
+        | undefined
+      this.t.exec('UPDATE session_workspaces SET loop_pin = ? WHERE session_key = ?', [
+        JSON.stringify(loopPin((start?.data as { loop?: unknown } | undefined)?.loop) ?? null),
+        sessionKey,
+      ])
+    }
     let from = Math.max(1, current.lastSeq + 1)
     const target = Math.max(current.lastSeq, status.lastSeq)
     while (from <= target) {
@@ -513,6 +547,8 @@ export class MemorySessionWorkspaces implements SessionWorkspacePort {
     if (event.seq > row.metadata.lastSeq) row.metadata.lastSeq = event.seq
     if (generation > row.metadata.generation) row.metadata.generation = generation
     if (event.type === 'session/start') {
+      const loop = loopPin((event.data as { loop?: unknown } | null)?.loop)
+      if (loop) row.metadata.loop = loop
       if (!row.metadata.createdAt) row.metadata.createdAt = event.ts
       row.metadata.preset = typeof data?.preset === 'string' ? data.preset : null
       row.metadata.profileHash =
