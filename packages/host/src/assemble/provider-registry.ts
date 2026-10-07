@@ -155,6 +155,10 @@ export class ProviderRegistry<T extends ProviderIdentity> {
   clearSelection(scope: string): void {
     this.selections.delete(scope)
   }
+  /** Registered providers in insertion order, for named service operations. */
+  values(): readonly T[] {
+    return [...this.entries.values()].map(({ provider }) => provider)
+  }
   catalog(): readonly ProviderCatalogEntry[] {
     return Object.freeze(
       [...this.entries.values()]

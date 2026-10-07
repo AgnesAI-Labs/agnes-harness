@@ -1001,7 +1001,7 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
             installLoops(root, origins)
             installToolProviders(root, origins)
             installCompactionEngines(root, origins)
-            installChildAgents(root, origins)
+            installChildAgents(root, origins, providerSelections['child-agent'])
             const sandboxProviders = installSandboxProviders(root, origins)
             sandboxProviders.register(createLocalSandboxProvider(adapters.exec, adapters.platform.os))
             sandboxProviderSlot.registry = sandboxProviders

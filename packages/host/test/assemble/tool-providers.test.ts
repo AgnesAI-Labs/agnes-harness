@@ -26,6 +26,7 @@ it('assembles the bundled default policy row before opening a real Host session'
               'tool-runtime': { provider: 'default' },
               'tool-policy': { provider: 'default' },
               compaction: { provider: 'default' },
+              'child-agent': { provider: 'in-process' },
             },
           },
         ],
@@ -59,6 +60,15 @@ it('assembles the bundled default policy row before opening a real Host session'
     )
     expect(catalog).toContainEqual(
       expect.objectContaining({ kind: 'tool-policy', id: 'default', active: true }),
+    )
+    expect(catalog).toContainEqual(
+      expect.objectContaining({
+        kind: 'child-agent',
+        id: 'in-process',
+        sourcePackage: '@agnes/base',
+        active: true,
+        restartRequired: false,
+      }),
     )
   } finally {
     await host.close()

@@ -105,7 +105,12 @@ export interface ChildAgentRegistration {
 export interface ChildAgentService extends ChildAgentRegistration {
   setSessionAllowlist(sessionKey: string, allowlist: ChildAgentAllowlist | undefined): void
   allowlist(sessionKey: string): ChildAgentAllowlist | undefined
-  start(providerId: string, task: string, options: ChildAgentStartOptions): Promise<ChildAgentHandle>
+  /** Undefined selects the configured child-agent provider; explicit ids are unchanged. */
+  start(
+    providerId: string | undefined,
+    task: string,
+    options: ChildAgentStartOptions,
+  ): Promise<ChildAgentHandle>
   list(sessionKey: string): Promise<readonly ChildAgentListing[]>
 }
 

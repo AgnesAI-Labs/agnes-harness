@@ -3,7 +3,7 @@ import {
   type ProviderSelection,
   type ProviderCatalogEntry,
 } from '@agnes/extension-api'
-import { DEFAULT_LOOP, type PresetView } from '@agnes/core'
+import { DEFAULT_LOOP, IN_PROCESS_CHILD_PROVIDER_ID, type PresetView } from '@agnes/core'
 import { HostError } from '../errors.js'
 import type { ResolvedProfile } from '../profile/types.js'
 import type { PresetDoc } from '../presets/types.js'
@@ -16,6 +16,7 @@ export const PROVIDER_KINDS = [
   'sandbox',
   'tool-runtime',
   'tool-policy',
+  'child-agent',
 ] as const
 export type ProviderKindName = (typeof PROVIDER_KINDS)[number]
 export type ProviderSelections = Partial<Record<ProviderKindName, ProviderSelection>>
@@ -131,6 +132,7 @@ export function providerConfigurationScopes(
     sandbox: { provider: profile.sandbox?.provider ?? LOCAL_SANDBOX_PROVIDER_ID },
     'tool-runtime': { provider: preset.tools.runtime ?? 'default' },
     'tool-policy': { provider: preset.approval.policy ?? 'default' },
+    'child-agent': { provider: IN_PROCESS_CHILD_PROVIDER_ID },
   }
   const fallback = defaults[entry.kind as ProviderKindName]
   return fallback?.provider === entry.id &&
