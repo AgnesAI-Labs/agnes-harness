@@ -153,6 +153,17 @@ Agent Loop 负责调度与自身检查点状态。通过 `@agnes/extension-api` 
 
 受控的 `turn.checkpoint`、`model.respond`、`tools.drain`、压缩与延迟等待端口维护 Core 的账本和恢复不变量。调度器通过 `ctx.turn.continuation()` 选择下一条边，无须接触私有程序计数器。`@agnes/loop-default` 只使用公共上下文，由 Base 发行包的普通插件行注册。`checkpointMode: 'ledger'` 使用 Core 恢复并接受没有驱动检查点的历史会话。有状态驱动默认使用 `'driver'` 模式，恢复前校验 codec 版本。Host 为 `ctx.children` 绑定父会话的 `ChildAgentSessionService`，提供 start/list/message/interrupt/result/events/dispose。省略 providerId 使用 child-agent 配置；每次 start 都检查当前允许名单，继承父工作区、固定代码 generation、预算和工具过滤，子选项只能收窄这些约束。会话关闭会取消并等待已启动或正在启动的子代理清理完成。
 
+有两种调度方式：
+
+| 方式 | 操作与职责 |
+| --- | --- |
+| 粗粒度边 | 官方默认循环通过 `turn.continuation()` 选择 `turn.checkpoint`、`model.respond`、`tools.drain`、压缩和延迟等待。Core 执行既有模型、工具、门控策略及账本恢复。 |
+| 底层端口 | 第三方循环通过输入领取、回合视图、`prepareRequest` + `model.stream`、`tools.batch`、副作用回执、压缩、子代理和等待/唤醒自行管理状态机、响应解析及调度。准入、审批绑定及副作用仍由 Core 管理。[独立 ReAct 示例](../../examples/loops/react-loop/README.md) 不调用任何粗粒度调度边。 |
+
+底层驱动使用 `ctx.events.assistant(message, nextCheckpoint)` 原子提交解析后的助手消息及下一检查点，Core 同时建立工具调用的助手归属。调度前保存稳定工具 id 和停驻意图。工具端口等待同批任务结束、关闭审批停驻回合后抛出 `code: 'PARKED'`，驱动应返回 parked 结果。恢复时 `input.resumeParked()` 打开原审批续点，`tools.resume(invocationId, signal)` 使用既有授权执行原调用。`E_LANE_BUSY` 表示另一张审批票据仍需单独续接：保留调用 id，把当前续点以 parked 结束并等待该票据。不确定的外部发送拒绝自动重放。压缩前等待副作用结束，并用 `turn.endStep()` 关闭当前步骤。这些操作只执行账本转移，不选择下一调度动作。
+
+可继续的子代理通过事件中的 `idle` 分隔每轮响应；`result()` 等待其生命周期终止。`wait.park` 返回后检查取消并领取 steer。子代理启动回执、上下文估算、唤醒持久性和后台任务结果等待等接口边界，见 ReAct 示例的[底层端口发现清单](../../examples/loops/react-loop/README.md#low-level-port-findings)。
+
 遵守取消信号，dispose 必须幂等。会话关闭先停止准入，再取消并等待活跃驱动/工具工作，允许最终写入，然后关闭 hooks、账本与工作区租约。释放非活跃的账本续点会保留其恢复能力。
 
 新会话选择优先级为显式参数、管理端默认值、profile 顶层 `loop: { id, version }`、`agnes.default@1.0.0`。SDK 使用 `client.createSession({ cwd, loop })` 或 `client.session.new({ cwd, loop })`，CLI 使用 `agh -p "提示词" --loop example.dag@1.0.0`。开始记录固定循环身份；默认值变更仅影响新会话。旧会话映射到默认身份，缺失时明确失败，不会替换循环。参见[独立 DAG 示例](../../examples/loops/dag-loop/README.md)：模型规划、并行波次、依赖汇合与恢复均只依赖公共端口。

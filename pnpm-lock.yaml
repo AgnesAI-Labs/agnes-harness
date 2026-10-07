@@ -38,6 +38,12 @@ importers:
         specifier: '*'
         version: link:../../../packages/extension-api
 
+  examples/loops/react-loop:
+    dependencies:
+      '@agnes/extension-api':
+        specifier: ^1.4.0
+        version: link:../../../packages/extension-api
+
   examples/packages/cordis-greeting:
     dependencies:
       '@agnes/plugin-runtime':

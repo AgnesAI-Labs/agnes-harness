@@ -1,0 +1,24 @@
+{
+  "name": "@agnes-example/react-loop",
+  "version": "1.0.0",
+  "type": "module",
+  "license": "Apache-2.0",
+  "exports": "./index.mjs",
+  "types": "./index.d.mts",
+  "peerDependencies": {
+    "@agnes/extension-api": "^1.4.0"
+  },
+  "agnes": {
+    "plugins": [
+      {
+        "id": "loop:react",
+        "export": "plugin",
+        "apiRange": "^1.4.0",
+        "default": true,
+        "inject": [
+          "loops"
+        ]
+      }
+    ]
+  }
+}

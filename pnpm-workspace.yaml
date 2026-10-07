@@ -3,6 +3,7 @@ packages:
   - packages/package-manager/bundled-plugins/document-reader
   - examples/packages/cordis-greeting
   - examples/loops/dag-loop
+  - examples/loops/react-loop
   - examples/persistence
   - examples/sandbox/docker
   - tools/*
