@@ -159,11 +159,7 @@ export interface PersistenceCatalogEntry {
  * The key half of a register cell. Same spelling as Core `registerKey`: most registers are keyed
  * by lane, artifact jobs by `jobId`, and harness entries by kind and id joined with NUL.
  */
-export function persistenceRegisterKey(event: {
-  register?: string
-  lane?: string
-  data: unknown
-}): string {
+export function persistenceRegisterKey(event: { register?: string; lane?: string; data: unknown }): string {
   const data = event.data as Record<string, unknown> | null
   switch (event.register) {
     case 'artifact/job':
@@ -188,7 +184,8 @@ export function isPersistenceTombstone(register: string, data: unknown): boolean
 
 /** Checks the provider shape. A provider that does not declare restart-required is refused. */
 export function definePersistenceProvider<T extends PersistenceProvider>(provider: T): T {
-  if (provider === null || typeof provider !== 'object') throw new Error('persistence provider must be an object')
+  if (provider === null || typeof provider !== 'object')
+    throw new Error('persistence provider must be an object')
   if (typeof provider.id !== 'string' || !PROVIDER_ID.test(provider.id))
     throw new Error('persistence provider id must match ^[a-z][a-z0-9._-]{0,63}$')
   if (typeof provider.version !== 'string' || provider.version.length === 0 || provider.version.length > 64)

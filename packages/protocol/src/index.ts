@@ -224,7 +224,6 @@ export type {
   PackageInstallParams,
   PackageListParams,
   PackageListResult,
-  PluginGenerationStatus,
   PackageOperation,
   PackageOperationCancelParams,
   PackageOperationGetParams,
@@ -234,7 +233,6 @@ export type {
   PackagePinsReleaseParams,
   PackagePinsReleaseResult,
   PackagePreview,
-  PluginCapabilities,
   PackageProvenance,
   PackageRemoveParams,
   PackageRollbackParams,
@@ -247,6 +245,8 @@ export type {
   PackageUntrustParams,
   PackageUpdateParams,
   PackageWarning,
+  PluginCapabilities,
+  PluginGenerationStatus,
   PluginTreeApplyParams,
   PluginTreeApplyResult,
   PluginTreeArtifact,
@@ -436,6 +436,7 @@ export * from './errors.js'
 export * from './hooks.js'
 export { jcs } from './jcs.js'
 export { DEFAULT_JSON_DATA_MAX_BYTES, inspectJsonData } from './json-data.js'
+export * from './loop-selection.js'
 export * from './meta.js'
 export * from './methods.js'
 // migrate.js is re-exported by name:
@@ -452,6 +453,7 @@ export * from './methods.js'
 export { CURRENT_V, listMigrations, normalize, registerMigration, supportedVersions } from './migrate.js'
 export * from './model.js'
 export * from './package-admin.js'
+export { type PluginFailureHelp, pluginFailureHelp } from './plugin-failure-help.js'
 export { validateProjectionCapability, validateProjectionReadResult } from './projections.js'
 export * from './provider.js'
 export * from './resource-control.js'
@@ -477,5 +479,3 @@ export {
   validateUserAttachments,
 } from './validate.js'
 export * from './worker-generation.js'
-export * from './loop-selection.js'
-export { pluginFailureHelp, type PluginFailureHelp } from './plugin-failure-help.js'

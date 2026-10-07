@@ -1,7 +1,7 @@
 import { Type } from '@sinclair/typebox'
 import { describe, expect, it } from 'vitest'
-import { defineAgnesPlugin, type Context } from '../src/index.js'
 import { defineTool } from '../src/author/tool.js'
+import { type Context, defineAgnesPlugin } from '../src/index.js'
 import { createPluginTestHost } from './plugin.js'
 
 const tool = defineTool({

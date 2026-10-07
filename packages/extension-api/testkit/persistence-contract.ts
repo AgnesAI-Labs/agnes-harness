@@ -1,6 +1,6 @@
+import { expect, it } from 'vitest'
 import type { PersistenceEventRecord, PersistenceSessionStore } from '../src/persistence.js'
 import { PERSISTENCE_SCAN_PAGE_MAX } from '../src/persistence.js'
-import { expect, it } from 'vitest'
 
 const NUL = '\u0000'
 
@@ -11,7 +11,11 @@ export type PersistenceContractFactory = {
 
 let nextId = 0
 
-function event(type: string, data: unknown, over: Partial<PersistenceEventRecord> = {}): PersistenceEventRecord {
+function event(
+  type: string,
+  data: unknown,
+  over: Partial<PersistenceEventRecord> = {},
+): PersistenceEventRecord {
   nextId += 1
   return {
     ts: '2026-09-07T00:00:00.000Z',
@@ -65,7 +69,9 @@ export function persistenceContract(name: string, create: () => PersistenceContr
     )
     await store.commit('k', { events, expectedWriterRunId: 'r1' })
     expect(await store.scan('k', { limit: 1 })).toHaveLength(1)
-    await expect(store.scan('k', { toSeq: events.length })).rejects.toMatchObject({ code: 'E_SCAN_TRUNCATED' })
+    await expect(store.scan('k', { toSeq: events.length })).rejects.toMatchObject({
+      code: 'E_SCAN_TRUNCATED',
+    })
     await store.close()
   })
 
@@ -109,7 +115,9 @@ export function persistenceContract(name: string, create: () => PersistenceContr
     })
     expect((await store.registers('k')).map((row) => row.key)).toEqual([`skill${NUL}a`, `skill${NUL}b`])
     await store.commit('k', {
-      events: [event('harness/entry', { kind: 'skill', id: 'a', tombstone: true }, { register: 'harness/entry' })],
+      events: [
+        event('harness/entry', { kind: 'skill', id: 'a', tombstone: true }, { register: 'harness/entry' }),
+      ],
       expectedWriterRunId: 'r1',
     })
     expect((await store.registers('k')).map((row) => row.key)).toEqual([`skill${NUL}b`])

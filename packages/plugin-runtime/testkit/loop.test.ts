@@ -1,7 +1,7 @@
-import { loopCheckpointCodec, type LoopContext, type LoopDriver } from '@agnes/extension-api'
+import { type LoopContext, type LoopDriver, loopCheckpointCodec } from '@agnes/extension-api'
 import { Type } from '@sinclair/typebox'
 import { describe, expect, it } from 'vitest'
-import { defineLoop, defineTool, type Context } from '../src/index.js'
+import { type Context, defineLoop, defineTool } from '../src/index.js'
 import { driveLoop } from './loop.js'
 import { createPluginTestHost } from './plugin.js'
 

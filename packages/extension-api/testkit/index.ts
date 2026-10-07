@@ -51,10 +51,9 @@ export function defineFixture(fixture: ExtensionFixture): ExtensionFixture {
 }
 export { projectionFixture } from './fixtures/projections.js'
 export { serviceFixture } from './fixtures/services.js'
-
+export { type PersistenceContractFactory, persistenceContract } from './persistence-contract.js'
 export {
   TRANSPORT_CONTRACT_CASES,
   type TransportContractCase,
   type TransportFixture,
 } from './transport-contract.js'
-export { persistenceContract, type PersistenceContractFactory } from './persistence-contract.js'

@@ -1,6 +1,6 @@
 import type { Action, Actor, Decision, JobSpec, JobStatus, JsonValue, Target } from '@agnes/protocol'
-import type { ChildAgentListing } from './child-agent.js'
 import type { Static, TSchema } from '@sinclair/typebox'
+import type { ChildAgentListing } from './child-agent.js'
 import type {
   ArtifactRef,
   Bytes,

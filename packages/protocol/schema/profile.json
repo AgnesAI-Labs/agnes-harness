@@ -10,10 +10,7 @@
         "loop": {
           "type": "object",
           "additionalProperties": false,
-          "required": [
-            "id",
-            "version"
-          ],
+          "required": ["id", "version"],
           "properties": {
             "id": {
               "type": "string",
@@ -53,9 +50,7 @@
                   "pattern": "^[^\\s\\u0000-\\u001f\\u007f]+$"
                 }
               },
-              "required": [
-                "engine"
-              ]
+              "required": ["engine"]
             },
             {
               "type": "null"
@@ -73,9 +68,7 @@
               "pattern": "^[^\\s\\u0000-\\u001f\\u007f]+$"
             }
           },
-          "required": [
-            "provider"
-          ]
+          "required": ["provider"]
         },
         "sandbox": {
           "type": "object",
@@ -88,9 +81,7 @@
               "pattern": "^[^\\s\\u0000-\\u001f\\u007f]+$"
             }
           },
-          "required": [
-            "provider"
-          ]
+          "required": ["provider"]
         },
         "packages": {
           "type": "array",
@@ -196,13 +187,7 @@
       "additionalProperties": false,
       "properties": {
         "layer": {
-          "enum": [
-            "default",
-            "profile",
-            "preset",
-            "admin",
-            "session"
-          ]
+          "enum": ["default", "profile", "preset", "admin", "session"]
         },
         "name": {
           "type": "string",
@@ -211,10 +196,7 @@
           "pattern": "^[^\\s\\u0000-\\u001f\\u007f]+$"
         }
       },
-      "required": [
-        "layer",
-        "name"
-      ]
+      "required": ["layer", "name"]
     },
     "Capability": {
       "type": "string",
@@ -703,9 +685,7 @@
               "pattern": "^[^\\s\\u0000-\\u001f\\u007f]+$"
             }
           },
-          "required": [
-            "engine"
-          ]
+          "required": ["engine"]
         },
         "persistence": {
           "type": "object",
@@ -718,9 +698,7 @@
               "pattern": "^[^\\s\\u0000-\\u001f\\u007f]+$"
             }
           },
-          "required": [
-            "provider"
-          ]
+          "required": ["provider"]
         },
         "sandbox": {
           "type": "object",
@@ -733,17 +711,12 @@
               "pattern": "^[^\\s\\u0000-\\u001f\\u007f]+$"
             }
           },
-          "required": [
-            "provider"
-          ]
+          "required": ["provider"]
         },
         "loop": {
           "type": "object",
           "additionalProperties": false,
-          "required": [
-            "id",
-            "version"
-          ],
+          "required": ["id", "version"],
           "properties": {
             "id": {
               "type": "string",
@@ -1081,9 +1054,7 @@
               "pattern": "^[^\\s\\u0000-\\u001f\\u007f]+$"
             }
           },
-          "required": [
-            "engine"
-          ]
+          "required": ["engine"]
         },
         "persistence": {
           "type": "object",
@@ -1096,9 +1067,7 @@
               "pattern": "^[^\\s\\u0000-\\u001f\\u007f]+$"
             }
           },
-          "required": [
-            "provider"
-          ]
+          "required": ["provider"]
         },
         "sandbox": {
           "type": "object",
@@ -1111,9 +1080,7 @@
               "pattern": "^[^\\s\\u0000-\\u001f\\u007f]+$"
             }
           },
-          "required": [
-            "provider"
-          ]
+          "required": ["provider"]
         },
         "adminBundles": {
           "type": "array",
@@ -1147,10 +1114,7 @@
         "loop": {
           "type": "object",
           "additionalProperties": false,
-          "required": [
-            "id",
-            "version"
-          ],
+          "required": ["id", "version"],
           "properties": {
             "id": {
               "type": "string",

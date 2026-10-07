@@ -1,5 +1,5 @@
 import type { Context } from '@agnes/cordis'
-import type { PluginExtensionAPI, LoopRegistryPort, ModelAdapterRegistration } from '@agnes/extension-api'
+import type { LoopRegistryPort, ModelAdapterRegistration, PluginExtensionAPI } from '@agnes/extension-api'
 
 export type LoopPluginContext = Context & { loops: LoopRegistryPort }
 export type ModelAdapterPluginContext = Context & { modelAdapters: ModelAdapterRegistration }

@@ -289,7 +289,10 @@ const TARGETS: Array<{
     out: 'gen/ts/lockfile.ts',
     module: 'LockfileSchema',
     imports: [
-      { from: 'schema/package-admin.json', defs: ['PackageContributionSummary', 'PackageTrustDecision', 'PluginCapabilities'] },
+      {
+        from: 'schema/package-admin.json',
+        defs: ['PackageContributionSummary', 'PackageTrustDecision', 'PluginCapabilities'],
+      },
       { from: 'schema/surface.json', defs: ['SurfaceDescriptor', 'SurfaceArtifact', 'SurfaceServiceGrant'] },
       {
         from: 'schema/extension-manifest.json',

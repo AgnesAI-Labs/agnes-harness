@@ -1,6 +1,6 @@
 import type { ContentBlock, InferenceEvent, JsonValue, RequestBody } from '@agnes/protocol'
-import type { ToolResult } from './tool.js'
 import type { LoopEventPort } from './loop-events.js'
+import type { ToolResult } from './tool.js'
 
 /** A session pins this identity; reopening never substitutes a different loop. */
 export interface LoopSelection {

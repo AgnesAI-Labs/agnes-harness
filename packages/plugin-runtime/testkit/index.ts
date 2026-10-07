@@ -14,11 +14,11 @@ import {
 } from '../src/row-mount.js'
 import type { RowOrigin, RowOriginLookup } from '../src/row-origin.js'
 
-export { createPluginTestHost, type PluginTestOptions } from './plugin.js'
 export { driveLoop, type LoopTestOptions } from './loop.js'
-export { scriptedModel, type ModelReply } from './model.js'
+export { type ModelReply, scriptedModel } from './model.js'
+export { type ModelAdapterTestOptions, runModelAdapter } from './model-adapter.js'
+export { createPluginTestHost, type PluginTestOptions } from './plugin.js'
 export type { PluginTestRegistration } from './registration.js'
-export { runModelAdapter, type ModelAdapterTestOptions } from './model-adapter.js'
 
 export interface VerifiedTestSnapshotRef {
   readonly packageId: string

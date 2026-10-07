@@ -2,45 +2,42 @@
 // 不合判 `E_API_RANGE`。
 
 export * from './api-range.js'
-
+export * from './child-agent.js'
 export * from './common.js'
+export type {
+  CompactionBudget,
+  CompactionEngine,
+  CompactionEngineCatalogEntry,
+  CompactionEngineInstance,
+  CompactionEnginePluginContext,
+  CompactionEngineRegistration,
+  CompactionInput,
+  CompactionModelPort,
+  CompactionNode,
+  CompactionOutput,
+  CompactionReplacement,
+} from './compaction-engine.js'
 export * from './errors.js'
 export * from './extension.js'
 export { HOOK_TABLE } from './generated/hook-table.js'
 export { SLOT_TABLE } from './generated/slot-table.js'
 export * from './hooks.js'
+export * from './loop.js'
+export * from './loop-events.js'
+export * from './loop-plugin.js'
 export * from './manifest.js'
+export * from './model-adapter.js'
+export * from './persistence.js'
 export * from './plugin-extension.js'
 export * from './projections.js'
+export * from './provider-kind.js'
 export * from './resources.js'
+export * from './sandbox-provider.js'
 export * from './services.js'
 export * from './skill-install.js'
 export * from './slots.js'
 export * from './tool.js'
+export * from './tool-policy.js'
+export * from './tool-runtime.js'
 export * from './version.js'
 export * from './workspace-hooks.js'
-
-export * from './loop.js'
-export * from './model-adapter.js'
-export * from './loop-plugin.js'
-export * from './tool-runtime.js'
-export * from './provider-kind.js'
-export * from './tool-policy.js'
-export * from './loop-events.js'
-
-export type {
-  CompactionBudget,
-  CompactionNode,
-  CompactionInput,
-  CompactionReplacement,
-  CompactionOutput,
-  CompactionModelPort,
-  CompactionEngineInstance,
-  CompactionEngine,
-  CompactionEngineCatalogEntry,
-  CompactionEngineRegistration,
-  CompactionEnginePluginContext,
-} from './compaction-engine.js'
-export * from './persistence.js'
-export * from './sandbox-provider.js'
-export * from './child-agent.js'

@@ -9,10 +9,9 @@ export function defineAgnesPlugin<P extends Plugin>(plugin: P): P {
   return plugin
 }
 
-export type { Context, Inject, Plugin }
-
-export { defineTool, toolCancelled, toolError } from './author/tool.js'
-export type { TypedToolDef, TypedToolResult } from './author/tool.js'
+export type { LoopPluginContext, ModelAdapterPluginContext } from './author/context.js'
 export { defineLoop } from './author/loop.js'
 export { defineModelAdapter } from './author/model-adapter.js'
-export type { LoopPluginContext, ModelAdapterPluginContext } from './author/context.js'
+export type { TypedToolDef, TypedToolResult } from './author/tool.js'
+export { defineTool, toolCancelled, toolError } from './author/tool.js'
+export type { Context, Inject, Plugin }

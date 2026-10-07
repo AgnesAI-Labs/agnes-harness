@@ -5784,7 +5784,11 @@ const METHOD_DEF: Record<MethodName, MethodDefRef> = {
     params: 'PackageCatalogGetParams',
     result: 'PackageCatalogDescriptor',
   },
-  '_agnes/v1/plugins.generations': { fileId: 'https://agnes.ai/schema/package-admin.json', params: 'PackageListParams', result: 'PluginGenerationStatus' },
+  '_agnes/v1/plugins.generations': {
+    fileId: 'https://agnes.ai/schema/package-admin.json',
+    params: 'PackageListParams',
+    result: 'PluginGenerationStatus',
+  },
   '_agnes/v1/packages.list': {
     fileId: 'https://agnes.ai/schema/package-admin.json',
     params: 'PackageListParams',
@@ -6301,7 +6305,11 @@ const METHOD_RESULT_SAMPLE: Partial<Record<MethodName, Sample>> = {
   '_agnes/v1/mcp.servers.oauth.status.set': ResourceControlSamples.McpOAuthStatusResult,
   '_agnes/v1/packages.catalog.list': PackageAdminSamples.PackageCatalogPage as Sample,
   '_agnes/v1/packages.catalog.get': PackageAdminSamples.PackageCatalogDescriptor as Sample,
-  '_agnes/v1/plugins.generations': { valid: { generations: [], plugins: [] }, invalid: [{ generations: [], plugins: [], unknown: true }], note: 'Generation status rejects extra fields' },
+  '_agnes/v1/plugins.generations': {
+    valid: { generations: [], plugins: [] },
+    invalid: [{ generations: [], plugins: [], unknown: true }],
+    note: 'Generation status rejects extra fields',
+  },
   '_agnes/v1/packages.list': PackageAdminSamples.PackageListResult as Sample,
   '_agnes/v1/skins.list': PackageAdminSamples.SkinListResult as Sample,
   '_agnes/v1/skins.read': PackageAdminSamples.SkinReadResult as Sample,

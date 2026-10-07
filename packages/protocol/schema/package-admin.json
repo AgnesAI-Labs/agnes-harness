@@ -114,10 +114,7 @@
               "pattern": "^local:(home|workspace)/[a-z0-9][a-z0-9._-]*$"
             }
           },
-          "required": [
-            "type",
-            "ref"
-          ]
+          "required": ["type", "ref"]
         },
         {
           "type": "object",
@@ -187,10 +184,7 @@
         {
           "type": "object",
           "additionalProperties": false,
-          "required": [
-            "type",
-            "ref"
-          ],
+          "required": ["type", "ref"],
           "properties": {
             "type": {
               "const": "path"
@@ -206,10 +200,7 @@
         {
           "type": "object",
           "additionalProperties": false,
-          "required": [
-            "type",
-            "ref"
-          ],
+          "required": ["type", "ref"],
           "properties": {
             "type": {
               "const": "url"
@@ -1202,11 +1193,7 @@
                 "pattern": "^[a-f0-9-]{36}$"
               },
               "state": {
-                "enum": [
-                  "active",
-                  "draining",
-                  "failed"
-                ]
+                "enum": ["active", "draining", "failed"]
               },
               "boundSessions": {
                 "type": "integer",
@@ -1229,10 +1216,7 @@
                       "maxLength": 64
                     }
                   },
-                  "required": [
-                    "id",
-                    "version"
-                  ]
+                  "required": ["id", "version"]
                 }
               },
               "error": {
@@ -1240,12 +1224,7 @@
                 "maxLength": 512
               }
             },
-            "required": [
-              "id",
-              "state",
-              "boundSessions",
-              "packages"
-            ]
+            "required": ["id", "state", "boundSessions", "packages"]
           }
         },
         "plugins": {
@@ -1260,12 +1239,7 @@
                 "maxLength": 256
               },
               "state": {
-                "enum": [
-                  "active",
-                  "draining",
-                  "restart-required",
-                  "failed"
-                ]
+                "enum": ["active", "draining", "restart-required", "failed"]
               },
               "boundSessions": {
                 "type": "integer",
@@ -1280,19 +1254,11 @@
                 "maxLength": 512
               }
             },
-            "required": [
-              "id",
-              "state",
-              "boundSessions",
-              "drainingSessions"
-            ]
+            "required": ["id", "state", "boundSessions", "drainingSessions"]
           }
         }
       },
-      "required": [
-        "generations",
-        "plugins"
-      ]
+      "required": ["generations", "plugins"]
     },
     "PackageListResult": {
       "type": "object",

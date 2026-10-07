@@ -128,10 +128,7 @@
         "loop": {
           "type": "object",
           "additionalProperties": false,
-          "required": [
-            "id",
-            "version"
-          ],
+          "required": ["id", "version"],
           "properties": {
             "id": {
               "type": "string",
@@ -3491,10 +3488,7 @@
         "loop": {
           "type": "object",
           "additionalProperties": false,
-          "required": [
-            "id",
-            "version"
-          ],
+          "required": ["id", "version"],
           "properties": {
             "id": {
               "type": "string",
@@ -4578,9 +4572,7 @@
     "SessionLoopCatalogResult": {
       "type": "object",
       "additionalProperties": false,
-      "required": [
-        "loops"
-      ],
+      "required": ["loops"],
       "properties": {
         "loops": {
           "type": "array",
@@ -4588,12 +4580,7 @@
           "items": {
             "type": "object",
             "additionalProperties": false,
-            "required": [
-              "id",
-              "version",
-              "sourcePackage",
-              "capabilities"
-            ],
+            "required": ["id", "version", "sourcePackage", "capabilities"],
             "properties": {
               "id": {
                 "type": "string",
@@ -4637,9 +4624,7 @@
     "SessionAdapterCatalogResult": {
       "type": "object",
       "additionalProperties": false,
-      "required": [
-        "modelAdapters"
-      ],
+      "required": ["modelAdapters"],
       "properties": {
         "modelAdapters": {
           "type": "array",
@@ -4647,14 +4632,7 @@
           "items": {
             "type": "object",
             "additionalProperties": false,
-            "required": [
-              "id",
-              "version",
-              "api",
-              "sourcePackage",
-              "capabilities",
-              "models"
-            ],
+            "required": ["id", "version", "api", "sourcePackage", "capabilities", "models"],
             "properties": {
               "id": {
                 "type": "string",
@@ -4683,11 +4661,7 @@
               "capabilities": {
                 "type": "object",
                 "additionalProperties": false,
-                "required": [
-                  "imageInput",
-                  "tools",
-                  "streaming"
-                ],
+                "required": ["imageInput", "tools", "streaming"],
                 "properties": {
                   "imageInput": {
                     "type": "boolean"
@@ -4712,9 +4686,7 @@
                 "items": {
                   "type": "object",
                   "additionalProperties": false,
-                  "required": [
-                    "id"
-                  ],
+                  "required": ["id"],
                   "properties": {
                     "id": {
                       "type": "string",
@@ -4744,10 +4716,7 @@
     "SessionDefaultsState": {
       "type": "object",
       "additionalProperties": false,
-      "required": [
-        "revision",
-        "defaults"
-      ],
+      "required": ["revision", "defaults"],
       "properties": {
         "revision": {
           "type": "integer",
@@ -4762,10 +4731,7 @@
             "loop": {
               "type": "object",
               "additionalProperties": false,
-              "required": [
-                "id",
-                "version"
-              ],
+              "required": ["id", "version"],
               "properties": {
                 "id": {
                   "type": "string",
@@ -4784,11 +4750,7 @@
             "modelAdapter": {
               "type": "object",
               "additionalProperties": false,
-              "required": [
-                "id",
-                "version",
-                "model"
-              ],
+              "required": ["id", "version", "model"],
               "properties": {
                 "id": {
                   "type": "string",

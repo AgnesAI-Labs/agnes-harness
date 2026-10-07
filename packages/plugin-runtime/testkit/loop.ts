@@ -1,5 +1,5 @@
 import type { LoopCheckpoint, LoopContext, LoopFactory, LoopStepOutcome } from '@agnes/extension-api'
-import { scriptedModel, type ModelReply } from './model.js'
+import { type ModelReply, scriptedModel } from './model.js'
 
 export interface LoopTestOptions {
   replies?: readonly ModelReply[]
