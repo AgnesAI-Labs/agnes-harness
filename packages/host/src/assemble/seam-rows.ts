@@ -4,6 +4,7 @@ import {
   DYNAMIC_SEAM_NAMES,
   type DynamicSeamName,
   E_ROW_IMPORT,
+  type EntryRow,
   type ExactExtrasPolicy,
   type HostPluginImporterFactory,
   type PackageSnapshotCandidateRef,
@@ -40,6 +41,7 @@ export type HostThirdPartyRowClaim = Readonly<{
 export function buildSeamRows(
   input: Readonly<{
     profile: ResolvedProfile
+    generationBuiltinRows?: readonly Readonly<EntryRow>[]
     modules: ReadonlyMap<string, PackageModule>
     preset: PresetDoc
     contextFor(owner: string, seam: DynamicSeamName): SeamInitContext
@@ -83,7 +85,13 @@ export function buildSeamRows(
       })
     }
 
-    const revision = `host-seam-extras:v1:${deployment}:${name}`
+    const pinned = input.generationBuiltinRows?.find(
+      (row) =>
+        resolvedPackage.trust === 'builtin' &&
+        row.id === id &&
+        row.plugin === `builtin:${packageId}/${selected.declaration.export}`,
+    )
+    const revision = pinned?.extrasRevision ?? `host-seam-extras:v1:${deployment}:${name}`
     const values = Object.freeze({
       [HOST_SEAM_INIT]: () => input.contextFor(packageId, name),
     })
@@ -104,7 +112,7 @@ export function buildSeamRows(
       entryRevision: snapshotId,
       extrasRevision: revision,
       mountRevision: 'host-seam-row:v1',
-      config: selected.declaration.config ?? input.preset,
+      config: pinned?.config ?? selected.declaration.config ?? input.preset,
       inject: Object.keys(selected.entry.inject),
       provides: selected.entry.provides,
       runtime: selected.declaration.runtime,

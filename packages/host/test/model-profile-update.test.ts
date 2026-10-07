@@ -2,6 +2,7 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { ScriptedProvider } from '@agnes/ai/testkit'
+import { buildRuntimeTarget } from '@agnes/plugin-runtime/host'
 import { expect, it } from 'vitest'
 import { createTestHost } from '../testkit/index.js'
 
@@ -19,7 +20,7 @@ it('publishes a new catalogue to existing sessions and keeps the old runtime aft
   try {
     const session = await host.createSession({ cwd: root })
     const next = structuredClone(host.profile)
-    const route = next.provider.routes?.[0]
+    const route = next.provider.routes?.find((row) => row.route === 'gw')
     const first = route?.models?.[0]
     if (!route || !first) throw new Error('fixture model missing')
     route.models = [...(route.models ?? []), { ...first, id: 'hot-model', name: 'hot-model' }]
@@ -45,6 +46,46 @@ it('publishes a new catalogue to existing sessions and keeps the old runtime aft
     expect(host.provider).toBe(before)
     await host.applyModelProfile(next)
     expect(host.provider.models().some((model) => model.id === 'hot-model')).toBe(true)
+    const target = host.runtimeTargetSnapshot?.()
+    if (!target) throw new Error('fixture runtime target missing')
+    await host.applyRuntimeTarget(
+      buildRuntimeTarget({
+        rows: target.tree.rows,
+        resources: target.resource.resources,
+        resourceRevision: 'f'.repeat(64),
+        compositeRevision: 'f'.repeat(64),
+      }),
+    )
+    const fresh = await host.createSession({ cwd: root, key: 'after-model-configuration' })
+    await fresh.setModel({ slot: 'primary', route: route.route, model: 'hot-model' })
+    const generationId = fresh.pluginGenerationId
+    expect(generationId).not.toBe(session.pluginGenerationId)
+    await fresh.close()
+    await host.close()
+    const cold = await createTestHost({
+      dataDir: root,
+      disableSessionTitle: true,
+      profileInputs: {
+        user: {
+          name: next.name,
+          provider: { ...next.provider, routes: (next.provider.routes ?? []).filter((row) => row.route !== 'demo') },
+          adapters: next.adapters,
+        },
+      },
+      provider: (profile) =>
+        new ScriptedProvider({
+          models: profile.provider.routes?.flatMap((r) => r.models ?? []) ?? [],
+          scripts: [],
+        }),
+    })
+    try {
+      const resumed = await cold.host.createSession({ cwd: root, key: fresh.key })
+      expect(resumed.pluginGenerationId).toBe(generationId)
+      await resumed.setModel({ slot: 'primary', route: route.route, model: 'hot-model' })
+      expect(resumed.preset.model.id.primary).toBe('hot-model')
+    } finally {
+      await cold.host.close()
+    }
   } finally {
     await host.close()
     await rm(root, { recursive: true, force: true })

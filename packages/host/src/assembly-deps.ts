@@ -35,7 +35,7 @@ export type AssembleDeps = HostPaths &
     /** Host-owned lookup of the currently published runtime for already-open Core sessions. */
     currentRuntime?: KernelOptions['currentRuntime']
     /** Host-private builtin row identities to fit before a restored generation starts. */
-    generationExtensionRows?: readonly Readonly<EntryRow>[]
+    generationBuiltinRows?: readonly Readonly<EntryRow>[]
     publicFetch?: KernelOptions['publicFetch']
     seamTimeoutMs?: number
     platform?: PlatformBackend

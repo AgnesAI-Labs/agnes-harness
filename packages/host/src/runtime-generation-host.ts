@@ -104,26 +104,28 @@ export async function createRuntimeGenerationHost(
       .map((pkg) => pkg.id),
   ].filter((id): id is string => typeof id === 'string'))
     basePackages.add(id)
-  // Model routes and credential stores may change through applyModelProfile. They are not
-  // deployment identity; generation registries still validate loop/adapter selections on open.
-  const { secrets: _secrets, ...fixedAdapters } = profile.adapters
-  const compatibility = createHash('sha256')
-    .update(
-      JSON.stringify({
-        adapters: fixedAdapters,
-        persistence: profile.persistence,
-        sandbox: profile.seams.sandbox,
-        sandboxProvider: profile.sandbox,
-        platform: profile.seams.platform,
-        composition: profile.composition,
-        bundlePresets: profile.bundlePresets,
-        agnesVersion: options.agnesVersion,
-        builtinPackages: profile.packages
-          .filter((pkg) => pkg.trust === 'builtin')
-          .map(({ id, version, integrity }) => ({ id, version, integrity })),
-      }),
-    )
-    .digest('hex')
+  // Mutable model routes and credential stores follow applyModelProfile. Deployment identity
+  // still pins backend and plugin registries, including their loop/adapter selections.
+  const compatibilityFor = (profile: ResolvedProfile) => {
+    const { secrets: _secrets, ...fixedAdapters } = profile.adapters
+    return createHash('sha256')
+      .update(
+        JSON.stringify({
+          adapters: fixedAdapters,
+          persistence: profile.persistence,
+          sandbox: profile.seams.sandbox,
+          sandboxProvider: profile.sandbox,
+          platform: profile.seams.platform,
+          composition: profile.composition,
+          bundlePresets: profile.bundlePresets,
+          agnesVersion: options.agnesVersion,
+          builtinPackages: profile.packages
+            .filter((pkg) => pkg.trust === 'builtin')
+            .map(({ id, version, integrity }) => ({ id, version, integrity })),
+        }),
+      )
+      .digest('hex')
+  }
 
   const sourcesFor = async (target: RuntimeTarget): Promise<readonly RuntimePluginSnapshot[]> => {
     const sources =
@@ -139,7 +141,9 @@ export async function createRuntimeGenerationHost(
     )
     return new RuntimePluginCatalogue([...catalogue.values()]).select(target)
   }
-  const bindGeneration = (key: string, id: string): void => {
+  const bindGeneration = (key: string, id: string, host: Host): void => {
+    const existing = store.session(key)
+    if (existing && live.get(existing.generationId)?.host === host) return
     if (store.pin(key, id).generationId !== id)
       throw new Error('E_GENERATION_BINDING_CONFLICT: session was bound by another worker')
   }
@@ -152,7 +156,7 @@ export async function createRuntimeGenerationHost(
     store.create(
       target,
       sources,
-      compatibility,
+      compatibilityFor(profile),
       [
         ...profile.packages
           .filter((pkg) => pkg.trust === 'builtin' && pkg.enabled !== false)
@@ -182,11 +186,11 @@ export async function createRuntimeGenerationHost(
     rowsByGeneration.set(snapshot.id, new Map(preparedRows))
     const binding = { id: snapshot.id }
     bindings.set(initial, binding)
-    initialBinding = (key) => bindGeneration(key, binding.id)
+    initialBinding = (key) => bindGeneration(key, binding.id, initial)
     return current
   }
   const build = async (snapshot: PluginGenerationSnapshot): Promise<LiveGeneration> => {
-    if (snapshot.compatibility !== compatibility)
+    if (snapshot.compatibility !== compatibilityFor(profile))
       throw new Error(
         `E_GENERATION_INCOMPATIBLE: generation ${snapshot.id} needs its original loop/adapter deployment`,
       )
@@ -228,7 +232,7 @@ export async function createRuntimeGenerationHost(
       { ...profile, packages },
       {
         ...generationOptions,
-        generationExtensionRows: targetRows(target).filter((row) => row.plugin.startsWith('builtin:')),
+        generationBuiltinRows: targetRows(target).filter((row) => row.plugin.startsWith('builtin:')),
         onGenerationBasePackages: (ids) => {
           for (const id of ids) basePackages.add(id)
           options.onGenerationBasePackages?.(ids)
@@ -239,7 +243,7 @@ export async function createRuntimeGenerationHost(
         runtimePluginSources: async () => snapshot.sources,
         activationBarrier: createExtensionActivationBarrier(),
         onGenerationSessionBinding: (key) => {
-          bindGeneration(key, binding.id)
+          bindGeneration(key, binding.id, host)
         },
       },
     )
@@ -452,7 +456,10 @@ export async function createRuntimeGenerationHost(
     extensionRows?: readonly ReturnType<Host['extensionRows']['prepare']>[],
   ) => {
     const head = await ensureCurrent()
-    if (head.snapshot.artifact.digest === encodeRuntimeTargetArtifact(target).digest)
+    if (
+      head.snapshot.artifact.digest === encodeRuntimeTargetArtifact(target).digest &&
+      head.snapshot.compatibility === compatibilityFor(profile)
+    )
       return head.host.ordinaryConvergence()
     const oldTarget = decodeRuntimeTargetArtifact(head.snapshot.artifact)
     // Backend facets are process configuration. A package generation cannot replace them live.
@@ -492,6 +499,7 @@ export async function createRuntimeGenerationHost(
         }
         if (extensionRows) await head.host.extensionRows.apply(extensionRows)
         else await head.host.applyRuntimeTarget(target)
+        if (generationSkills && snapshot.resources) generationSkills.seal(snapshot.resources, true)
         current = { snapshot, host: head.host }
         live.set(snapshot.id, current)
         const binding = bindings.get(head.host)
@@ -649,6 +657,22 @@ export async function createRuntimeGenerationHost(
           const message = error instanceof Error ? error.message : String(error)
           if (message.includes('E_GENERATION_') || message.startsWith('Loop '))
             failures.set(pin.generationId, message)
+          throw error
+        }
+      }),
+    applyModelProfile: (next) =>
+      enqueue(async () => {
+        const head = await ensureCurrent()
+        const previous = profile
+        await head.host.applyModelProfile(next)
+        profile = head.host.profile
+        try {
+          // Keep subsequent generation builds on the applied profile. Immutable backend changes
+          // are refused by the underlying Host; mutable routes retain their generation identity.
+          await publishTarget(decodeRuntimeTargetArtifact(head.snapshot.artifact))
+        } catch (error) {
+          await head.host.applyModelProfile(previous)
+          profile = previous
           throw error
         }
       }),

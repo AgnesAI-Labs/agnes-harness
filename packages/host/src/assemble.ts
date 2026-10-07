@@ -865,6 +865,7 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
         : runtime
     }
     const builtSeams = buildSeamRows({
+      ...(deps.generationBuiltinRows ? { generationBuiltinRows: deps.generationBuiltinRows } : {}),
       profile,
       modules,
       preset: defaultPreset.doc,
@@ -2442,7 +2443,7 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
     }
     hostExtensionRows = Object.freeze([
       ...extRowIds.map((extensionId) => {
-        const pinned = deps.generationExtensionRows?.find((row) => row.id === `ext:${extensionId}`)
+        const pinned = deps.generationBuiltinRows?.find((row) => row.id === `ext:${extensionId}`)
         return prepareExtensionRow({
           extensionId,
           ...(extensionId === 'agnes/skills'
