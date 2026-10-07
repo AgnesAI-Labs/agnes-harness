@@ -8,6 +8,9 @@ import type { HookPort } from '../step/session.js'
 import { CoreError } from '../types.js'
 import { type DispatchContext, HOOK_UNHANDLED, type HookEngine } from './engine.js'
 import { discoverResources, type ResourceDiscovery, type ResourceDiscoveryInputs } from './resources.js'
+
+type CachedContextResult = { ext: string; result: ContextResult; hook?: number }
+
 import { contextReturnToWire } from './returns.js'
 
 export type SessionHookInputs = {
@@ -41,7 +44,7 @@ export class SessionHookPort implements HookPort {
   }
 
   private turnSnapshot: HookSnapshot | undefined
-  private contextResults: Array<{ ext: string; result: ContextResult }> = []
+  private contextResults: CachedContextResult[] = []
 
   private snapshot(): HookSnapshot {
     this.turnSnapshot ??= this.engine.snapshot()
@@ -163,45 +166,45 @@ export class SessionHookPort implements HookPort {
     base: PromptSection[],
     refreshOnly = false,
   ): Promise<{ sections: PromptSection[]; additionalContext: string }> {
-    const results: Array<{ ext: string; result: ContextResult }> = structuredClone(
+    const results: CachedContextResult[] = structuredClone(
       refreshOnly ? this.contextResults : this.discovered.contributions,
     )
     const refresh = new Set(
-      results.filter((entry) => entry.result.refreshOnRequest).map((entry) => entry.ext),
+      results.filter((entry) => entry.result.refreshOnRequest).map((entry) => entry.hook),
     )
-    const captured = this.snapshot()
-    const snapshot: HookSnapshot = refreshOnly
-      ? { entries: (event) => captured.entries(event).filter((entry) => refresh.has(entry.meta.source)) }
-      : captured
+    const registrations = this.snapshot().entries('context')
     const initial = applyContextResults(base, results)
     let sections = initial.sections
     let additionalContext = initial.additionalContext
     let overflow = initial.overflow
-    const outcome = await this.engine.dispatch(
-      'context',
-      () => ({
-        sections: sections.map(({ text, ...section }) => ({ ...section, content: text })),
-        surfaceDigest: this.inputs.surfaceDigest(),
-        getSurface: () => this.inputs.surface(),
-      }),
-      this.inputs.context(),
-      {
-        snapshot,
-        accept: (value, source) => {
-          const entry = { ext: source, result: contextReturnToWire(value) }
-          const index = refreshOnly ? results.findLastIndex((item) => item.ext === source) : -1
-          if (index < 0) results.push(entry)
-          else results[index] = entry
-          const applied = applyContextResults(base, results)
-          sections = applied.sections
-          additionalContext = applied.additionalContext
-          overflow = applied.overflow
+    for (const [hook, registration] of registrations.entries()) {
+      if (refreshOnly && !refresh.has(hook)) continue
+      const outcome = await this.engine.dispatch(
+        'context',
+        () => ({
+          sections: sections.map(({ text, ...section }) => ({ ...section, content: text })),
+          surfaceDigest: this.inputs.surfaceDigest(),
+          getSurface: () => this.inputs.surface(),
+        }),
+        this.inputs.context(),
+        {
+          snapshot: { entries: () => [registration] },
+          accept: (value, source) => {
+            const entry = { ext: source, result: contextReturnToWire(value), hook }
+            const index = refreshOnly ? results.findIndex((item) => item.hook === hook) : -1
+            if (index < 0) results.push(entry)
+            else results[index] = entry
+            const applied = applyContextResults(base, results)
+            sections = applied.sections
+            additionalContext = applied.additionalContext
+            overflow = applied.overflow
+          },
         },
-      },
-    )
-    if (outcome.kind === 'rejected') {
-      if (outcome.blocked) throw outcome.blocked
-      rejected()
+      )
+      if (outcome.kind === 'rejected') {
+        if (outcome.blocked) throw outcome.blocked
+        rejected()
+      }
     }
     for (const item of overflow) {
       try {
