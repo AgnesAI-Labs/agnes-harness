@@ -38,3 +38,4 @@ export type {
   CompactionEnginePluginContext,
 } from './compaction-engine.js'
 export * from './persistence.js'
+export * from './sandbox-provider.js'
