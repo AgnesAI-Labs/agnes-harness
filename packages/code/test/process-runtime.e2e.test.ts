@@ -1,5 +1,6 @@
 import type { ToolContext } from '@agnes/extension-api'
 import { expect, it } from 'vitest'
+import { seatbeltConfine } from '../../base/extensions/sandbox/src/backends.js'
 import { createExec } from '../../host/src/adapters/exec.js'
 import { createLocalSandboxProvider } from '../../host/src/adapters/sandbox-local.js'
 import { createBridge } from '../src/extensions/code-mode/bridge.js'
@@ -112,6 +113,44 @@ it('refuses an unbound provider request before process execution', async () => {
     await executor.killAll()
   }
 })
+
+it.runIf(process.platform === 'darwin').each(['read-only', 'workspace-write'] as const)(
+  'keeps the bridge usable inside the real %s process boundary',
+  async (access) => {
+    const { mkdtempSync, realpathSync, rmSync } = await import('node:fs')
+    const { tmpdir } = await import('node:os')
+    const { join } = await import('node:path')
+    const dir = realpathSync(mkdtempSync(join(tmpdir(), 'agnes-code-policy-')))
+    const { ctx, executor } = context()
+    ctx.exec = (argv, opts) =>
+      executor.run(
+        seatbeltConfine(argv, {
+          cwd: dir,
+          allowPaths: access === 'workspace-write' ? [dir] : [],
+          denyPaths: [],
+          networkAllow: [],
+        }),
+        { ...opts, cwd: dir },
+      )
+    try {
+      const result = await processRuntime(ctx, 'typescript').run({
+        program: `const fs = await import('node:fs'); let writable = true;
+          try { fs.writeFileSync(${JSON.stringify(join(dir, 'output'))}, 'ok'); } catch { writable = false; }
+          return { writable, echo: await tools.echo({ value: 1 }) };`,
+        bindings: createBridge(ctx),
+        limits: { wallMs: 5000, maxOutputChars: 65536 },
+      })
+      expect(result.status, result.stderr).toBe('ok')
+      expect(JSON.parse(result.stdout)).toEqual({
+        writable: access === 'workspace-write',
+        echo: { value: 1 },
+      })
+    } finally {
+      await executor.killAll()
+      rmSync(dir, { recursive: true, force: true })
+    }
+  },
+)
 
 it.each(['read', 'denied-shell'] as const)(
   'loads the official preset and drives %s through Host approvals and ledger',

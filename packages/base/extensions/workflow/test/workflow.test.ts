@@ -120,6 +120,18 @@ it('refuses unavailable persistence before spawning, and cancels accepted childr
     'persistence',
   )
   expect(f.tasks).toEqual([])
+  const uncertain = await fixture()
+  uncertain.ctx.tools.invoke = async () => {
+    throw new Error('creation reply was lost')
+  }
+  await uncertain.tools.get('workflow')!.execute({ name: 'uncertain', stages }, uncertain.ctx)
+  const interrupted = Object.values(uncertain.persisted().runs)[0]!
+  expect(interrupted.status).toBe('interrupted')
+  uncertain.ctx.tools.invoke = f.ctx.tools.invoke
+  const retry = await uncertain.tools.get('workflow')!.execute({ runId: interrupted.id }, uncertain.ctx)
+  expect(retry.isError).toBe(true)
+  expect(Object.values(uncertain.persisted().runs)[0]?.error).toContain('refusing duplicate dispatch')
+  expect(f.tasks).toEqual([])
   f.ctx.subagent.collect = async (childKey) => {
     f.ac.abort()
     return { childKey, status: 'running' }
