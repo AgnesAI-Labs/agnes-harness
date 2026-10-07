@@ -1,5 +1,5 @@
 import type { PluginGenerationStatus, RuntimeAdminSnapshot } from '@agnes/protocol'
-import { Badge, Button } from '@agnes/web-ui'
+import { Badge, Button, Field } from '@agnes/web-ui'
 import { useState } from 'react'
 import type { PluginAdminApi } from '../admin/plugins/api.js'
 
@@ -60,11 +60,72 @@ export function ProvidersPanel({
     </>
   )
 }
-export function GenerationsPanel({ status, t }: { status: PluginGenerationStatus | undefined; t: Text }) {
+type MigrationPort = { migrateSession(sessionId: string): Promise<unknown> }
+function supportsMigration(api: PluginAdminApi | undefined): api is PluginAdminApi & MigrationPort {
+  return !!api && 'migrateSession' in api && typeof api.migrateSession === 'function'
+}
+export function GenerationsPanel({
+  status,
+  api,
+  canSave = false,
+  t,
+  onRefresh,
+}: {
+  status: PluginGenerationStatus | undefined
+  api?: PluginAdminApi | undefined
+  canSave?: boolean
+  t: Text
+  onRefresh?(): Promise<void>
+}) {
+  const [sessionId, setSessionId] = useState('')
+  const [confirming, setConfirming] = useState(false)
+  const [busy, setBusy] = useState(false)
+  const [message, setMessage] = useState('')
+  const [result, setResult] = useState<{ previous: string; current: string }>()
+  const supported = supportsMigration(api)
+  async function migrate() {
+    if (!supportsMigration(api) || !canSave || busy || !sessionId.trim()) return
+    setBusy(true)
+    setMessage('')
+    setResult(undefined)
+    try {
+      // Consume W7's validated admin client when fitted; older clients fail closed.
+      const value = await api.migrateSession(sessionId.trim())
+      if (
+        !value ||
+        typeof value !== 'object' ||
+        !('previousGenerationId' in value) ||
+        typeof value.previousGenerationId !== 'string' ||
+        !('generationId' in value) ||
+        typeof value.generationId !== 'string' ||
+        !('changed' in value) ||
+        typeof value.changed !== 'boolean'
+      )
+        throw new Error('Invalid migration result')
+      setResult({ previous: value.previousGenerationId, current: value.generationId })
+      setMessage(value.changed ? 'migrated' : 'alreadyCurrent')
+      setConfirming(false)
+      // Migration remains successful if the separate catalog refresh is unavailable.
+      try {
+        await onRefresh?.()
+      } catch {
+        /* The refresh controller presents its own error. */
+      }
+    } catch {
+      setMessage('migrationFailed')
+    } finally {
+      setBusy(false)
+    }
+  }
   return (
     <details data-testid="plugin-generations">
       <summary>{t('generation')}</summary>
       {!status?.generations.length && <p>{t('noGenerations')}</p>}
+      {status?.currentGenerationId && (
+        <p>
+          {t('currentGeneration')}: <code>{status.currentGenerationId}</code>
+        </p>
+      )}
       {status?.generations.map((generation) => (
         <article className="runtime-card" key={generation.id}>
           <p>
@@ -83,6 +144,59 @@ export function GenerationsPanel({ status, t }: { status: PluginGenerationStatus
           {generation.error && <p role="alert">{generation.error}</p>}
         </article>
       ))}
+      <section data-testid="session-generation-migration" aria-busy={busy}>
+        <h3>{t('migrate')}</h3>
+        <p>{t('migrationHelp')}</p>
+        {!supported && <p>{t('migrationUnavailable')}</p>}
+        <Field label={t('sessionKey')} htmlFor="migration-session-key">
+          <input
+            id="migration-session-key"
+            data-testid="migration-session-key"
+            type="text"
+            maxLength={512}
+            value={sessionId}
+            disabled={!supported || !canSave || busy}
+            onChange={(event) => {
+              setSessionId(event.target.value)
+              setConfirming(false)
+              setMessage('')
+              setResult(undefined)
+            }}
+          />
+        </Field>
+        {!confirming ? (
+          <Button
+            data-testid="migrate-session"
+            disabled={!supported || !canSave || busy || !sessionId.trim()}
+            onClick={() => setConfirming(true)}
+          >
+            {t('migrate')}
+          </Button>
+        ) : (
+          <fieldset aria-label={t('migrationConfirm')}>
+            <p>
+              {t('migrationConfirm')} <code>{sessionId.trim()}</code>
+            </p>
+            <Button
+              data-testid="confirm-session-migration"
+              disabled={busy}
+              loading={busy}
+              onClick={() => void migrate()}
+            >
+              {t('confirmMigration')}
+            </Button>{' '}
+            <Button disabled={busy} onClick={() => setConfirming(false)}>
+              {t('cancel')}
+            </Button>
+          </fieldset>
+        )}
+        {message && <p role={message === 'migrationFailed' ? 'alert' : 'status'}>{t(message)}</p>}
+        {result && (
+          <p>
+            <code>{result.previous}</code> → <code>{result.current}</code>
+          </p>
+        )}
+      </section>
     </details>
   )
 }

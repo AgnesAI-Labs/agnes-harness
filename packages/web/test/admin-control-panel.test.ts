@@ -14,6 +14,8 @@ import {
 import { pluginAdminLocaleCatalog } from '../src/admin/plugins/locales/admin.js'
 import { sessionLoopSelection } from '../src/admin/plugins/session-loop.js'
 import { SETTINGS_PAGES, SettingsHub } from '../src/settings/hub.js'
+import { settingsCatalog } from '../src/settings/locales.js'
+import { GenerationsPanel, PublicationPanel } from '../src/settings/runtime-panels.js'
 
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 const t = (key: string) => pluginAdminLocaleCatalog.en[key] ?? key
@@ -86,6 +88,7 @@ it('loads catalog choices and saves their exact identities and revision', async 
     ...loop,
     id: 'adapter',
     api: 'custom',
+    wireApi: 'openai-chat',
     capabilities: { imageInput: true, tools: true, streaming: true },
     models: [{ id: 'model' }],
   }
@@ -209,4 +212,71 @@ it('navigates runtime capabilities and never offers a disallowed security preset
       expect(host.textContent).toContain('Not allowed by this profile')
     }
   }
+})
+
+it('reports publication failures and requires an explicit eligible migration without changing pins on refusal', async () => {
+  const text = (key: string) => settingsCatalog.en[key] ?? key
+  const context = {
+    profile: 'local-dev',
+    clientId: 'admin',
+    permissions: ['packages.read'] as const,
+    readOnly: true,
+  }
+  const older = new PluginAdminApi(context, vi.fn())
+  const unsupported = await mount(
+    createElement(GenerationsPanel, { api: older, status: undefined, canSave: true, t: text }),
+  )
+  expect(unsupported.querySelector<HTMLButtonElement>('[data-testid="migrate-session"]')?.disabled).toBe(true)
+  expect(unsupported.textContent).toContain(text('migrationUnavailable'))
+  const publication = await mount(
+    createElement(PublicationPanel, {
+      snapshot: {
+        providers: [],
+        presets: [],
+        localPluginFolders: { home: '/synthetic', workspace: '/synthetic' },
+        publication: {
+          operation: 'models',
+          ok: false,
+          recovery: 'retry-same-input',
+          containers: [
+            { compositionHash: 'container-a', status: 'applied' },
+            { compositionHash: 'container-b', status: 'failed' },
+          ],
+        },
+      },
+      t: text,
+    }),
+  )
+  expect(publication.querySelector('[role="alert"]')?.textContent).toBe(text('publicationRetry'))
+  expect(publication.textContent).toContain('container-b')
+  expect(publication.textContent).toContain(text('publicationFailed'))
+  const migrateSession = vi.fn().mockRejectedValueOnce(new Error('BUSY')).mockResolvedValue({
+    previousGenerationId: 'previous',
+    generationId: 'current',
+    changed: true,
+  })
+  const api = Object.assign(new PluginAdminApi({ ...context, readOnly: false }, vi.fn()), { migrateSession })
+  const host = await mount(
+    createElement(GenerationsPanel, { api, status: undefined, canSave: true, t: text }),
+  )
+  await act(async () => {
+    const input = host.querySelector<HTMLInputElement>('[data-testid="migration-session-key"]')
+    const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set
+    if (!input || !setter) throw new Error('Missing session key input')
+    setter.call(input, 'session-key')
+    input.dispatchEvent(new Event('input', { bubbles: true }))
+  })
+  await act(async () => host.querySelector<HTMLButtonElement>('[data-testid="migrate-session"]')?.click())
+  expect(migrateSession).not.toHaveBeenCalled()
+  await act(async () =>
+    host.querySelector<HTMLButtonElement>('[data-testid="confirm-session-migration"]')?.click(),
+  )
+  expect(host.querySelector('[role="alert"]')?.textContent).toBe(text('migrationFailed'))
+  expect(host.textContent).not.toContain('previous')
+  await act(async () =>
+    host.querySelector<HTMLButtonElement>('[data-testid="confirm-session-migration"]')?.click(),
+  )
+  expect(migrateSession).toHaveBeenLastCalledWith('session-key')
+  expect(host.querySelector('[role="status"]')?.textContent).toBe(text('migrated'))
+  expect(host.textContent).toContain('previous → current')
 })

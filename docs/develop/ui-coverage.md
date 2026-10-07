@@ -2,7 +2,7 @@
 
 English | [简体中文](ui-coverage.zh-CN.md)
 
-This inventory covers the plugin architecture and shared workbench at the integration baseline `71a90c62` and the settings implementation in this change. It records available controls separately from backend support and browser acceptance. The product remains a developer preview. See [architecture](architecture.md), [provider architecture](architecture-plugins.md), [source map](source-map.md) and [Web guide](../guide/web.md).
+This inventory covers the plugin architecture and shared workbench at the integration baseline `c897fe4b` and the settings implementation in this change. It records available controls separately from backend support and browser acceptance. The product remains a developer preview. See [architecture](architecture.md), [provider architecture](architecture-plugins.md), [source map](source-map.md) and [Web guide](../guide/web.md).
 
 Open **Plugins** in workbench settings or `/admin/plugins`. The runtime navigation contains **Plugins**, **Providers**, **Agent Loop & Models**, **Bundles & Presets**, **Security**, **MCP & Skills** and **Examples**. Both hosts use the same settings renderer; model accounts and resource management retain their existing controllers.
 
@@ -14,6 +14,8 @@ Open **Plugins** in workbench settings or `/admin/plugins`. The runtime navigati
 | Install npm, path/folder, tgz/archive, Git, HTTPS archive and workspace extension | Plugins: Install from source; folder uses `path`, archive uses `file`, Git uses `git` | Backend source validation determines supported references. Credentials must never be pasted into a source. Local scan references are owner-generated. |
 | Trust / revoke, enable / disable, update, rollback, remove | Existing plugin detail actions and confirmations | Existing package admin permission and recovery checks apply to all operations. |
 | Code generations and session pins | Plugins: Code generations lists ID, actual state, packages and bound-session count; draining summary and orphan-pin release | Session code stays pinned across close/resume. A new default never silently changes an existing binding. |
+| Publication status per container | Plugins: publication operation and Applied/Failed status for each composition hash, with retry-same-input recovery hint | Reads sanitized Host publication facts; no container exception text or credentials. |
+| Explicit session migration | Plugins / Code generations: enter a session key, confirm migration to current plugins, view previous/new generation; backend refusal preserves bindings | Consumes W7’s validated `PluginAdminApi.migrateSession(sessionId)` when present. The control remains disabled until that client/API is integrated; busy and incompatible sessions are backend decisions. |
 | Local plugin folders and hot reload | Plugins: Local plugins shows actual home/workspace roots; Rescan local plugins requests the existing watcher | Rescan completion is not activation success: inspect resulting plugin states. Automatic watcher reload and historical session coexistence need the integrated browser gate. |
 | Plugin creator | Plugins: Ask the agent to build a plugin opens a new task with a reviewable prompt | Draft is not sent automatically. Creator tooling must be enabled in the profile to scaffold through the agent. |
 | All provider kinds: loop, model-adapter, compaction, persistence, sandbox, tool-runtime, tool-policy, child-agent | Providers: every kind has a section, even when empty; identity/version, source, capabilities, selection scope, lifecycle scope and restart requirement | Reads the real combined Host registry. Active means selected for the reported scope, not running-session count. Startup-only kinds are configured through profile/bundle contracts. |
@@ -43,10 +45,10 @@ Open **Plugins** in workbench settings or `/admin/plugins`. The runtime navigati
 
 The launcher’s private Node SDK connection supplies these fixed HTTP routes, with exact Origin/Host checks, server-established grants and no-store responses:
 
-- `GET /admin/api/runtime → RuntimeAdminSnapshot`: description-only `providers`, allowed `presets` and `localPluginFolders`; no provider factories, preset configuration, source bytes or credentials.
+- `GET /admin/api/runtime → RuntimeAdminSnapshot`: description-only `providers`, allowed `presets` and `localPluginFolders`, plus optional sanitized `publication`; no provider factories, preset configuration, source bytes or credentials.
 - `POST /admin/api/reload-local {}`: activation permission and recovery checks; requests the existing owner-configured watcher rescan. The response confirms the rescan request finished; plugin state remains the activation authority.
 - The private daemon methods are `_agnes/v1/sessionSelection.runtime({})` and `_agnes/v1/sessionSelection.reloadLocal({})`. Browser SDK control-plane blocking and daemon grant checks cover the existing `sessionSelection` family.
-- Existing loop/model defaults, bundle selection, preset-specific composition dump, package lifecycle and resource endpoints are reused. No Core/Host provider implementation is added.
+- Existing loop/model defaults, bundle selection, preset-specific composition dump, package lifecycle and resource endpoints are reused. No Core/Host provider implementation is added. The adapter catalog now accepts optional `wireApi` (legacy `api` fallback) and matches configured models using the registered wire API.
 
 The runtime catalog currently requires a production supervisor with configured local-plugin roots. An embedder without this fitted admin port gets an unavailable state, not a fabricated catalog.
 
@@ -61,6 +63,6 @@ pnpm test:web-smoke --list
 
 The runner uses installed/cached Playwright and cached Chromium; it never downloads a browser. `AGH_PLAYWRIGHT_PACKAGE` can select the Playwright package folder and `AGH_CHROMIUM_PATH` can select an existing Chromium executable. Output defaults to a temporary directory; `AGH_WEB_TEST_OUTPUT` can override it. Use an isolated synthetic home/server for mutations.
 
-`tools/e2e-web/navigation.spec.ts` covers all seven pages in English and Simplified Chinese, provider sections, local-plugin controls, the creator entry and uncaught page errors. Stable `settings-nav-*`, `settings-page-*`, `providers-*`, `security-*`, `plugin-generations`, `local-plugins`, `reload-local-plugins`, `new-session-preset`, `bundle-order`, `config-dump` and `config-choice-sources` IDs supplement accessible names.
+`tools/e2e-web/navigation.spec.ts` covers all seven pages in English and Simplified Chinese, provider sections, local-plugin controls, the creator entry and uncaught page errors. Stable `settings-nav-*`, `settings-page-*`, `providers-*`, `security-*`, `plugin-generations`, `composition-publication`, `migration-session-key`, `migrate-session`, `confirm-session-migration`, `local-plugins`, `reload-local-plugins`, `new-session-preset`, `bundle-order`, `config-dump` and `config-choice-sources` IDs supplement accessible names.
 
 Full acceptance still requires the integrated runtime: plugin install/trust/enable/update/rollback, defaults and session choices, bundle/preset provenance, real sandbox refusal paths, MCP/Skills changes, all conversation cards, and an FDE bundle session turn. Navigation smoke alone does not establish delivery readiness.

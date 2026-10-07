@@ -2,7 +2,7 @@
 
 [English](ui-coverage.md) | 简体中文
 
-本清单覆盖集成基线 `71a90c62` 的插件架构、共享工作台以及本次设置实现。区分界面入口、后台支持与浏览器验收，产品仍为开发者预览。参阅[架构](architecture.zh-CN.md)、[提供器架构](architecture-plugins.zh-CN.md)、[源码地图](source-map.zh-CN.md)与 [Web 指南](../guide/web.zh-CN.md)。
+本清单覆盖集成基线 `c897fe4b` 的插件架构、共享工作台以及本次设置实现。区分界面入口、后台支持与浏览器验收，产品仍为开发者预览。参阅[架构](architecture.zh-CN.md)、[提供器架构](architecture-plugins.zh-CN.md)、[源码地图](source-map.zh-CN.md)与 [Web 指南](../guide/web.zh-CN.md)。
 
 从工作台设置中的**插件**或 `/admin/plugins` 进入。运行时导航包含**插件**、**提供器**、**Agent Loop 与模型**、**组合包与预设**、**安全**、**MCP 与技能**、**示例**。独立页和内嵌页共用渲染器；模型账户与资源管理继续复用现有控制器。
 
@@ -14,6 +14,8 @@
 | npm、路径/文件夹、tgz/归档、Git、HTTPS 归档、工作区扩展安装 | 插件：从来源安装；文件夹用 `path`，归档用 `file`，Git 用 `git` | 支持的引用格式由后台校验。来源不得包含凭据；本地扫描引用由 owner 生成。 |
 | 信任/撤销、启用/停用、更新、回滚、移除 | 复用插件详情操作及确认 | 所有操作保留管理权限与恢复模式检查。 |
 | 代码代际与会话占用 | 插件：代码代际展示 ID、真实状态、包和绑定会话数；排空汇总与孤儿 pin 释放 | 关闭/恢复后继续固定代码；新默认值不会暗中替换旧绑定。 |
+| 各容器发布状态 | 插件：显示发布操作、每个组合哈希的已应用/失败状态，以及重试相同输入的恢复提示 | 读取 Host 的脱敏发布事实，不展示容器异常原文或凭据。 |
+| 显式迁移会话 | 插件 / 代码代际：输入会话标识并确认迁移，显示迁移前后代际；后台拒绝时保留绑定 | 接入 W7 已验证的 `PluginAdminApi.migrateSession(sessionId)` 后启用；客户端/API 未集成时保持禁用。会话忙碌和兼容性由后台判断。 |
 | 本地插件目录与热重载 | 插件：本地插件展示真实用户/工作区目录；重新扫描按钮调用现有监视器 | 扫描完成不等于激活成功，需查看插件状态。自动重载及历史会话共存需集成验收。 |
 | 插件创建入口 | 插件：请智能体创建插件，打开带可审查草稿的新任务 | 不自动发送。通过智能体生成脚手架需在配置档启用创建工具。 |
 | 八种提供器：loop、model-adapter、compaction、persistence、sandbox、tool-runtime、tool-policy、child-agent | 提供器：每类均有区域与空状态；展示身份/版本、来源、能力、选择作用域、生命周期及重启要求 | 读取真实 Host 组合目录。已选择不等于运行会话数；启动级选择通过配置档/组合包合同配置。 |
@@ -61,6 +63,8 @@ pnpm test:web-smoke --list
 
 使用已安装/缓存的 Playwright 与缓存 Chromium，不下载浏览器。`AGH_PLAYWRIGHT_PACKAGE` 可指定包目录，`AGH_CHROMIUM_PATH` 可指定现有 Chromium 可执行文件。结果默认放临时目录，可用 `AGH_WEB_TEST_OUTPUT` 覆盖。变更验收使用隔离、合成的 home/server。
 
-`tools/e2e-web/navigation.spec.ts` 覆盖英/中文七个页面、八类提供器、本地插件按钮、创建入口及未捕获页面错误。稳定标识包括 `settings-nav-*`、`settings-page-*`、`providers-*`、`security-*`、`plugin-generations`、`local-plugins`、`reload-local-plugins`、`new-session-preset`、`bundle-order`、`config-dump`、`config-choice-sources`，同时保留可访问名称。
+`tools/e2e-web/navigation.spec.ts` 覆盖英/中文七个页面、八类提供器、本地插件按钮、创建入口及未捕获页面错误。稳定标识包括 `settings-nav-*`、`settings-page-*`、`providers-*`、`security-*`、`plugin-generations`、`composition-publication`、`migration-session-key`、`migrate-session`、`confirm-session-migration`、`local-plugins`、`reload-local-plugins`、`new-session-preset`、`bundle-order`、`config-dump`、`config-choice-sources`，同时保留可访问名称。
 
 完整验收仍须在集成运行时完成：插件安装/信任/启停/更新/回滚、默认值与会话选择、组合/预设来源、真实沙箱拒绝路径、MCP/技能变更、所有对话卡片及 FDE 组合包会话轮次。导航 smoke 不单独证明可用于真实交付。
+
+适配器目录兼容可选的 `wireApi` 字段（旧 DTO 回退到 `api`），并使用已注册的 wire API 匹配配置模型。运行时目录还提供可选的脱敏 `publication` 报告。

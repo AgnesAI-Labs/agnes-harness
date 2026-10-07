@@ -32,13 +32,15 @@ export function ExamplesPanel({
     async function read() {
       const result: PackageCatalogDescriptor[] = []
       let cursor: string | undefined
+      let pages = 0
       do {
+        pages += 1
         const page = await catalogApi.catalog(undefined, cursor)
         result.push(
           ...page.items.filter((row) => row.source.ref.includes('/fde/') && row.kinds?.includes('bundle')),
         )
         cursor = page.nextCursor ?? undefined
-      } while (cursor && current && result.length < 256)
+      } while (cursor && current && result.length < 256 && pages < 32)
       if (current) setRows(result)
     }
     void read()

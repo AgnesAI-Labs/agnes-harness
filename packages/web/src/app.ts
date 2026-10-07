@@ -1674,7 +1674,7 @@ async function selectPermission(mode: PermissionMode): Promise<boolean> {
   const usePreset = runtimeCatalog?.presets.some((entry) => entry.id === preset) === true
   if (mode === 'view' && !usePreset) throw new Error(settingsText('notAllowed'))
   if (!current && draftingNew) {
-    if (usePreset) draftPreset = preset
+    draftPreset = usePreset ? preset : undefined
     permissionMode = mode
     rememberWebComposer({ permission: mode })
     notice.textContent = t('app.permission.draftNotice', { mode: permissionLabel(mode) })
@@ -1690,7 +1690,11 @@ async function selectPermission(mode: PermissionMode): Promise<boolean> {
   permissionChangePending = true
   renderControls()
   try {
-    if (usePreset) await session.setPreset(preset)
+    if (usePreset) {
+      await session.setPreset(preset)
+      if (current !== session || selection !== epoch || connectionEpoch !== permissionConnectionEpoch)
+        return false
+    }
     const applied = await session.setYolo(requestedYolo)
     if (
       current !== session ||

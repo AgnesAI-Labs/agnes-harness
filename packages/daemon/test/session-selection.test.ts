@@ -19,6 +19,7 @@ it('serves host catalogs, persists exact defaults and refuses web/narrow writes'
     id: 'custom',
     version: '2.0.0',
     api: 'custom',
+    wireApi: 'openai-chat',
     sourcePackage: '@acme/adapter',
     capabilities: { imageInput: true, tools: true, streaming: true },
   }
@@ -26,7 +27,7 @@ it('serves host catalogs, persists exact defaults and refuses web/narrow writes'
     hostSessionCatalog({
       kernel: { loops: { catalog: () => [loop] } },
       modelAdapterCatalog: () => [adapter],
-      provider: { models: () => [{ id: 'model', route: 'account', api: 'custom' }] },
+      provider: { models: () => [{ id: 'model', route: 'account', api: 'openai-chat' }] },
     } as unknown as Host)
   const service = sessionSelectionProvider(configuration, catalog)
   const runtimeSnapshot = {

@@ -10,6 +10,8 @@ export type AdminModelAdapter = Readonly<{
   id: string
   version: string
   api: string
+  /** Wire API may differ from the registered adapter identity. */
+  wireApi?: string
   sourcePackage: string
   capabilities: Readonly<{ imageInput: boolean; tools: boolean; streaming: boolean }>
   label?: string
@@ -85,10 +87,11 @@ export function isAdminLoop(value: unknown): value is AdminLoop {
 export function isAdminModelAdapter(value: unknown): value is AdminModelAdapter {
   if (
     !record(value) ||
-    !keys(value, ['id', 'version', 'api', 'sourcePackage', 'capabilities', 'label', 'models']) ||
+    !keys(value, ['id', 'version', 'api', 'wireApi', 'sourcePackage', 'capabilities', 'label', 'models']) ||
     !text(value.id) ||
     !text(value.version) ||
     !text(value.api) ||
+    (value.wireApi !== undefined && !text(value.wireApi)) ||
     !text(value.sourcePackage) ||
     (value.label !== undefined && !text(value.label)) ||
     !Array.isArray(value.models) ||

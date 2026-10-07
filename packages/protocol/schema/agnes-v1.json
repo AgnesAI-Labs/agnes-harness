@@ -4652,6 +4652,12 @@
                 "maxLength": 256,
                 "pattern": "^[^\\u0000-\\u001f\\u007f]+$"
               },
+              "wireApi": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 256,
+                "pattern": "^[^\\u0000-\\u001f\\u007f]+$"
+              },
               "sourcePackage": {
                 "type": "string",
                 "minLength": 1,

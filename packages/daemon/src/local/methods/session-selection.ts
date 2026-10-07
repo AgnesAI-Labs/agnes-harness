@@ -8,6 +8,7 @@ import {
   type AdminLoop,
   type AdminModelAdapter,
   type AdminSessionSelection,
+  isAdminModelAdapter,
   type RuntimeAdminSnapshot,
   rpcError,
   type SessionDefaultsSnapshot,
@@ -27,8 +28,9 @@ export function sessionSelectionProvider(
   return createAdminSessionSelection(
     {
       loops: async () => (await catalog()).loops,
-      modelAdapters: async () => (await catalog()).modelAdapters,
-      models: async (adapter) => (adapter as AdminModelAdapter).models,
+      modelAdapters: async () =>
+        (await catalog()).modelAdapters.map((entry) => ({ ...entry, wireApi: entry.wireApi ?? entry.api })),
+      models: async (adapter) => (isAdminModelAdapter(adapter) ? adapter.models : []),
     },
     configuration as ConfigurationService & SessionDefaultsConfigurationService,
   )
@@ -41,7 +43,7 @@ export async function hostSessionCatalog(host: Host): Promise<Catalog> {
     modelAdapters: host.modelAdapterCatalog().map((entry) => ({
       ...entry,
       models: models
-        .filter((model) => model.api === entry.id)
+        .filter((model) => model.api === entry.wireApi)
         .map((model) => ({ id: model.id, route: model.route })),
     })),
   }

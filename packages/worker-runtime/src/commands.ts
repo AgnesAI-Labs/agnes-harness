@@ -674,12 +674,7 @@ export async function handleServiceCommand(
     case 'session.catalog': {
       if (!host) throw new Error('session catalog requires an assembled Host')
       const models = host.provider.models()
-      const publication =
-        'compositionPublicationStatus' in host && typeof host.compositionPublicationStatus === 'function'
-          ? (host.compositionPublicationStatus() as
-              | import('@agnes/protocol').RuntimePublicationReport
-              | undefined)
-          : undefined
+      const publication = host.compositionPublicationStatus?.()
       return {
         ...(publication
           ? {
@@ -703,7 +698,7 @@ export async function handleServiceCommand(
         modelAdapters: host.modelAdapterCatalog().map((entry) => ({
           ...entry,
           models: models
-            .filter((model) => model.api === entry.id)
+            .filter((model) => model.api === entry.wireApi)
             .map((model) => ({ id: model.id, route: model.route })),
         })),
       }

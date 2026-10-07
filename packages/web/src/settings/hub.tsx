@@ -114,7 +114,7 @@ export function SettingsHub({
         </Button>
         {page === 'plugins' && (
           <>
-            <GenerationsPanel status={generations} t={t} />
+            <GenerationsPanel status={generations} api={api} canSave={canSave} t={t} onRefresh={onRefresh} />
             {snapshot && <PublicationPanel snapshot={snapshot} t={t} />}
             {api && snapshot && (
               <LocalPluginsPanel
