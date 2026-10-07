@@ -68,8 +68,6 @@ const SUPPLIED: Record<string, string[]> = {
   ],
   'agnes/interaction': [
     'tool:ask_user_question',
-    'hook:tool_call',
-    'hook:before_step',
     'slot:tool.card.inline',
     'projection:agnes/interaction/questions',
   ],
@@ -91,6 +89,8 @@ const SUPPLIED: Record<string, string[]> = {
   // Service registrations belong to the Host service registry, outside Kernel.registrations.
   'agnes/jobs-web': ['hook:shutdown'],
   'agnes/plan-mode': ['tool:exit_plan_mode', 'hook:context', 'hook:approval_request'],
+  'agnes/context-rules': ['hook:context', 'projection:agnes/context-rules/scopes'],
+  'agnes/time-context': ['hook:context', 'projection:agnes/time-context/clock'],
   'agnes/mcp-resources': [
     'tool:list_mcp_resources',
     'tool:list_mcp_resource_templates',
@@ -150,6 +150,8 @@ describe('the builtin extensions that moved to the shared row host', () => {
       'agnes/mcp-resources',
       'agnes/workflow',
       'agnes/session-query',
+      'agnes/context-rules',
+      'agnes/time-context',
     ])
     for (const [id, registrations] of Object.entries(SUPPLIED)) {
       expect(listed(h, id)?.loaded, id).toBe(true)

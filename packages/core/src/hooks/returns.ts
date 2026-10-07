@@ -59,7 +59,7 @@ function object(value: unknown, keys: readonly string[]): Record<string, unknown
   return value as Record<string, unknown>
 }
 function contextWire(snapshot: unknown): ContextReturn {
-  const value = object(snapshot, ['sections', 'additionalContext'])
+  const value = object(snapshot, ['sections', 'additionalContext', 'refreshOnRequest'])
   const result: Record<string, unknown> = { ...value }
   if ('sections' in value) {
     if (!Array.isArray(value.sections)) invalid()

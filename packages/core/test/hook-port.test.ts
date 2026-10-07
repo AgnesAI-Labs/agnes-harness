@@ -310,6 +310,35 @@ describe('SessionHookPort', () => {
     expect(overflow).toEqual([{ ext: 'agnes/test', bytes: 9000 }])
   })
 
+  it('refreshes opted-in context while retaining frozen contributors and refusing a failed live refresh', async () => {
+    const { engine, port } = setup()
+    let frozen = 'frozen first',
+      live = 'live first',
+      fail = false
+    engine.on('context', () => ({ additionalContext: frozen }), meta)
+    engine.on(
+      'context',
+      () => {
+        if (fail) throw new Error('unreadable live resource')
+        return {
+          refreshOnRequest: true,
+          sections: [{ id: 'rules', order: 120, content: live }],
+          additionalContext: live,
+        }
+      },
+      { ...meta, source: 'agnes/live' },
+    )
+    expect(await port.context([])).toMatchObject({ additionalContext: 'frozen first\nlive first' })
+    frozen = 'frozen changed'
+    live = 'live changed'
+    expect(await port.refreshContext([])).toMatchObject({
+      additionalContext: 'frozen first\nlive changed',
+      sections: [{ id: 'rules', text: 'live changed' }],
+    })
+    fail = true
+    await expect(port.refreshContext([])).rejects.toThrow('hook rejected transformation')
+  })
+
   it('fails closed for context validation instead of silently dropping a bad return', async () => {
     const { engine, port } = setup()
     engine.on('context', (() => ({ injected: true })) as unknown as HookHandler<'context'>, meta)

@@ -7,7 +7,7 @@ import { buildCompactionPlan } from '@agnes/base'
 import { fakeProvider, textTurn, toolTurn } from '@agnes/core/testkit'
 import type { Provider, RequestBody } from '@agnes/protocol'
 import { createPrivateDirectorySync, createPrivateFileSync } from '@agnes/system-node'
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   createTestHost,
   expectExtends,
@@ -19,9 +19,14 @@ import {
 const baseDir = fileURLToPath(new URL('../../../base/', import.meta.url))
 const parentKey = 'prefix-parent'
 const apis: readonly WireApi[] = ['anthropic-messages', 'openai-completions']
+afterEach(() => vi.unstubAllEnvs())
 
 function setupDir() {
   const dataDir = mkdtempSync(join(tmpdir(), 'agnes-fork-prefix-'))
+  // These fixtures assert a full frozen request prefix beyond the fork trigger; live clock notes
+  // are deliberately outside that inherited boundary and are covered by default-context tests.
+  vi.stubEnv('AGH_HOME', dataDir)
+  writeFileSync(join(dataDir, 'context.json'), JSON.stringify({ timeEnabled: false }))
   const credentials = join(dataDir, 'credentials')
   createPrivateDirectorySync(credentials)
   createPrivateDirectorySync(join(credentials, 'test'))

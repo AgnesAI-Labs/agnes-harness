@@ -38,7 +38,10 @@ export default defineExtension((agnes) => {
         undefined,
         ctx.signal,
       )
-      return { sections: [{ id: 'agents-md', order: 120, content: snapshot.content }] }
+      return {
+        refreshOnRequest: true,
+        sections: [{ id: 'agents-md', order: 120, content: snapshot.content }],
+      }
     }),
   ]
   return () => {

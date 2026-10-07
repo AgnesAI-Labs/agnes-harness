@@ -37,7 +37,10 @@ function compactPlan(payload: HookPayloadMap['before_compact'], split: boolean) 
   const nodes = payload.getSurface()
   const first = nodes[0]
   const triggerIndex = split
-    ? nodes.findLastIndex((node, index) => node.type === 'user/message' && index < nodes.length - 1)
+    ? nodes.findLastIndex(
+        (node, index) =>
+          node.type === 'user/message' && node.messageKind !== 'runtime_context' && index < nodes.length - 1,
+      )
     : -1
   const end = nodes[split ? triggerIndex - 1 : nodes.length - 2]
   const kept = nodes.at(-1)
@@ -243,7 +246,10 @@ describe('real provider wire compaction prefix', () => {
           plan: async (payload) => {
             const nodes = payload.getSurface()
             const first = nodes.findLastIndex(
-              (node, index) => node.type === 'user/message' && index < nodes.length - 1,
+              (node, index) =>
+                node.type === 'user/message' &&
+                node.messageKind !== 'runtime_context' &&
+                index < nodes.length - 1,
             )
             const start = nodes[first]
             const end = nodes.at(-2)

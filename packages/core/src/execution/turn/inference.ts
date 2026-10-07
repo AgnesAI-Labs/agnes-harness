@@ -305,7 +305,7 @@ export async function assembleRequestPrefix(
   const preloaded = t.preload
   const permitted = new Set(ctx.disclosed)
   merged.tools = merged.tools.filter((name) => permitted.has(name))
-  // Freeze context-hook output for identical assembly inputs within this turn. Current-prompt
+  // Cache ordinary context hooks for identical assembly inputs; opted-in contributors refresh. Current-prompt
   // matching and the selected Skill body remain Host-private until their note lands.
   const prefixKey = canonicalJson([
     ctx.model.route,
@@ -317,9 +317,11 @@ export async function assembleRequestPrefix(
   ])
   const hookContext =
     t.prefix?.key === prefixKey
-      ? structuredClone({ sections: t.prefix.sections, additionalContext: t.prefix.additionalContext })
+      ? s.hooks.refreshContext
+        ? await s.hooks.refreshContext(merged.sections)
+        : structuredClone({ sections: t.prefix.sections, additionalContext: t.prefix.additionalContext })
       : await s.hooks.context(merged.sections)
-  if (t.prefix?.key !== prefixKey) t.prefix = { key: prefixKey, ...structuredClone(hookContext) }
+  t.prefix = { key: prefixKey, ...structuredClone(hookContext) }
   merged.sections = hookContext.sections
   if (
     !s.computerUseAllowed({ route: ctx.model.route, model: ctx.model.model }) &&

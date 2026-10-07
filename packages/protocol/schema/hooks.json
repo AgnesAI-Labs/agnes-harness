@@ -333,7 +333,11 @@
           "items": { "$ref": "#/$defs/PromptSection" },
           "description": "Sections this participant is contributing or overriding, by id. Omit any section you are not changing -- it stays as it was."
         },
-        "additionalContext": { "type": "string", "maxLength": 8192 }
+        "additionalContext": { "type": "string", "maxLength": 8192 },
+        "refreshOnRequest": {
+          "type": "boolean",
+          "description": "Opt this contributor into refresh before each model request. Other context contributors stay cached for the turn."
+        }
       }
     },
 

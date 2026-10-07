@@ -152,6 +152,9 @@ function hookSurface(
     return {
       seq: node.seq,
       type,
+      ...(node.kind === 'user'
+        ? { messageKind: (node.event.data as import('@agnes/protocol').UserMessage).kind ?? 'prompt' }
+        : {}),
       ...(node.pinned ? { pinned: true } : {}),
       tokensEstimate: nodeTokens(node, argsTokens),
     }

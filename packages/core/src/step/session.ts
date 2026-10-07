@@ -286,6 +286,9 @@ export type HookPort = {
     verifier?: VerifierVerdict
   }): Promise<{ action: 'stop' } | { action: 'continue'; note: string }>
   context(sections: PromptSection[]): Promise<{ sections: PromptSection[]; additionalContext: string }>
+  refreshContext?(
+    sections: PromptSection[],
+  ): Promise<{ sections: PromptSection[]; additionalContext: string }>
   beforeRequest(out: DeriveOutput, slot: string, attempt: number): Promise<DeriveOutput>
   requestPatch?(payload: HookPayloadMap['before_request']): Promise<HookReturnMap['before_request']>
   beforeStep(p: {

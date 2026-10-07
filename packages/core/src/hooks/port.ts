@@ -41,6 +41,7 @@ export class SessionHookPort implements HookPort {
   }
 
   private turnSnapshot: HookSnapshot | undefined
+  private contextResults: Array<{ ext: string; result: ContextResult }> = []
 
   private snapshot(): HookSnapshot {
     this.turnSnapshot ??= this.engine.snapshot()
@@ -75,6 +76,7 @@ export class SessionHookPort implements HookPort {
     } finally {
       this.turnSnapshot = undefined
       this.discovered = { resources: [], contributions: [] }
+      this.contextResults = []
     }
   }
 
@@ -94,6 +96,7 @@ export class SessionHookPort implements HookPort {
 
   resetTurn(): void {
     this.turnSnapshot = this.engine.snapshot()
+    this.contextResults = []
     this.engine.resetTurn()
   }
 
@@ -152,10 +155,24 @@ export class SessionHookPort implements HookPort {
     return result.results.find((entry) => entry.value.action === 'continue')?.value ?? { action: 'stop' }
   }
 
-  async context(base: PromptSection[]): Promise<{ sections: PromptSection[]; additionalContext: string }> {
+  async refreshContext(base: PromptSection[]) {
+    return this.context(base, true)
+  }
+
+  async context(
+    base: PromptSection[],
+    refreshOnly = false,
+  ): Promise<{ sections: PromptSection[]; additionalContext: string }> {
     const results: Array<{ ext: string; result: ContextResult }> = structuredClone(
-      this.discovered.contributions,
+      refreshOnly ? this.contextResults : this.discovered.contributions,
     )
+    const refresh = new Set(
+      results.filter((entry) => entry.result.refreshOnRequest).map((entry) => entry.ext),
+    )
+    const captured = this.snapshot()
+    const snapshot: HookSnapshot = refreshOnly
+      ? { entries: (event) => captured.entries(event).filter((entry) => refresh.has(entry.meta.source)) }
+      : captured
     const initial = applyContextResults(base, results)
     let sections = initial.sections
     let additionalContext = initial.additionalContext
@@ -169,12 +186,13 @@ export class SessionHookPort implements HookPort {
       }),
       this.inputs.context(),
       {
-        snapshot: this.snapshot(),
+        snapshot,
         accept: (value, source) => {
           const entry = { ext: source, result: contextReturnToWire(value) }
-          const next = [...results, entry]
-          const applied = applyContextResults(base, next)
-          results.push(entry)
+          const index = refreshOnly ? results.findLastIndex((item) => item.ext === source) : -1
+          if (index < 0) results.push(entry)
+          else results[index] = entry
+          const applied = applyContextResults(base, results)
           sections = applied.sections
           additionalContext = applied.additionalContext
           overflow = applied.overflow
@@ -192,6 +210,7 @@ export class SessionHookPort implements HookPort {
         /* diagnostic isolation */
       }
     }
+    this.contextResults = structuredClone(results)
     return { sections, additionalContext }
   }
 

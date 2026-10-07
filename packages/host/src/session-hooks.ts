@@ -135,6 +135,9 @@ export function createSessionHookPort(
               : node.kind === 'tool_result'
                 ? 'tool/result'
                 : 'summary',
+        ...(node.kind === 'user'
+          ? { messageKind: (node.event.data as import('@agnes/protocol').UserMessage).kind ?? 'prompt' }
+          : {}),
         pinned: node.pinned,
       })),
     surfaceDigest: () => ({ nodes: session.surface().length, tokensEstimate: contextTokens(session) }),
@@ -155,6 +158,7 @@ export function createSessionHookPort(
     'toolCall',
     'turnStopping',
     'context',
+    'refreshContext',
     'toolResult',
     'approvalRequest',
     'requestError',

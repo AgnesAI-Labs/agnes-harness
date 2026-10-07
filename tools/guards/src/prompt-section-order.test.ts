@@ -61,7 +61,6 @@ const CANONICAL_PROMPT_SECTIONS: ReadonlyArray<{
   { id: 'plugin-creator', order: 165, owner: 'base' },
   { id: 'session-query', order: 168, owner: 'base' },
   { id: 'channel-style', order: 170, owner: 'code' },
-  { id: 'time-context', order: 175, owner: 'base' },
   // packages/core/src/request/contribute.ts's harnessSections(), which folds harness register
   // entries into the same sorted section list at these two fixed orders.
   { id: 'harness:prompt', order: 180, owner: 'core' },

@@ -46,7 +46,7 @@ export default defineExtension((agnes) => {
     agnes.registerProjection(timeProjection),
     agnes.registerHook('context', async (_payload, ctx) => {
       const config = readContextConfig()
-      if (!config.timeEnabled) return { sections: [{ id: 'time-context', order: 175, content: '' }] }
+      if (!config.timeEnabled) return { refreshOnRequest: true }
       const read = await ctx.projections.readOwn<TimeState>('clock')
       if (read.status !== 'available') throw new Error('time context persistence unavailable')
       const now = Date.now()
@@ -55,13 +55,8 @@ export default defineExtension((agnes) => {
       const sampledAt =
         interval === 0 ? now : start + Math.floor(Math.max(0, now - start) / interval) * interval
       return {
-        sections: [
-          {
-            id: 'time-context',
-            order: 175,
-            content: renderTimeContext(sampledAt, config.timeZone, read.value.precedingTurnAt),
-          },
-        ],
+        refreshOnRequest: true,
+        additionalContext: renderTimeContext(sampledAt, config.timeZone, read.value.precedingTurnAt),
       }
     }),
   ]

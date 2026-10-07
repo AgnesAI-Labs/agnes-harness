@@ -62,7 +62,6 @@ export const PROMPT_SECTIONS: ReadonlyArray<PromptSectionSpec> = validateSection
   { id: 'plugin-creator', order: 165, source: 'dynamic', owner: 'base' },
   { id: 'session-query', order: 168, source: 'dynamic', owner: 'base' },
   { id: 'channel-style', order: 170, source: 'file', owner: 'code' },
-  { id: 'time-context', order: 175, source: 'dynamic', owner: 'base' },
 ])
 
 export function sectionOrder(id: string): number {

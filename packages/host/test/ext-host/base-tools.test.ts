@@ -369,9 +369,12 @@ describe('a host assembled from a profile naming @agnes/base', () => {
     const provider = new ScriptedProvider({
       models: [fakeModel({ route: 'gw', id: 'm1' })],
       scripts: [
-        callTool('ask_user_question', {
-          questions: [{ id: 'choice', question: 'Choose a route', options: ['A', 'B'] }],
-        }),
+        () => {
+          writeFileSync(join(dataDir, 'AGENTS.md'), 'LIVE_RULE_V2')
+          return callTool('ask_user_question', {
+            questions: [{ id: 'choice', question: 'Choose a route', options: ['A', 'B'] }],
+          })
+        },
         say('Continuing independent work.'),
         say('The invalid answer leaves the question open.'),
         say('You chose B.'),
@@ -398,7 +401,8 @@ describe('a host assembled from a profile naming @agnes/base', () => {
       const first = await prompt('Ask me')
       expect(first).toMatchObject({ reason: 'completed' })
       expect(provider.calls[0]?.system).toContain('LIVE_RULE_V1')
-      expect(provider.calls[0]?.system).toContain('Time zone:')
+      expect(provider.calls[1]?.system).toContain('LIVE_RULE_V2')
+      expect(JSON.stringify(provider.calls[0]?.messages)).toContain('Time zone:')
       writeFileSync(join(dataDir, 'AGENTS.md'), 'LIVE_RULE_V2')
       const rows = await session.scan({ type: 'x/agnes/interaction/requested', toSeq: session.lastSeq })
       expect(rows).toHaveLength(1)

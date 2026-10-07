@@ -24,6 +24,8 @@ export type SurfaceNode = {
   seq: Seq
   type: 'user/message' | 'assistant/message' | 'tool/result' | 'summary'
   pinned?: boolean
+  /** Distinguishes actual input from automatic runtime notes on user/message nodes. */
+  messageKind?: 'prompt' | 'steer' | 'follow_up' | 'runtime_context'
   tokensEstimate?: number
 }
 export type ReadonlyRequestView = {
@@ -103,7 +105,7 @@ export interface HookReturnMap {
   resources_discover: { resources?: ResourceEntry[]; additionalContext?: string }
   /** Park releases the turn until new input arrives; block reports a policy refusal. */
   before_step: { block?: boolean; park?: boolean; reason?: string }
-  context: { sections?: PromptSection[]; additionalContext?: string }
+  context: { sections?: PromptSection[]; additionalContext?: string; refreshOnRequest?: boolean }
   before_request: {
     patch?: {
       samplingParams?: Record<string, JsonValue>
