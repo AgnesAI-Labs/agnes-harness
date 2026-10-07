@@ -2,7 +2,7 @@
   "id": "agnes/jobs-web",
   "version": "0.1.0",
   "apiRange": "^1.4",
-  "entry": "./index.ts",
+  "entry": "./src/index.ts",
   "capabilities": {
     "services": [
       {

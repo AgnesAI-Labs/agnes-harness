@@ -31,7 +31,8 @@ export const jobsServiceCapabilities = [
     kind: 'query' as const,
     inputSchema: {
       type: 'object' as const,
-      properties: jobsReadSchema.properties,
+      // Service metadata is JSON; TypeBox symbol annotations must not cross this boundary.
+      properties: JSON.parse(JSON.stringify(jobsReadSchema.properties)),
       additionalProperties: false as const,
     },
     outputSchema,
@@ -43,7 +44,7 @@ export const jobsServiceCapabilities = [
     kind: 'effect' as const,
     inputSchema: {
       type: 'object' as const,
-      properties: jobsControlSchema.properties,
+      properties: JSON.parse(JSON.stringify(jobsControlSchema.properties)),
       required: ['operation'] as string[],
       additionalProperties: false as const,
     },

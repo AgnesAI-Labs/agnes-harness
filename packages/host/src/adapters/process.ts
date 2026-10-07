@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url'
 import type { ProcessOutput, SandboxProcess, SandboxProcessRequest } from '@agnes/extension-api'
 import { sandboxUnavailable } from '@agnes/extension-api'
 import { baseEnvironment } from './exec.js'
+import { createWin32Platform } from './platform.js'
 
 declare const AGNES_PACKAGED_BUILTINS: boolean | undefined
 export function ptyRelayBinary(): string {
@@ -21,7 +22,7 @@ const dimensions = (columns: number, rows: number) => {
 export async function openLocalProcess(request: SandboxProcessRequest): Promise<SandboxProcess> {
   request.signal?.throwIfAborted()
   if (!request.argv.length) throw new Error('process argv is empty')
-  const windows = process.platform === 'win32' // guards-allow-platform: process-tree/PTY backend selection
+  const windows = createWin32Platform().matches()
   if (request.pty && windows) throw sandboxUnavailable('local Windows PTY needs a ConPTY provider')
   if (request.pty) dimensions(request.pty.columns, request.pty.rows)
   const argv = request.pty

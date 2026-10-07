@@ -32,7 +32,32 @@ describe('tool schema snapshots', () => {
     const canonical = JSON.stringify(
       TOOLS_CORE.map((t) => ({ name: t.name, description: t.description, parameters: t.parameters })),
     )
-    expect(canonical).not.toMatch(/darwin|linux|win32|windows|posix|powershell|bash|zsh|cmd\.exe/i)
+    const shell = TOOLS_CORE.find((tool) => tool.name === 'shell')!
+    expect(shell.parameters.properties.shell).toMatchObject({
+      anyOf: [
+        { const: 'bash', type: 'string' },
+        { const: 'zsh', type: 'string' },
+        { const: 'pwsh', type: 'string' },
+      ],
+    })
+    // Interpreter choices are a fixed public enum, identical on every machine.
+    // The rest of the prompt must still contain no platform or interpreter names.
+    const withoutShellChoices = JSON.stringify(
+      TOOLS_CORE.map((tool) => ({
+        name: tool.name,
+        description: tool.description,
+        parameters:
+          tool.name === 'shell'
+            ? {
+                ...tool.parameters,
+                properties: Object.fromEntries(
+                  Object.entries(tool.parameters.properties).filter(([name]) => name !== 'shell'),
+                ),
+              }
+            : tool.parameters,
+      })),
+    )
+    expect(withoutShellChoices).not.toMatch(/darwin|linux|win32|windows|posix|powershell|bash|zsh|cmd\.exe/i)
     expect(`${createHash('sha256').update(canonical).digest('hex')}\n`).toBe(fixture('HASH'))
   })
 })

@@ -93,7 +93,7 @@
       "./extensions/mcp-resources",
       "./extensions/workflow",
       "./extensions/session-query",
-      "./extensions/jobs/jobs-web"
+      "./extensions/jobs-web"
     ]
   },
   "scripts": {

@@ -277,6 +277,7 @@ describe('a host assembled from a profile naming @agnes/base', () => {
         'agnes/interaction',
         'agnes/deliverables',
         'agnes/jobs',
+        'agnes/jobs-web',
         'agnes/compaction',
         'agnes/refine',
         'agnes/subagent',
@@ -329,7 +330,18 @@ describe('a host assembled from a profile naming @agnes/base', () => {
       expect(namesFrom('agnes/tools-web')).toEqual(['web_fetch', 'web_search'])
       expect(namesFrom('agnes/interaction')).toEqual(['ask_user_question'])
       expect(namesFrom('agnes/deliverables')).toEqual(['present'])
-      expect(namesFrom('agnes/jobs')).toEqual(['job_kill', 'job_list', 'job_output'])
+      expect(namesFrom('agnes/jobs')).toEqual([
+        'job_kill',
+        'job_list',
+        'job_output',
+        'pty_close',
+        'pty_list',
+        'pty_open',
+        'pty_read',
+        'pty_resize',
+        'pty_send',
+        'pty_signal',
+      ])
       expect(namesFrom('agnes/compaction')).toEqual(['compact'])
       expect(namesFrom('agnes/refine')).toEqual(['harness_propose'])
       expect(namesFrom('agnes/subagent')).toEqual([
@@ -822,10 +834,10 @@ describe('a host assembled from a profile naming @agnes/base', () => {
     })
     // The skills extension is loaded but inert until a daemon worker supplies a private runtime
     // snapshot, and this host does not load code-mode. Count: tools-core 5, tools-search 3,
-    // tools-web 2, interaction 1, deliverables 1, jobs 3, compaction 1, refine 1, subagent 8,
+    // tools-web 2, interaction 1, deliverables 1, jobs 10, compaction 1, refine 1, subagent 8,
     // mcp-search 2, computer-use 1, plugin-creator 4, exit_plan_mode, and the three stable MCP
     // resource tools, plus workflow and workflow_status, and session-query 5.
-    expect(host.kernel.tools.size).toBe(43)
+    expect(host.kernel.tools.size).toBe(50)
     for (const name of [
       'subagent_list',
       'subagent_send_message',

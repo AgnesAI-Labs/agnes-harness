@@ -217,7 +217,14 @@ describe('S3 Service registration and invocation', () => {
         expect(Object.isFrozen(ctx.actor.attrs)).toBe(true)
         expect(ctx.source).toBe('reports')
         expect(ctx.requestId).toMatch(/^[0-9a-f-]{36}$/)
-        expect(ctx).not.toHaveProperty('session')
+        expect(ctx.session).toEqual({
+          key: 'session-1',
+          lane: 'main',
+          workspaceRoot: '/workspace',
+          turn: 0,
+          step: 0,
+        })
+        expect(ctx).not.toHaveProperty('sandbox')
         return output
       },
     })

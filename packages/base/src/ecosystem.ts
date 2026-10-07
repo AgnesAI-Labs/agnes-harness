@@ -11,9 +11,9 @@ import {
   hooksRunnerExtension,
 } from '../extensions/hooks-runner/src/index.js'
 import interactionExtension from '../extensions/interaction/src/index.js'
-import { createJobsWebExtension } from '../extensions/jobs/jobs-web/index.js'
 import { createJobsExtension } from '../extensions/jobs/src/index.js'
 import { shellJobsFor } from '../extensions/jobs/src/registry.js'
+import { createJobsWebExtension } from '../extensions/jobs-web/src/index.js'
 import mcpResourcesExtension from '../extensions/mcp-resources/src/index.js'
 import { mcpSearchExtension } from '../extensions/mcp-search/src/index.js'
 import { mcpCatalogHubFor } from '../extensions/mcp-server/src/catalog-hub.js'

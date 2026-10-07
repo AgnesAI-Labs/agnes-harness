@@ -1,6 +1,6 @@
 import { defineExtension } from '@agnes/extension-api'
-import { type ShellJobs, standaloneShellJobs } from '../src/registry.js'
-import { createJobsServices } from '../src/services.js'
+import { type ShellJobs, standaloneShellJobs } from '../../jobs/src/registry.js'
+import { createJobsServices } from '../../jobs/src/services.js'
 
 /** A separate admission surface: an older profile without services keeps its shell/job tools. */
 export function createJobsWebExtension(jobs: ShellJobs) {
