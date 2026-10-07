@@ -900,6 +900,11 @@ describe('connectMcp', () => {
     return {
       setElicitationHandler: vi.fn(),
       setToolListChangedHandler: vi.fn(),
+      setResourceListChangedHandler: vi.fn(),
+      getServerCapabilities: vi.fn(() => ({})),
+      listResources: vi.fn(async () => ({ resources: [] })),
+      listResourceTemplates: vi.fn(async () => ({ resourceTemplates: [] })),
+      readResource: vi.fn(async () => ({ contents: [] })),
       connect: vi.fn(async () => undefined),
       listTools: vi.fn(async (_params?: { cursor?: string }) => ({
         tools: [
@@ -1328,6 +1333,11 @@ describe('connectMcp HTTP redirect handling', () => {
       createClient: () => ({
         setElicitationHandler: () => undefined,
         setToolListChangedHandler: () => undefined,
+        setResourceListChangedHandler: () => undefined,
+        getServerCapabilities: () => ({}),
+        listResources: async () => ({ resources: [] }),
+        listResourceTemplates: async () => ({ resourceTemplates: [] }),
+        readResource: async () => ({ contents: [] }),
         connect: async () => undefined,
         listTools: async () => ({ tools: [] }),
         callTool: async () => ({ content: [] }),

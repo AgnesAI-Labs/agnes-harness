@@ -191,9 +191,19 @@ export {
 } from './mcp/index-table.js'
 export { mcpLocalToolPrefix } from './mcp/naming.js'
 export {
+  MCP_RESOURCE_LIST_SUFFIX,
+  MCP_RESOURCE_READ_SUFFIX,
+  MCP_RESOURCE_TEMPLATES_SUFFIX,
+  type McpResourceToolSuffix,
+  mcpResourceToolName,
+} from './mcp/resources.js'
+export {
   inspectRemoteCatalog,
   type McpConnection,
+  type McpRemoteResource,
+  type McpRemoteResourceTemplate,
   type McpRemoteTool,
+  type McpResourceContent,
   registerRemoteToolsStrict,
   validateRemoteCatalog,
 } from './mcp/register.js'

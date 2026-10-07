@@ -20,8 +20,9 @@ import {
 } from '../../extensions/tools-core/src/guards/output.js'
 import { MAX_READ_BYTES } from '../../extensions/tools-core/src/tools/read.js'
 import { remoteInputSchema } from '../mcp-json-schema.js'
-import type { McpServerConfig } from './config.js'
+import { mcpErrorText, redactMcpSecrets, type McpServerConfig } from './config.js'
 import { mcpLocalToolPrefix } from './naming.js'
+import { admitMcpResourceTools } from './resources.js'
 
 export type McpRemoteTool = {
   name: string
@@ -29,6 +30,26 @@ export type McpRemoteTool = {
   inputSchema: Record<string, unknown>
   annotations?: { readOnlyHint?: boolean }
 }
+export type McpRemoteResource = Readonly<{
+  uri: string
+  name: string
+  description?: string
+  mimeType?: string
+}>
+export type McpRemoteResourceTemplate = Readonly<{
+  uriTemplate: string
+  name: string
+  description?: string
+  mimeType?: string
+}>
+export type McpResourceContent = Readonly<
+  { uri: string; mimeType?: string; text: string } | { uri: string; mimeType?: string; blob: string }
+>
+export type McpResourceCallOptions = Readonly<{
+  cursor?: string
+  signal?: AbortSignal
+  timeoutMs?: number
+}>
 type RemoteContent = { type: 'text'; text: string } | { type: 'image'; data: string; mimeType: string }
 export type RemoteToolIndexRow = { name: string; description: string; schema: string }
 /** A remote tool left out of registration, and why; `name` only when it is a usable remote name. */
@@ -64,36 +85,28 @@ export type McpConnection = {
     opts: { signal: AbortSignal },
   ): Promise<{ content: RemoteContent[]; isError?: boolean }>
   close(): Promise<void>
+  /** True only when the server's initialize result advertised the `resources` capability. */
+  supportsResources?: boolean
+  listResources?(
+    options?: McpResourceCallOptions,
+  ): Promise<{ resources: McpRemoteResource[]; nextCursor?: string }>
+  listResourceTemplates?(
+    options?: McpResourceCallOptions,
+  ): Promise<{ resourceTemplates: McpRemoteResourceTemplate[]; nextCursor?: string }>
+  readResource?(
+    uri: string,
+    options?: McpResourceCallOptions,
+  ): Promise<{ contents: McpResourceContent[] }>
   /** Reports an unexpected transport close/error; disposal stops the subscription. */
   onClose?(listener: () => void): () => void
   /** Reports the server's `notifications/tools/list_changed`; disposal stops the subscription. */
   onToolsChanged?(listener: () => void): () => void
+  /** Reports the server's `notifications/resources/list_changed`; disposal stops the subscription. */
+  onResourcesChanged?(listener: () => void): () => void
 }
 
-const secretValues = (cfg: McpServerConfig): string[] =>
-  [...Object.values(cfg.env ?? {}), ...Object.values(cfg.headers ?? {})]
-    .flatMap((value) => (value.startsWith('Bearer ') ? [value, value.slice('Bearer '.length)] : [value]))
-    .filter((value) => value.length > 0)
-    .sort((a, b) => b.length - a.length)
-
-const redactSecrets = (value: string, cfg: McpServerConfig): string => {
-  let redacted = value
-  for (const secret of secretValues(cfg)) redacted = redacted.replaceAll(secret, '[REDACTED]')
-  return redacted
-}
-
-const errorText = (error: unknown, cfg?: McpServerConfig): string => {
-  let message = 'unknown failure'
-  try {
-    // `Error.message` is only typed as a string; an untrusted realm can replace it with an object.
-    // Own the primitive before redaction so a hostile `replaceAll` never receives configured secrets.
-    message = String(error instanceof Error ? error.message : error)
-  } catch {
-    // Untrusted transports may reject with objects whose coercion throws. Error reporting must stay total.
-  }
-  if (cfg) message = redactSecrets(message, cfg)
-  return message.replace(/[\r\n]+/g, ' ').slice(0, 1024)
-}
+const redactSecrets = redactMcpSecrets
+const errorText = mcpErrorText
 
 function localName(serverId: string, remoteName: string): string {
   const remote = remoteName.replace(/[^A-Za-z0-9_]/g, '_')
@@ -535,24 +548,35 @@ export async function registerRemoteToolsStrict(
     const definitions = remote.map((tool) => remoteDefinition(conn, cfg, tool, mediaLimits))
     const duplicate = definitions.find((definition) => opts.claimedNames?.has(definition.name))
     if (duplicate) throw new Error(`duplicate MCP tool name: ${duplicate.name}`)
-    const catalog = definitions.map((definition) => ({
+    const taken = new Set<string>([...definitions.map((definition) => definition.name), ...(opts.claimedNames ?? [])])
+    const admitted = admitMcpResourceTools(conn, cfg, taken, (name) =>
+      agnes.ctx.log.warn('MCP resource tool name conflicts with a registered tool', { id: cfg.id, name }),
+    )
+    const resourceTools = admitted.tools
+    const catalog = [...definitions, ...resourceTools].map((definition) => ({
       name: definition.name,
       description: definition.description,
       schema: JSON.stringify(definition.parameters),
     }))
+    const resourceNote =
+      conn.supportsResources === true
+        ? `, ${resourceTools.length} resource tools${
+            admitted.conflicts > 0 ? `, ${admitted.conflicts} omitted for name conflict` : ''
+          }`
+        : ''
     disposers.push(
       agnes.registerResource({
         id: cfg.id,
         kind: 'mcp',
         name: cfg.id,
-        description: `MCP server ${cfg.id} (${definitions.length} tools)`,
+        description: `MCP server ${cfg.id} (${definitions.length} tools${resourceNote})`,
       }),
     )
-    for (const definition of definitions) disposers.push(agnes.registerTool(definition))
+    for (const definition of [...definitions, ...resourceTools]) disposers.push(agnes.registerTool(definition))
     // `tool_search` discovers only tools omitted from the default disclosure. Eager MCP tools
     // are already offered directly in every request and must not be duplicated in that index.
     if (cfg.defer) opts.onCatalog?.(catalog)
-    for (const definition of definitions) opts.claimedNames?.add(definition.name)
+    for (const definition of [...definitions, ...resourceTools]) opts.claimedNames?.add(definition.name)
   } catch (error) {
     for (const dispose of disposers.reverse()) dispose()
     if (opts.ownsConnection !== false) await conn.close().catch(() => undefined)

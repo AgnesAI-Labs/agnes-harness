@@ -48,7 +48,7 @@ function abortableSleep(ms: number, signal: AbortSignal): Promise<void> {
  * One extension row per configured MCP server (D118, dsh 的 `apply` + 连接监督器参照实现，落在
  * `@agnes/base`)。工厂函数本身是同步的：连接与首次目录同步在 `superviseConnection` 内部后台进行,
  * 行立刻返回,慢服务器不会拖长整次应用(否则 dsh 是等的,这里刻意不照做)。断线按 dsh 式退避重连;
- * `tools/list_changed` 触发重新同步;卸载时关闭连接、注销工具,并释放这个服务器在 `McpCatalogHub`
+ * `tools/list_changed` 与 `resources/list_changed` 都触发重新同步;卸载时关闭连接、注销工具,并释放这个服务器在 `McpCatalogHub`
  * 里的搜索索引声明。
  *
  * 与设计稿(`2026-09-21-resource-rows-design.md` 第 33 行)字面文本的一处偏差:稿子写的是

@@ -11,9 +11,20 @@ import {
 } from '@modelcontextprotocol/sdk/client/stdio.js'
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js'
 import type { FetchLike } from '@modelcontextprotocol/sdk/shared/transport.js'
-import { ElicitRequestSchema, ToolListChangedNotificationSchema } from '@modelcontextprotocol/sdk/types.js'
+import {
+  ElicitRequestSchema,
+  ResourceListChangedNotificationSchema,
+  ToolListChangedNotificationSchema,
+} from '@modelcontextprotocol/sdk/types.js'
 import type { McpServerConfig } from './config.js'
-import type { McpConnection } from './register.js'
+import {
+  MAX_MCP_RESOURCE_CONTENTS,
+  MAX_MCP_RESOURCE_PAGE,
+  readRemoteResource,
+  readRemoteResourceContent,
+  readRemoteResourceTemplate,
+} from './resources.js'
+import type { McpConnection, McpResourceCallOptions } from './register.js'
 
 type SdkTool = {
   name: string
@@ -22,13 +33,31 @@ type SdkTool = {
   annotations?: { readOnlyHint?: boolean | undefined } | undefined
 }
 type SdkTransport = CloseObservableTransport
+type SdkResource = { uri: string; name: string; description?: string; mimeType?: string }
+type SdkResourceTemplate = { uriTemplate: string; name: string; description?: string; mimeType?: string }
+type SdkResourceContent = { uri: string; mimeType?: string; text?: string; blob?: string }
+type SdkRequestOptions = { signal?: AbortSignal }
 type SdkClient = {
   setElicitationHandler(handler: () => { action: 'decline' }): void
   /** Fires on the server's `notifications/tools/list_changed`. Set once; a client that reconnects
    * gets a fresh SdkClient (and so a fresh handler registration) rather than resubscribing. */
   setToolListChangedHandler(handler: () => void): void
+  setResourceListChangedHandler(handler: () => void): void
+  getServerCapabilities(): { resources?: object | undefined } | undefined
   connect(transport: SdkTransport): Promise<void>
   listTools(params?: { cursor?: string }): Promise<{ tools: SdkTool[]; nextCursor?: string | undefined }>
+  listResources(
+    params?: { cursor?: string },
+    options?: SdkRequestOptions,
+  ): Promise<{ resources: SdkResource[]; nextCursor?: string | undefined }>
+  listResourceTemplates(
+    params?: { cursor?: string },
+    options?: SdkRequestOptions,
+  ): Promise<{ resourceTemplates: SdkResourceTemplate[]; nextCursor?: string | undefined }>
+  readResource(
+    params: { uri: string },
+    options?: SdkRequestOptions,
+  ): Promise<{ contents: SdkResourceContent[] }>
   callTool(
     params: { name: string; arguments: Record<string, unknown> },
     schema: undefined,
@@ -184,7 +213,12 @@ async function bounded<T>(
   options: { signal?: AbortSignal; timeoutMs?: number },
 ): Promise<T> {
   const timeoutMs = options.timeoutMs
-  if (options.signal?.aborted) throw aborted()
+  // The SDK schedules an abort listener even when the signal is already aborted. Drop that
+  // rejection here so it cannot escape after this function has already failed.
+  if (options.signal?.aborted) {
+    operation.catch(() => undefined)
+    throw aborted()
+  }
   let timer: ReturnType<typeof setTimeout> | undefined
   let onAbort: (() => void) | undefined
   try {
@@ -210,6 +244,11 @@ const realSdk: McpSdkDeps = {
         client.setNotificationHandler(ToolListChangedNotificationSchema, () => {
           handler()
         }),
+      setResourceListChangedHandler: (handler) =>
+        client.setNotificationHandler(ResourceListChangedNotificationSchema, () => {
+          handler()
+        }),
+      getServerCapabilities: () => client.getServerCapabilities(),
       connect: (transport) => client.connect(transport as Parameters<typeof client.connect>[0]),
       async listTools(params) {
         const page = await client.listTools(params)
@@ -221,6 +260,41 @@ const realSdk: McpSdkDeps = {
             ...(tool.annotations === undefined ? {} : { annotations: tool.annotations }),
           })),
           ...(page.nextCursor === undefined ? {} : { nextCursor: page.nextCursor }),
+        }
+      },
+      async listResources(params, options) {
+        const page = await client.listResources(params, options)
+        return {
+          resources: page.resources.map((resource) => ({
+            uri: resource.uri,
+            name: resource.name,
+            ...(resource.description === undefined ? {} : { description: resource.description }),
+            ...(resource.mimeType === undefined ? {} : { mimeType: resource.mimeType }),
+          })),
+          ...(page.nextCursor === undefined ? {} : { nextCursor: page.nextCursor }),
+        }
+      },
+      async listResourceTemplates(params, options) {
+        const page = await client.listResourceTemplates(params, options)
+        return {
+          resourceTemplates: page.resourceTemplates.map((template) => ({
+            uriTemplate: template.uriTemplate,
+            name: template.name,
+            ...(template.description === undefined ? {} : { description: template.description }),
+            ...(template.mimeType === undefined ? {} : { mimeType: template.mimeType }),
+          })),
+          ...(page.nextCursor === undefined ? {} : { nextCursor: page.nextCursor }),
+        }
+      },
+      async readResource(params, options) {
+        const page = await client.readResource(params, options)
+        return {
+          contents: page.contents.map((item) => ({
+            uri: item.uri,
+            ...(item.mimeType === undefined ? {} : { mimeType: item.mimeType }),
+            ...('text' in item && item.text !== undefined ? { text: item.text } : {}),
+            ...('blob' in item && item.blob !== undefined ? { blob: item.blob } : {}),
+          })),
         }
       },
       async callTool(params, schema, options) {
@@ -403,9 +477,19 @@ export async function connectMcp(
     errorIsDisconnect: cfg.transport !== 'stdio',
   })
   const toolsChangedListeners = new Set<() => void>()
+  const resourcesChangedListeners = new Set<() => void>()
   client.setToolListChangedHandler(() => {
     if (closed) return
     for (const listener of [...toolsChangedListeners]) listener()
+  })
+  client.setResourceListChangedHandler(() => {
+    if (closed) return
+    for (const listener of [...resourcesChangedListeners]) listener()
+  })
+  const supportsResources = client.getServerCapabilities()?.resources !== undefined
+  const resourceCall = (options: McpResourceCallOptions | undefined) => ({
+    timeoutMs: options?.timeoutMs ?? DEFAULT_MCP_CATALOG_TIMEOUT_MS,
+    ...(options?.signal === undefined ? {} : { signal: options.signal }),
   })
   return {
     id: cfg.id,
@@ -435,6 +519,48 @@ export async function connectMcp(
         cursor = page.nextCursor
       }
     },
+    supportsResources,
+    async listResources(listOptions = {}) {
+      const page = await bounded(
+        client.listResources(
+          listOptions.cursor === undefined ? undefined : { cursor: listOptions.cursor },
+          listOptions.signal === undefined ? undefined : { signal: listOptions.signal },
+        ),
+        resourceCall(listOptions),
+      )
+      if (page.resources.length > MAX_MCP_RESOURCE_PAGE) throw new Error('MCP resource page exceeds Host limit')
+      return {
+        resources: page.resources.map((resource) => readRemoteResource(resource)),
+        ...(typeof page.nextCursor === 'string' ? { nextCursor: page.nextCursor } : {}),
+      }
+    },
+    async listResourceTemplates(listOptions = {}) {
+      const page = await bounded(
+        client.listResourceTemplates(
+          listOptions.cursor === undefined ? undefined : { cursor: listOptions.cursor },
+          listOptions.signal === undefined ? undefined : { signal: listOptions.signal },
+        ),
+        resourceCall(listOptions),
+      )
+      if (page.resourceTemplates.length > MAX_MCP_RESOURCE_PAGE)
+        throw new Error('MCP resource template page exceeds Host limit')
+      return {
+        resourceTemplates: page.resourceTemplates.map((template) => readRemoteResourceTemplate(template)),
+        ...(typeof page.nextCursor === 'string' ? { nextCursor: page.nextCursor } : {}),
+      }
+    },
+    async readResource(uri, readOptions = {}) {
+      const page = await bounded(
+        client.readResource({ uri }, readOptions.signal === undefined ? undefined : { signal: readOptions.signal }),
+        {
+          ...(readOptions.timeoutMs === undefined ? {} : { timeoutMs: readOptions.timeoutMs }),
+          ...(readOptions.signal === undefined ? {} : { signal: readOptions.signal }),
+        },
+      )
+      if (page.contents.length > MAX_MCP_RESOURCE_CONTENTS)
+        throw new Error('MCP resource content count exceeds Host limit')
+      return { contents: page.contents.map((item) => readRemoteResourceContent(item)) }
+    },
     async callTool(name, args, opts) {
       const result = await client.callTool({ name, arguments: callArguments(args) }, undefined, {
         signal: opts.signal,
@@ -448,6 +574,7 @@ export async function connectMcp(
       stopTransportHealth()
       closeListeners.clear()
       toolsChangedListeners.clear()
+      resourcesChangedListeners.clear()
       await client.close()
     },
     onClose(listener) {
@@ -462,6 +589,11 @@ export async function connectMcp(
       if (closed) return () => undefined
       toolsChangedListeners.add(listener)
       return () => toolsChangedListeners.delete(listener)
+    },
+    onResourcesChanged(listener) {
+      if (closed) return () => undefined
+      resourcesChangedListeners.add(listener)
+      return () => resourcesChangedListeners.delete(listener)
     },
   }
 }

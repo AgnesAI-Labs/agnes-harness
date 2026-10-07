@@ -20,3 +20,29 @@ export type McpServerConfig = {
   allowedTools?: readonly string[]
   defer: boolean
 }
+
+/** Longest secrets first, so a shorter prefix of the same value cannot survive redaction. */
+export function mcpSecretValues(cfg: McpServerConfig): string[] {
+  return [...Object.values(cfg.env ?? {}), ...Object.values(cfg.headers ?? {})]
+    .flatMap((value) => (value.startsWith('Bearer ') ? [value, value.slice('Bearer '.length)] : [value]))
+    .filter((value) => value.length > 0)
+    .sort((a, b) => b.length - a.length)
+}
+
+export function redactMcpSecrets(value: string, cfg: McpServerConfig): string {
+  let redacted = value
+  for (const secret of mcpSecretValues(cfg)) redacted = redacted.replaceAll(secret, '[REDACTED]')
+  return redacted
+}
+
+/** A single-line, secret-free message. Untrusted errors must not be able to throw during formatting. */
+export function mcpErrorText(error: unknown, cfg?: McpServerConfig): string {
+  let message = 'unknown failure'
+  try {
+    message = String(error instanceof Error ? error.message : error)
+  } catch {
+    // Untrusted transports may reject with objects whose coercion throws.
+  }
+  if (cfg) message = redactMcpSecrets(message, cfg)
+  return message.replace(/[\r\n]+/g, ' ').slice(0, 1024)
+}
