@@ -1,5 +1,7 @@
 import type { ModelAdapterPluginContext } from '@agnes/plugin-runtime'
+import { localOpenAIAdapter } from './local-openai.js'
 import { replayAdapter, scriptedAdapter } from './replay.js'
+export { discoverLocalModels, localOpenAIAdapter } from './local-openai.js'
 export { replayAdapter, replayRequestKey, scriptedAdapter } from './replay.js'
 export { readModelResponses, recordModelResponses, type ModelResponseRecord } from './trace.js'
 
@@ -9,5 +11,6 @@ export const modelAdaptersPlugin = {
   apply(ctx: ModelAdapterPluginContext) {
     ctx.modelAdapters.register(replayAdapter)
     ctx.modelAdapters.register(scriptedAdapter)
+    ctx.modelAdapters.register(localOpenAIAdapter)
   },
 }

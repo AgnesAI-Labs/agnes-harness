@@ -118,3 +118,5 @@ export * from './transport/jsonl.js'
 export * from './transport/types.js'
 export { type WebSocketLike, type WsOptions, wsTransport } from './transport/ws.js'
 export * from './ui-projection-sync.js'
+
+export * from './headless.js'
