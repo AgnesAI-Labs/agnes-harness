@@ -64,7 +64,13 @@ it('shows declared kinds and observable states without guessing draining or rest
 
 it('loads catalog choices and saves their exact identities and revision', async () => {
   const loop = { id: 'workflow', version: '1.0.0', sourcePackage: '@acme/workflow', capabilities: ['resume'] }
-  const adapter = { ...loop, id: 'adapter', models: [{ id: 'model' }] }
+  const adapter = {
+    ...loop,
+    id: 'adapter',
+    api: 'custom',
+    capabilities: { imageInput: true, tools: true, streaming: true },
+    models: [{ id: 'model' }],
+  }
   const snapshot = {
     revision: 4,
     defaults: {

@@ -439,4 +439,3 @@ export {
 export * from './workspace-policy.js'
 
 export { modelAdapterCatalog, ModelAdapterRegistry } from './assemble/model-adapters.js'
-export { createAdminSessionSelection } from './admin-session-selection.js'

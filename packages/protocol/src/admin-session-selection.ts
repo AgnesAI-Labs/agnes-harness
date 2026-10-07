@@ -6,10 +6,15 @@ export type AdminLoop = Readonly<{
   capabilities: readonly string[]
   sourcePackage: string
 }>
-export type AdminModelAdapter = AdminLoop &
-  Readonly<{
-    models: readonly Readonly<{ id: string; label?: string }>[]
-  }>
+export type AdminModelAdapter = Readonly<{
+  id: string
+  version: string
+  api: string
+  sourcePackage: string
+  capabilities: Readonly<{ imageInput: boolean; tools: boolean; streaming: boolean }>
+  label?: string
+  models: readonly Readonly<{ id: string; label?: string }>[]
+}>
 export type SessionDefaults = Readonly<{
   loop?: Readonly<{ id: string; version: string }>
   modelAdapter?: Readonly<{ id: string; version: string; model: string }>
@@ -78,16 +83,28 @@ export function isAdminLoop(value: unknown): value is AdminLoop {
   )
 }
 export function isAdminModelAdapter(value: unknown): value is AdminModelAdapter {
-  if (!record(value) || !Array.isArray(value.models) || value.models.length > 4096) return false
-  const { models, ...loop } = value
-  return (
-    isAdminLoop(loop) &&
-    models.every(
-      (model) =>
-        record(model) &&
-        keys(model, ['id', 'label']) &&
-        text(model.id) &&
-        (model.label === undefined || text(model.label)),
-    )
+  if (
+    !record(value) ||
+    !keys(value, ['id', 'version', 'api', 'sourcePackage', 'capabilities', 'label', 'models']) ||
+    !text(value.id) ||
+    !text(value.version) ||
+    !text(value.api) ||
+    !text(value.sourcePackage) ||
+    (value.label !== undefined && !text(value.label)) ||
+    !Array.isArray(value.models) ||
+    value.models.length > 4096 ||
+    !record(value.capabilities) ||
+    !keys(value.capabilities, ['imageInput', 'tools', 'streaming']) ||
+    typeof value.capabilities.imageInput !== 'boolean' ||
+    typeof value.capabilities.tools !== 'boolean' ||
+    typeof value.capabilities.streaming !== 'boolean'
+  )
+    return false
+  return value.models.every(
+    (model) =>
+      record(model) &&
+      keys(model, ['id', 'label']) &&
+      text(model.id) &&
+      (model.label === undefined || text(model.label)),
   )
 }

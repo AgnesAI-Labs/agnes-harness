@@ -76,7 +76,8 @@ export function KindFilter({
   )
 }
 const identity = (entry: { id: string; version: string }) => JSON.stringify([entry.id, entry.version])
-const label = (entry: AdminLoop) => `${entry.label ?? entry.id} · ${entry.version}`
+const label = (entry: Pick<AdminLoop, 'id' | 'version' | 'label'>) =>
+  `${entry.label ?? entry.id} · ${entry.version}`
 
 export function SessionDefaultsPanel({
   api,
@@ -202,10 +203,7 @@ export function SessionDefaultsPanel({
                   ? [
                       {
                         value: loop,
-                        label:
-                          label({ ...catalog.snapshot.defaults.loop, sourcePackage: '', capabilities: [] }) +
-                          ' · ' +
-                          t('defaults.unavailable-choice'),
+                        label: `${label(catalog.snapshot.defaults.loop)} · ${t('defaults.unavailable-choice')}`,
                         disabled: true,
                       },
                     ]
@@ -236,11 +234,7 @@ export function SessionDefaultsPanel({
                       {
                         value: adapter,
                         label:
-                          label({
-                            ...catalog.snapshot.defaults.modelAdapter,
-                            sourcePackage: '',
-                            capabilities: [],
-                          }) +
+                          label(catalog.snapshot.defaults.modelAdapter) +
                           ' · ' +
                           t('defaults.unavailable-choice'),
                         disabled: true,

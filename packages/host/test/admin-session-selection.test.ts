@@ -4,11 +4,18 @@ import { createAdminSessionSelection } from '../src/admin-session-selection.js'
 it('validates exact catalog versions and model ids before persisting defaults', async () => {
   const save = vi.fn(async (input) => ({ ...input, revision: input.revision + 1 }))
   const loop = { id: 'loop', version: '1.0.0', sourcePackage: '@acme/loop', capabilities: ['resume'] }
-  const adapter = { ...loop, id: 'adapter', models: [{ id: 'model' }] }
+  const adapter = {
+    ...loop,
+    id: 'adapter',
+    api: 'custom',
+    capabilities: { imageInput: true, tools: true, streaming: true },
+    models: [{ id: 'model' }],
+  }
   const provider = createAdminSessionSelection(
     {
       loops: async () => [loop],
       modelAdapters: async () => [adapter],
+      models: async () => adapter.models,
     },
     { sessionDefaults: async () => ({ revision: 0, defaults: {} }), saveSessionDefaults: save },
   )

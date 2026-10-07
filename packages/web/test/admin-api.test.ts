@@ -319,7 +319,18 @@ it('validates catalogs and sends defaults through fixed same-origin GET/PUT rout
   const fetcher = vi
     .fn<typeof fetch>()
     .mockResolvedValueOnce(Response.json({ loops: [loop], ...snapshot }))
-    .mockResolvedValueOnce(Response.json({ modelAdapters: [{ ...loop, models: [{ id: 'model' }] }] }))
+    .mockResolvedValueOnce(
+      Response.json({
+        modelAdapters: [
+          {
+            ...loop,
+            api: 'custom',
+            capabilities: { imageInput: true, tools: true, streaming: true },
+            models: [{ id: 'model' }],
+          },
+        ],
+      }),
+    )
     .mockResolvedValueOnce(Response.json({ ...snapshot, revision: 2 }))
   const api = new PluginAdminApi(context, fetcher)
   expect((await api.loops()).loops).toEqual([loop])
@@ -333,7 +344,18 @@ it('validates catalogs and sends defaults through fixed same-origin GET/PUT rout
   expect(JSON.parse(String(fetcher.mock.calls[2]?.[1]?.body))).toEqual(snapshot)
   fetcher.mockResolvedValueOnce(Response.json({ loops: [{ ...loop, token: 'secret' }], ...snapshot }))
   await expect(api.loops()).rejects.toMatchObject({ details: { code: 'ADMIN_RESPONSE_INVALID' } })
-  fetcher.mockResolvedValueOnce(Response.json({ modelAdapters: [{ ...loop, models: [null] }] }))
+  fetcher.mockResolvedValueOnce(
+    Response.json({
+      modelAdapters: [
+        {
+          ...loop,
+          api: 'custom',
+          capabilities: { imageInput: true, tools: true, streaming: true },
+          models: [null],
+        },
+      ],
+    }),
+  )
   await expect(api.modelAdapters()).rejects.toMatchObject({ details: { code: 'ADMIN_RESPONSE_INVALID' } })
   fetcher.mockResolvedValueOnce(
     Response.json({ error: { code: 'CONFIG_REVISION_CONFLICT', message: 'Reload.' } }, { status: 409 }),
