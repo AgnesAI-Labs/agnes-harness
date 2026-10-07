@@ -16,8 +16,8 @@ const roots: string[] = []
 // Explicit preload now adds one durable tail note. It does not alter the disclosed tool schema:
 // discovery and read tools remain available for the loaded and generic turns alike.
 // Pagination changes both read-tool schemas; pin the merged, model-visible tool set.
-// The write description also includes the incremental-generation guidance shipped with the tools.
-const EXPECTED_SKILL_TOOL_SCHEMA_HASH = '1f38d67cc65637ee005dcc05a2c2c7fa25a1eefa03431da132655c898da82a80'
+// The write description includes incremental-generation guidance; read now describes saved attachments.
+const EXPECTED_SKILL_TOOL_SCHEMA_HASH = '99e4ce581000f0925fe89ad5e38b0c602e099f08562ac405844e87a78dffd9b4'
 const expectedToolNames = [
   'compact',
   'edit',
@@ -250,6 +250,9 @@ it.each([false, true])('preloads and discovers workspace Skills with shared work
     )
     const firstRequest = provider.calls[0]
     if (!firstRequest) throw new Error('missing first Skill request')
+    expect(firstRequest.tools.find((tool) => tool.name === 'read')?.description).toContain(
+      'session-file://list',
+    )
     const firstToolSchemaHash = sha256hex(canonicalJson(firstRequest.tools).normalize('NFC'))
     expect(headers.map((row) => (row.data as { tool_schema_hash?: string }).tool_schema_hash)).toEqual([
       firstToolSchemaHash,

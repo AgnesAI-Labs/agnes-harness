@@ -309,6 +309,14 @@ it('maps recovery park to human and approval ask to require_approval', () => {
 })
 
 it('preserves unplaced model settings without publishing them as session fields', () => {
+  const inputLimits = {
+    maxRequestBytes: 4194304,
+    images: {
+      maxPerMessage: 3,
+      maxPerRequest: 9,
+      resize: { jpegQuality: 80, maxBytes: 1048576, maxHeight: 1024, maxWidth: 2048 },
+    },
+  }
   const profile = {
     name: 'dev',
     provider: {
@@ -316,7 +324,7 @@ it('preserves unplaced model settings without publishing them as session fields'
         {
           route: 'first',
           models: [
-            { id: 'one', defaultSettings: { contextWindow: 65536, thinking: 'high' } },
+            { id: 'one', defaultSettings: { contextWindow: 65536, thinking: 'high' }, inputLimits },
             { id: 'two', defaultSettings: { contextWindow: 131072 } },
             { id: 'no-defaults' },
           ],
@@ -348,6 +356,25 @@ it('preserves unplaced model settings without publishing them as session fields'
     value: profile.provider,
     reason: 'manifest_digest_required',
   })
+  for (const [leaf, value] of [
+    ['images/maxPerMessage', inputLimits.images.maxPerMessage],
+    ['images/maxPerRequest', inputLimits.images.maxPerRequest],
+    ['images/resize/jpegQuality', inputLimits.images.resize.jpegQuality],
+    ['images/resize/maxBytes', inputLimits.images.resize.maxBytes],
+    ['images/resize/maxHeight', inputLimits.images.resize.maxHeight],
+    ['images/resize/maxWidth', inputLimits.images.resize.maxWidth],
+    ['maxRequestBytes', inputLimits.maxRequestBytes],
+  ] as const) {
+    const path = `/provider/routes[]/models[]/inputLimits/${leaf}`
+    expect(result.rows.find((row) => row.path === path)).toMatchObject({
+      present: true,
+      source: 'document',
+      layer: 'user',
+      value: [value],
+      placed: false,
+    })
+  }
+  expect(result.sessionParameters).not.toHaveProperty('provider')
   for (const [key, value] of [
     ['contextWindow', [65536, 131072]],
     ['thinking', ['high', 'low']],
