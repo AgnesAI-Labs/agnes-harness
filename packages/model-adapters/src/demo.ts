@@ -165,7 +165,17 @@ function data(message: RequestBody['messages'][number]): unknown {
 
 /** Decisions are derived entirely from the request, so concurrent sessions and replay stay independent. */
 export function demoReply(request: RequestBody): ModelAdapterEvent[] {
-  const userIndex = request.messages.findLastIndex((message) => message.role === 'user')
+  // Core appends runtime/time/Skill notes as user messages after the actual input.
+  // Teaching commands must follow the input, not interpret those contextual notes as a new turn.
+  const userIndex = request.messages.findLastIndex(
+    (message) =>
+      message.role === 'user' &&
+      !message.content.some(
+        (part) =>
+          part.type === 'text' &&
+          /^(?:\[runtime context\]|\[hook context\]|\[skill loaded\])\n/.test(part.text),
+      ),
+  )
   const user = request.messages[userIndex]
   const prompt = user?.content.flatMap((part) => (part.type === 'text' ? [part.text] : [])).join(' ') ?? ''
   const results = request.messages.slice(userIndex + 1).filter((message) => message.role === 'tool_result')

@@ -156,7 +156,12 @@ it('derives demo tool arguments, refuses invalid examples and summarizes actual 
   })
   const body: RequestBody = {
     ...request,
-    messages: [{ role: 'user', content: [{ type: 'text', text: 'call lesson_echo' }] }],
+    messages: [
+      { role: 'user', content: [{ type: 'text', text: 'call lesson_echo' }] },
+      { role: 'user', content: [{ type: 'text', text: '[runtime context]\n{"cwd":"/repo"}' }] },
+      { role: 'user', content: [{ type: 'text', text: '[hook context]\nCurrent time: now' }] },
+      { role: 'user', content: [{ type: 'text', text: '[skill loaded]\nAcceptance playbook' }] },
+    ],
     tools: [
       {
         name: 'lesson_echo',
