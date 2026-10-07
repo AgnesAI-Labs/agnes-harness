@@ -192,7 +192,23 @@ describe('createMcpRowRuntime against a real Host', () => {
     const runtime = createMcpRowRuntime({ host, opener })
     await runtime.apply([entry('alpha', 'r1'), entry('beta', 'r1')])
     await vi.waitFor(() => expect(connects.sort()).toEqual(['alpha', 'beta']))
-
+    const old = await host.createSession({ key: 'old-code', cwd: hostDir })
+    await host.extensionRows.apply(
+      host.extensionRows
+        .current()
+        .map((row) =>
+          row.id === 'ext:agnes/tools-web'
+            ? host.extensionRows.prepare({
+                extensionId: 'agnes/tools-web',
+                entryRevision: 'next-code-version',
+              })
+            : row,
+        ),
+    )
+    const fresh = await host.createSession({ key: 'new-code', cwd: hostDir })
+    expect(fresh.pluginGenerationId).not.toBe(old.pluginGenerationId)
+    expect(connects.sort()).toEqual(['alpha', 'beta'])
+    expect(closes).toEqual([])
     await runtime.apply([entry('alpha', 'r2'), entry('beta', 'r1')])
 
     await vi.waitFor(() => expect(connects.filter((id) => id === 'alpha')).toHaveLength(2))
@@ -200,6 +216,17 @@ describe('createMcpRowRuntime against a real Host', () => {
     expect(connects.filter((id) => id === 'beta')).toHaveLength(1)
     await vi.waitFor(() => expect(tool(host, `${ALPHA_PREFIX}ping`)).toBeDefined())
     expect(tool(host, `${BETA_PREFIX}ping`)).toBeDefined()
+    await runtime.apply([{ ...entry('alpha', 'r2'), desired: 'disabled' }, entry('beta', 'r1')])
+    expect(old.currentTools().resolve(`${ALPHA_PREFIX}ping`)).toBeUndefined()
+    expect(old.currentTools().resolve(`${BETA_PREFIX}ping`)).toBeDefined()
+    expect(fresh.currentTools().resolve(`${ALPHA_PREFIX}ping`)).toBeUndefined()
+    expect(fresh.currentTools().resolve(`${BETA_PREFIX}ping`)).toBeDefined()
+    await vi.waitFor(() => expect(closes).toEqual(['alpha', 'alpha']))
+    await old.close()
+    await host.releaseSessionGeneration?.(old.key)
+    expect(closes).toEqual(['alpha', 'alpha'])
+    await host.close()
+    expect(closes).toEqual(['alpha', 'alpha', 'beta'])
   })
 
   it('reconnect() forces a server to remount on the next apply() even at the same revision, and only that one', async () => {
@@ -453,10 +480,14 @@ describe('createMcpRowRuntime first connection attempts (design §3.8, D120)', (
         compositeRevision: 'f'.repeat(64),
       }),
     )
-    expect(runtime.status('alpha')?.connectionState).toBe('connecting')
+    expect(runtime.status('alpha')?.connectionState).toBe('ready')
+    runtime.reconnect('alpha')
+    const applying = runtime.apply([entry('alpha')])
+    await vi.waitFor(() => expect(runtime.status('alpha')?.connectionState).toBe('connecting'))
     const ready = runtime.waitForStatus('alpha')
     release()
     await expect(ready).resolves.toMatchObject({ connectionState: 'ready', toolCount: 1 })
+    await applying
     expect(runtime.tools('alpha', 'r1')?.items.map((item) => item.name)).toEqual(['ping'])
     await pinned.close()
   })

@@ -87,6 +87,10 @@ A versionless loop selection requires exactly one installed version. An explicit
 | `sandbox` | `local`, Host | Startup selection, bound on first workspace; restart required to change it. |
 | `child-agent` | `in-process`, Base | Defined with `defineProviderKind`; `childAgents` remains the typed facade. Optional `acp` stays unloaded by default. Fiber unload aborts the provider lifetime and disposes its handles; capability checks and session allowlists still apply. |
 
+## Pinned code, live resources
+
+Sessions persist their plugin code generation: packages, loops, providers and tool implementations stay pinned across hibernation and restart. MCP server definitions and Skills are live resources, filtered by the session’s composition. Added, updated or removed resources take effect on the session’s next turn; disabling an MCP server removes it from new turns of every session. Unchanged MCP servers share one connection across code generations within a worker, with reference-counted leases; the connection closes when its last generation/session reference is released. Cold resume resolves the pinned code snapshot and current resources, and waits for the first MCP catalog sync with a bounded timeout.
+
 ## The plugin ladder
 
 Each rung works without learning the next: **0 Use** — select installed plugins and presets; **1 Skill** — write `SKILL.md`; **2 Connect** — configure MCP; **3 Tool** — write a JS/TS tool; **4 Panel** — add a client panel; **5 Brain** — replace a model adapter, compaction engine or policy; **6 Loop** — supply a complete driver; **7 Bundle** — compose the pieces as configuration. Beginners enter through tools and Skills; researchers swap algorithms; FDE teams distribute bundles; core contributors maintain the ports and shared provider lifecycle.

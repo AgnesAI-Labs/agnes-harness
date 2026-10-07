@@ -124,11 +124,12 @@ it('runs preset compositions side by side, filters tools and retains the generat
 })
 
 it('restricts Skill reads and optional panels to the selected resources and slots', () => {
+  let listed = [
+    { resourceId: 'visible', name: 'read' },
+    { resourceId: 'hidden', name: 'write' },
+  ]
   const input = {
-    list: () => [
-      { resourceId: 'visible', name: 'read' },
-      { resourceId: 'hidden', name: 'write' },
-    ],
+    list: () => listed,
     read: () => ({ ok: true }),
     readFile: () => ({ ok: true }),
     readRoots: () => ['/broad'],
@@ -141,6 +142,13 @@ it('restricts Skill reads and optional panels to the selected resources and slot
     code: 'UNAUTHORIZED',
   })
   expect(skills.readRoots?.()).toEqual([])
+  listed = [
+    { resourceId: 'replacement', name: 'read' },
+    { resourceId: 'added-hidden', name: 'write' },
+  ]
+  expect(skills.list().map((skill) => skill.resourceId)).toEqual(['replacement'])
+  expect(skills.read('visible', { sessionKey: 'fixture' })).toEqual({ ok: false, code: 'UNAUTHORIZED' })
+  expect(skills.read('added-hidden', { sessionKey: 'fixture' })).toEqual({ ok: false, code: 'UNAUTHORIZED' })
   const location = ['acme/skills', 'refund', 'skills/refund'].join('\0')
   const resourceId = skillResourceIdAt(
     { scope: 'package', rootKey: 'package', priority: 50, path: '' },

@@ -115,12 +115,17 @@ export async function createCompositionHost(
       try {
         const rows = new Map(host.extensionRows.current().map((row) => [row.id, row]))
         for (const input of prepared.values()) {
-          const row = host.extensionRows.prepare(input)
+          // A restored composition keeps its code pin, but must seed current resource factories.
+          if (pinned && input.dynamic?.generation?.kind !== 'mcp-server') continue
+          const dynamic =
+            pinned && input.dynamic?.generation && options.restoreGenerationExtension
+              ? await options.restoreGenerationExtension(input.dynamic.generation)
+              : input.dynamic
+          const row = host.extensionRows.prepare({ ...input, ...(dynamic ? { dynamic } : {}) })
           rows.set(row.id, row)
         }
         if (latestTarget && !pinned) await host.applyRuntimeTarget(project(latestTarget, binding.tree))
-        else if (prepared.size && !pinned)
-          await host.extensionRows.apply(projectRows([...rows.values()], binding.tree))
+        else if (prepared.size) await host.extensionRows.apply(projectRows([...rows.values()], binding.tree))
         const container = { host, tree: binding.tree }
         containers.set(binding.tree.hash, container)
         return container

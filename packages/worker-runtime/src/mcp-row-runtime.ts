@@ -293,21 +293,38 @@ export function createMcpRowRuntime(
 }
 
 /** The old resource manager's worst case before a turn could start: 10s connect + 10s catalog. */
-const FIRST_ATTEMPT_TIMEOUT_MS = 20_000
+export const FIRST_ATTEMPT_TIMEOUT_MS = 20_000
 /** Matches the protocol schema's `McpToolCatalogPage.items` cap. */
 const PAGE_SIZE = 100
 
 /** Waits until every attempt settled or `ms` elapsed, whichever comes first. Never rejects. */
-async function settledWithin(attempts: readonly Promise<unknown>[], ms: number): Promise<void> {
-  if (!attempts.length) return
+export async function settledWithin(
+  attempts: readonly Promise<unknown>[],
+  ms: number,
+  signal?: AbortSignal,
+): Promise<void> {
+  if (!attempts.length || signal?.aborted) return
   let timer: ReturnType<typeof setTimeout> | undefined
-  await Promise.race([
-    Promise.allSettled(attempts),
-    new Promise<void>((resolve) => {
-      timer = setTimeout(resolve, ms)
-    }),
-  ])
-  clearTimeout(timer)
+  let aborted: (() => void) | undefined
+  try {
+    await Promise.race([
+      Promise.allSettled(attempts),
+      new Promise<void>((resolve) => {
+        timer = setTimeout(resolve, ms)
+      }),
+      ...(signal
+        ? [
+            new Promise<void>((resolve) => {
+              aborted = resolve
+              signal.addEventListener('abort', aborted, { once: true })
+            }),
+          ]
+        : []),
+    ])
+  } finally {
+    clearTimeout(timer)
+    if (aborted) signal?.removeEventListener('abort', aborted)
+  }
 }
 
 /** A decimal-offset cursor over an already-sorted tool list; same semantics as the retired

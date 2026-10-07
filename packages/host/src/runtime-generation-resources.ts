@@ -2,22 +2,15 @@ import { AsyncLocalStorage } from 'node:async_hooks'
 import type {
   RuntimeGenerationResourceInput,
   RuntimeGenerationResourceSnapshot,
-  RuntimeGenerationSnapshotStore,
 } from '@agnes/package-manager'
 import type { JsonValue } from '@agnes/protocol'
-import {
-  restoreSkillGeneration,
-  type SkillGenerationSnapshot,
-  type SkillRuntimeInput,
-} from '@agnes/resource-control-runtime'
+import type { SkillRuntimeInput } from '@agnes/resource-control-runtime'
 import type { Host, HostOptions } from './host.js'
 
 type PreparedRow = Parameters<Host['extensionRows']['prepare']>[0]
 type ResourceData = {
   version: 1
-  skills?: SkillGenerationSnapshot
   scoped: boolean
-  unavailable?: string
   rows: {
     extensionId: string
     entryRevision?: string
@@ -31,45 +24,24 @@ export function captureGenerationResources(
   rows: Iterable<PreparedRow>,
   extensionRowIds?: readonly string[],
 ): RuntimeGenerationResourceInput {
-  const directories: string[] = []
-  let view: SkillGenerationSnapshot | undefined, unavailable: string | undefined
-  if (skills) {
-    try {
-      if (!skills.generationSnapshot) throw new Error('custom Skills input provides no generationSnapshot()')
-      view = skills.generationSnapshot()
-      view = {
-        ...view,
-        entries: view.entries.map((entry) => {
-          if (!entry.directory) return entry
-          let index = directories.indexOf(entry.directory)
-          if (index === -1) index = directories.push(entry.directory) - 1
-          return { ...entry, directory: String(index) }
-        }),
-      }
-    } catch (error) {
-      unavailable = `E_GENERATION_SKILLS_UNRESTORABLE: ${String(error)}`
-    }
-  }
   const data: ResourceData = {
     version: 1,
     scoped: !!skills?.scopeWorkspace,
-    ...(view ? { skills: view } : {}),
-    ...(unavailable ? { unavailable } : {}),
     ...(extensionRowIds ? { extensionRowIds: [...extensionRowIds] } : {}),
     rows: [...rows]
-      .filter((row) => row.dynamic)
+      .filter((row) => row.dynamic && row.dynamic.generation?.kind !== 'mcp-server')
       .map((row) => ({
         extensionId: row.extensionId,
         ...(row.entryRevision ? { entryRevision: row.entryRevision } : {}),
         ...(row.dynamic?.generation ? { generation: row.dynamic.generation } : {}),
       })),
   }
-  return { data: data as unknown as JsonValue, directories }
+  return { data: data as unknown as JsonValue, directories: [] }
 }
 
 function resourceData(snapshot: RuntimeGenerationResourceSnapshot): ResourceData {
   const data = snapshot.data as unknown as ResourceData
-  if (!data || data.version !== 1 || !Array.isArray(data.rows) || typeof data.scoped !== 'boolean')
+  if (data?.version !== 1 || !Array.isArray(data.rows) || typeof data.scoped !== 'boolean')
     throw new Error('E_GENERATION_RESOURCE_INTEGRITY: invalid private resource metadata')
   if (
     data.extensionRowIds !== undefined &&
@@ -80,54 +52,14 @@ function resourceData(snapshot: RuntimeGenerationResourceSnapshot): ResourceData
   return data
 }
 
-function restoreSkills(snapshot: RuntimeGenerationResourceSnapshot): SkillRuntimeInput | undefined {
-  const data = resourceData(snapshot)
-  if (data.unavailable) throw new Error(data.unavailable)
-  if (!data.skills) return undefined
-  return restoreSkillGeneration({
-    ...data.skills,
-    entries: data.skills.entries.map((entry) => {
-      if (!entry.directory) return entry
-      const directory = snapshot.directories[Number(entry.directory)]
-      if (!directory || String(Number(entry.directory)) !== entry.directory)
-        throw new Error('E_GENERATION_SKILLS_DIRECTORY_MISSING: pinned Skill directory is missing')
-      return { ...entry, directory }
-    }),
-  })
-}
-
-/** This wrapper is fitted before assembly and sealed to the copied view before any session opens. */
-export function createGenerationSkills(
-  original: SkillRuntimeInput | undefined,
-  store: RuntimeGenerationSnapshotStore,
-) {
-  let shared = original
-  let scoped = !!original?.scopeWorkspace
-  let fallback = false
-  const views = new Map<string, SkillRuntimeInput>()
-  const calls = new AsyncLocalStorage<{ key: string; view: SkillRuntimeInput; active: boolean }>()
+/** Code generations consume current resources; workspace authorization is scoped to each turn. */
+export function createGenerationSkills(original: SkillRuntimeInput | undefined) {
+  const calls = new AsyncLocalStorage<{ key: string; active: boolean }>()
   const current = (key?: string) => {
     const call = calls.getStore()
-    if (call) return call.active && (key === undefined || key === call.key) ? call.view : undefined
-    return !fallback && scoped && key !== undefined ? undefined : shared
-  }
-  const bind = async (key: string, root: string, existing: boolean) => {
-    const saved = store.sessionResources(key)
-    if (saved) {
-      const view = restoreSkills(saved)
-      if (view) views.set(key, view)
-      return
-    }
-    if (!scoped || !original) return
-    if (fallback) return
-    if (existing)
-      throw new Error('E_GENERATION_SKILLS_WORKSPACE_MISSING: session has no pinned workspace Skills view')
-    const capture = () => Promise.resolve(captureGenerationResources(original, []))
-    const input = original.scopeWorkspace
-      ? await original.scopeWorkspace(root, key, capture)
-      : await capture()
-    const view = restoreSkills(store.pinSessionResources(key, input))
-    if (view) views.set(key, view)
+    if (call && (!call.active || (key !== undefined && key !== call.key))) return undefined
+    if (!call && original?.scopeWorkspace && key !== undefined) return undefined
+    return original
   }
   const input: SkillRuntimeInput = {
     list: () => current()?.list() ?? [],
@@ -140,57 +72,35 @@ export function createGenerationSkills(
         code: 'UNAUTHORIZED',
       },
     readRoots: () => {
-      const call = calls.getStore()
-      const active = !!call?.active
-      return [
-        ...new Set(
-          (active ? [call.view] : [shared]).flatMap((view) => {
-            let data: SkillGenerationSnapshot | undefined
-            try {
-              data = view?.generationSnapshot?.()
-            } catch {
-              /* A live custom view is not serializable. */
-            }
-            return data
-              ? data.entries
-                  .filter(
-                    (entry) =>
-                      entry.actual.actual === 'ready' &&
-                      entry.directory &&
-                      (active || entry.actual.sourceIdentity.scope === 'user'),
-                  )
-                  .map((entry) => entry.directory as string)
-              : (view?.readRoots?.() ?? [])
-          }),
-        ),
-      ]
+      const view = current()
+      let snapshot: ReturnType<NonNullable<SkillRuntimeInput['generationSnapshot']>> | undefined
+      try {
+        snapshot = view?.generationSnapshot?.()
+      } catch {
+        // Custom live inputs may expose reads without a serializable resource view.
+      }
+      return snapshot
+        ? snapshot.entries
+            .filter(
+              (entry) =>
+                entry.actual.actual === 'ready' &&
+                entry.directory &&
+                (calls.getStore()?.active || entry.actual.sourceIdentity.scope === 'user'),
+            )
+            .map((entry) => entry.directory as string)
+        : (view?.readRoots?.() ?? [])
     },
     async scopeWorkspace(root, key, invoke) {
-      if (fallback && original?.scopeWorkspace) return original.scopeWorkspace(root, key, invoke)
-      if (!views.has(key) && scoped) await bind(key, root, !!store.session(key)?.resourcesDigest)
-      const view = views.get(key) ?? shared
-      if (!view) return invoke()
-      const call = { key, view, active: true }
+      const call = { key, active: true }
+      const run = () => calls.run(call, invoke)
       try {
-        return await calls.run(call, invoke)
+        return await (original?.scopeWorkspace ? original.scopeWorkspace(root, key, run) : run())
       } finally {
         call.active = false
       }
     },
   }
-  return {
-    input,
-    bind,
-    seal(snapshot: RuntimeGenerationResourceSnapshot, allowLiveFallback: boolean) {
-      const data = resourceData(snapshot)
-      scoped = data.scoped
-      if (data.unavailable && allowLiveFallback) {
-        fallback = true
-        return
-      }
-      shared = restoreSkills(snapshot)
-    },
-  }
+  return { input }
 }
 
 export async function restoreGenerationRows(
@@ -200,6 +110,7 @@ export async function restoreGenerationRows(
 ): Promise<readonly PreparedRow[]> {
   const rows: PreparedRow[] = []
   for (const row of resourceData(snapshot).rows) {
+    if (row.generation?.kind === 'mcp-server') continue
     const current = live?.get(row.extensionId)
     if (current?.dynamic) {
       rows.push(current)

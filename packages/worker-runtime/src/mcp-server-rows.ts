@@ -16,6 +16,8 @@ import {
   validateResourceControlData,
 } from '@agnes/protocol'
 
+import { leaseMcpConnection } from './mcp-connection-pool.js'
+
 /** One snapshot entry -- structurally `@agnes/resource-control-runtime`'s `McpManagedInput`
  * (`worker-runtime.ts`'s `mcp: readonly McpManagedInput[]`), so the snapshot's own entries are
  * assignable here without this package taking on that (layer-6) dependency itself. */
@@ -151,7 +153,8 @@ export function mcpServerRowsFromDefinitions(
         factory: (ctx: Parameters<typeof mcpCatalogHubFor>[0]) =>
           mcpServerExtension(cfg, {
             catalogHub: mcpCatalogHubFor(ctx),
-            connect: (_cfg: McpServerConfig, signal: AbortSignal) => opener.connect(definition, signal),
+            connect: (_cfg: McpServerConfig, signal: AbortSignal) =>
+              leaseMcpConnection(opener, `${serverId}\0${revision}`, definition, signal),
             ...(options.onFirstAttempt
               ? { onFirstAttempt: (ready) => options.onFirstAttempt?.(definition.serverId, ready) }
               : {}),

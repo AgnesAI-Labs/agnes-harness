@@ -16,7 +16,7 @@ import {
   type SkillGenerationSnapshot,
 } from '@agnes/resource-control-runtime'
 import { expect, it } from 'vitest'
-import { captureGenerationResources, createGenerationSkills } from '../src/runtime-generation-resources.js'
+import { createGenerationSkills } from '../src/runtime-generation-resources.js'
 import { buildCompleteRuntimeTarget } from '../src/runtime-target-builder.js'
 import { createTestHost } from '../testkit/index.js'
 import { fixtureTool } from './fixtures/tool.js'
@@ -204,7 +204,7 @@ it('keeps old plugin leases across update, close and cold resume, and drains on 
   }
 })
 
-it('pins changed Skills bodies for old sessions after a cold resume', async () => {
+it('keeps code pins while reading live Skills after refresh and cold resume', async () => {
   const root = mkdtempSync(join(tmpdir(), 'agnes-generation-skills-'))
   let host: Awaited<ReturnType<typeof createTestHost>>['host'] | undefined
   const view = (body: string) => {
@@ -234,6 +234,7 @@ it('pins changed Skills bodies for old sessions after a cold resume', async () =
     const a = await host.createSession({ key: 'skills-old', cwd: root })
     await host.refreshSkillRow(view('new body'))
     const b = await host.createSession({ key: 'skills-new', cwd: root })
+    expect(b.pluginGenerationId).toBe(a.pluginGenerationId)
     const read = (session: typeof a) =>
       required(session.currentTools().resolve('skill_read')).execute({ name: 'pinned' }, {
         signal: new AbortController().signal,
@@ -246,22 +247,23 @@ it('pins changed Skills bodies for old sessions after a cold resume', async () =
           generationDepth: 0,
         },
       } as never)
-    expect(await read(a)).toMatchObject({ content: [{ text: expect.stringContaining('old body') }] })
+    expect(await read(a)).toMatchObject({ content: [{ text: expect.stringContaining('new body') }] })
     expect(await read(b)).toMatchObject({ content: [{ text: expect.stringContaining('new body') }] })
     await host.close()
     host = (await createTestHost({ ...options, skillResources: view('current unrelated body') })).host
     const resumed = await host.createSession({ key: 'skills-old', cwd: root })
     expect(resumed.pluginGenerationId).toBe(a.pluginGenerationId)
-    expect(await read(resumed)).toMatchObject({ content: [{ text: expect.stringContaining('old body') }] })
+    expect(await read(resumed)).toMatchObject({
+      content: [{ text: expect.stringContaining('current unrelated body') }],
+    })
   } finally {
     await host?.close()
     rmSync(root, { recursive: true, force: true })
   }
 })
 
-it('restores scoped Skills privately without granting another session its archived directories', async () => {
+it('reads live scoped Skills without granting another session its directories', async () => {
   const root = mkdtempSync(join(tmpdir(), 'agnes-generation-workspace-'))
-  const store = new RuntimeGenerationSnapshotStore(root)
   const empty: SkillGenerationSnapshot = { version: 1, listed: [], entries: [] }
   let selected = empty
   const view = (name: string): SkillGenerationSnapshot => {
@@ -294,6 +296,9 @@ it('restores scoped Skills privately without granting another session its archiv
   ])
   const original = {
     ...restoreSkillGeneration(empty),
+    list: () => restoreSkillGeneration(selected).list(),
+    read: (...args: Parameters<ReturnType<typeof restoreSkillGeneration>['read']>) =>
+      restoreSkillGeneration(selected).read(...args),
     generationSnapshot: () => selected,
     async scopeWorkspace<T>(key: string, _session: string, invoke: () => Promise<T>) {
       selected = required(views.get(key))
@@ -305,31 +310,35 @@ it('restores scoped Skills privately without granting another session its archiv
     },
   }
   try {
-    const target = buildCompleteRuntimeTarget({ rows: [], resources: { mcp: [], skills: {} } }).target
-    const snapshot = store.create(target, [], 'compatible', [], captureGenerationResources(original, []))
-    const runtime = createGenerationSkills(original, store)
-    runtime.seal(required(snapshot.resources), true)
-    for (const key of views.keys()) {
-      store.pin(key, snapshot.id)
-      await runtime.bind(key, key, false)
-    }
+    const runtime = createGenerationSkills(original)
     expect(runtime.input.readRoots?.()).toEqual([])
-    const own = required(store.sessionResources('a')).directories[0]
+    const own = join(root, 'first')
     await runtime.input.scopeWorkspace?.('a', 'a', async () => {
       expect(runtime.input.readRoots?.()).toEqual([own])
-      expect(runtime.input.read(views.get('a')!.listed[0]!.resourceId, { sessionKey: 'b' })).toEqual({
+      expect(
+        runtime.input.read(required(required(views.get('a')).listed[0]).resourceId, { sessionKey: 'a' }),
+      ).toMatchObject({ ok: true, content: expect.stringContaining('first') })
+      expect(
+        runtime.input.read(required(required(views.get('a')).listed[0]).resourceId, { sessionKey: 'b' }),
+      ).toEqual({
         ok: false,
         code: 'UNAUTHORIZED',
       })
     })
-    rmSync(join(root, 'first'), { recursive: true })
-    const cold = createGenerationSkills(undefined, store)
-    cold.seal(required(snapshot.resources), false)
-    await cold.bind('a', 'a', true)
+    views.set('a', required(views.get('b')))
+    await runtime.input.scopeWorkspace?.('a', 'a', async () => {
+      expect(runtime.input.readRoots?.()).toEqual([join(root, 'second')])
+      expect(
+        runtime.input.read(required(required(views.get('a')).listed[0]).resourceId, { sessionKey: 'a' }),
+      ).toMatchObject({ ok: true, content: expect.stringContaining('second') })
+    })
+    const cold = createGenerationSkills(undefined)
     await cold.input.scopeWorkspace?.('a', 'a', async () => {
-      expect(cold.input.read(views.get('a')!.listed[0]!.resourceId, { sessionKey: 'a' })).toMatchObject({
-        ok: true,
-        content: expect.stringContaining('first'),
+      expect(
+        cold.input.read(required(required(views.get('a')).listed[0]).resourceId, { sessionKey: 'a' }),
+      ).toEqual({
+        ok: false,
+        code: 'UNAUTHORIZED',
       })
     })
   } finally {

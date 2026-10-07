@@ -333,6 +333,8 @@ export async function runWorker(
   const bootResources = resourceSlot.generation
   if (resourceLifecycleWorker && !bootResources)
     throw new Error('resource lifecycle worker lacks a resource snapshot')
+  const managedAllowed: string[] = []
+  const sharedMcpOpener = createWorkerMcpServerOpener(workerResourcesInput, managedAllowed)
   const hostRoot = deps.hostRoot ?? hostRootFrom()
   const profileDir = join(agnesHome(env), 'profiles', profile.name)
   // Re-read trust and immutable active pins for every target. Installed package directories are
@@ -398,7 +400,7 @@ export async function runWorker(
     ? Promise.resolve(undefined)
     : deps.buildHost
       ? deps.buildHost(profile, prompter, {
-          restoreGenerationExtension: generationExtensionRestorer(workerResourcesInput),
+          restoreGenerationExtension: generationExtensionRestorer(workerResourcesInput, sharedMcpOpener),
           skillInstall,
           mcpManage,
           pluginManage,
@@ -422,7 +424,7 @@ export async function runWorker(
                 }
               : createLoader({ cacheDir: profile.cacheDir, hostRoot, agnesVersion: '0.0.0' }))
           return createHost(profile, {
-            restoreGenerationExtension: generationExtensionRestorer(workerResourcesInput),
+            restoreGenerationExtension: generationExtensionRestorer(workerResourcesInput, sharedMcpOpener),
             dataDir: profile.dataDir,
             profileDir,
             workspaceRoot: cwd,
@@ -465,11 +467,10 @@ export async function runWorker(
   // reload re-derives the rows and applies them again.
   if (workerKind === 'session' && host && bootResources) {
     const deploymentAllowed = deploymentMcpPolicy(env).allowedExecutables
-    const managedAllowed: string[] = []
     const restoreUnsetAllowlist = env.AGNES_MCP_STDIO_ALLOWLIST === undefined
     const mcpRows = createMcpRowRuntime({
       host,
-      opener: createWorkerMcpServerOpener(workerResourcesInput, managedAllowed),
+      opener: sharedMcpOpener,
       beforeApply: (entries) =>
         syncManagedMcpExecutableAllowlist(
           entries,

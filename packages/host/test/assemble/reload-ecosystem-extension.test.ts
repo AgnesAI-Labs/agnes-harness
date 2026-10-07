@@ -175,8 +175,6 @@ describe('Host.reloadEcosystemExtension', () => {
       }
       const before = await searchTurn()
       expect(before).toContain('skill-a')
-      await session.close()
-      await host.releaseSessionGeneration?.(session.key)
 
       const mark = audit.events.length
       const status = await host.reloadEcosystemExtension('agnes/skills', {
@@ -184,8 +182,7 @@ describe('Host.reloadEcosystemExtension', () => {
       })
       expect(status).toMatchObject({ id: 'agnes/skills', loaded: true })
 
-      const refreshed = await host.createSession({ cwd: dataDir, key: 'skills-refreshed' })
-      const after = await searchTurn(refreshed)
+      const after = await searchTurn()
       expect(after).toContain('skill-e')
       expect(after).not.toContain('skill-a')
       // Only agnes/skills was reloaded; agnes/mcp-search kept running the whole time.
@@ -230,8 +227,14 @@ describe('Host.reloadEcosystemExtension', () => {
       const after = await host.createSession({ key: 'skills-after', cwd: dataDir })
       expect(await catalog(after)).not.toContain('skill-a')
       expect(await catalog(after)).toContain('skill-e')
-      expect(await catalog(before)).toContain('skill-a')
-      expect(await catalog(before)).not.toContain('skill-e')
+      await before.enqueue('next-turn', {
+        content: [{ type: 'text', text: 'Use current Skills.' }],
+        actor: before.d.actor,
+        kind: 'prompt',
+      })
+      await before.run({ until: 'turn-end', signal: new AbortController().signal })
+      expect(await catalog(before)).not.toContain('skill-a')
+      expect(await catalog(before)).toContain('skill-e')
     } finally {
       await host.close()
     }

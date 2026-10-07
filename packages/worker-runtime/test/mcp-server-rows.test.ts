@@ -1,6 +1,7 @@
 import { mcpLocalToolPrefix } from '@agnes/base'
 import { MemTable } from '@agnes/base/testkit'
 import type { McpServerDefinitionInput } from '@agnes/protocol'
+import * as workerResources from '@agnes/resource-control-worker'
 import { describe, expect, it, vi } from 'vitest'
 import { type McpServerSnapshotEntry, mcpServerRowsFromDefinitions } from '../src/mcp-server-rows.js'
 import { generationExtensionRestorer } from '../src/runtime-generation-restore.js'
@@ -160,17 +161,87 @@ describe('mcpServerRowsFromDefinitions', () => {
 
 it('reconstructs a cold generation MCP factory from SecretRefs and refuses unknown factory kinds', async () => {
   const entry = stdioEntry('pinned', 'original-revision')
-  const row = mcpServerRowsFromDefinitions([entry], fakeOpener).rows[0]!
+  const row = mcpServerRowsFromDefinitions([entry], fakeOpener).rows[0]
+  if (!row?.generation) throw new Error('missing MCP resource factory metadata')
   const restore = generationExtensionRestorer({
     env: {},
     createSecrets: () => {
       throw new Error('SecretRefs must be resolved only when connecting')
     },
   } as unknown as Parameters<typeof generationExtensionRestorer>[0])
-  const rebuilt = await restore(structuredClone(row.generation!))
+  const rebuilt = await restore(structuredClone(row.generation))
   expect(rebuilt.spec).toEqual(row.spec)
   expect(rebuilt.generation).toEqual(row.generation)
   expect(JSON.stringify(rebuilt.generation)).toContain('secret://mcp/pinned-token')
   expect(() => restore({ kind: 'unknown', data: {} })).toThrow('E_GENERATION_FACTORY_KIND')
   expect(() => restore({ kind: 'mcp-server', data: {} })).toThrow('E_GENERATION_MCP_DEFINITION')
+  let release!: () => void
+  const catalog = new Promise<void>((resolve) => {
+    release = resolve
+  })
+  let listing = false,
+    closed = false
+  const tools = new Set<string>()
+  const connection = {
+    id: 'pinned',
+    async listTools() {
+      listing = true
+      await catalog
+      return [{ name: 'ping', description: 'Ping', inputSchema: { type: 'object' } }]
+    },
+    async callTool() {
+      return { content: [] }
+    },
+    async close() {
+      closed = true
+    },
+    onClose: () => () => undefined,
+    onToolsChanged: () => () => undefined,
+  }
+  const opener = vi
+    .spyOn(workerResources, 'createMcpServerOpener')
+    .mockReturnValue({ connect: async () => connection })
+  let finish: (() => Promise<void>) | undefined
+  try {
+    const cold = await restore(structuredClone(row.generation))
+    const log = { debug() {}, info() {}, warn() {}, error() {} }
+    const table = new MemTable('tool_index')
+    const factory = await cold.factory({
+      signal: new AbortController().signal,
+      adapters: { storage: { table: () => table } },
+      profile: {},
+      log,
+    } as never)
+    if (!factory) throw new Error('missing cold factory')
+    let activated = false
+    const activation = Promise.resolve(
+      factory({
+        ctx: { log },
+        registerTool: (tool: { name: string }) => {
+          tools.add(tool.name)
+          return () => tools.delete(tool.name)
+        },
+        registerResource: () => () => undefined,
+      } as never),
+    ).then((dispose) => {
+      activated = true
+      return dispose
+    })
+    finish = async () => {
+      const dispose = await activation
+      await dispose?.()
+    }
+    await vi.waitFor(() => expect(listing).toBe(true))
+    expect(activated).toBe(false)
+    release()
+    const dispose = await activation
+    expect([...tools]).toEqual([`${mcpLocalToolPrefix('pinned')}ping`])
+    await dispose?.()
+    expect(tools.size).toBe(0)
+    expect(closed).toBe(true)
+  } finally {
+    release()
+    await finish?.()
+    opener.mockRestore()
+  }
 })

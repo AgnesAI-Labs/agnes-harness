@@ -1,6 +1,7 @@
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { ScriptedProvider } from '@agnes/ai/testkit'
 import { buildRuntimeTarget } from '@agnes/plugin-runtime/host'
 import { expect, it } from 'vitest'
@@ -10,6 +11,7 @@ it('publishes a new catalogue to existing sessions and keeps the old runtime aft
   const root = await mkdtemp(join(tmpdir(), 'agnes-model-update-'))
   const { host } = await createTestHost({
     dataDir: root,
+    packageDirs: { '@agnes/base': fileURLToPath(new URL('../../base', import.meta.url)) },
     disableSessionTitle: true,
     provider: (profile) =>
       new ScriptedProvider({
@@ -50,7 +52,7 @@ it('publishes a new catalogue to existing sessions and keeps the old runtime aft
     if (!target) throw new Error('fixture runtime target missing')
     await host.applyRuntimeTarget(
       buildRuntimeTarget({
-        rows: target.tree.rows,
+        rows: target.tree.rows.filter((row) => row.id !== 'ext:agnes/tools-web'),
         resources: target.resource.resources,
         resourceRevision: 'f'.repeat(64),
         compositeRevision: 'f'.repeat(64),
@@ -64,11 +66,15 @@ it('publishes a new catalogue to existing sessions and keeps the old runtime aft
     await host.close()
     const cold = await createTestHost({
       dataDir: root,
+      packageDirs: { '@agnes/base': fileURLToPath(new URL('../../base', import.meta.url)) },
       disableSessionTitle: true,
       profileInputs: {
         user: {
           name: next.name,
-          provider: { ...next.provider, routes: (next.provider.routes ?? []).filter((row) => row.route !== 'demo') },
+          provider: {
+            ...next.provider,
+            routes: (next.provider.routes ?? []).filter((row) => row.route !== 'demo'),
+          },
           adapters: next.adapters,
         },
       },
