@@ -24,6 +24,7 @@ describe('repo', () => {
       '@agnes/extension-api',
       '@agnes/guards',
       '@agnes/host',
+      '@agnes/loop-default',
       '@agnes/mcp-transport-health',
       '@agnes/model-adapters',
       '@agnes/package-admin-client-node',

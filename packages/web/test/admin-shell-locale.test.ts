@@ -32,7 +32,7 @@ it('translates the standalone admin shell during the blocking boot script', asyn
   document.documentElement.innerHTML = html
   document.dispatchEvent(new Event('DOMContentLoaded'))
 
-  expect(document.querySelector('h1')?.textContent).toBe('插件管理')
+  expect(document.querySelector('h1')?.textContent).toBe('运行时设置')
   expect(document.querySelector('#source-form button[type="submit"]')?.textContent).toBe('检查内容')
 })
 
@@ -63,14 +63,14 @@ it('updates the plugin admin static shell when the document locale changes', () 
     [PLUGIN_ADMIN_LOCALE_NAMESPACE]: pluginAdminLocaleCatalog,
   })
 
-  expect(document.querySelector('h1')?.textContent).toBe('Plugin management')
+  expect(document.querySelector('h1')?.textContent).toBe('Runtime settings')
   expect(document.querySelector('#source-form button[type="submit"]')?.textContent).toBe('Check source')
 
   localStorage.setItem('agnes-locale', 'zh-CN')
   document.documentElement.lang = 'zh-CN'
   window.dispatchEvent(new Event('agnes:locale-changed'))
 
-  expect(document.querySelector('h1')?.textContent).toBe('插件管理')
+  expect(document.querySelector('h1')?.textContent).toBe('运行时设置')
   expect(document.querySelector('#source-form button[type="submit"]')?.textContent).toBe('检查内容')
   expect(document.getElementById('admin-confirm-title')?.textContent).toBe('确认操作')
   for (const node of document.querySelectorAll<HTMLElement>('[data-i18n]')) {

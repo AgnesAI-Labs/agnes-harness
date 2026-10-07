@@ -23,6 +23,7 @@
         "@agnes/error-sanitization",
         "@agnes/extension-api",
         "@agnes/host",
+        "@agnes/loop-default",
         "@agnes/mcp-transport-health",
         "@agnes/model-adapters",
         "@agnes/package-admin-client-node",
