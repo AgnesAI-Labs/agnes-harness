@@ -560,7 +560,9 @@ const INITIAL_CEILING: Record<string, number> = {
   'packages/cli/src/tui/package-controller': 58,
   // DAEMON-SHORT-SOCKET-PATH: reuse daemon path preflight before spawning; +9 counted lines.
   'packages/cli/src/boot/backend': 538,
-  'packages/cli/src/boot/default': 56,
+  // 2026-10-07 reviewed growth: explicit session inspection and headless runtime selection.
+  // countLines: 56 -> 70 (+14); exact cap, no exclusions or spare allocation.
+  'packages/cli/src/boot/default': 70,
   // 2026-09-22 CLI error surfaces (F03): `sessions show` prints one detail row per field with
   // model-written text escaped, and an id that matches nothing exits 1 on stderr. Exact measured 60.
   'packages/cli/src/commands/sessions': 60,
@@ -637,8 +639,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // rebased onto 9a3d70ed (which itself reached 936): 937, exact cap.
   // 2026-09-22 Web Plugins parity: package asset and service BFF launcher integration. Exact.
   // 2026-10-07 reviewed growth: local Web/start composition, selected surfaces and normalized bundled declarations.
-  // countLines: 1110 -> 1232 (+122); exact cap, no exclusions or spare allocation.
-  'packages/cli/launch': 1232, // SKILL-INSTALL-CORE: preserve request-only port in packaged Host options.
+  // countLines: 1110 -> 1236 (+126); exact cap, no exclusions or spare allocation.
+  'packages/cli/launch': 1236, // SKILL-INSTALL-CORE: preserve request-only port in packaged Host options.
   // 2026-09-14: whole-branch review fix wave (Finding 1), same as above. Measured 90, exact --
   // unaffected by the workspace-picker change (different file, same aggregate prefix).
   // 2026-09-14: Task 4 profile-command-plan wires packages.trustWorkspace into invoke()'s switch --
@@ -654,8 +656,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // 2026-09-18 web-client-modules P1a: private clientModules.read launcher connection.
   // Task 11 tree get/list/apply/rollback invoke cases. Re-measured: 132, exact.
   // 2026-10-07 reviewed growth: session catalogs/defaults and composition administration bindings.
-  // countLines: 303 -> 333 (+30); exact cap, no exclusions or spare allocation.
-  'packages/cli/launch/package-admin': 333,
+  // countLines: 303 -> 337 (+34); exact cap, no exclusions or spare allocation.
+  'packages/cli/launch/package-admin': 337,
   // 2026-09-15: theme work adds the blocking first-paint theme IIFE build step. 2026-09-15
   // (merge with origin/main, which adds the Windows runtime bundling). Combined exact
   // measured total: 184.
@@ -1053,9 +1055,9 @@ const INITIAL_CEILING: Record<string, number> = {
   // 2026-10-05 the two sides coexist on the merged tree, so neither side's number holds. Re-measured
   // with countLines() after the merge: 26102, exact, no spare.
   // 2026-10-06: reject oversized inbox records before durable append; 26424, exact.
-  // 2026-10-07 reviewed growth: pluggable loops, child agents, tool runtime/policy ports and cancellation recovery.
-  // countLines: 26546 -> 28442 (+1896); exact cap, no exclusions or spare allocation.
-  'packages/core/src': 28442,
+  // 2026-10-07 reviewed growth: pluggable loops, child agents, tool runtime/policy ports, session tool catalogs and cancellation recovery.
+  // countLines: 26546 -> 28463 (+1917); exact cap, no exclusions or spare allocation.
+  'packages/core/src': 28463,
   // 2026-09-15: DeepSeek V4 Pro/Flash ship a known-thinking-corrections table (new file) so the
   // product corrects pi-ai's verified-wrong reasoning_effort data out of the box, instead of
   // requiring every deployment to hand-edit thinkingEfforts once they notice. Measured 3347.
@@ -1289,9 +1291,9 @@ const INITIAL_CEILING: Record<string, number> = {
   // The Kernel receives the spawned-child turn admission. Measured 4193, exact, no spare (+1).
   // A returning package must not be served a cached generation bound to revoked leases (+7), and the
   // full-access read-only roots reach the fence from the assembly (+7). Measured 4207, exact.
-  // 2026-10-07 reviewed growth: provider registries, model adapter factories, pinned generations and creator row wiring.
-  // countLines: 4207 -> 5965 (+1758); exact cap, no exclusions or spare allocation.
-  'packages/host/src/assemble': 5965,
+  // 2026-10-07 reviewed growth: provider registries, adapter factories, pinned generations, creator rows and isolated headless wiring.
+  // countLines: 4207 -> 5976 (+1769); exact cap, no exclusions or spare allocation.
+  'packages/host/src/assemble': 5976,
   // P1: generated-schema validators and duplicate projection-name refusal; measured exact cap.
   // F1 adds Surface JSON/identity validation and lock snapshot validation.
   // PM4 adds strict management DTO validation and method permission/identity contracts; exact total.
@@ -1368,9 +1370,9 @@ const INITIAL_CEILING: Record<string, number> = {
   // TRACE-INSPECTION-20260925: readToolDetail method types; measured 2201, exact.
   // Response metadata on cost/ledger: ResponseMeta root type export. Re-measured on the rebased
   // tree: 2201, exact.
-  // 2026-10-07 reviewed growth: plugin capabilities, composition/admin contracts and missing schema-owned type exports.
-  // countLines: 2272 -> 2468 (+196); exact cap, no exclusions or spare allocation.
-  'packages/protocol/src': 2468,
+  // 2026-10-07 reviewed growth: plugin capabilities, composition/admin contracts, schema-owned type exports and session tool schemas.
+  // countLines: 2272 -> 2509 (+237); exact cap, no exclusions or spare allocation.
+  'packages/protocol/src': 2509,
   'packages/cli/src/tui': 4000,
   // 2026-09-16: first registration of packages/cli-tui — it matched none of the (then) 113 ratchet
   // keys, so the cli-progress-surface plan's Tasks 1-4 (Loader hide/restart/stop, formatTurnSummary,
@@ -1567,9 +1569,9 @@ const INITIAL_CEILING: Record<string, number> = {
   // TRACE-INSPECTION-20260925: bounded, abortable paged detail read; measured 5127, exact.
   // 2026-10-04 image attachments: image blocks flow through the UI projection sync.
   // Measured: 5176, exact, no spare.
-  // 2026-10-07 reviewed growth: headless streaming and session provider catalogs/defaults.
-  // countLines: 5188 -> 5440 (+252); exact cap, no exclusions or spare allocation.
-  'packages/sdk/src': 5440,
+  // 2026-10-07 reviewed growth: headless streaming, provider catalogs/defaults and session tool inspection.
+  // countLines: 5188 -> 5443 (+255); exact cap, no exclusions or spare allocation.
+  'packages/sdk/src': 5443,
   'packages/sdk/src/extensions.node': 21,
   'packages/sdk/src/package-admin.node': 147,
   'packages/sdk/src/surface.browser': 3,
@@ -1932,9 +1934,9 @@ const INITIAL_CEILING: Record<string, number> = {
   // An approval request carries the tool's ACP kind and name. Measured 26542 (+6), exact cap.
   // Approval reasons: the prompter router answers with a reason (+18). Measured 26758 (combined tree), exact cap.
   // 2026-10-06: bound image transport byte totals and split oversized worker scan ranges; 26818, exact.
-  // 2026-10-07 reviewed growth: provider/admin catalogs, composition surfaces and durable session generations.
-  // countLines: 26847 -> 27530 (+683); exact cap, no exclusions or spare allocation.
-  'packages/daemon/src': 27530,
+  // 2026-10-07 reviewed growth: provider/admin catalogs, composition surfaces, session tool ownership and durable generations.
+  // countLines: 26847 -> 27566 (+719); exact cap, no exclusions or spare allocation.
+  'packages/daemon/src': 27566,
   'packages/daemon/src/packages/admin-session': 46,
   // 2026-09-14: whole-branch review fix wave (Finding 1) adds the two missing
   // 'pins/inspect'/'pins/release' entries to the ACTIONS BFF route allowlist, which had been left
@@ -1944,9 +1946,9 @@ const INITIAL_CEILING: Record<string, number> = {
   // 192, exact.
   // Task 11 BFF tree/get|list|apply|rollback. Re-measured: 230, exact.
   // 2026-09-22 Web Plugins parity: browser-row/service package control plane. Exact.
-  // 2026-10-07 reviewed growth: bundle composition and provider/session defaults administration.
-  // countLines: 231 -> 372 (+141); exact cap, no exclusions or spare allocation.
-  'packages/daemon/src/packages/admin-surface': 372,
+  // 2026-10-07 reviewed growth: bundle/provider/session defaults administration and owner-checked tool catalogs.
+  // countLines: 231 -> 399 (+168); exact cap, no exclusions or spare allocation.
+  'packages/daemon/src/packages/admin-surface': 399,
   // A manager error may race its last onProgress callback; the handler drains that callback before
   // recording terminal failure so polling cannot resurrect an operation. Measured total: 1043.
   // 2026-09-14: Task 3 orphaned-pin-cleanup adds RuntimePinReleaseOutcome/RuntimePinsAdapter type
@@ -2683,8 +2685,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // Measured 38359, exact.
   // Approval reasons: the Prompter type may answer with a reason (+2). Measured 38398 (combined tree), exact cap.
   // 2026-10-07 reviewed growth: provider composition, pinned generations, local loading and absent capability port preservation.
-  // countLines: 38398 -> 43525 (+5127); exact cap, no exclusions or spare allocation.
-  'packages/host/src': 43525,
+  // countLines: 38398 -> 43538 (+5140); exact cap, no exclusions or spare allocation.
+  'packages/host/src': 43538,
   'packages/host/src/ext-host/service-invocation': 247,
   // T5.2's permission projector is kept independently bounded so later extension-host work cannot
   // hide in the package-wide increment. Measured source: 86 lines.
@@ -2741,8 +2743,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // 2026-09-21 AGH namespace rename (.agnes -> .agh): +1 counted line: inputs.ts imports AGH_DIR for <cwd>/.agh/profile.local.yaml.
   // Re-measured with this guard's countLines(): 1185, exact cap, no spare.
   // 2026-10-07 reviewed growth: bundle resolution, session composition persistence and provider-independent visibility.
-  // countLines: 1187 -> 2728 (+1541); exact cap, no exclusions or spare allocation.
-  'packages/host/src/profile': 2728,
+  // countLines: 1187 -> 2730 (+1543); exact cap, no exclusions or spare allocation.
+  'packages/host/src/profile': 2730,
   // 2026-09-09: raised from 1100. 1071 of it was spent and the 29 left could not cover the deny-list
   // repair with anything to spare; the repair measures 1075. The remaining 100 are platform-win32
   // reaching parity with platform-posix - today its probe() asserts a fixed table where posix
@@ -2886,9 +2888,9 @@ const INITIAL_CEILING: Record<string, number> = {
   // 2026-10-07 reviewed growth: bundled author guidance and scaffold/test/install tools; generated assets use the existing exclusion.
   // countLines: 0 -> 179 (+179); exact cap, no exclusions or spare allocation.
   'packages/base/extensions/plugin-creator': 179,
-  // 2026-10-07 reviewed growth: scripted/replay/local-OpenAI providers and bounded response recording.
-  // countLines: 0 -> 526 (+526); exact cap, no exclusions or spare allocation.
-  'packages/model-adapters/src': 526,
+  // 2026-10-07 reviewed growth: scripted/replay/local-OpenAI providers, keyless teaching tools and bounded response recording.
+  // countLines: 0 -> 800 (+800); exact cap, no exclusions or spare allocation.
+  'packages/model-adapters/src': 800,
   // 2026-10-07 reviewed growth: ACP child process provider, framing and lifecycle disposal.
   // countLines: new scope 348; exact cap, no exclusions or spare allocation.
   'packages/base/extensions/subagent-acp': 348,
