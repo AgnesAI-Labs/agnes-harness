@@ -17,6 +17,7 @@ const preview = {
   declaredCapabilities: { exec: ['node'] },
   license: 'MIT',
   provenance: { source, integrity, signatureVerified: false },
+  kinds: ['tool' as const],
   contributions: [],
   capabilityDiff: {
     added: [],
@@ -149,9 +150,11 @@ describe('package command', () => {
       expect(written.join('\n')).toContain(`capabilityHash ${preview.capabilityHash}`)
       expect(written.join('\n')).toContain('declared capabilities {"exec":["node"]}')
       expect(written.join('\n')).toContain('blockers none')
+      expect(written.join('\n')).toContain('contributions tool')
       expect(written.join('\n')).toContain('desired installed-disabled; actual not-running; trusted false')
       if (argv[0] === 'plugins') {
-        expect(written.join('\n')).toContain('install, trust and enable this reviewed version')
+        expect(written.join('\n').match(/install, trust and enable this reviewed version/g)).toHaveLength(1)
+        expect(written.join('\n')).not.toContain('Installation will remain disabled and untrusted.')
         expect(fixture.trusts).toEqual([
           expect.objectContaining({
             expectedIntegrity: integrity,

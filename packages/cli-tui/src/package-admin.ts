@@ -120,8 +120,10 @@ export async function installPreview(
   return operation
 }
 
-export function formatPreview(preview: PackagePreview): string {
-  const contributions = preview.contributions.map((contribution) => contribution.kind).join(', ') || 'none'
+export function formatPreview(preview: PackagePreview, options: { activate?: boolean } = {}): string {
+  const contributions =
+    [...new Set([...(preview.kinds ?? []), ...preview.contributions.map((item) => item.kind)])].join(', ') ||
+    'none'
   const warnings = preview.warnings.map((warning) => warning.safeMessage).join('; ') || 'none'
   return [
     `Preview ${preview.id}@${preview.version}`,
@@ -131,7 +133,9 @@ export function formatPreview(preview: PackagePreview): string {
     `blockers ${preview.blockers.map((b) => b.references.join(', ')).join('; ') || 'none'}`,
     `contributions ${contributions}`,
     `warnings ${warnings}`,
-    'Installation will remain disabled and untrusted.',
+    options.activate
+      ? 'Confirmation will install, trust and enable this reviewed version.'
+      : 'Installation will remain disabled and untrusted.',
   ].join('\n')
 }
 

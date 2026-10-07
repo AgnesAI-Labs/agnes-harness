@@ -179,7 +179,8 @@ it('reads the non-executable contribution kinds and detects grant/dependency dif
       ],
     },
   })
-  const p = await manager().inspect(profile, source)
+  const m = manager()
+  const p = await m.inspect(profile, source)
   expect(p.contributions.map((c) => c.kind)).toEqual([
     'preset',
     'provider',
@@ -191,6 +192,14 @@ it('reads the non-executable contribution kinds and detects grant/dependency dif
   expect(p.capabilityDiff.dependenciesAdded).toEqual(['acme/dependency'])
   expect(p.capabilityDiff.serviceGrantsAdded).toHaveLength(1)
   expect(p.blockers).toEqual([])
+  expect(p.warnings.some((warning) => warning.code === 'dependency-change')).toBe(false)
+  await m.install(profile, source, { expectedIntegrity: p.integrity })
+  const manifest = JSON.parse(readFileSync(join(sourceDir, 'package.json'), 'utf8'))
+  manifest.dependencies['acme/dependency'] = '^2.0'
+  json(join(sourceDir, 'package.json'), manifest)
+  const next = await m.inspect(profile, source)
+  expect(next.capabilityDiff.dependenciesAdded).toEqual(['acme/dependency'])
+  expect(next.warnings.some((warning) => warning.code === 'dependency-change')).toBe(true)
 })
 it('rejects bundled legacy manifests even when the package does not declare plugins', async () => {
   cpSync(join(fixtures, 'pkg-a'), join(sourceDir, 'bundle'), { recursive: true })

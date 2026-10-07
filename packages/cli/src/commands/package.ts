@@ -133,9 +133,7 @@ export async function runPackageCommand(
         profile,
         parsePackageSource(requireArg(args, 1, 'agh install <source>')),
       )
-      io.write(
-        `${formatPreview(preview)}\n${p.command === 'plugins' ? 'Confirmation will install, trust and enable this reviewed version.\n' : ''}`,
-      )
+      io.write(`${formatPreview(preview, { activate: p.command === 'plugins' })}\n`)
       if (preview.blockers.length > 0)
         throw new UsageError('package preview has blockers; resolve the blockers above and inspect again')
       if (!(await confirmPreview(p, io, preview))) {

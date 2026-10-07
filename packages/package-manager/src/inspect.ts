@@ -314,7 +314,7 @@ export function inspectStaged(input: {
       code: 'runtime-support-change',
       safeMessage: 'Previously declared runtime support was removed.',
     })
-  if (capabilityDiff.dependenciesAdded.length)
+  if (input.previous && capabilityDiff.dependenciesAdded.length)
     warnings.push({ code: 'dependency-change', safeMessage: 'Package dependencies were added or changed.' })
   if (capabilityDiff.serviceGrantsAdded.length)
     warnings.push({
