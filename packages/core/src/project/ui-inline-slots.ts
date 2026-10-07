@@ -20,9 +20,12 @@ export async function fillInlineNodes(
   )
     return
   for (const node of nodes) {
-    if (node.kind !== 'tool' || node.resultSeq === undefined) continue
+    if (node.kind !== 'tool' || (node.resultSeq === undefined && node.status !== 'running')) continue
     try {
-      const fills = await opts.inlineFills(opts.surface, { kind: 'tool_result', toolUseId: node.toolUseId })
+      const fills = await opts.inlineFills(opts.surface, {
+        kind: node.resultSeq === undefined ? 'tool_call' : 'tool_result',
+        toolUseId: node.toolUseId,
+      })
       if (!Array.isArray(fills)) continue
       for (const fill of fills) {
         if (

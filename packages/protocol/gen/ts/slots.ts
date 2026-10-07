@@ -30,7 +30,8 @@ export const X_AGNES_SLOT_TABLE = {
     ],
     "failPolicy": "open",
     "trigger": [
-      "tool_result"
+      "tool_result",
+      "tool_call"
     ],
     "payload": "ToolCardInlinePayload"
   },

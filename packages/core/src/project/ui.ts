@@ -49,7 +49,10 @@ import { fillInlineNodes, fillInlinePage } from './ui-inline-slots.js'
 /** Generation belongs to the daemon's writer ownership, not to a core ledger projection. */
 export type CoreUITimeline = Omit<UITimeline, 'generation'>
 export type SlotFill = SlotFillView
-export type SlotTrigger = { kind: 'tool_result'; toolUseId: string } | { kind: 'turn_end' } | { kind: 'tick' }
+export type SlotTrigger =
+  | { kind: 'tool_result' | 'tool_call'; toolUseId: string }
+  | { kind: 'turn_end' }
+  | { kind: 'tick' }
 /** The host supplies its bounded extension runner; core filters its output for this surface. */
 export type SlotFillRunner = (surface: 'tui' | 'web' | 'channel', trigger: SlotTrigger) => Promise<SlotFill[]>
 export type UIOptions = {
@@ -625,6 +628,17 @@ export class UIProjectionCell {
     if ((event.lane ?? 'main') !== this.lane) return changed
     const { id, seq } = event
     const data = event.data
+    // An extension's durable tool state can change an inline card before its result exists.
+    if (
+      event.type.startsWith('x/') &&
+      data &&
+      typeof data === 'object' &&
+      !Array.isArray(data) &&
+      typeof data.toolUseId === 'string'
+    ) {
+      const tool = this.tools.get(data.toolUseId)
+      if (tool?.status === 'running') changed.add(tool.id)
+    }
     if (typeof event.surfaceOp === 'object') {
       const value = data as {
         content?: Array<{ type: string; text?: string }>

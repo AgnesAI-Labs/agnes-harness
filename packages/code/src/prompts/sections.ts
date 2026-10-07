@@ -50,13 +50,7 @@ export const PROMPT_SECTIONS: ReadonlyArray<PromptSectionSpec> = validateSection
   // to the runtime-context tail message (code-mode/prompts.ts's contribute()), and the gaps of ten
   // exist precisely so a retirement like this one does not force renumbering everything below it.
   //
-  // The row below, 'agents-md', is reserved for base and not yet implemented: no file under
-  // packages/base currently registers a section with this id. If a base file ever claims order 120,
-  // tools/guards/src/prompt-section-order.test.ts requires that claim's id to be 'agents-md' -- the
-  // guard does not, on its own, confirm that nothing has claimed the order in the meantime. The slot
-  // is reserved now so that when base ships AGENTS.md support it has an already-agreed position
-  // between environment and coding-doctrine, instead of a later change renumbering this table to
-  // make room.
+  // Live repository rules contributed by the official context-rules extension.
   { id: 'agents-md', order: 120, source: 'dynamic', owner: 'base' },
   { id: 'coding-doctrine', order: 130, source: 'file', owner: 'code' },
   { id: 'code-doctrine', order: 140, source: 'file', owner: 'code' },
@@ -68,6 +62,7 @@ export const PROMPT_SECTIONS: ReadonlyArray<PromptSectionSpec> = validateSection
   { id: 'plugin-creator', order: 165, source: 'dynamic', owner: 'base' },
   { id: 'session-query', order: 168, source: 'dynamic', owner: 'base' },
   { id: 'channel-style', order: 170, source: 'file', owner: 'code' },
+  { id: 'time-context', order: 175, source: 'dynamic', owner: 'base' },
 ])
 
 export function sectionOrder(id: string): number {

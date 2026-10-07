@@ -32,11 +32,11 @@ This page lists what the current session path implements. A management screen th
 | Directory skill (`<name>/SKILL.md`) | Supported |
 | Flat file (`<name>.md` directly in a skill root) | Supported without frontmatter: filename supplies the name and the first nonempty heading/line supplies the description. Empty files or invalid explicit frontmatter are rejected. A directory of the same name wins over the flat file. An earlier directory wins over a later one |
 | Fixed roots | Supported: workspace `.agh/skills`, `AGH_HOME/skills`, and, with `AGNES_SKILLS_IMPORT_USER=1`, `.agents/skills`, `.claude/skills`, and `.codex/skills` under the operating-system home. Workspace `.agents/skills` and `.claude/skills` are scanned with the workspace root |
-| Custom skill roots | Not supported. There is no configuration for an extra root |
+| Custom skill roots | Supported through installation `context.json` → `customSkillRoots` or Settings → Context. Absolute paths only; scanned after the Agnes home root with the same trust and refresh rules |
 | Relative resource paths | Supported inside the skill directory, through `skill_read_file` and ordinary file tools against the directory named by `skill_read`. Paths must stay inside that directory |
 | Same-name precedence | Higher priority wins. Ties break by `sourceId`. A higher-priority skill that is untrusted, disabled, or hidden from the model does not hand the name to a lower-priority skill |
 | `disable-model-invocation` | Supported. `true` hides the skill from the model catalog, `skill_read`, `skill_read_file`, and `tool_search`. The host can still read it |
-| `user-invocable` | Recorded. `false` keeps the skill model-visible. Agnes has no separate user command palette |
+| `user-invocable` | Supported. `false` refuses explicit invocation while leaving the skill model-visible. Web and TUI accept `/skill invoke NAME ARGUMENTS`; the Context page has an invocation form |
 | `disable` | Supported. `true` hides the skill from both the model and the host read |
 | Omitted flags | Both model and user use are permitted |
 | Invalid flag value | That document is skipped |

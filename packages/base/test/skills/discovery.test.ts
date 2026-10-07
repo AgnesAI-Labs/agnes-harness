@@ -96,6 +96,13 @@ describe('skill discovery', () => {
     const agnesHomeDir = '/var/agnes-deployment/custom-home'
     const input = { workspaceRoot: '/work/project', osHomeDir, agnesHomeDir }
     expect(skillRoots(input).map((root) => root.rootKey)).toEqual(['workspace-agnes', 'user-agnes'])
+    const custom = skillRoots({ ...input, customRoots: ['/opt/team-skills', '/opt/team-skills'] })
+    expect(custom[1]?.dirs?.map((dir) => dir.path)).toEqual([
+      join(agnesHomeDir, 'skills'),
+      '/opt/team-skills',
+    ])
+    expect(custom[1]?.dirs?.[1]?.prefix).toMatch(/^custom\/[a-f0-9]{64}\/$/)
+    expect(() => skillRoots({ ...input, customRoots: ['relative'] })).toThrow()
     const roots = skillRoots({ ...input, importUserSkills: true })
     expect(roots.map((root) => [root.rootKey, root.path])).toEqual([
       ['workspace-agnes', join('/work/project', '.agh', 'skills')],

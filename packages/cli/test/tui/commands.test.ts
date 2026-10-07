@@ -151,7 +151,7 @@ describe('SLASH_COMMANDS (cli 稿 §9.3 and PM7)', () => {
     expect(slashCommand('/model')?.args).toBe('[<slot> <route>/<model> [<thinking>]]')
     expect(slashCommand('/install')?.args).toBe('<source>|confirm|cancel')
     expect(slashCommand('/package')?.args).toContain('rollback')
-    expect(slashCommand('/skill')?.args).toBe('refresh|trust ...')
+    expect(slashCommand('/skill')?.args).toBe('invoke <name> [arguments]|refresh|trust ...')
     // Commands without arguments carry no shape at all, and an unknown name finds nothing.
     expect(slashCommand('/help')?.args).toBeUndefined()
     expect(slashCommand('/nope')).toBeUndefined()

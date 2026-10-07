@@ -1,0 +1,16 @@
+{
+  "id": "agnes/context-rules",
+  "version": "0.1.0",
+  "apiRange": "^1.4",
+  "entry": "./src/index.ts",
+  "capabilities": {
+    "hooks": ["context"],
+    "projections": [
+      {
+        "name": "scopes",
+        "inputEventTypes": ["tool/call"],
+        "maxStateBytes": 65536
+      }
+    ]
+  }
+}

@@ -62,7 +62,7 @@ A failed refresh may leave stale or last-known content. Stale data is not eviden
 
 A flat disk file needs no YAML frontmatter. For example, `$AGH_HOME/skills/review-notes.md` containing `# Review project notes` is named `review-notes`, with its description taken from the first nonempty heading or line (up to 1024 characters). Its entire Markdown remains the body. Empty files and malformed explicit frontmatter are rejected. Directory `SKILL.md` and packaged Skill contributions still require `name` and `description` frontmatter.
 
-A skill root may contain a directory `<name>/SKILL.md` or a flat `<name>.md`. The directory wins when both exist. Custom roots are not supported. `SKILL.md` may set `disable-model-invocation`, `user-invocable`, and `disable`; omitted flags permit both model and user use. The daemon watches directories and relative resource files; `skills refresh --yes` requests an immediate rescan. Details and the unsupported cases are in [MCP and Skills support](mcp-skills-support.md).
+A skill root may contain a directory `<name>/SKILL.md` or a flat `<name>.md`. The directory wins when both exist. Installation-owned `context.json` supports `customSkillRoots` (absolute directories). Configure these through **Settings → Context**; they follow `AGH_HOME/skills` at priority 400. See [default context](context.md). `SKILL.md` may set `disable-model-invocation`, `user-invocable`, and `disable`; omitted flags permit both model and user use. The daemon watches directories and relative resource files; `skills refresh --yes` requests an immediate rescan. Details and the unsupported cases are in [MCP and Skills support](mcp-skills-support.md).
 
 <a id="调整同名候选优先级"></a>
 
@@ -122,3 +122,5 @@ Runtime contributions do not enter the disk trust/desired workflow; their trust 
 The bundled Skill Helper has its own installation request flow. A tool may request installation, but cannot bypass user confirmation, source review, or write boundaries. Subagents cannot request Skill installation through it.
 
 Implementation: [discovery roots](../../packages/base/extensions/skills/src/discover.ts), [candidate registry](../../packages/resource-control-runtime/src/skills.ts), [Cordis service](../../packages/resource-control-runtime/src/skills-cordis.ts), [session preloading](../../packages/host/src/resources/skill-preload.ts), [Skill Helper](../../packages/package-manager/bundled-plugins/skill-helper/README.md).
+
+Invoke a user-invocable Skill in Web or TUI with `/skill invoke NAME ARGUMENTS`. The Context page also offers an invocation form. The Host loads only a unique trusted, enabled winner; unknown, disabled or user-hidden Skills are refused. Arguments remain in the user message.

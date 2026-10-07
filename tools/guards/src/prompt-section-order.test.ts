@@ -51,10 +51,7 @@ const CANONICAL_PROMPT_SECTIONS: ReadonlyArray<{
   { id: 'core:untrusted-envelope', order: 0, owner: 'core' },
   { id: 'persona', order: 100, owner: 'code' },
   { id: 'environment', order: 110, owner: 'code' },
-  // Reserved for base, not yet implemented: no file under packages/base currently registers a
-  // section with this id. If a base file ever claims order 120, the third test below requires that
-  // claim's id to be 'agents-md' -- it does not, on its own, confirm that nothing currently claims
-  // the order. See the comment on this row in packages/code/src/prompts/sections.ts.
+  // Live repository guidance supplied by the official context-rules extension.
   { id: 'agents-md', order: 120, owner: 'base' },
   { id: 'coding-doctrine', order: 130, owner: 'code' },
   { id: 'code-doctrine', order: 140, owner: 'code' },
@@ -64,6 +61,7 @@ const CANONICAL_PROMPT_SECTIONS: ReadonlyArray<{
   { id: 'plugin-creator', order: 165, owner: 'base' },
   { id: 'session-query', order: 168, owner: 'base' },
   { id: 'channel-style', order: 170, owner: 'code' },
+  { id: 'time-context', order: 175, owner: 'base' },
   // packages/core/src/request/contribute.ts's harnessSections(), which folds harness register
   // entries into the same sorted section list at these two fixed orders.
   { id: 'harness:prompt', order: 180, owner: 'core' },
@@ -121,13 +119,9 @@ describe('prompt section order table has one claimant per order, across both con
         }
       }
     }
-    // 'agents-md' is currently the only base-owned row in the table, and it is allowed to stay
-    // unclaimed (see its row's comment above) — so this loop has zero iterations today. It is kept
-    // rather than deleted because it is not vacuous forever: the day a base-owned row is added back
-    // (a real agents-md contributor, or something new), this is what starts requiring it to actually
-    // exist rather than silently trusting a stale reservation.
+    // Every official base context contributor must fill its canonical section.
     for (const s of CANONICAL_PROMPT_SECTIONS)
-      if (s.owner === 'base' && s.id !== 'agents-md') expect(seenBaseIds.has(s.id), s.id).toBe(true)
+      if (s.owner === 'base') expect(seenBaseIds.has(s.id), s.id).toBe(true)
   })
 
   it('the two extractors are not dead regexes: each matches its own file shape and not the other', () => {

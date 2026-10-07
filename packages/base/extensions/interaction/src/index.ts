@@ -1,7 +1,14 @@
+import { setTimeout as delay } from 'node:timers/promises'
 import { defineExtension, defineTool, type ProjectionDef } from '@agnes/extension-api'
 import { type Answers, answerPrefix, parseAnswer, QuestionParams, type Questions } from './question.js'
 
-type Question = { id: string; toolUseId: string; questions: Questions; answer: Answers | null }
+type Question = {
+  id: string
+  toolUseId: string
+  questions: Questions
+  answer: Answers | null
+  deadline?: number
+}
 type State = { questions: Question[] }
 function bounded(questions: Question[]): State {
   while (questions.length > 1 && new TextEncoder().encode(JSON.stringify(questions)).length > 230000)
@@ -25,16 +32,22 @@ export const questionProjection: ProjectionDef<State> = {
       const questions = [...state.questions.slice(-31), question]
       return bounded(questions)
     }
-    if (event.type === 'user/message') {
-      const data = event.data as { content?: { type: string; text?: string }[] }
-      const text =
-        data.content
-          ?.filter((b) => b.type === 'text')
-          .map((b) => b.text ?? '')
-          .join('\n') ?? ''
+    if (event.type === 'user/message' || event.type === 'inbox') {
+      const data = event.data as {
+        content?: { type: string; text?: string }[]
+        items?: { content: { type: string; text?: string }[] }[]
+      } | null
+      const messages = event.type === 'inbox' ? (data?.items ?? []) : data ? [data] : []
+      const texts = messages.map(
+        (message) =>
+          message.content
+            ?.filter((b) => b.type === 'text')
+            .map((b) => b.text ?? '')
+            .join('\n') ?? '',
+      )
       const questions = state.questions.map((q) => {
         if (q.answer) return q
-        const answer = parseAnswer(q.id, q.questions, text)
+        const answer = texts.map((text) => parseAnswer(q.id, q.questions, text)).find(Boolean)
         return answer ? { ...q, answer } : q
       })
       return questions.some((q, i) => q !== state.questions[i]) ? bounded(questions) : (state as State)
@@ -55,12 +68,12 @@ export default defineExtension((agnes) => {
       defineTool({
         name: 'ask_user_question',
         description:
-          'Ask one to four questions with single choice, multiple choice, or free text. The session parks until the user supplies a valid answer. Options are labels; omit options for free text. Responses are persisted in the session and wake it through ordinary user input.',
+          'Ask one to four questions with single choice, multiple choice, or free text. The agent continues immediately by default; timeoutMs optionally waits up to a bounded deadline. Late answers arrive as new input. Options are labels; omit options for free text. Responses are persisted in the session and wake it through ordinary user input.',
         parameters: QuestionParams,
         meta: {
           isReadOnly: true,
           isDestructive: false,
-          isConcurrencySafe: false,
+          isConcurrencySafe: true,
           isOpenWorld: false,
           replay: 'idempotent',
           costHint: {},
@@ -82,55 +95,49 @@ export default defineExtension((agnes) => {
               content: [{ type: 'text', text: JSON.stringify(previous.answer) }],
               details: { questionId: previous.id, answers: previous.answer },
             }
-          const pending = state.questions.find((q) => !q.answer)
-          if (pending && pending.toolUseId !== ctx.session.toolUseId)
-            return {
-              content: [{ type: 'text', text: `A question is already waiting: ${pending.id}` }],
-              isError: true,
-            }
           const id = ctx.session.toolUseId
+          const deadline = previous?.deadline ?? Date.now() + (args.timeoutMs ?? 0)
           if (!previous)
             await agnes.events.append('requested', {
               id,
               toolUseId: id,
               questions: args.questions,
               answer: null,
+              deadline,
             })
+          while (Date.now() < deadline) {
+            ctx.signal.throwIfAborted()
+            const answer = (await read(ctx)).questions.find((q) => q.id === id)?.answer
+            if (answer)
+              return {
+                content: [{ type: 'text', text: JSON.stringify(answer) }],
+                details: { questionId: id, answers: answer },
+              }
+            await delay(Math.min(100, deadline - Date.now()), undefined, { signal: ctx.signal })
+          }
           return {
             content: [
               {
                 type: 'text',
-                text: `Waiting for your answer.\n${args.questions.map((q) => `${q.question}${q.options ? `\n${q.options.map((o, i) => `${i + 1}. ${o}`).join('\n')}` : ''}`).join('\n\n')}\nSubmit ${answerPrefix(id)} followed by a JSON object mapping question ids to answers; multiple choice uses arrays.`,
+                text: `Question remains open; continue independent work. A late answer will arrive as new user input.\n${args.questions.map((q) => `${q.question}${q.options ? `\n${q.options.map((o, i) => `${i + 1}. ${o}`).join('\n')}` : ''}`).join('\n\n')}\nSubmit ${answerPrefix(id)} followed by a JSON object mapping question ids to answers; multiple choice uses arrays.`,
               },
             ],
-            details: { questionId: id, status: 'pending' },
+            details: { questionId: id, status: 'pending', deadline },
           }
         },
       }),
     ),
   )
-  // Sibling calls in the same batch cannot implement work while a question is waiting.
-  disposers.push(
-    agnes.registerHook('tool_call', async (payload, ctx) => {
-      const pending = (await read(ctx)).questions.find((q) => !q.answer)
-      return pending && payload.name !== 'ask_user_question'
-        ? { allow: false, reason: 'Answer the pending question first' }
-        : { allow: true }
-    }),
-  )
-  disposers.push(
-    agnes.registerHook('before_step', async (_payload, ctx) => {
-      const state = await read(ctx)
-      return state.questions.some((q) => !q.answer) ? { park: true, reason: 'waiting for user answer' } : {}
-    }),
-  )
   disposers.push(
     agnes.registerSlot('tool.card.inline', async (ctx) => {
-      if (ctx.trigger.kind !== 'tool_result') return null
+      if (ctx.trigger.kind !== 'tool_result' && ctx.trigger.kind !== 'tool_call') return null
       const toolUseId = ctx.trigger.toolUseId
       const question = (await read(ctx)).questions.find((q) => q.toolUseId === toolUseId)
       return question
-        ? { title: 'Question', question: { id: question.id, questions: question.questions } }
+        ? {
+            title: 'Question · continue independent work; late answers are accepted',
+            question: { id: question.id, questions: question.questions },
+          }
         : null
     }),
   )

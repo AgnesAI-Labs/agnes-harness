@@ -29,7 +29,7 @@ export interface SlotContext {
   readonly session: SessionRef
   readonly surface: 'tui' | 'web' | 'channel'
   readonly trigger:
-    | { readonly kind: 'tool_result'; readonly toolUseId: string }
+    | { readonly kind: 'tool_result' | 'tool_call'; readonly toolUseId: string }
     | { readonly kind: 'turn_end' }
     | { readonly kind: 'tick' }
 }

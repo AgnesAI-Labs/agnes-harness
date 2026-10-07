@@ -13,6 +13,7 @@ export const toolCardsLocaleCatalog = {
     'cards.workflow.cancelled': 'Cancelled',
 
     'cards.question.title': 'Answer questions',
+    'cards.question.timing': 'The agent can continue independent work. You can submit an answer later.',
     'cards.question.invalid': 'Choose an answer for every question.',
     'cards.question.failed': 'Answer could not be submitted. Try again.',
     'cards.question.freeText': 'Free text',
@@ -37,6 +38,7 @@ export const toolCardsLocaleCatalog = {
     'cards.workflow.cancelled': '已取消',
 
     'cards.question.title': '回答问题',
+    'cards.question.timing': 'Agent 可以继续独立工作，您也可以稍后提交答案。',
     'cards.question.invalid': '请回答每个问题。',
     'cards.question.failed': '答案提交失败，请重试。',
     'cards.question.freeText': '自由填写',

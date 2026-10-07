@@ -17,12 +17,14 @@ function QuestionCard({
   question,
   session,
   answered,
+  running,
   t,
 }: {
   t: Text
   question: Question
   session?: SessionService | undefined
   answered: boolean
+  running: boolean
 }) {
   const [answers, setAnswers] = useState<Record<string, string | string[]>>({})
   const [freeText, setFreeText] = useState<Record<string, string>>({})
@@ -36,6 +38,7 @@ function QuestionCard({
   }
   const encoded = answerPrefix(question.id) + JSON.stringify(values)
   const valid = !!parseAnswer(question.id, question.questions, encoded)
+  const [submitted, setSubmitted] = useState(false)
   const [sending, setSending] = useState(false)
   const [error, setError] = useState<string>()
   const update = (id: string, value: string | string[]) =>
@@ -48,25 +51,37 @@ function QuestionCard({
       aria-label={t('cards.question.title')}
       onSubmit={(event) => {
         event.preventDefault()
-        if (!session || sending || answered) return
+        if (!session || sending || answered || submitted) return
         if (!valid) {
           setError('cards.question.invalid')
           return
         }
         setSending(true)
         setError(undefined)
-        void session.commands
-          .prompt([{ type: 'text', text: encoded }])
+        const send = async () => {
+          const projection = await session.projection?.read()
+          const value =
+            projection && typeof projection === 'object' && 'value' in projection
+              ? projection.value
+              : undefined
+          const busy =
+            value && typeof value === 'object' && 'opState' in value ? value.opState != null : running
+          if (busy) await session.commands.followUp([{ type: 'text', text: encoded }])
+          else await session.commands.prompt([{ type: 'text', text: encoded }])
+          setSubmitted(true)
+        }
+        void send()
           .catch(() => setError('cards.question.failed'))
           .finally(() => setSending(false))
       }}
     >
+      {!answered && <p data-testid="question-timing">{t('cards.question.timing')}</p>}
       {question.questions.map((q) => (
         <fieldset
           key={q.id}
           data-testid="question-field"
           data-question-id={q.id}
-          disabled={answered || sending}
+          disabled={answered || submitted || sending}
         >
           <legend>{q.question}</legend>
           {q.options?.map((option) => (
@@ -114,10 +129,10 @@ function QuestionCard({
       <Button
         data-testid="question-submit"
         htmlType="submit"
-        disabled={!session || answered || sending || !valid}
+        disabled={!session || answered || submitted || sending || !valid}
       >
         {t(
-          answered
+          answered || submitted
             ? 'cards.question.answered'
             : sending
               ? 'cards.question.submitting'
@@ -221,6 +236,7 @@ export function DefaultToolCards({
               t={t}
               {...(session ? { session } : {})}
               answered={answered.has(payload.question.id)}
+              running={node.status === 'running'}
             />
           )
         if (payload.deliverables)

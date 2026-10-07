@@ -1,7 +1,7 @@
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { createSearchAdmin } from '@agnes/base/search'
 import { type AdminSurfaceAction, createAdminSurface } from '@agnes/daemon/packages'
-import { createCredentialStore } from '@agnes/host'
+import { agnesHome, createCredentialStore } from '@agnes/host'
 import type {
   AdminSessionSelection,
   ClientModuleEffectCallParams,
@@ -38,6 +38,7 @@ import { parseArgs } from '../src/args.js'
 import { localPipeFactories } from '../src/boot/pipe-factory.js'
 import { compositionAdminFor } from '../src/commands/config-dump.js'
 import type { LocalBackend } from './backend.js'
+import { contextAdmin } from './context-admin.js'
 
 const CLIENT_SERVICE_PATH = '/api/client-modules/service'
 const CLIENT_EFFECT_PATH = '/api/client-modules/effect'
@@ -258,8 +259,17 @@ export function localPackageAdmin(
       }))
     },
   })
+  const handleContext = contextAdmin(
+    origin,
+    async () => {
+      await initialize()
+      return (await client.workspace.list()).items
+    },
+    agnesHome(process.env),
+  )
   return {
-    handle: surface.handle,
+    handle: async (request: IncomingMessage, response: ServerResponse) =>
+      (await handleContext(request, response)) || (await surface.handle(request, response)),
     /**
      * Bytes for one `/skins/...` path, for the Web launcher's same-origin asset route.
      *

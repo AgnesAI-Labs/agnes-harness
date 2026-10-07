@@ -69,6 +69,16 @@ describe('Skill prompt preloader', () => {
     expect(loaded).toContain(
       `resourceId: ${resourceId}\nrevision: ${'a'.repeat(64)}\ndirectory: -\n\n${body}`,
     )
+    expect((await preload({ sessionKey: 's', prompt: '/skill invoke review arguments' }))?.note).toContain(
+      body,
+    )
+    current = {
+      ...runtime(),
+      invocation: () => ({ userInvocable: false, modelInvocable: true, disabled: false }),
+    }
+    await expect(
+      preload({ sessionKey: 's', prompt: '/skill invoke review arguments' }),
+    ).resolves.toMatchObject({ key: 'skill-invocation:refused' })
     current = runtime({ desired: 'disabled', actual: 'disabled' })
     await expect(preload(prompt)).resolves.toBeUndefined()
   })
@@ -181,6 +191,10 @@ describe('Skill prompt preloader', () => {
     const preloader = createSkillPromptPreloader(runtime(overrides, read), () => invocation())
     await expect(preloader({ sessionKey: 'session-1', prompt })).resolves.toBeUndefined()
     expect(read).toHaveBeenCalledTimes(expectedReads)
+    if (_case !== 'not explicitly named')
+      await expect(
+        preloader({ sessionKey: 'session-1', prompt: '/skill invoke review' }),
+      ).resolves.toMatchObject({ key: 'skill-invocation:refused' })
   })
 
   it('acquires before reading resource context and releases after a failed lookup settles', async () => {

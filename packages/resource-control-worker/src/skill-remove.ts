@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto'
 import { lstatSync, readdirSync, realpathSync, unlinkSync } from 'node:fs'
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
-import { locateSkillEntry, skillRoots } from '@agnes/base'
+import { locateSkillEntry, readContextConfig, skillRoots } from '@agnes/base'
 import { AGH_DIR, type SkillDescriptor } from '@agnes/protocol'
 import { deleteSkillEntrySync, skillDeletionPath, syncDirectorySync } from '@agnes/system-node'
 import { scanSkills } from './skill-bootstrap.js'
@@ -28,6 +28,7 @@ export async function removeFilesystemSkill(input: {
     workspaceRoot: cwd ?? agnesHomeDir,
     osHomeDir,
     agnesHomeDir,
+    customRoots: readContextConfig(agnesHomeDir).customSkillRoots,
     importUserSkills: input.importUserSkills ?? process.env.AGNES_SKILLS_IMPORT_USER === '1',
   }).find((item) => item.rootKey === descriptor.sourceIdentity.rootKey)
   if (!root || (root.scope === 'workspace' && (!cwd || root.workspaceKey !== descriptor.workspaceId))) fail()

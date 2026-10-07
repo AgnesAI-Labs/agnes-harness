@@ -849,6 +849,7 @@ export class TuiApp {
   async command(text: string): Promise<void> {
     if (this.stopped) return
     const r = await runSlash(this, text)
+    if (r.prompt) await this.submit(r.prompt)
     if (r.details && r.text !== undefined) {
       this.statusBar.setNotice(undefined)
       this.usagePanel.show(r.text, r.title)
@@ -957,11 +958,19 @@ export class TuiApp {
   async submit(text: string): Promise<void> {
     if (this.stopped) throw new Error('TUI stopped')
     if (!text.trim()) return
-    if (text.startsWith('/')) throw new Error('Command unavailable')
+    const skillCommand = /^\/skill\s+invoke\s+\S+/.test(text)
+    if (text.startsWith('/') && !skillCommand) throw new Error('Command unavailable')
     this.statusBar.setNotice(undefined)
-    const blocks = this.questionPrompt
-      ? [{ type: 'text' as const, text: answerQuestion(this.questionPrompt, text) }]
-      : attachmentsFrom(text)
+    const blocks =
+      this.questionPrompt && !skillCommand
+        ? [{ type: 'text' as const, text: answerQuestion(this.questionPrompt, text) }]
+        : attachmentsFrom(text)
+    if (this.busy && this.questionPrompt && !skillCommand) {
+      await this.o.session.followUp(blocks)
+      this.questionPrompt = undefined
+      this.statusBar.setNotice(tt('app.questionSent', this.locale))
+      return
+    }
     if (this.busy) {
       // The daemon's followUp endpoint durably enqueues input, but this TUI has no background
       // turn runner to wake that queue after the current turn ends. Keep the draft locally and

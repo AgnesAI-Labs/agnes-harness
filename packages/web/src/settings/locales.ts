@@ -3,6 +3,30 @@ import type { LocaleCatalog } from '@agnes/web-ui'
 export const SETTINGS_NAMESPACE = '@agnes/web/runtime-settings'
 export const settingsCatalog: LocaleCatalog = {
   en: {
+    context: 'Context',
+    contextHelp:
+      'Repository rules refresh before every model request. Settings are owned by this installation.',
+    contextFailed: 'Context could not be loaded or saved. Check the workspace and configuration.',
+    contextSaved: 'Saved. Context resources refresh live; custom Skill roots rescan automatically.',
+    contextDefaults: 'Default context',
+    contextRules: 'Load repository rules',
+    contextTime: 'Include time context',
+    contextZone: 'Display time zone (IANA)',
+    contextInterval: 'Time refresh interval (milliseconds; 0 samples every request)',
+    contextRoots: 'Custom Skill folders (absolute paths, one per line)',
+    contextSave: 'Save context settings',
+    contextChoose: 'Choose a workspace',
+    contextRefresh: 'Refresh rules',
+    contextScopeHelp:
+      'This preview shows the workspace baseline. Nested rules load when the agent touches files in their directory; repository text never grants permissions.',
+    contextNoRules: 'No rule files loaded.',
+    contextSkipped: 'Skipped by size, containment or read checks',
+    contextSkillInvoke: 'Invoke a Skill',
+    contextSkillName: 'Skill name',
+    contextSkillArgs: 'Arguments',
+    contextQuestionHelp:
+      'Questions continue immediately by default. The agent may wait up to 60 seconds; late answers arrive as new input.',
+
     navigation: 'Runtime settings',
     plugins: 'Plugins',
     providers: 'Providers',
@@ -170,6 +194,27 @@ export const settingsCatalog: LocaleCatalog = {
     historyCapped: 'Results are capped. Narrow the query.',
   },
   'zh-CN': {
+    context: '上下文',
+    contextHelp: '每次模型请求前刷新仓库规则。设置由当前安装维护。',
+    contextFailed: '无法加载或保存上下文，请检查工作区与配置。',
+    contextSaved: '已保存。上下文资源实时刷新，自定义 Skill 目录自动重新扫描。',
+    contextDefaults: '默认上下文',
+    contextRules: '加载仓库规则',
+    contextTime: '提供时间上下文',
+    contextZone: '显示时区（IANA）',
+    contextInterval: '时间刷新间隔（毫秒；0 表示每次请求采样）',
+    contextRoots: '自定义 Skill 目录（绝对路径，每行一个）',
+    contextSave: '保存上下文设置',
+    contextChoose: '选择工作区',
+    contextRefresh: '刷新规则',
+    contextScopeHelp: '此处显示工作区基础规则。Agent 访问目录内文件时加载嵌套规则；仓库文本不会授予权限。',
+    contextNoRules: '未加载规则文件。',
+    contextSkipped: '因大小、目录边界或读取检查跳过',
+    contextSkillInvoke: '调用 Skill',
+    contextSkillName: 'Skill 名称',
+    contextSkillArgs: '参数',
+    contextQuestionHelp: '问题默认不阻塞 Agent。Agent 可选择等待最多 60 秒；晚到的答案作为新输入送达。',
+
     navigation: '运行时设置',
     plugins: '插件',
     providers: '提供器',

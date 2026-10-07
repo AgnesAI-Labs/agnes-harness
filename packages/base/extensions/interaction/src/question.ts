@@ -2,6 +2,14 @@ import { type Static, Type } from '@sinclair/typebox'
 
 export const QuestionParams = Type.Object(
   {
+    timeoutMs: Type.Optional(
+      Type.Integer({
+        minimum: 0,
+        maximum: 60000,
+        description:
+          'Wait at most this many milliseconds. Default 0 continues immediately; late answers arrive as new user input.',
+      }),
+    ),
     questions: Type.Array(
       Type.Object(
         {

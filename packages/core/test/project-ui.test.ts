@@ -647,6 +647,32 @@ it('tool cards follow planned, running and result states at the requested sequen
   await running
   try {
     expect(kind((await session.projectUI()).nodes, 'tool')[0]?.status).toBe('running')
+    const active = kind((await session.projectUI()).nodes, 'tool')[0]
+    if (!active) throw new Error('running tool was not projected')
+    const beforeCard = session.lastSeq
+    await session.append([
+      row('x/test/question-opened', { toolUseId: active.toolUseId }, { ignorable: true }),
+    ])
+    const inlineFills: SlotFillRunner = async (_surface, trigger) =>
+      trigger.kind === 'tool_call'
+        ? [{ slot: 'tool.card.inline', extId: 'test', payload: { title: 'Waiting for answer' } }]
+        : []
+    expect(
+      kind((await session.projectUI(undefined, { surface: 'web', inlineFills })).nodes, 'tool')[0]?.slots?.[0]
+        ?.payload,
+    ).toEqual({ title: 'Waiting for answer' })
+    const update = await session.projectUIPatch(beforeCard, undefined, { surface: 'web', inlineFills })
+    expect(update.kind).toBe('patch')
+    if (update.kind === 'patch')
+      expect(
+        update.patch.changes.some(
+          (change) =>
+            change.op === 'upsert' &&
+            change.node.kind === 'tool' &&
+            JSON.stringify(change.node.slots?.[0]?.payload) ===
+              JSON.stringify({ title: 'Waiting for answer' }),
+        ),
+      ).toBe(true)
   } finally {
     release()
     await phase

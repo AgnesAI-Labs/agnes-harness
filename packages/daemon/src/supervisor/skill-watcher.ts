@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto'
 import { existsSync, readdirSync, realpathSync, statSync, watch as watchFs } from 'node:fs'
 import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
+import { readContextConfig } from '@agnes/base'
 import { agnesHome } from '@agnes/host'
 import type { ResourceAuthority, ResourceControlService } from '@agnes/resource-control-store'
 import { skillRoots } from '@agnes/resource-control-worker'
@@ -19,7 +20,11 @@ export type WatchFn = (
 export type SkillWatcher = Readonly<{
   /** Schedules a refresh of `target` as if one of its files had changed. */
   changed(target: SkillRefreshTarget): void
-  watchRoot(target: { rootKey: string }, path: string, options?: { followLinks?: boolean }): void
+  watchRoot(
+    target: { rootKey: string },
+    path: string | readonly string[],
+    options?: { followLinks?: boolean },
+  ): void
   watchWorkspace(
     workspaceId: string,
     paths: string | readonly string[],
@@ -245,9 +250,19 @@ export function createSkillWatcher(o: {
   }
 
   return Object.freeze({
-    watchRoot(target: { rootKey: string }, path: string, options?: { followLinks?: boolean }) {
-      if (lifetime.signal.aborted || roots.has(target.rootKey)) return
-      roots.set(target.rootKey, arm(target, path, options?.followLinks === true))
+    watchRoot(
+      target: { rootKey: string },
+      path: string | readonly string[],
+      options?: { followLinks?: boolean },
+    ) {
+      if (lifetime.signal.aborted) return
+      roots.get(target.rootKey)?.()
+      const stops = (typeof path === 'string' ? [path] : path).map((dir) =>
+        arm(target, dir, options?.followLinks === true),
+      )
+      roots.set(target.rootKey, () => {
+        for (const stop of stops) stop()
+      })
     },
     changed: schedule,
     watchWorkspace(workspaceId: string, paths: string | readonly string[], options?: { refresh?: boolean }) {
@@ -313,6 +328,7 @@ export async function startSkillWatcher(o: {
     importUserSkills: env.AGNES_SKILLS_IMPORT_USER === '1',
     osHomeDir: env.HOME ?? env.USERPROFILE ?? homedir(),
     agnesHomeDir: agnesHome(env),
+    customRoots: readContextConfig(agnesHome(env)).customSkillRoots,
   }
   const workspaceSkills = (workspaceRoot: string) =>
     (skillRoots({ workspaceRoot, ...homes })[0]?.dirs ?? []).map((dir) => dir.path)
@@ -322,8 +338,35 @@ export async function startSkillWatcher(o: {
   })
   for (const root of skillRoots({ workspaceRoot: homes.agnesHomeDir, ...homes })) {
     if (root.rootKey !== 'workspace-agnes')
-      watcher.watchRoot({ rootKey: root.rootKey }, root.path, { followLinks: root.scope === 'user' })
+      watcher.watchRoot(
+        { rootKey: root.rootKey },
+        (root.dirs ?? [{ path: root.path }]).map((dir) => dir.path),
+        { followLinks: root.scope === 'user' },
+      )
   }
+  let customIdentity = JSON.stringify(homes.customRoots)
+  const configPoll = setInterval(() => {
+    try {
+      const next = readContextConfig(homes.agnesHomeDir).customSkillRoots
+      const identity = JSON.stringify(next)
+      if (identity === customIdentity) return
+      customIdentity = identity
+      homes.customRoots = next
+      const root = skillRoots({ workspaceRoot: homes.agnesHomeDir, ...homes }).find(
+        (r) => r.rootKey === 'user-agnes',
+      )
+      if (root)
+        watcher.watchRoot(
+          { rootKey: root.rootKey },
+          (root.dirs ?? [{ path: root.path }]).map((dir) => dir.path),
+          { followLinks: true },
+        )
+      watcher.changed({ rootKey: 'user-agnes' })
+    } catch (error) {
+      o.log?.warn(`skill watcher: invalid context configuration: ${String(error)}`)
+    }
+  }, 1000)
+  configPoll.unref()
   const stopRegistered = o.catalog.onRegistered((workspaceId, root) =>
     watcher.watchWorkspace(workspaceId, workspaceSkills(root)),
   )
@@ -354,6 +397,7 @@ export async function startSkillWatcher(o: {
   return Object.freeze({
     ...watcher,
     close: () => {
+      clearInterval(configPoll)
       stopBound()
       stopRegistered()
       stopPackages?.()

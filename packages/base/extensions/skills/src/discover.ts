@@ -1,4 +1,4 @@
-import { join, sep } from 'node:path'
+import { isAbsolute, join, resolve, sep } from 'node:path'
 import type { FsEntry, FsStat } from '@agnes/extension-api'
 import {
   AGH_DIR,
@@ -56,6 +56,8 @@ export function skillRoots(paths: {
   osHomeDir: string
   agnesHomeDir: string
   importUserSkills?: boolean
+  /** Installation-owned extra user roots, scanned after the Agnes home skills. */
+  customRoots?: readonly string[]
 }): readonly SkillRoot[] {
   const listed = [
     { ...FIVE_SKILL_ROOTS[0], path: join(paths.workspaceRoot, AGH_DIR, 'skills') },
@@ -73,7 +75,17 @@ export function skillRoots(paths: {
   ])
   return Object.freeze([
     { ...workspaceRoot, workspaceKey: workspaceSkillKey(paths.workspaceRoot), dirs },
-    listed[1] as SkillRoot,
+    {
+      ...(listed[1] as SkillRoot),
+      dirs: Object.freeze([
+        { path: (listed[1] as SkillRoot).path, prefix: '' },
+        ...[...new Set(paths.customRoots ?? [])].map((path) => {
+          if (!isAbsolute(path)) throw new Error('custom Skill roots must be absolute')
+          const canonical = resolve(path)
+          return { path: canonical, prefix: `custom/${skillSha256(canonical)}/` }
+        }),
+      ]),
+    },
     ...(paths.importUserSkills === true ? (listed.slice(2) as SkillRoot[]) : []),
   ])
 }

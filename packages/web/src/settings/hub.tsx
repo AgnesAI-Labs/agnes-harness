@@ -8,6 +8,7 @@ import { Button, useUiText } from '@agnes/web-ui'
 import { type ReactNode, useEffect, useState } from 'react'
 import type { PluginAdminApi } from '../admin/plugins/api.js'
 import { BundlesPanel, SessionDefaultsPanel } from '../admin/plugins/control-panel.js'
+import { ContextPanel } from './context.js'
 import { ExamplesPanel } from './examples.js'
 import { HistorySearchPanel } from './history.js'
 import { JobsPanel } from './jobs-panel.js'
@@ -31,6 +32,7 @@ export const SETTINGS_PAGES = [
   'bundles',
   'security',
   'resources',
+  'context',
   'examples',
   'history',
   'terminal',
@@ -163,6 +165,7 @@ export function SettingsHub({
           </>
         )}
         {(page === 'terminal' || page === 'jobs') && <JobsPanel key={page} terminal={page === 'terminal'} />}
+        {page === 'context' && <ContextPanel canSave={canSave} />}
         {page === 'examples' && (
           <ExamplesPanel
             api={api}

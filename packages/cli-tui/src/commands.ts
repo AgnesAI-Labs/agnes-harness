@@ -55,7 +55,7 @@ export const SLASH_COMMANDS: readonly SlashCommand[] = [
     descriptionKey: 'commands.package',
   },
   { name: '/skills', descriptionKey: 'commands.skills' },
-  { name: '/skill', args: 'refresh|trust ...', descriptionKey: 'commands.skill' },
+  { name: '/skill', args: 'invoke <name> [arguments]|refresh|trust ...', descriptionKey: 'commands.skill' },
   { name: '/mcp', args: '<action> ...', descriptionKey: 'commands.mcp' },
   { name: '/context', descriptionKey: 'commands.context' },
 ]
@@ -90,6 +90,7 @@ export type SessionChoice = {
 
 export type SlashResult = {
   text?: string
+  prompt?: string
   details?: boolean
   /** Long-lived local output belongs in the transcript; omitted text is a short status notice. */
   presentation?: 'transcript'
@@ -399,11 +400,14 @@ export async function runSlash(app: TuiApp, line: string): Promise<SlashResult> 
       if (args.length) return { text: 'usage: /skills' }
       return resourceCommand('resources', ['list', '--kind', 'skill'])
     case '/skill':
+      if (args[0] === 'invoke' && args[1]) {
+        return { prompt: line }
+      }
       if (args[0] === 'refresh') return resourceCommand('skills', ['refresh', ...args.slice(1)])
       if (args[0] === 'trust') return resourceCommand('skills', ['trust', ...args.slice(1)])
       if (args[0] === 'confirm' || args[0] === 'cancel') return resourceCommand('skills', args)
       return {
-        text: 'usage: /skill refresh [--root-key <key>] | /skill trust <resourceId> <revision> [trusted|rejected]',
+        text: 'usage: /skill invoke <name> [arguments] | /skill refresh [--root-key <key>] | /skill trust <resourceId> <revision> [trusted|rejected]',
       }
     case '/mcp':
       return resourceCommand('mcp', args.length ? args : ['list'])

@@ -56,7 +56,7 @@ node /path/to/agnes-harness/packages/cli/dist/local/agnes.mjs skills list
 
 磁盘上的扁平文件无需 YAML frontmatter。例如 `$AGH_HOME/skills/review-notes.md` 内容为 `# Review project notes` 时，名称取文件名 `review-notes`，描述取首个非空标题或文本行（最多 1024 字符），完整 Markdown 保留为正文。空文件与无效的显式 frontmatter 会被拒绝；目录 `SKILL.md` 与打包的 Skill 贡献仍需带 `name`、`description` 的 frontmatter。
 
-技能根里可以是目录 `<name>/SKILL.md`，也可以是扁平的 `<name>.md`。两者同名时目录胜出。不支持自定义根目录。`SKILL.md` 可以设置 `disable-model-invocation`、`user-invocable` 和 `disable`；省略这些字段时模型与用户两侧都允许。daemon 会监视目录中的说明与相对资源文件；`skills refresh --yes` 可立即重扫。细节与不支持的情况见 [MCP 与 Skills 支持范围](mcp-skills-support.zh-CN.md)。
+技能根里可以是目录 `<name>/SKILL.md`，也可以是扁平的 `<name>.md`。两者同名时目录胜出。安装目录的 `context.json` 支持 `customSkillRoots`（绝对路径）。可在 **设置 → 上下文** 中配置；它们在 `AGH_HOME/skills` 之后按优先级 400 扫描。参见[默认上下文](context.zh-CN.md)。`SKILL.md` 可以设置 `disable-model-invocation`、`user-invocable` 和 `disable`；省略这些字段时模型与用户两侧都允许。daemon 会监视目录中的说明与相对资源文件；`skills refresh --yes` 可立即重扫。细节与不支持的情况见 [MCP 与 Skills 支持范围](mcp-skills-support.zh-CN.md)。
 
 ## 调整同名候选优先级
 
@@ -108,3 +108,5 @@ ctx.skills.register({
 随分发提供的 Skill Helper 插件有自己的安装请求流程；工具可申请，不意味着能绕过用户确认、来源审核和写入边界。子 agent 不能借此申请 Skill 安装。
 
 实现依据：[发现根](../../packages/base/extensions/skills/src/discover.ts)、[候选注册表](../../packages/resource-control-runtime/src/skills.ts)、[Cordis service](../../packages/resource-control-runtime/src/skills-cordis.ts)、[会话预加载](../../packages/host/src/resources/skill-preload.ts)、[Skill Helper](../../packages/package-manager/bundled-plugins/skill-helper/README.md)。
+
+在 Web 或 TUI 中使用 `/skill invoke NAME ARGUMENTS` 调用允许用户调用的 Skill；上下文页面也提供调用表单。Host 只加载唯一、可信且启用的胜出项；未知、停用或禁止用户调用的 Skill 会被拒绝。参数保留在用户消息中。

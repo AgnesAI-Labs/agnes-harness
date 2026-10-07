@@ -4,6 +4,7 @@ import { DatabaseSync } from 'node:sqlite'
 import type { ExtensionFactory } from '@agnes/extension-api'
 import compactionExtension from '../extensions/compaction/src/index.js'
 import { createComputerUseExtension } from '../extensions/computer-use/src/index.js'
+import contextRulesExtension from '../extensions/context-rules/src/index.js'
 import deliverablesExtension from '../extensions/deliverables/src/index.js'
 import {
   type CcHookMap,
@@ -27,6 +28,7 @@ import { createSessionQueryExtension } from '../extensions/session-query/src/ind
 import { skillsExtension } from '../extensions/skills/src/runtime.js'
 import { createSubagentExtension, type SubagentLimits } from '../extensions/subagent/src/index.js'
 import { gitWorktrees, type WorktreeEntry } from '../extensions/subagent/src/worktree.js'
+import timeContextExtension from '../extensions/time-context/src/index.js'
 import { createToolsCoreExtension } from '../extensions/tools-core/src/index.js'
 import toolsSearchExtension from '../extensions/tools-search/src/index.js'
 import { createToolsWebExtension } from '../extensions/tools-web/src/index.js'
@@ -197,6 +199,8 @@ function defineSubagentExtension(init: SeamInitContext): ExtensionFactory {
 /** Trusted factories keyed by the manifest id the host is about to admit. */
 export const ecosystem = {
   'agnes/workflow': (): ExtensionFactory => workflowExtension,
+  'agnes/context-rules': (): ExtensionFactory => contextRulesExtension,
+  'agnes/time-context': (): ExtensionFactory => timeContextExtension,
   'agnes/interaction': (): ExtensionFactory => interactionExtension,
   'agnes/deliverables': (): ExtensionFactory => deliverablesExtension,
   'agnes/plugin-creator': (): ExtensionFactory => pluginCreatorExtension,

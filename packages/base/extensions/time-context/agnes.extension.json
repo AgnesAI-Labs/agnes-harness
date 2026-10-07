@@ -1,0 +1,16 @@
+{
+  "id": "agnes/time-context",
+  "version": "0.1.0",
+  "apiRange": "^1.4",
+  "entry": "./src/index.ts",
+  "capabilities": {
+    "hooks": ["context"],
+    "projections": [
+      {
+        "name": "clock",
+        "inputEventTypes": ["turn/start", "turn/end"],
+        "maxStateBytes": 65536
+      }
+    ]
+  }
+}

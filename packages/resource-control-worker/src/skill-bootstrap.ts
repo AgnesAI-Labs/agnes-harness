@@ -7,6 +7,7 @@ import {
   type DiscoveredSkillCandidate,
   discoverPackageSkill,
   discoverSkillRoot,
+  readContextConfig,
   type SkillRootFailure,
   workspaceSkillKey,
 } from '@agnes/base'
@@ -231,6 +232,7 @@ export async function scanSkills(
     osHomeDir,
     agnesHomeDir,
     importUserSkills,
+    customRoots: readContextConfig(agnesHomeDir).customSkillRoots,
   }).filter((root) => cwd !== undefined || root.rootKey !== 'workspace-agnes')
   const scans = await Promise.all(roots.map((root) => discoverSkillRoot(fs, root)))
   const filesystem: Array<{ rootKey: FilesystemSkillRoot; candidates: SkillCandidate[] }> = []

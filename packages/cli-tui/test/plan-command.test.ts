@@ -16,6 +16,9 @@ describe('/plan', () => {
     const cwd = mkdtempSync(join(tmpdir(), 'agnes-plan-cli-'))
     dirs.push(cwd)
     const app = { cwd, session: {} } as TuiApp
+    await expect(runSlash(app, '/skill invoke review check')).resolves.toEqual({
+      prompt: '/skill invoke review check',
+    })
     await expect(runSlash(app, '/plan keep the diff small')).resolves.toEqual({
       active: true,
       text: 'Plan mode is on: keep the diff small',

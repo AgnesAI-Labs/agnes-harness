@@ -115,10 +115,14 @@ it('defaults the user Agnes Skill root to <osHome>/.agh/skills and no longer rea
     await writeFile(join(skill, 'SKILL.md'), `---\nname: ${name}\ndescription: Skill\n---\nbody`)
   }
 
+  const custom = join(root, 'custom-roots')
+  await mkdir(join(custom, 'extra'), { recursive: true })
+  await writeFile(join(custom, 'extra', 'SKILL.md'), '---\nname: extra\ndescription: Extra\n---\nbody')
+  await writeFile(join(home, '.agh', 'context.json'), JSON.stringify({ customSkillRoots: [custom] }))
   const scanned = await scanSkills(undefined, undefined, undefined, home)
 
   const userAgnes = scanned.roots.find((entry) => entry.rootKey === 'user-agnes')
-  expect(userAgnes?.candidates.map((candidate) => candidate.name)).toEqual(['current'])
+  expect(userAgnes?.candidates.map((candidate) => candidate.name)).toEqual(['current', 'extra'])
   expect(scanned.roots.flatMap((entry) => entry.candidates).map((candidate) => candidate.name)).not.toContain(
     'legacy',
   )

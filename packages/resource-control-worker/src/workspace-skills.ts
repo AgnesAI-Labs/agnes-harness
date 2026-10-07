@@ -27,6 +27,7 @@ export function workspaceSkills(
           },
         }
       : {}),
+    invocation: (resourceId) => current()?.invocation?.(resourceId),
     list: () => current()?.list() ?? [],
     // User-level roots are global, and the fence asks outside any workspace scope.
     readRoots: () => shared.readRoots?.() ?? [],

@@ -291,6 +291,8 @@ describe('a host assembled from a profile naming @agnes/base', () => {
         'agnes/mcp-resources',
         'agnes/workflow',
         'agnes/session-query',
+        'agnes/context-rules',
+        'agnes/time-context',
       ])
       const byId = (id: string) => status.find((entry) => entry.id === id)
       const skills = byId('agnes/skills')
@@ -360,14 +362,18 @@ describe('a host assembled from a profile naming @agnes/base', () => {
     }
   })
 
-  it('parks an official question, refuses an invalid answer, and wakes with a persisted valid answer', async () => {
+  it('continues independent work after a question, keeps invalid answers pending, and receives valid late input with live context', async () => {
     const dataDir = scratch()
+    vi.stubEnv('AGH_HOME', dataDir)
+    writeFileSync(join(dataDir, 'AGENTS.md'), 'LIVE_RULE_V1')
     const provider = new ScriptedProvider({
       models: [fakeModel({ route: 'gw', id: 'm1' })],
       scripts: [
         callTool('ask_user_question', {
           questions: [{ id: 'choice', question: 'Choose a route', options: ['A', 'B'] }],
         }),
+        say('Continuing independent work.'),
+        say('The invalid answer leaves the question open.'),
         say('You chose B.'),
       ],
       onExhausted: 'error',
@@ -390,13 +396,18 @@ describe('a host assembled from a profile naming @agnes/base', () => {
         return session.run({ until: 'turn-end', signal: new AbortController().signal })
       }
       const first = await prompt('Ask me')
-      expect(first).toMatchObject({ reason: 'parked' })
-      expect(provider.calls).toHaveLength(1)
+      expect(first).toMatchObject({ reason: 'completed' })
+      expect(provider.calls[0]?.system).toContain('LIVE_RULE_V1')
+      expect(provider.calls[0]?.system).toContain('Time zone:')
+      writeFileSync(join(dataDir, 'AGENTS.md'), 'LIVE_RULE_V2')
       const rows = await session.scan({ type: 'x/agnes/interaction/requested', toSeq: session.lastSeq })
       expect(rows).toHaveLength(1)
-      const id = (rows[0]!.data as { id: string }).id
-      expect(await prompt(`[question-answer ${id}] {"choice":"C"}`)).toMatchObject({ reason: 'parked' })
-      expect(provider.calls).toHaveLength(1)
+      const row = rows[0]
+      if (!row) throw new Error('missing persisted question')
+      const id = (row.data as { id: string }).id
+      expect(await prompt(`[question-answer ${id}] {"choice":"C"}`)).toMatchObject({ reason: 'completed' })
+      expect(provider.calls[2]?.system).toContain('LIVE_RULE_V2')
+      expect(provider.calls[2]?.system).not.toContain('LIVE_RULE_V1')
       const ui = await session.projectUI(undefined, { surface: 'web' })
       expect(JSON.stringify(ui)).toContain('Choose a route')
       expect(
@@ -414,11 +425,12 @@ describe('a host assembled from a profile naming @agnes/base', () => {
         ],
       })
       expect(await prompt(`[question-answer ${id}] {"choice":"B"}`)).toMatchObject({ reason: 'completed' })
-      expect(JSON.stringify(provider.calls[1]?.messages)).toContain('choice')
+      expect(JSON.stringify(provider.calls[3]?.messages)).toContain('choice')
       const answers = await session.scan({ type: 'user/message', toSeq: session.lastSeq })
       expect(JSON.stringify(answers)).toContain('question-answer')
     } finally {
       await host.close()
+      vi.unstubAllEnvs()
     }
   })
 
@@ -1211,7 +1223,7 @@ describe('a host assembled from a profile naming @agnes/base', () => {
           .snapshot()
           .entries('tool_call')
           .map((entry) => entry.meta.source),
-      ).toEqual(['agnes/interaction', 'agnes/hooks-runner'])
+      ).toEqual(['agnes/hooks-runner'])
       const session = await host.createSession({ cwd: dataDir })
       const payload = {
         toolUseId: 'tool-1',

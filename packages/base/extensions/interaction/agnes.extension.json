@@ -8,13 +8,13 @@
       "prefix": "",
       "names": ["ask_user_question"]
     },
-    "hooks": ["before_step", "tool_call"],
+    "hooks": [],
     "events": true,
     "slots": ["tool.card.inline"],
     "projections": [
       {
         "name": "questions",
-        "inputEventTypes": ["x/agnes/interaction/requested", "user/message"],
+        "inputEventTypes": ["x/agnes/interaction/requested", "user/message", "inbox"],
         "maxStateBytes": 262144
       }
     ]

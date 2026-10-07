@@ -306,3 +306,13 @@ export const defaultLoopPlugin = {
     registerLoopPlugin(ctx, '@agnes/base', defaultLoopFactory)
   },
 }
+
+export {
+  type ContextConfig,
+  contextHome,
+  loadContextRules,
+  parseContextConfig,
+  type RulesSnapshot,
+  readContextConfig,
+  writeContextConfig,
+} from '../extensions/context-rules/src/index.js'

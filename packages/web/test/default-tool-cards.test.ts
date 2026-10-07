@@ -59,6 +59,9 @@ it('submits multiple choices with free text and exposes authorized deliverable o
         }),
       ),
     )
+    expect(el.querySelector('[data-testid=question-timing]')?.textContent).toContain(
+      'continue independent work',
+    )
     await vi.waitFor(() => expect(el.querySelector('a[download]')?.getAttribute('href')).toBe('blob:report'))
     expect(el.querySelector('a[target="_blank"]')?.getAttribute('rel')).toContain('noopener')
     expect(el.querySelector('a[download]')?.getAttribute('download')).toBe('report.txt')
