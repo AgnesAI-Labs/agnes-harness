@@ -194,27 +194,41 @@ it('lets an admitted turn retain a durable turn hold after activation closes the
   expect(order).toEqual(['commit'])
 })
 
-it('does not let detached work retain an expired turn across a closed gate', async () => {
-  const barrier = createExtensionActivationBarrier()
-  const invokeDetached = deferred()
-  const finishSwitch = deferred()
-  let detached: Promise<unknown> | undefined
-  const outer = barrier.admit('turn')
-  await outer.run(() => {
-    detached = invokeDetached.promise.then(() => {
-      try {
-        return barrier.admit('turn')
-      } catch (error) {
-        return error
-      }
+it.each(['turn', 'tool', 'service'] as const)(
+  'admits detached %s work afresh after its parent expires',
+  async (kind) => {
+    const barrier = createExtensionActivationBarrier()
+    const invokeDetached = deferred()
+    const finishSwitch = deferred()
+    let detached: Promise<unknown> | undefined
+    const outer = barrier.admit('turn')
+    await outer.run(() => {
+      detached = invokeDetached.promise.then(() => {
+        try {
+          const fresh = barrier.admit(kind)
+          fresh.finish()
+          return 'admitted'
+        } catch (error) {
+          return error
+        }
+      })
     })
-  })
-  const activation = barrier.quiesce('pkg.detached-expired-turn', () => finishSwitch.promise)
-  invokeDetached.resolve()
-  await expect(detached).resolves.toBeInstanceOf(ActivationInProgressError)
-  finishSwitch.resolve()
-  await activation
-})
+    const activation = barrier.quiesce('pkg.detached-expired-turn', () => finishSwitch.promise)
+    invokeDetached.resolve()
+    await expect(detached).resolves.toBeInstanceOf(ActivationInProgressError)
+    finishSwitch.resolve()
+    await activation
+    let admitted: unknown
+    await barrier.admit('turn').run(() => {
+      admitted = Promise.resolve().then(() => {
+        const fresh = barrier.admit(kind)
+        return fresh.run(() => 'admitted')
+      })
+    })
+    await expect(admitted).resolves.toBe('admitted')
+    expect(barrier.snapshot().active).toEqual({ turn: 0, tool: 0, service: 0 })
+  },
+)
 
 it('queues work started by a live invocation behind an activation, and refuses it otherwise', async () => {
   const barrier = createExtensionActivationBarrier()

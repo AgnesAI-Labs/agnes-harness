@@ -190,16 +190,12 @@ export function createExtensionActivationBarrier(
       // This is not a fresh admission: it is part of the same causal invocation and therefore may
       // cross a gate that closed after the parent started. Unrelated/nested turn requests still
       // have no invocation context and are refused below while quiescing.
-      if (parent?.kind === 'turn' && kind === 'turn') {
-        try {
-          return parent.retain()
-        } catch (error) {
-          if (!(error instanceof TypeError)) throw error
-          // AsyncLocalStorage may outlive the invocation in detached work. An expired parent is
-          // not authority to cross the gate; treat this as an unrelated fresh admission below.
-        }
+      // Detached work can inherit an expired async context. Only a live parent carries
+      // admission authority; later child hooks and tools must enter through the gate afresh.
+      if (parent && liveInvocations.has(parent)) {
+        if (parent.kind === 'turn' && kind === 'turn') return parent.retain()
+        if (kind !== 'turn') return parent.child(kind)
       }
-      if (parent && kind !== 'turn') return parent.child(kind)
       if (state !== 'accepting') throw new ActivationInProgressError(operationId as string)
       return makeInvocation(kind)
     },
