@@ -129,3 +129,13 @@ Third-party runtime sources require trusted immutable snapshots. An arbitrary fi
 Next: [Backend tools](backend.md) · [Frontend panels](frontend.md) · [Full-stack integration](fullstack.md) · [Installation and updates](../guide/packages.md).
 
 Source: [author types](../../packages/plugin-runtime/src/author.ts), [manifest parsing](../../packages/package-manager/src/plugin-manifest.ts), [PluginExtensionAPI](../../packages/extension-api/src/plugin-extension.ts), [row API](../../packages/host/src/ext-host/row-extension-api.ts), [ClientContext](../../packages/web-client/src/client-module.ts).
+
+## Writing an Agent Loop
+
+An Agent Loop owns scheduling and checkpoint state. Export a `LoopFactory` with `id`, `version`, `capabilities`, a versioned `codec`, `create(ctx)` and `resume(ctx, checkpoint)`. Its driver implements `step(signal)`, `cancel()`, `dispose()` and `checkpoint()`. Register it during plugin apply with `registerLoopPlugin(ctx, 'your-package', factory)` from `@agnes/extension-api`; declare the exported plugin in `agnes.plugins` with `inject: ["loops"]`. Host installs this Cordis service before loading package rows and removes registrations when their owning plugin unloads. `kernel.loops.catalog()` exposes installed identities, capabilities and verified source packages.
+
+The context provides multimodal model stream/complete, approved tool execute/batch, input/inbox, events, checkpoint storage and wait/wake; compaction and child sessions are optional. Call `ctx.input.accept()` to open or rehydrate a turn, save state with `ctx.checkpoints.write(driver.checkpoint())`, and close it with `ctx.events.finish(reason)`. Accepted inputs have a stable optional `id` so checkpoints can recognize a recovered turn. Batch results keep input order; calls overlap only when Host's tool policy permits it. Drivers must honor abort signals and reject unsupported checkpoint versions before resumed work.
+
+Choose a loop for a new session with profile `loop: { "id": "example.dag", "version": "1.0.0" }`, the admin defaults API, SDK `client.createSession({ cwd, loop })` (also `client.session.new({ cwd, loop })`), or `agh -p "prompt" --loop example.dag@1.0.0`. Explicit selection wins over the persisted admin default, which wins over the resolved profile and built-in `agnes.default@1.0.0`. Session start records pin the identity; later changes to defaults affect new sessions. Legacy sessions use the built-in loop. Missing selected or persisted loops fail clearly before session start; resume never silently substitutes a different loop.
+
+See [the standalone DAG example](../../examples/loops/dag-loop/README.md) for model planning, parallel tool waves, joins and guarded checkpoint recovery. It imports no Core or Host scheduling internals.

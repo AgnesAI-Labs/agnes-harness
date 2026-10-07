@@ -113,3 +113,11 @@ Host 普通树与 Web 页面分别创建 Context。`web:` 是平台合成的客�
 下一步：[后端工具](backend.zh-CN.md) · [前端面板](frontend.zh-CN.md) · [联动](fullstack.zh-CN.md) · [安装与更新](../guide/packages.zh-CN.md)。
 
 事实源：[作者类型](../../packages/plugin-runtime/src/author.ts)、[manifest 解析](../../packages/package-manager/src/plugin-manifest.ts)、[PluginExtensionAPI](../../packages/extension-api/src/plugin-extension.ts)、[行 API](../../packages/host/src/ext-host/row-extension-api.ts)、[ClientContext](../../packages/web-client/src/client-module.ts)。
+
+## 编写 Agent Loop
+
+Agent Loop 负责调度与自身检查点状态。通过 `@agnes/extension-api` 导出 `LoopFactory`（`id`、`version`、`capabilities`、版本化 `codec`、`create(ctx)`、`resume(ctx, checkpoint)`），驱动实现 `step(signal)`、`cancel()`、`dispose()` 与 `checkpoint()`。在插件 apply 中调用 `registerLoopPlugin(ctx, '包名', factory)`；`agnes.plugins` 的对应入口声明 `inject: ["loops"]`。Host 在加载插件前安装 Cordis 服务，插件卸载时移除注册。`kernel.loops.catalog()` 返回已安装循环的身份、能力和可信来源包。
+
+上下文提供多模态模型请求、经过 Host 审批的单次/批量工具执行、输入、事件、检查点存储和等待/唤醒；压缩与子会话端口可选。`ctx.input.accept()` 打开或恢复当前轮次，返回可选的稳定输入 `id`；保存检查点后通过 `ctx.events.finish(reason)` 结束轮次。批量结果保持输入顺序，是否并行仍由工具策略决定。恢复前必须校验 codec 版本，执行过程遵守取消信号。
+
+新会话选择优先级为显式参数、管理端默认值、profile 顶层 `loop: { id, version }`、内置 `agnes.default@1.0.0`。SDK 使用 `client.createSession({ cwd, loop })` 或 `client.session.new({ cwd, loop })`，CLI 使用 `agh -p "提示词" --loop example.dag@1.0.0`。会话开始记录固定循环身份；旧会话映射到内置循环。循环缺失时明确失败，不会在恢复时替换为默认循环。参见[独立 DAG 示例](../../examples/loops/dag-loop/README.md)：模型规划或静态计划、并行工具波次、依赖汇合及带不确定性检查的恢复均只依赖公共接口。

@@ -186,6 +186,7 @@ export type TestHostOptions = {
   packageDirs?: Record<string, string>
   // Installed third-party snapshots a later runtime target may name, and the importer that serves them.
   runtimePluginCatalogue?: HostOptions['runtimePluginCatalogue']
+  runtimePluginSnapshots?: HostOptions['runtimePluginSnapshots']
   // Installed snapshots re-read before every target, the way a worker supplies them in production.
   runtimePluginSources?: HostOptions['runtimePluginSources']
   ordinaryStartTimeoutMs?: HostOptions['ordinaryStartTimeoutMs']
@@ -351,7 +352,10 @@ export async function createTestHost(o: TestHostOptions): Promise<TestHost> {
   const loader = new MemoryPackageLoader(modules)
   const host = await createHost(profile, {
     dataDir: o.dataDir,
-    packageDirs: new Map(ids.map((id) => [id, o.packageDirs?.[id] ?? o.dataDir])),
+    packageDirs: new Map([
+      ...ids.map((id) => [id, o.packageDirs?.[id] ?? o.dataDir] as const),
+      ...Object.entries(o.packageDirs ?? {}),
+    ]),
     profileDir: `${o.dataDir}/profiles/${template}`,
     workspaceRoot: o.dataDir,
     homeDir: o.dataDir,
@@ -363,6 +367,7 @@ export async function createTestHost(o: TestHostOptions): Promise<TestHost> {
     env: o.env ?? { ...process.env },
     ...(o.serviceAuthority ? { serviceAuthority: o.serviceAuthority } : {}),
     ...(o.runtimePluginCatalogue ? { runtimePluginCatalogue: o.runtimePluginCatalogue } : {}),
+    ...(o.runtimePluginSnapshots ? { runtimePluginSnapshots: o.runtimePluginSnapshots } : {}),
     ...(o.runtimePluginSources ? { runtimePluginSources: o.runtimePluginSources } : {}),
     ...(o.ordinaryStartTimeoutMs === undefined ? {} : { ordinaryStartTimeoutMs: o.ordinaryStartTimeoutMs }),
     ...(o.extensionLoader ? { extensionLoader: o.extensionLoader } : {}),
