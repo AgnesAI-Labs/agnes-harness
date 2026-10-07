@@ -1238,7 +1238,8 @@ body:not([data-connection="reconnecting"]):not([data-connection="closed"]) .conn
   min-height: 0;
   flex: 1;
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr);
+  /* Tabs and the persistent goal precede the remaining conversation/trace viewport. */
+  grid-template-rows: auto auto minmax(0, 1fr);
   grid-template-columns: minmax(0, 1fr);
 }
 /* 页签行：tablist 与「报告问题」按钮同级，按钮不进 tablist，以免破坏 tab 语义。 */
