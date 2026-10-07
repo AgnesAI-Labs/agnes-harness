@@ -2,11 +2,13 @@ import { type Context, Service } from '@agnes/cordis'
 import { CoreError } from '@agnes/core'
 import {
   defineProviderKind,
+  type LoopDriver,
   type LoopFactory,
   type LoopRegistryPort,
   type LoopSelection,
 } from '@agnes/extension-api'
 import type { RowOriginLookup } from '@agnes/plugin-runtime/host'
+import { ProviderLifetime } from './provider-lifetime.js'
 import { installProviderRegistry, type ProviderRegistry, providerSource } from './provider-registry.js'
 
 declare module '@agnes/cordis' {
@@ -43,10 +45,56 @@ export class LoopsService extends Service implements LoopRegistryPort {
     )
   }
   register(sourcePackage: string, factory: LoopFactory): () => Promise<void> {
+    const lifetime = new ProviderLifetime('loop', factory.id)
+    const drivers = new Set<LoopDriver>()
+    const own = (driver: LoopDriver): LoopDriver => {
+      const instance = new ProviderLifetime('loop', factory.id)
+      drivers.add(driver)
+      const dispose = lifetime.own(() =>
+        instance.close(
+          async () => {
+            await driver.dispose()
+            drivers.delete(driver)
+          },
+          () => driver.cancel(),
+        ),
+      )
+      return {
+        step(signal) {
+          lifetime.assertActive()
+          instance.assertActive()
+          const joined = AbortSignal.any([signal, lifetime.signal, instance.signal])
+          return instance.track(Promise.resolve().then(() => driver.step(joined)))
+        },
+        cancel: () => driver.cancel(),
+        dispose,
+        checkpoint: () => driver.checkpoint(),
+      }
+    }
     return this.registry.register(
       providerSource(this.ctx, this.origins, sourcePackage, true),
-      factory,
+      {
+        ...factory,
+        create(ctx) {
+          lifetime.assertActive()
+          return own(factory.create(ctx))
+        },
+        resume(ctx, checkpoint) {
+          lifetime.assertActive()
+          return own(factory.resume(ctx, checkpoint))
+        },
+      },
       this.ctx,
+      () =>
+        lifetime.close(undefined, async () => {
+          const results = await Promise.allSettled([...drivers].map((driver) => driver.cancel()))
+          const failures = results.filter((result) => result.status === 'rejected')
+          if (failures.length)
+            throw new AggregateError(
+              failures.map((result) => result.reason),
+              'Loop cancellation failed',
+            )
+        }),
     )
   }
   resolve(selection: LoopSelection) {

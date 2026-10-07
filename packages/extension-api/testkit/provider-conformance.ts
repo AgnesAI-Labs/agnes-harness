@@ -10,6 +10,10 @@ export interface ProviderConformanceProbe {
   start(signal: AbortSignal): ProviderConformanceOperation
   /** Close session/workspace handles acquired by the probe. */
   close(): Promise<void>
+  /** Persistence has no signal-bearing operation; report that limitation explicitly. */
+  cancellation?: 'unsupported'
+  /** Release a controlled, non-cancellable call after unload has started. */
+  unloadStarted?(): Promise<void>
   /** Native APIs may return an explicit cancelled outcome instead of rejecting. */
   isCancelledResult?(result: unknown): boolean
   /** Reopen persisted state with a fresh session/instance, then check its observable contents. */
@@ -76,14 +80,19 @@ export async function runProviderConformance<K extends keyof KindMap>(
     )
       throw new Error('Provider conformance: catalog must expose immutable registration metadata')
     probe = await options.open(providers.resolve(kind, selection))
-    const cancel = new AbortController()
-    const operation = probe.start(cancel.signal)
-    // Attach a rejection handler before cancellation, without suppressing the assertion below.
-    void operation.result.catch(() => {})
-    await operation.ready
-    cancel.abort()
-    await expectCancelled(operation.result, probe)
-    cases.push('cancel')
+    if (probe.cancellation === 'unsupported') {
+      if (kind !== 'persistence') throw new Error(`Provider conformance: ${kind} must support cancellation`)
+      cases.push('cancel-unsupported')
+    } else {
+      const cancel = new AbortController()
+      const operation = probe.start(cancel.signal)
+      // Attach a rejection handler before cancellation, without suppressing the assertion below.
+      void operation.result.catch(() => {})
+      await operation.ready
+      cancel.abort()
+      await expectCancelled(operation.result, probe)
+      cases.push('cancel')
+    }
     if (kind === 'loop' || kind === 'persistence') {
       if (!probe.coldResume) throw new Error(`Provider conformance: ${kind} requires a cold-resume probe`)
     }
@@ -104,6 +113,7 @@ export async function runProviderConformance<K extends keyof KindMap>(
     await active.ready
     const disposal = unregister()
     if (disposal !== unregister()) throw new Error('Provider conformance: unregister must be idempotent')
+    await probe.unloadStarted?.()
     await disposal
     if (!settled)
       throw new Error('Provider conformance: unregister returned before the admitted operation drained')

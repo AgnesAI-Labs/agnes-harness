@@ -1,4 +1,5 @@
 import { join } from 'node:path'
+import type { Context } from '@agnes/cordis'
 import { CoreError, type CoreErrorCode } from '@agnes/core'
 import {
   DEFAULT_PERSISTENCE_PROVIDER_ID,
@@ -11,6 +12,7 @@ import {
   type PersistenceScanQuery,
   type PersistenceSessionStore,
 } from '@agnes/extension-api'
+import { ProviderLifetime } from '../assemble/provider-lifetime.js'
 import { ProviderRegistry } from '../assemble/provider-registry.js'
 import { HostError } from '../errors.js'
 import { createSqliteStorage, type SqliteStorage } from './storage-sqlite.js'
@@ -132,11 +134,66 @@ function accept(provider: PersistenceProvider, source: string): PersistenceProvi
   }
 }
 
+/** Own stores even when a plugin opens one through the shared registration port. */
+class PersistenceProviderRegistry extends ProviderRegistry<PersistenceProvider> {
+  override register(
+    source: string,
+    provider: PersistenceProvider,
+    owner?: Context,
+    cleanup?: () => void | Promise<void>,
+  ): () => Promise<void> {
+    // Startup stores belong to openAdapters, which outlives ordinary plugin generations.
+    if (!owner) return super.register(source, provider, owner, cleanup)
+    this.validate(source, provider)
+    const lifetime = new ProviderLifetime('persistence', provider.id)
+    const wrapped: PersistenceProvider = {
+      ...provider,
+      open: (options) =>
+        lifetime.run(async (signal) => {
+          const store = await provider.open(options)
+          const instance = new ProviderLifetime('persistence', provider.id)
+          const close = lifetime.own(() => instance.close(() => store.close()))
+          if (signal.aborted) {
+            await close()
+            signal.throwIfAborted()
+          }
+          const asynchronous = new Set<PropertyKey>([
+            'open',
+            'commit',
+            'renew',
+            'release',
+            'scan',
+            'registers',
+            'scanIntegrity',
+            'createChild',
+            'discardNewSession',
+          ])
+          // Preserve optional provider methods and SQLite's extra host ports without inventing them.
+          return new Proxy(store, {
+            get(target, key) {
+              if (key === 'close') return close
+              const value: unknown = Reflect.get(target, key, target)
+              if (typeof value !== 'function') return value
+              return (...args: unknown[]) => {
+                lifetime.assertActive()
+                instance.assertActive()
+                if (asynchronous.has(key))
+                  return instance.run(() => Reflect.apply(value, target, args), lifetime.signal)
+                return Reflect.apply(value, target, args)
+              }
+            },
+          })
+        }),
+    }
+    return super.register(source, wrapped, owner, () => lifetime.close(cleanup))
+  }
+}
+
 export function createPersistenceProviderRegistry(
   modules: ReadonlyMap<string, { persistenceProvider?: PersistenceProvider }> | undefined,
   providers: readonly PersistenceProvider[] | undefined,
 ): ProviderRegistry<PersistenceProvider> {
-  const registry = new ProviderRegistry(
+  const registry = new PersistenceProviderRegistry(
     defineProviderKind<PersistenceProvider>({
       kind: 'persistence',
       restartRequired: true,
