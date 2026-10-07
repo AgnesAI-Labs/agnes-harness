@@ -21,7 +21,7 @@ Capabilities are `continuable`, `interrupt`, `modelSelection`, `inheritsParentCo
 
 ## Register a provider
 
-Register from an ordinary Cordis plugin that injects `childAgents`:
+The host defines the `child-agent` kind with `defineProviderKind`. `childAgents` is the typed facade over that registry. Register from an ordinary Cordis plugin that injects `childAgents`:
 
 ```ts
 import type { ChildAgentPluginContext } from '@agnes/extension-api'
@@ -35,7 +35,13 @@ export const main = defineAgnesPlugin({
 })
 ```
 
-Declare `main` and the same injection in `package.json`'s `agnes.plugins`. Duplicate ids are refused. Unloading the plugin removes the catalog entry and disposes handles started through the service. `catalog()` exposes id, version, source package, and capabilities. Host also exposes `Assembled.childAgentCatalog()`.
+The same provider can be registered through the shared entry point:
+
+```ts
+ctx.providers.register('child-agent', '@example/agents', provider)
+```
+
+Declare `main` and the same injection in `package.json`'s `agnes.plugins`. Duplicate ids are refused. Unloading the plugin removes the catalog entry and disposes handles started through the service. `catalog()` exposes id, version, source package, and capabilities. `ctx.providers.catalog()` lists the same provider with the capability names that are true. Host also exposes `Assembled.childAgentCatalog()`.
 
 The in-process provider is installed with the `@agnes/base` package. Its plugin row id is `child-agent:in-process` and its provider id is `in-process`.
 

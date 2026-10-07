@@ -17,7 +17,7 @@ flowchart TD
   Registry --> Policy[tool-policy]
   Registry --> Store[persistence]
   Registry --> Sandbox[sandbox]
-  Registry -. future kind .-> Children[child-agent]
+  Registry --> Children[child-agent]
   Loop --> Ports[model, tools, events, checkpoint, wait ports]
   Model --> Ports
   Compact --> Ports
@@ -50,7 +50,7 @@ export const plugin = {
 }
 ```
 
-Named services (`loops`, `modelAdapters`, `compactionEngines`, `toolRuntimes`, `toolPolicies`, `sandboxProviders`) retain their existing typed APIs and catalog shapes. The common entry point delegates to those services, including their instance cleanup and source-package checks. Contributors adding a kind use `installProviderRegistry(ctx, defineProviderKind({...}))` from `@agnes/host`, then fit its operations behind a typed facade. The persistence registry remains process-owned: packages export `persistenceProvider` before the store opens, and that same registry joins the combined catalog after Cordis starts.
+Named services (`loops`, `modelAdapters`, `compactionEngines`, `toolRuntimes`, `toolPolicies`, `sandboxProviders`, `childAgents`) retain their existing typed APIs and catalog shapes. The common entry point delegates to those services, including their instance cleanup and source-package checks. Contributors adding a kind use `installProviderRegistry(ctx, defineProviderKind({...}))` from `@agnes/host`, then fit its operations behind a typed facade. The persistence registry remains process-owned: packages export `persistenceProvider` before the store opens, and that same registry joins the combined catalog after Cordis starts.
 
 ## Selection and compatibility
 
@@ -81,7 +81,7 @@ A versionless loop selection requires exactly one installed version. An explicit
 | `tool-policy` | `default`, Base approval policy | Selected per preset; principal authorization remains in Core. |
 | `persistence` | `sqlite`, Host | Process startup selection; restart required. Providers do not migrate another store's files. |
 | `sandbox` | `local`, Host | Startup selection, bound on first workspace; restart required to change it. |
-| `child-agent` | Being added separately | The shared helper accepts new kinds; this migration does not supply a child-agent provider. |
+| `child-agent` | `in-process`, Base | Defined with `defineProviderKind`. Registrations reload with Cordis. `childAgents` is the typed facade. `acp` is optional and stays unloaded by default. |
 
 ## The plugin ladder
 

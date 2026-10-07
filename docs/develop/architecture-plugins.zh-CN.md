@@ -17,7 +17,7 @@ flowchart TD
   Registry --> Policy[tool-policy]
   Registry --> Store[persistence]
   Registry --> Sandbox[sandbox]
-  Registry -. 后续类型 .-> Children[child-agent]
+  Registry --> Children[child-agent]
   Loop --> Ports[模型、工具、事件、检查点、等待端口]
   Model --> Ports
   Compact --> Ports
@@ -50,7 +50,7 @@ export const plugin = {
 }
 ```
 
-`loops`、`modelAdapters`、`compactionEngines`、`toolRuntimes`、`toolPolicies`、`sandboxProviders` 保留原有类型化 API 和目录结构；统一入口委托这些服务执行，包括实例清理与来源包核对。贡献者添加类型时使用 `@agnes/host` 的 `installProviderRegistry(ctx, defineProviderKind({...}))`，再为操作提供类型化外观。persistence 保留进程级启动生命周期：包在打开存储前导出 `persistenceProvider`，同一注册表在 Cordis 启动后加入统一目录。
+`loops`、`modelAdapters`、`compactionEngines`、`toolRuntimes`、`toolPolicies`、`sandboxProviders`、`childAgents` 保留原有类型化 API 和目录结构；统一入口委托这些服务执行，包括实例清理与来源包核对。贡献者添加类型时使用 `@agnes/host` 的 `installProviderRegistry(ctx, defineProviderKind({...}))`，再为操作提供类型化外观。persistence 保留进程级启动生命周期：包在打开存储前导出 `persistenceProvider`，同一注册表在 Cordis 启动后加入统一目录。
 
 ## 选择与兼容
 
@@ -81,7 +81,7 @@ loop 省略版本时必须恰好安装一个版本。显式版本必须匹配；
 | `tool-policy` | Base approval policy 的 `default` | preset 选择；主体授权仍由 Core 决定。 |
 | `persistence` | Host 的 `sqlite` | 启动选择，变更需重启；不会迁移其他 provider 的文件。 |
 | `sandbox` | Host 的 `local` | 启动选择、首个 workspace 绑定，变更需重启。 |
-| `child-agent` | 独立任务正在添加 | 统一 helper 可接入新类型，本次迁移不提供 child-agent 实现。 |
+| `child-agent` | Base 的 `in-process` | 用 `defineProviderKind` 定义。注册随 Cordis 重载。`childAgents` 是类型化外观。`acp` 可选，默认不加载。 |
 
 ## 插件阶梯
 

@@ -21,7 +21,7 @@
 
 ## 注册提供者
 
-从注入 `childAgents` 的普通 Cordis 插件注册：
+Host 用 `defineProviderKind` 定义 `child-agent` 类型。`childAgents` 是该注册表的类型化外观。从注入 `childAgents` 的普通 Cordis 插件注册：
 
 ```ts
 import type { ChildAgentPluginContext } from '@agnes/extension-api'
@@ -35,7 +35,13 @@ export const main = defineAgnesPlugin({
 })
 ```
 
-在 `package.json` 的 `agnes.plugins` 里声明 `main` 和相同的注入。重复 id 会被拒绝。卸载插件会移除目录项，并释放通过该服务启动的句柄。`catalog()` 提供 id、版本、来源包和能力。Host 也提供 `Assembled.childAgentCatalog()`。
+也可以走统一入口：
+
+```ts
+ctx.providers.register('child-agent', '@example/agents', provider)
+```
+
+在 `package.json` 的 `agnes.plugins` 里声明 `main` 和相同的注入。重复 id 会被拒绝。卸载插件会移除目录项，并释放通过该服务启动的句柄。`catalog()` 提供 id、版本、来源包和能力。`ctx.providers.catalog()` 列出同一提供者，能力名只包含值为 true 的项。Host 也提供 `Assembled.childAgentCatalog()`。
 
 `in-process` 随 `@agnes/base` 安装。插件行 id 是 `child-agent:in-process`，提供者 id 是 `in-process`。
 
