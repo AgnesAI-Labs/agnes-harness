@@ -3,7 +3,9 @@ import { RuntimeGenerationSnapshotStore } from '@agnes/package-manager'
 import type { RuntimeTarget } from '@agnes/plugin-runtime/host'
 import { readAdminLoopDefault } from '../assemble/loop-selection.js'
 import { createConfigurationService } from '../configuration.js'
+import { HostError } from '../errors.js'
 import type { Host, HostOptions } from '../host.js'
+import { createHostFacade } from '../host-facade.js'
 import { resolvePreset } from '../presets/resolve.js'
 import { createRuntimeGenerationHost } from '../runtime-generation-host.js'
 import { pluginSnapshotIdentity } from '../runtime-plugin-catalogue.js'
@@ -45,6 +47,7 @@ export async function createCompositionHost(
   let currentSkills = options.skillResources
   const presets = await compositionPresets(profile, options)
   let closed = false
+  let closing: Promise<void> | undefined
   let queue: Promise<unknown> = Promise.resolve()
   let latestTarget: RuntimeTarget | undefined
   const writer = await createLiveCompositionWriter(options.profileDir)
@@ -205,8 +208,11 @@ export async function createCompositionHost(
     }
   }
   const enqueue = <T>(run: () => Promise<T>): Promise<T> => {
-    if (closed) return Promise.reject(new Error('E_HOST_CLOSED: host is closed'))
-    const next = queue.then(run)
+    if (closed) return Promise.reject(new HostError('E_HOST_CLOSED', 'host is closed'))
+    const next = queue.then(() => {
+      if (closed) throw new HostError('E_HOST_CLOSED', 'host is closed')
+      return run()
+    })
     queue = next.catch(() => undefined)
     return next
   }
@@ -261,6 +267,7 @@ export async function createCompositionHost(
         }
         try {
           const container = await open(binding)
+          if (closed) throw new HostError('E_HOST_CLOSED', 'host is closed')
           const loop = generations.session(key)?.loop ?? binding.tree.selection.loop
           if (input.loop && loop && (input.loop.id !== loop.id || input.loop.version !== loop.version))
             throw new Error(
@@ -373,22 +380,22 @@ export async function createCompositionHost(
           return convergence()
         }),
     },
-    async close() {
-      if (closed) return
+    close() {
+      if (closing) return closing
       closed = true
       clearInterval(statusTimer)
-      await queue
-      const results = await Promise.allSettled([...containers.values()].map(({ host }) => host.close()))
-      writer.close()
-      const failed = results.find((result) => result.status === 'rejected')
-      if (failed?.status === 'rejected') throw failed.reason
+      const hosts = new Map([...containers.values()].map(({ host }) => [host, host.close()]))
+      for (const close of hosts.values()) void close.catch(() => undefined)
+      closing = (async () => {
+        await queue
+        for (const { host } of containers.values()) if (!hosts.has(host)) hosts.set(host, host.close())
+        const results = await Promise.allSettled(hosts.values())
+        writer.close()
+        const failed = results.find((result) => result.status === 'rejected')
+        if (failed?.status === 'rejected') throw failed.reason
+      })()
+      return closing
     },
   }
-  return new Proxy(initial.host, {
-    get(target, property) {
-      if (Object.hasOwn(overrides, property)) return Reflect.get(overrides, property)
-      const value = Reflect.get(target, property, target)
-      return typeof value === 'function' ? value.bind(target) : value
-    },
-  })
+  return createHostFacade(initial.host, overrides)
 }

@@ -14,8 +14,10 @@ import {
 } from '@agnes/plugin-runtime/host'
 import { composeExtensionRowTarget } from './assemble/ext-rows.js'
 import { SKILL_ROW_ID, skillRowRevision } from './assemble/skill-row.js'
+import { HostError } from './errors.js'
 import { createExtensionActivationBarrier } from './ext-host/activation-barrier.js'
 import type { Host, HostOptions } from './host.js'
+import { createHostFacade } from './host-facade.js'
 import type { ResolvedProfile } from './profile/types.js'
 import type { SkillRuntimeInput } from './resources/skills.js'
 import {
@@ -284,8 +286,11 @@ export async function createRuntimeGenerationHost(
     store.collect(new Set([...live.keys(), ...opening.keys()]), retired)
   }
   const enqueue = <T>(run: () => Promise<T>): Promise<T> => {
-    if (closed) return Promise.reject(new Error('E_HOST_CLOSED: host is closed'))
-    const next = queue.then(run)
+    if (closed) return Promise.reject(new HostError('E_HOST_CLOSED', 'host is closed'))
+    const next = queue.then(() => {
+      if (closed) throw new HostError('E_HOST_CLOSED', 'host is closed')
+      return run()
+    })
     queue = next.catch(() => undefined)
     return next
   }
@@ -540,6 +545,7 @@ export async function createRuntimeGenerationHost(
         const pin = existing ?? { sessionKey: key, generationId: desiredId }
         const generation = await resolve(pin.generationId)
         try {
+          if (closed) throw new HostError('E_HOST_CLOSED', 'host is closed')
           if (
             pin.loop &&
             input.loop &&
@@ -553,6 +559,7 @@ export async function createRuntimeGenerationHost(
             ...(pin.loop ? { loop: pin.loop } : {}),
           })
           try {
+            if (closed) throw new HostError('E_HOST_CLOSED', 'host is closed')
             store.recordLoop(key, session.loop)
             await resourceSkills.get(pin.generationId)?.bind(key, session.d.cwd, !!existing)
           } catch (error) {
@@ -670,11 +677,19 @@ export async function createRuntimeGenerationHost(
     close: () => {
       if (closing) return closing
       closed = true
+      // Claim admitted openings now, before waiting for the outer mutation queue to drain.
+      const hosts = new Map<Host, Promise<void>>()
+      const claim = (host: Host) => {
+        if (!hosts.has(host)) hosts.set(host, host.close())
+      }
+      claim(initial)
+      for (const generation of live.values()) claim(generation.host)
+      for (const close of hosts.values()) void close.catch(() => undefined)
       closing = (async () => {
         await queue
         await Promise.allSettled(opening.values())
-        const hosts = new Set([initial, ...[...live.values()].map((generation) => generation.host)])
-        const results = await Promise.allSettled([...hosts].map((host) => host.close()))
+        for (const generation of live.values()) claim(generation.host)
+        const results = await Promise.allSettled(hosts.values())
         const errors = results.flatMap((result) => (result.status === 'rejected' ? [result.reason] : []))
         if (errors.length) throw new AggregateError(errors, 'generation shutdown failed')
         store.collect(new Set())
@@ -688,19 +703,5 @@ export async function createRuntimeGenerationHost(
     await initial.close().catch(() => undefined)
     throw error
   }
-  return new Proxy(initial, {
-    get(_host, property) {
-      if (property in overrides) return Reflect.get(overrides, property)
-      const target = current?.host ?? initial,
-        value = Reflect.get(target, property, target)
-      // Process ports are captured before the first binding. An unreferenced bootstrap Host may
-      // retire on the first resource publication; retained callbacks must follow the current Host.
-      return typeof value === 'function'
-        ? (...args: unknown[]) => {
-            const target = current?.host ?? initial
-            return Reflect.apply(Reflect.get(target, property, target), target, args)
-          }
-        : value
-    },
-  })
+  return createHostFacade(initial, overrides, () => current?.host ?? initial)
 }

@@ -843,6 +843,7 @@ export async function startSupervisor(o: StartSupervisorOptions): Promise<{
   activationBarrier: ExtensionActivationBarrier
   ws?: { url: string; token: string }
 }> {
+  prepareDaemonSocketPaths(o.config)
   const composition = o.profile.composition
     ? resolveComposition(o.profile, {
         preset: compositionPreset(o.profile, o.profile.presets.default),
@@ -859,7 +860,6 @@ export async function startSupervisor(o: StartSupervisorOptions): Promise<{
       },
     }
   }
-  prepareDaemonSocketPaths(o.config)
   if (o.config.ws && o.config.localWeb) throw new Error('choose local Web or remote WSS')
   const clock = o.clock ?? (() => Date.now())
 

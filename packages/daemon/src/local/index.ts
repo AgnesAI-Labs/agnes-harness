@@ -4,6 +4,7 @@ import {
   type ConfigurationService,
   type ExtensionActivationBarrier,
   type Host,
+  hostInspectionSource,
   resolveWorkspaceDirectory,
 } from '@agnes/host'
 import { rpcError } from '@agnes/protocol'
@@ -83,6 +84,7 @@ const embeddedSessionOwnership = new WeakMap<Host, MemorySessionPrincipalOwnersh
 
 function lockedPackageMutationStatusSource(host: Host): LockedPackageMutationStatusSource | undefined {
   try {
+    host = hostInspectionSource(host)
     if (utilTypes.isProxy(host)) return undefined
     const descriptor = Object.getOwnPropertyDescriptor(host, 'lockedPackageMutations')
     if (!descriptor || !Object.hasOwn(descriptor, 'value')) return undefined
@@ -97,6 +99,7 @@ function lockedPackageMutationStatusSource(host: Host): LockedPackageMutationSta
 
 function computerUseStatusSource(host: Host): ComputerUseStatusSource | undefined {
   try {
+    host = hostInspectionSource(host)
     if (utilTypes.isProxy(host)) return undefined
     const descriptor = Object.getOwnPropertyDescriptor(host, 'computerUse')
     if (!descriptor || !Object.hasOwn(descriptor, 'value')) return undefined

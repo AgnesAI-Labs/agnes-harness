@@ -4,6 +4,7 @@ import {
   evaluateFixedComputerUsePlatformAdmission,
 } from '@agnes/host'
 import { describe, expect, it } from 'vitest'
+import { createLocalEndpoint } from '../src/local/index.js'
 import { openTestHost } from './host.js'
 
 // The lazy runtime reports first-use preparation only where the pinned driver is admitted for this
@@ -48,6 +49,29 @@ const initialize = {
 }
 
 describe('computer-use status RPC', () => {
+  it('refuses inspection of an external Host proxy without evaluating its descriptor trap', async () => {
+    const fixture = await openTestHost()
+    let touched = false
+    const host = new Proxy(fixture.host, {
+      getOwnPropertyDescriptor() {
+        touched = true
+        throw new Error('untrusted descriptor trap')
+      },
+    })
+    const endpoint = createLocalEndpoint(host, { workspaces: fixture.workspaces, clock: () => 0 })
+    try {
+      await endpoint.handle(initialize)
+      const response = await endpoint.handle(request(3))
+      expect(response).toMatchObject({
+        result: { admission: { state: 'blocked', reason: 'p0-evidence-incomplete' } },
+      })
+      expect(response).not.toHaveProperty('result.lockedPackageMutations')
+      expect(touched).toBe(false)
+    } finally {
+      await endpoint.close()
+      await fixture.close()
+    }
+  })
   it('requires authenticated initialization and reports first-use preparation without starting a driver', async () => {
     const fixture = await openTestHost()
     const endpoint = fixture.endpoint({ clock: () => 0 })

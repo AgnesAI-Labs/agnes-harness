@@ -1,4 +1,5 @@
 import type { Host } from '../host.js'
+import { createHostFacade } from '../host-facade.js'
 import { resolvePreset } from '../presets/resolve.js'
 import { resolveComposition } from './composition.js'
 import { createLiveCompositionWriter, type LiveCompositionSession } from './composition-state.js'
@@ -49,6 +50,7 @@ export async function trackHostComposition(
   }
   const timer = setInterval(publish, 1000)
   timer.unref()
+  let closing: Promise<void> | undefined
   const overrides: Partial<Host> = {
     compositionSessions: live,
     async createSession(input) {
@@ -69,20 +71,12 @@ export async function trackHostComposition(
       publish()
       return seq
     },
-    async close() {
+    close() {
+      if (closing) return closing
       clearInterval(timer)
-      try {
-        await host.close()
-      } finally {
-        writer.close()
-      }
+      closing = host.close().finally(() => writer.close())
+      return closing
     },
   }
-  return new Proxy(host, {
-    get(target, property) {
-      if (Object.hasOwn(overrides, property)) return Reflect.get(overrides, property)
-      const value = Reflect.get(target, property, target)
-      return typeof value === 'function' ? value.bind(target) : value
-    },
-  })
+  return createHostFacade(host, overrides)
 }

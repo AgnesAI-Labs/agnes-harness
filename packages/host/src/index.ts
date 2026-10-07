@@ -338,6 +338,7 @@ export {
   type ServiceInspection,
 } from './ext-host/service-invocation.js'
 export { createHost, type Host, type HostOptions, type HostSession } from './host.js'
+export { hostInspectionSource } from './host-facade.js'
 export { closeHost, Rollback } from './lifecycle.js'
 export {
   defaultVerifyIntegrity,
