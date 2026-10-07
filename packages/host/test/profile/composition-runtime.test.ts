@@ -45,11 +45,12 @@ it('runs preset compositions side by side, filters tools and retains the generat
       user: {
         name: 'local-dev',
         composition: {},
-        presets: { default: 'reader', allowed: ['reader', 'writer'] },
+        presets: { default: 'reader', allowed: ['reader', 'writer', 'observer'] },
       },
     },
-    allowed: ['reader', 'writer'],
+    allowed: ['reader', 'writer', 'observer'],
     presets: {
+      observer: { name: 'observer', extends: 'standard', composition: { tools: ['read', 'write'] } },
       reader: { name: 'reader', extends: 'standard', composition: { tools: ['read'] } },
       writer: {
         name: 'writer',
@@ -111,6 +112,7 @@ it('runs preset compositions side by side, filters tools and retains the generat
       host.compositionSessions?.().find((session) => session.sessionKey === writer.key)?.providers.compaction,
     ).toEqual({ engine: 'fixture' })
     await expect(host.setSessionPreset(reader.key, 'writer')).rejects.toThrow('separate Host generation')
+    const observer = await host.createSession({ key: 'observer-session', preset: 'observer', cwd: root })
     const next = structuredClone(host.profile)
     const route = next.provider.routes?.find((route) => route.route === 'gw')
     const first = route?.models?.[0]
@@ -125,17 +127,20 @@ it('runs preset compositions side by side, filters tools and retains the generat
       containers: [
         { status: 'applied' },
         { status: 'failed', error: expect.stringContaining('writer model candidate refused') },
+        { status: 'applied' },
       ],
     })
-    expect(() => assertHostPublication(partial)).toThrow('applied to 1/2 containers')
+    expect(() => assertHostPublication(partial)).toThrow('applied to 2/3 containers')
     expect(host.compositionPublicationStatus?.()).toEqual(partial)
     await reader.setModel({ slot: 'primary', route: route.route, model: 'live-model' })
     await expect(
       writer.setModel({ slot: 'primary', route: route.route, model: 'live-model' }),
     ).rejects.toThrow('E_MODEL_UNKNOWN')
+    await observer.setModel({ slot: 'primary', route: route.route, model: 'live-model' })
     refuseWriter = false
     expect(await host.applyModelProfile(next)).toMatchObject({ ok: true })
     await writer.setModel({ slot: 'primary', route: route.route, model: 'live-model' })
+    await observer.close()
     const profileDir = join(root, 'profiles', 'local-dev')
     // Use the same durable directory as createTestHost's production Host options.
     const bindings = new CompositionSessionStore(profileDir)
@@ -151,6 +156,13 @@ it('runs preset compositions side by side, filters tools and retains the generat
     expect(resumed.pluginGenerationId).toBe(generation)
     expect(resumed.currentTools().resolve('write')).toBeUndefined()
     await resumed.close()
+    const migration = await host.migrateSessionGeneration?.(resumed.key)
+    expect(migration?.changed).toBe(true)
+    expect(bindings.read(resumed.key)?.tree.preset).toBe('reader')
+    const migrated = await host.createSession({ key: resumed.key, cwd: root })
+    expect(migrated.pluginGenerationId).toBe(migration?.generationId)
+    expect(migrated.currentTools().resolve('write')).toBeUndefined()
+    await migrated.close()
     await host.releaseSessionGeneration?.(resumed.key)
     expect(bindings.read(resumed.key)).toBeUndefined()
   } finally {
