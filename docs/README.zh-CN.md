@@ -28,6 +28,7 @@
 | [会话与恢复](guide/sessions.zh-CN.md) | 继续任务、导出记录、处理中断 |
 | [插件生命周期](guide/packages.zh-CN.md) | 安装、信任、启用、更新与移除插件 |
 | [安全与信任](guide/security.zh-CN.md) | 选择工作目录，理解授权和执行边界 |
+| [沙箱提供者](guide/sandbox-providers.zh-CN.md) | 在启动时选择进程沙箱，并阅读声明的能力 |
 | [排错](guide/troubleshooting.zh-CN.md) | 从错误码和运行状态定位下一步 |
 
 ## 构建与深入了解

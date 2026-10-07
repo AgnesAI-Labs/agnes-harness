@@ -38,7 +38,7 @@ Web「工作区内修改」将文件访问限制在所选工作区内，执行�
 
 ## 平台与进程
 
-默认命令执行要求可用的沙箱；Linux 使用 bubblewrap，macOS 使用 Seatbelt。不可用且策略要求拒绝时返回 `SANDBOX_UNAVAILABLE`。宿主启动成功不代表所有工具可执行。Windows 的部分安全能力仍有外部验证与实现边界，见[限制](../reference/limitations.zh-CN.md)。
+默认命令执行要求可用的沙箱；Linux 使用 bubblewrap，macOS 使用 Seatbelt。不可用且策略要求拒绝时返回 `SANDBOX_UNAVAILABLE`。宿主启动成功不代表所有工具可执行。Windows 的部分安全能力仍有外部验证与实现边界，见[限制](../reference/limitations.zh-CN.md)。Profile 可以在启动时选择另一个沙箱提供者，见[沙箱提供者](sandbox-providers.zh-CN.md)。当前进程会保持这个选择，直到再次启动。
 
 本地 Web 的安全边界是回环监听及精确 Origin/Host 校验，不是互联网用户认证。不要直接把它暴露到公网。手动 `--connect` 必须明确指定目标；Windows 命名管道还核对所属进程与发现记录。
 

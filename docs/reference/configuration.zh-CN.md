@@ -44,6 +44,7 @@ builtin 模板是基础，用户 profile 与 Host configuration overlay 合并�
 | `computerUse` | 启用、应用访问范围、捕获与保留限制 |
 | `extensionIsolation` | 隔离请求与不可用处置，不能凭声明证明真实保护 |
 | `limits` | daemon/worker/jobs/shutdown 等受支持的点分键 |
+| `sandbox.provider` | 启动时的沙箱提供者 id，默认 `local`。更改需要重启进程。见[沙箱提供者](../guide/sandbox-providers.zh-CN.md) |
 
 完整字段以[Profile Schema](../../packages/protocol/schema/profile.json)、[实际类型](../../packages/host/src/profile/types.ts)、[local-dev 模板](../../packages/host/templates/local-dev.yaml)及[enterprise 模板](../../packages/host/templates/enterprise.yaml)核对。Schema 合法只是第一步，策略与装配可能进一步拒绝。
 

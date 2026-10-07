@@ -46,7 +46,7 @@ A request to edit files is not permission for arbitrary plugin execution. Plugin
 
 ## Platforms and processes
 
-Default command execution requires an available sandbox: bubblewrap on Linux and Seatbelt on macOS. If unavailable and policy requires refusal, execution returns `SANDBOX_UNAVAILABLE`. Successful Host startup does not prove every tool can execute. Some Windows security capabilities remain subject to implementation and external verification limits; see [limitations](../reference/limitations.md).
+Default command execution requires an available sandbox: bubblewrap on Linux and Seatbelt on macOS. If unavailable and policy requires refusal, execution returns `SANDBOX_UNAVAILABLE`. Successful Host startup does not prove every tool can execute. Some Windows security capabilities remain subject to implementation and external verification limits; see [limitations](../reference/limitations.md). A profile can select another sandbox provider at startup; see [Sandbox providers](sandbox-providers.md). The running process keeps that choice until it starts again.
 
 Local Web relies on loopback binding and exact Origin/Host checks, rather than internet user authentication. Do not expose it directly to the public internet. A manual `--connect` must identify the target explicitly. Windows named pipes also check process ownership against discovery records.
 

@@ -50,6 +50,7 @@ Built-in templates provide the base. User profiles and the Host configuration ov
 | `computerUse` | Enablement, application access, capture, and retention limits |
 | `extensionIsolation` | Isolation requests and unavailable behavior; declaration alone does not prove enforcement |
 | `limits` | Supported dotted keys for daemon/worker/jobs/shutdown and other limits |
+| `sandbox.provider` | Startup sandbox provider id, default `local`. Changing it requires a process restart. See [Sandbox providers](../guide/sandbox-providers.md) |
 
 Check the full [profile schema](../../packages/protocol/schema/profile.json), [implementation types](../../packages/host/src/profile/types.ts), [local-dev template](../../packages/host/templates/local-dev.yaml), and [enterprise template](../../packages/host/templates/enterprise.yaml). Valid schema is only the first gate; policy and assembly can still refuse a configuration.
 
