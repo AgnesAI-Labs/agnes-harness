@@ -172,10 +172,11 @@ describe('seam exposure: what a third-party extension can reach at each moment (
     )
     writeFileSync(
       entry,
-      `export default (api) => {
+      `import { defineTool } from '@agnes/extension-api';
+export default (api) => {
   api.registerHook('before_step', (_payload, hctx) => ({
     block: true,
-    reason: JSON.stringify({ factory: api.ctx.platform, factoryKeys: Object.keys(api.ctx).sort(), hook: hctx.platform, hookKeys: Object.keys(hctx).sort() }),
+    reason: JSON.stringify({ sdk: typeof defineTool, factory: api.ctx.platform, factoryKeys: Object.keys(api.ctx).sort(), hook: hctx.platform, hookKeys: Object.keys(hctx).sort() }),
   }));
 };`,
     )
@@ -252,6 +253,7 @@ describe('seam exposure: what a third-party extension can reach at each moment (
       )
       expect(returned).toMatchObject({ block: true })
       const seen = JSON.parse((returned as { reason: string }).reason) as Record<string, unknown>
+      expect(seen.sdk).toBe('function')
       expect(seen.factory).toEqual(FACTS)
       expect(seen.hook).toEqual(FACTS)
       expect(seen.factoryKeys).toEqual(FACTORY_KEYS)

@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import { readFileSync, realpathSync } from 'node:fs'
+import { existsSync, readFileSync, realpathSync } from 'node:fs'
 import { dirname, isAbsolute, relative } from 'node:path'
 import type { ExtensionAPI, HookEvent, HookHandler } from '@agnes/extension-api'
 import * as extensionApi from '@agnes/extension-api'
@@ -109,8 +109,12 @@ export async function loadRunnerExtension(
       signal: shutdown.signal,
     }),
   })
-  const metadata = JSON.parse(readFileSync(`${root}/package.json`, 'utf8'))
-  checkProvidedExternals(metadata.agnes?.hostProvidedExternals)
+  // Standalone extension manifests predate optional package-level SDK declarations.
+  const packageManifest = `${root}/package.json`
+  if (existsSync(packageManifest)) {
+    const metadata = JSON.parse(readFileSync(packageManifest, 'utf8'))
+    checkProvidedExternals(metadata.agnes?.hostProvidedExternals)
+  }
   const jiti = createJiti(`${dirname(data.entry)}/package.json`, {
     moduleCache: false,
     fsCache: false,
