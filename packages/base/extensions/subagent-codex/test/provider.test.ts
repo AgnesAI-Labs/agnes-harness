@@ -89,13 +89,16 @@ it('refuses capabilities it does not have and stays disabled until allowlisted',
   const { existsSync } = await import('node:fs')
   expect(existsSync(marker)).toBe(false)
   let registered = false
-  codexChildAgentsPlugin({ enabled: false, command: 'codex', args: [], allow: [] }).apply({
-    childAgents: {
-      register() {
-        registered = true
-        return async () => undefined
+  codexChildAgentsPlugin.apply(
+    {
+      childAgents: {
+        register() {
+          registered = true
+          return async () => undefined
+        },
       },
-    },
-  } as never)
+    } as never,
+    { enabled: false, command: 'codex', args: [], allow: [] },
+  )
   expect(registered).toBe(false)
 })

@@ -48,6 +48,27 @@ export const AGNES_BASE_PLUGIN_DECLARATIONS = Object.freeze(
         runtime: 'in-process',
         default: true,
       },
+      {
+        export: 'codexChildAgentsPlugin',
+        id: 'child-agent:codex',
+        inject: ['childAgents'],
+        runtime: 'in-process',
+        default: false,
+      },
+      {
+        export: 'claudeCodeChildAgentsPlugin',
+        id: 'child-agent:claude-code',
+        inject: ['childAgents'],
+        runtime: 'in-process',
+        default: false,
+      },
+      {
+        export: 'sdkChildAgentsPlugin',
+        id: 'child-agent:sdk',
+        inject: ['childAgents'],
+        runtime: 'in-process',
+        default: false,
+      },
     ] satisfies readonly Readonly<AgnesPluginManifestEntry>[]
   ).map((entry) => Object.freeze({ ...entry, apiRange: '^1.4.0' })),
 )

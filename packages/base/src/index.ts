@@ -319,6 +319,7 @@ export {
   DEFAULT_SDK_CHILD_ENGINE,
   DISABLED_CHILD_ENGINES,
   parseChildEngineSettings,
+  readChildEngineSettings,
   SDK_CHILD_CAPABILITIES,
   SDK_CHILD_PROVIDER_ID,
   type SdkChildEngineConfig,

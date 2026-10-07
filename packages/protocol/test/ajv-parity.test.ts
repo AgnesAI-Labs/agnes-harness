@@ -75,7 +75,12 @@ import {
   validateMethod,
   validateRequestMedia,
 } from '../src/index.js'
-import { RuntimeAdminEmpty, RuntimeAdminSnapshot } from '../src/runtime-admin.js'
+import {
+  ChildEnginesSaveParams,
+  ChildEnginesState,
+  RuntimeAdminEmpty,
+  RuntimeAdminSnapshot,
+} from '../src/runtime-admin.js'
 import { SessionToolsParams, SessionToolsResult } from '../src/session-tools.js'
 
 type Json = Record<string, unknown>
@@ -161,7 +166,10 @@ const ajv = new AjvCtor({ strict: false, allowUnionTypes: true })
 addFormats(ajv)
 const SESSION_TOOLS_ID = 'https://agnes.dev/session-tools'
 const RUNTIME_ADMIN_ID = 'https://agnes.dev/runtime-admin'
-ajv.addSchema({ $id: RUNTIME_ADMIN_ID, $defs: { RuntimeAdminEmpty, RuntimeAdminSnapshot } })
+ajv.addSchema({
+  $id: RUNTIME_ADMIN_ID,
+  $defs: { ChildEnginesSaveParams, ChildEnginesState, RuntimeAdminEmpty, RuntimeAdminSnapshot },
+})
 ajv.addSchema({ $id: SESSION_TOOLS_ID, $defs: { SessionToolsParams, SessionToolsResult } })
 // Reference validator uses URL parsing as required by the owned custom format's contract.
 ajv.addFormat('agnes-git-source', (ref: string) => {
@@ -5444,7 +5452,7 @@ const SELF_OWNED_DOCS: Array<[string, Json, string, Record<string, Sample>]> = [
 ]
 
 const DEFS_BY_FILE: Record<string, Record<string, TSchema>> = {
-  [RUNTIME_ADMIN_ID]: { RuntimeAdminEmpty, RuntimeAdminSnapshot },
+  [RUNTIME_ADMIN_ID]: { ChildEnginesSaveParams, ChildEnginesState, RuntimeAdminEmpty, RuntimeAdminSnapshot },
   [SESSION_TOOLS_ID]: { SessionToolsParams, SessionToolsResult },
   'https://agnes.ai/schema/worker.json': WorkerDefs,
   'https://agnes.ai/schema/resource-control.json': {
@@ -6036,6 +6044,16 @@ const METHOD_DEF: Record<MethodName, MethodDefRef> = {
   },
   '_agnes/v1/config.test': { fileId: AGNES_ID, params: 'ConfigTestInput', result: 'ConfigTestResult' },
   '_agnes/v1/config.account': { fileId: AGNES_ID, params: 'ConfigAccountInput', result: 'ConfigSnapshot' },
+  '_agnes/v1/config.childEngines.get': {
+    fileId: RUNTIME_ADMIN_ID,
+    params: 'RuntimeAdminEmpty',
+    result: 'ChildEnginesState',
+  },
+  '_agnes/v1/config.childEngines.save': {
+    fileId: RUNTIME_ADMIN_ID,
+    params: 'ChildEnginesSaveParams',
+    result: 'ChildEnginesState',
+  },
   '_agnes/v1/config.save': { fileId: AGNES_ID, params: 'ConfigSaveInput', result: 'ConfigSnapshot' },
   '_agnes/v1/computerUse.status': {
     fileId: AGNES_ID,
@@ -6303,6 +6321,55 @@ const METHOD_PARAMS_SAMPLE: Record<MethodName, Sample> = {
     valid: { accountId: 'work', action: 'enable', expectedRevision: 1 },
     invalid: [{ accountId: '../bad', action: 'enable', expectedRevision: 1 }],
   },
+  '_agnes/v1/config.childEngines.get': {
+    note: 'child engine reads have no caller scope',
+    valid: {},
+    invalid: [{ profile: 'other' }],
+  },
+  '_agnes/v1/config.childEngines.save': {
+    note: 'child engine saves reject secrets, bad protocols, and publication fields',
+    valid: {
+      revision: 0,
+      engines: {
+        codex: { enabled: false, command: 'codex', args: ['exec'], allow: [] },
+        claudeCode: { enabled: false, command: 'claude', args: [], allow: [] },
+        sdk: { enabled: false, protocol: 'sdk', command: '', args: [], allow: [] },
+      },
+    },
+    invalid: [
+      {
+        revision: 0,
+        engines: { codex: { enabled: false, command: 'codex', args: [], allow: [], env: { SECRET: 'x' } } },
+      },
+      {
+        revision: 0,
+        engines: {
+          codex: { enabled: false, command: 'codex', args: [], allow: [] },
+          claudeCode: { enabled: false, command: 'claude', args: [], allow: [] },
+          sdk: { enabled: false, protocol: 'hot', command: '', args: [], allow: [] },
+        },
+      },
+      { revision: -1, engines: {} },
+      { revision: 0 },
+      {
+        revision: 0,
+        effect: 'hot',
+        engines: {
+          codex: { enabled: false, command: 'codex', args: [], allow: [] },
+          claudeCode: { enabled: false, command: 'claude', args: [], allow: [] },
+          sdk: { enabled: false, protocol: 'sdk', command: '', args: [], allow: [] },
+        },
+      },
+      {
+        revision: 0,
+        engines: {
+          codex: { enabled: false, command: 'codex\n', args: [], allow: [] },
+          claudeCode: { enabled: false, command: 'claude', args: [], allow: [] },
+          sdk: { enabled: false, protocol: 'sdk', command: '', args: [], allow: [] },
+        },
+      },
+    ],
+  },
   '_agnes/v1/config.save': AGNES_SAMPLES.ConfigSaveInput as Sample,
   '_agnes/v1/computerUse.status': AGNES_SAMPLES.Empty as Sample,
   '_agnes/v1/computerUse.permissions.status': AGNES_SAMPLES.Empty as Sample,
@@ -6498,6 +6565,42 @@ const METHOD_RESULT_SAMPLE: Partial<Record<MethodName, Sample>> = {
   '_agnes/v1/config.providers': AGNES_SAMPLES.ConfigProvidersResult as Sample,
   '_agnes/v1/config.test': AGNES_SAMPLES.ConfigTestResult as Sample,
   '_agnes/v1/config.account': AGNES_SAMPLES.ConfigSnapshot as Sample,
+  '_agnes/v1/config.childEngines.get': {
+    note: 'a read may omit the publication effect',
+    valid: {
+      revision: 0,
+      engines: {
+        codex: { enabled: false, command: 'codex', args: ['exec'], allow: [] },
+        claudeCode: { enabled: false, command: 'claude', args: [], allow: [] },
+        sdk: { enabled: false, protocol: 'sdk', command: '', args: [], allow: [] },
+      },
+    },
+    invalid: [
+      { revision: 0 },
+      {
+        revision: 0,
+        effect: 'hot',
+        engines: {
+          codex: { enabled: false, command: 'codex', args: [], allow: [] },
+          claudeCode: { enabled: false, command: 'claude', args: [], allow: [] },
+          sdk: { enabled: false, protocol: 'sdk', command: '', args: [], allow: [] },
+        },
+      },
+    ],
+  },
+  '_agnes/v1/config.childEngines.save': {
+    note: 'a save reports whether new sessions can see the rows',
+    valid: {
+      revision: 1,
+      effect: 'new-sessions',
+      engines: {
+        codex: { enabled: true, command: 'codex', args: ['exec'], allow: ['codex'] },
+        claudeCode: { enabled: false, command: 'claude', args: [], allow: [] },
+        sdk: { enabled: false, protocol: 'acp', command: '', args: [], allow: [] },
+      },
+    },
+    invalid: [{ revision: 1, effect: 'hot', engines: {} }],
+  },
   '_agnes/v1/config.save': AGNES_SAMPLES.ConfigSnapshot as Sample,
   '_agnes/v1/computerUse.status': AGNES_SAMPLES.ComputerUseStatusResult as Sample,
   '_agnes/v1/computerUse.permissions.status': AGNES_SAMPLES.ComputerUsePermissionsStatusResult as Sample,

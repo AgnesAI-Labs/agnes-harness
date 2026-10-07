@@ -1,3 +1,5 @@
+import { commandAllowed } from '@agnes/protocol'
+
 /** Command strings a child engine may spawn. An empty list refuses every command. */
 export type EngineLaunch = {
   enabled: boolean
@@ -8,12 +10,7 @@ export type EngineLaunch = {
   env?: Readonly<Record<string, string>>
 }
 
-/** Exact command match. Basenames do not allow a different path. */
-export function commandAllowed(command: string, allow: readonly string[]): boolean {
-  const trimmed = command.trim()
-  if (!trimmed) return false
-  return allow.some((entry) => entry.trim() === trimmed)
-}
+export { commandAllowed }
 
 export function assertEngineLaunch(launch: EngineLaunch): void {
   if (!launch.enabled) throw new Error('child engine is disabled')

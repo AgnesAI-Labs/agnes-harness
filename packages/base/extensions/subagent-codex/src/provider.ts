@@ -5,7 +5,7 @@ import type {
   ChildAgentProvider,
   ChildAgentStartOptions,
 } from '@agnes/extension-api'
-import { DISABLED_CHILD_ENGINES } from '../../subagent-sdk/src/document.js'
+import { DISABLED_CHILD_ENGINES, readEngineDocument } from '../../subagent-sdk/src/document.js'
 import { assertEngineLaunch, type EngineLaunch, engineArgs } from '../../subagent-sdk/src/launch.js'
 import {
   attachOneShot,
@@ -83,14 +83,12 @@ export function codexChildAgentProvider(config: CodexChildEngineConfig): ChildAg
   }
 }
 
-export function codexChildAgentsPlugin(config: CodexChildEngineConfig = DEFAULT_CODEX_CHILD_ENGINE) {
-  const provider = codexChildAgentProvider(config)
-  return {
-    inject: ['childAgents'] as const,
-    apply(ctx: ChildAgentPluginContext) {
-      if (!config.enabled) return
-      assertEngineLaunch(config)
-      return ctx.childAgents.register(provider)
-    },
-  }
+export const codexChildAgentsPlugin = {
+  inject: ['childAgents'] as const,
+  apply(ctx: ChildAgentPluginContext, config?: unknown) {
+    const parsed = readEngineDocument(config)
+    if (!parsed?.enabled) return
+    assertEngineLaunch(parsed)
+    return ctx.childAgents.register(codexChildAgentProvider(parsed))
+  },
 }

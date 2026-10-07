@@ -80,6 +80,9 @@ describe('packaged host wiring', () => {
       'seam:repair',
       'seam:harness',
       'loop:agnes.default',
+      'child-agent:codex',
+      'child-agent:claude-code',
+      'child-agent:sdk',
     ])
     expect(module.plugins?.every(({ entry }) => typeof entry.prepared === 'object')).toBe(true)
   })

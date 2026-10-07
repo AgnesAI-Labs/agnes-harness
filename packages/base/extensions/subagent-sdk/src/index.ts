@@ -15,4 +15,5 @@ export {
   childEngineSettingsError,
   DISABLED_CHILD_ENGINES,
   parseChildEngineSettings,
+  readChildEngineSettings,
 } from './settings.js'

@@ -435,6 +435,7 @@ export type {
 } from '../gen/ts/worker.js'
 export * from './admin-session-selection.js'
 export * from './attachments.js'
+export * from './child-engine-document.js'
 export * from './codec/permission.js'
 export * from './codec/stop-reason.js'
 export * from './configs.js'

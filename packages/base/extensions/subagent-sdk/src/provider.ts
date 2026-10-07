@@ -6,7 +6,7 @@ import type {
   ChildAgentStartOptions,
 } from '@agnes/extension-api'
 import { acpChildAgentProvider } from '../../subagent-acp/src/provider.js'
-import { DISABLED_CHILD_ENGINES } from './document.js'
+import { DISABLED_CHILD_ENGINES, readSdkEngineDocument } from './document.js'
 import { assertEngineLaunch, type EngineLaunch } from './launch.js'
 import { attachOneShot, listEngineChildren, refuseUnsupportedChildOptions } from './oneshot.js'
 import { EngineProcess } from './process.js'
@@ -123,14 +123,12 @@ export function sdkChildAgentProvider(config: SdkChildEngineConfig): ChildAgentP
   }
 }
 
-export function sdkChildAgentsPlugin(config: SdkChildEngineConfig = DEFAULT_SDK_CHILD_ENGINE) {
-  const provider = sdkChildAgentProvider(config)
-  return {
-    inject: ['childAgents'] as const,
-    apply(ctx: ChildAgentPluginContext) {
-      if (!config.enabled) return
-      assertEngineLaunch(config)
-      return ctx.childAgents.register(provider)
-    },
-  }
+export const sdkChildAgentsPlugin = {
+  inject: ['childAgents'] as const,
+  apply(ctx: ChildAgentPluginContext, config?: unknown) {
+    const parsed = readSdkEngineDocument(config)
+    if (!parsed?.enabled) return
+    assertEngineLaunch(parsed)
+    return ctx.childAgents.register(sdkChildAgentProvider(parsed))
+  },
 }

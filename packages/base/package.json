@@ -72,6 +72,36 @@
         "runtime": "in-process",
         "default": true,
         "apiRange": "^1.4.0"
+      },
+      {
+        "export": "codexChildAgentsPlugin",
+        "id": "child-agent:codex",
+        "inject": [
+          "childAgents"
+        ],
+        "runtime": "in-process",
+        "default": false,
+        "apiRange": "^1.4.0"
+      },
+      {
+        "export": "claudeCodeChildAgentsPlugin",
+        "id": "child-agent:claude-code",
+        "inject": [
+          "childAgents"
+        ],
+        "runtime": "in-process",
+        "default": false,
+        "apiRange": "^1.4.0"
+      },
+      {
+        "export": "sdkChildAgentsPlugin",
+        "id": "child-agent:sdk",
+        "inject": [
+          "childAgents"
+        ],
+        "runtime": "in-process",
+        "default": false,
+        "apiRange": "^1.4.0"
       }
     ],
     "extensions": [

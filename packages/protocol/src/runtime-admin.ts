@@ -127,3 +127,50 @@ export const RuntimeAdminSnapshot = Type.Object(
   { additionalProperties: false },
 )
 export type RuntimeAdminSnapshot = Static<typeof RuntimeAdminSnapshot>
+
+const engineText = Type.String({ maxLength: 4096, pattern: '^[^\u0000-\u001f\u007f]*$' })
+const engineList = Type.Array(engineText, { maxItems: 64 })
+const engineDocument = Type.Object(
+  {
+    enabled: Type.Boolean(),
+    command: engineText,
+    args: engineList,
+    allow: engineList,
+  },
+  { additionalProperties: false },
+)
+const childEnginesDocument = Type.Object(
+  {
+    codex: engineDocument,
+    claudeCode: engineDocument,
+    sdk: Type.Object(
+      {
+        enabled: Type.Boolean(),
+        protocol: Type.Union([Type.Literal('sdk'), Type.Literal('acp')]),
+        command: engineText,
+        args: engineList,
+        allow: engineList,
+      },
+      { additionalProperties: false },
+    ),
+  },
+  { additionalProperties: false },
+)
+/** Saved child-engine document. `effect` is a publication result, not an input. */
+export const ChildEnginesSaveParams = Type.Object(
+  {
+    revision: Type.Integer({ minimum: 0, maximum: 9007199254740991 }),
+    engines: childEnginesDocument,
+  },
+  { additionalProperties: false },
+)
+export type ChildEnginesSaveParams = Static<typeof ChildEnginesSaveParams>
+export const ChildEnginesState = Type.Object(
+  {
+    revision: Type.Integer({ minimum: 0, maximum: 9007199254740991 }),
+    engines: childEnginesDocument,
+    effect: Type.Optional(Type.Union([Type.Literal('new-sessions'), Type.Literal('restart-required')])),
+  },
+  { additionalProperties: false },
+)
+export type ChildEnginesState = Static<typeof ChildEnginesState>

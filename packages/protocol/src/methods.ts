@@ -13,7 +13,12 @@ import {
   type ResourceControlMethodName,
   validateResourceControlCall,
 } from './resource-control.js'
-import { RuntimeAdminEmpty, RuntimeAdminSnapshot } from './runtime-admin.js'
+import {
+  ChildEnginesSaveParams,
+  ChildEnginesState,
+  RuntimeAdminEmpty,
+  RuntimeAdminSnapshot,
+} from './runtime-admin.js'
 import { validateExtensionCall } from './services.js'
 import { SessionToolsParams, SessionToolsResult } from './session-tools.js'
 import { type ValidationResult, validateAgainst } from './validate.js'
@@ -54,6 +59,8 @@ export type MethodName =
   | '_agnes/v1/sessionSelection.modelAdapters'
   | '_agnes/v1/sessionSelection.defaults.get'
   | '_agnes/v1/sessionSelection.defaults.save'
+  | '_agnes/v1/config.childEngines.get'
+  | '_agnes/v1/config.childEngines.save'
   | '_agnes/v1/config.get'
   | '_agnes/v1/config.oauth'
   | '_agnes/v1/config.providers'
@@ -140,6 +147,8 @@ export const METHODS: Record<MethodName, MethodSpec> = {
   '_agnes/v1/config.test': clientRequest(A.ConfigTestInput, A.ConfigTestResult),
   '_agnes/v1/config.save': clientRequest(A.ConfigSaveInput, A.ConfigSnapshot),
   '_agnes/v1/config.account': clientRequest(A.ConfigAccountInput, A.ConfigSnapshot),
+  '_agnes/v1/config.childEngines.get': clientRequest(RuntimeAdminEmpty, ChildEnginesState),
+  '_agnes/v1/config.childEngines.save': clientRequest(ChildEnginesSaveParams, ChildEnginesState),
   '_agnes/v1/computerUse.status': clientRequest(A.Empty, A.ComputerUseStatusResult),
   '_agnes/v1/computerUse.permissions.status': clientRequest(A.Empty, A.ComputerUsePermissionsStatusResult),
   '_agnes/v1/computerUse.permissions.grant': clientRequest(A.Empty, A.ComputerUsePermissionsStatusResult),
