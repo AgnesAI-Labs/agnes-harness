@@ -46,6 +46,7 @@ import {
 import type { ReactNode } from 'react'
 import type { PluginRuntimeState } from '../../client-modules/runtime-status.js'
 import { SettingsHub, type SettingsPage } from '../../settings/hub.js'
+import type { SchedulesApi } from '../../settings/schedules.js'
 import { AdminApiError, PluginAdminApi } from './api.js'
 import { CapabilityReview, FailureHelp } from './capability-review.js'
 import {
@@ -94,6 +95,7 @@ type PluginAdminOptions = Readonly<{
   actualSlots?: (packageId: string) => readonly string[]
   locale?: UiLocaleSource
   runtime?: PluginRuntimeSource
+  schedules?: SchedulesApi
 }>
 
 const pluginAdminCatalogs = {
@@ -203,6 +205,7 @@ function asRuntimeView(state: PluginRuntimeState | undefined): RuntimeStateView 
 
 class PluginAdminPage {
   readonly #runtime: PluginRuntimeSource | undefined
+  readonly #schedules: SchedulesApi | undefined
   #runtimeStop: (() => void) | undefined
   readonly #locale: UiLocaleSource
   readonly #localeStop: () => void
@@ -214,6 +217,7 @@ class PluginAdminPage {
   constructor(options: PluginAdminOptions = {}) {
     this.actualSlots = options.actualSlots
     this.#runtime = options.runtime
+    this.#schedules = options.schedules
     if (options.locale) {
       this.#locale = options.locale
       this.#localeStop = options.locale.subscribe(() => this.render())
@@ -1119,6 +1123,7 @@ class PluginAdminPage {
           onPage={this.#onSettingsPage}
           onReview={this.#reviewExample}
           onRefresh={this.#refreshSettings}
+          {...(this.#schedules ? { schedules: this.#schedules } : {})}
         >
           <GenerationDrainSummary
             status={this.#state.generations}

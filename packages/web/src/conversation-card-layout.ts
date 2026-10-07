@@ -22,7 +22,8 @@ export function keepConversationCardVisible(node: UINode): boolean {
       return (
         (fill.extId === 'agnes/workflow' && !!payload.table) ||
         !!payload.question ||
-        !!payload.deliverables?.length
+        !!payload.deliverables?.length ||
+        !!payload.table
       )
     }) ?? false
   )

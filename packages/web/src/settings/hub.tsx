@@ -23,6 +23,7 @@ import {
   SecurityPanel,
   sessionStartUrl,
 } from './runtime-panels.js'
+import { type SchedulesApi, SchedulesPage } from './schedules.js'
 import { SearchPanel } from './search.js'
 
 export const SETTINGS_PAGES = [
@@ -39,6 +40,7 @@ export const SETTINGS_PAGES = [
   'history',
   'terminal',
   'jobs',
+  'schedules',
 ] as const
 export type SettingsPage = (typeof SETTINGS_PAGES)[number]
 function initialPage(): SettingsPage {
@@ -55,6 +57,7 @@ export function SettingsHub({
   onPage,
   onRefresh,
   onReview,
+  schedules,
 }: {
   api: PluginAdminApi | undefined
   canSave: boolean
@@ -65,6 +68,7 @@ export function SettingsHub({
   onPage(page: SettingsPage): void
   onRefresh(): Promise<void>
   onReview(item: PackageCatalogDescriptor): void
+  schedules?: SchedulesApi
 }) {
   const { t } = useUiText(SETTINGS_NAMESPACE, settingsCatalog)
   const [page, setPage] = useState<SettingsPage>(initialPage)
@@ -179,6 +183,7 @@ export function SettingsHub({
           />
         )}
         {page === 'history' && <HistorySearchPanel t={t} />}
+        {page === 'schedules' && <SchedulesPage t={t} {...(schedules ? { api: schedules } : {})} />}
       </section>
     </div>
   )

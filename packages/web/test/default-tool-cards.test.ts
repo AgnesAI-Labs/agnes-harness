@@ -132,3 +132,43 @@ it('expands workflow stages and links each member to its child session', () => {
     el.remove()
   }
 })
+
+it('renders a reminder table from the inline card payload', () => {
+  const el = document.createElement('div')
+  document.body.append(el)
+  const root = createRoot(el)
+  const node = {
+    kind: 'tool',
+    slots: [
+      {
+        slot: 'tool.card.inline',
+        payload: {
+          title: 'Reminder',
+          table: {
+            columns: ['Title', 'Next', 'Status'],
+            rows: [['Standup', '2026-09-07T09:00:00.000Z', 'active']],
+          },
+        },
+      },
+    ],
+  } as unknown as Extract<UINode, { kind: 'tool' }>
+  try {
+    flushSync(() =>
+      root.render(
+        createElement(DefaultToolCards, {
+          node,
+          session: { commands: { prompt: vi.fn() } } as unknown as SessionService,
+          resources: { files: { load: vi.fn() } } as unknown as ClientResourceService,
+          answered: new Set<string>(),
+        }),
+      ),
+    )
+    const card = el.querySelector('[data-testid="reminder-card"]')
+    expect(card?.getAttribute('aria-label')).toBe('Reminder')
+    expect(card?.textContent).toContain('Standup')
+    expect(card?.querySelectorAll('th')).toHaveLength(3)
+  } finally {
+    flushSync(() => root.unmount())
+    el.remove()
+  }
+})

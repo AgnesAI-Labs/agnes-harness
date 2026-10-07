@@ -2054,6 +2054,12 @@ async function openAdminPane(pane: AdminPaneName, tab: ResourceTab = 'skills'): 
           ...mountPluginAdmin({
             actualSlots: clientModules.actualSlots,
             runtime: clientModules.reconciler,
+            schedules: {
+              list: (params) => client.call('_agnes/v1/schedules.list', params),
+              upsert: (params) => client.call('_agnes/v1/schedules.upsert', params),
+              archive: (params) => client.call('_agnes/v1/schedules.archive', params),
+              sessionKey: () => current?.id,
+            },
           }),
         })
       } else {

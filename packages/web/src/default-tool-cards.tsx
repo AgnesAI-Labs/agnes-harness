@@ -248,6 +248,37 @@ export function DefaultToolCards({
               {...(resources ? { resources } : {})}
             />
           ))
+        if (payload.table)
+          return (
+            <article
+              key={`${fill.extId}:reminder`}
+              className="conversation-native-card"
+              data-testid="reminder-card"
+              aria-label={payload.title}
+            >
+              <strong>{payload.title}</strong>
+              <table>
+                <thead>
+                  <tr>
+                    {payload.table.columns.map((column) => (
+                      <th key={column} scope="col">
+                        {column}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {payload.table.rows.map((row) => (
+                    <tr key={row.join('\u001f')}>
+                      {row.map((cell) => (
+                        <td key={cell}>{cell}</td>
+                      ))}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </article>
+          )
         return null
       })}
     </>
