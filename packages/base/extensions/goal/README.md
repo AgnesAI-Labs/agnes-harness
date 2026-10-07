@@ -22,4 +22,4 @@ Automatic rounds enter the ordinary next-turn inbox with an owner-bound identity
 
 Credit spend is checked between steps and turns, so an in-flight response can exceed the goal credit limit. Existing per-request model budget admission remains active. Unknown credit usage with a configured goal budget blocks continuation. An older host without the optional turn_stopping input port reports continuation as unavailable.
 
-The existing status.line slot supplies a typed goal snapshot. Live slots are delivered outside transcript indices, including empty replacement arrays when a goal is cleared.
+The existing status.line slot supplies a typed goal snapshot. Clearing a goal removes that snapshot and reports No goal. Live slots are delivered outside transcript indices, including empty replacement arrays when no fills remain.
