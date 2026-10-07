@@ -51,6 +51,11 @@ import type { SessionWorkspaceFence } from './adapters/session-workspace.js'
 import { type ApprovalGrantManagement, createApprovalGrantControlPlane } from './approval-grants.js'
 import { assembleCompaction } from './assemble/compaction.js'
 import {
+  childAgentCatalog,
+  installChildAgents,
+  withBuiltinChildAgents,
+} from './assemble/child-agents.js'
+import {
   installCompactionEngines,
   withBuiltinCompactionEngines,
   compactionEngineCatalog,
@@ -310,6 +315,8 @@ export type Assembled = {
   providers: import('@agnes/extension-api').ProvidersCatalogPort
   sessionLoopDefault?(): Promise<import('@agnes/protocol').LoopSelection | undefined>
   compactionEngineCatalog(): ReturnType<typeof compactionEngineCatalog>
+  /** Read-only metadata for installed child agent providers. */
+  childAgentCatalog(): ReturnType<typeof childAgentCatalog>
   compositionForPreset(name?: string, session?: CompositionPatch): ResolvedComposition
   /** Reviewed bundled API-key routes fitted at assembly, eligible for runtime model switching. */
   preconfiguredRoutes: readonly string[]
@@ -854,7 +861,9 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
     const builtPresets = buildPresetRows(presets)
     const ordinaryModules = new Map(modules)
     for (const [id, loaded] of runtimePackages) ordinaryModules.set(id, loaded.module)
-    const compositionModules = withBuiltinToolPolicies(withBuiltinCompactionEngines(withBuiltinModelAdapters(ordinaryModules)))
+    const compositionModules = withBuiltinChildAgents(
+      withBuiltinToolPolicies(withBuiltinCompactionEngines(withBuiltinModelAdapters(ordinaryModules))),
+    )
     const compositionOwners = new Map(
       [...compositionModules.values()].flatMap((module) =>
         (module.plugins ?? []).map((plugin) => [plugin.declaration.id, module.id] as const),
@@ -991,6 +1000,7 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
             installLoops(root, origins)
             installToolProviders(root, origins)
             installCompactionEngines(root, origins)
+            installChildAgents(root, origins)
             const sandboxProviders = installSandboxProviders(root, origins)
             sandboxProviders.register(createLocalSandboxProvider(adapters.exec, adapters.platform.os))
             sandboxProviderSlot.registry = sandboxProviders
@@ -2566,6 +2576,7 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
       modelAdapterCatalog: () => modelAdapterCatalog(pluginTree.root),
       sessionLoopDefault: () => readAdminLoopDefault(deps.profileDir, profile.name),
       compactionEngineCatalog: () => compactionEngineCatalog(pluginTree.root),
+      childAgentCatalog: () => childAgentCatalog(pluginTree.root),
       compositionForPreset,
       applyModelProfile,
       presets,

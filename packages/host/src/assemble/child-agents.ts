@@ -1,0 +1,216 @@
+import {
+  assertChildAgentAllowed,
+  childAgentAllowlist,
+  inProcessChildAgentProvider,
+  setChildAgentAllowlist,
+} from '@agnes/core'
+import { type Context, Service } from '@agnes/cordis'
+import type {
+  ChildAgentAllowlist,
+  ChildAgentCatalogEntry,
+  ChildAgentHandle,
+  ChildAgentListing,
+  ChildAgentProvider,
+  ChildAgentService,
+  ChildAgentStartOptions,
+} from '@agnes/extension-api'
+import { normalizePluginExport, type RowOrigin, type RowOriginLookup } from '@agnes/plugin-runtime/host'
+import { HostError } from '../errors.js'
+import type { PackageModule } from './packages.js'
+
+declare module '@agnes/cordis' {
+  interface Context {
+    childAgents: ChildAgentRegistry
+  }
+}
+
+const CAPABILITIES = [
+  'continuable',
+  'interrupt',
+  'modelSelection',
+  'inheritsParentContext',
+  'worktree',
+] as const
+
+export class ChildAgentRegistry extends Service implements ChildAgentService {
+  private readonly records = new Map<
+    string,
+    {
+      provider: ChildAgentProvider
+      entry: ChildAgentCatalogEntry
+      lifetime: AbortController
+      handles: Set<ChildAgentHandle>
+    }
+  >()
+
+  constructor(
+    ctx: Context,
+    private readonly origins?: RowOriginLookup,
+  ) {
+    super(ctx, 'childAgents')
+  }
+
+  register(provider: ChildAgentProvider): () => void {
+    if (
+      typeof provider?.id !== 'string' ||
+      !provider.id.trim() ||
+      typeof provider.version !== 'string' ||
+      !provider.version.trim() ||
+      typeof provider.start !== 'function' ||
+      !provider.capabilities ||
+      CAPABILITIES.some((flag) => typeof provider.capabilities[flag] !== 'boolean')
+    )
+      throw new HostError('E_API_RANGE', 'invalid child agent registration')
+    if (this.records.has(provider.id))
+      throw new HostError('E_API_RANGE', `duplicate child agent provider: ${provider.id}`)
+    let origin: Readonly<RowOrigin> | undefined
+    for (let fiber = this.ctx.fiber; fiber !== fiber.parent.fiber; fiber = fiber.parent.fiber) {
+      origin = this.origins?.lookup(fiber)
+      if (origin) break
+    }
+    if (this.origins && !origin && this.ctx !== this.ctx.root)
+      throw new HostError('E_EXT_LOAD', 'child agent provider requires a verified plugin row')
+    const record = {
+      provider,
+      entry: Object.freeze({
+        id: provider.id,
+        version: provider.version,
+        sourcePackage:
+          origin?.trustTier === 'builtin' && origin.rowId === 'child-agent:in-process'
+            ? '@agnes/base'
+            : (origin?.packageId ?? '@agnes/base'),
+        capabilities: Object.freeze({ ...provider.capabilities }),
+      }),
+      lifetime: new AbortController(),
+      handles: new Set<ChildAgentHandle>(),
+    }
+    return this.ctx.effect(() => {
+      this.records.set(provider.id, record)
+      return () => {
+        record.lifetime.abort()
+        const handles = [...record.handles]
+        record.handles.clear()
+        this.records.delete(provider.id)
+        for (const handle of handles) void Promise.resolve(handle.dispose()).catch(() => undefined)
+      }
+    }, `childAgents.register(${provider.id})`)
+  }
+
+  catalog(): readonly ChildAgentCatalogEntry[] {
+    return Object.freeze(
+      [...this.records.values()].map((record) => record.entry).sort((a, b) => a.id.localeCompare(b.id)),
+    )
+  }
+
+  setSessionAllowlist(sessionKey: string, allowlist: ChildAgentAllowlist | undefined): void {
+    setChildAgentAllowlist(sessionKey, allowlist)
+  }
+
+  allowlist(sessionKey: string): ChildAgentAllowlist | undefined {
+    return childAgentAllowlist(sessionKey)
+  }
+
+  async start(providerId: string, task: string, options: ChildAgentStartOptions): Promise<ChildAgentHandle> {
+    const record = this.records.get(providerId)
+    if (!record)
+      throw new HostError('E_DEP_MISSING', `child agent provider is not registered: ${providerId}`, {
+        detail: { reason: 'child-agent-missing', id: providerId },
+      })
+    if (record.lifetime.signal.aborted)
+      throw new HostError('E_DEP_MISSING', `child agent provider was unloaded: ${providerId}`)
+    if (!options?.signal || !options.sessionKey)
+      throw new HostError('E_API_RANGE', 'child agent start requires a session and a signal')
+    options.signal.throwIfAborted()
+    assertChildAgentAllowed(options.sessionKey, {
+      providerId,
+      ...(options.model ? { model: options.model } : {}),
+    })
+    refuseMissingCapability(record.provider, options)
+    const handle = await record.provider.start(task, options)
+    if (!handle || typeof handle.dispose !== 'function' || typeof handle.sendMessage !== 'function')
+      throw new HostError('E_API_RANGE', `invalid child agent handle: ${providerId}`)
+    record.handles.add(handle)
+    return {
+      id: handle.id,
+      providerId: handle.providerId,
+      capabilities: handle.capabilities,
+      events: () => handle.events(),
+      sendMessage: (text, signal) => handle.sendMessage(text, signal),
+      interrupt: () => handle.interrupt(),
+      result: () => handle.result(),
+      async dispose() {
+        record.handles.delete(handle)
+        await handle.dispose()
+      },
+    }
+  }
+
+  async list(sessionKey: string): Promise<readonly ChildAgentListing[]> {
+    const lists = await Promise.all(
+      [...this.records.values()].map((record) => record.provider.list?.(sessionKey) ?? Promise.resolve([])),
+    )
+    const seen = new Set<string>()
+    const children: ChildAgentListing[] = []
+    for (const list of lists) {
+      for (const child of list) {
+        if (seen.has(child.id)) continue
+        seen.add(child.id)
+        children.push(child)
+      }
+    }
+    return children
+  }
+}
+
+function refuseMissingCapability(provider: ChildAgentProvider, options: ChildAgentStartOptions): void {
+  if (options.fork && !provider.capabilities.inheritsParentContext)
+    throw new HostError(
+      'E_CAPABILITY_UNDECLARED',
+      `child provider ${provider.id} cannot inherit parent context`,
+    )
+  if (options.model && !provider.capabilities.modelSelection)
+    throw new HostError('E_CAPABILITY_UNDECLARED', `child provider ${provider.id} cannot select a child model`)
+  if (options.isolation === 'worktree' && !provider.capabilities.worktree)
+    throw new HostError('E_CAPABILITY_UNDECLARED', `child provider ${provider.id} cannot isolate a child worktree`)
+}
+
+export function installChildAgents(root: Context, origins?: RowOriginLookup): ChildAgentRegistry {
+  return new ChildAgentRegistry(root, origins)
+}
+
+/** Supply the in-process child provider through the same ordinary row and registry as community providers. */
+export function withBuiltinChildAgents(
+  modules: ReadonlyMap<string, PackageModule>,
+): ReadonlyMap<string, PackageModule> {
+  const builtin = modules.get('@agnes/base')
+  if (!builtin || builtin.plugins?.some((row) => row.declaration.id === 'child-agent:in-process')) return modules
+  const provider = inProcessChildAgentProvider()
+  const result = new Map(modules)
+  result.set('@agnes/base', {
+    ...builtin,
+    plugins: [
+      ...(builtin.plugins ?? []),
+      {
+        declaration: {
+          id: 'child-agent:in-process',
+          export: 'childAgentPlugin',
+          default: true,
+          inject: ['childAgents'],
+          provide: [],
+          runtime: 'in-process',
+        },
+        entry: normalizePluginExport({
+          inject: ['childAgents'],
+          apply(ctx: Context) {
+            ctx.childAgents.register(provider)
+          },
+        }),
+      },
+    ],
+  })
+  return result
+}
+
+export function childAgentCatalog(root: Context): readonly ChildAgentCatalogEntry[] {
+  return root.childAgents.catalog()
+}

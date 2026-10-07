@@ -442,6 +442,7 @@ export * from './workspace-policy.js'
 export { modelAdapterCatalog, ModelAdapterRegistry } from './assemble/model-adapters.js'
 
 export { compactionEngineCatalog, CompactionEngineRegistry } from './assemble/compaction-engines.js'
+export { childAgentCatalog, ChildAgentRegistry } from './assemble/child-agents.js'
 export type { PluginGenerationStatus } from './runtime-generation-host.js'
 export { buildCompleteRuntimeTarget } from './runtime-target-builder.js'
 export * from './profile/composition.js'
