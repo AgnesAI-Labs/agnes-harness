@@ -1,0 +1,1 @@
+Run the data-report workflow with the bundled synthetic fixtures.

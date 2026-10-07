@@ -1,0 +1,1 @@
+Run the crm-assistant workflow with the bundled synthetic fixtures.

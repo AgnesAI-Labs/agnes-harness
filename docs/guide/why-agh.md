@@ -24,6 +24,8 @@ AGH is built for Forward Deployed Engineering (FDE): working in users' environme
 | Ongoing work | Shared daemon, session history, and recovery entry points | Find and continue tasks through CLI, Web, and SDK |
 | Execution control | Package trust, tool approvals, and execution constraints | Decide which code loads, which actions are allowed, and how to inspect results |
 
+Try the [six installable FDE bundles](../../examples/fde/README.md): support triage, contract review, data reporting, operations runbooks, CRM assistance and simulated device inspection. Each ships a loop, tools, policy and Skills together, with keyless fixtures and a real-model configuration path.
+
 Each part has its own entry points and examples. Start with one query tool, add a Skill and a business panel, and grow the application around the needs of the deployment.
 
 <a id="从一次集成积累可复用能力"></a>
@@ -71,7 +73,7 @@ Ordinary third-party plugins run as trusted in-process code. Review their source
 
 AGH plans to explore integration through MHS (Model Hardware Standard), bringing device state, human confirmation, and execution receipts into task workflows. The aim is to make integrations reusable across inspection, instrument coordination, and field operations.
 
-**MHS integration documentation and examples are coming soon.** [Explore the device integration direction →](mhs.md)
+A [simulated device bundle](../../examples/fde/device-inspection/README.md) now demonstrates status → anomaly → human confirmation → constrained action → receipt verification. It is MHS-inspired and does not claim MHS compatibility. The integration seam is a preview; validated hardware adapters remain future work. [Explore the device integration direction →](mhs.md)
 
 <a id="带着你的问题开始"></a>
 

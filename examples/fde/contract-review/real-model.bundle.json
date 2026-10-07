@@ -1,0 +1,32 @@
+{
+  "extends": ["@agnes-fde/contract-review#contract-review"],
+  "profile": {
+    "plugins": {
+      "ext:@agnes-fde/contract-review/main": {
+        "config": {
+          "target": {
+            "route": "customer",
+            "model": "customer-model"
+          }
+        }
+      }
+    }
+  },
+  "presets": {
+    "contract-review": {
+      "name": "contract-review",
+      "extends": "standard",
+      "approval": {
+        "policy": "fde.contract-review"
+      },
+      "model": {
+        "route": {
+          "primary": {
+            "route": "customer",
+            "model": "customer-model"
+          }
+        }
+      }
+    }
+  }
+}

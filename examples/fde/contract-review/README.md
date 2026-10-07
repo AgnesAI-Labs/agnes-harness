@@ -1,0 +1,64 @@
+# Contract review bundle
+
+English | [简体中文](README.zh-CN.md) · [FDE examples](../README.md)
+
+A procurement reviewer needs clause evidence and an aggregated risk draft.
+
+**Workflow:** Split clauses → parallel review nodes → aggregate markdown report → model commentary.
+
+This fixed DAG uses LoopContext.tools.batch for independent reviews and a join stage. The policy denies writes even in full-access sessions. The fixture rubric produces a draft for a qualified reviewer.
+
+## What ships
+
+- `main`: author-kit plugin registering business tools, `fde.contract-review` loop and policy, and the packaged Skill.
+- `runtime.mjs`: a public-port loop with versioned checkpoints, cancellation and refusal on uncertain recovery. Every independent tarball includes this helper.
+- `fixtures/`: synthetic business input; `skills/playbook/SKILL.md`: customer playbook registered and used in model prompts.
+- The bundle kind is declared in `agnes.kinds`; `agnes.bundles.contract-review` selects the loop and supplies its preset.
+
+## Install and run
+
+Use Node 24.10+ and a source-built `agh` from [installation](../../../docs/guide/install.md). Preview author packages are not promised as public npm releases. A fresh local-dev profile supplies keyless `demo/demo-model`. Existing configured profiles must retain that route or use the real-model configuration below. Review the source, dependencies and capabilities when installing; confirmation installs, trusts and enables the reviewed package.
+
+Start from the repository root:
+
+```sh
+cd examples/fde/contract-review
+agh plugins add .
+agh run --bundle '@agnes-fde/contract-review#contract-review' --preset contract-review --input fixtures/prompt.txt --json
+agh serve
+```
+
+For a portable package, run `npm pack` here and install the resulting tarball with `agh plugins add ./NAME.tgz`. Runtime, fixtures, playbook and any panel/MCP server travel together. No workspace imports or sibling examples are required.
+
+This read-only workflow completes headlessly. Inspect the report in JSONL tool results and assistant messages.
+
+For Web, open the serve URL, then **Admin → Plugins → Bundles**. Select `@agnes-fde/contract-review#contract-review`, save and restart Host as requested. Start a new session with preset `contract-review` and Demo model; paste `fixtures/prompt.txt`. Existing sessions retain their pinned loop. Inspect the report and trace.
+
+This is a one-turn fixture workflow with fixed identifiers. The built-in Demo route makes no live inference; tools produce deterministic evidence and support/CRM drafts are scripted. Quick tests use scripted model replies. With a real model, tool evidence remains the same and model prose becomes live inference.
+
+## Use a real model
+
+Configure a real route/model in AGH, then edit both the plugin target and preset primary route in [real-model.bundle.json](real-model.bundle.json) to that same pair:
+
+```sh
+agh run --bundle ./real-model.bundle.json --preset contract-review --input fixtures/prompt.txt --json
+```
+
+The loop uses explicit `target`; client model selection alone does not change it. For Web, apply equivalent target config to this plugin row in the user profile composition and choose that real model for a new session. Keep keys outside this bundle.
+
+## Adapt for a customer
+
+Replace extraction and the risk rubric with customer terms and jurisdiction; preserve clause IDs and evidence. Add read-only retrieval through the author kit.
+
+Keep facts and approval in the backend. Ordinary plugins are trusted in-process code; declarations are review metadata, not process isolation. Denied tools, model errors and interrupted pending stages stop this example. Reconcile a pending checkpoint before starting a new run; it never automatically repeats an uncertain effect.
+
+## Quick test
+
+After installing matching author-package tarballs from this source revision into this directory:
+
+```sh
+npm run build
+npm test
+```
+
+Tests drive public loop/tool contracts with fixed model replies and check results and refusal boundaries.  See [external verification](../README.md#verification) for the repository harness command.

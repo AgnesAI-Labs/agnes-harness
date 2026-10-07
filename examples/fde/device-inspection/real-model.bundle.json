@@ -1,0 +1,32 @@
+{
+  "extends": ["@agnes-fde/device-inspection#device-inspection"],
+  "profile": {
+    "plugins": {
+      "ext:@agnes-fde/device-inspection/main": {
+        "config": {
+          "target": {
+            "route": "customer",
+            "model": "customer-model"
+          }
+        }
+      }
+    }
+  },
+  "presets": {
+    "device-inspection": {
+      "name": "device-inspection",
+      "extends": "standard",
+      "approval": {
+        "policy": "fde.device-inspection"
+      },
+      "model": {
+        "route": {
+          "primary": {
+            "route": "customer",
+            "model": "customer-model"
+          }
+        }
+      }
+    }
+  }
+}

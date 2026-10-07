@@ -1,0 +1,32 @@
+{
+  "extends": ["@agnes-fde/support-triage#support-triage"],
+  "profile": {
+    "plugins": {
+      "ext:@agnes-fde/support-triage/main": {
+        "config": {
+          "target": {
+            "route": "customer",
+            "model": "customer-model"
+          }
+        }
+      }
+    }
+  },
+  "presets": {
+    "support-triage": {
+      "name": "support-triage",
+      "extends": "standard",
+      "approval": {
+        "policy": "fde.support-triage"
+      },
+      "model": {
+        "route": {
+          "primary": {
+            "route": "customer",
+            "model": "customer-model"
+          }
+        }
+      }
+    }
+  }
+}

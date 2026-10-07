@@ -1,0 +1,10 @@
+[
+  {
+    "id": "A-100",
+    "name": "Synthetic Northwind",
+    "renewalDate": "2026-11-01",
+    "health": "at-risk",
+    "owner": "Synthetic account team",
+    "openTickets": 3
+  }
+]

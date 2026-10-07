@@ -1,0 +1,1 @@
+Run the device-inspection workflow with the bundled synthetic fixtures.

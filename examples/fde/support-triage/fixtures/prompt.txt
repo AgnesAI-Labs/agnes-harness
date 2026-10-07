@@ -1,0 +1,1 @@
+Run the support-triage workflow with the bundled synthetic fixtures.
