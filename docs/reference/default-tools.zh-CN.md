@@ -49,3 +49,7 @@ const searchProvider: SearchProvider = {
 PTY 工具：`pty_open/read/send/signal/resize/list/close` 分别负责打开、读取、发送原始文本、发信号、调整尺寸、列出和关闭。所有操作按返回的 `jobId` 定位。统一 `job_list/output/kill` 也支持 PTY、持久解释器和子代理（`child:<id>`），完成通知出现在后续模型上下文及 Web 作业面板。任务跨轮次保留，Host 重启不恢复。
 
 本地 PTY 支持构建原生助手后的 macOS/Linux；Windows 支持管道执行，PTY 需提供方实现。Shell 必须已安装。远端和其他沙箱提供方必须实现公共 process 入口，缺失时明确拒绝，不回退本地执行。捕获上限 4 MiB，每会话/分支最多保留 128 个作业。
+
+## 持久目标工具
+
+goal_get {} 读取会话目标、续轮与额度用量。goal_update 接受 status "complete" 或 "blocked" 和非空 reason。模型不能创建或恢复目标。通过 Web 目标卡片或 [会话指南](../guide/sessions.zh-CN.md#persistent-goals) 中的 /goal 命令控制。

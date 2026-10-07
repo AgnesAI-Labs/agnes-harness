@@ -6,6 +6,7 @@ import compactionExtension from '../extensions/compaction/src/index.js'
 import { createComputerUseExtension } from '../extensions/computer-use/src/index.js'
 import contextRulesExtension from '../extensions/context-rules/src/index.js'
 import deliverablesExtension from '../extensions/deliverables/src/index.js'
+import goalExtension from '../extensions/goal/src/index.js'
 import {
   type CcHookMap,
   type HooksRunnerExtensionDeps,
@@ -201,6 +202,8 @@ export const ecosystem = {
   'agnes/workflow': (): ExtensionFactory => workflowExtension,
   'agnes/context-rules': (): ExtensionFactory => contextRulesExtension,
   'agnes/time-context': (): ExtensionFactory => timeContextExtension,
+
+  'agnes/goal': (): ExtensionFactory => goalExtension,
   'agnes/interaction': (): ExtensionFactory => interactionExtension,
   'agnes/deliverables': (): ExtensionFactory => deliverablesExtension,
   'agnes/plugin-creator': (): ExtensionFactory => pluginCreatorExtension,

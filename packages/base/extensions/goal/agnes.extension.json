@@ -1,0 +1,27 @@
+{
+  "id": "agnes/goal",
+  "version": "0.1.0",
+  "apiRange": "^1.4",
+  "entry": "./src/index.ts",
+  "capabilities": {
+    "tools": { "prefix": "goal_", "names": ["goal_get", "goal_update"] },
+    "hooks": ["session_start", "before_step", "context", "turn_stopping"],
+    "events": true,
+    "slots": ["status.line"],
+    "projections": [
+      {
+        "name": "goal",
+        "inputEventTypes": [
+          "inbox",
+          "user/message",
+          "cost/ledger",
+          "turn/end",
+          "x/agnes/goal/reserved",
+          "x/agnes/goal/updated",
+          "x/agnes/goal/paused"
+        ],
+        "maxStateBytes": 65536
+      }
+    ]
+  }
+}

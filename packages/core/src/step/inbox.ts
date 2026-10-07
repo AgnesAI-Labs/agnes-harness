@@ -3,6 +3,8 @@ import type { Inbox, InboxItem } from '../reduce/shapes.js'
 import type { EventInput } from '../types.js'
 
 export type EnqueueMsg = {
+  /** Atomic admission for a continuation: refuse when another input is already pending. */
+  ifEmpty?: boolean
   content: ContentBlock[]
   actor: Actor
   commandId?: string

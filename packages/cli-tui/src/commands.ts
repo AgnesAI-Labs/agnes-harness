@@ -36,6 +36,7 @@ export const SLASH_COMMANDS: readonly SlashCommand[] = [
   { name: '/doctor', args: 'computer-use', descriptionKey: 'commands.doctor' },
   { name: '/rewind', args: '<seq>', descriptionKey: 'commands.rewind' },
   { name: '/compact', args: '[instructions]', descriptionKey: 'commands.compact' },
+  { name: '/goal', args: '[create|edit|pause|resume|complete|clear] ...', descriptionKey: 'commands.goal' },
   { name: '/plan', args: '[on|off|instruction]', descriptionKey: 'commands.plan' },
   { name: '/preset', args: '<name>', descriptionKey: 'commands.preset' },
   { name: '/theme', args: '[light|dark|mono]', descriptionKey: 'commands.theme' },
@@ -306,6 +307,27 @@ export async function runSlash(app: TuiApp, line: string): Promise<SlashResult> 
       // yet. That denial is real, known debt, not something to route around here: the call below is
       // the honest real path, and it will surface exactly that error against a real daemon.
       return { switchSession: await c.session.fork(s.id, at) }
+    }
+    case '/goal': {
+      if (line.trim() === '/goal' || line.trim() === '/goal show') {
+        const { timeline } = await s.projectUIOpening({ surface: 'tui' })
+        const live = timeline.slots?.find(
+          (fill) => fill.extId === 'agnes/goal' && fill.slot === 'status.line',
+        )
+        if (live) return { text: String((live.payload as { text: string }).text) }
+        const slot = [...timeline.nodes]
+          .reverse()
+          .find(
+            (node) =>
+              node.kind === 'slot' && node.fill.extId === 'agnes/goal' && node.fill.slot === 'status.line',
+          )
+        return {
+          text: slot?.kind === 'slot' ? String((slot.fill.payload as { text: string }).text) : 'No goal',
+        }
+      }
+      if (app.busy) await s.steer(line.trim())
+      else await s.prompt(line.trim())
+      return {}
     }
     case '/plan':
       return applyPlanCommand(app.cwd, line.trim())

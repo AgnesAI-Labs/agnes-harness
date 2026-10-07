@@ -1,6 +1,7 @@
 import type { LocaleCatalog } from '@agnes/web-client'
 import { appLocaleCatalog } from './locales/app.js'
 import { composerLocaleCatalog } from './locales/composer.js'
+import { goalLocaleCatalog } from './locales/goal.js'
 import { indexShellLocaleCatalog } from './locales/index-shell.js'
 import { sessionLocaleCatalog } from './locales/session.js'
 import { settingsLocaleCatalog } from './locales/settings.js'
@@ -13,6 +14,7 @@ export const WEB_LOCALE_NAMESPACE = '@agnes/web'
 /** web 包各域目录的聚合点：新域只在这里追加一项。 */
 const WEB_DICTS = [
   appLocaleCatalog,
+  goalLocaleCatalog,
   composerLocaleCatalog,
   indexShellLocaleCatalog,
   sessionLocaleCatalog,

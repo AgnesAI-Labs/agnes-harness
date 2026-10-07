@@ -95,6 +95,7 @@ import {
   type UIProjectionCell,
 } from '../project/ui.js'
 import { fillInlineNodes, fillInlinePage } from '../project/ui-inline-slots.js'
+import { fillLiveSlots } from '../project/ui-live-slots.js'
 import { contextTokensAtCut, projectUsage } from '../project/usage.js'
 import type { Inbox, InboxItem } from '../reduce/shapes.js'
 import { type EffectTree, effectTree } from '../reduce/state.js'
@@ -1087,6 +1088,8 @@ export class SessionImpl {
         if (error) throw new CoreError('E_ENVELOPE', error)
       }
       const cur = (this.latest('inbox') as Inbox | undefined) ?? { items: [] }
+      if (msg.ifEmpty && cur.items.length)
+        throw new CoreError('E_RELATION', 'continuation input competed with pending input')
       const item: InboxItem = {
         itemId: this.d.ids.requestId(),
         target,
@@ -1913,7 +1916,9 @@ export class SessionImpl {
     return this.d.surface.nodes()
   }
   private withSlots<T extends Omit<UIOptions, 'sessionKey' | 'upto' | 'lane'>>(opts: T): T {
-    return opts.fills || !this.d.slotFills ? opts : { ...opts, inlineFills: this.d.slotFills() }
+    return opts.fills || !this.d.slotFills
+      ? opts
+      : { ...opts, inlineFills: this.d.slotFills(), liveFills: this.d.slotFills() }
   }
 
   projectUI(upto?: Seq, opts: Omit<UIOptions, 'sessionKey' | 'upto' | 'lane'> = {}): Promise<CoreUITimeline> {
@@ -1959,7 +1964,8 @@ export class SessionImpl {
           patch.changes.flatMap((change) => (change.op === 'upsert' ? [change.node] : [])),
           opts,
         )
-        return { kind: 'patch', patch }
+        const slots = await fillLiveSlots(opts)
+        return { kind: 'patch', patch: { ...patch, ...(slots ? { slots } : {}) } }
       }
       // Explicit dynamic fills may synthesize nodes. Registry inline cards decorate only the
       // journal changes, so production calls retain the incremental path.

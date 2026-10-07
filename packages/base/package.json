@@ -87,6 +87,7 @@
       "./extensions/skills",
       "./extensions/computer-use",
       "./extensions/interaction",
+      "./extensions/goal",
       "./extensions/deliverables",
       "./extensions/jobs",
       "./extensions/plan-mode",

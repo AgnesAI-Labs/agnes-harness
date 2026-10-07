@@ -56,3 +56,23 @@ After a daemon failure, preserve the home and error, inspect `daemon status`, re
 TUI `/rewind SEQ` and Web forking create a new session from a historical point. They do not undo file writes, recall network requests, or invalidate completed tools. Recovery applies current permissions; past authorization is not revived automatically.
 
 Implementation: [session SDK](../../packages/sdk/src/session.ts), [Core](../../packages/core/src), [import](../../packages/cli/src/commands/import.ts), [export](../../packages/cli/src/commands/export.ts).
+
+<a id="persistent-goals"></a>
+
+## Persistent goals
+
+The official default goal plugin keeps a session objective on the ledger. In Web, open the goal bar above the conversation to create/edit it, set automatic-round and optional credit limits, pause/resume, complete, or clear it. The CLI uses the same session input:
+
+```text
+/goal create --max-rounds 10 --budget 20 Deliver a tested patch
+/goal edit --max-rounds 5 Deliver a smaller patch
+/goal edit --budget none Remove the goal credit cap
+/goal pause
+/goal resume
+/goal complete
+/goal clear
+```
+
+/goal followed by an objective also creates a goal; /goal in the CLI displays its status. Options precede the objective. The default allowance is ten automatic rounds without an additional credit limit. Resume grants a fresh round allowance while keeping spend. Editing preserves phase and spend. The model can report completion or a blocker with evidence through goal_update, and cannot raise limits or resume itself.
+
+Automatic rounds enter the next-turn inbox. Human controls take priority; stale rounds stop before model work. Completion, blockers, cancellation, errors and exhausted limits stop continuation. Credit checks occur between steps/turns; an in-flight response can exceed the goal limit, while normal model budget admission still applies. Unknown credit usage with a goal budget blocks continuation. Restored active goals pause until explicit resume.

@@ -2824,6 +2824,12 @@
       "additionalProperties": false,
       "required": ["sessionId", "upto", "generation", "opState", "nodes", "turns"],
       "properties": {
+        "slots": {
+          "description": "Live registry status/action fills outside transcript indices. In patches, a supplied array replaces all known live slots.",
+          "type": "array",
+          "maxItems": 32,
+          "items": { "$ref": "#/$defs/SlotFillView" }
+        },
         "pendingInputs": {
           "description": "Authoritative next-turn inbox order at this projection cut. Omitted by older servers.",
           "type": "array",
@@ -3120,6 +3126,12 @@
       "additionalProperties": false,
       "required": ["sessionId", "generation", "from", "upto", "opState", "changes", "turnChanges"],
       "properties": {
+        "slots": {
+          "description": "Live registry status/action fills outside transcript indices. In patches, a supplied array replaces all known live slots.",
+          "type": "array",
+          "maxItems": 32,
+          "items": { "$ref": "#/$defs/SlotFillView" }
+        },
         "pendingInputs": {
           "description": "Full replacement of next-turn inbox order, including an empty array when drained. Omission preserves known input for older-server compatibility.",
           "type": "array",

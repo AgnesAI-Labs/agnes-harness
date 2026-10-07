@@ -21,7 +21,15 @@ describe('author hook contracts', () => {
       [HookPayloadMap['context'], HookContext]
     >()
     expectTypeOf<keyof HookContext>().toEqualTypeOf<
-      'session' | 'replayed' | 'signal' | 'lease' | 'log' | 'projections' | 'platform' | 'workspaceHooks'
+      | 'session'
+      | 'replayed'
+      | 'signal'
+      | 'input'
+      | 'lease'
+      | 'log'
+      | 'projections'
+      | 'platform'
+      | 'workspaceHooks'
     >()
     // Hooks run on every kernel event: facts only, no capability probe (spec P2/P4).
     expectTypeOf<HookContext['platform']>().toEqualTypeOf<PlatformFacts>()

@@ -133,6 +133,11 @@ export interface HookReturnMap {
 }
 
 export interface HookContext {
+  /** Only available at turn_stopping. Competing input wins; false means nothing was queued.
+   * The owner-bound input starts a separate turn after this run finishes. */
+  readonly input?: {
+    enqueueNextTurn(text: string, key: string, signal: AbortSignal): Promise<boolean>
+  }
   readonly projections: ProjectionReader
   readonly session: SessionRef
   readonly replayed: boolean // replayOnResume 重发时 true；handler 必须幂等

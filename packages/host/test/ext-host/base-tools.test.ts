@@ -229,6 +229,70 @@ describe('a host assembled from a profile naming @agnes/base', () => {
     }
   })
 
+  it('runs ledger goals across separate turns, bounds continuation, and applies human controls without inference', async () => {
+    const dataDir = scratch()
+    const provider = new ScriptedProvider({
+      models: [fakeModel({ route: 'gw', id: 'm1' })],
+      scripts: [
+        say('Still working'),
+        say('More work remains'),
+        callTool('goal_update', { status: 'blocked', reason: 'Need credentials' }),
+        say('Waiting'),
+        callTool('goal_update', { status: 'complete', reason: 'Validated result' }),
+        say('Done'),
+      ],
+      onExhausted: 'error',
+    })
+    const { host } = await createTestHost({
+      dataDir,
+      packageDirs: { '@agnes/base': baseDir },
+      provider,
+      disableSessionTitle: true,
+    })
+    try {
+      expect(host.extensions().find((e) => e.id === 'agnes/goal')).toMatchObject({ loaded: true })
+      const session = await host.createSession({ cwd: dataDir })
+      const run = () => session.run({ until: 'idle', signal: new AbortController().signal })
+      const prompt = async (text: string) => {
+        await session.enqueue('next-turn', { content: [{ type: 'text', text }], actor: session.d.actor })
+        return run()
+      }
+      const goal = async () => {
+        const ui = await session.projectUI(undefined, { surface: 'web' })
+        const slot = ui.slots?.find((fill) => fill.extId === 'agnes/goal')
+        return slot ? (slot.payload as import('@agnes/protocol/gen/slots').StatusLinePayload).goal : undefined
+      }
+      await prompt('/goal create --max-rounds 1 Deliver')
+      await run()
+      expect(await goal()).toMatchObject({
+        phase: 'blocked',
+        rounds: 1,
+        reason: 'Maximum automatic rounds reached',
+      })
+      expect(provider.calls).toHaveLength(2)
+      const turns = await session.scan({ type: 'turn/end', toSeq: session.lastSeq })
+      expect(turns.filter((row) => (row.data as { reason: string }).reason === 'completed')).toHaveLength(2)
+      await prompt('/goal resume')
+      await run()
+      expect(await goal()).toMatchObject({ phase: 'blocked', reason: 'Need credentials' })
+      expect(provider.calls).toHaveLength(4)
+      await prompt('/goal pause')
+      expect(await goal()).toMatchObject({ phase: 'paused' })
+      await prompt('/goal edit --max-rounds 2 Deliver a patch')
+      expect(await goal()).toMatchObject({ phase: 'paused', objective: 'Deliver a patch', maxRounds: 2 })
+      expect(provider.calls).toHaveLength(4)
+      await prompt('/goal resume')
+      await run()
+      expect(await goal()).toMatchObject({ phase: 'complete', reason: 'Validated result' })
+      expect(provider.calls).toHaveLength(6)
+      await prompt('/goal clear')
+      expect(await goal()).toBeUndefined()
+      expect(provider.calls).toHaveLength(6)
+    } finally {
+      await host.close()
+    }
+  })
+
   it('loads bundled tools, including the compaction request surface', async () => {
     const { host } = await createTestHost({
       dataDir: scratch(),
@@ -275,6 +339,7 @@ describe('a host assembled from a profile naming @agnes/base', () => {
         'agnes/tools-search',
         'agnes/tools-web',
         'agnes/interaction',
+        'agnes/goal',
         'agnes/deliverables',
         'agnes/jobs',
         'agnes/jobs-web',
@@ -852,8 +917,8 @@ describe('a host assembled from a profile naming @agnes/base', () => {
     // snapshot, and this host does not load code-mode. Count: tools-core 5, tools-search 3,
     // tools-web 2, interaction 1, deliverables 1, jobs 10, compaction 1, refine 1, subagent 8,
     // mcp-search 2, computer-use 1, plugin-creator 4, exit_plan_mode, and the three stable MCP
-    // resource tools, plus workflow and workflow_status, and session-query 5.
-    expect(host.kernel.tools.size).toBe(50)
+    // resource tools, workflow and workflow_status, session-query 5, and two goal tools.
+    expect(host.kernel.tools.size).toBe(52)
     for (const name of [
       'subagent_list',
       'subagent_send_message',

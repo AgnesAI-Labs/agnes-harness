@@ -58,6 +58,7 @@ const CANONICAL_PROMPT_SECTIONS: ReadonlyArray<{
   { id: 'tools:sdk', order: 150, owner: 'code' },
   { id: 'skills', order: 160, owner: 'base' },
   { id: 'plan-mode', order: 162, owner: 'base' },
+  { id: 'persistent-goal', order: 164, owner: 'base' },
   { id: 'plugin-creator', order: 165, owner: 'base' },
   { id: 'session-query', order: 168, owner: 'base' },
   { id: 'channel-style', order: 170, owner: 'code' },

@@ -59,6 +59,7 @@ export const PROMPT_SECTIONS: ReadonlyArray<PromptSectionSpec> = validateSection
   // additionalContext channel is capped at 8192 bytes by the hook schema.
   { id: 'skills', order: 160, source: 'dynamic', owner: 'base' },
   { id: 'plan-mode', order: 162, source: 'dynamic', owner: 'base' },
+  { id: 'persistent-goal', order: 164, source: 'dynamic', owner: 'base' },
   { id: 'plugin-creator', order: 165, source: 'dynamic', owner: 'base' },
   { id: 'session-query', order: 168, source: 'dynamic', owner: 'base' },
   { id: 'channel-style', order: 170, source: 'file', owner: 'code' },

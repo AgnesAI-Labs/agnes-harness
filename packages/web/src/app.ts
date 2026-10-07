@@ -39,6 +39,7 @@ import type { ComposerView } from './composer.js'
 import { rememberWebComposer, selectionFromMemory } from './composer-memory.js'
 import { createComputerUsePaneController } from './computer-use-pane.js'
 import { createDiagnosticsDialog } from './diagnostics-dialog.js'
+import { renderGoalCard } from './goal-card.js'
 import {
   APPROVAL_SEARCH_PAGES,
   approvalOutsideWindow,
@@ -114,6 +115,8 @@ const composerDraftKey = 'agnes-web-composer-draft'
 const savedComposerDraft = sessionStorage.getItem(composerDraftKey)
 const notice = element('notice', 'p')
 const conversation = element('conversation-shell', 'div')
+const goalHost = document.createElement('div')
+conversation.before(goalHost)
 const newSessionDialog = element('new-session', 'dialog')
 const newSessionError = element('new-session-error', 'p')
 const newSessionForm = element('new-session-form', 'form')
@@ -678,6 +681,10 @@ function setConnection(value: 'connecting' | 'connected' | 'reconnecting' | 'clo
   renderControls()
 }
 function renderControls(): void {
+  renderGoalCard(goalHost, projection, !connected || sessionPending || sending || stopping, (command) => {
+    composerRuntime.setDraft(command)
+    submitComposer()
+  })
   // 切换会话加载期间的视觉态：旧画面降不透明度提示「正在准备」，新投影就绪后
   // 由 sessionPending = false 的那次 renderControls 平滑恢复。
   document.body.classList.toggle('session-switching', sessionPending)
@@ -2176,6 +2183,21 @@ function isPlanCommand(input: string): boolean {
 function submitComposer(): void {
   const originalDraft = composerRuntime.getDraft()
   const input = originalDraft.trim()
+  if (/^\/goal(?:\s+show)?$/.test(input) && composerRuntime.getAttachmentBlocks().length === 0) {
+    composerRuntime.setDraft('')
+    sessionStorage.removeItem(composerDraftKey)
+    composerRuntime.resize()
+    const toggle = goalHost.querySelector<HTMLButtonElement>('[data-testid="goal-toggle"]')
+    if (toggle?.getAttribute('aria-expanded') === 'false') toggle.click()
+    toggle?.focus()
+    return
+  }
+  if (/^\/goal(?:\s|$)/.test(input) && current && projection?.opState) {
+    composerRuntime.setDraft('')
+    sessionStorage.removeItem(composerDraftKey)
+    void current.steer(input).catch(showError)
+    return
+  }
   if (isPlanCommand(input)) {
     const cwd = selectedWorkspace?.path
     if (!cwd) {

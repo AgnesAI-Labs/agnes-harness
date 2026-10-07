@@ -46,3 +46,23 @@ node packages/cli/dist/local/agnes.mjs import session.jsonl --from auto --key ag
 TUI `/rewind SEQ` 和 Web 分叉从某个历史位置创建新会话，不撤销已经写入的文件、不撤回网络请求、不让已执行工具失效。恢复也按当前权限重新约束执行，而不是复活过去的授权。
 
 实现依据：[会话 SDK](../../packages/sdk/src/session.ts)、[Core](../../packages/core/src)、[导入](../../packages/cli/src/commands/import.ts)、[导出](../../packages/cli/src/commands/export.ts)。
+
+<a id="persistent-goals"></a>
+
+## 持久目标
+
+官方默认目标插件将会话目标保存在账本中。打开 Web 对话上方的目标栏，可创建/编辑目标，设置自动续轮上限和可选额度预算，暂停/恢复、完成或清除。CLI 使用同一会话输入：
+
+```text
+/goal create --max-rounds 10 --budget 20 交付并验证补丁
+/goal edit --max-rounds 5 交付较小的补丁
+/goal edit --budget none 移除目标积分上限
+/goal pause
+/goal resume
+/goal complete
+/goal clear
+```
+
+/goal 后接目标内容也可创建目标，CLI 中 /goal 显示当前状态。选项写在目标内容之前。默认允许十次自动续轮，不额外限制额度。恢复会重新授权续轮次数并保留已用额度；编辑保留阶段与额度。模型只能通过 goal_update 提交带原因的完成或受阻状态，不能提高上限或自行恢复。
+
+自动续轮进入下一回合输入队列；人工控制优先，过期续轮在推理前停止。完成、受阻、取消、错误或耗尽上限都会停止续轮。额度在步骤与回合边界检查，因此正在执行的响应可能超过目标预算，模型的常规预算准入仍生效。设置目标预算但额度用量未知时，续轮会受阻。恢复进程后，原本活跃的目标暂停，等待明确恢复。

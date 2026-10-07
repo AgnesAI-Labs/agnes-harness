@@ -73,6 +73,26 @@ function patchOf(from: number, upto: number, totalNodes: number, changes: UITime
 }
 
 describe('the pure patch functions', () => {
+  it.each([undefined, []])(
+    'preserves or clears live status slots with %s without changing history coordinates',
+    (slots) => {
+      const original = [
+        {
+          slot: 'status.line' as const,
+          extId: 'agnes/goal',
+          payload: { text: 'Goal paused', level: 'info' },
+        },
+      ]
+      const current = deepFreeze({ ...timeline(1, []), slots: original })
+      const patch = deepFreeze({ ...patchOf(1, 2, 0, []), ...(slots ? { slots } : {}) })
+      expect(applyUITimelinePatch(current, patch).slots).toEqual(slots ?? original)
+      const window = applyWindowedUITimelinePatch(current, { startIndex: 0, totalNodes: 0 }, patch)
+      expect(window.timeline.slots).toEqual(slots ?? original)
+      expect(window.timeline.nodes).toEqual([])
+      expect(window.coordinates.startIndex).toBe(0)
+    },
+  )
+
   it.each([undefined, [], [{ itemId: 'C', preview: 'C' }]])(
     'replaces pending input with %s without transcript changes',
     (pendingInputs) => {

@@ -948,9 +948,11 @@ it('fills only supported surface triggers after real results, never pending tool
     change.op === 'upsert' && change.node.kind === 'tool' ? [change.node] : [],
   )
   expect(tools[0]?.slots?.map((fill) => fill.payload)).toEqual([{ title: 'card' }])
+  expect(update.patch.slots?.map((fill) => fill.payload)).toEqual([{ text: 'status', level: 'info' }])
   const fullView = vi.spyOn(session.d.ui, 'view').mockRejectedValue(new Error('unexpected full view'))
   const opening = await session.projectUIOpening({ surface: 'tui', maxNodes: 1 })
   expect(opening.timeline.nodes).toHaveLength(1)
+  expect(opening.timeline.slots?.map((fill) => fill.payload)).toEqual([{ text: 'status', level: 'info' }])
   const page = await session.projectUIHistory(opening.timeline.upto, opening.startIndex, {
     surface: 'tui',
     limit: 100,

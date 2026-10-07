@@ -62,6 +62,17 @@ export class ExtensionInvocation {
     return admitted ? admitted.run(run) : run()
   }
 
+  assertActive(owner: string): void {
+    const invocation = this.current.getStore()
+    if (
+      !invocation?.active ||
+      invocation.signal.aborted ||
+      invocation.session.closingOrClosed ||
+      invocation.owner !== owner
+    )
+      throw refused('extension input has no active session')
+  }
+
   async readProjection(registry: ProjectionRegistry, key: string, meta: RegMeta, beforeFold: () => void) {
     const invocation = this.current.getStore()
     const valid = () =>

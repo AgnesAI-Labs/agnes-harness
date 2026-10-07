@@ -6708,3 +6708,37 @@ body.admin-page {
 .session-terminal:focus-visible {
   outline: 2px solid var(--agnes-input-border-focus);
 }
+
+.goal-card {
+  margin: 0.5rem 1rem;
+  padding: 0.75rem;
+  border: 1px solid var(--agnes-input-border);
+  border-radius: 8px;
+}
+.goal-card label {
+  display: grid;
+  gap: 0.25rem;
+  margin-block: 0.5rem;
+}
+.goal-card textarea {
+  min-height: 4rem;
+  width: 100%;
+}
+.goal-card button {
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  text-align: start;
+}
+.goal-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.goal-card > button {
+  display: block;
+  width: 100%;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}

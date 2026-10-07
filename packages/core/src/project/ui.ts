@@ -45,6 +45,7 @@ import { clipUtf16 as clip } from './clip.js'
 import { SurfaceCache } from './surface.js'
 import { TurnProjection, turnsForNodes } from './turns.js'
 import { fillInlineNodes, fillInlinePage } from './ui-inline-slots.js'
+import { fillLiveSlots } from './ui-live-slots.js'
 
 /** Generation belongs to the daemon's writer ownership, not to a core ledger projection. */
 export type CoreUITimeline = Omit<UITimeline, 'generation'>
@@ -67,6 +68,8 @@ export type UIOptions = {
   fills?: SlotFillRunner
   /** Session registry cards decorate existing tool nodes without changing paging indices. */
   inlineFills?: SlotFillRunner
+  /** Live status and action cards do not participate in transcript coordinates. */
+  liveFills?: SlotFillRunner
   usage?: UsageView
 }
 
@@ -353,7 +356,7 @@ export class UIProjectionCell {
   }
 
   async view(
-    opts: Pick<UIOptions, 'surface' | 'fills' | 'inlineFills' | 'usage'> = {},
+    opts: Pick<UIOptions, 'surface' | 'fills' | 'inlineFills' | 'liveFills' | 'usage'> = {},
   ): Promise<CoreUITimeline> {
     const nodes = structuredClone(this.nodes)
     const tools = new Map(
@@ -404,7 +407,8 @@ export class UIProjectionCell {
     }
     await fillInlineNodes(nodes, opts)
     nodes.sort((a, b) => (a.seq ?? this.upto) - (b.seq ?? this.upto))
-    return this.timeline(nodes, opts.usage)
+    const slots = await fillLiveSlots(opts)
+    return { ...this.timeline(nodes, opts.usage), ...(slots ? { slots } : {}) }
   }
 
   /** The live turn list, not a copy; callers only read it. */
@@ -418,7 +422,7 @@ export class UIProjectionCell {
    * dynamic fills retain that path; registry inline cards decorate only the bounded page.
    */
   async opening(
-    opts: Pick<UIOptions, 'surface' | 'fills' | 'inlineFills' | 'usage'> & {
+    opts: Pick<UIOptions, 'surface' | 'fills' | 'inlineFills' | 'liveFills' | 'usage'> & {
       maxNodes: number
       maxBytes: number
       /** Bytes a turn adds to the page when a node first brings it in; turns are free when absent. */
@@ -441,21 +445,26 @@ export class UIProjectionCell {
         totalNodes: page.totalNodes,
       }
     }
+    const slots = await fillLiveSlots(opts, Math.min(UI_SLOT_MAX_BYTES, Math.floor(opts.maxBytes / 4)))
+    const pageBytes = Math.max(1, opts.maxBytes - encoder.encode(JSON.stringify(slots ?? [])).byteLength)
     const page = await fillInlinePage(
       boundedTimelinePage(
         this.nodes,
         this.nodes.length,
         opts.maxNodes,
-        opts.maxBytes,
+        pageBytes,
         opts.turnBytes && turnCharge(this.turnsProjection.turns, opts.turnBytes),
       ),
       opts,
       opts.maxNodes,
-      opts.maxBytes,
+      pageBytes,
       opts.turnBytes && turnCharge(this.turnsProjection.turns, opts.turnBytes),
     )
     return {
-      timeline: this.timeline(page.nodes, opts.usage, turnsForNodes(this.turnsProjection.turns, page.nodes)),
+      timeline: {
+        ...this.timeline(page.nodes, opts.usage, turnsForNodes(this.turnsProjection.turns, page.nodes)),
+        ...(slots ? { slots } : {}),
+      },
       hasEarlier: page.hasEarlier,
       startIndex: page.startIndex,
       totalNodes: page.totalNodes,

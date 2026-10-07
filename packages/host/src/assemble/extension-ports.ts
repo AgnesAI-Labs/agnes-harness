@@ -1,4 +1,4 @@
-import type { ProjectionRegistry, SessionImpl } from '@agnes/core'
+import { CoreError, type ProjectionRegistry, type SessionImpl } from '@agnes/core'
 import type { SessionRef } from '@agnes/extension-api'
 import type { ExtensionActivationBarrier } from '../ext-host/activation-barrier.js'
 import { ExtensionInvocation, type SessionResolver } from '../ext-host/invocation.js'
@@ -72,7 +72,60 @@ export function bindExtensionInvocations(
       add: (def, meta) =>
         ports.tools.add({ ...def, execute: wrap(def.execute.bind(def), meta.source) }, meta),
     },
-    hooks: { on: (event, handler, meta) => ports.hooks.on(event, canonicalWrap(handler, meta.source), meta) },
+    hooks: {
+      on: (event, handler, meta) =>
+        ports.hooks.on(
+          event,
+          canonicalWrap((payload, context) => {
+            const session = resolveHook(context.session)
+            const input =
+              event === 'turn_stopping' && session
+                ? {
+                    async enqueueNextTurn(text: string, key: string, signal: AbortSignal) {
+                      invocation.assertActive(meta.source)
+                      signal.throwIfAborted()
+                      context.signal.throwIfAborted()
+                      if (!text.trim() || text.length > 32768 || !key || key.length > 256)
+                        throw new Error('invalid continuation input')
+                      try {
+                        await session.enqueue('next-turn', {
+                          ifEmpty: true,
+                          content: [{ type: 'text', text }],
+                          actor: {
+                            id: meta.source,
+                            org: 'local',
+                            role: 'extension',
+                            deptPath: [],
+                            attrs: {},
+                          },
+                          commandId: `${meta.source}:${key}`,
+                          kind: 'follow_up',
+                          trust: 'untrusted',
+                        })
+                      } catch (error) {
+                        if (
+                          error instanceof CoreError &&
+                          error.code === 'E_RELATION' &&
+                          error.message === 'continuation input competed with pending input'
+                        )
+                          return false
+                        throw error
+                      }
+                      // run serializes against the active runner. Never await it inside that runner's hook.
+                      void session
+                        .run({ until: 'idle', signal: AbortSignal.any([signal, session.ac.signal]) })
+                        .catch((error) =>
+                          session.d.logger.warn('continuation run failed', { message: String(error) }),
+                        )
+                      return true
+                    },
+                  }
+                : undefined
+            return handler(payload, { ...context, ...(input ? { input } : {}) })
+          }, meta.source),
+          meta,
+        ),
+    },
     slots: {
       register: (slot, fill, meta) =>
         ports.slots.register(

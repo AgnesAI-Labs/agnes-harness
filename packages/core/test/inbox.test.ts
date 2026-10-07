@@ -7,6 +7,22 @@ import { fakeProvider } from './helpers/fake-provider.js'
 import { actor, openSession } from './helpers/open-session.js'
 
 describe('Inbox segment', () => {
+  it('atomically refuses automatic continuation behind pending input', async () => {
+    const { session } = await openSession({ provider: fakeProvider([]) })
+    const content = [{ type: 'text' as const, text: 'continuation' }]
+    const admissions = await Promise.allSettled([
+      session.enqueue('next-turn', { actor, content, ifEmpty: true }),
+      session.enqueue('next-turn', { actor, content, ifEmpty: true }),
+    ])
+    expect(admissions.map((result) => result.status)).toEqual(['fulfilled', 'rejected'])
+    const before = session.lastSeq
+    await expect(session.enqueue('next-turn', { actor, content, ifEmpty: true })).rejects.toMatchObject({
+      code: 'E_RELATION',
+    })
+    expect(session.lastSeq).toBe(before)
+    expect((await session.projectUI()).pendingInputs).toHaveLength(1)
+  })
+
   it('removes only the selected pending input durably without changing the active turn', async () => {
     const { session, log } = await openSession({ provider: fakeProvider([]) })
     await session.enqueue('next-turn', { actor, content: [{ type: 'text', text: 'active' }] })

@@ -119,6 +119,7 @@ export function applyUITimelinePatch(current: UITimeline, patch: UITimelinePatch
     ...((patch.pendingInputs ?? current.pendingInputs) === undefined
       ? {}
       : { pendingInputs: patch.pendingInputs ?? current.pendingInputs }),
+    ...((patch.slots ?? current.slots) === undefined ? {} : { slots: patch.slots ?? current.slots }),
     ...((patch.yolo ?? current.yolo) === undefined ? {} : { yolo: patch.yolo ?? current.yolo }),
     ...(patch.budget === undefined ? {} : { budget: patch.budget }),
     ...(patch.usage === undefined ? {} : { usage: patch.usage }),
@@ -217,6 +218,7 @@ export function applyWindowedUITimelinePatch(
       ...((patch.pendingInputs ?? current.pendingInputs) === undefined
         ? {}
         : { pendingInputs: patch.pendingInputs ?? current.pendingInputs }),
+      ...((patch.slots ?? current.slots) === undefined ? {} : { slots: patch.slots ?? current.slots }),
       ...((patch.yolo ?? current.yolo) === undefined ? {} : { yolo: patch.yolo ?? current.yolo }),
       ...(patch.budget === undefined
         ? current.budget === undefined

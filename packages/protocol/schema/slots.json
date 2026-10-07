@@ -41,6 +41,50 @@
     "UiSlotName": {
       "enum": ["tool.card.inline", "sidebar.action", "status.line", "notification"]
     },
+    "GoalSnapshot": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "revision", "objective", "phase", "rounds", "maxRounds", "creditsUsed"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "maxLength": 256
+        },
+        "revision": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "objective": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 8192
+        },
+        "phase": {
+          "enum": ["active", "paused", "blocked", "complete"]
+        },
+        "rounds": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "maxRounds": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100
+        },
+        "creditsUsed": {
+          "type": "number",
+          "minimum": 0
+        },
+        "budgetCredits": {
+          "type": "number",
+          "minimum": 0
+        },
+        "reason": {
+          "type": "string",
+          "maxLength": 2048
+        }
+      }
+    },
     "ToolCardInlinePayload": {
       "type": "object",
       "additionalProperties": false,
@@ -209,6 +253,7 @@
       "additionalProperties": false,
       "required": ["text", "level"],
       "properties": {
+        "goal": { "$ref": "#/$defs/GoalSnapshot" },
         "text": { "type": "string", "maxLength": 512 },
         "level": { "enum": ["info", "warn", "error"] }
       }
