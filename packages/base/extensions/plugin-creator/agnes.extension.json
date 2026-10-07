@@ -1,0 +1,17 @@
+{
+  "id": "agnes/plugin-creator",
+  "version": "0.1.0",
+  "apiRange": "^1.0",
+  "entry": "./src/index.ts",
+  "capabilities": {
+    "tools": {
+      "prefix": "plugin_",
+      "names": ["plugin_creator_guide", "plugin_scaffold", "plugin_test", "plugin_install_local"]
+    },
+    "hooks": ["context"],
+    "slots": [],
+    "events": false,
+    "resources": [],
+    "network": []
+  }
+}

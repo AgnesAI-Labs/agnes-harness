@@ -47,6 +47,7 @@
     ],
     "extensions": [
       "./extensions/tools-core",
+      "./extensions/plugin-creator",
       "./extensions/tools-search",
       "./extensions/tools-web",
       "./extensions/compaction",

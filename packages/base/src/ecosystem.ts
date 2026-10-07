@@ -11,6 +11,7 @@ import {
 } from '../extensions/hooks-runner/src/index.js'
 import { mcpSearchExtension } from '../extensions/mcp-search/src/index.js'
 import { mcpCatalogHubFor } from '../extensions/mcp-server/src/catalog-hub.js'
+import pluginCreatorExtension from '../extensions/plugin-creator/src/index.js'
 import { createPrivacyExtension, sessionEgressAuthority } from '../extensions/privacy/src/index.js'
 import { createRefineExtension } from '../extensions/refine/src/index.js'
 import { RefineQueue } from '../extensions/refine/src/queue.js'
@@ -171,6 +172,7 @@ function defineSubagentExtension(init: SeamInitContext): ExtensionFactory {
 
 /** Trusted factories keyed by the manifest id the host is about to admit. */
 export const ecosystem = {
+  'agnes/plugin-creator': (): ExtensionFactory => pluginCreatorExtension,
   'agnes/tools-core': (): ExtensionFactory => toolsCoreExtension,
   'agnes/tools-search': (): ExtensionFactory => toolsSearchExtension,
   'agnes/tools-web': (): ExtensionFactory => toolsWebExtension,
