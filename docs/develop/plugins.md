@@ -92,6 +92,16 @@ Dependency names must agree between static declarations and exported metadata. T
 
 A value published by `ctx.provide('name', value)` belongs to the current Context's service space, and consumers declare `inject`. Dependencies determine loading order; array order does not replace the graph. Register manually acquired timers, connections, and listeners with `ctx.effect(() => disposer)`. Disposers withdraw resources on unload; they cannot automatically reverse completed external business actions.
 
+## Model adapter packages
+
+An ordinary trusted plugin can inject `modelAdapters` and call `ctx.modelAdapters.register(adapter)`. Declare the same injection in `agnes.plugins`. The [public ModelAdapter contract](../../packages/extension-api/src/model-adapter.ts) wraps the existing WireAdapter shape: id, version, protocol/API name, capabilities (including image input), and `create({ routes })` returning a wire instance. The [fixture package](../../packages/host/test/fixtures/model-adapter/index.ts) shows registration without depending on Host or Core.
+
+Configure `provider.adapters` with the registration id or its enabled source package, and set the route's `api` to that registration id. Route `compat` carries adapter-specific configuration. Existing `@agnes/ai` selections and pi API names keep working, including API-key and managed subscription OAuth routes.
+
+The instance streams wire events; the existing AI facade continues to own stamps, tool-call recovery and usage accounting. Credentialed structural instances implement `bindCredential`; Host resolves secrets before inference. `dispose()` releases instance resources, and optional registration `cleanup()` releases shared resources. Both run when the owning plugin unloads. Duplicate ids and unavailable selections are refused.
+
+Admin integrations can call Host's `modelAdapterCatalog(root)` or the assembled `modelAdapterCatalog()` to read id, version, source package, API name and capabilities. The catalog exposes no configuration, credentials or executable factories. Adapter unload or replacement currently requires rebuilding the model profile; live session generation pinning is not provided by this contract.
+
 <a id="不同-api-不可混用"></a>
 
 ## Keep API boundaries distinct
