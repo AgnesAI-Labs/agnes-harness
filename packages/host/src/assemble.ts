@@ -1667,6 +1667,9 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
       return {
         ...baseContext(owner),
         sandbox: seams.sandbox,
+        ...(owner === '@agnes/base' && extensionId === 'agnes/tools-web' && deps.searchProvider
+          ? { searchProvider: deps.searchProvider }
+          : {}),
         ...(owner === '@agnes/base' && extensionId === 'agnes/hooks-runner' && hookCommands
           ? { trustedHookCommands: hookCommands }
           : {}),

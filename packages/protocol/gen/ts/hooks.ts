@@ -24,7 +24,7 @@ export const HooksSchema = Type.Module({
   "ResourcesDiscoverPayload": Type.Object({ "actor": Type.Ref('Actor'), "cwd": Type.String(), "registered": Type.Array(Type.Ref('ResourceEntry')) }, { additionalProperties: false }),
   "ResourcesDiscoverReturn": Type.Object({ "resources": Type.Optional(Type.Array(Type.Ref('ResourceEntry'))), "additionalContext": Type.Optional(Type.String({ maxLength: 8192 })) }, { additionalProperties: false }),
   "BeforeStepPayload": Type.Object({ "turn": Type.Integer(), "step": Type.Integer(), "depth": Type.Integer({ minimum: 0 }), "budget": Type.Object({ "remaining": Type.Union([Type.Number(), Type.Null()]), "cap": Type.Union([Type.Number(), Type.Null()]) }, { additionalProperties: false }) }, { additionalProperties: false }),
-  "BeforeStepReturn": Type.Object({ "block": Type.Optional(Type.Boolean()), "reason": Type.Optional(Type.String({ maxLength: 1024 })) }, { additionalProperties: false }),
+  "BeforeStepReturn": Type.Object({ "block": Type.Optional(Type.Boolean()), "park": Type.Optional(Type.Boolean()), "reason": Type.Optional(Type.String({ maxLength: 1024 })) }, { additionalProperties: false }),
   "ContextPayload": Type.Object({ "sections": Type.Array(Type.Ref('PromptSection')), "surfaceDigest": Type.Ref('SurfaceDigest') }, { additionalProperties: false }),
   "ContextReturn": Type.Object({ "sections": Type.Optional(Type.Array(Type.Ref('PromptSection'))), "additionalContext": Type.Optional(Type.String({ maxLength: 8192 })) }, { additionalProperties: false }),
   "BeforeRequestPayload": Type.Object({ "request": JsonValue, "slot": Type.String(), "model": Type.String(), "attempt": Type.Integer({ minimum: 1 }) }, { additionalProperties: false }),

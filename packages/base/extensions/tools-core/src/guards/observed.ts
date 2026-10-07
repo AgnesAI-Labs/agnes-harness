@@ -2,18 +2,8 @@ import { isUtf8 } from 'node:buffer'
 import { createHash } from 'node:crypto'
 import type { ToolContext } from '@agnes/extension-api'
 
-// What each session last saw of each file, so `write` can tell "the file I read" from "a file that
-// changed since". A whole-file write composed from a read that is no longer true silently discards
-// whatever was changed in between; the check refuses exactly that and nothing else. It is a
-// detector of lost updates, not a lock: it never waits, and a file the session has not looked at
-// is never refused.
-//
-// The table lives in this module, like the file-lock chains, so it has the same lifetime as the
-// process and is not saved anywhere. After a restart it is empty and the check lets the write
-// through, which fails towards "allowed" rather than towards a refusal the model cannot explain.
-
-// The table is bounded: a long session touches many files and each entry is only a short string.
-// The least recently recorded one is dropped first, and a dropped entry means "not seen".
+// Session observations are process-local and bounded. A restart or eviction requires a fresh
+// read of an existing file; absence of an observation always fails closed for mutation.
 export const MAX_OBSERVED_ENTRIES = 4096
 
 const table = new Map<string, string>()
@@ -21,6 +11,7 @@ const table = new Map<string, string>()
 // A path that is no longer there is a version too, so a file that was read and then deleted is
 // "changed" like any other. It never collides with a recorded version.
 export const ABSENT = 'absent'
+export const UNKNOWN_VERSION = 'observed-without-version'
 
 const dec = new TextDecoder('utf-8', { fatal: false, ignoreBOM: true })
 const enc = new TextEncoder()

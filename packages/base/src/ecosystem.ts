@@ -4,11 +4,15 @@ import { DatabaseSync } from 'node:sqlite'
 import type { ExtensionFactory } from '@agnes/extension-api'
 import compactionExtension from '../extensions/compaction/src/index.js'
 import { createComputerUseExtension } from '../extensions/computer-use/src/index.js'
+import deliverablesExtension from '../extensions/deliverables/src/index.js'
 import {
   type CcHookMap,
   type HooksRunnerExtensionDeps,
   hooksRunnerExtension,
 } from '../extensions/hooks-runner/src/index.js'
+import interactionExtension from '../extensions/interaction/src/index.js'
+import { createJobsExtension } from '../extensions/jobs/src/index.js'
+import { shellJobsFor } from '../extensions/jobs/src/registry.js'
 import { mcpSearchExtension } from '../extensions/mcp-search/src/index.js'
 import { mcpCatalogHubFor } from '../extensions/mcp-server/src/catalog-hub.js'
 import pluginCreatorExtension from '../extensions/plugin-creator/src/index.js'
@@ -19,9 +23,9 @@ import { createRefineHarness } from '../extensions/refine/src/seam.js'
 import { skillsExtension } from '../extensions/skills/src/runtime.js'
 import { createSubagentExtension, type SubagentLimits } from '../extensions/subagent/src/index.js'
 import { gitWorktrees, type WorktreeEntry } from '../extensions/subagent/src/worktree.js'
-import toolsCoreExtension from '../extensions/tools-core/src/index.js'
+import { createToolsCoreExtension } from '../extensions/tools-core/src/index.js'
 import toolsSearchExtension from '../extensions/tools-search/src/index.js'
-import toolsWebExtension from '../extensions/tools-web/src/index.js'
+import { createToolsWebExtension } from '../extensions/tools-web/src/index.js'
 import type { SeamInitContext } from './seam-init.js'
 
 /** Replaced with the reviewed generated asset by the CLI SEA build. */
@@ -172,10 +176,15 @@ function defineSubagentExtension(init: SeamInitContext): ExtensionFactory {
 
 /** Trusted factories keyed by the manifest id the host is about to admit. */
 export const ecosystem = {
+  'agnes/interaction': (): ExtensionFactory => interactionExtension,
+  'agnes/deliverables': (): ExtensionFactory => deliverablesExtension,
   'agnes/plugin-creator': (): ExtensionFactory => pluginCreatorExtension,
-  'agnes/tools-core': (): ExtensionFactory => toolsCoreExtension,
+  'agnes/tools-core': (init: SeamInitContext): ExtensionFactory =>
+    createToolsCoreExtension(shellJobsFor(init.signal)),
+  'agnes/jobs': (init: SeamInitContext): ExtensionFactory => createJobsExtension(shellJobsFor(init.signal)),
   'agnes/tools-search': (): ExtensionFactory => toolsSearchExtension,
-  'agnes/tools-web': (): ExtensionFactory => toolsWebExtension,
+  'agnes/tools-web': (init: SeamInitContext): ExtensionFactory =>
+    createToolsWebExtension(init.searchProvider),
   'agnes/compaction': (): ExtensionFactory => compactionExtension,
   'agnes/privacy': (init: SeamInitContext): ExtensionFactory => privacyFactory(init),
   // Cross-server deferred-tool search plus the ready-Skill listing (design §3.9, D123). Host hands it

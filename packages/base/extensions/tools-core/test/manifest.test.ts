@@ -31,14 +31,13 @@ describe('tools-core manifest', () => {
 
   it('claims only the capabilities these tools use', () => {
     // Every entry here is an authority the host grants on the strength of this file, so an empty
-    // list is a claim in its own right: no hooks, no slots, no resources, and no network of its
+    // list is a claim in its own right: shutdown cleans jobs; no slots, resources or network of its
     // own — the tools reach the network only through a command the model runs.
-    expect(manifest.capabilities.hooks).toEqual([])
+    expect(manifest.capabilities.hooks).toEqual(['shutdown'])
     expect(manifest.capabilities.slots).toEqual([])
     expect(manifest.capabilities.resources).toEqual([])
     expect(manifest.capabilities.network).toEqual([])
-    // Output larger than the guard allows is stored as an artifact, and background commands are
-    // submitted as jobs; both need the artifacts capability.
+    // Output larger than the guard allows is stored as an artifact.
     expect(manifest.capabilities.artifacts).toBe(true)
     expect(manifest.capabilities.events).toBe(true)
   })
@@ -56,7 +55,12 @@ describe('tools-core manifest', () => {
   it('registers only tool names the manifest declares, and disposes every one', async () => {
     const registered: string[] = []
     const disposed: string[] = []
+    const hooks: string[] = []
     const api = {
+      registerHook: (name: string) => {
+        hooks.push(name)
+        return () => {}
+      },
       registerTool: (d: ToolDef): Disposer => {
         registered.push(d.name)
         return () => {
@@ -70,7 +74,8 @@ describe('tools-core manifest', () => {
     // the two lists whole, in order, is what makes a name declared and never registered - or worse,
     // registered under a name the manifest does not carry - fail here rather than at assembly.
     expect(registered).toEqual(manifest.capabilities.tools.names)
-    dispose()
+    expect(hooks).toEqual(manifest.capabilities.hooks)
+    await dispose()
     expect(disposed).toEqual(registered)
   })
 })

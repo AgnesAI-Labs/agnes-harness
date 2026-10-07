@@ -287,7 +287,11 @@ export type HookPort = {
   context(sections: PromptSection[]): Promise<{ sections: PromptSection[]; additionalContext: string }>
   beforeRequest(out: DeriveOutput, slot: string, attempt: number): Promise<DeriveOutput>
   requestPatch?(payload: HookPayloadMap['before_request']): Promise<HookReturnMap['before_request']>
-  beforeStep(p: { turn: number; step: number; depth: number }): Promise<{ block?: boolean; park?: boolean; reason?: string }>
+  beforeStep(p: {
+    turn: number
+    step: number
+    depth: number
+  }): Promise<{ block?: boolean; park?: boolean; reason?: string }>
   toolResult?(p: HookPayloadMap['tool_result']): Promise<HookReturnMap['tool_result']>
   approvalRequest?(p: HookPayloadMap['approval_request']): Promise<HookReturnMap['approval_request']>
   requestError?(p: HookPayloadMap['request_error']): Promise<void>
@@ -354,6 +358,8 @@ export type SessionDeps = {
   tracker: StateTracker
   surface: SurfaceCache
   ui: UIProjectionCell
+  /** Fresh current-registry slot runner for each projection request. Explicit fills override it. */
+  slotFills?: () => import('../project/ui.js').SlotFillRunner
   lane: string
   runtime: SeamRuntime
   provider: Provider
@@ -1887,7 +1893,12 @@ export class SessionImpl {
   surface(): readonly SurfaceNode[] {
     return this.d.surface.nodes()
   }
+  private withSlots<T extends Omit<UIOptions, 'sessionKey' | 'upto' | 'lane'>>(opts: T): T {
+    return opts.fills || !this.d.slotFills ? opts : { ...opts, fills: this.d.slotFills() }
+  }
+
   projectUI(upto?: Seq, opts: Omit<UIOptions, 'sessionKey' | 'upto' | 'lane'> = {}): Promise<CoreUITimeline> {
+    opts = this.withSlots(opts)
     if (upto !== undefined && (!Number.isSafeInteger(upto) || upto < 0))
       return Promise.reject(
         new CoreError('E_ENVELOPE', 'UI upper bound must be a nonnegative safe sequence number'),
@@ -1913,6 +1924,7 @@ export class SessionImpl {
     upto?: Seq,
     opts: Omit<UIOptions, 'sessionKey' | 'upto' | 'lane'> = {},
   ): Promise<CoreUIProjectionUpdate> {
+    opts = this.withSlots(opts)
     if (
       !Number.isSafeInteger(after) ||
       after < 0 ||
@@ -1984,6 +1996,7 @@ export class SessionImpl {
       maxBytes?: number
     } = {},
   ): Promise<CoreUIOpeningResult> {
+    opts = this.withSlots(opts)
     const maxNodes = opts.maxNodes ?? UI_OPENING_DEFAULT_MAX_NODES
     const maxBytes = opts.maxBytes ?? UI_PROJECTION_DEFAULT_MAX_BYTES
     if (!Number.isSafeInteger(maxNodes) || maxNodes < 1 || !Number.isSafeInteger(maxBytes) || maxBytes < 1)
@@ -2039,6 +2052,7 @@ export class SessionImpl {
       maxBytes?: number
     } = {},
   ): Promise<CoreUIHistoryPage> {
+    opts = this.withSlots(opts)
     const limit = opts.limit ?? UI_HISTORY_DEFAULT_LIMIT
     const maxBytes = opts.maxBytes ?? UI_PROJECTION_DEFAULT_MAX_BYTES
     if (

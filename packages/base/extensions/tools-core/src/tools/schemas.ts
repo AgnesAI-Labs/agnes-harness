@@ -20,6 +20,7 @@ export const ShellParams = Type.Object(
     timeoutMs: Type.Optional(Type.Integer({ minimum: 1 })),
     cwd: Type.Optional(Path),
     background: Type.Optional(Type.Boolean()),
+    timeoutToBackground: Type.Optional(Type.Boolean()),
   },
   { additionalProperties: false },
 )

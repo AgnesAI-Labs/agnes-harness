@@ -19,7 +19,8 @@
     "dist/sea/native",
     "dist/sea/runtime",
     "dist/sea/THIRD-PARTY-NOTICES/computer-use-hermes.txt",
-    "dist/sea/bundled-plugins"
+    "dist/sea/bundled-plugins",
+    "dist/sea/ripgrep"
   ],
   "bin": {
     "agh": "./bin/agh"

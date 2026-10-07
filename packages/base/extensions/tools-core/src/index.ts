@@ -1,7 +1,8 @@
 import { type Disposer, defineExtension, type ToolDef } from '@agnes/extension-api'
+import { type ShellJobs, standaloneShellJobs } from '../../jobs/src/registry.js'
 import { editTool } from './tools/edit.js'
 import { readTool } from './tools/read.js'
-import { shellTool } from './tools/shell.js'
+import { createShellTool, shellTool } from './tools/shell.js'
 import { todoTool } from './tools/todo.js'
 import { writeTool } from './tools/write.js'
 
@@ -13,16 +14,24 @@ import { writeTool } from './tools/write.js'
 // name nobody can call.
 export const TOOLS_CORE: readonly ToolDef[] = [readTool, writeTool, editTool, shellTool, todoTool]
 
-// The module the manifest's `entry` points at. Registration is the whole of it: a factory reaching
-// for anything else would be taking authority this manifest does not declare.
 // The placeholder the shell tool puts at the head of its argv, re-exported so the deployment's
 // sandbox implementation can substitute an interpreter for it without importing a tool module.
 export { SHELL_SENTINEL } from './tools/shell.js'
 
-export default defineExtension((agnes) => {
-  const disposers = TOOLS_CORE.map((t) => agnes.registerTool(t))
-  const dispose: Disposer = () => {
-    for (const d of disposers) d()
-  }
-  return dispose
-})
+export function createToolsCoreExtension(jobs: ShellJobs = standaloneShellJobs) {
+  return defineExtension((agnes) => {
+    const tools = [readTool, writeTool, editTool, createShellTool(jobs), todoTool]
+    const disposers = tools.map((t) => agnes.registerTool(t))
+    disposers.push(
+      agnes.registerHook('shutdown', async (_payload, ctx) => {
+        await jobs.closeSession(ctx.session.key, ctx.session.lane)
+      }),
+    )
+    const dispose: Disposer = async () => {
+      for (const d of disposers) d()
+      await jobs.dispose()
+    }
+    return dispose
+  })
+}
+export default createToolsCoreExtension()

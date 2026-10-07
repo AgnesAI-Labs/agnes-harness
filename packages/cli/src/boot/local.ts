@@ -379,7 +379,7 @@ export async function bootLocal(p: ParsedArgs, deps: LocalBootDeps): Promise<Boo
   const imageBytes = computerUse.capture.maxBytesPerImage
   const artifacts = createLocalArtifactReadStore({
     dataDir: profile.dataDir,
-    maxArtifactBytes: imageBytes,
+    maxArtifactBytes: Math.max(32 * 1024 * 1024, imageBytes),
   })
   let mediaHost: Host | undefined
   const requestMedia = composeProductionRequestMedia({

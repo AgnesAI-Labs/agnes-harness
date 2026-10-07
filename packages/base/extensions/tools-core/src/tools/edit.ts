@@ -1,6 +1,6 @@
 import { defineTool, type ToolResult } from '@agnes/extension-api'
 import { withFileLock } from '../guards/mutation-queue.js'
-import { observe, versionOf } from '../guards/observed.js'
+import { observe, observedVersion, UNKNOWN_VERSION, versionOf } from '../guards/observed.js'
 import { looksTruncated } from '../guards/truncation.js'
 import { normalizeWorkspacePath } from '../paths.js'
 import { isBinary, MAX_READ_BYTES } from './read.js'
@@ -28,7 +28,7 @@ function fail(text: string): ToolResult {
 export const editTool = defineTool({
   name: 'edit',
   description:
-    'Apply exact text replacements to a file. Each oldText must occur exactly once in the current file content - include surrounding lines when a short string would match more than once - and the edits are applied in the order given. Build large generated files incrementally: aim for at most 8 KiB of new content per call, preserve the rest of the file, and split larger additions across multiple calls.',
+    'Apply exact text replacements to a file read in this session. Each oldText must occur exactly once in the current file content - include surrounding lines when a short string would match more than once - and the edits are applied in the order given. Build large generated files incrementally: aim for at most 8 KiB of new content per call, preserve the rest of the file, and split larger additions across multiple calls.',
   parameters: EditParams,
   meta: {
     isReadOnly: false,
@@ -60,6 +60,11 @@ export const editTool = defineTool({
       } catch {
         return fail('edit failed: file is not valid UTF-8')
       }
+      if (observedVersion(ctx.session.key, abs) === undefined)
+        return {
+          ...fail(`edit refused: read ${args.path} in this session before editing it`),
+          details: { code: 'FS_NOT_OBSERVED', path: args.path },
+        }
       let text = original
       for (const [i, e] of args.edits.entries()) {
         const n = occurrences(text, e.oldText)
@@ -82,7 +87,11 @@ export const editTool = defineTool({
       // the check, and refusing here would make two sessions editing different parts of one file
       // fail each other. It does record what it wrote, so a later `write` of this session compares
       // against the file as this edit left it.
-      observe(ctx.session.key, abs, await versionOf(ctx, args.path, enc.encode(text), MAX_READ_BYTES))
+      observe(
+        ctx.session.key,
+        abs,
+        (await versionOf(ctx, args.path, enc.encode(text), MAX_READ_BYTES)) ?? UNKNOWN_VERSION,
+      )
       const delta = text.split('\n').length - original.split('\n').length
       return {
         content: [

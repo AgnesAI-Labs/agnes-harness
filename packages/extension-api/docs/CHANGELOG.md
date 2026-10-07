@@ -4,6 +4,14 @@ API additions require a minor version; removals or semantic changes require a ma
 
 ## Unreleased
 
+`HookReturnMap.before_step` gains optional `park?: boolean`: a pending interaction ends the turn as
+parked before another inference request. Blocking still takes precedence when both directives are set.
+`SearchProvider.search(queries, { signal, timeoutMs }): Promise<SearchResult[]>` is an additive
+deployment-owned search interface; the Host passes it only to the official web-tools factory.
+`tool.card.inline` accepts optional typed question and deliverable payloads. Existing payloads remain
+valid, and clients submit answers through ordinary user messages using the shared protocol helpers.
+
+
 `definePersistenceProvider` publishes a session persistence provider. The store methods are the ones Core's
 log storage and the host package tables already use: `open`, `commit`, `renew`, `release`, `scan`,
 `registers`, `tables`, and `close`. `DEFAULT_PERSISTENCE_PROVIDER_ID` is `sqlite`. `PERSISTENCE_SCAN_PAGE_MAX`

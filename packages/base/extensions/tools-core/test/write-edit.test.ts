@@ -15,6 +15,12 @@ function ctxOf(opts: FakeToolContextOpts = {}) {
   return fakeToolContext({ sessionKey: `test-session-${sessions++}`, ...opts })
 }
 
+async function observedCtxOf(opts: FakeToolContextOpts = {}) {
+  const ctx = ctxOf(opts)
+  for (const path of ctx.mem.files.keys()) await readTool.execute({ path }, ctx)
+  return ctx
+}
+
 const dec = new TextDecoder()
 function textOf(r: ToolResult): string {
   const first = r.content[0]
@@ -32,7 +38,7 @@ describe('write', () => {
   })
 
   it('creates a file and says so, with the byte count in details', async () => {
-    const ctx = ctxOf()
+    const ctx = await observedCtxOf()
     const r = await writeTool.execute({ path: 'n.txt', content: 'héllo' }, ctx)
     expect(dec.decode(ctx.mem.files.get('/work/proj/n.txt'))).toBe('héllo')
     expect(textOf(r)).toBe('created n.txt (5 chars)')
@@ -42,14 +48,14 @@ describe('write', () => {
   })
 
   it.each(['', 'x'.repeat(10)])('overwrites existing content %j and says overwrote', async (old) => {
-    const ctx = ctxOf({ files: { 'a.txt': old } })
+    const ctx = await observedCtxOf({ files: { 'a.txt': old } })
     const r = await writeTool.execute({ path: 'a.txt', content: 'y'.repeat(10) }, ctx)
     expect(textOf(r)).toBe('overwrote a.txt (10 chars)')
     expect(dec.decode(ctx.mem.files.get('/work/proj/a.txt'))).toBe('y'.repeat(10))
   })
 
   it('refuses a truncated overwrite and leaves the file alone', async () => {
-    const ctx = ctxOf({ files: { 'big.ts': 'x'.repeat(100) } })
+    const ctx = await observedCtxOf({ files: { 'big.ts': 'x'.repeat(100) } })
     const r = await writeTool.execute({ path: 'big.ts', content: 'y'.repeat(10) }, ctx)
     expect(r.isError).toBe(true)
     expect(textOf(r)).toContain('truncation guard')
@@ -57,7 +63,7 @@ describe('write', () => {
   })
 
   it('refuses to empty a non-empty file', async () => {
-    const ctx = ctxOf({ files: { 'big.ts': 'x'.repeat(100) } })
+    const ctx = await observedCtxOf({ files: { 'big.ts': 'x'.repeat(100) } })
     const r = await writeTool.execute({ path: 'big.ts', content: '' }, ctx)
     expect(r.isError).toBe(true)
     expect(dec.decode(ctx.mem.files.get('/work/proj/big.ts'))).toBe('x'.repeat(100))
@@ -73,7 +79,7 @@ describe('write', () => {
       // a sandbox refusal arriving as "no previous content" would switch the truncation guard off on
       // exactly the reads that failed for a reason, and the overwrite would go ahead unchecked. This
       // is a branch a memory filesystem never produces on its own, which is why it needs a fixture.
-      const ctx = ctxOf({
+      const ctx = await observedCtxOf({
         files: { 'locked.ts': 'x'.repeat(100) },
         readErrors: { 'locked.ts': { code, message } },
       })
@@ -88,13 +94,13 @@ describe('write', () => {
 describe('a file that is readable but not writable', () => {
   const message = 'E_FS_DENIED: /work/proj/state.yaml is denied by policy'
   const locked = () =>
-    ctxOf({
+    observedCtxOf({
       files: { 'state.yaml': 'name: a\n' },
       writeErrors: { 'state.yaml': { code: 'E_FS_DENIED', message } },
     })
 
   it('write names the refusal and leaves the file alone', async () => {
-    const ctx = locked()
+    const ctx = await locked()
     const result = await writeTool.execute({ path: 'state.yaml', content: 'name: b\n' }, ctx)
     expect(result.isError).toBe(true)
     expect(textOf(result)).toBe(`write failed before writing: ${message}`)
@@ -102,7 +108,7 @@ describe('a file that is readable but not writable', () => {
   })
 
   it('edit names the refusal and leaves the file alone', async () => {
-    const ctx = locked()
+    const ctx = await locked()
     const result = await editTool.execute(
       { path: 'state.yaml', edits: [{ oldText: 'name: a', newText: 'name: b' }] },
       ctx,
@@ -113,7 +119,7 @@ describe('a file that is readable but not writable', () => {
   })
 
   it('still lets any other write failure propagate', async () => {
-    const ctx = ctxOf({
+    const ctx = await observedCtxOf({
       files: { 'state.yaml': 'name: a\n' },
       writeErrors: { 'state.yaml': { code: 'EIO', message: 'EIO: disk' } },
     })
@@ -135,7 +141,7 @@ describe('edit', () => {
   })
 
   it('applies unique edits in order and reports the line delta', async () => {
-    const ctx = ctxOf({ files: { 'a.ts': 'const a = 1\nconst b = 2\n' } })
+    const ctx = await observedCtxOf({ files: { 'a.ts': 'const a = 1\nconst b = 2\n' } })
     const r = await editTool.execute(
       {
         path: 'a.ts',
@@ -158,7 +164,7 @@ describe('edit', () => {
     ['x x', 'x'],
     ['aaa', 'aa'],
   ])('rejects missing or ambiguous oldText in %j without writing', async (original, oldText) => {
-    const ctx = ctxOf({ files: { 'a.ts': original } })
+    const ctx = await observedCtxOf({ files: { 'a.ts': original } })
     const missing = await editTool.execute({ path: 'a.ts', edits: [{ oldText: 'zzz', newText: '' }] }, ctx)
     expect(missing.isError).toBe(true)
     expect(textOf(missing)).toContain('not found')
@@ -171,13 +177,13 @@ describe('edit', () => {
   it('replaces the match literally, not as a replacement pattern', async () => {
     // String.replace expands `$&` and friends in the replacement, so a newText carrying one would
     // otherwise write text that appears nowhere in the model's request.
-    const ctx = ctxOf({ files: { 'a.ts': 'const a = 1\n' } })
+    const ctx = await observedCtxOf({ files: { 'a.ts': 'const a = 1\n' } })
     await editTool.execute({ path: 'a.ts', edits: [{ oldText: 'a = 1', newText: 'a = "$&"' }] }, ctx)
     expect(dec.decode(ctx.mem.files.get('/work/proj/a.ts'))).toBe('const a = "$&"\n')
   })
 
   it('reports a read failure instead of writing', async () => {
-    const ctx = ctxOf()
+    const ctx = await observedCtxOf()
     const r = await editTool.execute({ path: 'nope.ts', edits: [{ oldText: 'a', newText: 'b' }] }, ctx)
     expect(r.isError).toBe(true)
     expect(textOf(r)).toContain('edit failed')
@@ -191,7 +197,7 @@ describe('edit', () => {
   ])('refuses non-text bytes %j without writing', async (bytes, error) => {
     // Decoding bytes that are not text and writing the decoded form back replaces every byte that
     // is not valid UTF-8 with a replacement character, which corrupts the file silently.
-    const ctx = ctxOf({ files: { 'b.bin': bytes } })
+    const ctx = await observedCtxOf({ files: { 'b.bin': bytes } })
     const r = await editTool.execute({ path: 'b.bin', edits: [{ oldText: 'a', newText: 'z' }] }, ctx)
     expect(r.isError).toBe(true)
     expect(textOf(r)).toContain(error)
@@ -199,7 +205,7 @@ describe('edit', () => {
   })
 
   it('preserves a UTF-8 BOM and counts its bytes in the result', async () => {
-    const ctx = ctxOf({ files: { 'a.txt': new Uint8Array([0xef, 0xbb, 0xbf, 0x61, 0x62]) } })
+    const ctx = await observedCtxOf({ files: { 'a.txt': new Uint8Array([0xef, 0xbb, 0xbf, 0x61, 0x62]) } })
     const r = await editTool.execute({ path: 'a.txt', edits: [{ oldText: 'a', newText: 'z' }] }, ctx)
     expect(r.isError).toBeUndefined()
     expect([...(ctx.mem.files.get('/work/proj/a.txt') as Uint8Array)]).toEqual([0xef, 0xbb, 0xbf, 0x7a, 0x62])
@@ -207,7 +213,7 @@ describe('edit', () => {
   })
 
   it('refuses an edit that truncates the file', async () => {
-    const ctx = ctxOf({ files: { 'a.ts': `${'x'.repeat(100)}DROP` } })
+    const ctx = await observedCtxOf({ files: { 'a.ts': `${'x'.repeat(100)}DROP` } })
     const r = await editTool.execute(
       { path: 'a.ts', edits: [{ oldText: 'x'.repeat(100), newText: '' }] },
       ctx,
@@ -262,7 +268,7 @@ describe('the mutation queue keys on the file, not on the spelling', () => {
   it('puts two spellings of one path on the same chain', async () => {
     // `a.ts` and `/work/proj/a.ts` are one file. Keyed on the raw argument they took two different
     // locks, so two writers to the same file ran at once and the last one to finish won.
-    const ctx = ctxOf({ files: { 'race.txt': 'x'.repeat(100) } })
+    const ctx = await observedCtxOf({ files: { 'race.txt': 'x'.repeat(100) } })
     const [first, second] = await Promise.all([
       writeTool.execute({ path: 'race.txt', content: 'A'.repeat(1000) }, ctx),
       writeTool.execute({ path: '/work/proj/race.txt', content: 'B'.repeat(100) }, ctx),
@@ -298,6 +304,7 @@ describe('write refuses to replace a file that changed after it was read', () =>
     const { a, b } = twoSessions(base)
     await read(a)
     // Another session changes the file between a's read and a's write.
+    await read(b)
     await editTool.execute({ path: 'shared.txt', edits: [{ oldText: 'two', newText: 'TWO' }] }, b)
     const r = await overwrite(a, 'line one\nline two\nline THREE\n')
     expect(r.isError).toBe(true)
@@ -312,6 +319,7 @@ describe('write refuses to replace a file that changed after it was read', () =>
   it('lets the write through once the file is read again, and the merged content lands', async () => {
     const { a, b } = twoSessions(base)
     await read(a)
+    await read(b)
     await editTool.execute({ path: 'shared.txt', edits: [{ oldText: 'two', newText: 'TWO' }] }, b)
     expect((await overwrite(a, 'x'.repeat(base.length))).isError).toBe(true)
     await read(a)
@@ -394,10 +402,10 @@ describe('write refuses to replace a file that changed after it was read', () =>
 })
 
 describe('write leaves alone what the session has not seen', () => {
-  it('overwrites an existing file that was never read, as before', async () => {
+  it('refuses an existing file that was never read', async () => {
     const ctx = ctxOf({ files: { 'shared.txt': 'old\n' } })
-    expect((await overwrite(ctx, 'new\n')).isError).toBeUndefined()
-    expect(onDisk(ctx)).toBe('new\n')
+    expect((await overwrite(ctx, 'new\n')).details).toEqual({ code: 'FS_NOT_OBSERVED', path: 'shared.txt' })
+    expect(onDisk(ctx)).toBe('old\n')
   })
 
   it('does not take another session’s read as its own', async () => {
@@ -405,7 +413,7 @@ describe('write leaves alone what the session has not seen', () => {
     await read(a)
     put(a, 'changed\n')
     // b never looked at the file; only a's view is out of date.
-    expect((await overwrite(b, 'by b\n')).isError).toBeUndefined()
+    expect((await overwrite(b, 'by b\n')).details).toMatchObject({ code: 'FS_NOT_OBSERVED' })
   })
 
   it('creates a file that does not exist without a check', async () => {
@@ -417,13 +425,13 @@ describe('write leaves alone what the session has not seen', () => {
     const ctx = ctxOf({ files: { 'shared.txt': new Uint8Array([0x61, 0x00, 0x62]) } })
     expect((await read(ctx)).isError).toBe(true)
     put(ctx, 'text now\n')
-    expect((await overwrite(ctx, 'mine\n')).isError).toBeUndefined()
+    expect((await overwrite(ctx, 'mine\n')).details).toMatchObject({ code: 'FS_NOT_OBSERVED' })
     const other = ctxOf({ files: { 'shared.txt': 'old\n' } })
     expect((await readTool.execute({ path: `artifact://${'0'.repeat(64)}?size=3` }, other)).isError).toBe(
       true,
     )
     put(other, 'changed\n')
-    expect((await overwrite(other, 'mine\n')).isError).toBeUndefined()
+    expect((await overwrite(other, 'mine\n')).details).toMatchObject({ code: 'FS_NOT_OBSERVED' })
   })
 
   it('keeps a file that was read again recently over files read since it was first read', async () => {
@@ -452,7 +460,7 @@ describe('write leaves alone what the session has not seen', () => {
       await readTool.execute({ path: `f${i}` }, ctx)
     }
     put(ctx, 'changed\n')
-    expect((await overwrite(ctx, 'mine\n')).isError).toBeUndefined()
+    expect((await overwrite(ctx, 'mine\n')).details).toMatchObject({ code: 'FS_NOT_OBSERVED' })
     // A file inside the window is still held.
     put(ctx, 'last\n')
     await read(ctx)
@@ -477,9 +485,15 @@ describe('what a session writes itself is what it has seen', () => {
     expect((await overwrite(ctx, 'ONE\ntwo\nthree\n')).isError).toBeUndefined()
   })
 
-  it('lets a session edit then write a file it never read, and refuses once someone else changes it', async () => {
+  it('refuses an unobserved edit, then observes edits after a read', async () => {
     const { a, b } = twoSessions('one\ntwo\n')
+    expect(
+      (await editTool.execute({ path: 'shared.txt', edits: [{ oldText: 'one', newText: 'ONE' }] }, a))
+        .details,
+    ).toMatchObject({ code: 'FS_NOT_OBSERVED' })
+    await read(a)
     await editTool.execute({ path: 'shared.txt', edits: [{ oldText: 'one', newText: 'ONE' }] }, a)
+    await read(b)
     await editTool.execute({ path: 'shared.txt', edits: [{ oldText: 'two', newText: 'TWO' }] }, b)
     expect(textOf(await overwrite(a, 'ONE\nthree\n'))).toContain('stale read')
   })
@@ -493,10 +507,11 @@ describe('what a session writes itself is what it has seen', () => {
   })
 })
 
-describe('edit stays unguarded', () => {
+describe('observed edit matches current content', () => {
   it('applies to a file that changed since it was read, because its own match is the check', async () => {
     const { a, b } = twoSessions('one\ntwo\nthree\n')
     await read(a)
+    await read(b)
     await editTool.execute({ path: 'shared.txt', edits: [{ oldText: 'one', newText: 'ONE' }] }, b)
     const r = await editTool.execute(
       { path: 'shared.txt', edits: [{ oldText: 'three', newText: 'THREE' }] },
@@ -509,6 +524,7 @@ describe('edit stays unguarded', () => {
   it('still reports a missing oldText as before, without any staleness wording', async () => {
     const { a, b } = twoSessions('one\ntwo\n')
     await read(a)
+    await read(b)
     await editTool.execute({ path: 'shared.txt', edits: [{ oldText: 'two', newText: 'TWO' }] }, b)
     const r = await editTool.execute({ path: 'shared.txt', edits: [{ oldText: 'two', newText: '2' }] }, a)
     expect(textOf(r)).toBe('edit 1: oldText not found')

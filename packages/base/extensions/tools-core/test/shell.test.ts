@@ -1,22 +1,37 @@
 import { checkToolDef } from '@agnes/extension-api'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { fakeToolContext } from '../../../testkit/tool-context.js'
+import { ShellJobs } from '../../jobs/src/registry.js'
 import { OUTPUT_LIMITS } from '../src/guards/output.js'
-import { SHELL_SENTINEL, shellTool } from '../src/tools/shell.js'
+import { createShellTool, SHELL_SENTINEL } from '../src/tools/shell.js'
+
+// Compatibility foreground executor for hosts without a session job registry.
+const shellTool = createShellTool()
 
 const textOf = (r: { content: { type: string }[] }): string =>
   (r.content[0] as { type: 'text'; text: string }).text
 
 describe('shell', () => {
+  it('preserves foreground execution for a backend that cannot rewrite host argv', async () => {
+    const ctx = fakeToolContext()
+    ctx.sandbox.confine = async () => {
+      throw Object.assign(new Error('external backend'), { code: 'SANDBOX_UNAVAILABLE' })
+    }
+    const result = await createShellTool(new ShellJobs()).execute({ command: 'echo ready' }, ctx)
+    expect(result.isError).toBeUndefined()
+    expect(ctx.calls.exec).toHaveLength(1)
+    expect(ctx.calls.exec[0]).toEqual([SHELL_SENTINEL, 'echo ready'])
+  })
+
   it('has a complete definition with replay never', () => {
     expect(checkToolDef(shellTool)).toEqual({ ok: true })
     expect(shellTool.meta.replay).toBe('never')
     expect(shellTool.description).not.toMatch(/bash|powershell|windows|posix/i)
   })
 
-  it('does not promise background execution while the job runner refuses every job', () => {
+  it('describes session jobs and their control tools', () => {
     expect(shellTool.description).not.toMatch(/background=true|poll the returned job/i)
-    expect(shellTool.description).toMatch(/background.*unavailable/i)
+    expect(shellTool.description).toContain('timeoutToBackground')
   })
 
   it('declares itself destructive, open-world and left to the command policy for approval', () => {
@@ -328,33 +343,13 @@ describe('shell timeout', () => {
   )
 })
 
-describe('shell background jobs', () => {
-  it('submits a background job instead of blocking', async () => {
+describe('shell without a job registry', () => {
+  it('fails clearly without pretending a generic artifact job executed the command', async () => {
     const ctx = fakeToolContext()
-    const r = await shellTool.execute({ command: 'sleep 100', background: true }, ctx)
+    const result = await shellTool.execute({ command: 'sleep 100', background: true }, ctx)
+    expect(result.isError).toBe(true)
+    expect(textOf(result)).toContain('background execution is unavailable')
     expect(ctx.calls.exec).toHaveLength(0)
-    expect(r.content[0]).toEqual({ type: 'text', text: 'background job job-1 started' })
-    expect(r.isError).toBeUndefined()
-  })
-
-  it('submits the command and cwd under the tool call id as its idempotency key', async () => {
-    const ctx = fakeToolContext()
-    await shellTool.execute({ command: 'sleep 100', background: true, cwd: '/tmp' }, ctx)
-    expect(ctx.calls.jobs[0]).toEqual({
-      idempotencyKey: ctx.session.toolUseId,
-      payload: { kind: 'shell', command: 'sleep 100', cwd: '/tmp' },
-      schedule: { kind: 'once' },
-    })
-  })
-
-  it('reports a job that could not be submitted as an error', async () => {
-    const ctx = fakeToolContext()
-    ctx.artifacts.submitJob = () => Promise.reject(new Error('job store offline'))
-    const r = await shellTool.execute({ command: 'sleep 100', background: true }, ctx)
-    expect(r.isError).toBe(true)
-    expect(textOf(r)).toContain('job store offline')
-    // The advice has to be something the model can do today, and background=true is not.
-    expect(textOf(r)).toMatch(/background execution is unavailable here; run the command in the foreground/)
-    expect(textOf(r)).not.toContain('background=true')
+    expect(ctx.calls.jobs).toHaveLength(0)
   })
 })

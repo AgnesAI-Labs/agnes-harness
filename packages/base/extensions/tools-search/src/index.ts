@@ -1,7 +1,6 @@
 import { type Disposer, defineExtension, type ToolDef } from '@agnes/extension-api'
-import { findTool } from './tools/find.js'
-import { grepTool } from './tools/grep.js'
 import { lsTool } from './tools/ls.js'
+import { ripgrepFindTool as findTool, ripgrepGrepTool as grepTool } from './tools/ripgrep.js'
 
 // The tools this extension actually registers, in the order the manifest names them. The manifest
 // is what grants the authority and it already names all three; this list is what claims it. These

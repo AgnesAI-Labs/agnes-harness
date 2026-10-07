@@ -1,4 +1,4 @@
-import type { UINode, UITurn } from '@agnes/protocol'
+import { parseAnswer, type UINode, type UITurn } from '@agnes/protocol'
 import {
   type ClientResourceService,
   type LocaleService,
@@ -17,6 +17,7 @@ import {
 } from '@agnes/web-ui/assistant-ui'
 import { type ReactNode, useSyncExternalStore } from 'react'
 import type { ClaimResolver } from './client-modules/boot.js'
+import { DefaultToolCards } from './default-tool-cards.js'
 import { toolIconReact } from './tool-icon.js'
 
 type SlotNode = Extract<UINode, { kind: 'slot' }>
@@ -121,6 +122,7 @@ export function WebConversationMessages({
   locale,
   resources,
   turns,
+  nodes,
   visibleNodeIds,
   onFork,
 }: {
@@ -129,6 +131,7 @@ export function WebConversationMessages({
   session?: SessionService
   locale?: LocaleService
   resources?: ClientResourceService
+  nodes?: readonly UINode[]
   turns?: readonly UITurn[]
   visibleNodeIds?: readonly string[]
   onFork?: (turn: UITurn) => Promise<void>
@@ -139,6 +142,23 @@ export function WebConversationMessages({
     registry ? registry.subscribeSession.bind(registry) : noSessionSubscription,
     () => registry?.sessionId,
   )
+  const answered = new Set<string>()
+  for (const tool of nodes ?? []) {
+    if (tool.kind !== 'tool') continue
+    for (const fill of tool.slots ?? []) {
+      const payload = fill.payload as import('@agnes/protocol/gen/slots').ToolCardInlinePayload
+      if (!payload.question) continue
+      for (const node of nodes ?? []) {
+        if (node.kind !== 'user') continue
+        const text = node.content
+          .filter((b) => b.type === 'text')
+          .map((b) => b.text)
+          .join('\n')
+        if (parseAnswer(payload.question.id, payload.question.questions, text))
+          answered.add(payload.question.id)
+      }
+    }
+  }
   const props: ConversationMessagesProps = {
     t: (key, vars) => locale?.t(key, vars) ?? key,
     ...(turns ? { turns } : {}),
@@ -164,12 +184,20 @@ export function WebConversationMessages({
       />
     ),
     renderTool: (node) => (
-      <ConversationToolCard
-        key={node.id}
-        node={node}
-        icon={toolIconReact(node.name)}
-        t={(key, vars) => locale?.t(key, vars) ?? key}
-      />
+      <>
+        <DefaultToolCards
+          node={node}
+          answered={answered}
+          {...(session ? { session } : {})}
+          {...(resources ? { resources } : {})}
+        />
+        <ConversationToolCard
+          key={node.id}
+          node={node}
+          icon={toolIconReact(node.name)}
+          t={(key, vars) => locale?.t(key, vars) ?? key}
+        />
+      </>
     ),
     renderSlot: (node) => (
       <SlotLeaf

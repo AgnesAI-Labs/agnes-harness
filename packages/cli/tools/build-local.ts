@@ -12,6 +12,7 @@ import { beginRuntimeDirectory } from '../../base/tools/runtime-directory.js'
 import { buildConversationCss } from '../../web-ui/tools/build-conversation-css.js'
 import { prepareDocumentReader } from './document-reader.js'
 import { copyPluginPackRuntime } from './plugin-pack-runtime.js'
+import { copyRipgrep } from './ripgrep.js'
 import { copySystemRuntime, withBuiltSystemRuntime } from './windows-runtime.js'
 
 const cliRoot = join(dirname(fileURLToPath(import.meta.url)), '..')
@@ -138,6 +139,7 @@ async function runtimeDefines(version: string): Promise<Record<string, string>> 
   ])
   return {
     AGNES_VERSION: JSON.stringify(version),
+    AGNES_BUNDLED_RIPGREP_PATH: JSON.stringify(`./ripgrep/${process.platform === 'win32' ? 'rg.exe' : 'rg'}`), // guards-allow-platform: target native executable
     AGNES_COMPOSED_WORKER: 'true',
     AGNES_PACKAGED_BUILTINS: 'true',
     AGNES_BASE_PRESET_TEXT: JSON.stringify(await readFile(join(base, 'presets', 'base.yaml'), 'utf8')),
@@ -279,6 +281,7 @@ export async function buildLocalWeb(webOut: string): Promise<void> {
 async function buildLocal(out: string, nativeOutput?: string, versionOverride?: string): Promise<void> {
   const webOut = join(out, 'web')
   await mkdir(join(out, 'native'), { recursive: true })
+  await copyRipgrep(out)
   await copyComputerUseNotice(out)
   await copyBundledPlugins(out)
   await copyPluginPackRuntime(out)

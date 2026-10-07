@@ -274,6 +274,9 @@ describe('a host assembled from a profile naming @agnes/base', () => {
         'agnes/tools-core',
         'agnes/tools-search',
         'agnes/tools-web',
+        'agnes/interaction',
+        'agnes/deliverables',
+        'agnes/jobs',
         'agnes/compaction',
         'agnes/refine',
         'agnes/subagent',
@@ -319,7 +322,10 @@ describe('a host assembled from a profile naming @agnes/base', () => {
           .sort()
       expect(namesFrom('agnes/tools-core')).toEqual(['edit', 'read', 'shell', 'todo', 'write'])
       expect(namesFrom('agnes/tools-search')).toEqual(['find', 'grep', 'ls'])
-      expect(namesFrom('agnes/tools-web')).toEqual(['web_fetch'])
+      expect(namesFrom('agnes/tools-web')).toEqual(['web_fetch', 'web_search'])
+      expect(namesFrom('agnes/interaction')).toEqual(['ask_user_question'])
+      expect(namesFrom('agnes/deliverables')).toEqual(['present'])
+      expect(namesFrom('agnes/jobs')).toEqual(['job_kill', 'job_list', 'job_output'])
       expect(namesFrom('agnes/compaction')).toEqual(['compact'])
       expect(namesFrom('agnes/refine')).toEqual(['harness_propose'])
       expect(namesFrom('agnes/subagent')).toEqual([
@@ -332,6 +338,126 @@ describe('a host assembled from a profile naming @agnes/base', () => {
         'subagent_spawn',
       ])
       expect(namesFrom('agnes/mcp-search')).toEqual(['tool_describe', 'tool_search'])
+    } finally {
+      await host.close()
+    }
+  })
+
+  it('parks an official question, refuses an invalid answer, and wakes with a persisted valid answer', async () => {
+    const dataDir = scratch()
+    const provider = new ScriptedProvider({
+      models: [fakeModel({ route: 'gw', id: 'm1' })],
+      scripts: [
+        callTool('ask_user_question', {
+          questions: [{ id: 'choice', question: 'Choose a route', options: ['A', 'B'] }],
+        }),
+        say('You chose B.'),
+      ],
+      onExhausted: 'error',
+    })
+    const { host } = await createTestHost({
+      dataDir,
+      packageDirs: { '@agnes/base': baseDir },
+      provider,
+      disableSessionTitle: true,
+    })
+    try {
+      expect(host.extensions().find((e) => e.id === 'agnes/interaction')).toMatchObject({ loaded: true })
+      const session = await host.createSession({ cwd: dataDir })
+      const prompt = async (text: string) => {
+        await session.enqueue('next-turn', {
+          content: [{ type: 'text', text }],
+          actor: session.d.actor,
+          kind: 'prompt',
+        })
+        return session.run({ until: 'turn-end', signal: new AbortController().signal })
+      }
+      const first = await prompt('Ask me')
+      expect(first).toMatchObject({ reason: 'parked' })
+      expect(provider.calls).toHaveLength(1)
+      const rows = await session.scan({ type: 'x/agnes/interaction/requested', toSeq: session.lastSeq })
+      expect(rows).toHaveLength(1)
+      const id = (rows[0]!.data as { id: string }).id
+      expect(await prompt(`[question-answer ${id}] {"choice":"C"}`)).toMatchObject({ reason: 'parked' })
+      expect(provider.calls).toHaveLength(1)
+      const ui = await session.projectUI(undefined, { surface: 'web' })
+      expect(JSON.stringify(ui)).toContain('Choose a route')
+      expect(
+        ui.nodes.find((node) => node.kind === 'tool' && node.name === 'ask_user_question'),
+      ).toMatchObject({
+        slots: [
+          expect.objectContaining({
+            payload: expect.objectContaining({
+              question: {
+                id,
+                questions: [{ id: 'choice', question: 'Choose a route', options: ['A', 'B'] }],
+              },
+            }),
+          }),
+        ],
+      })
+      expect(await prompt(`[question-answer ${id}] {"choice":"B"}`)).toMatchObject({ reason: 'completed' })
+      expect(JSON.stringify(provider.calls[1]?.messages)).toContain('choice')
+      const answers = await session.scan({ type: 'user/message', toSeq: session.lastSeq })
+      expect(JSON.stringify(answers)).toContain('question-answer')
+    } finally {
+      await host.close()
+    }
+  })
+
+  it('presents an existing file as a persisted artifact card and refuses a missing file', async () => {
+    const dataDir = scratch()
+    writeFileSync(join(dataDir, 'report.txt'), 'A synthetic report')
+    const provider = new ScriptedProvider({
+      models: [fakeModel({ route: 'gw', id: 'm1' })],
+      scripts: [
+        callTool('present', { files: [{ path: 'report.txt', description: 'Review result' }] }),
+        say('Ready.'),
+        callTool('present', { files: [{ path: 'missing.txt' }] }),
+        say('Missing.'),
+      ],
+      onExhausted: 'error',
+    })
+    const { host } = await createTestHost({
+      dataDir,
+      packageDirs: { '@agnes/base': baseDir },
+      provider,
+      disableSessionTitle: true,
+      seams: {
+        artifacts: {
+          put: async (bytes, meta) => ({
+            sha256: createHash('sha256').update(bytes).digest('hex'),
+            size: bytes.length,
+            mime: meta?.mime ?? 'application/octet-stream',
+          }),
+        },
+      },
+    })
+    try {
+      const session = await host.createSession({ cwd: dataDir })
+      const prompt = async (text: string) => {
+        await session.enqueue('next-turn', {
+          content: [{ type: 'text', text }],
+          actor: session.d.actor,
+          kind: 'prompt',
+        })
+        return session.run({ until: 'turn-end', signal: new AbortController().signal })
+      }
+      expect(await prompt('Present report')).toMatchObject({ reason: 'completed' })
+      const events = await session.scan({ type: 'x/agnes/deliverables/presented', toSeq: session.lastSeq })
+      expect(events).toHaveLength(1)
+      expect(JSON.stringify(events)).toContain(
+        createHash('sha256').update('A synthetic report').digest('hex'),
+      )
+      const ui = await session.projectUI(undefined, { surface: 'web' })
+      expect(JSON.stringify(ui)).toContain('deliverables')
+      expect(JSON.stringify(ui)).toContain('report.txt')
+      await prompt('Present missing file')
+      expect(
+        await session.scan({ type: 'x/agnes/deliverables/presented', toSeq: session.lastSeq }),
+      ).toHaveLength(1)
+      const results = await session.scan({ type: 'tool/result', toSeq: session.lastSeq })
+      expect(results.at(-1)?.data).toMatchObject({ isError: true })
     } finally {
       await host.close()
     }

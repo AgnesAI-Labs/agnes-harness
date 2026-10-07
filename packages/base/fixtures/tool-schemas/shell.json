@@ -17,6 +17,9 @@
     },
     "background": {
       "type": "boolean"
+    },
+    "timeoutToBackground": {
+      "type": "boolean"
     }
   },
   "required": [

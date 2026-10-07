@@ -174,16 +174,29 @@ describe('SessionHookPort', () => {
 
   it('gets live budget from the assembled session and obeys a before_step block', async () => {
     let remaining = 17
+    let park = false
     const { engine, port } = setup({ budget: () => ({ remaining, cap: 20 }) })
     engine.on(
       'before_step',
-      (payload) => ({ block: payload.budget.remaining === 0, reason: String(payload.budget.remaining) }),
+      (payload) => ({
+        block: payload.budget.remaining === 0,
+        park,
+        reason: String(payload.budget.remaining),
+      }),
       meta,
     )
     await expect(port.beforeStep({ turn: 1, step: 1, depth: 0 })).resolves.toEqual({})
+    park = true
+    await expect(port.beforeStep({ turn: 1, step: 2, depth: 0 })).resolves.toEqual({
+      block: false,
+      park: true,
+      reason: '17',
+    })
+    park = false
     remaining = 0
     await expect(port.beforeStep({ turn: 1, step: 2, depth: 0 })).resolves.toEqual({
       block: true,
+      park: false,
       reason: '0',
     })
   })

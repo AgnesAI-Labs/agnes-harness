@@ -248,6 +248,17 @@
       "purpose": "Compile Extension and MCP tool schemas at runtime and independently verify protocol conformance.",
       "rationale": "Reuse the established schema implementation; reject invalid or external references before callbacks run.",
       "consumers": ["packages/base", "packages/host", "packages/protocol"]
+    },
+    {
+      "name": "@vscode/ripgrep",
+      "version": "1.18.0",
+      "license": "MIT",
+      "source": "https://github.com/microsoft/vscode-ripgrep",
+      "purpose": "Bundled ripgrep executable for official file search tools. Platform packages include ripgrep and its third-party licenses.",
+      "rationale": "Use a pinned search engine without requiring a system rg installation.",
+      "consumers": [
+        "packages/base"
+      ]
     }
   ]
 }
