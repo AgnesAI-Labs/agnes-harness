@@ -54,7 +54,7 @@ describe('loop author driver', () => {
       let state = initial
       return {
         async step(signal) {
-          if (state) return { phase: 'done', reason: 'completed' }
+          if (state) return { outcome: 'turn-ended', phase: 'done', reason: 'completed' }
           const reply = await ctx.model.complete(request, signal)
           for (const event of reply)
             if (event.type === 'toolcall_end') {
@@ -64,7 +64,7 @@ describe('loop author driver', () => {
           state++
           await ctx.checkpoints.write(codec.encode(state))
           await ctx.events.finish('completed')
-          return { phase: 'done', reason: 'completed' }
+          return { outcome: 'turn-ended', phase: 'done', reason: 'completed' }
         },
         cancel() {},
         dispose() {
@@ -126,7 +126,7 @@ describe('loop author driver', () => {
       capabilities: [],
       codec,
       create: () => ({
-        step: async () => ({ phase: 'working' }),
+        step: async () => ({ outcome: 'running', phase: 'working' }),
         cancel() {
           cancelled = true
         },
@@ -148,7 +148,7 @@ describe('loop author driver', () => {
         ...loop.create(),
         async step() {
           ac.abort(new Error('Stopped'))
-          return { phase: 'working' }
+          return { outcome: 'running', phase: 'working' }
         },
       }),
     })

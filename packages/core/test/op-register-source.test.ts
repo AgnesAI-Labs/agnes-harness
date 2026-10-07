@@ -15,8 +15,8 @@ describe('the program counter a session steps from', () => {
   it('is the log register cell, not the value folded from the ledger', async () => {
     const h = await openSession({ provider: hanging() })
     await h.session.enqueue('next-turn', { content: [{ type: 'text', text: 'go' }], actor })
-    expect(await h.session.step()).toEqual({ phase: 'checkpoint' })
-    expect(await h.session.step()).toEqual({ phase: 'inference' })
+    expect(await h.session.step()).toEqual({ outcome: 'running', phase: 'checkpoint' })
+    expect(await h.session.step()).toEqual({ outcome: 'running', phase: 'inference' })
     const folded = h.session.op()
     if (!folded) throw new Error('expected an open operation')
     const planted: NonNullable<OpState> = { ...folded, step: folded.step + 7 }

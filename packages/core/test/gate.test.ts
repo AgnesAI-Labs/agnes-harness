@@ -43,7 +43,7 @@ describe('contextTokens', () => {
     await session.enqueue('next-turn', { content: [{ type: 'text', text: '12345678' }], actor })
     // One step: acceptInput claims the queued prompt and writes it to the surface, before any new
     // inference (and therefore any new ledger row) runs.
-    expect(await session.step()).toEqual({ phase: 'checkpoint' })
+    expect(await session.step()).toEqual({ outcome: 'running', phase: 'checkpoint' })
     // The new message lands after the first turn's ledger row, so it is estimated at chars/4
     // (8 chars -> 2) and added on top of the ledger's 15 instead of recounting the whole surface.
     expect(contextTokens(session)).toBe(17)

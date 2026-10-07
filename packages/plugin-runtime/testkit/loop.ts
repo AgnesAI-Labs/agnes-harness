@@ -1,3 +1,4 @@
+import { loopShouldStop } from '@agnes/extension-api'
 import type { LoopCheckpoint, LoopContext, LoopFactory, LoopStepOutcome } from '@agnes/extension-api'
 import { type ModelReply, scriptedModel } from './model.js'
 
@@ -8,6 +9,7 @@ export interface LoopTestOptions {
   tools?: LoopContext['tools']
   signal?: AbortSignal
   maxSteps?: number
+  until?: 'turn-end' | 'idle'
 }
 
 /** Drive an actual factory/driver against scripted model replies and observable ports. */
@@ -17,6 +19,7 @@ export async function driveLoop(factory: LoopFactory, options: LoopTestOptions =
   const steps: LoopStepOutcome[] = []
   const inputs = [...(options.inputs ?? [])]
   let checkpoint = options.checkpoint ? structuredClone(options.checkpoint) : null
+  let current: (typeof inputs)[number] | null = null
   let finished: Parameters<LoopContext['events']['finish']> | undefined
   const signal = options.signal ?? new AbortController().signal
   const maxSteps = options.maxSteps ?? 20
@@ -33,13 +36,14 @@ export async function driveLoop(factory: LoopFactory, options: LoopTestOptions =
         throw new Error('Loop test tools not configured')
       },
     },
-    input: { accept: async () => inputs.shift() ?? null, pending: () => inputs.length > 0 },
+    input: { accept: async () => current ??= inputs.shift() ?? null, pending: () => inputs.length > 0 },
     events: {
       emit: async (type, data) => {
         events.push({ type, data: structuredClone(data) })
       },
       finish: async (...args) => {
         finished = args
+        current = null
       },
     },
     checkpoints: {
@@ -68,7 +72,7 @@ export async function driveLoop(factory: LoopFactory, options: LoopTestOptions =
       const outcome = await driver.step(signal)
       signal.throwIfAborted()
       steps.push(outcome)
-      if (outcome.reason || finished) {
+      if (loopShouldStop(outcome, options.until ?? 'turn-end')) {
         checkpoint = structuredClone(driver.checkpoint())
         return {
           steps,

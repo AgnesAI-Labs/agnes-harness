@@ -48,9 +48,10 @@ export type LoopEndReason =
   | 'max_steps'
   | 'interrupted'
 
-/** One scheduling edge. Custom phase names are deliberately open. */
+/** Scheduling is determined by outcome alone; phase is optional display metadata. */
 export interface LoopStepOutcome {
-  phase: string
+  outcome: 'running' | 'idle' | 'turn-ended' | 'parked'
+  phase?: string
   reason?: LoopEndReason
 }
 
@@ -119,4 +120,15 @@ export interface LoopRegistryPort {
   register(sourcePackage: string, factory: LoopFactory): () => void
   resolve(selection: LoopSelection): LoopFactory
   catalog(): readonly LoopCatalogEntry[]
+}
+
+/** Shared production/testkit stop rule. Completed turns may continue only for until=idle. */
+export function loopShouldStop(result: LoopStepOutcome, until: 'turn-end' | 'idle'): boolean {
+  switch (result.outcome) {
+    case 'running': return false
+    case 'idle':
+    case 'parked': return true
+    case 'turn-ended': return until === 'turn-end' || (result.reason ?? 'completed') !== 'completed'
+    default: throw new Error('Invalid loop step outcome')
+  }
 }

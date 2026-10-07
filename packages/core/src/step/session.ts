@@ -1,3 +1,5 @@
+import { loopShouldStop } from '@agnes/extension-api'
+import { publicOutcome } from '../loop/outcome.js'
 import type {
   HookPayloadMap,
   HookReturnMap,
@@ -331,7 +333,8 @@ export const noCompaction: CompactionPort = {
   onOverflow: () => 'failure',
 }
 
-export type StepOutcome = LoopStepOutcome
+/** Internal ledger-operation result; public drivers use LoopStepOutcome. */
+export type StepOutcome = { phase: string; reason?: TurnEndReason }
 export type TurnEndReason =
   | 'completed'
   | 'aborted'
@@ -511,6 +514,7 @@ export class SessionImpl {
   // run/step/resume calls in progress, and the resume they wait behind. `turn` and `op()` cannot say
   // this: both are set while a crashed turn waits to be continued, with nothing running.
   private activeOps = 0
+  private readonly activeWork = new Set<Promise<unknown>>()
   private resuming: Promise<unknown> | undefined
   private running: Promise<TurnOutcome> | undefined
   // The error the last turn/end row carried, for run() to hand back with its outcome. Phases report
@@ -1542,18 +1546,22 @@ export class SessionImpl {
    * Counts one run/step/resume in progress for as long as `fn` runs. A run or step waits for a
    * resume in progress first, and counts while it waits, so no second resume can start before it.
    */
-  private async active<T>(fn: () => Promise<T>, afterResume = true): Promise<T> {
+  private active<T>(fn: () => Promise<T>, afterResume = true): Promise<T> {
+    if (this.closing) return Promise.reject(new CoreError('E_CLOSED', 'session closed'))
     this.activeOps++
-    try {
+    const work = Promise.resolve().then(async () => {
       while (afterResume && this.resuming) await this.resuming
-      return await fn()
-    } finally {
+      return fn()
+    })
+    this.activeWork.add(work)
+    return work.finally(() => {
+      this.activeWork.delete(work)
       this.activeOps--
-    }
+    })
   }
 
   /** Dispatches on the phase the ledger says the lane is in, and advances it by exactly one edge. */
-  async step(): Promise<StepOutcome> {
+  async step(): Promise<LoopStepOutcome> {
     return this.active(() =>
       this.d.withModelSnapshot
         ? this.d.withModelSnapshot(() => this.stepWithModelSnapshot())
@@ -1561,9 +1569,9 @@ export class SessionImpl {
     )
   }
 
-  private async stepWithModelSnapshot(): Promise<StepOutcome> {
+  private async stepWithModelSnapshot(): Promise<LoopStepOutcome> {
     const op = this.op()
-    if (op?.control.status === 'cancel_requested') return finishAborted(this)
+    if (op?.control.status === 'cancel_requested') return publicOutcome(await finishAborted(this))
     return this.loopDriver.step(this.ac.signal)
   }
 
@@ -1631,9 +1639,7 @@ export class SessionImpl {
     const maxEdges = 64
     let edges = 0
     const progress = () =>
-      this.loop.id === defaultLoopFactory.id && this.loop.version === defaultLoopFactory.version
-        ? this.opSeq()
-        : this.lastSeq
+      this.lastSeq
     let cursor = progress()
     try {
       for (;;) {
@@ -1656,7 +1662,7 @@ export class SessionImpl {
         const open = this.op()
         if (open && this.ac.signal.aborted && !this.closing && open.control.status !== 'cancel_requested')
           await this.abort()
-        let out: StepOutcome
+        let out: LoopStepOutcome
         const quietEntry = this.d.quiet?.enter(this.d.quietGroup ?? this.key)
         if (quietEntry) await quietEntry
         try {
@@ -1678,7 +1684,7 @@ export class SessionImpl {
           // the user asked for the stop. End the turn as the stop it was, with no invariant row for
           // what the cancel itself caused; if even that cannot be written, the failure path below
           // still records and closes the turn.
-          if (this.ac.signal.aborted && !this.closing) {
+          if (this.ac.signal.aborted) {
             try {
               await this.abort()
               const stopped = await finishAborted(this)
@@ -1698,7 +1704,7 @@ export class SessionImpl {
         } finally {
           this.d.quiet?.leave(this.d.quietGroup ?? this.key)
         }
-        if (out.phase === 'terminal')
+        if (loopShouldStop(out, opts.until) && out.outcome !== 'idle')
           return {
             reason: out.reason ?? 'completed',
             lastSeq: this.lastSeq,
@@ -1706,7 +1712,7 @@ export class SessionImpl {
           }
         // Idle means no open turn and nothing queued to open one. Looping on would only spin:
         // acceptInput answers false every time, and new input arrives by enqueue then run().
-        if (out.phase === 'idle') return { reason: 'completed', lastSeq: this.lastSeq }
+        if (out.outcome === 'idle') return { reason: 'completed', lastSeq: this.lastSeq }
         const op = this.op()
         // Reconciliation gets the boundary before a deferred poll or retry backoff can put this run
         // to sleep. The Host decides whether this point means immediate, step, or turn policy.
@@ -2232,19 +2238,19 @@ export class SessionImpl {
     this.ac.abort()
     this.closePromise = Promise.resolve().then(async () => {
       const failures: unknown[] = []
-      await this.hooks.shutdown?.().catch((error: unknown) => failures.push(error))
-      await this.d.log.close().catch((error: unknown) => failures.push(error))
-      await Promise.resolve()
-        .then(() => this.loopDriver?.dispose())
-        .catch((error: unknown) => failures.push(error))
+      const attempt = async (fn: () => unknown | Promise<unknown>) => {
+        try { await fn() } catch (error) { failures.push(error) }
+      }
+      await attempt(() => this.loopDriver?.cancel())
+      await Promise.all(this.runtimeInstances.map((instance) => attempt(() => instance.runtime.cancel())))
+      // Keep hooks, log and lease alive while producers settle effects and final checkpoints.
+      await Promise.allSettled([...this.activeWork])
+      await attempt(() => this.loopDriver?.dispose())
+      await Promise.all(this.runtimeInstances.map((instance) => attempt(() => instance.runtime.dispose())))
       if (this.loopContext) disposeLoopContext(this.loopContext)
-      await Promise.all(
-        this.runtimeInstances.map((instance) =>
-          Promise.resolve()
-            .then(() => instance.runtime.dispose())
-            .catch((error: unknown) => failures.push(error)),
-        ),
-      )
+      if (this.op()) await attempt(() => finishAborted(this))
+      await attempt(() => this.hooks.shutdown?.())
+      await attempt(() => this.d.log.close())
       await this.d.workspaceLease?.close().catch((error: unknown) => failures.push(error))
       if (failures.length === 1) throw failures[0]
       if (failures.length > 1) throw new AggregateError(failures, 'session close failed')

@@ -131,14 +131,14 @@ export function createDagLoop(config = {}) {
       },
       async step(signal) {
         if (disposed) throw new Error('DAG driver is disposed')
-        if (cancelled || signal.aborted) return { phase: 'cancelled', reason: 'aborted' }
+        if (cancelled || signal.aborted) return { outcome: 'turn-ended', phase: 'cancelled', reason: 'aborted' }
         // accept() rehydrates a recovered turn as well as claiming a fresh input.
         const input = await ctx.input.accept()
-        if (!input) return { phase: 'idle' }
+        if (!input) return { outcome: 'idle', phase: 'idle' }
         if (state.stage === 'done') {
           if (input.id && input.id === state.inputId) {
             await ctx.events.finish('completed')
-            return { phase: 'done', reason: 'completed' }
+            return { outcome: 'turn-ended', phase: 'done', reason: 'completed' }
           }
           state = initial()
         }
@@ -147,7 +147,7 @@ export function createDagLoop(config = {}) {
           state.inputId = input.id ?? null
           state.stage = state.nodes === null ? 'plan' : 'tools'
           await save()
-          return { phase: state.stage }
+          return { outcome: 'running', phase: state.stage }
         }
         if (state.stage === 'plan') {
           const text = await complete(
@@ -160,7 +160,7 @@ export function createDagLoop(config = {}) {
           state.nodes = plan(JSON.parse(text))
           state.stage = 'tools'
           await save()
-          return { phase: 'tools' }
+          return { outcome: 'running', phase: 'tools' }
         }
         if (state.stage === 'tools') {
           const ready = state.nodes.filter(
@@ -187,13 +187,13 @@ export function createDagLoop(config = {}) {
             await save()
             if (outputs.some((output) => output.isError)) {
               await ctx.events.finish('error', { code: 'DAG_TOOL_FAILED', message: 'DAG tool failed' })
-              return { phase: 'failed', reason: 'error' }
+              return { outcome: 'turn-ended', phase: 'failed', reason: 'error' }
             }
-            return { phase: 'tools' }
+            return { outcome: 'running', phase: 'tools' }
           }
           state.stage = 'summary'
           await save()
-          return { phase: 'summary' }
+          return { outcome: 'running', phase: 'summary' }
         }
         if (state.stage === 'summary') {
           if (!state.static) {
@@ -214,7 +214,7 @@ export function createDagLoop(config = {}) {
           state.stage = 'done'
           await save()
           await ctx.events.finish('completed')
-          return { phase: 'done', reason: 'completed' }
+          return { outcome: 'turn-ended', phase: 'done', reason: 'completed' }
         }
         throw new Error('Invalid DAG stage')
       },

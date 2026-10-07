@@ -1,3 +1,4 @@
+import { publicOutcome } from './outcome.js'
 import type {
   LoopCheckpoint,
   LoopCheckpointCodec,
@@ -59,7 +60,10 @@ class DefaultLoopDriver implements LoopDriver {
     // The default loop's durable program counter remains the existing Core op register.
     return codec.encode(this.ports.session.op())
   }
-  async step(_signal: AbortSignal): Promise<StepOutcome> {
+  async step(signal: AbortSignal) {
+    return publicOutcome(await this.advance(signal))
+  }
+  private async advance(_signal: AbortSignal): Promise<StepOutcome> {
     const ports = this.ports
     const s = ports.session
     const op = s.op()

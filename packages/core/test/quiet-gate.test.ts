@@ -76,9 +76,9 @@ describe('Core quiet gate', () => {
     session.step = async () => {
       if (parentEdges++ === 0) {
         await child.run('what?')
-        return { phase: 'checkpoint' }
+        return { outcome: 'running', phase: 'checkpoint' }
       }
-      return { phase: 'terminal', reason: 'completed' }
+      return { outcome: 'turn-ended', phase: 'terminal', reason: 'completed' }
     }
 
     await expect(session.run({ until: 'turn-end', signal: signal() })).resolves.toMatchObject({
@@ -146,7 +146,7 @@ describe('Core quiet gate', () => {
         },
       },
     })
-    session.step = async () => ({ phase: 'checkpoint' })
+    session.step = async () => ({ outcome: 'running', phase: 'checkpoint' })
 
     await expect(session.run({ until: 'turn-end', signal: signal() })).rejects.toBe(failed)
     expect(calls).toEqual(['enter', 'leave', 'yield:step', 'yield:turn'])
@@ -174,7 +174,7 @@ describe('Core quiet gate', () => {
     let stepped = false
     session.step = async () => {
       stepped = true
-      return { phase: 'terminal', reason: 'completed' }
+      return { outcome: 'turn-ended', phase: 'terminal', reason: 'completed' }
     }
     const running = session.run({ until: 'turn-end', signal: signal() })
     await Promise.resolve()
@@ -187,12 +187,12 @@ describe('Core quiet gate', () => {
   it.each([
     {
       name: 'deferred poll',
-      outcome: { phase: 'deferred' as const },
+      outcome: { outcome: 'running' as const, phase: 'deferred' as const },
       operation: { phase: { kind: 'deferred' as const } },
     },
     {
       name: 'inference retry',
-      outcome: { phase: 'inference' as const },
+      outcome: { outcome: 'running' as const, phase: 'inference' as const },
       operation: {
         phase: {
           kind: 'inference' as const,
@@ -226,7 +226,7 @@ describe('Core quiet gate', () => {
     })
     session.step = async () => {
       edges++
-      return edges === 1 ? outcome : { phase: 'terminal', reason: 'completed' }
+      return edges === 1 ? outcome : { outcome: 'turn-ended', phase: 'terminal', reason: 'completed' }
     }
     session.op = () => (edges === 1 ? (operation as never) : null)
 

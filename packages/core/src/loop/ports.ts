@@ -1,3 +1,4 @@
+import { publicOutcome } from './outcome.js'
 import type { LoopCheckpoint, LoopContext, LoopToolCall } from '@agnes/extension-api'
 import { type ContentBlock, type InferenceEvent, type RequestBody, validateAgainst } from '@agnes/protocol'
 import { RequestBody as WireRequest } from '@agnes/protocol/gen/model'
@@ -288,7 +289,7 @@ export async function createLoopContext(s: SessionImpl, restoreCheckpoint = fals
                   [],
                   withPhase(op, { kind: 'compaction', reason: 'requested', resumeAfter: op.phase }),
                 )
-              return runCompaction(s, signal)
+              return publicOutcome(await runCompaction(s, signal))
             },
           },
         }

@@ -20,8 +20,8 @@ const hanging = (): Provider => ({
 async function inInference(storage = new MemoryStorage()) {
   const h = await openSession({ provider: hanging(), storage })
   await h.session.enqueue('next-turn', { content: [{ type: 'text', text: 'go' }], actor })
-  expect(await h.session.step()).toEqual({ phase: 'checkpoint' })
-  expect(await h.session.step()).toEqual({ phase: 'inference' })
+  expect(await h.session.step()).toEqual({ outcome: 'running', phase: 'checkpoint' })
+  expect(await h.session.step()).toEqual({ outcome: 'running', phase: 'inference' })
   return h
 }
 

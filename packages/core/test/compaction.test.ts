@@ -1028,7 +1028,7 @@ describe('production compaction phase', () => {
     const { session, log } = await history(errorTurn)
     session.compaction = runner()
     await session.enqueue('next-turn', { content: [{ type: 'text', text: 'overflow' }], actor })
-    expect(await session.step()).toEqual({ phase: 'checkpoint' })
+    expect(await session.step()).toEqual({ outcome: 'running', phase: 'checkpoint' })
     const op = session.op()
     if (op?.phase.kind !== 'checkpoint') throw new Error('missing checkpoint')
     await session.transition(
@@ -1053,7 +1053,7 @@ describe('production compaction phase', () => {
   it('records an unavailable internal compaction phase instead of silently pretending it ran', async () => {
     const { session, log } = await openSession({ provider: fakeProvider([]) })
     await session.enqueue('next-turn', { content: [{ type: 'text', text: 'compact' }], actor })
-    expect(await session.step()).toEqual({ phase: 'checkpoint' })
+    expect(await session.step()).toEqual({ outcome: 'running', phase: 'checkpoint' })
     const op = session.op()
     if (op?.phase.kind !== 'checkpoint') throw new Error('missing checkpoint')
     await session.transition(
@@ -1596,7 +1596,7 @@ describe('routing a summary that is unavailable', () => {
     })
     opened.session.compaction = runner
     await opened.session.enqueue('next-turn', { content: [{ type: 'text', text: 'next' }], actor })
-    expect(await opened.session.step()).toEqual({ phase: 'checkpoint' })
+    expect(await opened.session.step()).toEqual({ outcome: 'running', phase: 'checkpoint' })
     const enter = async (reason: 'threshold' | 'overflow' | 'requested') => {
       const op = opened.session.op()
       if (op?.phase.kind !== 'checkpoint') throw new Error('expected a checkpoint')
@@ -1826,7 +1826,7 @@ describe('routing a summary that is unavailable', () => {
     expect(h.runner.transientFailures).toBe(1)
     expect((await h.session.run({ until: 'turn-end', signal: signal() })).reason).toBe('completed')
     await h.session.enqueue('next-turn', { content: [{ type: 'text', text: 'again' }], actor })
-    expect(await h.session.step()).toEqual({ phase: 'checkpoint' })
+    expect(await h.session.step()).toEqual({ outcome: 'running', phase: 'checkpoint' })
     // The previous turn's failure does not count against this one: retried, not elided.
     await h.enter('threshold')
     const o = await h.outcome()

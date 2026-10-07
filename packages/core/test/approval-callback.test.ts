@@ -155,7 +155,7 @@ describe('parked approval callbacks', () => {
     })
     await h.session.resumeApproval(h.ticket, 'allowed-permanent', approver)
     expect(grants).toEqual([])
-    expect(await h.session.step()).toEqual({ phase: 'tools' })
+    expect(await h.session.step()).toEqual({ outcome: 'running', phase: 'tools' })
     await h.session.runToolsPhase()
     expect(grants).toEqual([
       expect.objectContaining({
@@ -236,7 +236,7 @@ describe('parked approval callbacks', () => {
     await h.session.resumeApproval(h.ticket, 'allowed-once', approver)
     await h.session.enqueue('next-turn', { actor, content: [{ type: 'text', text: 'later prompt' }] })
 
-    expect(await h.session.step()).toEqual({ phase: 'tools' })
+    expect(await h.session.step()).toEqual({ outcome: 'running', phase: 'tools' })
     const starts = await h.log.scan({ type: 'turn/start', order: 'desc', limit: 1, lane: 'main' })
     expect(starts[0]?.data).toMatchObject({
       trigger: 'approval-resume',

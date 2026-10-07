@@ -271,7 +271,7 @@ describe('count calibration', () => {
   it('a recount that finds no budget register says so and leaves the estimate alone', async () => {
     const { session, log } = await openSession({ provider: withCount(1234), preset: preset(null) })
     await session.enqueue('next-turn', { content: [{ type: 'text', text: 'hi' }], actor })
-    expect(await session.step()).toEqual({ phase: 'checkpoint' })
+    expect(await session.step()).toEqual({ outcome: 'running', phase: 'checkpoint' })
     const op = session.op()
     if (!op) throw new Error('the accepted turn left no program counter')
     await session.transition([], withPhase(op, { kind: 'inference', gen: { status: 'ready', attempt: 0 } }))

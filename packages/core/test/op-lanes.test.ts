@@ -123,7 +123,7 @@ describe('the op lane set kept beside the register table', () => {
     const inSync = () => expect(h.log.opLanes()).toEqual(tableLanes(h.log))
     inSync()
     await h.session.enqueue('next-turn', { content: [{ type: 'text', text: 'go' }], actor })
-    expect(await h.session.step()).toEqual({ phase: 'checkpoint' })
+    expect(await h.session.step()).toEqual({ outcome: 'running', phase: 'checkpoint' })
     inSync()
     expect(h.log.opLanes()).toEqual(new Set(['main']))
     h.log.replaceRegisterCache(h.log.allRegisters())

@@ -208,7 +208,7 @@ describe('run loop', () => {
       actor,
       budget: 10,
     })
-    expect(await first.session.step()).toMatchObject({ phase: 'checkpoint' })
+    expect(await first.session.step()).toMatchObject({ outcome: 'running', phase: 'checkpoint' })
     expect(first.session.turnBudgetCap()).toBe(10)
     await first.log.close()
 
@@ -486,13 +486,13 @@ describe('run loop', () => {
     await session.enqueue('next-step', { content: [{ type: 'text', text: 'second' }], actor, kind: 'steer' })
     // One checkpoint edge: it takes one item and hands the turn back to the model rather than
     // draining the queue before the model has seen any of it.
-    expect(await session.step()).toEqual({ phase: 'checkpoint' })
+    expect(await session.step()).toEqual({ outcome: 'running', phase: 'checkpoint' })
     expect(
       (await log.scan({ type: 'user/message', limit: 10 })).map((e) => (e.data as { kind?: string }).kind),
     ).toEqual(['prompt', 'steer'])
     expect((session.latest('inbox') as { items: unknown[] }).items).toHaveLength(1)
     // And the next edge goes to the model rather than taking the second item too.
-    expect(await session.step()).toEqual({ phase: 'inference' })
+    expect(await session.step()).toEqual({ outcome: 'running', phase: 'inference' })
     expect((session.latest('inbox') as { items: unknown[] }).items).toHaveLength(1)
   })
 
@@ -576,7 +576,7 @@ describe('run loop safety', () => {
     let calls = 0
     session.step = async () => {
       calls++
-      return calls === 1 ? real() : { phase: 'inference' }
+      return calls === 1 ? real() : { outcome: 'running', phase: 'inference' }
     }
     // The bound is a terminal outcome, not a throw: a caller that gets an exception off the
     // declared contract is a caller left with a turn still open and no turn/end to resume from.
@@ -594,7 +594,7 @@ describe('run loop safety', () => {
 
   it('a run that hits the bound with no open turn still ends on the outcome contract', async () => {
     const { session } = await openSession({ provider: fakeProvider([textTurn('a')]) })
-    session.step = async () => ({ phase: 'checkpoint' })
+    session.step = async () => ({ outcome: 'running', phase: 'checkpoint' })
     const out = await session.run({ until: 'turn-end', signal: sig() })
     expect(out).toMatchObject({ reason: 'error', error: { code: 'E_RELATION' } })
   })

@@ -267,7 +267,7 @@ describe('single-tool parked continuation', () => {
     async (verdict) => {
       const h = await setup()
       await h.session.resumeApproval('ticket-1', verdict, approver)
-      expect(await h.session.step()).toEqual({ phase: 'tools' })
+      expect(await h.session.step()).toEqual({ outcome: 'running', phase: 'tools' })
       expect(h.executions()).toBe(0)
       await h.session.close()
       const foreign = await openSession({
@@ -294,7 +294,7 @@ describe('single-tool parked continuation', () => {
     const h = await setup()
     try {
       await h.session.resumeApproval('ticket-1', 'allowed-once', approver)
-      expect(await h.session.step()).toEqual({ phase: 'tools' })
+      expect(await h.session.step()).toEqual({ outcome: 'running', phase: 'tools' })
       await h.session.abort(actor)
       expect((await run(h)).reason).toBe('aborted')
       expect(h.executions()).toBe(0)

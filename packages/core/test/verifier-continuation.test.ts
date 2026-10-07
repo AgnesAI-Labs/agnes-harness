@@ -71,7 +71,7 @@ describe('verifier pause continuation', () => {
       const h = await setup()
       try {
         await h.session.resumeApproval('review', verdict, approver)
-        expect(await h.session.step()).toEqual({ phase: 'checkpoint' })
+        expect(await h.session.step()).toEqual({ outcome: 'running', phase: 'checkpoint' })
         expect((await run(h)).reason).toBe('completed')
         expect(h.provider.calls).toBe(2)
         expect(JSON.stringify(h.provider.requests[1]?.messages)).toContain('first draft')

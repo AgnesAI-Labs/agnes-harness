@@ -80,8 +80,8 @@ describe('interrupted output is recorded while the process is alive', () => {
     const storage = new MemoryStorage()
     const first = await openSession({ provider: streamThenHang(), storage })
     await first.session.enqueue('next-turn', { content: [{ type: 'text', text: 'go' }], actor })
-    expect(await first.session.step()).toEqual({ phase: 'checkpoint' })
-    expect(await first.session.step()).toEqual({ phase: 'inference' })
+    expect(await first.session.step()).toEqual({ outcome: 'running', phase: 'checkpoint' })
+    expect(await first.session.step()).toEqual({ outcome: 'running', phase: 'inference' })
     const inference = first.session.step().catch(() => undefined)
     await wait(30)
     // A worker shutting down closes every session it hosts; this is that close, not a kill.

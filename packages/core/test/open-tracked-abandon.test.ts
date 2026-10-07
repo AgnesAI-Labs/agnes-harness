@@ -94,8 +94,8 @@ describe('an open that fails after taking the lease', () => {
     const memory = new MemoryStorage()
     const first = await openSession({ provider: hanging(), storage: memory })
     await first.session.enqueue('next-turn', { content: [{ type: 'text', text: 'go' }], actor })
-    expect(await first.session.step()).toEqual({ phase: 'checkpoint' })
-    expect(await first.session.step()).toEqual({ phase: 'inference' })
+    expect(await first.session.step()).toEqual({ outcome: 'running', phase: 'checkpoint' })
+    expect(await first.session.step()).toEqual({ outcome: 'running', phase: 'inference' })
     // Enough rows for a second verification page.
     await first.log.append(Array.from({ length: 600 }, (_, n) => user(`pad ${n}`)))
     await first.log.close()

@@ -33,7 +33,7 @@ function echoDriver(ctx: LoopContext, initial: 'ready' | 'done' = 'ready'): Loop
     checkpoint: () => codec.encode(state),
     async step(signal) {
       const input = await ctx.input.accept()
-      if (!input) return { phase: 'idle' }
+      if (!input) return { outcome: 'idle', phase: 'idle' }
       const result = await ctx.tools.execute({ name: 'read', args: {} }, signal)
       const batch = await ctx.tools.batch([{ name: 'read', args: {} }], signal)
       const request: RequestBody = {
@@ -61,7 +61,7 @@ function echoDriver(ctx: LoopContext, initial: 'ready' | 'done' = 'ready'): Loop
       state = 'done'
       await ctx.checkpoints.write(codec.encode(state))
       await ctx.events.finish('completed')
-      return { phase: 'terminal', reason: 'completed' }
+      return { outcome: 'turn-ended', phase: 'terminal', reason: 'completed' }
     },
   }
 }
@@ -289,12 +289,12 @@ describe('loop plugins', () => {
             },
             checkpoint: () => codec.encode('ready'),
             async step(signal) {
-              if (!(await ctx.input.accept())) return { phase: 'idle' }
+              if (!(await ctx.input.accept())) return { outcome: 'idle', phase: 'idle' }
               entered()
               await ctx.wait.park(signal)
               const reason = signal.aborted ? 'aborted' : 'completed'
               await ctx.events.finish(reason)
-              return { phase: 'terminal', reason }
+              return { outcome: 'turn-ended', phase: 'terminal', reason }
             },
           }
         },
@@ -354,7 +354,7 @@ it('overlaps independent safe tools in a custom batch and preserves requested re
         dispose() {},
         checkpoint: () => codec.encode('ready'),
         async step(signal) {
-          if (!(await ctx.input.accept())) return { phase: 'idle' }
+          if (!(await ctx.input.accept())) return { outcome: 'idle', phase: 'idle' }
           const results = await ctx.tools.batch(
             [
               { name: 'left', args: {} },
@@ -364,7 +364,7 @@ it('overlaps independent safe tools in a custom batch and preserves requested re
           )
           await ctx.events.emit('x/parallel/results', { results: results.map((result) => result.content) })
           await ctx.events.finish('completed')
-          return { phase: 'done', reason: 'completed' }
+          return { outcome: 'turn-ended', phase: 'done', reason: 'completed' }
         },
       }
     },
@@ -393,4 +393,78 @@ it('overlaps independent safe tools in a custom batch and preserves requested re
     release()
     await k.close()
   }
+})
+
+it('drains a cancelled step and driver final writes before closing the log, once', async () => {
+  const loops = new LoopRegistry()
+  let started!: () => void
+  const active = new Promise<void>((resolve) => { started = resolve })
+  let disposed = 0
+  const closingLoop: LoopFactory = {
+    ...echo,
+    id: 'test.close',
+    create(ctx) {
+      return {
+        checkpoint: () => codec.encode('ready'),
+        cancel() {},
+        async dispose() {
+          disposed++
+          await ctx.checkpoints.write(codec.encode('done'))
+        },
+        async step(signal) {
+          await ctx.input.accept()
+          started()
+          await ctx.wait.park(signal)
+          await ctx.events.emit('x/close/drained', {})
+          await ctx.events.finish('aborted')
+          return { outcome: 'turn-ended', phase: 'custom-final', reason: 'aborted' }
+        },
+      }
+    },
+  }
+  loops.register('@test/close', closingLoop)
+  const k = kernel(new MemoryStorage(), loops)
+  const session = await k.session('close', { ...options, loop: closingLoop })
+  await session.enqueue('next-turn', { content: [{ type: 'text', text: 'run' }], actor })
+  const running = session.run({ until: 'turn-end', signal: new AbortController().signal })
+  await active
+  const close = session.close()
+  expect(session.close()).toBe(close)
+  await expect(session.step()).rejects.toMatchObject({ code: 'E_CLOSED' })
+  await close
+  expect((await running).reason).toBe('aborted')
+  expect(disposed).toBe(1)
+  expect(session.d.log.isClosed).toBe(true)
+  const rows = await k.o.storage.scan(session.key, { fromSeq: 1, limit: 200 })
+  expect(rows.some((row) => row.type === 'x/close/drained')).toBe(true)
+  expect(rows.at(-1)?.data).toMatchObject({ checkpoint: { state: 'done' } })
+  await k.close()
+})
+
+it.each(['turn-end', 'idle'] as const)('uses explicit custom outcomes with two inputs until %s', async (until) => {
+  const loops = new LoopRegistry()
+  const custom: LoopFactory = {
+    ...echo, id: 'test.outcomes',
+    create(ctx) {
+      return {
+        checkpoint: () => codec.encode('ready'), cancel() {}, dispose() {},
+        async step() {
+          const input = await ctx.input.accept()
+          if (!input) return { outcome: 'idle', phase: 'arbitrary' }
+          await ctx.events.emit('x/outcome/input', { id: input.id ?? '' })
+          await ctx.events.finish('completed')
+          return { outcome: 'turn-ended', phase: 'arbitrary', reason: 'completed' }
+        },
+      }
+    },
+  }
+  loops.register('@test/outcomes', custom)
+  const k = kernel(new MemoryStorage(), loops)
+  try {
+    const session = await k.session('outcomes', { ...options, loop: custom })
+    for (const text of ['first', 'second'])
+      await session.enqueue('next-turn', { content: [{ type: 'text', text }], actor })
+    expect((await session.run({ until, signal: new AbortController().signal })).reason).toBe('completed')
+    expect(await session.scan({ type: 'turn/end', limit: 10 })).toHaveLength(until === 'idle' ? 2 : 1)
+  } finally { await k.close() }
 })
