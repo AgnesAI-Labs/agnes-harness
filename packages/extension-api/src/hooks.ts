@@ -101,7 +101,8 @@ export interface HookReturnMap {
   // biome-ignore lint/suspicious/noConfusingVoidType: synchronous and async observe handlers return void
   session_start: void
   resources_discover: { resources?: ResourceEntry[]; additionalContext?: string }
-  before_step: { block?: boolean; reason?: string }
+  /** Park releases the turn until new input arrives; block reports a policy refusal. */
+  before_step: { block?: boolean; park?: boolean; reason?: string }
   context: { sections?: PromptSection[]; additionalContext?: string }
   before_request: {
     patch?: {
