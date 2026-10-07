@@ -702,7 +702,8 @@ export class SessionImpl {
     if (this.loopDriver) return
     this.toolPolicy()
     await this.toolRuntime()
-    const ctx = await createLoopContext(this)
+    const factory = this.d.loopFactory ?? defaultLoopFactory
+    const ctx = await createLoopContext(this, resumed && factory !== defaultLoopFactory)
     this.loopContext = ctx
     bindDefaultLoopPorts(ctx, {
       session: this,
@@ -710,7 +711,6 @@ export class SessionImpl {
       finishAborted: () => finishAborted(this),
       checkpoint: () => checkpointRoutine(this),
     })
-    const factory = this.d.loopFactory ?? defaultLoopFactory
     const checkpoint =
       ctx.checkpoints.read() ??
       (resumed && factory === defaultLoopFactory ? factory.codec.encode(this.op()) : null)
@@ -1558,11 +1558,17 @@ export class SessionImpl {
    * that a cancellation outlives the controller that delivered it.
    */
   abort(by: Actor = this.d.actor): Promise<AbortResult> {
-    return abortSession(this, by).then(async (result) => {
-      await Promise.all([
-        this.loopDriver?.cancel(),
-        ...this.runtimeInstances.map((instance) => instance.runtime.cancel()),
-      ])
+    return abortSession(this, by).then((result) => {
+      // This is a cancellation request, not a drain: a tool may await this very call.
+      // Runtime cancel/dispose still drain their work; close owns final cleanup.
+      void Promise.all([
+        Promise.resolve().then(() => this.loopDriver?.cancel()),
+        ...this.runtimeInstances.map((instance) => Promise.resolve().then(() => instance.runtime.cancel())),
+      ]).catch((error: unknown) => {
+        void this.diag('invariant', { kind: 'loop-cancel-failed', message: String(error) }).catch(
+          () => undefined,
+        )
+      })
       return result
     })
   }
@@ -2202,6 +2208,8 @@ export class SessionImpl {
     this.ac.abort()
     this.closePromise = Promise.resolve().then(async () => {
       const failures: unknown[] = []
+      await this.hooks.shutdown?.().catch((error: unknown) => failures.push(error))
+      await this.d.log.close().catch((error: unknown) => failures.push(error))
       await Promise.resolve()
         .then(() => this.loopDriver?.dispose())
         .catch((error: unknown) => failures.push(error))
@@ -2213,8 +2221,6 @@ export class SessionImpl {
             .catch((error: unknown) => failures.push(error)),
         ),
       )
-      await this.hooks.shutdown?.().catch((error: unknown) => failures.push(error))
-      await this.d.log.close().catch((error: unknown) => failures.push(error))
       await this.d.workspaceLease?.close().catch((error: unknown) => failures.push(error))
       if (failures.length === 1) throw failures[0]
       if (failures.length > 1) throw new AggregateError(failures, 'session close failed')

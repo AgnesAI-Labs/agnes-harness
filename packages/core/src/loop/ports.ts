@@ -2,7 +2,6 @@ import type { LoopCheckpoint, LoopContext, LoopToolCall } from '@agnes/extension
 import { type ContentBlock, type InferenceEvent, type RequestBody, validateAgainst } from '@agnes/protocol'
 import { RequestBody as WireRequest } from '@agnes/protocol/gen/model'
 import { runLoopChild } from '../child/loop-port.js'
-import { scanPages } from '../log/scan-pages.js'
 import type { Inbox } from '../reduce/shapes.js'
 import { runCompaction } from '../step/compaction.js'
 import { withPhase } from '../step/op-state.js'
@@ -17,16 +16,21 @@ export function disposeLoopContext(ctx: LoopContext): void {
 const CHECKPOINT_EVENT = 'x/core/loop-checkpoint'
 
 /** Fit public operations without handing an independent driver the default scheduler. */
-export async function createLoopContext(s: SessionImpl): Promise<LoopContext> {
+export async function createLoopContext(s: SessionImpl, restoreCheckpoint = false): Promise<LoopContext> {
   let checkpoint: LoopCheckpoint | null = null
-  const [start] = await s.d.log.scan({ type: 'session/start', order: 'desc', limit: 1 })
-  for await (const page of scanPages((query) => s.d.log.scan(query), {
-    type: CHECKPOINT_EVENT,
-    lane: s.lane,
-    fromSeq: start?.seq ?? 1,
-    toSeq: s.lastSeq,
-  })) {
-    for (const event of page) {
+  // Fresh children and the default loop use the op register, never the parent ledger.
+  // Independent drivers restore only the latest checkpoint of the current session.
+  if (restoreCheckpoint) {
+    const [start] = await s.d.log.scan({ type: 'session/start', order: 'desc', limit: 1 })
+    const [event] = await s.d.log.scan({
+      type: CHECKPOINT_EVENT,
+      lane: s.lane,
+      fromSeq: start?.seq ?? 1,
+      toSeq: s.lastSeq,
+      order: 'desc',
+      limit: 1,
+    })
+    if (event) {
       const data = event.data as unknown as {
         loop: { id: string; version: string }
         checkpoint: LoopCheckpoint

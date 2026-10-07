@@ -390,6 +390,12 @@ export async function approveAndExecute(
     decisionId = decision.decisionId
     if (decision.effect === 'deny')
       return { result: await refuse(s, call.toolUseId, 'AUTHZ_DENIED', decision.reason, decisionId) }
+    if ((o.signal ?? s.ac.signal).aborted) {
+      await s.transition([], (cur) => updateCall(cur, call.toolUseId, { status: 'approved' }))
+      return {
+        result: await refuse(s, call.toolUseId, 'CANCELLED', 'cancelled before dispatch', decisionId),
+      }
+    }
     const approvalMode = s.d.approvalMode ?? 'manual'
     const permission = await s.toolPolicy().decide(
       structuredClone({
