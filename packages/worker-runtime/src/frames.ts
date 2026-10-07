@@ -37,6 +37,7 @@ export type SessionMethod =
 /** Process-wide methods available before C2 runtime-target delivery exists. */
 export type WorkerMethod =
   | 'ping'
+  | 'pluginGenerations.status'
   | 'configuration.apply'
   | 'session.catalog'
   | 'inspectService'

@@ -345,10 +345,9 @@ export const PACKAGE_ADMIN_METHODS = Object.freeze({
   // One skin file's bytes. The path is a same-origin URL path, never a filesystem path, and the
   // daemon answers only for ids its enabled+trusted roster claims (design §22).
   '_agnes/v1/skins.read': contract(P.SkinReadParams, P.SkinReadResult, 'read', 'packages.read'),
-  // Web client modules (design WC2/WC3): the roster is derived from inventory + activation state,
-  // so the request reuses PackageListParams and the read permission, same as skins.
+  // A session selector resolves the immutable roster pinned with its backend generation.
   '_agnes/v1/clientModules.list': contract(
-    P.PackageListParams,
+    P.ClientModuleListParams,
     P.ClientModuleListResult,
     'read',
     'packages.read',

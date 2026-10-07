@@ -24,6 +24,7 @@ type HostedSession = {
 
 /** What a hibernated session keeps: enough to reopen it, and nothing that grants authority. */
 type HibernatedStub = {
+  pluginGenerationId?: string
   binding: WorkspaceBinding
   parent?: { key: string; boundarySeq: number }
   preset: string
@@ -306,6 +307,7 @@ export class HostedSessions {
     const ledger = session.d.log.storage
     const lastSeq = session.lastSeq
     this.stubs.set(key, {
+      ...(session.pluginGenerationId ? { pluginGenerationId: session.pluginGenerationId } : {}),
       binding: session.d.workspaceIdentity as WorkspaceBinding,
       ...(session.d.log.parent ? { parent: session.d.log.parent } : {}),
       preset: session.preset.name,
@@ -371,6 +373,10 @@ export class HostedSessions {
         binding: stub.binding,
         preset: stub.preset,
       })
+      if (stub.pluginGenerationId && session.pluginGenerationId !== stub.pluginGenerationId) {
+        await session.close()
+        throw new Error('E_GENERATION_RESUME_MISMATCH: hibernated session changed plugin generation')
+      }
       this.stubs.delete(key)
       const hosted = this.adopt(key, session)
       if (stub.tailFrom !== undefined) this.follow(key, hosted, stub.tailFrom)

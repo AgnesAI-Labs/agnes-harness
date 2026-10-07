@@ -113,6 +113,10 @@ Cancellation is a request: continue checking the operation after its receipt. An
 
 ## Why an update may not switch immediately
 
-A runtime target carries complete identity and revision information. Host supports constrained live-tree transactions and incremental reconciliation; eligible changes can reuse unchanged rows. Seamless hot updates are not guaranteed for every plugin. Dependencies, identity changes, timeouts, failed compensation, and tainted trees can lead to refusal or a full rebuild. The browser updates and cleans up its own roster, so Host activation does not prove browser loading.
+Each package activation creates an immutable plugin generation. New sessions bind the current generation; existing sessions retain their packages, versions, loop and frontend bundles through hibernation and worker restart. Disable or uninstall stops new bindings while existing sessions drain. Closing a connection does not release a saved session's generation. Once a session is deleted, the Host owner calls `releaseSessionGeneration(sessionKey)`; generations with no remaining session references are disposed and collected.
+
+Storage, filesystem, sandbox and platform backends require restart. Resume fails explicitly if the pinned snapshot is missing, its package files changed, or the deployment's loop/adapter configuration is incompatible. It never substitutes the current generation. `Host.pluginGenerationStatus()` and the internal worker command `pluginGenerations.status` expose generation counts and active/draining/restart-required/failed plugin state for administration. Browser roster requests can supply `sessionId` to load that session's generation; assets use immutable generation routes.
+
+Candidate loading, dependencies and activation timeouts can still cause an activation to fail. The prior generation continues serving its bound sessions. The browser loads its own bundle roster, so Host activation does not prove browser loading.
 
 Implementation: [shell commands](../../packages/cli/src/commands/package.ts), [SDK](../../packages/sdk/src/package-admin.node.ts), [Web administration](../../packages/web/src/admin/plugins/admin.tsx), [EntryTree](../../packages/cordis-loader/src/entry-tree.ts), [Host publication](../../packages/host/src/runtime-target-publisher.ts).

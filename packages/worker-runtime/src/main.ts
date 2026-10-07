@@ -495,7 +495,15 @@ export async function runWorker(
     if (typeof candidate.applyRuntimeTarget !== 'function') {
       throw new Error('E_RUNTIME_TARGET_UNAVAILABLE: Host has no runtime target publisher')
     }
-    return Object.freeze({ applyRuntimeTarget: candidate.applyRuntimeTarget.bind(candidate) })
+    return Object.freeze({
+      applyRuntimeTarget: candidate.applyRuntimeTarget.bind(candidate),
+      ...(candidate.runtimeTargetSnapshot
+        ? { runtimeTargetSnapshot: candidate.runtimeTargetSnapshot.bind(candidate) }
+        : {}),
+      ...(candidate.pluginGenerationStatus
+        ? { pluginGenerationStatus: candidate.pluginGenerationStatus.bind(candidate) }
+        : {}),
+    })
   }
   const bootSource =
     env.AGNES_RUNTIME_BOOT_SOURCE === 'lastGood' || env.AGNES_RUNTIME_BOOT_SOURCE === 'bootstrap'

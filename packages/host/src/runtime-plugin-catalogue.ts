@@ -57,6 +57,7 @@ export class RuntimePluginCatalogue {
     const selected = new Map<string, Readonly<RuntimePluginSnapshot>>()
     const rows = [...target.tree.rows, ...Object.values(target.resource.rows).filter((row) => row !== null)]
     for (const row of rows) {
+      if (row.disabled) continue
       const identity = pluginSnapshotIdentity(row.plugin)
       if (!identity) continue
       const source = this.#byIdentity.get(key(identity.packageId, identity.snapshotId))

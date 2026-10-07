@@ -678,6 +678,9 @@ export async function handleServiceCommand(
         })),
       }
     }
+    case 'pluginGenerations.status':
+      if (!host?.pluginGenerationStatus) throw new Error('Plugin generation status is unavailable')
+      return host.pluginGenerationStatus()
     case 'abortService':
       aborts.get(String(p.callId))?.abort()
       return {}

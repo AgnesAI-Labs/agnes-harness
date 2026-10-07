@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs'
 import type { Host, HostSession } from '@agnes/host'
+import { buildCompleteRuntimeTarget } from '@agnes/host'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   SESSION_SCOPED_WORKER_METHODS,
@@ -82,6 +83,8 @@ describe('HostedSessions hibernates idle sessions and wakes them on demand', () 
   it('answers ping and a run-less abort from the stub without waking, and wakes for anything else', async () => {
     const t = await setup()
     const session = await t.open('stub')
+    const generationId = session.pluginGenerationId
+    expect(generationId).toBeDefined()
     const lastSeq = session.lastSeq
     await t.idle()
     const created = t.creates()
@@ -94,9 +97,18 @@ describe('HostedSessions hibernates idle sessions and wakes them on demand', () 
     await expect(t.hosted.dispatch(t.command('stub', 'abort', { runId: 'none' }))).resolves.toEqual({})
     expect(t.creates()).toBe(created)
     expect(t.hibernated('stub')).toBe(true)
+    const target = t.host.runtimeTargetSnapshot?.()
+    if (!target) throw new Error('missing Host target')
+    await t.host.applyRuntimeTarget(
+      buildCompleteRuntimeTarget({
+        rows: target.tree.rows,
+        resources: { mcp: [], skills: { generation: 'next' } },
+      }).target,
+    )
     await expect(t.hosted.dispatch(t.command('stub', 'latest', { register: 'op.state' }))).resolves.toBeNull()
     expect(t.creates()).toBe(created + 1)
     expect(t.hibernated('stub')).toBe(false)
+    expect(t.live('stub').pluginGenerationId).toBe(generationId)
   })
 
   it('answers ping with the ledger head, even after another writer appended while it slept', async () => {

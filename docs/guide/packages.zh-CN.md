@@ -99,6 +99,10 @@ node packages/cli/dist/local/agnes.mjs packages pins inspect
 
 ## 更新为何不总是立即切换
 
-Runtime target 带完整身份/修订信息。Host 已有受限活树事务和增量调和；合格变更可以复用未改变行，不能承诺任何插件都无中断热更新。依赖、身份变更、超时、事务补偿失败和污染树都可能触发拒绝或整体重建。浏览器再根据自己的名册更新和清理，Host active 不等于浏览器已加载。
+每次包激活生成不可变的插件 generation。新会话绑定当前 generation；已有会话在休眠和 worker 重启后仍保留原包、版本、loop 与前端 bundle。禁用或卸载停止新的绑定，已有会话继续排空。关闭连接不会释放持久会话的 generation；会话删除后，由 Host 所有者调用 `releaseSessionGeneration(sessionKey)`，不再被会话引用的 generation 才会销毁并回收。
+
+存储、文件系统、sandbox 和平台后端仍需要重启。恢复时若固定快照缺失、包文件发生变化，或部署的 loop/adapter 配置不兼容，会明确失败，不会替换成当前 generation。`Host.pluginGenerationStatus()` 和内部 worker 命令 `pluginGenerations.status` 向管理端提供 generation 引用数及 active/draining/restart-required/failed 插件状态。浏览器名册请求可携带 `sessionId`，加载该会话固定的 generation，资源通过不可变的 generation 路径提供。
+
+候选加载、依赖与激活超时仍可能导致激活失败，旧 generation 继续服务已绑定的会话。浏览器自行加载 bundle 名册，Host active 不等于浏览器已加载。
 
 实现依据：[shell 命令](../../packages/cli/src/commands/package.ts)、[SDK](../../packages/sdk/src/package-admin.node.ts)、[Web 管理](../../packages/web/src/admin/plugins/admin.tsx)、[EntryTree](../../packages/cordis-loader/src/entry-tree.ts)、[Host 发布](../../packages/host/src/runtime-target-publisher.ts)。

@@ -56,6 +56,8 @@ export type AssembleDeps = HostPaths &
     runtimePluginCatalogue?: readonly Readonly<RuntimePluginSnapshot>[]
     /** Installed snapshots re-read before each target is applied, so a package trusted after boot can load. */
     runtimePluginSources?: () => Promise<readonly Readonly<RuntimePluginSnapshot>[]>
+    /** Host-private durable generation binding, also reached by Core-created children. */
+    onGenerationSessionBinding?: (sessionKey: string) => void
     /** How long one row may take to mount before the delivery is failed. Defaults to 30 seconds. */
     ordinaryStartTimeoutMs?: number
     /** Packages whose legacy extensions are restored by the worker activation pipeline. */

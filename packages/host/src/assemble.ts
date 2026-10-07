@@ -338,6 +338,7 @@ export type Assembled = {
   publicationDispatch: PublicationDispatch
   /** The sole Host publication of a complete RuntimeTarget. It shares this assembly's PublicationGate. */
   applyRuntimeTarget(target: RuntimeTarget): Promise<RuntimeConvergenceReport>
+  runtimeTargetSnapshot(): RuntimeTarget
   bindRuntimeSession(sessionKey: string, preset: string): Promise<void>
   unbindRuntimeSession(sessionKey: string): Promise<void>
   sessionPresetLimits(): { limits?: Record<string, number>; park?: unknown }
@@ -1078,6 +1079,7 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
       },
     }
     const bindRuntimeSession = async (sessionKey: string, preset: string): Promise<void> => {
+      deps.onGenerationSessionBinding?.(sessionKey)
       const published = runtimeTargetPublisher.current().value.current
       if (!published) return
       const overlay = isolateSessionOverlay(published.ordinary.pluginTree.root, sessionKey, preset)
@@ -2448,6 +2450,11 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
       },
       publicationDispatch,
       applyRuntimeTarget,
+      runtimeTargetSnapshot: () => {
+        const target = runtimeTargetPublisher.current().value.current?.target
+        if (!target) throw new Error('E_GENERATION_TARGET_MISSING: no published target')
+        return target
+      },
       bindRuntimeSession,
       unbindRuntimeSession,
       sessionPresetLimits: () => ({

@@ -159,10 +159,11 @@ function renderReconnect(phase: ReconnectPhase): void {
 // 名册真源是 `_agnes/v1/clientModules.list`（P1a）；profile 要等 config.get() 才报出，
 // 之前名册按空处理（fail-closed，不加载任何模块）。
 const moduleExtIds = new Map<string, string[]>()
+let moduleSessionId: string | undefined
 const rosterSource: RosterSource = {
   async list() {
     if (!profileName) return { revision: '', modules: [], statuses: [] }
-    const roster = await client.clientModules.list(profileName)
+    const roster = await client.clientModules.list(profileName, moduleSessionId)
     // `rows` is the authoritative browser lifecycle surface.  The legacy
     // `modules` compatibility projection deliberately cannot carry every
     // immutable declaration, including the per-module service allow-list.
@@ -1150,6 +1151,7 @@ async function open(
   // 半透明提示，状态栏「正在准备会话」），不经历「清空 → 空白 → 填充」的闪屏，
   // 也避免 `body:has(#transcript:empty)` 把布局跳进空态模式。
   current = undefined
+  moduleSessionId = undefined
   clientModules.session.setSession(undefined)
   sessionYoloEnabled = options.created ? false : undefined
   permissionRefreshPending = false
@@ -1211,6 +1213,8 @@ async function open(
     }
     const loaded = binding.session
     current = loaded
+    moduleSessionId = loaded.id
+    await clientModules.reconciler.reconcileNow()
     clientModules.session.setSession(loaded.id)
     if (!options.created) permissionMode = 'workspace'
     const metadata = sessionRows.find((row) => row.sessionId === id) as
@@ -1294,6 +1298,7 @@ async function open(
     if (!selectionReady) {
       const failed = current
       current = undefined
+      moduleSessionId = undefined
       clientModules.session.setSession(undefined)
       projection = undefined
       knownSessionModel = undefined
@@ -1486,7 +1491,9 @@ async function beginNewDraft(showWorkspacePicker = true, workspace?: WorkspaceEn
   const inherited = selectionFromMemory(runtimeModels, accountProvider)
   const stop = stopEvents
   current = undefined
+  moduleSessionId = undefined
   clientModules.session.setSession(undefined)
+  await clientModules.reconciler.reconcileNow()
   projection = undefined
   draftingNew = true
   draftModelSettingsEdited = false

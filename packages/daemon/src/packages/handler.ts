@@ -484,7 +484,7 @@ class Service implements PackageAdminService {
       if (method === '_agnes/v1/skins.read')
         return await this.skinsRead(data as { profile: string; path: string })
       if (method === '_agnes/v1/clientModules.list')
-        return await this.clientModulesList(data as { profile: string })
+        return await this.clientModulesList(data as { profile: string; sessionId?: string })
       if (method === '_agnes/v1/clientModules.read')
         return await this.clientModulesRead(data as { profile: string; path: string })
       if (method === '_agnes/v1/clientModules.callService')
@@ -702,10 +702,14 @@ class Service implements PackageAdminService {
     }
   }
 
-  private async clientModulesList(params: { profile: string }): Promise<ClientModuleListResult> {
+  private async clientModulesList(params: {
+    profile: string
+    sessionId?: string
+  }): Promise<ClientModuleListResult> {
     const directory = await this.options.profileDirectory(params.profile)
     const inventory = await this.options.manager.inventory(directory)
     const result = await this.clientModules.list({
+      ...(params.sessionId ? { sessionId: params.sessionId } : {}),
       profile: params.profile,
       profileDirectory: directory,
       inventory,
@@ -748,6 +752,7 @@ class Service implements PackageAdminService {
     const directory = await this.options.profileDirectory(params.profile)
     const inventory = await this.options.manager.inventory(directory)
     const roster = await this.clientModules.list({
+      sessionId: params.sessionId,
       profile: params.profile,
       profileDirectory: directory,
       inventory,
@@ -785,6 +790,7 @@ class Service implements PackageAdminService {
     const directory = await this.options.profileDirectory(params.profile)
     const inventory = await this.options.manager.inventory(directory)
     const roster = await this.clientModules.list({
+      sessionId: params.sessionId,
       profile: params.profile,
       profileDirectory: directory,
       inventory,

@@ -351,9 +351,12 @@ export class Client {
      * modules/statuses fields; normalize that response locally so callers get the same `rows`
      * contract without ever exposing config, credentials, or raw runtime artifacts.
      */
-    list: async (profile: string): Promise<ClientModuleListResult & { rows: ClientModuleRosterRow[] }> =>
+    list: async (
+      profile: string,
+      sessionId?: string,
+    ): Promise<ClientModuleListResult & { rows: ClientModuleRosterRow[] }> =>
       projectClientModuleRows(
-        await this.call('_agnes/v1/clientModules.list', { profile }),
+        await this.call('_agnes/v1/clientModules.list', { profile, ...(sessionId ? { sessionId } : {}) }),
       ) as ClientModuleListResult & { rows: ClientModuleRosterRow[] },
     read: (profile: string, path: string): Promise<ClientModuleReadResult> =>
       this.call('_agnes/v1/clientModules.read', { profile, path }),

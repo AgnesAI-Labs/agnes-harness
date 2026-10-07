@@ -1,8 +1,15 @@
-import type { RuntimeTarget, RuntimeTargetArtifact } from '@agnes/plugin-runtime/host'
+import type { PluginGenerationStatus } from '@agnes/host'
+import {
+  encodeRuntimeTargetArtifact,
+  type RuntimeTarget,
+  type RuntimeTargetArtifact,
+} from '@agnes/plugin-runtime/host'
 import { adaptRuntimeStaleFrame, type VerifiedRuntimeTargetDelivery } from './runtime-target-artifact.js'
 
 export type RuntimeTargetApplyPort<Result = void> = Readonly<{
   applyRuntimeTarget(target: RuntimeTarget): Result | PromiseLike<Result>
+  pluginGenerationStatus?(): PluginGenerationStatus
+  runtimeTargetSnapshot?(): RuntimeTarget
 }>
 
 export type RuntimeTargetSlotOutcome<Result = void> =
@@ -30,6 +37,8 @@ export type RuntimeTargetSlot<Result = void> = Readonly<{
    * running, only the most recently offered distinct target remains queued.
    */
   offer(frame: unknown): Promise<RuntimeTargetSlotOutcome<Result>>
+  /** Latest desired delivery and retained session generations have independent lifetimes. */
+  generations(): PluginGenerationStatus | undefined
 }>
 
 type Waiter<Result> = (outcome: RuntimeTargetSlotOutcome<Result>) => void
@@ -53,6 +62,15 @@ class LatestRuntimeTargetSlot<Result> implements RuntimeTargetSlot<Result> {
 
   constructor(port: RuntimeTargetApplyPort<Result>) {
     this.#port = port
+  }
+
+  generations(): PluginGenerationStatus | undefined {
+    return this.#port.pluginGenerationStatus?.()
+  }
+
+  #isCurrent(digest: string): boolean {
+    const target = this.#port.runtimeTargetSnapshot?.()
+    return target ? encodeRuntimeTargetArtifact(target).digest === digest : this.#applied?.digest === digest
   }
 
   offer(frame: unknown): Promise<RuntimeTargetSlotOutcome<Result>> {
@@ -81,7 +99,7 @@ class LatestRuntimeTargetSlot<Result> implements RuntimeTargetSlot<Result> {
         return
       }
 
-      if (!this.#active && !this.#pending && this.#applied?.digest === digest) {
+      if (!this.#active && !this.#pending && this.#applied?.digest === digest && this.#isCurrent(digest)) {
         resolve(
           Object.freeze({
             status: 'applied',
@@ -128,7 +146,7 @@ class LatestRuntimeTargetSlot<Result> implements RuntimeTargetSlot<Result> {
         const digest = entry.delivery.artifact.digest
         const alreadyApplied = this.#applied
 
-        if (alreadyApplied?.digest === digest) {
+        if (alreadyApplied?.digest === digest && this.#isCurrent(digest)) {
           this.#finish(
             entry,
             Object.freeze({

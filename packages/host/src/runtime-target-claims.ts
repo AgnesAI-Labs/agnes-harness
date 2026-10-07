@@ -115,6 +115,7 @@ export async function loadRuntimeTargetClaims(
   const claims = new Map<string, Claim>()
   const loaded = new Map<string, Promise<PackageModule | undefined>>()
   for (const row of options.target.tree.rows) {
+    if (row.disabled) continue
     const identity = parsePlugin(row.plugin)
     const source = sources.get(sourceKey(identity.packageId))
     if (!source) {

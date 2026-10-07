@@ -2,6 +2,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { InstalledInventory, InstalledPackage, PackageManager } from '@agnes/package-manager'
+import { hashDirectory, RuntimeGenerationSnapshotStore } from '@agnes/package-manager'
 import {
   buildRuntimeTarget,
   createPluginRow,
@@ -108,6 +109,56 @@ function webArtifact(packageId: string, revision: string, disabled = false) {
 }
 
 describe('client module immutable snapshots', () => {
+  it('serves the session generation roster and assets after the installed plugin is removed', async () => {
+    const f = fixture(),
+      row = installed({ directory: f.packageDirectory })
+    const store = new RuntimeGenerationSnapshotStore(f.root)
+    const snapshot = store.create(
+      decodeRuntimeTargetArtifact(webArtifact(row.id, row.entry.integrity)),
+      [
+        {
+          generation: 1,
+          trusted: true,
+          snapshot: {
+            snapshotId: row.entry.integrity,
+            integrity: row.entry.integrity,
+            profile: 'local-dev',
+            packageId: row.id,
+            version: '1.0.0',
+            treeIntegrity: hashDirectory(f.packageDirectory, { exclude: [] }),
+            capabilityHash: row.capabilityHash,
+            directory: f.packageDirectory,
+            contributions: row.contributions,
+          },
+        },
+      ],
+      'test',
+    )
+    store.pin('old-session', snapshot.id)
+    rmSync(f.packageDirectory, { recursive: true })
+    const empty: InstalledInventory = { profile: 'local-dev', hash: 'empty', packages: [] }
+    const registry = createClientModuleRegistry({ snapshotDirectory: () => f.snapshots })
+    try {
+      const input = {
+        profile: 'local-dev',
+        profileDirectory: f.root,
+        inventory: empty,
+        actual: async () => undefined,
+        refreshInventory: async () => empty,
+      }
+      const roster = await registry.list({ ...input, sessionId: 'old-session' })
+      expect(roster.modules).toHaveLength(1)
+      expect(roster.modules[0]?.entryUrl).toContain(`/plugins/generations/${snapshot.id}/`)
+      const module = roster.modules[0]
+      if (!module) throw new Error('missing generation client module')
+      const asset = await registry.read({ ...input, path: module.entryUrl })
+      expect(asset.found).toBe(true)
+      if (asset.found) expect(Buffer.from(asset.base64, 'base64').toString()).toContain('"v1"')
+      expect((await registry.list(input)).modules).toEqual([])
+    } finally {
+      registry.close()
+    }
+  })
   it('binds a row-owned client descriptor to its plugin service identity', async () => {
     const files = fixture()
     const base = installed({ directory: files.packageDirectory, backend: true })

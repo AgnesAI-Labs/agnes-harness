@@ -7,6 +7,7 @@ import {
   type InstalledInventory,
   type InstalledPackage,
   isRuntimePackageEligible,
+  RuntimeGenerationSnapshotStore,
   resolveClientModuleAsset,
 } from '@agnes/package-manager'
 import {
@@ -147,6 +148,7 @@ export function runtimeArtifactsFromStore(
 
 export type ClientModuleRegistry = Readonly<{
   list(input: {
+    sessionId?: string
     profile: string
     profileDirectory: string
     inventory: InstalledInventory
@@ -899,6 +901,95 @@ function rosterRevision(
 }
 
 export function createClientModuleRegistry(options: ClientModuleRegistryOptions): ClientModuleRegistry {
+  const generationRegistries = new Map<string, ClientModuleRegistry>()
+  const pruneGenerationAssets = async (input: Parameters<ClientModuleRegistry['list']>[0]) => {
+    const referenced = new Set(
+      new RuntimeGenerationSnapshotStore(input.profileDirectory).sessions().map((pin) => pin.generationId),
+    )
+    const root = join(options.snapshotDirectory(input.profile, input.profileDirectory), 'generations')
+    const directories = await readdir(root).catch((error: NodeJS.ErrnoException) => {
+      if (error.code === 'ENOENT') return [] as string[]
+      throw error
+    })
+    for (const id of directories) {
+      if (!/^[a-f0-9-]{36}$/.test(id) || referenced.has(id)) continue
+      const key = `${input.profile}:${id}`
+      generationRegistries.get(key)?.close()
+      generationRegistries.delete(key)
+      await rm(join(root, id), { recursive: true, force: true })
+    }
+  }
+  const generationInput = (input: Parameters<ClientModuleRegistry['list']>[0], id: string) => {
+    const store = new RuntimeGenerationSnapshotStore(input.profileDirectory)
+    const snapshot = store.read(id)
+    const packages = snapshot.sources.map((source) => ({
+      id: source.snapshot.packageId,
+      directory: source.snapshot.directory,
+      entry: {
+        version: source.snapshot.version,
+        integrity: source.snapshot.integrity,
+        treeIntegrity: source.snapshot.treeIntegrity,
+        enabled: true,
+      },
+      contributions: source.snapshot.contributions,
+      capabilityHash: source.snapshot.capabilityHash,
+      trusted: true,
+      enabled: true,
+      blockers: [],
+    })) as unknown as InstalledPackage[]
+    const inventory = { ...input.inventory, packages }
+    let registry = generationRegistries.get(`${input.profile}:${id}`)
+    if (!registry) {
+      registry = createClientModuleRegistry({
+        ...options,
+        snapshotDirectory: (profile, directory) =>
+          join(options.snapshotDirectory(profile, directory), 'generations', id),
+        runtimeArtifacts: () => ({ desired: snapshot.artifact, lastGood: snapshot.artifact }),
+        changed: () => undefined,
+      })
+      generationRegistries.set(`${input.profile}:${id}`, registry)
+    }
+    return {
+      registry,
+      input: {
+        profile: input.profile,
+        profileDirectory: input.profileDirectory,
+        inventory,
+        refreshInventory: async () => inventory,
+        actual: async (packageId: string) => {
+          const source = snapshot.sources.find((item) => item.snapshot.packageId === packageId)
+          return source
+            ? { actual: 'running' as const, actualIntegrity: source.snapshot.integrity }
+            : undefined
+        },
+      },
+    }
+  }
+  const generationRoster = async (
+    input: Parameters<ClientModuleRegistry['list']>[0],
+    id: string,
+  ): Promise<ClientModuleListResult> => {
+    const selected = generationInput(input, id)
+    const result = await selected.registry.list(selected.input)
+    const route = (url: string) => url.replace('/plugins/', `/plugins/generations/${id}/`)
+    return {
+      ...result,
+      modules: result.modules.map((module) => ({
+        ...module,
+        entryUrl: route(module.entryUrl),
+        styleUrls: module.styleUrls.map(route),
+      })),
+      ...(result.rows
+        ? {
+            rows: result.rows.map((row) => ({
+              ...row,
+              ...(row.entryUrl ? { entryUrl: route(row.entryUrl) } : {}),
+              ...(row.styleUrls ? { styleUrls: row.styleUrls.map(route) } : {}),
+            })),
+          }
+        : {}),
+    }
+  }
   const clock = options.clock ?? (() => new Date())
   const retentionMs = options.retentionMs ?? CLIENT_MODULE_RETENTION_MS
   const quotaBytes = options.quotaBytes ?? CLIENT_MODULE_SNAPSHOT_QUOTA_BYTES
@@ -1328,7 +1419,12 @@ export function createClientModuleRegistry(options: ClientModuleRegistryOptions)
   }
 
   return {
-    list: (input) => {
+    list: async (input) => {
+      await pruneGenerationAssets(input)
+      if (input.sessionId) {
+        const pin = new RuntimeGenerationSnapshotStore(input.profileDirectory).session(input.sessionId)
+        if (pin) return generationRoster(input, pin.generationId)
+      }
       inputs.set(input.profile, input)
       return serialize(input.profile, () => reconcile(input, true)).catch((error: unknown) => {
         emitResourceFailure(input)
@@ -1337,6 +1433,7 @@ export function createClientModuleRegistry(options: ClientModuleRegistryOptions)
     },
     refresh: (input, reason, packageId) =>
       serialize(input.profile, async () => {
+        await pruneGenerationAssets(input)
         inputs.set(input.profile, input)
         const result = await reconcile(input, false)
         emit({
@@ -1352,6 +1449,13 @@ export function createClientModuleRegistry(options: ClientModuleRegistryOptions)
       }),
     read: (input) =>
       serialize(input.profile, async () => {
+        await pruneGenerationAssets(input)
+        const generationPath = /^\/plugins\/generations\/([a-f0-9-]{36})\/(.+)$/.exec(input.path)
+        if (generationPath) {
+          const id = generationPath[1] as string
+          const selected = generationInput(input, id)
+          return selected.registry.read({ ...selected.input, path: `/plugins/${generationPath[2]}` })
+        }
         inputs.set(input.profile, input)
         await reconcile(input, true)
         const root = options.snapshotDirectory(input.profile, input.profileDirectory)
@@ -1394,6 +1498,8 @@ export function createClientModuleRegistry(options: ClientModuleRegistryOptions)
       return () => listeners.delete(listener)
     },
     close() {
+      for (const registry of generationRegistries.values()) registry.close()
+      generationRegistries.clear()
       for (const timer of timers.values()) clearTimeout(timer)
       timers.clear()
       inputs.clear()

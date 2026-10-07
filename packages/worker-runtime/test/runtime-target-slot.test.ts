@@ -1,5 +1,6 @@
 import {
   buildRuntimeTarget,
+  decodeRuntimeTargetArtifact,
   encodeRuntimeTargetArtifact,
   type RuntimeTarget,
   type RuntimeTargetArtifact,
@@ -81,9 +82,13 @@ describe('runtime target latest-wins slot', () => {
 
   it('coalesces an in-flight digest and treats an already-applied digest as idempotent', async () => {
     const gate = deferred<void>()
-    const applyRuntimeTarget = vi.fn(async () => gate.promise)
-    const slot = createRuntimeTargetSlot({ applyRuntimeTarget })
     const a = artifact('a')
+    let current = decodeRuntimeTargetArtifact(a)
+    const applyRuntimeTarget = vi.fn(async (target: RuntimeTarget) => {
+      await gate.promise
+      current = target
+    })
+    const slot = createRuntimeTargetSlot({ applyRuntimeTarget, runtimeTargetSnapshot: () => current })
 
     const first = slot.offer(frame(a))
     const duplicate = slot.offer(frame(a))
@@ -94,6 +99,11 @@ describe('runtime target latest-wins slot', () => {
     await expect(duplicate).resolves.toMatchObject({ status: 'applied', changed: true })
     await expect(slot.offer(frame(a))).resolves.toMatchObject({ status: 'applied', changed: false })
     expect(applyRuntimeTarget).toHaveBeenCalledOnce()
+    // A separate resource/extension publication can advance the Host's head while old sessions
+    // retain A. A cached delivery result is no longer proof that A is the current target.
+    current = decodeRuntimeTargetArtifact(artifact('b'))
+    await expect(slot.offer(frame(a))).resolves.toMatchObject({ status: 'applied', changed: true })
+    expect(encodeRuntimeTargetArtifact(current).digest).toBe(a.digest)
   })
 
   it('lets a repeat of the active digest supersede a different queued target', async () => {

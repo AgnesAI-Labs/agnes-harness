@@ -25,6 +25,7 @@ import type { PresetDoc } from './presets/types.js'
 import { withAssemblyIsolation } from './profile/isolation.js'
 import type { ResolvedProfile } from './profile/types.js'
 import type { SkillRuntimeInput } from './resources/skills.js'
+import { createRuntimeGenerationHost, type PluginGenerationStatus } from './runtime-generation-host.js'
 import {
   type CreateSessionOptions,
   checkPresetHardRequirements,
@@ -44,7 +45,7 @@ import {
 
 // core does not export a type named `Session`; it exports SessionImpl and SessionLogImpl. Taking the
 // return type instead of pinning a name means a rename over there is not a break over here.
-export type HostSession = Awaited<ReturnType<Kernel['session']>>
+export type HostSession = Awaited<ReturnType<Kernel['session']>> & { readonly pluginGenerationId?: string }
 export type HostOptions = Omit<AssembleDeps, 'audit' | 'loader'> & {
   audit?: AuditSink
   loader?: PackageLoader
@@ -62,6 +63,11 @@ export type HostOptions = Omit<AssembleDeps, 'audit' | 'loader'> & {
 }
 
 export interface Host {
+  pluginGenerationStatus?(): PluginGenerationStatus
+  sessionGeneration?(sessionKey: string): string | undefined
+  releaseSessionGeneration?(sessionKey: string): Promise<void>
+  /** Host-private immutable target projection for generation assembly. */
+  runtimeTargetSnapshot?(): RuntimeTarget
   /** Privileged coordination port. It is not reachable from ExtensionAPI or any wire request. */
   readonly activationBarrier: ExtensionActivationBarrier
   /** Authenticated management port. It is not registered as a model tool or extension service. */
@@ -141,6 +147,10 @@ export interface Host {
 }
 
 export async function createHost(profile: ResolvedProfile, opts: HostOptions): Promise<Host> {
+  return createRuntimeGenerationHost(profile, opts, createHostInstance)
+}
+
+async function createHostInstance(profile: ResolvedProfile, opts: HostOptions): Promise<Host> {
   profile = withAssemblyIsolation(profile, opts.extensionIsolation)
   const loader = opts.loader
   if (!loader)
@@ -509,6 +519,7 @@ export async function createHost(profile: ResolvedProfile, opts: HostOptions): P
       return a.refreshSkillRow(fresh)
     },
     ordinaryConvergence: () => a.ordinaryConvergence(),
+    runtimeTargetSnapshot: () => a.runtimeTargetSnapshot(),
     applyRuntimeTarget: (target) => {
       if (closed) throw new HostError('E_HOST_CLOSED', 'host is closed')
       return a.applyRuntimeTarget(target)

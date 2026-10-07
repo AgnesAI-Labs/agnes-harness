@@ -2084,6 +2084,26 @@
         }
       }
     },
+    "ClientModuleListParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+          "profile": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64,
+              "pattern": "^[a-z][a-z0-9.-]{0,63}$"
+          },
+          "sessionId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 512
+          }
+      },
+      "required": [
+          "profile"
+      ]
+    },
     "ClientModuleReadParams": {
       "description": "One same-origin client-module route path to read bytes for. The path is a URL path, never a filesystem path.",
       "type": "object",
