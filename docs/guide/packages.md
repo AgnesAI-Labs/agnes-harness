@@ -19,7 +19,7 @@ agh plugins add https://example.com/team/hello-tool.git
 agh plugins add https://example.com/hello-tool.zip
 ```
 
-The command displays the source, integrity, capability hash, requested capabilities, warnings and blockers. Confirming `plugins add` installs, trusts and enables that exact reviewed version. Use `--yes` for an explicitly authorized script; otherwise a noninteractive invocation cancels. Legacy `agh install` continues to install disabled and untrusted. `agh plugins trust <id>` reviews the installed declaration and retrieves the hash automatically; `agh plugins enable <id>` displays it again before enabling.
+The command displays the source, integrity, capability hash, requested capabilities, warnings and blockers. Confirming `plugins add` installs, trusts and enables that exact reviewed version. Use `--yes` for an explicitly authorized script; otherwise a noninteractive invocation exits with a reason and a hint to use `--yes`. Legacy `agh install` continues to install disabled and untrusted. `agh plugins trust <id>` reviews the installed declaration and retrieves the hash automatically; `agh plugins enable <id>` displays it again before enabling.
 
 In **Settings → Plugin management → Install from source**, choose **Local path**, **Git URL**, or **Archive HTTPS URL**. Local paths name files on the daemon's machine. `file:` accepts absolute paths, folders outside the daemon workspace, relative folders, `.tgz`/`.tar.gz`/`.tar`, and ZIP files. Explicit relative `file:` references still resolve against the daemon workspace; bare CLI paths resolve against the CLI's cwd. Sources cannot be symlinks. Archives can contain a package at their root or inside one enclosing directory; traversal paths, links, special entries and oversized archives are refused. HTTPS archive downloads do not follow redirects or accept credentials.
 
@@ -143,14 +143,14 @@ Use the [installation guide](install.md) to create a temporary AGH_HOME and star
 
 ```sh
 node packages/cli/dist/local/agnes.mjs package inspect file:./examples/packages/hot-tool-plugin
-node packages/cli/dist/local/agnes.mjs install file:./examples/packages/hot-tool-plugin
+node packages/cli/dist/local/agnes.mjs install file:./examples/packages/hot-tool-plugin --yes
 ```
 
-Installation shows a preview and requests interactive confirmation. Check package ID, version, source, integrity, capabilityHash, warnings, and blockers. A blocked package cannot simply be authorized. Use the actual preview values:
+Installation shows a preview. Without `--yes`, confirmation requires an interactive terminal; non-TTY callers get a reason and hint instead of silent cancellation. Check package ID, version, source, integrity, capabilityHash, warnings, and blockers. A blocked package cannot simply be authorized. `package trust <id> --yes` displays and trusts the current installed integrity/capability hashes. You may still provide both hashes explicitly; mismatches print expected and given values. `--yes` never overrides blockers or hash checks:
 
 ```sh
-node packages/cli/dist/local/agnes.mjs package trust @agnes-examples/hot-tool-plugin INTEGRITY CAPABILITY_HASH
-node packages/cli/dist/local/agnes.mjs package enable @agnes-examples/hot-tool-plugin
+node packages/cli/dist/local/agnes.mjs package trust @agnes-examples/hot-tool-plugin --yes
+node packages/cli/dist/local/agnes.mjs package enable @agnes-examples/hot-tool-plugin --yes
 node packages/cli/dist/local/agnes.mjs package status
 ```
 

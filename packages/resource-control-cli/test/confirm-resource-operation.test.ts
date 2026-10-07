@@ -43,7 +43,11 @@ describe('confirmResourceOperation must settle when the operator declines to ans
   })
 
   it('[preserve] a non-TTY stream fails closed without ever prompting', async () => {
-    expect(await ask('', false)).toEqual({ settled: false, prompted: false })
+    const stdin = Object.assign(new PassThrough(), { isTTY: false })
+    const stdout = Object.assign(new PassThrough(), { isTTY: false })
+    await expect(confirmResourceOperation({ stdin, stdout }, 'refresh skills')).rejects.toThrow(
+      'rerun with --yes',
+    )
   })
 
   it('stdin EOF declines instead of hanging the command', async () => {

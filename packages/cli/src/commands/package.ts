@@ -22,8 +22,30 @@ export {
 
 export type PackageCommandIO = {
   write(text: string): void
-  confirm(preview: PackagePreview): Promise<boolean>
-  confirmEnable?(installed: PackageInstalledDescriptor): Promise<boolean>
+  confirm(
+    preview: Pick<PackagePreview, 'id' | 'version' | 'integrity'>,
+    action?: 'install' | 'trust' | 'enable',
+  ): Promise<boolean>
+  confirmEnable?(installed: PackageInstalledDescriptor, action?: 'trust' | 'enable'): Promise<boolean>
+}
+
+async function confirmPreview(
+  p: ParsedArgs,
+  io: PackageCommandIO,
+  preview: Pick<PackagePreview, 'id' | 'version' | 'integrity'>,
+  action: 'install' | 'trust' | 'enable' = 'install',
+): Promise<boolean> {
+  return p.yes === true || io.confirm(preview, action)
+}
+
+async function confirmInstalled(
+  p: ParsedArgs,
+  io: PackageCommandIO,
+  installed: PackageInstalledDescriptor,
+  action: 'trust' | 'enable',
+): Promise<boolean> {
+  if (p.yes) return true
+  return io.confirmEnable ? io.confirmEnable(installed, action) : io.confirm(installed, action)
 }
 
 function formatOperation(operation: PackageOperation): string {
@@ -114,11 +136,10 @@ export async function runPackageCommand(
       io.write(
         `${formatPreview(preview)}\n${p.command === 'plugins' ? 'Confirmation will install, trust and enable this reviewed version.\n' : ''}`,
       )
-      if (preview.blockers.length > 0) throw new Error('package preview has blockers')
-      if (!(await io.confirm(preview))) {
-        io.write(
-          'Installation cancelled. Use an interactive terminal or --yes to confirm the displayed preview.\n',
-        )
+      if (preview.blockers.length > 0)
+        throw new UsageError('package preview has blockers; resolve the blockers above and inspect again')
+      if (!(await confirmPreview(p, io, preview))) {
+        io.write('Installation cancelled.\n')
         return
       }
       io.write(`${formatOperation(await installPreview(client, profile, preview))}\n`)
@@ -141,30 +162,28 @@ export async function runPackageCommand(
       return
     }
     case 'trust': {
-      if (p.command === 'plugins' && args.length === 2) {
-        const row = (await client.packages.list({ profile })).packages.find((item) => item.id === args[1])
-        if (!row) throw new Error('Plugin is not installed.')
-        if (!row.capabilityHash)
-          throw new Error('Installed summary has no capability hash; update the daemon.')
-        io.write(`Requested capabilities: ${JSON.stringify(row.declaredCapabilities ?? 'not declared')}\n`)
-        if (!(p.yes || (await io.confirmEnable?.(row)))) {
-          io.write('Trust cancelled. Use an interactive terminal or --yes.\n')
-          return
-        }
-        const receipt = await client.packages.trust({
-          profile,
-          clientId: await client.clientId(),
-          commandId: newPackageCommandId('trust'),
-          id: row.id,
-          expectedIntegrity: row.integrity,
-          capabilityHash: row.capabilityHash,
-        })
-        io.write(formatOperation(await waitForPackageOperation(client, receipt)) + '\n')
+      const id = requireArg(args, 1, 'agh package trust <id> [<integrity> <capabilityHash>] [--yes]')
+      if (args.length !== 2 && args.length !== 4)
+        throw new UsageError('usage: agh package trust <id> [<integrity> <capabilityHash>] [--yes]')
+      const installed = (await client.packages.list({ profile })).packages.find((entry) => entry.id === id)
+      if (!installed) throw new UsageError(`package ${id} is not installed; run agh package status`)
+      io.write(
+        `${installed.id}@${installed.version}\nintegrity ${installed.integrity}\ncapabilityHash ${installed.capabilityHash ?? 'unavailable'}\nRequested capabilities: ${JSON.stringify(installed.declaredCapabilities ?? 'not declared')}\nblockers ${installed.blockers.map((blocker) => `${blocker.code}: ${blocker.references.join(', ')}`).join('; ') || 'none'}\n`,
+      )
+      const expectedIntegrity = args[2] ?? installed.integrity
+      const capabilityHash = args[3] ?? installed.capabilityHash
+      if (expectedIntegrity !== installed.integrity || capabilityHash !== installed.capabilityHash)
+        throw new UsageError(
+          `hash mismatch: expected integrity=${installed.integrity} capabilityHash=${installed.capabilityHash}; given integrity=${expectedIntegrity} capabilityHash=${capabilityHash}; review the installed package before trusting`,
+        )
+      if (!capabilityHash)
+        throw new UsageError('installed package has no capabilityHash; rebuild or upgrade the daemon')
+      if (installed.blockers.length)
+        throw new UsageError('package has blockers; resolve them before trusting')
+      if (!(await confirmInstalled(p, io, installed, 'trust'))) {
+        io.write('Trust cancelled.\n')
         return
       }
-      const id = requireArg(args, 1, 'agh package trust <id> <integrity> <capabilityHash>')
-      const expectedIntegrity = requireArg(args, 2, 'agh package trust <id> <integrity> <capabilityHash>')
-      const capabilityHash = requireArg(args, 3, 'agh package trust <id> <integrity> <capabilityHash>')
       const receipt = await client.packages.trust({
         profile,
         clientId: await client.clientId(),
@@ -183,14 +202,16 @@ export async function runPackageCommand(
       const id = requireArg(args, 1, `agh package ${action} <id>`)
       let reviewedIntegrity: string | undefined
       if (action === 'enable') {
-        const row = (await client.packages.list({ profile })).packages.find((item) => item.id === id)
-        if (!row) throw new Error('Plugin is not installed.')
-        if (!row.capabilityHash)
-          throw new Error('Installed summary has no capability hash; update the daemon.')
-        reviewedIntegrity = row.integrity
-        io.write(`Requested capabilities: ${JSON.stringify(row.declaredCapabilities ?? 'not declared')}\n`)
-        if (p.command === 'plugins' && !(p.yes || (await io.confirmEnable?.(row)))) {
-          io.write('Enable cancelled. Use an interactive terminal or --yes.\n')
+        const installed = (await client.packages.list({ profile })).packages.find((entry) => entry.id === id)
+        if (!installed) throw new UsageError(`package ${id} is not installed; run agh package status`)
+        if (!installed.capabilityHash)
+          throw new UsageError('Installed summary has no capability hash; update the daemon.')
+        reviewedIntegrity = installed.integrity
+        io.write(
+          `Enable ${installed.id}@${installed.version} integrity=${installed.integrity} capabilityHash=${installed.capabilityHash}\nRequested capabilities: ${JSON.stringify(installed.declaredCapabilities ?? 'not declared')}\n`,
+        )
+        if (!(await confirmInstalled(p, io, installed, 'enable'))) {
+          io.write('Enable cancelled.\n')
           return
         }
       }

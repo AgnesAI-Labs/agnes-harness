@@ -2,8 +2,8 @@ import type { PackageOperationGetParams } from '@agnes/protocol'
 import type { NodeClient } from '@agnes/sdk'
 import { describe, expect, it, vi } from 'vitest'
 import { parseArgs } from '../src/args.js'
-import { runPluginDevelopmentCommand } from '../src/commands/plugins.js'
 import { runPackageCommand } from '../src/commands/package.js'
+import { runPluginDevelopmentCommand } from '../src/commands/plugins.js'
 
 const profile = 'local-dev'
 const source = { type: 'npm' as const, ref: 'npm:example@1.0.0' }
@@ -13,6 +13,8 @@ const preview = {
   version: '1.0.0',
   source,
   integrity,
+  capabilityHash: 'b'.repeat(64),
+  declaredCapabilities: { exec: ['node'] },
   license: 'MIT',
   provenance: { source, integrity, signatureVerified: false },
   contributions: [],
@@ -28,7 +30,7 @@ const preview = {
   blockers: [],
 }
 
-function operation(kind: 'inspect' | 'install', installed = false) {
+function operation(kind: 'inspect' | 'install' | 'trust' | 'enable', installed = false) {
   return {
     operationId: kind,
     profile,
@@ -56,8 +58,10 @@ function operation(kind: 'inspect' | 'install', installed = false) {
   }
 }
 
-function client(): { value: NodeClient; installs: () => number } {
+function client(): { value: NodeClient; installs: () => number; trusts: unknown[]; enables: unknown[] } {
   let installCalls = 0
+  const trusts: unknown[] = []
+  const enables: unknown[] = []
   return {
     value: {
       async clientId() {
@@ -73,7 +77,9 @@ function client(): { value: NodeClient; installs: () => number } {
           },
         },
         async list() {
-          return { packages: [] }
+          return {
+            packages: [{ ...preview, trusted: false, desired: 'installed-disabled', actual: 'not-running' }],
+          }
         },
         async inspect() {
           return { operationId: 'inspect', profile }
@@ -82,11 +88,13 @@ function client(): { value: NodeClient; installs: () => number } {
           installCalls++
           return { operationId: 'install', profile }
         },
-        async trust() {
-          throw new Error('unused')
+        async trust(params: unknown) {
+          trusts.push(params)
+          return { operationId: 'trust', profile }
         },
-        async enable() {
-          throw new Error('unused')
+        async enable(params: unknown) {
+          enables.push(params)
+          return { operationId: 'enable', profile }
         },
         async disable() {
           throw new Error('unused')
@@ -102,7 +110,13 @@ function client(): { value: NodeClient; installs: () => number } {
         },
         operation: {
           async get(params: PackageOperationGetParams) {
-            return params.operationId === 'inspect' ? operation('inspect') : operation('install', true)
+            return params.operationId === 'inspect'
+              ? operation('inspect')
+              : params.operationId === 'trust'
+                ? operation('trust')
+                : params.operationId === 'enable'
+                  ? operation('enable')
+                  : operation('install', true)
           },
           async cancel() {
             throw new Error('unused')
@@ -114,20 +128,43 @@ function client(): { value: NodeClient; installs: () => number } {
       },
     } as unknown as NodeClient,
     installs: () => installCalls,
+    trusts,
+    enables,
   }
 }
 
 describe('package command', () => {
-  it('binds install confirmation to preview integrity and leaves the result disabled/untrusted', async () => {
-    const fixture = client()
-    const written: string[] = []
-    await runPackageCommand(parseArgs(['install', source.ref]), fixture.value, {
-      write: (line) => written.push(line),
-      confirm: async (value) => value.integrity === integrity,
-    })
-    expect(fixture.installs()).toBe(1)
-    expect(written.join('\n')).toContain('Installation will remain disabled and untrusted.')
-    expect(written.join('\n')).toContain('desired installed-disabled; actual not-running; trusted false')
+  it('binds install to the preview and activates only the reviewed plugins add version', async () => {
+    for (const argv of [
+      ['install', source.ref],
+      ['plugins', 'add', source.ref, '--yes'],
+    ]) {
+      const fixture = client()
+      const written: string[] = []
+      await runPackageCommand(parseArgs(argv), fixture.value, {
+        write: (line) => written.push(line),
+        confirm: async (value) => value.integrity === integrity,
+      })
+      expect(fixture.installs()).toBe(1)
+      expect(written.join('\n')).toContain(`capabilityHash ${preview.capabilityHash}`)
+      expect(written.join('\n')).toContain('declared capabilities {"exec":["node"]}')
+      expect(written.join('\n')).toContain('blockers none')
+      expect(written.join('\n')).toContain('desired installed-disabled; actual not-running; trusted false')
+      if (argv[0] === 'plugins') {
+        expect(written.join('\n')).toContain('install, trust and enable this reviewed version')
+        expect(fixture.trusts).toEqual([
+          expect.objectContaining({
+            expectedIntegrity: integrity,
+            capabilityHash: preview.capabilityHash,
+          }),
+        ])
+        expect(fixture.enables).toEqual([expect.objectContaining({ expectedInstalledIntegrity: integrity })])
+      } else {
+        expect(written.join('\n')).toContain('Installation will remain disabled and untrusted.')
+        expect(fixture.trusts).toEqual([])
+        expect(fixture.enables).toEqual([])
+      }
+    }
   })
 
   it('does not install after a rejected preview confirmation', async () => {
@@ -214,4 +251,35 @@ it('routes discovery-owned local reload through the existing activation effect',
   } as unknown as NodeClient
   await runPluginDevelopmentCommand(parseArgs(['plugins', 'reload', 'example']), rpc, () => {})
   expect(enable.mock.calls[0]?.[0]).toMatchObject({ profile, id: 'example', clientId: 'cli-client' })
+})
+
+it('trusts the installed hashes with --yes and refuses wrong hashes with expected/given values', async () => {
+  for (const command of ['package', 'plugins']) {
+    const fixture = client()
+    const written: string[] = []
+    const io = {
+      write: (text: string) => written.push(text),
+      confirm: async () => {
+        throw new Error('must not prompt')
+      },
+    }
+    await runPackageCommand(parseArgs([command, 'trust', 'example', '--yes']), fixture.value, io)
+    expect(fixture.trusts).toEqual([
+      expect.objectContaining({ expectedIntegrity: integrity, capabilityHash: preview.capabilityHash }),
+    ])
+    const wrong = 'c'.repeat(64)
+    await expect(
+      runPackageCommand(
+        parseArgs([command, 'trust', 'example', integrity, wrong, '--yes']),
+        fixture.value,
+        io,
+      ),
+    ).rejects.toThrow(
+      `expected integrity=${integrity} capabilityHash=${preview.capabilityHash}; given integrity=${integrity} capabilityHash=${wrong}`,
+    )
+    expect(fixture.trusts).toHaveLength(1)
+    await runPackageCommand(parseArgs([command, 'enable', 'example', '--yes']), fixture.value, io)
+    expect(fixture.enables).toEqual([expect.objectContaining({ expectedInstalledIntegrity: integrity })])
+    expect(written.join('')).toContain('Requested capabilities: {"exec":["node"]}')
+  }
 })

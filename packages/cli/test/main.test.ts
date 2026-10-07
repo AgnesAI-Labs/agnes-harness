@@ -209,6 +209,31 @@ describe('main', () => {
     const g = harness(scratch())
     expect(await main(['--help'], g.io, g.boot)).toBe(0)
     expect(g.out()).toContain('agh -p [prompt]')
+    for (const command of [
+      'serve',
+      'web',
+      'start',
+      'mcp',
+      'skills',
+      'resources',
+      'daemon',
+      'ext',
+      'plugins',
+      'dev',
+      'package',
+      'install',
+      'doctor',
+      'config',
+    ]) {
+      const item = harness(scratch())
+      const createHostImpl = vi.fn(() => {
+        throw new Error('help must not boot')
+      })
+      expect(await main([command, '--help'], item.io, { ...item.boot, createHostImpl })).toBe(0)
+      expect(item.out()).toContain('agh')
+      expect(item.err()).toBe('')
+      expect(createHostImpl).not.toHaveBeenCalled()
+    }
   })
 
   it('dispatches doctor through the real command entry and writes its JSON once', async () => {
@@ -317,11 +342,12 @@ describe('main', () => {
     }
   })
 
-  it('a flag the grammar does not know exits 2 and prints the usage', async () => {
+  it('a flag the grammar does not know exits 2 and prints a help hint', async () => {
     const h = harness(scratch())
     expect(await main(['--nope'], h.io, h.boot)).toBe(2)
     expect(h.err()).toContain('unknown flag --nope')
-    expect(h.err()).toContain('agh -p [prompt]')
+    expect(h.err()).toContain('run agh --help for usage')
+    expect(h.err().trim().split('\n')).toHaveLength(1)
     expect(h.out()).toBe('')
   })
 

@@ -14,16 +14,18 @@ import { AGNES_ERRORS, JSONRPC_ERRORS } from '@agnes/protocol'
 import {
   confirmResourceOperation,
   isResourceOperationFailure,
+  ResourceUsageError,
   resourceOperationFailureWasRendered,
   runResourceCliCommand,
 } from '@agnes/resource-control-cli'
 import { TransportClosed } from '@agnes/sdk'
-import { parseArgs, resolveMode, usage } from './args.js'
+import { parseArgs, resolveMode } from './args.js'
 import { ensureLocalBackend } from './boot/backend.js'
 import { bootDefault } from './boot/default.js'
 import { makeEphemeralHome, profileNameFrom, resolveHome } from './boot/inputs.js'
 import { bootLocal, type LocalBootDeps } from './boot/local.js'
 import { installSignalLadder } from './boot/signals.js'
+import { commandHelp } from './command-help.js'
 import { type ConfigWizardIO, runConfigurationWizard } from './config-wizard.js'
 import {
   BootError,
@@ -381,7 +383,7 @@ export async function main(argv: string[], io: MainIO, boot: Partial<LocalBootDe
   try {
     p = parseArgs(argv)
   } catch (e) {
-    io.stderr.write(`${(e as Error).message}\n${usage()}\n`)
+    io.stderr.write(`${(e as Error).message}; run agh --help for usage\n`)
     return ExitCode.USAGE
   }
   // A relative --cwd means relative to where the user typed it. Left raw, it reaches the daemon,
@@ -392,7 +394,7 @@ export async function main(argv: string[], io: MainIO, boot: Partial<LocalBootDe
     return ExitCode.OK
   }
   if (p.help) {
-    io.stdout.write(`${usage()}\n`)
+    io.stdout.write(`${commandHelp(p.command)}\n`)
     return ExitCode.OK
   }
 
@@ -656,7 +658,7 @@ export async function main(argv: string[], io: MainIO, boot: Partial<LocalBootDe
     }
     if (p.command === 'plugins' && p.positional[0] === 'pack') {
       const { packPlugin } = await import('@agnes/package-manager')
-      if (!p.positional[1]) throw new Error('usage: agh plugins pack <folder> [output.tgz]')
+      if (!p.positional[1]) throw new UsageError('usage: agh plugins pack <folder> [output.tgz]')
       io.stdout.write((await packPlugin(p.positional[1], p.positional[2])) + '\n')
       return 0
     }
@@ -671,17 +673,18 @@ export async function main(argv: string[], io: MainIO, boot: Partial<LocalBootDe
         // The daemon scope serves only the profile it was booted for, which AGNES_PROFILE can choose.
         await runPackageCommand({ ...p, profile: booted.profileName }, booted.client, {
           write: (text) => io.stdout.write(text),
-          confirmEnable: (item) => confirmPackageInstall(io, item.id, item.version, item.integrity, true),
-          confirm: (preview) =>
-            p.yes
-              ? Promise.resolve(true)
-              : confirmPackageInstall(
-                  io,
-                  preview.id,
-                  preview.version,
-                  preview.integrity,
-                  p.command === 'plugins',
-                ),
+          confirm: (preview, action) =>
+            confirmPackageInstall(
+              io,
+              preview.id,
+              preview.version,
+              preview.integrity,
+              p.command === 'plugins' && (action === undefined || action === 'install')
+                ? 'install, trust and enable'
+                : action,
+            ),
+          confirmEnable: (item, action) =>
+            confirmPackageInstall(io, item.id, item.version, item.integrity, action ?? 'enable'),
         })
         return ExitCode.OK
       } finally {
@@ -719,6 +722,7 @@ export async function main(argv: string[], io: MainIO, boot: Partial<LocalBootDe
       await runResourceCliCommand({
         kind: p.command,
         rest: p.rest,
+        workspacePath: p.cwd ?? io.cwd,
         boot: (profile) =>
           bootDefault({ ...p, ...(profile ? { profile } : {}) }, deps, {
             useEmbedded: Object.keys(boot).length > 0,
@@ -880,16 +884,23 @@ export async function main(argv: string[], io: MainIO, boot: Partial<LocalBootDe
       if (!resourceOperationFailureWasRendered(e)) io.stderr.write(`${safeFailure}\n`)
       return ExitCode.ERROR
     }
-    if (e instanceof UsageError || e instanceof BootError || e instanceof CommandError) {
-      io.stderr.write(`${e.message}\n`)
-      return e.code
+    if (
+      e instanceof UsageError ||
+      e instanceof BootError ||
+      e instanceof CommandError ||
+      e instanceof ResourceUsageError
+    ) {
+      io.stderr.write(`${e.message.replace(/[\r\n]+/g, ' ')}; run agh ${p.command ?? ''} --help for usage\n`)
+      return e instanceof ResourceUsageError ? ExitCode.USAGE : e.code
     }
     // The stack alone is not an answer: a JSON-RPC failure stringifies to its name and number, and
     // everything an operator could act on -- which refusal, from where -- is in `data.code`.
     const data = (e as { data?: { code?: unknown; message?: unknown } } | null)?.data
     const detail = [data?.code, data?.message].filter((x) => typeof x === 'string').join(': ')
-    io.stderr.write(`agnes: ${(e as Error).message}${detail ? ` ${detail}` : ''}\n`)
-    io.stderr.write(`${(e as Error).stack ?? String(e)}\n`)
+    const reason = `agnes: ${(e as Error).message}${detail ? ` ${detail}` : ''}`.replace(/[\r\n]+/g, ' ')
+    io.stderr.write(
+      `${reason}; run agh ${p.command ?? ''} --help for usage or agh doctor for configuration\n`,
+    )
     return ExitCode.ERROR
   } finally {
     eph?.release()
@@ -902,22 +913,22 @@ function confirmPackageInstall(
   id: string,
   version: string,
   integrity: string,
-  activate = false,
+  action: 'install' | 'trust' | 'enable' | 'install, trust and enable' = 'install',
 ): Promise<boolean> {
-  if (io.stdin.isTTY !== true || io.stdout.isTTY !== true) return Promise.resolve(false)
+  if (io.stdin.isTTY !== true || io.stdout.isTTY !== true)
+    return Promise.reject(
+      new UsageError('confirmation requires a TTY; review the preview and rerun with --yes'),
+    )
   return new Promise((resolve) => {
     const prompt = createInterface({ input: io.stdin, output: io.stdout, terminal: true })
     // EOF and Ctrl-C close the interface without ever calling the question callback. Settling as
     // "not confirmed" keeps INV-33: an unanswered prompt is never read as consent. Resolve before
     // close() below, which emits 'close' synchronously and would otherwise bury the answer.
     prompt.once('close', () => resolve(false))
-    prompt.question(
-      `${activate ? 'Install, trust and enable' : 'Install'} ${id}@${version} (${integrity})? [y/N] `,
-      (answer) => {
-        resolve(/^y(?:es)?$/i.test(answer.trim()))
-        prompt.close()
-      },
-    )
+    prompt.question(`${action} ${id}@${version} (${integrity})? [y/N] `, (answer) => {
+      resolve(/^y(?:es)?$/i.test(answer.trim()))
+      prompt.close()
+    })
   })
 }
 
@@ -958,6 +969,14 @@ export async function runExecutable(): Promise<void> {
     agnesVersion: agnesVersion(),
   })
   process.exitCode = code
+  // main has completed all owned cleanup. Flush redirected output before ending the executable;
+  // unrelated library timers must not keep a successful one-shot command alive.
+  await Promise.all(
+    [process.stdout, process.stderr].map(
+      (stream) => new Promise<void>((resolve) => stream.write('', () => resolve())),
+    ),
+  )
+  process.exit(code)
 }
 
 const entry = process.argv[1]
@@ -973,10 +992,6 @@ function isMainModule(moduleUrl: string): boolean {
 }
 
 if (!process.getBuiltinModule('node:sea').isSea() && isMainModule(import.meta.url)) {
-  // The code is set, not taken. `process.exit` discards whatever is still queued on a pipe, and the
-  // last two things a run writes -- the answer and the reason word -- are queued immediately before
-  // this point, so exiting here truncated exactly the output the caller was reading. Node leaves
-  // with this code once the loop is empty; the signal ladder keeps its own hard exit, which is what
-  // a shutdown that will not finish needs.
+  // The executable flushes both output streams after main completes its owned cleanup.
   void runExecutable()
 }

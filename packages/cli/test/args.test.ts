@@ -328,6 +328,8 @@ describe('usage', () => {
     'import',
     'doctor',
     'profile',
+    'plugins',
+    'dev',
     'package',
     'install',
     'consent',
@@ -386,4 +388,28 @@ it('selects a versioned loop, including a scoped id, and refuses missing version
     ['resume', 'id', '--loop', 'dag@1'],
   ])
     expect(() => parseArgs(argv)).toThrow(UsageError)
+})
+
+it('recognizes help before forwarding commands and leaves stdio arguments as data', () => {
+  for (const command of [
+    'serve',
+    'web',
+    'start',
+    'mcp',
+    'skills',
+    'resources',
+    'daemon',
+    'ext',
+    'plugins',
+    'package',
+    'install',
+    'doctor',
+    'config',
+  ]) {
+    expect(parseArgs([command, '--help']).help, command).toBe(true)
+    expect(parseArgs([command, 'test', '--help']).help, command).toBe(true)
+  }
+  expect(parseArgs(['mcp', 'add', 'example', '--arg', '--help']).help).toBe(false)
+  expect(parseArgs(['mcp', 'serve', '--', '--help']).help).toBe(false)
+  expect(parseArgs(['install', 'file:./example', '--yes']).yes).toBe(true)
 })

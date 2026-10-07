@@ -17,7 +17,7 @@ agh plugins add https://example.com/team/hello-tool.git
 agh plugins add https://example.com/hello-tool.zip
 ```
 
-命令显示来源、内容摘要、能力哈希、能力范围、警告与阻断项。确认 `plugins add` 后安装、信任并启用核对过的确切版本。已明确授权的脚本可用 `--yes`；未确认的非交互调用会取消。旧的 `agh install` 仍保持未信任、停用。`agh plugins trust <id>` 自动读取已安装版本的哈希供确认，`agh plugins enable <id>` 启用前再次展示能力。
+命令显示来源、内容摘要、能力哈希、能力范围、警告与阻断项。确认 `plugins add` 后安装、信任并启用核对过的确切版本。已明确授权的脚本可用 `--yes`；未确认的非交互调用会报出原因，并提示使用 `--yes`。旧的 `agh install` 仍保持未信任、停用。`agh plugins trust <id>` 自动读取已安装版本的哈希供确认，`agh plugins enable <id>` 启用前再次展示能力。
 
 管理页的“从来源安装”支持本地路径、Git URL 和归档 HTTPS 地址。本地路径指向 daemon 所在机器。`file:` 接受绝对路径、daemon 工作区外的文件夹、相对文件夹、`.tgz`/`.tar.gz`/`.tar` 与 ZIP。显式的相对 `file:` 仍从 daemon 工作区解析；CLI 裸路径从 CLI 当前目录解析。来源不能是符号链接。归档可直接包含包，或用单个目录包住它；越界路径、链接、特殊文件与过大的归档会被拒绝。HTTPS 下载不跟随重定向、不接受 URL 凭据。
 
@@ -135,14 +135,14 @@ AGH 默认提供四个官方助手插件。新建本地配置，以及已有配�
 
 ```sh
 node packages/cli/dist/local/agnes.mjs package inspect file:./examples/packages/hot-tool-plugin
-node packages/cli/dist/local/agnes.mjs install file:./examples/packages/hot-tool-plugin
+node packages/cli/dist/local/agnes.mjs install file:./examples/packages/hot-tool-plugin --yes
 ```
 
-安装命令展示预览并要求交互确认。检查 package ID、版本、来源、integrity、capabilityHash、警告与 blockers；不能给有 blocker 的包直接授权。然后使用预览实际值：
+安装命令展示预览；不加 `--yes` 时需要交互终端，非 TTY 会提示用 `--yes` 重试。检查 package ID、版本、来源、integrity、capabilityHash、警告与 blockers；不能给有 blocker 的包直接授权。`package trust <id> --yes` 显示并信任当前已安装版本的两个哈希；仍可显式传入哈希，不匹配时显示 expected/given。`--yes` 不绕过 blockers 或哈希校验：
 
 ```sh
-node packages/cli/dist/local/agnes.mjs package trust @agnes-examples/hot-tool-plugin INTEGRITY CAPABILITY_HASH
-node packages/cli/dist/local/agnes.mjs package enable @agnes-examples/hot-tool-plugin
+node packages/cli/dist/local/agnes.mjs package trust @agnes-examples/hot-tool-plugin --yes
+node packages/cli/dist/local/agnes.mjs package enable @agnes-examples/hot-tool-plugin --yes
 node packages/cli/dist/local/agnes.mjs package status
 ```
 

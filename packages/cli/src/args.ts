@@ -68,7 +68,6 @@ const VALUE_FLAGS: Record<string, keyof ParsedArgs> = Object.assign(Object.creat
 })
 
 const BOOL_FLAGS: Record<string, keyof ParsedArgs> = Object.assign(Object.create(null), {
-  '--yes': 'yes',
   '-p': 'print',
   '--print': 'print',
   '--continue': 'continue',
@@ -83,6 +82,7 @@ const BOOL_FLAGS: Record<string, keyof ParsedArgs> = Object.assign(Object.create
   '--raw': 'raw',
   '--resolved': 'resolved',
   '--probe': 'probe',
+  '--yes': 'yes',
   '--help': 'help',
   '-h': 'help',
   '--version': 'version',
@@ -125,6 +125,17 @@ export function parseArgs(argv: string[]): ParsedArgs {
     i = 1
     if (FORWARDED.has(head)) {
       p.rest = argv.slice(1)
+      // Handle help before a forwarded grammar can start a daemon or bind a listener.
+      // Stdio arguments and everything after -- remain data for the other program.
+      for (let at = 0; at < p.rest.length; at++) {
+        const arg = p.rest[at]
+        if (arg === '--') break
+        if (arg === '--arg') {
+          at++
+          continue
+        }
+        if (arg === '--help' || arg === '-h') p.help = true
+      }
       return p
     }
     if (head === 'acp') p.mode = 'acp'
@@ -244,13 +255,13 @@ export function usage(): string {
     'agh computer-use permissions status|grant [--json]',
     'agh doctor subagents [--json] [--repair]',
     'agh profile list | inspect <p> [--resolved] | trust <deployDir>',
-    'agh package [--profile <p>] status|catalog [query]|inspect <src>|add <src>|trust <id> <integrity> <capabilityHash>',
+    'agh package [--profile <p>] status|catalog [query]|inspect <src>|add <src>|trust <id> [<integrity> <capabilityHash>] [--yes]',
     '              enable|disable|rollback|remove <id> | operation|cancel <operationId>',
     'agh plugins add <url|path> [--yes] | pack <folder> [output.tgz] | trust|enable <id> [--yes]',
-    'agh install <src> [--profile <p>]',
+    'agh install <src> [--profile <p>] [--yes]',
     'agh dev <plugin-folder> [--profile <p>]   agh plugins reload [id] [--profile <p>]',
     'agh packages pins inspect | release <pinId...> [--profile <p>]',
-    'agh resources list|get|operation|cancel|enable|disable ...   agh skills refresh|trust ...',
+    'agh resources list|get|operation|cancel|enable|disable ...   agh skills list|refresh|trust ...',
     'agh mcp list|get|add|update|remove|test|enable|disable|status|reconnect|tools ...',
     'agh consent DISABLED|LOCAL|ANON|FULL',
     'agh stats deviation [--json]        agh config [--connect <t>]        agh conformance gateway [--json]',

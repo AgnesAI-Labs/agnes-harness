@@ -121,7 +121,8 @@ describe('resource CLI argument boundary', () => {
     })
     expect(output).toContain('No resources found.')
     expect(output).toContain('<workspace>/.agh/skills/<name>/SKILL.md')
-    expect(output).toContain('~/.agh/skills/<name>/SKILL.md')
+    expect(output).toContain('$AGH_HOME/skills/<name>/SKILL.md')
+    expect(output).toContain('AGNES_SKILLS_IMPORT_USER=1')
     expect(output).not.toMatch(/\/Users\/|\/home\/|[A-Za-z]:\\/)
   })
   it('keeps the MCP empty list free of Skill path copy', async () => {
@@ -185,10 +186,10 @@ describe('resource CLI argument boundary', () => {
       },
     )
     expect(output).toContain('was created but is not usable yet')
-    // /mcp trust and /mcp enable both route through expected(), which throws UsageError without
+    // agh mcp trust and agh mcp enable both route through expected(), which throws UsageError without
     // --expected-revision <revision> -- the example command must include it or it cannot work.
-    expect(output).toContain('/mcp trust example --expected-revision <revision>')
-    expect(output).toContain('/mcp enable example --expected-revision <revision>')
+    expect(output).toContain('agh mcp trust example --expected-revision <revision>')
+    expect(output).toContain('agh mcp enable example --expected-revision <revision>')
   })
   it('accepts normal dash-prefixed stdio arguments but rejects shell command switches', async () => {
     await expect(
@@ -277,7 +278,17 @@ describe('resource CLI argument boundary', () => {
         clientId: async () => 'client',
         resources: { desiredSet: receipt, operation: { get: async () => operation } },
         skills: { refresh: receipt },
-        mcp: { servers: { test: receipt } },
+        mcp: {
+          servers: {
+            test: receipt,
+            status: async () => ({
+              lastSafeError: {
+                code: 'MCP_UNAVAILABLE',
+                message: 'stdio executable is not allowed by profile policy',
+              },
+            }),
+          },
+        },
       }
       await expect(
         runResourceCommand(kind, args, client as never, {
@@ -294,6 +305,7 @@ describe('resource CLI argument boundary', () => {
       } satisfies Partial<ResourceOperationFailure>)
       expect(output).toContain('RESOURCE_RECONCILE_FAILED: Resource refresh was rejected safely\n')
       expect(output.match(/RESOURCE_RECONCILE_FAILED/g)).toHaveLength(1)
+      if (kind === 'mcp') expect(output).toContain('stdio executable is not allowed by profile policy')
       expect(
         resourceOperationFailureWasRendered(
           new ResourceOperationFailure(operation.operationId, 'failed', operation.lastSafeError, true),
@@ -342,4 +354,45 @@ describe('resource terminal output ownership', () => {
     expect(output.match(/RESOURCE_OPERATION_CANCELLED/g)).toHaveLength(1)
     expect(output.endsWith('\n')).toBe(true)
   })
+})
+
+it('lists skills and accepts --yes without prompting, while preserving revision binding', async () => {
+  const calls: unknown[] = []
+  const client = {
+    clientId: async () => 'client',
+    workspace: {
+      add: async (path: string) => {
+        calls.push({ path })
+        return { workspace: { workspaceId: 'a'.repeat(64) } }
+      },
+    },
+    resources: {
+      list: async (params: unknown) => {
+        calls.push(params)
+        return { items: [] }
+      },
+      operation: { get: async () => ({ state: 'succeeded' }) },
+    },
+    skills: {
+      refresh: async (params: unknown) => {
+        calls.push(params)
+        return { operationId: 'op', state: 'received' }
+      },
+    },
+  }
+  const io = {
+    workspacePath: '/project',
+    write: () => undefined,
+    confirm: async () => {
+      throw new Error('must not prompt')
+    },
+  }
+  await runResourceCommand('skills', ['--profile', 'local-dev', 'list'], client as never, io)
+  await runResourceCommand('skills', ['refresh', '--yes'], client as never, io)
+  expect(calls).toEqual([
+    { path: '/project' },
+    expect.objectContaining({ kind: 'skill', workspaceId: 'a'.repeat(64) }),
+    { path: '/project' },
+    expect.objectContaining({ profile: 'local-dev', clientId: 'client', workspaceId: 'a'.repeat(64) }),
+  ])
 })
