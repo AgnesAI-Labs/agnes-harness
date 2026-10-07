@@ -6,6 +6,7 @@ import { compactTool } from './tool.js'
 // cleanly restores this package-owned default.
 export default defineExtension((agnes) => agnes.registerTool(compactTool))
 
-export { createDefaultCompactionEngine } from './engine.js'
+export { createDefaultCompactionEngine, resolveCompactionQualityConfig } from './engine.js'
+export type { CompactionQualityConfig } from './engine.js'
 export { buildCompactionPlan } from './plan.js'
 export { compactTool } from './tool.js'
