@@ -2,7 +2,7 @@
 
 [English](ui-coverage.md) | 简体中文
 
-本清单覆盖集成基线 `656a2270` 的插件架构、共享工作台以及本次设置实现。区分界面入口、后台支持与浏览器验收，产品仍为开发者预览。参阅[架构](architecture.zh-CN.md)、[提供器架构](architecture-plugins.zh-CN.md)、[源码地图](source-map.zh-CN.md)与 [Web 指南](../guide/web.zh-CN.md)。
+本清单覆盖集成基线 `df4f28a4` 的插件架构、共享工作台以及本次设置实现。区分界面入口、后台支持与浏览器验收，产品仍为开发者预览。参阅[架构](architecture.zh-CN.md)、[提供器架构](architecture-plugins.zh-CN.md)、[源码地图](source-map.zh-CN.md)与 [Web 指南](../guide/web.zh-CN.md)。
 
 从工作台设置中的**插件**或 `/admin/plugins` 进入。运行时导航包含**插件**、**提供器**、**Agent Loop 与模型**、**组合包与预设**、**安全**、**MCP 与技能**、**示例**。独立页和内嵌页共用渲染器；模型账户与资源管理继续复用现有控制器。
 
@@ -34,11 +34,11 @@
 | 共享会话、持久历史、流式输出、附件、取消、追加/排队输入 | 原对话工作台与工作区选择器 | 本设置变更保留。 |
 | 审批、Trace、恢复、诊断、会话搜索/归档/分叉/导出 | 原工作台操作、Trace 与诊断 | 后台维护授权、效果回执及会话事实。 |
 | 前端插件面板、公开槽位、皮肤、主题/语言、Computer Use 管理 | 原客户端模块对账、设置与工作台区域 | 保留 `@agnes/web-ui` 原语、token、CSP 与皮肤钩子。 |
-| ask_user_question 卡片 | E1 已在工具结果前渲染问题表单，保留原时间线与公开槽位 | 原卡片与对话适配器测试通过；真实会话及中文文案仍需最终验收。本变更不修改卡片。 |
-| 交付物卡片 | E1 已在同一工具区域渲染经授权的打开/下载链接 | 原卡片与对话适配器测试通过；真实文件交付仍需最终验收。本变更不修改卡片。 |
-| 后台任务卡片 | 预留现有对话时间线/工具结果区域 | 由对话实现负责，本变更不新增卡片。 |
-| 计划模式卡片 | 预留现有对话时间线与输入栏状态区域 | 由对话实现负责，本变更不新增卡片。 |
-| 子智能体卡片 | 预留现有对话时间线/工具结果区域，元数据见提供器 | 由对话实现负责，本变更不新增卡片。 |
+| ask_user_question 卡片 | 原生英/中文问题表单在轮次结束与过程折叠后仍可见；选项、自由输入与提交有稳定标识 | 通过真实对话适配器和合成会话端口验证多选提交及已回答状态；真实会话仍需最终验收。 |
+| 交付物卡片 | 经授权的文件链接不随过程折叠隐藏；打开/下载标识及 artifact hash | 浏览器下载与卡片资源释放已验证；真实文件授权仍归后台验收。 |
+| 后台任务卡片 | 现有 `job_list`、`job_output`、`job_kill` 工具结果卡片和后台 shell 收据保持可见，带卡片/详情稳定标识 | 工具调用状态与详情中的后台任务状态/输出分开；布局不生成轮询、终止或生命周期事实。 |
+| 计划模式卡片 | E2 `/plan` 输入命令与共享实时审批区；计划预览及后台提供的批准/拒绝选项有稳定标识 | 待审批内容位于折叠过程之外。浏览器夹具验证批准/拒绝呈现；真实写入/执行限制仍由后台维护。 |
+| 子智能体卡片 | 现有 `subagent_*` 工具结果卡片保持可见并提供详情稳定标识；提供器元数据保留 | 子智能体身份/状态来自后台结果文本，工具完成不代表子智能体完成；真实继续、打断、取消仍需最终验收。 |
 | Headless、JSONL、replay、批处理 | 明确不要求 Web 入口 | 参阅 [headless 指南](../guide/headless.zh-CN.md)。 |
 
 ## 管理端接线
@@ -73,4 +73,19 @@ pnpm test:web-smoke --list
 
 安全状态通过现有运行时管理目录的可选 `security: RuntimeSecurityStatus` 提供，聚合组合容器和代码代际。包含最近平台探测、已放行预设的规范沙箱/审批/网络要求及工作区隔离快照；不暴露 seam、工厂、执行权限或配置/凭据。
 
-当前验证：集成基线上的相关包 `tsc -b`、安全/组合/会话选择与协议 AJV 一致性测试通过；缓存 Chromium 的英/中文导航、375px 安全布局及确认迁移共 3 个用例通过。浏览器测试使用构建后的真实 Web UI 与合成管理响应，不证明生产守护进程的迁移或沙箱执行。E1 问题/交付物卡片与对话适配器的直接测试通过；后台任务、计划、子智能体的完整卡片仍按所属 stream 交付后验收。
+当前验证：之前设置变更的安全/组合/会话选择与协议 AJV 检查通过。E1/E2 集成后，相关包 `tsc -b` 及 29 个卡片/审批/对话/计划直接测试通过；缓存 Chromium 的英/中文 × 1280px/375px 共 4 个用例覆盖过程折叠、多选提交、文件下载、任务/子智能体详情、计划批准与拒绝。使用真实生产组件、完整构建样式及合成会话/资源端口，不证明真实守护进程执行或后台授权。
+
+## 对话布局验收
+
+构建 Web 资源后启动隔离的组件夹具：
+
+```sh
+pnpm --filter @agnes/web build
+node tools/e2e-web/serve-conversation-fixture.mjs
+# 将输出的回环 URL 同时填入两个变量：
+AGH_WEB_URL=http://127.0.0.1:PORT AGH_CONVERSATION_FIXTURE_URL=http://127.0.0.1:PORT pnpm test:web-smoke conversation.spec.ts
+```
+
+稳定标识：`question-card`、`question-field`、`question-option`、`question-free-text`、`question-submit`、`deliverable-card`、`deliverable-open`、`deliverable-download`、`background-job-card`、`child-agent-card`、`tool-detail-toggle`、`tool-detail-text`、`turn-process-toggle`、`plan-approval-card`、`approval-card`、`approval-preview`、`approval-action`。重复标识按 `[data-node-id]`、`[data-question-id]`、`[data-artifact-sha256]` 或 `[data-tool-name]` 限定范围；审批动作保留后台身份 `data-approval-action`，不要按位置选择。任务/子智能体沿用现有工具结果，不新增管理协议。
+
+共享呈现合同仅增加可选项：`ConversationMessagesProps.keepNodeVisible?: (node: UINode) => boolean` 与 `ApprovalView.kind?: 'plan'`。已有调用方保留默认过程折叠行为，不修改协议、提供器或授权 API。

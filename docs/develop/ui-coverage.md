@@ -2,7 +2,7 @@
 
 English | [简体中文](ui-coverage.zh-CN.md)
 
-This inventory covers the plugin architecture and shared workbench at the integration baseline `656a2270` and the settings implementation in this change. It records available controls separately from backend support and browser acceptance. The product remains a developer preview. See [architecture](architecture.md), [provider architecture](architecture-plugins.md), [source map](source-map.md) and [Web guide](../guide/web.md).
+This inventory covers the plugin architecture and shared workbench at the integration baseline `df4f28a4` and the settings implementation in this change. It records available controls separately from backend support and browser acceptance. The product remains a developer preview. See [architecture](architecture.md), [provider architecture](architecture-plugins.md), [source map](source-map.md) and [Web guide](../guide/web.md).
 
 Open **Plugins** in workbench settings or `/admin/plugins`. The runtime navigation contains **Plugins**, **Providers**, **Agent Loop & Models**, **Bundles & Presets**, **Security**, **MCP & Skills** and **Examples**. Both hosts use the same settings renderer; model accounts and resource management retain their existing controllers.
 
@@ -34,11 +34,11 @@ Open **Plugins** in workbench settings or `/admin/plugins`. The runtime navigati
 | Shared sessions, durable history, streaming, attachments, cancellation, follow-up/queued input | Existing conversation workbench and workspace picker | Preserved by this settings change. |
 | Approvals, trace, recovery, diagnostics, session search/archive/fork/export | Existing workbench controls, trace and diagnostics panels | Backend owns authorization, effect receipts and session facts. |
 | Frontend plugin panels, public slots, skins, theme/locale, Computer Use management | Existing client-module reconciliation, settings and workbench regions | Shared `@agnes/web-ui` primitives, tokens, CSP and skin hooks are preserved. |
-| ask_user_question cards | E1 renders question forms before tool results in the existing timeline, retaining public slots | Existing card and conversation adapter tests pass; real session interaction and Chinese card text remain in the final gate. This change does not edit cards. |
-| Deliverable cards | E1 renders authorized open/download links in the same tool region | Existing card and conversation adapter tests pass; real file delivery remains in the final gate. This change does not edit cards. |
-| Background-job cards | Reserved in the existing conversation timeline / tool-result region | Owned by the conversation implementation; this change adds no card. |
-| Plan-mode cards | Reserved in the existing conversation timeline and composer status region | Owned by the conversation implementation; this change adds no card. |
-| Child-agent cards | Reserved in the existing conversation timeline / tool-result region; provider metadata is on Providers | Owned by the conversation implementation; this change adds no card. |
+| ask_user_question cards | Native EN/zh question form stays visible after the turn settles and process history collapses; option/free-text/submit IDs | Multiple-choice submission and answered state verified through the real adapter with synthetic session ports; real session acceptance remains. |
+| Deliverable cards | Authorized file links stay outside collapsed process history; open/download IDs and artifact hash | Browser download and native card cleanup tested; real artifact authorization remains a backend gate. |
+| Background-job cards | Existing `job_list`, `job_output`, `job_kill` result cards and background shell receipts remain visible; stable card/detail IDs | The tool-call status is separate from the captured job status/output in details. No polling, kill or lifecycle state is fabricated by the layout. |
+| Plan-mode cards | E2 `/plan` composer command and shared live approval region; plan preview and backend-supplied allow/reject actions have stable IDs | Pending approval stays outside collapsed process history. Browser fixture covers allow/reject presentation; real write/exec gating remains backend-owned. |
+| Child-agent cards | Existing `subagent_*` result cards remain visible with stable detail IDs; provider metadata stays on Providers | Child identity/status comes from backend result text; tool completion never implies child completion. Real continuation/interrupt/cancel remains in the final gate. |
 | Headless, JSONL, replay, batch runs | Intentionally outside Web UI | Use the [headless guide](../guide/headless.md). |
 
 ## Admin glue
@@ -71,4 +71,19 @@ Session creation SDK adds `bundles?: readonly string[]`, carried through ACP `ai
 
 The runtime admin catalog adds optional `security: RuntimeSecurityStatus`, aggregated across composition containers and code generations. It exposes the most recent platform probe, allowed presets’ normalized sandbox/approval/network requirements and workspace enforcement snapshots; no seams, factories, execution authority, config or credentials.
 
-Current validation: touched-package `tsc -b`, focused security/composition/session-selection tests and protocol AJV parity pass on the integration baseline. Cached Chromium passes three cases: English/Chinese navigation, 375px security layout, and confirmed migration. The browser run uses the built real Web UI with synthetic admin responses; it does not establish production daemon migration or sandbox enforcement. Direct tests for E1 question/deliverable cards and the conversation adapter pass; complete job, plan and child cards remain for acceptance after their owning streams deliver them.
+Current validation: focused security/composition/session-selection and protocol AJV checks passed in the earlier settings change. After E1/E2 integration, touched-package `tsc -b` and 29 focused card/approval/conversation/plan checks pass. Four cached-Chromium conversation cases exercise EN/zh at 1280px/375px, collapsed process history, question submission, file download, job/child disclosures, and plan allow/reject. These use real production components and complete built styles with synthetic session/resource ports; they do not establish real daemon tool execution or backend authorization.
+
+## Conversation layout acceptance
+
+After building Web assets, start the isolated component fixture:
+
+```sh
+pnpm --filter @agnes/web build
+node tools/e2e-web/serve-conversation-fixture.mjs
+# Use the printed loopback URL for both variables:
+AGH_WEB_URL=http://127.0.0.1:PORT AGH_CONVERSATION_FIXTURE_URL=http://127.0.0.1:PORT pnpm test:web-smoke conversation.spec.ts
+```
+
+Stable IDs: `question-card`, `question-field`, `question-option`, `question-free-text`, `question-submit`, `deliverable-card`, `deliverable-open`, `deliverable-download`, `background-job-card`, `child-agent-card`, `tool-detail-toggle`, `tool-detail-text`, `turn-process-toggle`, `plan-approval-card`, `approval-card`, `approval-preview`, `approval-action`. Scope repeated IDs by `[data-node-id]`, `[data-question-id]`, `[data-artifact-sha256]` or `[data-tool-name]`. Approval actions retain their backend identity in `data-approval-action`; never select by position. The native job and child surfaces show existing tool results rather than introducing a new management protocol.
+
+Additive shared presentation contracts: `ConversationMessagesProps.keepNodeVisible?: (node: UINode) => boolean` and `ApprovalView.kind?: 'plan'`. Existing consumers keep their default process-folding behavior. No protocol, provider or authorization API changed.
