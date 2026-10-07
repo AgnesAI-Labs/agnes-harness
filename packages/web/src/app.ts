@@ -1406,8 +1406,8 @@ function renderNewSessionControls(): void {
   for (const control of newSessionDialog.querySelectorAll<HTMLButtonElement>('[data-new-session-cancel]'))
     control.disabled = newSessionCreating || workspacePickerBusy
 }
-function openNewSessionDialog(): void {
-  if (!connected || sessionPending || newSessionCreating) return
+function openNewSessionDialog(transitioning = false): void {
+  if (!connected || (sessionPending && !transitioning) || newSessionCreating) return
   if (!newSessionDialog.open) {
     try {
       newSessionDialog.showModal()
@@ -1492,7 +1492,6 @@ async function beginNewDraft(showWorkspacePicker = true, workspace?: WorkspaceEn
   const epoch = ++selection
   const previous = current
   if (previous && knownSessionModel) rememberWebComposer({ model: knownSessionModel })
-  await refreshSessionCatalog()
   const inherited = selectionFromMemory(runtimeModels, accountProvider)
   const stop = stopEvents
   current = undefined
@@ -1506,20 +1505,6 @@ async function beginNewDraft(showWorkspacePicker = true, workspace?: WorkspaceEn
   draftLoop = newSessionCatalog?.defaults.loop
   pendingSessionKey = crypto.randomUUID()
   knownSessionModel = inherited.model ? modelDefaults(inherited.model) : undefined
-  const adminModel = newSessionCatalog?.defaults.modelAdapter
-  const preferred = adminModel
-    ? runtimeModels.find(
-        (model) =>
-          model.id === adminModel.model &&
-          newSessionCatalog?.modelAdapters.some(
-            (adapter) =>
-              adapter.id === adminModel.id &&
-              adapter.version === adminModel.version &&
-              adapter.models.some((entry) => entry.id === model.id && entry.route === model.route),
-          ),
-      )
-    : undefined
-  if (preferred) knownSessionModel = modelDefaults(preferred)
   permissionMode = inherited.permission
   permissionRefreshPending = false
   initialPermissionPending = undefined
@@ -1537,12 +1522,29 @@ async function beginNewDraft(showWorkspacePicker = true, workspace?: WorkspaceEn
   history.replaceState(null, '', `${url.pathname}${url.search}`)
   topbarRuntime.setTaskTitle(t('app.newSession.defaultTitle'))
   render()
-  if (!selectedWorkspace?.available && showWorkspacePicker) openNewSessionDialog()
+  if (!selectedWorkspace?.available && showWorkspacePicker) openNewSessionDialog(true)
   else composerRuntime.focus()
   sessionPending = true
   renderControls()
   let cleanupError: unknown
   try {
+    await refreshSessionCatalog()
+    if (selection === epoch && draftingNew && !draftModelExplicit && !draftModelSettingsEdited) {
+      const adminModel = newSessionCatalog?.defaults.modelAdapter
+      const preferred = adminModel
+        ? runtimeModels.find(
+            (model) =>
+              model.id === adminModel.model &&
+              newSessionCatalog?.modelAdapters.some(
+                (adapter) =>
+                  adapter.id === adminModel.id &&
+                  adapter.version === adminModel.version &&
+                  adapter.models.some((entry) => entry.id === model.id && entry.route === model.route),
+              ),
+          )
+        : undefined
+      if (preferred) knownSessionModel = modelDefaults(preferred)
+    }
     const stopped = await stopWithTimeout(stop)
     if (!stopped) {
       notice.textContent = t('app.notice.oldSessionClosing')

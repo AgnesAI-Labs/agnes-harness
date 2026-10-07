@@ -1466,7 +1466,8 @@ describe('web session selection', () => {
     history.replaceState(null, '', '/#test-launcher-token')
     let pickerCalls = 0
     const fetcher = vi.fn<typeof fetch>(async (_input, init) => {
-      if (init?.method === 'GET') return new Response(JSON.stringify({ available: true }), { status: 200 })
+      if ((init?.method ?? 'GET') === 'GET')
+        return new Response(JSON.stringify({ available: true }), { status: 200 })
       pickerCalls++
       return new Response(
         JSON.stringify(
