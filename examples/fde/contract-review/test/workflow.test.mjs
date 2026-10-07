@@ -8,6 +8,9 @@ const context = {}
 test('contract-review completes through the public loop and tool ports', async () => {
   const run = await runWorkflow(main, { context })
   assert.equal(run.finished[0], 'completed')
+  const messages = run.events.filter((event) => event.type === 'assistant/message')
+  assert.ok(messages.length > 0)
+  assert.ok(messages.every((event) => event.data.stopReason === 'end_turn'))
   assert.ok(run.checkpoint.state.data.deliverables.some((file) => file.ref.size > 0))
   assert.ok(run.calls.some((call) => call.name === 'present'))
 

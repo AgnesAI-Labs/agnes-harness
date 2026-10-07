@@ -377,6 +377,7 @@ export function makeBundle({ name, tools, stages, readOnly = false, validateSett
             await save()
             await ctx.events.emit('assistant/message', {
               content: [{ type: 'text', text: `${stage.name}:\n${JSON.stringify(data, null, 2)}` }],
+              stopReason: 'end_turn',
             })
             return { outcome: 'running', phase: stage.name }
           } catch (error) {
