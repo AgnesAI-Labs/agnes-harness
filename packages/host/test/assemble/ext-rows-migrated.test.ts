@@ -120,6 +120,14 @@ const SUPPLIED: Record<string, string[]> = {
     'tool:session_event_read',
     'hook:context',
   ],
+  'agnes/schedule': [
+    'tool:schedule_create',
+    'tool:schedule_list',
+    'tool:schedule_update',
+    'tool:schedule_delete',
+    'slot:tool.card.inline',
+    'slot:notification',
+  ],
 }
 
 const listed = (h: { host: { extensions(): { id: string; loaded: boolean }[] } }, id: string) =>
@@ -163,6 +171,7 @@ describe('the builtin extensions that moved to the shared row host', () => {
       'agnes/session-query',
       'agnes/context-rules',
       'agnes/time-context',
+      'agnes/schedule',
     ])
     for (const [id, registrations] of Object.entries(SUPPLIED)) {
       expect(listed(h, id)?.loaded, id).toBe(true)

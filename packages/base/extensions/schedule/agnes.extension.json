@@ -1,0 +1,13 @@
+{
+  "id": "agnes/schedule",
+  "version": "0.1.0",
+  "apiRange": "^1.4",
+  "entry": "./src/index.ts",
+  "capabilities": {
+    "tools": {
+      "prefix": "",
+      "names": ["schedule_create", "schedule_list", "schedule_update", "schedule_delete"]
+    },
+    "slots": ["tool.card.inline", "notification"]
+  }
+}

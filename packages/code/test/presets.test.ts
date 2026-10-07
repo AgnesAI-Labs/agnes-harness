@@ -218,6 +218,10 @@ describe('standard.yaml', () => {
         'job_output',
         'job_list',
         'job_kill',
+        'schedule_create',
+        'schedule_list',
+        'schedule_update',
+        'schedule_delete',
       ],
     })
     expect(doc.mcp).toEqual({ defer: true })

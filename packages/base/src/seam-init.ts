@@ -191,6 +191,8 @@ export type SeamInitContext = {
    * sees it, and a sandbox seam initialised without it must refuse: the host cannot bind what it
    * cannot canonicalize. */
   sandboxHost?: SandboxHostServices
+  /** Daemon job tables, supplied only to agnes/schedule. */
+  scheduleTables?: { table(name: string): TableHandle }
 }
 
 export type SeamFactory<S = unknown> = (ctx: SeamInitContext) => Promise<S>

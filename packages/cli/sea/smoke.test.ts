@@ -206,6 +206,7 @@ describe.skipIf(!bin || !harness)('SEA smoke', () => {
           'agnes/plan-mode',
           'agnes/mcp-resources',
           'agnes/session-query',
+          'agnes/schedule',
         ]),
       )
       expect(

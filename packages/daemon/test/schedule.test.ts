@@ -41,6 +41,44 @@ describe('job schedules', () => {
     expect(nextAfterCompletion({ kind: 'every', everyMs: 1_000 }, now)).toBe(now + 1_000)
   })
 
+  it('matches a restricted day-of-month or day-of-week, and either one when both are restricted', () => {
+    const thirteenth = parseCron('0 0 13 * *')
+    expect(cronMatches(thirteenth, new Date(timestamp('2026-09-13T00:00:00Z')))).toBe(true)
+    expect(cronMatches(thirteenth, new Date(timestamp('2026-09-12T00:00:00Z')))).toBe(false)
+    const friday = parseCron('0 0 * * 5')
+    expect(cronMatches(friday, new Date(timestamp('2026-09-04T00:00:00Z')))).toBe(true)
+    expect(cronMatches(friday, new Date(timestamp('2026-09-03T00:00:00Z')))).toBe(false)
+    const either = parseCron('30 4 1,15 * 5')
+    expect(nextRunAt({ kind: 'cron', expr: '30 4 1,15 * 5' }, timestamp('2026-08-31T00:00:00Z'))).toBe(
+      timestamp('2026-09-01T04:30:00Z'),
+    )
+    expect(cronMatches(either, new Date(timestamp('2026-09-04T04:30:00Z')))).toBe(true)
+    expect(nextRunAt({ kind: 'cron', expr: '30 4 * * 5' }, timestamp('2026-08-31T00:00:00Z'))).toBe(
+      timestamp('2026-09-04T04:30:00Z'),
+    )
+    expect(cronMatches(parseCron('0 0 1-31 * 5'), new Date(timestamp('2026-09-02T00:00:00Z')))).toBe(true)
+  })
+
+  it('skips a missing local time and fires a repeated local time at the earlier instant', () => {
+    const oneThirty = parseCron('30 1 * * *')
+    expect(cronMatches(oneThirty, new Date(timestamp('2026-11-01T05:30:00Z')), 'America/New_York')).toBe(true)
+    expect(cronMatches(oneThirty, new Date(timestamp('2026-11-01T06:30:00Z')), 'America/New_York')).toBe(
+      false,
+    )
+    expect(
+      nextRunAt(
+        { kind: 'cron', expr: '30 1 * * *', tz: 'America/New_York' },
+        timestamp('2026-11-01T05:00:00Z'),
+      ),
+    ).toBe(timestamp('2026-11-01T05:30:00Z'))
+    expect(
+      nextRunAt(
+        { kind: 'cron', expr: '30 2 * * *', tz: 'America/New_York' },
+        timestamp('2026-03-08T06:00:00Z'),
+      ),
+    ).toBe(timestamp('2026-03-09T06:30:00Z'))
+  })
+
   it('rejects invalid every intervals and invalid random values', () => {
     expect(() => nextRunAt({ kind: 'every', everyMs: 0 }, 0)).toThrow(/E_SCHEDULE/)
     expect(() => nextRunAt({ kind: 'cron', expr: '* * * * *', staggerMs: -1 }, 0)).toThrow(/E_SCHEDULE/)

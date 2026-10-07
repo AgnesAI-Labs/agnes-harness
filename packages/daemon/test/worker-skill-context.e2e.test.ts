@@ -16,14 +16,17 @@ const roots: string[] = []
 // Explicit preload now adds one durable tail note. It does not alter the disclosed tool schema:
 // discovery and read tools remain available for the loaded and generic turns alike.
 // Pin the complete model-visible schema, including official interaction, delivery, jobs,
-// MCP resources, plugin authoring, workflows, PTYs, history, child-model discovery and bounded questions.
-const EXPECTED_SKILL_TOOL_SCHEMA_HASH = 'ad2ab7163565c92f70b5e4c9890ea478b77db86bba156f59e90220156c7b690b'
+// MCP resources, plugin authoring, workflows, PTYs, history, reminders, goals, child-model
+// discovery and bounded questions.
+const EXPECTED_SKILL_TOOL_SCHEMA_HASH = 'c587e834b7f7de9d6cc17dd3d4563f62c32b289bd426bbb49376fa785c3df915'
 const expectedToolNames = [
   'ask_user_question',
   'compact',
   'edit',
   'exit_plan_mode',
   'find',
+  'goal_get',
+  'goal_update',
   'grep',
   'job_kill',
   'job_list',
@@ -46,6 +49,10 @@ const expectedToolNames = [
   'pty_signal',
   'read',
   'read_mcp_resource',
+  'schedule_create',
+  'schedule_delete',
+  'schedule_list',
+  'schedule_update',
   'session_event_read',
   'session_event_search',
   'session_event_trace',

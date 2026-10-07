@@ -19,6 +19,14 @@ import {
   RuntimeAdminEmpty,
   RuntimeAdminSnapshot,
 } from './runtime-admin.js'
+import {
+  SchedulesArchiveParams,
+  SchedulesArchiveResult,
+  SchedulesListParams,
+  SchedulesListResult,
+  SchedulesUpsertParams,
+  SchedulesUpsertResult,
+} from './schedules.js'
 import { validateExtensionCall } from './services.js'
 import { SessionToolsParams, SessionToolsResult } from './session-tools.js'
 import { type ValidationResult, validateAgainst } from './validate.js'
@@ -111,6 +119,9 @@ export type MethodName =
   | '_agnes/v1/jobs.enqueue'
   | '_agnes/v1/jobs.poll'
   | '_agnes/v1/jobs.cancel'
+  | '_agnes/v1/schedules.list'
+  | '_agnes/v1/schedules.upsert'
+  | '_agnes/v1/schedules.archive'
   | '_agnes/v1/artifact.job.status'
   | '_agnes/v1/ext.ui.response'
   | '_agnes/v1/directory.upsert'
@@ -285,6 +296,9 @@ export const METHODS: Record<MethodName, MethodSpec> = {
   '_agnes/v1/jobs.enqueue': clientRequest(A.JobSpec, A.JobIdResult),
   '_agnes/v1/jobs.poll': clientRequest(A.JobIdParams, A.JobStatus),
   '_agnes/v1/jobs.cancel': clientRequest(A.JobIdParams, A.Empty),
+  '_agnes/v1/schedules.list': clientRequest(SchedulesListParams, SchedulesListResult),
+  '_agnes/v1/schedules.upsert': clientRequest(SchedulesUpsertParams, SchedulesUpsertResult),
+  '_agnes/v1/schedules.archive': clientRequest(SchedulesArchiveParams, SchedulesArchiveResult),
   '_agnes/v1/artifact.job.status': clientRequest(A.JobIdParams, A.ArtifactJob),
   '_agnes/v1/ext.ui.response': clientRequest(A.ExtUiResponseParams, A.SeqResult),
   '_agnes/v1/directory.upsert': clientRequest(A.DirectoryUpsertParams, A.DirectoryUpsertResult),

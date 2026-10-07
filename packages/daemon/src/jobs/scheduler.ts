@@ -40,6 +40,12 @@ type SchedulerOptions = {
   activationBarrier: ExtensionActivationBarrier
   random?: () => number
   log?: (message: string) => void
+  onDispatched?(job: JobRow, info: { at: number; seq?: number; reason?: string }): void
+  keepWaiting?(job: JobRow): boolean
+  onSettled?(
+    job: JobRow,
+    info: { at: number; nextRunAt: number | null; status: 'completed' | 'waiting' },
+  ): void
 }
 
 export class Scheduler {
@@ -189,6 +195,7 @@ export class Scheduler {
       if (!entry.session.resume) throw new Error('session does not support resume')
       await entry.session.resume()
       signal.throwIfAborted()
+      this.dispatched(job, { reason: 'resumed' })
       return { reason: 'resumed' }
     }
     if (!('prompt' in job.payload)) throw new Error(`unsupported job payload ${job.idempotencyKey}`)
@@ -215,6 +222,7 @@ export class Scheduler {
         ...(job.budget !== undefined ? { budget: job.budget } : {}),
       })
       signal.throwIfAborted()
+      this.dispatched(job, { seq })
       return { seq }
     }
     // Unlike ACP, scheduled prompts do not have a client prompt id. Keep the worker's separate
@@ -228,6 +236,7 @@ export class Scheduler {
         ...(job.budget !== undefined ? { budget: job.budget } : {}),
       })
       signal.throwIfAborted()
+      this.dispatched(job, { seq, reason: 'prompt' })
       const outcome = await entry.session.run({ until: 'turn-end', signal })
       signal.throwIfAborted()
       if (outcome.reason === 'error') {
@@ -240,14 +249,23 @@ export class Scheduler {
     }
   }
 
+  private dispatched(job: JobRow, info: { seq?: number; reason?: string }): void {
+    this.options.onDispatched?.(job, { at: this.options.clock(), ...info })
+  }
+
   private settleSuccess(job: JobRow, result: { seq?: number; reason?: string }): void {
-    const next = nextAfterCompletion(job.schedule, this.options.clock(), {
-      ...(this.options.random ? { random: this.options.random } : {}),
-    })
+    const blocked = this.options.keepWaiting?.(job) === false
+    const next = blocked
+      ? null
+      : nextAfterCompletion(job.schedule, this.options.clock(), {
+          ...(this.options.random ? { random: this.options.random } : {}),
+        })
+    const status = next === null ? 'completed' : 'waiting'
     this.options.repo.settle(
       job.idempotencyKey,
-      next === null ? { status: 'completed', result } : { status: 'waiting', result, delayUntil: next },
+      next === null ? { status, result } : { status, result, delayUntil: next },
     )
+    this.options.onSettled?.(job, { at: this.options.clock(), nextRunAt: next, status })
   }
 
   private settleFailure(job: JobRow, error: string): void {

@@ -64,6 +64,7 @@ import {
   type JobsPort,
   MemoryClaims,
   MemoryJournal,
+  type SchedulesPort,
   type SessionLister,
 } from './ports.js'
 import { type Prompter, PrompterRouter } from './prompter.js'
@@ -257,6 +258,7 @@ export type LocalEndpointOptions = {
   activationBarrier?: ExtensionActivationBarrier
   claims?: ClaimStore
   jobs?: JobsPort
+  schedules?: SchedulesPort
   /** Authentication verifier for an embedded endpoint. The normal local form keeps the unix-only
    * default; authenticated transport adapters can supply their verifier without bypassing authGate. */
   auth?: LocalContext['auth']
@@ -404,6 +406,7 @@ export function createLocalEndpoint(
       journal,
       claims: opts.claims ?? new MemoryClaims(),
       ...(opts.jobs ? { jobs: opts.jobs } : {}),
+      ...(opts.schedules ? { schedules: opts.schedules } : {}),
       ...(opts.directory ? { directory: opts.directory } : {}),
       // Host owns the fitted principals seam. An explicit resolver remains available to transport
       // tests and enterprise adapters, but the ordinary local CLI must not lose approval support

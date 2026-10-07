@@ -45,6 +45,7 @@ export const EXT_ROW_EXTENSION_IDS: ReadonlySet<string> = new Set([
   'agnes/session-query',
   'agnes/context-rules',
   'agnes/time-context',
+  'agnes/schedule',
 ])
 
 /**
@@ -111,6 +112,7 @@ export const MIGRATED_EXTENSION_IDS: ReadonlySet<string> = new Set([
   'agnes/session-query',
   'agnes/context-rules',
   'agnes/time-context',
+  'agnes/schedule',
 ])
 
 export type ExtRowLoadResult = Readonly<{

@@ -1726,6 +1726,9 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
         ...(owner === '@agnes/base' && extensionId === 'agnes/privacy' && privacyTrajectory
           ? { privacyTrajectory }
           : {}),
+        ...(owner === '@agnes/base' && extensionId === 'agnes/schedule'
+          ? { scheduleTables: lazyPackageTables(adapters.storage, '@agnes/daemon') }
+          : {}),
         ...(extensionRowGrantFor(owner, extensionId)?.computerUse && computerUseBackendProvider
           ? {
               // Extension unload calls provider.dispose(). The lazy runtime's dispose closes the

@@ -9,8 +9,8 @@ import type { Provider, RequestBody } from '@agnes/protocol'
 import { createPrivateDirectorySync, createPrivateFileSync } from '@agnes/system-node'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
+  type CapturedRequest,
   createTestHost,
-  expectExtends,
   renderedParts,
   startWireCapture,
   type WireApi,
@@ -20,6 +20,49 @@ const baseDir = fileURLToPath(new URL('../../../base/', import.meta.url))
 const parentKey = 'prefix-parent'
 const apis: readonly WireApi[] = ['anthropic-messages', 'openai-completions']
 afterEach(() => vi.unstubAllEnvs())
+
+const SCHEDULE_TOOL_NAMES = new Set([
+  'schedule_create',
+  'schedule_delete',
+  'schedule_list',
+  'schedule_update',
+])
+
+function toolName(tool: unknown): string | undefined {
+  if (!tool || typeof tool !== 'object') return undefined
+  const record = tool as { name?: unknown; function?: { name?: unknown } }
+  if (typeof record.name === 'string') return record.name
+  if (typeof record.function?.name === 'string') return record.function.name
+  return undefined
+}
+
+/** Delegated children keep the parent prefix except the four schedule tools the subagent filter denies. */
+function withoutScheduleTools(tools: unknown): unknown {
+  return Array.isArray(tools) ? tools.filter((tool) => !SCHEDULE_TOOL_NAMES.has(toolName(tool) ?? '')) : tools
+}
+
+function expectForkExtends(
+  previous: CapturedRequest,
+  next: CapturedRequest,
+  options: { throughMessage?: number } = {},
+): void {
+  const parentTools = (previous.body as { tools?: unknown }).tools
+  const childTools = (next.body as { tools?: unknown }).tools
+  expect(withoutScheduleTools(parentTools)).toEqual(childTools)
+  expect(
+    Array.isArray(parentTools) && parentTools.some((tool) => SCHEDULE_TOOL_NAMES.has(toolName(tool) ?? '')),
+  ).toBe(true)
+  const visible = (request: CapturedRequest) =>
+    renderedParts(request).filter((part) => {
+      if (part.key === 'tools') return false
+      if (options.throughMessage === undefined) return true
+      const match = part.key.match(/^(?:messages|input)\[(\d+)\]$/u)
+      return !match || Number(match[1]) < options.throughMessage
+    })
+  const parentParts = visible(previous)
+  const childParts = visible(next)
+  for (const [index, left] of parentParts.entries()) expect(childParts[index]).toEqual(left)
+}
 
 function setupDir() {
   const dataDir = mkdtempSync(join(tmpdir(), 'agnes-fork-prefix-'))
@@ -111,15 +154,14 @@ describe('delegated child wire prefixes', () => {
             .slice(precedingReads + 1)
             .find((request) => !request.raw.includes('started prefix-parent/'))
           if (!first || !beforeFork || !child) throw new Error('missing fork request')
-          expectExtends(first, child)
+          expectForkExtends(first, child)
           const triggerPart = renderedParts(beforeFork).find(
             (part) =>
               part.key.match(/^(?:messages|input)\[\d+\]$/u) && part.bytes.includes('Delegate after reading'),
           )
           const triggerIndex = Number(triggerPart?.key.match(/\[(\d+)\]/u)?.[1])
           expect(Number.isInteger(triggerIndex)).toBe(true)
-          expectExtends(beforeFork, child, { throughMessage: triggerIndex + 1 })
-          expect(renderedParts(child)[0]?.bytes).toBe(renderedParts(first)[0]?.bytes)
+          expectForkExtends(beforeFork, child, { throughMessage: triggerIndex + 1 })
         } finally {
           await host.close()
         }
@@ -161,7 +203,8 @@ describe('delegated child wire prefixes', () => {
         const child = requests.find((request) => request.sessionKey !== parentKey)
         expect(parent).toBeDefined()
         expect(child).toBeDefined()
-        expect(child?.tools).toEqual(parent?.tools)
+        expect(withoutScheduleTools(parent?.tools)).toEqual(child?.tools)
+        expect((parent?.tools ?? []).some((tool) => SCHEDULE_TOOL_NAMES.has(toolName(tool) ?? ''))).toBe(true)
         expect(child?.system).toBe(parent?.system)
       } finally {
         await host.close()

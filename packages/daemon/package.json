@@ -27,6 +27,7 @@
     "@agnes/resource-control-daemon": "workspace:*",
     "@agnes/resource-control-runtime": "workspace:*",
     "@agnes/resource-control-worker": "workspace:*",
+    "@agnes/base": "workspace:*",
     "@agnes/worker-runtime": "workspace:*",
     "@agnes/error-sanitization": "workspace:*",
     "@agnes/system-node": "workspace:*",
@@ -35,7 +36,6 @@
   },
   "devDependencies": {
     "@agnes/ai": "workspace:*",
-    "@agnes/base": "workspace:*",
     "@agnes/code": "workspace:*",
     "@agnes/sdk": "workspace:*",
     "@agnes/web-server": "workspace:*",

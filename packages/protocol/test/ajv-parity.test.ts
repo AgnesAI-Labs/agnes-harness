@@ -81,6 +81,17 @@ import {
   RuntimeAdminEmpty,
   RuntimeAdminSnapshot,
 } from '../src/runtime-admin.js'
+import {
+  ScheduleDelivery,
+  ScheduleSelector,
+  SchedulesArchiveParams,
+  SchedulesArchiveResult,
+  SchedulesListParams,
+  SchedulesListResult,
+  SchedulesUpsertParams,
+  SchedulesUpsertResult,
+  ScheduleView,
+} from '../src/schedules.js'
 import { SessionToolsParams, SessionToolsResult } from '../src/session-tools.js'
 
 type Json = Record<string, unknown>
@@ -166,9 +177,24 @@ const ajv = new AjvCtor({ strict: false, allowUnionTypes: true })
 addFormats(ajv)
 const SESSION_TOOLS_ID = 'https://agnes.dev/session-tools'
 const RUNTIME_ADMIN_ID = 'https://agnes.dev/runtime-admin'
+const SCHEDULES_ID = 'https://agnes.dev/schedules'
 ajv.addSchema({
   $id: RUNTIME_ADMIN_ID,
   $defs: { ChildEnginesSaveParams, ChildEnginesState, RuntimeAdminEmpty, RuntimeAdminSnapshot },
+})
+ajv.addSchema({
+  $id: SCHEDULES_ID,
+  $defs: {
+    ScheduleDelivery,
+    ScheduleSelector,
+    ScheduleView,
+    SchedulesArchiveParams,
+    SchedulesArchiveResult,
+    SchedulesListParams,
+    SchedulesListResult,
+    SchedulesUpsertParams,
+    SchedulesUpsertResult,
+  },
 })
 ajv.addSchema({ $id: SESSION_TOOLS_ID, $defs: { SessionToolsParams, SessionToolsResult } })
 // Reference validator uses URL parsing as required by the owned custom format's contract.
@@ -5453,6 +5479,17 @@ const SELF_OWNED_DOCS: Array<[string, Json, string, Record<string, Sample>]> = [
 
 const DEFS_BY_FILE: Record<string, Record<string, TSchema>> = {
   [RUNTIME_ADMIN_ID]: { ChildEnginesSaveParams, ChildEnginesState, RuntimeAdminEmpty, RuntimeAdminSnapshot },
+  [SCHEDULES_ID]: {
+    ScheduleDelivery,
+    ScheduleSelector,
+    ScheduleView,
+    SchedulesArchiveParams,
+    SchedulesArchiveResult,
+    SchedulesListParams,
+    SchedulesListResult,
+    SchedulesUpsertParams,
+    SchedulesUpsertResult,
+  },
   [SESSION_TOOLS_ID]: { SessionToolsParams, SessionToolsResult },
   'https://agnes.ai/schema/worker.json': WorkerDefs,
   'https://agnes.ai/schema/resource-control.json': {
@@ -6218,6 +6255,21 @@ const METHOD_DEF: Record<MethodName, MethodDefRef> = {
   '_agnes/v1/jobs.enqueue': { fileId: AGNES_ID, params: 'JobSpec', result: 'JobIdResult' },
   '_agnes/v1/jobs.poll': { fileId: AGNES_ID, params: 'JobIdParams', result: 'JobStatus' },
   '_agnes/v1/jobs.cancel': { fileId: AGNES_ID, params: 'JobIdParams', result: 'Empty' },
+  '_agnes/v1/schedules.list': {
+    fileId: SCHEDULES_ID,
+    params: 'SchedulesListParams',
+    result: 'SchedulesListResult',
+  },
+  '_agnes/v1/schedules.upsert': {
+    fileId: SCHEDULES_ID,
+    params: 'SchedulesUpsertParams',
+    result: 'SchedulesUpsertResult',
+  },
+  '_agnes/v1/schedules.archive': {
+    fileId: SCHEDULES_ID,
+    params: 'SchedulesArchiveParams',
+    result: 'SchedulesArchiveResult',
+  },
   '_agnes/v1/artifact.job.status': { fileId: AGNES_ID, params: 'JobIdParams', result: 'ArtifactJob' },
   '_agnes/v1/artifact.read': {
     fileId: AGNES_ID,
@@ -6451,6 +6503,31 @@ const METHOD_PARAMS_SAMPLE: Record<MethodName, Sample> = {
   '_agnes/v1/jobs.enqueue': AGNES_SAMPLES.JobSpec as Sample,
   '_agnes/v1/jobs.poll': AGNES_SAMPLES.JobIdParams as Sample,
   '_agnes/v1/jobs.cancel': AGNES_SAMPLES.JobIdParams as Sample,
+  '_agnes/v1/schedules.list': {
+    valid: { scope: 'session', sessionKey: 's' },
+    invalid: [{ scope: 'session', extra: true }, { scope: 'nope' }, { scope: 'all', sessionKey: '' }],
+    note: 'session scope may name a session; global scope is authorized separately',
+  },
+  '_agnes/v1/schedules.upsert': {
+    valid: { sessionKey: 's', title: 'Standup', prompt: 'Summarize', selector: { every_seconds: 60 } },
+    invalid: [
+      { sessionKey: 's', title: 'Standup', prompt: 'Summarize', selector: { every_seconds: 59 } },
+      { sessionKey: 's', title: 'x'.repeat(121), prompt: 'Summarize', selector: { every_seconds: 60 } },
+      {
+        sessionKey: 's',
+        title: 'Standup',
+        prompt: 'Summarize',
+        selector: { every_seconds: 60 },
+        extra: true,
+      },
+    ],
+    note: 'one selector; every_seconds is at least 60',
+  },
+  '_agnes/v1/schedules.archive': {
+    valid: { id: 'sched_0123456789abcdef' },
+    invalid: [{ id: 'sched_0123456789abcde' }, { id: 'sched_0123456789abcdef', extra: true }],
+    note: 'schedule ids are sched_ plus 16 hex characters',
+  },
   '_agnes/v1/artifact.job.status': AGNES_SAMPLES.JobIdParams as Sample,
   '_agnes/v1/artifact.read': AGNES_SAMPLES.ArtifactReadParams as Sample,
   '_agnes/v1/ext.ui.response': AGNES_SAMPLES.ExtUiResponseParams as Sample,
@@ -6652,6 +6729,35 @@ const METHOD_RESULT_SAMPLE: Partial<Record<MethodName, Sample>> = {
   '_agnes/v1/jobs.enqueue': AGNES_SAMPLES.JobIdResult as Sample,
   '_agnes/v1/jobs.poll': AGNES_SAMPLES.JobStatus as Sample,
   '_agnes/v1/jobs.cancel': AGNES_SAMPLES.Empty as Sample,
+  '_agnes/v1/schedules.list': {
+    valid: {
+      schedules: [
+        {
+          id: 'sched_0123456789abcdef',
+          sessionKey: 's',
+          title: 'Standup',
+          prompt: 'Summarize',
+          selector: { daily: { time: '09:00', timeZone: 'UTC' } },
+          status: 'active',
+          nextRunAt: 1,
+          revision: 1,
+          deliveries: [],
+        },
+      ],
+    },
+    invalid: [{ schedules: [], extra: true }, { schedules: [{ id: 'sched_0123456789abcdef' }] }],
+    note: 'list returns reminder views',
+  },
+  '_agnes/v1/schedules.upsert': {
+    valid: { updated: false, code: 'schedule_not_found' },
+    invalid: [{ updated: false }, { updated: false, code: 'schedule_not_found', extra: true }],
+    note: 'a refused update names a code; success is a reminder view',
+  },
+  '_agnes/v1/schedules.archive': {
+    valid: { deleted: false },
+    invalid: [{}, { deleted: false, extra: true }],
+    note: 'unknown and already archived ids report deleted false',
+  },
   '_agnes/v1/artifact.job.status': AGNES_SAMPLES.ArtifactJob as Sample,
   '_agnes/v1/artifact.read': AGNES_SAMPLES.ArtifactReadResult as Sample,
   '_agnes/v1/ext.ui.response': AGNES_SAMPLES.SeqResult as Sample,

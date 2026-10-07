@@ -2,6 +2,7 @@ import { randomBytes, randomUUID } from 'node:crypto'
 import { mkdir, rename, rm, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { createSchedulesPort, openDaemonScheduleDb } from '@agnes/base/schedule'
 import {
   ActivationInProgressError,
   type ConfigurationService,
@@ -1725,6 +1726,9 @@ export async function startSupervisor(o: StartSupervisorOptions): Promise<{
     const lister = withSessionPreferences(rawLister, preferences)
 
     const jobsRepo = jobTables ? new JobsRepo(jobTables.table('jobs'), clock) : undefined
+    const schedules = jobTables
+      ? createSchedulesPort(openDaemonScheduleDb(jobTables.table('schedules')), clock)
+      : undefined
     const scheduler = jobsRepo
       ? new Scheduler({
           repo: jobsRepo,
@@ -1740,6 +1744,13 @@ export async function startSupervisor(o: StartSupervisorOptions): Promise<{
           workspaces: workspaceCatalog,
           ownership: sessionOwnership,
           activationBarrier,
+          ...(schedules
+            ? {
+                onDispatched: (job, info) => schedules.recordDispatch(job.idempotencyKey, info),
+                keepWaiting: (job) => schedules.stillWaiting(job.idempotencyKey),
+                onSettled: (job, info) => schedules.noteSettlement(job.idempotencyKey, info),
+              }
+            : {}),
         })
       : undefined
     const jobs =
@@ -1897,6 +1908,7 @@ export async function startSupervisor(o: StartSupervisorOptions): Promise<{
         journal,
         claims,
         ...(selectedJobs ? { jobs: selectedJobs } : {}),
+        ...(schedules ? { schedules } : {}),
         lister,
         ...(o.ports?.directory ? { directory: o.ports.directory } : {}),
         resolveActor,

@@ -137,5 +137,6 @@
   "packages/base/extensions/jobs": 327,
   "packages/base/extensions/mcp-resources": 54,
   "packages/base/extensions/plan-mode": 167,
-  "packages/base/extensions/session-query": 800
+  "packages/base/extensions/session-query": 800,
+  "packages/base/extensions/schedule": 798
 }

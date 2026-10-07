@@ -53,6 +53,20 @@ export interface JobsPort {
   cancel(jobId: string): Promise<void>
 }
 
+export interface SchedulesPort {
+  list(params: {
+    scope: 'session' | 'all'
+    sessionKey?: string
+    includeArchived?: boolean
+  }): Promise<{ schedules: unknown[] }>
+  upsert(params: unknown): Promise<unknown>
+  archive(params: { id: string }): Promise<{ deleted: boolean }>
+  read(id: string): Promise<{ sessionKey: string } | undefined>
+  recordDispatch(jobKey: string, info: { at: number; seq?: number; reason?: string }): void
+  noteSettlement(jobKey: string, info: { nextRunAt: number | null }): void
+  stillWaiting(jobKey: string): boolean
+}
+
 export type SessionMetaRow = {
   sessionId: string
   parent?: string

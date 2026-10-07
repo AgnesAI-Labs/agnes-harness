@@ -7,6 +7,7 @@
     ".": "./src/index.ts",
     "./search": "./extensions/tools-web/src/search/index.ts",
     "./computer-use": "./extensions/computer-use/src/index.ts",
+    "./schedule": "./extensions/schedule/src/runtime.ts",
     "./privacy": "./extensions/privacy/src/redact.ts",
     "./child-engines": "./extensions/subagent-sdk/src/document.ts",
     "./testkit": "./testkit/index.ts",
@@ -127,7 +128,8 @@
       "./extensions/session-query",
       "./extensions/jobs-web",
       "./extensions/context-rules",
-      "./extensions/time-context"
+      "./extensions/time-context",
+      "./extensions/schedule"
     ]
   },
   "scripts": {

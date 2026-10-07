@@ -327,6 +327,9 @@ importers:
 
   packages/daemon:
     dependencies:
+      '@agnes/base':
+        specifier: workspace:*
+        version: link:../base
       '@agnes/error-sanitization':
         specifier: workspace:*
         version: link:../error-sanitization
@@ -370,9 +373,6 @@ importers:
       '@agnes/ai':
         specifier: workspace:*
         version: link:../ai
-      '@agnes/base':
-        specifier: workspace:*
-        version: link:../base
       '@agnes/code':
         specifier: workspace:*
         version: link:../code

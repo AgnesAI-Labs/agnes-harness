@@ -25,6 +25,7 @@ import { createPrivacyExtension, sessionEgressAuthority } from '../extensions/pr
 import { createRefineExtension } from '../extensions/refine/src/index.js'
 import { RefineQueue } from '../extensions/refine/src/queue.js'
 import { createRefineHarness } from '../extensions/refine/src/seam.js'
+import { createScheduleExtension } from '../extensions/schedule/src/index.js'
 import { createSessionQueryExtension } from '../extensions/session-query/src/index.js'
 import { skillsExtension } from '../extensions/skills/src/runtime.js'
 import { createSubagentExtension, type SubagentLimits } from '../extensions/subagent/src/index.js'
@@ -237,6 +238,7 @@ export const ecosystem = {
   'agnes/skills': (init: SeamInitContext): ExtensionFactory => createEcosystemExtensions(init).skills(),
   'agnes/plan-mode': (): ExtensionFactory => planModeExtension,
   'agnes/mcp-resources': (): ExtensionFactory => mcpResourcesExtension,
+  'agnes/schedule': (init: SeamInitContext): ExtensionFactory => createScheduleExtension(init.scheduleTables),
   'agnes/computer-use': (init: SeamInitContext): ExtensionFactory => {
     if (!init.computerUseBackendProvider)
       throw new Error('computer-use extension requires the Host-owned backend provider')
