@@ -37,6 +37,7 @@ describe('author API consistency', () => {
     ])
     expect(Object.keys(persistenceTestkit).sort()).toEqual([
       'persistenceContract',
+      'persistenceHostContract',
       'persistenceSqliteContract',
     ])
     expect(releaseProblems(input)).toEqual([])
