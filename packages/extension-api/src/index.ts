@@ -24,6 +24,7 @@ export * from './loop.js'
 export * from './model-adapter.js'
 export * from './loop-plugin.js'
 export * from './tool-runtime.js'
+export * from './provider-kind.js'
 export * from './tool-policy.js'
 export * from './loop-events.js'
 
