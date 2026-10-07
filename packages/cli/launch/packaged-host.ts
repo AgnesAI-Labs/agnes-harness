@@ -5,6 +5,7 @@ import {
   createLoader,
   HostError,
   type HostOptions,
+  loadChildEnginePluginLayers,
   type PackageLoader,
   type PackageModule,
   type Prompter,
@@ -141,7 +142,7 @@ export function packagedPackages(profile: ResolvedProfile, home: string, entryFi
   }
 }
 
-export function createPackagedHost(
+export async function createPackagedHost(
   profile: ResolvedProfile,
   prompter: Prompter,
   options: {
@@ -159,6 +160,7 @@ export function createPackagedHost(
   >,
 ) {
   const { home, cwd, entryFile, ...resources } = options
+  const ordinaryPluginLayers = await loadChildEnginePluginLayers({ home, profile: profile.name })
   return createHost(profile, {
     dataDir: profile.dataDir,
     profileDir: join(home, 'profiles', profile.name),
@@ -169,5 +171,6 @@ export function createPackagedHost(
     log: { debug() {}, info() {}, warn() {}, error() {} },
     ...packagedPackages(profile, home, entryFile),
     ...resources,
+    ...(ordinaryPluginLayers ? { ordinaryPluginLayers } : {}),
   })
 }

@@ -3,7 +3,12 @@ import { mkdir, mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import type { HostOptions, Prompter, ResolvedProfile } from '@agnes/host'
+import {
+  createConfigurationService,
+  type HostOptions,
+  type Prompter,
+  type ResolvedProfile,
+} from '@agnes/host'
 import { parseAgnesPluginEntries } from '@agnes/package-manager'
 import { afterEach, describe, expect, expectTypeOf, it, vi } from 'vitest'
 
@@ -137,10 +142,29 @@ describe('packaged host wiring', () => {
 
   it('assembles a packaged Host when no Skill runtime is present', async () => {
     const { home, profile, entryFile } = await packagedHome()
+    const configuration = createConfigurationService({ home, profile: profile.name })
+    const engines = await configuration.childEngines()
+    await configuration.saveChildEngines({
+      ...engines,
+      engines: {
+        ...engines.engines,
+        codex: {
+          ...engines.engines.codex,
+          enabled: true,
+          command: process.execPath,
+          args: ['fake-codex.mjs'],
+          allow: [process.execPath],
+        },
+      },
+    })
     await createPackagedHost(profile, prompter, { home, cwd: home, entryFile })
     expect(createHost).toHaveBeenCalledOnce()
     const options = createHost.mock.calls[0]?.[1]
     expect(options).not.toHaveProperty('skillResources')
+    expect(options?.ordinaryPluginLayers?.deployment?.['child-agent:codex']).toMatchObject({
+      enabled: true,
+      config: { command: process.execPath, args: ['fake-codex.mjs'], allow: [process.execPath] },
+    })
   })
 
   it('forwards the verified ordinary-plugin snapshot selection without rebuilding it', async () => {
