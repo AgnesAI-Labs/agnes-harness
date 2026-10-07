@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { defaultToolPolicy } from '@agnes/core'
 import type { ToolDef, ToolPolicyInput } from '@agnes/extension-api'
+import { AGH_DIR } from '@agnes/protocol'
 import { afterEach, describe, expect, it } from 'vitest'
 import planMode from '../src/index.js'
 import { decidePlanMode } from '../src/policy.js'
@@ -69,7 +70,7 @@ describe('plan mode policy', () => {
   it('fail-closes a corrupt plan file to inactive', () => {
     const cwd = workspace()
     applyPlanCommand(cwd, '/plan')
-    writeFileSync(join(cwd, '.agnes', 'plan-mode.json'), '{')
+    writeFileSync(join(cwd, AGH_DIR, 'plan-mode.json'), '{')
     expect(readPlanMode(cwd).active).toBe(false)
   })
 })
@@ -79,13 +80,19 @@ describe('plan mode extension', () => {
     const cwd = workspace()
     applyPlanCommand(cwd, '/plan')
     const tools: ToolDef[] = []
-    const hooks = new Map<string, (payload: unknown, ctx: { session: { workspaceRoot: string } }) => unknown>()
+    const hooks = new Map<
+      string,
+      (payload: unknown, ctx: { session: { workspaceRoot: string } }) => unknown
+    >()
     planMode({
       registerTool(tool: ToolDef) {
         tools.push(tool)
         return () => undefined
       },
-      registerHook(name: string, handler: (payload: unknown, ctx: { session: { workspaceRoot: string } }) => unknown) {
+      registerHook(
+        name: string,
+        handler: (payload: unknown, ctx: { session: { workspaceRoot: string } }) => unknown,
+      ) {
         hooks.set(name, handler)
         return () => undefined
       },
@@ -93,7 +100,7 @@ describe('plan mode extension', () => {
     const tool = tools.find((item) => item.name === 'exit_plan_mode')
     const ctx = { session: { workspaceRoot: cwd } }
     expect(hooks.get('context')?.({}, ctx)).toMatchObject({
-      sections: [{ id: 'plan-mode', order: 160 }],
+      sections: [{ id: 'plan-mode', order: 162 }],
     })
     const approval = hooks.get('approval_request')?.(
       { request: { tool: 'exit_plan_mode', argv: { plan: 'do the small thing' } } },

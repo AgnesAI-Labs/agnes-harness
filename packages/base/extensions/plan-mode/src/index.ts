@@ -27,8 +27,7 @@ export default defineExtension((agnes) => {
         },
         async execute(args, ctx) {
           const state = readPlanMode(ctx.cwd)
-          if (!state.active)
-            return { content: [{ type: 'text', text: 'Plan mode is not active' }] }
+          if (!state.active) return { content: [{ type: 'text', text: 'Plan mode is not active' }] }
           writePlanMode(ctx.cwd, {
             active: false,
             pendingPlan: args.plan,
@@ -53,7 +52,7 @@ export default defineExtension((agnes) => {
         sections: [
           {
             id: 'plan-mode',
-            order: 160,
+            order: 162,
             content: `Plan mode is active. Write a plan and call exit_plan_mode with the plan markdown. Write, edit, shell, and other non-read-only tools are blocked until the user approves that plan.${instruction}`,
           },
         ],
@@ -79,5 +78,5 @@ export default defineExtension((agnes) => {
 })
 
 export { decidePlanMode } from './policy.js'
-export { applyPlanCommand, planModePath, readPlanMode, writePlanMode } from './state.js'
 export type { PlanModeState } from './state.js'
+export { applyPlanCommand, planModePath, readPlanMode, writePlanMode } from './state.js'

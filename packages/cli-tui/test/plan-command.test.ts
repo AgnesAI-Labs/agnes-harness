@@ -1,6 +1,7 @@
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { AGH_DIR } from '@agnes/protocol'
 import { afterEach, describe, expect, it } from 'vitest'
 import type { TuiApp } from '../src/app.js'
 import { runSlash } from '../src/commands.js'
@@ -19,12 +20,15 @@ describe('/plan', () => {
       active: true,
       text: 'Plan mode is on: keep the diff small',
     })
-    expect(JSON.parse(readFileSync(join(cwd, '.agnes', 'plan-mode.json'), 'utf8'))).toMatchObject({
+    expect(JSON.parse(readFileSync(join(cwd, AGH_DIR, 'plan-mode.json'), 'utf8'))).toMatchObject({
       active: true,
       instruction: 'keep the diff small',
     })
-    await expect(runSlash(app, '/plan off')).resolves.toMatchObject({ active: false, text: 'Plan mode is off' })
-    expect(JSON.parse(readFileSync(join(cwd, '.agnes', 'plan-mode.json'), 'utf8'))).toEqual({
+    await expect(runSlash(app, '/plan off')).resolves.toMatchObject({
+      active: false,
+      text: 'Plan mode is off',
+    })
+    expect(JSON.parse(readFileSync(join(cwd, AGH_DIR, 'plan-mode.json'), 'utf8'))).toEqual({
       active: false,
       updatedAt: expect.any(String),
     })

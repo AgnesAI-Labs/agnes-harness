@@ -12,7 +12,7 @@
   "@agnes/protocol-validation": [],
   "@agnes/error-sanitization": [],
   "@agnes/package-isolation": ["@agnes/system-node"],
-  "@agnes/web-server": [],
+  "@agnes/web-server": ["@agnes/protocol"],
   "@agnes/web-admin-frame": [],
   "@agnes/package-admin-client-node": ["@agnes/protocol"],
   "@agnes/resource-control-runtime": ["@agnes/cordis", "@agnes/protocol"],
@@ -58,7 +58,8 @@
     "@agnes/plugin-runtime",
     "@agnes/ai",
     "@agnes/mcp-transport-health",
-    "@agnes/system-node"
+    "@agnes/system-node",
+    "@agnes/loop-default"
   ],
   "@agnes/mcp-transport-health": [],
   "@agnes/code": ["@agnes/protocol", "@agnes/extension-api", "@agnes/core", "@agnes/base"],
@@ -137,5 +138,6 @@
     "@agnes/system-node"
   ],
   "@agnes/system-node": [],
-  "@agnes/model-adapters": ["@agnes/ai", "@agnes/extension-api", "@agnes/plugin-runtime", "@agnes/protocol"]
+  "@agnes/model-adapters": ["@agnes/ai", "@agnes/extension-api", "@agnes/plugin-runtime", "@agnes/protocol"],
+  "@agnes/loop-default": ["@agnes/extension-api"]
 }

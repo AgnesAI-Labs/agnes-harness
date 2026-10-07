@@ -1,10 +1,11 @@
 import { mkdirSync, realpathSync, writeFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
+import { AGH_DIR } from '@agnes/protocol'
 
 /**
  * Durable plan-mode file. The canonical reader and writer live in the plan-mode extension.
  * This copy exists so the TUI can flip the file without importing `@agnes/base`.
- * Schema: `{ active, instruction?, pendingPlan?, updatedAt }` at `<cwd>/.agnes/plan-mode.json`.
+ * Schema: `{ active, instruction?, pendingPlan?, updatedAt }` at `<cwd>/.agh/plan-mode.json`.
  */
 type PlanModeState = {
   active: boolean
@@ -23,13 +24,16 @@ function canonicalPlanCwd(cwd: string): string {
 
 function writePlanMode(cwd: string, state: PlanModeState): void {
   const root = canonicalPlanCwd(cwd)
-  mkdirSync(join(root, '.agnes'), { recursive: true })
-  writeFileSync(join(root, '.agnes', 'plan-mode.json'), `${JSON.stringify(state)}\n`)
+  mkdirSync(join(root, AGH_DIR), { recursive: true })
+  writeFileSync(join(root, AGH_DIR, 'plan-mode.json'), `${JSON.stringify(state)}\n`)
 }
 
 /** `/plan`, `/plan on`, `/plan off`, or `/plan <instruction>`. Turning on drops any pending plan. */
 export function applyPlanCommand(cwd: string, line: string): { active: boolean; text: string } {
-  const rest = line.trim().replace(/^\/plan\b/, '').trim()
+  const rest = line
+    .trim()
+    .replace(/^\/plan\b/, '')
+    .trim()
   const updatedAt = new Date().toISOString()
   if (rest === 'off') {
     writePlanMode(cwd, { active: false, updatedAt })

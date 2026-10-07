@@ -80,7 +80,7 @@ const LAYER: Record<string, number> = {
   '@agnes/error-sanitization': -1,
   '@agnes/package-isolation': -1,
   '@agnes/system-node': -2, // OS primitives sit below infrastructure leaves and have no package dependencies.
-  '@agnes/web-server': -1,
+  '@agnes/web-server': 1,
   '@agnes/web-admin-frame': -1,
   '@agnes/protocol': 0,
   '@agnes/resource-control-client-node': 2,
@@ -96,6 +96,8 @@ const LAYER: Record<string, number> = {
   '@agnes/resource-control-cli': 10,
   '@agnes/extension-api': 1,
   '@agnes/core': 2,
+  '@agnes/loop-default': 2, // First-party loop plugin consumes the author API.
+
   '@agnes/ai': 3,
   '@agnes/model-adapters': 4,
   // A seam-only package (RA16): implements SandboxSeam against a transport handed to it by the

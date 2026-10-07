@@ -810,7 +810,11 @@ importers:
         specifier: 18.3.1
         version: 18.3.1(react@18.3.1)
 
-  packages/web-server: {}
+  packages/web-server:
+    dependencies:
+      '@agnes/protocol':
+        specifier: workspace:*
+        version: link:../protocol
 
   packages/web-slots: {}
 

@@ -1,10 +1,11 @@
 import { mkdirSync, realpathSync, statSync, writeFileSync } from 'node:fs'
 import { isAbsolute, join, resolve } from 'node:path'
+import { AGH_DIR } from '@agnes/protocol'
 
 /**
  * Durable plan-mode file. The canonical reader and writer live in the plan-mode extension.
  * This copy exists so the static web server can flip the file without importing `@agnes/base`.
- * Schema: `{ active, instruction?, pendingPlan?, updatedAt }` at `<cwd>/.agnes/plan-mode.json`.
+ * Schema: `{ active, instruction?, pendingPlan?, updatedAt }` at `<cwd>/.agh/plan-mode.json`.
  */
 type PlanModeState = {
   active: boolean
@@ -22,7 +23,7 @@ function invalid(): PlanModeWrite {
 
 /**
  * Write plan mode for an absolute cwd that already exists. The cwd itself is never created.
- * Only `<realpath(cwd)>/.agnes/plan-mode.json` is written.
+ * Only `<realpath(cwd)>/.agh/plan-mode.json` is written.
  */
 export function applyPlanCommand(cwd: string, line: string): PlanModeWrite {
   if (cwd.length === 0 || cwd.length > 4096 || cwd.includes('\0') || !isAbsolute(cwd)) return invalid()
@@ -46,7 +47,7 @@ export function applyPlanCommand(cwd: string, line: string): PlanModeWrite {
           ...(rest === '' || rest === 'on' ? {} : { instruction: rest.slice(0, 4000) }),
           updatedAt,
         }
-  const dir = join(root, '.agnes')
+  const dir = join(root, AGH_DIR)
   mkdirSync(dir, { recursive: true })
   writeFileSync(join(dir, 'plan-mode.json'), `${JSON.stringify(state)}\n`)
   return {

@@ -1,5 +1,6 @@
 import { mkdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
+import { AGH_DIR } from '@agnes/protocol'
 
 /** Durable plan-mode file. CLI, web, and the worker all read this path. */
 export type PlanModeState = {
@@ -22,7 +23,7 @@ export function canonicalPlanCwd(cwd: string): string {
 }
 
 export function planModePath(cwd: string): string {
-  return join(canonicalPlanCwd(cwd), '.agnes', 'plan-mode.json')
+  return join(canonicalPlanCwd(cwd), AGH_DIR, 'plan-mode.json')
 }
 
 function parseState(raw: string): PlanModeState {
@@ -30,8 +31,12 @@ function parseState(raw: string): PlanModeState {
   if (!parsed || typeof parsed.active !== 'boolean') return inactive()
   return {
     active: parsed.active,
-    ...(typeof parsed.instruction === 'string' && parsed.instruction ? { instruction: parsed.instruction } : {}),
-    ...(typeof parsed.pendingPlan === 'string' && parsed.pendingPlan ? { pendingPlan: parsed.pendingPlan } : {}),
+    ...(typeof parsed.instruction === 'string' && parsed.instruction
+      ? { instruction: parsed.instruction }
+      : {}),
+    ...(typeof parsed.pendingPlan === 'string' && parsed.pendingPlan
+      ? { pendingPlan: parsed.pendingPlan }
+      : {}),
     updatedAt: typeof parsed.updatedAt === 'string' ? parsed.updatedAt : '',
   }
 }
@@ -39,7 +44,7 @@ function parseState(raw: string): PlanModeState {
 /** File wins when it exists. A missing file falls back to this process's last write. */
 export function readPlanMode(cwd: string): PlanModeState {
   const key = canonicalPlanCwd(cwd)
-  const path = join(key, '.agnes', 'plan-mode.json')
+  const path = join(key, AGH_DIR, 'plan-mode.json')
   try {
     const state = parseState(readFileSync(path, 'utf8'))
     memory.set(key, state)
@@ -55,15 +60,18 @@ export function readPlanMode(cwd: string): PlanModeState {
 
 export function writePlanMode(cwd: string, state: PlanModeState): void {
   const key = canonicalPlanCwd(cwd)
-  const path = join(key, '.agnes', 'plan-mode.json')
-  mkdirSync(join(key, '.agnes'), { recursive: true })
+  const path = join(key, AGH_DIR, 'plan-mode.json')
+  mkdirSync(join(key, AGH_DIR), { recursive: true })
   writeFileSync(path, `${JSON.stringify(state)}\n`)
   memory.set(key, state)
 }
 
 /** `/plan`, `/plan on`, `/plan off`, or `/plan <instruction>`. `/plan off` clears the stage directly. */
 export function applyPlanCommand(cwd: string, line: string): { active: boolean; text: string } {
-  const rest = line.trim().replace(/^\/plan\b/, '').trim()
+  const rest = line
+    .trim()
+    .replace(/^\/plan\b/, '')
+    .trim()
   const updatedAt = new Date().toISOString()
   if (rest === 'off') {
     writePlanMode(cwd, { active: false, updatedAt })

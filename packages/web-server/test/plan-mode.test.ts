@@ -1,6 +1,7 @@
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { AGH_DIR } from '@agnes/protocol'
 import { afterEach, describe, expect, it } from 'vitest'
 import { applyPlanCommand } from '../src/plan-mode.js'
 
@@ -18,7 +19,7 @@ describe('applyPlanCommand', () => {
       active: true,
       text: 'Plan mode is on: look first',
     })
-    expect(JSON.parse(readFileSync(join(cwd, '.agnes', 'plan-mode.json'), 'utf8'))).toMatchObject({
+    expect(JSON.parse(readFileSync(join(cwd, AGH_DIR, 'plan-mode.json'), 'utf8'))).toMatchObject({
       active: true,
       instruction: 'look first',
     })

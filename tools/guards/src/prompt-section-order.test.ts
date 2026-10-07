@@ -60,6 +60,7 @@ const CANONICAL_PROMPT_SECTIONS: ReadonlyArray<{
   { id: 'code-doctrine', order: 140, owner: 'code' },
   { id: 'tools:sdk', order: 150, owner: 'code' },
   { id: 'skills', order: 160, owner: 'base' },
+  { id: 'plan-mode', order: 162, owner: 'base' },
   { id: 'plugin-creator', order: 165, owner: 'base' },
   { id: 'channel-style', order: 170, owner: 'code' },
   // packages/core/src/request/contribute.ts's harnessSections(), which folds harness register
