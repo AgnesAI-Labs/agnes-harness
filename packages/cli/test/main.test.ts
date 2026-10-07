@@ -576,7 +576,7 @@ describe('main', () => {
     const h = harness(dir)
     expect(await main(['--resume', sessionId, '-p', 'go on then'], h.io, h.boot)).toBe(0)
     expect(h.out()).toBe('main says hi\n')
-    expect(h.err()).toBe('')
+    expect(h.err()).toBe(`Session: ${sessionId}\n`)
   })
 
   it.each(['--resume', 'resume'])(
