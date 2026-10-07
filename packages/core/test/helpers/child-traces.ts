@@ -209,9 +209,11 @@ export async function uncachedProjection(
   surface?: 'tui' | 'web' | 'channel',
 ) {
   const current = await parent.projectUI(undefined, surface ? { surface } : {})
+  const fills = parent.d.slotFills?.()
   const base = await parent.d.ui.view({
     ...(surface ? { surface } : {}),
     ...(current.usage ? { usage: current.usage } : {}),
+    ...(fills ? { inlineFills: fills, liveFills: fills } : {}),
   })
   const load = async (childKey: string) => {
     try {

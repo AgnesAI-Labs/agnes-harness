@@ -50,14 +50,14 @@ export function bindExtensionInvocations(
       })
     }
   const canonicalWrap =
-    <P, C extends Context, R>(callback: (payload: P, context: C) => R, owner: string) =>
+    <P, C extends Context, R>(callback: (payload: P, context: C, session: SessionImpl) => R, owner: string) =>
     (payload: P, context: C) => {
       const invoke = (sessionResolver: SessionResolver) =>
         invocation.runFor(
           context.session,
           context.signal,
           sessionResolver,
-          (session) => callback(payload, { ...context, session: canonicalSession(session) }),
+          (session) => callback(payload, { ...context, session: canonicalSession(session) }, session),
           owner,
         )
       if (!publication) return invoke(resolveHook)
@@ -76,8 +76,7 @@ export function bindExtensionInvocations(
       on: (event, handler, meta) =>
         ports.hooks.on(
           event,
-          canonicalWrap((payload, context) => {
-            const session = resolveHook(context.session)
+          canonicalWrap((payload, context, session) => {
             const input =
               event === 'turn_stopping' && session
                 ? {

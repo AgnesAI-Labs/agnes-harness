@@ -446,7 +446,8 @@ export class UIProjectionCell {
       }
     }
     const slots = await fillLiveSlots(opts, Math.min(UI_SLOT_MAX_BYTES, Math.floor(opts.maxBytes / 4)))
-    const pageBytes = Math.max(1, opts.maxBytes - encoder.encode(JSON.stringify(slots ?? [])).byteLength)
+    const slotBytes = slots ? encoder.encode(JSON.stringify(slots)).byteLength : 0
+    const pageBytes = Math.max(1, opts.maxBytes - slotBytes)
     const page = await fillInlinePage(
       boundedTimelinePage(
         this.nodes,

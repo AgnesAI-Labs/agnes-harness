@@ -580,6 +580,7 @@ const HOOKS_DEFS: Record<string, TSchema> = {
 
 // slots.json, the sixth self-owned document. It borrows nothing, so it has no cross-file aliases.
 const SLOTS_DEFS: Record<string, TSchema> = {
+  GoalSnapshot: SlotsGen.GoalSnapshot,
   UiSlotName: SlotsGen.UiSlotName,
   ToolCardInlinePayload: SlotsGen.ToolCardInlinePayload,
   SidebarActionPayload: SlotsGen.SidebarActionPayload,
@@ -4034,7 +4035,31 @@ const toolCardOk: Json = {
   actions: [{ id: 'export', label: 'Export' }],
 }
 
+const goalOk = {
+  id: 'goal-1',
+  revision: 1,
+  objective: 'Deliver a patch',
+  phase: 'active',
+  rounds: 0,
+  maxRounds: 2,
+  creditsUsed: 0,
+  budgetCredits: 10,
+}
 const SLOTS_SAMPLES: Record<string, Sample> = {
+  GoalSnapshot: {
+    valid: goalOk,
+    invalid: [
+      { ...goalOk, phase: 'done' },
+      { ...goalOk, maxRounds: 0 },
+      { ...goalOk, maxRounds: 101 },
+      { ...goalOk, budgetCredits: -1 },
+      { ...goalOk, creditsUsed: -1 },
+      { ...goalOk, revision: 0 },
+      { ...goalOk, rounds: -1 },
+      { ...goalOk, objective: '' },
+    ],
+    note: 'persistent goals have closed lifecycle states and bounded continuation limits',
+  },
   UiSlotName: {
     valid: 'status.line',
     invalid: ['statusline', 'primary', 1],
@@ -4061,12 +4086,13 @@ const SLOTS_SAMPLES: Record<string, Sample> = {
     note: 'hand-written; the id pattern is the same one the card actions use, so both are addressable the same way',
   },
   StatusLinePayload: {
-    valid: { text: '3 tools running', level: 'info' },
+    valid: { text: 'Goal active', level: 'info', goal: goalOk },
     invalid: [
       { text: 'x', level: 'debug' }, // enum
       { text: 'x' }, // missing required level
       { text: rep(513), level: 'info' }, // boundary: one over maxLength:512
       { text: 'x', level: 'info', onClick: 'fn' }, // additionalProperties:false - a slot carries data, never behaviour
+      { text: 'x', level: 'info', goal: { ...goalOk, phase: 'done' } },
     ],
     note: 'the closed-object negative matters here: a slot payload crosses a process boundary, so a function-shaped key must be refused rather than dropped',
   },
