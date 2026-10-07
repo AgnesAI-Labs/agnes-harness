@@ -10,8 +10,8 @@ function endpoint(baseUrl: string): URL {
     throw new Error(
       'local model endpoint must be an absolute HTTP URL without credentials, query or fragment',
     )
-  url.pathname = url.pathname.replace(/\/+$/, '')
-  if (!url.pathname.endsWith('/v1')) url.pathname += '/v1'
+  const path = url.pathname.replace(/\/+$/, '')
+  url.pathname = path.endsWith('/v1') ? path : `${path}/v1`
   return url
 }
 /** Explicit /v1/models discovery. Never contacts a vendor fallback or infers capabilities. */

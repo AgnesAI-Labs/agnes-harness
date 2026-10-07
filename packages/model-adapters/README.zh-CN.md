@@ -2,7 +2,7 @@
 
 可选 adapter 通过 `modelAdaptersPlugin` 注册（`inject: ["modelAdapters"]`）。`scripted` 与 `replay` 不需要网络或凭证。
 
-- `scriptedAdapter.create(config)` 读取 `route.compat.file` 指定的绝对路径。文件格式：`{ "schemaVersion": 1, "replies": [[{ "type": "text_delta", "delta": "Hello" }, { "type": "done", "reason": "stop" }]] }`。
+- `scriptedAdapter.create(config)` 读取 `route.compat.file` 指定的绝对路径。文件格式：`{ "schemaVersion": 1, "replies": [[{ "type": "text_delta", "delta": "Hello" }, { "type": "usage", "tokens": { "input": 1, "output": 1, "cacheRead": 0, "cacheWrite": 0 }, "creditSource": "estimated" }, { "type": "done", "reason": "stop" }]] }`。
 - `recordModelResponses(instance, absoluteFile)` 包装任意模型 adapter 实例，以独占方式创建权限为 0600 的 v1 回复 JSONL 文件。请求含提示词，不含 adapter 凭证；请妥善保存。销毁 wrapper 会关闭文件和上游实例。
 - `replayAdapter.create(config)` 读取 `route.compat.file`。默认 `match: "strict"` 比较 kind、slot、system、messages、tools、sampling，忽略路由、会话 ID 和派生 hash。显式 `match: "sequence"` 为不同 loop/compaction 提示词提供相同回复。耗尽或不完整记录直接失败，不会回退到付费模型。
 

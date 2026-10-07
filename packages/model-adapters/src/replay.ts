@@ -45,14 +45,49 @@ function instance(
     models: (route) => config.routes.find((decl) => decl.route === route)?.models ?? [],
     async *stream(route: string, request: RequestBody, options: ModelAdapterStreamOptions) {
       options.signal.throwIfAborted()
-      if (disposed) throw new Error(`${id} adapter is disposed`)
+      if (disposed) {
+        yield {
+          type: 'error',
+          reason: 'error',
+          code: 'NO_ADAPTER',
+          message: `${id} adapter is disposed`,
+          retryable: false,
+        }
+        return
+      }
       const key = `${options.sessionKey}\0${route}`
-      if (busy.has(key)) throw new Error(`${id} refuses concurrent invocations in one session route`)
+      if (busy.has(key)) {
+        yield {
+          type: 'error',
+          reason: 'error',
+          code: 'FORMAT',
+          message: `${id} refuses concurrent invocations in one session route`,
+          retryable: false,
+        }
+        return
+      }
       const index = cursors.get(key) ?? 0
       const reply = replies.get(route)?.[index]
-      if (!reply) throw new Error(`${id} transcript exhausted at invocation ${index}`)
-      if (strict.get(route) && reply.key !== replayRequestKey(request))
-        throw new Error(`replay request mismatch at invocation ${index}`)
+      if (!reply) {
+        yield {
+          type: 'error',
+          reason: 'error',
+          code: 'NO_MODEL',
+          message: `${id} transcript exhausted at invocation ${index}`,
+          retryable: false,
+        }
+        return
+      }
+      if (strict.get(route) && reply.key !== replayRequestKey(request)) {
+        yield {
+          type: 'error',
+          reason: 'error',
+          code: 'CONTRACT_MISMATCH',
+          message: `replay request mismatch at invocation ${index}`,
+          retryable: false,
+        }
+        return
+      }
       busy.add(key)
       cursors.set(key, index + 1)
       try {

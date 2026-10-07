@@ -78,9 +78,13 @@ it('records private responses and replays with independent session cursors, mism
   expect(await readModelResponses(path)).toHaveLength(1)
   expect(await readFile(path, 'utf8')).not.toContain('credential')
   const replay = await replayAdapter.create(config(path))
-  await expect(collect(replay, { ...request, system: 'Changed' })).rejects.toThrow('mismatch')
+  expect(await collect(replay, { ...request, system: 'Changed' })).toEqual([
+    expect.objectContaining({ type: 'error', code: 'CONTRACT_MISMATCH', retryable: false }),
+  ])
   expect(await collect(replay)).toEqual(events)
-  await expect(collect(replay)).rejects.toThrow('exhausted')
+  expect(await collect(replay)).toEqual([
+    expect.objectContaining({ type: 'error', code: 'NO_MODEL', retryable: false }),
+  ])
   expect(await collect(replay, { ...request, sessionKey: 'session-2' }, options('session-2'))).toEqual(events)
   const sequence = await replayAdapter.create(config(path, 'sequence'))
   expect(await collect(sequence, { ...request, system: 'Compare another strategy' })).toEqual(events)
@@ -90,13 +94,20 @@ it('scripted files work outside testkit and validate terminal events and cancell
   const replies = [
     [
       { type: 'text_delta', delta: 'Lesson' },
+      {
+        type: 'usage',
+        tokens: { input: 1, output: 1, cacheRead: 0, cacheWrite: 0 },
+        creditSource: 'estimated',
+      },
       { type: 'done', reason: 'stop' },
     ],
   ]
   await writeFile(path, JSON.stringify({ schemaVersion: 1, replies }))
   const scripted = await scriptedAdapter.create(config(path))
   expect(await collect(scripted)).toEqual(replies[0])
-  await expect(collect(scripted)).rejects.toThrow('exhausted')
+  expect(await collect(scripted)).toEqual([
+    expect.objectContaining({ type: 'error', code: 'NO_MODEL', retryable: false }),
+  ])
   const ac = new AbortController()
   ac.abort()
   await expect(collect(scripted, request, { ...options(), signal: ac.signal })).rejects.toThrow()

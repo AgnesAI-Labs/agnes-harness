@@ -62,6 +62,8 @@ export function validateReply(value: unknown): ModelAdapterEvent[] {
   const terminals = events.filter((event) => event.type === 'done' || event.type === 'error')
   if (terminals.length !== 1 || terminals[0] !== events.at(-1))
     throw new Error('reply must end with one terminal event')
+  if (events.at(-1)?.type === 'done' && events.filter((event) => event.type === 'usage').length !== 1)
+    throw new Error('successful reply requires one usage event')
   return events
 }
 export async function readModelResponses(
