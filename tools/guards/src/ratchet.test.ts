@@ -1294,8 +1294,10 @@ const INITIAL_CEILING: Record<string, number> = {
   // A returning package must not be served a cached generation bound to revoked leases (+7), and the
   // full-access read-only roots reach the fence from the assembly (+7). Measured 4207, exact.
   // 2026-10-07 reviewed growth: provider registries, adapter factories, pinned generations, creator rows, headless wiring, provider diagnostics and model deployment compatibility.
-  // countLines: 4207 -> 5982 (+1775); exact cap, no exclusions or spare allocation.
-  'packages/host/src/assemble': 5982,
+  // 2026-10-07 generation repair: fit restored builtin extension/seam identities before generation assembly.
+  // Integrated countLines: 5982 -> 5999 (+17); exact cap.
+  // countLines: 4207 -> 5999 (+1792); exact cap, no exclusions or spare allocation.
+  'packages/host/src/assemble': 5999,
   // P1: generated-schema validators and duplicate projection-name refusal; measured exact cap.
   // F1 adds Surface JSON/identity validation and lock snapshot validation.
   // PM4 adds strict management DTO validation and method permission/identity contracts; exact total.
@@ -1937,8 +1939,10 @@ const INITIAL_CEILING: Record<string, number> = {
   // Approval reasons: the prompter router answers with a reason (+18). Measured 26758 (combined tree), exact cap.
   // 2026-10-06: bound image transport byte totals and split oversized worker scan ranges; 26818, exact.
   // 2026-10-07 reviewed growth: provider/admin catalogs, composition surfaces, session tool ownership, durable generations, fresh-local demo admission and Host facade inspection.
-  // countLines: 26847 -> 27570 (+723); exact cap, no exclusions or spare allocation.
-  'packages/daemon/src': 27570,
+  // 2026-10-07 generation repair: retain ownership admission facts for generation-pinned sessions.
+  // Integrated countLines: 27570 -> 27573 (+3); exact cap.
+  // countLines: 26847 -> 27573 (+726); exact cap, no exclusions or spare allocation.
+  'packages/daemon/src': 27573,
   'packages/daemon/src/packages/admin-session': 46,
   // 2026-09-14: whole-branch review fix wave (Finding 1) adds the two missing
   // 'pins/inspect'/'pins/release' entries to the ACTIONS BFF route allowlist, which had been left
@@ -2687,8 +2691,10 @@ const INITIAL_CEILING: Record<string, number> = {
   // Measured 38359, exact.
   // Approval reasons: the Prompter type may answer with a reason (+2). Measured 38398 (combined tree), exact cap.
   // 2026-10-07 reviewed growth: provider composition, pinned generations, local loading, absent capability ports and fresh-local demo admission, facade ownership and shutdown refusal.
-  // countLines: 38398 -> 43645 (+5247); exact cap, no exclusions or spare allocation.
-  'packages/host/src': 43645,
+  // 2026-10-07 generation repair: pinned builtin identities, current MCP/Skill resources, unbound container reuse and applied model profile retention.
+  // Integrated countLines: 43645 -> 43753 (+108); exact cap.
+  // countLines: 38398 -> 43753 (+5355); exact cap, no exclusions or spare allocation.
+  'packages/host/src': 43753,
   'packages/host/src/ext-host/service-invocation': 247,
   // T5.2's permission projector is kept independently bounded so later extension-host work cannot
   // hide in the package-wide increment. Measured source: 86 lines.
@@ -2745,8 +2751,10 @@ const INITIAL_CEILING: Record<string, number> = {
   // 2026-09-21 AGH namespace rename (.agnes -> .agh): +1 counted line: inputs.ts imports AGH_DIR for <cwd>/.agh/profile.local.yaml.
   // Re-measured with this guard's countLines(): 1185, exact cap, no spare.
   // 2026-10-07 reviewed growth: bundle resolution, session composition persistence, provider-independent visibility and opt-in fresh-local demo admission, facade ownership and shutdown refusal.
-  // countLines: 1187 -> 2794 (+1607); exact cap, no exclusions or spare allocation.
-  'packages/host/src/profile': 2794,
+  // 2026-10-07 generation repair: restore current MCP factories when reopening pinned composition code.
+  // Integrated countLines: 2794 -> 2798 (+4); exact cap.
+  // countLines: 1187 -> 2798 (+1611); exact cap, no exclusions or spare allocation.
+  'packages/host/src/profile': 2798,
   // 2026-09-09: raised from 1100. 1071 of it was spent and the 29 left could not cover the deny-list
   // repair with anything to spare; the repair measures 1075. The remaining 100 are platform-win32
   // reaching parity with platform-posix - today its probe() asserts a fixed table where posix
