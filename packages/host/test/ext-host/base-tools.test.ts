@@ -280,6 +280,7 @@ describe('a host assembled from a profile naming @agnes/base', () => {
         'agnes/computer-use',
         'agnes/hooks-runner',
         'agnes/privacy',
+        'agnes/plugin-creator',
         'agnes/mcp-search',
         'agnes/skills',
       ])
@@ -680,8 +681,18 @@ describe('a host assembled from a profile naming @agnes/base', () => {
     })
     // The skills extension is loaded but inert until a daemon worker supplies a private runtime
     // snapshot. An empty resource-control view must not alter the legacy Host tool surface.
-    // Seventeen plus the computer-use tool the default enabled profile now mounts as a row.
-    expect(host.kernel.tools.size).toBe(18)
+    // Twenty-one runtime tools plus the four registered plugin-creator tools.
+    expect(host.kernel.tools.size).toBe(25)
+    for (const name of [
+      'subagent_list',
+      'subagent_send_message',
+      'subagent_interrupt',
+      'plugin_creator_guide',
+      'plugin_scaffold',
+      'plugin_test',
+      'plugin_install_local',
+    ])
+      expect(host.kernel.tools.resolve(name)).toMatchObject({ name })
     expect(host.kernel.tools.resolve('computer_use')).toMatchObject({ name: 'computer_use' })
     expect(host.kernel.tools.resolve('subagent_cancel')).toMatchObject({ name: 'subagent_cancel' })
     await host.close()

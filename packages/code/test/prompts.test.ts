@@ -26,6 +26,7 @@ describe('prompt section order table', () => {
       ['code-doctrine', 140],
       ['tools:sdk', 150],
       ['skills', 160],
+      ['plugin-creator', 165],
       ['channel-style', 170],
     ])
     expect(sectionOrder('code-doctrine')).toBe(140)
@@ -43,7 +44,7 @@ describe('prompt section order table', () => {
 
   it('records who supplies each section, and registers the other packages only to reserve an order', () => {
     const byOwner = (owner: string) => PROMPT_SECTIONS.filter((s) => s.owner === owner).map((s) => s.id)
-    expect(byOwner('base')).toEqual(['agents-md', 'skills'])
+    expect(byOwner('base')).toEqual(['agents-md', 'skills', 'plugin-creator'])
     expect(byOwner('code')).toEqual([
       'persona',
       'environment',

@@ -11,8 +11,8 @@
 在将要启动 daemon 的工作区执行。源码预览的脚手架命令从 AGH 仓库运行：
 
 ```sh
-mkdir -p .agnes/plugins
-node templates/create-agh-plugin.mjs tool hello-tool .agnes/plugins/hello-tool --local
+mkdir -p .agh/plugins
+node templates/create-agh-plugin.mjs tool hello-tool .agh/plugins/hello-tool --local
 ```
 
 包入口是 `./src/index.ts`。AGH 用 jiti 按需转译，并提供公共作者 SDK 和 TypeBox。也可以放到 `$AGH_HOME/plugins/hello-tool`，每个终端使用同一个配置 home。本地目录意味着选择信任并执行其中代码，只放你愿意运行的插件。
@@ -47,7 +47,7 @@ Web 中新建会话，选择 **Demo (local tool-aware, no API key)**，提交 `c
 运行中的 daemon 会发现新本地目录并监听修改；普通插件改动无需重启，会激活新代际。在 `/admin/plugins` 检查启用错误，也可立即请求重载：
 
 ```sh
-agh dev .agnes/plugins/hello-tool --profile local-dev
+agh dev .agh/plugins/hello-tool --profile local-dev
 agh plugins reload hello-tool --profile local-dev
 ```
 
@@ -59,9 +59,9 @@ agh plugins reload hello-tool --profile local-dev
 
 ```sh
 nice -n 10 pnpm exec tsc -b packages/plugin-runtime packages/protocol packages/resource-control-runtime
-node templates/link-local.mjs .agnes/plugins/hello-tool
-npm --prefix .agnes/plugins/hello-tool run build
-npm --prefix .agnes/plugins/hello-tool test
+node templates/link-local.mjs .agh/plugins/hello-tool
+npm --prefix .agh/plugins/hello-tool run build
+npm --prefix .agh/plugins/hello-tool test
 ```
 
 linker 可重复执行。model-adapter 模板使用公共合同测试数据，不再要求构建 `@agnes/ai`。需要安装编译包时，不带 `--local` 创建、构建后按[插件管理](../guide/packages.zh-CN.md)安装。侧栏选 `tool-with-panel`，独立循环选 `loop`。

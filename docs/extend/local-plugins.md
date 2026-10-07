@@ -4,7 +4,7 @@ English | [简体中文](local-plugins.zh-CN.md)
 
 [Author guide](README.md) · [Build a plugin by asking the agent](agent-built-plugins.md)
 
-The daemon discovers immediate plugin directories under `<AGNES_HOME>/plugins/<name>/` and `<workspace>/.agnes/plugins/<name>/`. `<AGNES_HOME>` means the configured runtime home (the CLI uses `AGH_HOME`); the workspace is the daemon startup workspace, not every session cwd. Folder names use lowercase letters, digits, dots, underscores and hyphens.
+The daemon discovers immediate plugin directories under `<AGNES_HOME>/plugins/<name>/` and `<workspace>/.agh/plugins/<name>/`. `<AGNES_HOME>` means the configured runtime home (the CLI uses `AGH_HOME`); the workspace is the daemon startup workspace, not every session cwd. Folder names use lowercase letters, digits, dots, underscores and hyphens.
 
 A folder can contain a normal package with `package.json`, `agnes.plugins` and a source entry:
 

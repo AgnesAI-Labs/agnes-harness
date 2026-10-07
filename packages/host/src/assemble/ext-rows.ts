@@ -31,6 +31,7 @@ export const EXT_ROW_EXTENSION_IDS: ReadonlySet<string> = new Set([
   'agnes/code-mode',
   'agnes/hooks-runner',
   'agnes/privacy',
+  'agnes/plugin-creator',
   'agnes/mcp-search',
   'agnes/skills',
 ])
@@ -83,6 +84,7 @@ export const MIGRATED_EXTENSION_IDS: ReadonlySet<string> = new Set([
   'agnes/subagent',
   'agnes/refine',
   'agnes/privacy',
+  'agnes/plugin-creator',
   'agnes/computer-use',
   'agnes/hooks-runner',
   'agnes/mcp-search',

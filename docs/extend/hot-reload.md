@@ -16,7 +16,7 @@ agh plugins reload --profile local-dev
 
 `dev` inspects, installs if necessary, trusts the inspected revision and enables it. It explicitly authorizes executing that local package. File sources stay relative to the daemon startup workspace; an absolute CLI path is accepted when it is inside that workspace. Start the daemon from the same workspace as the command. Identity collisions and inspection blockers remain errors. File packages need `package.json`; use the [local plugins folders](local-plugins.md) for a bare `plugin.ts` or `plugin.js`.
 
-For automatic reload, use the existing local roots: `<AGNES_HOME>/plugins/<name>` or `<workspace>/.agnes/plugins/<name>`. Their watcher copies changed bytes and calls the daemon's generation publication adapter. The manual command also supports these discovery-owned packages. Removing a folder disables future bindings. Reload preserves disabled choices; use `dev` or admin Enable to activate a disabled package.
+For automatic reload, use the existing local roots: `<AGNES_HOME>/plugins/<name>` or `<workspace>/.agh/plugins/<name>`. Their watcher copies changed bytes and calls the daemon's generation publication adapter. The manual command also supports these discovery-owned packages. Removing a folder disables future bindings. Reload preserves disabled choices; use `dev` or admin Enable to activate a disabled package.
 
 ## What changes for sessions
 

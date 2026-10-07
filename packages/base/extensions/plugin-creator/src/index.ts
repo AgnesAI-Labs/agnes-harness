@@ -1,4 +1,5 @@
 import { defineExtension, defineTool, type ToolContext } from '@agnes/extension-api'
+import { AGH_DIR } from '@agnes/protocol'
 import { Type } from '@sinclair/typebox'
 import { creatorAssets } from './generated/assets.js'
 import { scriptedToolTest } from './scripted-test.js'
@@ -61,7 +62,7 @@ console.log(dir);
 const install = `
 const fs = require("node:fs"), path = require("node:path");
 const source = path.resolve(process.argv[1]), name = process.argv[2];
-const target = path.join(process.cwd(), ".agnes", "plugins", name);
+const target = path.join(process.cwd(), ${JSON.stringify(AGH_DIR)}, "plugins", name);
 if (fs.existsSync(target)) throw new Error("Local plugin exists; edit it or choose another name");
 const exclude = new Set(["node_modules", ".git", "dist"]);
 function copy(from, to) {
@@ -128,7 +129,7 @@ export const pluginCreatorTools = [
   defineTool({
     name: 'plugin_install_local',
     description:
-      'Run plugin tests, then copy passing source to the session workspace .agnes/plugins/name. Refuses overwrite.',
+      'Run plugin tests, then copy passing source to the session workspace .agh/plugins/name. Refuses overwrite.',
     parameters: Type.Object(
       { directory: Type.String({ minLength: 1 }), name: Type.String({ pattern: '^[a-z0-9][a-z0-9._-]*$' }) },
       { additionalProperties: false },

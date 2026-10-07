@@ -11,8 +11,8 @@ Use Node.js 24.10 or later and an AGH source installation following [installatio
 Run these commands from the workspace where you will start the daemon. For the source preview, run the scaffolder from the AGH checkout:
 
 ```sh
-mkdir -p .agnes/plugins
-node templates/create-agh-plugin.mjs tool hello-tool .agnes/plugins/hello-tool --local
+mkdir -p .agh/plugins
+node templates/create-agh-plugin.mjs tool hello-tool .agh/plugins/hello-tool --local
 ```
 
 The package exports `./src/index.ts`. AGH transpiles it with jiti and provides the public author SDK imports, including TypeBox. You can also place it in `$AGH_HOME/plugins/hello-tool`; use the same configured home in every terminal. Local folders opt into trusted execution, so put only code you intend to run there.
@@ -47,7 +47,7 @@ Edit `src/index.ts`. Keep `ctx.signal.throwIfAborted()` and pass its signal into
 The running daemon discovers new local folders and watches edits. Ordinary plugin changes activate a new generation without restart. Check `/admin/plugins` for activation errors, or request an immediate reload:
 
 ```sh
-agh dev .agnes/plugins/hello-tool --profile local-dev
+agh dev .agh/plugins/hello-tool --profile local-dev
 agh plugins reload hello-tool --profile local-dev
 ```
 
@@ -59,9 +59,9 @@ To compile a starter or run its author tests, build the preview SDK declarations
 
 ```sh
 nice -n 10 pnpm exec tsc -b packages/plugin-runtime packages/protocol packages/resource-control-runtime
-node templates/link-local.mjs .agnes/plugins/hello-tool
-npm --prefix .agnes/plugins/hello-tool run build
-npm --prefix .agnes/plugins/hello-tool test
+node templates/link-local.mjs .agh/plugins/hello-tool
+npm --prefix .agh/plugins/hello-tool run build
+npm --prefix .agh/plugins/hello-tool test
 ```
 
 The linker is safe to repeat. The model-adapter starter uses public contract fixtures and does not require an `@agnes/ai` build. For a compiled installable package, scaffold without `--local`, build it, then follow [plugin management](../guide/packages.md). For a sidebar use `tool-with-panel`; for an independent agent loop use `loop`.

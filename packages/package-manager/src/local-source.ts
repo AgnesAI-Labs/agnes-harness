@@ -1,5 +1,6 @@
 import { existsSync, lstatSync, readdirSync, writeFileSync } from 'node:fs'
 import { join, relative } from 'node:path'
+import { AGH_DIR } from '@agnes/protocol'
 import { copyPackageTreeSync } from './copy-tree.js'
 import { readStaticJson } from './integrity.js'
 import { hashDirectory, type PackageSource } from './sources.js'
@@ -84,7 +85,7 @@ export function stageLocalPlugin(candidate: LocalPluginCandidate, stage: string)
 }
 
 export function localPluginRoots(home: string, workspace: string): LocalPluginRoots {
-  return { home: join(home, 'plugins'), workspace: join(workspace, '.agnes', 'plugins') }
+  return { home: join(home, 'plugins'), workspace: join(workspace, AGH_DIR, 'plugins') }
 }
 
 /** Sanitized diagnostics deliberately exclude source text, exception messages and absolute paths. */

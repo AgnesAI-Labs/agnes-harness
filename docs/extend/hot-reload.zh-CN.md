@@ -16,7 +16,7 @@ agh plugins reload --profile local-dev
 
 `dev` 检查包，必要时安装，然后信任已检查的版本并启用它。这表示你明确授权执行该本地包。file 来源仍相对于 daemon 启动工作区；CLI 也接受该工作区内的绝对路径。请在同一工作区启动 daemon 和执行命令。身份冲突与检查阻断仍会报错。file 包需要 `package.json`；只有 `plugin.ts` / `plugin.js` 的目录请放到[本地插件目录](local-plugins.zh-CN.md)。
 
-自动重载使用现有的 `<AGNES_HOME>/plugins/<name>` 或 `<workspace>/.agnes/plugins/<name>` watcher。它复制修改后的源码，并调用 daemon 的 generation 发布适配器；手动命令也支持这些自动发现的包。删除源目录会停止未来绑定。重载保留禁用选择；启用禁用包请使用 `dev` 或管理页启用操作。
+自动重载使用现有的 `<AGNES_HOME>/plugins/<name>` 或 `<workspace>/.agh/plugins/<name>` watcher。它复制修改后的源码，并调用 daemon 的 generation 发布适配器；手动命令也支持这些自动发现的包。删除源目录会停止未来绑定。重载保留禁用选择；启用禁用包请使用 `dev` 或管理页启用操作。
 
 ## 会话如何变化
 

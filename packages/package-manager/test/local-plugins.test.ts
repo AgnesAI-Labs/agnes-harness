@@ -45,6 +45,7 @@ function setup() {
 }
 it('discovers both roots, freezes edits, keeps disabled choices and reports broken source', async () => {
   const f = setup()
+  expect(f.localPlugins.workspace).toBe(join(f.root, 'workspace', '.agh', 'plugins'))
   const single = join(f.localPlugins.home, 'hello')
   const pkg = join(f.localPlugins.workspace, 'package-tool')
   mkdirSync(single, { recursive: true })
