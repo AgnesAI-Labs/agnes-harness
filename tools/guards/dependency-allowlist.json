@@ -50,7 +50,7 @@
   "@agnes/history-index": [],
   "@agnes/extension-api": ["@agnes/protocol"],
   "@agnes/core": ["@agnes/protocol", "@agnes/protocol-validation", "@agnes/extension-api"],
-  "@agnes/ai": ["@agnes/protocol", "@agnes/core"],
+  "@agnes/ai": ["@agnes/protocol", "@agnes/core", "@agnes/extension-api"],
   "@agnes/base": [
     "@agnes/protocol",
     "@agnes/protocol-validation",
