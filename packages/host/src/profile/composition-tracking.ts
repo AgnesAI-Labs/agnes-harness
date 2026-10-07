@@ -2,7 +2,11 @@ import type { Host } from '../host.js'
 import { createHostFacade } from '../host-facade.js'
 import { resolvePreset } from '../presets/resolve.js'
 import { resolveComposition } from './composition.js'
-import { createLiveCompositionWriter, type LiveCompositionSession } from './composition-state.js'
+import {
+  CompositionSessionStore,
+  createLiveCompositionWriter,
+  type LiveCompositionSession,
+} from './composition-state.js'
 import type { ResolvedProfile } from './types.js'
 
 /** Keep legacy Hosts' behavior unchanged while exposing the same safe live inspection surface. */
@@ -12,6 +16,7 @@ export async function trackHostComposition(
   profileDir: string,
 ): Promise<Host> {
   const writer = await createLiveCompositionWriter(profileDir)
+  const store = new CompositionSessionStore(profileDir)
   const live = (): readonly LiveCompositionSession[] =>
     [...host.kernel.sessions.values()].map((session) => {
       const tree = resolveComposition(profile, {
@@ -57,6 +62,14 @@ export async function trackHostComposition(
       if (input.bundles?.length) resolveComposition(profile, { sessionBundles: input.bundles })
       const session = await host.createSession(input),
         close = session.close.bind(session)
+      store.pin({
+        sessionKey: session.key,
+        tree: resolveComposition(profile, {
+          preset: resolvePreset(session.preset.name, host.presets, { limits: profile.limits }).doc,
+        }),
+        profile,
+        legacy: true,
+      })
       session.close = async () => {
         try {
           await close()
@@ -71,6 +84,10 @@ export async function trackHostComposition(
       const seq = await host.setSessionPreset(key, name)
       publish()
       return seq
+    },
+    async releaseSessionGeneration(key) {
+      await host.releaseSessionGeneration?.(key)
+      store.release(key)
     },
     close() {
       if (closing) return closing

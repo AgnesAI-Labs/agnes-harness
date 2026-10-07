@@ -94,15 +94,13 @@ export async function createCompositionHost(
     const started = (async () => {
       const pinned = generations.session(binding.sessionKey)
       const skills = compositionSkills(currentSkills, binding.tree.selection, skillOwners)
+      const deployment = {
+        ...binding.profile,
+        provider: modelProfile.provider,
+        adapters: { ...binding.profile.adapters, secrets: modelProfile.adapters.secrets },
+      }
       const host = await createRuntimeGenerationHost(
-        profileForComposition(
-          {
-            ...binding.profile,
-            provider: modelProfile.provider,
-            adapters: { ...binding.profile.adapters, secrets: modelProfile.adapters.secrets },
-          },
-          binding.tree,
-        ),
+        binding.legacy ? deployment : profileForComposition(deployment, binding.tree),
         {
           ...options,
           ...(skills ? { skillResources: skills } : {}),

@@ -10,6 +10,8 @@ export type CompositionBinding = Readonly<{
   sessionKey: string
   tree: ResolvedComposition
   profile: ResolvedProfile
+  /** This session predates a composition container; retain its original deployment hash. */
+  legacy?: true
 }>
 export type LiveCompositionSession = Readonly<{
   sessionKey: string

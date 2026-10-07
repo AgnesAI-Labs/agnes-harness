@@ -318,3 +318,43 @@ it('filters registered MCP identities without confusing slug collisions or long 
   }
   expect(registry.size).toBe(ids.length)
 })
+
+it('retains a legacy session deployment when bundles are configured after its first boot', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'agnes-legacy-composition-'))
+  let host: Awaited<ReturnType<typeof createTestHost>>['host'] | undefined
+  try {
+    host = (
+      await createTestHost({
+        dataDir: root,
+        script: [],
+        packageDirs: { '@agnes/base': fileURLToPath(new URL('../../../base', import.meta.url)) },
+      })
+    ).host
+    const original = await host.createSession({ key: 'before-bundles', cwd: root })
+    const generation = original.pluginGenerationId
+    const loop = original.loop
+    expect(new CompositionSessionStore(join(root, 'profiles', 'local-dev')).read(original.key)?.legacy).toBe(
+      true,
+    )
+    await original.close()
+    await host.close()
+    host = (
+      await createTestHost({
+        dataDir: root,
+        script: [],
+        packageDirs: { '@agnes/base': fileURLToPath(new URL('../../../base', import.meta.url)) },
+        profileInputs: { user: { name: 'local-dev', composition: { tools: ['read'] } } },
+      })
+    ).host
+    const resumed = await host.createSession({ key: 'before-bundles', cwd: root })
+    expect(resumed.pluginGenerationId).toBe(generation)
+    expect(resumed.loop).toEqual(loop)
+    expect(resumed.currentTools().resolve('write')).toBeDefined()
+    await resumed.close()
+    await host.releaseSessionGeneration?.(resumed.key)
+    expect(new CompositionSessionStore(join(root, 'profiles', 'local-dev')).read(resumed.key)).toBeUndefined()
+  } finally {
+    await host?.close()
+    rmSync(root, { recursive: true, force: true })
+  }
+})
