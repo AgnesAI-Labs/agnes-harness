@@ -15,7 +15,7 @@ const walk = (d: string) => {
 }
 walk(src)
 
-// Value imports are limited to the tool-contract helpers and the extension event-name builder.
+// Value imports are limited to tool-contract helpers, event names, provider errors and public default algorithms.
 // Hook registration reuses that builder for source attribution instead of copying its identifier gate.
 // The registry reads the description bound from the contract so its post-sanitize check cannot drift.
 // Everything else remains type-only; new runtime dependencies require an explicit boundary decision.
@@ -27,6 +27,9 @@ const EXT_VALUE_ALLOWED = new Set([
   'checkToolDef',
   'resolveToolCallPolicy',
   'extEventType',
+  'ProviderError', // shared provider admission failures; Core session opening keeps its compatibility alias
+  'createCompactionThreshold', // authority-free default threshold shared with Base
+  'defaultToolPolicy', // authority-free default risk decision shared with Base
   'unavailableProjections', // authority-free default; Host supplies the scoped invocation reader
 ])
 

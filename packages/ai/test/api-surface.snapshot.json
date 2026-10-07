@@ -33,6 +33,7 @@
   "codexAuth",
   "compareDeclaration",
   "createApiKeyProviderAdapters",
+  "createApiKeyProviderConfigs",
   "createProvider",
   "createState",
   "deviationGate",

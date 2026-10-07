@@ -9,7 +9,12 @@ import {
   persistenceSqliteContract,
 } from '@agnes/extension-api/testkit/persistence-contract'
 import { afterAll, describe, expect, it } from 'vitest'
-import { openAdapters, sqlitePersistenceProvider } from '../../src/adapters/index.js'
+import {
+  openAdapters,
+  openConfiguredPersistence,
+  sqlitePersistenceProvider,
+} from '../../src/adapters/index.js'
+import { persistenceProviderRegistry } from '../../src/adapters/storage-provider.js'
 import { readNamedExports } from '../../src/assemble/packages.js'
 import { resolveProfile } from '../../src/profile/resolve.js'
 import type { LockState, ProfileFragment, ResolveEnv } from '../../src/profile/types.js'
@@ -421,6 +426,30 @@ it('runs the default accounting, refine and MCP domains on metadata without SQL'
     expect(reopened.metadata.namespace('@agnes/base', 'refine_queue').get('row:proposal')).toMatchObject({
       status: 'queued',
     })
+  } finally {
+    await reopened.close()
+  }
+})
+
+it('keeps process persistence live after registry teardown until session leases and Host references release', async () => {
+  const dataDir = tempDir()
+  const first = await openConfiguredPersistence({ dataDir })
+  const second = await openConfiguredPersistence({ dataDir })
+  try {
+    await first.open('lease', { writerRunId: 'first', ttlMs: 60_000 })
+    await persistenceProviderRegistry(first)!.dispose()
+    await first.release('lease', 'first')
+    await first.close()
+    await second.open('lease', { writerRunId: 'second', ttlMs: 60_000 })
+    await second.release('lease', 'second')
+  } finally {
+    await first.close()
+    await second.close()
+  }
+  const reopened = await openConfiguredPersistence({ dataDir })
+  try {
+    await reopened.open('lease', { writerRunId: 'reopened', ttlMs: 60_000 })
+    await reopened.release('lease', 'reopened')
   } finally {
     await reopened.close()
   }

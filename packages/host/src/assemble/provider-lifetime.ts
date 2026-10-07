@@ -61,6 +61,10 @@ export class ProviderLifetime {
     this.resources.add(release)
     return release
   }
+  /** Transfer an accepted process resource to its longer-lived reference-counted owner. */
+  disown(dispose: () => Promise<void>): void {
+    this.resources.delete(dispose)
+  }
   async drain(): Promise<void> {
     while (this.pending.size) await Promise.allSettled([...this.pending])
   }

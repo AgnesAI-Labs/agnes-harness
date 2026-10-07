@@ -11,7 +11,6 @@ import {
   DEFAULT_PERSISTENCE_PROVIDER_ID,
   definePersistenceProvider,
   defineProviderKind,
-  PERSISTENCE_EFFECT,
   type PersistenceCapability,
   type PersistenceLeaseClaim,
   type PersistenceProvider,
@@ -295,55 +294,70 @@ class PersistenceProviderRegistry extends ProviderRegistry<PersistenceProvider> 
     const wrapped: PersistenceProvider = {
       ...provider,
       open: (options) =>
-        lifetime.run(async (signal) => {
-          const store = await provider.open({ ...options, signal })
-          const instance = new ProviderLifetime('persistence', provider.id)
-          const close = lifetime.own(() =>
-            instance.close(() => {
-              if (typeof store?.close === 'function') return store.close()
-            }),
-          )
-          const valid =
-            store &&
-            ['open', 'commit', 'renew', 'release', 'scan', 'registers', 'close'].every(
-              (key) => typeof store[key as keyof PersistenceSessionStore] === 'function',
+        lifetime
+          .run(async (signal) => {
+            const store = await provider.open({ ...options, signal })
+            const instance = new ProviderLifetime('persistence', provider.id)
+            const close = lifetime.own(() =>
+              instance.close(() => {
+                if (typeof store?.close === 'function') return store.close()
+              }),
             )
-          if (!valid || signal.aborted) {
-            await close()
-            signal.throwIfAborted()
-            throw new ProviderError('E_PROVIDER_INVALID', 'Persistence provider returned an invalid store', {
-              kind: 'persistence',
-              provider: provider.id,
-              operation: 'open',
+            const valid =
+              store &&
+              ['open', 'commit', 'renew', 'release', 'scan', 'registers', 'close'].every(
+                (key) => typeof store[key as keyof PersistenceSessionStore] === 'function',
+              )
+            if (!valid || signal.aborted) {
+              await close()
+              signal.throwIfAborted()
+              throw new ProviderError(
+                'E_PROVIDER_INVALID',
+                'Persistence provider returned an invalid store',
+                {
+                  kind: 'persistence',
+                  provider: provider.id,
+                  operation: 'open',
+                },
+              )
+            }
+            const asynchronous = new Set<PropertyKey>([
+              'open',
+              'commit',
+              'renew',
+              'release',
+              'scan',
+              'registers',
+              'scanIntegrity',
+              'createChild',
+              'discardNewSession',
+            ])
+            // Preserve optional provider methods and SQLite's extra host ports without inventing them.
+            const view = new Proxy(store, {
+              get(target, key) {
+                if (key === 'close') return close
+                const value: unknown = Reflect.get(target, key, target)
+                if (typeof value !== 'function') return value
+                return (...args: unknown[]) => {
+                  if (owner) lifetime.assertActive()
+                  instance.assertActive()
+                  if (asynchronous.has(key))
+                    return instance.run(
+                      () => Reflect.apply(value, target, args),
+                      owner ? lifetime.signal : undefined,
+                    )
+                  return Reflect.apply(value, target, args)
+                }
+              },
             })
-          }
-          const asynchronous = new Set<PropertyKey>([
-            'open',
-            'commit',
-            'renew',
-            'release',
-            'scan',
-            'registers',
-            'scanIntegrity',
-            'createChild',
-            'discardNewSession',
-          ])
-          // Preserve optional provider methods and SQLite's extra host ports without inventing them.
-          return new Proxy(store, {
-            get(target, key) {
-              if (key === 'close') return close
-              const value: unknown = Reflect.get(target, key, target)
-              if (typeof value !== 'function') return value
-              return (...args: unknown[]) => {
-                lifetime.assertActive()
-                instance.assertActive()
-                if (asynchronous.has(key))
-                  return instance.run(() => Reflect.apply(value, target, args), lifetime.signal)
-                return Reflect.apply(value, target, args)
-              }
-            },
-          })
-        }, options.signal),
+            return { view, close }
+          }, options.signal)
+          .then(({ view, close }) => {
+            // Startup stores outlive ordinary plugin registries. openAdapters' process reference
+            // closes them after sessions release their leases; plugin-opened stores remain fiber-owned.
+            if (!owner) lifetime.disown(close)
+            return view
+          }),
     }
     return super.register(source, wrapped, owner, () => lifetime.close(cleanup))
   }

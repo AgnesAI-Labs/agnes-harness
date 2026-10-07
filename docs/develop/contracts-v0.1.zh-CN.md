@@ -89,7 +89,7 @@ Dispatch 按操作/attempt 触发，不保证跨重试或崩溃全局一次。�
 | `sandbox` | 可异步 `create({workspaceRoot?, options?}, signal?)`，可选实测 `probe`；实例 `exec/capabilities/dispose`、可选 `openProcess`。Host 每调用传 workspace/digest、read/write allow/deny、network mode/hosts、required enforcement，deny 优先。Local 与第三方都使用选定实例；缺 policy/能力/平台/enforcement 时 spawn 前拒绝；结果报告真实 enforcement。Backend id 启动期固定，实例按 workspace/options 复用。Host 将 owner/caller signal 传给 probe/create。同一工作区/options 共享构造；后续等待者取消不会取消现有共享实例。Process `close` 杀进程树并等待退出；PTY/JSON bridge 须明确声明支持。 |
 | `child-agent` | `start(task, options)`、可选 `adopt/list`；handle 的 `events/sendMessage/interrupt/result/dispose`。Follow-up 回执表示已接收，不是已回答。父级 facade 固定 session/cwd/generation，实施 provider/model allowlists、tool deny/allow、credit ceiling；子级 options 只能收窄。空 allowlist 全拒绝；不支持能力则拒绝。父 abort 请求取消；facade/unregister 排空 creating children 与 handles，保留清理失败并幂等。默认 `in-process`，可选 ACP 默认不加载；旧 subagent 操作保留显式 in-process 路径。 |
 
-Provider 创建、实例与调用归注册 owner：先停止准入，再在支持时 abort，join 已准入工作，dispose 实例，最后清理注册资源；释放依赖前 await unregister。Session close 请求取消，生产者排空后才关闭 hooks、ledger、workspace lease；保留/聚合清理失败。取消是协作请求：provider 不结束可能使卸载持续等待。Loop/sandbox/persistence 构造均可异步并接收 signal。Host 在接受结果前拥有资源：取消后迟到或无效结果须 dispose，factory 失败不发布实例，unregister 等待构造完成后 cleanup。进程 persistence 按数据目录/provider 身份共享，首个打开者拥有构造 signal；此构造取消使所有等待者失败并允许重试。后续获取者取消只释放自身引用。不可中断 store I/O 会排空，不会被丢弃。
+创建归准入 owner，实例与调用归 generation/workspace/process owner。已接受启动 store 移交进程引用 owner，普通 registry 卸载不会关闭它；会话释放 lease 且最后一个 Host 关闭后才释放：先停止准入，再在支持时 abort，join 已准入工作，dispose 实例，最后清理注册资源；释放依赖前 await unregister。Session close 请求取消，生产者排空后才关闭 hooks、ledger、workspace lease；保留/聚合清理失败。取消是协作请求：provider 不结束可能使卸载持续等待。Loop/sandbox/persistence 构造均可异步并接收 signal。Host 在接受结果前拥有资源：取消后迟到或无效结果须 dispose，factory 失败不发布实例，unregister 等待构造完成后 cleanup。进程 persistence 按数据目录/provider 身份共享，首个打开者拥有构造 signal；此构造取消使所有等待者失败并允许重试。后续获取者取消只释放自身引用。不可中断 store I/O 会排空，不会被丢弃。
 
 ## 注册、选择与重启 scope
 
@@ -187,6 +187,8 @@ Bundle 父先于子、每次解析只应用一次；循环/未知 id 拒绝；�
 | Loop/provider 注册 | `DEFAULT_LOOP`, `LOOP_EVENTS`, `loopCheckpointCodec`, `loopShouldStop`, `registerLoopPlugin`, `registerToolRuntimePlugin`, `registerToolPolicyPlugin`, `defineProviderKind`, `PROVIDER_LIFECYCLE_SCOPES`, `providerRestartRequired` |
 | 公共默认算法 | `createCompactionThreshold`、`defaultToolPolicy`（experimental，不依赖 Core） |
 | 持久化/sandbox | `DEFAULT_PERSISTENCE_PROVIDER_ID`, `PERSISTENCE_EFFECT`, `PERSISTENCE_SCAN_PAGE_MAX`, `definePersistenceProvider`, `persistenceRegisterKey`, `isPersistenceTombstone`, `LOCAL_SANDBOX_PROVIDER_ID`, `sandboxUnavailable` |
+
+AI 根出口另新增 experimental `createApiKeyProviderConfigs(): Promise<readonly {id: string; routes: ManualRoute[]}[]>`，为公共模型 factory 提供无凭据的官方 catalog 输入；[独立快照](../../packages/ai/test/api-surface.snapshot.json)记录此新增。`createApiKeyProviderAdapters` 继续支持。
 
 以下公开暴露仍需审阅，本次保留而不删除：
 
