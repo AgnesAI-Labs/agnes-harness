@@ -104,6 +104,8 @@ export async function createRuntimeGenerationHost(
         sandboxProvider: profile.sandbox,
         platform: profile.seams.platform,
         provider: profile.provider,
+        composition: profile.composition,
+        bundlePresets: profile.bundlePresets,
         agnesVersion: options.agnesVersion,
         builtinPackages: profile.packages
           .filter((pkg) => pkg.trust === 'builtin')
