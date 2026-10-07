@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto'
+import { resolve as resolvePath } from 'node:path'
 import {
   type PluginGenerationSnapshot,
   RuntimeGenerationSnapshotStore,
@@ -100,6 +101,7 @@ export async function createRuntimeGenerationHost(
         adapters: profile.adapters,
         persistence: profile.persistence,
         sandbox: profile.seams.sandbox,
+        sandboxProvider: profile.sandbox,
         platform: profile.seams.platform,
         provider: profile.provider,
         agnesVersion: options.agnesVersion,
@@ -210,6 +212,10 @@ export async function createRuntimeGenerationHost(
       { ...profile, packages },
       {
         ...generationOptions,
+        onGenerationBasePackages: (ids) => {
+          for (const id of ids) basePackages.add(id)
+          options.onGenerationBasePackages?.(ids)
+        },
         ...(hasSkills ? { skillResources: generationSkills.input } : {}),
         packageDirs,
         runtimePluginSnapshots: snapshot.sources,
@@ -424,11 +430,27 @@ export async function createRuntimeGenerationHost(
       current = await build(snapshot)
     } catch (error) {
       failures.set(snapshot.id, error instanceof Error ? error.message : String(error))
-      failedSnapshots.set(snapshot.id, snapshot)
+      const { resources: _resources, sources: _sources, ...diagnostic } = snapshot
+      failedSnapshots.set(snapshot.id, { ...diagnostic, sources: [] })
+      skillsByGeneration.delete(snapshot.id)
+      rowsByGeneration.delete(snapshot.id)
+      // Failed candidates were never published. Retain only their diagnostic, not resource
+      // bodies, factory closures or executable archives with no session references.
+      try {
+        store.collect(new Set([...live.keys(), ...opening.keys()]))
+      } catch {
+        /* Preserve the activation error. */
+      }
       throw error
     }
     // Publication has committed. Retirement failure belongs to the retired generation, and cannot
     // turn a successful head change into a rejected apply/compensation transaction.
+    const referenced = new Set(store.sessions().map((pin) => pin.generationId))
+    for (const id of failedSnapshots.keys())
+      if (!referenced.has(id)) {
+        failedSnapshots.delete(id)
+        failures.delete(id)
+      }
     try {
       await collect()
     } catch (error) {
@@ -457,7 +479,7 @@ export async function createRuntimeGenerationHost(
           available.find((source) => source.snapshot.packageId === id)?.snapshot.directory ??
           options.packageDirs?.get(id)
         if (!path) throw new Error(`E_PLUGIN_RELOAD_SOURCE_MISSING: register a local directory for ${id}`)
-        const source = readDevelopmentPlugin(path, profile.name)
+        const source = readDevelopmentPlugin(resolvePath(options.workspaceRoot, path), profile.name)
         if (source.snapshot.packageId !== id)
           throw new Error('E_PLUGIN_RELOAD_IDENTITY: local package name differs from the requested id')
         const target = decodeRuntimeTargetArtifact(head.snapshot.artifact)

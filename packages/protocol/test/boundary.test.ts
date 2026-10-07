@@ -260,6 +260,7 @@ describe('protocol src boundary', () => {
                 'PackageInspectParams',
                 'PackageInstallParams',
                 'PackageListParams',
+                'PluginGenerationStatus',
                 'PackageListResult',
                 'SkinReadParams',
                 'ClientModuleReadParams',

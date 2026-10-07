@@ -22,7 +22,7 @@ export async function runPluginDevelopmentCommand(
     throw new UsageError('usage: agh dev <plugin-folder> | agh plugins reload [id]')
   const installed = (await client.packages.list({ profile })).packages
   let selected: { directory: string; previous?: PackageInstalledDescriptor }[]
-  if (dev) selected = [{ directory: resolve(p.positional[0] as string) }]
+  if (dev) selected = [{ directory: resolve(p.cwd ?? process.cwd(), p.positional[0] as string) }]
   else {
     const id = p.positional[1]
     const rows = installed.filter((row) =>

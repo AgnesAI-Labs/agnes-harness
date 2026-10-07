@@ -997,6 +997,10 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
           },
           ...(deps.skillContribution ? { skillContribution: deps.skillContribution } : {}),
           afterApply: () => {
+            const backend = sandboxProviderSlot.registry
+              ?.catalog()
+              .find((entry) => entry.id === profile.sandbox?.provider)
+            if (backend) deps.onGenerationBasePackages?.([backend.sourcePackage])
             if (kernel) kernel.invalidateSeams()
           },
         }

@@ -524,6 +524,7 @@ export type PackageAdminDataName =
   | 'PackageOperationReceipt'
   | 'PackageOperation'
   | 'PackageCatalogPage'
+  | 'PluginGenerationStatus'
   | 'PackageListResult'
   | 'PackageCatalogListParams'
   | 'PackageCatalogGetParams'
@@ -576,6 +577,7 @@ const DATA_SCHEMAS: Record<PackageAdminDataName, TSchema> = {
   PackageOperationReceipt: P.PackageOperationReceipt,
   PackageOperation: P.PackageOperation,
   PackageCatalogPage: P.PackageCatalogPage,
+  PluginGenerationStatus: P.PluginGenerationStatus,
   PackageListResult: P.PackageListResult,
   PackageCatalogListParams: P.PackageCatalogListParams,
   PackageCatalogGetParams: P.PackageCatalogGetParams,

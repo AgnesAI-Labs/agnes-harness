@@ -27,6 +27,7 @@ import {
 } from './runtime-snapshots-resources.js'
 
 export type PluginGenerationSnapshot = Readonly<{
+  version?: 1 | 2
   id: string
   artifact: RuntimeTargetArtifact
   sources: readonly RuntimePluginSnapshot[]
@@ -83,6 +84,7 @@ export class RuntimeGenerationSnapshotStore {
       writeFileSync(
         join(directory, 'generation.json'),
         JSON.stringify({
+          version: resources ? 2 : 1,
           id,
           ownerPid: process.pid,
           artifact: encodeRuntimeTargetArtifact(target),
@@ -113,6 +115,8 @@ export class RuntimeGenerationSnapshotStore {
     }
     if (
       record.id !== id ||
+      (record.version !== undefined && record.version !== 1 && record.version !== 2) ||
+      (record.version === 2 && !/^[a-f0-9]{64}$/.test(record.resourcesDigest ?? '')) ||
       typeof record.compatibility !== 'string' ||
       !Array.isArray(record.sources) ||
       !Array.isArray(record.packages) ||

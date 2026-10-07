@@ -72,6 +72,7 @@ it('keeps old plugin leases across update, close and cold resume, and drains on 
     extensionLoader: {
       async import(file: string) {
         const version = readFileSync(file, 'utf8')
+        if (version === 'broken') throw new Error('fixture activation refused')
         return {
           main: defineAgnesPlugin({
             inject: ['extension'],
@@ -133,6 +134,17 @@ it('keeps old plugin leases across update, close and cold resume, and drains on 
     expect(await execute(a)).toMatchObject({ content: [{ text: '1.0.0' }] })
     expect(await execute(b)).toMatchObject({ content: [{ text: '2.0.0' }] })
     expect(b.pluginGenerationId).not.toBe(firstId)
+    writeFileSync(join(two.snapshot.directory, 'index.js'), 'broken')
+    await expect(required(host.reloadPlugin)('acme/generation')).rejects.toThrow('E_PACKAGE_STATE')
+    const failed = required(host.pluginGenerationStatus?.()).generations.find(
+      (item) => item.state === 'failed',
+    )
+    expect(failed?.boundSessions).toBe(0)
+    expect(required(host.pluginGenerationStatus?.()).currentGenerationId).toBe(b.pluginGenerationId)
+    expect(() =>
+      new RuntimeGenerationSnapshotStore(join(root, 'profiles/local-dev')).read(required(failed).id),
+    ).toThrow('E_GENERATION_SNAPSHOT_MISSING')
+    expect(await execute(b)).toMatchObject({ content: [{ text: '2.0.0' }] })
     await host.applyRuntimeTarget(target())
     const unbound = await host.createSession({ key: 'session-disabled', cwd: root })
     expect(unbound.currentTools().resolve('generation_value')).toBeUndefined()
