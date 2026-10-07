@@ -41,7 +41,7 @@ agh plugins add ./hello-tool.tgz
 ```json
 {
   "agnes": {
-    "plugins": [{ "export": "main" }],
+    "plugins": [{ "apiRange": "^1.4.0", "export": "main" }],
     "capabilities": {
       "network": ["api.example.com", "*.example.org"],
       "filesystem": { "read": ["workspace/reports/*"], "write": ["workspace/output/*"] },
@@ -72,6 +72,10 @@ agh plugins add ./hello-tool.tgz
 这是社区信任模型：能力声明用于审核受信任代码，不构成隔离沙箱。Host 在工具 exec/沙箱启动、网络 fetch、文件访问边界记录未声明使用，不记录命令参数、目标或秘密值。现有沙箱与网络授权仍决定是否执行。直接使用 Node API、插件初始化和注入服务内部的调用不在该观察范围内。
 
 ## 排障
+
+每个 `agnes.plugins` 条目都必须声明经过测试的扩展 API `apiRange`（例如 `^1.4.0`）。新安装和更新会在导入插件代码前拒绝缺失或不兼容的范围，不会根据当前 Host 版本推断范围。
+
+缺少声明的旧安装包仍显示在列表中，带有 `incompatible` 阻断及 `plugin-api-range-required` 引用；不能信任、启用、激活或用作回滚目标。包文件和锁条目保留，支持更新或删除。迁移时，获取兼容的新版本，或在作者源码的每个插件条目中添加经过测试的范围，按需重新构建或打包，然后使用**从新来源更新**（也可以删除后重装）。启用前重新审核完整性和信任声明。不要直接编辑安装缓存或锁文件，否则完整性校验会失败。此前安装的官方助手也需要这样更新；重启或重新构建 AGH 会保留已固定的旧快照。
 
 失败状态携带简短修复建议和文档链接。管理页详情提供“修复指南”，CLI 失败也显示建议。
 

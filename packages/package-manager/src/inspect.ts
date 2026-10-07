@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto'
 import { existsSync } from 'node:fs'
 import { dirname, join } from 'node:path'
-import { API_VERSION, checkManifest, satisfiesApiRange } from '@agnes/extension-api'
+import { API_VERSION, checkManifest, ProviderError, satisfiesApiRange } from '@agnes/extension-api'
 import {
   type PackageCapabilityDiff,
   type PackageContributionSummary,
@@ -186,6 +186,16 @@ export function inspectStaged(input: {
     if (isReservedPluginRowIdError(error))
       throw new PackageError('E_EXT_LOAD', 'plugin row id prefix web: is reserved; choose another id', {
         detail: { reason: 'reserved-row-id', prefix: 'web:' },
+      })
+    if (error instanceof ProviderError)
+      throw new PackageError('E_API_RANGE', `${error.message}. ${error.hint ?? ''}`, {
+        detail: {
+          reason:
+            error.code === 'E_PROVIDER_INVALID'
+              ? 'plugin-api-range-required'
+              : 'plugin-api-range-incompatible',
+          hint: error.hint,
+        },
       })
     invalid('plugins')
   }

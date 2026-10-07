@@ -105,6 +105,17 @@ export function verifyPackageDirectory(
       return { capabilityHash: hash, blockers: [RESERVED_WEB_ROW_BLOCKER] }
     if (error instanceof PackageError && error.detail.reason === 'legacy-extension-format')
       return { capabilityHash: hash, blockers: [LEGACY_EXTENSION_BLOCKER] }
+    if (
+      error instanceof PackageError &&
+      (error.detail.reason === 'plugin-api-range-required' ||
+        error.detail.reason === 'plugin-api-range-incompatible')
+    )
+      return {
+        capabilityHash: hash,
+        blockers: [
+          { code: 'incompatible', references: [String(error.detail.reason), 'docs/guide/packages.md'] },
+        ],
+      }
     throw error
   }
   if (
@@ -149,6 +160,7 @@ function verifiedRollbackTarget(
     if (isReservedRowIdPackageError(error)) return null
     throw error
   }
+  if (verified.blockers.length) return null
   if (
     snapshot.state.trusted !== null &&
     (snapshot.trustDecision?.integrity !== snapshot.integrity ||

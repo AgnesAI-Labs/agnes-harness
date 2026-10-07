@@ -43,7 +43,7 @@ Declare requested access in `package.json`. The same declaration appears for ins
 ```json
 {
   "agnes": {
-    "plugins": [{ "export": "main" }],
+    "plugins": [{ "apiRange": "^1.4.0", "export": "main" }],
     "capabilities": {
       "network": ["api.example.com", "*.example.org"],
       "filesystem": { "read": ["workspace/reports/*"], "write": ["workspace/output/*"] },
@@ -74,6 +74,10 @@ The policy vocabulary is `network:<host>`, `filesystem.read:<scope>`, `filesyste
 This is the community trust model. Declarations help review trusted code; they are not a security sandbox. Host-observed tool exec/sandbox launches, network fetches and filesystem access report undeclared use in plugin logs, without recording command arguments, targets or credential values. Existing sandbox and egress authorization still decide whether an operation runs. Direct Node APIs, plugin initialization and injected service implementations are outside this observation boundary.
 
 ## Troubleshooting
+
+Every `agnes.plugins` entry must declare a tested extension API `apiRange` (for example, `^1.4.0`). New installs and updates refuse missing or incompatible ranges before importing plugin code. No range is inferred from the installed Host version.
+
+Older installed packages without this declaration remain visible with an `incompatible` blocker and the reference `plugin-api-range-required`. They cannot be trusted, enabled, activated, or selected as rollback targets. Their files and lock entries are preserved so they can be updated or removed. To migrate, obtain a compatible release or add a tested range to every plugin entry in the author's source, rebuild or repack as needed, and use **Update from a new source** (or remove and reinstall). Review the new integrity and trust declaration before enabling it. Do not edit the installed cache or lock: that invalidates integrity. Previously installed official helpers also need this update; restarting or rebuilding AGH preserves their pinned snapshots.
 
 Failed plugin states carry a short fix hint and a documentation link. In plugin details, use the **Fix guide** link; CLI failures also print the hint.
 

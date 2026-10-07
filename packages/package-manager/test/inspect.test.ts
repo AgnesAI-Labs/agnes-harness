@@ -54,7 +54,9 @@ function pkg(extra: Record<string, unknown> = {}) {
     version: '1.0.0',
     license: 'MIT',
     exports: './index.ts',
-    agnes: { plugins: [{ export: 'main', id: 'ext:acme/pkg-a/main', runtime: 'in-process' }] },
+    agnes: {
+      plugins: [{ apiRange: '^1.4.0', export: 'main', id: 'ext:acme/pkg-a/main', runtime: 'in-process' }],
+    },
     ...extra,
   })
 }
@@ -107,7 +109,9 @@ it('recognizes the static agnes.plugins declaration without importing plugin cod
   writeFileSync(join(sourceDir, 'index.mjs'), `throw new Error('plugin code must not run during inspect')`)
   pkg({
     exports: './index.mjs',
-    agnes: { plugins: [{ export: 'main', runtime: 'in-process', config: { greeting: 'hello' } }] },
+    agnes: {
+      plugins: [{ apiRange: '^1.4.0', export: 'main', runtime: 'in-process', config: { greeting: 'hello' } }],
+    },
   })
 
   const preview = await manager().inspect(profile, source)
@@ -116,7 +120,7 @@ it('recognizes the static agnes.plugins declaration without importing plugin cod
 })
 
 it('rejects a package that declares both executable loading formats', async () => {
-  pkg({ agnes: { plugins: [{ export: 'main' }], extensions: [] } })
+  pkg({ agnes: { plugins: [{ apiRange: '^1.4.0', export: 'main' }], extensions: [] } })
   await expect(manager().inspect(profile, source)).rejects.toMatchObject({
     detail: { reason: 'legacy-extension-format' },
   })
@@ -126,7 +130,7 @@ it('rejects package-authored web rows with a stable reserved-prefix reason', asy
   writeFileSync(join(sourceDir, 'index.mjs'), 'export default () => ({})\n')
   pkg({
     exports: './index.mjs',
-    agnes: { plugins: [{ export: 'panel', id: 'web:@victim/panel' }] },
+    agnes: { plugins: [{ apiRange: '^1.4.0', export: 'panel', id: 'web:@victim/panel' }] },
   })
   await expect(manager().inspect(profile, source)).rejects.toMatchObject({
     code: 'E_PACKAGE_STATE',
@@ -221,7 +225,7 @@ it('rejects bundled legacy manifests even when the package does not declare plug
 })
 it.each([
   { agnes: { unknown: [] } },
-  { agnes: { kinds: ['invalid'], plugins: [{ export: 'main' }] } },
+  { agnes: { kinds: ['invalid'], plugins: [{ apiRange: '^1.4.0', export: 'main' }] } },
   { agnes: { contributions: [{ kind: 'mystery', id: 'acme/x' }] } },
   {
     agnes: {
@@ -236,6 +240,21 @@ it.each([
 ])('refuses malformed, unknown or escaped static metadata %#', async (extra) => {
   pkg(extra)
   await expect(manager().inspect(profile, source)).rejects.toMatchObject({ code: 'E_PACKAGE_STATE' })
+  clean()
+})
+it.each([
+  [{ export: 'main' }, 'plugin-api-range-required'],
+  [{ export: 'main', apiRange: '^99.0.0' }, 'plugin-api-range-incompatible'],
+])('refuses ordinary plugin %j before install with an actionable API hint', async (plugin, reason) => {
+  pkg({ agnes: { plugins: [plugin] } })
+  const before = lockBytes()
+  const expected = { code: 'E_PACKAGE_BLOCKED', detail: { reason, hint: expect.stringMatching(/range/i) } }
+  await expect(manager().inspect(profile, source)).rejects.toMatchObject(expected)
+  await expect(
+    manager().install(profile, source, { expectedIntegrity: hashDirectory(sourceDir) }),
+  ).rejects.toMatchObject(expected)
+  expect(lockBytes()).toBe(before)
+  expect(existsSync(packageDir(root, 'local-dev', 'acme/pkg-a'))).toBe(false)
   clean()
 })
 it('returns blockers for legacy dynamic-only packages and policy/API incompatibility', async () => {
@@ -266,7 +285,11 @@ it('does not report a plugin config update as an extension capability expansion'
     preview = await m.inspect(profile, source)
   await m.install(profile, source, { expectedIntegrity: preview.integrity })
   expect((await m.inspect(profile, source)).capabilityDiff.added).toEqual([])
-  pkg({ agnes: { plugins: [{ export: 'main', id: 'ext:acme/pkg-a/main', config: { mode: 'next' } }] } })
+  pkg({
+    agnes: {
+      plugins: [{ apiRange: '^1.4.0', export: 'main', id: 'ext:acme/pkg-a/main', config: { mode: 'next' } }],
+    },
+  })
   const next = await m.inspect(profile, source)
   expect(next.capabilityDiff.added).toEqual([])
   expect(next.capabilityDiff.removed).toEqual([])
@@ -430,7 +453,7 @@ it('rejects custom npm identity different from the exact source', async () => {
 })
 
 it('projects declared package kinds through preview and verified installed inventory', async () => {
-  pkg({ agnes: { kinds: ['loop', 'ui'], plugins: [{ export: 'main' }] } })
+  pkg({ agnes: { kinds: ['loop', 'ui'], plugins: [{ apiRange: '^1.4.0', export: 'main' }] } })
   const instance = manager()
   const preview = await instance.inspect(profile, source)
   expect(preview.kinds).toEqual(['loop', 'ui'])

@@ -140,7 +140,7 @@ export function parseAgnesPluginEntries(
         kind: 'plugin',
         provider: packageId,
         operation: 'admit',
-        hint: 'Declare apiRange in every agnes.plugins entry.',
+        hint: 'Declare a tested apiRange in every agnes.plugins entry, then reinstall or update and review trust; see docs/guide/packages.md.',
       })
     if (!satisfiesApiRange(raw.apiRange))
       throw new ProviderError(
