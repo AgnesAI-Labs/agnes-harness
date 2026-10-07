@@ -48,6 +48,7 @@
     "plugins": [
       {
         "export": "main",
+        "apiRange": "^1.4.0",
         "id": "ext:@agnes-fde/ops-runbook/main",
         "inject": [
           "extension",

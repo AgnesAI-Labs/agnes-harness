@@ -52,6 +52,7 @@
     "plugins": [
       {
         "export": "main",
+        "apiRange": "^1.4.0",
         "id": "ext:@agnes-fde/device-inspection/main",
         "inject": [
           "extension",
