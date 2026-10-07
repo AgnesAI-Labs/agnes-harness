@@ -4,11 +4,13 @@ import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { ToolRegistry } from '@agnes/core'
 import { HOOK_EVENTS } from '@agnes/extension-api'
+import { defineTool } from '@agnes/plugin-runtime'
 import { inspectJsonData } from '@agnes/protocol'
 import { Type } from '@sinclair/typebox'
 import { Value } from '@sinclair/typebox/value'
 import { afterEach, expect, it } from 'vitest'
 import { buildExtensionApi } from '../../src/ext-host/api.js'
+import { loadError } from '../../src/ext-host/diagnostics.js'
 import { createExtHost } from '../../src/ext-host/host.js'
 import { createLoader, runtimeForm } from '../../src/ext-host/loader.js'
 
@@ -306,4 +308,61 @@ it('blocks late registration from a real native extension module', async () => {
   } finally {
     await ext.disposeAll()
   }
+})
+
+it.each(['ts', 'js'])(
+  'loads an external %s SDK graph without node_modules and resolves package-owned dependencies',
+  async (ext) => {
+    const f = setup()
+    f.write(
+      'package.json',
+      JSON.stringify({
+        type: 'module',
+        agnes: {
+          hostProvidedExternals: {
+            '@agnes/plugin-runtime': '0.0.0',
+            '@agnes/extension-api': '^1.4.0',
+            '@sinclair/typebox': '~0.34.0',
+          },
+        },
+      }),
+    )
+    f.write(
+      'node_modules/own-dependency/package.json',
+      JSON.stringify({ name: 'own-dependency', main: './index.js' }),
+    )
+    f.write('node_modules/own-dependency/index.js', 'exports.value = 42')
+    const entry = f.write(
+      `index.${ext}`,
+      `
+    import { defineTool } from '@agnes/plugin-runtime'
+    import { Type } from '@sinclair/typebox'
+    import { value } from 'own-dependency'
+    export { defineTool, Type, value }
+  `,
+    )
+    expect(await f.loader.import(entry)).toMatchObject({ defineTool, Type, value: 42 })
+    f.write(
+      'package.json',
+      JSON.stringify({ agnes: { hostProvidedExternals: { '@agnes/extension-api': '^99.0.0' } } }),
+    )
+    await expect(f.loader.import(entry)).rejects.toThrow(/@agnes\/extension-api.*incompatible.*upgrade AGH/)
+  },
+)
+
+it('names missing modules and fixes while withholding arbitrary evaluation errors', async () => {
+  const f = setup()
+  const entry = f.write('index.ts', "import 'missing-dependency'; export default () => {}")
+  await f.loader.import(entry).catch((error) => {
+    expect(loadError(error, 'import').message).toContain('missing-dependency')
+    expect(loadError(error, 'import').message).toContain('bundle/install')
+  })
+  await expect(f.loader.import(entry)).rejects.toThrow(
+    /Missing plugin module "missing-dependency".*bundle\/install/,
+  )
+  f.write(
+    'package.json',
+    JSON.stringify({ agnes: { hostProvidedExternals: { '@agnes/plugin-runtime/host': '*' } } }),
+  )
+  await expect(f.loader.import(entry)).rejects.toThrow(/Host does not provide module.*plugin-runtime\/host/)
 })

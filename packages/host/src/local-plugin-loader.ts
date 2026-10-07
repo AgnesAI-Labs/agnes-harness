@@ -1,6 +1,2 @@
-import * as pluginRuntime from '@agnes/plugin-runtime'
-
-/** Share author helpers with local source graphs outside the Host node_modules tree. */
-export const localPluginVirtualModules = {
-  '@agnes/plugin-runtime': pluginRuntime,
-} as const
+/** The same public namespaces serve local source, installed snapshots and candidate reloads. */
+export { providedExternalModules as localPluginVirtualModules } from '@agnes/plugin-runtime/provided-externals'

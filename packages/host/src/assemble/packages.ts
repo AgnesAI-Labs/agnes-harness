@@ -229,14 +229,29 @@ export async function loadRuntimePackage(
 ): Promise<LoadedRuntimePackage | undefined> {
   let namespace: Readonly<Record<string, unknown>> | undefined
   let entry = ''
+  let moduleFailure: HostError | undefined
   const loaded = await loadPackagePlugins({
     snapshot: source.snapshot,
     generation: source.generation,
     async importModule(snapshot) {
       entry = packageEntry(snapshot.packageId, snapshot.directory)
-      namespace = await loader.import(entry)
+      try {
+        namespace = await loader.import(entry)
+      } catch (error) {
+        if (
+          error instanceof HostError &&
+          ['module-missing', 'external-manifest', 'external-unavailable', 'external-version'].includes(
+            String(error.detail?.reason),
+          )
+        )
+          moduleFailure = error
+        throw error
+      }
       return namespace
     },
+  }).catch((error) => {
+    if (moduleFailure && error?.detail?.reason === 'module-import') throw moduleFailure
+    throw error
   })
   if (!loaded.length) return undefined
   if (!namespace || !entry) throw new Error('runtime plugin loader did not return a module namespace')

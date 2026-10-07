@@ -1,12 +1,22 @@
+import { existsSync, readFileSync } from 'node:fs'
 import { basename, dirname, join } from 'node:path'
-import * as extensionApi from '@agnes/extension-api'
 import * as protocol from '@agnes/protocol'
-import * as typebox from '@sinclair/typebox'
-import * as typeboxValue from '@sinclair/typebox/value'
+import {
+  checkProvidedExternals,
+  missingPluginModule,
+  PluginModuleError,
+} from '@agnes/plugin-runtime/provided-externals'
 import { createJiti } from 'jiti'
 import { HostError } from '../errors.js'
 import { localPluginVirtualModules } from '../local-plugin-loader.js'
 import { resolveEntry } from './manifest.js'
+
+/** Only resolver-produced diagnostics may cross the module-evaluation error boundary. */
+export class PluginImportError extends HostError {
+  constructor(failure: PluginModuleError) {
+    super('E_EXT_LOAD', failure.message, { detail: { reason: failure.reason, module: failure.module } })
+  }
+}
 
 export function runtimeForm(): 'sea' | 'bundled' | 'source' {
   if (process.getBuiltinModule('node:sea').isSea()) return 'sea'
@@ -14,9 +24,9 @@ export function runtimeForm(): 'sea' | 'bundled' | 'source' {
 }
 
 /**
- * Candidate loader: forces the entry through jiti and shares actual host namespaces.
+ * Plugin loader: forces the entry through jiti and shares actual host namespaces.
  * The pinned pnpm patch propagates forceTranspile through JS/TS/CJS graphs and refreshes JSON.
- * This is the production candidate importer; ordinary boot keeps its established importer. jiti's
+ * Installed packages, local sources and candidates use this importer. jiti's
  * unpatched moduleCache option alone does not clear Node's ESM module cache.
  */
 export function createLoader(opts: { cacheDir: string; hostRoot: string; agnesVersion: string }): {
@@ -28,11 +38,8 @@ export function createLoader(opts: { cacheDir: string; hostRoot: string; agnesVe
     moduleCache: false,
     fsCache: join(opts.cacheDir, 'jiti', opts.agnesVersion),
     virtualModules: {
-      '@agnes/extension-api': extensionApi,
       ...localPluginVirtualModules,
       '@agnes/protocol': protocol,
-      '@sinclair/typebox': typebox,
-      '@sinclair/typebox/value': typeboxValue,
     },
     tryNative: false,
     forceTranspile: true,
@@ -44,10 +51,22 @@ export function createLoader(opts: { cacheDir: string; hostRoot: string; agnesVe
     async import(entryFile) {
       const filename = resolveEntry(dirname(entryFile), basename(entryFile))
       try {
+        // Use the nearest package manifest, including extension entries nested inside a package.
+        for (let root = dirname(filename); ; root = dirname(root)) {
+          const manifest = join(root, 'package.json')
+          if (existsSync(manifest)) {
+            const metadata = JSON.parse(readFileSync(manifest, 'utf8'))
+            checkProvidedExternals(metadata.agnes?.hostProvidedExternals)
+            break
+          }
+          if (dirname(root) === root) break
+        }
         const result: unknown = await jiti.import(filename)
         if (result === null || typeof result !== 'object') throw new Error('invalid module namespace')
         return result as Record<string, unknown>
-      } catch {
+      } catch (error) {
+        const failure = error instanceof PluginModuleError ? error : missingPluginModule(error)
+        if (failure) throw new PluginImportError(failure)
         // Extension source and thrown values may contain credentials; never forward them.
         throw new HostError('E_EXT_LOAD', 'extension module evaluation failed')
       }

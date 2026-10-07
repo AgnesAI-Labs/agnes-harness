@@ -1,3 +1,5 @@
+import { PluginImportError } from './loader.js'
+
 export type LoadStage = 'package' | 'manifest' | 'identity' | 'entry' | 'import' | 'export' | 'factory'
 const messages: Record<LoadStage, string> = {
   package: 'invalid bundled extension declaration',
@@ -20,6 +22,7 @@ const codes = new Set([
 ])
 
 export function loadError(error: unknown, stage: LoadStage): { code: string; message: string } {
+  if (error instanceof PluginImportError) return { code: error.code, message: error.message }
   let code = 'E_EXT_LOAD'
   try {
     if (error && typeof error === 'object') {

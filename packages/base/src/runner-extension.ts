@@ -4,7 +4,11 @@ import { dirname, isAbsolute, relative } from 'node:path'
 import type { ExtensionAPI, HookEvent, HookHandler } from '@agnes/extension-api'
 import * as extensionApi from '@agnes/extension-api'
 import * as protocol from '@agnes/protocol'
-import * as typebox from '@sinclair/typebox'
+import {
+  checkProvidedExternals,
+  missingPluginModule,
+  providedExternalModules,
+} from '@agnes/plugin-runtime/provided-externals'
 import { createJiti } from 'jiti/static'
 import { runnerLease } from './runner-context.js'
 
@@ -105,6 +109,8 @@ export async function loadRunnerExtension(
       signal: shutdown.signal,
     }),
   })
+  const metadata = JSON.parse(readFileSync(`${root}/package.json`, 'utf8'))
+  checkProvidedExternals(metadata.agnes?.hostProvidedExternals)
   const jiti = createJiti(`${dirname(data.entry)}/package.json`, {
     moduleCache: false,
     fsCache: false,
@@ -114,12 +120,13 @@ export async function loadRunnerExtension(
     debug: false,
     tsconfigPaths: false,
     virtualModules: {
-      '@agnes/extension-api': extensionApi,
+      ...providedExternalModules,
       '@agnes/protocol': protocol,
-      '@sinclair/typebox': typebox,
     },
   })
-  const imported: unknown = await jiti.import(data.entry)
+  const imported: unknown = await jiti.import(data.entry).catch((error) => {
+    throw missingPluginModule(error) ?? new Error('extension module evaluation failed')
+  })
   if (!record(imported) || typeof imported.default !== 'function')
     throw new Error('invalid extension factory')
   const returned: unknown = imported.default(api)

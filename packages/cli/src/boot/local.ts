@@ -109,10 +109,14 @@ async function defaultPackages(
       deps.home,
       process.getBuiltinModule('node:sea').isSea() ? process.execPath : fileURLToPath(import.meta.url),
     )
+  const extensionLoader = createLoader({
+    cacheDir: profile.cacheDir,
+    hostRoot,
+    agnesVersion: deps.agnesVersion,
+  })
   return {
-    loader: createJitiPackageLoader(
-      createLoader({ cacheDir: profile.cacheDir, hostRoot, agnesVersion: deps.agnesVersion }),
-    ),
+    extensionLoader,
+    loader: createJitiPackageLoader(extensionLoader),
     packageDirs: packageDirs(profile, { dataDir: profile.dataDir, profileDir, lock, hostRoot }),
   }
 }
