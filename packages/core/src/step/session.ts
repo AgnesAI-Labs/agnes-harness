@@ -9,6 +9,7 @@ import type {
 import type {
   Actor,
   ApprovalMode,
+  ContentBlock,
   ExecutionDomain,
   InferenceEvent,
   ModelRecord,
@@ -23,6 +24,8 @@ import type {
 } from '@agnes/protocol'
 import {
   inspectJsonData,
+  MAX_FRAME_BYTES,
+  modelImageInputError,
   UI_HISTORY_DEFAULT_LIMIT,
   UI_OPENING_DEFAULT_MAX_NODES,
   UI_PROJECTION_DEFAULT_MAX_BYTES,
@@ -90,6 +93,7 @@ import type { ContractRef, DeriveOutput, RequestHeaderData } from '../request/de
 import { createEnvelopeCache, type EnvelopeCache } from '../request/envelope-cache.js'
 import { type EnvelopeEpochs, nonceFor, recordHeader } from '../request/envelope-epochs.js'
 import type { RequestBody as MintedRequestBody } from '../request/mint.js'
+import { validateUserMessageImages } from '../request/user-message-images.js'
 import type {
   CurrentRuntimeLookup,
   RuntimePromptPreload,
@@ -940,6 +944,13 @@ export class SessionImpl {
    * anchor and its tool arguments are addressed by.
    */
   enqueue(target: 'next-turn' | 'next-step', msg: EnqueueMsg): Promise<Seq> {
+    let content: ContentBlock[]
+    try {
+      content = structuredClone(msg.content)
+      validateUserMessageImages(content)
+    } catch (error) {
+      return Promise.reject(error)
+    }
     return this.locked(async () => {
       if (msg.budget !== undefined) {
         if (target !== 'next-turn')
@@ -947,11 +958,17 @@ export class SessionImpl {
         if (!Number.isFinite(msg.budget) || msg.budget < 0)
           throw new CoreError('E_ENVELOPE', 'a per-turn budget override must be a finite non-negative number')
       }
+      if (content.some((block) => block.type === 'image')) {
+        const target = resolveModel(this, 'primary')
+        const model = this.d.provider.models().find((m) => m.route === target.route && m.id === target.model)
+        const error = modelImageInputError(model, [{ content }])
+        if (error) throw new CoreError('E_ENVELOPE', error)
+      }
       const cur = (this.latest('inbox') as Inbox | undefined) ?? { items: [] }
       const item: InboxItem = {
         itemId: this.d.ids.requestId(),
         target,
-        content: msg.content,
+        content,
         actor: msg.actor,
         enqueuedAt: new Date(this.d.clock()).toISOString(),
         ...(msg.commandId ? { commandId: msg.commandId } : {}),
@@ -960,8 +977,14 @@ export class SessionImpl {
         ...(msg.titleLocale ? { titleLocale: msg.titleLocale } : {}),
         trust: msg.trust ?? 'trusted',
       }
+      const nextInbox = inboxEvent(this.lane, this.d.actor, { items: [...cur.items, item] })
+      if (encoder.encode(JSON.stringify(nextInbox)).byteLength > MAX_FRAME_BYTES - 4096)
+        throw new CoreError(
+          'E_ENVELOPE',
+          'Queued inputs are too large. Wait for a pending message to finish or remove one before sending more attachments.',
+        )
       const r = await this.d.log.append([
-        inboxEvent(this.lane, this.d.actor, { items: [...cur.items, item] }),
+        nextInbox,
         ...(msg.budget !== undefined
           ? [
               budgetOverrideEvent(INBOX_BUDGET_EVENT, this.d.actor, {
@@ -972,6 +995,22 @@ export class SessionImpl {
           : []),
       ])
       return r.firstSeq
+    })
+  }
+
+  /** Remove only unclaimed next-turn input under the same lock as enqueue and acceptInput. */
+  removeQueuedInput(itemId: string, by: Actor, admissionId: string): Promise<Seq> {
+    return this.locked(async () => {
+      const inbox = (this.latest('inbox') as Inbox | undefined) ?? { items: [] }
+      if (!inbox.items.some((item) => item.itemId === itemId && item.target === 'next-turn'))
+        throw new CoreError('E_RELATION', 'queued input is no longer pending', { itemId })
+      const written = await this.d.log.append([
+        inboxEvent(this.lane, this.d.actor, {
+          items: inbox.items.filter((item) => item.itemId !== itemId),
+        }),
+        this.ev('x/core/queued-input-removed', { itemId, admissionId, by }, { ignorable: true }),
+      ])
+      return written.firstSeq
     })
   }
 
@@ -1829,6 +1868,7 @@ export class SessionImpl {
       parentEffectId?: string
       nestedLease?: NestedToolLease
       onPark?: (event: EventInput) => void
+      onAttachmentRead?: () => void
     },
   ): Promise<ToolResult> {
     return invokeTool(this, name, args, o)

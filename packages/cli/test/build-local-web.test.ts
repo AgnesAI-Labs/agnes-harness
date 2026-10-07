@@ -18,6 +18,17 @@ it('builds local web assets with the shared platform vendor modules', async () =
     )
     const html = await readFile(join(output, 'index.html'), 'utf8')
     const antdVendor = await readFile(join(output, 'vendor', 'antd.js'), 'utf8')
+    // antd 产物不自包含是正常情况：另一个 vendor 入口（比如 assistant-ui）只要也引用 antd，esbuild 就会把
+    // 共享代码提成 chunk，antd.js 只剩再导出的壳，连带 react-is 的版权声明一起搬进 chunk。所以顺着 chunk 找。
+    const antdVendorChunks = [...antdVendor.matchAll(/(?:from\s+)?["'](\.\/chunk-[\w-]+\.js)["']/g)].map(
+      (match) => match[1],
+    )
+    const antdVendorSources = [
+      antdVendor,
+      ...(await Promise.all(
+        antdVendorChunks.map((chunk) => readFile(join(output, 'vendor', chunk ?? ''), 'utf8')),
+      )),
+    ]
     const markdownVendor = await readFile(join(output, 'vendor', 'assistant-ui.js'), 'utf8')
     const markdownLicense = await readFile(
       join(output, 'THIRD-PARTY-NOTICES/ant-design-x-markdown.txt'),
@@ -28,7 +39,8 @@ it('builds local web assets with the shared platform vendor modules', async () =
     expect(chunkSources.some((source) => /from\s+["']antd["']/.test(source))).toBe(true)
     expect(app).toMatch(/from\s+["']@agnes\/web-ui\/assistant-ui["']/)
     expect(html).toContain('"react": "/vendor/react.js"')
-    expect(antdVendor.includes('Copyright (c) Meta Platforms, Inc. and affiliates.')).toBe(true)
+    const reactIsNotice = 'Copyright (c) Meta Platforms, Inc. and affiliates.'
+    expect(antdVendorSources.some((source) => source.includes(reactIsNotice))).toBe(true)
     expect(markdownVendor).toContain('x-markdown')
     expect(markdownVendor).not.toContain('Dynamic require of "react" is not supported')
 

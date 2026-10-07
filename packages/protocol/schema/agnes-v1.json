@@ -240,6 +240,9 @@
         "generation": { "type": "integer", "minimum": 1 }
       }
     },
+    "SessionRemoveQueuedParams": {
+      "$ref": "#/$defs/SessionSendNowParams"
+    },
     "SessionSteerResult": {
       "type": "object",
       "additionalProperties": false,
@@ -331,6 +334,11 @@
                   "reasoning": {
                     "type": "boolean"
                   },
+                  "input": {
+                    "type": "array",
+                    "items": { "enum": ["text", "image"] }
+                  },
+                  "inputLimits": { "$ref": "model.json#/$defs/ModelInputLimits" },
                   "thinkingLevelMap": {
                     "type": "object",
                     "additionalProperties": {
@@ -399,7 +407,7 @@
           "maxLength": 128
         },
         "kind": {
-          "enum": ["steer", "followUp", "sendNow", "compact", "fork", "jobs.enqueue"]
+          "enum": ["steer", "followUp", "sendNow", "removeQueued", "compact", "fork", "jobs.enqueue"]
         },
         "generation": {
           "type": "integer",
@@ -1756,7 +1764,7 @@
         "maxBytes": {
           "type": "integer",
           "minimum": 16384,
-          "maximum": 1048576,
+          "maximum": 150990848,
           "default": 262144
         }
       }
@@ -1787,7 +1795,7 @@
         "maxBytes": {
           "type": "integer",
           "minimum": 16384,
-          "maximum": 1048576,
+          "maximum": 150990848,
           "default": 262144
         }
       }

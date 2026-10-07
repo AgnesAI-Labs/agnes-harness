@@ -4420,8 +4420,8 @@ export const RuntimeMethodSchemaRefs = freeze({
     "enqueueClientJob": {
       "input": {
         "typeId": "agh.jobs/enqueueClientJob.request@1",
-        "revision": 1,
-        "digest": "e372f65483beec5eb6f4876ee2ad1c61f29e5667e24635767c40f054e528757c"
+        "revision": 2,
+        "digest": "69606d358d263119e9b179052772f9c88b8ef56da3c42ba4f46458a69cf53dd2"
       },
       "output": {
         "typeId": "agh.jobs/enqueueClientJob.response@1",
@@ -5897,8 +5897,8 @@ export const RuntimeMethodSchemaRefs = freeze({
       },
       "output": {
         "typeId": "agh.projection/openConversation.response@1",
-        "revision": 6,
-        "digest": "c4ea7e82066489f0ecbedf2459149b5102134bac8408ea023510a6b61a628b25"
+        "revision": 7,
+        "digest": "7d9594733e9e2fbc908f88e1334ed359920a56cb3c5350bdad4c22b72c1c687d"
       }
     },
     "conversationHistory": {
@@ -5909,8 +5909,8 @@ export const RuntimeMethodSchemaRefs = freeze({
       },
       "output": {
         "typeId": "agh.projection/conversationHistory.response@1",
-        "revision": 6,
-        "digest": "c4ea7e82066489f0ecbedf2459149b5102134bac8408ea023510a6b61a628b25"
+        "revision": 7,
+        "digest": "7d9594733e9e2fbc908f88e1334ed359920a56cb3c5350bdad4c22b72c1c687d"
       }
     },
     "acceptCommand": {
@@ -6103,15 +6103,15 @@ export const RuntimeMethodSchemaRefs = freeze({
       },
       "output": {
         "typeId": "agh.transport/clientQuery.response@1",
-        "revision": 7,
-        "digest": "5ac38e55652e82b2d4b45843ba8fe096c504fd55664267b190ab00660b40b203"
+        "revision": 8,
+        "digest": "aeaaf6c4761648a316703c46ba08e995d882ae396cd5fdd275d2ad0547d3981d"
       }
     },
     "clientCommand": {
       "input": {
         "typeId": "agh.transport/clientCommand.request@1",
-        "revision": 3,
-        "digest": "feb2a687ef2d34a559178f78f55e82e7f55ffc0edc3d61cab38da093dc2222ab"
+        "revision": 4,
+        "digest": "1bde9a583e31012c2052a1b78e6920eaf8f0cf6d972aeac27cee0207082dc2c4"
       },
       "output": {
         "typeId": "agh.transport/clientCommand.response@1",
@@ -6139,8 +6139,8 @@ export const RuntimeMethodSchemaRefs = freeze({
       },
       "output": {
         "typeId": "agh.transport/subscribe.response@1",
-        "revision": 6,
-        "digest": "1f9922dbc5795d61a847f9e721167fd9304a13d92baadddc953bfefd67957d01"
+        "revision": 7,
+        "digest": "c62e57e40b10e54da2d40e91b2d31fc9bfa0ee624a860a55daefb4f160ab35c4"
       }
     },
     "readSubscription": {
@@ -6151,8 +6151,8 @@ export const RuntimeMethodSchemaRefs = freeze({
       },
       "output": {
         "typeId": "agh.transport/readSubscription.response@1",
-        "revision": 6,
-        "digest": "a1488e6d0d417fa85f02df235b1b6b705f01785c2cf9f7e388f767fbc7bd751a"
+        "revision": 7,
+        "digest": "3a775c2561fcf176981001c4c3688c81f8cb2357d7e52a6ba3bb4a1fbfb3a4b4"
       }
     },
     "closeSubscription": {

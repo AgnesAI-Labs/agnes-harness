@@ -14,7 +14,7 @@ it.each([false, true])('discovers optional pinned helper even with broken exampl
   if (broken) mkdirSync(join(root, 'examples', 'packages'), { recursive: true })
   const catalog = await discoverLocalExamples(root)
   const result = await catalog.read({ offline: true })
-  expect(result.entries).toHaveLength(3)
+  expect(result.entries).toHaveLength(4)
   expect(result.entries[0]).toMatchObject({
     id: '@agnes/skill-helper',
     version: '0.1.1',
@@ -25,6 +25,11 @@ it.each([false, true])('discovers optional pinned helper even with broken exampl
     id: '@agnes/mcp-helper',
     version: '0.1.0',
     source: { ref: 'file:./bundled-plugins/mcp-helper' },
+  })
+  expect(result.entries[3]).toMatchObject({
+    id: '@agnes/document-reader',
+    version: '0.1.2',
+    source: { ref: 'file:./bundled-plugins/document-reader' },
   })
   expect(JSON.stringify(result.entries)).not.toContain('github.com')
   expect(result.sources.find((source) => source.sourceId === 'builtin-plugins')?.status).toBe('cached')

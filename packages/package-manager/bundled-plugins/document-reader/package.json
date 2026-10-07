@@ -1,0 +1,36 @@
+{
+  "name": "@agnes/document-reader",
+  "version": "0.1.2",
+  "description": "Offline, session-scoped PDF, Word, OCR and ZIP attachment reader",
+  "type": "module",
+  "license": "Apache-2.0",
+  "exports": "./index.mjs",
+  "files": [
+    "index.mjs",
+    "src",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=24.10"
+  },
+  "agnes": {
+    "plugins": [
+      {
+        "export": "documentReader",
+        "id": "ext:document-reader/main",
+        "inject": [
+          "extension"
+        ]
+      }
+    ]
+  },
+  "devDependencies": {
+    "@hyzyla/pdfium": "2.1.13",
+    "@tesseract.js-data/chi_sim": "1.0.0",
+    "@tesseract.js-data/eng": "1.0.0",
+    "tesseract-wasm": "0.11.0",
+    "word-extractor": "1.0.4",
+    "yauzl": "3.4.0"
+  }
+}

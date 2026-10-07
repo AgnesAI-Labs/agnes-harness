@@ -41,7 +41,8 @@ describe('runtime target artifact wire contract', () => {
     )
     expect(validateRuntimeTargetArtifact(maximum)).toEqual({ ok: true, value: maximum })
     expect(validateRuntimeStaleFrame(frame)).toEqual({ ok: true, value: frame })
-    expect(Buffer.byteLength(JSON.stringify(frame), 'utf8')).toBe(MAX_FRAME_BYTES - 3)
+    expect(Buffer.byteLength(JSON.stringify(frame), 'utf8')).toBe(16 * 1024 * 1024 - 3)
+    expect(Buffer.byteLength(JSON.stringify(frame), 'utf8')).toBeLessThan(MAX_FRAME_BYTES)
 
     const oversized = {
       ...maximum,
@@ -49,7 +50,7 @@ describe('runtime target artifact wire contract', () => {
     }
     expect(validateRuntimeTargetArtifact(oversized).ok).toBe(false)
     expect(Buffer.byteLength(JSON.stringify({ type: 'runtime.stale', artifact: oversized }), 'utf8')).toBe(
-      MAX_FRAME_BYTES + 1,
+      16 * 1024 * 1024 + 1,
     )
   })
 

@@ -2,14 +2,15 @@ import { createHash, timingSafeEqual } from 'node:crypto'
 import { createServer as createHttpServer, type IncomingMessage, STATUS_CODES } from 'node:http'
 import { createServer } from 'node:https'
 import type { AddressInfo, Socket } from 'node:net'
+import { MAX_FRAME_BYTES } from '@agnes/protocol'
 import { type WebSocket, WebSocketServer } from 'ws'
 import type { RpcEndpoint } from '../local/endpoint.js'
 import type { JsonRpcMessage } from '../rpc.js'
 import { type RuntimeClientPorts, runtimeClientRoutes } from '../runtime/transport.js'
 
-export const WS_MAX_MESSAGE_BYTES = 2 * 1024 * 1024
+export const WS_MAX_MESSAGE_BYTES = MAX_FRAME_BYTES
 const MAX_PENDING = 1_000
-const MAX_BUFFERED_BYTES = 8 * 1024 * 1024
+const MAX_BUFFERED_BYTES = MAX_FRAME_BYTES
 
 function authorized(header: string | undefined, token: string): boolean {
   const given = header?.startsWith('Bearer ') ? header.slice(7) : ''
@@ -42,6 +43,7 @@ function target(addr: string): { host: string; port: number } {
 
 function bind(socket: WebSocket, endpoint: RpcEndpoint, onClose: () => void): void {
   let pending = 0
+  let pendingBytes = 0
   let stopped = false
   const stop = (code = 1008) => {
     if (stopped) return
@@ -50,8 +52,10 @@ function bind(socket: WebSocket, endpoint: RpcEndpoint, onClose: () => void): vo
     void endpoint.close().catch(() => undefined)
   }
   const send = (message: JsonRpcMessage) => {
-    if (stopped || socket.bufferedAmount > MAX_BUFFERED_BYTES) return stop(1013)
-    socket.send(JSON.stringify(message), (error) => {
+    if (stopped) return
+    const text = JSON.stringify(message)
+    if (socket.bufferedAmount + Buffer.byteLength(text, 'utf8') > MAX_BUFFERED_BYTES) return stop(1013)
+    socket.send(text, (error) => {
       if (error) stop(1011)
     })
   }
@@ -59,6 +63,7 @@ function bind(socket: WebSocket, endpoint: RpcEndpoint, onClose: () => void): vo
     const bytes = Buffer.isBuffer(data) ? data : Array.isArray(data) ? Buffer.concat(data) : Buffer.from(data)
     if (binary || bytes.length > WS_MAX_MESSAGE_BYTES || pending >= MAX_PENDING)
       return stop(binary ? 1003 : 1009)
+    if (pendingBytes + bytes.length > MAX_BUFFERED_BYTES) return stop(1013)
     let message: JsonRpcMessage
     try {
       message = JSON.parse(bytes.toString()) as JsonRpcMessage
@@ -66,13 +71,17 @@ function bind(socket: WebSocket, endpoint: RpcEndpoint, onClose: () => void): vo
       return stop(1007)
     }
     pending++
+    pendingBytes += bytes.length
     void endpoint
       .handle(message)
       .then((reply) => {
         if (reply) send(reply)
       })
       .catch(() => stop(1011))
-      .finally(() => pending--)
+      .finally(() => {
+        pending--
+        pendingBytes -= bytes.length
+      })
   })
   socket.once('close', () => {
     stopped = true

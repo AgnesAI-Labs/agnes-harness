@@ -31,6 +31,7 @@ import {
   resolveModel,
   surfaceToolCalls,
 } from './inference.js'
+import { resolvedModelRecord } from './model-tools.js'
 import { type OpStateObj, type OpStatePhase, withPhase } from './op-state.js'
 import type { CompactionPort, SessionImpl, StepOutcome } from './session.js'
 
@@ -339,6 +340,10 @@ function summaryRequest(
     : segment.instruction
   let derived = deriveRequest({
     kind: 'summary',
+    inlineImages: {
+      model: resolvedModelRecord(s.d.provider, target),
+      canRead: false,
+    },
     merged: { tools: [], sections: [], runtimeContext: {}, conflicts: [] },
     harnessEntries: [],
     surface: segment.nodes,

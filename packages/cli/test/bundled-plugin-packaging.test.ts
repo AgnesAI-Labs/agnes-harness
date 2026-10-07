@@ -15,6 +15,7 @@ it.each([
   { name: 'skill-helper', exportName: 'skillHelper', tools: 4 },
   { name: 'mcp-helper', exportName: 'mcpHelper', tools: 1 },
   { name: 'plugin-helper', exportName: 'pluginHelper', tools: 3 },
+  { name: 'document-reader', exportName: 'documentReader', tools: 1 },
 ])('ships and relocates $name outside source workspace', async (helper) => {
   const root = await mkdtemp(join(tmpdir(), 'agnes-helper-delivery-'))
   roots.push(root)
@@ -23,12 +24,26 @@ it.each([
   expect((await readdir(join(output, 'bundled-plugins', helper.name))).sort()).toEqual(
     ['LICENSE', 'README.md', 'index.mjs', 'package.json', 'src'].sort(),
   )
+  if (helper.name === 'document-reader') {
+    const notices = await readdir(
+      join(output, 'bundled-plugins', helper.name, 'src/runtime/THIRD-PARTY-NOTICES'),
+    )
+    expect(notices).toEqual(
+      expect.arrayContaining([
+        'saxes.txt',
+        'pdfium-third-party.txt',
+        'tesseract.txt',
+        'leptonica.txt',
+        'tessdata-Apache-2.0.txt',
+      ]),
+    )
+  }
   const resolver = fileURLToPath(
     new URL('../../package-manager/src/bundled-plugin-source.ts', import.meta.url),
   )
   await build({
     stdin: {
-      contents: `import { bundledPluginSourceRoot, BUNDLED_HELPERS } from ${JSON.stringify(resolver)}; import { readFileSync } from 'node:fs'; import { join } from 'node:path'; import { pathToFileURL } from 'node:url'; const tools = []; (await import(pathToFileURL(join(bundledPluginSourceRoot(BUNDLED_HELPERS.find(h=>h.name===${JSON.stringify(helper.name)}).ref), 'bundled-plugins/'+${JSON.stringify(helper.name)}+'/index.mjs')).href))[${JSON.stringify(helper.exportName)}].apply({extension:()=>({registerTool: tool => tools.push(tool.name)})}); if (tools.length !== ${helper.tools}) throw new Error('Missing tools'); console.log(JSON.parse(readFileSync(join(bundledPluginSourceRoot(BUNDLED_HELPERS.find(h=>h.name===${JSON.stringify(helper.name)}).ref), 'bundled-plugins/'+${JSON.stringify(helper.name)}+'/package.json'), 'utf8')).name)`,
+      contents: `import { bundledPluginSourceRoot, BUNDLED_HELPERS } from ${JSON.stringify(resolver)}; import { readFileSync } from 'node:fs'; import { join } from 'node:path'; import { pathToFileURL } from 'node:url'; const tools = []; (await import(pathToFileURL(join(bundledPluginSourceRoot(BUNDLED_HELPERS.find(h=>h.name===${JSON.stringify(helper.name)}).ref), 'bundled-plugins/'+${JSON.stringify(helper.name)}+'/index.mjs')).href))[${JSON.stringify(helper.exportName)}].apply({effect: factory => factory(), extension:()=>({registerTool: tool => tools.push(tool.name)})}); if (tools.length !== ${helper.tools}) throw new Error('Missing tools'); console.log(JSON.parse(readFileSync(join(bundledPluginSourceRoot(BUNDLED_HELPERS.find(h=>h.name===${JSON.stringify(helper.name)}).ref), 'bundled-plugins/'+${JSON.stringify(helper.name)}+'/package.json'), 'utf8')).name)`,
       resolveDir: root,
     },
     outfile: join(output, 'probe.mjs'),

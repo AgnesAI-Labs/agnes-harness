@@ -241,7 +241,12 @@ describe('diagnostics.events', () => {
     await session.append([
       session.ev('user/message', text('two')),
       session.ev('user/message', text('three')),
-      session.ev('user/message', { content: [{ type: 'image', data: 'AAAA', mimeType: 'image/png' }] }),
+      session.ev('user/message', {
+        content: [
+          { type: 'image', data: 'AAAA', mimeType: 'image/png' },
+          { type: 'file', name: 'private.txt', mimeType: 'text/plain', data: 'cHJpdmF0ZSBjb250ZW50' },
+        ],
+      }),
     ])
     const ledger = (await session.scan({ fromSeq: 1, limit: 500 })) as readonly EventEnvelope[]
     expect(ledger.filter((row) => row.type === 'assistant/output')).toHaveLength(1)
@@ -258,9 +263,13 @@ describe('diagnostics.events', () => {
     expect(events.some((event) => event.type === 'assistant/output')).toBe(true)
     const image = events.at(-1)
     expect(image?.data).toEqual({
-      content: [{ type: 'image', data: '[OMITTED:image:base64]', mimeType: 'image/png' }],
+      content: [
+        { type: 'image', data: '[OMITTED:image:base64]', mimeType: 'image/png' },
+        { type: 'file', name: 'private.txt', mimeType: 'text/plain', data: '[OMITTED:file:base64]' },
+      ],
     })
     expect(JSON.stringify(events)).not.toContain('AAAA')
+    expect(JSON.stringify(events)).not.toContain('cHJpdmF0ZSBjb250ZW50')
     // The end is decided by lastSeq, not by row count: a full page that reaches lastSeq is the last.
     const last = await call<DiagnosticsEventsResult>(ep, '_agnes/v1/diagnostics.events', {
       sessionId,

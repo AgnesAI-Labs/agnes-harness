@@ -9,11 +9,13 @@ export {
 } from './approval.js'
 export {
   Composer,
+  type ComposerAttachmentBlock,
   type ComposerDependencies,
   type ComposerHandle,
   type ComposerRegionOptions,
   type ComposerSlots,
   type ComposerView,
+  downscaleImageFile,
   type ModelPickerOption,
   type ModelPickerState,
   type PermissionMode,

@@ -1,4 +1,5 @@
 import type { ResolvedProfile } from '@agnes/host'
+import { MAX_FRAME_BYTES } from '@agnes/protocol'
 import { daemonSocketPaths } from './supervisor/socket-paths.js'
 
 export type DaemonLimits = {
@@ -19,7 +20,7 @@ export const DEFAULT_LIMITS: DaemonLimits = {
   workerIdleEvictMs: 600_000,
   workerStartupMs: 30_000,
   subscribeBufferEvents: 1000,
-  subscribeBufferBytes: 8 * 1024 * 1024,
+  subscribeBufferBytes: MAX_FRAME_BYTES,
   jobsTickMs: 1000,
   jobsLockMs: 60_000,
   jobsMaxStalled: 5,

@@ -27,6 +27,8 @@ function contentBlock(block: ContentBlock): string {
       return escapeHtml(block.text)
     case 'image':
       return `<span class="attachment">[image: ${escapeHtml(block.mimeType)}]</span>`
+    case 'file':
+      return `<span class="attachment">[file: ${escapeHtml(block.name)} · ${escapeHtml(block.mimeType)}]</span>`
     case 'resource_link': {
       const label = block.name ? `${block.name}: ` : ''
       return `<span class="attachment">[resource: ${escapeHtml(label + block.uri)}]</span>`

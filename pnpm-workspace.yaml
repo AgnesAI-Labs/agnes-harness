@@ -1,5 +1,6 @@
 packages:
   - packages/*
+  - packages/package-manager/bundled-plugins/document-reader
   - examples/packages/cordis-greeting
   - examples/runtime-reference
   - tools/*

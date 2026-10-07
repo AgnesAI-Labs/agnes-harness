@@ -33,6 +33,8 @@ const AGNES_AI_MODELS: Model<Api>[] = CHAT_MODELS.map(
       api: 'openai-completions',
       baseUrl: AGNES_AI_BASE_URL,
       input: image ? ['text', 'image'] : ['text'],
+      // Agnes counts images across the complete request, including history and tool results.
+      ...(image ? { inputLimits: { images: { maxPerRequest: 4 } } } : {}),
       contextWindow: 200000,
       maxTokens: 65536,
       compat: { maxTokensField: 'max_tokens' },

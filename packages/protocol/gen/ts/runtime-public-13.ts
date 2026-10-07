@@ -97,6 +97,8 @@ export const RuntimePublic13 = Type.Module({
   "MemoryItem": Type.Object({ "ref": Type.Ref('DomainObjectRef'), "contentRef": Type.Ref('DataRef'), "sourceRefs": Type.Array(Type.Ref('PublicRef'), { maxItems: 10000 }), "provenance": Type.Ref('Provenance'), "trust": Type.Union([Type.Literal('system'), Type.Literal('user'), Type.Literal('external'), Type.Literal('derived')]), "labels": Type.Array(Type.String(), { maxItems: 10000 }), "ownerPrincipalRef": Type.Ref('Id'), "expiresAt": Type.Union([Type.Ref('Timestamp'), Type.Null()]), "status": Type.Union([Type.Literal('active'), Type.Literal('deleted')]) }, { additionalProperties: false }),
   "DeletionReceipt": Type.Object({ "deletionId": Type.Ref('Id'), "authorityId": Type.Ref('Id'), "watermark": Type.Ref('UInt53'), "invalidatedRefs": Type.Array(Type.Ref('PublicRef'), { maxItems: 10000 }) }, { additionalProperties: false }),
   "RetrievalHit": Type.Object({ "ref": Type.Ref('PublicRef'), "score": Type.Number(), "source": Type.Ref('Provenance'), "trust": Type.Union([Type.Literal('system'), Type.Literal('user'), Type.Literal('external'), Type.Literal('derived')]) }, { additionalProperties: false }),
+  "ResourcesRegisterResult": Type.Object({ "revision": Type.Ref('Revision') }, { additionalProperties: false }),
+  "ResourcesRemoveRequest": Type.Object({ "id": Type.Ref('Id'), "expectedRevision": Type.Ref('Revision') }, { additionalProperties: false }),
   "ResourcesRemoveResult": Type.Object({ "revision": Type.Ref('Revision') }, { additionalProperties: false }),
   "ResourcesRetainRequest": Type.Object({ "resource": Type.Ref('PublicRef'), "purpose": Type.Union([Type.Literal('continuation'), Type.Literal('artifact'), Type.Literal('job'), Type.Literal('history')]) }, { additionalProperties: false }),
   "ResourcesReleaseRequest": Type.Object({ "retention": Type.Ref('RetentionRef'), "reason": Type.String() }, { additionalProperties: false }),
@@ -378,6 +380,10 @@ export const DeletionReceipt = RuntimePublic13.Import('DeletionReceipt')
 export type DeletionReceipt = Static<typeof DeletionReceipt>
 export const RetrievalHit = RuntimePublic13.Import('RetrievalHit')
 export type RetrievalHit = Static<typeof RetrievalHit>
+export const ResourcesRegisterResult = RuntimePublic13.Import('ResourcesRegisterResult')
+export type ResourcesRegisterResult = Static<typeof ResourcesRegisterResult>
+export const ResourcesRemoveRequest = RuntimePublic13.Import('ResourcesRemoveRequest')
+export type ResourcesRemoveRequest = Static<typeof ResourcesRemoveRequest>
 export const ResourcesRemoveResult = RuntimePublic13.Import('ResourcesRemoveResult')
 export type ResourcesRemoveResult = Static<typeof ResourcesRemoveResult>
 export const ResourcesRetainRequest = RuntimePublic13.Import('ResourcesRetainRequest')

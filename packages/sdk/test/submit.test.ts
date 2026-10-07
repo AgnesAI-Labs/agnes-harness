@@ -54,40 +54,47 @@ it('owns input before yielding and persists the exact pending command before wir
     commandId: 'cid:s:1',
   })
 })
-it('retains pending on overload and replays the same command then clears it', async () => {
-  let fail = true
-  const s = await setup(() => {
-    if (fail) throw Object.assign(new Error('OVERLOADED'), { code: -32001, data: { code: 'OVERLOADED' } })
-    return { seq: 9, replayed: true }
-  })
-  await expect(s.session.followUp('later')).rejects.toMatchObject({ code: -32001 })
-  expect(await s.journal.pending('s')).toHaveLength(1)
-  fail = false
-  await s.client.resendPending('s')
-  const calls = s.f.calls.filter((c) => c.method === '_agnes/v1/submit')
-  expect(calls).toHaveLength(2)
-  expect(calls[1]?.params).toEqual(calls[0]?.params)
-  expect(await s.journal.pending('s')).toEqual([])
-})
-it('clears a stale send-now on replay and still delivers the following pending command', async () => {
-  let replay = false
-  const s = await setup((params) => {
-    if (!replay) throw Object.assign(new Error('OVERLOADED'), { code: -32001, data: { code: 'OVERLOADED' } })
-    if ((params as { kind: string }).kind === 'sendNow')
-      throw rpcError('SEMANTIC_REJECTED', { code: 'QUEUED_INPUT_GONE' })
-    return { seq: 9, replayed: false }
-  })
-  await expect(s.session.sendNow('already-started')).rejects.toMatchObject({ code: -32001 })
-  await expect(s.session.followUp('after reconnect')).rejects.toMatchObject({ code: -32001 })
-  expect(await s.journal.pending('s')).toHaveLength(2)
-  replay = true
-  await expect(s.client.resendPending('s')).resolves.toBeUndefined()
-  expect(await s.journal.pending('s')).toEqual([])
-  expect(s.f.calls.filter((entry) => entry.method === '_agnes/v1/submit').at(-1)?.params).toMatchObject({
-    kind: 'followUp',
-    payload: { content: [{ type: 'text', text: 'after reconnect' }] },
-  })
-})
+it.each(['followUp', 'removeQueued'] as const)(
+  'retains pending %s on overload and replays the same command then clears it',
+  async (kind) => {
+    let fail = true
+    const s = await setup(() => {
+      if (fail) throw Object.assign(new Error('OVERLOADED'), { code: -32001, data: { code: 'OVERLOADED' } })
+      return { seq: 9, replayed: true }
+    })
+    await expect(s.session[kind]('later')).rejects.toMatchObject({ code: -32001 })
+    expect(await s.journal.pending('s')).toHaveLength(1)
+    fail = false
+    await s.client.resendPending('s')
+    const calls = s.f.calls.filter((c) => c.method === '_agnes/v1/submit')
+    expect(calls).toHaveLength(2)
+    expect(calls[1]?.params).toEqual(calls[0]?.params)
+    expect(await s.journal.pending('s')).toEqual([])
+  },
+)
+it.each(['sendNow', 'removeQueued'] as const)(
+  'clears a stale %s on replay and still delivers the following pending command',
+  async (kind) => {
+    let replay = false
+    const s = await setup((params) => {
+      if (!replay)
+        throw Object.assign(new Error('OVERLOADED'), { code: -32001, data: { code: 'OVERLOADED' } })
+      if ((params as { kind: string }).kind === kind)
+        throw rpcError('SEMANTIC_REJECTED', { code: 'QUEUED_INPUT_GONE' })
+      return { seq: 9, replayed: false }
+    })
+    await expect(s.session[kind]('already-started')).rejects.toMatchObject({ code: -32001 })
+    await expect(s.session.followUp('after reconnect')).rejects.toMatchObject({ code: -32001 })
+    expect(await s.journal.pending('s')).toHaveLength(2)
+    replay = true
+    await expect(s.client.resendPending('s')).resolves.toBeUndefined()
+    expect(await s.journal.pending('s')).toEqual([])
+    expect(s.f.calls.filter((entry) => entry.method === '_agnes/v1/submit').at(-1)?.params).toMatchObject({
+      kind: 'followUp',
+      payload: { content: [{ type: 'text', text: 'after reconnect' }] },
+    })
+  },
+)
 it('journals fork with one stable child key and accepts a result without a synthetic sequence', async () => {
   const journal = memoryJournal('cid')
   const s = await setup(async (params) => {

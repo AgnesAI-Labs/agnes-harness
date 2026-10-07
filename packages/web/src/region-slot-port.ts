@@ -43,6 +43,11 @@ export interface RegionSlots {
   outlet<N extends SlotName>(props: SlotOutletProps<N>, context?: RegionSlotContext): ReactElement
 }
 
+/** Composer attachments are scoped to the active session, even under a stable root outlet. */
+export interface ComposerRegionSlots extends RegionSlots {
+  subscribeSession(listener: () => void): () => void
+}
+
 /** Timeline nodes still project through the registry itself, so the transcript region needs it. */
 export interface TranscriptRegionSlots extends RegionSlots {
   readonly registry: SlotRegistry
@@ -55,9 +60,10 @@ function rootStableRegistry(registry: SlotRegistry): SlotRegistry {
   return stable
 }
 
-export function registryRegionSlots(registry: SlotRegistry): TranscriptRegionSlots {
+export function registryRegionSlots(registry: SlotRegistry): TranscriptRegionSlots & ComposerRegionSlots {
   return {
     registry,
+    subscribeSession: (listener) => registry.subscribeSession(listener),
     has: (name) => registry.spec(name) !== undefined,
     declare: (name, spec, parent) => registry.declare(name, spec, 'web-shell', parent),
     register: (entry, component) => registry.register(entry, component),

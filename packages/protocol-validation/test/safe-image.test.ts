@@ -2,8 +2,11 @@ import { constants, deflateSync, inflateSync } from 'node:zlib'
 import {
   decodeSafeImage,
   decodeSafeImages,
+  modelImageInputError,
   SafeImageError,
   type SafeImageLimits,
+  USER_MESSAGE_IMAGE_LIMITS,
+  userImagePolicy,
 } from '@agnes/protocol-validation'
 import { describe, expect, it } from 'vitest'
 
@@ -155,6 +158,12 @@ describe('safe image decoder', () => {
     expect(() =>
       decodeSafeImage({ data: base64(jpeg(10, 10).slice(0, -2)), mimeType: 'image/jpeg' }, limits),
     ).toThrow(/JPEG/)
+    expect(() =>
+      decodeSafeImage(
+        { data: base64([...jpeg(10, 10), ...new Array(24).fill(0)]), mimeType: 'image/jpeg' },
+        limits,
+      ),
+    ).toThrow(/trailing bytes/)
   })
 
   it('requires critical PNG chunks in safe order and rejects compressed ancillary data', () => {
@@ -397,6 +406,36 @@ describe('safe image decoder', () => {
     ).toThrow(/byte limit/)
   })
 
+  it('accepts 100 MiB of image bytes and rejects larger images or batches', () => {
+    const small = Buffer.from(jpeg(1, 1))
+    const segments: Buffer[] = [small.subarray(0, 2)]
+    let remaining = USER_MESSAGE_IMAGE_LIMITS.maxBytesPerImage - small.length
+    while (remaining > 0) {
+      const size = Math.min(remaining, 65_537)
+      const segment = Buffer.alloc(size)
+      segment[0] = 0xff
+      segment[1] = 0xe1
+      segment.writeUInt16BE(size - 2, 2)
+      segments.push(segment)
+      remaining -= size
+    }
+    segments.push(small.subarray(2))
+    const bytes = Buffer.concat(segments)
+    const input = { data: base64(bytes), mimeType: 'image/jpeg' as const }
+    expect(decodeSafeImage(input, USER_MESSAGE_IMAGE_LIMITS).bytes.length).toBe(
+      USER_MESSAGE_IMAGE_LIMITS.maxBytesPerImage,
+    )
+    expect(() =>
+      decodeSafeImage(
+        { ...input, data: base64(Buffer.concat([bytes, Buffer.from([0])])) },
+        USER_MESSAGE_IMAGE_LIMITS,
+      ),
+    ).toThrow(/byte limit/)
+    expect(() =>
+      decodeSafeImages([input, { data: base64(small), mimeType: 'image/jpeg' }], USER_MESSAGE_IMAGE_LIMITS),
+    ).toThrow(/byte limit/)
+  })
+
   it('applies remaining aggregate caps before decoding the next image', () => {
     const input = { data: base64(png(10, 10)), mimeType: 'image/png' as const }
     const one = decodeSafeImage(input, limits)
@@ -412,5 +451,48 @@ describe('safe image decoder', () => {
       /pixel limit/,
     )
     expect(decodeSafeImages([input, input], limits)).toHaveLength(2)
+  })
+
+  it('accepts a full-HD screenshot under the user message limits', () => {
+    // 1,920x1,080 is 2,073,600px, so a round 2,000,000 cap rejected the most ordinary desktop
+    // capture. The limit now shares the 1456 edge the vision paths enforce.
+    expect(
+      decodeSafeImage({ data: base64(png(1920, 1080)), mimeType: 'image/png' }, USER_MESSAGE_IMAGE_LIMITS),
+    ).toMatchObject({ width: 1920, height: 1080, pixels: 2_073_600 })
+    expect(() =>
+      decodeSafeImage({ data: base64(png(1457, 1456)), mimeType: 'image/png' }, USER_MESSAGE_IMAGE_LIMITS),
+    ).toThrow(/pixel limit/)
+  })
+})
+
+describe('model image limits', () => {
+  it('combines provider counts and dimensions with product caps, including unknown capabilities', () => {
+    expect(userImagePolicy(undefined).supported).toBe(false)
+    expect(userImagePolicy({ input: ['text'] }).supported).toBe(false)
+    expect(userImagePolicy({ input: ['image'] })).toMatchObject({
+      supported: true,
+      maxCount: Infinity,
+      maxWidth: 1456,
+      maxHeight: 1456,
+    })
+    expect(
+      userImagePolicy({
+        input: ['image'],
+        inputLimits: {
+          images: { maxPerMessage: 3, maxPerRequest: 2, resize: { maxWidth: 100, maxHeight: 2000 } },
+        },
+      }),
+    ).toMatchObject({ maxCount: 2, maxWidth: 100, maxHeight: 1456 })
+  })
+  it.each([
+    [1, 1, true],
+    [2, 1, false],
+    [1, 2, false],
+  ])('checks decoded dimensions %s by %s against model limits', (width, height, accepted) => {
+    const model = { input: ['image'], inputLimits: { images: { resize: { maxWidth: 1, maxHeight: 1 } } } }
+    const error = modelImageInputError(model, [
+      { content: [{ type: 'image', data: base64(png(width, height)), mimeType: 'image/png' }] },
+    ])
+    expect(error === undefined).toBe(accepted)
   })
 })

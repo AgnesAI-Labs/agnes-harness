@@ -3,6 +3,7 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { connect } from 'node:net'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { MAX_FRAME_BYTES } from '@agnes/protocol'
 import { afterEach, expect, it } from 'vitest'
 import { LocalEndpoint, type RpcEndpoint } from '../src/local/endpoint.js'
 import { bindConnection } from '../src/supervisor/connection.js'
@@ -144,11 +145,11 @@ it('enforces the default 1000 in-flight message limit on actual socket traffic',
   await ended
 })
 
-it('rejects an outbound frame over the default 8MiB write buffer cap on a real socket', async () => {
+it('rejects an outbound frame over the configured byte ceiling on a real socket', async () => {
   const ep = endpoint(),
     w = await wire(ep)
   const ended = once(w.client, 'close')
-  ep.push({ jsonrpc: '2.0', method: 'test/large', params: { text: 'x'.repeat(8 * 1024 * 1024) } })
-  expect(await w.next()).toMatchObject({ error: { code: -32001 } })
+  ep.push({ jsonrpc: '2.0', method: 'test/large', params: { text: 'x'.repeat(MAX_FRAME_BYTES) } })
+  expect((await w.next()).error).toMatchObject({ code: -32603 })
   await ended
 })

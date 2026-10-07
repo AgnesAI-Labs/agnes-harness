@@ -3,6 +3,11 @@ import type { LocaleCatalog } from './index.js'
 /** 组件内置可访问性文案（W1）。经 `ComposerDependencies.translate` 注入，命名空间 `@agnes/web-units`。 */
 export const composerLocaleCatalog: LocaleCatalog = {
   en: {
+    'composer.attachment.add': 'Add attachments',
+    'composer.attachment.hint':
+      'All file types; up to 50 attachments and 100 MiB total after image processing. Images follow model limits. Some formats may be unreadable.',
+    'composer.attachment.remove': 'Remove attachment {index}',
+    'composer.attachment.tooMany': 'A message can hold at most {count} attachments.',
     'composer.input.label': 'Task content',
     'composer.permission.accessible': 'Choose permission for this session',
     'composer.permission.workspace': 'Changes apply within the workspace',
@@ -14,8 +19,36 @@ export const composerLocaleCatalog: LocaleCatalog = {
     'composer.queue.sending': 'Stopping and sending…',
     'composer.queue.sendAccessible': 'Send queued message {index} now',
     'composer.queue.sendTitle': 'Stop the current turn and run this message first',
+    'composer.queue.remove': 'Delete',
+    'composer.queue.removing': 'Deleting…',
+    'composer.queue.removeAccessible': 'Delete queued message {index}',
+    'composer.queue.removeTitle': 'Remove this message from the queue',
+    'composer.image.limit':
+      'PNG and JPEG, up to {count} images and 100 MiB in total after processing; model limits may be lower.',
+    'composer.image.modelLimit':
+      'The processed image exceeds this model’s size or dimension limits. Use a smaller image.',
+    'composer.image.limitUnspecified':
+      'PNG and JPEG, up to 100 MiB total after processing. Image count follows the model’s declared limits.',
+    'composer.image.tooManyPixels':
+      'Images in one message must total no more than 8 million pixels. Remove or resize an image.',
+    'composer.image.add': 'Add images',
+    'composer.image.unsupported': 'Select a model with image input to add images.',
+    'composer.image.modelChanged': 'The image limits changed. Add the image again.',
+    'composer.image.reading': 'Reading attachment…',
+    'composer.image.invalid': 'The file is not a valid PNG or JPEG image.',
+    'composer.image.invalidType': 'Only PNG and JPEG images are supported.',
+    'composer.image.readFailed': 'The attachment could not be read.',
+    'composer.image.alt': 'Attached image {index}',
+    'composer.image.remove': 'Remove image {index}',
+    'composer.image.tooMany': 'A message can hold at most {count} images.',
+    'composer.image.tooLarge': 'Attachments in one message must total no more than 100 MiB.',
   },
   'zh-CN': {
+    'composer.attachment.add': '添加附件',
+    'composer.attachment.hint':
+      '可上传各类文件，最多 50 个，图片处理后附件合计不超过 100 MiB。图片按模型限制；部分格式可能无法解析。',
+    'composer.attachment.remove': '移除附件 {index}',
+    'composer.attachment.tooMany': '一条消息最多添加 {count} 个附件。',
     'composer.input.label': '任务内容',
     'composer.permission.accessible': '选择本会话权限',
     'composer.permission.workspace': '工作区内修改',
@@ -27,5 +60,25 @@ export const composerLocaleCatalog: LocaleCatalog = {
     'composer.queue.sending': '正在停止并发送…',
     'composer.queue.sendAccessible': '立即发送第 {index} 条待执行消息',
     'composer.queue.sendTitle': '停止当前轮，优先执行这条消息',
+    'composer.queue.remove': '删除',
+    'composer.queue.removing': '正在删除…',
+    'composer.queue.removeAccessible': '删除第 {index} 条待执行消息',
+    'composer.queue.removeTitle': '从待执行队列中删除这条消息',
+    'composer.image.limit': '支持 PNG 和 JPEG，最多 {count} 张，处理后合计不超过 100 MiB；模型限制可能更低。',
+    'composer.image.modelLimit': '处理后的图片仍超过当前模型的大小或尺寸限制，请使用更小的图片。',
+    'composer.image.limitUnspecified':
+      '支持 PNG 和 JPEG，处理后合计不超过 100 MiB；数量按模型声明的限制执行。',
+    'composer.image.tooManyPixels': '单条消息中的图片合计不能超过 800 万像素，请减少图片或缩小尺寸。',
+    'composer.image.add': '添加图片',
+    'composer.image.unsupported': '请先选择支持图片输入的模型。',
+    'composer.image.modelChanged': '图片限制发生变化，请重新添加图片。',
+    'composer.image.reading': '正在读取附件…',
+    'composer.image.invalid': '文件内容不是有效的 PNG 或 JPEG 图片。',
+    'composer.image.invalidType': '目前只支持 PNG 和 JPEG 图片。',
+    'composer.image.readFailed': '无法读取附件文件。',
+    'composer.image.alt': '附件图片 {index}',
+    'composer.image.remove': '移除图片 {index}',
+    'composer.image.tooMany': '一条消息最多添加 {count} 张图片。',
+    'composer.image.tooLarge': '单条消息中的附件合计不能超过 100 MiB。',
   },
 }

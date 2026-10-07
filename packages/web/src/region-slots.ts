@@ -31,6 +31,7 @@ import {
   Conversation,
   type ConversationChildContainers,
   type ConversationHandle,
+  downscaleImageFile,
   EMPTY_SIDEBAR_STATE,
   PANE_IDS,
   SETTINGS_DSH_SLOT_NAMES,
@@ -66,7 +67,7 @@ import { createModelPicker } from './model-picker.js'
 import { renderSessionNavigation } from './navigation.js'
 import { createPermissionPicker } from './permission-picker.js'
 import { isComposerSubmitShortcut, resizeComposer, type Translate } from './presentation.js'
-import type { RegionSlots, TranscriptRegionSlots } from './region-slot-port.js'
+import type { ComposerRegionSlots, RegionSlots, TranscriptRegionSlots } from './region-slot-port.js'
 import { bindSidebar } from './shell.js'
 import { createTimelineRenderer } from './timeline.js'
 import { TimelineNodeHost } from './timeline-node-host.js'
@@ -83,6 +84,7 @@ const COMPOSER_DEPENDENCIES: Omit<
   'translate' | 'createModelPicker' | 'createPermissionPicker'
 > = {
   createUsagePanel,
+  downscaleImage: downscaleImageFile,
   UsagePanel: ConversationUsage,
   isSubmitShortcut: isComposerSubmitShortcut,
   resize: resizeComposer,
@@ -535,7 +537,7 @@ function ComposerDshFrame({
 }
 
 export function mountComposerRegion(
-  slots: RegionSlots,
+  slots: ComposerRegionSlots,
   container: HTMLElement,
   options: ComposerRegionOptions,
   locale: LocaleService,
@@ -610,6 +612,7 @@ export function mountComposerRegion(
     },
     () => createElement(SlotOutlet, { name: 'conversation.composer.bar' }),
   )
+  const removeSessionListener = slots.subscribeSession(() => handle.current?.clearImageBlocks())
   const root = createAntdRoot(container)
   flushSync(() => {
     root.render(slots.outlet({ name: COMPOSER_SLOT }, { rootStable: true }))
@@ -622,9 +625,27 @@ export function mountComposerRegion(
     getDraft() {
       return handle.current?.getDraft() ?? draft
     },
+    getImageBlocks() {
+      return handle.current?.getImageBlocks() ?? []
+    },
+    getAttachmentBlocks() {
+      return handle.current?.getAttachmentBlocks() ?? []
+    },
+    hasPendingImages() {
+      return handle.current?.hasPendingImages() ?? false
+    },
     render(next) {
       view = next
       handle.current?.render(next)
+    },
+    clearImageBlocks() {
+      handle.current?.clearImageBlocks()
+    },
+    restoreImageBlocks(images) {
+      handle.current?.restoreImageBlocks(images)
+    },
+    restoreAttachmentBlocks(attachments) {
+      handle.current?.restoreAttachmentBlocks(attachments)
     },
     resize() {
       handle.current?.resize()
@@ -637,6 +658,7 @@ export function mountComposerRegion(
       if (disposed) return
       disposed = true
       root.unmount()
+      removeSessionListener()
       removeBuiltin()
       removeDshBarBuiltin()
       ownedShell?.dispose()

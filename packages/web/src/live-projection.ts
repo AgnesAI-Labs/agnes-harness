@@ -1,4 +1,4 @@
-import type { UITimeline } from '@agnes/protocol'
+import { UI_PROJECTION_MAX_BYTES, type UITimeline } from '@agnes/protocol'
 import {
   type Client,
   type LedgerEvent,
@@ -9,7 +9,7 @@ import {
 } from '@agnes/sdk/browser'
 
 /** Web keeps the protocol's bounded opening and a modest history page. */
-export const WEB_OPENING = { maxNodes: 500, maxBytes: 1_048_576 } as const
+export const WEB_OPENING = { maxNodes: 500, maxBytes: UI_PROJECTION_MAX_BYTES } as const
 export const WEB_HISTORY_LIMIT = 100
 /** Pages loaded on their own to find a pending approval that lies before the loaded window. */
 export const APPROVAL_SEARCH_PAGES = 3

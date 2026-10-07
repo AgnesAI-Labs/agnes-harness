@@ -70,6 +70,7 @@ import {
   METHODS,
   type MethodName,
   type MethodSpec,
+  UI_PROJECTION_MAX_BYTES,
   validateAgainst,
   validateMethod,
   validateRequestMedia,
@@ -410,6 +411,7 @@ const AGNES_DEFS: Record<string, TSchema> = {
   SessionCompactParams: AgnesGen.SessionCompactParams,
   SessionSteerParams: AgnesGen.SessionSteerParams,
   SessionSendNowParams: AgnesGen.SessionSendNowParams,
+  SessionRemoveQueuedParams: AgnesGen.SessionRemoveQueuedParams,
   SessionSteerResult: AgnesGen.SessionSteerResult,
   ApisListParams: AgnesGen.ApisListParams,
   ApisListResult: AgnesGen.ApisListResult,
@@ -486,6 +488,7 @@ const MODEL_DEFS: Record<string, TSchema> = {
   ToolSchema: ModelGen.ToolSchema,
   RequestMessage: ModelGen.RequestMessage,
   RequestBody: ModelGen.RequestBody,
+  ModelInputLimits: ModelGen.ModelInputLimits,
   ModelCost: ModelGen.ModelCost,
   ModelRecord: ModelGen.ModelRecord,
   ContractStamp: ModelGen.ContractStamp,
@@ -1947,7 +1950,7 @@ const AGNES_SAMPLES: Record<string, Sample> = {
       { sessionId: 's', maxNodes: 0 },
       { sessionId: 's', maxNodes: 501 },
       { sessionId: 's', maxBytes: 16_383 },
-      { sessionId: 's', maxBytes: 1_048_577 },
+      { sessionId: 's', maxBytes: UI_PROJECTION_MAX_BYTES + 1 },
       { sessionId: 's', surface: 'ide' },
     ],
     note: 'opening request has closed surface plus bounded node and byte budgets',
@@ -1964,7 +1967,7 @@ const AGNES_SAMPLES: Record<string, Sample> = {
       { sessionId: 's', cursor: '' },
       { sessionId: 's', cursor: 'c', limit: 0 },
       { sessionId: 's', cursor: 'c', limit: 201 },
-      { sessionId: 's', cursor: 'c', maxBytes: 1_048_577 },
+      { sessionId: 's', cursor: 'c', maxBytes: UI_PROJECTION_MAX_BYTES + 1 },
     ],
     note: 'history reads require an opaque cursor and clamp caller node/byte budgets',
   },
@@ -2359,6 +2362,19 @@ const AGNES_SAMPLES: Record<string, Sample> = {
       { sessionId: 's', itemId: 'queued-1', commandId: 'send-now-1', extra: true }, // additionalProperties:false
     ],
     note: 'send-now rides the journal-bound submit command; the schema names one queued item to run first',
+  },
+  SessionRemoveQueuedParams: {
+    valid: { sessionId: 's', itemId: 'queued-1', commandId: 'remove-1' },
+    invalid: [
+      { sessionId: 's', commandId: 'remove-1' },
+      { sessionId: 's', itemId: '', commandId: 'remove-1' },
+      { sessionId: rep(513), itemId: 'queued-1', commandId: 'remove-1' },
+      { sessionId: 's', itemId: rep(513), commandId: 'remove-1' },
+      { sessionId: 's', itemId: 'queued-1', commandId: rep(129) },
+      { sessionId: 's', itemId: 'queued-1', commandId: 'remove-1', generation: 0 },
+      { sessionId: 's', itemId: 'queued-1', commandId: 'remove-1', extra: true },
+    ],
+    note: 'queue removal shares the bounded selection shape with send-now',
   },
   SessionSteerResult: {
     valid: steerResultOk,
@@ -3240,6 +3256,25 @@ const MODEL_SAMPLES: Record<string, Sample> = {
       { ...modelRequestBody, timeoutMs: { firstToken: 30000 } }, // missing required total
     ],
     note: 'hand-written; sampling and timeoutMs are optional closed objects, so both are exercised through the optional path',
+  },
+  ModelInputLimits: {
+    valid: {
+      maxRequestBytes: 2048,
+      images: {
+        maxPerMessage: 2,
+        maxPerRequest: 4,
+        resize: { maxWidth: 100, maxHeight: 200, maxBytes: 1024, jpegQuality: 80 },
+      },
+    },
+    invalid: [
+      { maxRequestBytes: 0 },
+      { images: { maxPerMessage: -1 } },
+      { images: { maxPerRequest: 1.5 } },
+      { images: { resize: { maxWidth: 0 } } },
+      { images: { resize: { jpegQuality: 101 } } },
+      { images: { unknown: 1 } },
+    ],
+    note: 'Provider image limits are optional; declared limits must be positive and recognized.',
   },
   ModelCost: {
     valid: { input: 3, output: 15, cacheRead: 0.3, cacheWrite: 3.75 },

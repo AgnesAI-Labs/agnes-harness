@@ -44,6 +44,19 @@ function toLines(text: string): string[] {
   return lines
 }
 
+/** Uploaded files can be mostly newlines. Keep only one line in memory while paging them. */
+function* attachmentLines(text: string): Generator<string> {
+  let start = 0
+  for (;;) {
+    const end = text.indexOf('\n', start)
+    const line = text.slice(start, end < 0 ? text.length : end)
+    if (line.length * 3 <= WRAP_BYTES) yield line
+    else yield* splitByBytes(line, WRAP_BYTES)
+    if (end < 0 || end === text.length - 1) return
+    start = end + 1
+  }
+}
+
 function clipLine(line: string): string {
   if (line.length * 3 <= WRAP_BYTES) return line
   const bytes = byteLength(line)
@@ -118,40 +131,45 @@ export async function loadSpilledLines(ctx: ToolContext, path: string): Promise<
 // cut into a head and a tail: the model reads on from the hint instead of losing the middle.
 function pageOfLines(
   maxBytes: number,
-  spilled: { lines: string[]; notes: string },
+  spilled: { lines: Iterable<string>; notes: string },
   offset: number,
   limit: number | undefined,
   what: 'file' | 'artifact',
 ): string {
   const { lines, notes } = spilled
   const start = offset - 1
-  if (start >= lines.length)
-    return `${notes}[no lines at offset ${offset}; the ${what} has ${lines.length} lines]`
-  const end = limit === undefined ? lines.length : Math.min(lines.length, start + limit)
   const budget = maxBytes - HINT_RESERVE - byteLength(notes)
   const rows: string[] = []
   let used = 0
   let at = start
-  for (; at < end; at++) {
-    const row = `${at + 1}\t${lines[at]}`
+  let total = 0
+  let clipped = false
+  for (const line of lines) {
+    const index = total++
+    if (index < start || (limit !== undefined && index >= start + limit) || clipped) continue
+    const row = `${index + 1}\t${line}`
     const cost = byteLength(row) + 1
     // A page always holds at least one line. A line cannot outgrow the budget: it is at most the
     // wrap width, far under it.
-    if (rows.length > 0 && used + cost > budget) break
+    if (rows.length > 0 && used + cost > budget) {
+      clipped = true
+      continue
+    }
     rows.push(row)
     used += cost
+    at = index + 1
   }
-  const hint =
-    at < end
-      ? `\n[lines ${start + 1}-${at} of ${lines.length}; call read again with offset=${at + 1} to continue]`
-      : ''
+  if (start >= total) return `${notes}[no lines at offset ${offset}; the ${what} has ${total} lines]`
+  const hint = clipped
+    ? `\n[lines ${start + 1}-${at} of ${total}; call read again with offset=${at + 1} to continue]`
+    : ''
   return notes + rows.join('\n') + hint
 }
 
 export const readTool = defineTool({
   name: 'read',
   description:
-    'Read a text file. Returns lines prefixed with their 1-based line number. Use offset (first line) and limit (number of lines) to page through large files. Also takes the artifact:// path from a truncated output note, to read the rest of that output the same way.',
+    'Read a text file with line numbers; offset and limit page through it. Also reads artifact:// truncated outputs. Read uploaded text files using session-file://message-seq/file-index; long lines wrap into paged rows. session-file://list lists saved attachments (offset/limit page entries). Binary files, PDF, audio and video may be unreadable with the current pi-ai input. For image originals, use session-image://list, then session-image://message-seq/image-index; combine references as session-image://12/1,34/2. Originals count toward the model image limit; inspect them before claiming unseen details.',
   parameters: ReadParams,
   meta: {
     isReadOnly: true,
@@ -164,6 +182,60 @@ export const readTool = defineTool({
     requiresApproval: 'never',
   },
   async execute(args, ctx): Promise<ToolResult> {
+    if (args.path.startsWith('session-file://')) {
+      try {
+        const file = await ctx.session.readAttachment?.({ ...args, maxBytes: ctx.outputMaxBytes })
+        if (!file) throw new Error('This attachment is unavailable in the current session.')
+        const header = String.fromCharCode(...file.bytes.subarray(0, 16))
+        if (
+          /^(audio|video)\//iu.test(file.mimeType) ||
+          /^application\/(pdf|zip|gzip|x-7z-compressed)/iu.test(file.mimeType) ||
+          // Office MIME labels can also describe plain CSV/TSV. Inspect the bytes before decoding.
+          // biome-ignore lint/suspicious/noControlCharactersInRegex: Match binary magic bytes, including mislabeled PDFs and archives.
+          /^(%PDF-|PK\x03\x04|\x1f\x8b|\x89PNG|\xff\xd8|GIF8|RIFF|\xd0\xcf\x11\xe0)/u.test(header) ||
+          header.slice(4, 8) === 'ftyp'
+        )
+          throw new Error(
+            'The original was uploaded, but this plain-text read tool cannot parse this binary format. For PDF, Word or ZIP, try an available document-reading tool. Native pi-ai file/audio/video input is unavailable. If no suitable tool can read it, explain the limitation; do not claim to have read it.',
+          )
+        const encoding =
+          file.bytes[0] === 0xff && file.bytes[1] === 0xfe
+            ? 'utf-16le'
+            : file.bytes[0] === 0xfe && file.bytes[1] === 0xff
+              ? 'utf-16be'
+              : 'utf-8'
+        const text = new TextDecoder(encoding, { fatal: true }).decode(file.bytes)
+        if (args.path === 'session-file://list') return { content: [{ type: 'text', text }] }
+        // biome-ignore lint/suspicious/noControlCharactersInRegex: Binary detection must reject embedded control bytes.
+        if (/[\u0000-\u0008\u000b\u000e-\u001f]/u.test(text))
+          throw new Error('Binary content cannot be read as text.')
+        const lines = attachmentLines(text)
+        return {
+          content: [
+            {
+              type: 'text',
+              text: pageOfLines(
+                ctx.outputMaxBytes,
+                { lines, notes: '' },
+                args.offset ?? 1,
+                args.limit,
+                'file',
+              ),
+            },
+          ],
+        }
+      } catch (error) {
+        return {
+          content: [{ type: 'text', text: `Attachment read failed: ${describeFailure(error)}` }],
+          isError: true,
+        }
+      }
+    }
+    if (args.path.startsWith('session-image://')) {
+      if (!ctx.session.readImages)
+        return { content: [{ type: 'text', text: 'Session image reloading is unavailable.' }], isError: true }
+      return ctx.session.readImages(args)
+    }
     if (args.path.startsWith('artifact://')) {
       const spilled = await loadSpilledLines(ctx, args.path)
       if (!spilled.ok)

@@ -11,6 +11,16 @@ import { type RpcError, rpcError } from './errors.js'
 import { validateRequestMedia } from './request-media.js'
 import { validateRuntimeValue } from './runtime/validation.js'
 
+export {
+  USER_MESSAGE_ATTACHMENT_LIMITS,
+  validateUserAttachments,
+} from '../../protocol-validation/src/attachments.js'
+export { modelImageInputError, userImagePolicy } from '../../protocol-validation/src/model-images.js'
+export {
+  decodeAttachmentData,
+  decodeSafeImages,
+  USER_MESSAGE_IMAGE_LIMITS,
+} from '../../protocol-validation/src/safe-image.js'
 export type { ValidationError, ValidationResult } from '../../protocol-validation/src/validate.js'
 export { isDateTime, validateAgainst } from '../../protocol-validation/src/validate.js'
 

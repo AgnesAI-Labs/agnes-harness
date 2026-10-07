@@ -108,49 +108,60 @@ describe('artifact authority ledger projection', () => {
     await f.tables.close()
   })
 
-  it('projects a validated tool-result image before request-media preflight needs to read it', async () => {
-    const f = await fixture()
-    await f.projection.observe(
-      'session-a',
-      {
-        seq: 3,
-        ts: '2026-09-17T00:00:00.000Z',
-        id: '01J6ZM2Q3R4S5T6V7W8X9Y0Z03',
-        lane: 'main',
-        type: 'tool/result',
-        v: 1,
-        actor: { id: 'owner-a', org: 'local', role: 'owner', deptPath: [], attrs: {} },
-        origin: 'tool:computer_use',
-        trust: 'untrusted',
-        sourceEventSeqs: [2],
-        data: {
-          toolUseId: 'call-1',
-          content: [
-            {
-              type: 'resource_link',
-              name: 'image',
-              uri: `artifact://${f.sha256}`,
-              mimeType: 'image/png',
-            },
-          ],
-          isError: false,
-          enforcement: { level: 'full', scope: [] },
-          authz: { decisionId: 'n/a' },
+  it.each([
+    ['tool:computer_use', 'untrusted'],
+    ['tool:read', 'trusted'],
+    ['tool:document_read', 'untrusted'],
+  ] as const)(
+    'projects a validated %s image before request-media preflight reads it',
+    async (origin, trust) => {
+      const f = await fixture()
+      await f.projection.observe(
+        'session-a',
+        {
+          seq: 3,
+          ts: '2026-09-17T00:00:00.000Z',
+          id: '01J6ZM2Q3R4S5T6V7W8X9Y0Z03',
+          lane: 'main',
+          type: 'tool/result',
+          v: 1,
+          actor: { id: 'owner-a', org: 'local', role: 'owner', deptPath: [], attrs: {} },
+          origin,
+          trust,
+          sourceEventSeqs: [2],
+          data: {
+            toolUseId: 'call-1',
+            content: [
+              {
+                type: 'resource_link',
+                name: 'image',
+                uri: `artifact://${f.sha256}`,
+                mimeType: 'image/png',
+              },
+            ],
+            isError: false,
+            enforcement: { level: 'full', scope: [] },
+            authz: { decisionId: 'n/a' },
+          },
         },
-      },
-      new AbortController().signal,
-    )
-    expect(f.index.resolve('session-a', 'main', f.sha256)).toMatchObject({
-      ownerId: 'owner-a',
-      artifact: { sha256: f.sha256, size: f.bytes.byteLength, mime: 'image/png' },
-    })
-    await f.tables.close()
-  })
+        new AbortController().signal,
+      )
+      expect(f.index.resolve('session-a', 'main', f.sha256)).toMatchObject({
+        ownerId: 'owner-a',
+        artifact: { sha256: f.sha256, size: f.bytes.byteLength, mime: 'image/png' },
+      })
+      await f.tables.close()
+    },
+  )
 
   it.each([
     ['another tool', { origin: 'tool:other', trust: 'untrusted', isError: false }],
     ['a trusted tool result', { origin: 'tool:computer_use', trust: 'trusted', isError: false }],
     ['an error result', { origin: 'tool:computer_use', trust: 'untrusted', isError: true }],
+    ['an untrusted session image result', { origin: 'tool:read', trust: 'untrusted', isError: false }],
+    ['a trusted document image result', { origin: 'tool:document_read', trust: 'trusted', isError: false }],
+    ['a failed document image result', { origin: 'tool:document_read', trust: 'untrusted', isError: true }],
+    ['a failed session image result', { origin: 'tool:read', trust: 'trusted', isError: true }],
   ])('does not project an image claimed by %s', async (_label, provenance) => {
     const f = await fixture()
     await f.projection.observe(

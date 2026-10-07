@@ -2,6 +2,7 @@ import { type Ack, jcs, validateAgainst, validateMethod } from '@agnes/protocol'
 import {
   SessionCompactParams,
   SessionForkParams,
+  SessionRemoveQueuedParams,
   SessionSendNowParams,
   SessionSteerParams,
 } from '@agnes/protocol/gen/agnes-v1'
@@ -9,7 +10,7 @@ import type { Client } from './client.js'
 import { JsonRpcError, ProtocolViolation } from './errors.js'
 import { type PendingCommand, snapshotPending } from './journal.js'
 
-export type SubmitKind = 'steer' | 'followUp' | 'sendNow' | 'compact'
+export type SubmitKind = 'steer' | 'followUp' | 'sendNow' | 'removeQueued' | 'compact'
 export type CompactOutcome =
   | { state: 'completed'; endSeq: number }
   | { state: 'failed'; endSeq: number }
@@ -34,8 +35,11 @@ function validated(command: PendingCommand, clientId: string, sessionId: string)
       ? typeof params.payload.childKey !== 'string' || !validateAgainst(SessionForkParams, params.payload).ok
       : params.kind === 'compact'
         ? !validateAgainst(SessionCompactParams, { ...params.payload, commandId: params.commandId }).ok
-        : params.kind === 'sendNow'
-          ? !validateAgainst(SessionSendNowParams, { ...params.payload, commandId: params.commandId }).ok
+        : params.kind === 'sendNow' || params.kind === 'removeQueued'
+          ? !validateAgainst(params.kind === 'sendNow' ? SessionSendNowParams : SessionRemoveQueuedParams, {
+              ...params.payload,
+              commandId: params.commandId,
+            }).ok
           : !['steer', 'followUp'].includes(params.kind) ||
             !validateAgainst(SessionSteerParams, { ...params.payload, commandId: params.commandId }).ok)
   )
@@ -113,7 +117,11 @@ export async function submitCompactAware(
   await client.journal.markPending(sessionId, structuredClone(command))
   const ack = await client.call<Ack>(command.method, command.params).catch(async (error: unknown) => {
     // A definitive stale-item refusal has no effect to replay; retain unknown transport outcomes.
-    if (kind === 'sendNow' && error instanceof JsonRpcError && error.data.code === 'QUEUED_INPUT_GONE')
+    if (
+      (kind === 'sendNow' || kind === 'removeQueued') &&
+      error instanceof JsonRpcError &&
+      error.data.code === 'QUEUED_INPUT_GONE'
+    )
       await client.journal.clearPending(sessionId, command.commandId)
     throw error
   })
@@ -164,7 +172,7 @@ export async function resendPending(client: Client, sessionId: string): Promise<
       // The selected item may have started while this client was disconnected. That refusal
       // is definitive, and must not prevent replay of the remaining pending commands.
       if (
-        params.kind === 'sendNow' &&
+        (params.kind === 'sendNow' || params.kind === 'removeQueued') &&
         error instanceof JsonRpcError &&
         error.data.code === 'QUEUED_INPUT_GONE'
       ) {

@@ -2,6 +2,7 @@
 import { readFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import type { ConfigSnapshot, UIOpeningResult, UIProjectionUpdate, UITimeline } from '@agnes/protocol'
+import { MAX_FRAME_BYTES } from '@agnes/protocol'
 import type { LedgerEvent } from '@agnes/sdk/browser'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -66,6 +67,8 @@ const timelineRenderer = vi.hoisted(() => ({
   })),
   nearBottom: vi.fn(() => true),
 }))
+const originalCreateObjectURL = Object.getOwnPropertyDescriptor(URL, 'createObjectURL')
+const originalRevokeObjectURL = Object.getOwnPropertyDescriptor(URL, 'revokeObjectURL')
 
 vi.mock('@agnes/sdk/browser', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@agnes/sdk/browser')>()),
@@ -107,6 +110,7 @@ type SessionDouble = {
   events: ReturnType<typeof vi.fn>
   followUp: ReturnType<typeof vi.fn>
   sendNow: ReturnType<typeof vi.fn>
+  removeQueued: ReturnType<typeof vi.fn>
   onPermissionRequest: ReturnType<typeof vi.fn>
   onPreview: ReturnType<typeof vi.fn>
   projectUI: ReturnType<typeof vi.fn>
@@ -152,8 +156,9 @@ function idleTimeline(sessionId: string, model?: { route: string; id: string }):
   }
 }
 
-function busyTimeline(sessionId: string): UITimeline {
+function busyTimeline(sessionId: string, model?: { route: string; id: string }): UITimeline {
   return {
+    ...idleTimeline(sessionId, model),
     sessionId,
     upto: 1,
     generation: 1,
@@ -210,6 +215,7 @@ function session(id: string, projectUI: () => Promise<UITimeline>): SessionDoubl
     })),
     followUp: vi.fn(async () => undefined),
     sendNow: vi.fn(async () => 1),
+    removeQueued: vi.fn(async () => 1),
     onPermissionRequest: vi.fn(() => vi.fn()),
     onPreview: vi.fn(() => vi.fn()),
     projectUI: vi.fn(projectUI),
@@ -278,6 +284,10 @@ afterEach(async () => {
   traceBridge.claim = undefined
   traceBridge.metas.length = 0
   vi.unstubAllGlobals()
+  if (originalCreateObjectURL) Object.defineProperty(URL, 'createObjectURL', originalCreateObjectURL)
+  else Reflect.deleteProperty(URL, 'createObjectURL')
+  if (originalRevokeObjectURL) Object.defineProperty(URL, 'revokeObjectURL', originalRevokeObjectURL)
+  else Reflect.deleteProperty(URL, 'revokeObjectURL')
   document.documentElement.replaceChildren()
   sessionStorage.clear()
   localStorage.clear()
@@ -482,7 +492,9 @@ describe('web permission synchronization', () => {
       old.prompt.mockClear()
       submit('use the current permission')
       await vi.waitFor(() =>
-        expect(old.prompt).toHaveBeenCalledWith('use the current permission', { titleLocale: 'zh-CN' }),
+        expect(old.prompt).toHaveBeenCalledWith([{ type: 'text', text: 'use the current permission' }], {
+          titleLocale: 'zh-CN',
+        }),
       )
       expect.soft(pendingLabel).toBe('请选择权限')
       expect.soft(renderedLabel).toBe('请选择权限')
@@ -584,7 +596,9 @@ describe('web permission synchronization', () => {
     await vi.waitFor(() => expect(label()).toBe('工作区内修改'))
     submit('confirmed permission')
     await vi.waitFor(() =>
-      expect(old.prompt).toHaveBeenCalledWith('confirmed permission', { titleLocale: 'zh-CN' }),
+      expect(old.prompt).toHaveBeenCalledWith([{ type: 'text', text: 'confirmed permission' }], {
+        titleLocale: 'zh-CN',
+      }),
     )
 
     const opened = old.projectUIOpening.mock.calls.length
@@ -602,7 +616,9 @@ describe('web permission synchronization', () => {
     await vi.waitFor(() => expect(label()).toBe('工作区内修改'))
     submit('confirmed after reconnect')
     await vi.waitFor(() =>
-      expect(old.prompt).toHaveBeenCalledWith('confirmed after reconnect', { titleLocale: 'zh-CN' }),
+      expect(old.prompt).toHaveBeenCalledWith([{ type: 'text', text: 'confirmed after reconnect' }], {
+        titleLocale: 'zh-CN',
+      }),
     )
     expect(old.setYolo).toHaveBeenCalledTimes(2)
   }, 20_000)
@@ -740,28 +756,52 @@ describe('web session selection', () => {
         expect(model.querySelector('[data-model-label]')?.textContent).toBe('model-b')
       })
       expect(permission.querySelector('[data-permission-label]')?.textContent).toBe('完全权限')
-      const settingsButton = document.getElementById('composer-model-settings') as HTMLButtonElement
-      settingsButton.click()
-      await vi.waitFor(() =>
-        expect((document.getElementById('session-model-window') as HTMLInputElement)?.value).toBe('64000'),
-      )
-      const thinking = document.getElementById('session-model-thinking') as HTMLSelectElement
-      expect(thinking.value).toBe('high')
-      thinking.value = 'low'
-      thinking.dispatchEvent(new Event('change', { bubbles: true }))
-      const windowInput = document.getElementById('session-model-window') as HTMLInputElement
-      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set?.call(windowInput, '32000')
-      windowInput.dispatchEvent(new Event('input', { bubbles: true }))
-      const dialogButton = (label: string) =>
-        [...document.querySelectorAll<HTMLButtonElement>('.agnes-ui-dialog button')].find(
-          (b) => b.textContent?.replace(/\s/g, '') === label,
+      // 会话参数在模型行展开的详情里：模型列表 → 详情 → 参数选项三级。
+      const row = (index: number) =>
+        document.querySelectorAll<HTMLElement>('.model-picker-list [role="option"]')[index]
+      const detailRow = (id: string) =>
+        document.querySelector<HTMLElement>(`[id$="-model-settings-popover"] [id$="-${id}"]`)
+      const leafOption = (label: string) =>
+        [...document.querySelectorAll<HTMLElement>('[id$="-session-model-thinking"] [role="option"]')].find(
+          (option) => option.textContent?.startsWith(label),
         )
-      dialogButton('应用到本会话')?.click()
+      const budgetOption = (label: string) =>
+        [...document.querySelectorAll<HTMLElement>('[id$="-session-model-budget"] [role="option"]')].find(
+          (option) => option.textContent === label,
+        )
+      // 提交在飞行中时触发按钮与面板会一起禁用，每次开关前等它落定。
+      const openPanel = async () => {
+        await vi.waitFor(() => expect(model.disabled).toBe(false))
+        if (!document.querySelector<HTMLElement>('.model-picker-list')) model.click()
+        await vi.waitFor(() =>
+          expect(document.querySelector<HTMLElement>('.model-picker-list')).not.toBeNull(),
+        )
+      }
+      const openDetail = async () => {
+        await openPanel()
+        if (!document.querySelector<HTMLElement>('[id$="-model-settings-popover"]')) row(1)?.click()
+        await vi.waitFor(() =>
+          expect(document.querySelector<HTMLElement>('[id$="-model-settings-popover"]')).not.toBeNull(),
+        )
+      }
+      const closePanel = async () => {
+        await vi.waitFor(() => expect(model.disabled).toBe(false))
+        if (document.querySelector<HTMLElement>('.model-picker-list')) model.click()
+        await vi.waitFor(() => expect(document.querySelector<HTMLElement>('.model-picker-list')).toBeNull())
+      }
+      await openDetail()
+      expect(detailRow('model-detail-capacity')?.textContent).toContain('128K')
+      detailRow('model-detail-thinking')?.click()
+      expect(leafOption('高')?.getAttribute('aria-selected')).toBe('true')
+      leafOption('低')?.click()
       await vi.waitFor(() => expect(document.getElementById('notice')?.textContent).toContain('新会话将使用'))
+      // 选完一个参数整条菜单收起，改下一个要重新展开。
+      await vi.waitFor(() => expect(document.querySelector<HTMLElement>('.model-picker-list')).toBeNull())
+      await openDetail()
+      detailRow('model-detail-budget')?.click()
+      budgetOption('32K')?.click()
+      await vi.waitFor(() => expect(document.querySelector<HTMLElement>('.model-picker-list')).toBeNull())
       draftModel.defaultSettings.contextWindow = 96000
-      model.click()
-      document.querySelectorAll<HTMLElement>('[role="option"]')[1]?.click()
-      await vi.waitFor(() => expect(document.querySelector('[role="listbox"]')).toBeNull())
       await configurationCallback.saved?.({
         profile: 'local',
         revision: 1,
@@ -769,12 +809,10 @@ describe('web session selection', () => {
         provider: null,
         effect: 'new-sessions',
       })
-      settingsButton.click()
-      await vi.waitFor(() =>
-        expect((document.getElementById('session-model-window') as HTMLInputElement)?.value).toBe('32000'),
-      )
-      expect((document.getElementById('session-model-thinking') as HTMLSelectElement).value).toBe('low')
-      dialogButton('取消')?.click()
+      await openDetail()
+      expect(detailRow('model-detail-thinking')?.textContent).toContain('低')
+      expect(detailRow('model-detail-budget')?.textContent).toContain('32K')
+      await closePanel()
       const cwd = document.getElementById('new-session-cwd') as HTMLInputElement
       cwd.value = '/workspace/agnes'
       document
@@ -838,7 +876,9 @@ describe('web session selection', () => {
       }
       expect(fresh.setYolo).toHaveBeenCalledWith(true)
       await vi.waitFor(() =>
-        expect(fresh.prompt).toHaveBeenCalledWith('use the remembered selection', { titleLocale: 'zh-CN' }),
+        expect(fresh.prompt).toHaveBeenCalledWith([{ type: 'text', text: 'use the remembered selection' }], {
+          titleLocale: 'zh-CN',
+        }),
       )
       expect(permission.querySelector('[data-permission-label]')?.textContent).toBe('完全权限')
     },
@@ -911,7 +951,9 @@ describe('web session selection', () => {
     await vi.waitFor(() => expect(create).toHaveBeenCalledOnce())
     expect(create).toHaveBeenCalledWith({ cwd: beta.path, sessionKey: expect.any(String) })
     await vi.waitFor(() =>
-      expect(fresh.prompt).toHaveBeenCalledWith('create in beta', { titleLocale: 'zh-CN' }),
+      expect(fresh.prompt).toHaveBeenCalledWith([{ type: 'text', text: 'create in beta' }], {
+        titleLocale: 'zh-CN',
+      }),
     )
   })
 
@@ -1019,7 +1061,7 @@ describe('web session selection', () => {
       }),
     )
 
-    // The flat picker changes only the model; thinking controls stay in account settings.
+    // 模型列表仍是扁平的一段；档位与预算只是同面板的另外两段，模型那段不掺进二级菜单。
     await vi.waitFor(() => expect(control('composer-model').disabled).toBe(false))
     control('composer-model').click()
     expect(document.querySelector('.model-picker-entry, #model-submenu-listbox')).toBeNull()
@@ -1372,7 +1414,9 @@ describe('web session selection', () => {
     includeFresh = true
     newProjection.resolve(idleTimeline('fresh'))
     await vi.waitFor(() =>
-      expect(fresh.prompt).toHaveBeenCalledWith('must not cross sessions', { titleLocale: 'zh-CN' }),
+      expect(fresh.prompt).toHaveBeenCalledWith([{ type: 'text', text: 'must not cross sessions' }], {
+        titleLocale: 'zh-CN',
+      }),
     )
   })
 
@@ -1607,7 +1651,9 @@ describe('web session selection', () => {
       try {
         submit('first message')
         await vi.waitFor(() =>
-          expect(fresh.prompt).toHaveBeenCalledWith('first message', { titleLocale: 'zh-CN' }),
+          expect(fresh.prompt).toHaveBeenCalledWith([{ type: 'text', text: 'first message' }], {
+            titleLocale: 'zh-CN',
+          }),
         )
         if (mode === 'failed') {
           listing.reject(new Error('sidebar list failed'))
@@ -1739,7 +1785,9 @@ describe('web session selection', () => {
       .querySelector<HTMLElement>('.composer-form')
       ?.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
     await vi.waitFor(() =>
-      expect(fresh.prompt).toHaveBeenLastCalledWith('成功后的第二条消息', { titleLocale: 'en' }),
+      expect(fresh.prompt).toHaveBeenLastCalledWith([{ type: 'text', text: '成功后的第二条消息' }], {
+        titleLocale: 'en',
+      }),
     )
     expect(create).toHaveBeenCalledTimes(1)
     expect(create.mock.calls[0]?.[0]?.sessionKey).toBe(firstKey)
@@ -1810,6 +1858,7 @@ describe('web session selection', () => {
     expect(running.sendNow).toHaveBeenCalledWith('C')
     expect(queuedButton.disabled).toBe(true)
     expect(queuedButton.getAttribute('aria-busy')).toBe('true')
+    expect(cancel.disabled).toBe(true)
     sendNow.reject(new Error('synthetic send-now refusal'))
     await vi.waitFor(() =>
       expect(document.querySelector('.composer-queue-error')?.textContent).toBe('synthetic send-now refusal'),
@@ -1825,9 +1874,13 @@ describe('web session selection', () => {
     expect(document.querySelector('.composer-queue-count')?.textContent).toBe('待执行 · 1')
     expect(running.prompt).not.toHaveBeenCalled()
     const reads = titleList.mock.calls.length
-    running.followUp.mockImplementation(async (input: string) => {
+    running.followUp.mockImplementation(async (input: { type: string; text?: string }[]) => {
       sequence++
-      pendingInputs = [...pendingInputs, { itemId: `queued-${sequence}`, preview: input }]
+      // 提交内容已是 ContentBlock[]，排队区的 preview 由 daemon 从文本块得出，这里照此模拟。
+      const preview = input
+        .flatMap((block) => (block.type === 'text' && block.text ? [block.text] : []))
+        .join('')
+      pendingInputs = [...pendingInputs, { itemId: `queued-${sequence}`, preview }]
       return sequence
     })
     const followUps = ['本轮还没结束，先补充下一轮', '再排一条', '第三条也应立即显示']
@@ -1840,18 +1893,169 @@ describe('web session selection', () => {
       Array.from(document.querySelectorAll('.composer-queue-preview'), (node) => node.textContent),
     ).toEqual(['第二条提示词', ...followUps])
     expect(titleList).toHaveBeenCalledTimes(reads)
+    const composer = document.querySelector<HTMLElement>('.composer-prompt') as HTMLTextAreaElement
+    composer.value = '尚未发送的草稿'
+    composer.dispatchEvent(new Event('input', { bubbles: true }))
+    const removeItemId = pendingInputs[1]?.itemId
+    const remove = document.querySelector<HTMLButtonElement>(
+      '.composer-queue li:nth-child(2) .composer-queue-remove',
+    )
+    if (!remove) throw new Error('missing queued input deletion')
+    expect(remove.type).toBe('button')
+    expect(remove.textContent).toBe('删除')
+    expect(remove.getAttribute('aria-label')).toBe('删除第 2 条待执行消息')
+    expect(cancel.disabled).toBe(false)
+    expect(running.cancel).not.toHaveBeenCalled()
+    const removing = deferred<number>()
+    running.removeQueued.mockImplementationOnce(() => removing.promise)
+    remove.click()
+    remove.click()
+    expect(running.removeQueued).toHaveBeenCalledExactlyOnceWith(removeItemId)
+    expect(remove.disabled).toBe(true)
+    expect(remove.getAttribute('aria-busy')).toBe('true')
+    expect(remove.textContent).toBe('正在删除…')
+    expect(
+      Array.from(document.querySelectorAll<HTMLButtonElement>('.composer-queue button')).every(
+        (button) => button.disabled,
+      ),
+    ).toBe(true)
+    expect(document.activeElement).toBe(composer)
+    expect(cancel.disabled).toBe(false)
     const firstCancel = deferred<void>()
     running.cancel.mockImplementationOnce(() => firstCancel.promise)
     cancel.click()
     await vi.waitFor(() => expect(running.cancel).toHaveBeenCalledTimes(1))
+    expect(cancel.disabled).toBe(true)
     cancel.click()
     expect(running.cancel).toHaveBeenCalledTimes(1)
+    removing.reject(new Error('synthetic removal refusal'))
+    await vi.waitFor(() =>
+      expect(document.querySelector('.composer-queue-error')?.textContent).toBe('synthetic removal refusal'),
+    )
+    expect(document.querySelectorAll('[data-queue-item]')).toHaveLength(4)
+    // Deletion settling must not unlock the composer while stopping is still pending.
+    expect(cancel.disabled).toBe(true)
+    expect(remove.disabled).toBe(true)
+    expect(composer.disabled).toBe(true)
     firstCancel.reject(new Error('cancel temporarily unavailable'))
     await vi.waitFor(() => expect(cancel.disabled).toBe(false))
+    expect(remove.disabled).toBe(false)
+    expect(composer.disabled).toBe(false)
+    running.removeQueued.mockImplementationOnce(async (itemId: string) => {
+      pendingInputs = pendingInputs.filter((item) => item.itemId !== itemId)
+      return ++sequence
+    })
+    remove.click()
+    await vi.waitFor(() => expect(document.querySelectorAll('[data-queue-item]')).toHaveLength(3))
+    expect(document.querySelector('.composer-queue-count')?.textContent).toBe('待执行 · 3')
+    expect(
+      Array.from(document.querySelectorAll('.composer-queue-preview'), (node) => node.textContent),
+    ).toEqual(['第二条提示词', ...followUps.slice(1)])
+    expect(composer.value).toBe('尚未发送的草稿')
+    expect(running.cancel).toHaveBeenCalledTimes(1)
+    expect(running.sendNow).toHaveBeenCalledTimes(2)
+    expect(document.querySelector('.composer-queue-error')).toBeNull()
+
+    running.removeQueued.mockImplementationOnce(async (itemId: string) => {
+      pendingInputs = pendingInputs.filter((item) => item.itemId !== itemId)
+      sequence++
+      throw { data: { code: 'QUEUED_INPUT_GONE' } }
+    })
+    document
+      .querySelector<HTMLButtonElement>('.composer-queue li:nth-child(2) .composer-queue-remove')
+      ?.click()
+    await vi.waitFor(() => expect(document.querySelectorAll('[data-queue-item]')).toHaveLength(2))
+    expect(document.querySelector('.composer-queue-error')?.textContent).toBe(
+      '这条消息已开始执行或已不在队列中，列表会刷新。',
+    )
+    running.removeQueued.mockImplementation(async (itemId: string) => {
+      pendingInputs = pendingInputs.filter((item) => item.itemId !== itemId)
+      return ++sequence
+    })
+    for (const count of [1, 0]) {
+      document.querySelector<HTMLButtonElement>('.composer-queue-remove')?.click()
+      await vi.waitFor(() => expect(document.querySelectorAll('[data-queue-item]')).toHaveLength(count))
+    }
+    expect(document.querySelector('.composer-queue')).toBeNull()
+    expect(composer.value).toBe('尚未发送的草稿')
     cancel.click()
     await vi.waitFor(() => expect(running.cancel).toHaveBeenCalledTimes(2))
     expect(running.prompt).not.toHaveBeenCalled()
   })
+})
+
+describe('queued input deletion', () => {
+  it.each(['success', 'failure'] as const)(
+    'allows deletion without a usable model and ignores a late old-session %s',
+    async (outcome) => {
+      installPublicFixture()
+      const old = session('old', async () => ({
+        ...idleTimeline('old', { route: 'removed', id: 'missing-model' }),
+        pendingInputs: [{ itemId: 'shared-id', preview: 'old input' }],
+      }))
+      let nextQueue = [{ itemId: 'shared-id', preview: 'next input' }]
+      let seq = 0
+      const next = session('next', async () => ({
+        ...idleTimeline('next'),
+        upto: seq,
+        pendingInputs: nextQueue,
+      }))
+      const oldRemoval = deferred<number>()
+      const nextRemoval = deferred<number>()
+      old.removeQueued.mockImplementation(() => oldRemoval.promise)
+      next.removeQueued.mockImplementation(() => nextRemoval.promise)
+      sdk.createClient.mockReturnValue({
+        apis: vi.fn(async () => ({ profile: { models: [] } })),
+        approval: { decide: vi.fn(async () => undefined) },
+        close: vi.fn(async () => undefined),
+        config: {
+          get: vi.fn(async () => ({ configured: outcome === 'failure' })),
+          providers: vi.fn(async () => ({ providers: [] })),
+        },
+        initialize: vi.fn(async () => undefined),
+        on: vi.fn(),
+        workspace: { list: vi.fn(async () => ({ items: [] })) },
+        session: {
+          list: vi.fn(async () => ({ items: [{ sessionId: 'old' }, { sessionId: 'next' }] })),
+          load: vi.fn(async (id: string) => (id === 'old' ? old : next)),
+        },
+      })
+      binding.loadWebSession.mockImplementation(async (_load: unknown, id: string) => ({
+        session: id === 'old' ? old : next,
+        offPermission: vi.fn(),
+      }))
+      binding.bindWebSession.mockImplementation((selected: SessionDouble) => ({
+        session: selected,
+        offPermission: vi.fn(),
+      }))
+      await import('../src/app.js')
+      await vi.waitFor(() =>
+        expect(document.querySelector<HTMLButtonElement>('.composer-queue-remove')?.disabled).toBe(false),
+      )
+      expect(document.querySelector<HTMLButtonElement>('.composer-queue-send')?.disabled).toBe(true)
+      document.querySelector<HTMLButtonElement>('.composer-queue-remove')?.click()
+      expect(old.removeQueued).toHaveBeenCalledExactlyOnceWith('shared-id')
+      document.querySelector<HTMLButtonElement>('[data-session="next"]')?.click()
+      await vi.waitFor(() =>
+        expect(document.querySelector('.composer-queue-preview')?.textContent).toBe('next input'),
+      )
+      document.querySelector<HTMLButtonElement>('.composer-queue-remove')?.click()
+      expect(next.removeQueued).toHaveBeenCalledExactlyOnceWith('shared-id')
+      if (outcome === 'success') oldRemoval.resolve(1)
+      else oldRemoval.reject(new Error('late old-session refusal'))
+      await new Promise<void>((resolve) => setTimeout(resolve, 0))
+      const remove = document.querySelector<HTMLButtonElement>('.composer-queue-remove')
+      expect(remove?.disabled).toBe(true)
+      expect(remove?.getAttribute('aria-busy')).toBe('true')
+      expect(document.querySelector('.composer-queue-preview')?.textContent).toBe('next input')
+      expect(document.querySelector('.composer-queue-error')).toBeNull()
+      nextQueue = []
+      nextRemoval.resolve(++seq)
+      await vi.waitFor(() => expect(document.querySelector('.composer-queue')).toBeNull())
+      expect(old.cancel).not.toHaveBeenCalled()
+      expect(next.cancel).not.toHaveBeenCalled()
+    },
+  )
 })
 
 describe('composer draft persistence', () => {
@@ -1859,9 +2063,11 @@ describe('composer draft persistence', () => {
     installPublicFixture()
     const old = session('old', async () => idleTimeline('old'))
     const inFlight = deferred<undefined>()
+    const unloading = deferred<undefined>()
     old.prompt
       .mockRejectedValueOnce(new Error('prompt rejected'))
       .mockImplementationOnce(() => inFlight.promise)
+      .mockImplementationOnce(() => unloading.promise)
     const client = {
       apis: vi.fn(async () => ({ profile: { models: [{ route: 'local', id: 'model-a' }] } })),
       approval: { decide: vi.fn(async () => undefined) },
@@ -1899,19 +2105,203 @@ describe('composer draft persistence', () => {
     await vi.waitFor(() => expect(composer.value).toBe('一段较长的任务提示词'))
     expect(sessionStorage.getItem(draftKey)).toBe('一段较长的任务提示词')
 
-    // The prompt was accepted and the run is in flight. Unloading closes the connection, which rejects
-    // the pending call, but that is not a failed send: nothing may be stored or put back.
+    // Preserve a later draft if the in-flight message is rejected.
     document
       .querySelector<HTMLElement>('.composer-form')
       ?.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
     await vi.waitFor(() => expect(old.prompt).toHaveBeenCalledTimes(2))
     expect(composer.value).toBe('')
     expect(sessionStorage.getItem(draftKey)).toBeNull()
+    type('下一条草稿')
+    inFlight.reject(new Error('provider rejected image input'))
+    await vi.waitFor(() => expect(composer.value).toBe('一段较长的任务提示词\n下一条草稿'))
+    expect(sessionStorage.getItem(draftKey)).toBe('一段较长的任务提示词\n下一条草稿')
+
+    // The third prompt was accepted and is in flight. Unloading is not a failed send and must not
+    // revive its contents.
+    document
+      .querySelector<HTMLElement>('.composer-form')
+      ?.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+    await vi.waitFor(() => expect(old.prompt).toHaveBeenCalledTimes(3))
+    expect(composer.value).toBe('')
+    expect(sessionStorage.getItem(draftKey)).toBeNull()
     window.dispatchEvent(new Event('pagehide'))
-    inFlight.reject(new Error('transport closed'))
+    unloading.reject(new Error('transport closed'))
     await new Promise((resolve) => setTimeout(resolve, 0))
     expect(composer.value).toBe('')
     expect(sessionStorage.getItem(draftKey)).toBeNull()
+  })
+})
+
+describe('image composer submissions', () => {
+  const imagePngData =
+    'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII='
+  const imagePngBytes = Uint8Array.from(atob(imagePngData), (character) => character.charCodeAt(0))
+
+  async function start(
+    sessionValue: SessionDouble,
+    busy = false,
+    inputModes: readonly ('text' | 'image')[] = ['text', 'image'],
+  ): Promise<void> {
+    installPublicFixture()
+    const imageUrl = `blob:${sessionValue.id}-image`
+    Object.defineProperty(URL, 'createObjectURL', { configurable: true, value: vi.fn(() => imageUrl) })
+    Object.defineProperty(URL, 'revokeObjectURL', { configurable: true, value: vi.fn() })
+    sdk.createClient.mockReturnValue({
+      apis: vi.fn(async () => ({
+        profile: { models: [{ route: 'local', id: 'model-a', input: inputModes }] },
+      })),
+      approval: { decide: vi.fn(async () => undefined) },
+      close: vi.fn(async () => undefined),
+      config: {
+        get: vi.fn(async () => ({ configured: true })),
+        providers: vi.fn(async () => ({ providers: [] })),
+      },
+      initialize: vi.fn(async () => undefined),
+      on: vi.fn(),
+      workspace: { list: vi.fn(async () => ({ items: [] })) },
+      session: {
+        list: vi.fn(async () => ({ items: [{ sessionId: sessionValue.id }] })),
+        load: vi.fn(async () => sessionValue),
+      },
+    })
+    binding.loadWebSession.mockResolvedValue({ session: sessionValue, offPermission: vi.fn() })
+    binding.bindWebSession.mockImplementation((selected: SessionDouble) => ({
+      session: selected,
+      offPermission: vi.fn(),
+    }))
+    await import('../src/app.js')
+    const send = document.querySelector<HTMLElement>('.composer-send') as HTMLButtonElement
+    await vi.waitFor(() =>
+      expect((document.querySelector<HTMLElement>('.composer-prompt') as HTMLTextAreaElement).disabled).toBe(
+        false,
+      ),
+    )
+    if (busy) await vi.waitFor(() => expect(send.dataset.mode).toBe('busy'))
+  }
+
+  async function attachPng(
+    accepted = true,
+    file = new File([imagePngBytes], 'one.png', { type: 'image/png' }),
+  ): Promise<void> {
+    const prompt = document.querySelector<HTMLTextAreaElement>('.composer-prompt')
+    expect(prompt).not.toBeNull()
+    if (!prompt) throw new Error('composer input is missing')
+    const event = new Event('paste', { bubbles: true, cancelable: true })
+    Object.defineProperty(event, 'clipboardData', {
+      value: {
+        files: [file],
+        items: [],
+        getData: () => '',
+      },
+    })
+    prompt.dispatchEvent(event)
+    if (accepted)
+      await vi.waitFor(() => expect(document.querySelector('.composer-image-preview img')).not.toBeNull())
+  }
+
+  it.each(['PNG', '10 MiB JPEG'])(
+    'enables and sends a %s without text through session.prompt',
+    async (format) => {
+      const active = session('old', async () => idleTimeline('old', { route: 'local', id: 'model-a' }))
+      await start(active)
+      let bytes = imagePngBytes
+      let mimeType = 'image/png'
+      if (format === '10 MiB JPEG') {
+        bytes = new Uint8Array(10 * 1024 * 1024)
+        bytes.set([
+          0xff, 0xd8, 0xff, 0xc0, 0, 11, 8, 0, 1, 0, 1, 1, 1, 0x11, 0, 0xff, 0xda, 0, 8, 1, 1, 0, 0, 63, 0,
+        ])
+        bytes.set([0xff, 0xd9], bytes.length - 2)
+        mimeType = 'image/jpeg'
+      }
+      await attachPng(true, new File([bytes], 'image', { type: mimeType }))
+
+      const send = document.querySelector<HTMLElement>('.composer-send') as HTMLButtonElement
+      expect(send.disabled).toBe(false)
+      submit('')
+
+      await vi.waitFor(() => expect(active.prompt).toHaveBeenCalledTimes(1))
+      expect(active.prompt).toHaveBeenCalledWith(
+        [{ type: 'image', mimeType, data: Buffer.from(bytes).toString('base64') }],
+        { titleLocale: 'zh-CN' },
+      )
+    },
+  )
+
+  it('sends mixed text and images through session.followUp and restores both on failure', async () => {
+    const active = session('old', async () => busyTimeline('old', { route: 'local', id: 'model-a' }))
+    active.followUp.mockRejectedValueOnce(new Error('follow-up rejected'))
+    await start(active, true)
+    await attachPng()
+    const draft = document.querySelector<HTMLElement>('.composer-prompt') as HTMLTextAreaElement
+    draft.value = '请解释这张图'
+    draft.dispatchEvent(new Event('input', { bubbles: true }))
+    submit('请解释这张图')
+
+    await vi.waitFor(() => expect(active.followUp).toHaveBeenCalledTimes(1))
+    expect(active.followUp).toHaveBeenCalledWith([
+      { type: 'text', text: '请解释这张图' },
+      { type: 'image', mimeType: 'image/png', data: imagePngData },
+    ])
+    await vi.waitFor(() => expect(draft.value).toBe('请解释这张图'))
+    expect(document.querySelector('.composer-image-preview img')).not.toBeNull()
+    expect(document.getElementById('notice')?.textContent).toContain('follow-up rejected')
+  })
+
+  it('accepts an image as a file attachment when the selected model has only text input', async () => {
+    const active = session('old', async () => idleTimeline('old', { route: 'local', id: 'model-a' }))
+    await start(active, false, ['text'])
+    await attachPng(false)
+    await vi.waitFor(() => expect(document.querySelector('.composer-file-preview')).not.toBeNull())
+
+    expect((document.querySelector<HTMLElement>('.composer-send') as HTMLButtonElement).disabled).toBe(false)
+    expect(document.querySelector('.composer-image-preview img')).toBeNull()
+    expect(document.querySelector<HTMLElement>('.composer-attach')?.getAttribute('aria-disabled')).toBe(
+      'false',
+    )
+    submit('')
+    await vi.waitFor(() =>
+      expect(active.prompt).toHaveBeenCalledWith(
+        [{ type: 'file', name: 'one.png', mimeType: 'image/png', data: imagePngData }],
+        { titleLocale: 'zh-CN' },
+      ),
+    )
+  })
+
+  it('keeps text and attachments when batch validation fails before sending', async () => {
+    const active = session('old', async () => idleTimeline('old', { route: 'local', id: 'model-a' }))
+    await start(active)
+    await attachPng()
+    const protocol = await import('@agnes/protocol')
+    const validation = vi.spyOn(protocol, 'decodeSafeImages').mockImplementationOnce(() => {
+      throw new Error('images exceed aggregate pixel limit')
+    })
+    submit('保留文字和图片')
+    expect(active.prompt).not.toHaveBeenCalled()
+    expect((document.querySelector<HTMLElement>('.composer-prompt') as HTMLTextAreaElement).value).toBe(
+      '保留文字和图片',
+    )
+    expect(document.querySelector('.composer-image-preview img')).not.toBeNull()
+    expect(document.getElementById('notice')?.textContent).toContain('aggregate pixel limit')
+    validation.mockRestore()
+    submit('保留文字和图片')
+    await vi.waitFor(() => expect(active.prompt).toHaveBeenCalledTimes(1))
+  })
+
+  it('keeps an image draft and refuses a WebSocket frame that exceeds the transport limit', async () => {
+    const active = session('old', async () => busyTimeline('old', { route: 'local', id: 'model-a' }))
+    await start(active, true)
+    await attachPng()
+    const longText = 'x'.repeat(MAX_FRAME_BYTES)
+    submit(longText)
+
+    expect(active.followUp).not.toHaveBeenCalled()
+    expect((document.querySelector<HTMLElement>('.composer-prompt') as HTMLTextAreaElement).value).toBe(
+      longText,
+    )
+    expect(document.querySelector('.composer-image-preview img')).not.toBeNull()
+    expect(document.getElementById('notice')?.textContent).toContain('144 MiB 限制')
   })
 })
 

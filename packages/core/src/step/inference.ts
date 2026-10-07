@@ -44,6 +44,7 @@ import {
   remintRequestWithMaxTokens,
 } from '../request/derive.js'
 import { canonicalJson, sha256Hex } from '../request/hash.js'
+import { inlineImageMediaSurface } from '../request/inline-images.js'
 import { toProviderRequest } from '../request/to-provider.js'
 import { CoreError, type Event, type EventInput, type Seq } from '../types.js'
 import {
@@ -54,7 +55,7 @@ import {
 } from './calibrate.js'
 import { finishAborted } from './control.js'
 import { contextBudgetError } from './gate.js'
-import { resolvedModelInput, supportsComputerUse, toolNamesForModel, toolsForModel } from './model-tools.js'
+import { resolvedModelRecord, supportsComputerUse, toolNamesForModel, toolsForModel } from './model-tools.js'
 import { type OpStateObj, type ToolCallState, withPhase } from './op-state.js'
 import { runCoreReplacement, runSlot } from './reentry.js'
 import type { OpContext, SessionImpl, StepOutcome } from './session.js'
@@ -482,7 +483,8 @@ export async function runInference(s: SessionImpl): Promise<StepOutcome> {
   // auxiliary image model cannot safely steer the primary model's next pointer/keyboard action,
   // so withhold the tool unless this exact primary model advertises native image input. Unknown,
   // duplicate, or malformed catalogue entries resolve to text-only above and therefore fail closed.
-  const modelInput = resolvedModelInput(s.d.provider, target)
+  const inlineImageModel = resolvedModelRecord(s.d.provider, target)
+  const modelInput = inlineImageModel?.input ?? (['text'] as const)
   const computerUseAllowed = supportsComputerUse(modelInput)
   // Freeze the selected model's contract before asynchronous contribution hooks can run.
   const contract = Object.freeze({ ...(s.d.contractForModel?.(target) ?? s.d.contract) })
@@ -561,7 +563,7 @@ export async function runInference(s: SessionImpl): Promise<StepOutcome> {
         try {
           requestMedia = await prepareRequestMediaFromSurface({
             sessionKey: s.key,
-            surface,
+            surface: inlineImageMediaSurface(surface),
             lookupToolCalls: async (seqs) => {
               const rows = await Promise.all(
                 seqs.map((seq) =>
@@ -622,6 +624,10 @@ export async function runInference(s: SessionImpl): Promise<StepOutcome> {
   await s.ensureEnvelopeEpochs()
   let out = deriveRequest({
     kind: 'turn',
+    inlineImages: {
+      model: inlineImageModel,
+      canRead: Boolean(s.d.requestMedia && disclosed.some((tool) => tool.name === 'read')),
+    },
     merged,
     harnessEntries: [...s.state.registers.harnessEntries.values()].map((c) => c.value),
     surface,

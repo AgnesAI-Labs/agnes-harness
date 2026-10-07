@@ -2,6 +2,60 @@
   "scope": "External dependencies directly used for building, testing, type checking or development.",
   "packages": [
     {
+      "name": "@hyzyla/pdfium",
+      "version": "2.1.13",
+      "license": "MIT",
+      "source": "https://github.com/hyzyla/pdfium",
+      "purpose": "Bundle PDF text extraction and rasterization into the document-reader plugin.",
+      "rationale": "Ships a platform-independent WASM engine without Office or native Node addons.",
+      "consumers": ["packages/package-manager/bundled-plugins/document-reader"]
+    },
+    {
+      "name": "@tesseract.js-data/chi_sim",
+      "version": "1.0.0",
+      "license": "MIT (npm packaging); Apache-2.0 (upstream traineddata)",
+      "source": "https://github.com/naptha/tessdata",
+      "purpose": "Bundle a local Chinese/English OCR model in the document-reader plugin.",
+      "rationale": "Allows offline scanned-document reading without sending documents to an OCR service.",
+      "consumers": ["packages/package-manager/bundled-plugins/document-reader"]
+    },
+    {
+      "name": "@tesseract.js-data/eng",
+      "version": "1.0.0",
+      "license": "MIT (npm packaging); Apache-2.0 (upstream traineddata)",
+      "source": "https://github.com/naptha/tessdata",
+      "purpose": "Bundle an optional local English OCR model in the document-reader plugin.",
+      "rationale": "Provides language selection using the same offline worker and asset packaging.",
+      "consumers": ["packages/package-manager/bundled-plugins/document-reader"]
+    },
+    {
+      "name": "tesseract-wasm",
+      "version": "0.11.0",
+      "license": "BSD-2-Clause",
+      "source": "https://github.com/robertknight/tesseract-wasm",
+      "purpose": "Bundle SIMD and fallback OCR WASM engines in the document-reader plugin.",
+      "rationale": "Runs OCR inside a cancellable Node worker with identical Windows and macOS code.",
+      "consumers": ["packages/package-manager/bundled-plugins/document-reader"]
+    },
+    {
+      "name": "word-extractor",
+      "version": "1.0.4",
+      "license": "MIT",
+      "source": "https://github.com/morungos/node-word-extractor",
+      "purpose": "Bundle DOC and DOCX plain-text extraction in the document-reader plugin.",
+      "rationale": "Covers legacy Word files without invoking a platform-specific Office executable.",
+      "consumers": ["packages/package-manager/bundled-plugins/document-reader"]
+    },
+    {
+      "name": "yauzl",
+      "version": "3.4.0",
+      "license": "MIT",
+      "source": "https://github.com/thejoshwolfe/yauzl",
+      "purpose": "Bundle bounded ZIP metadata inspection and selected-entry reading in the document-reader plugin.",
+      "rationale": "Reads archive bytes without extracting user-selected paths onto disk.",
+      "consumers": ["packages/package-manager/bundled-plugins/document-reader"]
+    },
+    {
       "name": "@biomejs/biome",
       "version": "2.5.12",
       "license": "MIT OR Apache-2.0",

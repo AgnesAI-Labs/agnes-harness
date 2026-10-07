@@ -125,8 +125,10 @@ function mediaRoots(event: EventEnvelope): readonly Readonly<{ sha256: string; m
   }
   if (event.type !== 'tool/result') return undefined
   const data = event.data as { content?: unknown; isError?: unknown }
-  if (event.origin !== 'tool:computer_use' || event.trust !== 'untrusted' || data.isError !== false)
-    return undefined
+  const imageResult =
+    (['tool:computer_use', 'tool:document_read'].includes(event.origin) && event.trust === 'untrusted') ||
+    (event.origin === 'tool:read' && event.trust === 'trusted')
+  if (!imageResult || data.isError !== false) return undefined
   if (!Array.isArray(data.content)) return undefined
   const roots = new Map<string, Readonly<{ sha256: string; mime: string }>>()
   for (const value of data.content) {

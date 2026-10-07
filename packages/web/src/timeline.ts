@@ -102,6 +102,12 @@ const textContent = (node: UserNode): string =>
     .map((block) => block.text)
     .join('\n')
 
+/** 轨迹面板是纯文本视图：含图消息在这里用一行说明代替缩略图，逐张占一行。 */
+function legacyUserContent(node: UserNode, t: Translate): string {
+  const images = node.content.filter((block) => block.type === 'image')
+  return [textContent(node), ...images.map(() => t('timeline.imageUnavailable'))].filter(Boolean).join('\n')
+}
+
 /** What an assistant node says; an attempt whose streamed text died with its process says so. */
 function assistantText(node: Extract<UINode, { kind: 'assistant' }>, t: Translate): string {
   if (node.lostChars === undefined || node.text !== '') return node.text
@@ -121,7 +127,14 @@ function fingerprint(node: UINode): string {
   switch (node.kind) {
     case 'user': {
       const body = textContent(node)
-      return `${node.kind}:${node.id}:${sampledPart(body)}`
+      const images = node.content
+        .filter((block) => block.type === 'image')
+        .map(
+          (block) =>
+            `${block.mimeType}:${block.data.length}:${block.data.slice(0, 16)}:${block.data.slice(-16)}`,
+        )
+        .join('|')
+      return `${node.kind}:${node.id}:${sampledPart(body)}:${images}`
     }
     case 'assistant':
       return `${node.kind}:${node.id}:${sampledPart(node.thinking)}:${sampledPart(node.text)}:${
@@ -216,7 +229,7 @@ function createEntry(node: UINode, t: Translate, entryFingerprint: string, cards
 
   if (node.kind === 'user') {
     const title = heading(element, 'node-label', t('timeline.userLabel'))
-    const body = text(element, 'node-body', textContent(node))
+    const body = text(element, 'node-body', legacyUserContent(node, t))
     return {
       kind: node.kind,
       element,
@@ -224,7 +237,7 @@ function createEntry(node: UINode, t: Translate, entryFingerprint: string, cards
       update(next) {
         if (next.kind !== 'user') return
         updateText(title, t('timeline.userLabel'))
-        updateText(body, textContent(next))
+        updateText(body, legacyUserContent(next, t))
       },
     }
   }

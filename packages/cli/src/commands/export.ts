@@ -35,7 +35,10 @@ export function sanitizeExportValue(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(sanitizeExportValue)
   if (value === null || typeof value !== 'object') return value
   const record = value as Record<string, unknown>
-  if ((record.type === 'image' || record.type === 'audio') && typeof record.data === 'string')
+  if (
+    (record.type === 'image' || record.type === 'audio' || record.type === 'file') &&
+    typeof record.data === 'string'
+  )
     return { ...record, data: `[OMITTED:${record.type}:base64]` }
   if (record.type === 'base64' && typeof record.data === 'string')
     return { ...record, data: '[OMITTED:binary:base64]' }

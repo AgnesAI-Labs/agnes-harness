@@ -182,7 +182,7 @@ function fixture(overrides: { uri?: string; sourceTool?: string; origin?: string
   return { ledger: [call, result], surface: computeSurface([result], {}) }
 }
 
-async function media(source = fixture()) {
+async function media(source = fixture(), mainModelInput: readonly ('text' | 'image')[] = ['text', 'image']) {
   return prepareRequestMediaFromSurface({
     sessionKey: 'session-a',
     lane: 'main',
@@ -192,7 +192,7 @@ async function media(source = fixture()) {
     readArtifact: () => jpeg,
     surfaceLimits,
     mediaLimits: limits,
-    mainModelInput: ['text', 'image'],
+    mainModelInput,
     auxiliaryVisionAvailable: false,
   })
 }
@@ -236,34 +236,56 @@ function derive(
 }
 
 describe('request media derive and provider wire', () => {
-  it('persists and hashes authenticated media, then emits adjacent label/image blocks', async () => {
-    const prepared = await media()
-    const out = derive(prepared)
-    expect(out.header.media).toEqual(prepared.header)
-    expect(out.header.derived_hash).toBe(hashDerivedRequest(out.request, prepared.hashMaterial))
-    expect(out.request.messages[0]?.content.map((block) => block.type)).toEqual(['tool_result'])
+  it.each(['computer_use', 'document_read'])(
+    'persists authenticated %s media and emits adjacent label/image blocks',
+    async (sourceTool) => {
+      const source = fixture({ sourceTool })
+      const prepared = await media(source)
+      const out = derive(prepared, source.surface)
+      expect(out.header.media).toEqual(prepared.header)
+      expect(out.header.derived_hash).toBe(hashDerivedRequest(out.request, prepared.hashMaterial))
+      expect(out.request.messages[0]?.content.map((block) => block.type)).toEqual(['tool_result'])
+      const wire = toProviderRequest(out.request, {
+        sessionKey: 'session-a',
+        derivedHash: out.header.derived_hash,
+      })
+      expect(wire.messages[0]?.content.map((block) => block.type)).toEqual(['text', 'text', 'image'])
+      expect(wire.messages[0]?.content[1]).toMatchObject({
+        type: 'text',
+        text: expect.stringContaining('[untrusted tool image;'),
+      })
+      const checked = validateEvent({
+        seq: 3,
+        ts: '2026-09-17T00:00:00.000Z',
+        id: '01J6ZM2Q3R4S5T6V7W8X9Y0Z03',
+        type: 'request/header',
+        data: out.header,
+        actor,
+        origin: 'system',
+        trust: 'trusted',
+        lane: 'main',
+        v: 1,
+      })
+      expect(checked.ok).toBe(true)
+    },
+  )
+
+  it('keeps document page images out of a text-only model request without a vision route', async () => {
+    const source = fixture({ sourceTool: 'document_read' })
+    const prepared = await media(source, ['text'])
+    const out = derive(prepared, source.surface)
     const wire = toProviderRequest(out.request, {
       sessionKey: 'session-a',
       derivedHash: out.header.derived_hash,
     })
-    expect(wire.messages[0]?.content.map((block) => block.type)).toEqual(['text', 'text', 'image'])
-    expect(wire.messages[0]?.content[1]).toMatchObject({
-      type: 'text',
-      text: expect.stringContaining('[untrusted tool image;'),
+    expect(out.header.media).toMatchObject({
+      route: 'text-only',
+      selectionOrder: [],
+      manifest: [{ selected: false, reason: 'unsupported' }],
     })
-    const checked = validateEvent({
-      seq: 3,
-      ts: '2026-09-17T00:00:00.000Z',
-      id: '01J6ZM2Q3R4S5T6V7W8X9Y0Z03',
-      type: 'request/header',
-      data: out.header,
-      actor,
-      origin: 'system',
-      trust: 'trusted',
-      lane: 'main',
-      v: 1,
-    })
-    expect(checked.ok).toBe(true)
+    expect(wire.messages.some((message) => message.content.some((block) => block.type === 'image'))).toBe(
+      false,
+    )
   })
 
   it('refuses to leak pre-routed auxiliary images onto the primary provider wire', async () => {

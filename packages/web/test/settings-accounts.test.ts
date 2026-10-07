@@ -45,7 +45,7 @@ const account = (id: string): ConfigAccount => ({
   credentialConfigured: true,
   authType: 'api-key',
 })
-async function setup() {
+async function setup(accounts: ConfigAccount[] = [account('work'), account('personal')]) {
   window = new Window()
   window.document.write(
     readFileSync(new NodeURL('../public/index.html', import.meta.url), 'utf8').replace(
@@ -68,7 +68,7 @@ async function setup() {
       model: 'm',
       credentialConfigured: true,
     },
-    accounts: [account('work'), account('personal')],
+    accounts,
     defaultAccountId: 'work',
     effect: 'new-sessions',
   }
@@ -150,6 +150,20 @@ it('uses the visible Provider picker to update connection fields and locks exist
   expect(h.input('config-provider-trigger').disabled).toBe(true)
   expect(h.doc.querySelector('#config-provider-trigger')?.textContent).toBe('OpenAI')
   expect(h.config.save).not.toHaveBeenCalled()
+})
+
+it('colours the account indicator by enablement first, then credential health', async () => {
+  const h = await setup([
+    account('work'),
+    { ...account('personal'), enabled: false },
+    { ...account('broken'), credentialConfigured: false },
+  ])
+  const status = (index: number) =>
+    h.doc.querySelectorAll('.config-account')[index]?.getAttribute('data-status')
+  expect(status(0)).toBe('ready')
+  expect(status(1)).toBe('inactive')
+  expect(status(2)).toBe('missing')
+  h.controller.close()
 })
 
 it('selects an exact account, clears transient keys and sends account-scoped test/save', async () => {
