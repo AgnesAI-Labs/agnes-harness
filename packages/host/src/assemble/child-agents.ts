@@ -5,6 +5,7 @@ import {
   setChildAgentAllowlist,
 } from '@agnes/core'
 import { type Context, Service } from '@agnes/cordis'
+import { defineProviderKind } from '@agnes/extension-api'
 import type {
   ChildAgentAllowlist,
   ChildAgentCatalogEntry,
@@ -14,9 +15,10 @@ import type {
   ChildAgentService,
   ChildAgentStartOptions,
 } from '@agnes/extension-api'
-import { normalizePluginExport, type RowOrigin, type RowOriginLookup } from '@agnes/plugin-runtime/host'
+import { normalizePluginExport, type RowOriginLookup } from '@agnes/plugin-runtime/host'
 import { HostError } from '../errors.js'
 import type { PackageModule } from './packages.js'
+import { installProviderRegistry, providerSource, type ProviderRegistry } from './provider-registry.js'
 
 declare module '@agnes/cordis' {
   interface Context {
@@ -33,6 +35,7 @@ const CAPABILITIES = [
 ] as const
 
 export class ChildAgentRegistry extends Service implements ChildAgentService {
+  private readonly registry: ProviderRegistry<ChildAgentProvider>
   private readonly records = new Map<
     string,
     {
@@ -48,52 +51,55 @@ export class ChildAgentRegistry extends Service implements ChildAgentService {
     private readonly origins?: RowOriginLookup,
   ) {
     super(ctx, 'childAgents')
+    this.registry = installProviderRegistry(
+      ctx,
+      defineProviderKind<ChildAgentProvider>({
+        kind: 'child-agent',
+        validate(provider) {
+          if (
+            typeof provider?.id !== 'string' ||
+            !provider.id.trim() ||
+            typeof provider.version !== 'string' ||
+            !provider.version.trim() ||
+            typeof provider.start !== 'function' ||
+            !provider.capabilities ||
+            CAPABILITIES.some((flag) => typeof provider.capabilities[flag] !== 'boolean')
+          )
+            throw new HostError('E_API_RANGE', 'invalid child agent registration')
+        },
+        capabilities: (provider) => CAPABILITIES.filter((flag) => provider.capabilities[flag]),
+      }),
+      (owner, source, provider) => owner.childAgents.register(provider, source),
+    )
   }
 
-  register(provider: ChildAgentProvider): () => void {
-    if (
-      typeof provider?.id !== 'string' ||
-      !provider.id.trim() ||
-      typeof provider.version !== 'string' ||
-      !provider.version.trim() ||
-      typeof provider.start !== 'function' ||
-      !provider.capabilities ||
-      CAPABILITIES.some((flag) => typeof provider.capabilities[flag] !== 'boolean')
-    )
-      throw new HostError('E_API_RANGE', 'invalid child agent registration')
-    if (this.records.has(provider.id))
-      throw new HostError('E_API_RANGE', `duplicate child agent provider: ${provider.id}`)
-    let origin: Readonly<RowOrigin> | undefined
-    for (let fiber = this.ctx.fiber; fiber !== fiber.parent.fiber; fiber = fiber.parent.fiber) {
-      origin = this.origins?.lookup(fiber)
-      if (origin) break
-    }
-    if (this.origins && !origin && this.ctx !== this.ctx.root)
-      throw new HostError('E_EXT_LOAD', 'child agent provider requires a verified plugin row')
+  register(provider: ChildAgentProvider, sourcePackage?: string): () => Promise<void> {
+    this.registry.definition.validate(provider)
     const record = {
       provider,
       entry: Object.freeze({
         id: provider.id,
         version: provider.version,
-        sourcePackage:
-          origin?.trustTier === 'builtin' && origin.rowId === 'child-agent:in-process'
-            ? '@agnes/base'
-            : (origin?.packageId ?? '@agnes/base'),
+        sourcePackage: providerSource(
+          this.ctx,
+          this.origins,
+          sourcePackage ?? '@agnes/base',
+          sourcePackage !== undefined,
+        ),
         capabilities: Object.freeze({ ...provider.capabilities }),
       }),
       lifetime: new AbortController(),
       handles: new Set<ChildAgentHandle>(),
     }
-    return this.ctx.effect(() => {
-      this.records.set(provider.id, record)
-      return () => {
-        record.lifetime.abort()
-        const handles = [...record.handles]
-        record.handles.clear()
-        this.records.delete(provider.id)
-        for (const handle of handles) void Promise.resolve(handle.dispose()).catch(() => undefined)
-      }
-    }, `childAgents.register(${provider.id})`)
+    const unregister = this.registry.register(record.entry.sourcePackage, provider, this.ctx, () => {
+      record.lifetime.abort()
+      const handles = [...record.handles]
+      record.handles.clear()
+      this.records.delete(provider.id)
+      for (const handle of handles) void Promise.resolve(handle.dispose()).catch(() => undefined)
+    })
+    this.records.set(provider.id, record)
+    return unregister
   }
 
   catalog(): readonly ChildAgentCatalogEntry[] {

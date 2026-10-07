@@ -50,7 +50,14 @@ it('registers providers, refuses missing capabilities, and disposes handles on u
   await expect.poll(() => registry.catalog().length).toBe(1)
   expect(Object.isFrozen(registry.catalog()[0])).toBe(true)
   expect(registry.catalog()[0]).toMatchObject({ id: 'demo', sourcePackage: '@agnes/base' })
-  expect(() => registry.register(provider('demo', limited).api)).toThrow('duplicate child agent provider')
+  await expect
+    .poll(() => root.providers.catalog().find((entry) => entry.kind === 'child-agent' && entry.id === 'demo'))
+    .toMatchObject({
+      capabilities: ['continuable', 'interrupt'],
+      restartRequired: false,
+      sourcePackage: '@agnes/base',
+    })
+  expect(() => registry.register(provider('demo', limited).api)).toThrow('duplicate child-agent provider')
   await expect(
     registry.start('demo', 'task', { signal: signal(), sessionKey: 's', cwd: '/tmp', fork: true }),
   ).rejects.toThrow('cannot inherit parent context')
