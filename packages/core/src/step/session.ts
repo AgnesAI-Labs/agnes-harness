@@ -16,6 +16,7 @@ import type {
   ToolRuntimeProvider,
   ToolRuntimeRegistryPort,
 } from '@agnes/extension-api'
+import { DEFAULT_LOOP, loopShouldStop } from '@agnes/extension-api'
 import type {
   Actor,
   ApprovalMode,
@@ -94,6 +95,7 @@ import {
   type UIOptions,
   type UIProjectionCell,
 } from '../project/ui.js'
+import { fillInlineNodes, fillInlinePage } from '../project/ui-inline-slots.js'
 import { contextTokensAtCut, projectUsage } from '../project/usage.js'
 import type { Inbox, InboxItem } from '../reduce/shapes.js'
 import { type EffectTree, effectTree } from '../reduce/state.js'
@@ -362,7 +364,7 @@ export type SessionDeps = {
   tracker: StateTracker
   surface: SurfaceCache
   ui: UIProjectionCell
-  /** Fresh current-registry slot runner for each projection request. Explicit fills override it. */
+  /** Fresh registry runner for inline tool cards. Explicit dynamic fills override it. */
   slotFills?: () => import('../project/ui.js').SlotFillRunner
   lane: string
   runtime: SeamRuntime
@@ -1909,7 +1911,7 @@ export class SessionImpl {
     return this.d.surface.nodes()
   }
   private withSlots<T extends Omit<UIOptions, 'sessionKey' | 'upto' | 'lane'>>(opts: T): T {
-    return opts.fills || !this.d.slotFills ? opts : { ...opts, fills: this.d.slotFills() }
+    return opts.fills || !this.d.slotFills ? opts : { ...opts, inlineFills: this.d.slotFills() }
   }
 
   projectUI(upto?: Seq, opts: Omit<UIOptions, 'sessionKey' | 'upto' | 'lane'> = {}): Promise<CoreUITimeline> {
@@ -1948,8 +1950,17 @@ export class SessionImpl {
       return Promise.reject(new CoreError('E_ENVELOPE', 'invalid UI projection patch bounds'))
     return this.exclusively<CoreUIProjectionUpdate>(async () => {
       this.guardProjection()
-      // Historical cuts and dynamic extension fills retain the authoritative slow path. Production
-      // daemon calls do not supply fills, so a live head hit stays wholly on the event-driven cell.
+      const filledPatch = async (
+        patch: import('../project/ui.js').CoreUITimelinePatch,
+      ): Promise<CoreUIProjectionUpdate> => {
+        await fillInlineNodes(
+          patch.changes.flatMap((change) => (change.op === 'upsert' ? [change.node] : [])),
+          opts,
+        )
+        return { kind: 'patch', patch }
+      }
+      // Explicit dynamic fills may synthesize nodes. Registry inline cards decorate only the
+      // journal changes, so production calls retain the incremental path.
       const live = () =>
         this.d.ui.complete && this.d.ui.upto === this.lastSeq && (upto === undefined || upto >= this.lastSeq)
       if (!live() || opts.fills) return { kind: 'replace', timeline: await this.projectFull(upto, opts) }
@@ -1957,7 +1968,7 @@ export class SessionImpl {
         const usage = this.headProjectionUsage()
         const patch = this.d.ui.journalPatch(after, usage)
         if (!patch) return { kind: 'replace', timeline: await this.d.ui.view({ ...opts, usage }) }
-        return { kind: 'patch', patch }
+        return filledPatch(patch)
       }
       const traces = await this.probeChildren(this.d.ui.turnList)
       if (!live()) return { kind: 'replace', timeline: await this.projectFull(upto, opts) }
@@ -1997,7 +2008,7 @@ export class SessionImpl {
         upserts.push({ op: 'upsert', index, turn: copy })
       }
       upserts.sort((a, b) => a.index - b.index)
-      return { kind: 'patch', patch: { ...patch, turnChanges: [...removals, ...upserts] } }
+      return filledPatch({ ...patch, turnChanges: [...removals, ...upserts] })
     }).then((update) =>
       update.kind === 'patch'
         ? { ...update, patch: { ...update.patch, yolo: this.yolo } }
@@ -2090,10 +2101,17 @@ export class SessionImpl {
         const traces = web ? await this.probeChildren(this.d.ui.turnList) : undefined
         if (live()) {
           const embed = traces && webTurns(subagentOwners(this.d.ui.turnList), traces)
-          const page = this.d.ui.history(cut, beforeIndex, limit, maxBytes, embed?.bytes)
+          const page = await fillInlinePage(
+            this.d.ui.history(cut, beforeIndex, limit, maxBytes, embed?.bytes),
+            opts,
+            limit,
+            maxBytes,
+            embed && turnCharge(this.d.ui.turnList, embed.bytes),
+          )
           if (beforeIndex > page.totalNodes)
             throw new CoreError('E_ENVELOPE', 'UI history cursor is outside the captured timeline')
-          return embed ? { ...page, turns: page.turns.map(embed.take) } : page
+          const turns = turnsForNodes(page.turns, page.nodes, false)
+          return { ...page, turns: embed ? turns.map(embed.take) : turns }
         }
       }
 

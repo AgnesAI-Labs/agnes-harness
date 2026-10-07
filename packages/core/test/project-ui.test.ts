@@ -912,12 +912,50 @@ it('fills only supported surface triggers after real results, never pending tool
   expect(calls).toEqual([])
   await session.projectUI(undefined, { surface: 'tui', fills })
   expect(calls).toEqual(['tick'])
+  const baseline = session.lastSeq
   await run(session)
+  session.d.slotFills = () => fills
+  const update = await session.projectUIPatch(baseline, undefined, { surface: 'tui' })
+  expect(update.kind).toBe('patch')
+  if (update.kind !== 'patch') throw new Error('expected incremental inline cards')
+  const tools = update.patch.changes.flatMap((change) =>
+    change.op === 'upsert' && change.node.kind === 'tool' ? [change.node] : [],
+  )
+  expect(tools[0]?.slots?.map((fill) => fill.payload)).toEqual([{ title: 'card' }])
+  const fullView = vi.spyOn(session.d.ui, 'view').mockRejectedValue(new Error('unexpected full view'))
+  const opening = await session.projectUIOpening({ surface: 'tui', maxNodes: 1 })
+  expect(opening.timeline.nodes).toHaveLength(1)
+  const page = await session.projectUIHistory(opening.timeline.upto, opening.startIndex, {
+    surface: 'tui',
+    limit: 100,
+  })
+  expect(kind(page.nodes, 'tool')[0]?.slots?.map((fill) => fill.payload)).toEqual([{ title: 'card' }])
+  fullView.mockRestore()
   calls.length = 0
   const timeline = await session.projectUI(undefined, { surface: 'tui', fills })
   expect(calls).toEqual(['tool_result', 'turn_end', 'tick'])
   expect(kind(timeline.nodes, 'tool')[0]?.slots?.[0]?.payload).toEqual({ title: 'card' })
   expect(kind(timeline.nodes, 'slot')).toHaveLength(1)
+
+  session.d.slotFills = () => async () => [
+    {
+      slot: 'tool.card.inline',
+      extId: 'test/ext',
+      payload: { title: 'large card', table: { columns: ['x'], rows: [['x'.repeat(1024)]] } },
+    },
+  ]
+  const bounded = await session.projectUIOpening({ surface: 'tui', maxNodes: 100, maxBytes: 900 })
+  expect(kind(bounded.timeline.nodes, 'tool')).toHaveLength(0)
+  expect(bounded.hasEarlier).toBe(true)
+  expect(new TextEncoder().encode(JSON.stringify(bounded.timeline.nodes)).byteLength).toBeLessThanOrEqual(900)
+  const oversized = await session.projectUIHistory(bounded.timeline.upto, bounded.startIndex, {
+    surface: 'tui',
+    limit: 100,
+    maxBytes: 900,
+  })
+  expect(oversized.nodes).toHaveLength(1)
+  expect(kind(oversized.nodes, 'tool')[0]?.slots?.[0]?.payload).toMatchObject({ title: 'large card' })
+  expect(oversized.startIndex).toBe(bounded.startIndex - 1)
 })
 
 it('isolates lane state and does not let later rows influence an earlier cut', async () => {

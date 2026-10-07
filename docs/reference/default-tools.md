@@ -23,6 +23,10 @@ Background jobs survive turn completion but do not survive Host restart. Session
 
 File search limits process capture and accumulated match text to 4 MiB. A capture ceiling is reported as a partial search; spill artifacts contain all captured rows, not uncaptured data. File access remains checked through the public context and confined executor. Distributions copy the pinned platform executable and its license notices beside the runtime; a system `rg` install is unnecessary.
 
+Local artifact stores accept a configured read limit from zero through the 32 MiB hard cap. CLI and daemon use 32 MiB, matching the maximum deliverable and spill-readable artifact size. Ripgrep refuses captured search output above that ceiling with an error asking for a narrower search, before either spill path stores bytes. Computer Use images retain their separate 4 MiB cap, and RPC response chunks retain their own bounds.
+
+Automatic question and deliverable cards attach to existing completed tool nodes. Live updates use journal patches; opening and history fill only their bounded page and account for card bytes. Explicit dynamic projection fills that synthesize additional nodes retain the full-view path.
+
 Deliverable downloads use the existing session/lane-authorized artifact RPC in bounded chunks. The client verifies size and SHA-256 before creating a temporary URL. HTML and other active formats are downloaded as bytes. Presenting a path does not grant access to arbitrary host paths or URLs.
 
 A deployment embeds search through the public host dependency:
