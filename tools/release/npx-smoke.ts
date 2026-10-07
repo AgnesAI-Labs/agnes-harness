@@ -2,11 +2,11 @@
 // Packs @agnes/harness, installs the tarball outside the repo, and checks agh web.
 import { execFileSync, spawn } from 'node:child_process'
 import { existsSync } from 'node:fs'
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { copyFile, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { createServer } from 'node:net'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 import { PUBLIC_PACKAGE_NAME, PUBLIC_PACKAGE_VERSION } from './npx-package.js'
 import { packNpxPackage } from './pack-npx.js'
 
@@ -19,12 +19,13 @@ const install = join(root, 'install')
 const home = join(root, 'home')
 const workspace = join(root, 'work')
 const cache = join(root, 'npm-cache')
+const daemonStderr = join(root, 'daemon.stderr.log')
 let web: ReturnType<typeof spawn> | undefined
 let webLog = ''
 let succeeded = false
 const agh = join(install, 'node_modules', '.bin', process.platform === 'win32' ? 'agh.cmd' : 'agh') // guards-allow-platform: npm executable suffix for the smoke platform
 
-const env = {
+const env: NodeJS.ProcessEnv = {
   PATH: process.env.PATH ?? '',
   HOME: home,
   USERPROFILE: home,
@@ -74,7 +75,10 @@ async function waitFor(label: string, probe: () => Promise<boolean>): Promise<vo
   const deadline = Date.now() + 90_000
   let last = 'not ready'
   while (Date.now() < deadline) {
-    if (web && web.exitCode !== null) throw new Error(`${label}: agh web exited ${web.exitCode}\n${webLog}`)
+    if (web && web.exitCode !== null) {
+      const daemonLog = await readFile(daemonStderr, 'utf8').catch(() => '')
+      throw new Error(`${label}: agh web exited ${web.exitCode}\n${webLog}\ndaemon stderr:\n${daemonLog}`)
+    }
     try {
       if (await probe()) return
     } catch (error) {
@@ -82,7 +86,8 @@ async function waitFor(label: string, probe: () => Promise<boolean>): Promise<vo
     }
     await new Promise((done) => setTimeout(done, 250))
   }
-  throw new Error(`${label}: timed out (${last})\n${webLog}`)
+  const daemonLog = await readFile(daemonStderr, 'utf8').catch(() => '')
+  throw new Error(`${label}: timed out (${last})\n${webLog}\ndaemon stderr:\n${daemonLog}`)
 }
 
 try {
@@ -137,6 +142,10 @@ try {
 
   const port = await freePort()
   const origin = `http://127.0.0.1:${port}`
+  const capture = join(root, 'daemon-stderr-capture.mjs')
+  await copyFile(join(repo, 'tools/release/daemon-stderr-capture.mjs'), capture)
+  env.NODE_OPTIONS = `--import=${pathToFileURL(capture).href}`
+  env.AGH_SMOKE_DAEMON_STDERR = daemonStderr
   web = spawn(agh, ['web', '--port', String(port)], {
     cwd: workspace,
     env,
