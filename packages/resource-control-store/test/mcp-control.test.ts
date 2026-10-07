@@ -60,11 +60,18 @@ afterEach(async () => {
 })
 
 describe('MCP durable resource control', () => {
-  it('adopts one command once, rejects conflicting replay and blocks removal while enabled', async () => {
+  it.each([false, true])('guards replay and enabled removal (safe: %s)', async (safe) => {
     directory = await mkdtemp(join(tmpdir(), 'agnes-mcp-control-'))
+    const reason = {
+      code: 'MCP_CONNECT_TIMEOUT',
+      message: 'MCP connection did not become ready before the deadline',
+    }
     const store = new McpResourceStore(directory, scope, {
       reconcile: async ({ serverId, enabled, definition: candidate }) => {
-        if (candidate.displayName === 'Bad candidate') throw new Error('candidate could not connect')
+        if (candidate.displayName === 'Bad candidate') {
+          if (!safe) throw new Error('candidate could not connect')
+          return { status: { ...ready(serverId), connectionState: 'unavailable' as const }, error: reason }
+        }
         return {
           status: enabled ? ready(serverId) : { ...ready(serverId), connectionState: 'disabled' as const },
         }
@@ -150,7 +157,10 @@ describe('MCP durable resource control', () => {
       },
       authority,
     )
-    expect(await settled(service, update.operationId)).toMatchObject({ state: 'failed' })
+    expect(await settled(service, update.operationId)).toMatchObject({
+      state: 'failed',
+      lastSafeError: safe ? reason : { code: 'MCP_RECONCILE_FAILED' },
+    })
     // The failed candidate never destroys the last ready definition/status used by reconnect/tools.
     await expect(
       service.call('_agnes/v1/mcp.servers.get', { profile, serverId: definition.serverId }, authority),

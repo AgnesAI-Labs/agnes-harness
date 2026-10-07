@@ -364,7 +364,8 @@ export async function resolvedConfig(
   if (signal.aborted) throw new DOMException('operation aborted', 'AbortError')
   const definition = input.definition
   validateManagedTransport(definition, policies.stdioPolicy, policies.httpPolicy)
-  const allowedTools = Object.freeze([...(definition.toolPolicy?.allow ?? [])])
+  const allowedTools =
+    definition.toolPolicy?.allow === undefined ? undefined : Object.freeze([...definition.toolPolicy.allow])
   if (definition.transport.kind === 'stdio') {
     const binding = definition.secretBinding
     const env: Record<string, string> = {}
@@ -381,7 +382,7 @@ export async function resolvedConfig(
       cmd: [definition.transport.executable, ...definition.transport.args],
       baseEnv: fixedEnvironment(baseEnv),
       ...(Object.keys(env).length ? { env: Object.freeze(env) } : {}),
-      allowedTools,
+      ...(allowedTools === undefined ? {} : { allowedTools }),
       defer: false,
     })
   }
@@ -419,7 +420,7 @@ export async function resolvedConfig(
     transport: definition.transport.kind,
     url: definition.transport.url,
     ...(Object.keys(headers).length ? { headers: Object.freeze(headers) } : {}),
-    allowedTools,
+    ...(allowedTools === undefined ? {} : { allowedTools }),
     defer: false,
   })
 }

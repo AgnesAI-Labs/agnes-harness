@@ -1,7 +1,7 @@
 import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import type { McpConnection, McpServerConfig } from '@agnes/base'
+import { inspectRemoteCatalog, type McpConnection, type McpServerConfig } from '@agnes/base'
 import type { McpServerDefinitionInput } from '@agnes/protocol'
 import { describe, expect, it, vi } from 'vitest'
 import {
@@ -42,7 +42,7 @@ const httpDefinition: McpServerDefinitionInput = {
 } as McpServerDefinitionInput
 
 describe('createMcpServerOpener', () => {
-  it('resolves the credential and connects with the fully-resolved config', async () => {
+  it.each([undefined, [], ['ping']])('resolves credentials and filters tools (%j)', async (allow) => {
     connectMcp.mockClear()
     const resolver = vi.fn(async (ref: string) => (ref === 'secret:gh-token' ? 'tok-123' : 'unexpected'))
     const opener = createMcpServerOpener({
@@ -52,7 +52,13 @@ describe('createMcpServerOpener', () => {
       httpPolicy: {},
     })
     const controller = new AbortController()
-    const connection = await opener.connect(stdioDefinition, controller.signal)
+    const connection = await opener.connect(
+      {
+        ...stdioDefinition,
+        ...(allow === undefined ? {} : { toolPolicy: { allow } }),
+      },
+      controller.signal,
+    )
 
     expect(connection).toBe(fakeConnection)
     expect(resolver).toHaveBeenCalledWith('secret:gh-token', controller.signal)
@@ -69,6 +75,15 @@ describe('createMcpServerOpener', () => {
       env: { GH_TOKEN: 'tok-123' },
     })
     expect(options.signal).toBe(controller.signal)
+    const catalog = await inspectRemoteCatalog(
+      {
+        ...fakeConnection,
+        id: config.id,
+        listTools: async () => [{ name: 'ping', description: 'Ping', inputSchema: { type: 'object' } }],
+      },
+      config,
+    )
+    expect(catalog.tools.map((tool) => tool.name)).toEqual(allow?.length === 0 ? [] : ['ping'])
   })
 
   it('resolves an http bearer credential into the Authorization header', async () => {

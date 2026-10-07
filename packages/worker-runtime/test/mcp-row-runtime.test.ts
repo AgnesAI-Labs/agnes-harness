@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url'
 import { connectMcp, type McpConnection, type McpServerOpener, mcpLocalToolPrefix } from '@agnes/base'
 import type { Host } from '@agnes/host'
 import { createTestHost } from '@agnes/host/testkit'
+import { buildRuntimeTarget } from '@agnes/plugin-runtime/host'
 import { type McpServerDefinitionInput, validateResourceControlData } from '@agnes/protocol'
 import {
   createWorkerMcpServerOpener,
@@ -424,15 +425,38 @@ describe('createMcpRowRuntime first connection attempts (design §3.8, D120)', (
   it("resolves only after a started row's first attempt: its tools are there when apply returns", async () => {
     const host = await testHost()
     const slow = countingOpener()
+    let remount = false
+    let release!: () => void
+    const pending = new Promise<void>((resolve) => {
+      release = resolve
+    })
     const opener: McpServerOpener = {
       async connect(definition, signal) {
+        if (remount) await pending
         await new Promise((resolve) => setTimeout(resolve, 150))
         return slow.opener.connect(definition, signal)
       },
     }
-    await createMcpRowRuntime({ host, opener }).apply([entry('alpha')])
+    const runtime = createMcpRowRuntime({ host, opener })
+    await runtime.apply([entry('alpha')])
     // No waitFor: apply itself waited for the connection and the tool registration.
     expect(tool(host, `${ALPHA_PREFIX}ping`)).toBeDefined()
+    remount = true
+    const target = host.runtimeTargetSnapshot?.()
+    if (!target) throw new Error('the MCP row did not publish a runtime target')
+    await host.applyRuntimeTarget(
+      buildRuntimeTarget({
+        rows: target.tree.rows,
+        resources: target.resource.resources,
+        resourceRevision: 'f'.repeat(64),
+        compositeRevision: 'f'.repeat(64),
+      }),
+    )
+    expect(runtime.status('alpha')?.connectionState).toBe('connecting')
+    const ready = runtime.waitForStatus('alpha')
+    release()
+    await expect(ready).resolves.toMatchObject({ connectionState: 'ready', toolCount: 1 })
+    expect(runtime.tools('alpha', 'r1')?.items.map((item) => item.name)).toEqual(['ping'])
   })
 
   it('a server that never answers holds apply only up to the cap', async () => {
@@ -446,12 +470,19 @@ describe('createMcpRowRuntime first connection attempts (design §3.8, D120)', (
         }),
     }
     const started = Date.now()
-    const result = await createMcpRowRuntime({ host, opener: hanging, firstAttemptTimeoutMs: 100 }).apply([
-      entry('alpha'),
-    ])
+    const runtime = createMcpRowRuntime({ host, opener: hanging, firstAttemptTimeoutMs: 100 })
+    const result = await runtime.apply([entry('alpha')])
     expect(Date.now() - started).toBeLessThan(2_000)
     expect(result.rowIds).toHaveLength(1)
     expect(tool(host, `${ALPHA_PREFIX}ping`)).toBeUndefined()
+    await expect(runtime.waitForStatus('alpha', 1)).resolves.toMatchObject({
+      connectionState: 'unavailable',
+      lastSafeError: { code: 'MCP_CONNECT_TIMEOUT' },
+    })
+    const ac = new AbortController()
+    const waiting = runtime.waitForStatus('alpha', 5_000, ac.signal)
+    ac.abort()
+    await expect(waiting).rejects.toMatchObject({ name: 'AbortError' })
   })
 
   it('does not wait on a row it did not restart', async () => {

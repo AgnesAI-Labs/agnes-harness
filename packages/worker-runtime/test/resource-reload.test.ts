@@ -123,6 +123,7 @@ function recordingRows(options: { events?: string[]; gate?: Promise<void>; rejec
       return { rowIds: ids.map((id) => `ext:agnes/mcp-${id}`), skipped: [], statuses: new Map(statuses) }
     },
     status: (serverId) => statuses.get(serverId),
+    waitForStatus: async (serverId) => statuses.get(serverId),
     tools: () => undefined,
     reconnect: (serverId) => reconnected.push(serverId),
   }

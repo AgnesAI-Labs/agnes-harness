@@ -539,6 +539,7 @@ export async function applyMcpRowChange(
   serverId: string,
   reconnect: boolean,
 ): Promise<McpStatus | undefined> {
+  const deadline = Date.now() + 20_000
   const slot = o.resources
   if (reconnect) slot?.mcpRows?.reconnect(serverId)
   const mark = slot ? ++slot.staleMarks : 0
@@ -559,7 +560,7 @@ export async function applyMcpRowChange(
     release?.()
     if (!slot || slot.reloadedMarks >= mark) break
   }
-  return slot?.mcpRows?.status(serverId)
+  return slot?.mcpRows?.waitForStatus(serverId, Math.max(0, deadline - Date.now()), ac.signal)
 }
 
 /**

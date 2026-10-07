@@ -124,6 +124,8 @@ export type McpRowRuntime = Readonly<{
   /** This server's last-known status, or `undefined` if it has never been part of any applied
    *  snapshot. Read after an out-of-band status frame, or by a caller that only has a serverId. */
   status(serverId: string): McpStatus | undefined
+  /** Wait for the current row's ready/failure observation, including a generation remount. */
+  waitForStatus(serverId: string, timeoutMs?: number, signal?: AbortSignal): Promise<McpStatus | undefined>
   /** A page of this server's live tool catalog, or `undefined` if it has no row, no successful sync
    *  yet, or `expectedRevision` no longer matches its current one (the daemon's own guard against
    *  serving a page from a revision the journal has already moved past). */
@@ -186,6 +188,7 @@ export function createMcpRowRuntime(
   // fresh event, so its status here is exactly the one still-accurate answer for it.
   const statuses = new Map<string, McpStatus>()
   const catalogs = new Map<string, Catalog>()
+  const statusChanged = new Set<() => void>()
   const cap = deps.firstAttemptTimeoutMs ?? FIRST_ATTEMPT_TIMEOUT_MS
   return Object.freeze({
     async apply(entries: readonly McpServerSnapshotEntry[]): Promise<McpRowApplyResult> {
@@ -197,6 +200,7 @@ export function createMcpRowRuntime(
           statuses.delete(serverId)
           catalogs.delete(serverId)
           epochs.delete(serverId)
+          for (const notify of statusChanged) notify()
         }
       for (const entry of entries) revisions.set(entry.definition.serverId, entry.revision)
       // A row's extension starts while Host applies it, so by the time Host's apply resolves this
@@ -216,6 +220,7 @@ export function createMcpRowRuntime(
           if (event.state === 'ready')
             catalogs.set(serverId, { revision, catalogRevision: event.catalogRevision, tools: event.tools })
           deps.onStatus?.(serverId, status)
+          for (const notify of statusChanged) notify()
         },
       })
       const others = deps.host.extensionRows.current().filter((row) => !owned.has(row.id))
@@ -231,6 +236,7 @@ export function createMcpRowRuntime(
         statuses.set(serverId, status)
         catalogs.delete(serverId)
         deps.onStatus?.(serverId, status)
+        for (const notify of statusChanged) notify()
       }
       const settled = new Map<string, McpStatus>()
       for (const serverId of present) {
@@ -240,6 +246,41 @@ export function createMcpRowRuntime(
       return Object.freeze({ rowIds, skipped, statuses: settled })
     },
     status: (serverId) => statuses.get(serverId),
+    waitForStatus(serverId, timeoutMs = cap, signal) {
+      if (signal?.aborted) return Promise.reject(new DOMException('aborted', 'AbortError'))
+      const observed = statuses.get(serverId)
+      if (observed?.connectionState !== 'connecting') return Promise.resolve(observed)
+      return new Promise((resolve, reject) => {
+        const finish = (status: McpStatus | undefined, aborted = false) => {
+          clearTimeout(timer)
+          statusChanged.delete(changed)
+          signal?.removeEventListener('abort', abort)
+          if (aborted) reject(new DOMException('aborted', 'AbortError'))
+          else resolve(status)
+        }
+        const changed = () => {
+          const status = statuses.get(serverId)
+          if (status?.connectionState !== 'connecting') finish(status)
+        }
+        const abort = () => finish(undefined, true)
+        const timer = setTimeout(
+          () =>
+            finish({
+              ...observed,
+              connectionState: 'unavailable',
+              observedAt: observedAt(),
+              lastSafeError: {
+                code: 'MCP_CONNECT_TIMEOUT',
+                message: 'MCP connection did not become ready before the deadline',
+              },
+            }),
+          Math.max(0, timeoutMs),
+        )
+        statusChanged.add(changed)
+        signal?.addEventListener('abort', abort, { once: true })
+        changed()
+      })
+    },
     tools(serverId, expectedRevision, cursor) {
       const catalog = catalogs.get(serverId)
       if (!catalog || catalog.revision !== expectedRevision) return undefined
