@@ -135,6 +135,8 @@ describe('client module immutable snapshots', () => {
       'test',
     )
     store.pin('old-session', snapshot.id)
+    const another = store.create(decodeRuntimeTargetArtifact(snapshot.artifact), snapshot.sources, 'test')
+    store.pin('other-session', another.id)
     rmSync(f.packageDirectory, { recursive: true })
     const empty: InstalledInventory = { profile: 'local-dev', hash: 'empty', packages: [] }
     const registry = createClientModuleRegistry({ snapshotDirectory: () => f.snapshots })
@@ -149,6 +151,9 @@ describe('client module immutable snapshots', () => {
       const roster = await registry.list({ ...input, sessionId: 'old-session' })
       expect(roster.modules).toHaveLength(1)
       expect(roster.modules[0]?.entryUrl).toContain(`/plugins/generations/${snapshot.id}/`)
+      const otherRoster = await registry.list({ ...input, sessionId: 'other-session' })
+      expect(otherRoster.revision).not.toBe(roster.revision)
+      expect(otherRoster.modules[0]?.entryUrl).toContain(`/plugins/generations/${another.id}/`)
       const module = roster.modules[0]
       if (!module) throw new Error('missing generation client module')
       const asset = await registry.read({ ...input, path: module.entryUrl })

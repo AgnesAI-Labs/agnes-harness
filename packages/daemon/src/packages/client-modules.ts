@@ -972,7 +972,7 @@ export function createClientModuleRegistry(options: ClientModuleRegistryOptions)
     const selected = generationInput(input, id)
     const result = await selected.registry.list(selected.input)
     const route = (url: string) => url.replace('/plugins/', `/plugins/generations/${id}/`)
-    return {
+    const roster = {
       ...result,
       modules: result.modules.map((module) => ({
         ...module,
@@ -989,6 +989,7 @@ export function createClientModuleRegistry(options: ClientModuleRegistryOptions)
           }
         : {}),
     }
+    return { ...roster, revision: rosterRevision(roster) }
   }
   const clock = options.clock ?? (() => new Date())
   const retentionMs = options.retentionMs ?? CLIENT_MODULE_RETENTION_MS

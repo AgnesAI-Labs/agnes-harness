@@ -1213,8 +1213,13 @@ async function open(
     }
     const loaded = binding.session
     current = loaded
+    offPermission = binding.offPermission
     moduleSessionId = loaded.id
     await clientModules.reconciler.reconcileNow()
+    if (epoch !== selection) {
+      binding.offPermission?.()
+      return
+    }
     clientModules.session.setSession(loaded.id)
     if (!options.created) permissionMode = 'workspace'
     const metadata = sessionRows.find((row) => row.sessionId === id) as
@@ -1493,7 +1498,6 @@ async function beginNewDraft(showWorkspacePicker = true, workspace?: WorkspaceEn
   current = undefined
   moduleSessionId = undefined
   clientModules.session.setSession(undefined)
-  await clientModules.reconciler.reconcileNow()
   projection = undefined
   draftingNew = true
   draftModelSettingsEdited = false
@@ -1549,6 +1553,7 @@ async function beginNewDraft(showWorkspacePicker = true, workspace?: WorkspaceEn
   }
   try {
     await previous?.detach()
+    await clientModules.reconciler.reconcileNow()
   } catch (error) {
     cleanupError ??= error
   } finally {

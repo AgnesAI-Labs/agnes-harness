@@ -136,12 +136,16 @@ describe('client reconciler（WC10 前端状态机）', () => {
     const h = await harness()
     const log = { loaded: [] as string[], disposed: [] as string[] }
     stubPlugin(h.ctx, log)
-    const source = { list: async () => roster([mod('a', 'v1')]) }
+    let module = mod('a', 'v1')
+    const source = { list: async () => roster([module]) }
     const reconciler = createReconciler({ ctx: h.ctx, source, importer: h.importer })
     await reconciler.reconcileNow()
     await reconciler.reconcileNow()
     expect(log.loaded.filter((x) => x === 'apply:a')).toHaveLength(1)
     expect(h.loaded).toEqual(['/a/v1/index.js'])
+    module = { ...module, entryUrl: '/plugins/generations/next/a/v1/index.js' }
+    await reconciler.reconcileNow()
+    expect(h.loaded).toEqual(['/a/v1/index.js', '/plugins/generations/next/a/v1/index.js'])
   })
 
   it('rejects a DSH slot before import when the catalog version is missing', async () => {

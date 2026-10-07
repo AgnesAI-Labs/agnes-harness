@@ -134,16 +134,19 @@ export interface Host {
    * the only way to reach `validatePresetSwitch` from outside it. Throws `HostError` on an invalid
    * name; the caller passes `resolved.view` on to `session.setPreset()`.
    */
-  validatePresetSwitch(name: string): ResolvedPreset
+  validatePresetSwitch(name: string, sessionKey?: string): ResolvedPreset
   /** Same gate, for `session.setModel`. Throws `HostError` on a selection outside this deployment's
    *  assembled route table; the caller passes `sel` unchanged on to `session.setModel()`. */
-  validateModelSwitch(sel: {
-    slot: string
-    route: string
-    model: string
-    thinking?: ThinkingLevel | null
-    contextWindow?: number | null
-  }): void
+  validateModelSwitch(
+    sel: {
+      slot: string
+      route: string
+      model: string
+      thinking?: ThinkingLevel | null
+      contextWindow?: number | null
+    },
+    sessionKey?: string,
+  ): void
 }
 
 export async function createHost(profile: ResolvedProfile, opts: HostOptions): Promise<Host> {

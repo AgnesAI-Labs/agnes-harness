@@ -24,6 +24,7 @@ export type PluginGenerationSnapshot = Readonly<{
   id: string
   artifact: RuntimeTargetArtifact
   sources: readonly RuntimePluginSnapshot[]
+  packages: readonly Readonly<{ id: string; version: string }>[]
   compatibility: string
 }>
 export type SessionGenerationPin = Readonly<{
@@ -49,6 +50,10 @@ export class RuntimeGenerationSnapshotStore {
     target: RuntimeTarget,
     sources: readonly RuntimePluginSnapshot[],
     compatibility: string,
+    packages: PluginGenerationSnapshot['packages'] = sources.map((source) => ({
+      id: source.snapshot.packageId,
+      version: source.snapshot.version,
+    })),
   ): PluginGenerationSnapshot {
     const id = randomUUID(),
       directory = this.directory(id)
@@ -64,7 +69,13 @@ export class RuntimeGenerationSnapshotStore {
       })
       writeFileSync(
         join(directory, 'generation.json'),
-        JSON.stringify({ id, artifact: encodeRuntimeTargetArtifact(target), sources: copied, compatibility }),
+        JSON.stringify({
+          id,
+          artifact: encodeRuntimeTargetArtifact(target),
+          sources: copied,
+          packages,
+          compatibility,
+        }),
         { mode: 0o600, flag: 'wx', flush: true },
       )
       this.#created.add(id)
@@ -85,7 +96,13 @@ export class RuntimeGenerationSnapshotStore {
     } catch {
       throw new Error(`E_GENERATION_SNAPSHOT_MISSING: generation ${id} cannot be resumed`)
     }
-    if (record.id !== id || typeof record.compatibility !== 'string' || !Array.isArray(record.sources))
+    if (
+      record.id !== id ||
+      typeof record.compatibility !== 'string' ||
+      !Array.isArray(record.sources) ||
+      !Array.isArray(record.packages) ||
+      record.packages.some((pkg) => typeof pkg.id !== 'string' || typeof pkg.version !== 'string')
+    )
       throw new Error('E_GENERATION_INTEGRITY: invalid generation snapshot')
     decodeRuntimeTargetArtifact(record.artifact)
     const sources = record.sources.map((source, index) => {
@@ -96,7 +113,11 @@ export class RuntimeGenerationSnapshotStore {
         throw new Error('E_GENERATION_INTEGRITY: package snapshot is unavailable or changed')
       return Object.freeze({ ...source, snapshot: Object.freeze(snapshot) })
     })
-    return Object.freeze({ ...record, sources: Object.freeze(sources) })
+    return Object.freeze({
+      ...record,
+      sources: Object.freeze(sources),
+      packages: Object.freeze(record.packages.map((pkg) => Object.freeze(pkg))),
+    })
   }
 
   private pinPath(sessionKey: string): string {

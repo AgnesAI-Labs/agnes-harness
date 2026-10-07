@@ -366,7 +366,7 @@ export async function handleCommand(
     }
     case 'setModel': {
       const sel = p.sel as { slot: string; route: string; model: string }
-      o.host.validateModelSwitch(sel)
+      o.host.validateModelSwitch(sel, session.key)
       return { effectiveFromSeq: await session.setModel(sel) }
     }
     case 'setYolo': {

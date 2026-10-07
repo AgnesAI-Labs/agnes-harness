@@ -741,9 +741,14 @@ export function createReconciler(options: ReconcilerOptions): ClientReconciler {
       if (blockedRows.has(rowId)) continue
       const state = stateOf(rowId)
       state.rosterPresent = true
-      const unchanged = state.active?.revision === mod.revision && state.phase === 'active'
+      const unchanged =
+        state.active?.revision === mod.revision &&
+        state.active.entryUrl === mod.entryUrl &&
+        state.phase === 'active'
       const pending =
-        state.target?.revision === mod.revision && (state.phase === 'loading' || state.phase === 'active')
+        state.target?.revision === mod.revision &&
+        state.target.entryUrl === mod.entryUrl &&
+        (state.phase === 'loading' || state.phase === 'active')
       if (unchanged || pending) continue
       waits.push(applyTarget(rowId, state, mod))
     }

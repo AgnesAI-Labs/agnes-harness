@@ -1118,7 +1118,7 @@ export function registerAgnes(
     requireOwner('session.setPreset', p.sessionId, c)
     const entry = cx.registry.require(p.sessionId)
     try {
-      const resolved = cx.host.validatePresetSwitch(p.preset)
+      const resolved = cx.host.validatePresetSwitch(p.preset, p.sessionId)
       return {
         effectiveFromSeq: await runQueued(cx.commandQueue, p.sessionId, neverAbort(), () =>
           entry.session.setPreset(resolved.view),
@@ -1146,7 +1146,7 @@ export function registerAgnes(
     }
     requireOwner('session.setModel', p.sessionId, c)
     try {
-      cx.host.validateModelSwitch(sel)
+      cx.host.validateModelSwitch(sel, p.sessionId)
       return {
         effectiveFromSeq: await runQueued(cx.commandQueue, p.sessionId, neverAbort(), () =>
           cx.registry.require(p.sessionId).session.setModel(sel),

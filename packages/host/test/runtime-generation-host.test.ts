@@ -125,6 +125,8 @@ it('keeps old plugin leases across update, close and cold resume, and drains on 
     expect(await execute(b)).toMatchObject({ content: [{ text: '2.0.0' }] })
     expect(b.pluginGenerationId).not.toBe(firstId)
     await host.applyRuntimeTarget(target())
+    const unbound = await host.createSession({ key: 'session-disabled', cwd: root })
+    expect(unbound.currentTools().resolve('generation_value')).toBeUndefined()
     expect(required(host.pluginGenerationStatus?.()).plugins).toContainEqual({
       id: 'acme/generation',
       state: 'draining',
@@ -142,6 +144,7 @@ it('keeps old plugin leases across update, close and cold resume, and drains on 
     expect(await execute(resumed)).toMatchObject({ content: [{ text: '1.0.0' }] })
     const store = new RuntimeGenerationSnapshotStore(join(root, 'profiles/local-dev'))
     expect(store.session('session-a')?.loop).toEqual(resumed.loop)
+    expect(store.read(required(firstId)).packages).toContainEqual({ id: 'acme/generation', version: '1.0.0' })
     expect(() => store.recordLoop('session-a', { id: 'missing-loop', version: '9.0.0' })).toThrow(
       'E_GENERATION_LOOP_INCOMPATIBLE',
     )
@@ -159,6 +162,9 @@ it('keeps old plugin leases across update, close and cold resume, and drains on 
     )
     await expect(host.createSession({ key: 'session-b', cwd: root })).rejects.toThrow(
       'E_GENERATION_INCOMPATIBLE',
+    )
+    expect(required(host.pluginGenerationStatus?.()).generations).toContainEqual(
+      expect.objectContaining({ id: secondId, state: 'failed', boundSessions: 1 }),
     )
     writeFileSync(file, saved)
     rmSync(join(store.root, secondId), { recursive: true })

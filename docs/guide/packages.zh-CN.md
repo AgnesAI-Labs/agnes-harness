@@ -93,7 +93,7 @@ node packages/cli/dist/local/agnes.mjs package cancel OPERATION_ID
 node packages/cli/dist/local/agnes.mjs packages pins inspect
 ```
 
-撤信任保留在 Node SDK 中，供管理和恢复流程使用；普通 Web 页面不再显示这一动作，shell 也没有通用 `package untrust` 命令。禁用撤下能力，删除处理安装状态与自有文件；正在被使用的快照可能有 pin，不能手动删除引用中的目录。`packages pins release PIN_ID` 是针对核验过的孤儿 pin 的显式清理动作，不用它绕开运行安全门。已有隔离演示验证禁用后三个示例包均可删除；仍需以目标平台和最终发行构建复验，具体基线见[验证记录](../maintainers/verification.zh-CN.md)。
+撤信任保留在 Node SDK 中，供管理和恢复流程使用；普通 Web 页面不再显示这一动作，shell 也没有通用 `package untrust` 命令。禁用停止向新会话提供能力，已有会话保留其 generation 直到删除；删除处理安装状态与自有文件；正在被使用的快照可能有 pin，不能手动删除引用中的目录。`packages pins release PIN_ID` 是针对核验过的孤儿 pin 的显式清理动作，不用它绕开运行安全门。已有隔离演示验证禁用后三个示例包均可删除；仍需以目标平台和最终发行构建复验，具体基线见[验证记录](../maintainers/verification.zh-CN.md)。
 
 取消是请求，收到回执后继续查 operation；部分有副作用操作不能当作从未发生。工具、事件监听、Cordis 服务与前端槽位应随所属 fiber 清理，外部业务数据不因插件卸载自动撤销。
 
@@ -101,7 +101,7 @@ node packages/cli/dist/local/agnes.mjs packages pins inspect
 
 每次包激活生成不可变的插件 generation。新会话绑定当前 generation；已有会话在休眠和 worker 重启后仍保留原包、版本、loop 与前端 bundle。禁用或卸载停止新的绑定，已有会话继续排空。关闭连接不会释放持久会话的 generation；会话删除后，由 Host 所有者调用 `releaseSessionGeneration(sessionKey)`，不再被会话引用的 generation 才会销毁并回收。
 
-存储、文件系统、sandbox 和平台后端仍需要重启。恢复时若固定快照缺失、包文件发生变化，或部署的 loop/adapter 配置不兼容，会明确失败，不会替换成当前 generation。`Host.pluginGenerationStatus()` 和内部 worker 命令 `pluginGenerations.status` 向管理端提供 generation 引用数及 active/draining/restart-required/failed 插件状态。浏览器名册请求可携带 `sessionId`，加载该会话固定的 generation，资源通过不可变的 generation 路径提供。
+存储、文件系统、sandbox 和平台后端仍需要重启。恢复时若固定快照缺失、包文件发生变化，或部署的 loop/adapter 配置不兼容，会明确失败，不会替换成当前 generation。私有 MCP 工厂或 Skills 视图也必须能够重建；原视图缺失时拒绝冷恢复。`Host.pluginGenerationStatus()` 和内部 worker 命令 `pluginGenerations.status` 向管理端提供 generation 引用数及 active/draining/restart-required/failed 插件状态。浏览器名册请求可携带 `sessionId`，加载该会话固定的 generation，资源通过不可变的 generation 路径提供。
 
 候选加载、依赖与激活超时仍可能导致激活失败，旧 generation 继续服务已绑定的会话。浏览器自行加载 bundle 名册，Host active 不等于浏览器已加载。
 

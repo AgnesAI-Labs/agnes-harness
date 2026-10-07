@@ -53,6 +53,7 @@ export async function createRuntimeGenerationHost(
   const live = new Map<string, LiveGeneration>()
   const opening = new Map<string, Promise<LiveGeneration>>()
   const preparedRows = new Map<string, Parameters<Host['extensionRows']['prepare']>[0]>()
+  const rowsByGeneration = new Map<string, typeof preparedRows>()
   const skillsByGeneration = new Map<string, SkillRuntimeInput | undefined>()
   const failures = new Map<string, string>()
   const failedSnapshots = new Map<string, PluginGenerationSnapshot>()
@@ -103,14 +104,22 @@ export async function createRuntimeGenerationHost(
     if (store.pin(key, id).generationId !== id)
       throw new Error('E_GENERATION_BINDING_CONFLICT: session was bound by another worker')
   }
+  const snapshotTarget = (target: RuntimeTarget, sources: readonly RuntimePluginSnapshot[]) =>
+    store.create(target, sources, compatibility, [
+      ...profile.packages
+        .filter((pkg) => pkg.trust === 'builtin' && pkg.enabled !== false)
+        .map((pkg) => ({ id: pkg.id, version: pkg.version })),
+      ...sources.map((source) => ({ id: source.snapshot.packageId, version: source.snapshot.version })),
+    ])
   const ensureCurrent = async (): Promise<LiveGeneration> => {
     if (current) return current
     const target = initial.runtimeTargetSnapshot?.()
     if (!target) throw new Error('E_GENERATION_TARGET_MISSING: Host has no runtime snapshot')
-    const snapshot = store.create(target, await sourcesFor(target), compatibility)
+    const snapshot = snapshotTarget(target, await sourcesFor(target))
     current = { snapshot, host: initial }
     live.set(snapshot.id, current)
     skillsByGeneration.set(snapshot.id, options.skillResources)
+    rowsByGeneration.set(snapshot.id, new Map(preparedRows))
     initialBinding = (key) => {
       bindGeneration(key, snapshot.id)
     }
@@ -165,7 +174,8 @@ export async function createRuntimeGenerationHost(
       },
     )
     try {
-      for (const input of preparedRows.values()) host.extensionRows.prepare(input)
+      for (const input of (rowsByGeneration.get(snapshot.id) ?? preparedRows).values())
+        host.extensionRows.prepare(input)
       await host.applyRuntimeTarget(decodeRuntimeTargetArtifact(snapshot.artifact))
     } catch (error) {
       await host.close().catch(() => undefined)
@@ -184,6 +194,9 @@ export async function createRuntimeGenerationHost(
     opening.set(id, started)
     try {
       return await started
+    } catch (error) {
+      failures.set(id, error instanceof Error ? error.message : String(error))
+      throw error
     } finally {
       opening.delete(id)
     }
@@ -200,6 +213,7 @@ export async function createRuntimeGenerationHost(
       await generation.host.close()
       live.delete(id)
       skillsByGeneration.delete(id)
+      rowsByGeneration.delete(id)
       retired.add(id)
     }
     store.collect(new Set([...live.keys(), ...opening.keys()]), retired)
@@ -226,7 +240,7 @@ export async function createRuntimeGenerationHost(
           errors.set(id, String(error))
         }
       }
-    const active = new Set(current?.snapshot.sources.map((source) => source.snapshot.packageId) ?? [])
+    const active = new Set(current?.snapshot.packages.map((pkg) => pkg.id) ?? [])
     const plugins = new Map<string, PluginGenerationStatus['plugins'][number]>()
     const generations: PluginGenerationStatus['generations'][number][] = []
     for (const [id, snapshot] of snapshots) {
@@ -236,24 +250,27 @@ export async function createRuntimeGenerationHost(
         state: errors.has(id) ? 'failed' : id === current?.snapshot.id ? 'active' : 'draining',
         ...(errors.has(id) ? { error: errors.get(id) as string } : {}),
         boundSessions,
-        packages: snapshot.sources.map((source) => ({
-          id: source.snapshot.packageId,
-          version: source.snapshot.version,
-        })),
+        packages: snapshot.packages,
       })
-      for (const source of snapshot.sources) {
-        const packageId = source.snapshot.packageId,
+      for (const pkg of snapshot.packages) {
+        const packageId = pkg.id,
           previous = plugins.get(packageId)
+        const failed = live
+          .get(id)
+          ?.host.extensions()
+          .find((entry) => entry.package === packageId && entry.error)
+        const error = failed?.error?.message ?? errors.get(id)
         plugins.set(packageId, {
           id: packageId,
           state: basePackages.has(packageId)
             ? 'restart-required'
-            : active.has(packageId)
+            : active.has(packageId) && !(id === current?.snapshot.id && error)
               ? 'active'
-              : errors.has(id)
+              : error
                 ? 'failed'
                 : 'draining',
           boundSessions: (previous?.boundSessions ?? 0) + boundSessions,
+          ...(error ? { error } : {}),
         })
       }
     }
@@ -296,30 +313,44 @@ export async function createRuntimeGenerationHost(
       return head.host.ordinaryConvergence()
     const oldTarget = decodeRuntimeTargetArtifact(head.snapshot.artifact)
     // Backend facets are process configuration. A package generation cannot replace them live.
-    for (const row of target.tree.rows)
+    for (const row of [...oldTarget.tree.rows, ...target.tree.rows])
       if (row.id === 'seam:sandbox' || row.id === 'seam:platform' || row.id.startsWith('adapter:')) {
-        if (JSON.stringify(oldTarget.tree.rows.find((old) => old.id === row.id)) !== JSON.stringify(row))
+        if (
+          JSON.stringify(oldTarget.tree.rows.find((old) => old.id === row.id)) !==
+          JSON.stringify(target.tree.rows.find((next) => next.id === row.id))
+        )
           throw new Error(`E_GENERATION_RESTART_REQUIRED: ${row.id} requires restart`)
       }
-    const snapshot = store.create(target, await sourcesFor(target), compatibility)
-    skillsByGeneration.set(snapshot.id, skills ? skills.input : skillsByGeneration.get(head.snapshot.id))
-    for (const source of snapshot.sources)
-      if (basePackages.has(source.snapshot.packageId)) {
-        const previous = head.snapshot.sources.find(
-          (item) => item.snapshot.packageId === source.snapshot.packageId,
+    const sources = await sourcesFor(target)
+    for (const previous of head.snapshot.sources)
+      if (basePackages.has(previous.snapshot.packageId)) {
+        const next = sources.find((item) => item.snapshot.packageId === previous.snapshot.packageId)
+        if (
+          previous.snapshot.integrity !== next?.snapshot.integrity ||
+          previous.snapshot.version !== next?.snapshot.version
         )
-        if (previous?.snapshot.integrity !== source.snapshot.integrity)
-          throw new Error(`E_GENERATION_RESTART_REQUIRED: ${source.snapshot.packageId} requires restart`)
+          throw new Error(`E_GENERATION_RESTART_REQUIRED: ${previous.snapshot.packageId} requires restart`)
       }
+    const snapshot = snapshotTarget(target, sources)
+    skillsByGeneration.set(snapshot.id, skills ? skills.input : skillsByGeneration.get(head.snapshot.id))
+    rowsByGeneration.set(snapshot.id, new Map(preparedRows))
     try {
       current = await build(snapshot)
-      await collect()
-      return current.host.ordinaryConvergence()
     } catch (error) {
       failures.set(snapshot.id, error instanceof Error ? error.message : String(error))
       failedSnapshots.set(snapshot.id, snapshot)
       throw error
     }
+    // Publication has committed. Retirement failure belongs to the retired generation, and cannot
+    // turn a successful head change into a rejected apply/compensation transaction.
+    try {
+      await collect()
+    } catch (error) {
+      for (const id of live.keys())
+        if (id !== current.snapshot.id && !store.sessions().some((pin) => pin.generationId === id))
+          failures.set(id, `E_GENERATION_DISPOSE: ${String(error)}`)
+    }
+    return current.host.ordinaryConvergence()
   }
   const overrides: Partial<Host> = {
     kernel,
@@ -350,8 +381,18 @@ export async function createRuntimeGenerationHost(
         const pin = existing ?? { sessionKey: key, generationId: desiredId }
         const generation = await resolve(pin.generationId)
         try {
+          if (
+            pin.loop &&
+            input.loop &&
+            (pin.loop.id !== input.loop.id || pin.loop.version !== input.loop.version)
+          )
+            throw new Error('E_GENERATION_LOOP_INCOMPATIBLE: requested loop differs from the session pin')
           if (pin.loop) generation.host.kernel.loops.resolve(pin.loop)
-          const session = await generation.host.createSession({ ...input, key })
+          const session = await generation.host.createSession({
+            ...input,
+            key,
+            ...(pin.loop ? { loop: pin.loop } : {}),
+          })
           try {
             store.recordLoop(key, session.loop)
           } catch (error) {
@@ -391,6 +432,7 @@ export async function createRuntimeGenerationHost(
           entryRevision: revision,
           skillResources: fresh,
         })
+        const previous = preparedRows.get('agnes/skills')
         preparedRows.set('agnes/skills', {
           extensionId: 'agnes/skills',
           entryRevision: revision,
@@ -401,15 +443,32 @@ export async function createRuntimeGenerationHost(
           row,
           ...Object.values(target.resource.rows).flatMap((resource) => (resource ? [resource] : [])),
         ]
-        await publishTarget(
-          buildCompleteRuntimeTarget({
-            rows,
-            resources: { ...target.resource.resources, skills: { entries: fresh?.list() ?? [] } },
-          }).target,
-          { input: fresh },
-        )
+        try {
+          await publishTarget(
+            buildCompleteRuntimeTarget({
+              rows,
+              resources: { ...target.resource.resources, skills: { entries: fresh?.list() ?? [] } },
+            }).target,
+            { input: fresh },
+          )
+        } catch (error) {
+          if (previous) preparedRows.set('agnes/skills', previous)
+          else preparedRows.delete('agnes/skills')
+          throw error
+        }
       }),
+    reloadEcosystemExtension: async (id, freshInit) => {
+      if (id !== 'agnes/skills') return (current?.host ?? initial).reloadEcosystemExtension(id, freshInit)
+      await overrides.refreshSkillRow?.(freshInit.skillResources)
+      const result = (current?.host ?? initial).extensions().find((entry) => entry.id === id)
+      if (!result) throw new Error('E_GENERATION_SKILLS: Skills row has no status')
+      return result
+    },
     setSessionPreset: (key, preset) => owner(key).setSessionPreset(key, preset),
+    validatePresetSwitch: (name, key) =>
+      (key ? owner(key) : (current?.host ?? initial)).validatePresetSwitch(name),
+    validateModelSwitch: (selection, key) =>
+      (key ? owner(key) : (current?.host ?? initial)).validateModelSwitch(selection),
     callService: (params, ...rest) => owner(params.sessionId).callService(params, ...rest),
     inspectService: (params, ...rest) => owner(params.sessionId).inspectService(params, ...rest),
     extensionRows: {
