@@ -48,7 +48,7 @@ export async function linkLocal(destination) {
   for (const name of ['@types', 'typescript', 'tsx'])
     await symlink(join(repo, 'node_modules', name), join(target, 'node_modules', name), 'dir')
   await mkdir(join(target, 'node_modules/.bin'))
-  await symlink(join(repo, 'node_modules/.bin/tsc'), join(target, 'node_modules/.bin/tsc'))
+  await symlink('../typescript/bin/tsc', join(target, 'node_modules/.bin/tsc'))
   return target
 }
 

@@ -66,7 +66,8 @@ describe('plugin scaffolder', () => {
             },
           })
         } catch (error) {
-          throw new Error(String((error as { stdout?: string }).stdout), { cause: error })
+          const output = error as { stdout?: string; stderr?: string }
+          throw new Error(`${output.stdout ?? ''}\n${output.stderr ?? ''}`, { cause: error })
         }
       }
       expect(run('build')).toContain('tsc')
