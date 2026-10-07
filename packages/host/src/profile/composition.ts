@@ -398,6 +398,8 @@ export function resolveComposition(
   if (options.rows)
     for (const id of Object.keys(selection.plugins ?? {}))
       if (!rows.some((row) => row.id === id)) fail(`unknown plugin row ${id}`)
+  if (selection.loop?.id === 'default' && selection.loop.version === DEFAULT_LOOP.version)
+    selection.loop = { ...DEFAULT_LOOP }
   if (options.catalog) validateComposition(selection, options.catalog)
   const tree = { profile: profile.name, preset, bundles: [...new Set(bundles)], selection, sources, rows }
   return freezeTree({ ...tree, hash: `sha256-${sha256hex(canonicalJson(tree))}` })

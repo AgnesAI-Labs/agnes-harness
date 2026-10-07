@@ -178,3 +178,26 @@ it('saves admin bundles with optimistic concurrency and reloads desired origins'
   })
   expect((await admin.bundles()).bundles).toEqual(['acme/research#research'])
 })
+
+it('canonicalizes the documented default loop alias before catalog validation and hashing', async () => {
+  const profile = await resolveProfile({ builtin: 'local-dev' }, env)
+  const options = {
+    catalog: {
+      ...runtime,
+      loops: [{ id: 'agnes.default', version: '1.0.0', sourcePackage: '@agnes/core', capabilities: [] }],
+    },
+  }
+  const alias = resolveComposition(profile, {
+    ...options,
+    session: { loop: { id: 'default', version: '1.0.0' } },
+  })
+  const canonical = resolveComposition(profile, {
+    ...options,
+    session: { loop: { id: 'agnes.default', version: '1.0.0' } },
+  })
+  expect(alias.selection.loop).toEqual({ id: 'agnes.default', version: '1.0.0' })
+  expect(alias.hash).toBe(canonical.hash)
+  expect(() =>
+    resolveComposition(profile, { ...options, session: { loop: { id: 'default', version: '2.0.0' } } }),
+  ).toThrow('unknown loop')
+})

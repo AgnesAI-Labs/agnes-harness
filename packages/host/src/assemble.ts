@@ -19,7 +19,11 @@ import {
   type SeamName,
 } from '@agnes/core'
 import { API_VERSION, type ExtensionManifest, type LeaseView } from '@agnes/extension-api'
-import { type RuntimePluginSnapshot, readPluginCapabilities } from '@agnes/package-manager'
+import {
+  developmentPluginRows,
+  type RuntimePluginSnapshot,
+  readPluginCapabilities,
+} from '@agnes/package-manager'
 import {
   createMutableSeamImplementations,
   type EntryRow,
@@ -1158,7 +1162,14 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
     })
     const bootTreeRows = Object.freeze([...builtPresets.rows, ...builtOrdinary.rows, ...builtSeams.rows])
     const initialRuntimeTarget = buildCompleteRuntimeTarget({
-      rows: bootTreeRows,
+      rows: [
+        ...bootTreeRows,
+        ...activeRuntimeSources.flatMap((source) =>
+          profile.packages.some((pkg) => pkg.id === source.snapshot.packageId && pkg.enabled)
+            ? developmentPluginRows(source, bootTreeRows).filter((row) => row.id.startsWith('web:'))
+            : [],
+        ),
+      ],
       resources: { mcp: [], skills: {} },
     }).target
     await applyRuntimeTarget(initialRuntimeTarget)

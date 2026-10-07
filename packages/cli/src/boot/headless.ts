@@ -1,5 +1,6 @@
-import { open } from 'node:fs/promises'
-import { isAbsolute, resolve } from 'node:path'
+import { mkdtemp, open, rm } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { isAbsolute, join, resolve } from 'node:path'
 import { type BundleCatalog, expandBundles, type ProfileInputs, parsePackageBundles } from '@agnes/host'
 import type { HeadlessRunBoot } from '../commands/run.js'
 import { UsageError } from '../errors.js'
@@ -49,14 +50,31 @@ export function applyHeadlessBundle(
 /** Apply a transient bundle through Host profile inputs; never write desired admin defaults. */
 export async function bootHeadless(input: HeadlessRunBoot, deps: LocalBootDeps) {
   const bundle = await loadHeadlessBundle(input.bundle, deps.cwd)
-  return bootLocal(input.args, {
-    ...deps,
-    signal: input.signal,
-    // This form is deliberately embedded: no launcher, web listener or shared daemon mutation.
-    transformProfileInputs: async (original) =>
-      applyHeadlessBundle(
-        deps.transformProfileInputs ? await deps.transformProfileInputs(original) : original,
-        bundle,
-      ),
-  })
+  const runtimeDirectory = await mkdtemp(join(tmpdir(), 'agh-headless-'))
+  try {
+    const boot = await bootLocal(input.args, {
+      ...deps,
+      runtimeDirectory,
+      signal: input.signal,
+      // This form is deliberately embedded: no launcher or web listener; shared session state and generation pins stay isolated.
+      transformProfileInputs: async (original) =>
+        applyHeadlessBundle(
+          deps.transformProfileInputs ? await deps.transformProfileInputs(original) : original,
+          bundle,
+        ),
+    })
+    return {
+      ...boot,
+      close: async () => {
+        try {
+          await boot.close()
+        } finally {
+          await rm(runtimeDirectory, { recursive: true, force: true })
+        }
+      },
+    }
+  } catch (error) {
+    await rm(runtimeDirectory, { recursive: true, force: true })
+    throw error
+  }
 }
