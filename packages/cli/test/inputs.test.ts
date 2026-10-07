@@ -139,7 +139,7 @@ describe('readProfileInputs', () => {
     const home = scratch('home')
     const cwd = scratch('cwd')
     const inputs = await readProfileInputs({ home, cwd, flags: flagsFor(cwd), agnesVersion: '0.0.0' })
-    expect(inputs).toEqual({ builtin: 'local-dev' })
+    expect(inputs).toEqual({ builtin: 'local-dev', adminBundles: [] })
     expect(Object.hasOwn(inputs, 'user')).toBe(false)
     expect(Object.hasOwn(inputs, 'local')).toBe(false)
     expect(Object.hasOwn(inputs, 'flags')).toBe(false)

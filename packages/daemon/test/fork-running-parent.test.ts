@@ -1,5 +1,6 @@
 import type { HostSession } from '@agnes/host'
-import { describe, expect, it, vi } from 'vitest'
+import { describe, expect, it } from 'vitest'
+import { createLocalEndpoint } from '../src/local/index.js'
 import { openTestHost } from './host.js'
 
 const init = {
@@ -16,12 +17,18 @@ describe('forking a parent', () => {
     const h = await openTestHost()
     const createSession = h.host.createSession.bind(h.host)
     let opened: HostSession | undefined
-    vi.spyOn(h.host, 'createSession').mockImplementation(async (opts) => {
+    // Capture the public open without replacing the generation container's internal method.
+    const captureSession: typeof h.host.createSession = async (opts) => {
       const created = await createSession(opts)
       opened ??= created
       return created
+    }
+    const host = new Proxy(h.host, {
+      get(target, property, receiver) {
+        return property === 'createSession' ? captureSession : Reflect.get(target, property, receiver)
+      },
     })
-    const ep = h.endpoint({ clock: () => Date.now(), pollMs: 5 })
+    const ep = createLocalEndpoint(host, { clock: () => Date.now(), pollMs: 5, workspaces: h.workspaces })
     try {
       await ep.handle(init)
       await h.addWorkspace(h.dataDir)

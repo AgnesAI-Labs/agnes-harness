@@ -14,24 +14,39 @@ const apis: readonly WireApi[] = ['anthropic-messages', 'openai-completions', 'o
 const resourceId = `skill/user/user-agnes/${'a'.repeat(64)}`
 const skillBody = 'SKILL_WIRE_BODY_SENTINEL'
 
-function skillRuntime(reads: string[], content = skillBody): SkillRuntimeInput {
+function skillRuntime(reads: string[], content = skillBody, snapshot = false): SkillRuntimeInput {
+  const listed: ReturnType<SkillRuntimeInput['list']> = [
+    {
+      kind: 'skill',
+      resourceId,
+      name: 'review',
+      description: 'Review changes.',
+      revision: 'b'.repeat(64),
+      sourceIdentity: { scope: 'user', rootKey: 'user-agnes', sourceId: 'c'.repeat(64) },
+      priority: 400,
+      resolution: { winner: true, shadowed: [] },
+      trust: 'trusted',
+      desired: 'enabled',
+      actual: 'ready',
+      stale: false,
+    },
+  ]
   return {
-    list: () => [
-      {
-        kind: 'skill',
-        resourceId,
-        name: 'review',
-        description: 'Review changes.',
-        revision: 'b'.repeat(64),
-        sourceIdentity: { scope: 'user', rootKey: 'user-agnes', sourceId: 'c'.repeat(64) },
-        priority: 400,
-        resolution: { winner: true, shadowed: [] },
-        trust: 'trusted',
-        desired: 'enabled',
-        actual: 'ready',
-        stale: false,
-      },
-    ],
+    list: () => listed,
+    ...(snapshot
+      ? {
+          generationSnapshot: () => ({
+            version: 1 as const,
+            listed,
+            entries: listed.map((actual) => ({
+              resourceId: actual.resourceId,
+              actual,
+              body: content,
+              files: [],
+            })),
+          }),
+        }
+      : {}),
     read: (id) => {
       reads.push(id)
       return id === resourceId ? { ok: true, content } : { ok: false, code: 'NOT_FOUND' }
@@ -177,7 +192,7 @@ describe('loaded Skill wire prefix', () => {
     credentials(dataDir)
     const capture = await startWireCapture(() => ({ text: 'fixture reply' }))
     const reads: string[] = []
-    const options = hostOptions(dataDir, api, capture.baseUrl(api), skillRuntime(reads))
+    const options = hostOptions(dataDir, api, capture.baseUrl(api), skillRuntime(reads, skillBody, true))
     try {
       const first = await createTestHost(options)
       try {
@@ -197,7 +212,7 @@ describe('loaded Skill wire prefix', () => {
         expect(JSON.stringify(after.body).split('[skill loaded]')).toHaveLength(2)
         const rows = await reopened.d.log.scan({ type: 'user/message', limit: 100 })
         expect(rows.filter((row) => JSON.stringify(row.data).includes('[skill loaded]'))).toHaveLength(1)
-        expect(reads).toEqual([resourceId, resourceId])
+        expect(JSON.stringify(after.body)).toContain(skillBody)
       } finally {
         await second.host.close()
       }

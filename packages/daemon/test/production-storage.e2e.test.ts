@@ -251,6 +251,7 @@ describe('production supervisor storage', () => {
     const workspace = join(dir, 'workspace')
     const home = join(dir, 'home')
     const priorHome = process.env.HOME
+    const priorImportUser = process.env.AGNES_SKILLS_IMPORT_USER
     // The worker inherits process.env: an exported AGH_HOME/AGNES_HOME would move the user-agnes
     // root away from <HOME>/.agh, so clear both for the test and restore them afterwards.
     const priorHomeVars = { AGH_HOME: process.env.AGH_HOME, AGNES_HOME: process.env.AGNES_HOME }
@@ -275,6 +276,8 @@ describe('production supervisor storage', () => {
         )
       }
       process.env.HOME = home
+      // External user roots are opt-in; this case deliberately covers all five roots.
+      process.env.AGNES_SKILLS_IMPORT_USER = '1'
       const resourceProfile = await resolveProfile(
         {
           builtin: 'local-dev',
@@ -407,6 +410,8 @@ describe('production supervisor storage', () => {
     } finally {
       rpc?.close()
       await supervisor?.close()
+      if (priorImportUser === undefined) delete process.env.AGNES_SKILLS_IMPORT_USER
+      else process.env.AGNES_SKILLS_IMPORT_USER = priorImportUser
       if (priorHome === undefined) delete process.env.HOME
       else process.env.HOME = priorHome
       for (const [name, value] of Object.entries(priorHomeVars))
