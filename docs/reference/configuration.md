@@ -39,6 +39,7 @@ Built-in templates provide the base. User profiles and the Host configuration ov
 | `seams` | Ownership of required seam implementations; not an unrestricted plugin registration API |
 | `provider` | package/adapters/routes/catalog/contract; route name `default` is a reserved sentinel |
 | `adapters` | storage/fs/exec/platform/secrets selection |
+| `persistence` | `{ provider: id }`. Default `sqlite`, and that default is omitted from the resolved profile. User profile only. Changing it is restart-required. The protocol schema does not list this field yet; Host types and user YAML accept it. |
 | `transports` | stdio/unix/ws-tls; remote configuration also needs certificates and authentication |
 | `dataDir`, `cacheDir` | Data/cache locations; changes may alter shared-instance identity |
 | `presets` | default and allowed; the default must be allowed |

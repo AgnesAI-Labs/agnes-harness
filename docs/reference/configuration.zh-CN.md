@@ -33,6 +33,7 @@ builtin 模板是基础，用户 profile 与 Host configuration overlay 合并�
 | `seams` | 必要接缝实现归属；不是普通插件自由注册的接口 |
 | `provider` | package/adapters/routes/catalog/contract；route 名 `default` 是保留 sentinel |
 | `adapters` | storage/fs/exec/platform/secrets 选择 |
+| `persistence` | `{ provider: id }`。默认 `sqlite`，默认值不写入解析后的 profile。仅用户 profile 可设置。更改后需要重启。协议 schema 尚未列出该字段；Host 类型和用户 YAML 接受它。 |
 | `transports` | stdio/unix/ws-tls，远程配置另需证书与认证 |
 | `dataDir`、`cacheDir` | 数据/缓存位置；改变它们可能改变共享实例身份 |
 | `presets` | default 与 allowed；默认必须在允许集合中 |

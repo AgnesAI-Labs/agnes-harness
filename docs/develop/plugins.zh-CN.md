@@ -90,6 +90,23 @@ export const example = {
 
 管理端可调用 Host 的 `modelAdapterCatalog(root)` 或装配对象的 `modelAdapterCatalog()`，读取 id、版本、来源包、API 名和能力。目录不暴露配置、凭据或工厂。当前卸载或替换适配器后须重新装配模型配置；本合同不提供运行中会话的代际固定。
 
+## 持久化提供者
+
+会话账本和每个 owner 的包表是同一个存储。提供者只实现这个存储。[`definePersistenceProvider`](../../packages/extension-api/src/persistence.ts) 的 `open({ dataDir })` 返回 `open`、`commit`、`renew`、`release`、`scan`、`registers`、`tables` 和 `close`。扫描分页上限是 `PERSISTENCE_SCAN_PAGE_MAX`（500）。寄存器单元使用 `persistenceRegisterKey` 和 `isPersistenceTombstone`，与 Core 现有拼写相同。
+
+内置 id 是 `sqlite`（`DEFAULT_PERSISTENCE_PROVIDER_ID`）。配置省略 `persistence.provider` 时 Host 使用它。在用户 profile 中改 id：
+
+```yaml
+persistence:
+  provider: sqlite
+```
+
+`adapters.storage` 是原来的适配器名，不选择这个提供者。工作区、local、flags 和 managed 层不能设置 `persistence`。每个提供者的 `state.effect` 都是 `restart-required`。Host 在打开适配器时读取 id。插件的 `apply()` 发生在这之后，换不了当前进程已经打开的存储。
+
+包通过具名导出 `persistenceProvider` 发布实现。[`@agnes-examples/persistence-jsonl`](../../examples/persistence/src/index.ts) 是第二个提供者，id 为 `jsonl`，事件日志只追加。它不迁移 SQLite 账本。它的包表接受 `CREATE TABLE`、`CREATE INDEX`、`INSERT` 和 `SELECT`，不是 Host 的 SQL 授权器。子任务控制和崩溃回收仍在 `sqlite` 上。daemon 自己的任务表仍直接打开 SQLite。提供者之间没有迁移。
+
+协议里的 profile schema 还没有 `persistence`。Host 的 profile 类型和用户 `profile.yaml` 接受它。
+
 ## 不同 API 不可混用
 
 | 接口 | 可以做什么 | 边界 |

@@ -102,6 +102,23 @@ The instance streams wire events; the existing AI facade continues to own stamps
 
 Admin integrations can call Host's `modelAdapterCatalog(root)` or the assembled `modelAdapterCatalog()` to read id, version, source package, API name and capabilities. The catalog exposes no configuration, credentials or executable factories. Adapter unload or replacement currently requires rebuilding the model profile; live session generation pinning is not provided by this contract.
 
+## Persistence providers
+
+The session ledger and the per-owner package tables are one store. A provider implements that store and nothing else. The contract is [`definePersistenceProvider`](../../packages/extension-api/src/persistence.ts): `open({ dataDir })` returns `open`, `commit`, `renew`, `release`, `scan`, `registers`, `tables`, and `close`. Scan pages use `PERSISTENCE_SCAN_PAGE_MAX` (500). Register cells use `persistenceRegisterKey` and `isPersistenceTombstone`, the same spelling Core already uses.
+
+The built-in id is `sqlite` (`DEFAULT_PERSISTENCE_PROVIDER_ID`). Host uses it when `persistence.provider` is omitted. Set another id in the user profile:
+
+```yaml
+persistence:
+  provider: sqlite
+```
+
+`adapters.storage` is the older adapter name and does not select this provider. A workspace, local, flags, or managed layer cannot set `persistence`. Every provider's `state.effect` is `restart-required`. Host reads the id when it opens adapters. A plugin `apply()` runs after that and cannot replace the store of the current process.
+
+A package publishes the named export `persistenceProvider`. [`@agnes-examples/persistence-jsonl`](../../examples/persistence/src/index.ts) is a second provider, id `jsonl`, with an append-only event log. It does not migrate a SQLite ledger. Its package tables accept `CREATE TABLE`, `CREATE INDEX`, `INSERT`, and `SELECT`, and they are not the host SQL authorizer. Child control and crash reclaim stay on `sqlite`. The daemon's own job tables still open SQLite directly. There is no migration between providers.
+
+The protocol profile schema does not list `persistence` yet. Host profile types and a user `profile.yaml` accept it.
+
 <a id="不同-api-不可混用"></a>
 
 ## Keep API boundaries distinct
