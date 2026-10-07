@@ -129,7 +129,16 @@
                       "required": ["type", "ref"],
                       "properties": {
                         "type": {
-                          "enum": ["npm", "market", "git", "file", "workspace", "local"]
+                          "enum": [
+                            "npm",
+                            "market",
+                            "git",
+                            "file",
+                            "workspace",
+                            "local",
+                            "path",
+                            "url"
+                          ]
                         },
                         "ref": {
                           "type": "string",
@@ -207,6 +216,9 @@
                     },
                     "trustDecision": {
                       "$ref": "package-admin.json#/$defs/PackageTrustDecision"
+                    },
+                    "declaredCapabilities": {
+                      "$ref": "package-admin.json#/$defs/PluginCapabilities"
                     }
                   }
                 }
@@ -235,6 +247,9 @@
             },
             "trustDecision": {
               "$ref": "package-admin.json#/$defs/PackageTrustDecision"
+            },
+            "declaredCapabilities": {
+              "$ref": "package-admin.json#/$defs/PluginCapabilities"
             }
           }
         },
@@ -262,7 +277,14 @@
               "required": ["type", "ref"],
               "properties": {
                 "type": {
-                  "enum": ["git", "workspace", "file", "local"]
+                  "enum": [
+                    "git",
+                    "workspace",
+                    "file",
+                    "local",
+                    "path",
+                    "url"
+                  ]
                 },
                 "ref": {
                   "type": "string",
@@ -360,7 +382,16 @@
                       "required": ["type", "ref"],
                       "properties": {
                         "type": {
-                          "enum": ["npm", "market", "git", "file", "workspace", "local"]
+                          "enum": [
+                            "npm",
+                            "market",
+                            "git",
+                            "file",
+                            "workspace",
+                            "local",
+                            "path",
+                            "url"
+                          ]
                         },
                         "ref": {
                           "type": "string",
@@ -438,6 +469,9 @@
                     },
                     "trustDecision": {
                       "$ref": "package-admin.json#/$defs/PackageTrustDecision"
+                    },
+                    "declaredCapabilities": {
+                      "$ref": "package-admin.json#/$defs/PluginCapabilities"
                     }
                   }
                 }
@@ -466,6 +500,9 @@
             },
             "trustDecision": {
               "$ref": "package-admin.json#/$defs/PackageTrustDecision"
+            },
+            "declaredCapabilities": {
+              "$ref": "package-admin.json#/$defs/PluginCapabilities"
             }
           }
         }

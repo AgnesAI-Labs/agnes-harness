@@ -13,6 +13,7 @@ const COMMANDS = new Set<string>([
   'doctor',
   'computer-use',
   'profile',
+  'plugins',
   'package',
   'packages',
   'install',
@@ -65,6 +66,7 @@ const VALUE_FLAGS: Record<string, keyof ParsedArgs> = Object.assign(Object.creat
 })
 
 const BOOL_FLAGS: Record<string, keyof ParsedArgs> = Object.assign(Object.create(null), {
+  '--yes': 'yes',
   '-p': 'print',
   '--print': 'print',
   '--continue': 'continue',
@@ -242,6 +244,7 @@ export function usage(): string {
     'agh profile list | inspect <p> [--resolved] | trust <deployDir>',
     'agh package [--profile <p>] status|catalog [query]|inspect <src>|add <src>|trust <id> <integrity> <capabilityHash>',
     '              enable|disable|rollback|remove <id> | operation|cancel <operationId>',
+    'agh plugins add <url|path> [--yes] | pack <folder> [output.tgz] | trust|enable <id> [--yes]',
     'agh install <src> [--profile <p>]',
     'agh packages pins inspect | release <pinId...> [--profile <p>]',
     'agh resources list|get|operation|cancel|enable|disable ...   agh skills refresh|trust ...',

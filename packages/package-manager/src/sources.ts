@@ -9,9 +9,11 @@ import {
   renameSync,
   rmSync,
   statSync,
+  writeFileSync,
 } from 'node:fs'
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { runIsolatedCommand } from '@agnes/package-isolation'
+import { extractPluginArchive } from './plugin-archives.js'
 import { bundledPluginSourceRoot } from './bundled-plugin-source.js'
 import { copyPackageTreeSync } from './copy-tree.js'
 import { PackageError } from './errors.js'
@@ -19,7 +21,7 @@ import { checkCancelled } from './ports.js'
 import { claimFetch, readyStage } from './staging.js'
 
 export type PackageSource = {
-  type: 'npm' | 'git' | 'file' | 'workspace' | 'market' | 'local'
+  type: 'npm' | 'git' | 'file' | 'workspace' | 'market' | 'local' | 'path' | 'url'
   ref: string
 }
 export type ExecFn = (
@@ -29,6 +31,7 @@ export type ExecFn = (
 ) => Promise<{ stdout: string }>
 export type FetchedSource = {
   dir: string
+  source?: PackageSource
   version: string
   integrity: string
   license?: string
@@ -72,32 +75,30 @@ export function parseSource(spec: string): PackageSource {
       throw sourceError('npm source needs an exact version', 'exact-version')
     return { type: 'npm', ref: spec }
   }
-  if (spec.startsWith('git:')) {
-    const raw = spec.slice(4)
-    const hashAt = raw.lastIndexOf('#')
-    const commit = raw.slice(hashAt + 1)
+  if (spec.startsWith('git:') || spec.startsWith('url:')) {
+    const type = spec.startsWith('git:') ? 'git' : 'url'
     let url: URL
     try {
-      url = new URL(raw.slice(0, hashAt))
+      url = new URL(spec.slice(4))
     } catch {
-      throw sourceError('git source needs a credential-free HTTPS URL and full commit', 'invalid-git-ref')
+      throw sourceError('Use a credential-free HTTPS URL', 'invalid-url')
     }
     if (
-      hashAt <= 0 ||
-      !/^[a-f0-9]{40}$/.test(commit) ||
       url.protocol !== 'https:' ||
-      url.username !== '' ||
-      url.password !== '' ||
-      url.search !== '' ||
-      url.hash !== ''
+      url.username ||
+      url.password ||
+      url.search ||
+      (type === 'url' && url.hash) ||
+      (url.hash && !/^#[A-Za-z0-9._/-]+$/.test(url.hash))
     )
-      throw sourceError('git source needs a credential-free HTTPS URL and full commit', 'invalid-git-ref')
-    return { type: 'git', ref: spec }
+      throw sourceError('Use a credential-free HTTPS URL and optional git ref', 'invalid-url')
+    return { type, ref: spec }
   }
-  if (spec.startsWith('file:')) {
-    if (!safeRelative(spec.slice(5), './'))
-      throw sourceError('file source must be a contained ./ relative path', 'invalid-file-ref')
-    return { type: 'file', ref: spec }
+  if (spec.startsWith('file:') || spec.startsWith('path:')) {
+    const raw = spec.slice(5)
+    if (!raw || raw.includes('\0') || raw.includes('\\'))
+      throw sourceError('Use a folder or archive path', 'invalid-file-ref')
+    return { type: spec.startsWith('file:') ? 'file' : 'path', ref: spec }
   }
   if (spec.startsWith('workspace:')) {
     if (!safeRelative(spec.slice(10), 'extensions/'))
@@ -199,7 +200,7 @@ type PackageJson = {
   dependencies: Record<string, string>
 }
 
-function readPackageJson(dir: string): PackageJson {
+export function readPackageJson(dir: string): PackageJson {
   const file = join(dir, 'package.json')
   let text: string
   try {
@@ -259,7 +260,7 @@ function childEnvironment(): NodeJS.ProcessEnv {
   return env
 }
 
-const defaultExec: ExecFn = (command, args, opts) =>
+export const defaultExec: ExecFn = (command, args, opts) =>
   runIsolatedCommand(command, args, {
     ...opts,
     env: childEnvironment(),
@@ -378,7 +379,7 @@ function localSource(src: PackageSource, cwd: string): string {
       { workspaceRoot: cwdRoot },
     )
   }
-  if (!contained(cwdRoot, from))
+  if (src.type === 'workspace' && !contained(cwdRoot, from))
     throw sourceError('local package source is outside cwd', 'source-escape', { workspaceRoot: cwdRoot })
   return from
 }
@@ -450,13 +451,18 @@ export async function fetchSource(
     let pkg: PackageJson
     let integrity: string
     let releasedAt: string | undefined
+    let resolvedSource: PackageSource | undefined
     switch (checked.type) {
       case 'file':
+      case 'path':
       case 'workspace': {
         const from = localSource(checked, opts.cwd)
         if (contained(from, target))
           throw sourceError('package destination is inside its source', 'destination-inside-source')
-        integrity = copyLocal(from, payload, opts.signal)
+        if (statSync(from).isFile()) {
+          await extractPluginArchive(from, payload, exec, opts.signal)
+          integrity = hashDirectory(payload)
+        } else integrity = copyLocal(from, payload, opts.signal)
         pkg = metadata(payload)
         break
       }
@@ -530,8 +536,9 @@ export async function fetchSource(
       case 'git': {
         const raw = checked.ref.slice(4)
         const split = raw.lastIndexOf('#')
-        const url = raw.slice(0, split)
-        const commit = raw.slice(split + 1)
+        const url = split < 0 ? raw : raw.slice(0, split)
+        const requested = split < 0 ? 'HEAD' : raw.slice(split + 1)
+        let commit = requested
         mkdirSync(payload)
         const prefix = [
           '-c',
@@ -543,6 +550,28 @@ export async function fetchSource(
         ]
         const git = (args: string[]): Promise<{ stdout: string }> =>
           exec('git', [...prefix, ...args], { cwd: opts.cwd })
+        if (!/^[a-f0-9]{40}$/.test(commit)) {
+          const refs = (
+            await git([
+              'ls-remote',
+              '--',
+              url,
+              requested === 'HEAD' ? 'HEAD' : 'refs/heads/' + requested,
+              'refs/tags/' + requested,
+              'refs/tags/' + requested + '^{}',
+            ])
+          ).stdout
+          const rows = refs
+            .trim()
+            .split('\n')
+            .map((line) => line.split(/\s+/))
+            .filter((row) => /^[a-f0-9]{40}$/.test(row[0] ?? ''))
+          const selected = rows.find((row) => row[1]?.endsWith('^{}')) ?? rows[0]
+          if (!selected?.[0] || (rows.length > 1 && !rows.some((row) => row[1]?.endsWith('^{}'))))
+            throw sourceError('Git ref is unavailable or ambiguous; supply a commit', 'git-ref')
+          commit = selected[0]
+        }
+        resolvedSource = { type: 'git', ref: 'git:' + url + '#' + commit }
         await git(['init', '--quiet', payload])
         await git(['-C', payload, 'remote', 'add', 'origin', url])
         await git(['-C', payload, 'fetch', '--quiet', '--depth', '1', 'origin', commit])
@@ -553,6 +582,27 @@ export async function fetchSource(
             detail: { reason: 'commit' },
           })
         rmSync(join(payload, '.git'), { recursive: true, force: true })
+        pkg = metadata(payload)
+        integrity = hashDirectory(payload)
+        break
+      }
+      case 'url': {
+        const response = await fetch(checked.ref.slice(4), {
+          redirect: 'error',
+          signal: AbortSignal.any([AbortSignal.timeout(120000), ...(opts.signal ? [opts.signal] : [])]),
+        })
+        if (!response.ok || Number(response.headers.get('content-length') ?? 0) > 256 * 1024 * 1024)
+          throw sourceError('Archive download failed or is too large', 'archive-download')
+        const chunks: Uint8Array[] = []
+        let size = 0
+        for await (const chunk of response.body ?? []) {
+          size += chunk.length
+          if (size > 256 * 1024 * 1024) throw sourceError('Archive is too large', 'archive-size')
+          chunks.push(chunk)
+        }
+        const archive = join(work, 'download')
+        writeFileSync(archive, Buffer.concat(chunks))
+        await extractPluginArchive(archive, payload, exec, opts.signal)
         pkg = metadata(payload)
         integrity = hashDirectory(payload)
         break
@@ -570,6 +620,7 @@ export async function fetchSource(
     renameSync(payload, target)
     return {
       dir: target,
+      ...(resolvedSource ? { source: resolvedSource } : {}),
       version: pkg.version,
       integrity,
       ...(pkg.license === undefined ? {} : { license: pkg.license }),

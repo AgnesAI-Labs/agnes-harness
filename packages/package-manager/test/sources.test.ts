@@ -42,28 +42,27 @@ describe('parseSource', () => {
     'npm:@agnes/base@1.2.3-01',
     'git:http://example.com/x.git#0123456789012345678901234567890123456789',
     'git:https://user:password@example.com/x.git#0123456789012345678901234567890123456789',
-    'git:https://example.com/x.git#main',
     'git:https://example.com/x.git?token=x#0123456789012345678901234567890123456789',
   ])('refuses an unpinned or unsafe network source: %s', (source) => {
     expect(() => parseSource(source)).toThrow()
   })
 
-  it('accepts contained local forms and refuses traversal spellings', () => {
+  it('accepts explicit local paths while keeping workspace references contained', () => {
     expect(parseSource('file:./vendor/x')).toEqual({ type: 'file', ref: 'file:./vendor/x' })
     expect(parseSource('workspace:extensions/sales')).toEqual({
       type: 'workspace',
       ref: 'workspace:extensions/sales',
     })
     for (const source of [
-      'file:/tmp/x',
-      'file:../x',
-      'file:.',
       'file:.\\x',
       'workspace:/extensions/x',
       'workspace:extensions/../x',
       'workspace:other/x',
     ])
       expect(() => parseSource(source), source).toThrow()
+    for (const ref of ['file:/tmp/x', 'file:../x', 'file:.']) expect(parseSource(ref)).toEqual({ type: 'file', ref })
+    expect(parseSource('git:https://example.com/x.git#main')).toMatchObject({ type: 'git' })
+    expect(parseSource('git:https://example.com/x.git')).toMatchObject({ type: 'git' })
     expect(() => parseSource('market:kiwi/x@1.0.0')).toThrow(/E_PACKAGE_SOURCE/)
     expect(() => parseSource('other:x')).toThrow(/unknown package source/)
   })
@@ -165,6 +164,9 @@ describe('fetchSource', () => {
     })
     expect(fetched.integrity).toBe(hashDirectory(into))
     expect(readFileSync(join(into, 'package.json'), 'utf8')).toContain('acme/pkg-a')
+    const outside = join(dir, 'absolute')
+    await fetchSource(parseSource('file:' + join(fixtures, 'pkg-a')), outside, { cwd: dir })
+    expect(hashDirectory(outside)).toBe(fetched.integrity)
   })
 
   it('fails closed on an escaping source symlink and leaves no destination or stage', async () => {
@@ -329,6 +331,9 @@ describe('fetchSource', () => {
       fetchSource(parseSource('npm:@agnes/base@1.2.3'), into, { cwd: dir, exec }),
     ).resolves.toMatchObject({ dir: into, integrity, version: '1.2.3' })
     expect(readFileSync(join(into, 'package.json'), 'utf8')).toContain('@agnes/base')
+    const localArchive = join(dir, 'local-tarball')
+    await fetchSource(parseSource('file:' + tarball), localArchive, { cwd: fixtures })
+    expect(readFileSync(join(localArchive, 'package.json'), 'utf8')).toContain('@agnes/base')
   })
 
   it.each(['npm-symlink.tgz', 'npm-hardlink.tgz'])(

@@ -10,6 +10,7 @@ import { type BuildOptions, type BuildResult, build, type Plugin } from 'esbuild
 import { collectThirdPartyNotices } from '../../../tools/third-party-notices.mjs'
 import { beginRuntimeDirectory } from '../../base/tools/runtime-directory.js'
 import { buildConversationCss } from '../../web-ui/tools/build-conversation-css.js'
+import { copyPluginPackRuntime } from './plugin-pack-runtime.js'
 import { prepareDocumentReader } from './document-reader.js'
 import { copySystemRuntime, withBuiltSystemRuntime } from './windows-runtime.js'
 
@@ -280,6 +281,7 @@ async function buildLocal(out: string, nativeOutput?: string, versionOverride?: 
   await mkdir(join(out, 'native'), { recursive: true })
   await copyComputerUseNotice(out)
   await copyBundledPlugins(out)
+  await copyPluginPackRuntime(out)
   const packageJson = JSON.parse(await readFile(join(cliRoot, 'package.json'), 'utf8')) as {
     version?: unknown
   }

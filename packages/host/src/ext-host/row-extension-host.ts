@@ -39,7 +39,13 @@ export type RowExtensionHostOptions = Readonly<{
   describePackage?(
     packageId: string,
     snapshotId: string,
-  ): Readonly<{ version?: string; integrity?: string }> | undefined
+  ):
+    | Readonly<{
+        version?: string
+        integrity?: string
+        declaredCapabilities?: import('@agnes/protocol').PluginCapabilities
+      }>
+    | undefined
 }>
 
 /** Everything that only exists once the kernel does. */
@@ -337,6 +343,9 @@ export function createRowExtensionHost(options: RowExtensionHostOptions) {
               ),
           }
         : {}),
+      ...(info?.declaredCapabilities === undefined
+        ? {}
+        : { declaredCapabilities: info.declaredCapabilities }),
       source,
       version: packageVersion,
       packageIdentity: origin.packageId,

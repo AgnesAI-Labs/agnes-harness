@@ -233,6 +233,7 @@ export type {
   PackagePinsReleaseParams,
   PackagePinsReleaseResult,
   PackagePreview,
+  PluginCapabilities,
   PackageProvenance,
   PackageRemoveParams,
   PackageRollbackParams,
@@ -476,3 +477,4 @@ export {
 } from './validate.js'
 export * from './worker-generation.js'
 export * from './loop-selection.js'
+export { pluginFailureHelp, type PluginFailureHelp } from './plugin-failure-help.js'

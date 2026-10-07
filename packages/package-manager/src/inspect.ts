@@ -19,6 +19,12 @@ import {
   parseAgnesPluginEntries,
   parseAgnesPluginKinds,
 } from './plugin-manifest.js'
+import {
+  capabilityAtoms,
+  capabilityPolicyBlockers,
+  parsePluginCapabilities,
+  type PluginCapabilityPolicy,
+} from './plugin-capabilities.js'
 import { checkCancelled } from './ports.js'
 import { resolveSkins } from './skin-assets.js'
 import { type FetchedSource, hashDirectory, type PackageSource } from './sources.js'
@@ -113,6 +119,7 @@ export function inspectStaged(input: {
   fetched: FetchedSource
   previous?: LockEntry
   ceiling: readonly string[]
+  capabilityPolicy?: PluginCapabilityPolicy
   signal?: AbortSignal
 }): { preview: PackagePreview; treeIntegrity: string } {
   checkCancelled(input.signal)
@@ -151,6 +158,7 @@ export function inspectStaged(input: {
           'clientDescriptors',
           'kinds',
           'bundles',
+          'capabilities',
         ].includes(k),
     )
   )
@@ -166,6 +174,7 @@ export function inspectStaged(input: {
       Object.keys(bundles).length > 64)
   )
     invalid('bundles')
+  const declaredCapabilities = parsePluginCapabilities(metadata.capabilities)
   let kinds: ReturnType<typeof parseAgnesPluginKinds>
   let plugins: ReturnType<typeof parseAgnesPluginEntries>
   try {
@@ -190,7 +199,10 @@ export function inspectStaged(input: {
   if (metadata.clientDescriptors !== undefined && !Array.isArray(metadata.clientDescriptors))
     invalid('client-descriptors')
   const contributions: PackageContributionSummary[] = []
-  const blockers: PackagePreview['blockers'] = []
+  const blockers: PackagePreview['blockers'] = capabilityPolicyBlockers(
+    declaredCapabilities,
+    input.capabilityPolicy ?? {},
+  )
   const clientRows = new Set<string>()
   const clientPaths = new Set<string>()
   for (const raw of array(metadata.clientDescriptors)) {
@@ -285,6 +297,10 @@ export function inspectStaged(input: {
   if (input.source.type === 'workspace')
     blockers.push({ code: 'policy', references: ['use-trust-workspace'] })
   const capabilityDiff = diff(contributions, input.previous, String(pkg.name), fetched.dependencies)
+  const currentAtoms = new Set(capabilityAtoms(declaredCapabilities)),
+    previousAtoms = new Set(capabilityAtoms(input.previous?.declaredCapabilities))
+  capabilityDiff.added.push(...difference(currentAtoms, previousAtoms))
+  capabilityDiff.removed.push(...difference(previousAtoms, currentAtoms))
   const warnings: PackagePreview['warnings'] = [
     { code: 'unverified-provenance', safeMessage: 'Package signature has not been verified.' },
   ]
@@ -317,10 +333,15 @@ export function inspectStaged(input: {
       ...(fetched.releasedAt ? { releasedAt: fetched.releasedAt } : {}),
     },
     contributions,
+    ...(declaredCapabilities === undefined ? {} : { declaredCapabilities }),
     ...(kinds === undefined ? {} : { kinds }),
     dependencies,
     capabilityDiff,
-    capabilityHash: capabilityHash({ contributions, dependencies: fetched.dependencies }),
+    capabilityHash: capabilityHash({
+      contributions,
+      dependencies: fetched.dependencies,
+      ...(declaredCapabilities === undefined ? {} : { declaredCapabilities }),
+    }),
     warnings,
     blockers,
   })

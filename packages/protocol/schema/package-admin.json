@@ -146,7 +146,7 @@
               "type": "string",
               "minLength": 1,
               "maxLength": 1024,
-              "pattern": "^file:\\./(?!\\.{1,2}(?:/|$))[^/\\\\\\x00:]+(?:/(?!\\.{1,2}(?:/|$))[^/\\\\\\x00:]+)*$"
+              "pattern": "^file:[^\\x00\\\\]+$"
             }
           },
           "required": ["type", "ref"]
@@ -178,11 +178,49 @@
               "type": "string",
               "minLength": 1,
               "maxLength": 1024,
-              "pattern": "^git:",
+              "pattern": "^git:https://[^\\s#]+(?:#[A-Za-z0-9._/-]+)?$",
               "format": "agnes-git-source"
             }
           },
           "required": ["type", "ref"]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "type",
+            "ref"
+          ],
+          "properties": {
+            "type": {
+              "const": "path"
+            },
+            "ref": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 1024,
+              "pattern": "^path:"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "type",
+            "ref"
+          ],
+          "properties": {
+            "type": {
+              "const": "url"
+            },
+            "ref": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 1024,
+              "pattern": "^url:"
+            }
+          }
         }
       ]
     },
@@ -633,6 +671,9 @@
           "pattern": "^[a-f0-9]{64}$",
           "minLength": 64,
           "maxLength": 64
+        },
+        "declaredCapabilities": {
+          "$ref": "#/$defs/PluginCapabilities"
         }
       },
       "required": [
@@ -882,6 +923,17 @@
               "type": "null"
             }
           ]
+        },
+        "declaredCapabilities": {
+          "$ref": "#/$defs/PluginCapabilities"
+        },
+        "failureHint": {
+          "type": "string",
+          "maxLength": 512
+        },
+        "failureDocs": {
+          "type": "string",
+          "maxLength": 1024
         }
       },
       "required": [
@@ -991,6 +1043,14 @@
             "$ref": "#/$defs/PackageBlocker"
           },
           "maxItems": 128
+        },
+        "fixHint": {
+          "type": "string",
+          "maxLength": 512
+        },
+        "docsUrl": {
+          "type": "string",
+          "maxLength": 1024
         }
       },
       "required": ["code", "safeMessage", "blockers"]
@@ -2376,6 +2436,87 @@
       "properties": {
         "rolledBack": { "type": "boolean" },
         "desiredDigest": { "type": "string", "pattern": "^sha256-[0-9a-f]{64}$" }
+      }
+    },
+    "PluginCapabilities": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "network": {
+          "type": "array",
+          "maxItems": 128,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512
+          }
+        },
+        "exec": {
+          "type": "array",
+          "maxItems": 128,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512
+          }
+        },
+        "secrets": {
+          "type": "array",
+          "maxItems": 128,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512
+          }
+        },
+        "credentials": {
+          "type": "array",
+          "maxItems": 128,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512
+          }
+        },
+        "filesystem": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "read": {
+              "type": "array",
+              "maxItems": 128,
+              "uniqueItems": true,
+              "items": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 512
+              }
+            },
+            "write": {
+              "type": "array",
+              "maxItems": 128,
+              "uniqueItems": true,
+              "items": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 512
+              }
+            }
+          }
+        },
+        "model": {
+          "type": "boolean"
+        },
+        "childAgents": {
+          "type": "boolean"
+        },
+        "ui": {
+          "type": "boolean"
+        }
       }
     }
   }

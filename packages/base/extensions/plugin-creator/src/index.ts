@@ -47,6 +47,7 @@ ${creatorAssets.scaffoldSource}
 const dir = await scaffold(process.argv[2], process.argv[3], process.argv[4]);
 const file = path.join(dir, "package.json"), pkg = JSON.parse(fs.readFileSync(file, "utf8"));
 pkg.exports = "./src/index.ts";
+pkg.agnes.capabilities = { ...(process.argv[2] === "tool-with-panel" ? { ui: true } : {}), ...(process.argv[2] === "loop" ? { model: true } : {}) };
 fs.writeFileSync(file, JSON.stringify(pkg, null, 2) + "\\n");
 for (const name of fs.readdirSync(path.join(dir, "test"))) {
   const test = path.join(dir, "test", name);

@@ -6,6 +6,7 @@ it.each([
   ['API range mismatch', 'Plugin API range is incompatible.'],
   ['missing inject clock', 'A required plugin service is missing.'],
   ['schema error secret=hidden', 'Plugin configuration schema is invalid.'],
+  ['capability blocked exec', 'Plugin capability policy blocked activation.'],
   ['frontend load failure', 'Plugin frontend could not be loaded.'],
   ['private path secret=hidden', 'Runtime activation failed.'],
 ])('projects safe diagnostics for %s', (input, expected) => {

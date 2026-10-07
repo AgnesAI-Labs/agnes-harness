@@ -18,7 +18,7 @@ import {
   type SeamName,
 } from '@agnes/core'
 import { API_VERSION, type ExtensionManifest, type LeaseView } from '@agnes/extension-api'
-import type { RuntimePluginSnapshot } from '@agnes/package-manager'
+import { readPluginCapabilities, type RuntimePluginSnapshot } from '@agnes/package-manager'
 import {
   createMutableSeamImplementations,
   type EntryRow,
@@ -910,7 +910,12 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
       audit: say,
       order: extensionOrder,
       owners: extensionOwners,
-      describePackage: (packageId, snapshotId) => pluginCatalogue.describe(packageId, snapshotId),
+      describePackage: (packageId, snapshotId) => {
+        const description = pluginCatalogue.describe(packageId, snapshotId)
+        const source = pluginCatalogue.get(packageId, snapshotId)
+        const declaredCapabilities = source ? readPluginCapabilities(source.snapshot.directory) : undefined
+        return description && { ...description, ...(declaredCapabilities === undefined ? {} : { declaredCapabilities }) }
+      },
     })
     const rowServices = createRowServiceHost((packageId, snapshotId) =>
       pluginCatalogue.describe(packageId, snapshotId),

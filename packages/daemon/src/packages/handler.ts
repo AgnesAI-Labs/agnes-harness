@@ -1,3 +1,4 @@
+import { pluginFailureHelp } from '@agnes/protocol'
 import { createHash } from 'node:crypto'
 import { readFileSync, statSync } from 'node:fs'
 import type {
@@ -221,7 +222,28 @@ function packageError(error: unknown): PackageAdminError {
   const detail =
     raw.detail && typeof raw.detail === 'object' ? (raw.detail as Record<string, unknown>) : undefined
   const blockers = safeBlockers(detail?.blockers)
-  return { code, safeMessage: safeMessage[code], blockers }
+  return {
+    code,
+    safeMessage: safeMessage[code],
+    blockers,
+    ...pluginFailureHelp(
+      blockers.some((b) => b.references.includes('capability-blocked'))
+        ? 'capability blocked'
+        : String(detail?.reason ?? raw.message ?? code),
+    ),
+  }
+}
+
+function operationWithHelp(operation: PackageOperation): PackageOperation {
+  const value = structuredClone(operation)
+  if (value.error && !value.error.fixHint) {
+    const help =
+      value.installed?.failureHint && value.installed.failureDocs
+        ? { fixHint: value.installed.failureHint, docsUrl: value.installed.failureDocs }
+        : pluginFailureHelp(value.error.code)
+    value.error = { ...value.error, ...help }
+  }
+  return value
 }
 
 function operationError(error: PackageAdminError): never {
@@ -297,7 +319,24 @@ function projectPackage(
       : null,
     contributions: structuredClone([...row.contributions]),
     blockers: safeBlockers(row.blockers),
+    ...(row.localFailure || observation.actual === 'failed' || row.blockers.length
+      ? {
+          failureHint: pluginFailureHelp(
+            row.blockers.some((b) => b.references.includes('capability-blocked'))
+              ? 'capability blocked'
+              : (row.localFailure ?? observation.actualReason ?? ''),
+          ).fixHint,
+          failureDocs: pluginFailureHelp(
+            row.blockers.some((b) => b.references.includes('capability-blocked'))
+              ? 'capability blocked'
+              : (row.localFailure ?? observation.actualReason ?? ''),
+          ).docsUrl,
+        }
+      : {}),
     capabilityHash: row.capabilityHash,
+    ...(row.entry.declaredCapabilities === undefined
+      ? {}
+      : { declaredCapabilities: row.entry.declaredCapabilities }),
   }
   if (!validatePackageAdminData('PackageInstalledDescriptor', value).ok)
     throw rpcError('SEMANTIC_REJECTED', { reason: 'E_PACKAGE_STATE' })
@@ -901,7 +940,7 @@ class Service implements PackageAdminService {
     // prevents one authenticated administrator from observing another administrator's operation.
     if (!found || found.identity.principalId !== authority.principalId)
       throw rpcError('SEMANTIC_REJECTED', { reason: 'PACKAGE_OPERATION_UNAVAILABLE' })
-    return structuredClone(found.operation)
+    return operationWithHelp(found.operation)
   }
 
   private async effect(
@@ -1628,7 +1667,10 @@ class Service implements PackageAdminService {
     operationId: string,
     mutate: (current: StoredPackageOperation) => StoredPackageOperation,
   ): Promise<StoredPackageOperation> {
-    const value = await this.options.operations.update(operationId, mutate)
+    const value = await this.options.operations.update(operationId, (current) => {
+      const next = mutate(current)
+      return { ...next, operation: operationWithHelp(next.operation) }
+    })
     for (const listener of this.listeners) {
       try {
         listener(structuredClone(value.operation))

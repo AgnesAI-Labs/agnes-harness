@@ -1,3 +1,4 @@
+import { CapabilityReview, FailureHelp } from './capability-review.js'
 import type {
   PackageCatalogDescriptor,
   PackageInstalledDescriptor,
@@ -104,10 +105,12 @@ const pluginAdminCatalogs = {
   [ADMIN_LOCALE_NAMESPACE]: adminLocaleCatalog,
 } as const
 
-const SOURCE_TYPE_OPTIONS = Object.keys(SOURCE_FORMATS).map((type) => ({
-  value: type,
-  label: type,
-}))
+const SOURCE_TYPE_OPTIONS = Object.keys(SOURCE_FORMATS)
+  .filter((type) => type !== 'local' && type !== 'path')
+  .map((type) => ({
+    value: type,
+    label: type,
+  }))
 
 function element<K extends keyof HTMLElementTagNameMap>(id: string, tag: K): HTMLElementTagNameMap[K] {
   const found = document.getElementById(id)
@@ -737,10 +740,15 @@ class PluginAdminPage {
               ? 'preview.action.update-activate'
               : 'preview.action.update',
         ),
-      facts: combined ? (
-        <UpdateActivationFacts installed={installed!} preview={preview} />
-      ) : (
-        <PreviewConfirmationFacts preview={preview} />
+      facts: (
+        <>
+          <CapabilityReview value={preview.declaredCapabilities} t={this.#t} />
+          {combined ? (
+            <UpdateActivationFacts installed={installed!} preview={preview} />
+          ) : (
+            <PreviewConfirmationFacts preview={preview} />
+          )}
+        </>
       ),
       run: () => this.confirmPreview(),
     })
@@ -1224,7 +1232,25 @@ class PluginAdminPage {
       <UiLocaleProvider source={this.#locale}>
         <DetailContent
           heading={item.id}
-          metadata={<PluginBadges item={item} runtime={this.runtimeState(item.id)} t={this.#t} />}
+          metadata={
+            <>
+              <PluginBadges item={item} runtime={this.runtimeState(item.id)} t={this.#t} />
+              {'desired' in item && <CapabilityReview value={item.declaredCapabilities} t={this.#t} />}
+              {'desired' in item &&
+              (item.actual === 'failed' ||
+                item.blockers.length ||
+                this.runtimeState(item.id)?.phase === 'failed') ? (
+                <FailureHelp
+                  reason={
+                    item.blockers.length
+                      ? 'capability blocked'
+                      : (this.runtimeState(item.id)?.error?.message ?? item.actualReason ?? '')
+                  }
+                  t={this.#t}
+                />
+              ) : undefined}
+            </>
+          }
           intro=""
           version={this.#t('version', { version: item.version })}
           stateText={'trusted' in item ? undefined : this.#t('compatibility', { value: item.compatibility })}
@@ -1619,7 +1645,12 @@ class PluginAdminPage {
       title: () => this.#t('confirm.enable.title', { id: item.id }),
       description: () => this.#t(item.trusted ? 'confirm.enable.trusted' : 'confirm.enable.verify'),
       label: () => this.#t('confirm.enable.action'),
-      facts: !item.trusted ? <TrustConfirmationFacts item={item} leadKey="lead.trust-enable" /> : undefined,
+      facts: (
+        <>
+          <CapabilityReview value={item.declaredCapabilities} t={this.#t} />
+          {!item.trusted ? <TrustConfirmationFacts item={item} leadKey="lead.trust-enable" /> : undefined}
+        </>
+      ),
       run: async () => {
         if (item.trusted) {
           await this.#submitEnable(item)
@@ -1824,7 +1855,9 @@ class PluginAdminPage {
           intro={this.sourceIntro()}
           typeOptions={SOURCE_TYPE_OPTIONS.map(({ value }) => ({
             value,
-            label: this.#adminT(`source.${value}`),
+            label: ['path', 'url'].includes(value)
+              ? this.#t(`capability.source.${value}`)
+              : this.#adminT(`source.${value}`),
           }))}
           type={this.#sourceTypeValue}
           ref_={this.#sourceRefValue}

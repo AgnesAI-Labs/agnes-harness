@@ -81,6 +81,7 @@ type SnapshotRecord = {
   releasedAt: string | null
   dependencies: Record<string, string>
   contributions: PackageContributionSummary[]
+  declaredCapabilities?: NonNullable<LockEntry['declaredCapabilities']>
 }
 type PinRecord = {
   pinId: string
@@ -173,7 +174,10 @@ function validateRecord(raw: unknown): SnapshotRecord {
       'releasedAt',
       'dependencies',
       'contributions',
+      ...(value.declaredCapabilities === undefined ? [] : ['declaredCapabilities']),
     ]) ||
+    (value.declaredCapabilities !== undefined &&
+      !validatePackageAdminData('PluginCapabilities', value.declaredCapabilities).ok) ||
     value.version !== 1 ||
     typeof value.snapshotId !== 'string' ||
     !SHA256.test(value.snapshotId) ||
@@ -214,8 +218,7 @@ function validateRecord(raw: unknown): SnapshotRecord {
         treeIntegrity: record.treeIntegrity,
         capabilityHash: record.capabilityHash,
       }) ||
-    capabilityHash({ contributions: record.contributions, dependencies: record.dependencies }) !==
-      record.capabilityHash
+    capabilityHash(record) !== record.capabilityHash
   )
     integrityFailure('snapshot-identity')
   return structuredClone(record)
@@ -315,6 +318,9 @@ function recordFromEntry(packageId: string, entry: LockEntry): SnapshotRecord {
     releasedAt: entry.releasedAt ?? null,
     dependencies: structuredClone(entry.dependencies),
     contributions: structuredClone(entry.contributions),
+    ...(entry.declaredCapabilities === undefined
+      ? {}
+      : { declaredCapabilities: structuredClone(entry.declaredCapabilities) }),
   }
 }
 function trusted(entry: LockEntry, record: SnapshotRecord): boolean {
@@ -379,6 +385,9 @@ function recordEntry(record: SnapshotRecord): LockEntry {
     dependencies: structuredClone(record.dependencies),
     previous: null,
     contributions: structuredClone(record.contributions),
+    ...(record.declaredCapabilities === undefined
+      ? {}
+      : { declaredCapabilities: structuredClone(record.declaredCapabilities) }),
     treeIntegrity: record.treeIntegrity,
     ...(record.releasedAt ? { releasedAt: record.releasedAt } : {}),
   } as LockEntry

@@ -18,6 +18,7 @@ export type Command =
   | 'doctor'
   | 'computer-use'
   | 'profile'
+  | 'plugins'
   | 'package'
   | 'packages'
   | 'install'
@@ -43,6 +44,7 @@ export type ParsedArgs = {
   print: boolean
   mode?: 'text' | 'json' | 'acp'
   help: boolean
+  yes?: boolean
   version: boolean
   profile?: string
   preset?: string

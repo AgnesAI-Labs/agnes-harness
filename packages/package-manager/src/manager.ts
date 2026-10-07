@@ -6,6 +6,7 @@ import { type PackagePreview, validatePackageAdminData } from '@agnes/protocol'
 import type { PackageAuditSink } from './audit.js'
 import { copyPackageTreeSync } from './copy-tree.js'
 import { PackageError } from './errors.js'
+import { readPluginCapabilityPolicy } from './plugin-capabilities.js'
 import { inspectStaged } from './inspect.js'
 import { canonical, capabilityHash, freezeData } from './integrity.js'
 import { type InstalledInventory, type InstalledPackage, readInventory } from './inventory.js'
@@ -450,7 +451,14 @@ export function createPackageManager(options: ManagerOptions): PackageManager {
   let localReload: LocalPluginReload | undefined
   const localFailures = new Map<
     string,
-    { id: string; source: { type: 'local'; ref: string }; activation?: boolean }
+    {
+      id: string
+      source: { type: 'local'; ref: string }
+      activation?: boolean
+      reason?: string
+      declaredCapabilities?: import('@agnes/protocol').PluginCapabilities
+      blockers?: InstalledPackage['blockers']
+    }
   >()
   const localPending = new Set<string>()
   const scanLocal = (profileDir: string): string[] => {
@@ -465,6 +473,8 @@ export function createPackageManager(options: ManagerOptions): PackageManager {
       seen.add(candidate.source.ref)
       const stage = stageFor(profileDir)
       let id = candidate.name
+      let declaredCapabilities: import('@agnes/protocol').PluginCapabilities | undefined
+      let capabilityBlockers: InstalledPackage['blockers'] = []
       try {
         const prepared = stageLocalPlugin(candidate, stage)
         const pkg = readPackageJson(stage)
@@ -491,8 +501,11 @@ export function createPackageManager(options: ManagerOptions): PackageManager {
             dependencies: pkg.dependencies,
           },
           ceiling: ceiling(lock),
+          capabilityPolicy: readPluginCapabilityPolicy(profileDir),
         })
-        if (checked.preview.blockers.length) throw new Error('blocked local package')
+        declaredCapabilities = checked.preview.declaredCapabilities
+        capabilityBlockers = checked.preview.blockers
+        if (checked.preview.blockers.length) throw new Error('Plugin capability policy blocked activation.')
         if (current?.integrity === prepared.integrity) {
           if (!localFailures.get(candidate.source.ref)?.activation) localFailures.delete(candidate.source.ref)
           continue
@@ -508,10 +521,13 @@ export function createPackageManager(options: ManagerOptions): PackageManager {
         )
         entry.treeIntegrity = checked.treeIntegrity
         entry.contributions = checked.preview.contributions
+        if (checked.preview.declaredCapabilities !== undefined)
+          entry.declaredCapabilities = checked.preview.declaredCapabilities
+        const capabilityChanged = current && capabilityHash(current) !== capabilityHash(entry)
         entry.state = {
           installed: current?.state.installed ?? stamp(),
-          trusted: current && current.state.trusted === null ? null : stamp(),
-          enabled: current?.state.enabled ?? true,
+          trusted: capabilityChanged || (current && current.state.trusted === null) ? null : stamp(),
+          enabled: capabilityChanged ? false : (current?.state.enabled ?? true),
         }
         if (entry.state.trusted !== null)
           entry.trustDecision = {
@@ -531,6 +547,9 @@ export function createPackageManager(options: ManagerOptions): PackageManager {
         localFailures.set(candidate.source.ref, {
           id: installedId ?? `local-${candidate.source.ref.slice(6).replace('/', '-')}`,
           source: candidate.source,
+          ...(declaredCapabilities === undefined ? {} : { declaredCapabilities }),
+          blockers: capabilityBlockers,
+          ...(capabilityBlockers.length ? { reason: 'Plugin capability policy blocked activation.' } : {}),
         })
       } finally {
         clearStage(stage)
@@ -566,6 +585,9 @@ export function createPackageManager(options: ManagerOptions): PackageManager {
         trust: 'trusted',
         license: 'UNLICENSED',
         dependencies: {},
+        ...(failure.declaredCapabilities === undefined
+          ? {}
+          : { declaredCapabilities: failure.declaredCapabilities }),
         previous: null,
         state: { installed: new Date(0).toISOString(), trusted: null, enabled: false },
       }
@@ -581,7 +603,8 @@ export function createPackageManager(options: ManagerOptions): PackageManager {
           blockers: [],
           verifiedRollbackTarget: null,
         }),
-        localFailure: LOCAL_PLUGIN_FAILURE,
+        ...(failure.blockers?.length ? { blockers: failure.blockers } : {}),
+        localFailure: failure.reason ?? LOCAL_PLUGIN_FAILURE,
       }
       // Retain the prior valid snapshot for pinned sessions when the editable source is broken.
       if (existing) rows[index] = row
@@ -720,10 +743,11 @@ export function createPackageManager(options: ManagerOptions): PackageManager {
               })
             const { preview, treeIntegrity } = inspectStaged({
               dir: stage,
-              source,
+              source: fetched.source ?? source,
               fetched,
               previous: current,
               ceiling: ceiling(lock),
+              capabilityPolicy: readPluginCapabilityPolicy(profileDir),
               ...(op.signal ? { signal: op.signal } : {}),
             })
             if (preview.id !== id)
@@ -733,7 +757,7 @@ export function createPackageManager(options: ManagerOptions): PackageManager {
                 detail: { blockers: preview.blockers },
               })
             const entry = entryFrom(
-              source,
+              fetched.source ?? source,
               fetched,
               readPackageJson(stage),
               readManifestIn(stage),
@@ -741,6 +765,9 @@ export function createPackageManager(options: ManagerOptions): PackageManager {
               current,
             )
             entry.contributions = preview.contributions
+            if (preview.declaredCapabilities !== undefined)
+              entry.declaredCapabilities = preview.declaredCapabilities
+            else delete entry.declaredCapabilities
             entry.treeIntegrity = treeIntegrity
             entry.surfaces = preview.contributions.flatMap((c) =>
               c.kind === 'surface' ? [c.descriptor] : [],
@@ -788,10 +815,11 @@ export function createPackageManager(options: ManagerOptions): PackageManager {
         const pkg = readPackageJson(stage)
         const { preview } = inspectStaged({
           dir: stage,
-          source,
+          source: fetched.source ?? source,
           fetched,
           ...(lock.packages[pkg.name] ? { previous: lock.packages[pkg.name] } : {}),
           ceiling: ceiling(lock),
+          capabilityPolicy: readPluginCapabilityPolicy(profileDir),
           ...(op.signal ? { signal: op.signal } : {}),
         })
         progress(op, 'completed')
@@ -821,9 +849,10 @@ export function createPackageManager(options: ManagerOptions): PackageManager {
               })
             const { preview, treeIntegrity } = inspectStaged({
               dir: stage,
-              source,
+              source: fetched.source ?? source,
               fetched,
               ceiling: ceiling(lock),
+              capabilityPolicy: readPluginCapabilityPolicy(profileDir),
               ...(op.signal ? { signal: op.signal } : {}),
             })
             if (lock.packages[preview.id])
@@ -833,8 +862,18 @@ export function createPackageManager(options: ManagerOptions): PackageManager {
                 detail: { blockers: preview.blockers },
               })
             const manifest = readManifestIn(stage)
-            const entry = entryFrom(source, fetched, readPackageJson(stage), manifest, stamp(), undefined)
+            const entry = entryFrom(
+              fetched.source ?? source,
+              fetched,
+              readPackageJson(stage),
+              manifest,
+              stamp(),
+              undefined,
+            )
             entry.contributions = preview.contributions
+            if (preview.declaredCapabilities !== undefined)
+              entry.declaredCapabilities = preview.declaredCapabilities
+            else delete entry.declaredCapabilities
             entry.treeIntegrity = treeIntegrity
             entry.surfaces = preview.contributions.flatMap((c) =>
               c.kind === 'surface' ? [c.descriptor] : [],
@@ -880,7 +919,14 @@ export function createPackageManager(options: ManagerOptions): PackageManager {
             })
           const manifest = readManifestIn(stage)
           const installed = stamp()
-          const entry = entryFrom(source, fetched, pkg, manifest, installed, lock.packages[pkg.name])
+          const entry = entryFrom(
+            fetched.source ?? source,
+            fetched,
+            pkg,
+            manifest,
+            installed,
+            lock.packages[pkg.name],
+          )
           if (addOptions.trust === 'verify') {
             runTrustGate({
               id: pkg.name,
@@ -1113,6 +1159,7 @@ export function createPackageManager(options: ManagerOptions): PackageManager {
                 ...(next.releasedAt ? { releasedAt: next.releasedAt } : {}),
               },
               ceiling: ceiling(lock),
+              capabilityPolicy: readPluginCapabilityPolicy(profileDir),
             })
             if (checked.preview.blockers.length)
               throw new PackageError('E_API_RANGE', 'previous package is blocked')
@@ -1179,7 +1226,7 @@ export function createPackageManager(options: ManagerOptions): PackageManager {
           const pkg = readPackageJson(stage)
           const manifest = readManifestIn(stage)
           const trusted = stamp()
-          const entry = entryFrom(source, fetched, pkg, manifest, trusted, current)
+          const entry = entryFrom(fetched.source ?? source, fetched, pkg, manifest, trusted, current)
           verifyInstalledIntegrity(id, entry, stage, stage)
           runTrustGate({
             id,
@@ -1261,7 +1308,14 @@ export function createPackageManager(options: ManagerOptions): PackageManager {
             license: pkg.license,
             dependencies: pkg.dependencies,
           }
-          const entry = entryFrom(source, fetched, pkg, author, installed, lock.packages[extension.id])
+          const entry = entryFrom(
+            fetched.source ?? source,
+            fetched,
+            pkg,
+            author,
+            installed,
+            lock.packages[extension.id],
+          )
           verifyInstalledIntegrity(extension.id, entry, dir)
           runTrustGate({
             id: extension.id,

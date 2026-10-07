@@ -11,7 +11,8 @@ import {
   type PluginExtensionAPI,
   type ToolDef,
 } from '@agnes/extension-api'
-import { inspectJsonData, isHookEvent } from '@agnes/protocol'
+import { observePluginCapabilities } from '../plugin-capability-observer.js'
+import { type PluginCapabilities, inspectJsonData, isHookEvent } from '@agnes/protocol'
 import type { Lease } from './lease.js'
 import type { KernelPorts, RegMeta } from './ports.js'
 import { projectionReader } from './projection-reader.js'
@@ -46,6 +47,7 @@ export type RowExtensionApiInput = {
     signal: AbortSignal,
   ) => Promise<import('@agnes/extension-api').SkillInstallResult>
   /** Host-stamped `plugin/<hash>` owner id; never chosen by the plugin. */
+  declaredCapabilities?: PluginCapabilities
   source: string
   version: string
   packageIdentity: string
@@ -158,7 +160,7 @@ export function buildRowExtensionAPI(input: RowExtensionApiInput): PluginExtensi
             const pluginManage = input.pluginManage
             try {
               return await execute(args, {
-                ...tctx,
+                ...observePluginCapabilities(tctx, input.declaredCapabilities, log),
                 projections,
                 ...(mcpManage
                   ? {

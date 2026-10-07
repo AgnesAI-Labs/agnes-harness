@@ -1,3 +1,4 @@
+import { pluginFailureHelp } from '@agnes/protocol'
 import type {
   AdminLoop,
   AdminModelAdapter,
@@ -279,9 +280,11 @@ export function pluginFailureMessage(message: string, t: Text): string {
     'A required plugin service is missing.': 'failure.missing-inject',
     'Plugin configuration schema is invalid.': 'failure.schema',
     'Plugin frontend could not be loaded.': 'failure.frontend',
+    'Plugin capability policy blocked activation.': 'failure.capability',
     'Runtime activation failed.': 'failure.activation',
   }
-  return keys[message] ? t(keys[message]) : message
+  const reason = keys[message] ? t(keys[message]) : message
+  return reason + ' ' + pluginFailureHelp(message).fixHint
 }
 
 export function BundlesPanel({

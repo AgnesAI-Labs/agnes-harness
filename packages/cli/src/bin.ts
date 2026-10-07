@@ -654,14 +654,30 @@ export async function main(argv: string[], io: MainIO, boot: Partial<LocalBootDe
         await booted.close().catch(() => undefined)
       }
     }
-    if (p.command === 'package' || p.command === 'install') {
+    if (p.command === 'plugins' && p.positional[0] === 'pack') {
+      const { packPlugin } = await import('@agnes/package-manager')
+      if (!p.positional[1]) throw new Error('usage: agh plugins pack <folder> [output.tgz]')
+      io.stdout.write((await packPlugin(p.positional[1], p.positional[2])) + '\n')
+      return 0
+    }
+    if (p.command === 'plugins' || p.command === 'package' || p.command === 'install') {
       const booted = await bootDefault(p, deps, { useEmbedded: Object.keys(boot).length > 0 })
       try {
         const { runPackageCommand } = await import('./commands/package.js')
         // The daemon scope serves only the profile it was booted for, which AGNES_PROFILE can choose.
         await runPackageCommand({ ...p, profile: booted.profileName }, booted.client, {
           write: (text) => io.stdout.write(text),
-          confirm: (preview) => confirmPackageInstall(io, preview.id, preview.version, preview.integrity),
+          confirmEnable: (item) => confirmPackageInstall(io, item.id, item.version, item.integrity, true),
+          confirm: (preview) =>
+            p.yes
+              ? Promise.resolve(true)
+              : confirmPackageInstall(
+                  io,
+                  preview.id,
+                  preview.version,
+                  preview.integrity,
+                  p.command === 'plugins',
+                ),
         })
         return ExitCode.OK
       } finally {
@@ -865,7 +881,13 @@ export async function main(argv: string[], io: MainIO, boot: Partial<LocalBootDe
 }
 
 /** A non-interactive command never guesses consent: it previews then exits without an install. */
-function confirmPackageInstall(io: MainIO, id: string, version: string, integrity: string): Promise<boolean> {
+function confirmPackageInstall(
+  io: MainIO,
+  id: string,
+  version: string,
+  integrity: string,
+  activate = false,
+): Promise<boolean> {
   if (io.stdin.isTTY !== true || io.stdout.isTTY !== true) return Promise.resolve(false)
   return new Promise((resolve) => {
     const prompt = createInterface({ input: io.stdin, output: io.stdout, terminal: true })
@@ -873,10 +895,13 @@ function confirmPackageInstall(io: MainIO, id: string, version: string, integrit
     // "not confirmed" keeps INV-33: an unanswered prompt is never read as consent. Resolve before
     // close() below, which emits 'close' synchronously and would otherwise bury the answer.
     prompt.once('close', () => resolve(false))
-    prompt.question(`Install ${id}@${version} (${integrity})? [y/N] `, (answer) => {
-      resolve(/^y(?:es)?$/i.test(answer.trim()))
-      prompt.close()
-    })
+    prompt.question(
+      `${activate ? 'Install, trust and enable' : 'Install'} ${id}@${version} (${integrity})? [y/N] `,
+      (answer) => {
+        resolve(/^y(?:es)?$/i.test(answer.trim()))
+        prompt.close()
+      },
+    )
   })
 }
 

@@ -15,3 +15,5 @@ description: Build, test and install an Agnes plugin from a natural-language req
 8. Check `/admin/plugins`: source is `local`, with installed/enabled/failed status. Explain any missing dependency or activation error. Running sessions keep their plugin generation; try the new plugin in a new session once activated. Until the generation reload port is connected, restart the daemon.
 
 Scaffolding, code writes, dependency installation, tests and installation must follow the session approval policy and sandbox. Refusal or cancellation ends the dependent step. Ordinary local plugins execute trusted Node code; only install code the user intends to trust.
+
+Declare requested capabilities in package.json `agnes.capabilities` before installation: network hosts, filesystem read/write scopes, exec commands, secrets/credentials names, model, childAgents and UI. Keep scopes narrow. The admin policy may reject the request; inspect the fix hint and do not widen policy without approval.

@@ -1,3 +1,5 @@
+import { pluginFailureHelp } from '@agnes/protocol'
+import { resolve } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import type {
   PackageOperation,
@@ -31,12 +33,27 @@ export function parsePackageSource(value: string): PackageSource {
   if (value.startsWith('file:')) return { type: 'file', ref: value }
   if (value.startsWith('workspace:')) return { type: 'workspace', ref: value }
   if (value.startsWith('git:')) return { type: 'git', ref: value }
-  throw new TuiUsageError('package source must begin with npm:, file:, workspace:, or git:')
+  if (value.startsWith('https://'))
+    return {
+      type: /\.(?:zip|tgz|tar(?:\.gz)?)(?:$)/i.test(value) ? 'url' : 'git',
+      ref: (/\.(?:zip|tgz|tar(?:\.gz)?)(?:$)/i.test(value) ? 'url:' : 'git:') + value,
+    }
+  if (value.startsWith('url:')) return { type: 'url', ref: value }
+  if (value.startsWith('path:')) return { type: 'path', ref: value }
+  if (
+    value.startsWith('/') ||
+    value.startsWith('./') ||
+    value.startsWith('../') ||
+    /\.(zip|tgz|tar|tar\.gz)$/i.test(value)
+  )
+    return { type: 'file', ref: 'file:' + resolve(value) }
+  throw new TuiUsageError('Use a git HTTPS URL, folder/archive path, or npm:package@version')
 }
 
 function terminalError(operation: PackageOperation): Error {
   const detail = operation.error?.safeMessage ?? operation.state
-  return new Error(`package ${operation.operation} ${detail}`)
+  const help = operation.error?.fixHint ? operation.error : pluginFailureHelp(operation.error?.code ?? detail)
+  return new Error(`package ${operation.operation} ${detail} ${help.fixHint} ${help.docsUrl}`)
 }
 
 function pause(): Promise<void> {
@@ -109,6 +126,9 @@ export function formatPreview(preview: PackagePreview): string {
   return [
     `Preview ${preview.id}@${preview.version}`,
     `integrity ${preview.integrity}`,
+    `capabilityHash ${preview.capabilityHash}`,
+    `declared capabilities ${preview.declaredCapabilities === undefined ? 'not declared' : JSON.stringify(preview.declaredCapabilities)}`,
+    `blockers ${preview.blockers.map((b) => b.references.join(', ')).join('; ') || 'none'}`,
     `contributions ${contributions}`,
     `warnings ${warnings}`,
     'Installation will remain disabled and untrusted.',

@@ -2,6 +2,15 @@
   "scope": "External dependencies directly used by product runtime or optional integration paths.",
   "packages": [
     {
+      "name": "esbuild",
+      "version": "0.28.2",
+      "license": "MIT",
+      "source": "https://github.com/evanw/esbuild",
+      "purpose": "Bundle third-party JavaScript dependencies into shareable plugin archives.",
+      "rationale": "Reuse the repository bundler so the receiving machine needs no plugin dependency installation.",
+      "consumers": ["packages/package-manager"]
+    },
+    {
       "name": "@ant-design/x-markdown",
       "version": "2.9.0",
       "license": "MIT",

@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto'
 import { readFileSync, statSync } from 'node:fs'
 import { resolve } from 'node:path'
-import type { PackageContributionSummary } from '@agnes/protocol'
+import type { PackageContributionSummary, PluginCapabilities } from '@agnes/protocol'
 import { syncDirectorySync } from '@agnes/system-node'
 import { PackageError } from './errors.js'
 
@@ -45,6 +45,7 @@ export function syncDirectory(directory: string): void {
 
 export function capabilityHash(entry: {
   contributions?: PackageContributionSummary[]
+  declaredCapabilities?: PluginCapabilities
   dependencies: Record<string, string>
 }): string {
   return snapshotHash({
@@ -52,5 +53,6 @@ export function capabilityHash(entry: {
       c.kind === 'extension' ? { ...c, runtimeSupports: c.runtimeSupports ?? ['in-process'] } : c,
     ),
     dependencies: entry.dependencies,
+    ...(entry.declaredCapabilities === undefined ? {} : { declaredCapabilities: entry.declaredCapabilities }),
   })
 }

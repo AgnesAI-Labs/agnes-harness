@@ -32,7 +32,7 @@ export const pluginAdminShellLocaleCatalog: LocaleCatalog = {
     'shell.source.type': 'Source type',
     'shell.source.file': 'Local path',
     'shell.source.workspace': 'Workspace extension',
-    'shell.source.git': 'Pinned Git commit',
+    'shell.source.git': 'Git URL or pinned commit',
     'shell.source.reference': 'Source reference',
     'shell.source.hint': 'The host strictly validates source formats. Do not paste credentials here.',
     'shell.source.submit': 'Check source',

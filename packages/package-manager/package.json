@@ -20,7 +20,8 @@
     "@agnes/protocol": "workspace:*",
     "@agnes/extension-api": "workspace:*",
     "@agnes/system-node": "workspace:*",
-    "yaml": "2.9.0"
+    "yaml": "2.9.0",
+    "esbuild": "0.28.2"
   },
   "license": "Apache-2.0 AND MIT"
 }

@@ -1,6 +1,7 @@
 import { existsSync } from 'node:fs'
 import { resolve } from 'node:path'
 import type { PackageBlocker, PackageContributionSummary } from '@agnes/protocol'
+import { capabilityPolicyBlockers, readPluginCapabilityPolicy } from './plugin-capabilities.js'
 import { PackageError } from './errors.js'
 import { inspectStaged } from './inspect.js'
 import { canonical, capabilityHash, freezeData, snapshotHash } from './integrity.js'
@@ -109,7 +110,8 @@ export function verifyPackageDirectory(
   if (
     checked.preview.id !== id ||
     canonical(checked.preview.contributions) !== canonical(entry.contributions) ||
-    canonical(checked.preview.dependencies) !== canonical(entry.dependencies)
+    canonical(checked.preview.dependencies) !== canonical(entry.dependencies) ||
+    canonical(checked.preview.declaredCapabilities) !== canonical(entry.declaredCapabilities)
   )
     throw new PackageError('E_LOCK_MISMATCH', 'installed inventory metadata differs from lock', {
       detail: { id },
@@ -187,7 +189,10 @@ export function readInventory(
       if (!workspace.ok) throw new PackageError('E_LOCK_MISMATCH', 'workspace inventory is not trusted')
       directory = resolve(workspace.deployDir, entry.source.ref.slice('workspace:'.length))
     }
-    const blockers: PackageBlocker[] = []
+    const blockers: PackageBlocker[] = capabilityPolicyBlockers(
+      entry.declaredCapabilities,
+      readPluginCapabilityPolicy(options.profileDir),
+    )
     let hash = capabilityHash(entry)
     let kinds: readonly AgnesPluginKind[] | undefined
     if (entry.contributions === undefined || entry.treeIntegrity === undefined)

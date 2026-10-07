@@ -6,7 +6,9 @@ const sourceText = createCatalogTranslator(pluginAdminLocaleCatalog, 'en')
 
 export function sourceFromForm(type: string, ref: string): PackageSource | undefined {
   if (!ref) return undefined
-  if (type === 'npm' || type === 'file' || type === 'workspace' || type === 'git') return { type, ref }
+  if (type === 'npm' || type === 'workspace') return { type, ref }
+  if (type === 'file' || type === 'path' || type === 'git' || type === 'url')
+    return { type, ref: ref.startsWith(type + ':') ? ref : type + ':' + ref }
   return undefined
 }
 
@@ -16,17 +18,16 @@ export const SOURCE_FORMATS: Readonly<
 > = Object.freeze({
   local: { prefix: 'local:', example: 'local:workspace/my-plugin' },
   npm: { prefix: 'npm:', example: 'npm:scope/package@1.2.3' },
-  file: {
-    prefix: 'file:./',
-    example: 'file:./examples/packages/hot-service/v1',
-  },
+  file: { prefix: 'file:', example: '/home/me/my-plugin.tgz' },
+  path: { prefix: 'path:', example: '/home/me/my-plugin' },
+  url: { prefix: 'url:', example: 'https://example.com/my-plugin.zip' },
   workspace: {
     prefix: 'workspace:extensions/',
     example: 'workspace:extensions/my-extension',
   },
   git: {
     prefix: 'git:',
-    example: 'git:https://example.com/org/repo.git#<40-character commit hash>',
+    example: 'https://example.com/org/repo.git',
   },
 })
 
@@ -39,6 +40,7 @@ export function sourceProblem(
   if (!ref) return t('source.validation.missing')
   const format = type in SOURCE_FORMATS ? SOURCE_FORMATS[type as PackageSource['type']] : undefined
   if (!format) return t('source.validation.type')
+  if (['file', 'path', 'git', 'url'].includes(type)) return undefined
   if (!ref.startsWith(format.prefix))
     return t('source.validation.prefix', { prefix: format.prefix, example: format.example })
   return undefined
