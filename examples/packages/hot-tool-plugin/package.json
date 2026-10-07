@@ -8,6 +8,7 @@
     "plugins": [
       {
         "export": "textStatsTool",
+        "apiRange": "^1.4.0",
         "id": "ext:agnes-examples/hot-tool-plugin",
         "inject": [
           "extension"

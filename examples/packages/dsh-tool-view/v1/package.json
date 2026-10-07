@@ -8,6 +8,7 @@
     "plugins": [
       {
         "export": "main",
+        "apiRange": "^1.4.0",
         "id": "ext:examples/dsh-tool-view/main",
         "runtime": "in-process"
       }

@@ -18,6 +18,7 @@
     "plugins": [
       {
         "export": "skillHelper",
+        "apiRange": "^1.4.0",
         "id": "ext:skill-helper/main",
         "inject": [
           "extension"

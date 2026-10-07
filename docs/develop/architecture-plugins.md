@@ -31,7 +31,7 @@ flowchart TD
 
 ## One provider pattern
 
-Every kind describes validation, capabilities, identity and restart requirements with `defineProviderKind<T>()` from `@agnes/extension-api`. Host's `ProviderRegistry<T>` owns registration, duplicate refusal, selection, immutable catalogs and disposal. Registration may be owned by a plugin fiber; unloading it unregisters the provider and runs its existing resource cleanup. Loop identity is `id@version`; the other current kinds refuse duplicate ids.
+Every kind describes validation, capabilities, semver identity and lifecycle scope with `defineProviderKind<T>()` from `@agnes/extension-api`. Host's `ProviderRegistry<T>` owns registration, duplicate refusal, selection, immutable catalogs and disposal. Registration may be owned by a plugin fiber; unregister returns an idempotent `Promise<void>`. Model, compaction, policy and tool-runtime owners stop admission, abort and drain creates/calls, dispose instances, then run registration cleanup. Cleanup failures are aggregated. Loop identity is `id@version`; the other current kinds refuse duplicate ids.
 
 An author can register an existing kind through one service:
 
@@ -74,13 +74,13 @@ Existing top-level `loop: { id, version }`, `compaction: { engine }`, `persisten
 
 A versionless loop selection requires exactly one installed version. An explicit version must match; missing or ambiguous providers fail with an installation or configuration hint. Core still pins the resolved loop id and version in the session, and legacy sessions map to `agnes.default@1.0.0`. Resume does not silently switch to an installed alternative.
 
-`host.providers.catalog()` (also `ctx.providers.catalog()`) returns every installed kind with `id`, `version`, `sourcePackage`, a capability list, `restartRequired`, `active` and `selectedFor`. This read-only view contains no factories or credentials. Active means selected by the reported profile/default or fitted provider scope, not the number of running sessions. Uninstalled providers are absent; future kinds join when their service is installed. Admin and config-dump integrations can consume this port without another registry or HTTP endpoint.
+`host.providers.catalog()` (also `ctx.providers.catalog()`) returns every installed kind with `id`, `version`, `sourcePackage`, a capability list, `scope`, derived `restartRequired`, `active` and `selectedFor`. This read-only view contains no factories or credentials. Active means selected by the reported profile/default or fitted provider scope, not the number of running sessions. Uninstalled providers are absent; future kinds join when their service is installed. Admin and config-dump integrations can consume this port without another registry or HTTP endpoint.
 
 | Kind | Default | Replacement / lifecycle |
 | --- | --- | --- |
 | `loop` | `agnes.default@1.0.0`, Core | Select for new sessions; persisted id/version governs resume. Registrations reload with Cordis. |
 | `model-adapter` | API-specific adapters from `@agnes/ai` | Model-profile updates rebuild validated routes; unload disposes owned instances. |
-| `compaction` | `default`, Base | Registration is reloadable; the assembled runner selection requires a Host restart. |
+| `compaction` | `default`, Base | Generation scope: a new Host generation assembles its runner; existing sessions retain their code. |
 | `tool-runtime` | `default`, Core | Preset selection; session instances own scheduling and cancellation. |
 | `tool-policy` | `default`, Base approval policy | Selected per preset; principal authorization remains in Core. |
 | `persistence` | `sqlite`, Host | Process startup selection; restart required. Providers do not migrate another store's files. |
@@ -94,3 +94,18 @@ Sessions persist their plugin code generation: packages, loops, providers and to
 ## The plugin ladder
 
 Each rung works without learning the next: **0 Use** — select installed plugins and presets; **1 Skill** — write `SKILL.md`; **2 Connect** — configure MCP; **3 Tool** — write a JS/TS tool; **4 Panel** — add a client panel; **5 Brain** — replace a model adapter, compaction engine or policy; **6 Loop** — supply a complete driver; **7 Bundle** — compose the pieces as configuration. Beginners enter through tools and Skills; researchers swap algorithms; FDE teams distribute bundles; core contributors maintain the ports and shared provider lifecycle.
+
+
+## Provider author contracts
+
+Built-in string kinds use `KindMap`: `register(kind, sourcePackage, provider)` and `resolve(kind, selection)` infer the matching provider type. Custom kinds use the exact invariant token returned by `defineProviderKind<T>()` and installed by their service. A token with the same name but a different identity is refused. The verified plugin owner determines `sourcePackage`; a conflicting claim fails admission.
+
+Provider failures use `ProviderError`, separate from the closed extension-call error set: `E_PROVIDER_DUPLICATE`, `E_PROVIDER_UNKNOWN`, `E_PROVIDER_INVALID`, `E_PROVIDER_INCOMPATIBLE` and `E_PROVIDER_UNAVAILABLE`. Each carries `kind`, optional `provider`, `operation`, `retryable`, optional `hint` and original `cause`. Duplicate registration no longer reports an API-range error.
+
+Every filesystem-loaded ordinary plugin entry in `agnes.plugins` must declare `apiRange`, for example `"^1.4.0"`. Host checks static metadata before importing code, independently of `hostProvidedExternals`. Existing manifests must add this field. Provider `version` is semver (the built-in persistence version is now `1.0.0`); package version, provider version, contract range and checkpoint codec version have separate meanings. Extension API remains `1.4.0` during this experimental hardening. `ModelAdapter.wireApi` names its wire format; deprecated `api` remains accepted, and conflicting aliases are refused. Catalogs expose both names during migration.
+
+Scopes are session (`loop`, `tool-runtime`, `child-agent`), generation (`model-adapter`, `compaction`, `tool-policy`) and process (`persistence`, `sandbox`). Custom kinds may declare workspace scope. Workspace/process scopes derive `restartRequired`; generation publication also checks the registered package's scopes. Backend seam rows retain their startup constraints where no provider contract describes them.
+
+`@agnes/plugin-runtime` exports `defineProvider`, `defineLoop`, `defineModelAdapter`, `defineToolRuntime`, `defineToolPolicy`, `defineCompactionEngine`, `defineSandboxProvider`, `definePersistenceProvider` and `defineChildAgentProvider`. The helpers preserve inferred declarations and validate identity/operations early; Host still validates registrations. Model, compaction and tool-runtime factories can return promises and receive a creation signal. Compaction instances and policies may dispose owned resources; registrations may clean up shared resources. Await unregister before releasing a plugin's dependencies. Cancellation requests cooperative termination: a provider must settle started work after abort, or unload remains pending rather than claiming a completed drain.
+
+`@agnes/extension-api/testkit` publishes `runProviderConformance` and a named runner for each of the eight kinds, also re-exported by `@agnes/plugin-runtime/testkit`. Supply the registration port captured inside an isolated Host plugin and an `open` probe using the real Host service or session path. Each probe starts a controlled operation and reports when it reaches the provider, so the suite can check cancellation and unload without timing guesses. Loop and persistence probes must verify cold resume; other probes can opt in. The suites check rejection, immutable metadata, cancellation, idempotent draining unload and missing-provider refusal. They deliberately fail if a provider ignores cancellation or a facade returns before work drains.

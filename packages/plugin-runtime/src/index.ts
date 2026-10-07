@@ -1,3 +1,12 @@
+export {
+  defineChildAgentProvider,
+  defineCompactionEngine,
+  definePersistenceProvider,
+  defineProvider,
+  defineSandboxProvider,
+  defineToolPolicy,
+  defineToolRuntime,
+} from './author/providers.js'
 export type {
   AgnesPlugin,
   Context,

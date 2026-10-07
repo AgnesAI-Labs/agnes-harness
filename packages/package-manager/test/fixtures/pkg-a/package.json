@@ -13,6 +13,7 @@
     "plugins": [
       {
         "export": "main",
+        "apiRange": "^1.4.0",
         "id": "ext:acme/pkg-a/main",
         "runtime": "in-process"
       }

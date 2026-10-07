@@ -37,6 +37,37 @@ it('identifies the actual source runtime without a fake SEA flag', () => {
   expect(runtimeForm()).toBe('source')
 })
 
+it('requires compatible ordinary plugin apiRange before evaluating any source', async () => {
+  const f = setup()
+  const marker = join(f.root, 'evaluated')
+  const entry = f.write(
+    'index.ts',
+    `import { writeFileSync } from 'node:fs'; writeFileSync(${JSON.stringify(marker)}, 'yes'); export const main = () => {}`,
+  )
+  for (const [apiRange, code] of [
+    [undefined, 'E_PROVIDER_INVALID'],
+    ['^99.0.0', 'E_PROVIDER_INCOMPATIBLE'],
+  ] as const) {
+    f.write(
+      'package.json',
+      JSON.stringify({ name: '@test/provider', agnes: { plugins: [{ export: 'main', apiRange }] } }),
+    )
+    await expect(f.loader.import(entry)).rejects.toMatchObject({
+      code,
+      kind: 'plugin',
+      operation: 'admit',
+      retryable: false,
+    })
+    expect(readdirSync(f.root)).not.toContain('evaluated')
+  }
+  f.write(
+    'package.json',
+    JSON.stringify({ name: '@test/provider', agnes: { plugins: [{ export: 'main', apiRange: '^1.4.0' }] } }),
+  )
+  expect(await f.loader.import(entry)).toHaveProperty('main')
+  expect(readFileSync(marker, 'utf8')).toBe('yes')
+})
+
 it('shares all three real host modules even when the extension carries decoy copies', async () => {
   const f = setup()
   for (const name of ['@agnes/extension-api', '@agnes/protocol', '@sinclair/typebox']) {

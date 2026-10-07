@@ -27,6 +27,7 @@
     "plugins": [
       {
         "export": "backend",
+        "apiRange": "^1.4.0",
         "id": "ext:acme/dashboard/backend",
         "runtime": "in-process",
         "services": [

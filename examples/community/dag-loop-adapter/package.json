@@ -36,6 +36,7 @@
     "plugins": [
       {
         "export": "toolPlugin",
+        "apiRange": "^1.4.0",
         "id": "ext:@community/dag-loop-adapter/tools",
         "inject": [
           "extension"
@@ -43,6 +44,7 @@
       },
       {
         "export": "adapterPlugin",
+        "apiRange": "^1.4.0",
         "id": "ext:@community/dag-loop-adapter/adapter",
         "inject": [
           "modelAdapters"
@@ -50,6 +52,7 @@
       },
       {
         "export": "loopPlugin",
+        "apiRange": "^1.4.0",
         "id": "ext:@community/dag-loop-adapter/loop",
         "inject": [
           "loops"

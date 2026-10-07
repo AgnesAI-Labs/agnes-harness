@@ -18,6 +18,7 @@
     "plugins": [
       {
         "export": "pluginHelper",
+        "apiRange": "^1.4.0",
         "id": "ext:plugin-helper/main",
         "inject": [
           "extension"

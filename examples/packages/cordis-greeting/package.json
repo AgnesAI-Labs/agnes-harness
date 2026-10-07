@@ -18,6 +18,7 @@
     "plugins": [
       {
         "export": "greeting",
+        "apiRange": "^1.4.0",
         "config": {
           "message": "Hello from an Agnes plugin"
         },

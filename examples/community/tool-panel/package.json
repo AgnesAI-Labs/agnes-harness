@@ -31,6 +31,7 @@
     "plugins": [
       {
         "export": "main",
+        "apiRange": "^1.4.0",
         "id": "ext:@community/tool-panel/main",
         "inject": [
           "extension"

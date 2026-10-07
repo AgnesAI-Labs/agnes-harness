@@ -61,7 +61,7 @@ The current ordinary plugin entry is `agnes.plugins` in `package.json`, referenc
   "exports": "./index.mjs",
   "agnes": {
     "plugins": [
-      { "export": "example", "id": "ext:example/plugin", "inject": ["skills"] }
+      { "apiRange": "^1.4.0", "export": "example", "id": "ext:example/plugin", "inject": ["skills"] }
     ]
   }
 }

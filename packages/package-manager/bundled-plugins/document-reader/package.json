@@ -18,6 +18,7 @@
     "plugins": [
       {
         "export": "documentReader",
+        "apiRange": "^1.4.0",
         "id": "ext:document-reader/main",
         "inject": [
           "extension"

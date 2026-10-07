@@ -7,12 +7,14 @@
     "plugins": [
       {
         "export": "echo",
+        "apiRange": "^1.4.0",
         "id": "ext:example/echo",
         "runtime": "in-process",
         "default": true
       },
       {
         "export": "echo",
+        "apiRange": "^1.4.0",
         "id": "ext:example/echo-isolated",
         "runtime": "isolated"
       }

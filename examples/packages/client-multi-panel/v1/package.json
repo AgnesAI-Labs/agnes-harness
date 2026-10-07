@@ -8,11 +8,13 @@
     "plugins": [
       {
         "export": "primary",
+        "apiRange": "^1.4.0",
         "id": "ext:examples/client-multi-panel/primary",
         "runtime": "in-process"
       },
       {
         "export": "secondary",
+        "apiRange": "^1.4.0",
         "id": "ext:examples/client-multi-panel/secondary",
         "runtime": "in-process"
       }

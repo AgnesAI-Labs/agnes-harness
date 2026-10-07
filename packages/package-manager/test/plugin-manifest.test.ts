@@ -2,10 +2,11 @@ import { describe, expect, it } from 'vitest'
 import { parseAgnesPluginEntries, parseAgnesPluginKinds } from '../src/plugin-manifest.js'
 
 describe('package.json agnes.plugins', () => {
-  it('normalizes the five-field author shape and freezes the result', () => {
+  it('normalizes the author shape with a required contract range and freezes the result', () => {
     const entries = parseAgnesPluginEntries('@acme/example', [
-      { export: 'main' },
+      { apiRange: '^1.4.0', export: 'main' },
       {
+        apiRange: '^1.4.0',
         export: 'optional',
         id: 'ext:acme/optional',
         runtime: 'isolated',
@@ -16,12 +17,14 @@ describe('package.json agnes.plugins', () => {
 
     expect(entries).toEqual([
       {
+        apiRange: '^1.4.0',
         export: 'main',
         id: 'ext:@acme/example/main',
         runtime: 'in-process',
         default: true,
       },
       {
+        apiRange: '^1.4.0',
         export: 'optional',
         id: 'ext:acme/optional',
         runtime: 'isolated',
@@ -34,14 +37,16 @@ describe('package.json agnes.plugins', () => {
   })
 
   it.each([
+    [[{ export: 'missing-range' }], 'apiRange'],
+    [[{ export: 'incompatible', apiRange: '^99.0.0' }], 'apiRange'],
     [null, 'list'],
-    [{ export: 'main' }, 'list'],
+    [{ apiRange: '^1.4.0', export: 'main' }, 'list'],
     [[{}], 'export'],
-    [[{ export: '' }], 'export'],
-    [[{ export: 'main', runtime: 'worker' }], 'runtime'],
-    [[{ export: 'main', default: 'yes' }], 'default'],
-    [[{ export: 'main', extra: true }], 'unknown'],
-    [[{ export: 'main', id: '../escape' }], 'id'],
+    [[{ apiRange: '^1.4.0', export: '' }], 'export'],
+    [[{ apiRange: '^1.4.0', export: 'main', runtime: 'worker' }], 'runtime'],
+    [[{ apiRange: '^1.4.0', export: 'main', default: 'yes' }], 'default'],
+    [[{ apiRange: '^1.4.0', export: 'main', extra: true }], 'unknown'],
+    [[{ apiRange: '^1.4.0', export: 'main', id: '../escape' }], 'id'],
   ])('rejects invalid input %j', (value, message) => {
     expect(() => parseAgnesPluginEntries('@acme/example', value)).toThrow(message)
   })
@@ -49,30 +54,32 @@ describe('package.json agnes.plugins', () => {
   it('rejects duplicate normalized ids', () => {
     expect(() =>
       parseAgnesPluginEntries('@acme/example', [
-        { export: 'main' },
-        { export: 'other', id: 'ext:@acme/example/main' },
+        { apiRange: '^1.4.0', export: 'main' },
+        { apiRange: '^1.4.0', export: 'other', id: 'ext:@acme/example/main' },
       ]),
     ).toThrow(/duplicate/i)
   })
 
   it('rejects package-authored web rows because that namespace belongs to the daemon', () => {
     expect(() =>
-      parseAgnesPluginEntries('@acme/example', [{ export: 'panel', id: 'web:@victim/example' }]),
+      parseAgnesPluginEntries('@acme/example', [
+        { apiRange: '^1.4.0', export: 'panel', id: 'web:@victim/example' },
+      ]),
     ).toThrow(/web:.*reserved/i)
   })
 
   it('rejects non-JSON and cyclic config values', () => {
-    expect(() => parseAgnesPluginEntries('@acme/example', [{ export: 'main', config: () => 1 }])).toThrow(
-      /config/i,
-    )
-    expect(() => parseAgnesPluginEntries('@acme/example', [{ export: 'main', config: Number.NaN }])).toThrow(
-      /config/i,
-    )
+    expect(() =>
+      parseAgnesPluginEntries('@acme/example', [{ apiRange: '^1.4.0', export: 'main', config: () => 1 }]),
+    ).toThrow(/config/i)
+    expect(() =>
+      parseAgnesPluginEntries('@acme/example', [{ apiRange: '^1.4.0', export: 'main', config: Number.NaN }]),
+    ).toThrow(/config/i)
     const cyclic: { self?: unknown } = {}
     cyclic.self = cyclic
-    expect(() => parseAgnesPluginEntries('@acme/example', [{ export: 'main', config: cyclic }])).toThrow(
-      /cyclic/i,
-    )
+    expect(() =>
+      parseAgnesPluginEntries('@acme/example', [{ apiRange: '^1.4.0', export: 'main', config: cyclic }]),
+    ).toThrow(/cyclic/i)
   })
 
   it('returns an empty frozen list when plugins are omitted', () => {
@@ -83,7 +90,7 @@ describe('package.json agnes.plugins', () => {
 
   it('accepts declared provide and inject service names and freezes them', () => {
     const [entry] = parseAgnesPluginEntries('@acme/example', [
-      { export: 'main', provide: ['acmeStats'], inject: ['clock', 'seam:approval'] },
+      { apiRange: '^1.4.0', export: 'main', provide: ['acmeStats'], inject: ['clock', 'seam:approval'] },
     ])
     expect(entry?.provide).toEqual(['acmeStats'])
     expect(entry?.inject).toEqual(['clock', 'seam:approval'])
@@ -93,18 +100,20 @@ describe('package.json agnes.plugins', () => {
 
   it('separates Surface-callable services from Cordis provide names', () => {
     const [entry] = parseAgnesPluginEntries('@acme/example', [
-      { export: 'main', provide: ['clock'], services: ['data.read'] },
+      { apiRange: '^1.4.0', export: 'main', provide: ['clock'], services: ['data.read'] },
     ])
     expect(entry?.provide).toEqual(['clock'])
     expect(entry?.services).toEqual(['data.read'])
     expect(Object.isFrozen(entry?.services)).toBe(true)
     expect(() =>
-      parseAgnesPluginEntries('@acme/example', [{ export: 'main', services: ['Bad/Name'] }]),
+      parseAgnesPluginEntries('@acme/example', [
+        { apiRange: '^1.4.0', export: 'main', services: ['Bad/Name'] },
+      ]),
     ).toThrow(/Surface service name syntax/)
   })
 
   it('leaves provide and inject absent when the author declares neither', () => {
-    const [entry] = parseAgnesPluginEntries('@acme/example', [{ export: 'main' }])
+    const [entry] = parseAgnesPluginEntries('@acme/example', [{ apiRange: '^1.4.0', export: 'main' }])
     expect(entry).not.toHaveProperty('provide')
     expect(entry).not.toHaveProperty('inject')
   })
@@ -119,15 +128,19 @@ describe('package.json agnes.plugins', () => {
     ['too many names', Array.from({ length: 65 }, (_, index) => `s${index}`)],
     ['an over-long name', ['x'.repeat(129)]],
   ])('rejects provide with %s', (_label, provide) => {
-    expect(() => parseAgnesPluginEntries('@acme/example', [{ export: 'main', provide }])).toThrow(/provide/)
+    expect(() =>
+      parseAgnesPluginEntries('@acme/example', [{ apiRange: '^1.4.0', export: 'main', provide }]),
+    ).toThrow(/provide/)
   })
 
   it('rejects an invalid inject list the same way', () => {
-    expect(() => parseAgnesPluginEntries('@acme/example', [{ export: 'main', inject: 'clock' }])).toThrow(
-      /inject/,
-    )
     expect(() =>
-      parseAgnesPluginEntries('@acme/example', [{ export: 'main', inject: ['clock', 'clock'] }]),
+      parseAgnesPluginEntries('@acme/example', [{ apiRange: '^1.4.0', export: 'main', inject: 'clock' }]),
+    ).toThrow(/inject/)
+    expect(() =>
+      parseAgnesPluginEntries('@acme/example', [
+        { apiRange: '^1.4.0', export: 'main', inject: ['clock', 'clock'] },
+      ]),
     ).toThrow(/duplicate/)
   })
 })

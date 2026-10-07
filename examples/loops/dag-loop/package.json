@@ -13,6 +13,7 @@
       {
         "id": "loop:dag",
         "export": "plugin",
+        "apiRange": "^1.4.0",
         "default": true,
         "inject": [
           "loops"

@@ -21,7 +21,7 @@ describe('jsonl persistence provider', () => {
   it('declares that changing provider takes a restart', () => {
     expect(persistenceProvider).toMatchObject({
       id: 'jsonl',
-      version: '1',
+      version: '1.0.0',
       state: { effect: 'restart-required' },
     })
   })

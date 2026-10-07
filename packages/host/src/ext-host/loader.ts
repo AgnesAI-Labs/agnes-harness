@@ -1,6 +1,8 @@
 import { existsSync, readFileSync } from 'node:fs'
 import { basename, dirname, join } from 'node:path'
+import { ProviderError } from '@agnes/extension-api'
 import {
+  checkPluginApiRanges,
   checkProvidedExternals,
   missingPluginModule,
   PluginModuleError,
@@ -56,11 +58,18 @@ export function createLoader(opts: { cacheDir: string; hostRoot: string; agnesVe
           const manifest = join(root, 'package.json')
           if (existsSync(manifest)) {
             const metadata = JSON.parse(readFileSync(manifest, 'utf8'))
+            checkPluginApiRanges(metadata.agnes?.plugins, metadata.name ?? 'plugin')
             checkProvidedExternals(metadata.agnes?.hostProvidedExternals)
             break
           }
           if (dirname(root) === root) break
         }
+      } catch (error) {
+        if (error instanceof ProviderError) throw error
+        if (error instanceof PluginModuleError) throw new PluginImportError(error)
+        throw new HostError('E_EXT_LOAD', 'plugin manifest validation failed')
+      }
+      try {
         const result: unknown = await jiti.import(filename)
         if (result === null || typeof result !== 'object') throw new Error('invalid module namespace')
         return result as Record<string, unknown>

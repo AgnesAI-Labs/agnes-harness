@@ -1,6 +1,6 @@
 import * as cordis from '@agnes/cordis'
 import * as extensionApi from '@agnes/extension-api'
-import { API_VERSION, satisfiesApiRange } from '@agnes/extension-api'
+import { API_VERSION, ProviderError, satisfiesApiRange } from '@agnes/extension-api'
 import * as typebox from '@sinclair/typebox'
 import * as typeboxCompiler from '@sinclair/typebox/compiler'
 import * as typeboxValue from '@sinclair/typebox/value'
@@ -86,4 +86,36 @@ export function missingPluginModule(error: unknown): PluginModuleError | undefin
     `Missing plugin module "${name}"; declare compatible agnes.hostProvidedExternals for public SDK modules, or bundle/install this third-party dependency in the plugin package.`,
     name,
   )
+}
+
+/** Called on static metadata before any ordinary plugin module is evaluated. */
+export function checkPluginApiRanges(plugins: unknown, packageId: string): void {
+  if (plugins === undefined) return
+  if (!Array.isArray(plugins))
+    throw new ProviderError('E_PROVIDER_INVALID', 'agnes.plugins must be an array', {
+      kind: 'plugin',
+      provider: packageId,
+      operation: 'admit',
+    })
+  for (const plugin of plugins) {
+    const range = plugin && typeof plugin === 'object' ? plugin.apiRange : undefined
+    if (typeof range !== 'string' || !range.trim() || range.length > 256)
+      throw new ProviderError('E_PROVIDER_INVALID', 'ordinary plugin requires apiRange', {
+        kind: 'plugin',
+        provider: packageId,
+        operation: 'admit',
+        hint: 'Declare apiRange in every agnes.plugins entry.',
+      })
+    if (!satisfiesApiRange(range))
+      throw new ProviderError(
+        'E_PROVIDER_INCOMPATIBLE',
+        `ordinary plugin apiRange does not admit API ${API_VERSION}`,
+        {
+          kind: 'plugin',
+          provider: packageId,
+          operation: 'admit',
+          hint: 'Use a compatible extension API range or upgrade the Host.',
+        },
+      )
+  }
 }

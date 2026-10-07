@@ -1,3 +1,5 @@
+import { API_VERSION, ProviderError, satisfiesApiRange } from '@agnes/extension-api'
+
 export type AgnesPluginRuntime = 'in-process' | 'isolated'
 
 /** A package author attempted to claim a row namespace owned by the daemon. */
@@ -17,6 +19,8 @@ export function isReservedPluginRowIdError(value: unknown): value is ReservedPlu
 export interface AgnesPluginManifestEntry {
   readonly export: string
   readonly id: string
+  /** Required in package manifests; optional here for legacy embedding-created rows. */
+  readonly apiRange?: string
   readonly runtime: AgnesPluginRuntime
   readonly config?: unknown
   readonly default: boolean
@@ -31,6 +35,7 @@ export interface AgnesPluginManifestEntry {
 
 const ENTRY_FIELDS = new Set([
   'export',
+  'apiRange',
   'id',
   'runtime',
   'config',
@@ -130,6 +135,25 @@ export function parseAgnesPluginEntries(
     )
       fail(`entry ${index} export`, 'contains unsupported characters')
 
+    if (typeof raw.apiRange !== 'string' || !raw.apiRange.trim() || raw.apiRange.length > 256)
+      throw new ProviderError('E_PROVIDER_INVALID', 'ordinary plugin requires apiRange', {
+        kind: 'plugin',
+        provider: packageId,
+        operation: 'admit',
+        hint: 'Declare apiRange in every agnes.plugins entry.',
+      })
+    if (!satisfiesApiRange(raw.apiRange))
+      throw new ProviderError(
+        'E_PROVIDER_INCOMPATIBLE',
+        `ordinary plugin apiRange does not admit API ${API_VERSION}`,
+        {
+          kind: 'plugin',
+          provider: packageId,
+          operation: 'admit',
+          hint: 'Use a compatible extension API range or upgrade the Host.',
+        },
+      )
+
     const id = raw.id === undefined ? `ext:${packageId}/${raw.export}` : raw.id
     if (typeof id !== 'string' || !validRowId(id)) fail(`entry ${index} id`, 'is not a valid row id')
     if (id.startsWith('web:')) throw new ReservedPluginRowIdError(id)
@@ -144,6 +168,7 @@ export function parseAgnesPluginEntries(
 
     return Object.freeze({
       export: raw.export,
+      apiRange: raw.apiRange,
       id,
       runtime,
       ...(raw.config === undefined ? {} : { config: freezeJson(raw.config) }),

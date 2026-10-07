@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto'
 import { join } from 'node:path'
+import { ProviderError } from '@agnes/extension-api'
 import {
   normalizePluginExport,
   type PackageSnapshotCandidateRef,
@@ -167,7 +168,8 @@ function readDeclarations(snapshot: RuntimeSnapshot): readonly Readonly<AgnesPlu
     stateFailure('legacy-extension-format')
   try {
     return parseAgnesPluginEntries(snapshot.packageId, (agnes as Readonly<Record<string, unknown>>).plugins)
-  } catch {
+  } catch (error) {
+    if (error instanceof ProviderError) throw error
     stateFailure('plugin-manifest')
   }
 }

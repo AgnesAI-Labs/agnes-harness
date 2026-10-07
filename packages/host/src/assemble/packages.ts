@@ -23,6 +23,7 @@ import {
   type HookInvocationSnapshot,
   type Logger,
   type PersistenceProvider,
+  ProviderError,
 } from '@agnes/extension-api'
 import {
   type AgnesPluginManifestEntry,
@@ -464,7 +465,8 @@ export function createJitiPackageLoader(loader: {
           id,
           (pkg.agnes as Readonly<Record<string, unknown>> | undefined)?.plugins,
         )
-      } catch {
+      } catch (error) {
+        if (error instanceof ProviderError) throw error
         throw new HostError('E_EXT_LOAD', `${id}: plugin manifest is invalid`, {
           detail: { id, reason: 'plugin-manifest' },
         })

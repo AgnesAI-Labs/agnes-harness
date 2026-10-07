@@ -53,6 +53,20 @@ export { projectionFixture } from './fixtures/projections.js'
 export { serviceFixture } from './fixtures/services.js'
 export { type PersistenceContractFactory, persistenceContract } from './persistence-contract.js'
 export {
+  childAgentConformance,
+  compactionConformance,
+  loopConformance,
+  modelAdapterConformance,
+  type ProviderConformanceOperation,
+  type ProviderConformanceOptions,
+  type ProviderConformanceProbe,
+  persistenceConformance,
+  runProviderConformance,
+  sandboxConformance,
+  toolPolicyConformance,
+  toolRuntimeConformance,
+} from './provider-conformance.js'
+export {
   TRANSPORT_CONTRACT_CASES,
   type TransportContractCase,
   type TransportFixture,

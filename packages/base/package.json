@@ -14,6 +14,7 @@
     "plugins": [
       {
         "export": "toolPolicyPlugin",
+        "apiRange": "^1.4.0",
         "id": "tool-policy:default",
         "inject": [
           "toolPolicies"
@@ -22,34 +23,42 @@
       },
       {
         "export": "approvalPlugin",
+        "apiRange": "^1.4.0",
         "id": "seam:approval"
       },
       {
         "export": "principalsPlugin",
+        "apiRange": "^1.4.0",
         "id": "seam:principals"
       },
       {
         "export": "artifactsPlugin",
+        "apiRange": "^1.4.0",
         "id": "seam:artifacts"
       },
       {
         "export": "checkpointPlugin",
+        "apiRange": "^1.4.0",
         "id": "seam:checkpoint"
       },
       {
         "export": "ledgerPlugin",
+        "apiRange": "^1.4.0",
         "id": "seam:ledger"
       },
       {
         "export": "verifierPlugin",
+        "apiRange": "^1.4.0",
         "id": "seam:verifier"
       },
       {
         "export": "repairPlugin",
+        "apiRange": "^1.4.0",
         "id": "seam:repair"
       },
       {
         "export": "harnessPlugin",
+        "apiRange": "^1.4.0",
         "id": "seam:harness"
       }
     ],

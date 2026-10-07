@@ -11,6 +11,7 @@
       {
         "id": "model-adapter:community-fake",
         "export": "plugin",
+        "apiRange": "^1.4.0",
         "inject": [
           "modelAdapters"
         ]

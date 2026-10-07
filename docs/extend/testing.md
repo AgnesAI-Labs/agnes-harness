@@ -57,3 +57,12 @@ The [adapter starter test](../../templates/model-adapter/test/adapter.test.mjs) 
 Extend the nearest test when behavior changes. Cover valid input, schema errors, business refusal, cancellation, cleanup and resume as applicable. The panel test checks descriptor/slot/render behavior; browser mounting needs separate verification. MCP bundle tests check packaged assets and Skill registration; real server connectivity needs separate verification.
 
 Author test success establishes contracts with deterministic dependencies. It does not prove compatibility with real providers, browsers, MCP servers or OS sandboxes.
+
+
+## Provider conformance against Host
+
+`@agnes/extension-api/testkit` and `@agnes/plugin-runtime/testkit` export `loopConformance`, `modelAdapterConformance`, `compactionConformance`, `toolRuntimeConformance`, `toolPolicyConformance`, `persistenceConformance`, `sandboxConformance` and `childAgentConformance`. `runProviderConformance(kind, options)` is their common runner.
+
+Capture `ctx.providers` inside an isolated ordinary Host plugin. Pass that port, the owner package name, a fresh provider declaration and `open(provider)`. The probe uses the Host's public service/session path and returns `start(signal)`, `close()` and, for loop/persistence, `coldResume()`. Each started operation returns `{ ready, result }`: `ready` settles once the controlled operation reaches the provider, and `result` settles after it drains. If the native API returns a cancelled outcome instead of rejecting with AbortError, supply `isCancelledResult(result)` to validate that outcome. The suite refuses unload that returns before the admitted operation settles.
+
+The [Host conformance test](../../packages/host/test/assemble/provider-conformance.test.ts) demonstrates the model/compaction/runtime/policy suites with real assembly and registration. These suites check the lifecycle contract; use provider-specific observable assertions in cold-resume probes and separate generation tests for publication or upgrades.

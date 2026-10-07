@@ -28,6 +28,7 @@
       {
         "id": "compaction-engine:sliding-window",
         "export": "main",
+        "apiRange": "^1.4.0",
         "inject": [
           "compactionEngines"
         ],

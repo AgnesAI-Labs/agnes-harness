@@ -23,6 +23,7 @@
       {
         "id": "model-adapters:pi",
         "export": "modelAdaptersPlugin",
+        "apiRange": "^1.4.0",
         "inject": [
           "modelAdapters"
         ]

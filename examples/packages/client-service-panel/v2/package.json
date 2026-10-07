@@ -9,6 +9,7 @@
     "plugins": [
       {
         "export": "runtime",
+        "apiRange": "^1.4.0",
         "id": "ext:examples/client-service-panel/runtime",
         "runtime": "in-process"
       }

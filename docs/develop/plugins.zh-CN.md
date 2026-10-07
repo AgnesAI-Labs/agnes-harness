@@ -51,7 +51,7 @@ AGH 使用仓内 `@agnes/cordis` 的 Context、服务依赖和 fiber 生命周�
   "exports": "./index.mjs",
   "agnes": {
     "plugins": [
-      { "export": "example", "id": "ext:example/plugin", "inject": ["skills"] }
+      { "apiRange": "^1.4.0", "export": "example", "id": "ext:example/plugin", "inject": ["skills"] }
     ]
   }
 }

@@ -6,7 +6,7 @@ export { openJsonlStore } from './jsonl.js'
 /** File-backed provider. Selecting it, or leaving it, takes effect on the next process start. */
 export const persistenceProvider: PersistenceProvider = definePersistenceProvider({
   id: 'jsonl',
-  version: '1',
+  version: '1.0.0',
   state: { effect: PERSISTENCE_EFFECT },
   open: openJsonlStore,
 })
