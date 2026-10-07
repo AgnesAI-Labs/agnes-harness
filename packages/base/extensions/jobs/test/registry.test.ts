@@ -15,9 +15,13 @@ it('unifies child output/cancellation with owner isolation and completion notifi
       providerId: 'acp',
       status: cancelled ? 'cancelled' : 'running',
       continuable: true,
-      text: 'child output',
     },
   ]
+  ctx.subagent.collect = async (childKey) => ({
+    childKey,
+    status: cancelled ? 'cancelled' : 'running',
+    text: 'child output',
+  })
   ctx.subagent.cancel = async () => {
     cancelled = true
     return { childKey: 'child-1', status: 'cancelled' }

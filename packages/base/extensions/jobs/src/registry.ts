@@ -268,7 +268,14 @@ export class ShellJobs {
       port ??
       (ctx.subagent?.list
         ? {
-            list: () => ctx.subagent!.list!(),
+            list: async () =>
+              Promise.all(
+                (await ctx.subagent!.list!()).map(async (child) => {
+                  if (child.text !== undefined) return child
+                  const snapshot = await ctx.subagent!.collect(child.id, { wait: false })
+                  return { ...child, ...(snapshot.text !== undefined ? { text: snapshot.text } : {}) }
+                }),
+              ),
             cancel: async (id: string) => {
               await ctx.subagent!.cancel(id)
             },
