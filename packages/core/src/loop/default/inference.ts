@@ -470,6 +470,11 @@ export async function runInference(s: SessionImpl): Promise<StepOutcome> {
   }
   const step = op.step + 1
   const gate = await s.hooks.beforeStep({ turn: op.meta.turn, step, depth: 0 })
+  if (gate.park && !gate.block) {
+    if (s.ac.signal.aborted) return finishAborted(s)
+    await s.endTurn('parked')
+    return { phase: 'terminal', reason: 'parked' }
+  }
   if (gate.block) {
     // A fail-closed hook that the cancel cut off reports a block, but nobody blocked the turn: the
     // user stopped it, and that is what the ledger and the client should say.

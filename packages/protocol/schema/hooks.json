@@ -309,6 +309,7 @@
       "additionalProperties": false,
       "properties": {
         "block": { "type": "boolean" },
+        "park": { "type": "boolean", "description": "End this turn as parked; new input wakes the session." },
         "reason": { "type": "string", "maxLength": 1024 }
       }
     },

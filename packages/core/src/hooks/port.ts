@@ -104,11 +104,11 @@ export class SessionHookPort implements HookPort {
       this.inputs.context(),
       {
         snapshot: this.snapshot(),
-        terminal: (value) => value.block === true,
+        terminal: (value) => value.block === true || value.park === true,
       },
     )
     if (result.kind === 'rejected') return { block: true, reason: result.reason }
-    return result.results.find((entry) => entry.value.block)?.value ?? {}
+    return result.results.find((entry) => entry.value.block || entry.value.park)?.value ?? {}
   }
 
   async toolCall(p: Parameters<HookPort['toolCall']>[0]): ReturnType<HookPort['toolCall']> {

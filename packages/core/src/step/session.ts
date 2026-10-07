@@ -275,7 +275,7 @@ export type HookPort = {
   }): Promise<{ action: 'stop' } | { action: 'continue'; note: string }>
   context(sections: PromptSection[]): Promise<{ sections: PromptSection[]; additionalContext: string }>
   beforeRequest(out: DeriveOutput, slot: string, attempt: number): Promise<DeriveOutput>
-  beforeStep(p: { turn: number; step: number; depth: number }): Promise<{ block?: boolean; reason?: string }>
+  beforeStep(p: { turn: number; step: number; depth: number }): Promise<{ block?: boolean; park?: boolean; reason?: string }>
   toolResult?(p: HookPayloadMap['tool_result']): Promise<HookReturnMap['tool_result']>
   approvalRequest?(p: HookPayloadMap['approval_request']): Promise<HookReturnMap['approval_request']>
   requestError?(p: HookPayloadMap['request_error']): Promise<void>
