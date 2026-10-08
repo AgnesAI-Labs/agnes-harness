@@ -88,7 +88,7 @@ After disabling backend and frontend contributions, old handles must stop workin
 ## Verification commands
 
 ```sh
-pnpm exec vitest run tools/public-docs/examples.test.ts packages/host/test/assemble/dynamic-client-extension.test.ts packages/daemon/test/client-modules.test.ts --maxWorkers=1
+pnpm exec vitest run tools/public-docs/examples.test.ts packages/host/test/assemble/dynamic-client-extension.test.ts packages/daemon-admin/test/client-modules.test.ts --maxWorkers=1
 ```
 
 This combination covers example modules, Host assembly/revocation, and daemon browser-call boundaries. [web-workbench.mjs](../../tools/acceptance/web-workbench.mjs) is an optional acceptance program for the full browser → BFF → daemon → worker → Host path. Recorded versions and coverage are listed separately in [verification](../maintainers/verification.md).

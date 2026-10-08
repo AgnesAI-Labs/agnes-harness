@@ -1,0 +1,34 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": ".",
+    "outDir": "dist"
+  },
+  "include": ["src/**/*.ts"],
+  "references": [
+    {
+      "path": "../../tsconfig.config.json"
+    },
+    {
+      "path": "../daemon-foundation"
+    },
+    {
+      "path": "../host"
+    },
+    {
+      "path": "../package-manager"
+    },
+    {
+      "path": "../plugin-runtime"
+    },
+    {
+      "path": "../protocol"
+    },
+    {
+      "path": "../resource-control-store"
+    },
+    {
+      "path": "../system-node"
+    }
+  ]
+}

@@ -234,6 +234,13 @@ describe('ratchet key path-boundary matching (regression: sibling-prefix false m
 // preset composition and inline projection repairs. Only exceeded scopes and missing bundled
 // extension keys change; scanning, source exclusions and the default extension ceiling stay fixed.
 const INITIAL_CEILING: Record<string, number> = {
+  'packages/daemon-admin/src/packages/project': 43,
+  'packages/daemon-admin/src/packages/permissions': 71,
+  'packages/daemon-admin/src/packages/operations': 410,
+  'packages/daemon-admin/src/packages/index': 47,
+  'packages/daemon-admin/src/packages/handler': 1703,
+  'packages/daemon-admin/src/packages/admin-surface': 584,
+  'packages/daemon-admin/src': 4832,
   'packages/daemon-surfaces/src/surfaces': 1961,
   'packages/daemon-surfaces/src': 1962,
   'packages/daemon-foundation/src/jobs': 638,
@@ -2090,7 +2097,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // countLines: 27898 -> 28105; exact cap, no exclusions or spare allocation.
   // Acceptance review: Persist child-engine settings through publication and recover legacy default loop pins when listing sessions.
   // countLines: 28105 -> 28157; exact cap, no exclusions or spare allocation.
-  'packages/daemon/src': 22023,
+  'packages/daemon/src': 17210,
   'packages/daemon/src/packages/admin-session': 46,
   // 2026-09-14: whole-branch review fix wave (Finding 1) adds the two missing
   // 'pins/inspect'/'pins/release' entries to the ACTIONS BFF route allowlist, which had been left
@@ -2106,7 +2113,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // countLines: 399 -> 484; exact measured cap, no exclusions or spare allocation.
   // 2026-10-07 gap-fill review: Validated live context, search configuration and child-engine administration handlers.
   // countLines: 484 -> 584; exact cap, no exclusions or spare allocation.
-  'packages/daemon/src/packages/admin-surface': 584,
+  'packages/daemon/src/packages/admin-surface': 1,
   // A manager error may race its last onProgress callback; the handler drains that callback before
   // recording terminal failure so polling cannot resurrect an operation. Measured total: 1043.
   // 2026-09-14: Task 3 orphaned-pin-cleanup adds RuntimePinReleaseOutcome/RuntimePinsAdapter type
@@ -2146,7 +2153,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // countLines: 1619 -> 1682; exact measured cap, no exclusions or spare allocation.
   // 2026-10-07 gap-fill review: History query operations on the existing package handler.
   // countLines: 1682 -> 1703; exact cap, no exclusions or spare allocation.
-  'packages/daemon/src/packages/handler': 1703,
+  'packages/daemon/src/packages/handler': 1,
   // 2026-09-14 doctor activation-recovery report: the optional barrel re-export of
   // ACTIVATION_RECOVERY_FILENAME/ActivationRecoveryBreadcrumb/isActivationRecoveryBreadcrumb adds
   // two lines. Measured 42, exact.
@@ -2154,12 +2161,12 @@ const INITIAL_CEILING: Record<string, number> = {
   // supervisor.ts's bindRuntimePins wiring and daemon tests can import it. Measured 43, exact.
   // 2026-09-16 (plugin-skin S26): the `localWebSkinReadAuthority` re-export. Measured 44, exact.
   // 2026-09-18 web-client-modules P1a: registry public exports.
-  'packages/daemon/src/packages/index': 58,
-  'packages/daemon/src/packages/operations': 410,
+  'packages/daemon/src/packages/index': 1,
+  'packages/daemon/src/packages/operations': 1,
   // 2026-09-16 (plugin-skin S26): the authority `methods` allowlist, its enforcement in
   // `requirePackageAdmin`, and `localWebSkinReadAuthority`. Measured 70, exact.
-  'packages/daemon/src/packages/permissions': 71,
-  'packages/daemon/src/packages/project': 52,
+  'packages/daemon/src/packages/permissions': 1,
+  'packages/daemon/src/packages/project': 1,
   // H3 and the activation handoff add the supervisor admission seam plus separately factored
   // activation/actual/deployment transaction modules. Review hardening binds scheduled turns,
   // runtime observations, desired/actual drift/orphan reconciliation and failure cleanup. The

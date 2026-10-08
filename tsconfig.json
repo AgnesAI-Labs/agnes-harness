@@ -261,6 +261,12 @@
     },
     {
       "path": "packages/daemon-surfaces/tsconfig.test.json"
+    },
+    {
+      "path": "packages/daemon-admin"
+    },
+    {
+      "path": "packages/daemon-admin/tsconfig.test.json"
     }
   ]
 }

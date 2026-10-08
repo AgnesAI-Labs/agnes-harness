@@ -168,6 +168,7 @@ export function auditStageGraph(packages: PackageShape[], imports: ImportSite[])
       site.packageName !== PACKAGE_MANAGER &&
       site.packageName !== WORKER_RUNTIME &&
       site.packageName !== '@agnes/daemon-foundation' &&
+      site.packageName !== '@agnes/daemon-admin' &&
       site.packageName !== DAEMON
     ) {
       errors.push(

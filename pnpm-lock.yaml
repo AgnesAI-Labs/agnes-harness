@@ -446,6 +446,9 @@ importers:
       '@agnes/base':
         specifier: workspace:*
         version: link:../base
+      '@agnes/daemon-admin':
+        specifier: workspace:*
+        version: link:../daemon-admin
       '@agnes/daemon-foundation':
         specifier: workspace:*
         version: link:../daemon-foundation
@@ -507,6 +510,43 @@ importers:
       '@types/ws':
         specifier: 8.18.1
         version: 8.18.1
+
+  packages/daemon-admin:
+    dependencies:
+      '@agnes/daemon-foundation':
+        specifier: workspace:*
+        version: link:../daemon-foundation
+      '@agnes/host':
+        specifier: workspace:*
+        version: link:../host
+      '@agnes/package-manager':
+        specifier: workspace:*
+        version: link:../package-manager
+      '@agnes/plugin-runtime':
+        specifier: workspace:*
+        version: link:../plugin-runtime
+      '@agnes/protocol':
+        specifier: workspace:*
+        version: link:../protocol
+      '@agnes/resource-control-store':
+        specifier: workspace:*
+        version: link:../resource-control-store
+      '@agnes/system-node':
+        specifier: workspace:*
+        version: link:../system-node
+      es-module-lexer:
+        specifier: 2.3.2
+        version: 2.3.2
+    devDependencies:
+      '@agnes/ai':
+        specifier: workspace:*
+        version: link:../ai
+      '@agnes/base':
+        specifier: workspace:*
+        version: link:../base
+      '@agnes/daemon':
+        specifier: workspace:*
+        version: link:../daemon
 
   packages/daemon-foundation:
     dependencies:

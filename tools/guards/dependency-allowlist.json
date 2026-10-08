@@ -117,7 +117,8 @@
     "@agnes/error-sanitization",
     "@agnes/system-node",
     "@agnes/daemon-foundation",
-    "@agnes/daemon-surfaces"
+    "@agnes/daemon-surfaces",
+    "@agnes/daemon-admin"
   ],
   "@agnes/cli": [
     "@agnes/system-node",
@@ -266,5 +267,19 @@
     "@agnes/protocol",
     "@agnes/worker-runtime"
   ],
-  "@agnes/daemon-surfaces": ["@agnes/host", "@agnes/package-manager", "@agnes/protocol", "@agnes/system-node"]
+  "@agnes/daemon-surfaces": [
+    "@agnes/host",
+    "@agnes/package-manager",
+    "@agnes/protocol",
+    "@agnes/system-node"
+  ],
+  "@agnes/daemon-admin": [
+    "@agnes/daemon-foundation",
+    "@agnes/host",
+    "@agnes/package-manager",
+    "@agnes/plugin-runtime",
+    "@agnes/protocol",
+    "@agnes/resource-control-store",
+    "@agnes/system-node"
+  ]
 }

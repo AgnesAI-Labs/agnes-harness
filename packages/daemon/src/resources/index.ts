@@ -1,1 +1,1 @@
-export * from '@agnes/resource-control-store'
+export * from '@agnes/daemon-admin/resources/index'

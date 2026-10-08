@@ -1,0 +1,48 @@
+{
+  "name": "@agnes/daemon-admin",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./index": "./src/index.ts",
+    "./package-actual-identity": "./src/package-actual-identity.ts",
+    "./package-readiness": "./src/package-readiness.ts",
+    "./packages/admin-surface": "./src/packages/admin-surface.ts",
+    "./packages/client-modules": "./src/packages/client-modules.ts",
+    "./packages/default-helper-state": "./src/packages/default-helper-state.ts",
+    "./packages/default-helpers": "./src/packages/default-helpers.ts",
+    "./packages/handler": "./src/packages/handler.ts",
+    "./packages/index": "./src/packages/index.ts",
+    "./packages/local-examples": "./src/packages/local-examples.ts",
+    "./packages/operations": "./src/packages/operations.ts",
+    "./packages/permissions": "./src/packages/permissions.ts",
+    "./packages/plugin-source": "./src/packages/plugin-source.ts",
+    "./packages/project": "./src/packages/project.ts",
+    "./packages/runtime-references": "./src/packages/runtime-references.ts",
+    "./plugin-tree-surface": "./src/plugin-tree-surface.ts",
+    "./resources/adapters": "./src/resources/adapters.ts",
+    "./resources/admin-surface": "./src/resources/admin-surface.ts",
+    "./resources/index": "./src/resources/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -b",
+    "test": "pnpm --dir ../.. exec vitest run packages/daemon-admin/test --maxWorkers=1"
+  },
+  "dependencies": {
+    "@agnes/daemon-foundation": "workspace:*",
+    "@agnes/host": "workspace:*",
+    "@agnes/package-manager": "workspace:*",
+    "@agnes/plugin-runtime": "workspace:*",
+    "@agnes/protocol": "workspace:*",
+    "@agnes/resource-control-store": "workspace:*",
+    "@agnes/system-node": "workspace:*",
+    "es-module-lexer": "2.3.2"
+  },
+  "license": "Apache-2.0",
+  "devDependencies": {
+    "@agnes/ai": "workspace:*",
+    "@agnes/base": "workspace:*",
+    "@agnes/daemon": "workspace:*"
+  }
+}

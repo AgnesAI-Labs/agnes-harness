@@ -1,5 +1,1 @@
-export type {
-  McpLifecycleAdapter,
-  SkillCatalogAdapter,
-  SkillCatalogCandidate,
-} from '@agnes/resource-control-store'
+export * from '@agnes/daemon-admin/resources/adapters'

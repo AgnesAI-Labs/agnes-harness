@@ -56,6 +56,9 @@
     },
     {
       "path": "../daemon-surfaces"
+    },
+    {
+      "path": "../daemon-admin"
     }
   ]
 }

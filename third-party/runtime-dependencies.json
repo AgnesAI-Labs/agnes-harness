@@ -135,7 +135,7 @@
       "source": "https://github.com/guybedford/es-module-lexer",
       "purpose": "Parses the static and literal dynamic ESM dependency graph of browser client-module snapshots.",
       "rationale": "Avoids treating comments or ordinary strings as imports while enumerating the immutable browser resource closure.",
-      "consumers": ["packages/daemon"]
+      "consumers": ["packages/daemon", "packages/daemon-admin"]
     },
     {
       "name": "ajv-formats",
