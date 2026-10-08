@@ -72,8 +72,14 @@ The hot-reload/restart spec is tagged `@flaky` after one observed daemon restart
 readiness during validation. It remains enabled and any recurrence fails the gate. Later focused
 passes do not clear that observation. Its failure report/trace is retained separately from successful
 runs. Process status and daemon audit evidence are now attached; local code updates are published
-atomically to avoid partial fixture files. The underlying restart failure is not yet attributed or
-claimed fixed. Remove the tag only after the cause and a regression fix are established.
+atomically to avoid partial fixture files. Investigation reproduced the failure when the macOS
+process-identity boot-time component changes
+while the daemon's PID and process start time remain unchanged: `daemon stop` returns `not-running`,
+the old process retains the mutation lock, and its replacement exits before readiness. The identity
+helper currently uses `kern.boottime`, which [Apple's kernel adjusts when setting calendar time](https://github.com/apple-oss-distributions/xnu/blob/main/osfmk/kern/clock.c).
+A platform identity fix, compatibility with existing owner records, and a regression test for clock
+adjustment are still required. Keep this tag until that fix is verified; repeated passing runs do not
+resolve the failure. Do not add retries, PID-only shutdown, or an identity-comparison tolerance.
 
 ## Phase 2, after the UI overhaul is integrated
 
