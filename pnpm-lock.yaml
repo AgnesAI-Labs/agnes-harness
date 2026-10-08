@@ -517,6 +517,9 @@ importers:
       '@agnes/host-infrastructure':
         specifier: workspace:*
         version: link:../host-infrastructure
+      '@agnes/host-providers':
+        specifier: workspace:*
+        version: link:../host-providers
       '@agnes/model-adapters':
         specifier: workspace:*
         version: link:../model-adapters
@@ -754,6 +757,55 @@ importers:
       '@agnes/host':
         specifier: workspace:*
         version: link:../host
+
+  packages/host-providers:
+    dependencies:
+      '@agnes/ai':
+        specifier: workspace:*
+        version: link:../ai
+      '@agnes/cordis':
+        specifier: workspace:*
+        version: link:../cordis
+      '@agnes/core':
+        specifier: workspace:*
+        version: link:../core
+      '@agnes/extension-api':
+        specifier: workspace:*
+        version: link:../extension-api
+      '@agnes/host-common':
+        specifier: workspace:*
+        version: link:../host-common
+      '@agnes/host-extensions':
+        specifier: workspace:*
+        version: link:../host-extensions
+      '@agnes/host-infrastructure':
+        specifier: workspace:*
+        version: link:../host-infrastructure
+      '@agnes/model-adapters':
+        specifier: workspace:*
+        version: link:../model-adapters
+      '@agnes/package-manager':
+        specifier: workspace:*
+        version: link:../package-manager
+      '@agnes/plugin-runtime':
+        specifier: workspace:*
+        version: link:../plugin-runtime
+      '@agnes/protocol':
+        specifier: workspace:*
+        version: link:../protocol
+    devDependencies:
+      '@agnes/host':
+        specifier: workspace:*
+        version: link:../host
+      '@agnes/resource-control-runtime':
+        specifier: workspace:*
+        version: link:../resource-control-runtime
+      '@agnes/system-node':
+        specifier: workspace:*
+        version: link:../system-node
+      '@sinclair/typebox':
+        specifier: 0.34.33
+        version: 0.34.33
 
   packages/loop-default:
     dependencies:

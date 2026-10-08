@@ -120,6 +120,7 @@
         "packages/host",
         "packages/host-computer-use",
         "packages/host-extensions",
+        "packages/host-providers",
         "packages/model-adapters",
         "packages/plugin-runtime",
         "packages/protocol",

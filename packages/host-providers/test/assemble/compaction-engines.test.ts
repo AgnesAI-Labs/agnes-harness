@@ -1,9 +1,9 @@
 import { Context } from '@agnes/cordis'
 import type { CompactionEngine } from '@agnes/extension-api'
+import { resolveProfile } from '@agnes/host-common/profile/resolve'
 import { expect, it } from 'vitest'
 import { assembleCompaction } from '../../src/assemble/compaction.js'
 import { installCompactionEngines } from '../../src/assemble/compaction-engines.js'
-import { resolveProfile } from '../../src/profile/resolve.js'
 
 const engine = (id = 'default'): CompactionEngine => ({
   id,

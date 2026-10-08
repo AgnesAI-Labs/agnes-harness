@@ -1,4 +1,5 @@
 import { type CurrentSessionRuntime, noopHooks, ToolRegistry } from '@agnes/core'
+import { PublicationGate } from '@agnes/host-common/publication-gate'
 import {
   buildRuntimeTarget,
   createPluginRow,
@@ -6,7 +7,6 @@ import {
   RESOURCE_OWNED_ROW_IDS,
 } from '@agnes/plugin-runtime/host'
 import { describe, expect, it, vi } from 'vitest'
-import { PublicationGate } from '../src/publication-gate.js'
 import { publishedSessionRuntime } from '../src/runtime-generation-view.js'
 import { RuntimeMutationGate } from '../src/runtime-mutation-gate.js'
 import { RuntimePluginCatalogue } from '../src/runtime-plugin-catalogue.js'

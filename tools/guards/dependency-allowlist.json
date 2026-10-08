@@ -93,7 +93,8 @@
     "@agnes/host-infrastructure",
     "@agnes/host-computer-use",
     "@agnes/host-artifacts",
-    "@agnes/host-extensions"
+    "@agnes/host-extensions",
+    "@agnes/host-providers"
   ],
   "@agnes/sdk": [
     "@agnes/protocol",
@@ -223,5 +224,18 @@
     "@agnes/protocol",
     "@agnes/resource-control-runtime",
     "@agnes/system-node"
+  ],
+  "@agnes/host-providers": [
+    "@agnes/ai",
+    "@agnes/cordis",
+    "@agnes/core",
+    "@agnes/extension-api",
+    "@agnes/host-common",
+    "@agnes/host-extensions",
+    "@agnes/host-infrastructure",
+    "@agnes/model-adapters",
+    "@agnes/package-manager",
+    "@agnes/plugin-runtime",
+    "@agnes/protocol"
   ]
 }

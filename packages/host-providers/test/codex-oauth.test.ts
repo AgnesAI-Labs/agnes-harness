@@ -16,15 +16,18 @@ import {
   type SubscriptionProviderId,
 } from '@agnes/ai'
 import { fakeRequest } from '@agnes/ai/testkit'
+import type { ResolvedProfile } from '@agnes/host-common/profile/types'
+import {
+  codexCredentials,
+  subscriptionCredentials,
+} from '@agnes/host-infrastructure/adapters/codex-credentials'
+import * as credentialStores from '@agnes/host-infrastructure/adapters/credential-store'
+import { createCredentialStore } from '@agnes/host-infrastructure/adapters/credential-store'
+import { createCodexLogin } from '@agnes/host-infrastructure/codex-login'
+import { createConfigurationService } from '@agnes/host-infrastructure/configuration'
 import * as systemNode from '@agnes/system-node'
 import { afterEach, expect, it, vi } from 'vitest'
-import { codexCredentials, subscriptionCredentials } from '../src/adapters/codex-credentials.js'
-import * as credentialStores from '../src/adapters/credential-store.js'
-import { createCredentialStore } from '../src/adapters/credential-store.js'
 import { buildProvider } from '../src/assemble/provider.js'
-import { createCodexLogin } from '../src/codex-login.js'
-import { createConfigurationService } from '../src/configuration.js'
-import type { ResolvedProfile } from '../src/profile/types.js'
 
 function must<T>(value: T | null | undefined): T {
   if (value == null) throw new Error('missing fixture value')
@@ -439,7 +442,7 @@ it('serializes actual processes and releases the transaction lock after a proces
   const home = await root(),
     store = codexCredentials(home, ref)
   await store.modify(CODEX_ID, async () => credential(1))
-  const fixture = fileURLToPath(new URL('./fixtures/codex-refresh.ts', import.meta.url))
+  const fixture = fileURLToPath(new URL('../../host/test/fixtures/codex-refresh.ts', import.meta.url))
   const run = promisify(execFile)
   await Promise.all(
     [1, 2].map(() =>

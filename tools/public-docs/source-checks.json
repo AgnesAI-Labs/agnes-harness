@@ -36,7 +36,7 @@
     "includes": ["web: is reserved", "'in-process' | 'isolated'"]
   },
   {
-    "path": "packages/host/src/runtime-target-assembler.ts",
+    "path": "packages/host-providers/src/runtime-target-assembler.ts",
     "includes": ["web:"]
   },
   {
@@ -258,7 +258,7 @@
     "excludes": ["from '@agnes/core'"]
   },
   {
-    "path": "packages/host/src/assemble/model-adapters.ts",
+    "path": "packages/host-providers/src/assemble/model-adapters.ts",
     "includes": ["await record.adapter.create(config, signal)"],
     "excludes": ["builtin()", "builtin?:"]
   }

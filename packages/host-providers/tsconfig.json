@@ -1,0 +1,46 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": ".",
+    "outDir": "dist"
+  },
+  "include": ["src/**/*.ts"],
+  "references": [
+    {
+      "path": "../../tsconfig.config.json"
+    },
+    {
+      "path": "../ai"
+    },
+    {
+      "path": "../cordis"
+    },
+    {
+      "path": "../core"
+    },
+    {
+      "path": "../extension-api"
+    },
+    {
+      "path": "../host-common"
+    },
+    {
+      "path": "../host-extensions"
+    },
+    {
+      "path": "../host-infrastructure"
+    },
+    {
+      "path": "../model-adapters"
+    },
+    {
+      "path": "../package-manager"
+    },
+    {
+      "path": "../plugin-runtime"
+    },
+    {
+      "path": "../protocol"
+    }
+  ]
+}

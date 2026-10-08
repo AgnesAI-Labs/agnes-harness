@@ -1,6 +1,7 @@
 import { PiAdapter } from '@agnes/ai'
 import { fakeModel, fakeRequest } from '@agnes/ai/testkit'
 import { type PresetView, presetDefaults } from '@agnes/core'
+import type { ResolvedProfile, RouteDecl } from '@agnes/host-common/profile/types'
 import type { ModelRecord, RouteTable } from '@agnes/protocol'
 import { describe, expect, it } from 'vitest'
 import {
@@ -10,7 +11,6 @@ import {
   sweepAwsDestination,
   verifyRoutes,
 } from '../../src/assemble/routes.js'
-import type { ResolvedProfile, RouteDecl } from '../../src/profile/types.js'
 
 const model = (id: string, route: string, slot?: ModelRecord['slot']): ModelRecord => ({
   id,

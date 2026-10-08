@@ -1,3 +1,5 @@
+import type { ResolvedProfile } from '@agnes/host-common/profile/types'
+import type { PackageModule } from '@agnes/host-extensions/assemble/packages'
 import {
   createPluginRow,
   createTreeSnapshot,
@@ -6,8 +8,6 @@ import {
 } from '@agnes/plugin-runtime/host'
 import { describe, expect, it } from 'vitest'
 import { buildOrdinaryRows } from '../src/assemble/ordinary-rows.js'
-import type { PackageModule } from '../src/assemble/packages.js'
-import type { ResolvedProfile } from '../src/profile/types.js'
 
 describe('ordinary row builder', () => {
   it.each(RESOURCE_OWNED_ROW_IDS)('refuses resource-owned id %s', (id) => {

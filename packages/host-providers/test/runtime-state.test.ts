@@ -1,5 +1,5 @@
+import { PublicationGate } from '@agnes/host-common/publication-gate'
 import { describe, expect, it, vi } from 'vitest'
-import { PublicationGate } from '../src/publication-gate.js'
 import { stageCandidateRuntime } from '../src/runtime-candidate.js'
 import { RuntimeStateCoordinator, RuntimeStateStaleError } from '../src/runtime-state.js'
 

@@ -15,15 +15,15 @@
       "packages/host/src/host.ts": 3,
       "packages/host/src/profile/composition-runtime.ts": 5,
       "packages/host/src/runtime-generation-host.ts": 7,
-      "packages/host/src/runtime-hot-policy.ts": 3,
-      "packages/host/src/runtime-plugin-catalogue.ts": 3,
-      "packages/host/src/runtime-target-assembler.ts": 7,
-      "packages/host/src/runtime-target-builder.ts": 2,
-      "packages/host/src/runtime-target-claims.ts": 3,
-      "packages/host/src/runtime-target-publisher.ts": 10,
-      "packages/host/src/runtime-target-report.ts": 2,
-      "packages/host/src/runtime-target-resources.ts": 7,
-      "packages/host/src/runtime-target-static-authority.ts": 2,
+      "packages/host-providers/src/runtime-hot-policy.ts": 3,
+      "packages/host-providers/src/runtime-plugin-catalogue.ts": 3,
+      "packages/host-providers/src/runtime-target-assembler.ts": 7,
+      "packages/host-providers/src/runtime-target-builder.ts": 2,
+      "packages/host-providers/src/runtime-target-claims.ts": 3,
+      "packages/host-providers/src/runtime-target-publisher.ts": 10,
+      "packages/host-providers/src/runtime-target-report.ts": 2,
+      "packages/host-providers/src/runtime-target-resources.ts": 7,
+      "packages/host-providers/src/runtime-target-static-authority.ts": 2,
       "packages/package-manager/src/runtime-snapshots-generations.ts": 2,
       "packages/plugin-runtime/src/host/index.ts": 1,
       "packages/plugin-runtime/src/runtime-target.ts": 8,
@@ -37,12 +37,12 @@
       "packages/protocol/schema/worker.json": 1
     },
     "c2_runtime_state": {
-      "packages/host/src/resource-generation-cell.ts": 1,
-      "packages/host/src/runtime-candidate.ts": 4,
-      "packages/host/src/runtime-state.ts": 5,
-      "packages/host/src/runtime-target-assembler.ts": 3,
-      "packages/host/src/runtime-target-publisher.ts": 10,
-      "packages/host/src/runtime-target-resources.ts": 2
+      "packages/host-providers/src/resource-generation-cell.ts": 1,
+      "packages/host-providers/src/runtime-candidate.ts": 4,
+      "packages/host-providers/src/runtime-state.ts": 5,
+      "packages/host-providers/src/runtime-target-assembler.ts": 3,
+      "packages/host-providers/src/runtime-target-publisher.ts": 10,
+      "packages/host-providers/src/runtime-target-resources.ts": 2
     }
   }
 }

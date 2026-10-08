@@ -1,3 +1,4 @@
+import type { PackageModule } from '@agnes/host-extensions/assemble/packages'
 import type { RuntimePluginSnapshot, RuntimeSnapshot } from '@agnes/package-manager'
 import {
   buildRuntimeTarget,
@@ -6,7 +7,6 @@ import {
   type ThirdPartyRowMountFactory,
 } from '@agnes/plugin-runtime/host'
 import { describe, expect, it, vi } from 'vitest'
-import type { PackageModule } from '../src/assemble/packages.js'
 import { loadRuntimeTargetClaims } from '../src/runtime-target-claims.js'
 
 const revision = 'a'.repeat(64)

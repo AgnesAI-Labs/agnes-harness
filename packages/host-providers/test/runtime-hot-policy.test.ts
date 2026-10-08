@@ -1,10 +1,7 @@
 import { Context } from '@agnes/cordis'
 import type { CurrentSessionRuntime } from '@agnes/core'
-import { buildRuntimeTarget, createPluginRow, normalizePluginExport } from '@agnes/plugin-runtime/host'
-import { describe, expect, it } from 'vitest'
-import { readCreditsPerUsd } from '../src/assemble/provider.js'
-import { toPresetView } from '../src/presets/view.js'
-import type { ResolvedProfile } from '../src/profile/types.js'
+import { toPresetView } from '@agnes/host-common/presets/view'
+import type { ResolvedProfile } from '@agnes/host-common/profile/types'
 import {
   applyHotPolicySnapshot,
   approvalTicketRevision,
@@ -13,9 +10,12 @@ import {
   commandHookInvocationSnapshot,
   createHotPolicyFacade,
   HOT_POLICY_ROWS,
-} from '../src/profile-policy.js'
-import { PublicationDispatch } from '../src/publication-dispatch.js'
-import { PublicationGate } from '../src/publication-gate.js'
+} from '@agnes/host-common/profile-policy'
+import { PublicationDispatch } from '@agnes/host-common/publication-dispatch'
+import { PublicationGate } from '@agnes/host-common/publication-gate'
+import { buildRuntimeTarget, createPluginRow, normalizePluginExport } from '@agnes/plugin-runtime/host'
+import { describe, expect, it } from 'vitest'
+import { readCreditsPerUsd } from '../src/assemble/provider.js'
 import {
   type IsolatedSessionOverlay,
   isolateHotPolicyServices,

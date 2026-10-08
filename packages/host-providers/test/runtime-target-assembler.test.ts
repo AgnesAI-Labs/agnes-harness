@@ -1,4 +1,5 @@
 import type { Context } from '@agnes/cordis'
+import { assembleOrdinaryPluginTree } from '@agnes/host-extensions/assemble/seams-cordis'
 import type { RuntimePluginSnapshot, RuntimeSnapshot } from '@agnes/package-manager'
 import {
   buildRuntimeTarget,
@@ -7,7 +8,6 @@ import {
   RESOURCE_OWNED_ROW_IDS,
 } from '@agnes/plugin-runtime/host'
 import { describe, expect, it, vi } from 'vitest'
-import { assembleOrdinaryPluginTree } from '../src/assemble/seams-cordis.js'
 import { RuntimePluginCatalogue } from '../src/runtime-plugin-catalogue.js'
 import {
   assembleRuntimeTargetOrdinaryCandidate,

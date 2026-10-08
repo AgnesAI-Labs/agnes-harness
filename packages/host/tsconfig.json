@@ -51,6 +51,9 @@
     },
     {
       "path": "../host-extensions"
+    },
+    {
+      "path": "../host-providers"
     }
   ]
 }
