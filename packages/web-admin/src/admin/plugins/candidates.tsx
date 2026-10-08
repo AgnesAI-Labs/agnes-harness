@@ -1,8 +1,14 @@
 import type { AuthoringCandidate, AuthoringCandidateSummary } from '@agnes/protocol'
-import { Button, SettingsToolbar } from '@agnes/web-ui'
-import { type ReactNode, useEffect, useState } from 'react'
+import { Badge, Button, SettingsToolbar } from '@agnes/web-ui'
+import { type ReactNode, useEffect, useRef, useState } from 'react'
 import type { PluginAdminApi } from './api.js'
-import { CapabilityReview } from './capability-review.js'
+import {
+  addedPermissions,
+  CandidateDelta,
+  CandidateFileDiff,
+  CandidateTechnical,
+  type CandidateText,
+} from './candidate-review.js'
 
 type Confirmation = {
   title: string
@@ -19,18 +25,51 @@ export function CandidateInbox({
   t,
   confirm,
   onPublished,
+  sessionTitle,
 }: {
   api: PluginAdminApi | undefined
   canReview: boolean
   canTest: boolean
-  t: (key: string) => string
+  t: CandidateText
   confirm: (input: Confirmation) => void
   onPublished: () => Promise<void>
+  sessionTitle?: ((key: string) => Promise<string | undefined>) | undefined
 }) {
   const [items, setItems] = useState<AuthoringCandidateSummary[]>([]),
     [selected, setSelected] = useState<AuthoringCandidate>(),
     [error, setError] = useState(''),
-    [busy, setBusy] = useState(false)
+    [busy, setBusy] = useState(false),
+    [originTitle, setOriginTitle] = useState<string>()
+  const review = useRef<HTMLElement>(null)
+  const originKey = selected?.origin.sessionKey
+  useEffect(() => {
+    let alive = true
+    setOriginTitle(undefined)
+    if (originKey && sessionTitle)
+      void sessionTitle(originKey)
+        .then((title) => {
+          if (alive) setOriginTitle(title)
+        })
+        .catch(() => undefined)
+    return () => {
+      alive = false
+    }
+  }, [originKey, sessionTitle])
+  const selectedId = selected?.candidateId
+  useEffect(() => {
+    if (!selectedId) return
+    let frame = 0
+    const reveal = () => {
+      cancelAnimationFrame(frame)
+      frame = requestAnimationFrame(() => review.current?.scrollIntoView({ block: 'nearest' }))
+    }
+    reveal()
+    window.addEventListener('resize', reveal)
+    return () => {
+      cancelAnimationFrame(frame)
+      window.removeEventListener('resize', reveal)
+    }
+  }, [selectedId])
   useEffect(() => {
     if (!api) return
     let alive = true
@@ -76,176 +115,163 @@ export function CandidateInbox({
       title: t(approve ? 'candidates.approve' : 'candidates.reject'),
       description: t(approve ? 'candidates.publishWarning' : 'candidates.rejectWarning'),
       label: t(approve ? 'candidates.approve' : 'candidates.reject'),
-      facts: (
-        <dl>
-          <dt>{t('candidates.hash')}</dt>
-          <dd>
-            <code>{value.candidateHash}</code>
-          </dd>
-          <dt>{t('candidates.reviewHash')}</dt>
-          <dd>
-            <code>{reviewHash}</code>
-          </dd>
-        </dl>
-      ),
+      facts: <CandidateTechnical value={value} t={t} />,
       run: () => act(() => api.candidatesDecide(value.candidateId, value.candidateHash, reviewHash, approve)),
     })
   }
+  const title = originTitle || t('candidates.untitledSession')
+  const permissions = selected ? addedPermissions(selected) : undefined
+  const tone = (state: string) =>
+    state === 'published'
+      ? ('ok' as const)
+      : state === 'review'
+        ? ('warn' as const)
+        : ['failed', 'interrupted'].includes(state)
+          ? ('bad' as const)
+          : ('off' as const)
   return (
     <section className="plugin-candidates" data-testid="plugin-candidates" aria-label={t('candidates.title')}>
       <SettingsToolbar>
-        <h3>{t('candidates.title')}</h3>
+        {selected ? (
+          <Button data-testid="candidate-back" disabled={busy} onClick={() => setSelected(undefined)}>
+            {t('candidates.back')}
+          </Button>
+        ) : (
+          <h3>{t('candidates.title')}</h3>
+        )}
         <Button
           data-testid="candidate-refresh"
           disabled={!api || busy}
-          onClick={() => void refresh().catch(() => setError(t('candidates.unavailable')))}
+          onClick={() =>
+            void refresh()
+              .then(() => setSelected(undefined))
+              .catch(() => setError(t('candidates.unavailable')))
+          }
         >
           {t('candidates.refresh')}
         </Button>
       </SettingsToolbar>
-      <p>{t('candidates.description')}</p>
       {error && (
         <p role="alert" data-testid="candidate-error">
           {error}
         </p>
       )}
-      {!items.length ? (
-        <p>{t('candidates.empty')}</p>
+      {!selected ? (
+        <>
+          <p>{t('candidates.description')}</p>
+          {!items.length ? (
+            <p>{t('candidates.empty')}</p>
+          ) : (
+            <ul className="candidate-list" data-testid="candidate-list">
+              {items.map((value) => (
+                <li key={value.candidateId}>
+                  <Button
+                    data-testid="candidate-open"
+                    disabled={busy}
+                    onClick={() => {
+                      if (api)
+                        void api
+                          .candidatesShow(value.candidateId)
+                          .then(setSelected)
+                          .catch(() => setError(t('candidates.unavailable')))
+                    }}
+                  >
+                    <span>{value.packageId}</span>
+                    <Badge tone={tone(value.state)}>{t('candidates.state.' + value.state)}</Badge>
+                  </Button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </>
       ) : (
-        <ul>
-          {items.map((value) => (
-            <li key={value.candidateId}>
+        <section
+          ref={review}
+          className="candidate-review-panel"
+          data-testid="candidate-review"
+          aria-label={t('candidates.review')}
+        >
+          <header className="candidate-summary" data-testid="candidate-summary">
+            <div className="candidate-summary-heading">
+              <h4>{selected.packageId}</h4>
+              <span data-testid="candidate-state">
+                <Badge tone={tone(selected.state)}>{t('candidates.state.' + selected.state)}</Badge>
+              </span>
+            </div>
+            <p>
+              {t(selected.baseHash === null ? 'candidates.summaryNew' : 'candidates.summaryUpdate', {
+                session: title,
+              })}
+            </p>
+            <p title={title} data-testid="candidate-provenance">
+              {t('candidates.byAgent', { session: title, turn: selected.origin.turn })}
+            </p>
+            <div className="candidate-summary-facts">
+              <span data-testid="candidate-tests">
+                {selected.tests?.state === 'passed'
+                  ? t(selected.tests.count === 1 ? 'candidates.testsPassed' : 'candidates.testsPassedTotal', {
+                      count: selected.tests.count,
+                    })
+                  : selected.tests
+                    ? t('candidates.testsFailed', { count: selected.tests.count })
+                    : t('candidates.tests.none')}
+              </span>
+              <span>
+                {permissions === undefined
+                  ? t('candidates.permissionsUnknown')
+                  : permissions === 0
+                    ? t('candidates.noNewPermissions')
+                    : t('candidates.permissionsCount', { count: permissions })}
+              </span>
+            </div>
+          </header>
+          <div className="candidate-review-body" data-testid="candidate-review-body">
+            <CandidateDelta value={selected} t={t} />
+            <section aria-label={t('candidates.diff')}>
+              <h4>{t('candidates.diff')}</h4>
+              {selected.files.map((file) => (
+                <CandidateFileDiff key={selected.candidateId + ':' + file.path} file={file} t={t} />
+              ))}
+            </section>
+            <CandidateTechnical value={selected} t={t} />
+          </div>
+          <SettingsToolbar className="candidate-review-actions" data-testid="candidate-actions">
+            {selected.state !== 'review' &&
+              !['published', 'rejected', 'publishing', 'interrupted'].includes(selected.state) && (
+                <Button
+                  data-testid="candidate-test"
+                  disabled={
+                    !api ||
+                    !canTest ||
+                    busy ||
+                    ['published', 'rejected', 'publishing', 'interrupted'].includes(selected.state)
+                  }
+                  onClick={() => {
+                    const value = selected
+                    if (api)
+                      confirm({
+                        title: t('candidates.runTests'),
+                        description: t('candidates.testWarning'),
+                        label: t('candidates.runTests'),
+                        facts: <CandidateTechnical value={value} t={t} />,
+                        run: () => act(() => api.candidatesTest(value.candidateId, value.candidateHash)),
+                      })
+                  }}
+                >
+                  {t('candidates.runTests')}
+                </Button>
+              )}
+            {selected.state === 'tested' && (
               <Button
-                data-testid="candidate-open"
-                disabled={busy}
+                data-testid="candidate-submit"
+                disabled={!api || !canReview || busy || selected.state !== 'tested'}
                 onClick={() => {
-                  if (api)
-                    void api
-                      .candidatesShow(value.candidateId)
-                      .then(setSelected)
-                      .catch(() => setError(t('candidates.unavailable')))
+                  if (api) void act(() => api.candidatesSubmit(selected.candidateId, selected.candidateHash))
                 }}
               >
-                {value.packageId} · {t('candidates.state.' + value.state)}
+                {t('candidates.submit')}
               </Button>
-            </li>
-          ))}
-        </ul>
-      )}
-      {selected && (
-        <section data-testid="candidate-review" aria-label={t('candidates.review')}>
-          <h4>{selected.packageId}</h4>
-          <p data-testid="candidate-state">{t('candidates.state.' + selected.state)}</p>
-          <dl>
-            <dt>{t('candidates.hash')}</dt>
-            <dd data-testid="candidate-hash">
-              <code>{selected.candidateHash}</code>
-            </dd>
-            <dt>{t('candidates.base')}</dt>
-            <dd>
-              <code>{selected.baseHash ?? t('candidates.new')}</code>
-            </dd>
-            <dt>{t('candidates.reviewHash')}</dt>
-            <dd data-testid="candidate-review-hash">
-              <code>{selected.reviewHash ?? t('candidates.none')}</code>
-            </dd>
-            <dt>{t('candidates.provenance')}</dt>
-            <dd data-testid="candidate-provenance">
-              installer={selected.installer} ·{' '}
-              <span data-testid="candidate-origin">
-                {selected.origin.sessionKey} · {selected.origin.toolUseId}
-              </span>{' '}
-              · {selected.origin.turn}
-            </dd>
-          </dl>
-          <CapabilityReview value={selected.preview?.declaredCapabilities} t={t} />
-          {selected.preview && (
-            <section aria-label={t('candidates.delta')}>
-              <h4>{t('candidates.delta')}</h4>
-              {/* biome-ignore lint/a11y/noNoninteractiveTabindex: focus enables keyboard scrolling of reviewed source and test output. */}
-              <pre
-                role="region"
-                // biome-ignore lint/a11y/noNoninteractiveTabindex: focus enables keyboard scrolling of the capability delta.
-                tabIndex={0}
-                aria-label={t('candidates.delta')}
-                data-testid="candidate-capability-delta"
-              >
-                {JSON.stringify(selected.preview.capabilityDiff, null, 2)}
-              </pre>
-            </section>
-          )}
-          <section aria-label={t('candidates.tests')}>
-            <h4>{t('candidates.tests')}</h4>
-            <p data-testid="candidate-tests">
-              {selected.tests ? (
-                <>
-                  {t('candidates.tests.' + selected.tests.state)} · {selected.tests.count} ·{' '}
-                  <code data-testid="candidate-test-hash">{selected.tests.hash}</code>
-                </>
-              ) : (
-                t('candidates.tests.none')
-              )}
-            </p>
-            {selected.tests && (
-              <details>
-                <summary>{t('candidates.output')}</summary>
-                {/* biome-ignore lint/a11y/noNoninteractiveTabindex: focus enables keyboard scrolling of reviewed source and test output. */}
-                <pre role="region" tabIndex={0} aria-label={t('candidates.output')}>
-                  {selected.tests.output}
-                </pre>
-              </details>
             )}
-          </section>
-          <section aria-label={t('candidates.diff')}>
-            <h4>{t('candidates.diff')}</h4>
-            {selected.files.map((file) => (
-              <details key={file.path} data-testid="candidate-file-diff">
-                <summary>{file.path}</summary>
-                <h5>{t('candidates.before')}</h5>
-                {/* biome-ignore lint/a11y/noNoninteractiveTabindex: focus enables keyboard scrolling of reviewed source and test output. */}
-                <pre role="region" tabIndex={0} aria-label={`${t('candidates.before')} ${file.path}`}>
-                  {file.before ?? t('candidates.absent')}
-                </pre>
-                <h5>{t('candidates.after')}</h5>
-                {/* biome-ignore lint/a11y/noNoninteractiveTabindex: focus enables keyboard scrolling of reviewed source and test output. */}
-                <pre role="region" tabIndex={0} aria-label={`${t('candidates.after')} ${file.path}`}>
-                  {file.after ?? t('candidates.absent')}
-                </pre>
-              </details>
-            ))}
-          </section>
-          <SettingsToolbar>
-            <Button
-              data-testid="candidate-test"
-              disabled={
-                !api ||
-                !canTest ||
-                busy ||
-                ['published', 'rejected', 'publishing', 'interrupted'].includes(selected.state)
-              }
-              onClick={() => {
-                const value = selected
-                if (api)
-                  confirm({
-                    title: t('candidates.runTests'),
-                    description: t('candidates.testWarning'),
-                    label: t('candidates.runTests'),
-                    facts: <code>{value.candidateHash}</code>,
-                    run: () => act(() => api.candidatesTest(value.candidateId, value.candidateHash)),
-                  })
-              }}
-            >
-              {t('candidates.runTests')}
-            </Button>
-            <Button
-              data-testid="candidate-submit"
-              disabled={!api || !canReview || busy || selected.state !== 'tested'}
-              onClick={() => {
-                if (api) void act(() => api.candidatesSubmit(selected.candidateId, selected.candidateHash))
-              }}
-            >
-              {t('candidates.submit')}
-            </Button>
             <Button
               type="primary"
               data-testid="candidate-approve"

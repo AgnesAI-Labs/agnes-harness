@@ -504,6 +504,7 @@ test('agent candidate review binds exact tests and hashes, refuses edited approv
     preset: 'full-access',
   })
   await old.attach()
+  await client.session.rename(old.id, 'Text statistics workshop')
   old.onPermissionRequest(async () => ({ verdict: 'allowed-once' }))
   const { prompt } = await import('./sdk.js')
   await prompt(old, 'call plugin_helper_guide {"kind":"tool"}')
@@ -542,15 +543,24 @@ test('agent candidate review binds exact tests and hashes, refuses edited approv
   if (!(await page.getByTestId('settings-navigation').isVisible())) await settings(page)
   await section(page, 'plugins')
   await page.getByTestId('candidate-open').filter({ hasText: draft.packageId }).click()
-  await expect(page.getByTestId('candidate-state')).toHaveText('Awaiting human review')
-  await expect(page.getByTestId('candidate-tests')).toContainText('Passed')
-  await expect(page.getByTestId('candidate-provenance')).toContainText('installer=agent')
-  await expect(page.getByTestId('candidate-capability-delta')).toBeVisible()
+  await expect(page.getByTestId('candidate-state')).toHaveText('Awaiting review')
+  await expect(page.getByTestId('candidate-tests')).toContainText('Tests passed 1/1')
+  await expect(page.getByTestId('candidate-provenance')).toContainText(
+    'Drafted by Agent · From “Text statistics workshop” (turn 2)',
+  )
+  await expect(page.getByTestId('candidate-capability-delta')).toContainText('New permissions: none')
+  await expect(page.getByTestId('candidate-summary')).toContainText('No new permissions')
+  await expect(page.getByTestId('candidate-hash')).toBeHidden()
+  await expect(page.getByTestId('candidate-technical')).not.toHaveAttribute('open')
+  await expect(page.getByTestId('candidate-approve')).toBeInViewport({ ratio: 1 })
+  await expect(page.getByTestId('candidate-reject')).toBeInViewport({ ratio: 1 })
   const diff = page
     .getByTestId('candidate-file-diff')
     .filter({ has: page.getByText('index.mjs', { exact: true }) })
   await diff.locator('summary').click()
   await expect(diff).toContainText('my_text_stats')
+  await expect(diff.getByText('New file', { exact: true })).toBeVisible()
+  await expect(diff.locator('.candidate-diff-added').first()).toContainText('+')
   await translated(page)
   await accessible(page, info, 'candidate-review')
   // Review each changed screen across both languages and themes. Digest and session IDs are dynamic.
@@ -575,26 +585,12 @@ test('agent candidate review binds exact tests and hashes, refuses edited approv
     if (!(await page.getByTestId('settings-navigation').isVisible())) await settings(page, locale)
     await section(page, 'plugins')
     await page.getByTestId('candidate-open').filter({ hasText: draft.packageId }).click()
-    await page
-      .getByTestId('candidate-review')
-      .locator('h4')
-      .first()
-      .evaluate((heading) => heading.scrollIntoView({ block: 'start' }))
+    await expect(page.getByTestId('candidate-approve')).toBeInViewport({ ratio: 1 })
+    await expect(page.getByTestId('candidate-reject')).toBeInViewport({ ratio: 1 })
+    await expect(page.getByTestId('candidate-hash')).toBeHidden()
     await translated(page)
     await accessible(page, info, `candidate-review-${locale}-${theme}`)
-    const masks = [
-      page.getByTestId('candidate-hash').locator('code'),
-      page.getByTestId('candidate-review-hash').locator('code'),
-      page.getByTestId('candidate-origin'),
-      page.getByTestId('candidate-test-hash'),
-    ]
-    await screen(page, info, `candidate-review-${locale}-${theme}`, masks)
-    await page
-      .getByTestId('candidate-file-diff')
-      .filter({ has: page.getByText('index.mjs', { exact: true }) })
-      .locator('summary')
-      .click()
-    await screen(page, info, `candidate-diff-${locale}-${theme}`, masks)
+    await screen(page, info, `candidate-review-${locale}-${theme}`)
   }
   await page.evaluate(() => {
     localStorage.setItem('e2e-authoring-locale', 'en')
@@ -606,9 +602,38 @@ test('agent candidate review binds exact tests and hashes, refuses edited approv
   if (!(await page.getByTestId('settings-navigation').isVisible())) await settings(page)
   await section(page, 'plugins')
   await page.getByTestId('candidate-open').filter({ hasText: draft.packageId }).click()
+  await client.session.rename(old.id, 'A very long workshop title '.repeat(3).slice(0, 80))
+  await page.goto(runtime.url)
+  await expect(page.getByTestId('conversation-turn')).toHaveCount(4)
+  if (!(await page.getByTestId('settings-navigation').isVisible())) await settings(page)
+  await section(page, 'plugins')
+  await page.getByTestId('candidate-open').filter({ hasText: draft.packageId }).click()
+  await page.emulateMedia({ reducedMotion: 'reduce' })
+  for (const [width, height] of [
+    [1440, 900],
+    [1024, 900],
+    [900, 900],
+    [840, 900],
+    [540, 900],
+    [390, 900],
+    [540, 600],
+  ]) {
+    await page.setViewportSize({ width: width!, height: height! })
+    await expect(page.getByTestId('candidate-approve')).toBeInViewport({ ratio: 1 })
+    await expect(page.getByTestId('candidate-reject')).toBeInViewport({ ratio: 1 })
+    expect(
+      await page.getByTestId('candidate-review').evaluate((panel) => panel.scrollWidth <= panel.clientWidth),
+    ).toBe(true)
+  }
+  await page.setViewportSize({ width: 1280, height: 900 })
+  await page.emulateMedia({ reducedMotion: 'no-preference' })
+  await client.session.rename(old.id, 'Text statistics workshop')
   await page.getByTestId('candidate-approve').click()
   const dialog = page.getByRole('dialog', { name: 'Approve and publish', exact: true })
-  await expect(dialog).toContainText(reviewed.candidateHash)
+  await expect(dialog.getByTestId('candidate-hash')).toBeHidden()
+  await dialog.getByTestId('candidate-technical').locator('summary').focus()
+  await dialog.getByTestId('candidate-technical').locator('summary').press('Enter')
+  await expect(dialog.getByTestId('candidate-hash')).toHaveText(reviewed.candidateHash)
   // A model edit after the human opened the review must invalidate that dialog's captured hashes.
   const changed = guide.files.map((f) =>
     f.path === 'index.mjs' ? { ...f, content: f.content + '\n// Edited after review\n' } : f,
@@ -632,23 +657,24 @@ test('agent candidate review binds exact tests and hashes, refuses edited approv
   expect(
     (await client.packages.list({ profile: 'local-dev' })).packages.some((p) => p.id === draft.packageId),
   ).toBe(false)
+  await page.getByTestId('candidate-back').click()
   await page.getByTestId('candidate-open').filter({ hasText: draft.packageId }).first().click()
   await expect(page.getByTestId('candidate-state')).toHaveText('Draft; review invalidated after edits')
   await expect(page.getByTestId('candidate-approve')).toBeDisabled()
   await page.getByTestId('candidate-test').click()
   await page
-    .getByRole('dialog', { name: 'Review and run tests', exact: true })
-    .getByRole('button', { name: 'Review and run tests', exact: true })
+    .getByRole('dialog', { name: 'Run tests', exact: true })
+    .getByRole('button', { name: 'Run tests', exact: true })
     .click()
   await expect(page.getByTestId('candidate-state')).toHaveText('Tests passed; awaiting submission')
   await page.getByTestId('candidate-submit').click()
-  await expect(page.getByTestId('candidate-state')).toHaveText('Awaiting human review')
+  await expect(page.getByTestId('candidate-state')).toHaveText('Awaiting review')
   await page.getByTestId('candidate-approve').click()
   await page
     .getByRole('dialog', { name: 'Approve and publish', exact: true })
     .getByRole('button', { name: 'Approve and publish', exact: true })
     .click()
-  await expect(page.getByTestId('candidate-state')).toHaveText('Published; session code stays pinned', {
+  await expect(page.getByTestId('candidate-state')).toHaveText('Published', {
     timeout: 25_000,
   })
   const provenance = await client.request('_agnes/v1/packages.provenance', {
@@ -703,22 +729,118 @@ test('agent candidate review binds exact tests and hashes, refuses edited approv
   )
   await page.getByTestId('candidate-refresh').click()
   await page.getByTestId('candidate-open').filter({ hasText: skill.packageId }).click()
-  await expect(page.getByTestId('candidate-tests')).toContainText('Passed')
+  await expect(page.getByTestId('candidate-tests')).toContainText('Tests passed 1/1')
   await page
     .getByTestId('candidate-file-diff')
     .filter({ has: page.getByText('skills/reviewed-method/SKILL.md', { exact: true }) })
     .locator('summary')
     .click()
-  await expect(page.getByTestId('candidate-review')).toContainText(skillBody.trim())
+  const skillDiff = page
+    .getByTestId('candidate-file-diff')
+    .filter({ has: page.getByText('skills/reviewed-method/SKILL.md', { exact: true }) })
+    .locator('.candidate-diff-added')
+  await expect
+    .poll(async () => (await skillDiff.allTextContents()).map((line) => line.slice(2, -1)).join('\n'))
+    .toBe(skillBody)
   await page.getByTestId('candidate-reject').click()
   await page
     .getByRole('dialog', { name: 'Reject candidate', exact: true })
     .getByRole('button', { name: 'Reject candidate', exact: true })
     .click()
   await expect(page.getByTestId('candidate-state')).toHaveText('Rejected')
+  await page.getByTestId('candidate-back').click()
+  await expect(page.getByTestId('candidate-list').getByTestId('candidate-open')).toHaveCount(2)
+  await expect(page.getByTestId('candidate-open').filter({ hasText: draft.packageId })).toContainText(
+    'Published',
+  )
+  await expect(page.getByTestId('candidate-open').filter({ hasText: skill.packageId })).toContainText(
+    'Rejected',
+  )
   expect(
     (await client.packages.list({ profile: 'local-dev' })).packages.some((p) => p.id === skill.packageId),
   ).toBe(false)
+  // A reviewed update supplies a genuine replacement diff, and the inbox shows all three review outcomes.
+  const updateFiles = guide.files.map((file) =>
+    file.path === 'index.mjs' ? { ...file, content: file.content + '\n// Reviewed update\n' } : file,
+  )
+  // Escape template text so the demo's natural-language authoring shortcut does not replace this explicit call.
+  await prompt(
+    old,
+    'call plugin_helper_create ' +
+      JSON.stringify({ files: updateFiles }).replace(/[Pp]/g, (letter) =>
+        letter === 'P' ? '\\u0050' : '\\u0070',
+      ),
+  )
+  const update = JSON.parse(
+    ((await toolResult(old, 'plugin_helper_create'))!.content[0] as { text: string }).text,
+  ) as import('@agnes/protocol').AuthoringCandidate
+  expect(update.files.find((file) => file.path === 'index.mjs')?.after).toBe(
+    updateFiles.find((file) => file.path === 'index.mjs')!.content,
+  )
+  await prompt(
+    old,
+    'call plugin_helper_install ' + JSON.stringify({ action: 'test', proposalId: update.candidateId }),
+  )
+  await prompt(
+    old,
+    'call plugin_helper_install ' + JSON.stringify({ action: 'commit', proposalId: update.candidateId }),
+  )
+  for (const [locale, theme] of [
+    ['en', 'light'],
+    ['en', 'dark'],
+    ['zh-CN', 'light'],
+    ['zh-CN', 'dark'],
+  ] as const) {
+    await page.evaluate(
+      ({ locale, theme }) => {
+        localStorage.setItem('e2e-authoring-locale', locale)
+        localStorage.setItem('e2e-authoring-theme', theme)
+      },
+      { locale, theme },
+    )
+    await page.goto(runtime.url)
+    await expect(page.getByTestId('conversation-turn')).toHaveCount(11)
+    if (!(await page.getByTestId('settings-navigation').isVisible())) await settings(page, locale)
+    await section(page, 'plugins')
+    await expect(page.getByTestId('candidate-list').getByTestId('candidate-open')).toHaveCount(3)
+    await screen(page, info, `candidate-list-${locale}-${theme}`)
+    await page
+      .getByTestId('candidate-open')
+      .filter({ hasText: update.packageId })
+      .filter({ hasText: locale === 'en' ? 'Awaiting review' : '待审阅' })
+      .click()
+    const file = page
+      .getByTestId('candidate-file-diff')
+      .filter({ has: page.getByText('index.mjs', { exact: true }) })
+    await file.locator('summary').click()
+    const removed = file.locator('.candidate-diff-removed').filter({ hasText: '// Edited after review' })
+    const added = file.locator('.candidate-diff-added').filter({ hasText: '// Reviewed update' })
+    const diff = file.getByTestId('candidate-diff-lines')
+    await diff.focus()
+    await diff.press('ArrowDown')
+    await expect.poll(() => diff.evaluate((pre) => pre.scrollTop)).toBeGreaterThan(0)
+    await file.getByTestId('candidate-diff-lines').evaluate((pre) => {
+      pre.scrollIntoView({ block: 'nearest' })
+      pre.scrollTop = pre.scrollHeight
+    })
+    await expect(removed).toContainText('- // Edited after review')
+    await expect(removed).toBeInViewport({ ratio: 1 })
+    await expect(added).toContainText('+ // Reviewed update')
+    await expect(added).toBeInViewport({ ratio: 1 })
+    await expect(file.locator('summary')).toBeInViewport({ ratio: 1 })
+    await expect(page.getByTestId('candidate-approve')).toBeInViewport({ ratio: 1 })
+    await translated(page)
+    await accessible(page, info, `candidate-diff-${locale}-${theme}`)
+    await screen(page, info, `candidate-diff-${locale}-${theme}`)
+  }
+  await page.evaluate(() => {
+    localStorage.setItem('e2e-authoring-locale', 'en')
+    localStorage.setItem('e2e-authoring-theme', 'light')
+  })
+  await page.goto(runtime.url)
+  await expect(page.getByTestId('conversation-turn')).toHaveCount(11)
+  if (!(await page.getByTestId('settings-navigation').isVisible())) await settings(page)
+  await section(page, 'plugins')
   await prompt(
     old,
     'call skill_helper_create ' +
@@ -745,7 +867,7 @@ test('agent candidate review binds exact tests and hashes, refuses edited approv
     .getByRole('dialog', { name: 'Approve and publish', exact: true })
     .getByRole('button', { name: 'Approve and publish', exact: true })
     .click()
-  await expect(page.getByTestId('candidate-state')).toHaveText('Published; session code stays pinned', {
+  await expect(page.getByTestId('candidate-state')).toHaveText('Published', {
     timeout: 25_000,
   })
   const skillSession = await client.session.new({

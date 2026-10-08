@@ -103,6 +103,7 @@ type PluginAdminOptions = Readonly<{
   locale?: UiLocaleSource
   runtime?: PluginRuntimeSource
   schedules?: SchedulesApi
+  candidateSessionTitle?: (key: string) => Promise<string | undefined>
 }>
 
 const pluginAdminCatalogs = {
@@ -213,6 +214,7 @@ function asRuntimeView(state: PluginRuntimeState | undefined): RuntimeStateView 
 class PluginAdminPage {
   readonly #runtime: PluginRuntimeSource | undefined
   readonly #schedules: SchedulesApi | undefined
+  readonly #candidateSessionTitle: PluginAdminOptions['candidateSessionTitle']
   #runtimeStop: (() => void) | undefined
   readonly #locale: UiLocaleSource
   readonly #localeStop: () => void
@@ -227,6 +229,7 @@ class PluginAdminPage {
     this.actualSlots = options.actualSlots
     this.#runtime = options.runtime
     this.#schedules = options.schedules
+    this.#candidateSessionTitle = options.candidateSessionTitle
     if (options.locale) {
       this.#locale = options.locale
       this.#localeStop = options.locale.subscribe(() => this.render())
@@ -1140,6 +1143,7 @@ class PluginAdminPage {
           {...(this.#schedules ? { schedules: this.#schedules } : {})}
         >
           <CandidateInbox
+            sessionTitle={this.#candidateSessionTitle}
             api={this.#api}
             canReview={
               this.canEffect('packages.trust') &&
