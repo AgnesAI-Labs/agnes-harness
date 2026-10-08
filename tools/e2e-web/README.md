@@ -22,7 +22,7 @@ The command also typechecks the harness and runs the i18n-scanner unit checks.
 No browser or package installation happens during the gate. `AGH_CHROMIUM_PATH` can select an
 already installed executable for local debugging; CI uses the pinned Playwright Chromium cache.
 
-## Phase 1 coverage
+## Runtime and SDK coverage
 
 Each spec receives a new short `/tmp` directory and an isolated `AGH_HOME` and `HOME`. The harness
 starts `node packages/cli/dist/local/agnes.mjs serve --port PORT` **from the repository root**. It
@@ -41,9 +41,9 @@ plugin generations after reload/restart, MCP stdio invocation, workspace skill d
 bundled FDE workflow writing a deliverable. They assert durable tool results and persisted output,
 not just that a request was accepted.
 
-Chromium opens the served shell once to save a startup screenshot; Phase 1 does not drive or
-assert page-level UI flows. Existing navigation/conversation smoke files remain separate from the
-gate and are intentionally not included in the Phase 1 Playwright test match.
+The runtime fixture records a startup screenshot before each spec. Maintained page flows use the
+same real daemon and public SDK for persisted-state assertions. The older UI smoke files remain
+separate from this gate.
 
 ## Gate and failure evidence
 
@@ -77,26 +77,44 @@ Reproduce any recurrence with `--repeat-each 8`; do not add retries or time tole
 Failure reports/traces remain separate from successful runs; process status and daemon audit
 are attached, and editor-style code updates are published atomically.
 
-## Phase 2, after the UI overhaul is integrated
+## Maintained UI and visual gate
 
-Page-level specs and visual baselines are deliberately deferred until the owner confirms the UI
-merge. `quality.ts` supplies visible/accessible-name unresolved-key scans, WCAG A/AA axe scans
-(with JSON evidence), screenshots, and Playwright visual comparisons. `fixtures.ts` installs
-console/pageerror and external-request checks before navigation. No existing UI error is ignored.
+`ui-gate.spec.ts` checks first run, Agent options, the account dialog and all 20 settings sections
+in en/zh-CN and light/dark at 1280×900. It checks visible and accessible-name i18n keys, horizontal
+overflow and WCAG A/AA axe violations, with JSON evidence. `ui-flows.spec.ts` drives account save
+against the loopback provider, demo read/cancel, folder review/install/enable/disable, old/new
+local plugin generations through rescan and restart, MCP stdio, skill slash preloading, ask,
+plan approval, authorized deliverable downloads, child collection, goal completion, background
+job output, interactive terminal input/output, schedule creation/archive and the bundled FDE
+workflow through restart. Backend assertions use CLI or SDK, never raw admin HTTP from specs.
+Selectors use roles and stable test IDs; disclosures are checked before toggling.
 
-After rebasing onto the integrated UI, add maintained specs against roles/test ids for the Agent
-chip, account dialog, cancel, every settings section, plugin capability review/toggles, hot reload,
-MCP, skills slash, ask/plan/deliverable/jobs/terminal/child/goal/schedule cards and FDE/restart flows.
-Include zh/en and light/dark main screens, and activate those specs in `playwright.config.mjs`.
+`baselines/ready.json` declares every ready screen and the two remaining pending visual areas:
+plugin-kinds row spacing and Discover duplicate-version grouping. Pending areas still undergo
+translation, accessibility and browser-error checks and save screenshots; their annotations do
+not claim visual coverage. The reviewed Discover baseline filters to a single-version entry.
+Ready PNGs cover key screens in both locales and themes, including installed plugin cards,
+Skills empty state and tool rows. The additional installed-folder card screen is en/light.
 
-Only then create a reviewed `baselines/ready.json` recording the integrated UI commit, Chromium
-version and viewport, and run `AGH_UPDATE_VISUALS=1 pnpm e2e:web` on the CI platform. Commit the
-reviewed PNGs with that manifest. Normal gate runs use `updateSnapshots: none` and require every
-activated baseline; they never bless missing images automatically. Until the manifest exists,
-`screen()` records a `visual-baseline-pending` annotation and a screenshot without claiming visual
-regression coverage. Tolerance is 0.2% changed pixels with a per-pixel threshold of 0.2. Baseline
-updates require image review, not tolerance growth. Automated axe checks complement, and do not
-replace, manual accessibility review.
+Normal gate runs use `updateSnapshots: none`: unknown names, a missing manifest or a missing
+ready image fail. Only an explicit reviewed update writes baselines:
+
+```sh
+AGH_UPDATE_VISUALS=1 pnpm e2e:web --reuse-build
+```
+
+Review PNG changes and the manifest together on macOS with the pinned Chromium. Tolerance is
+0.2% changed pixels with a per-pixel threshold of 0.2; do not enlarge it to hide a regression.
+Only the repository workspace text (checkout name/absolute path) and elapsed turn timing are
+hidden; the metadata clock is normalized to 12:00 while its model label stays visible.
+The screenshot stylesheet uses the real document’s advertised CSP nonce; CSP remains enforced. Temporary fixture paths, credentials and machine-specific home data are not baselines.
+Finite UI motion and pending controls must settle before axe or screenshots; no fixed sleeps
+or error exemptions are used. Automated axe checks complement manual accessibility review.
+
+The Agent picker reads the backend bundle catalog so newly installed bundles are available to
+new sessions without restarting the shared worker. Saving deployment-wide default bundles
+retains its documented `restart-required` effect; selecting bundles on a new session does not
+change those defaults.
 
 ## UI smoke acceptance
 

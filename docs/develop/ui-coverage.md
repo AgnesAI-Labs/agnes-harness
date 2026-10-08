@@ -41,6 +41,17 @@ One settings shell owns group navigation, layout, keyboard tabs and `?settings=<
 | Child-agent cards | Existing `subagent_*` result cards remain visible with stable detail IDs; provider metadata stays on Providers | Child identity/status comes from backend result text; tool completion never implies child completion. Real continuation/interrupt/cancel remains in the final gate. |
 | Headless, JSONL, replay, batch runs | Intentionally outside Web UI | Use the [headless guide](../guide/headless.md). |
 
+## Maintained merge gate
+
+`pnpm e2e:web` builds or validates a reusable local build, starts the real daemon/Web launcher from
+the repository root with a fresh home, and runs the SDK and role/test-ID UI suites offline with
+cached Chromium. The UI matrix covers every settings section in en/zh-CN and light/dark; mutation
+flows verify persisted results through public SDK/CLI. Translation keys, axe violations, console
+errors and page errors fail. Reviewed screenshot comparisons use the declared ready manifest,
+0.2% pixel tolerance and no automatic baseline blessing. Only plugin-kinds row spacing and
+Discover duplicate-version grouping remain explicitly pending. See the [gate instructions](../../tools/e2e-web/README.md)
+for coverage, artifact paths, the required CI check and local baseline review.
+
 ## Admin glue
 
 The launcher’s private Node SDK connection supplies these fixed HTTP routes, with exact Origin/Host checks, server-established grants and no-store responses:

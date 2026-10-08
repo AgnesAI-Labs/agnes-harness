@@ -852,7 +852,7 @@ function Turn({
         >
           <summary data-testid="turn-process-toggle">
             <span className="process-row">
-              <span className="process-label" data-agnes-dynamic="turn-process">
+              <span className="process-label" data-agnes-dynamic="turn-process" data-testid="turn-timing">
                 {statusText}
               </span>
               <svg className="icon process-chevron" viewBox="0 0 24 24" aria-hidden="true">

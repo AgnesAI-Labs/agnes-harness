@@ -294,7 +294,7 @@ export function LocalPluginsPanel({
   }
   return (
     <details data-testid="local-plugins">
-      <summary>{t('local')}</summary>
+      <summary data-testid="local-plugins-toggle">{t('local')}</summary>
       <p>{t('localHelp')}</p>
       <dl>
         <dt>{t('home')}</dt>

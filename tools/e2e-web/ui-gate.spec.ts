@@ -1,6 +1,9 @@
+import { rm } from 'node:fs/promises'
+import { join } from 'node:path'
+import { AGH_DIR } from '@agnes/protocol'
 import { expect, test } from './fixtures.js'
 import { accessible, screen, translated } from './quality.js'
-import { chooseWorkspace, preferences, section, settings } from './ui.js'
+import { chooseWorkspace, closeSettings, preferences, section, settings } from './ui.js'
 
 const pages = [
   'model',
@@ -29,6 +32,8 @@ for (const locale of ['en', 'zh-CN'])
   for (const theme of ['light', 'dark']) {
     test(`main screens and every settings section ${locale}/${theme}`, async ({ page, runtime }, info) => {
       test.setTimeout(150_000)
+      // This matrix owns the genuinely empty Skills screen; the slash flow owns discovery.
+      await rm(join(runtime.workspace, AGH_DIR, 'skills'), { recursive: true })
       await preferences(page, locale, theme)
       await page.goto(runtime.url)
       await expect(
@@ -74,9 +79,43 @@ for (const locale of ['en', 'zh-CN'])
         .click()
       for (const id of pages) {
         await section(page, id)
-        if (!['model', 'skills', 'mcp', 'archived', 'computer-use', 'general'].includes(id))
-          await expect(page.getByTestId(`settings-page-${id}`)).toBeVisible()
+        const native: Record<string, [string, string]> = {
+          model: ['Model accounts', '模型账户'],
+          skills: ['Skills', '技能'],
+          mcp: ['MCP', 'MCP'],
+          archived: ['Archived sessions', '已归档会话'],
+          'computer-use': ['Computer Use', 'Computer Use'],
+          general: ['General', '通用设置'],
+        }
+        const heading = native[id]
+        if (heading)
+          await expect(
+            page.getByRole('heading', { name: heading[locale === 'en' ? 0 : 1], exact: true }),
+          ).toBeVisible()
+        else await expect(page.getByTestId(`settings-page-${id}`)).toBeVisible()
+        if (id === 'providers') await screen(page, info, `plugin-kinds-${locale}-${theme}`)
+        if (id === 'discover') {
+          await quality('discover-duplicate-versions')
+          await screen(page, info, `discover-duplicate-versions-${locale}-${theme}`)
+          await page
+            .getByRole('searchbox', { name: locale === 'en' ? 'Search plugins' : '搜索插件', exact: true })
+            .fill('@agnes-example/dag-loop')
+          await expect(page.getByRole('heading', { name: /DAG/ })).toHaveCount(1)
+        }
         await quality(`settings-${id}`, id === 'general' || ['plugins', 'discover', 'skills'].includes(id))
       }
+      await closeSettings(page, locale)
+      const composer = page.getByRole('textbox', {
+        name: locale === 'en' ? 'Task content' : '任务内容',
+        exact: true,
+      })
+      await composer.fill('call read {"path":"report.md"}')
+      await composer.press('Enter')
+      const current = page.getByTestId('conversation-turn')
+      await expect(current).toHaveAttribute('data-status', 'completed')
+      await current.getByTestId('turn-process-toggle').click()
+      await current.getByTestId('tool-detail-toggle').click()
+      await expect(current.getByTestId('tool-detail-text')).toContainText('Synthetic delivery')
+      await quality('tool-row', true)
     })
   }

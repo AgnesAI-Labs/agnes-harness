@@ -323,7 +323,12 @@ export function ConversationTurnActions({
             positionUsage(summary.current, usage.current)
         }}
       >
-        <summary ref={summary} className="turn-meta" aria-label={t('turnactions.metaAria')}>
+        <summary
+          ref={summary}
+          className="turn-meta"
+          data-testid="turn-metadata"
+          aria-label={t('turnactions.metaAria')}
+        >
           {settled ? facts.join(' · ') : ''}
         </summary>
         <dl ref={usage} className="turn-usage-grid">

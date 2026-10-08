@@ -2,7 +2,7 @@ name: Web E2E
 on:
   pull_request:
   push:
-    branches: [main, feat/agh-plugin-core, feat/agh-e2e-gate]
+    branches: [main, feat/agh-plugin-core, feat/agh-e2e-gate, feat/agh-e2e-ui-gate]
   merge_group:
   workflow_dispatch:
 permissions: { contents: read }

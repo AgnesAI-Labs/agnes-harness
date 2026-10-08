@@ -1,0 +1,71 @@
+{
+  "uiCommit": "62fc9dbd",
+  "chromium": "153.0.8010.12",
+  "playwright": "1.63.0",
+  "viewport": {
+    "width": 1280,
+    "height": 900
+  },
+  "platform": "darwin",
+  "tolerance": {
+    "maxDiffPixelRatio": 0.002,
+    "threshold": 0.2
+  },
+  "masks": [
+    "Repository workspace text only: checkout name and absolute path vary by machine.",
+    "Turn timing: runtime duration varies. Metadata clock only is normalized to 12:00."
+  ],
+  "ready": [
+    "first-run-en-light",
+    "new-session-en-light",
+    "agent-options-en-light",
+    "accounts-en-light",
+    "add-account-en-light",
+    "settings-general-en-light",
+    "settings-plugins-en-light",
+    "settings-discover-en-light",
+    "settings-skills-en-light",
+    "tool-row-en-light",
+    "first-run-en-dark",
+    "new-session-en-dark",
+    "agent-options-en-dark",
+    "accounts-en-dark",
+    "add-account-en-dark",
+    "settings-general-en-dark",
+    "settings-plugins-en-dark",
+    "settings-discover-en-dark",
+    "settings-skills-en-dark",
+    "tool-row-en-dark",
+    "first-run-zh-CN-light",
+    "new-session-zh-CN-light",
+    "agent-options-zh-CN-light",
+    "accounts-zh-CN-light",
+    "add-account-zh-CN-light",
+    "settings-general-zh-CN-light",
+    "settings-plugins-zh-CN-light",
+    "settings-discover-zh-CN-light",
+    "settings-skills-zh-CN-light",
+    "tool-row-zh-CN-light",
+    "first-run-zh-CN-dark",
+    "new-session-zh-CN-dark",
+    "agent-options-zh-CN-dark",
+    "accounts-zh-CN-dark",
+    "add-account-zh-CN-dark",
+    "settings-general-zh-CN-dark",
+    "settings-plugins-zh-CN-dark",
+    "settings-discover-zh-CN-dark",
+    "settings-skills-zh-CN-dark",
+    "tool-row-zh-CN-dark",
+    "plugin-cards-en-light"
+  ],
+  "pending": {
+    "plugin-kinds-en-light": "Plugin kinds row spacing awaits the remaining UI polish.",
+    "discover-duplicate-versions-en-light": "Discover duplicate-version grouping awaits the remaining UI polish.",
+    "plugin-kinds-en-dark": "Plugin kinds row spacing awaits the remaining UI polish.",
+    "discover-duplicate-versions-en-dark": "Discover duplicate-version grouping awaits the remaining UI polish.",
+    "plugin-kinds-zh-CN-light": "Plugin kinds row spacing awaits the remaining UI polish.",
+    "discover-duplicate-versions-zh-CN-light": "Discover duplicate-version grouping awaits the remaining UI polish.",
+    "plugin-kinds-zh-CN-dark": "Plugin kinds row spacing awaits the remaining UI polish.",
+    "discover-duplicate-versions-zh-CN-dark": "Discover duplicate-version grouping awaits the remaining UI polish."
+  }
+}

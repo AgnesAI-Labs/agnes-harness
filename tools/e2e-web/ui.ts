@@ -5,6 +5,7 @@ import type { Runtime } from './runtime.js'
 export async function preferences(page: Page, locale = 'en', theme = 'light') {
   await page.addInitScript(
     ({ locale, theme }) => {
+      if (location.protocol !== 'http:') return
       localStorage.setItem('agnes-locale', locale)
       localStorage.setItem('agnes-theme', theme)
     },
@@ -65,7 +66,9 @@ export async function fresh(page: Page) {
   const permission = page.getByTestId('new-session-preset')
   await permission.click()
   await page.getByRole('option', { name: /^Full access\b/ }).click()
-  await page.keyboard.press('Escape')
+  await page.getByTestId('composer-agent').click()
+  await expect(page.getByTestId('composer-agent')).toHaveAttribute('aria-expanded', 'false')
+  await expect(page.getByTestId('agent-options')).toBeHidden()
 }
 
 export async function send(page: Page, input: string) {
@@ -82,5 +85,6 @@ export async function send(page: Page, input: string) {
 export async function turn(page: Page, input: string) {
   const current = await send(page, input)
   await expect(current).toHaveAttribute('data-status', 'completed', { timeout: 25_000 })
+  await expect(page.getByRole('button', { name: 'Stop', exact: true })).toHaveCount(0)
   return current
 }

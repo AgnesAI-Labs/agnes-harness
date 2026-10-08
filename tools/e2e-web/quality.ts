@@ -1,4 +1,5 @@
-import { existsSync } from 'node:fs'
+import { readFileSync } from 'node:fs'
+import { basename } from 'node:path'
 import AxeBuilder from '@axe-core/playwright'
 import type { Page, TestInfo } from '@playwright/test'
 import { expect } from './fixtures.js'
@@ -63,13 +64,58 @@ export async function accessible(page: Page, info: TestInfo, name: string) {
     .toEqual([])
 }
 export async function screen(page: Page, info: TestInfo, name: string) {
-  await page.screenshot({ path: info.outputPath(`${name}.png`), animations: 'disabled', fullPage: true })
-  if (existsSync('tools/e2e-web/baselines/ready.json')) {
-    await expect(page).toHaveScreenshot(`${name}.png`, { animations: 'disabled', fullPage: true })
-  } else {
-    info.annotations.push({
-      type: 'visual-baseline-pending',
-      description: 'Establish reviewed baselines after the UI overhaul is integrated.',
+  await settled(page)
+  const manifest = JSON.parse(readFileSync('tools/e2e-web/baselines/ready.json', 'utf8')) as {
+    ready: string[]
+    pending: Record<string, string>
+  }
+  const root = basename(process.cwd()).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  const checkout = page.getByRole('button', { name: new RegExp(`^${root}(?: |$)`), includeHidden: true })
+  const metadata = page.getByTestId('turn-metadata')
+  await metadata.evaluateAll((summaries) => {
+    for (const summary of summaries) {
+      const original = summary.textContent ?? ''
+      summary.setAttribute('data-e2e-clock-original', original)
+      summary.textContent = original.replace(/\d{2}:\d{2}(?:\s?[AP]M)?/, '12:00')
+    }
+  })
+  await checkout.evaluateAll((buttons) => {
+    for (const button of buttons)
+      for (const child of Array.from(button.children))
+        if (child.tagName === 'SPAN') child.setAttribute('data-e2e-environment', 'checkout')
+  })
+  await page.evaluate(
+    (css) => {
+      const nonce = document.querySelector<HTMLMetaElement>('meta[name="agnes-csp-nonce"]')?.content
+      if (!nonce) throw new Error('The real shell must advertise its CSP style nonce')
+      const style = document.createElement('style')
+      style.id = 'e2e-visual-style'
+      style.nonce = nonce
+      style.textContent = css
+      document.head.append(style)
+    },
+    readFileSync('tools/e2e-web/baselines/screenshot.css', 'utf8'),
+  )
+  const options = { animations: 'disabled' as const, fullPage: true }
+  try {
+    await page.screenshot({ ...options, path: info.outputPath(`${name}.png`) })
+    if (manifest.pending[name]) {
+      info.annotations.push({ type: 'visual-baseline-pending', description: manifest.pending[name] })
+      return
+    }
+    expect(manifest.ready, 'Every visual screen must be declared ready or explicitly pending').toContain(name)
+    await expect(page).toHaveScreenshot(`${name}.png`, options)
+  } finally {
+    await page.evaluate(() => document.getElementById('e2e-visual-style')?.remove())
+    await metadata.evaluateAll((summaries) => {
+      for (const summary of summaries) {
+        summary.textContent = summary.getAttribute('data-e2e-clock-original')
+        summary.removeAttribute('data-e2e-clock-original')
+      }
+    })
+    await checkout.evaluateAll((buttons) => {
+      for (const button of buttons)
+        for (const child of Array.from(button.children)) child.removeAttribute('data-e2e-environment')
     })
   }
 }
