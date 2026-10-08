@@ -198,7 +198,9 @@ describe('ResourceControlStore admission barrier', () => {
       authority,
     )
     await expect(settled(service, success.operationId)).resolves.toMatchObject({ state: 'succeeded' })
-    expect(published).toEqual([profile])
+    // A durable terminal receipt precedes downstream session notification. Await that observable
+    // notification itself rather than assuming it was delivered before the operation read returned.
+    await vi.waitFor(() => expect(published).toEqual([profile]))
 
     const listed = await service.call('_agnes/v1/resources.list', { profile }, authority)
     const skill = listed.items[0]
@@ -244,7 +246,7 @@ describe('ResourceControlStore admission barrier', () => {
       authority,
     )
     await expect(settled(service, disable.operationId)).resolves.toMatchObject({ state: 'succeeded' })
-    expect(published).toEqual([profile, profile, profile, profile])
+    await vi.waitFor(() => expect(published).toEqual([profile, profile, profile, profile]))
 
     const unchanged = await service.call(
       '_agnes/v1/skills.refresh',
@@ -261,7 +263,7 @@ describe('ResourceControlStore admission barrier', () => {
       authority,
     )
     await expect(settled(service, edited.operationId)).resolves.toMatchObject({ state: 'succeeded' })
-    expect(published).toEqual([profile, profile, profile, profile, profile])
+    await vi.waitFor(() => expect(published).toEqual([profile, profile, profile, profile, profile]))
 
     removed = true
     const deleted = await service.call(
@@ -270,7 +272,7 @@ describe('ResourceControlStore admission barrier', () => {
       authority,
     )
     await expect(settled(service, deleted.operationId)).resolves.toMatchObject({ state: 'succeeded' })
-    expect(published).toEqual([profile, profile, profile, profile, profile, profile])
+    await vi.waitFor(() => expect(published).toEqual([profile, profile, profile, profile, profile, profile]))
 
     fail = true
     const failed = await service.call(
