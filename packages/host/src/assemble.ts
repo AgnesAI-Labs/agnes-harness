@@ -901,7 +901,10 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
         ...(runtimePromptPreloader ? { runtimePromptPreloader } : {}),
       })
       return profile.composition
-        ? { ...runtime, tools: compositionTools(runtime.tools, profile.composition) }
+        ? {
+            ...runtime,
+            tools: compositionTools(runtime.tools, profile.composition, profile.compositionToolScope),
+          }
         : runtime
     }
     const builtSeams = buildSeamRows({
@@ -2066,8 +2069,9 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
           const session = kernel.sessions.get(context.session.key)
           if (!session) return { allow: false, reason: 'Composition session is unavailable.' }
           const tree = compositionForPreset(session.preset.name)
-          return compositionTools(session.currentTools(), tree.selection).resolve(payload.name) &&
-            compositionAllowsTool(tree.selection, payload.name, payload.meta.isReadOnly === true)
+          return compositionTools(session.currentTools(), tree.selection, tree.toolScope).resolve(
+            payload.name,
+          ) && compositionAllowsTool(tree.selection, payload.name, payload.meta.isReadOnly === true)
             ? { allow: true }
             : { allow: false, reason: 'Tool denied by the selected composition policy.' }
         },
@@ -2102,7 +2106,9 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
     const extPorts = bindExtensionInvocations(
       {
         services,
-        tools: profile.composition ? compositionTools(kernel.tools, profile.composition) : kernel.tools,
+        tools: profile.composition
+          ? compositionTools(kernel.tools, profile.composition, profile.compositionToolScope)
+          : kernel.tools,
         hooks: kernel.hooks,
         slots: kernel.slots,
         resources: kernel.resources,

@@ -8,7 +8,7 @@ const stop = new Set(['what', 'which', 'the', 'and', 'for', 'does', 'with', 'how
 export const tools = [
   tool(
     'fde_knowledge_retrieve',
-    'Retrieve exact paragraphs from the packaged local docs folder.',
+    'Retrieve paragraphs from bundled demo fixtures/docs, not workspace documents or a live knowledge base.',
     Type.Object({ question: Type.String({ minLength: 1 }) }),
     ({ question }) => {
       const query = terms(question).filter((word) => !stop.has(word))

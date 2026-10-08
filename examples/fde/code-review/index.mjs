@@ -30,7 +30,7 @@ const added = (diff) => {
 export const tools = [
   tool(
     'fde_review_diff',
-    'Read the synthetic git diff and fixture repository metadata.',
+    'Read bundled demo fixtures/change.patch and synthetic repository metadata, not the workspace Git diff.',
     Type.Object({}),
     () => ({
       diff,

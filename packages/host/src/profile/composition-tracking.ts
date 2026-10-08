@@ -7,6 +7,7 @@ import {
   createLiveCompositionWriter,
   type LiveCompositionSession,
 } from './composition-state.js'
+import { compositionToolGroups } from './composition-visibility.js'
 import type { ResolvedProfile } from './types.js'
 
 /** Keep legacy Hosts' behavior unchanged while exposing the same safe live inspection surface. */
@@ -30,6 +31,7 @@ export async function trackHostComposition(
         compositionHash: tree.hash,
         preset: session.preset.name,
         bundles: tree.bundles,
+        toolGroups: compositionToolGroups(session.currentTools(), tree, profile.bundleCatalog),
         providers: {
           loop: session.loop,
           modelAdapters: [

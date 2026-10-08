@@ -11,6 +11,7 @@ import { Badge, Button, Field, Select, type StateTone, useUiText } from '@agnes/
 import { useEffect, useState } from 'react'
 import type { PluginRuntimeState } from '../../client-modules/runtime-status.js'
 import { SETTINGS_NAMESPACE, settingsCatalog } from '../../settings/locales.js'
+import { SessionToolsPanel } from '../../settings/session-tools.js'
 import type { PluginAdminApi } from './api.js'
 
 export const PLUGIN_KINDS = ['tool', 'loop', 'model-adapter', 'mcp', 'skills', 'ui', 'bundle'] as const
@@ -371,6 +372,7 @@ export function BundlesPanel({
   const [busy, setBusy] = useState(false)
   const [message, setMessage] = useState('')
   const [dump, setDump] = useState('')
+  const [sessionInfo, setSessionInfo] = useState<unknown>()
   const [dumpPreset, setDumpPreset] = useState<string>()
   const [origins, setOrigins] = useState<{ choice: string; layer: string; name: string }[]>([])
   const [reload, setReload] = useState(0)
@@ -391,13 +393,14 @@ export function BundlesPanel({
     setSnapshot(undefined)
     setDump('')
     setOrigins([])
+    setSessionInfo(undefined)
     setMessage('')
     if (!api) return
     setBusy(true)
-    api
-      .bundles()
-      .then((value) => {
+    Promise.all([api.bundles(), api.composition()])
+      .then(([value, composition]) => {
         if (current) {
+          setSessionInfo(composition)
           setSnapshot(value)
           setSelected(value.bundles)
         }
@@ -430,6 +433,7 @@ export function BundlesPanel({
     setBusy(true)
     try {
       const value = await api.composition(dumpPreset)
+      setSessionInfo(value)
       setDump(JSON.stringify(value, null, 2))
       if (
         value &&
@@ -460,6 +464,7 @@ export function BundlesPanel({
     <section aria-label={t('bundles.title')} style={{ marginBlock: '1rem' }}>
       <h2>{t('bundles.title')}</h2>
       <p>{t('bundles.description')}</p>
+      <SessionToolsPanel value={sessionInfo} t={settingsText} />
       {message && <p role="status">{t(message)}</p>}
       {snapshot && (
         <form

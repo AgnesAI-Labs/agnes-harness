@@ -19,10 +19,18 @@ export type LiveCompositionSession = Readonly<{
   compositionHash: string
   preset: string
   bundles: readonly string[]
+  toolGroups?: readonly CompositionToolGroup[]
   providers: Pick<
     ResolvedComposition['selection'],
     'loop' | 'modelAdapters' | 'compaction' | 'persistence' | 'sandbox'
   >
+}>
+
+export type CompositionToolGroup = Readonly<{
+  packageId: string
+  reason: 'official-default' | 'enabled-plugin' | 'bundle' | 'selected-loop'
+  bundles: readonly string[]
+  tools: readonly string[]
 }>
 
 /** Shares W7's session lifetime: retained on close/hibernate, removed only on deletion. */

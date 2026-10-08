@@ -24,10 +24,113 @@ import {
 import type { SkillRuntimeInput } from '../../src/resources/skills.js'
 import { buildCompleteRuntimeTarget } from '../../src/runtime-target-builder.js'
 import { createTestHost } from '../../testkit/index.js'
+import { pluginHost, pluginRow, pluginSourceWith, targetOf } from '../assemble/plugin-extension-fixture.js'
 
 vi.mock('../../src/adapters/process-identity-default.js', () => ({
   defaultProcessIdentity: async () => ({ state: 'alive', startId: 'composition-test-worker' }),
 }))
+
+it('isolates bundle tools from default and other bundles while retaining general plugins and cold pins', async () => {
+  const ids = ['acme/a', 'acme/b', 'acme/general']
+  const sources = ids.map((vendor, index) => {
+    const source = pluginSourceWith(
+      [
+        {
+          exportName: 'plugin',
+          rowId: 'ext:' + vendor,
+          body: `agnes.registerTool(tool('fixture_${index}'))`,
+        },
+      ],
+      { vendor },
+    )
+    if (index > 1) return source
+    const file = join(source.snapshot.directory, 'package.json')
+    const manifest = JSON.parse(readFileSync(file, 'utf8'))
+    manifest.agnes.bundles = { [index === 0 ? 'a' : 'b']: {} }
+    writeFileSync(file, JSON.stringify(manifest))
+    return {
+      ...source,
+      snapshot: {
+        ...source.snapshot,
+        treeIntegrity: hashDirectory(source.snapshot.directory, { exclude: [] }),
+      },
+    }
+  })
+  const options = {
+    script: [],
+    disableSessionTitle: true,
+    // A live deployment starts with no bundles, then receives both through publication.
+    runtimePluginSources: async () => sources,
+  }
+  let fixture = await pluginHost(sources, options)
+  const dataDir = fixture.dataDir
+  const target = targetOf(ids.map((vendor) => pluginRow('ext:' + vendor, 'plugin', false, { vendor })))
+  try {
+    await fixture.host.applyRuntimeTarget(target)
+    const normal = await fixture.host.createSession({ key: 'default-tools', cwd: dataDir })
+    const a = await fixture.host.createSession({ key: 'bundle-a', cwd: dataDir, bundles: ['acme/a#a'] })
+    const b = await fixture.host.createSession({ key: 'bundle-b', cwd: dataDir, bundles: ['acme/b#b'] })
+    for (const [session, expected] of [
+      [normal, ['fixture_2']],
+      [a, ['fixture_0', 'fixture_2']],
+      [b, ['fixture_1', 'fixture_2']],
+    ] as const) {
+      const tools = session.currentTools()
+      expect(
+        tools
+          .list()
+          .filter((tool) => tool.name.startsWith('fixture_'))
+          .map((tool) => tool.name)
+          .sort(),
+      ).toEqual(expected)
+      expect(
+        tools
+          .snapshot(0)
+          .defs.filter((tool) => tool.name.startsWith('fixture_'))
+          .map((tool) => tool.name)
+          .sort(),
+      ).toEqual(expected)
+      for (let i = 0; i < 3; i++)
+        expect(!!tools.resolve('fixture_' + i)).toBe(new Set<string>(expected).has('fixture_' + i))
+    }
+    expect(
+      fixture.host.compositionSessions?.().find((session) => session.sessionKey === a.key)?.toolGroups,
+    ).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          packageId: 'acme/a',
+          reason: 'bundle',
+          bundles: ['acme/a#a'],
+          tools: ['fixture_0'],
+        }),
+      ]),
+    )
+    const manifestFile = join(sources[0]!.snapshot.directory, 'package.json')
+    const manifestBytes = readFileSync(manifestFile, 'utf8')
+    try {
+      writeFileSync(manifestFile, '{}')
+      await expect(fixture.host.createSession({ key: 'unverified-bundle', cwd: dataDir })).rejects.toThrow(
+        'E_COMPOSITION_BUNDLE_INTEGRITY',
+      )
+      expect(a.currentTools().resolve('fixture_0')).toBeDefined()
+    } finally {
+      writeFileSync(manifestFile, manifestBytes)
+    }
+    const pin = a.pluginGenerationId
+    await normal.close()
+    await a.close()
+    await b.close()
+    await fixture.host.close()
+    fixture = await pluginHost(sources, { ...options, dataDir })
+    const reopened = await fixture.host.createSession({ key: 'bundle-a', cwd: dataDir })
+    expect(reopened.pluginGenerationId).toBe(pin)
+    expect(reopened.currentTools().resolve('fixture_0')).toBeDefined()
+    expect(reopened.currentTools().resolve('fixture_1')).toBeUndefined()
+    await reopened.close()
+  } finally {
+    await fixture.host.close()
+  }
+})
 
 it('runs preset compositions side by side, filters tools and retains the generation on cold reopen', async () => {
   const root = mkdtempSync(join(tmpdir(), 'agnes-compositions-'))

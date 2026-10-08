@@ -5,12 +5,17 @@ import { makeBundle, modelText, tool, value } from './runtime.mjs'
 const contract = readFileSync(new URL('./fixtures/contract.txt', import.meta.url), 'utf8')
 const clause = Type.Object({ id: Type.String(), text: Type.String() }, { additionalProperties: false })
 export const tools = [
-  tool('fde_contract_split', 'Split the synthetic contract into numbered clauses.', Type.Object({}), () => ({
-    clauses: contract
-      .trim()
-      .split(/\n\s*\n/)
-      .map((text, i) => ({ id: `C-${i + 1}`, text })),
-  })),
+  tool(
+    'fde_contract_split',
+    'Read bundled demo fixtures/contract.txt and split it into clauses, not a workspace contract.',
+    Type.Object({}),
+    () => ({
+      clauses: contract
+        .trim()
+        .split(/\n\s*\n/)
+        .map((text, i) => ({ id: `C-${i + 1}`, text })),
+    }),
+  ),
   tool(
     'fde_contract_review',
     'Review one clause against the fixture risk rubric.',

@@ -59,6 +59,8 @@ export type ResolvedComposition = Readonly<{
   selection: CompositionPatch
   sources: Readonly<Record<string, CompositionSource>>
   rows: readonly CompositionRow[]
+  /** Compiled ownership, pinned with the composition; absent on pre-isolation bindings. */
+  toolScope?: Readonly<{ bundlePackages: readonly string[]; activePackages: readonly string[] }>
   hash: string
 }>
 
@@ -410,6 +412,21 @@ export function resolveComposition(
   if (selection.loop?.id === 'default' && selection.loop.version === DEFAULT_LOOP.version)
     selection.loop = { ...DEFAULT_LOOP }
   if (options.catalog) validateComposition(selection, options.catalog)
+  const entries = Object.values(profile.bundleCatalog ?? {})
+  const selectedBundles = expandBundles(bundles, profile.bundleCatalog ?? {})
+  // The existing loop picker is also an explicit composition choice. Match the full identity.
+  const loopBundles = entries.filter(
+    (entry) =>
+      selection.loop?.id !== DEFAULT_LOOP.id &&
+      entry.document.profile?.loop?.id === selection.loop?.id &&
+      entry.document.profile?.loop?.version === selection.loop?.version,
+  )
+  const toolScope = profile.compositionToolScope ?? {
+    bundlePackages: [...new Set(entries.map((entry) => entry.sourcePackage))].sort(),
+    activePackages: [
+      ...new Set([...selectedBundles, ...loopBundles].map((entry) => entry.sourcePackage)),
+    ].sort(),
+  }
   const tree = {
     profile: profile.name,
     preset,
@@ -418,6 +435,7 @@ export function resolveComposition(
     selection,
     sources,
     rows,
+    toolScope,
   }
   return freezeTree({ ...tree, hash: `sha256-${sha256hex(canonicalJson(tree))}` })
 }
@@ -491,6 +509,7 @@ export function profileForComposition(profile: ResolvedProfile, tree: ResolvedCo
       }
     }),
     composition: patch,
+    compositionToolScope: tree.toolScope ?? { bundlePackages: [], activePackages: [] },
     compositionSources: tree.sources,
     ...(tree.sessionBundles !== undefined || tree.sources.loop?.layer === 'session'
       ? {

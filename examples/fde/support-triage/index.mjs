@@ -10,8 +10,11 @@ const get = (id) => {
   return ticket
 }
 export const tools = [
-  tool('fde_support_ticket', 'Read one synthetic customer ticket.', object({ id: Type.String() }), ({ id }) =>
-    get(id),
+  tool(
+    'fde_support_ticket',
+    'Read one synthetic customer ticket from bundled demo fixtures/tickets.json, not workspace files or a live customer system.',
+    object({ id: Type.String() }),
+    ({ id }) => get(id),
   ),
   tool(
     'fde_support_classify',

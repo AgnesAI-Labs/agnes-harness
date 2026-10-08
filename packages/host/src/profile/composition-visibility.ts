@@ -2,11 +2,16 @@ import { createHash } from 'node:crypto'
 import type { ToolRegistry } from '@agnes/core'
 import type { RuntimePluginSnapshot } from '@agnes/package-manager'
 import type { SkillRuntimeInput } from '../resources/skills.js'
-import type { CompositionPatch } from './composition.js'
+import type { CompositionPatch, ResolvedComposition } from './composition.js'
 import { compositionAllowsTool } from './composition.js'
+import type { CompositionToolGroup } from './composition-state.js'
 
 /** A read facade; registration and leases stay owned by the generation's original registry. */
-export function compositionTools(tools: ToolRegistry, selection: CompositionPatch): ToolRegistry {
+export function compositionTools(
+  tools: ToolRegistry,
+  selection: CompositionPatch,
+  scope?: ResolvedComposition['toolScope'],
+): ToolRegistry {
   // Decode the registered MCP name contract without loading its concrete provider package.
   const mcpPrefixes = selection.mcp?.map((id) => {
     const serverId = id.replace(/^mcp\//, '')
@@ -23,6 +28,8 @@ export function compositionTools(tools: ToolRegistry, selection: CompositionPatc
     const registered = tools.resolve(name)
     return (
       !!registered &&
+      (!scope?.bundlePackages.includes(registered.packageIdentity ?? '') ||
+        scope.activePackages.includes(registered.packageIdentity ?? '')) &&
       !selection.packages?.some((pkg) => pkg.id === registered.packageIdentity && pkg.enabled === false) &&
       compositionAllowsTool(selection, name, registered.meta.isReadOnly) &&
       (!name.startsWith('mcp_') ||
@@ -54,6 +61,44 @@ export function compositionTools(tools: ToolRegistry, selection: CompositionPatc
       return typeof value === 'function' ? value.bind(target) : value
     },
   })
+}
+
+/** Describe the actual filtered catalog, without exposing plugin configuration. */
+export function compositionToolGroups(
+  tools: ToolRegistry,
+  tree: ResolvedComposition,
+  catalog: import('./composition.js').BundleCatalog = {},
+): readonly CompositionToolGroup[] {
+  const groups = new Map<
+    string,
+    { packageId: string; reason: CompositionToolGroup['reason']; bundles: string[]; tools: string[] }
+  >()
+  for (const tool of tools.list()) {
+    const registered = tools.resolve(tool.name)
+    if (!registered) continue
+    const packageId = registered.packageIdentity ?? registered.source.source
+    let group = groups.get(packageId)
+    if (!group) {
+      const bundles = tree.bundles.filter(
+        (id) => catalog[id]?.sourcePackage === packageId || id.startsWith(packageId + '#'),
+      )
+      group = {
+        packageId,
+        reason: bundles.length
+          ? 'bundle'
+          : tree.toolScope?.bundlePackages.includes(packageId)
+            ? 'selected-loop'
+            : registered.source.trust === 'builtin'
+              ? 'official-default'
+              : 'enabled-plugin',
+        bundles,
+        tools: [],
+      }
+      groups.set(packageId, group)
+    }
+    group.tools.push(tool.name)
+  }
+  return [...groups.values()].sort((a, b) => a.packageId.localeCompare(b.packageId))
 }
 
 /** Selection accepts stable Skill resource IDs or names; an empty list retains defaults. */

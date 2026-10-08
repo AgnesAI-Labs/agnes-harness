@@ -6,6 +6,14 @@
 
 Profile 从插件装配应用；bundle 把可复用的 profile 补丁和 preset 打包成静态数据。安装组合包不会执行入口模块，也不会授予权限。安装、完整性校验、信任与启用仍是独立步骤。
 
+## 会话工具可见范围
+
+启用发布组合包的 package 后，其 provider 可供选择。该 package 的工具只向选择其组合包（含继承的组合包）或组合包声明的精确 loop 的会话披露并开放执行。Default 会话保留官方工具和显式启用的通用插件。工具 allow/deny、只读、package 和 MCP 过滤继续生效；工具白名单不能授予其他组合包的工具。
+
+编译后的工具归属范围随 composition 和代码 generation 固定，实时资源沿用现有过滤规则。旧保存绑定保留原范围；新建会话可应用隔离。resolved profile 新增可选的 Host 生成字段 `compositionToolScope`，不属于用户 manifest 设置。
+
+Web 设置 → 组合包与预设中的会话信息列出实际工具组及启用原因。示例工具明确标注其打包 fixture 来源；工作区问题应使用工作区文件读取工具。
+
 ## 格式与选择
 
 在 `package.json` 声明 `agnes.kinds: ["bundle"]` 和 `agnes.bundles`。标识为 `<package-id>#<bundle-name>`，名称以小写字母开头，可包含小写字母、数字和连字符。每个文档接受 `extends`、`profile` 和 `presets`。参见 [research 示例](../../examples/bundles/research/README.md)；英文格式示例可通过页首语言切换查看。

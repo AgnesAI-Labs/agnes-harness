@@ -1,7 +1,7 @@
 import { dirname } from 'node:path'
+import { CoreError } from '@agnes/core'
 import { RuntimeGenerationSnapshotStore } from '@agnes/package-manager'
 import type { RuntimeTarget } from '@agnes/plugin-runtime/host'
-import { readAdminLoopDefault } from '../assemble/loop-selection.js'
 import { SKILL_ROW_ID } from '../assemble/skill-row.js'
 import { createConfigurationService } from '../configuration.js'
 import { HostError } from '../errors.js'
@@ -12,6 +12,7 @@ import { createRuntimeGenerationHost } from '../runtime-generation-host.js'
 import { pluginSnapshotIdentity, RuntimePluginCatalogue } from '../runtime-plugin-catalogue.js'
 import { buildCompleteRuntimeTarget } from '../runtime-target-builder.js'
 import { sessionKey } from '../session.js'
+import { readRuntimeBundles } from './bundles-reader.js'
 import { profileForComposition, type ResolvedComposition, resolveComposition } from './composition.js'
 import { compositionPresets } from './composition-presets.js'
 import {
@@ -19,7 +20,7 @@ import {
   CompositionSessionStore,
   createLiveCompositionWriter,
 } from './composition-state.js'
-import { compositionSkillOwners, compositionSkills } from './composition-visibility.js'
+import { compositionSkillOwners, compositionSkills, compositionToolGroups } from './composition-visibility.js'
 import { modelProfileDeployment } from './model-compatibility.js'
 import type { ResolvedProfile } from './types.js'
 
@@ -32,6 +33,8 @@ export async function createCompositionHost(
   options: HostOptions,
   factory: Factory,
 ): Promise<Host> {
+  const legacyPublication =
+    !profile.composition && !profile.bundlePresets && !Object.keys(profile.bundleCatalog ?? {}).length
   const store = new CompositionSessionStore(options.profileDir)
   const configuration = createConfigurationService({
     home: options.homeDir ?? dirname(dirname(options.profileDir)),
@@ -234,6 +237,7 @@ export async function createCompositionHost(
         compositionHash: container.tree.hash,
         preset: session.preset.name,
         bundles: container.tree.bundles,
+        toolGroups: compositionToolGroups(session.currentTools(), container.tree, profile.bundleCatalog),
         providers: {
           loop: session.loop,
           modelAdapters: adapters.length ? adapters : (selection.modelAdapters ?? []),
@@ -281,6 +285,7 @@ export async function createCompositionHost(
     apply: (container: Container) => Promise<unknown>,
   ): Promise<HostPublicationReport> => {
     const results: HostPublicationReport['containers'][number][] = []
+    let failure: unknown
     for (const container of containers.values()) {
       try {
         const report = await apply(container)
@@ -288,6 +293,7 @@ export async function createCompositionHost(
           throw new Error('Container did not converge; inspect ordinaryConvergence for row failures')
         results.push({ compositionHash: container.tree.hash, status: 'applied' })
       } catch (error) {
+        failure ??= error
         results.push({ compositionHash: container.tree.hash, status: 'failed', error: String(error) })
       }
     }
@@ -297,6 +303,8 @@ export async function createCompositionHost(
       recovery: 'retry-same-input',
       containers: Object.freeze(results.map((result) => Object.freeze(result))),
     })
+    // Live-source admission adds composition isolation without changing legacy publication errors.
+    if (legacyPublication && failure) throw failure
     return lastPublication
   }
   const sessions = new Proxy(initial.host.kernel.sessions, {
@@ -342,20 +350,43 @@ export async function createCompositionHost(
         let binding = store.read(key)
         if (!binding) {
           const parent = input.parent ? store.read(input.parent.key) : undefined
-          const loop = input.loop ?? (parent ? undefined : await readAdminLoopDefault(configuration))
+          const sources =
+            latestTarget && !parent
+              ? new RuntimePluginCatalogue(
+                  (await options.runtimePluginSources?.()) ??
+                    options.runtimePluginCatalogue ??
+                    options.runtimePluginSnapshots ??
+                    [],
+                ).select(latestTarget)
+              : []
+          const admissionProfile = {
+            ...profile,
+            bundleCatalog: { ...profile.bundleCatalog, ...readRuntimeBundles(sources) },
+          }
+          const loop =
+            input.loop ?? (parent ? undefined : (await configuration.sessionDefaults()).defaults.loop)
           const tree =
             parent?.tree ??
-            resolveComposition(profile, {
+            resolveComposition(admissionProfile, {
               preset: resolvePreset(input.preset ?? profile.presets.default, initial.host.presets, {
                 limits: profile.limits,
               }).doc,
               ...(loop ? { session: { loop } } : {}),
               ...(input.bundles !== undefined ? { sessionBundles: input.bundles } : {}),
             })
+          const selectedLoop = tree.selection.loop
+          if (
+            !parent &&
+            selectedLoop &&
+            !initial.host.kernel.loops
+              .catalog()
+              .some((entry) => entry.id === selectedLoop.id && entry.version === selectedLoop.version)
+          )
+            throw new CoreError('E_LOOP_MISSING', 'The selected loop is unavailable.', { loop: selectedLoop })
           binding = store.pin({
             sessionKey: key,
             tree,
-            profile: parent?.profile ?? profileForComposition(profile, tree),
+            profile: parent?.profile ?? profileForComposition(admissionProfile, tree),
           })
         }
         if (
@@ -405,7 +436,11 @@ export async function createCompositionHost(
     migrateSessionGeneration: (key) =>
       enqueue(async () => {
         const binding = store.read(key)
-        if (!binding) throw new Error('E_COMPOSITION_BINDING_MISSING: session has no saved composition')
+        if (!binding) {
+          // Pre-composition durable generation pins retain the generation owner's migration checks.
+          if (!initial.host.migrateSessionGeneration) throw new Error('E_GENERATION_MIGRATION_UNAVAILABLE')
+          return initial.host.migrateSessionGeneration(key)
+        }
         const container = await open(binding)
         if (!container.host.migrateSessionGeneration) throw new Error('E_GENERATION_MIGRATION_UNAVAILABLE')
         const result = await container.host.migrateSessionGeneration(key)

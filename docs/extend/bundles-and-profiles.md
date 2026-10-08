@@ -6,6 +6,14 @@ English | [简体中文](bundles-and-profiles.zh-CN.md)
 
 A profile selects an application built from plugins. A bundle packages reusable profile patches and presets as static data. Installing a bundle does not execute an entry module or grant permissions. Installation, integrity verification, trust and enablement remain separate steps.
 
+## Session tool visibility
+
+Enabling a package that publishes bundles makes its providers available for selection. Its tools are disclosed and executable only in sessions selecting a bundle from that package (including inherited bundles), or the exact loop declared by that bundle. Default sessions retain official tools and explicitly enabled general plugins. Tool allow/deny, read-only, package and MCP filters still apply; naming a tool in an allowlist does not grant a different bundle's tools.
+
+The compiled ownership scope is pinned with the composition and code generation. Live resources retain their existing filters. Older saved bindings keep their prior scope; create a new session to apply isolation. The resolved profile adds the optional Host-generated `compositionToolScope` field; this is not a user manifest setting.
+
+In Web Settings → Bundles & Presets, session information lists actual tool groups and why they are active. Demo fixture readers identify their packaged sources. For workspace questions, use the workspace file reader.
+
 ## Publish a bundle
 
 Declare `agnes.kinds: ["bundle"]` and an `agnes.bundles` map in `package.json`. Bundle identifiers are `<package-id>#<bundle-name>`; names use lowercase letters, digits and hyphens and start with a letter. A package can publish several bundles. Each document accepts `extends`, `profile` and `presets`:

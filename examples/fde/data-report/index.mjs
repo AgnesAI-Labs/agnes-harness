@@ -34,7 +34,7 @@ const rowsSchema = Type.Array(
 export const tools = [
   tool(
     'fde_data_read',
-    'Read a bounded bundled CSV; arbitrary paths are not accepted.',
+    'Read demo fixture fixtures/sales.csv packaged with this bundle, not a workspace CSV. Fixed synthetic sales data; arbitrary paths are not accepted.',
     Type.Object({}),
     () => ({ rows: parseCsv(readFileSync(new URL('./fixtures/sales.csv', import.meta.url), 'utf8')) }),
   ),

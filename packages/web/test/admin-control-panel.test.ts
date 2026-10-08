@@ -21,6 +21,8 @@ import { GenerationsPanel, PublicationPanel } from '../src/settings/runtime-pane
 import { SecurityStatusPanel } from '../src/settings/security-status.js'
 import { effectiveSessionPreset, permissionForSessionPreset } from '../src/settings/session-choice.js'
 
+import { SessionToolsPanel } from '../src/settings/session-tools.js'
+
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 const t = (key: string) => pluginAdminLocaleCatalog.en[key] ?? key
 const roots: Root[] = []
@@ -44,6 +46,45 @@ const item = {
   desired: 'enabled',
   actual: 'running',
 } as PackageInstalledDescriptor
+
+it('shows actual session tool groups and their activation reasons in both languages', async () => {
+  for (const locale of ['en', 'zh-CN'] as const) {
+    const text = (key: string) => settingsCatalog[locale][key] ?? key
+    const host = await mount(
+      createElement(SessionToolsPanel, {
+        t: text,
+        value: {
+          sessions: [
+            {
+              sessionKey: 'fixture-session',
+              preset: 'standard',
+              toolGroups: [
+                { packageId: '@agnes/base', reason: 'official-default', bundles: [], tools: ['read'] },
+                { packageId: 'acme/general', reason: 'enabled-plugin', bundles: [], tools: ['lookup'] },
+                {
+                  packageId: 'acme/demo',
+                  reason: 'bundle',
+                  bundles: ['acme/demo#demo'],
+                  tools: ['demo_read'],
+                },
+                { packageId: 'ignored', reason: 'unknown', bundles: [], tools: ['secret'] },
+              ],
+            },
+          ],
+        },
+      }),
+    )
+    expect(host.querySelector('[data-testid=session-tool-groups] summary')?.textContent).toContain(
+      'fixture-session',
+    )
+    expect(host.textContent).toContain(text('toolReason.official-default'))
+    expect(host.textContent).toContain(text('toolReason.enabled-plugin'))
+    expect(host.textContent).toContain(text('toolReason.bundle'))
+    expect(host.textContent).toContain('acme/demo#demo')
+    expect(host.textContent).toContain('demo_read')
+    expect(host.textContent).not.toContain('ignored')
+  }
+})
 
 it('shows declared kinds and observable states without guessing draining or restart requirements', async () => {
   const host = await mount(createElement(PluginBadges, { item, t }))

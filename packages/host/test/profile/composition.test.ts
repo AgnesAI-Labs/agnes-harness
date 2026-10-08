@@ -59,6 +59,37 @@ it('resolves inherited bundles, preset/admin/session precedence and safe dumps',
     },
     env,
   )
+  expect(
+    resolveComposition({
+      ...profile,
+      bundles: [],
+      composition: {},
+      loop: { id: 'agnes.default', version: '1.0.0' },
+    }).toolScope?.activePackages,
+  ).toEqual([])
+  expect(
+    resolveComposition(
+      { ...profile, bundles: [], composition: {}, loop: { id: 'agnes.default', version: '1.0.0' } },
+      {
+        session: { loop: { id: 'example.dag', version: '1.0.0' } },
+      },
+    ).toolScope?.activePackages,
+  ).toEqual(['acme/research'])
+  const defaultLoop = { id: 'agnes.default', version: '1.0.0' }
+  expect(
+    resolveComposition({
+      ...profile,
+      bundles: [],
+      composition: {},
+      loop: defaultLoop,
+      bundleCatalog: {
+        ...catalog,
+        ...parsePackageBundles('acme/shared-default', {
+          demo: { profile: { loop: defaultLoop } },
+        }),
+      },
+    }).toolScope?.activePackages,
+  ).toEqual([])
   expect(profile.bundlePresets?.research?.name).toBe('research')
   expect(profile.presets.allowed).toContain('research')
   const tree = resolveComposition(profile, {

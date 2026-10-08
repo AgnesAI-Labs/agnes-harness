@@ -1117,6 +1117,24 @@
             "pattern": "^[^\\s\\u0000-\\u001f\\u007f]+$"
           }
         },
+        "compositionToolScope": {
+          "description": "Host-compiled bundle tool ownership, pinned with the session composition.",
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["bundlePackages", "activePackages"],
+          "properties": {
+            "bundlePackages": {
+              "type": "array",
+              "uniqueItems": true,
+              "items": { "type": "string", "minLength": 1, "maxLength": 512 }
+            },
+            "activePackages": {
+              "type": "array",
+              "uniqueItems": true,
+              "items": { "type": "string", "minLength": 1, "maxLength": 512 }
+            }
+          }
+        },
         "sessionComposition": {
           "type": "object",
           "additionalProperties": false,

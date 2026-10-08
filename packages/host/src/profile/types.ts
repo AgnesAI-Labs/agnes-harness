@@ -10,7 +10,12 @@ import type {
   RouteDecl,
 } from '@agnes/protocol'
 import type { PresetDoc } from '../presets/types.js'
-import type { BundleCatalog, CompositionPatch, CompositionSource } from './composition.js'
+import type {
+  BundleCatalog,
+  CompositionPatch,
+  CompositionSource,
+  ResolvedComposition,
+} from './composition.js'
 
 /** `^[a-z][a-z0-9.-]{0,63}$` in the profile schema; kept as a string alias here. */
 export type Capability = string
@@ -221,6 +226,8 @@ export type ResolvedPackage = {
   provides?: SeamName[]
 }
 export type ResolvedProfile = Readonly<{
+  /** Host-compiled tool ownership; never a deployment manifest input. */
+  compositionToolScope?: ResolvedComposition['toolScope']
   /** Host-compiled session overlays; never a deployment manifest input. */
   sessionComposition?: Readonly<{
     bundles?: readonly string[]
