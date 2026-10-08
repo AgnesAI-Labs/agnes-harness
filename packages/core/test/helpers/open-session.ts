@@ -7,7 +7,7 @@ import { SeamRuntime } from '@agnes/core-effects/effects/wrap'
 import { createWorkspaceInvocationPort } from '@agnes/core-effects/workspace/runtime'
 import { MemoryStorage } from '@agnes/core-ledger/log/memory-storage'
 import { openTracked } from '@agnes/core-ledger/reduce/tracker'
-import type { ToolContext } from '@agnes/extension-api'
+import type { ToolContext, ToolResult } from '@agnes/extension-api'
 import { defaultLoopFactory } from '@agnes/loop-default'
 import type { Provider } from '@agnes/protocol'
 import { Type } from '@sinclair/typebox'
@@ -67,10 +67,7 @@ const meta = {
 }
 
 export const readTool = (
-  fn: (
-    args: unknown,
-    ctx: ToolContext,
-  ) => Promise<{ content: Array<{ type: 'text'; text: string }> }> = async (args) => ({
+  fn: (args: unknown, ctx: ToolContext) => Promise<ToolResult> = async (args) => ({
     content: [{ type: 'text' as const, text: `read:${JSON.stringify(args)}` }],
   }),
 ) =>
