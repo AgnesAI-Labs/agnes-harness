@@ -7,7 +7,7 @@ import { promisify } from 'node:util'
 import type { McpServerConfig } from '@agnes/base'
 import { type BackendProbeExec, detectBackend } from '@agnes/base/sandbox'
 import { isOfficialMcpDefinition, readPackageSourceConfiguration } from '@agnes/package-manager'
-import type { McpServerDefinitionInput } from '@agnes/protocol'
+import { type McpServerDefinitionInput, WORKSPACE_SECRET_DIRS } from '@agnes/protocol'
 
 export type McpSandboxContext = Readonly<{
   workspace?: string
@@ -68,8 +68,7 @@ const below = (root: string, path: string): boolean => {
 
 async function hardDenyRoots(workspace: string, readPaths: string[], context: McpSandboxContext) {
   const roots = [
-    join(workspace, '.agh', 'secrets'),
-    join(workspace, '.agnes', 'secrets'),
+    ...WORKSPACE_SECRET_DIRS.map((path) => join(workspace, path)),
     join(context.dataDir, 'secrets'),
     join(context.dataDir, 'daemon'),
     ...['secrets', 'auth', 'profiles', 'daemon'].map((leaf) => join(context.home as string, leaf)),

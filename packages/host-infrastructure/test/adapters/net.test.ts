@@ -59,7 +59,8 @@ it.each(['service', 'caller'] as const)(
       const response = await createNetFetch({ signal: ac.signal })(`http://127.0.0.1:${address.port}`, {
         signal: caller.signal,
       })
-      reader = response.body!.getReader()
+      if (!response.body) throw new Error('Expected a streaming response body')
+      reader = response.body.getReader()
       expect(new TextDecoder().decode((await reader.read()).value)).toBe('first')
       if (source === 'service') ac.abort()
       else caller.abort()
