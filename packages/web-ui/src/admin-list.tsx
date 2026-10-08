@@ -3,8 +3,9 @@ import { type JSX, type ReactNode, useState } from 'react'
 import { ADMIN_LOCALE_NAMESPACE, contributionText, type RuntimeStateView, sourceLabel } from './admin-text.js'
 import { adminLocaleCatalog } from './locales/admin.js'
 import { ADMIN_LIST_LOCALE_NAMESPACE, adminListLocaleCatalog } from './locales/admin-list.js'
-import { SettingsDetails, SettingsSelect } from './settings-layout.js'
+import { SettingsDetails } from './settings-layout.js'
 import { Badge } from './ui/badge.js'
+import { Select } from './ui/select.js'
 import { StateSwitch } from './ui/state-lights.js'
 import { useUiText } from './ui-locale.js'
 
@@ -334,28 +335,27 @@ export function PluginList({
               {metadataOf?.(item)}
               {description && <p>{description}</p>}
               {alternatives.length > 1 ? (
-                <SettingsDetails title={t('row.versions')} data-testid="plugin-other-versions">
+                <SettingsDetails
+                  title={t('row.versions', { version: item.version })}
+                  data-testid="plugin-other-versions"
+                >
                   <label htmlFor={`plugin-version-${encodeURIComponent(item.id)}`}>
                     {t('row.version')}
-                    <SettingsSelect
+                    <Select<string>
                       id={`plugin-version-${encodeURIComponent(item.id)}`}
                       data-testid="plugin-version-picker"
+                      className="plugin-version-picker"
+                      virtual={false}
                       aria-label={t('row.version')}
                       value={item.version}
-                      onChange={(event) =>
-                        setVersions((prior) => ({ ...prior, [item.id]: event.target.value }))
-                      }
-                    >
-                      {alternatives.map((entry) => (
-                        <option key={entry.version} value={entry.version}>
-                          {entry.version}
-                        </option>
-                      ))}
-                    </SettingsSelect>
+                      options={alternatives.map((entry) => ({ value: entry.version, label: entry.version }))}
+                      getPopupContainer={(trigger) => trigger.parentElement ?? trigger}
+                      onChange={(value) => setVersions((prior) => ({ ...prior, [item.id]: value }))}
+                    />
                   </label>
                 </SettingsDetails>
               ) : null}
-              <p className="plugin-source">{item.version}</p>
+              {alternatives.length === 1 && <p className="plugin-source">{item.version}</p>}
               <SettingsDetails title={t('row.technicalDetails')}>
                 <p>
                   <code>{item.id}</code>

@@ -7,6 +7,7 @@ import {
   SettingsSelect,
   SettingsState,
   SettingsTextArea,
+  StateSwitch,
 } from '@agnes/web-ui'
 import { useCallback, useEffect, useState } from 'react'
 
@@ -161,11 +162,13 @@ export function SchedulesPage({ api, t }: { api?: SchedulesApi | undefined; t(ke
         </Button>
       </fieldset>
       <label className="agnes-settings-checkbox" htmlFor="schedules-include-archived">
-        <SettingsInput
-          type="checkbox"
+        <StateSwitch
           id="schedules-include-archived"
+          testId="schedules-include-archived"
+          label={t('schedulesIncludeArchived')}
+          disabled={false}
           checked={includeArchived}
-          onChange={(event) => setIncludeArchived(event.target.checked)}
+          onToggle={setIncludeArchived}
         />
         {t('schedulesIncludeArchived')}
       </label>
@@ -237,15 +240,15 @@ export function SchedulesPage({ api, t }: { api?: SchedulesApi | undefined; t(ke
             <legend>{t('schedulesWeekdays')}</legend>
             {[0, 1, 2, 3, 4, 5, 6].map((day) => (
               <label key={day} htmlFor={`schedule-weekday-${day}`}>
-                <SettingsInput
-                  type="checkbox"
+                <StateSwitch
                   id={`schedule-weekday-${day}`}
+                  testId={`schedule-weekday-${day}`}
+                  label={t(`schedulesDay.${day}`)}
+                  disabled={busy || !api || !sessionKey}
                   checked={weekdays.includes(day)}
-                  onChange={(event) =>
+                  onToggle={(checked) =>
                     setWeekdays((current) =>
-                      event.target.checked
-                        ? [...current, day].sort()
-                        : current.filter((item) => item !== day),
+                      checked ? [...current, day].sort() : current.filter((item) => item !== day),
                     )
                   }
                 />

@@ -637,3 +637,22 @@ button.primary-button {
 .agnes-settings-row > .agnes-settings-details > summary {
   padding-block: 0.25rem;
 }
+
+/* Catalog controls share the surface and rhythm of the other settings controls. */
+.plugin-row[data-tab="discover"],
+.plugin-row[data-tab="discover"]:hover,
+.plugin-row[data-tab="discover"]:focus-visible {
+  background: transparent;
+}
+.plugin-version-picker {
+  width: 100%;
+  min-height: var(--control-height);
+}
+.agnes-settings-card .agnes-settings-details[data-compact] {
+  border: 0;
+  padding: 0;
+  border-radius: 0;
+}
+.agnes-settings-details[data-compact] > summary {
+  padding-block: 0.25rem;
+}

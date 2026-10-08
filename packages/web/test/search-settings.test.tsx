@@ -78,6 +78,9 @@ it('shows the unconfigured state and saves a key without rendering it again', as
   })
   expect(host.querySelector('[data-testid="search-empty"]')?.textContent).toContain('No search provider')
   expect(host.querySelector('[data-testid="search-provider-brave"]')).not.toBeNull()
+  expect(host.querySelector<HTMLDetailsElement>('[data-testid="search-technical-exa"]')?.open).toBe(false)
+  expect(host.querySelector('[data-testid="search-technical-exa"]')?.hasAttribute('data-compact')).toBe(true)
+  expect(settingsCatalog.en.searchApiKeyHint).not.toContain('secret://')
   expect(host.querySelector('[data-testid="search-secret-exa"]')?.textContent).toContain(
     'secret://search/exa',
   )
@@ -93,7 +96,10 @@ it('shows the unconfigured state and saves a key without rendering it again', as
   })
   await act(async () => host.querySelector<HTMLButtonElement>('[data-testid="search-save"]')?.click())
   expect(saved).toBe(false)
-  expect(host.querySelector('[role="alert"]')).not.toBeNull()
+  expect(host.querySelector('#search-max-results-error')?.textContent).toContain('whole number from 1 to 10')
+  expect(count?.getAttribute('aria-invalid')).toBe('true')
+  expect(count?.getAttribute('aria-describedby')).toBe('search-max-results-error')
+  expect(document.activeElement).toBe(count)
   await act(async () => {
     setter?.call(count, '5')
     count?.dispatchEvent(new Event('input', { bubbles: true }))
@@ -107,6 +113,9 @@ it('shows the unconfigured state and saves a key without rendering it again', as
   await act(async () => {
     host.querySelector<HTMLButtonElement>('[data-testid="search-save"]')?.click()
   })
+  expect(host.querySelector('[data-testid="search-enabled"]')?.getAttribute('role')).toBe('switch')
+  expect(host.querySelector('[data-testid="search-enabled"]')?.getAttribute('aria-checked')).toBe('true')
+  expect(count?.getAttribute('aria-invalid')).toBeNull()
   expect(saved).toBe(true)
   expect(host.textContent).not.toContain(key)
   expect(host.querySelector('[data-testid="search-api-key"]')?.getAttribute('value') ?? '').not.toContain(key)

@@ -5203,7 +5203,7 @@ body.admin-page {
   line-height: 1.45;
 }
 .plugin-facts dt {
-  color: var(--agnes-text-tertiary);
+  color: var(--agnes-text-secondary);
 }
 .plugin-facts dd {
   min-width: 0;

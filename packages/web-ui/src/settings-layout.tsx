@@ -136,10 +136,19 @@ export function SettingsRow({
 export function SettingsDetails({
   title,
   children,
+  compact = false,
   ...props
-}: Omit<HTMLAttributes<HTMLDetailsElement>, 'title'> & { title: ReactNode; 'data-testid'?: string }) {
+}: Omit<HTMLAttributes<HTMLDetailsElement>, 'title'> & {
+  title: ReactNode
+  compact?: boolean
+  'data-testid'?: string
+}) {
   return (
-    <details {...props} className={['agnes-settings-details', props.className].filter(Boolean).join(' ')}>
+    <details
+      {...props}
+      data-compact={compact || undefined}
+      className={['agnes-settings-details', props.className].filter(Boolean).join(' ')}
+    >
       <summary data-testid={props['data-testid'] ? `${props['data-testid']}-toggle` : undefined}>
         {title}
       </summary>

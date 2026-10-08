@@ -307,6 +307,8 @@ it.each(['sandbox', 'compaction', 'persistence'] as const)(
     )
     expect(host.textContent).not.toContain('option.')
     expect(host.textContent).not.toContain('not supported')
+    expect(host.querySelector('input[type="checkbox"]')).toBeNull()
+    if (kind !== 'persistence') expect(host.querySelector('[role="switch"]')).not.toBeNull()
     for (const control of host.querySelectorAll<HTMLInputElement>('input, select, textarea'))
       expect(control.disabled).toBe(true)
     await act(async () => root.unmount())

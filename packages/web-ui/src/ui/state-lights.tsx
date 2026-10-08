@@ -44,6 +44,10 @@ export function StateLights({ states }: { states: readonly StateLight[] }): JSX.
 export type StateSwitchProps = Readonly<{
   /** 无障碍名，例如「启用 GitHub」。 */
   label: string
+  id?: string | undefined
+  testId?: string | undefined
+  invalid?: boolean | undefined
+  describedBy?: string | undefined
   checked: boolean
   disabled: boolean
   /** 用户拨动开关时调用。调用方负责确认流程与忙碌态，本组件不改状态。 */
@@ -51,14 +55,27 @@ export type StateSwitchProps = Readonly<{
 }>
 
 /**
- * Switch 开关。用 `role="switch"` 而不是 checkbox：它在列表行里是一个动作，不是一个表单取值。
+ * Switch 开关。用 `role="switch"` 而不是 checkbox：它支持列表行和布尔设置，状态由调用方持有。
  * `checked` 由调用方按用户可感知的实际结果计算；点击只发出下一步请求，不提前改视觉状态。
  * 不采用 antd Switch：行内动作语义、title、stopPropagation 与 `.switch` 皮肤契约都要保真。
  */
-export function StateSwitch({ label, checked, disabled, onToggle }: StateSwitchProps): JSX.Element {
+export function StateSwitch({
+  label,
+  checked,
+  disabled,
+  onToggle,
+  id,
+  testId,
+  invalid,
+  describedBy,
+}: StateSwitchProps): JSX.Element {
   return (
     <button
       type="button"
+      id={id}
+      data-testid={testId}
+      aria-invalid={invalid || undefined}
+      aria-describedby={describedBy}
       className="switch"
       role="switch"
       aria-checked={checked}

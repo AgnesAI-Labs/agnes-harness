@@ -5,7 +5,7 @@ export const ADMIN_LIST_LOCALE_NAMESPACE = '@agnes/web-ui/admin-list'
 export const adminListLocaleCatalog: LocaleCatalog = {
   en: {
     'row.technicalDetails': 'Technical details',
-    'row.versions': 'Other versions',
+    'row.versions': 'Versions · {version}',
     'row.version': 'Version',
     'row.name.@agnes/document-reader': 'Document reader',
     'row.description.@agnes/document-reader': 'Read PDF, Word, image text and ZIP attachments offline.',
@@ -45,7 +45,7 @@ export const adminListLocaleCatalog: LocaleCatalog = {
   },
   'zh-CN': {
     'row.technicalDetails': '技术详情',
-    'row.versions': '其他版本',
+    'row.versions': '版本 · {version}',
     'row.version': '版本',
     'row.name.@agnes/document-reader': '文档读取',
     'row.description.@agnes/document-reader': '离线读取 PDF、Word、图片文字和 ZIP 附件。',

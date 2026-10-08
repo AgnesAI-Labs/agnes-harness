@@ -133,12 +133,18 @@ it('groups catalog versions and reviews the selected version without opening the
     }),
   )
   expect(host.querySelectorAll('[data-plugin-id]')).toHaveLength(1)
-  const picker = host.querySelector<HTMLSelectElement>('[data-testid="plugin-version-picker"]')!
-  await act(async () => {
-    picker.value = '2.0.0'
-    picker.dispatchEvent(new Event('change', { bubbles: true }))
-  })
+  const picker = host.querySelector<HTMLElement>('[data-testid="plugin-version-picker"]')!
+  await act(async () =>
+    picker.querySelector('input')?.dispatchEvent(new MouseEvent('mousedown', { bubbles: true })),
+  )
+  const option = [...host.querySelectorAll<HTMLElement>('.ant-select-item-option')].find(
+    (entry) => entry.textContent === '2.0.0',
+  )
+  expect(option).toBeDefined()
+  await act(async () => option?.click())
   expect(chosen).toBeUndefined()
+  expect(host.querySelector('.plugin-source')).toBeNull()
+  expect(host.querySelector('[data-testid="plugin-other-versions"] summary')?.textContent).toContain('2.0.0')
   expect(host.querySelector('.plugin-compatibility')?.textContent).toBe('Unsupported')
   host.querySelector<HTMLButtonElement>('.plugin-row > button')?.click()
   expect(chosen).toBe('2.0.0')

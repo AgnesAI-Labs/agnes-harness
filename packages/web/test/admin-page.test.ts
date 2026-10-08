@@ -332,19 +332,22 @@ it('groups real catalog releases and carries the selected version source through
   expect(listText).toContain('@agnes-examples/agent-automation')
   expect(listText).toContain('@agnes-examples/compaction-policy')
   expect(listText).toContain('1.0.0')
-  expect(listText).toContain('1.1.0')
+  expect(document.querySelectorAll('[data-testid="plugin-other-versions"]')).toHaveLength(3)
   expect(listText).not.toContain('1.2.0')
 
-  const v2 = [...document.querySelectorAll<HTMLElement>('.plugin-row')].find(
-    (row) => row.textContent.includes('@agnes-examples/hot-tool') && row.textContent.includes('1.1.0'),
-  )
-  expect(v2).toBeDefined()
-  const picker = v2?.querySelector<HTMLSelectElement>('[data-testid="plugin-version-picker"]')
-  expect(picker?.options.length).toBe(2)
+  const v2 = document.querySelector<HTMLElement>('[data-plugin-id="@agnes-examples/hot-tool"]')
+  expect(v2).not.toBeNull()
+  const picker = v2?.querySelector<HTMLElement>('[data-testid="plugin-version-picker"]')
   if (!picker) throw new Error('catalog version picker missing')
-  picker.value = '1.1.0'
-  picker.dispatchEvent(new Event('change', { bubbles: true }))
-  await vi.waitFor(() => expect(v2?.querySelector('.plugin-source')?.textContent).toBe('1.1.0'))
+  v2?.querySelector<HTMLElement>('[data-testid="plugin-other-versions-toggle"]')?.click()
+  picker.querySelector('input')?.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }))
+  await vi.waitFor(() => expect(v2?.querySelectorAll('.ant-select-item-option')).toHaveLength(2))
+  const option = [...(v2?.querySelectorAll<HTMLElement>('.ant-select-item-option') ?? [])].find(
+    (entry) => entry.textContent === '1.1.0',
+  )
+  option?.click()
+  await vi.waitFor(() => expect(v2?.getAttribute('data-plugin-version')).toBe('1.1.0'))
+  expect(v2?.querySelector('.plugin-source')).toBeNull()
   expect(document.getElementById('plugin-detail')?.hasAttribute('open')).toBe(false)
   v2?.click()
   expect(document.getElementById('plugin-detail')?.textContent).toContain('Version 1.1.0')

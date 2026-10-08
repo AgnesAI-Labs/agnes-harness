@@ -25,7 +25,7 @@
 | `createSettingsIcon` | A | 原生设置导航图标 | 分类图标共用 `icon` 皮肤钩子和主题尺寸；装饰性图标不进入无障碍名称 |
 
 | `SettingsList` / `SettingsRow` | A | 平面设置列表 | 同账户页标题、说明与操作对齐；无嵌套卡片 |
-| `SettingsDetails` | A | 原生 details | 默认折叠的高级信息；键盘可展开 |
+| `SettingsDetails` | A | 原生 details | 默认折叠的高级信息；键盘可展开；`compact` 用于行内无嵌套卡片的技术信息 |
 | `SettingsToolbar` | A | 设置筛选操作栏 | 表单控件与按钮底部对齐，窄屏自动换行 |
 
 | `ConversationInteractionResult` / `interactionToolPresentation` | A | 会话交互结果 | 从工具生命周期生成本地化摘要；原始结果置于“查看详情”，不修改协议数据 |
@@ -35,3 +35,5 @@
 | `SchemaControl` / `SchemaConfigFields` / `SchemaConfigForm` | A | 既有 Field / Settings 控件 | JSON schema 子集、本地化元数据、按字段错误、受控保存/测试；凭据只传引用 / JSON schema subset, localized metadata, field errors and caller-controlled actions; credentials use references |
 | `ProviderConfigForm` / `providerConfigSchemas` | A | 协议生成配置约束 | 沙箱、压缩、持久化表单；调用方提供权威值和权限，不存在任意配置写接口 / Generated sandbox, compaction and persistence constraints; caller owns authoritative values and grants |
 | `createSchemaSettingsComponent` | A | 设置页 registry 桥接 | 插件声明 schema / 权限 / load-save-test，工厂处理读取、失败重试、草稿和 revision；仍由唯一设置壳挂载 / Declarative schema-backed settings section with caller-controlled permissions and revision-aware adapters |
+
+StateSwitch also renders Boolean schema/settings fields; optional id/testId and validation ARIA attributes preserve labels and selectors. Controlled state, keyboard button behavior and plugin-row propagation rules are shared.

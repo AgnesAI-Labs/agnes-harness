@@ -7,6 +7,7 @@ import {
   SettingsSelect,
   SettingsState,
   SettingsTextArea,
+  StateSwitch,
   useUiText,
 } from '@agnes/web-ui'
 import { useEffect, useRef, useState } from 'react'
@@ -172,22 +173,24 @@ export function ContextPanel({ canSave }: { canSave: boolean }) {
         <fieldset disabled={!canSave || busy}>
           <legend>{t('contextDefaults')}</legend>
           <label className="agnes-settings-checkbox" htmlFor="context-rules-enabled">
-            <SettingsInput
+            <StateSwitch
               id="context-rules-enabled"
-              data-testid="context-rules-enabled"
-              type="checkbox"
+              testId="context-rules-enabled"
+              label={t('contextRules')}
+              disabled={!canSave || busy}
               checked={config.rulesEnabled}
-              onChange={(e) => setConfig({ ...config, rulesEnabled: e.target.checked })}
+              onToggle={(checked) => setConfig({ ...config, rulesEnabled: checked })}
             />
             {t('contextRules')}
           </label>
           <label className="agnes-settings-checkbox" htmlFor="context-time-enabled">
-            <SettingsInput
+            <StateSwitch
               id="context-time-enabled"
-              data-testid="context-time-enabled"
-              type="checkbox"
+              testId="context-time-enabled"
+              label={t('contextTime')}
+              disabled={!canSave || busy}
               checked={config.timeEnabled}
-              onChange={(e) => setConfig({ ...config, timeEnabled: e.target.checked })}
+              onToggle={(checked) => setConfig({ ...config, timeEnabled: checked })}
             />
             {t('contextTime')}
           </label>

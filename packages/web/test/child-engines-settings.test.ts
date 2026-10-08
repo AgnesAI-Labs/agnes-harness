@@ -47,8 +47,10 @@ it('requires an exact allowlist entry before enabling an engine', async () => {
   expect(host.querySelector('[data-testid="child-engine-codex-capabilities"]')?.textContent).toContain(
     'Interrupt: Yes',
   )
-  const enabled = host.querySelector<HTMLInputElement>('[data-testid="child-engine-codex-enabled"]')
+  const enabled = host.querySelector<HTMLButtonElement>('[data-testid="child-engine-codex-enabled"]')
+  expect(enabled?.getAttribute('role')).toBe('switch')
   await act(async () => enabled?.click())
+  expect(enabled?.getAttribute('aria-checked')).toBe('true')
   await act(async () => host.querySelector<HTMLButtonElement>('[data-testid="child-engine-save"]')?.click())
   expect(host.querySelector('[data-testid="child-engine-status"]')?.getAttribute('role')).toBe('alert')
   expect(api.saveChildEngines).not.toHaveBeenCalled()

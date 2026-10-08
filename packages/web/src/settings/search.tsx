@@ -1,12 +1,15 @@
 import {
   appServerErrorMessage,
   Button,
+  type ConfigIssue,
   configIssues,
   Field,
   SchemaControl,
   SettingsCard,
+  SettingsDetails,
   SettingsInput,
   SettingsState,
+  StateSwitch,
 } from '@agnes/web-ui'
 import { useEffect, useState } from 'react'
 import { searchConfigSchema } from './config-schemas.js'
@@ -108,6 +111,8 @@ export function SearchPanel({
   const [notice, setNotice] = useState('')
   const [error, setError] = useState('')
   const [errorEnvelope, setErrorEnvelope] = useState<unknown>()
+  const [issues, setIssues] = useState<readonly ConfigIssue[]>([])
+  const invalid = (name: string) => issues.some((issue) => issue.path === `/${name}`)
   const [hits, setHits] = useState<SearchHit[]>([])
   const selected = status?.providers.find((row) => row.id === providerId)
 
@@ -155,18 +160,23 @@ export function SearchPanel({
     const results = integer(maxResults, 1, 10)
     const timeout = integer(timeoutMs, 1000, 60_000)
     const ratePerMinute = integer(rate, 1, 600)
-    if (
-      configIssues(searchConfigSchema, {
-        id: providerId,
-        endpoint,
-        maxResults: results,
-        timeoutMs: timeout,
-        ratePerMinute,
-        enabled,
-        makeDefault,
-      }).length
-    ) {
+    const validation = configIssues(searchConfigSchema, {
+      id: providerId,
+      endpoint,
+      maxResults: results,
+      timeoutMs: timeout,
+      ratePerMinute,
+      enabled,
+      makeDefault,
+    })
+    setIssues(validation)
+    if (validation.length) {
+      setErrorEnvelope(undefined)
       setError('searchFailed')
+      const field = Object.entries(searchConfigSchema.properties).find(
+        ([name]) => validation[0]?.path === `/${name}`,
+      )?.[1]['x-ui'].id
+      if (field) document.getElementById(field)?.focus()
       return
     }
     const savedDefault = status.providers.find((row) => row.isDefault)?.id ?? null
@@ -272,7 +282,13 @@ export function SearchPanel({
             <li key={row.id} data-testid={`search-provider-${row.id}`}>
               {row.label} · {row.ready ? t('searchReady') : t('searchNotReady')}
               {row.isDefault ? ` · ${t('searchDefault')}` : ''}
-              <span data-testid={`search-secret-${row.id}`}> {row.secretRef}</span>
+              <SettingsDetails
+                compact
+                title={t('searchTechnicalDetails')}
+                data-testid={`search-technical-${row.id}`}
+              >
+                <span data-testid={`search-secret-${row.id}`}>{row.secretRef}</span>
+              </SettingsDetails>
             </li>
           ))}
         </ul>
@@ -310,36 +326,76 @@ export function SearchPanel({
           </Field>
           {selected?.secretConfigured && <p>{t('searchApiKeyStored')}</p>}
           <Field label={t('searchClearKey')} htmlFor="search-clear-key">
-            <SettingsInput
+            <StateSwitch
               id="search-clear-key"
-              data-testid="search-clear-key"
-              type="checkbox"
+              testId="search-clear-key"
+              label={t('searchClearKey')}
+              disabled={!canSave || busy || !status}
               checked={clearKey}
-              onChange={(event) => setClearKey(event.target.checked)}
+              onToggle={setClearKey}
             />
           </Field>
-          <Field label={t('searchMaxResults')} htmlFor="search-max-results">
+          <Field
+            label={t('searchMaxResults')}
+            htmlFor="search-max-results"
+            error={
+              invalid('maxResults') ? (
+                <span id="search-max-results-error">{t('searchMaxResultsError')}</span>
+              ) : undefined
+            }
+          >
             <SchemaControl
               schema={searchConfigSchema.properties.maxResults}
               value={maxResults}
               t={t}
-              onChange={(value) => setMaxResults(String(value))}
+              invalid={invalid('maxResults')}
+              describedBy={invalid('maxResults') ? 'search-max-results-error' : undefined}
+              onChange={(value) => {
+                setMaxResults(String(value))
+                setIssues((current) => current.filter((issue) => issue.path !== '/maxResults'))
+              }}
             />
           </Field>
-          <Field label={t('searchTimeout')} htmlFor="search-timeout">
+          <Field
+            label={t('searchTimeout')}
+            htmlFor="search-timeout"
+            error={
+              invalid('timeoutMs') ? (
+                <span id="search-timeout-error">{t('searchTimeoutError')}</span>
+              ) : undefined
+            }
+          >
             <SchemaControl
               schema={searchConfigSchema.properties.timeoutMs}
               value={timeoutMs}
               t={t}
-              onChange={(value) => setTimeoutMs(String(value))}
+              invalid={invalid('timeoutMs')}
+              describedBy={invalid('timeoutMs') ? 'search-timeout-error' : undefined}
+              onChange={(value) => {
+                setTimeoutMs(String(value))
+                setIssues((current) => current.filter((issue) => issue.path !== '/timeoutMs'))
+              }}
             />
           </Field>
-          <Field label={t('searchRate')} htmlFor="search-rate">
+          <Field
+            label={t('searchRate')}
+            htmlFor="search-rate"
+            error={
+              invalid('ratePerMinute') ? (
+                <span id="search-rate-error">{t('searchRateError')}</span>
+              ) : undefined
+            }
+          >
             <SchemaControl
               schema={searchConfigSchema.properties.ratePerMinute}
               value={rate}
               t={t}
-              onChange={(value) => setRate(String(value))}
+              invalid={invalid('ratePerMinute')}
+              describedBy={invalid('ratePerMinute') ? 'search-rate-error' : undefined}
+              onChange={(value) => {
+                setRate(String(value))
+                setIssues((current) => current.filter((issue) => issue.path !== '/ratePerMinute'))
+              }}
             />
           </Field>
           <Field label={t('searchEnabled')} htmlFor="search-enabled">

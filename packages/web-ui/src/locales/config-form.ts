@@ -34,6 +34,7 @@ export const configFormCatalog: LocaleCatalog = {
     tested: 'Configuration test completed.',
     save: 'Save',
     test: 'Test configuration',
+    toggle: 'Toggle setting',
   },
   'zh-CN': {
     loading: '正在读取配置…',
@@ -68,5 +69,6 @@ export const configFormCatalog: LocaleCatalog = {
     tested: '配置测试完成。',
     save: '保存',
     test: '测试配置',
+    toggle: '切换设置',
   },
 }

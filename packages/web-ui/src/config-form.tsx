@@ -18,6 +18,7 @@ import {
 } from './settings-layout.js'
 import { Button } from './ui/button.js'
 import { Field } from './ui/field.js'
+import { StateSwitch } from './ui/state-lights.js'
 import { useUiText } from './ui-locale.js'
 
 /** A schema control can retain a native page's existing Field/label wrapper and IDs. */
@@ -44,6 +45,7 @@ export function SchemaControl({
   invalid?: boolean | undefined
   describedBy?: string | undefined
 }) {
+  const { t: text } = useUiText(CONFIG_FORM_NAMESPACE, configFormCatalog)
   const arrayText = Array.isArray(value) ? value.join('\n') : String(value ?? '')
   const [draftText, setDraftText] = useState(arrayText)
   const lastValue = useRef(value)
@@ -77,11 +79,15 @@ export function SchemaControl({
     )
   if (schema.type === 'boolean')
     return (
-      <SettingsInput
-        {...props}
-        type="checkbox"
+      <StateSwitch
+        id={props.id}
+        testId={props['data-testid']}
+        invalid={invalid}
+        describedBy={describedBy}
+        label={ariaLabel ?? (ui?.labelKey ? t(ui.labelKey) : text('toggle'))}
+        disabled={disabled ?? false}
         checked={value === true}
-        onChange={(event) => onChange(event.target.checked)}
+        onToggle={onChange}
       />
     )
   if (schema.type === 'array' || ui?.control === 'textarea')
