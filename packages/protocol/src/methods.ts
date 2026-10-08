@@ -1,6 +1,7 @@
 import type { TSchema } from '@sinclair/typebox'
 import * as Acp from '../gen/ts/acp.js'
 import * as A from '../gen/ts/agnes-v1.js'
+import { ADMIN_METHODS, type AdminMethodName } from './app-server.js'
 import {
   PACKAGE_ADMIN_METHODS,
   type PackageAdminAccessPolicy,
@@ -57,6 +58,7 @@ const clientRequest = (params: TSchema, result: TSchema): MethodSpec => ({
 // excess property on the object literal. The runtime key list in test/methods.test.ts pins the same
 // set a third way.
 export type MethodName =
+  | AdminMethodName
   | PackageAdminMethodName
   | ResourceControlMethodName
   | '_agnes/v1/extension.ack'
@@ -139,6 +141,7 @@ export type MethodName =
   | '_agnes/v1/daemon.notice'
 
 export const METHODS: Record<MethodName, MethodSpec> = {
+  ...ADMIN_METHODS,
   ...PACKAGE_ADMIN_METHODS,
   ...RESOURCE_CONTROL_METHODS,
   '_agnes/v1/extension.ack': clientRequest(A.ExtensionAckParams, A.Empty),

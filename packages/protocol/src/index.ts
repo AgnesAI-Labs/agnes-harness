@@ -148,6 +148,8 @@ export type {
   WorkspaceListParams,
   WorkspaceListResult,
 } from '../gen/ts/agnes-v1.js'
+export type * from '../gen/ts/app-server-methods.js'
+export { APP_SERVER_SCHEMA } from '../gen/ts/app-server-schema.js'
 export type { Action, Decision, RowScope, Target } from '../gen/ts/authz.js'
 export type { BridgeMethod, BridgeRequest, BridgeResponse, ToolsInvokeParams } from '../gen/ts/bridge.js'
 export type {
@@ -434,12 +436,14 @@ export type {
   WorkerGeneration,
 } from '../gen/ts/worker.js'
 export * from './admin-session-selection.js'
+export * from './app-server.js'
 export * from './attachments.js'
 export * from './child-engine-document.js'
 export * from './codec/permission.js'
 export * from './codec/stop-reason.js'
 export * from './configs.js'
 export * from './constants.js'
+export { httpRpcError, normalizeRpcError } from './error-envelope.js'
 export * from './errors.js'
 export * from './hooks.js'
 export { jcs } from './jcs.js'

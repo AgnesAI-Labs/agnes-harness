@@ -59,6 +59,13 @@ describe('protocol src boundary', () => {
     expect(Object.keys(mod).sort()).toEqual(
       [
         'AGNES_ERRORS',
+        'ADMIN_METHODS',
+        'APP_SERVER_VERSION',
+        'APP_SERVER_SCHEMA',
+        'AppServerError',
+        'AppServerErrorCause',
+        'normalizeRpcError',
+        'httpRpcError',
         'CHILD_ENGINE_ROW_IDS',
         'ChildEnginesSaveParams',
         'ChildEnginesState',

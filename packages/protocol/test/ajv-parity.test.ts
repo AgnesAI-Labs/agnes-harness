@@ -46,6 +46,7 @@ import type { Ajv2020 as Ajv2020Class } from 'ajv/dist/2020.js'
 import { describe, expect, it } from 'vitest'
 import * as AcpGen from '../gen/ts/acp.js'
 import * as AgnesGen from '../gen/ts/agnes-v1.js'
+import * as AppGen from '../gen/ts/app-server.js'
 import * as AuthzGen from '../gen/ts/authz.js'
 import * as BridgeGen from '../gen/ts/bridge.js'
 import * as ChannelGen from '../gen/ts/channel.js'
@@ -148,6 +149,7 @@ function requestMediaDataOf(id: string): unknown {
 // along with x-* extension keys and `discriminator` (on the ACP side). None of these are shapes ajv's
 // strict mode recognises, yet all are either legal 2020-12 keywords or pure annotation keys — without
 // relaxing these two options, compilation throws outright.
+const AppDoc = JSON.parse(readFileSync(`${pkgRoot}schema/app-server.json`, 'utf8')) as Json
 const sessionSchemaDoc = JSON.parse(readFileSync(`${pkgRoot}schema/session-v1.json`, 'utf8')) as Json
 const agnesSchemaDoc = JSON.parse(readFileSync(`${pkgRoot}schema/agnes-v1.json`, 'utf8')) as Json
 const modelSchemaDoc = JSON.parse(readFileSync(`${pkgRoot}schema/model.json`, 'utf8')) as Json
@@ -223,6 +225,7 @@ const ServiceDoc = JSON.parse(readFileSync(`${pkgRoot}schema/extension-service.j
 ajv.addSchema(ServiceDoc)
 const ProjectionDoc = JSON.parse(readFileSync(`${pkgRoot}schema/projection.json`, 'utf8')) as Json
 ajv.addSchema(ProjectionDoc)
+ajv.addSchema(AppDoc)
 ajv.addSchema(sessionSchemaDoc)
 ajv.addSchema(agnesSchemaDoc)
 ajv.addSchema(modelSchemaDoc)
@@ -5443,6 +5446,146 @@ function resourceControlSamples(): Record<ResourceControlSampleName, Sample> {
 }
 
 const ResourceControlSamples = resourceControlSamples()
+const AppSamples: Record<string, Sample> = {
+  AdminMcpOAuthSave: {
+    valid: {
+      serverId: 'github',
+      credential: {
+        provider: 'fixture',
+        accessToken: 'synthetic-access',
+        refreshToken: 'synthetic-refresh',
+        expiresAt: 0,
+        scope: [],
+        grantId: 'fixture-grant',
+      },
+    },
+    invalid: [
+      {
+        serverId: '../other',
+        credential: {
+          provider: 'fixture',
+          accessToken: 'synthetic-access',
+          refreshToken: 'synthetic-refresh',
+          expiresAt: 0,
+          scope: [],
+          grantId: 'fixture-grant',
+        },
+      },
+    ],
+    note: 'daemon-only OAuth credential persistence',
+  },
+  JsonValue: { valid: { nested: [null, false, 3] }, invalid: [undefined], note: 'App Server boundary shape' },
+  AppServerErrorCause: {
+    valid: { code: 'CONFIG_CREDENTIAL_REQUIRED' },
+    invalid: [
+      { code: 'SECRET', message: 'unsafe' },
+      { code: 'CONFIG_CREDENTIAL_REQUIRED', message: 'secret' },
+    ],
+    note: 'App Server boundary shape',
+  },
+  AppServerError: {
+    valid: {
+      code: -32011,
+      message: 'SEMANTIC_REJECTED',
+      data: {
+        code: 'SEMANTIC_REJECTED',
+        messageKey: 'appServer.errors.credentialRequired',
+        diagnosticId: '00000000-0000-0000-0000-000000000001',
+        cause: { code: 'CONFIG_CREDENTIAL_REQUIRED' },
+      },
+    },
+    invalid: [
+      {
+        code: -32011,
+        message: 'SEMANTIC_REJECTED',
+        data: { code: 'SEMANTIC_REJECTED', messageKey: 'raw.secret', diagnosticId: 'bad' },
+      },
+    ],
+    note: 'App Server boundary shape',
+  },
+  AdminEmpty: { valid: {}, invalid: [{ extra: 1 }], note: 'App Server boundary shape' },
+  AdminBundlesSave: {
+    valid: { revision: 0, bundles: [] },
+    invalid: [null],
+    note: 'App Server boundary shape',
+  },
+  AdminBundlesResult: {
+    valid: { revision: 0, bundles: [], effect: 'restart-required' },
+    invalid: [null],
+    note: 'App Server boundary shape',
+  },
+  AdminCompositionParams: { valid: {}, invalid: [{ preset: 'INVALID' }], note: 'App Server boundary shape' },
+  AdminCompositionResult: {
+    valid: { status: 'live', validation: 'static', selection: {}, rows: [], sessions: [] },
+    invalid: [null],
+    note: 'App Server boundary shape',
+  },
+  AdminSearchSave: { valid: { provider: { id: 'p' } }, invalid: [null], note: 'App Server boundary shape' },
+  AdminSearchTest: {
+    valid: { provider: 'p', query: 'q' },
+    invalid: [null],
+    note: 'App Server boundary shape',
+  },
+  AdminSearchResult: { valid: {}, invalid: [null], note: 'App Server boundary shape' },
+  AdminContextConfig: {
+    valid: {
+      rulesEnabled: true,
+      instructionFiles: [],
+      localInstructionFiles: [],
+      maxBytes: 0,
+      maxSourceBytes: 0,
+      timeEnabled: true,
+      timeZone: 'UTC',
+      refreshIntervalMs: 0,
+      customSkillRoots: [],
+    },
+    invalid: [null],
+    note: 'App Server boundary shape',
+  },
+  AdminContextParams: {
+    valid: {},
+    invalid: [{ config: { maxBytes: 60001 } }],
+    note: 'App Server boundary shape',
+  },
+  AdminContextResult: {
+    valid: {
+      config: {
+        rulesEnabled: true,
+        instructionFiles: [],
+        localInstructionFiles: [],
+        maxBytes: 0,
+        maxSourceBytes: 0,
+        timeEnabled: true,
+        timeZone: 'UTC',
+        refreshIntervalMs: 0,
+        customSkillRoots: [],
+      },
+      workspaces: [],
+    },
+    invalid: [null],
+    note: 'App Server boundary shape',
+  },
+  AdminHistoryParams: {
+    valid: { query: '', title: '', workspace: '' },
+    invalid: [null],
+    note: 'App Server boundary shape',
+  },
+  AdminHistoryResult: {
+    valid: { items: [], truncated: false },
+    invalid: [null],
+    note: 'App Server boundary shape',
+  },
+  AdminPlanParams: {
+    valid: { cwd: '/tmp', line: '/plan on' },
+    invalid: [null],
+    note: 'App Server boundary shape',
+  },
+  AdminPlanResult: {
+    valid: { active: true, text: 'Plan mode is on' },
+    invalid: [null],
+    note: 'App Server boundary shape',
+  },
+}
 const SELF_OWNED_DOCS: Array<[string, Json, string, Record<string, Sample>]> = [
   [
     'resource-control.json',
@@ -5450,6 +5593,7 @@ const SELF_OWNED_DOCS: Array<[string, Json, string, Record<string, Sample>]> = [
     'https://agnes.ai/schema/resource-control.json',
     ResourceControlSamples,
   ],
+  ['app-server.json', AppDoc, 'https://agnes.ai/schema/app-server-v1', AppSamples],
   ['package-admin.json', PackageAdminDoc, 'https://agnes.ai/schema/package-admin.json', PackageAdminSamples],
   ['surface.json', SurfaceDoc, 'https://agnes.ai/schema/surface.json', surfaceSamples()],
   ['extension-service.json', ServiceDoc, 'https://agnes.ai/schema/extension-service.json', ServiceSamples],
@@ -5478,6 +5622,9 @@ const SELF_OWNED_DOCS: Array<[string, Json, string, Record<string, Sample>]> = [
 ]
 
 const DEFS_BY_FILE: Record<string, Record<string, TSchema>> = {
+  'https://agnes.ai/schema/app-server-v1': Object.fromEntries(
+    Object.keys(AppSamples).map((key) => [key, (AppGen as unknown as Record<string, TSchema>)[key]!]),
+  ),
   [RUNTIME_ADMIN_ID]: { ChildEnginesSaveParams, ChildEnginesState, RuntimeAdminEmpty, RuntimeAdminSnapshot },
   [SCHEDULES_ID]: {
     ScheduleDelivery,
@@ -5761,6 +5908,56 @@ describe('McpServerDescriptor: authorizationStatus field (mcp-oauth-authorizatio
 type MethodDefRef = { fileId: string; params: string; result?: string }
 
 const METHOD_DEF: Record<MethodName, MethodDefRef> = {
+  '_agnes/v1/admin.mcp.oauth.save': {
+    fileId: 'https://agnes.ai/schema/app-server-v1',
+    params: 'AdminMcpOAuthSave',
+    result: 'AdminEmpty',
+  },
+  '_agnes/v1/admin.bundles.get': {
+    fileId: 'https://agnes.ai/schema/app-server-v1',
+    params: 'AdminEmpty',
+    result: 'AdminBundlesResult',
+  },
+  '_agnes/v1/admin.bundles.save': {
+    fileId: 'https://agnes.ai/schema/app-server-v1',
+    params: 'AdminBundlesSave',
+    result: 'AdminBundlesResult',
+  },
+  '_agnes/v1/admin.composition.get': {
+    fileId: 'https://agnes.ai/schema/app-server-v1',
+    params: 'AdminCompositionParams',
+    result: 'AdminCompositionResult',
+  },
+  '_agnes/v1/admin.search.get': {
+    fileId: 'https://agnes.ai/schema/app-server-v1',
+    params: 'AdminEmpty',
+    result: 'AdminSearchResult',
+  },
+  '_agnes/v1/admin.search.save': {
+    fileId: 'https://agnes.ai/schema/app-server-v1',
+    params: 'AdminSearchSave',
+    result: 'AdminSearchResult',
+  },
+  '_agnes/v1/admin.search.test': {
+    fileId: 'https://agnes.ai/schema/app-server-v1',
+    params: 'AdminSearchTest',
+    result: 'AdminSearchResult',
+  },
+  '_agnes/v1/admin.context': {
+    fileId: 'https://agnes.ai/schema/app-server-v1',
+    params: 'AdminContextParams',
+    result: 'AdminContextResult',
+  },
+  '_agnes/v1/admin.history.search': {
+    fileId: 'https://agnes.ai/schema/app-server-v1',
+    params: 'AdminHistoryParams',
+    result: 'AdminHistoryResult',
+  },
+  '_agnes/v1/admin.plan': {
+    fileId: 'https://agnes.ai/schema/app-server-v1',
+    params: 'AdminPlanParams',
+    result: 'AdminPlanResult',
+  },
   '_agnes/v1/sessionSelection.runtime': {
     fileId: RUNTIME_ADMIN_ID,
     params: 'RuntimeAdminEmpty',
@@ -6285,6 +6482,70 @@ const METHOD_DEF: Record<MethodName, MethodDefRef> = {
 }
 
 const METHOD_PARAMS_SAMPLE: Record<MethodName, Sample> = {
+  '_agnes/v1/admin.mcp.oauth.save': {
+    valid: {
+      serverId: 'github',
+      credential: {
+        provider: 'fixture',
+        accessToken: 'synthetic-access',
+        refreshToken: 'synthetic-refresh',
+        expiresAt: 0,
+        scope: [],
+        grantId: 'fixture-grant',
+      },
+    },
+    invalid: [
+      {
+        serverId: '../other',
+        credential: {
+          provider: 'fixture',
+          accessToken: 'synthetic-access',
+          refreshToken: 'synthetic-refresh',
+          expiresAt: 0,
+          scope: [],
+          grantId: 'fixture-grant',
+        },
+      },
+    ],
+    note: 'daemon-only OAuth credential persistence',
+  },
+  '_agnes/v1/admin.bundles.get': { valid: {}, invalid: [{ extra: 1 }], note: 'App Server boundary shape' },
+  '_agnes/v1/admin.bundles.save': {
+    valid: { revision: 0, bundles: [] },
+    invalid: [null],
+    note: 'App Server boundary shape',
+  },
+  '_agnes/v1/admin.composition.get': {
+    valid: {},
+    invalid: [{ preset: 'INVALID' }],
+    note: 'App Server boundary shape',
+  },
+  '_agnes/v1/admin.search.get': { valid: {}, invalid: [{ extra: 1 }], note: 'App Server boundary shape' },
+  '_agnes/v1/admin.search.save': {
+    valid: { provider: { id: 'p' } },
+    invalid: [null],
+    note: 'App Server boundary shape',
+  },
+  '_agnes/v1/admin.search.test': {
+    valid: { provider: 'p', query: 'q' },
+    invalid: [null],
+    note: 'App Server boundary shape',
+  },
+  '_agnes/v1/admin.context': {
+    valid: {},
+    invalid: [{ config: { maxBytes: 60001 } }],
+    note: 'App Server boundary shape',
+  },
+  '_agnes/v1/admin.history.search': {
+    valid: { query: '', title: '', workspace: '' },
+    invalid: [null],
+    note: 'App Server boundary shape',
+  },
+  '_agnes/v1/admin.plan': {
+    valid: { cwd: '/tmp', line: '/plan on' },
+    invalid: [null],
+    note: 'App Server boundary shape',
+  },
   '_agnes/v1/sessionSelection.runtime': {
     valid: {},
     invalid: [{ profile: 'other' }],
@@ -6535,6 +6796,57 @@ const METHOD_PARAMS_SAMPLE: Record<MethodName, Sample> = {
 }
 
 const METHOD_RESULT_SAMPLE: Partial<Record<MethodName, Sample>> = {
+  '_agnes/v1/admin.mcp.oauth.save': {
+    valid: {},
+    invalid: [{ extra: 1 }],
+    note: 'write acknowledges without returning a credential',
+  },
+  '_agnes/v1/admin.bundles.get': {
+    valid: { revision: 0, bundles: [], effect: 'restart-required' },
+    invalid: [null],
+    note: 'App Server boundary shape',
+  },
+  '_agnes/v1/admin.bundles.save': {
+    valid: { revision: 0, bundles: [], effect: 'restart-required' },
+    invalid: [null],
+    note: 'App Server boundary shape',
+  },
+  '_agnes/v1/admin.composition.get': {
+    valid: { status: 'live', validation: 'static', selection: {}, rows: [], sessions: [] },
+    invalid: [null],
+    note: 'App Server boundary shape',
+  },
+  '_agnes/v1/admin.search.get': { valid: {}, invalid: [null], note: 'App Server boundary shape' },
+  '_agnes/v1/admin.search.save': { valid: {}, invalid: [null], note: 'App Server boundary shape' },
+  '_agnes/v1/admin.search.test': { valid: {}, invalid: [null], note: 'App Server boundary shape' },
+  '_agnes/v1/admin.context': {
+    valid: {
+      config: {
+        rulesEnabled: true,
+        instructionFiles: [],
+        localInstructionFiles: [],
+        maxBytes: 0,
+        maxSourceBytes: 0,
+        timeEnabled: true,
+        timeZone: 'UTC',
+        refreshIntervalMs: 0,
+        customSkillRoots: [],
+      },
+      workspaces: [],
+    },
+    invalid: [null],
+    note: 'App Server boundary shape',
+  },
+  '_agnes/v1/admin.history.search': {
+    valid: { items: [], truncated: false },
+    invalid: [null],
+    note: 'App Server boundary shape',
+  },
+  '_agnes/v1/admin.plan': {
+    valid: { active: true, text: 'Plan mode is on' },
+    invalid: [null],
+    note: 'App Server boundary shape',
+  },
   '_agnes/v1/sessionSelection.runtime': {
     valid: {
       providers: [],

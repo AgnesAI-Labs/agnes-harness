@@ -1,5 +1,14 @@
+import { createRequire } from 'node:module'
 import { describe, expect, it } from 'vitest'
-import { AGNES_ERRORS, rpcError } from '../src/index.js'
+import {
+  AGNES_ERRORS,
+  APP_SERVER_SCHEMA,
+  AppServerError,
+  httpRpcError,
+  normalizeRpcError,
+  rpcError,
+  validateAgainst,
+} from '../src/index.js'
 
 describe('errors', () => {
   it('maps the twelve _agnes codes', () => {
@@ -31,4 +40,68 @@ describe('errors', () => {
       data: { code: 'UNKNOWN_KEY', key: 'seams' },
     })
   })
+})
+
+it('publishes safe, stable envelopes for every transport without leaking nested causes', () => {
+  const cause = {
+    code: 'CONFIG_CREDENTIAL_REJECTED',
+    message: 'fixture-secret',
+    stack: 'private-path',
+    data: { token: 'fixture-secret' },
+  }
+  const error = normalizeRpcError(
+    rpcError('SEMANTIC_REJECTED', { reason: 'CONFIG_CREDENTIAL_REJECTED', cause }),
+  )
+  expect(error).toMatchObject({
+    code: -32011,
+    message: 'SEMANTIC_REJECTED',
+    data: {
+      code: 'SEMANTIC_REJECTED',
+      cause: { code: 'CONFIG_CREDENTIAL_REJECTED' },
+      messageKey: 'appServer.errors.credentialRejected',
+      diagnosticId: expect.any(String),
+    },
+  })
+  expect(JSON.stringify(error)).not.toContain('fixture-secret')
+  expect(JSON.stringify(error)).not.toContain('private-path')
+  expect(validateAgainst(AppServerError, error).ok).toBe(true)
+  expect(normalizeRpcError(error)).toEqual(error)
+  const denied = httpRpcError(403, 'E_ADMIN_ORIGIN')
+  expect(denied).toMatchObject({ code: -32006, data: { messageKey: 'appServer.errors.forbidden' } })
+  expect(normalizeRpcError(rpcError('METHOD_NOT_FOUND'))).toHaveProperty(
+    'data.messageKey',
+    'appServer.errors.methodNotFound',
+  )
+  expect(
+    normalizeRpcError(rpcError('INTERNAL_ERROR', { cause: { code: 'untrusted-secret', message: 'secret' } })),
+  ).not.toHaveProperty('data.cause')
+  expect(normalizeRpcError(rpcError('INVALID_PARAMS', { code: 'PATTERN', path: '/serverId' }))).toMatchObject(
+    { code: -32602, data: { code: 'PATTERN', messageKey: 'appServer.errors.invalidParams' } },
+  )
+  expect(APP_SERVER_SCHEMA['x-version']).toBe(1)
+})
+
+it('exports independently resolvable JSON Schema for every method and the error envelope', () => {
+  const require = createRequire(import.meta.url)
+  const Ajv = require('ajv/dist/2020.js')
+  const ajv = new Ajv({ strict: false, validateFormats: false })
+  ajv.addSchema(APP_SERVER_SCHEMA)
+  const id = APP_SERVER_SCHEMA.$id as string
+  const catalog = APP_SERVER_SCHEMA['x-methods'] as Record<
+    string,
+    { params: { $ref: string }; result?: { $ref: string } }
+  >
+  for (const spec of Object.values(catalog)) {
+    expect(ajv.getSchema(id + spec.params.$ref)).toBeTypeOf('function')
+    if (spec.result) expect(ajv.getSchema(id + spec.result.$ref)).toBeTypeOf('function')
+  }
+  const check = ajv.getSchema(id + '#/$defs/AppServerError')
+  expect(check(normalizeRpcError(rpcError('AUTH_INVALID')))).toBe(true)
+  expect(
+    check({
+      code: -32007,
+      message: 'AUTH_INVALID',
+      data: { code: 'AUTH_INVALID', messageKey: 'unsafe.secret', diagnosticId: 'missing' },
+    }),
+  ).toBe(false)
 })

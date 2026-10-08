@@ -1,3 +1,4 @@
+import type { AppServerClientMethod, AppServerParams, AppServerResult } from '@agnes/protocol'
 // The client object: one connection, one handshake, one validated call path.
 // Everything above it (sessions, jobs, approvals) is built out of `call` / `notify`,
 // so schema checking and the lazy handshake happen in exactly one place.
@@ -598,6 +599,14 @@ export class Client {
       clearTimeout(timer)
       if (this.initAbort === abort) this.initAbort = undefined
     }
+  }
+
+  request<M extends AppServerClientMethod>(
+    method: M,
+    params: AppServerParams<M>,
+    options: CallOptions = {},
+  ): Promise<AppServerResult<M>> {
+    return this.call<AppServerResult<M>>(method, params, options)
   }
 
   async call<T>(method: string, params: unknown, o: CallOptions = {}): Promise<T> {

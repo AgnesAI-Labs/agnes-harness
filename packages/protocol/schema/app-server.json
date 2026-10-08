@@ -1,0 +1,776 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agnes.ai/schema/app-server-v1",
+  "title": "AGH App Server v1",
+  "$defs": {
+    "JsonValue": {
+      "anyOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "number"
+        },
+        {
+          "type": "string"
+        },
+        {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/JsonValue"
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          }
+        }
+      ]
+    },
+    "AppServerErrorCause": {
+      "type": "object",
+      "properties": {
+        "code": {
+          "enum": [
+            "CONFIG_AUTH_BUSY",
+            "CONFIG_AUTH_CANCELLED",
+            "CONFIG_AUTH_EXPIRED",
+            "CONFIG_AUTH_FAILED",
+            "CONFIG_AUTH_UNAVAILABLE",
+            "CONFIG_CREDENTIAL_INVALID",
+            "CONFIG_CREDENTIAL_NO_SPACE",
+            "CONFIG_CREDENTIAL_PERMISSIONS",
+            "CONFIG_CREDENTIAL_READ_ONLY",
+            "CONFIG_CREDENTIAL_REJECTED",
+            "CONFIG_CREDENTIAL_REQUIRED",
+            "CONFIG_CREDENTIAL_STORE",
+            "CONFIG_ENDPOINT_OVERRIDE_UNSUPPORTED",
+            "CONFIG_FAILED",
+            "CONFIG_INVALID_INPUT",
+            "CONFIG_INVALID_STATE",
+            "CONFIG_MODEL_UNAVAILABLE",
+            "CONFIG_PERSIST_FAILED",
+            "CONFIG_PROVIDER_UNAVAILABLE",
+            "CONFIG_REVISION_CONFLICT",
+            "CONFIG_SUBSCRIPTION_AUTH",
+            "CONFIG_SUBSCRIPTION_FAILED",
+            "CONFIG_SUBSCRIPTION_MODEL",
+            "CONFIG_SUBSCRIPTION_QUOTA",
+            "CONFIG_SUBSCRIPTION_RATE_LIMIT",
+            "CONFIG_SUBSCRIPTION_TIMEOUT",
+            "CONFIG_TEST_FAILED",
+            "CONFIG_UNKNOWN_PROVIDER",
+            "E_GENERATION_BINDING_CONFLICT",
+            "E_GENERATION_DISPOSE",
+            "E_GENERATION_FACTORY_INCOMPATIBLE",
+            "E_GENERATION_FACTORY_UNAVAILABLE",
+            "E_GENERATION_INCOMPATIBLE",
+            "E_GENERATION_LOOP_INCOMPATIBLE",
+            "E_GENERATION_MIGRATION_UNAVAILABLE",
+            "E_GENERATION_PIN_MISSING",
+            "E_GENERATION_RESOURCE_INTEGRITY",
+            "E_GENERATION_RESTART_REQUIRED",
+            "E_GENERATION_SESSION_OPEN",
+            "E_GENERATION_SKILLS",
+            "E_GENERATION_TARGET_MISSING",
+            "E_PROVIDER_DUPLICATE",
+            "E_PROVIDER_INCOMPATIBLE",
+            "E_PROVIDER_INVALID",
+            "E_PROVIDER_UNAVAILABLE",
+            "E_PROVIDER_UNKNOWN",
+            "SEARCH_FAILED",
+            "SEARCH_INVALID",
+            "SEARCH_NOT_CONFIGURED",
+            "SEARCH_RATE_LIMITED",
+            "SEARCH_ROUTE",
+            "SEARCH_TIMEOUT"
+          ]
+        }
+      },
+      "required": ["code"],
+      "additionalProperties": false
+    },
+    "AppServerError": {
+      "type": "object",
+      "properties": {
+        "code": {
+          "type": "integer"
+        },
+        "message": {
+          "type": "string",
+          "maxLength": 256
+        },
+        "data": {
+          "type": "object",
+          "properties": {
+            "code": {
+              "type": "string",
+              "maxLength": 128
+            },
+            "messageKey": {
+              "enum": [
+                "appServer.errors.internal",
+                "appServer.errors.invalidRequest",
+                "appServer.errors.invalidParams",
+                "appServer.errors.methodNotFound",
+                "appServer.errors.forbidden",
+                "appServer.errors.auth",
+                "appServer.errors.busy",
+                "appServer.errors.notFound",
+                "appServer.errors.conflict",
+                "appServer.errors.timeout",
+                "appServer.errors.unavailable",
+                "appServer.errors.credentialRequired",
+                "appServer.errors.credentialRejected",
+                "appServer.errors.credentialStore",
+                "appServer.errors.provider",
+                "appServer.errors.generation",
+                "appServer.errors.rejected"
+              ]
+            },
+            "diagnosticId": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$"
+            },
+            "cause": {
+              "$ref": "#/$defs/AppServerErrorCause"
+            }
+          },
+          "required": ["code", "messageKey", "diagnosticId"],
+          "additionalProperties": true
+        }
+      },
+      "required": ["code", "message", "data"],
+      "additionalProperties": false
+    },
+    "AdminEmpty": {
+      "type": "object",
+      "properties": {},
+      "required": [],
+      "additionalProperties": false
+    },
+    "AdminBundlesSave": {
+      "type": "object",
+      "properties": {
+        "revision": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "bundles": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "maxLength": 512
+          },
+          "maxItems": 64
+        }
+      },
+      "required": ["revision", "bundles"],
+      "additionalProperties": false
+    },
+    "AdminBundlesResult": {
+      "type": "object",
+      "properties": {
+        "revision": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "bundles": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "maxLength": 512
+          },
+          "maxItems": 64
+        },
+        "effect": {
+          "const": "restart-required"
+        },
+        "catalog": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "maxLength": 512
+              },
+              "sourcePackage": {
+                "type": "string",
+                "maxLength": 256
+              }
+            },
+            "required": ["id", "sourcePackage"],
+            "additionalProperties": false
+          },
+          "maxItems": 4096
+        }
+      },
+      "required": ["revision", "bundles", "effect"],
+      "additionalProperties": false
+    },
+    "AdminCompositionParams": {
+      "type": "object",
+      "properties": {
+        "preset": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9-]{0,63}$"
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    },
+    "AdminCompositionResult": {
+      "type": "object",
+      "properties": {
+        "status": {
+          "enum": ["live", "desired"]
+        },
+        "validation": {
+          "const": "static"
+        },
+        "selection": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          }
+        },
+        "rows": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "maxItems": 4096
+        },
+        "sessions": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "maxItems": 4096
+        },
+        "profile": {
+          "type": "string",
+          "maxLength": 4096
+        },
+        "preset": {
+          "type": "string",
+          "maxLength": 4096
+        },
+        "hash": {
+          "type": "string",
+          "maxLength": 4096
+        },
+        "bundles": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "maxLength": 512
+          },
+          "maxItems": 64
+        },
+        "sessionBundles": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "maxLength": 512
+          },
+          "maxItems": 64
+        },
+        "sources": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          }
+        },
+        "toolScope": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          }
+        },
+        "capabilities": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          }
+        },
+        "packages": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "maxItems": 4096
+        },
+        "pluginOverrides": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "maxItems": 4096
+        }
+      },
+      "required": ["status", "validation", "selection", "rows", "sessions"],
+      "additionalProperties": false
+    },
+    "AdminSearchSave": {
+      "type": "object",
+      "properties": {
+        "provider": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          }
+        },
+        "defaultProvider": {
+          "anyOf": [
+            {
+              "type": "string",
+              "maxLength": 64
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "apiKey": {
+          "type": "string",
+          "maxLength": 65536
+        }
+      },
+      "required": ["provider"],
+      "additionalProperties": false
+    },
+    "AdminSearchTest": {
+      "type": "object",
+      "properties": {
+        "provider": {
+          "type": "string",
+          "maxLength": 64
+        },
+        "query": {
+          "type": "string",
+          "maxLength": 500
+        }
+      },
+      "required": ["provider", "query"],
+      "additionalProperties": false
+    },
+    "AdminSearchResult": {
+      "type": "object",
+      "additionalProperties": {
+        "$ref": "#/$defs/JsonValue"
+      }
+    },
+    "AdminContextConfig": {
+      "type": "object",
+      "properties": {
+        "rulesEnabled": {
+          "type": "boolean"
+        },
+        "instructionFiles": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "maxLength": 1024
+          },
+          "maxItems": 128
+        },
+        "localInstructionFiles": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "maxLength": 1024
+          },
+          "maxItems": 128
+        },
+        "maxBytes": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 60000
+        },
+        "maxSourceBytes": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1048576
+        },
+        "timeEnabled": {
+          "type": "boolean"
+        },
+        "timeZone": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "refreshIntervalMs": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 86400000
+        },
+        "customSkillRoots": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "maxLength": 4096
+          },
+          "maxItems": 128
+        }
+      },
+      "required": [
+        "rulesEnabled",
+        "instructionFiles",
+        "localInstructionFiles",
+        "maxBytes",
+        "maxSourceBytes",
+        "timeEnabled",
+        "timeZone",
+        "refreshIntervalMs",
+        "customSkillRoots"
+      ],
+      "additionalProperties": false
+    },
+    "AdminContextParams": {
+      "type": "object",
+      "properties": {
+        "cwd": {
+          "type": "string",
+          "maxLength": 4096
+        },
+        "config": {
+          "type": "object",
+          "properties": {
+            "rulesEnabled": {
+              "type": "boolean"
+            },
+            "instructionFiles": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "maxLength": 1024
+              },
+              "maxItems": 128
+            },
+            "localInstructionFiles": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "maxLength": 1024
+              },
+              "maxItems": 128
+            },
+            "maxBytes": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 60000
+            },
+            "maxSourceBytes": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 1048576
+            },
+            "timeEnabled": {
+              "type": "boolean"
+            },
+            "timeZone": {
+              "type": "string",
+              "maxLength": 128
+            },
+            "refreshIntervalMs": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 86400000
+            },
+            "customSkillRoots": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "maxLength": 4096
+              },
+              "maxItems": 128
+            }
+          },
+          "required": [],
+          "additionalProperties": false
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    },
+    "AdminContextResult": {
+      "type": "object",
+      "properties": {
+        "config": {
+          "$ref": "#/$defs/AdminContextConfig"
+        },
+        "workspaces": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "path": {
+                "type": "string",
+                "maxLength": 4096
+              },
+              "available": {
+                "type": "boolean"
+              }
+            },
+            "required": ["path", "available"],
+            "additionalProperties": false
+          },
+          "maxItems": 4096
+        },
+        "rules": {
+          "type": "object",
+          "properties": {
+            "root": {
+              "type": "string",
+              "maxLength": 4096
+            },
+            "files": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "path": {
+                    "type": "string",
+                    "maxLength": 4096
+                  },
+                  "scope": {
+                    "type": "string",
+                    "maxLength": 4096
+                  },
+                  "content": {
+                    "type": "string",
+                    "maxLength": 60000
+                  },
+                  "trust": {
+                    "enum": ["user", "repository"]
+                  }
+                },
+                "required": ["path", "scope", "content", "trust"],
+                "additionalProperties": false
+              },
+              "maxItems": 4096
+            },
+            "skipped": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "maxLength": 4096
+              },
+              "maxItems": 4096
+            },
+            "content": {
+              "type": "string",
+              "maxLength": 60000
+            }
+          },
+          "required": ["root", "files", "skipped", "content"],
+          "additionalProperties": false
+        }
+      },
+      "required": ["config", "workspaces"],
+      "additionalProperties": false
+    },
+    "AdminHistoryParams": {
+      "type": "object",
+      "properties": {
+        "query": {
+          "type": "string",
+          "maxLength": 256
+        },
+        "title": {
+          "type": "string",
+          "maxLength": 256
+        },
+        "workspace": {
+          "type": "string",
+          "maxLength": 4096
+        },
+        "cursor": {
+          "type": "string",
+          "maxLength": 65536
+        }
+      },
+      "required": ["query", "title", "workspace"],
+      "additionalProperties": false
+    },
+    "AdminHistoryResult": {
+      "type": "object",
+      "properties": {
+        "items": {
+          "type": "array",
+          "maxItems": 1000,
+          "items": {
+            "type": "object",
+            "properties": {
+              "sessionId": {
+                "type": "string",
+                "maxLength": 4096
+              },
+              "title": {
+                "type": "string",
+                "maxLength": 65536
+              },
+              "workspace": {
+                "type": "string",
+                "maxLength": 4096
+              },
+              "snippet": {
+                "type": "string",
+                "maxLength": 65536
+              },
+              "ts": {
+                "type": "string",
+                "maxLength": 128
+              },
+              "seq": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "type": {
+                "type": "string",
+                "maxLength": 128
+              }
+            },
+            "required": ["sessionId", "title", "workspace", "snippet", "ts"],
+            "additionalProperties": false
+          }
+        },
+        "next": {
+          "type": "string",
+          "maxLength": 65536
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": ["items", "truncated"],
+      "additionalProperties": false
+    },
+    "AdminPlanParams": {
+      "type": "object",
+      "properties": {
+        "cwd": {
+          "type": "string",
+          "maxLength": 4096
+        },
+        "line": {
+          "type": "string",
+          "maxLength": 8192,
+          "pattern": "^\\s*/plan(?:\\s|$)"
+        }
+      },
+      "required": ["cwd", "line"],
+      "additionalProperties": false
+    },
+    "AdminPlanResult": {
+      "type": "object",
+      "properties": {
+        "active": {
+          "type": "boolean"
+        },
+        "text": {
+          "type": "string",
+          "maxLength": 8192
+        }
+      },
+      "required": ["active", "text"],
+      "additionalProperties": false
+    },
+    "AdminMcpOAuthSave": {
+      "type": "object",
+      "properties": {
+        "serverId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-z][a-z0-9._-]{0,127}$"
+        },
+        "credential": {
+          "type": "object",
+          "properties": {
+            "provider": {
+              "type": "string",
+              "maxLength": 4096
+            },
+            "accessToken": {
+              "type": "string",
+              "maxLength": 65536
+            },
+            "refreshToken": {
+              "type": "string",
+              "maxLength": 65536
+            },
+            "expiresAt": {
+              "type": "number",
+              "minimum": 0
+            },
+            "scope": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "maxLength": 1024
+              },
+              "maxItems": 128
+            },
+            "grantId": {
+              "type": "string",
+              "maxLength": 512
+            }
+          },
+          "required": ["provider", "accessToken", "refreshToken", "expiresAt", "scope", "grantId"],
+          "additionalProperties": false
+        }
+      },
+      "required": ["serverId", "credential"],
+      "additionalProperties": false
+    }
+  },
+  "x-methods": {
+    "_agnes/v1/admin.bundles.get": {
+      "params": "AdminEmpty",
+      "result": "AdminBundlesResult"
+    },
+    "_agnes/v1/admin.bundles.save": {
+      "params": "AdminBundlesSave",
+      "result": "AdminBundlesResult"
+    },
+    "_agnes/v1/admin.composition.get": {
+      "params": "AdminCompositionParams",
+      "result": "AdminCompositionResult"
+    },
+    "_agnes/v1/admin.search.get": {
+      "params": "AdminEmpty",
+      "result": "AdminSearchResult"
+    },
+    "_agnes/v1/admin.search.save": {
+      "params": "AdminSearchSave",
+      "result": "AdminSearchResult"
+    },
+    "_agnes/v1/admin.search.test": {
+      "params": "AdminSearchTest",
+      "result": "AdminSearchResult"
+    },
+    "_agnes/v1/admin.context": {
+      "params": "AdminContextParams",
+      "result": "AdminContextResult"
+    },
+    "_agnes/v1/admin.history.search": {
+      "params": "AdminHistoryParams",
+      "result": "AdminHistoryResult"
+    },
+    "_agnes/v1/admin.plan": {
+      "params": "AdminPlanParams",
+      "result": "AdminPlanResult"
+    },
+    "_agnes/v1/admin.mcp.oauth.save": {
+      "params": "AdminMcpOAuthSave",
+      "result": "AdminEmpty"
+    }
+  }
+}

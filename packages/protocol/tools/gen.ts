@@ -12,6 +12,7 @@ const TARGETS: Array<{
   module: string
   imports?: ImportSpec[]
 }> = [
+  { schema: 'schema/app-server.json', out: 'gen/ts/app-server.ts', module: 'AppServerV1' },
   { schema: 'schema/worker.json', out: 'gen/ts/worker.ts', module: 'WorkerSchema' },
   {
     schema: 'schema/resource-control.json',
@@ -379,7 +380,19 @@ for (const t of TARGETS) {
   // UNSUPPORTED_NODES keys are repo-root-relative paths (the same granularity as the exemption lists
   // in tools/guards). `pkg` is the absolute path to packages/protocol, so prefixing the fixed segment
   // is enough — no need to resolve the repo root a second time.
-  const src = generateModule(doc, t.module, `packages/protocol/${t.schema}`)
+  let src = generateModule(doc, t.module, `packages/protocol/${t.schema}`)
+  if (t.module === 'AppServerV1') {
+    const methods = doc['x-methods'] as Record<string, { params: string; result: string }>
+    src +=
+      '\nexport const ADMIN_METHODS = {\n' +
+      Object.entries(methods)
+        .map(
+          ([name, spec]) =>
+            `  ${JSON.stringify(name)}: {kind:'request',direction:'c2s',params:${spec.params},result:${spec.result}},`,
+        )
+        .join('\n') +
+      '\n} as const\n'
+  }
   const outPath = join(pkg, t.out)
   const current = existsSync(outPath) ? readFileSync(outPath, 'utf8') : ''
   if (current === src) continue
@@ -396,4 +409,6 @@ for (const t of TARGETS) {
 // stale page is as wrong as a stale module, and it is the only place the declaration tables are
 // readable as prose.
 dirty += writeDocs(check)
+const { writeAppServerArtifacts } = await import('./gen-app-server.js')
+dirty += writeAppServerArtifacts(pkg, check)
 if (check && dirty) process.exit(1)
