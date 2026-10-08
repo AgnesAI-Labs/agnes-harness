@@ -124,7 +124,7 @@ jobs:
         run: pnpm exec vitest run tools/guards/src --maxWorkers=1
       - name: Linux kernel identity regression
         if: ${{ !cancelled() && steps.native.outcome == 'success' }}
-        run: pnpm exec vitest run packages/host-infrastructure/test/process-identity-linux.e2e.test.ts packages/base/extensions/sandbox/test/backend-linux.e2e.test.ts packages/package-manager/test/local-watcher.slow.test.ts packages/host-infrastructure/test/adapters/storage-lock.e2e.test.ts --maxWorkers=1
+        run: pnpm exec vitest run packages/host-infrastructure/test/process-identity-linux.e2e.test.ts packages/base/extensions/sandbox/test/backend-linux.e2e.test.ts packages/host-infrastructure/test/sandbox-read-paths.e2e.test.ts packages/package-manager/test/local-watcher.slow.test.ts packages/host-infrastructure/test/adapters/storage-lock.e2e.test.ts --maxWorkers=1
   linux-fast:
     name: Linux fast tests (${{ matrix.shard }}/6)
     strategy:

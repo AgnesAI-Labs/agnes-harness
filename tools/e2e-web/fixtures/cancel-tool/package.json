@@ -1,0 +1,19 @@
+{
+  "name": "@agnes-e2e/cancel-tool",
+  "version": "1.0.0",
+  "type": "module",
+  "license": "MIT",
+  "exports": "./index.mjs",
+  "agnes": {
+    "plugins": [
+      {
+        "export": "cancelTool",
+        "apiRange": "^1.4.0",
+        "id": "ext:agnes-e2e/cancel-tool",
+        "inject": [
+          "extension"
+        ]
+      }
+    ]
+  }
+}

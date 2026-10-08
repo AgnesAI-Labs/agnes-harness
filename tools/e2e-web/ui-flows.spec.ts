@@ -54,7 +54,11 @@ test('UI first run, Agent selection, demo read/cancel, account save and restart 
   const demo = await current(page, runtime)
   expect(JSON.stringify(await toolResult(demo, 'read'))).toContain('Synthetic delivery')
   await expect(await detail(page, 'report.md')).toContainText('Synthetic delivery')
-  const cancelled = await send(page, 'call shell {"command":"sleep 30","timeoutToBackground":false}')
+  // Cancellation must exercise an in-flight tool even when the OS command sandbox is unavailable.
+  await install(await runtime.connect(), 'tools/e2e-web/fixtures/cancel-tool')
+  await fresh(page)
+  const cancelled = await send(page, 'call e2e_wait_for_cancel {}')
+  await expect(cancelled).toHaveAttribute('data-status', 'running')
   await expect(cancelled.getByTestId('tool-detail-toggle')).toBeVisible()
   await page.getByRole('button', { name: 'Stop', exact: true }).click()
   await expect(cancelled).toHaveAttribute('data-status', 'cancelled')
