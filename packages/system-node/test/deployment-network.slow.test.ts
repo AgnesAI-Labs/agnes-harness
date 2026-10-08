@@ -82,7 +82,7 @@ it.each(['request', 'idle', 'abort', 'cancel'] as const)(
     const controller = new AbortController()
     const work = client
       .fetch(endpoint, { signal: controller.signal })
-      .then((response) => (kind === 'cancel' ? response.body?.cancel() : response.text()))
+      .then(async (response) => (kind === 'cancel' ? await response.body?.cancel() : await response.text()))
     if (kind === 'abort') controller.abort()
     if (kind === 'cancel') await expect(work).resolves.toBeUndefined()
     else await expect(work).rejects.toThrow()
