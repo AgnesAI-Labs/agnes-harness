@@ -30,12 +30,6 @@
   "exclude": ["fixtures/**"],
   "references": [
     {
-      "path": "../../packages/base"
-    },
-    {
-      "path": "../../packages/host"
-    },
-    {
       "path": "../../packages/sdk"
     }
   ]
