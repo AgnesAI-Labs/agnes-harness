@@ -1,4 +1,11 @@
-import type { Billing, ModelRecord, ModelSettings, ThinkingLevel, UsageView } from '@agnes/protocol'
+import type {
+  Billing,
+  ModelRecord,
+  ModelSettings,
+  SessionStart,
+  ThinkingLevel,
+  UsageView,
+} from '@agnes/protocol'
 import { contextAnchorOf } from '../reduce/anchor.js'
 import type { CostLedger } from '../reduce/shapes.js'
 import type { Event, Seq } from '../types.js'
@@ -23,6 +30,8 @@ export function contextTokensAtCut(events: Iterable<Event>, lane: string, upto: 
   let last: { seq: Seq; total: number } | undefined
   for (const event of prefix) {
     if ((event.lane ?? 'main') !== lane) continue
+    const start = event.type === 'session/start' ? (event.data as unknown as SessionStart) : undefined
+    if (start?.parent && start.delegation?.kind === 'spawn') last = undefined
     last = contextAnchorOf(event) ?? last
   }
   let total = last?.total ?? 0

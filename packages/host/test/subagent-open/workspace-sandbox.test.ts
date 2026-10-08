@@ -44,6 +44,7 @@ class RoutedProvider implements Provider {
   private readonly parent: ScriptedProvider
   private readonly child: ScriptedProvider
   readonly childKeys: string[] = []
+  readonly childRequests: RequestBody[] = []
 
   /** Holds every child model request until released. */
   childGate: Promise<void> = Promise.resolve()
@@ -61,6 +62,7 @@ class RoutedProvider implements Provider {
   infer(req: RequestBody, opts: { signal: AbortSignal; toolNames: string[] }) {
     if (req.sessionKey === PARENT) return this.parent.infer(req, opts)
     this.childKeys.push(req.sessionKey)
+    this.childRequests.push(req)
     const gate = this.childGate
     const inner = this.child.infer(req, opts)
     return (async function* () {
@@ -173,10 +175,17 @@ describe('subagents in a workspace-bound Host session', () => {
         },
         text('parent collected'),
       ],
-      [text('three files')],
+      [
+        toolCall('read', { path: 'probe.txt' }),
+        (req) => {
+          expect(JSON.stringify(req.messages)).toContain('child workspace input')
+          return text('three files')
+        },
+      ],
     )
-    const { host, session, dataDir } = await workspaceHost(provider)
+    const { host, session, dataDir, root } = await workspaceHost(provider)
     try {
+      writeFileSync(join(root, 'probe.txt'), 'child workspace input')
       const out = await prompt(session, 'spawn and collect')
       expect(out.reason).toBe('completed')
       const [spawn, collect] = await toolResults(session)
@@ -184,6 +193,15 @@ describe('subagents in a workspace-bound Host session', () => {
       expect(childKey).not.toBe('')
       expect(collect?.isError).not.toBe(true)
       expect(textOf(collect)).toBe('three files')
+      const req = provider.childRequests[0]
+      if (!req) throw new Error('missing child request')
+      // The parent's spawn call is still executing when this first child request is built.
+      expect(req.tools.some((tool) => tool.name === 'read')).toBe(true)
+      expect(req.messages.some((message) => message.role === 'assistant')).toBe(false)
+      expect(JSON.stringify(req.messages)).not.toContain('spawn and collect')
+      expect(JSON.stringify(req.messages)).toContain('count the files')
+      expect(JSON.stringify(req.messages)).toContain('delegated child agent')
+      expect((await childRecord(dataDir, childKey))?.cwd).toBe(root)
       expect(await childRecord(dataDir, childKey)).toMatchObject({
         creationPhase: 'committed',
         state: 'ready',

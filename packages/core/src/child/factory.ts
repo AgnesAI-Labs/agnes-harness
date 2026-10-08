@@ -597,7 +597,13 @@ export class KernelChildren implements ChildrenFactory {
     const body = opts.input ?? record.inputText
     if (!opts.recovering && body && !inbox?.items?.length) {
       await child.enqueue('next-turn', {
-        content: [{ type: 'text', text: body }],
+        content: [
+          {
+            type: 'text',
+            text: 'You are a delegated child agent. Complete the task below in this session using its disclosed tools and working directory. Return your result to the delegating agent; do not repeat the parent orchestration. Any inherited conversation is background, not your task.',
+          },
+          { type: 'text', text: body },
+        ],
         actor: child.d.actor,
       })
     }

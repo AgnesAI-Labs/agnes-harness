@@ -11,6 +11,7 @@ import {
   type ModelSettings,
   normalize,
   type OpState,
+  type SessionStart,
   type SlotFillView,
   type ThinkingLevel,
   type ToolCall,
@@ -569,6 +570,10 @@ export class UIProjectionCell {
     this.cacheHealth = applyCacheHealthEvent(this.cacheHealth, event, this.lane)
     this.contextSurface.push([event])
     if (event.type === 'session/start' && (event.data as { parent?: unknown } | null)?.parent) {
+      if ((event.data as unknown as SessionStart).delegation?.kind === 'spawn') {
+        this.contextBase = undefined
+        this.contextTokensValue = 0
+      }
       Object.assign(this.usageTotals, emptyTotals())
       this.seenCostEffects.clear()
       this.usageCredits = 0

@@ -172,7 +172,7 @@ export function reduce(prev: LedgerState, raw: Event): LedgerState {
       const start = d as unknown as SessionStart
       if (start.parent) {
         // A fork starts these over; lastTurn, planItems, artifactJobs, harnessEntries and the last
-        // ledger tokens carry across from the parent.
+        // ledger tokens carry across from the parent, except for a fresh spawned conversation.
         reset('registers.budgetState')
         reset('registers.inbox')
         reset('openTurn')
@@ -185,6 +185,7 @@ export function reduce(prev: LedgerState, raw: Event): LedgerState {
         s.decisions = ChunkedMap.empty()
         s.toolCalls = ChunkedMap.empty()
         s.creditsUsed = 0
+        if (start.delegation?.kind === 'spawn') s.lastLedgerTokens = null
       }
       s.session = { ...start, ...(start.loop ? { loop: { ...start.loop } } : {}) }
       break

@@ -1,3 +1,4 @@
+import type { SessionStart } from '@agnes/protocol'
 import { CoreError, type Event, type Seq } from '../types.js'
 
 /**
@@ -19,7 +20,7 @@ export type SurfaceSnapshot = {
   byId: ReadonlyMap<Seq, Event>
 }
 
-/** The only three event types the model sees, and therefore the only ones the surface carries. */
+/** Message types carried by the surface; delegated session starts also reset its scope. */
 const KIND: Record<string, SurfaceNode['kind']> = {
   'user/message': 'user',
   'assistant/message': 'assistant',
@@ -32,6 +33,16 @@ const KIND: Record<string, SurfaceNode['kind']> = {
  * generation counter should count — an event whose range no longer resolves changes nothing.
  */
 function applyEvent(nodes: SurfaceNode[], e: Event, pins: Set<Seq>): { changed: boolean; replaced: boolean } {
+  if (e.type === 'session/start') {
+    const start = e.data as unknown as SessionStart
+    if (start.parent && start.delegation?.kind === 'spawn') {
+      // Ancestry remains in the ledger, but a spawned task owns a fresh conversation.
+      // In particular, the parent's still-running spawn/workflow is not a child tool call.
+      const changed = nodes.length > 0
+      nodes.length = 0
+      return { changed, replaced: changed }
+    }
+  }
   const kind = KIND[e.type]
   if (!kind) return { changed: false, replaced: false }
   if (typeof e.surfaceOp === 'object' && e.surfaceOp.op === 'replace') {
@@ -126,7 +137,7 @@ let seedSurfaceImpl: (lane: string, snap: SurfaceSnapshot, seq: Seq) => SurfaceC
 
 /**
  * The surface of one lane, maintained as rows arrive rather than refolded per read. `replaceGeneration`
- * counts the masks actually applied, so a consumer caching anything derived from the surface can tell
+ * counts masks and scope resets actually applied, so a consumer caching the surface can tell
  * an append from a rewrite.
  */
 export class SurfaceCache {

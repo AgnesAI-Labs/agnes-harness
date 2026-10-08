@@ -59,6 +59,23 @@ const res = (id: string, extra: Partial<Event> = {}) =>
   )
 
 describe('surface', () => {
+  it.each(['spawn', 'fork'] as const)('scopes a delegated %s conversation on replay', (kind) => {
+    seq = 0
+    const inherited = [user('parent task'), asst('pending parent orchestration')]
+    const start = ev('session/start', { parent: { key: 'parent', boundarySeq: seq }, delegation: { kind } })
+    const own = user('child task')
+    const events = [...inherited, start, own]
+    const expected = kind === 'spawn' ? [own.seq] : [...inherited.map((e) => e.seq), own.seq]
+    const cache = new SurfaceCache('main')
+    cache.push(events)
+    expect(cache.nodes().map((node) => node.seq)).toEqual(expected)
+    expect(computeSurface(events).map((node) => node.seq)).toEqual(expected)
+    expect(inherited.map((e) => e.data)).toEqual([
+      { content: [{ type: 'text', text: 'parent task' }] },
+      { content: [{ type: 'text', text: 'pending parent orchestration' }], stopReason: 'end_turn' },
+    ])
+  })
+
   it('keeps the three visible types in order and ignores others', () => {
     seq = 0
     const events = [

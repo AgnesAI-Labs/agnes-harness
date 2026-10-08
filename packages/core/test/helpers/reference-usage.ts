@@ -1,7 +1,7 @@
-// The usage bookkeeping the UI cell kept before it stopped copying per row, kept verbatim as the
-// reference the equivalence tests compare against: cache-health's seen-effect set copied on every
+// The usage bookkeeping the UI cell kept before it stopped copying per row, updated for fresh
+// spawned conversations: cache-health's seen-effect set copied on every
 // inference cost row, and the surface rebuilt as a new array for every node.
-import type { CostLedger, RequestHeader } from '@agnes/protocol'
+import type { CostLedger, RequestHeader, SessionStart } from '@agnes/protocol'
 import type { CacheHealthState, CacheInvalidationRecord } from '../../src/project/cache-health.js'
 import type { SurfaceNode } from '../../src/project/surface.js'
 import type { Event, Seq } from '../../src/types.js'
@@ -113,6 +113,8 @@ export function referenceApplyEvent(
   e: Event,
   pins: Set<Seq>,
 ): { nodes: SurfaceNode[]; replaced: boolean } {
+  const start = e.type === 'session/start' ? (e.data as unknown as SessionStart) : undefined
+  if (start?.parent && start.delegation?.kind === 'spawn') return { nodes: [], replaced: nodes.length > 0 }
   const kind = KIND[e.type]
   if (!kind) return { nodes, replaced: false }
   if (typeof e.surfaceOp === 'object' && e.surfaceOp.op === 'replace') {

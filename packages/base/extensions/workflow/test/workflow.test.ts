@@ -79,8 +79,14 @@ it.each(['completed', 'idle'] as const)(
     const out = await f.tools.get('workflow')!.execute({ name: 'report', stages }, f.ctx)
     expect(out.isError).toBe(false)
     expect(f.tasks).toHaveLength(3)
-    expect(f.tasks[2]).toContain('child-1 answer')
-    expect(f.tasks[2]).toContain('child-2 answer')
+    expect(f.tasks.slice(0, 2)).toEqual(['Research A', 'Research B'])
+    expect(f.tasks[2]).toBe(
+      'Combine findings\nPrevious stage results:\n' +
+        JSON.stringify([
+          { name: 'A', text: 'child-1 answer' },
+          { name: 'B', text: 'child-2 answer' },
+        ]),
+    )
     const run = Object.values(f.persisted().runs)[0]!
     expect(run.status).toBe('completed')
     expect(run.stages[0]?.members.map((m) => m.childKey)).toEqual(['child-1', 'child-2'])

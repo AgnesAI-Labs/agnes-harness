@@ -50,6 +50,13 @@ before its identity is recorded, resume refuses another dispatch. Reconcile that
 ambiguous child before starting a new run. Cancellation cancels accepted
 children; a cancelled or failed run cannot be resumed.
 
+A spawned in-process child starts with its own task conversation. Its ledger keeps the parent
+ancestry for audit, but the model does not receive the parent's in-flight tool calls or prior
+conversation. A forked child inherits the prefix captured before its delegating tool call; its
+new task identifies it as the child. Both retain the selected code generation, tool filters,
+workspace isolation and permission limits. Workflow stages pass the preceding stage's named
+results explicitly in the next child's task, rather than relying on inherited conversation.
+
 The Web run card groups members by stage. Expand a stage to see member status
 and its child-session link. In-process children currently lack daemon session
 adoption and ownership registration, so opening these links through the daemon
