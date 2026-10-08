@@ -1,75 +1,27 @@
 {
-  "@agnes/e2e-web": [
-    "@agnes/sdk",
-    "@agnes/protocol"
-  ],
+  "@agnes/e2e-web": ["@agnes/sdk", "@agnes/protocol"],
   "@agnes/cosmokit": [],
-  "@agnes/cordis": [
-    "@agnes/cosmokit"
-  ],
-  "@agnes/cordis-loader": [
-    "@agnes/cordis"
-  ],
-  "@agnes/plugin-runtime": [
-    "@agnes/cordis",
-    "@agnes/cordis-loader",
-    "@agnes/extension-api"
-  ],
+  "@agnes/cordis": ["@agnes/cosmokit"],
+  "@agnes/cordis-loader": ["@agnes/cordis"],
+  "@agnes/plugin-runtime": ["@agnes/cordis", "@agnes/cordis-loader", "@agnes/extension-api"],
   "@agnes/web-slots": [],
-  "@agnes/web-ui": [
-    "@agnes/protocol",
-    "@agnes/protocol-validation"
-  ],
-  "@agnes/web-client": [
-    "@agnes/cordis",
-    "@agnes/web-slots",
-    "@agnes/protocol",
-    "@agnes/sdk"
-  ],
-  "@agnes/web-units": [
-    "@agnes/protocol",
-    "@agnes/protocol-validation",
-    "@agnes/web-slots",
-    "@agnes/web-ui"
-  ],
+  "@agnes/web-ui": ["@agnes/protocol", "@agnes/protocol-validation"],
+  "@agnes/web-client": ["@agnes/cordis", "@agnes/web-slots", "@agnes/protocol", "@agnes/sdk"],
+  "@agnes/web-units": ["@agnes/protocol", "@agnes/protocol-validation", "@agnes/web-slots", "@agnes/web-ui"],
   "@agnes/resource-control-contracts": [],
-  "@agnes/protocol": [
-    "@agnes/resource-control-contracts",
-    "@agnes/protocol-validation"
-  ],
+  "@agnes/protocol": ["@agnes/resource-control-contracts", "@agnes/protocol-validation"],
   "@agnes/protocol-validation": [],
   "@agnes/error-sanitization": [],
-  "@agnes/package-isolation": [
-    "@agnes/system-node"
-  ],
-  "@agnes/web-server": [
-    "@agnes/protocol",
-    "@agnes/history-index"
-  ],
+  "@agnes/package-isolation": ["@agnes/system-node"],
+  "@agnes/web-server": ["@agnes/protocol", "@agnes/history-index"],
   "@agnes/web-admin-frame": [],
-  "@agnes/package-admin-client-node": [
-    "@agnes/protocol"
-  ],
-  "@agnes/resource-control-runtime": [
-    "@agnes/cordis",
-    "@agnes/protocol"
-  ],
-  "@agnes/resource-control-store": [
-    "@agnes/protocol",
-    "@agnes/system-node"
-  ],
-  "@agnes/resource-control-client-node": [
-    "@agnes/protocol"
-  ],
+  "@agnes/package-admin-client-node": ["@agnes/protocol"],
+  "@agnes/resource-control-runtime": ["@agnes/cordis", "@agnes/protocol"],
+  "@agnes/resource-control-store": ["@agnes/protocol", "@agnes/system-node"],
+  "@agnes/resource-control-client-node": ["@agnes/protocol"],
   "@agnes/cli-launch": [],
-  "@agnes/cli-tui": [
-    "@agnes/protocol",
-    "@agnes/sdk"
-  ],
-  "@agnes/resource-control-web": [
-    "@agnes/protocol",
-    "@agnes/web-ui"
-  ],
+  "@agnes/cli-tui": ["@agnes/protocol", "@agnes/sdk"],
+  "@agnes/resource-control-web": ["@agnes/protocol", "@agnes/web-ui"],
   "@agnes/resource-control-worker": [
     "@agnes/base",
     "@agnes/protocol",
@@ -95,15 +47,9 @@
     "@agnes/resource-control-runtime",
     "@agnes/resource-control-worker"
   ],
-  "@agnes/resource-control-cli": [
-    "@agnes/daemon",
-    "@agnes/protocol",
-    "@agnes/sdk"
-  ],
+  "@agnes/resource-control-cli": ["@agnes/daemon", "@agnes/protocol", "@agnes/sdk"],
   "@agnes/history-index": [],
-  "@agnes/extension-api": [
-    "@agnes/protocol"
-  ],
+  "@agnes/extension-api": ["@agnes/protocol"],
   "@agnes/core": [
     "@agnes/protocol",
     "@agnes/protocol-validation",
@@ -114,11 +60,7 @@
     "@agnes/core-effects",
     "@agnes/core-artifacts"
   ],
-  "@agnes/ai": [
-    "@agnes/protocol",
-    "@agnes/core",
-    "@agnes/extension-api"
-  ],
+  "@agnes/ai": ["@agnes/protocol", "@agnes/core", "@agnes/extension-api"],
   "@agnes/base": [
     "@agnes/protocol",
     "@agnes/protocol-validation",
@@ -132,16 +74,8 @@
     "@agnes/history-index"
   ],
   "@agnes/mcp-transport-health": [],
-  "@agnes/code": [
-    "@agnes/protocol",
-    "@agnes/extension-api",
-    "@agnes/core",
-    "@agnes/base"
-  ],
-  "@agnes/runtime-python": [
-    "@agnes/code",
-    "@agnes/protocol"
-  ],
+  "@agnes/code": ["@agnes/protocol", "@agnes/extension-api", "@agnes/core", "@agnes/base"],
+  "@agnes/runtime-python": ["@agnes/code", "@agnes/protocol"],
   "@agnes/host": [
     "@agnes/cordis",
     "@agnes/protocol",
@@ -205,16 +139,8 @@
     "@agnes/cli-launch",
     "@agnes/package-manager"
   ],
-  "@agnes/channels": [
-    "@agnes/protocol",
-    "@agnes/sdk",
-    "@agnes/system-node",
-    "@agnes/daemon"
-  ],
-  "@agnes/bridges": [
-    "@agnes/protocol",
-    "@agnes/sdk"
-  ],
+  "@agnes/channels": ["@agnes/protocol", "@agnes/sdk", "@agnes/system-node", "@agnes/daemon"],
+  "@agnes/bridges": ["@agnes/protocol", "@agnes/sdk"],
   "@agnes/web": [
     "@agnes/base",
     "@agnes/cordis",
@@ -228,9 +154,7 @@
     "@agnes/web-units"
   ],
   "@agnes/guards": [],
-  "@agnes/sandbox-remote": [
-    "@agnes/core"
-  ],
+  "@agnes/sandbox-remote": ["@agnes/core"],
   "@agnes/package-manager": [
     "@agnes/protocol",
     "@agnes/extension-api",
@@ -240,23 +164,10 @@
     "@agnes/system-node"
   ],
   "@agnes/system-node": [],
-  "@agnes/model-adapters": [
-    "@agnes/ai",
-    "@agnes/extension-api",
-    "@agnes/plugin-runtime",
-    "@agnes/protocol"
-  ],
-  "@agnes/loop-default": [
-    "@agnes/extension-api"
-  ],
-  "@agnes/core-common": [
-    "@agnes/extension-api",
-    "@agnes/protocol"
-  ],
-  "@agnes/core-child-control": [
-    "@agnes/core-common",
-    "@agnes/extension-api"
-  ],
+  "@agnes/model-adapters": ["@agnes/ai", "@agnes/extension-api", "@agnes/plugin-runtime", "@agnes/protocol"],
+  "@agnes/loop-default": ["@agnes/extension-api"],
+  "@agnes/core-common": ["@agnes/extension-api", "@agnes/protocol"],
+  "@agnes/core-child-control": ["@agnes/core-common", "@agnes/extension-api"],
   "@agnes/core-ledger": [
     "@agnes/core-child-control",
     "@agnes/core-common",

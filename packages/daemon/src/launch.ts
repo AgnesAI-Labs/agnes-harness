@@ -4,8 +4,8 @@ import {
   type RunAgnesdDeps,
   runAgnesd as run,
   type StartSupervisorOptions,
-  startProductionSupervisor as startProduction,
   startSupervisor as start,
+  startProductionSupervisor as startProduction,
 } from '@agnes/daemon-supervisor/supervisor/supervisor'
 
 function defaultWorkerEntry(): string {

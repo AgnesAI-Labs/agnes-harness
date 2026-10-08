@@ -23,9 +23,7 @@
       "source": "https://github.com/ant-design/x/tree/main/packages/x-markdown",
       "purpose": "Static React rendering of assistant body and thinking Markdown in the shared Web UI layer.",
       "rationale": "Pins the React 18 compatible implementation verified in the W5a-0 fixture while keeping Agnes URL, HTML, image and copy rules in an auditable adapter.",
-      "consumers": [
-        "packages/web-ui"
-      ]
+      "consumers": ["packages/web-ui"]
     },
     {
       "name": "@assistant-ui/react",
@@ -34,9 +32,7 @@
       "source": "https://github.com/assistant-ui/assistant-ui/tree/main/packages/react",
       "purpose": "Headless conversation runtime exposed through the shared Web UI package and vendor entry.",
       "rationale": "Pins the B-0 verified React 18 compatible runtime while keeping external UI imports inside @agnes/web-ui.",
-      "consumers": [
-        "packages/web-ui"
-      ]
+      "consumers": ["packages/web-ui"]
     },
     {
       "name": "@assistant-ui/tap",
@@ -45,9 +41,7 @@
       "source": "https://github.com/assistant-ui/assistant-ui",
       "purpose": "Reactive state dependency used by the pinned assistant-ui conversation runtime.",
       "rationale": "Pins the transitive version that passed B-0 because the newer compatible-range release failed the fixture's initial state read.",
-      "consumers": [
-        "packages/web-ui"
-      ]
+      "consumers": ["packages/web-ui"]
     },
     {
       "name": "antd",
@@ -56,9 +50,7 @@
       "source": "https://github.com/ant-design/ant-design",
       "purpose": "Accessible browser UI primitives used by the shared Web UI foundation.",
       "rationale": "Keeps the A-line UI migration on one pinned component implementation while the web package consumes only the @agnes/web-ui boundary.",
-      "consumers": [
-        "packages/web-ui"
-      ]
+      "consumers": ["packages/web-ui"]
     },
     {
       "name": "react",
@@ -82,9 +74,7 @@
       "source": "https://github.com/earendil-works/pi/tree/main/packages/ai",
       "purpose": "Provider adapters, model catalog and streaming AI protocol support.",
       "rationale": "Uses the project's selected public AI abstraction instead of maintaining parallel provider implementations.",
-      "consumers": [
-        "packages/ai"
-      ]
+      "consumers": ["packages/ai"]
     },
     {
       "name": "@modelcontextprotocol/sdk",
@@ -93,10 +83,7 @@
       "source": "https://github.com/modelcontextprotocol/typescript-sdk",
       "purpose": "MCP client transport and protocol interoperability.",
       "rationale": "Provides the canonical TypeScript implementation of the external MCP contract.",
-      "consumers": [
-        "packages/base",
-        "packages/resource-control-runtime"
-      ]
+      "consumers": ["packages/base", "packages/resource-control-runtime"]
     },
     {
       "name": "@joplin/turndown-plugin-gfm",
@@ -105,9 +92,7 @@
       "source": "https://github.com/laurent22/joplin-turndown-plugin-gfm",
       "purpose": "Adds GitHub Flavored Markdown table and strikethrough rules to public-page conversion.",
       "rationale": "Uses the maintained Turndown GFM rules instead of duplicating Markdown conversion behavior.",
-      "consumers": [
-        "packages/base"
-      ]
+      "consumers": ["packages/base"]
     },
     {
       "name": "@standard-schema/spec",
@@ -116,10 +101,7 @@
       "source": "https://github.com/standard-schema/standard-schema",
       "purpose": "Schema specification interface consumed by the vendored Cordis core at runtime.",
       "rationale": "Vendored @agnes/cordis (from npm @deepseek-ai/cordis@4.0.2) pins this exact version; provenance recorded in packages/cordis/VENDORED.md.",
-      "consumers": [
-        "packages/cordis",
-        "packages/plugin-runtime"
-      ]
+      "consumers": ["packages/cordis", "packages/plugin-runtime"]
     },
     {
       "name": "@sinclair/typebox",
@@ -153,10 +135,7 @@
       "source": "https://github.com/guybedford/es-module-lexer",
       "purpose": "Parses the static and literal dynamic ESM dependency graph of browser client-module snapshots.",
       "rationale": "Avoids treating comments or ordinary strings as imports while enumerating the immutable browser resource closure.",
-      "consumers": [
-        "packages/daemon",
-        "packages/daemon-admin"
-      ]
+      "consumers": ["packages/daemon", "packages/daemon-admin"]
     },
     {
       "name": "ajv-formats",
@@ -165,10 +144,7 @@
       "source": "https://github.com/ajv-validator/ajv-formats",
       "purpose": "Standard format validation for MCP tool input schemas and protocol parity tests.",
       "rationale": "Provides RFC 3986 URI validation for external MCP schemas without maintaining a separate validator.",
-      "consumers": [
-        "packages/base",
-        "packages/protocol"
-      ]
+      "consumers": ["packages/base", "packages/protocol"]
     },
     {
       "name": "dingtalk-stream",
@@ -177,9 +153,7 @@
       "source": "https://github.com/open-dingtalk/dingtalk-stream-sdk-nodejs",
       "purpose": "Optional DingTalk streaming channel integration.",
       "rationale": "Uses DingTalk's maintained stream SDK for its proprietary gateway protocol.",
-      "consumers": [
-        "packages/channels"
-      ]
+      "consumers": ["packages/channels"]
     },
     {
       "name": "get-east-asian-width",
@@ -188,10 +162,7 @@
       "source": "https://github.com/sindresorhus/get-east-asian-width",
       "purpose": "Unicode terminal cell-width calculation for the CLI.",
       "rationale": "Avoids incorrect cursor layout for East Asian wide and full-width characters.",
-      "consumers": [
-        "packages/cli",
-        "packages/cli-tui"
-      ]
+      "consumers": ["packages/cli", "packages/cli-tui"]
     },
     {
       "name": "isomorphic-git",
@@ -200,9 +171,7 @@
       "source": "https://github.com/isomorphic-git/isomorphic-git",
       "purpose": "Programmatic Git operations for base extensions.",
       "rationale": "Provides Git behavior through a JavaScript API without assuming a shell Git executable.",
-      "consumers": [
-        "packages/base"
-      ]
+      "consumers": ["packages/base"]
     },
     {
       "name": "ipaddr.js",
@@ -211,9 +180,7 @@
       "source": "https://github.com/whitequark/ipaddr.js",
       "purpose": "Parses and classifies resolved IPv4 and IPv6 addresses for bounded public retrieval.",
       "rationale": "Provides well-tested address parsing for the public-network deny rules, including IPv4-mapped IPv6 forms.",
-      "consumers": [
-        "packages/host-infrastructure"
-      ]
+      "consumers": ["packages/host-infrastructure"]
     },
     {
       "name": "jiti",
@@ -222,10 +189,7 @@
       "source": "https://github.com/unjs/jiti",
       "purpose": "Loads TypeScript and modern JavaScript extension modules in Host and the confined Base runner.",
       "rationale": "Supports the extension authoring formats accepted by the Host loader without a separate compile step.",
-      "consumers": [
-        "packages/base",
-        "packages/host-extensions"
-      ]
+      "consumers": ["packages/base", "packages/host-extensions"]
     },
     {
       "name": "marked",
@@ -234,11 +198,7 @@
       "source": "https://github.com/markedjs/marked",
       "purpose": "Parses assistant Markdown for terminal and Web rendering.",
       "rationale": "Uses one maintained Markdown lexer; the Web client renders tokens through a DOM allowlist rather than inserting parser HTML.",
-      "consumers": [
-        "packages/cli",
-        "packages/cli-tui",
-        "packages/web"
-      ]
+      "consumers": ["packages/cli", "packages/cli-tui", "packages/web"]
     },
     {
       "name": "turndown",
@@ -247,9 +207,7 @@
       "source": "https://github.com/mixmark-io/turndown",
       "purpose": "Converts fetched HTML into bounded Markdown tool output.",
       "rationale": "Uses a maintained HTML-to-Markdown implementation before applying the product's output limits.",
-      "consumers": [
-        "packages/base"
-      ]
+      "consumers": ["packages/base"]
     },
     {
       "name": "undici",
@@ -258,10 +216,7 @@
       "source": "https://github.com/nodejs/undici",
       "purpose": "Provides the explicit HTTP dispatcher used by bounded public retrieval.",
       "rationale": "Allows connection policy and redirect handling to stay under Host control instead of relying on ambient global fetch state.",
-      "consumers": [
-        "packages/host-computer-use",
-        "packages/host-infrastructure"
-      ]
+      "consumers": ["packages/host-computer-use", "packages/host-infrastructure"]
     },
     {
       "name": "ws",
@@ -270,12 +225,7 @@
       "source": "https://github.com/websockets/ws",
       "purpose": "WebSocket client transport and authenticated daemon listener.",
       "rationale": "Supplies the Node WebSocket implementation needed where the browser-native API is unavailable.",
-      "consumers": [
-        "packages/daemon",
-        "packages/daemon-rpc",
-        "packages/sdk",
-        "packages/daemon-supervisor"
-      ]
+      "consumers": ["packages/daemon", "packages/daemon-rpc", "packages/sdk", "packages/daemon-supervisor"]
     },
     {
       "name": "yaml",
@@ -317,9 +267,7 @@
       "source": "https://github.com/microsoft/vscode-ripgrep",
       "purpose": "Bundled ripgrep executable for official file search tools. Platform packages include ripgrep and its third-party licenses.",
       "rationale": "Use a pinned search engine without requiring a system rg installation.",
-      "consumers": [
-        "packages/base"
-      ]
+      "consumers": ["packages/base"]
     }
   ]
 }
