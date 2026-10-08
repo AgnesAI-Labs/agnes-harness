@@ -68,9 +68,9 @@ export function compositionToolGroups(
     string,
     { packageId: string; reason: CompositionToolGroup['reason']; bundles: string[]; tools: string[] }
   >()
-  for (const tool of tools.list()) {
-    const registered = tools.resolve(tool.name)
-    if (!registered) continue
+  // Capture one authorized view. Resolving each tool again both mixes live selections and
+  // repeats the full session/model capability resolver for every item in periodic status.
+  for (const registered of tools.snapshot(0).byName.values()) {
     const packageId = registered.packageIdentity ?? registered.source.source
     let group = groups.get(packageId)
     if (!group) {
@@ -91,7 +91,7 @@ export function compositionToolGroups(
       }
       groups.set(packageId, group)
     }
-    group.tools.push(tool.name)
+    group.tools.push(registered.name)
   }
   return [...groups.values()].sort((a, b) => a.packageId.localeCompare(b.packageId))
 }

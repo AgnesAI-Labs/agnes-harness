@@ -25,8 +25,13 @@ import {
   compositionSkillOwners,
   compositionSkills,
   compositionSurfaceAllowed,
+  compositionToolGroups,
   compositionTools,
 } from '@agnes/host-runtime/profile/composition-visibility'
+import {
+  capabilityToolCatalog,
+  resolveSessionCapabilities,
+} from '@agnes/host-runtime/profile/session-capabilities'
 import { hashDirectory, type RuntimePluginSnapshot } from '@agnes/package-manager'
 import { createPluginRow, normalizePluginExport } from '@agnes/plugin-runtime/host'
 import { RuntimeSecurityStatus, SessionCapabilitySet, validateAgainst } from '@agnes/protocol'
@@ -609,6 +614,34 @@ it('filters registered MCP identities without confusing slug collisions or long 
     expect(tools.snapshot(0).defs.map((tool) => tool.name)).toEqual([...names].sort())
     expect(tools.resolve(mcpLocalToolPrefix(ids.find((other) => other !== id)!) + 'read')).toBeUndefined()
   }
+  const tree = {
+    profile: 'local-dev',
+    preset: 'full-access',
+    bundles: [],
+    selection: {},
+    sources: {},
+    rows: [],
+    hash: `sha256-${'0'.repeat(64)}`,
+  }
+  // One status read must describe one authorized catalog, even if the next read changes selection.
+  let selected = 'a.b'
+  const live = compositionTools(registry, {}, undefined, () => {
+    const current = selected
+    selected = 'a_b'
+    return resolveSessionCapabilities({
+      selection: { mcp: [`mcp/${current}`] },
+      installed: { tools: capabilityToolCatalog(registry) },
+    })
+  })
+  for (const id of ['a.b', 'a_b'])
+    expect(compositionToolGroups(live, tree)).toEqual([
+      {
+        packageId: 'fixture',
+        reason: 'official-default',
+        bundles: [],
+        tools: [mcpLocalToolPrefix(id) + 'read', mcpPublicToolName(id, 'read')].sort(),
+      },
+    ])
   expect(registry.size).toBe(ids.length * 2)
 })
 
