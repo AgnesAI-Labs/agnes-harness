@@ -63,7 +63,9 @@ describe('HookDispatch table-driven scheduling', () => {
       for (const timer of [...timers.values()]) timer.fn()
       await expect(run).resolves.toMatchObject({ kind: closed ? 'rejected' : 'ok' })
       await tick()
-      expect(failures).toHaveLength(1)
+      expect(failures).toEqual([
+        { event, source: 'agnes/test', message: 'hook execution failed', failure: 'timeout' },
+      ])
       expect(timers.size).toBe(0)
     },
   )
@@ -204,7 +206,12 @@ describe('HookDispatch table-driven scheduling', () => {
       ],
       signal,
     )
-    expect(result).toEqual({ kind: 'rejected', source: 'agnes/test', reason: 'hook execution failed' })
+    expect(result).toEqual({
+      kind: 'rejected',
+      source: 'agnes/test',
+      reason: 'hook execution failed',
+      failure: 'execution',
+    })
     expect(later).toBe(false)
     expect(JSON.stringify(failures)).not.toContain('secret credential')
   })
@@ -233,7 +240,8 @@ describe('HookDispatch table-driven scheduling', () => {
   })
 
   it('timeout rejects by the actual context table deadline and prevents late commits', async () => {
-    const { dispatcher, signal, timers } = setup()
+    const { dispatcher, timers, failures } = setup()
+    const controller = new AbortController()
     let resolve!: (value: number) => void
     let committed = 0
     const run = dispatcher.run(
@@ -246,7 +254,7 @@ describe('HookDispatch table-driven scheduling', () => {
             }),
         ),
       ],
-      signal,
+      controller.signal,
       {
         commit: (value) => {
           committed = value
@@ -256,7 +264,11 @@ describe('HookDispatch table-driven scheduling', () => {
     await tick()
     expect([...timers.values()].map((t) => t.ms)).toEqual([1500])
     for (const timer of [...timers.values()]) timer.fn()
-    await expect(run).resolves.toMatchObject({ kind: 'rejected' })
+    controller.abort()
+    await expect(run).resolves.toMatchObject({ kind: 'rejected', failure: 'timeout' })
+    expect(failures).toEqual([
+      { event: 'context', source: 'agnes/test', message: 'hook execution failed', failure: 'timeout' },
+    ])
     resolve(42)
     await tick()
     expect(committed).toBe(0)
@@ -270,7 +282,7 @@ describe('HookDispatch table-driven scheduling', () => {
         throw new Error('invalid patch')
       },
     })
-    expect(result).toMatchObject({ kind: 'rejected' })
+    expect(result).toMatchObject({ kind: 'rejected', failure: 'result' })
   })
 
   it('does not retain an invalid open directive result when its terminal validator throws', async () => {
@@ -292,7 +304,7 @@ describe('HookDispatch table-driven scheduling', () => {
       if (before) controller.abort()
       const run = dispatcher.run('tool_call', [entry(() => n++)], controller.signal)
       if (!before) controller.abort()
-      await expect(run).resolves.toMatchObject({ kind: 'rejected' })
+      await expect(run).resolves.toMatchObject({ kind: 'rejected', failure: 'cancelled' })
       expect(n).toBe(0)
       expect(timers.size).toBe(0)
     }
@@ -331,7 +343,12 @@ describe('HookDispatch table-driven scheduling', () => {
           ],
           new AbortController().signal,
         ),
-      ).resolves.toEqual({ kind: 'rejected', source: 'agnes/test', reason: 'hook execution failed' })
+      ).resolves.toEqual({
+        kind: 'rejected',
+        source: 'agnes/test',
+        reason: 'hook execution failed',
+        failure: 'execution',
+      })
       await tick()
     },
   )

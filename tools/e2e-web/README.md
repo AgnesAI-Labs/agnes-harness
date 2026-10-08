@@ -25,7 +25,7 @@ already installed executable for local debugging; CI uses the pinned Playwright 
 ## Runtime and SDK coverage
 
 Each spec receives a new short `/tmp` directory and an isolated `AGH_HOME` and `HOME`. The harness
-starts `node packages/cli/dist/local/agnes.mjs serve --port PORT` **from the repository root**. It
+starts `node agnes.mjs serve --port PORT` **from the repository root**. It
 uses the first-run keyless demo model, synthetic workspace data, a loopback OpenAI-compatible
 provider and a dependency-free stdio MCP fixture. Child environments allow only the required
 path/home/profile/origin values; real provider keys, proxy settings and user configuration are
@@ -58,7 +58,8 @@ The local command shares two workers with per-test scheduling. CI runs four comp
 shards per platform with one worker per runner, so concurrent daemon/worker/Chromium trees do not
 compete on the same small runner. Linux fast tests, typechecks, structural guards and kernel
 regressions run in their own hard-gated job instead of consuming the Web job's execution budget.
-Every shard keeps zero retries, an eight-minute test deadline and a ten-minute CI gate step.
+Every shard keeps zero retries and a ten-minute CI gate step. Local Playwright runs have a
+twelve-minute global deadline, with shorter per-spec deadlines.
 `test.only` and retry overrides are refused. A flaky spec remains a gate failure; do not
 quarantine it with retries or `test.skip`. To investigate, run the named spec several times:
 
@@ -68,7 +69,9 @@ pnpm e2e:web --reuse-build --grep 'local hot reload' --repeat-each 3
 
 `.agnes-tmp/e2e-web` (existing ignored local-acceptance directory) contains the HTML/JSON report, screen/failure screenshots,
 failure traces, browser errors, process logs and SDK evidence attachments. Redacted diagnostics and
-session events are collected through the public SDK before shutdown, including hook attribution.
+session events are collected through the public SDK before shutdown, including context hook
+attribution and trusted timeout/cancellation/execution/result failure classifications. Extension
+exception text remains redacted.
 SDK and browser RPC timings contain only method names, durations and error codes, never parameters
 or response bodies. CI artifacts include the platform and shard number to avoid upload collisions. Set
 `AGH_WEB_TEST_OUTPUT` to place these artifacts elsewhere. The harness closes its SDK clients,

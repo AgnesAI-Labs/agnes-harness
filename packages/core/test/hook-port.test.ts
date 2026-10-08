@@ -343,7 +343,7 @@ describe('SessionHookPort', () => {
       fail = true
       await expect(port.refreshContext([])).rejects.toMatchObject({
         code: 'E_ENVELOPE',
-        message: `E_ENVELOPE: hook rejected transformation (context, ${source})`,
+        message: `E_ENVELOPE: hook rejected transformation (context, ${source}, execution)`,
       })
     },
   )

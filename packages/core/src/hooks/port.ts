@@ -204,7 +204,10 @@ export class SessionHookPort implements HookPort {
       if (outcome.kind === 'rejected') {
         if (outcome.blocked) throw outcome.blocked
         // Registration attribution is safe to publish; the extension's exception text is not.
-        throw new CoreError('E_ENVELOPE', `hook rejected transformation (context, ${outcome.source})`)
+        throw new CoreError(
+          'E_ENVELOPE',
+          `hook rejected transformation (context, ${outcome.source}, ${outcome.failure})`,
+        )
       }
     }
     for (const item of overflow) {
