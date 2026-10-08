@@ -93,10 +93,39 @@ for (const locale of ['en', 'zh-CN'])
             page.getByRole('heading', { name: heading[locale === 'en' ? 0 : 1], exact: true }),
           ).toBeVisible()
         else await expect(page.getByTestId(`settings-page-${id}`)).toBeVisible()
-        if (id === 'providers') await screen(page, info, `plugin-kinds-${locale}-${theme}`)
+        if (id === 'providers') {
+          const disclosures = page.getByTestId('provider-technical-details')
+          expect(await disclosures.count()).toBeGreaterThan(0)
+          const excess = await disclosures.evaluateAll((details) =>
+            details.map((detail) => {
+              const row = detail.closest('article')
+              if (!row) throw new Error('Provider disclosure has no shared row')
+              return (
+                row.getBoundingClientRect().bottom -
+                detail.getBoundingClientRect().bottom -
+                Number.parseFloat(getComputedStyle(row).paddingBottom)
+              )
+            }),
+          )
+          expect(
+            Math.max(...excess),
+            'Provider rows have no gap beyond their shared padding',
+          ).toBeLessThanOrEqual(1)
+          await screen(page, info, `plugin-kinds-${locale}-${theme}`)
+        }
         if (id === 'discover') {
           await quality('discover-duplicate-versions')
+          const packageRow = page.locator('article[data-plugin-id="@agnes-examples/client-multi-panel"]')
+          await expect(packageRow).toHaveCount(1)
+          await expect(packageRow.getByRole('heading')).toHaveCount(1)
+          const versions = packageRow.getByTestId('plugin-other-versions')
+          await expect(versions).not.toHaveAttribute('open', '')
           await screen(page, info, `discover-duplicate-versions-${locale}-${theme}`)
+          await versions.getByTestId('plugin-other-versions-toggle').click()
+          await expect(packageRow.getByTestId('plugin-version-picker').locator('option')).toHaveCount(2)
+          await packageRow.getByTestId('plugin-version-picker').selectOption('2.0.0')
+          await expect(packageRow).toHaveAttribute('data-plugin-version', '2.0.0')
+          await versions.locator('summary').click()
           await page
             .getByRole('searchbox', { name: locale === 'en' ? 'Search plugins' : '搜索插件', exact: true })
             .fill('@agnes-example/dag-loop')

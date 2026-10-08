@@ -1,5 +1,5 @@
 {
-  "uiCommit": "62fc9dbd",
+  "uiCommit": "6b5bc1b3",
   "chromium": "153.0.8010.12",
   "playwright": "1.63.0",
   "viewport": {
@@ -56,16 +56,15 @@
     "settings-discover-zh-CN-dark",
     "settings-skills-zh-CN-dark",
     "tool-row-zh-CN-dark",
-    "plugin-cards-en-light"
+    "plugin-cards-en-light",
+    "plugin-kinds-en-light",
+    "discover-duplicate-versions-en-light",
+    "plugin-kinds-en-dark",
+    "discover-duplicate-versions-en-dark",
+    "plugin-kinds-zh-CN-light",
+    "discover-duplicate-versions-zh-CN-light",
+    "plugin-kinds-zh-CN-dark",
+    "discover-duplicate-versions-zh-CN-dark"
   ],
-  "pending": {
-    "plugin-kinds-en-light": "Plugin kinds row spacing awaits the remaining UI polish.",
-    "discover-duplicate-versions-en-light": "Discover duplicate-version grouping awaits the remaining UI polish.",
-    "plugin-kinds-en-dark": "Plugin kinds row spacing awaits the remaining UI polish.",
-    "discover-duplicate-versions-en-dark": "Discover duplicate-version grouping awaits the remaining UI polish.",
-    "plugin-kinds-zh-CN-light": "Plugin kinds row spacing awaits the remaining UI polish.",
-    "discover-duplicate-versions-zh-CN-light": "Discover duplicate-version grouping awaits the remaining UI polish.",
-    "plugin-kinds-zh-CN-dark": "Plugin kinds row spacing awaits the remaining UI polish.",
-    "discover-duplicate-versions-zh-CN-dark": "Discover duplicate-version grouping awaits the remaining UI polish."
-  }
+  "pending": {}
 }

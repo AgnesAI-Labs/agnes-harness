@@ -89,10 +89,10 @@ job output, interactive terminal input/output, schedule creation/archive and the
 workflow through restart. Backend assertions use CLI or SDK, never raw admin HTTP from specs.
 Selectors use roles and stable test IDs; disclosures are checked before toggling.
 
-`baselines/ready.json` declares every ready screen and the two remaining pending visual areas:
-plugin-kinds row spacing and Discover duplicate-version grouping. Pending areas still undergo
-translation, accessibility and browser-error checks and save screenshots; their annotations do
-not claim visual coverage. The reviewed Discover baseline filters to a single-version entry.
+`baselines/ready.json` declares every reviewed screen, including compact plugin-kinds rows
+and Discover package cards with grouped versions in both locales and themes. The gate checks
+row padding and version selection in addition to translation, accessibility and browser errors.
+The separate Discover search baseline filters to a single-version entry.
 Ready PNGs cover key screens in both locales and themes, including installed plugin cards,
 Skills empty state and tool rows. The additional installed-folder card screen is en/light.
 

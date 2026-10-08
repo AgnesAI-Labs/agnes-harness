@@ -307,6 +307,7 @@ export function PluginList({
             key={tab === 'discover' ? item.id : `${item.id}@${item.version}`}
             className="plugin-row"
             data-plugin-id={item.id}
+            data-plugin-version={item.version}
             data-tab={tab}
             onClick={(event) => {
               // 行内 Switch / 动作按钮自己处理点击；置灰控件在部分浏览器里不发 click，
