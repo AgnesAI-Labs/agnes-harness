@@ -67,12 +67,14 @@ export function encodeOwner(owner: Owner): string {
 
 /** Null means absent, never corrupt. Reading does not acquire or reclaim the lock. */
 export async function readOwner(dataDir: string): Promise<Owner | null> {
+  return readOwnerFile(join(dataDir, 'daemon', 'owner.json'))
+}
+
+/** Shared bounded, no-follow reader for the legacy identity witness. */
+export async function readOwnerFile(file: string, privateFile = false): Promise<Owner | null> {
   let handle: Awaited<ReturnType<typeof open>>
   try {
-    handle = await open(
-      join(dataDir, 'daemon', 'owner.json'),
-      constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK,
-    )
+    handle = await open(file, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK)
   } catch (error) {
     if (error !== null && typeof error === 'object' && 'code' in error && error.code === 'ENOENT') return null
     throw new OwnerReadError()
@@ -83,6 +85,7 @@ export async function readOwner(dataDir: string): Promise<Owner | null> {
       if (
         !info.isFile() ||
         info.size > 4096 ||
+        (privateFile && createPlatform().os !== 'win32' && (info.mode & 0o777) !== 0o600) ||
         // O_NOFOLLOW is not available on Windows. Reject hard-linked records so an external path
         // cannot mutate the exact file after this identity check.
         (createPlatform().os === 'win32' && info.nlink !== 1)

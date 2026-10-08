@@ -48,6 +48,10 @@ node packages/cli/dist/local/agnes.mjs doctor provider --json
 | Browser disconnected / task still running after stopping a client | Closing a client and canceling/stopping backend work are different actions; inspect backend history for the final state |
 | Import failure | Preserve input and error and reproduce with a redacted minimal fixture; do not directly edit the database |
 
+macOS daemon identity uses the kernel boot-session UUID, PID and the process's saved start timestamp; calendar-clock adjustments do not change it. Old owner/discovery records remain readable. An exact legacy identity match creates a private boot-bound migration witness without rewriting the old daemon's records. After that verification, status and stop remain valid across clock adjustments. If an old record has already drifted before verification, its boot cannot be established: status conservatively reports running and discovery/stop refuse unknown identity. No PID-only match, time tolerance or lock bypass is used.
+
+The local launcher includes a child's startup refusal (such as `daemon or package mutation lock is held`) in the early-exit error when the child can publish its private startup diagnostic. The receipt is removed after startup succeeds or fails.
+
 `E_SEAM_INIT` session initialization failures return `INTERNAL_ERROR` with a stable `data.code`: `E_SEAM_INIT`, or the specific `E_PROVIDER_*` cause when a provider fails to register or initialize. The daemon audit records that code without exception messages or request parameters. For a missing loop, check that its exact id/version is installed, enabled, and selected by the session bundle.
 
 Unexpected daemon errors may include a `diagnosticId`. Match it against `audit/daemon.jsonl` under the selected dataDir. Failed audit writes may instead return `diagnosticUnavailable`; this does not prove there was no error. Records should contain safe method/code/time fields, but still review them for private context before sharing.

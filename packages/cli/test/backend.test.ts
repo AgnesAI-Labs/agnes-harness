@@ -1,6 +1,6 @@
 import type { ChildProcess } from 'node:child_process'
 import { EventEmitter } from 'node:events'
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { DaemonDiscovery, DaemonScope } from '@agnes/daemon'
@@ -12,6 +12,7 @@ import type { LaunchResources } from '../launch/resources.js'
 import { parseArgs } from '../src/args.js'
 import { ensureLocalBackend, type SpawnDaemonInput } from '../src/boot/backend.js'
 import { bootDefault } from '../src/boot/default.js'
+import { STARTUP_DIAGNOSTIC_ENV } from '../src/boot/startup-diagnostic.js'
 import { BootError } from '../src/errors.js'
 
 const TEST_RESOURCES = {
@@ -455,6 +456,40 @@ describe('ensureLocalBackend', () => {
     expect(events.indexOf('stop')).toBeGreaterThan(events.indexOf('config-failure'))
     expect(events.indexOf('release')).toBeGreaterThan(events.indexOf('stop'))
     expect(vi.mocked(daemon.stopDaemon)).toHaveBeenCalledOnce()
+  })
+
+  it('surfaces the child startup refusal and removes its private receipt', async () => {
+    const child = fakeChild()
+    const root = mkdtempSync(join(tmpdir(), 'agnes-launch-refusal-'))
+    const daemonDir = join(root, 'daemon')
+    mkdirSync(daemonDir)
+    vi.mocked(daemon.resolveDaemonScope).mockResolvedValue({ ...scope, dataDir: root, daemonDir })
+    let path = ''
+    const spawnDaemon = ({ env }: SpawnDaemonInput) => {
+      path = env[STARTUP_DIAGNOSTIC_ENV] ?? ''
+      writeFileSync(path, JSON.stringify({ message: 'daemon or package mutation lock is held' }), {
+        mode: 0o600,
+      })
+      queueMicrotask(() => {
+        ;(child as unknown as { exitCode: number | null }).exitCode = 1
+        child.emit('exit', 1, null)
+      })
+      return child
+    }
+    try {
+      await expect(
+        ensureLocalBackend({
+          resources: TEST_RESOURCES,
+          spawnDaemon,
+          readinessTimeoutMs: 500,
+          readinessPollMs: 2,
+        }),
+      ).rejects.toThrow(/daemon child exited before readiness \(1\): daemon or package mutation lock is held/)
+      expect(existsSync(path)).toBe(false)
+      expect(child.kill).not.toHaveBeenCalled()
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
   })
 
   it('preserves an unrelated owner when its child fails after ownership changed', async () => {

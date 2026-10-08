@@ -24,6 +24,12 @@ import {
 import { type Client, type CreateClientOptions, createClient, memoryJournal } from '@agnes/sdk'
 import { type LaunchResources, resolveLaunchResources } from '../../launch/resources.js'
 import { BootError } from '../errors.js'
+import {
+  readStartupDiagnostic,
+  removeStartupDiagnostic,
+  STARTUP_DIAGNOSTIC_ENV,
+  startupDiagnosticPath,
+} from './startup-diagnostic.js'
 
 /** A private Web capability returned by the validated daemon discovery handshake. */
 export type LocalBackendWeb = DaemonDiscoveryWeb & { token: string }
@@ -268,6 +274,7 @@ function launchChild(
   scope: DaemonScope,
   options: EnsureLocalBackendOptions,
   requested: LocalWebOptions | undefined,
+  diagnosticPath: string,
 ): DetachedChild {
   const resources = productionResources(options) as LaunchResources & { runtimeNode?: string }
   const entry = resources.daemonEntry
@@ -290,6 +297,7 @@ function launchChild(
     ...(options.env ?? {}),
     AGH_HOME: scope.home,
     AGNES_PROFILE: scope.profile,
+    [STARTUP_DIAGNOSTIC_ENV]: diagnosticPath,
   }
   const runtimeOverride = options.env?.AGNES_NODE_EXEC_PATH ?? process.env.AGNES_NODE_EXEC_PATH
   const execPath = isSea() ? runtimeOverride || resources.runtimeNode : process.execPath
@@ -413,6 +421,7 @@ async function discoverOrStart(
   let child: DetachedChild | undefined
   let childStartId: string | undefined
   let childError: Error | undefined
+  let diagnosticPath: string | undefined
   try {
     // Recheck after taking the launcher lock: another process may have published while this caller
     // was resolving its scope or waiting for the lock.
@@ -425,7 +434,8 @@ async function discoverOrStart(
             ipc: createPlatform().snapshot().os === 'win32' ? 'pipe' : 'unix',
           }),
         )
-        child = launchChild(scope, options, requested ?? options.startupWeb)
+        diagnosticPath = startupDiagnosticPath(scope.daemonDir)
+        child = launchChild(scope, options, requested ?? options.startupWeb, diagnosticPath)
       } catch (error) {
         throw asBootError('spawn', error)
       }
@@ -433,8 +443,9 @@ async function discoverOrStart(
         childError = error instanceof Error ? error : new Error(String(error))
       })
       child.once('exit', (code, signal) => {
+        const reason = diagnosticPath ? readStartupDiagnostic(diagnosticPath) : undefined
         childError = new Error(
-          `daemon child exited before readiness (${code === null ? 'signal' : code}${signal ? `/${signal}` : ''})`,
+          `daemon child exited before readiness (${code === null ? 'signal' : code}${signal ? `/${signal}` : ''})${reason ? `: ${reason}` : ''}`,
         )
       })
       // Register lifecycle listeners before the identity probe: a very short-lived child can exit
@@ -461,6 +472,7 @@ async function discoverOrStart(
     }
     throw error
   } finally {
+    removeStartupDiagnostic(diagnosticPath)
     startupLock.release()
   }
 }

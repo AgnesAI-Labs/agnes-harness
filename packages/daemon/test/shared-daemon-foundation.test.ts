@@ -1,6 +1,7 @@
 import { chmod, link, mkdir, mkdtemp, readFile, rm, symlink, unlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import * as host from '@agnes/host'
 import {
   createPlatform,
   fileSecretsDir,
@@ -407,6 +408,60 @@ describe('generation-bound discovery and Web credential', () => {
       )
     } finally {
       await lock.release()
+    }
+  })
+
+  it('keeps legacy discovery usable after verified migration and calendar drift', async () => {
+    const dataDir = await root('agnes-discovery-legacy-')
+    const scope = await resolveDaemonScope({ home: dataDir, profile: 'local-dev', dataDir })
+    const oldId = `darwin:1000.000000:${process.pid}:2000.000002`
+    const newId = `darwin:11111111-2222-3333-4444-555555555555:${process.pid}:2000.000002`
+    const lock = await acquireOwnerLock(dataDir, {
+      socketPath: join(dataDir, 'daemon', 'agnesd.sock'),
+      processIdentity: async () => ({ state: 'alive', startId: oldId }),
+    })
+    const descriptor = await publishDaemonDiscovery(scope, {
+      owner: lock.owner,
+      socketPath: lock.owner.socketPath,
+      profileHash: 'sha256-profile',
+    })
+    const probe = vi.spyOn(host, 'legacyMacosProcessIdentity')
+    const processIdentity = async () => ({ state: 'alive' as const, startId: newId })
+    try {
+      probe.mockResolvedValue({
+        identity: { state: 'alive', startId: newId },
+        legacyStartId: oldId.replace('1000.000000', '999.925027'),
+      })
+      await expect(readDaemonDiscovery(scope, { processIdentity })).rejects.toThrow('identity is unavailable')
+      const output: string[] = []
+      expect(
+        await runDaemonControl(
+          { command: 'status', home: scope.home, dataDir },
+          {
+            processIdentity,
+            write: (text) => output.push(text),
+          },
+        ),
+      ).toBe(0)
+      expect(JSON.parse(output.join('')).running).toBe(true)
+      await expect(
+        runDaemonControl({ command: 'stop', home: scope.home, dataDir }, { processIdentity }),
+      ).rejects.toThrow('identity is unavailable')
+      probe.mockResolvedValue({ identity: { state: 'alive', startId: newId }, legacyStartId: oldId })
+      expect(await readDaemonDiscovery(scope, { processIdentity })).toEqual(descriptor)
+      probe.mockResolvedValue({
+        identity: { state: 'alive', startId: newId },
+        legacyStartId: oldId.replace('1000.000000', '999.925027'),
+      })
+      expect(await readDaemonDiscovery(scope, { processIdentity })).toEqual(descriptor)
+      expect(
+        await readDaemonDiscovery(scope, {
+          processIdentity: async () => ({ state: 'alive', startId: newId.replace('11111111', 'aaaaaaaa') }),
+        }),
+      ).toBeNull()
+    } finally {
+      probe.mockRestore()
+      await lock.release() // Old-format owner bytes still let the old daemon release normally.
     }
   })
 

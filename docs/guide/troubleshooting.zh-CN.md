@@ -46,6 +46,10 @@ node packages/cli/dist/local/agnes.mjs doctor provider --json
 | 浏览器断线/停止后仍运行 | 关闭客户端与取消/停止后台不同；根据后台历史确认最终状态 |
 | 导入失败 | 保留输入和错误，用脱敏最小夹具复现；不要直接改数据库 |
 
+macOS daemon identity 使用内核 boot-session UUID、PID 和进程保存的启动时间；calendar clock 校时不会改变该 identity。旧 owner/discovery 记录仍可读取。旧 identity 精确匹配时，系统写入私有、绑定 boot 的迁移证明，不改写仍在运行的旧 daemon 的记录。完成验证后，status 和 stop 可跨校时继续工作。若旧记录在首次验证前已经漂移，则无法确认所属 boot：status 保守报告 running，discovery/stop 拒绝 unknown identity。不使用 PID-only 匹配、时间容差或锁绕过。
+
+子进程能写入私有启动诊断时，本地 launcher 会在 early-exit 错误中附上真实拒绝原因，例如 `daemon or package mutation lock is held`。启动成功或失败后均清理诊断文件。
+
 `E_SEAM_INIT` 会话初始化失败返回 `INTERNAL_ERROR`，其 `data.code` 为稳定的 `E_SEAM_INIT`；若 Provider 注册或初始化失败，则保留具体的 `E_PROVIDER_*` 原因码。daemon 审计记录该码，不记录异常消息或请求参数。缺少 loop 时，检查其精确 id/version 是否已安装、启用，并被会话 bundle 选中。
 
 意外 daemon 错误可能附 `diagnosticId`；用它匹配所选 dataDir 下 `audit/daemon.jsonl` 的记录。审计写入失败时可能返回 `diagnosticUnavailable`，不能因此声称不存在错误。记录应只含安全的 method/code/时间等，分享前仍检查私有上下文。

@@ -384,7 +384,10 @@ export {
 } from '@agnes/host-infrastructure/adapters/platform'
 export { resolveConfiguredPowerShell } from '@agnes/host-infrastructure/adapters/powershell'
 export type { ProcessIdentity } from '@agnes/host-infrastructure/adapters/process-identity'
-export { defaultProcessIdentity } from '@agnes/host-infrastructure/adapters/process-identity-default'
+export {
+  defaultProcessIdentity,
+  legacyMacosProcessIdentity,
+} from '@agnes/host-infrastructure/adapters/process-identity-default'
 export {
   composeSecrets,
   createSecretsEnv,

@@ -11,6 +11,7 @@ import {
   windowsProtectPrivateDirectorySync,
   windowsReadPrivateFileSync,
 } from '@agnes/system-node'
+import { resolveOwnerIdentity } from './owner-identity.js'
 import type { Owner } from './owner-record.js'
 import { readOwner } from './owner-record.js'
 import type { DaemonScope } from './scope.js'
@@ -323,7 +324,12 @@ export async function readDaemonDiscovery(
     throw new DaemonDiscoveryError('daemon discovery does not match the selected scope')
   const found = await identity(
     owner.pid,
-    options.processIdentity ?? defaultProcessIdentity,
+    async (pid) =>
+      resolveOwnerIdentity(
+        scope.dataDir,
+        owner,
+        await (options.processIdentity ?? defaultProcessIdentity)(pid),
+      ),
     options.identityTimeoutMs ?? 1000,
   )
   if (found.state === 'dead') return null

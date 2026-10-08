@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url'
 import type { ProcessIdentity } from './process-identity.js'
 
 // macOS has no readable /proc equivalent, so unlike process-identity-linux.ts this backend
-// shells out to a tiny compiled helper (packages/host/native/macos-process-identity.c) that
+// shells out to a tiny compiled helper (packages/host-infrastructure/native/macos-process-identity.c) that
 // calls libproc + sysctl directly. The helper is built by scripts/build-native.mjs; its exact
 // output contract is documented at the top of the .c file and mirrored in the parsing below.
 declare const AGNES_PACKAGED_BUILTINS: boolean | undefined
@@ -22,7 +22,7 @@ const unknown = (reason: string): ProcessIdentity => ({ state: 'unknown', reason
 
 // A single alive line, bounded in both digit count and fractional precision so a compromised or
 // mismatched-version binary cannot smuggle an oversized or ambiguous value through as a startId.
-const ALIVE = /^alive ([0-9]{1,20}\.[0-9]{1,6}) ([0-9]{1,20}\.[0-9]{1,6})$/
+const ALIVE = /^alive ([0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}) ([1-9][0-9]{0,19}\.[0-9]{6})$/i
 
 function defaultSpawn(bin: string, args: string[]): Promise<{ stdout: string; code: number }> {
   return new Promise((resolve, reject) => {
@@ -65,11 +65,38 @@ export async function macosProcessIdentity(
   const line = (result.stdout.split('\n', 1)[0] ?? '').trim()
   if (result.code === 0) {
     const match = ALIVE.exec(line)
-    if (!match) return unknown('malformed alive output')
-    return { state: 'alive', startId: `darwin:${match[1]}:${pid}:${match[2]}` }
+    if (!match?.[1] || /^0{8}(?:-0{4}){3}-0{12}$/.test(match[1])) return unknown('malformed alive output')
+    return { state: 'alive', startId: `darwin:${match[1].toLowerCase()}:${pid}:${match[2]}` }
   }
   if (result.code === 1) return line === 'dead' ? { state: 'dead' } : unknown('malformed dead output')
   if (result.code === 2 && line.startsWith('unknown ') && /^[!-~]+$/.test(line.slice(8)))
     return unknown(line.slice(8))
   return unknown('helper reported an unrecognized outcome')
+}
+
+/** Migration probe: exposes the old calendar-derived boot field only alongside the new identity.
+ * It may anchor an exact old record to this boot; it must never itself be used as a boot identity. */
+export async function legacyMacosProcessIdentity(
+  pid: number,
+  deps: { spawn?: (bin: string, args: string[]) => Promise<{ stdout: string; code: number }> } = {},
+): Promise<{
+  identity: ProcessIdentity
+  legacyStartId?: string
+}> {
+  let legacyStartId: string | undefined
+  const identity = await macosProcessIdentity(pid, {
+    spawn: async (binary, args) => {
+      const result = await (deps.spawn ?? defaultSpawn)(binary, [...args, 'legacy'])
+      const match =
+        /^alive ([0-9a-f-]{36}) ([1-9][0-9]{0,19}\.[0-9]{6}) ([1-9][0-9]{0,19}\.[0-9]{6})\n?$/i.exec(
+          result.stdout,
+        )
+      if (result.code === 0 && match) {
+        legacyStartId = `darwin:${match[3]}:${pid}:${match[2]}`
+        return { stdout: `alive ${match[1]} ${match[2]}\n`, code: 0 }
+      }
+      return result
+    },
+  })
+  return identity.state === 'alive' && legacyStartId ? { identity, legacyStartId } : { identity }
 }

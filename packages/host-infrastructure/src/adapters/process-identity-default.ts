@@ -21,3 +21,5 @@ export async function defaultProcessIdentity(
   if (platform.os === 'win32') return windowsProcessIdentity(pid)
   return { state: 'unknown', reason: 'unsupported platform' }
 }
+
+export { legacyMacosProcessIdentity } from './process-identity-macos.js'

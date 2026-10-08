@@ -3,6 +3,7 @@ import { existsSync, realpathSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { type RunAgnesdArgs, runAgnesd } from '@agnes/daemon'
+import { publishStartupDiagnostic } from '../src/boot/startup-diagnostic.js'
 
 type LocalWeb = { addr: string; origin: string }
 
@@ -49,20 +50,25 @@ export function parseDaemonEntryArgs(argv: readonly string[]): {
 export async function runDaemonEntry(argv: readonly string[] = process.argv.slice(2)): Promise<void> {
   const parsed = parseDaemonEntryArgs(argv)
   if (parsed.args.home !== undefined) process.env.AGH_HOME = parsed.args.home
-  const packagedWorker = join(dirname(fileURLToPath(import.meta.url)), 'worker.mjs')
-  const sourceWorker = join(dirname(fileURLToPath(import.meta.url)), 'worker-entry.ts')
-  const workerEntry = existsSync(packagedWorker)
-    ? packagedWorker
-    : existsSync(sourceWorker)
-      ? sourceWorker
-      : (() => {
-          throw new Error('Agnes local worker entry is unavailable; rebuild the production distribution')
-        })()
-  await runAgnesd(parsed.args, {
-    workerEntry,
-    ...(workerEntry.endsWith('.ts') ? { workerExecArgv: ['--import', 'tsx'] } : {}),
-    ...(parsed.localWeb ? { localWeb: parsed.localWeb } : {}),
-  })
+  try {
+    const packagedWorker = join(dirname(fileURLToPath(import.meta.url)), 'worker.mjs')
+    const sourceWorker = join(dirname(fileURLToPath(import.meta.url)), 'worker-entry.ts')
+    const workerEntry = existsSync(packagedWorker)
+      ? packagedWorker
+      : existsSync(sourceWorker)
+        ? sourceWorker
+        : (() => {
+            throw new Error('Agnes local worker entry is unavailable; rebuild the production distribution')
+          })()
+    await runAgnesd(parsed.args, {
+      workerEntry,
+      ...(workerEntry.endsWith('.ts') ? { workerExecArgv: ['--import', 'tsx'] } : {}),
+      ...(parsed.localWeb ? { localWeb: parsed.localWeb } : {}),
+    })
+  } catch (error) {
+    publishStartupDiagnostic(error, parsed.args.dataDir)
+    throw error
+  }
 }
 
 function isMainModule(moduleUrl: string): boolean {

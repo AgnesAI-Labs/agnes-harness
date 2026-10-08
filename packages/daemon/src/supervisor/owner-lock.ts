@@ -3,6 +3,7 @@ import { open, rename, rm, unlink } from 'node:fs/promises'
 import { join } from 'node:path'
 import type { ProcessIdentity } from '@agnes/host'
 import { acquireDaemonMutationLock } from './mutation-lock.js'
+import { resolveOwnerIdentity } from './owner-identity.js'
 import { encodeOwner, type Owner, readOwner } from './owner-record.js'
 
 export class OwnerLockError extends Error {
@@ -51,7 +52,9 @@ export async function acquireOwnerLock(
   try {
     const old = await readOwner(dataDir)
     if (old) {
-      const found = await identity(old.pid, options.processIdentity)
+      const found = await identity(old.pid, async (pid) =>
+        resolveOwnerIdentity(dataDir, old, await options.processIdentity(pid)),
+      )
       if (found.state !== 'dead' && !(found.state === 'alive' && found.startId !== old.processStartId))
         throw new OwnerLockError()
     }

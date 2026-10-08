@@ -1,7 +1,8 @@
 import { connect } from 'node:net'
 import { defaultProcessIdentity, type ProcessIdentity } from '@agnes/host'
 import type { Args } from '../config.js'
-import { type DaemonDiscoveryReadOptions, readDaemonDiscovery } from './discovery.js'
+import { DaemonDiscoveryError, type DaemonDiscoveryReadOptions, readDaemonDiscovery } from './discovery.js'
+import { resolveOwnerIdentity } from './owner-identity.js'
 import { type Owner, readOwner } from './owner-record.js'
 import { resolveDaemonScope } from './scope.js'
 import { publishWindowsStopRequest } from './stop-request.js'
@@ -98,7 +99,8 @@ export async function daemonStatus(
   if (!owner) return { running: false }
   const identity = await processIdentity(
     owner.pid,
-    options.processIdentity ?? defaultProcessIdentity,
+    async (pid) =>
+      resolveOwnerIdentity(dataDir, owner, await (options.processIdentity ?? defaultProcessIdentity)(pid)),
     options.identityTimeoutMs ?? 1000,
   )
   if (identity.state === 'dead') return { running: false }
@@ -119,10 +121,11 @@ export async function stopDaemon(
   dataDir: string,
   options: StopDaemonOptions = {},
 ): Promise<StopDaemonResult> {
-  const query = options.processIdentity ?? defaultProcessIdentity
   const identityTimeoutMs = options.identityTimeoutMs ?? 1000
   const owner = await readOwner(dataDir)
   if (!owner) return 'not-running'
+  const query = async (pid: number) =>
+    resolveOwnerIdentity(dataDir, owner, await (options.processIdentity ?? defaultProcessIdentity)(pid))
 
   const first = await processIdentity(owner.pid, query, identityTimeoutMs)
   if (first.state === 'dead' || (first.state === 'alive' && !matches(owner, first))) return 'not-running'
@@ -194,7 +197,18 @@ export async function runDaemonControl(
     ...(options.processIdentity ? { processIdentity: options.processIdentity } : {}),
     ...(options.identityTimeoutMs !== undefined ? { identityTimeoutMs: options.identityTimeoutMs } : {}),
   }
-  await (options.discovery ?? readDaemonDiscovery)(scope, discoveryOptions)
+  try {
+    await (options.discovery ?? readDaemonDiscovery)(scope, discoveryOptions)
+  } catch (error) {
+    // Scope validation precedes identity lookup. Read-only status may conservatively report live;
+    // stop and every other discovery refusal retain the identity/scope gate.
+    if (
+      args.command !== 'status' ||
+      !(error instanceof DaemonDiscoveryError) ||
+      error.message !== 'daemon discovery owner identity is unavailable'
+    )
+      throw error
+  }
   const write = options.write ?? ((text: string) => process.stdout.write(text))
   if (args.command === 'stop') {
     const result = options.stop

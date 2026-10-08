@@ -3,14 +3,33 @@ import { macosProcessIdentity, macosProcessIdentityBinary } from '../src/adapter
 
 const spawnOf = (stdout: string, code: number) => async () => ({ stdout, code })
 
-it('binds boot time and process start time into a startId that changes across PID reuse', async () => {
-  expect(await macosProcessIdentity(42, { spawn: spawnOf('alive 1000.000001 2000.000002\n', 0) })).toEqual({
+it('binds immutable boot identity and saved process start time, refusing PID reuse and another boot', async () => {
+  expect(
+    await macosProcessIdentity(42, {
+      spawn: spawnOf('alive 11111111-2222-3333-4444-555555555555 2000.000002\n', 0),
+    }),
+  ).toEqual({
     state: 'alive',
-    startId: 'darwin:1000.000001:42:2000.000002',
+    startId: 'darwin:11111111-2222-3333-4444-555555555555:42:2000.000002',
   })
   expect(
-    await macosProcessIdentity(42, { spawn: spawnOf('alive 1000.000001 2000.000002\n', 0) }),
-  ).not.toEqual(await macosProcessIdentity(42, { spawn: spawnOf('alive 1000.000001 2000.000003\n', 0) }))
+    await macosProcessIdentity(42, {
+      spawn: spawnOf('alive 11111111-2222-3333-4444-555555555555 2000.000002\n', 0),
+    }),
+  ).not.toEqual(
+    await macosProcessIdentity(42, {
+      spawn: spawnOf('alive 11111111-2222-3333-4444-555555555555 2000.000003\n', 0),
+    }),
+  )
+  expect(
+    await macosProcessIdentity(42, {
+      spawn: spawnOf('alive 11111111-2222-3333-4444-555555555555 2000.000002\n', 0),
+    }),
+  ).not.toEqual(
+    await macosProcessIdentity(42, {
+      spawn: spawnOf('alive aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee 2000.000002\n', 0),
+    }),
+  )
 })
 
 it('reports the helper-observed exit code 1 as dead', async () => {
@@ -40,10 +59,16 @@ it.each([0, -1, 1.5, Number.NaN, 2_147_483_648])(
 it.each([
   ['alive but malformed body', 'alive not-a-number\n', 0],
   ['alive with a missing field', 'alive 1000.000001\n', 0],
+  ['legacy mutable boot time', 'alive 1000.000001 2000.000002\n', 0],
+  ['nil boot identity', 'alive 00000000-0000-0000-0000-000000000000 2000.000002\n', 0],
   ['code 0 but empty stdout', '', 0],
   ['dead exit code but wrong body', 'unknown eperm\n', 1],
-  ['an exit code outside the 0/1/2 contract', 'alive 1000.000001 2000.000002\n', 99],
-  ['alive line carrying an unexpected trailing token', 'alive 1000.000001 2000.000002 extra\n', 0],
+  ['an exit code outside the 0/1/2 contract', 'alive 11111111-2222-3333-4444-555555555555 2000.000002\n', 99],
+  [
+    'alive line carrying an unexpected trailing token',
+    'alive 11111111-2222-3333-4444-555555555555 2000.000002 extra\n',
+    0,
+  ],
 ])('never certifies a malformed helper answer as alive or dead: %s', async (_label, stdout, code) => {
   const result = await macosProcessIdentity(42, { spawn: spawnOf(stdout, code) })
   expect(result.state).toBe('unknown')

@@ -4,6 +4,8 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { createServer } from 'node:net'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
+import type { ProcessIdentity } from '@agnes/host'
+import * as host from '@agnes/host'
 import { describe, expect, it, vi } from 'vitest'
 import { DaemonControlError, daemonStatus, runDaemonControl, stopDaemon } from '../src/supervisor/control.js'
 import { acquireOwnerLock } from '../src/supervisor/owner-lock.js'
@@ -60,6 +62,76 @@ describe('daemonStatus', () => {
         await lock.release()
       }
     } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  it('anchors a legacy owner to a boot before drift; status/stop preserve PID-reuse and reboot refusal', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'agnes-control-legacy-'))
+    const oldId = 'darwin:1000.000000:42:2000.000002'
+    const newId = 'darwin:11111111-2222-3333-4444-555555555555:42:2000.000002'
+    const owner = {
+      pid: 42,
+      processStartId: oldId,
+      generation: randomUUID(),
+      startedAt: new Date().toISOString(),
+      socketPath: join(dir, 'daemon.sock'),
+    }
+    mkdirSync(join(dir, 'daemon'))
+    const ownerPath = join(dir, 'daemon', 'owner.json')
+    writeFileSync(ownerPath, encodeOwner(owner))
+    const probe = vi.spyOn(host, 'legacyMacosProcessIdentity')
+    const processIdentity = vi.fn<() => Promise<ProcessIdentity>>(async () => ({
+      state: 'alive',
+      startId: newId,
+    }))
+    const kill = vi.fn(() => processIdentity.mockResolvedValue({ state: 'dead' }))
+    try {
+      writeFileSync(ownerPath, encodeOwner({ ...owner, processStartId: 'darwin:unrecognized-legacy' }))
+      expect(await daemonStatus(dir, { processIdentity, connect: async () => true })).toMatchObject({
+        running: true,
+      })
+      await expect(stopDaemon(dir, { processIdentity, kill })).rejects.toThrow(/identity unavailable/)
+      expect(kill).not.toHaveBeenCalled()
+      writeFileSync(ownerPath, encodeOwner(owner))
+      // No same-boot proof and already-drifted fields: conservatively live, never signal.
+      probe.mockResolvedValue({
+        identity: { state: 'alive', startId: newId },
+        legacyStartId: 'darwin:999.925027:42:2000.000002',
+      })
+      expect(await daemonStatus(dir, { processIdentity, connect: async () => true })).toMatchObject({
+        running: true,
+      })
+      await expect(stopDaemon(dir, { processIdentity, kill })).rejects.toThrow(/identity unavailable/)
+      expect(kill).not.toHaveBeenCalled()
+      // Exact legacy fields provide the migration anchor; owner bytes remain old-daemon compatible.
+      probe.mockResolvedValue({ identity: { state: 'alive', startId: newId }, legacyStartId: oldId })
+      expect(await daemonStatus(dir, { processIdentity, connect: async () => true })).toMatchObject({
+        running: true,
+      })
+      probe.mockResolvedValue({
+        identity: { state: 'alive', startId: newId },
+        legacyStartId: 'darwin:999.925027:42:2000.000002',
+      })
+      expect(await daemonStatus(dir, { processIdentity, connect: async () => true })).toMatchObject({
+        running: true,
+      })
+      const { readOwner } = await import('../src/supervisor/owner-record.js')
+      expect(await readOwner(dir)).toEqual(owner)
+      for (const stale of [
+        newId.replace('11111111', 'aaaaaaaa'),
+        newId.replace('2000.000002', '2000.000003'),
+      ]) {
+        processIdentity.mockResolvedValue({ state: 'alive', startId: stale })
+        expect(await daemonStatus(dir, { processIdentity })).toEqual({ running: false })
+        expect(await stopDaemon(dir, { processIdentity, kill })).toBe('not-running')
+        expect(kill).not.toHaveBeenCalled()
+      }
+      processIdentity.mockResolvedValue({ state: 'alive', startId: newId })
+      expect(await stopDaemon(dir, { processIdentity, kill })).toBe('stopped')
+      expect(kill).toHaveBeenCalledWith(42, 'SIGTERM')
+    } finally {
+      probe.mockRestore()
       rmSync(dir, { recursive: true, force: true })
     }
   })
