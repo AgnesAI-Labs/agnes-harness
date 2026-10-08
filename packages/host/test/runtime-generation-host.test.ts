@@ -118,6 +118,9 @@ it('keeps old plugin leases across update, close and cold resume, and drains on 
     const reload = await required(host.reloadPlugin)('acme/generation', two.snapshot.directory)
     expect(reload.changed).toBe(true)
     expect(await required(host.reloadPlugin)('acme/generation')).toEqual({ ...reload, changed: false })
+    // A new, unbound container must also accept subsequent installed code publications.
+    await host.applyRuntimeTarget(target(one))
+    await host.applyRuntimeTarget(target(two))
     const b = await host.createSession({ key: 'session-b', cwd: root })
     const execute = (session: typeof a) =>
       required(session.currentTools().resolve('generation_value')).execute({}, {

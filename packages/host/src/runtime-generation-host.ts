@@ -251,7 +251,8 @@ export async function createRuntimeGenerationHost(
         ...(hasSkills ? { skillResources: generationSkills.input } : {}),
         packageDirs,
         runtimePluginSnapshots: snapshot.sources,
-        runtimePluginSources: async () => snapshot.sources,
+        // Target identities still pin imports; an unbound container may receive newer targets.
+        runtimePluginSources: options.runtimePluginSources ?? (async () => snapshot.sources),
         activationBarrier: createExtensionActivationBarrier(),
         sessionGeneration: (key) => store.session(key)?.generationId ?? binding.id,
         onGenerationSessionBinding: (key) => {
