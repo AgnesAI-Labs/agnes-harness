@@ -83,7 +83,9 @@ export async function createCompositionHost(
     tree: ResolvedComposition,
     host?: Host,
   ): T[] => {
-    const skill = host?.runtimeTargetSnapshot?.()?.tree.rows.find((row) => row.id === SKILL_ROW_ID)
+    // Skills are live resources. A replayed target can carry a row from an earlier worker boot.
+    // Use this container's prepared row so its mount identity matches its current importer.
+    const skill = host?.extensionRows.current().find((row) => row.id === SKILL_ROW_ID)
     const candidates = rows.map((row) => (skill && row.id === SKILL_ROW_ID ? (skill as T) : row))
     const plugins = resolveSessionCapabilities({
       composition: tree,

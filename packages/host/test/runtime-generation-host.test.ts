@@ -254,7 +254,7 @@ it('keeps code pins while reading live Skills after refresh and cold resume', as
       resourceId: `skill/runtime/runtime/${'a'.repeat(64)}`,
       name: 'pinned',
       description: 'Pinned instructions',
-      revision: body === 'old body' ? 'a'.repeat(64) : 'b'.repeat(64),
+      revision: (body === 'old body' ? 'a' : body === 'new body' ? 'b' : 'c').repeat(64),
       capabilityHash: 'c'.repeat(64),
       sourceIdentity: { scope: 'runtime', rootKey: 'runtime', sourceId: 'a'.repeat(64) },
       priority: 450,
@@ -267,6 +267,7 @@ it('keeps code pins while reading live Skills after refresh and cold resume', as
     script: [],
     disableSessionTitle: true,
     packageDirs: { '@agnes/base': fileURLToPath(new URL('../../base', import.meta.url)) },
+    runtimePluginSources: async () => [],
   }
   try {
     host = (await createTestHost({ ...options, skillResources: view('old body') })).host
@@ -288,8 +289,28 @@ it('keeps code pins while reading live Skills after refresh and cold resume', as
       } as never)
     expect(await read(a)).toMatchObject({ content: [{ text: expect.stringContaining('new body') }] })
     expect(await read(b)).toMatchObject({ content: [{ text: expect.stringContaining('new body') }] })
+    const lastGoodTarget = required(host.runtimeTargetSnapshot?.())
+    expect(lastGoodTarget.resource.rows['ext:agnes/skills']).not.toBeNull()
     await host.close()
     host = (await createTestHost({ ...options, skillResources: view('current unrelated body') })).host
+    expect(host.runtimeTargetSnapshot?.()?.resource.rows['ext:agnes/skills']?.entryRevision).not.toBe(
+      lastGoodTarget.resource.rows['ext:agnes/skills']?.entryRevision,
+    )
+    // Cold worker boot replays the daemon's last-good target after assembling current resources.
+    expect((await host.applyRuntimeTarget(lastGoodTarget)).publication?.ok).toBe(true)
+    const jobs = host.extensionRows.prepare({ extensionId: 'agnes/jobs', entryRevision: 'jobs-v2' })
+    // Publishing code rows must keep the current Skills importer, even with a stale resource row.
+    expect(
+      (
+        await host.extensionRows.apply([
+          ...host.extensionRows
+            .current()
+            .filter((row) => row.id !== jobs.id && row.id !== 'ext:agnes/skills'),
+          jobs,
+          required(lastGoodTarget.resource.rows['ext:agnes/skills'] ?? undefined),
+        ])
+      ).publication?.ok,
+    ).toBe(true)
     const resumed = await host.createSession({ key: 'skills-old', cwd: root })
     expect(resumed.pluginGenerationId).toBe(a.pluginGenerationId)
     expect(await read(resumed)).toMatchObject({
