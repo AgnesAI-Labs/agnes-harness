@@ -98,6 +98,8 @@ loop 省略版本时必须恰好安装一个版本。显式版本必须匹配；
 
 模型路由、目录及凭据存储配置同样是实时配置：`Host.applyModelProfile` 广播到所有保留的代码容器，各容器的 adapter 注册表保持固定。冷恢复容器使用当前配置；非模型后端变更仍被拒绝。
 
+禁用提供会话 composition 所选 Loop 的包时，该 composition 进入排空状态：保留原代码容器，仅发布动态资源，直到该 Loop 再次启用；新会话不能绑定已禁用的 bundle。保留的代码显示为 draining，Loop 不可用期间拒绝显式迁移。恢复中的任务沿用已有 Loop pin。
+
 ### 发布与恢复
 
 composition 发布采用逐容器收敛。`applyRuntimeTarget` 与 `extensionRows.apply` 的收敛结果带有 `publication`；composition Host 的 `refreshSkillRow`、`applyModelProfile` 返回 `HostPublicationReport`，普通 Host 保留 void 返回。报告包含操作、每个 `compositionHash` 的 `applied`/`failed` 结果及错误，以及 `recovery: 'retry-same-input'`。所有容器都会尝试发布，失败不会阻止后续容器。成功容器保留新状态，失败容器可能保留旧状态或部分收敛，新容器采用最新期望输入。重试同一完整输入使失败容器继续收敛。`compositionPublicationStatus()` 读取最后报告。调用方必须检查 `ok`；worker 的资源和配置命令通过 `assertHostPublication` 抛出携带完整报告的 `HostPublicationError`。失败不表示曾执行全局原子回滚。

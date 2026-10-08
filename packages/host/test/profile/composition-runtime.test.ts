@@ -47,7 +47,17 @@ it('isolates bundle tools from default and other bundles while retaining general
         {
           exportName: 'plugin',
           rowId: 'ext:' + vendor,
-          body: `agnes.registerTool(tool('fixture_${index}'))`,
+          body: `agnes.registerTool(tool('fixture_${index}'))
+${
+  index === 0
+    ? `ctx.loops.register('acme/a', {
+  id: 'fixture.business', version: '1.0.0', capabilities: [],
+  codec: { version: 1, encode: (state) => ({ codecVersion: 1, state }), decode: (checkpoint) => checkpoint.state },
+  create: () => ({ step: async () => ({ outcome: 'idle' }), cancel() {}, dispose() {}, checkpoint: () => ({ codecVersion: 1, state: null }) }),
+  resume: () => ({ step: async () => ({ outcome: 'idle' }), cancel() {}, dispose() {}, checkpoint: () => ({ codecVersion: 1, state: null }) }),
+})`
+    : ''
+}`,
         },
       ],
       { vendor },
@@ -55,7 +65,18 @@ it('isolates bundle tools from default and other bundles while retaining general
     if (index > 1) return source
     const file = join(source.snapshot.directory, 'package.json')
     const manifest = JSON.parse(readFileSync(file, 'utf8'))
-    manifest.agnes.bundles = { [index === 0 ? 'a' : 'b']: {} }
+    manifest.agnes.bundles = {
+      [index === 0 ? 'a' : 'b']:
+        index === 0 ? { profile: { loop: { id: 'fixture.business', version: '1.0.0' } } } : {},
+    }
+    if (index === 0) {
+      manifest.agnes.plugins[0].inject.push('loops')
+      const entry = join(source.snapshot.directory, 'index.js')
+      writeFileSync(
+        entry,
+        readFileSync(entry, 'utf8').replace("inject: ['extension']", "inject: ['extension', 'loops']"),
+      )
+    }
     writeFileSync(file, JSON.stringify(manifest))
     return {
       ...source,
@@ -73,7 +94,14 @@ it('isolates bundle tools from default and other bundles while retaining general
   }
   let fixture = await pluginHost(sources, options)
   const dataDir = fixture.dataDir
-  const target = targetOf(ids.map((vendor) => pluginRow('ext:' + vendor, 'plugin', false, { vendor })))
+  const row = (vendor: string, disabled = false) =>
+    createPluginRow({
+      ...pluginRow('ext:' + vendor, 'plugin', disabled, { vendor }),
+      snapshotDigest: `sha256-${'8'.repeat(64)}`,
+      exportName: 'plugin',
+      inject: vendor === 'acme/a' ? ['extension', 'loops'] : ['extension'],
+    })
+  const target = targetOf(ids.map((vendor) => row(vendor)))
   try {
     await fixture.host.applyRuntimeTarget(target)
     const normal = await fixture.host.createSession({ key: 'default-tools', cwd: dataDir })
@@ -125,12 +153,28 @@ it('isolates bundle tools from default and other bundles while retaining general
     } finally {
       writeFileSync(manifestFile, manifestBytes)
     }
-    const disabled = targetOf(
-      ids.map((vendor) => pluginRow('ext:' + vendor, 'plugin', vendor === 'acme/general', { vendor })),
-    )
+    expect(
+      (await fixture.host.applyRuntimeTarget(targetOf(ids.map((vendor) => row(vendor, vendor === 'acme/a')))))
+        .ok,
+    ).toBe(true)
+    expect(
+      fixture.host.pluginGenerationStatus!().plugins.find((item) => item.id === 'acme/general'),
+    ).toMatchObject({ state: 'active' })
+    const disabled = targetOf(ids.map((vendor) => row(vendor, vendor !== 'acme/b')))
     const report = await fixture.host.applyRuntimeTarget(disabled)
     expect(report.ok, JSON.stringify(report)).toBe(true)
     expect(normal.currentTools().resolve('fixture_2')).toBeDefined()
+    expect(a.loop).toEqual({ id: 'fixture.business', version: '1.0.0' })
+    expect(a.currentTools().resolve('fixture_0')).toBeDefined()
+    await expect(
+      fixture.host.createSession({ key: 'disabled-business', cwd: dataDir, bundles: ['acme/a#a'] }),
+    ).rejects.toThrow()
+    await expect(fixture.host.migrateSessionGeneration!('bundle-a')).rejects.toThrow(
+      'E_GENERATION_LOOP_INCOMPATIBLE',
+    )
+    expect(fixture.host.pluginGenerationStatus!().plugins.find((item) => item.id === 'acme/a')).toMatchObject(
+      { state: 'draining' },
+    )
     const fresh = await fixture.host.createSession({ key: 'after-disable', cwd: dataDir })
     expect(fresh.currentTools().resolve('fixture_2')).toBeUndefined()
     await fresh.close()
