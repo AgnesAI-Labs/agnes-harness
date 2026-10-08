@@ -1,8 +1,7 @@
 import { defineExtension, defineTool, type ToolContext } from '@agnes/extension-api'
-import { AGH_DIR } from '@agnes/protocol'
 import { Type } from '@sinclair/typebox'
+import { candidateTemplate } from './candidate-templates.js'
 import { creatorAssets } from './generated/assets.js'
-import { scriptedToolTest } from './scripted-test.js'
 
 const meta = {
   isReadOnly: false,
@@ -14,72 +13,29 @@ const meta = {
   costHint: undefined,
   deferLoading: undefined,
 }
-async function run(ctx: ToolContext, argv: string[], cwd = ctx.cwd) {
+const candidateId = Type.String({ pattern: '^candidate-[a-f0-9]{32}$' }),
+  expectedHash = Type.String({ pattern: '^sha256-[a-f0-9]{64}$' })
+const file = Type.Object(
+  { path: Type.String({ minLength: 1, maxLength: 240 }), content: Type.String({ maxLength: 131072 }) },
+  { additionalProperties: false },
+)
+async function request(ctx: ToolContext, input: unknown) {
   ctx.signal.throwIfAborted()
-  const result = await ctx.exec(argv, { cwd, timeoutMs: ctx.timeoutMs })
+  if (!ctx.pluginManage)
+    return {
+      isError: true,
+      content: [
+        { type: 'text' as const, text: 'Host-reviewed authoring is unavailable. No files were installed.' },
+      ],
+    }
+  const value = await ctx.pluginManage.request(input)
   ctx.signal.throwIfAborted()
-  return {
-    content: [
-      { type: 'text' as const, text: [result.stdout, result.stderr, `exit ${result.code}`].join('\n') },
-    ],
-    ...(result.code !== 0 || result.timedOut ? { isError: true } : {}),
-  }
+  return { content: [{ type: 'text' as const, text: JSON.stringify(value) }] }
 }
-// Each mutation runs through the normal ToolContext exec port and tool approval classifier.
-// Arguments are passed as argv, never interpolated into a shell command.
-const prepare = `
-const fs = require("node:fs"), path = require("node:path");
-const { mkdir, rm, writeFile } = require("node:fs/promises");
-const { join, resolve } = path;
-const root = "/__agnes_templates__";
-const templateNames = ${JSON.stringify(creatorAssets.templateNames)};
-const files = ${JSON.stringify(creatorAssets.files)};
-async function readFile(file) { return files[file.slice(root.length + 1).split(path.sep).join("/")]; }
-async function readdir(dir) {
-  const prefix = dir.slice(root.length + 1).split(path.sep).join("/") + "/";
-  const entries = new Map();
-  for (const name of Object.keys(files)) if (name.startsWith(prefix)) {
-    const rest = name.slice(prefix.length), leaf = rest.split("/")[0], directory = rest.includes("/");
-    entries.set(leaf, { name: leaf, isDirectory: () => directory, isFile: () => !directory });
-  }
-  return [...entries.values()];
-}
-${creatorAssets.scaffoldSource}
-const dir = await scaffold(process.argv[2], process.argv[3], process.argv[4], { local: true });
-const file = path.join(dir, "package.json"), pkg = JSON.parse(fs.readFileSync(file, "utf8"));
-pkg.exports = "./src/index.ts";
-pkg.agnes.capabilities = { ...(process.argv[2] === "tool-with-panel" ? { ui: true } : {}), ...(process.argv[2] === "loop" ? { model: true } : {}) };
-fs.writeFileSync(file, JSON.stringify(pkg, null, 2) + "\\n");
-for (const name of fs.readdirSync(path.join(dir, "test"))) {
-  const test = path.join(dir, "test", name);
-  fs.writeFileSync(test, fs.readFileSync(test, "utf8").replaceAll("../dist/index.js", "../src/index.ts"));
-}
-if (["tool", "tool-with-panel"].includes(process.argv[2])) {
-  fs.writeFileSync(path.join(dir, "test", "scripted.test.mjs"), ${JSON.stringify(scriptedToolTest)});
-}
-console.log(dir);
-`
-const install = `
-const fs = require("node:fs"), path = require("node:path");
-const source = path.resolve(process.argv[1]), name = process.argv[2];
-const target = path.join(process.cwd(), ${JSON.stringify(AGH_DIR)}, "plugins", name);
-if (fs.existsSync(target)) throw new Error("Local plugin exists; edit it or choose another name");
-const exclude = new Set(["node_modules", ".git", "dist"]);
-function copy(from, to) {
-  const stat = fs.lstatSync(from);
-  if (stat.isDirectory()) { fs.mkdirSync(to); for (const name of fs.readdirSync(from)) {
-    if (!exclude.has(name)) copy(path.join(from, name), path.join(to, name));
-  } } else if (stat.isFile()) fs.copyFileSync(from, to);
-  else throw new Error("Plugins may not contain symlinks or special files");
-}
-fs.mkdirSync(path.dirname(target), { recursive: true });
-try { copy(source, target); } catch (error) { fs.rmSync(target, { recursive: true, force: true }); throw error; }
-console.log("Installed " + name + "; check /admin/plugins. New sessions use it after activation.");
-`
 export const pluginCreatorTools = [
   defineTool({
     name: 'plugin_creator_guide',
-    description: 'Read the bundled plugin creator skill before building a plugin.',
+    description: 'Read the reviewed plugin/Skill authoring guide.',
     parameters: Type.Object({}, { additionalProperties: false }),
     meta: { ...meta, isReadOnly: true, isDestructive: false, replay: 'safe', requiresApproval: 'never' },
     async execute(_args, ctx) {
@@ -90,63 +46,69 @@ export const pluginCreatorTools = [
   defineTool({
     name: 'plugin_scaffold',
     description:
-      'Create a zero-build plugin from the create-agh-plugin templates in a new workspace directory.',
+      'Draft a plugin or Markdown Skill in the Host candidate area, outside discovery roots. Returns candidateId and candidateHash; no code is installed.',
     parameters: Type.Object(
       {
         template: Type.Union(
-          ['tool', 'tool-with-panel', 'mcp-skills', 'model-adapter', 'loop'].map((name) =>
-            Type.Literal(name),
+          ['tool', 'tool-with-panel', 'mcp-skills', 'model-adapter', 'loop', 'skill'].map((v) =>
+            Type.Literal(v),
           ),
         ),
         name: Type.String({ pattern: '^(?:@[a-z0-9][a-z0-9._-]*/)?[a-z0-9][a-z0-9._-]*$' }),
-        directory: Type.String({ minLength: 1 }),
+        directory: Type.Optional(
+          Type.String({ description: 'Legacy hint only; candidates are always stored by the Host.' }),
+        ),
       },
       { additionalProperties: false },
     ),
     meta,
     async execute(args, ctx) {
-      return run(ctx, [
-        'node',
-        '-e',
-        `(async () => {${prepare}})().catch(e => { console.error(e.message); process.exitCode = 1 })`,
-        'plugin-creator',
-        args.template,
-        args.name,
-        args.directory,
-      ])
+      return request(ctx, { action: 'candidate.create', files: candidateTemplate(args.template, args.name) })
     },
   }),
   defineTool({
     name: 'plugin_test',
     description:
-      'Run the plugin npm test script (author testkit; use scripted model replies, no model account). Install its development dependencies first.',
-    parameters: Type.Object({ directory: Type.String({ minLength: 1 }) }, { additionalProperties: false }),
+      'Ask permission to run bounded Node author tests against this exact candidate hash, using the public testkit. Tests never publish.',
+    parameters: Type.Object({ candidateId, expectedHash }, { additionalProperties: false }),
     meta,
     async execute(args, ctx) {
-      return run(ctx, [ctx.platform.shell === 'powershell' ? 'npm.cmd' : 'npm', 'test'], args.directory)
+      return request(ctx, { action: 'candidate.test', ...args })
     },
   }),
   defineTool({
     name: 'plugin_install_local',
     description:
-      'Run plugin tests, then copy passing source to the session workspace .agh/plugins/name. Refuses overwrite.',
+      'Submit this passing candidate for human review in Settings → Plugins. This never installs, trusts or enables code; the human publishes the exact reviewed hash.',
+    parameters: Type.Object({ candidateId, expectedHash }, { additionalProperties: false }),
+    meta,
+    async execute(args, ctx) {
+      return request(ctx, { action: 'candidate.submit', ...args })
+    },
+  }),
+  defineTool({
+    name: 'plugin_candidate_write',
+    description:
+      'Replace candidate files through the Host authoring port. Supply the complete text tree. Every change invalidates tests and human review.',
     parameters: Type.Object(
-      { directory: Type.String({ minLength: 1 }), name: Type.String({ pattern: '^[a-z0-9][a-z0-9._-]*$' }) },
+      { candidateId, expectedHash, files: Type.Array(file, { minItems: 1, maxItems: 64 }) },
       { additionalProperties: false },
     ),
     meta,
     async execute(args, ctx) {
-      const tested = await run(
-        ctx,
-        [ctx.platform.shell === 'powershell' ? 'npm.cmd' : 'npm', 'test'],
-        args.directory,
-      )
-      if (tested.isError) return tested
-      return run(ctx, ['node', '-e', install, args.directory, args.name])
+      return request(ctx, { action: 'candidate.write', ...args })
+    },
+  }),
+  defineTool({
+    name: 'plugin_candidate_read',
+    description: 'Read a candidate, its files, hash, tests and review state.',
+    parameters: Type.Object({ candidateId }, { additionalProperties: false }),
+    meta: { ...meta, isReadOnly: true, isDestructive: false, replay: 'safe', requiresApproval: 'never' },
+    async execute(args, ctx) {
+      return request(ctx, { action: 'candidate.show', ...args })
     },
   }),
 ] as const
-
 export default defineExtension((api) => {
   const disposers = pluginCreatorTools.map((tool) => api.registerTool(tool))
   disposers.push(
@@ -156,7 +118,7 @@ export default defineExtension((api) => {
           id: 'plugin-creator',
           order: 165,
           content:
-            'To build a plugin from a user request, first call plugin_creator_guide. Use plugin_scaffold, normal read/write/edit tools, plugin_test, then plugin_install_local. All changes and test commands follow normal session approvals.',
+            'To grow a plugin or Skill: read plugin_creator_guide; plugin_scaffold creates a private candidate, plugin_candidate_read/write edit its full text tree, plugin_test runs tests for its hash, plugin_install_local submits it for human review. Only the human may publish in Settings → Plugins. Never write drafts to plugin/Skill discovery roots. Old sessions keep their pinned generation.',
         },
       ],
     })),

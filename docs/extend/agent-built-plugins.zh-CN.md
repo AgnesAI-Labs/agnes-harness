@@ -4,23 +4,37 @@
 
 [作者指南](README.zh-CN.md) · [本地插件](local-plugins.zh-CN.md) · [测试](testing.zh-CN.md)
 
-先配置能调用工具、编辑文件的模型 route，再在 daemon 的工作区内打开本地会话。内置 Demo 用于教学回复，不是自动插件作者。可以要求：
+让能调用工具的模型实现可复用工具或 Skill，并提供确定性测试。内置 Demo 可离线复现显式的 `call <工具> <JSON>` 指令，不会自主设计代码。
 
-> 创建一个校验客户编号的插件，返回规范化编号，解释无效输入。包含确定性测试，执行测试，并在安装前让我确认。
+Agent 创作的文件走 **候选 → 测试 → 人工审阅 → 发布**。Host 将有界纯文本文件集合写入 profile 的私有 `.authoring-candidates` 区。发现流程不会加载它，即使自定义发现根目录指向候选区内部。创建或提交候选不安装、不信任、不启用插件。
 
-默认内置的 **Plugin Helper** 提供三个工具：
+默认 **Plugin Helper** 提供三个工具：
 
-1. 调用 `plugin_helper_guide`，传入 kind: tool（也可选 skill / skin）。它返回与当前版本匹配的说明和完整、自包含的 JavaScript 模板；不会创建作者工具包的全部五种 TypeScript 模板。
-2. 实现所需行为，并在返回的文件集合中加入确定性测试。保持包名、row ID、具名 export、inject 服务与工具名一致。Helper 接受不带依赖与包脚本的纯文本 ESM；高级 Loop、adapter 与客户端面板走[作者快速入门](quickstart.zh-CN.md)。
-3. 调用 `plugin_helper_create`，传入 files: [{ path, content }, ...]。它验证文件集合，在会话工作区的 .plugin-helper 下写入新目录，返回 `prepared proposal`、目录、integrity 与能力预览。这一步保存源码，不安装或执行插件。
-4. 检查保存的文件，通过普通已审批 shell 工具执行测试。例如自包含的 node:test 用例可执行 `node --test <返回目录>/test.mjs`。Plugin Helper 不会自动跑测试。测试失败时如实报告，用 `plugin_helper_install` 的 action: cancel 取消 proposal，修复文件集合后重新 prepare。编辑已保存目录不会改变不可变的 `prepared proposal`。
-5. 仅在检查和测试通过后，调用 `plugin_helper_install`，传入 action: commit 与 `proposalId`。本地确认单独授权安装、信任并启用这份已准备的确切内容。创建源码不等于同意安装；拒绝或取消后停止流程。
-6. 返回 `submitted` 时结束当前轮次；后续轮次再用 `plugin_helper_install` 的 action: status 与同一 `proposalId` 查询。在“设置 → 插件管理”或 /admin/plugins 核对实际 running 状态后再报告成功。新工具在后续轮次可用，提交回执不代表已激活。
+1. `plugin_helper_guide`（`kind: tool|skill|skin`）返回版本匹配的 JavaScript 模板和 Node 合同测试。实现需求后，加强测试，包括无效输入。
+2. `plugin_helper_create`（`files: [{path, content}, …]`）仅写 Host 候选区，返回 `proposalId`（候选 ID）、`candidateHash` 和 `draft` 状态。有界 helper 接受不带依赖与生命周期脚本的自包含文本 ESM。
+3. `plugin_helper_install`（`action: test`、`proposalId`）先征得明确许可，再对该摘要的私有副本执行 Node 作者测试。`action: commit` 提交通过的结果供审阅；`action: status` 查询持久候选。Commit 不再安装；旧 onboarding proposal ID 需重新创建候选。
 
-默认 Plugin Helper 没有上述名称以外的测试／脚手架工具；作者测试用普通已审批 shell 与文件工具。可选源码扩展 `agnes/plugin-creator` 是另一套作者工具包集成，不是默认内置 Helper。
+新创作 Markdown 的 `skill_helper_create` 同样保存为可审阅的 Skill 包候选；`skill_helper_install` 对候选 ID 使用 test/commit/status。创作包在此 profile 发布；代码按会话固定，已批准的 Skill 资源实时刷新；create 不再接受原 workspace/user 范围与仅安装参数。已有 Skill 导入保留 workspace/user 导入审批流程。
 
-写文件、测试与安装均遵循会话审批和沙箱策略；不得用 shell 或配置修改绕过拒绝。普通已安装插件执行可信 Node 代码，预览与测试通过并不会隔离模块初始化。测试需覆盖用户所需行为及无效输入，不能只保留 echo 断言；失败的检查和未验证的浏览器效果应分别报告。
+可选 `agnes/plugin-creator` 扩展另有 `plugin_scaffold`（tool、tool-with-panel、mcp-skills、model-adapter、loop、skill）、`plugin_candidate_read`、`plugin_candidate_write`、`plugin_test` 和 `plugin_install_local`。写入须提供旧 `candidateHash` 并替换完整文本树；`plugin_install_local` 只提交测试通过的摘要，不将代码复制到发现根目录。
 
-后续源码开发可使用[本地插件](local-plugins.zh-CN.md)根目录与[热重载](hot-reload.zh-CN.md)：运行中的 daemon 会监视修改，也可用 `agh dev <folder>` / `agh plugins reload <id>` 立即重载。普通插件改动无需重启，新会话使用新代际，已有会话保留原版本。
+在 **设置 → 插件 → Agent 候选** 查看文件差异、已安装版本 `baseHash`、候选摘要、能力／权限变化、测试和 Agent 会话／轮次来源。先看源码再运行测试：作者测试在本机执行可信 JavaScript，剥离环境、限制时间和输出并支持取消，但不是恶意代码沙箱。运行器使用 Node 24 与公开作者 SDK，不运行包生命周期脚本，不将 Markdown 当命令；至少一个实际执行的测试通过后才能提交。
 
-内置 Plugin Helper 实现与模板位于 packages/package-manager/bundled-plugins/plugin-helper。独立 creator 扩展通过 node packages/base/extensions/plugin-creator/gen-assets.mjs 内嵌作者工具包资源；修改其 Skill 或 templates 后应重新生成。
+提交后，在现有确认弹窗中选择 **批准并发布** 或 **拒绝**。审批同时绑定候选摘要与不可变审阅摘要。草稿编辑、审阅副本损坏、已安装基线改变都会拒绝旧审批；须重新测试并提交。失败测试、已拒绝候选不能发布。新增能力须遵守部署的正常能力策略并获得新的人工审批。
+
+CLI 审阅：
+
+```sh
+agh plugins candidates list --json
+agh plugins candidates show <candidate-id> --json
+agh plugins candidates approve <candidate-id> --candidate-hash <sha256> --review-hash <sha256>
+agh plugins candidates reject <candidate-id> --candidate-hash <sha256> --review-hash <sha256>
+```
+
+两个摘要均取自实际审阅的记录。CLI 不会悄悄批准编辑后的最新草稿。App Server 提供 `_agnes/v1/plugins.candidates.{list,show,create,write,test,submit,approve,reject}`；create/write 仅供 Host 标记的作者通道，Agent 无法自行批准／拒绝。协议 schema 维护这些方法及持久来源字段。
+
+发布走正常包安装／更新、信任、启用和代际协调。只有运行时确认审阅摘要已 running，才能返回 `published`。新会话获得插件代码，旧会话保留固定代码代际。已批准的 Skill Markdown 属于实时资源，也可在旧会话中变为可见。来源保留 `installer=agent`、作者会话／轮次及审阅者。失败或中断的发布不自动重放；先检查实际包状态，再创建新候选。
+
+Markdown Skill 是包内数据，全文与插件快照一起审阅。Skill 提及的脚本仍需普通工具审批。人工维护的[本地插件](local-plugins.zh-CN.md)与[热重载](hot-reload.zh-CN.md)继续作为明确的开发者信任路径；作者 helper 不向其中写草稿。已授权 shell 仍拥有正常文件系统权限。
+
+候选只含文本（最多 64 文件、每文件 128 KiB、总计 256 KiB），每 profile 最多 128 候选。二进制资产和依赖安装走普通作者／包工作流；目前没有候选垃圾回收命令。内置实现位于 `packages/package-manager/bundled-plugins/plugin-helper`；creator 资源生成命令为 `node packages/base/extensions/plugin-creator/gen-assets.mjs`。

@@ -4,6 +4,7 @@ import { packageOfRow } from '@agnes/daemon-foundation/composite-desired'
 import type { LocalEndpoint } from '@agnes/daemon-foundation/local/endpoint'
 import type { CompositeTargetStore } from '@agnes/daemon-foundation/storage/composite-target-store'
 import type {
+  AuthoringTestRunner,
   CatalogRead,
   InstalledInventory,
   InstalledPackage,
@@ -11,6 +12,7 @@ import type {
   PackageSource,
 } from '@agnes/package-manager'
 import {
+  AuthoringCandidates,
   activeRuntimePinId,
   collectSkinRoster,
   parseSource,
@@ -23,6 +25,8 @@ import {
 } from '@agnes/package-manager'
 import { decodeRuntimeTargetArtifact, type RuntimeTargetArtifact } from '@agnes/plugin-runtime/host'
 import {
+  type AuthoringCandidate,
+  type AuthoringFile,
   type ClientModuleEffectCallParams,
   type ClientModuleListResult,
   type ClientModuleReadResult,
@@ -51,6 +55,7 @@ import {
 } from '@agnes/protocol'
 import { classifyPackageContributions } from '../package-readiness.js'
 import { pluginTreeList } from '../plugin-tree-surface.js'
+import { runAuthoringTests } from './authoring-tests.js'
 import {
   type ClientModuleRegistry,
   type ClientModulesChanged,
@@ -396,6 +401,7 @@ function sortCatalog(entries: readonly PackageCatalogDescriptor[]): PackageCatal
 }
 
 class Service implements PackageAdminService {
+  private readonly candidates: AuthoringCandidates
   private readonly tails = new Map<string, Promise<void>>()
   private readonly active = new Map<string, AbortController>()
   private readonly listeners = new Set<(operation: PackageOperation) => void>()
@@ -406,6 +412,7 @@ class Service implements PackageAdminService {
   constructor(
     private readonly options: {
       manager: PackageManager
+      authoringTestRunner?: AuthoringTestRunner
       profileDirectory: PackageProfileDirectory
       operations: PackageOperationStore
       catalog?: Catalog
@@ -429,6 +436,10 @@ class Service implements PackageAdminService {
       clock: () => string
     },
   ) {
+    this.candidates = new AuthoringCandidates(
+      options.manager,
+      options.authoringTestRunner ?? runAuthoringTests,
+    )
     this.clientModules =
       options.clientModules ??
       createClientModuleRegistry({
@@ -527,6 +538,10 @@ class Service implements PackageAdminService {
     )
       operationError(this.recoveryError)
     try {
+      if (method.startsWith('_agnes/v1/plugins.candidates.')) {
+        if (this.recoveryError) operationError(this.recoveryError)
+        return await this.authoring(method, data, granted)
+      }
       if (method === '_agnes/v1/packages.catalog.list')
         return await this.catalogList(
           data as { profile: string; query?: string; cursor?: string; limit?: number },
@@ -644,6 +659,115 @@ class Service implements PackageAdminService {
       if (error && typeof error === 'object' && 'code' in error && typeof error.code === 'number') throw error
       operationError(packageError(error))
     }
+  }
+
+  private async authoring(
+    method: PackageAdminMethodName,
+    params: Record<string, unknown>,
+    authority: PackageAdminAuthority,
+  ): Promise<unknown> {
+    const profile = params.profile as string,
+      directory = await this.options.profileDirectory(profile)
+    const owner = authority.principalId,
+      id = params.candidateId as string
+    const action = method.slice('_agnes/v1/plugins.candidates.'.length)
+    if (action === 'list') return { candidates: this.candidates.list(directory, owner) }
+    if (action === 'show') return this.candidates.show(directory, id, owner)
+    this.requireBoundClient(method, params as EffectParams, authority)
+    if (['create', 'write'].includes(action) && (!authority.installer || !authority.authoringOrigin))
+      throw rpcError('CAPABILITY_DENIED')
+    if (['approve', 'reject'].includes(action) && authority.installer === 'agent')
+      throw rpcError('CAPABILITY_DENIED', { reason: 'Agent cannot approve its own candidate' })
+    if (action === 'approve')
+      requirePackageAdminPermissions(method, authority, [
+        'packages.install',
+        'packages.trust',
+        'packages.activate',
+      ])
+    return this.candidates.serialized(directory, async () => {
+      const expected = params.expectedHash as string
+      if (action === 'create')
+        return this.candidates.create(
+          directory,
+          params.files as AuthoringFile[],
+          owner,
+          jcs([owner, authority.clientId, params.commandId]),
+          authority.authoringOrigin!,
+        )
+      if (action === 'write')
+        return this.candidates.write(directory, id, owner, expected, params.files as AuthoringFile[])
+      if (action === 'test')
+        return this.candidates.test(
+          directory,
+          id,
+          owner,
+          expected,
+          authority.authoringSignal ?? AbortSignal.timeout(120_000),
+        )
+      if (action === 'submit') return this.candidates.submit(directory, id, owner, expected)
+      return this.candidates.decide(
+        directory,
+        id,
+        owner,
+        expected,
+        params.reviewHash as string,
+        action === 'approve',
+        async (source, value: AuthoringCandidate) => {
+          if (!value.preview?.capabilityHash) throw new Error('Candidate capability snapshot is missing')
+          const signal = AbortSignal.timeout(120_000)
+          const authoring = {
+            candidateId: value.candidateId,
+            candidateHash: value.candidateHash,
+            baseHash: value.baseHash,
+            reviewHash: value.reviewHash!,
+            origin: value.origin,
+            reviewer: owner,
+          }
+          if (value.baseHash === null)
+            await this.options.manager.install(directory, source, {
+              expectedIntegrity: value.candidateHash,
+              installer: 'agent',
+              authoring,
+              signal,
+            })
+          else
+            await this.options.manager.update(directory, value.packageId, source, {
+              expectedIntegrity: value.candidateHash,
+              expectedInstalledIntegrity: value.baseHash,
+              installer: 'agent',
+              authoring,
+              signal,
+            })
+          await this.options.manager.trust(directory, value.packageId, {
+            integrity: value.candidateHash,
+            capabilityHash: value.preview.capabilityHash,
+          })
+          await this.options.manager.enable(directory, value.packageId, true, {
+            expectedInstalledIntegrity: value.candidateHash,
+          })
+          if (!this.options.activation) throw new Error('Runtime activation is unavailable')
+          const observed = await this.options.activation.reconcile({
+            profile,
+            packageId: value.packageId,
+            operationId: value.candidateId,
+            operation: value.baseHash === null ? 'enable' : 'update',
+            signal,
+          })
+          await this.refreshClientModules(profile, directory, 'rebuilt')
+          if (
+            observed.error ||
+            observed.actual !== 'running' ||
+            observed.actualIntegrity !== value.candidateHash
+          )
+            throw new Error('Candidate runtime activation failed')
+          const row = (await this.options.manager.inventory(directory)).packages.find(
+            (p) => p.id === value.packageId,
+          )
+          if (row?.entry.integrity !== value.candidateHash || !row.enabled || !row.trusted)
+            throw new Error('Candidate changed during runtime activation')
+        },
+      )
+    })
   }
 
   private pluginTreeStore(): CompositeTargetStore | undefined {
@@ -1838,6 +1962,7 @@ class Service implements PackageAdminService {
 
 export function createPackageAdminService(options: {
   manager: PackageManager
+  authoringTestRunner?: AuthoringTestRunner
   profileDirectory: PackageProfileDirectory
   operations: PackageOperationStore
   catalog?: Catalog

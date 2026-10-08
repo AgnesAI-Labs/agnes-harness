@@ -490,3 +490,283 @@ test('UI FDE bundle selection runs and restores its durable deliverable', async 
   await expect(card.last()).toContainText('report.md')
   await quality(page, info, 'fde-deliverable')
 })
+
+test('agent candidate review binds exact tests and hashes, refuses edited approval, publishes only for new sessions', async ({
+  page,
+  runtime,
+  expectedBrowserErrors,
+}, info) => {
+  test.setTimeout(300_000)
+  const client = await runtime.connect()
+  const old = await client.session.new({
+    sessionKey: crypto.randomUUID(),
+    cwd: runtime.workspace,
+    preset: 'full-access',
+  })
+  await old.attach()
+  old.onPermissionRequest(async () => ({ verdict: 'allowed-once' }))
+  const { prompt } = await import('./sdk.js')
+  await prompt(old, 'call plugin_helper_guide {"kind":"tool"}')
+  const guide = JSON.parse(
+    (await toolResult(old, 'plugin_helper_guide'))!.content[0]!.type === 'text'
+      ? ((await toolResult(old, 'plugin_helper_guide'))!.content[0] as { text: string }).text
+      : '{}',
+  ) as { files: { path: string; content: string }[] }
+  await prompt(old, 'call plugin_helper_create ' + JSON.stringify({ files: guide.files }))
+  const createdResult = (await toolResult(old, 'plugin_helper_create'))!.content[0] as { text: string }
+  const draft = JSON.parse(createdResult.text) as import('@agnes/protocol').AuthoringCandidate
+  expect(draft).toMatchObject({ state: 'draft', installer: 'agent', origin: { turn: 2 } })
+  expect(
+    (await client.packages.list({ profile: 'local-dev' })).packages.some((p) => p.id === draft.packageId),
+  ).toBe(false)
+  await prompt(
+    old,
+    'call plugin_helper_install ' + JSON.stringify({ action: 'test', proposalId: draft.candidateId }),
+  )
+  await prompt(
+    old,
+    'call plugin_helper_install ' + JSON.stringify({ action: 'commit', proposalId: draft.candidateId }),
+  )
+  const reviewed = await client.request('_agnes/v1/plugins.candidates.show', {
+    profile: 'local-dev',
+    candidateId: draft.candidateId,
+  })
+  expect(reviewed).toMatchObject({ state: 'review', tests: { state: 'passed', hash: draft.candidateHash } })
+  await page.addInitScript(() => {
+    if (location.protocol !== 'http:') return
+    localStorage.setItem('agnes-locale', localStorage.getItem('e2e-authoring-locale') ?? 'en')
+    localStorage.setItem('agnes-theme', localStorage.getItem('e2e-authoring-theme') ?? 'light')
+  })
+  await page.goto(runtime.url)
+  await expect(page.getByRole('button', { name: 'Settings', exact: true })).toBeVisible()
+  if (!(await page.getByTestId('settings-navigation').isVisible())) await settings(page)
+  await section(page, 'plugins')
+  await page.getByTestId('candidate-open').filter({ hasText: draft.packageId }).click()
+  await expect(page.getByTestId('candidate-state')).toHaveText('Awaiting human review')
+  await expect(page.getByTestId('candidate-tests')).toContainText('Passed')
+  await expect(page.getByTestId('candidate-provenance')).toContainText('installer=agent')
+  await expect(page.getByTestId('candidate-capability-delta')).toBeVisible()
+  const diff = page
+    .getByTestId('candidate-file-diff')
+    .filter({ has: page.getByText('index.mjs', { exact: true }) })
+  await diff.locator('summary').click()
+  await expect(diff).toContainText('my_text_stats')
+  await translated(page)
+  await accessible(page, info, 'candidate-review')
+  // Review each changed screen across both languages and themes. Digest and session IDs are dynamic.
+  for (const [locale, theme] of [
+    ['en', 'light'],
+    ['en', 'dark'],
+    ['zh-CN', 'light'],
+    ['zh-CN', 'dark'],
+  ] as const) {
+    await page.evaluate(
+      ({ locale, theme }) => {
+        localStorage.setItem('e2e-authoring-locale', locale)
+        localStorage.setItem('e2e-authoring-theme', theme)
+      },
+      { locale, theme },
+    )
+    await page.goto(runtime.url)
+    await expect(page.getByTestId('conversation-turn')).toHaveCount(4)
+    await expect(
+      page.getByRole('button', { name: locale === 'en' ? 'Settings' : '设置', exact: true }),
+    ).toBeVisible()
+    if (!(await page.getByTestId('settings-navigation').isVisible())) await settings(page, locale)
+    await section(page, 'plugins')
+    await page.getByTestId('candidate-open').filter({ hasText: draft.packageId }).click()
+    await page
+      .getByTestId('candidate-review')
+      .locator('h4')
+      .first()
+      .evaluate((heading) => heading.scrollIntoView({ block: 'start' }))
+    await translated(page)
+    await accessible(page, info, `candidate-review-${locale}-${theme}`)
+    const masks = [
+      page.getByTestId('candidate-hash').locator('code'),
+      page.getByTestId('candidate-review-hash').locator('code'),
+      page.getByTestId('candidate-origin'),
+      page.getByTestId('candidate-test-hash'),
+    ]
+    await screen(page, info, `candidate-review-${locale}-${theme}`, masks)
+    await page
+      .getByTestId('candidate-file-diff')
+      .filter({ has: page.getByText('index.mjs', { exact: true }) })
+      .locator('summary')
+      .click()
+    await screen(page, info, `candidate-diff-${locale}-${theme}`, masks)
+  }
+  await page.evaluate(() => {
+    localStorage.setItem('e2e-authoring-locale', 'en')
+    localStorage.setItem('e2e-authoring-theme', 'light')
+  })
+  await page.goto(runtime.url)
+  await expect(page.getByTestId('conversation-turn')).toHaveCount(4)
+  await expect(page.getByRole('button', { name: 'Settings', exact: true })).toBeVisible()
+  if (!(await page.getByTestId('settings-navigation').isVisible())) await settings(page)
+  await section(page, 'plugins')
+  await page.getByTestId('candidate-open').filter({ hasText: draft.packageId }).click()
+  await page.getByTestId('candidate-approve').click()
+  const dialog = page.getByRole('dialog', { name: 'Approve and publish', exact: true })
+  await expect(dialog).toContainText(reviewed.candidateHash)
+  // A model edit after the human opened the review must invalidate that dialog's captured hashes.
+  const changed = guide.files.map((f) =>
+    f.path === 'index.mjs' ? { ...f, content: f.content + '\n// Edited after review\n' } : f,
+  )
+  const { readFile, writeFile } = await import('node:fs/promises'),
+    { join } = await import('node:path')
+  const record = JSON.parse(
+    await readFile(
+      join(runtime.home, 'profiles/local-dev/.authoring-candidates', draft.candidateId, 'record.json'),
+      'utf8',
+    ),
+  ) as { tree: string }
+  await writeFile(join(record.tree, 'index.mjs'), changed.find((f) => f.path === 'index.mjs')!.content)
+  expectedBrowserErrors.push(
+    'console: Failed to load resource: the server responded with a status of 409 (Conflict)',
+  )
+  const staleResponse = page.waitForResponse((response) => response.url().endsWith('/candidates/approve'))
+  await dialog.getByRole('button', { name: 'Approve and publish', exact: true }).click()
+  expect((await staleResponse).status()).toBe(409)
+  await expect(page.getByTestId('candidate-error')).toBeVisible()
+  expect(
+    (await client.packages.list({ profile: 'local-dev' })).packages.some((p) => p.id === draft.packageId),
+  ).toBe(false)
+  await page.getByTestId('candidate-open').filter({ hasText: draft.packageId }).first().click()
+  await expect(page.getByTestId('candidate-state')).toHaveText('Draft; review invalidated after edits')
+  await expect(page.getByTestId('candidate-approve')).toBeDisabled()
+  await page.getByTestId('candidate-test').click()
+  await page
+    .getByRole('dialog', { name: 'Review and run tests', exact: true })
+    .getByRole('button', { name: 'Review and run tests', exact: true })
+    .click()
+  await expect(page.getByTestId('candidate-state')).toHaveText('Tests passed; awaiting submission')
+  await page.getByTestId('candidate-submit').click()
+  await expect(page.getByTestId('candidate-state')).toHaveText('Awaiting human review')
+  await page.getByTestId('candidate-approve').click()
+  await page
+    .getByRole('dialog', { name: 'Approve and publish', exact: true })
+    .getByRole('button', { name: 'Approve and publish', exact: true })
+    .click()
+  await expect(page.getByTestId('candidate-state')).toHaveText('Published; session code stays pinned', {
+    timeout: 25_000,
+  })
+  const provenance = await client.request('_agnes/v1/packages.provenance', {
+    profile: 'local-dev',
+    id: draft.packageId,
+  })
+  expect(provenance).toMatchObject({
+    installer: 'agent',
+    authoring: { candidateId: draft.candidateId, origin: draft.origin },
+  })
+  expect(provenance.authoring!.candidateHash).not.toBe(reviewed.candidateHash)
+  expect((await old.tools()).tools.some((t) => t.name === 'my_text_stats')).toBe(false)
+  const freshSession = await client.session.new({
+    sessionKey: crypto.randomUUID(),
+    cwd: runtime.workspace,
+    preset: 'full-access',
+  })
+  await freshSession.attach()
+  expect((await freshSession.tools()).tools.some((t) => t.name === 'my_text_stats')).toBe(true)
+  await prompt(freshSession, 'call my_text_stats {"text":"hello world"}')
+  expect((await toolResult(freshSession, 'my_text_stats'))!.structured).toEqual({ characters: 11, words: 2 })
+  await prompt(old, 'call read {"path":"report.md"}')
+  expect(JSON.stringify(await toolResult(old, 'read'))).toContain('Synthetic delivery')
+  // Authored Markdown and adjacent scripts stay inert, and rejection never publishes a Skill.
+  const skillBody =
+    '---\nname: Reviewed method\ndescription: Synthetic reusable workflow.\n---\n\nUse the normal approved shell tool for scripts.\n'
+  await prompt(
+    old,
+    'call skill_helper_create ' +
+      JSON.stringify({
+        name: 'reviewed-method',
+        files: [
+          { path: 'SKILL.md', content: skillBody },
+          {
+            path: 'scripts/check.mjs',
+            content: "throw new Error('This script must never run during review')\n",
+          },
+        ],
+      }),
+  )
+  const skill = JSON.parse(
+    ((await toolResult(old, 'skill_helper_create'))!.content[0] as { text: string }).text,
+  ) as import('@agnes/protocol').AuthoringCandidate
+  expect(skill).toMatchObject({ state: 'draft', installer: 'agent' })
+  await prompt(
+    old,
+    'call skill_helper_install ' + JSON.stringify({ action: 'test', proposalId: skill.candidateId }),
+  )
+  await prompt(
+    old,
+    'call skill_helper_install ' + JSON.stringify({ action: 'commit', proposalId: skill.candidateId }),
+  )
+  await page.getByTestId('candidate-refresh').click()
+  await page.getByTestId('candidate-open').filter({ hasText: skill.packageId }).click()
+  await expect(page.getByTestId('candidate-tests')).toContainText('Passed')
+  await page
+    .getByTestId('candidate-file-diff')
+    .filter({ has: page.getByText('skills/reviewed-method/SKILL.md', { exact: true }) })
+    .locator('summary')
+    .click()
+  await expect(page.getByTestId('candidate-review')).toContainText(skillBody.trim())
+  await page.getByTestId('candidate-reject').click()
+  await page
+    .getByRole('dialog', { name: 'Reject candidate', exact: true })
+    .getByRole('button', { name: 'Reject candidate', exact: true })
+    .click()
+  await expect(page.getByTestId('candidate-state')).toHaveText('Rejected')
+  expect(
+    (await client.packages.list({ profile: 'local-dev' })).packages.some((p) => p.id === skill.packageId),
+  ).toBe(false)
+  await prompt(
+    old,
+    'call skill_helper_create ' +
+      JSON.stringify({
+        name: 'reviewed-published',
+        files: [{ path: 'SKILL.md', content: skillBody }],
+      }),
+  )
+  const publishSkill = JSON.parse(
+    ((await toolResult(old, 'skill_helper_create'))!.content[0] as { text: string }).text,
+  ) as import('@agnes/protocol').AuthoringCandidate
+  await prompt(
+    old,
+    'call skill_helper_install ' + JSON.stringify({ action: 'test', proposalId: publishSkill.candidateId }),
+  )
+  await prompt(
+    old,
+    'call skill_helper_install ' + JSON.stringify({ action: 'commit', proposalId: publishSkill.candidateId }),
+  )
+  await page.getByTestId('candidate-refresh').click()
+  await page.getByTestId('candidate-open').filter({ hasText: publishSkill.packageId }).click()
+  await page.getByTestId('candidate-approve').click()
+  await page
+    .getByRole('dialog', { name: 'Approve and publish', exact: true })
+    .getByRole('button', { name: 'Approve and publish', exact: true })
+    .click()
+  await expect(page.getByTestId('candidate-state')).toHaveText('Published; session code stays pinned', {
+    timeout: 25_000,
+  })
+  const skillSession = await client.session.new({
+    sessionKey: crypto.randomUUID(),
+    cwd: runtime.workspace,
+    preset: 'full-access',
+  })
+  await skillSession.attach()
+  await prompt(skillSession, 'call skill_read {"name":"reviewed-published"}')
+  expect(JSON.stringify(await toolResult(skillSession, 'skill_read'))).toContain(
+    'Synthetic reusable workflow.',
+  )
+  await prompt(old, 'call skill_read {"name":"reviewed-published"}')
+  expect(JSON.stringify(await toolResult(old, 'skill_read'))).toContain('Synthetic reusable workflow.')
+  expect((await old.tools()).tools.some((t) => t.name === 'my_text_stats')).toBe(false)
+  const list = JSON.parse(await runtime.cli(['plugins', 'candidates', 'list', '--json'])) as {
+    candidates: { state: string }[]
+  }
+  expect(list.candidates.some((c) => c.state === 'published')).toBe(true)
+  await info.attach('reviewed-publication.json', {
+    body: JSON.stringify({ reviewed, provenance }),
+    contentType: 'application/json',
+  })
+})

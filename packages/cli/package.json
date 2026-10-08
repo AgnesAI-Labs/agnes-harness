@@ -65,7 +65,8 @@
     "@xterm/headless": "6.0.0",
     "esbuild": "0.28.2",
     "postject": "1.0.0-alpha.6",
-    "@agnes/host-infrastructure": "workspace:*"
+    "@agnes/host-infrastructure": "workspace:*",
+    "@agnes/plugin-runtime": "workspace:*"
   },
   "license": "Apache-2.0"
 }

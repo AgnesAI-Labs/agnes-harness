@@ -1,4 +1,5 @@
 export type { PackageAuditEvent, PackageAuditSink } from './audit.js'
+export { AuthoringCandidates, type AuthoringTestRunner } from './authoring-candidates.js'
 export {
   BUNDLED_EXAMPLES,
   BUNDLED_HELPERS,

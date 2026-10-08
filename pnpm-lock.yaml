@@ -295,6 +295,9 @@ importers:
       '@agnes/host-infrastructure':
         specifier: workspace:*
         version: link:../host-infrastructure
+      '@agnes/plugin-runtime':
+        specifier: workspace:*
+        version: link:../plugin-runtime
       '@sinclair/typebox':
         specifier: 0.34.33
         version: 0.34.33
@@ -555,6 +558,9 @@ importers:
       '@agnes/host':
         specifier: workspace:*
         version: link:../host
+      '@agnes/package-isolation':
+        specifier: workspace:*
+        version: link:../package-isolation
       '@agnes/package-manager':
         specifier: workspace:*
         version: link:../package-manager
@@ -576,6 +582,9 @@ importers:
       es-module-lexer:
         specifier: 2.3.2
         version: 2.3.2
+      esbuild:
+        specifier: 0.28.2
+        version: 0.28.2
     devDependencies:
       '@agnes/ai':
         specifier: workspace:*

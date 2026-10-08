@@ -4,23 +4,37 @@ English | [简体中文](agent-built-plugins.zh-CN.md)
 
 [Author guide](README.md) · [Local plugins](local-plugins.md) · [Testing](testing.md)
 
-Use a model route that can call tools and edit files, then start a local session in the daemon's workspace. The built-in Demo is a teaching reply, not an autonomous plugin author. Ask:
+Ask a tool-capable model to implement a reusable tool or Skill, including deterministic tests. The Demo can reproduce explicit `call <tool> <JSON>` instructions offline; it does not autonomously design code.
 
-> Build a plugin that validates a customer reference, returns its normalized form, and explains invalid inputs. Include deterministic tests, run them, and ask me before installing it.
+Agent-authored files follow **candidate → tests → human review → publish**. The Host saves bounded text trees in the profile’s private `.authoring-candidates` area. Discovery never loads that area, including when a custom discovery root points inside it. Creating or submitting a candidate does not install, trust or enable it.
 
-The default bundled **Plugin Helper** exposes these three tools:
+The default **Plugin Helper** exposes three tools:
 
-1. Call `plugin_helper_guide` with kind: tool (or skill / skin). It returns version-matched guidance and a complete self-contained JavaScript template. This helper does not scaffold all five TypeScript author-kit templates.
-2. Implement the requested behavior and add deterministic tests to the returned file bundle. Keep the package name, row ID, named export, inject services and tool name consistent. The helper accepts text-only ESM without dependencies or package scripts. Advanced loops, adapters and client panels use the [author quickstart](quickstart.md).
-3. Call `plugin_helper_create` with files: [{ path, content }, ...]. It validates the bundle, writes a fresh directory under the session workspace's .plugin-helper folder and returns a `prepared proposal`, directory, integrity and capability preview. This saves source; it does not install or execute it.
-4. Review the saved files and run the tests through the normal approved shell tool, for example `node --test <returned-directory>/test.mjs` for a self-contained node:test fixture. Plugin Helper does not run tests automatically. If a test fails, report it, cancel the proposal with `plugin_helper_install` action: cancel, repair the file bundle and prepare a new proposal. Edits to the saved directory do not update the immutable `prepared proposal`.
-5. Call `plugin_helper_install` with action: commit and `proposalId` only after the review and tests pass. The local confirmation separately authorizes installing, trusting and enabling those exact prepared bytes. Creating the source is not installation consent. Denial or cancellation stops this workflow.
-6. If the reply is `submitted`, end the turn. On a later turn call `plugin_helper_install` with action: status and the same `proposalId`; check actual running state in Settings → Plugin management or /admin/plugins before claiming success. New tools become available on later turns; a `submitted` receipt is not proof of activation.
+1. `plugin_helper_guide` (`kind: tool|skill|skin`) returns a version-matched JavaScript template and Node contract test. Implement the requested behavior and strengthen the test, including invalid inputs.
+2. `plugin_helper_create` (`files: [{path, content}, …]`) writes only to the Host candidate area and returns `proposalId` (the candidate ID), `candidateHash` and `draft` state. The bounded helper accepts self-contained text ESM without dependencies or lifecycle scripts.
+3. `plugin_helper_install` (`action: test`, `proposalId`) asks explicit permission to execute Node author tests against a private copy of that exact tree. `action: commit` submits passing results for review; `action: status` reads the durable candidate. Commit no longer installs. Old onboarding proposal IDs require a fresh candidate.
 
-There is no default Plugin Helper test/scaffold tool beyond the names above. Use the ordinary approved shell and file tools for author tests. The optional source extension `agnes/plugin-creator` is a separate author-kit integration, not the default bundled helper.
+For newly authored Markdown, `skill_helper_create` also writes a reviewed Skill package candidate; `skill_helper_install` uses test/commit/status for its candidate ID. Authored packages publish in this profile; code stays pinned per session and approved Skill resources refresh live; creation no longer accepts the old workspace/user scope or install-only flags. Importing existing Skills retains its workspace/user import approval workflow.
 
-All file writes, tests and installation follow session approvals and sandbox policy. Do not bypass a refusal with shell or configuration changes. Ordinary installed plugins execute trusted Node code; inspection and passing tests do not sandbox module initialization. Tests must assert your requested behavior, including invalid inputs, not merely the starter echo. Report failed checks and unverified browser effects separately.
+The optional `agnes/plugin-creator` extension also provides `plugin_scaffold` (tool, tool-with-panel, mcp-skills, model-adapter, loop or skill), `plugin_candidate_read`, `plugin_candidate_write`, `plugin_test` and `plugin_install_local`. Writes replace the complete text tree and require the previous `candidateHash`; `plugin_install_local` submits the tested hash for human review. It never copies code into a discovery root.
 
-For continued source development, use the [local plugins](local-plugins.md) roots and [hot reload](hot-reload.md): the running daemon watches edits, or use `agh dev <folder>` / `agh plugins reload <id>` for an immediate reload. Ordinary plugin edits require no restart. New sessions use the new generation; existing sessions retain their pinned version.
+In **Settings → Plugins → Agent candidates**, read the file diff, installed `baseHash`, candidate hash, capability/permission changes, tests and agent session/turn provenance. Run tests only after inspecting the source: author tests execute trusted JavaScript on this machine, with a stripped environment, bounded time/output and cancellation, but are not a sandbox for hostile code. The runner uses Node 24 and the public author SDK; it never runs package lifecycle scripts or treats Markdown as a command. Tests must pass with at least one executed case.
 
-The bundled Plugin Helper implementation and templates live in packages/package-manager/bundled-plugins/plugin-helper. The separate creator extension embeds its author-kit assets using node packages/base/extensions/plugin-creator/gen-assets.mjs; regenerate those assets when its Skill or templates change.
+Submit the tested tree, then choose **Approve and publish** or **Reject** in the existing confirmation dialog. Approval binds both the candidate hash and the immutable review hash. Any draft edit, damaged review copy or changed installed base refuses the old approval; re-test and request a fresh review. Failed tests and rejected candidates cannot publish. New capabilities require a fresh human approval under the installation’s normal capability policy.
+
+For CLI review:
+
+```sh
+agh plugins candidates list --json
+agh plugins candidates show <candidate-id> --json
+agh plugins candidates approve <candidate-id> --candidate-hash <sha256> --review-hash <sha256>
+agh plugins candidates reject <candidate-id> --candidate-hash <sha256> --review-hash <sha256>
+```
+
+Take both hashes from the review you inspected. CLI does not silently approve the latest edited draft. App Server exposes `_agnes/v1/plugins.candidates.{list,show,create,write,test,submit,approve,reject}`; create/write require the Host-stamped authoring lane, and the agent cannot approve/reject itself. The protocol schemas own these methods and persisted provenance.
+
+Publication uses normal package install/update, trust, enable and generation reconciliation. A `published` result requires the runtime to report the reviewed integrity as running. New sessions gain the plugin code; existing sessions keep their pinned code generation. Approved Skill Markdown is a live resource and can become visible to existing sessions as well. Provenance retains `installer=agent`, author session/turn and reviewer. A failed or interrupted publication is never automatically replayed; inspect actual package state before creating a new candidate.
+
+Markdown Skills are package data: review their full text with the plugin snapshot. A script mentioned by a Skill still needs normal tool approval. Human-maintained [local plugins](local-plugins.md) and [hot reload](hot-reload.md) remain explicit developer trust paths; the authoring helper never writes drafts there. Already-authorized shell access retains its ordinary filesystem authority.
+
+Candidate trees are text-only (64 files, 128 KiB per file, 256 KiB total), with 128 candidates per profile. Binary assets and dependency installation use the normal author/package workflow. There is no candidate garbage collection command yet. Bundled implementation: `packages/package-manager/bundled-plugins/plugin-helper`; creator assets: `node packages/base/extensions/plugin-creator/gen-assets.mjs`.

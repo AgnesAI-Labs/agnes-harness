@@ -14,6 +14,8 @@ export type PackageAdminAuthority = Readonly<{
   audience: 'admin'
   /** Set only by the daemon's reviewed agent-authoring lane, never by RPC params. */
   installer?: 'agent'
+  authoringOrigin?: import('@agnes/protocol').AuthoringOrigin
+  authoringSignal?: AbortSignal
   principalId: string
   /** Server-established connection namespace for effect/cancel idempotency. */
   clientId: string

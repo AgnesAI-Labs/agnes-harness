@@ -32,7 +32,7 @@ describe('PM4 management contracts', () => {
     // negatives proving config/credential fields are refused, plus standalone row fixtures for
     // the generated-schema parity table. The current set also includes generation status and
     // capability/source authoring boundaries.
-    expect(result.total).toBe(527)
+    expect(result.total).toBe(606)
     expect(result.skipped).toBe(0)
   })
   it('requires explicit classification, permission and command identity for every management method', () => {
@@ -44,7 +44,7 @@ describe('PM4 management contracts', () => {
       .filter((name) => /^_agnes\/v1\/(?:packages|skins|clientModules|plugins|sessions)\./.test(name))
       .sort()
     expect(names).toEqual(Object.keys(PACKAGE_ADMIN_METHODS).sort())
-    expect(names).toHaveLength(32) // Includes publication status and explicit session generation migration.
+    expect(names).toHaveLength(40) // Includes publication status, session migration and eight reviewed-authoring methods.
     for (const name of names as PackageAdminMethodName[]) {
       const method = METHODS[name],
         policy = method.administration

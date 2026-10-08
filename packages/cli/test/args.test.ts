@@ -413,3 +413,22 @@ it('recognizes help before forwarding commands and leaves stdio arguments as dat
   expect(parseArgs(['mcp', 'serve', '--', '--help']).help).toBe(false)
   expect(parseArgs(['install', 'file:./example', '--yes']).yes).toBe(true)
 })
+
+it('keeps candidate review digests supplied by the human instead of selecting the latest draft', () => {
+  const candidateHash = 'sha256-' + 'a'.repeat(64),
+    reviewHash = 'sha256-' + 'b'.repeat(64)
+  expect(
+    parseArgs([
+      'plugins',
+      'candidates',
+      'approve',
+      'candidate-' + 'c'.repeat(32),
+      '--candidate-hash',
+      candidateHash,
+      '--review-hash',
+      reviewHash,
+    ]),
+  ).toMatchObject({ command: 'plugins', candidateHash, reviewHash })
+  for (const flag of ['--candidate-hash', '--review-hash'])
+    expect(() => parseArgs(['plugins', 'candidates', 'approve', flag])).toThrow(UsageError)
+})

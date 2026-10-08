@@ -6,11 +6,12 @@
       "version": "0.28.2",
       "license": "MIT",
       "source": "https://github.com/evanw/esbuild",
-      "purpose": "Bundle shareable plugins, SDK browser checks, Web clients and isolated hooks runners.",
+      "purpose": "Bundle shareable plugins, SDK browser checks, Web clients, isolated hooks runners and reviewed authoring tests.",
       "rationale": "Reuse the repository bundler so the receiving machine needs no plugin dependency installation.",
       "consumers": [
         "packages/base",
         "packages/cli",
+        "packages/daemon-admin",
         "packages/package-manager",
         "packages/sdk",
         "packages/web"

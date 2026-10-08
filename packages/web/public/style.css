@@ -7214,3 +7214,24 @@ body.admin-page {
     display: none;
   }
 }
+
+/* Reviewed authoring stays within the shared settings pane on narrow screens. */
+.plugin-candidates {
+  min-width: 0;
+  margin-block: 1rem;
+}
+.plugin-candidates dl,
+.plugin-candidates dd {
+  margin-inline: 0;
+  overflow-wrap: anywhere;
+}
+.plugin-candidates pre {
+  max-height: 24rem;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.plugin-candidates summary {
+  cursor: pointer;
+  overflow-wrap: anywhere;
+}

@@ -684,7 +684,13 @@
           "type": "boolean"
         },
         "sourceKind": {
-          "enum": ["official-catalog", "npm", "git", "local-folder", "tarball"]
+          "enum": [
+            "official-catalog",
+            "npm",
+            "git",
+            "local-folder",
+            "tarball"
+          ]
         },
         "resolvedLocation": {
           "type": "string",
@@ -703,20 +709,38 @@
           "maxLength": 2048
         },
         "verification": {
-          "enum": ["unverified", "official-ed25519", "npm-sigstore"]
+          "enum": [
+            "unverified",
+            "official-ed25519",
+            "npm-sigstore"
+          ]
         },
         "installedAt": {
           "type": "string",
           "format": "date-time"
         },
         "installer": {
-          "enum": ["user", "agent"]
+          "enum": [
+            "user",
+            "agent"
+          ]
         },
         "trustDecision": {
-          "enum": ["pending", "confirmed", "revoked"]
+          "enum": [
+            "pending",
+            "confirmed",
+            "revoked"
+          ]
+        },
+        "authoring": {
+          "$ref": "#/$defs/AuthoringProvenance"
         }
       },
-      "required": ["source", "integrity", "signatureVerified"]
+      "required": [
+        "source",
+        "integrity",
+        "signatureVerified"
+      ]
     },
     "PackagePreview": {
       "type": "object",
@@ -2770,6 +2794,661 @@
           "enum": ["official-only", "official+npm-with-provenance", "any-with-confirmation"]
         }
       }
+    },
+    "AuthoringFile": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "path": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 240
+        },
+        "content": {
+          "type": "string",
+          "maxLength": 131072
+        }
+      },
+      "required": [
+        "path",
+        "content"
+      ]
+    },
+    "AuthoringOrigin": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "sessionKey": {
+          "type": "string",
+          "maxLength": 512
+        },
+        "toolUseId": {
+          "type": "string",
+          "maxLength": 512
+        },
+        "packageId": {
+          "type": "string",
+          "maxLength": 512
+        },
+        "snapshotId": {
+          "type": "string",
+          "maxLength": 512
+        },
+        "rowId": {
+          "type": "string",
+          "maxLength": 512
+        },
+        "turn": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        }
+      },
+      "required": [
+        "sessionKey",
+        "toolUseId",
+        "packageId",
+        "snapshotId",
+        "rowId",
+        "turn"
+      ]
+    },
+    "AuthoringTests": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "hash": {
+          "type": "string",
+          "pattern": "^sha256-[a-f0-9]{64}$"
+        },
+        "state": {
+          "enum": [
+            "passed",
+            "failed"
+          ]
+        },
+        "count": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 100000
+        },
+        "runner": {
+          "const": "node-test"
+        },
+        "output": {
+          "type": "string",
+          "maxLength": 16384
+        },
+        "completedAt": {
+          "type": "string",
+          "maxLength": 64
+        }
+      },
+      "required": [
+        "hash",
+        "state",
+        "count",
+        "runner",
+        "output",
+        "completedAt"
+      ]
+    },
+    "AuthoringCandidate": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "candidateId": {
+          "type": "string",
+          "pattern": "^candidate-[a-f0-9]{32}$"
+        },
+        "packageId": {
+          "type": "string",
+          "maxLength": 256
+        },
+        "candidateHash": {
+          "type": "string",
+          "pattern": "^sha256-[a-f0-9]{64}$"
+        },
+        "baseHash": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^sha256-[a-f0-9]{64}$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "reviewHash": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^sha256-[a-f0-9]{64}$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "state": {
+          "enum": [
+            "draft",
+            "tested",
+            "review",
+            "publishing",
+            "published",
+            "rejected",
+            "failed",
+            "interrupted"
+          ]
+        },
+        "files": {
+          "type": "array",
+          "maxItems": 128,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "path": {
+                "type": "string",
+                "maxLength": 240
+              },
+              "before": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "maxLength": 131072
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "after": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "maxLength": 131072
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "path",
+              "before",
+              "after"
+            ]
+          }
+        },
+        "preview": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/PackagePreview"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "tests": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/AuthoringTests"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "origin": {
+          "$ref": "#/$defs/AuthoringOrigin"
+        },
+        "installer": {
+          "const": "agent"
+        },
+        "reviewer": {
+          "anyOf": [
+            {
+              "type": "string",
+              "maxLength": 512
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "message": {
+          "type": "string",
+          "maxLength": 256
+        },
+        "sourceFiles": {
+          "type": "array",
+          "maxItems": 64,
+          "items": {
+            "$ref": "#/$defs/AuthoringFile"
+          }
+        }
+      },
+      "required": [
+        "candidateId",
+        "packageId",
+        "candidateHash",
+        "baseHash",
+        "reviewHash",
+        "state",
+        "files",
+        "preview",
+        "tests",
+        "origin",
+        "installer",
+        "reviewer",
+        "message",
+        "sourceFiles"
+      ]
+    },
+    "AuthoringCandidateList": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "candidates": {
+          "type": "array",
+          "maxItems": 128,
+          "items": {
+            "$ref": "#/$defs/AuthoringCandidateSummary"
+          }
+        }
+      },
+      "required": [
+        "candidates"
+      ]
+    },
+    "AuthoringCreateParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "profile": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[a-z][a-z0-9.-]{0,63}$"
+        },
+        "clientId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$"
+        },
+        "commandId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$"
+        },
+        "files": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 64,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "path": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 240
+              },
+              "content": {
+                "type": "string",
+                "maxLength": 131072
+              }
+            },
+            "required": [
+              "path",
+              "content"
+            ]
+          }
+        }
+      },
+      "required": [
+        "profile",
+        "clientId",
+        "commandId",
+        "files"
+      ]
+    },
+    "AuthoringWriteParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "profile": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[a-z][a-z0-9.-]{0,63}$"
+        },
+        "clientId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$"
+        },
+        "commandId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$"
+        },
+        "candidateId": {
+          "type": "string",
+          "pattern": "^candidate-[a-f0-9]{32}$"
+        },
+        "expectedHash": {
+          "type": "string",
+          "pattern": "^sha256-[a-f0-9]{64}$"
+        },
+        "files": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 64,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "path": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 240
+              },
+              "content": {
+                "type": "string",
+                "maxLength": 131072
+              }
+            },
+            "required": [
+              "path",
+              "content"
+            ]
+          }
+        }
+      },
+      "required": [
+        "profile",
+        "clientId",
+        "commandId",
+        "candidateId",
+        "expectedHash",
+        "files"
+      ]
+    },
+    "AuthoringTestParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "profile": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[a-z][a-z0-9.-]{0,63}$"
+        },
+        "clientId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$"
+        },
+        "commandId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$"
+        },
+        "candidateId": {
+          "type": "string",
+          "pattern": "^candidate-[a-f0-9]{32}$"
+        },
+        "expectedHash": {
+          "type": "string",
+          "pattern": "^sha256-[a-f0-9]{64}$"
+        }
+      },
+      "required": [
+        "profile",
+        "clientId",
+        "commandId",
+        "candidateId",
+        "expectedHash"
+      ]
+    },
+    "AuthoringSubmitParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "profile": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[a-z][a-z0-9.-]{0,63}$"
+        },
+        "clientId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$"
+        },
+        "commandId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$"
+        },
+        "candidateId": {
+          "type": "string",
+          "pattern": "^candidate-[a-f0-9]{32}$"
+        },
+        "expectedHash": {
+          "type": "string",
+          "pattern": "^sha256-[a-f0-9]{64}$"
+        }
+      },
+      "required": [
+        "profile",
+        "clientId",
+        "commandId",
+        "candidateId",
+        "expectedHash"
+      ]
+    },
+    "AuthoringApproveParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "profile": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[a-z][a-z0-9.-]{0,63}$"
+        },
+        "clientId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$"
+        },
+        "commandId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$"
+        },
+        "candidateId": {
+          "type": "string",
+          "pattern": "^candidate-[a-f0-9]{32}$"
+        },
+        "expectedHash": {
+          "type": "string",
+          "pattern": "^sha256-[a-f0-9]{64}$"
+        },
+        "reviewHash": {
+          "type": "string",
+          "pattern": "^sha256-[a-f0-9]{64}$"
+        }
+      },
+      "required": [
+        "profile",
+        "clientId",
+        "commandId",
+        "candidateId",
+        "expectedHash",
+        "reviewHash"
+      ]
+    },
+    "AuthoringRejectParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "profile": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[a-z][a-z0-9.-]{0,63}$"
+        },
+        "clientId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$"
+        },
+        "commandId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$"
+        },
+        "candidateId": {
+          "type": "string",
+          "pattern": "^candidate-[a-f0-9]{32}$"
+        },
+        "expectedHash": {
+          "type": "string",
+          "pattern": "^sha256-[a-f0-9]{64}$"
+        },
+        "reviewHash": {
+          "type": "string",
+          "pattern": "^sha256-[a-f0-9]{64}$"
+        }
+      },
+      "required": [
+        "profile",
+        "clientId",
+        "commandId",
+        "candidateId",
+        "expectedHash",
+        "reviewHash"
+      ]
+    },
+    "AuthoringShowParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "profile": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[a-z][a-z0-9.-]{0,63}$"
+        },
+        "candidateId": {
+          "type": "string",
+          "pattern": "^candidate-[a-f0-9]{32}$"
+        }
+      },
+      "required": [
+        "profile",
+        "candidateId"
+      ]
+    },
+    "AuthoringProvenance": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "candidateId": {
+          "type": "string",
+          "pattern": "^candidate-[a-f0-9]{32}$"
+        },
+        "candidateHash": {
+          "type": "string",
+          "pattern": "^sha256-[a-f0-9]{64}$"
+        },
+        "reviewHash": {
+          "type": "string",
+          "pattern": "^sha256-[a-f0-9]{64}$"
+        },
+        "baseHash": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^sha256-[a-f0-9]{64}$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "origin": {
+          "$ref": "#/$defs/AuthoringOrigin"
+        },
+        "reviewer": {
+          "type": "string",
+          "maxLength": 512
+        }
+      },
+      "required": [
+        "candidateId",
+        "candidateHash",
+        "reviewHash",
+        "baseHash",
+        "origin",
+        "reviewer"
+      ]
+    },
+    "AuthoringCandidateSummary": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "candidateId": {
+          "type": "string",
+          "pattern": "^candidate-[a-f0-9]{32}$"
+        },
+        "packageId": {
+          "type": "string",
+          "maxLength": 256
+        },
+        "candidateHash": {
+          "type": "string",
+          "pattern": "^sha256-[a-f0-9]{64}$"
+        },
+        "state": {
+          "enum": [
+            "draft",
+            "tested",
+            "review",
+            "publishing",
+            "published",
+            "rejected",
+            "failed",
+            "interrupted"
+          ]
+        }
+      },
+      "required": [
+        "candidateId",
+        "packageId",
+        "candidateHash",
+        "state"
+      ]
     }
   }
 }

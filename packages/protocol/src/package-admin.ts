@@ -326,6 +326,55 @@ const contract = (
     }),
   })
 export const PACKAGE_ADMIN_METHODS = Object.freeze({
+  '_agnes/v1/plugins.candidates.list': contract(
+    P.PackageListParams,
+    P.AuthoringCandidateList,
+    'read',
+    'packages.read',
+  ),
+  '_agnes/v1/plugins.candidates.show': contract(
+    P.AuthoringShowParams,
+    P.AuthoringCandidate,
+    'read',
+    'packages.read',
+  ),
+  '_agnes/v1/plugins.candidates.create': contract(
+    P.AuthoringCreateParams,
+    P.AuthoringCandidate,
+    'effect',
+    'packages.install',
+  ),
+  '_agnes/v1/plugins.candidates.write': contract(
+    P.AuthoringWriteParams,
+    P.AuthoringCandidate,
+    'effect',
+    'packages.install',
+  ),
+  '_agnes/v1/plugins.candidates.test': contract(
+    P.AuthoringTestParams,
+    P.AuthoringCandidate,
+    'effect',
+    'extensions.execute',
+  ),
+  '_agnes/v1/plugins.candidates.submit': contract(
+    P.AuthoringSubmitParams,
+    P.AuthoringCandidate,
+    'effect',
+    'packages.install',
+  ),
+  '_agnes/v1/plugins.candidates.approve': contract(
+    P.AuthoringApproveParams,
+    P.AuthoringCandidate,
+    'effect',
+    'packages.trust',
+  ),
+  '_agnes/v1/plugins.candidates.reject': contract(
+    P.AuthoringRejectParams,
+    P.AuthoringCandidate,
+    'effect',
+    'packages.trust',
+  ),
+
   '_agnes/v1/packages.catalog.list': contract(
     P.PackageCatalogListParams,
     P.PackageCatalogPage,
@@ -528,6 +577,20 @@ export function canAccessPackageAdmin(
 // trying to print the whole literal type. An explicit annotation on the table sidesteps that by
 // giving tsc a short type reference (`Record<PackageAdminDataName, TSchema>`) to print instead.
 export type PackageAdminDataName =
+  | 'AuthoringFile'
+  | 'AuthoringOrigin'
+  | 'AuthoringTests'
+  | 'AuthoringCandidate'
+  | 'AuthoringCandidateList'
+  | 'AuthoringCandidateSummary'
+  | 'AuthoringProvenance'
+  | 'AuthoringShowParams'
+  | 'AuthoringCreateParams'
+  | 'AuthoringWriteParams'
+  | 'AuthoringTestParams'
+  | 'AuthoringSubmitParams'
+  | 'AuthoringApproveParams'
+  | 'AuthoringRejectParams'
   | 'PackageAdminPermission'
   | 'PackageSource'
   | 'PackageContributionSummary'
@@ -587,6 +650,21 @@ export type PackageAdminDataName =
   | 'ClientModuleRosterRow'
   | 'ClientModuleEffectCallParams'
 const DATA_SCHEMAS: Record<PackageAdminDataName, TSchema> = {
+  AuthoringFile: P.AuthoringFile,
+  AuthoringOrigin: P.AuthoringOrigin,
+  AuthoringTests: P.AuthoringTests,
+  AuthoringCandidate: P.AuthoringCandidate,
+  AuthoringCandidateList: P.AuthoringCandidateList,
+  AuthoringCandidateSummary: P.AuthoringCandidateSummary,
+  AuthoringProvenance: P.AuthoringProvenance,
+  AuthoringShowParams: P.AuthoringShowParams,
+  AuthoringCreateParams: P.AuthoringCreateParams,
+  AuthoringWriteParams: P.AuthoringWriteParams,
+  AuthoringTestParams: P.AuthoringTestParams,
+  AuthoringSubmitParams: P.AuthoringSubmitParams,
+  AuthoringApproveParams: P.AuthoringApproveParams,
+  AuthoringRejectParams: P.AuthoringRejectParams,
+
   PackageAdminPermission: P.PackageAdminPermission,
   PackageSource: P.PackageSource,
   PackageContributionSummary: P.PackageContributionSummary,

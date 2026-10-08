@@ -35,7 +35,7 @@ export type RowExtensionApiInput = {
   pluginManage?: (
     invocation: Pick<
       import('../resources/plugin-manage-port.js').PluginManageInvocation,
-      'input' | 'toolUseId' | 'sessionKey'
+      'input' | 'toolUseId' | 'sessionKey' | 'turn'
     >,
     signal: AbortSignal,
   ) => Promise<unknown>
@@ -202,6 +202,7 @@ export function buildRowExtensionAPI(input: RowExtensionApiInput): PluginExtensi
                             {
                               input: structuredClone(request),
                               toolUseId: tctx.session.toolUseId,
+                              turn: tctx.session.turn ?? 0,
                               sessionKey: tctx.session.key,
                             },
                             callSignal,

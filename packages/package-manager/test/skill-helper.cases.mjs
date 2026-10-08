@@ -44,6 +44,19 @@ export function registerSkillHelperTests(test) {
               }
         },
       },
+      pluginManage: {
+        async request(input) {
+          requests.push(input)
+          return {
+            proposalId: 'candidate-' + 'a'.repeat(32),
+            state: ['prepare', 'candidate.create'].includes(input.action)
+              ? 'draft'
+              : input.action === 'commit'
+                ? 'review'
+                : 'tested',
+          }
+        },
+      },
       skillInstall: {
         async request(input) {
           requests.push(input)
@@ -76,8 +89,9 @@ export function registerSkillHelperTests(test) {
     assert.equal(invalid.structured.retryable, true)
     assert.equal(c.requests.length, 0)
     const valid = await run('create', { name: 'requirement-organizer', files }, c.ctx)
-    assert.equal(valid.structured.state, 'prepared')
-    assert.match(c.writes[0].content.toString(), /name: 需求整理助手/)
+    assert.equal(valid.structured.state, 'draft')
+    assert.equal(c.writes.length, 0)
+    assert.match(c.requests[0].files.find((f) => f.path.endsWith('/SKILL.md')).content, /name: 需求整理助手/)
   })
   function zip(entries) {
     const locals = [],
@@ -150,12 +164,12 @@ export function registerSkillHelperTests(test) {
     assert.equal(x.requests[0].scope, 'user')
     assert.equal(x.requests[0].enable, false)
   })
-  test('creation stages complete bytes and only prepares; lifecycle stays with core', async () => {
+  test('creation writes only complete candidate bytes; import lifecycle stays with core', async () => {
     const x = context()
     const r = await run('create', { name: 'demo', files }, x.ctx)
-    assert.equal(r.structured.state, 'prepared')
-    assert.equal(x.writes[0].content.toString(), doc)
-    assert.ok(x.requests[0].sourceDirectory.includes('.skill-helper'))
+    assert.equal(r.structured.state, 'draft')
+    assert.equal(x.writes.length, 0)
+    assert.equal(x.requests[0].files.find((f) => f.path.endsWith('/SKILL.md')).content, doc)
     for (const action of ['commit', 'status', 'cancel'])
       await run('install', { action, proposalId: 'proposal' }, x.ctx)
     assert.deepEqual(
@@ -211,7 +225,7 @@ export function registerSkillHelperTests(test) {
     assert.match(r.structured.message, /SKILL\.md/)
     assert.match(r.structured.nextAction, /重新调用/)
     assert.equal(x.writes.length + x.requests.length, 0)
-    assert.equal((await run('create', { name: 'weekly-report', files }, x.ctx)).structured.state, 'prepared')
+    assert.equal((await run('create', { name: 'weekly-report', files }, x.ctx)).structured.state, 'draft')
   })
   test('host rejection of a local directory name asks the user to rename it', async () => {
     const x = context()

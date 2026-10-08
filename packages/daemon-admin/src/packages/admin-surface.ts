@@ -27,6 +27,14 @@ const PREFIX = '/admin/plugins/api/'
 // route map (packages/web/src/admin/plugins/api.ts METHOD_BY_PATH) — see
 // admin-surface.test.ts's "route allowlist" coverage.
 export const ACTIONS = {
+  'candidates/list': '_agnes/v1/plugins.candidates.list',
+  'candidates/show': '_agnes/v1/plugins.candidates.show',
+  'candidates/create': '_agnes/v1/plugins.candidates.create',
+  'candidates/write': '_agnes/v1/plugins.candidates.write',
+  'candidates/test': '_agnes/v1/plugins.candidates.test',
+  'candidates/submit': '_agnes/v1/plugins.candidates.submit',
+  'candidates/approve': '_agnes/v1/plugins.candidates.approve',
+  'candidates/reject': '_agnes/v1/plugins.candidates.reject',
   'catalog/list': '_agnes/v1/packages.catalog.list',
   'catalog/get': '_agnes/v1/packages.catalog.get',
   list: '_agnes/v1/packages.list',

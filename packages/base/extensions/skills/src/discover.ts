@@ -320,6 +320,7 @@ export async function discoverSkillRoot(fs: SkillFs, root: SkillRoot): Promise<S
   let seen = 0
   const dirs = root.dirs ?? [{ path: root.path, prefix: '' }]
   for (const [dirIndex, dir] of dirs.entries()) {
+    if (resolve(dir.path).split(/[\\/]/).includes('.authoring-candidates')) continue
     let entries: FsEntry[]
     try {
       entries = await fs.list(dir.path)
@@ -335,6 +336,7 @@ export async function discoverSkillRoot(fs: SkillFs, root: SkillRoot): Promise<S
         return failed(root.rootKey, 'root-unresolvable')
       }
     }
+    if (dirReal?.split(/[\\/]/).includes('.authoring-candidates')) continue
     // Directories come first so a Skill directory wins over a same-name single file.
     const ordered = [...entries]
       .filter((entry) => validEntryName(entry.name))
@@ -405,6 +407,7 @@ export async function locateSkillEntry(
   resourceId: string,
 ): Promise<Readonly<{ dirPath: string; name: string; kind: FsEntry['kind'] }> | undefined> {
   for (const dir of root.dirs ?? [{ path: root.path, prefix: '' }]) {
+    if (resolve(dir.path).split(/[\\/]/).includes('.authoring-candidates')) continue
     let entries: FsEntry[]
     try {
       entries = await fs.list(dir.path)

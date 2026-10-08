@@ -101,7 +101,11 @@ export interface PackageManager {
   install(
     profileDir: string,
     source: PackageSource,
-    opts: OperationOptions & { expectedIntegrity: string; installer?: 'agent' | 'user' },
+    opts: OperationOptions & {
+      expectedIntegrity: string
+      installer?: 'agent' | 'user'
+      authoring?: import('@agnes/protocol').AuthoringProvenance
+    },
   ): Promise<LockEntry>
   add(profileDir: string, spec: string, opts?: { trust?: 'verify' | 'skip' }): Promise<LockEntry>
   trust(profileDir: string, id: string, decision?: TrustDecision): Promise<LockEntry>
@@ -133,6 +137,9 @@ export interface PackageManager {
     source: PackageSource,
     opts: OperationOptions & {
       expectedIntegrity: string
+      expectedInstalledIntegrity?: string
+      installer?: 'agent' | 'user'
+      authoring?: import('@agnes/protocol').AuthoringProvenance
       activation?: PackageLifecycleActivation
     },
   ): Promise<LockEntry>
@@ -806,13 +813,30 @@ export function createPackageManager(options: ManagerOptions): PackageManager {
             store = storeFor(profileDir)
           writable(lock)
           const current = installed(store, lock, id, true).entry
+          if (
+            op.expectedInstalledIntegrity !== undefined &&
+            current.integrity !== op.expectedInstalledIntegrity
+          )
+            throw new PackageError('E_LOCK_MISMATCH', 'installed package changed since candidate review', {
+              code: 'E_PACKAGE_PREVIEW_STALE',
+            })
           if (op.activation && current.integrity !== op.activation.expectedInstalledIntegrity)
             throw new PackageError('E_LOCK_MISMATCH', 'installed package preview is stale', {
               code: 'E_PACKAGE_PREVIEW_STALE',
             })
           const stage = stageFor(profileDir)
           try {
-            const fetched = await acquire(source, stage, op, profileDir)
+            const acquired = await acquire(source, stage, op, profileDir)
+            const fetched = op.installer
+              ? {
+                  ...acquired,
+                  provenance: {
+                    ...acquired.provenance!,
+                    installer: op.installer,
+                    ...(op.authoring ? { authoring: op.authoring } : {}),
+                  },
+                }
+              : acquired
             if (fetched.integrity !== expectedIntegrity)
               throw new PackageError('E_LOCK_MISMATCH', 'package preview is stale', {
                 code: 'E_PACKAGE_PREVIEW_STALE',
@@ -920,7 +944,14 @@ export function createPackageManager(options: ManagerOptions): PackageManager {
           try {
             const acquired = await acquire(source, stage, op, profileDir)
             const fetched = op.installer
-              ? { ...acquired, provenance: { ...acquired.provenance!, installer: op.installer } }
+              ? {
+                  ...acquired,
+                  provenance: {
+                    ...acquired.provenance!,
+                    installer: op.installer,
+                    ...(op.authoring ? { authoring: op.authoring } : {}),
+                  },
+                }
               : acquired
             if (fetched.integrity !== expectedIntegrity)
               throw new PackageError('E_LOCK_MISMATCH', 'package preview is stale', {

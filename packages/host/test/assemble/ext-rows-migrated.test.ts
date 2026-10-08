@@ -49,6 +49,8 @@ const SUPPLIED: Record<string, string[]> = {
     'tool:plugin_scaffold',
     'tool:plugin_test',
     'tool:plugin_install_local',
+    'tool:plugin_candidate_write',
+    'tool:plugin_candidate_read',
     'hook:context',
   ],
   'agnes/mcp-search': ['tool:tool_search', 'tool:tool_describe'],

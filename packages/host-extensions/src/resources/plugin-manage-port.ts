@@ -5,6 +5,7 @@ export type PluginManageInvocation = Readonly<{
   rowId: string
   sessionKey: string
   toolUseId: string
+  turn: number
   leaseId: string
   input: unknown
 }>

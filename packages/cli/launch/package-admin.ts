@@ -126,6 +126,47 @@ export function localPackageAdmin(
   const invoke = async (action: AdminSurfaceAction, params: unknown): Promise<unknown> => {
     await initialize()
     switch (action) {
+      case 'candidates/list':
+        return client.request(
+          '_agnes/v1/plugins.candidates.list',
+          params as import('@agnes/protocol').PackageListParams,
+        )
+      case 'candidates/show':
+        return client.request(
+          '_agnes/v1/plugins.candidates.show',
+          params as import('@agnes/protocol').AuthoringShowParams,
+        )
+      case 'candidates/test':
+        return client.request(
+          '_agnes/v1/plugins.candidates.test',
+          params as import('@agnes/protocol').AuthoringTestParams,
+        )
+      case 'candidates/submit':
+        return client.request(
+          '_agnes/v1/plugins.candidates.submit',
+          params as import('@agnes/protocol').AuthoringSubmitParams,
+        )
+      case 'candidates/approve':
+        return client.request(
+          '_agnes/v1/plugins.candidates.approve',
+          params as import('@agnes/protocol').AuthoringApproveParams,
+        )
+      case 'candidates/reject':
+        return client.request(
+          '_agnes/v1/plugins.candidates.reject',
+          params as import('@agnes/protocol').AuthoringRejectParams,
+        )
+      case 'candidates/create':
+        return client.request(
+          '_agnes/v1/plugins.candidates.create',
+          params as import('@agnes/protocol').AuthoringCreateParams,
+        )
+      case 'candidates/write':
+        return client.request(
+          '_agnes/v1/plugins.candidates.write',
+          params as import('@agnes/protocol').AuthoringWriteParams,
+        )
+
       case 'catalog/list':
         return client.packages.catalog.list(params as PackageCatalogListParams)
       case 'catalog/get':

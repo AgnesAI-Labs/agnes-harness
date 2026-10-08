@@ -341,6 +341,14 @@ describe('local package admin surface trust boundary', () => {
   // this list.
   it('keeps the BFF route allowlist in lockstep with the Web admin API client route map', () => {
     const expectedPaths = [
+      'candidates/list',
+      'candidates/show',
+      'candidates/create',
+      'candidates/write',
+      'candidates/test',
+      'candidates/submit',
+      'candidates/approve',
+      'candidates/reject',
       'catalog/list',
       'generations',
       'provenance',

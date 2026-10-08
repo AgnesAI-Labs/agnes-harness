@@ -506,3 +506,13 @@ describe('frontmatter bounds agree with the protocol schema', () => {
     expect(userOnly?.capabilityHash).not.toBe(permitted?.capabilityHash)
   })
 })
+
+it('never discovers candidate Markdown through explicit roots or canonical root aliases', async () => {
+  const root = '/profile/.authoring-candidates/candidate-a/trees/revision/skills'
+  const files = fs({
+    [root + '/draft/SKILL.md']: '---\nname: draft\ndescription: Draft only\n---\nNever discovered.',
+  })
+  expect(await discoverSkillRoot(files, workspaceRoot(root))).toMatchObject({ ok: true, candidates: [] })
+  const alias = { ...files, realpath: async () => root }
+  expect(await discoverSkillRoot(alias, workspaceRoot('/alias'))).toMatchObject({ ok: true, candidates: [] })
+})

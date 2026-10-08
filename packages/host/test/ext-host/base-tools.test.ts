@@ -923,10 +923,10 @@ describe('a host assembled from a profile naming @agnes/base', () => {
     // The skills extension is loaded but inert until a daemon worker supplies a private runtime
     // snapshot, and this host does not load code-mode. Count: tools-core 5, tools-search 3,
     // tools-web 2, interaction 1, deliverables 1, jobs 10, compaction 1, refine 1, subagent 8,
-    // mcp-search 2, computer-use 1, plugin-creator 4, exit_plan_mode, and the three stable MCP
+    // mcp-search 2, computer-use 1, plugin-creator 6, exit_plan_mode, and the three stable MCP
     // resource tools, workflow and workflow_status, session-query 5, two goal tools, and the four
     // schedule reminders.
-    expect(host.kernel.tools.size).toBe(56)
+    expect(host.kernel.tools.size).toBe(58)
     for (const name of [
       'subagent_list',
       'subagent_send_message',
@@ -935,6 +935,8 @@ describe('a host assembled from a profile naming @agnes/base', () => {
       'plugin_scaffold',
       'plugin_test',
       'plugin_install_local',
+      'plugin_candidate_write',
+      'plugin_candidate_read',
     ])
       expect(host.kernel.tools.resolve(name)).toMatchObject({ name })
     expect(host.kernel.tools.resolve('computer_use')).toMatchObject({ name: 'computer_use' })

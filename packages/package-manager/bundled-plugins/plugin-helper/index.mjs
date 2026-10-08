@@ -1,5 +1,3 @@
-import { randomUUID } from 'node:crypto'
-import { join } from 'node:path'
 import { array, enumeration, object, string } from './src/schema.mjs'
 import { skinFiles, skinGuidance } from './src/skin.mjs'
 import { toolSource } from './src/templates.mjs'
@@ -64,9 +62,16 @@ export const pluginHelper = {
             host: 'Agnes Harness',
             apiVersion: '1.4.0',
             guidance: skinGuidance,
-            files: skinFiles(),
+            files: [
+              ...skinFiles(),
+              {
+                path: 'test/skin.test.mjs',
+                content:
+                  'import {test} from "node:test";import assert from "node:assert/strict";import {readFileSync} from "node:fs";test("skin declares stylesheet",()=>{const pkg=JSON.parse(readFileSync("package.json","utf8"));assert.ok(pkg.agnes.plugins.length>0)})\n',
+              },
+            ],
             nextAction:
-              'Use plugin_helper_create, review the preview, then plugin_helper_install commit for native approval. End the turn after submitted and verify status on a later turn.',
+              'Use plugin_helper_create, plugin_helper_install test, then commit to submit a human review. Only Settings → Plugins or the candidate CLI can publish the reviewed hash.',
           })
         const manifest = {
           name: 'my-agh-plugin',
@@ -93,11 +98,18 @@ export const pluginHelper = {
           host: 'Agnes Harness',
           apiVersion: '1.4.0',
           guidance:
-            'Understand the requested behavior, select the minimum capabilities and implement it using the template. Rename the package, row and tool/Skill. agnes.plugins named exports and inject must match the exported plugin object. Tool schemas require TypeBox Kind symbols, with all ToolMeta fields shown. Use invocation ctx.fs/net/shell for user operations; never use ambient Node access to bypass AGH policy. Install executes generated JavaScript with local process privileges; inspection does not prove safety or correctness. This first helper accepts text-only self-contained ESM, tool/Skill rows or the skin guide template, no dependencies/scripts or same-name replacement. Advanced services/client UI follow the public author guide and the standard package manager. Save via plugin_helper_create; review the preview before plugin_helper_install commit requests native approval. After submitted, end this turn; verify status and use actual tools on the next turn. Do not claim UI effects were verified from backend status. Never bypass denial with shell/config edits.',
+            'Understand the requested behavior, select the minimum capabilities and implement it using the template. Rename the package, row and tool/Skill. agnes.plugins named exports and inject must match the exported plugin object. Tool schemas require TypeBox Kind symbols, with all ToolMeta fields shown. Use invocation ctx.fs/net/shell for user operations; never use ambient Node access to bypass AGH policy. Install executes generated JavaScript with local process privileges; inspection does not prove safety or correctness. This first helper accepts text-only self-contained ESM, tool/Skill rows or the skin guide template, no dependencies/scripts; replacement must review the installed base hash. Advanced services/client UI follow the public author guide and the standard package manager. Save only in the Host private candidate area via plugin_helper_create; plugin_helper_install test asks permission to run Node tests, commit submits the passing hash for human review. The human must publish in Settings → Plugins; status reads the durable candidate, and publication affects only new sessions. Do not claim UI effects were verified from backend status. Never bypass denial with shell/config edits.',
           documentation: 'https://github.com/AgnesAI-Labs/agnes-harness/blob/main/docs/develop/plugins.md',
           files: [
             { path: 'package.json', content: JSON.stringify(manifest, null, 2) },
             { path: 'index.mjs', content: source },
+            {
+              path: 'test/plugin.test.mjs',
+              content:
+                kind === 'tool'
+                  ? 'import {test} from "node:test";import assert from "node:assert/strict";import {createPluginTestHost} from "@agnes/plugin-runtime/testkit";import {main} from "../index.mjs";test("counts words",async()=>{const host=await createPluginTestHost(main);try{assert.deepEqual((await host.invoke("my_text_stats",{text:"hello world"})).structured,{characters:11,words:2})}finally{await host.dispose()}})\n'
+                  : 'import {test} from "node:test";import assert from "node:assert/strict";import {main} from "../index.mjs";test("registers Skill data",()=>{let skill;main.apply({skills:{register(value){skill=value}}});assert.equal(skill.name,"my-workflow");assert.ok(skill.body)})\n',
+            },
           ],
         })
       },
@@ -105,37 +117,19 @@ export const pluginHelper = {
     api.registerTool({
       name: 'plugin_helper_create',
       description:
-        'Save newly authored AGH plugin files in a fresh workspace directory and inspect an exact content bundle. Read plugin_helper_guide first. Returns prepared with capabilities and integrity; does not install or execute candidate code. No imports of existing directories. Stop on policy rejection; do not bypass using shell.',
+        'Save newly authored AGH plugin files only in the Host candidate area outside discovery roots. Read plugin_helper_guide first. Returns draft with candidateId and candidateHash; does not install or execute code. Stop on policy rejection; do not bypass using shell.',
       parameters: object({ files: array(object({ path: string(240), content: string(256 * 1024, 0) }), 32) }),
       meta: meta(false, 'always'),
       async execute({ files }, ctx) {
-        const management = port(ctx)
-        // Daemon validates the full manifest and every path before any workspace write.
-        const prepared = await management.request({ action: 'prepare', files })
-        const directory = join(ctx.cwd, '.plugin-helper', randomUUID())
-        try {
-          for (const file of files) {
-            ctx.signal.throwIfAborted()
-            await ctx.fs.write(join(directory, ...file.path.split('/')), file.content)
-          }
-        } catch (error) {
-          await management.request({ action: 'cancel', proposalId: prepared.proposalId }).catch(() => {})
-          throw error
-        }
-        return result({
-          ...prepared,
-          directory,
-          message:
-            'Source saved and checked, not installed. Review the files and preview. commit asks the local user to approve installation into AGH.',
-        })
+        return result(await port(ctx).request({ action: 'prepare', files }))
       },
     })
     api.registerTool({
       name: 'plugin_helper_install',
       description:
-        'Request native confirmation to install, trust and enable the exact prepared AGH plugin, or query/cancel its proposal. Creating a plugin does not authorize installation. submitted means pending activation: end this turn, then status checks actual running state; new tools appear on later turns. Denial/cancellation must not be retried or bypassed automatically.',
-      parameters: object({ action: enumeration('commit', 'status', 'cancel'), proposalId: string(80) }),
-      meta: meta(false),
+        'Run Node tests with explicit permission, submit a passing candidate for human review, or inspect its status. commit never installs/trusts/enables. Only a human can publish the exact reviewed hash in Settings → Plugins. Denial and failure must not be bypassed.',
+      parameters: object({ action: enumeration('test', 'commit', 'status'), proposalId: string(80) }),
+      meta: meta(false, 'always'),
       async execute(input, ctx) {
         return result(await port(ctx).request(input))
       },

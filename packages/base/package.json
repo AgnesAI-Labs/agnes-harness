@@ -13,7 +13,8 @@
     "./testkit": "./testkit/index.ts",
     "./presets/*": "./presets/*",
     "./plan-mode": "./extensions/plan-mode/src/state.ts",
-    "./sandbox": "./extensions/sandbox/src/backends.ts"
+    "./sandbox": "./extensions/sandbox/src/backends.ts",
+    "./plugin-creator": "./extensions/plugin-creator/src/candidate-templates.ts"
   },
   "agnes": {
     "plugins": [

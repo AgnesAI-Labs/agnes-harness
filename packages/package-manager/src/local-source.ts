@@ -1,5 +1,5 @@
-import { existsSync, lstatSync, readdirSync, writeFileSync } from 'node:fs'
-import { join, relative } from 'node:path'
+import { existsSync, lstatSync, readdirSync, realpathSync, writeFileSync } from 'node:fs'
+import { join, relative, resolve } from 'node:path'
 import { AGH_DIR } from '@agnes/protocol'
 import { copyPackageTreeSync } from './copy-tree.js'
 import { readStaticJson } from './integrity.js'
@@ -21,6 +21,12 @@ export function discoverLocalPlugins(roots: LocalPluginRoots): LocalPluginCandid
   for (const scope of ['home', 'workspace'] as const) {
     const root = roots[scope]
     if (!existsSync(root)) continue
+    if (
+      [resolve(root), realpathSync(root)].some((path) =>
+        path.split(/[\\/]/).includes('.authoring-candidates'),
+      )
+    )
+      continue
     if (!lstatSync(root).isDirectory() || lstatSync(root).isSymbolicLink())
       throw new TypeError('Local plugins root must be a directory, not a symlink')
     for (const entry of readdirSync(root, { withFileTypes: true }).sort((a, b) =>

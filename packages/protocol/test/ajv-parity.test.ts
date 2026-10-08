@@ -325,6 +325,21 @@ const SESSION_DEFS: Record<string, TSchema> = {
 }
 
 const AGNES_DEFS: Record<string, TSchema> = {
+  AuthoringFile: AgnesGen.AuthoringFile,
+  AuthoringOrigin: AgnesGen.AuthoringOrigin,
+  AuthoringTests: AgnesGen.AuthoringTests,
+  AuthoringCandidate: AgnesGen.AuthoringCandidate,
+  AuthoringCandidateList: AgnesGen.AuthoringCandidateList,
+  AuthoringCandidateSummary: AgnesGen.AuthoringCandidateSummary,
+  AuthoringCreateParams: AgnesGen.AuthoringCreateParams,
+  AuthoringWriteParams: AgnesGen.AuthoringWriteParams,
+  AuthoringTestParams: AgnesGen.AuthoringTestParams,
+  AuthoringSubmitParams: AgnesGen.AuthoringSubmitParams,
+  AuthoringApproveParams: AgnesGen.AuthoringApproveParams,
+  AuthoringRejectParams: AgnesGen.AuthoringRejectParams,
+  AuthoringShowParams: AgnesGen.AuthoringShowParams,
+  AuthoringProvenance: AgnesGen.AuthoringProvenance,
+
   SessionLoopCatalogResult: AgnesGen.SessionLoopCatalogResult,
   SessionAdapterCatalogResult: AgnesGen.SessionAdapterCatalogResult,
   SessionDefaultsState: AgnesGen.SessionDefaultsState,
@@ -5282,6 +5297,20 @@ const PackageAdminSamples: Record<string, Sample> = Object.fromEntries(
     },
   ]),
 )
+AGNES_SAMPLES.AuthoringFile = PackageAdminSamples.AuthoringFile as Sample
+AGNES_SAMPLES.AuthoringOrigin = PackageAdminSamples.AuthoringOrigin as Sample
+AGNES_SAMPLES.AuthoringTests = PackageAdminSamples.AuthoringTests as Sample
+AGNES_SAMPLES.AuthoringCandidate = PackageAdminSamples.AuthoringCandidate as Sample
+AGNES_SAMPLES.AuthoringCandidateList = PackageAdminSamples.AuthoringCandidateList as Sample
+AGNES_SAMPLES.AuthoringCandidateSummary = PackageAdminSamples.AuthoringCandidateSummary as Sample
+AGNES_SAMPLES.AuthoringCreateParams = PackageAdminSamples.AuthoringCreateParams as Sample
+AGNES_SAMPLES.AuthoringWriteParams = PackageAdminSamples.AuthoringWriteParams as Sample
+AGNES_SAMPLES.AuthoringTestParams = PackageAdminSamples.AuthoringTestParams as Sample
+AGNES_SAMPLES.AuthoringSubmitParams = PackageAdminSamples.AuthoringSubmitParams as Sample
+AGNES_SAMPLES.AuthoringApproveParams = PackageAdminSamples.AuthoringApproveParams as Sample
+AGNES_SAMPLES.AuthoringRejectParams = PackageAdminSamples.AuthoringRejectParams as Sample
+AGNES_SAMPLES.AuthoringShowParams = PackageAdminSamples.AuthoringShowParams as Sample
+AGNES_SAMPLES.AuthoringProvenance = PackageAdminSamples.AuthoringProvenance as Sample
 AGNES_SAMPLES.PluginGenerationStatus = PackageAdminSamples.PluginGenerationStatus as Sample
 AGNES_SAMPLES.PluginPublicationReport = PackageAdminSamples.PluginPublicationReport as Sample
 AGNES_SAMPLES.PluginPublicationStatusResult = PackageAdminSamples.PluginPublicationStatusResult as Sample
@@ -5860,6 +5889,21 @@ const DEFS_BY_FILE: Record<string, Record<string, TSchema>> = {
     WorkspaceId: ResourceControlGen.WorkspaceId,
   },
   'https://agnes.ai/schema/package-admin.json': {
+    AuthoringFile: PackageAdminGen.AuthoringFile,
+    AuthoringOrigin: PackageAdminGen.AuthoringOrigin,
+    AuthoringTests: PackageAdminGen.AuthoringTests,
+    AuthoringCandidate: PackageAdminGen.AuthoringCandidate,
+    AuthoringCandidateList: PackageAdminGen.AuthoringCandidateList,
+    AuthoringCandidateSummary: PackageAdminGen.AuthoringCandidateSummary,
+    AuthoringCreateParams: PackageAdminGen.AuthoringCreateParams,
+    AuthoringWriteParams: PackageAdminGen.AuthoringWriteParams,
+    AuthoringTestParams: PackageAdminGen.AuthoringTestParams,
+    AuthoringSubmitParams: PackageAdminGen.AuthoringSubmitParams,
+    AuthoringApproveParams: PackageAdminGen.AuthoringApproveParams,
+    AuthoringRejectParams: PackageAdminGen.AuthoringRejectParams,
+    AuthoringShowParams: PackageAdminGen.AuthoringShowParams,
+    AuthoringProvenance: PackageAdminGen.AuthoringProvenance,
+
     SkinListResult: PackageAdminGen.SkinListResult,
     SkinReadParams: PackageAdminGen.SkinReadParams,
     SkinReadResult: PackageAdminGen.SkinReadResult,
@@ -6072,6 +6116,47 @@ const METHOD_DEF: Record<MethodName, MethodDefRef> = {
     params: 'DoctorParams',
     result: 'DoctorResult',
   },
+  '_agnes/v1/plugins.candidates.list': {
+    fileId: 'https://agnes.ai/schema/package-admin.json',
+    params: 'PackageListParams',
+    result: 'AuthoringCandidateList',
+  },
+  '_agnes/v1/plugins.candidates.show': {
+    fileId: 'https://agnes.ai/schema/package-admin.json',
+    params: 'AuthoringShowParams',
+    result: 'AuthoringCandidate',
+  },
+  '_agnes/v1/plugins.candidates.create': {
+    fileId: 'https://agnes.ai/schema/package-admin.json',
+    params: 'AuthoringCreateParams',
+    result: 'AuthoringCandidate',
+  },
+  '_agnes/v1/plugins.candidates.write': {
+    fileId: 'https://agnes.ai/schema/package-admin.json',
+    params: 'AuthoringWriteParams',
+    result: 'AuthoringCandidate',
+  },
+  '_agnes/v1/plugins.candidates.test': {
+    fileId: 'https://agnes.ai/schema/package-admin.json',
+    params: 'AuthoringTestParams',
+    result: 'AuthoringCandidate',
+  },
+  '_agnes/v1/plugins.candidates.submit': {
+    fileId: 'https://agnes.ai/schema/package-admin.json',
+    params: 'AuthoringSubmitParams',
+    result: 'AuthoringCandidate',
+  },
+  '_agnes/v1/plugins.candidates.approve': {
+    fileId: 'https://agnes.ai/schema/package-admin.json',
+    params: 'AuthoringApproveParams',
+    result: 'AuthoringCandidate',
+  },
+  '_agnes/v1/plugins.candidates.reject': {
+    fileId: 'https://agnes.ai/schema/package-admin.json',
+    params: 'AuthoringRejectParams',
+    result: 'AuthoringCandidate',
+  },
+
   '_agnes/v1/packages.provenance': {
     fileId: 'https://agnes.ai/schema/package-admin.json',
     params: 'PackageProvenanceParams',
@@ -6676,6 +6761,166 @@ const METHOD_PARAMS_SAMPLE: Record<MethodName, Sample> = {
     invalid: [{ probeAccounts: 'yes' }, { home: '/untrusted' }],
     note: 'explicit probe only; caller cannot choose home',
   },
+  '_agnes/v1/plugins.candidates.list': {
+    valid: { profile: 'local-dev' },
+    invalid: [{ profile: '../escape' }, { ...{ profile: 'local-dev' }, unknown: true }],
+    note: 'candidate hash and authenticated effect contract',
+  },
+  '_agnes/v1/plugins.candidates.show': {
+    valid: { profile: 'local-dev', candidateId: 'candidate-11111111111111111111111111111111' },
+    invalid: [
+      { profile: '../escape' },
+      {
+        ...{ profile: 'local-dev', candidateId: 'candidate-11111111111111111111111111111111' },
+        unknown: true,
+      },
+    ],
+    note: 'candidate hash and authenticated effect contract',
+  },
+  '_agnes/v1/plugins.candidates.create': {
+    valid: {
+      profile: 'local-dev',
+      clientId: 'client',
+      commandId: 'command',
+      files: [{ path: 'package.json', content: '{}' }],
+    },
+    invalid: [
+      { profile: '../escape' },
+      {
+        ...{
+          profile: 'local-dev',
+          candidateId: 'candidate-11111111111111111111111111111111',
+          clientId: 'client',
+          commandId: 'command',
+          files: [{ path: 'package.json', content: '{}' }],
+        },
+        unknown: true,
+      },
+    ],
+    note: 'candidate hash and authenticated effect contract',
+  },
+  '_agnes/v1/plugins.candidates.write': {
+    valid: {
+      profile: 'local-dev',
+      candidateId: 'candidate-11111111111111111111111111111111',
+      clientId: 'client',
+      commandId: 'command',
+      files: [{ path: 'package.json', content: '{}' }],
+      expectedHash: 'sha256-1111111111111111111111111111111111111111111111111111111111111111',
+    },
+    invalid: [
+      { profile: '../escape' },
+      {
+        ...{
+          profile: 'local-dev',
+          candidateId: 'candidate-11111111111111111111111111111111',
+          clientId: 'client',
+          commandId: 'command',
+          files: [{ path: 'package.json', content: '{}' }],
+          expectedHash: 'sha256-1111111111111111111111111111111111111111111111111111111111111111',
+        },
+        unknown: true,
+      },
+    ],
+    note: 'candidate hash and authenticated effect contract',
+  },
+  '_agnes/v1/plugins.candidates.test': {
+    valid: {
+      profile: 'local-dev',
+      candidateId: 'candidate-11111111111111111111111111111111',
+      clientId: 'client',
+      commandId: 'command',
+      expectedHash: 'sha256-1111111111111111111111111111111111111111111111111111111111111111',
+    },
+    invalid: [
+      { profile: '../escape' },
+      {
+        ...{
+          profile: 'local-dev',
+          candidateId: 'candidate-11111111111111111111111111111111',
+          clientId: 'client',
+          commandId: 'command',
+          expectedHash: 'sha256-1111111111111111111111111111111111111111111111111111111111111111',
+        },
+        unknown: true,
+      },
+    ],
+    note: 'candidate hash and authenticated effect contract',
+  },
+  '_agnes/v1/plugins.candidates.submit': {
+    valid: {
+      profile: 'local-dev',
+      candidateId: 'candidate-11111111111111111111111111111111',
+      clientId: 'client',
+      commandId: 'command',
+      expectedHash: 'sha256-1111111111111111111111111111111111111111111111111111111111111111',
+    },
+    invalid: [
+      { profile: '../escape' },
+      {
+        ...{
+          profile: 'local-dev',
+          candidateId: 'candidate-11111111111111111111111111111111',
+          clientId: 'client',
+          commandId: 'command',
+          expectedHash: 'sha256-1111111111111111111111111111111111111111111111111111111111111111',
+        },
+        unknown: true,
+      },
+    ],
+    note: 'candidate hash and authenticated effect contract',
+  },
+  '_agnes/v1/plugins.candidates.approve': {
+    valid: {
+      profile: 'local-dev',
+      candidateId: 'candidate-11111111111111111111111111111111',
+      clientId: 'client',
+      commandId: 'command',
+      expectedHash: 'sha256-1111111111111111111111111111111111111111111111111111111111111111',
+      reviewHash: 'sha256-2222222222222222222222222222222222222222222222222222222222222222',
+    },
+    invalid: [
+      { profile: '../escape' },
+      {
+        ...{
+          profile: 'local-dev',
+          candidateId: 'candidate-11111111111111111111111111111111',
+          clientId: 'client',
+          commandId: 'command',
+          expectedHash: 'sha256-1111111111111111111111111111111111111111111111111111111111111111',
+          reviewHash: 'sha256-2222222222222222222222222222222222222222222222222222222222222222',
+        },
+        unknown: true,
+      },
+    ],
+    note: 'candidate hash and authenticated effect contract',
+  },
+  '_agnes/v1/plugins.candidates.reject': {
+    valid: {
+      profile: 'local-dev',
+      candidateId: 'candidate-11111111111111111111111111111111',
+      clientId: 'client',
+      commandId: 'command',
+      expectedHash: 'sha256-1111111111111111111111111111111111111111111111111111111111111111',
+      reviewHash: 'sha256-2222222222222222222222222222222222222222222222222222222222222222',
+    },
+    invalid: [
+      { profile: '../escape' },
+      {
+        ...{
+          profile: 'local-dev',
+          candidateId: 'candidate-11111111111111111111111111111111',
+          clientId: 'client',
+          commandId: 'command',
+          expectedHash: 'sha256-1111111111111111111111111111111111111111111111111111111111111111',
+          reviewHash: 'sha256-2222222222222222222222222222222222222222222222222222222222222222',
+        },
+        unknown: true,
+      },
+    ],
+    note: 'candidate hash and authenticated effect contract',
+  },
+
   '_agnes/v1/packages.provenance': {
     valid: { profile: 'local-dev', id: 'fixture' },
     invalid: [{ profile: 'local-dev' }],
@@ -7004,6 +7249,14 @@ const METHOD_PARAMS_SAMPLE: Record<MethodName, Sample> = {
 
 const METHOD_RESULT_SAMPLE: Partial<Record<MethodName, Sample>> = {
   '_agnes/v1/doctor.run': AppSamples.DoctorResult!,
+  '_agnes/v1/plugins.candidates.reject': PackageAdminSamples.AuthoringCandidate as Sample,
+  '_agnes/v1/plugins.candidates.approve': PackageAdminSamples.AuthoringCandidate as Sample,
+  '_agnes/v1/plugins.candidates.submit': PackageAdminSamples.AuthoringCandidate as Sample,
+  '_agnes/v1/plugins.candidates.test': PackageAdminSamples.AuthoringCandidate as Sample,
+  '_agnes/v1/plugins.candidates.write': PackageAdminSamples.AuthoringCandidate as Sample,
+  '_agnes/v1/plugins.candidates.create': PackageAdminSamples.AuthoringCandidate as Sample,
+  '_agnes/v1/plugins.candidates.show': PackageAdminSamples.AuthoringCandidate as Sample,
+  '_agnes/v1/plugins.candidates.list': PackageAdminSamples.AuthoringCandidateList as Sample,
   '_agnes/v1/packages.provenance': PackageAdminSamples.PackageProvenance as Sample,
   '_agnes/v1/packages.sourcePolicy': PackageAdminSamples.PackageSourcePolicy as Sample,
   '_agnes/v1/admin.mcp.oauth.save': {

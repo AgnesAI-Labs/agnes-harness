@@ -140,7 +140,15 @@
     "runtime-doctor-zh-CN-light-1440",
     "runtime-doctor-zh-CN-light-1280",
     "runtime-doctor-zh-CN-dark-1440",
-    "runtime-doctor-zh-CN-dark-1280"
+    "runtime-doctor-zh-CN-dark-1280",
+    "candidate-review-en-light",
+    "candidate-review-en-dark",
+    "candidate-review-zh-CN-light",
+    "candidate-review-zh-CN-dark",
+    "candidate-diff-en-light",
+    "candidate-diff-en-dark",
+    "candidate-diff-zh-CN-light",
+    "candidate-diff-zh-CN-dark"
   ],
   "pending": {},
   "platforms": ["darwin", "linux"],

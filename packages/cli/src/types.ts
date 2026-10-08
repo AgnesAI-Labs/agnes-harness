@@ -58,6 +58,8 @@ export type ParsedArgs = {
   cwd?: string
   /** Explicit Computer Use rescue store; bypasses profile/package resolution. */
   dataDir?: string
+  candidateHash?: string
+  reviewHash?: string
   newSession?: boolean
   continue: boolean
   resume?: string

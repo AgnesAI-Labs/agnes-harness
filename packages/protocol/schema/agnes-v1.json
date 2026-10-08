@@ -5255,6 +5255,48 @@
         "audit",
         "limits"
       ]
+    },
+    "AuthoringFile": {
+      "$ref": "package-admin.json#/$defs/AuthoringFile"
+    },
+    "AuthoringOrigin": {
+      "$ref": "package-admin.json#/$defs/AuthoringOrigin"
+    },
+    "AuthoringTests": {
+      "$ref": "package-admin.json#/$defs/AuthoringTests"
+    },
+    "AuthoringCandidate": {
+      "$ref": "package-admin.json#/$defs/AuthoringCandidate"
+    },
+    "AuthoringCandidateList": {
+      "$ref": "package-admin.json#/$defs/AuthoringCandidateList"
+    },
+    "AuthoringCreateParams": {
+      "$ref": "package-admin.json#/$defs/AuthoringCreateParams"
+    },
+    "AuthoringWriteParams": {
+      "$ref": "package-admin.json#/$defs/AuthoringWriteParams"
+    },
+    "AuthoringTestParams": {
+      "$ref": "package-admin.json#/$defs/AuthoringTestParams"
+    },
+    "AuthoringSubmitParams": {
+      "$ref": "package-admin.json#/$defs/AuthoringSubmitParams"
+    },
+    "AuthoringApproveParams": {
+      "$ref": "package-admin.json#/$defs/AuthoringApproveParams"
+    },
+    "AuthoringRejectParams": {
+      "$ref": "package-admin.json#/$defs/AuthoringRejectParams"
+    },
+    "AuthoringShowParams": {
+      "$ref": "package-admin.json#/$defs/AuthoringShowParams"
+    },
+    "AuthoringProvenance": {
+      "$ref": "package-admin.json#/$defs/AuthoringProvenance"
+    },
+    "AuthoringCandidateSummary": {
+      "$ref": "package-admin.json#/$defs/AuthoringCandidateSummary"
     }
   }
 }

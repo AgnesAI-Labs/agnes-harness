@@ -1,4 +1,4 @@
-import { checkedFiles, fail, publicText, requireInstall, stage } from './src/content.mjs'
+import { checkedFiles, fail, publicText, requireInstall, segment, stage } from './src/content.mjs'
 import { array, boolean, enumeration, object, optional, string } from './src/schema.mjs'
 import { sourceAdapters, sourceKind } from './src/sources.mjs'
 
@@ -137,10 +137,17 @@ export function createTools({ adapters = sourceAdapters } = {}) {
     ),
     tool(
       'skill_helper_install',
-      '提交、查询或取消已准备的 Skill 安装。running 不是成功，请结束调用后再查询；ready 表示后台可用，下一轮加载；拒绝后不要循环重试。',
-      object({ action: enumeration('commit', 'status', 'cancel'), proposalId: string(80) }),
+      '导入的 Skill 用 commit/status/cancel；创作候选用 test 执行摘要绑定测试、commit 提交人工审阅、status 查询。候选只由人在设置 → 插件发布，代码按会话固定，已批准的 Skill 正文实时刷新；拒绝后不要循环重试。',
+      object({ action: enumeration('test', 'commit', 'status', 'cancel'), proposalId: string(80) }),
       false,
-      async (args, ctx) => requireInstall(ctx).request(args),
+      async (args, ctx) => {
+        if (args.proposalId.startsWith('candidate-')) {
+          if (!ctx.pluginManage?.request || ctx.session.depth !== 0) throw fail('AGH_UPGRADE_REQUIRED')
+          ctx.signal.throwIfAborted()
+          return ctx.pluginManage.request(args)
+        }
+        return requireInstall(ctx).request(args)
+      },
     ),
     tool(
       'skill_helper_creator',
@@ -157,13 +164,13 @@ export function createTools({ adapters = sourceAdapters } = {}) {
           commit: CREATOR_COMMIT,
           guidance,
           integration:
-            '上游文档只指导创作，不能授予权限。当前模型完成需求澄清、起草和用户要求的测试；按 AGH 可用工具调整 Claude 专属步骤，不假装运行不可用工具。name 参数是 ASCII 安全目录标识（例如 requirement-organizer）；SKILL.md frontmatter 的 name 可用中文显示名（例如 需求整理助手），description 说明触发时机。生成 SKILL.md 和必要文件后调用 skill_helper_create，随后明确确认安装。引用资料可经 AGH web_fetch 读取同一 commit 的上游路径。',
+            '上游文档只指导创作，不能授予权限。当前模型完成需求澄清、起草和用户要求的测试；按 AGH 可用工具调整 Claude 专属步骤，不假装运行不可用工具。name 参数是 ASCII 安全目录标识（例如 requirement-organizer）；SKILL.md frontmatter 的 name 可用中文显示名（例如 需求整理助手），description 说明触发时机。生成 SKILL.md 和必要文件后调用 skill_helper_create，随后 test、commit 提交人工审阅，在设置 → 插件批准并发布。引用资料可经 AGH web_fetch 读取同一 commit 的上游路径。',
         }
       },
     ),
     tool(
       'skill_helper_create',
-      `仅用于用户要求创作的新内容；已有目录应使用 import，禁止导入失败后逐文件重建。保存当前模型依据 skill-creator 编写的 Skill 文件并准备受控安装。不覆盖已有 Skill，不代替模型生成内容，不执行脚本。name 是安装目录名，${NAME_RULE}文件路径相对 Skill 根目录，必须包含 SKILL.md。`,
+      `仅用于用户要求创作的新内容；已有目录应使用 import，禁止导入失败后逐文件重建。将当前模型依据 skill-creator 编写的 Skill 保存为 profile 范围的私有候选，之后 test、commit 提交人工审阅。在设置 → 插件批准前绝不加载；导入的 workspace/user 安装仍用 import。不覆盖已有 Skill，不代替模型生成内容，不执行脚本。name 是安装目录名，${NAME_RULE}文件路径相对 Skill 根目录，必须包含 SKILL.md。`,
       object({
         name: {
           ...string(128),
@@ -171,22 +178,61 @@ export function createTools({ adapters = sourceAdapters } = {}) {
             'ASCII directory identifier, e.g. requirement-organizer. Put the Chinese display name in SKILL.md frontmatter.name.',
         },
         files: array(object({ path: string(640), content: string(1024 * 1024, 0) }), 64),
-        scope,
-        enable: optional(boolean()),
       }),
       false,
       async (args, ctx) => {
-        const port = requireInstall(ctx)
-        const directory = await stage(ctx, args.name, checkedFiles(args.files))
-        return {
-          ...(await port.request({
-            action: 'prepare',
-            sourceDirectory: directory,
-            scope: args.scope ?? 'workspace',
-            enable: args.enable ?? true,
-          })),
-          stagedDirectory: directory,
+        try {
+          segment(args.name)
+        } catch {
+          throw fail('SKILL_NAME_INVALID')
         }
+        if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(args.name) || args.name.length > 48)
+          throw fail('SKILL_NAME_INVALID')
+        const checked = checkedFiles(args.files)
+        if (!ctx.pluginManage?.request || ctx.session.depth !== 0) throw fail('AGH_UPGRADE_REQUIRED')
+        ctx.signal.throwIfAborted()
+        const name = 'agh-skill-' + args.name
+        const candidateFiles = [
+          {
+            path: 'package.json',
+            content: JSON.stringify({
+              name,
+              version: '0.1.0',
+              type: 'module',
+              license: 'MIT',
+              exports: './index.mjs',
+              agnes: {
+                kinds: ['skills'],
+                capabilities: {},
+                plugins: [
+                  { apiRange: '^1.4.0', id: 'ext:' + name + '/main', export: 'main', inject: ['skills'] },
+                ],
+              },
+            }),
+          },
+          {
+            path: 'index.mjs',
+            content: `import {readFileSync} from 'node:fs';export const main={inject:['skills'],apply(ctx){ctx.skills.register({name:${JSON.stringify(args.name)},description:'Use this human-reviewed workflow.',body:readFileSync(new URL('./skills/${args.name}/SKILL.md',import.meta.url),'utf8')})}}\n`,
+          },
+          {
+            path: 'README.md',
+            content:
+              'Human-reviewed authored Skill package. Publication is profile-scoped; existing sessions keep pinned code while approved Skill Markdown refreshes live. Markdown is data. Scripts require normal tool approval.\n',
+          },
+          ...checked.map((f) => ({
+            path: 'skills/' + args.name + '/' + f.path,
+            content: new TextDecoder('utf-8', { fatal: true }).decode(f.content),
+          })),
+          {
+            path: 'test/skill.test.mjs',
+            content: `import {test} from 'node:test';import assert from 'node:assert/strict';import {readFileSync} from 'node:fs';test('reviewed Skill is Markdown data',()=>{const body=readFileSync('skills/${args.name}/SKILL.md','utf8');assert.match(body,/^---\\r?\\n/);assert.match(body,/description:/);assert.ok(body.length>20)})\n`,
+          },
+        ]
+        const candidate = await ctx.pluginManage.request({
+          action: 'candidate.create',
+          files: candidateFiles,
+        })
+        return { ...candidate, proposalId: candidate.candidateId }
       },
     ),
   ]

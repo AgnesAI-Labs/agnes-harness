@@ -6,7 +6,14 @@
   "capabilities": {
     "tools": {
       "prefix": "plugin_",
-      "names": ["plugin_creator_guide", "plugin_scaffold", "plugin_test", "plugin_install_local"]
+      "names": [
+        "plugin_creator_guide",
+        "plugin_scaffold",
+        "plugin_test",
+        "plugin_install_local",
+        "plugin_candidate_write",
+        "plugin_candidate_read"
+      ]
     },
     "hooks": ["context"],
     "slots": [],

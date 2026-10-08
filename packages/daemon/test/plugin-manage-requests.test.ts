@@ -1,8 +1,9 @@
 import { randomUUID } from 'node:crypto'
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createPackageManager, emptyLock, writeLock } from '@agnes/package-manager'
+import type { AuthoringCandidate } from '@agnes/protocol'
 import { afterEach, expect, it, vi } from 'vitest'
 import { LocalEndpoint } from '../src/local/endpoint.js'
 import { createPackageAdminService, FilePackageOperationStore } from '../src/packages/index.js'
@@ -80,6 +81,12 @@ async function setup() {
     profileDirectory: async () => profileDir,
     operations: new FilePackageOperationStore(join(root, 'ops')),
     clock: () => new Date().toISOString(),
+    authoringTestRunner: async () => ({
+      state: 'passed',
+      count: 1,
+      runner: 'node-test',
+      output: 'synthetic unit runner',
+    }),
     activation: {
       actual: async () =>
         running
@@ -117,6 +124,7 @@ async function setup() {
   const request = (input: unknown, overrides = {}, requestId: string = randomUUID()) =>
     handler('session', requestId, 'plugin-manage', {
       input,
+      turn: 2,
       packageId: '@agnes/plugin-helper',
       snapshotId: 'snap',
       rowId: 'ext:plugin-helper/main',
@@ -124,7 +132,7 @@ async function setup() {
       toolUseId: 'tool',
       leaseId: 'lease',
       ...overrides,
-    }) as Promise<{ proposalId: string; state: string; installed: boolean; actual: string }>
+    }) as Promise<AuthoringCandidate & { proposalId: string }>
   return {
     root,
     profileDir,
@@ -140,39 +148,59 @@ async function setup() {
     abort: (id: string) => handler('session', 'abort', 'plugin-manage-abort', { requestId: id }),
   }
 }
-it('inspects real files, approves exact content, installs and enables through PackageAdmin, and recovers status without replay', async () => {
-  const s = await setup()
-  const p = await s.request({ action: 'prepare', files })
-  expect(p.state).toBe('prepared')
+it('drafts and submits a tested review without installing, trusting or enabling; only a human admin can publish', async () => {
+  const s = await setup(),
+    p = await s.request({ action: 'prepare', files })
+  expect(p.state).toBe('draft')
+  expect(p.origin).toMatchObject({ sessionKey: 'session', turn: 2, toolUseId: 'tool' })
+  await expect(s.request({ action: 'commit', proposalId: p.proposalId })).rejects.toMatchObject({
+    data: { reason: 'E_PACKAGE_PREVIEW_STALE' },
+  })
+  await s.request({ action: 'candidate.test', candidateId: p.candidateId, expectedHash: p.candidateHash })
+  const r = await s.request({ action: 'commit', proposalId: p.proposalId })
+  expect(r.state).toBe('review')
+  expect(r.tests).toMatchObject({ state: 'passed', hash: r.candidateHash })
   expect((await s.manager.inventory(s.profileDir)).packages).toHaveLength(0)
-  expect(s.ask).not.toHaveBeenCalled()
-  const submitted = await s.request({ action: 'commit', proposalId: p.proposalId })
-  expect(['submitted', 'ready']).toContain(submitted.state)
-  await vi.waitFor(async () =>
-    expect((await s.request({ action: 'status', proposalId: p.proposalId })).state).toBe('ready'),
-  )
-  expect(await s.manager.provenance(s.profileDir, 'test-plugin')).toMatchObject({ installer: 'agent' })
   expect(s.ask).toHaveBeenCalledOnce()
-  expect(JSON.stringify(s.ask.mock.calls)).toContain('sha256-')
+  expect(JSON.stringify(s.ask.mock.calls)).toContain(r.candidateHash)
   s.restart()
-  expect((await s.request({ action: 'commit', proposalId: p.proposalId })).state).toBe('ready')
-  expect(s.ask).toHaveBeenCalledOnce()
+  expect((await s.request({ action: 'status', proposalId: p.proposalId })).state).toBe('review')
+  await expect(
+    s.request({
+      action: 'candidate.approve',
+      candidateId: p.candidateId,
+      expectedHash: p.candidateHash,
+      reviewHash: r.reviewHash,
+    }),
+  ).rejects.toMatchObject({ code: -32602 })
   expect(s.exec).not.toHaveBeenCalled()
-  await expect(s.request({ action: 'prepare', files })).rejects.toMatchObject({
-    data: { code: 'PLUGIN_PACKAGE_EXISTS' },
-  })
 })
-it('does not install on native rejection, and does not replay a prepared proposal after restart', async () => {
-  const s = await setup()
-  const p = await s.request({ action: 'prepare', files })
+it('denied test execution and cancelled native prompts leave the candidate inactive, with no passing result', async () => {
+  const s = await setup(),
+    p = await s.request({ action: 'prepare', files })
   s.ask.mockResolvedValueOnce({ outcome: { outcome: 'selected', optionId: 'deny' } })
-  expect((await s.request({ action: 'commit', proposalId: p.proposalId })).state).toBe('cancelled')
+  await expect(
+    s.request({ action: 'candidate.test', candidateId: p.candidateId, expectedHash: p.candidateHash }),
+  ).rejects.toMatchObject({ data: { code: 'PLUGIN_TEST_REJECTED' } })
+  expect((await s.request({ action: 'status', proposalId: p.proposalId })).tests).toBeNull()
+  s.ask.mockImplementationOnce(
+    (_m, _p, opts) =>
+      new Promise((_resolve, reject) =>
+        opts?.signal?.addEventListener('abort', () => reject(new Error('aborted')), { once: true }),
+      ),
+  )
+  const job = s
+    .request(
+      { action: 'candidate.test', candidateId: p.candidateId, expectedHash: p.candidateHash },
+      {},
+      'cancel-me',
+    )
+    .catch((e) => e)
+  await vi.waitFor(() => expect(s.ask).toHaveBeenCalledTimes(2))
+  await s.abort('cancel-me')
+  await job
   expect((await s.manager.inventory(s.profileDir)).packages).toHaveLength(0)
-  const p2 = await s.request({ action: 'prepare', files })
-  s.restart()
-  await expect(s.request({ action: 'commit', proposalId: p2.proposalId })).rejects.toMatchObject({
-    data: { code: 'PLUGIN_PROPOSAL_EXPIRED' },
-  })
+  expect((await s.request({ action: 'status', proposalId: p.proposalId })).tests).toBeNull()
 })
 it('binds authority to the local owner, session and live connection', async () => {
   const s = await setup()
@@ -185,31 +213,23 @@ it('binds authority to the local owner, session and live connection', async () =
   })
   expect(s.ask).not.toHaveBeenCalled()
 })
-it('rejects source changes after preview and never trusts changed bytes', async () => {
-  const s = await setup()
-  const p = await s.request({ action: 'prepare', files })
-  writeFileSync(
-    join(s.root, 'plugin-onboarding', 'sources', p.proposalId, 'index.mjs'),
-    `${source}\n// changed`,
+it('rejects changed bytes and legacy proposals before tests or approval; no request can publish', async () => {
+  const s = await setup(),
+    p = await s.request({ action: 'prepare', files })
+  const record = JSON.parse(
+    readFileSync(join(s.profileDir, '.authoring-candidates', p.candidateId, 'record.json'), 'utf8'),
   )
-  await expect(s.request({ action: 'commit', proposalId: p.proposalId })).rejects.toMatchObject({
-    data: { code: 'PLUGIN_PACKAGE_OPERATION_FAILED' },
+  writeFileSync(join(record.tree, 'index.mjs'), source + '// changed')
+  await expect(
+    s.request({ action: 'candidate.test', candidateId: p.candidateId, expectedHash: p.candidateHash }),
+  ).rejects.toMatchObject({ data: { code: 'PLUGIN_CANDIDATE_STALE' } })
+  await expect(s.request({ action: 'commit', proposalId: randomUUID() })).rejects.toMatchObject({
+    data: { code: 'PLUGIN_LEGACY_PROPOSAL_REVIEW_REQUIRED' },
   })
-  expect((await s.manager.inventory(s.profileDir)).packages).toHaveLength(0)
-})
-it('aborting the native prompt admits no installation', async () => {
-  const s = await setup()
-  const p = await s.request({ action: 'prepare', files })
-  s.ask.mockImplementationOnce(
-    (_m, _p, opts) =>
-      new Promise((_resolve, reject) =>
-        opts?.signal?.addEventListener('abort', () => reject(new Error('aborted')), { once: true }),
-      ),
-  )
-  const job = s.request({ action: 'commit', proposalId: p.proposalId }, {}, 'cancel-me').catch((e) => e)
-  await vi.waitFor(() => expect(s.ask).toHaveBeenCalledOnce())
-  await s.abort('cancel-me')
-  await job
+  await expect(s.request({ action: 'cancel', proposalId: p.proposalId })).rejects.toMatchObject({
+    data: { code: 'PLUGIN_REJECT_IN_REVIEW_UI' },
+  })
+  expect(s.ask).not.toHaveBeenCalled()
   expect((await s.manager.inventory(s.profileDir)).packages).toHaveLength(0)
 })
 it.each([
@@ -251,41 +271,6 @@ it('rejects aliases, file-directory conflicts, bounds and lifecycle/dependency d
   ).toThrow()
 })
 
-it('cancels an in-flight approval through the proposal and does not continue installation', async () => {
-  const s = await setup()
-  const p = await s.request({ action: 'prepare', files })
-  s.ask.mockImplementationOnce(
-    (_m, _p, opts) =>
-      new Promise((_resolve, reject) =>
-        opts?.signal?.addEventListener('abort', () => reject(new Error('aborted')), { once: true }),
-      ),
-  )
-  const pending = s.request({ action: 'commit', proposalId: p.proposalId }).catch((e) => e)
-  await vi.waitFor(() => expect(s.ask).toHaveBeenCalledOnce())
-  expect((await s.request({ action: 'cancel', proposalId: p.proposalId })).state).toBe('cancelling')
-  await pending
-  expect((await s.request({ action: 'status', proposalId: p.proposalId })).state).toBe('cancelled')
-  expect((await s.manager.inventory(s.profileDir)).packages).toHaveLength(0)
-})
-it('preserves an admitted installation after trust failure but never replays the remaining pipeline', async () => {
-  const s = await setup()
-  const p = await s.request({ action: 'prepare', files })
-  const trust = vi.spyOn(s.manager, 'trust').mockRejectedValue(new Error('fixture trust failure'))
-  await expect(s.request({ action: 'commit', proposalId: p.proposalId })).rejects.toMatchObject({
-    data: { code: 'PLUGIN_PACKAGE_OPERATION_FAILED' },
-  })
-  s.restart()
-  expect(await s.request({ action: 'commit', proposalId: p.proposalId })).toMatchObject({
-    state: 'failed',
-    installed: true,
-  })
-  expect(trust).toHaveBeenCalledOnce()
-  expect(s.ask).toHaveBeenCalledOnce()
-  expect((await s.manager.inventory(s.profileDir)).packages[0]?.entry.state).toMatchObject({
-    enabled: false,
-    trusted: null,
-  })
-})
 it.each(['tool', 'skill'])('the shipped %s template passes real package inspection', async (kind) => {
   const module = await import(
     new URL('../../package-manager/bundled-plugins/plugin-helper/index.mjs', import.meta.url).href
@@ -298,10 +283,10 @@ it.each(['tool', 'skill'])('the shipped %s template passes real package inspecti
   if (!guide) throw new Error('guide missing')
   const generated = JSON.parse((await guide.execute({ kind })).content[0]?.text ?? '{}')
   const s = await setup()
-  expect((await s.request({ action: 'prepare', files: generated.files })).state).toBe('prepared')
+  expect((await s.request({ action: 'prepare', files: generated.files })).state).toBe('draft')
 })
 
-it('accepts and installs the bundled pure skin template, rejecting arbitrary client contributions', async () => {
+it('accepts the bundled pure skin candidate template, rejecting arbitrary client contributions', async () => {
   const templatePath = '../../package-manager/bundled-plugins/plugin-helper/src/skin.mjs'
   const { skinFiles } = await import(templatePath)
   const skin: { path: string; content: string }[] = skinFiles()
@@ -310,11 +295,8 @@ it('accepts and installs the bundled pure skin template, rejecting arbitrary cli
   const p = await s.request({ action: 'prepare', files: skin }).catch((e) => {
     throw new Error(JSON.stringify(e))
   })
-  expect(p.state).toBe('prepared')
-  await s.request({ action: 'commit', proposalId: p.proposalId })
-  await vi.waitFor(async () =>
-    expect((await s.request({ action: 'status', proposalId: p.proposalId })).state).toBe('ready'),
-  )
+  expect(p.state).toBe('draft')
+  expect((await s.manager.inventory(s.profileDir)).packages).toHaveLength(0)
   for (const content of [JSON.stringify({ skins: [], panels: [] }), JSON.stringify({ panels: [{}] })]) {
     const bad = skin.map((f) => (f.path === 'extensions/main/agnes.client.json' ? { ...f, content } : f))
     expect(() => checkedPluginFiles(bad)).toThrow('PLUGIN_FILES_INVALID')

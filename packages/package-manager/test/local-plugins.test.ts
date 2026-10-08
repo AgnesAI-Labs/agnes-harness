@@ -113,3 +113,12 @@ it('calls the generation reload port once per changed package and closes watchin
     await watcher.close()
   }
 })
+
+it('never discovers the private authoring area even when configured as a local root', async () => {
+  const f = setup(),
+    root = join(f.profileDir, '.authoring-candidates', 'candidate-' + 'a'.repeat(32), 'trees', 'revision')
+  mkdirSync(join(root, 'ready-tool'), { recursive: true })
+  writeFileSync(join(root, 'ready-tool/plugin.ts'), 'export default {apply(){}}\n')
+  const { discoverLocalPlugins } = await import('../src/local-source.js')
+  expect(discoverLocalPlugins({ home: root, workspace: root })).toEqual([])
+})

@@ -18,6 +18,48 @@ export async function runPluginDevelopmentCommand(
   write: (text: string) => void,
 ): Promise<void> {
   const profile = p.profile ?? 'local-dev'
+  if (p.command === 'plugins' && p.positional[0] === 'candidates') {
+    const action = p.positional[1],
+      candidateId = p.positional[2]
+    if (action === 'list' && p.positional.length === 2) {
+      write(
+        JSON.stringify(
+          await client.request('_agnes/v1/plugins.candidates.list', { profile }),
+          null,
+          p.json ? undefined : 2,
+        ) + '\n',
+      )
+      return
+    }
+    if (!['show', 'approve', 'reject'].includes(action ?? '') || !candidateId || p.positional.length !== 3)
+      throw new UsageError('usage: agh plugins candidates list | show|approve|reject <candidate-id>')
+    const value = await client.request('_agnes/v1/plugins.candidates.show', { profile, candidateId })
+    if (action === 'show') {
+      write(JSON.stringify(value, null, p.json ? undefined : 2) + '\n')
+      return
+    }
+    // Require review hashes supplied after inspecting `show`, rather than silently approving a newer draft.
+    const expectedHash = p.candidateHash,
+      reviewHash = p.reviewHash
+    if (typeof expectedHash !== 'string' || typeof reviewHash !== 'string')
+      throw new UsageError(
+        'Approve/reject requires --candidate-hash <sha256> --review-hash <sha256> from candidates show',
+      )
+    const input = {
+      profile,
+      candidateId,
+      expectedHash,
+      reviewHash,
+      clientId: await client.clientId(),
+      commandId: newPackageCommandId('candidate-review'),
+    }
+    const result =
+      action === 'approve'
+        ? await client.request('_agnes/v1/plugins.candidates.approve', input)
+        : await client.request('_agnes/v1/plugins.candidates.reject', input)
+    write(JSON.stringify(result, null, p.json ? undefined : 2) + '\n')
+    return
+  }
   if (p.command === 'plugins' && p.positional[0] === 'provenance') {
     if (p.positional.length !== 2) throw new UsageError('usage: agh plugins provenance <id>')
     const result = await client.request('_agnes/v1/packages.provenance', {

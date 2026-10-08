@@ -1,7 +1,15 @@
 import { test as base, expect } from '@playwright/test'
 import { isolatedRuntime, type Runtime } from './runtime.js'
 
-export const test = base.extend<{ runtime: Runtime; browserHealth: undefined }>({
+export const test = base.extend<{
+  runtime: Runtime
+  browserHealth: undefined
+  expectedBrowserErrors: string[]
+}>({
+  // biome-ignore lint/correctness/noEmptyPattern: Playwright inspects the destructured fixture dependencies.
+  expectedBrowserErrors: async ({}, use) => {
+    await use([])
+  },
   runtime: async ({ page }, use, info) => {
     const runtime = await isolatedRuntime(
       info.title.startsWith('guided first run zh-CN') ? 'installed' : 'root',
@@ -41,7 +49,7 @@ export const test = base.extend<{ runtime: Runtime; browserHealth: undefined }>(
     }
   },
   browserHealth: [
-    async ({ page, context }, use, info) => {
+    async ({ page, context, expectedBrowserErrors }, use, info) => {
       const errors: string[] = []
       const requests: { method: string; durationMs: number; code?: unknown }[] = []
       page.on('websocket', (socket) => {
@@ -89,7 +97,10 @@ export const test = base.extend<{ runtime: Runtime; browserHealth: undefined }>(
         body: JSON.stringify(requests, null, 2),
         contentType: 'application/json',
       })
-      expect(errors, 'All console errors, page errors and external requests fail the gate').toEqual([])
+      expect(
+        errors,
+        'Only explicitly asserted negative-flow errors are expected; all other browser errors fail',
+      ).toEqual(expectedBrowserErrors)
     },
     { auto: true },
   ],

@@ -103,6 +103,31 @@ const MODEL_VALIDATORS: Record<string, (x: unknown) => ValidationResult<unknown>
 }
 
 const CONFIG_VALIDATORS: Record<string, (x: unknown) => ValidationResult<unknown>> = {
+  AuthoringFile: (x) => validatePackageAdminData('AuthoringFile' satisfies PackageAdminDataName, x),
+  AuthoringOrigin: (x) => validatePackageAdminData('AuthoringOrigin' satisfies PackageAdminDataName, x),
+  AuthoringTests: (x) => validatePackageAdminData('AuthoringTests' satisfies PackageAdminDataName, x),
+  AuthoringCandidate: (x) => validatePackageAdminData('AuthoringCandidate' satisfies PackageAdminDataName, x),
+  AuthoringCandidateList: (x) =>
+    validatePackageAdminData('AuthoringCandidateList' satisfies PackageAdminDataName, x),
+  AuthoringCreateParams: (x) =>
+    validatePackageAdminData('AuthoringCreateParams' satisfies PackageAdminDataName, x),
+  AuthoringWriteParams: (x) =>
+    validatePackageAdminData('AuthoringWriteParams' satisfies PackageAdminDataName, x),
+  AuthoringTestParams: (x) =>
+    validatePackageAdminData('AuthoringTestParams' satisfies PackageAdminDataName, x),
+  AuthoringSubmitParams: (x) =>
+    validatePackageAdminData('AuthoringSubmitParams' satisfies PackageAdminDataName, x),
+  AuthoringApproveParams: (x) =>
+    validatePackageAdminData('AuthoringApproveParams' satisfies PackageAdminDataName, x),
+  AuthoringRejectParams: (x) =>
+    validatePackageAdminData('AuthoringRejectParams' satisfies PackageAdminDataName, x),
+  AuthoringShowParams: (x) =>
+    validatePackageAdminData('AuthoringShowParams' satisfies PackageAdminDataName, x),
+  AuthoringProvenance: (x) =>
+    validatePackageAdminData('AuthoringProvenance' satisfies PackageAdminDataName, x),
+  AuthoringCandidateSummary: (x) =>
+    validatePackageAdminData('AuthoringCandidateSummary' satisfies PackageAdminDataName, x),
+
   PackageAdminPermission: (x) =>
     validatePackageAdminData('PackageAdminPermission' satisfies PackageAdminDataName, x),
   PackageActivationTrust: (x) =>

@@ -143,6 +143,14 @@ describe('methods (I1 set)', () => {
         '_agnes/v1/mcp.servers.trust.set',
         '_agnes/v1/mcp.servers.update',
         '_agnes/v1/packages.catalog.get',
+        '_agnes/v1/plugins.candidates.list',
+        '_agnes/v1/plugins.candidates.show',
+        '_agnes/v1/plugins.candidates.create',
+        '_agnes/v1/plugins.candidates.write',
+        '_agnes/v1/plugins.candidates.test',
+        '_agnes/v1/plugins.candidates.submit',
+        '_agnes/v1/plugins.candidates.approve',
+        '_agnes/v1/plugins.candidates.reject',
         '_agnes/v1/packages.catalog.list',
         '_agnes/v1/packages.disable',
         '_agnes/v1/packages.enable',
@@ -229,7 +237,7 @@ describe('methods (I1 set)', () => {
         'session/update',
       ].sort(),
     )
-    expect(Object.keys(METHODS)).toHaveLength(147)
+    expect(Object.keys(METHODS)).toHaveLength(155)
     expect(METHODS['session/cancel']).toMatchObject({ kind: 'notification', direction: 'c2s' })
     expect(METHODS['session/request_permission']).toMatchObject({ kind: 'request', direction: 's2c' })
   })

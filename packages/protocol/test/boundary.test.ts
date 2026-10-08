@@ -300,6 +300,20 @@ describe('protocol src boundary', () => {
             !(
               doc === 'agnes-v1' &&
               [
+                'AuthoringFile',
+                'AuthoringOrigin',
+                'AuthoringTests',
+                'AuthoringCandidate',
+                'AuthoringCandidateList',
+                'AuthoringCreateParams',
+                'AuthoringWriteParams',
+                'AuthoringTestParams',
+                'AuthoringSubmitParams',
+                'AuthoringApproveParams',
+                'AuthoringRejectParams',
+                'AuthoringShowParams',
+                'AuthoringProvenance',
+                'AuthoringCandidateSummary',
                 'PackageActivationTrust',
                 'PackageActivationRequest',
                 'PackageRollbackTarget',

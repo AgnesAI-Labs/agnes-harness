@@ -38,6 +38,14 @@ export const ADMIN_API_ROOT = '/admin/plugins/api'
 
 type FetchLike = typeof fetch
 const METHOD_BY_PATH = {
+  'candidates/list': '_agnes/v1/plugins.candidates.list',
+  'candidates/show': '_agnes/v1/plugins.candidates.show',
+  'candidates/create': '_agnes/v1/plugins.candidates.create',
+  'candidates/write': '_agnes/v1/plugins.candidates.write',
+  'candidates/test': '_agnes/v1/plugins.candidates.test',
+  'candidates/submit': '_agnes/v1/plugins.candidates.submit',
+  'candidates/approve': '_agnes/v1/plugins.candidates.approve',
+  'candidates/reject': '_agnes/v1/plugins.candidates.reject',
   'catalog/list': '_agnes/v1/packages.catalog.list',
   'catalog/get': '_agnes/v1/packages.catalog.get',
   list: '_agnes/v1/packages.list',
@@ -155,6 +163,37 @@ export class PluginAdminApi {
         message: 'The admin context is invalid; reopen the page.',
       })
     return body
+  }
+
+  async candidatesList(): Promise<import('@agnes/protocol').AuthoringCandidateList> {
+    return this.#post('candidates/list', { profile: this.#context.profile })
+  }
+  async candidatesShow(candidateId: string): Promise<import('@agnes/protocol').AuthoringCandidate> {
+    return this.#post('candidates/show', { profile: this.#context.profile, candidateId })
+  }
+  async candidatesTest(
+    candidateId: string,
+    expectedHash: string,
+  ): Promise<import('@agnes/protocol').AuthoringCandidate> {
+    return this.#effect('candidates/test', { candidateId, expectedHash })
+  }
+  async candidatesSubmit(
+    candidateId: string,
+    expectedHash: string,
+  ): Promise<import('@agnes/protocol').AuthoringCandidate> {
+    return this.#effect('candidates/submit', { candidateId, expectedHash })
+  }
+  async candidatesDecide(
+    candidateId: string,
+    expectedHash: string,
+    reviewHash: string,
+    approve: boolean,
+  ): Promise<import('@agnes/protocol').AuthoringCandidate> {
+    return this.#effect(approve ? 'candidates/approve' : 'candidates/reject', {
+      candidateId,
+      expectedHash,
+      reviewHash,
+    })
   }
 
   async publicationStatus(): Promise<PluginPublicationStatusResult> {

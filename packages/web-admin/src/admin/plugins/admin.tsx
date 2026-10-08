@@ -55,6 +55,7 @@ import { SETTINGS_NAMESPACE, settingsCatalog } from '../../settings/locales.js'
 import { sessionStartUrl } from '../../settings/runtime-panels.js'
 import type { SchedulesApi } from '../../settings/schedules.js'
 import { AdminApiError, PluginAdminApi } from './api.js'
+import { CandidateInbox } from './candidates.js'
 import { CapabilityReview, FailureHelp, ProvenanceReview } from './capability-review.js'
 import {
   GenerationDrainSummary,
@@ -1138,6 +1139,18 @@ class PluginAdminPage {
           onRefresh={this.#refreshSettings}
           {...(this.#schedules ? { schedules: this.#schedules } : {})}
         >
+          <CandidateInbox
+            api={this.#api}
+            canReview={
+              this.canEffect('packages.trust') &&
+              this.canEffect('packages.install') &&
+              this.canEffect('packages.activate')
+            }
+            canTest={this.canEffect('extensions.execute')}
+            t={this.#t}
+            confirm={(input) => this.configureConfirm(input)}
+            onPublished={() => this.refresh()}
+          />
           <GenerationDrainSummary
             status={this.#state.generations}
             installed={this.#state.installed}
