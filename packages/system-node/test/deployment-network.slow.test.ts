@@ -66,7 +66,7 @@ it('uses an environment CONNECT proxy, bypasses NO_PROXY, and never exposes prox
   ).toEqual({ http: 'proxy.example:8080', https: 'proxy.example:8080', exclusionsConfigured: false })
   expect(deploymentProxyHosts({ HTTP_PROXY: 'malformed' }).http).toBe('invalid')
 })
-it.each(['request', 'idle', 'abort'] as const)(
+it.each(['request', 'idle', 'abort', 'cancel'] as const)(
   'bounds the %s lifetime and closes stalled response bodies',
   async (kind) => {
     const endpoint = await listen(
@@ -80,9 +80,12 @@ it.each(['request', 'idle', 'abort'] as const)(
     const client = createDeploymentFetch({ requestMs: kind === 'request' ? 30 : 1000, streamIdleMs: 30 }, {})
     clients.push(client)
     const controller = new AbortController()
-    const work = client.fetch(endpoint, { signal: controller.signal }).then((response) => response.text())
+    const work = client
+      .fetch(endpoint, { signal: controller.signal })
+      .then((response) => (kind === 'cancel' ? response.body?.cancel() : response.text()))
     if (kind === 'abort') controller.abort()
-    await expect(work).rejects.toThrow()
+    if (kind === 'cancel') await expect(work).resolves.toBeUndefined()
+    else await expect(work).rejects.toThrow()
   },
 )
 

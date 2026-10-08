@@ -10,9 +10,9 @@
 
 ## 部署网络
 
-官方模型适配器、MCP HTTP/SSE、URL/npm/git 包下载和 OTLP HTTP 导出遵循 `HTTP_PROXY`、`HTTPS_PROXY`、`NO_PROXY`，小写名称优先。未配置 HTTPS 代理时使用 HTTP 代理；`NO_PROXY` 匹配的主机直连。显式为空的小写值覆盖大写值。修改进程环境后重启 daemon。`agnes doctor --section network` 仅报告有效代理的主机/端口及是否配置绕过规则，不显示用户名、密码或查询参数。工作区 `web_fetch` 保留独立的公网访问策略。
+官方模型适配器、MCP HTTP/SSE、URL/npm/git 包下载和 OTLP HTTP 导出遵循 `HTTP_PROXY`、`HTTPS_PROXY`、`NO_PROXY`，小写名称优先。未配置 HTTPS 代理时使用 HTTP 代理；`NO_PROXY` 匹配的主机直连。显式为空的小写值覆盖大写值。修改进程环境后重启 daemon。`agnes doctor network` 仅报告有效代理的主机/端口及是否配置绕过规则，不显示用户名、密码或查询参数。工作区 `web_fetch` 保留独立的公网访问策略。
 
-在 **设置 → 模型 → 账户详情** 中继续用 Base URL 覆盖账户端点。由共享 schema 表单渲染的网络字段配置可选 `networkTimeouts.requestMs`、`connectMs`、`streamIdleMs`，均为 1–3600000 的整数毫秒。配置保存、OAuth 提交输入及 `provider.routes[]` 也支持这些字段。留空使用默认值：请求 300000、连接 10000、流空闲 60000 毫秒；现有更严格的模型/回合期限仍然生效。`{}` 重置已保存覆盖。变更作用于新装配会话，不会重定向在途请求。流空闲限制传输/模型输出间隔；取消会清理定时器并中止在途操作。社区自定义适配器自行负责其传输行为。
+在 **设置 → 模型 → 账户详情** 中继续用 Base URL 覆盖账户端点。由共享 schema 表单渲染的网络字段配置可选 `networkTimeouts.requestMs`、`connectMs`、`streamIdleMs`，均为 1–3600000 的整数毫秒。配置保存、OAuth 提交输入及 `provider.routes[]` 也支持这些字段。留空使用默认值：请求 300000、连接 10000、流空闲 60000 毫秒；现有更严格的模型/回合期限仍然生效。`{}` 重置已保存覆盖。变更作用于新装配会话，不会重定向在途请求。流空闲限制传输/模型输出间隔；取消会清理定时器并中止在途操作。Codex 使用 SSE 传输，以应用相同的代理和超时设置。社区自定义适配器自行负责其传输行为。
 
 ## 位置与层级
 

@@ -96,7 +96,7 @@ export async function fetchProviderModels(options: {
   const signal = options.signal === undefined ? timeout : AbortSignal.any([options.signal, timeout])
   let response: Response
   try {
-    response = await (options.request ?? globalThis.fetch)(url, {
+    response = await (options.request ?? deploymentFetch)(url, {
       method: 'GET',
       redirect: 'error',
       headers,

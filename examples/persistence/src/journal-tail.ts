@@ -53,7 +53,7 @@ export function readJournalTail(bytes: Buffer) {
       if (checked)
         fail('E_STORAGE_FAULT', 'Valid transactions follow journal damage; automatic truncation refused')
     } else if (!checked) badOffset = offset
-    else {
+    else if (frame) {
       if (frame.revision !== revision + 1 || frame.previous !== previous)
         fail('E_STORAGE_FAULT', 'Journal chain mismatch; automatic truncation refused')
       frames.push(frame)

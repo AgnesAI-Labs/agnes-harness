@@ -263,7 +263,7 @@ export function usage(): string {
     'agh sessions [list [--cwd <dir>] | show <id> | migrate <key> [--profile <p>] [--json]]',
     'agh export <id> [--format agnes|sharegpt|claude-code] [--html] [--raw] [-o|--out <file>]',
     'agh import <file> [--from claude-code|codex|pi|auto] [--key <sessionKey>]',
-    'agh doctor [platform|provider|storage|profile|extensions|daemon|binary|code-runtime] [--json]',
+    'agh doctor [platform|network|provider|storage|profile|extensions|daemon|binary|code-runtime] [--json]',
     'agh doctor provider --probe [--json]  # explicit minimal-inference diagnostic',
     'agh doctor computer-use [--json] [--include <check>] [--skip <check>]',
     'agh computer-use status [--json] | install [--upgrade] [--json] | restart [--json]',

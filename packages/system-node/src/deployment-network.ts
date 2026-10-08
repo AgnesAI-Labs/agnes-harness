@@ -119,7 +119,8 @@ export function createDeploymentFetch(
         async cancel(reason) {
           controller.abort(reason)
           clear()
-          await reader.cancel(reason)
+          // Aborting the socket may reject its reader; explicit body cancellation must still succeed.
+          await reader.cancel(reason).catch(() => undefined)
         },
       })
       const wrapped = new Response(stream, {

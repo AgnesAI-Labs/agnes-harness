@@ -283,19 +283,23 @@ describe('credential fail-closed gate', () => {
 
   // The positive control. A gate that refuses everything proves nothing, so the same fixture with a
   // credential actually bound reaches the wire and the request carries that credential and no other.
-  it('a properly bound route does reach the wire, carrying the credential it was handed', async () => {
-    const keys: Array<string | undefined> = []
-    const seen: StreamImpl = (_model, _context, options) => {
-      keys.push(options?.apiKey)
-      return (async function* () {
-        yield { type: 'done', reason: 'stop', message: msg('', 'stop') } as never
-      })()
-    }
-    const a = new PiAdapter({ manualRoutes: [route], streamImpl: seen, maxRetries: 0 })
-    a.bindCredential('gw', 'sk-bound')
-    expect((await drain(a, { timeoutMs: slow })).map((e) => e.type)).toEqual(['usage', 'done'])
-    expect(keys).toEqual(['sk-bound'])
-  })
+  it.each(['openai-completions', 'openai-codex-responses'] as const)(
+    'a properly bound %s route reaches the wire with its credential and deployment transport',
+    async (api) => {
+      const keys: Array<string | undefined> = []
+      const seen: StreamImpl = (_model, _context, options) => {
+        keys.push(options?.apiKey)
+        if (api === 'openai-codex-responses') expect(options?.transport).toBe('sse')
+        return (async function* () {
+          yield { type: 'done', reason: 'stop', message: msg('', 'stop') } as never
+        })()
+      }
+      const a = new PiAdapter({ manualRoutes: [{ ...route, api }], streamImpl: seen, maxRetries: 0 })
+      a.bindCredential('gw', 'sk-bound')
+      expect((await drain(a, { timeoutMs: slow })).map((e) => e.type)).toEqual(['usage', 'done'])
+      expect(keys).toEqual(['sk-bound'])
+    },
+  )
 
   // A credential bound for one route is not a credential for another. Two routes on one adapter, one
   // of them keyed: the unkeyed one is refused rather than served from its neighbour's secret.

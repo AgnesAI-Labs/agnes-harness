@@ -249,6 +249,7 @@ it('offers subscription controls, keeps polling during manual input and commits 
     operationId: 'op',
     model: 'gpt-codex',
     defaultSettings: {},
+    networkTimeouts: {},
   })
   expect(h.save).not.toHaveBeenCalled()
   h.controller.close()

@@ -432,7 +432,8 @@ export class PiAdapter extends WireAdapter {
     if (record.compat && Object.keys(record.compat).length > 0)
       transforms.push({ event: 'compat', ext: 'pi' })
     // These APIs accept fetch and serialize their final request before calling it. Google rejects
-    // custom fetch; Bedrock uses Smithy and Codex can use WebSockets. Those remain unreported.
+    // custom fetch and Bedrock uses Smithy; those remain unreported. Codex uses SSE so
+    // its requests honor the same deployment proxy and account deadlines.
     const observable = new Set([
       'openai-completions',
       'openai-responses',
@@ -569,9 +570,7 @@ export class PiAdapter extends WireAdapter {
             // pi-ai checks header-owned authentication in stream options before it
             // constructs a client. Model headers alone cannot authenticate Kimi OAuth.
             ...(requestAuth?.headers === undefined ? {} : { headers: requestAuth.headers }),
-            ...(decl.api === 'openai-codex-responses' && this.resolveCredential
-              ? { transport: 'sse' as const }
-              : {}),
+            ...(decl.api === 'openai-codex-responses' ? { transport: 'sse' as const } : {}),
             ...(observable.has(decl.api) ? { fetch: fetchBody(wire) } : {}),
             timeoutMs: networkTimeouts?.requestMs ?? 300_000,
             connectTimeoutMs: networkTimeouts?.connectMs ?? 10_000,

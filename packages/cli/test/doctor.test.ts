@@ -204,11 +204,12 @@ describe('doctor command aggregation', () => {
     expect(result.text).not.toContain('sk-do-not-print')
   })
 
-  it('lists the corrected eight sections and rejects unknown or extra section arguments', async () => {
+  it('lists all nine sections and rejects unknown or extra section arguments', async () => {
     const d = deps()
     const result = await doctorCommand(parseArgs(['doctor']), d)
     expect(result.json.map((section) => section.name)).toEqual([
       'platform',
+      'network',
       'provider',
       'storage',
       'profile',
@@ -219,7 +220,7 @@ describe('doctor command aggregation', () => {
     ])
     expect(result.exitCode).toBe(1)
     expect(usage()).toContain(
-      'doctor [platform|provider|storage|profile|extensions|daemon|binary|code-runtime]',
+      'doctor [platform|network|provider|storage|profile|extensions|daemon|binary|code-runtime]',
     )
     expect(usage()).not.toContain('doctor [provider|sandbox')
 

@@ -62,6 +62,7 @@ describe('host boundaries', () => {
             '@agnes/extension-api',
             '@agnes/cordis',
             '@agnes/core',
+            '@agnes/core-ledger',
             '@agnes/ai',
             '@agnes/model-adapters',
             '@agnes/observability',

@@ -226,6 +226,7 @@ it('refreshes an expired staged grant before testing and commits the rotated gra
     model,
     expect.any(AbortSignal),
     undefined,
+    undefined,
   )
   expect(fetch).toHaveBeenCalledTimes(1)
   lifetime.abort()
