@@ -38,3 +38,5 @@ Links point to source at the same revision as this document. See [verification](
 A package's `package.json` `exports` defines its public entry points. These source links help explain the implementation; applications and plugins should not deep-import another package's private src. Python runtime and the Python thin client are not currently usable public integration paths.
 
 Production, tests and shared testkits use separate TypeScript projects in the runtime packages; root `typecheck` includes all three and their tool scripts.
+
+Local RPC authenticates and dispatches settings operations through `@agnes/daemon-admin/app-server`; daemon-admin owns composition, context, plan-mode and history implementations. The RPC factory export remains compatible. The only Base import allowed in local RPC is the named `ScheduleRejected` public refusal marker. MCP names use the portable `sha256Hex` export from protocol: UTF-8 encoding (including replacement of unpaired surrogates) and existing suffixes remain unchanged.

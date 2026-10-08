@@ -19,7 +19,7 @@
 | 前端插件与槽位 | [web-client](../../packages/web-client/src)、[web-slots](../../packages/web-slots/src)、[web-units](../../packages/web-units/src) | [名册对账](../../packages/web/test/client-modules.reconcile.test.ts) |
 | 协议/校验 | [protocol schema](../../packages/protocol/schema)、[method table](../../packages/protocol/src/methods.ts)、[protocol-validation](../../packages/protocol-validation/src) | [protocol tests](../../packages/protocol/test) |
 | SDK 会话/传输 | [sdk](../../packages/sdk/src) | [sdk tests](../../packages/sdk/test) |
-| daemon/worker | [daemon](../../packages/daemon/src)、[worker-runtime](../../packages/worker-runtime/src) | [daemon tests](../../packages/daemon/test) |
+| daemon/worker | [daemon-foundation](../../packages/daemon-foundation/src)、[daemon-surfaces](../../packages/daemon-surfaces/src)、[daemon-admin](../../packages/daemon-admin/src)、[daemon-rpc](../../packages/daemon-rpc/src)、[daemon-supervisor](../../packages/daemon-supervisor/src)、[daemon](../../packages/daemon/src)、[worker-runtime](../../packages/worker-runtime/src) | [daemon tests](../../packages/daemon/test) |
 | 执行循环/恢复 | [core-common](../../packages/core-common/src), [core-child-control](../../packages/core-child-control/src), [core-ledger](../../packages/core-ledger/src), [core-effects](../../packages/core-effects/src), [core-artifacts](../../packages/core-artifacts/src), [core](../../packages/core/src) | [core tests](../../packages/core/test) |
 | provider 类型/统一生命周期/组合目录 | [类型合同](../../packages/extension-api/src/provider-kind.ts)、[注册表](../../packages/host-common/src/assemble/provider-registry.ts)、[选择](../../packages/host-providers/src/assemble/provider-selection.ts)、[provider 架构](architecture-plugins.zh-CN.md) | [注册与选择测试](../../packages/host-common/test/assemble/provider-registry.test.ts)、[Host 装配](../../packages/host/test/assemble/tool-providers.test.ts) |
 | 配置/装配/凭据/平台 | [host-common](../../packages/host-common/src), [host-infrastructure](../../packages/host-infrastructure/src), [host-computer-use](../../packages/host-computer-use/src), [host-artifacts](../../packages/host-artifacts/src), [host-extensions](../../packages/host-extensions/src), [host-providers](../../packages/host-providers/src), [host-runtime](../../packages/host-runtime/src), [host](../../packages/host/src)、[system-node](../../packages/system-node/src) | [host tests](../../packages/host/test) |
@@ -36,3 +36,5 @@
 包公开出口以各自 package.json 的 `exports` 为准。上表深链接用于读代码，应用和插件不应据此深导入其他包私有 src。Python runtime 与 Python thin client 尚不作为可用公开路线。
 
 运行时包的生产源码、测试和共享 testkit 使用独立的 TypeScript 项目；根 `typecheck` 覆盖三者及工具脚本。
+
+本地 RPC 经 `@agnes/daemon-admin/app-server` 认证并分派设置操作；daemon-admin 拥有组合、上下文、计划模式及历史的实现。RPC 原有工厂出口保持兼容。本地 RPC 仅允许从 Base 导入具名公开拒绝标记 `ScheduleRejected`。MCP 命名使用 protocol 的可移植 `sha256Hex` 出口：UTF-8 编码（包括未配对代理项的替换）与现有后缀均保持不变。

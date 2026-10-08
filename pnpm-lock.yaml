@@ -519,9 +519,15 @@ importers:
 
   packages/daemon-admin:
     dependencies:
+      '@agnes/base':
+        specifier: workspace:*
+        version: link:../base
       '@agnes/daemon-foundation':
         specifier: workspace:*
         version: link:../daemon-foundation
+      '@agnes/history-index':
+        specifier: workspace:*
+        version: link:../history-index
       '@agnes/host':
         specifier: workspace:*
         version: link:../host
@@ -534,6 +540,9 @@ importers:
       '@agnes/protocol':
         specifier: workspace:*
         version: link:../protocol
+      '@agnes/resource-control-runtime':
+        specifier: workspace:*
+        version: link:../resource-control-runtime
       '@agnes/resource-control-store':
         specifier: workspace:*
         version: link:../resource-control-store
@@ -547,9 +556,6 @@ importers:
       '@agnes/ai':
         specifier: workspace:*
         version: link:../ai
-      '@agnes/base':
-        specifier: workspace:*
-        version: link:../base
       '@agnes/daemon':
         specifier: workspace:*
         version: link:../daemon
@@ -593,18 +599,12 @@ importers:
       '@agnes/daemon-surfaces':
         specifier: workspace:*
         version: link:../daemon-surfaces
-      '@agnes/history-index':
-        specifier: workspace:*
-        version: link:../history-index
       '@agnes/host':
         specifier: workspace:*
         version: link:../host
       '@agnes/protocol':
         specifier: workspace:*
         version: link:../protocol
-      '@agnes/resource-control-runtime':
-        specifier: workspace:*
-        version: link:../resource-control-runtime
       '@agnes/worker-runtime':
         specifier: workspace:*
         version: link:../worker-runtime

@@ -23,18 +23,22 @@
     "./plugin-tree-surface": "./src/plugin-tree-surface.ts",
     "./resources/adapters": "./src/resources/adapters.ts",
     "./resources/admin-surface": "./src/resources/admin-surface.ts",
-    "./resources/index": "./src/resources/index.ts"
+    "./resources/index": "./src/resources/index.ts",
+    "./app-server": "./src/app-server.ts"
   },
   "scripts": {
     "typecheck": "tsc -b",
     "test": "pnpm --dir ../.. exec vitest run packages/daemon-admin/test --maxWorkers=1"
   },
   "dependencies": {
+    "@agnes/base": "workspace:*",
     "@agnes/daemon-foundation": "workspace:*",
+    "@agnes/history-index": "workspace:*",
     "@agnes/host": "workspace:*",
     "@agnes/package-manager": "workspace:*",
     "@agnes/plugin-runtime": "workspace:*",
     "@agnes/protocol": "workspace:*",
+    "@agnes/resource-control-runtime": "workspace:*",
     "@agnes/resource-control-store": "workspace:*",
     "@agnes/system-node": "workspace:*",
     "es-module-lexer": "2.3.2"
@@ -42,7 +46,6 @@
   "license": "Apache-2.0",
   "devDependencies": {
     "@agnes/ai": "workspace:*",
-    "@agnes/base": "workspace:*",
     "@agnes/daemon": "workspace:*"
   }
 }

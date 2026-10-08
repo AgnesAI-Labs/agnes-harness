@@ -279,11 +279,14 @@
     "@agnes/system-node"
   ],
   "@agnes/daemon-admin": [
+    "@agnes/base",
     "@agnes/daemon-foundation",
+    "@agnes/history-index",
     "@agnes/host",
     "@agnes/package-manager",
     "@agnes/plugin-runtime",
     "@agnes/protocol",
+    "@agnes/resource-control-runtime",
     "@agnes/resource-control-store",
     "@agnes/system-node"
   ],
@@ -294,9 +297,7 @@
     "@agnes/daemon-surfaces",
     "@agnes/host",
     "@agnes/protocol",
-    "@agnes/worker-runtime",
-    "@agnes/history-index",
-    "@agnes/resource-control-runtime"
+    "@agnes/worker-runtime"
   ],
   "@agnes/daemon-supervisor": [
     "@agnes/base",

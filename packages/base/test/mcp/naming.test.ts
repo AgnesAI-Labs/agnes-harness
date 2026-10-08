@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto'
 import { describe, expect, it } from 'vitest'
 import {
   mcpLegacyToolName,
@@ -14,6 +15,18 @@ describe('mcpLocalToolPrefix', () => {
     // /[^A-Za-z0-9_]/g -> '_' sanitizer, so `mcp_a_b_read` collided for both servers.
     expect(mcpLocalToolPrefix('a.b')).not.toBe(mcpLocalToolPrefix('a_b'))
   })
+
+  it.each(['gh', 'café — 中文', '😀', '\ud800', '\udc00', 'x'.repeat(55), 'x'.repeat(56), 'x'.repeat(64)])(
+    'keeps existing SHA-256 legacy identities for %j',
+    (id) => {
+      const digest = createHash('sha256').update(id, 'utf8').digest('hex').slice(0, 8)
+      expect(mcpLocalToolPrefix(id).endsWith(`_${digest}_`)).toBe(true)
+      expect(mcpLegacyToolName(id, 'read')).toBe(`${mcpLocalToolPrefix(id)}read`)
+      const rewritten = mcpPublicToolName('gh', `${id}-tool`)
+      const toolDigest = createHash('sha256').update(`gh\0${id}-tool`, 'utf8').digest('hex').slice(0, 8)
+      expect(rewritten.endsWith(`_${toolDigest}`)).toBe(true)
+    },
+  )
 
   it('is a pure function of the server id: same id always yields the same prefix', () => {
     expect(mcpLocalToolPrefix('gh')).toBe(mcpLocalToolPrefix('gh'))

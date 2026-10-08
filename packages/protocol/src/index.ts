@@ -480,6 +480,7 @@ export { validateExtensionCall, validateExtensionCallError, validateServiceCapab
 export * from './session-capabilities.js'
 export { parseSessionBundles } from './session-composition.js'
 export * from './session-tools.js'
+export { sha256Hex } from './sha256.js'
 export * from './slots.js'
 export * from './surfaces.js'
 export type { ValidationError, ValidationResult } from './validate.js'

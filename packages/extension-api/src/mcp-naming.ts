@@ -1,4 +1,4 @@
-import { createHash } from 'node:crypto'
+import { sha256Hex } from '@agnes/protocol'
 
 const SLUG_MAX = 40
 const NAME_MAX = 64
@@ -31,12 +31,12 @@ export function mcpLocalToolPrefix(serverId: string): string {
       .replace(/[^a-z0-9]+/g, '_')
       .replace(/^_+|_+$/g, '')
       .slice(0, SLUG_MAX) || 'server'
-  const hash = createHash('sha256').update(serverId, 'utf8').digest('hex').slice(0, 8)
+  const hash = sha256Hex(serverId).slice(0, 8)
   return `mcp_${slug}_${hash}_`
 }
 
 function hash8(material: string): string {
-  return createHash('sha256').update(material, 'utf8').digest('hex').slice(0, 8)
+  return sha256Hex(material).slice(0, 8)
 }
 
 function ident(raw: string): { text: string; rewritten: boolean } {

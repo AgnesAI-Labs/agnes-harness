@@ -21,13 +21,26 @@ describe('daemon/local boundary', () => {
     expect(files.length).toBeGreaterThan(4)
   })
 
-  it('never imports supervisor, worker, node:net or node:child_process', () => {
-    for (const f of files) {
-      const t = readFileSync(f, 'utf8')
-      expect(t, f).not.toMatch(/from ['"](?:\.\.\/(supervisor|worker)\/|@agnes\/daemon-supervisor)/)
-      expect(t, f).not.toMatch(/from ['"]node:(net|child_process)['"]/)
-      expect(t, f).not.toMatch(/from ['"]@agnes\/(core|sdk|base|ai)['"]/)
-    }
+  it('keeps local RPC on owner ports rather than execution implementations', () => {
+    for (const f of files) expect(forbiddenImports(readFileSync(f, 'utf8')), f).toEqual([])
+  })
+
+  it.each([
+    ["import { run } from '@agnes/core/session'", true],
+    ["import type { Session } from '@agnes/core-ledger'", true],
+    ["export { applyPlanCommand } from '@agnes/base/plan-mode'", true],
+    ["const base = await import('@agnes/base/search')", true],
+    ["const base = require('@agnes/base')", true],
+    ['const unknown = await import(moduleName)', true],
+    ["import { ScheduleRejected, createScheduleStore } from '@agnes/base/schedule'", true],
+    ["import { spawn } from 'node:child_process'", true],
+    ["import { start } from '../../supervisor/start.js'", true],
+    ["import { ScheduleRejected as Refusal } from '@agnes/base/schedule'", false],
+    ["import { createAppServerAdmin } from '@agnes/daemon-admin/app-server'", false],
+    ["import { rpcError } from '@agnes/protocol'", false],
+    ['registry.require(sessionId)', false],
+  ])('classifies the declared module boundary in %s', (source, refused) => {
+    expect(forbiddenImports(source).length > 0).toBe(refused)
   })
 
   // `f?.g(x) ?? h(x)` where g returns void runs BOTH sides, always: the optional call evaluates to
@@ -80,3 +93,35 @@ describe('daemon/local boundary', () => {
     expect(VOID_COALESCE.test('const n = opts.pollMs ?? defaultPollMs')).toBe(false)
   })
 })
+
+/** Settings implementations belong to daemon-admin; local RPC authenticates and dispatches.
+ * ScheduleRejected is the existing public refusal marker, not an execution service. */
+function forbiddenImports(source: string): string[] {
+  const refused: string[] = []
+  // Scan static import/export clauses and literal dynamic imports/require calls. Only the named
+  // public refusal marker is an exception; implementation imports and computed dynamic imports fail closed.
+  const modules =
+    /(?:\b(import|export)\s+([^;]*?)\s+from\s*|\bimport\s*|(?<![\w$.])(?:import|require)\s*\(\s*)['"]([^'"]+)['"]/g
+  for (const match of source.matchAll(modules)) {
+    const value = match[3] ?? ''
+    if (/^@agnes\/base(?:\/|$)/.test(value)) {
+      if (
+        value === '@agnes/base/schedule' &&
+        match[1] === 'import' &&
+        /^(?:type\s+)?\{\s*(?:type\s+)?ScheduleRejected(?:\s+as\s+[\w$]+)?\s*,?\s*\}$/.test(
+          (match[2] ?? '').trim(),
+        )
+      )
+        continue
+      refused.push(value)
+    } else if (
+      /^@agnes\/(?:core(?:-[\w-]+)?|sdk|ai)(?:\/|$)/.test(value) ||
+      /^@agnes\/daemon-supervisor(?:\/|$)/.test(value) ||
+      /^(?:\.\.\/)+(?:supervisor|worker)(?:\/|$)/.test(value) ||
+      /^node:(?:net|child_process)(?:\/|$)/.test(value)
+    )
+      refused.push(value)
+  }
+  if (/(?<![\w$.])import\s*\(\s*(?!['"\s])/.test(source)) refused.push('non-literal module import')
+  return refused
+}

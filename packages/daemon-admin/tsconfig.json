@@ -29,6 +29,15 @@
     },
     {
       "path": "../system-node"
+    },
+    {
+      "path": "../base"
+    },
+    {
+      "path": "../history-index"
+    },
+    {
+      "path": "../resource-control-runtime"
     }
   ]
 }

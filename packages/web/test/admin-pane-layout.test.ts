@@ -2,6 +2,7 @@
 import { readFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import { afterEach, expect, it } from 'vitest'
+import { mountRenderedIndex, resetWebDom } from './web-dom-fixture.js'
 
 const packageDirectory = process.cwd().endsWith('/packages/web')
   ? process.cwd()
@@ -9,8 +10,7 @@ const packageDirectory = process.cwd().endsWith('/packages/web')
 const publicDirectory = resolve(packageDirectory, 'public')
 
 afterEach(() => {
-  document.head.replaceChildren()
-  document.body.replaceChildren()
+  resetWebDom()
 })
 
 /** Rule body by selector, so the assertions stay about declarations instead of line numbers. */
@@ -55,14 +55,26 @@ it('keeps settings DSH and pane mounts inside the content grid column', async ()
   expect(css).toContain('#settings-dsh-shell-slots > [id^="settings-dsh-slot-"]')
 })
 
-it('the iframe-era embedded overrides are gone', async () => {
+it('settings mount the shared admin surface in-document without iframe-era overrides', async () => {
   const css = await readFile(resolve(publicDirectory, 'style.css'), 'utf8')
-  // These only existed because the panes were cross-document iframes. Their absence is the guard
-  // against reintroducing a second layout path that only fires in the embedded host.
+  // The pane id is now a legitimate same-document host. Keep rejecting the old cross-document
+  // layout path, and verify the real mounted surface rather than banning its host selector.
   expect(css).not.toContain('admin-embedded')
   expect(css).not.toContain('plugin-settings-loading')
-  expect(css).not.toContain('plugin-settings-pane')
   expect(css).not.toContain('plugin-settings-frame')
+  const runtime = await mountRenderedIndex()
+  try {
+    const pane = document.getElementById('plugin-settings-pane')
+    expect(pane?.tagName).toBe('SECTION')
+    expect(pane?.ownerDocument).toBe(document)
+    expect(document.getElementById('config-form')?.contains(pane)).toBe(true)
+    expect(pane?.querySelector('.admin-pane-body .plugin-layout .plugin-list')).not.toBeNull()
+    expect(pane?.querySelector('iframe')).toBeNull()
+    expect(pane?.querySelector('[src], .admin-embedded')).toBeNull()
+  } finally {
+    await runtime.dispose()
+    resetWebDom()
+  }
 })
 
 it('the resource toolbar keeps its actions with the tabs', async () => {

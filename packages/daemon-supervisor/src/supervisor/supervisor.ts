@@ -2,6 +2,7 @@ import { randomBytes, randomUUID } from 'node:crypto'
 import { mkdir, rename, rm, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { createSchedulesPort, openDaemonScheduleDb } from '@agnes/base/schedule'
+import { createAppServerAdmin } from '@agnes/daemon-admin/app-server'
 import { runningPackageIdentity } from '@agnes/daemon-admin/package-actual-identity'
 import {
   activateDefaultHelpers,
@@ -104,7 +105,7 @@ import type { AuthConfig } from '@agnes/daemon-rpc/local/auth'
 import { CommandQueue } from '@agnes/daemon-rpc/local/command-queue'
 import type { LockedPackageMutationStatusSource } from '@agnes/daemon-rpc/local/computer-use-control'
 import { disposeFeeds, type Feed, registerAcp } from '@agnes/daemon-rpc/local/methods/acp'
-import { createAppServerAdmin, registerAppServerAdmin } from '@agnes/daemon-rpc/local/methods/admin'
+import { registerAppServerAdmin } from '@agnes/daemon-rpc/local/methods/admin'
 import {
   type AgnesContext,
   indexApprovalTicket,
