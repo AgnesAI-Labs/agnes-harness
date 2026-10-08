@@ -3,6 +3,7 @@ import type { JSX, ReactNode } from 'react'
 import { ADMIN_LOCALE_NAMESPACE, contributionText, type RuntimeStateView, sourceLabel } from './admin-text.js'
 import { adminLocaleCatalog } from './locales/admin.js'
 import { ADMIN_LIST_LOCALE_NAMESPACE, adminListLocaleCatalog } from './locales/admin-list.js'
+import { SettingsDetails } from './settings-layout.js'
 import { StateLights, StateSwitch } from './ui/state-lights.js'
 import { useUiText } from './ui-locale.js'
 
@@ -222,6 +223,7 @@ export function PluginList({
   onLoadMore,
   metadataOf,
   formatFailure,
+  presentationOf,
 }: {
   tab: AdminTab
   rows: readonly (PackageInstalledDescriptor | PackageCatalogDescriptor)[]
@@ -237,6 +239,9 @@ export function PluginList({
   onToggleDesired(item: PackageInstalledDescriptor, next: boolean): void
   onLoadMore(): void
   formatFailure?(message: string, code?: string): string
+  presentationOf?(
+    item: PackageInstalledDescriptor | PackageCatalogDescriptor,
+  ): { name: string; description?: string } | undefined
   metadataOf?(item: PackageInstalledDescriptor | PackageCatalogDescriptor): ReactNode
 }): JSX.Element {
   const { t } = useUiText(ADMIN_LIST_LOCALE_NAMESPACE, adminListLocaleCatalog)
@@ -274,6 +279,13 @@ export function PluginList({
       )}
       {rows.map((item) => {
         const runtime = runtimeOf(item.id)
+        const nameKey = `row.name.${item.id}`
+        const presentation = presentationOf?.(item)
+        const displayName = presentation?.name ?? (t(nameKey) === nameKey ? item.id : t(nameKey))
+        const descriptionKey = `row.description.${item.id}`
+        const description =
+          presentation?.description ??
+          (t(descriptionKey) === descriptionKey ? contributionText(item, adminText) : t(descriptionKey))
         const failureReason =
           tab === 'installed'
             ? (runtime?.error?.message ??
@@ -291,7 +303,8 @@ export function PluginList({
             onClick={(event) => {
               // 行内 Switch / 动作按钮自己处理点击；置灰控件在部分浏览器里不发 click，
               // 事件会落到行上，所以这里再挡一次，避免「拨开关顺带打开详情」。
-              if (event.target instanceof Element && event.target.closest('.switch, button, a')) return
+              if (event.target instanceof Element && event.target.closest('.switch, button, a, details'))
+                return
               onOpen(item)
             }}
           >
@@ -300,17 +313,22 @@ export function PluginList({
                 <button
                   type="button"
                   className="plugin-details-button"
-                  aria-label={t('row.details', { id: item.id })}
+                  aria-label={t('row.details', { id: displayName })}
                   onClick={() => onOpen(item)}
                 >
-                  {item.id}
+                  {displayName}
                 </button>
               </h2>
               {metadataOf?.(item)}
-              <p>{contributionText(item, adminText)}</p>
-              <p className="plugin-source">
-                {item.version} · {sourceLabel(item.source as PackageSource, adminText)}
-              </p>
+              <p>{description}</p>
+              <p className="plugin-source">{item.version}</p>
+              <SettingsDetails title={t('row.technicalDetails')}>
+                <p>
+                  <code>{item.id}</code>
+                </p>
+                <p>{sourceLabel(item.source as PackageSource, adminText)}</p>
+                <p>{contributionText(item, adminText)}</p>
+              </SettingsDetails>
               {tab === 'installed' && (
                 <SurfaceLinks links={surfaceLinksOf(item.id)} packageId={item.id} t={t} />
               )}

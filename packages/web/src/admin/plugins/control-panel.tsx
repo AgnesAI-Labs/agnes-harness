@@ -105,12 +105,13 @@ export function KindFilter({
 }) {
   return (
     <Field label={t('kind.filter')}>
-      <Select<PluginKind | ''>
+      <Select<PluginKind | 'all'>
+        virtual={false}
         aria-label={t('kind.filter')}
-        value={value}
-        onChange={onChange}
+        value={value || 'all'}
+        onChange={(kind) => onChange(kind === 'all' ? '' : kind)}
         options={[
-          { value: '', label: t('kind.all') },
+          { value: 'all', label: t('kind.all') },
           ...PLUGIN_KINDS.map((kind) => ({ value: kind, label: t(`kind.${kind}`) })),
         ]}
       />

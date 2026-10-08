@@ -1,5 +1,5 @@
 import { type SessionCapability, SessionCapabilitySet, validateAgainst } from '@agnes/protocol'
-import { SettingsCard, SettingsState } from '@agnes/web-ui'
+import { SettingsCard, SettingsDetails, SettingsState } from '@agnes/web-ui'
 
 type ToolGroup = {
   packageId: string
@@ -48,11 +48,17 @@ export function SessionToolsPanel({ value, t }: { value: unknown; t(key: string)
       <h3>{t('sessionToolInfo')}</h3>
       <p>{t('sessionToolHelp')}</p>
       {!sessions.length && <SettingsState>{t('sessionToolUnavailable')}</SettingsState>}
-      {sessions.map((session) => (
+      {sessions.map((session, index) => (
         <details key={session.sessionKey} data-testid="session-tool-groups">
-          <summary>
-            {session.sessionKey} · {session.preset}
-          </summary>
+          <summary>{t('sessionToolSession').replace('{number}', String(index + 1))}</summary>
+          <SettingsDetails title={t('technicalDetails')}>
+            <dl className="agnes-settings-metadata">
+              <dt>{t('sessionKey')}</dt>
+              <dd>{session.sessionKey}</dd>
+              <dt>{t('presets')}</dt>
+              <dd>{session.preset}</dd>
+            </dl>
+          </SettingsDetails>
           {session.capabilities ? (
             <CapabilityDetails value={session.capabilities} t={t} />
           ) : (
@@ -118,23 +124,25 @@ function CapabilityDetails({ value, t }: { value: SessionCapabilitySet; t(key: s
   ] as const
   return (
     <div data-testid="session-capabilities">
-      <dl className="agnes-settings-metadata">
-        <dt>{t('capabilityGeneration')}</dt>
-        <dd>{value.codePin.generationId ?? t('capabilityLegacy')}</dd>
-        <dt>{t('capabilityBundles')}</dt>
-        <dd>{value.bundles.join(', ') || t('capabilityNone')}</dd>
-        {selections.map(([kind, selected, source]) => (
-          <div key={kind}>
-            <dt>{t(`capabilityCategory.${kind}`)}</dt>
-            <dd>
-              {selected}
-              <small> · {sourceText(source)}</small>
-            </dd>
-          </div>
-        ))}
-      </dl>
+      <SettingsDetails title={t('technicalDetails')} data-testid="session-capabilities-diagnostics">
+        <dl className="agnes-settings-metadata">
+          <dt>{t('capabilityGeneration')}</dt>
+          <dd>{value.codePin.generationId ?? t('capabilityLegacy')}</dd>
+          <dt>{t('capabilityBundles')}</dt>
+          <dd>{value.bundles.join(', ') || t('capabilityNone')}</dd>
+          {selections.map(([kind, selected, source]) => (
+            <div key={kind}>
+              <dt>{t(`capabilityCategory.${kind}`)}</dt>
+              <dd>
+                {selected}
+                <small> · {sourceText(source)}</small>
+              </dd>
+            </div>
+          ))}
+        </dl>
+      </SettingsDetails>
       {CATEGORIES.map((kind) => (
-        <details key={kind} data-testid={`session-capability-${kind}`} open={kind === 'tools'}>
+        <details key={kind} data-testid={`session-capability-${kind}`}>
           <summary>
             {t(`capabilityCategory.${kind}`)} ·{' '}
             {new Intl.NumberFormat(document.documentElement.lang || 'en').format(value[kind].length)}

@@ -317,9 +317,14 @@ it('renders all real local releases and carries a selected catalog source throug
   await vi.waitFor(() =>
     expect(document.querySelector('.plugin-empty')?.textContent).toContain('No packages are installed'),
   )
+  expect(document.querySelector('.plugin-tabs')).toBeNull()
+  expect(document.querySelector('[data-testid=plugin-diagnostics]')?.hasAttribute('open')).toBe(false)
+  expect(
+    document.querySelector('[data-testid=plugin-creator]')?.closest('[data-testid=plugin-toolbar]'),
+  ).not.toBeNull()
   expect(document.querySelector('.plugin-empty')?.classList.contains('admin-empty-state')).toBe(true)
   expect(document.querySelector('.plugin-empty .admin-empty-state-mark')).not.toBeNull()
-  document.getElementById('discover-tab')?.click()
+  document.querySelector<HTMLButtonElement>('[data-testid="settings-nav-discover"]')?.click()
   await vi.waitFor(() => expect(document.querySelectorAll('.plugin-row')).toHaveLength(6))
 
   const listText = document.getElementById('plugin-list')?.textContent ?? ''
@@ -340,6 +345,10 @@ it('renders all real local releases and carries a selected catalog source throug
     (candidate) => candidate.textContent === 'Inspect installation',
   )
   check?.click()
+  // The shared shell can move away from the installed header while inspection is pending.
+  // Examples has its own install trigger and no source-install button.
+  document.querySelector<HTMLButtonElement>('[data-testid="settings-nav-examples"]')?.click()
+  await vi.waitFor(() => expect(document.getElementById('install-source')).toBeNull())
   await vi.waitFor(() =>
     expect(document.getElementById('plugin-confirm-title')?.textContent).toContain('Install preview'),
   )
@@ -348,7 +357,7 @@ it('renders all real local releases and carries a selected catalog source throug
 
   document.getElementById('plugin-confirm-action')?.click()
   await vi.waitFor(() => expect(installed).toHaveLength(1))
-  document.getElementById('installed-tab')?.click()
+  document.querySelector<HTMLButtonElement>('[data-testid="settings-nav-plugins"]')?.click()
   await vi.waitFor(() => expect(document.querySelectorAll('.plugin-row')).toHaveLength(1))
   const installedText = document.getElementById('plugin-list')?.textContent ?? ''
   expect(installedText).toContain('@agnes-examples/hot-tool')

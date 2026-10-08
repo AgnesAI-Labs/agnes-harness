@@ -47,11 +47,15 @@ export {
 export { createSettingsIcon } from './settings-icon.js'
 export {
   SettingsCard,
+  SettingsDetails,
   SettingsInput,
+  SettingsList,
   SettingsPage,
+  SettingsRow,
   SettingsSelect,
   SettingsState,
   SettingsTextArea,
+  SettingsToolbar,
 } from './settings-layout.js'
 export { SettingsModelPane } from './settings-model-pane.js'
 export {

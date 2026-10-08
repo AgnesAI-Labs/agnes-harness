@@ -4,6 +4,16 @@ export const ADMIN_LIST_LOCALE_NAMESPACE = '@agnes/web-ui/admin-list'
 
 export const adminListLocaleCatalog: LocaleCatalog = {
   en: {
+    'row.technicalDetails': 'Technical details',
+    'row.name.@agnes/document-reader': 'Document reader',
+    'row.description.@agnes/document-reader': 'Read PDF, Word, image text and ZIP attachments offline.',
+    'row.name.@agnes/mcp-helper': 'MCP connection helper',
+    'row.description.@agnes/mcp-helper': 'Connect MCP servers through reviewed requests.',
+    'row.name.@agnes/plugin-helper': 'Plugin assistant',
+    'row.description.@agnes/plugin-helper': 'Create, inspect and install plugins through reviewed requests.',
+    'row.name.@agnes/skill-helper': 'Skills assistant',
+    'row.description.@agnes/skill-helper': 'Create and import reusable skills through reviewed requests.',
+
     'list.failure': 'The plugin could not load. Review its details and retry.',
     'surface.open-aria': 'Open the {surfaceId} page for {packageId} at {mount}',
     'surface.open-page': 'Open page · {mount}',
@@ -30,6 +40,16 @@ export const adminListLocaleCatalog: LocaleCatalog = {
     'load-more': 'Load more catalog entries',
   },
   'zh-CN': {
+    'row.technicalDetails': '技术详情',
+    'row.name.@agnes/document-reader': '文档读取',
+    'row.description.@agnes/document-reader': '离线读取 PDF、Word、图片文字和 ZIP 附件。',
+    'row.name.@agnes/mcp-helper': 'MCP 连接助手',
+    'row.description.@agnes/mcp-helper': '通过审核后的请求连接 MCP 服务。',
+    'row.name.@agnes/plugin-helper': '插件助手',
+    'row.description.@agnes/plugin-helper': '通过审核后的请求创建、检查和安装插件。',
+    'row.name.@agnes/skill-helper': '技能助手',
+    'row.description.@agnes/skill-helper': '通过审核后的请求创建和导入可复用技能。',
+
     'list.failure': '未能加载插件。请检查详情后重试。',
     'surface.open-aria': '打开 {packageId} 的 {surfaceId} 页面 {mount}',
     'surface.open-page': '打开页面 · {mount}',

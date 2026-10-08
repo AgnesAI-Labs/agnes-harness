@@ -5,7 +5,7 @@ import type {
   RuntimeAdminSnapshot,
 } from '@agnes/protocol'
 import { type SettingsSection, settingsSections, type UiExtensionContext } from '@agnes/web-client'
-import { Button, SettingsCard } from '@agnes/web-ui'
+import { SettingsCard, SettingsDetails } from '@agnes/web-ui'
 import type { ReactNode } from 'react'
 import type { PluginAdminApi } from '../admin/plugins/api.js'
 import { BundlesPanel, SessionDefaultsPanel } from '../admin/plugins/control-panel.js'
@@ -21,7 +21,6 @@ import {
   ProvidersPanel,
   PublicationPanel,
   SecurityPanel,
-  sessionStartUrl,
 } from './runtime-panels.js'
 import { type SchedulesApi, SchedulesPage } from './schedules.js'
 import { SearchPanel } from './search.js'
@@ -100,35 +99,30 @@ const definitions: readonly [
     20,
     (c, t) => (
       <>
-        <GenerationsPanel
-          status={c.generations}
-          api={c.api}
-          canSave={c.canSave}
-          t={t}
-          onRefresh={c.onRefresh}
-        />
-        {c.snapshot && <PublicationPanel snapshot={c.snapshot} t={t} />}
-        {c.api && c.snapshot && (
-          <LocalPluginsPanel
+        {c.children}
+        <SettingsDetails title={t('diagnostics')} data-testid="plugin-diagnostics">
+          <GenerationsPanel
+            status={c.generations}
             api={c.api}
-            snapshot={c.snapshot}
             canSave={c.canSave}
             t={t}
             onRefresh={c.onRefresh}
           />
-        )}
-        <SettingsCard
-          description={t('creatorHelp')}
-          actions={
-            <Button data-testid="plugin-creator" href={sessionStartUrl(undefined, t('creatorPrompt'))}>
-              {t('creator')}
-            </Button>
-          }
-        />
-        {c.children}
+          {c.snapshot && <PublicationPanel snapshot={c.snapshot} t={t} />}
+          {c.api && c.snapshot && (
+            <LocalPluginsPanel
+              api={c.api}
+              snapshot={c.snapshot}
+              canSave={c.canSave}
+              t={t}
+              onRefresh={c.onRefresh}
+            />
+          )}
+        </SettingsDetails>
       </>
     ),
   ],
+  ['plugins', 'discover', 20.5, (c) => c.children],
   ['plugins', 'providers', 21, (c, t) => c.snapshot && <ProvidersPanel snapshot={c.snapshot} t={t} />],
   [
     'plugins',
@@ -159,7 +153,7 @@ for (const [group, id, order, render] of definitions) {
     id,
     order,
     icon: group,
-    titleKey: `settings-shell.page.${id}`,
+    titleKey: id === 'plugins' ? 'settings-shell.page.installed' : `settings-shell.page.${id}`,
     groupTitleKey: `settings-shell.group.${group}`,
     navigationId: id === 'plugins' ? 'plugin-management' : `runtime-settings-${id}`,
     component: ({ context }) => render(context.data as RuntimeSettingsContext, context.t),

@@ -74,7 +74,11 @@ it('shows actual session tool groups and their activation reasons in both langua
         },
       }),
     )
-    expect(host.querySelector('[data-testid=session-tool-groups] summary')?.textContent).toContain(
+    expect(host.querySelector('[data-testid=session-tool-groups] summary')?.textContent).toBe(
+      text('sessionToolSession').replace('{number}', '1'),
+    )
+    expect(host.querySelector('[data-testid=session-tool-groups] details')?.hasAttribute('open')).toBe(false)
+    expect(host.querySelector('[data-testid=session-tool-groups] details')?.textContent).toContain(
       'fixture-session',
     )
     expect(host.textContent).toContain(text('toolReason.official-default'))
@@ -543,5 +547,7 @@ it('distinguishes requested permissions from measured workspace enforcement', as
   expect(rows[0]?.textContent).toContain(text('enforcement.partial'))
   expect(rows[0]?.textContent).toContain('bound-digest')
   expect(rows[1]?.textContent).toContain(text('unmeasured'))
-  expect(rows[1]?.textContent).not.toContain(text('enforcement.full'))
+  expect(rows[1]?.querySelector('[data-testid=workspace-enforcement]')?.textContent).not.toContain(
+    text('enforcement.full'),
+  )
 })

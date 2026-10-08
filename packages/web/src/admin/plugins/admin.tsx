@@ -19,6 +19,7 @@ import {
   adminDialogsLocaleCatalog,
   adminListLocaleCatalog,
   adminLocaleCatalog,
+  Button,
   blockerText,
   ConfirmDialogContent,
   contributionText,
@@ -26,6 +27,7 @@ import {
   createUiTranslator,
   type DetailActionSpec,
   DetailContent,
+  Field,
   hasPermission,
   integrityLabel,
   OrphanPins,
@@ -35,6 +37,8 @@ import {
   RollbackActivationFacts,
   type RuntimeStateView,
   renderRegion,
+  SettingsInput,
+  SettingsToolbar,
   SourceDialogContent,
   sourceLabel,
   TrustConfirmationFacts,
@@ -47,6 +51,8 @@ import {
 import type { ReactNode } from 'react'
 import type { PluginRuntimeState } from '../../client-modules/runtime-status.js'
 import { SettingsHub, type SettingsPage } from '../../settings/hub.js'
+import { SETTINGS_NAMESPACE, settingsCatalog } from '../../settings/locales.js'
+import { sessionStartUrl } from '../../settings/runtime-panels.js'
 import type { SchedulesApi } from '../../settings/schedules.js'
 import { AdminApiError, PluginAdminApi } from './api.js'
 import { CapabilityReview, FailureHelp } from './capability-review.js'
@@ -290,18 +296,13 @@ class PluginAdminPage {
   readonly #notice = element('admin-notice', 'p')
   readonly #treeStatus = element('plugin-tree-status', 'p')
   readonly #recovery = element('recovery-notice', 'section')
-  readonly #tabs = {
-    installed: button('installed-tab'),
-    discover: button('discover-tab'),
-  } as const
-  readonly #search = element('plugin-search', 'input')
   readonly #layout = element('plugin-layout', 'div')
   readonly #listHost = element('plugin-list', 'section')
   readonly #onSettingsPage = (page: SettingsPage): void => {
-    const toolbar = this.#listHost
-      .closest('.admin-main, .admin-pane-body')
-      ?.querySelector<HTMLElement>('.plugin-toolbar')
-    if (toolbar) toolbar.hidden = page !== 'plugins'
+    const tab = page === 'discover' ? 'discover' : 'installed'
+    if ((page === 'plugins' || page === 'discover') && this.#tab !== tab) {
+      queueMicrotask(() => void this.selectTab(tab))
+    }
     const shell = document.getElementById('config-form')
     if (shell) {
       shell.dataset.runtimePage = page
@@ -360,32 +361,10 @@ class PluginAdminPage {
     this.#detail.addEventListener('click', (event) => {
       if (event.target === this.#detail) this.closeDetail()
     })
-    button('install-source').addEventListener('click', () => this.openSourceDialog('install'))
-    // 页签交互（点击 + 方向键/Home/End）与搜索框留在骨架元素上：它们是静态结构，
-    // 状态切换由 syncTabs 用 aria-selected/tabIndex 表达。
-    for (const name of ['installed', 'discover'] as const) {
-      this.#tabs[name].addEventListener('click', () => void this.selectTab(name))
-    }
-    this.#tabs.installed.addEventListener('keydown', (event) => {
-      if (event.key === 'ArrowRight' || event.key === 'ArrowDown' || event.key === 'Home') {
-        event.preventDefault()
-        void this.selectTab('discover')
-        this.#tabs.discover.focus()
-      }
-    })
-    this.#tabs.discover.addEventListener('keydown', (event) => {
-      if (event.key === 'ArrowLeft' || event.key === 'ArrowUp' || event.key === 'End') {
-        event.preventDefault()
-        void this.selectTab('installed')
-        this.#tabs.installed.focus()
-      }
-    })
-    this.#search.addEventListener('input', () => {
-      this.#queryRaw = this.#search.value
-      this.#query = this.#search.value.trim()
-      if (this.#tab === 'installed') this.render()
-      else void this.loadCatalog()
-    })
+    // The registry owns navigation; remove the legacy second tab level and toolbar.
+    this.#listHost.closest('.admin-main, .admin-pane-body')?.querySelector('.plugin-toolbar')?.remove()
+    document.getElementById('install-source')?.remove()
+    this.#listHost.removeAttribute('role')
     this.#sourceDialog.addEventListener('cancel', (event) => {
       event.preventDefault()
       this.closeSourceDialog()
@@ -394,16 +373,6 @@ class PluginAdminPage {
       event.preventDefault()
       this.closeConfirm()
     })
-  }
-
-  /** 页签选中态：aria-selected 与 roving tabIndex 同步（同组只保留一个 tabindex=0）。 */
-  syncTabs(): void {
-    for (const name of ['installed', 'discover'] as const) {
-      const selected = this.#tab === name
-      const tab = this.#tabs[name]
-      tab.setAttribute('aria-selected', String(selected))
-      tab.tabIndex = selected ? 0 : -1
-    }
   }
 
   async refresh(options: { preserveError?: boolean } = {}): Promise<void> {
@@ -785,7 +754,7 @@ class PluginAdminPage {
   }
 
   openPreview(preview: PackagePreview, mode: PreviewMode): void {
-    this.#confirmTrigger = this.#sourceTrigger ?? button('install-source')
+    this.#confirmTrigger ??= this.#sourceTrigger ?? this.#listHost
     const installed =
       mode === 'update' ? this.#state.installed.find((item) => item.id === preview.id) : undefined
     const combined = !!installed && this.canCombineUpdate(installed, preview)
@@ -1090,17 +1059,14 @@ class PluginAdminPage {
     }
   }
 
+  settingsText(key: string): string {
+    return createUiTranslator(this.#locale, SETTINGS_NAMESPACE, settingsCatalog)(key)
+  }
+
   render(): void {
     const { context, connection, error, loading, tree } = this.#state
     // 通知条/树状态/恢复横幅是骨架上的单行文本节点，命令式赋值即可；真正的手工业（列表行、
     // 详情体、对话框内容）全部在下面的 React 区域里。
-    this.#tabs.installed.disabled = this.#tabs.discover.disabled = !context || !this.can('packages.read')
-    this.syncTabs()
-    this.#search.placeholder =
-      this.#tab === 'installed' ? this.#t('search.installed') : this.#t('search.discover')
-    this.#search.setAttribute('aria-label', this.#search.placeholder)
-    this.#search.disabled = !context || !this.can('packages.read')
-    button('install-source').disabled = !this.canEffect('packages.install')
     this.#recovery.hidden = !context?.readOnly
     this.#layout.dataset.detail = String(this.hasDetail())
     const connectionNotice =
@@ -1184,15 +1150,58 @@ class PluginAdminPage {
             installed={this.#state.installed}
             t={this.#t}
           />
-          <KindFilter
-            value={this.#kind}
-            t={this.#t}
-            onChange={(value) => {
-              this.#kind = value
-              this.render()
-            }}
-          />
+          <SettingsToolbar data-testid="plugin-toolbar">
+            <Field label={this.#t('shell.search.aria')} htmlFor="plugin-search">
+              <SettingsInput
+                id="plugin-search"
+                type="search"
+                value={this.#queryRaw}
+                placeholder={this.#t(this.#tab === 'installed' ? 'search.installed' : 'search.discover')}
+                disabled={!context || !this.can('packages.read')}
+                onChange={(event) => {
+                  this.#queryRaw = event.target.value
+                  this.#query = event.target.value.trim()
+                  if (this.#tab === 'installed') this.render()
+                  else void this.loadCatalog()
+                }}
+              />
+            </Field>
+            <KindFilter
+              value={this.#kind}
+              t={this.#t}
+              onChange={(value) => {
+                this.#kind = value
+                this.render()
+              }}
+            />
+            <Button
+              id="install-source"
+              type="primary"
+              disabled={!this.canEffect('packages.install')}
+              onClick={() => this.openSourceDialog('install')}
+            >
+              {this.#t('shell.install')}
+            </Button>
+            <Button
+              data-testid="plugin-creator"
+              href={sessionStartUrl(undefined, this.settingsText('creatorPrompt'))}
+            >
+              {this.settingsText('creator')}
+            </Button>
+          </SettingsToolbar>
           <PluginList
+            presentationOf={(item) => {
+              if (!/^@(agnes-example|agnes-fde|community)\//.test(item.id)) return undefined
+              const name = item.id.split('/').at(-1)
+              const key = `example.name.${name}`
+              const label = this.settingsText(key)
+              if (label === key) return undefined
+              const descriptionKey = item.id.startsWith('@agnes-fde/')
+                ? 'example.summary.fde'
+                : `example.summary.${name}`
+              const description = this.settingsText(descriptionKey)
+              return { name: label, ...(description === descriptionKey ? {} : { description }) }
+            }}
             formatFailure={(message, code) => pluginFailureMessage(message, this.#t, code)}
             metadataOf={(item) => (
               <PluginBadges item={item} runtime={this.runtimeState(item.id)} t={this.#t} />

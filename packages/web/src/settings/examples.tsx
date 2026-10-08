@@ -61,7 +61,7 @@ export function ExamplesPanel({
     }
   }, [api, revision])
   return (
-    <SettingsCard aria-busy={busy}>
+    <section aria-busy={busy}>
       <p>{t('examplesHelp')}</p>
       {busy && <SettingsState tone="loading">{t('loading')}</SettingsState>}
       {failed && <SettingsState tone="error">{t('unavailable')}</SettingsState>}
@@ -138,6 +138,6 @@ export function ExamplesPanel({
         })}
       </div>
       <Button onClick={onBundles}>{t('chooseBundle')}</Button>
-    </SettingsCard>
+    </section>
   )
 }

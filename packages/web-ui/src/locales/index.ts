@@ -21,10 +21,14 @@ import { modelSettingsLocaleCatalog } from './model-settings.js'
 
 const primitiveCatalog: LocaleCatalog = {
   en: {
+    'accounts.empty': 'No saved model accounts yet.',
+    'accounts.loading': 'Loading configuration…',
     'settings.selectPicker.fallback': 'Choose {label}',
     'settings.selectPicker.ariaJoin': '{label}: {value}',
   },
   'zh-CN': {
+    'accounts.empty': '还没有已保存的模型账户。',
+    'accounts.loading': '正在读取配置…',
     'settings.selectPicker.fallback': '选择{label}',
     'settings.selectPicker.ariaJoin': '{label}：{value}',
   },

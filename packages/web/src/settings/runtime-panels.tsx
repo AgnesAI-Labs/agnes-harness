@@ -1,5 +1,15 @@
 import type { PluginGenerationStatus, RuntimeAdminSnapshot } from '@agnes/protocol'
-import { Badge, Button, Field, SettingsCard, SettingsInput, SettingsState } from '@agnes/web-ui'
+import {
+  Badge,
+  Button,
+  Field,
+  SettingsCard,
+  SettingsDetails,
+  SettingsInput,
+  SettingsList,
+  SettingsRow,
+  SettingsState,
+} from '@agnes/web-ui'
 import { useState } from 'react'
 import type { PluginAdminApi } from '../admin/plugins/api.js'
 import { SecurityStatusPanel } from './security-status.js'
@@ -24,52 +34,82 @@ export function ProvidersPanel({
   t: Text
   kinds?: readonly string[]
 }) {
+  const label = (prefix: string, value: string) => {
+    const text = t(`${prefix}.${value}`)
+    return text === `${prefix}.${value}` ? undefined : text
+  }
   return (
     <>
-      <p>{t('providerHelp')}</p>
+      {kinds.length > 1 && <p>{t('providerHelp')}</p>}
       {kinds.map((kind) => (
-        <section
-          key={kind}
-          aria-label={t(`provider.${kind}`)}
-          data-testid={`providers-${kind}`}
-          className="runtime-card"
-        >
+        <section key={kind} aria-label={t(`provider.${kind}`)} data-testid={`providers-${kind}`}>
           <h3>{t(`provider.${kind}`)}</h3>
-          <small>
-            <code>{kind}</code>
-          </small>
-          {kind === 'persistence' && <p data-testid="persistence-provider-help">{t('persistenceHelp')}</p>}
-          {!snapshot.providers.some((entry) => entry.kind === kind) && <p>{t('empty')}</p>}
-          {snapshot.providers
-            .filter((entry) => entry.kind === kind)
-            .map((entry) => (
-              <SettingsCard key={`${entry.id}@${entry.version}`}>
-                <h4>
-                  {entry.id} · {entry.version}{' '}
-                  <Badge tone={entry.active ? 'ok' : 'off'}>{t(entry.active ? 'active' : 'inactive')}</Badge>{' '}
-                  {entry.restartRequired && <Badge tone="warn">{t('restart')}</Badge>}
-                </h4>
-                <dl>
-                  <dt>{t('source')}</dt>
-                  <dd>{entry.sourcePackage}</dd>
-                  <dt>{t('capabilities')}</dt>
-                  <dd>{entry.capabilities.join(', ') || '—'}</dd>
-                  <dt>{t('scopes')}</dt>
-                  <dd>{entry.selectedFor.join(', ') || '—'}</dd>
-                  {entry.scope && (
+          <p>{t(`providerHelp.${kind}`)}</p>
+          {kind === 'persistence' && (
+            <SettingsDetails title={t('technicalDetails')} data-testid="persistence-provider-help">
+              <p>{t('persistenceHelp')}</p>
+            </SettingsDetails>
+          )}
+          {!snapshot.providers.some((entry) => entry.kind === kind) && (
+            <SettingsState>{t('empty')}</SettingsState>
+          )}
+          <SettingsList>
+            {snapshot.providers
+              .filter((entry) => entry.kind === kind)
+              .map((entry) => (
+                <SettingsRow
+                  key={`${entry.id}@${entry.version}`}
+                  title={label('providerName', entry.id) ?? entry.id}
+                  actions={
                     <>
-                      <dt>{t('lifecycle')}</dt>
-                      <dd>{entry.scope}</dd>
+                      <Badge tone={entry.active ? 'ok' : 'off'}>
+                        {t(entry.active ? 'active' : 'inactive')}
+                      </Badge>
+                      {entry.restartRequired && <Badge tone="warn">{t('restart')}</Badge>}
                     </>
-                  )}
-                </dl>
-              </SettingsCard>
-            ))}
+                  }
+                >
+                  <div className="agnes-settings-capabilities">
+                    {entry.capabilities.flatMap((capability) => {
+                      const name = label('providerCapability', capability)
+                      return name ? [<Badge key={capability}>{name}</Badge>] : []
+                    })}
+                  </div>
+                  <SettingsDetails title={t('technicalDetails')} data-testid="provider-technical-details">
+                    <dl>
+                      <dt>{t('providerName')}</dt>
+                      <dd>
+                        <code>{entry.id}</code>
+                      </dd>
+                      <dt>{t('providerKind')}</dt>
+                      <dd>
+                        <code>{kind}</code>
+                      </dd>
+                      <dt>{t('providerVersion')}</dt>
+                      <dd>{entry.version}</dd>
+                      <dt>{t('source')}</dt>
+                      <dd>{entry.sourcePackage}</dd>
+                      <dt>{t('capabilities')}</dt>
+                      <dd>{entry.capabilities.join(', ') || '—'}</dd>
+                      <dt>{t('scopes')}</dt>
+                      <dd>{entry.selectedFor.join(', ') || '—'}</dd>
+                      {entry.scope && (
+                        <>
+                          <dt>{t('lifecycle')}</dt>
+                          <dd>{entry.scope}</dd>
+                        </>
+                      )}
+                    </dl>
+                  </SettingsDetails>
+                </SettingsRow>
+              ))}
+          </SettingsList>
         </section>
       ))}
     </>
   )
 }
+
 export function GenerationsPanel({
   status,
   api,
@@ -121,7 +161,7 @@ export function GenerationsPanel({
         </p>
       )}
       {status?.generations.map((generation) => (
-        <SettingsCard className="runtime-card" key={generation.id}>
+        <div className="agnes-settings-row" key={generation.id}>
           <p>
             <code>{generation.id}</code> <Badge>{t(`generationState.${generation.state}`)}</Badge>
           </p>
@@ -136,7 +176,7 @@ export function GenerationsPanel({
             ))}
           </ul>
           {generation.error && <SettingsState tone="error">{t('generationFailure')}</SettingsState>}
-        </SettingsCard>
+        </div>
       ))}
       <section data-testid="session-generation-migration" aria-busy={busy}>
         <h3>{t('migrate')}</h3>
@@ -305,7 +345,8 @@ export function PresetsPanel({ snapshot, t }: { snapshot: RuntimeAdminSnapshot; 
       ))}
       {snapshot.presets.map((preset) => (
         <p key={preset.id}>
-          <code>{preset.id}</code> {preset.isDefault && <Badge>{t('default')}</Badge>}{' '}
+          {t(`choice.${preset.id}`) === `choice.${preset.id}` ? preset.id : t(`choice.${preset.id}`)}{' '}
+          {preset.isDefault && <Badge>{t('default')}</Badge>}{' '}
           <Button href={sessionStartUrl(preset.id)}>{t('start')}</Button>
         </p>
       ))}
@@ -320,7 +361,6 @@ export function SecurityPanel({ snapshot, t }: { snapshot: RuntimeAdminSnapshot;
         {(['read-only', 'workspace-write', 'full-access'] as const).map((id, index) => (
           <SettingsCard key={id} className="runtime-card" data-testid={`security-${id}`}>
             <h3>{t(['readOnly', 'workspaceWrite', 'fullAccess'][index] ?? id)}</h3>
-            <code>{id}</code>
             <p>
               {snapshot.presets.some((preset) => preset.id === id) ? (
                 <Button href={sessionStartUrl(id)}>{t('securityStart')}</Button>

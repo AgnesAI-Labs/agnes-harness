@@ -3,6 +3,13 @@ import type { LocaleCatalog } from '@agnes/web-client'
 /** 设置域文案（S 线）：配置错误码译文（§8.2 设置负责人翻译）、外观、OAuth、选择器与账户面板。 */
 export const settingsLocaleCatalog: LocaleCatalog = {
   en: {
+    'accounts.empty': 'No saved model accounts yet.',
+    'accounts.loading': 'Loading configuration…',
+    'settings-shell.page.installed': 'Installed plugins',
+    'settings-shell.page.discover': 'Discover plugins',
+    'settings-shell.page.providers': 'Plugin kinds',
+    'resources.skillsDescription': 'Manage skills that give the agent reusable instructions and playbooks.',
+    'resources.mcpDescription': 'Connect external tools through MCP servers.',
     'settings.config.authFailed': 'Sign-in did not finish. Retry or use device-code sign-in.',
     'settings.config.authExpired': 'The sign-in attempt expired. Sign in again.',
     'settings.config.authBusy': 'A sign-in is already in progress. Try again shortly.',
@@ -157,6 +164,13 @@ export const settingsLocaleCatalog: LocaleCatalog = {
     'settings.confirm.default': 'Confirm',
   },
   'zh-CN': {
+    'accounts.empty': '还没有已保存的模型账户。',
+    'accounts.loading': '正在读取配置…',
+    'settings-shell.page.installed': '已安装插件',
+    'settings-shell.page.discover': '发现插件',
+    'settings-shell.page.providers': '插件类型',
+    'resources.skillsDescription': '管理为 Agent 提供可复用指令和工作指南的技能。',
+    'resources.mcpDescription': '通过 MCP 服务连接外部工具。',
     'settings.config.authFailed': '登录未完成，请重试或使用设备码登录。',
     'settings.config.authExpired': '登录操作已过期，请重新登录。',
     'settings.config.authBusy': '正在处理登录，请稍后重试。',

@@ -104,3 +104,47 @@ export const SettingsTextArea = forwardRef<HTMLTextAreaElement, TextareaHTMLAttr
 export function SettingsSelect(props: SelectHTMLAttributes<HTMLSelectElement>) {
   return <select {...props} className={['agnes-settings-input', props.className].filter(Boolean).join(' ')} />
 }
+
+/** Flat settings rows keep controls and diagnostics out of nested cards. */
+export function SettingsList(props: HTMLAttributes<HTMLDivElement>) {
+  return <div {...props} className={['agnes-settings-list', props.className].filter(Boolean).join(' ')} />
+}
+export function SettingsRow({
+  title,
+  description,
+  actions,
+  children,
+  ...props
+}: Omit<HTMLAttributes<HTMLElement>, 'title'> & {
+  title: ReactNode
+  description?: ReactNode
+  actions?: ReactNode
+}) {
+  return (
+    <article {...props} className={['agnes-settings-row', props.className].filter(Boolean).join(' ')}>
+      <div className="agnes-settings-row-heading">
+        <div>
+          <h4>{title}</h4>
+          {description && <p>{description}</p>}
+        </div>
+        {actions && <div className="agnes-settings-actions">{actions}</div>}
+      </div>
+      {children}
+    </article>
+  )
+}
+export function SettingsDetails({
+  title,
+  children,
+  ...props
+}: Omit<HTMLAttributes<HTMLDetailsElement>, 'title'> & { title: ReactNode }) {
+  return (
+    <details {...props} className={['agnes-settings-details', props.className].filter(Boolean).join(' ')}>
+      <summary>{title}</summary>
+      <div>{children}</div>
+    </details>
+  )
+}
+export function SettingsToolbar(props: HTMLAttributes<HTMLDivElement>) {
+  return <div {...props} className={['agnes-settings-toolbar', props.className].filter(Boolean).join(' ')} />
+}

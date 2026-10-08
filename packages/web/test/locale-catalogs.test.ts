@@ -1,4 +1,4 @@
-import { readdirSync } from 'node:fs'
+import { readdirSync, readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { expect, it } from 'vitest'
@@ -37,6 +37,8 @@ it('keeps web catalogs paired and every translated value non-empty', () => {
       expect(emptyValues, `${name} ${locale} empty values`).toEqual([])
     }
   }
+  const css = readFileSync(resolve('packages/web/public/style.css'), 'utf8')
+  expect(css.match(/content:\s*["'][^"']*\p{Script=Han}[^"']*["']/gu)).toBeNull()
 })
 
 function catalogFiles(directory: string): string[] {

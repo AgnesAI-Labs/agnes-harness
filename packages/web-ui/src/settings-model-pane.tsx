@@ -38,7 +38,11 @@ export function SettingsModelPane({
               <span>{t('settings-shell.addAccount')}</span>
             </Button>
           </div>
-          <div id="config-accounts" />
+          <div
+            id="config-accounts"
+            data-empty-text={t('accounts.empty')}
+            data-loading-text={t('accounts.loading')}
+          />
           <p className="config-list-note">{t('settings-shell.accountsNote')}</p>
         </section>
         {afterAccounts}

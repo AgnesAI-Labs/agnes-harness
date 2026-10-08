@@ -20,6 +20,8 @@ function LocalizedProvider({ children, nonce }: { children: ReactNode; nonce: st
       ...(nonce ? { csp: { nonce } } : {}),
       locale: language === 'zh-CN' ? zhCN : enUS,
       button: { autoInsertSpace: false },
+      getPopupContainer: (trigger?: HTMLElement) =>
+        trigger?.closest<HTMLDialogElement>('dialog[open]') ?? trigger?.ownerDocument.body ?? document.body,
       theme: { zeroRuntime: true, hashed: false, cssVar: { key: 'agnes-theme' } },
     },
     children,
