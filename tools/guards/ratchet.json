@@ -18,7 +18,7 @@
   "packages/sdk/src/package-admin.node": 147,
   "packages/sdk/src/surface.browser": 3,
   "packages/sdk/src/surface.node": 163,
-  "packages/daemon/src": 17210,
+  "packages/daemon/src": 10575,
   "packages/daemon/src/packages/admin-session": 46,
   "packages/daemon/src/packages/admin-surface": 1,
   "packages/daemon/src/packages/handler": 1,
@@ -26,8 +26,8 @@
   "packages/daemon/src/packages/operations": 1,
   "packages/daemon/src/packages/permissions": 1,
   "packages/daemon/src/packages/project": 1,
-  "packages/daemon/src/local/auth": 336,
-  "packages/daemon/src/local/methods/extensions": 199,
+  "packages/daemon/src/local/auth": 1,
+  "packages/daemon/src/local/methods/extensions": 1,
   "packages/daemon/src/supervisor/service-worker": 103,
   "packages/daemon/src/surfaces": 13,
   "packages/daemon/src/worker/service-authority": 48,
@@ -179,5 +179,8 @@
   "packages/daemon-admin/src/packages/index": 47,
   "packages/daemon-admin/src/packages/operations": 410,
   "packages/daemon-admin/src/packages/permissions": 71,
-  "packages/daemon-admin/src/packages/project": 43
+  "packages/daemon-admin/src/packages/project": 43,
+  "packages/daemon-rpc/src": 6790,
+  "packages/daemon-rpc/src/local/auth": 341,
+  "packages/daemon-rpc/src/local/methods/extensions": 199
 }

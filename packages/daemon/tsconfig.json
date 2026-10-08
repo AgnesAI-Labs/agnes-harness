@@ -59,6 +59,9 @@
     },
     {
       "path": "../daemon-admin"
+    },
+    {
+      "path": "../daemon-rpc"
     }
   ]
 }

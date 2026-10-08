@@ -118,7 +118,8 @@
     "@agnes/system-node",
     "@agnes/daemon-foundation",
     "@agnes/daemon-surfaces",
-    "@agnes/daemon-admin"
+    "@agnes/daemon-admin",
+    "@agnes/daemon-rpc"
   ],
   "@agnes/cli": [
     "@agnes/system-node",
@@ -281,5 +282,14 @@
     "@agnes/protocol",
     "@agnes/resource-control-store",
     "@agnes/system-node"
+  ],
+  "@agnes/daemon-rpc": [
+    "@agnes/base",
+    "@agnes/daemon-admin",
+    "@agnes/daemon-foundation",
+    "@agnes/daemon-surfaces",
+    "@agnes/host",
+    "@agnes/protocol",
+    "@agnes/worker-runtime"
   ]
 }

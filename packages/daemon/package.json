@@ -35,7 +35,8 @@
     "ws": "8.21.3",
     "@agnes/daemon-foundation": "workspace:*",
     "@agnes/daemon-surfaces": "workspace:*",
-    "@agnes/daemon-admin": "workspace:*"
+    "@agnes/daemon-admin": "workspace:*",
+    "@agnes/daemon-rpc": "workspace:*"
   },
   "devDependencies": {
     "@agnes/ai": "workspace:*",

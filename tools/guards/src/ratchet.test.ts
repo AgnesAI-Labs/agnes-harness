@@ -234,6 +234,9 @@ describe('ratchet key path-boundary matching (regression: sibling-prefix false m
 // preset composition and inline projection repairs. Only exceeded scopes and missing bundled
 // extension keys change; scanning, source exclusions and the default extension ceiling stay fixed.
 const INITIAL_CEILING: Record<string, number> = {
+  'packages/daemon-rpc/src/local/methods/extensions': 199,
+  'packages/daemon-rpc/src/local/auth': 341,
+  'packages/daemon-rpc/src': 6790,
   'packages/daemon-admin/src/packages/project': 43,
   'packages/daemon-admin/src/packages/permissions': 71,
   'packages/daemon-admin/src/packages/operations': 410,
@@ -2097,7 +2100,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // countLines: 27898 -> 28105; exact cap, no exclusions or spare allocation.
   // Acceptance review: Persist child-engine settings through publication and recover legacy default loop pins when listing sessions.
   // countLines: 28105 -> 28157; exact cap, no exclusions or spare allocation.
-  'packages/daemon/src': 17210,
+  'packages/daemon/src': 10575,
   'packages/daemon/src/packages/admin-session': 46,
   // 2026-09-14: whole-branch review fix wave (Finding 1) adds the two missing
   // 'pins/inspect'/'pins/release' entries to the ACTIONS BFF route allowlist, which had been left
@@ -2176,9 +2179,9 @@ const INITIAL_CEILING: Record<string, number> = {
   // adds explicit receipt acknowledgement and strips stale representation metadata. Each
   // new security subject is independently capped below so the aggregate increase is not spare room.
   // 2026-09-15: reject not-yet-valid JWT nbf. Measured 336; exact.
-  'packages/daemon/src/local/auth': 336,
+  'packages/daemon/src/local/auth': 1,
   // CORDIS-C1b Task 6 binds public service calls to durable session ownership.
-  'packages/daemon/src/local/methods/extensions': 199,
+  'packages/daemon/src/local/methods/extensions': 1,
   'packages/daemon/src/supervisor/service-worker': 103,
   // Includes the independently reviewed F6 deployment transaction from the activation lane.
   // 2026-09-16 (surface-boot-wiring plan, Tasks 2-5): deploy-dir.ts (resolveDeployDir),

@@ -127,6 +127,7 @@ const LAYER: Record<string, number> = {
   '@agnes/daemon-foundation': 8.1,
   '@agnes/daemon-surfaces': 8.1,
   '@agnes/daemon-admin': 8.3,
+  '@agnes/daemon-rpc': 8.4,
   '@agnes/daemon': 9,
   // Channel's outer client launcher consumes the daemon's public discovery reader, like other clients.
   '@agnes/channels': 10,

@@ -1,0 +1,56 @@
+{
+  "name": "@agnes/daemon-rpc",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./index": "./src/index.ts",
+    "./local/artifact-read-authority": "./src/local/artifact-read-authority.ts",
+    "./local/artifact-read": "./src/local/artifact-read.ts",
+    "./local/auth": "./src/local/auth.ts",
+    "./local/command-binding": "./src/local/command-binding.ts",
+    "./local/command-queue": "./src/local/command-queue.ts",
+    "./local/computer-use-control": "./src/local/computer-use-control.ts",
+    "./local/follow-up-runner": "./src/local/follow-up-runner.ts",
+    "./local/index": "./src/local/index.ts",
+    "./local/methods/acp": "./src/local/methods/acp.ts",
+    "./local/methods/agnes": "./src/local/methods/agnes.ts",
+    "./local/methods/artifacts": "./src/local/methods/artifacts.ts",
+    "./local/methods/config": "./src/local/methods/config.ts",
+    "./local/methods/diagnostics": "./src/local/methods/diagnostics.ts",
+    "./local/methods/extensions": "./src/local/methods/extensions.ts",
+    "./local/methods/session-preferences": "./src/local/methods/session-preferences.ts",
+    "./local/methods/session-selection": "./src/local/methods/session-selection.ts",
+    "./local/methods/surfaces": "./src/local/methods/surfaces.ts",
+    "./local/methods/workspaces": "./src/local/methods/workspaces.ts",
+    "./local/project": "./src/local/project.ts",
+    "./local/prompter": "./src/local/prompter.ts",
+    "./local/session-admission": "./src/local/session-admission.ts",
+    "./local/sessions": "./src/local/sessions.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -b",
+    "test": "pnpm --dir ../.. exec vitest run packages/daemon-rpc/test --maxWorkers=1"
+  },
+  "dependencies": {
+    "@agnes/base": "workspace:*",
+    "@agnes/daemon-admin": "workspace:*",
+    "@agnes/daemon-foundation": "workspace:*",
+    "@agnes/daemon-surfaces": "workspace:*",
+    "@agnes/host": "workspace:*",
+    "@agnes/protocol": "workspace:*",
+    "@agnes/worker-runtime": "workspace:*"
+  },
+  "license": "Apache-2.0",
+  "devDependencies": {
+    "@agnes/ai": "workspace:*",
+    "@agnes/code": "workspace:*",
+    "@agnes/daemon": "workspace:*",
+    "@agnes/package-manager": "workspace:*",
+    "@agnes/sdk": "workspace:*",
+    "@agnes/system-node": "workspace:*",
+    "@types/ws": "8.18.1",
+    "ws": "8.21.3"
+  }
+}
