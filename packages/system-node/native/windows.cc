@@ -43,7 +43,7 @@ static napi_value failure(napi_env env, const char* operation, DWORD error) {
     case ERROR_FILE_TOO_LARGE: code = "EFBIG"; break;
   }
   napi_value message, result, name, number;
-  const std::string text = std::string(operation) + " failed";
+  const std::string text = std::string(code) + ": " + operation + " failed";
   napi_create_string_utf8(env, text.c_str(), NAPI_AUTO_LENGTH, &message);
   napi_create_string_utf8(env, code, NAPI_AUTO_LENGTH, &name);
   napi_create_error(env, name, message, &result);

@@ -294,7 +294,12 @@ readline.createInterface({input:process.stdin}).on('line',async(line)=>{const r=
         baseEnv: { HOME: syntheticHome },
         stdioPolicy: { allowedExecutables: [process.execPath] },
         httpPolicy: {},
-        sandbox: { dataDir, home: homeAlias, secretsDir, profileDir: join(homeAlias, 'profiles', 'local-dev') },
+        sandbox: {
+          dataDir,
+          home: homeAlias,
+          secretsDir,
+          profileDir: join(homeAlias, 'profiles', 'local-dev'),
+        },
       })
       let connection: Awaited<ReturnType<typeof opener.connect>> | undefined
       try {

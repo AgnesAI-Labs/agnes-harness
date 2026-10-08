@@ -132,6 +132,7 @@ export function createSessionWorkspaceAdapterFactory(
         throw fault('local workspace root identity changed')
       let closed = false
       const finalPath = localFsIo.finalPath
+      const readRange = localFsIo.readRange
       const handle: WorkspaceRuntimeHandle = Object.freeze({
         kind: 'local',
         root: currentRoot,
@@ -162,6 +163,15 @@ export function createSessionWorkspaceAdapterFactory(
               })
             return localFsIo.readFile(...args)
           },
+          ...(readRange && {
+            readRange: (abs: string, opts: { offset: number; limit?: number }) => {
+              if (closed)
+                throw Object.assign(new Error('E_WORKSPACE_CLOSED: workspace handle closed'), {
+                  code: 'E_WORKSPACE_CLOSED',
+                })
+              return readRange(abs, opts)
+            },
+          }),
           writeFile: (...args) => {
             if (closed)
               throw Object.assign(new Error('E_WORKSPACE_CLOSED: workspace handle closed'), {

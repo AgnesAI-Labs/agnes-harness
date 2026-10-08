@@ -105,7 +105,14 @@ describe('session workspace adapters', () => {
         sandbox: { policyDigest: 'b'.repeat(64), backend: 'none' },
       }),
     ).rejects.toThrow('SANDBOX_UNAVAILABLE')
+    await fenceA.fs.write('window.txt', new TextEncoder().encode('0123456789'))
+    await expect(fenceA.fs.read('window.txt', { unit: 'bytes', offset: 2, limit: 3 })).resolves.toEqual(
+      new TextEncoder().encode('234'),
+    )
     await fenceA.close()
+    await expect(fenceA.fs.read('window.txt', { unit: 'bytes', limit: 1 })).rejects.toThrow(
+      'E_WORKSPACE_CLOSED',
+    )
     await expect(fenceA.fs.read('.')).rejects.toThrow('E_WORKSPACE_CLOSED')
     await expect(fenceB.fs.write('live.txt', new TextEncoder().encode('live'))).resolves.toBeUndefined()
     expect(run).toHaveBeenCalledTimes(1)

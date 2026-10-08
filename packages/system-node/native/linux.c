@@ -30,7 +30,7 @@ static napi_value fail(napi_env env, const char* operation, int error) {
     case ENOMEM: code = "ENOMEM"; break;
   }
   char message[192];
-  snprintf(message, sizeof(message), "%s failed", operation);
+  snprintf(message, sizeof(message), "%s: %s failed", code, operation);
   napi_value text, name, result;
   napi_create_string_utf8(env, message, NAPI_AUTO_LENGTH, &text);
   napi_create_string_utf8(env, code, NAPI_AUTO_LENGTH, &name);
