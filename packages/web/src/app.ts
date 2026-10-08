@@ -1,5 +1,5 @@
-import { adaptResourceAdmin } from './admin/resources/admin.js'
-import './settings/registry.js'
+import { adaptResourceAdmin } from '@agnes/web-admin/admin/resources/admin'
+import '@agnes/web-admin/settings/registry'
 import {
   type ConfigSnapshot,
   type ContentBlock,
@@ -25,6 +25,12 @@ import {
   type PermissionRequest,
   type Session,
 } from '@agnes/sdk/browser'
+import { sessionLoopSelection } from '@agnes/web-admin/admin/plugins/session-loop'
+import { type PermissionMode, permissionLabel, yoloEnabled } from '@agnes/web-admin/permission-picker'
+import { createSettingsController } from '@agnes/web-admin/settings'
+import { loadRuntimeCatalog } from '@agnes/web-admin/settings/api'
+import { settingsCatalog } from '@agnes/web-admin/settings/locales'
+import { effectiveSessionPreset, permissionForSessionPreset } from '@agnes/web-admin/settings/session-choice'
 import { bindDismissibleDialog } from '@agnes/web-admin-frame'
 import { settingsSections } from '@agnes/web-client'
 import { bindAppearance, bindSkinGroup } from '@agnes/web-foundation/appearance'
@@ -46,7 +52,6 @@ import {
 } from '@agnes/web-foundation/skin'
 import { safeThemeStorage } from '@agnes/web-foundation/theme'
 import { createCatalogTranslator } from '@agnes/web-ui'
-import { sessionLoopSelection } from './admin/plugins/session-loop.js'
 import { createPendingCoordinator } from './admin-pane-coordinator.js'
 import type { ApprovalAction } from './approval.js'
 import { approvalToolName, liveApprovalCard } from './approval-card.js'
@@ -75,7 +80,6 @@ import {
 } from './loop-picker.js'
 import type { ModelPickerOption } from './model-picker.js'
 import { renderWorkspaceOptions } from './navigation.js'
-import { type PermissionMode, permissionLabel, yoloEnabled } from './permission-picker.js'
 import { PlanModeRequestError, submitPlanCommand } from './plan-mode.js'
 import {
   canSubmitComposer,
@@ -94,10 +98,6 @@ import { bootstrapProbe, createReconnectController, type ReconnectPhase } from '
 import { createSessionActions, forkTitle } from './session-actions.js'
 import { bindWebSession, loadWebSession } from './session-binding.js'
 import { createTitleRefresh, sessionTitle } from './session-title.js'
-import { loadRuntimeCatalog } from './settings/api.js'
-import { settingsCatalog } from './settings/locales.js'
-import { effectiveSessionPreset, permissionForSessionPreset } from './settings/session-choice.js'
-import { createSettingsController } from './settings.js'
 import {
   durableApprovalActions,
   nodeText,
@@ -2074,7 +2074,7 @@ async function openAdminPane(pane: AdminPaneName, tab: ResourceTab = 'skills'): 
         return
       }
       if (pane === 'plugin') {
-        const { mountPluginAdmin } = await import('./admin/plugins/admin.js')
+        const { mountPluginAdmin } = await import('@agnes/web-admin/admin/plugins/admin')
         mountedAdminPanes.set(pane, {
           ...mountPluginAdmin({
             actualSlots: clientModules.actualSlots,

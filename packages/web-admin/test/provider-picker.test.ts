@@ -1,8 +1,8 @@
 import { setLocaleTranslator } from '@agnes/web-foundation/locale-bridge'
+import { enT, zhT } from '@agnes/web-foundation/testkit/locale'
 import { type HTMLElement as HappyElement, Window } from 'happy-dom'
 import { afterEach, expect, it, vi } from 'vitest'
 import { createProviderPicker } from '../src/provider-picker.js'
-import { enT, zhT } from './helpers/locale.js'
 
 // i18n: these suites assert zh-CN catalog output; pin the translator before imports run.
 setLocaleTranslator(zhT)

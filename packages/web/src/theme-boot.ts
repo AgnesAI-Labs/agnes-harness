@@ -1,4 +1,5 @@
 import { resourceAdminShellLocaleCatalog } from '@agnes/resource-control-web/locale-shell'
+import { pluginAdminShellLocaleCatalog } from '@agnes/web-admin/admin/plugins/locales/shell'
 import {
   applyDocumentLocale,
   applyLocaleText,
@@ -29,7 +30,6 @@ import {
   THEME_STORAGE_KEY,
   watchSystemTheme,
 } from '@agnes/web-foundation/theme'
-import { pluginAdminShellLocaleCatalog } from './admin/plugins/locales/shell.js'
 
 /**
  * 首帧防闪烁入口。

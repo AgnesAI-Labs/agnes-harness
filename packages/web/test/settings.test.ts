@@ -2,11 +2,11 @@
 
 import type { ConfigSnapshot, ConfigTestResult } from '@agnes/protocol'
 import type { Client } from '@agnes/sdk/browser'
+import { createSettingsController } from '@agnes/web-admin/settings'
 import { setLocaleTranslator } from '@agnes/web-foundation/locale-bridge'
 import { unmountRegion } from '@agnes/web-ui'
 import { Window } from 'happy-dom'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { createSettingsController } from '../src/settings.js'
 import { renderSettingsMarkup } from '../src/settings-region.js'
 import { zhT } from './helpers/locale.js'
 
@@ -15,7 +15,7 @@ setLocaleTranslator(zhT)
 
 // Picker interaction is covered by settings-accounts/settings-oauth; these cases exercise the
 // controller against real DOM nodes because the account and select subtrees are React-owned.
-vi.mock('../src/provider-picker.js', () => ({
+vi.mock('@agnes/web-admin/provider-picker', () => ({
   createAccountPickers: () => ({ sync: vi.fn(), close: vi.fn() }),
 }))
 

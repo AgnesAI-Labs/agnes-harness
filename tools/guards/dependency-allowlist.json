@@ -143,7 +143,6 @@
   "@agnes/channels": ["@agnes/protocol", "@agnes/sdk", "@agnes/system-node", "@agnes/daemon"],
   "@agnes/bridges": ["@agnes/protocol", "@agnes/sdk"],
   "@agnes/web": [
-    "@agnes/base",
     "@agnes/cordis",
     "@agnes/protocol",
     "@agnes/resource-control-web",
@@ -153,7 +152,8 @@
     "@agnes/web-server",
     "@agnes/web-ui",
     "@agnes/web-units",
-    "@agnes/web-foundation"
+    "@agnes/web-foundation",
+    "@agnes/web-admin"
   ],
   "@agnes/guards": [],
   "@agnes/sandbox-remote": ["@agnes/core"],
@@ -314,5 +314,14 @@
     "@agnes/system-node",
     "@agnes/worker-runtime"
   ],
-  "@agnes/web-foundation": ["@agnes/base", "@agnes/web-client", "@agnes/web-ui", "@agnes/web-units"]
+  "@agnes/web-foundation": ["@agnes/base", "@agnes/web-client", "@agnes/web-ui", "@agnes/web-units"],
+  "@agnes/web-admin": [
+    "@agnes/base",
+    "@agnes/protocol",
+    "@agnes/resource-control-web",
+    "@agnes/sdk",
+    "@agnes/web-client",
+    "@agnes/web-foundation",
+    "@agnes/web-ui"
+  ]
 }

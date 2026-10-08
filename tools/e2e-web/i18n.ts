@@ -4,8 +4,8 @@ import { join } from 'node:path'
 export async function localeKeys(
   folders = [
     'packages/web-foundation/src/locales',
-    'packages/web/src/admin/plugins/locales',
-    'packages/web/src/settings',
+    'packages/web-admin/src/admin/plugins/locales',
+    'packages/web-admin/src/settings',
     'packages/web-units/src',
     'packages/resource-control-web/src/locales',
     'packages/web-ui/src',

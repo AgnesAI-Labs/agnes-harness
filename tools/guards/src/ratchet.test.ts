@@ -235,6 +235,16 @@ describe('ratchet key path-boundary matching (regression: sibling-prefix false m
 // extension keys change; scanning, source exclusions and the default extension ceiling stay fixed.
 const INITIAL_CEILING: Record<string, number> = {
   // Pure Web ownership migration: exact measured countLines; no spare allocation.
+  'packages/web-admin/src/settings': 5093,
+  // Pure Web ownership migration: exact measured countLines; no spare allocation.
+  'packages/web-admin/src/permission-picker': 248,
+  // Pure Web ownership migration: exact measured countLines; no spare allocation.
+  'packages/web-admin/src/admin/plugins/types': 82,
+  // Pure Web ownership migration: exact measured countLines; no spare allocation.
+  'packages/web-admin/src/admin/plugins/api': 505,
+  // Pure Web ownership migration: exact measured countLines; no spare allocation.
+  'packages/web-admin/src': 9392,
+  // Pure Web ownership migration: exact measured countLines; no spare allocation.
   'packages/web-foundation/src': 2328,
   'packages/daemon-rpc/src/local/methods/extensions': 199,
   'packages/daemon-rpc/src/local/auth': 341,
@@ -560,7 +570,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // 2026-09-22 UI plugin management: inject the embedded pane's client runtime reconciler.
   // 2026-09-25 UI refactor: permission options now render through the React region contract.
   // Re-measured with countLines(): 215, exact, no spare.
-  'packages/web/src/permission-picker': 248,
+  'packages/web/src/permission-picker': 1,
   // 2026-09-17 WEB-RUN-TRACE: new panel renderer. Measured 130; exact cap, no spare.
   // 2026-09-17 DSH parity: gantt + event list + inspector. Measured 411.
   // 2026-09-17 DSH layout: idle-compressed gantt. Measured 445.
@@ -581,7 +591,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // countLines: 900 -> 1846; exact measured cap, no exclusions or spare allocation.
   // 2026-10-07 gap-fill review: Live context/search/history settings, goal controls and optional child-engine configuration.
   // countLines: 1846 -> 3890; exact cap, no exclusions or spare allocation.
-  'packages/web/src/settings': 3890,
+  'packages/web/src/settings': 21,
   // 2026-09-17 rebase 后的重新实测：timeline.ts 的详情弹窗管线已在 WEB-UI-ALIGN-DSH 中删除
   // （原 427 是旧实现的实测值），删码后未跟着收紧会留下 55 行富余，故收到实测精确值 372。
   // 2026-09-24 WEB-INCREMENTAL-PROJECTION-TRACE-INDEX C6 (Web incremental wiring) and its review fixes,
@@ -2381,7 +2391,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // countLines: 19657 -> 22109; exact cap, no exclusions or spare allocation.
   // Acceptance review: Retain published composition details and stable expanded goal state during admin refresh.
   // countLines: 22109 -> 22110; exact cap, no exclusions or spare allocation.
-  'packages/web/src': 21811,
+  'packages/web/src': 12461,
   // 2026-09-17 web-client-modules frontend track (rebased onto L0/permission-picker main): re-measured exact value below.
   // 2026-09-14: Task 7 orphaned-pin-cleanup adds the orphan-pins section to PluginAdminPage — the
   // #orphanPins/#orphanPinsList/#orphanPinsStatus/#orphanPinsReleaseAll element bindings, the
@@ -2430,7 +2440,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // countLines: 433 -> 468; exact measured cap, no exclusions or spare allocation.
   // 2026-10-07 gap-fill review: Typed context/search/child-engine administration calls.
   // countLines: 468 -> 485; exact cap, no exclusions or spare allocation.
-  'packages/web/src/admin/plugins/api': 485,
+  'packages/web/src/admin/plugins/api': 1,
   // 2026-09-22 UI plugin management: browser runtime phase labels and safe failure messages.
   // Re-measured: 112, exact cap.
   'packages/web/src/admin/plugins/presentation': 112,
@@ -2440,7 +2450,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // 2026-09-25 C-line: countLines 79 (same import reorganization).
   // 2026-10-07 reviewed growth: local reload and plugin lifecycle state projections.
   // countLines: 79 -> 82 (+3); exact cap, no exclusions or spare allocation.
-  'packages/web/src/admin/plugins/types': 82,
+  'packages/web/src/admin/plugins/types': 1,
   'packages/daemon/src/jobs': 4,
   'packages/bridges/src': 2600,
   // I7 Channels12/13 add durable refs, bounded multipart outbound delivery, gap recovery, and

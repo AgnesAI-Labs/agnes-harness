@@ -14,7 +14,6 @@
     "typecheck": "tsc -b"
   },
   "dependencies": {
-    "@agnes/base": "workspace:*",
     "@agnes/cordis": "workspace:*",
     "@agnes/protocol": "workspace:*",
     "@agnes/resource-control-web": "workspace:*",
@@ -24,7 +23,8 @@
     "@agnes/web-server": "workspace:*",
     "@agnes/web-ui": "workspace:*",
     "@agnes/web-units": "workspace:*",
-    "@agnes/web-foundation": "workspace:*"
+    "@agnes/web-foundation": "workspace:*",
+    "@agnes/web-admin": "workspace:*"
   },
   "devDependencies": {
     "@types/react": "18.3.12",

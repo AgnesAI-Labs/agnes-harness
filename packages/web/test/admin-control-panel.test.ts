@@ -1,27 +1,25 @@
 /** @vitest-environment happy-dom */
 import type { PackageInstalledDescriptor, RuntimeAdminSnapshot } from '@agnes/protocol'
-import { act, createElement } from 'react'
-import { createRoot, type Root } from 'react-dom/client'
-import { afterEach, expect, it, vi } from 'vitest'
-import { PluginAdminApi } from '../src/admin/plugins/api.js'
+import { PluginAdminApi } from '@agnes/web-admin/admin/plugins/api'
 import {
   GenerationDrainSummary,
   KindFilter,
   PluginBadges,
   pluginStates,
   SessionDefaultsPanel,
-} from '../src/admin/plugins/control-panel.js'
-import { pluginAdminLocaleCatalog } from '../src/admin/plugins/locales/admin.js'
-import { sessionLoopSelection } from '../src/admin/plugins/session-loop.js'
+} from '@agnes/web-admin/admin/plugins/control-panel'
+import { pluginAdminLocaleCatalog } from '@agnes/web-admin/admin/plugins/locales/admin'
+import { sessionLoopSelection } from '@agnes/web-admin/admin/plugins/session-loop'
+import { SETTINGS_PAGES, SettingsHub } from '@agnes/web-admin/settings/hub'
+import { settingsCatalog } from '@agnes/web-admin/settings/locales'
+import { GenerationsPanel, PublicationPanel } from '@agnes/web-admin/settings/runtime-panels'
+import { SecurityStatusPanel } from '@agnes/web-admin/settings/security-status'
+import { effectiveSessionPreset, permissionForSessionPreset } from '@agnes/web-admin/settings/session-choice'
+import { SessionToolsPanel } from '@agnes/web-admin/settings/session-tools'
+import { act, createElement } from 'react'
+import { createRoot, type Root } from 'react-dom/client'
+import { afterEach, expect, it, vi } from 'vitest'
 import { LoopPicker, updateLoopPicker } from '../src/loop-picker.js'
-import { SETTINGS_PAGES, SettingsHub } from '../src/settings/hub.js'
-import { settingsCatalog } from '../src/settings/locales.js'
-import { GenerationsPanel, PublicationPanel } from '../src/settings/runtime-panels.js'
-
-import { SecurityStatusPanel } from '../src/settings/security-status.js'
-import { effectiveSessionPreset, permissionForSessionPreset } from '../src/settings/session-choice.js'
-
-import { SessionToolsPanel } from '../src/settings/session-tools.js'
 
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 const t = (key: string) => pluginAdminLocaleCatalog.en[key] ?? key

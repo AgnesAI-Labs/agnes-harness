@@ -2,17 +2,17 @@
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { resourceAdminShellLocaleCatalog } from '@agnes/resource-control-web/locale-shell'
+import {
+  PLUGIN_ADMIN_LOCALE_NAMESPACE,
+  pluginAdminLocaleCatalog,
+} from '@agnes/web-admin/admin/plugins/locales/admin'
+import { pluginAdminShellLocaleCatalog } from '@agnes/web-admin/admin/plugins/locales/shell'
 import { createDocumentLocaleSource } from '@agnes/web-ui'
 import { SettingsPaneBuiltin } from '@agnes/web-units'
 import { createElement } from 'react'
 import { flushSync } from 'react-dom'
 import { createRoot } from 'react-dom/client'
 import { afterEach, expect, it, vi } from 'vitest'
-import {
-  PLUGIN_ADMIN_LOCALE_NAMESPACE,
-  pluginAdminLocaleCatalog,
-} from '../src/admin/plugins/locales/admin.js'
-import { pluginAdminShellLocaleCatalog } from '../src/admin/plugins/locales/shell.js'
 
 afterEach(() => {
   document.documentElement.lang = 'en'

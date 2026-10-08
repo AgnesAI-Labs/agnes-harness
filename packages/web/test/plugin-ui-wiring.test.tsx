@@ -1,10 +1,10 @@
 /** @vitest-environment happy-dom */
 import type { PackageInstalledDescriptor } from '@agnes/protocol'
+import { pluginStates } from '@agnes/web-admin/admin/plugins/control-panel'
 import type { ClientContext } from '@agnes/web-client'
 import { act, createElement } from 'react'
 import { createRoot } from 'react-dom/client'
 import { expect, it, vi } from 'vitest'
-import { pluginStates } from '../src/admin/plugins/control-panel.js'
 import { startClientModules } from '../src/client-modules/boot.js'
 import { createReconciler } from '../src/client-modules/reconcile.js'
 import { LoopPicker, loadNewSessionCatalog, updateLoopPicker } from '../src/loop-picker.js'

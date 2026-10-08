@@ -1,1 +1,1 @@
-export * from '@agnes/resource-control-web/types'
+export * from '@agnes/web-admin/admin/resources/types'

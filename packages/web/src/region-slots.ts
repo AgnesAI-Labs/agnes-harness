@@ -6,6 +6,8 @@
  * Only the section's children move behind a SlotOutlet.  A browser module can shadow the built-in
  * entry by registering the same slot with a lower priority; the surrounding page remains intact.
  */
+
+import { createPermissionPicker } from '@agnes/web-admin/permission-picker'
 import {
   type ClientDocumentArtifact,
   ClientResourceReclaimedError,
@@ -68,7 +70,6 @@ import type { DocumentPreviewInput, DocumentPreviewKind } from './document-previ
 import { LoopPicker } from './loop-picker.js'
 import { createModelPicker } from './model-picker.js'
 import { renderSessionNavigation } from './navigation.js'
-import { createPermissionPicker } from './permission-picker.js'
 import { isComposerSubmitShortcut, resizeComposer } from './presentation.js'
 import { bindSidebar } from './shell.js'
 import { createTimelineRenderer } from './timeline.js'

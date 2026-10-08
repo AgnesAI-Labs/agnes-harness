@@ -7,6 +7,7 @@ import type { Client } from '@agnes/sdk/browser'
 import { settingsSections } from '@agnes/web-client'
 import '../src/settings/registry.js'
 import { setLocaleTranslator } from '@agnes/web-foundation/locale-bridge'
+import { zhT } from '@agnes/web-foundation/testkit/locale'
 import { unmountRegion } from '@agnes/web-ui'
 import { SettingsBuiltin, SettingsPaneBuiltin } from '@agnes/web-units'
 import { createElement } from 'react'
@@ -14,12 +15,11 @@ import { flushSync } from 'react-dom'
 import { createRoot } from 'react-dom/client'
 import { afterEach, expect, it, vi } from 'vitest'
 import { createSettingsController } from '../src/settings.js'
-import { zhT } from './helpers/locale.js'
 
 // i18n: these suites assert zh-CN catalog output; pin the translator before imports run.
 setLocaleTranslator(zhT)
 
-const stylePath = resolve(import.meta.dirname, '../public/style.css')
+const stylePath = resolve(import.meta.dirname, '../../web/public/style.css')
 
 function styleRule(css: string, selector: string): string {
   const escapedSelector = selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')

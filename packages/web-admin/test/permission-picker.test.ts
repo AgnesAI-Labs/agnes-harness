@@ -1,9 +1,9 @@
 /** @vitest-environment happy-dom */
 
 import { setLocaleTranslator } from '@agnes/web-foundation/locale-bridge'
+import { zhT } from '@agnes/web-foundation/testkit/locale'
 import { afterEach, expect, it, vi } from 'vitest'
 import { createPermissionPicker, permissionLabel, yoloEnabled } from '../src/permission-picker.js'
-import { zhT } from './helpers/locale.js'
 
 // i18n: these suites assert zh-CN catalog output; pin the translator before imports run.
 setLocaleTranslator(zhT)

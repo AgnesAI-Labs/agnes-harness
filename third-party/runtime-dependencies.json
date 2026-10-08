@@ -62,8 +62,9 @@
       "consumers": [
         "packages/resource-control-web",
         "packages/web",
-        "packages/web-foundation",
+        "packages/web-admin",
         "packages/web-client",
+        "packages/web-foundation",
         "packages/web-ui",
         "packages/web-units"
       ]

@@ -1,0 +1,43 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "outDir": "dist/test",
+    "tsBuildInfoFile": "dist/tsconfig.test.tsbuildinfo"
+  },
+  "include": ["test/**/*.ts", "test/**/*.tsx"],
+  "references": [
+    {
+      "path": "."
+    },
+    {
+      "path": "../../tsconfig.config.json"
+    },
+    {
+      "path": "../base"
+    },
+    {
+      "path": "../protocol"
+    },
+    {
+      "path": "../resource-control-web"
+    },
+    {
+      "path": "../sdk"
+    },
+    {
+      "path": "../web-client"
+    },
+    {
+      "path": "../web-foundation"
+    },
+    {
+      "path": "../web-ui"
+    },
+    {
+      "path": "../web-units"
+    },
+    {
+      "path": "../web-foundation/tsconfig.testkit.json"
+    }
+  ]
+}

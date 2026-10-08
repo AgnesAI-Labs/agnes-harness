@@ -83,6 +83,7 @@
       "consumers": [
         "packages/resource-control-web",
         "packages/web",
+        "packages/web-admin",
         "packages/web-client",
         "packages/web-foundation",
         "packages/web-ui",
@@ -98,6 +99,7 @@
       "rationale": "Type-only companion of the pinned react-dom dependency; same version line.",
       "consumers": [
         "packages/web",
+        "packages/web-admin",
         "packages/web-client",
         "packages/web-foundation",
         "packages/web-ui",
@@ -138,7 +140,13 @@
       "source": "https://github.com/facebook/react/tree/main/packages/react-dom",
       "purpose": "DOM renderer for the web workbench and client module mount points; bundled into /vendor/* shared-singleton chunks.",
       "rationale": "Same pin line as react (WC5).",
-      "consumers": ["packages/web", "packages/web-client", "packages/web-ui", "packages/web-units"]
+      "consumers": [
+        "packages/web",
+        "packages/web-admin",
+        "packages/web-client",
+        "packages/web-ui",
+        "packages/web-units"
+      ]
     },
     {
       "name": "tsx",
@@ -165,7 +173,7 @@
       "source": "https://github.com/vitest-dev/vitest",
       "purpose": "Unit, integration, conformance and guard test runner.",
       "rationale": "Provides one test runtime compatible with the workspace's ESM TypeScript setup.",
-      "consumers": [".", "packages/web-foundation"]
+      "consumers": [".", "packages/web-admin", "packages/web-foundation"]
     },
     {
       "name": "postject",

@@ -38,6 +38,9 @@
       "path": "../sdk"
     },
     {
+      "path": "../web-admin"
+    },
+    {
       "path": "../web-admin-frame"
     },
     {
@@ -47,6 +50,9 @@
       "path": "../web-foundation"
     },
     {
+      "path": "../web-foundation/tsconfig.testkit.json"
+    },
+    {
       "path": "../web-server"
     },
     {
@@ -54,9 +60,6 @@
     },
     {
       "path": "../web-units"
-    },
-    {
-      "path": "../web-foundation/tsconfig.testkit.json"
     }
   ]
 }

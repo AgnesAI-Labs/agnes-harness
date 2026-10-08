@@ -39,8 +39,8 @@ vi.mock('../src/client-modules/boot.js', async (importOriginal) => {
     },
   }
 })
-vi.mock('../src/settings.js', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('../src/settings.js')>()
+vi.mock('@agnes/web-admin/settings', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@agnes/web-admin/settings')>()
   return {
     ...actual,
     createSettingsController: (options: Parameters<typeof actual.createSettingsController>[0]) => {

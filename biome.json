@@ -41,7 +41,8 @@
       "includes": [
         "packages/web-ui/src/**",
         "packages/resource-control-web/src/**",
-        "packages/web/src/admin/**"
+        "packages/web/src/admin/**",
+        "packages/web-admin/src/admin/**"
       ],
       "linter": {
         "rules": {

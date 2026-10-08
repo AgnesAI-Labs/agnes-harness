@@ -53,7 +53,15 @@ function catalogFiles(directory: string): string[] {
 }
 it('keeps every exported frontend catalog paired across all frontend packages', async () => {
   let count = 0
-  for (const pkg of ['web', 'web-foundation', 'web-ui', 'web-units', 'web-client', 'resource-control-web'])
+  for (const pkg of [
+    'web',
+    'web-foundation',
+    'web-admin',
+    'web-ui',
+    'web-units',
+    'web-client',
+    'resource-control-web',
+  ])
     for (const file of catalogFiles(resolve('packages', pkg, 'src'))) {
       const exports = await import(/* @vite-ignore */ pathToFileURL(file).href)
       for (const [name, value] of Object.entries(exports)) {

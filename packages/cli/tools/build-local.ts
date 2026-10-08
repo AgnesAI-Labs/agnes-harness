@@ -210,7 +210,7 @@ export async function buildLocalWeb(webOut: string): Promise<void> {
   await buildWithMetadata({
     entryPoints: {
       app: join(repoPackages, 'web', 'src', 'app.ts'),
-      admin: join(repoPackages, 'web', 'src', 'admin', 'plugins', 'admin.tsx'),
+      admin: '@agnes/web-admin/admin/plugins/admin',
       resources: join(repoPackages, 'resource-control-web', 'src', 'admin.tsx'),
       // 独立页（/admin/plugins、/admin/resources）的宿主入口；设置弹窗里嵌的是上面三个模块。
       'admin-standalone': join(repoPackages, 'web', 'src', 'admin', 'plugins', 'standalone.ts'),

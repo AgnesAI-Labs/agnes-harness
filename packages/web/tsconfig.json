@@ -38,6 +38,9 @@
       "path": "../sdk"
     },
     {
+      "path": "../web-admin"
+    },
+    {
       "path": "../web-admin-frame"
     },
     {

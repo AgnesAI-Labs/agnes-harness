@@ -202,4 +202,4 @@ Storage, filesystem, sandbox and platform backends require restart. Resume fails
 
 Candidate loading, dependencies and activation timeouts can still cause an activation to fail. The prior generation continues serving its bound sessions. The browser loads its own bundle roster, so Host activation does not prove browser loading.
 
-Implementation: [shell commands](../../packages/cli/src/commands/package.ts), [SDK](../../packages/sdk/src/package-admin.node.ts), [Web administration](../../packages/web/src/admin/plugins/admin.tsx), [EntryTree](../../packages/cordis-loader/src/entry-tree.ts), [Host publication](../../packages/host-providers/src/runtime-target-publisher.ts).
+Implementation: [shell commands](../../packages/cli/src/commands/package.ts), [SDK](../../packages/sdk/src/package-admin.node.ts), [Web administration](../../packages/web-admin/src/admin/plugins/admin.tsx), [EntryTree](../../packages/cordis-loader/src/entry-tree.ts), [Host publication](../../packages/host-providers/src/runtime-target-publisher.ts).
