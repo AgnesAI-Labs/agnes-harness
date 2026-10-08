@@ -1,7 +1,9 @@
 export type { PackageAuditEvent, PackageAuditSink } from './audit.js'
 export {
+  BUNDLED_EXAMPLES,
   BUNDLED_HELPERS,
   BUNDLED_SKILL_HELPER_REF,
+  bundledExampleSource,
   bundledPluginSourceRoot,
 } from './bundled-plugin-source.js'
 export * from './capabilities.js'

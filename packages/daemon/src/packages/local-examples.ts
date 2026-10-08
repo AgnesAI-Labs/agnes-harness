@@ -2,6 +2,7 @@ import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import {
   BUNDLED_HELPERS,
+  bundledExamplesEntries,
   bundledPluginSourceRoot,
   createCatalog,
   createLocalExamplesCatalog,
@@ -36,6 +37,11 @@ export async function discoverLocalExamples(workspace: string): Promise<LocalExa
       issuedAt: new Date().toISOString(),
       ttlMs: 86_400_000,
       entries: BUNDLED_HELPERS.map(helperEntry),
+    })),
+    staticCatalogSource('official-examples', async (signal) => ({
+      issuedAt: new Date().toISOString(),
+      ttlMs: 86_400_000,
+      entries: await bundledExamplesEntries(signal),
     })),
   ]
   if (existsSync(join(workspace, 'examples', 'packages'))) {

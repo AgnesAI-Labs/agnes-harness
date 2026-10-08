@@ -13,6 +13,7 @@
     "dist/local",
     "dist/local/THIRD-PARTY-NOTICES/computer-use-hermes.txt",
     "dist/local/bundled-plugins",
+    "dist/local/bundled-examples",
     "dist/sea/daemon.mjs",
     "dist/sea/worker.mjs",
     "dist/sea/web",
@@ -20,6 +21,7 @@
     "dist/sea/runtime",
     "dist/sea/THIRD-PARTY-NOTICES/computer-use-hermes.txt",
     "dist/sea/bundled-plugins",
+    "dist/sea/bundled-examples",
     "dist/sea/ripgrep"
   ],
   "bin": {

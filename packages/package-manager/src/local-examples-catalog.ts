@@ -1,11 +1,13 @@
-import { existsSync, lstatSync, readFileSync, realpathSync } from 'node:fs'
+import { existsSync, lstatSync, mkdtempSync, readFileSync, realpathSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { isAbsolute, join, relative, sep } from 'node:path'
 import type { PackageCatalogDescriptor } from '@agnes/protocol'
 import { validatePackageAdminData } from '@agnes/protocol'
+import { BUNDLED_EXAMPLES, bundledExampleSource } from './bundled-plugin-source.js'
 import { type CatalogRead, createCatalog, staticCatalogSource } from './catalog.js'
 import { PackageError } from './errors.js'
 import { inspectStaged } from './inspect.js'
-import { hashDirectory } from './sources.js'
+import { fetchSource, hashDirectory } from './sources.js'
 
 const SOURCE_ID = 'local-examples'
 const TTL_MS = 86_400_000
@@ -77,6 +79,7 @@ function descriptor(
   workspace: string,
   relativeDirectory: string,
   signal?: AbortSignal,
+  sourceRef?: string,
 ): Omit<PackageCatalogDescriptor, 'sourceId' | 'retrievedAt'> {
   signal?.throwIfAborted()
   const directory = join(workspace, relativeDirectory)
@@ -91,7 +94,7 @@ function descriptor(
   const pkg = json(join(owned, 'package.json'))
   if (typeof pkg.name !== 'string' || typeof pkg.version !== 'string' || typeof pkg.license !== 'string')
     return invalid('identity')
-  const source = { type: 'file' as const, ref: `file:./${relativeDirectory}` }
+  const source = { type: 'file' as const, ref: sourceRef ?? `file:./${relativeDirectory}` }
   const integrity = hashDirectory(owned, { ...(signal ? { signal } : {}) })
   const { preview } = inspectStaged({
     dir: owned,
@@ -162,4 +165,25 @@ export async function createLocalExamplesCatalog(
   const initial = await catalog.read(options.signal ? { signal: options.signal } : {})
   if (initial.sources[0]?.status !== 'fresh') return invalid('read')
   return catalog
+}
+
+/** Metadata only: installation still fetches, inspects, reviews, trusts and enables normally. */
+export async function bundledExamplesEntries(signal?: AbortSignal) {
+  const staging = mkdtempSync(join(tmpdir(), 'agnes-example-catalog-'))
+  try {
+    const entries: Omit<PackageCatalogDescriptor, 'sourceId' | 'retrievedAt'>[] = []
+    for (const example of BUNDLED_EXAMPLES) {
+      const source = bundledExampleSource(example.ref)
+      if (!source) return invalid('bundled-source')
+      await fetchSource({ type: 'file', ref: example.ref }, join(staging, example.name), {
+        cwd: source.root,
+        ...(signal ? { signal } : {}),
+      })
+      const entry = descriptor(realpathSync(staging), example.name, signal, example.ref)
+      entries.push({ ...entry, ...(example.family === 'loops' ? { kinds: ['loop' as const] } : {}) })
+    }
+    return entries
+  } finally {
+    rmSync(staging, { recursive: true, force: true })
+  }
 }

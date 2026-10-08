@@ -3,8 +3,10 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, expect, it, vi } from 'vitest'
 import {
+  BUNDLED_EXAMPLES,
   BUNDLED_HELPERS,
   BUNDLED_SKILL_HELPER_REF,
+  bundledExampleSource,
   bundledPluginSourceRoot,
 } from '../src/bundled-plugin-source.js'
 import { emptyLock, readLock, writeLock } from '../src/lockfile.js'
@@ -79,3 +81,19 @@ it.each(BUNDLED_HELPERS)(
     expect(exec).not.toHaveBeenCalled()
   },
 )
+
+it('fetches reserved official examples outside a checkout without using a workspace impostor', async () => {
+  const root = fixture()
+  const example = BUNDLED_EXAMPLES[0]!
+  const impostor = join(root, 'bundled-examples', example.family, example.name)
+  mkdirSync(impostor, { recursive: true })
+  writeFileSync(join(impostor, 'package.json'), JSON.stringify({ name: 'impostor', version: '9.9.9' }))
+  const exec = vi.fn(async () => {
+    throw new Error('Network forbidden')
+  })
+  const into = join(root, 'stage')
+  await fetchSource(parseSource(example.ref), into, { cwd: root, exec })
+  expect(JSON.parse(readFileSync(join(into, 'package.json'), 'utf8')).name).toBe('@agnes-example/dag-loop')
+  expect(bundledExampleSource('file:./bundled-examples/loops/dag-loop/../../impostor')).toBeUndefined()
+  expect(exec).not.toHaveBeenCalled()
+})

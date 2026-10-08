@@ -14,7 +14,16 @@ it.each([false, true])('discovers optional pinned helper even with broken exampl
   if (broken) mkdirSync(join(root, 'examples', 'packages'), { recursive: true })
   const catalog = await discoverLocalExamples(root)
   const result = await catalog.read({ offline: true })
-  expect(result.entries).toHaveLength(4)
+  expect(result.entries).toHaveLength(21)
+  const examples = result.entries.filter((entry) => entry.sourceId === 'official-examples')
+  expect(examples).toHaveLength(17)
+  expect(examples.filter((entry) => entry.id.startsWith('@agnes-fde/'))).toHaveLength(12)
+  expect(examples.map((entry) => entry.id)).toEqual(
+    expect.arrayContaining(['@agnes-example/dag-loop', '@agnes-example/react-loop', '@community/tool-panel']),
+  )
+  expect(
+    examples.every((entry) => entry.integrity && entry.source.ref.startsWith('file:./bundled-examples/')),
+  ).toBe(true)
   expect(result.entries[0]).toMatchObject({
     id: '@agnes/skill-helper',
     version: '0.1.1',

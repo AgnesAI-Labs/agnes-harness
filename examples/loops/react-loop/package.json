@@ -11,7 +11,7 @@
   "agnes": {
     "plugins": [
       {
-        "id": "loop:react",
+        "id": "ext:example-react",
         "export": "plugin",
         "apiRange": "^1.4.0",
         "default": true,

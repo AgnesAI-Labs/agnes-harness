@@ -174,7 +174,15 @@ execFileSync(
   },
 )
 const local = join(root, 'dist', 'local')
-for (const name of ['daemon.mjs', 'worker.mjs', 'web', 'THIRD-PARTY-NOTICES', 'bundled-plugins', 'ripgrep'])
+for (const name of [
+  'daemon.mjs',
+  'worker.mjs',
+  'web',
+  'THIRD-PARTY-NOTICES',
+  'bundled-plugins',
+  'bundled-examples',
+  'ripgrep',
+])
   cpSync(join(local, name), join(out, name), { recursive: true })
 if (existsSync(join(local, 'native'))) cpSync(join(local, 'native'), join(out, 'native'), { recursive: true })
 cpSync(

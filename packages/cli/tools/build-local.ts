@@ -5,7 +5,7 @@ import { appendFile, chmod, copyFile, cp, mkdir, readdir, readFile, rm } from 'n
 import { createRequire } from 'node:module'
 import { dirname, isAbsolute, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { BUNDLED_HELPERS } from '@agnes/package-manager'
+import { BUNDLED_EXAMPLES, BUNDLED_HELPERS } from '@agnes/package-manager'
 import { type BuildOptions, type BuildResult, build, type Plugin } from 'esbuild'
 import { collectThirdPartyNotices } from '../../../tools/third-party-notices.mjs'
 import { beginRuntimeDirectory } from '../../base/tools/runtime-directory.js'
@@ -67,6 +67,42 @@ const bundleJitiTransform: Plugin = {
       }
     })
   },
+}
+
+/** Ship the curated example payload independently of the user's workspace. */
+export async function copyBundledExamples(outputDirectory: string): Promise<void> {
+  for (const { family, name } of BUNDLED_EXAMPLES) {
+    const source = join(repoPackages, '..', 'examples', family, name)
+    const destination = join(outputDirectory, 'bundled-examples', family, name)
+    await mkdir(destination, { recursive: true })
+    const payload = (await readdir(source)).filter(
+      (file) =>
+        [
+          'package.json',
+          'LICENSE',
+          'fixtures',
+          'skills',
+          'client',
+          'mcp',
+          'dag',
+          'provider.example.json',
+        ].includes(file) ||
+        file.startsWith('README') ||
+        (/\.(mjs|mts|json)$/.test(file) && file !== 'tsconfig.json'),
+    )
+    for (const file of payload) await cp(join(source, file), join(destination, file), { recursive: true })
+    if (family === 'community')
+      await build({
+        entryPoints: [join(source, 'src', 'index.ts')],
+        outfile: join(destination, 'dist', 'index.js'),
+        bundle: true,
+        platform: 'node',
+        format: 'esm',
+        target: ['node24'],
+        packages: 'external',
+        legalComments: 'eof',
+      })
+  }
 }
 
 async function bundle(entry: string, outfile: string, define: Record<string, string> = {}): Promise<void> {
@@ -284,6 +320,7 @@ async function buildLocal(out: string, nativeOutput?: string, versionOverride?: 
   await copyRipgrep(out)
   await copyComputerUseNotice(out)
   await copyBundledPlugins(out)
+  await copyBundledExamples(out)
   await copyPluginPackRuntime(out)
   const packageJson = JSON.parse(await readFile(join(cliRoot, 'package.json'), 'utf8')) as {
     version?: unknown

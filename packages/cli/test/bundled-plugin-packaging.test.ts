@@ -5,7 +5,7 @@ import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { build } from 'esbuild'
 import { afterEach, expect, it } from 'vitest'
-import { copyBundledPlugins } from '../tools/build-local.js'
+import { copyBundledExamples, copyBundledPlugins } from '../tools/build-local.js'
 
 const roots: string[] = []
 afterEach(async () => {
@@ -78,4 +78,20 @@ it.each([
     expect.arrayContaining(['dist/local/bundled-plugins', 'dist/sea/bundled-plugins']),
   )
   expect(await readFile(new URL('../sea/build.mjs', import.meta.url), 'utf8')).toContain("'bundled-plugins'")
+})
+
+it('ships all official example payloads with runnable community entries and no checkout-only files', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'agnes-example-delivery-'))
+  roots.push(root)
+  await copyBundledExamples(root)
+  const families = await readdir(join(root, 'bundled-examples'))
+  expect(families.sort()).toEqual(['community', 'fde', 'loops'])
+  expect(await readdir(join(root, 'bundled-examples/fde'))).toHaveLength(12)
+  expect(await readdir(join(root, 'bundled-examples/loops'))).toHaveLength(2)
+  for (const name of ['tool-panel', 'mcp-skills', 'dag-loop-adapter']) {
+    const payload = join(root, 'bundled-examples/community', name)
+    expect(await readFile(join(payload, 'dist/index.js'), 'utf8')).toContain('export')
+    expect(await readdir(payload)).not.toEqual(expect.arrayContaining(['test', 'node_modules', 'src']))
+    expect(await readFile(join(payload, 'LICENSE'), 'utf8')).toContain('Apache')
+  }
 })
