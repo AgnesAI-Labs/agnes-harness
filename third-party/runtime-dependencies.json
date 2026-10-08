@@ -110,7 +110,21 @@
       "source": "https://github.com/sinclairzx81/typebox",
       "purpose": "Runtime JSON-schema construction and static TypeScript schema inference.",
       "rationale": "Keeps runtime validation schemas and compile-time protocol types derived from one definition.",
-      "consumers": ["packages/ai", "packages/base", "packages/cli", "packages/code", "packages/core", "packages/extension-api", "packages/host", "packages/host-computer-use", "packages/model-adapters", "packages/plugin-runtime", "packages/protocol", "packages/protocol-validation", "packages/resource-control-contracts"]
+      "consumers": [
+        "packages/ai",
+        "packages/base",
+        "packages/cli",
+        "packages/code",
+        "packages/core",
+        "packages/extension-api",
+        "packages/host",
+        "packages/host-computer-use",
+        "packages/model-adapters",
+        "packages/plugin-runtime",
+        "packages/protocol",
+        "packages/protocol-validation",
+        "packages/resource-control-contracts"
+      ]
     },
     {
       "name": "es-module-lexer",
