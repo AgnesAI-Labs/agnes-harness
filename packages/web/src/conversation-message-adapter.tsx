@@ -119,6 +119,30 @@ function DshNodeLeaf({
 }
 
 /** Independent Web harness for transcript projection and interaction. */
+function interactionEcho(
+  nodes: readonly UINode[],
+  text: string,
+  nodeId?: string,
+): Extract<UINode, { kind: 'tool' }> | undefined {
+  const demoResult = text.startsWith('[Demo model — local, deterministic, no API key] Tool result: ')
+  const index = nodes.findIndex((node) => node.id === nodeId)
+  const preceding =
+    demoResult && index > 0 ? nodes.slice(0, index).findLast((node) => node.kind === 'tool') : undefined
+  if (preceding?.kind === 'tool' && interactionToolPresentation(preceding)) return preceding
+  return nodes.find(
+    (node): node is Extract<UINode, { kind: 'tool' }> =>
+      node.kind === 'tool' &&
+      !!node.resultPreview &&
+      !!interactionToolPresentation(node) &&
+      (text.trim() === node.resultPreview.trim() ||
+        (demoResult &&
+          text
+            .replace(/\s+/g, ' ')
+            .trim()
+            .endsWith(`Tool result: ${node.resultPreview.replace(/\s+/g, ' ').trim()}`))),
+  )
+}
+
 export function WebConversationMessages({
   registry,
   claim,
@@ -146,6 +170,16 @@ export function WebConversationMessages({
     registry ? registry.subscribeSession.bind(registry) : noSessionSubscription,
     () => registry?.sessionId,
   )
+  // Route exact interaction echoes into the tool's existing disclosure, keeping one details action.
+  const echoedTools = new Map<string, Extract<UINode, { kind: 'tool' }>>()
+  const rawEchoes = new Map<string, string[]>()
+  for (const node of nodes ?? []) {
+    if (node.kind !== 'assistant') continue
+    const echo = interactionEcho(nodes ?? [], node.text, node.id)
+    if (!echo) continue
+    echoedTools.set(node.id, echo)
+    rawEchoes.set(echo.id, [...(rawEchoes.get(echo.id) ?? []), node.text])
+  }
   const answered = new Set<string>()
   const answerLabels = new Map<string, string>()
   const answerMessages = new Map<string, string>()
@@ -176,7 +210,7 @@ export function WebConversationMessages({
     }
   }
   const props: ConversationMessagesProps = {
-    keepNodeVisible: keepConversationCardVisible,
+    keepNodeVisible: (node) => keepConversationCardVisible(node) || rawEchoes.has(node.id),
     t: (key, vars) => locale?.t(key, vars) ?? key,
     ...(turns ? { turns } : {}),
     ...(visibleNodeIds ? { visibleNodeIds } : {}),
@@ -201,49 +235,8 @@ export function WebConversationMessages({
           t={(key, vars) => locale?.t(key, vars) ?? key}
         />
       )
-      // Condense only the deterministic demo tool reply or an exact raw interaction result.
-      // Resource references may differ from the preview; arbitrary model prose stays unchanged.
-      const demoResult = text.startsWith('[Demo model — local, deterministic, no API key] Tool result: ')
-      const precedingTool = demoResult
-        ? nodes
-            ?.slice(
-              0,
-              nodes.findIndex((node) => node.id === state?.nodeId),
-            )
-            .findLast((node) => node.kind === 'tool')
-        : undefined
-      const echo =
-        part === 'body' &&
-        ((precedingTool?.kind === 'tool' && interactionToolPresentation(precedingTool)
-          ? precedingTool
-          : undefined) ??
-          nodes?.find(
-            (node) =>
-              node.kind === 'tool' &&
-              node.resultPreview &&
-              (text.trim() === node.resultPreview.trim() ||
-                text
-                  .replace(/\s+/g, ' ')
-                  .trim()
-                  .endsWith(`Tool result: ${node.resultPreview.replace(/\s+/g, ' ').trim()}`)) &&
-              interactionToolPresentation(node, (key, vars) => locale?.t(key, vars) ?? key),
-          ))
-      if (echo && echo.kind === 'tool' && (text.trim() === echo.resultPreview?.trim() || demoResult)) {
-        const presentation = interactionToolPresentation(
-          echo,
-          (key, vars) => locale?.t(key, vars) ?? key,
-          answerLabels.get(echo.id),
-        )
-        if (presentation)
-          return (
-            <ConversationInteractionResult
-              summary={keepConversationCardVisible(echo) ? undefined : presentation.summary}
-              t={(key, vars) => locale?.t(key, vars) ?? key}
-            >
-              {markdown}
-            </ConversationInteractionResult>
-          )
-      }
+      const echo = part === 'body' && state?.nodeId ? echoedTools.get(state.nodeId) : undefined
+      if (echo) return null
       return markdown
     },
     renderTool: (node) => (
@@ -278,6 +271,7 @@ export function WebConversationMessages({
               <ConversationToolCard
                 key={node.id}
                 node={node}
+                resultAppendix={rawEchoes.get(node.id)?.join('\n\n')}
                 icon={toolIconReact(node.name)}
                 presentation={interactionToolPresentation(
                   node,

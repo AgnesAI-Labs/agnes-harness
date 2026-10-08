@@ -5,7 +5,6 @@ export const ADMIN_LIST_LOCALE_NAMESPACE = '@agnes/web-ui/admin-list'
 export const adminListLocaleCatalog: LocaleCatalog = {
   en: {
     'row.technicalDetails': 'Technical details',
-    'row.description.generic': 'Review the tools and features in the technical details.',
     'row.name.@agnes/document-reader': 'Document reader',
     'row.description.@agnes/document-reader': 'Read PDF, Word, image text and ZIP attachments offline.',
     'row.name.@agnes/mcp-helper': 'MCP connection helper',
@@ -24,6 +23,8 @@ export const adminListLocaleCatalog: LocaleCatalog = {
     'orphan.release': 'Release',
     'compatibility.label': 'Compatibility',
     'compatibility.supported': 'Compatible',
+    'compatibility.supportedHelp': 'This plugin is compatible with the current installation.',
+    'compatibility.unsupportedHelp': 'This plugin requires a different runtime or API version.',
     'compatibility.unsupported': 'Unsupported',
     'switch.disable': 'Request to disable {id}',
     'switch.enable': 'Request to enable {id}',
@@ -42,7 +43,6 @@ export const adminListLocaleCatalog: LocaleCatalog = {
   },
   'zh-CN': {
     'row.technicalDetails': '技术详情',
-    'row.description.generic': '展开技术详情，查看插件提供的工具和功能。',
     'row.name.@agnes/document-reader': '文档读取',
     'row.description.@agnes/document-reader': '离线读取 PDF、Word、图片文字和 ZIP 附件。',
     'row.name.@agnes/mcp-helper': 'MCP 连接助手',
@@ -61,6 +61,8 @@ export const adminListLocaleCatalog: LocaleCatalog = {
     'orphan.release': '释放',
     'compatibility.label': '兼容',
     'compatibility.supported': '兼容',
+    'compatibility.supportedHelp': '此插件兼容当前安装。',
+    'compatibility.unsupportedHelp': '此插件需要不同的运行环境或 API 版本。',
     'compatibility.unsupported': '不支持',
     'switch.disable': '请求停用 {id}',
     'switch.enable': '请求启用 {id}',

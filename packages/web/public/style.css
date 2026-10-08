@@ -2208,7 +2208,7 @@ button.trace-gantt-bar:focus-visible {
   flex: 0 0 auto;
   padding: 0.375rem;
   border-color: transparent;
-  color: var(--agnes-text-tertiary);
+  color: var(--agnes-text-primary);
   background: transparent;
   font-size: 0.8125rem;
   line-height: 1.5rem;
@@ -2268,9 +2268,12 @@ button.trace-gantt-bar:focus-visible {
   font-size: var(--font-size-xs);
   line-height: 1.4;
 }
-.tool[data-status="running"] .tool-status,
-.tool[data-status="completed"] .tool-status {
-  color: var(--agnes-text-emphasis);
+.tool[data-status="running"] .tool-status {
+  color: var(--agnes-text-secondary);
+}
+.tool[data-status="completed"] .tool-status,
+[data-agnes-tool-card][data-status="completed"] .tool-status {
+  color: var(--agnes-status-success-text);
 }
 .tool[data-status="failed"] {
   border-color: var(--agnes-status-danger-text);
@@ -4853,7 +4856,7 @@ body.admin-page {
 }
 /* 目录页第三列是动作按钮而不是 Switch，宽度随文案变，所以在基础轨上单独覆盖。 */
 .plugin-row[data-tab="discover"] {
-  grid-template-columns: minmax(0, 1fr) 8.5rem auto;
+  grid-template-columns: minmax(0, 1fr) auto auto;
 }
 .plugin-row[data-tab="installed"]:has(.plugin-row-retry) {
   grid-template-columns: minmax(0, 1fr) auto;
@@ -4905,12 +4908,12 @@ body.admin-page {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  color: var(--agnes-text-tertiary);
+  color: var(--agnes-text-secondary);
   font-size: var(--font-size-xs);
   line-height: 1.45;
 }
 .plugin-row-content .plugin-source {
-  color: var(--agnes-text-tertiary);
+  color: var(--agnes-text-secondary);
 }
 .plugin-row-content .resource-safe-error {
   margin-top: 0.5rem;
@@ -6122,7 +6125,7 @@ body.admin-page {
 :is(#config-form, #account-dialog) .config-validation-section #config-error {
   grid-column: 1 / -1;
 }
-:is(#config-form, #account-dialog) input:not(.ant-select-input),
+:is(#config-form, #account-dialog) input:not(.ant-select-input):not(.agnes-settings-toolbar input),
 :is(#config-form, #account-dialog) select,
 :is(#config-form, #account-dialog) .select-picker-trigger {
   height: var(--control-height-form);
@@ -6138,16 +6141,18 @@ body.admin-page {
     box-shadow var(--transition-fast),
     background-color var(--transition-fast);
 }
-:is(#config-form, #account-dialog) input:not(.ant-select-input):hover:not(:disabled),
+:is(#config-form, #account-dialog)
+  input:not(.ant-select-input):not(.agnes-settings-toolbar input):hover:not(:disabled),
 :is(#config-form, #account-dialog) select:hover:not(:disabled) {
   border-color: var(--agnes-input-border-emphasis);
   background: var(--agnes-input-surface);
 }
-:is(#config-form, #account-dialog) input:not(.ant-select-input):focus-visible,
+:is(#config-form, #account-dialog)
+  input:not(.ant-select-input):not(.agnes-settings-toolbar input):focus-visible,
 :is(#config-form, #account-dialog) select:focus-visible {
   background: var(--agnes-input-surface);
 }
-:is(#config-form, #account-dialog) input:not(.ant-select-input):disabled,
+:is(#config-form, #account-dialog) input:not(.ant-select-input):not(.agnes-settings-toolbar input):disabled,
 :is(#config-form, #account-dialog) select:disabled {
   color: var(--agnes-text-tertiary);
   border-color: var(--agnes-line-primary);

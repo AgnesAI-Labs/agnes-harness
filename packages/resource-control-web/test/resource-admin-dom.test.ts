@@ -406,7 +406,7 @@ it('says why a skill source produced no results instead of only that it failed',
   byId('skills-tab').click()
   await vi.waitFor(() => expect(byId('resource-list').textContent).toContain('Refresh failed'))
   const rendered = byId('resource-list').textContent ?? ''
-  expect(rendered).toContain('Skill sources: 1')
+  expect(rendered).toContain('Some skill directories could not be checked (1). Expand to see why.')
   expect(rendered).toContain('A SKILL.md frontmatter block is invalid')
   // 旧文案是实现视角的措辞，现在不再出现。
   expect(rendered).not.toContain('没有可保留的目录')
@@ -418,7 +418,10 @@ it('uses the shared empty-state structure for Skill and MCP pages', async () => 
 
   const skillsEmpty = byId('resource-list').querySelector<HTMLElement>('.admin-empty-state')
   expect(skillsEmpty?.querySelector('h2')?.textContent).toBe('No Skills found')
-  expect(skillsEmpty?.querySelectorAll('.admin-empty-state-hints li')).toHaveLength(5)
+  expect(
+    [...(skillsEmpty?.querySelectorAll('.admin-empty-state-hints li') ?? [])].map((item) => item.textContent),
+  ).toEqual(['Agnes home: $AGH_HOME/skills'])
+  expect(skillsEmpty?.textContent).toContain('AGNES_SKILLS_IMPORT_USER=1')
 
   emptyMcp = true
   byId('mcp-tab').click()

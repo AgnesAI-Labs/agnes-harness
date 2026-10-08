@@ -4,7 +4,8 @@ import { ADMIN_LOCALE_NAMESPACE, contributionText, type RuntimeStateView, source
 import { adminLocaleCatalog } from './locales/admin.js'
 import { ADMIN_LIST_LOCALE_NAMESPACE, adminListLocaleCatalog } from './locales/admin-list.js'
 import { SettingsDetails } from './settings-layout.js'
-import { StateLights, StateSwitch } from './ui/state-lights.js'
+import { Badge } from './ui/badge.js'
+import { StateSwitch } from './ui/state-lights.js'
 import { useUiText } from './ui-locale.js'
 
 export type AdminTab = 'installed' | 'discover'
@@ -134,18 +135,16 @@ export function OrphanPins({
 /** 目录页保留兼容性提示；已安装页不再显示内部状态灯。 */
 function CatalogCompatibility({ item }: { item: PackageCatalogDescriptor }): JSX.Element {
   const { t } = useUiText(ADMIN_LIST_LOCALE_NAMESPACE, adminListLocaleCatalog)
+  const unsupported = item.compatibility === 'unsupported'
   return (
-    <StateLights
-      states={[
-        {
-          label: t('compatibility.label'),
-          value: t(
-            item.compatibility === 'unsupported' ? 'compatibility.unsupported' : 'compatibility.supported',
-          ),
-          tone: item.compatibility === 'unsupported' ? 'bad' : 'ok',
-        },
-      ]}
-    />
+    <span
+      className="plugin-compatibility"
+      title={t(unsupported ? 'compatibility.unsupportedHelp' : 'compatibility.supportedHelp')}
+    >
+      <Badge tone={unsupported ? 'bad' : 'ok'}>
+        {t(unsupported ? 'compatibility.unsupported' : 'compatibility.supported')}
+      </Badge>
+    </span>
   )
 }
 
@@ -284,8 +283,7 @@ export function PluginList({
         const displayName = presentation?.name ?? (t(nameKey) === nameKey ? item.id : t(nameKey))
         const descriptionKey = `row.description.${item.id}`
         const description =
-          presentation?.description ??
-          (t(descriptionKey) === descriptionKey ? t('row.description.generic') : t(descriptionKey))
+          presentation?.description ?? (t(descriptionKey) === descriptionKey ? undefined : t(descriptionKey))
         const failureReason =
           tab === 'installed'
             ? (runtime?.error?.message ??
@@ -320,7 +318,7 @@ export function PluginList({
                 </button>
               </h2>
               {metadataOf?.(item)}
-              <p>{description}</p>
+              {description && <p>{description}</p>}
               <p className="plugin-source">{item.version}</p>
               <SettingsDetails title={t('row.technicalDetails')}>
                 <p>
@@ -328,6 +326,15 @@ export function PluginList({
                 </p>
                 <p>{sourceLabel(item.source as PackageSource, adminText)}</p>
                 <p>{contributionText(item, adminText)}</p>
+                {tab === 'discover' && (
+                  <p>
+                    {t(
+                      (item as PackageCatalogDescriptor).compatibility === 'unsupported'
+                        ? 'compatibility.unsupportedHelp'
+                        : 'compatibility.supportedHelp',
+                    )}
+                  </p>
+                )}
               </SettingsDetails>
               {tab === 'installed' && (
                 <SurfaceLinks links={surfaceLinksOf(item.id)} packageId={item.id} t={t} />

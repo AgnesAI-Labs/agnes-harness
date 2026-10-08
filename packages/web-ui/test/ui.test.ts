@@ -133,6 +133,9 @@ it('lists only reported skill roots and explains optional user-agent imports', a
     'Workspace: .agh/skills, .agents/skills, .claude/skills',
   ])
   expect(host.querySelector('.resource-empty h2')?.textContent).toBe('No Skills found')
+  expect(host.querySelector('.resource-roots > summary')?.textContent).toBe(
+    'Checked 1 skill directory and found no skills.',
+  )
   expect(host.textContent).toContain('AGNES_SKILLS_IMPORT_USER=1')
   expect(host.textContent).not.toContain('Legacy')
   dispose()

@@ -29,3 +29,5 @@
 | `SettingsToolbar` | A | 设置筛选操作栏 | 表单控件与按钮底部对齐，窄屏自动换行 |
 
 | `ConversationInteractionResult` / `interactionToolPresentation` | A | 会话交互结果 | 从工具生命周期生成本地化摘要；原始结果置于“查看详情”，不修改协议数据 |
+
+| `ConversationToolCard` | A | 会话工具行 | 唯一详情按钮；可选 `resultAppendix` 将模型原样回显合并入原始结果详情，保持协议文本可查阅 / One details action; optional `resultAppendix` preserves verbatim result echoes in the same details panel |

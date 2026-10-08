@@ -34,7 +34,7 @@ function renderText(element: ReturnType<typeof createElement>): string {
 describe('plugin list localization', () => {
   it('uses English for the default empty state and keeps contribution IDs in details', () => {
     expect(renderText(createElement(PluginList, listProps))).toContain('No packages are installed')
-    checkContributionDetails('en', 'Review the tools and features in the technical details.')
+    checkContributionDetails('en', 'Compatible')
   })
 
   it('uses the selected locale for the empty state', () => {
@@ -48,7 +48,7 @@ describe('plugin list localization', () => {
     const text = renderText(createElement(UiLocaleProvider, { source }, createElement(PluginList, listProps)))
 
     expect(text).toContain('尚未安装插件')
-    checkContributionDetails('zh-CN', '展开技术详情，查看插件提供的工具和功能。')
+    checkContributionDetails('zh-CN', '兼容')
   })
 })
 
@@ -94,6 +94,7 @@ function checkContributionDetails(locale: 'en' | 'zh-CN', summary: string) {
   expect(details.textContent).toContain('plugin/012345abcdef')
   details.remove()
   expect(host.textContent).not.toContain('plugin/012345abcdef')
-  expect(host.textContent).toContain(summary)
+  expect(host.querySelector('.plugin-compatibility')?.textContent).toBe(summary)
+  expect(host.querySelector('.plugin-row-content > p:not(.plugin-source)')).toBeNull()
   dispose()
 }

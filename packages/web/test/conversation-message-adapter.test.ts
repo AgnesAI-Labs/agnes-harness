@@ -240,7 +240,11 @@ describe('W3b Web-owned leaves and real web-client slots', () => {
     await mount(store)
     const card = item('tool')?.querySelector<HTMLElement>('[data-agnes-tool-card]')
     const button = card?.querySelector<HTMLButtonElement>('.tool-detail')
+    expect(card?.querySelector('.tool-detail-body')?.getAttribute('aria-hidden')).toBe('true')
+    expect(card?.querySelector<HTMLElement>('.tool-detail-text')?.tabIndex).toBe(-1)
     await act(async () => button?.click())
+    expect(card?.querySelector('.tool-detail-body')?.getAttribute('aria-hidden')).toBe('false')
+    expect(card?.querySelector<HTMLElement>('.tool-detail-text')?.tabIndex).toBe(0)
     button?.focus()
     await update(store, [{ ...initial, name: 'web_search', status: 'completed' }])
     expect(item('tool')?.querySelector('[data-agnes-tool-card]')).toBe(card)
@@ -602,10 +606,11 @@ it('summarizes interaction protocol and exact demo echoes while preserving raw d
   await mount(store)
   expect(item('tool')?.querySelector('.tool-name')?.textContent).toBe('提问')
   expect(item('tool')?.querySelector('.tool-summary')?.textContent).toBe('问题已发送，等待你的回答。')
-  const details = item('echo')?.querySelector<HTMLDetailsElement>('[data-testid=interaction-result-details]')
-  expect(details?.open).toBe(false)
-  expect(details?.textContent).toContain(protocol.replace('\n', ' '))
-  expect(item('echo')?.querySelector('[data-testid=interaction-result-summary] > p')).toBeNull()
+  expect(item('echo')?.querySelector('[data-testid=interaction-result-details]')).toBeNull()
+  expect(item('tool')?.querySelectorAll('[data-testid=tool-detail-toggle]')).toHaveLength(1)
+  expect(item('tool')?.querySelector('[data-testid=tool-detail-text]')?.textContent).toContain(
+    protocol.replace('\n', ' '),
+  )
   expect(item('prose')?.querySelector('[data-testid=interaction-result-summary]')).toBeNull()
   expect(item('prose')?.textContent).toContain(`My own explanation: ${protocol}`)
   const answer: UINode = {
@@ -637,9 +642,9 @@ it('summarizes interaction protocol and exact demo echoes while preserving raw d
     text: '[Demo model — local, deterministic, no API key] Tool result: Presented report.md[resource artifact/abc]',
   }
   await update(store, [question, echo, prose, answer, present, artifactEcho])
-  const artifactDetails = item('artifact-echo')?.querySelector<HTMLDetailsElement>(
-    '[data-testid=interaction-result-details]',
+  expect(item('artifact-echo')?.querySelector('[data-testid=interaction-result-details]')).toBeNull()
+  expect(item('present')?.querySelectorAll('[data-testid=tool-detail-toggle]')).toHaveLength(1)
+  expect(item('present')?.querySelector('[data-testid=tool-detail-text]')?.textContent).toContain(
+    'artifact/abc',
   )
-  expect(artifactDetails?.open).toBe(false)
-  expect(artifactDetails?.textContent).toContain('artifact/abc')
 })

@@ -62,8 +62,8 @@ export function ProvidersPanel({
                   title={label('providerName', entry.id) ?? entry.id}
                   actions={
                     <>
-                      <Badge tone={entry.active ? 'ok' : 'off'}>
-                        {t(entry.active ? 'active' : 'inactive')}
+                      <Badge tone={kind === 'model-adapter' || entry.active ? 'ok' : 'off'}>
+                        {t(kind === 'model-adapter' ? 'available' : entry.active ? 'active' : 'inactive')}
                       </Badge>
                       {entry.restartRequired && <Badge tone="warn">{t('restart')}</Badge>}
                     </>

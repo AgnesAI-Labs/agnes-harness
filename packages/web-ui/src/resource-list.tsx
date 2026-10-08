@@ -132,13 +132,26 @@ export const ROOT_FAILURE_KEYS: Record<NonNullable<SkillRootStatus['diagnostic']
  * 文案面向用户，不暴露实现视角的措辞。
  */
 export function ResourceRoots({ roots }: { roots: readonly SkillRootStatus[] }): JSX.Element {
-  const { t } = useUiText(RESOURCE_LIST_LOCALE_NAMESPACE, resourceListLocaleCatalog)
+  const { t, locale } = useUiText(RESOURCE_LIST_LOCALE_NAMESPACE, resourceListLocaleCatalog)
   const counts = { ready: 0, empty: 0, failed: 0 }
   for (const root of roots) {
     if (root.state === 'ready') counts.ready += 1
     else if (root.state === 'empty') counts.empty += 1
     else counts.failed += 1
   }
+  const checked = counts.ready + counts.empty
+  const summaryKey = !roots.length
+    ? 'none'
+    : counts.failed === roots.length
+      ? 'failed'
+      : counts.failed
+        ? counts.ready
+          ? 'partialFound'
+          : 'partialEmpty'
+        : counts.ready
+          ? 'found'
+          : 'empty'
+  const summarySuffix = checked === 1 && summaryKey !== 'failed' ? '.one' : ''
   const labels: Record<SkillRootStatus['state'], string> = {
     ready: t('root.ready'),
     empty: t('root.empty'),
@@ -148,14 +161,11 @@ export function ResourceRoots({ roots }: { roots: readonly SkillRootStatus[] }):
   return (
     <details className="resource-roots">
       <summary>
-        {[
-          t('root.source-count', { count: roots.length }),
-          t('root.ready-count', { count: counts.ready }),
-          t('root.empty-count', { count: counts.empty }),
-          counts.failed ? t('root.failed-count', { count: counts.failed }) : '',
-        ]
-          .filter(Boolean)
-          .join(' · ')}
+        {t(`root.summary.${summaryKey}${summarySuffix}`, {
+          count: new Intl.NumberFormat(locale).format(counts.ready + counts.empty),
+          found: new Intl.NumberFormat(locale).format(counts.ready),
+          failed: new Intl.NumberFormat(locale).format(counts.failed),
+        })}
       </summary>
       <ul>
         {roots.map((root) => (

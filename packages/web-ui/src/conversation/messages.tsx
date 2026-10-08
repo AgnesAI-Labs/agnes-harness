@@ -468,12 +468,14 @@ export function ConversationToolCard({
   icon,
   onExpandedChange,
   presentation,
+  resultAppendix,
   t = fallbackT,
 }: {
   node: ToolNode
   icon?: ReactNode
   onExpandedChange?: (expanded: boolean) => void
   presentation?: { name: string; summary: string } | undefined
+  resultAppendix?: string | undefined
   t?: Translate
 }) {
   const [expanded, setExpanded] = useState(false)
@@ -495,6 +497,7 @@ export function ConversationToolCard({
     t('tool.detail.status', { status: outcome.label }),
     ...(node.argsPreview ? ['', t('tool.detail.args'), node.argsPreview] : []),
     ...(outcome.text ? ['', outcome.section, outcome.text] : []),
+    ...(resultAppendix ? ['', resultAppendix] : []),
   ].join('\n')
   const detail = useInteractionSnapshot(detailHost, nextDetail)
   return (
@@ -527,9 +530,14 @@ export function ConversationToolCard({
       <div className="tool-summary" hidden={!meaningful}>
         {meaningful ? summary : ''}
       </div>
-      <div className="tool-detail-body">
+      <div className="tool-detail-body" aria-hidden={!expanded}>
         <div className="tool-detail-inner">
-          <div ref={detailHost} className="tool-detail-text" data-testid="tool-detail-text">
+          <div
+            ref={detailHost}
+            className="tool-detail-text"
+            data-testid="tool-detail-text"
+            tabIndex={expanded ? 0 : -1}
+          >
             {detail}
           </div>
         </div>

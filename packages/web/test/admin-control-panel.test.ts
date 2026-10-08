@@ -297,6 +297,26 @@ it('navigates runtime capabilities and never offers a disallowed security preset
         selectedFor: ['default'],
         scope: 'session',
       },
+      {
+        kind: 'model-adapter',
+        id: 'available-a',
+        version: '1.0.0',
+        sourcePackage: '@acme/models',
+        capabilities: [],
+        restartRequired: false,
+        active: true,
+        selectedFor: ['route:a'],
+      },
+      {
+        kind: 'model-adapter',
+        id: 'available-b',
+        version: '1.0.0',
+        sourcePackage: '@acme/models',
+        capabilities: [],
+        restartRequired: false,
+        active: false,
+        selectedFor: [],
+      },
     ],
     presets: [{ id: 'standard', isDefault: true }],
     localPluginFolders: { home: '/synthetic/plugins', workspace: '/synthetic/.agh/plugins' },
@@ -337,6 +357,12 @@ it('navigates runtime capabilities and never offers a disallowed security preset
     if (page === 'providers') {
       expect(host.textContent).toContain('@acme/loop')
       expect(host.querySelectorAll('[data-testid^="providers-"]')).toHaveLength(8)
+      const adapters = host.querySelector('[data-testid=providers-model-adapter]')
+      expect(
+        [...(adapters?.querySelectorAll('.agnes-settings-actions .agnes-ui-badge') ?? [])].map(
+          (badge) => badge.textContent,
+        ),
+      ).toEqual(['Available', 'Available'])
     }
     if (page === 'security') {
       expect(host.querySelectorAll('[data-testid^="security-"]')).toHaveLength(3)
