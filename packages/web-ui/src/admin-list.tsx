@@ -282,31 +282,30 @@ export function PluginList({
                 : (item as PackageInstalledDescriptor).actualReason))
             : undefined
         return (
+          // biome-ignore lint/a11y/useKeyWithClickEvents: The heading button provides the same keyboard action; the row adds a pointer hit area without nesting interactive roles.
           <article
             key={`${item.id}@${item.version}`}
             className="plugin-row"
             data-plugin-id={item.id}
             data-tab={tab}
-            tabIndex={0}
-            role="button"
-            aria-label={t('row.details', { id: item.id })}
             onClick={(event) => {
               // 行内 Switch / 动作按钮自己处理点击；置灰控件在部分浏览器里不发 click，
               // 事件会落到行上，所以这里再挡一次，避免「拨开关顺带打开详情」。
               if (event.target instanceof Element && event.target.closest('.switch, button, a')) return
               onOpen(item)
             }}
-            onKeyDown={(event) => {
-              // 行内控件的按键会冒泡到行：焦点在 Switch 上按空格是拨开关，不是打开详情。
-              if (event.target !== event.currentTarget) return
-              if (event.key === 'Enter' || event.key === ' ') {
-                event.preventDefault()
-                onOpen(item)
-              }
-            }}
           >
             <div className="plugin-row-content">
-              <h2>{item.id}</h2>
+              <h2>
+                <button
+                  type="button"
+                  className="plugin-details-button"
+                  aria-label={t('row.details', { id: item.id })}
+                  onClick={() => onOpen(item)}
+                >
+                  {item.id}
+                </button>
+              </h2>
               {metadataOf?.(item)}
               <p>{contributionText(item, adminText)}</p>
               <p className="plugin-source">

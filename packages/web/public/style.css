@@ -188,17 +188,17 @@
   --agnes-trace-lane-context: #3fa37a;
   --agnes-trace-lane-model: #6f62c4;
   --agnes-trace-lane-tool: #d4843a;
-  --agnes-trace-badge-user-text: #3b6fb6;
+  --agnes-trace-badge-user-text: var(--agnes-text-primary);
   --agnes-trace-badge-user-bg: rgb(59 111 182 / 14%);
-  --agnes-trace-badge-context-text: #2f8f6a;
+  --agnes-trace-badge-context-text: var(--agnes-text-primary);
   --agnes-trace-badge-context-bg: rgb(47 143 106 / 14%);
-  --agnes-trace-badge-assistant-text: #5c52a8;
+  --agnes-trace-badge-assistant-text: var(--agnes-text-primary);
   --agnes-trace-badge-assistant-bg: rgb(92 82 168 / 14%);
-  --agnes-trace-badge-tool-text: #c36b22;
+  --agnes-trace-badge-tool-text: var(--agnes-text-primary);
   --agnes-trace-badge-tool-bg: rgb(195 107 34 / 14%);
-  --agnes-trace-badge-approval-text: #8a5a12;
+  --agnes-trace-badge-approval-text: var(--agnes-text-primary);
   --agnes-trace-badge-approval-bg: rgb(138 90 18 / 12%);
-  --agnes-trace-badge-compaction-text: #4e586a;
+  --agnes-trace-badge-compaction-text: var(--agnes-text-primary);
   --agnes-trace-badge-compaction-bg: rgb(78 88 106 / 12%);
 }
 
@@ -293,17 +293,17 @@
   --agnes-trace-lane-context: #3fa37a;
   --agnes-trace-lane-model: #6f62c4;
   --agnes-trace-lane-tool: #d4843a;
-  --agnes-trace-badge-user-text: #3b6fb6;
+  --agnes-trace-badge-user-text: var(--agnes-text-primary);
   --agnes-trace-badge-user-bg: rgb(59 111 182 / 14%);
-  --agnes-trace-badge-context-text: #2f8f6a;
+  --agnes-trace-badge-context-text: var(--agnes-text-primary);
   --agnes-trace-badge-context-bg: rgb(47 143 106 / 14%);
-  --agnes-trace-badge-assistant-text: #5c52a8;
+  --agnes-trace-badge-assistant-text: var(--agnes-text-primary);
   --agnes-trace-badge-assistant-bg: rgb(92 82 168 / 14%);
-  --agnes-trace-badge-tool-text: #c36b22;
+  --agnes-trace-badge-tool-text: var(--agnes-text-primary);
   --agnes-trace-badge-tool-bg: rgb(195 107 34 / 14%);
-  --agnes-trace-badge-approval-text: #8a5a12;
+  --agnes-trace-badge-approval-text: var(--agnes-text-primary);
   --agnes-trace-badge-approval-bg: rgb(138 90 18 / 12%);
-  --agnes-trace-badge-compaction-text: #4e586a;
+  --agnes-trace-badge-compaction-text: var(--agnes-text-primary);
   --agnes-trace-badge-compaction-bg: rgb(78 88 106 / 12%);
 }
 

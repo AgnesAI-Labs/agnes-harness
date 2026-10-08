@@ -793,6 +793,8 @@ export function createSettingsController(options: SettingsControllerOptions): Se
     }
   }
   const renderAccounts = (): void => {
+    const guard = optionalElement('config-account-guard', 'p')
+    if (guard) guard.hidden = !editingId || editingId !== configuration?.defaultAccountId
     const currentAccountList = accountList()
     if (renderedAccountList && renderedAccountList !== currentAccountList) {
       unmountRegion(renderedAccountList)

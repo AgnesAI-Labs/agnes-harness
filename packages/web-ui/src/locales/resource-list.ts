@@ -4,6 +4,7 @@ export const RESOURCE_LIST_LOCALE_NAMESPACE = '@agnes/web-ui/resource-list'
 
 export const resourceListLocaleCatalog: LocaleCatalog = {
   en: {
+    ...resourceFailureCatalog.en,
     loading: 'Reading the local resource catalog…',
     error: 'Could not read the resource catalog.',
     retry: 'Retry',
@@ -39,6 +40,7 @@ export const resourceListLocaleCatalog: LocaleCatalog = {
     'row.enable': 'Request to enable {name}',
   },
   'zh-CN': {
+    ...resourceFailureCatalog['zh-CN'],
     loading: '正在读取本地资源目录…',
     error: '资源目录读取失败。',
     retry: '重试读取',
@@ -74,3 +76,5 @@ export const resourceListLocaleCatalog: LocaleCatalog = {
     'row.enable': '请求启用 {name}',
   },
 }
+
+import { resourceFailureCatalog } from '../resource-failure.js'

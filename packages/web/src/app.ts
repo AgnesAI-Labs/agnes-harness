@@ -686,10 +686,15 @@ function setConnection(value: 'connecting' | 'connected' | 'reconnecting' | 'clo
   renderControls()
 }
 function renderControls(): void {
-  renderGoalCard(goalHost, projection, !connected || sessionPending || sending || stopping, (command) => {
-    composerRuntime.setDraft(command)
-    submitComposer()
-  })
+  renderGoalCard(
+    goalHost,
+    draftingNew ? undefined : projection,
+    !connected || sessionPending || sending || stopping,
+    (command) => {
+      composerRuntime.setDraft(command)
+      submitComposer()
+    },
+  )
   // 切换会话加载期间的视觉态：旧画面降不透明度提示「正在准备」，新投影就绪后
   // 由 sessionPending = false 的那次 renderControls 平滑恢复。
   document.body.classList.toggle('session-switching', sessionPending)
@@ -2024,8 +2029,14 @@ async function openAdminPane(pane: AdminPaneName, tab: ResourceTab = 'skills'): 
     if (pane !== 'resources') return
     for (const control of controls) {
       const selected = control.id === `${tab}-tab`
-      control.setAttribute('aria-selected', String(selected))
-      control.tabIndex = selected ? 0 : -1
+      if (control.getAttribute('role') === 'tab') {
+        control.setAttribute('aria-selected', String(selected))
+        control.tabIndex = selected ? 0 : -1
+      } else {
+        control.removeAttribute('aria-selected')
+        control.setAttribute('aria-current', selected ? 'page' : 'false')
+        control.tabIndex = 0
+      }
     }
   }
   let resourceReady = false
@@ -2512,6 +2523,7 @@ window.addEventListener('pagehide', () => {
 composerRuntime.resize()
 
 run(async () => {
+  const startupSelection = selection
   setConnection('connecting')
   if (!wsUrl) throw new Error(t('app.ws.unavailable'))
   // A first connection that fails never reports `closed`; the page may hold a stale daemon address.
@@ -2545,6 +2557,8 @@ run(async () => {
     showError(new Error(t('app.workspaceList.unreadable'), { cause: error }))
   }
   const page = await list()
+  // A user selection made while startup was loading owns the current view.
+  if (selection !== startupSelection) return
   const selected = new URL(location.href).searchParams.get('session')
   if (startupRequest.get('new') === '1') {
     await beginNewDraft(configured)

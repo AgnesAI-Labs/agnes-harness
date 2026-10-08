@@ -363,7 +363,7 @@ textarea.agnes-settings-input {
 }
 .agnes-settings-section-tabs button[aria-selected="true"] {
   border-bottom-color: var(--agnes-text-emphasis);
-  color: var(--agnes-text-emphasis);
+  color: var(--agnes-text-primary);
 }
 .agnes-settings-section-tabs button:focus-visible {
   outline: 2px solid var(--agnes-text-emphasis);
@@ -421,4 +421,58 @@ textarea.agnes-settings-input {
   border: 0;
   border-radius: 0;
   background: transparent;
+}
+
+/* Static Ant styles must use the same contrast-safe brand colors as native controls. */
+.agnes-ui-button.ant-btn-primary:not(:disabled) {
+  color: var(--agnes-text-inverse);
+  background: var(--agnes-brand-primary);
+  border-color: var(--agnes-brand-primary);
+}
+.agnes-ui-button.ant-btn-primary:not(:disabled):hover,
+.agnes-ui-button.ant-btn-primary:not(:disabled):focus-visible {
+  background: var(--agnes-brand-primary);
+  border-color: var(--agnes-brand-primary);
+}
+.plugin-details-button {
+  color: inherit;
+  font: inherit;
+  text-align: start;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+}
+.plugin-details-button:focus-visible {
+  outline: 2px solid var(--agnes-brand-focus-ring);
+  outline-offset: 4px;
+  border-radius: var(--radius-sm);
+}
+.primary-button:not(:disabled):hover {
+  color: var(--agnes-button-primary-content);
+  background: var(--agnes-button-primary-bg-hover);
+  border-color: var(--agnes-button-primary-bg-hover);
+}
+.agnes-ui-popover .ant-popover-container,
+.agnes-ui-popover .ant-popover-inner {
+  color: var(--agnes-text-primary);
+  background: var(--agnes-bg-popover);
+  border: 1px solid var(--agnes-line-primary);
+  box-shadow: var(--shadow-elevation);
+}
+.agnes-ui-popover .ant-popover-arrow {
+  --antd-arrow-background-color: var(--agnes-bg-popover);
+}
+.composer-agent.agnes-ui-button:not(:disabled):hover {
+  color: var(--agnes-text-secondary);
+  background: var(--agnes-bg-hover);
+}
+.agent-picker-panel,
+.agnes-ui-popover .ant-popover-inner-content {
+  color: var(--agnes-text-primary);
+}
+/* Enabling a primary action changes its semantic state immediately; avoid low-contrast color blends. */
+.agnes-ui-button.ant-btn-primary,
+button.primary-button {
+  transition-property: box-shadow, transform;
 }

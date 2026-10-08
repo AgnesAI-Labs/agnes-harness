@@ -381,6 +381,33 @@ describe('web permission synchronization', () => {
     return { old, publish, timeline, connect }
   }
 
+  it('keeps a new draft when the startup session list arrives after the user chooses New', async () => {
+    installPublicFixture()
+    const pending = deferred<{ items: { sessionId: string }[] }>()
+    const client = {
+      connectionState: 'connected',
+      initialize: vi.fn(async () => undefined),
+      on: vi.fn(() => () => undefined),
+      close: vi.fn(async () => undefined),
+      apis: vi.fn(async () => ({ profile: { models: [] } })),
+      config: {
+        get: vi.fn(async () => ({ configured: true })),
+        providers: vi.fn(async () => ({ providers: [] })),
+      },
+      workspace: { list: vi.fn(async () => ({ items: [] })) },
+      session: { list: vi.fn(() => pending.promise), load: vi.fn() },
+    }
+    sdk.createClient.mockReturnValue(client)
+    await import('../src/app.js')
+    await vi.waitFor(() => expect(client.session.list).toHaveBeenCalled())
+    document.getElementById('new')?.click()
+    pending.resolve({ items: [{ sessionId: 'old' }] })
+    await vi.waitFor(() => expect(document.querySelector('[data-testid="goal-bar"]')).toBeNull())
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    expect(binding.loadWebSession).not.toHaveBeenCalled()
+    expect((document.getElementById('new-session') as HTMLDialogElement).open).toBe(true)
+  })
+
   it('restores full access on reopening, applies workspace selections, and follows remote patches', async () => {
     const { old, publish } = await boot(false)
     const staleReady = deferred<void>()

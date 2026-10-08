@@ -782,11 +782,14 @@ export const Trace = forwardRef<TraceHandle, TraceProps>(function Trace(
     }
     root.hidden = !next
     document.body.classList.toggle('trace-open', next)
-    options.toggle.setAttribute('aria-pressed', next ? 'true' : 'false')
+    if (options.toggle.getAttribute('role') === 'tab') options.toggle.removeAttribute('aria-pressed')
+    else options.toggle.setAttribute('aria-pressed', next ? 'true' : 'false')
     options.toggle.setAttribute('aria-selected', next ? 'true' : 'false')
     if (options.chatToggle) {
       options.chatToggle.setAttribute('aria-selected', next ? 'false' : 'true')
-      options.chatToggle.setAttribute('aria-pressed', next ? 'false' : 'true')
+      if (options.chatToggle.getAttribute('role') === 'tab')
+        options.chatToggle.removeAttribute('aria-pressed')
+      else options.chatToggle.setAttribute('aria-pressed', next ? 'false' : 'true')
     }
     if (options.conversation) options.conversation.hidden = next
     if (persist) store.setItem(TRACE_PANEL_STORAGE_KEY, next ? 'open' : 'closed')

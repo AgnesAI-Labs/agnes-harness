@@ -1,5 +1,6 @@
 import { mkdir } from 'node:fs/promises'
 import { join } from 'node:path'
+import AxeBuilder from '@axe-core/playwright'
 import { expect, test } from '@playwright/test'
 import { localeKeys, unresolvedLabels } from './i18n.js'
 
@@ -14,7 +15,7 @@ for (const locale of ['zh-CN', 'en'])
       [1280, 800],
     ] as const) {
       test(`UI quality ${locale}/${theme}/${width}x${height}`, async ({ page }) => {
-        test.setTimeout(120_000)
+        test.setTimeout(process.env.AGH_UI_AXE === '1' ? 240_000 : 120_000)
         const knownKeys = await localeKeys()
         const errors: string[] = []
         page.on('pageerror', (error: Error) => errors.push(error.message))
@@ -30,6 +31,14 @@ for (const locale of ['zh-CN', 'en'])
         if (folder) await mkdir(folder, { recursive: true })
         async function screen(name: string) {
           await page.waitForTimeout(250)
+          await page.evaluate(() =>
+            Promise.all(
+              document
+                .getAnimations()
+                .filter((animation) => animation instanceof CSSTransition)
+                .map((animation) => animation.finished.catch(() => undefined)),
+            ),
+          )
           const unresolved = await page.evaluate(unresolvedLabels, knownKeys)
           expect(unresolved, `${name}: unresolved locale keys`).toEqual([])
           expect(
@@ -38,8 +47,20 @@ for (const locale of ['zh-CN', 'en'])
           ).toBe(true)
           expect(errors, `${name}: uncaught browser errors`).toEqual([])
           if (folder) await page.screenshot({ path: join(folder, `${name}.png`) })
+          if (process.env.AGH_UI_AXE === '1' && width === 1440) {
+            const scan = await new AxeBuilder({ page })
+              .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'])
+              .analyze()
+            expect(
+              scan.violations.map(({ id, nodes }) => ({
+                id,
+                targets: nodes.map(({ target, failureSummary }) => ({ target, failureSummary })),
+              })),
+              `${name}: accessibility`,
+            ).toEqual([])
+          }
         }
-        await page.goto('/')
+        await page.goto('/?new=1')
         await expect(page.locator('#settings')).toBeVisible()
         await page.waitForTimeout(1000)
         if (await page.locator('#new-session[open]').count()) {
@@ -78,6 +99,10 @@ for (const locale of ['zh-CN', 'en'])
           ['appearance-settings', 'general'],
         ]) {
           await page.locator(`#${id}`).click()
+          if (id === 'skills-tab' || id === 'mcp-tab') {
+            await expect(page.locator(`#${id}`)).not.toHaveAttribute('role', 'tab')
+            await expect(page.locator(`#${id}`)).toHaveAttribute('tabindex', '0')
+          }
           await screen(`settings-${name}`)
         }
         const groups: Record<string, string> = {
@@ -114,6 +139,7 @@ for (const locale of ['zh-CN', 'en'])
           const tab = page.getByTestId(`settings-nav-${id}-tab`)
           if (await tab.count()) await tab.click()
           await expect(page.getByTestId(`settings-page-${id}`)).toBeVisible()
+          if (id === 'plugins') await expect(page.locator('#install-source')).toBeEnabled()
           await screen(`runtime-${id}`)
           if (id === 'bundles' && (await page.getByTestId('session-tool-groups').count())) {
             await page.getByTestId('session-tool-groups').first().locator('summary').first().click()

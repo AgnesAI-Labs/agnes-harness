@@ -251,7 +251,10 @@ export function ResourceRow({
         )}
         {item.lastSafeError && (
           <p className="resource-safe-error">
-            {t('row.safe-error', { code: item.lastSafeError.code, message: item.lastSafeError.message })}
+            {t('row.safe-error', {
+              code: item.lastSafeError.code,
+              message: resourceFailureLabel(item.lastSafeError.code, t),
+            })}
           </p>
         )}
       </div>
@@ -264,3 +267,5 @@ export function ResourceRow({
     </article>
   )
 }
+
+import { resourceFailureLabel } from './resource-failure.js'

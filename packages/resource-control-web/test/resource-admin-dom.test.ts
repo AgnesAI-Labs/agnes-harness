@@ -341,7 +341,7 @@ it('flags credential material in the URL before submit', () => {
   change('mcp-name', 'Demo')
   change('mcp-transport', 'http')
   change('mcp-url', 'https://example.com/mcp?token=x')
-  expect(byId('mcp-error').textContent).toContain('SecretRef')
+  expect(byId('mcp-error').textContent).toContain('credential reference')
   expect(byId<HTMLInputElement>('mcp-url').getAttribute('aria-invalid')).toBe('true')
 })
 
@@ -509,7 +509,7 @@ it('keeps the row Switch on the requested state so a failed MCP can still be sto
   expect(toggle?.getAttribute('aria-checked')).toBe('true')
   expect(row?.querySelector('.state-light')).toBeNull()
   expect(row?.textContent).toContain('MCP_CONNECT_FAILED')
-  expect(row?.textContent).toContain('stdio executable is not allowed by profile policy')
+  expect(row?.textContent).toContain('The connection failed. Check its configuration and try again.')
   row?.click()
   expect(byId<HTMLDialogElement>('resource-detail').open).toBe(true)
   expect(byId('resource-detail').textContent).not.toContain('Desired state')
@@ -572,19 +572,31 @@ it('preserves a failed operation notice after catalog reload', async () => {
   action('Reconnect')
   await vi.waitFor(() => expect(submitted('mcp/list')).toHaveLength(2))
   await settle()
-  expect(byId('resource-notice').textContent).toBe('连接已断开，请重连。')
+  expect(byId('resource-notice').textContent).toBe(
+    'The connection failed. Check its configuration and try again.',
+  )
+  expect(byId('resource-notice').textContent).not.toContain('连接已断开')
+  document.documentElement.lang = 'zh-CN'
+  window.dispatchEvent(new Event('agnes:locale-changed'))
+  await vi.waitFor(() => expect(byId('resource-notice').textContent).toBe('连接失败。请检查配置后重试。'))
   expect(byId('resource-notice').dataset.kind).toBe('error')
 })
 
 it('shows rejected commands and disconnected status safely; Skills remains reachable', async () => {
   refused = true
   action('Enable')
-  await vi.waitFor(() => expect(byId('resource-notice').textContent).toBe('请先信任当前版本。'))
+  await vi.waitFor(() =>
+    expect(byId('resource-notice').textContent).toBe(
+      'This action is not permitted. Check trust and permissions.',
+    ),
+  )
   expect(submitted('mcp/enable')).toHaveLength(0)
   expect(submitted('operations/get')).toHaveLength(0)
   action('View connection status')
   await vi.waitFor(() =>
-    expect(byId('resource-detail').textContent).toContain('MCP_DISCONNECTED: 连接已断开。'),
+    expect(byId('resource-detail').textContent).toContain(
+      'MCP_DISCONNECTED: The connection failed. Check its configuration and try again.',
+    ),
   )
   offline = true
   action('Reconnect')
@@ -630,7 +642,9 @@ it('keeps rejected creation visible in the open dialog', async () => {
   change('mcp-name', 'Created MCP')
   change('mcp-executable', 'fixture')
   await submitMcpForm()
-  await vi.waitFor(() => expect(byId('mcp-error').textContent).toBe('请先信任当前版本。'))
+  await vi.waitFor(() =>
+    expect(byId('mcp-error').textContent).toBe('This action is not permitted. Check trust and permissions.'),
+  )
   expect(byId<HTMLDialogElement>('mcp-dialog').open).toBe(true)
   expect(submitted('operations/get')).toHaveLength(0)
 })

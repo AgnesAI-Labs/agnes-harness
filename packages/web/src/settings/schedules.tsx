@@ -359,7 +359,7 @@ export function SchedulesPage({ api, t }: { api?: SchedulesApi | undefined; t(ke
           }}
         >
           <p>{t('schedulesConfirmBody')}</p>
-          {error && <SettingsState tone="error">{t(error)}</SettingsState>}
+          {typeof error === 'string' && <SettingsState tone="error">{t(error)}</SettingsState>}
           <Button
             htmlType="button"
             data-testid="schedules-archive-confirm"

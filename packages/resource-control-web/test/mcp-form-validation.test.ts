@@ -107,7 +107,7 @@ describe('MCP form live validation mirrors the runtime schema', () => {
     expect(messages(empty, submit).join('\n')).toContain('Enter an executable')
     expect(messages({ ...http(''), toolsText: '' }, submit).join('\n')).toContain('HTTPS')
     expect(messages({ ...http(''), secretKind: 'http-bearer', secretText: '' }, submit).join('\n')).toContain(
-      'SecretRef',
+      'credential reference',
     )
   })
 })

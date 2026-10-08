@@ -4,6 +4,7 @@ export const RESOURCE_DETAIL_LOCALE_NAMESPACE = '@agnes/web-ui/resource-detail'
 
 export const resourceDetailLocaleCatalog: LocaleCatalog = {
   en: {
+    ...resourceFailureCatalog.en,
     'close.aria': 'Close details for {title}',
     close: 'Close details',
     'skill.kind': 'Skill resource',
@@ -34,6 +35,7 @@ export const resourceDetailLocaleCatalog: LocaleCatalog = {
     'mcp.edit': 'Edit',
   },
   'zh-CN': {
+    ...resourceFailureCatalog['zh-CN'],
     'close.aria': '关闭 {title} 的详情',
     close: '关闭详情',
     'skill.kind': '技能 资源',
@@ -63,3 +65,5 @@ export const resourceDetailLocaleCatalog: LocaleCatalog = {
     'mcp.edit': '编辑',
   },
 }
+
+import { resourceFailureCatalog } from '../resource-failure.js'

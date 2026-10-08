@@ -145,6 +145,10 @@ function templateFromSettingsMarkup(entries?: readonly SettingsNavigationEntry[]
       button.id = entry.navigationId ?? `runtime-settings-${entry.id}`
       button.type = 'button'
       button.className = 'settings-nav-item'
+      button.removeAttribute('role')
+      button.removeAttribute('aria-selected')
+      button.removeAttribute('aria-controls')
+      button.tabIndex = 0
       button.dataset.settingsSection = entry.id
       button.dataset.testid = `settings-nav-${entry.id}`
       button.dataset.settingsIcon = entry.icon
@@ -437,7 +441,7 @@ function SettingsBuiltinImpl(
         }
         if (pane === 'resources') {
           for (const tab of ['skills', 'mcp'])
-            root.querySelector(`#${tab}-tab`)?.setAttribute('aria-selected', String(tab === id))
+            root.querySelector(`#${tab}-tab`)?.setAttribute('aria-current', tab === id ? 'page' : 'false')
           root.querySelector('#resource-list')?.setAttribute('aria-labelledby', `${id}-tab`)
         }
         if (notify) {

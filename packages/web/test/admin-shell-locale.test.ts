@@ -105,12 +105,12 @@ it('translates mounted plugin and resource settings panes with their owning cata
   })
 
   expect(pluginHost.querySelector('#install-source')?.textContent).toBe('从来源安装')
-  expect(resourceHost.querySelector('#skill-refresh')?.textContent).toBe('刷新 Skill 目录')
+  expect(resourceHost.querySelector('#skill-refresh')?.textContent).toBe('刷新技能目录')
 
   document.documentElement.lang = 'en'
   window.dispatchEvent(new Event('agnes:locale-changed'))
   expect(pluginHost.querySelector('#install-source')?.textContent).toBe('Install from source')
-  expect(resourceHost.querySelector('#skill-refresh')?.textContent).toBe('Refresh Skill catalog')
+  expect(resourceHost.querySelector('#skill-refresh')?.textContent).toBe('Refresh skills catalog')
 
   locale.dispose()
   pluginRoot.unmount()

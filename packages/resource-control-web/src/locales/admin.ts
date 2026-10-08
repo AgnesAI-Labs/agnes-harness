@@ -1,10 +1,12 @@
 import type { LocaleCatalog } from '@agnes/web-ui'
+import { resourceFailureCatalog } from '@agnes/web-ui'
 import { resourceAdminShellLocaleCatalog } from './shell.js'
 
 export const RESOURCE_ADMIN_LOCALE_NAMESPACE = '@agnes/resource-control-web/admin'
 
 export const resourceAdminLocaleCatalog: LocaleCatalog = {
   en: {
+    ...resourceFailureCatalog.en,
     ...resourceAdminShellLocaleCatalog.en,
     'error.unavailable': 'The resource admin service is temporarily unavailable. Try again later.',
     'error.not-connected': 'Resource admin is not connected.',
@@ -67,14 +69,14 @@ export const resourceAdminLocaleCatalog: LocaleCatalog = {
     'error.form.identity': 'Enter a service ID and display name.',
     'error.form.executable': 'Enter an executable allowed by local policy.',
     'error.form.env-format': 'Use TOKEN=secret://namespace/name, with each environment variable listed once.',
-    'error.form.env-empty': 'Enter at least one environment-variable SecretRef.',
+    'error.form.env-empty': 'Enter at least one environment-variable credential reference.',
     'error.form.url': 'Enter an HTTPS address or a loopback HTTP address allowed by local policy.',
-    'error.form.secret': 'Enter an existing SecretRef.',
+    'error.form.secret': 'Enter an existing credential reference.',
     'validation.url-format': 'Enter a complete URL.',
     'validation.url-no-credentials':
-      'The address cannot include a username, password, or #fragment. Use a SecretRef for credentials.',
+      'The address cannot include a username, password, or #fragment. Use a credential reference for credentials.',
     'validation.url-no-secret-query':
-      'URL query parameters cannot contain token, secret, password, api-key, or credential. Use a SecretRef for credentials.',
+      'URL query parameters cannot contain token, secret, password, api-key, or credential. Use a credential reference for credentials.',
     'validation.url-secure': 'Use an https:// URL or a loopback http:// URL without spaces.',
     'validation.executable':
       'The executable cannot be a shell (sh/bash/zsh/fish/cmd/powershell/pwsh); a bare name cannot contain spaces.',
@@ -83,7 +85,7 @@ export const resourceAdminLocaleCatalog: LocaleCatalog = {
     'validation.env-name':
       'Environment variable {index} needs a valid uppercase name; reserved names such as PATH and HOME are not allowed.',
     'validation.env-ref': 'Environment variable {index} must use the form TOKEN=secret://namespace/name.',
-    'validation.secret-ref': 'Use a SecretRef in the form secret://namespace/name.',
+    'validation.secret-ref': 'Use a credential reference in the form secret://namespace/name.',
     'validation.tools-limit': 'Allow at most {count} tools.',
     'validation.tool-name':
       'Tool name {index} is invalid. It must start with a letter and contain only letters, numbers, underscores, dots, or hyphens.',
@@ -104,6 +106,7 @@ export const resourceAdminLocaleCatalog: LocaleCatalog = {
     'tab.label': 'Resource type',
   },
   'zh-CN': {
+    ...resourceFailureCatalog['zh-CN'],
     ...resourceAdminShellLocaleCatalog['zh-CN'],
     'error.unavailable': '资源管理后台暂时不可用，请稍后重试。',
     'error.not-connected': '资源管理尚未连接。',
@@ -121,7 +124,7 @@ export const resourceAdminLocaleCatalog: LocaleCatalog = {
     'notice.created': 'MCP「{name}」已创建，但尚未可用：请检查配置后点击「启用」。',
     'empty.mcp.title': '还没有 MCP 服务',
     'empty.mcp.description': '添加一个 MCP 服务后，可以在这里查看连接和启用状态。',
-    'empty.skills.title': '还没有发现 Skill',
+    'empty.skills.title': '还没有发现 技能',
     'empty.skills.description':
       '把 SKILL.md 放到下列模板路径后刷新。只扫描这些根的直属子目录，不会递归，也不会读取普通 skills/ 文件夹。',
     'progress.waiting': '正在等待后台…',
@@ -140,7 +143,7 @@ export const resourceAdminLocaleCatalog: LocaleCatalog = {
     'action.request': '请求{action} {kind}「{name}」\n版本：{revision}',
     'action.remove-skill.label': '永久删除',
     'action.remove-skill.summary':
-      '永久删除 Skill「{name}」及目录中的全部文件。不可恢复；同名的其他来源可能接替生效。用户目录中的 Skill 可能也被其他应用使用。',
+      '永久删除 技能「{name}」及目录中的全部文件。不可恢复；同名的其他来源可能接替生效。用户目录中的技能可能也被其他应用使用。',
     'action.test-mcp': '测试连接',
     'action.test-mcp-summary': '测试 MCP「{name}」\n{revision}\n测试不会启用服务或调用工具。',
     'action.reconnect': '重连',
@@ -148,22 +151,22 @@ export const resourceAdminLocaleCatalog: LocaleCatalog = {
     'action.remove-mcp': '移除',
     'action.remove-mcp-summary': '移除 MCP「{name}」\n{revision}\n后台会阻断仍被使用或尚未安全退役的定义。',
     'action.refresh-skills':
-      '刷新 Skill 目录\n后台将重新扫描受控根目录，并保留最近一次安全目录直到新结果通过校验。',
+      '刷新技能目录\n后台将重新扫描受控根目录，并保留最近一次安全目录直到新结果通过校验。',
     'action.edit-mcp': '编辑 {name}',
     'action.create-mcp': '添加 MCP 服务',
     'action.update-mcp-summary': '更新 MCP「{name}」\n版本：{revision}\n更新后需要重新启用。',
     'action.create-mcp-summary': '创建 MCP「{name}」\n它将以停用状态保存，可在检查后直接启用。',
-    'action.adjust-priority': '调整同名 Skill「{name}」的覆盖优先级：{current} → {next}。不会改变启用状态。',
+    'action.adjust-priority': '调整同名 技能「{name}」的覆盖优先级：{current} → {next}。不会改变启用状态。',
     'error.form.identity': '请填写服务 ID 和显示名称。',
     'error.form.executable': '请填写受允许的可执行文件。',
     'error.form.env-format': '环境变量格式为 TOKEN=secret://namespace/name，每项只能出现一次。',
-    'error.form.env-empty': '请填写至少一个环境变量 SecretRef。',
+    'error.form.env-empty': '请填写至少一个环境变量凭据引用。',
     'error.form.url': '请填写 HTTPS 地址，或获本地策略允许的 loopback HTTP 地址。',
-    'error.form.secret': '请填写已有的 SecretRef。',
+    'error.form.secret': '请填写已有的凭据引用。',
     'validation.url-format': '地址格式不正确，请填写完整 URL。',
-    'validation.url-no-credentials': '地址不能携带用户名、密码或 #fragment（凭据请用 SecretRef）。',
+    'validation.url-no-credentials': '地址不能携带用户名、密码或 #fragment（凭据请用凭据引用）。',
     'validation.url-no-secret-query':
-      '地址查询参数不能包含 token / secret / password / api-key / credential（凭据请用 SecretRef）。',
+      '地址查询参数不能包含 token / secret / password / api-key / credential（凭据请用凭据引用）。',
     'validation.url-secure': '地址需为 https:// 或 loopback 的 http:// URL，且不含空格。',
     'validation.executable':
       '可执行文件不能是 shell（sh/bash/zsh/fish/cmd/powershell/pwsh），裸名称不能含空格。',
@@ -171,7 +174,7 @@ export const resourceAdminLocaleCatalog: LocaleCatalog = {
     'validation.arg-invalid': '第 {index} 个参数不合法：不能是 -c 或 /c，也不能为空。',
     'validation.env-name': '第 {index} 项环境变量名不合法：需大写字母开头（不能是 PATH/HOME 等保留名）。',
     'validation.env-ref': '第 {index} 项需形如 TOKEN=secret://namespace/name。',
-    'validation.secret-ref': 'SecretRef 需形如 secret://namespace/name。',
+    'validation.secret-ref': '凭据引用 需形如 secret://namespace/name。',
     'validation.tools-limit': '允许工具最多 {count} 个。',
     'validation.tool-name': '第 {index} 个工具名不合法：需以字母开头，只能含字母、数字、下划线、点、连字符。',
     'validation.tool-duplicate': '允许工具中有重复项：「{name}」。',

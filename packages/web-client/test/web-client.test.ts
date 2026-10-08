@@ -794,7 +794,7 @@ describe('SlotOutlet', () => {
     ctx.plugin(clientModule(mod), { packageId: 'p', revision: 'r1' })
     await vi.waitFor(() => {
       expect(el.textContent).toContain('hello-card')
-      expect(el.textContent).not.toContain('Plugin for this slot is not ready')
+      expect(el.textContent).not.toContain(slotLocaleCatalog.en['slot.notReady'])
       expect(el.querySelector('[data-slot="workbench.panel"]')).toBeTruthy()
     }, committed)
   })
@@ -811,7 +811,7 @@ describe('SlotOutlet', () => {
     await vi.waitFor(() => {
       const empty = el.querySelector('[data-slot="workbench.panel"]')
       expect(empty?.hasAttribute('hidden')).toBe(true)
-      expect(el.textContent).not.toContain('Plugin for this slot is not ready')
+      expect(el.textContent).not.toContain(slotLocaleCatalog.en['slot.notReady'])
     }, committed)
 
     registry.register('workbench.panel', () => createElement('div', {}, 'ready-panel'))
@@ -841,7 +841,7 @@ describe('SlotOutlet', () => {
 
     off()
     await vi.waitFor(() => {
-      expect(el.textContent).toContain('Plugin for this slot is not ready')
+      expect(el.textContent).toContain(slotLocaleCatalog.en['slot.notReady'])
       expect(el.querySelector('[data-slot="tool.card.inline"]')).toBe(host)
     }, committed)
   })

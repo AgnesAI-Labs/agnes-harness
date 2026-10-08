@@ -108,6 +108,8 @@ function mount(open = true, readToolDetail?: TracePanelOptions['readToolDetail']
   const chat = document.createElement('button')
   const conversation = document.createElement('div')
   toggle.id = 'view-trace'
+  toggle.setAttribute('role', 'tab')
+  chat.setAttribute('role', 'tab')
   toggle.textContent = '轨迹'
   chat.id = 'view-chat'
   chat.textContent = '对话'
@@ -170,6 +172,8 @@ describe('trace panel', () => {
   it('switches to the trace view and persists without calling projectUI', () => {
     const { root, toggle, chat, conversation, panel, projectUI } = mount(false)
     panel.setOpen(true)
+    expect(toggle.hasAttribute('aria-pressed')).toBe(false)
+    expect(chat.hasAttribute('aria-pressed')).toBe(false)
     expect(root.hidden).toBe(false)
     expect(conversation.hidden).toBe(true)
     chat.click()

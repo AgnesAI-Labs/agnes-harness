@@ -21,6 +21,8 @@ import {
   renderRegion,
   resourceDesiredEnabled,
   resourceDetailLocaleCatalog,
+  resourceFailureKey,
+  resourceFailureLabel,
   resourceListLocaleCatalog,
   type SelectPicker,
   SkillDetailContent,
@@ -165,7 +167,7 @@ class ResourceAdminPage {
       value.code !== 'ADMIN_UNAVAILABLE' &&
       value.code !== 'RESOURCE_ADMIN_UNAVAILABLE'
     ) {
-      this.setRawNotice(value.message, 'error')
+      this.setNotice(resourceFailureKey(value.code), 'error')
       return
     }
     this.setNotice('error.unavailable', 'error')
@@ -373,7 +375,7 @@ class ResourceAdminPage {
       if (terminal.has(op.state)) {
         this.#activeOperation = undefined
         if (op.state === 'succeeded') this.setNotice('notice.succeeded', 'success')
-        else if (op.lastSafeError?.message) this.setRawNotice(op.lastSafeError.message, 'error')
+        else if (op.lastSafeError?.message) this.setNotice(resourceFailureKey(op.lastSafeError.code), 'error')
         else this.setNotice('notice.failed', 'error')
         await this.reload(true)
         if (this.#loadState === 'error') return false
@@ -387,16 +389,34 @@ class ResourceAdminPage {
   }
 
   render(): void {
+    const heading = document.querySelector<HTMLElement>('#resource-settings-pane h2')
+    if (heading) {
+      heading.dataset.i18n = `tab.${this.#tab}`
+      heading.textContent = this.#t(`tab.${this.#tab}`)
+    }
+    const addHint = document.querySelector<HTMLElement>(
+      '#resource-settings-pane [data-i18n="shell.embedded.add-description"]',
+    )
+    if (addHint) addHint.hidden = this.#tab !== 'mcp'
     notice.textContent = this.#notice.key
       ? this.#t(this.#notice.key, this.#notice.vars)
       : (this.#notice.raw ?? '')
     notice.dataset.kind = this.#notice.kind
     const skillTab = $('skills-tab', 'button')
     const mcpTab = $('mcp-tab', 'button')
-    skillTab.setAttribute('aria-selected', String(this.#tab === 'skills'))
-    mcpTab.setAttribute('aria-selected', String(this.#tab === 'mcp'))
-    skillTab.tabIndex = this.#tab === 'skills' ? 0 : -1
-    mcpTab.tabIndex = this.#tab === 'mcp' ? 0 : -1
+    for (const [control, selected] of [
+      [skillTab, this.#tab === 'skills'],
+      [mcpTab, this.#tab === 'mcp'],
+    ] as const) {
+      if (control.getAttribute('role') === 'tab') {
+        control.setAttribute('aria-selected', String(selected))
+        control.tabIndex = selected ? 0 : -1
+      } else {
+        control.removeAttribute('aria-selected')
+        control.setAttribute('aria-current', selected ? 'page' : 'false')
+        control.tabIndex = 0
+      }
+    }
     $('skill-refresh', 'button').hidden = this.#tab !== 'skills'
     const busy = this.#reloadPromise !== undefined || this.#loadMorePromise !== undefined
     $('skill-refresh', 'button').disabled = !this.writable() || busy
@@ -496,7 +516,7 @@ class ResourceAdminPage {
                   this.#t('fact.safe-error'),
                   this.#detailT('safe-error', {
                     code: value.lastSafeError.code,
-                    message: value.lastSafeError.message,
+                    message: resourceFailureLabel(value.lastSafeError.code, this.#t),
                   }),
                 ])
               return panel
@@ -597,7 +617,7 @@ class ResourceAdminPage {
         this.#t(resourceDesiredEnabled(skill) ? 'action.disable' : 'action.enable'),
         this.#t('action.request', {
           action: this.#t(resourceDesiredEnabled(skill) ? 'action.disable' : 'action.enable'),
-          kind: 'Skill',
+          kind: this.#t('tab.skills'),
           name: skill.name,
           revision: `${skill.revision.slice(0, 12)}…`,
         }),
@@ -993,7 +1013,7 @@ export function mountResourceAdmin(options: ResourceAdminOptions = {}): Resource
             : cause instanceof ResourceAdminApiError &&
                 ['ADMIN_UNAVAILABLE', 'RESOURCE_ADMIN_UNAVAILABLE'].includes(cause.details.code)
               ? activeResourceText('error.unavailable')
-              : errorOf(cause).message
+              : resourceFailureLabel(errorOf(cause).code, activeResourceText)
       else page.showError(cause)
     })
   })
@@ -1003,7 +1023,8 @@ export function mountResourceAdmin(options: ResourceAdminOptions = {}): Resource
     root: list,
     visible: () =>
       !list.closest('[hidden]') &&
-      document.getElementById('mcp-tab')?.getAttribute('aria-selected') === 'true',
+      (document.getElementById('mcp-tab')?.getAttribute('aria-selected') === 'true' ||
+        document.getElementById('mcp-tab')?.getAttribute('aria-current') === 'page'),
     refresh: () => page.refreshMcpIfChanged(),
   })
   const ready = page.start()

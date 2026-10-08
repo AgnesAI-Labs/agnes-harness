@@ -34,6 +34,7 @@ export {
   unmountRegion,
 } from './regions.js'
 export * from './resource-detail.js'
+export { resourceFailureCatalog, resourceFailureKey, resourceFailureLabel } from './resource-failure.js'
 export * from './resource-list.js'
 export * from './select-picker.js'
 export { SettingsAccountDialog } from './settings-account-dialog.js'

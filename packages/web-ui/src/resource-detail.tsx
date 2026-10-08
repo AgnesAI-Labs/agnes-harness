@@ -134,7 +134,10 @@ export function SkillDetailContent({
         )}
         {skill.lastSafeError && (
           <p className="resource-safe-error">
-            {t('safe-error', { code: skill.lastSafeError.code, message: skill.lastSafeError.message })}
+            {t('safe-error', {
+              code: skill.lastSafeError.code,
+              message: resourceFailureLabel(skill.lastSafeError.code, t),
+            })}
           </p>
         )}
         {skill.sourceIdentity.scope !== 'runtime' && !removing && (
@@ -242,7 +245,10 @@ export function McpDetailContent({
         <FactList className="resource-facts" items={[[t('mcp.fact.source'), server.source]]} />
         {server.lastSafeError && (
           <p className="resource-safe-error">
-            {t('safe-error', { code: server.lastSafeError.code, message: server.lastSafeError.message })}
+            {t('safe-error', {
+              code: server.lastSafeError.code,
+              message: resourceFailureLabel(server.lastSafeError.code, t),
+            })}
           </p>
         )}
         {!status && (
@@ -331,3 +337,5 @@ export function McpDetailContent({
 }
 
 export type { StatusPanel, ToolCatalog }
+
+import { resourceFailureLabel } from './resource-failure.js'

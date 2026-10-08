@@ -118,7 +118,7 @@ it('shows a localized durable goal and forwards human controls through slash inp
       ...live,
       slots: live.slots.map((fill) => ({
         ...fill,
-        payload: { ...fill.payload, goal: undefined, text: 'Internal failure' },
+        payload: { level: fill.payload.level, text: 'Internal failure' },
       })),
     },
     false,
