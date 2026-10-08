@@ -18,6 +18,23 @@ import { createSkillInstaller, type SkillInstallAuthority } from '../../src/reso
 import type { SkillInstallInvocation } from '../../src/resources/skill-install-port.js'
 
 const roots: string[] = []
+const terminalWrite = vi.hoisted(() => ({
+  block: undefined as ((from: string, to: string) => Promise<(() => void) | undefined>) | undefined,
+}))
+vi.mock('@agnes/system-node', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@agnes/system-node')>()
+  return {
+    ...actual,
+    renameWriteThrough: async (...args: Parameters<typeof actual.renameWriteThrough>) => {
+      const completed = await terminalWrite.block?.(args[0], args[1])
+      try {
+        await actual.renameWriteThrough(...args)
+      } finally {
+        completed?.()
+      }
+    },
+  }
+})
 const discovery = { roots: skillRoots, discover: discoverSkillRoot }
 afterEach(() => {
   for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true })
@@ -80,7 +97,11 @@ function setup(enable = true) {
     await expect
       .poll(async () => (await request({ action: 'status', proposalId })).state, { timeout: 5000 })
       .not.toBe('running')
-    return request({ action: 'status', proposalId })
+    const result = await request({ action: 'status', proposalId })
+    expect(JSON.parse(readFileSync(join(root, 'receipts', `${proposalId}.json`), 'utf8')).result).toEqual(
+      result,
+    )
+    return result
   }
   return {
     root,
@@ -206,9 +227,40 @@ describe('controlled Skill installer', () => {
           ? { state: 'succeeded' }
           : { operationId: 'operation' },
     )
-    await s.request({ action: 'commit', proposalId: p.proposalId })
-    expect(await s.done(p.proposalId)).toMatchObject({ state: 'failed', phase: 'refresh' })
-    expect(s.resources.mock.calls.some(([m]) => m === '_agnes/v1/skills.trust.set')).toBe(false)
+    let enter!: () => void
+    let release!: () => void
+    let complete!: () => void
+    const entered = new Promise<void>((resolve) => {
+      enter = resolve
+    })
+    const held = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    const completed = new Promise<void>((resolve) => {
+      complete = resolve
+    })
+    // Hold the real persistence boundary: a terminal status must not precede its durable receipt.
+    terminalWrite.block = async (from, to) => {
+      if (to !== join(s.root, 'receipts', `${p.proposalId}.json`)) return
+      if (JSON.parse(readFileSync(from, 'utf8')).result.state !== 'failed') return
+      enter()
+      await held
+      return complete
+    }
+    try {
+      await s.request({ action: 'commit', proposalId: p.proposalId })
+      await entered
+      expect(await s.request({ action: 'status', proposalId: p.proposalId })).toMatchObject({
+        state: 'running',
+      })
+      release()
+      expect(await s.done(p.proposalId)).toMatchObject({ state: 'failed', phase: 'refresh' })
+      expect(s.resources.mock.calls.some(([m]) => m === '_agnes/v1/skills.trust.set')).toBe(false)
+    } finally {
+      release()
+      await completed
+      terminalWrite.block = undefined
+    }
   })
 
   it('deduplicates commit and reports restart interruption without automatic effects', async () => {
