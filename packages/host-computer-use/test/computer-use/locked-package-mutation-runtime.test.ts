@@ -2,8 +2,8 @@ import { createHash } from 'node:crypto'
 import { mkdirSync, mkdtempSync, realpathSync, renameSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { createSqliteStorage, type SqliteStorage } from '@agnes/host-infrastructure/adapters/storage-sqlite'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { createSqliteStorage, type SqliteStorage } from '../../src/adapters/storage-sqlite.js'
 import {
   createHostLockedPackageMutationRuntime,
   type HostLockedPackageMutationEngine,

@@ -2,14 +2,14 @@ import { mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { LockedPackageOperationReceipt, LockedPackageOperationReceiptPort } from '@agnes/base'
-import { afterEach, describe, expect, it, vi } from 'vitest'
-import { sqlitePersistenceProvider } from '../../src/adapters/storage-provider.js'
+import { sqlitePersistenceProvider } from '@agnes/host-infrastructure/adapters/storage-provider'
 import {
   createSqliteStorage,
   type SqliteStorage,
   type TableHandle,
   type TableStore,
-} from '../../src/adapters/storage-sqlite.js'
+} from '@agnes/host-infrastructure/adapters/storage-sqlite'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   createMetadataLockedPackageOperationReceiptPort,
   createSqliteLockedPackageOperationReceiptPort,

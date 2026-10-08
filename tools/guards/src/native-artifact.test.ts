@@ -6,7 +6,11 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { repoRoot } from './repo.js'
 
 const HOST_NATIVE_DIR = 'packages/host/native'
-const NATIVE_DIRS = [HOST_NATIVE_DIR, 'packages/host-infrastructure/native']
+const NATIVE_DIRS = [
+  HOST_NATIVE_DIR,
+  'packages/host-infrastructure/native',
+  'packages/host-computer-use/native',
+]
 
 /**
  * Return true for executable formats, not for a filename or execute bit. The source directory

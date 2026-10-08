@@ -234,6 +234,7 @@ describe('ratchet key path-boundary matching (regression: sibling-prefix false m
 // preset composition and inline projection repairs. Only exceeded scopes and missing bundled
 // extension keys change; scanning, source exclusions and the default extension ceiling stay fixed.
 const INITIAL_CEILING: Record<string, number> = {
+  'packages/host-computer-use/src': 10586,
   'packages/host-infrastructure/src/adapters/public-fetch': 380,
   'packages/host-infrastructure/src/adapters/secrets-win32': 20,
   'packages/host-infrastructure/src/adapters/exec-output': 32,
@@ -1399,7 +1400,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // countLines: 6460 -> 6577; exact cap, no exclusions or spare allocation.
   // 2026-10-08 freeze-close review: Unify provider errors, own late loop/child results and transfer accepted process-store ownership.
   // countLines: 6577 -> 6603 (+26); exact measured cap, no exclusions or spare allocation.
-  'packages/host/src/assemble': 6314,
+  'packages/host/src/assemble': 6300,
   // P1: generated-schema validators and duplicate projection-name refusal; measured exact cap.
   // F1 adds Surface JSON/identity validation and lock snapshot validation.
   // PM4 adds strict management DTO validation and method permission/identity contracts; exact total.
@@ -2865,7 +2866,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // countLines: 46355 -> 46484 (+129); exact measured cap, no exclusions or spare allocation.
   // Acceptance review: Restore immutable generation sources and publish child-engine configuration with explicit engine admission.
   // countLines: 46484 -> 46566; exact cap, no exclusions or spare allocation.
-  'packages/host/src': 34831,
+  'packages/host/src': 24290,
   // 2026-10-07 gap-fill review: Preserve governed bridge errors through service invocation.
   // countLines: 247 -> 254; exact cap, no exclusions or spare allocation.
   'packages/host/src/ext-host/service-invocation': 254,

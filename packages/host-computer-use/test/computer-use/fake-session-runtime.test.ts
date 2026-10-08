@@ -21,7 +21,10 @@ import {
   normalizeFakeObserveResult,
 } from '../../src/computer-use/fake/session-runtime.js'
 
-const fixture = join(dirname(fileURLToPath(import.meta.url)), 'fixtures/fake-driver-child.mjs')
+const fixture = join(
+  dirname(fileURLToPath(import.meta.url)),
+  '../../../host/test/computer-use/fixtures/fake-driver-child.mjs',
+)
 const tempDirs: string[] = []
 const runtimes: Array<{ dispose(): Promise<void> }> = []
 

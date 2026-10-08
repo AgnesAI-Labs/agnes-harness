@@ -505,6 +505,9 @@ importers:
       '@agnes/host-common':
         specifier: workspace:*
         version: link:../host-common
+      '@agnes/host-computer-use':
+        specifier: workspace:*
+        version: link:../host-computer-use
       '@agnes/host-infrastructure':
         specifier: workspace:*
         version: link:../host-infrastructure
@@ -532,18 +535,12 @@ importers:
       '@agnes/system-node':
         specifier: workspace:*
         version: link:../system-node
-      '@sinclair/typebox':
-        specifier: 0.34.33
-        version: 0.34.33
       ajv:
         specifier: 8.20.0
         version: 8.20.0
       jiti:
         specifier: 2.7.0
         version: 2.7.0(patch_hash=77f93f7110d63c7b4551ac2eab9c87a64c2ba97de0b71047e25171d3fac05fd2)
-      undici:
-        specifier: 8.10.2
-        version: 8.10.2
       yaml:
         specifier: 2.9.0
         version: 2.9.0
@@ -554,6 +551,9 @@ importers:
       '@agnes/code':
         specifier: workspace:*
         version: link:../code
+      '@sinclair/typebox':
+        specifier: 0.34.33
+        version: 0.34.33
 
   packages/host-common:
     dependencies:
@@ -585,6 +585,46 @@ importers:
       '@agnes/code':
         specifier: workspace:*
         version: link:../code
+      '@agnes/host':
+        specifier: workspace:*
+        version: link:../host
+
+  packages/host-computer-use:
+    dependencies:
+      '@agnes/core':
+        specifier: workspace:*
+        version: link:../core
+      '@agnes/extension-api':
+        specifier: workspace:*
+        version: link:../extension-api
+      '@agnes/host-common':
+        specifier: workspace:*
+        version: link:../host-common
+      '@agnes/host-infrastructure':
+        specifier: workspace:*
+        version: link:../host-infrastructure
+      '@agnes/protocol':
+        specifier: workspace:*
+        version: link:../protocol
+      '@agnes/protocol-validation':
+        specifier: workspace:*
+        version: link:../protocol-validation
+      '@agnes/system-node':
+        specifier: workspace:*
+        version: link:../system-node
+      '@sinclair/typebox':
+        specifier: 0.34.33
+        version: 0.34.33
+      ajv:
+        specifier: 8.20.0
+        version: 8.20.0
+      undici:
+        specifier: 8.10.2
+        version: 8.10.2
+    devDependencies:
+      '@agnes/base':
+        specifier: workspace:*
+        version: link:../base
       '@agnes/host':
         specifier: workspace:*
         version: link:../host

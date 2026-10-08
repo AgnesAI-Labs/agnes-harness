@@ -155,7 +155,10 @@ describe('computer-use driver lock schema and fixed candidate', () => {
   it('ships Windows admission evidence with the pinned bytes after documentation cleanup', () => {
     const lab = cloneCandidate().platformLabs.win32
     const bytes = readFileSync(
-      new URL('./evidence/labs/windows-x64-live-admission-2026-09-20.json', import.meta.url),
+      new URL(
+        '../../../host/test/computer-use/evidence/labs/windows-x64-live-admission-2026-09-20.json',
+        import.meta.url,
+      ),
     )
     expect(lab.evidencePath).toBe(
       'packages/host/test/computer-use/evidence/labs/windows-x64-live-admission-2026-09-20.json',

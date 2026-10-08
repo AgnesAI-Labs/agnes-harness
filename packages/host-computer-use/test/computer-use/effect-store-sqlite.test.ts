@@ -1,8 +1,8 @@
 import { mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { createSqliteStorage } from '@agnes/host-infrastructure/adapters/storage-sqlite'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { createSqliteStorage } from '../../src/adapters/storage-sqlite.js'
 import { createSqliteComputerUseEffectStore } from '../../src/computer-use/effect-store-sqlite.js'
 import type { ComputerUseEffectBinding } from '../../src/computer-use/host-enforcement.js'
 

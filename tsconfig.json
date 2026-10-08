@@ -222,6 +222,12 @@
     },
     {
       "path": "packages/host-infrastructure/tsconfig.test.json"
+    },
+    {
+      "path": "packages/host-computer-use"
+    },
+    {
+      "path": "packages/host-computer-use/tsconfig.test.json"
     }
   ]
 }

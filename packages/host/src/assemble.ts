@@ -21,6 +21,10 @@ import {
   type SessionImpl,
 } from '@agnes/core'
 import { API_VERSION, type ExtensionManifest, type LeaseView, type ResourceEntry } from '@agnes/extension-api'
+import fixedComputerUseDriverLock from '@agnes/host-computer-use/computer-use/computer-use-driver-lock.json' with {
+  type: 'json',
+}
+import type { HostComputerUseStatusSource } from '@agnes/host-computer-use/computer-use/status'
 import {
   developmentPluginRows,
   type RuntimePluginSnapshot,
@@ -120,18 +124,13 @@ import { SKILL_ROW_ID, skillRowRevision, withSkillRow } from './assemble/skill-r
 import { installToolProviders, withBuiltinToolPolicies } from './assemble/tool-providers.js'
 import { trustedHookCommands } from './assemble/trusted-hooks.js'
 import type { AssembleDeps } from './assembly-deps.js'
-import fixedComputerUseDriverLock from './computer-use/computer-use-driver-lock.json' with { type: 'json' }
 import {
   evaluateFixedComputerUsePlatformAdmission,
   inspectComputerUseDriverLock,
 } from './computer-use/driver-lock.js'
-import {
-  type ComputerUseDriverOperationKind,
-  type ComputerUseDriverOperationSnapshot,
-  createComputerUseDriverOperationRuntime,
-} from './computer-use/driver-operation-runtime.js'
+import { createComputerUseDriverOperationRuntime } from './computer-use/driver-operation-runtime.js'
 import { createComputerUseHostDispatchPort } from './computer-use/host-dispatch.js'
-import { type ComputerUseAvailability, createLazyComputerUseRuntime } from './computer-use/lazy-runtime.js'
+import { createLazyComputerUseRuntime } from './computer-use/lazy-runtime.js'
 import { createLinuxComputerUseBackendProvider } from './computer-use/linux-driver-backend.js'
 import {
   doctorLockedLinuxComputerUseDriver,
@@ -291,25 +290,10 @@ export const ASSEMBLY_STEPS: readonly AssemblyStep[] = STEP_ORDER
 /** What `Assembled.extHost` and `Host.extensions()` actually are, named once for both call sites. */
 export type ManagedExtHost = ReturnType<typeof createManagedExtHost>
 
-export type HostComputerUseRuntimeStatus = Readonly<{
-  platform: 'win32' | 'darwin' | 'linux'
-  version: string
-  publisher: string
-  activeSessions: number
-  startAttempted: boolean
-}>
-
-export type HostComputerUseStatusSource = Readonly<{
-  status(): HostComputerUseRuntimeStatus | Readonly<{ availability: ComputerUseAvailability }>
-  doctor(params?: ComputerUseDoctorParams): Promise<void>
-  permissionsStatus(): Promise<Readonly<{ accessibility: boolean; screenRecording: boolean }> | null>
-  permissionsGrant(): Promise<Readonly<{ accessibility: boolean; screenRecording: boolean }> | null>
-  setSessionYolo(session: Readonly<{ key: string; lane: string }>, enabled: boolean): Promise<void>
-  operationStart(kind: ComputerUseDriverOperationKind): ComputerUseDriverOperationSnapshot
-  operationStatus(operationId?: string): ComputerUseDriverOperationSnapshot | undefined
-  operationCancel(operationId: string): ComputerUseDriverOperationSnapshot | undefined
-}>
-
+export type {
+  HostComputerUseRuntimeStatus,
+  HostComputerUseStatusSource,
+} from '@agnes/host-computer-use/computer-use/status'
 export type OrdinaryReconciliationLifecycle = Readonly<{
   /** Refuses new target applications and settles only after every admitted one finishes. */
   close(): Promise<void>

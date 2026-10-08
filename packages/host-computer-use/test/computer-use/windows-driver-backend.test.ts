@@ -1,9 +1,9 @@
+import type { ResolvedComputerUseProfile } from '@agnes/host-common/profile/types'
 import { describe, expect, it, vi } from 'vitest'
 import {
   createWindowsComputerUseBackendProvider,
   windowsComputerUseDriverCommandForMode,
 } from '../../src/computer-use/windows-driver-backend.js'
-import type { ResolvedComputerUseProfile } from '../../src/profile/types.js'
 
 const notesIdentity = {
   executablePath: 'C:\\Program Files\\Notes\\notes.exe',

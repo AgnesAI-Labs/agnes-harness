@@ -19,7 +19,7 @@
 | daemon/worker | [daemon](../../packages/daemon/src)、[worker-runtime](../../packages/worker-runtime/src) | [daemon tests](../../packages/daemon/test) |
 | 执行循环/恢复 | [core-common](../../packages/core-common/src), [core-child-control](../../packages/core-child-control/src), [core-ledger](../../packages/core-ledger/src), [core-effects](../../packages/core-effects/src), [core-artifacts](../../packages/core-artifacts/src), [core](../../packages/core/src) | [core tests](../../packages/core/test) |
 | provider 类型/统一生命周期/组合目录 | [类型合同](../../packages/extension-api/src/provider-kind.ts)、[注册表](../../packages/host-common/src/assemble/provider-registry.ts)、[选择](../../packages/host/src/assemble/provider-selection.ts)、[provider 架构](architecture-plugins.zh-CN.md) | [注册与选择测试](../../packages/host-common/test/assemble/provider-registry.test.ts)、[Host 装配](../../packages/host/test/assemble/tool-providers.test.ts) |
-| 配置/装配/凭据/平台 | [host-common](../../packages/host-common/src), [host-infrastructure](../../packages/host-infrastructure/src), [host](../../packages/host/src)、[system-node](../../packages/system-node/src) | [host tests](../../packages/host/test) |
+| 配置/装配/凭据/平台 | [host-common](../../packages/host-common/src), [host-infrastructure](../../packages/host-infrastructure/src), [host-computer-use](../../packages/host-computer-use/src), [host](../../packages/host/src)、[system-node](../../packages/system-node/src) | [host tests](../../packages/host/test) |
 | 模型/流解析 | [ai](../../packages/ai/src) | [ai tests](../../packages/ai/test) |
 | 标准工具/接缝 | [base extensions](../../packages/base/extensions)、[base](../../packages/base/src) | [base tests](../../packages/base/test) |
 | Code 工作流 | [code](../../packages/code/src) | [code tests](../../packages/code/test) |

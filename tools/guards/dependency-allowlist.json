@@ -90,7 +90,8 @@
     "@agnes/system-node",
     "@agnes/model-adapters",
     "@agnes/host-common",
-    "@agnes/host-infrastructure"
+    "@agnes/host-infrastructure",
+    "@agnes/host-computer-use"
   ],
   "@agnes/sdk": [
     "@agnes/protocol",
@@ -188,6 +189,15 @@
     "@agnes/host-common",
     "@agnes/protocol",
     "@agnes/sandbox-remote",
+    "@agnes/system-node"
+  ],
+  "@agnes/host-computer-use": [
+    "@agnes/core",
+    "@agnes/extension-api",
+    "@agnes/host-common",
+    "@agnes/host-infrastructure",
+    "@agnes/protocol",
+    "@agnes/protocol-validation",
     "@agnes/system-node"
   ]
 }

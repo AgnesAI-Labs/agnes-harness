@@ -110,20 +110,7 @@
       "source": "https://github.com/sinclairzx81/typebox",
       "purpose": "Runtime JSON-schema construction and static TypeScript schema inference.",
       "rationale": "Keeps runtime validation schemas and compile-time protocol types derived from one definition.",
-      "consumers": [
-        "packages/ai",
-        "packages/base",
-        "packages/cli",
-        "packages/code",
-        "packages/core",
-        "packages/extension-api",
-        "packages/host",
-        "packages/model-adapters",
-        "packages/plugin-runtime",
-        "packages/protocol",
-        "packages/protocol-validation",
-        "packages/resource-control-contracts"
-      ]
+      "consumers": ["packages/ai", "packages/base", "packages/cli", "packages/code", "packages/core", "packages/extension-api", "packages/host-computer-use", "packages/model-adapters", "packages/plugin-runtime", "packages/protocol", "packages/protocol-validation", "packages/resource-control-contracts"]
     },
     {
       "name": "es-module-lexer",
@@ -213,7 +200,7 @@
       "source": "https://github.com/nodejs/undici",
       "purpose": "Provides the explicit HTTP dispatcher used by bounded public retrieval.",
       "rationale": "Allows connection policy and redirect handling to stay under Host control instead of relying on ambient global fetch state.",
-      "consumers": ["packages/host", "packages/host-infrastructure"]
+      "consumers": ["packages/host-computer-use", "packages/host-infrastructure"]
     },
     {
       "name": "ws",
@@ -248,7 +235,7 @@
       "source": "https://github.com/ajv-validator/ajv",
       "purpose": "Compile Extension and MCP tool schemas at runtime and independently verify protocol conformance.",
       "rationale": "Reuse the established schema implementation; reject invalid or external references before callbacks run.",
-      "consumers": ["packages/base", "packages/host", "packages/protocol"]
+      "consumers": ["packages/base", "packages/host", "packages/host-computer-use", "packages/protocol"]
     },
     {
       "name": "@vscode/ripgrep",

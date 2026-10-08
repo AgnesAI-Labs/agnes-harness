@@ -1,11 +1,11 @@
 import { renameSync, rmSync, writeFileSync } from 'node:fs'
+import type { ResolvedComputerUseProfile } from '@agnes/host-common/profile/types'
 import { expect, it, vi } from 'vitest'
 import {
   createMacOSComputerUseBackendProvider,
   grantMacOSComputerUsePermissions,
   probeMacOSComputerUsePermissions,
 } from '../../src/computer-use/macos-driver-backend.js'
-import type { ResolvedComputerUseProfile } from '../../src/profile/types.js'
 
 const signature = 'a'.repeat(64)
 const profile: ResolvedComputerUseProfile = {

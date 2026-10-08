@@ -29,17 +29,17 @@
     "@agnes/resource-control-runtime": "workspace:*",
     "@agnes/sandbox-remote": "workspace:*",
     "@agnes/system-node": "workspace:*",
-    "@sinclair/typebox": "0.34.33",
     "ajv": "8.20.0",
     "jiti": "2.7.0",
-    "undici": "8.10.2",
     "yaml": "2.9.0",
     "@agnes/host-common": "workspace:*",
-    "@agnes/host-infrastructure": "workspace:*"
+    "@agnes/host-infrastructure": "workspace:*",
+    "@agnes/host-computer-use": "workspace:*"
   },
   "devDependencies": {
     "@agnes/base": "workspace:*",
-    "@agnes/code": "workspace:*"
+    "@agnes/code": "workspace:*",
+    "@sinclair/typebox": "0.34.33"
   },
   "license": "Apache-2.0 AND MIT"
 }
