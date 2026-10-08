@@ -75,6 +75,11 @@ export async function screen(page: Page, info: TestInfo, name: string, mask: Loc
     })
     await page.mouse.move(0, 0)
   }
+  // Optional self-check content follows this card; keep the existing status frame at its lower edge.
+  if (name.startsWith('diagnostics-status-'))
+    await page.getByTestId('diagnostics-runtime').evaluate((card) => {
+      card.scrollIntoView({ block: 'end', behavior: 'instant' })
+    })
   const manifest = JSON.parse(readFileSync('tools/e2e-web/baselines/ready.json', 'utf8')) as {
     ready: string[]
     pending: Record<string, string>

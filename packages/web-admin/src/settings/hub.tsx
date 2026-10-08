@@ -122,7 +122,7 @@ export function SettingsHub({
         <SettingsPageLayout
           title={sectionTitle(page)}
           actions={
-            needsRuntimeCatalog ? (
+            needsRuntimeCatalog && page !== 'diagnostics' ? (
               <Button
                 data-testid="settings-refresh"
                 disabled={!api || busy}

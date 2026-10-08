@@ -64,6 +64,7 @@ vi.mock('@agnes/sdk', () => ({
   memoryJournal: vi.fn(() => ({})),
   createClient: vi.fn(() => ({
     request: mocks.request,
+    call: mocks.request,
     initialize: vi.fn(async () => ({})),
     close: mocks.close,
     packages: {
@@ -130,7 +131,8 @@ it('advertises exactly the frozen hot-update features and forwards catalog reads
   expect(mocks.request).toHaveBeenCalledWith('_agnes/v1/diagnostics.export', {
     diagnosticId: '11111111-1111-4111-8111-111111111111',
   })
-  expect(options?.diagnostics.doctor).toBeUndefined()
+  await expect(options?.diagnostics.doctor?.()).resolves.toEqual({ schemaVersion: 1 })
+  expect(mocks.request).toHaveBeenCalledWith('_agnes/v1/doctor.run', {})
   await options?.invoke('catalog/list', { profile: 'local-dev', limit: 50 })
   expect(mocks.catalogList).toHaveBeenCalledWith({ profile: 'local-dev', limit: 50 })
   await options?.invoke('tree/list', { profile: 'local-dev' })

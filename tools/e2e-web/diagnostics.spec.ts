@@ -82,6 +82,9 @@ for (const locale of ['en', 'zh-CN'])
       )
       await page.getByTestId('diagnostics-runtime').scrollIntoViewIfNeeded()
       await screen(page, info, `diagnostics-status-${locale}-${theme}`)
+      await page.getByTestId('diagnostics-doctor-run').click()
+      await expect(page.getByTestId('diagnostics-doctor').getByRole('article')).toHaveCount(11)
+      await translated(page)
       if (locale === 'zh-CN' && theme === 'light') {
         for (const id of ['models', 'bundles', 'providers', 'security']) {
           await section(page, id)
