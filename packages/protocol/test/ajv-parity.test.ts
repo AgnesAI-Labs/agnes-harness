@@ -2608,7 +2608,12 @@ const AGNES_SAMPLES: Record<string, Sample> = {
         truncated: false,
         entries: Array.from({ length: 501 }, (_, index) => ({ name: `f${index}.txt`, kind: 'file' })),
       },
-    ],
+    ].map((invalid) => ({
+      revision: 'synthetic-revision',
+      observedAt: '2026-10-08T00:00:00Z',
+      gitStatus: 'available',
+      ...invalid,
+    })),
     note: 'listing is capped at 500 entries',
   },
   SessionWorkspaceReadParams: {
@@ -2631,7 +2636,7 @@ const AGNES_SAMPLES: Record<string, Sample> = {
       { path: 'a.ts', size: -1, binary: false, truncated: false },
       { path: 'a.ts', size: 1, binary: false, truncated: false, text: rep(1_048_577) },
       { path: 'a.ts', size: 1, binary: false, truncated: false, outside: true },
-    ],
+    ].map((invalid) => ({ revision: 'synthetic-revision', observedAt: '2026-10-08T00:00:00Z', ...invalid })),
     note: 'text is omitted for binary or oversized files and is capped at 1 MiB',
   },
   ApprovalGrantListParams: {
