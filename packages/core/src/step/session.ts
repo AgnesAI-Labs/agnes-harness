@@ -1147,12 +1147,15 @@ export class SessionImpl {
       // String lengths are a conservative UTF-8/JSON lower bound. Refuse a known-oversized
       // inbox before decoding large media or allocating its entire serialized frame.
       let minimumBytes = 0
-      for (const item of [...cur.items, { content }])
+      for (const item of [...cur.items, { content }]) {
+        if (!Array.isArray(item.content)) continue
         for (const block of item.content) {
+          if (!block || typeof block !== 'object') continue
           if ('data' in block && typeof block.data === 'string') minimumBytes += block.data.length
-          if (block.type === 'text') minimumBytes += block.text.length
+          if (block.type === 'text' && typeof block.text === 'string') minimumBytes += block.text.length
           if (minimumBytes > MAX_FRAME_BYTES - 4096) throw oversized()
         }
+      }
       validateUserMessageImages(content)
       if (content.some((block) => block.type === 'image')) {
         const target = resolveModel(this, 'primary')

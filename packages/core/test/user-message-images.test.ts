@@ -1,6 +1,6 @@
 import { sha256Hex } from '@agnes/core-common/request/hash'
 import type { ToolContext } from '@agnes/extension-api'
-import { type ModelRecord, USER_MESSAGE_IMAGE_LIMITS } from '@agnes/protocol'
+import { type ContentBlock, type ModelRecord, USER_MESSAGE_IMAGE_LIMITS } from '@agnes/protocol'
 import { Type } from '@sinclair/typebox'
 import { describe, expect, it } from 'vitest'
 import { ToolRegistry } from '../src/registry/tools.js'
@@ -44,6 +44,8 @@ it('snapshots attachment bytes before waiting for the enqueue lock', async () =>
 })
 
 it.each([
+  ['null block', [null] as unknown as ContentBlock[]],
+  ['non-array content', null as unknown as ContentBlock[]],
   ['invalid Base64', [file('AB==')]],
   ['invalid name', [{ ...file(), name: 'bad\u0000name' }]],
   ['invalid MIME', [{ ...file(), mimeType: 'text/plain\nInjected' }]],
