@@ -1,0 +1,32 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "outDir": "dist/testkit",
+    "tsBuildInfoFile": "dist/tsconfig.testkit.tsbuildinfo"
+  },
+  "include": [
+    "testkit/assertions.test.ts",
+    "testkit/assertions.ts",
+    "testkit/index.ts",
+    "testkit/mem-fts.ts",
+    "testkit/mem-table.ts",
+    "testkit/seam-init.ts",
+    "testkit/tool-context.test.ts",
+    "testkit/tool-context.ts"
+  ],
+  "exclude": ["dist", "node_modules"],
+  "references": [
+    {
+      "path": "."
+    },
+    {
+      "path": "../../tsconfig.config.json"
+    },
+    {
+      "path": "../plugin-runtime"
+    },
+    {
+      "path": "../history-index"
+    }
+  ]
+}

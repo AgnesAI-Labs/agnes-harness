@@ -6,20 +6,36 @@
     "resolveJsonModule": true
   },
   "include": ["**/*.ts", "src/computer-use/computer-use-driver-lock.json"],
-  "exclude": ["dist", "node_modules"],
+  "exclude": [
+    "dist",
+    "node_modules",
+    "test",
+    "testkit",
+    "tools",
+    "**/*.test.ts",
+    "**/*.test.tsx",
+    "**/test/**",
+    "**/tests/**",
+    "vitest.config.ts"
+  ],
   "references": [
-    { "path": "../cordis" },
-    { "path": "../model-adapters" },
-    { "path": "../plugin-runtime" },
-    { "path": "../system-node" },
+    {
+      "path": "../cordis"
+    },
+    {
+      "path": "../model-adapters"
+    },
+    {
+      "path": "../plugin-runtime"
+    },
+    {
+      "path": "../system-node"
+    },
     {
       "path": "../resource-control-runtime"
     },
     {
       "path": "../sandbox-remote"
-    },
-    {
-      "path": "../../tsconfig.config.json"
     }
   ]
 }

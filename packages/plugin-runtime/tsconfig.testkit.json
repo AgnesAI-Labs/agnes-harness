@@ -1,0 +1,39 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "outDir": "dist/testkit",
+    "tsBuildInfoFile": "dist/tsconfig.testkit.tsbuildinfo"
+  },
+  "include": [
+    "testkit/author.test.ts",
+    "testkit/index.ts",
+    "testkit/loop.test.ts",
+    "testkit/loop.ts",
+    "testkit/model-adapter.test.ts",
+    "testkit/model-adapter.ts",
+    "testkit/model.ts",
+    "testkit/plugin.ts",
+    "testkit/registration.ts"
+  ],
+  "exclude": ["dist", "node_modules"],
+  "references": [
+    {
+      "path": "."
+    },
+    {
+      "path": "../extension-api"
+    },
+    {
+      "path": "../../tsconfig.config.json"
+    },
+    {
+      "path": "../cordis"
+    },
+    {
+      "path": "../cordis-loader"
+    },
+    {
+      "path": "../host/tsconfig.testkit.json"
+    }
+  ]
+}

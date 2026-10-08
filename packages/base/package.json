@@ -159,11 +159,11 @@
     "jiti": "2.7.0",
     "turndown": "7.2.4",
     "yaml": "2.9.0",
-    "@agnes/loop-default": "workspace:*"
+    "@agnes/loop-default": "workspace:*",
+    "@agnes/mcp-transport-health": "workspace:*"
   },
   "devDependencies": {
     "@agnes/extension-api": "workspace:*",
-    "@agnes/mcp-transport-health": "workspace:*",
     "@types/turndown": "5.0.6",
     "esbuild": "0.28.2"
   },

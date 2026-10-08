@@ -1,25 +1,29 @@
 {
-  "extends": "../../tsconfig.base.json",
+  "extends": "./tsconfig.json",
   "compilerOptions": {
-    "rootDir": ".",
-    "outDir": "dist"
+    "outDir": "dist/test",
+    "tsBuildInfoFile": "dist/tsconfig.test.tsbuildinfo"
   },
-  "include": ["**/*.ts"],
-  "exclude": [
-    "dist",
-    "node_modules",
-    "test",
-    "testkit",
-    "tools",
+  "include": [
+    "test/**/*.ts",
+    "test/**/*.tsx",
     "**/*.test.ts",
     "**/*.test.tsx",
-    "**/test/**",
-    "**/tests/**",
+    "**/test/**/*.ts",
+    "**/tests/**/*.ts",
+    "tools/**/*.ts",
     "vitest.config.ts"
   ],
+  "exclude": ["dist", "node_modules"],
   "references": [
     {
+      "path": "."
+    },
+    {
       "path": "../system-node"
+    },
+    {
+      "path": "../../tsconfig.config.json"
     },
     {
       "path": "../protocol"
@@ -59,6 +63,12 @@
     },
     {
       "path": "../web"
+    },
+    {
+      "path": "../host/tsconfig.testkit.json"
+    },
+    {
+      "path": "../base/tsconfig.test.json"
     }
   ]
 }

@@ -31,3 +31,5 @@
 | 工程约束 | [guards](../../tools/guards) | [ratchet](../../tools/guards/ratchet.json) |
 
 包公开出口以各自 package.json 的 `exports` 为准。上表深链接用于读代码，应用和插件不应据此深导入其他包私有 src。Python runtime 与 Python thin client 尚不作为可用公开路线。
+
+运行时包的生产源码、测试和共享 testkit 使用独立的 TypeScript 项目；根 `typecheck` 覆盖三者及工具脚本。

@@ -1,0 +1,49 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "outDir": "dist/test",
+    "tsBuildInfoFile": "dist/tsconfig.test.tsbuildinfo"
+  },
+  "include": [
+    "test/**/*.ts",
+    "test/**/*.tsx",
+    "**/*.test.ts",
+    "**/*.test.tsx",
+    "**/test/**/*.ts",
+    "**/tests/**/*.ts",
+    "tools/**/*.ts",
+    "vitest.config.ts"
+  ],
+  "exclude": [
+    "dist",
+    "node_modules",
+    "testkit/tool-context.test.ts",
+    "testkit/assertions.test.ts",
+    "testkit/assertions.ts",
+    "testkit/mem-fts.ts",
+    "testkit/seam-init.ts",
+    "testkit/mem-table.ts",
+    "testkit/tool-context.ts",
+    "testkit/index.ts"
+  ],
+  "references": [
+    {
+      "path": "."
+    },
+    {
+      "path": "../../tsconfig.config.json"
+    },
+    {
+      "path": "../plugin-runtime"
+    },
+    {
+      "path": "../history-index"
+    },
+    {
+      "path": "tsconfig.testkit.json"
+    },
+    {
+      "path": "../core/tsconfig.testkit.json"
+    }
+  ]
+}

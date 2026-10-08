@@ -25,14 +25,14 @@
   },
   "devDependencies": {
     "@agnes/base": "workspace:*",
-    "@agnes/core": "workspace:*",
     "@agnes/extension-api": "workspace:*",
     "@agnes/host": "workspace:*",
     "@agnes/protocol": "workspace:*"
   },
   "dependencies": {
     "@sinclair/typebox": "0.34.33",
-    "yaml": "2.9.0"
+    "yaml": "2.9.0",
+    "@agnes/core": "workspace:*"
   },
   "license": "Apache-2.0"
 }

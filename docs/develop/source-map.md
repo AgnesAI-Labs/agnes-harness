@@ -33,3 +33,5 @@ Links point to source at the same revision as this document. See [verification](
 | Engineering constraints | [guards](../../tools/guards) | [Ratchet](../../tools/guards/ratchet.json) |
 
 A package's `package.json` `exports` defines its public entry points. These source links help explain the implementation; applications and plugins should not deep-import another package's private src. Python runtime and the Python thin client are not currently usable public integration paths.
+
+Production, tests and shared testkits use separate TypeScript projects in the runtime packages; root `typecheck` includes all three and their tool scripts.

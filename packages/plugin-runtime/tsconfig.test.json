@@ -1,0 +1,53 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "outDir": "dist/test",
+    "tsBuildInfoFile": "dist/tsconfig.test.tsbuildinfo"
+  },
+  "include": [
+    "test/**/*.ts",
+    "test/**/*.tsx",
+    "**/*.test.ts",
+    "**/*.test.tsx",
+    "**/test/**/*.ts",
+    "**/tests/**/*.ts",
+    "tools/**/*.ts",
+    "vitest.config.ts"
+  ],
+  "exclude": [
+    "dist",
+    "node_modules",
+    "testkit/model-adapter.test.ts",
+    "testkit/index.ts",
+    "testkit/plugin.ts",
+    "testkit/loop.test.ts",
+    "testkit/model-adapter.ts",
+    "testkit/loop.ts",
+    "testkit/registration.ts",
+    "testkit/model.ts",
+    "testkit/author.test.ts"
+  ],
+  "references": [
+    {
+      "path": "."
+    },
+    {
+      "path": "../extension-api"
+    },
+    {
+      "path": "../../tsconfig.config.json"
+    },
+    {
+      "path": "../cordis"
+    },
+    {
+      "path": "../cordis-loader"
+    },
+    {
+      "path": "tsconfig.testkit.json"
+    },
+    {
+      "path": "../host/tsconfig.testkit.json"
+    }
+  ]
+}

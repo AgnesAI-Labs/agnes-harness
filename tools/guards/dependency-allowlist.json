@@ -5,7 +5,7 @@
   "@agnes/plugin-runtime": ["@agnes/cordis", "@agnes/cordis-loader", "@agnes/extension-api"],
   "@agnes/web-slots": [],
   "@agnes/web-ui": ["@agnes/protocol", "@agnes/protocol-validation"],
-  "@agnes/web-client": ["@agnes/cordis", "@agnes/web-slots"],
+  "@agnes/web-client": ["@agnes/cordis", "@agnes/web-slots", "@agnes/protocol", "@agnes/sdk"],
   "@agnes/web-units": ["@agnes/protocol", "@agnes/protocol-validation", "@agnes/web-slots", "@agnes/web-ui"],
   "@agnes/resource-control-contracts": [],
   "@agnes/protocol": ["@agnes/resource-control-contracts", "@agnes/protocol-validation"],
@@ -114,7 +114,8 @@
     "@agnes/resource-control-cli",
     "@agnes/resource-control-runtime",
     "@agnes/cli-tui",
-    "@agnes/cli-launch"
+    "@agnes/cli-launch",
+    "@agnes/package-manager"
   ],
   "@agnes/channels": ["@agnes/protocol", "@agnes/sdk", "@agnes/system-node", "@agnes/daemon"],
   "@agnes/bridges": ["@agnes/protocol", "@agnes/sdk"],

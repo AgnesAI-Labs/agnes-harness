@@ -1,0 +1,48 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "outDir": "dist/test",
+    "tsBuildInfoFile": "dist/tsconfig.test.tsbuildinfo"
+  },
+  "include": [
+    "test/**/*.ts",
+    "test/**/*.tsx",
+    "**/*.test.ts",
+    "**/*.test.tsx",
+    "**/test/**/*.ts",
+    "**/tests/**/*.ts",
+    "tools/**/*.ts",
+    "vitest.config.ts"
+  ],
+  "exclude": [
+    "dist",
+    "node_modules",
+    "testkit/gen-long-session.ts",
+    "test/helpers/open-session.ts",
+    "testkit/index.ts",
+    "testkit/op-cell-cases.ts",
+    "test/helpers/op-history.ts",
+    "testkit/op-mark-checks.ts",
+    "testkit/loops.ts",
+    "testkit/op-check-cases.ts",
+    "testkit/encode-ledger-state.ts",
+    "testkit/record-transitions.ts",
+    "testkit/op-check-sweep.ts",
+    "testkit/fenced-fs.ts",
+    "testkit/tool-heavy-ledger.ts",
+    "test/helpers/fake-seams.ts",
+    "test/helpers/fake-provider.ts",
+    "testkit/gen-crash.ts"
+  ],
+  "references": [
+    {
+      "path": "."
+    },
+    {
+      "path": "../../tsconfig.config.json"
+    },
+    {
+      "path": "tsconfig.testkit.json"
+    }
+  ]
+}

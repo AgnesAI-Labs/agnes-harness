@@ -1,27 +1,27 @@
 {
-  "extends": "../../tsconfig.base.json",
+  "extends": "./tsconfig.json",
   "compilerOptions": {
-    "module": "ESNext",
-    "moduleResolution": "Bundler",
-    "rootDir": ".",
-    "outDir": "dist",
-    "lib": ["ES2023", "DOM", "DOM.Iterable"],
-    "jsx": "react-jsx"
+    "outDir": "dist/test",
+    "tsBuildInfoFile": "dist/tsconfig.test.tsbuildinfo"
   },
-  "include": ["**/*.ts", "**/*.tsx"],
-  "exclude": [
-    "dist",
-    "node_modules",
-    "test",
-    "testkit",
-    "tools",
+  "include": [
+    "test/**/*.ts",
+    "test/**/*.tsx",
     "**/*.test.ts",
     "**/*.test.tsx",
-    "**/test/**",
-    "**/tests/**",
+    "**/test/**/*.ts",
+    "**/tests/**/*.ts",
+    "tools/**/*.ts",
     "vitest.config.ts"
   ],
+  "exclude": ["dist", "node_modules"],
   "references": [
+    {
+      "path": "."
+    },
+    {
+      "path": "../../tsconfig.config.json"
+    },
     {
       "path": "../base"
     },

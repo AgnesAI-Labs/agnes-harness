@@ -53,11 +53,11 @@
     "get-east-asian-width": "1.6.0",
     "marked": "18.0.12",
     "yaml": "2.9.0",
-    "@agnes/web": "workspace:*"
+    "@agnes/web": "workspace:*",
+    "@agnes/package-manager": "workspace:*"
   },
   "devDependencies": {
     "@agnes/extension-api": "workspace:*",
-    "@agnes/package-manager": "workspace:*",
     "@sinclair/typebox": "0.34.33",
     "@xterm/headless": "6.0.0",
     "esbuild": "0.28.2",

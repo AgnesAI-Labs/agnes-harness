@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { dirname, join, relative, resolve, sep } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { listPackages, repoRoot } from './repo.js'
+import { DEFAULT_EXCLUDE_DIRS, isTestFile, listPackages, listSourceFiles, repoRoot } from './repo.js'
 
 const root = repoRoot()
 const allow = JSON.parse(
@@ -159,4 +159,111 @@ describe('dependency allowlist matches layer order', () => {
       }
     })
   }
+})
+
+// Test fixtures can depend on higher layers. Production imports, including type queries and
+// literal dynamic imports, must use declared downward dependencies rather than devDependencies.
+function importedModules(source: string): string[] {
+  const text = source.replace(
+    /('(?:\\.|[^'\\])*'|"(?:\\.|[^"\\])*"|`(?:\\.|[^`\\])*`)|\/\/[^\n]*|\/\*[\s\S]*?\*\//g,
+    (match, literal: string | undefined) => literal ?? ' '.repeat(match.length),
+  )
+  return [...text.matchAll(/\b(?:from\s*|import\s*(?:\(\s*)?)["']([^"']+)["']/g)].map(
+    (match) => match[1] as string,
+  )
+}
+
+function dependencyCycles(graph: Map<string, Set<string>>): string[] {
+  const done = new Set<string>()
+  const stack: string[] = []
+  const cycles: string[] = []
+  const visit = (name: string) => {
+    if (stack.includes(name)) {
+      cycles.push([...stack.slice(stack.indexOf(name)), name].join(' → '))
+      return
+    }
+    if (done.has(name)) return
+    stack.push(name)
+    for (const dep of graph.get(name) ?? []) visit(dep)
+    stack.pop()
+    done.add(name)
+  }
+  for (const name of graph.keys()) visit(name)
+  return cycles
+}
+
+it('production source and manifests form declared, acyclic package graphs', () => {
+  const packages = listPackages(root)
+  const byName = new Map(packages.map((pkg) => [pkg.name, pkg]))
+  const sourceGraph = new Map<string, Set<string>>()
+  const manifestGraph = new Map<string, Set<string>>()
+  const errors: string[] = []
+  // Schema-owned compatibility modules predate the workspace split. Keep these exact existing
+  // imports visible; new private cross-package paths are rejected, including in split packages.
+  const legacyPaths = new Set([
+    'packages/protocol/src/json-data.ts:../../protocol-validation/src/json-data.js',
+    'packages/protocol/src/request-media.ts:../../protocol-validation/src/validate.js',
+    'packages/protocol/src/resource-control.ts:../../resource-control-contracts/src/resource-control.js',
+    'packages/protocol/src/validate.ts:../../protocol-validation/src/validate.js',
+    'packages/protocol/src/validate.ts:../../protocol-validation/src/attachments.js',
+    'packages/protocol/src/validate.ts:../../protocol-validation/src/model-images.js',
+    'packages/protocol/src/validate.ts:../../protocol-validation/src/safe-image.js',
+  ])
+  for (const pkg of packages) {
+    const declared = {
+      ...(pkg.json.dependencies as Record<string, string> | undefined),
+      ...(pkg.json.peerDependencies as Record<string, string> | undefined),
+    }
+    // Optional Host peer supports testkit activation only, never production plugin code.
+    if (pkg.name === '@agnes/plugin-runtime') delete declared['@agnes/host']
+    const edges = new Set<string>()
+    sourceGraph.set(pkg.name, edges)
+    manifestGraph.set(pkg.name, new Set(Object.keys(declared).filter((name) => byName.has(name))))
+    for (const file of listSourceFiles(pkg.dir, {
+      excludeDirs: [...DEFAULT_EXCLUDE_DIRS, 'test', 'tests', 'testkit', 'fixtures', 'tools', 'scripts'],
+    })) {
+      if (isTestFile(file) || file.endsWith('vitest.config.ts')) continue
+      for (const spec of importedModules(readFileSync(file, 'utf8'))) {
+        if (spec.startsWith('.')) {
+          const target = resolve(dirname(file), spec)
+          const owner = packages.find((candidate) => target.startsWith(`${candidate.dir}${sep}`))
+          if (owner && owner !== pkg) {
+            edges.add(owner.name)
+            if (!legacyPaths.has(`${relative(root, file)}:${spec}`)) {
+              errors.push(`${relative(root, file)} imports private path ${spec}`)
+            }
+          }
+          continue
+        }
+        const name = spec.startsWith('@') ? spec.split('/').slice(0, 2).join('/') : spec.split('/')[0]
+        if (!name || !byName.has(name) || name === pkg.name) continue
+        edges.add(name)
+        if (!(name in declared)) errors.push(`${relative(root, file)} imports undeclared ${spec}`)
+      }
+    }
+  }
+  expect(errors).toEqual([])
+  expect(dependencyCycles(manifestGraph), 'production manifest cycles').toEqual([])
+  expect(dependencyCycles(sourceGraph), 'production source cycles').toEqual([])
+})
+
+it('detects fixture back-edges, type queries and literal dynamic imports', () => {
+  expect(
+    importedModules(`
+    // import('@agnes/ignored')
+    import type { X } from '@agnes/a'
+    export { Y } from '@agnes/b/subpath'
+    type Z = import('@agnes/c').Z
+    const load = () => import('@agnes/d')
+    import '@agnes/e'
+  `),
+  ).toEqual(['@agnes/a', '@agnes/b/subpath', '@agnes/c', '@agnes/d', '@agnes/e'])
+  expect(
+    dependencyCycles(
+      new Map([
+        ['leaf', new Set(['root'])],
+        ['root', new Set(['leaf'])],
+      ]),
+    ),
+  ).toEqual(['leaf → root → leaf'])
 })

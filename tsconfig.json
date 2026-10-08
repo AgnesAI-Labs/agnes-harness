@@ -144,6 +144,45 @@
     },
     {
       "path": "packages/history-index"
+    },
+    {
+      "path": "packages/core/tsconfig.test.json"
+    },
+    {
+      "path": "packages/core/tsconfig.testkit.json"
+    },
+    {
+      "path": "packages/host/tsconfig.test.json"
+    },
+    {
+      "path": "packages/host/tsconfig.testkit.json"
+    },
+    {
+      "path": "packages/daemon/tsconfig.test.json"
+    },
+    {
+      "path": "packages/web/tsconfig.test.json"
+    },
+    {
+      "path": "packages/base/tsconfig.test.json"
+    },
+    {
+      "path": "packages/base/tsconfig.testkit.json"
+    },
+    {
+      "path": "packages/cli/tsconfig.test.json"
+    },
+    {
+      "path": "packages/code/tsconfig.test.json"
+    },
+    {
+      "path": "packages/plugin-runtime/tsconfig.test.json"
+    },
+    {
+      "path": "packages/plugin-runtime/tsconfig.testkit.json"
+    },
+    {
+      "path": "packages/worker-runtime/tsconfig.test.json"
     }
   ]
 }

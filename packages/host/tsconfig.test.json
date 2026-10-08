@@ -1,0 +1,58 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "outDir": "dist/test",
+    "tsBuildInfoFile": "dist/tsconfig.test.tsbuildinfo"
+  },
+  "include": [
+    "test/**/*.ts",
+    "test/**/*.tsx",
+    "**/*.test.ts",
+    "**/*.test.tsx",
+    "**/test/**/*.ts",
+    "**/tests/**/*.ts",
+    "tools/**/*.ts",
+    "vitest.config.ts"
+  ],
+  "exclude": [
+    "dist",
+    "node_modules",
+    "testkit/fs-io-memory.ts",
+    "testkit/plugin-registration.ts",
+    "testkit/index.ts",
+    "testkit/wire-capture.ts",
+    "testkit/cordis-seams.ts"
+  ],
+  "references": [
+    {
+      "path": "."
+    },
+    {
+      "path": "../cordis"
+    },
+    {
+      "path": "../model-adapters"
+    },
+    {
+      "path": "../plugin-runtime"
+    },
+    {
+      "path": "../system-node"
+    },
+    {
+      "path": "../resource-control-runtime"
+    },
+    {
+      "path": "../sandbox-remote"
+    },
+    {
+      "path": "../../tsconfig.config.json"
+    },
+    {
+      "path": "tsconfig.testkit.json"
+    },
+    {
+      "path": "../core/tsconfig.testkit.json"
+    }
+  ]
+}
