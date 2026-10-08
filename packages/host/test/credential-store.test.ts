@@ -171,6 +171,14 @@ describe.runIf(process.getuid !== undefined)('credential store', () => {
     chmodSync(join(root, 'secrets'), 0o755)
     expect(await refusal(store.read('secret://deepseek/default'))).toMatchObject({ reason: 'mode' })
     chmodSync(join(root, 'secrets'), 0o700)
+    for (const mode of [0o777, 0o500]) {
+      chmodSync(root, mode)
+      expect(await refusal(store.putApiKey('secret://deepseek/default', 'replacement-marker'))).toMatchObject(
+        { reason: 'mode', path: root },
+      )
+      expect(lstatSync(root).mode & 0o7777).toBe(mode)
+    }
+    chmodSync(root, 0o700)
 
     const file = resolveCredentialFile(root, 'secret://deepseek/default', 'api-key')
     rmSync(file)

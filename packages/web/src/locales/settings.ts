@@ -14,8 +14,16 @@ export const settingsLocaleCatalog: LocaleCatalog = {
     'settings.config.credentialRequired': 'An API key is required. Enter the key and retry.',
     'settings.config.credentialRejected':
       'The provider rejected the API key or its access. Check the key and account permissions, then retry.',
+    'settings.config.credentialPermissions':
+      'Credential storage permissions are invalid. Ensure AGH_HOME and its secrets/auth directories belong to the current user, with directories 0700 and files 0600. Check data/audit/configuration.jsonl for the affected path.',
+    'settings.config.credentialNoSpace':
+      'Credential storage has no free space. Free disk space in AGH_HOME and retry.',
+    'settings.config.credentialReadOnly':
+      'Credential storage is on a read-only filesystem. Move AGH_HOME to a writable local directory and restart.',
+    'settings.config.credentialInvalid':
+      'Credential storage contains an unsafe path or invalid data. Check data/audit/configuration.jsonl and restore a private, regular store.',
     'settings.config.credentialStore':
-      'The local credential store is unavailable. Check this machine’s configuration.',
+      'The local credential store is unavailable. Check filesystem access and native build support; see data/audit/configuration.jsonl for the path and error code.',
     'settings.config.providerUnavailable':
       'The provider model catalog is unavailable. Check the network or base URL.',
     'settings.config.testFailed': 'The provider connection test failed. Check the address and key.',
@@ -158,7 +166,15 @@ export const settingsLocaleCatalog: LocaleCatalog = {
     'settings.config.credentialRequired': '需要 API key，请输入密钥后重试。',
     'settings.config.credentialRejected':
       'Provider 拒绝了 API key 或其访问权限。请检查密钥与账号权限后重试。',
-    'settings.config.credentialStore': '本地凭据存储不可用，请检查本机配置。',
+    'settings.config.credentialPermissions':
+      '凭据存储权限不符合要求。请确认 AGH_HOME 及 secrets/auth 目录属于当前用户，目录权限为 0700、文件权限为 0600；具体路径见 data/audit/configuration.jsonl。',
+    'settings.config.credentialNoSpace': '凭据存储所在磁盘空间不足。请释放 AGH_HOME 所在磁盘的空间后重试。',
+    'settings.config.credentialReadOnly':
+      '凭据存储位于只读文件系统。请将 AGH_HOME 移至可写的本地目录并重启。',
+    'settings.config.credentialInvalid':
+      '凭据存储存在不安全路径或无效数据。请检查 data/audit/configuration.jsonl，恢复私有的普通目录和文件。',
+    'settings.config.credentialStore':
+      '本地凭据存储不可用。请检查文件系统访问权限和本机构建支持；具体路径及错误码见 data/audit/configuration.jsonl。',
     'settings.config.providerUnavailable': 'Provider 模型目录不可用，请检查网络或 Base URL。',
     'settings.config.testFailed': 'Provider 连接测试未通过，请检查地址和密钥。',
     'settings.config.subscriptionAuth': '上游拒绝了订阅授权或访问权限，请重新授权并核对登录账号。',

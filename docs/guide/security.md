@@ -84,6 +84,8 @@ Permanent disk Skill deletion covers every file in the selected directory. User 
 
 ## Secrets and persistent data
 
+Local model accounts use private files under `AGH_HOME/secrets` (also on macOS), shared with session model adapters. On a credential write, AGH narrows a home owned by the current user from owner-writable, non-group/world-writable permissions such as 0755 to 0700. It does not repair existing credential directories or files: directories must be 0700 and files 0600. Storage failures refuse the account operation and record the error class, reason, allowlisted OS code and affected path in `AGH_HOME/data/audit/configuration.jsonl`, without credential contents. Settings distinguishes permission failures, read-only filesystems and unsafe or invalid storage.
+
 The configuration service stores provider keys in a credential backend. Public configuration retains only `secret://...` references. MCP CLI rejects plaintext options such as `--token` and `--env`, accepting constrained references instead. A reference does not grant arbitrary permission to read a secret.
 
 `AGH_HOME` contains sessions, configuration, grants, audits, and caches. Reduced logging does not mean conversation text is free of sensitive information. Review user input, tool arguments, and paths before exporting, taking screenshots, or publishing errors. Do not commit `secrets/`, `auth/`, a complete home, real traces, or credential files. `publicConfig` reaches the browser and must never contain secrets or secret references.

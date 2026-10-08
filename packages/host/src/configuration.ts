@@ -49,11 +49,13 @@ import {
 import { renameWriteThrough, windowsEnsurePrivateDirectorySync } from '@agnes/system-node'
 import { subscriptionCredentials } from './adapters/codex-credentials.js'
 import {
+  CredentialStoreError,
   createCredentialStore,
   isSubscriptionCredential,
   type StoredCredential,
 } from './adapters/credential-store.js'
 import { createWin32Platform } from './adapters/platform.js'
+import { createFileAudit } from './audit.js'
 import { type CodexLoginDependencies, createCodexLogin } from './codex-login.js'
 import { withConfigurationLock } from './configuration-lock.js'
 import {
@@ -76,6 +78,10 @@ export type ConfigurationErrorCode =
   | 'CONFIG_CREDENTIAL_REQUIRED'
   | 'CONFIG_CREDENTIAL_REJECTED'
   | 'CONFIG_CREDENTIAL_STORE'
+  | 'CONFIG_CREDENTIAL_PERMISSIONS'
+  | 'CONFIG_CREDENTIAL_READ_ONLY'
+  | 'CONFIG_CREDENTIAL_NO_SPACE'
+  | 'CONFIG_CREDENTIAL_INVALID'
   | 'CONFIG_PROVIDER_UNAVAILABLE'
   | 'CONFIG_TEST_FAILED'
   | 'CONFIG_SUBSCRIPTION_AUTH'
@@ -92,31 +98,39 @@ export type ConfigurationErrorCode =
 export class ConfigurationError extends Error {
   constructor(readonly code: ConfigurationErrorCode) {
     super(
-      code === 'CONFIG_CREDENTIAL_REJECTED'
-        ? 'The provider rejected the API key or its access. Check the key and account permissions.'
-        : code.startsWith('CONFIG_SUBSCRIPTION_')
-          ? 'Subscription model test failed.'
-          : code === 'CONFIG_INVALID_INPUT'
-            ? 'Configuration input is invalid.'
-            : code === 'CONFIG_UNKNOWN_PROVIDER'
-              ? 'The selected provider is unavailable.'
-              : code === 'CONFIG_ENDPOINT_OVERRIDE_UNSUPPORTED'
-                ? 'This provider does not support endpoint overrides.'
-                : code === 'CONFIG_CREDENTIAL_REQUIRED'
-                  ? 'An API key is required.'
-                  : code === 'CONFIG_CREDENTIAL_STORE'
-                    ? 'The credential store is unavailable.'
-                    : code === 'CONFIG_PROVIDER_UNAVAILABLE'
-                      ? 'The provider catalogue is unavailable.'
-                      : code === 'CONFIG_TEST_FAILED'
-                        ? 'The provider connection test failed.'
-                        : code === 'CONFIG_MODEL_UNAVAILABLE'
-                          ? 'The selected model is unavailable.'
-                          : code === 'CONFIG_REVISION_CONFLICT'
-                            ? 'Configuration changed; reload and try again.'
-                            : code === 'CONFIG_PERSIST_FAILED'
-                              ? 'Configuration could not be saved.'
-                              : 'The saved configuration is invalid.',
+      code === 'CONFIG_CREDENTIAL_NO_SPACE'
+        ? 'Credential storage has no free space. Free disk space in AGH_HOME and retry.'
+        : code === 'CONFIG_CREDENTIAL_PERMISSIONS'
+          ? 'Credential permissions are invalid. Check ownership, directory mode 0700 and file mode 0600; see data/audit/configuration.jsonl.'
+          : code === 'CONFIG_CREDENTIAL_READ_ONLY'
+            ? 'Credential storage is read-only. Move AGH_HOME to a writable local directory and restart.'
+            : code === 'CONFIG_CREDENTIAL_INVALID'
+              ? 'Credential storage is unsafe or invalid. Check data/audit/configuration.jsonl.'
+              : code === 'CONFIG_CREDENTIAL_REJECTED'
+                ? 'The provider rejected the API key or its access. Check the key and account permissions.'
+                : code.startsWith('CONFIG_SUBSCRIPTION_')
+                  ? 'Subscription model test failed.'
+                  : code === 'CONFIG_INVALID_INPUT'
+                    ? 'Configuration input is invalid.'
+                    : code === 'CONFIG_UNKNOWN_PROVIDER'
+                      ? 'The selected provider is unavailable.'
+                      : code === 'CONFIG_ENDPOINT_OVERRIDE_UNSUPPORTED'
+                        ? 'This provider does not support endpoint overrides.'
+                        : code === 'CONFIG_CREDENTIAL_REQUIRED'
+                          ? 'An API key is required.'
+                          : code === 'CONFIG_CREDENTIAL_STORE'
+                            ? 'The credential store is unavailable.'
+                            : code === 'CONFIG_PROVIDER_UNAVAILABLE'
+                              ? 'The provider catalogue is unavailable.'
+                              : code === 'CONFIG_TEST_FAILED'
+                                ? 'The provider connection test failed.'
+                                : code === 'CONFIG_MODEL_UNAVAILABLE'
+                                  ? 'The selected model is unavailable.'
+                                  : code === 'CONFIG_REVISION_CONFLICT'
+                                    ? 'Configuration changed; reload and try again.'
+                                    : code === 'CONFIG_PERSIST_FAILED'
+                                      ? 'Configuration could not be saved.'
+                                      : 'The saved configuration is invalid.',
     )
     this.name = 'ConfigurationError'
   }
@@ -719,9 +733,41 @@ export function createConfigurationService(
   const readCredential = async (ref: string): Promise<StoredCredential | null> => {
     try {
       return await credentialStore.read(ref)
-    } catch {
-      throw new ConfigurationError('CONFIG_CREDENTIAL_STORE')
+    } catch (error) {
+      throw credentialFailure(error, 'read')
     }
+  }
+
+  const credentialFailure = (error: unknown, operation: 'read' | 'write'): ConfigurationError => {
+    const failure = error instanceof CredentialStoreError ? error : undefined
+    try {
+      createFileAudit(join(home, 'data', 'audit', 'configuration.jsonl')).write({
+        kind: 'daemon.request_failed',
+        detail: {
+          operation,
+          errorClass: failure ? 'CredentialStoreError' : 'UnknownError',
+          errorCode: failure?.code ?? 'UNKNOWN',
+          reason: failure?.reason,
+          osCode: failure?.osCode,
+          path: failure?.path ?? fileSecretsDir(home),
+        },
+      })
+    } catch {
+      /* Audit failure must not replace the refusal. */
+    }
+    return new ConfigurationError(
+      failure?.osCode === 'ENOSPC'
+        ? 'CONFIG_CREDENTIAL_NO_SPACE'
+        : failure?.osCode === 'EROFS'
+          ? 'CONFIG_CREDENTIAL_READ_ONLY'
+          : failure &&
+              (['mode', 'owner'].includes(failure.reason) ||
+                ['EPERM', 'EACCES'].includes(failure.osCode ?? ''))
+            ? 'CONFIG_CREDENTIAL_PERMISSIONS'
+            : failure && !['io', 'enforcement-unavailable'].includes(failure.reason)
+              ? 'CONFIG_CREDENTIAL_INVALID'
+              : 'CONFIG_CREDENTIAL_STORE',
+    )
   }
 
   const loadState = async (): Promise<StoredConfiguration | undefined> => {
@@ -1084,8 +1130,8 @@ export function createConfigurationService(
     if (input.makeDefault && !enabled) throw new ConfigurationError('CONFIG_INVALID_INPUT')
     try {
       if (!oauth) await credentialStore.putApiKey(ref, key as string)
-    } catch {
-      throw new ConfigurationError('CONFIG_CREDENTIAL_STORE')
+    } catch (error) {
+      throw credentialFailure(error, 'write')
     }
     const next: StoredConfiguration = {
       version: 2,

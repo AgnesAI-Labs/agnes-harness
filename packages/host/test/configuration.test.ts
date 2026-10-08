@@ -1,4 +1,5 @@
-import { access, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import * as fsPromises from 'node:fs/promises'
+import { access, chmod, lstat, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { createServer, type IncomingMessage } from 'node:http'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -8,6 +9,11 @@ import { createPrivateDirectorySync } from '@agnes/system-node'
 import { afterEach, expect, it, vi } from 'vitest'
 import { createCredentialStore } from '../src/adapters/credential-store.js'
 import { createConfigurationService } from '../src/configuration.js'
+
+vi.mock('node:fs/promises', async (importOriginal) => {
+  const fs = await importOriginal<typeof import('node:fs/promises')>()
+  return { ...fs, mkdir: vi.fn(fs.mkdir) }
+})
 
 const homes: string[] = []
 const servers: ReturnType<typeof createServer>[] = []
@@ -58,6 +64,7 @@ it('tests a real provider catalogue, saves an atomic non-secret record, and expo
   if (!model) throw new Error('openai catalogue is empty')
   const server = await fixture(model)
   const root = await home()
+  if (process.getuid) await chmod(root, 0o755) // Fresh custom home under the normal POSIX umask.
   const service = createConfigurationService({ home: root, profile: 'local-dev' })
   expect(await service.profileInput()).toEqual({})
 
@@ -90,6 +97,7 @@ it('tests a real provider catalogue, saves an atomic non-secret record, and expo
     expectedRevision: 0,
     defaultSettings,
   })
+  if (process.getuid) expect((await lstat(root)).mode & 0o7777).toBe(0o700)
   expect(saved).toMatchObject({ profile: 'local-dev', revision: 1, configured: true, effect: 'new-sessions' })
   expect(await service.get()).toEqual(saved)
   expect(saved.accounts?.[0]?.models[0]?.defaultSettings).toEqual(defaultSettings)
@@ -618,4 +626,78 @@ it('persists child engines beside session defaults and drops invalid fields', as
   await expect(reloaded.saveChildEngines({ revision: 0, engines })).rejects.toMatchObject({
     code: 'CONFIG_REVISION_CONFLICT',
   })
+})
+
+it.runIf(process.getuid !== undefined).each([0o500, 0o755])(
+  'refuses secrets directory mode %o with actionable errors and safe diagnostics',
+  async (mode) => {
+    const server = await fixture('deepseek-flash')
+    const root = await home()
+    const directory = join(root, 'secrets')
+    await mkdir(directory, { mode })
+    const service = createConfigurationService({ home: root, profile: 'local-dev' })
+    const input = { providerId: 'deepseek', baseUrl: server.baseUrl, apiKey: 'sk-test-value' }
+    await expect(
+      service.save({ ...input, model: 'deepseek-flash', expectedRevision: 0 }),
+    ).rejects.toMatchObject({
+      code: 'CONFIG_CREDENTIAL_PERMISSIONS',
+      message: expect.stringContaining('0700'),
+    })
+    expect((await service.get()).revision).toBe(0)
+    expect((await lstat(directory)).mode & 0o7777).toBe(mode)
+    const audit = await readFile(join(root, 'data', 'audit', 'configuration.jsonl'), 'utf8')
+    expect(audit).not.toContain(input.apiKey)
+    expect(JSON.parse(audit.trim())).toMatchObject({
+      kind: 'daemon.request_failed',
+      detail: {
+        operation: 'write',
+        errorClass: 'CredentialStoreError',
+        errorCode: 'CREDENTIAL_STORE_UNSAFE',
+        reason: 'mode',
+        path: directory,
+      },
+    })
+    await chmod(directory, 0o700)
+    await service.save({ ...input, model: 'deepseek-flash', expectedRevision: 0 })
+    await chmod(directory, mode)
+    await expect(service.get()).rejects.toMatchObject({ code: 'CONFIG_CREDENTIAL_PERMISSIONS' })
+    const records = (await readFile(join(root, 'data', 'audit', 'configuration.jsonl'), 'utf8'))
+      .trim()
+      .split('\n')
+      .map((line) => JSON.parse(line))
+    expect(records.at(-1)).toMatchObject({ detail: { operation: 'read', path: directory, reason: 'mode' } })
+    await chmod(directory, 0o700)
+  },
+)
+
+it.runIf(process.getuid !== undefined).each([
+  ['EROFS', 'CONFIG_CREDENTIAL_READ_ONLY'],
+  ['EACCES', 'CONFIG_CREDENTIAL_PERMISSIONS'],
+  ['ENOSPC', 'CONFIG_CREDENTIAL_NO_SPACE'],
+])('reports %s without leaking exception text or publishing an account', async (osCode, code) => {
+  const server = await fixture('deepseek-flash')
+  const root = await home()
+  const directory = join(root, 'secrets')
+  const original = (await vi.importActual<typeof import('node:fs/promises')>('node:fs/promises')).mkdir
+  vi.spyOn(fsPromises, 'mkdir').mockImplementation(async (path, options) => {
+    if (path === directory) throw Object.assign(new Error('private exception marker'), { code: osCode })
+    return original(path, options)
+  })
+  const service = createConfigurationService({ home: root, profile: 'local-dev' })
+  await expect(
+    service.save({
+      providerId: 'deepseek',
+      baseUrl: server.baseUrl,
+      apiKey: 'sk-test-value',
+      model: 'deepseek-flash',
+      expectedRevision: 0,
+    }),
+  ).rejects.toMatchObject({ code })
+  expect((await service.get()).revision).toBe(0)
+  const audit = await readFile(join(root, 'data', 'audit', 'configuration.jsonl'), 'utf8')
+  expect(JSON.parse(audit.trim())).toMatchObject({
+    detail: { errorClass: 'CredentialStoreError', reason: 'io', osCode, path: directory },
+  })
+  expect(audit).not.toContain('private exception marker')
+  expect(audit).not.toContain('sk-test-value')
 })
