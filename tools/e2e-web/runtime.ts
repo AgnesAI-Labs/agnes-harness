@@ -46,7 +46,16 @@ export async function isolatedRuntime() {
         { cwd: process.cwd(), env, timeout: 20_000, maxBuffer: 2 * 1024 * 1024 },
         (error, stdout, stderr) => {
           log += `CLI ${args[0]}\n${stdout}${stderr}`
-          error ? reject(new Error(`CLI ${args[0]}: ${stderr}`, { cause: error })) : done(stdout)
+          error
+            ? reject(
+                new Error(
+                  `CLI ${args[0]}: ${stderr || stdout} (code=${error.code}, signal=${error.signal})`,
+                  {
+                    cause: error,
+                  },
+                ),
+              )
+            : done(stdout)
         },
       )
       child.stdin?.end()

@@ -10,15 +10,21 @@ export const test = base.extend<{ runtime: Runtime; browserHealth: undefined }>(
       await use(runtime)
     } finally {
       try {
-        await info.attach('final-screen.png', {
-          body: await page.screenshot({ animations: 'disabled' }),
-          contentType: 'image/png',
-        })
-        await page.close()
-        await info.attach('runtime-diagnostics.json', {
-          body: await runtime.diagnostics(),
-          contentType: 'application/json',
-        })
+        try {
+          await info.attach('final-screen.png', {
+            body: await page.screenshot({ animations: 'disabled' }),
+            contentType: 'image/png',
+          })
+        } finally {
+          try {
+            await page.close()
+          } finally {
+            await info.attach('runtime-diagnostics.json', {
+              body: await runtime.diagnostics(),
+              contentType: 'application/json',
+            })
+          }
+        }
       } finally {
         try {
           await runtime.dispose()
