@@ -16,7 +16,8 @@ pnpm exec playwright install chromium
 ```
 
 The default command runs `build:local`. `--reuse-build` reuses only an E2E-stamped build whose
-product source, manifests, lockfile, Node version, OS and architecture match; otherwise it rebuilds.
+product source, manifests, lockfile, root/package TypeScript configurations, Node version, OS and
+architecture match; otherwise it rebuilds.
 The command also typechecks the harness and runs the i18n-scanner unit checks.
 No browser or package installation happens during the gate. `AGH_CHROMIUM_PATH` can select an
 already installed executable for local debugging; CI uses the pinned Playwright Chromium cache.

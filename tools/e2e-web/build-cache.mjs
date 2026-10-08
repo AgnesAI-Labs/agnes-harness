@@ -18,6 +18,7 @@ export async function sourceHash() {
       'package.json',
       'pnpm-lock.yaml',
       'pnpm-workspace.yaml',
+      ':(top,glob)tsconfig*.json',
       'patches',
     ],
     { encoding: 'utf8' },
