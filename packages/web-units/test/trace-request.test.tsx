@@ -90,31 +90,45 @@ it('shows captured sources and all request panes, highlights changes and explici
   const host = document.createElement('div')
   document.body.append(host)
   const root = createRoot(host)
+  const compare = async (value: string) =>
+    act(async () => {
+      const select = host.querySelector<HTMLSelectElement>('[data-testid="request-trace-compare"]')!
+      select.value = value
+      select.dispatchEvent(new Event('change', { bubbles: true }))
+    })
   try {
     await act(async () =>
       root.render(createElement(RequestTraceView, { sessionId: 'old', callId: snapshot.id, read })),
     )
     expect(host.querySelectorAll('[role="tab"]')).toHaveLength(6)
-    expect(host.textContent).toContain('profile:system-prompt')
-    expect(host.querySelector('[role="tabpanel"]')?.textContent).toContain(
+    expect(host.querySelector('[data-testid="request-trace-source"]')?.textContent).toContain(
+      'Your custom persona',
+    )
+    expect(host.querySelector('[data-testid="request-trace-source"]')?.getAttribute('title')).toContain(
+      'profile:system-prompt',
+    )
+    expect(host.querySelector('[data-testid="request-trace-summary"]')?.textContent).toContain('demo')
+    expect(host.querySelector('[data-testid="request-trace-content"]')?.textContent).toContain(
       'Logical request before adapter transforms',
     )
     expect(host.textContent).toContain('final provider body unavailable')
     await act(async () =>
       host.querySelector<HTMLButtonElement>('[data-testid="request-trace-tab-raw"]')!.click(),
     )
-    expect(host.querySelector('[role="tabpanel"]')?.textContent).toContain('Final provider body unavailable')
-    expect(host.querySelector('[role="tabpanel"]')?.textContent).not.toContain('new persona')
+    expect(host.querySelector('[data-testid="request-trace-content"]')?.textContent).toContain(
+      'Final provider body unavailable',
+    )
+    expect(host.querySelector('[data-testid="request-trace-content"]')?.textContent).not.toContain(
+      'new persona',
+    )
     expect(host.querySelector<HTMLButtonElement>('[data-testid="request-trace-copy"]')?.disabled).toBe(true)
     await act(async () =>
       host.querySelector<HTMLButtonElement>('[data-testid="request-trace-tab-system"]')!.click(),
     )
-    await act(async () => host.querySelector<HTMLInputElement>('[data-testid="request-trace-diff"]')!.click())
+    await compare('previous')
     expect(host.querySelector('del')?.textContent).toContain('old persona')
     expect(host.querySelector('ins')?.textContent).toContain('new persona')
-    await act(async () =>
-      host.querySelector<HTMLButtonElement>('[data-testid="request-trace-baseline"]')!.click(),
-    )
+    await compare('pin')
     await act(async () =>
       root.render(
         createElement(RequestTraceView, {
@@ -125,13 +139,14 @@ it('shows captured sources and all request panes, highlights changes and explici
         }),
       ),
     )
+    await compare('fixed')
     expect(calls.findLast((call) => call.callId === '00000000-0000-4000-8000-000000000002')?.compare).toEqual(
       { sessionId: 'old', callId: snapshot.id },
     )
     await act(async () =>
       host.querySelector<HTMLButtonElement>('[data-testid="request-trace-tab-tools"]')!.click(),
     )
-    expect(host.querySelector('[role="tabpanel"]')?.textContent).toContain('read')
+    expect(host.querySelector('[data-testid="request-trace-content"]')?.textContent).toContain('read')
     await act(async () => {
       const select = host.querySelector<HTMLSelectElement>('[data-testid="request-trace-call"]')!
       select.value = '00000000-0000-4000-8000-000000000003'
@@ -149,25 +164,34 @@ it('shows captured sources and all request panes, highlights changes and explici
     await act(async () =>
       host.querySelector<HTMLButtonElement>('[data-testid="request-trace-tab-tokens"]')!.click(),
     )
-    expect(host.querySelector('[role="tabpanel"]')?.textContent).toContain('Provider token usage is missing.')
-    expect(host.querySelector('[role="tabpanel"]')?.textContent).not.toContain('99')
+    expect(host.querySelector('[data-testid="request-trace-content"]')?.textContent).toContain(
+      'Provider token usage is missing.',
+    )
+    expect(host.querySelector('[data-testid="request-trace-content"]')?.textContent).not.toContain('99')
+    expect(host.querySelector('[data-testid="request-trace-summary"]')?.textContent).toContain('Attempt 1/2')
+    expect(host.querySelector('[data-testid="request-trace-summary"]')?.textContent).toContain('Failed')
+    expect(host.querySelector('[data-testid="request-trace-summary"]')?.textContent).not.toContain('99')
+    await compare('previous')
+    expect(host.querySelector('[data-testid="request-trace-summary"]')?.textContent).toContain('Attempt 1/2')
+    expect(host.querySelector('[data-testid="request-trace-summary"]')?.textContent).not.toContain('99')
+    await compare('none')
     await act(async () =>
       host.querySelector<HTMLButtonElement>('[data-testid="request-trace-tab-raw"]')!.click(),
     )
-    expect(host.querySelector('[role="tabpanel"]')?.textContent).toContain('Not sent')
-    expect(host.querySelector('[role="tabpanel"]')?.textContent).not.toContain('no capture tap')
+    expect(host.querySelector('[data-testid="request-trace-content"]')?.textContent).toContain('Not sent')
+    expect(host.querySelector('[data-testid="request-trace-content"]')?.textContent).not.toContain(
+      'no capture tap',
+    )
     expect(host.querySelector<HTMLButtonElement>('[data-testid="request-trace-copy"]')?.disabled).toBe(true)
 
     await act(async () =>
       host.querySelector<HTMLButtonElement>('[data-testid="request-trace-tab-system"]')!.click(),
     )
-    await act(async () => host.querySelector<HTMLInputElement>('[data-testid="request-trace-diff"]')!.click())
-    expect(host.querySelector('[role="tabpanel"]')?.textContent).toContain('compacted history')
-    await act(async () =>
-      [...host.querySelectorAll('button')]
-        .find((button) => button.textContent === 'Clear comparison')!
-        .click(),
+    await compare('previous')
+    expect(host.querySelector('[data-testid="request-trace-content"]')?.textContent).toContain(
+      'compacted history',
     )
+    await compare('clear')
     await act(async () =>
       root.render(
         createElement(RequestTraceView, {

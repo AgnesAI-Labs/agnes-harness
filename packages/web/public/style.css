@@ -7435,10 +7435,14 @@ body.admin-page {
   padding: 12px;
   border-block-end: 1px solid var(--agnes-line-primary);
 }
-.request-trace-tabs {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
+.request-trace-tabs .ant-tabs-nav {
+  margin-block-end: 8px;
+}
+.request-trace-tabs .ant-tabs-tab {
+  white-space: nowrap;
+}
+.request-trace-tabs .ant-tabs-tab + .ant-tabs-tab {
+  margin-inline-start: 18px;
 }
 .request-trace-json ins {
   background: color-mix(in srgb, var(--agnes-status-success-text) 18%, transparent);
@@ -7460,10 +7464,74 @@ body.admin-page {
   min-width: 6rem;
   max-width: 11rem;
 }
-.request-trace-controls {
+.request-trace-header {
   position: sticky;
   top: 0;
   z-index: 3;
   padding-block: 8px;
   background: var(--agnes-bg-surface);
+}
+
+.request-trace-header h3 {
+  margin: 0 0 8px;
+  font-size: var(--font-size-sm);
+}
+.request-trace-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  color: var(--agnes-text-secondary);
+  font-size: var(--font-size-xs);
+  padding-block-end: 8px;
+}
+.request-trace-summary strong {
+  color: var(--agnes-text-primary);
+}
+.request-trace-selectors {
+  display: flex;
+  gap: 12px;
+}
+.request-trace-selectors > * {
+  flex: 1;
+  min-width: 0;
+}
+.request-trace-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: var(--font-size-sm);
+}
+.request-trace-actions select {
+  flex: 1;
+  min-width: 0;
+  max-width: 18rem;
+}
+.trace-body:has(.request-trace) {
+  grid-template-columns: minmax(15rem, 0.65fr) minmax(0, 1.35fr);
+}
+.system-prompt-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr);
+  gap: 20px;
+  align-items: start;
+}
+.system-prompt-layout > * {
+  min-width: 0;
+}
+.system-prompt-layout [data-testid="system-prompt-preview"] {
+  position: sticky;
+  top: 0;
+  max-height: 65dvh;
+  overflow: auto;
+}
+@media (max-width: 900px) {
+  .trace-body:has(.request-trace) {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .system-prompt-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .system-prompt-layout [data-testid="system-prompt-preview"] {
+    position: static;
+  }
 }

@@ -32,6 +32,7 @@ export { RESOURCE_DETAIL_LOCALE_NAMESPACE, resourceDetailLocaleCatalog } from '.
 export { RESOURCE_LIST_LOCALE_NAMESPACE, resourceListLocaleCatalog } from './locales/resource-list.js'
 export * from './model-settings.js'
 export * from './popover.js'
+export { promptSourceLabel } from './prompt-source.js'
 export * from './provider-config-form.js'
 export {
   createRegionHost,

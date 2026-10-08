@@ -1315,6 +1315,10 @@ export const Trace = forwardRef<TraceHandle, TraceProps>(function Trace(
         }),
       )
     })
+  const stepLabel = (step: string | undefined) => {
+    const match = /^Step (\d+)$/i.exec(step ?? '')
+    return match ? traceText('trace.stepNumber', { n: match[1]! }) : step
+  }
   const inspector = selectedRow
     ? createElement(
         'aside',
@@ -1328,7 +1332,7 @@ export const Trace = forwardRef<TraceHandle, TraceProps>(function Trace(
             { className: 'trace-inspector-title' },
             [
               selectedRow.turn ? traceText('trace.inspector.turn', { turn: selectedRow.turn }) : undefined,
-              selectedRow.step,
+              stepLabel(selectedRow.step),
               traceText('trace.inspector.message'),
             ]
               .filter(Boolean)
@@ -1428,7 +1432,9 @@ export const Trace = forwardRef<TraceHandle, TraceProps>(function Trace(
                 ]
               })
             : []),
-          ...(selectedRow.step ? [paneField(traceText('trace.field.step'), selectedRow.step)] : []),
+          ...(selectedRow.step
+            ? [paneField(traceText('trace.field.step'), stepLabel(selectedRow.step) ?? '')]
+            : []),
           ...(selectedRow.durationMs !== undefined || selectedRow.statusCode === 'running'
             ? [paneField(traceText('trace.field.duration'), durationLabel(selectedRow.durationMs))]
             : []),
@@ -1903,7 +1909,11 @@ export const Trace = forwardRef<TraceHandle, TraceProps>(function Trace(
               onClick: () => selectRow(row.id),
               ...(nested ? { style: { paddingLeft: `${24 + toolDepth * 16}px` } } : {}),
             },
-            createElement('span', { className: 'trace-step-mark' }, item.showStep ? row.step : undefined),
+            createElement(
+              'span',
+              { className: 'trace-step-mark' },
+              item.showStep ? stepLabel(row.step) : undefined,
+            ),
             createElement('span', { className: `trace-badge kind-${row.kind}` }, row.badge),
             createElement(
               'span',

@@ -9,12 +9,14 @@ import {
   Button,
   createCatalogTranslator,
   Field,
+  promptSourceLabel,
   SettingsCheckbox,
   SettingsCode,
   SettingsDetails,
   SettingsSelect,
   SettingsState,
   SettingsToolbar,
+  Tabs,
 } from '@agnes/web-ui'
 import { useEffect, useState } from 'react'
 
@@ -38,6 +40,16 @@ function value(snapshot: ModelRequestSnapshot, pane: Pane, attemptIndex = -1): s
         : snapshot[pane],
     null,
     2,
+  )
+}
+function tokenSummary(tokens: unknown, missing: string): string {
+  if (!tokens || typeof tokens !== 'object') return missing
+  const values = tokens as Record<string, unknown>
+  return (
+    ['input', 'output']
+      .filter((key) => typeof values[key] === 'number')
+      .map((key) => `${key === 'input' ? '↑' : '↓'} ${values[key]}`)
+      .join(' · ') || missing
   )
 }
 /** Bounded line diff; large blocks use a whole-block comparison instead of quadratic matching. */
@@ -80,18 +92,18 @@ export function RequestTraceView({
   const [result, setResult] = useState<ModelRequestResult>()
   const [error, setError] = useState(false)
   const [pane, setPane] = useState<Pane>('system')
-  const [diff, setDiff] = useState(false)
+  const [compareMode, setCompareMode] = useState<'none' | 'previous' | 'fixed'>('none')
   const [copied, setCopied] = useState(false)
-  const [baseline, setBaseline] = useState(false)
   const [comparisonInput, setComparisonInput] = useState(comparison)
   useEffect(() => {
     const pending = new AbortController()
     setResult(undefined)
     setError(false)
-    setAttemptIndex(-1)
     setConfirmClear(false)
     const compare =
-      comparisonInput && (comparisonInput.callId !== selectedCall || comparisonInput.sessionId !== sessionId)
+      compareMode === 'fixed' &&
+      comparisonInput &&
+      (comparisonInput.callId !== selectedCall || comparisonInput.sessionId !== sessionId)
         ? comparisonInput
         : undefined
     void read({ sessionId, callId: selectedCall, ...(compare ? { compare } : {}) }, pending.signal)
@@ -102,7 +114,7 @@ export function RequestTraceView({
         if (!pending.signal.aborted) setError(true)
       })
     return () => pending.abort()
-  }, [sessionId, selectedCall, read, comparisonInput])
+  }, [sessionId, selectedCall, read, comparisonInput, compareMode])
   useEffect(() => {
     const pending = new AbortController()
     void read({ sessionId }, pending.signal)
@@ -114,41 +126,104 @@ export function RequestTraceView({
   }, [sessionId, read])
   const snapshot = result?.snapshot
   const previous = result?.previous
+  const diff = compareMode !== 'none'
   const attempt = snapshot?.attempts[attemptIndex < 0 ? snapshot.attempts.length - 1 : attemptIndex]
   const rawUnavailable = attempt?.wire == null
   const currentText = snapshot ? value(snapshot, pane, attemptIndex) : ''
+  const content = snapshot ? (
+    <div data-testid="request-trace-content">
+      <p>{t(pane === 'raw' ? 'wire' : pane === 'tokens' ? 'tokenScope' : 'logical')}</p>
+      {pane === 'raw' && rawUnavailable ? (
+        <SettingsState>
+          {t('wireMissing')} ·{' '}
+          {t(
+            attempt?.wireUnavailable === 'capture-limit'
+              ? 'limit'
+              : attempt?.wireUnavailable === 'not-sent'
+                ? 'not-sent'
+                : attempt?.wireUnavailable === 'capture-failed'
+                  ? 'captureFailed'
+                  : 'unsupported',
+          )}
+        </SettingsState>
+      ) : pane === 'tokens' ? (
+        <>
+          <SettingsCode label={t('actual')}>
+            {JSON.stringify(
+              attempt ? attempt.providerActualTokens : snapshot.tokens.providerActual,
+              null,
+              2,
+            ) ?? t('missingTokens')}
+          </SettingsCode>
+          <SettingsCode label={t('estimated')}>
+            {JSON.stringify(attempt ? attempt.estimatedTokens : snapshot.tokens.estimated, null, 2) ??
+              t('missingTokens')}
+          </SettingsCode>
+          {!(attempt ? attempt.providerActualTokens : snapshot.tokens.providerActual) && (
+            <p>{t('missingTokens')}</p>
+          )}
+        </>
+      ) : diff && previous ? (
+        <>
+          <p>{t(value(previous, pane) === currentText ? 'unchanged' : 'changed')}</p>
+          <SettingsCode
+            label={t(pane)}
+            className="request-trace-json"
+            data-testid="request-trace-diff-content"
+          >
+            {requestDiff(value(previous, pane), currentText).map((part) =>
+              part.kind === 'removed' ? (
+                <del key={part.key}>
+                  {part.text}
+                  {'\n'}
+                </del>
+              ) : part.kind === 'added' ? (
+                <ins key={part.key}>
+                  {part.text}
+                  {'\n'}
+                </ins>
+              ) : (
+                <span key={part.key}>
+                  {part.text}
+                  {'\n'}
+                </span>
+              ),
+            )}
+          </SettingsCode>
+        </>
+      ) : pane === 'system' ? (
+        <>
+          {snapshot.sections.map((section) => (
+            <SettingsDetails
+              key={section.id}
+              title={
+                <span data-testid="request-trace-source" title={`${section.id} · ${section.source}`}>
+                  {promptSourceLabel(section.id, section.source, locale)}
+                </span>
+              }
+              compact
+              open={section.id !== 'core:untrusted-envelope'}
+            >
+              <SettingsCode label={t(pane)} className="request-trace-json">
+                {section.text}
+              </SettingsCode>
+            </SettingsDetails>
+          ))}
+          <SettingsDetails title={t('raw')} compact>
+            <SettingsCode label={t(pane)} className="request-trace-json">
+              {snapshot.system}
+            </SettingsCode>
+          </SettingsDetails>
+        </>
+      ) : (
+        <SettingsCode label={t(pane)} className="request-trace-json">
+          {currentText}
+        </SettingsCode>
+      )}
+    </div>
+  ) : null
   return (
     <section className="request-trace" data-testid="request-trace" aria-label={t('title')}>
-      <h3>{t('title')}</h3>
-      {calls.length > 1 && (
-        <Field label={t('call')} htmlFor={`request-trace-${callId}-call`}>
-          <SettingsSelect
-            id={`request-trace-${callId}-call`}
-            data-testid="request-trace-call"
-            value={selectedCall}
-            onChange={(event) => {
-              setSelectedCall(event.currentTarget.value)
-              setDiff(false)
-            }}
-          >
-            {calls.map((call, index) => (
-              <option key={call.id} value={call.id}>
-                {index + 1} ·{' '}
-                {t(
-                  call.kind === 'inference'
-                    ? 'task'
-                    : call.kind === 'compaction'
-                      ? 'compaction'
-                      : call.kind === 'summary'
-                        ? 'summary'
-                        : 'other',
-                )}{' '}
-                · {call.model}
-              </option>
-            ))}
-          </SettingsSelect>
-        </Field>
-      )}
       {error ? (
         <SettingsState tone="error">{t('failed')}</SettingsState>
       ) : !result ? (
@@ -157,6 +232,160 @@ export function RequestTraceView({
         <SettingsState>{t('missing')}</SettingsState>
       ) : (
         <>
+          <header className="request-trace-header">
+            <h3>{t('title')}</h3>
+            <div className="request-trace-summary" data-testid="request-trace-summary">
+              <strong>
+                {typeof snapshot.params === 'object' && snapshot.params && 'model' in snapshot.params
+                  ? String(snapshot.params.model ?? t('unknown'))
+                  : t('unknown')}
+              </strong>
+              <span>
+                {t('attemptCount', {
+                  n: attempt ? (attemptIndex < 0 ? snapshot.attempts.length : attemptIndex + 1) : 0,
+                  total: snapshot.attempts.length,
+                })}
+              </span>
+              <span>
+                {t(attempt?.status === 'failed' ? 'failedAttempt' : (attempt?.status ?? 'unknown'))}
+              </span>
+              <span>
+                {t('actual')}:{' '}
+                {tokenSummary(
+                  attempt ? attempt.providerActualTokens : snapshot.tokens.providerActual,
+                  t('unknown'),
+                )}
+              </span>
+              <span>
+                {t('estimated')}:{' '}
+                {tokenSummary(attempt ? attempt.estimatedTokens : snapshot.tokens.estimated, t('unknown'))}
+              </span>
+              <time dateTime={snapshot.createdAt} title={snapshot.createdAt}>
+                {new Date(snapshot.createdAt).toLocaleString(locale)}
+              </time>
+            </div>
+            <div className="request-trace-selectors">
+              {calls.length > 1 && (
+                <Field label={t('call')} htmlFor={`request-trace-${callId}-call`}>
+                  <SettingsSelect
+                    id={`request-trace-${callId}-call`}
+                    data-testid="request-trace-call"
+                    value={selectedCall}
+                    onChange={(event) => {
+                      setSelectedCall(event.currentTarget.value)
+                      setAttemptIndex(-1)
+                      setCompareMode('none')
+                    }}
+                  >
+                    {calls.map((call, index) => (
+                      <option key={call.id} value={call.id}>
+                        {index + 1} ·{' '}
+                        {t(
+                          call.kind === 'inference'
+                            ? 'task'
+                            : call.kind === 'compaction'
+                              ? 'compaction'
+                              : call.kind === 'summary'
+                                ? 'summary'
+                                : 'other',
+                        )}{' '}
+                        · {call.model}
+                      </option>
+                    ))}
+                  </SettingsSelect>
+                </Field>
+              )}
+
+              {snapshot.attempts.length > 1 && (
+                <Field label={t('attempt')} htmlFor={`request-trace-${callId}-attempt`}>
+                  <SettingsSelect
+                    id={`request-trace-${callId}-attempt`}
+                    data-testid="request-trace-attempt"
+                    value={attemptIndex < 0 ? snapshot.attempts.length - 1 : attemptIndex}
+                    onChange={(event) => {
+                      setAttemptIndex(Number(event.currentTarget.value))
+                      setCompareMode('none')
+                    }}
+                  >
+                    {snapshot.attempts.map((attempt, index) => (
+                      <option key={attempt.attemptId} value={index}>
+                        {index + 1} · {t(attempt.status === 'failed' ? 'failedAttempt' : attempt.status)} ·{' '}
+                        {attempt.adapter.api}
+                      </option>
+                    ))}
+                  </SettingsSelect>
+                </Field>
+              )}
+            </div>
+            <div className="request-trace-actions">
+              <label htmlFor={`request-trace-${callId}-compare`}>{t('compare')}</label>
+              <SettingsSelect
+                id={`request-trace-${callId}-compare`}
+                data-testid="request-trace-compare"
+                value={compareMode}
+                onChange={(event) => {
+                  const mode = event.currentTarget.value
+                  if (mode === 'pin') {
+                    comparison = { sessionId, callId: selectedCall }
+                    setComparisonInput(comparison)
+                    setCompareMode('none')
+                  } else if (mode === 'clear') {
+                    comparison = undefined
+                    setComparisonInput(undefined)
+                    setCompareMode('none')
+                  } else setCompareMode(mode as 'none' | 'previous' | 'fixed')
+                }}
+              >
+                <option value="none">{t('none')}</option>
+                <option value="previous" disabled={!previous}>
+                  {t('previousRequest')}
+                </option>
+                <option
+                  value="fixed"
+                  disabled={
+                    !comparisonInput ||
+                    (comparisonInput.sessionId === sessionId && comparisonInput.callId === selectedCall)
+                  }
+                >
+                  {t('fixedBaseline')}
+                </option>
+                <optgroup label={t('baselineActions')}>
+                  <option value="pin">{t('baseline')}</option>
+                  <option value="clear" disabled={!comparisonInput}>
+                    {t('clear')}
+                  </option>
+                </optgroup>
+              </SettingsSelect>
+              <Button
+                data-testid="request-trace-copy"
+                aria-label={t(copied ? 'copied' : 'copy')}
+                title={t(copied ? 'copied' : 'copy')}
+                size="small"
+                disabled={!navigator.clipboard?.writeText || (pane === 'raw' && rawUnavailable)}
+                icon={
+                  <svg
+                    viewBox="0 0 24 24"
+                    width="16"
+                    height="16"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="1.5"
+                    aria-hidden="true"
+                  >
+                    <rect x="8" y="8" width="12" height="12" rx="2" />
+                    <path d="M16 8V4H4v12h4" />
+                  </svg>
+                }
+                onClick={() => {
+                  void navigator.clipboard
+                    .writeText(currentText)
+                    .then(() => setCopied(true))
+                    .catch(() => setError(true))
+                }}
+              />
+              {copied && <span role="status">{t('copied')}</span>}
+            </div>
+          </header>
           <SettingsDetails
             title={t(snapshot.capture === 'final-provider-body' ? 'wire' : 'adapter')}
             compact
@@ -210,176 +439,22 @@ export function RequestTraceView({
               </SettingsToolbar>
             )}
           </SettingsDetails>
-          {snapshot.attempts.length > 1 && (
-            <Field label={t('attempt')} htmlFor={`request-trace-${callId}-attempt`}>
-              <SettingsSelect
-                id={`request-trace-${callId}-attempt`}
-                data-testid="request-trace-attempt"
-                value={attemptIndex < 0 ? snapshot.attempts.length - 1 : attemptIndex}
-                onChange={(event) => {
-                  setAttemptIndex(Number(event.currentTarget.value))
-                  setDiff(false)
-                }}
-              >
-                {snapshot.attempts.map((attempt, index) => (
-                  <option key={attempt.attemptId} value={index}>
-                    {index + 1} · {t(attempt.status === 'failed' ? 'failedAttempt' : attempt.status)} ·{' '}
-                    {attempt.adapter.api}
-                  </option>
-                ))}
-              </SettingsSelect>
-            </Field>
-          )}
-          <div className="request-trace-controls">
-            <div role="tablist" aria-label={t('title')} className="request-trace-tabs">
-              {panes.map((name) => (
-                <Button
-                  key={name}
-                  role="tab"
-                  aria-selected={pane === name}
-                  aria-controls={`request-trace-${callId}-panel`}
-                  id={`request-trace-${callId}-${name}`}
-                  data-testid={`request-trace-tab-${name}`}
-                  type={pane === name ? 'primary' : 'default'}
-                  onClick={() => {
-                    setPane(name)
-                    setCopied(false)
-                  }}
-                >
-                  {t(name)}
-                </Button>
-              ))}
-            </div>
-            <SettingsToolbar>
-              <SettingsCheckbox
-                label={t('diff')}
-                data-testid="request-trace-diff"
-                checked={diff}
-                disabled={!previous}
-                onChange={(event) => setDiff(event.currentTarget.checked)}
-              />
-              <Button
-                data-testid="request-trace-baseline"
-                onClick={() => {
-                  comparison = { sessionId, callId: selectedCall }
-                  setBaseline(true)
-                }}
-              >
-                {t(baseline ? 'selected' : 'baseline')}
-              </Button>
-              {comparison && (
-                <Button
-                  onClick={() => {
-                    comparison = undefined
-                    setBaseline(false)
-                    setComparisonInput(undefined)
-                  }}
-                >
-                  {t('clear')}
-                </Button>
-              )}
-              <Button
-                data-testid="request-trace-copy"
-                disabled={!navigator.clipboard?.writeText || (pane === 'raw' && rawUnavailable)}
-                onClick={() => {
-                  void navigator.clipboard
-                    .writeText(currentText)
-                    .then(() => setCopied(true))
-                    .catch(() => setError(true))
-                }}
-              >
-                {t(copied ? 'copied' : 'copy')}
-              </Button>
-            </SettingsToolbar>
-          </div>
+          <Tabs
+            className="request-trace-tabs"
+            size="small"
+            destroyOnHidden
+            activeKey={pane}
+            onChange={(name) => {
+              setPane(name as Pane)
+              setCopied(false)
+            }}
+            items={panes.map((name) => ({
+              key: name,
+              children: name === pane ? content : null,
+              label: <span data-testid={`request-trace-tab-${name}`}>{t(name)}</span>,
+            }))}
+          />
           {!previous && <p>{t('noPrevious')}</p>}
-          <div
-            role="tabpanel"
-            id={`request-trace-${callId}-panel`}
-            aria-labelledby={`request-trace-${callId}-${pane}`}
-            data-testid="request-trace-content"
-          >
-            <p>{t(pane === 'raw' ? 'wire' : pane === 'tokens' ? 'tokenScope' : 'logical')}</p>
-            {pane === 'raw' && rawUnavailable ? (
-              <SettingsState>
-                {t('wireMissing')} ·{' '}
-                {t(
-                  attempt?.wireUnavailable === 'capture-limit'
-                    ? 'limit'
-                    : attempt?.wireUnavailable === 'not-sent'
-                      ? 'not-sent'
-                      : attempt?.wireUnavailable === 'capture-failed'
-                        ? 'captureFailed'
-                        : 'unsupported',
-                )}
-              </SettingsState>
-            ) : pane === 'tokens' ? (
-              <>
-                <SettingsCode label={t('actual')}>
-                  {JSON.stringify(
-                    attempt ? attempt.providerActualTokens : snapshot.tokens.providerActual,
-                    null,
-                    2,
-                  ) ?? t('missingTokens')}
-                </SettingsCode>
-                <SettingsCode label={t('estimated')}>
-                  {JSON.stringify(attempt ? attempt.estimatedTokens : snapshot.tokens.estimated, null, 2) ??
-                    t('missingTokens')}
-                </SettingsCode>
-                {!(attempt ? attempt.providerActualTokens : snapshot.tokens.providerActual) && (
-                  <p>{t('missingTokens')}</p>
-                )}
-              </>
-            ) : diff && previous ? (
-              <>
-                <p>{t(value(previous, pane) === currentText ? 'unchanged' : 'changed')}</p>
-                <SettingsCode
-                  label={t(pane)}
-                  className="request-trace-json"
-                  data-testid="request-trace-diff-content"
-                >
-                  {requestDiff(value(previous, pane), currentText).map((part) =>
-                    part.kind === 'removed' ? (
-                      <del key={part.key}>
-                        {part.text}
-                        {'\n'}
-                      </del>
-                    ) : part.kind === 'added' ? (
-                      <ins key={part.key}>
-                        {part.text}
-                        {'\n'}
-                      </ins>
-                    ) : (
-                      <span key={part.key}>
-                        {part.text}
-                        {'\n'}
-                      </span>
-                    ),
-                  )}
-                </SettingsCode>
-              </>
-            ) : pane === 'system' ? (
-              <>
-                {snapshot.sections.map((section) => (
-                  <SettingsDetails key={section.id} title={section.id} compact open>
-                    <p data-testid="request-trace-source">{section.source}</p>
-                    <SettingsCode label={t(pane)} className="request-trace-json">
-                      {section.text}
-                    </SettingsCode>
-                  </SettingsDetails>
-                ))}
-                <SettingsDetails title={t('raw')} compact>
-                  <SettingsCode label={t(pane)} className="request-trace-json">
-                    {snapshot.system}
-                  </SettingsCode>
-                </SettingsDetails>
-              </>
-            ) : (
-              <SettingsCode label={t(pane)} className="request-trace-json">
-                {currentText}
-              </SettingsCode>
-            )}
-          </div>
         </>
       )}
     </section>

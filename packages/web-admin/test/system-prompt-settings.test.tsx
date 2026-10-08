@@ -37,7 +37,10 @@ it('renders source labels, saves bounded instructions, requires override confirm
     act(async () => host.querySelector<HTMLButtonElement>(`[data-testid="system-prompt-${name}"]`)!.click())
   try {
     await act(async () => root.render(createElement(SystemPromptPanel, { canSave: true, api })))
-    expect(host.textContent).toContain('plugin/persona.md')
+    expect(host.querySelector('[data-testid="system-prompt-source"]')?.getAttribute('title')).toContain(
+      'plugin/persona.md',
+    )
+    expect(host.querySelector('.system-prompt-layout [data-testid="system-prompt-preview"]')).not.toBeNull()
     expect(host.textContent).toContain('Existing sessions keep')
     await input('personaPrefix', 'new persona')
     await click('save')

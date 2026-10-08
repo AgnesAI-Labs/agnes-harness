@@ -35,7 +35,7 @@ for (const locale of ['en', 'zh-CN'])
       await send('Synthetic original persona request')
       const oldUrl = page.url()
       await request()
-      await page.getByTestId('request-trace-baseline').click()
+      await page.getByTestId('request-trace-compare').selectOption('pin')
       await page.locator('#view-chat').click()
       await settings(page, locale)
       await section(page, 'system-prompt')
@@ -51,6 +51,7 @@ for (const locale of ['en', 'zh-CN'])
       await page.getByTestId('system-prompt-editor').evaluate((element) => {
         for (let parent = element.parentElement; parent; parent = parent.parentElement) parent.scrollTop = 0
       })
+      await expect(page.getByTestId('system-prompt-preview')).toBeInViewport()
       await screen(page, info, `system-prompt-${locale}-${theme}`)
       await closeSettings(page, locale)
       await send('Same original session after changing profile settings')
@@ -62,13 +63,15 @@ for (const locale of ['en', 'zh-CN'])
       await request()
       await expect(page.getByTestId('request-trace-content')).toContainText('Synthetic delivery persona')
       await expect(
-        page.getByTestId('request-trace-source').filter({ hasText: 'profile:system-prompt' }),
+        page
+          .getByTestId('request-trace-source')
+          .filter({ hasText: locale === 'en' ? 'Your custom persona' : '你的自定义角色' }),
       ).toBeVisible()
-      await page.getByTestId('request-trace-diff').check()
+      await page.getByTestId('request-trace-compare').selectOption('fixed')
       await expect(page.getByTestId('request-trace-diff-content').locator('ins')).toContainText(
         'Synthetic delivery persona',
       )
-      await page.getByTestId('request-trace-diff').uncheck()
+      await page.getByTestId('request-trace-compare').selectOption('none')
       for (const pane of ['tools', 'messages', 'params', 'tokens', 'raw', 'system']) {
         await page.getByTestId(`request-trace-tab-${pane}`).click()
         await expect(page.getByTestId('request-trace-content')).toBeVisible()
@@ -80,10 +83,12 @@ for (const locale of ['en', 'zh-CN'])
       await page.locator('#trace-timeline-mode').selectOption('sequence')
       await translated(page)
       await accessible(page, info, 'request-trace')
-      await page
-        .getByTestId('request-trace-source')
-        .filter({ hasText: 'profile:system-prompt' })
-        .scrollIntoViewIfNeeded()
+      await page.getByTestId('request-trace-summary').scrollIntoViewIfNeeded()
+      await expect(page.getByTestId('request-trace-summary')).toContainText('demo')
+      const tabs = await page.getByTestId('request-trace').getByRole('tab').all()
+      const boxes = await Promise.all(tabs.map((tab) => tab.boundingBox()))
+      expect(new Set(boxes.map((box) => Math.round(box!.y))).size).toBe(1)
+      if (locale === 'zh-CN') await expect(page.locator('.trace-inspector-head')).not.toContainText('Step 1')
       // Runtime elapsed time changes both text and toolbar geometry; keep a synthetic visual value.
       const elapsed = page.locator('.trace-stats .trace-stat').first()
       const originalElapsed = await elapsed.textContent()
@@ -93,6 +98,7 @@ for (const locale of ['en', 'zh-CN'])
       try {
         await screen(page, info, `request-trace-${locale}-${theme}`, [
           page.locator('.trace-stat'),
+          page.locator('.request-trace-summary time'),
           page.locator('.trace-inspector-pane'),
         ])
       } finally {
