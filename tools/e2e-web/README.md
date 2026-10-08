@@ -48,8 +48,8 @@ separate from this gate.
 ## Gate and failure evidence
 
 The required GitHub status is **Web E2E gate** from `.github/workflows/e2e-web.yml`. It aggregates
-every macOS 14 and Linux Web shard and the separate Linux contracts job; a failed or cancelled
-dependency fails the aggregate.
+every macOS 14 and Linux Web shard, all three Linux fast-test shards and the separate Linux
+contracts job; a failed or cancelled dependency fails the aggregate.
 Maintainers must select that status in the target branch's required checks/ruleset; committing a
 workflow alone does not change GitHub branch protection. The workflow runs on pull requests,
 merge groups, integration/main pushes and manual dispatch, without path-based skips.
@@ -60,9 +60,11 @@ Chromium and CI fonts; dispatch does not generate or approve missing baselines.
 
 The local command shares two workers with per-test scheduling. CI runs six complete, disjoint
 shards per platform with one worker per runner, so concurrent daemon/worker/Chromium trees do not
-compete on the same small runner. Linux fast tests, typechecks, structural guards and kernel
-regressions run in their own hard-gated job instead of consuming the Web job's execution budget.
-Every shard keeps zero retries and a ten-minute CI gate step. Local Playwright runs have a
+compete on the same small runner. The complete `pnpm test` fast tier runs in three independent
+Vitest shards with one worker each; typechecks, structural guards and kernel regressions run
+once in a separate contracts job. All shards and contracts remain required by the aggregate,
+so they cannot consume the Web jobs' execution budget or hide a failed partition.
+Every Web shard keeps zero retries and a ten-minute CI gate step. Local Playwright runs have a
 twelve-minute global deadline, with shorter per-spec deadlines.
 `test.only` and retry overrides are refused. A flaky spec remains a gate failure; do not
 quarantine it with retries or `test.skip`. To investigate, run the named spec several times:

@@ -119,10 +119,6 @@ jobs:
         if: ${{ !cancelled() && steps.native.outcome == 'success' }}
         run: pnpm typecheck
       # Reviewed structural checks remain hard gates; unremeasured line budgets are reported debt.
-      - name: Fast tests
-        env: { AGH_RATCHET_REPORT: '1' }
-        if: ${{ !cancelled() && steps.native.outcome == 'success' }}
-        run: pnpm test
       - name: Repository guards (line-budget debt report-only)
         env: { AGH_RATCHET_REPORT: '1' }
         if: ${{ !cancelled() && steps.native.outcome == 'success' }}
@@ -130,9 +126,35 @@ jobs:
       - name: Linux kernel identity regression
         if: ${{ !cancelled() && steps.native.outcome == 'success' }}
         run: pnpm exec vitest run packages/host-infrastructure/test/process-identity-linux.e2e.test.ts packages/base/extensions/sandbox/test/backend-linux.e2e.test.ts packages/package-manager/test/local-watcher.slow.test.ts packages/host-infrastructure/test/adapters/storage-lock.e2e.test.ts --maxWorkers=1
+  linux-fast:
+    name: Linux fast tests (${{ matrix.shard }}/3)
+    strategy:
+      fail-fast: false
+      matrix: { shard: [1, 2, 3] }
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with: { node-version: 24.20.0, cache: pnpm }
+      - name: Native toolchain and bubblewrap
+        run: sudo apt-get update && sudo apt-get install -y build-essential libssl-dev python3 bubblewrap
+      - run: pnpm install --frozen-lockfile
+        id: install
+      - name: Native helpers
+        id: native
+        run: |
+          pnpm --filter @agnes/host build:native
+          pnpm --filter @agnes/system-node build:native
+      # Same complete fast tier and one worker as pnpm test, partitioned by Vitest.
+      - name: Fast tests (zero retries)
+        env: { AGH_RATCHET_REPORT: '1' }
+        if: ${{ !cancelled() && steps.native.outcome == 'success' }}
+        run: pnpm test --shard=${{ matrix.shard }}/3
   web-e2e-gate:
     name: Web E2E gate
-    needs: [e2e-web, e2e-web-linux, linux-contracts]
+    needs: [e2e-web, e2e-web-linux, linux-contracts, linux-fast]
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 1
@@ -142,7 +164,9 @@ jobs:
           MACOS_RESULT: ${{ needs.e2e-web.result }}
           LINUX_RESULT: ${{ needs.e2e-web-linux.result }}
           CONTRACTS_RESULT: ${{ needs.linux-contracts.result }}
+          FAST_RESULT: ${{ needs.linux-fast.result }}
         run: |
           test "$MACOS_RESULT" = success
           test "$LINUX_RESULT" = success
           test "$CONTRACTS_RESULT" = success
+          test "$FAST_RESULT" = success
