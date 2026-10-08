@@ -20,4 +20,6 @@ For model planning, omit `plan`. The first reply must be a JSON plan array; the 
 
 The plan array may be plain or fenced JSON, followed by explanatory prose. Only the initial array is executed; later prose is ignored, and the final summary is generated after execution. Leading prose, incomplete JSON and multiple plan arrays are refused before any tools run.
 
+The model summary uses `ctx.events.assistant(message, checkpoint)` to atomically publish the conversation message and its completed checkpoint.
+
 Codec version 1 checkpoints input identity, the plan, completed outputs and the current wave. Each tool uses a stable invocation id derived from the input and node. Restart between waves resumes without rerunning completed nodes. During a wave, the loop queries `ctx.effects.status`: durable responses are reused, unsent calls can proceed and `may-have-sent` refuses replay until reconciled. Model planning and summaries also use stable invocation ids; uncertain model sends refuse automatic retry. Responses are receipts, not guarantees that an external effect executed exactly once.

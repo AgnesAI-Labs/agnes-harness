@@ -88,8 +88,9 @@ function ports(planReply = JSON.stringify(nodes)) {
       emit: async (type, data) => {
         events.push({ type, data })
       },
-      assistant: async () => {
-        throw new Error('unexpected assistant port')
+      assistant: async (message, next) => {
+        events.push({ type: 'assistant/message', data: message })
+        checkpoint = structuredClone(next)
       },
       finish: async () => {
         finished = true
@@ -157,6 +158,7 @@ it.each([
   for (let i = 0; i < 10; i++) {
     if ((await driver.step(signal)).reason) break
   }
+  expect(p.checkpoint().state).toMatchObject({ stage: 'done' })
   expect(p.requests).toHaveLength(2)
   expect((p.requests[0] as { system: string }).system).toContain(JSON.stringify(tools))
   expect(p.batches.map((batch) => batch.map((call) => call.name))).toEqual([['read', 'read'], ['join']])
