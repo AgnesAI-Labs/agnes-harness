@@ -2,8 +2,8 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
+import { DDL } from '@agnes/host-infrastructure/adapters/ddl'
 import { afterEach, describe, expect, it } from 'vitest'
-import { DDL } from '../src/adapters/ddl.js'
 import {
   catchUpArtifactRefIndex,
   openArtifactRefIndex,

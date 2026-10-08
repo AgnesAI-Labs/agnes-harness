@@ -45,6 +45,9 @@
     },
     {
       "path": "../host-computer-use"
+    },
+    {
+      "path": "../host-artifacts"
     }
   ]
 }

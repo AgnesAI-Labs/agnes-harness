@@ -228,6 +228,12 @@
     },
     {
       "path": "packages/host-computer-use/tsconfig.test.json"
+    },
+    {
+      "path": "packages/host-artifacts"
+    },
+    {
+      "path": "packages/host-artifacts/tsconfig.test.json"
     }
   ]
 }

@@ -91,7 +91,8 @@
     "@agnes/model-adapters",
     "@agnes/host-common",
     "@agnes/host-infrastructure",
-    "@agnes/host-computer-use"
+    "@agnes/host-computer-use",
+    "@agnes/host-artifacts"
   ],
   "@agnes/sdk": [
     "@agnes/protocol",
@@ -198,6 +199,14 @@
     "@agnes/host-infrastructure",
     "@agnes/protocol",
     "@agnes/protocol-validation",
+    "@agnes/system-node"
+  ],
+  "@agnes/host-artifacts": [
+    "@agnes/core",
+    "@agnes/extension-api",
+    "@agnes/host-common",
+    "@agnes/host-infrastructure",
+    "@agnes/protocol",
     "@agnes/system-node"
   ]
 }

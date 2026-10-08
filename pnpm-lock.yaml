@@ -502,6 +502,9 @@ importers:
       '@agnes/extension-api':
         specifier: workspace:*
         version: link:../extension-api
+      '@agnes/host-artifacts':
+        specifier: workspace:*
+        version: link:../host-artifacts
       '@agnes/host-common':
         specifier: workspace:*
         version: link:../host-common
@@ -554,6 +557,31 @@ importers:
       '@sinclair/typebox':
         specifier: 0.34.33
         version: 0.34.33
+
+  packages/host-artifacts:
+    dependencies:
+      '@agnes/core':
+        specifier: workspace:*
+        version: link:../core
+      '@agnes/extension-api':
+        specifier: workspace:*
+        version: link:../extension-api
+      '@agnes/host-common':
+        specifier: workspace:*
+        version: link:../host-common
+      '@agnes/host-infrastructure':
+        specifier: workspace:*
+        version: link:../host-infrastructure
+      '@agnes/protocol':
+        specifier: workspace:*
+        version: link:../protocol
+      '@agnes/system-node':
+        specifier: workspace:*
+        version: link:../system-node
+    devDependencies:
+      '@agnes/host':
+        specifier: workspace:*
+        version: link:../host
 
   packages/host-common:
     dependencies:

@@ -6,7 +6,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { readComputerUseTombstone } from '../src/computer-use-marker.js'
 
 vi.mock('../src/adapters/platform.js', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('../src/adapters/platform.js')>()
+  const actual = await importOriginal<typeof import('@agnes/host-infrastructure/adapters/platform')>()
   return { ...actual, createPlatform: () => ({ ...actual.createPlatform(), os: 'win32' as const }) }
 })
 vi.mock('@agnes/system-node', async (importOriginal) => {

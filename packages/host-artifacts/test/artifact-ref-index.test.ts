@@ -4,8 +4,9 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
+import { DDL } from '@agnes/host-infrastructure/adapters/ddl'
 import { afterEach, describe, expect, it } from 'vitest'
-import { DDL } from '../src/adapters/ddl.js'
+import { fullScanRefIndex, indexTables } from '../../host/test/support/full-scan-roots-oracle.js'
 import { ARTIFACT_REF_EXTRACTOR_VERSION } from '../src/artifact-ledger-refs.js'
 import {
   ARTIFACT_REF_INDEX_FILE,
@@ -16,7 +17,6 @@ import {
   verifyRootsUnderLedgerLock,
   withIndexTransaction,
 } from '../src/artifact-ref-index.js'
-import { fullScanRefIndex, indexTables } from './support/full-scan-roots-oracle.js'
 
 const temporary: string[] = []
 const open: DatabaseSync[] = []

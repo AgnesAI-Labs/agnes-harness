@@ -34,7 +34,8 @@
     "yaml": "2.9.0",
     "@agnes/host-common": "workspace:*",
     "@agnes/host-infrastructure": "workspace:*",
-    "@agnes/host-computer-use": "workspace:*"
+    "@agnes/host-computer-use": "workspace:*",
+    "@agnes/host-artifacts": "workspace:*"
   },
   "devDependencies": {
     "@agnes/base": "workspace:*",

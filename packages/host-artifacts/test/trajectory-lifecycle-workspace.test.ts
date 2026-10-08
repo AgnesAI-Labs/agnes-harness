@@ -2,8 +2,8 @@ import type { WorkspaceInvocationPort, WorkspaceInvocationView } from '@agnes/co
 import { fakeProvider } from '@agnes/core/testkit'
 import type { SessionRef } from '@agnes/extension-api'
 import { describe, expect, it, vi } from 'vitest'
+import { ledgerDir, openOn } from '../../host/test/scan-trunc/fixture.js'
 import { createTrajectoryLifecycle } from '../src/trajectory-lifecycle.js'
-import { ledgerDir, openOn } from './scan-trunc/fixture.js'
 
 function deferred<T>() {
   let resolve!: (value: T) => void

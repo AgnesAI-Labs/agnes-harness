@@ -5,8 +5,8 @@ import { isTestFile, listSourceFiles, repoRoot } from './repo.js'
 
 const root = repoRoot()
 const writer = join(root, 'packages/package-manager/src')
-const hosts = ['host', 'host-common', 'host-infrastructure', 'host-computer-use'].map((name) =>
-  join(root, 'packages', name, 'src'),
+const hosts = ['host', 'host-common', 'host-infrastructure', 'host-computer-use', 'host-artifacts'].map(
+  (name) => join(root, 'packages', name, 'src'),
 )
 
 /** Compatibility files may delegate, but may never regain filesystem or source ownership. */

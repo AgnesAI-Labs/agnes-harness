@@ -1,0 +1,31 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": ".",
+    "outDir": "dist"
+  },
+  "include": ["src/**/*.ts"],
+  "references": [
+    {
+      "path": "../../tsconfig.config.json"
+    },
+    {
+      "path": "../core"
+    },
+    {
+      "path": "../extension-api"
+    },
+    {
+      "path": "../host-common"
+    },
+    {
+      "path": "../host-infrastructure"
+    },
+    {
+      "path": "../protocol"
+    },
+    {
+      "path": "../system-node"
+    }
+  ]
+}

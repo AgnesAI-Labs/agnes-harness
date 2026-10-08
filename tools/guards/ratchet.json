@@ -51,7 +51,7 @@
   "packages/base/src/mcp": 1601,
   "packages/base/extensions/computer-use": 1786,
   "packages/base/extensions/privacy": 800,
-  "packages/host/src": 24290,
+  "packages/host/src": 22061,
   "packages/host/src/ext-host/service-invocation": 254,
   "packages/host/src/ext-host/tool-context-capabilities": 130,
   "packages/host/src/ext-host/hooks-isolation-client": 390,
@@ -171,5 +171,6 @@
   "packages/host-infrastructure/src/adapters/exec-output": 32,
   "packages/host-infrastructure/src/adapters/secrets-win32": 20,
   "packages/host-infrastructure/src/adapters/public-fetch": 380,
-  "packages/host-computer-use/src": 10586
+  "packages/host-computer-use/src": 10586,
+  "packages/host-artifacts/src": 2243
 }

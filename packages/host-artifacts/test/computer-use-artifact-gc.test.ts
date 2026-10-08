@@ -7,9 +7,10 @@ import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import { setTimeout as delay } from 'node:timers/promises'
+import { DDL } from '@agnes/host-infrastructure/adapters/ddl'
 import { deletePrivateArtifactSync, privateArtifactDeleteAvailable } from '@agnes/system-node'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { DDL } from '../src/adapters/ddl.js'
+import { fullScanRefIndex, indexTables } from '../../host/test/support/full-scan-roots-oracle.js'
 import { ARTIFACT_RECLAIMED_FAILURE, createLocalArtifactReadStore } from '../src/artifact-read-store.js'
 import {
   ARTIFACT_REF_INDEX_FILE,
@@ -20,7 +21,6 @@ import { planRetentionProtection } from '../src/artifact-retention-protection.js
 import { createComputerUseArtifactGcRuntime } from '../src/computer-use-artifact-gc.js'
 import { computerUseMarkerPath } from '../src/computer-use-marker.js'
 import { createPrivateArtifactStore, withComputerUseArtifactMutation } from '../src/private-artifact-store.js'
-import { fullScanRefIndex, indexTables } from './support/full-scan-roots-oracle.js'
 
 vi.mock('../src/artifact-ref-index.js', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../src/artifact-ref-index.js')>()

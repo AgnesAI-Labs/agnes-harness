@@ -31,6 +31,7 @@ describe('repo', () => {
       '@agnes/guards',
       '@agnes/history-index',
       '@agnes/host',
+      '@agnes/host-artifacts',
       '@agnes/host-common',
       '@agnes/host-computer-use',
       '@agnes/host-infrastructure',
