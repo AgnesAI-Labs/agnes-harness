@@ -1,5 +1,5 @@
 import { createServer } from 'node:http'
-import type { AdminSessionSelection, PackageAdminPermission } from '@agnes/protocol'
+import type { AdminSessionSelection, DiagnosticsExportResult, PackageAdminPermission } from '@agnes/protocol'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   ACTIONS,
@@ -25,6 +25,7 @@ async function server(
     permissions?: readonly PackageAdminPermission[]
     composition?: NonNullable<AdminSurfaceOptions['composition']>
     sessionTools?: NonNullable<AdminSurfaceOptions['sessionTools']>
+    diagnostics?: NonNullable<AdminSurfaceOptions['diagnostics']>
     runtimeAdmin?: NonNullable<AdminSurfaceOptions['runtimeAdmin']>
   } = {},
 ) {
@@ -83,6 +84,65 @@ async function server(
 }
 
 describe('local package admin surface trust boundary', () => {
+  it('exports strict metadata diagnostics behind the read permission and exact origin, including in recovery', async () => {
+    const bundle: DiagnosticsExportResult = {
+      schemaVersion: 1,
+      collectedAt: '2026-10-08T00:00:00Z',
+      agh: { version: 'test' },
+      runtime: { platform: 'test', arch: 'test', osRelease: 'test', node: '24', pid: 1, uptimeMs: 0 },
+      profile: { hash: 'a'.repeat(64) },
+      generations: { available: false, current: null, items: [] },
+      doctor: [],
+      errors: [],
+      audit: [],
+      limits: { audit: 100, errors: 4096 },
+      telemetry: { enabled: false, includeContent: false, endpointHosts: ['collector.example:4318'] },
+    }
+    const diagnostics = { export: vi.fn(async () => bundle) }
+    const s = await server(undefined, undefined, { diagnostics, permissions: ['packages.read'] })
+    await s.login()
+    s.invoke.mockRejectedValueOnce(new Error('backend recovery'))
+    expect(await (await s.request('context')).json()).toMatchObject({ readOnly: true })
+    await expect((await s.selectionRequest('diagnostics')).json()).resolves.toEqual({
+      bundle,
+      doctorAvailable: false,
+    })
+    await expect((await s.selectionRequest('diagnostics', 'POST', {})).json()).resolves.toEqual(bundle)
+    for (const input of [{ sessionId: 'foreign' }, { limit: 501 }, { method: 'arbitrary' }])
+      expect((await s.selectionRequest('diagnostics', 'POST', input)).status).toBe(400)
+    expect(
+      (await s.selectionRequest('diagnostics', 'POST', {}, { Origin: 'http://evil.invalid' })).status,
+    ).toBe(403)
+    expect((await s.selectionRequest('diagnostics/doctor', 'POST', {})).status).toBe(503)
+    const denied = await server(undefined, undefined, { diagnostics, permissions: [] })
+    expect((await denied.selectionRequest('diagnostics')).status).toBe(403)
+    const invalid = await server(undefined, undefined, {
+      diagnostics: { export: async () => ({ ...bundle, password: 'secret' }) },
+    })
+    const failure = await invalid.selectionRequest('diagnostics')
+    expect(failure.status).toBe(502)
+    expect(await failure.text()).not.toContain('secret')
+    const supported = await server(undefined, undefined, {
+      diagnostics: {
+        ...diagnostics,
+        doctor: async () => ({
+          checks: [
+            {
+              id: 'credentials',
+              status: 'ok',
+              fixHintKey: 'doctor.fix.credentials',
+              message: 'private path',
+            },
+            { id: 'private path', status: 'fail' },
+          ],
+        }),
+      },
+    })
+    await expect(
+      (await supported.selectionRequest('diagnostics/doctor', 'POST', {})).json(),
+    ).resolves.toEqual({ sections: [{ name: 'credentials', status: 'ok' }] })
+  })
+
   it('returns a session tool catalog only through the authorized exact-origin BFF', async () => {
     const catalog = { sessionId: 'student:session', tools: [], resources: [] }
     const s = await server(undefined, undefined, {

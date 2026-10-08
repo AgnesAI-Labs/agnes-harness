@@ -3,6 +3,7 @@ import { beforeEach, expect, it, vi } from 'vitest'
 import type { LocalBackend } from './backend.js'
 
 const mocks = vi.hoisted(() => {
+  const request = vi.fn(async () => ({ schemaVersion: 1 }))
   const catalogList = vi.fn(async () => ({ items: [], nextCursor: null }))
   const close = vi.fn(async () => undefined)
   const surfaceClose = vi.fn()
@@ -41,6 +42,7 @@ const mocks = vi.hoisted(() => {
   }
   return {
     sessionSelection,
+    request,
     catalogList,
     close,
     surfaceClose,
@@ -61,6 +63,7 @@ const mocks = vi.hoisted(() => {
 vi.mock('@agnes/sdk', () => ({
   memoryJournal: vi.fn(() => ({})),
   createClient: vi.fn(() => ({
+    request: mocks.request,
     initialize: vi.fn(async () => ({})),
     close: mocks.close,
     packages: {
@@ -110,6 +113,7 @@ it('advertises exactly the frozen hot-update features and forwards catalog reads
   const admin = localPackageAdmin(backend, backend.web?.origin ?? '')
   const options = mocks.createAdminSurface.mock.calls[0]?.[0] as
     | {
+        diagnostics: { export(input: unknown): Promise<unknown>; doctor?: () => Promise<unknown> }
         features: string[]
         invoke(action: string, params: unknown): Promise<unknown>
         surfaceLinks(): Promise<unknown>
@@ -122,6 +126,11 @@ it('advertises exactly the frozen hot-update features and forwards catalog reads
     'packages.operation-control.v1',
   ])
 
+  await options?.diagnostics.export({ diagnosticId: '11111111-1111-4111-8111-111111111111' })
+  expect(mocks.request).toHaveBeenCalledWith('_agnes/v1/diagnostics.export', {
+    diagnosticId: '11111111-1111-4111-8111-111111111111',
+  })
+  expect(options?.diagnostics.doctor).toBeUndefined()
   await options?.invoke('catalog/list', { profile: 'local-dev', limit: 50 })
   expect(mocks.catalogList).toHaveBeenCalledWith({ profile: 'local-dev', limit: 50 })
   await options?.invoke('tree/list', { profile: 'local-dev' })

@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { basename } from 'node:path'
 import AxeBuilder from '@axe-core/playwright'
-import type { Page, TestInfo } from '@playwright/test'
+import type { Locator, Page, TestInfo } from '@playwright/test'
 import { expect } from './fixtures.js'
 import { localeKeys, unresolvedLabels } from './i18n.js'
 
@@ -63,7 +63,7 @@ export async function accessible(page: Page, info: TestInfo, name: string) {
     )
     .toEqual([])
 }
-export async function screen(page: Page, info: TestInfo, name: string) {
+export async function screen(page: Page, info: TestInfo, name: string, mask: Locator[] = []) {
   await settled(page)
   // Streaming pins to the bottom; the visual contract frames the completed tool row from its start.
   if (name.startsWith('tool-row-')) {
@@ -106,7 +106,7 @@ export async function screen(page: Page, info: TestInfo, name: string) {
     },
     readFileSync('tools/e2e-web/baselines/screenshot.css', 'utf8'),
   )
-  const options = { animations: 'disabled' as const, fullPage: true }
+  const options = { animations: 'disabled' as const, fullPage: true, mask }
   try {
     await page.screenshot({ ...options, path: info.outputPath(`${name}.png`) })
     if (manifest.pending[name]) {

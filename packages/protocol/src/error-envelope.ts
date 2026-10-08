@@ -3,7 +3,8 @@ import { type AppServerError, AppServerErrorCause } from '../gen/ts/app-server.j
 import { recordDiagnostic } from './diagnostic-records.js'
 import { AGNES_ERRORS, JSONRPC_ERRORS, type RpcError } from './errors.js'
 
-function errorMessageKey(code: string): AppServerError['data']['messageKey'] {
+/** Pure classification for safe diagnostic records; does not create or persist an error. */
+export function errorMessageKey(code: string): AppServerError['data']['messageKey'] {
   if (code === 'CONFIG_CREDENTIAL_REQUIRED') return 'appServer.errors.credentialRequired'
   if (code === 'CONFIG_CREDENTIAL_REJECTED') return 'appServer.errors.credentialRejected'
   if (code.startsWith('CONFIG_CREDENTIAL_')) return 'appServer.errors.credentialStore'

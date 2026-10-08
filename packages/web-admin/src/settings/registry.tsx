@@ -11,6 +11,7 @@ import type { PluginAdminApi } from '../admin/plugins/api.js'
 import { BundlesPanel, SessionDefaultsPanel } from '../admin/plugins/control-panel.js'
 import { ChildEnginesPanel } from './child-engines.js'
 import { ContextPanel } from './context.js'
+import { DiagnosticsPanel } from './diagnostics.js'
 import { ExamplesPanel } from './examples.js'
 import { HistorySearchPanel } from './history.js'
 import { JobsPanel } from './jobs-panel.js'
@@ -145,6 +146,7 @@ const definitions: readonly [
   ['automation', 'schedules', 61, (c, t) => <SchedulesPage api={c.schedules} t={t} />],
   ['automation', 'terminal', 62, () => <JobsPanel terminal />],
   ['security', 'security', 70, (c, t) => c.snapshot && <SecurityPanel snapshot={c.snapshot} t={t} />],
+  ['diagnostics', 'diagnostics', 75, () => <DiagnosticsPanel />],
   ['history', 'history', 80, (_, t) => <HistorySearchPanel t={t} />],
 ]
 for (const [group, id, order, render] of definitions) {
@@ -152,14 +154,15 @@ for (const [group, id, order, render] of definitions) {
     group,
     id,
     order,
-    icon: group,
+    icon: group === 'diagnostics' ? 'tools' : group,
     titleKey:
       id === 'plugins'
         ? 'settings-shell.page.installed'
         : id === 'providers'
           ? 'settings.pluginKinds.title'
           : `settings-shell.page.${id}`,
-    groupTitleKey: `settings-shell.group.${group}`,
+    groupTitleKey:
+      group === 'diagnostics' ? 'settings-shell.page.diagnostics' : `settings-shell.group.${group}`,
     navigationId: id === 'plugins' ? 'plugin-management' : `runtime-settings-${id}`,
     component: ({ context }) => render(context.data as RuntimeSettingsContext, context.t),
   }

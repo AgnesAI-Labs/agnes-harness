@@ -5,6 +5,7 @@ import {
   APP_SERVER_SCHEMA,
   AppServerError,
   diagnosticRecords,
+  errorMessageKey,
   httpRpcError,
   normalizeRpcError,
   observeDiagnostics,
@@ -81,6 +82,8 @@ it('publishes safe, stable envelopes for every transport without leaking nested 
   expect(normalizeRpcError(rpcError('INVALID_PARAMS', { code: 'PATTERN', path: '/serverId' }))).toMatchObject(
     { code: -32602, data: { code: 'PATTERN', messageKey: 'appServer.errors.invalidParams' } },
   )
+  expect(errorMessageKey('CONFIG_CREDENTIAL_REJECTED')).toBe(error.data.messageKey)
+  expect(errorMessageKey('untrusted-secret')).toBe('appServer.errors.internal')
   expect(APP_SERVER_SCHEMA['x-version']).toBe(1)
   const row = diagnosticRecords().find((row) => row.diagnosticId === error.data.diagnosticId)
   expect(row).toMatchObject({

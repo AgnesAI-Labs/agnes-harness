@@ -11,7 +11,10 @@ import { timelineLocaleCatalog } from '@agnes/web-foundation/locales/timeline'
 import { expect, it } from 'vitest'
 import { pluginAdminShellLocaleCatalog } from '../src/admin/plugins/locales/shell.js'
 
+import { diagnosticsCatalog } from '../src/settings/diagnostics-locale.js'
+
 const catalogs = [
+  ['diagnostics', diagnosticsCatalog],
   ['web app', appLocaleCatalog],
   ['web composer', composerLocaleCatalog],
   ['web index shell', indexShellLocaleCatalog],

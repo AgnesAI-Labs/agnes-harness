@@ -4551,6 +4551,32 @@ const PRESET_SAMPLES: Record<string, Sample> = {
 const task20Fixtures = loadJsonl(`${pkgRoot}fixtures/configs/task20.jsonl`) as Array<
   FixtureRow & { kind: string; name: string }
 >
+// Extend the existing diagnostics parity contract: legacy bundles remain valid,
+// while collector URLs or credential fields never become part of the public DTO.
+AGNES_SAMPLES.DiagnosticsExportResult!.invalid.push(
+  ...[
+    {
+      enabled: false,
+      includeContent: false,
+      endpointHosts: ['https://collector.example/private?token=fixture'],
+    },
+    {
+      enabled: false,
+      includeContent: false,
+      endpointHosts: ['collector.example'],
+      headers: { authorization: 'fixture' },
+    },
+  ].map((telemetry) => ({ ...(AGNES_SAMPLES.DiagnosticsExportResult!.valid as object), telemetry })),
+)
+AGNES_SAMPLES.DiagnosticsExportResult!.valid = {
+  ...(AGNES_SAMPLES.DiagnosticsExportResult!.valid as object),
+  telemetry: {
+    enabled: false,
+    includeContent: false,
+    endpointHosts: ['collector.example:4318', '[::1]:4318'],
+  },
+}
+
 const task20Helpers = JSON.parse(readFileSync(`${pkgRoot}test/task20-samples.json`, 'utf8')) as Record<
   string,
   unknown

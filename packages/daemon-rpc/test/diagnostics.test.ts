@@ -92,6 +92,7 @@ describe('diagnostics.export', () => {
     ep.conn.credentialKind = 'local'
     registerDiagnostics(ep, {
       home,
+      telemetry: { enabled: false, includeContent: false, endpointHosts: ['collector.example:4318'] },
       registry: {
         get: () => undefined,
         require: () => {
@@ -111,6 +112,11 @@ describe('diagnostics.export', () => {
       lastSeq: 23,
       idHash: expect.stringMatching(/^[a-f0-9]{64}$/),
       loopIdHash: expect.stringMatching(/^[a-f0-9]{64}$/),
+    })
+    expect(exported.result?.telemetry).toEqual({
+      enabled: false,
+      includeContent: false,
+      endpointHosts: ['collector.example:4318'],
     })
     expect(JSON.stringify(exported.result)).not.toContain('synthetic-loop')
     const denied = await call(ep, '_agnes/v1/diagnostics.export', { sessionId: 'foreign' })

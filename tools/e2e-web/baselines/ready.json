@@ -68,7 +68,15 @@
     "discover-version-picker-en-light",
     "discover-version-picker-en-dark",
     "discover-version-picker-zh-CN-light",
-    "discover-version-picker-zh-CN-dark"
+    "discover-version-picker-zh-CN-dark",
+    "diagnostics-en-light",
+    "diagnostics-en-dark",
+    "diagnostics-zh-CN-light",
+    "diagnostics-zh-CN-dark",
+    "diagnostics-status-en-light",
+    "diagnostics-status-en-dark",
+    "diagnostics-status-zh-CN-light",
+    "diagnostics-status-zh-CN-dark"
   ],
   "pending": {},
   "platforms": ["darwin", "linux"],

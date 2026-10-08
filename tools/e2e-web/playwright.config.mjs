@@ -4,7 +4,7 @@ import { defineConfig } from '@playwright/test'
 const output = resolve(process.env.AGH_WEB_TEST_OUTPUT ?? '.agnes-tmp/e2e-web')
 export default defineConfig({
   testDir: '.',
-  testMatch: ['runtime.spec.ts', 'ui-gate.spec.ts', 'ui-flows.spec.ts'],
+  testMatch: ['diagnostics.spec.ts', 'runtime.spec.ts', 'ui-gate.spec.ts', 'ui-flows.spec.ts'],
   workers: 2,
   // Every spec owns a fresh home and daemon; spread long flows across both workers.
   fullyParallel: true,

@@ -96,6 +96,7 @@ export function registerDiagnostics(
     home?: string
     profileHash?: string
     compositionHash?: string
+    telemetry?: DiagnosticsExportResult['telemetry']
     generations?: () => Promise<unknown> | unknown
     doctor?: () =>
       | Promise<readonly { name: string; status: string }[]>
@@ -198,6 +199,7 @@ export function registerDiagnostics(
     ]
     return {
       schemaVersion: 1,
+      ...(deps.telemetry ? { telemetry: deps.telemetry } : {}),
       collectedAt: new Date(c.clock()).toISOString(),
       agh: { version: typeof AGNES_VERSION === 'string' ? AGNES_VERSION : 'dev' },
       runtime: {

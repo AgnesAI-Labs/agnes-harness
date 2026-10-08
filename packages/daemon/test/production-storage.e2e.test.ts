@@ -862,6 +862,15 @@ describe('production supervisor storage', () => {
     const dir = mkdtempSync(join(tmpdir(), 'agh-storage-lifecycle-'))
     try {
       const events: string[] = []
+      writeFileSync(
+        join(dir, 'observability.json'),
+        JSON.stringify({
+          enabled: false,
+          includeContent: true,
+          endpoint: 'https://collector.example:4318/private?token=synthetic-secret',
+          headers: { Authorization: 'synthetic-secret' },
+        }),
+      )
       const store = { table: () => ({}) }
       const owners: string[] = []
       let storageOptions: unknown
@@ -900,6 +909,12 @@ describe('production supervisor storage', () => {
         tablesDir: join(dir, 'tables'),
       })
       expect(owners).toEqual(['@agnes/daemon', '@agnes/daemon/artifact-read-authority'])
+      expect(received?.telemetryStatus).toEqual({
+        enabled: false,
+        includeContent: true,
+        endpointHosts: ['collector.example:4318'],
+      })
+      expect(JSON.stringify(received?.telemetryStatus)).not.toContain('synthetic-secret')
       expect(received?.jobTables).toBeDefined()
       expect(received?.artifactAuthorityTable).toBeDefined()
       expect(received?.reclaim).toBeDefined()

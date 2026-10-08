@@ -20,6 +20,7 @@ import {
   validatePackageAdminCall,
   validatePackageAdminData,
 } from '@agnes/protocol'
+import { DiagnosticsExportParams, DiagnosticsExportResult } from '@agnes/protocol/gen/agnes-v1'
 
 const PREFIX = '/admin/plugins/api/'
 // Exported so tests can assert this stays in lockstep with the Web BFF client's own hand-maintained
@@ -96,6 +97,13 @@ export type AdminSurfaceOptions = {
     bundles(): Promise<unknown>
     dump(preset?: string): Promise<unknown>
     saveBundles(input: { revision: number; bundles: string[] }): Promise<unknown>
+  }
+  /** Fixed local-owner diagnostics bridge; never forwards a browser-selected method. */
+  diagnostics?: {
+    export(
+      input: import('@agnes/protocol').DiagnosticsExportParams,
+    ): Promise<import('@agnes/protocol').DiagnosticsExportResult>
+    doctor?: () => Promise<unknown>
   }
   clock?: () => number
 }
@@ -199,6 +207,100 @@ export function createAdminSurface(options: AdminSurfaceOptions) {
       }
       if (selectionRoute) {
         const route = url.pathname.slice('/admin/api/'.length)
+        if (route === 'diagnostics' || route === 'diagnostics/doctor') {
+          const doctor = route === 'diagnostics/doctor'
+          if (!configuredPermissions.includes('packages.read')) {
+            error(response, 403, 'E_ADMIN_FORBIDDEN', 'Diagnostics access denied.')
+            return true
+          }
+          if (!options.diagnostics || (doctor && !options.diagnostics.doctor)) {
+            error(response, 503, 'E_ADMIN_CATALOG_UNAVAILABLE', 'Diagnostics unavailable.')
+            return true
+          }
+          if (!(request.method === 'POST' || (!doctor && request.method === 'GET'))) {
+            error(response, 404, 'E_ADMIN_ROUTE', 'Diagnostics operation unavailable.')
+            return true
+          }
+          let input: unknown
+          try {
+            input = request.method === 'GET' ? {} : await readBody(request)
+          } catch {
+            error(response, 400, 'E_ADMIN_REQUEST', 'Invalid diagnostic parameters.')
+            return true
+          }
+          try {
+            if (
+              !record(input) ||
+              (doctor
+                ? Object.keys(input).length !== 0
+                : 'sessionId' in input || !validateAgainst(DiagnosticsExportParams, input).ok)
+            ) {
+              error(response, 400, 'E_ADMIN_REQUEST', 'Invalid diagnostic parameters.')
+              return true
+            }
+            if (doctor) {
+              const result = await options.diagnostics.doctor!()
+              const names = [
+                'daemon',
+                'worker',
+                'lock',
+                'socket',
+                'leases',
+                'jobs',
+                'sandbox',
+                'storage',
+                'provider',
+                'profile',
+                'model',
+                'tools',
+                'mcp',
+                'skills',
+                'plugins',
+                'runtime',
+                'prerequisites',
+                'node',
+                'native',
+                'home',
+                'permissions',
+                'credentials',
+                'connection',
+                'disk',
+                'accounts',
+              ]
+              if (!record(result)) throw new Error('invalid self-check')
+              const sections = result.checks ?? result.sections
+              if (!Array.isArray(sections)) throw new Error('invalid self-check')
+              reply(response, 200, {
+                sections: sections
+                  .filter(
+                    (row) =>
+                      record(row) &&
+                      names.includes(String(row.id ?? row.name)) &&
+                      ['ok', 'warn', 'fail', 'unavailable'].includes(String(row.status)),
+                  )
+                  .map((row) => ({ name: row.id ?? row.name, status: row.status })),
+              })
+            } else {
+              const bundle = await options.diagnostics.export(input)
+              if (!validateAgainst(DiagnosticsExportResult, bundle).ok) throw new Error('invalid diagnostics')
+              reply(
+                response,
+                200,
+                request.method === 'GET' ? { bundle, doctorAvailable: !!options.diagnostics.doctor } : bundle,
+              )
+            }
+          } catch (failure) {
+            const envelope =
+              record(failure) &&
+              typeof failure.code === 'number' &&
+              record(failure.data) &&
+              typeof failure.data.code === 'string'
+                ? normalizeRpcError(failure as unknown as RpcError)
+                : httpRpcError(502, 'E_DIAGNOSTICS_UNAVAILABLE')
+            reply(response, 502, { error: envelope })
+          }
+          return true
+        }
         if (route === 'runtime' || route === 'reload-local') {
           const write = route === 'reload-local'
           if (request.method !== (write ? 'POST' : 'GET')) {

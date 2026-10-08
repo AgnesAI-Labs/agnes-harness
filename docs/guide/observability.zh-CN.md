@@ -70,3 +70,9 @@ App Server 方法 `_agnes/v1/diagnostics.export` 支持可选 `sessionId`、`lim
 默认包含最后 4096 个错误，各 audit 文件最多读取末尾 1 MiB。journal 存在时，旧错误仍可按 ID 查询；删除 home 或 journal 会删除历史。公开提交前仍需检查：时间、版本、哈希、平台和运行数量可能透露部署元数据。
 
 相关接口见[排障](troubleshooting.zh-CN.md)、[CLI 参考](../reference/cli.zh-CN.md)、[App Server](../reference/app-server.zh-CN.md)。
+
+## Web 诊断
+
+打开 **设置 → 诊断** 可查看近期安全错误记录、复制诊断 ID，或输入完整 ID 查询历史记录。**导出诊断包** 会下载脱敏 JSON；查询后仅选择该错误。页面还显示 Worker 状态、插件代数和绑定会话数，技术详情默认折叠。
+
+遥测状态只读，反映 daemon 启动时的配置。收集端只显示主机名与端口，不显示 URL 路径、查询参数、请求头或凭据。启用内容导出时显示风险提示，但诊断包始终不含内容。修改 `AGH_HOME/observability.json` 并重启 daemon 后配置生效。后端注册自检方法时，页面还会提供 **运行自检**。

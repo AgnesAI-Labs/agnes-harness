@@ -4875,6 +4875,29 @@
           "type": "string",
           "format": "date-time"
         },
+        "telemetry": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["enabled", "includeContent", "endpointHosts"],
+          "properties": {
+            "enabled": {
+              "type": "boolean"
+            },
+            "includeContent": {
+              "type": "boolean"
+            },
+            "endpointHosts": {
+              "type": "array",
+              "maxItems": 3,
+              "items": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 255,
+                "pattern": "^[A-Za-z0-9.:[\\]-]+$"
+              }
+            }
+          }
+        },
         "agh": {
           "type": "object",
           "additionalProperties": false,

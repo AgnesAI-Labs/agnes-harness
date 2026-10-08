@@ -10,7 +10,7 @@ export const settingsCatalog: LocaleCatalog = {
     'securityScope.process': 'Processes',
     'securityScope.network': 'Network',
 
-    diagnostics: 'Advanced / diagnostics',
+    diagnostics: 'Diagnostics',
     technicalDetails: 'Technical details',
     providerName: 'Name',
     providerKind: 'Plugin kind',
@@ -470,7 +470,7 @@ export const settingsCatalog: LocaleCatalog = {
     'securityScope.process': '进程',
     'securityScope.network': '网络',
 
-    diagnostics: '高级 / 诊断',
+    diagnostics: '诊断',
     technicalDetails: '技术详情',
     providerName: '名称',
     providerKind: '插件类型',

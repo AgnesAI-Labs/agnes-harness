@@ -720,6 +720,7 @@ export type StartSupervisorOptions = {
   /** Read-only Host mutation readiness; omission is the production fail-closed default. */
   lockedPackageMutations?: LockedPackageMutationStatusSource
   observability?: import('@agnes/observability').ObservabilityProvider
+  telemetryStatus?: import('@agnes/protocol').DiagnosticsExportResult['telemetry']
   audit?: (rec: unknown) => void
   /** Test/composition injection; production creates one global supervisor gate. */
   activationBarrier?: ExtensionActivationBarrier
@@ -2022,6 +2023,7 @@ export async function startSupervisor(o: StartSupervisorOptions): Promise<{
         sessionSnapshot: (key) => workspaces.metadata(key),
         dataDir: o.config.dataDir,
         home: o.config.home ?? o.config.dataDir,
+        ...(o.telemetryStatus ? { telemetry: o.telemetryStatus } : {}),
         profileHash: o.profile.hash,
         ...(composition
           ? { compositionHash: createHash('sha256').update(JSON.stringify(composition)).digest('hex') }
@@ -2336,12 +2338,34 @@ export async function startProductionSupervisor(
     start?: typeof startSupervisor
   } = {},
 ): Promise<SupervisorHandle> {
-  const observability = createObservability(
-    observabilityConfig({}, { ...process.env, AGH_HOME: o.config.home ?? o.config.dataDir }),
+  const telemetryConfig = observabilityConfig(
+    {},
+    { ...process.env, AGH_HOME: o.config.home ?? o.config.dataDir },
   )
+  const observability = createObservability(telemetryConfig)
   const stopDiagnostics = installDiagnosticJournal(o.config.home ?? o.config.dataDir)
   observability.lifecycle('daemon', 'start')
-  o = { ...o, observability }
+  o = {
+    ...o,
+    observability,
+    telemetryStatus: {
+      enabled: telemetryConfig.enabled,
+      includeContent: telemetryConfig.includeContent ?? false,
+      endpointHosts: [
+        ...new Set(
+          [telemetryConfig.endpoint, telemetryConfig.tracesEndpoint, telemetryConfig.metricsEndpoint].flatMap(
+            (endpoint) => {
+              try {
+                return endpoint ? [new URL(endpoint).host] : []
+              } catch {
+                return []
+              }
+            },
+          ),
+        ),
+      ],
+    },
+  }
   let storage: ReturnType<typeof createSqliteStorage>
   try {
     prepareDaemonSocketPaths(o.config)

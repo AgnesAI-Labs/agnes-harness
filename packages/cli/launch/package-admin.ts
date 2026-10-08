@@ -26,7 +26,13 @@ import type {
   PluginTreeRollbackParams,
   SessionGenerationMigrationParams,
 } from '@agnes/protocol'
-import { httpRpcError, normalizeRpcError, type RpcError, validatePackageAdminCall } from '@agnes/protocol'
+import {
+  httpRpcError,
+  METHODS,
+  normalizeRpcError,
+  type RpcError,
+  validatePackageAdminCall,
+} from '@agnes/protocol'
 import type {
   ClientModuleEffectCallResult,
   ClientModuleServiceCallResult,
@@ -177,6 +183,20 @@ export function localPackageAdmin(
     }
   }
   const surface = createAdminSurface({
+    diagnostics: {
+      async export(input) {
+        await initialize()
+        return client.request('_agnes/v1/diagnostics.export', input)
+      },
+      ...(Object.hasOwn(METHODS, '_agnes/v1/doctor.run')
+        ? {
+            doctor: async () => {
+              await initialize()
+              return client.call('_agnes/v1/doctor.run', {})
+            },
+          }
+        : {}),
+    },
     searchAdmin: {
       async handle(method, path, body) {
         await initialize()

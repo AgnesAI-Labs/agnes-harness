@@ -1,0 +1,63 @@
+import { readFile } from 'node:fs/promises'
+import { validateAgainst } from '@agnes/protocol'
+import { DiagnosticsExportResult } from '@agnes/protocol/gen/agnes-v1'
+import { expect, test } from './fixtures.js'
+import { accessible, screen, translated } from './quality.js'
+import { chooseWorkspace, preferences, section, settings } from './ui.js'
+
+for (const locale of ['en', 'zh-CN'])
+  for (const theme of ['light', 'dark'])
+    test(`diagnostics error lookup and redacted download ${locale}/${theme}`, async ({
+      page,
+      runtime,
+    }, info) => {
+      const payloadMarker = ['synthetic', 'private-diagnostics-body'].join('-')
+      const client = await runtime.connect()
+      let diagnosticId = ''
+      try {
+        await client.call('synthetic/diagnostics-failure', { password: payloadMarker })
+      } catch (error) {
+        diagnosticId = (error as { data?: { diagnosticId?: string } }).data?.diagnosticId ?? ''
+      }
+      expect(diagnosticId).toMatch(/^[a-f0-9-]{36}$/)
+      await preferences(page, locale, theme)
+      await page.goto(runtime.url)
+      await chooseWorkspace(page, runtime, locale)
+      await settings(page, locale)
+      await section(page, 'diagnostics')
+      const row = page.getByTestId('diagnostics-error').filter({ hasText: diagnosticId })
+      await expect(row).toBeVisible()
+      await expect(page.getByTestId('diagnostics-errors')).toHaveAttribute('aria-busy', 'false')
+      await page.getByTestId('diagnostics-query').fill(diagnosticId)
+      await page.getByTestId('diagnostics-search').click()
+      await expect(page.getByTestId('diagnostics-errors')).toHaveAttribute('aria-busy', 'false')
+      await expect(page.getByTestId('diagnostics-error')).toHaveCount(1)
+      const pending = page.waitForEvent('download')
+      await page.getByTestId('diagnostics-export').click()
+      const download = await pending
+      expect(download.suggestedFilename()).toBe('agh-diagnostics.json')
+      const path = await download.path()
+      if (!path) throw new Error('Missing diagnostic download')
+      const text = await readFile(path, 'utf8')
+      const bundle = JSON.parse(text)
+      expect(validateAgainst(DiagnosticsExportResult, bundle).ok).toBe(true)
+      expect(bundle.errors).toHaveLength(1)
+      expect(bundle.errors[0].diagnosticId).toBe(diagnosticId)
+      expect(bundle.telemetry).toEqual({ enabled: false, includeContent: false, endpointHosts: [] })
+      for (const privateValue of [payloadMarker, runtime.home, runtime.workspace])
+        expect(text).not.toContain(privateValue)
+      await expect(page.getByTestId('diagnostics-errors')).toHaveAttribute('aria-busy', 'false')
+      await page.getByTestId('diagnostics-query').fill('')
+      await page.getByTestId('diagnostics-query').blur()
+      await page.getByTestId('diagnostics-errors').evaluate((element) => {
+        for (let parent = element.parentElement; parent; parent = parent.parentElement) parent.scrollTop = 0
+      })
+      await translated(page)
+      await accessible(page, info, 'diagnostics')
+      await screen(page, info, `diagnostics-${locale}-${theme}`, [
+        page.getByTestId('diagnostics-error-id'),
+        page.getByTestId('diagnostics-error-time'),
+      ])
+      await page.getByTestId('diagnostics-runtime').scrollIntoViewIfNeeded()
+      await screen(page, info, `diagnostics-status-${locale}-${theme}`)
+    })

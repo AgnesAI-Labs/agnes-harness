@@ -70,3 +70,9 @@ App Server clients use `_agnes/v1/diagnostics.export` with optional `sessionId`,
 The default bundle includes the latest 4096 errors and reads at most the last 1 MiB of each audit file. Older errors remain available by exact ID while the journal exists. Deleting the home or its journal removes that history. Review even a redacted bundle before posting it publicly: timestamps, versions, hashes, platform and operational counts can reveal deployment metadata.
 
 See [troubleshooting](troubleshooting.md), [CLI reference](../reference/cli.md) and [App Server](../reference/app-server.md) for related interfaces.
+
+## Web diagnostics
+
+Open **Settings → Diagnostics** to view recent safe error records, copy a diagnostic ID, or find an older record by its exact ID. **Export diagnostic bundle** downloads the redacted JSON bundle; after a search, it selects that error. The page also shows worker health, generation counts and bound session counts. Technical details start collapsed.
+
+Telemetry status is read only and reflects the daemon's startup configuration. Only collector host names and ports are shown; URL paths, queries, headers and credentials are excluded. Content export displays a warning but does not change the content-free diagnostics bundle. Edit `AGH_HOME/observability.json` and restart the daemon to change telemetry. If the backend registers the self-check method, the page also offers **Run self-check**.

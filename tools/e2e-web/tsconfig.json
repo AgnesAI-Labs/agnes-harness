@@ -7,6 +7,7 @@
     "outDir": "../../outputs/e2e-types"
   },
   "include": [
+    "diagnostics.spec.ts",
     "runtime.spec.ts",
     "ui-gate.spec.ts",
     "ui-flows.spec.ts",
