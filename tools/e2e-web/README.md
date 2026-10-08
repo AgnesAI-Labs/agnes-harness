@@ -113,7 +113,10 @@ AGH_UPDATE_VISUALS=1 pnpm e2e:web --reuse-build
 ```
 
 Review PNG changes and the manifest together with the pinned Chromium on the target platform.
-Linux uses Ubuntu 24.04 with Playwright-installed system libraries; PNGs live in
+Linux uses the pinned Ubuntu 24.04 runner with Playwright-installed system libraries and
+`fonts-dejavu-core` / `fonts-dejavu-mono`. Install both font packages when reproducing the gate
+in a minimal container: without them Chromium falls back to WenQuanYi for monospace text,
+changing diagnostic IDs' layout even with identical CSS. PNGs live in
 `baselines/linux/`, separately from `baselines/darwin/`. The Linux CI job also runs
 production/fixture typechecks, fast tests, guards and kernel identity integration.
 Each failed check remains a failed job even when later steps collect Web evidence. Tolerance is

@@ -73,12 +73,12 @@ export async function fresh(page: Page, locale = 'en') {
   await permission.click()
   await page.getByRole('option', { name: locale === 'en' ? /^Full access\b/ : /^完全权限/ }).click()
   await expect(permission).toContainText(locale === 'en' ? 'Full access' : '完全权限')
-  await page.keyboard.press('Escape')
+  await page
+    .getByRole('textbox', { name: locale === 'en' ? 'Task content' : '任务内容', exact: true })
+    .click()
   await expect(
     page.getByRole('option', { name: locale === 'en' ? /^Full access\b/ : /^完全权限/ }),
   ).toBeHidden()
-  if ((await page.getByTestId('composer-agent').getAttribute('aria-expanded')) === 'true')
-    await page.getByTestId('composer-agent').click()
   await expect(page.getByTestId('composer-agent')).toHaveAttribute('aria-expanded', 'false')
   await expect(page.getByTestId('agent-options')).toBeHidden()
 }
