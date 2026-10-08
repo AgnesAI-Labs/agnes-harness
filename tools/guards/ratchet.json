@@ -18,7 +18,7 @@
   "packages/sdk/src/package-admin.node": 147,
   "packages/sdk/src/surface.browser": 3,
   "packages/sdk/src/surface.node": 163,
-  "packages/daemon/src": 23971,
+  "packages/daemon/src": 22023,
   "packages/daemon/src/packages/admin-session": 46,
   "packages/daemon/src/packages/admin-surface": 584,
   "packages/daemon/src/packages/handler": 1703,
@@ -29,7 +29,7 @@
   "packages/daemon/src/local/auth": 336,
   "packages/daemon/src/local/methods/extensions": 199,
   "packages/daemon/src/supervisor/service-worker": 103,
-  "packages/daemon/src/surfaces": 2543,
+  "packages/daemon/src/surfaces": 13,
   "packages/daemon/src/worker/service-authority": 48,
   "packages/web/src": 22110,
   "packages/web/src/admin/plugins/admin": 1714,
@@ -170,5 +170,7 @@
   "packages/host-runtime/src/adapters": 465,
   "packages/host-runtime/src/approval-expiry": 105,
   "packages/daemon-foundation/src": 4214,
-  "packages/daemon-foundation/src/jobs": 638
+  "packages/daemon-foundation/src/jobs": 638,
+  "packages/daemon-surfaces/src": 1962,
+  "packages/daemon-surfaces/src/surfaces": 1961
 }

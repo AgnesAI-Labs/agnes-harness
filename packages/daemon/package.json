@@ -33,7 +33,8 @@
     "@agnes/system-node": "workspace:*",
     "es-module-lexer": "2.3.2",
     "ws": "8.21.3",
-    "@agnes/daemon-foundation": "workspace:*"
+    "@agnes/daemon-foundation": "workspace:*",
+    "@agnes/daemon-surfaces": "workspace:*"
   },
   "devDependencies": {
     "@agnes/ai": "workspace:*",

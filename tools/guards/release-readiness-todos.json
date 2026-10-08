@@ -26,6 +26,7 @@
         "@agnes/cosmokit",
         "@agnes/daemon",
         "@agnes/daemon-foundation",
+        "@agnes/daemon-surfaces",
         "@agnes/error-sanitization",
         "@agnes/extension-api",
         "@agnes/history-index",

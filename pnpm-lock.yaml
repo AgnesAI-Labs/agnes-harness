@@ -449,6 +449,9 @@ importers:
       '@agnes/daemon-foundation':
         specifier: workspace:*
         version: link:../daemon-foundation
+      '@agnes/daemon-surfaces':
+        specifier: workspace:*
+        version: link:../daemon-surfaces
       '@agnes/error-sanitization':
         specifier: workspace:*
         version: link:../error-sanitization
@@ -529,6 +532,28 @@ importers:
       '@agnes/daemon':
         specifier: workspace:*
         version: link:../daemon
+
+  packages/daemon-surfaces:
+    dependencies:
+      '@agnes/host':
+        specifier: workspace:*
+        version: link:../host
+      '@agnes/package-manager':
+        specifier: workspace:*
+        version: link:../package-manager
+      '@agnes/protocol':
+        specifier: workspace:*
+        version: link:../protocol
+      '@agnes/system-node':
+        specifier: workspace:*
+        version: link:../system-node
+    devDependencies:
+      '@agnes/daemon':
+        specifier: workspace:*
+        version: link:../daemon
+      '@agnes/web-server':
+        specifier: workspace:*
+        version: link:../web-server
 
   packages/error-sanitization: {}
 

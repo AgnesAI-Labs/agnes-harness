@@ -20,7 +20,7 @@ import {
   type SurfaceRuntimeAdapter,
   type SurfaceRuntimeHandle,
   type SurfaceSpawnOptions,
-} from '../src/index.js'
+} from '../../daemon/src/index.js'
 
 const temporaryDirectories: string[] = []
 

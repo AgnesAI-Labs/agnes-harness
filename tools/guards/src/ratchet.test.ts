@@ -234,6 +234,8 @@ describe('ratchet key path-boundary matching (regression: sibling-prefix false m
 // preset composition and inline projection repairs. Only exceeded scopes and missing bundled
 // extension keys change; scanning, source exclusions and the default extension ceiling stay fixed.
 const INITIAL_CEILING: Record<string, number> = {
+  'packages/daemon-surfaces/src/surfaces': 1961,
+  'packages/daemon-surfaces/src': 1962,
   'packages/daemon-foundation/src/jobs': 638,
   'packages/daemon-foundation/src': 4214,
   'packages/host-runtime/src/approval-expiry': 105,
@@ -2088,7 +2090,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // countLines: 27898 -> 28105; exact cap, no exclusions or spare allocation.
   // Acceptance review: Persist child-engine settings through publication and recover legacy default loop pins when listing sessions.
   // countLines: 28105 -> 28157; exact cap, no exclusions or spare allocation.
-  'packages/daemon/src': 23971,
+  'packages/daemon/src': 22023,
   'packages/daemon/src/packages/admin-session': 46,
   // 2026-09-14: whole-branch review fix wave (Finding 1) adds the two missing
   // 'pins/inspect'/'pins/release' entries to the ACTIONS BFF route allowlist, which had been left
@@ -2237,7 +2239,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // Task 16 cold update: stop old then start new, no auto-restore. Re-measured: 2541, exact.
   // SurfaceInstanceStatus.revision is the package snapshot used for mixed/surface-only actual.
   // Re-measured: 2543, exact cap, no spare.
-  'packages/daemon/src/surfaces': 2543,
+  'packages/daemon/src/surfaces': 13,
   'packages/daemon/src/worker/service-authority': 48,
   // 2026-09-12: T2.5 introduces the framework-free Web UI, its loopback static launcher and the
   // projection adapter. New package, measured at 320 production TypeScript lines; exact cap.

@@ -255,6 +255,12 @@
     },
     {
       "path": "packages/daemon-foundation/tsconfig.test.json"
+    },
+    {
+      "path": "packages/daemon-surfaces"
+    },
+    {
+      "path": "packages/daemon-surfaces/tsconfig.test.json"
     }
   ]
 }

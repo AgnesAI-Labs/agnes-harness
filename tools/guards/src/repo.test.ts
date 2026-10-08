@@ -26,6 +26,7 @@ describe('repo', () => {
       '@agnes/cosmokit',
       '@agnes/daemon',
       '@agnes/daemon-foundation',
+      '@agnes/daemon-surfaces',
       '@agnes/e2e-web',
       '@agnes/error-sanitization',
       '@agnes/extension-api',

@@ -53,6 +53,9 @@
     },
     {
       "path": "../daemon-foundation"
+    },
+    {
+      "path": "../daemon-surfaces"
     }
   ]
 }

@@ -1,0 +1,38 @@
+{
+  "name": "@agnes/daemon-surfaces",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./index": "./src/index.ts",
+    "./surfaces/artifact-resolver": "./src/surfaces/artifact-resolver.ts",
+    "./surfaces/boot-coordination": "./src/surfaces/boot-coordination.ts",
+    "./surfaces/controller": "./src/surfaces/controller.ts",
+    "./surfaces/deploy-dir": "./src/surfaces/deploy-dir.ts",
+    "./surfaces/deployment-policy": "./src/surfaces/deployment-policy.ts",
+    "./surfaces/health": "./src/surfaces/health.ts",
+    "./surfaces/local-runtime": "./src/surfaces/local-runtime.ts",
+    "./surfaces/mount-proxy": "./src/surfaces/mount-proxy.ts",
+    "./surfaces/routes": "./src/surfaces/routes.ts",
+    "./surfaces/secret-resolver": "./src/surfaces/secret-resolver.ts",
+    "./surfaces/security-headers": "./src/surfaces/security-headers.ts",
+    "./surfaces/types": "./src/surfaces/types.ts",
+    "./surfaces/windows-runtime": "./src/surfaces/windows-runtime.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -b",
+    "test": "pnpm --dir ../.. exec vitest run packages/daemon-surfaces/test --maxWorkers=1"
+  },
+  "dependencies": {
+    "@agnes/host": "workspace:*",
+    "@agnes/package-manager": "workspace:*",
+    "@agnes/protocol": "workspace:*",
+    "@agnes/system-node": "workspace:*"
+  },
+  "license": "Apache-2.0",
+  "devDependencies": {
+    "@agnes/daemon": "workspace:*",
+    "@agnes/web-server": "workspace:*"
+  }
+}
