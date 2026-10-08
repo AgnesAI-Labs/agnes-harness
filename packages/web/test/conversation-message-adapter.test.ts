@@ -624,4 +624,22 @@ it('summarizes interaction protocol and exact demo echoes while preserving raw d
     item('answer')?.querySelector<HTMLDetailsElement>('[data-testid=interaction-result-details]')?.open,
   ).toBe(false)
   expect(item('echo')?.querySelector('[data-testid=interaction-result-summary] > p')).toBeNull()
+  const present: UINode = {
+    ...tool('completed'),
+    id: 'present',
+    name: 'present',
+    resultPreview: 'Presented report.md',
+  }
+  const artifactEcho: UINode = {
+    kind: 'assistant',
+    id: 'artifact-echo',
+    seq: 6,
+    text: '[Demo model — local, deterministic, no API key] Tool result: Presented report.md[resource artifact/abc]',
+  }
+  await update(store, [question, echo, prose, answer, present, artifactEcho])
+  const artifactDetails = item('artifact-echo')?.querySelector<HTMLDetailsElement>(
+    '[data-testid=interaction-result-details]',
+  )
+  expect(artifactDetails?.open).toBe(false)
+  expect(artifactDetails?.textContent).toContain('artifact/abc')
 })

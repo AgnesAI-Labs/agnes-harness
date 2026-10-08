@@ -201,27 +201,34 @@ export function WebConversationMessages({
           t={(key, vars) => locale?.t(key, vars) ?? key}
         />
       )
-      // A deterministic demo reply may echo a tool result verbatim. Only that exact echo (or
-      // exact raw result) is condensed; arbitrary model prose is never rewritten.
+      // Condense only the deterministic demo tool reply or an exact raw interaction result.
+      // Resource references may differ from the preview; arbitrary model prose stays unchanged.
+      const demoResult = text.startsWith('[Demo model — local, deterministic, no API key] Tool result: ')
+      const precedingTool = demoResult
+        ? nodes
+            ?.slice(
+              0,
+              nodes.findIndex((node) => node.id === state?.nodeId),
+            )
+            .findLast((node) => node.kind === 'tool')
+        : undefined
       const echo =
         part === 'body' &&
-        nodes?.find(
-          (node) =>
-            node.kind === 'tool' &&
-            node.resultPreview &&
-            (text.trim() === node.resultPreview.trim() ||
-              text
-                .replace(/\s+/g, ' ')
-                .trim()
-                .endsWith(`Tool result: ${node.resultPreview.replace(/\s+/g, ' ').trim()}`)) &&
-            interactionToolPresentation(node, (key, vars) => locale?.t(key, vars) ?? key),
-        )
-      if (
-        echo &&
-        echo.kind === 'tool' &&
-        (text.trim() === echo.resultPreview?.trim() ||
-          text.startsWith('[Demo model — local, deterministic, no API key]'))
-      ) {
+        ((precedingTool?.kind === 'tool' && interactionToolPresentation(precedingTool)
+          ? precedingTool
+          : undefined) ??
+          nodes?.find(
+            (node) =>
+              node.kind === 'tool' &&
+              node.resultPreview &&
+              (text.trim() === node.resultPreview.trim() ||
+                text
+                  .replace(/\s+/g, ' ')
+                  .trim()
+                  .endsWith(`Tool result: ${node.resultPreview.replace(/\s+/g, ' ').trim()}`)) &&
+              interactionToolPresentation(node, (key, vars) => locale?.t(key, vars) ?? key),
+          ))
+      if (echo && echo.kind === 'tool' && (text.trim() === echo.resultPreview?.trim() || demoResult)) {
         const presentation = interactionToolPresentation(
           echo,
           (key, vars) => locale?.t(key, vars) ?? key,

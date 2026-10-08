@@ -5,6 +5,7 @@ export const ADMIN_LIST_LOCALE_NAMESPACE = '@agnes/web-ui/admin-list'
 export const adminListLocaleCatalog: LocaleCatalog = {
   en: {
     'row.technicalDetails': 'Technical details',
+    'row.description.generic': 'Review the tools and features in the technical details.',
     'row.name.@agnes/document-reader': 'Document reader',
     'row.description.@agnes/document-reader': 'Read PDF, Word, image text and ZIP attachments offline.',
     'row.name.@agnes/mcp-helper': 'MCP connection helper',
@@ -41,6 +42,7 @@ export const adminListLocaleCatalog: LocaleCatalog = {
   },
   'zh-CN': {
     'row.technicalDetails': '技术详情',
+    'row.description.generic': '展开技术详情，查看插件提供的工具和功能。',
     'row.name.@agnes/document-reader': '文档读取',
     'row.description.@agnes/document-reader': '离线读取 PDF、Word、图片文字和 ZIP 附件。',
     'row.name.@agnes/mcp-helper': 'MCP 连接助手',

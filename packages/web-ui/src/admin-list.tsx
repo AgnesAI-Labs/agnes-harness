@@ -285,7 +285,7 @@ export function PluginList({
         const descriptionKey = `row.description.${item.id}`
         const description =
           presentation?.description ??
-          (t(descriptionKey) === descriptionKey ? contributionText(item, adminText) : t(descriptionKey))
+          (t(descriptionKey) === descriptionKey ? t('row.description.generic') : t(descriptionKey))
         const failureReason =
           tab === 'installed'
             ? (runtime?.error?.message ??
