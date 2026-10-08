@@ -53,6 +53,10 @@ dependency fails the aggregate.
 Maintainers must select that status in the target branch's required checks/ruleset; committing a
 workflow alone does not change GitHub branch protection. The workflow runs on pull requests,
 merge groups, integration/main pushes and manual dispatch, without path-based skips.
+Run the same gate on an unmerged branch with `gh workflow run e2e-web.yml --ref BRANCH`, then
+watch the returned run with `gh run watch RUN_ID --exit-status`. Dispatch checks that branch's
+specs and baselines. Every ready screen needs both platform PNGs captured with the pinned
+Chromium and CI fonts; dispatch does not generate or approve missing baselines.
 
 The local command shares two workers with per-test scheduling. CI runs four complete, disjoint
 shards per platform with one worker per runner, so concurrent daemon/worker/Chromium trees do not
