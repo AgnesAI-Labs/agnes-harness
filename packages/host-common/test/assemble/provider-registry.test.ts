@@ -9,22 +9,22 @@ import {
   ProviderError,
 } from '@agnes/extension-api'
 import { expect, it } from 'vitest'
-import { installSandboxProviders } from '../../src/adapters/sandbox-providers.js'
-import { createPersistenceProviderRegistry } from '../../src/adapters/storage-provider.js'
-import { installCompactionEngines } from '../../src/assemble/compaction-engines.js'
-import { installLoops } from '../../src/assemble/loops.js'
-import { installModelAdapters } from '../../src/assemble/model-adapters.js'
+import { installSandboxProviders } from '../../../host/src/adapters/sandbox-providers.js'
+import { createPersistenceProviderRegistry } from '../../../host/src/adapters/storage-provider.js'
+import { installCompactionEngines } from '../../../host/src/assemble/compaction-engines.js'
+import { installLoops } from '../../../host/src/assemble/loops.js'
+import { installModelAdapters } from '../../../host/src/assemble/model-adapters.js'
+import {
+  applyProviderPreset,
+  readProviderSelection,
+  readProviderSelections,
+} from '../../../host/src/assemble/provider-selection.js'
+import { installToolProviders } from '../../../host/src/assemble/tool-providers.js'
 import {
   installProviderRegistry,
   ProviderRegistry,
   providerSource,
 } from '../../src/assemble/provider-registry.js'
-import {
-  applyProviderPreset,
-  readProviderSelection,
-  readProviderSelections,
-} from '../../src/assemble/provider-selection.js'
-import { installToolProviders } from '../../src/assemble/tool-providers.js'
 
 const kind = defineProviderKind<{ id: string; version: string; ready: boolean }>({
   kind: 'test',

@@ -62,7 +62,7 @@
       "id": "profile.additional-layers",
       "evidence": [
         {
-          "path": "packages/host/src/profile/isolation.ts",
+          "path": "packages/host-common/src/profile/isolation.ts",
           "marker": "resolveProfile cannot apply the"
         }
       ]

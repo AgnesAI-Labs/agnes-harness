@@ -98,4 +98,4 @@ The persistence contract separates ledger, metadata/KV, durable child-control, r
 
 Provider authors declare `capabilities: { ledger: true, ... }` and expose `metadata`, `childControl`, `reclaim` and `scanIntegrity` explicitly. SQLite ledger/child files remain compatible. Legacy grant and receipt schemas are validated before copying to metadata; revocations remain durable before observers are notified. Legacy SQL tables remain for rollback evidence, but metadata changes are not reflected back into them.
 
-Implementation: [default profile](../../packages/host/templates/local-dev.yaml), [ordinary row API](../../packages/host/src/ext-host/row-extension-api.ts), [MCP argument policy](../../packages/resource-control-cli/src/resources.ts), [Web server](../../packages/web-server/src/server.ts).
+Implementation: [default profile](../../packages/host-common/templates/local-dev.yaml), [ordinary row API](../../packages/host/src/ext-host/row-extension-api.ts), [MCP argument policy](../../packages/resource-control-cli/src/resources.ts), [Web server](../../packages/web-server/src/server.ts).

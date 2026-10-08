@@ -19,7 +19,7 @@ afterEach(() => {
 it('new owner and unchanged Host API produce identical lock bytes and installed trees', async () => {
   vi.useFakeTimers({ toFake: ['Date'] })
   vi.setSystemTime(new Date('2026-09-12T00:00:00Z'))
-  const fixture = join(dirname(fileURLToPath(import.meta.url)), '..', 'fixtures')
+  const fixture = join(dirname(fileURLToPath(import.meta.url)), '../../../host/test/fixtures')
   const lockBytes: string[] = []
   const trees: string[][] = []
   for (const make of [owner.createPackageManager, createPackageManager]) {

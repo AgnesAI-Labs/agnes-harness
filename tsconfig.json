@@ -210,6 +210,12 @@
     },
     {
       "path": "packages/core-artifacts"
+    },
+    {
+      "path": "packages/host-common"
+    },
+    {
+      "path": "packages/host-common/tsconfig.test.json"
     }
   ]
 }

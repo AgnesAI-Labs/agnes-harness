@@ -86,4 +86,4 @@ Provider 密钥经配置服务存入凭据后端；公开配置只保留 `secret
 
 作者声明 `capabilities: { ledger: true, ... }`，并显式提供 `metadata`、`childControl`、`reclaim` 和 `scanIntegrity`。SQLite 账本和子任务文件保持兼容。旧授权及回执 schema 先严格校验，再复制到 metadata；撤权先持久化后通知。旧 SQL 表保留用于回退核验，新 metadata 更新不反写旧表。
 
-实现依据：[默认 profile](../../packages/host/templates/local-dev.yaml)、[普通行 API](../../packages/host/src/ext-host/row-extension-api.ts)、[MCP 参数策略](../../packages/resource-control-cli/src/resources.ts)、[Web server](../../packages/web-server/src/server.ts)。
+实现依据：[默认 profile](../../packages/host-common/templates/local-dev.yaml)、[普通行 API](../../packages/host/src/ext-host/row-extension-api.ts)、[MCP 参数策略](../../packages/resource-control-cli/src/resources.ts)、[Web server](../../packages/web-server/src/server.ts)。

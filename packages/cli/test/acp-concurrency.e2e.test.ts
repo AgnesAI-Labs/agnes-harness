@@ -14,7 +14,7 @@ const enabled = configured !== undefined || process.env.CI !== undefined
 const concurrency = Number(configured ?? Math.min(200, availableParallelism() * 2))
 const fixture = fileURLToPath(new URL('./fixtures/acp-cli.ts', import.meta.url))
 const productionBin = fileURLToPath(new URL('../src/bin.ts', import.meta.url))
-const profileTemplate = fileURLToPath(new URL('../../host/templates/local-dev.yaml', import.meta.url))
+const profileTemplate = fileURLToPath(new URL('../../host-common/templates/local-dev.yaml', import.meta.url))
 const basePreset = fileURLToPath(new URL('../../base/presets/base.yaml', import.meta.url))
 const hookMap = fileURLToPath(
   new URL('../../base/extensions/hooks-runner/generated/cc-hook-map.json', import.meta.url),

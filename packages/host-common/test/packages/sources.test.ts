@@ -23,7 +23,7 @@ import {
   parseSource,
 } from '../../src/packages/sources.js'
 
-const fixtures = join(dirname(fileURLToPath(import.meta.url)), '..', 'fixtures')
+const fixtures = join(dirname(fileURLToPath(import.meta.url)), '../../../host/test/fixtures')
 
 describe('parseSource', () => {
   it('accepts pinned npm and credential-free HTTPS git refs', () => {

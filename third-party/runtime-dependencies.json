@@ -237,6 +237,7 @@
         "packages/cli",
         "packages/code",
         "packages/host",
+        "packages/host-common",
         "packages/package-manager"
       ]
     },

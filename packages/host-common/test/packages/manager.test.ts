@@ -10,7 +10,7 @@ import { createPackageManager } from '../../src/packages/manager.js'
 import { type ExecFn, packageDir } from '../../src/packages/sources.js'
 import { verifyWorkspace } from '../../src/packages/workspace.js'
 
-const fixtures = join(dirname(fileURLToPath(import.meta.url)), '..', 'fixtures')
+const fixtures = join(dirname(fileURLToPath(import.meta.url)), '../../../host/test/fixtures')
 const HASH = `sha256-${'0'.repeat(64)}`
 const SEAMS = {
   approval: '@agnes/base',

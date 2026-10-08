@@ -30,7 +30,7 @@ const root = repoRoot()
 // module's whole job is to be the layout. Matched the same way kernel-create.test.ts blesses
 // packages/host/src/assemble -- by path-boundary, not by name -- so a future split into a paths/
 // directory (as assemble.ts was later split) stays exempt without editing this file.
-const PATHS_MODULE_ABS = join(root, 'packages/host/src/paths')
+const PATHS_MODULE_ABS = join(root, 'packages/host-common/src/paths')
 // Rule B's one owner. The directory name lives in @agnes/protocol rather than paths.ts because it is
 // needed by packages that cannot depend on @agnes/host (base, sdk, resource-control-worker, and
 // sandbox-remote through core's re-export); protocol is the one layer all of them already sit above.
@@ -153,7 +153,7 @@ const JOIN_DATA_CACHE_EXEMPTIONS: readonly JoinDataCacheExemption[] = [
     reason:
       'web-server is layer 1 and cannot import dataDir() from @agnes/host (layer 7). The history ' +
       'search route still has to find the ledger directory when the launcher cannot pass historyDataDir. ' +
-      "This one join matches packages/host/src/paths.ts dataDir: the home root plus 'data'. The harness " +
+      "This one join matches packages/host-common/src/paths.ts dataDir: the home root plus 'data'. The harness " +
       'directory name comes from AGH_DIR, not a second literal.',
   },
   {
@@ -190,7 +190,7 @@ describe('the Agnes home directory layout is reconstructed in exactly one place'
     expect(total).toBeGreaterThan(100)
   })
 
-  it("no join(<path>, 'data' | 'cache') outside packages/host/src/paths, unless named and reasoned above", () => {
+  it("no join(<path>, 'data' | 'cache') outside packages/host-common/src/paths, unless named and reasoned above", () => {
     const offenders: string[] = []
     for (const scanDir of SCAN_DIRS) {
       for (const f of listSourceFiles(scanDir, { excludeDirs: EXCLUDE_DIRS })) {
@@ -215,7 +215,7 @@ describe('the Agnes home directory layout is reconstructed in exactly one place'
     ).toEqual([])
   })
 
-  it("packages/host/src/paths still spells out 'data' and 'cache' exactly where expected", () => {
+  it("packages/host-common/src/paths still spells out 'data' and 'cache' exactly where expected", () => {
     // Pins the exempt module's own shape, the same way kernel-create.test.ts pins Kernel.create to
     // "zero or exactly one" rather than merely excluding the assemble directory from the count. An
     // exemption that only checks *where* a literal is, never *how many* are there, would not notice

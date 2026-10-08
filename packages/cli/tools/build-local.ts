@@ -128,7 +128,7 @@ async function runtimeDefines(version: string): Promise<Record<string, string>> 
     codeExtensions,
     minimalSha,
   ] = await Promise.all([
-    textMap(join(repoPackages, 'host', 'templates'), 'yaml'),
+    textMap(join(repoPackages, 'host-common', 'templates'), 'yaml'),
     textMap(join(code, 'presets'), 'yaml'),
     textMap(join(code, 'prompts'), 'md'),
     textMap(join(ai, 'fixtures', 'conformance'), 'jsonl'),

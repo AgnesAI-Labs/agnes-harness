@@ -46,7 +46,7 @@ const textMap = (dir, extension) =>
       .sort()
       .map((file) => [basename(file, `.${extension}`), readFileSync(join(dir, file), 'utf8')]),
   )
-const profileTemplates = textMap(join(workspace, 'host', 'templates'), 'yaml')
+const profileTemplates = textMap(join(workspace, 'host-common', 'templates'), 'yaml')
 const codePresets = textMap(join(workspace, 'code', 'presets'), 'yaml')
 const codePrompts = textMap(join(workspace, 'code', 'prompts'), 'md')
 const conformanceFixtures = textMap(join(workspace, 'ai', 'fixtures', 'conformance'), 'jsonl')

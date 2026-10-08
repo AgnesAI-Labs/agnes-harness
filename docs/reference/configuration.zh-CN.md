@@ -46,7 +46,7 @@ builtin 模板是基础，用户 profile 与 Host configuration overlay 合并�
 | `limits` | daemon/worker/jobs/shutdown 等受支持的点分键 |
 | `sandbox.provider` | 启动时的沙箱提供者 id，默认 `local`。更改需要重启进程。见[沙箱提供者](../guide/sandbox-providers.zh-CN.md) |
 
-完整字段以[Profile Schema](../../packages/protocol/schema/profile.json)、[实际类型](../../packages/host/src/profile/types.ts)、[local-dev 模板](../../packages/host/templates/local-dev.yaml)及[enterprise 模板](../../packages/host/templates/enterprise.yaml)核对。Schema 合法只是第一步，策略与装配可能进一步拒绝。
+完整字段以[Profile Schema](../../packages/protocol/schema/profile.json)、[实际类型](../../packages/host-common/src/profile/types.ts)、[local-dev 模板](../../packages/host-common/templates/local-dev.yaml)及[enterprise 模板](../../packages/host-common/templates/enterprise.yaml)核对。Schema 合法只是第一步，策略与装配可能进一步拒绝。
 
 ## 模型与密钥
 
@@ -86,4 +86,4 @@ API 客户端可通过 `_agnes/v1/session.setModel` 传入可选的 `thinking`�
 
 普通插件默认配置来自 `agnes.plugins[].config`，由导出的 `Config` 校验。部署/用户/工作区普通行覆盖由装配接口处理；不要猜一个未被当前解析器接受的顶层 `plugins:` 就会生效。包入口、配置与 inject/provide 的精确形状见[插件教程](../develop/plugins.zh-CN.md)。
 
-源码依据：[输入合并](../../packages/host/src/profile/inputs.ts)、[解析](../../packages/host/src/profile/resolve.ts)、[配置存储](../../packages/host/src/configuration.ts)、[后台身份](../../packages/daemon/src/supervisor/scope.ts)、[daemon limits](../../packages/daemon/src/config.ts)。
+源码依据：[输入合并](../../packages/host/src/profile/inputs.ts)、[解析](../../packages/host-common/src/profile/resolve.ts)、[配置存储](../../packages/host/src/configuration.ts)、[后台身份](../../packages/daemon/src/supervisor/scope.ts)、[daemon limits](../../packages/daemon/src/config.ts)。

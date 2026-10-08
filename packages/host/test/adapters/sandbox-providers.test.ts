@@ -22,6 +22,7 @@ import {
   type SandboxProviderSlot,
 } from '../../src/adapters/sandbox-providers.js'
 import { createAdminSessionSelection } from '../../src/admin-session-selection.js'
+import type {} from '../../src/assemble/loops.js'
 import { createConfigurationService } from '../../src/configuration.js'
 import { createTestHost } from '../../testkit/index.js'
 

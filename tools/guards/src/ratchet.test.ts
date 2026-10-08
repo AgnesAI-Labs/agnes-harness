@@ -234,6 +234,10 @@ describe('ratchet key path-boundary matching (regression: sibling-prefix false m
 // preset composition and inline projection repairs. Only exceeded scopes and missing bundled
 // extension keys change; scanning, source exclusions and the default extension ceiling stay fixed.
 const INITIAL_CEILING: Record<string, number> = {
+  'packages/host-common/src/configuration-lock': 39,
+  'packages/host-common/src/profile': 1837,
+  'packages/host-common/src': 3597,
+  'packages/host-common/src/assemble': 439,
   'packages/core-artifacts/src': 744,
   'packages/core-effects/src': 2565,
   'packages/core-ledger/src': 6153,
@@ -766,7 +770,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // 2026-10-07 gap-fill review: Persist child-engine settings and validated context/search configuration.
   // countLines: 1286 -> 1349; exact cap, no exclusions or spare allocation.
   'packages/host/src/configuration': 1349,
-  'packages/host/src/configuration-lock': 39,
+  'packages/host/src/configuration-lock': 1,
   'packages/daemon/src/supervisor/configuration': 45,
   // S5 service workers reload the profile hash and its immutable snapshot path as one value.
   'packages/daemon/src/supervisor/profile-bindings': 124,
@@ -1382,7 +1386,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // countLines: 6460 -> 6577; exact cap, no exclusions or spare allocation.
   // 2026-10-08 freeze-close review: Unify provider errors, own late loop/child results and transfer accepted process-store ownership.
   // countLines: 6577 -> 6603 (+26); exact measured cap, no exclusions or spare allocation.
-  'packages/host/src/assemble': 6603,
+  'packages/host/src/assemble': 6314,
   // P1: generated-schema validators and duplicate projection-name refusal; measured exact cap.
   // F1 adds Surface JSON/identity validation and lock snapshot validation.
   // PM4 adds strict management DTO validation and method permission/identity contracts; exact total.
@@ -2848,7 +2852,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // countLines: 46355 -> 46484 (+129); exact measured cap, no exclusions or spare allocation.
   // Acceptance review: Restore immutable generation sources and publish child-engine configuration with explicit engine admission.
   // countLines: 46484 -> 46566; exact cap, no exclusions or spare allocation.
-  'packages/host/src': 46566,
+  'packages/host/src': 43765,
   // 2026-10-07 gap-fill review: Preserve governed bridge errors through service invocation.
   // countLines: 247 -> 254; exact cap, no exclusions or spare allocation.
   'packages/host/src/ext-host/service-invocation': 254,
@@ -2917,7 +2921,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // countLines: 2798 -> 2919; exact measured cap, no exclusions or spare allocation.
   // Acceptance review: Preserve live skill importers and latest code composition rows across publication and frozen views.
   // countLines: 2919 -> 2974; exact cap, no exclusions or spare allocation.
-  'packages/host/src/profile': 2974,
+  'packages/host/src/profile': 1669,
   // 2026-09-09: raised from 1100. 1071 of it was spent and the 29 left could not cover the deny-list
   // repair with anything to spare; the repair measures 1075. The remaining 100 are platform-win32
   // reaching parity with platform-posix - today its probe() asserts a fixed table where posix
@@ -3040,7 +3044,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // countLines: 6061 -> 6781; exact cap, no exclusions or spare allocation.
   // 2026-10-08 freeze-close review: Track sandbox/store operations, reject aborted construction and retain process stores through registry teardown.
   // countLines: 6781 -> 6884 (+103); exact measured cap, no exclusions or spare allocation.
-  'packages/host/src/adapters': 6884,
+  'packages/host/src/adapters': 6892,
 
   // C1b Task 5 persists child creation attempts and deferred recovery; exact total, no spare.
   // Task 17 review: sqlite_master scan + table-name refuse. Re-measured: 674, exact.

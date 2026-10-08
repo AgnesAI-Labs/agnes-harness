@@ -5,7 +5,7 @@ import { isTestFile, listSourceFiles, repoRoot } from './repo.js'
 
 const root = repoRoot()
 const writer = join(root, 'packages/package-manager/src')
-const host = join(root, 'packages/host/src')
+const hosts = ['host', 'host-common'].map((name) => join(root, 'packages', name, 'src'))
 
 /** Compatibility files may delegate, but may never regain filesystem or source ownership. */
 function compatibilityViolation(source: string): boolean {
@@ -42,7 +42,7 @@ describe('Package lifecycle ownership', () => {
     }
   })
   it('Host package compatibility files only delegate to the unique owner', () => {
-    for (const file of listSourceFiles(join(host, 'packages'))) {
+    for (const file of hosts.flatMap((host) => listSourceFiles(join(host, 'packages')))) {
       if (basename(file) === 'compat.ts') continue
       expect(compatibilityViolation(readFileSync(file, 'utf8')), relative(root, file)).toBe(false)
     }
@@ -66,8 +66,8 @@ describe('Package lifecycle ownership', () => {
     )
   })
   it('Host runtime code has no direct lock writer or package fetch call', () => {
-    for (const file of listSourceFiles(host)) {
-      if (relative(host, file).startsWith(`packages${sep}`)) continue
+    for (const file of hosts.flatMap((host) => listSourceFiles(host))) {
+      if (hosts.some((host) => relative(host, file).startsWith(`packages${sep}`))) continue
       expect(readFileSync(file, 'utf8'), relative(root, file)).not.toMatch(
         /\b(?:writeLock|snapshotPolicy|createPackageManager|fetchSource)\s*\(/,
       )
