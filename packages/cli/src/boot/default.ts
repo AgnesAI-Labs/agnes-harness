@@ -36,8 +36,7 @@ export async function bootDefault(
         'A daemon is already running for this home/profile. Omit --standalone to connect, or use --ephemeral for an isolated run.',
       )
   }
-  if (options.useEmbedded || p.standalone || p.ephemeral || p.mode === 'acp' || p.command === 'acp')
-    return bootLocal(p, deps)
+  if (options.useEmbedded || p.standalone || p.ephemeral) return bootLocal(p, deps)
 
   const backend = await ensureLocalBackend({
     env: deps.env,

@@ -97,6 +97,8 @@ Skills combine disk/package resource governance with runtime Cordis contribution
 
 ## App Server and clients
 
+Each `AGH_HOME` has one authenticated daemon endpoint. The [App Server v1 contract](../reference/app-server.md) publishes generated JSON Schema and method-specific TypeScript types. `agh app-server --stdio` and ACP are connection bridges to that daemon. Management HTTP paths adapt the same RPC methods; composition, search, context, history and plan state are owned by the daemon. Errors retain numeric codes and carry safe localized message keys, allowlisted causes and diagnostic ids.
+
 AGH's App Server provides shared task execution: the daemon manages sessions and the control plane, workers execute tasks, and the SDK provides communication entry points. Choose an integration path from the repository's [API contracts](../reference/api.md) when building a client.
 
 <a id="可复用场景的范围"></a>

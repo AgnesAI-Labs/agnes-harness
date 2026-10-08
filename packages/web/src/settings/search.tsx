@@ -1,4 +1,12 @@
-import { Button, Field, SettingsCard, SettingsInput, SettingsSelect, SettingsState } from '@agnes/web-ui'
+import {
+  appServerErrorMessage,
+  Button,
+  Field,
+  SettingsCard,
+  SettingsInput,
+  SettingsSelect,
+  SettingsState,
+} from '@agnes/web-ui'
 import { useEffect, useState } from 'react'
 
 const PROVIDER_IDS = ['brave', 'tavily', 'exa', 'perplexity', 'searxng'] as const
@@ -66,7 +74,10 @@ function integer(value: string, min: number, max: number): number | undefined {
 }
 
 async function readJson(response: Response): Promise<unknown> {
-  if (!response.ok) throw new Error(String(response.status))
+  if (!response.ok) {
+    const body = (await response.json().catch(() => undefined)) as { error?: unknown } | undefined
+    throw Object.assign(new Error('search unavailable'), { envelope: body?.error })
+  }
   return response.json() as Promise<unknown>
 }
 
@@ -94,6 +105,7 @@ export function SearchPanel({
   const [failed, setFailed] = useState(false)
   const [notice, setNotice] = useState('')
   const [error, setError] = useState('')
+  const [errorEnvelope, setErrorEnvelope] = useState<unknown>()
   const [hits, setHits] = useState<SearchHit[]>([])
   const selected = status?.providers.find((row) => row.id === providerId)
 
@@ -149,6 +161,7 @@ export function SearchPanel({
     const defaultProvider = makeDefault ? providerId : savedDefault === providerId ? null : savedDefault
     setBusy(true)
     setError('')
+    setErrorEnvelope(undefined)
     setNotice('')
     try {
       const value = await readJson(
@@ -175,7 +188,8 @@ export function SearchPanel({
       setApiKey('')
       setClearKey(false)
       setNotice('searchSaved')
-    } catch {
+    } catch (error) {
+      setErrorEnvelope((error as { envelope?: unknown })?.envelope)
       setError('searchFailed')
     } finally {
       setBusy(false)
@@ -191,6 +205,7 @@ export function SearchPanel({
     }
     setBusy(true)
     setError('')
+    setErrorEnvelope(undefined)
     setHits([])
     try {
       const response = await fetcher('/admin/api/search/test', {
@@ -201,16 +216,19 @@ export function SearchPanel({
       })
       const value = (await response.json()) as {
         ok?: boolean
+        error?: unknown
         message?: string
         results?: SearchHit[]
       }
       if (!response.ok || !value.ok) {
+        setErrorEnvelope(value.error)
         setError('searchFailed')
         return
       }
       setHits(Array.isArray(value.results) ? value.results : [])
       setNotice('searchSaved')
-    } catch {
+    } catch (error) {
+      setErrorEnvelope((error as { envelope?: unknown })?.envelope)
       setError('searchFailed')
     } finally {
       setBusy(false)
@@ -368,7 +386,7 @@ export function SearchPanel({
       )}
       {error && (
         <SettingsState tone="error" data-testid="search-error">
-          {t(error)}
+          {appServerErrorMessage(errorEnvelope, document.documentElement.lang) ?? t(error)}
         </SettingsState>
       )}
       <ul data-testid="search-test-result" aria-live="polite">

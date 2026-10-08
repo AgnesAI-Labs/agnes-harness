@@ -3,6 +3,7 @@
 English | [简体中文](api.zh-CN.md)
 
 <a id="api-与-schema-参考"></a>
+[App Server v1](app-server.md) · JSONL, generated schemas, authentication and error envelopes.
 
 [Documentation](../README.md) · [Plugin boundaries](../develop/plugins.md)
 

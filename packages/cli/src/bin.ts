@@ -427,6 +427,28 @@ export async function main(argv: string[], io: MainIO, boot: Partial<LocalBootDe
         boot: (input) => bootHeadless(input, deps),
       })
     }
+    if ((p.command === 'acp' || p.mode === 'acp') && Object.keys(boot).length === 0) {
+      if (p.standalone || p.ephemeral)
+        throw new UsageError('ACP uses the shared App Server; omit standalone/ephemeral')
+      if (!p.connect) {
+        const { runAppServer } = await import('./commands/app-server.js')
+        return await runAppServer(
+          [
+            '--stdio',
+            '--home',
+            deps.home,
+            '--cwd',
+            p.cwd ?? io.cwd,
+            ...(p.profile ? ['--profile', p.profile] : []),
+          ],
+          io,
+        )
+      }
+    }
+    if (p.command === 'app-server') {
+      const { runAppServer } = await import('./commands/app-server.js')
+      return await runAppServer(p.rest, io)
+    }
     if (p.command === 'serve' || p.command === 'web' || p.command === 'start') {
       const { runWebCommand } = await import('../launch/web-command.js')
       await runWebCommand(p.rest, {

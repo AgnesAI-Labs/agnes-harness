@@ -6,6 +6,8 @@ import type { Command } from './types.js'
 export function commandHelp(command?: Command): string {
   const common = 'Use --yes to confirm reviewed mutations without a TTY. Help never starts the backend.'
   switch (command) {
+    case 'app-server':
+      return 'Usage: agh app-server --stdio [--home <dir>] [--profile <name>] | schema --out <dir>\nAttach JSONL to the existing local daemon, or export the versioned protocol without starting one.'
     case 'run':
       return RUN_USAGE
     case 'tools':

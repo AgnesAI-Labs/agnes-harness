@@ -83,6 +83,8 @@ Skills 包含磁盘/包资源治理与运行时 Cordis 贡献。当前共享 wor
 
 ## App Server 与客户端
 
+每个 `AGH_HOME` 只有一个经过认证的 daemon endpoint。[App Server v1 合同](../reference/app-server.zh-CN.md) 发布生成的 JSON Schema 和方法级 TypeScript 类型。`agh app-server --stdio` 与 ACP 是连接同一 daemon 的 bridge。管理 HTTP 路径适配相同 RPC 方法；composition、search、context、history 和 plan 状态由 daemon 管理。错误保留数字代码，并携带本地化消息键、白名单 cause 和诊断 id。
+
 AGH 的 App Server 为客户端提供共享的任务运行基础：daemon 管理会话与控制面，worker 承载执行，SDK 提供通信入口。开发自己的客户端时，从本仓的[API 合同](../reference/api.zh-CN.md)选择接入方式。
 
 ## 可复用场景的范围

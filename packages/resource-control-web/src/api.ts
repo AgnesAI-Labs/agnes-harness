@@ -9,11 +9,14 @@ import type {
   SkillRootStatus,
   TrustState,
 } from '@agnes/protocol'
+import { appServerErrorMessage } from '@agnes/web-ui'
 import type { ResourceAdminContext, ResourceAdminError } from './types.js'
 
 export const RESOURCE_ADMIN_API_ROOT = '/admin/resources/api'
 type FetchLike = typeof fetch
-type ErrorResponse = { error?: { code?: unknown; message?: unknown } }
+type ErrorResponse = {
+  error?: { code?: unknown; message?: unknown; data?: { code?: unknown; messageKey?: unknown } }
+}
 
 export class ResourceAdminApiError extends Error {
   readonly details: ResourceAdminError
@@ -30,8 +33,17 @@ function safeError(
   if (!value || typeof value !== 'object') return { code: 'RESOURCE_ADMIN_UNAVAILABLE', message: fallback }
   const error = value as ErrorResponse
   return {
-    code: typeof error.error?.code === 'string' ? error.error.code : 'RESOURCE_ADMIN_UNAVAILABLE',
-    message: typeof error.error?.message === 'string' ? error.error.message : fallback,
+    code:
+      typeof error.error?.data?.code === 'string'
+        ? error.error.data.code
+        : typeof error.error?.code === 'string'
+          ? error.error.code
+          : 'RESOURCE_ADMIN_UNAVAILABLE',
+    message:
+      appServerErrorMessage(
+        error.error,
+        typeof document === 'undefined' ? 'en' : document.documentElement.lang,
+      ) ?? (typeof error.error?.message === 'string' ? error.error.message : fallback),
   }
 }
 function commandId(): string {

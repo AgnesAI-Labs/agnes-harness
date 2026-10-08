@@ -11,6 +11,7 @@ import type {
 import { minimumContextBudget } from '@agnes/protocol'
 import type { Client } from '@agnes/sdk/browser'
 import {
+  appServerErrorMessage,
   modelThinkingOptions,
   parseContextBudget,
   renderRegion,
@@ -67,6 +68,8 @@ const CONFIGURATION_REASON_KEYS: Readonly<Record<string, string>> = {
 }
 
 function configurationReason(error: unknown, t: (key: string) => string = tr): string | undefined {
+  const localized = appServerErrorMessage(error, document.documentElement.lang)
+  if (localized) return localized
   if (error === null || typeof error !== 'object') return undefined
   const data =
     'data' in error && error.data !== null && typeof error.data === 'object' ? error.data : undefined

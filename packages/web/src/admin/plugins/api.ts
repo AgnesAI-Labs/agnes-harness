@@ -31,6 +31,7 @@ import {
   validatePackageAdminCall,
   validatePackageAdminData,
 } from '@agnes/protocol'
+import { appServerErrorMessage } from '@agnes/web-ui'
 import type { AdminContext, AdminError, AdminSurfaceLinksResult } from './types.js'
 
 export const ADMIN_API_ROOT = '/admin/plugins/api'
@@ -65,7 +66,12 @@ const METHOD_BY_PATH = {
 type AdminPath = keyof typeof METHOD_BY_PATH
 
 type ErrorResponse = {
-  error?: { code?: unknown; message?: unknown; blockers?: unknown }
+  error?: {
+    code?: unknown
+    message?: unknown
+    blockers?: unknown
+    data?: { code?: unknown; messageKey?: unknown }
+  }
 }
 
 export class AdminApiError extends Error {
@@ -84,8 +90,17 @@ function safeError(
 ): AdminError {
   if (!value || typeof value !== 'object') return { code: 'ADMIN_UNAVAILABLE', message: fallback }
   const error = value as ErrorResponse
-  const code = typeof error.error?.code === 'string' ? error.error.code : 'ADMIN_UNAVAILABLE'
-  const message = typeof error.error?.message === 'string' ? error.error.message : fallback
+  const code =
+    typeof error.error?.data?.code === 'string'
+      ? error.error.data.code
+      : typeof error.error?.code === 'string'
+        ? error.error.code
+        : 'ADMIN_UNAVAILABLE'
+  const message =
+    appServerErrorMessage(
+      error.error,
+      typeof document === 'undefined' ? 'en' : document.documentElement.lang,
+    ) ?? (typeof error.error?.message === 'string' ? error.error.message : fallback)
   return { code, message }
 }
 

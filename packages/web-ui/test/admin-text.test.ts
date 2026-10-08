@@ -7,6 +7,7 @@ import {
   operationName,
   runtimeStateLabel,
 } from '../src/admin-text.js'
+import { appServerErrorMessage } from '../src/app-server-errors.js'
 import { adminLocaleCatalog } from '../src/locales/admin.js'
 import { resourceDetailLocaleCatalog } from '../src/locales/resource-detail.js'
 import { resourceListLocaleCatalog } from '../src/locales/resource-list.js'
@@ -74,4 +75,16 @@ describe('admin text labels', () => {
       Object.keys(resourceDetailLocaleCatalog['zh-CN']).sort(),
     )
   })
+})
+
+it('localizes only schema message keys and ignores exception text and unknown keys', () => {
+  const error = { message: 'private exception', data: { messageKey: 'appServer.errors.credentialRejected' } }
+  expect(appServerErrorMessage(error, 'en')).toBe('The credential was rejected. Check it and try again.')
+  expect(appServerErrorMessage(error, 'zh-CN')).toBe('凭据被拒绝，请检查后重试。')
+  for (const value of [
+    { data: { messageKey: 'appServer.errors.__proto__' } },
+    { message: 'private exception' },
+    null,
+  ])
+    expect(appServerErrorMessage(value, 'en')).toBeUndefined()
 })

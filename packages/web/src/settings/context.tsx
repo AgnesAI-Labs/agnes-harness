@@ -1,4 +1,5 @@
 import {
+  appServerErrorMessage,
   Button,
   Field,
   SettingsCard,
@@ -80,7 +81,10 @@ export async function contextRequest(
     body: JSON.stringify(input),
     ...(signal ? { signal } : {}),
   })
-  if (!response.ok) throw new Error('context unavailable')
+  if (!response.ok) {
+    const body = (await response.json().catch(() => undefined)) as { error?: unknown } | undefined
+    throw Object.assign(new Error('context unavailable'), { envelope: body?.error })
+  }
   const value: unknown = await response.json()
   if (!validSnapshot(value)) throw new Error('invalid context response')
   return value
@@ -93,7 +97,7 @@ export function ContextPanel({ canSave }: { canSave: boolean }) {
   const [cwd, setCwd] = useState('')
   const [roots, setRoots] = useState('')
   const [busy, setBusy] = useState(false)
-  const [error, setError] = useState(false)
+  const [error, setError] = useState<unknown>(false)
   const [saved, setSaved] = useState(false)
   const [skill, setSkill] = useState('')
   const [args, setArgs] = useState('')
@@ -109,8 +113,8 @@ export function ContextPanel({ canSave }: { canSave: boolean }) {
         setConfig(value.config)
         setRoots(value.config.customSkillRoots.join('\n'))
       })
-      .catch(() => {
-        if (current) setError(true)
+      .catch((error) => {
+        if (current) setError((error as { envelope?: unknown })?.envelope ?? true)
       })
       .finally(() => {
         if (current) setBusy(false)
@@ -149,8 +153,8 @@ export function ContextPanel({ canSave }: { canSave: boolean }) {
       setConfig(value.config)
       setRoots(value.config.customSkillRoots.join('\n'))
       setSaved(save)
-    } catch {
-      if (!lifetime.current?.signal.aborted) setError(true)
+    } catch (error) {
+      if (!lifetime.current?.signal.aborted) setError((error as { envelope?: unknown })?.envelope ?? true)
     } finally {
       if (!lifetime.current?.signal.aborted) setBusy(false)
     }
@@ -158,7 +162,11 @@ export function ContextPanel({ canSave }: { canSave: boolean }) {
   return (
     <SettingsCard data-testid="context-panel" aria-busy={busy}>
       <p>{t('contextHelp')}</p>
-      {error && <SettingsState tone="error">{t('contextFailed')}</SettingsState>}
+      {Boolean(error) && (
+        <SettingsState tone="error">
+          {appServerErrorMessage(error, document.documentElement.lang) ?? t('contextFailed')}
+        </SettingsState>
+      )}
       {saved && <SettingsState tone="success">{t('contextSaved')}</SettingsState>}
       {config && (
         <fieldset disabled={!canSave || busy}>
