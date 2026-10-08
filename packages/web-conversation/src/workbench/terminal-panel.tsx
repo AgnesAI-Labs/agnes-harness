@@ -13,6 +13,13 @@ import { useEffect, useRef, useState } from 'react'
 import { panelContext } from './context.js'
 
 type Input = Parameters<Session['jobsControl']>[0]
+type PendingInput = {
+  sessionId: string
+  jobId: string
+  alive: boolean
+  sending: boolean
+  text: string
+}
 const storageKey = (id: string) => `agnes.workbench.terminals.${id}`
 function attachments(id: string): string[] | undefined {
   try {
@@ -35,6 +42,21 @@ export function TerminalPanel({ context }: { context: UiExtensionContext }) {
   const [error, setError] = useState(''),
     [busy, setBusy] = useState(false)
   const outputElement = useRef<HTMLTextAreaElement>(null)
+  const pendingInput = useRef<PendingInput | undefined>(undefined)
+  useEffect(() => {
+    const queue: PendingInput = {
+      sessionId: sessionId ?? '',
+      jobId: active,
+      alive: true,
+      sending: false,
+      text: '',
+    }
+    pendingInput.current = queue
+    return () => {
+      queue.alive = false
+      queue.text = '' // Detach discards unsent UI input; an accepted send and the process remain owned by the session.
+    }
+  }, [sessionId, active])
   const [size, setSize] = useState({ columns: 100, rows: 30 })
   const [refresh, setRefresh] = useState(0)
   const [shell, setShell] = useState<'bash' | 'zsh' | 'pwsh'>('bash')
@@ -108,12 +130,12 @@ export function TerminalPanel({ context }: { context: UiExtensionContext }) {
     setActive((value) => (value === id ? '' : value))
   }
   const control = async (input: Input, closeId?: string) => {
-    if (!session) return
+    if (!session) return false
     const id = session.id
     setBusy(true)
     try {
       const result = await session.jobsControl(input)
-      if (scope.current !== id) return
+      if (scope.current !== id) return false
       setError('')
       if ('id' in result.output) {
         const receipt = result.output
@@ -129,12 +151,37 @@ export function TerminalPanel({ context }: { context: UiExtensionContext }) {
       }
       if (closeId) detach(closeId)
       setRefresh((value) => value + 1)
+      return true
     } catch (cause) {
       if (scope.current === id)
         setError(appServerErrorMessage(cause, document.documentElement.lang) ?? t('workbench.error'))
+      return false
     } finally {
       if (scope.current === id) setBusy(false)
     }
+  }
+  const sendInput = (jobId: string, text: string) => {
+    const queue = pendingInput.current
+    if (!queue?.alive || queue.sessionId !== sessionId || queue.jobId !== jobId) return
+    if (queue.text.length + text.length > 65536) {
+      setError(t('workbench.terminal.inputFull'))
+      return
+    }
+    queue.text += text
+    if (queue.sending) return
+    queue.sending = true
+    void (async () => {
+      while (queue.alive && queue.text) {
+        const batch = queue.text
+        queue.text = ''
+        // One in-flight input request preserves keystroke order and avoids RPC overload.
+        if (!(await control({ operation: 'send', jobId, text: batch }))) {
+          queue.text = '' // Never retry uncertain input or continue a partially refused command.
+          break
+        }
+      }
+      queue.sending = false
+    })()
   }
   const tabs = ids.flatMap((id) => snapshot.jobs.filter((job) => job.id === id))
   const job: SessionJob | undefined =
@@ -306,16 +353,12 @@ export function TerminalPanel({ context }: { context: UiExtensionContext }) {
               const text = terminalKey(event)
               if (text === undefined) return
               event.preventDefault()
-              void control({ operation: 'send', jobId: job.id, text })
+              sendInput(job.id, text)
             }}
             onPaste={(event) => {
               if (!human || !running) return
               event.preventDefault()
-              void control({
-                operation: 'send',
-                jobId: job.id,
-                text: event.clipboardData.getData('text/plain').slice(0, 65536),
-              })
+              sendInput(job.id, event.clipboardData.getData('text/plain').slice(0, 65536))
             }}
           />
         </div>
