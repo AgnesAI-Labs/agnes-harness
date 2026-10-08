@@ -261,3 +261,101 @@ test('session terminal survives UI detachment, follows agent output and honors p
   await expect(panel).toBeHidden()
   await expect(page.getByTestId('workbench-bottom-toggle')).toBeFocused()
 })
+
+test('goal panel follows durable progress and shares authorized human controls', async ({
+  page,
+  runtime,
+}, info) => {
+  test.setTimeout(180_000)
+  await page.addInitScript(() => {
+    if (location.protocol !== 'http:') return
+    if (!localStorage.getItem('agnes-locale')) localStorage.setItem('agnes-locale', 'en')
+    if (!localStorage.getItem('agnes-theme')) localStorage.setItem('agnes-theme', 'light')
+  })
+  await page.goto(runtime.url)
+  await chooseWorkspace(page, runtime)
+  await fresh(page)
+  const composer = page.getByRole('textbox', { name: 'Task content', exact: true })
+  await composer.fill('Create a session for goal review')
+  await composer.press('Enter')
+  await expect(page).toHaveURL(/session=/, { timeout: 40_000 })
+  await expect(page.getByTestId('conversation-turn').last()).toHaveAttribute('data-status', 'completed', {
+    timeout: 30_000,
+  })
+  await page.getByTestId('workbench-right-toggle').click()
+  await page.getByTestId('workbench-tab-goal').click()
+  const panel = page.getByTestId('goal-panel')
+  await expect(panel).toContainText('Create a goal')
+  await page.getByTestId('goal-toggle').click()
+  await page.getByTestId('goal-objective').fill('Review the synthetic delivery')
+  await page.getByTestId('goal-max-rounds').fill('1')
+  await page.getByTestId('goal-save').click()
+  await expect(panel.getByTestId('goal-panel-phase')).toHaveText('Blocked goal', { timeout: 30_000 })
+  await expect(page.getByTestId('goal-toggle')).toHaveAttribute('aria-expanded', 'false')
+  await expect(panel.getByTestId('goal-panel-objective')).toHaveText('Review the synthetic delivery')
+  await expect(panel.getByTestId('goal-panel-progress')).toContainText('1 of 1')
+  await expect(panel.getByTestId('goal-reason')).toContainText('maximum automatic rounds')
+  const client = await runtime.connect(),
+    id = new URL(page.url()).searchParams.get('session')
+  if (!id) throw new Error('session required')
+  const session = await client.session.load(id, { cwd: runtime.workspace })
+  const snapshot = async () => {
+    const timeline = await session.projectUI(undefined, { surface: 'web' })
+    const fill = timeline.slots?.find((fill) => fill.extId === 'agnes/goal' && fill.slot === 'status.line')
+    return (fill?.payload as { goal?: { id: string; phase: string; revision: number; rounds: number } })?.goal
+  }
+  const initial = await snapshot()
+  expect(initial).toMatchObject({ phase: 'blocked', rounds: 1 })
+  await composer.fill('/goal pause')
+  await composer.press('Enter')
+  await expect(panel.getByTestId('goal-panel-phase')).toHaveText('Paused goal')
+  await panel.getByTestId('goal-panel-resume').click()
+  await expect(panel.getByTestId('goal-panel-phase')).toHaveText('Blocked goal', { timeout: 30_000 })
+  expect((await snapshot())?.revision).toBeGreaterThan(initial?.revision ?? 0)
+  await translated(page)
+  await accessible(page, info, 'goal-panel')
+  const folder = process.env.AGH_WORKBENCH_REPORT
+  if (folder) {
+    await mkdir(folder, { recursive: true })
+    for (const locale of ['en', 'zh-CN'])
+      for (const theme of ['light', 'dark'])
+        for (const width of [1440, 1280]) {
+          await page.setViewportSize({ width, height: 900 })
+          await page.evaluate(
+            ({ locale, theme }) => {
+              localStorage.setItem('agnes-locale', locale)
+              localStorage.setItem('agnes-theme', theme)
+            },
+            { locale, theme },
+          )
+          await page.reload()
+          await page.getByTestId('workbench-tab-goal').click()
+          await expect(panel.getByTestId('goal-panel-objective')).toHaveText('Review the synthetic delivery')
+          await translated(page)
+          await settled(page)
+          await page.screenshot({ path: join(folder, `p3-${locale}-${theme}-${width}-after.png`) })
+          await page.getByTestId('workbench-right-toggle').click()
+          await page.screenshot({ path: join(folder, `p3-${locale}-${theme}-${width}-before.png`) })
+          await page.getByTestId('workbench-right-toggle').click()
+        }
+    await page.evaluate(() => {
+      localStorage.setItem('agnes-locale', 'en')
+      localStorage.setItem('agnes-theme', 'light')
+    })
+    await page.reload()
+    await page.getByTestId('workbench-tab-goal').click()
+  }
+  await panel.getByTestId('goal-panel-complete').click()
+  await expect(panel.getByTestId('goal-panel-phase')).toHaveText('Completed goal')
+  expect(await snapshot()).toMatchObject({ id: initial?.id, phase: 'complete' })
+  await expect(panel.getByTestId('goal-panel-complete')).toHaveCount(0)
+  await page.setViewportSize({ width: 375, height: 812 })
+  await page.getByTestId('workbench-tab-goal').press('Escape')
+  await expect(panel).toBeHidden()
+  await expect(page.getByTestId('workbench-right-toggle')).toBeFocused()
+  expect(await snapshot()).toMatchObject({ phase: 'complete' })
+  await page.getByTestId('workbench-right-toggle').click()
+  await panel.getByTestId('goal-panel-clear').click()
+  await expect(panel).toContainText('Create a goal')
+  expect(await snapshot()).toBeUndefined()
+})

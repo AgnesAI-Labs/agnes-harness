@@ -1,6 +1,7 @@
 import { workbenchPanels } from '@agnes/web-client'
 import { FactChainPanel } from './fact-chain-panel.js'
 import { FilesPanel } from './files-panel.js'
+import { GoalPanel } from './goal-panel.js'
 import { TerminalPanel } from './terminal-panel.js'
 
 if (!workbenchPanels.get('files'))
@@ -31,4 +32,13 @@ if (!workbenchPanels.get('terminal'))
     edge: 'bottom',
     titleKey: 'workbench.terminal.title',
     component: TerminalPanel,
+  })
+
+if (!workbenchPanels.get('goal'))
+  workbenchPanels.register({
+    id: 'goal',
+    order: 20,
+    edge: 'right',
+    titleKey: 'workbench.goal.title',
+    component: GoalPanel,
   })

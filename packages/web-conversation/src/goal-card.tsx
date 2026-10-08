@@ -14,6 +14,7 @@ import {
 import type { ComponentProps } from 'react'
 import { useEffect, useRef, useState } from 'react'
 import { RegisteredConversationCard } from './conversation-registry.js'
+import { GoalActions } from './goal-actions.js'
 
 export function goalSlot(timeline?: UITimeline): StatusLinePayload | undefined {
   const live = timeline?.slots?.find((fill) => fill.extId === 'agnes/goal' && fill.slot === 'status.line')
@@ -52,13 +53,6 @@ export function GoalCard({
   const [objective, setObjective] = useState(goal?.objective ?? '')
   const [rounds, setRounds] = useState(goal?.maxRounds ?? 10)
   const [budget, setBudget] = useState(goal?.budgetCredits?.toString() ?? '')
-  const action = (op: string) => onCommand(`/goal ${op}`)
-  const reasonKeys: Record<string, string> = {
-    'Credit usage unavailable': 'goal.reason.usageUnavailable',
-    'Credit budget exhausted': 'goal.reason.budgetExhausted',
-    'Maximum automatic rounds reached': 'goal.reason.roundLimit',
-    'Automatic continuation unavailable on this host': 'goal.reason.continuationUnavailable',
-  }
   return (
     <span data-testid="goal-bar">
       <Popover
@@ -74,12 +68,6 @@ export function GoalCard({
             data-testid="goal-card"
             aria-label={tr('goal.title')}
           >
-            {goal && <p>{tr('goal.progress', { rounds: goal.rounds, maxRounds: goal.maxRounds })}</p>}
-            {goal?.reason && (
-              <p role="status" data-testid="goal-reason">
-                {reasonKeys[goal.reason] ? tr(reasonKeys[goal.reason] ?? '') : tr('goal.reason.other')}
-              </p>
-            )}
             {error && <p role="status">{tr('goal.error')}</p>}
             <form
               onSubmit={(event) => {
@@ -133,60 +121,7 @@ export function GoalCard({
                 {tr(goal ? 'goal.edit' : 'goal.create')}
               </Button>
             </form>
-            {goal && (
-              <div className="goal-actions">
-                {goal.phase === 'active' && (
-                  <Button
-                    htmlType="button"
-                    disabled={disabled}
-                    data-testid="goal-pause"
-                    onClick={() => action('pause')}
-                  >
-                    {tr('goal.pause')}
-                  </Button>
-                )}
-                {(goal.phase === 'paused' || goal.phase === 'blocked') && (
-                  <Button
-                    htmlType="button"
-                    disabled={disabled}
-                    data-testid="goal-resume"
-                    onClick={() => action('resume')}
-                  >
-                    {tr('goal.resume')}
-                  </Button>
-                )}
-                {goal.phase !== 'complete' && (
-                  <Button
-                    htmlType="button"
-                    disabled={disabled}
-                    data-testid="goal-complete"
-                    onClick={() => action('complete')}
-                  >
-                    {tr('goal.complete')}
-                  </Button>
-                )}
-                <Button
-                  htmlType="button"
-                  disabled={disabled}
-                  data-testid="goal-clear"
-                  onClick={() => action('clear')}
-                >
-                  {tr('goal.clear')}
-                </Button>
-              </div>
-            )}
-            {goal && (
-              <p>
-                {tr('goal.spent')}{' '}
-                {goal.creditsUsed.toLocaleString(document.documentElement.lang || 'en', {
-                  minimumFractionDigits: 2,
-                  maximumFractionDigits: 2,
-                })}
-                {goal.budgetCredits === undefined
-                  ? ''
-                  : ` / ${goal.budgetCredits.toLocaleString(document.documentElement.lang || 'en')}`}
-              </p>
-            )}
+            {goal && <GoalActions goal={goal} disabled={disabled} onCommand={onCommand} t={tr} />}
           </ConversationCardLayout>
         }
       >

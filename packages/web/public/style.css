@@ -7623,3 +7623,49 @@ body.admin-page {
 .workbench-terminal-toolbar > span {
   margin-left: auto;
 }
+
+.workbench-goal {
+  padding: 1rem;
+  overflow: auto;
+  overflow-wrap: anywhere;
+}
+.workbench-goal h2 {
+  margin: 0.75rem 0 1rem;
+  font-size: var(--font-size-lg);
+  line-height: 1.5;
+}
+.workbench-goal-phase {
+  width: fit-content;
+  margin: 0;
+  padding: 0.2rem 0.5rem;
+  border-radius: var(--radius-md);
+  background: var(--agnes-bg-hover);
+  color: var(--agnes-text-emphasis);
+  font-size: var(--font-size-sm);
+}
+.workbench-goal-usage,
+.workbench-goal-details dl {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 0.5rem 1rem;
+  font-size: var(--font-size-sm);
+}
+.workbench-goal dd {
+  margin: 0;
+}
+.workbench-goal .goal-actions {
+  margin-block: 1rem;
+}
+.workbench-goal-details {
+  color: var(--agnes-text-secondary);
+  font-size: var(--font-size-xs);
+}
+
+.workbench-goal-phase[data-phase="blocked"] {
+  color: var(--agnes-status-warning-text);
+  background: var(--agnes-status-warning-bg);
+}
+.workbench-goal-phase[data-phase="complete"] {
+  color: var(--agnes-status-success-text);
+  background: var(--agnes-status-success-bg);
+}
