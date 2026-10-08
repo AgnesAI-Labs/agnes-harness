@@ -1,13 +1,13 @@
 import type { LoopCheckpoint, LoopContext, LoopRequest, LoopToolCall } from '@agnes/extension-api'
 import { expect, it } from 'vitest'
-import { codec, createDagLoop } from './index.mjs'
+import { codec, createDagLoop, type DagNode } from './index.mjs'
 
-const nodes = [
+const nodes: DagNode[] = [
   { id: 'a', tool: 'read', args: { path: 'a' }, after: [] },
   { id: 'b', tool: 'read', args: { path: 'b' }, after: [] },
   { id: 'join', tool: 'join', args: { a: { $result: 'a' }, b: { $result: 'b' } }, after: ['a', 'b'] },
 ]
-function ports() {
+function ports(planReply = JSON.stringify(nodes)) {
   let checkpoint: LoopCheckpoint | null = null
   const batches: LoopToolCall[][] = []
   const events: Array<{ type: string; data: unknown }> = []
@@ -16,9 +16,21 @@ function ports() {
   const ctx: LoopContext = {
     sessionKey: 'dag',
     lane: 'main',
-    prepareRequest: async (options = {}) => ({ ...options }) as LoopRequest,
+    prepareRequest: async (options = {}) => ({ ...options }) as unknown as LoopRequest,
+    estimateRequest: async () => {
+      throw new Error('unexpected estimate')
+    },
+    jobs: {
+      status: async () => {
+        throw new Error('unexpected job status')
+      },
+      join: async () => {
+        throw new Error('unexpected job join')
+      },
+    },
     turn: {
       view: async () => null,
+      endStep: async () => {},
       continuation: () => null,
       cancelled: () => false,
       checkpoint: async () => ({ outcome: 'running' }),
@@ -44,6 +56,9 @@ function ports() {
     },
     tools: {
       drain: async () => ({ outcome: 'running' }),
+      resume: async () => {
+        throw new Error('unexpected tool resume')
+      },
       execute: async () => {
         throw new Error('DAG must use the batch port')
       },
@@ -60,9 +75,7 @@ function ports() {
       },
       complete: async (request) => {
         requests.push(request)
-        return [
-          { type: 'text_delta', delta: requests.length === 1 ? JSON.stringify(nodes) : 'joined summary' },
-        ]
+        return [{ type: 'text_delta', delta: requests.length === 1 ? planReply : 'joined summary' }]
       },
     },
     checkpoints: {
@@ -75,13 +88,16 @@ function ports() {
       emit: async (type, data) => {
         events.push({ type, data })
       },
+      assistant: async () => {
+        throw new Error('unexpected assistant port')
+      },
       finish: async () => {
         finished = true
       },
     },
     wait: {
       park: async () => {},
-      wake() {},
+      wake: async () => {},
       poll: async () => ({ outcome: 'running' }),
       delay: async () => {},
     },
@@ -93,13 +109,13 @@ const signal = new AbortController().signal
 it('batches independent nodes, resumes their committed wave, joins outputs and finishes without a model for a static plan', async () => {
   const p = ports()
   const factory = createDagLoop({ plan: nodes })
-  let driver = factory.create(p.ctx)
+  let driver = await factory.create(p.ctx)
   await driver.step(signal) // accept input
   await driver.step(signal) // parallel wave
   expect(p.batches[0]?.map((call) => call.args)).toEqual([{ path: 'a' }, { path: 'b' }])
   const saved = p.checkpoint()
   await driver.dispose()
-  driver = factory.resume(p.ctx, saved)
+  driver = await factory.resume(p.ctx, saved)
   for (let i = 0; i < 4; i++) {
     if ((await driver.step(signal)).reason) break
   }
@@ -112,8 +128,20 @@ it('batches independent nodes, resumes their committed wave, joins outputs and f
   expect(p.events.at(-1)?.type).toBe('x/dag/result')
 })
 
-it('plans from the first model reply and summarizes only after the join', async () => {
-  const p = ports()
+it.each([
+  ['plain JSON', JSON.stringify(nodes)],
+  ['JSON followed by prose', `${JSON.stringify(nodes)}\n\nI will summarize after execution.`],
+  ['fenced JSON', `\`\`\`json\n${JSON.stringify(nodes)}\n\`\`\``],
+  [
+    'JSON containing bracket text',
+    JSON.stringify(
+      nodes.map((node, index) =>
+        index === 0 ? { ...node, args: { path: 'a ] bracket and "quote"' } } : node,
+      ),
+    ),
+  ],
+])('plans from %s and summarizes only after the join', async (_name, reply) => {
+  const p = ports(reply)
   const tools = [{ name: 'read', description: 'Read a file', parameters: { type: 'object' } }]
   p.ctx.turn.view = async () => ({
     turnId: 1,
@@ -125,7 +153,7 @@ it('plans from the first model reply and summarizes only after the join', async 
     prompt: { sections: [], runtime: {} },
     budget: { maxSteps: null, stepsUsed: 0, creditsUsed: 0, perRequestCap: null, onExceed: 'deny' },
   })
-  const driver = createDagLoop().create(p.ctx)
+  const driver = await createDagLoop().create(p.ctx)
   for (let i = 0; i < 10; i++) {
     if ((await driver.step(signal)).reason) break
   }
@@ -142,12 +170,19 @@ it('refuses cycles, unsupported codecs and uncertain effects before resumed work
   expect(() => createDagLoop({ plan: [{ ...nodes[0]!, after: ['a'] }] })).toThrow('cycle')
   const factory = createDagLoop({ plan: nodes })
   const p = ports()
-  const checkpoint = factory.create(p.ctx).checkpoint()
+  const checkpoint = (await factory.create(p.ctx)).checkpoint()
   expect(() => codec.decode({ ...checkpoint, codecVersion: 2 })).toThrow('version 2')
-  const resumed = factory.resume(p.ctx, {
+  const resumed = await factory.resume(p.ctx, {
     ...checkpoint,
     state: { ...(checkpoint.state as object), stage: 'tools', inFlight: ['a'] },
   })
   await expect(resumed.step(signal)).rejects.toThrow('outcome is uncertain')
   expect(p.batches).toEqual([])
+  for (const reply of ['No tools available', `${JSON.stringify(nodes)}\n[]`, '```json\n[]']) {
+    const refused = ports(reply)
+    const driver = await createDagLoop().create(refused.ctx)
+    await driver.step(signal)
+    await expect(driver.step(signal)).rejects.toThrow('DAG model')
+    expect(refused.batches).toEqual([])
+  }
 })

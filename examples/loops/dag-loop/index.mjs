@@ -33,6 +33,39 @@ function plan(value) {
   return nodes
 }
 
+/** Accept a plan-first reply, never search arbitrary prose for executable instructions. */
+function modelPlan(reply) {
+  const text = reply.trim()
+  const fence = /^```(?:json)?\s*\n/.exec(text)
+  const body = fence ? text.slice(fence[0].length) : text
+  if (!body.startsWith('[')) throw new Error('DAG model plan must begin with a JSON array')
+  let depth = 0,
+    quoted = false,
+    escaped = false
+  for (let i = 0; i < body.length; i++) {
+    const char = body[i]
+    if (quoted) {
+      if (escaped) escaped = false
+      else if (char === '\\') escaped = true
+      else if (char === '"') quoted = false
+      continue
+    }
+    if (char === '"') quoted = true
+    else if (char === '[') depth++
+    else if (char === ']' && --depth === 0) {
+      let tail = body.slice(i + 1).trim()
+      if (fence) {
+        if (!tail.startsWith('```')) throw new Error('DAG model plan has an unclosed JSON fence')
+        tail = tail.slice(3).trim()
+      }
+      if (/^[[\]{}]/.test(tail) || tail.startsWith('```'))
+        throw new Error('DAG model reply contains ambiguous plans')
+      return plan(JSON.parse(body.slice(0, i + 1)))
+    }
+  }
+  throw new Error('DAG model plan has an incomplete JSON array')
+}
+
 export const codec = loopCheckpointCodec(1, (value) => {
   if (
     !value ||
@@ -141,7 +174,7 @@ export function createDagLoop(config = {}) {
             state.input,
             signal,
           )
-          state.nodes = plan(JSON.parse(text))
+          state.nodes = modelPlan(text)
           state.stage = 'tools'
           await save()
           return { outcome: 'running', phase: 'tools' }
