@@ -167,6 +167,17 @@ it('persists diagnostic ids and projects untrusted history without messages or c
     const historical = readDiagnosticJournal(home, 1, '11111111-1111-1111-1111-111111111111')
     expect(historical).toHaveLength(1)
     expect(JSON.stringify(historical)).not.toContain('synthetic-private-secret')
+    const recent = { ...historical[0], diagnosticId: '22222222-2222-2222-2222-222222222222' }
+    await writeFile(
+      join(home, 'diagnostics', 'errors.jsonl'),
+      JSON.stringify(historical[0]) +
+        '\n' +
+        (' '.repeat(2049) + '\n').repeat(8) +
+        JSON.stringify(recent) +
+        '\n',
+    )
+    expect(readDiagnosticJournal(home, 1, historical[0]!.diagnosticId)).toEqual([])
+    expect(readDiagnosticJournal(home, 1, recent.diagnosticId)).toEqual([recent])
   } finally {
     retain()
     stop()

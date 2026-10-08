@@ -106,7 +106,7 @@ function makeScope(paths: {
   dataDir: string
 }): DaemonScope {
   const profileDir = join(paths.home, 'profiles', paths.profile)
-  const daemonDir = join(paths.dataDir, 'daemon')
+  const daemonDir = join(paths.home, 'daemon')
   const scopeID = scopeDigest(paths)
   return Object.freeze({
     ...paths,

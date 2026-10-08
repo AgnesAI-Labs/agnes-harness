@@ -9,7 +9,7 @@ import type {
   LoopRequestOptions,
   LoopToolCall,
 } from '@agnes/extension-api'
-import type { ContentBlock, InferenceEvent, RequestBody } from '@agnes/protocol'
+import { type ContentBlock, type InferenceEvent, inspectJsonData, type RequestBody } from '@agnes/protocol'
 import { releaseTreeReservation, settleTreeSpend } from '../child/runtime-budget.js'
 import { approvalContinuation, continueParked } from '../execution/turn/parked.js'
 import { approveAndExecute } from '../execution/turn/tools.js'
@@ -18,6 +18,7 @@ import type { DeriveOutput } from '../request/derive.js'
 import { toProviderRequest } from '../request/to-provider.js'
 import { runCompaction } from '../step/compaction.js'
 import { finishAborted } from '../step/control.js'
+import { appendExtensionEvent } from '../step/ext-events.js'
 import { builtinBudgetPreflight, checkpointRoutine } from '../step/gate.js'
 import { claimFrom, inboxEvent } from '../step/inbox.js'
 import { admitInferenceRequest, prepareInferenceRequest } from '../step/inference.js'
@@ -54,6 +55,8 @@ export async function createLoopContext(s: SessionImpl, restoreCheckpoint = fals
       limit: 1,
     })
     if (event) {
+      if (event.origin !== 'system' || event.trust !== 'trusted')
+        throw new CoreError('E_RELATION', 'Loop checkpoint source is invalid')
       const data = event.data as unknown as {
         loop: { id: string; version: string }
         checkpoint: LoopCheckpoint
@@ -592,7 +595,17 @@ export async function createLoopContext(s: SessionImpl, restoreCheckpoint = fals
         }
       },
       async emit(type, data) {
-        await s.d.log.append([s.ev(type, data, type.startsWith('x/') ? { ignorable: true } : {})])
+        if (
+          typeof type !== 'string' ||
+          !/^x\/[a-zA-Z0-9._-]+\/[^\s]+$/.test(type) ||
+          type.startsWith('x/core/')
+        )
+          throw new CoreError('E_ENVELOPE', 'Loop emit accepts only non-reserved extension event types')
+        const checked = inspectJsonData(data)
+        if (!checked.ok) throw new CoreError('E_ENVELOPE', 'Invalid Loop event data')
+        await s.locked(() =>
+          appendExtensionEvent(s, { type, data: checked.value, source: s.loop.id }, { loopTrigger: true }),
+        )
       },
       async finish(reason, error) {
         const step = s.state.openStep.get(s.lane)

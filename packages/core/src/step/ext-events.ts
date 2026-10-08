@@ -30,6 +30,7 @@ export function prepareExtensionEvent(type: string, data: unknown, meta: ToolSou
 export async function appendExtensionEvent(
   session: SessionImpl,
   event: ReturnType<typeof prepareExtensionEvent>,
+  options: { loopTrigger?: boolean } = {},
 ): Promise<Seq> {
   const op = session.op()
   let trigger: Event | undefined
@@ -59,7 +60,8 @@ export async function appendExtensionEvent(
     }
     if (tally.count >= quota) invalid('extension event quota exceeded')
     ;[trigger] = await read({ fromSeq: from, toSeq: from, lane: session.lane, limit: 1 })
-    if (trigger?.type !== 'user/message') invalid('extension event trigger unavailable')
+    if (!trigger || (!options.loopTrigger && trigger.type !== 'user/message'))
+      invalid('extension event trigger unavailable')
   }
   const actor = trigger?.actor ?? { id: 'system', org: 'local', role: 'system', deptPath: [], attrs: {} }
   const result = await session.d.log.append([

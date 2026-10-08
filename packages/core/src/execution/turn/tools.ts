@@ -1342,6 +1342,11 @@ export async function approveAndExecute(
               sourceEventSeqs: [call.argsSeq],
             },
           ),
+          s.ev(
+            'x/core/tool-response',
+            { version: 1, toolUseId: call.toolUseId, result: recordedResult },
+            { ignorable: true, sourceEventSeqs: [call.argsSeq] },
+          ),
         ]
     const verifierSignal = s.ev('verifier/signal', {
       scope: 'tool',

@@ -204,10 +204,13 @@ export function createDagLoop(config = {}) {
               [...state.input, { type: 'text', text: JSON.stringify(state.results) }],
               signal,
             )
-            await ctx.events.emit('assistant/message', {
-              content: [{ type: 'text', text }],
-              stopReason: 'end_turn',
-            })
+            await ctx.events.assistant(
+              {
+                content: [{ type: 'text', text }],
+                stopReason: 'end_turn',
+              },
+              codec.encode({ ...state, stage: 'done' }),
+            )
           } else {
             await ctx.events.emit('x/dag/result', { results: state.results })
           }

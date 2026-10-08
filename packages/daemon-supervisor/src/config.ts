@@ -143,7 +143,7 @@ export function buildConfig(o: {
     if (key && typeof v === 'number') limits[key] = v
   }
   const { socketPath, workersSocketPath } = daemonSocketPaths({
-    dataDir,
+    dataDir: o.home,
     ipc: o.ipc,
     ...(o.args.socket !== undefined ? { socket: o.args.socket } : {}),
   })

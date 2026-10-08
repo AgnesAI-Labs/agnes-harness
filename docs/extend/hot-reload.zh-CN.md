@@ -20,7 +20,7 @@ agh plugins reload --profile local-dev
 
 ## 会话如何变化
 
-成功激活会发布不可变 generation，包含启用包版本、可执行源码、客户端 bundle 和私有资源视图。新会话使用新 generation；已有会话保持工具、loop/adapter 选择、MCP 定义、Skills 视图和前端 bundle URL，休眠、冷恢复以及 daemon/worker 重启后也一样。修改源码无需修改版本号。
+成功激活会发布不可变 generation，包含启用包版本、可执行源码和客户端 bundle。新会话使用新 generation；已有会话保持可执行工具、loop/adapter 选择和前端 bundle URL，休眠、冷恢复以及 daemon/worker 重启后也一样。MCP 定义与 Skills 是实时资源，受会话 composition 与信任过滤；修改在下一轮可见，当前轮保留其快照。禁用或删除 MCP server 后，保留会话的后续轮次也不再提供它。修改源码无需修改版本号。
 
 浏览器按会话获取客户端模块，使用 `/plugins/generations/<generationId>/…` URL；切换到新会话时加载匹配 bundle。重载不会替换运行中会话的 UI，也不在下一轮自动切换其代码。
 
@@ -30,9 +30,15 @@ agh plugins reload --profile local-dev
 
 persistence/storage provider、sandbox 及其他进程基础后端仍标记 `restart-required`，不能被包重载替换。恢复检查部署兼容性与会话已持久化的 loop id/version。快照缺失、资源归档被修改或部署不兼容会产生明确的 `E_GENERATION_*` 错误，不会替换为当前代码。
 
-MCP generation 保存定义、revision 与 SecretRef；冷恢复重建 factory，连接时才解析密钥。部署 transport 策略继续生效。Skills 内容、已索引文件和目录会被私有复制；会话首次打开时固定 workspace 视图。密钥缺失或 transport 策略拒绝仍可能导致连接失败。
+冷恢复从当前资源取得 MCP 定义、revision 与 SecretRef，连接时才解析密钥，部署 transport 策略继续生效。恢复使用固定代码和当前 Skills，并在初始 MCP 目录同步时有界等待（目前 20 秒）。历史资源归档只作证据，不作为实时读取来源。不变的有效 MCP 配置可在同一 worker 与 opener/policy/credential 边界内共享连接，不跨 worker 或凭据范围共享。
 
-自定义动态 extension 可提供声明式 `generation` 元数据和 Host `restoreGenerationExtension` 回调。自定义 Skills 可提供 `generationSnapshot()`。没有可恢复输入时允许当前进程运行，但冷恢复报 `E_GENERATION_FACTORY_UNAVAILABLE` 或 `E_GENERATION_SKILLS_UNRESTORABLE`。自定义授权不能被序列化。
+## 恢复边界
+
+稳定 invocation identity 为不确定发送设置栅栏并恢复已有回执，不保证外部副作用的 exactly-once，也不与外部工具组成原子事务。模型已发送但缺少持久完整回执时仍属不确定，必须先协调结果再重放。checkpoint 关联不是外部副作用提交。原子 ledger 提交也不代表每种后端或文件系统都保证断电持久性；这需要后端 fsync 和平台专项验收。详见[合同](../develop/contracts-v0.1.zh-CN.md)。
+
+Core 将 version-1 `x/core/tool-response` 与 `tool/result` 放在同一次 ledger 提交中，保留作者响应的 content（含 artifact 引用）以及可选的 `isError`、`structured`、`details`、`terminate`。驱动回执缺失时优先恢复该表示。旧行只能恢复已持久化的 ledger content、`isError` 和 `structured`，无法重建缺失的作者元数据。Loop invocation 回执必须来自受信 Core 并匹配固定 loop id/version；缺少此绑定的旧回执以 `E_RELATION` 拒绝协调，不会重新发送不确定操作。
+
+Loop `events.emit` 仅接受非保留的 `x/*` 事件，并记录不受信插件来源。助手消息与控制操作应使用 `events.assistant(message, checkpoint)` 等专用端口；直接发射 ledger/control 类型或 `x/core/*` 会被拒绝。
 
 ## 嵌入与状态查询
 

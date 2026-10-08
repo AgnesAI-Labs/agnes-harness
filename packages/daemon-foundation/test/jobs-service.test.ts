@@ -18,6 +18,20 @@ describe('JobsService', () => {
 
     expect(await service.enqueue(spec, { local: false })).toEqual({ jobId: 'daily' })
     expect(await service.enqueue(spec, { local: false })).toEqual({ jobId: 'daily' })
+    for (const change of [
+      { payload: { prompt: 'different' } },
+      { sessionKey: 'other-session' },
+      { maxAttempts: 4 },
+      { budget: 10 },
+      { schedule: { kind: 'once' } },
+    ])
+      await expect(service.enqueue({ ...spec, ...change }, { local: false })).rejects.toMatchObject({
+        code: -32011,
+        data: { reason: 'JOB_IDENTITY_CONFLICT' },
+      })
+    const otherProfile = new JobsService({ repo, profileHash: 'other', clock: () => now })
+    await expect(otherProfile.enqueue(spec, { local: false })).rejects.toMatchObject({ code: -32011 })
+    expect(repo.get('daily')?.payload).toEqual(spec.payload)
     expect(await service.poll('daily')).toMatchObject({
       jobId: 'daily',
       status: 'waiting',

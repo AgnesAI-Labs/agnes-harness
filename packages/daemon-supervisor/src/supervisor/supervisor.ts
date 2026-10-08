@@ -216,11 +216,12 @@ import { daemonDoctor } from './doctor.js'
 import { type JwksResolver, type JwksTransport, startJwksCache } from './jwks-cache.js'
 import { closeWithAudit, installSignals, shutdownLadder } from './lifecycle.js'
 import { createMcpManageRequests } from './mcp-manage-requests.js'
+import { acquireDaemonMutationLock } from './mutation-lock.js'
 import { acquireOwnerLock } from './owner-lock.js'
 import { createPluginManageRequests } from './plugin-manage-requests.js'
 import { type RemoteEntry, WorkerRegistry } from './registry.js'
 import { createRuntimeTargetProbeLauncher, spawnRuntimeTargetProbeWorker } from './runtime-target-probe.js'
-import { resolveDaemonProfile, resolveDaemonScope } from './scope.js'
+import { canonicalPath, resolveDaemonProfile, resolveDaemonScope } from './scope.js'
 import {
   workerComputerUseStatusSource,
   workerServiceCaller,
@@ -904,11 +905,13 @@ export async function startSupervisor(o: StartSupervisorOptions): Promise<{
   const clock = o.clock ?? (() => Date.now())
 
   // Single-owner lock first: everything below allocates real resources (sockets, a worker pool), and
-  // a second `agnesd` against the same dataDir must fail before any of that exists, not after.
-  const lock = await acquireOwnerLock(o.config.dataDir, {
+  // a second `agnesd` against the same canonical home must fail before any of that exists, not after.
+  const ownerHome = await canonicalPath(o.config.home ?? o.config.dataDir)
+  const lock = await acquireOwnerLock(ownerHome, {
     socketPath: o.config.socketPath,
     processIdentity: o.processIdentity ?? defaultProcessIdentity,
   })
+  let dataGuard: { release(): void } | undefined
   let stopJwksCache: (() => Promise<void>) | undefined
   let localPluginWatcher: { refresh(): Promise<void>; close(): Promise<void> } | undefined
   let skillWatcher: SkillWatcher | undefined
@@ -929,9 +932,16 @@ export async function startSupervisor(o: StartSupervisorOptions): Promise<{
       }
     }
     await workerPool?.waitForExitRecovery().catch(() => undefined)
-    await lock.release().catch(() => undefined)
+    try {
+      dataGuard?.release()
+    } finally {
+      await lock.release().catch(() => undefined)
+    }
   }
   try {
+    // Retain storage exclusivity and refuse a live pre-home-layout daemon during migration.
+    if ((await canonicalPath(o.config.dataDir)) !== ownerHome)
+      dataGuard = acquireDaemonMutationLock(o.config.dataDir)
     // The profile is worker input, not a startup marker. Persist it only after the owner lock is
     // held so a competing launch cannot overwrite the profile currently used by another daemon.
     await persistResolvedProfile(o.profileFile, o.profile)
@@ -2059,8 +2069,14 @@ export async function startSupervisor(o: StartSupervisorOptions): Promise<{
             : undefined
         },
         doctor: async () =>
-          (await daemonDoctor({ dataDir: o.config.dataDir, clock, ...(scheduler ? { scheduler } : {}) }))
-            .sections,
+          (
+            await daemonDoctor({
+              dataDir: o.config.dataDir,
+              home: ownerHome,
+              clock,
+              ...(scheduler ? { scheduler } : {}),
+            })
+          ).sections,
       })
       if (artifactReadConfigured) registerArtifactRead(ep, artifactRead as ArtifactReadRpcOptions)
       if (effectivePackageAdmin)
@@ -2305,7 +2321,11 @@ export async function startSupervisor(o: StartSupervisorOptions): Promise<{
           // A forced worker exit can begin durable turn recovery after the graceful phase timed
           // out. Fence the runtime only after that recovery settles, then release ownership.
           await pool.waitForExitRecovery()
-          await lock.release()
+          try {
+            dataGuard?.release()
+          } finally {
+            await lock.release()
+          }
         },
         log: (message) => console.error(message),
       }))
@@ -2822,7 +2842,7 @@ export async function runAgnesd(args: RunAgnesdArgs = {}, deps: RunAgnesdDeps = 
   })
   const windows = process.platform === 'win32' // guards-allow-platform: Windows graceful stop is delivered through the private generation-bound request.
   if (windows)
-    stopWatching = watchWindowsStopRequest(scope.dataDir, sup.owner, () => {
+    stopWatching = watchWindowsStopRequest(scope.home, sup.owner, () => {
       void close().then(
         () => process.exit(0),
         () => process.exit(1),

@@ -221,6 +221,7 @@ export interface LoopContext {
     pending(): boolean
   }
   readonly events: LoopEventPort & {
+    /** Non-reserved x/* events only; Core records this loop's untrusted plugin provenance. */
     emit(type: string, data: JsonValue): Promise<void>
     /** Persist an assistant message and the driver's next checkpoint in one ledger transaction. */
     assistant(message: Omit<AssistantMessage, 'requestSeq'>, checkpoint: LoopCheckpoint): Promise<void>

@@ -11,12 +11,13 @@ export type DaemonDoctorSection = {
 
 export async function daemonDoctor(options: {
   dataDir: string
+  home?: string
   tables?: Pick<Tables, 'table'>
   scheduler?: Pick<Scheduler, 'doctor'>
   clock: () => number
   status?: DaemonStatusOptions
 }): Promise<{ sections: DaemonDoctorSection[] }> {
-  const state = await daemonStatus(options.dataDir, options.status)
+  const state = await daemonStatus(options.home ?? options.dataDir, options.status)
   const sections: DaemonDoctorSection[] = [
     {
       name: 'lock',

@@ -20,7 +20,7 @@ For automatic reload, use the existing local roots: `<AGNES_HOME>/plugins/<name>
 
 ## What changes for sessions
 
-A successful activation publishes an immutable generation with enabled package versions, executable trees, client bundles and private resource views. New sessions use it. Existing sessions keep their tools, loop/adapter selection, MCP definitions, Skills view and frontend bundle URLs, including after hibernation, cold resume and worker/daemon restart. A version number need not change to reload edited bytes.
+A successful activation publishes an immutable generation with enabled package versions, executable trees and client bundles. New sessions use it. Existing sessions keep their executable tools, loop/adapter selection and frontend bundle URLs, including after hibernation, cold resume and worker/daemon restart. MCP definitions and Skills are live resources, filtered by the session composition and trust. Updates become visible at the next turn; the current turn retains its snapshot. Disabling or removing an MCP server removes it from subsequent turns of retained sessions. A version number need not change to reload edited bytes.
 
 The browser roster is session-aware: sessions use `/plugins/generations/<generationId>/…` URLs. Switching to a new session reconciles the matching bundle. Reload does not replace a running session's UI or apply code at its next turn.
 
@@ -30,9 +30,15 @@ Old generations remain while any durable session references them. Close/hibernat
 
 Persistence/storage providers, sandbox and other process backends stay `restart-required`. Package reload cannot replace them. Restore checks deployment compatibility and the persisted loop id/version. Missing snapshots, changed resource archives or incompatible deployments produce explicit `E_GENERATION_*` errors without substituting current code.
 
-MCP generations persist definitions, revisions and SecretRefs, reconstruct factories on cold resume, and resolve secrets only when connecting. Deployment transport policy still applies. Skills bodies, indexed files and directories are copied privately; scoped workspace views are pinned when the session first opens. Missing credentials or rejected transport policy can still prevent connection.
+MCP definitions, revisions and SecretRefs come from current resources on cold resume; secrets are resolved only when connecting. Deployment transport policy still applies. Resume uses pinned code and current Skills, and waits for initial MCP catalog synchronization with a bounded timeout (currently 20 seconds). Historical resource archives are evidence, not the live read source. Unchanged effective MCP configurations can share connections within the worker and opener/policy/credential boundary; connections are not shared across workers or credential scopes.
 
-Custom dynamic extensions can supply declarative `generation` metadata and a Host `restoreGenerationExtension` callback. Custom Skills inputs can supply `generationSnapshot()`. Without restorable input, live generations can run, but cold resume refuses with `E_GENERATION_FACTORY_UNAVAILABLE` or `E_GENERATION_SKILLS_UNRESTORABLE`. Custom authorization cannot be serialized.
+## Recovery boundaries
+
+Stable invocation identities fence uncertain dispatch and recover recorded responses. They do not guarantee exactly-once external effects or an atomic transaction with an external tool. A model send without a durable complete receipt remains uncertain; reconcile it before replay. Checkpoint associations are not external-effect commits. Atomic ledger commits do not establish power loss durability for every backend or filesystem; that requires backend-specific fsync and platform qualification. See the [contracts](../develop/contracts-v0.1.md).
+
+Core stores a version-1 `x/core/tool-response` beside `tool/result` in the same ledger commit. It preserves the author response content (including artifact references), optional `isError`, `structured`, `details` and `terminate`. Recovery reads that representation before the driver's receipt. Legacy rows recover only persisted ledger content, `isError` and `structured`; missing author metadata cannot be reconstructed. Loop invocation receipts must have trusted Core provenance and match the pinned loop id/version. Legacy receipts without that binding refuse reconciliation with `E_RELATION`, rather than redispatching an uncertain operation.
+
+Loop `events.emit` accepts non-reserved `x/*` events and records untrusted plugin provenance. Use typed ports such as `events.assistant(message, checkpoint)` for assistant messages and control operations. Direct ledger/control emission and `x/core/*` are rejected.
 
 ## Embedding and status
 

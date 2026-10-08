@@ -147,7 +147,7 @@ $env:AGNES_PROFILE = 'local-dev'
 node .\packages\cli\dist\local\agnes.mjs serve
 ```
 
-For regular use, you may leave `AGH_HOME` unset; the default is `~/.agh`. Instances with the same home/profile/dataDir share a daemon. Different project directories do not automatically isolate accounts or background services. Keep experimental home paths short because Unix sockets have path limits. When the default socket path is too long, the daemon selects a short temporary directory after checking identity and permissions. An explicitly configured socket path that is too long is still rejected.
+For regular use, you may leave `AGH_HOME` unset; the default is `~/.agh`. A canonical AGH_HOME owns one daemon; profile and dataDir must match its running configuration. Different project directories do not automatically isolate accounts or background services. Keep experimental home paths short because Unix sockets have path limits. When the default socket path is too long, the daemon selects a short temporary directory after checking identity and permissions. An explicitly configured socket path that is too long is still rejected.
 
 <a id="重建与版本切换"></a>
 

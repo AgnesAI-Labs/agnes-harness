@@ -796,9 +796,9 @@ export function registerAgnes(
     const approver = await cx.resolveActor(p.approverCredential, 'approval', match.sessionId)
     const session = match.session
     try {
-      if (session.resumeApproval) return session.resumeApproval(p.ticket, p.verdict, approver)
+      if (session.resumeApproval) return await session.resumeApproval(p.ticket, p.verdict, approver)
       if (session.decideApproval)
-        return session.decideApproval({ ticket: p.ticket, verdict: p.verdict, decidedBy: approver })
+        return await session.decideApproval({ ticket: p.ticket, verdict: p.verdict, decidedBy: approver })
       throw new Error('session has no approval callback')
     } catch (error) {
       const e = error as { code?: unknown; message?: unknown }
