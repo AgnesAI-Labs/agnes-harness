@@ -1,13 +1,15 @@
 import {
   appServerErrorMessage,
   Button,
+  configIssues,
   Field,
+  SchemaControl,
   SettingsCard,
   SettingsInput,
-  SettingsSelect,
   SettingsState,
 } from '@agnes/web-ui'
 import { useEffect, useState } from 'react'
+import { searchConfigSchema } from './config-schemas.js'
 
 const PROVIDER_IDS = ['brave', 'tavily', 'exa', 'perplexity', 'searxng'] as const
 type ProviderId = (typeof PROVIDER_IDS)[number]
@@ -153,7 +155,17 @@ export function SearchPanel({
     const results = integer(maxResults, 1, 10)
     const timeout = integer(timeoutMs, 1000, 60_000)
     const ratePerMinute = integer(rate, 1, 600)
-    if (results === undefined || timeout === undefined || ratePerMinute === undefined) {
+    if (
+      configIssues(searchConfigSchema, {
+        id: providerId,
+        endpoint,
+        maxResults: results,
+        timeoutMs: timeout,
+        ratePerMinute,
+        enabled,
+        makeDefault,
+      }).length
+    ) {
       setError('searchFailed')
       return
     }
@@ -268,28 +280,21 @@ export function SearchPanel({
       <form onSubmit={(event) => void save(event)}>
         <fieldset disabled={!canSave || busy || !status}>
           <Field label={t('searchProvider')} htmlFor="search-edit-provider">
-            <SettingsSelect
-              id="search-edit-provider"
-              data-testid="search-edit-provider"
+            <SchemaControl
+              schema={searchConfigSchema.properties.id}
               value={providerId}
-              onChange={(event) => {
-                if (isProviderId(event.target.value)) setProviderId(event.target.value)
+              t={(key) => status?.providers.find((row) => row.id === key)?.label ?? key}
+              onChange={(value) => {
+                if (isProviderId(value)) setProviderId(value)
               }}
-            >
-              {PROVIDER_IDS.map((id) => (
-                <option key={id} value={id}>
-                  {status?.providers.find((row) => row.id === id)?.label ?? id}
-                </option>
-              ))}
-            </SettingsSelect>
+            />
           </Field>
           <Field label={t('searchEndpoint')} htmlFor="search-endpoint" hint={t('searchEndpointHint')}>
-            <SettingsInput
-              id="search-endpoint"
-              data-testid="search-endpoint"
+            <SchemaControl
+              schema={searchConfigSchema.properties.endpoint}
               value={endpoint}
-              autoComplete="off"
-              onChange={(event) => setEndpoint(event.target.value)}
+              t={t}
+              onChange={(value) => setEndpoint(String(value))}
             />
           </Field>
           <Field label={t('searchApiKey')} htmlFor="search-api-key" hint={t('searchApiKeyHint')}>
@@ -314,48 +319,43 @@ export function SearchPanel({
             />
           </Field>
           <Field label={t('searchMaxResults')} htmlFor="search-max-results">
-            <SettingsInput
-              id="search-max-results"
-              data-testid="search-max-results"
-              inputMode="numeric"
+            <SchemaControl
+              schema={searchConfigSchema.properties.maxResults}
               value={maxResults}
-              onChange={(event) => setMaxResults(event.target.value)}
+              t={t}
+              onChange={(value) => setMaxResults(String(value))}
             />
           </Field>
           <Field label={t('searchTimeout')} htmlFor="search-timeout">
-            <SettingsInput
-              id="search-timeout"
-              data-testid="search-timeout"
-              inputMode="numeric"
+            <SchemaControl
+              schema={searchConfigSchema.properties.timeoutMs}
               value={timeoutMs}
-              onChange={(event) => setTimeoutMs(event.target.value)}
+              t={t}
+              onChange={(value) => setTimeoutMs(String(value))}
             />
           </Field>
           <Field label={t('searchRate')} htmlFor="search-rate">
-            <SettingsInput
-              id="search-rate"
-              data-testid="search-rate"
-              inputMode="numeric"
+            <SchemaControl
+              schema={searchConfigSchema.properties.ratePerMinute}
               value={rate}
-              onChange={(event) => setRate(event.target.value)}
+              t={t}
+              onChange={(value) => setRate(String(value))}
             />
           </Field>
           <Field label={t('searchEnabled')} htmlFor="search-enabled">
-            <SettingsInput
-              id="search-enabled"
-              data-testid="search-enabled"
-              type="checkbox"
-              checked={enabled}
-              onChange={(event) => setEnabled(event.target.checked)}
+            <SchemaControl
+              schema={searchConfigSchema.properties.enabled}
+              value={enabled}
+              t={t}
+              onChange={(value) => setEnabled(value === true)}
             />
           </Field>
           <Field label={t('searchMakeDefault')} htmlFor="search-make-default">
-            <SettingsInput
-              id="search-make-default"
-              data-testid="search-make-default"
-              type="checkbox"
-              checked={makeDefault}
-              onChange={(event) => setMakeDefault(event.target.checked)}
+            <SchemaControl
+              schema={searchConfigSchema.properties.makeDefault}
+              value={makeDefault}
+              t={t}
+              onChange={(value) => setMakeDefault(value === true)}
             />
           </Field>
           <Button htmlType="submit" data-testid="search-save" disabled={!canSave || busy}>

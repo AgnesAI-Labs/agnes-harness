@@ -69,3 +69,5 @@ Drop a source plugin into the [local plugins folder](local-plugins.md), or [buil
 [Bundles and profiles](bundles-and-profiles.md) describes reusable profile patches, presets and configuration provenance.
 
 [Developing plugins with hot reload](hot-reload.md) covers manual reload, session pins and restart requirements.
+
+[Schema-driven configuration UI](configuration-ui.md) · Shared settings forms, validation and controlled actions.

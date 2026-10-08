@@ -4,8 +4,9 @@ import {
   childEngineSettingsError,
   DISABLED_CHILD_ENGINES,
 } from '@agnes/base/child-engines'
-import { Button, Field, SettingsCard, SettingsInput, SettingsSelect, SettingsTextArea } from '@agnes/web-ui'
+import { Button, configIssues, SchemaConfigFields, SchemaControl, SettingsCard } from '@agnes/web-ui'
 import { useEffect, useState } from 'react'
+import { childEngineConfigSchema } from './config-schemas.js'
 
 type Text = (key: string) => string
 type EngineId = 'codex' | 'claude-code' | 'sdk'
@@ -30,13 +31,6 @@ function failureCode(error: unknown): string | undefined {
   if (typeof details?.code === 'string') return details.code
   const code = (error as { code?: unknown }).code
   return typeof code === 'string' ? code : undefined
-}
-
-function lines(value: string): string[] {
-  return value
-    .split('\n')
-    .map((line) => line.trim())
-    .filter((line) => line.length > 0)
 }
 
 function flags(id: EngineId, protocol: 'sdk' | 'acp') {
@@ -110,59 +104,43 @@ export function ChildEnginesPanel({
           >
             <h3 id={`child-engine-${id}-title`}>{t(`engine.${id}`)}</h3>
             <label className="agnes-settings-checkbox" htmlFor={`child-engine-${id}-enabled`}>
-              <SettingsInput
-                type="checkbox"
-                id={`child-engine-${id}-enabled`}
-                data-testid={`child-engine-${id}-enabled`}
-                checked={current.enabled}
+              <SchemaControl
+                schema={childEngineConfigSchema(id).properties!.enabled!}
+                value={current.enabled}
                 disabled={!canSave || !ready || busy}
-                onChange={(event) => replace(id, { enabled: event.target.checked })}
+                t={t}
+                onChange={(value) => replace(id, { enabled: value === true })}
               />{' '}
               {t('engine.enabled')}
             </label>
-            <Field label={t('engine.command')}>
-              <SettingsInput
-                data-testid={`child-engine-${id}-command`}
-                aria-label={`${t(`engine.${id}`)} ${t('engine.command')}`}
-                value={current.command}
-                disabled={!canSave || !ready || busy}
-                onChange={(event) => replace(id, { command: event.target.value })}
-              />
-            </Field>
-            <Field label={t('engine.args')}>
-              <SettingsTextArea
-                data-testid={`child-engine-${id}-args`}
-                aria-label={`${t(`engine.${id}`)} ${t('engine.args')}`}
-                value={current.args.join('\n')}
-                disabled={!canSave || !ready || busy}
-                onChange={(event) => replace(id, { args: lines(event.target.value) })}
-              />
-            </Field>
-            <Field label={t('engine.allow')}>
-              <SettingsTextArea
-                data-testid={`child-engine-${id}-allow`}
-                aria-label={`${t(`engine.${id}`)} ${t('engine.allow')}`}
-                value={current.allow.join('\n')}
-                disabled={!canSave || !ready || busy}
-                onChange={(event) => replace(id, { allow: lines(event.target.value) })}
-              />
-            </Field>
-            {id === 'sdk' && (
-              <Field label={t('engine.protocol')}>
-                <SettingsSelect
-                  data-testid="child-engine-sdk-protocol"
-                  aria-label={t('engine.protocol')}
-                  value={draft.sdk.protocol}
-                  disabled={!canSave || !ready || busy}
-                  onChange={(event) =>
-                    replace('sdk', { protocol: event.target.value === 'acp' ? 'acp' : 'sdk' })
-                  }
-                >
-                  <option value="sdk">{t('engine.sdkProtocol')}</option>
-                  <option value="acp">{t('engine.acpProtocol')}</option>
-                </SettingsSelect>
-              </Field>
-            )}
+            <SchemaConfigFields
+              schema={{
+                ...childEngineConfigSchema(id),
+                required: [],
+                properties: Object.fromEntries(
+                  Object.entries(childEngineConfigSchema(id).properties ?? {}).filter(
+                    ([key]) => key !== 'enabled',
+                  ),
+                ),
+              }}
+              value={{
+                command: current.command,
+                args: current.args,
+                allow: current.allow,
+                ...(id === 'sdk' ? { protocol: draft.sdk.protocol } : {}),
+              }}
+              t={t}
+              disabled={!canSave || !ready || busy}
+              onChange={(next) => {
+                if (typeof next.command === 'string' && Array.isArray(next.args) && Array.isArray(next.allow))
+                  replace(id, {
+                    command: next.command,
+                    args: next.args,
+                    allow: next.allow,
+                    ...(id === 'sdk' ? { protocol: next.protocol === 'acp' ? 'acp' : 'sdk' } : {}),
+                  })
+              }}
+            />
             <h4>{t('engine.capabilities')}</h4>
             <ul data-testid={`child-engine-${id}-capabilities`}>
               {Object.entries(capability).map(([name, on]) => (
@@ -194,7 +172,10 @@ export function ChildEnginesPanel({
         loading={busy}
         onClick={() => {
           if (busy || !ready) return
-          const error = childEngineSettingsError(draft)
+          const invalid = ENGINES.some(
+            (id) => configIssues(childEngineConfigSchema(id), engine(id)).length > 0,
+          )
+          const error = invalid ? 'command' : childEngineSettingsError(draft)
           if (error) {
             setStatus(error === 'allow' ? 'engine.allowRequired' : 'engine.commandRequired')
             return

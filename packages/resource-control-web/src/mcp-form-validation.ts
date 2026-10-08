@@ -1,5 +1,10 @@
 import { RESOURCE_CONTROL_METHODS } from '@agnes/protocol'
-import { createCatalogTranslator, type LocaleTranslator } from '@agnes/web-ui'
+import {
+  type ConfigSchema,
+  configIssues,
+  createCatalogTranslator,
+  type LocaleTranslator,
+} from '@agnes/web-ui'
 import { resourceAdminLocaleCatalog } from './locales/admin.js'
 
 const englishText = createCatalogTranslator(resourceAdminLocaleCatalog, 'en')
@@ -66,6 +71,21 @@ export const MCP_FORM_LIMITS = {
   urlMaxLength: schemaNumber('McpHttpTransport.url', 'maxLength'),
 } as const
 
+/** Shared UI schema validation keeps the existing managed MCP form/confirmation DOM intact. */
+export const MCP_FORM_SCHEMAS: Readonly<Record<keyof typeof MCP_FORM_PATTERNS, ConfigSchema>> =
+  Object.fromEntries(
+    Object.entries(MCP_FORM_PATTERNS).map(([key, regex]) => [
+      key,
+      {
+        type: 'string',
+        pattern: regex.source,
+        ...(key === 'secretRef' ? { format: 'credential-reference' as const } : {}),
+      },
+    ]),
+  ) as Record<keyof typeof MCP_FORM_PATTERNS, ConfigSchema>
+const matchesField = (key: keyof typeof MCP_FORM_SCHEMAS, value: string) =>
+  configIssues(MCP_FORM_SCHEMAS[key], value).length === 0
+
 export type McpFormFieldId = 'mcp-id' | 'mcp-executable' | 'mcp-args' | 'mcp-url' | 'mcp-secret' | 'mcp-tools'
 
 export type McpFormFieldIssue = Readonly<{
@@ -115,7 +135,7 @@ function urlIssues(url: string, t: LocaleTranslator): McpFormFieldIssue[] {
         message: t('validation.url-no-secret-query'),
       },
     ]
-  if (url.length > MCP_FORM_LIMITS.urlMaxLength || !MCP_FORM_PATTERNS.url.test(url))
+  if (url.length > MCP_FORM_LIMITS.urlMaxLength || !matchesField('url', url))
     return [
       {
         field: 'mcp-url',
@@ -127,7 +147,7 @@ function urlIssues(url: string, t: LocaleTranslator): McpFormFieldIssue[] {
 
 function stdioIssues(executable: string, argsText: string, t: LocaleTranslator): McpFormFieldIssue[] {
   const issues: McpFormFieldIssue[] = []
-  if (executable && !MCP_FORM_PATTERNS.executable.test(executable))
+  if (executable && !matchesField('executable', executable))
     issues.push({
       field: 'mcp-executable',
       message: t('validation.executable'),
@@ -139,7 +159,7 @@ function stdioIssues(executable: string, argsText: string, t: LocaleTranslator):
       message: t('validation.args-limit', { count: MCP_FORM_LIMITS.argsMaxItems }),
     })
   const badIndex = args.findIndex(
-    (arg) => arg.length > MCP_FORM_LIMITS.argMaxLength || !MCP_FORM_PATTERNS.arg.test(arg),
+    (arg) => arg.length > MCP_FORM_LIMITS.argMaxLength || !matchesField('arg', arg),
   )
   if (badIndex >= 0)
     issues.push({
@@ -155,14 +175,14 @@ function secretIssues(secretKind: string, secretText: string, t: LocaleTranslato
       const at = line.indexOf('=')
       const name = at < 1 ? '' : line.slice(0, at)
       const reference = line.slice(at + 1)
-      if (!name || !MCP_FORM_PATTERNS.envName.test(name))
+      if (!name || !matchesField('envName', name))
         return [
           {
             field: 'mcp-secret',
             message: t('validation.env-name', { index: index + 1 }),
           },
         ]
-      if (!MCP_FORM_PATTERNS.secretRef.test(reference))
+      if (!matchesField('secretRef', reference))
         return [
           {
             field: 'mcp-secret',
@@ -172,7 +192,7 @@ function secretIssues(secretKind: string, secretText: string, t: LocaleTranslato
     }
     return []
   }
-  if (secretText && !MCP_FORM_PATTERNS.secretRef.test(secretText))
+  if (secretText && !matchesField('secretRef', secretText))
     return [
       {
         field: 'mcp-secret',
@@ -192,7 +212,7 @@ function toolIssues(toolsText: string, t: LocaleTranslator): McpFormFieldIssue[]
       },
     ]
   const badIndex = tools.findIndex(
-    (tool) => tool.length > MCP_FORM_LIMITS.toolMaxLength || !MCP_FORM_PATTERNS.toolName.test(tool),
+    (tool) => tool.length > MCP_FORM_LIMITS.toolMaxLength || !matchesField('toolName', tool),
   )
   if (badIndex >= 0)
     return [

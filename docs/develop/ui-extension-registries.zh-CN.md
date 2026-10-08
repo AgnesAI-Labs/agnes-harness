@@ -33,4 +33,6 @@ const disposeCard = conversationCards.register({
 
 register 返回幂等且绑定该注册项身份的卸载函数，须绑定到客户端模块的 effect 或销毁作用域。旧卸载函数不会删除后来使用同一 ID 的注册项。subscribe、getSnapshot 支持响应式宿主；entries 返回排序后的注册项；get 按 ID 查询。选中页面卸载后回到第一个内置分类。UI 注册项必须与已安装客户端模块的生命周期一致。
 
-会话工具组和 session-info 数据结构属于后台。SessionToolsPanel 独立渲染 SessionCapabilitySet 的启用状态和 source/rule 来源说明，并兼容可选的旧 toolGroups；注册表不规范化、扩展或保存此数据。基于 schema 的配置表单和注册表 guard 策略由后续工作负责。
+会话工具组和 session-info 数据结构属于后台。SessionToolsPanel 独立渲染 SessionCapabilitySet 的启用状态和 source/rule 来源说明，并兼容可选的旧 toolGroups；注册表不规范化、扩展或保存此数据。配置页面可通过下方链接的 schema UI API 声明后注册；保存和测试适配器不改变后台权限。
+
+配置页面声明与 shared forms 见 [schema 配置 UI](../extend/configuration-ui.zh-CN.md)。设置 context 的翻译器可解析已注册的扩展目录键。

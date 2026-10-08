@@ -53,3 +53,5 @@ Host 必须提供对应注册服务，循环或适配器插件才能加载。安
 [组合包与配置](bundles-and-profiles.zh-CN.md)介绍可复用的配置补丁、preset 和选择来源。
 
 [热重载开发指南](hot-reload.zh-CN.md)说明手动重载、会话固定与重启要求。
+
+[Schema 驱动配置界面](configuration-ui.zh-CN.md) · 共享设置表单、校验与受控操作。

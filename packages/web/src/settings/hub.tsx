@@ -137,7 +137,10 @@ export function SettingsHub({
               <Component
                 key={`${page}:${revision}`}
                 context={{
-                  t,
+                  t: (key, vars) => {
+                    const value = t(key, vars)
+                    return value === key ? hostT(key, vars) : value
+                  },
                   data: {
                     api,
                     canSave,

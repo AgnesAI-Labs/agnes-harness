@@ -104,3 +104,9 @@ Stable IDs: `question-card`, `question-field`, `question-option`, `question-free
 Additive shared presentation contracts: `ConversationMessagesProps.keepNodeVisible?: (node: UINode) => boolean` and `ApprovalView.kind?: 'plan'`. Existing consumers keep their default process-folding behavior. No protocol, provider or authorization API changed.
 
 Set `AGH_UI_ISOLATED=1` to start a fresh real daemon and synthetic workspace for each matrix case; it also supplies a synthetic deliverable automatically.
+
+## Schema configuration contract
+
+See [configuration UI](../extend/configuration-ui.md). Search and child-engine controls retain existing IDs and handlers; MCP reuses shared reference validation within its managed creation flow. Sandbox/compaction/persistence form declarations derive from public generated schemas and accept authoritative caller-owned values/adapters. The catalog does not expose private configuration. A registered declaration owns loading/retry, revision preservation and resource-scoped cancellation.
+
+Stable IDs: `<declaration.testId>`, `<declaration.testId>-form`, `search-edit-provider`, `search-endpoint`, `search-max-results`, `search-timeout`, `search-rate`, `child-engine-<engine>-<field>`, `provider-<kind>-config`. Discover versions share one card per package; `plugin-other-versions` and `plugin-version-picker` are scoped by `.plugin-row[data-plugin-id]`. Selecting a version changes the source used by inspection and normal installation review. Installed releases remain separate.

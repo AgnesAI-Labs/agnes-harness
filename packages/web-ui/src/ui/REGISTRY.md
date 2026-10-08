@@ -31,3 +31,7 @@
 | `ConversationInteractionResult` / `interactionToolPresentation` | A | 会话交互结果 | 从工具生命周期生成本地化摘要；原始结果置于“查看详情”，不修改协议数据 |
 
 | `ConversationToolCard` | A | 会话工具行 | 唯一详情按钮；可选 `resultAppendix` 将模型原样回显合并入原始结果详情，保持协议文本可查阅 / One details action; optional `resultAppendix` preserves verbatim result echoes in the same details panel |
+
+| `SchemaControl` / `SchemaConfigFields` / `SchemaConfigForm` | A | 既有 Field / Settings 控件 | JSON schema 子集、本地化元数据、按字段错误、受控保存/测试；凭据只传引用 / JSON schema subset, localized metadata, field errors and caller-controlled actions; credentials use references |
+| `ProviderConfigForm` / `providerConfigSchemas` | A | 协议生成配置约束 | 沙箱、压缩、持久化表单；调用方提供权威值和权限，不存在任意配置写接口 / Generated sandbox, compaction and persistence constraints; caller owns authoritative values and grants |
+| `createSchemaSettingsComponent` | A | 设置页 registry 桥接 | 插件声明 schema / 权限 / load-save-test，工厂处理读取、失败重试、草稿和 revision；仍由唯一设置壳挂载 / Declarative schema-backed settings section with caller-controlled permissions and revision-aware adapters |

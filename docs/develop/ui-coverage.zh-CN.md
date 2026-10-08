@@ -57,3 +57,9 @@ AGH_WEB_URL=http://127.0.0.1:PORT AGH_CONVERSATION_FIXTURE_URL=http://127.0.0.1:
 设置 `AGH_UI_AXE=1` 后，截图矩阵会检查中英文、浅深色的每个 1440 像素页面及弹窗的 WCAG A/AA 问题。递归语言键集检查还覆盖资源设置包。测试使用仓库锁定的 Playwright 和本机已安装的 Chromium。
 
 设置 `AGH_UI_ISOLATED=1` 后，每个矩阵用例会启动独立的真实 daemon 和合成工作区，并自动创建用于交付物卡片的文件。
+
+## Schema 配置合同
+
+参见 [schema 配置 UI](../extend/configuration-ui.zh-CN.md)。搜索和子代理控件保留原有 ID、操作和保存接口；MCP 管理表单复用共享的引用校验。沙箱、压缩和持久化表单声明取自公开生成 schema，接受调用方提供的权威值与适配器；目录不公开私有配置。配置页面声明负责加载、重试、修订号保留和资源切换取消。
+
+稳定 ID：`<declaration.testId>`、`<declaration.testId>-form`、`search-edit-provider`、`search-endpoint`、`search-max-results`、`search-timeout`、`search-rate`、`child-engine-<engine>-<field>`、`provider-<kind>-config`。发现页每包一张卡片；`plugin-other-versions` 和 `plugin-version-picker` 按 `.plugin-row[data-plugin-id]` 定位。版本切换改变正常审查安装时使用的来源；已安装版本仍独立展示。
