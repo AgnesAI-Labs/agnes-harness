@@ -533,13 +533,17 @@ test('UI FDE bundle selection runs and restores its durable deliverable', async 
   await card.getByTestId('deliverable-download').click()
   const file = await download
   expect(file.suggestedFilename()).toBe('report.md')
-  const path = await file.path()
-  if (!path) throw new Error('The authorized deliverable must download to a real file')
+  const path = info.outputPath('report.md')
+  await file.saveAs(path)
   expect(await readFile(path, 'utf8')).toContain('Source-backed answer')
   const url = page.url()
   await page.goto('about:blank')
   await runtime.restart()
   await page.goto(url)
+  // A restarted daemon must finish replay before the durable-card contract is checked.
+  await expect(page.getByTestId('conversation-turn')).toHaveAttribute('data-status', 'completed', {
+    timeout: 25_000,
+  })
   await expect(card).toContainText('report.md')
   await turn(page, 'Who reviews refund requests?')
   await expect(card.last()).toContainText('report.md')

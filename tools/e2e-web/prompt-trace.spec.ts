@@ -52,6 +52,7 @@ for (const locale of ['en', 'zh-CN'])
         for (let parent = element.parentElement; parent; parent = parent.parentElement) parent.scrollTop = 0
       })
       await expect(page.getByTestId('system-prompt-preview')).toBeInViewport()
+      await page.mouse.move(0, 0)
       await screen(page, info, `system-prompt-${locale}-${theme}`)
       await closeSettings(page, locale)
       await send('Same original session after changing profile settings')
