@@ -43,6 +43,7 @@ type Proposal = {
   rootKey: 'workspace-agnes' | 'user-agnes'
   expires: number
   result: SkillInstallResult
+  pendingWrite?: Promise<void>
   busy: boolean
   approvalAbort?: AbortController
   cancelled: boolean
@@ -80,7 +81,7 @@ export function createSkillInstaller(directory: string, discovery: SkillDiscover
     installDigest(
       JSON.stringify([a.principalId, a.profile, i.sessionKey, i.packageId, i.snapshotId, i.rowId]),
     )
-  const save = async (p: Proposal) => {
+  const save = async (p: Proposal, result = p.result) => {
     unlinked(directory)
     mkdirSync(dirname(directory), { recursive: true, mode: 0o700 })
     try {
@@ -95,7 +96,7 @@ export function createSkillInstaller(directory: string, discovery: SkillDiscover
     const fd = createPrivateFileSync(temp)
     try {
       try {
-        writeFileSync(fd, JSON.stringify({ owner: p.owner, result: p.result }))
+        writeFileSync(fd, JSON.stringify({ owner: p.owner, result }))
         fsyncSync(fd)
       } finally {
         closeSync(fd)
@@ -111,8 +112,17 @@ export function createSkillInstaller(directory: string, discovery: SkillDiscover
     if (Date.now() > p.expires) throw installError('SKILL_INSTALL_EXPIRED')
   }
   const update = async (p: Proposal, patch: Partial<SkillInstallResult>) => {
-    p.result = Object.freeze({ ...p.result, ...patch })
-    await save(p)
+    const committed = (p.pendingWrite ?? Promise.resolve())
+      .catch(() => undefined)
+      .then(async () => {
+        if (['ready', 'installed', 'failed', 'cancelled', 'interrupted'].includes(p.result.state)) return
+        const result = Object.freeze({ ...p.result, ...patch })
+        await save(p, result)
+        // Public terminal states acknowledge completed persistence, not an in-flight rename/flush.
+        p.result = result
+      })
+    p.pendingWrite = committed
+    await committed
   }
   const call = async (p: Proposal, method: ResourceControlMethodName, params: Record<string, unknown>) => {
     check(p)

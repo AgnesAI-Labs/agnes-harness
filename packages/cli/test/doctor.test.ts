@@ -157,7 +157,7 @@ describe('doctor command aggregation', () => {
 
   it.skipIf(process.platform === 'win32')('probes the real daemon owner and unix socket', async () => {
     const d = deps()
-    const daemonDir = join(d.home, 'data', 'daemon')
+    const daemonDir = join(d.home, 'daemon')
     const socketPath = join(daemonDir, 'agnesd.sock')
     mkdirSync(daemonDir, { recursive: true })
     const identity = await defaultProcessIdentity(process.pid)
@@ -192,7 +192,7 @@ describe('doctor command aggregation', () => {
 
   it('fails closed on a corrupt owner record without echoing its contents', async () => {
     const d = deps()
-    const daemonDir = join(d.home, 'data', 'daemon')
+    const daemonDir = join(d.home, 'daemon')
     mkdirSync(daemonDir, { recursive: true })
     writeFileSync(join(daemonDir, 'owner.json'), '{"secret":"sk-do-not-print"}')
 
@@ -282,7 +282,15 @@ describe('home inspection and startup guidance', () => {
   })
   it('maps common startup codes to actionable text without exposing exception messages', async () => {
     const { startupFailure } = await import('../src/commands/first-run-locales.js')
-    for (const code of ['EADDRINUSE', 'EACCES', 'CONFIG_CREDENTIAL_STORE', 'E_HOME_VERSION']) {
+    for (const code of [
+      'EADDRINUSE',
+      'EACCES',
+      'CONFIG_CREDENTIAL_STORE',
+      'E_HOME_VERSION',
+      'E_DAEMON_SCOPE_CONFLICT',
+      'E_DAEMON_BUSY',
+      'E_DAEMON_STARTUP_BUSY',
+    ]) {
       const error = Object.assign(new Error('PRIVATE UPSTREAM BODY'), { code })
       const en = startupFailure(error, {})
       const zh = startupFailure(error, { AGNES_LOCALE: 'zh-CN' })
