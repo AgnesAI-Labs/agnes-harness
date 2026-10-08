@@ -907,3 +907,64 @@ it('refuses a trusted invocation receipt bound to another loop', async () => {
     await f.session.close()
   }
 })
+
+it('recovers exact author tool content and metadata if the subsequent receipt append fails', async () => {
+  const f = await openSession({ provider: fakeProvider([]) })
+  const result = {
+    content: [
+      { type: 'text' as const, text: 'ok' },
+      {
+        type: 'ref' as const,
+        ref: { sha256: 'a'.repeat(64), size: 3, mime: 'text/plain' },
+        mime: 'text/plain',
+      },
+    ],
+    isError: false,
+    structured: { approved: true },
+    details: { source: 'fixture' },
+    terminate: false,
+  }
+  let executions = 0
+  f.session.d.registry.add(
+    readTool(async () => {
+      executions++
+      return result
+    }),
+    { source: 'test', trust: 'builtin' },
+  )
+  const ctx = await createLoopContext(f.session)
+  try {
+    await f.session.enqueue('next-turn', { content: [{ type: 'text', text: 'go' }], actor })
+    await ctx.input.accept()
+    const append = f.log.append.bind(f.log)
+    const fault = vi.spyOn(f.log, 'append').mockImplementation(async (events, ...args) => {
+      if (
+        events.some(
+          (e) =>
+            e.type === 'x/core/loop-invocation' && (e.data as { status?: string }).status === 'responded',
+        )
+      )
+        throw new Error('receipt fault')
+      return append(events, ...args)
+    })
+    try {
+      await expect(
+        ctx.tools.execute({ name: 'read', args: {}, invocationId: 'response' }, new AbortController().signal),
+      ).rejects.toThrow('receipt fault')
+      expect(await ctx.effects.status('response')).toMatchObject({ status: 'responded', result })
+      fault.mockRestore()
+      expect(
+        await ctx.tools.execute(
+          { name: 'read', args: {}, invocationId: 'response' },
+          new AbortController().signal,
+        ),
+      ).toEqual(result)
+      expect(executions).toBe(1)
+    } finally {
+      fault.mockRestore()
+    }
+  } finally {
+    disposeLoopContext(ctx)
+    await f.session.close()
+  }
+})
