@@ -1,0 +1,20 @@
+{
+  "name": "@agnes/observability",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "license": "Apache-2.0",
+  "exports": {
+    ".": "./src/index.ts",
+    "./testkit": "./testkit/index.ts"
+  },
+  "dependencies": {
+    "@agnes/extension-api": "workspace:*",
+    "@agnes/protocol": "workspace:*",
+    "@agnes/error-sanitization": "workspace:*",
+    "@agnes/system-node": "workspace:*"
+  },
+  "scripts": {
+    "typecheck": "tsc -b"
+  }
+}

@@ -4,9 +4,12 @@ import {
   AGNES_ERRORS,
   APP_SERVER_SCHEMA,
   AppServerError,
+  diagnosticRecords,
   httpRpcError,
   normalizeRpcError,
+  observeDiagnostics,
   rpcError,
+  safeDiagnosticRecord,
   validateAgainst,
 } from '../src/index.js'
 
@@ -79,6 +82,27 @@ it('publishes safe, stable envelopes for every transport without leaking nested 
     { code: -32602, data: { code: 'PATTERN', messageKey: 'appServer.errors.invalidParams' } },
   )
   expect(APP_SERVER_SCHEMA['x-version']).toBe(1)
+  const row = diagnosticRecords().find((row) => row.diagnosticId === error.data.diagnosticId)
+  expect(row).toMatchObject({
+    diagnosticId: error.data.diagnosticId,
+    code: error.code,
+    cause: 'CONFIG_CREDENTIAL_REJECTED',
+  })
+  expect(JSON.stringify(row)).not.toContain('fixture-secret')
+  const unknown = normalizeRpcError({ code: -32999, message: 'private error', data: { code: 'private-key' } })
+  expect(
+    safeDiagnosticRecord(diagnosticRecords().find((row) => row.diagnosticId === unknown.data.diagnosticId)),
+  ).toMatchObject({ code: -32999, name: 'INTERNAL_ERROR' })
+  let refuse = false
+  const stop = observeDiagnostics(() => {
+    if (refuse) throw new Error('synthetic sink unavailable')
+  })
+  refuse = true
+  try {
+    expect(normalizeRpcError(rpcError('INTERNAL_ERROR')).data).toHaveProperty('diagnosticUnavailable', true)
+  } finally {
+    stop()
+  }
 })
 
 it('exports independently resolvable JSON Schema for every method and the error envelope', () => {

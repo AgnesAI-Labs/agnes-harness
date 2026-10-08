@@ -73,7 +73,8 @@
     "@agnes/resource-control-worker": "workspace:*",
     "@agnes/system-node": "workspace:*",
     "@agnes/worker-runtime": "workspace:*",
-    "ws": "8.21.3"
+    "ws": "8.21.3",
+    "@agnes/observability": "workspace:*"
   },
   "license": "Apache-2.0",
   "devDependencies": {

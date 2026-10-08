@@ -23,6 +23,9 @@
     },
     {
       "path": "../history-index"
+    },
+    {
+      "path": "../observability"
     }
   ]
 }

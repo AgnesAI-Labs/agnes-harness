@@ -76,6 +76,7 @@ describe('packaged host wiring', () => {
     expect(module.plugins?.map(({ declaration }) => declaration)).toEqual(AGNES_BASE_PLUGIN_DECLARATIONS)
     expect(module.plugins?.map(({ declaration }) => declaration.id)).toEqual([
       'tool-policy:default',
+      'observability:otel',
       'seam:approval',
       'seam:principals',
       'seam:artifacts',

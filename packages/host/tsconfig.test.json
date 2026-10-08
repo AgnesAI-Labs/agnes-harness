@@ -53,6 +53,9 @@
     },
     {
       "path": "../core/tsconfig.testkit.json"
+    },
+    {
+      "path": "../observability/tsconfig.testkit.json"
     }
   ]
 }

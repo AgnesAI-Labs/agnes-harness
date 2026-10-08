@@ -67,3 +67,7 @@ Computer Use: `status`, `install [--upgrade]`, `restart`, `operation [ID]`, `can
 Low-level `ext`, `mcp serve`, and `serve model-api` are specialized integration surfaces. They do not replace the local workbench commands or establish a verified public service.
 
 Authoritative syntax: [args/usage](../../packages/cli/src/args.ts), [package](../../packages/cli/src/commands/package.ts), [resources](../../packages/resource-control-cli/src/resources.ts), [TUI package](../../packages/cli-tui/src/package-controller.ts).
+
+## Diagnostics
+
+`agh diagnostics export [--session SESSION_ID] --out diagnostics.json` writes a redacted support bundle through the local owner connection. See [observability](../guide/observability.md) for its contents and limits.

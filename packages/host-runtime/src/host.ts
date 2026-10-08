@@ -35,6 +35,7 @@ import {
   SessionWorkspaceRuntimeTable,
 } from '@agnes/host-infrastructure/session-workspace-runtime'
 import type { LiveCompositionSession } from '@agnes/host-providers/profile/composition-state'
+import { currentCorrelation } from '@agnes/observability'
 import type { RuntimeTarget } from '@agnes/plugin-runtime/host'
 import type { Actor, ExtensionCallParams, ExtensionCallResult, ThinkingLevel } from '@agnes/protocol'
 import { adminSecurityStatus } from './admin-security-status.js'
@@ -210,7 +211,14 @@ async function createHostInstance(profile: ResolvedProfile, opts: HostOptions): 
   // Built only once the loader is known good: createFileAudit's constructor eagerly mkdir's, so
   // building it before this check left a real audit/ directory on disk behind a createHost() call
   // that was always going to refuse - a rejected assembly is supposed to have no side effects.
-  const audit = opts.audit ?? createFileAudit(join(opts.dataDir, 'audit', 'host.jsonl'))
+  const auditSink = opts.audit ?? createFileAudit(join(opts.dataDir, 'audit', 'host.jsonl'))
+  const audit: AuditSink = {
+    ...auditSink,
+    write(event) {
+      const correlation = currentCorrelation()
+      auditSink.write(correlation ? { ...event, detail: { ...event.detail, ...correlation } } : event)
+    },
+  }
   audit.write({ kind: 'profile.resolved', detail: { hash: profile.hash, chain: profile.chain } })
   const workspaceRuntimes = new SessionWorkspaceRuntimeTable((key) => a.kernel.get(key)?.yolo === true)
   const a = await assemble(profile, {
@@ -512,6 +520,7 @@ async function createHostInstance(profile: ResolvedProfile, opts: HostOptions): 
           await pendingChildWorkspace?.close().catch(() => undefined)
           throw error
         }
+        const offObservation = a.observeSession(s.key)
         const run = s.run.bind(s)
         ;(s as HostSession & { run: HostSession['run'] }).run = (options) => {
           const invocation = a.activationBarrier.admit('turn')
@@ -563,6 +572,7 @@ async function createHostInstance(profile: ResolvedProfile, opts: HostOptions): 
               await a.unbindRuntimeSession(s.key)
               await close()
             } finally {
+              offObservation()
               sessions.delete(s)
             }
           }

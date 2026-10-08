@@ -37,8 +37,12 @@ export class SharedSessionChannel {
     return this.request('notice', params, signal)
   }
 
-  log(level: 'debug' | 'info' | 'warn' | 'error', message: string): void {
-    this.send({ kind: 'log', sessionKey: this.currentSessionKey(), level, message })
+  log(
+    level: 'debug' | 'info' | 'warn' | 'error',
+    message: string,
+    correlation?: { traceId: string; spanId: string },
+  ): void {
+    this.send({ ...correlation, kind: 'log', sessionKey: this.currentSessionKey(), level, message })
   }
 
   request(method: RequestFrame['method'], params: unknown, signal: AbortSignal): Promise<unknown> {

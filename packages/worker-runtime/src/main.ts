@@ -250,9 +250,15 @@ export async function runWorker(
   const sessionLog: NonNullable<WorkerHostDeps['log']> = Object.fromEntries(
     (['debug', 'info', 'warn', 'error'] as const).map((level) => [
       level,
-      (message: string) => {
+      (message: string, fields?: { traceId?: unknown; spanId?: unknown }) => {
         try {
-          sharedChannel.log(level, message)
+          sharedChannel.log(
+            level,
+            message,
+            typeof fields?.traceId === 'string' && typeof fields?.spanId === 'string'
+              ? { traceId: fields.traceId, spanId: fields.spanId }
+              : undefined,
+          )
         } catch {
           // Host assembly and worker-wide maintenance have no session context.
         }

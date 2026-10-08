@@ -111,6 +111,9 @@ importers:
 
   packages/base:
     dependencies:
+      '@agnes/observability':
+        specifier: workspace:*
+        version: link:../observability
       '@agnes/core':
         specifier: workspace:*
         version: link:../core
@@ -210,6 +213,9 @@ importers:
 
   packages/cli:
     dependencies:
+      '@agnes/observability':
+        specifier: workspace:*
+        version: link:../observability
       '@agnes/ai':
         specifier: workspace:*
         version: link:../ai
@@ -587,6 +593,9 @@ importers:
 
   packages/daemon-rpc:
     dependencies:
+      '@agnes/observability':
+        specifier: workspace:*
+        version: link:../observability
       '@agnes/base':
         specifier: workspace:*
         version: link:../base
@@ -636,6 +645,9 @@ importers:
 
   packages/daemon-supervisor:
     dependencies:
+      '@agnes/observability':
+        specifier: workspace:*
+        version: link:../observability
       '@agnes/base':
         specifier: workspace:*
         version: link:../base
@@ -794,6 +806,9 @@ importers:
         specifier: 2.9.0
         version: 2.9.0
     devDependencies:
+      '@agnes/observability':
+        specifier: workspace:*
+        version: link:../observability
       '@agnes/base':
         specifier: workspace:*
         version: link:../base
@@ -1055,6 +1070,9 @@ importers:
 
   packages/host-runtime:
     dependencies:
+      '@agnes/observability':
+        specifier: workspace:*
+        version: link:../observability
       '@agnes/cordis':
         specifier: workspace:*
         version: link:../cordis
@@ -1701,6 +1719,21 @@ importers:
         version: link:../../packages/sdk
 
   tools/guards: {}
+
+  packages/observability:
+    dependencies:
+      '@agnes/error-sanitization':
+        specifier: workspace:*
+        version: link:../error-sanitization
+      '@agnes/extension-api':
+        specifier: workspace:*
+        version: link:../extension-api
+      '@agnes/protocol':
+        specifier: workspace:*
+        version: link:../protocol
+      '@agnes/system-node':
+        specifier: workspace:*
+        version: link:../system-node
 
 packages:
 

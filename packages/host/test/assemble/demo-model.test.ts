@@ -14,7 +14,10 @@ import {
 import { buildProvider } from '@agnes/host-providers/assemble/provider'
 import { materializeRoutes } from '@agnes/host-providers/assemble/routes'
 import { readConfigurationProfileInputs } from '@agnes/host-runtime/profile/inputs'
-import { expect, it } from 'vitest'
+import { currentCorrelation, observabilityPlugin } from '@agnes/observability'
+import { memoryCollector } from '@agnes/observability/testkit'
+import { normalizePluginExport } from '@agnes/plugin-runtime/host'
+import { expect, it, vi } from 'vitest'
 import { createTestHost } from '../../testkit/index.js'
 import { fixtureTool } from '../fixtures/tool.js'
 
@@ -49,8 +52,30 @@ it('runs the fresh local-dev demo through registry and provider without credenti
       expect(events.at(-1)).toEqual({ type: 'done', reason: 'stop' })
     }
     const dataDir = await mkdtemp(join(tmpdir(), 'agh-demo-session-'))
+    const collector = await memoryCollector()
+    vi.stubEnv('AGH_HOME', dataDir)
+    const correlations: unknown[] = []
     const { host } = await createTestHost({
       dataDir,
+      packages: {
+        '@agnes/base': {
+          plugins: [
+            {
+              declaration: {
+                id: 'observability:otel',
+                export: 'observabilityPlugin',
+                apiRange: '^1.4.0',
+                default: true,
+                inject: ['providers'],
+                provide: [],
+                runtime: 'in-process',
+                config: { enabled: true, endpoint: collector.endpoint },
+              },
+              entry: normalizePluginExport(observabilityPlugin),
+            },
+          ],
+        },
+      },
       provider: built.provider,
       disableSessionTitle: true,
       profileInputs: {
@@ -62,12 +87,22 @@ it('runs the fresh local-dev demo through registry and provider without credenti
       session.currentTools().add(
         {
           ...fixtureTool('student_echo'),
-          execute: async () => ({ content: [{ type: 'text', text: 'actual student result' }] }),
+          execute: async () => {
+            correlations.push(currentCorrelation())
+            const child = await session.d.children.create({
+              parent: session.key,
+              cwd: dataDir,
+              input: 'synthetic-private-child-body',
+              start: false,
+            })
+            await child.run('synthetic-private-child-body')
+            return { content: [{ type: 'text', text: 'actual student result' }] }
+          },
         },
         { source: 'student/echo', trust: 'trusted' },
       )
       await session.enqueue('next-turn', {
-        content: [{ type: 'text', text: 'call student_echo' }],
+        content: [{ type: 'text', text: 'call student_echo synthetic-private-prompt' }],
         actor: session.d.actor,
       })
       expect(await session.run({ until: 'turn-end', signal: new AbortController().signal })).toMatchObject({
@@ -79,6 +114,49 @@ it('runs the fresh local-dev demo through registry and provider without credenti
       expect(await session.scan({ type: 'tool/result', limit: 1 })).toHaveLength(1)
     } finally {
       await host.close()
+      await collector.close()
+      vi.unstubAllEnvs()
+      const payload = JSON.stringify(collector.requests)
+      for (const secret of [
+        'synthetic-private-prompt',
+        'synthetic-private-child-body',
+        'actual student result',
+        dataDir,
+      ])
+        expect(payload).not.toContain(secret)
+      type Span = {
+        name: string
+        traceId: string
+        spanId: string
+        parentSpanId?: string
+        attributes: Array<{ key: string; value: unknown }>
+      }
+      const spans = collector.requests
+        .filter((row) => row.path === '/v1/traces')
+        .flatMap((row) =>
+          (row.body.resourceSpans as Array<{ scopeSpans: Array<{ spans: Span[] }> }>).flatMap((resource) =>
+            resource.scopeSpans.flatMap((scope) => scope.spans),
+          ),
+        )
+      expect(spans.map((row) => row.name)).toEqual(
+        expect.arrayContaining(['session', 'turn', 'model', 'tool', 'child']),
+      )
+      const tool = spans.find((row) => row.name === 'tool')!
+      const turn = spans.find((row) => row.spanId === tool.parentSpanId)!
+      expect(turn.name).toBe('turn')
+      expect(tool.attributes).toEqual(
+        expect.arrayContaining([
+          { key: 'tool.id', value: { stringValue: expect.stringMatching(/^[a-f0-9]{64}$/) } },
+        ]),
+      )
+      expect(turn.attributes).toEqual(expect.arrayContaining([{ key: 'turn.id', value: { doubleValue: 1 } }]))
+      expect(spans.find((row) => row.spanId === turn.parentSpanId)?.name).toBe('session')
+      const child = spans.find((row) => row.name === 'child')!
+      expect(child.traceId).toBe(turn.traceId)
+      expect(child.parentSpanId).toBe(turn.spanId)
+      expect(spans.some((row) => row.name === 'session' && row.parentSpanId === child.spanId)).toBe(true)
+      expect(correlations).toContainEqual({ traceId: tool.traceId, spanId: tool.spanId })
+      expect(collector.requests.some((row) => row.path === '/v1/metrics')).toBe(true)
       await rm(dataDir, { recursive: true, force: true })
     }
     const aborted = new AbortController()

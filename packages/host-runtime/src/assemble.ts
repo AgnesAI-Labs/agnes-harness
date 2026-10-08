@@ -24,6 +24,7 @@ import {
   API_VERSION,
   type ExtensionManifest,
   type LeaseView,
+  observabilityKind,
   ProviderError,
   type ResourceEntry,
 } from '@agnes/extension-api'
@@ -34,7 +35,7 @@ import {
 import { createPrivateArtifactStore } from '@agnes/host-artifacts/private-artifact-store'
 import { createProductionImageInputTokenFallback } from '@agnes/host-artifacts/request-media-runtime'
 import { createTrajectoryLifecycle } from '@agnes/host-artifacts/trajectory-lifecycle'
-import { installProviders } from '@agnes/host-common/assemble/provider-registry'
+import { installProviderRegistry, installProviders } from '@agnes/host-common/assemble/provider-registry'
 import { HostError, type HostErrorCode } from '@agnes/host-common/errors'
 import { ownStateRoots } from '@agnes/host-common/paths'
 import { mergeValue } from '@agnes/host-common/presets/merge'
@@ -242,6 +243,7 @@ import {
   createHostRuntimeTargetResourceFactory,
   type HostRuntimeTargetResources,
 } from '@agnes/host-providers/runtime-target-resource-bootstrap'
+import { correlatedLogger, withObservedSession } from '@agnes/observability'
 import {
   developmentPluginRows,
   type RuntimePluginSnapshot,
@@ -349,6 +351,8 @@ export type Assembled = {
   routes: RouteTable | undefined
   /** Read-only metadata for installed model adapter factories. */
   modelAdapterCatalog(): ReturnType<typeof modelAdapterCatalog>
+  observeSession(key: string): () => void
+  observability?: import('@agnes/extension-api').ObservabilityProvider
   providers: import('@agnes/extension-api').ProvidersCatalogPort
   sessionPresetDefault?(): Promise<string | undefined>
   sessionLoopDefault?(): Promise<import('@agnes/protocol').LoopSelection | undefined>
@@ -1107,6 +1111,11 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
             rowServices.installRoot(root, origins)
             installModelAdapters(root, origins)
             installLoops(root, origins)
+            const observabilityRegistry: import('@agnes/host-common/assemble/provider-registry').ProviderRegistry<
+              import('@agnes/extension-api').ObservabilityProvider
+            > = installProviderRegistry(root, observabilityKind, (owner, source, provider) =>
+              observabilityRegistry.register(source, provider, owner, () => provider.dispose()),
+            )
             installToolProviders(root, origins)
             installCompactionEngines(root, origins)
             installChildAgents(root, origins, providerSelections['child-agent'])
@@ -1958,6 +1967,17 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
 
     // 8 kernel - the repository's single Kernel.create call site
     let extensionLeaseFor: ((source: string) => LeaseView | undefined) | undefined
+    const observabilityLease = leaseFor(
+      {
+        id: 'agnes/observability',
+        version: '1.0.0',
+        apiRange: '^1.4.0',
+        entry: './observability',
+        capabilities: { hooks: ['session_start', 'shutdown', 'subagent_start', 'subagent_end'] },
+      },
+      { ttlMs: ROW_BOUND_LEASE_TTL_MS, now: Date.now() },
+    )
+    rollback.push('observability-lease', () => observabilityLease.revoke('host closed'))
     const compositionLease = profile.composition
       ? leaseFor(
           {
@@ -2045,11 +2065,15 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
       approvalMode: profile.approvals.mode,
       ...(computerUseBackendProvider ? { hostToolDispatch: createComputerUseHostDispatchPort() } : {}),
       ...(profile.reconcile.point === 'immediate' ? {} : { quiet: quietState }),
-      logger: deps.log,
+      ...(deps.log ? { logger: correlatedLogger(deps.log) } : {}),
       clock,
       agnesVersion: deps.agnesVersion ?? '0.0.0',
       hookLeaseFor: (source) =>
-        source === 'agnes/composition' ? compositionLease?.view() : extensionLeaseFor?.(source),
+        source === 'agnes/observability'
+          ? observabilityLease.view()
+          : source === 'agnes/composition'
+            ? compositionLease?.view()
+            : extensionLeaseFor?.(source),
       retainSessionRefIdentity: (sessionRef) => extensionSessions.owns(sessionRef),
       ...(deps.requestMedia !== undefined ? { requestMedia: deps.requestMedia } : {}),
       ...(deps.requestMedia !== undefined
@@ -2210,6 +2234,74 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
             ).values(),
           ],
         },
+      })
+    }
+    const observability = pluginTree.root.providers
+      .catalog()
+      .some((entry) => entry.kind === 'observability' && entry.id === 'agnes.otel')
+      ? pluginTree.root.providers.resolve(observabilityKind, 'agnes.otel')
+      : undefined
+    const observations = new Map<string, () => void>()
+    const observeSession = (key: string): (() => void) => {
+      if (observations.has(key) || !observability) return () => undefined
+      const session = kernel.get(key)
+      if (!session) return () => undefined
+      const release = observability.bindSession(key)
+      const stop = session.onAppended((events) => {
+        for (const event of events) {
+          try {
+            observability.observe(key, event)
+          } catch {
+            /* Passive observation. */
+          }
+        }
+      })
+      const run = session.run.bind(session)
+      session.run = (options) => withObservedSession(observability, key, () => run(options))
+      const cleanup = () => {
+        if (!observations.delete(key)) return
+        stop()
+        release()
+      }
+      observations.set(key, cleanup)
+      return cleanup
+    }
+    if (observability) {
+      const offSession = kernel.hooks.on(
+        'session_start',
+        (_payload, context) => {
+          observeSession(context.session.key)
+        },
+        { source: 'agnes/observability', trust: 'builtin', hookRank: 0 },
+      )
+      const offShutdown = kernel.hooks.on(
+        'shutdown',
+        (_payload, context) => {
+          observations.get(context.session.key)?.()
+        },
+        { source: 'agnes/observability', trust: 'builtin', hookRank: 0 },
+      )
+      const offStart = kernel.hooks.on(
+        'subagent_start',
+        (payload, context) => {
+          observability.child(context.session.key, payload.childKey, 'start')
+          observeSession(payload.childKey)
+        },
+        { source: 'agnes/observability', trust: 'builtin', hookRank: 0 },
+      )
+      const offEnd = kernel.hooks.on(
+        'subagent_end',
+        (payload, context) => {
+          observability.child(context.session.key, payload.childKey, 'end', payload.outcome !== 'completed')
+        },
+        { source: 'agnes/observability', trust: 'builtin', hookRank: 0 },
+      )
+      rollback.push('observability-hooks', () => {
+        offSession()
+        offShutdown()
+        offStart()
+        offEnd()
+        for (const cleanup of [...observations.values()]) cleanup()
       })
     }
     if (profile.composition) {
@@ -2871,6 +2963,8 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
       get preconfiguredRoutes() {
         return preconfiguredRoutes
       },
+      observeSession,
+      ...(observability ? { observability } : {}),
       providers: { catalog: () => pluginTree.root.providers.catalog() },
       modelAdapterCatalog: () => modelAdapterCatalog(pluginTree.root),
       sessionPresetDefault: async () => (await sessionConfiguration.sessionDefaults()).defaults.preset,

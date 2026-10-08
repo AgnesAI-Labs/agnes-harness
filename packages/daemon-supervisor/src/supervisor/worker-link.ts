@@ -100,7 +100,12 @@ export class WorkerLink {
       onPreview?: (sessionKey: string, update: PreviewUpdate) => void
       onResourceStatus?: (serverId: string, status: McpStatus) => void
       onRequest: (frame: RequestFrame) => Promise<unknown>
-      onLog?: (sessionKey: string, level: 'debug' | 'info' | 'warn' | 'error', message: string) => void
+      onLog?: (
+        sessionKey: string,
+        level: 'debug' | 'info' | 'warn' | 'error',
+        message: string,
+        correlation?: { traceId: string; spanId: string },
+      ) => void
       onActivity?: (sessionKey: string) => void
       onSessionFailure?: (sessionKey: string, error: unknown) => void
       onRuntimeFrame?: (frame: unknown) => void
@@ -227,7 +232,17 @@ export class WorkerLink {
       return
     }
     if (frame.kind === 'log') {
-      this.options.onLog?.(frame.sessionKey, frame.level, frame.message)
+      this.options.onLog?.(
+        frame.sessionKey,
+        frame.level,
+        frame.message,
+        typeof frame.traceId === 'string' &&
+          /^[a-f0-9]{32}$/.test(frame.traceId) &&
+          typeof frame.spanId === 'string' &&
+          /^[a-f0-9]{16}$/.test(frame.spanId)
+          ? { traceId: frame.traceId, spanId: frame.spanId }
+          : undefined,
+      )
       this.options.onActivity?.(frame.sessionKey)
       return
     }

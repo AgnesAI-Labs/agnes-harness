@@ -40,6 +40,7 @@ Still choosing? Try the [three examples](guide/demo.md), then use the [extension
 | [Use a local model](guide/local-model.md) | Configure local OpenAI-compatible endpoints and discovery |
 | [Security and trust](guide/security.md) | Choose a working directory and understand authorization and execution boundaries |
 | [Sandbox providers](guide/sandbox-providers.md) | Select the process sandbox at startup and read declared capabilities |
+| [Observability and diagnostics](guide/observability.md) | Enable OTLP telemetry and export a redacted issue bundle |
 | [Troubleshooting](guide/troubleshooting.md) | Use error codes and runtime state to choose the next diagnostic step |
 
 <a id="构建与深入了解"></a>

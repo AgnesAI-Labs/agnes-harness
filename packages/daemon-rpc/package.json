@@ -41,7 +41,8 @@
     "@agnes/daemon-surfaces": "workspace:*",
     "@agnes/host": "workspace:*",
     "@agnes/protocol": "workspace:*",
-    "@agnes/worker-runtime": "workspace:*"
+    "@agnes/worker-runtime": "workspace:*",
+    "@agnes/observability": "workspace:*"
   },
   "license": "Apache-2.0",
   "devDependencies": {

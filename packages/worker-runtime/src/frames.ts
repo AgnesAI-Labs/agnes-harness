@@ -140,6 +140,8 @@ export type SessionInterruptedFrame = {
   reason: string
 }
 export type LogFrame = {
+  traceId?: string
+  spanId?: string
   kind: 'log'
   sessionKey: string
   level: 'debug' | 'info' | 'warn' | 'error'

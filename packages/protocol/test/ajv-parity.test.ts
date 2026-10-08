@@ -499,6 +499,9 @@ const AGNES_DEFS: Record<string, TSchema> = {
   SessionPreferences: AgnesGen.SessionPreferences,
   SessionRenameParams: AgnesGen.SessionRenameParams,
   SessionArchiveParams: AgnesGen.SessionArchiveParams,
+  DiagnosticsExportParams: AgnesGen.DiagnosticsExportParams,
+  DiagnosticsExportResult: AgnesGen.DiagnosticsExportResult,
+  DiagnosticRecord: AgnesGen.DiagnosticRecord,
   DiagnosticsCollectParams: AgnesGen.DiagnosticsCollectParams,
   DiagnosticsCollectResult: AgnesGen.DiagnosticsCollectResult,
   DiagnosticsEventsParams: AgnesGen.DiagnosticsEventsParams,
@@ -2974,6 +2977,37 @@ const AGNES_SAMPLES: Record<string, Sample> = {
     note: 'archive input',
     valid: { sessionId: 's', archived: true },
     invalid: [{ sessionId: 's' }, { sessionId: 's', archived: 'yes' }],
+  },
+  DiagnosticsExportParams: {
+    note: 'bounded redacted bundle',
+    valid: {},
+    invalid: [{ limit: 501 }, { diagnosticId: 'invalid' }],
+  },
+  DiagnosticRecord: {
+    note: 'safe diagnostic identity',
+    valid: {
+      diagnosticId: '00000000-0000-0000-0000-000000000001',
+      at: '2026-01-01T00:00:00Z',
+      code: -32603,
+      name: 'INTERNAL_ERROR',
+    },
+    invalid: [{}],
+  },
+  DiagnosticsExportResult: {
+    note: 'metadata only',
+    valid: {
+      schemaVersion: 1,
+      collectedAt: '2026-01-01T00:00:00Z',
+      agh: { version: 'dev' },
+      runtime: { platform: 'test', arch: 'test', osRelease: 'test', node: '24', pid: 1, uptimeMs: 0 },
+      profile: { hash: 'a'.repeat(64) },
+      generations: { available: false, current: null, items: [] },
+      doctor: [],
+      errors: [],
+      audit: [],
+      limits: { audit: 100, errors: 4096 },
+    },
+    invalid: [{}],
   },
   DiagnosticsCollectParams: { note: 'collect takes no input', valid: {}, invalid: [{ extra: 1 }] },
   DiagnosticsCollectResult: {
@@ -6412,6 +6446,11 @@ const METHOD_DEF: Record<MethodName, MethodDefRef> = {
     params: 'SessionArchiveParams',
     result: 'SessionPreferences',
   },
+  '_agnes/v1/diagnostics.export': {
+    fileId: AGNES_ID,
+    params: 'DiagnosticsExportParams',
+    result: 'DiagnosticsExportResult',
+  },
   '_agnes/v1/diagnostics.collect': {
     fileId: AGNES_ID,
     params: 'DiagnosticsCollectParams',
@@ -6770,6 +6809,7 @@ const METHOD_PARAMS_SAMPLE: Record<MethodName, Sample> = {
     valid: { sessionId: 's', archived: true },
     invalid: [{ sessionId: 's', archived: 'true' }],
   },
+  '_agnes/v1/diagnostics.export': AGNES_SAMPLES.DiagnosticsExportParams as Sample,
   '_agnes/v1/diagnostics.collect': AGNES_SAMPLES.DiagnosticsCollectParams as Sample,
   '_agnes/v1/diagnostics.events': AGNES_SAMPLES.DiagnosticsEventsParams as Sample,
   '_agnes/v1/session.list': AGNES_SAMPLES.SessionListParams as Sample,
@@ -6903,6 +6943,7 @@ const METHOD_RESULT_SAMPLE: Partial<Record<MethodName, Sample>> = {
 
   '_agnes/v1/session.rename': AGNES_SAMPLES.SessionPreferences as Sample,
   '_agnes/v1/session.archive': AGNES_SAMPLES.SessionPreferences as Sample,
+  '_agnes/v1/diagnostics.export': AGNES_SAMPLES.DiagnosticsExportResult as Sample,
   '_agnes/v1/diagnostics.collect': AGNES_SAMPLES.DiagnosticsCollectResult as Sample,
   '_agnes/v1/diagnostics.events': {
     note: 'empty last page',

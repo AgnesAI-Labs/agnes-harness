@@ -53,6 +53,9 @@
     },
     {
       "path": "../system-node"
+    },
+    {
+      "path": "../observability"
     }
   ]
 }

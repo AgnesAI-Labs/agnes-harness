@@ -59,3 +59,7 @@ Computer Use：`status`、`install [--upgrade]`、`restart`、`operation [ID]`�
 低层 `ext`、`mcp serve` 与 `serve model-api` 是专用接入面，不能替代前述本地工作台命令或被当作已验证公网服务。
 
 权威语法：[args/usage](../../packages/cli/src/args.ts)、[package](../../packages/cli/src/commands/package.ts)、[resources](../../packages/resource-control-cli/src/resources.ts)、[TUI package](../../packages/cli-tui/src/package-controller.ts)。
+
+## 诊断
+
+`agh diagnostics export [--session SESSION_ID] --out diagnostics.json` 通过本地 owner 连接写出脱敏支持包。内容与限制见[可观测性](../guide/observability.zh-CN.md)。

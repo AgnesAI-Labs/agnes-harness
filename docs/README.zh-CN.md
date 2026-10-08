@@ -34,6 +34,7 @@
 | [使用本地模型](guide/local-model.zh-CN.md) | 本地 OpenAI-compatible endpoint 和模型发现 |
 | [安全与信任](guide/security.zh-CN.md) | 选择工作目录，理解授权和执行边界 |
 | [沙箱提供者](guide/sandbox-providers.zh-CN.md) | 在启动时选择进程沙箱，并阅读声明的能力 |
+| [可观测性与诊断](guide/observability.zh-CN.md) | 开启 OTLP 遥测并导出脱敏问题包 |
 | [排错](guide/troubleshooting.zh-CN.md) | 从错误码和运行状态定位下一步 |
 
 ## 构建与深入了解

@@ -37,9 +37,18 @@ export class CommandQueue {
       maxPending: 1_024,
       maxPerSession: 32,
     },
+    private readonly onDepth?: (depth: number) => void,
   ) {
     if (![limits.maxPending, limits.maxPerSession].every((v) => Number.isSafeInteger(v) && v > 0))
       throw new RangeError('command queue limits must be positive integers')
+  }
+
+  private reportDepth(): void {
+    try {
+      this.onDepth?.(this.pending)
+    } catch {
+      /* Metrics cannot affect queue admission. */
+    }
   }
 
   run<T>(
@@ -78,6 +87,7 @@ export class CommandQueue {
     })
     queue.waiting.push(entry as Entry<unknown>)
     this.pending++
+    this.reportDepth()
     signal.addEventListener('abort', entry.abort, { once: true })
     if (signal.aborted) entry.abort()
     else this.pump(sessionId, queue)
@@ -91,6 +101,7 @@ export class CommandQueue {
       for (const entry of queue.waiting.splice(0)) {
         entry.signal.removeEventListener('abort', entry.abort)
         this.pending--
+        this.reportDepth()
         entry.reject(new CommandQueueError('CLOSED'))
       }
       queue.active?.controller.abort(new CommandQueueError('CLOSED'))
@@ -110,6 +121,7 @@ export class CommandQueue {
     queue.waiting.splice(at, 1)
     entry.signal.removeEventListener('abort', entry.abort)
     this.pending--
+    this.reportDepth()
     entry.reject(abortReason(entry.signal))
     if (!queue.active && queue.waiting.length === 0) this.sessions.delete(sessionId)
     this.maybeClosed()
@@ -134,6 +146,7 @@ export class CommandQueue {
       entry.signal.removeEventListener('abort', entry.abort)
       queue.active = undefined
       this.pending--
+      this.reportDepth()
       if (queue.waiting.length === 0) this.sessions.delete(sessionId)
       else this.pump(sessionId, queue)
       this.maybeClosed()

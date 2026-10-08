@@ -86,6 +86,8 @@ break every request. The three constants are new runtime exports.
 
 ## 1.4.0
 
+- Add the passive `ObservabilityProvider` contract and `observabilityKind` for opt-in telemetry on public committed events and lifecycle ports.
+
 - Optional `ToolContext.pluginManage` port for approved AGH plugin authoring and installation. Host controls identity, invocation lifetime and native approval.
 
 ## 1.3.0

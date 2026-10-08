@@ -47,7 +47,8 @@
     "@agnes/resource-control-runtime": "workspace:*",
     "@agnes/sandbox-remote": "workspace:*",
     "@agnes/system-node": "workspace:*",
-    "yaml": "2.9.0"
+    "yaml": "2.9.0",
+    "@agnes/observability": "workspace:*"
   },
   "license": "Apache-2.0 AND MIT"
 }

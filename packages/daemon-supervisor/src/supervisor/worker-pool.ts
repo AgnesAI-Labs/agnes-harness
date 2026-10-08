@@ -134,7 +134,10 @@ export class WorkerPool {
         sessionKey: string
         level: 'debug' | 'info' | 'warn' | 'error'
         message: string
+        traceId?: string
+        spanId?: string
       }) => void
+      onLifecycle?: (phase: 'start' | 'stop' | 'restart', id: string) => void
       onSessionFailure?: (sessionKey: string, error: unknown) => void
       runtimeDelivery?: CompositeRuntimeDelivery
       notices: NoticeEmitter
@@ -163,7 +166,8 @@ export class WorkerPool {
       onResourceStatus: (serverId, status) =>
         this.o.onResourceStatus?.({ sessionKey: workerKey, serverId, status }),
       onRequest: (f) => this.o.onRequest(f.sessionKey, f),
-      onLog: (sessionKey, level, message) => this.o.onLog?.({ sessionKey, level, message }),
+      onLog: (sessionKey, level, message, correlation) =>
+        this.o.onLog?.({ sessionKey, level, message, ...correlation }),
       onActivity: (sessionKey) => this.touch(sessionKey),
       onSessionFailure: (sessionKey, error) => {
         // No notice here: the protocol has no kind for a session-scoped interruption, and the
@@ -301,6 +305,13 @@ export class WorkerPool {
     const live = [...this.slots.values()].filter((s) => s.link?.alive).length
     if (live >= this.o.config.limits.maxWorkers) throw rpcError('OVERLOADED', { retryAfterMs: 1000 })
 
+    if (this.crashes.has(workerKey)) {
+      try {
+        this.o.onLifecycle?.('restart', workerKey)
+      } catch {
+        /* passive observer */
+      }
+    }
     const token = randomBytes(32).toString('hex')
     const generation = workerGeneration(this.nextGeneration)
     this.nextGeneration = generation + 1
@@ -435,6 +446,11 @@ export class WorkerPool {
           if (!link.alive) return
           slot.initializingLink = undefined
           startupFinished = true
+          try {
+            this.o.onLifecycle?.('start', `${workerKey}:${generation}`)
+          } catch {
+            /* passive observer */
+          }
           resolve(link)
         })
       })
@@ -500,6 +516,11 @@ export class WorkerPool {
       // Reject immediately so callers do not wait for the full startup deadline and remove the
       // token before a late socket connection can claim a failed generation.
       spawnedChild.once('exit', (code, signal) => {
+        try {
+          this.o.onLifecycle?.('stop', `${workerKey}:${generation}`)
+        } catch {
+          /* passive observer */
+        }
         if (startupFinished) {
           slot.link = undefined
           if (!slot.intentionalExit) this.crashed(workerKey)

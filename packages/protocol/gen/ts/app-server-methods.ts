@@ -111,6 +111,7 @@ export interface AppServerMethods {
   "_agnes/v1/session.fork": { params: Static<typeof import("./agnes-v1.js").SessionForkParams>; result: Static<typeof import("./agnes-v1.js").SessionIdParams>; direction: "c2s"; kind: "request" }
   "_agnes/v1/session.rename": { params: Static<typeof import("./agnes-v1.js").SessionRenameParams>; result: Static<typeof import("./agnes-v1.js").SessionPreferences>; direction: "c2s"; kind: "request" }
   "_agnes/v1/session.archive": { params: Static<typeof import("./agnes-v1.js").SessionArchiveParams>; result: Static<typeof import("./agnes-v1.js").SessionPreferences>; direction: "c2s"; kind: "request" }
+  "_agnes/v1/diagnostics.export": { params: Static<typeof import("./agnes-v1.js").DiagnosticsExportParams>; result: Static<typeof import("./agnes-v1.js").DiagnosticsExportResult>; direction: "c2s"; kind: "request" }
   "_agnes/v1/diagnostics.collect": { params: Static<typeof import("./agnes-v1.js").DiagnosticsCollectParams>; result: Static<typeof import("./agnes-v1.js").DiagnosticsCollectResult>; direction: "c2s"; kind: "request" }
   "_agnes/v1/diagnostics.events": { params: Static<typeof import("./agnes-v1.js").DiagnosticsEventsParams>; result: Static<typeof import("./agnes-v1.js").DiagnosticsEventsResult>; direction: "c2s"; kind: "request" }
   "_agnes/v1/session.list": { params: Static<typeof import("./agnes-v1.js").SessionListParams>; result: Static<typeof import("./agnes-v1.js").PageSessionMeta>; direction: "c2s"; kind: "request" }

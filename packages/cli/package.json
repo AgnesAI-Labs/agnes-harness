@@ -56,7 +56,8 @@
     "marked": "18.0.12",
     "yaml": "2.9.0",
     "@agnes/web": "workspace:*",
-    "@agnes/package-manager": "workspace:*"
+    "@agnes/package-manager": "workspace:*",
+    "@agnes/observability": "workspace:*"
   },
   "devDependencies": {
     "@agnes/extension-api": "workspace:*",

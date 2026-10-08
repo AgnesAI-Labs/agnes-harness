@@ -1,13 +1,17 @@
+import { createHash } from 'node:crypto'
 import { open } from 'node:fs/promises'
 import { release } from 'node:os' // guards-allow-platform: diagnostics report
 import { join } from 'node:path'
 import type { CallContext, LocalEndpoint } from '@agnes/daemon-foundation/local/endpoint'
 import type { Registry } from '@agnes/daemon-foundation/registry'
 import { redactDetail } from '@agnes/host'
+import { observabilityHome, readDiagnosticJournal } from '@agnes/observability'
 import {
   type DiagnosticsCollectResult,
   type DiagnosticsEventsParams,
   type DiagnosticsEventsResult,
+  type DiagnosticsExportParams,
+  type DiagnosticsExportResult,
   type EventEnvelope,
   rpcError,
 } from '@agnes/protocol'
@@ -84,10 +88,150 @@ export function registerDiagnostics(
   endpoint: LocalEndpoint,
   deps: {
     requireSessionOwner: (method: string, sessionId: string, c: CallContext) => void
-    registry: Pick<Registry<SessionEntry>, 'require'>
+    registry: Pick<Registry<SessionEntry>, 'require' | 'get'>
+    sessionSnapshot?: (
+      key: string,
+    ) => { lastSeq: number; loop?: { id: string; version: string }; pluginGenerationId?: string } | undefined
     dataDir?: string
+    home?: string
+    profileHash?: string
+    compositionHash?: string
+    generations?: () => Promise<unknown> | unknown
+    doctor?: () =>
+      | Promise<readonly { name: string; status: string }[]>
+      | readonly { name: string; status: string }[]
   },
 ): void {
+  endpoint.register('_agnes/v1/diagnostics.export', async (params, c): Promise<DiagnosticsExportResult> => {
+    localOwner(c)
+    const { sessionId, diagnosticId, limit = 100 } = params as DiagnosticsExportParams
+    const hash = (value: string) => createHash('sha256').update(value).digest('hex')
+    let session: DiagnosticsExportResult['session']
+    if (sessionId) {
+      deps.requireSessionOwner('diagnostics.export', sessionId, c)
+      const found = deps.registry.get(sessionId)?.session ?? deps.sessionSnapshot?.(sessionId)
+      if (!found) throw rpcError('SESSION_NOT_FOUND', { sessionId })
+      session = {
+        idHash: hash(sessionId),
+        lastSeq: found.lastSeq,
+        ...(found.loop ? { loopIdHash: hash(found.loop.id), loopVersionHash: hash(found.loop.version) } : {}),
+        ...(found.pluginGenerationId ? { generationIdHash: hash(found.pluginGenerationId) } : {}),
+      }
+    }
+    const audit: DiagnosticsExportResult['audit'] = []
+    for (const name of LOGS) {
+      const log = await readTail(deps.dataDir, name)
+      for (const line of log.text.split('\n')) {
+        try {
+          const row = JSON.parse(line) as {
+            at?: string
+            kind?: string
+            detail?: { diagnosticId?: string; traceId?: string; spanId?: string }
+          }
+          if (
+            !row.at ||
+            !Number.isFinite(Date.parse(row.at)) ||
+            !row.kind ||
+            ![
+              'daemon.request_failed',
+              'plugin.tree.reverted',
+              'profile.resolved',
+              'host.ready',
+              'host.closed',
+              'host.teardown_finished',
+              'session.recovered',
+              'startup.failed',
+              'secret.resolved',
+              'extension.service-call',
+            ].includes(row.kind)
+          )
+            continue
+          const d = row.detail
+          audit.push({
+            at: new Date(row.at).toISOString(),
+            kind: row.kind,
+            ...(d?.diagnosticId && /^[a-f0-9-]{36}$/.test(d.diagnosticId)
+              ? { diagnosticId: d.diagnosticId }
+              : {}),
+            ...(d?.traceId && /^[a-f0-9]{32}$/.test(d.traceId) ? { traceId: d.traceId } : {}),
+            ...(d?.spanId && /^[a-f0-9]{16}$/.test(d.spanId) ? { spanId: d.spanId } : {}),
+          })
+        } catch {
+          /* Arbitrary audit values and unparseable bytes never enter an issue bundle. */
+        }
+      }
+    }
+    audit.sort((a, b) => a.at.localeCompare(b.at))
+    let generations: DiagnosticsExportResult['generations'] = { available: false, current: null, items: [] }
+    try {
+      const value = (await deps.generations?.()) as
+        | {
+            currentGenerationId?: string
+            generations?: Array<{ id: string; state: string; boundSessions: number }>
+          }
+        | undefined
+      if (value && Array.isArray(value.generations))
+        generations = {
+          available: true,
+          current: value.currentGenerationId ? hash(value.currentGenerationId) : null,
+          items: value.generations
+            .slice(0, 512)
+            .filter(
+              (row) =>
+                typeof row.id === 'string' &&
+                ['active', 'draining', 'failed'].includes(row.state) &&
+                Number.isInteger(row.boundSessions) &&
+                row.boundSessions >= 0,
+            )
+            .map((row) => ({
+              idHash: hash(row.id),
+              state: row.state as 'active' | 'draining' | 'failed',
+              boundSessions: row.boundSessions,
+            })),
+        }
+    } catch {
+      /* An unavailable worker remains explicit; exporting does not start or replace it. */
+    }
+    const sections = (await deps.doctor?.()) ?? [
+      { name: 'daemon', status: 'ok' },
+      { name: 'worker', status: 'unavailable' },
+    ]
+    return {
+      schemaVersion: 1,
+      collectedAt: new Date(c.clock()).toISOString(),
+      agh: { version: typeof AGNES_VERSION === 'string' ? AGNES_VERSION : 'dev' },
+      runtime: {
+        platform: process.platform, // guards-allow-platform: diagnostics report
+        arch: process.arch, // guards-allow-platform: diagnostics report
+        osRelease: release(),
+        node: process.versions.node,
+        pid: process.pid,
+        uptimeMs: Math.round(process.uptime() * 1000),
+      }, // guards-allow-platform: diagnostics report
+      profile: {
+        hash: deps.profileHash ?? hash('unavailable'),
+        ...(deps.compositionHash ? { compositionHash: deps.compositionHash } : {}),
+      },
+      generations,
+      doctor: sections
+        .filter((row) =>
+          ['daemon', 'worker', 'lock', 'socket', 'leases', 'jobs', 'sandbox', 'storage'].includes(row.name),
+        )
+        .map((row) => ({
+          name: row.name,
+          status: (['ok', 'warn', 'fail'].includes(row.status) ? row.status : 'unavailable') as
+            | 'ok'
+            | 'warn'
+            | 'fail'
+            | 'unavailable',
+        })),
+      errors: readDiagnosticJournal(deps.home ?? observabilityHome(), diagnosticId ? 1 : 4096, diagnosticId),
+      audit: audit.slice(-limit),
+      ...(session ? { session } : {}),
+      limits: { audit: limit, errors: diagnosticId ? 1 : 4096 },
+    }
+  })
+
   endpoint.register(
     '_agnes/v1/diagnostics.collect',
     async (_params, c): Promise<DiagnosticsCollectResult> => {
@@ -98,8 +242,8 @@ export function registerDiagnostics(
         collectedAt: new Date(c.clock()).toISOString(),
         agh: { version: typeof AGNES_VERSION === 'string' ? AGNES_VERSION : 'dev' },
         runtime: {
-          platform: process.platform, // guards-allow-platform: diagnostics report
-          arch: process.arch, // guards-allow-platform: diagnostics report
+          platform: process.platform, // guards-allow-platform: diagnostics report // guards-allow-platform: diagnostics report
+          arch: process.arch, // guards-allow-platform: diagnostics report // guards-allow-platform: diagnostics report
           osRelease: release(), // guards-allow-platform: diagnostics report
           node: process.versions.node,
           pid: process.pid,

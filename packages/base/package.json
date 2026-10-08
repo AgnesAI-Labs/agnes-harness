@@ -27,6 +27,16 @@
         "runtime": "in-process"
       },
       {
+        "id": "observability:otel",
+        "export": "observabilityPlugin",
+        "inject": [
+          "providers"
+        ],
+        "runtime": "in-process",
+        "default": true,
+        "apiRange": "^1.4.0"
+      },
+      {
         "export": "approvalPlugin",
         "apiRange": "^1.4.0",
         "id": "seam:approval"
@@ -162,7 +172,8 @@
     "turndown": "7.2.4",
     "yaml": "2.9.0",
     "@agnes/loop-default": "workspace:*",
-    "@agnes/mcp-transport-health": "workspace:*"
+    "@agnes/mcp-transport-health": "workspace:*",
+    "@agnes/observability": "workspace:*"
   },
   "devDependencies": {
     "@agnes/extension-api": "workspace:*",

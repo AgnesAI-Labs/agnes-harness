@@ -97,6 +97,7 @@ const LAYER: Record<string, number> = {
   '@agnes/resource-control-cli': 10,
   '@agnes/history-index': 0,
   '@agnes/extension-api': 1,
+  '@agnes/observability': 2, // Official telemetry consumes only public author contracts and OS primitives.
   '@agnes/core-common': 1.1,
   '@agnes/core-child-control': 1.2,
   '@agnes/core-ledger': 1.3,

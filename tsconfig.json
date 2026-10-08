@@ -297,6 +297,12 @@
     },
     {
       "path": "packages/web-conversation/tsconfig.test.json"
+    },
+    {
+      "path": "packages/observability"
+    },
+    {
+      "path": "packages/observability/tsconfig.test.json"
     }
   ]
 }

@@ -117,6 +117,7 @@ describe('methods (I1 set)', () => {
         '_agnes/v1/config.save',
         '_agnes/v1/config.test',
         '_agnes/v1/daemon.notice',
+        '_agnes/v1/diagnostics.export',
         '_agnes/v1/diagnostics.collect',
         '_agnes/v1/diagnostics.events',
         '_agnes/v1/directory.upsert',
@@ -225,7 +226,7 @@ describe('methods (I1 set)', () => {
         'session/update',
       ].sort(),
     )
-    expect(Object.keys(METHODS)).toHaveLength(143)
+    expect(Object.keys(METHODS)).toHaveLength(144)
     expect(METHODS['session/cancel']).toMatchObject({ kind: 'notification', direction: 'c2s' })
     expect(METHODS['session/request_permission']).toMatchObject({ kind: 'request', direction: 's2c' })
   })

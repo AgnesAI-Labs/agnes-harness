@@ -10,6 +10,8 @@ export function commandHelp(command?: Command): string {
       return 'Usage: agh app-server --stdio [--home <dir>] [--profile <name>] | schema --out <dir>\nAttach JSONL to the existing local daemon, or export the versioned protocol without starting one.'
     case 'run':
       return RUN_USAGE
+    case 'diagnostics':
+      return 'Usage: agh diagnostics export [--session <id>] --out <file>\nExport redacted runtime metadata and diagnostic IDs for issue reports.'
     case 'tools':
       return 'Usage: agh tools [--session <key>] [--json] [--cwd <dir>] [--profile <name>]\nList tools, MCP and skills visible to a fresh session or the selected session.'
     case 'serve':

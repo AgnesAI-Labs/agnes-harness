@@ -10,7 +10,11 @@ const signal = () => new AbortController().signal
 
 describe('CommandQueue', () => {
   it('runs one session FIFO while another session progresses independently', async () => {
-    const queue = new CommandQueue()
+    let depth = 0
+    const queue = new CommandQueue(undefined, (value) => {
+      depth = value
+      if (value === 1) throw new Error('synthetic observer refusal')
+    })
     const first = deferred<void>()
     const order: string[] = []
     const a = queue.run('a', signal(), async () => {
@@ -19,11 +23,13 @@ describe('CommandQueue', () => {
       order.push('a1-end')
     })
     const a2 = queue.run('a', signal(), async () => void order.push('a2'))
+    expect(depth).toBe(2)
     await queue.run('b', signal(), async () => void order.push('b1'))
     expect(order).toEqual(['a1-start', 'b1'])
     first.resolve()
     await Promise.all([a, a2])
     expect(order).toEqual(['a1-start', 'b1', 'a1-end', 'a2'])
+    expect(depth).toBe(0)
   })
 
   it('counts active and waiting items against global and per-session limits', async () => {

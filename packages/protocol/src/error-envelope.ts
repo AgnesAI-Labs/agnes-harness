@@ -1,5 +1,6 @@
 import { Value } from '@sinclair/typebox/value'
 import { type AppServerError, AppServerErrorCause } from '../gen/ts/app-server.js'
+import { recordDiagnostic } from './diagnostic-records.js'
 import { AGNES_ERRORS, JSONRPC_ERRORS, type RpcError } from './errors.js'
 
 function errorMessageKey(code: string): AppServerError['data']['messageKey'] {
@@ -57,6 +58,13 @@ export function normalizeRpcError(error: RpcError): AppServerError {
     typeof oldId === 'string' && /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/.test(oldId)
       ? oldId
       : crypto.randomUUID()
+  const available = recordDiagnostic({
+    diagnosticId,
+    at: new Date().toISOString(),
+    code: error.code,
+    name,
+    ...(cause ? { cause: cause.code } : {}),
+  })
   return {
     code: error.code,
     message: name,
@@ -68,6 +76,7 @@ export function normalizeRpcError(error: RpcError): AppServerError {
         return key === 'appServer.errors.internal' ? errorMessageKey(name) : key
       })(),
       diagnosticId,
+      ...(!available ? { diagnosticUnavailable: true } : {}),
       ...(cause ? { cause } : {}),
     },
   }

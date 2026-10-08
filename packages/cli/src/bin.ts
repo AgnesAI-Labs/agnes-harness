@@ -10,6 +10,7 @@ import {
   runDaemonControl,
   stopDaemon,
 } from '@agnes/daemon'
+import { installDiagnosticJournal } from '@agnes/observability'
 import { AGNES_ERRORS, JSONRPC_ERRORS } from '@agnes/protocol'
 import {
   confirmResourceOperation,
@@ -401,6 +402,7 @@ export async function main(argv: string[], io: MainIO, boot: Partial<LocalBootDe
   let ladderInstalled = false
   const eph = p.ephemeral ? ephemeralHome(io, () => ladderInstalled) : undefined
   const home = eph?.home ?? resolveHome(io.env)
+  const stopDiagnostics = Object.keys(boot).length === 0 ? installDiagnosticJournal(home) : undefined
   // Progress goes to a terminal or nowhere. A redirected stderr belongs to whatever the operator
   // pointed it at, and filling it with spinner text is how a log becomes unreadable.
   const log = (s: string): void => {
@@ -665,6 +667,18 @@ export async function main(argv: string[], io: MainIO, boot: Partial<LocalBootDe
           admission: booted.sessionAdmission,
           io: { stdout: io.stdout, stderr: io.stderr },
         })
+      } finally {
+        await booted.close().catch(() => undefined)
+      }
+    }
+    if (p.command === 'diagnostics') {
+      if (p.positional[0] !== 'export' || !p.out)
+        throw new UsageError('usage: agh diagnostics export [--session <id>] --out <file>')
+      const booted = await bootDefault(p, deps, { useEmbedded: Object.keys(boot).length > 0 })
+      try {
+        const { diagnosticsCommand } = await import('./commands/diagnostics.js')
+        await diagnosticsCommand(p, booted.client, io.cwd)
+        return ExitCode.OK
       } finally {
         await booted.close().catch(() => undefined)
       }
@@ -949,6 +963,7 @@ export async function main(argv: string[], io: MainIO, boot: Partial<LocalBootDe
     )
     return ExitCode.ERROR
   } finally {
+    stopDiagnostics?.()
     eph?.release()
   }
 }

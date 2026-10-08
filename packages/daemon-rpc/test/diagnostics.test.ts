@@ -1,9 +1,20 @@
 import { mkdirSync, mkdtempSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import type { DiagnosticsCollectResult, DiagnosticsEventsResult, EventEnvelope } from '@agnes/protocol'
+import { LocalEndpoint } from '@agnes/daemon-foundation/local/endpoint'
+import { installDiagnosticJournal } from '@agnes/observability'
+import {
+  type ApisListResult,
+  type DiagnosticsCollectResult,
+  type DiagnosticsEventsResult,
+  type DiagnosticsExportResult,
+  type EventEnvelope,
+  normalizeRpcError,
+  rpcError,
+} from '@agnes/protocol'
 import { afterEach, describe, expect, it } from 'vitest'
 import { openTestHost } from '../../daemon/test/host.js'
+import { registerDiagnostics } from '../src/local/methods/diagnostics.js'
 
 const initialize = {
   jsonrpc: '2.0' as const,
@@ -19,7 +30,7 @@ type Endpoint = ReturnType<Awaited<ReturnType<typeof openTestHost>>['endpoint']>
 type Response<T> = { result?: T; error?: { data?: { code?: string } } }
 
 let id = 10
-const call = async <T>(ep: Endpoint, method: string, params: unknown): Promise<Response<T>> =>
+const call = async <T>(ep: Pick<Endpoint, 'handle'>, method: string, params: unknown): Promise<Response<T>> =>
   (await ep.handle({ jsonrpc: '2.0', id: id++, method, params })) as Response<T>
 
 const cleanups: Array<() => Promise<void> | void> = []
@@ -27,7 +38,10 @@ afterEach(async () => {
   for (const cleanup of cleanups.splice(0).reverse()) await cleanup()
 })
 
-async function setup(options: { dataDir?: string } = {}, host: Parameters<typeof openTestHost>[0] = {}) {
+async function setup(
+  options: { dataDir?: string; diagnosticsHome?: string } = {},
+  host: Parameters<typeof openTestHost>[0] = {},
+) {
   const h = await openTestHost(host)
   const ep = h.endpoint({ pollMs: 5, ...options })
   cleanups.push(() => h.close())
@@ -67,6 +81,97 @@ async function readAll(ep: Endpoint, sessionId: string, limit: number, maxBytes:
   }
   throw new Error('diagnostics.events never reached the end')
 }
+
+describe('diagnostics.export', () => {
+  it('exports an owned historical snapshot without opening a live session', async () => {
+    const home = tempDataDir()
+    const ep = new LocalEndpoint({ clock: Date.now, principalId: 'synthetic-owner' })
+    cleanups.push(() => ep.close())
+    ep.conn.initialized = true
+    ep.conn.authKind = 'local'
+    ep.conn.credentialKind = 'local'
+    registerDiagnostics(ep, {
+      home,
+      registry: {
+        get: () => undefined,
+        require: () => {
+          throw new Error('must not open live session')
+        },
+      },
+      requireSessionOwner: (_method, key) => {
+        if (key !== 'historical') throw rpcError('CAPABILITY_DENIED')
+      },
+      sessionSnapshot: (key) =>
+        key === 'historical' ? { lastSeq: 23, loop: { id: 'synthetic-loop', version: '1.0.0' } } : undefined,
+    })
+    const exported = await call<DiagnosticsExportResult>(ep, '_agnes/v1/diagnostics.export', {
+      sessionId: 'historical',
+    })
+    expect(exported.result?.session).toMatchObject({
+      lastSeq: 23,
+      idHash: expect.stringMatching(/^[a-f0-9]{64}$/),
+      loopIdHash: expect.stringMatching(/^[a-f0-9]{64}$/),
+    })
+    expect(JSON.stringify(exported.result)).not.toContain('synthetic-loop')
+    const denied = await call(ep, '_agnes/v1/diagnostics.export', { sessionId: 'foreign' })
+    expect(denied.error?.data?.code).toBe('CAPABILITY_DENIED')
+  })
+
+  it('exports only metadata and locates transport and durable diagnostic IDs without secrets', async () => {
+    const home = tempDataDir()
+    const stop = installDiagnosticJournal(home)
+    const secret = ['synthetic', 'private-body-and-path'].join('-')
+    const old = normalizeRpcError(rpcError('INTERNAL_ERROR', { message: secret, password: secret }))
+    stop()
+    writeFileSync(
+      join(home, 'audit', 'daemon.jsonl'),
+      JSON.stringify({
+        at: '2026-10-08T00:00:00.000Z',
+        kind: 'daemon.request_failed',
+        detail: { diagnosticId: old.data.diagnosticId, message: secret, argv: secret },
+        prompt: secret,
+      }) + '\n',
+    )
+    const { h, ep } = await setup({ dataDir: home, diagnosticsHome: home })
+    const id = await newSession(ep, h.dataDir)
+    const invalid = (await call<{ never: true }>(ep, '_agnes/v1/diagnostics.export', {
+      limit: 999,
+      password: secret,
+    })) as { error: { data: { diagnosticId: string } } }
+    const bundle = await call<DiagnosticsExportResult>(ep, '_agnes/v1/diagnostics.export', {
+      sessionId: id,
+      limit: 1,
+    })
+    expect(bundle.error).toBeUndefined()
+    const apis = await call<ApisListResult>(ep, '_agnes/v1/apis.list', {})
+    expect(apis.result?.families.find((row) => row.name === 'diagnostics')?.methods).toContain(
+      '_agnes/v1/diagnostics.export',
+    )
+    expect(bundle.result?.errors).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ diagnosticId: old.data.diagnosticId }),
+        expect.objectContaining({ diagnosticId: invalid.error.data.diagnosticId }),
+      ]),
+    )
+    expect(bundle.result?.session?.idHash).toMatch(/^[a-f0-9]{64}$/)
+    expect(bundle.result?.profile.hash).toBe(h.host.profile.hash)
+    expect(bundle.result?.audit).toEqual([
+      { at: '2026-10-08T00:00:00.000Z', kind: 'daemon.request_failed', diagnosticId: old.data.diagnosticId },
+    ])
+    const text = JSON.stringify(bundle.result)
+    for (const value of [secret, home, h.dataDir, id]) expect(text).not.toContain(value)
+    const exact = await call<DiagnosticsExportResult>(ep, '_agnes/v1/diagnostics.export', {
+      diagnosticId: old.data.diagnosticId,
+    })
+    expect(exact.result?.errors).toHaveLength(1)
+    expect(exact.result?.errors[0]?.diagnosticId).toBe(old.data.diagnosticId)
+    ep.conn.authKind = 'jwt'
+    expect(await call(ep, '_agnes/v1/diagnostics.export', {})).toHaveProperty(
+      'error.data.code',
+      'CAPABILITY_DENIED',
+    )
+  })
+})
 
 describe('diagnostics.collect', () => {
   it('collect rejects non-local owner', async () => {

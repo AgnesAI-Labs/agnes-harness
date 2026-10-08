@@ -18,6 +18,7 @@ export type Command =
   | 'export'
   | 'import'
   | 'doctor'
+  | 'diagnostics'
   | 'computer-use'
   | 'profile'
   | 'plugins'

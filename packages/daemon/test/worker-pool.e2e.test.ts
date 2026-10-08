@@ -523,6 +523,7 @@ describe('WorkerPool', () => {
     }
     const notices: string[] = []
     const exited: string[] = []
+    const lifecycle: Array<{ phase: string; id: string }> = []
     const pool = new WorkerPool({
       config,
       profile: { name: 'p', hash: 'h1' } as never,
@@ -532,6 +533,10 @@ describe('WorkerPool', () => {
       execArgv: ['--import', 'tsx'],
       clock: () => 0,
       onEvent: () => undefined,
+      onLifecycle: (phase, id) => {
+        lifecycle.push({ phase, id })
+        throw new Error('synthetic observer refusal')
+      },
       onRequest: async () => undefined,
       notices: { emit: (k: string) => notices.push(k) },
     })
@@ -542,6 +547,8 @@ describe('WorkerPool', () => {
     const sessionKey = 'agnes:t:a:x:dm:1'
     const link = await pool.acquire(sessionKey, { kind: 'service', resourceControl: true })
     expect(await link.command('ping', {})).toEqual({ ok: true })
+    const started = lifecycle.find((row) => row.phase === 'start')
+    expect(started?.id).toContain(sessionKey)
 
     // Three crashes on the same session key. The first `link.command('crash', {})` is sent to the
     // still-live real worker and kills it, which fires the pool's own `child.once('exit', ...)`
@@ -562,6 +569,7 @@ describe('WorkerPool', () => {
     expect(notices.filter((n) => n === 'worker_crashed')).toHaveLength(2)
     expect(notices).toContain('worker_quarantined')
     expect(exited).toContain(sessionKey)
+    expect(lifecycle).toContainEqual({ phase: 'stop', id: started?.id })
     await expect(pool.acquire(sessionKey, { kind: 'service', resourceControl: true })).rejects.toThrow(
       /quarantined/,
     )

@@ -1,4 +1,4 @@
-import { randomBytes, randomUUID } from 'node:crypto'
+import { createHash, randomBytes, randomUUID } from 'node:crypto'
 import { mkdir, rename, rm, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { createSchedulesPort, openDaemonScheduleDb } from '@agnes/base/schedule'
@@ -158,6 +158,7 @@ import {
   resolveWorkspaceDirectory,
   sessionsDbPath,
 } from '@agnes/host'
+import { createObservability, installDiagnosticJournal, observabilityConfig } from '@agnes/observability'
 import {
   activeRuntimePinId,
   createPackageManager,
@@ -208,6 +209,7 @@ import { startChildMaintenance } from './child-maintenance.js'
 import { configurationApplication } from './configuration.js'
 import { bindConnection } from './connection.js'
 import { publishDaemonDiscovery, removeDaemonDiscovery } from './discovery.js'
+import { daemonDoctor } from './doctor.js'
 import { type JwksResolver, type JwksTransport, startJwksCache } from './jwks-cache.js'
 import { closeWithAudit, installSignals, shutdownLadder } from './lifecycle.js'
 import { createMcpManageRequests } from './mcp-manage-requests.js'
@@ -717,6 +719,7 @@ export type StartSupervisorOptions = {
   artifactAuthorityProjection?: ProductionArtifactAuthorityProjection
   /** Read-only Host mutation readiness; omission is the production fail-closed default. */
   lockedPackageMutations?: LockedPackageMutationStatusSource
+  observability?: import('@agnes/observability').ObservabilityProvider
   audit?: (rec: unknown) => void
   /** Test/composition injection; production creates one global supervisor gate. */
   activationBarrier?: ExtensionActivationBarrier
@@ -977,7 +980,7 @@ export async function startSupervisor(o: StartSupervisorOptions): Promise<{
     // user-controlled package directory.
     await writePackageSkillInventory(o.profile, o.profileDir, packageSkillSnapshotPath)
     const activationBarrier = o.activationBarrier ?? createExtensionActivationBarrier()
-    const commandQueue = new CommandQueue()
+    const commandQueue = new CommandQueue(undefined, (depth) => o.observability?.queueDepth(depth))
     startupCleanup.push(() => commandQueue.close())
     const notices = new NoticeSink({
       endpoints: () => [...conns],
@@ -1191,6 +1194,7 @@ export async function startSupervisor(o: StartSupervisorOptions): Promise<{
       onPreview: (sessionKey, p) => registry.deliverPreview(sessionKey, p),
       onResourceStatus: (input) => observeResourceMcpStatus?.(input),
       onLog: (input) => o.audit?.({ kind: 'worker.log', ...input }),
+      onLifecycle: (phase, id) => o.observability?.lifecycle('worker', phase, undefined, id),
       onSessionFailure: (sessionKey, error) => registry.interrupt(sessionKey, error),
       ...(runtimeDelivery ? { runtimeDelivery } : {}),
       onRequest: async (sessionKey, f) => {
@@ -2015,7 +2019,22 @@ export async function startSupervisor(o: StartSupervisorOptions): Promise<{
       registerDiagnostics(ep, {
         requireSessionOwner: requireSessionOwner(cx),
         registry: cx.registry,
+        sessionSnapshot: (key) => workspaces.metadata(key),
         dataDir: o.config.dataDir,
+        home: o.config.home ?? o.config.dataDir,
+        profileHash: o.profile.hash,
+        ...(composition
+          ? { compositionHash: createHash('sha256').update(JSON.stringify(composition)).digest('hex') }
+          : {}),
+        generations: async () => {
+          const worker = pool.businessWorker()
+          return worker?.link.alive
+            ? worker.link.command('pluginGenerations.status', {}, { timeoutMs: 3000 })
+            : undefined
+        },
+        doctor: async () =>
+          (await daemonDoctor({ dataDir: o.config.dataDir, clock, ...(scheduler ? { scheduler } : {}) }))
+            .sections,
       })
       if (artifactReadConfigured) registerArtifactRead(ep, artifactRead as ArtifactReadRpcOptions)
       if (effectivePackageAdmin)
@@ -2317,12 +2336,25 @@ export async function startProductionSupervisor(
     start?: typeof startSupervisor
   } = {},
 ): Promise<SupervisorHandle> {
-  prepareDaemonSocketPaths(o.config)
-  const storage = (deps.createStorage ?? createSqliteStorage)({
-    file: join(o.config.dataDir, 'sessions.db'),
-    tablesDir: join(o.config.dataDir, 'tables'),
-    ...(o.clock ? { clock: o.clock } : {}),
-  })
+  const observability = createObservability(
+    observabilityConfig({}, { ...process.env, AGH_HOME: o.config.home ?? o.config.dataDir }),
+  )
+  const stopDiagnostics = installDiagnosticJournal(o.config.home ?? o.config.dataDir)
+  observability.lifecycle('daemon', 'start')
+  o = { ...o, observability }
+  let storage: ReturnType<typeof createSqliteStorage>
+  try {
+    prepareDaemonSocketPaths(o.config)
+    storage = (deps.createStorage ?? createSqliteStorage)({
+      file: join(o.config.dataDir, 'sessions.db'),
+      tablesDir: join(o.config.dataDir, 'tables'),
+      ...(o.clock ? { clock: o.clock } : {}),
+    })
+  } catch (error) {
+    stopDiagnostics()
+    await observability.dispose()
+    throw error
+  }
   let supervisor: SupervisorHandle
   try {
     supervisor = await (deps.start ?? startSupervisor)({
@@ -2334,6 +2366,8 @@ export async function startProductionSupervisor(
       reclaim: storage.crashReclaim,
     })
   } catch (error) {
+    stopDiagnostics()
+    await observability.dispose()
     try {
       await storage.close()
     } catch (cleanupError) {
@@ -2344,20 +2378,26 @@ export async function startProductionSupervisor(
 
   let closePromise: Promise<void> | undefined
   const close = async (): Promise<void> => {
-    let supervisorError: unknown
     try {
-      await supervisor.close()
-    } catch (error) {
-      supervisorError = error
+      let supervisorError: unknown
+      try {
+        await supervisor.close()
+      } catch (error) {
+        supervisorError = error
+      }
+      try {
+        await storage.close()
+      } catch (storageError) {
+        if (supervisorError !== undefined)
+          throw new AggregateError([supervisorError, storageError], 'supervisor and storage shutdown failed')
+        throw storageError
+      }
+      if (supervisorError !== undefined) throw supervisorError
+    } finally {
+      observability.lifecycle('daemon', 'stop')
+      await observability.dispose()
+      stopDiagnostics()
     }
-    try {
-      await storage.close()
-    } catch (storageError) {
-      if (supervisorError !== undefined)
-        throw new AggregateError([supervisorError, storageError], 'supervisor and storage shutdown failed')
-      throw storageError
-    }
-    if (supervisorError !== undefined) throw supervisorError
   }
   return {
     ...(supervisor.failed ? { failed: supervisor.failed } : {}),

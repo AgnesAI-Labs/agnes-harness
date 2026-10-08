@@ -4817,6 +4817,275 @@
           }
         }
       }
+    },
+    "DiagnosticsExportParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "sessionId": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "diagnosticId": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$"
+        },
+        "limit": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 500
+        }
+      },
+      "required": []
+    },
+    "DiagnosticRecord": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "diagnosticId": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$"
+        },
+        "at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "code": {
+          "type": "integer"
+        },
+        "name": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "cause": {
+          "type": "string",
+          "maxLength": 128
+        }
+      },
+      "required": ["diagnosticId", "at", "code", "name"]
+    },
+    "DiagnosticsExportResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "schemaVersion": {
+          "const": 1
+        },
+        "collectedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "agh": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["version"],
+          "properties": {
+            "version": {
+              "type": "string",
+              "maxLength": 128
+            }
+          }
+        },
+        "runtime": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["platform", "arch", "osRelease", "node", "pid", "uptimeMs"],
+          "properties": {
+            "platform": {
+              "type": "string",
+              "maxLength": 64
+            },
+            "arch": {
+              "type": "string",
+              "maxLength": 64
+            },
+            "osRelease": {
+              "type": "string",
+              "maxLength": 256
+            },
+            "node": {
+              "type": "string",
+              "maxLength": 64
+            },
+            "pid": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "uptimeMs": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        },
+        "profile": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "hash": {
+              "type": "string",
+              "pattern": "^(?:sha256-)?[a-f0-9]{64}$"
+            },
+            "compositionHash": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{64}$"
+            }
+          },
+          "required": ["hash"]
+        },
+        "generations": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "available": {
+              "type": "boolean"
+            },
+            "current": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "pattern": "^[a-f0-9]{64}$"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "items": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "idHash": {
+                    "type": "string",
+                    "pattern": "^[a-f0-9]{64}$"
+                  },
+                  "state": {
+                    "enum": ["active", "draining", "failed"]
+                  },
+                  "boundSessions": {
+                    "type": "integer",
+                    "minimum": 0
+                  }
+                },
+                "required": ["idHash", "state", "boundSessions"]
+              },
+              "maxItems": 512
+            }
+          },
+          "required": ["available", "current", "items"]
+        },
+        "doctor": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "name": {
+                "type": "string",
+                "maxLength": 128
+              },
+              "status": {
+                "enum": ["ok", "warn", "fail", "unavailable"]
+              }
+            },
+            "required": ["name", "status"]
+          },
+          "maxItems": 32
+        },
+        "errors": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/DiagnosticRecord"
+          },
+          "maxItems": 4096
+        },
+        "audit": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "at": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "kind": {
+                "type": "string",
+                "maxLength": 128
+              },
+              "diagnosticId": {
+                "type": "string",
+                "pattern": "^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$"
+              },
+              "traceId": {
+                "type": "string",
+                "pattern": "^[a-f0-9]{32}$"
+              },
+              "spanId": {
+                "type": "string",
+                "pattern": "^[a-f0-9]{16}$"
+              }
+            },
+            "required": ["at", "kind"]
+          },
+          "maxItems": 500
+        },
+        "session": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "idHash": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{64}$"
+            },
+            "lastSeq": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "loopIdHash": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{64}$"
+            },
+            "loopVersionHash": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{64}$"
+            },
+            "generationIdHash": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{64}$"
+            }
+          },
+          "required": ["idHash", "lastSeq"]
+        },
+        "limits": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "audit": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "errors": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          "required": ["audit", "errors"]
+        }
+      },
+      "required": [
+        "schemaVersion",
+        "collectedAt",
+        "agh",
+        "runtime",
+        "profile",
+        "generations",
+        "doctor",
+        "errors",
+        "audit",
+        "limits"
+      ]
     }
   }
 }

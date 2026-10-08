@@ -343,6 +343,7 @@ export const defaultLoopPlugin = {
   },
 }
 
+export { observabilityPlugin } from '@agnes/observability'
 export {
   type ContextConfig,
   contextHome,

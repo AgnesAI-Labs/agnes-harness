@@ -106,6 +106,7 @@ export type MethodName =
   | '_agnes/v1/session.fork'
   | '_agnes/v1/session.rename'
   | '_agnes/v1/session.archive'
+  | '_agnes/v1/diagnostics.export'
   | '_agnes/v1/diagnostics.collect'
   | '_agnes/v1/diagnostics.events'
   | '_agnes/v1/session.list'
@@ -269,6 +270,7 @@ export const METHODS: Record<MethodName, MethodSpec> = {
   },
   '_agnes/v1/session.rename': clientRequest(A.SessionRenameParams, A.SessionPreferences),
   '_agnes/v1/session.archive': clientRequest(A.SessionArchiveParams, A.SessionPreferences),
+  '_agnes/v1/diagnostics.export': clientRequest(A.DiagnosticsExportParams, A.DiagnosticsExportResult),
   '_agnes/v1/diagnostics.collect': clientRequest(A.DiagnosticsCollectParams, A.DiagnosticsCollectResult),
   '_agnes/v1/diagnostics.events': clientRequest(A.DiagnosticsEventsParams, A.DiagnosticsEventsResult),
   '_agnes/v1/session.list': {

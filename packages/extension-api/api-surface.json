@@ -54,6 +54,7 @@
     "isProviderError",
     "loopCheckpointCodec",
     "loopShouldStop",
+    "observabilityKind",
     "parseSemver",
     "persistenceRegisterKey",
     "providerRestartRequired",

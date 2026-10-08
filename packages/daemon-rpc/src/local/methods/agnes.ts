@@ -404,7 +404,11 @@ const FAMILIES: Array<Family & { when?: (cx: AgnesContext) => boolean }> = [
   },
   {
     name: 'diagnostics',
-    methods: ['_agnes/v1/diagnostics.collect', '_agnes/v1/diagnostics.events'],
+    methods: [
+      '_agnes/v1/diagnostics.collect',
+      '_agnes/v1/diagnostics.events',
+      '_agnes/v1/diagnostics.export',
+    ],
     guidance:
       'Local-owner support bundle: runtime info, redacted audit log tails, and sanitized ledger pages.',
     when: (cx) => cx.authKind === 'local' && cx.credentialKind === 'local',

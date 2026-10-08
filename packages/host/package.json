@@ -42,7 +42,8 @@
   "devDependencies": {
     "@agnes/base": "workspace:*",
     "@agnes/code": "workspace:*",
-    "@sinclair/typebox": "0.34.33"
+    "@sinclair/typebox": "0.34.33",
+    "@agnes/observability": "workspace:*"
   },
   "license": "Apache-2.0 AND MIT"
 }

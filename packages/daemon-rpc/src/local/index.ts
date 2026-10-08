@@ -298,6 +298,7 @@ export type LocalEndpointOptions = {
   artifactRead?: ArtifactReadRpcOptions
   /** Where diagnostics.collect reads `audit/*.jsonl` tails. Omitted: both logs report missing. */
   dataDir?: string
+  diagnosticsHome?: string
 }
 
 /**
@@ -474,6 +475,9 @@ export function createLocalEndpoint(
   registerDiagnostics(ep, {
     requireSessionOwner: requireSessionOwner(cx),
     registry,
+    profileHash: host.profile.hash,
+    ...(opts.diagnosticsHome ? { home: opts.diagnosticsHome } : {}),
+    generations: () => host.pluginGenerationStatus?.(),
     ...(opts.dataDir === undefined ? {} : { dataDir: opts.dataDir }),
   })
   if (artifactReadConfigured) registerArtifactRead(ep, opts.artifactRead as ArtifactReadRpcOptions)

@@ -13,6 +13,7 @@ const COMMANDS = new Set<string>([
   'export',
   'import',
   'doctor',
+  'diagnostics',
   'computer-use',
   'profile',
   'plugins',
@@ -209,8 +210,13 @@ export function parseArgs(argv: string[]): ParsedArgs {
     throw new UsageError('--loop selects a new session; resumed sessions keep their pinned loop')
   if (p.newSession && (p.continue || p.resume !== undefined || p.command === 'resume'))
     throw new UsageError('--new cannot be combined with --continue or --resume')
-  if (p.key !== undefined && p.command !== 'tools' && argv.includes('--session'))
-    throw new UsageError('--session is supported only by tools')
+  if (
+    p.key !== undefined &&
+    p.command !== 'tools' &&
+    p.command !== 'diagnostics' &&
+    argv.includes('--session')
+  )
+    throw new UsageError('--session is supported only by tools and diagnostics')
   if (p.continue && p.resume !== undefined)
     throw new UsageError('--continue and --resume are mutually exclusive')
   if (p.dataDir !== undefined && !(p.command === 'computer-use' && p.positional[0] === 'rescue'))
@@ -253,6 +259,7 @@ export function usage(): string {
     'agh run --bundle <package#id|path> --input <file|-> --json [--batch]',
     'agh resume <id> [-p [prompt]]',
     'agh tools [--session <key>] [--json]',
+    'agh diagnostics export [--session <id>] --out <file>',
     'agh sessions [list [--cwd <dir>] | show <id> | migrate <key> [--profile <p>] [--json]]',
     'agh export <id> [--format agnes|sharegpt|claude-code] [--html] [--raw] [-o|--out <file>]',
     'agh import <file> [--from claude-code|codex|pi|auto] [--key <sessionKey>]',

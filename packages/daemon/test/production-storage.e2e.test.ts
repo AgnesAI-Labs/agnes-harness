@@ -859,91 +859,101 @@ describe('production supervisor storage', () => {
   }, 150_000)
 
   it('closes the supervisor before storage exactly once on normal or signal-driven shutdown', async () => {
-    const events: string[] = []
-    const store = { table: () => ({}) }
-    const owners: string[] = []
-    let storageOptions: unknown
-    let received: StartSupervisorOptions | undefined
-    const directory = { upsert: async () => ({ upserted: 0, deleted: 0 }) }
-    const supervisor = await startProductionSupervisor(
-      { ...options('/state'), ports: { directory } },
-      {
-        createStorage: ((o: unknown) => {
-          storageOptions = o
-          return {
-            crashReclaim: reclaim,
-            tables(id: string) {
-              owners.push(id)
-              return store
-            },
-            async close() {
-              events.push('storage.close')
-            },
-          }
-        }) as never,
-        start: (async (o: StartSupervisorOptions) => {
-          received = o
-          return {
-            socketPath: '/state/daemon/agnesd.sock',
-            async close() {
-              events.push('supervisor.close')
-            },
-          }
-        }) as never,
-      },
-    )
+    const dir = mkdtempSync(join(tmpdir(), 'agh-storage-lifecycle-'))
+    try {
+      const events: string[] = []
+      const store = { table: () => ({}) }
+      const owners: string[] = []
+      let storageOptions: unknown
+      let received: StartSupervisorOptions | undefined
+      const directory = { upsert: async () => ({ upserted: 0, deleted: 0 }) }
+      const supervisor = await startProductionSupervisor(
+        { ...options(dir), ports: { directory } },
+        {
+          createStorage: ((o: unknown) => {
+            storageOptions = o
+            return {
+              crashReclaim: reclaim,
+              tables(id: string) {
+                owners.push(id)
+                return store
+              },
+              async close() {
+                events.push('storage.close')
+              },
+            }
+          }) as never,
+          start: (async (o: StartSupervisorOptions) => {
+            received = o
+            return {
+              socketPath: join(dir, 'daemon', 'agnesd.sock'),
+              async close() {
+                events.push('supervisor.close')
+              },
+            }
+          }) as never,
+        },
+      )
 
-    expect(storageOptions).toEqual({
-      file: join('/state', 'sessions.db'),
-      tablesDir: join('/state', 'tables'),
-    })
-    expect(owners).toEqual(['@agnes/daemon', '@agnes/daemon/artifact-read-authority'])
-    expect(received?.jobTables).toBeDefined()
-    expect(received?.artifactAuthorityTable).toBeDefined()
-    expect(received?.reclaim).toBeDefined()
-    expect(received?.tables).toBeUndefined()
-    expect(received?.ports?.directory).toBe(directory)
-    await Promise.all([supervisor.close(), supervisor.close()])
-    expect(events).toEqual(['supervisor.close', 'storage.close'])
+      expect(storageOptions).toEqual({
+        file: join(dir, 'sessions.db'),
+        tablesDir: join(dir, 'tables'),
+      })
+      expect(owners).toEqual(['@agnes/daemon', '@agnes/daemon/artifact-read-authority'])
+      expect(received?.jobTables).toBeDefined()
+      expect(received?.artifactAuthorityTable).toBeDefined()
+      expect(received?.reclaim).toBeDefined()
+      expect(received?.tables).toBeUndefined()
+      expect(received?.ports?.directory).toBe(directory)
+      await Promise.all([supervisor.close(), supervisor.close()])
+      expect(events).toEqual(['supervisor.close', 'storage.close'])
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
   })
 
   it('closes storage after startup failure and after a supervisor shutdown failure', async () => {
-    const startup = new Error('startup failed')
-    let startupCloses = 0
-    await expect(
-      startProductionSupervisor(options('/startup-failure'), {
+    const dir = mkdtempSync(join(tmpdir(), 'agh-storage-failure-'))
+    try {
+      const startup = new Error('startup failed')
+      let startupCloses = 0
+      await expect(
+        startProductionSupervisor(options(join(dir, 'startup')), {
+          createStorage: (() => ({
+            crashReclaim: reclaim,
+            tables: () => ({ table: () => ({}) }),
+            close: async () => {
+              startupCloses++
+            },
+          })) as never,
+          start: (async () => {
+            throw startup
+          }) as never,
+        }),
+      ).rejects.toBe(startup)
+      expect(startupCloses).toBe(1)
+
+      const shutdown = new Error('shutdown failed')
+      let shutdownCloses = 0
+      const supervisor = await startProductionSupervisor(options(join(dir, 'shutdown')), {
         createStorage: (() => ({
           crashReclaim: reclaim,
           tables: () => ({ table: () => ({}) }),
           close: async () => {
-            startupCloses++
+            shutdownCloses++
           },
         })) as never,
-        start: (async () => {
-          throw startup
-        }) as never,
-      }),
-    ).rejects.toBe(startup)
-    expect(startupCloses).toBe(1)
-
-    const shutdown = new Error('shutdown failed')
-    let shutdownCloses = 0
-    const supervisor = await startProductionSupervisor(options('/shutdown-failure'), {
-      createStorage: (() => ({
-        crashReclaim: reclaim,
-        tables: () => ({ table: () => ({}) }),
-        close: async () => {
-          shutdownCloses++
-        },
-      })) as never,
-      start: (async () => ({
-        socketPath: '/shutdown-failure/daemon/agnesd.sock',
-        close: async () => {
-          throw shutdown
-        },
-      })) as never,
-    })
-    await expect(supervisor.close()).rejects.toBe(shutdown)
-    expect(shutdownCloses).toBe(1)
+        start: (async () => ({
+          socketPath: join(dir, 'shutdown', 'daemon', 'agnesd.sock'),
+          close: async () => {
+            throw shutdown
+          },
+        })) as never,
+      })
+      await expect(supervisor.close()).rejects.toBe(shutdown)
+      expect(shutdownCloses).toBe(1)
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
   })
 })

@@ -69,10 +69,13 @@ export type {
   ConfigTestResult,
   Cursor,
   DaemonNotice,
+  DiagnosticRecord,
   DiagnosticsCollectParams,
   DiagnosticsCollectResult,
   DiagnosticsEventsParams,
   DiagnosticsEventsResult,
+  DiagnosticsExportParams,
+  DiagnosticsExportResult,
   DirectoryUpsertParams,
   DirectoryUpsertResult,
   EffectiveFromResult,
@@ -445,6 +448,7 @@ export * from './codec/permission.js'
 export * from './codec/stop-reason.js'
 export * from './configs.js'
 export * from './constants.js'
+export { diagnosticRecords, observeDiagnostics, safeDiagnosticRecord } from './diagnostic-records.js'
 export { httpRpcError, normalizeRpcError } from './error-envelope.js'
 export * from './errors.js'
 export * from './hooks.js'
