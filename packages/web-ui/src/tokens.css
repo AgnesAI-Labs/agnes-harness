@@ -207,6 +207,9 @@
   color: var(--agnes-text-primary);
   font: inherit;
 }
+.agnes-settings-input-surface {
+  background: var(--agnes-bg-surface);
+}
 textarea.agnes-settings-input {
   min-height: 5rem;
   resize: vertical;

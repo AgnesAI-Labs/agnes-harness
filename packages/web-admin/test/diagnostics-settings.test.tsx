@@ -51,6 +51,9 @@ it.each([false, true])(
     const download = vi.fn()
     const host = await mount(diagnosticsApi(fetcher), download)
     expect(host.textContent).toContain('collector.example:4318')
+    const errorCode = host.querySelector('[data-testid="diagnostics-error-code"]')!
+    expect(errorCode.textContent).toBe('-32602')
+    expect(errorCode.closest<HTMLDetailsElement>('details')?.open).toBe(false)
     expect(host.querySelector('[data-testid="diagnostics-content-warning"]')).not.toBeNull()
     expect(host.querySelector<HTMLDetailsElement>('[data-testid="diagnostics-runtime-details"]')?.open).toBe(
       false,
@@ -104,4 +107,24 @@ it('renders safe translated failures, rejects invalid DTOs, and cancels an unmou
   )
   await act(async () => roots.pop()?.unmount())
   expect(signal?.aborted).toBe(true)
+  const idle = await mount(
+    diagnosticsApi(async () =>
+      Response.json({
+        bundle: {
+          ...bundle,
+          doctor: [],
+          generations: {
+            ...bundle.generations,
+            items: [{ ...bundle.generations.items[0]!, boundSessions: 0 }],
+          },
+          telemetry: { enabled: false, includeContent: false, endpointHosts: [] },
+        },
+        doctorAvailable: false,
+      }),
+    ),
+  )
+  expect(idle.querySelector('[data-testid="diagnostics-runtime"]')?.textContent).toContain(
+    'No Worker is currently running',
+  )
+  expect(idle.querySelector('[data-testid="diagnostics-endpoint"]')?.textContent).toBe('Not configured')
 })

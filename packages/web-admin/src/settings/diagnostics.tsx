@@ -105,6 +105,11 @@ export function DiagnosticsPanel({
   }
   const failure = error instanceof DiagnosticsRequestError ? error.envelope : undefined
   const telemetry = bundle?.telemetry
+  const boundSessions = bundle?.generations.available
+    ? bundle.generations.items.reduce((count, row) => count + row.boundSessions, 0)
+    : undefined
+  const workerStatus = bundle?.doctor.find((row) => row.name === 'worker')?.status
+  const workerIdle = boundSessions === 0 && (!workerStatus || workerStatus === 'unavailable')
   return (
     <>
       <p>{t('help')}</p>
@@ -125,6 +130,7 @@ export function DiagnosticsPanel({
           <Field label={t('id')} htmlFor="diagnostics-query">
             <SettingsInput
               id="diagnostics-query"
+              surface="surface"
               data-testid="diagnostics-query"
               value={query}
               maxLength={36}
@@ -194,12 +200,12 @@ export function DiagnosticsPanel({
                 }
               >
                 <p>
-                  {t('code')}: <code>{record.code}</code>
-                </p>
-                <p>
                   {t('id')}: <code data-testid="diagnostics-error-id">{record.diagnosticId}</code>
                 </p>
                 <SettingsDetails title={t('technical')} compact>
+                  <p>
+                    {t('code')}: <code data-testid="diagnostics-error-code">{record.code}</code>
+                  </p>
                   <code>{record.name}</code>
                   {record.cause && (
                     <p>
@@ -236,7 +242,7 @@ export function DiagnosticsPanel({
       <SettingsCard title={t('telemetry')} data-testid="diagnostics-telemetry">
         <SettingsList>
           <SettingsRow
-            title={t('telemetry')}
+            title={t('status')}
             actions={
               <Badge tone={telemetry?.enabled ? 'ok' : 'off'}>
                 {t(telemetry ? (telemetry.enabled ? 'enabled' : 'disabled') : 'unknown')}
@@ -245,7 +251,7 @@ export function DiagnosticsPanel({
           />
           <SettingsRow title={t('collector')}>
             <span data-testid="diagnostics-endpoint">
-              {telemetry?.endpointHosts.join(', ') || t('unknown')}
+              {telemetry ? telemetry.endpointHosts.join(', ') || t('notConfigured') : t('unknown')}
             </span>
           </SettingsRow>
           <SettingsRow
@@ -273,19 +279,13 @@ export function DiagnosticsPanel({
       </SettingsCard>
       <SettingsCard title={t('runtime')} data-testid="diagnostics-runtime">
         <SettingsRow title={t('worker')}>
-          <Badge>
-            {t(`state.${bundle?.doctor.find((row) => row.name === 'worker')?.status ?? 'unavailable'}`)}
-          </Badge>
+          <Badge>{workerIdle ? t('workerIdle') : t(`state.${workerStatus ?? 'unavailable'}`)}</Badge>
         </SettingsRow>
         <SettingsRow title={t('generations')}>
           <span>{bundle?.generations.available ? bundle.generations.items.length : t('unknown')}</span>
         </SettingsRow>
         <SettingsRow title={t('bound')}>
-          <span>
-            {bundle?.generations.available
-              ? bundle.generations.items.reduce((count, row) => count + row.boundSessions, 0)
-              : t('unknown')}
-          </span>
+          <span>{boundSessions ?? t('unknown')}</span>
         </SettingsRow>
         <SettingsDetails title={t('technical')} data-testid="diagnostics-runtime-details" compact>
           {bundle && (

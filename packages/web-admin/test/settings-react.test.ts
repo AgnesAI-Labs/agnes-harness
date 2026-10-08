@@ -45,6 +45,7 @@ it('keeps the account dialog close control anchored and the action footer visibl
   // selector must therefore win on specificity or the close control falls back into the left edge.
   expect(close).toContain('position: absolute')
   expect(close).toContain('right: 0.75rem')
+  expect(styleRule(css, '#config-form .agnes-settings-page-heading')).toContain('padding-inline-end: 3.25rem')
 
   // Only the middle section may scroll. Keeping the footer outside that scrollport prevents a
   // short browser window from clipping the save action below the dialog edge.

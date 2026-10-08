@@ -154,7 +154,7 @@ for (const [group, id, order, render] of definitions) {
     group,
     id,
     order,
-    icon: group === 'diagnostics' ? 'tools' : group,
+    icon: group,
     titleKey:
       id === 'plugins'
         ? 'settings-shell.page.installed'

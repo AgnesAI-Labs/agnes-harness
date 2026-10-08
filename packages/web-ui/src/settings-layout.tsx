@@ -78,17 +78,24 @@ export function SettingsState({
     </div>
   )
 }
-export const SettingsInput = forwardRef<HTMLInputElement, InputHTMLAttributes<HTMLInputElement>>(
-  function SettingsInput(props, ref) {
-    return (
-      <input
-        {...props}
-        ref={ref}
-        className={['agnes-settings-input', props.className].filter(Boolean).join(' ')}
-      />
-    )
-  },
-)
+export const SettingsInput = forwardRef<
+  HTMLInputElement,
+  InputHTMLAttributes<HTMLInputElement> & { surface?: 'page' | 'surface' }
+>(function SettingsInput({ surface = 'page', ...props }, ref) {
+  return (
+    <input
+      {...props}
+      ref={ref}
+      className={[
+        'agnes-settings-input',
+        surface === 'surface' && 'agnes-settings-input-surface',
+        props.className,
+      ]
+        .filter(Boolean)
+        .join(' ')}
+    />
+  )
+})
 export const SettingsTextArea = forwardRef<HTMLTextAreaElement, TextareaHTMLAttributes<HTMLTextAreaElement>>(
   function SettingsTextArea(props, ref) {
     return (

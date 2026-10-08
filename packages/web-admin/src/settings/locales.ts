@@ -729,7 +729,7 @@ export const settingsCatalog: LocaleCatalog = {
     persistenceHelp:
       '持久化支持 SQLite 或完整的非 SQL 插件实现。在配置中选择后重启生效。原文件仍归原插件实现；迁移历史请导出并导入会话。',
     providerHelp: '查看当前安装提供的能力。每种插件类型各司其职；选择的变更适用于新会话。',
-    generation: '插件代际',
+    generation: '已发布的插件版本',
     bound: '绑定会话数',
     currentGeneration: '当前代际',
     migrate: '将会话迁移到当前插件',

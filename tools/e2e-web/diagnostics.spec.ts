@@ -25,6 +25,12 @@ for (const locale of ['en', 'zh-CN'])
       await chooseWorkspace(page, runtime, locale)
       await settings(page, locale)
       await section(page, 'diagnostics')
+      await expect(page.getByTestId('settings-refresh')).toHaveCount(0)
+      const close = page.locator('#config-close')
+      await expect(close).toBeVisible()
+      const diagnosticIcon = page.getByTestId('settings-nav-diagnostics').locator('path')
+      const toolsIcon = page.getByTestId('settings-nav-search').locator('path')
+      expect(await diagnosticIcon.getAttribute('d')).not.toBe(await toolsIcon.getAttribute('d'))
       const row = page.getByTestId('diagnostics-error').filter({ hasText: diagnosticId })
       await expect(row).toBeVisible()
       await expect(page.getByTestId('diagnostics-errors')).toHaveAttribute('aria-busy', 'false')
@@ -32,6 +38,19 @@ for (const locale of ['en', 'zh-CN'])
       await page.getByTestId('diagnostics-search').click()
       await expect(page.getByTestId('diagnostics-errors')).toHaveAttribute('aria-busy', 'false')
       await expect(page.getByTestId('diagnostics-error')).toHaveCount(1)
+      await expect(page.getByTestId('diagnostics-error-code')).toBeHidden()
+      const fieldColor = await page
+        .getByTestId('diagnostics-query')
+        .evaluate((input) => getComputedStyle(input).backgroundColor)
+      const surfaceColor = await page.getByTestId('diagnostics-query').evaluate((input) => {
+        const probe = document.createElement('div')
+        probe.style.background = 'var(--agnes-bg-surface)'
+        input.parentElement?.appendChild(probe)
+        const color = getComputedStyle(probe).backgroundColor
+        probe.remove()
+        return color
+      })
+      expect(fieldColor).toBe(surfaceColor)
       const pending = page.waitForEvent('download')
       await page.getByTestId('diagnostics-export').click()
       const download = await pending
@@ -58,6 +77,19 @@ for (const locale of ['en', 'zh-CN'])
         page.getByTestId('diagnostics-error-id'),
         page.getByTestId('diagnostics-error-time'),
       ])
+      await expect(page.getByTestId('diagnostics-runtime')).toContainText(
+        locale === 'zh-CN' ? '当前无运行中的 Worker' : 'No Worker is currently running',
+      )
       await page.getByTestId('diagnostics-runtime').scrollIntoViewIfNeeded()
       await screen(page, info, `diagnostics-status-${locale}-${theme}`)
+      if (locale === 'zh-CN' && theme === 'light') {
+        for (const id of ['models', 'bundles', 'providers', 'security']) {
+          await section(page, id)
+          const button = page.getByTestId('settings-refresh')
+          await expect(button).toBeVisible()
+          const action = await button.boundingBox()
+          const exit = await close.boundingBox()
+          expect(action && exit && action.x + action.width <= exit.x).toBe(true)
+        }
+      }
     })
