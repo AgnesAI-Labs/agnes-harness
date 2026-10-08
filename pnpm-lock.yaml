@@ -93,6 +93,9 @@ importers:
       '@agnes/loop-default':
         specifier: workspace:*
         version: link:../loop-default
+      '@agnes/mcp-transport-health':
+        specifier: workspace:*
+        version: link:../mcp-transport-health
       '@agnes/plugin-runtime':
         specifier: workspace:*
         version: link:../plugin-runtime
@@ -139,9 +142,6 @@ importers:
       '@agnes/extension-api':
         specifier: workspace:*
         version: link:../extension-api
-      '@agnes/mcp-transport-health':
-        specifier: workspace:*
-        version: link:../mcp-transport-health
       '@types/turndown':
         specifier: 5.0.6
         version: 5.0.6
@@ -203,6 +203,9 @@ importers:
       '@agnes/host':
         specifier: workspace:*
         version: link:../host
+      '@agnes/package-manager':
+        specifier: workspace:*
+        version: link:../package-manager
       '@agnes/protocol':
         specifier: workspace:*
         version: link:../protocol
@@ -234,9 +237,6 @@ importers:
       '@agnes/extension-api':
         specifier: workspace:*
         version: link:../extension-api
-      '@agnes/package-manager':
-        specifier: workspace:*
-        version: link:../package-manager
       '@sinclair/typebox':
         specifier: 0.34.33
         version: 0.34.33
@@ -269,6 +269,9 @@ importers:
 
   packages/code:
     dependencies:
+      '@agnes/core':
+        specifier: workspace:*
+        version: link:../core
       '@sinclair/typebox':
         specifier: 0.34.33
         version: 0.34.33
@@ -279,9 +282,6 @@ importers:
       '@agnes/base':
         specifier: workspace:*
         version: link:../base
-      '@agnes/core':
-        specifier: workspace:*
-        version: link:../core
       '@agnes/extension-api':
         specifier: workspace:*
         version: link:../extension-api
@@ -309,6 +309,9 @@ importers:
 
   packages/core:
     dependencies:
+      '@agnes/core-common':
+        specifier: workspace:*
+        version: link:../core-common
       '@agnes/extension-api':
         specifier: workspace:*
         version: link:../extension-api
@@ -325,6 +328,15 @@ importers:
       '@agnes/loop-default':
         specifier: workspace:*
         version: link:../loop-default
+
+  packages/core-common:
+    dependencies:
+      '@agnes/extension-api':
+        specifier: workspace:*
+        version: link:../extension-api
+      '@agnes/protocol':
+        specifier: workspace:*
+        version: link:../protocol
 
   packages/cosmokit: {}
 
@@ -795,16 +807,16 @@ importers:
       '@agnes/cordis':
         specifier: workspace:*
         version: link:../cordis
-      '@agnes/web-slots':
-        specifier: workspace:*
-        version: link:../web-slots
-    devDependencies:
       '@agnes/protocol':
         specifier: workspace:*
         version: link:../protocol
       '@agnes/sdk':
         specifier: workspace:*
         version: link:../sdk
+      '@agnes/web-slots':
+        specifier: workspace:*
+        version: link:../web-slots
+    devDependencies:
       '@types/react':
         specifier: 18.3.12
         version: 18.3.12

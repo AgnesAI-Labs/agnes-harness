@@ -17,5 +17,9 @@
     "**/tests/**",
     "vitest.config.ts"
   ],
-  "references": []
+  "references": [
+    {
+      "path": "../core-common"
+    }
+  ]
 }

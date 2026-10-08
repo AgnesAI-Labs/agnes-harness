@@ -183,6 +183,12 @@
     },
     {
       "path": "packages/worker-runtime/tsconfig.test.json"
+    },
+    {
+      "path": "packages/core-common"
+    },
+    {
+      "path": "packages/core-common/tsconfig.test.json"
     }
   ]
 }

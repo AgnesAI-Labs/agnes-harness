@@ -18,6 +18,7 @@ describe('repo', () => {
       '@agnes/cordis',
       '@agnes/cordis-loader',
       '@agnes/core',
+      '@agnes/core-common',
       '@agnes/cosmokit',
       '@agnes/daemon',
       '@agnes/error-sanitization',

@@ -49,7 +49,12 @@
   "@agnes/resource-control-cli": ["@agnes/daemon", "@agnes/protocol", "@agnes/sdk"],
   "@agnes/history-index": [],
   "@agnes/extension-api": ["@agnes/protocol"],
-  "@agnes/core": ["@agnes/protocol", "@agnes/protocol-validation", "@agnes/extension-api"],
+  "@agnes/core": [
+    "@agnes/protocol",
+    "@agnes/protocol-validation",
+    "@agnes/extension-api",
+    "@agnes/core-common"
+  ],
   "@agnes/ai": ["@agnes/protocol", "@agnes/core", "@agnes/extension-api"],
   "@agnes/base": [
     "@agnes/protocol",
@@ -143,5 +148,6 @@
   ],
   "@agnes/system-node": [],
   "@agnes/model-adapters": ["@agnes/ai", "@agnes/extension-api", "@agnes/plugin-runtime", "@agnes/protocol"],
-  "@agnes/loop-default": ["@agnes/extension-api"]
+  "@agnes/loop-default": ["@agnes/extension-api"],
+  "@agnes/core-common": ["@agnes/extension-api", "@agnes/protocol"]
 }

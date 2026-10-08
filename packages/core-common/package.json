@@ -1,0 +1,25 @@
+{
+  "name": "@agnes/core-common",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./context-diagnostics": "./src/context-diagnostics.ts",
+    "./ids": "./src/ids.ts",
+    "./loop/registry": "./src/loop/registry.ts",
+    "./request/hash": "./src/request/hash.ts",
+    "./step/op-state": "./src/step/op-state.ts",
+    "./step/preset": "./src/step/preset.ts",
+    "./types": "./src/types.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -b",
+    "test": "pnpm --dir ../.. exec vitest run packages/core-common/test --maxWorkers=1"
+  },
+  "dependencies": {
+    "@agnes/extension-api": "workspace:*",
+    "@agnes/protocol": "workspace:*"
+  },
+  "license": "Apache-2.0"
+}

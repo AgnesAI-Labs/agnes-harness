@@ -1,3 +1,4 @@
+import type { Conflict } from '@agnes/core-common/context-diagnostics'
 import type { HarnessEntry } from '../reduce/shapes.js'
 import type { RegistrySnapshot } from '../registry/tools.js'
 
@@ -11,11 +12,11 @@ export type Contribution = {
   promptSections?: PromptSection[]
   runtimeContext?: Record<string, unknown>
 }
-export type Conflict = { key: string; ops: string[] }
-/** One section's token cost, as recorded for observability -- text itself is not kept, only its
- * estimated size, so this stays cheap enough to write unconditionally every turn. */
-export type ContextSectionSummary = { id: string; order: number; source: string; tokens: number }
-export type ContextBreakdownDiag = { sections: ContextSectionSummary[] }
+export type {
+  Conflict,
+  ContextBreakdownDiag,
+  ContextSectionSummary,
+} from '@agnes/core-common/context-diagnostics'
 export type Merged = {
   tools: string[]
   sections: PromptSection[]

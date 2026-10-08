@@ -1,3 +1,4 @@
+import type { Conflict, ContextBreakdownDiag } from '@agnes/core-common/context-diagnostics'
 import {
   type ApprovalAsked,
   type ApprovalDecided,
@@ -33,7 +34,6 @@ import { SlotFillView as SlotFillSchema } from '@agnes/protocol/gen/agnes-v1'
 import { contextAnchorOf } from '../reduce/anchor.js'
 import { reduce } from '../reduce/reducer.js'
 import { initialState, type LedgerState } from '../reduce/state.js'
-import type { Conflict, ContextBreakdownDiag } from '../request/contribute.js'
 import { canonicalJson } from '../request/hash.js'
 import { CoreError, type Event, type Seq } from '../types.js'
 import {
