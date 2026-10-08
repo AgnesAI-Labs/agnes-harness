@@ -6,6 +6,20 @@ import { listenUnix } from '../src/supervisor/socket.js'
 import { openTestHost } from './host.js'
 import { localSdkTransport, localSocketPath } from './local-socket-path.js'
 
+// Only the deliberately unanswered submit uses a short deadline. Initialize, session/new and
+// replay are real work and retain the SDK's normal deadlines under concurrent CI load.
+function expireLostAck(client: ReturnType<typeof createClient>) {
+  const call = client.call.bind(client)
+  let firstSubmit = true
+  return vi.spyOn(client, 'call').mockImplementation(<T>(method: string, params: unknown, options = {}) => {
+    if (method === '_agnes/v1/submit' && firstSubmit) {
+      firstSubmit = false
+      return call<T>(method, params, { ...options, timeoutMs: 200 })
+    }
+    return call<T>(method, params, options)
+  })
+}
+
 it.each(['steer', 'followUp'] as const)(
   'recovers %s from a lost real Ack without enqueueing twice',
   async (kind) => {
@@ -44,8 +58,8 @@ it.each(['steer', 'followUp'] as const)(
     const client = createClient({
       transport: localSdkTransport(socketPath),
       journal,
-      timeouts: { request: 200 },
     })
+    const expiringAck = expireLostAck(client)
     try {
       const session = await client.session.new({ cwd: h.dataDir })
       const core = await created.mock.results[0]?.value
@@ -81,6 +95,7 @@ it.each(['steer', 'followUp'] as const)(
       await Promise.all(closed)
       await h.close()
       created.mockRestore()
+      expiringAck.mockRestore()
     }
   },
 )
@@ -120,8 +135,8 @@ it('recovers a compact request from a lost real Ack without running the compacti
   const client = createClient({
     transport: localSdkTransport(socketPath),
     journal,
-    timeouts: { request: 200 },
   })
+  const expiringAck = expireLostAck(client)
   try {
     const session = await client.session.new({ cwd: h.dataDir })
     const core = await created.mock.results[0]?.value
@@ -150,5 +165,6 @@ it('recovers a compact request from a lost real Ack without running the compacti
     await Promise.all(closed)
     await h.close()
     created.mockRestore()
+    expiringAck.mockRestore()
   }
 })

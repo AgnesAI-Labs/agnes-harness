@@ -512,6 +512,13 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
             visual && dependencies.downscaleImage
               ? await dependencies.downscaleImage(candidate, policy)
               : candidate
+          if (readGeneration !== generation.current) return
+          // Refuse an oversized result before allocating its bytes and base64 copy. Sources may
+          // still be large: the gate applies only after the downscaler has had a chance to run.
+          if (scaled.size > MAX_IMAGE_BYTES) {
+            onError(new Error(tooLargeMessage))
+            return
+          }
           const { data, bytes } = await readImage(scaled)
           if (readGeneration !== generation.current) return
           if (
