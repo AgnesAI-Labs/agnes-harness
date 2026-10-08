@@ -125,6 +125,7 @@ export interface AppServerMethods {
   "_agnes/v1/session.jobs.control": { params: Static<typeof import("./agnes-v1.js").SessionJobsControlParams>; result: Static<typeof import("./agnes-v1.js").SessionJobsControlResult>; direction: "c2s"; kind: "request" }
   "_agnes/v1/session.workspace.list": { params: Static<typeof import("./agnes-v1.js").SessionWorkspaceListParams>; result: Static<typeof import("./agnes-v1.js").SessionWorkspaceListResult>; direction: "c2s"; kind: "request" }
   "_agnes/v1/session.workspace.read": { params: Static<typeof import("./agnes-v1.js").SessionWorkspaceReadParams>; result: Static<typeof import("./agnes-v1.js").SessionWorkspaceReadResult>; direction: "c2s"; kind: "request" }
+  "_agnes/v1/session.workspace.changes": { params: Static<typeof import("./agnes-v1.js").SessionWorkspaceChangesParams>; result: Static<typeof import("./agnes-v1.js").SessionWorkspaceChangesResult>; direction: "c2s"; kind: "request" }
   "_agnes/v1/session.readToolDetail": { params: Static<typeof import("./agnes-v1.js").SessionReadToolDetailParams>; result: Static<typeof import("./agnes-v1.js").SessionReadToolDetailResult>; direction: "c2s"; kind: "request" }
   "_agnes/v1/session.followUp": { params: Static<typeof import("./agnes-v1.js").SessionSteerParams>; result: Static<typeof import("./agnes-v1.js").SessionSteerResult>; direction: "c2s"; kind: "request" }
   "_agnes/v1/session.fork": { params: Static<typeof import("./agnes-v1.js").SessionForkParams>; result: Static<typeof import("./agnes-v1.js").SessionIdParams>; direction: "c2s"; kind: "request" }

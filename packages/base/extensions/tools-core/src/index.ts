@@ -1,10 +1,11 @@
 import { type Disposer, defineExtension, type ToolDef } from '@agnes/extension-api'
 import { type ShellJobs, standaloneShellJobs } from '../../jobs/src/registry.js'
-import { editTool } from './tools/edit.js'
+import { type FileChangeRecorder, fileChangeReceipt } from './file-change.js'
+import { createEditTool, editTool } from './tools/edit.js'
 import { readTool } from './tools/read.js'
 import { createShellTool, shellTool } from './tools/shell.js'
 import { todoTool } from './tools/todo.js'
-import { writeTool } from './tools/write.js'
+import { createWriteTool, writeTool } from './tools/write.js'
 
 // The tools this extension actually registers, in the order the manifest names them. The manifest
 // is what grants the authority and it already names all five; this list is what claims it. The
@@ -20,7 +21,11 @@ export { SHELL_SENTINEL } from './tools/shell.js'
 
 export function createToolsCoreExtension(jobs: ShellJobs = standaloneShellJobs) {
   return defineExtension((agnes) => {
-    const tools = [readTool, writeTool, editTool, createShellTool(jobs), todoTool]
+    const record: FileChangeRecorder = async (input, context) => {
+      const receipt = fileChangeReceipt(input, context)
+      if (receipt) await agnes.events.append('file-change', receipt)
+    }
+    const tools = [readTool, createWriteTool(record), createEditTool(record), createShellTool(jobs), todoTool]
     const disposers = tools.map((t) => agnes.registerTool(t))
     disposers.push(
       agnes.registerHook('shutdown', async (_payload, ctx) => {

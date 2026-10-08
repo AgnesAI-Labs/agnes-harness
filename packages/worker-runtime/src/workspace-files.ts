@@ -111,6 +111,11 @@ async function resolveInside(root: string, rel: string, authority: WorkspaceAuth
   }
 }
 
+/** Historical review receipts also require current root authority, even for an empty result. */
+export async function assertWorkspacePublicRoot(cwd: string, authority: WorkspaceAuthority): Promise<void> {
+  await resolveInside(await canonicalRoot(cwd), '', authority)
+}
+
 /** The installation home is never a workbench document source, even inside an admitted workspace. */
 async function assertPublicPath(abs: string): Promise<void> {
   const home = resolve(

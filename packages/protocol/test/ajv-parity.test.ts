@@ -512,6 +512,11 @@ const AGNES_DEFS: Record<string, TSchema> = {
   SessionJobsControlParams: AgnesGen.SessionJobsControlParams,
   SessionJobsControlResult: AgnesGen.SessionJobsControlResult,
   SessionWorkspaceListParams: AgnesGen.SessionWorkspaceListParams,
+  SessionWorkspaceChangesParams: AgnesGen.SessionWorkspaceChangesParams,
+  SessionWorkspaceChangesResult: AgnesGen.SessionWorkspaceChangesResult,
+  SessionWorkspaceChange: AgnesGen.SessionWorkspaceChange,
+  SessionWorkspaceChangeEvidence: AgnesGen.SessionWorkspaceChangeEvidence,
+  SessionWorkspaceChangesSelected: AgnesGen.SessionWorkspaceChangesSelected,
   SessionWorkspaceEntry: AgnesGen.SessionWorkspaceEntry,
   SessionWorkspaceListResult: AgnesGen.SessionWorkspaceListResult,
   SessionWorkspaceReadParams: AgnesGen.SessionWorkspaceReadParams,
@@ -1766,6 +1771,49 @@ const harnessMetaOk: Json = {
   phase: 'event',
 }
 
+const REVIEW_REVISION = 'a'.repeat(64)
+const REVIEW_EVIDENCE = {
+  callSeq: 1,
+  resultSeq: 3,
+  receiptSeq: 2,
+  toolUseId: 'u',
+  tool: 'write',
+  turn: 1,
+  observedAt: '2026-10-09T00:00:00Z',
+  decisionId: 'decision',
+  enforcement: 'full',
+}
+const REVIEW_CHANGE = {
+  path: 'src/a.ts',
+  kind: 'added',
+  basis: 'session',
+  added: 1,
+  removed: 0,
+  diffStatus: 'available',
+  freshness: 'current',
+  afterRevision: REVIEW_REVISION,
+  currentRevision: REVIEW_REVISION,
+  effects: [REVIEW_EVIDENCE],
+}
+const REVIEW_SELECTED = {
+  ...REVIEW_CHANGE,
+  beforeRevision: REVIEW_REVISION,
+  diff: '--- a\n+++ b\n+one\n',
+  viewerChanged: false,
+}
+const REVIEW_RESULT = {
+  scope: 'session',
+  revision: REVIEW_REVISION,
+  observedAt: '2026-10-09T00:00:00Z',
+  fromSeq: 1,
+  toSeq: 3,
+  turn: 1,
+  truncated: false,
+  unrecorded: false,
+  files: [REVIEW_CHANGE],
+  selected: REVIEW_SELECTED,
+}
+
 const AGNES_SAMPLES: Record<string, Sample> = {
   FactChainAnchor: {
     valid: { kind: 'tool', toolUseId: 'tool-1' },
@@ -2923,6 +2971,52 @@ const AGNES_SAMPLES: Record<string, Sample> = {
     valid: { output: { ok: true } },
     invalid: [{ output: { ok: false } }, { output: {} }],
     note: 'process or acknowledged terminal operation',
+  },
+  SessionWorkspaceChangesParams: {
+    valid: { sessionId: 's', path: 'src/a.ts', scope: 'session', expectedRevision: REVIEW_REVISION },
+    invalid: [
+      {},
+      { sessionId: 's', cwd: '../outside' },
+      { sessionId: 's', scope: 'all' },
+      { sessionId: 's', path: '' },
+      { sessionId: 's', expectedRevision: 'x'.repeat(129) },
+    ],
+    note: 'session-bound review parameters',
+  },
+  SessionWorkspaceChangeEvidence: {
+    valid: REVIEW_EVIDENCE,
+    invalid: [
+      { ...REVIEW_EVIDENCE, callSeq: -1 },
+      { ...REVIEW_EVIDENCE, tool: 'shell' },
+      { ...REVIEW_EVIDENCE, enforcement: 'guessed' },
+    ],
+    note: 'actual confirmed tool coordinates',
+  },
+  SessionWorkspaceChange: {
+    valid: REVIEW_CHANGE,
+    invalid: [
+      { ...REVIEW_CHANGE, added: -1 },
+      { ...REVIEW_CHANGE, basis: 'git-guessed' },
+      { ...REVIEW_CHANGE, effects: Array(101).fill(REVIEW_EVIDENCE) },
+    ],
+    note: 'bounded file attribution',
+  },
+  SessionWorkspaceChangesSelected: {
+    valid: REVIEW_SELECTED,
+    invalid: [
+      { ...REVIEW_SELECTED, diff: 'x'.repeat(65537) },
+      { ...REVIEW_SELECTED, beforeRevision: 'wrong' },
+    ],
+    note: 'bounded read-only diff',
+  },
+  SessionWorkspaceChangesResult: {
+    valid: REVIEW_RESULT,
+    invalid: [
+      { ...REVIEW_RESULT, files: Array(51).fill(REVIEW_CHANGE) },
+      { ...REVIEW_RESULT, turn: -1 },
+      { ...REVIEW_RESULT, unrecorded: 'false' },
+    ],
+    note: 'bounded review projection and coverage',
   },
   SessionWorkspaceListParams: {
     valid: { sessionId: 's', path: 'src' },
@@ -6665,6 +6759,11 @@ const METHOD_DEF: Record<MethodName, MethodDefRef> = {
     params: 'SessionJobsControlParams',
     result: 'SessionJobsControlResult',
   },
+  '_agnes/v1/session.workspace.changes': {
+    fileId: AGNES_ID,
+    params: 'SessionWorkspaceChangesParams',
+    result: 'SessionWorkspaceChangesResult',
+  },
   '_agnes/v1/session.workspace.list': {
     fileId: AGNES_ID,
     params: 'SessionWorkspaceListParams',
@@ -7484,6 +7583,7 @@ const METHOD_PARAMS_SAMPLE: Record<MethodName, Sample> = {
   },
   '_agnes/v1/session.jobs.read': AGNES_SAMPLES.SessionJobsReadParams as Sample,
   '_agnes/v1/session.jobs.control': AGNES_SAMPLES.SessionJobsControlParams as Sample,
+  '_agnes/v1/session.workspace.changes': AGNES_SAMPLES.SessionWorkspaceChangesParams as Sample,
   '_agnes/v1/session.workspace.list': AGNES_SAMPLES.SessionWorkspaceListParams as Sample,
   '_agnes/v1/session.workspace.read': AGNES_SAMPLES.SessionWorkspaceReadParams as Sample,
   '_agnes/v1/sessionSelection.loops': AGNES_SAMPLES.ConfigEmptyParams as Sample,
@@ -7858,6 +7958,7 @@ const METHOD_RESULT_SAMPLE: Partial<Record<MethodName, Sample>> = {
   },
   '_agnes/v1/session.jobs.read': AGNES_SAMPLES.SessionJobsReadResult as Sample,
   '_agnes/v1/session.jobs.control': AGNES_SAMPLES.SessionJobsControlResult as Sample,
+  '_agnes/v1/session.workspace.changes': AGNES_SAMPLES.SessionWorkspaceChangesResult as Sample,
   '_agnes/v1/session.workspace.list': AGNES_SAMPLES.SessionWorkspaceListResult as Sample,
   '_agnes/v1/session.workspace.read': AGNES_SAMPLES.SessionWorkspaceReadResult as Sample,
 

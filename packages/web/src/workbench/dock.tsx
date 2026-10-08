@@ -37,6 +37,7 @@ export function Dock({ context }: { context: UiExtensionContext }) {
   const [factTarget, setFactTarget] = useState<FactChainParams>()
   const returnFocus = useRef<HTMLElement | null>(null)
   const sessionId = (context.data as WorkbenchContext)?.session?.id
+  const [selection, setSelection] = useState<unknown>()
   const [selected, setSelected] = useState({ right: 'files', bottom: 'terminal' })
   const surfaces = useMemo(
     () => ({
@@ -135,6 +136,21 @@ export function Dock({ context }: { context: UiExtensionContext }) {
     document.addEventListener('keydown', keyboard)
     return () => document.removeEventListener('keydown', keyboard)
   }, [layout, surfaces])
+  const openPanel = (id: string, payload?: unknown) => {
+    const panel = workbenchPanels.get(id)
+    if (!panel) return
+    const edge = panel.edge
+    setSelection(payload)
+    setSelected((value) => ({ ...value, [edge]: id }))
+    setLayout((value) => ({
+      ...value,
+      [`${edge}Open`]: true,
+      ...(window.innerWidth <= 767 ? { [`${edge === 'right' ? 'bottom' : 'right'}Open`]: false } : {}),
+    }))
+    requestAnimationFrame(() =>
+      surfaces[edge]?.querySelector<HTMLButtonElement>('[role="tab"][aria-selected="true"]')?.focus(),
+    )
+  }
   const close = (edge: 'right' | 'bottom') => {
     setLayout((value) => ({ ...value, [`${edge}Open`]: false }))
     if (returnFocus.current?.isConnected) returnFocus.current.focus()
@@ -290,12 +306,13 @@ export function Dock({ context }: { context: UiExtensionContext }) {
                           active.id === 'facts'
                             ? {
                                 ...context,
+                                selection, openPanel,
                                 data: {
                                   ...(context.data as WorkbenchContext),
                                   factChain: factTarget?.sessionId === sessionId ? factTarget : undefined,
                                 },
                               }
-                            : context
+                            : { ...context, selection, openPanel }
                         }
                         headerId={`workbench-header-actions-${edge}`}
                       />

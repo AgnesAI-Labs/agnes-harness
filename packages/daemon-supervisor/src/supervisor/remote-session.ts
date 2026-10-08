@@ -69,6 +69,14 @@ export class RemoteSession {
     this.latestCache.set(`${e.register}/${dataKey}`, e.data)
   }
 
+  workspaceChanges(input: {
+    scope?: 'session' | 'turn'
+    path?: string
+    expectedRevision?: string
+  }): Promise<unknown> {
+    return this.link.command('workspaceChanges', input)
+  }
+
   workspaceFiles(operation: 'list' | 'read', path: string): Promise<unknown> {
     return this.link.command('workspaceFiles', { operation, path })
   }

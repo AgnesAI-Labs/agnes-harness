@@ -24,6 +24,8 @@ import {
   type SessionProjectUIParams,
   type SessionProjectUIPatchParams,
   type SessionReadToolDetailResult,
+  type SessionWorkspaceChangesParams,
+  type SessionWorkspaceChangesResult,
   type SessionWorkspaceListResult,
   type SessionWorkspaceReadResult,
   type SlotName,
@@ -523,6 +525,12 @@ export class Session {
       sessionId: this.id,
       commandId: input.commandId ?? crypto.randomUUID(),
     })
+  }
+
+  workspaceChanges(
+    input: Omit<SessionWorkspaceChangesParams, 'sessionId'> = {},
+  ): Promise<SessionWorkspaceChangesResult> {
+    return this.client.call('_agnes/v1/session.workspace.changes', { ...input, sessionId: this.id })
   }
 
   workspaceList(path = ''): Promise<SessionWorkspaceListResult> {
