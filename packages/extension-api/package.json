@@ -5,6 +5,7 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
+    "./mcp-naming": "./src/mcp-naming.ts",
     "./testkit": "./testkit/index.ts",
     "./testkit/persistence-contract": "./testkit/persistence-contract.ts"
   },

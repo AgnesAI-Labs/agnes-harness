@@ -4,6 +4,9 @@ API additions require a minor version; removals or semantic changes require a ma
 
 ## Unreleased
 
+The Node-only `@agnes/extension-api/mcp-naming` subpath shares stable and legacy MCP naming
+helpers with Base and Host. Root runtime exports remain unchanged.
+
 Loop factories now accept an optional construction signal and return a driver or Promise; callers
 must await create/resume. Sandbox create accepts an optional signal, and persistence open options
 accept `signal`. Existing synchronous factories remain valid. Host drains constructors, disposes

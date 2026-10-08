@@ -5,7 +5,8 @@ import {
   type PresetView,
   type ToolRegistry,
 } from '@agnes/core'
-import { type ChildAgentAllowlist, mcpLocalToolPrefix, mcpStablePrefix } from '@agnes/extension-api'
+import type { ChildAgentAllowlist } from '@agnes/extension-api'
+import { mcpLocalToolPrefix, mcpStablePrefix } from '@agnes/extension-api/mcp-naming'
 import { clientModuleRowIdForContribution, type RuntimePluginSnapshot } from '@agnes/package-manager'
 import type { LoopSelection, RouteTable, SessionCapability, SessionCapabilitySet } from '@agnes/protocol'
 import { materializeRoutes } from '../assemble/routes.js'
