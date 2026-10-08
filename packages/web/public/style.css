@@ -7555,3 +7555,71 @@ body.admin-page {
   font-family: var(--font-mono);
   font-size: var(--font-size-xs);
 }
+
+.workbench-terminal,
+.workbench-terminal-job {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  height: 100%;
+}
+.workbench-terminal > .workbench-panel-toolbar > span {
+  color: var(--agnes-text-secondary);
+  font-size: var(--font-size-xs);
+}
+.workbench-terminal-tabs {
+  display: flex;
+  gap: 0.25rem;
+  overflow: auto;
+  padding-inline: 0.6rem;
+  flex-shrink: 0;
+}
+.workbench-terminal-tabs [aria-selected="true"] {
+  background: var(--agnes-bg-hover);
+  color: var(--agnes-text-emphasis);
+}
+.workbench-terminal-job {
+  flex: 1;
+}
+.workbench-terminal-details {
+  margin-inline: 0.75rem;
+  font-size: var(--font-size-xs);
+  overflow-wrap: anywhere;
+}
+.workbench-terminal-details dl {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 0.25rem 0.75rem;
+}
+.workbench-terminal-details dd {
+  margin: 0;
+}
+.workbench-terminal-output {
+  flex: 1;
+  width: 100%;
+  min-height: 4rem;
+  resize: none;
+  border: 0;
+  border-radius: 0;
+  padding: 0.5rem 0.75rem;
+  color: var(--agnes-text-primary);
+  background: var(--agnes-bg-app-content);
+  font-family: var(--font-mono);
+  font-size: var(--font-size-sm);
+  line-height: 1.5;
+}
+.workbench-terminal-available {
+  display: flex;
+  flex-wrap: wrap;
+  max-height: 5rem;
+  overflow: auto;
+  flex-shrink: 0;
+}
+
+.workbench-terminal .workbench-panel-toolbar {
+  justify-content: flex-start;
+  flex-shrink: 0;
+}
+.workbench-terminal-toolbar > span {
+  margin-left: auto;
+}

@@ -6,6 +6,8 @@ import { PersistentShell, type ShellName, shellArgv } from './persistent-shell.j
 
 export interface ShellJobView {
   id: string
+  owner: 'human' | 'agent'
+  ownerSessionId: string
   kind: 'shell' | 'shell-session' | 'pty' | 'child'
   command: string
   cwd: string
@@ -56,6 +58,7 @@ export class ShellJobs {
     return jobs
   }
   private add(ctx: JobOwner, view: ShellJobView, stop: () => Promise<void>): Job {
+    view.ownerSessionId = ctx.session.key
     const jobs = this.table(ctx)
     if (jobs.size >= MAX_JOBS) {
       const old = [...jobs].find(([, job]) => job.view.status !== 'running')
@@ -88,6 +91,8 @@ export class ShellJobs {
   private view(kind: ShellJobView['kind'], command: string, cwd: string): ShellJobView {
     return {
       id: randomUUID(),
+      owner: 'agent',
+      ownerSessionId: '',
       kind,
       command: command.slice(0, 2048),
       cwd,
@@ -185,12 +190,15 @@ export class ShellJobs {
     cwd = ctx.cwd,
     dimensions = { columns: 100, rows: 30 },
     pty = true,
+    origin: 'human' | 'agent' = 'agent',
   ): Promise<ShellJobView> {
     const handle = await this.open(ctx, shellArgv(shell, pty), cwd, pty ? dimensions : undefined)
     let job: Job
     try {
-      job = this.add(ctx, { ...this.view(pty ? 'pty' : 'shell-session', shell, cwd), shell }, () =>
-        handle.close(),
+      job = this.add(
+        ctx,
+        { ...this.view(pty ? 'pty' : 'shell-session', shell, cwd), shell, owner: origin },
+        () => handle.close(),
       )
     } catch (error) {
       await handle.close()

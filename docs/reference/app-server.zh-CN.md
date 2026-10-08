@@ -68,3 +68,7 @@ ACP 初始化版本仍为 1，AGH 扩展仍使用 `_agnes/v1`。v1 客户端应�
 `_agnes/v1/session.workspace.list` 接收 `{ sessionId, path? }`，返回 `{ path, truncated, entries }`（最多 500 个条目，可选 git 标记）。`_agnes/v1/session.workspace.read` 接收 `{ sessionId, path }`，返回 `{ path, size, binary, truncated, text? }`。两者均要求会话所有权与工作区相对路径，拒绝符号链接及安装目录，规范路径限于已准入工作区。文本预览上限为 1 MiB；二进制或超大文件省略正文。这是通过 `Session.workspaceList`/`workspaceRead` 使用的只读会话方法，不是管理 API。
 
 本地 App Server 的 owner、启动锁与 discovery 位于 `<AGH_HOME>/daemon`，以规范化 home（含符号链接别名）为身份。配置档和数据目录是该实例的受校验配置，不会产生额外服务身份；更改前须停止已有服务。从旧数据目录 owner 布局升级时须先停止旧服务。诊断导出最多扫描最近 `4096 × limit` 字节（limit 为 1–1000）；窗口外的旧诊断 id 可能不可用。
+
+## 会话进程任务
+
+`_agnes/v1/session.jobs.read({sessionId, jobId?})` 返回有上限的任务快照。`_agnes/v1/session.jobs.control({sessionId, commandId, operation, ...})` 经既有服务命令 journal 执行终端副作用。两者校验会话所有权；控制操作拒绝另一会话或 agent 所有的任务。打开终端和输入遵守会话权限策略；打开时使用已准入 cwd 与会话 sandbox。关闭 dock 和分离会话不会结束任务。见[工作台面板](../extend/workbench-panels.zh-CN.md)。

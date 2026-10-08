@@ -539,6 +539,356 @@
         }
       }
     },
+    "SessionJob": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "owner", "ownerSessionId", "kind", "command", "cwd", "status", "code", "truncated"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "owner": {
+          "enum": ["human", "agent"]
+        },
+        "ownerSessionId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "kind": {
+          "enum": ["shell", "shell-session", "pty", "child"]
+        },
+        "command": {
+          "type": "string",
+          "maxLength": 2048
+        },
+        "cwd": {
+          "type": "string",
+          "maxLength": 4096
+        },
+        "status": {
+          "enum": ["running", "completed", "failed", "killed"]
+        },
+        "code": {
+          "type": ["integer", "null"]
+        },
+        "truncated": {
+          "type": "boolean"
+        },
+        "shell": {
+          "enum": ["bash", "zsh", "pwsh"]
+        },
+        "sessionId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "stdout": {
+          "type": "string",
+          "maxLength": 65536
+        },
+        "stderr": {
+          "type": "string",
+          "maxLength": 65536
+        }
+      }
+    },
+    "SessionJobsReadParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sessionId"],
+      "properties": {
+        "sessionId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "jobId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        }
+      }
+    },
+    "SessionJobsReadResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["jobs", "completions"],
+      "properties": {
+        "jobs": {
+          "type": "array",
+          "maxItems": 128,
+          "items": {
+            "$ref": "#/$defs/SessionJob"
+          }
+        },
+        "completions": {
+          "type": "array",
+          "maxItems": 128,
+          "items": {
+            "$ref": "#/$defs/SessionJob"
+          }
+        },
+        "job": {
+          "$ref": "#/$defs/SessionJob"
+        }
+      }
+    },
+    "SessionJobsControlParams": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["sessionId", "commandId", "operation"],
+          "properties": {
+            "sessionId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 512
+            },
+            "commandId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 512
+            },
+            "operation": {
+              "const": "open"
+            },
+            "jobId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 512
+            },
+            "shell": {
+              "enum": ["bash", "zsh", "pwsh"]
+            },
+            "text": {
+              "type": "string",
+              "maxLength": 65536
+            },
+            "columns": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 1000
+            },
+            "rows": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 1000
+            },
+            "signal": {
+              "enum": ["SIGINT", "SIGTERM", "SIGHUP"]
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["sessionId", "commandId", "operation", "jobId", "text"],
+          "properties": {
+            "sessionId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 512
+            },
+            "commandId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 512
+            },
+            "operation": {
+              "const": "send"
+            },
+            "jobId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 512
+            },
+            "shell": {
+              "enum": ["bash", "zsh", "pwsh"]
+            },
+            "text": {
+              "type": "string",
+              "maxLength": 65536
+            },
+            "columns": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 1000
+            },
+            "rows": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 1000
+            },
+            "signal": {
+              "enum": ["SIGINT", "SIGTERM", "SIGHUP"]
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["sessionId", "commandId", "operation", "jobId", "columns", "rows"],
+          "properties": {
+            "sessionId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 512
+            },
+            "commandId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 512
+            },
+            "operation": {
+              "const": "resize"
+            },
+            "jobId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 512
+            },
+            "shell": {
+              "enum": ["bash", "zsh", "pwsh"]
+            },
+            "text": {
+              "type": "string",
+              "maxLength": 65536
+            },
+            "columns": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 1000
+            },
+            "rows": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 1000
+            },
+            "signal": {
+              "enum": ["SIGINT", "SIGTERM", "SIGHUP"]
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["sessionId", "commandId", "operation", "jobId", "signal"],
+          "properties": {
+            "sessionId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 512
+            },
+            "commandId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 512
+            },
+            "operation": {
+              "const": "signal"
+            },
+            "jobId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 512
+            },
+            "shell": {
+              "enum": ["bash", "zsh", "pwsh"]
+            },
+            "text": {
+              "type": "string",
+              "maxLength": 65536
+            },
+            "columns": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 1000
+            },
+            "rows": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 1000
+            },
+            "signal": {
+              "enum": ["SIGINT", "SIGTERM", "SIGHUP"]
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["sessionId", "commandId", "operation", "jobId"],
+          "properties": {
+            "sessionId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 512
+            },
+            "commandId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 512
+            },
+            "operation": {
+              "const": "kill"
+            },
+            "jobId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 512
+            },
+            "shell": {
+              "enum": ["bash", "zsh", "pwsh"]
+            },
+            "text": {
+              "type": "string",
+              "maxLength": 65536
+            },
+            "columns": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 1000
+            },
+            "rows": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 1000
+            },
+            "signal": {
+              "enum": ["SIGINT", "SIGTERM", "SIGHUP"]
+            }
+          }
+        }
+      ]
+    },
+    "SessionJobsControlResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["output"],
+      "properties": {
+        "output": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/SessionJob"
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["ok"],
+              "properties": {
+                "ok": {
+                  "const": true
+                }
+              }
+            }
+          ]
+        }
+      }
+    },
     "SessionWorkspaceListParams": {
       "type": "object",
       "additionalProperties": false,

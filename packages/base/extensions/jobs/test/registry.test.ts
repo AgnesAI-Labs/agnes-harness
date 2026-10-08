@@ -91,3 +91,85 @@ it('joins a launch racing session shutdown and never republishes its process', a
   expect(closed).toBe(true)
   expect(jobs.list(ctx)).toEqual([])
 })
+
+it('keeps backend origin, isolates controls and reports slow or capped output without closing jobs on reads', async () => {
+  const jobs = new ShellJobs(),
+    tool = fakeToolContext({ sessionKey: 'terminal-session' })
+  const processes: { emit(text: string): void; end(): void; input: string; closed: boolean }[] = []
+  tool.sandbox.openProcess = async () => {
+    let listener: (chunk: { stream: 'stdout'; text: string }) => void = () => {}
+    let end!: () => void
+    const exited = new Promise<{ code: number }>((resolve) => {
+      end = () => resolve({ code: 0 })
+    })
+    const process = {
+      emit(text: string) {
+        listener({ stream: 'stdout', text })
+      },
+      end,
+      input: '',
+      closed: false,
+    }
+    processes.push(process)
+    return {
+      enforcement: { level: 'none', scope: [] },
+      exited,
+      onOutput(fn) {
+        listener = fn
+        return () => {
+          listener = () => {}
+        }
+      },
+      write: async (text) => {
+        process.input += text
+      },
+      resize: async () => {},
+      signal: async () => {},
+      close: async () => {
+        process.closed = true
+        end()
+      },
+    }
+  }
+  const ctx = { ...tool, source: 'test', requestId: 'r', timeoutMs: 1000 } as ServiceContext
+  const [read, control] = createJobsServices(jobs)
+  try {
+    const agent = await jobs.openTerminal(tool, 'bash')
+    const opened = (await control!.handler({ operation: 'open' }, ctx)) as { id: string }
+    expect(jobs.list(tool)).toMatchObject([
+      { id: agent.id, owner: 'agent', ownerSessionId: tool.session.key, status: 'running' },
+      { id: opened.id, owner: 'human', ownerSessionId: tool.session.key, status: 'running' },
+    ])
+    for (const input of [
+      { operation: 'send', text: 'no' },
+      { operation: 'resize', columns: 80, rows: 24 },
+      { operation: 'signal', signal: 'SIGINT' },
+      { operation: 'kill' },
+    ])
+      await expect(control!.handler({ ...input, jobId: agent.id }, ctx)).rejects.toThrow('CAPABILITY_DENIED')
+    await expect(
+      read!.handler({ jobId: opened.id }, { ...ctx, session: { ...tool.session, key: 'foreign' } }),
+    ).rejects.toThrow('JOB_NOT_FOUND')
+    await control!.handler({ operation: 'send', jobId: opened.id, text: 'hello' }, ctx)
+    expect(processes[1]!.input).toBe('hello')
+    processes[1]!.emit('BEGIN')
+    expect(await read!.handler({ jobId: opened.id }, ctx)).toMatchObject({
+      job: { stdout: 'BEGIN', status: 'running', truncated: false },
+    })
+    processes[1]!.emit('x'.repeat(70000))
+    expect(await read!.handler({ jobId: opened.id }, ctx)).toMatchObject({
+      job: { truncated: true, stdout: 'x'.repeat(65536), status: 'running' },
+    })
+    processes[1]!.emit('x'.repeat(4 * 1024 * 1024))
+    expect(jobs.list(tool).find((job) => job.id === opened.id)?.truncated).toBe(true)
+    expect(processes.every((process) => !process.closed)).toBe(true)
+    processes[1]!.end()
+    await Promise.resolve()
+    expect(await read!.handler({ jobId: opened.id }, ctx)).toMatchObject({
+      job: { status: 'completed', code: 0 },
+    })
+    expect(jobs.list(tool).find((job) => job.id === agent.id)?.status).toBe('running')
+  } finally {
+    await jobs.dispose()
+  }
+})

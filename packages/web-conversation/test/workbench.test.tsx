@@ -9,6 +9,7 @@ import { flushSync } from 'react-dom'
 import { expect, it, vi } from 'vitest'
 import { FilesPanel } from '../src/workbench/files-panel.js'
 import { workbenchLocaleCatalog } from '../src/workbench/locales.js'
+import { TerminalPanel } from '../src/workbench/terminal-panel.js'
 
 it('loads directories lazily, previews text and mentions a relative path without submitting', async () => {
   const list = vi.fn(async (path: string) => ({
@@ -156,5 +157,134 @@ it('clears fact records on session changes and ignores an old response while kee
   } finally {
     unmountRegion(host)
     host.remove()
+  }
+})
+
+it('detaches terminals on unmount and restores tabs while agent output remains read-only', async () => {
+  localStorage.clear()
+  const human = {
+    id: 'human',
+    owner: 'human',
+    ownerSessionId: 's',
+    kind: 'pty',
+    command: 'bash',
+    shell: 'bash',
+    cwd: '/workspace',
+    status: 'running',
+    code: null,
+    truncated: false,
+    stdout: 'human output',
+    stderr: '',
+  }
+  const agent = { ...human, id: 'agent', owner: 'agent', stdout: 'agent output' }
+  let evicted = false
+  const session = {
+    id: 's',
+    jobsRead: async (id?: string) => {
+      if (evicted && id === human.id) throw new Error('Job was evicted')
+      return {
+        jobs: evicted ? [agent] : [human, agent],
+        completions: [],
+        ...(id ? { job: id === human.id ? human : agent } : {}),
+      }
+    },
+    jobsControl: async () => {
+      throw new Error('Agent controls must not dispatch')
+    },
+  } as unknown as Session
+  const host = document.createElement('div')
+  document.body.append(host)
+  const context = {
+    t: createCatalogTranslator(workbenchLocaleCatalog, 'en'),
+    data: { session, disabled: false, mention() {}, command() {} },
+  }
+  try {
+    renderRegion(host, <TerminalPanel context={context} />)
+    await vi.waitFor(() => expect(host.querySelector('textarea')?.value).toBe('human output'))
+    expect(host.querySelector('[data-testid="terminal-kill"]')).not.toBeNull()
+    unmountRegion(host)
+    expect(human.status).toBe('running')
+    expect(agent.status).toBe('running')
+    renderRegion(host, <TerminalPanel context={context} />)
+    await vi.waitFor(() => expect(host.querySelector('textarea')?.value).toBe('human output'))
+    const follow = [...host.querySelectorAll('button')].find((button) =>
+      button.textContent?.includes('Attach'),
+    )
+    if (!follow) throw new Error('missing agent follow action')
+    flushSync(() => follow.click())
+    await vi.waitFor(() => expect(host.querySelector('textarea')?.value).toBe('agent output'))
+    expect(host.querySelector('[data-testid="terminal-kill"]')).toBeNull()
+    expect(host.querySelector('[data-testid="terminal-interrupt"]')).toBeNull()
+    flushSync(() => (host.querySelector('[data-testid="terminal-tab-close"]') as HTMLButtonElement).click())
+    expect(agent.status).toBe('running')
+    flushSync(() => (host.querySelector('[role=tab]') as HTMLButtonElement).click())
+    evicted = true
+    await vi.waitFor(() => expect(host.querySelector('[role=tab]')).toBeNull(), { timeout: 2500 })
+    expect(host.textContent).not.toContain('Job was evicted')
+  } finally {
+    unmountRegion(host)
+    host.remove()
+    localStorage.clear()
+  }
+})
+
+it('renders kill receipts immediately and keeps a running tab until close is confirmed', async () => {
+  localStorage.clear()
+  const job = {
+    id: 'human-close',
+    owner: 'human' as const,
+    ownerSessionId: 's',
+    kind: 'pty' as const,
+    command: 'bash',
+    cwd: '/workspace',
+    status: 'running' as const,
+    code: null,
+    truncated: false,
+    stdout: 'Live terminal output',
+    stderr: '',
+  }
+  let confirm: (() => void) | undefined,
+    holdPolling = false
+  const jobsControl = vi.fn(async () => {
+    await new Promise<void>((resolve) => {
+      confirm = resolve
+    })
+    return { output: { ...job, status: 'killed' as const } }
+  })
+  const session = {
+    id: 's',
+    jobsRead: async () => {
+      if (holdPolling) await new Promise<void>(() => {})
+      return { jobs: [job], completions: [], job }
+    },
+    jobsControl,
+  } as unknown as Session
+  const host = document.createElement('div')
+  document.body.append(host)
+  const context = {
+    t: createCatalogTranslator(workbenchLocaleCatalog, 'en'),
+    data: { session, disabled: false },
+  }
+  try {
+    renderRegion(host, <TerminalPanel context={context} />)
+    await vi.waitFor(() => expect(host.querySelector('textarea')?.value).toContain('Live terminal output'))
+    flushSync(() => (host.querySelector('[data-testid=terminal-kill]') as HTMLButtonElement).click())
+    expect(host.querySelector('[role=status]')?.textContent).toBe('Running')
+    holdPolling = true
+    confirm?.()
+    await vi.waitFor(() => expect(host.querySelector('[role=status]')?.textContent).toBe('Killed'))
+    expect(jobsControl).toHaveBeenCalledWith({ operation: 'kill', jobId: job.id })
+    unmountRegion(host)
+    holdPolling = false
+    renderRegion(host, <TerminalPanel context={context} />)
+    await vi.waitFor(() => expect(host.querySelector('[data-testid=terminal-tab-close]')).not.toBeNull())
+    flushSync(() => (host.querySelector('[data-testid=terminal-tab-close]') as HTMLButtonElement).click())
+    expect(host.querySelector('[role=tab]')).not.toBeNull()
+    confirm?.()
+    await vi.waitFor(() => expect(host.querySelector('[role=tab]')).toBeNull())
+  } finally {
+    unmountRegion(host)
+    host.remove()
+    localStorage.clear()
   }
 })

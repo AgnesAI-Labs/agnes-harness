@@ -108,7 +108,7 @@ export function Dock({ context }: { context: UiExtensionContext }) {
       const edge = edges.find(
         (value) => layout[`${value}Open`] && surfaces[value]?.contains(event.target as Node),
       )
-      if (!edge) return
+      if (!edge || event.defaultPrevented) return
       if (event.key === 'Escape') {
         event.preventDefault()
         setLayout((value) => ({ ...value, [`${edge}Open`]: false }))

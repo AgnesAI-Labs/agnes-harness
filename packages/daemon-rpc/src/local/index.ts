@@ -413,6 +413,13 @@ export function createLocalEndpoint(
     ep,
     {
       ...cx,
+      sessionServices: {
+        activationBarrier: cx.activationBarrier,
+        journal,
+        commandQueue,
+        callService: host.callService.bind(host),
+        inspectService: host.inspectService.bind(host),
+      },
       configuration: opts.configuration !== undefined,
       profileHashForSession: async (key: string) => registry.require(key).session.d.resolvedProfileHash,
       limits: { ...DEFAULT_LIMITS, ...opts.limits },

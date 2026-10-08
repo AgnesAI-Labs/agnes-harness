@@ -71,7 +71,12 @@ export function createJobsServices(jobs: ShellJobs): ServiceDef[] {
         }
         if (typeof input.jobId === 'string') {
           const job = await jobs.wait({ ...scope, signal: ctx.signal }, input.jobId, 0)
-          result.job = { ...job, stdout: job.stdout.slice(-65536), stderr: job.stderr.slice(-65536) }
+          result.job = {
+            ...job,
+            truncated: job.truncated || job.stdout.length > 65536 || job.stderr.length > 65536,
+            stdout: job.stdout.slice(-65536),
+            stderr: job.stderr.slice(-65536),
+          }
         }
         return result
       },
@@ -95,10 +100,15 @@ export function createJobsServices(jobs: ShellJobs): ServiceDef[] {
               columns: typeof input.columns === 'number' ? input.columns : 100,
               rows: typeof input.rows === 'number' ? input.rows : 30,
             },
+            true,
+            'human',
           )
           return { ...job }
         }
         if (typeof input.jobId !== 'string') throw new Error('jobId is required')
+        const job = jobs.list(scope).find((candidate) => candidate.id === input.jobId)
+        if (!job || job.owner !== 'human')
+          throw new Error('CAPABILITY_DENIED: only human terminals can be controlled by the UI')
         if (input.operation === 'send' && typeof input.text === 'string')
           await jobs.send(scope, input.jobId, input.text)
         else if (
@@ -112,8 +122,14 @@ export function createJobsServices(jobs: ShellJobs): ServiceDef[] {
           (input.signal === 'SIGINT' || input.signal === 'SIGTERM' || input.signal === 'SIGHUP')
         )
           await jobs.signal(scope, input.jobId, input.signal)
-        else if (input.operation === 'kill') return { ...(await jobs.kill(scope, input.jobId)) }
-        else throw new Error('invalid job operation')
+        else if (input.operation === 'kill') {
+          const killed = await jobs.kill(scope, input.jobId)
+          const { stdout, stderr, ...metadata } = killed
+          return {
+            ...metadata,
+            truncated: killed.truncated || stdout.length > 65536 || stderr.length > 65536,
+          }
+        } else throw new Error('invalid job operation')
         return { ok: true }
       },
     },

@@ -15,6 +15,9 @@ import {
   type SessionAttachParams,
   type SessionAttachResult,
   type SessionBudgetResult,
+  type SessionJobsControlParams,
+  type SessionJobsControlResult,
+  type SessionJobsReadResult,
   type SessionPreviewParams,
   type SessionProjectUIHistoryParams,
   type SessionProjectUIOpeningParams,
@@ -50,6 +53,10 @@ import { JsonRpcError, ProtocolViolation, TransportClosed } from './errors.js'
 // assembly of a turn's outcome out of two independent arrivals - the prompt response
 // and the terminal notification that precedes it.
 import { type CompactOutcome, submitCommand, submitCompactAware } from './submit.js'
+
+type JobControlInput<P = SessionJobsControlParams> = P extends unknown
+  ? Omit<P, 'sessionId' | 'commandId'> & { commandId?: string }
+  : never
 
 export type TurnResult = {
   stopReason: AcpStopReason
@@ -502,6 +509,22 @@ export class Session {
   ): Promise<import('@agnes/protocol').FactChainResult> {
     return this.client.factChain({ sessionId: this.id, laneId, anchor }, options)
   }
+
+  jobsRead(jobId?: string): Promise<SessionJobsReadResult> {
+    return this.client.call('_agnes/v1/session.jobs.read', {
+      sessionId: this.id,
+      ...(jobId ? { jobId } : {}),
+    })
+  }
+
+  jobsControl(input: JobControlInput): Promise<SessionJobsControlResult> {
+    return this.client.call('_agnes/v1/session.jobs.control', {
+      ...input,
+      sessionId: this.id,
+      commandId: input.commandId ?? crypto.randomUUID(),
+    })
+  }
+
   workspaceList(path = ''): Promise<SessionWorkspaceListResult> {
     return this.client.call<SessionWorkspaceListResult>('_agnes/v1/session.workspace.list', {
       sessionId: this.id,

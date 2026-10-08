@@ -23,3 +23,9 @@ worker 在会话 workspace invocation 内执行 list/read，使用与工具一�
 忽略匹配支持注释、`*`、`?`、`**`、目录规则和按顺序生效的否定规则；不支持转义、字符组、Git 全局排除或重新包含已隐藏的父目录。查看器也明确声明这一子集。
 
 从 `@agnes/web-client` 注册 `fileViewerActions`，条目为 `{ id, order, component }`。组件收到 `{ context, path, revision }`，可进入独立注册的 diff/review 面板并链接实际 ledger 来源，不获得写入或恢复权限。需把 disposer 绑定到模块生命周期。
+
+## 会话终端
+
+通过 `Session.jobsRead(jobId?)` 列举会话任务或读取有上限的输出。`Session.jobsControl(input)` 支持 open、send、resize、signal、kill；副作用使用持久化 `commandId`（SDK 默认生成，重试可显式提供）。daemon 校验会话所有者，只授予固定 jobs 服务。后台记录包含 `owner`、`ownerSessionId`、`id`、`status`、退出码和截断标记。UI 仅控制 human 终端；agent 任务只能跟随或分离。中断发送 SIGINT，终止会结束进程；明确关闭运行中的 human 页签也会结束该进程。关闭 dock、卸载面板、切换会话或断开连接仅分离 UI。进程在明确终止或其 Host/会话关闭时结束，不跨 daemon 重启保留。
+
+打开终端和输入经过当前会话工具策略，包括 read-only 与计划模式拒绝。已认证用户的明确操作提供人工批准，不能覆盖 preset 拒绝。打开操作使用与工具执行相同的会话 sandbox，不接受调用方选择 cwd，也没有 raw-spawn 回退。改变 sandbox 权限需要新建会话；Host 会拒绝改变现有 workspace sandbox 的 preset 切换。错误和状态来自后台；每个输出流上限为 64 Ki 个字符，溢出会明确提示。`@agnes/web-ui` 的 `terminalScreen` 与 `terminalKey` 复用设置页的纯文本 VT 渲染和键盘映射，终端字节不会变成 HTML。
