@@ -50,6 +50,13 @@ node --import tsx tools/public-docs/smoke.mjs
 
 The smoke test uses an isolated temporary home, a loopback model fixture, and real CLI/daemon/worker processes. It checks sessions, default helpers, plugins, Web interfaces, updates, and cleanup, then stops the services it started. It accesses Web through HTTP/WebSocket clients, which does not establish real-browser visual acceptance.
 
+The maintained macOS merge gate is `pnpm e2e:web`. Provision cached Chromium separately with
+`pnpm exec playwright install chromium`; the gate builds the local runtime, launches the real
+`agnes.mjs serve` from the repository root, and runs isolated offline CLI/SDK acceptance with
+browser startup evidence. See the [Web E2E guide](../../tools/e2e-web/README.md) for build reuse,
+artifacts, zero-retry policy and the **Web E2E gate** required status. Page-level acceptance and
+visual baselines await the integrated UI overhaul; this phase does not claim that coverage.
+
 See [installation](../guide/install.md) for separate output directories and PowerShell steps, or the [demo guide](../guide/demo.md) for manual exploration.
 
 <a id="记录验证结果"></a>

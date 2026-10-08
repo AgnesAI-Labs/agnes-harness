@@ -1,22 +1,35 @@
-import { createRequire } from 'node:module'
-import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { resolve } from 'node:path'
+import { defineConfig } from '@playwright/test'
 
-const require = createRequire(import.meta.url)
-const { defineConfig } = require(join(process.env.AGH_PLAYWRIGHT_PACKAGE, 'test.js'))
+const output = resolve(process.env.AGH_WEB_TEST_OUTPUT ?? '.agnes-tmp/e2e-web')
 export default defineConfig({
   testDir: '.',
-  testMatch: '*.spec.ts',
+  testMatch: 'runtime.spec.ts',
   workers: 1,
-  timeout: 45_000,
-  outputDir: process.env.AGH_WEB_TEST_OUTPUT ?? join(tmpdir(), 'agh-web-smoke-results'),
-  reporter: 'list',
+  fullyParallel: false,
+  forbidOnly: true,
+  retries: 0,
+  failOnFlakyTests: true,
+  timeout: 60_000,
+  globalTimeout: 8 * 60_000,
+  expect: { timeout: 10_000, toHaveScreenshot: { maxDiffPixelRatio: 0.002, threshold: 0.2 } },
+  outputDir: resolve(output, 'results'),
+  snapshotPathTemplate: '{testDir}/baselines/{platform}/{arg}{ext}',
+  updateSnapshots: process.env.AGH_UPDATE_VISUALS === '1' ? 'all' : 'none',
+  reporter: [
+    ['list'],
+    ['html', { outputFolder: resolve(output, 'report'), open: 'never' }],
+    ['json', { outputFile: resolve(output, 'results.json') }],
+  ],
   use: {
-    baseURL: process.env.AGH_WEB_URL,
     browserName: 'chromium',
     headless: true,
     viewport: { width: 1280, height: 900 },
+    actionTimeout: 10_000,
+    navigationTimeout: 15_000,
+    serviceWorkers: 'block',
     trace: 'retain-on-failure',
+    screenshot: 'only-on-failure',
     ...(process.env.AGH_CHROMIUM_PATH
       ? { launchOptions: { executablePath: process.env.AGH_CHROMIUM_PATH } }
       : {}),

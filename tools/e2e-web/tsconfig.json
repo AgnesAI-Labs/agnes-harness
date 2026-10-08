@@ -1,0 +1,24 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": "../..",
+    "composite": true,
+    "declaration": true,
+    "outDir": "../../outputs/e2e-types"
+  },
+  "include": [
+    "runtime.spec.ts",
+    "runtime.ts",
+    "sdk.ts",
+    "fixtures.ts",
+    "quality.ts",
+    "i18n.ts",
+    "../acceptance/provider-fixture.ts"
+  ],
+  "exclude": ["fixtures/**"],
+  "references": [
+    {
+      "path": "../../packages/sdk"
+    }
+  ]
+}

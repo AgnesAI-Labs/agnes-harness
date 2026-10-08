@@ -7,6 +7,7 @@
     "node": ">=24.10"
   },
   "scripts": {
+    "e2e:web": "node tools/e2e-web/run.mjs",
     "test:web-smoke": "node tools/e2e-web/run.mjs",
     "release:npx-smoke": "tsx tools/release/npx-smoke.ts",
     "release:external-examples": "tsx tools/release/external-examples.ts",
@@ -23,7 +24,9 @@
     "bench:ledger-write": "tsx tools/bench-ledger-write.ts"
   },
   "devDependencies": {
+    "@axe-core/playwright": "4.11.0",
     "@biomejs/biome": "2.5.12",
+    "@playwright/test": "1.63.0",
     "@types/node": "26.4.1",
     "happy-dom": "20.14.3",
     "tsx": "4.23.13",

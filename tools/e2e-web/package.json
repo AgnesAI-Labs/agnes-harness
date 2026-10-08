@@ -1,0 +1,9 @@
+{
+  "name": "@agnes/e2e-web",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@agnes/protocol": "workspace:*",
+    "@agnes/sdk": "workspace:*"
+  }
+}

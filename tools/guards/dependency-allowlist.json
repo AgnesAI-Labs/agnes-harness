@@ -1,4 +1,5 @@
 {
+  "@agnes/e2e-web": ["@agnes/sdk", "@agnes/protocol"],
   "@agnes/cosmokit": [],
   "@agnes/cordis": ["@agnes/cosmokit"],
   "@agnes/cordis-loader": ["@agnes/cordis"],

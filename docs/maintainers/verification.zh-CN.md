@@ -42,6 +42,12 @@ node --import tsx tools/public-docs/smoke.mjs
 
 smoke 使用隔离的临时 home、本机回环模型夹具与真实 CLI/daemon/worker，检查会话、默认助手、插件、Web 接口以及更新和清理；结束后停止自行启动的服务。它通过 HTTP/WebSocket 客户端访问 Web 接口，不代表真实浏览器视觉验收。
 
+维护中的 macOS 合并门禁使用 `pnpm e2e:web`。先单独运行
+`pnpm exec playwright install chromium` 缓存浏览器；门禁构建本地运行时，从仓库根目录启动真实
+`agnes.mjs serve`，使用隔离环境执行离线 CLI/SDK 验收并保存浏览器启动证据。
+[Web E2E 指南](../../tools/e2e-web/README.md) 说明构建复用、产物、零重试规则和
+**Web E2E gate** 必需状态。页面级验收及视觉基线等 UI 重构集成后再建立，本阶段不声称已覆盖这些内容。
+
 构建到独立输出目录或执行 PowerShell 步骤见[安装指南](../guide/install.zh-CN.md)，手动体验见[演示指南](../guide/demo.zh-CN.md)。
 
 ## 记录验证结果

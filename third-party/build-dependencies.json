@@ -195,6 +195,24 @@
       "purpose": "Tailwind v4 CSS framework used to build the shared web-ui conversation styles.",
       "rationale": "Provides the source directives and theme utilities consumed by the web-ui stylesheet build.",
       "consumers": ["packages/web-ui"]
+    },
+    {
+      "name": "@playwright/test",
+      "version": "1.63.0",
+      "license": "Apache-2.0",
+      "source": "https://github.com/microsoft/playwright",
+      "purpose": "Run the real daemon/Web end-to-end merge gate with cached Chromium and failure traces.",
+      "rationale": "Provides stable browser assertions, visual comparison, lifecycle fixtures and CI reports.",
+      "consumers": ["."]
+    },
+    {
+      "name": "@axe-core/playwright",
+      "version": "4.11.0",
+      "license": "MPL-2.0",
+      "source": "https://github.com/dequelabs/axe-core-npm",
+      "purpose": "Scan main Web screens for WCAG A/AA accessibility violations in the merge gate.",
+      "rationale": "Uses maintained axe rules in the same real browser as functional acceptance.",
+      "consumers": ["."]
     }
   ]
 }
